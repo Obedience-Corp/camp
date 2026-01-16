@@ -15,7 +15,7 @@ func TestLoad(t *testing.T) {
 }
 
 func TestConfigSave(t *testing.T) {
-	cfg := &Config{
+	cfg := &CampaignConfig{
 		Name:        "test-campaign",
 		Description: "Test campaign",
 	}
@@ -27,29 +27,16 @@ func TestConfigSave(t *testing.T) {
 	}
 }
 
-func TestConfigTypes(t *testing.T) {
-	// Test that Config struct can be instantiated
-	cfg := Config{
-		Name:        "my-campaign",
-		Description: "My campaign description",
-		Projects: []ProjectConfig{
-			{
-				Name: "project-a",
-				Path: "projects/project-a",
-				URL:  "https://github.com/example/project-a",
-			},
-		},
-	}
+func TestConfigAlias(t *testing.T) {
+	// Test that Config alias works with CampaignConfig
+	var cfg Config
+	cfg.Name = "alias-test"
+	cfg.Type = CampaignTypeProduct
 
-	if cfg.Name != "my-campaign" {
-		t.Errorf("Config.Name = %s; want my-campaign", cfg.Name)
+	if cfg.Name != "alias-test" {
+		t.Errorf("Config.Name = %s; want alias-test", cfg.Name)
 	}
-
-	if len(cfg.Projects) != 1 {
-		t.Errorf("len(Config.Projects) = %d; want 1", len(cfg.Projects))
-	}
-
-	if cfg.Projects[0].Name != "project-a" {
-		t.Errorf("Config.Projects[0].Name = %s; want project-a", cfg.Projects[0].Name)
+	if cfg.Type != CampaignTypeProduct {
+		t.Errorf("Config.Type = %s; want product", cfg.Type)
 	}
 }

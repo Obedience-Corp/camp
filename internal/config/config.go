@@ -1,40 +1,27 @@
 // Package config provides configuration loading and management for camp.
+//
+// Camp uses a two-level configuration system:
+//   - Campaign config: .campaign/campaign.yaml in the campaign root
+//   - Global config: ~/.config/campaign/config.yaml for user preferences
+//
+// Additionally, a registry at ~/.config/campaign/registry.yaml tracks
+// all known campaigns for quick navigation.
 package config
 
-// Config holds the campaign configuration loaded from campaign.yaml.
-type Config struct {
-	// Name is the campaign name
-	Name string `yaml:"name"`
-
-	// Description is a brief description of the campaign
-	Description string `yaml:"description,omitempty"`
-
-	// Projects contains the list of project configurations
-	Projects []ProjectConfig `yaml:"projects,omitempty"`
-}
-
-// ProjectConfig holds configuration for a single project in the campaign.
-type ProjectConfig struct {
-	// Name is the project name (directory name)
-	Name string `yaml:"name"`
-
-	// Path is the relative path to the project
-	Path string `yaml:"path"`
-
-	// URL is the git remote URL (for submodules)
-	URL string `yaml:"url,omitempty"`
-}
+// Config is an alias for CampaignConfig for backward compatibility.
+// Deprecated: Use CampaignConfig directly.
+type Config = CampaignConfig
 
 // Load loads configuration from the specified file path.
 // If path is empty, it searches for campaign.yaml in the current directory
 // and parent directories.
-func Load(path string) (*Config, error) {
-	// Placeholder - will be implemented in 03_config_loading sequence
-	return &Config{}, nil
+func Load(path string) (*CampaignConfig, error) {
+	// Placeholder - will be implemented in 02_campaign_config task
+	return &CampaignConfig{}, nil
 }
 
 // Save saves the configuration to the specified file path.
-func (c *Config) Save(path string) error {
-	// Placeholder - will be implemented in 03_config_loading sequence
+func (c *CampaignConfig) Save(path string) error {
+	// Placeholder - will be implemented in 02_campaign_config task
 	return nil
 }
