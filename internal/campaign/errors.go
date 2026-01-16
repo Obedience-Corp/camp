@@ -5,7 +5,8 @@ import "errors"
 
 var (
 	// ErrNotInCampaign is returned when the current directory is not inside a campaign.
-	ErrNotInCampaign = errors.New("not inside a campaign directory")
+	ErrNotInCampaign = errors.New("not inside a campaign directory\n" +
+		"Hint: Run 'camp init' to create a campaign, or navigate to an existing one")
 
 	// ErrCampaignExists is returned when trying to initialize a campaign that already exists.
 	ErrCampaignExists = errors.New("campaign already exists in this directory")

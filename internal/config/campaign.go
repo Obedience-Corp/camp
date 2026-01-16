@@ -102,7 +102,8 @@ func findCampaignRoot(ctx context.Context, startDir string) (string, error) {
 
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", errors.New("not inside a campaign directory")
+			return "", errors.New("not inside a campaign directory\n" +
+				"Hint: Run 'camp init' to create a campaign, or navigate to an existing one")
 		}
 		dir = parent
 	}
