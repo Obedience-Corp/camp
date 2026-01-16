@@ -1,0 +1,36 @@
+# Binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/camp
+
+# Test binary
+*.test
+
+# Output of go coverage tool
+coverage.out
+coverage.html
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+
+# IDE/Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Debug
+__debug_bin*
+
+# Local environment
+.env.local
+.envrc
