@@ -2,12 +2,20 @@ package config
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
+
+// ErrMultipleMatches is returned when an ID prefix matches multiple campaigns.
+var ErrMultipleMatches = errors.New("multiple campaigns match that prefix")
+
+// ErrCampaignNotFound is returned when a campaign cannot be found.
+var ErrCampaignNotFound = errors.New("campaign not found")
 
 // LoadRegistry loads the campaign registry from ~/.config/campaign/registry.yaml.
 // Returns an empty registry if the file doesn't exist.
@@ -72,43 +80,139 @@ func SaveRegistry(ctx context.Context, reg *Registry) error {
 }
 
 // Register adds or updates a campaign in the registry.
-func (r *Registry) Register(name, path string, campaignType CampaignType) {
+// The campaign is keyed by its ID for uniqueness.
+func (r *Registry) Register(id, name, path string, campaignType CampaignType) {
 	if r.Campaigns == nil {
 		r.Campaigns = make(map[string]RegisteredCampaign)
 	}
-	r.Campaigns[name] = RegisteredCampaign{
+	r.Campaigns[id] = RegisteredCampaign{
+		ID:         id,
+		Name:       name,
 		Path:       path,
 		Type:       campaignType,
 		LastAccess: time.Now(),
 	}
 }
 
-// Unregister removes a campaign from the registry.
-func (r *Registry) Unregister(name string) {
+// UnregisterByID removes a campaign from the registry by ID.
+func (r *Registry) UnregisterByID(id string) {
 	if r.Campaigns != nil {
-		delete(r.Campaigns, name)
+		delete(r.Campaigns, id)
 	}
 }
 
-// Get retrieves a campaign from the registry.
+// UnregisterByName removes a campaign from the registry by name.
+// If multiple campaigns have the same name, only the first found is removed.
+func (r *Registry) UnregisterByName(name string) bool {
+	if r.Campaigns == nil {
+		return false
+	}
+	for id, c := range r.Campaigns {
+		if c.Name == name {
+			delete(r.Campaigns, id)
+			return true
+		}
+	}
+	return false
+}
+
+// GetByID retrieves a campaign from the registry by its full ID.
 // Returns the campaign and true if found, or zero value and false if not.
-func (r *Registry) Get(name string) (RegisteredCampaign, bool) {
+func (r *Registry) GetByID(id string) (RegisteredCampaign, bool) {
 	if r.Campaigns == nil {
 		return RegisteredCampaign{}, false
 	}
-	c, ok := r.Campaigns[name]
+	c, ok := r.Campaigns[id]
 	return c, ok
 }
 
-// UpdateLastAccess updates the last access time for a campaign.
-func (r *Registry) UpdateLastAccess(name string) {
+// GetByIDPrefix retrieves a campaign by ID prefix (like git commit hashes).
+// Returns an error if multiple campaigns match the prefix.
+func (r *Registry) GetByIDPrefix(prefix string) (RegisteredCampaign, error) {
+	if r.Campaigns == nil {
+		return RegisteredCampaign{}, ErrCampaignNotFound
+	}
+
+	var matches []RegisteredCampaign
+	for id, c := range r.Campaigns {
+		if strings.HasPrefix(id, prefix) {
+			matches = append(matches, c)
+		}
+	}
+
+	switch len(matches) {
+	case 0:
+		return RegisteredCampaign{}, ErrCampaignNotFound
+	case 1:
+		return matches[0], nil
+	default:
+		return RegisteredCampaign{}, ErrMultipleMatches
+	}
+}
+
+// GetByName retrieves a campaign from the registry by name.
+// Returns the campaign and true if found, or zero value and false if not.
+// If multiple campaigns have the same name, returns the first found.
+func (r *Registry) GetByName(name string) (RegisteredCampaign, bool) {
+	if r.Campaigns == nil {
+		return RegisteredCampaign{}, false
+	}
+	for _, c := range r.Campaigns {
+		if c.Name == name {
+			return c, true
+		}
+	}
+	return RegisteredCampaign{}, false
+}
+
+// Get retrieves a campaign by ID or name (tries ID first, then name).
+// For CLI convenience - accepts either identifier.
+func (r *Registry) Get(query string) (RegisteredCampaign, bool) {
+	// Try exact ID match first
+	if c, ok := r.GetByID(query); ok {
+		return c, true
+	}
+	// Try ID prefix match
+	if c, err := r.GetByIDPrefix(query); err == nil {
+		return c, true
+	}
+	// Fall back to name lookup
+	return r.GetByName(query)
+}
+
+// UpdateLastAccess updates the last access time for a campaign by ID.
+func (r *Registry) UpdateLastAccess(id string) {
 	if r.Campaigns == nil {
 		return
 	}
-	if c, ok := r.Campaigns[name]; ok {
+	if c, ok := r.Campaigns[id]; ok {
 		c.LastAccess = time.Now()
-		r.Campaigns[name] = c
+		r.Campaigns[id] = c
 	}
+}
+
+// ListIDs returns all campaign IDs in the registry.
+func (r *Registry) ListIDs() []string {
+	if r.Campaigns == nil {
+		return nil
+	}
+	ids := make([]string, 0, len(r.Campaigns))
+	for id := range r.Campaigns {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+// ListAll returns all registered campaigns.
+func (r *Registry) ListAll() []RegisteredCampaign {
+	if r.Campaigns == nil {
+		return nil
+	}
+	campaigns := make([]RegisteredCampaign, 0, len(r.Campaigns))
+	for _, c := range r.Campaigns {
+		campaigns = append(campaigns, c)
+	}
+	return campaigns
 }
 
 // List returns all campaign names in the registry.
@@ -117,8 +221,8 @@ func (r *Registry) List() []string {
 		return nil
 	}
 	names := make([]string, 0, len(r.Campaigns))
-	for name := range r.Campaigns {
-		names = append(names, name)
+	for _, c := range r.Campaigns {
+		names = append(names, c.Name)
 	}
 	return names
 }
@@ -132,15 +236,15 @@ func (r *Registry) Len() int {
 }
 
 // FindByPath finds a campaign by its path.
-// Returns the name and campaign if found, or empty string and zero value if not.
-func (r *Registry) FindByPath(path string) (string, RegisteredCampaign, bool) {
+// Returns the campaign if found.
+func (r *Registry) FindByPath(path string) (RegisteredCampaign, bool) {
 	if r.Campaigns == nil {
-		return "", RegisteredCampaign{}, false
+		return RegisteredCampaign{}, false
 	}
-	for name, c := range r.Campaigns {
+	for _, c := range r.Campaigns {
 		if c.Path == path {
-			return name, c, true
+			return c, true
 		}
 	}
-	return "", RegisteredCampaign{}, false
+	return RegisteredCampaign{}, false
 }

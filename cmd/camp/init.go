@@ -110,7 +110,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	if !dryRun {
-		fmt.Printf("\nCampaign root: %s\n", result.CampaignRoot)
+		fmt.Printf("\nCampaign: %s\n", result.Name)
+		fmt.Printf("ID: %s\n", result.ID)
+		fmt.Printf("Root: %s\n", result.CampaignRoot)
 	}
 
 	return nil

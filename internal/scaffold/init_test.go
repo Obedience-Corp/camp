@@ -14,6 +14,9 @@ func TestInit(t *testing.T) {
 	tmpDir := t.TempDir()
 	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
 
+	// Isolate registry to temp dir
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
 	campaignDir := filepath.Join(tmpDir, "test-campaign")
 	if err := os.MkdirAll(campaignDir, 0755); err != nil {
 		t.Fatalf("failed to create test dir: %v", err)
@@ -57,6 +60,7 @@ func TestInit(t *testing.T) {
 func TestInit_Minimal(t *testing.T) {
 	tmpDir := t.TempDir()
 	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
 	campaignDir := filepath.Join(tmpDir, "minimal-campaign")
 	os.MkdirAll(campaignDir, 0755)
@@ -130,6 +134,7 @@ func TestInit_CampaignExists(t *testing.T) {
 func TestInit_DryRun(t *testing.T) {
 	tmpDir := t.TempDir()
 	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
 	campaignDir := filepath.Join(tmpDir, "dry-run-campaign")
 	os.MkdirAll(campaignDir, 0755)
@@ -182,6 +187,7 @@ func TestInit_ContextTimeout(t *testing.T) {
 func TestInit_DefaultName(t *testing.T) {
 	tmpDir := t.TempDir()
 	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
 	campaignDir := filepath.Join(tmpDir, "auto-named")
 	os.MkdirAll(campaignDir, 0755)
@@ -220,6 +226,7 @@ func TestInit_AllTypes(t *testing.T) {
 		t.Run(string(campaignType), func(t *testing.T) {
 			tmpDir := t.TempDir()
 			tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+			t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
 			campaignDir := filepath.Join(tmpDir, "typed-campaign")
 			os.MkdirAll(campaignDir, 0755)
@@ -282,6 +289,7 @@ func TestInitOptions_Validate(t *testing.T) {
 func TestInit_SkipsExistingDirs(t *testing.T) {
 	tmpDir := t.TempDir()
 	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
 	campaignDir := filepath.Join(tmpDir, "partial-campaign")
 	os.MkdirAll(campaignDir, 0755)

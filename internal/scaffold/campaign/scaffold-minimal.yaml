@@ -1,0 +1,24 @@
+# Minimal Campaign Scaffold Definition
+# Standard format for minimal camp CLI campaign initialization
+scaffold_version: "1.0.0"
+templates_dir: campaign/templates
+
+vars:
+  campaign_name: ""
+  campaign_id: ""
+  campaign_type: "product"
+
+files:
+  # .campaign directory structure
+  - path: ".campaign/templates/.gitkeep"
+    template: "~"
+  - path: ".campaign/agents/.gitkeep"
+    template: "~"
+
+  # Only projects directory in minimal mode
+  - path: "projects/OBEY.md"
+    template: "OBEY-projects.md.tmpl"
+
+  # Root CLAUDE.md
+  - path: "CLAUDE.md"
+    template: "CLAUDE.md.tmpl"

@@ -117,7 +117,7 @@ func runRegister(cmd *cobra.Command, args []string) error {
 	}
 
 	// Check for existing registration with same name but different path
-	if existing, exists := reg.Get(name); exists && existing.Path != absPath {
+	if existing, exists := reg.GetByName(name); exists && existing.Path != absPath {
 		fmt.Printf("Warning: Campaign '%s' already registered at %s\n", name, existing.Path)
 		fmt.Print("Replace with new path? [y/N] ")
 		reader := bufio.NewReader(os.Stdin)
@@ -127,10 +127,12 @@ func runRegister(cmd *cobra.Command, args []string) error {
 			fmt.Println("Aborted.")
 			return nil
 		}
+		// Remove the old entry before adding new one
+		reg.UnregisterByID(existing.ID)
 	}
 
-	// Register
-	reg.Register(name, absPath, ctype)
+	// Register using campaign ID
+	reg.Register(cfg.ID, name, absPath, ctype)
 
 	// Save registry
 	if err := config.SaveRegistry(ctx, reg); err != nil {
@@ -138,5 +140,6 @@ func runRegister(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("Registered: %s (%s)\n", name, absPath)
+	fmt.Printf("Campaign ID: %s\n", cfg.ID)
 	return nil
 }

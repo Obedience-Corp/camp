@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
 )
 
@@ -18,6 +19,7 @@ const CampaignDir = ".campaign"
 
 // LoadCampaignConfig loads .campaign/campaign.yaml from the campaign root.
 // Returns the configuration with defaults applied and validated.
+// If the campaign lacks an ID, one is generated and saved (migration for older campaigns).
 func LoadCampaignConfig(ctx context.Context, campaignRoot string) (*CampaignConfig, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -39,6 +41,16 @@ func LoadCampaignConfig(ctx context.Context, campaignRoot string) (*CampaignConf
 
 	// Apply defaults for missing optional fields
 	cfg.ApplyDefaults()
+
+	// Migration: Generate ID for campaigns that don't have one
+	if cfg.ID == "" {
+		cfg.ID = uuid.New().String()
+		// Save the updated config with the new ID
+		if err := SaveCampaignConfig(ctx, campaignRoot, &cfg); err != nil {
+			// Log warning but don't fail - ID can be regenerated next time
+			// The config is still usable without persistence
+		}
+	}
 
 	// Validate required fields
 	if err := ValidateCampaignConfig(&cfg); err != nil {

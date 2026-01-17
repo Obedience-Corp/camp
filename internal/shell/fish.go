@@ -34,6 +34,9 @@ function cgo --description "Navigate campaign directories"
         if test -n "$dest"
             cd $dest
         end
+    else if test "$argv[1]" = "--help" -o "$argv[1]" = "-h"
+        # Show help from camp go
+        camp go --help
     else if test "$argv[1]" = "-c"
         # Command execution mode: cgo -c <category> <command...>
         set -l category $argv[2]

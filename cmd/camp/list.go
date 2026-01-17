@@ -14,6 +14,7 @@ import (
 
 // campaignEntry represents a campaign for display purposes.
 type campaignEntry struct {
+	ID         string    `json:"id"`
 	Name       string    `json:"name"`
 	Type       string    `json:"type"`
 	Path       string    `json:"path"`
@@ -79,9 +80,10 @@ func runList(cmd *cobra.Command, args []string) error {
 // sortCampaigns converts the registry map to a sorted slice.
 func sortCampaigns(campaigns map[string]config.RegisteredCampaign, by string) []campaignEntry {
 	entries := make([]campaignEntry, 0, len(campaigns))
-	for name, c := range campaigns {
+	for id, c := range campaigns {
 		entries = append(entries, campaignEntry{
-			Name:       name,
+			ID:         id,
+			Name:       c.Name,
 			Type:       string(c.Type),
 			Path:       c.Path,
 			LastAccess: c.LastAccess,
@@ -123,13 +125,18 @@ func outputCampaigns(campaigns []campaignEntry, format string) error {
 		return nil
 	default: // table
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "NAME\tTYPE\tPATH")
+		fmt.Fprintln(w, "ID\tNAME\tTYPE\tPATH")
 		for _, c := range campaigns {
 			campaignType := c.Type
 			if campaignType == "" {
 				campaignType = "-"
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\n", c.Name, campaignType, c.Path)
+			// Truncate ID for display (first 8 chars like git)
+			shortID := c.ID
+			if len(shortID) > 8 {
+				shortID = shortID[:8]
+			}
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", shortID, c.Name, campaignType, c.Path)
 		}
 		return w.Flush()
 	}

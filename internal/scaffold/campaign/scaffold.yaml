@@ -1,0 +1,36 @@
+# Campaign Scaffold Definition
+# Standard format for camp CLI campaign initialization
+scaffold_version: "1.0.0"
+templates_dir: campaign/templates
+
+vars:
+  campaign_name: ""
+  campaign_id: ""
+  campaign_type: "product"
+
+files:
+  # .campaign directory structure
+  - path: ".campaign/templates/.gitkeep"
+    template: "~"
+  - path: ".campaign/agents/.gitkeep"
+    template: "~"
+
+  # Project directories with OBEY.md files
+  - path: "projects/OBEY.md"
+    template: "OBEY-projects.md.tmpl"
+  - path: "worktrees/OBEY.md"
+    template: "OBEY-worktrees.md.tmpl"
+  - path: "ai_docs/OBEY.md"
+    template: "OBEY-ai_docs.md.tmpl"
+  - path: "docs/OBEY.md"
+    template: "OBEY-docs.md.tmpl"
+  - path: "corpus/OBEY.md"
+    template: "OBEY-corpus.md.tmpl"
+  - path: "pipelines/OBEY.md"
+    template: "OBEY-pipelines.md.tmpl"
+  - path: "code_reviews/OBEY.md"
+    template: "OBEY-code_reviews.md.tmpl"
+
+  # Root CLAUDE.md
+  - path: "CLAUDE.md"
+    template: "CLAUDE.md.tmpl"

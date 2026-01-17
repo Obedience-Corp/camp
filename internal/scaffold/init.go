@@ -3,10 +3,13 @@ package scaffold
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/lancekrogers/guild-scaffold/pkg/scaffold"
 	"github.com/obediencecorp/camp/internal/campaign"
 	"github.com/obediencecorp/camp/internal/config"
 )
@@ -29,6 +32,10 @@ type InitOptions struct {
 
 // InitResult contains information about what was created.
 type InitResult struct {
+	// ID is the unique campaign identifier (UUID v4).
+	ID string
+	// Name is the campaign name.
+	Name string
 	// CampaignRoot is the path to the campaign root.
 	CampaignRoot string
 	// DirsCreated lists directories that were created.
@@ -73,56 +80,68 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 		opts.Type = config.CampaignTypeProduct
 	}
 
+	// Generate unique campaign ID
+	campaignID := uuid.New().String()
+
 	result := &InitResult{
+		ID:           campaignID,
+		Name:         name,
 		CampaignRoot: absDir,
 	}
 
-	// Select directories to create
-	dirs := StandardDirs
+	// Select scaffold recipe based on minimal flag
+	scaffoldPath := "campaign/scaffold.yaml"
 	if opts.Minimal {
-		dirs = MinimalDirs
+		scaffoldPath = "campaign/scaffold-minimal.yaml"
 	}
 
-	// Create directories
-	for _, d := range dirs {
-		path := filepath.Join(absDir, d)
-		if opts.DryRun {
-			result.DirsCreated = append(result.DirsCreated, path)
-			continue
-		}
+	// Get expected directories and files from scaffold
+	expectedDirs, expectedFiles := getExpectedPaths(absDir, opts.Minimal)
 
-		if _, err := os.Stat(path); err == nil {
-			result.Skipped = append(result.Skipped, path)
-			continue
+	// Check what already exists and mark as skipped
+	for _, d := range expectedDirs {
+		if _, err := os.Stat(d); err == nil {
+			result.Skipped = append(result.Skipped, d)
 		}
-
-		if err := os.MkdirAll(path, 0755); err != nil {
-			return nil, fmt.Errorf("failed to create directory %s: %w", path, err)
-		}
-		result.DirsCreated = append(result.DirsCreated, path)
 	}
 
-	// Create .campaign subdirectories
-	for _, d := range CampaignSubdirs {
-		path := filepath.Join(absDir, config.CampaignDir, d)
-		if opts.DryRun {
-			result.DirsCreated = append(result.DirsCreated, path)
-			continue
+	// Run scaffold (handles directories and template files)
+	if !opts.DryRun {
+		// Use guild-scaffold to create the scaffold structure
+		templateFS, err := fs.Sub(CampaignScaffoldFS, "campaign/templates")
+		if err != nil {
+			return nil, fmt.Errorf("failed to get template sub-fs: %w", err)
 		}
 
-		if _, err := os.Stat(path); err == nil {
-			result.Skipped = append(result.Skipped, path)
-			continue
+		_, scaffoldErr := scaffold.ScaffoldFromFS(ctx, CampaignScaffoldFS, scaffoldPath, scaffold.Options{
+			TemplatesFS: templateFS,
+			Dest:        absDir,
+			Vars: map[string]any{
+				"campaign_name": name,
+				"campaign_id":   campaignID,
+				"campaign_type": string(opts.Type),
+			},
+			Dry:       false,
+			Overwrite: false,
+		})
+		if scaffoldErr != nil {
+			return nil, fmt.Errorf("failed to create scaffold: %w", scaffoldErr)
 		}
+	}
 
-		if err := os.MkdirAll(path, 0755); err != nil {
-			return nil, fmt.Errorf("failed to create directory %s: %w", path, err)
+	// Track what was created
+	for _, d := range expectedDirs {
+		if !containsPath(result.Skipped, d) {
+			result.DirsCreated = append(result.DirsCreated, d)
 		}
-		result.DirsCreated = append(result.DirsCreated, path)
+	}
+	for _, f := range expectedFiles {
+		result.FilesCreated = append(result.FilesCreated, f)
 	}
 
 	// Create campaign.yaml
 	cfg := &config.CampaignConfig{
+		ID:          campaignID,
 		Name:        name,
 		Type:        opts.Type,
 		CreatedAt:   time.Now(),
@@ -134,43 +153,19 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 		if err := config.SaveCampaignConfig(ctx, absDir, cfg); err != nil {
 			return nil, fmt.Errorf("failed to create campaign config: %w", err)
 		}
-		result.FilesCreated = append(result.FilesCreated, config.CampaignConfigPath(absDir))
 	}
+	result.FilesCreated = append(result.FilesCreated, config.CampaignConfigPath(absDir))
 
-	// Create OBEY.md files for each directory
-	if !opts.DryRun {
-		if err := CreateObeyFiles(ctx, absDir, opts.Minimal); err != nil {
-			return nil, fmt.Errorf("failed to create OBEY.md files: %w", err)
-		}
-		// Track OBEY.md files created (one for each non-.campaign directory)
-		for _, d := range dirs {
-			if d != ".campaign" {
-				if _, ok := ObeyContent[d]; ok {
-					result.FilesCreated = append(result.FilesCreated, filepath.Join(absDir, d, "OBEY.md"))
-				}
-			}
-		}
-	}
-
-	// Create CLAUDE.md and AGENTS.md symlink
-	claudePath := filepath.Join(absDir, "CLAUDE.md")
+	// Create AGENTS.md symlink to CLAUDE.md
 	agentsPath := filepath.Join(absDir, "AGENTS.md")
 
 	if !opts.DryRun {
-		// Create CLAUDE.md using the template
-		if err := CreateClaudeMD(ctx, absDir, name); err != nil {
-			return nil, fmt.Errorf("failed to create CLAUDE.md: %w", err)
-		}
-		if _, err := os.Stat(claudePath); err == nil {
-			result.FilesCreated = append(result.FilesCreated, claudePath)
-		}
-
-		// Create AGENTS.md symlink to CLAUDE.md
-		if err := CreateAgentsMDSymlink(ctx, absDir); err != nil {
-			// Symlinks may fail on some systems, just note it
-			result.Skipped = append(result.Skipped, agentsPath+" (symlink failed)")
-		} else {
-			if _, err := os.Lstat(agentsPath); err == nil {
+		// Create symlink to CLAUDE.md (relative path)
+		if _, err := os.Lstat(agentsPath); os.IsNotExist(err) {
+			if err := os.Symlink("CLAUDE.md", agentsPath); err != nil {
+				// Symlinks may fail on some systems, just note it
+				result.Skipped = append(result.Skipped, agentsPath+" (symlink failed)")
+			} else {
 				result.FilesCreated = append(result.FilesCreated, agentsPath+" -> CLAUDE.md")
 			}
 		}
@@ -180,7 +175,7 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 	if !opts.NoRegister && !opts.DryRun {
 		reg, err := config.LoadRegistry(ctx)
 		if err == nil {
-			reg.Register(name, absDir, opts.Type)
+			reg.Register(campaignID, name, absDir, opts.Type)
 			// Ignore registry save errors - not critical
 			_ = config.SaveRegistry(ctx, reg)
 		}
@@ -195,4 +190,45 @@ func (o *InitOptions) Validate() error {
 		return fmt.Errorf("invalid campaign type: %s", o.Type)
 	}
 	return nil
+}
+
+// getExpectedPaths returns the expected directories and files based on scaffold type.
+func getExpectedPaths(baseDir string, minimal bool) (dirs []string, files []string) {
+	// Select directories based on minimal flag
+	selectedDirs := StandardDirs
+	if minimal {
+		selectedDirs = MinimalDirs
+	}
+
+	// Build full paths for main directories
+	for _, d := range selectedDirs {
+		dirs = append(dirs, filepath.Join(baseDir, d))
+	}
+
+	// Add .campaign subdirectories
+	for _, d := range CampaignSubdirs {
+		dirs = append(dirs, filepath.Join(baseDir, ".campaign", d))
+	}
+
+	// Build file paths (OBEY.md files)
+	for _, d := range selectedDirs {
+		if d != ".campaign" {
+			files = append(files, filepath.Join(baseDir, d, "OBEY.md"))
+		}
+	}
+
+	// CLAUDE.md
+	files = append(files, filepath.Join(baseDir, "CLAUDE.md"))
+
+	return dirs, files
+}
+
+// containsPath checks if a string slice contains a path string.
+func containsPath(slice []string, s string) bool {
+	for _, item := range slice {
+		if item == s {
+			return true
+		}
+	}
+	return false
 }

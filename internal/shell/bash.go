@@ -35,6 +35,9 @@ cgo() {
     if [ -n "$dest" ]; then
       cd "$dest" || return 1
     fi
+  elif [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+    # Show help from camp go
+    camp go --help
   elif [ "$1" = "-c" ]; then
     # Command execution mode: cgo -c <category> <command...>
     shift

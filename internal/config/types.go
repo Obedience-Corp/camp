@@ -19,6 +19,8 @@ const (
 
 // CampaignConfig represents .campaign/campaign.yaml configuration.
 type CampaignConfig struct {
+	// ID is the unique campaign identifier (UUID v4).
+	ID string `yaml:"id"`
 	// Name is the campaign name.
 	Name string `yaml:"name"`
 	// Type is the campaign type.
@@ -77,12 +79,16 @@ type GlobalConfig struct {
 
 // Registry represents ~/.config/campaign/registry.yaml for tracking campaigns.
 type Registry struct {
-	// Campaigns maps campaign names to their registration info.
+	// Campaigns maps campaign IDs to their registration info.
 	Campaigns map[string]RegisteredCampaign `yaml:"campaigns,omitempty"`
 }
 
 // RegisteredCampaign holds information about a registered campaign.
 type RegisteredCampaign struct {
+	// ID is the unique campaign identifier (UUID v4).
+	ID string `yaml:"id"`
+	// Name is the campaign name (for display and lookup).
+	Name string `yaml:"name"`
 	// Path is the absolute path to the campaign root.
 	Path string `yaml:"path"`
 	// Type is the campaign type.
