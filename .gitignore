@@ -16,8 +16,8 @@ out/
 # Dependency directories
 vendor/
 
-# Go workspace file
-go.work
+# Go workspace sum (generated, not needed)
+go.work.sum
 
 # IDE/Editor
 .idea/
