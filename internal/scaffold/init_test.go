@@ -50,10 +50,16 @@ func TestInit(t *testing.T) {
 		t.Error("campaign.yaml was not created")
 	}
 
-	// Check CLAUDE.md was created
+	// Check AGENTS.md was created (source of truth)
+	agentsPath := filepath.Join(campaignDir, "AGENTS.md")
+	if _, err := os.Stat(agentsPath); os.IsNotExist(err) {
+		t.Error("AGENTS.md was not created")
+	}
+
+	// Check CLAUDE.md symlink was created
 	claudePath := filepath.Join(campaignDir, "CLAUDE.md")
-	if _, err := os.Stat(claudePath); os.IsNotExist(err) {
-		t.Error("CLAUDE.md was not created")
+	if _, err := os.Lstat(claudePath); os.IsNotExist(err) {
+		t.Error("CLAUDE.md symlink was not created")
 	}
 }
 

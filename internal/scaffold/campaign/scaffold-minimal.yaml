@@ -19,6 +19,6 @@ files:
   - path: "projects/OBEY.md"
     template: "OBEY-projects.md.tmpl"
 
-  # Root CLAUDE.md
-  - path: "CLAUDE.md"
-    template: "CLAUDE.md.tmpl"
+  # Root AGENTS.md (source of truth, CLAUDE.md symlinks to this)
+  - path: "AGENTS.md"
+    template: "AGENTS.md.tmpl"

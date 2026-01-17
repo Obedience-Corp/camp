@@ -10,9 +10,8 @@ bin/
 # Test binary
 *.test
 
-# Output of go coverage tool
-coverage.out
-coverage.html
+# Output directory (coverage, build artifacts)
+out/
 
 # Dependency directories
 vendor/

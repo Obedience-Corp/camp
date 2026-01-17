@@ -156,17 +156,17 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 	}
 	result.FilesCreated = append(result.FilesCreated, config.CampaignConfigPath(absDir))
 
-	// Create AGENTS.md symlink to CLAUDE.md
-	agentsPath := filepath.Join(absDir, "AGENTS.md")
+	// Create CLAUDE.md symlink to AGENTS.md (AGENTS.md is the source of truth)
+	claudePath := filepath.Join(absDir, "CLAUDE.md")
 
 	if !opts.DryRun {
-		// Create symlink to CLAUDE.md (relative path)
-		if _, err := os.Lstat(agentsPath); os.IsNotExist(err) {
-			if err := os.Symlink("CLAUDE.md", agentsPath); err != nil {
+		// Create symlink to AGENTS.md (relative path)
+		if _, err := os.Lstat(claudePath); os.IsNotExist(err) {
+			if err := os.Symlink("AGENTS.md", claudePath); err != nil {
 				// Symlinks may fail on some systems, just note it
-				result.Skipped = append(result.Skipped, agentsPath+" (symlink failed)")
+				result.Skipped = append(result.Skipped, claudePath+" (symlink failed)")
 			} else {
-				result.FilesCreated = append(result.FilesCreated, agentsPath+" -> CLAUDE.md")
+				result.FilesCreated = append(result.FilesCreated, claudePath+" -> AGENTS.md")
 			}
 		}
 	}
@@ -217,8 +217,8 @@ func getExpectedPaths(baseDir string, minimal bool) (dirs []string, files []stri
 		}
 	}
 
-	// CLAUDE.md
-	files = append(files, filepath.Join(baseDir, "CLAUDE.md"))
+	// AGENTS.md (source of truth)
+	files = append(files, filepath.Join(baseDir, "AGENTS.md"))
 
 	return dirs, files
 }

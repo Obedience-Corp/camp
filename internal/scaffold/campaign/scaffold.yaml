@@ -31,6 +31,6 @@ files:
   - path: "code_reviews/OBEY.md"
     template: "OBEY-code_reviews.md.tmpl"
 
-  # Root CLAUDE.md
-  - path: "CLAUDE.md"
-    template: "CLAUDE.md.tmpl"
+  # Root AGENTS.md (source of truth, CLAUDE.md symlinks to this)
+  - path: "AGENTS.md"
+    template: "AGENTS.md.tmpl"

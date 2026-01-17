@@ -17,9 +17,10 @@ verbose:
 # Run tests with coverage report
 [no-cd]
 coverage:
-    go test -race -coverprofile=coverage.out ./...
-    go tool cover -html=coverage.out -o coverage.html
-    @echo "Coverage report: coverage.html"
+    @mkdir -p out
+    go test -race -coverprofile=out/coverage.out ./...
+    go tool cover -html=out/coverage.out -o out/coverage.html
+    @echo "Coverage report: out/coverage.html"
 
 # Run short tests only
 [no-cd]
