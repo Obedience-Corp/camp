@@ -28,7 +28,7 @@ just install
 
 ### Shell Integration
 
-Add to your shell config to enable the `cgo` navigation function:
+Add to your shell config to enable the `cgo` navigation function and tab completion:
 
 **Zsh** (~/.zshrc):
 ```bash
@@ -44,6 +44,13 @@ eval "$(camp shell-init bash)"
 ```fish
 camp shell-init fish | source
 ```
+
+The eval hook provides:
+- **`cgo` function** - Shell-native navigation with actual `cd` behavior
+- **Tab completion** - Context-aware completion for categories, projects, and commands
+- **`camp` completion** - Full command completion for the camp CLI
+
+After adding the eval line, restart your shell or run `source ~/.zshrc` (or equivalent).
 
 ## Quick Start
 
@@ -137,6 +144,60 @@ Generate shell integration scripts:
 camp shell-init zsh       # Output zsh init script
 camp shell-init bash      # Output bash init script
 camp shell-init fish      # Output fish init script
+```
+
+#### How the Eval Hook Works
+
+The eval hook dynamically generates and executes shell code at startup:
+
+```bash
+# What happens when you add this to ~/.zshrc:
+eval "$(camp shell-init zsh)"
+
+# 1. camp shell-init zsh outputs shell code (functions, completions)
+# 2. eval executes that code in your current shell
+# 3. The cgo function and completions become available
+```
+
+#### Why Eval Instead of Sourcing a File?
+
+- **Version sync** - Always uses functions matching your installed camp version
+- **No file management** - Nothing to update when camp is upgraded
+- **Shell detection** - Camp can detect your shell environment dynamically
+
+#### What Gets Installed
+
+The shell-init script provides:
+
+```bash
+# 1. The cgo navigation function
+cgo p                    # Runs: cd "$(camp go p --print)"
+cgo p api                # Runs: cd "$(camp go p api --print)"
+cgo -c p ls              # Runs: camp go p -c ls (no cd)
+
+# 2. Tab completion for cgo
+cgo <TAB>                # Completes categories: p c f a d w r pi
+cgo p <TAB>              # Completes project names
+
+# 3. Tab completion for camp commands
+camp <TAB>               # Completes: init go project list register...
+camp project <TAB>       # Completes: add list remove
+```
+
+#### Troubleshooting
+
+```bash
+# Verify camp is in PATH
+which camp
+
+# Test shell-init output
+camp shell-init zsh
+
+# Manually reload
+source ~/.zshrc
+
+# Check if cgo is defined
+type cgo
 ```
 
 ### camp complete
