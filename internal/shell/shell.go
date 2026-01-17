@@ -29,4 +29,3 @@ func IsSupported(shellType string) bool {
 	}
 	return false
 }
-

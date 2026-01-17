@@ -72,13 +72,13 @@ func TestScore_FuzzyMatch(t *testing.T) {
 		target string
 		match  bool
 	}{
-		{"as", "api-service", true},      // a...s
-		{"asv", "api-service", true},     // a...s...v
-		{"xyz", "api-service", false},    // no match
-		{"apis", "api-service", true},    // api-s
-		{"svc", "api-service", true},     // s...v...c (weak but valid)
-		{"apisvc", "api-service", true},  // api-svc
-		{"apx", "api-service", false},    // no x in target
+		{"as", "api-service", true},     // a...s
+		{"asv", "api-service", true},    // a...s...v
+		{"xyz", "api-service", false},   // no match
+		{"apis", "api-service", true},   // api-s
+		{"svc", "api-service", true},    // s...v...c (weak but valid)
+		{"apisvc", "api-service", true}, // api-svc
+		{"apx", "api-service", false},   // no x in target
 	}
 
 	for _, tt := range tests {
@@ -187,9 +187,9 @@ func TestFilter_NoMatches(t *testing.T) {
 
 func TestFilter_Sorting(t *testing.T) {
 	targets := []string{
-		"api-helper",   // Contains "api"
-		"api",          // Exact match
-		"api-service",  // Prefix match
+		"api-helper",  // Contains "api"
+		"api",         // Exact match
+		"api-service", // Prefix match
 	}
 
 	matches := Filter(targets, "api")
@@ -294,13 +294,13 @@ func TestIsWordBoundary(t *testing.T) {
 		pos  int
 		want bool
 	}{
-		{"api-service", 0, true},   // Start of string
-		{"api-service", 4, true},   // After '-'
-		{"api/service", 4, true},   // After '/'
-		{"api_service", 4, true},   // After '_'
-		{"api.service", 4, true},   // After '.'
-		{"apiservice", 3, false},   // Mid-word
-		{"api service", 4, true},   // After space
+		{"api-service", 0, true}, // Start of string
+		{"api-service", 4, true}, // After '-'
+		{"api/service", 4, true}, // After '/'
+		{"api_service", 4, true}, // After '_'
+		{"api.service", 4, true}, // After '.'
+		{"apiservice", 3, false}, // Mid-word
+		{"api service", 4, true}, // After space
 	}
 
 	for _, tt := range tests {
@@ -319,11 +319,11 @@ func TestIsCamelCaseBoundary(t *testing.T) {
 		pos  int
 		want bool
 	}{
-		{"apiService", 3, true},   // s->S
-		{"apiService", 0, false},  // Start
-		{"ApiService", 3, true},   // i->S
-		{"APISERVICE", 3, false},  // All caps
-		{"apiservice", 3, false},  // All lower
+		{"apiService", 3, true},  // s->S
+		{"apiService", 0, false}, // Start
+		{"ApiService", 3, true},  // i->S
+		{"APISERVICE", 3, false}, // All caps
+		{"apiservice", 3, false}, // All lower
 	}
 
 	for _, tt := range tests {

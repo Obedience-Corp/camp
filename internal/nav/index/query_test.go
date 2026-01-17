@@ -132,10 +132,10 @@ func TestQuery_Search(t *testing.T) {
 	}{
 		{"empty query all", "", nav.CategoryAll, 5},
 		{"empty query projects", "", nav.CategoryProjects, 2},
-		{"api search all", "api", nav.CategoryAll, 1},     // at least api-service
+		{"api search all", "api", nav.CategoryAll, 1}, // at least api-service
 		{"api search projects", "api", nav.CategoryProjects, 1},
 		{"web search", "web", nav.CategoryAll, 1},
-		{"no match", "xyz123", nav.CategoryAll, 0},        // use unique pattern
+		{"no match", "xyz123", nav.CategoryAll, 0}, // use unique pattern
 		{"camp in festivals", "camp", nav.CategoryFestivals, 1},
 	}
 
@@ -291,11 +291,11 @@ func TestQuery_Names(t *testing.T) {
 
 	// Check all names are present
 	expected := map[string]bool{
-		"api-service": true,
-		"web-app":     true,
-		"camp-cli":    true,
+		"api-service":  true,
+		"web-app":      true,
+		"camp-cli":     true,
 		"architecture": true,
-		"research":    true,
+		"research":     true,
 	}
 
 	for _, name := range names {
