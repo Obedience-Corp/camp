@@ -13,6 +13,13 @@ commit := `git rev-parse --short HEAD 2>/dev/null || echo "unknown"`
 build_date := `date -u +"%Y-%m-%dT%H:%M:%SZ"`
 ldflags := "-X " + version_pkg + ".Version=" + version + " -X " + version_pkg + ".Commit=" + commit + " -X " + version_pkg + ".BuildDate=" + build_date
 
+# Modules
+[doc('Testing (unit, coverage, benchmarks)')]
+mod test '.justfiles/test.just'
+
+[doc('Cross-platform builds')]
+mod xbuild '.justfiles/build.just'
+
 [private]
 default:
     @echo "camp CLI - Campaign Management Tool"
@@ -25,27 +32,6 @@ build:
     @mkdir -p {{bin_dir}}
     go build -ldflags '{{ldflags}}' -o {{bin_dir}}/{{binary_name}} ./cmd/camp
     @echo "Built {{bin_dir}}/{{binary_name}}"
-
-# Build camp binary (dev mode, no ldflags)
-build-dev:
-    @echo "Building camp (dev)..."
-    @mkdir -p {{bin_dir}}
-    go build -o {{bin_dir}}/{{binary_name}} ./cmd/camp
-    @echo "Built {{bin_dir}}/{{binary_name}}"
-
-# Run tests
-test:
-    go test -race -cover ./...
-
-# Run tests with verbose output
-test-verbose:
-    go test -race -cover -v ./...
-
-# Run tests with coverage report
-test-coverage:
-    go test -race -coverprofile=coverage.out ./...
-    go tool cover -html=coverage.out -o coverage.html
-    @echo "Coverage report: coverage.html"
 
 # Format Go code
 fmt:
