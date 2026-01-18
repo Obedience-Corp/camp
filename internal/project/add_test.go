@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -277,5 +278,94 @@ func initGitRepoWithGoMod(t *testing.T, path string) {
 	cmd = exec.Command("git", "-C", path, "commit", "-m", "Initial commit with go.mod")
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("failed to create initial commit: %v", err)
+	}
+}
+
+// TestAdd_InvalidURL tests URL validation.
+func TestAdd_InvalidURL(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+
+	// Initialize as git repo
+	initGitRepo(t, tmpDir)
+
+	ctx := context.Background()
+	_, err := Add(ctx, tmpDir, "not-a-valid-url", AddOptions{})
+
+	if err == nil {
+		t.Fatal("Add() should return error for invalid URL")
+	}
+
+	if !strings.Contains(err.Error(), "invalid git URL format") {
+		t.Errorf("error should mention invalid URL format, got: %v", err)
+	}
+}
+
+// TestAdd_NotInGitRepo tests the git repo pre-flight check.
+func TestAdd_NotInGitRepo(t *testing.T) {
+	tmpDir := t.TempDir()
+	// Don't initialize as git repo
+
+	ctx := context.Background()
+	_, err := Add(ctx, tmpDir, "git@github.com:org/repo.git", AddOptions{})
+
+	if err == nil {
+		t.Fatal("Add() should return error when not in a git repo")
+	}
+
+	if !strings.Contains(err.Error(), "not a git repository") {
+		t.Errorf("error should mention not a git repository, got: %v", err)
+	}
+}
+
+// TestCheckGitInstalled tests the git installation check.
+func TestCheckGitInstalled(t *testing.T) {
+	ctx := context.Background()
+	err := checkGitInstalled(ctx)
+
+	// This should pass on any system with git installed
+	if err != nil {
+		t.Skipf("git not installed on this system: %v", err)
+	}
+}
+
+// TestCheckIsGitRepo tests the git repo check.
+func TestCheckIsGitRepo(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupFunc   func(t *testing.T) string
+		expectError bool
+	}{
+		{
+			name: "valid git repo",
+			setupFunc: func(t *testing.T) string {
+				tmpDir := t.TempDir()
+				initGitRepo(t, tmpDir)
+				return tmpDir
+			},
+			expectError: false,
+		},
+		{
+			name: "not a git repo",
+			setupFunc: func(t *testing.T) string {
+				return t.TempDir()
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := tt.setupFunc(t)
+			ctx := context.Background()
+			err := checkIsGitRepo(ctx, path)
+
+			if tt.expectError && err == nil {
+				t.Error("expected error, got nil")
+			}
+			if !tt.expectError && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
 	}
 }

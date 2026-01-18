@@ -47,11 +47,28 @@ func Add(ctx context.Context, campaignRoot, source string, opts AddOptions) (*Ad
 		return nil, ctx.Err()
 	}
 
+	// Pre-flight check: is git installed?
+	if err := checkGitInstalled(ctx); err != nil {
+		return nil, err
+	}
+
+	// Pre-flight check: are we in a git repo?
+	if err := checkIsGitRepo(ctx, campaignRoot); err != nil {
+		return nil, err
+	}
+
 	// Validate source
 	source = strings.TrimSpace(source)
 	if source == "" && opts.Local == "" {
 		return nil, fmt.Errorf("source URL is required\n" +
 			"Hint: Provide a git URL like 'git@github.com:org/repo.git' or use --local for existing repos")
+	}
+
+	// Validate and parse the URL (unless it's a local path)
+	if opts.Local == "" {
+		if _, err := ParseGitURL(source); err != nil {
+			return nil, err
+		}
 	}
 
 	// Determine project name
@@ -135,7 +152,9 @@ func addRemoteAsSubmodule(ctx context.Context, campaignRoot, url, path string) e
 	cmd.Dir = campaignRoot
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("failed to add submodule: %w\n%s", err, string(output))
+		// Diagnose the git error and provide helpful guidance
+		gitErr := DiagnoseGitError(cmd.String(), string(output), cmd.ProcessState.ExitCode())
+		return gitErr
 	}
 
 	// Initialize the submodule
@@ -160,7 +179,8 @@ func addLocalAsSubmodule(ctx context.Context, campaignRoot, localPath, destPath,
 	// Verify it's a git repo
 	gitPath := filepath.Join(absLocal, ".git")
 	if _, err := os.Stat(gitPath); os.IsNotExist(err) {
-		return fmt.Errorf("local path is not a git repository: %s", localPath)
+		return fmt.Errorf("local path is not a git repository: %s\n"+
+			"Hint: Run 'git init' in the directory first, or provide a git repository URL instead", localPath)
 	}
 
 	// Add as submodule using absolute path
@@ -169,8 +189,30 @@ func addLocalAsSubmodule(ctx context.Context, campaignRoot, localPath, destPath,
 	cmd.Dir = campaignRoot
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("failed to add local submodule: %w\n%s", err, string(output))
+		// Diagnose the git error and provide helpful guidance
+		gitErr := DiagnoseGitError(cmd.String(), string(output), cmd.ProcessState.ExitCode())
+		return gitErr
 	}
 
+	return nil
+}
+
+// checkGitInstalled verifies that git is installed and available.
+func checkGitInstalled(ctx context.Context) error {
+	cmd := exec.CommandContext(ctx, "git", "--version")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git is not installed or not in PATH\n" +
+			"Please install git: https://git-scm.com/downloads")
+	}
+	return nil
+}
+
+// checkIsGitRepo verifies that the campaign root is a git repository.
+func checkIsGitRepo(ctx context.Context, campaignRoot string) error {
+	cmd := exec.CommandContext(ctx, "git", "-C", campaignRoot, "rev-parse", "--git-dir")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("campaign directory is not a git repository\n" +
+			"Hint: Run 'git init' in the campaign root, or use 'camp init' to create a new campaign")
+	}
 	return nil
 }

@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/obediencecorp/camp/internal/campaign"
 	"github.com/obediencecorp/camp/internal/project"
@@ -65,11 +67,16 @@ func runProjectAdd(cmd *cobra.Command, args []string) error {
 
 	result, err := project.Add(ctx, root, source, opts)
 	if err != nil {
+		// Check if it's a GitError and format it nicely
+		var gitErr *project.GitError
+		if errors.As(err, &gitErr) {
+			return formatGitError(gitErr)
+		}
 		return err
 	}
 
 	// Print result
-	fmt.Printf("Added project: %s\n", result.Name)
+	fmt.Printf("✓ Added project: %s\n", result.Name)
 	fmt.Printf("  Path:   %s\n", result.Path)
 	fmt.Printf("  Source: %s\n", result.Source)
 	if result.Type != "" {
@@ -77,4 +84,31 @@ func runProjectAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// formatGitError formats a GitError with nice visual indicators.
+func formatGitError(gitErr *project.GitError) error {
+	var b strings.Builder
+
+	// Header with X indicator
+	b.WriteString("✗ ")
+	b.WriteString(gitErr.Diagnosis)
+	b.WriteString("\n")
+
+	// Fix instructions if present
+	if gitErr.Fix != "" {
+		b.WriteString("\n")
+		b.WriteString(gitErr.Fix)
+		b.WriteString("\n")
+	}
+
+	// Documentation link if present
+	if gitErr.DocLink != "" {
+		b.WriteString("\n")
+		b.WriteString("📚 Documentation: ")
+		b.WriteString(gitErr.DocLink)
+		b.WriteString("\n")
+	}
+
+	return fmt.Errorf("%s", b.String())
 }
