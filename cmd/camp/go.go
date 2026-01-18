@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/obediencecorp/camp/internal/config"
 	"github.com/obediencecorp/camp/internal/nav"
@@ -23,11 +24,15 @@ Category shortcuts:
   r  = code_reviews   pi = pipelines
 
 Usage patterns:
-  camp go           Jump to last location (or campaign root if no history)
-  camp go --root    Jump to campaign root
+  camp go           Toggle between campaign root and last location
+  camp go --root    Jump to campaign root (ignore toggle)
   camp go p         Jump to projects/
   camp go f         Jump to festivals/
   camp go p api     Fuzzy search projects/ for "api"
+
+Toggle behavior (no args):
+  - From anywhere: jump to campaign root, save current location
+  - From campaign root: jump back to saved location
 
 The --print flag outputs just the path for shell integration:
   cd "$(camp go p --print)"
@@ -37,11 +42,11 @@ The -c flag runs a command from the directory without changing to it:
   camp go f -c fest status  Run fest status from festivals/
 
 Or use the cgo shell function for instant navigation:
-  cgo               Navigate to last location
+  cgo               Toggle between root and last location
   cgo p             Equivalent to: cd "$(camp go p --print)"
   cgo p -c ls       Run ls in projects/ without changing directory`,
-	Example: `  camp go               # Jump to last location
-  camp go --root        # Jump to campaign root
+	Example: `  camp go               # Toggle: root ↔ last location
+  camp go --root        # Force jump to campaign root
   camp go p             # Jump to projects/
   camp go p api         # Fuzzy find "api" in projects/
   camp go p --print     # Print path (for shell scripts)
@@ -103,28 +108,41 @@ func runGo(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		// If no category and no --root flag, try to use last location
+		// If no category and no --root flag, implement toggle behavior
 		if result.Category == nav.CategoryAll && !forceRoot {
-			lastLoc, err := state.GetLastLocation(ctx, rootResult.Path)
-			if err == nil && lastLoc != "" {
-				// Successfully got a last location - use it
-				jumpResult := &nav.DirectJumpResult{
-					Path:     lastLoc,
-					Category: result.Category,
-					IsRoot:   false,
-				}
-
-				// Save this as the new last location
-				_ = state.SetLastLocation(ctx, rootResult.Path, jumpResult.Path)
-
-				if printOnly {
-					fmt.Println(jumpResult.Path)
-				} else {
-					fmt.Printf("cd %s\n", jumpResult.Path)
-				}
-				return nil
+			// Get current working directory to check if we're at root
+			cwd, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("failed to get current directory: %w", err)
 			}
-			// No last location found, fall through to jump to root
+
+			// Normalize paths for comparison (resolve symlinks)
+			cwdReal, _ := evalSymlinks(cwd)
+			rootReal, _ := evalSymlinks(rootResult.Path)
+			atRoot := cwdReal == rootReal
+
+			var destPath string
+			if atRoot {
+				// At campaign root - toggle back to last location
+				lastLoc, err := state.GetLastLocation(ctx, rootResult.Path)
+				if err == nil && lastLoc != "" && lastLoc != rootResult.Path {
+					destPath = lastLoc
+				} else {
+					// No last location - stay at root
+					destPath = rootResult.Path
+				}
+			} else {
+				// Not at root - save current location and jump to root
+				_ = state.SetLastLocation(ctx, rootResult.Path, cwd)
+				destPath = rootResult.Path
+			}
+
+			if printOnly {
+				fmt.Println(destPath)
+			} else {
+				fmt.Printf("cd %s\n", destPath)
+			}
+			return nil
 		}
 
 		// Jump to the requested category (or root if no category specified)
@@ -212,4 +230,13 @@ func handleCustomNavShortcut(ctx context.Context, sc config.ShortcutConfig, camp
 		fmt.Printf("cd %s\n", jumpResult.Path)
 	}
 	return nil
+}
+
+// evalSymlinks resolves symlinks in a path, returning the original path if resolution fails.
+func evalSymlinks(path string) (string, error) {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return path, err
+	}
+	return resolved, nil
 }
