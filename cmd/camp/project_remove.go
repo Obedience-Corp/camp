@@ -8,6 +8,7 @@ import (
 
 	"github.com/obediencecorp/camp/internal/campaign"
 	"github.com/obediencecorp/camp/internal/project"
+	"github.com/obediencecorp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -50,12 +51,13 @@ func runProjectRemove(cmd *cobra.Command, args []string) error {
 
 	// Confirm if deleting and not forced
 	if delete && !force && !dryRun {
-		fmt.Printf("Delete project '%s' and all its files? This cannot be undone. [y/N] ", name)
+		fmt.Printf("%s Delete project %s and all its files? This cannot be undone. [y/N] ",
+			ui.WarningIcon(), ui.Value(name))
 		reader := bufio.NewReader(os.Stdin)
 		response, _ := reader.ReadString('\n')
 		response = strings.TrimSpace(strings.ToLower(response))
 		if response != "y" && response != "yes" {
-			fmt.Println("Aborted.")
+			fmt.Println(ui.Dim("Aborted."))
 			return nil
 		}
 	}
@@ -79,29 +81,30 @@ func runProjectRemove(cmd *cobra.Command, args []string) error {
 
 	// Print results
 	if dryRun {
-		fmt.Println("Dry run - would remove:")
-		fmt.Printf("  Project: %s\n", result.Name)
+		fmt.Println(ui.Warning("Dry run - would remove:"))
+		fmt.Println()
+		fmt.Println(ui.KeyValue("  Project:", result.Name))
 		if result.SubmoduleRemoved {
-			fmt.Println("  - Remove from git submodule tracking")
+			fmt.Printf("    %s Remove from git submodule tracking\n", ui.BulletIcon())
 		}
 		if result.FilesDeleted {
-			fmt.Printf("  - Delete files at %s\n", result.Path)
+			fmt.Printf("    %s Delete files at %s\n", ui.BulletIcon(), ui.Dim(result.Path))
 		}
 		if result.WorktreeDeleted {
-			fmt.Printf("  - Delete worktrees for %s\n", result.Name)
+			fmt.Printf("    %s Delete worktrees for %s\n", ui.BulletIcon(), ui.Dim(result.Name))
 		}
 		return nil
 	}
 
-	fmt.Printf("Removed project: %s\n", result.Name)
+	fmt.Printf("%s %s\n", ui.SuccessIcon(), ui.Success("Removed project: "+result.Name))
 	if result.SubmoduleRemoved {
-		fmt.Println("  Submodule unregistered")
+		fmt.Printf("  %s Submodule unregistered\n", ui.SuccessIcon())
 	}
 	if result.FilesDeleted {
-		fmt.Println("  Files deleted")
+		fmt.Printf("  %s Files deleted\n", ui.SuccessIcon())
 	}
 	if result.WorktreeDeleted {
-		fmt.Println("  Worktrees deleted")
+		fmt.Printf("  %s Worktrees deleted\n", ui.SuccessIcon())
 	}
 
 	return nil

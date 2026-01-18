@@ -9,6 +9,7 @@ import (
 
 	"github.com/obediencecorp/camp/internal/config"
 	"github.com/obediencecorp/camp/internal/scaffold"
+	"github.com/obediencecorp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -60,7 +61,7 @@ func runRegister(cmd *cobra.Command, args []string) error {
 	// Check .campaign/ exists
 	campaignDir := filepath.Join(absPath, config.CampaignDir)
 	if _, err := os.Stat(campaignDir); os.IsNotExist(err) {
-		fmt.Printf("No campaign found at %s\n", absPath)
+		fmt.Printf("%s No campaign found at %s\n", ui.WarningIcon(), ui.Dim(absPath))
 		fmt.Print("Would you like to initialize one? [y/N] ")
 		reader := bufio.NewReader(os.Stdin)
 		response, _ := reader.ReadString('\n')
@@ -79,10 +80,10 @@ func runRegister(cmd *cobra.Command, args []string) error {
 			if err != nil {
 				return err
 			}
-			fmt.Printf("Initialized and registered campaign at %s\n", result.CampaignRoot)
+			fmt.Printf("%s Initialized and registered campaign at %s\n", ui.SuccessIcon(), ui.Value(result.CampaignRoot))
 			return nil
 		}
-		fmt.Println("Aborted.")
+		fmt.Println(ui.Dim("Aborted."))
 		return nil
 	}
 
@@ -118,13 +119,13 @@ func runRegister(cmd *cobra.Command, args []string) error {
 
 	// Check for existing registration with same name but different path
 	if existing, exists := reg.GetByName(name); exists && existing.Path != absPath {
-		fmt.Printf("Warning: Campaign '%s' already registered at %s\n", name, existing.Path)
+		fmt.Printf("%s Campaign '%s' already registered at %s\n", ui.WarningIcon(), ui.Value(name), ui.Dim(existing.Path))
 		fmt.Print("Replace with new path? [y/N] ")
 		reader := bufio.NewReader(os.Stdin)
 		response, _ := reader.ReadString('\n')
 		response = strings.TrimSpace(strings.ToLower(response))
 		if response != "y" && response != "yes" {
-			fmt.Println("Aborted.")
+			fmt.Println(ui.Dim("Aborted."))
 			return nil
 		}
 		// Remove the old entry before adding new one
@@ -139,7 +140,8 @@ func runRegister(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Printf("Registered: %s (%s)\n", name, absPath)
-	fmt.Printf("Campaign ID: %s\n", cfg.ID)
+	fmt.Printf("%s %s\n", ui.SuccessIcon(), ui.Success("Registered: "+name))
+	fmt.Println(ui.KeyValue("Path:", absPath))
+	fmt.Println(ui.KeyValue("Campaign ID:", cfg.ID))
 	return nil
 }

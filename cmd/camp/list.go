@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/obediencecorp/camp/internal/config"
+	"github.com/obediencecorp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -64,9 +65,10 @@ func runList(cmd *cobra.Command, args []string) error {
 	}
 
 	if reg.Len() == 0 {
-		fmt.Println("No campaigns registered.")
-		fmt.Println("Create one with: camp init")
-		fmt.Println("Or register existing: camp register <path>")
+		fmt.Println(ui.Warning("No campaigns registered."))
+		fmt.Println()
+		fmt.Printf("  Create one with: %s\n", ui.Accent("camp init"))
+		fmt.Printf("  Or register existing: %s\n", ui.Accent("camp register <path>"))
 		return nil
 	}
 
@@ -125,7 +127,8 @@ func outputCampaigns(campaigns []campaignEntry, format string) error {
 		return nil
 	default: // table
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "ID\tNAME\tTYPE\tPATH")
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+			ui.Label("ID"), ui.Label("NAME"), ui.Label("TYPE"), ui.Label("PATH"))
 		for _, c := range campaigns {
 			campaignType := c.Type
 			if campaignType == "" {
@@ -136,7 +139,12 @@ func outputCampaigns(campaigns []campaignEntry, format string) error {
 			if len(shortID) > 8 {
 				shortID = shortID[:8]
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", shortID, c.Name, campaignType, c.Path)
+			typeStyle := ui.GetCampaignTypeStyle(c.Type)
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+				ui.Dim(shortID),
+				ui.Value(c.Name),
+				typeStyle.Render(campaignType),
+				ui.Dim(c.Path))
 		}
 		return w.Flush()
 	}

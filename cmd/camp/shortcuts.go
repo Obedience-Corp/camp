@@ -8,6 +8,7 @@ import (
 
 	"github.com/obediencecorp/camp/internal/config"
 	"github.com/obediencecorp/camp/internal/nav"
+	"github.com/obediencecorp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -60,7 +61,7 @@ func loadCampaignConfigSafe(ctx context.Context) (*config.CampaignConfig, string
 }
 
 func printDefaultShortcuts() error {
-	fmt.Println("Built-in Navigation Shortcuts:")
+	fmt.Println(ui.Subheader("Built-in Navigation Shortcuts"))
 	fmt.Println()
 
 	// Sort shortcuts for consistent display
@@ -73,19 +74,20 @@ func printDefaultShortcuts() error {
 	})
 
 	for _, s := range shortcuts {
-		fmt.Printf("  %-4s -> %s/\n", s[0], s[1])
+		fmt.Printf("  %s %s %s/\n", ui.Accent(fmt.Sprintf("%-4s", s[0])), ui.ArrowIcon(), ui.Value(s[1]))
 	}
 
 	fmt.Println()
-	fmt.Println("No custom shortcuts defined (not in a campaign or no shortcuts configured)")
+	fmt.Println(ui.Warning("No custom shortcuts defined (not in a campaign or no shortcuts configured)"))
 	fmt.Println()
-	fmt.Println("To add custom shortcuts, edit .campaign/campaign.yaml and add a 'shortcuts' section.")
+	fmt.Printf("To add custom shortcuts, edit %s and add a 'shortcuts' section.\n",
+		ui.Accent(".campaign/campaign.yaml"))
 
 	return nil
 }
 
 func printAllShortcuts(cfg *config.CampaignConfig, campaignRoot string) error {
-	fmt.Println("Built-in Navigation Shortcuts:")
+	fmt.Println(ui.Subheader("Built-in Navigation Shortcuts"))
 	fmt.Println()
 
 	// Sort and display default shortcuts
@@ -98,13 +100,13 @@ func printAllShortcuts(cfg *config.CampaignConfig, campaignRoot string) error {
 	})
 
 	for _, s := range shortcuts {
-		fmt.Printf("  %-4s -> %s/\n", s[0], s[1])
+		fmt.Printf("  %s %s %s/\n", ui.Accent(fmt.Sprintf("%-4s", s[0])), ui.ArrowIcon(), ui.Value(s[1]))
 	}
 
 	// Display custom shortcuts
 	if len(cfg.Shortcuts) > 0 {
 		fmt.Println()
-		fmt.Println("Custom Shortcuts:")
+		fmt.Println(ui.Subheader("Custom Shortcuts"))
 		fmt.Println()
 
 		// Separate navigation and command shortcuts
@@ -122,7 +124,7 @@ func printAllShortcuts(cfg *config.CampaignConfig, campaignRoot string) error {
 
 		// Display navigation shortcuts
 		if len(navShortcuts) > 0 {
-			fmt.Println("  Navigation (use with: camp go <shortcut>):")
+			fmt.Printf("  %s\n", ui.Info("Navigation (use with: camp go <shortcut>)"))
 			keys := make([]string, 0, len(navShortcuts))
 			for k := range navShortcuts {
 				keys = append(keys, k)
@@ -133,16 +135,20 @@ func printAllShortcuts(cfg *config.CampaignConfig, campaignRoot string) error {
 				sc := navShortcuts[key]
 				desc := ""
 				if sc.Description != "" {
-					desc = fmt.Sprintf(" # %s", sc.Description)
+					desc = ui.Dim(" # " + sc.Description)
 				}
-				fmt.Printf("    %-10s -> %s%s\n", key, sc.Path, desc)
+				fmt.Printf("    %s %s %s%s\n",
+					ui.Accent(fmt.Sprintf("%-10s", key)),
+					ui.ArrowIcon(),
+					ui.Value(sc.Path),
+					desc)
 			}
 			fmt.Println()
 		}
 
 		// Display command shortcuts
 		if len(cmdShortcuts) > 0 {
-			fmt.Println("  Commands (use with: camp run <shortcut>):")
+			fmt.Printf("  %s\n", ui.Info("Commands (use with: camp run <shortcut>)"))
 			keys := make([]string, 0, len(cmdShortcuts))
 			for k := range cmdShortcuts {
 				keys = append(keys, k)
@@ -153,7 +159,7 @@ func printAllShortcuts(cfg *config.CampaignConfig, campaignRoot string) error {
 				sc := cmdShortcuts[key]
 				desc := ""
 				if sc.Description != "" {
-					desc = fmt.Sprintf(" # %s", sc.Description)
+					desc = ui.Dim(" # " + sc.Description)
 				}
 
 				// Show command with workdir if specified
@@ -167,22 +173,26 @@ func printAllShortcuts(cfg *config.CampaignConfig, campaignRoot string) error {
 					cmdDisplay = cmdDisplay[:47] + "..."
 				}
 
-				fmt.Printf("    %-10s -> %s%s\n", key, cmdDisplay, desc)
+				fmt.Printf("    %s %s %s%s\n",
+					ui.Accent(fmt.Sprintf("%-10s", key)),
+					ui.ArrowIcon(),
+					ui.Value(cmdDisplay),
+					desc)
 			}
 		}
 	} else {
 		fmt.Println()
-		fmt.Println("No custom shortcuts defined.")
+		fmt.Println(ui.Dim("No custom shortcuts defined."))
 		fmt.Println()
-		fmt.Println("To add shortcuts, edit .campaign/campaign.yaml:")
+		fmt.Printf("To add shortcuts, edit %s:\n", ui.Accent(".campaign/campaign.yaml"))
 		fmt.Println()
-		fmt.Println("  shortcuts:")
-		fmt.Println("    api:")
-		fmt.Println("      path: \"projects/api-service\"")
-		fmt.Println("      description: \"Jump to API\"")
-		fmt.Println("    build:")
-		fmt.Println("      command: \"just build\"")
-		fmt.Println("      description: \"Build all\"")
+		fmt.Println(ui.Dim("  shortcuts:"))
+		fmt.Println(ui.Dim("    api:"))
+		fmt.Println(ui.Dim("      path: \"projects/api-service\""))
+		fmt.Println(ui.Dim("      description: \"Jump to API\""))
+		fmt.Println(ui.Dim("    build:"))
+		fmt.Println(ui.Dim("      command: \"just build\""))
+		fmt.Println(ui.Dim("      description: \"Build all\""))
 	}
 
 	return nil

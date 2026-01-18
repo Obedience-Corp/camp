@@ -7,6 +7,7 @@ import (
 
 	"github.com/obediencecorp/camp/internal/campaign"
 	"github.com/obediencecorp/camp/internal/project"
+	"github.com/obediencecorp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -76,11 +77,12 @@ func runProjectAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	// Print result
-	fmt.Printf("✓ Added project: %s\n", result.Name)
-	fmt.Printf("  Path:   %s\n", result.Path)
-	fmt.Printf("  Source: %s\n", result.Source)
+	fmt.Printf("%s %s\n", ui.SuccessIcon(), ui.Success("Added project: "+result.Name))
+	fmt.Println()
+	fmt.Println(ui.KeyValue("  Path:", result.Path))
+	fmt.Println(ui.KeyValue("  Source:", result.Source))
 	if result.Type != "" {
-		fmt.Printf("  Type:   %s\n", result.Type)
+		fmt.Println(ui.KeyValue("  Type:", result.Type))
 	}
 
 	return nil
@@ -91,22 +93,24 @@ func formatGitError(gitErr *project.GitError) error {
 	var b strings.Builder
 
 	// Header with X indicator
-	b.WriteString("✗ ")
-	b.WriteString(gitErr.Diagnosis)
+	b.WriteString(ui.ErrorIcon())
+	b.WriteString(" ")
+	b.WriteString(ui.Error(gitErr.Diagnosis))
 	b.WriteString("\n")
 
 	// Fix instructions if present
 	if gitErr.Fix != "" {
 		b.WriteString("\n")
-		b.WriteString(gitErr.Fix)
+		b.WriteString(ui.Info(gitErr.Fix))
 		b.WriteString("\n")
 	}
 
 	// Documentation link if present
 	if gitErr.DocLink != "" {
 		b.WriteString("\n")
-		b.WriteString("📚 Documentation: ")
-		b.WriteString(gitErr.DocLink)
+		b.WriteString(ui.Label("Documentation:"))
+		b.WriteString(" ")
+		b.WriteString(ui.Accent(gitErr.DocLink))
 		b.WriteString("\n")
 	}
 

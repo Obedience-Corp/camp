@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"text/tabwriter"
+
+	"github.com/obediencecorp/camp/internal/ui"
 )
 
 // OutputFormat specifies the output format for project lists.
@@ -30,20 +32,41 @@ func FormatProjects(w io.Writer, projects []Project, format OutputFormat) error 
 
 func formatTable(w io.Writer, projects []Project) error {
 	if len(projects) == 0 {
-		fmt.Fprintln(w, "No projects found. Add one with: camp project add <url>")
+		fmt.Fprintln(w, ui.Warning("No projects found."))
+		fmt.Fprintln(w)
+		fmt.Fprintf(w, "Add one with: %s\n", ui.Accent("camp project add <url>"))
 		return nil
 	}
 
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "NAME\tPATH\tTYPE")
+	fmt.Fprintf(tw, "%s\t%s\t%s\n", ui.Label("NAME"), ui.Label("PATH"), ui.Label("TYPE"))
 	for _, p := range projects {
 		projectType := p.Type
 		if projectType == "" {
 			projectType = "-"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\n", p.Name, p.Path, projectType)
+		fmt.Fprintf(tw, "%s\t%s\t%s\n",
+			ui.Value(p.Name),
+			ui.Dim(p.Path),
+			getProjectTypeStyled(projectType))
 	}
 	return tw.Flush()
+}
+
+// getProjectTypeStyled returns styled project type text.
+func getProjectTypeStyled(projectType string) string {
+	switch projectType {
+	case "go":
+		return ui.ColoredText(projectType, ui.InfoColor) // Blue
+	case "rust":
+		return ui.ColoredText(projectType, ui.ErrorColor) // Red/orange for Rust
+	case "typescript", "javascript":
+		return ui.ColoredText(projectType, ui.WarningColor) // Yellow
+	case "python":
+		return ui.ColoredText(projectType, ui.SuccessColor) // Green
+	default:
+		return ui.Dim(projectType)
+	}
 }
 
 func formatSimple(w io.Writer, projects []Project) error {

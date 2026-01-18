@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/obediencecorp/camp/internal/config"
+	"github.com/obediencecorp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -55,17 +56,18 @@ func runUnregister(cmd *cobra.Command, args []string) error {
 	campaign, exists := reg.Get(query)
 	if !exists {
 		return fmt.Errorf("campaign %q not found in registry\n"+
-			"Hint: Run 'camp list' to see registered campaigns", query)
+			"Hint: Run '%s' to see registered campaigns", query, ui.Accent("camp list"))
 	}
 
 	// Confirm unless forced
 	if !force {
-		fmt.Printf("Unregister campaign '%s' (ID: %s) at %s? [y/N] ", campaign.Name, campaign.ID[:8], campaign.Path)
+		fmt.Printf("Unregister campaign %s (ID: %s) at %s? [y/N] ",
+			ui.Value(campaign.Name), ui.Dim(campaign.ID[:8]), ui.Dim(campaign.Path))
 		reader := bufio.NewReader(os.Stdin)
 		response, _ := reader.ReadString('\n')
 		response = strings.TrimSpace(strings.ToLower(response))
 		if response != "y" && response != "yes" {
-			fmt.Println("Aborted.")
+			fmt.Println(ui.Dim("Aborted."))
 			return nil
 		}
 	}
@@ -78,7 +80,7 @@ func runUnregister(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Printf("Unregistered: %s (ID: %s)\n", campaign.Name, campaign.ID[:8])
-	fmt.Println("Note: Files were not deleted.")
+	fmt.Printf("%s %s\n", ui.SuccessIcon(), ui.Success("Unregistered: "+campaign.Name))
+	fmt.Println(ui.Dim("Note: Files were not deleted."))
 	return nil
 }

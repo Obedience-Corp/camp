@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 
+	"github.com/obediencecorp/camp/internal/ui"
 	"github.com/obediencecorp/camp/internal/version"
 	"github.com/spf13/cobra"
 )
@@ -36,6 +37,10 @@ NAVIGATION (using cgo shell function):
 
 Run 'camp --help' for detailed command information.`,
 	Version: fmt.Sprintf("%s (built %s, commit %s)", version.Version, version.BuildDate, version.Commit),
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		// Wire up the no-color flag
+		ui.SetNoColor(noColor)
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// When invoked without subcommand, show help
 		return cmd.Help()

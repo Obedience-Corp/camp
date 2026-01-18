@@ -5,6 +5,7 @@ import (
 
 	"github.com/obediencecorp/camp/internal/config"
 	"github.com/obediencecorp/camp/internal/scaffold"
+	"github.com/obediencecorp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -90,38 +91,44 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Print results
 	if dryRun {
-		fmt.Println("Dry run - would create:")
+		fmt.Println(ui.Warning("Dry run - would create:"))
 	} else {
-		fmt.Println("Campaign initialized successfully!")
+		fmt.Println(ui.Success("✓ Campaign Initialized"))
 	}
 
 	if len(result.DirsCreated) > 0 {
-		fmt.Println("\nDirectories created:")
+		fmt.Println()
+		fmt.Println(ui.Subheader("Directories created:"))
 		for _, d := range result.DirsCreated {
-			fmt.Printf("  %s\n", d)
+			fmt.Printf("  %s %s\n", ui.SuccessIcon(), ui.Value(d))
 		}
 	}
 
 	if len(result.FilesCreated) > 0 {
-		fmt.Println("\nFiles created:")
+		fmt.Println()
+		fmt.Println(ui.Subheader("Files created:"))
 		for _, f := range result.FilesCreated {
-			fmt.Printf("  %s\n", f)
+			fmt.Printf("  %s %s\n", ui.SuccessIcon(), ui.Value(f))
 		}
 	}
 
 	if len(result.Skipped) > 0 && verbose {
-		fmt.Println("\nSkipped (already exist):")
+		fmt.Println()
+		fmt.Println(ui.Subheader("Skipped (already exist):"))
 		for _, s := range result.Skipped {
-			fmt.Printf("  %s\n", s)
+			fmt.Printf("  %s %s\n", ui.WarningIcon(), ui.Dim(s))
 		}
 	}
 
 	if !dryRun {
-		fmt.Printf("\nCampaign: %s\n", result.Name)
-		fmt.Printf("ID: %s\n", result.ID)
-		fmt.Printf("Root: %s\n", result.CampaignRoot)
+		fmt.Println()
+		typeColor := ui.GetCampaignTypeColor(string(opts.Type))
+		fmt.Println(ui.KeyValue("Campaign:", result.Name))
+		fmt.Println(ui.KeyValueColored("Type:", string(opts.Type), typeColor))
+		fmt.Println(ui.KeyValue("ID:", result.ID))
+		fmt.Println(ui.KeyValue("Root:", result.CampaignRoot))
 		if result.GitInitialized {
-			fmt.Printf("Git: initialized\n")
+			fmt.Println(ui.KeyValueColored("Git:", "initialized", ui.SuccessColor))
 		}
 	}
 

@@ -10,6 +10,7 @@ import (
 	"github.com/obediencecorp/camp/internal/nav"
 	"github.com/obediencecorp/camp/internal/nav/index"
 	"github.com/obediencecorp/camp/internal/state"
+	"github.com/obediencecorp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -185,11 +186,11 @@ func runGo(cmd *cobra.Command, args []string) error {
 
 	// Multiple matches - inform user
 	if resolveResult.HasMultipleMatches() && !printOnly {
-		fmt.Fprintf(os.Stderr, "Multiple matches found:\n")
+		fmt.Fprintln(os.Stderr, ui.Warning("Multiple matches found:"))
 		for _, m := range resolveResult.Matches {
-			fmt.Fprintf(os.Stderr, "  %s\n", m.Name)
+			fmt.Fprintf(os.Stderr, "  %s %s\n", ui.BulletIcon(), ui.Dim(m.Name))
 		}
-		fmt.Fprintf(os.Stderr, "Using best match: %s\n", resolveResult.Name)
+		fmt.Fprintf(os.Stderr, "%s %s\n", ui.Label("Using best match:"), ui.Value(resolveResult.Name))
 	}
 
 	if printOnly {
