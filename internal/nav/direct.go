@@ -2,6 +2,7 @@ package nav
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -116,6 +117,45 @@ func DirectJumpFromRoot(ctx context.Context, root string, cat Category) (*Direct
 	return &DirectJumpResult{
 		Path:     absPath,
 		Category: cat,
+		IsRoot:   false,
+	}, nil
+}
+
+// JumpToPath resolves a relative path to an absolute path within the campaign.
+// The path is relative to the campaign root and must exist.
+func JumpToPath(ctx context.Context, relativePath string) (*DirectJumpResult, error) {
+	root, err := campaign.DetectCached(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return JumpToPathFromRoot(ctx, root, relativePath)
+}
+
+// JumpToPathFromRoot resolves a relative path to an absolute path using a known root.
+// This is more efficient when the root is already known.
+func JumpToPathFromRoot(ctx context.Context, root string, relativePath string) (*DirectJumpResult, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	absPath := filepath.Join(root, relativePath)
+
+	// Verify directory exists
+	info, err := os.Stat(absPath)
+	if os.IsNotExist(err) {
+		return nil, fmt.Errorf("path does not exist: %s", relativePath)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat path %s: %w", relativePath, err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("path is not a directory: %s", relativePath)
+	}
+
+	return &DirectJumpResult{
+		Path:     absPath,
+		Category: CategoryAll, // Custom paths don't map to categories
 		IsRoot:   false,
 	}, nil
 }

@@ -125,3 +125,21 @@ func ShortcutForCategory(cat Category) string {
 	}
 	return ""
 }
+
+// MergeShortcuts combines default navigation shortcuts with custom mappings.
+// Custom mappings take precedence over defaults.
+func MergeShortcuts(customMappings map[string]Category) map[string]Category {
+	merged := make(map[string]Category)
+
+	// Start with defaults
+	for k, v := range DefaultShortcuts {
+		merged[k] = v
+	}
+
+	// Override with custom mappings
+	for k, v := range customMappings {
+		merged[k] = v
+	}
+
+	return merged
+}

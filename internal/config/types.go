@@ -33,6 +33,8 @@ type CampaignConfig struct {
 	Paths CampaignPaths `yaml:"paths,omitempty"`
 	// Projects contains the list of project configurations.
 	Projects []ProjectConfig `yaml:"projects,omitempty"`
+	// Shortcuts defines custom navigation and command shortcuts.
+	Shortcuts map[string]ShortcutConfig `yaml:"shortcuts,omitempty"`
 }
 
 // CampaignPaths defines the directory structure for a campaign.
@@ -61,6 +63,28 @@ type ProjectConfig struct {
 	URL string `yaml:"url,omitempty"`
 	// Branch is the default branch for the project.
 	Branch string `yaml:"branch,omitempty"`
+}
+
+// ShortcutConfig defines a custom navigation or command shortcut.
+type ShortcutConfig struct {
+	// Path is the relative path for navigation shortcuts.
+	Path string `yaml:"path,omitempty"`
+	// Command is the command to execute for command shortcuts.
+	Command string `yaml:"command,omitempty"`
+	// WorkDir is the working directory for command execution (relative to campaign root).
+	WorkDir string `yaml:"workdir,omitempty"`
+	// Description provides help text for this shortcut.
+	Description string `yaml:"description,omitempty"`
+}
+
+// IsNavigation returns true if this is a navigation shortcut (has Path).
+func (s ShortcutConfig) IsNavigation() bool {
+	return s.Path != ""
+}
+
+// IsCommand returns true if this is a command shortcut (has Command).
+func (s ShortcutConfig) IsCommand() bool {
+	return s.Command != ""
 }
 
 // GlobalConfig represents ~/.config/campaign/config.yaml configuration.
