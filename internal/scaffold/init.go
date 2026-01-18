@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -26,6 +27,8 @@ type InitOptions struct {
 	FromExisting bool
 	// NoRegister skips adding to global registry.
 	NoRegister bool
+	// SkipGitInit skips git repository initialization.
+	SkipGitInit bool
 	// DryRun shows what would be done without creating anything.
 	DryRun bool
 }
@@ -44,6 +47,36 @@ type InitResult struct {
 	FilesCreated []string
 	// Skipped lists items that were skipped (already exist).
 	Skipped []string
+	// GitInitialized indicates if a git repository was initialized.
+	GitInitialized bool
+}
+
+// isInGitRepo checks if the given directory is already inside a git repository.
+func isInGitRepo(ctx context.Context, dir string) bool {
+	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--git-dir")
+	cmd.Dir = dir
+	return cmd.Run() == nil
+}
+
+// initGitRepo initializes a new git repository at the given directory.
+func initGitRepo(ctx context.Context, dir string) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	// Check if git is available
+	if _, err := exec.LookPath("git"); err != nil {
+		return fmt.Errorf("git is not installed - use --no-git flag to skip initialization")
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "init")
+	cmd.Dir = dir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git init failed: %w (output: %s)", err, string(output))
+	}
+
+	return nil
 }
 
 // Init initializes a new campaign at the given directory.
@@ -168,6 +201,16 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 			} else {
 				result.FilesCreated = append(result.FilesCreated, claudePath+" -> AGENTS.md")
 			}
+		}
+	}
+
+	// Initialize git repository if not already in one and not skipped
+	if !opts.SkipGitInit && !opts.DryRun {
+		if !isInGitRepo(ctx, absDir) {
+			if err := initGitRepo(ctx, absDir); err != nil {
+				return nil, err
+			}
+			result.GitInitialized = true
 		}
 	}
 

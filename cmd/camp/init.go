@@ -28,11 +28,15 @@ Also creates:
   CLAUDE.md     - AI agent instruction file
   AGENTS.md     - Symlink to CLAUDE.md
 
-Use --minimal for just .campaign/ and projects/.`,
+Initializes a git repository if not already inside one.
+
+Use --minimal for just .campaign/ and projects/.
+Use --no-git to skip git initialization.`,
 	Example: `  camp init                      Initialize current directory
   camp init my-campaign          Create and initialize new directory
   camp init --name "My Project"  Set custom campaign name
   camp init --minimal            Minimal structure (.campaign/, projects/)
+  camp init --no-git             Skip git initialization
   camp init --dry-run            Preview without creating anything`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runInit,
@@ -45,6 +49,7 @@ func init() {
 	initCmd.Flags().StringP("type", "t", "product", "Campaign type (product, research, tools, personal)")
 	initCmd.Flags().BoolP("minimal", "m", false, "Create minimal directory structure")
 	initCmd.Flags().Bool("no-register", false, "Don't add to global registry")
+	initCmd.Flags().Bool("no-git", false, "Skip git repository initialization")
 	initCmd.Flags().Bool("dry-run", false, "Show what would be done without creating anything")
 }
 
@@ -60,14 +65,16 @@ func runInit(cmd *cobra.Command, args []string) error {
 	typeStr, _ := cmd.Flags().GetString("type")
 	minimal, _ := cmd.Flags().GetBool("minimal")
 	noRegister, _ := cmd.Flags().GetBool("no-register")
+	noGit, _ := cmd.Flags().GetBool("no-git")
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 
 	opts := scaffold.InitOptions{
-		Name:       name,
-		Type:       config.CampaignType(typeStr),
-		Minimal:    minimal,
-		NoRegister: noRegister,
-		DryRun:     dryRun,
+		Name:        name,
+		Type:        config.CampaignType(typeStr),
+		Minimal:     minimal,
+		NoRegister:  noRegister,
+		SkipGitInit: noGit,
+		DryRun:      dryRun,
 	}
 
 	// Validate options
@@ -113,6 +120,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Printf("\nCampaign: %s\n", result.Name)
 		fmt.Printf("ID: %s\n", result.ID)
 		fmt.Printf("Root: %s\n", result.CampaignRoot)
+		if result.GitInitialized {
+			fmt.Printf("Git: initialized\n")
+		}
 	}
 
 	return nil

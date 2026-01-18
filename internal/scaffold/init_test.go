@@ -3,6 +3,7 @@ package scaffold
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -325,5 +326,125 @@ func TestInit_SkipsExistingDirs(t *testing.T) {
 	}
 	if !skippedMap[docsPath] {
 		t.Errorf("docs should be in Skipped list")
+	}
+}
+
+func TestInit_GitInitialized(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	campaignDir := filepath.Join(tmpDir, "git-campaign")
+	os.MkdirAll(campaignDir, 0755)
+
+	ctx := context.Background()
+	result, err := Init(ctx, campaignDir, InitOptions{Name: "git-test"})
+
+	if err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+
+	// Check that git was initialized
+	if !result.GitInitialized {
+		t.Error("GitInitialized should be true")
+	}
+
+	// Check that .git directory exists
+	gitDir := filepath.Join(campaignDir, ".git")
+	if _, err := os.Stat(gitDir); os.IsNotExist(err) {
+		t.Errorf(".git directory was not created")
+	}
+}
+
+func TestInit_SkipGitInit(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	campaignDir := filepath.Join(tmpDir, "no-git-campaign")
+	os.MkdirAll(campaignDir, 0755)
+
+	ctx := context.Background()
+	result, err := Init(ctx, campaignDir, InitOptions{
+		Name:        "no-git-test",
+		SkipGitInit: true,
+	})
+
+	if err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+
+	// Check that git was not initialized
+	if result.GitInitialized {
+		t.Error("GitInitialized should be false when SkipGitInit is true")
+	}
+
+	// Check that .git directory does not exist
+	gitDir := filepath.Join(campaignDir, ".git")
+	if _, err := os.Stat(gitDir); err == nil {
+		t.Errorf(".git directory should not exist when SkipGitInit is true")
+	}
+}
+
+func TestInit_GitAlreadyInRepo(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	// Create a git repo first
+	gitRepoDir := filepath.Join(tmpDir, "git-repo")
+	os.MkdirAll(gitRepoDir, 0755)
+
+	// Initialize git in the parent directory
+	cmd := exec.Command("git", "init")
+	cmd.Dir = gitRepoDir
+	if err := cmd.Run(); err != nil {
+		t.Skipf("git not available, skipping test: %v", err)
+	}
+
+	// Create campaign dir inside the git repo
+	campaignDir := filepath.Join(gitRepoDir, "campaign")
+	os.MkdirAll(campaignDir, 0755)
+
+	ctx := context.Background()
+	result, err := Init(ctx, campaignDir, InitOptions{Name: "in-git"})
+
+	if err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+
+	// Check that git was NOT initialized (already in a repo)
+	if result.GitInitialized {
+		t.Error("GitInitialized should be false when already inside a git repo")
+	}
+}
+
+func TestInit_DryRunNoGit(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	campaignDir := filepath.Join(tmpDir, "dry-run-git")
+	os.MkdirAll(campaignDir, 0755)
+
+	ctx := context.Background()
+	result, err := Init(ctx, campaignDir, InitOptions{
+		Name:   "dry-run",
+		DryRun: true,
+	})
+
+	if err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+
+	// Check that git was NOT initialized (dry run)
+	if result.GitInitialized {
+		t.Error("GitInitialized should be false in dry run mode")
+	}
+
+	// Check that .git directory was NOT created
+	gitDir := filepath.Join(campaignDir, ".git")
+	if _, err := os.Stat(gitDir); err == nil {
+		t.Errorf(".git directory should not exist in dry run mode")
 	}
 }
