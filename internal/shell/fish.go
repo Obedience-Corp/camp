@@ -73,6 +73,12 @@ complete -c cgo -n "__camp_is_first_arg" -a "pi" -d "pipelines/"
 # Dynamic completion from camp
 complete -c cgo -n "not __camp_is_first_arg" -a "(camp complete (commandline -opc)[2..-1] 2>/dev/null)"
 
+# Run command from campaign root
+# Usage: cr <command> [args...]
+function cr --description "Run command from campaign root"
+    camp run $argv
+end
+
 # Tab completion for camp commands
 complete -c camp -f  # no file completion by default
 

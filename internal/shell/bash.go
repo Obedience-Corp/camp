@@ -83,6 +83,12 @@ _cgo_complete() {
 }
 complete -F _cgo_complete cgo
 
+# Run command from campaign root
+# Usage: cr <command> [args...]
+cr() {
+  camp run "$@"
+}
+
 # Tab completion for camp
 _camp_complete() {
   local cur prev

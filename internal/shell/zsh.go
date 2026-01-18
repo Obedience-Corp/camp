@@ -81,6 +81,12 @@ _cgo() {
 }
 compdef _cgo cgo
 
+# Run command from campaign root
+# Usage: cr <command> [args...]
+cr() {
+  camp run "$@"
+}
+
 # Camp command completion
 _camp() {
   local curcontext="$curcontext" state line
