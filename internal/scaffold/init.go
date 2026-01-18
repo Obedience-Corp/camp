@@ -180,6 +180,7 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 		CreatedAt:   time.Now(),
 		Description: fmt.Sprintf("Campaign: %s", name),
 		Paths:       config.DefaultCampaignPaths(),
+		Shortcuts:   config.DefaultNavigationShortcuts(),
 	}
 
 	if !opts.DryRun {

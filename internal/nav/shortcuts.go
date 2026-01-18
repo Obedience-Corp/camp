@@ -32,6 +32,13 @@ const (
 // DefaultShortcuts maps single/double letters to categories.
 // Single letters are the most common directories.
 // Double letters are used when single letters would conflict.
+//
+// NOTE: Navigation shortcuts should be defined in campaign.yaml instead of
+// being hardcoded here. This map serves as a fallback for campaigns created
+// before shortcuts were added to the config file. New campaigns will have
+// these shortcuts scaffolded in .campaign/campaign.yaml.
+//
+// See config.DefaultNavigationShortcuts() for the authoritative defaults.
 var DefaultShortcuts = map[string]Category{
 	"p":  CategoryProjects,    // p = projects
 	"c":  CategoryCorpus,      // c = corpus

@@ -15,14 +15,23 @@ import (
 )
 
 var goCmd = &cobra.Command{
-	Use:   "go [category] [query...]",
+	Use:   "go [shortcut] [query...]",
 	Short: "Navigate to campaign directories",
-	Long: `Navigate within the campaign using category shortcuts.
+	Long: `Navigate within the campaign using shortcuts.
 
-Category shortcuts:
+Default shortcuts (configurable in .campaign/campaign.yaml):
   p  = projects       c  = corpus        f  = festivals
   a  = ai_docs        d  = docs          w  = worktrees
   r  = code_reviews   pi = pipelines
+
+You can customize or add shortcuts in your campaign.yaml:
+  shortcuts:
+    p:
+      path: projects/
+      description: Jump to projects directory
+    my:
+      path: my-custom-dir/
+      description: Jump to my custom directory
 
 Usage patterns:
   camp go           Toggle between campaign root and last location
@@ -76,17 +85,24 @@ func runGo(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Check if the first arg is a custom navigation shortcut
+	// Build category mappings from config shortcuts
+	// This allows config shortcuts to work with fuzzy search
+	configMappings := buildCategoryMappings(cfg.Shortcuts)
+
+	// Check if the first arg is a custom navigation shortcut with non-standard path
 	if len(args) > 0 {
 		shortcutName := args[0]
 		if sc, ok := cfg.Shortcuts[shortcutName]; ok && sc.IsNavigation() {
-			// This is a custom navigation shortcut
-			return handleCustomNavShortcut(ctx, sc, campaignRoot, printOnly, command)
+			// If this is a custom path (not a standard directory), use direct navigation
+			// Standard paths are handled below via ParseShortcut for fuzzy search support
+			if !isStandardPath(sc.Path) {
+				return handleCustomNavShortcut(ctx, sc, campaignRoot, printOnly, command)
+			}
 		}
 	}
 
-	// Parse built-in shortcuts
-	result := nav.ParseShortcut(args, nil)
+	// Parse shortcuts using config mappings (with hardcoded defaults as fallback)
+	result := nav.ParseShortcut(args, configMappings)
 
 	// Command execution mode
 	if len(command) > 0 {
@@ -240,4 +256,44 @@ func evalSymlinks(path string) (string, error) {
 		return path, err
 	}
 	return resolved, nil
+}
+
+// standardPaths maps standard directory paths to their nav categories.
+var standardPaths = map[string]nav.Category{
+	"projects/":     nav.CategoryProjects,
+	"projects":      nav.CategoryProjects,
+	"worktrees/":    nav.CategoryWorktrees,
+	"worktrees":     nav.CategoryWorktrees,
+	"festivals/":    nav.CategoryFestivals,
+	"festivals":     nav.CategoryFestivals,
+	"ai_docs/":      nav.CategoryAIDocs,
+	"ai_docs":       nav.CategoryAIDocs,
+	"docs/":         nav.CategoryDocs,
+	"docs":          nav.CategoryDocs,
+	"corpus/":       nav.CategoryCorpus,
+	"corpus":        nav.CategoryCorpus,
+	"code_reviews/": nav.CategoryCodeReviews,
+	"code_reviews":  nav.CategoryCodeReviews,
+	"pipelines/":    nav.CategoryPipelines,
+	"pipelines":     nav.CategoryPipelines,
+}
+
+// isStandardPath returns true if the path maps to a known category.
+func isStandardPath(path string) bool {
+	_, ok := standardPaths[path]
+	return ok
+}
+
+// buildCategoryMappings converts config shortcuts to nav.Category mappings.
+// Only shortcuts with standard paths are included; custom paths are handled separately.
+func buildCategoryMappings(shortcuts map[string]config.ShortcutConfig) map[string]nav.Category {
+	mappings := make(map[string]nav.Category)
+	for name, sc := range shortcuts {
+		if sc.IsNavigation() {
+			if cat, ok := standardPaths[sc.Path]; ok {
+				mappings[name] = cat
+			}
+		}
+	}
+	return mappings
 }

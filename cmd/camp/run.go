@@ -5,38 +5,27 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
-	"github.com/obediencecorp/camp/internal/config"
+	"github.com/obediencecorp/camp/internal/campaign"
 	"github.com/spf13/cobra"
 )
 
 var runCmd = &cobra.Command{
-	Use:   "run <shortcut> [args...]",
-	Short: "Execute a command shortcut",
-	Long: `Execute a command shortcut defined in .campaign/campaign.yaml.
+	Use:   "run <command> [args...]",
+	Short: "Execute command from campaign root",
+	Long: `Execute any command from the campaign root directory.
 
-Command shortcuts allow you to define frequently-used commands that should be
-executed from specific directories within your campaign. Extra arguments are
-passed through to the command.
+This is useful when you're deep in a subdirectory but want to run a command
+as if you were at the campaign root. The command inherits your current
+environment (stdin, stdout, stderr).
 
-Define shortcuts in .campaign/campaign.yaml:
-
-  shortcuts:
-    build:
-      command: "just build"
-      description: "Build all projects"
-    dev:
-      command: "docker compose up -d"
-      workdir: "dev/infrastructure"
-      description: "Start dev environment"
-
-The command is executed from the campaign root by default, or from 'workdir'
-if specified. The working directory path is relative to the campaign root.`,
-	Example: `  camp run build              # Run build shortcut
-  camp run dev                # Start dev environment
-  camp run test -- --verbose  # Pass args to test command`,
+All arguments after 'run' are passed directly to the shell.`,
+	Example: `  camp run ls                 # List campaign root contents
+  camp run pwd                # Print campaign root path
+  camp run just --list        # Show just recipes from root
+  camp run make build         # Run make from campaign root
+  camp run git status         # Run git status from root`,
 	Aliases: []string{"r"},
 	Args:    cobra.MinimumNArgs(1),
 	RunE:    runRun,
@@ -49,41 +38,17 @@ func init() {
 func runRun(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
-	// Load campaign config
-	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
+	// Detect campaign root
+	root, err := campaign.DetectCached(ctx)
 	if err != nil {
 		return err
 	}
 
-	shortcutName := args[0]
-	extraArgs := args[1:]
+	// Build the full command string
+	fullCmd := strings.Join(args, " ")
 
-	// Look up the shortcut
-	sc, ok := cfg.Shortcuts[shortcutName]
-	if !ok {
-		return fmt.Errorf("shortcut %q not found\n\nRun 'camp shortcuts' to see available shortcuts", shortcutName)
-	}
-
-	// Verify this is a command shortcut
-	if !sc.IsCommand() {
-		if sc.IsNavigation() {
-			return fmt.Errorf("shortcut %q is a navigation shortcut (use 'camp go %s' instead)", shortcutName, shortcutName)
-		}
-		return fmt.Errorf("shortcut %q has no command defined", shortcutName)
-	}
-
-	// Determine working directory
-	workDir := campaignRoot
-	if sc.WorkDir != "" {
-		workDir = filepath.Join(campaignRoot, sc.WorkDir)
-		// Verify the directory exists
-		if stat, err := os.Stat(workDir); err != nil || !stat.IsDir() {
-			return fmt.Errorf("working directory %q does not exist", sc.WorkDir)
-		}
-	}
-
-	// Execute the command
-	return executeCommand(ctx, sc.Command, workDir, extraArgs)
+	// Execute from campaign root
+	return executeCommand(ctx, fullCmd, root, nil)
 }
 
 // executeCommand executes a shell command from the specified directory.

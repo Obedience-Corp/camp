@@ -14,6 +14,21 @@ func DefaultCampaignPaths() CampaignPaths {
 	}
 }
 
+// DefaultNavigationShortcuts returns the default navigation shortcuts for campaigns.
+// These shortcuts allow quick navigation to common directories within a campaign.
+func DefaultNavigationShortcuts() map[string]ShortcutConfig {
+	return map[string]ShortcutConfig{
+		"p":  {Path: "projects/", Description: "Jump to projects directory"},
+		"w":  {Path: "worktrees/", Description: "Jump to worktrees directory"},
+		"f":  {Path: "festivals/", Description: "Jump to festivals directory"},
+		"a":  {Path: "ai_docs/", Description: "Jump to AI docs directory"},
+		"d":  {Path: "docs/", Description: "Jump to docs directory"},
+		"c":  {Path: "corpus/", Description: "Jump to corpus directory"},
+		"r":  {Path: "code_reviews/", Description: "Jump to code reviews directory"},
+		"pi": {Path: "pipelines/", Description: "Jump to pipelines directory"},
+	}
+}
+
 // DefaultGlobalConfig returns the default global configuration.
 func DefaultGlobalConfig() GlobalConfig {
 	return GlobalConfig{
@@ -32,6 +47,7 @@ func DefaultCampaignConfig(name string) CampaignConfig {
 		Type:      CampaignTypeProduct,
 		CreatedAt: time.Now(),
 		Paths:     DefaultCampaignPaths(),
+		Shortcuts: DefaultNavigationShortcuts(),
 		Projects:  nil,
 	}
 }
