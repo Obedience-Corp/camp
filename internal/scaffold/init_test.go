@@ -25,8 +25,9 @@ func TestInit(t *testing.T) {
 
 	ctx := context.Background()
 	result, err := Init(ctx, campaignDir, InitOptions{
-		Name: "test-campaign",
-		Type: config.CampaignTypeProduct,
+		Name:       "test-campaign",
+		Type:       config.CampaignTypeProduct,
+		NoRegister: true,
 	})
 
 	if err != nil {
@@ -74,8 +75,9 @@ func TestInit_Minimal(t *testing.T) {
 
 	ctx := context.Background()
 	result, err := Init(ctx, campaignDir, InitOptions{
-		Name:    "minimal",
-		Minimal: true,
+		Name:       "minimal",
+		Minimal:    true,
+		NoRegister: true,
 	})
 
 	if err != nil {
@@ -148,8 +150,9 @@ func TestInit_DryRun(t *testing.T) {
 
 	ctx := context.Background()
 	result, err := Init(ctx, campaignDir, InitOptions{
-		Name:   "dry-run",
-		DryRun: true,
+		Name:       "dry-run",
+		DryRun:     true,
+		NoRegister: true,
 	})
 
 	if err != nil {
@@ -200,7 +203,7 @@ func TestInit_DefaultName(t *testing.T) {
 	os.MkdirAll(campaignDir, 0755)
 
 	ctx := context.Background()
-	result, err := Init(ctx, campaignDir, InitOptions{}) // No name specified
+	result, err := Init(ctx, campaignDir, InitOptions{NoRegister: true}) // No name specified
 
 	if err != nil {
 		t.Fatalf("Init() error = %v", err)
@@ -240,8 +243,9 @@ func TestInit_AllTypes(t *testing.T) {
 
 			ctx := context.Background()
 			_, err := Init(ctx, campaignDir, InitOptions{
-				Name: "typed",
-				Type: campaignType,
+				Name:       "typed",
+				Type:       campaignType,
+				NoRegister: true,
 			})
 
 			if err != nil {
@@ -306,7 +310,7 @@ func TestInit_SkipsExistingDirs(t *testing.T) {
 	os.MkdirAll(filepath.Join(campaignDir, "docs"), 0755)
 
 	ctx := context.Background()
-	result, err := Init(ctx, campaignDir, InitOptions{Name: "partial"})
+	result, err := Init(ctx, campaignDir, InitOptions{Name: "partial", NoRegister: true})
 
 	if err != nil {
 		t.Fatalf("Init() error = %v", err)
@@ -338,7 +342,7 @@ func TestInit_GitInitialized(t *testing.T) {
 	os.MkdirAll(campaignDir, 0755)
 
 	ctx := context.Background()
-	result, err := Init(ctx, campaignDir, InitOptions{Name: "git-test"})
+	result, err := Init(ctx, campaignDir, InitOptions{Name: "git-test", NoRegister: true})
 
 	if err != nil {
 		t.Fatalf("Init() error = %v", err)
@@ -368,6 +372,7 @@ func TestInit_SkipGitInit(t *testing.T) {
 	result, err := Init(ctx, campaignDir, InitOptions{
 		Name:        "no-git-test",
 		SkipGitInit: true,
+		NoRegister:  true,
 	})
 
 	if err != nil {
@@ -407,7 +412,7 @@ func TestInit_GitAlreadyInRepo(t *testing.T) {
 	os.MkdirAll(campaignDir, 0755)
 
 	ctx := context.Background()
-	result, err := Init(ctx, campaignDir, InitOptions{Name: "in-git"})
+	result, err := Init(ctx, campaignDir, InitOptions{Name: "in-git", NoRegister: true})
 
 	if err != nil {
 		t.Fatalf("Init() error = %v", err)
@@ -429,8 +434,9 @@ func TestInit_DryRunNoGit(t *testing.T) {
 
 	ctx := context.Background()
 	result, err := Init(ctx, campaignDir, InitOptions{
-		Name:   "dry-run",
-		DryRun: true,
+		Name:       "dry-run",
+		DryRun:     true,
+		NoRegister: true,
 	})
 
 	if err != nil {
