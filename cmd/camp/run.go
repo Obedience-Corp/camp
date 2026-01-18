@@ -21,14 +21,15 @@ as if you were at the campaign root. The command inherits your current
 environment (stdin, stdout, stderr).
 
 All arguments after 'run' are passed directly to the shell.`,
-	Example: `  camp run ls                 # List campaign root contents
+	Example: `  camp run ls -la             # List campaign root contents
   camp run pwd                # Print campaign root path
   camp run just --list        # Show just recipes from root
   camp run make build         # Run make from campaign root
-  camp run git status         # Run git status from root`,
-	Aliases: []string{"r"},
-	Args:    cobra.MinimumNArgs(1),
-	RunE:    runRun,
+  camp run git commit -m msg  # Run git with flags from root`,
+	Aliases:            []string{"r"},
+	Args:               cobra.MinimumNArgs(1),
+	DisableFlagParsing: true,
+	RunE:               runRun,
 }
 
 func init() {
