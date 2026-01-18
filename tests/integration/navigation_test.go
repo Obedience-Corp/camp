@@ -148,3 +148,92 @@ func TestGo_Help(t *testing.T) {
 	assert.Contains(t, output, "go", "help should list go command")
 	assert.Contains(t, output, "project", "help should list project command")
 }
+
+func TestGo_LastLocationNoHistory(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	// Setup: Create campaign
+	_, err := tc.InitCampaign("/campaigns/last-loc-test", "last-loc-test", "product")
+	require.NoError(t, err)
+
+	// First time with no history should go to campaign root
+	output, err := tc.RunCampInDir("/campaigns/last-loc-test", "go", "--print")
+	require.NoError(t, err, "camp go should succeed on first run")
+	assert.Contains(t, output, "last-loc-test", "should return campaign root path when no history")
+}
+
+func TestGo_LastLocationAfterNavigation(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	// Setup: Create campaign and project
+	_, err := tc.InitCampaign("/campaigns/last-loc-nav", "last-loc-nav", "product")
+	require.NoError(t, err)
+
+	err = tc.CreateGitRepo("/test/navproject")
+	require.NoError(t, err)
+
+	_, err = tc.RunCampInDir("/campaigns/last-loc-nav", "project", "add", "/test/navproject", "--local", "/test/navproject")
+	require.NoError(t, err)
+
+	// First navigation to projects
+	output1, err := tc.RunCampInDir("/campaigns/last-loc-nav", "go", "p", "--print")
+	require.NoError(t, err, "go p should succeed")
+	assert.Contains(t, output1, "projects", "first go p should return projects path")
+
+	// Second call to go without args should return last location (projects)
+	output2, err := tc.RunCampInDir("/campaigns/last-loc-nav", "go", "--print")
+	require.NoError(t, err, "go without args should succeed")
+	assert.Contains(t, output2, "projects", "go without args should return last location (projects)")
+}
+
+func TestGo_RootFlagIgnoresHistory(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	// Setup: Create campaign and navigate to projects
+	_, err := tc.InitCampaign("/campaigns/root-flag-test", "root-flag-test", "product")
+	require.NoError(t, err)
+
+	err = tc.CreateGitRepo("/test/rootflagproj")
+	require.NoError(t, err)
+
+	_, err = tc.RunCampInDir("/campaigns/root-flag-test", "project", "add", "/test/rootflagproj", "--local", "/test/rootflagproj")
+	require.NoError(t, err)
+
+	// Navigate to projects
+	_, err = tc.RunCampInDir("/campaigns/root-flag-test", "go", "p", "--print")
+	require.NoError(t, err)
+
+	// --root flag should ignore history and go to campaign root
+	output, err := tc.RunCampInDir("/campaigns/root-flag-test", "go", "--root", "--print")
+	require.NoError(t, err, "go --root should succeed")
+	assert.Contains(t, output, "root-flag-test", "go --root should return campaign root path")
+	assert.NotContains(t, output, "projects", "go --root should not return projects path")
+}
+
+func TestGo_MultipleNavigations(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	// Setup: Create campaign
+	_, err := tc.InitCampaign("/campaigns/multi-nav-test", "multi-nav-test", "product")
+	require.NoError(t, err)
+
+	err = tc.CreateGitRepo("/test/multiproj")
+	require.NoError(t, err)
+
+	_, err = tc.RunCampInDir("/campaigns/multi-nav-test", "project", "add", "/test/multiproj", "--local", "/test/multiproj")
+	require.NoError(t, err)
+
+	// Navigate to projects
+	output1, err := tc.RunCampInDir("/campaigns/multi-nav-test", "go", "p", "--print")
+	require.NoError(t, err)
+	assert.Contains(t, output1, "projects")
+
+	// Navigate back to root with --root flag
+	_, err = tc.RunCampInDir("/campaigns/multi-nav-test", "go", "--root", "--print")
+	require.NoError(t, err)
+
+	// go without args should now return root (since --root doesn't save as last location)
+	output2, err := tc.RunCampInDir("/campaigns/multi-nav-test", "go", "--print")
+	require.NoError(t, err)
+	assert.Contains(t, output2, "multi-nav-test", "go without args after --root should return root")
+}
