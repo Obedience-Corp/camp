@@ -1,15 +1,16 @@
 # Test recipes
+BUILDTOOL := "go run ./internal/buildutil"
 
 [private]
 default:
     @just --list --unsorted --justfile {{source_file()}}
 
-# Run all tests
+# Run all unit tests with dashboard
 [no-cd]
 all:
-    go test -race -cover ./...
+    @{{BUILDTOOL}} test
 
-# Run tests with verbose output
+# Run tests with verbose output (standard go test)
 [no-cd]
 verbose:
     go test -race -cover -v ./...
@@ -41,20 +42,12 @@ bench-verbose:
 # Integration Tests (require Docker/Colima)
 # ============================================
 
-# Run integration tests
+# Run integration tests with dashboard
 [no-cd]
 integration:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    echo "Building Linux binary for containers..."
-    mkdir -p bin/linux
-    GOOS=linux GOARCH=amd64 go build -o bin/linux/camp ./cmd/camp
-    echo "Running container-based integration tests..."
-    DOCKER_HOST="unix://${HOME}/.colima/default/docker.sock" \
-    TESTCONTAINERS_RYUK_DISABLED=true \
-    go test -v -tags=integration ./tests/integration/... -timeout 10m
+    @{{BUILDTOOL}} integration
 
-# Run integration tests with verbose output
+# Run integration tests with verbose output (standard go test)
 [no-cd]
 integration-verbose:
     #!/usr/bin/env bash
