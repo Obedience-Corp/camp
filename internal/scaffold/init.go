@@ -190,6 +190,23 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 	}
 	result.FilesCreated = append(result.FilesCreated, config.CampaignConfigPath(absDir))
 
+	// Create .gitignore to exclude machine-specific files
+	gitignorePath := filepath.Join(campaignDir, ".gitignore")
+	if !opts.DryRun {
+		if _, err := os.Stat(gitignorePath); os.IsNotExist(err) {
+			gitignoreContent := `# Machine-specific state (navigation history, timestamps)
+state.yaml
+
+# Generated cache (navigation index, rebuilt automatically)
+cache/
+`
+			if err := os.WriteFile(gitignorePath, []byte(gitignoreContent), 0644); err != nil {
+				return nil, fmt.Errorf("failed to create .gitignore: %w", err)
+			}
+			result.FilesCreated = append(result.FilesCreated, ".campaign/.gitignore")
+		}
+	}
+
 	// Create CLAUDE.md symlink to AGENTS.md (AGENTS.md is the source of truth)
 	claudePath := filepath.Join(absDir, "CLAUDE.md")
 
