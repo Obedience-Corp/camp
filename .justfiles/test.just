@@ -5,9 +5,15 @@ BUILDTOOL := "go run ./internal/buildutil"
 default:
     @just --list --unsorted --justfile {{source_file()}}
 
-# Run all unit tests with dashboard
+# Run all tests (unit + integration) with dashboard
 [no-cd]
 all:
+    @{{BUILDTOOL}} test
+    @{{BUILDTOOL}} integration
+
+# Run unit tests only with dashboard
+[no-cd]
+unit:
     @{{BUILDTOOL}} test
 
 # Run tests with verbose output (standard go test)
