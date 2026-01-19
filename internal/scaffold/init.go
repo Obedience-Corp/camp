@@ -31,6 +31,8 @@ type InitOptions struct {
 	SkipGitInit bool
 	// DryRun shows what would be done without creating anything.
 	DryRun bool
+	// Repair adds missing files to an existing campaign.
+	Repair bool
 }
 
 // InitResult contains information about what was created.
@@ -93,13 +95,19 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 
 	// Check if already inside a campaign
 	if _, err := campaign.Detect(ctx, absDir); err == nil {
-		return nil, fmt.Errorf("already inside a campaign at %s", absDir)
+		if !opts.Repair {
+			return nil, fmt.Errorf("already inside a campaign at %s\nUse --repair to add missing files", absDir)
+		}
+		// Repair mode: continue but only create missing files
 	}
 
 	// Check if .campaign already exists
 	campaignDir := filepath.Join(absDir, config.CampaignDir)
 	if _, err := os.Stat(campaignDir); err == nil {
-		return nil, fmt.Errorf("campaign already exists at %s", campaignDir)
+		if !opts.Repair {
+			return nil, fmt.Errorf("campaign already exists at %s", campaignDir)
+		}
+		// Repair mode: continue, we'll only create missing files
 	}
 
 	// Use directory name as campaign name if not specified

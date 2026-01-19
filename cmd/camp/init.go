@@ -53,6 +53,7 @@ func init() {
 	initCmd.Flags().Bool("no-register", false, "Don't add to global registry")
 	initCmd.Flags().Bool("no-git", false, "Skip git repository initialization")
 	initCmd.Flags().Bool("dry-run", false, "Show what would be done without creating anything")
+	initCmd.Flags().Bool("repair", false, "Add missing files to existing campaign")
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
@@ -69,6 +70,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	noRegister, _ := cmd.Flags().GetBool("no-register")
 	noGit, _ := cmd.Flags().GetBool("no-git")
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
+	repair, _ := cmd.Flags().GetBool("repair")
 
 	opts := scaffold.InitOptions{
 		Name:        name,
@@ -77,6 +79,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		NoRegister:  noRegister,
 		SkipGitInit: noGit,
 		DryRun:      dryRun,
+		Repair:      repair,
 	}
 
 	// Validate options
@@ -93,6 +96,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// Print results
 	if dryRun {
 		fmt.Println(ui.Warning("Dry run - would create:"))
+	} else if repair {
+		fmt.Println(ui.Success("✓ Campaign Repaired"))
 	} else {
 		fmt.Println(ui.Success("✓ Campaign Initialized"))
 	}
