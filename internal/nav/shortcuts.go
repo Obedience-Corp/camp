@@ -33,12 +33,9 @@ const (
 // Single letters are the most common directories.
 // Double letters are used when single letters would conflict.
 //
-// NOTE: Navigation shortcuts should be defined in campaign.yaml instead of
-// being hardcoded here. This map serves as a fallback for campaigns created
-// before shortcuts were added to the config file. New campaigns will have
-// these shortcuts scaffolded in .campaign/campaign.yaml.
-//
-// See config.DefaultNavigationShortcuts() for the authoritative defaults.
+// NOTE: This map is only used by ShortcutForCategory() for reverse lookups.
+// All runtime shortcut resolution uses shortcuts from campaign.yaml.
+// New campaigns get these defaults scaffolded via config.DefaultNavigationShortcuts().
 var DefaultShortcuts = map[string]Category{
 	"p":  CategoryProjects,    // p = projects
 	"c":  CategoryCorpus,      // c = corpus
@@ -61,26 +58,17 @@ type ParseResult struct {
 }
 
 // ParseShortcut parses arguments into category and query.
-// The first argument is checked against known shortcuts.
-// Custom mappings can override or extend default shortcuts.
+// The first argument is checked against the provided shortcuts map.
+// Only shortcuts from campaign.yaml (via customMappings) are used.
 func ParseShortcut(args []string, customMappings map[string]Category) ParseResult {
 	if len(args) == 0 {
 		return ParseResult{Category: CategoryAll, Query: "", IsShortcut: false}
 	}
 
-	// Build shortcuts map: defaults first, then custom overrides
-	shortcuts := make(map[string]Category)
-	for k, v := range DefaultShortcuts {
-		shortcuts[k] = v
-	}
-	for k, v := range customMappings {
-		shortcuts[k] = v
-	}
-
 	first := strings.ToLower(args[0])
 
-	// Check for shortcut match
-	if cat, ok := shortcuts[first]; ok {
+	// Check for shortcut match in custom mappings only
+	if cat, ok := customMappings[first]; ok {
 		query := ""
 		if len(args) > 1 {
 			query = strings.Join(args[1:], " ")
@@ -133,20 +121,14 @@ func ShortcutForCategory(cat Category) string {
 	return ""
 }
 
-// MergeShortcuts combines default navigation shortcuts with custom mappings.
-// Custom mappings take precedence over defaults.
+// MergeShortcuts returns a copy of the custom mappings.
+// Only shortcuts from campaign.yaml are used - no hardcoded defaults.
+// Deprecated: This function exists for backward compatibility.
+// Use the customMappings directly instead.
 func MergeShortcuts(customMappings map[string]Category) map[string]Category {
 	merged := make(map[string]Category)
-
-	// Start with defaults
-	for k, v := range DefaultShortcuts {
-		merged[k] = v
-	}
-
-	// Override with custom mappings
 	for k, v := range customMappings {
 		merged[k] = v
 	}
-
 	return merged
 }

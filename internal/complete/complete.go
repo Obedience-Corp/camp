@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/obediencecorp/camp/internal/config"
 	"github.com/obediencecorp/camp/internal/nav"
 	"github.com/obediencecorp/camp/internal/nav/index"
 )
@@ -21,34 +22,86 @@ func Generate(ctx context.Context, args []string) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, Timeout)
 	defer cancel()
 
+	// Load shortcuts from campaign config
+	shortcuts := loadShortcutMappings(ctx)
+
 	// No args - complete category shortcuts
 	if len(args) == 0 {
-		return CategoryShortcuts(), nil
+		return shortcutKeys(shortcuts), nil
 	}
 
 	// Check if first arg is a category shortcut
-	result := nav.ParseShortcut(args, nil)
+	result := nav.ParseShortcut(args, shortcuts)
 	if result.IsShortcut {
 		// Complete within category
 		return completeInCategory(ctx, result.Category, result.Query)
 	}
 
 	// Not a shortcut - complete from all targets and shortcuts
-	return completeAll(ctx, args[0])
+	return completeAll(ctx, args[0], shortcuts)
 }
 
-// CategoryShortcuts returns all category shortcut keys.
-func CategoryShortcuts() []string {
-	return []string{
-		"p",  // projects
-		"c",  // corpus
-		"f",  // festivals
-		"a",  // ai_docs
-		"d",  // docs
-		"w",  // worktrees
-		"r",  // code_reviews
-		"pi", // pipelines
+// loadShortcutMappings loads shortcuts from campaign config.
+// Returns empty map if not in a campaign or on error.
+func loadShortcutMappings(ctx context.Context) map[string]nav.Category {
+	cfg, _, err := config.LoadCampaignConfigFromCwd(ctx)
+	if err != nil {
+		return nil
 	}
+	return buildCategoryMappings(cfg.Shortcuts)
+}
+
+// buildCategoryMappings converts config shortcuts to nav.Category mappings.
+func buildCategoryMappings(shortcuts map[string]config.ShortcutConfig) map[string]nav.Category {
+	// Standard paths that map to categories
+	standardPaths := map[string]nav.Category{
+		"projects/":     nav.CategoryProjects,
+		"projects":      nav.CategoryProjects,
+		"worktrees/":    nav.CategoryWorktrees,
+		"worktrees":     nav.CategoryWorktrees,
+		"festivals/":    nav.CategoryFestivals,
+		"festivals":     nav.CategoryFestivals,
+		"ai_docs/":      nav.CategoryAIDocs,
+		"ai_docs":       nav.CategoryAIDocs,
+		"docs/":         nav.CategoryDocs,
+		"docs":          nav.CategoryDocs,
+		"corpus/":       nav.CategoryCorpus,
+		"corpus":        nav.CategoryCorpus,
+		"code_reviews/": nav.CategoryCodeReviews,
+		"code_reviews":  nav.CategoryCodeReviews,
+		"pipelines/":    nav.CategoryPipelines,
+		"pipelines":     nav.CategoryPipelines,
+	}
+
+	mappings := make(map[string]nav.Category)
+	for name, sc := range shortcuts {
+		if sc.IsNavigation() {
+			if cat, ok := standardPaths[sc.Path]; ok {
+				mappings[name] = cat
+			}
+		}
+	}
+	return mappings
+}
+
+// shortcutKeys returns the keys from a shortcuts map.
+func shortcutKeys(shortcuts map[string]nav.Category) []string {
+	if len(shortcuts) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(shortcuts))
+	for k := range shortcuts {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// CategoryShortcuts returns category shortcut keys from campaign config.
+// Returns nil if not in a campaign.
+func CategoryShortcuts() []string {
+	ctx := context.Background()
+	shortcuts := loadShortcutMappings(ctx)
+	return shortcutKeys(shortcuts)
 }
 
 // completeInCategory returns completion candidates within a specific category.
@@ -104,11 +157,11 @@ func completeInCategory(ctx context.Context, cat nav.Category, query string) ([]
 }
 
 // completeAll returns completion candidates from all categories plus shortcuts.
-func completeAll(ctx context.Context, query string) ([]string, error) {
+func completeAll(ctx context.Context, query string, shortcuts map[string]nav.Category) ([]string, error) {
 	var candidates []string
 
 	// Add matching category shortcuts first
-	for _, shortcut := range CategoryShortcuts() {
+	for shortcut := range shortcuts {
 		if strings.HasPrefix(shortcut, query) {
 			candidates = append(candidates, shortcut)
 		}

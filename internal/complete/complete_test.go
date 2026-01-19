@@ -8,7 +8,69 @@ import (
 	"time"
 )
 
+// campaignYAML is a minimal campaign.yaml with default shortcuts
+const campaignYAML = `id: test-campaign-id
+name: test-campaign
+type: product
+shortcuts:
+  p:
+    path: "projects/"
+    description: "Jump to projects directory"
+  c:
+    path: "corpus/"
+    description: "Jump to corpus directory"
+  f:
+    path: "festivals/"
+    description: "Jump to festivals directory"
+  a:
+    path: "ai_docs/"
+    description: "Jump to AI docs directory"
+  d:
+    path: "docs/"
+    description: "Jump to docs directory"
+  w:
+    path: "worktrees/"
+    description: "Jump to worktrees directory"
+  r:
+    path: "code_reviews/"
+    description: "Jump to code reviews directory"
+  pi:
+    path: "pipelines/"
+    description: "Jump to pipelines directory"
+`
+
+// createTestCampaign creates a test campaign with shortcuts configured.
+func createTestCampaign(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	campDir := filepath.Join(root, ".campaign")
+	if err := os.MkdirAll(campDir, 0755); err != nil {
+		t.Fatalf("Failed to create .campaign: %v", err)
+	}
+
+	// Create campaign.yaml with shortcuts
+	campaignPath := filepath.Join(campDir, "campaign.yaml")
+	if err := os.WriteFile(campaignPath, []byte(campaignYAML), 0644); err != nil {
+		t.Fatalf("Failed to create campaign.yaml: %v", err)
+	}
+
+	return root
+}
+
 func TestGenerate_NoArgs(t *testing.T) {
+	// Create test campaign with shortcuts
+	root := createTestCampaign(t)
+
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get working directory: %v", err)
+	}
+	defer os.Chdir(oldWd)
+
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("Failed to change to test directory: %v", err)
+	}
+
 	ctx := context.Background()
 	candidates, err := Generate(ctx, nil)
 
@@ -16,20 +78,53 @@ func TestGenerate_NoArgs(t *testing.T) {
 		t.Fatalf("Generate failed: %v", err)
 	}
 
-	// Should return category shortcuts
-	expected := []string{"p", "c", "f", "a", "d", "w", "r", "pi"}
-	if len(candidates) != len(expected) {
-		t.Errorf("Got %d candidates, want %d", len(candidates), len(expected))
+	// Should return category shortcuts from config
+	if len(candidates) != 8 {
+		t.Errorf("Got %d candidates, want 8", len(candidates))
+	}
+}
+
+func TestGenerate_NoArgs_NotInCampaign(t *testing.T) {
+	// Test outside a campaign - should return nil
+	root := t.TempDir()
+
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get working directory: %v", err)
+	}
+	defer os.Chdir(oldWd)
+
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("Failed to change to test directory: %v", err)
 	}
 
-	for i, c := range candidates {
-		if c != expected[i] {
-			t.Errorf("candidate[%d] = %q, want %q", i, c, expected[i])
-		}
+	ctx := context.Background()
+	candidates, err := Generate(ctx, nil)
+
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// Should return nil when not in a campaign
+	if candidates != nil {
+		t.Errorf("Got %d candidates, want nil", len(candidates))
 	}
 }
 
 func TestGenerate_EmptyArgs(t *testing.T) {
+	// Create test campaign with shortcuts
+	root := createTestCampaign(t)
+
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get working directory: %v", err)
+	}
+	defer os.Chdir(oldWd)
+
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("Failed to change to test directory: %v", err)
+	}
+
 	ctx := context.Background()
 	candidates, err := Generate(ctx, []string{})
 
@@ -43,12 +138,8 @@ func TestGenerate_EmptyArgs(t *testing.T) {
 }
 
 func TestGenerate_CategoryShortcut(t *testing.T) {
-	// Create test campaign
-	root := t.TempDir()
-	campDir := filepath.Join(root, ".campaign")
-	if err := os.MkdirAll(campDir, 0755); err != nil {
-		t.Fatalf("Failed to create .campaign: %v", err)
-	}
+	// Create test campaign with shortcuts
+	root := createTestCampaign(t)
 
 	// Create projects
 	for _, name := range []string{"api-service", "web-app", "cli-tool"} {
@@ -83,12 +174,8 @@ func TestGenerate_CategoryShortcut(t *testing.T) {
 }
 
 func TestGenerate_CategoryWithQuery(t *testing.T) {
-	// Create test campaign
-	root := t.TempDir()
-	campDir := filepath.Join(root, ".campaign")
-	if err := os.MkdirAll(campDir, 0755); err != nil {
-		t.Fatalf("Failed to create .campaign: %v", err)
-	}
+	// Create test campaign with shortcuts
+	root := createTestCampaign(t)
 
 	// Create projects
 	for _, name := range []string{"api-service", "api-gateway", "web-app"} {
@@ -117,12 +204,8 @@ func TestGenerate_CategoryWithQuery(t *testing.T) {
 }
 
 func TestGenerate_PartialShortcut(t *testing.T) {
-	// Create test campaign
-	root := t.TempDir()
-	campDir := filepath.Join(root, ".campaign")
-	if err := os.MkdirAll(campDir, 0755); err != nil {
-		t.Fatalf("Failed to create .campaign: %v", err)
-	}
+	// Create test campaign with shortcuts
+	root := createTestCampaign(t)
 
 	projPath := filepath.Join(root, "projects", "test-project")
 	if err := os.MkdirAll(projPath, 0755); err != nil {
@@ -160,28 +243,40 @@ func TestGenerate_Timeout(t *testing.T) {
 }
 
 func TestCategoryShortcuts(t *testing.T) {
+	// Create test campaign with shortcuts
+	root := createTestCampaign(t)
+
+	oldWd, _ := os.Getwd()
+	defer os.Chdir(oldWd)
+	os.Chdir(root)
+
 	shortcuts := CategoryShortcuts()
 
-	expected := []string{"p", "c", "f", "a", "d", "w", "r", "pi"}
-
-	if len(shortcuts) != len(expected) {
-		t.Errorf("Got %d shortcuts, want %d", len(shortcuts), len(expected))
+	// Should have 8 shortcuts from campaign.yaml
+	if len(shortcuts) != 8 {
+		t.Errorf("Got %d shortcuts, want 8", len(shortcuts))
 	}
+}
 
-	for i, s := range shortcuts {
-		if s != expected[i] {
-			t.Errorf("shortcut[%d] = %q, want %q", i, s, expected[i])
-		}
+func TestCategoryShortcuts_NotInCampaign(t *testing.T) {
+	// Test outside a campaign
+	root := t.TempDir()
+
+	oldWd, _ := os.Getwd()
+	defer os.Chdir(oldWd)
+	os.Chdir(root)
+
+	shortcuts := CategoryShortcuts()
+
+	// Should return nil when not in a campaign
+	if shortcuts != nil {
+		t.Errorf("Got %d shortcuts, want nil", len(shortcuts))
 	}
 }
 
 func TestGenerate_Performance(t *testing.T) {
-	// Create test campaign
-	root := t.TempDir()
-	campDir := filepath.Join(root, ".campaign")
-	if err := os.MkdirAll(campDir, 0755); err != nil {
-		t.Fatalf("Failed to create .campaign: %v", err)
-	}
+	// Create test campaign with shortcuts
+	root := createTestCampaign(t)
 
 	// Create many projects
 	for i := 0; i < 100; i++ {
@@ -223,18 +318,15 @@ func TestGenerate_NotInCampaign(t *testing.T) {
 	ctx := context.Background()
 	candidates, _ := Generate(ctx, []string{"p"})
 
-	// Should still return shortcuts when not in campaign
-	// (or empty, which is also acceptable)
-	_ = candidates
+	// Should return empty when not in campaign (no shortcuts available)
+	if len(candidates) != 0 {
+		t.Errorf("Got %d candidates, want 0 (not in campaign)", len(candidates))
+	}
 }
 
 func TestGenerate_ContextCancellation(t *testing.T) {
-	// Create test campaign
-	root := t.TempDir()
-	campDir := filepath.Join(root, ".campaign")
-	if err := os.MkdirAll(campDir, 0755); err != nil {
-		t.Fatalf("Failed to create .campaign: %v", err)
-	}
+	// Create test campaign with shortcuts
+	root := createTestCampaign(t)
 
 	projPath := filepath.Join(root, "projects", "test")
 	if err := os.MkdirAll(projPath, 0755); err != nil {

@@ -237,3 +237,133 @@ func TestGo_MultipleNavigations(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, output2, "multi-nav-test", "go without args after --root should return root")
 }
+
+// TestShortcuts_OnlyFromConfig verifies that shortcuts only work when defined in campaign.yaml
+func TestShortcuts_OnlyFromConfig(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	// Setup: Create campaign (which scaffolds default shortcuts)
+	_, err := tc.InitCampaign("/campaigns/shortcuts-test", "shortcuts-test", "product")
+	require.NoError(t, err)
+
+	// Create projects directory
+	_, _, err = tc.ExecCommand("mkdir", "-p", "/campaigns/shortcuts-test/projects")
+	require.NoError(t, err)
+
+	// Verify shortcut "p" works (should be in campaign.yaml by default)
+	output, err := tc.RunCampInDir("/campaigns/shortcuts-test", "go", "p", "--print")
+	require.NoError(t, err, "shortcut 'p' should work when defined in campaign.yaml")
+	assert.Contains(t, output, "projects", "shortcut 'p' should resolve to projects/")
+
+	// Read campaign.yaml to verify shortcuts are there
+	config, err := tc.ReadFile("/campaigns/shortcuts-test/.campaign/campaign.yaml")
+	require.NoError(t, err)
+	assert.Contains(t, config, "shortcuts:", "campaign.yaml should have shortcuts section")
+	assert.Contains(t, config, "p:", "campaign.yaml should have 'p' shortcut")
+}
+
+// TestShortcuts_HelpShowsConfigOnly verifies that --help only shows shortcuts from config
+func TestShortcuts_HelpShowsConfigOnly(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	// Setup: Create campaign
+	_, err := tc.InitCampaign("/campaigns/help-shortcuts-test", "help-shortcuts-test", "product")
+	require.NoError(t, err)
+
+	// Test that help shows shortcuts from config
+	output, err := tc.RunCampInDir("/campaigns/help-shortcuts-test", "go", "--help")
+	require.NoError(t, err)
+	assert.Contains(t, output, "from .campaign/campaign.yaml", "help should indicate shortcuts are from config")
+	assert.Contains(t, output, "p", "help should show 'p' shortcut from config")
+}
+
+// TestShortcuts_NotInCampaign verifies shortcuts don't work outside a campaign
+func TestShortcuts_NotInCampaign(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	// Try to use shortcut "p" outside a campaign
+	output, err := tc.RunCampInDir("/test", "go", "p", "--print")
+	// Should fail because we're not in a campaign
+	require.Error(t, err, "shortcut 'p' should fail outside a campaign")
+	assert.Contains(t, strings.ToLower(output), "not inside a campaign", "error should mention not in campaign")
+}
+
+// TestShortcuts_HelpNotInCampaign verifies help shows appropriate message when not in campaign
+func TestShortcuts_HelpNotInCampaign(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	// Get help outside a campaign
+	output, err := tc.RunCampInDir("/test", "go", "--help")
+	require.NoError(t, err, "help should work outside campaign")
+	assert.Contains(t, output, "Not in a campaign", "help should show not in campaign message")
+	assert.Contains(t, output, "camp init", "help should suggest camp init")
+}
+
+// TestShortcuts_RemovedFromConfig verifies that removing a shortcut from config stops it from working
+func TestShortcuts_RemovedFromConfig(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	// Setup: Create campaign
+	_, err := tc.InitCampaign("/campaigns/remove-shortcut-test", "remove-shortcut-test", "product")
+	require.NoError(t, err)
+
+	// Create projects directory
+	_, _, err = tc.ExecCommand("mkdir", "-p", "/campaigns/remove-shortcut-test/projects")
+	require.NoError(t, err)
+
+	// Verify "p" works initially
+	output, err := tc.RunCampInDir("/campaigns/remove-shortcut-test", "go", "p", "--print")
+	require.NoError(t, err, "shortcut 'p' should work initially")
+	assert.Contains(t, output, "projects")
+
+	// Create a new campaign.yaml without the "p" shortcut
+	newConfig := `id: test-id
+name: remove-shortcut-test
+type: product
+shortcuts:
+  f:
+    path: "festivals/"
+    description: "Jump to festivals"
+`
+	err = tc.WriteFile("/campaigns/remove-shortcut-test/.campaign/campaign.yaml", newConfig)
+	require.NoError(t, err)
+
+	// Now "p" should not work (treated as a query, not a shortcut)
+	output, err = tc.RunCampInDir("/campaigns/remove-shortcut-test", "go", "p", "--print")
+	// The shortcut "p" is no longer defined, so it should fail or not resolve to projects
+	if err == nil {
+		// If no error, output should NOT contain "projects" (would be a query result instead)
+		assert.NotContains(t, output, "/projects", "shortcut 'p' should not resolve after removal from config")
+	}
+	// Error is also acceptable - means the query "p" didn't find anything
+}
+
+// TestShortcuts_Command verifies the "camp shortcuts" command shows only config shortcuts
+func TestShortcuts_Command(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	// Setup: Create campaign
+	_, err := tc.InitCampaign("/campaigns/shortcuts-cmd-test", "shortcuts-cmd-test", "product")
+	require.NoError(t, err)
+
+	// Run shortcuts command
+	output, err := tc.RunCampInDir("/campaigns/shortcuts-cmd-test", "shortcuts")
+	require.NoError(t, err)
+
+	// Should show campaign name and shortcuts from config
+	assert.Contains(t, output, "shortcuts-cmd-test", "output should show campaign name")
+	assert.Contains(t, output, "p", "output should show 'p' shortcut")
+	// Should NOT show "Built-in" section (removed in our changes)
+	assert.NotContains(t, output, "Built-in", "output should not show 'Built-in' section")
+}
+
+// TestShortcuts_CommandNotInCampaign verifies shortcuts command behavior outside campaign
+func TestShortcuts_CommandNotInCampaign(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	// Run shortcuts command outside a campaign
+	output, err := tc.RunCampInDir("/test", "shortcuts")
+	require.NoError(t, err, "shortcuts command should succeed but show not in campaign message")
+	assert.Contains(t, output, "Not in a campaign", "output should indicate not in campaign")
+	assert.Contains(t, output, "camp init", "output should suggest camp init")
+}

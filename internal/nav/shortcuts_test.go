@@ -35,7 +35,8 @@ func TestParseShortcut_SingleLetterShortcuts(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.args[0], func(t *testing.T) {
-			result := ParseShortcut(tt.args, nil)
+			// Must pass shortcuts explicitly - no defaults used
+			result := ParseShortcut(tt.args, DefaultShortcuts)
 
 			if result.Category != tt.category {
 				t.Errorf("Category = %q, want %q", result.Category, tt.category)
@@ -51,7 +52,8 @@ func TestParseShortcut_SingleLetterShortcuts(t *testing.T) {
 }
 
 func TestParseShortcut_TwoLetterShortcut(t *testing.T) {
-	result := ParseShortcut([]string{"pi"}, nil)
+	// Must pass shortcuts explicitly - no defaults used
+	result := ParseShortcut([]string{"pi"}, DefaultShortcuts)
 
 	if result.Category != CategoryPipelines {
 		t.Errorf("Category = %q, want %q", result.Category, CategoryPipelines)
@@ -79,7 +81,8 @@ func TestParseShortcut_ShortcutWithQuery(t *testing.T) {
 	for _, tt := range tests {
 		name := tt.args[0] + " " + tt.args[1]
 		t.Run(name, func(t *testing.T) {
-			result := ParseShortcut(tt.args, nil)
+			// Must pass shortcuts explicitly - no defaults used
+			result := ParseShortcut(tt.args, DefaultShortcuts)
 
 			if result.Category != tt.category {
 				t.Errorf("Category = %q, want %q", result.Category, tt.category)
@@ -136,7 +139,8 @@ func TestParseShortcut_CaseInsensitive(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			result := ParseShortcut([]string{tt.input}, nil)
+			// Must pass shortcuts explicitly - no defaults used
+			result := ParseShortcut([]string{tt.input}, DefaultShortcuts)
 
 			if result.Category != tt.category {
 				t.Errorf("Category = %q, want %q", result.Category, tt.category)
@@ -162,7 +166,6 @@ func TestParseShortcut_CustomMappings(t *testing.T) {
 		{[]string{"x"}, CategoryProjects},     // Custom shortcut works
 		{[]string{"p"}, CategoryPipelines},    // Override works
 		{[]string{"ab"}, CategoryCodeReviews}, // Custom two-letter works
-		{[]string{"c"}, CategoryCorpus},       // Default still works
 	}
 
 	for _, tt := range tests {
@@ -173,6 +176,26 @@ func TestParseShortcut_CustomMappings(t *testing.T) {
 				t.Errorf("Category = %q, want %q", result.Category, tt.category)
 			}
 		})
+	}
+}
+
+func TestParseShortcut_NoDefaultFallback(t *testing.T) {
+	// Test that shortcuts not in custom mappings don't fall back to defaults
+	custom := map[string]Category{
+		"x": CategoryProjects, // Only define "x"
+	}
+
+	// "p" is in DefaultShortcuts but not in custom, should NOT match
+	result := ParseShortcut([]string{"p"}, custom)
+
+	if result.Category != CategoryAll {
+		t.Errorf("Category = %q, want %q (no fallback to defaults)", result.Category, CategoryAll)
+	}
+	if result.IsShortcut {
+		t.Error("IsShortcut should be false - no fallback to defaults")
+	}
+	if result.Query != "p" {
+		t.Errorf("Query = %q, want %q", result.Query, "p")
 	}
 }
 

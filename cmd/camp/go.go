@@ -305,45 +305,34 @@ func buildCategoryMappings(shortcuts map[string]config.ShortcutConfig) map[strin
 }
 
 // formatShortcutsHelp generates the shortcuts section for help output.
-// It loads from campaign config if available, otherwise uses defaults.
+// Only shows shortcuts from campaign.yaml - no hardcoded defaults.
 func formatShortcutsHelp() string {
 	ctx := context.Background()
 
 	// Try to load campaign config
 	cfg, _, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		// Not in campaign - show defaults
-		return formatDefaultShortcuts()
+		// Not in campaign
+		return formatNotInCampaignMessage()
 	}
 
-	// In campaign - show configured shortcuts
+	// In campaign - show configured shortcuts only
 	if len(cfg.Shortcuts) > 0 {
 		return formatConfigShortcuts(cfg.Shortcuts)
 	}
 
-	// Campaign exists but no shortcuts configured - show defaults
-	return formatDefaultShortcuts()
+	// Campaign exists but no shortcuts configured
+	return formatNoShortcutsMessage()
 }
 
-// formatDefaultShortcuts formats the default shortcuts for help output.
-func formatDefaultShortcuts() string {
-	var sb strings.Builder
-	sb.WriteString("Available shortcuts (defaults):\n")
+// formatNotInCampaignMessage returns message when not in a campaign.
+func formatNotInCampaignMessage() string {
+	return "Shortcuts: Not in a campaign. Run 'camp init' to create one.\n"
+}
 
-	// Sort shortcuts for consistent display
-	shortcuts := make([][2]string, 0, len(nav.DefaultShortcuts))
-	for key, cat := range nav.DefaultShortcuts {
-		shortcuts = append(shortcuts, [2]string{key, cat.Dir()})
-	}
-	sort.Slice(shortcuts, func(i, j int) bool {
-		return shortcuts[i][0] < shortcuts[j][0]
-	})
-
-	for _, s := range shortcuts {
-		sb.WriteString(fmt.Sprintf("  %-4s = %s\n", s[0], s[1]))
-	}
-
-	return sb.String()
+// formatNoShortcutsMessage returns message when campaign has no shortcuts.
+func formatNoShortcutsMessage() string {
+	return "Shortcuts: None configured. Add shortcuts to .campaign/campaign.yaml\n"
 }
 
 // formatConfigShortcuts formats configured shortcuts for help output.

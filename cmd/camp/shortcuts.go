@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/obediencecorp/camp/internal/config"
-	"github.com/obediencecorp/camp/internal/nav"
 	"github.com/obediencecorp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -15,10 +14,7 @@ import (
 var shortcutsCmd = &cobra.Command{
 	Use:   "shortcuts",
 	Short: "List all available shortcuts",
-	Long: `List all available navigation and command shortcuts.
-
-Shows both built-in navigation shortcuts (p, f, c, etc.) and custom shortcuts
-defined in .campaign/campaign.yaml under the 'shortcuts' key.
+	Long: `List all navigation and command shortcuts from .campaign/campaign.yaml.
 
 Navigation shortcuts (path-based):
   These shortcuts jump to directories within the campaign.
@@ -26,7 +22,10 @@ Navigation shortcuts (path-based):
 
 Command shortcuts (command-based):
   These shortcuts execute commands from specified directories.
-  Usage: camp run <shortcut> [args...]`,
+  Usage: camp run <shortcut> [args...]
+
+Default shortcuts are added when you run 'camp init'.
+You can customize shortcuts by editing .campaign/campaign.yaml.`,
 	Example: `  camp shortcuts              # List all shortcuts
   camp go api                 # Use navigation shortcut
   camp run build              # Use command shortcut`,
@@ -62,128 +61,21 @@ func loadCampaignConfigSafe(ctx context.Context) (*config.CampaignConfig, string
 }
 
 func printDefaultShortcuts() error {
-	fmt.Println(ui.Subheader("Built-in Navigation Shortcuts"))
+	fmt.Println(ui.Warning("Not in a campaign"))
 	fmt.Println()
-
-	// Sort shortcuts for consistent display
-	shortcuts := make([][2]string, 0, len(nav.DefaultShortcuts))
-	for key, cat := range nav.DefaultShortcuts {
-		shortcuts = append(shortcuts, [2]string{key, cat.Dir()})
-	}
-	sort.Slice(shortcuts, func(i, j int) bool {
-		return shortcuts[i][0] < shortcuts[j][0]
-	})
-
-	for _, s := range shortcuts {
-		fmt.Printf("  %s %s %s/\n", ui.Accent(fmt.Sprintf("%-4s", s[0])), ui.ArrowIcon(), ui.Value(s[1]))
-	}
-
-	fmt.Println()
-	fmt.Println(ui.Warning("No custom shortcuts defined (not in a campaign or no shortcuts configured)"))
-	fmt.Println()
-	fmt.Printf("To add custom shortcuts, edit %s and add a 'shortcuts' section.\n",
-		ui.Accent(".campaign/campaign.yaml"))
+	fmt.Printf("Run %s to create a new campaign with default shortcuts.\n",
+		ui.Accent("camp init"))
 
 	return nil
 }
 
-func printAllShortcuts(cfg *config.CampaignConfig, campaignRoot string) error {
-	fmt.Println(ui.Subheader("Built-in Navigation Shortcuts"))
+func printAllShortcuts(cfg *config.CampaignConfig, _ string) error {
+	fmt.Println(ui.Subheader("Shortcuts"))
+	fmt.Printf("Campaign: %s\n", ui.Accent(cfg.Name))
 	fmt.Println()
 
-	// Sort and display default shortcuts
-	shortcuts := make([][2]string, 0, len(nav.DefaultShortcuts))
-	for key, cat := range nav.DefaultShortcuts {
-		shortcuts = append(shortcuts, [2]string{key, cat.Dir()})
-	}
-	sort.Slice(shortcuts, func(i, j int) bool {
-		return shortcuts[i][0] < shortcuts[j][0]
-	})
-
-	for _, s := range shortcuts {
-		fmt.Printf("  %s %s %s/\n", ui.Accent(fmt.Sprintf("%-4s", s[0])), ui.ArrowIcon(), ui.Value(s[1]))
-	}
-
-	// Display custom shortcuts
-	if len(cfg.Shortcuts) > 0 {
-		fmt.Println()
-		fmt.Println(ui.Subheader("Custom Shortcuts"))
-		fmt.Println()
-
-		// Separate navigation and command shortcuts
-		navShortcuts := make(map[string]config.ShortcutConfig)
-		cmdShortcuts := make(map[string]config.ShortcutConfig)
-
-		for key, sc := range cfg.Shortcuts {
-			if sc.IsNavigation() {
-				navShortcuts[key] = sc
-			}
-			if sc.IsCommand() {
-				cmdShortcuts[key] = sc
-			}
-		}
-
-		// Display navigation shortcuts
-		if len(navShortcuts) > 0 {
-			fmt.Printf("  %s\n", ui.Info("Navigation (use with: camp go <shortcut>)"))
-			keys := make([]string, 0, len(navShortcuts))
-			for k := range navShortcuts {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-
-			for _, key := range keys {
-				sc := navShortcuts[key]
-				desc := ""
-				if sc.Description != "" {
-					desc = ui.Dim(" # " + sc.Description)
-				}
-				fmt.Printf("    %s %s %s%s\n",
-					ui.Accent(fmt.Sprintf("%-10s", key)),
-					ui.ArrowIcon(),
-					ui.Value(sc.Path),
-					desc)
-			}
-			fmt.Println()
-		}
-
-		// Display command shortcuts
-		if len(cmdShortcuts) > 0 {
-			fmt.Printf("  %s\n", ui.Info("Commands (use with: camp run <shortcut>)"))
-			keys := make([]string, 0, len(cmdShortcuts))
-			for k := range cmdShortcuts {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-
-			for _, key := range keys {
-				sc := cmdShortcuts[key]
-				desc := ""
-				if sc.Description != "" {
-					desc = ui.Dim(" # " + sc.Description)
-				}
-
-				// Show command with workdir if specified
-				cmdDisplay := sc.Command
-				if sc.WorkDir != "" {
-					cmdDisplay = fmt.Sprintf("[%s] %s", sc.WorkDir, sc.Command)
-				}
-
-				// Truncate long commands
-				if len(cmdDisplay) > 50 {
-					cmdDisplay = cmdDisplay[:47] + "..."
-				}
-
-				fmt.Printf("    %s %s %s%s\n",
-					ui.Accent(fmt.Sprintf("%-10s", key)),
-					ui.ArrowIcon(),
-					ui.Value(cmdDisplay),
-					desc)
-			}
-		}
-	} else {
-		fmt.Println()
-		fmt.Println(ui.Dim("No custom shortcuts defined."))
+	if len(cfg.Shortcuts) == 0 {
+		fmt.Println(ui.Dim("No shortcuts configured."))
 		fmt.Println()
 		fmt.Printf("To add shortcuts, edit %s:\n", ui.Accent(".campaign/campaign.yaml"))
 		fmt.Println()
@@ -194,6 +86,79 @@ func printAllShortcuts(cfg *config.CampaignConfig, campaignRoot string) error {
 		fmt.Println(ui.Dim("    build:"))
 		fmt.Println(ui.Dim("      command: \"just build\""))
 		fmt.Println(ui.Dim("      description: \"Build all\""))
+		return nil
+	}
+
+	// Separate navigation and command shortcuts
+	navShortcuts := make(map[string]config.ShortcutConfig)
+	cmdShortcuts := make(map[string]config.ShortcutConfig)
+
+	for key, sc := range cfg.Shortcuts {
+		if sc.IsNavigation() {
+			navShortcuts[key] = sc
+		}
+		if sc.IsCommand() {
+			cmdShortcuts[key] = sc
+		}
+	}
+
+	// Display navigation shortcuts
+	if len(navShortcuts) > 0 {
+		fmt.Printf("%s\n", ui.Info("Navigation (use with: camp go <shortcut>)"))
+		keys := make([]string, 0, len(navShortcuts))
+		for k := range navShortcuts {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+
+		for _, key := range keys {
+			sc := navShortcuts[key]
+			desc := ""
+			if sc.Description != "" {
+				desc = ui.Dim(" # " + sc.Description)
+			}
+			fmt.Printf("  %s %s %s%s\n",
+				ui.Accent(fmt.Sprintf("%-10s", key)),
+				ui.ArrowIcon(),
+				ui.Value(sc.Path),
+				desc)
+		}
+		fmt.Println()
+	}
+
+	// Display command shortcuts
+	if len(cmdShortcuts) > 0 {
+		fmt.Printf("%s\n", ui.Info("Commands (use with: camp run <shortcut>)"))
+		keys := make([]string, 0, len(cmdShortcuts))
+		for k := range cmdShortcuts {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+
+		for _, key := range keys {
+			sc := cmdShortcuts[key]
+			desc := ""
+			if sc.Description != "" {
+				desc = ui.Dim(" # " + sc.Description)
+			}
+
+			// Show command with workdir if specified
+			cmdDisplay := sc.Command
+			if sc.WorkDir != "" {
+				cmdDisplay = fmt.Sprintf("[%s] %s", sc.WorkDir, sc.Command)
+			}
+
+			// Truncate long commands
+			if len(cmdDisplay) > 50 {
+				cmdDisplay = cmdDisplay[:47] + "..."
+			}
+
+			fmt.Printf("  %s %s %s%s\n",
+				ui.Accent(fmt.Sprintf("%-10s", key)),
+				ui.ArrowIcon(),
+				ui.Value(cmdDisplay),
+				desc)
+		}
 	}
 
 	return nil
