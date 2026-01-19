@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/obediencecorp/camp/internal/config"
 	"github.com/obediencecorp/camp/internal/nav"
@@ -18,20 +20,6 @@ var goCmd = &cobra.Command{
 	Use:   "go [shortcut] [query...]",
 	Short: "Navigate to campaign directories",
 	Long: `Navigate within the campaign using shortcuts.
-
-Default shortcuts (configurable in .campaign/campaign.yaml):
-  p  = projects       c  = corpus        f  = festivals
-  a  = ai_docs        d  = docs          w  = worktrees
-  r  = code_reviews   pi = pipelines
-
-You can customize or add shortcuts in your campaign.yaml:
-  shortcuts:
-    p:
-      path: projects/
-      description: Jump to projects directory
-    my:
-      path: my-custom-dir/
-      description: Jump to my custom directory
 
 Usage patterns:
   camp go           Toggle between campaign root and last location
@@ -68,6 +56,23 @@ Or use the cgo shell function for instant navigation:
 func init() {
 	rootCmd.AddCommand(goCmd)
 	goCmd.GroupID = "navigation"
+
+	// Custom help to show dynamic shortcuts from campaign config
+	defaultHelp := goCmd.HelpFunc()
+	goCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		// Generate dynamic shortcuts section
+		shortcutsSection := formatShortcutsHelp()
+
+		// Temporarily prepend shortcuts to Long description
+		originalLong := cmd.Long
+		cmd.Long = shortcutsSection + "\n" + originalLong
+
+		// Call default help
+		defaultHelp(cmd, args)
+
+		// Restore original
+		cmd.Long = originalLong
+	})
 
 	goCmd.Flags().Bool("print", false, "Print path only (for shell integration)")
 	goCmd.Flags().StringArrayP("command", "c", nil, "Run command from directory (can be repeated for args)")
@@ -297,4 +302,80 @@ func buildCategoryMappings(shortcuts map[string]config.ShortcutConfig) map[strin
 		}
 	}
 	return mappings
+}
+
+// formatShortcutsHelp generates the shortcuts section for help output.
+// It loads from campaign config if available, otherwise uses defaults.
+func formatShortcutsHelp() string {
+	ctx := context.Background()
+
+	// Try to load campaign config
+	cfg, _, err := config.LoadCampaignConfigFromCwd(ctx)
+	if err != nil {
+		// Not in campaign - show defaults
+		return formatDefaultShortcuts()
+	}
+
+	// In campaign - show configured shortcuts
+	if len(cfg.Shortcuts) > 0 {
+		return formatConfigShortcuts(cfg.Shortcuts)
+	}
+
+	// Campaign exists but no shortcuts configured - show defaults
+	return formatDefaultShortcuts()
+}
+
+// formatDefaultShortcuts formats the default shortcuts for help output.
+func formatDefaultShortcuts() string {
+	var sb strings.Builder
+	sb.WriteString("Available shortcuts (defaults):\n")
+
+	// Sort shortcuts for consistent display
+	shortcuts := make([][2]string, 0, len(nav.DefaultShortcuts))
+	for key, cat := range nav.DefaultShortcuts {
+		shortcuts = append(shortcuts, [2]string{key, cat.Dir()})
+	}
+	sort.Slice(shortcuts, func(i, j int) bool {
+		return shortcuts[i][0] < shortcuts[j][0]
+	})
+
+	for _, s := range shortcuts {
+		sb.WriteString(fmt.Sprintf("  %-4s = %s\n", s[0], s[1]))
+	}
+
+	return sb.String()
+}
+
+// formatConfigShortcuts formats configured shortcuts for help output.
+func formatConfigShortcuts(shortcuts map[string]config.ShortcutConfig) string {
+	var sb strings.Builder
+	sb.WriteString("Available shortcuts (from .campaign/campaign.yaml):\n")
+
+	// Separate navigation shortcuts only
+	navShortcuts := make(map[string]config.ShortcutConfig)
+	for key, sc := range shortcuts {
+		if sc.IsNavigation() {
+			navShortcuts[key] = sc
+		}
+	}
+
+	if len(navShortcuts) == 0 {
+		sb.WriteString("  (no navigation shortcuts configured)\n")
+		return sb.String()
+	}
+
+	// Sort and display
+	keys := make([]string, 0, len(navShortcuts))
+	for k := range navShortcuts {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, key := range keys {
+		sc := navShortcuts[key]
+		path := strings.TrimSuffix(sc.Path, "/")
+		sb.WriteString(fmt.Sprintf("  %-4s = %s\n", key, path))
+	}
+
+	return sb.String()
 }
