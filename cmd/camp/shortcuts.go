@@ -36,6 +36,7 @@ Command shortcuts (command-based):
 
 func init() {
 	rootCmd.AddCommand(shortcutsCmd)
+	shortcutsCmd.GroupID = "navigation"
 }
 
 func runShortcuts(cmd *cobra.Command, args []string) error {

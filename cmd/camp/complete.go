@@ -16,6 +16,7 @@ var completeCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(completeCmd)
+	completeCmd.GroupID = "system"
 }
 
 func runComplete(cmd *cobra.Command, args []string) error {

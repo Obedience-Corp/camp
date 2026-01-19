@@ -50,4 +50,5 @@ func init() {
 	versionCmd.Flags().BoolP("short", "s", false, "show only version number")
 	versionCmd.Flags().Bool("json", false, "output as JSON")
 	rootCmd.AddCommand(versionCmd)
+	versionCmd.GroupID = "system"
 }

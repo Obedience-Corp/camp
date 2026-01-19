@@ -51,6 +51,7 @@ Examples:
 
 func init() {
 	rootCmd.AddCommand(listCmd)
+	listCmd.GroupID = "registry"
 
 	listCmd.Flags().StringP("format", "f", "table", "Output format (table, simple, json)")
 	listCmd.Flags().StringP("sort", "s", "accessed", "Sort by (name, accessed, type)")

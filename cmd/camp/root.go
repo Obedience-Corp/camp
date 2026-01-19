@@ -27,7 +27,7 @@ and enables lightning-fast navigation through category shortcuts and TUI fuzzy f
 GETTING STARTED:
   camp init               Initialize a new campaign in the current directory
   camp project list       List all projects in the campaign
-  camp status             Show campaign status
+  camp list               Show all registered campaigns
 
 NAVIGATION (using cgo shell function):
   cgo                     Navigate to campaign root
@@ -35,7 +35,12 @@ NAVIGATION (using cgo shell function):
   cgo f                   Navigate to festivals directory
   cgo <name>              Fuzzy find and navigate to any target
 
-Run 'camp --help' for detailed command information.`,
+COMMON WORKFLOWS:
+  camp project add <url>  Add a git repo as a project submodule
+  camp run <command>      Run command from campaign root directory
+  camp shortcuts          View all available navigation shortcuts
+
+Run 'camp shell-init' to enable the cgo navigation function.`,
 	Version: fmt.Sprintf("%s (built %s, commit %s)", version.Version, version.BuildDate, version.Commit),
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		// Wire up the no-color flag
@@ -53,10 +58,17 @@ func Execute() error {
 }
 
 func init() {
+	// Define command groups for organized help output
+	rootCmd.AddGroup(
+		&cobra.Group{ID: "setup", Title: "Setup Commands:"},
+		&cobra.Group{ID: "navigation", Title: "Navigation Commands:"},
+		&cobra.Group{ID: "registry", Title: "Registry Commands:"},
+		&cobra.Group{ID: "project", Title: "Project Commands:"},
+		&cobra.Group{ID: "system", Title: "System Commands:"},
+	)
+
 	// Global persistent flags
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: ~/.config/campaign/config.yaml)")
 	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "disable colored output")
 	rootCmd.PersistentFlags().BoolVar(&verbose, "verbose", false, "enable verbose output")
-
-	// Subcommands will be added here as they are implemented
 }

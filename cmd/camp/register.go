@@ -39,6 +39,7 @@ Examples:
 
 func init() {
 	rootCmd.AddCommand(registerCmd)
+	registerCmd.GroupID = "setup"
 
 	registerCmd.Flags().StringP("name", "n", "", "Override campaign name")
 	registerCmd.Flags().StringP("type", "t", "", "Override campaign type (product, research, tools, personal)")

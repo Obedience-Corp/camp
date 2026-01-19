@@ -67,6 +67,7 @@ Or use the cgo shell function for instant navigation:
 
 func init() {
 	rootCmd.AddCommand(goCmd)
+	goCmd.GroupID = "navigation"
 
 	goCmd.Flags().Bool("print", false, "Print path only (for shell integration)")
 	goCmd.Flags().StringArrayP("command", "c", nil, "Run command from directory (can be repeated for args)")

@@ -37,6 +37,7 @@ Examples:
 
 func init() {
 	rootCmd.AddCommand(unregisterCmd)
+	unregisterCmd.GroupID = "setup"
 
 	unregisterCmd.Flags().BoolP("force", "f", false, "Skip confirmation prompt")
 }

@@ -43,6 +43,7 @@ The cgo function enables quick navigation:
 
 func init() {
 	rootCmd.AddCommand(shellInitCmd)
+	shellInitCmd.GroupID = "system"
 }
 
 func runShellInit(cmd *cobra.Command, args []string) error {

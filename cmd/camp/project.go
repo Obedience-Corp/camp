@@ -23,4 +23,5 @@ Examples:
 
 func init() {
 	rootCmd.AddCommand(projectCmd)
+	projectCmd.GroupID = "project"
 }

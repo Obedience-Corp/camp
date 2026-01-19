@@ -34,6 +34,7 @@ All arguments after 'run' are passed directly to the shell.`,
 
 func init() {
 	rootCmd.AddCommand(runCmd)
+	runCmd.GroupID = "navigation"
 }
 
 func runRun(cmd *cobra.Command, args []string) error {

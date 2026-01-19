@@ -45,6 +45,7 @@ Use --no-git to skip git initialization.`,
 
 func init() {
 	rootCmd.AddCommand(initCmd)
+	initCmd.GroupID = "setup"
 
 	initCmd.Flags().StringP("name", "n", "", "Campaign name (defaults to directory name)")
 	initCmd.Flags().StringP("type", "t", "product", "Campaign type (product, research, tools, personal)")
