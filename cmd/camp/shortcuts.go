@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -33,9 +35,51 @@ You can customize shortcuts by editing .campaign/campaign.yaml.`,
 	RunE:    runShortcuts,
 }
 
+var shortcutsAddCmd = &cobra.Command{
+	Use:   "add <project> <name> <path>",
+	Short: "Add a sub-shortcut to a project",
+	Long: `Add a sub-shortcut to a project for quick directory navigation.
+
+The path is relative to the project root directory.
+Use 'default' as the shortcut name to set the default jump location.`,
+	Example: `  camp shortcuts add festival-methodology default fest/
+  camp shortcuts add festival-methodology cli fest/cmd/fest/
+  camp shortcuts add guild-core db db/migrations/`,
+	Args: cobra.ExactArgs(3),
+	RunE: runShortcutsAdd,
+}
+
+var shortcutsRemoveCmd = &cobra.Command{
+	Use:   "remove <project> <name>",
+	Short: "Remove a sub-shortcut from a project",
+	Long:  `Remove a sub-shortcut from a project.`,
+	Example: `  camp shortcuts remove festival-methodology cli
+  camp shortcuts remove guild-core db`,
+	Aliases: []string{"rm"},
+	Args:    cobra.ExactArgs(2),
+	RunE:    runShortcutsRemove,
+}
+
+var shortcutsListCmd = &cobra.Command{
+	Use:   "list [project]",
+	Short: "List shortcuts for a specific project",
+	Long: `List all sub-shortcuts configured for a specific project.
+
+If no project is specified, lists all campaign shortcuts.`,
+	Example: `  camp shortcuts list festival-methodology
+  camp shortcuts list fest  # Fuzzy match`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: runShortcutsList,
+}
+
 func init() {
 	rootCmd.AddCommand(shortcutsCmd)
 	shortcutsCmd.GroupID = "navigation"
+
+	// Add subcommands
+	shortcutsCmd.AddCommand(shortcutsAddCmd)
+	shortcutsCmd.AddCommand(shortcutsRemoveCmd)
+	shortcutsCmd.AddCommand(shortcutsListCmd)
 }
 
 func runShortcuts(cmd *cobra.Command, args []string) error {
@@ -182,4 +226,176 @@ func formatShortcutList(shortcuts map[string]string) string {
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+// runShortcutsAdd adds a sub-shortcut to a project.
+func runShortcutsAdd(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+	projectName := args[0]
+	shortcutName := args[1]
+	shortcutPath := args[2]
+
+	// Load campaign config
+	cfg, root, err := config.LoadCampaignConfigFromCwd(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Find the project (fuzzy match)
+	projectIdx := findProjectIndex(cfg.Projects, projectName)
+	if projectIdx == -1 {
+		return fmt.Errorf("project %q not found (run 'camp projects' to see available projects)", projectName)
+	}
+
+	project := &cfg.Projects[projectIdx]
+
+	// Validate path exists
+	fullPath := filepath.Join(root, project.Path, shortcutPath)
+	if stat, err := os.Stat(fullPath); err != nil || !stat.IsDir() {
+		return fmt.Errorf("path does not exist or is not a directory: %s", fullPath)
+	}
+
+	// Initialize shortcuts map if nil
+	if project.Shortcuts == nil {
+		project.Shortcuts = make(map[string]string)
+	}
+
+	// Check if shortcut already exists
+	if existing, ok := project.Shortcuts[shortcutName]; ok {
+		fmt.Printf("%s Updating shortcut '%s' for project '%s'\n",
+			ui.WarningIcon(), shortcutName, project.Name)
+		fmt.Printf("  Old: %s\n", ui.Dim(existing))
+		fmt.Printf("  New: %s\n", ui.Value(shortcutPath))
+	} else {
+		fmt.Printf("%s Adding shortcut '%s' to project '%s'\n",
+			ui.SuccessIcon(), shortcutName, project.Name)
+	}
+
+	// Add/update the shortcut
+	project.Shortcuts[shortcutName] = shortcutPath
+
+	// Save config
+	if err := config.SaveCampaignConfig(ctx, root, cfg); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+
+	fmt.Printf("\n%s %s %s %s\n",
+		ui.Label("Usage:"),
+		ui.Accent("camp p"),
+		ui.Value(projectName),
+		ui.Value(shortcutName))
+
+	return nil
+}
+
+// runShortcutsRemove removes a sub-shortcut from a project.
+func runShortcutsRemove(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+	projectName := args[0]
+	shortcutName := args[1]
+
+	// Load campaign config
+	cfg, root, err := config.LoadCampaignConfigFromCwd(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Find the project (fuzzy match)
+	projectIdx := findProjectIndex(cfg.Projects, projectName)
+	if projectIdx == -1 {
+		return fmt.Errorf("project %q not found", projectName)
+	}
+
+	project := &cfg.Projects[projectIdx]
+
+	// Check if shortcut exists
+	if project.Shortcuts == nil {
+		return fmt.Errorf("project '%s' has no shortcuts configured", project.Name)
+	}
+
+	if _, ok := project.Shortcuts[shortcutName]; !ok {
+		return fmt.Errorf("shortcut '%s' not found in project '%s'", shortcutName, project.Name)
+	}
+
+	// Remove the shortcut
+	delete(project.Shortcuts, shortcutName)
+
+	// Save config
+	if err := config.SaveCampaignConfig(ctx, root, cfg); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+
+	fmt.Printf("%s Removed shortcut '%s' from project '%s'\n",
+		ui.SuccessIcon(), shortcutName, project.Name)
+
+	return nil
+}
+
+// runShortcutsList lists shortcuts for a specific project or all campaign shortcuts.
+func runShortcutsList(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+
+	// Load campaign config
+	cfg, _, err := config.LoadCampaignConfigFromCwd(ctx)
+	if err != nil {
+		return err
+	}
+
+	// If no project specified, show all shortcuts
+	if len(args) == 0 {
+		return printAllShortcuts(cfg, "")
+	}
+
+	projectName := args[0]
+
+	// Find the project (fuzzy match)
+	projectIdx := findProjectIndex(cfg.Projects, projectName)
+	if projectIdx == -1 {
+		return fmt.Errorf("project %q not found", projectName)
+	}
+
+	project := cfg.Projects[projectIdx]
+
+	// Display project shortcuts
+	fmt.Printf("%s shortcuts:\n", ui.Accent(project.Name))
+
+	if len(project.Shortcuts) == 0 {
+		fmt.Printf("  %s\n", ui.Dim("(no shortcuts configured - jumps to project root)"))
+		return nil
+	}
+
+	// Get sorted shortcut names
+	names := make([]string, 0, len(project.Shortcuts))
+	for name := range project.Shortcuts {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		path := project.Shortcuts[name]
+		fmt.Printf("  %-12s %s\n", ui.Accent(name), ui.Dim(path))
+	}
+
+	return nil
+}
+
+// findProjectIndex finds a project by name (exact or prefix match).
+// Returns -1 if not found.
+func findProjectIndex(projects []config.ProjectConfig, name string) int {
+	// Try exact match first
+	for i, p := range projects {
+		if p.Name == name {
+			return i
+		}
+	}
+
+	// Try prefix match
+	name = strings.ToLower(name)
+	for i, p := range projects {
+		if strings.HasPrefix(strings.ToLower(p.Name), name) {
+			return i
+		}
+	}
+
+	return -1
 }
