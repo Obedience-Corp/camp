@@ -95,11 +95,25 @@ func runRun(cmd *cobra.Command, args []string) error {
 				// If we have a query, resolve it
 				if parseResult.Query != "" {
 					// Check for sub-shortcut in query
+					// But only if the next arg after project name is a valid shortcut
 					queryParts := strings.Fields(parseResult.Query)
 					projectQuery := queryParts[0]
 					var subShortcut string
+					consumed := 2 // @p + project
+
+					// First resolve the project to check if it has the potential sub-shortcut
 					if len(queryParts) > 1 {
-						subShortcut = queryParts[1]
+						potentialSubShortcut := queryParts[1]
+						// Try resolution first to see if the project has this shortcut
+						testResult, testErr := index.Resolve(ctx, index.ResolveOptions{
+							CampaignRoot: root,
+							Category:     parseResult.Category,
+							Query:        projectQuery,
+						})
+						if testErr == nil && testResult.Target != nil && testResult.Target.HasShortcut(potentialSubShortcut) {
+							subShortcut = potentialSubShortcut
+							consumed = 3 // @p + project + subshortcut
+						}
 					}
 
 					// Resolve the project with sub-shortcut
@@ -119,8 +133,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 
 					workDir = resolveResult.Path
 
-					// Determine how many args were consumed (shortcut + query parts)
-					consumed := 1 + len(queryParts) // @p + fest [+ cli]
+					// Determine how many args were consumed
 					if consumed >= len(args) {
 						return fmt.Errorf("no command specified")
 					}
