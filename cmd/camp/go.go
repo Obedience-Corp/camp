@@ -260,7 +260,7 @@ func formatSubShortcutError(err *index.InvalidSubShortcutError) error {
 
 	msg.WriteString("\nSee: camp shortcuts --help")
 
-	return fmt.Errorf(msg.String())
+	return fmt.Errorf("%s", msg.String())
 }
 
 // listProjectShortcuts displays available sub-shortcuts for a project.
