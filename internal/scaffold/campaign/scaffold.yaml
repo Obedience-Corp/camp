@@ -1,50 +1,64 @@
 # Campaign Scaffold Definition
-# Standard format for camp CLI campaign initialization
-scaffold_version: "1.0.0"
-templates_dir: campaign/templates
+# Tree format with mirror structure for camp CLI campaign initialization
+_scaffold_version: "1.0.0"
+_templates_dir: campaign/templates
+_mirror_structure: true
 
-vars:
+_vars:
   campaign_name: ""
   campaign_id: ""
   campaign_type: "product"
 
-files:
-  # .campaign directory structure
-  - path: ".campaign/templates/.gitkeep"
-    template: "~"
-  - path: ".campaign/agents/.gitkeep"
-    template: "~"
+# Root AGENTS.md (source of truth, CLAUDE.md symlinks to this)
+AGENTS.md: AGENTS.md.tmpl
 
-  # Project directories with OBEY.md files
-  - path: "projects/OBEY.md"
-    template: "OBEY-projects.md.tmpl"
-  - path: "worktrees/OBEY.md"
-    template: "OBEY-worktrees.md.tmpl"
-  - path: "ai_docs/OBEY.md"
-    template: "OBEY-ai_docs.md.tmpl"
-  - path: "docs/OBEY.md"
-    template: "OBEY-docs.md.tmpl"
-  - path: "corpus/OBEY.md"
-    template: "OBEY-corpus.md.tmpl"
-  - path: "pipelines/OBEY.md"
-    template: "OBEY-pipelines.md.tmpl"
-  - path: "code_reviews/OBEY.md"
-    template: "OBEY-code_reviews.md.tmpl"
+# .campaign directory structure
+.campaign/:
+  templates/:
+    _empty: true
+  agents/:
+    _empty: true
 
-  # Intents directory structure
-  - path: "intents/OBEY.md"
-    template: "OBEY-intents.md.tmpl"
-  - path: "intents/inbox/.gitkeep"
-    template: "~"
-  - path: "intents/active/.gitkeep"
-    template: "~"
-  - path: "intents/ready/.gitkeep"
-    template: "~"
-  - path: "intents/done/.gitkeep"
-    template: "~"
-  - path: "intents/killed/.gitkeep"
-    template: "~"
+# Project directories with OBEY.md files
+projects/:
+  _files:
+    OBEY.md: ~
 
-  # Root AGENTS.md (source of truth, CLAUDE.md symlinks to this)
-  - path: "AGENTS.md"
-    template: "AGENTS.md.tmpl"
+worktrees/:
+  _files:
+    OBEY.md: ~
+
+ai_docs/:
+  _files:
+    OBEY.md: ~
+
+docs/:
+  _files:
+    OBEY.md: ~
+
+corpus/:
+  _files:
+    OBEY.md: ~
+
+pipelines/:
+  _files:
+    OBEY.md: ~
+
+code_reviews/:
+  _files:
+    OBEY.md: ~
+
+# Intents directory structure
+intents/:
+  _files:
+    OBEY.md: ~
+  inbox/:
+    _empty: true
+  active/:
+    _empty: true
+  ready/:
+    _empty: true
+  done/:
+    _empty: true
+  killed/:
+    _empty: true

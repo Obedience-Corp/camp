@@ -1,30 +1,32 @@
 # Minimal Campaign Scaffold Definition
-# Standard format for minimal camp CLI campaign initialization
-scaffold_version: "1.0.0"
-templates_dir: campaign/templates
+# Tree format with mirror structure for minimal camp CLI campaign initialization
+_scaffold_version: "1.0.0"
+_templates_dir: campaign/templates
+_mirror_structure: true
 
-vars:
+_vars:
   campaign_name: ""
   campaign_id: ""
   campaign_type: "product"
 
-files:
-  # .campaign directory structure
-  - path: ".campaign/templates/.gitkeep"
-    template: "~"
-  - path: ".campaign/agents/.gitkeep"
-    template: "~"
+# Root AGENTS.md (source of truth, CLAUDE.md symlinks to this)
+AGENTS.md: AGENTS.md.tmpl
 
-  # Only projects directory in minimal mode
-  - path: "projects/OBEY.md"
-    template: "OBEY-projects.md.tmpl"
+# .campaign directory structure
+.campaign/:
+  templates/:
+    _empty: true
+  agents/:
+    _empty: true
 
-  # Intents directory (minimal: only inbox)
-  - path: "intents/OBEY.md"
-    template: "OBEY-intents.md.tmpl"
-  - path: "intents/inbox/.gitkeep"
-    template: "~"
+# Only projects directory in minimal mode
+projects/:
+  _files:
+    OBEY.md: ~
 
-  # Root AGENTS.md (source of truth, CLAUDE.md symlinks to this)
-  - path: "AGENTS.md"
-    template: "AGENTS.md.tmpl"
+# Intents directory (minimal: only inbox)
+intents/:
+  _files:
+    OBEY.md: ~
+  inbox/:
+    _empty: true
