@@ -269,6 +269,36 @@ type: product
 description: My awesome project
 ```
 
+### Project Jump Locations
+
+Projects can define shortcuts to jump directly to subdirectories within the project. The `default` shortcut is used when navigating to the project without specifying a sub-path.
+
+Add a `projects` section to `.campaign/campaign.yaml`:
+
+```yaml
+projects:
+  - name: festival-methodology
+    path: projects/festival-methodology
+    shortcuts:
+      default: fest/           # Jump here by default
+      cli: fest/cmd/fest/      # Named sub-shortcut
+
+  - name: api-service
+    path: projects/api-service
+    shortcuts:
+      default: src/
+```
+
+Usage:
+
+```bash
+cgo p fest       # Jumps to projects/festival-methodology/fest/ (uses default)
+cgo p fest cli   # Jumps to projects/festival-methodology/fest/cmd/fest/
+cgo p api        # Jumps to projects/api-service/src/ (uses default)
+```
+
+Without a `default` shortcut, navigation jumps to the project root.
+
 ### Global Config
 
 Located at `~/.config/campaign/config.yaml`:
