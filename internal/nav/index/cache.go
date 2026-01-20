@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/obediencecorp/camp/internal/config"
 	"gopkg.in/yaml.v3"
 )
 
@@ -137,8 +138,14 @@ func GetOrBuild(ctx context.Context, campaignRoot string, forceRebuild bool) (*I
 		}
 	}
 
+	// Load campaign config to get project shortcuts
+	var projects []config.ProjectConfig
+	if cfg, err := config.LoadCampaignConfig(ctx, campaignRoot); err == nil {
+		projects = cfg.Projects
+	}
+
 	// Build fresh
-	builder := NewBuilder(campaignRoot)
+	builder := NewBuilder(campaignRoot).WithProjects(projects)
 	idx, err := builder.Build(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build index: %w", err)

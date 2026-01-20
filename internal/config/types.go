@@ -63,6 +63,39 @@ type ProjectConfig struct {
 	URL string `yaml:"url,omitempty"`
 	// Branch is the default branch for the project.
 	Branch string `yaml:"branch,omitempty"`
+	// Shortcuts maps shortcut names to relative paths within the project.
+	// The "default" key is used when jumping to the project without a sub-shortcut.
+	Shortcuts map[string]string `yaml:"shortcuts,omitempty"`
+}
+
+// ResolveShortcut returns the relative path for a shortcut name.
+// If name is empty, returns the "default" shortcut path.
+// Returns empty string if the shortcut doesn't exist.
+func (p *ProjectConfig) ResolveShortcut(name string) string {
+	if p.Shortcuts == nil {
+		return ""
+	}
+	if name == "" {
+		return p.Shortcuts["default"]
+	}
+	return p.Shortcuts[name]
+}
+
+// HasShortcuts returns true if the project has any shortcuts defined.
+func (p *ProjectConfig) HasShortcuts() bool {
+	return len(p.Shortcuts) > 0
+}
+
+// ShortcutNames returns sorted list of shortcut names for this project.
+func (p *ProjectConfig) ShortcutNames() []string {
+	if p.Shortcuts == nil {
+		return nil
+	}
+	names := make([]string, 0, len(p.Shortcuts))
+	for name := range p.Shortcuts {
+		names = append(names, name)
+	}
+	return names
 }
 
 // ShortcutConfig defines a custom navigation or command shortcut.

@@ -77,6 +77,7 @@ func init() {
 	goCmd.Flags().Bool("print", false, "Print path only (for shell integration)")
 	goCmd.Flags().StringArrayP("command", "c", nil, "Run command from directory (can be repeated for args)")
 	goCmd.Flags().Bool("root", false, "Jump to campaign root (ignore last location)")
+	goCmd.Flags().BoolP("list", "l", false, "List available sub-shortcuts for a project")
 }
 
 func runGo(cmd *cobra.Command, args []string) error {
@@ -84,6 +85,7 @@ func runGo(cmd *cobra.Command, args []string) error {
 	printOnly, _ := cmd.Flags().GetBool("print")
 	command, _ := cmd.Flags().GetStringArray("command")
 	forceRoot, _ := cmd.Flags().GetBool("root")
+	listShortcuts, _ := cmd.Flags().GetBool("list")
 
 	// Load campaign config to get custom shortcuts
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
@@ -109,6 +111,15 @@ func runGo(cmd *cobra.Command, args []string) error {
 
 	// Parse shortcuts using config mappings (with hardcoded defaults as fallback)
 	result := nav.ParseShortcut(args, configMappings)
+
+	// Check for sub-shortcut in remaining args
+	// Example: "camp p fest cli" -> result.Query="fest", subShortcut="cli"
+	var subShortcut string
+	queryParts := strings.Fields(result.Query)
+	if len(queryParts) > 1 {
+		result.Query = queryParts[0]
+		subShortcut = queryParts[1]
+	}
 
 	// Command execution mode
 	if len(command) > 0 {
@@ -198,9 +209,19 @@ func runGo(cmd *cobra.Command, args []string) error {
 		CampaignRoot: jumpResult.Path,
 		Category:     result.Category,
 		Query:        result.Query,
+		SubShortcut:  subShortcut,
 	})
 	if err != nil {
+		// Handle invalid sub-shortcut error
+		if subErr, ok := err.(*index.InvalidSubShortcutError); ok {
+			return formatSubShortcutError(subErr)
+		}
 		return err
+	}
+
+	// Handle --list flag: show available sub-shortcuts for the matched project
+	if listShortcuts {
+		return listProjectShortcuts(resolveResult)
 	}
 
 	// Save this as the last location
@@ -220,6 +241,50 @@ func runGo(cmd *cobra.Command, args []string) error {
 	} else {
 		fmt.Printf("cd %s\n", resolveResult.Path)
 	}
+	return nil
+}
+
+// formatSubShortcutError formats an InvalidSubShortcutError for user display.
+func formatSubShortcutError(err *index.InvalidSubShortcutError) error {
+	var msg strings.Builder
+	msg.WriteString(fmt.Sprintf("Error: Unknown shortcut '%s' for project '%s'\n",
+		err.SubShortcut, err.ProjectName))
+
+	if len(err.AvailableNames) > 0 {
+		msg.WriteString("Available shortcuts: ")
+		msg.WriteString(strings.Join(err.AvailableNames, ", "))
+		msg.WriteString("\n")
+	} else {
+		msg.WriteString("No shortcuts configured for this project.\n")
+	}
+
+	msg.WriteString("\nSee: camp shortcuts --help")
+
+	return fmt.Errorf(msg.String())
+}
+
+// listProjectShortcuts displays available sub-shortcuts for a project.
+func listProjectShortcuts(result *index.ResolveResult) error {
+	if result.Target == nil {
+		fmt.Printf("%s: no target information available\n", result.Name)
+		return nil
+	}
+
+	t := result.Target
+	fmt.Printf("%s shortcuts:\n", ui.Accent(result.Name))
+
+	if !t.HasShortcuts() {
+		fmt.Printf("  %s\n", ui.Dim("(no shortcuts configured - jumps to project root)"))
+		return nil
+	}
+
+	// Get sorted shortcut names
+	names := t.ShortcutNames()
+	for _, name := range names {
+		path := t.Shortcuts[name]
+		fmt.Printf("  %-12s %s\n", ui.Accent(name), ui.Dim(path))
+	}
+
 	return nil
 }
 

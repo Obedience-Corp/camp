@@ -21,6 +21,8 @@ type ResolveResult struct {
 	Matches []Target
 	// Exact indicates if this was an exact match.
 	Exact bool
+	// Target is the matched target (for accessing shortcuts).
+	Target *Target
 }
 
 // ResolveOptions configures the resolution behavior.
@@ -33,6 +35,19 @@ type ResolveOptions struct {
 	ExactOnly bool
 	// CampaignRoot is the root directory. Required.
 	CampaignRoot string
+	// SubShortcut is an optional sub-shortcut within a project target.
+	SubShortcut string
+}
+
+// InvalidSubShortcutError indicates a sub-shortcut wasn't found.
+type InvalidSubShortcutError struct {
+	ProjectName     string
+	SubShortcut     string
+	AvailableNames  []string
+}
+
+func (e *InvalidSubShortcutError) Error() string {
+	return fmt.Sprintf("unknown shortcut '%s' for project '%s'", e.SubShortcut, e.ProjectName)
 }
 
 // Resolve finds a navigation target by category and optional query.
@@ -89,13 +104,25 @@ func resolveWithQuery(ctx context.Context, opts ResolveOptions) (*ResolveResult,
 	}
 
 	// First try exact match
-	for _, t := range targets {
+	for i := range targets {
+		t := &targets[i]
 		if t.Name == opts.Query {
+			// Handle sub-shortcut if provided
+			jumpPath := t.JumpPath(opts.SubShortcut)
+			if opts.SubShortcut != "" && jumpPath == "" {
+				// Invalid sub-shortcut
+				return nil, &InvalidSubShortcutError{
+					ProjectName:    t.Name,
+					SubShortcut:    opts.SubShortcut,
+					AvailableNames: t.ShortcutNames(),
+				}
+			}
 			return &ResolveResult{
-				Path:     t.Path,
+				Path:     jumpPath,
 				Name:     t.Name,
 				Category: t.Category,
 				Exact:    true,
+				Target:   t,
 			}, nil
 		}
 	}
@@ -119,9 +146,9 @@ func resolveWithQuery(ctx context.Context, opts ResolveOptions) (*ResolveResult,
 	// Build matched targets list
 	var matchedTargets []Target
 	for _, m := range matches {
-		for _, t := range targets {
-			if t.Name == m.Target {
-				matchedTargets = append(matchedTargets, t)
+		for i := range targets {
+			if targets[i].Name == m.Target {
+				matchedTargets = append(matchedTargets, targets[i])
 				break
 			}
 		}
@@ -129,23 +156,46 @@ func resolveWithQuery(ctx context.Context, opts ResolveOptions) (*ResolveResult,
 
 	// Single match - return it
 	if len(matchedTargets) == 1 {
-		t := matchedTargets[0]
+		t := &matchedTargets[0]
+		// Handle sub-shortcut if provided
+		jumpPath := t.JumpPath(opts.SubShortcut)
+		if opts.SubShortcut != "" && jumpPath == "" {
+			// Invalid sub-shortcut
+			return nil, &InvalidSubShortcutError{
+				ProjectName:    t.Name,
+				SubShortcut:    opts.SubShortcut,
+				AvailableNames: t.ShortcutNames(),
+			}
+		}
 		return &ResolveResult{
-			Path:     t.Path,
+			Path:     jumpPath,
 			Name:     t.Name,
 			Category: t.Category,
 			Matches:  matchedTargets,
 			Exact:    false,
+			Target:   t,
 		}, nil
 	}
 
-	// Multiple matches - return all
+	// Multiple matches - return all (use first/best match)
+	t := &matchedTargets[0]
+	// Handle sub-shortcut if provided
+	jumpPath := t.JumpPath(opts.SubShortcut)
+	if opts.SubShortcut != "" && jumpPath == "" {
+		// Invalid sub-shortcut
+		return nil, &InvalidSubShortcutError{
+			ProjectName:    t.Name,
+			SubShortcut:    opts.SubShortcut,
+			AvailableNames: t.ShortcutNames(),
+		}
+	}
 	return &ResolveResult{
-		Path:     matchedTargets[0].Path, // First/best match
-		Name:     matchedTargets[0].Name,
-		Category: matchedTargets[0].Category,
+		Path:     jumpPath,
+		Name:     t.Name,
+		Category: t.Category,
 		Matches:  matchedTargets,
 		Exact:    false,
+		Target:   t,
 	}, nil
 }
 

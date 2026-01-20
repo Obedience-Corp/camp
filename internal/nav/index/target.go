@@ -2,6 +2,8 @@
 package index
 
 import (
+	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/obediencecorp/camp/internal/nav"
@@ -17,6 +19,62 @@ type Target struct {
 	Category nav.Category `yaml:"category"`
 	// LastAccess tracks when this target was last navigated to.
 	LastAccess time.Time `yaml:"last_access,omitempty"`
+	// Shortcuts maps shortcut names to relative paths within the target.
+	// Used for project sub-shortcuts (e.g., "cli" -> "fest/cmd/fest/").
+	Shortcuts map[string]string `yaml:"shortcuts,omitempty"`
+}
+
+// JumpPath returns the absolute path to jump to, optionally using a sub-shortcut.
+// If subShortcut is provided and exists, returns path + shortcut path.
+// If subShortcut is empty and "default" shortcut exists, uses that.
+// Otherwise returns the target's base path.
+func (t *Target) JumpPath(subShortcut string) string {
+	if t.Shortcuts == nil {
+		return t.Path
+	}
+
+	// Try explicit sub-shortcut first
+	if subShortcut != "" {
+		if subPath, ok := t.Shortcuts[subShortcut]; ok {
+			return filepath.Join(t.Path, subPath)
+		}
+		// Invalid shortcut - return empty to signal error
+		return ""
+	}
+
+	// Fall back to default shortcut if it exists
+	if defaultPath, ok := t.Shortcuts["default"]; ok {
+		return filepath.Join(t.Path, defaultPath)
+	}
+
+	return t.Path
+}
+
+// HasShortcut returns true if the target has the named shortcut.
+func (t *Target) HasShortcut(name string) bool {
+	if t.Shortcuts == nil {
+		return false
+	}
+	_, ok := t.Shortcuts[name]
+	return ok
+}
+
+// HasShortcuts returns true if the target has any shortcuts defined.
+func (t *Target) HasShortcuts() bool {
+	return len(t.Shortcuts) > 0
+}
+
+// ShortcutNames returns sorted list of shortcut names for this target.
+func (t *Target) ShortcutNames() []string {
+	if t.Shortcuts == nil {
+		return nil
+	}
+	names := make([]string, 0, len(t.Shortcuts))
+	for name := range t.Shortcuts {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // Index holds all navigation targets for a campaign.

@@ -6,17 +6,36 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/obediencecorp/camp/internal/config"
 	"github.com/obediencecorp/camp/internal/nav"
 )
 
 // Builder builds the navigation index by scanning campaign directories.
 type Builder struct {
-	root string
+	root     string
+	projects []config.ProjectConfig
 }
 
 // NewBuilder creates a new index builder for a campaign root.
 func NewBuilder(root string) *Builder {
 	return &Builder{root: root}
+}
+
+// WithProjects sets project configs for the builder.
+// This allows project shortcuts to be attached to targets.
+func (b *Builder) WithProjects(projects []config.ProjectConfig) *Builder {
+	b.projects = projects
+	return b
+}
+
+// findProjectConfig finds project config by name.
+func (b *Builder) findProjectConfig(name string) *config.ProjectConfig {
+	for i := range b.projects {
+		if b.projects[i].Name == name {
+			return &b.projects[i]
+		}
+	}
+	return nil
 }
 
 // Build scans the campaign and builds the navigation index.
@@ -89,11 +108,20 @@ func (b *Builder) scanCategory(ctx context.Context, cat nav.Category) ([]Target,
 			continue
 		}
 
-		targets = append(targets, Target{
+		target := Target{
 			Name:     entry.Name(),
 			Path:     filepath.Join(dir, entry.Name()),
 			Category: cat,
-		})
+		}
+
+		// For projects, attach shortcuts from project config if available
+		if cat == nav.CategoryProjects {
+			if projectCfg := b.findProjectConfig(entry.Name()); projectCfg != nil {
+				target.Shortcuts = projectCfg.Shortcuts
+			}
+		}
+
+		targets = append(targets, target)
 	}
 
 	return targets, nil
@@ -242,11 +270,20 @@ func (b *Builder) scanCategoryWithOptions(ctx context.Context, cat nav.Category,
 			continue
 		}
 
-		targets = append(targets, Target{
+		target := Target{
 			Name:     entry.Name(),
 			Path:     filepath.Join(dir, entry.Name()),
 			Category: cat,
-		})
+		}
+
+		// For projects, attach shortcuts from project config if available
+		if cat == nav.CategoryProjects {
+			if projectCfg := b.findProjectConfig(entry.Name()); projectCfg != nil {
+				target.Shortcuts = projectCfg.Shortcuts
+			}
+		}
+
+		targets = append(targets, target)
 	}
 
 	return targets, nil
