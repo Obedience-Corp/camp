@@ -2,6 +2,8 @@ module github.com/obediencecorp/camp
 
 go 1.25.5
 
+replace github.com/lancekrogers/guild-scaffold => ../guild-scaffold
+
 require (
 	github.com/google/uuid v1.6.0
 	github.com/ktr0731/go-fuzzyfinder v0.9.0

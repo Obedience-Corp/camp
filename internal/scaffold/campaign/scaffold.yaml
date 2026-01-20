@@ -1,102 +1,11 @@
 # Campaign Scaffold Definition
-# Tree format with mirror structure for camp CLI campaign initialization
+# Uses scan_templates to auto-discover structure from templates directory
 _scaffold_version: "1.0.0"
 _templates_dir: campaign/templates
 _mirror_structure: true
+_scan_templates: true
 
 _vars:
   campaign_name: ""
   campaign_id: ""
   campaign_type: "product"
-
-# Root AGENTS.md (source of truth, CLAUDE.md symlinks to this)
-AGENTS.md: AGENTS.md.tmpl
-
-# .campaign directory structure
-.campaign/:
-  templates/:
-    _empty: true
-  agents/:
-    _empty: true
-
-# Project directories with OBEY.md files
-projects/:
-  _files:
-    OBEY.md: ~
-
-worktrees/:
-  _files:
-    OBEY.md: ~
-
-ai_docs/:
-  _files:
-    OBEY.md: ~
-  analysis/:
-    _empty: true
-  research/:
-    _empty: true
-  conversations/:
-    _empty: true
-  generated/:
-    _empty: true
-
-docs/:
-  _files:
-    OBEY.md: ~
-  architecture/:
-    _empty: true
-  api/:
-    _empty: true
-  guides/:
-    _empty: true
-  adr/:
-    _empty: true
-
-corpus/:
-  _files:
-    OBEY.md: ~
-  references/:
-    _empty: true
-  examples/:
-    _empty: true
-  papers/:
-    _empty: true
-  context/:
-    _empty: true
-
-pipelines/:
-  _files:
-    OBEY.md: ~
-  github/:
-    _empty: true
-  docker/:
-    _empty: true
-  scripts/:
-    _empty: true
-  terraform/:
-    _empty: true
-
-code_reviews/:
-  _files:
-    OBEY.md: ~
-  pending/:
-    _empty: true
-  completed/:
-    _empty: true
-  templates/:
-    _empty: true
-
-# Intents directory structure
-intents/:
-  _files:
-    OBEY.md: ~
-  inbox/:
-    _empty: true
-  active/:
-    _empty: true
-  ready/:
-    _empty: true
-  done/:
-    _empty: true
-  killed/:
-    _empty: true
