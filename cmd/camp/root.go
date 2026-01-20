@@ -64,6 +64,7 @@ func init() {
 		&cobra.Group{ID: "navigation", Title: "Navigation Commands:"},
 		&cobra.Group{ID: "registry", Title: "Registry Commands:"},
 		&cobra.Group{ID: "project", Title: "Project Commands:"},
+		&cobra.Group{ID: "planning", Title: "Planning Commands:"},
 		&cobra.Group{ID: "system", Title: "System Commands:"},
 	)
 
