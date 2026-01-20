@@ -1,3 +1,5 @@
+![camp banner](docs/images/banner.jpg)
+
 # camp
 
 Fast, fuzzy navigation for multi-project AI workspaces.
