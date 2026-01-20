@@ -11,6 +11,7 @@ func DefaultCampaignPaths() CampaignPaths {
 		Docs:      "docs/",
 		Corpus:    "corpus/",
 		Festivals: "festivals/",
+		Intents:   "intents/",
 	}
 }
 
@@ -26,6 +27,7 @@ func DefaultNavigationShortcuts() map[string]ShortcutConfig {
 		"c":  {Path: "corpus/", Description: "Jump to corpus directory"},
 		"r":  {Path: "code_reviews/", Description: "Jump to code reviews directory"},
 		"pi": {Path: "pipelines/", Description: "Jump to pipelines directory"},
+		"i":  {Path: "intents/", Description: "Jump to intents directory"},
 	}
 }
 
@@ -86,6 +88,9 @@ func (c *CampaignConfig) ApplyDefaults() {
 	if c.Paths.Festivals == "" {
 		c.Paths.Festivals = defaults.Festivals
 	}
+	if c.Paths.Intents == "" {
+		c.Paths.Intents = defaults.Intents
+	}
 }
 
 // ApplyDefaults fills in missing fields with default values.
@@ -111,5 +116,8 @@ func (c *GlobalConfig) ApplyDefaults() {
 	}
 	if c.DefaultPaths.Festivals == "" {
 		c.DefaultPaths.Festivals = defaults.Festivals
+	}
+	if c.DefaultPaths.Intents == "" {
+		c.DefaultPaths.Intents = defaults.Intents
 	}
 }

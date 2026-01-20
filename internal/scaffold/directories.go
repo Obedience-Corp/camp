@@ -11,18 +11,34 @@ var StandardDirs = []string{
 	"corpus",
 	"pipelines",
 	"code_reviews",
+	"intents",
 }
 
 // MinimalDirs contains the minimum directories for a campaign.
 var MinimalDirs = []string{
 	".campaign",
 	"projects",
+	"intents",
 }
 
 // CampaignSubdirs contains subdirectories within .campaign/
 var CampaignSubdirs = []string{
 	"templates",
 	"agents",
+}
+
+// IntentsSubdirs contains subdirectories within intents/ for full campaigns.
+var IntentsSubdirs = []string{
+	"inbox",
+	"active",
+	"ready",
+	"done",
+	"killed",
+}
+
+// IntentsMinimalSubdirs contains subdirectories within intents/ for minimal campaigns.
+var IntentsMinimalSubdirs = []string{
+	"inbox",
 }
 
 // DirectoryPurposes maps directories to their purpose descriptions.
@@ -34,4 +50,5 @@ var DirectoryPurposes = map[string]string{
 	"corpus":       "Reference materials, examples, and knowledge base documents.",
 	"pipelines":    "CI/CD pipeline definitions and automation scripts.",
 	"code_reviews": "Code review notes and feedback documents.",
+	"intents":      "Future work items not yet ready for Festivals.",
 }

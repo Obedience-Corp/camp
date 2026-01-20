@@ -19,6 +19,12 @@ files:
   - path: "projects/OBEY.md"
     template: "OBEY-projects.md.tmpl"
 
+  # Intents directory (minimal: only inbox)
+  - path: "intents/OBEY.md"
+    template: "OBEY-intents.md.tmpl"
+  - path: "intents/inbox/.gitkeep"
+    template: "~"
+
   # Root AGENTS.md (source of truth, CLAUDE.md symlinks to this)
   - path: "AGENTS.md"
     template: "AGENTS.md.tmpl"

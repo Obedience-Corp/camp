@@ -51,6 +51,8 @@ type CampaignPaths struct {
 	Corpus string `yaml:"corpus,omitempty"`
 	// Festivals is the path to festivals directory.
 	Festivals string `yaml:"festivals,omitempty"`
+	// Intents is the path to intents directory.
+	Intents string `yaml:"intents,omitempty"`
 }
 
 // ProjectConfig holds configuration for a single project in the campaign.

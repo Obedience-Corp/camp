@@ -265,8 +265,10 @@ func (o *InitOptions) Validate() error {
 func getExpectedPaths(baseDir string, minimal bool) (dirs []string, files []string) {
 	// Select directories based on minimal flag
 	selectedDirs := StandardDirs
+	intentsSubdirs := IntentsSubdirs
 	if minimal {
 		selectedDirs = MinimalDirs
+		intentsSubdirs = IntentsMinimalSubdirs
 	}
 
 	// Build full paths for main directories
@@ -277,6 +279,11 @@ func getExpectedPaths(baseDir string, minimal bool) (dirs []string, files []stri
 	// Add .campaign subdirectories
 	for _, d := range CampaignSubdirs {
 		dirs = append(dirs, filepath.Join(baseDir, ".campaign", d))
+	}
+
+	// Add intents subdirectories
+	for _, d := range intentsSubdirs {
+		dirs = append(dirs, filepath.Join(baseDir, "intents", d))
 	}
 
 	// Build file paths (OBEY.md files)

@@ -31,6 +31,20 @@ files:
   - path: "code_reviews/OBEY.md"
     template: "OBEY-code_reviews.md.tmpl"
 
+  # Intents directory structure
+  - path: "intents/OBEY.md"
+    template: "OBEY-intents.md.tmpl"
+  - path: "intents/inbox/.gitkeep"
+    template: "~"
+  - path: "intents/active/.gitkeep"
+    template: "~"
+  - path: "intents/ready/.gitkeep"
+    template: "~"
+  - path: "intents/done/.gitkeep"
+    template: "~"
+  - path: "intents/killed/.gitkeep"
+    template: "~"
+
   # Root AGENTS.md (source of truth, CLAUDE.md symlinks to this)
   - path: "AGENTS.md"
     template: "AGENTS.md.tmpl"
