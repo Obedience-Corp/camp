@@ -340,7 +340,7 @@ func TestNewTemplateData(t *testing.T) {
 func TestNewTemplateDataFromInput(t *testing.T) {
 	ts := time.Date(2026, 1, 19, 15, 34, 12, 0, time.UTC)
 
-	data := NewTemplateDataFromInput("Test Intent", "feature", "camp", "lance", ts)
+	data := NewTemplateDataFromInput("Test Intent", "feature", "camp", "lance", "Test body content", ts)
 
 	// ID should be generated from title and timestamp
 	if !strings.HasPrefix(data.ID, "20260119-153412-") {
@@ -364,12 +364,15 @@ func TestNewTemplateDataFromInput(t *testing.T) {
 	if data.CreatedAt != "2026-01-19" {
 		t.Errorf("CreatedAt = %q, want %q", data.CreatedAt, "2026-01-19")
 	}
+	if data.Body != "Test body content" {
+		t.Errorf("Body = %q, want %q", data.Body, "Test body content")
+	}
 }
 
 func TestRenderTemplate_RoundTrip(t *testing.T) {
 	// Render a template and verify it can be parsed back
 	ts := time.Date(2026, 1, 19, 15, 34, 12, 0, time.UTC)
-	data := NewTemplateDataFromInput("Roundtrip Test", "feature", "camp", "lance", ts)
+	data := NewTemplateDataFromInput("Roundtrip Test", "feature", "camp", "lance", "Round trip body content", ts)
 
 	output, err := RenderTemplate(data)
 	if err != nil {

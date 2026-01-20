@@ -22,6 +22,7 @@ type TemplateData struct {
 	Project   string
 	Author    string
 	CreatedAt string // Formatted as YYYY-MM-DD
+	Body      string // Description/body content
 }
 
 // RenderTemplate generates an intent file from a template with the given data.
@@ -58,12 +59,13 @@ func NewTemplateData(intent *Intent) TemplateData {
 		Project:   intent.Project,
 		Author:    intent.Author,
 		CreatedAt: FormatCreatedAt(intent.CreatedAt),
+		Body:      intent.Content,
 	}
 }
 
 // NewTemplateDataFromInput creates a TemplateData struct from user input.
 // The timestamp is used to generate both the ID and CreatedAt fields.
-func NewTemplateDataFromInput(title, typ, project, author string, timestamp time.Time) TemplateData {
+func NewTemplateDataFromInput(title, typ, project, author, body string, timestamp time.Time) TemplateData {
 	return TemplateData{
 		ID:        GenerateID(title, timestamp),
 		Title:     title,
@@ -71,5 +73,6 @@ func NewTemplateDataFromInput(title, typ, project, author string, timestamp time
 		Project:   project,
 		Author:    author,
 		CreatedAt: FormatCreatedAt(timestamp),
+		Body:      body,
 	}
 }

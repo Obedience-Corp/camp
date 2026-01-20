@@ -40,6 +40,7 @@ type CreateOptions struct {
 	Type      Type
 	Project   string
 	Author    string
+	Body      string    // Description/body content for the intent
 	Timestamp time.Time // Optional; defaults to time.Now()
 }
 
@@ -56,7 +57,7 @@ func (s *IntentService) CreateDirect(ctx context.Context, opts CreateOptions) (*
 	}
 
 	// Generate ID and template data
-	data := NewTemplateDataFromInput(opts.Title, string(opts.Type), opts.Project, opts.Author, ts)
+	data := NewTemplateDataFromInput(opts.Title, string(opts.Type), opts.Project, opts.Author, opts.Body, ts)
 
 	// Render template
 	content, err := RenderTemplate(data)
@@ -106,7 +107,7 @@ func (s *IntentService) CreateWithEditor(ctx context.Context, opts CreateOptions
 	}
 
 	// Generate template data
-	data := NewTemplateDataFromInput(opts.Title, string(opts.Type), opts.Project, opts.Author, ts)
+	data := NewTemplateDataFromInput(opts.Title, string(opts.Type), opts.Project, opts.Author, opts.Body, ts)
 
 	// Render template
 	content, err := RenderTemplate(data)

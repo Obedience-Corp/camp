@@ -12,6 +12,7 @@ import (
 	"github.com/obediencecorp/camp/internal/config"
 	"github.com/obediencecorp/camp/internal/editor"
 	"github.com/obediencecorp/camp/internal/intent"
+	"github.com/obediencecorp/camp/internal/project"
 )
 
 var intentAddCmd = &cobra.Command{
@@ -54,7 +55,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 
 	// Parse flags
 	intentType, _ := cmd.Flags().GetString("type")
-	project, _ := cmd.Flags().GetString("project")
+	projectName, _ := cmd.Flags().GetString("project")
 	useEditor, _ := cmd.Flags().GetBool("edit")
 
 	// Get title from args or empty for form
@@ -63,20 +64,20 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 		title = args[0]
 	}
 
+	// Find campaign root first (needed for project list)
+	_, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
+	if err != nil {
+		return fmt.Errorf("not in a campaign directory: %w", err)
+	}
+
 	// Collect input via huh form if needed
-	var err error
-	title, intentType, project, err = collectIntentInput(title, intentType, project)
+	var body string
+	title, intentType, projectName, body, err = collectIntentInput(ctx, campaignRoot, title, intentType, projectName)
 	if err != nil {
 		if errors.Is(err, huh.ErrUserAborted) {
 			return fmt.Errorf("intent creation cancelled")
 		}
 		return fmt.Errorf("failed to collect input: %w", err)
-	}
-
-	// Find campaign root
-	_, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
-	if err != nil {
-		return fmt.Errorf("not in a campaign directory: %w", err)
 	}
 
 	// Create service
@@ -86,7 +87,8 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	opts := intent.CreateOptions{
 		Title:   title,
 		Type:    intent.Type(intentType),
-		Project: project,
+		Project: projectName,
+		Body:    body,
 	}
 
 	// Determine capture mode
@@ -98,18 +100,35 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 }
 
 // collectIntentInput displays the huh form if title is not provided.
-func collectIntentInput(title, intentType, project string) (string, string, string, error) {
-	// Skip form if title already provided
+// Returns title, intentType, project, body, error.
+func collectIntentInput(ctx context.Context, campaignRoot, title, intentType, projectName string) (string, string, string, string, error) {
+	var body string
+
+	// Skip form if title already provided (CLI fast path)
 	if title != "" {
 		if intentType == "" {
 			intentType = "idea"
 		}
-		return title, intentType, project, nil
+		return title, intentType, projectName, body, nil
 	}
 
 	// Default values
 	if intentType == "" {
 		intentType = "idea"
+	}
+
+	// Load project list for selector
+	projects, err := project.List(ctx, campaignRoot)
+	if err != nil {
+		return "", "", "", "", fmt.Errorf("loading projects: %w", err)
+	}
+
+	// Build project options: "None" first, then actual projects
+	projectOptions := []huh.Option[string]{
+		huh.NewOption("None", ""),
+	}
+	for _, p := range projects {
+		projectOptions = append(projectOptions, huh.NewOption(p.Name, p.Name))
 	}
 
 	form := huh.NewForm(
@@ -138,19 +157,31 @@ func collectIntentInput(title, intentType, project string) (string, string, stri
 				).
 				Value(&intentType),
 
-			huh.NewInput().
+			huh.NewSelect[string]().
 				Title("Project").
-				Description("Related project (optional)").
-				Placeholder("guild-chat").
-				Value(&project),
+				Description("Related project").
+				Options(projectOptions...).
+				Value(&projectName),
+
+			huh.NewText().
+				Title("Description").
+				Description("What is this intent about? (required)").
+				Placeholder("Describe the intent...").
+				Value(&body).
+				Validate(func(s string) error {
+					if strings.TrimSpace(s) == "" {
+						return errors.New("description is required")
+					}
+					return nil
+				}),
 		),
 	)
 
 	if err := form.Run(); err != nil {
-		return "", "", "", err
+		return "", "", "", "", err
 	}
 
-	return title, intentType, project, nil
+	return title, intentType, projectName, body, nil
 }
 
 // runFastCapture creates intent file directly without editor.
