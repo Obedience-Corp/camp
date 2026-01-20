@@ -10,6 +10,8 @@ import (
 
 	"github.com/obediencecorp/camp/internal/campaign"
 	"github.com/obediencecorp/camp/internal/config"
+	"github.com/obediencecorp/camp/internal/nav"
+	"github.com/obediencecorp/camp/internal/nav/index"
 	"github.com/spf13/cobra"
 )
 
@@ -76,7 +78,67 @@ func runRun(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("shortcut %q is not a navigation shortcut (only shortcuts with paths can be used)", shortcutName)
 		}
 
-		// Resolve shortcut path to absolute directory
+		// Check if this is a standard path that supports project sub-shortcuts
+		// e.g., @p fest cli -> projects/festival-methodology/fest/cmd/fest/
+		if isStandardPath(sc.Path) {
+			// Build category mappings from config shortcuts
+			configMappings := buildCategoryMappings(cfg.Shortcuts)
+
+			// Parse the remaining args to see if there's a project + optional sub-shortcut
+			remainingArgs := args[1:]
+			if len(remainingArgs) > 0 {
+				// Use ParseShortcut to determine if first remaining arg is a query
+				// Create a synthetic args list with just the shortcut + potential query
+				syntheticArgs := append([]string{shortcutName}, remainingArgs...)
+				parseResult := nav.ParseShortcut(syntheticArgs, configMappings)
+
+				// If we have a query, resolve it
+				if parseResult.Query != "" {
+					// Check for sub-shortcut in query
+					queryParts := strings.Fields(parseResult.Query)
+					projectQuery := queryParts[0]
+					var subShortcut string
+					if len(queryParts) > 1 {
+						subShortcut = queryParts[1]
+					}
+
+					// Resolve the project with sub-shortcut
+					resolveResult, err := index.Resolve(ctx, index.ResolveOptions{
+						CampaignRoot: root,
+						Category:     parseResult.Category,
+						Query:        projectQuery,
+						SubShortcut:  subShortcut,
+					})
+					if err != nil {
+						// Handle invalid sub-shortcut error
+						if subErr, ok := err.(*index.InvalidSubShortcutError); ok {
+							return formatSubShortcutError(subErr)
+						}
+						return err
+					}
+
+					workDir = resolveResult.Path
+
+					// Determine how many args were consumed (shortcut + query parts)
+					consumed := 1 + len(queryParts) // @p + fest [+ cli]
+					if consumed >= len(args) {
+						return fmt.Errorf("no command specified")
+					}
+					commandArgs = args[consumed:]
+
+					// Verify directory exists
+					if stat, err := os.Stat(workDir); err != nil || !stat.IsDir() {
+						return fmt.Errorf("directory does not exist: %s", workDir)
+					}
+
+					// Build and execute command
+					fullCmd := strings.Join(commandArgs, " ")
+					return executeCommand(ctx, fullCmd, workDir, nil)
+				}
+			}
+		}
+
+		// Resolve shortcut path to absolute directory (non-project case)
 		workDir = filepath.Join(root, sc.Path)
 
 		// Verify directory exists
