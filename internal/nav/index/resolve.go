@@ -41,9 +41,9 @@ type ResolveOptions struct {
 
 // InvalidSubShortcutError indicates a sub-shortcut wasn't found.
 type InvalidSubShortcutError struct {
-	ProjectName     string
-	SubShortcut     string
-	AvailableNames  []string
+	ProjectName    string
+	SubShortcut    string
+	AvailableNames []string
 }
 
 func (e *InvalidSubShortcutError) Error() string {

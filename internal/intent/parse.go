@@ -1,0 +1,112 @@
+package intent
+
+import (
+	"bytes"
+	"errors"
+	"fmt"
+
+	"gopkg.in/yaml.v3"
+)
+
+// Parsing errors.
+var (
+	ErrEmptyContent        = errors.New("empty content")
+	ErrInvalidFrontmatter  = errors.New("invalid frontmatter format: expected two --- delimiters")
+	ErrFrontmatterParse    = errors.New("failed to parse frontmatter YAML")
+	ErrFrontmatterMarshal  = errors.New("failed to marshal frontmatter to YAML")
+)
+
+// delimiter is the frontmatter section delimiter.
+var delimiter = []byte("---")
+
+// ParseIntent parses an intent from markdown content with YAML frontmatter.
+//
+// Expected format:
+//
+//	---
+//	id: 20260119-153412-example
+//	title: Example Intent
+//	status: inbox
+//	created_at: 2026-01-19
+//	---
+//
+//	# Markdown content
+//
+// Returns the parsed Intent with Content field populated with the body.
+func ParseIntent(content []byte) (*Intent, error) {
+	// Handle empty content
+	if len(bytes.TrimSpace(content)) == 0 {
+		return nil, ErrEmptyContent
+	}
+
+	// Find frontmatter delimiters
+	// SplitN with limit 3 splits into at most 3 parts:
+	// [before first ---] [between ---] [after second ---]
+	parts := bytes.SplitN(content, delimiter, 3)
+	if len(parts) < 3 {
+		return nil, ErrInvalidFrontmatter
+	}
+
+	// parts[0] should be empty (or just whitespace) before first ---
+	// parts[1] is frontmatter YAML
+	// parts[2] is body markdown
+	frontmatter := bytes.TrimSpace(parts[1])
+	body := parts[2]
+
+	// Handle case where content starts with --- but has no second delimiter
+	if len(frontmatter) == 0 && len(bytes.TrimSpace(body)) == 0 {
+		return nil, ErrInvalidFrontmatter
+	}
+
+	// Parse YAML into Intent
+	var intent Intent
+	if err := yaml.Unmarshal(frontmatter, &intent); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrFrontmatterParse, err)
+	}
+
+	// Store body content (trimmed of leading whitespace, preserve trailing)
+	intent.Content = string(bytes.TrimLeft(body, "\n\r"))
+
+	return &intent, nil
+}
+
+// ParseIntentFromFile is a convenience function that reads and parses an intent file.
+// It also sets the Path field on the returned Intent.
+func ParseIntentFromFile(path string, content []byte) (*Intent, error) {
+	intent, err := ParseIntent(content)
+	if err != nil {
+		return nil, err
+	}
+	intent.Path = path
+	return intent, nil
+}
+
+// SerializeIntent converts an Intent struct to markdown with YAML frontmatter.
+//
+// The Content field is preserved as the body after the frontmatter.
+// Runtime fields (Path) are not included in the output.
+func SerializeIntent(intent *Intent) ([]byte, error) {
+	// Marshal frontmatter to YAML
+	frontmatter, err := yaml.Marshal(intent)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrFrontmatterMarshal, err)
+	}
+
+	// Combine frontmatter and body
+	var buf bytes.Buffer
+	buf.WriteString("---\n")
+	buf.Write(frontmatter)
+	buf.WriteString("---\n")
+
+	// Add body content if present
+	if intent.Content != "" {
+		buf.WriteString("\n")
+		buf.WriteString(intent.Content)
+		// Ensure file ends with newline
+		if !bytes.HasSuffix([]byte(intent.Content), []byte("\n")) {
+			buf.WriteString("\n")
+		}
+	}
+
+	return buf.Bytes(), nil
+}
