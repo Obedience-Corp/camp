@@ -65,47 +65,6 @@ func TestInit(t *testing.T) {
 	}
 }
 
-func TestInit_Minimal(t *testing.T) {
-	tmpDir := t.TempDir()
-	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
-	t.Setenv("XDG_CONFIG_HOME", tmpDir)
-
-	campaignDir := filepath.Join(tmpDir, "minimal-campaign")
-	os.MkdirAll(campaignDir, 0755)
-
-	ctx := context.Background()
-	result, err := Init(ctx, campaignDir, InitOptions{
-		Name:       "minimal",
-		Minimal:    true,
-		NoRegister: true,
-	})
-
-	if err != nil {
-		t.Fatalf("Init() error = %v", err)
-	}
-
-	// Check minimal directories were created
-	for _, dir := range MinimalDirs {
-		path := filepath.Join(campaignDir, dir)
-		if _, err := os.Stat(path); os.IsNotExist(err) {
-			t.Errorf("directory %s was not created", dir)
-		}
-	}
-
-	// Check non-minimal directories were NOT created
-	nonMinimal := []string{"worktrees", "ai_docs", "docs", "corpus", "pipelines", "code_reviews"}
-	for _, dir := range nonMinimal {
-		path := filepath.Join(campaignDir, dir)
-		if _, err := os.Stat(path); err == nil {
-			t.Errorf("non-minimal directory %s should not exist", dir)
-		}
-	}
-
-	if len(result.DirsCreated) == 0 {
-		t.Error("DirsCreated should not be empty")
-	}
-}
-
 func TestInit_AlreadyInCampaign(t *testing.T) {
 	tmpDir := t.TempDir()
 	tmpDir, _ = filepath.EvalSymlinks(tmpDir)

@@ -21,8 +21,6 @@ type InitOptions struct {
 	Name string
 	// Type is the campaign type.
 	Type config.CampaignType
-	// Minimal creates only essential directories.
-	Minimal bool
 	// FromExisting migrates an existing workspace.
 	FromExisting bool
 	// NoRegister skips adding to global registry.
@@ -130,14 +128,11 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 		CampaignRoot: absDir,
 	}
 
-	// Select scaffold recipe based on minimal flag
+	// Scaffold path
 	scaffoldPath := "campaign/scaffold.yaml"
-	if opts.Minimal {
-		scaffoldPath = "campaign/scaffold-minimal.yaml"
-	}
 
 	// Get expected directories and files from scaffold
-	expectedDirs, expectedFiles := getExpectedPaths(absDir, opts.Minimal)
+	expectedDirs, expectedFiles := getExpectedPaths(absDir)
 
 	// Check what already exists and mark as skipped
 	for _, d := range expectedDirs {
@@ -261,18 +256,10 @@ func (o *InitOptions) Validate() error {
 	return nil
 }
 
-// getExpectedPaths returns the expected directories and files based on scaffold type.
-func getExpectedPaths(baseDir string, minimal bool) (dirs []string, files []string) {
-	// Select directories based on minimal flag
-	selectedDirs := StandardDirs
-	intentsSubdirs := IntentsSubdirs
-	if minimal {
-		selectedDirs = MinimalDirs
-		intentsSubdirs = IntentsMinimalSubdirs
-	}
-
+// getExpectedPaths returns the expected directories and files.
+func getExpectedPaths(baseDir string) (dirs []string, files []string) {
 	// Build full paths for main directories
-	for _, d := range selectedDirs {
+	for _, d := range StandardDirs {
 		dirs = append(dirs, filepath.Join(baseDir, d))
 	}
 
@@ -282,12 +269,12 @@ func getExpectedPaths(baseDir string, minimal bool) (dirs []string, files []stri
 	}
 
 	// Add intents subdirectories
-	for _, d := range intentsSubdirs {
+	for _, d := range IntentsSubdirs {
 		dirs = append(dirs, filepath.Join(baseDir, "intents", d))
 	}
 
 	// Build file paths (OBEY.md files)
-	for _, d := range selectedDirs {
+	for _, d := range StandardDirs {
 		if d != ".campaign" {
 			files = append(files, filepath.Join(baseDir, d, "OBEY.md"))
 		}

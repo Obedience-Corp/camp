@@ -14,13 +14,6 @@ var StandardDirs = []string{
 	"intents",
 }
 
-// MinimalDirs contains the minimum directories for a campaign.
-var MinimalDirs = []string{
-	".campaign",
-	"projects",
-	"intents",
-}
-
 // CampaignSubdirs contains subdirectories within .campaign/
 var CampaignSubdirs = []string{
 	"templates",
@@ -34,11 +27,6 @@ var IntentsSubdirs = []string{
 	"ready",
 	"done",
 	"killed",
-}
-
-// IntentsMinimalSubdirs contains subdirectories within intents/ for minimal campaigns.
-var IntentsMinimalSubdirs = []string{
-	"inbox",
 }
 
 // DirectoryPurposes maps directories to their purpose descriptions.
