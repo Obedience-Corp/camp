@@ -50,8 +50,8 @@ paths:
 		t.Errorf("Paths.Projects = %q, want %q", cfg.Paths.Projects, "src/")
 	}
 	// Default should be applied for missing path
-	if cfg.Paths.Worktrees != "worktrees/" {
-		t.Errorf("Paths.Worktrees = %q, want %q (default)", cfg.Paths.Worktrees, "worktrees/")
+	if cfg.Paths.Worktrees != "projects/worktrees/" {
+		t.Errorf("Paths.Worktrees = %q, want %q (default)", cfg.Paths.Worktrees, "projects/worktrees/")
 	}
 }
 

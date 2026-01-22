@@ -124,11 +124,16 @@ func TestGenerateZsh_ContainsCategoryShortcuts(t *testing.T) {
 
 	shortcuts := []string{
 		"'p:projects",
-		"'c:corpus",
+		"'pw:projects/worktrees",
 		"'f:festivals",
 		"'a:ai_docs",
 		"'d:docs",
-		"'w:worktrees",
+		"'du:dungeon",
+		"'w:workflow",
+		"'cr:workflow/code_reviews",
+		"'pi:workflow/pipelines",
+		"'de:workflow/design",
+		"'i:workflow/intents",
 	}
 
 	for _, shortcut := range shortcuts {

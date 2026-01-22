@@ -92,7 +92,7 @@ func TestFilterByCategory(t *testing.T) {
 		},
 		{
 			name:     "filter non-existent returns empty",
-			category: nav.CategoryCorpus,
+			category: nav.CategoryDungeon,
 			wantLen:  0,
 		},
 	}

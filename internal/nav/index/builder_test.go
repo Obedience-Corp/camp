@@ -190,37 +190,7 @@ func TestBuilder_scanCategory_SkipsHiddenFiles(t *testing.T) {
 	}
 }
 
-func TestBuilder_scanCategory_CorpusIncludesFiles(t *testing.T) {
-	root := t.TempDir()
-	root, _ = filepath.EvalSymlinks(root)
-
-	// Create corpus directory with both files and directories
-	corpusDir := filepath.Join(root, "corpus")
-	if err := os.MkdirAll(corpusDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Join(corpusDir, "research-docs"), 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(corpusDir, "notes.md"), []byte("# Notes"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	builder := NewBuilder(root)
-	ctx := context.Background()
-
-	targets, err := builder.scanCategory(ctx, nav.CategoryCorpus)
-	if err != nil {
-		t.Fatalf("scanCategory() error = %v", err)
-	}
-
-	// Corpus should include both directory and file
-	if len(targets) != 2 {
-		t.Errorf("Expected 2 corpus targets (dir + file), got %d", len(targets))
-	}
-}
-
-func TestBuilder_scanCategory_OtherCategoriesSkipFiles(t *testing.T) {
+func TestBuilder_scanCategory_SkipsFiles(t *testing.T) {
 	root := t.TempDir()
 	root, _ = filepath.EvalSymlinks(root)
 
@@ -455,7 +425,7 @@ func setupTestCampaign(t *testing.T) string {
 		"projects":  {"api-service", "web-app"},
 		"festivals": {"camp-cli"},
 		"docs":      {"architecture"},
-		"corpus":    {"research"},
+		"workflow":  {"code_reviews"},
 	}
 
 	for cat, entries := range dirs {
@@ -479,7 +449,7 @@ func BenchmarkBuilder_Build(b *testing.B) {
 	root := b.TempDir()
 
 	// Create a realistic campaign structure
-	dirs := []string{"projects", "festivals", "docs", "corpus"}
+	dirs := []string{"projects", "festivals", "docs", "workflow"}
 	for _, dir := range dirs {
 		catDir := filepath.Join(root, dir)
 		if err := os.MkdirAll(catDir, 0755); err != nil {

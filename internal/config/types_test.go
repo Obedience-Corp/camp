@@ -15,11 +15,12 @@ description: A test campaign
 created_at: 2026-01-14T10:00:00Z
 paths:
   projects: projects/
-  worktrees: worktrees/
+  worktrees: projects/worktrees/
   ai_docs: ai_docs/
   docs: docs/
-  corpus: corpus/
   festivals: festivals/
+  workflow: workflow/
+  dungeon: dungeon/
 projects:
   - name: project-a
     path: projects/project-a
@@ -161,8 +162,8 @@ func TestDefaultCampaignPaths(t *testing.T) {
 	if paths.Projects != "projects/" {
 		t.Errorf("Projects = %q, want %q", paths.Projects, "projects/")
 	}
-	if paths.Worktrees != "worktrees/" {
-		t.Errorf("Worktrees = %q, want %q", paths.Worktrees, "worktrees/")
+	if paths.Worktrees != "projects/worktrees/" {
+		t.Errorf("Worktrees = %q, want %q", paths.Worktrees, "projects/worktrees/")
 	}
 	if paths.AIDocs != "ai_docs/" {
 		t.Errorf("AIDocs = %q, want %q", paths.AIDocs, "ai_docs/")
@@ -170,11 +171,26 @@ func TestDefaultCampaignPaths(t *testing.T) {
 	if paths.Docs != "docs/" {
 		t.Errorf("Docs = %q, want %q", paths.Docs, "docs/")
 	}
-	if paths.Corpus != "corpus/" {
-		t.Errorf("Corpus = %q, want %q", paths.Corpus, "corpus/")
-	}
 	if paths.Festivals != "festivals/" {
 		t.Errorf("Festivals = %q, want %q", paths.Festivals, "festivals/")
+	}
+	if paths.Workflow != "workflow/" {
+		t.Errorf("Workflow = %q, want %q", paths.Workflow, "workflow/")
+	}
+	if paths.Intents != "workflow/intents/" {
+		t.Errorf("Intents = %q, want %q", paths.Intents, "workflow/intents/")
+	}
+	if paths.CodeReviews != "workflow/code_reviews/" {
+		t.Errorf("CodeReviews = %q, want %q", paths.CodeReviews, "workflow/code_reviews/")
+	}
+	if paths.Pipelines != "workflow/pipelines/" {
+		t.Errorf("Pipelines = %q, want %q", paths.Pipelines, "workflow/pipelines/")
+	}
+	if paths.Design != "workflow/design/" {
+		t.Errorf("Design = %q, want %q", paths.Design, "workflow/design/")
+	}
+	if paths.Dungeon != "dungeon/" {
+		t.Errorf("Dungeon = %q, want %q", paths.Dungeon, "dungeon/")
 	}
 }
 
@@ -265,8 +281,8 @@ func TestCampaignConfigApplyDefaults_PreservesExisting(t *testing.T) {
 		t.Errorf("Paths.Projects = %q, want %q (should preserve existing)", cfg.Paths.Projects, "src/")
 	}
 	// But missing paths should be filled
-	if cfg.Paths.Worktrees != "worktrees/" {
-		t.Errorf("Paths.Worktrees = %q, want %q (should apply default)", cfg.Paths.Worktrees, "worktrees/")
+	if cfg.Paths.Worktrees != "projects/worktrees/" {
+		t.Errorf("Paths.Worktrees = %q, want %q (should apply default)", cfg.Paths.Worktrees, "projects/worktrees/")
 	}
 }
 

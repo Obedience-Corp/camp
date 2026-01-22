@@ -65,7 +65,7 @@ func TestQuery_ByCategory(t *testing.T) {
 		{nav.CategoryProjects, 2},
 		{nav.CategoryFestivals, 1},
 		{nav.CategoryDocs, 1},
-		{nav.CategoryCorpus, 1},
+		{nav.CategoryCodeReviews, 1},
 		{nav.CategoryAll, 5},
 		{nav.Category("nonexistent"), 0},
 	}
@@ -99,10 +99,10 @@ func TestQuery_Categories(t *testing.T) {
 
 	// Verify all expected categories present
 	expected := map[nav.Category]bool{
-		nav.CategoryProjects:  true,
-		nav.CategoryFestivals: true,
-		nav.CategoryDocs:      true,
-		nav.CategoryCorpus:    true,
+		nav.CategoryProjects:    true,
+		nav.CategoryFestivals:   true,
+		nav.CategoryDocs:        true,
+		nav.CategoryCodeReviews: true,
 	}
 
 	for _, cat := range cats {
@@ -295,7 +295,7 @@ func TestQuery_Names(t *testing.T) {
 		"web-app":      true,
 		"camp-cli":     true,
 		"architecture": true,
-		"research":     true,
+		"reviews":      true,
 	}
 
 	for _, name := range names {
@@ -348,7 +348,7 @@ func createTestIndex() *Index {
 	idx.AddTarget(Target{Name: "web-app", Path: "/test/projects/web-app", Category: nav.CategoryProjects})
 	idx.AddTarget(Target{Name: "camp-cli", Path: "/test/festivals/camp-cli", Category: nav.CategoryFestivals})
 	idx.AddTarget(Target{Name: "architecture", Path: "/test/docs/architecture", Category: nav.CategoryDocs})
-	idx.AddTarget(Target{Name: "research", Path: "/test/corpus/research", Category: nav.CategoryCorpus})
+	idx.AddTarget(Target{Name: "reviews", Path: "/test/workflow/code_reviews", Category: nav.CategoryCodeReviews})
 	return idx
 }
 
@@ -406,7 +406,7 @@ func BenchmarkQuery_Find(b *testing.B) {
 
 func createLargeIndex(n int) *Index {
 	idx := NewIndex("/test")
-	categories := []nav.Category{nav.CategoryProjects, nav.CategoryFestivals, nav.CategoryDocs, nav.CategoryCorpus}
+	categories := []nav.Category{nav.CategoryProjects, nav.CategoryFestivals, nav.CategoryDocs, nav.CategoryCodeReviews}
 
 	for i := 0; i < n; i++ {
 		cat := categories[i%len(categories)]

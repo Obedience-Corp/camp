@@ -16,9 +16,9 @@ shortcuts:
   p:
     path: "projects/"
     description: "Jump to projects directory"
-  c:
-    path: "corpus/"
-    description: "Jump to corpus directory"
+  pw:
+    path: "projects/worktrees/"
+    description: "Jump to project worktrees"
   f:
     path: "festivals/"
     description: "Jump to festivals directory"
@@ -28,15 +28,24 @@ shortcuts:
   d:
     path: "docs/"
     description: "Jump to docs directory"
+  du:
+    path: "dungeon/"
+    description: "Jump to dungeon directory"
   w:
-    path: "worktrees/"
-    description: "Jump to worktrees directory"
-  r:
-    path: "code_reviews/"
-    description: "Jump to code reviews directory"
+    path: "workflow/"
+    description: "Jump to workflow directory"
+  cr:
+    path: "workflow/code_reviews/"
+    description: "Jump to code reviews"
   pi:
-    path: "pipelines/"
-    description: "Jump to pipelines directory"
+    path: "workflow/pipelines/"
+    description: "Jump to pipelines"
+  de:
+    path: "workflow/design/"
+    description: "Jump to design"
+  i:
+    path: "workflow/intents/"
+    description: "Jump to intents"
 `
 
 // createTestCampaign creates a test campaign with shortcuts configured.
@@ -79,8 +88,8 @@ func TestGenerate_NoArgs(t *testing.T) {
 	}
 
 	// Should return category shortcuts from config
-	if len(candidates) != 8 {
-		t.Errorf("Got %d candidates, want 8", len(candidates))
+	if len(candidates) != 11 {
+		t.Errorf("Got %d candidates, want 11", len(candidates))
 	}
 }
 
@@ -252,9 +261,9 @@ func TestCategoryShortcuts(t *testing.T) {
 
 	shortcuts := CategoryShortcuts()
 
-	// Should have 8 shortcuts from campaign.yaml
-	if len(shortcuts) != 8 {
-		t.Errorf("Got %d shortcuts, want 8", len(shortcuts))
+	// Should have 11 shortcuts from campaign.yaml
+	if len(shortcuts) != 11 {
+		t.Errorf("Got %d shortcuts, want 11", len(shortcuts))
 	}
 }
 

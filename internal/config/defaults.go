@@ -5,13 +5,17 @@ import "time"
 // DefaultCampaignPaths returns the default directory structure for campaigns.
 func DefaultCampaignPaths() CampaignPaths {
 	return CampaignPaths{
-		Projects:  "projects/",
-		Worktrees: "worktrees/",
-		AIDocs:    "ai_docs/",
-		Docs:      "docs/",
-		Corpus:    "corpus/",
-		Festivals: "festivals/",
-		Intents:   "intents/",
+		Projects:    "projects/",
+		Worktrees:   "projects/worktrees/",
+		AIDocs:      "ai_docs/",
+		Docs:        "docs/",
+		Festivals:   "festivals/",
+		Workflow:    "workflow/",
+		Intents:     "workflow/intents/",
+		CodeReviews: "workflow/code_reviews/",
+		Pipelines:   "workflow/pipelines/",
+		Design:      "workflow/design/",
+		Dungeon:     "dungeon/",
 	}
 }
 
@@ -20,14 +24,16 @@ func DefaultCampaignPaths() CampaignPaths {
 func DefaultNavigationShortcuts() map[string]ShortcutConfig {
 	return map[string]ShortcutConfig{
 		"p":  {Path: "projects/", Description: "Jump to projects directory"},
-		"w":  {Path: "worktrees/", Description: "Jump to worktrees directory"},
+		"pw": {Path: "projects/worktrees/", Description: "Jump to project worktrees"},
+		"w":  {Path: "workflow/", Description: "Jump to workflow directory"},
 		"f":  {Path: "festivals/", Description: "Jump to festivals directory"},
 		"a":  {Path: "ai_docs/", Description: "Jump to AI docs directory"},
 		"d":  {Path: "docs/", Description: "Jump to docs directory"},
-		"c":  {Path: "corpus/", Description: "Jump to corpus directory"},
-		"r":  {Path: "code_reviews/", Description: "Jump to code reviews directory"},
-		"pi": {Path: "pipelines/", Description: "Jump to pipelines directory"},
-		"i":  {Path: "intents/", Description: "Jump to intents directory"},
+		"du": {Path: "dungeon/", Description: "Jump to dungeon directory"},
+		"cr": {Path: "workflow/code_reviews/", Description: "Jump to code reviews"},
+		"pi": {Path: "workflow/pipelines/", Description: "Jump to pipelines"},
+		"de": {Path: "workflow/design/", Description: "Jump to design"},
+		"i":  {Path: "workflow/intents/", Description: "Jump to intents"},
 	}
 }
 
@@ -82,14 +88,26 @@ func (c *CampaignConfig) ApplyDefaults() {
 	if c.Paths.Docs == "" {
 		c.Paths.Docs = defaults.Docs
 	}
-	if c.Paths.Corpus == "" {
-		c.Paths.Corpus = defaults.Corpus
-	}
 	if c.Paths.Festivals == "" {
 		c.Paths.Festivals = defaults.Festivals
 	}
+	if c.Paths.Workflow == "" {
+		c.Paths.Workflow = defaults.Workflow
+	}
 	if c.Paths.Intents == "" {
 		c.Paths.Intents = defaults.Intents
+	}
+	if c.Paths.CodeReviews == "" {
+		c.Paths.CodeReviews = defaults.CodeReviews
+	}
+	if c.Paths.Pipelines == "" {
+		c.Paths.Pipelines = defaults.Pipelines
+	}
+	if c.Paths.Design == "" {
+		c.Paths.Design = defaults.Design
+	}
+	if c.Paths.Dungeon == "" {
+		c.Paths.Dungeon = defaults.Dungeon
 	}
 }
 
@@ -111,13 +129,25 @@ func (c *GlobalConfig) ApplyDefaults() {
 	if c.DefaultPaths.Docs == "" {
 		c.DefaultPaths.Docs = defaults.Docs
 	}
-	if c.DefaultPaths.Corpus == "" {
-		c.DefaultPaths.Corpus = defaults.Corpus
-	}
 	if c.DefaultPaths.Festivals == "" {
 		c.DefaultPaths.Festivals = defaults.Festivals
 	}
+	if c.DefaultPaths.Workflow == "" {
+		c.DefaultPaths.Workflow = defaults.Workflow
+	}
 	if c.DefaultPaths.Intents == "" {
 		c.DefaultPaths.Intents = defaults.Intents
+	}
+	if c.DefaultPaths.CodeReviews == "" {
+		c.DefaultPaths.CodeReviews = defaults.CodeReviews
+	}
+	if c.DefaultPaths.Pipelines == "" {
+		c.DefaultPaths.Pipelines = defaults.Pipelines
+	}
+	if c.DefaultPaths.Design == "" {
+		c.DefaultPaths.Design = defaults.Design
+	}
+	if c.DefaultPaths.Dungeon == "" {
+		c.DefaultPaths.Dungeon = defaults.Dungeon
 	}
 }

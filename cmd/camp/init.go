@@ -15,19 +15,22 @@ var initCmd = &cobra.Command{
 	Long: `Initialize a new campaign directory structure.
 
 Creates the standard campaign directories:
-  .campaign/    - Campaign configuration and metadata
-  projects/     - Project repositories (submodules or worktrees)
-  festivals/    - Festival methodology workspace
-  worktrees/    - Git worktrees for parallel development
-  ai_docs/      - AI-generated documentation
-  docs/         - Human-authored documentation
-  corpus/       - Reference materials and knowledge base
-  pipelines/    - CI/CD pipeline definitions
-  code_reviews/ - Code review notes and feedback
+  .campaign/              - Campaign configuration and metadata
+  projects/               - Project repositories (submodules or worktrees)
+  projects/worktrees/     - Git worktrees for parallel development
+  festivals/              - Festival methodology workspace (via fest init)
+  ai_docs/                - AI-generated documentation
+  docs/                   - Human-authored documentation
+  dungeon/                - Archived and deprioritized work
+  workflow/               - Workflow management
+  workflow/code_reviews/  - Code review notes and feedback
+  workflow/pipelines/     - CI/CD pipeline definitions
+  workflow/design/        - Design documents
+  workflow/intents/       - Intent documents
 
 Also creates:
-  CLAUDE.md     - AI agent instruction file
-  AGENTS.md     - Symlink to CLAUDE.md
+  AGENTS.md     - AI agent instruction file
+  CLAUDE.md     - Symlink to AGENTS.md
 
 Initializes a git repository if not already inside one.
 

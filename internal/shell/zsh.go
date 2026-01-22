@@ -62,13 +62,16 @@ _cgo() {
     # First argument - category shortcuts and targets
     targets=(
       'p:projects directory'
-      'c:corpus directory'
+      'pw:projects/worktrees directory'
       'f:festivals directory'
       'a:ai_docs directory'
       'd:docs directory'
-      'w:worktrees directory'
-      'r:code_reviews directory'
-      'pi:pipelines directory'
+      'du:dungeon directory'
+      'w:workflow directory'
+      'cr:workflow/code_reviews directory'
+      'pi:workflow/pipelines directory'
+      'de:workflow/design directory'
+      'i:workflow/intents directory'
     )
     _describe 'category' targets
   elif (( CURRENT == 3 )); then

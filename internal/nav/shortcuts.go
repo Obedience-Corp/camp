@@ -11,20 +11,26 @@ type Category string
 const (
 	// CategoryProjects is the projects directory.
 	CategoryProjects Category = "projects"
-	// CategoryCorpus is the corpus/reference materials directory.
-	CategoryCorpus Category = "corpus"
+	// CategoryWorktrees is the worktrees directory (under projects/).
+	CategoryWorktrees Category = "projects/worktrees"
 	// CategoryFestivals is the festivals directory.
 	CategoryFestivals Category = "festivals"
 	// CategoryAIDocs is the AI documentation directory.
 	CategoryAIDocs Category = "ai_docs"
 	// CategoryDocs is the human documentation directory.
 	CategoryDocs Category = "docs"
-	// CategoryWorktrees is the worktrees directory.
-	CategoryWorktrees Category = "worktrees"
-	// CategoryCodeReviews is the code reviews directory.
-	CategoryCodeReviews Category = "code_reviews"
-	// CategoryPipelines is the pipelines directory.
-	CategoryPipelines Category = "pipelines"
+	// CategoryDungeon is the dungeon directory (archived/paused work).
+	CategoryDungeon Category = "dungeon"
+	// CategoryWorkflow is the workflow directory.
+	CategoryWorkflow Category = "workflow"
+	// CategoryCodeReviews is the code reviews directory (under workflow/).
+	CategoryCodeReviews Category = "workflow/code_reviews"
+	// CategoryPipelines is the pipelines directory (under workflow/).
+	CategoryPipelines Category = "workflow/pipelines"
+	// CategoryDesign is the design directory (under workflow/).
+	CategoryDesign Category = "workflow/design"
+	// CategoryIntents is the intents directory (under workflow/).
+	CategoryIntents Category = "workflow/intents"
 	// CategoryAll represents all directories (no specific category).
 	CategoryAll Category = ""
 )
@@ -38,13 +44,16 @@ const (
 // New campaigns get these defaults scaffolded via config.DefaultNavigationShortcuts().
 var DefaultShortcuts = map[string]Category{
 	"p":  CategoryProjects,    // p = projects
-	"c":  CategoryCorpus,      // c = corpus
+	"pw": CategoryWorktrees,   // pw = project worktrees
 	"f":  CategoryFestivals,   // f = festivals
 	"a":  CategoryAIDocs,      // a = ai_docs
 	"d":  CategoryDocs,        // d = docs
-	"w":  CategoryWorktrees,   // w = worktrees
-	"r":  CategoryCodeReviews, // r = code_reviews
-	"pi": CategoryPipelines,   // pi = pipelines (two letters to avoid conflict)
+	"du": CategoryDungeon,     // du = dungeon
+	"w":  CategoryWorkflow,    // w = workflow
+	"cr": CategoryCodeReviews, // cr = code_reviews
+	"pi": CategoryPipelines,   // pi = pipelines
+	"de": CategoryDesign,      // de = design
+	"i":  CategoryIntents,     // i = intents
 }
 
 // ParseResult contains the parsed shortcut and remaining query.
@@ -101,13 +110,16 @@ func (c Category) String() string {
 func ValidCategories() []Category {
 	return []Category{
 		CategoryProjects,
-		CategoryCorpus,
+		CategoryWorktrees,
 		CategoryFestivals,
 		CategoryAIDocs,
 		CategoryDocs,
-		CategoryWorktrees,
+		CategoryDungeon,
+		CategoryWorkflow,
 		CategoryCodeReviews,
 		CategoryPipelines,
+		CategoryDesign,
+		CategoryIntents,
 	}
 }
 

@@ -225,6 +225,20 @@ cache/
 		}
 	}
 
+	// Initialize festivals directory via fest CLI if it doesn't exist
+	if !opts.DryRun {
+		if err := initFestivalsIfNeeded(ctx, absDir); err != nil {
+			// Log the error but don't fail - user can run fest init manually
+			result.Skipped = append(result.Skipped, "festivals/ (fest init failed - run manually)")
+		} else {
+			// Check if festivals was created
+			festivalsPath := filepath.Join(absDir, "festivals")
+			if _, err := os.Stat(festivalsPath); err == nil {
+				result.DirsCreated = append(result.DirsCreated, festivalsPath)
+			}
+		}
+	}
+
 	// Initialize git repository if not already in one and not skipped
 	if !opts.SkipGitInit && !opts.DryRun {
 		if !isInGitRepo(ctx, absDir) {
@@ -268,20 +282,44 @@ func getExpectedPaths(baseDir string) (dirs []string, files []string) {
 		dirs = append(dirs, filepath.Join(baseDir, ".campaign", d))
 	}
 
-	// Add intents subdirectories
-	for _, d := range IntentsSubdirs {
-		dirs = append(dirs, filepath.Join(baseDir, "intents", d))
+	// Add projects subdirectories (worktrees)
+	for _, d := range ProjectsSubdirs {
+		dirs = append(dirs, filepath.Join(baseDir, "projects", d))
 	}
 
-	// Build file paths (OBEY.md files)
+	// Add dungeon subdirectories
+	for _, d := range DungeonSubdirs {
+		dirs = append(dirs, filepath.Join(baseDir, "dungeon", d))
+	}
+
+	// Add workflow subdirectories
+	for _, d := range WorkflowSubdirs {
+		dirs = append(dirs, filepath.Join(baseDir, "workflow", d))
+	}
+
+	// Add intents subdirectories (under workflow)
+	for _, d := range IntentsSubdirs {
+		dirs = append(dirs, filepath.Join(baseDir, "workflow", "intents", d))
+	}
+
+	// Build file paths (OBEY.md files for main dirs)
 	for _, d := range StandardDirs {
 		if d != ".campaign" {
 			files = append(files, filepath.Join(baseDir, d, "OBEY.md"))
 		}
 	}
 
-	// AGENTS.md (source of truth)
+	// OBEY.md files for subdirectories
+	for _, d := range ProjectsSubdirs {
+		files = append(files, filepath.Join(baseDir, "projects", d, "OBEY.md"))
+	}
+	for _, d := range WorkflowSubdirs {
+		files = append(files, filepath.Join(baseDir, "workflow", d, "OBEY.md"))
+	}
+
+	// AGENTS.md (source of truth) and README.md
 	files = append(files, filepath.Join(baseDir, "AGENTS.md"))
+	files = append(files, filepath.Join(baseDir, "README.md"))
 
 	return dirs, files
 }
@@ -294,4 +332,35 @@ func containsPath(slice []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// initFestivalsIfNeeded runs `fest init` if the festivals directory doesn't exist.
+// This delegates festival scaffolding to the fest CLI for proper structure.
+func initFestivalsIfNeeded(ctx context.Context, dir string) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	festivalsPath := filepath.Join(dir, "festivals")
+	if _, err := os.Stat(festivalsPath); err == nil {
+		// festivals/ already exists, skip
+		return nil
+	}
+
+	// Check if fest is available
+	festPath, err := exec.LookPath("fest")
+	if err != nil {
+		// fest not installed, skip silently - user can run fest init manually
+		return nil
+	}
+
+	cmd := exec.CommandContext(ctx, festPath, "init", "--path", dir)
+	cmd.Dir = dir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		// Don't fail the whole init if fest init fails - user can run it manually
+		return fmt.Errorf("fest init failed (run manually with 'fest init'): %w (output: %s)", err, string(output))
+	}
+
+	return nil
 }

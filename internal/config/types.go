@@ -41,18 +41,26 @@ type CampaignConfig struct {
 type CampaignPaths struct {
 	// Projects is the path to the projects directory.
 	Projects string `yaml:"projects,omitempty"`
-	// Worktrees is the path to git worktrees directory.
+	// Worktrees is the path to git worktrees directory (under projects/).
 	Worktrees string `yaml:"worktrees,omitempty"`
 	// AIDocs is the path to AI documentation directory.
 	AIDocs string `yaml:"ai_docs,omitempty"`
 	// Docs is the path to documentation directory.
 	Docs string `yaml:"docs,omitempty"`
-	// Corpus is the path to corpus/reference material directory.
-	Corpus string `yaml:"corpus,omitempty"`
 	// Festivals is the path to festivals directory.
 	Festivals string `yaml:"festivals,omitempty"`
-	// Intents is the path to intents directory.
+	// Workflow is the path to the workflow directory.
+	Workflow string `yaml:"workflow,omitempty"`
+	// Intents is the path to intents directory (under workflow/).
 	Intents string `yaml:"intents,omitempty"`
+	// CodeReviews is the path to code reviews directory (under workflow/).
+	CodeReviews string `yaml:"code_reviews,omitempty"`
+	// Pipelines is the path to pipelines directory (under workflow/).
+	Pipelines string `yaml:"pipelines,omitempty"`
+	// Design is the path to design directory (under workflow/).
+	Design string `yaml:"design,omitempty"`
+	// Dungeon is the path to dungeon directory (archived/paused work).
+	Dungeon string `yaml:"dungeon,omitempty"`
 }
 
 // ProjectConfig holds configuration for a single project in the campaign.

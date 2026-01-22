@@ -233,8 +233,12 @@ func TestDirectJumpFromRoot_ContextCancellation(t *testing.T) {
 func TestDirectJumpFromRoot_NotADirectory(t *testing.T) {
 	dir := setupTestCampaign(t)
 
-	// Create a file where a directory is expected
-	pipelines := filepath.Join(dir, "pipelines")
+	// Create workflow directory first, then a file where pipelines directory is expected
+	workflowDir := filepath.Join(dir, "workflow")
+	if err := os.MkdirAll(workflowDir, 0755); err != nil {
+		t.Fatalf("Failed to create workflow dir: %v", err)
+	}
+	pipelines := filepath.Join(workflowDir, "pipelines")
 	if err := os.WriteFile(pipelines, []byte("not a dir"), 0644); err != nil {
 		t.Fatalf("Failed to create file: %v", err)
 	}

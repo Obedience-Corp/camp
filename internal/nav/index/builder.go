@@ -102,9 +102,8 @@ func (b *Builder) scanCategory(ctx context.Context, cat nav.Category) ([]Target,
 			continue
 		}
 
-		// For most categories, only include directories
-		// Corpus may include files (markdown docs, etc.)
-		if !entry.IsDir() && cat != nav.CategoryCorpus {
+		// Only include directories
+		if !entry.IsDir() {
 			continue
 		}
 
@@ -266,7 +265,7 @@ func (b *Builder) scanCategoryWithOptions(ctx context.Context, cat nav.Category,
 			continue
 		}
 
-		if !entry.IsDir() && cat != nav.CategoryCorpus {
+		if !entry.IsDir() {
 			continue
 		}
 

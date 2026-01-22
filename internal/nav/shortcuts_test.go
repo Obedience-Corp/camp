@@ -25,12 +25,15 @@ func TestParseShortcut_SingleLetterShortcuts(t *testing.T) {
 		query    string
 	}{
 		{[]string{"p"}, CategoryProjects, ""},
-		{[]string{"c"}, CategoryCorpus, ""},
+		{[]string{"pw"}, CategoryWorktrees, ""},
 		{[]string{"f"}, CategoryFestivals, ""},
 		{[]string{"a"}, CategoryAIDocs, ""},
 		{[]string{"d"}, CategoryDocs, ""},
-		{[]string{"w"}, CategoryWorktrees, ""},
-		{[]string{"r"}, CategoryCodeReviews, ""},
+		{[]string{"du"}, CategoryDungeon, ""},
+		{[]string{"w"}, CategoryWorkflow, ""},
+		{[]string{"cr"}, CategoryCodeReviews, ""},
+		{[]string{"de"}, CategoryDesign, ""},
+		{[]string{"i"}, CategoryIntents, ""},
 	}
 
 	for _, tt := range tests {
@@ -205,13 +208,16 @@ func TestCategoryDir(t *testing.T) {
 		dir      string
 	}{
 		{CategoryProjects, "projects"},
-		{CategoryCorpus, "corpus"},
+		{CategoryWorktrees, "projects/worktrees"},
 		{CategoryFestivals, "festivals"},
 		{CategoryAIDocs, "ai_docs"},
 		{CategoryDocs, "docs"},
-		{CategoryWorktrees, "worktrees"},
-		{CategoryCodeReviews, "code_reviews"},
-		{CategoryPipelines, "pipelines"},
+		{CategoryDungeon, "dungeon"},
+		{CategoryWorkflow, "workflow"},
+		{CategoryCodeReviews, "workflow/code_reviews"},
+		{CategoryPipelines, "workflow/pipelines"},
+		{CategoryDesign, "workflow/design"},
+		{CategoryIntents, "workflow/intents"},
 		{CategoryAll, ""},
 	}
 
@@ -236,20 +242,23 @@ func TestCategoryString(t *testing.T) {
 
 func TestValidCategories(t *testing.T) {
 	cats := ValidCategories()
-	if len(cats) != 8 {
-		t.Errorf("len(ValidCategories()) = %d, want 8", len(cats))
+	if len(cats) != 11 {
+		t.Errorf("len(ValidCategories()) = %d, want 11", len(cats))
 	}
 
 	// Verify all expected categories are present
 	expected := map[Category]bool{
 		CategoryProjects:    false,
-		CategoryCorpus:      false,
+		CategoryWorktrees:   false,
 		CategoryFestivals:   false,
 		CategoryAIDocs:      false,
 		CategoryDocs:        false,
-		CategoryWorktrees:   false,
+		CategoryDungeon:     false,
+		CategoryWorkflow:    false,
 		CategoryCodeReviews: false,
 		CategoryPipelines:   false,
+		CategoryDesign:      false,
+		CategoryIntents:     false,
 	}
 
 	for _, c := range cats {
@@ -272,8 +281,12 @@ func TestShortcutForCategory(t *testing.T) {
 		shortcut string
 	}{
 		{CategoryProjects, "p"},
-		{CategoryCorpus, "c"},
+		{CategoryWorktrees, "pw"},
+		{CategoryDungeon, "du"},
+		{CategoryWorkflow, "w"},
 		{CategoryPipelines, "pi"},
+		{CategoryDesign, "de"},
+		{CategoryIntents, "i"},
 		{CategoryAll, ""}, // No shortcut for all
 	}
 
@@ -289,7 +302,7 @@ func TestShortcutForCategory(t *testing.T) {
 
 func TestDefaultShortcutsComplete(t *testing.T) {
 	// Verify all shortcuts are defined
-	expectedCount := 8 // 7 single-letter + 1 two-letter
+	expectedCount := 11 // p, pw, f, a, d, du, w, cr, pi, de, i
 	if len(DefaultShortcuts) != expectedCount {
 		t.Errorf("len(DefaultShortcuts) = %d, want %d", len(DefaultShortcuts), expectedCount)
 	}

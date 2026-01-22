@@ -23,13 +23,16 @@ type CategoryCandidate struct {
 func Categories() []CategoryCandidate {
 	return []CategoryCandidate{
 		{Value: "p", Description: "projects/", Category: nav.CategoryProjects},
-		{Value: "c", Description: "corpus/", Category: nav.CategoryCorpus},
+		{Value: "pw", Description: "projects/worktrees/", Category: nav.CategoryWorktrees},
 		{Value: "f", Description: "festivals/", Category: nav.CategoryFestivals},
 		{Value: "a", Description: "ai_docs/", Category: nav.CategoryAIDocs},
 		{Value: "d", Description: "docs/", Category: nav.CategoryDocs},
-		{Value: "w", Description: "worktrees/", Category: nav.CategoryWorktrees},
-		{Value: "r", Description: "code_reviews/", Category: nav.CategoryCodeReviews},
-		{Value: "pi", Description: "pipelines/", Category: nav.CategoryPipelines},
+		{Value: "du", Description: "dungeon/", Category: nav.CategoryDungeon},
+		{Value: "w", Description: "workflow/", Category: nav.CategoryWorkflow},
+		{Value: "cr", Description: "workflow/code_reviews/", Category: nav.CategoryCodeReviews},
+		{Value: "pi", Description: "workflow/pipelines/", Category: nav.CategoryPipelines},
+		{Value: "de", Description: "workflow/design/", Category: nav.CategoryDesign},
+		{Value: "i", Description: "workflow/intents/", Category: nav.CategoryIntents},
 	}
 }
 

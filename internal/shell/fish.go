@@ -62,13 +62,16 @@ end
 # Tab completion for cgo - category shortcuts with descriptions
 complete -c cgo -f  # no file completion
 complete -c cgo -n "__camp_is_first_arg" -a "p" -d "projects/"
-complete -c cgo -n "__camp_is_first_arg" -a "c" -d "corpus/"
+complete -c cgo -n "__camp_is_first_arg" -a "pw" -d "projects/worktrees/"
 complete -c cgo -n "__camp_is_first_arg" -a "f" -d "festivals/"
 complete -c cgo -n "__camp_is_first_arg" -a "a" -d "ai_docs/"
 complete -c cgo -n "__camp_is_first_arg" -a "d" -d "docs/"
-complete -c cgo -n "__camp_is_first_arg" -a "w" -d "worktrees/"
-complete -c cgo -n "__camp_is_first_arg" -a "r" -d "code_reviews/"
-complete -c cgo -n "__camp_is_first_arg" -a "pi" -d "pipelines/"
+complete -c cgo -n "__camp_is_first_arg" -a "du" -d "dungeon/"
+complete -c cgo -n "__camp_is_first_arg" -a "w" -d "workflow/"
+complete -c cgo -n "__camp_is_first_arg" -a "cr" -d "workflow/code_reviews/"
+complete -c cgo -n "__camp_is_first_arg" -a "pi" -d "workflow/pipelines/"
+complete -c cgo -n "__camp_is_first_arg" -a "de" -d "workflow/design/"
+complete -c cgo -n "__camp_is_first_arg" -a "i" -d "workflow/intents/"
 
 # Dynamic completion from camp
 complete -c cgo -n "not __camp_is_first_arg" -a "(camp complete (commandline -opc)[2..-1] 2>/dev/null)"

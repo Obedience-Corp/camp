@@ -8,6 +8,16 @@ Git submodules and project repositories for this campaign.
 - Each subdirectory is a complete git repository
 - Shared libraries and dependencies
 
+## Structure
+
+```
+projects/
+├── worktrees/          # Git worktrees for parallel development
+├── api-service/        # Backend API
+├── frontend/           # Web application
+└── shared-libs/        # Common utilities
+```
+
 ## Usage
 
 ```bash
@@ -18,14 +28,5 @@ camp project add git@github.com:org/repo.git
 camp project list
 
 # Navigate to a project
-camp go project-name
-```
-
-## Structure
-
-```
-projects/
-├── api-service/        # Backend API
-├── frontend/           # Web application
-└── shared-libs/        # Common utilities
+cgo p project-name
 ```

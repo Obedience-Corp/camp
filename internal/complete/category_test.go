@@ -15,13 +15,16 @@ func TestCategories(t *testing.T) {
 	// Check we have all expected categories
 	expected := map[string]string{
 		"p":  "projects/",
-		"c":  "corpus/",
+		"pw": "projects/worktrees/",
 		"f":  "festivals/",
 		"a":  "ai_docs/",
 		"d":  "docs/",
-		"w":  "worktrees/",
-		"r":  "code_reviews/",
-		"pi": "pipelines/",
+		"du": "dungeon/",
+		"w":  "workflow/",
+		"cr": "workflow/code_reviews/",
+		"pi": "workflow/pipelines/",
+		"de": "workflow/design/",
+		"i":  "workflow/intents/",
 	}
 
 	if len(cats) != len(expected) {
@@ -53,13 +56,16 @@ func TestCategories_HasCorrectCategories(t *testing.T) {
 		want     nav.Category
 	}{
 		{"p", nav.CategoryProjects},
-		{"c", nav.CategoryCorpus},
+		{"pw", nav.CategoryWorktrees},
 		{"f", nav.CategoryFestivals},
 		{"a", nav.CategoryAIDocs},
 		{"d", nav.CategoryDocs},
-		{"w", nav.CategoryWorktrees},
-		{"r", nav.CategoryCodeReviews},
+		{"du", nav.CategoryDungeon},
+		{"w", nav.CategoryWorkflow},
+		{"cr", nav.CategoryCodeReviews},
 		{"pi", nav.CategoryPipelines},
+		{"de", nav.CategoryDesign},
+		{"i", nav.CategoryIntents},
 	}
 
 	for _, tt := range tests {
@@ -102,15 +108,15 @@ func TestGenerateWithDescriptions_NoArgs(t *testing.T) {
 	}
 
 	// First candidates should be category shortcuts
-	shortcuts := map[string]bool{"p": true, "c": true, "f": true, "a": true, "d": true, "w": true, "r": true, "pi": true}
+	shortcuts := map[string]bool{"p": true, "pw": true, "f": true, "a": true, "d": true, "du": true, "w": true, "cr": true, "pi": true, "de": true, "i": true}
 	foundShortcuts := 0
 	for _, c := range candidates {
 		if shortcuts[c.Value] {
 			foundShortcuts++
 		}
 	}
-	if foundShortcuts != 8 {
-		t.Errorf("Found %d shortcuts, want 8", foundShortcuts)
+	if foundShortcuts != 11 {
+		t.Errorf("Found %d shortcuts, want 11", foundShortcuts)
 	}
 }
 
@@ -206,13 +212,16 @@ func TestCategoryByShortcut(t *testing.T) {
 		want     nav.Category
 	}{
 		{"p", nav.CategoryProjects},
-		{"c", nav.CategoryCorpus},
+		{"pw", nav.CategoryWorktrees},
 		{"f", nav.CategoryFestivals},
 		{"a", nav.CategoryAIDocs},
 		{"d", nav.CategoryDocs},
-		{"w", nav.CategoryWorktrees},
-		{"r", nav.CategoryCodeReviews},
+		{"du", nav.CategoryDungeon},
+		{"w", nav.CategoryWorkflow},
+		{"cr", nav.CategoryCodeReviews},
 		{"pi", nav.CategoryPipelines},
+		{"de", nav.CategoryDesign},
+		{"i", nav.CategoryIntents},
 		{"invalid", nav.CategoryAll},
 		{"", nav.CategoryAll},
 	}
@@ -233,7 +242,7 @@ func TestDescriptionForCategory(t *testing.T) {
 		want     string
 	}{
 		{"p", "projects/"},
-		{"c", "corpus/"},
+		{"w", "workflow/"},
 		{"f", "festivals/"},
 		{"invalid", ""},
 		{"", ""},
