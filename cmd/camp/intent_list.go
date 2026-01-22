@@ -12,6 +12,7 @@ import (
 
 	"github.com/obediencecorp/camp/internal/config"
 	"github.com/obediencecorp/camp/internal/intent"
+	"github.com/obediencecorp/camp/internal/paths"
 )
 
 var intentListCmd = &cobra.Command{
@@ -65,13 +66,14 @@ func runIntentList(cmd *cobra.Command, args []string) error {
 	includeAll, _ := cmd.Flags().GetBool("all")
 
 	// Find campaign root
-	_, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
+	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
 		return fmt.Errorf("not in a campaign directory: %w", err)
 	}
 
-	// Create service
-	svc := intent.NewIntentService(campaignRoot)
+	// Create path resolver and service
+	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
+	svc := intent.NewIntentService(campaignRoot, resolver.Intents())
 
 	// Build list options
 	opts := buildListOptions(statuses, types, project, horizon, sortBy, includeAll)

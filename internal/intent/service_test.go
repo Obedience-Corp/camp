@@ -11,7 +11,7 @@ import (
 )
 
 func TestNewIntentService(t *testing.T) {
-	svc := NewIntentService("/test/root")
+	svc := NewIntentService("/test/root", "/test/root/intents")
 	if svc == nil {
 		t.Fatal("NewIntentService returned nil")
 	}
@@ -25,7 +25,7 @@ func TestNewIntentService(t *testing.T) {
 
 func TestIntentService_CreateDirect(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 	ctx := context.Background()
 
 	tests := []struct {
@@ -93,7 +93,7 @@ func TestIntentService_CreateDirect(t *testing.T) {
 
 func TestIntentService_CreateDirect_DuplicateID(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 	ctx := context.Background()
 
 	opts := CreateOptions{
@@ -119,7 +119,7 @@ func TestIntentService_CreateDirect_DuplicateID(t *testing.T) {
 
 func TestIntentService_CreateDirect_ContextCancelled(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
@@ -132,7 +132,7 @@ func TestIntentService_CreateDirect_ContextCancelled(t *testing.T) {
 
 func TestIntentService_CreateWithEditor(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 	ctx := context.Background()
 
 	// Mock editor that modifies the file
@@ -165,7 +165,7 @@ func TestIntentService_CreateWithEditor(t *testing.T) {
 
 func TestIntentService_CreateWithEditor_Cancelled(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 	ctx := context.Background()
 
 	// Mock editor that doesn't change the content
@@ -185,7 +185,7 @@ func TestIntentService_CreateWithEditor_Cancelled(t *testing.T) {
 
 func TestIntentService_Find(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 	ctx := context.Background()
 
 	// Create test intents
@@ -239,7 +239,7 @@ func TestIntentService_Find(t *testing.T) {
 
 func TestIntentService_Find_AcrossStatuses(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 	ctx := context.Background()
 
 	// Create an intent and move it to active
@@ -271,7 +271,7 @@ func TestIntentService_Find_AcrossStatuses(t *testing.T) {
 
 func TestIntentService_Get(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 	ctx := context.Background()
 
 	created, err := svc.CreateDirect(ctx, CreateOptions{
@@ -300,7 +300,7 @@ func TestIntentService_Get(t *testing.T) {
 
 func TestIntentService_List(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 	ctx := context.Background()
 
 	// Create multiple intents
@@ -382,7 +382,7 @@ func TestIntentService_List(t *testing.T) {
 
 func TestIntentService_List_Sorting(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 	ctx := context.Background()
 
 	// Create intents with different times and priorities
@@ -426,7 +426,7 @@ func TestIntentService_List_Sorting(t *testing.T) {
 
 func TestIntentService_Delete(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 	ctx := context.Background()
 
 	created, err := svc.CreateDirect(ctx, CreateOptions{
@@ -461,7 +461,7 @@ func TestIntentService_Delete(t *testing.T) {
 
 func TestIntentService_Move(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 	ctx := context.Background()
 
 	created, err := svc.CreateDirect(ctx, CreateOptions{
@@ -504,7 +504,7 @@ func TestIntentService_Move(t *testing.T) {
 
 func TestIntentService_Move_SameStatus(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 	ctx := context.Background()
 
 	created, err := svc.CreateDirect(ctx, CreateOptions{
@@ -527,7 +527,7 @@ func TestIntentService_Move_SameStatus(t *testing.T) {
 
 func TestIntentService_Archive(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 	ctx := context.Background()
 
 	created, err := svc.CreateDirect(ctx, CreateOptions{
@@ -552,7 +552,7 @@ func TestIntentService_Archive(t *testing.T) {
 
 func TestIntentService_Save(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 	ctx := context.Background()
 
 	created, err := svc.CreateDirect(ctx, CreateOptions{
@@ -585,7 +585,7 @@ func TestIntentService_Save(t *testing.T) {
 
 func TestIntentService_Edit(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 	ctx := context.Background()
 
 	created, err := svc.CreateDirect(ctx, CreateOptions{
@@ -618,7 +618,7 @@ func TestIntentService_Edit(t *testing.T) {
 
 func TestIntentService_Edit_StatusChange(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 	ctx := context.Background()
 
 	created, err := svc.CreateDirect(ctx, CreateOptions{
@@ -769,7 +769,7 @@ func TestPriorityRank(t *testing.T) {
 
 func TestIntentService_Save_NoPath(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 	ctx := context.Background()
 
 	intent := &Intent{
@@ -789,7 +789,7 @@ func TestIntentService_Save_NoPath(t *testing.T) {
 
 func TestIntentService_Save_ContextCancelled(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -808,7 +808,7 @@ func TestIntentService_Save_ContextCancelled(t *testing.T) {
 
 func TestIntentService_Delete_NotFound(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 	ctx := context.Background()
 
 	err := svc.Delete(ctx, "nonexistent-id")
@@ -819,7 +819,7 @@ func TestIntentService_Delete_NotFound(t *testing.T) {
 
 func TestIntentService_Delete_ContextCancelled(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -832,7 +832,7 @@ func TestIntentService_Delete_ContextCancelled(t *testing.T) {
 
 func TestIntentService_Move_NotFound(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 	ctx := context.Background()
 
 	_, err := svc.Move(ctx, "nonexistent-id", StatusActive)
@@ -843,7 +843,7 @@ func TestIntentService_Move_NotFound(t *testing.T) {
 
 func TestIntentService_Move_ContextCancelled(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -856,7 +856,7 @@ func TestIntentService_Move_ContextCancelled(t *testing.T) {
 
 func TestIntentService_List_ContextCancelled(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -869,7 +869,7 @@ func TestIntentService_List_ContextCancelled(t *testing.T) {
 
 func TestIntentService_Find_ContextCancelled(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -882,7 +882,7 @@ func TestIntentService_Find_ContextCancelled(t *testing.T) {
 
 func TestIntentService_Get_ContextCancelled(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -895,7 +895,7 @@ func TestIntentService_Get_ContextCancelled(t *testing.T) {
 
 func TestIntentService_Edit_NotFound(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 	ctx := context.Background()
 
 	_, err := svc.Edit(ctx, "nonexistent-id", nil)
@@ -906,7 +906,7 @@ func TestIntentService_Edit_NotFound(t *testing.T) {
 
 func TestIntentService_Edit_ContextCancelled(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -919,7 +919,7 @@ func TestIntentService_Edit_ContextCancelled(t *testing.T) {
 
 func TestIntentService_Edit_EditorError(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 	ctx := context.Background()
 
 	created, err := svc.CreateDirect(ctx, CreateOptions{
@@ -943,7 +943,7 @@ func TestIntentService_Edit_EditorError(t *testing.T) {
 
 func TestIntentService_Edit_ValidationError(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 	ctx := context.Background()
 
 	created, err := svc.CreateDirect(ctx, CreateOptions{
@@ -972,7 +972,7 @@ func TestIntentService_Edit_ValidationError(t *testing.T) {
 
 func TestIntentService_List_AllSortOptions(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 	ctx := context.Background()
 
 	// Create intents with different data for sorting
@@ -1025,7 +1025,7 @@ func TestIntentService_List_AllSortOptions(t *testing.T) {
 
 func TestIntentService_CreateWithEditor_EditorError(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 	ctx := context.Background()
 
 	errorEditor := func(ctx context.Context, path string) error {
@@ -1044,7 +1044,7 @@ func TestIntentService_CreateWithEditor_EditorError(t *testing.T) {
 
 func TestIntentService_CreateWithEditor_ValidationFails(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 	ctx := context.Background()
 
 	// Editor that clears the title (breaks validation)
@@ -1081,7 +1081,7 @@ func TestMoveFile_SourceNotExist(t *testing.T) {
 
 func TestIntentService_loadIntent_Error(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 
 	// Non-existent file
 	_, err := svc.loadIntent(filepath.Join(tmpDir, "nonexistent.md"))
@@ -1091,7 +1091,7 @@ func TestIntentService_loadIntent_Error(t *testing.T) {
 }
 
 func TestIntentService_getIntentPath(t *testing.T) {
-	svc := NewIntentService("/campaign")
+	svc := NewIntentService("/campaign", "/campaign/intents")
 
 	tests := []struct {
 		status Status
@@ -1113,7 +1113,7 @@ func TestIntentService_getIntentPath(t *testing.T) {
 
 func TestIntentService_List_EmptyDirectories(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 	ctx := context.Background()
 
 	// List with no intents created - should return empty slice
@@ -1128,7 +1128,7 @@ func TestIntentService_List_EmptyDirectories(t *testing.T) {
 
 func TestIntentService_List_SkipsNonMarkdownFiles(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 	ctx := context.Background()
 
 	// Create inbox directory with non-markdown files
@@ -1162,7 +1162,7 @@ func TestIntentService_List_SkipsNonMarkdownFiles(t *testing.T) {
 
 func TestIntentService_List_SkipsMalformedFiles(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 	ctx := context.Background()
 
 	// Create inbox directory
@@ -1197,7 +1197,7 @@ func TestIntentService_List_SkipsMalformedFiles(t *testing.T) {
 
 func TestIntentService_CreateDirect_UseDefaultTimestamp(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 	ctx := context.Background()
 
 	// Don't provide timestamp - should use time.Now()
@@ -1218,7 +1218,7 @@ func TestIntentService_CreateDirect_UseDefaultTimestamp(t *testing.T) {
 
 func TestIntentService_CreateWithEditor_ContextCancelledBeforeEditor(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -1231,7 +1231,7 @@ func TestIntentService_CreateWithEditor_ContextCancelledBeforeEditor(t *testing.
 
 func TestIntentService_Move_AllStatuses(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 	ctx := context.Background()
 
 	// Test moving to killed status (archive)
@@ -1255,7 +1255,7 @@ func TestIntentService_Move_AllStatuses(t *testing.T) {
 
 func TestIntentService_Edit_NilEditor(t *testing.T) {
 	tmpDir := t.TempDir()
-	svc := NewIntentService(tmpDir)
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
 	ctx := context.Background()
 
 	created, err := svc.CreateDirect(ctx, CreateOptions{
