@@ -29,12 +29,53 @@ type CampaignConfig struct {
 	Description string `yaml:"description,omitempty"`
 	// CreatedAt is when the campaign was created.
 	CreatedAt time.Time `yaml:"created_at,omitempty"`
-	// Paths defines the campaign directory structure.
-	Paths CampaignPaths `yaml:"paths,omitempty"`
 	// Projects contains the list of project configurations.
 	Projects []ProjectConfig `yaml:"projects,omitempty"`
-	// Shortcuts defines custom navigation and command shortcuts.
-	Shortcuts map[string]ShortcutConfig `yaml:"shortcuts,omitempty"`
+
+	// Jumps holds the loaded jumps configuration (from .campaign/settings/jumps.yaml).
+	// This field is not serialized to campaign.yaml - it's loaded separately.
+	Jumps *JumpsConfig `yaml:"-"`
+
+	// Legacy fields for migration (will be moved to jumps.yaml if present).
+	// These are only used during loading for backward compatibility.
+	LegacyPaths     CampaignPaths             `yaml:"paths,omitempty"`
+	LegacyShortcuts map[string]ShortcutConfig `yaml:"shortcuts,omitempty"`
+}
+
+// Paths returns the campaign paths configuration.
+// Returns from Jumps if loaded, otherwise returns legacy paths or defaults.
+func (c *CampaignConfig) Paths() CampaignPaths {
+	if c.Jumps != nil {
+		return c.Jumps.Paths
+	}
+	if c.LegacyPaths.Projects != "" {
+		return c.LegacyPaths
+	}
+	return DefaultCampaignPaths()
+}
+
+// Shortcuts returns the campaign shortcuts configuration.
+// Returns from Jumps if loaded, otherwise returns legacy shortcuts or defaults.
+func (c *CampaignConfig) Shortcuts() map[string]ShortcutConfig {
+	if c.Jumps != nil && c.Jumps.Shortcuts != nil {
+		return c.Jumps.Shortcuts
+	}
+	if c.LegacyShortcuts != nil {
+		return c.LegacyShortcuts
+	}
+	return DefaultNavigationShortcuts()
+}
+
+// HasLegacyConfig returns true if the config has legacy paths or shortcuts
+// that should be migrated to jumps.yaml.
+func (c *CampaignConfig) HasLegacyConfig() bool {
+	return c.LegacyPaths.Projects != "" || len(c.LegacyShortcuts) > 0
+}
+
+// ClearLegacyConfig removes legacy paths and shortcuts after migration.
+func (c *CampaignConfig) ClearLegacyConfig() {
+	c.LegacyPaths = CampaignPaths{}
+	c.LegacyShortcuts = nil
 }
 
 // CampaignPaths defines the directory structure for a campaign.

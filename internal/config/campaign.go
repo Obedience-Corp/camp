@@ -19,7 +19,7 @@ const CampaignDir = ".campaign"
 
 // LoadCampaignConfig loads .campaign/campaign.yaml from the campaign root.
 // Returns the configuration with defaults applied and validated.
-// If the campaign lacks an ID, one is generated and saved (migration for older campaigns).
+// Also loads .campaign/settings/jumps.yaml and handles migration from legacy configs.
 func LoadCampaignConfig(ctx context.Context, campaignRoot string) (*CampaignConfig, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -43,12 +43,22 @@ func LoadCampaignConfig(ctx context.Context, campaignRoot string) (*CampaignConf
 	cfg.ApplyDefaults()
 
 	// Migration: Generate ID for campaigns that don't have one
+	needsSave := false
 	if cfg.ID == "" {
 		cfg.ID = uuid.New().String()
-		// Save the updated config with the new ID
+		needsSave = true
+	}
+
+	// Load jumps.yaml or handle migration from legacy config
+	if err := loadOrMigrateJumps(ctx, campaignRoot, &cfg); err != nil {
+		return nil, err
+	}
+
+	// If we migrated legacy config, we need to save campaign.yaml without paths/shortcuts
+	if needsSave || cfg.HasLegacyConfig() {
+		cfg.ClearLegacyConfig()
 		if err := SaveCampaignConfig(ctx, campaignRoot, &cfg); err != nil {
-			// Log warning but don't fail - ID can be regenerated next time
-			// The config is still usable without persistence
+			// Log warning but don't fail - can retry next time
 		}
 	}
 
@@ -58,6 +68,51 @@ func LoadCampaignConfig(ctx context.Context, campaignRoot string) (*CampaignConf
 	}
 
 	return &cfg, nil
+}
+
+// loadOrMigrateJumps loads jumps.yaml or migrates from legacy campaign.yaml fields.
+func loadOrMigrateJumps(ctx context.Context, campaignRoot string, cfg *CampaignConfig) error {
+	// Try to load existing jumps.yaml
+	jumps, err := LoadJumpsConfig(ctx, campaignRoot)
+	if err != nil {
+		return err
+	}
+
+	if jumps != nil {
+		// jumps.yaml exists, use it
+		jumps.ApplyDefaults()
+		cfg.Jumps = jumps
+		return nil
+	}
+
+	// No jumps.yaml exists - check for legacy config to migrate
+	if cfg.HasLegacyConfig() {
+		// Migrate legacy paths and shortcuts to jumps.yaml
+		jumps = &JumpsConfig{
+			Paths:     cfg.LegacyPaths,
+			Shortcuts: cfg.LegacyShortcuts,
+		}
+		jumps.ApplyDefaults()
+
+		// Save the new jumps.yaml
+		if err := SaveJumpsConfig(ctx, campaignRoot, jumps); err != nil {
+			return fmt.Errorf("failed to migrate jumps config: %w", err)
+		}
+
+		cfg.Jumps = jumps
+		return nil
+	}
+
+	// No jumps.yaml and no legacy config - create defaults
+	defaultJumps := DefaultJumpsConfig()
+	if err := SaveJumpsConfig(ctx, campaignRoot, &defaultJumps); err != nil {
+		// Don't fail if we can't save defaults, just use them in memory
+		cfg.Jumps = &defaultJumps
+		return nil
+	}
+
+	cfg.Jumps = &defaultJumps
+	return nil
 }
 
 // LoadCampaignConfigFromCwd loads campaign config by first detecting the campaign root

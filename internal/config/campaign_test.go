@@ -18,6 +18,7 @@ func TestLoadCampaignConfig(t *testing.T) {
 		t.Fatalf("failed to create campaign dir: %v", err)
 	}
 
+	// Legacy config with paths: block (should trigger migration)
 	configContent := `
 name: test-campaign
 type: product
@@ -45,13 +46,18 @@ paths:
 	if cfg.Description != "A test campaign" {
 		t.Errorf("Description = %q, want %q", cfg.Description, "A test campaign")
 	}
-	// Custom path should be preserved
-	if cfg.Paths.Projects != "src/" {
-		t.Errorf("Paths.Projects = %q, want %q", cfg.Paths.Projects, "src/")
+	// Custom path should be migrated to jumps.yaml and accessible via Paths()
+	if cfg.Paths().Projects != "src/" {
+		t.Errorf("Paths().Projects = %q, want %q", cfg.Paths().Projects, "src/")
 	}
 	// Default should be applied for missing path
-	if cfg.Paths.Worktrees != "projects/worktrees/" {
-		t.Errorf("Paths.Worktrees = %q, want %q (default)", cfg.Paths.Worktrees, "projects/worktrees/")
+	if cfg.Paths().Worktrees != "projects/worktrees/" {
+		t.Errorf("Paths().Worktrees = %q, want %q (default)", cfg.Paths().Worktrees, "projects/worktrees/")
+	}
+
+	// Verify jumps.yaml was created (migration)
+	if !JumpsConfigExists(tmpDir) {
+		t.Error("jumps.yaml should have been created during migration")
 	}
 }
 
@@ -78,10 +84,10 @@ func TestLoadCampaignConfig_DefaultsApplied(t *testing.T) {
 		t.Errorf("Type = %q, want %q (default)", cfg.Type, CampaignTypeProduct)
 	}
 
-	// All paths should have defaults
+	// All paths should have defaults (from jumps.yaml which is auto-created)
 	defaults := DefaultCampaignPaths()
-	if cfg.Paths.Projects != defaults.Projects {
-		t.Errorf("Paths.Projects = %q, want %q", cfg.Paths.Projects, defaults.Projects)
+	if cfg.Paths().Projects != defaults.Projects {
+		t.Errorf("Paths().Projects = %q, want %q", cfg.Paths().Projects, defaults.Projects)
 	}
 }
 
@@ -176,7 +182,6 @@ func TestSaveCampaignConfig(t *testing.T) {
 		Name:        "saved-campaign",
 		Type:        CampaignTypeResearch,
 		Description: "A saved campaign",
-		Paths:       DefaultCampaignPaths(),
 	}
 
 	ctx := context.Background()
@@ -191,7 +196,7 @@ func TestSaveCampaignConfig(t *testing.T) {
 		t.Error("config file was not created")
 	}
 
-	// Load it back and verify
+	// Load it back and verify (this will auto-create jumps.yaml with defaults)
 	loaded, err := LoadCampaignConfig(ctx, tmpDir)
 	if err != nil {
 		t.Fatalf("LoadCampaignConfig() error = %v", err)

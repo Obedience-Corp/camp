@@ -118,10 +118,10 @@ func printAllShortcuts(cfg *config.CampaignConfig, _ string) error {
 	fmt.Printf("Campaign: %s\n", ui.Accent(cfg.Name))
 	fmt.Println()
 
-	if len(cfg.Shortcuts) == 0 {
+	if len(cfg.Shortcuts()) == 0 {
 		fmt.Println(ui.Dim("No shortcuts configured."))
 		fmt.Println()
-		fmt.Printf("To add shortcuts, edit %s:\n", ui.Accent(".campaign/campaign.yaml"))
+		fmt.Printf("To add shortcuts, edit %s:\n", ui.Accent(".campaign/settings/jumps.yaml"))
 		fmt.Println()
 		fmt.Println(ui.Dim("  shortcuts:"))
 		fmt.Println(ui.Dim("    api:"))
@@ -137,7 +137,7 @@ func printAllShortcuts(cfg *config.CampaignConfig, _ string) error {
 	navShortcuts := make(map[string]config.ShortcutConfig)
 	cmdShortcuts := make(map[string]config.ShortcutConfig)
 
-	for key, sc := range cfg.Shortcuts {
+	for key, sc := range cfg.Shortcuts() {
 		if sc.IsNavigation() {
 			navShortcuts[key] = sc
 		}

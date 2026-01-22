@@ -48,7 +48,7 @@ func loadShortcutMappings(ctx context.Context) map[string]nav.Category {
 	if err != nil {
 		return nil
 	}
-	return buildCategoryMappings(cfg.Shortcuts)
+	return buildCategoryMappings(cfg.Shortcuts())
 }
 
 // buildCategoryMappings converts config shortcuts to nav.Category mappings.

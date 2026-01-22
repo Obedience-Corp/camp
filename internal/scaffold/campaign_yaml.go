@@ -60,6 +60,7 @@ func IsValidCampaignName(name string) bool {
 }
 
 // CreateCampaignConfig generates a new campaign.yaml configuration.
+// Note: Paths and shortcuts are now stored in .campaign/settings/jumps.yaml
 func CreateCampaignConfig(ctx context.Context, campaignRoot string, opts InitOptions) (*config.CampaignConfig, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -70,7 +71,6 @@ func CreateCampaignConfig(ctx context.Context, campaignRoot string, opts InitOpt
 		Type:        opts.Type,
 		CreatedAt:   time.Now().UTC(),
 		Description: fmt.Sprintf("Campaign: %s", opts.Name),
-		Paths:       config.DefaultCampaignPaths(),
 	}
 
 	// Apply defaults
@@ -78,10 +78,19 @@ func CreateCampaignConfig(ctx context.Context, campaignRoot string, opts InitOpt
 		cfg.Type = config.CampaignTypeProduct
 	}
 
-	// Save to file
+	// Save campaign.yaml
 	if err := config.SaveCampaignConfig(ctx, campaignRoot, cfg); err != nil {
 		return nil, err
 	}
+
+	// Create jumps.yaml with default paths and shortcuts
+	jumps := config.DefaultJumpsConfig()
+	if err := config.SaveJumpsConfig(ctx, campaignRoot, &jumps); err != nil {
+		return nil, fmt.Errorf("failed to create jumps config: %w", err)
+	}
+
+	// Attach jumps to the config for return
+	cfg.Jumps = &jumps
 
 	return cfg, nil
 }

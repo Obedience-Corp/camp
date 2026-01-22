@@ -49,14 +49,15 @@ func DefaultGlobalConfig() GlobalConfig {
 }
 
 // DefaultCampaignConfig returns a default campaign configuration with the given name.
+// Note: Paths and shortcuts are now in .campaign/settings/jumps.yaml
 func DefaultCampaignConfig(name string) CampaignConfig {
+	jumps := DefaultJumpsConfig()
 	return CampaignConfig{
 		Name:      name,
 		Type:      CampaignTypeProduct,
 		CreatedAt: time.Now(),
-		Paths:     DefaultCampaignPaths(),
-		Shortcuts: DefaultNavigationShortcuts(),
 		Projects:  nil,
+		Jumps:     &jumps,
 	}
 }
 
@@ -68,46 +69,13 @@ func NewRegistry() *Registry {
 }
 
 // ApplyDefaults fills in missing fields with default values.
+// Note: Paths and shortcuts defaults are now applied via JumpsConfig.ApplyDefaults()
 func (c *CampaignConfig) ApplyDefaults() {
 	if c.Type == "" {
 		c.Type = CampaignTypeProduct
 	}
 	if c.CreatedAt.IsZero() {
 		c.CreatedAt = time.Now()
-	}
-	defaults := DefaultCampaignPaths()
-	if c.Paths.Projects == "" {
-		c.Paths.Projects = defaults.Projects
-	}
-	if c.Paths.Worktrees == "" {
-		c.Paths.Worktrees = defaults.Worktrees
-	}
-	if c.Paths.AIDocs == "" {
-		c.Paths.AIDocs = defaults.AIDocs
-	}
-	if c.Paths.Docs == "" {
-		c.Paths.Docs = defaults.Docs
-	}
-	if c.Paths.Festivals == "" {
-		c.Paths.Festivals = defaults.Festivals
-	}
-	if c.Paths.Workflow == "" {
-		c.Paths.Workflow = defaults.Workflow
-	}
-	if c.Paths.Intents == "" {
-		c.Paths.Intents = defaults.Intents
-	}
-	if c.Paths.CodeReviews == "" {
-		c.Paths.CodeReviews = defaults.CodeReviews
-	}
-	if c.Paths.Pipelines == "" {
-		c.Paths.Pipelines = defaults.Pipelines
-	}
-	if c.Paths.Design == "" {
-		c.Paths.Design = defaults.Design
-	}
-	if c.Paths.Dungeon == "" {
-		c.Paths.Dungeon = defaults.Dungeon
 	}
 }
 
