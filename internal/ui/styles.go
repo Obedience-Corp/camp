@@ -9,7 +9,7 @@ var (
 	InfoColor     = lipgloss.Color("33")  // Blue
 	WarningColor  = lipgloss.Color("220") // Yellow/amber
 	ErrorColor    = lipgloss.Color("196") // Red
-	DimColor      = lipgloss.Color("245") // Grey
+	DimColor      = lipgloss.Color("253") // Very light grey (readable on dark backgrounds)
 	BrightColor   = lipgloss.Color("255") // White
 	AccentColor   = lipgloss.Color("51")  // Cyan
 	CategoryColor = lipgloss.Color("141") // Purple
@@ -21,6 +21,15 @@ var (
 	ResearchColor = lipgloss.Color("33")  // Blue
 	ToolsColor    = lipgloss.Color("220") // Yellow
 	PersonalColor = lipgloss.Color("141") // Purple
+)
+
+// Intent status colors - reuse existing semantic colors for consistency
+var (
+	StatusInboxColor  = DimColor     // Light grey for inbox
+	StatusActiveColor = SuccessColor // Green for active
+	StatusReadyColor  = WarningColor // Yellow for ready
+	StatusDoneColor   = SuccessColor // Green for done
+	StatusKilledColor = ErrorColor   // Red for killed
 )
 
 // Pre-built styles
@@ -67,5 +76,23 @@ func GetCampaignTypeColor(campaignType string) lipgloss.Color {
 		return PersonalColor
 	default:
 		return DimColor
+	}
+}
+
+// GetIntentStatusStyle returns the style for an intent status
+func GetIntentStatusStyle(status string) lipgloss.Style {
+	switch status {
+	case "inbox":
+		return lipgloss.NewStyle().Foreground(StatusInboxColor)
+	case "active":
+		return lipgloss.NewStyle().Foreground(StatusActiveColor)
+	case "ready":
+		return lipgloss.NewStyle().Foreground(StatusReadyColor)
+	case "done":
+		return lipgloss.NewStyle().Foreground(StatusDoneColor)
+	case "killed":
+		return lipgloss.NewStyle().Foreground(StatusKilledColor)
+	default:
+		return lipgloss.NewStyle().Foreground(DimColor)
 	}
 }
