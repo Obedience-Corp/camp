@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -24,6 +25,35 @@ func TestLoadGlobalConfig_Defaults(t *testing.T) {
 	}
 }
 
+func TestLoadGlobalConfig_AutoCreate(t *testing.T) {
+	// Use temp XDG_CONFIG_HOME
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	ctx := context.Background()
+	_, err := LoadGlobalConfig(ctx)
+	if err != nil {
+		t.Fatalf("LoadGlobalConfig() error = %v", err)
+	}
+
+	// Verify config file was auto-created
+	path := GlobalConfigPath()
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		t.Error("config file was not auto-created on first load")
+	}
+
+	// Verify it's valid JSON
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read auto-created config: %v", err)
+	}
+
+	var cfg GlobalConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Errorf("auto-created config is not valid JSON: %v", err)
+	}
+}
+
 func TestLoadGlobalConfig_FromFile(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
@@ -32,12 +62,12 @@ func TestLoadGlobalConfig_FromFile(t *testing.T) {
 	configDir := filepath.Join(dir, AppName)
 	os.MkdirAll(configDir, 0755)
 
-	configContent := `
-default_type: research
-editor: nvim
-no_color: true
-`
-	configPath := filepath.Join(configDir, "config.yaml")
+	configContent := `{
+  "default_type": "research",
+  "editor": "nvim",
+  "no_color": true
+}`
+	configPath := filepath.Join(configDir, "config.json")
 	os.WriteFile(configPath, []byte(configContent), 0644)
 
 	ctx := context.Background()
@@ -57,20 +87,20 @@ no_color: true
 	}
 }
 
-func TestLoadGlobalConfig_InvalidYAML(t *testing.T) {
+func TestLoadGlobalConfig_InvalidJSON(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
 	configDir := filepath.Join(dir, AppName)
 	os.MkdirAll(configDir, 0755)
 
-	configPath := filepath.Join(configDir, "config.yaml")
-	os.WriteFile(configPath, []byte("invalid: [yaml"), 0644)
+	configPath := filepath.Join(configDir, "config.json")
+	os.WriteFile(configPath, []byte("{invalid json"), 0644)
 
 	ctx := context.Background()
 	_, err := LoadGlobalConfig(ctx)
 	if err == nil {
-		t.Error("LoadGlobalConfig() expected error for invalid YAML")
+		t.Error("LoadGlobalConfig() expected error for invalid JSON")
 	}
 }
 
@@ -194,7 +224,7 @@ func TestGlobalConfigPath(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
 	got := GlobalConfigPath()
-	want := filepath.Join(dir, AppName, "config.yaml")
+	want := filepath.Join(dir, AppName, "config.json")
 	if got != want {
 		t.Errorf("GlobalConfigPath() = %q, want %q", got, want)
 	}

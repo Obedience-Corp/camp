@@ -11,31 +11,39 @@ import (
 // RunForm runs a huh form with the configured theme applied.
 // It loads the theme from global config and applies it before running.
 func RunForm(ctx context.Context, form *huh.Form) error {
-	cfg, _ := config.LoadGlobalConfig(ctx)
-
-	themeName := ThemeName(cfg.TUI.Theme)
-	if themeName == "" {
-		themeName = ThemeAdaptive
+	cfg, err := config.LoadGlobalConfig(ctx)
+	if err != nil {
+		// Use huh defaults on error
+		return form.Run()
 	}
 
-	form = form.WithTheme(GetTheme(themeName))
+	themeName := ThemeName(cfg.TUI.Theme)
 
-	return form.Run()
+	// Adaptive = let huh auto-detect terminal colors
+	if themeName == "" || themeName == ThemeAdaptive {
+		return form.Run()
+	}
+
+	return form.WithTheme(GetTheme(themeName)).Run()
 }
 
 // RunFormAccessible runs a huh form with accessible mode enabled.
 // This is useful for screen readers and other accessibility tools.
 func RunFormAccessible(ctx context.Context, form *huh.Form) error {
-	cfg, _ := config.LoadGlobalConfig(ctx)
-
-	themeName := ThemeName(cfg.TUI.Theme)
-	if themeName == "" {
-		themeName = ThemeAdaptive
+	cfg, err := config.LoadGlobalConfig(ctx)
+	if err != nil {
+		// Use huh defaults on error
+		return form.WithAccessible(true).Run()
 	}
 
-	form = form.WithTheme(GetTheme(themeName)).WithAccessible(true)
+	themeName := ThemeName(cfg.TUI.Theme)
 
-	return form.Run()
+	// Adaptive = let huh auto-detect terminal colors
+	if themeName == "" || themeName == ThemeAdaptive {
+		return form.WithAccessible(true).Run()
+	}
+
+	return form.WithTheme(GetTheme(themeName)).WithAccessible(true).Run()
 }
 
 // IsCancelled returns true if the error indicates user cancellation.

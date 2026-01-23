@@ -20,7 +20,7 @@ func ConfigDir() string {
 
 // GlobalConfigPath returns the path to the global config file.
 func GlobalConfigPath() string {
-	return filepath.Join(ConfigDir(), "config.yaml")
+	return filepath.Join(ConfigDir(), "config.json")
 }
 
 // RegistryPath returns the path to the campaign registry file.

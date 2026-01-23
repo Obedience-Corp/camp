@@ -174,25 +174,25 @@ func (s ShortcutConfig) IsCommand() bool {
 // TUIConfig holds configuration for terminal UI elements.
 type TUIConfig struct {
 	// Theme is the color theme for huh forms (adaptive, light, dark, high-contrast).
-	Theme string `yaml:"theme,omitempty"`
+	Theme string `json:"theme,omitempty" yaml:"theme,omitempty"`
 	// VimMode enables vim-style keybindings in forms.
-	VimMode bool `yaml:"vim_mode,omitempty"`
+	VimMode bool `json:"vim_mode,omitempty" yaml:"vim_mode,omitempty"`
 }
 
-// GlobalConfig represents ~/.config/campaign/config.yaml configuration.
+// GlobalConfig represents ~/.config/campaign/config.json configuration.
 type GlobalConfig struct {
 	// DefaultType is the default campaign type when creating new campaigns.
-	DefaultType CampaignType `yaml:"default_type,omitempty"`
+	DefaultType CampaignType `json:"default_type,omitempty" yaml:"default_type,omitempty"`
 	// Editor is the preferred editor command.
-	Editor string `yaml:"editor,omitempty"`
+	Editor string `json:"editor,omitempty" yaml:"editor,omitempty"`
 	// NoColor disables colored output.
-	NoColor bool `yaml:"no_color,omitempty"`
+	NoColor bool `json:"no_color,omitempty" yaml:"no_color,omitempty"`
 	// Verbose enables verbose output.
-	Verbose bool `yaml:"verbose,omitempty"`
+	Verbose bool `json:"verbose,omitempty" yaml:"verbose,omitempty"`
 	// TUI holds terminal UI configuration.
-	TUI TUIConfig `yaml:"tui,omitempty"`
+	TUI TUIConfig `json:"tui,omitempty" yaml:"tui,omitempty"`
 	// DefaultPaths provides default paths for new campaigns.
-	DefaultPaths CampaignPaths `yaml:"default_paths,omitempty"`
+	DefaultPaths CampaignPaths `json:"default_paths,omitempty" yaml:"default_paths,omitempty"`
 }
 
 // Registry represents ~/.config/campaign/registry.yaml for tracking campaigns.

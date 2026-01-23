@@ -2,14 +2,13 @@ package config
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
-
-	"gopkg.in/yaml.v3"
 )
 
-// LoadGlobalConfig loads the global configuration from ~/.config/campaign/config.yaml.
-// Returns default configuration if the file doesn't exist.
+// LoadGlobalConfig loads the global configuration from ~/.config/campaign/config.json.
+// Returns default configuration if the file doesn't exist, and auto-creates the file.
 func LoadGlobalConfig(ctx context.Context) (*GlobalConfig, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -19,15 +18,16 @@ func LoadGlobalConfig(ctx context.Context) (*GlobalConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			// Return defaults if no config file
+			// Return defaults and auto-create config file for discoverability
 			cfg := DefaultGlobalConfig()
+			_ = SaveGlobalConfig(ctx, &cfg) // Ignore error - may lack permissions
 			return &cfg, nil
 		}
 		return nil, fmt.Errorf("failed to read global config %s: %w", path, err)
 	}
 
 	var cfg GlobalConfig
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse global config %s: %w", path, err)
 	}
 
@@ -42,7 +42,7 @@ func LoadGlobalConfig(ctx context.Context) (*GlobalConfig, error) {
 	return &cfg, nil
 }
 
-// SaveGlobalConfig saves the global configuration to ~/.config/campaign/config.yaml.
+// SaveGlobalConfig saves the global configuration to ~/.config/campaign/config.json.
 func SaveGlobalConfig(ctx context.Context, cfg *GlobalConfig) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
@@ -53,7 +53,7 @@ func SaveGlobalConfig(ctx context.Context, cfg *GlobalConfig) error {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
-	data, err := yaml.Marshal(cfg)
+	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal global config: %w", err)
 	}
