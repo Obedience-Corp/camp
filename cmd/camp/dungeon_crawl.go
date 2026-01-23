@@ -2,12 +2,13 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
 	"github.com/obediencecorp/camp/internal/config"
 	"github.com/obediencecorp/camp/internal/dungeon"
-	"github.com/obediencecorp/camp/internal/paths"
 	"github.com/obediencecorp/camp/internal/ui"
 )
 
@@ -46,11 +47,16 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("not in a campaign directory: %w", err)
 	}
 
-	// Create path resolver
-	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
+	// Get current working directory for local dungeon
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("getting current directory: %w", err)
+	}
+	dungeonPath := filepath.Join(cwd, "dungeon")
 
-	// Create dungeon service
-	svc := dungeon.NewService(campaignRoot, resolver.Dungeon())
+	// Create dungeon service (still validates campaign, but uses CWD for dungeon)
+	_ = cfg // campaign config loaded to validate we're in a campaign
+	svc := dungeon.NewService(campaignRoot, dungeonPath)
 
 	// Check if dungeon exists
 	items, err := svc.ListItems(ctx)
@@ -60,7 +66,7 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 
 	if len(items) == 0 {
 		fmt.Printf("%s Dungeon is empty. Nothing to crawl.\n", ui.InfoIcon())
-		fmt.Printf("\n  Move items to %s to start using the dungeon.\n", ui.Value(resolver.RelativeDungeon()))
+		fmt.Printf("\n  Move items to %s to start using the dungeon.\n", ui.Value("./dungeon"))
 		return nil
 	}
 
@@ -80,7 +86,7 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  %s Skipped: %d\n", ui.BulletIcon(), summary.Skipped)
 
 	if summary.Archived > 0 {
-		fmt.Printf("\n%s Archived items moved to %s\n", ui.InfoIcon(), ui.Value(resolver.RelativeDungeon()+"/archived/"))
+		fmt.Printf("\n%s Archived items moved to %s\n", ui.InfoIcon(), ui.Value("./dungeon/archived/"))
 	}
 
 	return nil

@@ -2,13 +2,13 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
 
 	"github.com/obediencecorp/camp/internal/config"
 	"github.com/obediencecorp/camp/internal/dungeon"
-	"github.com/obediencecorp/camp/internal/paths"
 	"github.com/obediencecorp/camp/internal/ui"
 )
 
@@ -50,11 +50,16 @@ func runDungeonAdd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("not in a campaign directory: %w", err)
 	}
 
-	// Create path resolver
-	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
+	// Get current working directory for local dungeon
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("getting current directory: %w", err)
+	}
+	dungeonPath := filepath.Join(cwd, "dungeon")
 
-	// Create dungeon service
-	svc := dungeon.NewService(campaignRoot, resolver.Dungeon())
+	// Create dungeon service (still validates campaign, but uses CWD for dungeon)
+	_ = cfg // campaign config loaded to validate we're in a campaign
+	svc := dungeon.NewService(campaignRoot, dungeonPath)
 
 	// Initialize dungeon
 	result, err := svc.Init(ctx, dungeon.InitOptions{
@@ -66,7 +71,7 @@ func runDungeonAdd(cmd *cobra.Command, args []string) error {
 
 	// Report results
 	relPath := func(p string) string {
-		rel, err := filepath.Rel(campaignRoot, p)
+		rel, err := filepath.Rel(cwd, p)
 		if err != nil {
 			return p
 		}
@@ -96,7 +101,7 @@ func runDungeonAdd(cmd *cobra.Command, args []string) error {
 	if totalCreated == 0 && len(result.Skipped) > 0 {
 		fmt.Printf("\n%s Dungeon already initialized. Use --force to overwrite.\n", ui.InfoIcon())
 	} else if totalCreated > 0 {
-		fmt.Printf("\n%s Dungeon initialized at %s\n", ui.SuccessIcon(), ui.Value(relPath(resolver.Dungeon())))
+		fmt.Printf("\n%s Dungeon initialized at %s\n", ui.SuccessIcon(), ui.Value("./dungeon"))
 	}
 
 	return nil
