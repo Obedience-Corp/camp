@@ -57,9 +57,7 @@ func ValidateProjectConfig(p *ProjectConfig) error {
 
 // ValidateGlobalConfig validates a global configuration.
 func ValidateGlobalConfig(cfg *GlobalConfig) error {
-	if cfg.DefaultType != "" && !cfg.DefaultType.Valid() {
-		return fmt.Errorf("%w: %q", ErrInvalidType, cfg.DefaultType)
-	}
+	// GlobalConfig only contains user preferences, no validation needed
 	return nil
 }
 

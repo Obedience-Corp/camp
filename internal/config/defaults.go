@@ -48,12 +48,10 @@ func DefaultTUIConfig() TUIConfig {
 // DefaultGlobalConfig returns the default global configuration.
 func DefaultGlobalConfig() GlobalConfig {
 	return GlobalConfig{
-		DefaultType:  CampaignTypeProduct,
-		Editor:       "", // Uses $EDITOR environment variable
-		NoColor:      false,
-		Verbose:      false,
-		TUI:          DefaultTUIConfig(),
-		DefaultPaths: DefaultCampaignPaths(),
+		Editor:  "", // Uses $EDITOR environment variable
+		NoColor: false,
+		Verbose: false,
+		TUI:     DefaultTUIConfig(),
 	}
 }
 
@@ -90,45 +88,8 @@ func (c *CampaignConfig) ApplyDefaults() {
 
 // ApplyDefaults fills in missing fields with default values.
 func (c *GlobalConfig) ApplyDefaults() {
-	if c.DefaultType == "" {
-		c.DefaultType = CampaignTypeProduct
-	}
 	// Apply TUI defaults
 	if c.TUI.Theme == "" {
 		c.TUI.Theme = "adaptive"
-	}
-	defaults := DefaultCampaignPaths()
-	if c.DefaultPaths.Projects == "" {
-		c.DefaultPaths.Projects = defaults.Projects
-	}
-	if c.DefaultPaths.Worktrees == "" {
-		c.DefaultPaths.Worktrees = defaults.Worktrees
-	}
-	if c.DefaultPaths.AIDocs == "" {
-		c.DefaultPaths.AIDocs = defaults.AIDocs
-	}
-	if c.DefaultPaths.Docs == "" {
-		c.DefaultPaths.Docs = defaults.Docs
-	}
-	if c.DefaultPaths.Festivals == "" {
-		c.DefaultPaths.Festivals = defaults.Festivals
-	}
-	if c.DefaultPaths.Workflow == "" {
-		c.DefaultPaths.Workflow = defaults.Workflow
-	}
-	if c.DefaultPaths.Intents == "" {
-		c.DefaultPaths.Intents = defaults.Intents
-	}
-	if c.DefaultPaths.CodeReviews == "" {
-		c.DefaultPaths.CodeReviews = defaults.CodeReviews
-	}
-	if c.DefaultPaths.Pipelines == "" {
-		c.DefaultPaths.Pipelines = defaults.Pipelines
-	}
-	if c.DefaultPaths.Design == "" {
-		c.DefaultPaths.Design = defaults.Design
-	}
-	if c.DefaultPaths.Dungeon == "" {
-		c.DefaultPaths.Dungeon = defaults.Dungeon
 	}
 }

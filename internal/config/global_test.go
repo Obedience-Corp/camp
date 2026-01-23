@@ -20,8 +20,9 @@ func TestLoadGlobalConfig_Defaults(t *testing.T) {
 		t.Fatalf("LoadGlobalConfig() error = %v", err)
 	}
 
-	if cfg.DefaultType != CampaignTypeProduct {
-		t.Errorf("DefaultType = %q, want %q", cfg.DefaultType, CampaignTypeProduct)
+	// Verify TUI defaults are applied
+	if cfg.TUI.Theme != "adaptive" {
+		t.Errorf("TUI.Theme = %q, want %q", cfg.TUI.Theme, "adaptive")
 	}
 }
 
@@ -63,7 +64,6 @@ func TestLoadGlobalConfig_FromFile(t *testing.T) {
 	os.MkdirAll(configDir, 0755)
 
 	configContent := `{
-  "default_type": "research",
   "editor": "nvim",
   "no_color": true
 }`
@@ -76,9 +76,6 @@ func TestLoadGlobalConfig_FromFile(t *testing.T) {
 		t.Fatalf("LoadGlobalConfig() error = %v", err)
 	}
 
-	if cfg.DefaultType != CampaignTypeResearch {
-		t.Errorf("DefaultType = %q, want %q", cfg.DefaultType, CampaignTypeResearch)
-	}
 	if cfg.Editor != "nvim" {
 		t.Errorf("Editor = %q, want %q", cfg.Editor, "nvim")
 	}
@@ -119,9 +116,8 @@ func TestSaveGlobalConfig(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
 	cfg := &GlobalConfig{
-		DefaultType: CampaignTypeTools,
-		Editor:      "code",
-		NoColor:     false,
+		Editor:  "code",
+		NoColor: false,
 	}
 
 	ctx := context.Background()
@@ -142,9 +138,6 @@ func TestSaveGlobalConfig(t *testing.T) {
 		t.Fatalf("LoadGlobalConfig() error = %v", err)
 	}
 
-	if loaded.DefaultType != cfg.DefaultType {
-		t.Errorf("loaded DefaultType = %q, want %q", loaded.DefaultType, cfg.DefaultType)
-	}
 	if loaded.Editor != cfg.Editor {
 		t.Errorf("loaded Editor = %q, want %q", loaded.Editor, cfg.Editor)
 	}

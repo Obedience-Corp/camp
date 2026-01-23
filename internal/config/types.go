@@ -180,9 +180,8 @@ type TUIConfig struct {
 }
 
 // GlobalConfig represents ~/.config/campaign/config.json configuration.
+// Contains only user preference fields - campaign-specific settings belong elsewhere.
 type GlobalConfig struct {
-	// DefaultType is the default campaign type when creating new campaigns.
-	DefaultType CampaignType `json:"default_type,omitempty" yaml:"default_type,omitempty"`
 	// Editor is the preferred editor command.
 	Editor string `json:"editor,omitempty" yaml:"editor,omitempty"`
 	// NoColor disables colored output.
@@ -191,8 +190,6 @@ type GlobalConfig struct {
 	Verbose bool `json:"verbose,omitempty" yaml:"verbose,omitempty"`
 	// TUI holds terminal UI configuration.
 	TUI TUIConfig `json:"tui,omitempty" yaml:"tui,omitempty"`
-	// DefaultPaths provides default paths for new campaigns.
-	DefaultPaths CampaignPaths `json:"default_paths,omitempty" yaml:"default_paths,omitempty"`
 }
 
 // Registry represents ~/.config/campaign/registry.yaml for tracking campaigns.

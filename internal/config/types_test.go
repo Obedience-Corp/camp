@@ -61,12 +61,11 @@ projects:
 
 func TestGlobalConfigYAML(t *testing.T) {
 	yamlData := `
-default_type: research
 editor: vim
 no_color: true
 verbose: false
-default_paths:
-  projects: src/
+tui:
+  theme: dark
 `
 	var cfg GlobalConfig
 	err := yaml.Unmarshal([]byte(yamlData), &cfg)
@@ -74,17 +73,14 @@ default_paths:
 		t.Fatalf("yaml.Unmarshal() error = %v", err)
 	}
 
-	if cfg.DefaultType != CampaignTypeResearch {
-		t.Errorf("DefaultType = %q, want %q", cfg.DefaultType, CampaignTypeResearch)
-	}
 	if cfg.Editor != "vim" {
 		t.Errorf("Editor = %q, want %q", cfg.Editor, "vim")
 	}
 	if !cfg.NoColor {
 		t.Error("NoColor = false, want true")
 	}
-	if cfg.DefaultPaths.Projects != "src/" {
-		t.Errorf("DefaultPaths.Projects = %q, want %q", cfg.DefaultPaths.Projects, "src/")
+	if cfg.TUI.Theme != "dark" {
+		t.Errorf("TUI.Theme = %q, want %q", cfg.TUI.Theme, "dark")
 	}
 }
 
@@ -204,9 +200,6 @@ func TestDefaultCampaignPaths(t *testing.T) {
 func TestDefaultGlobalConfig(t *testing.T) {
 	cfg := DefaultGlobalConfig()
 
-	if cfg.DefaultType != CampaignTypeProduct {
-		t.Errorf("DefaultType = %q, want %q", cfg.DefaultType, CampaignTypeProduct)
-	}
 	if cfg.Editor != "" {
 		t.Errorf("Editor = %q, want empty string", cfg.Editor)
 	}
@@ -215,6 +208,9 @@ func TestDefaultGlobalConfig(t *testing.T) {
 	}
 	if cfg.Verbose {
 		t.Error("Verbose = true, want false")
+	}
+	if cfg.TUI.Theme != "adaptive" {
+		t.Errorf("TUI.Theme = %q, want %q", cfg.TUI.Theme, "adaptive")
 	}
 }
 
@@ -302,11 +298,8 @@ func TestGlobalConfigApplyDefaults(t *testing.T) {
 	cfg := GlobalConfig{}
 	cfg.ApplyDefaults()
 
-	if cfg.DefaultType != CampaignTypeProduct {
-		t.Errorf("DefaultType = %q, want %q", cfg.DefaultType, CampaignTypeProduct)
-	}
-	if cfg.DefaultPaths.Projects != "projects/" {
-		t.Errorf("DefaultPaths.Projects = %q, want %q", cfg.DefaultPaths.Projects, "projects/")
+	if cfg.TUI.Theme != "adaptive" {
+		t.Errorf("TUI.Theme = %q, want %q", cfg.TUI.Theme, "adaptive")
 	}
 }
 
