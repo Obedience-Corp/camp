@@ -74,7 +74,7 @@ func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, erro
 
 	// Create template files
 	files := map[string]func() ([]byte, error){
-		filepath.Join(s.dungeonPath, "OBEY.md"):              GetOBEYTemplate,
+		filepath.Join(s.dungeonPath, "OBEY.md"):               GetOBEYTemplate,
 		filepath.Join(s.dungeonPath, "archived", "README.md"): GetArchivedREADME,
 	}
 
@@ -123,8 +123,8 @@ func (s *Service) ListItems(ctx context.Context) ([]DungeonItem, error) {
 
 	var items []DungeonItem
 	excludedNames := map[string]bool{
-		"archived":   true,
-		"OBEY.md":    true,
+		"archived":    true,
+		"OBEY.md":     true,
 		"crawl.jsonl": true,
 	}
 

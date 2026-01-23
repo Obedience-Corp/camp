@@ -505,4 +505,3 @@ func (s *IntentService) sortIntents(intents []*Intent, sortBy string, desc bool)
 		return less
 	})
 }
-

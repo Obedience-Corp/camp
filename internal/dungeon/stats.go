@@ -60,12 +60,12 @@ func (g *StatsGatherer) Gather(ctx context.Context, path string) *ItemStats {
 
 // sccOutput represents the JSON output from scc.
 type sccOutput []struct {
-	Name   string `json:"Name"`
-	Files  int    `json:"Count"`
-	Lines  int    `json:"Lines"`
-	Code   int    `json:"Code"`
-	Blank  int    `json:"Blank"`
-	Comment int   `json:"Comment"`
+	Name    string `json:"Name"`
+	Files   int    `json:"Count"`
+	Lines   int    `json:"Lines"`
+	Code    int    `json:"Code"`
+	Blank   int    `json:"Blank"`
+	Comment int    `json:"Comment"`
 }
 
 // gatherSCC runs scc and parses its output.

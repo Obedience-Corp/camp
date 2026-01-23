@@ -43,10 +43,10 @@ type ItemStats struct {
 
 // CrawlEntry represents a single decision logged during crawl.
 type CrawlEntry struct {
-	Timestamp time.Time   `json:"timestamp"`
-	Item      string      `json:"item"`
-	Decision  Decision    `json:"decision"`
-	Info      *ItemStats  `json:"info,omitempty"`
+	Timestamp time.Time  `json:"timestamp"`
+	Item      string     `json:"item"`
+	Decision  Decision   `json:"decision"`
+	Info      *ItemStats `json:"info,omitempty"`
 }
 
 // MarshalJSON implements custom JSON marshaling for CrawlEntry.

@@ -1,9 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/obediencecorp/camp/internal/config"
+	"github.com/obediencecorp/camp/internal/fest"
 	"github.com/obediencecorp/camp/internal/scaffold"
 	"github.com/obediencecorp/camp/internal/ui"
 	"github.com/spf13/cobra"
@@ -54,6 +58,7 @@ func init() {
 	initCmd.Flags().Bool("no-git", false, "Skip git repository initialization")
 	initCmd.Flags().Bool("dry-run", false, "Show what would be done without creating anything")
 	initCmd.Flags().Bool("repair", false, "Add missing files to existing campaign")
+	initCmd.Flags().Bool("skip-fest", false, "Skip automatic Festival Methodology initialization")
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
@@ -70,6 +75,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	noGit, _ := cmd.Flags().GetBool("no-git")
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	repair, _ := cmd.Flags().GetBool("repair")
+	skipFest, _ := cmd.Flags().GetBool("skip-fest")
 
 	opts := scaffold.InitOptions{
 		Name:        name,
@@ -89,6 +95,14 @@ func runInit(cmd *cobra.Command, args []string) error {
 	result, err := scaffold.Init(ctx, dir, opts)
 	if err != nil {
 		return err
+	}
+
+	// Initialize Festival Methodology (unless skipped or dry-run)
+	var festInitialized bool
+	if !dryRun && !skipFest {
+		festInitialized, _ = initializeFestivals(ctx, result.CampaignRoot)
+	} else if skipFest && !dryRun {
+		fmt.Println(ui.Info("Skipping Festival Methodology (--skip-fest)"))
 	}
 
 	// Print results
@@ -134,7 +148,83 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if result.GitInitialized {
 			fmt.Println(ui.KeyValueColored("Git:", "initialized", ui.SuccessColor))
 		}
+		if festInitialized {
+			fmt.Println(ui.KeyValueColored("Festivals:", "initialized", ui.SuccessColor))
+		}
 	}
 
 	return nil
+}
+
+// initializeFestivals runs fest init in the campaign directory.
+// Returns true if successful, false with guidance if fest is unavailable.
+func initializeFestivals(ctx context.Context, campaignRoot string) (bool, error) {
+	// Check if already initialized
+	if fest.IsInitialized(campaignRoot) {
+		fmt.Println(ui.Success("Festival Methodology already initialized"))
+		return true, nil
+	}
+
+	// Check if fest CLI is available
+	if !fest.IsFestAvailable() {
+		showFestInstallGuidance()
+		return false, fest.ErrFestNotFound
+	}
+
+	// Check if festivals directory has content but isn't initialized
+	if hasNonFestContent(campaignRoot) {
+		showFestManualInitGuidance()
+		return false, nil
+	}
+
+	fmt.Println(ui.Info("Initializing Festival Methodology..."))
+	err := fest.RunInit(ctx, &fest.InitOptions{
+		CampaignRoot: campaignRoot,
+	})
+	if err != nil {
+		showFestInitFailure(err)
+		return false, err
+	}
+
+	fmt.Println(ui.Success("Festival Methodology initialized"))
+	return true, nil
+}
+
+// hasNonFestContent checks if festivals/ has content that isn't fest-initialized.
+func hasNonFestContent(campaignRoot string) bool {
+	festivalsDir := filepath.Join(campaignRoot, "festivals")
+	entries, err := os.ReadDir(festivalsDir)
+	if err != nil {
+		return false
+	}
+	// If we have entries but fest isn't initialized, there's non-fest content
+	return len(entries) > 0 && !fest.IsInitialized(campaignRoot)
+}
+
+// showFestInstallGuidance displays guidance for installing fest CLI.
+func showFestInstallGuidance() {
+	fmt.Println()
+	fmt.Println(ui.Dim("Festival Methodology provides structured project planning."))
+	fmt.Println(ui.Dim("Install the fest CLI to enable it:"))
+	fmt.Println()
+	fmt.Println(ui.Dim("  go install github.com/obediencecorp/fest/cmd/fest@latest"))
+	fmt.Println()
+	fmt.Println(ui.Dim("Then run: camp init --repair"))
+	fmt.Println(ui.Dim("Continuing without Festival Methodology..."))
+}
+
+// showFestManualInitGuidance displays guidance when festivals/ has non-fest content.
+func showFestManualInitGuidance() {
+	fmt.Println()
+	fmt.Println(ui.Warning("festivals/ has content but is not fest-initialized"))
+	fmt.Println(ui.Dim("Run 'fest init' manually to initialize, or clear the directory."))
+}
+
+// showFestInitFailure displays guidance when fest init fails.
+func showFestInitFailure(err error) {
+	fmt.Println(ui.Warning(fmt.Sprintf("Failed to initialize Festival Methodology: %v", err)))
+	fmt.Println()
+	fmt.Println(ui.Dim("You may need to run 'fest init' manually."))
+	fmt.Println(ui.Dim("Use 'fest init --help' for options."))
+	fmt.Println(ui.Dim("Continuing with campaign creation..."))
 }
