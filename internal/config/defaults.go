@@ -37,6 +37,14 @@ func DefaultNavigationShortcuts() map[string]ShortcutConfig {
 	}
 }
 
+// DefaultTUIConfig returns the default TUI configuration.
+func DefaultTUIConfig() TUIConfig {
+	return TUIConfig{
+		Theme:   "adaptive", // Auto-detect based on terminal
+		VimMode: false,
+	}
+}
+
 // DefaultGlobalConfig returns the default global configuration.
 func DefaultGlobalConfig() GlobalConfig {
 	return GlobalConfig{
@@ -44,6 +52,7 @@ func DefaultGlobalConfig() GlobalConfig {
 		Editor:       "", // Uses $EDITOR environment variable
 		NoColor:      false,
 		Verbose:      false,
+		TUI:          DefaultTUIConfig(),
 		DefaultPaths: DefaultCampaignPaths(),
 	}
 }
@@ -83,6 +92,10 @@ func (c *CampaignConfig) ApplyDefaults() {
 func (c *GlobalConfig) ApplyDefaults() {
 	if c.DefaultType == "" {
 		c.DefaultType = CampaignTypeProduct
+	}
+	// Apply TUI defaults
+	if c.TUI.Theme == "" {
+		c.TUI.Theme = "adaptive"
 	}
 	defaults := DefaultCampaignPaths()
 	if c.DefaultPaths.Projects == "" {

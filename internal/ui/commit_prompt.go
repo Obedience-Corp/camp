@@ -7,7 +7,9 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/huh"
+
 	"github.com/obediencecorp/camp/internal/git"
+	"github.com/obediencecorp/camp/internal/ui/theme"
 )
 
 // PromptCommitMessage shows an interactive prompt for the commit message.
@@ -31,10 +33,10 @@ func PromptCommitMessage(ctx context.Context, executor git.GitExecutor) (string,
 		),
 	)
 
-	// Run the form
-	err := form.Run()
+	// Run the form with theme
+	err := theme.RunForm(ctx, form)
 	if err != nil {
-		if err == huh.ErrUserAborted {
+		if theme.IsCancelled(err) {
 			return "", nil // User cancelled
 		}
 		return "", err
@@ -56,9 +58,10 @@ func PromptCommitMessageSimple(ctx context.Context, executor git.GitExecutor) (s
 		Value(&message).
 		Validate(validateCommitMessage)
 
-	err := input.Run()
+	form := huh.NewForm(huh.NewGroup(input))
+	err := theme.RunForm(ctx, form)
 	if err != nil {
-		if err == huh.ErrUserAborted {
+		if theme.IsCancelled(err) {
 			return "", nil
 		}
 		return "", err
@@ -94,9 +97,9 @@ func PromptCommitMessageMultiline(ctx context.Context, executor git.GitExecutor)
 		),
 	)
 
-	err := form.Run()
+	err := theme.RunForm(ctx, form)
 	if err != nil {
-		if err == huh.ErrUserAborted {
+		if theme.IsCancelled(err) {
 			return "", nil
 		}
 		return "", err

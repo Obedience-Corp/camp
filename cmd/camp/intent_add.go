@@ -14,6 +14,7 @@ import (
 	"github.com/obediencecorp/camp/internal/intent"
 	"github.com/obediencecorp/camp/internal/paths"
 	"github.com/obediencecorp/camp/internal/project"
+	"github.com/obediencecorp/camp/internal/ui/theme"
 )
 
 var intentAddCmd = &cobra.Command{
@@ -181,7 +182,7 @@ func collectIntentInput(ctx context.Context, campaignRoot, title, intentType, pr
 		),
 	)
 
-	if err := form.Run(); err != nil {
+	if err := theme.RunForm(ctx, form); err != nil {
 		return "", "", "", "", err
 	}
 

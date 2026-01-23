@@ -171,6 +171,14 @@ func (s ShortcutConfig) IsCommand() bool {
 	return s.Command != ""
 }
 
+// TUIConfig holds configuration for terminal UI elements.
+type TUIConfig struct {
+	// Theme is the color theme for huh forms (adaptive, light, dark, high-contrast).
+	Theme string `yaml:"theme,omitempty"`
+	// VimMode enables vim-style keybindings in forms.
+	VimMode bool `yaml:"vim_mode,omitempty"`
+}
+
 // GlobalConfig represents ~/.config/campaign/config.yaml configuration.
 type GlobalConfig struct {
 	// DefaultType is the default campaign type when creating new campaigns.
@@ -181,6 +189,8 @@ type GlobalConfig struct {
 	NoColor bool `yaml:"no_color,omitempty"`
 	// Verbose enables verbose output.
 	Verbose bool `yaml:"verbose,omitempty"`
+	// TUI holds terminal UI configuration.
+	TUI TUIConfig `yaml:"tui,omitempty"`
 	// DefaultPaths provides default paths for new campaigns.
 	DefaultPaths CampaignPaths `yaml:"default_paths,omitempty"`
 }

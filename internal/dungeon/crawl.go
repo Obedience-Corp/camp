@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/charmbracelet/huh"
+
+	"github.com/obediencecorp/camp/internal/ui/theme"
 )
 
 // RunCrawl executes the interactive crawl TUI.
@@ -59,8 +61,8 @@ func RunCrawl(ctx context.Context, svc *Service) (*CrawlSummary, error) {
 			),
 		)
 
-		if err := form.Run(); err != nil {
-			if err == huh.ErrUserAborted {
+		if err := theme.RunForm(ctx, form); err != nil {
+			if theme.IsCancelled(err) {
 				// Ctrl+C during form - treat as quit
 				return summary, nil
 			}

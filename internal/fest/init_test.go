@@ -47,9 +47,9 @@ func TestRunInit_AlreadyInitialized(t *testing.T) {
 
 func TestIsInitialized(t *testing.T) {
 	tests := []struct {
-		name       string
-		setup      func(dir string)
-		want       bool
+		name  string
+		setup func(dir string)
+		want  bool
 	}{
 		{
 			name: "not initialized",
