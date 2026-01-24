@@ -152,6 +152,7 @@ func (p *ProjectConfig) ShortcutNames() []string {
 // ShortcutConfig defines a custom navigation or command shortcut.
 type ShortcutConfig struct {
 	// Path is the relative path for navigation shortcuts.
+	// Example: "projects/" means `cgo p` navigates to projects directory.
 	Path string `yaml:"path,omitempty"`
 	// Command is the command to execute for command shortcuts.
 	Command string `yaml:"command,omitempty"`
@@ -159,6 +160,10 @@ type ShortcutConfig struct {
 	WorkDir string `yaml:"workdir,omitempty"`
 	// Description provides help text for this shortcut.
 	Description string `yaml:"description,omitempty"`
+	// Concept is the command group this shortcut expands to.
+	// Example: "project" means `camp p commit` expands to `camp project commit`.
+	// If empty, the shortcut does not support command expansion.
+	Concept string `yaml:"concept,omitempty"`
 }
 
 // IsNavigation returns true if this is a navigation shortcut (has Path).
@@ -169,6 +174,26 @@ func (s ShortcutConfig) IsNavigation() bool {
 // IsCommand returns true if this is a command shortcut (has Command).
 func (s ShortcutConfig) IsCommand() bool {
 	return s.Command != ""
+}
+
+// HasConcept returns true if this shortcut can be used for command expansion.
+func (s ShortcutConfig) HasConcept() bool {
+	return s.Concept != ""
+}
+
+// HasPath returns true if this shortcut can be used for navigation.
+func (s ShortcutConfig) HasPath() bool {
+	return s.Path != ""
+}
+
+// IsNavigationOnly returns true if shortcut only supports navigation.
+func (s ShortcutConfig) IsNavigationOnly() bool {
+	return s.HasPath() && !s.HasConcept()
+}
+
+// IsConceptOnly returns true if shortcut only supports command expansion.
+func (s ShortcutConfig) IsConceptOnly() bool {
+	return s.HasConcept() && !s.HasPath()
 }
 
 // TUIConfig holds configuration for terminal UI elements.

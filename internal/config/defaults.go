@@ -21,20 +21,45 @@ func DefaultCampaignPaths() CampaignPaths {
 
 // DefaultNavigationShortcuts returns the default navigation shortcuts for campaigns.
 // These shortcuts allow quick navigation to common directories within a campaign.
+// Shortcuts with Concept support command expansion (e.g., `camp p commit` -> `camp project commit`).
 func DefaultNavigationShortcuts() map[string]ShortcutConfig {
 	return map[string]ShortcutConfig{
-		"p":  {Path: "projects/", Description: "Jump to projects directory"},
-		"pw": {Path: "projects/worktrees/", Description: "Jump to project worktrees"},
+		// Shortcuts with both navigation and command expansion
+		"p":  {Path: "projects/", Concept: "project", Description: "Projects directory and commands"},
+		"f":  {Path: "festivals/", Concept: "festival", Description: "Festivals directory and commands"},
+		"i":  {Path: "workflow/intents/", Concept: "intent", Description: "Intents directory and commands"},
+		"wt": {Path: "projects/worktrees/", Concept: "worktrees", Description: "Worktrees directory and commands"},
+
+		// Navigation-only shortcuts (no command expansion)
 		"w":  {Path: "workflow/", Description: "Jump to workflow directory"},
-		"f":  {Path: "festivals/", Description: "Jump to festivals directory"},
 		"a":  {Path: "ai_docs/", Description: "Jump to AI docs directory"},
 		"d":  {Path: "docs/", Description: "Jump to docs directory"},
 		"du": {Path: "dungeon/", Description: "Jump to dungeon directory"},
 		"cr": {Path: "workflow/code_reviews/", Description: "Jump to code reviews"},
 		"pi": {Path: "workflow/pipelines/", Description: "Jump to pipelines"},
 		"de": {Path: "workflow/design/", Description: "Jump to design"},
-		"i":  {Path: "workflow/intents/", Description: "Jump to intents"},
+
+		// Command-only shortcuts (no navigation path)
+		"cfg": {Concept: "config", Description: "Config commands"},
 	}
+}
+
+// MergeShortcuts merges user shortcuts with defaults.
+// User shortcuts take precedence over defaults.
+func MergeShortcuts(user, defaults map[string]ShortcutConfig) map[string]ShortcutConfig {
+	result := make(map[string]ShortcutConfig)
+
+	// Start with defaults
+	for k, v := range defaults {
+		result[k] = v
+	}
+
+	// Override with user config
+	for k, v := range user {
+		result[k] = v
+	}
+
+	return result
 }
 
 // DefaultTUIConfig returns the default TUI configuration.
