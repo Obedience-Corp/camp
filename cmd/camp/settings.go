@@ -83,7 +83,7 @@ func runGlobalSettings(ctx context.Context) error {
 			huh.NewOption(fmt.Sprintf("Editor         %s", displayStr(cfg.Editor, "$EDITOR")), "editor"),
 			huh.NewOption(fmt.Sprintf("Verbose        %s", boolStr(cfg.Verbose)), "verbose"),
 			huh.NewOption(fmt.Sprintf("No Color       %s", boolStr(cfg.NoColor)), "no_color"),
-			huh.NewOption("─────────────────", ""),
+			huh.NewOption("─────────────────", "_separator"),
 			huh.NewOption("Back", "back"),
 		}
 
@@ -104,8 +104,11 @@ func runGlobalSettings(ctx context.Context) error {
 		}
 
 		switch choice {
-		case "back", "":
+		case "back":
 			return nil
+		case "_separator":
+			// Ignore separator selection, continue the loop
+			continue
 		case "theme":
 			if err := editTheme(ctx, cfg); err != nil {
 				return err
@@ -138,7 +141,7 @@ func runLocalSettings(ctx context.Context) error {
 			huh.NewOption("[MOCK] Theme Override       NOT IMPLEMENTED", "theme"),
 			huh.NewOption("[MOCK] Project Defaults     NOT IMPLEMENTED", "projects"),
 			huh.NewOption("[MOCK] Intent Defaults      NOT IMPLEMENTED", "intents"),
-			huh.NewOption("─────────────────────────────────────────", ""),
+			huh.NewOption("─────────────────────────────────────────", "_separator"),
 			huh.NewOption("Back", "back"),
 		}
 
@@ -159,8 +162,11 @@ func runLocalSettings(ctx context.Context) error {
 		}
 
 		switch choice {
-		case "back", "":
+		case "back":
 			return nil
+		case "_separator":
+			// Ignore separator selection, continue the loop
+			continue
 		default:
 			fmt.Println("\nThis setting is not yet implemented.")
 			fmt.Println("Local campaign settings will be added in a future update.")
