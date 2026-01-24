@@ -161,10 +161,16 @@ func printAllShortcuts(cfg *config.CampaignConfig, _ string) error {
 			if sc.Description != "" {
 				desc = ui.Dim(" # " + sc.Description)
 			}
-			fmt.Printf("  %s %s %s%s\n",
+			// Show concept if available (indicates command expansion support)
+			conceptCol := ui.Dim("(nav only)")
+			if sc.Concept != "" {
+				conceptCol = ui.Success(fmt.Sprintf("→ %s", sc.Concept))
+			}
+			fmt.Printf("  %s %s %-14s %s%s\n",
 				ui.Accent(fmt.Sprintf("%-10s", key)),
 				ui.ArrowIcon(),
 				ui.Value(sc.Path),
+				conceptCol,
 				desc)
 		}
 		fmt.Println()
@@ -206,26 +212,6 @@ func printAllShortcuts(cfg *config.CampaignConfig, _ string) error {
 	}
 
 	return nil
-}
-
-// formatShortcutList formats a list of shortcuts for display.
-func formatShortcutList(shortcuts map[string]string) string {
-	if len(shortcuts) == 0 {
-		return "  (none)"
-	}
-
-	keys := make([]string, 0, len(shortcuts))
-	for k := range shortcuts {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	var lines []string
-	for _, k := range keys {
-		lines = append(lines, fmt.Sprintf("  %-4s -> %s", k, shortcuts[k]))
-	}
-
-	return strings.Join(lines, "\n")
 }
 
 // runShortcutsAdd adds a sub-shortcut to a project.
