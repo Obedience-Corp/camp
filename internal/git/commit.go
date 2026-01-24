@@ -139,9 +139,46 @@ func CommitAll(ctx context.Context, repoPath, message string) error {
 	return Commit(ctx, repoPath, &CommitOptions{Message: message})
 }
 
-// Stage adds files to the git index (staging area).
+// Stage adds files to the git index (staging area) with automatic lock handling.
 // If files is empty, stages all changes (git add .).
 func Stage(ctx context.Context, repoPath string, files []string) error {
+	var lastErr error
+	for attempt := 1; attempt <= maxRetryAttempts; attempt++ {
+		err := executeStage(ctx, repoPath, files)
+		if err == nil {
+			return nil // Success
+		}
+
+		// Check if it's a lock error
+		if !isLockError(err) {
+			return err // Non-lock error, don't retry
+		}
+
+		lastErr = err
+
+		// Try to clean stale locks
+		result, cleanErr := CleanStaleLocks(ctx, repoPath, nil)
+		if cleanErr != nil {
+			return fmt.Errorf("failed to clean locks during stage retry (attempt %d): %w", attempt, cleanErr)
+		}
+
+		// If we couldn't remove any locks, don't retry
+		if len(result.Removed) == 0 && len(result.Skipped) > 0 {
+			return fmt.Errorf("cannot stage: lock held by active process: %w", lastErr)
+		}
+
+		// Log retry
+		slog.Info("retrying stage after lock cleanup",
+			"attempt", attempt,
+			"removed", len(result.Removed),
+			"repoPath", repoPath)
+	}
+
+	return fmt.Errorf("stage failed after %d attempts: %w", maxRetryAttempts, lastErr)
+}
+
+// executeStage runs the actual git add command.
+func executeStage(ctx context.Context, repoPath string, files []string) error {
 	var args []string
 
 	// Use -C to run git in the specified directory
@@ -160,6 +197,15 @@ func Stage(ctx context.Context, repoPath string, files []string) error {
 
 	if err != nil {
 		errType := ClassifyGitError(string(output), cmd.ProcessState.ExitCode())
+
+		// Return LockError for lock issues so retry logic can handle it
+		if errType == GitErrorLock {
+			return &LockError{
+				Path: "index.lock",
+				Err:  err,
+			}
+		}
+
 		return fmt.Errorf("git add failed (type=%s): %s: %w",
 			errType.String(),
 			strings.TrimSpace(string(output)),

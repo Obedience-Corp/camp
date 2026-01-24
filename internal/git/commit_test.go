@@ -484,3 +484,35 @@ func TestIsLockError(t *testing.T) {
 		}
 	})
 }
+
+func TestStage_WithStaleLock(t *testing.T) {
+	tmpDir := initTestRepo(t)
+
+	// Create a file to stage
+	os.WriteFile(filepath.Join(tmpDir, "test.txt"), []byte("content"), 0644)
+
+	// Create stale lock file
+	lockPath := filepath.Join(tmpDir, ".git", "index.lock")
+	os.WriteFile(lockPath, []byte{}, 0644)
+
+	// Stage should succeed after cleaning lock
+	ctx := context.Background()
+	err := StageAll(ctx, tmpDir)
+	if err != nil {
+		t.Fatalf("StageAll() error = %v (should have cleaned stale lock)", err)
+	}
+
+	// Verify lock was removed
+	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+		t.Error("Stale lock still exists after stage")
+	}
+
+	// Verify file was staged
+	hasStaged, err := HasStagedChanges(ctx, tmpDir)
+	if err != nil {
+		t.Fatalf("HasStagedChanges() error = %v", err)
+	}
+	if !hasStaged {
+		t.Error("File was not staged after lock cleanup")
+	}
+}
