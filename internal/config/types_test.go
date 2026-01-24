@@ -8,6 +8,8 @@ import (
 )
 
 func TestCampaignConfigYAML(t *testing.T) {
+	// Test loading legacy format (paths: in campaign.yaml)
+	// These are now loaded into LegacyPaths for migration
 	yamlData := `
 name: test-campaign
 type: product
@@ -41,8 +43,13 @@ projects:
 	if cfg.Description != "A test campaign" {
 		t.Errorf("Description = %q, want %q", cfg.Description, "A test campaign")
 	}
-	if cfg.Paths.Projects != "projects/" {
-		t.Errorf("Paths.Projects = %q, want %q", cfg.Paths.Projects, "projects/")
+	// Legacy paths are loaded into LegacyPaths
+	if cfg.LegacyPaths.Projects != "projects/" {
+		t.Errorf("LegacyPaths.Projects = %q, want %q", cfg.LegacyPaths.Projects, "projects/")
+	}
+	// Paths() method returns LegacyPaths when Jumps is nil
+	if cfg.Paths().Projects != "projects/" {
+		t.Errorf("Paths().Projects = %q, want %q", cfg.Paths().Projects, "projects/")
 	}
 	if len(cfg.Projects) != 1 {
 		t.Fatalf("len(Projects) = %d, want 1", len(cfg.Projects))
@@ -54,12 +61,11 @@ projects:
 
 func TestGlobalConfigYAML(t *testing.T) {
 	yamlData := `
-default_type: research
 editor: vim
 no_color: true
 verbose: false
-default_paths:
-  projects: src/
+tui:
+  theme: dark
 `
 	var cfg GlobalConfig
 	err := yaml.Unmarshal([]byte(yamlData), &cfg)
@@ -67,17 +73,14 @@ default_paths:
 		t.Fatalf("yaml.Unmarshal() error = %v", err)
 	}
 
-	if cfg.DefaultType != CampaignTypeResearch {
-		t.Errorf("DefaultType = %q, want %q", cfg.DefaultType, CampaignTypeResearch)
-	}
 	if cfg.Editor != "vim" {
 		t.Errorf("Editor = %q, want %q", cfg.Editor, "vim")
 	}
 	if !cfg.NoColor {
 		t.Error("NoColor = false, want true")
 	}
-	if cfg.DefaultPaths.Projects != "src/" {
-		t.Errorf("DefaultPaths.Projects = %q, want %q", cfg.DefaultPaths.Projects, "src/")
+	if cfg.TUI.Theme != "dark" {
+		t.Errorf("TUI.Theme = %q, want %q", cfg.TUI.Theme, "dark")
 	}
 }
 
@@ -197,9 +200,6 @@ func TestDefaultCampaignPaths(t *testing.T) {
 func TestDefaultGlobalConfig(t *testing.T) {
 	cfg := DefaultGlobalConfig()
 
-	if cfg.DefaultType != CampaignTypeProduct {
-		t.Errorf("DefaultType = %q, want %q", cfg.DefaultType, CampaignTypeProduct)
-	}
 	if cfg.Editor != "" {
 		t.Errorf("Editor = %q, want empty string", cfg.Editor)
 	}
@@ -208,6 +208,9 @@ func TestDefaultGlobalConfig(t *testing.T) {
 	}
 	if cfg.Verbose {
 		t.Error("Verbose = true, want false")
+	}
+	if cfg.TUI.Theme != "adaptive" {
+		t.Errorf("TUI.Theme = %q, want %q", cfg.TUI.Theme, "adaptive")
 	}
 }
 
@@ -223,8 +226,9 @@ func TestDefaultCampaignConfig(t *testing.T) {
 	if cfg.CreatedAt.IsZero() {
 		t.Error("CreatedAt is zero, want non-zero")
 	}
-	if cfg.Paths.Projects != "projects/" {
-		t.Errorf("Paths.Projects = %q, want %q", cfg.Paths.Projects, "projects/")
+	// Paths are now accessed via Jumps (set by DefaultCampaignConfig)
+	if cfg.Paths().Projects != "projects/" {
+		t.Errorf("Paths().Projects = %q, want %q", cfg.Paths().Projects, "projects/")
 	}
 }
 
@@ -254,8 +258,11 @@ func TestCampaignConfigApplyDefaults(t *testing.T) {
 	if cfg.CreatedAt.IsZero() {
 		t.Error("CreatedAt is zero, want non-zero")
 	}
-	if cfg.Paths.Projects != "projects/" {
-		t.Errorf("Paths.Projects = %q, want %q", cfg.Paths.Projects, "projects/")
+	// Note: CampaignConfig.ApplyDefaults no longer sets paths directly
+	// Paths are managed via JumpsConfig and loaded separately
+	// Paths() method returns defaults when Jumps is nil
+	if cfg.Paths().Projects != "projects/" {
+		t.Errorf("Paths().Projects = %q, want %q", cfg.Paths().Projects, "projects/")
 	}
 }
 
@@ -265,7 +272,8 @@ func TestCampaignConfigApplyDefaults_PreservesExisting(t *testing.T) {
 		Name:      "test",
 		Type:      CampaignTypeResearch,
 		CreatedAt: created,
-		Paths: CampaignPaths{
+		// LegacyPaths simulates loading from old campaign.yaml format
+		LegacyPaths: CampaignPaths{
 			Projects: "src/",
 		},
 	}
@@ -277,34 +285,31 @@ func TestCampaignConfigApplyDefaults_PreservesExisting(t *testing.T) {
 	if !cfg.CreatedAt.Equal(created) {
 		t.Errorf("CreatedAt = %v, want %v (should preserve existing)", cfg.CreatedAt, created)
 	}
-	if cfg.Paths.Projects != "src/" {
-		t.Errorf("Paths.Projects = %q, want %q (should preserve existing)", cfg.Paths.Projects, "src/")
+	// LegacyPaths are accessed via Paths() when Jumps is nil
+	if cfg.Paths().Projects != "src/" {
+		t.Errorf("Paths().Projects = %q, want %q (should return legacy)", cfg.Paths().Projects, "src/")
 	}
-	// But missing paths should be filled
-	if cfg.Paths.Worktrees != "projects/worktrees/" {
-		t.Errorf("Paths.Worktrees = %q, want %q (should apply default)", cfg.Paths.Worktrees, "projects/worktrees/")
-	}
+	// Note: With the new architecture, defaults for missing paths are applied
+	// via JumpsConfig.ApplyDefaults() when the full loading pipeline runs.
+	// Here, LegacyPaths are returned directly since Jumps is nil.
 }
 
 func TestGlobalConfigApplyDefaults(t *testing.T) {
 	cfg := GlobalConfig{}
 	cfg.ApplyDefaults()
 
-	if cfg.DefaultType != CampaignTypeProduct {
-		t.Errorf("DefaultType = %q, want %q", cfg.DefaultType, CampaignTypeProduct)
-	}
-	if cfg.DefaultPaths.Projects != "projects/" {
-		t.Errorf("DefaultPaths.Projects = %q, want %q", cfg.DefaultPaths.Projects, "projects/")
+	if cfg.TUI.Theme != "adaptive" {
+		t.Errorf("TUI.Theme = %q, want %q", cfg.TUI.Theme, "adaptive")
 	}
 }
 
 func TestCampaignConfigMarshalYAML(t *testing.T) {
+	// New campaign.yaml format: no paths or shortcuts (those go in jumps.yaml)
 	cfg := CampaignConfig{
 		Name:        "test-campaign",
 		Type:        CampaignTypeProduct,
 		Description: "A test campaign",
 		CreatedAt:   time.Date(2026, 1, 14, 10, 0, 0, 0, time.UTC),
-		Paths:       DefaultCampaignPaths(),
 		Projects: []ProjectConfig{
 			{Name: "project-a", Path: "projects/project-a"},
 		},

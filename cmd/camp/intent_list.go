@@ -12,6 +12,8 @@ import (
 
 	"github.com/obediencecorp/camp/internal/config"
 	"github.com/obediencecorp/camp/internal/intent"
+	"github.com/obediencecorp/camp/internal/paths"
+	"github.com/obediencecorp/camp/internal/ui"
 )
 
 var intentListCmd = &cobra.Command{
@@ -65,13 +67,14 @@ func runIntentList(cmd *cobra.Command, args []string) error {
 	includeAll, _ := cmd.Flags().GetBool("all")
 
 	// Find campaign root
-	_, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
+	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
 		return fmt.Errorf("not in a campaign directory: %w", err)
 	}
 
-	// Create service
-	svc := intent.NewIntentService(campaignRoot)
+	// Create path resolver and service
+	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
+	svc := intent.NewIntentService(campaignRoot, resolver.Intents())
 
 	// Build list options
 	opts := buildListOptions(statuses, types, project, horizon, sortBy, includeAll)
@@ -130,25 +133,12 @@ func outputTable(intents []*intent.Intent) error {
 		return nil
 	}
 
-	// Define styles
-	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
+	// Define styles using the central palette
+	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.CategoryColor)
 
-	// Status color function
+	// Status color function using palette
 	statusColor := func(s intent.Status) string {
-		switch s {
-		case intent.StatusInbox:
-			return lipgloss.NewStyle().Foreground(lipgloss.Color("247")).Render(string(s))
-		case intent.StatusActive:
-			return lipgloss.NewStyle().Foreground(lipgloss.Color("40")).Render(string(s))
-		case intent.StatusReady:
-			return lipgloss.NewStyle().Foreground(lipgloss.Color("226")).Render(string(s))
-		case intent.StatusDone:
-			return lipgloss.NewStyle().Foreground(lipgloss.Color("35")).Render(string(s))
-		case intent.StatusKilled:
-			return lipgloss.NewStyle().Foreground(lipgloss.Color("160")).Render(string(s))
-		default:
-			return string(s)
-		}
+		return ui.GetIntentStatusStyle(string(s)).Render(string(s))
 	}
 
 	// Build table data

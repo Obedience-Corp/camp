@@ -175,15 +175,13 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 		result.FilesCreated = append(result.FilesCreated, f)
 	}
 
-	// Create campaign.yaml
+	// Create campaign.yaml (metadata only - paths/shortcuts go in jumps.yaml)
 	cfg := &config.CampaignConfig{
 		ID:          campaignID,
 		Name:        name,
 		Type:        opts.Type,
 		CreatedAt:   time.Now(),
 		Description: fmt.Sprintf("Campaign: %s", name),
-		Paths:       config.DefaultCampaignPaths(),
-		Shortcuts:   config.DefaultNavigationShortcuts(),
 	}
 
 	if !opts.DryRun {
@@ -192,6 +190,15 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 		}
 	}
 	result.FilesCreated = append(result.FilesCreated, config.CampaignConfigPath(absDir))
+
+	// Create jumps.yaml (paths and shortcuts)
+	jumps := config.DefaultJumpsConfig()
+	if !opts.DryRun {
+		if err := config.SaveJumpsConfig(ctx, absDir, &jumps); err != nil {
+			return nil, fmt.Errorf("failed to create jumps config: %w", err)
+		}
+	}
+	result.FilesCreated = append(result.FilesCreated, config.JumpsConfigPath(absDir))
 
 	// Create .gitignore to exclude machine-specific files
 	gitignorePath := filepath.Join(campaignDir, ".gitignore")

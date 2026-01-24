@@ -12,7 +12,9 @@ import (
 	"github.com/obediencecorp/camp/internal/config"
 	"github.com/obediencecorp/camp/internal/editor"
 	"github.com/obediencecorp/camp/internal/intent"
+	"github.com/obediencecorp/camp/internal/paths"
 	"github.com/obediencecorp/camp/internal/project"
+	"github.com/obediencecorp/camp/internal/ui/theme"
 )
 
 var intentAddCmd = &cobra.Command{
@@ -65,10 +67,13 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	// Find campaign root first (needed for project list)
-	_, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
+	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
 		return fmt.Errorf("not in a campaign directory: %w", err)
 	}
+
+	// Create path resolver
+	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
 
 	// Collect input via huh form if needed
 	var body string
@@ -81,7 +86,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create service
-	svc := intent.NewIntentService(campaignRoot)
+	svc := intent.NewIntentService(campaignRoot, resolver.Intents())
 
 	// Build create options
 	opts := intent.CreateOptions{
@@ -177,7 +182,7 @@ func collectIntentInput(ctx context.Context, campaignRoot, title, intentType, pr
 		),
 	)
 
-	if err := form.Run(); err != nil {
+	if err := theme.RunForm(ctx, form); err != nil {
 		return "", "", "", "", err
 	}
 

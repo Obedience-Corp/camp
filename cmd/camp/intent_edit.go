@@ -12,6 +12,7 @@ import (
 	"github.com/obediencecorp/camp/internal/config"
 	"github.com/obediencecorp/camp/internal/editor"
 	"github.com/obediencecorp/camp/internal/intent"
+	"github.com/obediencecorp/camp/internal/paths"
 )
 
 var intentEditCmd = &cobra.Command{
@@ -54,13 +55,14 @@ func runIntentEdit(cmd *cobra.Command, args []string) error {
 	projectFilter, _ := cmd.Flags().GetString("project")
 
 	// Find campaign root
-	_, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
+	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
 		return fmt.Errorf("not in a campaign directory: %w", err)
 	}
 
-	// Create service
-	svc := intent.NewIntentService(campaignRoot)
+	// Create path resolver and service
+	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
+	svc := intent.NewIntentService(campaignRoot, resolver.Intents())
 
 	var selectedIntent *intent.Intent
 

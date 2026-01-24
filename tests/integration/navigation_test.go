@@ -238,7 +238,7 @@ func TestGo_MultipleNavigations(t *testing.T) {
 	assert.Contains(t, output2, "multi-nav-test", "go without args after --root should return root")
 }
 
-// TestShortcuts_OnlyFromConfig verifies that shortcuts only work when defined in campaign.yaml
+// TestShortcuts_OnlyFromConfig verifies that shortcuts work when defined in jumps.yaml
 func TestShortcuts_OnlyFromConfig(t *testing.T) {
 	tc := GetSharedContainer(t)
 
@@ -250,19 +250,19 @@ func TestShortcuts_OnlyFromConfig(t *testing.T) {
 	_, _, err = tc.ExecCommand("mkdir", "-p", "/campaigns/shortcuts-test/projects")
 	require.NoError(t, err)
 
-	// Verify shortcut "p" works (should be in campaign.yaml by default)
+	// Verify shortcut "p" works (should be in jumps.yaml by default)
 	output, err := tc.RunCampInDir("/campaigns/shortcuts-test", "go", "p", "--print")
-	require.NoError(t, err, "shortcut 'p' should work when defined in campaign.yaml")
+	require.NoError(t, err, "shortcut 'p' should work when defined in jumps.yaml")
 	assert.Contains(t, output, "projects", "shortcut 'p' should resolve to projects/")
 
-	// Read campaign.yaml to verify shortcuts are there
-	config, err := tc.ReadFile("/campaigns/shortcuts-test/.campaign/campaign.yaml")
+	// Read jumps.yaml to verify shortcuts are there
+	config, err := tc.ReadFile("/campaigns/shortcuts-test/.campaign/settings/jumps.yaml")
 	require.NoError(t, err)
-	assert.Contains(t, config, "shortcuts:", "campaign.yaml should have shortcuts section")
-	assert.Contains(t, config, "p:", "campaign.yaml should have 'p' shortcut")
+	assert.Contains(t, config, "shortcuts:", "jumps.yaml should have shortcuts section")
+	assert.Contains(t, config, "p:", "jumps.yaml should have 'p' shortcut")
 }
 
-// TestShortcuts_HelpShowsConfigOnly verifies that --help only shows shortcuts from config
+// TestShortcuts_HelpShowsConfigOnly verifies that --help shows shortcuts from jumps.yaml
 func TestShortcuts_HelpShowsConfigOnly(t *testing.T) {
 	tc := GetSharedContainer(t)
 
@@ -273,7 +273,7 @@ func TestShortcuts_HelpShowsConfigOnly(t *testing.T) {
 	// Test that help shows shortcuts from config
 	output, err := tc.RunCampInDir("/campaigns/help-shortcuts-test", "go", "--help")
 	require.NoError(t, err)
-	assert.Contains(t, output, "from .campaign/campaign.yaml", "help should indicate shortcuts are from config")
+	assert.Contains(t, output, "from .campaign/settings/jumps.yaml", "help should indicate shortcuts are from jumps config")
 	assert.Contains(t, output, "p", "help should show 'p' shortcut from config")
 }
 
@@ -299,43 +299,54 @@ func TestShortcuts_HelpNotInCampaign(t *testing.T) {
 	assert.Contains(t, output, "camp init", "help should suggest camp init")
 }
 
-// TestShortcuts_RemovedFromConfig verifies that removing a shortcut from config stops it from working
-func TestShortcuts_RemovedFromConfig(t *testing.T) {
+// TestShortcuts_OverrideAndRestore verifies that user can override default shortcuts
+// and that removing the override restores default behavior.
+// Note: Default shortcuts now provide fallback when not in config, so removing
+// a shortcut doesn't disable it - it reverts to the default.
+func TestShortcuts_OverrideAndRestore(t *testing.T) {
 	tc := GetSharedContainer(t)
 
 	// Setup: Create campaign
-	_, err := tc.InitCampaign("/campaigns/remove-shortcut-test", "remove-shortcut-test", "product")
+	_, err := tc.InitCampaign("/campaigns/override-shortcut-test", "override-shortcut-test", "product")
 	require.NoError(t, err)
 
-	// Create projects directory
-	_, _, err = tc.ExecCommand("mkdir", "-p", "/campaigns/remove-shortcut-test/projects")
+	// Create both directories
+	_, _, err = tc.ExecCommand("mkdir", "-p", "/campaigns/override-shortcut-test/projects")
+	require.NoError(t, err)
+	_, _, err = tc.ExecCommand("mkdir", "-p", "/campaigns/override-shortcut-test/custom")
 	require.NoError(t, err)
 
-	// Verify "p" works initially
-	output, err := tc.RunCampInDir("/campaigns/remove-shortcut-test", "go", "p", "--print")
+	// Verify "p" initially points to default (projects/)
+	output, err := tc.RunCampInDir("/campaigns/override-shortcut-test", "go", "p", "--print")
 	require.NoError(t, err, "shortcut 'p' should work initially")
-	assert.Contains(t, output, "projects")
+	assert.Contains(t, output, "projects", "default 'p' should resolve to projects/")
 
-	// Create a new campaign.yaml without the "p" shortcut
-	newConfig := `id: test-id
-name: remove-shortcut-test
-type: product
+	// Override "p" to point to "custom/" in jumps.yaml
+	newJumps := `paths:
+  projects: "projects/"
+  worktrees: "projects/worktrees/"
+  ai_docs: "ai_docs/"
+  docs: "docs/"
+  dungeon: "dungeon/"
+  festivals: "festivals/"
+  workflow: "workflow/"
+  code_reviews: "workflow/code_reviews/"
+  pipelines: "workflow/pipelines/"
+  design: "workflow/design/"
+  intents: "workflow/intents/"
 shortcuts:
-  f:
-    path: "festivals/"
-    description: "Jump to festivals"
+  p:
+    path: "custom/"
+    description: "Overridden to custom"
 `
-	err = tc.WriteFile("/campaigns/remove-shortcut-test/.campaign/campaign.yaml", newConfig)
+	err = tc.WriteFile("/campaigns/override-shortcut-test/.campaign/settings/jumps.yaml", newJumps)
 	require.NoError(t, err)
 
-	// Now "p" should not work (treated as a query, not a shortcut)
-	output, err = tc.RunCampInDir("/campaigns/remove-shortcut-test", "go", "p", "--print")
-	// The shortcut "p" is no longer defined, so it should fail or not resolve to projects
-	if err == nil {
-		// If no error, output should NOT contain "projects" (would be a query result instead)
-		assert.NotContains(t, output, "/projects", "shortcut 'p' should not resolve after removal from config")
-	}
-	// Error is also acceptable - means the query "p" didn't find anything
+	// Verify "p" now points to custom/
+	output, err = tc.RunCampInDir("/campaigns/override-shortcut-test", "go", "p", "--print")
+	require.NoError(t, err, "shortcut 'p' should work after override")
+	assert.Contains(t, output, "custom", "overridden 'p' should resolve to custom/")
+	assert.NotContains(t, output, "projects", "overridden 'p' should NOT resolve to projects/")
 }
 
 // TestShortcuts_Command verifies the "camp shortcuts" command shows only config shortcuts

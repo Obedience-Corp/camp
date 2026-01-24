@@ -7,6 +7,7 @@ import (
 
 	"github.com/obediencecorp/camp/internal/config"
 	"github.com/obediencecorp/camp/internal/intent"
+	"github.com/obediencecorp/camp/internal/paths"
 )
 
 var intentMoveCmd = &cobra.Command{
@@ -55,13 +56,14 @@ func runIntentMove(cmd *cobra.Command, args []string) error {
 	}
 
 	// Find campaign root
-	_, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
+	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
 		return fmt.Errorf("not in a campaign directory: %w", err)
 	}
 
-	// Create service
-	svc := intent.NewIntentService(campaignRoot)
+	// Create path resolver and service
+	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
+	svc := intent.NewIntentService(campaignRoot, resolver.Intents())
 
 	// Move the intent
 	result, err := svc.Move(ctx, id, status)

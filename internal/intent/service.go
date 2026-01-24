@@ -26,11 +26,11 @@ type IntentService struct {
 }
 
 // NewIntentService creates a new IntentService.
-// campaignRoot is the root directory of the campaign.
-func NewIntentService(campaignRoot string) *IntentService {
+// intentsDir is the full path to the intents directory (e.g., from PathResolver.Intents()).
+func NewIntentService(campaignRoot, intentsDir string) *IntentService {
 	return &IntentService{
 		campaignRoot: campaignRoot,
-		intentsDir:   filepath.Join(campaignRoot, "intents"),
+		intentsDir:   intentsDir,
 	}
 }
 
@@ -505,4 +505,3 @@ func (s *IntentService) sortIntents(intents []*Intent, sortBy string, desc bool)
 		return less
 	})
 }
-

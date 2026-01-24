@@ -95,12 +95,12 @@ func runGo(cmd *cobra.Command, args []string) error {
 
 	// Build category mappings from config shortcuts
 	// This allows config shortcuts to work with fuzzy search
-	configMappings := buildCategoryMappings(cfg.Shortcuts)
+	configMappings := buildCategoryMappings(cfg.Shortcuts())
 
 	// Check if the first arg is a custom navigation shortcut with non-standard path
 	if len(args) > 0 {
 		shortcutName := args[0]
-		if sc, ok := cfg.Shortcuts[shortcutName]; ok && sc.IsNavigation() {
+		if sc, ok := cfg.Shortcuts()[shortcutName]; ok && sc.IsNavigation() {
 			// If this is a custom path (not a standard directory), use direct navigation
 			// Standard paths are handled below via ParseShortcut for fuzzy search support
 			if !isStandardPath(sc.Path) {
@@ -331,28 +331,28 @@ func evalSymlinks(path string) (string, error) {
 
 // standardPaths maps standard directory paths to their nav categories.
 var standardPaths = map[string]nav.Category{
-	"projects/":               nav.CategoryProjects,
-	"projects":                nav.CategoryProjects,
-	"projects/worktrees/":     nav.CategoryWorktrees,
-	"projects/worktrees":      nav.CategoryWorktrees,
-	"festivals/":              nav.CategoryFestivals,
-	"festivals":               nav.CategoryFestivals,
-	"ai_docs/":                nav.CategoryAIDocs,
-	"ai_docs":                 nav.CategoryAIDocs,
-	"docs/":                   nav.CategoryDocs,
-	"docs":                    nav.CategoryDocs,
-	"dungeon/":                nav.CategoryDungeon,
-	"dungeon":                 nav.CategoryDungeon,
-	"workflow/":               nav.CategoryWorkflow,
-	"workflow":                nav.CategoryWorkflow,
-	"workflow/code_reviews/":  nav.CategoryCodeReviews,
-	"workflow/code_reviews":   nav.CategoryCodeReviews,
-	"workflow/pipelines/":     nav.CategoryPipelines,
-	"workflow/pipelines":      nav.CategoryPipelines,
-	"workflow/design/":        nav.CategoryDesign,
-	"workflow/design":         nav.CategoryDesign,
-	"workflow/intents/":       nav.CategoryIntents,
-	"workflow/intents":        nav.CategoryIntents,
+	"projects/":              nav.CategoryProjects,
+	"projects":               nav.CategoryProjects,
+	"projects/worktrees/":    nav.CategoryWorktrees,
+	"projects/worktrees":     nav.CategoryWorktrees,
+	"festivals/":             nav.CategoryFestivals,
+	"festivals":              nav.CategoryFestivals,
+	"ai_docs/":               nav.CategoryAIDocs,
+	"ai_docs":                nav.CategoryAIDocs,
+	"docs/":                  nav.CategoryDocs,
+	"docs":                   nav.CategoryDocs,
+	"dungeon/":               nav.CategoryDungeon,
+	"dungeon":                nav.CategoryDungeon,
+	"workflow/":              nav.CategoryWorkflow,
+	"workflow":               nav.CategoryWorkflow,
+	"workflow/code_reviews/": nav.CategoryCodeReviews,
+	"workflow/code_reviews":  nav.CategoryCodeReviews,
+	"workflow/pipelines/":    nav.CategoryPipelines,
+	"workflow/pipelines":     nav.CategoryPipelines,
+	"workflow/design/":       nav.CategoryDesign,
+	"workflow/design":        nav.CategoryDesign,
+	"workflow/intents/":      nav.CategoryIntents,
+	"workflow/intents":       nav.CategoryIntents,
 }
 
 // isStandardPath returns true if the path maps to a known category.
@@ -388,8 +388,8 @@ func formatShortcutsHelp() string {
 	}
 
 	// In campaign - show configured shortcuts only
-	if len(cfg.Shortcuts) > 0 {
-		return formatConfigShortcuts(cfg.Shortcuts)
+	if len(cfg.Shortcuts()) > 0 {
+		return formatConfigShortcuts(cfg.Shortcuts())
 	}
 
 	// Campaign exists but no shortcuts configured
@@ -403,13 +403,13 @@ func formatNotInCampaignMessage() string {
 
 // formatNoShortcutsMessage returns message when campaign has no shortcuts.
 func formatNoShortcutsMessage() string {
-	return "Shortcuts: None configured. Add shortcuts to .campaign/campaign.yaml\n"
+	return "Shortcuts: None configured. Add shortcuts to .campaign/settings/jumps.yaml\n"
 }
 
 // formatConfigShortcuts formats configured shortcuts for help output.
 func formatConfigShortcuts(shortcuts map[string]config.ShortcutConfig) string {
 	var sb strings.Builder
-	sb.WriteString("Available shortcuts (from .campaign/campaign.yaml):\n")
+	sb.WriteString("Available shortcuts (from .campaign/settings/jumps.yaml):\n")
 
 	// Separate navigation shortcuts only
 	navShortcuts := make(map[string]config.ShortcutConfig)

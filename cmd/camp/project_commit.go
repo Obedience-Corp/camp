@@ -1,0 +1,227 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+
+	"github.com/obediencecorp/camp/internal/campaign"
+	"github.com/obediencecorp/camp/internal/config"
+	"github.com/obediencecorp/camp/internal/git"
+	"github.com/obediencecorp/camp/internal/ui"
+	"github.com/spf13/cobra"
+)
+
+var projectCommitCmd = &cobra.Command{
+	Use:   "commit",
+	Short: "Commit changes in a project submodule",
+	Long: `Commit changes within a project submodule.
+
+Auto-detects the current project from your working directory,
+or use --path to specify a project explicitly.
+
+Examples:
+  # From within a project directory
+  cd projects/my-api
+  camp project commit -m "Fix bug"
+
+  # Specify project explicitly
+  camp project commit --path projects/my-api -m "Update deps"`,
+	RunE: runProjectCommit,
+}
+
+var (
+	projectPath          string
+	projectCommitMessage string
+	projectCommitAll     bool
+	projectCommitAmend   bool
+)
+
+func init() {
+	projectCommitCmd.Flags().StringVarP(&projectPath, "path", "p", "", "Project path (relative to campaign root)")
+	projectCommitCmd.Flags().StringVarP(&projectCommitMessage, "message", "m", "", "Commit message (required)")
+	projectCommitCmd.Flags().BoolVarP(&projectCommitAll, "all", "a", true, "Stage all changes")
+	projectCommitCmd.Flags().BoolVar(&projectCommitAmend, "amend", false, "Amend the previous commit")
+
+	projectCmd.AddCommand(projectCommitCmd)
+}
+
+func runProjectCommit(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	// Find campaign root
+	campRoot, err := campaign.DetectCached(ctx)
+	if err != nil {
+		return fmt.Errorf("not in a campaign: %w", err)
+	}
+
+	// Resolve project path
+	resolvedPath, err := resolveProjectPath(ctx, campRoot, projectPath)
+	if err != nil {
+		showProjectList(ctx, campRoot)
+		return err
+	}
+
+	// Display which project
+	relPath, _ := filepath.Rel(campRoot, resolvedPath)
+	fmt.Printf("Project: %s\n", ui.Value(relPath))
+
+	// Create executor for the submodule
+	executor, err := git.NewExecutor(resolvedPath)
+	if err != nil {
+		return fmt.Errorf("failed to initialize git: %w", err)
+	}
+
+	// Get commit message - prompt if not provided
+	message := projectCommitMessage
+	if message == "" && !projectCommitAmend {
+		var promptErr error
+		message, promptErr = ui.PromptCommitMessageSimple(ctx, executor)
+		if promptErr != nil {
+			return fmt.Errorf("prompt failed: %w", promptErr)
+		}
+		if message == "" {
+			return fmt.Errorf("commit cancelled")
+		}
+	}
+
+	// Stage if requested
+	if projectCommitAll {
+		fmt.Println(ui.Info("Staging changes..."))
+		if err := executor.StageAll(ctx); err != nil {
+			return fmt.Errorf("failed to stage: %w", err)
+		}
+	}
+
+	// Check for changes
+	hasChanges, err := executor.HasChanges(ctx)
+	if err != nil {
+		return err
+	}
+	if !hasChanges && !projectCommitAmend {
+		fmt.Println(ui.Success("Nothing to commit in project"))
+		return nil
+	}
+
+	// Show what's staged
+	showStagedSummary(ctx, resolvedPath)
+
+	// Commit
+	fmt.Println(ui.Info("Committing changes..."))
+	opts := &git.CommitOptions{
+		Message: message,
+		Amend:   projectCommitAmend,
+	}
+	if err := executor.Commit(ctx, opts); err != nil {
+		if errors.Is(err, git.ErrNoChanges) {
+			fmt.Println(ui.Success("Nothing to commit"))
+			return nil
+		}
+		return fmt.Errorf("commit failed: %w", err)
+	}
+
+	fmt.Println(ui.Success("✓ Project changes committed"))
+
+	// Check if parent needs update
+	parentNeedsCommit := checkParentNeedsCommit(ctx, campRoot, resolvedPath)
+	if parentNeedsCommit {
+		fmt.Println()
+		fmt.Println(ui.Warning("Note: Campaign root shows this project as modified."))
+		fmt.Println(ui.Dim("Run 'camp commit' to update the submodule reference."))
+	}
+
+	return nil
+}
+
+// resolveProjectPath determines the project path from flags or current directory.
+func resolveProjectPath(ctx context.Context, campRoot, flagPath string) (string, error) {
+	if flagPath != "" {
+		// Explicit path provided - validate it's a registered project
+		absPath := filepath.Join(campRoot, flagPath)
+		if !isRegisteredProject(ctx, campRoot, absPath) {
+			return "", fmt.Errorf("'%s' is not a registered project", flagPath)
+		}
+		return absPath, nil
+	}
+
+	// Try to detect from current directory
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+
+	// Find project root from current directory
+	projectRoot, isSubmodule, err := git.FindProjectRootWithType(cwd)
+	if err != nil {
+		return "", fmt.Errorf("not inside a project directory: %w", err)
+	}
+
+	// Check if we're in the campaign root
+	if projectRoot == campRoot {
+		return "", errors.New("you're in the campaign root, not a project\nUse 'camp commit' for campaign-level commits")
+	}
+
+	// Verify it's a registered project (if not a submodule, might be untracked)
+	if !isSubmodule && !isRegisteredProject(ctx, campRoot, projectRoot) {
+		return "", fmt.Errorf("'%s' is not a registered project", projectRoot)
+	}
+
+	return projectRoot, nil
+}
+
+// isRegisteredProject checks if path is in the campaign's project list.
+func isRegisteredProject(ctx context.Context, campRoot, absPath string) bool {
+	cfg, err := config.LoadCampaignConfig(ctx, campRoot)
+	if err != nil {
+		return false
+	}
+
+	for _, proj := range cfg.Projects {
+		projPath := filepath.Join(campRoot, proj.Path)
+		if projPath == absPath {
+			return true
+		}
+	}
+	return false
+}
+
+// showProjectList displays available projects when detection fails.
+func showProjectList(ctx context.Context, campRoot string) {
+	cfg, err := config.LoadCampaignConfig(ctx, campRoot)
+	if err != nil {
+		return
+	}
+
+	if len(cfg.Projects) == 0 {
+		fmt.Println(ui.Dim("\nNo projects registered in this campaign."))
+		return
+	}
+
+	fmt.Println(ui.Dim("\nAvailable projects:"))
+	for _, proj := range cfg.Projects {
+		fmt.Printf("  - %s\n", proj.Path)
+	}
+	fmt.Println(ui.Dim("\nUse --path to specify a project, or navigate into one first."))
+}
+
+// checkParentNeedsCommit checks if the parent repo shows the submodule as modified.
+func checkParentNeedsCommit(ctx context.Context, campRoot, projectPath string) bool {
+	// Check if submodule is modified in parent
+	cmd := exec.CommandContext(ctx, "git", "-C", campRoot,
+		"diff", "--quiet", "--", projectPath)
+	err := cmd.Run()
+
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+			return true // Submodule modified in parent
+		}
+	}
+
+	return false
+}

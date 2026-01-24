@@ -16,6 +16,7 @@ var StandardDirs = []string{
 var CampaignSubdirs = []string{
 	"templates",
 	"agents",
+	"settings",
 }
 
 // ProjectsSubdirs contains subdirectories within projects/

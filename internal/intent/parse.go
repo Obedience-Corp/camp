@@ -10,10 +10,10 @@ import (
 
 // Parsing errors.
 var (
-	ErrEmptyContent        = errors.New("empty content")
-	ErrInvalidFrontmatter  = errors.New("invalid frontmatter format: expected two --- delimiters")
-	ErrFrontmatterParse    = errors.New("failed to parse frontmatter YAML")
-	ErrFrontmatterMarshal  = errors.New("failed to marshal frontmatter to YAML")
+	ErrEmptyContent       = errors.New("empty content")
+	ErrInvalidFrontmatter = errors.New("invalid frontmatter format: expected two --- delimiters")
+	ErrFrontmatterParse   = errors.New("failed to parse frontmatter YAML")
+	ErrFrontmatterMarshal = errors.New("failed to marshal frontmatter to YAML")
 )
 
 // delimiter is the frontmatter section delimiter.

@@ -157,18 +157,10 @@ func TestValidateGlobalConfig(t *testing.T) {
 		{
 			name: "valid config with all fields",
 			cfg: &GlobalConfig{
-				DefaultType: CampaignTypeProduct,
-				Editor:      "vim",
-				NoColor:     true,
+				Editor:  "vim",
+				NoColor: true,
 			},
 			wantErr: false,
-		},
-		{
-			name: "invalid default type",
-			cfg: &GlobalConfig{
-				DefaultType: CampaignType("invalid"),
-			},
-			wantErr: true,
 		},
 	}
 

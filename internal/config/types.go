@@ -29,12 +29,53 @@ type CampaignConfig struct {
 	Description string `yaml:"description,omitempty"`
 	// CreatedAt is when the campaign was created.
 	CreatedAt time.Time `yaml:"created_at,omitempty"`
-	// Paths defines the campaign directory structure.
-	Paths CampaignPaths `yaml:"paths,omitempty"`
 	// Projects contains the list of project configurations.
 	Projects []ProjectConfig `yaml:"projects,omitempty"`
-	// Shortcuts defines custom navigation and command shortcuts.
-	Shortcuts map[string]ShortcutConfig `yaml:"shortcuts,omitempty"`
+
+	// Jumps holds the loaded jumps configuration (from .campaign/settings/jumps.yaml).
+	// This field is not serialized to campaign.yaml - it's loaded separately.
+	Jumps *JumpsConfig `yaml:"-"`
+
+	// Legacy fields for migration (will be moved to jumps.yaml if present).
+	// These are only used during loading for backward compatibility.
+	LegacyPaths     CampaignPaths             `yaml:"paths,omitempty"`
+	LegacyShortcuts map[string]ShortcutConfig `yaml:"shortcuts,omitempty"`
+}
+
+// Paths returns the campaign paths configuration.
+// Returns from Jumps if loaded, otherwise returns legacy paths or defaults.
+func (c *CampaignConfig) Paths() CampaignPaths {
+	if c.Jumps != nil {
+		return c.Jumps.Paths
+	}
+	if c.LegacyPaths.Projects != "" {
+		return c.LegacyPaths
+	}
+	return DefaultCampaignPaths()
+}
+
+// Shortcuts returns the campaign shortcuts configuration.
+// Returns from Jumps if loaded, otherwise returns legacy shortcuts or defaults.
+func (c *CampaignConfig) Shortcuts() map[string]ShortcutConfig {
+	if c.Jumps != nil && c.Jumps.Shortcuts != nil {
+		return c.Jumps.Shortcuts
+	}
+	if c.LegacyShortcuts != nil {
+		return c.LegacyShortcuts
+	}
+	return DefaultNavigationShortcuts()
+}
+
+// HasLegacyConfig returns true if the config has legacy paths or shortcuts
+// that should be migrated to jumps.yaml.
+func (c *CampaignConfig) HasLegacyConfig() bool {
+	return c.LegacyPaths.Projects != "" || len(c.LegacyShortcuts) > 0
+}
+
+// ClearLegacyConfig removes legacy paths and shortcuts after migration.
+func (c *CampaignConfig) ClearLegacyConfig() {
+	c.LegacyPaths = CampaignPaths{}
+	c.LegacyShortcuts = nil
 }
 
 // CampaignPaths defines the directory structure for a campaign.
@@ -111,6 +152,7 @@ func (p *ProjectConfig) ShortcutNames() []string {
 // ShortcutConfig defines a custom navigation or command shortcut.
 type ShortcutConfig struct {
 	// Path is the relative path for navigation shortcuts.
+	// Example: "projects/" means `cgo p` navigates to projects directory.
 	Path string `yaml:"path,omitempty"`
 	// Command is the command to execute for command shortcuts.
 	Command string `yaml:"command,omitempty"`
@@ -118,6 +160,10 @@ type ShortcutConfig struct {
 	WorkDir string `yaml:"workdir,omitempty"`
 	// Description provides help text for this shortcut.
 	Description string `yaml:"description,omitempty"`
+	// Concept is the command group this shortcut expands to.
+	// Example: "project" means `camp p commit` expands to `camp project commit`.
+	// If empty, the shortcut does not support command expansion.
+	Concept string `yaml:"concept,omitempty"`
 }
 
 // IsNavigation returns true if this is a navigation shortcut (has Path).
@@ -130,18 +176,45 @@ func (s ShortcutConfig) IsCommand() bool {
 	return s.Command != ""
 }
 
-// GlobalConfig represents ~/.config/campaign/config.yaml configuration.
+// HasConcept returns true if this shortcut can be used for command expansion.
+func (s ShortcutConfig) HasConcept() bool {
+	return s.Concept != ""
+}
+
+// HasPath returns true if this shortcut can be used for navigation.
+func (s ShortcutConfig) HasPath() bool {
+	return s.Path != ""
+}
+
+// IsNavigationOnly returns true if shortcut only supports navigation.
+func (s ShortcutConfig) IsNavigationOnly() bool {
+	return s.HasPath() && !s.HasConcept()
+}
+
+// IsConceptOnly returns true if shortcut only supports command expansion.
+func (s ShortcutConfig) IsConceptOnly() bool {
+	return s.HasConcept() && !s.HasPath()
+}
+
+// TUIConfig holds configuration for terminal UI elements.
+type TUIConfig struct {
+	// Theme is the color theme for huh forms (adaptive, light, dark, high-contrast).
+	Theme string `json:"theme,omitempty" yaml:"theme,omitempty"`
+	// VimMode enables vim-style keybindings in forms.
+	VimMode bool `json:"vim_mode,omitempty" yaml:"vim_mode,omitempty"`
+}
+
+// GlobalConfig represents ~/.config/campaign/config.json configuration.
+// Contains only user preference fields - campaign-specific settings belong elsewhere.
 type GlobalConfig struct {
-	// DefaultType is the default campaign type when creating new campaigns.
-	DefaultType CampaignType `yaml:"default_type,omitempty"`
 	// Editor is the preferred editor command.
-	Editor string `yaml:"editor,omitempty"`
+	Editor string `json:"editor,omitempty" yaml:"editor,omitempty"`
 	// NoColor disables colored output.
-	NoColor bool `yaml:"no_color,omitempty"`
+	NoColor bool `json:"no_color,omitempty" yaml:"no_color,omitempty"`
 	// Verbose enables verbose output.
-	Verbose bool `yaml:"verbose,omitempty"`
-	// DefaultPaths provides default paths for new campaigns.
-	DefaultPaths CampaignPaths `yaml:"default_paths,omitempty"`
+	Verbose bool `json:"verbose,omitempty" yaml:"verbose,omitempty"`
+	// TUI holds terminal UI configuration.
+	TUI TUIConfig `json:"tui,omitempty" yaml:"tui,omitempty"`
 }
 
 // Registry represents ~/.config/campaign/registry.yaml for tracking campaigns.

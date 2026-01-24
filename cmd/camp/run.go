@@ -68,7 +68,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 		}
 
 		// Look up shortcut
-		sc, ok := cfg.Shortcuts[shortcutName]
+		sc, ok := cfg.Shortcuts()[shortcutName]
 		if !ok {
 			return fmt.Errorf("unknown shortcut %q (run 'camp shortcuts' to see available shortcuts)", shortcutName)
 		}
@@ -82,7 +82,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 		// e.g., @p fest cli -> projects/festival-methodology/fest/cmd/fest/
 		if isStandardPath(sc.Path) {
 			// Build category mappings from config shortcuts
-			configMappings := buildCategoryMappings(cfg.Shortcuts)
+			configMappings := buildCategoryMappings(cfg.Shortcuts())
 
 			// Parse the remaining args to see if there's a project + optional sub-shortcut
 			remainingArgs := args[1:]
