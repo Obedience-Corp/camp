@@ -41,6 +41,8 @@ type palette struct {
 	option      lipgloss.TerminalColor
 	placeholder lipgloss.TerminalColor
 	errorColor  lipgloss.TerminalColor
+	helpKey     lipgloss.TerminalColor // Navigation key labels (up, down, etc.)
+	helpDesc    lipgloss.TerminalColor // Navigation descriptions
 }
 
 // GetTheme returns a huh.Theme for the given theme name.
@@ -65,8 +67,10 @@ func darkPalette() palette {
 		focus:       lipgloss.Color("42"),  // Green
 		selected:    lipgloss.Color("42"),  // Green
 		option:      lipgloss.Color("252"), // Light grey
-		placeholder: lipgloss.Color("245"), // Medium grey
+		placeholder: lipgloss.Color("248"), // Medium-light grey (brighter for visibility)
 		errorColor:  lipgloss.Color("196"), // Red
+		helpKey:     lipgloss.Color("252"), // Light grey for nav keys
+		helpDesc:    lipgloss.Color("248"), // Medium-light grey for nav descriptions
 	}
 }
 
@@ -77,8 +81,10 @@ func lightPalette() palette {
 		focus:       lipgloss.Color("28"),  // Dark green
 		selected:    lipgloss.Color("28"),  // Dark green
 		option:      lipgloss.Color("235"), // Dark grey
-		placeholder: lipgloss.Color("241"), // Medium grey
+		placeholder: lipgloss.Color("236"), // Darker grey (better contrast on light backgrounds)
 		errorColor:  lipgloss.Color("124"), // Dark red
+		helpKey:     lipgloss.Color("240"), // Dark grey for nav keys
+		helpDesc:    lipgloss.Color("243"), // Medium-dark grey for nav descriptions
 	}
 }
 
@@ -91,6 +97,8 @@ func highContrastPalette() palette {
 		option:      lipgloss.Color("255"), // Bright white
 		placeholder: lipgloss.Color("252"), // Light grey
 		errorColor:  lipgloss.Color("196"), // Bright red
+		helpKey:     lipgloss.Color("255"), // Bright white for nav keys
+		helpDesc:    lipgloss.Color("252"), // Light grey for nav descriptions
 	}
 }
 
@@ -115,6 +123,14 @@ func buildTheme(p palette) *huh.Theme {
 	t.Blurred.UnselectedOption = t.Blurred.UnselectedOption.Foreground(p.placeholder)
 	t.Blurred.TextInput.Placeholder = t.Blurred.TextInput.Placeholder.Foreground(p.placeholder)
 	t.Blurred.TextInput.Text = t.Blurred.TextInput.Text.Foreground(p.placeholder)
+
+	// Style help (navigation hints: up, down, filter, enter, submit)
+	t.Help.ShortKey = t.Help.ShortKey.Foreground(p.helpKey)
+	t.Help.ShortDesc = t.Help.ShortDesc.Foreground(p.helpDesc)
+	t.Help.ShortSeparator = t.Help.ShortSeparator.Foreground(p.helpDesc)
+	t.Help.FullKey = t.Help.FullKey.Foreground(p.helpKey)
+	t.Help.FullDesc = t.Help.FullDesc.Foreground(p.helpDesc)
+	t.Help.FullSeparator = t.Help.FullSeparator.Foreground(p.helpDesc)
 
 	return t
 }
