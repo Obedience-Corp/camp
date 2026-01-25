@@ -61,11 +61,11 @@ func GetTheme(name ThemeName) *huh.Theme {
 }
 
 // buildAdaptiveTheme creates a theme based on ThemeCharm (huh's default)
-// but with brighter Help styles for better visibility.
+// but with brighter Help and Placeholder styles for better visibility.
 func buildAdaptiveTheme() *huh.Theme {
 	t := huh.ThemeCharm()
 
-	// Only fix the dim Help styles - preserve all other ThemeCharm colors
+	// Fix dim Help styles (navigation hints)
 	helpKey := lipgloss.AdaptiveColor{Light: "240", Dark: "250"}
 	helpDesc := lipgloss.AdaptiveColor{Light: "243", Dark: "246"}
 
@@ -75,6 +75,11 @@ func buildAdaptiveTheme() *huh.Theme {
 	t.Help.FullKey = t.Help.FullKey.Foreground(helpKey)
 	t.Help.FullDesc = t.Help.FullDesc.Foreground(helpDesc)
 	t.Help.FullSeparator = t.Help.FullSeparator.Foreground(helpDesc)
+
+	// Fix dim placeholder text (ThemeCharm uses 238 dark/248 light which is too dim)
+	placeholder := lipgloss.AdaptiveColor{Light: "243", Dark: "250"}
+	t.Focused.TextInput.Placeholder = t.Focused.TextInput.Placeholder.Foreground(placeholder)
+	t.Blurred.TextInput.Placeholder = t.Blurred.TextInput.Placeholder.Foreground(placeholder)
 
 	return t
 }
