@@ -77,7 +77,7 @@ func buildAdaptiveTheme() *huh.Theme {
 	t.Help.FullSeparator = t.Help.FullSeparator.Foreground(helpDesc)
 
 	// Fix dim placeholder text (ThemeCharm uses 238 dark/248 light which is too dim)
-	placeholder := lipgloss.AdaptiveColor{Light: "243", Dark: "250"}
+	placeholder := lipgloss.AdaptiveColor{Light: "240", Dark: "252"}
 	t.Focused.TextInput.Placeholder = t.Focused.TextInput.Placeholder.Foreground(placeholder)
 	t.Blurred.TextInput.Placeholder = t.Blurred.TextInput.Placeholder.Foreground(placeholder)
 
