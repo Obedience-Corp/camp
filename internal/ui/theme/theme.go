@@ -55,9 +55,28 @@ func GetTheme(name ThemeName) *huh.Theme {
 	case ThemeHighContrast:
 		return buildTheme(highContrastPalette())
 	default:
-		// Adaptive: use huh's base theme
-		return huh.ThemeBase()
+		// Adaptive: ThemeCharm with only Help style fixes
+		return buildAdaptiveTheme()
 	}
+}
+
+// buildAdaptiveTheme creates a theme based on ThemeCharm (huh's default)
+// but with brighter Help styles for better visibility.
+func buildAdaptiveTheme() *huh.Theme {
+	t := huh.ThemeCharm()
+
+	// Only fix the dim Help styles - preserve all other ThemeCharm colors
+	helpKey := lipgloss.AdaptiveColor{Light: "240", Dark: "250"}
+	helpDesc := lipgloss.AdaptiveColor{Light: "243", Dark: "246"}
+
+	t.Help.ShortKey = t.Help.ShortKey.Foreground(helpKey)
+	t.Help.ShortDesc = t.Help.ShortDesc.Foreground(helpDesc)
+	t.Help.ShortSeparator = t.Help.ShortSeparator.Foreground(helpDesc)
+	t.Help.FullKey = t.Help.FullKey.Foreground(helpKey)
+	t.Help.FullDesc = t.Help.FullDesc.Foreground(helpDesc)
+	t.Help.FullSeparator = t.Help.FullSeparator.Foreground(helpDesc)
+
+	return t
 }
 
 func darkPalette() palette {
