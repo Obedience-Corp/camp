@@ -20,6 +20,8 @@ func TestGenerateFish(t *testing.T) {
 		content string
 	}{
 		{"cgo function", "function cgo"},
+		{"cint function", "function cint"},
+		{"cint calls intent add", "camp intent add"},
 		{"cd command", "cd $dest"},
 		{"camp go call", "camp go"},
 		{"complete command", "complete -c cgo"},
