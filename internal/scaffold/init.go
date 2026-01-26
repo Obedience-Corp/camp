@@ -119,8 +119,16 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 		opts.Type = config.CampaignTypeProduct
 	}
 
-	// Generate unique campaign ID
-	campaignID := uuid.New().String()
+	// Check if campaign already exists and preserve its ID
+	var campaignID string
+	existingCfg, err := config.LoadCampaignConfig(ctx, absDir)
+	if err == nil && existingCfg.ID != "" {
+		// Campaign exists, preserve its ID
+		campaignID = existingCfg.ID
+	} else {
+		// New campaign, generate ID
+		campaignID = uuid.New().String()
+	}
 
 	result := &InitResult{
 		ID:           campaignID,
