@@ -114,6 +114,10 @@ type ExplorerModel struct {
 	previewPane    PreviewPane
 	showPreview    bool // Whether preview pane is visible
 	previewFocused bool // Whether preview has focus (vs list)
+
+	// Help overlay state
+	helpOverlay HelpOverlay
+	showHelp    bool
 }
 
 // NewExplorerModel creates a new Explorer model.
@@ -293,11 +297,28 @@ func (m ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// Handle help overlay (highest priority modal)
+		if m.showHelp {
+			var closed bool
+			m.helpOverlay, cmd, closed = m.helpOverlay.Update(msg)
+			if closed {
+				m.showHelp = false
+			}
+			return m, cmd
+		}
+
 		// Normal navigation mode
 		switch msg.String() {
 		case "q", "ctrl+c":
 			m.quitting = true
 			return m, tea.Quit
+		case "?":
+			// Toggle help overlay
+			m.showHelp = !m.showHelp
+			if m.showHelp {
+				m.helpOverlay = NewHelpOverlay(m.width-10, m.height-6)
+			}
+			return m, nil
 		case "/":
 			// Enter search mode
 			m.focus = focusSearch
@@ -501,7 +522,13 @@ func (m ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case archiveFinishedMsg:
 		if msg.err != nil {
-			m.statusMessage = "Archive failed: " + msg.err.Error()
+			if os.IsPermission(msg.err) {
+				m.statusMessage = "Permission denied: cannot archive file"
+			} else if os.IsNotExist(msg.err) {
+				m.statusMessage = "File no longer exists"
+			} else {
+				m.statusMessage = "Archive failed: " + msg.err.Error()
+			}
 		} else {
 			m.statusMessage = "Archived"
 		}
@@ -509,7 +536,13 @@ func (m ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case deleteFinishedMsg:
 		if msg.err != nil {
-			m.statusMessage = "Delete failed: " + msg.err.Error()
+			if os.IsPermission(msg.err) {
+				m.statusMessage = "Permission denied: cannot delete file"
+			} else if os.IsNotExist(msg.err) {
+				m.statusMessage = "File already deleted"
+			} else {
+				m.statusMessage = "Delete failed: " + msg.err.Error()
+			}
 		} else {
 			m.statusMessage = "Deleted: " + msg.title
 		}
@@ -521,6 +554,16 @@ func (m ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // openInEditor opens a file in the user's $EDITOR.
 func (m ExplorerModel) openInEditor(filePath string) tea.Cmd {
+	// Check file exists before opening
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		return func() tea.Msg {
+			return editorFinishedMsg{
+				err:  fmt.Errorf("file no longer exists: %s", filepath.Base(filePath)),
+				path: filePath,
+			}
+		}
+	}
+
 	editor := os.Getenv("EDITOR")
 	if editor == "" {
 		editor = "vi"
@@ -748,6 +791,11 @@ func (m ExplorerModel) View() string {
 		return m.viewConfirmation()
 	}
 
+	// Show help overlay if active (rendered over main view)
+	if m.showHelp {
+		return m.viewHelp()
+	}
+
 	var b strings.Builder
 
 	// Title
@@ -816,6 +864,17 @@ func (m ExplorerModel) View() string {
 
 	// Build the list view
 	var listBuilder strings.Builder
+
+	// Handle empty state
+	if len(m.filteredIntents) == 0 {
+		if m.searchInput.Value() != "" || m.typeWheel.SelectedValue() != "All" ||
+			m.statusWheel.SelectedValue() != "All" || m.conceptFilterPath != "" {
+			listBuilder.WriteString(helpStyle.Render("\n  No intents match current filters.\n  Press Escape to clear filters.\n"))
+		} else {
+			listBuilder.WriteString(helpStyle.Render("\n  No intents found.\n  Press 'n' to create one.\n"))
+		}
+	}
+
 	for gi, group := range m.groups {
 		// Group header
 		indicator := "▶"
@@ -1294,6 +1353,11 @@ func (m ExplorerModel) viewConfirmation() string {
 	b.WriteString(m.confirmDialog.View())
 
 	return b.String()
+}
+
+// viewHelp renders the help overlay.
+func (m ExplorerModel) viewHelp() string {
+	return m.helpOverlay.View()
 }
 
 // recalculateLayout updates component sizes based on terminal dimensions.
