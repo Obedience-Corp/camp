@@ -133,6 +133,23 @@ func runRegister(cmd *cobra.Command, args []string) error {
 		reg.UnregisterByID(existing.ID)
 	}
 
+	// Check for path conflict (different campaign ID at same path)
+	if existing, exists := reg.FindByPath(absPath); exists && existing.ID != cfg.ID {
+		fmt.Printf("%s Path already registered to different campaign\n", ui.WarningIcon())
+		fmt.Println(ui.KeyValue("Existing:", existing.Name+" ("+existing.ID[:8]+"...)"))
+		fmt.Println(ui.KeyValue("New:", name+" ("+cfg.ID[:8]+"...)"))
+		fmt.Print("Replace existing registration? [y/N] ")
+		reader := bufio.NewReader(os.Stdin)
+		response, _ := reader.ReadString('\n')
+		response = strings.TrimSpace(strings.ToLower(response))
+		if response != "y" && response != "yes" {
+			fmt.Println(ui.Dim("Aborted."))
+			return nil
+		}
+		// Remove the conflicting entry before adding new one
+		reg.UnregisterByID(existing.ID)
+	}
+
 	// Register using campaign ID
 	if err := reg.Register(cfg.ID, name, absPath, ctype); err != nil {
 		return fmt.Errorf("failed to register campaign: %w", err)
