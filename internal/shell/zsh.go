@@ -90,6 +90,12 @@ cr() {
   camp run "$@"
 }
 
+# Quick intent capture
+# Usage: cint "my idea"
+cint() {
+  camp intent add "$@"
+}
+
 # Camp command completion
 _camp() {
   local curcontext="$curcontext" state line
