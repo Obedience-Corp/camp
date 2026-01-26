@@ -268,9 +268,10 @@ cache/
 	if !opts.NoRegister && !opts.DryRun {
 		reg, err := config.LoadRegistry(ctx)
 		if err == nil {
-			reg.Register(campaignID, name, absDir, opts.Type)
-			// Ignore registry save errors - not critical
-			_ = config.SaveRegistry(ctx, reg)
+			if err := reg.Register(campaignID, name, absDir, opts.Type); err == nil {
+				// Ignore registry save errors - not critical
+				_ = config.SaveRegistry(ctx, reg)
+			}
 		}
 	}
 

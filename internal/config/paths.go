@@ -24,7 +24,16 @@ func GlobalConfigPath() string {
 }
 
 // RegistryPath returns the path to the campaign registry file.
+// Checks CAMP_REGISTRY_PATH environment variable first for test isolation.
 func RegistryPath() string {
+	if override := os.Getenv("CAMP_REGISTRY_PATH"); override != "" {
+		return override
+	}
+	return filepath.Join(ConfigDir(), "registry.json")
+}
+
+// LegacyRegistryPath returns the path to the old YAML registry file for migration.
+func LegacyRegistryPath() string {
 	return filepath.Join(ConfigDir(), "registry.yaml")
 }
 

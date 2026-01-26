@@ -134,7 +134,9 @@ func runRegister(cmd *cobra.Command, args []string) error {
 	}
 
 	// Register using campaign ID
-	reg.Register(cfg.ID, name, absPath, ctype)
+	if err := reg.Register(cfg.ID, name, absPath, ctype); err != nil {
+		return fmt.Errorf("failed to register campaign: %w", err)
+	}
 
 	// Save registry
 	if err := config.SaveRegistry(ctx, reg); err != nil {
