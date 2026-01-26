@@ -35,19 +35,23 @@ func TestLoadRegistry_FromFile(t *testing.T) {
 	configDir := filepath.Join(dir, AppName)
 	os.MkdirAll(configDir, 0755)
 
-	// New format: campaigns keyed by ID with name field
-	registryContent := `
-campaigns:
-  550e8400-e29b-41d4-a716-446655440000:
-    name: my-campaign
-    path: /home/user/my-campaign
-    type: product
-  a1b2c3d4-e5f6-7890-abcd-ef1234567890:
-    name: other-campaign
-    path: /home/user/other
-    type: research
-`
-	registryPath := filepath.Join(configDir, "registry.yaml")
+	// JSON format: campaigns keyed by ID with name field
+	registryContent := `{
+  "version": 2,
+  "campaigns": {
+    "550e8400-e29b-41d4-a716-446655440000": {
+      "name": "my-campaign",
+      "path": "/home/user/my-campaign",
+      "type": "product"
+    },
+    "a1b2c3d4-e5f6-7890-abcd-ef1234567890": {
+      "name": "other-campaign",
+      "path": "/home/user/other",
+      "type": "research"
+    }
+  }
+}`
+	registryPath := filepath.Join(configDir, "registry.json")
 	os.WriteFile(registryPath, []byte(registryContent), 0644)
 
 	ctx := context.Background()
@@ -551,17 +555,6 @@ func TestRegistryPath_Override(t *testing.T) {
 	}
 }
 
-func TestLegacyRegistryPath(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-
-	got := LegacyRegistryPath()
-	want := filepath.Join(dir, AppName, "registry.yaml")
-	if got != want {
-		t.Errorf("LegacyRegistryPath() = %q, want %q", got, want)
-	}
-}
-
 func TestRegistryRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
@@ -664,103 +657,5 @@ func TestRegistry_Register_UpdatePath(t *testing.T) {
 	_, found = reg.FindByPath("/new/path")
 	if !found {
 		t.Error("new path should be found after update")
-	}
-}
-
-func TestMigrateFromYAML(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-
-	configDir := filepath.Join(dir, AppName)
-	os.MkdirAll(configDir, 0755)
-
-	// Create legacy YAML registry
-	legacyContent := `
-campaigns:
-  id-1:
-    name: campaign-1
-    path: /home/user/c1
-    type: product
-  id-2:
-    name: campaign-2
-    path: /home/user/c2
-    type: research
-`
-	legacyPath := filepath.Join(configDir, "registry.yaml")
-	os.WriteFile(legacyPath, []byte(legacyContent), 0644)
-
-	// Load should trigger migration
-	ctx := context.Background()
-	reg, err := LoadRegistry(ctx)
-	if err != nil {
-		t.Fatalf("LoadRegistry() error = %v", err)
-	}
-
-	// Verify campaigns loaded
-	if reg.Len() != 2 {
-		t.Errorf("len(Campaigns) = %d, want 2", reg.Len())
-	}
-
-	// Verify JSON file was created
-	jsonPath := filepath.Join(configDir, "registry.json")
-	if _, err := os.Stat(jsonPath); os.IsNotExist(err) {
-		t.Error("JSON registry file was not created")
-	}
-
-	// Verify YAML file was backed up
-	backupPath := legacyPath + ".backup"
-	if _, err := os.Stat(backupPath); os.IsNotExist(err) {
-		t.Error("YAML registry backup was not created")
-	}
-
-	// Verify version is set
-	if reg.Version != RegistryVersion {
-		t.Errorf("Version = %d, want %d", reg.Version, RegistryVersion)
-	}
-}
-
-func TestMigrateFromYAML_Deduplicate(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-
-	configDir := filepath.Join(dir, AppName)
-	os.MkdirAll(configDir, 0755)
-
-	// Create legacy YAML registry with duplicate paths
-	legacyContent := `
-campaigns:
-  id-1:
-    name: campaign-old
-    path: /home/user/c1
-    type: product
-    last_access: 2024-01-01T00:00:00Z
-  id-2:
-    name: campaign-new
-    path: /home/user/c1
-    type: product
-    last_access: 2024-06-01T00:00:00Z
-`
-	legacyPath := filepath.Join(configDir, "registry.yaml")
-	os.WriteFile(legacyPath, []byte(legacyContent), 0644)
-
-	// Load should trigger migration with deduplication
-	ctx := context.Background()
-	reg, err := LoadRegistry(ctx)
-	if err != nil {
-		t.Fatalf("LoadRegistry() error = %v", err)
-	}
-
-	// Should only have 1 campaign (newer one wins)
-	if reg.Len() != 1 {
-		t.Errorf("len(Campaigns) = %d, want 1 (duplicates should be removed)", reg.Len())
-	}
-
-	// Verify the newer one (id-2) was kept
-	c, ok := reg.FindByPath("/home/user/c1")
-	if !ok {
-		t.Fatal("campaign not found by path")
-	}
-	if c.Name != "campaign-new" {
-		t.Errorf("Name = %q, want %q (newer should win)", c.Name, "campaign-new")
 	}
 }

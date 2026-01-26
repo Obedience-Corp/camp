@@ -8,21 +8,12 @@ import (
 )
 
 func TestCampaignConfigYAML(t *testing.T) {
-	// Test loading legacy format (paths: in campaign.yaml)
-	// These are now loaded into LegacyPaths for migration
+	// Test loading campaign.yaml format
 	yamlData := `
 name: test-campaign
 type: product
 description: A test campaign
 created_at: 2026-01-14T10:00:00Z
-paths:
-  projects: projects/
-  worktrees: projects/worktrees/
-  ai_docs: ai_docs/
-  docs: docs/
-  festivals: festivals/
-  workflow: workflow/
-  dungeon: dungeon/
 projects:
   - name: project-a
     path: projects/project-a
@@ -43,11 +34,7 @@ projects:
 	if cfg.Description != "A test campaign" {
 		t.Errorf("Description = %q, want %q", cfg.Description, "A test campaign")
 	}
-	// Legacy paths are loaded into LegacyPaths
-	if cfg.LegacyPaths.Projects != "projects/" {
-		t.Errorf("LegacyPaths.Projects = %q, want %q", cfg.LegacyPaths.Projects, "projects/")
-	}
-	// Paths() method returns LegacyPaths when Jumps is nil
+	// Paths() returns defaults when Jumps is nil
 	if cfg.Paths().Projects != "projects/" {
 		t.Errorf("Paths().Projects = %q, want %q", cfg.Paths().Projects, "projects/")
 	}
@@ -272,10 +259,6 @@ func TestCampaignConfigApplyDefaults_PreservesExisting(t *testing.T) {
 		Name:      "test",
 		Type:      CampaignTypeResearch,
 		CreatedAt: created,
-		// LegacyPaths simulates loading from old campaign.yaml format
-		LegacyPaths: CampaignPaths{
-			Projects: "src/",
-		},
 	}
 	cfg.ApplyDefaults()
 
@@ -285,13 +268,10 @@ func TestCampaignConfigApplyDefaults_PreservesExisting(t *testing.T) {
 	if !cfg.CreatedAt.Equal(created) {
 		t.Errorf("CreatedAt = %v, want %v (should preserve existing)", cfg.CreatedAt, created)
 	}
-	// LegacyPaths are accessed via Paths() when Jumps is nil
-	if cfg.Paths().Projects != "src/" {
-		t.Errorf("Paths().Projects = %q, want %q (should return legacy)", cfg.Paths().Projects, "src/")
+	// Paths() returns defaults when Jumps is nil
+	if cfg.Paths().Projects != "projects/" {
+		t.Errorf("Paths().Projects = %q, want %q (should return default)", cfg.Paths().Projects, "projects/")
 	}
-	// Note: With the new architecture, defaults for missing paths are applied
-	// via JumpsConfig.ApplyDefaults() when the full loading pipeline runs.
-	// Here, LegacyPaths are returned directly since Jumps is nil.
 }
 
 func TestGlobalConfigApplyDefaults(t *testing.T) {

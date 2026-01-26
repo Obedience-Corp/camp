@@ -32,11 +32,6 @@ func RegistryPath() string {
 	return filepath.Join(ConfigDir(), "registry.json")
 }
 
-// LegacyRegistryPath returns the path to the old YAML registry file for migration.
-func LegacyRegistryPath() string {
-	return filepath.Join(ConfigDir(), "registry.yaml")
-}
-
 // EnsureConfigDir creates the config directory if it doesn't exist.
 func EnsureConfigDir() error {
 	return os.MkdirAll(ConfigDir(), 0755)

@@ -8,8 +8,6 @@ import (
 	"os"
 	"strings"
 	"time"
-
-	"gopkg.in/yaml.v3"
 )
 
 // ErrMultipleMatches is returned when an ID prefix matches multiple campaigns.
@@ -20,7 +18,6 @@ var ErrCampaignNotFound = errors.New("campaign not found")
 
 // LoadRegistry loads the campaign registry from ~/.config/campaign/registry.json.
 // Returns an empty registry if the file doesn't exist.
-// Automatically migrates from YAML format if needed.
 func LoadRegistry(ctx context.Context) (*Registry, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -30,8 +27,7 @@ func LoadRegistry(ctx context.Context) (*Registry, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			// Check for legacy YAML file to migrate
-			return migrateFromYAMLIfNeeded(ctx)
+			return NewRegistry(), nil
 		}
 		return nil, fmt.Errorf("failed to read registry %s: %w", path, err)
 	}
@@ -61,68 +57,6 @@ func LoadRegistry(ctx context.Context) (*Registry, error) {
 	reg.rebuildPathIndex()
 
 	return &reg, nil
-}
-
-// migrateFromYAMLIfNeeded checks for and migrates a legacy YAML registry.
-func migrateFromYAMLIfNeeded(ctx context.Context) (*Registry, error) {
-	legacyPath := LegacyRegistryPath()
-	data, err := os.ReadFile(legacyPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			// No legacy file, return new registry
-			return NewRegistry(), nil
-		}
-		return nil, fmt.Errorf("failed to read legacy registry %s: %w", legacyPath, err)
-	}
-
-	// Parse YAML
-	var legacyReg Registry
-	if err := yaml.Unmarshal(data, &legacyReg); err != nil {
-		return nil, fmt.Errorf("failed to parse legacy registry %s: %w", legacyPath, err)
-	}
-
-	// Initialize and deduplicate
-	if legacyReg.Campaigns == nil {
-		legacyReg.Campaigns = make(map[string]RegisteredCampaign)
-	}
-
-	// Deduplicate: if same path appears with different IDs, keep the most recently accessed
-	pathToID := make(map[string]string)
-	for id, c := range legacyReg.Campaigns {
-		c.ID = id
-		if existingID, exists := pathToID[c.Path]; exists {
-			// Same path with different ID - keep the one with most recent access
-			existing := legacyReg.Campaigns[existingID]
-			if c.LastAccess.After(existing.LastAccess) {
-				// Remove old entry, keep new one
-				delete(legacyReg.Campaigns, existingID)
-				pathToID[c.Path] = id
-			} else {
-				// Keep old entry, remove this one
-				delete(legacyReg.Campaigns, id)
-			}
-		} else {
-			pathToID[c.Path] = id
-		}
-		legacyReg.Campaigns[id] = c
-	}
-
-	// Set version
-	legacyReg.Version = RegistryVersion
-
-	// Build path index
-	legacyReg.rebuildPathIndex()
-
-	// Save as JSON
-	if err := SaveRegistry(ctx, &legacyReg); err != nil {
-		return nil, fmt.Errorf("failed to migrate registry: %w", err)
-	}
-
-	// Rename old file to backup
-	backupPath := legacyPath + ".backup"
-	_ = os.Rename(legacyPath, backupPath) // Ignore error if rename fails
-
-	return &legacyReg, nil
 }
 
 // SaveRegistry saves the campaign registry to ~/.config/campaign/registry.json.
