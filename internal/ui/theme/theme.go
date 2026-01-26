@@ -62,6 +62,14 @@ func GetTheme(name ThemeName) *huh.Theme {
 
 // buildAdaptiveTheme creates a theme based on ThemeCharm (huh's default)
 // but with brighter Help and Placeholder styles for better visibility.
+//
+// NOTE: Due to a bug in huh/bubbles, Blurred.TextInput.Placeholder doesn't
+// work for fields that were never focused. The bubbles textarea's m.style
+// pointer is initialized to point to a local variable in New(), not to
+// m.BlurredStyle. Only Focus()/Blur() calls fix this, but fields that start
+// blurred never get those calls. We work around this by:
+// 1. Making focused placeholder bright (works correctly)
+// 2. Using Description text instead of placeholder for important prompts
 func buildAdaptiveTheme() *huh.Theme {
 	t := huh.ThemeCharm()
 
@@ -76,10 +84,14 @@ func buildAdaptiveTheme() *huh.Theme {
 	t.Help.FullDesc = t.Help.FullDesc.Foreground(helpDesc)
 	t.Help.FullSeparator = t.Help.FullSeparator.Foreground(helpDesc)
 
-	// Fix dim placeholder text (ThemeCharm uses 238 dark/248 light which is too dim)
-	placeholder := lipgloss.AdaptiveColor{Light: "240", Dark: "252"}
-	t.Focused.TextInput.Placeholder = t.Focused.TextInput.Placeholder.Foreground(placeholder)
-	t.Blurred.TextInput.Placeholder = t.Blurred.TextInput.Placeholder.Foreground(placeholder)
+	// Make focused placeholder bright (this works correctly)
+	t.Focused.TextInput.Placeholder = lipgloss.NewStyle().
+		Foreground(lipgloss.AdaptiveColor{Light: "243", Dark: "250"})
+
+	// Blurred placeholder styling doesn't work due to huh/bubbles bug,
+	// but we set it anyway in case they fix it in the future
+	t.Blurred.TextInput.Placeholder = lipgloss.NewStyle().
+		Foreground(lipgloss.AdaptiveColor{Light: "245", Dark: "248"})
 
 	return t
 }
