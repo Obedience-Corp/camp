@@ -139,16 +139,6 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 	// Scaffold path
 	scaffoldPath := "campaign/scaffold.yaml"
 
-	// Get expected directories and files from scaffold
-	expectedDirs, expectedFiles := getExpectedPaths(absDir)
-
-	// Check what already exists and mark as skipped
-	for _, d := range expectedDirs {
-		if _, err := os.Stat(d); err == nil {
-			result.Skipped = append(result.Skipped, d)
-		}
-	}
-
 	// Run scaffold (handles directories and template files)
 	if !opts.DryRun {
 		// Use guild-scaffold to create the scaffold structure
@@ -157,7 +147,7 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 			return nil, fmt.Errorf("failed to get template sub-fs: %w", err)
 		}
 
-		_, scaffoldErr := scaffold.ScaffoldFromFS(ctx, CampaignScaffoldFS, scaffoldPath, scaffold.Options{
+		stats, scaffoldErr := scaffold.ScaffoldFromFS(ctx, CampaignScaffoldFS, scaffoldPath, scaffold.Options{
 			TemplatesFS: templateFS,
 			Dest:        absDir,
 			Vars: map[string]any{
@@ -171,16 +161,17 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 		if scaffoldErr != nil {
 			return nil, fmt.Errorf("failed to create scaffold: %w", scaffoldErr)
 		}
-	}
 
-	// Track what was created
-	for _, d := range expectedDirs {
-		if !containsPath(result.Skipped, d) {
-			result.DirsCreated = append(result.DirsCreated, d)
+		// Use scaffold results directly - single source of truth
+		for _, dir := range stats.CreatedDirs {
+			result.DirsCreated = append(result.DirsCreated, filepath.Join(absDir, dir))
 		}
-	}
-	for _, f := range expectedFiles {
-		result.FilesCreated = append(result.FilesCreated, f)
+		for _, file := range stats.CreatedFiles {
+			result.FilesCreated = append(result.FilesCreated, filepath.Join(absDir, file))
+		}
+		for _, skipped := range stats.SkippedPaths {
+			result.Skipped = append(result.Skipped, filepath.Join(absDir, skipped))
+		}
 	}
 
 	// Create campaign.yaml (metadata only - paths/shortcuts go in jumps.yaml)
@@ -284,70 +275,6 @@ func (o *InitOptions) Validate() error {
 		return fmt.Errorf("invalid campaign type: %s", o.Type)
 	}
 	return nil
-}
-
-// getExpectedPaths returns the expected directories and files.
-func getExpectedPaths(baseDir string) (dirs []string, files []string) {
-	// Build full paths for main directories
-	for _, d := range StandardDirs {
-		dirs = append(dirs, filepath.Join(baseDir, d))
-	}
-
-	// Add .campaign subdirectories
-	for _, d := range CampaignSubdirs {
-		dirs = append(dirs, filepath.Join(baseDir, ".campaign", d))
-	}
-
-	// Add projects subdirectories (worktrees)
-	for _, d := range ProjectsSubdirs {
-		dirs = append(dirs, filepath.Join(baseDir, "projects", d))
-	}
-
-	// Add dungeon subdirectories
-	for _, d := range DungeonSubdirs {
-		dirs = append(dirs, filepath.Join(baseDir, "dungeon", d))
-	}
-
-	// Add workflow subdirectories
-	for _, d := range WorkflowSubdirs {
-		dirs = append(dirs, filepath.Join(baseDir, "workflow", d))
-	}
-
-	// Add intents subdirectories (under workflow)
-	for _, d := range IntentsSubdirs {
-		dirs = append(dirs, filepath.Join(baseDir, "workflow", "intents", d))
-	}
-
-	// Build file paths (OBEY.md files for main dirs)
-	for _, d := range StandardDirs {
-		if d != ".campaign" {
-			files = append(files, filepath.Join(baseDir, d, "OBEY.md"))
-		}
-	}
-
-	// OBEY.md files for subdirectories
-	for _, d := range ProjectsSubdirs {
-		files = append(files, filepath.Join(baseDir, "projects", d, "OBEY.md"))
-	}
-	for _, d := range WorkflowSubdirs {
-		files = append(files, filepath.Join(baseDir, "workflow", d, "OBEY.md"))
-	}
-
-	// AGENTS.md (source of truth) and README.md
-	files = append(files, filepath.Join(baseDir, "AGENTS.md"))
-	files = append(files, filepath.Join(baseDir, "README.md"))
-
-	return dirs, files
-}
-
-// containsPath checks if a string slice contains a path string.
-func containsPath(slice []string, s string) bool {
-	for _, item := range slice {
-		if item == s {
-			return true
-		}
-	}
-	return false
 }
 
 // initFestivalsIfNeeded runs `fest init` if the festivals directory doesn't exist.
