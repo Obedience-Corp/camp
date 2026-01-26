@@ -13,9 +13,9 @@ import (
 )
 
 var (
-	createBranch    string
-	createNewBranch bool
-	createTrack     string
+	createBranch     string
+	createStartPoint string
+	createTrack      string
 )
 
 var worktreesCreateCmd = &cobra.Command{
@@ -25,12 +25,18 @@ var worktreesCreateCmd = &cobra.Command{
 
 The worktree will be created at: projects/worktrees/<project>/<name>/
 
+By default, creates a new branch with the worktree name based on the current branch.
+Use --branch to checkout an existing branch instead.
+
 Examples:
-  # Create worktree on existing branch
+  # Create worktree with new branch based on current branch (default)
   camp worktrees create my-api feature-auth
 
-  # Create worktree with new branch
-  camp worktrees create my-api experiment --new-branch
+  # Create worktree with new branch based on main
+  camp worktrees create my-api experiment --start-point main
+
+  # Checkout existing branch (instead of creating new)
+  camp worktrees create my-api hotfix --branch hotfix-123
 
   # Create worktree tracking remote branch
   camp worktrees create web pr-review --track origin/feature-xyz`,
@@ -41,12 +47,12 @@ Examples:
 func init() {
 	worktreesCmd.AddCommand(worktreesCreateCmd)
 
-	worktreesCreateCmd.Flags().StringVarP(&createBranch, "branch", "b", "main",
-		"Existing branch to checkout")
-	worktreesCreateCmd.Flags().BoolVarP(&createNewBranch, "new-branch", "B", false,
-		"Create new branch with worktree name")
+	worktreesCreateCmd.Flags().StringVarP(&createBranch, "branch", "b", "",
+		"Checkout existing branch instead of creating new one")
+	worktreesCreateCmd.Flags().StringVarP(&createStartPoint, "start-point", "s", "",
+		"Base branch/commit for new branch (default: current branch)")
 	worktreesCreateCmd.Flags().StringVarP(&createTrack, "track", "t", "",
-		"Remote branch to track (implies --new-branch)")
+		"Remote branch to track (creates new local tracking branch)")
 }
 
 func runWorktreesCreate(cmd *cobra.Command, args []string) error {
@@ -74,18 +80,42 @@ func runWorktreesCreate(cmd *cobra.Command, args []string) error {
 	resolver := paths.NewResolver(campRoot, cfg.Paths())
 	creator := worktree.NewCreator(resolver, cfg)
 
-	// Build options
+	// Build options based on new semantics:
+	// - Default: create new branch with worktree name, based on current branch
+	// - --branch: checkout existing branch
+	// - --start-point: specify base for new branch
+	// - --track: track remote branch
 	opts := &worktree.CreateOptions{
 		Project:     projectName,
 		Name:        worktreeName,
-		Branch:      createBranch,
-		NewBranch:   createNewBranch,
 		TrackRemote: createTrack,
 	}
 
-	// Track implies new branch
-	if opts.TrackRemote != "" {
+	if createBranch != "" {
+		// Explicit existing branch requested
+		opts.Branch = createBranch
+		opts.NewBranch = false
+	} else if createTrack != "" {
+		// Track remote branch (handled by TrackRemote)
+		opts.NewBranch = false
+	} else {
+		// Default: create new branch based on current branch
 		opts.NewBranch = true
+		opts.Branch = worktreeName
+
+		// Determine start point
+		if createStartPoint != "" {
+			opts.StartPoint = createStartPoint
+		} else {
+			// Get current branch as default start point
+			projectPath := resolver.Project(projectName)
+			git := worktree.NewGitWorktree(projectPath)
+			currentBranch, err := git.CurrentBranch(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to detect current branch: %w", err)
+			}
+			opts.StartPoint = currentBranch
+		}
 	}
 
 	// Execute creation

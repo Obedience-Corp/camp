@@ -39,14 +39,40 @@ type GitWorktreeEntry struct {
 	Prunable string // Reason if prunable, empty otherwise
 }
 
+// CurrentBranch returns the current branch name.
+func (g *GitWorktree) CurrentBranch(ctx context.Context) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, g.timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--abbrev-ref", "HEAD")
+	cmd.Dir = g.projectPath
+
+	out, err := cmd.Output()
+	if err != nil {
+		return "", GitOperationFailed(
+			filepath.Base(g.projectPath),
+			"rev-parse",
+			parseGitError(err, out),
+		)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 // Add creates a new git worktree.
-func (g *GitWorktree) Add(ctx context.Context, path, branch string, createBranch bool) error {
+// If createBranch is true, creates a new branch with the given name based on startPoint.
+// If startPoint is empty, defaults to HEAD.
+func (g *GitWorktree) Add(ctx context.Context, path, branch string, createBranch bool, startPoint string) error {
 	ctx, cancel := context.WithTimeout(ctx, g.timeout)
 	defer cancel()
 
 	args := []string{"worktree", "add"}
 	if createBranch {
-		args = append(args, "-b", branch, path, "HEAD")
+		args = append(args, "-b", branch, path)
+		if startPoint != "" {
+			args = append(args, startPoint)
+		} else {
+			args = append(args, "HEAD")
+		}
 	} else {
 		args = append(args, path, branch)
 	}
