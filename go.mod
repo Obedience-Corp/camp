@@ -11,6 +11,7 @@ require (
 	github.com/ktr0731/go-fuzzyfinder v0.9.0
 	github.com/lancekrogers/guild-scaffold v0.0.0-20260116024605-75c1a949686a
 	github.com/muesli/termenv v0.16.0
+	github.com/sahilm/fuzzy v0.1.1
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.40.0

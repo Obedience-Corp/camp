@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/sahilm/fuzzy"
 )
 
 // Service errors.
@@ -306,6 +308,47 @@ func (s *IntentService) List(ctx context.Context, opts *ListOptions) ([]*Intent,
 	}
 
 	return intents, nil
+}
+
+// intentSource implements fuzzy.Source interface for intent searching.
+type intentSource []*Intent
+
+func (is intentSource) String(i int) string {
+	return is[i].Title
+}
+
+func (is intentSource) Len() int {
+	return len(is)
+}
+
+// Search returns intents matching the query string using fuzzy matching.
+// Empty query returns all intents. Results are sorted by relevance score.
+func (s *IntentService) Search(ctx context.Context, query string) ([]*Intent, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("context cancelled: %w", err)
+	}
+
+	// Get all intents
+	allIntents, err := s.List(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("listing intents: %w", err)
+	}
+
+	// Empty query returns all intents
+	if query == "" {
+		return allIntents, nil
+	}
+
+	// Use fuzzy matching on titles
+	matches := fuzzy.FindFrom(query, intentSource(allIntents))
+
+	// Build results from matches (already sorted by score)
+	results := make([]*Intent, len(matches))
+	for i, match := range matches {
+		results[i] = allIntents[match.Index]
+	}
+
+	return results, nil
 }
 
 // Edit opens an existing intent in an editor and saves changes.
