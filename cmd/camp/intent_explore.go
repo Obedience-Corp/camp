@@ -6,6 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
+	"github.com/obediencecorp/camp/internal/concept"
 	"github.com/obediencecorp/camp/internal/config"
 	"github.com/obediencecorp/camp/internal/intent"
 	"github.com/obediencecorp/camp/internal/intent/tui"
@@ -49,12 +50,13 @@ func runIntentExplore(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("not in a campaign directory: %w", err)
 	}
 
-	// Create path resolver and service
+	// Create path resolver and services
 	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
 	svc := intent.NewIntentService(campaignRoot, resolver.Intents())
+	conceptSvc := concept.NewService(campaignRoot, cfg.Shortcuts())
 
 	// Create and run the TUI
-	model := tui.NewExplorerModel(ctx, svc)
+	model := tui.NewExplorerModel(ctx, svc, conceptSvc)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {

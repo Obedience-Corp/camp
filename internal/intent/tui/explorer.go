@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/obediencecorp/camp/internal/concept"
 	"github.com/obediencecorp/camp/internal/intent"
 )
 
@@ -28,6 +29,17 @@ const (
 	focusSearch
 	focusTypeFilter
 	focusStatusFilter
+	focusConceptFilter // Filtering by concept
+	focusCreating      // Creating new intent
+)
+
+// creationStep represents the current step in new intent creation.
+type creationStep int
+
+const (
+	stepTitle creationStep = iota
+	stepType
+	stepConcept
 )
 
 // typeFilterItems are the available type filter options.
@@ -70,10 +82,21 @@ type ExplorerModel struct {
 
 	// Status message
 	statusMessage string
+
+	// New intent creation state
+	creationStep  creationStep
+	titleInput    textinput.Model
+	createTypeIdx int
+	conceptPicker ConceptPickerModel
+	conceptSvc    concept.Service
+
+	// Concept filter state
+	conceptFilterPath   string             // Active concept filter (empty = all)
+	conceptFilterPicker ConceptPickerModel // Picker for selecting filter
 }
 
 // NewExplorerModel creates a new Explorer model.
-func NewExplorerModel(ctx context.Context, svc *intent.IntentService) ExplorerModel {
+func NewExplorerModel(ctx context.Context, svc *intent.IntentService, conceptSvc concept.Service) ExplorerModel {
 	ti := textinput.New()
 	ti.Placeholder = "Search intents..."
 	ti.CharLimit = 100
@@ -85,14 +108,22 @@ func NewExplorerModel(ctx context.Context, svc *intent.IntentService) ExplorerMo
 	sw := NewScrollWheel(statusFilterItems)
 	sw.SetWidth(12)
 
+	// Title input for new intent creation
+	titleIn := textinput.New()
+	titleIn.Placeholder = "Enter intent title..."
+	titleIn.CharLimit = 100
+	titleIn.Width = 40
+
 	return ExplorerModel{
 		service:     svc,
 		ctx:         ctx,
+		conceptSvc:  conceptSvc,
 		cursorGroup: 0,
 		cursorItem:  -1, // Start on first group header
 		searchInput: ti,
 		typeWheel:   tw,
 		statusWheel: sw,
+		titleInput:  titleIn,
 		focus:       focusList,
 	}
 }
@@ -175,6 +206,24 @@ func (m ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
+		if m.focus == focusConceptFilter {
+			// Handle concept filter picker
+			m.conceptFilterPicker, cmd = m.conceptFilterPicker.Update(msg)
+			if m.conceptFilterPicker.Done() {
+				m.focus = focusList
+				if !m.conceptFilterPicker.Cancelled() {
+					m.conceptFilterPath = m.conceptFilterPicker.SelectedPath()
+				}
+				m.applyFilters()
+				return m, nil
+			}
+			return m, cmd
+		}
+
+		if m.focus == focusCreating {
+			return m.updateCreating(msg)
+		}
+
 		// Normal navigation mode
 		switch msg.String() {
 		case "q", "ctrl+c":
@@ -195,6 +244,24 @@ func (m ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.focus = focusStatusFilter
 			m.statusWheel.Focus()
 			return m, nil
+		case "c":
+			// Enter concept filter mode
+			m.focus = focusConceptFilter
+			m.conceptFilterPicker = NewConceptPickerModel(m.ctx, m.conceptSvc)
+			return m, nil
+		case "C":
+			// Clear concept filter
+			m.conceptFilterPath = ""
+			m.applyFilters()
+			return m, nil
+		case "n":
+			// Start new intent creation
+			m.focus = focusCreating
+			m.creationStep = stepTitle
+			m.titleInput.SetValue("")
+			m.titleInput.Focus()
+			m.createTypeIdx = 0
+			return m, textinput.Blink
 		case "j", "down":
 			m.moveCursorDown()
 		case "k", "up":
@@ -271,6 +338,18 @@ func (m *ExplorerModel) applyFilters() {
 			}
 		}
 		filtered = statusFiltered
+	}
+
+	// Apply concept filter
+	if m.conceptFilterPath != "" {
+		conceptFiltered := make([]*intent.Intent, 0)
+		for _, i := range filtered {
+			// Match if intent's concept starts with the filter path
+			if strings.HasPrefix(i.Concept, m.conceptFilterPath) {
+				conceptFiltered = append(conceptFiltered, i)
+			}
+		}
+		filtered = conceptFiltered
 	}
 
 	m.filteredIntents = filtered
@@ -368,6 +447,16 @@ func (m ExplorerModel) View() string {
 		return "Loading..."
 	}
 
+	// Show creation form if in creating mode
+	if m.focus == focusCreating {
+		return m.viewCreating()
+	}
+
+	// Show concept filter picker if active
+	if m.focus == focusConceptFilter {
+		return m.viewConceptFilter()
+	}
+
 	var b strings.Builder
 
 	// Title
@@ -404,6 +493,16 @@ func (m ExplorerModel) View() string {
 	} else {
 		b.WriteString(helpStyle.Render("Status: [" + statusValue + "]"))
 	}
+	b.WriteString("  ")
+
+	// Concept filter indicator
+	conceptValue := "All"
+	if m.conceptFilterPath != "" {
+		// Show just the last part of the path for brevity
+		parts := strings.Split(m.conceptFilterPath, "/")
+		conceptValue = parts[len(parts)-1]
+	}
+	b.WriteString(helpStyle.Render("Concept: [" + conceptValue + "]"))
 	b.WriteString("\n\n")
 
 	// Calculate available width for title (leave room for date and type)
@@ -446,7 +545,7 @@ func (m ExplorerModel) View() string {
 
 	// Status bar
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("j/k: navigate • enter/space: toggle • /: search • t: type • s: status • q: quit"))
+	b.WriteString(helpStyle.Render("j/k: navigate • /: search • t: type • s: status • c: concept • n: new • q: quit"))
 
 	if m.statusMessage != "" {
 		b.WriteString("\n")
@@ -477,13 +576,18 @@ func (m ExplorerModel) renderIntentRow(i *intent.Intent, isSelected bool, maxTit
 	typePart := intentTypeStyle.Render(fmt.Sprintf("[%s]", i.Type))
 	datePart := intentDateStyle.Render(date)
 
-	// Add concept if present
-	conceptPart := ""
+	// Add concept column - show concept name only (not full path)
+	conceptName := "-"
 	if i.Concept != "" {
-		conceptPart = " " + intentConceptStyle.Render(i.Concept)
+		conceptName = i.ConceptName()
+		// Truncate long concept names for alignment
+		if len(conceptName) > 15 {
+			conceptName = conceptName[:12] + "..."
+		}
 	}
+	conceptPart := intentConceptStyle.Render(conceptName)
 
-	row := fmt.Sprintf("  %s  %s  %s  %s%s", cursor, titlePart, typePart, datePart, conceptPart)
+	row := fmt.Sprintf("  %s  %s  %s  %s  %s", cursor, titlePart, typePart, datePart, conceptPart)
 
 	if isSelected {
 		return intentRowSelectedStyle.Render(row)
@@ -565,4 +669,150 @@ func groupIntentsByStatus(intents []*intent.Intent) []IntentGroup {
 	}
 
 	return groups
+}
+
+// createTypeOptions are the available types for new intents.
+var createTypeOptions = []string{"idea", "feature", "bug", "research", "chore"}
+
+// updateCreating handles key input during new intent creation.
+func (m ExplorerModel) updateCreating(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	switch msg.String() {
+	case "esc":
+		// Cancel creation, return to list
+		m.focus = focusList
+		m.titleInput.Blur()
+		return m, nil
+	}
+
+	switch m.creationStep {
+	case stepTitle:
+		switch msg.String() {
+		case "enter":
+			if m.titleInput.Value() != "" {
+				m.creationStep = stepType
+				m.titleInput.Blur()
+			}
+			return m, nil
+		}
+		m.titleInput, cmd = m.titleInput.Update(msg)
+		return m, cmd
+
+	case stepType:
+		switch msg.String() {
+		case "j", "down":
+			if m.createTypeIdx < len(createTypeOptions)-1 {
+				m.createTypeIdx++
+			}
+		case "k", "up":
+			if m.createTypeIdx > 0 {
+				m.createTypeIdx--
+			}
+		case "enter":
+			// Move to concept selection
+			m.creationStep = stepConcept
+			m.conceptPicker = NewConceptPickerModel(m.ctx, m.conceptSvc)
+			return m, nil
+		}
+		return m, nil
+
+	case stepConcept:
+		switch msg.String() {
+		case "tab":
+			// Skip concept selection, create intent without concept
+			return m.finishIntentCreation("")
+		}
+		// Pass to concept picker
+		m.conceptPicker, cmd = m.conceptPicker.Update(msg)
+		if m.conceptPicker.Done() {
+			if m.conceptPicker.Cancelled() {
+				// Go back to type selection
+				m.creationStep = stepType
+				return m, nil
+			}
+			// Create intent with selected concept
+			return m.finishIntentCreation(m.conceptPicker.SelectedPath())
+		}
+		return m, cmd
+	}
+
+	return m, nil
+}
+
+// finishIntentCreation creates the intent and returns to list view.
+func (m ExplorerModel) finishIntentCreation(conceptPath string) (tea.Model, tea.Cmd) {
+	title := m.titleInput.Value()
+	intentType := intent.Type(createTypeOptions[m.createTypeIdx])
+
+	opts := intent.CreateOptions{
+		Title:   title,
+		Type:    intentType,
+		Concept: conceptPath,
+	}
+
+	_, err := m.service.CreateDirect(m.ctx, opts)
+	if err != nil {
+		m.statusMessage = "Error creating intent: " + err.Error()
+		m.focus = focusList
+		return m, nil
+	}
+
+	m.statusMessage = "Intent created: " + title
+	m.focus = focusList
+
+	// Reload intents
+	return m, m.loadIntents()
+}
+
+// viewCreating renders the new intent creation form.
+func (m ExplorerModel) viewCreating() string {
+	var b strings.Builder
+
+	b.WriteString(titleStyle.Render("Create New Intent"))
+	b.WriteString("\n\n")
+
+	switch m.creationStep {
+	case stepTitle:
+		b.WriteString("Enter title:\n")
+		b.WriteString(m.titleInput.View())
+		b.WriteString("\n\n")
+		b.WriteString(helpStyle.Render("Enter: continue • Esc: cancel"))
+
+	case stepType:
+		b.WriteString("Title: " + m.titleInput.Value() + "\n\n")
+		b.WriteString("Select type:\n")
+		for i, t := range createTypeOptions {
+			cursor := "  "
+			if i == m.createTypeIdx {
+				cursor = "> "
+			}
+			b.WriteString(cursor + t + "\n")
+		}
+		b.WriteString("\n")
+		b.WriteString(helpStyle.Render("j/k: navigate • Enter: continue • Esc: cancel"))
+
+	case stepConcept:
+		b.WriteString("Title: " + m.titleInput.Value() + "\n")
+		b.WriteString("Type: " + createTypeOptions[m.createTypeIdx] + "\n\n")
+		b.WriteString("Select concept (optional):\n\n")
+		b.WriteString(m.conceptPicker.View())
+		b.WriteString("\n")
+		b.WriteString(helpStyle.Render("Tab: skip • Esc: back"))
+	}
+
+	return b.String()
+}
+
+// viewConceptFilter renders the concept filter picker.
+func (m ExplorerModel) viewConceptFilter() string {
+	var b strings.Builder
+
+	b.WriteString(titleStyle.Render("Filter by Concept"))
+	b.WriteString("\n\n")
+	b.WriteString(m.conceptFilterPicker.View())
+	b.WriteString("\n")
+	b.WriteString(helpStyle.Render("Esc: cancel"))
+
+	return b.String()
 }
