@@ -164,6 +164,7 @@ func init() {
 	// Define command groups for organized help output
 	rootCmd.AddGroup(
 		&cobra.Group{ID: "setup", Title: "Setup Commands:"},
+		&cobra.Group{ID: "campaign", Title: "Campaign Commands:"},
 		&cobra.Group{ID: "navigation", Title: "Navigation Commands:"},
 		&cobra.Group{ID: "registry", Title: "Registry Commands:"},
 		&cobra.Group{ID: "project", Title: "Project Commands:"},

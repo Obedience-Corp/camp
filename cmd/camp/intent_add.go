@@ -136,6 +136,7 @@ func collectIntentInput(ctx context.Context, campaignRoot, title, intentType, pr
 		projectOptions = append(projectOptions, huh.NewOption(p.Name, p.Name))
 	}
 
+	// DEBUG: Test with all 4 fields (original form)
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().
@@ -171,7 +172,7 @@ func collectIntentInput(ctx context.Context, campaignRoot, title, intentType, pr
 			huh.NewText().
 				Title("Description").
 				Description("What is this intent about? (required)").
-				Placeholder("Describe the intent...").
+				Placeholder("Start typing here...").
 				Value(&body).
 				Validate(func(s string) error {
 					if strings.TrimSpace(s) == "" {

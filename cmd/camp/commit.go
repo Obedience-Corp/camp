@@ -39,7 +39,7 @@ func init() {
 	commitCmd.Flags().BoolVar(&commitAmend, "amend", false, "Amend the previous commit")
 
 	rootCmd.AddCommand(commitCmd)
-	commitCmd.GroupID = "project"
+	commitCmd.GroupID = "campaign"
 }
 
 func runCommit(cmd *cobra.Command, args []string) error {

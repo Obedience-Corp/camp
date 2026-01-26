@@ -13,15 +13,13 @@ import (
 func RunForm(ctx context.Context, form *huh.Form) error {
 	cfg, err := config.LoadGlobalConfig(ctx)
 	if err != nil {
-		// Use huh defaults on error
-		return form.Run()
+		// Use adaptive theme on error
+		return form.WithTheme(GetTheme(ThemeAdaptive)).Run()
 	}
 
 	themeName := ThemeName(cfg.TUI.Theme)
-
-	// Adaptive = let huh auto-detect terminal colors
-	if themeName == "" || themeName == ThemeAdaptive {
-		return form.Run()
+	if themeName == "" {
+		themeName = ThemeAdaptive
 	}
 
 	return form.WithTheme(GetTheme(themeName)).Run()
@@ -32,15 +30,13 @@ func RunForm(ctx context.Context, form *huh.Form) error {
 func RunFormAccessible(ctx context.Context, form *huh.Form) error {
 	cfg, err := config.LoadGlobalConfig(ctx)
 	if err != nil {
-		// Use huh defaults on error
-		return form.WithAccessible(true).Run()
+		// Use adaptive theme on error
+		return form.WithTheme(GetTheme(ThemeAdaptive)).WithAccessible(true).Run()
 	}
 
 	themeName := ThemeName(cfg.TUI.Theme)
-
-	// Adaptive = let huh auto-detect terminal colors
-	if themeName == "" || themeName == ThemeAdaptive {
-		return form.WithAccessible(true).Run()
+	if themeName == "" {
+		themeName = ThemeAdaptive
 	}
 
 	return form.WithTheme(GetTheme(themeName)).WithAccessible(true).Run()
