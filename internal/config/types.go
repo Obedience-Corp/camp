@@ -217,24 +217,33 @@ type GlobalConfig struct {
 	TUI TUIConfig `json:"tui,omitempty" yaml:"tui,omitempty"`
 }
 
-// Registry represents ~/.config/campaign/registry.yaml for tracking campaigns.
+// RegistryVersion is the current registry format version.
+const RegistryVersion = 2
+
+// Registry represents ~/.config/campaign/registry.json for tracking campaigns.
 type Registry struct {
+	// Version is the registry format version.
+	Version int `json:"version" yaml:"version,omitempty"`
 	// Campaigns maps campaign IDs to their registration info.
-	Campaigns map[string]RegisteredCampaign `yaml:"campaigns,omitempty"`
+	Campaigns map[string]RegisteredCampaign `json:"campaigns" yaml:"campaigns,omitempty"`
+
+	// pathIndex maps paths to campaign IDs for fast lookup (not serialized).
+	pathIndex map[string]string `json:"-" yaml:"-"`
 }
 
 // RegisteredCampaign holds information about a registered campaign.
 type RegisteredCampaign struct {
 	// ID is the unique campaign identifier (UUID v4).
-	ID string `yaml:"id"`
+	// In JSON format, the ID is the map key, so this field is only used for YAML compatibility.
+	ID string `json:"-" yaml:"id"`
 	// Name is the campaign name (for display and lookup).
-	Name string `yaml:"name"`
+	Name string `json:"name" yaml:"name"`
 	// Path is the absolute path to the campaign root.
-	Path string `yaml:"path"`
+	Path string `json:"path" yaml:"path"`
 	// Type is the campaign type.
-	Type CampaignType `yaml:"type,omitempty"`
+	Type CampaignType `json:"type,omitempty" yaml:"type,omitempty"`
 	// LastAccess is when the campaign was last accessed.
-	LastAccess time.Time `yaml:"last_access,omitempty"`
+	LastAccess time.Time `json:"last_access,omitempty" yaml:"last_access,omitempty"`
 }
 
 // Valid returns true if the campaign type is a known valid type.

@@ -119,8 +119,16 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 		opts.Type = config.CampaignTypeProduct
 	}
 
-	// Generate unique campaign ID
-	campaignID := uuid.New().String()
+	// Check if campaign already exists and preserve its ID
+	var campaignID string
+	existingCfg, err := config.LoadCampaignConfig(ctx, absDir)
+	if err == nil && existingCfg.ID != "" {
+		// Campaign exists, preserve its ID
+		campaignID = existingCfg.ID
+	} else {
+		// New campaign, generate ID
+		campaignID = uuid.New().String()
+	}
 
 	result := &InitResult{
 		ID:           campaignID,
@@ -260,9 +268,10 @@ cache/
 	if !opts.NoRegister && !opts.DryRun {
 		reg, err := config.LoadRegistry(ctx)
 		if err == nil {
-			reg.Register(campaignID, name, absDir, opts.Type)
-			// Ignore registry save errors - not critical
-			_ = config.SaveRegistry(ctx, reg)
+			if err := reg.Register(campaignID, name, absDir, opts.Type); err == nil {
+				// Ignore registry save errors - not critical
+				_ = config.SaveRegistry(ctx, reg)
+			}
 		}
 	}
 

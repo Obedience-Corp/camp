@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -89,7 +90,9 @@ func TestSaveRegistry(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
 	reg := NewRegistry()
-	reg.Register("test-id-123", "test-campaign", "/tmp/test", CampaignTypeProduct)
+	if err := reg.Register("test-id-123", "test-campaign", "/tmp/test", CampaignTypeProduct); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
 
 	ctx := context.Background()
 	err := SaveRegistry(ctx, reg)
@@ -138,7 +141,9 @@ func TestSaveRegistry_ContextCancelled(t *testing.T) {
 func TestRegistry_Register(t *testing.T) {
 	reg := NewRegistry()
 
-	reg.Register("test-id", "test", "/path/to/test", CampaignTypeProduct)
+	if err := reg.Register("test-id", "test", "/path/to/test", CampaignTypeProduct); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
 
 	c, ok := reg.Campaigns["test-id"]
 	if !ok {
@@ -165,7 +170,9 @@ func TestRegistry_Register_NilMap(t *testing.T) {
 	reg := &Registry{} // Campaigns is nil
 
 	// Should not panic
-	reg.Register("test-id", "test", "/path/to/test", CampaignTypeProduct)
+	if err := reg.Register("test-id", "test", "/path/to/test", CampaignTypeProduct); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
 
 	if reg.Campaigns == nil {
 		t.Error("Campaigns should be initialized")
@@ -177,7 +184,9 @@ func TestRegistry_Register_NilMap(t *testing.T) {
 
 func TestRegistry_UnregisterByID(t *testing.T) {
 	reg := NewRegistry()
-	reg.Register("test-id", "test", "/path/to/test", CampaignTypeProduct)
+	if err := reg.Register("test-id", "test", "/path/to/test", CampaignTypeProduct); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
 
 	reg.UnregisterByID("test-id")
 
@@ -195,7 +204,9 @@ func TestRegistry_UnregisterByID_NilMap(t *testing.T) {
 
 func TestRegistry_UnregisterByName(t *testing.T) {
 	reg := NewRegistry()
-	reg.Register("test-id", "test", "/path/to/test", CampaignTypeProduct)
+	if err := reg.Register("test-id", "test", "/path/to/test", CampaignTypeProduct); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
 
 	ok := reg.UnregisterByName("test")
 	if !ok {
@@ -215,7 +226,9 @@ func TestRegistry_UnregisterByName(t *testing.T) {
 
 func TestRegistry_GetByID(t *testing.T) {
 	reg := NewRegistry()
-	reg.Register("test-id", "test", "/path/to/test", CampaignTypeProduct)
+	if err := reg.Register("test-id", "test", "/path/to/test", CampaignTypeProduct); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
 
 	c, ok := reg.GetByID("test-id")
 	if !ok {
@@ -233,7 +246,9 @@ func TestRegistry_GetByID(t *testing.T) {
 
 func TestRegistry_GetByName(t *testing.T) {
 	reg := NewRegistry()
-	reg.Register("test-id", "test", "/path/to/test", CampaignTypeProduct)
+	if err := reg.Register("test-id", "test", "/path/to/test", CampaignTypeProduct); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
 
 	c, ok := reg.GetByName("test")
 	if !ok {
@@ -254,8 +269,12 @@ func TestRegistry_GetByName(t *testing.T) {
 
 func TestRegistry_GetByIDPrefix(t *testing.T) {
 	reg := NewRegistry()
-	reg.Register("550e8400-e29b-41d4-a716-446655440000", "test1", "/path/to/test1", CampaignTypeProduct)
-	reg.Register("a1b2c3d4-e5f6-7890-abcd-ef1234567890", "test2", "/path/to/test2", CampaignTypeResearch)
+	if err := reg.Register("550e8400-e29b-41d4-a716-446655440000", "test1", "/path/to/test1", CampaignTypeProduct); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+	if err := reg.Register("a1b2c3d4-e5f6-7890-abcd-ef1234567890", "test2", "/path/to/test2", CampaignTypeResearch); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
 
 	// Full ID match
 	c, err := reg.GetByIDPrefix("550e8400-e29b-41d4-a716-446655440000")
@@ -293,8 +312,12 @@ func TestRegistry_GetByIDPrefix(t *testing.T) {
 
 func TestRegistry_GetByIDPrefix_MultipleMatches(t *testing.T) {
 	reg := NewRegistry()
-	reg.Register("abc123-xxx", "test1", "/path/to/test1", CampaignTypeProduct)
-	reg.Register("abc456-yyy", "test2", "/path/to/test2", CampaignTypeResearch)
+	if err := reg.Register("abc123-xxx", "test1", "/path/to/test1", CampaignTypeProduct); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+	if err := reg.Register("abc456-yyy", "test2", "/path/to/test2", CampaignTypeResearch); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
 
 	// Prefix matches multiple
 	_, err := reg.GetByIDPrefix("abc")
@@ -305,7 +328,9 @@ func TestRegistry_GetByIDPrefix_MultipleMatches(t *testing.T) {
 
 func TestRegistry_Get(t *testing.T) {
 	reg := NewRegistry()
-	reg.Register("550e8400-e29b-41d4-a716-446655440000", "my-campaign", "/path/to/test", CampaignTypeProduct)
+	if err := reg.Register("550e8400-e29b-41d4-a716-446655440000", "my-campaign", "/path/to/test", CampaignTypeProduct); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
 
 	// Get by full ID
 	c, ok := reg.Get("550e8400-e29b-41d4-a716-446655440000")
@@ -351,7 +376,9 @@ func TestRegistry_Get_NilMap(t *testing.T) {
 
 func TestRegistry_UpdateLastAccess(t *testing.T) {
 	reg := NewRegistry()
-	reg.Register("test-id", "test", "/path/to/test", CampaignTypeProduct)
+	if err := reg.Register("test-id", "test", "/path/to/test", CampaignTypeProduct); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
 
 	// Get initial time
 	c1, _ := reg.GetByID("test-id")
@@ -384,9 +411,15 @@ func TestRegistry_UpdateLastAccess_NilMap(t *testing.T) {
 
 func TestRegistry_ListIDs(t *testing.T) {
 	reg := NewRegistry()
-	reg.Register("id-alpha", "alpha", "/path/to/alpha", CampaignTypeProduct)
-	reg.Register("id-beta", "beta", "/path/to/beta", CampaignTypeResearch)
-	reg.Register("id-gamma", "gamma", "/path/to/gamma", CampaignTypeTools)
+	if err := reg.Register("id-alpha", "alpha", "/path/to/alpha", CampaignTypeProduct); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+	if err := reg.Register("id-beta", "beta", "/path/to/beta", CampaignTypeResearch); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+	if err := reg.Register("id-gamma", "gamma", "/path/to/gamma", CampaignTypeTools); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
 
 	ids := reg.ListIDs()
 	if len(ids) != 3 {
@@ -405,9 +438,15 @@ func TestRegistry_ListIDs(t *testing.T) {
 
 func TestRegistry_List(t *testing.T) {
 	reg := NewRegistry()
-	reg.Register("id-alpha", "alpha", "/path/to/alpha", CampaignTypeProduct)
-	reg.Register("id-beta", "beta", "/path/to/beta", CampaignTypeResearch)
-	reg.Register("id-gamma", "gamma", "/path/to/gamma", CampaignTypeTools)
+	if err := reg.Register("id-alpha", "alpha", "/path/to/alpha", CampaignTypeProduct); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+	if err := reg.Register("id-beta", "beta", "/path/to/beta", CampaignTypeResearch); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+	if err := reg.Register("id-gamma", "gamma", "/path/to/gamma", CampaignTypeTools); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
 
 	names := reg.List()
 	if len(names) != 3 {
@@ -439,7 +478,9 @@ func TestRegistry_Len(t *testing.T) {
 		t.Errorf("Len() = %d, want 0", reg.Len())
 	}
 
-	reg.Register("test-id", "test", "/path", CampaignTypeProduct)
+	if err := reg.Register("test-id", "test", "/path", CampaignTypeProduct); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
 	if reg.Len() != 1 {
 		t.Errorf("Len() = %d, want 1", reg.Len())
 	}
@@ -455,7 +496,9 @@ func TestRegistry_Len_NilMap(t *testing.T) {
 
 func TestRegistry_FindByPath(t *testing.T) {
 	reg := NewRegistry()
-	reg.Register("test-id", "test", "/path/to/test", CampaignTypeProduct)
+	if err := reg.Register("test-id", "test", "/path/to/test", CampaignTypeProduct); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
 
 	c, ok := reg.FindByPath("/path/to/test")
 	if !ok {
@@ -491,9 +534,31 @@ func TestRegistryPath(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
 	got := RegistryPath()
-	want := filepath.Join(dir, AppName, "registry.yaml")
+	want := filepath.Join(dir, AppName, "registry.json")
 	if got != want {
 		t.Errorf("RegistryPath() = %q, want %q", got, want)
+	}
+}
+
+func TestRegistryPath_Override(t *testing.T) {
+	dir := t.TempDir()
+	customPath := filepath.Join(dir, "custom-registry.json")
+	t.Setenv("CAMP_REGISTRY_PATH", customPath)
+
+	got := RegistryPath()
+	if got != customPath {
+		t.Errorf("RegistryPath() = %q, want %q", got, customPath)
+	}
+}
+
+func TestLegacyRegistryPath(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	got := LegacyRegistryPath()
+	want := filepath.Join(dir, AppName, "registry.yaml")
+	if got != want {
+		t.Errorf("LegacyRegistryPath() = %q, want %q", got, want)
 	}
 }
 
@@ -502,8 +567,12 @@ func TestRegistryRoundTrip(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
 	reg := NewRegistry()
-	reg.Register("id-1", "campaign-1", "/home/user/c1", CampaignTypeProduct)
-	reg.Register("id-2", "campaign-2", "/home/user/c2", CampaignTypeResearch)
+	if err := reg.Register("id-1", "campaign-1", "/home/user/c1", CampaignTypeProduct); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+	if err := reg.Register("id-2", "campaign-2", "/home/user/c2", CampaignTypeResearch); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
 
 	ctx := context.Background()
 
@@ -533,5 +602,165 @@ func TestRegistryRoundTrip(t *testing.T) {
 	}
 	if c.ID != "id-1" {
 		t.Errorf("campaign-1 ID = %q, want %q", c.ID, "id-1")
+	}
+}
+
+func TestRegistry_Register_EmptyID(t *testing.T) {
+	reg := NewRegistry()
+
+	err := reg.Register("", "test", "/path/to/test", CampaignTypeProduct)
+	if err != ErrEmptyID {
+		t.Errorf("Register() error = %v, want %v", err, ErrEmptyID)
+	}
+}
+
+func TestRegistry_Register_PathConflict(t *testing.T) {
+	reg := NewRegistry()
+
+	// Register first campaign
+	if err := reg.Register("id-1", "campaign-1", "/path/to/test", CampaignTypeProduct); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+
+	// Try to register different ID with same path
+	err := reg.Register("id-2", "campaign-2", "/path/to/test", CampaignTypeResearch)
+	if err == nil {
+		t.Error("Register() expected error for path conflict, got nil")
+	}
+	if err != nil && !errors.Is(err, ErrPathConflict) {
+		t.Errorf("Register() error = %v, want ErrPathConflict", err)
+	}
+}
+
+func TestRegistry_Register_UpdatePath(t *testing.T) {
+	reg := NewRegistry()
+
+	// Register campaign
+	if err := reg.Register("id-1", "campaign", "/old/path", CampaignTypeProduct); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+
+	// Update same ID with new path (campaign moved)
+	if err := reg.Register("id-1", "campaign", "/new/path", CampaignTypeProduct); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+
+	// Verify path is updated
+	c, ok := reg.GetByID("id-1")
+	if !ok {
+		t.Fatal("campaign not found after path update")
+	}
+	if c.Path != "/new/path" {
+		t.Errorf("Path = %q, want %q", c.Path, "/new/path")
+	}
+
+	// Verify old path is no longer in index
+	_, found := reg.FindByPath("/old/path")
+	if found {
+		t.Error("old path should not be found after update")
+	}
+
+	// Verify new path is in index
+	_, found = reg.FindByPath("/new/path")
+	if !found {
+		t.Error("new path should be found after update")
+	}
+}
+
+func TestMigrateFromYAML(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	configDir := filepath.Join(dir, AppName)
+	os.MkdirAll(configDir, 0755)
+
+	// Create legacy YAML registry
+	legacyContent := `
+campaigns:
+  id-1:
+    name: campaign-1
+    path: /home/user/c1
+    type: product
+  id-2:
+    name: campaign-2
+    path: /home/user/c2
+    type: research
+`
+	legacyPath := filepath.Join(configDir, "registry.yaml")
+	os.WriteFile(legacyPath, []byte(legacyContent), 0644)
+
+	// Load should trigger migration
+	ctx := context.Background()
+	reg, err := LoadRegistry(ctx)
+	if err != nil {
+		t.Fatalf("LoadRegistry() error = %v", err)
+	}
+
+	// Verify campaigns loaded
+	if reg.Len() != 2 {
+		t.Errorf("len(Campaigns) = %d, want 2", reg.Len())
+	}
+
+	// Verify JSON file was created
+	jsonPath := filepath.Join(configDir, "registry.json")
+	if _, err := os.Stat(jsonPath); os.IsNotExist(err) {
+		t.Error("JSON registry file was not created")
+	}
+
+	// Verify YAML file was backed up
+	backupPath := legacyPath + ".backup"
+	if _, err := os.Stat(backupPath); os.IsNotExist(err) {
+		t.Error("YAML registry backup was not created")
+	}
+
+	// Verify version is set
+	if reg.Version != RegistryVersion {
+		t.Errorf("Version = %d, want %d", reg.Version, RegistryVersion)
+	}
+}
+
+func TestMigrateFromYAML_Deduplicate(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	configDir := filepath.Join(dir, AppName)
+	os.MkdirAll(configDir, 0755)
+
+	// Create legacy YAML registry with duplicate paths
+	legacyContent := `
+campaigns:
+  id-1:
+    name: campaign-old
+    path: /home/user/c1
+    type: product
+    last_access: 2024-01-01T00:00:00Z
+  id-2:
+    name: campaign-new
+    path: /home/user/c1
+    type: product
+    last_access: 2024-06-01T00:00:00Z
+`
+	legacyPath := filepath.Join(configDir, "registry.yaml")
+	os.WriteFile(legacyPath, []byte(legacyContent), 0644)
+
+	// Load should trigger migration with deduplication
+	ctx := context.Background()
+	reg, err := LoadRegistry(ctx)
+	if err != nil {
+		t.Fatalf("LoadRegistry() error = %v", err)
+	}
+
+	// Should only have 1 campaign (newer one wins)
+	if reg.Len() != 1 {
+		t.Errorf("len(Campaigns) = %d, want 1 (duplicates should be removed)", reg.Len())
+	}
+
+	// Verify the newer one (id-2) was kept
+	c, ok := reg.FindByPath("/home/user/c1")
+	if !ok {
+		t.Fatal("campaign not found by path")
+	}
+	if c.Name != "campaign-new" {
+		t.Errorf("Name = %q, want %q (newer should win)", c.Name, "campaign-new")
 	}
 }
