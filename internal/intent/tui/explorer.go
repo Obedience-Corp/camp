@@ -102,13 +102,13 @@ type ExplorerModel struct {
 	conceptFilterPicker ConceptPickerModel // Picker for selecting filter
 
 	// Move action state
-	moveStatusIdx int             // Selected status index in move picker
-	intentToMove  *intent.Intent  // Intent being moved
+	moveStatusIdx int            // Selected status index in move picker
+	intentToMove  *intent.Intent // Intent being moved
 
 	// Confirmation dialog state
-	confirmDialog  ConfirmationDialog
-	pendingAction  string         // "delete" or "archive"
-	pendingIntent  *intent.Intent // Intent for pending action
+	confirmDialog ConfirmationDialog
+	pendingAction string         // "delete" or "archive"
+	pendingIntent *intent.Intent // Intent for pending action
 
 	// Preview pane state
 	previewPane    PreviewPane
@@ -1367,8 +1367,8 @@ func (m *ExplorerModel) recalculateLayout() {
 	}
 
 	// Reserve space for header (title, filters) and footer (help text)
-	headerHeight := 4  // Title + filters + spacing
-	footerHeight := 3  // Help text + status message
+	headerHeight := 4 // Title + filters + spacing
+	footerHeight := 3 // Help text + status message
 	contentHeight := m.height - headerHeight - footerHeight
 	if contentHeight < 5 {
 		contentHeight = 5
