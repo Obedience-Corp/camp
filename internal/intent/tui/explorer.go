@@ -20,6 +20,22 @@ type IntentGroup struct {
 	Expanded bool
 }
 
+// Focus mode determines which component has keyboard focus.
+type focusMode int
+
+const (
+	focusList focusMode = iota
+	focusSearch
+	focusTypeFilter
+	focusStatusFilter
+)
+
+// typeFilterItems are the available type filter options.
+var typeFilterItems = []string{"All", "Idea", "Feature", "Bug", "Research", "Chore"}
+
+// statusFilterItems are the available status filter options.
+var statusFilterItems = []string{"All", "Inbox", "Active", "Ready", "Done", "Killed"}
+
 // ExplorerModel is the main model for the Intent Explorer TUI.
 // It follows the BubbleTea Elm Architecture pattern.
 type ExplorerModel struct {
@@ -38,11 +54,13 @@ type ExplorerModel struct {
 
 	// Search input
 	searchInput textinput.Model
-	searching   bool // true when search input has focus
 
-	// Filter state
-	statusFilter *intent.Status
-	typeFilter   *intent.Type
+	// Filters
+	typeWheel   ScrollWheel
+	statusWheel ScrollWheel
+
+	// Focus mode
+	focus focusMode
 
 	// Display state
 	width    int
@@ -61,12 +79,21 @@ func NewExplorerModel(ctx context.Context, svc *intent.IntentService) ExplorerMo
 	ti.CharLimit = 100
 	ti.Width = 40
 
+	tw := NewScrollWheel(typeFilterItems)
+	tw.SetWidth(12)
+
+	sw := NewScrollWheel(statusFilterItems)
+	sw.SetWidth(12)
+
 	return ExplorerModel{
 		service:     svc,
 		ctx:         ctx,
 		cursorGroup: 0,
 		cursorItem:  -1, // Start on first group header
 		searchInput: ti,
+		typeWheel:   tw,
+		statusWheel: sw,
+		focus:       focusList,
 	}
 }
 
@@ -95,26 +122,56 @@ func (m ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		if m.searching {
+		if m.focus == focusSearch {
 			// Handle keys when search input has focus
 			switch msg.String() {
 			case "esc":
-				m.searching = false
+				m.focus = focusList
 				m.searchInput.Blur()
 				// Clear search and show all intents
 				m.searchInput.SetValue("")
-				m.applySearch()
+				m.applyFilters()
 				return m, nil
 			case "enter":
 				// Exit search mode but keep filter active
-				m.searching = false
+				m.focus = focusList
 				m.searchInput.Blur()
 				return m, nil
 			}
 			// Pass all other keys to the text input
 			m.searchInput, cmd = m.searchInput.Update(msg)
 			// Live update: apply search on every keystroke
-			m.applySearch()
+			m.applyFilters()
+			return m, cmd
+		}
+
+		if m.focus == focusTypeFilter {
+			// Handle keys when type filter has focus
+			switch msg.String() {
+			case "esc", "enter", "t":
+				m.focus = focusList
+				m.typeWheel.Blur()
+				m.applyFilters()
+				return m, nil
+			}
+			// Pass to scroll wheel
+			m.typeWheel, cmd = m.typeWheel.Update(msg)
+			m.applyFilters()
+			return m, cmd
+		}
+
+		if m.focus == focusStatusFilter {
+			// Handle keys when status filter has focus
+			switch msg.String() {
+			case "esc", "enter", "s":
+				m.focus = focusList
+				m.statusWheel.Blur()
+				m.applyFilters()
+				return m, nil
+			}
+			// Pass to scroll wheel
+			m.statusWheel, cmd = m.statusWheel.Update(msg)
+			m.applyFilters()
 			return m, cmd
 		}
 
@@ -125,9 +182,19 @@ func (m ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "/":
 			// Enter search mode
-			m.searching = true
+			m.focus = focusSearch
 			m.searchInput.Focus()
 			return m, textinput.Blink
+		case "t":
+			// Enter type filter mode
+			m.focus = focusTypeFilter
+			m.typeWheel.Focus()
+			return m, nil
+		case "s":
+			// Enter status filter mode
+			m.focus = focusStatusFilter
+			m.statusWheel.Focus()
+			return m, nil
 		case "j", "down":
 			m.moveCursorDown()
 		case "k", "up":
@@ -158,25 +225,55 @@ func (m ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// applySearch filters intents using fuzzy search and rebuilds groups.
-func (m *ExplorerModel) applySearch() {
+// applyFilters filters intents using search query and type filter.
+func (m *ExplorerModel) applyFilters() {
 	query := m.searchInput.Value()
+	m.statusMessage = ""
+
+	// Start with all intents
+	var filtered []*intent.Intent
+
+	// Apply search if there's a query
 	if query == "" {
-		// No search, show all intents
-		m.filteredIntents = m.intents
-		m.statusMessage = ""
+		filtered = m.intents
 	} else {
 		// Use fuzzy search via the service
 		results, err := m.service.Search(m.ctx, query)
 		if err != nil {
 			m.statusMessage = "Search error: " + err.Error()
-			// Fall back to showing all intents
-			m.filteredIntents = m.intents
+			filtered = m.intents
 		} else {
-			m.filteredIntents = results
-			m.statusMessage = ""
+			filtered = results
 		}
 	}
+
+	// Apply type filter
+	typeSelection := m.typeWheel.SelectedValue()
+	if typeSelection != "All" && typeSelection != "" {
+		typeFiltered := make([]*intent.Intent, 0)
+		targetType := strings.ToLower(typeSelection)
+		for _, i := range filtered {
+			if string(i.Type) == targetType {
+				typeFiltered = append(typeFiltered, i)
+			}
+		}
+		filtered = typeFiltered
+	}
+
+	// Apply status filter
+	statusSelection := m.statusWheel.SelectedValue()
+	if statusSelection != "All" && statusSelection != "" {
+		statusFiltered := make([]*intent.Intent, 0)
+		targetStatus := strings.ToLower(statusSelection)
+		for _, i := range filtered {
+			if string(i.Status) == targetStatus {
+				statusFiltered = append(statusFiltered, i)
+			}
+		}
+		filtered = statusFiltered
+	}
+
+	m.filteredIntents = filtered
 
 	// Rebuild groups from filtered intents
 	m.groups = groupIntentsByStatus(m.filteredIntents)
@@ -277,11 +374,35 @@ func (m ExplorerModel) View() string {
 	b.WriteString(titleStyle.Render("Intent Explorer"))
 	b.WriteString("\n")
 
-	// Search input
+	// Search input and type filter
 	b.WriteString(m.searchInput.View())
-	if m.searching {
+	if m.focus == focusSearch {
 		b.WriteString("  ")
 		b.WriteString(helpStyle.Render("(enter to search, esc to cancel)"))
+	}
+	b.WriteString("  ")
+
+	// Type filter indicator
+	typeValue := m.typeWheel.SelectedValue()
+	if m.focus == focusTypeFilter {
+		b.WriteString(helpStyle.Render("Type: "))
+		b.WriteString(intentConceptStyle.Render("[" + typeValue + "]"))
+		b.WriteString(" ")
+		b.WriteString(helpStyle.Render("(j/k to change, enter to select)"))
+	} else {
+		b.WriteString(helpStyle.Render("Type: [" + typeValue + "]"))
+	}
+	b.WriteString("  ")
+
+	// Status filter indicator
+	statusValue := m.statusWheel.SelectedValue()
+	if m.focus == focusStatusFilter {
+		b.WriteString(helpStyle.Render("Status: "))
+		b.WriteString(intentConceptStyle.Render("[" + statusValue + "]"))
+		b.WriteString(" ")
+		b.WriteString(helpStyle.Render("(j/k to change, enter to select)"))
+	} else {
+		b.WriteString(helpStyle.Render("Status: [" + statusValue + "]"))
 	}
 	b.WriteString("\n\n")
 
@@ -325,7 +446,7 @@ func (m ExplorerModel) View() string {
 
 	// Status bar
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("j/k: navigate • enter/space: toggle • /: search • q: quit"))
+	b.WriteString(helpStyle.Render("j/k: navigate • enter/space: toggle • /: search • t: type • s: status • q: quit"))
 
 	if m.statusMessage != "" {
 		b.WriteString("\n")
