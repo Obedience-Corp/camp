@@ -36,6 +36,7 @@ const (
 	focusConceptFilter // Filtering by concept
 	focusCreating      // Creating new intent
 	focusMove          // Moving intent to different status
+	focusConfirm       // Confirmation dialog
 )
 
 // creationStep represents the current step in new intent creation.
@@ -102,6 +103,11 @@ type ExplorerModel struct {
 	// Move action state
 	moveStatusIdx int             // Selected status index in move picker
 	intentToMove  *intent.Intent  // Intent being moved
+
+	// Confirmation dialog state
+	confirmDialog  ConfirmationDialog
+	pendingAction  string         // "delete" or "archive"
+	pendingIntent  *intent.Intent // Intent for pending action
 }
 
 // NewExplorerModel creates a new Explorer model.
@@ -255,6 +261,32 @@ func (m ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateMove(msg)
 		}
 
+		if m.focus == focusConfirm {
+			// Handle confirmation dialog
+			m.confirmDialog.HandleKey(msg.String())
+			if m.confirmDialog.IsDone() {
+				m.focus = focusList
+				if m.confirmDialog.Confirmed() && m.pendingIntent != nil {
+					switch m.pendingAction {
+					case "delete":
+						cmd := m.deleteIntent(m.pendingIntent)
+						m.pendingAction = ""
+						m.pendingIntent = nil
+						return m, cmd
+					case "archive":
+						cmd := m.archiveIntent(m.pendingIntent)
+						m.pendingAction = ""
+						m.pendingIntent = nil
+						return m, cmd
+					}
+				}
+				// Reset pending state on cancel
+				m.pendingAction = ""
+				m.pendingIntent = nil
+			}
+			return m, nil
+		}
+
 		// Normal navigation mode
 		switch msg.String() {
 		case "q", "ctrl+c":
@@ -328,20 +360,31 @@ func (m ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "a":
-			// Archive (move to killed status)
+			// Archive (move to killed status) - requires confirmation
 			if selected := m.SelectedIntent(); selected != nil {
 				if selected.Status == intent.StatusKilled {
 					m.statusMessage = "Already archived"
 					return m, nil
 				}
-				return m, m.archiveIntent(selected)
+				m.focus = focusConfirm
+				m.pendingAction = "archive"
+				m.pendingIntent = selected
+				m.confirmDialog = NewConfirmationDialog(
+					"Archive Intent",
+					fmt.Sprintf("Archive '%s'?\n\nIt will be moved to killed status.", selected.Title),
+				)
 			}
 			return m, nil
 		case "d":
-			// Delete intent (permanently)
-			// Note: Confirmation will be added in 02_confirmations sequence
+			// Delete intent (permanently) - requires confirmation
 			if selected := m.SelectedIntent(); selected != nil {
-				return m, m.deleteIntent(selected)
+				m.focus = focusConfirm
+				m.pendingAction = "delete"
+				m.pendingIntent = selected
+				m.confirmDialog = NewConfirmationDialog(
+					"Delete Intent",
+					fmt.Sprintf("Delete '%s'?\n\nThis cannot be undone.", selected.Title),
+				)
 			}
 			return m, nil
 		case "j", "down":
@@ -636,6 +679,11 @@ func (m ExplorerModel) View() string {
 	// Show move status picker if active
 	if m.focus == focusMove {
 		return m.viewMove()
+	}
+
+	// Show confirmation dialog if active
+	if m.focus == focusConfirm {
+		return m.viewConfirmation()
 	}
 
 	var b strings.Builder
@@ -1137,6 +1185,17 @@ func (m ExplorerModel) viewMove() string {
 	}
 	b.WriteString("\n")
 	b.WriteString(helpStyle.Render("j/k: navigate • Enter: move • Esc: cancel"))
+
+	return b.String()
+}
+
+// viewConfirmation renders the confirmation dialog.
+func (m ExplorerModel) viewConfirmation() string {
+	var b strings.Builder
+
+	b.WriteString(titleStyle.Render("Confirm Action"))
+	b.WriteString("\n\n")
+	b.WriteString(m.confirmDialog.View())
 
 	return b.String()
 }
