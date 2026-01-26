@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/obediencecorp/camp/internal/intent"
 )
 
@@ -35,11 +36,13 @@ type ExplorerModel struct {
 	cursorGroup int
 	cursorItem  int
 
-	// Search and filter state
-	searchQuery   string
-	statusFilter  *intent.Status
-	typeFilter    *intent.Type
-	conceptFilter string
+	// Search input
+	searchInput textinput.Model
+	searching   bool // true when search input has focus
+
+	// Filter state
+	statusFilter *intent.Status
+	typeFilter   *intent.Type
 
 	// Display state
 	width    int
@@ -53,11 +56,17 @@ type ExplorerModel struct {
 
 // NewExplorerModel creates a new Explorer model.
 func NewExplorerModel(ctx context.Context, svc *intent.IntentService) ExplorerModel {
+	ti := textinput.New()
+	ti.Placeholder = "Search intents..."
+	ti.CharLimit = 100
+	ti.Width = 40
+
 	return ExplorerModel{
 		service:     svc,
 		ctx:         ctx,
 		cursorGroup: 0,
 		cursorItem:  -1, // Start on first group header
+		searchInput: ti,
 	}
 }
 
@@ -82,12 +91,43 @@ func (m ExplorerModel) loadIntents() tea.Cmd {
 
 // Update implements tea.Model.
 func (m ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		if m.searching {
+			// Handle keys when search input has focus
+			switch msg.String() {
+			case "esc":
+				m.searching = false
+				m.searchInput.Blur()
+				// Clear search and show all intents
+				m.searchInput.SetValue("")
+				m.applySearch()
+				return m, nil
+			case "enter":
+				// Exit search mode but keep filter active
+				m.searching = false
+				m.searchInput.Blur()
+				return m, nil
+			}
+			// Pass all other keys to the text input
+			m.searchInput, cmd = m.searchInput.Update(msg)
+			// Live update: apply search on every keystroke
+			m.applySearch()
+			return m, cmd
+		}
+
+		// Normal navigation mode
 		switch msg.String() {
 		case "q", "ctrl+c":
 			m.quitting = true
 			return m, tea.Quit
+		case "/":
+			// Enter search mode
+			m.searching = true
+			m.searchInput.Focus()
+			return m, textinput.Blink
 		case "j", "down":
 			m.moveCursorDown()
 		case "k", "up":
@@ -99,6 +139,10 @@ func (m ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.searchInput.Width = m.width - 20
+		if m.searchInput.Width < 20 {
+			m.searchInput.Width = 20
+		}
 		m.ready = true
 
 	case intentsLoadedMsg:
@@ -112,6 +156,34 @@ func (m ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+// applySearch filters intents using fuzzy search and rebuilds groups.
+func (m *ExplorerModel) applySearch() {
+	query := m.searchInput.Value()
+	if query == "" {
+		// No search, show all intents
+		m.filteredIntents = m.intents
+		m.statusMessage = ""
+	} else {
+		// Use fuzzy search via the service
+		results, err := m.service.Search(m.ctx, query)
+		if err != nil {
+			m.statusMessage = "Search error: " + err.Error()
+			// Fall back to showing all intents
+			m.filteredIntents = m.intents
+		} else {
+			m.filteredIntents = results
+			m.statusMessage = ""
+		}
+	}
+
+	// Rebuild groups from filtered intents
+	m.groups = groupIntentsByStatus(m.filteredIntents)
+
+	// Reset cursor position
+	m.cursorGroup = 0
+	m.cursorItem = -1
 }
 
 // moveCursorDown moves the cursor down through groups and items.
@@ -203,6 +275,14 @@ func (m ExplorerModel) View() string {
 
 	// Title
 	b.WriteString(titleStyle.Render("Intent Explorer"))
+	b.WriteString("\n")
+
+	// Search input
+	b.WriteString(m.searchInput.View())
+	if m.searching {
+		b.WriteString("  ")
+		b.WriteString(helpStyle.Render("(enter to search, esc to cancel)"))
+	}
 	b.WriteString("\n\n")
 
 	// Calculate available width for title (leave room for date and type)
@@ -245,7 +325,7 @@ func (m ExplorerModel) View() string {
 
 	// Status bar
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("j/k: navigate • enter/space: toggle • q: quit"))
+	b.WriteString(helpStyle.Render("j/k: navigate • enter/space: toggle • /: search • q: quit"))
 
 	if m.statusMessage != "" {
 		b.WriteString("\n")
