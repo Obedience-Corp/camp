@@ -43,15 +43,15 @@ func testFS() fstest.MapFS {
 
 func TestFSService_List(t *testing.T) {
 	tests := []struct {
-		name       string
-		shortcuts  map[string]config.ShortcutConfig
-		wantCount  int
-		wantNames  []string
+		name      string
+		shortcuts map[string]config.ShortcutConfig
+		wantCount int
+		wantNames []string
 	}{
 		{
 			name:      "returns only concept shortcuts",
 			shortcuts: testShortcuts(),
-			wantCount: 2, // "p" and "f", not "go"
+			wantCount: 2,                  // "p" and "f", not "go"
 			wantNames: []string{"f", "p"}, // sorted alphabetically
 		},
 		{
@@ -153,10 +153,10 @@ func TestFSService_ListItems(t *testing.T) {
 
 func TestFSService_ListItems_SkipsHiddenFiles(t *testing.T) {
 	fsys := fstest.MapFS{
-		"projects/.git/config":   &fstest.MapFile{Data: []byte("")},
-		"projects/.hidden":       &fstest.MapFile{Mode: 0o755},
-		"projects/visible":       &fstest.MapFile{Mode: 0o755},
-		"projects/visible/file":  &fstest.MapFile{Data: []byte("")},
+		"projects/.git/config":  &fstest.MapFile{Data: []byte("")},
+		"projects/.hidden":      &fstest.MapFile{Mode: 0o755},
+		"projects/visible":      &fstest.MapFile{Mode: 0o755},
+		"projects/visible/file": &fstest.MapFile{Data: []byte("")},
 	}
 
 	shortcuts := map[string]config.ShortcutConfig{
@@ -475,10 +475,10 @@ func TestFSService_ContextCancellation(t *testing.T) {
 func TestFSService_ListItems_ChildrenCount(t *testing.T) {
 	// In fstest.MapFS, directories need files within them to exist
 	fsys := fstest.MapFS{
-		"projects/empty/.gitkeep":       &fstest.MapFile{Data: []byte("")}, // Empty dir with hidden file
-		"projects/hasthree/one/file":    &fstest.MapFile{Data: []byte("")},
-		"projects/hasthree/two/file":    &fstest.MapFile{Data: []byte("")},
-		"projects/hasthree/three/file":  &fstest.MapFile{Data: []byte("")},
+		"projects/empty/.gitkeep":      &fstest.MapFile{Data: []byte("")}, // Empty dir with hidden file
+		"projects/hasthree/one/file":   &fstest.MapFile{Data: []byte("")},
+		"projects/hasthree/two/file":   &fstest.MapFile{Data: []byte("")},
+		"projects/hasthree/three/file": &fstest.MapFile{Data: []byte("")},
 	}
 
 	shortcuts := map[string]config.ShortcutConfig{

@@ -19,7 +19,7 @@ func TestRenderTemplate(t *testing.T) {
 				ID:        "test-intent-20260119-153412",
 				Title:     "Test Intent",
 				Type:      "feature",
-				Project:   "camp",
+				Concept:   "camp",
 				Author:    "lance",
 				CreatedAt: "2026-01-19",
 			},
@@ -41,8 +41,8 @@ func TestRenderTemplate(t *testing.T) {
 					}
 				},
 				func(t *testing.T, output string) {
-					if !strings.Contains(output, "project: camp") {
-						t.Error("missing project in output")
+					if !strings.Contains(output, "concept: camp") {
+						t.Error("missing concept in output")
 					}
 				},
 				func(t *testing.T, output string) {
@@ -98,7 +98,7 @@ func TestRenderTemplate(t *testing.T) {
 				ID:        "minimal-20260119-153412",
 				Title:     "Minimal Intent",
 				Type:      "",
-				Project:   "",
+				Concept:   "",
 				Author:    "",
 				CreatedAt: "2026-01-19",
 			},
@@ -233,7 +233,7 @@ func TestRenderTemplate_ValidFrontmatter(t *testing.T) {
 		ID:        "test-20260119-153412",
 		Title:     "Test Intent",
 		Type:      "feature",
-		Project:   "camp",
+		Concept:   "camp",
 		Author:    "lance",
 		CreatedAt: "2026-01-19",
 	}
@@ -310,7 +310,7 @@ func TestNewTemplateData(t *testing.T) {
 		ID:        "test-20260119-153412",
 		Title:     "Test Intent",
 		Type:      TypeFeature,
-		Project:   "camp",
+		Concept:   "camp",
 		Author:    "lance",
 		CreatedAt: time.Date(2026, 1, 19, 15, 34, 12, 0, time.UTC),
 	}
@@ -326,8 +326,8 @@ func TestNewTemplateData(t *testing.T) {
 	if data.Type != string(intent.Type) {
 		t.Errorf("Type = %q, want %q", data.Type, string(intent.Type))
 	}
-	if data.Project != intent.Project {
-		t.Errorf("Project = %q, want %q", data.Project, intent.Project)
+	if data.Concept != intent.Concept {
+		t.Errorf("Concept = %q, want %q", data.Concept, intent.Concept)
 	}
 	if data.Author != intent.Author {
 		t.Errorf("Author = %q, want %q", data.Author, intent.Author)
@@ -355,8 +355,8 @@ func TestNewTemplateDataFromInput(t *testing.T) {
 	if data.Type != "feature" {
 		t.Errorf("Type = %q, want %q", data.Type, "feature")
 	}
-	if data.Project != "camp" {
-		t.Errorf("Project = %q, want %q", data.Project, "camp")
+	if data.Concept != "camp" {
+		t.Errorf("Concept = %q, want %q", data.Concept, "camp")
 	}
 	if data.Author != "lance" {
 		t.Errorf("Author = %q, want %q", data.Author, "lance")
@@ -393,8 +393,8 @@ func TestRenderTemplate_RoundTrip(t *testing.T) {
 	if string(intent.Type) != data.Type {
 		t.Errorf("Type = %q, want %q", intent.Type, data.Type)
 	}
-	if intent.Project != data.Project {
-		t.Errorf("Project = %q, want %q", intent.Project, data.Project)
+	if intent.Concept != data.Concept {
+		t.Errorf("Concept = %q, want %q", intent.Concept, data.Concept)
 	}
 	if intent.Author != data.Author {
 		t.Errorf("Author = %q, want %q", intent.Author, data.Author)

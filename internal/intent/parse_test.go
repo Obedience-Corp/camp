@@ -21,7 +21,7 @@ func TestParseIntent(t *testing.T) {
 id: test-intent-20260119-153412
 title: Test Intent
 type: feature
-project: test-project
+concept: test-project
 status: active
 created_at: 2026-01-19T15:34:12Z
 author: lance
@@ -56,8 +56,8 @@ Body content here.
 				if intent.Status != StatusActive {
 					t.Errorf("Status = %q, want %q", intent.Status, StatusActive)
 				}
-				if intent.Project != "test-project" {
-					t.Errorf("Project = %q, want %q", intent.Project, "test-project")
+				if intent.Concept != "test-project" {
+					t.Errorf("Concept = %q, want %q", intent.Concept, "test-project")
 				}
 				if intent.Author != "lance" {
 					t.Errorf("Author = %q, want %q", intent.Author, "lance")
@@ -104,8 +104,8 @@ Body.
 				if intent.Type != "" {
 					t.Errorf("Type should be empty, got %q", intent.Type)
 				}
-				if intent.Project != "" {
-					t.Errorf("Project should be empty, got %q", intent.Project)
+				if intent.Concept != "" {
+					t.Errorf("Concept should be empty, got %q", intent.Concept)
 				}
 			},
 		},
@@ -122,6 +122,47 @@ created_at: 2026-01-19
 			checks: func(t *testing.T, intent *Intent) {
 				if intent.Content != "" {
 					t.Errorf("Content should be empty, got %q", intent.Content)
+				}
+			},
+		},
+		{
+			name: "legacy project field converts to concept",
+			content: `---
+id: legacy-20260119-153412
+title: Legacy Project Intent
+status: inbox
+created_at: 2026-01-19
+project: camp
+---
+
+Body with legacy project.
+`,
+			wantErr: nil,
+			checks: func(t *testing.T, intent *Intent) {
+				// Legacy project "camp" should convert to concept "projects/camp"
+				if intent.Concept != "projects/camp" {
+					t.Errorf("Concept = %q, want %q", intent.Concept, "projects/camp")
+				}
+			},
+		},
+		{
+			name: "concept field preferred over legacy project",
+			content: `---
+id: both-20260119-153412
+title: Both Fields Intent
+status: inbox
+created_at: 2026-01-19
+concept: festivals/new-fest
+project: old-project
+---
+
+Body with both fields.
+`,
+			wantErr: nil,
+			checks: func(t *testing.T, intent *Intent) {
+				// Concept should be preferred over legacy project
+				if intent.Concept != "festivals/new-fest" {
+					t.Errorf("Concept = %q, want %q (concept should be preferred over project)", intent.Concept, "festivals/new-fest")
 				}
 			},
 		},
@@ -346,8 +387,8 @@ func TestSerializeIntent(t *testing.T) {
 				if strings.Contains(s, "type:") {
 					t.Error("should not contain empty type field")
 				}
-				if strings.Contains(s, "project:") {
-					t.Error("should not contain empty project field")
+				if strings.Contains(s, "concept:") {
+					t.Error("should not contain empty concept field")
 				}
 				if strings.Contains(s, "priority:") {
 					t.Error("should not contain empty priority field")

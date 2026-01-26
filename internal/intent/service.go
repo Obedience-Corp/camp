@@ -40,7 +40,7 @@ func NewIntentService(campaignRoot, intentsDir string) *IntentService {
 type CreateOptions struct {
 	Title     string
 	Type      Type
-	Project   string
+	Concept   string // Full concept path (e.g., "projects/camp")
 	Author    string
 	Body      string    // Description/body content for the intent
 	Timestamp time.Time // Optional; defaults to time.Now()
@@ -59,7 +59,7 @@ func (s *IntentService) CreateDirect(ctx context.Context, opts CreateOptions) (*
 	}
 
 	// Generate ID and template data
-	data := NewTemplateDataFromInput(opts.Title, string(opts.Type), opts.Project, opts.Author, opts.Body, ts)
+	data := NewTemplateDataFromInput(opts.Title, string(opts.Type), opts.Concept, opts.Author, opts.Body, ts)
 
 	// Render template
 	content, err := RenderTemplate(data)
@@ -109,7 +109,7 @@ func (s *IntentService) CreateWithEditor(ctx context.Context, opts CreateOptions
 	}
 
 	// Generate template data
-	data := NewTemplateDataFromInput(opts.Title, string(opts.Type), opts.Project, opts.Author, opts.Body, ts)
+	data := NewTemplateDataFromInput(opts.Title, string(opts.Type), opts.Concept, opts.Author, opts.Body, ts)
 
 	// Render template
 	content, err := RenderTemplate(data)
@@ -242,7 +242,7 @@ func (s *IntentService) Get(ctx context.Context, id string) (*Intent, error) {
 type ListOptions struct {
 	Status   *Status // Filter by status (nil for all)
 	Type     *Type   // Filter by type (nil for all)
-	Project  string  // Filter by project (empty for all)
+	Concept  string  // Filter by concept (empty for all)
 	SortBy   string  // Sort field: "created", "updated", "title", "priority"
 	SortDesc bool    // Sort in descending order
 }
@@ -290,7 +290,7 @@ func (s *IntentService) List(ctx context.Context, opts *ListOptions) ([]*Intent,
 				if opts.Type != nil && intent.Type != *opts.Type {
 					continue
 				}
-				if opts.Project != "" && intent.Project != opts.Project {
+				if opts.Concept != "" && intent.Concept != opts.Concept {
 					continue
 				}
 			}

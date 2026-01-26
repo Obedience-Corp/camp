@@ -163,7 +163,7 @@ func outputFindJSON(intents []*intent.Intent) error {
 		Title     string `json:"title"`
 		Type      string `json:"type"`
 		Status    string `json:"status"`
-		Project   string `json:"project,omitempty"`
+		Concept   string `json:"concept,omitempty"`
 		CreatedAt string `json:"created_at"`
 		UpdatedAt string `json:"updated_at,omitempty"`
 		Path      string `json:"path"`
@@ -176,7 +176,7 @@ func outputFindJSON(intents []*intent.Intent) error {
 			Title:     i.Title,
 			Type:      string(i.Type),
 			Status:    string(i.Status),
-			Project:   i.Project,
+			Concept:   i.Concept,
 			CreatedAt: i.CreatedAt.Format(time.RFC3339),
 			Path:      i.Path,
 		}

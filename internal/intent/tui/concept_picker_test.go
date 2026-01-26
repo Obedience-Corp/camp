@@ -458,9 +458,9 @@ func TestConceptPicker_Breadcrumb(t *testing.T) {
 func containsText(view, text string) bool {
 	return len(view) >= len(text) && (view == text ||
 		len(view) > len(text) &&
-		(view[:len(text)] == text ||
-		 view[len(view)-len(text):] == text ||
-		 findSubstring(view, text)))
+			(view[:len(text)] == text ||
+				view[len(view)-len(text):] == text ||
+				findSubstring(view, text)))
 }
 
 func findSubstring(s, substr string) bool {

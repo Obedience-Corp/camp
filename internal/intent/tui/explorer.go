@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/obediencecorp/camp/internal/intent"
 )
 
@@ -477,13 +477,13 @@ func (m ExplorerModel) renderIntentRow(i *intent.Intent, isSelected bool, maxTit
 	typePart := intentTypeStyle.Render(fmt.Sprintf("[%s]", i.Type))
 	datePart := intentDateStyle.Render(date)
 
-	// Add project if present
-	projectPart := ""
-	if i.Project != "" {
-		projectPart = " " + intentConceptStyle.Render(i.Project)
+	// Add concept if present
+	conceptPart := ""
+	if i.Concept != "" {
+		conceptPart = " " + intentConceptStyle.Render(i.Concept)
 	}
 
-	row := fmt.Sprintf("  %s  %s  %s  %s%s", cursor, titlePart, typePart, datePart, projectPart)
+	row := fmt.Sprintf("  %s  %s  %s  %s%s", cursor, titlePart, typePart, datePart, conceptPart)
 
 	if isSelected {
 		return intentRowSelectedStyle.Render(row)

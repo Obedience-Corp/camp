@@ -181,10 +181,10 @@ func TestFindSimilar(t *testing.T) {
 		target   string
 		expected []string
 	}{
-		{"pp", []string{"p"}},                     // typo
-		{"cfgg", []string{"cfg"}},                 // typo
-		{"xxxxxxxxx", []string{}},                 // no match
-		{"pr", []string{"pr", "p"}},               // exact match first
+		{"pp", []string{"p"}},       // typo
+		{"cfgg", []string{"cfg"}},   // typo
+		{"xxxxxxxxx", []string{}},   // no match
+		{"pr", []string{"pr", "p"}}, // exact match first
 	}
 
 	for _, tt := range tests {

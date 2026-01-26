@@ -92,7 +92,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	opts := intent.CreateOptions{
 		Title:   title,
 		Type:    intent.Type(intentType),
-		Project: projectName,
+		Concept: projectName, // projectName from CLI maps to Concept field
 		Body:    body,
 	}
 

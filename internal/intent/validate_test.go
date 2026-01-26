@@ -36,7 +36,7 @@ func TestIntent_Validate(t *testing.T) {
 				Priority:  PriorityHigh,
 				Horizon:   HorizonNow,
 				CreatedAt: now,
-				Project:   "test-project",
+				Concept:   "test-project",
 				Author:    "test-author",
 			},
 			wantErrs: 0,

@@ -40,7 +40,7 @@ func TestIntentService_CreateDirect(t *testing.T) {
 			opts: CreateOptions{
 				Title:     "Test Intent",
 				Type:      TypeFeature,
-				Project:   "test-project",
+				Concept:   "test-project",
 				Author:    "tester",
 				Timestamp: time.Date(2026, 1, 19, 15, 34, 12, 0, time.UTC),
 			},
@@ -308,7 +308,7 @@ func TestIntentService_List(t *testing.T) {
 	_, err := svc.CreateDirect(ctx, CreateOptions{
 		Title:     "List Test 1",
 		Type:      TypeFeature,
-		Project:   "project-a",
+		Concept:   "project-a",
 		Timestamp: time.Date(2026, 1, 19, 10, 0, 0, 0, time.UTC),
 	})
 	if err != nil {
@@ -318,7 +318,7 @@ func TestIntentService_List(t *testing.T) {
 	intent2, err := svc.CreateDirect(ctx, CreateOptions{
 		Title:     "List Test 2",
 		Type:      TypeBug,
-		Project:   "project-b",
+		Concept:   "project-b",
 		Timestamp: time.Date(2026, 1, 19, 11, 0, 0, 0, time.UTC),
 	})
 	if err != nil {
@@ -357,13 +357,13 @@ func TestIntentService_List(t *testing.T) {
 			wantCount: 1,
 		},
 		{
-			name:      "filter by project",
-			opts:      &ListOptions{Project: "project-a"},
+			name:      "filter by concept",
+			opts:      &ListOptions{Concept: "project-a"},
 			wantCount: 1,
 		},
 		{
 			name:      "no matches",
-			opts:      &ListOptions{Project: "nonexistent"},
+			opts:      &ListOptions{Concept: "nonexistent"},
 			wantCount: 0,
 		},
 	}
@@ -1322,7 +1322,7 @@ func TestIntentService_Search(t *testing.T) {
 		{"no match", "nonexistent", 0},
 		{"case insensitive", "DARK", 1},
 		{"match type in title", "bug", 1},
-		{"fuzzy match initials", "adm", 1},   // matches "Add dark mode feature"
+		{"fuzzy match initials", "adm", 1}, // matches "Add dark mode feature"
 		{"fuzzy match abbreviation", "oauth", 1},
 	}
 
