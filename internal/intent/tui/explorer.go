@@ -4,6 +4,10 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -31,6 +35,7 @@ const (
 	focusStatusFilter
 	focusConceptFilter // Filtering by concept
 	focusCreating      // Creating new intent
+	focusMove          // Moving intent to different status
 )
 
 // creationStep represents the current step in new intent creation.
@@ -93,6 +98,10 @@ type ExplorerModel struct {
 	// Concept filter state
 	conceptFilterPath   string             // Active concept filter (empty = all)
 	conceptFilterPicker ConceptPickerModel // Picker for selecting filter
+
+	// Move action state
+	moveStatusIdx int             // Selected status index in move picker
+	intentToMove  *intent.Intent  // Intent being moved
 }
 
 // NewExplorerModel creates a new Explorer model.
@@ -132,6 +141,24 @@ func NewExplorerModel(ctx context.Context, svc *intent.IntentService, conceptSvc
 type intentsLoadedMsg struct {
 	intents []*intent.Intent
 	err     error
+}
+
+// editorFinishedMsg is sent when an external editor closes.
+type editorFinishedMsg struct {
+	err  error
+	path string
+}
+
+// openFinishedMsg is sent when system open completes.
+type openFinishedMsg struct {
+	err error
+}
+
+// moveFinishedMsg is sent when an intent move completes.
+type moveFinishedMsg struct {
+	err       error
+	intentID  string
+	newStatus intent.Status
 }
 
 // Init implements tea.Model.
@@ -224,6 +251,10 @@ func (m ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateCreating(msg)
 		}
 
+		if m.focus == focusMove {
+			return m.updateMove(msg)
+		}
+
 		// Normal navigation mode
 		switch msg.String() {
 		case "q", "ctrl+c":
@@ -262,6 +293,57 @@ func (m ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.titleInput.Focus()
 			m.createTypeIdx = 0
 			return m, textinput.Blink
+		case "e":
+			// Open selected intent in $EDITOR
+			if selected := m.SelectedIntent(); selected != nil {
+				return m, m.openInEditor(selected.Path)
+			}
+		case "o":
+			// Open selected intent with system default handler
+			if selected := m.SelectedIntent(); selected != nil {
+				return m, m.openWithSystem(selected.Path)
+			}
+		case "O":
+			// Reveal in file manager (macOS Finder)
+			if selected := m.SelectedIntent(); selected != nil {
+				return m, m.revealInFileManager(selected.Path)
+			}
+		case "m":
+			// Start move action to change intent status
+			if selected := m.SelectedIntent(); selected != nil {
+				m.focus = focusMove
+				m.intentToMove = selected
+				m.moveStatusIdx = 0
+			}
+			return m, nil
+		case "p":
+			// Promote to next status in workflow
+			if selected := m.SelectedIntent(); selected != nil {
+				nextStatus := getNextStatus(selected.Status)
+				if nextStatus == selected.Status {
+					m.statusMessage = "Already at final status: " + selected.Status.String()
+					return m, nil
+				}
+				return m, m.moveIntent(selected, nextStatus)
+			}
+			return m, nil
+		case "a":
+			// Archive (move to killed status)
+			if selected := m.SelectedIntent(); selected != nil {
+				if selected.Status == intent.StatusKilled {
+					m.statusMessage = "Already archived"
+					return m, nil
+				}
+				return m, m.archiveIntent(selected)
+			}
+			return m, nil
+		case "d":
+			// Delete intent (permanently)
+			// Note: Confirmation will be added in 02_confirmations sequence
+			if selected := m.SelectedIntent(); selected != nil {
+				return m, m.deleteIntent(selected)
+			}
+			return m, nil
 		case "j", "down":
 			m.moveCursorDown()
 		case "k", "up":
@@ -287,9 +369,103 @@ func (m ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.intents = msg.intents
 		m.filteredIntents = msg.intents
 		m.groups = groupIntentsByStatus(msg.intents)
+
+	case editorFinishedMsg:
+		if msg.err != nil {
+			m.statusMessage = "Editor error: " + msg.err.Error()
+		} else {
+			m.statusMessage = "Edit complete"
+		}
+		// Refresh intent list to pick up changes
+		return m, m.loadIntents()
+
+	case openFinishedMsg:
+		if msg.err != nil {
+			m.statusMessage = "Open failed: " + msg.err.Error()
+		}
+		return m, nil
+
+	case moveFinishedMsg:
+		if msg.err != nil {
+			m.statusMessage = "Move failed: " + msg.err.Error()
+		} else {
+			m.statusMessage = fmt.Sprintf("Moved to %s", msg.newStatus)
+		}
+		m.intentToMove = nil
+		return m, m.loadIntents()
+
+	case archiveFinishedMsg:
+		if msg.err != nil {
+			m.statusMessage = "Archive failed: " + msg.err.Error()
+		} else {
+			m.statusMessage = "Archived"
+		}
+		return m, m.loadIntents()
+
+	case deleteFinishedMsg:
+		if msg.err != nil {
+			m.statusMessage = "Delete failed: " + msg.err.Error()
+		} else {
+			m.statusMessage = "Deleted: " + msg.title
+		}
+		return m, m.loadIntents()
 	}
 
 	return m, nil
+}
+
+// openInEditor opens a file in the user's $EDITOR.
+func (m ExplorerModel) openInEditor(filePath string) tea.Cmd {
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "vi"
+	}
+
+	c := exec.Command(editor, filePath)
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		return editorFinishedMsg{err: err, path: filePath}
+	})
+}
+
+// openWithSystem opens a file with the system's default handler.
+func (m ExplorerModel) openWithSystem(filePath string) tea.Cmd {
+	return func() tea.Msg {
+		var cmd *exec.Cmd
+		switch runtime.GOOS {
+		case "darwin":
+			cmd = exec.Command("open", filePath)
+		case "linux":
+			cmd = exec.Command("xdg-open", filePath)
+		case "windows":
+			cmd = exec.Command("cmd", "/c", "start", "", filePath)
+		default:
+			return openFinishedMsg{err: fmt.Errorf("unsupported platform: %s", runtime.GOOS)}
+		}
+		err := cmd.Start()
+		return openFinishedMsg{err: err}
+	}
+}
+
+// revealInFileManager opens the file manager and selects the file.
+func (m ExplorerModel) revealInFileManager(filePath string) tea.Cmd {
+	return func() tea.Msg {
+		var cmd *exec.Cmd
+		switch runtime.GOOS {
+		case "darwin":
+			// macOS: open -R reveals in Finder and selects the file
+			cmd = exec.Command("open", "-R", filePath)
+		case "linux":
+			// Linux: open the containing directory
+			cmd = exec.Command("xdg-open", filepath.Dir(filePath))
+		case "windows":
+			// Windows: explorer /select, highlights the file
+			cmd = exec.Command("explorer", "/select,", filePath)
+		default:
+			return openFinishedMsg{err: fmt.Errorf("unsupported platform: %s", runtime.GOOS)}
+		}
+		err := cmd.Start()
+		return openFinishedMsg{err: err}
+	}
 }
 
 // applyFilters filters intents using search query and type filter.
@@ -455,6 +631,11 @@ func (m ExplorerModel) View() string {
 	// Show concept filter picker if active
 	if m.focus == focusConceptFilter {
 		return m.viewConceptFilter()
+	}
+
+	// Show move status picker if active
+	if m.focus == focusMove {
+		return m.viewMove()
 	}
 
 	var b strings.Builder
@@ -813,6 +994,149 @@ func (m ExplorerModel) viewConceptFilter() string {
 	b.WriteString(m.conceptFilterPicker.View())
 	b.WriteString("\n")
 	b.WriteString(helpStyle.Render("Esc: cancel"))
+
+	return b.String()
+}
+
+// moveStatusOptions are the available statuses for moving intents.
+var moveStatusOptions = []struct {
+	name   string
+	status intent.Status
+}{
+	{"Inbox", intent.StatusInbox},
+	{"Active", intent.StatusActive},
+	{"Ready", intent.StatusReady},
+	{"Done", intent.StatusDone},
+	{"Killed", intent.StatusKilled},
+}
+
+// statusWorkflow defines the promotion order for intents.
+// Killed is excluded as it's an archive/terminal state.
+var statusWorkflow = []intent.Status{
+	intent.StatusInbox,
+	intent.StatusActive,
+	intent.StatusReady,
+	intent.StatusDone,
+}
+
+// getNextStatus returns the next status in the promotion workflow.
+// Returns the same status if already at the final state.
+func getNextStatus(current intent.Status) intent.Status {
+	for i, s := range statusWorkflow {
+		if s == current && i < len(statusWorkflow)-1 {
+			return statusWorkflow[i+1]
+		}
+	}
+	return current // No change if at end or not in workflow
+}
+
+// updateMove handles key input during move action.
+func (m ExplorerModel) updateMove(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		// Cancel move
+		m.focus = focusList
+		m.intentToMove = nil
+		return m, nil
+	case "j", "down":
+		if m.moveStatusIdx < len(moveStatusOptions)-1 {
+			m.moveStatusIdx++
+		}
+	case "k", "up":
+		if m.moveStatusIdx > 0 {
+			m.moveStatusIdx--
+		}
+	case "enter":
+		// Execute move
+		if m.intentToMove != nil {
+			newStatus := moveStatusOptions[m.moveStatusIdx].status
+			if m.intentToMove.Status == newStatus {
+				// Already at this status
+				m.statusMessage = "Already at " + newStatus.String()
+				m.focus = focusList
+				m.intentToMove = nil
+				return m, nil
+			}
+			m.focus = focusList
+			return m, m.moveIntent(m.intentToMove, newStatus)
+		}
+	}
+	return m, nil
+}
+
+// moveIntent moves an intent to a new status.
+func (m ExplorerModel) moveIntent(i *intent.Intent, newStatus intent.Status) tea.Cmd {
+	return func() tea.Msg {
+		_, err := m.service.Move(m.ctx, i.ID, newStatus)
+		return moveFinishedMsg{
+			err:       err,
+			intentID:  i.ID,
+			newStatus: newStatus,
+		}
+	}
+}
+
+// archiveIntent archives an intent (moves to killed status).
+func (m ExplorerModel) archiveIntent(i *intent.Intent) tea.Cmd {
+	return func() tea.Msg {
+		_, err := m.service.Archive(m.ctx, i.ID)
+		return archiveFinishedMsg{
+			err:      err,
+			intentID: i.ID,
+		}
+	}
+}
+
+// archiveFinishedMsg is sent when archive completes.
+type archiveFinishedMsg struct {
+	err      error
+	intentID string
+}
+
+// deleteIntent permanently deletes an intent.
+func (m ExplorerModel) deleteIntent(i *intent.Intent) tea.Cmd {
+	return func() tea.Msg {
+		err := m.service.Delete(m.ctx, i.ID)
+		return deleteFinishedMsg{
+			err:   err,
+			title: i.Title,
+		}
+	}
+}
+
+// deleteFinishedMsg is sent when delete completes.
+type deleteFinishedMsg struct {
+	err   error
+	title string
+}
+
+// viewMove renders the move status picker.
+func (m ExplorerModel) viewMove() string {
+	var b strings.Builder
+
+	b.WriteString(titleStyle.Render("Move Intent"))
+	b.WriteString("\n\n")
+
+	if m.intentToMove != nil {
+		b.WriteString("Moving: " + m.intentToMove.Title + "\n")
+		b.WriteString("Current status: " + m.intentToMove.Status.String() + "\n\n")
+	}
+
+	b.WriteString("Select new status:\n")
+	for i, opt := range moveStatusOptions {
+		cursor := "  "
+		if i == m.moveStatusIdx {
+			cursor = "> "
+		}
+		// Mark current status
+		marker := ""
+		if m.intentToMove != nil && m.intentToMove.Status == opt.status {
+			marker = " (current)"
+		}
+		b.WriteString(cursor + opt.name + marker + "\n")
+	}
+	b.WriteString("\n")
+	b.WriteString(helpStyle.Render("j/k: navigate • Enter: move • Esc: cancel"))
 
 	return b.String()
 }
