@@ -13,6 +13,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/obediencecorp/camp/internal/concept"
 	"github.com/obediencecorp/camp/internal/intent"
 )
@@ -108,6 +109,11 @@ type ExplorerModel struct {
 	confirmDialog  ConfirmationDialog
 	pendingAction  string         // "delete" or "archive"
 	pendingIntent  *intent.Intent // Intent for pending action
+
+	// Preview pane state
+	previewPane    PreviewPane
+	showPreview    bool // Whether preview pane is visible
+	previewFocused bool // Whether preview has focus (vs list)
 }
 
 // NewExplorerModel creates a new Explorer model.
@@ -387,10 +393,65 @@ func (m ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				)
 			}
 			return m, nil
+		case "v":
+			// Toggle preview pane visibility
+			m.showPreview = !m.showPreview
+			m.recalculateLayout()
+			// Load preview content for currently selected intent
+			if m.showPreview {
+				if selected := m.SelectedIntent(); selected != nil {
+					m.loadPreviewContent(selected)
+				}
+			}
+			return m, nil
+		case "tab":
+			// Switch focus between list and preview (only when preview visible)
+			if m.showPreview {
+				m.previewFocused = !m.previewFocused
+			}
+			return m, nil
 		case "j", "down":
+			if m.previewFocused && m.showPreview {
+				// Scroll preview down
+				var cmd tea.Cmd
+				m.previewPane, cmd = m.previewPane.Update(msg)
+				return m, cmd
+			}
 			m.moveCursorDown()
+			m.updatePreviewForSelection()
 		case "k", "up":
+			if m.previewFocused && m.showPreview {
+				// Scroll preview up
+				var cmd tea.Cmd
+				m.previewPane, cmd = m.previewPane.Update(msg)
+				return m, cmd
+			}
 			m.moveCursorUp()
+			m.updatePreviewForSelection()
+		case "ctrl+d":
+			if m.previewFocused && m.showPreview {
+				var cmd tea.Cmd
+				m.previewPane, cmd = m.previewPane.Update(msg)
+				return m, cmd
+			}
+		case "ctrl+u":
+			if m.previewFocused && m.showPreview {
+				var cmd tea.Cmd
+				m.previewPane, cmd = m.previewPane.Update(msg)
+				return m, cmd
+			}
+		case "g":
+			if m.previewFocused && m.showPreview {
+				var cmd tea.Cmd
+				m.previewPane, cmd = m.previewPane.Update(msg)
+				return m, cmd
+			}
+		case "G":
+			if m.previewFocused && m.showPreview {
+				var cmd tea.Cmd
+				m.previewPane, cmd = m.previewPane.Update(msg)
+				return m, cmd
+			}
 		case "enter", " ":
 			m.handleSelect()
 		}
@@ -402,6 +463,7 @@ func (m ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.searchInput.Width < 20 {
 			m.searchInput.Width = 20
 		}
+		m.recalculateLayout()
 		m.ready = true
 
 	case intentsLoadedMsg:
@@ -690,6 +752,9 @@ func (m ExplorerModel) View() string {
 
 	// Title
 	b.WriteString(titleStyle.Render("Intent Explorer"))
+	if m.showPreview && m.previewFocused {
+		b.WriteString(helpStyle.Render(" [preview focused]"))
+	}
 	b.WriteString("\n")
 
 	// Search input and type filter
@@ -734,13 +799,23 @@ func (m ExplorerModel) View() string {
 	b.WriteString(helpStyle.Render("Concept: [" + conceptValue + "]"))
 	b.WriteString("\n\n")
 
-	// Calculate available width for title (leave room for date and type)
-	titleWidth := m.width - 30
+	// Calculate widths based on preview visibility
+	listWidth := m.width
+	if m.showPreview {
+		listWidth = m.width * 60 / 100
+		if listWidth < 40 {
+			listWidth = 40
+		}
+	}
+
+	// Calculate available width for title within the list (leave room for date and type)
+	titleWidth := listWidth - 35
 	if titleWidth < 20 {
 		titleWidth = 20
 	}
 
-	// Render groups
+	// Build the list view
+	var listBuilder strings.Builder
 	for gi, group := range m.groups {
 		// Group header
 		indicator := "▶"
@@ -750,31 +825,52 @@ func (m ExplorerModel) View() string {
 
 		isGroupSelected := gi == m.cursorGroup && m.cursorItem == -1
 		cursor := noCursor
-		if isGroupSelected {
+		if isGroupSelected && !m.previewFocused {
 			cursor = cursorIndicator
 		}
 
 		header := fmt.Sprintf("%s %s %s (%d)", cursor, indicator, group.Name, len(group.Intents))
-		if isGroupSelected {
-			b.WriteString(groupHeaderSelectedStyle.Render(header))
+		if isGroupSelected && !m.previewFocused {
+			listBuilder.WriteString(groupHeaderSelectedStyle.Render(header))
 		} else {
-			b.WriteString(groupHeaderStyle.Render(header))
+			listBuilder.WriteString(groupHeaderStyle.Render(header))
 		}
-		b.WriteString("\n")
+		listBuilder.WriteString("\n")
 
 		// Render items if expanded
 		if group.Expanded {
 			for ii, i := range group.Intents {
-				isSelected := gi == m.cursorGroup && ii == m.cursorItem
-				b.WriteString(m.renderIntentRow(i, isSelected, titleWidth))
-				b.WriteString("\n")
+				isSelected := gi == m.cursorGroup && ii == m.cursorItem && !m.previewFocused
+				listBuilder.WriteString(m.renderIntentRow(i, isSelected, titleWidth))
+				listBuilder.WriteString("\n")
 			}
 		}
 	}
 
+	// Combine list and preview if preview is visible
+	if m.showPreview {
+		listView := listBuilder.String()
+		previewView := m.previewPane.View()
+
+		// Join horizontally with gap
+		combined := lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			listView,
+			"  ", // gap between list and preview
+			previewView,
+		)
+		b.WriteString(combined)
+	} else {
+		b.WriteString(listBuilder.String())
+	}
+
 	// Status bar
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("j/k: navigate • /: search • t: type • s: status • c: concept • n: new • q: quit"))
+	if m.showPreview {
+		b.WriteString(helpStyle.Render("j/k: navigate • v: hide preview • tab: switch focus • /: search • n: new • q: quit"))
+	} else {
+		b.WriteString(helpStyle.Render("j/k: navigate • v: show preview • /: search • t: type • s: status • c: concept • n: new • q: quit"))
+	}
 
 	if m.statusMessage != "" {
 		b.WriteString("\n")
@@ -1198,4 +1294,60 @@ func (m ExplorerModel) viewConfirmation() string {
 	b.WriteString(m.confirmDialog.View())
 
 	return b.String()
+}
+
+// recalculateLayout updates component sizes based on terminal dimensions.
+func (m *ExplorerModel) recalculateLayout() {
+	if m.width == 0 || m.height == 0 {
+		return
+	}
+
+	// Reserve space for header (title, filters) and footer (help text)
+	headerHeight := 4  // Title + filters + spacing
+	footerHeight := 3  // Help text + status message
+	contentHeight := m.height - headerHeight - footerHeight
+	if contentHeight < 5 {
+		contentHeight = 5
+	}
+
+	if m.showPreview {
+		// Split layout: list on left (60%), preview on right (40%)
+		listWidth := m.width * 60 / 100
+		previewWidth := m.width - listWidth - 2 // -2 for border/spacing
+
+		// Minimum widths
+		if listWidth < 40 {
+			listWidth = 40
+		}
+		if previewWidth < 30 {
+			previewWidth = 30
+		}
+
+		m.previewPane.SetSize(previewWidth, contentHeight)
+	}
+}
+
+// loadPreviewContent loads content from an intent file into the preview pane.
+func (m *ExplorerModel) loadPreviewContent(i *intent.Intent) {
+	if i == nil || i.Path == "" {
+		return
+	}
+
+	content, err := os.ReadFile(i.Path)
+	if err != nil {
+		m.previewPane.SetContent(i.Title, "Error loading content: "+err.Error())
+		return
+	}
+
+	m.previewPane.SetContent(i.Title, string(content))
+}
+
+// updatePreviewForSelection updates preview content when selection changes.
+func (m *ExplorerModel) updatePreviewForSelection() {
+	if !m.showPreview {
+		return
+	}
+	if selected := m.SelectedIntent(); selected != nil {
+		m.loadPreviewContent(selected)
+	}
 }
