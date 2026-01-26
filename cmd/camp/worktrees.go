@@ -24,11 +24,11 @@ Commands:
   clean     Remove stale worktrees
 
 Examples:
-  # Create a worktree for feature development
+  # Create a worktree for feature development (new branch based on current)
   camp worktrees create my-api feature-auth
 
-  # Create a worktree with a new branch
-  camp worktrees create my-api experiment --new-branch
+  # Create a worktree with new branch based on main
+  camp worktrees create my-api experiment --start-point main
 
   # List all worktrees
   camp worktrees list
