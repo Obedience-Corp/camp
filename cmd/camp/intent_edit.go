@@ -118,7 +118,7 @@ func resolveIntentByPartialID(ctx context.Context, svc *intent.IntentService, pa
 func pickIntent(ctx context.Context, svc *intent.IntentService, status, typ, project string) (*intent.Intent, error) {
 	// Build list options
 	opts := &intent.ListOptions{
-		Project:  project,
+		Concept:  project, // project from CLI maps to Concept field
 		SortBy:   "updated",
 		SortDesc: true,
 	}
@@ -147,16 +147,16 @@ func pickIntent(ctx context.Context, svc *intent.IntentService, status, typ, pro
 		intents,
 		func(i int) string {
 			intent := intents[i]
-			// Format: [status] ID - Title (project)
-			proj := intent.Project
-			if proj == "" {
-				proj = "-"
+			// Format: [status] ID - Title (concept)
+			concept := intent.Concept
+			if concept == "" {
+				concept = "-"
 			}
 			return fmt.Sprintf("[%s] %s - %s (%s)",
 				intent.Status,
 				truncateID(intent.ID),
 				intent.Title,
-				proj,
+				concept,
 			)
 		},
 		fuzzyfinder.WithPromptString("Select intent: "),
@@ -194,8 +194,8 @@ func formatIntentPreview(i *intent.Intent) string {
 	sb.WriteString(fmt.Sprintf("Status:   %s\n", i.Status))
 	sb.WriteString(fmt.Sprintf("Type:     %s\n", i.Type))
 
-	if i.Project != "" {
-		sb.WriteString(fmt.Sprintf("Project:  %s\n", i.Project))
+	if i.Concept != "" {
+		sb.WriteString(fmt.Sprintf("Concept:  %s\n", i.Concept))
 	}
 	if i.Priority != "" {
 		sb.WriteString(fmt.Sprintf("Priority: %s\n", i.Priority))

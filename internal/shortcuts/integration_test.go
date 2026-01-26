@@ -19,38 +19,38 @@ func TestShortcutExpansionEndToEnd(t *testing.T) {
 	expander := shortcuts.NewExpander(shortcutMap)
 
 	tests := []struct {
-		name           string
-		input          []string
-		expectedFirst  string
-		shouldExpand   bool
+		name            string
+		input           []string
+		expectedFirst   string
+		shouldExpand    bool
 		expectedConcept string
 	}{
 		{
-			name:           "expand p to project",
-			input:          []string{"p", "list"},
-			expectedFirst:  "project",
-			shouldExpand:   true,
+			name:            "expand p to project",
+			input:           []string{"p", "list"},
+			expectedFirst:   "project",
+			shouldExpand:    true,
 			expectedConcept: "project",
 		},
 		{
-			name:           "expand f to festival",
-			input:          []string{"f", "status"},
-			expectedFirst:  "festival",
-			shouldExpand:   true,
+			name:            "expand f to festival",
+			input:           []string{"f", "status"},
+			expectedFirst:   "festival",
+			shouldExpand:    true,
 			expectedConcept: "festival",
 		},
 		{
-			name:           "expand i to intent",
-			input:          []string{"i", "new"},
-			expectedFirst:  "intent",
-			shouldExpand:   true,
+			name:            "expand i to intent",
+			input:           []string{"i", "new"},
+			expectedFirst:   "intent",
+			shouldExpand:    true,
 			expectedConcept: "intent",
 		},
 		{
-			name:           "expand cfg to config",
-			input:          []string{"cfg", "edit"},
-			expectedFirst:  "config",
-			shouldExpand:   true,
+			name:            "expand cfg to config",
+			input:           []string{"cfg", "edit"},
+			expectedFirst:   "config",
+			shouldExpand:    true,
 			expectedConcept: "config",
 		},
 		{

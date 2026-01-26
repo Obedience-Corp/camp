@@ -89,6 +89,12 @@ cr() {
   camp run "$@"
 }
 
+# Quick intent capture
+# Usage: cint "my idea"
+cint() {
+  camp intent add "$@"
+}
+
 # Tab completion for camp
 _camp_complete() {
   local cur prev

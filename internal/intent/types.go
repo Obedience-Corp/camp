@@ -3,7 +3,11 @@
 // eventually be promoted to Festivals.
 package intent
 
-import "time"
+import (
+	"path/filepath"
+	"strings"
+	"time"
+)
 
 // Status represents the lifecycle state of an intent.
 type Status string
@@ -104,7 +108,7 @@ type Intent struct {
 
 	// Optional metadata
 	Type     Type     `yaml:"type,omitempty"`
-	Project  string   `yaml:"project,omitempty"`
+	Concept  string   `yaml:"concept,omitempty"` // Full concept path: "projects/camp"
 	Author   string   `yaml:"author,omitempty"`
 	Priority Priority `yaml:"priority,omitempty"`
 	Horizon  Horizon  `yaml:"horizon,omitempty"`
@@ -124,4 +128,21 @@ type Intent struct {
 	// Runtime fields (not serialized to YAML)
 	Path    string `yaml:"-"` // Filesystem path to the intent file
 	Content string `yaml:"-"` // Markdown body content (after frontmatter)
+}
+
+// ConceptType returns the concept type from the path (e.g., "projects" from "projects/camp").
+func (i *Intent) ConceptType() string {
+	if i.Concept == "" {
+		return ""
+	}
+	parts := strings.SplitN(i.Concept, "/", 2)
+	return parts[0]
+}
+
+// ConceptName returns the concept name from the path (e.g., "camp" from "projects/camp").
+func (i *Intent) ConceptName() string {
+	if i.Concept == "" {
+		return ""
+	}
+	return filepath.Base(i.Concept)
 }

@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/sahilm/fuzzy"
 )
 
 // Service errors.
@@ -38,7 +40,7 @@ func NewIntentService(campaignRoot, intentsDir string) *IntentService {
 type CreateOptions struct {
 	Title     string
 	Type      Type
-	Project   string
+	Concept   string // Full concept path (e.g., "projects/camp")
 	Author    string
 	Body      string    // Description/body content for the intent
 	Timestamp time.Time // Optional; defaults to time.Now()
@@ -57,7 +59,7 @@ func (s *IntentService) CreateDirect(ctx context.Context, opts CreateOptions) (*
 	}
 
 	// Generate ID and template data
-	data := NewTemplateDataFromInput(opts.Title, string(opts.Type), opts.Project, opts.Author, opts.Body, ts)
+	data := NewTemplateDataFromInput(opts.Title, string(opts.Type), opts.Concept, opts.Author, opts.Body, ts)
 
 	// Render template
 	content, err := RenderTemplate(data)
@@ -107,7 +109,7 @@ func (s *IntentService) CreateWithEditor(ctx context.Context, opts CreateOptions
 	}
 
 	// Generate template data
-	data := NewTemplateDataFromInput(opts.Title, string(opts.Type), opts.Project, opts.Author, opts.Body, ts)
+	data := NewTemplateDataFromInput(opts.Title, string(opts.Type), opts.Concept, opts.Author, opts.Body, ts)
 
 	// Render template
 	content, err := RenderTemplate(data)
@@ -240,7 +242,7 @@ func (s *IntentService) Get(ctx context.Context, id string) (*Intent, error) {
 type ListOptions struct {
 	Status   *Status // Filter by status (nil for all)
 	Type     *Type   // Filter by type (nil for all)
-	Project  string  // Filter by project (empty for all)
+	Concept  string  // Filter by concept (empty for all)
 	SortBy   string  // Sort field: "created", "updated", "title", "priority"
 	SortDesc bool    // Sort in descending order
 }
@@ -288,7 +290,7 @@ func (s *IntentService) List(ctx context.Context, opts *ListOptions) ([]*Intent,
 				if opts.Type != nil && intent.Type != *opts.Type {
 					continue
 				}
-				if opts.Project != "" && intent.Project != opts.Project {
+				if opts.Concept != "" && intent.Concept != opts.Concept {
 					continue
 				}
 			}
@@ -306,6 +308,47 @@ func (s *IntentService) List(ctx context.Context, opts *ListOptions) ([]*Intent,
 	}
 
 	return intents, nil
+}
+
+// intentSource implements fuzzy.Source interface for intent searching.
+type intentSource []*Intent
+
+func (is intentSource) String(i int) string {
+	return is[i].Title
+}
+
+func (is intentSource) Len() int {
+	return len(is)
+}
+
+// Search returns intents matching the query string using fuzzy matching.
+// Empty query returns all intents. Results are sorted by relevance score.
+func (s *IntentService) Search(ctx context.Context, query string) ([]*Intent, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("context cancelled: %w", err)
+	}
+
+	// Get all intents
+	allIntents, err := s.List(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("listing intents: %w", err)
+	}
+
+	// Empty query returns all intents
+	if query == "" {
+		return allIntents, nil
+	}
+
+	// Use fuzzy matching on titles
+	matches := fuzzy.FindFrom(query, intentSource(allIntents))
+
+	// Build results from matches (already sorted by score)
+	results := make([]*Intent, len(matches))
+	for i, match := range matches {
+		results[i] = allIntents[match.Index]
+	}
+
+	return results, nil
 }
 
 // Edit opens an existing intent in an editor and saves changes.

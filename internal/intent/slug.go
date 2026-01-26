@@ -64,13 +64,13 @@ func GenerateSlug(title string) string {
 
 // GenerateID creates a unique intent ID from title and timestamp.
 //
-// Format: YYYYMMDD-HHMMSS-slug
-// Example: 20260119-153412-add-dark-mode-toggle
+// Format: slug-YYYYMMDD-HHMMSS
+// Example: add-dark-mode-toggle-20260119-153412
 func GenerateID(title string, timestamp time.Time) string {
-	prefix := timestamp.Format("20060102-150405")
+	suffix := timestamp.Format("20060102-150405")
 	slug := GenerateSlug(title)
 	if slug == "" {
-		return prefix
+		return suffix
 	}
-	return prefix + "-" + slug
+	return slug + "-" + suffix
 }

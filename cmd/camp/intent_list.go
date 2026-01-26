@@ -103,7 +103,7 @@ func runIntentList(cmd *cobra.Command, args []string) error {
 
 func buildListOptions(statuses, types []string, project, horizon, sortBy string, includeAll bool) *intent.ListOptions {
 	opts := &intent.ListOptions{
-		Project:  project,
+		Concept:  project, // project from CLI maps to Concept field
 		SortBy:   sortBy,
 		SortDesc: sortBy == "updated" || sortBy == "created" || sortBy == "priority",
 	}
@@ -142,13 +142,13 @@ func outputTable(intents []*intent.Intent) error {
 	}
 
 	// Build table data
-	headers := []string{"ID", "TITLE", "TYPE", "STATUS", "PROJECT", "UPDATED"}
+	headers := []string{"ID", "TITLE", "TYPE", "STATUS", "CONCEPT", "UPDATED"}
 	rows := make([][]string, 0, len(intents))
 
 	for _, i := range intents {
 		id := truncate(i.ID, 20)
 		title := truncate(i.Title, 35)
-		proj := i.Project
+		proj := i.Concept
 		if proj == "" {
 			proj = "-"
 		}
@@ -198,7 +198,7 @@ func outputJSON(intents []*intent.Intent) error {
 		Title             string   `json:"title"`
 		Type              string   `json:"type"`
 		Status            string   `json:"status"`
-		Project           string   `json:"project,omitempty"`
+		Concept           string   `json:"concept,omitempty"`
 		Author            string   `json:"author,omitempty"`
 		Priority          string   `json:"priority,omitempty"`
 		Horizon           string   `json:"horizon,omitempty"`
@@ -219,7 +219,7 @@ func outputJSON(intents []*intent.Intent) error {
 			Title:             i.Title,
 			Type:              string(i.Type),
 			Status:            string(i.Status),
-			Project:           i.Project,
+			Concept:           i.Concept,
 			Author:            i.Author,
 			Priority:          string(i.Priority),
 			Horizon:           string(i.Horizon),

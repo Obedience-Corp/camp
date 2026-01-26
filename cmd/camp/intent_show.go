@@ -91,10 +91,10 @@ func showText(i *intent.Intent) error {
 	sb.WriteString(fmt.Sprintf("Type:     %s\n", i.Type))
 	sb.WriteString(fmt.Sprintf("Status:   %s\n", i.Status))
 
-	if i.Project != "" {
-		sb.WriteString(fmt.Sprintf("Project:  %s\n", i.Project))
+	if i.Concept != "" {
+		sb.WriteString(fmt.Sprintf("Concept:  %s\n", i.Concept))
 	} else {
-		sb.WriteString("Project:  (none)\n")
+		sb.WriteString("Concept:  (none)\n")
 	}
 
 	if i.Author != "" {
@@ -171,7 +171,7 @@ func showJSON(i *intent.Intent) error {
 		"title":              i.Title,
 		"type":               string(i.Type),
 		"status":             string(i.Status),
-		"project":            i.Project,
+		"concept":            i.Concept,
 		"author":             i.Author,
 		"priority":           string(i.Priority),
 		"horizon":            string(i.Horizon),
@@ -205,7 +205,7 @@ func showYAML(i *intent.Intent) error {
 		Title             string   `yaml:"title"`
 		Type              string   `yaml:"type"`
 		Status            string   `yaml:"status"`
-		Project           string   `yaml:"project,omitempty"`
+		Concept           string   `yaml:"concept,omitempty"`
 		Author            string   `yaml:"author,omitempty"`
 		Priority          string   `yaml:"priority,omitempty"`
 		Horizon           string   `yaml:"horizon,omitempty"`
@@ -223,7 +223,7 @@ func showYAML(i *intent.Intent) error {
 		Title:             i.Title,
 		Type:              string(i.Type),
 		Status:            string(i.Status),
-		Project:           i.Project,
+		Concept:           i.Concept,
 		Author:            i.Author,
 		Priority:          string(i.Priority),
 		Horizon:           string(i.Horizon),

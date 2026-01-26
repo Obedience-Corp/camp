@@ -52,12 +52,12 @@ func init() {
 
 // WorktreeInfoResult contains detailed worktree information.
 type WorktreeInfoResult struct {
-	Name       string            `json:"name"`
-	Project    string            `json:"project"`
-	Branch     string            `json:"branch"`
-	Path       string            `json:"path"`
-	Status     string            `json:"status"`
-	Created    string            `json:"created,omitempty"`
+	Name       string              `json:"name"`
+	Project    string              `json:"project"`
+	Branch     string              `json:"branch"`
+	Path       string              `json:"path"`
+	Status     string              `json:"status"`
+	Created    string              `json:"created,omitempty"`
 	LastCommit *WorktreeCommitInfo `json:"lastCommit,omitempty"`
 }
 

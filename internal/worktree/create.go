@@ -2,6 +2,7 @@ package worktree
 
 import (
 	"context"
+	"os"
 
 	"github.com/obediencecorp/camp/internal/config"
 	"github.com/obediencecorp/camp/internal/paths"
@@ -103,12 +104,20 @@ func (c *Creator) Create(ctx context.Context, opts *CreateOptions) (*CreateResul
 	}, nil
 }
 
-// resolveProject finds the project path from campaign config.
+// resolveProject finds the project path from campaign config or filesystem.
 func (c *Creator) resolveProject(name string) (string, error) {
+	// First check configured projects
 	for _, proj := range c.cfg.Projects {
 		if proj.Name == name || proj.Path == "projects/"+name {
 			return c.resolver.Project(name), nil
 		}
 	}
+
+	// Fall back to filesystem detection - check if project directory exists
+	projectPath := c.resolver.Project(name)
+	if info, err := os.Stat(projectPath); err == nil && info.IsDir() {
+		return projectPath, nil
+	}
+
 	return "", ProjectNotFound(name)
 }

@@ -13,7 +13,7 @@ var (
 	ErrTitleTooShort     = errors.New("title must be at least 3 characters")
 	ErrStatusRequired    = errors.New("status is required")
 	ErrCreatedAtRequired = errors.New("created_at is required")
-	ErrInvalidIDFormat   = errors.New("id does not match required format YYYYMMDD-HHMMSS-slug")
+	ErrInvalidIDFormat   = errors.New("id does not match required format slug-YYYYMMDD-HHMMSS")
 	ErrInvalidStatus     = errors.New("invalid status")
 	ErrInvalidType       = errors.New("invalid type")
 	ErrInvalidPriority   = errors.New("invalid priority")
@@ -21,8 +21,9 @@ var (
 	ErrPromotedToStatus  = errors.New("promoted_to can only be set when status is done")
 )
 
-// intentIDPattern matches the expected ID format: YYYYMMDD-HHMMSS-slug.
-var intentIDPattern = regexp.MustCompile(`^\d{8}-\d{6}(-.+)?$`)
+// intentIDPattern matches the expected ID format: slug-YYYYMMDD-HHMMSS.
+// The slug is optional (for empty titles), but when present must be lowercase alphanumeric with hyphens.
+var intentIDPattern = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]*[a-z0-9])?-)?\d{8}-\d{6}$`)
 
 // Validate checks the intent for consistency and completeness.
 // Returns a slice of all validation errors found.

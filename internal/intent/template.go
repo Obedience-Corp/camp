@@ -19,7 +19,7 @@ type TemplateData struct {
 	ID        string
 	Title     string
 	Type      string
-	Project   string
+	Concept   string // Full concept path (e.g., "projects/camp")
 	Author    string
 	CreatedAt string // Formatted as YYYY-MM-DD
 	Body      string // Description/body content
@@ -56,7 +56,7 @@ func NewTemplateData(intent *Intent) TemplateData {
 		ID:        intent.ID,
 		Title:     intent.Title,
 		Type:      string(intent.Type),
-		Project:   intent.Project,
+		Concept:   intent.Concept,
 		Author:    intent.Author,
 		CreatedAt: FormatCreatedAt(intent.CreatedAt),
 		Body:      intent.Content,
@@ -65,12 +65,12 @@ func NewTemplateData(intent *Intent) TemplateData {
 
 // NewTemplateDataFromInput creates a TemplateData struct from user input.
 // The timestamp is used to generate both the ID and CreatedAt fields.
-func NewTemplateDataFromInput(title, typ, project, author, body string, timestamp time.Time) TemplateData {
+func NewTemplateDataFromInput(title, typ, concept, author, body string, timestamp time.Time) TemplateData {
 	return TemplateData{
 		ID:        GenerateID(title, timestamp),
 		Title:     title,
 		Type:      typ,
-		Project:   project,
+		Concept:   concept,
 		Author:    author,
 		CreatedAt: FormatCreatedAt(timestamp),
 		Body:      body,

@@ -3,6 +3,7 @@ package intent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,7 +40,7 @@ func TestIntentService_CreateDirect(t *testing.T) {
 			opts: CreateOptions{
 				Title:     "Test Intent",
 				Type:      TypeFeature,
-				Project:   "test-project",
+				Concept:   "test-project",
 				Author:    "tester",
 				Timestamp: time.Date(2026, 1, 19, 15, 34, 12, 0, time.UTC),
 			},
@@ -307,7 +308,7 @@ func TestIntentService_List(t *testing.T) {
 	_, err := svc.CreateDirect(ctx, CreateOptions{
 		Title:     "List Test 1",
 		Type:      TypeFeature,
-		Project:   "project-a",
+		Concept:   "project-a",
 		Timestamp: time.Date(2026, 1, 19, 10, 0, 0, 0, time.UTC),
 	})
 	if err != nil {
@@ -317,7 +318,7 @@ func TestIntentService_List(t *testing.T) {
 	intent2, err := svc.CreateDirect(ctx, CreateOptions{
 		Title:     "List Test 2",
 		Type:      TypeBug,
-		Project:   "project-b",
+		Concept:   "project-b",
 		Timestamp: time.Date(2026, 1, 19, 11, 0, 0, 0, time.UTC),
 	})
 	if err != nil {
@@ -356,13 +357,13 @@ func TestIntentService_List(t *testing.T) {
 			wantCount: 1,
 		},
 		{
-			name:      "filter by project",
-			opts:      &ListOptions{Project: "project-a"},
+			name:      "filter by concept",
+			opts:      &ListOptions{Concept: "project-a"},
 			wantCount: 1,
 		},
 		{
 			name:      "no matches",
-			opts:      &ListOptions{Project: "nonexistent"},
+			opts:      &ListOptions{Concept: "nonexistent"},
 			wantCount: 0,
 		},
 	}
@@ -1209,10 +1210,10 @@ func TestIntentService_CreateDirect_UseDefaultTimestamp(t *testing.T) {
 		t.Fatalf("CreateDirect() error = %v", err)
 	}
 
-	// Verify a timestamp was generated (ID should start with today's date)
+	// Verify a timestamp was generated (ID should contain today's date)
 	today := time.Now().Format("20060102")
-	if !strings.HasPrefix(intent.ID, today) {
-		t.Errorf("ID should start with today's date %q, got %q", today, intent.ID)
+	if !strings.Contains(intent.ID, today) {
+		t.Errorf("ID should contain today's date %q, got %q", today, intent.ID)
 	}
 }
 
@@ -1273,5 +1274,106 @@ func TestIntentService_Edit_NilEditor(t *testing.T) {
 	}
 	if edited.ID != created.ID {
 		t.Errorf("ID = %q, want %q", edited.ID, created.ID)
+	}
+}
+
+func TestIntentService_Search(t *testing.T) {
+	tmpDir := t.TempDir()
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
+	ctx := context.Background()
+
+	// Create test intents
+	_, err := svc.CreateDirect(ctx, CreateOptions{
+		Title:     "Add dark mode feature",
+		Type:      TypeFeature,
+		Timestamp: time.Date(2026, 1, 19, 10, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateDirect() error = %v", err)
+	}
+
+	_, err = svc.CreateDirect(ctx, CreateOptions{
+		Title:     "Fix login bug",
+		Type:      TypeBug,
+		Timestamp: time.Date(2026, 1, 19, 11, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateDirect() error = %v", err)
+	}
+
+	_, err = svc.CreateDirect(ctx, CreateOptions{
+		Title:     "Research OAuth providers",
+		Type:      TypeResearch,
+		Timestamp: time.Date(2026, 1, 19, 12, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateDirect() error = %v", err)
+	}
+
+	tests := []struct {
+		name      string
+		query     string
+		wantCount int
+	}{
+		{"empty query returns all", "", 3},
+		{"match title word", "dark", 1},
+		{"match title partial", "log", 1},
+		{"match multiple words", "fix", 1},
+		{"no match", "nonexistent", 0},
+		{"case insensitive", "DARK", 1},
+		{"match type in title", "bug", 1},
+		{"fuzzy match initials", "adm", 1}, // matches "Add dark mode feature"
+		{"fuzzy match abbreviation", "oauth", 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			results, err := svc.Search(ctx, tt.query)
+			if err != nil {
+				t.Fatalf("Search() error = %v", err)
+			}
+			if len(results) != tt.wantCount {
+				t.Errorf("Search(%q) returned %d results, want %d", tt.query, len(results), tt.wantCount)
+			}
+		})
+	}
+}
+
+func TestIntentService_Search_ContextCancelled(t *testing.T) {
+	tmpDir := t.TempDir()
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := svc.Search(ctx, "test")
+	if err == nil {
+		t.Fatal("Search() should return error for cancelled context")
+	}
+}
+
+func BenchmarkIntentService_Search(b *testing.B) {
+	tmpDir := b.TempDir()
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
+	ctx := context.Background()
+
+	// Create 100 intents for benchmark
+	for i := 0; i < 100; i++ {
+		_, err := svc.CreateDirect(ctx, CreateOptions{
+			Title:     fmt.Sprintf("Intent number %d for testing search", i),
+			Type:      TypeFeature,
+			Timestamp: time.Date(2026, 1, 19, 10, 0, i, 0, time.UTC),
+		})
+		if err != nil {
+			b.Fatalf("CreateDirect() error = %v", err)
+		}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := svc.Search(ctx, "testing")
+		if err != nil {
+			b.Fatalf("Search() error = %v", err)
+		}
 	}
 }

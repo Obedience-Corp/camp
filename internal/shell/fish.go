@@ -82,6 +82,12 @@ function cr --description "Run command from campaign root"
     camp run $argv
 end
 
+# Quick intent capture
+# Usage: cint "my idea"
+function cint --description "Quick intent capture"
+    camp intent add $argv
+end
+
 # Tab completion for camp commands
 complete -c camp -f  # no file completion by default
 

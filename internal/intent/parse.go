@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -16,6 +17,58 @@ var (
 	ErrFrontmatterMarshal = errors.New("failed to marshal frontmatter to YAML")
 )
 
+// parsedIntent is an intermediate struct for parsing that supports both
+// the new "concept" field and the legacy "project" field for backward compatibility.
+type parsedIntent struct {
+	ID                string    `yaml:"id"`
+	Title             string    `yaml:"title"`
+	Status            Status    `yaml:"status"`
+	CreatedAt         time.Time `yaml:"created_at"`
+	Type              Type      `yaml:"type,omitempty"`
+	Concept           string    `yaml:"concept,omitempty"`
+	Project           string    `yaml:"project,omitempty"` // Legacy field - maps to Concept
+	Author            string    `yaml:"author,omitempty"`
+	Priority          Priority  `yaml:"priority,omitempty"`
+	Horizon           Horizon   `yaml:"horizon,omitempty"`
+	Tags              []string  `yaml:"tags,omitempty"`
+	BlockedBy         []string  `yaml:"blocked_by,omitempty"`
+	DependsOn         []string  `yaml:"depends_on,omitempty"`
+	PromotionCriteria string    `yaml:"promotion_criteria,omitempty"`
+	PromotedTo        string    `yaml:"promoted_to,omitempty"`
+	UpdatedAt         time.Time `yaml:"updated_at,omitempty"`
+}
+
+// toIntent converts a parsedIntent to an Intent, handling legacy field migration.
+func (p *parsedIntent) toIntent() *Intent {
+	intent := &Intent{
+		ID:                p.ID,
+		Title:             p.Title,
+		Status:            p.Status,
+		CreatedAt:         p.CreatedAt,
+		Type:              p.Type,
+		Author:            p.Author,
+		Priority:          p.Priority,
+		Horizon:           p.Horizon,
+		Tags:              p.Tags,
+		BlockedBy:         p.BlockedBy,
+		DependsOn:         p.DependsOn,
+		PromotionCriteria: p.PromotionCriteria,
+		PromotedTo:        p.PromotedTo,
+		UpdatedAt:         p.UpdatedAt,
+	}
+
+	// Handle concept/project migration
+	// Prefer concept if present, otherwise use legacy project
+	if p.Concept != "" {
+		intent.Concept = p.Concept
+	} else if p.Project != "" {
+		// Legacy: convert project name to concept path
+		intent.Concept = "projects/" + p.Project
+	}
+
+	return intent
+}
+
 // delimiter is the frontmatter section delimiter.
 var delimiter = []byte("---")
 
@@ -24,7 +77,7 @@ var delimiter = []byte("---")
 // Expected format:
 //
 //	---
-//	id: 20260119-153412-example
+//	id: example-20260119-153412
 //	title: Example Intent
 //	status: inbox
 //	created_at: 2026-01-19
@@ -58,16 +111,19 @@ func ParseIntent(content []byte) (*Intent, error) {
 		return nil, ErrInvalidFrontmatter
 	}
 
-	// Parse YAML into Intent
-	var intent Intent
-	if err := yaml.Unmarshal(frontmatter, &intent); err != nil {
+	// Parse YAML into intermediate struct (supports legacy project field)
+	var parsed parsedIntent
+	if err := yaml.Unmarshal(frontmatter, &parsed); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrFrontmatterParse, err)
 	}
+
+	// Convert to Intent (handles legacy field migration)
+	intent := parsed.toIntent()
 
 	// Store body content (trimmed of leading whitespace, preserve trailing)
 	intent.Content = string(bytes.TrimLeft(body, "\n\r"))
 
-	return &intent, nil
+	return intent, nil
 }
 
 // ParseIntentFromFile is a convenience function that reads and parses an intent file.

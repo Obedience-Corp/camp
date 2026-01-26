@@ -20,6 +20,8 @@ func TestGenerateBash(t *testing.T) {
 		content string
 	}{
 		{"cgo function", "cgo()"},
+		{"cint function", "cint()"},
+		{"cint calls intent add", "camp intent add"},
 		{"cd command", "cd \"$dest\""},
 		{"camp go call", "camp go"},
 		{"complete builtin", "complete -F"},
