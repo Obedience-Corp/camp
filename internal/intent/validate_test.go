@@ -19,7 +19,7 @@ func TestIntent_Validate(t *testing.T) {
 		{
 			name: "valid intent with required fields only",
 			intent: Intent{
-				ID:        "20260119-153412-test-intent",
+				ID:        "test-intent-20260119-153412",
 				Title:     "Test Intent",
 				Status:    StatusInbox,
 				CreatedAt: now,
@@ -29,7 +29,7 @@ func TestIntent_Validate(t *testing.T) {
 		{
 			name: "valid intent with all fields",
 			intent: Intent{
-				ID:        "20260119-153412-full-intent",
+				ID:        "full-intent-20260119-153412",
 				Title:     "Full Intent",
 				Status:    StatusActive,
 				Type:      TypeFeature,
@@ -44,7 +44,7 @@ func TestIntent_Validate(t *testing.T) {
 		{
 			name: "valid done intent with promoted_to",
 			intent: Intent{
-				ID:         "20260119-153412-promoted",
+				ID:         "promoted-20260119-153412",
 				Title:      "Promoted Intent",
 				Status:     StatusDone,
 				CreatedAt:  now,
@@ -82,7 +82,7 @@ func TestIntent_Validate(t *testing.T) {
 		{
 			name: "missing title",
 			intent: Intent{
-				ID:        "20260119-153412-test",
+				ID:        "test-20260119-153412",
 				Status:    StatusInbox,
 				CreatedAt: now,
 			},
@@ -92,7 +92,7 @@ func TestIntent_Validate(t *testing.T) {
 		{
 			name: "missing status",
 			intent: Intent{
-				ID:        "20260119-153412-test",
+				ID:        "test-20260119-153412",
 				Title:     "Test Intent",
 				CreatedAt: now,
 			},
@@ -102,7 +102,7 @@ func TestIntent_Validate(t *testing.T) {
 		{
 			name: "missing created_at",
 			intent: Intent{
-				ID:     "20260119-153412-test",
+				ID:     "test-20260119-153412",
 				Title:  "Test Intent",
 				Status: StatusInbox,
 			},
@@ -114,7 +114,7 @@ func TestIntent_Validate(t *testing.T) {
 		{
 			name: "title too short (1 char)",
 			intent: Intent{
-				ID:        "20260119-153412-a",
+				ID:        "a-20260119-153412",
 				Title:     "A",
 				Status:    StatusInbox,
 				CreatedAt: now,
@@ -125,7 +125,7 @@ func TestIntent_Validate(t *testing.T) {
 		{
 			name: "title too short (2 chars)",
 			intent: Intent{
-				ID:        "20260119-153412-ab",
+				ID:        "ab-20260119-153412",
 				Title:     "AB",
 				Status:    StatusInbox,
 				CreatedAt: now,
@@ -136,7 +136,7 @@ func TestIntent_Validate(t *testing.T) {
 		{
 			name: "title exactly 3 chars (valid)",
 			intent: Intent{
-				ID:        "20260119-153412-abc",
+				ID:        "abc-20260119-153412",
 				Title:     "ABC",
 				Status:    StatusInbox,
 				CreatedAt: now,
@@ -183,7 +183,7 @@ func TestIntent_Validate(t *testing.T) {
 		{
 			name: "invalid status value",
 			intent: Intent{
-				ID:        "20260119-153412-test",
+				ID:        "test-20260119-153412",
 				Title:     "Test Intent",
 				Status:    Status("invalid"),
 				CreatedAt: now,
@@ -194,7 +194,7 @@ func TestIntent_Validate(t *testing.T) {
 		{
 			name: "invalid type value",
 			intent: Intent{
-				ID:        "20260119-153412-test",
+				ID:        "test-20260119-153412",
 				Title:     "Test Intent",
 				Status:    StatusInbox,
 				Type:      Type("invalid"),
@@ -206,7 +206,7 @@ func TestIntent_Validate(t *testing.T) {
 		{
 			name: "invalid priority value",
 			intent: Intent{
-				ID:        "20260119-153412-test",
+				ID:        "test-20260119-153412",
 				Title:     "Test Intent",
 				Status:    StatusInbox,
 				Priority:  Priority("invalid"),
@@ -218,7 +218,7 @@ func TestIntent_Validate(t *testing.T) {
 		{
 			name: "invalid horizon value",
 			intent: Intent{
-				ID:        "20260119-153412-test",
+				ID:        "test-20260119-153412",
 				Title:     "Test Intent",
 				Status:    StatusInbox,
 				Horizon:   Horizon("invalid"),
@@ -232,7 +232,7 @@ func TestIntent_Validate(t *testing.T) {
 		{
 			name: "promoted_to with status not done",
 			intent: Intent{
-				ID:         "20260119-153412-test",
+				ID:         "test-20260119-153412",
 				Title:      "Test Intent",
 				Status:     StatusActive,
 				PromotedTo: "FEST-123",
@@ -295,7 +295,7 @@ func TestIntent_IsValid(t *testing.T) {
 		{
 			name: "valid intent",
 			intent: Intent{
-				ID:        "20260119-153412-test",
+				ID:        "test-20260119-153412",
 				Title:     "Test Intent",
 				Status:    StatusInbox,
 				CreatedAt: now,
@@ -437,7 +437,7 @@ func TestValidate_AllStatusValues(t *testing.T) {
 
 	for _, status := range statuses {
 		intent := Intent{
-			ID:        "20260119-153412-test",
+			ID:        "test-20260119-153412",
 			Title:     "Test Intent",
 			Status:    status,
 			CreatedAt: now,
@@ -458,7 +458,7 @@ func TestValidate_AllTypeValues(t *testing.T) {
 
 	for _, typ := range types {
 		intent := Intent{
-			ID:        "20260119-153412-test",
+			ID:        "test-20260119-153412",
 			Title:     "Test Intent",
 			Status:    StatusInbox,
 			Type:      typ,

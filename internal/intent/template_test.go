@@ -16,7 +16,7 @@ func TestRenderTemplate(t *testing.T) {
 		{
 			name: "basic template with all fields",
 			data: TemplateData{
-				ID:        "20260119-153412-test-intent",
+				ID:        "test-intent-20260119-153412",
 				Title:     "Test Intent",
 				Type:      "feature",
 				Project:   "camp",
@@ -26,7 +26,7 @@ func TestRenderTemplate(t *testing.T) {
 			wantErr: false,
 			checks: []func(t *testing.T, output string){
 				func(t *testing.T, output string) {
-					if !strings.Contains(output, "id: 20260119-153412-test-intent") {
+					if !strings.Contains(output, "id: test-intent-20260119-153412") {
 						t.Error("missing ID in output")
 					}
 				},
@@ -95,7 +95,7 @@ func TestRenderTemplate(t *testing.T) {
 		{
 			name: "empty optional fields",
 			data: TemplateData{
-				ID:        "20260119-153412-minimal",
+				ID:        "minimal-20260119-153412",
 				Title:     "Minimal Intent",
 				Type:      "",
 				Project:   "",
@@ -105,7 +105,7 @@ func TestRenderTemplate(t *testing.T) {
 			wantErr: false,
 			checks: []func(t *testing.T, output string){
 				func(t *testing.T, output string) {
-					if !strings.Contains(output, "id: 20260119-153412-minimal") {
+					if !strings.Contains(output, "id: minimal-20260119-153412") {
 						t.Error("missing ID in output")
 					}
 				},
@@ -125,7 +125,7 @@ func TestRenderTemplate(t *testing.T) {
 		{
 			name: "title with quotes",
 			data: TemplateData{
-				ID:        "20260119-153412-quotes",
+				ID:        "quotes-20260119-153412",
 				Title:     `Fix "login" issue`,
 				Type:      "bug",
 				CreatedAt: "2026-01-19",
@@ -142,7 +142,7 @@ func TestRenderTemplate(t *testing.T) {
 		{
 			name: "title with apostrophe",
 			data: TemplateData{
-				ID:        "20260119-153412-apostrophe",
+				ID:        "apostrophe-20260119-153412",
 				Title:     "Don't forget this",
 				Type:      "idea",
 				CreatedAt: "2026-01-19",
@@ -159,7 +159,7 @@ func TestRenderTemplate(t *testing.T) {
 		{
 			name: "title with colon",
 			data: TemplateData{
-				ID:        "20260119-153412-colon",
+				ID:        "colon-20260119-153412",
 				Title:     "Fix: Login timeout",
 				Type:      "bug",
 				CreatedAt: "2026-01-19",
@@ -176,7 +176,7 @@ func TestRenderTemplate(t *testing.T) {
 		{
 			name: "unicode title",
 			data: TemplateData{
-				ID:        "20260119-153412-unicode",
+				ID:        "unicode-20260119-153412",
 				Title:     "研究 OAuth2 providers",
 				Type:      "research",
 				CreatedAt: "2026-01-19",
@@ -193,7 +193,7 @@ func TestRenderTemplate(t *testing.T) {
 		{
 			name: "emoji in title",
 			data: TemplateData{
-				ID:        "20260119-153412-emoji",
+				ID:        "emoji-20260119-153412",
 				Title:     "Add 🎉 celebration feature",
 				Type:      "feature",
 				CreatedAt: "2026-01-19",
@@ -230,7 +230,7 @@ func TestRenderTemplate(t *testing.T) {
 
 func TestRenderTemplate_ValidFrontmatter(t *testing.T) {
 	data := TemplateData{
-		ID:        "20260119-153412-test",
+		ID:        "test-20260119-153412",
 		Title:     "Test Intent",
 		Type:      "feature",
 		Project:   "camp",
@@ -307,7 +307,7 @@ func TestFormatCreatedAt(t *testing.T) {
 
 func TestNewTemplateData(t *testing.T) {
 	intent := &Intent{
-		ID:        "20260119-153412-test",
+		ID:        "test-20260119-153412",
 		Title:     "Test Intent",
 		Type:      TypeFeature,
 		Project:   "camp",
@@ -342,12 +342,12 @@ func TestNewTemplateDataFromInput(t *testing.T) {
 
 	data := NewTemplateDataFromInput("Test Intent", "feature", "camp", "lance", "Test body content", ts)
 
-	// ID should be generated from title and timestamp
-	if !strings.HasPrefix(data.ID, "20260119-153412-") {
-		t.Errorf("ID should start with timestamp prefix, got %q", data.ID)
+	// ID should be generated from title and timestamp (format: slug-YYYYMMDD-HHMMSS)
+	if !strings.HasSuffix(data.ID, "-20260119-153412") {
+		t.Errorf("ID should end with timestamp suffix, got %q", data.ID)
 	}
-	if !strings.Contains(data.ID, "test-intent") {
-		t.Errorf("ID should contain slugified title, got %q", data.ID)
+	if !strings.HasPrefix(data.ID, "test-intent-") {
+		t.Errorf("ID should start with slugified title, got %q", data.ID)
 	}
 	if data.Title != "Test Intent" {
 		t.Errorf("Title = %q, want %q", data.Title, "Test Intent")

@@ -18,7 +18,7 @@ func TestParseIntent(t *testing.T) {
 		{
 			name: "valid intent with all fields",
 			content: `---
-id: 20260119-153412-test-intent
+id: test-intent-20260119-153412
 title: Test Intent
 type: feature
 project: test-project
@@ -31,9 +31,9 @@ tags:
   - test
   - example
 blocked_by:
-  - 20260118-000000-blocker
+  - blocker-20260118-000000
 depends_on:
-  - 20260117-000000-dependency
+  - dependency-20260117-000000
 promotion_criteria: >
   All tests must pass.
 ---
@@ -44,8 +44,8 @@ Body content here.
 `,
 			wantErr: nil,
 			checks: func(t *testing.T, intent *Intent) {
-				if intent.ID != "20260119-153412-test-intent" {
-					t.Errorf("ID = %q, want %q", intent.ID, "20260119-153412-test-intent")
+				if intent.ID != "test-intent-20260119-153412" {
+					t.Errorf("ID = %q, want %q", intent.ID, "test-intent-20260119-153412")
 				}
 				if intent.Title != "Test Intent" {
 					t.Errorf("Title = %q, want %q", intent.Title, "Test Intent")
@@ -88,7 +88,7 @@ Body content here.
 		{
 			name: "valid intent with required fields only",
 			content: `---
-id: 20260119-153412-minimal
+id: minimal-20260119-153412
 title: Minimal Intent
 status: inbox
 created_at: 2026-01-19
@@ -98,8 +98,8 @@ Body.
 `,
 			wantErr: nil,
 			checks: func(t *testing.T, intent *Intent) {
-				if intent.ID != "20260119-153412-minimal" {
-					t.Errorf("ID = %q, want %q", intent.ID, "20260119-153412-minimal")
+				if intent.ID != "minimal-20260119-153412" {
+					t.Errorf("ID = %q, want %q", intent.ID, "minimal-20260119-153412")
 				}
 				if intent.Type != "" {
 					t.Errorf("Type should be empty, got %q", intent.Type)
@@ -112,7 +112,7 @@ Body.
 		{
 			name: "valid intent with empty body",
 			content: `---
-id: 20260119-153412-no-body
+id: no-body-20260119-153412
 title: No Body
 status: inbox
 created_at: 2026-01-19
@@ -128,7 +128,7 @@ created_at: 2026-01-19
 		{
 			name: "valid intent with multiline body",
 			content: `---
-id: 20260119-153412-multiline
+id: multiline-20260119-153412
 title: Multiline Body
 status: inbox
 created_at: 2026-01-19
@@ -251,7 +251,7 @@ body`,
 
 func TestParseIntentFromFile(t *testing.T) {
 	content := `---
-id: 20260119-153412-test
+id: test-20260119-153412
 title: Test Intent
 status: inbox
 created_at: 2026-01-19
@@ -259,7 +259,7 @@ created_at: 2026-01-19
 
 Body.
 `
-	path := "/intents/inbox/20260119-153412-test.md"
+	path := "/intents/inbox/test-20260119-153412.md"
 
 	intent, err := ParseIntentFromFile(path, []byte(content))
 	if err != nil {
@@ -269,8 +269,8 @@ Body.
 	if intent.Path != path {
 		t.Errorf("Path = %q, want %q", intent.Path, path)
 	}
-	if intent.ID != "20260119-153412-test" {
-		t.Errorf("ID = %q, want %q", intent.ID, "20260119-153412-test")
+	if intent.ID != "test-20260119-153412" {
+		t.Errorf("ID = %q, want %q", intent.ID, "test-20260119-153412")
 	}
 }
 
@@ -283,7 +283,7 @@ func TestSerializeIntent(t *testing.T) {
 		{
 			name: "full intent",
 			intent: &Intent{
-				ID:        "20260119-153412-test",
+				ID:        "test-20260119-153412",
 				Title:     "Test Intent",
 				Status:    StatusInbox,
 				Type:      TypeFeature,
@@ -296,7 +296,7 @@ func TestSerializeIntent(t *testing.T) {
 				if !strings.HasPrefix(s, "---\n") {
 					t.Error("should start with ---")
 				}
-				if !strings.Contains(s, "id: 20260119-153412-test") {
+				if !strings.Contains(s, "id: test-20260119-153412") {
 					t.Error("should contain id")
 				}
 				if !strings.Contains(s, "title: Test Intent") {
@@ -316,7 +316,7 @@ func TestSerializeIntent(t *testing.T) {
 		{
 			name: "intent with empty content",
 			intent: &Intent{
-				ID:        "20260119-153412-empty",
+				ID:        "empty-20260119-153412",
 				Title:     "Empty Body",
 				Status:    StatusInbox,
 				CreatedAt: time.Date(2026, 1, 19, 0, 0, 0, 0, time.UTC),
@@ -324,7 +324,7 @@ func TestSerializeIntent(t *testing.T) {
 			},
 			checks: func(t *testing.T, data []byte) {
 				s := string(data)
-				if !strings.Contains(s, "id: 20260119-153412-empty") {
+				if !strings.Contains(s, "id: empty-20260119-153412") {
 					t.Error("should contain id")
 				}
 				// Should not have extra newlines for empty body
@@ -336,7 +336,7 @@ func TestSerializeIntent(t *testing.T) {
 		{
 			name: "optional fields omitted",
 			intent: &Intent{
-				ID:        "20260119-153412-minimal",
+				ID:        "minimal-20260119-153412",
 				Title:     "Minimal",
 				Status:    StatusInbox,
 				CreatedAt: time.Date(2026, 1, 19, 0, 0, 0, 0, time.UTC),
@@ -369,7 +369,7 @@ func TestSerializeIntent(t *testing.T) {
 
 func TestSerializeIntent_Roundtrip(t *testing.T) {
 	original := &Intent{
-		ID:        "20260119-153412-roundtrip",
+		ID:        "roundtrip-20260119-153412",
 		Title:     "Roundtrip Test",
 		Status:    StatusActive,
 		Type:      TypeFeature,

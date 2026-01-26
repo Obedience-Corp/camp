@@ -11,7 +11,7 @@ import (
 func TestIntent_YAMLMarshaling(t *testing.T) {
 	createdAt := time.Date(2026, 1, 19, 15, 34, 12, 0, time.UTC)
 	intent := &Intent{
-		ID:        "20260119-153412-test-intent",
+		ID:        "test-intent-20260119-153412",
 		Title:     "Test Intent",
 		Status:    StatusInbox,
 		Type:      TypeFeature,
@@ -19,7 +19,7 @@ func TestIntent_YAMLMarshaling(t *testing.T) {
 		Horizon:   HorizonLater,
 		CreatedAt: createdAt,
 		Tags:      []string{"test", "example"},
-		BlockedBy: []string{"20260118-000000-blocker"},
+		BlockedBy: []string{"blocker-20260118-000000"},
 	}
 
 	// Marshal to YAML
@@ -35,7 +35,7 @@ func TestIntent_YAMLMarshaling(t *testing.T) {
 		name     string
 		contains string
 	}{
-		{"id field", "id: 20260119-153412-test-intent"},
+		{"id field", "id: test-intent-20260119-153412"},
 		{"title field", "title: Test Intent"},
 		{"status field", "status: inbox"},
 		{"type field", "type: feature"},
@@ -86,7 +86,7 @@ func TestIntent_YAMLMarshaling(t *testing.T) {
 
 func TestIntent_OptionalFieldsOmitted(t *testing.T) {
 	intent := &Intent{
-		ID:        "20260119-153412-test",
+		ID:        "test-20260119-153412",
 		Title:     "Test",
 		Status:    StatusInbox,
 		CreatedAt: time.Now(),
@@ -131,7 +131,7 @@ func TestIntent_OptionalFieldsOmitted(t *testing.T) {
 
 func TestIntent_RuntimeFieldsNotSerialized(t *testing.T) {
 	intent := &Intent{
-		ID:        "20260119-153412-test",
+		ID:        "test-20260119-153412",
 		Title:     "Test",
 		Status:    StatusInbox,
 		CreatedAt: time.Now(),
@@ -236,7 +236,7 @@ func TestHorizon_String(t *testing.T) {
 func TestIntent_UnmarshalFromFrontmatter(t *testing.T) {
 	// Test unmarshaling from a typical frontmatter string
 	frontmatter := `
-id: 20260119-153412-add-dark-mode
+id: add-dark-mode-20260119-153412
 title: Add dark mode toggle
 type: feature
 project: guild-chat
@@ -248,9 +248,9 @@ priority: medium
 horizon: later
 
 blocked_by:
-  - 20260118-000000-theme-system
+  - theme-system-20260118-000000
 depends_on:
-  - 20260117-000000-settings-page
+  - settings-page-20260117-000000
 
 promotion_criteria: >
   Theme system must be implemented first.
@@ -263,8 +263,8 @@ promotion_criteria: >
 	}
 
 	// Verify all fields parsed correctly
-	if intent.ID != "20260119-153412-add-dark-mode" {
-		t.Errorf("ID = %q, want %q", intent.ID, "20260119-153412-add-dark-mode")
+	if intent.ID != "add-dark-mode-20260119-153412" {
+		t.Errorf("ID = %q, want %q", intent.ID, "add-dark-mode-20260119-153412")
 	}
 	if intent.Title != "Add dark mode toggle" {
 		t.Errorf("Title = %q, want %q", intent.Title, "Add dark mode toggle")

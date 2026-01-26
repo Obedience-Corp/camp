@@ -1209,10 +1209,10 @@ func TestIntentService_CreateDirect_UseDefaultTimestamp(t *testing.T) {
 		t.Fatalf("CreateDirect() error = %v", err)
 	}
 
-	// Verify a timestamp was generated (ID should start with today's date)
+	// Verify a timestamp was generated (ID should contain today's date)
 	today := time.Now().Format("20060102")
-	if !strings.HasPrefix(intent.ID, today) {
-		t.Errorf("ID should start with today's date %q, got %q", today, intent.ID)
+	if !strings.Contains(intent.ID, today) {
+		t.Errorf("ID should contain today's date %q, got %q", today, intent.ID)
 	}
 }
 

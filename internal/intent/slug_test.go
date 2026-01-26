@@ -97,12 +97,12 @@ func TestGenerateID(t *testing.T) {
 		title string
 		want  string
 	}{
-		{"normal title", "Add dark mode toggle", "20260119-153412-add-dark-mode-toggle"},
+		{"normal title", "Add dark mode toggle", "add-dark-mode-toggle-20260119-153412"},
 		{"empty title", "", "20260119-153412"},
-		{"special chars", "Fix: bug!", "20260119-153412-fix-bug"},
-		{"unicode", "研究 OAuth2", "20260119-153412-oauth2"},
-		{"emoji", "🎉 celebration", "20260119-153412-celebration"},
-		{"long title", "one two three four five six seven", "20260119-153412-one-two-three-four-five"},
+		{"special chars", "Fix: bug!", "fix-bug-20260119-153412"},
+		{"unicode", "研究 OAuth2", "oauth2-20260119-153412"},
+		{"emoji", "🎉 celebration", "celebration-20260119-153412"},
+		{"long title", "one two three four five six seven", "one-two-three-four-five-20260119-153412"},
 	}
 
 	for _, tt := range tests {
@@ -126,17 +126,17 @@ func TestGenerateID_DifferentTimestamps(t *testing.T) {
 		{
 			"midnight",
 			time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
-			"20260101-000000-test-title",
+			"test-title-20260101-000000",
 		},
 		{
 			"noon",
 			time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC),
-			"20260615-120000-test-title",
+			"test-title-20260615-120000",
 		},
 		{
 			"end of day",
 			time.Date(2026, 12, 31, 23, 59, 59, 0, time.UTC),
-			"20261231-235959-test-title",
+			"test-title-20261231-235959",
 		},
 	}
 

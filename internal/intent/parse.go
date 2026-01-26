@@ -24,7 +24,7 @@ var delimiter = []byte("---")
 // Expected format:
 //
 //	---
-//	id: 20260119-153412-example
+//	id: example-20260119-153412
 //	title: Example Intent
 //	status: inbox
 //	created_at: 2026-01-19
