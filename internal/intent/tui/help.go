@@ -59,7 +59,7 @@ type HelpOverlay struct {
 // NewHelpOverlay creates a new help overlay with the given dimensions.
 func NewHelpOverlay(width, height int) HelpOverlay {
 	// Create viewport with padding
-	vpWidth := width - 6  // Account for border and padding
+	vpWidth := width - 6 // Account for border and padding
 	vpHeight := height - 6
 	if vpWidth < 40 {
 		vpWidth = 40

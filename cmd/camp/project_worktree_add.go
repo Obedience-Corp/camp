@@ -15,10 +15,10 @@ import (
 )
 
 var (
-	wtAddProject   string
-	wtAddBranch    string
-	wtAddNewBranch bool
-	wtAddTrack     string
+	wtAddProject    string
+	wtAddBranch     string
+	wtAddStartPoint string
+	wtAddTrack      string
 )
 
 var projectWorktreeAddCmd = &cobra.Command{
@@ -31,13 +31,18 @@ to specify explicitly.
 
 The worktree will be created at: projects/worktrees/<project>/<name>/
 
+By default, creates a new branch with the worktree name based on the current branch.
+Use --branch to checkout an existing branch instead.
+
 Examples:
-  # From within a project (auto-detect)
-  cd projects/my-api
+  # Create worktree with new branch based on current branch (default)
   camp project worktree add feature-auth
 
-  # Create with new branch
-  camp project worktree add experiment --new-branch
+  # Create worktree with new branch based on main
+  camp project worktree add experiment --start-point main
+
+  # Checkout existing branch (instead of creating new)
+  camp project worktree add hotfix --branch hotfix-123
 
   # Track a remote branch
   camp project worktree add pr-review --track origin/feature-xyz
@@ -53,12 +58,12 @@ func init() {
 
 	projectWorktreeAddCmd.Flags().StringVarP(&wtAddProject, "project", "p", "",
 		"Project name (auto-detected from cwd if not specified)")
-	projectWorktreeAddCmd.Flags().StringVarP(&wtAddBranch, "branch", "b", "main",
-		"Existing branch to checkout")
-	projectWorktreeAddCmd.Flags().BoolVarP(&wtAddNewBranch, "new-branch", "B", false,
-		"Create new branch with worktree name")
+	projectWorktreeAddCmd.Flags().StringVarP(&wtAddBranch, "branch", "b", "",
+		"Checkout existing branch instead of creating new one")
+	projectWorktreeAddCmd.Flags().StringVarP(&wtAddStartPoint, "start-point", "s", "",
+		"Base branch/commit for new branch (default: current branch)")
 	projectWorktreeAddCmd.Flags().StringVarP(&wtAddTrack, "track", "t", "",
-		"Remote branch to track (implies --new-branch)")
+		"Remote branch to track (creates new local tracking branch)")
 }
 
 func runProjectWorktreeAdd(cmd *cobra.Command, args []string) error {
@@ -92,18 +97,42 @@ func runProjectWorktreeAdd(cmd *cobra.Command, args []string) error {
 	resolver := paths.NewResolver(campRoot, cfg.Paths())
 	creator := worktree.NewCreator(resolver, cfg)
 
-	// Build options
+	// Build options based on new semantics:
+	// - Default: create new branch with worktree name, based on current branch
+	// - --branch: checkout existing branch
+	// - --start-point: specify base for new branch
+	// - --track: track remote branch
 	opts := &worktree.CreateOptions{
 		Project:     projectName,
 		Name:        worktreeName,
-		Branch:      wtAddBranch,
-		NewBranch:   wtAddNewBranch,
 		TrackRemote: wtAddTrack,
 	}
 
-	// Track implies new branch
-	if opts.TrackRemote != "" {
+	if wtAddBranch != "" {
+		// Explicit existing branch requested
+		opts.Branch = wtAddBranch
+		opts.NewBranch = false
+	} else if wtAddTrack != "" {
+		// Track remote branch (handled by TrackRemote)
+		opts.NewBranch = false
+	} else {
+		// Default: create new branch based on current branch
 		opts.NewBranch = true
+		opts.Branch = worktreeName
+
+		// Determine start point
+		if wtAddStartPoint != "" {
+			opts.StartPoint = wtAddStartPoint
+		} else {
+			// Get current branch as default start point
+			projectPath := resolver.Project(projectName)
+			git := worktree.NewGitWorktree(projectPath)
+			currentBranch, err := git.CurrentBranch(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to detect current branch: %w", err)
+			}
+			opts.StartPoint = currentBranch
+		}
 	}
 
 	// Execute creation

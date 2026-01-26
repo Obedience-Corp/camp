@@ -12,8 +12,9 @@ import (
 type CreateOptions struct {
 	Project     string // Project name from campaign
 	Name        string // Worktree directory name
-	Branch      string // Branch to checkout (default: main)
+	Branch      string // Branch to checkout or create
 	NewBranch   bool   // Create new branch with worktree name
+	StartPoint  string // Base branch/commit for new branch (defaults to current branch)
 	TrackRemote string // Remote branch to track
 }
 
@@ -79,17 +80,21 @@ func (c *Creator) Create(ctx context.Context, opts *CreateOptions) (*CreateResul
 		}
 		branch = opts.TrackRemote
 	} else if opts.NewBranch {
-		// Create new branch
-		if err := git.Add(ctx, wtPath, opts.Name, true); err != nil {
+		// Create new branch based on start point (or current branch if not specified)
+		branchName := opts.Branch
+		if branchName == "" {
+			branchName = opts.Name
+		}
+		if err := git.Add(ctx, wtPath, branchName, true, opts.StartPoint); err != nil {
 			return nil, err
 		}
-		branch = opts.Name
+		branch = branchName
 	} else {
 		// Use existing branch
 		if !git.BranchExists(ctx, opts.Branch) {
 			return nil, BranchNotFoundError(opts.Project, opts.Branch)
 		}
-		if err := git.Add(ctx, wtPath, opts.Branch, false); err != nil {
+		if err := git.Add(ctx, wtPath, opts.Branch, false, ""); err != nil {
 			return nil, err
 		}
 		branch = opts.Branch
