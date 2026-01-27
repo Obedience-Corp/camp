@@ -1,88 +1,170 @@
 package state
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
-
-	"gopkg.in/yaml.v3"
 )
 
-// StateFile is the name of the state file in .campaign/
-const StateFile = "state.yaml"
+const (
+	// cacheDir is the directory under campaign root where cache files are stored.
+	cacheDir = ".campaign/cache"
+	// stateFile is the name of the state file.
+	stateFile = "state.jsonl"
+	// maxHistoryEntries is the maximum number of navigation entries to keep.
+	maxHistoryEntries = 5
+)
 
-// State represents the campaign navigation state.
-type State struct {
-	LastLocation   string    `yaml:"last_location,omitempty"`
-	LastNavigation time.Time `yaml:"last_navigation,omitempty"`
+// NavigationEntry represents a single navigation history entry.
+type NavigationEntry struct {
+	Location string    `json:"location"`
+	Time     time.Time `json:"ts"`
 }
 
 // StatePath returns the path to the state file for a given campaign root.
 func StatePath(campaignRoot string) string {
-	return filepath.Join(campaignRoot, ".campaign", StateFile)
+	return filepath.Join(campaignRoot, cacheDir, stateFile)
 }
 
-// LoadState loads the navigation state from the campaign root.
-// Returns an empty State if the file doesn't exist (no error).
+// LoadHistory loads all navigation entries from the state file.
+// Returns empty slice if the file doesn't exist (no error).
 // Returns error only for actual I/O or parsing problems.
-func LoadState(ctx context.Context, campaignRoot string) (*State, error) {
+func LoadHistory(ctx context.Context, campaignRoot string) ([]NavigationEntry, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
 
 	stateFile := StatePath(campaignRoot)
-	data, err := os.ReadFile(stateFile)
+	file, err := os.Open(stateFile)
 	if err != nil {
 		if os.IsNotExist(err) {
-			// No state file yet - return empty state
-			return &State{}, nil
+			return []NavigationEntry{}, nil
 		}
-		// Other errors (permissions, etc.) - return as-is
-		return nil, fmt.Errorf("failed to read state file %s: %w", stateFile, err)
+		return nil, fmt.Errorf("failed to open state file %s: %w", stateFile, err)
+	}
+	defer file.Close()
+
+	var entries []NavigationEntry
+	scanner := bufio.NewScanner(file)
+	lineNum := 0
+	for scanner.Scan() {
+		lineNum++
+		line := scanner.Text()
+		if line == "" {
+			continue
+		}
+		var entry NavigationEntry
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			return nil, fmt.Errorf("failed to parse line %d in state file: %w", lineNum, err)
+		}
+		entries = append(entries, entry)
 	}
 
-	var state State
-	if err := yaml.Unmarshal(data, &state); err != nil {
-		return nil, fmt.Errorf("failed to parse state file %s: %w", stateFile, err)
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read state file: %w", err)
 	}
 
-	return &state, nil
+	return entries, nil
 }
 
-// SaveState saves the navigation state to the campaign root.
-// Creates .campaign/ directory if it doesn't exist.
-func SaveState(ctx context.Context, campaignRoot string, state *State) error {
+// SaveEntry appends a navigation entry to the state file.
+// If the file exceeds maxHistoryEntries, it truncates to the last maxHistoryEntries.
+func SaveEntry(ctx context.Context, campaignRoot string, entry NavigationEntry) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
 
-	// Update the navigation timestamp
-	state.LastNavigation = time.Now()
+	stateFilePath := StatePath(campaignRoot)
+	stateDir := filepath.Dir(stateFilePath)
 
-	stateFile := StatePath(campaignRoot)
-	stateDir := filepath.Dir(stateFile)
-
-	// Ensure .campaign/ directory exists
+	// Ensure cache directory exists
 	if err := os.MkdirAll(stateDir, 0755); err != nil {
-		return fmt.Errorf("failed to create campaign directory: %w", err)
+		return fmt.Errorf("failed to create cache directory: %w", err)
 	}
 
-	data, err := yaml.Marshal(state)
+	// Load existing entries
+	entries, err := LoadHistory(ctx, campaignRoot)
 	if err != nil {
-		return fmt.Errorf("failed to marshal state: %w", err)
+		// If we can't load, start fresh
+		entries = []NavigationEntry{}
 	}
 
-	if err := os.WriteFile(stateFile, data, 0644); err != nil {
-		return fmt.Errorf("failed to write state file %s: %w", stateFile, err)
+	// Append new entry
+	entries = append(entries, entry)
+
+	// Truncate to last maxHistoryEntries
+	if len(entries) > maxHistoryEntries {
+		entries = entries[len(entries)-maxHistoryEntries:]
+	}
+
+	// Write all entries back
+	file, err := os.Create(stateFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to create state file: %w", err)
+	}
+	defer file.Close()
+
+	for _, e := range entries {
+		data, err := json.Marshal(e)
+		if err != nil {
+			return fmt.Errorf("failed to marshal entry: %w", err)
+		}
+		if _, err := file.Write(data); err != nil {
+			return fmt.Errorf("failed to write entry: %w", err)
+		}
+		if _, err := file.WriteString("\n"); err != nil {
+			return fmt.Errorf("failed to write newline: %w", err)
+		}
 	}
 
 	return nil
 }
 
-// SetLastLocation updates the last location for a campaign.
-// This is a convenience function that loads current state, updates location, and saves.
+// GetLastN returns the last N navigation entries, most recent last.
+// Returns fewer entries if history has less than N entries.
+func GetLastN(ctx context.Context, campaignRoot string, n int) ([]NavigationEntry, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	entries, err := LoadHistory(ctx, campaignRoot)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(entries) <= n {
+		return entries, nil
+	}
+
+	return entries[len(entries)-n:], nil
+}
+
+// GetLastLocation retrieves the most recent location from navigation history.
+// Returns empty string if no location has been saved yet.
+// Returns error only for I/O or parsing problems, not missing state.
+func GetLastLocation(ctx context.Context, campaignRoot string) (string, error) {
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+
+	entries, err := LoadHistory(ctx, campaignRoot)
+	if err != nil {
+		return "", err
+	}
+
+	if len(entries) == 0 {
+		return "", nil
+	}
+
+	return entries[len(entries)-1].Location, nil
+}
+
+// SetLastLocation saves a new location to the navigation history.
+// Validates that the location exists and is a directory.
 func SetLastLocation(ctx context.Context, campaignRoot, location string) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
@@ -93,29 +175,12 @@ func SetLastLocation(ctx context.Context, campaignRoot, location string) error {
 		return fmt.Errorf("invalid location: %s does not exist or is not a directory", location)
 	}
 
-	state, err := LoadState(ctx, campaignRoot)
-	if err != nil {
-		return err
+	entry := NavigationEntry{
+		Location: location,
+		Time:     time.Now(),
 	}
 
-	state.LastLocation = location
-	return SaveState(ctx, campaignRoot, state)
-}
-
-// GetLastLocation retrieves the last location from campaign state.
-// Returns empty string if no location has been saved yet.
-// Returns error only for I/O or parsing problems, not missing state.
-func GetLastLocation(ctx context.Context, campaignRoot string) (string, error) {
-	if ctx.Err() != nil {
-		return "", ctx.Err()
-	}
-
-	state, err := LoadState(ctx, campaignRoot)
-	if err != nil {
-		return "", err
-	}
-
-	return state.LastLocation, nil
+	return SaveEntry(ctx, campaignRoot, entry)
 }
 
 // ClearState removes the state file, resetting navigation history.
@@ -125,8 +190,8 @@ func ClearState(ctx context.Context, campaignRoot string) error {
 		return ctx.Err()
 	}
 
-	stateFile := StatePath(campaignRoot)
-	if err := os.Remove(stateFile); err != nil {
+	stateFilePath := StatePath(campaignRoot)
+	if err := os.Remove(stateFilePath); err != nil {
 		if os.IsNotExist(err) {
 			return nil // Idempotent - no state to clear
 		}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/obediencecorp/camp/internal/config"
@@ -76,6 +77,7 @@ Checks for:
 - Stale entries (paths that don't exist)
 - Missing .campaign/ directories
 - Campaigns in /tmp/ directories
+- Duplicate entries (multiple IDs pointing to the same path)
 
 Examples:
   camp registry check   Show any registry issues`,
@@ -112,9 +114,41 @@ func runRegistryPrune(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Find stale entries
+	// Find duplicate path entries (multiple IDs pointing to same path)
+	pathEntries := make(map[string][]config.RegisteredCampaign)
+	for _, c := range reg.ListAll() {
+		pathEntries[c.Path] = append(pathEntries[c.Path], c)
+	}
+
+	var duplicates []config.RegisteredCampaign
+	for _, entries := range pathEntries {
+		if len(entries) <= 1 {
+			continue
+		}
+		// Sort by last_access descending (most recent first)
+		sort.Slice(entries, func(i, j int) bool {
+			return entries[i].LastAccess.After(entries[j].LastAccess)
+		})
+		// Mark all but first (most recent) as duplicates
+		for i := 1; i < len(entries); i++ {
+			dup := entries[i]
+			dup.Name = fmt.Sprintf("duplicate path (keeping %s)", entries[0].ID[:8])
+			duplicates = append(duplicates, dup)
+		}
+	}
+
+	// Find stale entries (skip entries already marked as duplicates)
+	dupIDs := make(map[string]bool)
+	for _, d := range duplicates {
+		dupIDs[d.ID] = true
+	}
+
 	var stale []config.RegisteredCampaign
 	for _, c := range reg.ListAll() {
+		if dupIDs[c.ID] {
+			continue // Already marked as duplicate
+		}
+
 		isStale := false
 		reason := ""
 
@@ -143,14 +177,17 @@ func runRegistryPrune(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if len(stale) == 0 {
+	// Combine duplicates and stale entries
+	toRemove := append(duplicates, stale...)
+
+	if len(toRemove) == 0 {
 		fmt.Printf("%s Registry is clean (%d campaigns)\n", ui.SuccessIcon(), reg.Len())
 		return nil
 	}
 
 	// Show what will be removed
-	fmt.Printf("%s Found %d stale entries:\n", ui.WarningIcon(), len(stale))
-	for _, c := range stale {
+	fmt.Printf("%s Found %d entries to remove:\n", ui.WarningIcon(), len(toRemove))
+	for _, c := range toRemove {
 		fmt.Printf("  %s %s (%s)\n", ui.Dim(c.ID[:8]), ui.Value(c.Path), ui.Dim(c.Name))
 	}
 
@@ -170,8 +207,8 @@ func runRegistryPrune(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Remove stale entries
-	for _, c := range stale {
+	// Remove entries
+	for _, c := range toRemove {
 		reg.UnregisterByID(c.ID)
 	}
 
@@ -180,7 +217,7 @@ func runRegistryPrune(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to save registry: %w", err)
 	}
 
-	fmt.Printf("%s Removed %d stale entries\n", ui.SuccessIcon(), len(stale))
+	fmt.Printf("%s Removed %d entries\n", ui.SuccessIcon(), len(toRemove))
 	return nil
 }
 
@@ -302,6 +339,19 @@ func runRegistryCheck(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Check for duplicate paths
+	pathEntries := make(map[string][]config.RegisteredCampaign)
+	for _, c := range reg.ListAll() {
+		pathEntries[c.Path] = append(pathEntries[c.Path], c)
+	}
+	dupCount := 0
+	for path, entries := range pathEntries {
+		if len(entries) > 1 {
+			issues = append(issues, fmt.Sprintf("Duplicate: %d entries for path %s", len(entries), path))
+			dupCount += len(entries) - 1
+		}
+	}
+
 	if len(issues) == 0 {
 		fmt.Printf("%s Registry is healthy (%d campaigns)\n", ui.SuccessIcon(), reg.Len())
 		return nil
@@ -313,8 +363,8 @@ func runRegistryCheck(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println()
-	if staleCount > 0 {
-		fmt.Printf("Run %s to remove stale entries\n", ui.Accent("camp registry prune"))
+	if staleCount > 0 || dupCount > 0 {
+		fmt.Printf("Run %s to remove stale/duplicate entries\n", ui.Accent("camp registry prune"))
 	}
 	if tempCount > 0 {
 		fmt.Printf("Run %s to also clean temp entries\n", ui.Accent("camp registry prune --include-temp"))

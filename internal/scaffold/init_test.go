@@ -38,8 +38,9 @@ func TestInit(t *testing.T) {
 		t.Errorf("CampaignRoot = %q, want %q", result.CampaignRoot, campaignDir)
 	}
 
-	// Check directories were created
-	for _, dir := range StandardDirs {
+	// Check key directories were created (based on templates/ structure)
+	expectedDirs := []string{".campaign", "projects", "docs", "ai_docs", "dungeon", "workflow"}
+	for _, dir := range expectedDirs {
 		path := filepath.Join(campaignDir, dir)
 		if _, err := os.Stat(path); os.IsNotExist(err) {
 			t.Errorf("directory %s was not created", dir)
@@ -108,7 +109,7 @@ func TestInit_DryRun(t *testing.T) {
 	os.MkdirAll(campaignDir, 0755)
 
 	ctx := context.Background()
-	result, err := Init(ctx, campaignDir, InitOptions{
+	_, err := Init(ctx, campaignDir, InitOptions{
 		Name:       "dry-run",
 		DryRun:     true,
 		NoRegister: true,
@@ -118,13 +119,9 @@ func TestInit_DryRun(t *testing.T) {
 		t.Fatalf("Init() error = %v", err)
 	}
 
-	// Result should have dirs listed but NOT created
-	if len(result.DirsCreated) == 0 {
-		t.Error("DirsCreated should list directories for dry run")
-	}
-
-	// Check directories were NOT actually created
-	for _, dir := range StandardDirs {
+	// In dry run, scaffold doesn't run so directories should NOT exist
+	expectedDirs := []string{".campaign", "projects", "docs", "ai_docs", "dungeon", "workflow"}
+	for _, dir := range expectedDirs {
 		path := filepath.Join(campaignDir, dir)
 		if _, err := os.Stat(path); err == nil {
 			t.Errorf("directory %s should not exist in dry run", dir)
@@ -264,9 +261,11 @@ func TestInit_SkipsExistingDirs(t *testing.T) {
 	campaignDir := filepath.Join(tmpDir, "partial-campaign")
 	os.MkdirAll(campaignDir, 0755)
 
-	// Pre-create some directories
+	// Pre-create some directories with files in them so scaffold sees them as existing
 	os.MkdirAll(filepath.Join(campaignDir, "projects"), 0755)
+	os.WriteFile(filepath.Join(campaignDir, "projects", "OBEY.md"), []byte("existing"), 0644)
 	os.MkdirAll(filepath.Join(campaignDir, "docs"), 0755)
+	os.WriteFile(filepath.Join(campaignDir, "docs", "OBEY.md"), []byte("existing"), 0644)
 
 	ctx := context.Background()
 	result, err := Init(ctx, campaignDir, InitOptions{Name: "partial", NoRegister: true})
@@ -275,20 +274,22 @@ func TestInit_SkipsExistingDirs(t *testing.T) {
 		t.Fatalf("Init() error = %v", err)
 	}
 
-	// projects and docs should be in skipped
+	// Check that skipped list contains the pre-existing files
+	// Scaffold returns paths relative to dest, but init.go converts to absolute
 	skippedMap := make(map[string]bool)
 	for _, s := range result.Skipped {
 		skippedMap[s] = true
 	}
 
-	projectsPath := filepath.Join(campaignDir, "projects")
-	docsPath := filepath.Join(campaignDir, "docs")
+	// Check for the OBEY.md files that were pre-created
+	projectsOBEY := filepath.Join(campaignDir, "projects", "OBEY.md")
+	docsOBEY := filepath.Join(campaignDir, "docs", "OBEY.md")
 
-	if !skippedMap[projectsPath] {
-		t.Errorf("projects should be in Skipped list")
+	if !skippedMap[projectsOBEY] {
+		t.Errorf("projects/OBEY.md should be in Skipped list, got: %v", result.Skipped)
 	}
-	if !skippedMap[docsPath] {
-		t.Errorf("docs should be in Skipped list")
+	if !skippedMap[docsOBEY] {
+		t.Errorf("docs/OBEY.md should be in Skipped list, got: %v", result.Skipped)
 	}
 }
 

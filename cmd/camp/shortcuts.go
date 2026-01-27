@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/obediencecorp/camp/internal/config"
+	"github.com/obediencecorp/camp/internal/shortcuts"
 	"github.com/obediencecorp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -36,16 +38,20 @@ You can customize shortcuts by editing .campaign/campaign.yaml.`,
 }
 
 var shortcutsAddCmd = &cobra.Command{
-	Use:   "add <project> <name> <path>",
+	Use:   "add [project] [name] [path]",
 	Short: "Add a sub-shortcut to a project",
 	Long: `Add a sub-shortcut to a project for quick directory navigation.
 
 The path is relative to the project root directory.
-Use 'default' as the shortcut name to set the default jump location.`,
-	Example: `  camp shortcuts add festival-methodology default fest/
+Use 'default' as the shortcut name to set the default jump location.
+
+With no arguments, launches an interactive TUI for selecting the project
+and entering shortcut details.`,
+	Example: `  camp shortcuts add                            Interactive TUI mode
+  camp shortcuts add festival-methodology default fest/
   camp shortcuts add festival-methodology cli fest/cmd/fest/
   camp shortcuts add guild-core db db/migrations/`,
-	Args: cobra.ExactArgs(3),
+	Args: cobra.MaximumNArgs(3),
 	RunE: runShortcutsAdd,
 }
 
@@ -72,6 +78,33 @@ If no project is specified, lists all campaign shortcuts.`,
 	RunE: runShortcutsList,
 }
 
+var shortcutsAddJumpCmd = &cobra.Command{
+	Use:   "add-jump [name] [path]",
+	Short: "Add a campaign-level navigation shortcut",
+	Long: `Add a shortcut to .campaign/settings/jumps.yaml for quick navigation.
+
+The path is relative to the campaign root. If no path is provided (or empty),
+the shortcut will be concept-only (used for command expansion).
+
+With no arguments, launches an interactive TUI for entering shortcut details.`,
+	Example: `  camp shortcuts add-jump                          Interactive TUI mode
+  camp shortcuts add-jump api projects/api-service/
+  camp shortcuts add-jump api projects/api-service/ -d "Jump to API service"
+  camp shortcuts add-jump cfg "" -c config -d "Config commands"`,
+	Args: cobra.MaximumNArgs(2),
+	RunE: runShortcutsAddJump,
+}
+
+var shortcutsRemoveJumpCmd = &cobra.Command{
+	Use:     "remove-jump <name>",
+	Short:   "Remove a campaign-level shortcut",
+	Long:    `Remove a shortcut from .campaign/settings/jumps.yaml.`,
+	Example: `  camp shortcuts remove-jump api`,
+	Aliases: []string{"rm-jump"},
+	Args:    cobra.ExactArgs(1),
+	RunE:    runShortcutsRemoveJump,
+}
+
 func init() {
 	rootCmd.AddCommand(shortcutsCmd)
 	shortcutsCmd.GroupID = "navigation"
@@ -80,6 +113,12 @@ func init() {
 	shortcutsCmd.AddCommand(shortcutsAddCmd)
 	shortcutsCmd.AddCommand(shortcutsRemoveCmd)
 	shortcutsCmd.AddCommand(shortcutsListCmd)
+	shortcutsCmd.AddCommand(shortcutsAddJumpCmd)
+	shortcutsCmd.AddCommand(shortcutsRemoveJumpCmd)
+
+	// Flags for add-jump command
+	shortcutsAddJumpCmd.Flags().StringP("description", "d", "", "Help text for the shortcut")
+	shortcutsAddJumpCmd.Flags().StringP("concept", "c", "", "Command group for expansion (e.g., 'project')")
 }
 
 func runShortcuts(cmd *cobra.Command, args []string) error {
@@ -217,14 +256,33 @@ func printAllShortcuts(cfg *config.CampaignConfig, _ string) error {
 // runShortcutsAdd adds a sub-shortcut to a project.
 func runShortcutsAdd(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	projectName := args[0]
-	shortcutName := args[1]
-	shortcutPath := args[2]
 
 	// Load campaign config
 	cfg, root, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
 		return err
+	}
+
+	var projectName, shortcutName, shortcutPath string
+
+	// TUI mode if no args provided
+	if len(args) == 0 {
+		result, err := shortcuts.RunAddSubShortcutTUI(ctx, root)
+		if err != nil {
+			if errors.Is(err, shortcuts.ErrAborted) {
+				return fmt.Errorf("shortcut creation cancelled")
+			}
+			return err
+		}
+		projectName = result.ProjectName
+		shortcutName = result.ShortcutName
+		shortcutPath = result.ShortcutPath
+	} else if len(args) == 3 {
+		projectName = args[0]
+		shortcutName = args[1]
+		shortcutPath = args[2]
+	} else {
+		return fmt.Errorf("expected 0 or 3 arguments, got %d (use TUI mode with no args or provide all 3)", len(args))
 	}
 
 	// Find the project (fuzzy match)
@@ -384,4 +442,150 @@ func findProjectIndex(projects []config.ProjectConfig, name string) int {
 	}
 
 	return -1
+}
+
+// runShortcutsAddJump adds a campaign-level shortcut to jumps.yaml.
+func runShortcutsAddJump(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+
+	// Load campaign config to get root
+	_, root, err := config.LoadCampaignConfigFromCwd(ctx)
+	if err != nil {
+		return err
+	}
+
+	var shortcutName, shortcutPath, description, concept string
+
+	// TUI mode if no args provided
+	if len(args) == 0 {
+		result, err := shortcuts.RunAddJumpTUI(ctx, root)
+		if err != nil {
+			if errors.Is(err, shortcuts.ErrAborted) {
+				return fmt.Errorf("shortcut creation cancelled")
+			}
+			return err
+		}
+		shortcutName = result.Name
+		shortcutPath = result.Path
+		description = result.Description
+		concept = result.Concept
+	} else {
+		shortcutName = args[0]
+		// Get path (optional, empty string if not provided)
+		if len(args) > 1 {
+			shortcutPath = args[1]
+		}
+		// Get flags
+		description, _ = cmd.Flags().GetString("description")
+		concept, _ = cmd.Flags().GetString("concept")
+
+		// Validate: must have path or concept
+		if shortcutPath == "" && concept == "" {
+			return fmt.Errorf("shortcut must have a path or concept (use -c to specify concept)")
+		}
+	}
+
+	// Load jumps config
+	jumps, err := config.LoadJumpsConfig(ctx, root)
+	if err != nil {
+		return fmt.Errorf("failed to load jumps config: %w", err)
+	}
+
+	// Create default jumps config if nil
+	if jumps == nil {
+		defaultJumps := config.DefaultJumpsConfig()
+		jumps = &defaultJumps
+	}
+
+	// Initialize shortcuts map if nil
+	if jumps.Shortcuts == nil {
+		jumps.Shortcuts = make(map[string]config.ShortcutConfig)
+	}
+
+	// Validate path exists if provided
+	if shortcutPath != "" {
+		fullPath := filepath.Join(root, shortcutPath)
+		if stat, err := os.Stat(fullPath); err != nil || !stat.IsDir() {
+			return fmt.Errorf("path does not exist or is not a directory: %s", fullPath)
+		}
+	}
+
+	// Check if shortcut already exists
+	if existing, ok := jumps.Shortcuts[shortcutName]; ok {
+		fmt.Printf("%s Updating shortcut '%s'\n", ui.WarningIcon(), shortcutName)
+		if existing.Path != "" {
+			fmt.Printf("  Old path: %s\n", ui.Dim(existing.Path))
+		}
+		if shortcutPath != "" {
+			fmt.Printf("  New path: %s\n", ui.Value(shortcutPath))
+		}
+	} else {
+		fmt.Printf("%s Adding shortcut '%s'\n", ui.SuccessIcon(), shortcutName)
+	}
+
+	// Create shortcut config
+	sc := config.ShortcutConfig{
+		Path:        shortcutPath,
+		Description: description,
+		Concept:     concept,
+	}
+
+	// Add/update the shortcut
+	jumps.Shortcuts[shortcutName] = sc
+
+	// Save jumps config
+	if err := config.SaveJumpsConfig(ctx, root, jumps); err != nil {
+		return fmt.Errorf("failed to save jumps config: %w", err)
+	}
+
+	// Show usage info
+	fmt.Println()
+	if shortcutPath != "" {
+		fmt.Printf("%s %s %s\n", ui.Label("Navigate:"), ui.Accent("camp go"), ui.Value(shortcutName))
+	}
+	if concept != "" {
+		fmt.Printf("%s %s %s <command>\n", ui.Label("Expand:"), ui.Accent("camp"), ui.Value(shortcutName))
+	}
+
+	return nil
+}
+
+// runShortcutsRemoveJump removes a campaign-level shortcut from jumps.yaml.
+func runShortcutsRemoveJump(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+	shortcutName := args[0]
+
+	// Load campaign config to get root
+	_, root, err := config.LoadCampaignConfigFromCwd(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Load jumps config
+	jumps, err := config.LoadJumpsConfig(ctx, root)
+	if err != nil {
+		return fmt.Errorf("failed to load jumps config: %w", err)
+	}
+
+	// Check if jumps config exists
+	if jumps == nil || jumps.Shortcuts == nil {
+		return fmt.Errorf("no shortcuts configured")
+	}
+
+	// Check if shortcut exists
+	if _, ok := jumps.Shortcuts[shortcutName]; !ok {
+		return fmt.Errorf("shortcut '%s' not found", shortcutName)
+	}
+
+	// Remove the shortcut
+	delete(jumps.Shortcuts, shortcutName)
+
+	// Save jumps config
+	if err := config.SaveJumpsConfig(ctx, root, jumps); err != nil {
+		return fmt.Errorf("failed to save jumps config: %w", err)
+	}
+
+	fmt.Printf("%s Removed shortcut '%s'\n", ui.SuccessIcon(), shortcutName)
+
+	return nil
 }

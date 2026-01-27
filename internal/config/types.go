@@ -35,47 +35,24 @@ type CampaignConfig struct {
 	// Jumps holds the loaded jumps configuration (from .campaign/settings/jumps.yaml).
 	// This field is not serialized to campaign.yaml - it's loaded separately.
 	Jumps *JumpsConfig `yaml:"-"`
-
-	// Legacy fields for migration (will be moved to jumps.yaml if present).
-	// These are only used during loading for backward compatibility.
-	LegacyPaths     CampaignPaths             `yaml:"paths,omitempty"`
-	LegacyShortcuts map[string]ShortcutConfig `yaml:"shortcuts,omitempty"`
 }
 
 // Paths returns the campaign paths configuration.
-// Returns from Jumps if loaded, otherwise returns legacy paths or defaults.
+// Returns from Jumps if loaded, otherwise returns defaults.
 func (c *CampaignConfig) Paths() CampaignPaths {
 	if c.Jumps != nil {
 		return c.Jumps.Paths
-	}
-	if c.LegacyPaths.Projects != "" {
-		return c.LegacyPaths
 	}
 	return DefaultCampaignPaths()
 }
 
 // Shortcuts returns the campaign shortcuts configuration.
-// Returns from Jumps if loaded, otherwise returns legacy shortcuts or defaults.
+// Returns from Jumps if loaded, otherwise returns defaults.
 func (c *CampaignConfig) Shortcuts() map[string]ShortcutConfig {
 	if c.Jumps != nil && c.Jumps.Shortcuts != nil {
 		return c.Jumps.Shortcuts
 	}
-	if c.LegacyShortcuts != nil {
-		return c.LegacyShortcuts
-	}
 	return DefaultNavigationShortcuts()
-}
-
-// HasLegacyConfig returns true if the config has legacy paths or shortcuts
-// that should be migrated to jumps.yaml.
-func (c *CampaignConfig) HasLegacyConfig() bool {
-	return c.LegacyPaths.Projects != "" || len(c.LegacyShortcuts) > 0
-}
-
-// ClearLegacyConfig removes legacy paths and shortcuts after migration.
-func (c *CampaignConfig) ClearLegacyConfig() {
-	c.LegacyPaths = CampaignPaths{}
-	c.LegacyShortcuts = nil
 }
 
 // CampaignPaths defines the directory structure for a campaign.
@@ -259,4 +236,39 @@ func (t CampaignType) Valid() bool {
 // String returns the string representation of the campaign type.
 func (t CampaignType) String() string {
 	return string(t)
+}
+
+// VerificationReport contains results from registry verification.
+type VerificationReport struct {
+	Removed       []RemovedEntry
+	Updated       []UpdatedEntry
+	Added         []AddedEntry
+	TotalVerified int
+}
+
+// HasChanges returns true if any changes were made during verification.
+func (r *VerificationReport) HasChanges() bool {
+	return len(r.Removed) > 0 || len(r.Updated) > 0 || len(r.Added) > 0
+}
+
+// RemovedEntry represents a registry entry that was removed during verification.
+type RemovedEntry struct {
+	ID     string
+	Name   string
+	Path   string
+	Reason string
+}
+
+// UpdatedEntry represents a registry entry that was updated during verification.
+type UpdatedEntry struct {
+	ID      string
+	Path    string
+	Changes []string
+}
+
+// AddedEntry represents a registry entry that was added during verification.
+type AddedEntry struct {
+	ID   string
+	Name string
+	Path string
 }

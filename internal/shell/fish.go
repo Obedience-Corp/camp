@@ -88,6 +88,12 @@ function cint --description "Quick intent capture"
     camp intent add $argv
 end
 
+# Explore intents interactively
+# Usage: cie
+function cie --description "Explore intents interactively"
+    camp intent explore $argv
+end
+
 # Tab completion for camp commands
 complete -c camp -f  # no file completion by default
 

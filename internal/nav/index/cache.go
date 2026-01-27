@@ -2,20 +2,20 @@ package index
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/obediencecorp/camp/internal/config"
-	"gopkg.in/yaml.v3"
 )
 
 const (
 	// cacheDir is the directory under campaign root where cache files are stored.
 	cacheDir = ".campaign/cache"
 	// cacheFile is the name of the navigation index cache file.
-	cacheFile = "nav-index.yaml"
+	cacheFile = "nav-index.json"
 	// cacheMaxAge is the maximum age before cache is considered stale.
 	cacheMaxAge = 24 * time.Hour
 )
@@ -40,8 +40,8 @@ func Save(idx *Index, campaignRoot string) error {
 		return fmt.Errorf("failed to create cache directory: %w", err)
 	}
 
-	// Marshal to YAML
-	data, err := yaml.Marshal(idx)
+	// Marshal to JSON with indentation for readability
+	data, err := json.MarshalIndent(idx, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal index: %w", err)
 	}
@@ -74,7 +74,7 @@ func Load(campaignRoot string) (*Index, error) {
 	}
 
 	var idx Index
-	if err := yaml.Unmarshal(data, &idx); err != nil {
+	if err := json.Unmarshal(data, &idx); err != nil {
 		return nil, fmt.Errorf("failed to parse cache file: %w", err)
 	}
 

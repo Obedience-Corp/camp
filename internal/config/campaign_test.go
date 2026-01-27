@@ -18,13 +18,10 @@ func TestLoadCampaignConfig(t *testing.T) {
 		t.Fatalf("failed to create campaign dir: %v", err)
 	}
 
-	// Legacy config with paths: block (should trigger migration)
 	configContent := `
 name: test-campaign
 type: product
 description: A test campaign
-paths:
-  projects: src/
 `
 	configPath := filepath.Join(campaignDir, CampaignConfigFile)
 	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
@@ -46,18 +43,17 @@ paths:
 	if cfg.Description != "A test campaign" {
 		t.Errorf("Description = %q, want %q", cfg.Description, "A test campaign")
 	}
-	// Custom path should be migrated to jumps.yaml and accessible via Paths()
-	if cfg.Paths().Projects != "src/" {
-		t.Errorf("Paths().Projects = %q, want %q", cfg.Paths().Projects, "src/")
+	// Paths should have defaults from jumps.yaml
+	if cfg.Paths().Projects != "projects/" {
+		t.Errorf("Paths().Projects = %q, want %q", cfg.Paths().Projects, "projects/")
 	}
-	// Default should be applied for missing path
 	if cfg.Paths().Worktrees != "projects/worktrees/" {
-		t.Errorf("Paths().Worktrees = %q, want %q (default)", cfg.Paths().Worktrees, "projects/worktrees/")
+		t.Errorf("Paths().Worktrees = %q, want %q", cfg.Paths().Worktrees, "projects/worktrees/")
 	}
 
-	// Verify jumps.yaml was created (migration)
+	// Verify jumps.yaml was created
 	if !JumpsConfigExists(tmpDir) {
-		t.Error("jumps.yaml should have been created during migration")
+		t.Error("jumps.yaml should have been created")
 	}
 }
 

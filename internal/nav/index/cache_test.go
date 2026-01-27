@@ -10,7 +10,7 @@ import (
 
 func TestCachePath(t *testing.T) {
 	path := CachePath("/test/campaign")
-	expected := "/test/campaign/.campaign/cache/nav-index.yaml"
+	expected := "/test/campaign/.campaign/cache/nav-index.json"
 	if path != expected {
 		t.Errorf("CachePath() = %q, want %q", path, expected)
 	}
@@ -34,7 +34,7 @@ func TestSave(t *testing.T) {
 		t.Error("Cache file was not created")
 	}
 
-	// Verify content is valid YAML
+	// Verify content is valid JSON
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("Failed to read cache file: %v", err)
@@ -120,7 +120,7 @@ func TestLoad_NoCache(t *testing.T) {
 	}
 }
 
-func TestLoad_InvalidYAML(t *testing.T) {
+func TestLoad_InvalidJSON(t *testing.T) {
 	root := t.TempDir()
 	root, _ = filepath.EvalSymlinks(root)
 
@@ -129,14 +129,14 @@ func TestLoad_InvalidYAML(t *testing.T) {
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	cachePath := filepath.Join(cacheDir, "nav-index.yaml")
-	if err := os.WriteFile(cachePath, []byte("invalid: [yaml: {"), 0644); err != nil {
+	cachePath := filepath.Join(cacheDir, "nav-index.json")
+	if err := os.WriteFile(cachePath, []byte("{invalid json"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
 	_, err := Load(root)
 	if err == nil {
-		t.Error("Load() should error on invalid YAML")
+		t.Error("Load() should error on invalid JSON")
 	}
 }
 

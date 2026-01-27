@@ -95,6 +95,12 @@ cint() {
   camp intent add "$@"
 }
 
+# Explore intents interactively
+# Usage: cie
+cie() {
+  camp intent explore "$@"
+}
+
 # Tab completion for camp
 _camp_complete() {
   local cur prev

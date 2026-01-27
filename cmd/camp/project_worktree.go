@@ -26,8 +26,8 @@ Commands:
 Examples:
   # From within a project directory
   cd projects/my-api
-  camp project worktree add feature-auth
-  camp project worktree add experiment --new-branch
+  camp project worktree add feature-auth      # Creates new branch based on current
+  camp project worktree add fix --start-point main  # New branch based on main
   camp project worktree list
   camp project worktree remove feature-auth
 

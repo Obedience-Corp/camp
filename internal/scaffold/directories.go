@@ -1,52 +1,8 @@
 // Package scaffold provides campaign initialization and scaffolding functionality.
 package scaffold
 
-// StandardDirs contains all directories created for a full campaign.
-// Note: festivals/ is NOT included here - it's created via `fest init`.
-var StandardDirs = []string{
-	".campaign",
-	"projects",
-	"ai_docs",
-	"docs",
-	"dungeon",
-	"workflow",
-}
-
-// CampaignSubdirs contains subdirectories within .campaign/
-var CampaignSubdirs = []string{
-	"templates",
-	"agents",
-	"settings",
-}
-
-// ProjectsSubdirs contains subdirectories within projects/
-var ProjectsSubdirs = []string{
-	"worktrees",
-}
-
-// DungeonSubdirs contains subdirectories within dungeon/
-var DungeonSubdirs = []string{
-	"archived",
-}
-
-// WorkflowSubdirs contains subdirectories within workflow/
-var WorkflowSubdirs = []string{
-	"code_reviews",
-	"pipelines",
-	"design",
-	"intents",
-}
-
-// IntentsSubdirs contains subdirectories within workflow/intents/
-var IntentsSubdirs = []string{
-	"inbox",
-	"active",
-	"ready",
-	"done",
-	"killed",
-}
-
 // DirectoryPurposes maps directories to their purpose descriptions.
+// Used for documentation and help text.
 var DirectoryPurposes = map[string]string{
 	"projects":              "Contains all project repositories and worktrees.",
 	"projects/worktrees":    "Git worktrees for parallel development branches.",

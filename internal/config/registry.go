@@ -6,10 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
-
-	"gopkg.in/yaml.v3"
 )
 
 // ErrMultipleMatches is returned when an ID prefix matches multiple campaigns.
@@ -20,7 +19,6 @@ var ErrCampaignNotFound = errors.New("campaign not found")
 
 // LoadRegistry loads the campaign registry from ~/.config/campaign/registry.json.
 // Returns an empty registry if the file doesn't exist.
-// Automatically migrates from YAML format if needed.
 func LoadRegistry(ctx context.Context) (*Registry, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -30,8 +28,7 @@ func LoadRegistry(ctx context.Context) (*Registry, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			// Check for legacy YAML file to migrate
-			return migrateFromYAMLIfNeeded(ctx)
+			return NewRegistry(), nil
 		}
 		return nil, fmt.Errorf("failed to read registry %s: %w", path, err)
 	}
@@ -61,68 +58,6 @@ func LoadRegistry(ctx context.Context) (*Registry, error) {
 	reg.rebuildPathIndex()
 
 	return &reg, nil
-}
-
-// migrateFromYAMLIfNeeded checks for and migrates a legacy YAML registry.
-func migrateFromYAMLIfNeeded(ctx context.Context) (*Registry, error) {
-	legacyPath := LegacyRegistryPath()
-	data, err := os.ReadFile(legacyPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			// No legacy file, return new registry
-			return NewRegistry(), nil
-		}
-		return nil, fmt.Errorf("failed to read legacy registry %s: %w", legacyPath, err)
-	}
-
-	// Parse YAML
-	var legacyReg Registry
-	if err := yaml.Unmarshal(data, &legacyReg); err != nil {
-		return nil, fmt.Errorf("failed to parse legacy registry %s: %w", legacyPath, err)
-	}
-
-	// Initialize and deduplicate
-	if legacyReg.Campaigns == nil {
-		legacyReg.Campaigns = make(map[string]RegisteredCampaign)
-	}
-
-	// Deduplicate: if same path appears with different IDs, keep the most recently accessed
-	pathToID := make(map[string]string)
-	for id, c := range legacyReg.Campaigns {
-		c.ID = id
-		if existingID, exists := pathToID[c.Path]; exists {
-			// Same path with different ID - keep the one with most recent access
-			existing := legacyReg.Campaigns[existingID]
-			if c.LastAccess.After(existing.LastAccess) {
-				// Remove old entry, keep new one
-				delete(legacyReg.Campaigns, existingID)
-				pathToID[c.Path] = id
-			} else {
-				// Keep old entry, remove this one
-				delete(legacyReg.Campaigns, id)
-			}
-		} else {
-			pathToID[c.Path] = id
-		}
-		legacyReg.Campaigns[id] = c
-	}
-
-	// Set version
-	legacyReg.Version = RegistryVersion
-
-	// Build path index
-	legacyReg.rebuildPathIndex()
-
-	// Save as JSON
-	if err := SaveRegistry(ctx, &legacyReg); err != nil {
-		return nil, fmt.Errorf("failed to migrate registry: %w", err)
-	}
-
-	// Rename old file to backup
-	backupPath := legacyPath + ".backup"
-	_ = os.Rename(legacyPath, backupPath) // Ignore error if rename fails
-
-	return &legacyReg, nil
 }
 
 // SaveRegistry saves the campaign registry to ~/.config/campaign/registry.json.
@@ -389,4 +324,132 @@ func (r *Registry) FindByPath(path string) (RegisteredCampaign, bool) {
 		}
 	}
 	return RegisteredCampaign{}, false
+}
+
+// VerifyAndRepair validates all registry entries against their campaign.yaml files
+// and auto-heals any inconsistencies by removing bad entries and creating correct ones.
+func (r *Registry) VerifyAndRepair(ctx context.Context) (*VerificationReport, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	report := &VerificationReport{}
+
+	if r.Campaigns == nil {
+		return report, nil
+	}
+
+	var toRemove []string
+	toAdd := make(map[string]RegisteredCampaign)
+
+	for id, entry := range r.Campaigns {
+		report.TotalVerified++
+
+		// Check path exists
+		if _, err := os.Stat(entry.Path); os.IsNotExist(err) {
+			report.Removed = append(report.Removed, RemovedEntry{
+				ID:     id,
+				Name:   entry.Name,
+				Path:   entry.Path,
+				Reason: "path does not exist",
+			})
+			toRemove = append(toRemove, id)
+			continue
+		}
+
+		// Check campaign.yaml exists
+		configPath := filepath.Join(entry.Path, CampaignDir, CampaignConfigFile)
+		if _, err := os.Stat(configPath); os.IsNotExist(err) {
+			report.Removed = append(report.Removed, RemovedEntry{
+				ID:     id,
+				Name:   entry.Name,
+				Path:   entry.Path,
+				Reason: "no campaign.yaml (not a campaign)",
+			})
+			toRemove = append(toRemove, id)
+			continue
+		}
+
+		// Load campaign.yaml
+		cfg, err := LoadCampaignConfig(ctx, entry.Path)
+		if err != nil {
+			report.Removed = append(report.Removed, RemovedEntry{
+				ID:     id,
+				Name:   entry.Name,
+				Path:   entry.Path,
+				Reason: fmt.Sprintf("invalid campaign.yaml: %v", err),
+			})
+			toRemove = append(toRemove, id)
+			continue
+		}
+
+		// Check ID matches
+		if id != cfg.ID {
+			// Truncate IDs for display
+			shortActual := cfg.ID
+			if len(shortActual) > 8 {
+				shortActual = shortActual[:8]
+			}
+			report.Removed = append(report.Removed, RemovedEntry{
+				ID:     id,
+				Name:   entry.Name,
+				Path:   entry.Path,
+				Reason: fmt.Sprintf("ID mismatch (actual: %s)", shortActual),
+			})
+			toRemove = append(toRemove, id)
+
+			// Add correct entry if not already tracked
+			if _, exists := r.Campaigns[cfg.ID]; !exists {
+				if _, alreadyAdding := toAdd[cfg.ID]; !alreadyAdding {
+					toAdd[cfg.ID] = RegisteredCampaign{
+						ID:         cfg.ID,
+						Name:       cfg.Name,
+						Path:       entry.Path,
+						Type:       cfg.Type,
+						LastAccess: entry.LastAccess,
+					}
+					report.Added = append(report.Added, AddedEntry{
+						ID:   cfg.ID,
+						Name: cfg.Name,
+						Path: entry.Path,
+					})
+				}
+			}
+			continue
+		}
+
+		// Update Name/Type if changed
+		var changes []string
+		if entry.Name != cfg.Name {
+			changes = append(changes, fmt.Sprintf("name: %q → %q", entry.Name, cfg.Name))
+			entry.Name = cfg.Name
+		}
+		if entry.Type != cfg.Type {
+			changes = append(changes, fmt.Sprintf("type: %s → %s", entry.Type, cfg.Type))
+			entry.Type = cfg.Type
+		}
+		if len(changes) > 0 {
+			r.Campaigns[id] = entry
+			report.Updated = append(report.Updated, UpdatedEntry{
+				ID:      id,
+				Path:    entry.Path,
+				Changes: changes,
+			})
+		}
+	}
+
+	// Execute removals
+	for _, id := range toRemove {
+		delete(r.Campaigns, id)
+	}
+
+	// Execute additions
+	for id, entry := range toAdd {
+		r.Campaigns[id] = entry
+	}
+
+	// Rebuild path index
+	r.rebuildPathIndex()
+
+	return report, nil
 }

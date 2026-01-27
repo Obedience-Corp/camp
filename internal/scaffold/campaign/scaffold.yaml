@@ -1,11 +1,11 @@
 # Campaign Scaffold Definition
 # Uses scan_templates to auto-discover structure from templates directory
-_scaffold_version: "1.0.0"
-_templates_dir: campaign/templates
-_mirror_structure: true
-_scan_templates: true
+scaffold_version: "1.0.0"
+templates_dir: campaign/templates
+mirror_structure: true
+scan_templates: true
 
-_vars:
+vars:
   campaign_name: ""
   campaign_id: ""
   campaign_type: "product"

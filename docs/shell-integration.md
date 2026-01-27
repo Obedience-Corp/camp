@@ -88,6 +88,34 @@ cgo p ap<TAB>   # Completes to matching project names
 
 The completion system queries camp for real-time suggestions based on your campaign structure.
 
+## Helper Functions
+
+Shell integration also provides shorthand functions for common operations:
+
+### `cint` - Quick Intent Capture
+
+```bash
+cint "my idea for a new feature"
+```
+
+Equivalent to `camp intent add "..."`. Quickly capture thoughts and ideas.
+
+### `cie` - Explore Intents
+
+```bash
+cie
+```
+
+Equivalent to `camp intent explore`. Opens the interactive TUI for browsing, filtering, and managing intents.
+
+### `cr` - Run from Campaign Root
+
+```bash
+cr make test
+```
+
+Equivalent to `camp run make test`. Runs a command from the campaign root directory.
+
 ## Technical Details
 
 ### Why a Shell Function?
