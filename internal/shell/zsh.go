@@ -96,6 +96,12 @@ cint() {
   camp intent add "$@"
 }
 
+# Explore intents interactively
+# Usage: cie
+cie() {
+  camp intent explore "$@"
+}
+
 # Camp command completion
 _camp() {
   local curcontext="$curcontext" state line
