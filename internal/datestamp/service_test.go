@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -171,7 +172,7 @@ func TestDatestamp(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error")
 		}
-		if !contains(err.Error(), "not found") {
+		if !strings.Contains(err.Error(), "not found") {
 			t.Errorf("expected 'not found' in error, got: %v", err)
 		}
 	})
@@ -194,7 +195,7 @@ func TestDatestamp(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error")
 		}
-		if !contains(err.Error(), "already exists") {
+		if !strings.Contains(err.Error(), "already exists") {
 			t.Errorf("expected 'already exists' in error, got: %v", err)
 		}
 	})
@@ -207,7 +208,7 @@ func TestDatestamp(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error")
 		}
-		if !contains(err.Error(), "context cancelled") {
+		if !strings.Contains(err.Error(), "context cancelled") {
 			t.Errorf("expected 'context cancelled' in error, got: %v", err)
 		}
 	})
@@ -284,15 +285,3 @@ func TestBuildNewPath(t *testing.T) {
 	}
 }
 
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsAt(s, substr, 0))
-}
-
-func containsAt(s, substr string, start int) bool {
-	for i := start; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
-}
