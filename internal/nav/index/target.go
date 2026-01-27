@@ -12,16 +12,16 @@ import (
 // Target represents a navigation target in the index.
 type Target struct {
 	// Name is the display name of the target.
-	Name string `yaml:"name"`
+	Name string `json:"name"`
 	// Path is the absolute path to the target.
-	Path string `yaml:"path"`
+	Path string `json:"path"`
 	// Category is the category this target belongs to.
-	Category nav.Category `yaml:"category"`
+	Category nav.Category `json:"category"`
 	// LastAccess tracks when this target was last navigated to.
-	LastAccess time.Time `yaml:"last_access,omitempty"`
+	LastAccess time.Time `json:"last_access,omitempty"`
 	// Shortcuts maps shortcut names to relative paths within the target.
 	// Used for project sub-shortcuts (e.g., "cli" -> "fest/cmd/fest/").
-	Shortcuts map[string]string `yaml:"shortcuts,omitempty"`
+	Shortcuts map[string]string `json:"shortcuts,omitempty"`
 }
 
 // JumpPath returns the absolute path to jump to, optionally using a sub-shortcut.
@@ -80,13 +80,13 @@ func (t *Target) ShortcutNames() []string {
 // Index holds all navigation targets for a campaign.
 type Index struct {
 	// Targets is the list of all navigation targets.
-	Targets []Target `yaml:"targets"`
+	Targets []Target `json:"targets"`
 	// BuildTime is when this index was built.
-	BuildTime time.Time `yaml:"build_time"`
+	BuildTime time.Time `json:"build_time"`
 	// CampaignRoot is the campaign root this index was built for.
-	CampaignRoot string `yaml:"campaign_root"`
+	CampaignRoot string `json:"campaign_root"`
 	// Version is the index format version.
-	Version int `yaml:"version"`
+	Version int `json:"version"`
 }
 
 // IndexVersion is the current index format version.
