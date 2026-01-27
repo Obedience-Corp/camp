@@ -237,3 +237,38 @@ func (t CampaignType) Valid() bool {
 func (t CampaignType) String() string {
 	return string(t)
 }
+
+// VerificationReport contains results from registry verification.
+type VerificationReport struct {
+	Removed       []RemovedEntry
+	Updated       []UpdatedEntry
+	Added         []AddedEntry
+	TotalVerified int
+}
+
+// HasChanges returns true if any changes were made during verification.
+func (r *VerificationReport) HasChanges() bool {
+	return len(r.Removed) > 0 || len(r.Updated) > 0 || len(r.Added) > 0
+}
+
+// RemovedEntry represents a registry entry that was removed during verification.
+type RemovedEntry struct {
+	ID     string
+	Name   string
+	Path   string
+	Reason string
+}
+
+// UpdatedEntry represents a registry entry that was updated during verification.
+type UpdatedEntry struct {
+	ID      string
+	Path    string
+	Changes []string
+}
+
+// AddedEntry represents a registry entry that was added during verification.
+type AddedEntry struct {
+	ID   string
+	Name string
+	Path string
+}

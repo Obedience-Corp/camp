@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -55,6 +56,7 @@ func init() {
 
 	listCmd.Flags().StringP("format", "f", "table", "Output format (table, simple, json)")
 	listCmd.Flags().StringP("sort", "s", "accessed", "Sort by (name, accessed, type)")
+	listCmd.Flags().Bool("verify-verbose", false, "Show detailed verification output")
 }
 
 func runList(cmd *cobra.Command, args []string) error {
@@ -63,6 +65,26 @@ func runList(cmd *cobra.Command, args []string) error {
 	reg, err := config.LoadRegistry(ctx)
 	if err != nil {
 		return err
+	}
+
+	// Verify and self-heal registry
+	report, err := reg.VerifyAndRepair(ctx)
+	if err != nil {
+		return fmt.Errorf("registry verification failed: %w", err)
+	}
+
+	// Save if changes made
+	if report.HasChanges() {
+		if err := config.SaveRegistry(ctx, reg); err != nil {
+			return fmt.Errorf("failed to save registry: %w", err)
+		}
+
+		verbose, _ := cmd.Flags().GetBool("verify-verbose")
+		if verbose {
+			printVerificationDetails(report)
+		} else {
+			printVerificationSummary(report)
+		}
 	}
 
 	if reg.Len() == 0 {
@@ -149,4 +171,34 @@ func outputCampaigns(campaigns []campaignEntry, format string) error {
 		}
 		return w.Flush()
 	}
+}
+
+// printVerificationSummary prints a brief summary of verification changes.
+func printVerificationSummary(r *config.VerificationReport) {
+	var parts []string
+	if len(r.Removed) > 0 {
+		parts = append(parts, fmt.Sprintf("removed %d", len(r.Removed)))
+	}
+	if len(r.Added) > 0 {
+		parts = append(parts, fmt.Sprintf("added %d", len(r.Added)))
+	}
+	if len(r.Updated) > 0 {
+		parts = append(parts, fmt.Sprintf("updated %d", len(r.Updated)))
+	}
+	fmt.Printf("%s Registry cleaned: %s\n\n", ui.SuccessIcon(), strings.Join(parts, ", "))
+}
+
+// printVerificationDetails prints detailed information about verification changes.
+func printVerificationDetails(r *config.VerificationReport) {
+	fmt.Println("Registry verification:")
+	for _, e := range r.Removed {
+		fmt.Printf("  %s removed: %s (%s) - %s\n", ui.WarningIcon(), e.Name, e.Path, e.Reason)
+	}
+	for _, e := range r.Added {
+		fmt.Printf("  %s added: %s (%s)\n", ui.SuccessIcon(), e.Name, e.Path)
+	}
+	for _, e := range r.Updated {
+		fmt.Printf("  %s updated: %s - %s\n", ui.InfoIcon(), e.Path, strings.Join(e.Changes, ", "))
+	}
+	fmt.Println()
 }

@@ -659,3 +659,255 @@ func TestRegistry_Register_UpdatePath(t *testing.T) {
 		t.Error("new path should be found after update")
 	}
 }
+
+// createTestCampaign creates a minimal campaign directory with campaign.yaml
+func createTestCampaign(t *testing.T, root, id, name string, campaignType CampaignType) {
+	t.Helper()
+	campaignDir := filepath.Join(root, CampaignDir)
+	if err := os.MkdirAll(campaignDir, 0755); err != nil {
+		t.Fatalf("failed to create campaign dir: %v", err)
+	}
+
+	// Create minimal campaign.yaml
+	content := "id: " + id + "\nname: " + name + "\ntype: " + string(campaignType) + "\n"
+	configPath := filepath.Join(campaignDir, CampaignConfigFile)
+	if err := os.WriteFile(configPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write campaign.yaml: %v", err)
+	}
+}
+
+func TestRegistry_VerifyAndRepair_EmptyRegistry(t *testing.T) {
+	reg := NewRegistry()
+	ctx := context.Background()
+
+	report, err := reg.VerifyAndRepair(ctx)
+	if err != nil {
+		t.Fatalf("VerifyAndRepair() error = %v", err)
+	}
+
+	if report.HasChanges() {
+		t.Error("empty registry should have no changes")
+	}
+	if report.TotalVerified != 0 {
+		t.Errorf("TotalVerified = %d, want 0", report.TotalVerified)
+	}
+}
+
+func TestRegistry_VerifyAndRepair_ContextCancelled(t *testing.T) {
+	reg := NewRegistry()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := reg.VerifyAndRepair(ctx)
+	if err != context.Canceled {
+		t.Errorf("VerifyAndRepair() error = %v, want %v", err, context.Canceled)
+	}
+}
+
+func TestRegistry_VerifyAndRepair_RemoveMissingPath(t *testing.T) {
+	reg := NewRegistry()
+	// Register campaign with nonexistent path
+	if err := reg.Register("test-id", "test", "/nonexistent/path", CampaignTypeProduct); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+
+	ctx := context.Background()
+	report, err := reg.VerifyAndRepair(ctx)
+	if err != nil {
+		t.Fatalf("VerifyAndRepair() error = %v", err)
+	}
+
+	if !report.HasChanges() {
+		t.Error("expected changes in report")
+	}
+	if len(report.Removed) != 1 {
+		t.Errorf("len(Removed) = %d, want 1", len(report.Removed))
+	}
+	if report.Removed[0].Reason != "path does not exist" {
+		t.Errorf("Reason = %q, want 'path does not exist'", report.Removed[0].Reason)
+	}
+
+	// Verify entry was removed
+	if _, ok := reg.GetByID("test-id"); ok {
+		t.Error("campaign should be removed from registry")
+	}
+}
+
+func TestRegistry_VerifyAndRepair_RemoveNoCampaignYaml(t *testing.T) {
+	dir := t.TempDir()
+
+	reg := NewRegistry()
+	// Register campaign pointing to directory without .campaign/campaign.yaml
+	if err := reg.Register("test-id", "test", dir, CampaignTypeProduct); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+
+	ctx := context.Background()
+	report, err := reg.VerifyAndRepair(ctx)
+	if err != nil {
+		t.Fatalf("VerifyAndRepair() error = %v", err)
+	}
+
+	if len(report.Removed) != 1 {
+		t.Errorf("len(Removed) = %d, want 1", len(report.Removed))
+	}
+	if report.Removed[0].Reason != "no campaign.yaml (not a campaign)" {
+		t.Errorf("Reason = %q, want 'no campaign.yaml (not a campaign)'", report.Removed[0].Reason)
+	}
+}
+
+func TestRegistry_VerifyAndRepair_IDMismatch(t *testing.T) {
+	dir := t.TempDir()
+	// Create campaign with actual ID
+	actualID := "actual-campaign-id-12345"
+	createTestCampaign(t, dir, actualID, "test-campaign", CampaignTypeProduct)
+
+	reg := NewRegistry()
+	// Register with wrong ID
+	wrongID := "wrong-id-in-registry"
+	if err := reg.Register(wrongID, "test-campaign", dir, CampaignTypeProduct); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+
+	ctx := context.Background()
+	report, err := reg.VerifyAndRepair(ctx)
+	if err != nil {
+		t.Fatalf("VerifyAndRepair() error = %v", err)
+	}
+
+	// Wrong ID should be removed
+	if len(report.Removed) != 1 {
+		t.Errorf("len(Removed) = %d, want 1", len(report.Removed))
+	}
+	if _, ok := reg.GetByID(wrongID); ok {
+		t.Error("wrong ID should be removed from registry")
+	}
+
+	// Correct ID should be added
+	if len(report.Added) != 1 {
+		t.Errorf("len(Added) = %d, want 1", len(report.Added))
+	}
+	c, ok := reg.GetByID(actualID)
+	if !ok {
+		t.Error("correct ID should be added to registry")
+	}
+	if c.Path != dir {
+		t.Errorf("Path = %q, want %q", c.Path, dir)
+	}
+}
+
+func TestRegistry_VerifyAndRepair_UpdateNameAndType(t *testing.T) {
+	dir := t.TempDir()
+	id := "test-campaign-id"
+	// Create campaign with updated name and type
+	createTestCampaign(t, dir, id, "new-name", CampaignTypeResearch)
+
+	reg := NewRegistry()
+	// Register with old name and type
+	if err := reg.Register(id, "old-name", dir, CampaignTypeProduct); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+
+	ctx := context.Background()
+	report, err := reg.VerifyAndRepair(ctx)
+	if err != nil {
+		t.Fatalf("VerifyAndRepair() error = %v", err)
+	}
+
+	// Should have updates, not removals
+	if len(report.Removed) != 0 {
+		t.Errorf("len(Removed) = %d, want 0", len(report.Removed))
+	}
+	if len(report.Updated) != 1 {
+		t.Errorf("len(Updated) = %d, want 1", len(report.Updated))
+	}
+	if len(report.Updated[0].Changes) != 2 {
+		t.Errorf("len(Changes) = %d, want 2", len(report.Updated[0].Changes))
+	}
+
+	// Verify entry was updated
+	c, _ := reg.GetByID(id)
+	if c.Name != "new-name" {
+		t.Errorf("Name = %q, want 'new-name'", c.Name)
+	}
+	if c.Type != CampaignTypeResearch {
+		t.Errorf("Type = %q, want %q", c.Type, CampaignTypeResearch)
+	}
+}
+
+func TestRegistry_VerifyAndRepair_ValidCampaign(t *testing.T) {
+	dir := t.TempDir()
+	id := "test-campaign-id"
+	createTestCampaign(t, dir, id, "test-campaign", CampaignTypeProduct)
+
+	reg := NewRegistry()
+	if err := reg.Register(id, "test-campaign", dir, CampaignTypeProduct); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+
+	ctx := context.Background()
+	report, err := reg.VerifyAndRepair(ctx)
+	if err != nil {
+		t.Fatalf("VerifyAndRepair() error = %v", err)
+	}
+
+	// No changes for valid campaign
+	if report.HasChanges() {
+		t.Error("valid campaign should have no changes")
+	}
+	if report.TotalVerified != 1 {
+		t.Errorf("TotalVerified = %d, want 1", report.TotalVerified)
+	}
+}
+
+func TestVerificationReport_HasChanges(t *testing.T) {
+	tests := []struct {
+		name     string
+		report   VerificationReport
+		expected bool
+	}{
+		{
+			name:     "empty report",
+			report:   VerificationReport{},
+			expected: false,
+		},
+		{
+			name: "has removed",
+			report: VerificationReport{
+				Removed: []RemovedEntry{{ID: "test"}},
+			},
+			expected: true,
+		},
+		{
+			name: "has added",
+			report: VerificationReport{
+				Added: []AddedEntry{{ID: "test"}},
+			},
+			expected: true,
+		},
+		{
+			name: "has updated",
+			report: VerificationReport{
+				Updated: []UpdatedEntry{{ID: "test"}},
+			},
+			expected: true,
+		},
+		{
+			name: "has all",
+			report: VerificationReport{
+				Removed: []RemovedEntry{{ID: "r"}},
+				Added:   []AddedEntry{{ID: "a"}},
+				Updated: []UpdatedEntry{{ID: "u"}},
+			},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.report.HasChanges(); got != tt.expected {
+				t.Errorf("HasChanges() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
