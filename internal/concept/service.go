@@ -103,6 +103,17 @@ func (s *DefaultService) ListItems(ctx context.Context, conceptName, subpath str
 		items = filterIgnored(items, concept.Ignore)
 	}
 
+	// Zero out children if we're at max depth (prevents drill arrows in TUI)
+	if concept.MaxDepth != nil {
+		currentDepth := countPathDepth(subpath)
+		atMaxDepth := currentDepth+1 >= *concept.MaxDepth
+		if atMaxDepth {
+			for i := range items {
+				items[i].Children = 0
+			}
+		}
+	}
+
 	return items, nil
 }
 
@@ -430,6 +441,17 @@ func (s *FSService) ListItems(ctx context.Context, conceptName, subpath string) 
 	// Filter out ignored paths at top level
 	if subpath == "" && len(concept.Ignore) > 0 {
 		items = filterIgnored(items, concept.Ignore)
+	}
+
+	// Zero out children if we're at max depth (prevents drill arrows in TUI)
+	if concept.MaxDepth != nil {
+		currentDepth := countPathDepth(subpath)
+		atMaxDepth := currentDepth+1 >= *concept.MaxDepth
+		if atMaxDepth {
+			for i := range items {
+				items[i].Children = 0
+			}
+		}
 	}
 
 	return items, nil

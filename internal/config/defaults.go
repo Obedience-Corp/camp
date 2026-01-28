@@ -2,6 +2,65 @@ package config
 
 import "time"
 
+// DefaultConcepts returns the default concept configuration for campaigns.
+// Each concept has a name, path, description, and optional depth/ignore settings.
+func DefaultConcepts() []ConceptEntry {
+	depth0 := 0
+	depth1 := 1
+	return []ConceptEntry{
+		{
+			Name:        "projects",
+			Path:        "projects/",
+			Description: "Active development projects",
+			Depth:       &depth1,
+			Ignore:      []string{"worktrees/"},
+		},
+		{
+			Name:        "worktrees",
+			Path:        "projects/worktrees/",
+			Description: "Git worktrees",
+			Depth:       &depth1,
+		},
+		{
+			Name:        "festivals",
+			Path:        "festivals/",
+			Description: "Planning cycles",
+			// Depth nil = unlimited
+		},
+		{
+			Name:        "intents",
+			Path:        "workflow/intents/",
+			Description: "Ideas and tasks",
+			Depth:       &depth0,
+		},
+		{
+			Name:        "workflow",
+			Path:        "workflow/",
+			Description: "Work management",
+			Depth:       &depth1,
+			Ignore:      []string{"intents/", "design/"},
+		},
+		{
+			Name:        "design",
+			Path:        "workflow/design/",
+			Description: "Design documents",
+			Depth:       &depth1,
+		},
+		{
+			Name:        "docs",
+			Path:        "docs/",
+			Description: "Documentation",
+			Depth:       &depth0,
+		},
+		{
+			Name:        "dungeon",
+			Path:        "dungeon/",
+			Description: "Archived work",
+			// Depth nil = unlimited
+		},
+	}
+}
+
 // DefaultCampaignPaths returns the default directory structure for campaigns.
 func DefaultCampaignPaths() CampaignPaths {
 	return CampaignPaths{

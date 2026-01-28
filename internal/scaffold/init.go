@@ -174,13 +174,25 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 		}
 	}
 
-	// Create campaign.yaml (metadata only - paths/shortcuts go in jumps.yaml)
+	// Create campaign.yaml (metadata and concepts - paths/shortcuts go in jumps.yaml)
 	cfg := &config.CampaignConfig{
 		ID:          campaignID,
 		Name:        name,
 		Type:        opts.Type,
 		CreatedAt:   time.Now(),
 		Description: fmt.Sprintf("Campaign: %s", name),
+		ConceptList: config.DefaultConcepts(),
+	}
+
+	// In repair mode, preserve existing config values but add missing concepts
+	if opts.Repair && existingCfg != nil {
+		cfg.CreatedAt = existingCfg.CreatedAt
+		cfg.Description = existingCfg.Description
+		cfg.Projects = existingCfg.Projects
+		// Only add default concepts if none exist
+		if len(existingCfg.ConceptList) > 0 {
+			cfg.ConceptList = existingCfg.ConceptList
+		}
 	}
 
 	if !opts.DryRun {
