@@ -460,8 +460,20 @@ func (m ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "f":
 			// Open full-screen viewer for selected intent
 			if selected := m.SelectedIntent(); selected != nil {
+				group := m.groups[m.cursorGroup]
 				m.focus = focusViewer
-				m.viewer = NewIntentViewerModel(m.ctx, selected, m.service, m.width, m.height)
+				m.viewer = NewIntentViewerModel(
+					m.ctx, selected,
+					group.Intents, m.cursorItem,
+					m.service, m.width, m.height,
+				)
+			}
+			return m, nil
+		case ".":
+			// Open action menu for selected intent
+			if selected := m.SelectedIntent(); selected != nil {
+				m.focus = focusActionMenu
+				m.actionMenu = NewActionMenu(selected)
 			}
 			return m, nil
 		case "v":
@@ -608,8 +620,13 @@ func (m ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.Action {
 		case "view":
 			// Open full-screen viewer
+			group := m.groups[m.cursorGroup]
 			m.focus = focusViewer
-			m.viewer = NewIntentViewerModel(m.ctx, selected, m.service, m.width, m.height)
+			m.viewer = NewIntentViewerModel(
+				m.ctx, selected,
+				group.Intents, m.cursorItem,
+				m.service, m.width, m.height,
+			)
 		case "edit":
 			return m, m.openInEditor(selected.Path)
 		case "move":
@@ -650,6 +667,9 @@ func (m ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Viewer messages
 	case viewerClosedMsg:
 		m.focus = focusList
+		// Sync cursor to the intent that was being viewed when closing
+		// This handles navigation within the viewer (left/right keys)
+		m.cursorItem = msg.finalIndex
 		if msg.refresh {
 			return m, m.loadIntents()
 		}
@@ -897,7 +917,7 @@ func (m *ExplorerModel) moveToNextGroup() {
 	}
 }
 
-// handleSelect handles Enter/Space key - toggle group or show action menu on item.
+// handleSelect handles Enter/Space key - toggle group or open viewer on item.
 func (m *ExplorerModel) handleSelect() {
 	if len(m.groups) == 0 {
 		return
@@ -907,10 +927,15 @@ func (m *ExplorerModel) handleSelect() {
 		// On group header, toggle expansion
 		m.groups[m.cursorGroup].Expanded = !m.groups[m.cursorGroup].Expanded
 	} else {
-		// On intent item - show action menu
+		// On intent item - open full-screen viewer directly
 		if selected := m.SelectedIntent(); selected != nil {
-			m.focus = focusActionMenu
-			m.actionMenu = NewActionMenu(selected)
+			group := m.groups[m.cursorGroup]
+			m.focus = focusViewer
+			m.viewer = NewIntentViewerModel(
+				m.ctx, selected,
+				group.Intents, m.cursorItem,
+				m.service, m.width, m.height,
+			)
 		}
 	}
 }

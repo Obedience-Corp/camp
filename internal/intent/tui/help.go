@@ -20,11 +20,13 @@ NAVIGATION
   G           Go to bottom (preview/viewer)
   Ctrl+d      Half page down
   Ctrl+u      Half page up
-  Enter       Action menu (on intent) / Toggle (on group)
+  Enter       View intent / Toggle group
   Space       Toggle group expansion
   Tab         Switch focus (list/preview)
+  ←/→ h/l     Prev/next intent (in viewer)
 
 QUICK ACTIONS
+  .           Action menu
   f           View full screen
   e           Edit in $EDITOR
   o           Open with system handler

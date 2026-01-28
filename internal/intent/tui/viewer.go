@@ -27,6 +27,10 @@ type IntentViewerModel struct {
 	service    *intent.IntentService
 	ctx        context.Context
 
+	// Sibling navigation - allows cycling through intents in same status group
+	siblings     []*intent.Intent // All intents in the same status group
+	currentIndex int              // Index of current intent in siblings
+
 	// Viewport
 	viewport viewport.Model
 
@@ -50,8 +54,9 @@ type IntentViewerModel struct {
 
 // viewerClosedMsg is sent when the viewer is closed.
 type viewerClosedMsg struct {
-	intentID string
-	refresh  bool // True if intent was modified
+	intentID   string
+	refresh    bool // True if intent was modified
+	finalIndex int  // Index of intent when viewer closed (for cursor sync)
 }
 
 // viewerEditorFinishedMsg is sent when editor closes from viewer.
@@ -77,18 +82,22 @@ type viewerDeleteFinishedMsg struct {
 }
 
 // NewIntentViewerModel creates a new intent viewer for the given intent.
-func NewIntentViewerModel(ctx context.Context, i *intent.Intent, svc *intent.IntentService, width, height int) IntentViewerModel {
+// siblings contains all intents in the same status group for left/right navigation.
+// currentIndex is the position of the current intent within siblings.
+func NewIntentViewerModel(ctx context.Context, i *intent.Intent, siblings []*intent.Intent, currentIndex int, svc *intent.IntentService, width, height int) IntentViewerModel {
 	vp := viewport.New(width-4, height-8) // Account for header, footer, borders
 	vp.Style = lipgloss.NewStyle().Padding(0, 1)
 
 	m := IntentViewerModel{
-		intent:   i,
-		service:  svc,
-		ctx:      ctx,
-		viewport: vp,
-		width:    width,
-		height:   height,
-		ready:    true,
+		intent:       i,
+		siblings:     siblings,
+		currentIndex: currentIndex,
+		service:      svc,
+		ctx:          ctx,
+		viewport:     vp,
+		width:        width,
+		height:       height,
+		ready:        true,
 	}
 
 	// Load and render content
@@ -236,6 +245,16 @@ func (m IntentViewerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			targetLine = min(targetLine, lines)
 			m.viewport.SetYOffset(targetLine - m.viewport.Height + 1)
 
+		// Sibling navigation (cycle through intents in same status group)
+		case "left", "h":
+			if len(m.siblings) > 1 {
+				m.navigatePrev()
+			}
+		case "right", "l":
+			if len(m.siblings) > 1 {
+				m.navigateNext()
+			}
+
 		// Actions
 		case "e":
 			return m, m.openInEditor()
@@ -317,10 +336,35 @@ func (m IntentViewerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m IntentViewerModel) closeViewer() tea.Cmd {
 	return func() tea.Msg {
 		return viewerClosedMsg{
-			intentID: m.intent.ID,
-			refresh:  m.refreshOnReturn,
+			intentID:   m.intent.ID,
+			refresh:    m.refreshOnReturn,
+			finalIndex: m.currentIndex,
 		}
 	}
+}
+
+// navigatePrev moves to the previous intent in the sibling list (wraps around).
+func (m *IntentViewerModel) navigatePrev() {
+	if m.currentIndex > 0 {
+		m.currentIndex--
+	} else {
+		m.currentIndex = len(m.siblings) - 1 // wrap to end
+	}
+	m.intent = m.siblings[m.currentIndex]
+	m.loadContent()
+	m.viewport.GotoTop()
+}
+
+// navigateNext moves to the next intent in the sibling list (wraps around).
+func (m *IntentViewerModel) navigateNext() {
+	if m.currentIndex < len(m.siblings)-1 {
+		m.currentIndex++
+	} else {
+		m.currentIndex = 0 // wrap to start
+	}
+	m.intent = m.siblings[m.currentIndex]
+	m.loadContent()
+	m.viewport.GotoTop()
 }
 
 // openInEditor opens the intent in $EDITOR.
@@ -504,22 +548,34 @@ func (m IntentViewerModel) renderFooter() string {
 	scrollPct := int(m.viewport.ScrollPercent() * 100)
 	scrollInfo := fmt.Sprintf("%d%%", scrollPct)
 
-	// Navigation hint
-	navHint := "q: back to list"
+	// Position indicator (only if multiple siblings for navigation)
+	var posInfo string
+	if len(m.siblings) > 1 {
+		posInfo = fmt.Sprintf("%d/%d │ ", m.currentIndex+1, len(m.siblings))
+	}
+
+	// Navigation hint - show arrow keys when navigation is available
+	var navHint string
+	if len(m.siblings) > 1 {
+		navHint = "←/→: prev/next • q: back"
+	} else {
+		navHint = "q: back to list"
+	}
 
 	// Calculate spacing
 	actionsWidth := lipgloss.Width(actions)
 	scrollWidth := lipgloss.Width(scrollInfo)
+	posWidth := lipgloss.Width(posInfo)
 	navWidth := lipgloss.Width(navHint)
-	padding := m.width - actionsWidth - scrollWidth - navWidth - 10
+	padding := m.width - actionsWidth - scrollWidth - posWidth - navWidth - 10
 
 	if padding < 0 {
-		// Narrow terminal - minimal footer
-		return viewerFooterStyle.Render(fmt.Sprintf("%s │ %s", scrollInfo, navHint))
+		// Narrow terminal - minimal footer with position
+		return viewerFooterStyle.Render(fmt.Sprintf("%s%s │ %s", posInfo, scrollInfo, navHint))
 	}
 
 	spacer := strings.Repeat(" ", padding)
-	return viewerFooterStyle.Render(fmt.Sprintf("%s%s%s │ %s", actions, spacer, scrollInfo, navHint))
+	return viewerFooterStyle.Render(fmt.Sprintf("%s%s%s%s │ %s", actions, spacer, posInfo, scrollInfo, navHint))
 }
 
 // viewWithConfirmOverlay renders the view with confirmation dialog overlay.
