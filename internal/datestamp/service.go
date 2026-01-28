@@ -18,10 +18,10 @@ var (
 
 // Options configures the datestamp operation.
 type Options struct {
-	DateFormat string    // Go time format string (default: 2006-01-02)
-	DaysAgo    int       // Subtract this many days from today
-	UseMtime   bool      // Use file's last modified time instead of today
-	DryRun     bool      // Preview only, don't execute
+	DateFormat string // Go time format string (default: 2006-01-02)
+	DaysAgo    int    // Subtract this many days from today
+	UseMtime   bool   // Use file's last modified time instead of today
+	DryRun     bool   // Preview only, don't execute
 }
 
 // Result contains the outcome of a datestamp operation.

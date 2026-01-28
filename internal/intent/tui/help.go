@@ -16,12 +16,16 @@ Intent Explorer Keyboard Shortcuts
 NAVIGATION
   j/↓         Move down
   k/↑         Move up
-  g           Go to top (preview)
-  G           Go to bottom (preview)
-  Enter       Select/expand group
-  Space       Toggle group
+  g           Go to top (preview/viewer)
+  G           Go to bottom (preview/viewer)
+  Ctrl+d      Half page down
+  Ctrl+u      Half page up
+  Enter       Action menu (on intent) / Toggle (on group)
+  Space       Toggle group expansion
+  Tab         Switch focus (list/preview)
 
-ACTIONS
+QUICK ACTIONS
+  f           View full screen
   e           Edit in $EDITOR
   o           Open with system handler
   O           Reveal in file manager
@@ -41,7 +45,6 @@ FILTERS
 
 VIEW
   v           Toggle preview pane
-  Tab         Switch focus (list/preview)
   ?           Show this help
   q           Quit explorer
 
@@ -149,17 +152,10 @@ func (h HelpOverlay) Update(msg tea.Msg) (HelpOverlay, tea.Cmd, bool) {
 }
 
 // Styles for the help overlay.
-var (
-	helpBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("205")).
-			Padding(1, 2)
-
-	helpTitleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("205")).
-			MarginBottom(1)
-)
+var helpBoxStyle = lipgloss.NewStyle().
+	Border(lipgloss.RoundedBorder()).
+	BorderForeground(lipgloss.Color("205")).
+	Padding(1, 2)
 
 // View renders the help overlay.
 func (h HelpOverlay) View() string {

@@ -38,6 +38,23 @@ const (
 	focusCreating      // Creating new intent
 	focusMove          // Moving intent to different status
 	focusConfirm       // Confirmation dialog
+	focusActionMenu    // Action menu on intent
+	focusViewer        // Full-screen intent viewer
+)
+
+// layoutMode determines the responsive layout based on terminal width.
+type layoutMode int
+
+const (
+	layoutNarrow layoutMode = iota // <80 columns
+	layoutNormal                   // 80-120 columns
+	layoutWide                     // >120 columns
+)
+
+// Width breakpoints for responsive layout.
+const (
+	breakpointNarrow = 80
+	breakpointWide   = 120
 )
 
 // creationStep represents the current step in new intent creation.
@@ -111,13 +128,25 @@ type ExplorerModel struct {
 	pendingIntent *intent.Intent // Intent for pending action
 
 	// Preview pane state
-	previewPane    PreviewPane
-	showPreview    bool // Whether preview pane is visible
-	previewFocused bool // Whether preview has focus (vs list)
+	previewPane        PreviewPane
+	showPreview        bool // Whether preview pane is visible
+	previewFocused     bool // Whether preview has focus (vs list)
+	previewForceHidden bool // True when terminal is too narrow
 
 	// Help overlay state
 	helpOverlay HelpOverlay
 	showHelp    bool
+
+	// Action menu state
+	actionMenu ActionMenu
+
+	// Full-screen viewer state
+	viewer IntentViewerModel
+
+	// Layout state
+	layoutMode        layoutMode
+	showConceptColumn bool
+	fullConceptPaths  bool
 }
 
 // NewExplorerModel creates a new Explorer model.
@@ -297,6 +326,20 @@ func (m ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		if m.focus == focusActionMenu {
+			// Handle action menu
+			m.actionMenu, cmd = m.actionMenu.Update(msg)
+			return m, cmd
+		}
+
+		if m.focus == focusViewer {
+			// Handle viewer - pass all keys to it
+			var viewerModel tea.Model
+			viewerModel, cmd = m.viewer.Update(msg)
+			m.viewer = viewerModel.(IntentViewerModel)
+			return m, cmd
+		}
+
 		// Handle help overlay (highest priority modal)
 		if m.showHelp {
 			var closed bool
@@ -414,12 +457,19 @@ func (m ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				)
 			}
 			return m, nil
+		case "f":
+			// Open full-screen viewer for selected intent
+			if selected := m.SelectedIntent(); selected != nil {
+				m.focus = focusViewer
+				m.viewer = NewIntentViewerModel(m.ctx, selected, m.service, m.width, m.height)
+			}
+			return m, nil
 		case "v":
 			// Toggle preview pane visibility
 			m.showPreview = !m.showPreview
 			m.recalculateLayout()
 			// Load preview content for currently selected intent
-			if m.showPreview {
+			if m.shouldShowPreview() {
 				if selected := m.SelectedIntent(); selected != nil {
 					m.loadPreviewContent(selected)
 				}
@@ -547,6 +597,103 @@ func (m ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusMessage = "Deleted: " + msg.title
 		}
 		return m, m.loadIntents()
+
+	// Action menu messages
+	case ActionMenuSelectedMsg:
+		m.focus = focusList
+		selected := m.SelectedIntent()
+		if selected == nil {
+			return m, nil
+		}
+		switch msg.Action {
+		case "view":
+			// Open full-screen viewer
+			m.focus = focusViewer
+			m.viewer = NewIntentViewerModel(m.ctx, selected, m.service, m.width, m.height)
+		case "edit":
+			return m, m.openInEditor(selected.Path)
+		case "move":
+			m.focus = focusMove
+			m.intentToMove = selected
+			m.moveStatusIdx = 0
+		case "promote":
+			nextStatus := getNextStatus(selected.Status)
+			if nextStatus != selected.Status {
+				return m, m.moveIntent(selected, nextStatus)
+			}
+			m.statusMessage = "Already at final status"
+		case "archive":
+			if selected.Status != intent.StatusKilled {
+				m.focus = focusConfirm
+				m.pendingAction = "archive"
+				m.pendingIntent = selected
+				m.confirmDialog = NewConfirmationDialog(
+					"Archive Intent",
+					fmt.Sprintf("Archive '%s'?\n\nIt will be moved to killed status.", selected.Title),
+				)
+			}
+		case "delete":
+			m.focus = focusConfirm
+			m.pendingAction = "delete"
+			m.pendingIntent = selected
+			m.confirmDialog = NewConfirmationDialog(
+				"Delete Intent",
+				fmt.Sprintf("Delete '%s'?\n\nThis cannot be undone.", selected.Title),
+			)
+		}
+		return m, nil
+
+	case ActionMenuCancelledMsg:
+		m.focus = focusList
+		return m, nil
+
+	// Viewer messages
+	case viewerClosedMsg:
+		m.focus = focusList
+		if msg.refresh {
+			return m, m.loadIntents()
+		}
+		return m, nil
+
+	case viewerEditorFinishedMsg:
+		// Pass back to viewer if still in viewer mode
+		if m.focus == focusViewer {
+			var viewerModel tea.Model
+			viewerModel, cmd = m.viewer.Update(msg)
+			m.viewer = viewerModel.(IntentViewerModel)
+			return m, cmd
+		}
+		return m, nil
+
+	case viewerMoveFinishedMsg:
+		// Pass back to viewer
+		if m.focus == focusViewer {
+			var viewerModel tea.Model
+			viewerModel, cmd = m.viewer.Update(msg)
+			m.viewer = viewerModel.(IntentViewerModel)
+			return m, cmd
+		}
+		return m, nil
+
+	case viewerArchiveFinishedMsg:
+		// Pass back to viewer
+		if m.focus == focusViewer {
+			var viewerModel tea.Model
+			viewerModel, cmd = m.viewer.Update(msg)
+			m.viewer = viewerModel.(IntentViewerModel)
+			return m, cmd
+		}
+		return m, nil
+
+	case viewerDeleteFinishedMsg:
+		// Pass back to viewer
+		if m.focus == focusViewer {
+			var viewerModel tea.Model
+			viewerModel, cmd = m.viewer.Update(msg)
+			m.viewer = viewerModel.(IntentViewerModel)
+			return m, cmd
+		}
+		return m, nil
 	}
 
 	return m, nil
@@ -721,7 +868,8 @@ func (m *ExplorerModel) moveCursorUp() {
 		return
 	}
 
-	if m.cursorItem == -1 {
+	switch m.cursorItem {
+	case -1:
 		// On group header, move to previous group's last item
 		if m.cursorGroup > 0 {
 			m.cursorGroup--
@@ -732,10 +880,10 @@ func (m *ExplorerModel) moveCursorUp() {
 				m.cursorItem = -1
 			}
 		}
-	} else if m.cursorItem == 0 {
+	case 0:
 		// On first item, move to group header
 		m.cursorItem = -1
-	} else {
+	default:
 		// Move up within group
 		m.cursorItem--
 	}
@@ -749,7 +897,7 @@ func (m *ExplorerModel) moveToNextGroup() {
 	}
 }
 
-// handleSelect handles Enter/Space key - toggle group or select item.
+// handleSelect handles Enter/Space key - toggle group or show action menu on item.
 func (m *ExplorerModel) handleSelect() {
 	if len(m.groups) == 0 {
 		return
@@ -758,8 +906,13 @@ func (m *ExplorerModel) handleSelect() {
 	if m.cursorItem == -1 {
 		// On group header, toggle expansion
 		m.groups[m.cursorGroup].Expanded = !m.groups[m.cursorGroup].Expanded
+	} else {
+		// On intent item - show action menu
+		if selected := m.SelectedIntent(); selected != nil {
+			m.focus = focusActionMenu
+			m.actionMenu = NewActionMenu(selected)
+		}
 	}
-	// On item - future: open detail view
 }
 
 // View implements tea.Model.
@@ -769,6 +922,11 @@ func (m ExplorerModel) View() string {
 	}
 	if !m.ready {
 		return "Loading..."
+	}
+
+	// Full-screen viewer takes over entire display
+	if m.focus == focusViewer {
+		return m.viewer.View()
 	}
 
 	// Show creation form if in creating mode
@@ -796,11 +954,16 @@ func (m ExplorerModel) View() string {
 		return m.viewHelp()
 	}
 
+	// Show action menu overlay
+	if m.focus == focusActionMenu {
+		return m.viewActionMenu()
+	}
+
 	var b strings.Builder
 
 	// Title
 	b.WriteString(titleStyle.Render("Intent Explorer"))
-	if m.showPreview && m.previewFocused {
+	if m.shouldShowPreview() && m.previewFocused {
 		b.WriteString(helpStyle.Render(" [preview focused]"))
 	}
 	b.WriteString("\n")
@@ -847,20 +1010,24 @@ func (m ExplorerModel) View() string {
 	b.WriteString(helpStyle.Render("Concept: [" + conceptValue + "]"))
 	b.WriteString("\n\n")
 
-	// Calculate widths based on preview visibility
+	// Calculate widths based on preview visibility and layout mode
 	listWidth := m.width
-	if m.showPreview {
-		listWidth = m.width * 60 / 100
-		if listWidth < 40 {
-			listWidth = 40
+	if m.shouldShowPreview() {
+		switch m.layoutMode {
+		case layoutWide:
+			listWidth = m.width * 50 / 100
+		default:
+			listWidth = m.width * 60 / 100
 		}
+		listWidth = max(listWidth, 40)
 	}
 
-	// Calculate available width for title within the list (leave room for date and type)
+	// Calculate available width for title within the list
 	titleWidth := listWidth - 35
-	if titleWidth < 20 {
-		titleWidth = 20
+	if m.layoutMode == layoutNarrow {
+		titleWidth = m.width - 28 // cursor + type + date
 	}
+	titleWidth = max(titleWidth, 20)
 
 	// Build the list view
 	var listBuilder strings.Builder
@@ -907,7 +1074,7 @@ func (m ExplorerModel) View() string {
 	}
 
 	// Combine list and preview if preview is visible
-	if m.showPreview {
+	if m.shouldShowPreview() {
 		listView := listBuilder.String()
 		previewView := m.previewPane.View()
 
@@ -923,13 +1090,9 @@ func (m ExplorerModel) View() string {
 		b.WriteString(listBuilder.String())
 	}
 
-	// Status bar
+	// Status bar - adaptive based on layout mode
 	b.WriteString("\n")
-	if m.showPreview {
-		b.WriteString(helpStyle.Render("j/k: navigate • v: hide preview • tab: switch focus • /: search • n: new • q: quit"))
-	} else {
-		b.WriteString(helpStyle.Render("j/k: navigate • v: show preview • /: search • t: type • s: status • c: concept • n: new • q: quit"))
-	}
+	b.WriteString(m.renderStatusBar())
 
 	if m.statusMessage != "" {
 		b.WriteString("\n")
@@ -940,6 +1103,7 @@ func (m ExplorerModel) View() string {
 }
 
 // renderIntentRow renders a single intent row with proper formatting.
+// Layout is responsive based on terminal width.
 func (m ExplorerModel) renderIntentRow(i *intent.Intent, isSelected bool, maxTitleWidth int) string {
 	cursor := noCursor
 	if isSelected {
@@ -960,23 +1124,80 @@ func (m ExplorerModel) renderIntentRow(i *intent.Intent, isSelected bool, maxTit
 	typePart := intentTypeStyle.Render(fmt.Sprintf("[%s]", i.Type))
 	datePart := intentDateStyle.Render(date)
 
-	// Add concept column - show concept name only (not full path)
-	conceptName := "-"
-	if i.Concept != "" {
-		conceptName = i.ConceptName()
-		// Truncate long concept names for alignment
-		if len(conceptName) > 15 {
-			conceptName = conceptName[:12] + "..."
-		}
-	}
-	conceptPart := intentConceptStyle.Render(conceptName)
+	var row string
 
-	row := fmt.Sprintf("  %s  %s  %s  %s  %s", cursor, titlePart, typePart, datePart, conceptPart)
+	switch m.layoutMode {
+	case layoutNarrow:
+		// Minimal: cursor, title, type, date (no concept)
+		row = fmt.Sprintf("  %s  %s  %s  %s", cursor, titlePart, typePart, datePart)
+
+	case layoutNormal:
+		// Normal: cursor, title, type, date, concept (truncated)
+		conceptName := "-"
+		if i.Concept != "" {
+			conceptName = i.ConceptName()
+			if len(conceptName) > 15 {
+				conceptName = conceptName[:12] + "..."
+			}
+		}
+		conceptPart := intentConceptStyle.Render(conceptName)
+		row = fmt.Sprintf("  %s  %s  %s  %s  %s", cursor, titlePart, typePart, datePart, conceptPart)
+
+	case layoutWide:
+		// Wide: cursor, title, type, date, full concept path
+		concept := "-"
+		if i.Concept != "" {
+			if m.fullConceptPaths {
+				concept = i.Concept
+			} else {
+				concept = i.ConceptName()
+			}
+		}
+		conceptPart := intentConceptStyle.Render(concept)
+		row = fmt.Sprintf("  %s  %s  %s  %s  %s", cursor, titlePart, typePart, datePart, conceptPart)
+	}
 
 	if isSelected {
 		return intentRowSelectedStyle.Render(row)
 	}
 	return intentRowStyle.Render(row)
+}
+
+// renderStatusBar renders the status bar adapted to terminal width.
+func (m ExplorerModel) renderStatusBar() string {
+	switch m.layoutMode {
+	case layoutNarrow:
+		// Minimal hints
+		return helpStyle.Render("j/k • v • / • n • ? • q")
+	case layoutNormal:
+		if m.shouldShowPreview() {
+			return helpStyle.Render("j/k: nav • v: hide preview • tab: focus • /: search • n: new • q: quit")
+		}
+		return helpStyle.Render("j/k: nav • v: preview • /: search • t: type • s: status • n: new • q: quit")
+	case layoutWide:
+		if m.shouldShowPreview() {
+			return helpStyle.Render("j/k: navigate • v: hide preview • tab: switch focus • /: search • f: full view • n: new • ?: help • q: quit")
+		}
+		return helpStyle.Render("j/k: navigate • v: show preview • /: search • t: type • s: status • c: concept • f: full view • n: new • ?: help • q: quit")
+	}
+	return ""
+}
+
+// viewActionMenu renders the main view with action menu overlay.
+func (m ExplorerModel) viewActionMenu() string {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("Intent Explorer"))
+	b.WriteString("\n\n")
+
+	if selected := m.SelectedIntent(); selected != nil {
+		b.WriteString("Selected: " + selected.Title + "\n\n")
+	}
+
+	b.WriteString(m.actionMenu.View())
+	b.WriteString("\n\n")
+	b.WriteString(helpStyle.Render("j/k: navigate • Enter: select • Esc: cancel"))
+
+	return b.String()
 }
 
 // formatRelativeTime returns a human-friendly relative time string.
@@ -1361,34 +1582,87 @@ func (m ExplorerModel) viewHelp() string {
 }
 
 // recalculateLayout updates component sizes based on terminal dimensions.
+// getLayoutMode returns the current layout mode based on terminal width.
+func (m *ExplorerModel) getLayoutMode() layoutMode {
+	switch {
+	case m.width < breakpointNarrow:
+		return layoutNarrow
+	case m.width >= breakpointWide:
+		return layoutWide
+	default:
+		return layoutNormal
+	}
+}
+
 func (m *ExplorerModel) recalculateLayout() {
 	if m.width == 0 || m.height == 0 {
 		return
 	}
 
+	oldMode := m.layoutMode
+	m.layoutMode = m.getLayoutMode()
+
 	// Reserve space for header (title, filters) and footer (help text)
 	headerHeight := 4 // Title + filters + spacing
 	footerHeight := 3 // Help text + status message
 	contentHeight := m.height - headerHeight - footerHeight
-	if contentHeight < 5 {
-		contentHeight = 5
+	contentHeight = max(contentHeight, 5)
+
+	switch m.layoutMode {
+	case layoutNarrow:
+		// Force hide preview on narrow terminals
+		m.previewForceHidden = true
+		m.showConceptColumn = false
+		m.fullConceptPaths = false
+
+	case layoutNormal:
+		m.previewForceHidden = false
+		m.showConceptColumn = true
+		m.fullConceptPaths = false
+
+		if m.shouldShowPreview() {
+			listWidth := max(m.width*60/100, 40)
+			previewWidth := max(m.width-listWidth-2, 30)
+			m.previewPane.SetSize(previewWidth, contentHeight)
+		}
+
+	case layoutWide:
+		m.previewForceHidden = false
+		m.showConceptColumn = true
+		m.fullConceptPaths = true
+
+		if m.shouldShowPreview() {
+			// More generous 50/50 split for wide terminals
+			listWidth := m.width * 50 / 100
+			previewWidth := m.width - listWidth - 2
+			m.previewPane.SetSize(previewWidth, contentHeight)
+		}
 	}
 
-	if m.showPreview {
-		// Split layout: list on left (60%), preview on right (40%)
-		listWidth := m.width * 60 / 100
-		previewWidth := m.width - listWidth - 2 // -2 for border/spacing
-
-		// Minimum widths
-		if listWidth < 40 {
-			listWidth = 40
+	// Notify user of layout mode change
+	if oldMode != m.layoutMode && m.ready {
+		switch m.layoutMode {
+		case layoutNarrow:
+			if m.showPreview {
+				m.statusMessage = "Preview hidden (narrow terminal)"
+			}
+		case layoutNormal:
+			if oldMode == layoutNarrow && m.showPreview {
+				m.statusMessage = "Preview restored"
+			}
 		}
-		if previewWidth < 30 {
-			previewWidth = 30
-		}
-
-		m.previewPane.SetSize(previewWidth, contentHeight)
 	}
+}
+
+// shouldShowPreview returns whether the preview pane should be displayed.
+func (m *ExplorerModel) shouldShowPreview() bool {
+	if !m.showPreview {
+		return false
+	}
+	if m.previewForceHidden {
+		return false
+	}
+	return true
 }
 
 // loadPreviewContent loads content from an intent file into the preview pane.
