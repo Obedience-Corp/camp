@@ -116,6 +116,34 @@ func TestViewer_KeyNavigation(t *testing.T) {
 	}
 }
 
+func TestViewer_NavigationKeysReturnNilCmd(t *testing.T) {
+	// Verify that navigation keys return nil cmd (not passed to viewport)
+	// This prevents the freeze bug where keys fell through to viewport
+	ctx := context.Background()
+	siblings := mockIntents(3)
+
+	m := NewIntentViewerModel(ctx, siblings[1], siblings, 1, nil, 80, 24)
+
+	testCases := []struct {
+		name string
+		key  tea.KeyMsg
+	}{
+		{"left arrow", tea.KeyMsg{Type: tea.KeyLeft}},
+		{"right arrow", tea.KeyMsg{Type: tea.KeyRight}},
+		{"h key", tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")}},
+		{"l key", tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")}},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, cmd := m.Update(tc.key)
+			if cmd != nil {
+				t.Errorf("Expected nil cmd after %s, got non-nil (key may have fallen through to viewport)", tc.name)
+			}
+		})
+	}
+}
+
 func TestViewer_SingleIntentNoNavigation(t *testing.T) {
 	ctx := context.Background()
 	siblings := mockIntents(1) // Only one intent
