@@ -356,7 +356,9 @@ func TestViewer_ConsecutiveNavigations(t *testing.T) {
 }
 
 // containsSubstring is a helper to check if a string contains a substring.
+// It strips ANSI escape codes before checking.
 func containsSubstring(s, substr string) bool {
+	s = stripANSI(s)
 	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsSubstringHelper(s, substr))
 }
 
@@ -367,4 +369,27 @@ func containsSubstringHelper(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// stripANSI removes ANSI escape codes from a string.
+func stripANSI(s string) string {
+	var result []byte
+	i := 0
+	for i < len(s) {
+		if s[i] == '\x1b' && i+1 < len(s) && s[i+1] == '[' {
+			// Skip until we find the terminating character (letter)
+			j := i + 2
+			for j < len(s) && !((s[j] >= 'A' && s[j] <= 'Z') || (s[j] >= 'a' && s[j] <= 'z')) {
+				j++
+			}
+			if j < len(s) {
+				j++ // Skip the terminating character
+			}
+			i = j
+		} else {
+			result = append(result, s[i])
+			i++
+		}
+	}
+	return string(result)
 }
