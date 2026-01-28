@@ -130,23 +130,29 @@ func (m ConceptPickerModel) updateItemSelection(msg tea.KeyMsg) (ConceptPickerMo
 	case "down", "j":
 		m.itemWheel, _ = m.itemWheel.Update(msg)
 	case "enter":
-		// Get selected item
+		idx := m.itemWheel.Selected()
+		if idx >= 0 && idx < len(m.items) {
+			item := m.items[idx]
+			// Check if depth is infinite (nil) or configured
+			infiniteDepth := m.selectedConcept.MaxDepth == nil
+			canDrill := item.IsDir && item.Children > 0 && !item.DrillDisabled
+
+			if canDrill && !infiniteDepth {
+				// Configured depth: auto-drill until max depth
+				m.drillInto(item)
+			} else {
+				// Infinite depth OR can't drill: select this item
+				m.selectedPath = item.Path
+				m.step = stepDone
+			}
+		}
+	case "right", "l":
+		// Explicit drill (useful for infinite depth concepts)
 		idx := m.itemWheel.Selected()
 		if idx >= 0 && idx < len(m.items) {
 			item := m.items[idx]
 			if item.IsDir && item.Children > 0 && !item.DrillDisabled {
-				// Drill into subdirectory
-				m.pathHistory = append(m.pathHistory, m.currentSubpath)
-				if m.currentSubpath == "" {
-					m.currentSubpath = item.Name
-				} else {
-					m.currentSubpath = m.currentSubpath + "/" + item.Name
-				}
-				m.loadItems(m.currentSubpath)
-			} else {
-				// Select this item
-				m.selectedPath = item.Path
-				m.step = stepDone
+				m.drillInto(item)
 			}
 		}
 	case "backspace", "left", "h":
@@ -158,6 +164,17 @@ func (m ConceptPickerModel) updateItemSelection(msg tea.KeyMsg) (ConceptPickerMo
 	}
 
 	return m, nil
+}
+
+// drillInto navigates into a subdirectory.
+func (m *ConceptPickerModel) drillInto(item concept.Item) {
+	m.pathHistory = append(m.pathHistory, m.currentSubpath)
+	if m.currentSubpath == "" {
+		m.currentSubpath = item.Name
+	} else {
+		m.currentSubpath = m.currentSubpath + "/" + item.Name
+	}
+	m.loadItems(m.currentSubpath)
 }
 
 // navigateUp goes back one level in the directory hierarchy.
@@ -267,7 +284,14 @@ func (m ConceptPickerModel) viewItemSelection() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("↑/↓: navigate • Enter: select/drill • Backspace: back • Esc: cancel"))
+	// Show different help based on depth mode
+	if m.selectedConcept.MaxDepth == nil {
+		// Infinite depth: Enter selects, Right/l drills
+		b.WriteString(helpStyle.Render("↑/↓: navigate • Enter: select • →/l: drill • Backspace: back • Esc: cancel"))
+	} else {
+		// Configured depth: Enter auto-drills until max
+		b.WriteString(helpStyle.Render("↑/↓: navigate • Enter: select • Backspace: back • Esc: cancel"))
+	}
 
 	return b.String()
 }

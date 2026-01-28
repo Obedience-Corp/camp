@@ -93,7 +93,13 @@ func (s *DefaultService) ListItems(ctx context.Context, conceptName, subpath str
 		fullPath = filepath.Join(fullPath, subpath)
 	}
 
-	items, err := s.listDirItems(fullPath)
+	// Build relative path (from campaign root) for item paths
+	relativePath := concept.Path
+	if subpath != "" {
+		relativePath = filepath.Join(concept.Path, subpath)
+	}
+
+	items, err := s.listDirItems(fullPath, relativePath)
 	if err != nil {
 		return nil, err
 	}
@@ -188,8 +194,9 @@ func (s *DefaultService) hasItemsWithIgnore(path string, ignore []string, depth 
 }
 
 // listDirItems returns directory entries as Items.
-func (s *DefaultService) listDirItems(path string) ([]Item, error) {
-	entries, err := os.ReadDir(path)
+// fullPath is the absolute path for reading, relativePath is the path from campaign root for Item.Path.
+func (s *DefaultService) listDirItems(fullPath, relativePath string) ([]Item, error) {
+	entries, err := os.ReadDir(fullPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return []Item{}, nil
@@ -205,13 +212,13 @@ func (s *DefaultService) listDirItems(path string) ([]Item, error) {
 
 		item := Item{
 			Name:  entry.Name(),
-			Path:  filepath.Join(path, entry.Name()),
+			Path:  filepath.Join(relativePath, entry.Name()), // Relative path from campaign root
 			IsDir: entry.IsDir(),
 		}
 
 		// Count children for directories
 		if entry.IsDir() {
-			item.Children = s.countChildren(filepath.Join(path, entry.Name()))
+			item.Children = s.countChildren(filepath.Join(fullPath, entry.Name()))
 		}
 
 		items = append(items, item)
@@ -526,6 +533,7 @@ func (s *FSService) hasItemsWithIgnore(path string, ignore []string, depth *int)
 }
 
 // listDirItemsFS returns directory entries as Items via fs.FS.
+// path is relative to campaign root (used for both reading from fsys and storing in Item.Path).
 func (s *FSService) listDirItemsFS(path string) ([]Item, error) {
 	entries, err := fs.ReadDir(s.fsys, path)
 	if err != nil {
@@ -540,7 +548,7 @@ func (s *FSService) listDirItemsFS(path string) ([]Item, error) {
 
 		item := Item{
 			Name:  entry.Name(),
-			Path:  filepath.Join(s.campaignRoot, path, entry.Name()),
+			Path:  filepath.Join(path, entry.Name()), // Relative path from campaign root
 			IsDir: entry.IsDir(),
 		}
 

@@ -251,3 +251,181 @@ func TestIntentAddModel_ContextCancellation(t *testing.T) {
 		t.Error("Model should be done when context is cancelled")
 	}
 }
+
+func TestIntentAddModel_BodyCtrlS(t *testing.T) {
+	ctx := context.Background()
+	svc := mockConceptService{
+		concepts: []concept.Concept{
+			{Name: "p", Path: "projects", HasItems: false},
+		},
+	}
+
+	m := NewIntentAddModel(ctx, svc, AddOptions{})
+
+	// Navigate to body step: Title -> Type -> Concept -> Body
+	// Title
+	for _, char := range "Test" {
+		model, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{char}})
+		m = model.(IntentAddModel)
+	}
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(IntentAddModel)
+	// Type
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(IntentAddModel)
+	// Concept (select p which has no items, goes to body)
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(IntentAddModel)
+
+	if m.step != addStepBody {
+		t.Fatalf("Expected to be at body step, got %v", m.step)
+	}
+
+	// Type some body text
+	for _, char := range "Body content" {
+		model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{char}})
+		m = model.(IntentAddModel)
+	}
+
+	// Press Ctrl+S to save
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	m = model.(IntentAddModel)
+
+	if !m.Done() {
+		t.Error("Model should be done after Ctrl+S")
+	}
+	if m.Cancelled() {
+		t.Error("Model should not be cancelled")
+	}
+	if m.Result() == nil {
+		t.Error("Result should not be nil")
+	}
+}
+
+func TestIntentAddModel_VimWQ(t *testing.T) {
+	ctx := context.Background()
+	svc := mockConceptService{
+		concepts: []concept.Concept{
+			{Name: "p", Path: "projects", HasItems: false},
+		},
+	}
+
+	m := NewIntentAddModel(ctx, svc, AddOptions{})
+
+	// Navigate to body step
+	for _, char := range "Test" {
+		model, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{char}})
+		m = model.(IntentAddModel)
+	}
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(IntentAddModel)
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(IntentAddModel)
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(IntentAddModel)
+
+	// Type :wq
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{':'}})
+	m = model.(IntentAddModel)
+
+	if !m.vimCmdMode {
+		t.Error("Should be in vim command mode after :")
+	}
+
+	for _, char := range "wq" {
+		model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{char}})
+		m = model.(IntentAddModel)
+	}
+
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(IntentAddModel)
+
+	if !m.Done() {
+		t.Error("Model should be done after :wq")
+	}
+	if m.Cancelled() {
+		t.Error("Model should not be cancelled after :wq")
+	}
+}
+
+func TestIntentAddModel_VimQBang(t *testing.T) {
+	ctx := context.Background()
+	svc := mockConceptService{
+		concepts: []concept.Concept{
+			{Name: "p", Path: "projects", HasItems: false},
+		},
+	}
+
+	m := NewIntentAddModel(ctx, svc, AddOptions{})
+
+	// Navigate to body step
+	for _, char := range "Test" {
+		model, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{char}})
+		m = model.(IntentAddModel)
+	}
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(IntentAddModel)
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(IntentAddModel)
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(IntentAddModel)
+
+	// Type :q!
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{':'}})
+	m = model.(IntentAddModel)
+	for _, char := range "q!" {
+		model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{char}})
+		m = model.(IntentAddModel)
+	}
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(IntentAddModel)
+
+	if !m.Done() {
+		t.Error("Model should be done after :q!")
+	}
+	if !m.Cancelled() {
+		t.Error("Model should be cancelled after :q!")
+	}
+}
+
+func TestIntentAddModel_VimEscCancelsCommand(t *testing.T) {
+	ctx := context.Background()
+	svc := mockConceptService{
+		concepts: []concept.Concept{
+			{Name: "p", Path: "projects", HasItems: false},
+		},
+	}
+
+	m := NewIntentAddModel(ctx, svc, AddOptions{})
+
+	// Navigate to body step
+	for _, char := range "Test" {
+		model, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{char}})
+		m = model.(IntentAddModel)
+	}
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(IntentAddModel)
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(IntentAddModel)
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(IntentAddModel)
+
+	// Enter vim command mode
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{':'}})
+	m = model.(IntentAddModel)
+
+	if !m.vimCmdMode {
+		t.Error("Should be in vim command mode")
+	}
+
+	// Press Esc to cancel command mode
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = model.(IntentAddModel)
+
+	if m.vimCmdMode {
+		t.Error("Should exit vim command mode after Esc")
+	}
+	if m.Done() {
+		t.Error("Should not be done - Esc in command mode just exits command mode")
+	}
+}

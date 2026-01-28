@@ -67,6 +67,10 @@ type IntentAddModel struct {
 	// Display
 	width  int
 	height int
+
+	// Vim command mode
+	vimCmdMode bool
+	vimCmdBuf  string
 }
 
 // intentTypes are the available intent types.
@@ -244,25 +248,86 @@ func (m IntentAddModel) finishConceptStep() (tea.Model, tea.Cmd) {
 
 // updateBody handles input during body textarea step.
 func (m IntentAddModel) updateBody(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Handle vim command mode
+	if m.vimCmdMode {
+		return m.handleVimCommand(msg)
+	}
+
 	switch msg.String() {
-	case "esc", "ctrl+c":
+	case "ctrl+c":
 		m.cancelled = true
 		m.step = addStepDone
 		return m, tea.Quit
 
-	case "tab":
-		// Skip body, finish
+	case "esc":
+		// Skip body, save intent without description
+		m.bodyInput.SetValue("")
 		return m.finishBodyStep()
 
-	case "ctrl+d":
-		// Done with body
+	case "ctrl+s":
+		// Save with body content
 		return m.finishBodyStep()
+
+	case ":":
+		// Enter vim command mode
+		m.vimCmdMode = true
+		m.vimCmdBuf = ""
+		return m, nil
 	}
 
-	// Pass to textarea
+	// Pass to textarea (Enter inserts newline)
 	var cmd tea.Cmd
 	m.bodyInput, cmd = m.bodyInput.Update(msg)
 	return m, cmd
+}
+
+// handleVimCommand processes vim-style commands like :wq, :q, :q!
+func (m IntentAddModel) handleVimCommand(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEnter:
+		// Execute command
+		cmd := m.vimCmdBuf
+		m.vimCmdMode = false
+		m.vimCmdBuf = ""
+
+		switch cmd {
+		case "w", "wq":
+			// Save with body
+			return m.finishBodyStep()
+		case "q":
+			// Skip body, save intent without description
+			m.bodyInput.SetValue("")
+			return m.finishBodyStep()
+		case "q!":
+			// Cancel entire intent
+			m.cancelled = true
+			m.step = addStepDone
+			return m, tea.Quit
+		}
+		return m, nil
+
+	case tea.KeyEsc:
+		// Cancel command mode
+		m.vimCmdMode = false
+		m.vimCmdBuf = ""
+		return m, nil
+
+	case tea.KeyBackspace:
+		if len(m.vimCmdBuf) > 0 {
+			m.vimCmdBuf = m.vimCmdBuf[:len(m.vimCmdBuf)-1]
+		}
+		if m.vimCmdBuf == "" {
+			// Exit command mode if buffer is empty
+			m.vimCmdMode = false
+		}
+		return m, nil
+
+	case tea.KeyRunes:
+		m.vimCmdBuf += string(msg.Runes)
+		return m, nil
+	}
+
+	return m, nil
 }
 
 // finishBodyStep completes the body step and finishes creation.
@@ -400,8 +465,15 @@ func (m IntentAddModel) viewBodyStep() string {
 
 	b.WriteString("Description (optional):\n")
 	b.WriteString(m.bodyInput.View())
-	b.WriteString("\n\n")
-	b.WriteString(helpStyle.Render("Tab: skip • Ctrl+D: done • Esc: cancel"))
+	b.WriteString("\n")
+
+	// Show vim command buffer if in command mode
+	if m.vimCmdMode {
+		b.WriteString("\n:" + m.vimCmdBuf)
+	}
+
+	b.WriteString("\n")
+	b.WriteString(helpStyle.Render("Ctrl+S/:wq: save • Esc/:q: skip • Ctrl+C: cancel"))
 
 	return b.String()
 }
