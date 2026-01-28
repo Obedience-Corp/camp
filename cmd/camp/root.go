@@ -161,19 +161,63 @@ func loadShortcutsForExpansion() map[string]config.ShortcutConfig {
 }
 
 func init() {
+	// Register template functions for styled help
+	cobra.AddTemplateFunc("styleLabel", ui.Label)
+	cobra.AddTemplateFunc("styleCategory", ui.Category)
+	cobra.AddTemplateFunc("styleDim", ui.Dim)
+	cobra.AddTemplateFunc("styleAccent", ui.Accent)
+	cobra.AddTemplateFunc("styleBold", ui.BoldText)
+
+	// Apply styled usage template
+	rootCmd.SetUsageTemplate(styledUsageTemplate())
+
 	// Define command groups for organized help output
 	rootCmd.AddGroup(
-		&cobra.Group{ID: "setup", Title: "Setup Commands:"},
-		&cobra.Group{ID: "campaign", Title: "Campaign Commands:"},
-		&cobra.Group{ID: "navigation", Title: "Navigation Commands:"},
-		&cobra.Group{ID: "registry", Title: "Registry Commands:"},
-		&cobra.Group{ID: "project", Title: "Project Commands:"},
-		&cobra.Group{ID: "planning", Title: "Planning Commands:"},
-		&cobra.Group{ID: "system", Title: "System Commands:"},
+		&cobra.Group{ID: "setup", Title: ui.Category("Setup Commands:")},
+		&cobra.Group{ID: "campaign", Title: ui.Category("Campaign Commands:")},
+		&cobra.Group{ID: "navigation", Title: ui.Category("Navigation Commands:")},
+		&cobra.Group{ID: "registry", Title: ui.Category("Registry Commands:")},
+		&cobra.Group{ID: "project", Title: ui.Category("Project Commands:")},
+		&cobra.Group{ID: "planning", Title: ui.Category("Planning Commands:")},
+		&cobra.Group{ID: "system", Title: ui.Category("System Commands:")},
 	)
 
 	// Global persistent flags
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: ~/.config/campaign/config.yaml)")
 	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "disable colored output")
 	rootCmd.PersistentFlags().BoolVar(&verbose, "verbose", false, "enable verbose output")
+}
+
+// styledUsageTemplate returns a styled usage template for cobra commands.
+func styledUsageTemplate() string {
+	return `{{styleLabel "Usage:"}}
+  {{.UseLine}}{{if .HasAvailableSubCommands}}
+  {{.CommandPath}} [command]{{end}}{{if gt (len .Aliases) 0}}
+
+{{styleLabel "Aliases:"}}
+  {{.NameAndAliases}}{{end}}{{if .HasExample}}
+
+{{styleLabel "Examples:"}}
+{{.Example}}{{end}}{{if .HasAvailableSubCommands}}{{$cmds := .Commands}}{{if eq (len .Groups) 0}}
+
+{{styleCategory "Available Commands:"}}{{range $cmds}}{{if (or .IsAvailableCommand (eq .Name "help"))}}
+  {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}{{else}}{{range $group := .Groups}}
+
+{{.Title}}{{range $cmds}}{{if (and (eq .GroupID $group.ID) (or .IsAvailableCommand (eq .Name "help")))}}
+  {{styleAccent (rpad .Name .NamePadding)}} {{styleDim .Short}}{{end}}{{end}}{{end}}{{if not .AllChildCommandsHaveGroup}}
+
+{{styleCategory "Additional Commands:"}}{{range $cmds}}{{if (and (eq .GroupID "") (or .IsAvailableCommand (eq .Name "help")))}}
+  {{styleAccent (rpad .Name .NamePadding)}} {{styleDim .Short}}{{end}}{{end}}{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
+
+{{styleLabel "Flags:"}}
+{{.LocalFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableInheritedFlags}}
+
+{{styleLabel "Global Flags:"}}
+{{.InheritedFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasHelpSubCommands}}
+
+{{styleLabel "Additional help topics:"}}{{range .Commands}}{{if .IsAdditionalHelpTopicCommand}}
+  {{rpad .CommandPath .CommandPathPadding}} {{.Short}}{{end}}{{end}}{{end}}{{if .HasAvailableSubCommands}}
+
+{{styleDim "Use \"" }}{{.CommandPath}} [command] --help{{styleDim "\" for more information about a command."}}{{end}}
+`
 }
