@@ -44,7 +44,11 @@ type ConceptPickerModel struct {
 
 // NewConceptPickerModel creates a new concept picker with the given service.
 func NewConceptPickerModel(ctx context.Context, svc concept.Service) ConceptPickerModel {
-	concepts, _ := svc.List(ctx)
+	concepts, err := svc.List(ctx)
+	if err != nil {
+		// Log error but continue with empty concepts
+		concepts = nil
+	}
 
 	names := make([]string, len(concepts))
 	for i, c := range concepts {
@@ -231,7 +235,13 @@ func (m ConceptPickerModel) viewTypeSelection() string {
 
 	b.WriteString(titleStyle.Render("Select concept type:"))
 	b.WriteString("\n\n")
-	b.WriteString(m.typeWheel.View())
+
+	if len(m.concepts) == 0 {
+		b.WriteString(helpStyle.Render("(no concepts configured)"))
+	} else {
+		b.WriteString(m.typeWheel.View())
+	}
+
 	b.WriteString("\n")
 	b.WriteString(helpStyle.Render("↑/↓: navigate • Enter: select • Esc: cancel"))
 
