@@ -347,26 +347,36 @@ func (m IntentViewerModel) closeViewer() tea.Cmd {
 
 // navigatePrev moves to the previous intent in the sibling list (wraps around).
 func (m *IntentViewerModel) navigatePrev() {
+	if len(m.siblings) == 0 {
+		return // Safety check
+	}
 	if m.currentIndex > 0 {
 		m.currentIndex--
 	} else {
 		m.currentIndex = len(m.siblings) - 1 // wrap to end
 	}
-	m.intent = m.siblings[m.currentIndex]
-	m.loadContent()
-	m.viewport.GotoTop()
+	if m.currentIndex >= 0 && m.currentIndex < len(m.siblings) {
+		m.intent = m.siblings[m.currentIndex]
+		m.loadContent()
+		m.viewport.GotoTop()
+	}
 }
 
 // navigateNext moves to the next intent in the sibling list (wraps around).
 func (m *IntentViewerModel) navigateNext() {
+	if len(m.siblings) == 0 {
+		return // Safety check
+	}
 	if m.currentIndex < len(m.siblings)-1 {
 		m.currentIndex++
 	} else {
 		m.currentIndex = 0 // wrap to start
 	}
-	m.intent = m.siblings[m.currentIndex]
-	m.loadContent()
-	m.viewport.GotoTop()
+	if m.currentIndex >= 0 && m.currentIndex < len(m.siblings) {
+		m.intent = m.siblings[m.currentIndex]
+		m.loadContent()
+		m.viewport.GotoTop()
+	}
 }
 
 // openInEditor opens the intent in $EDITOR.
