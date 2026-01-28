@@ -15,6 +15,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/obediencecorp/camp/internal/concept"
+	"github.com/obediencecorp/camp/internal/config"
 	"github.com/obediencecorp/camp/internal/intent"
 )
 
@@ -151,6 +152,15 @@ type ExplorerModel struct {
 
 // NewExplorerModel creates a new Explorer model.
 func NewExplorerModel(ctx context.Context, svc *intent.IntentService, conceptSvc concept.Service) ExplorerModel {
+	// Initialize glamour style once at startup (handles adaptive detection).
+	// This avoids the slow OSC terminal query on every markdown render.
+	globalCfg, _ := config.LoadGlobalConfig(ctx)
+	themeName := "adaptive" // default
+	if globalCfg != nil {
+		themeName = globalCfg.TUI.Theme
+	}
+	initGlamourStyle(themeName)
+
 	ti := textinput.New()
 	ti.Placeholder = "Search intents..."
 	ti.CharLimit = 100

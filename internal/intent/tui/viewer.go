@@ -12,7 +12,6 @@ import (
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/obediencecorp/camp/internal/intent"
 )
@@ -128,25 +127,7 @@ func (m *IntentViewerModel) loadContent() {
 // renderContent renders the markdown content.
 func (m *IntentViewerModel) renderContent() {
 	content := stripFrontmatter(m.rawContent)
-
-	renderer, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
-		glamour.WithWordWrap(m.width-6),
-	)
-	if err != nil {
-		m.content = content
-		m.viewport.SetContent(m.content)
-		return
-	}
-
-	rendered, err := renderer.Render(content)
-	if err != nil {
-		m.content = content
-		m.viewport.SetContent(m.content)
-		return
-	}
-
-	m.content = strings.TrimSpace(rendered)
+	m.content = renderMarkdown(content, m.width-6)
 	m.viewport.SetContent(m.content)
 }
 

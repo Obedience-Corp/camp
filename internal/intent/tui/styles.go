@@ -1,9 +1,68 @@
 package tui
 
 import (
+	"os"
+	"strings"
+	"sync"
+
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 	"github.com/obediencecorp/camp/internal/ui/theme"
 )
+
+var (
+	glamourStyle     string
+	glamourStyleOnce sync.Once
+)
+
+// initGlamourStyle detects and caches the glamour style.
+// Call this once at TUI startup with the user's theme preference.
+// This avoids the slow OSC terminal query on every render.
+func initGlamourStyle(themeName string) {
+	glamourStyleOnce.Do(func() {
+		switch themeName {
+		case "dark":
+			glamourStyle = "dark"
+		case "light":
+			glamourStyle = "light"
+		case "high-contrast":
+			glamourStyle = "dark" // high-contrast uses dark base
+		default: // "adaptive" or empty
+			// Detect once - this is the slow operation
+			output := termenv.NewOutput(os.Stdout)
+			if output.HasDarkBackground() {
+				glamourStyle = "dark"
+			} else {
+				glamourStyle = "light"
+			}
+		}
+	})
+}
+
+// renderMarkdown renders content with glamour using the cached style.
+// Must call initGlamourStyle() before first use.
+func renderMarkdown(content string, width int) string {
+	// Fallback if not initialized
+	if glamourStyle == "" {
+		glamourStyle = "dark"
+	}
+
+	renderer, err := glamour.NewTermRenderer(
+		glamour.WithStylePath(glamourStyle),
+		glamour.WithWordWrap(width),
+	)
+	if err != nil {
+		return content
+	}
+
+	rendered, err := renderer.Render(content)
+	if err != nil {
+		return content
+	}
+
+	return strings.TrimSpace(rendered)
+}
 
 // pal is the TUI color palette for adaptive theming.
 var pal = theme.TUI()
