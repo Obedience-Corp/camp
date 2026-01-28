@@ -7,7 +7,7 @@ import (
 	"os"
 )
 
-// LoadGlobalConfig loads the global configuration from ~/.config/campaign/config.json.
+// LoadGlobalConfig loads the global configuration from ~/.config/obey/campaign/config.json.
 // Returns default configuration if the file doesn't exist, and auto-creates the file.
 func LoadGlobalConfig(ctx context.Context) (*GlobalConfig, error) {
 	if ctx.Err() != nil {
@@ -42,7 +42,7 @@ func LoadGlobalConfig(ctx context.Context) (*GlobalConfig, error) {
 	return &cfg, nil
 }
 
-// SaveGlobalConfig saves the global configuration to ~/.config/campaign/config.json.
+// SaveGlobalConfig saves the global configuration to ~/.config/obey/campaign/config.json.
 func SaveGlobalConfig(ctx context.Context, cfg *GlobalConfig) error {
 	if ctx.Err() != nil {
 		return ctx.Err()

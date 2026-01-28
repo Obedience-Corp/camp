@@ -32,7 +32,7 @@ func TestLoadRegistry_FromFile(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
-	configDir := filepath.Join(dir, AppName)
+	configDir := filepath.Join(dir, OrgName, AppName)
 	os.MkdirAll(configDir, 0755)
 
 	// JSON format: campaigns keyed by ID with name field
@@ -538,7 +538,7 @@ func TestRegistryPath(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
 	got := RegistryPath()
-	want := filepath.Join(dir, AppName, "registry.json")
+	want := filepath.Join(dir, OrgName, AppName, "registry.json")
 	if got != want {
 		t.Errorf("RegistryPath() = %q, want %q", got, want)
 	}

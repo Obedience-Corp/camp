@@ -303,7 +303,7 @@ Without a `default` shortcut, navigation jumps to the project root.
 
 ### Global Config
 
-Located at `~/.config/campaign/config.yaml`:
+Located at `~/.config/obey/campaign/config.yaml`:
 
 ```yaml
 default_type: product

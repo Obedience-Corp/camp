@@ -60,7 +60,7 @@ func TestLoadGlobalConfig_FromFile(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
 	// Create config file
-	configDir := filepath.Join(dir, AppName)
+	configDir := filepath.Join(dir, OrgName, AppName)
 	os.MkdirAll(configDir, 0755)
 
 	configContent := `{
@@ -88,7 +88,7 @@ func TestLoadGlobalConfig_InvalidJSON(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
-	configDir := filepath.Join(dir, AppName)
+	configDir := filepath.Join(dir, OrgName, AppName)
 	os.MkdirAll(configDir, 0755)
 
 	configPath := filepath.Join(configDir, "config.json")
@@ -194,7 +194,7 @@ func TestConfigDir_XDG(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
 	got := ConfigDir()
-	want := filepath.Join(dir, AppName)
+	want := filepath.Join(dir, OrgName, AppName)
 	if got != want {
 		t.Errorf("ConfigDir() = %q, want %q", got, want)
 	}
@@ -204,7 +204,7 @@ func TestConfigDir_Default(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "")
 
 	home, _ := os.UserHomeDir()
-	want := filepath.Join(home, ".config", AppName)
+	want := filepath.Join(home, ".config", OrgName, AppName)
 
 	got := ConfigDir()
 	if got != want {
@@ -217,7 +217,7 @@ func TestGlobalConfigPath(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
 	got := GlobalConfigPath()
-	want := filepath.Join(dir, AppName, "config.json")
+	want := filepath.Join(dir, OrgName, AppName, "config.json")
 	if got != want {
 		t.Errorf("GlobalConfigPath() = %q, want %q", got, want)
 	}
