@@ -443,6 +443,85 @@ func (s *Service) appendHistory(ctx context.Context, entry HistoryEntry) error {
 	return nil
 }
 
+// Migrate upgrades a legacy dungeon structure to a full workflow.
+// It creates a .workflow.yaml file and any missing directories.
+func (s *Service) Migrate(ctx context.Context, opts MigrateOptions) (*MigrateResult, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	result := &MigrateResult{}
+
+	// Check for existing dungeon directory
+	dungeonPath := s.resolvePath("dungeon")
+	if _, err := os.Stat(dungeonPath); os.IsNotExist(err) {
+		// No dungeon - just do a regular init
+		schema := DefaultSchema()
+		initResult, err := s.Init(ctx, InitOptions{Force: opts.Force})
+		if err != nil {
+			return nil, err
+		}
+		result.Created = append(result.Created, initResult.CreatedFiles...)
+		result.Created = append(result.Created, initResult.CreatedDirs...)
+		result.Schema = schema
+		return result, nil
+	}
+
+	// Dungeon exists - preserve it and add workflow
+	result.Preserved = append(result.Preserved, "dungeon/")
+
+	// Check for subdirectories
+	entries, err := os.ReadDir(dungeonPath)
+	if err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				result.Preserved = append(result.Preserved, "dungeon/"+entry.Name()+"/")
+			}
+		}
+	}
+
+	if !opts.DryRun {
+		// Create schema and remaining directories
+		schema := DefaultSchema()
+		data, err := yaml.Marshal(schema)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal schema: %w", err)
+		}
+
+		if err := os.WriteFile(s.schemaPath, data, 0644); err != nil {
+			return nil, fmt.Errorf("failed to write schema file: %w", err)
+		}
+		result.Created = append(result.Created, s.schemaPath)
+		s.schema = schema
+
+		// Create non-dungeon directories
+		for _, dir := range []string{"active", "ready"} {
+			dirPath := s.resolvePath(dir)
+			if _, err := os.Stat(dirPath); os.IsNotExist(err) {
+				if err := os.MkdirAll(dirPath, 0755); err != nil {
+					return nil, fmt.Errorf("failed to create directory %s: %w", dir, err)
+				}
+				result.Created = append(result.Created, dir+"/")
+			}
+		}
+
+		// Create any missing dungeon subdirectories
+		for childName := range schema.Directories["dungeon"].Children {
+			childPath := s.resolvePath("dungeon/" + childName)
+			if _, err := os.Stat(childPath); os.IsNotExist(err) {
+				if err := os.MkdirAll(childPath, 0755); err != nil {
+					return nil, fmt.Errorf("failed to create directory dungeon/%s: %w", childName, err)
+				}
+				result.Created = append(result.Created, "dungeon/"+childName+"/")
+			}
+		}
+
+		result.Schema = schema
+	}
+
+	return result, nil
+}
+
 // Crawl interactively reviews items across statuses.
 // This is a placeholder implementation - full TUI will be implemented later.
 func (s *Service) Crawl(ctx context.Context, opts CrawlOptions) (*CrawlResult, error) {
