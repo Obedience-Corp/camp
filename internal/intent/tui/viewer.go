@@ -298,14 +298,14 @@ func (m IntentViewerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case viewerArchiveFinishedMsg:
 		if msg.err == nil {
-			// Return to explorer after archive
+			m.refreshOnReturn = true
 			return m, m.closeViewer()
 		}
 		return m, nil
 
 	case viewerDeleteFinishedMsg:
 		if msg.err == nil {
-			// Return to explorer after delete
+			m.refreshOnReturn = true
 			return m, m.closeViewer()
 		}
 		return m, nil
