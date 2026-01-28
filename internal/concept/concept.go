@@ -19,6 +19,12 @@ type Concept struct {
 	// HasItems indicates whether this concept has subdirectory items.
 	// If true, the concept expands to show available items when selected.
 	HasItems bool
+
+	// MaxDepth controls drilling depth: nil=unlimited, 0=no drilling, 1+=levels.
+	MaxDepth *int
+
+	// Ignore lists subdirectory paths to exclude from listing.
+	Ignore []string
 }
 
 // Item represents a selectable item within a concept.
@@ -36,6 +42,10 @@ type Item struct {
 	// Children is the count of non-hidden children for directories.
 	// Used by UI to show drill-down indicators.
 	Children int
+
+	// DrillDisabled indicates drilling is disabled (due to depth limit).
+	// When true, UI should not show drill arrow OR "(empty)" label.
+	DrillDisabled bool
 }
 
 // Service provides operations for working with concepts.

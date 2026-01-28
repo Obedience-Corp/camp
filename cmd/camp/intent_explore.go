@@ -74,7 +74,7 @@ func runIntentExplore(cmd *cobra.Command, args []string) error {
 	// Create path resolver and services
 	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
 	svc := intent.NewIntentService(campaignRoot, resolver.Intents())
-	conceptSvc := concept.NewService(campaignRoot, cfg.Shortcuts())
+	conceptSvc := concept.NewService(campaignRoot, cfg.Concepts())
 
 	// Create and run the TUI
 	model := tui.NewExplorerModel(ctx, svc, conceptSvc)

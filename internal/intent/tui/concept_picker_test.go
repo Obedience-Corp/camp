@@ -14,6 +14,9 @@ type mockConceptService struct {
 	items    map[string][]concept.Item
 }
 
+// Helper for creating depth pointers in tests
+func intPtr(i int) *int { return &i }
+
 func (m mockConceptService) List(ctx context.Context) ([]concept.Concept, error) {
 	return m.concepts, nil
 }
@@ -157,9 +160,10 @@ func TestConceptPicker_SelectConceptWithoutItems(t *testing.T) {
 }
 
 func TestConceptPicker_DrillIntoDirectory(t *testing.T) {
+	// Use MaxDepth so Enter auto-drills (infinite depth would require right/l to drill)
 	svc := mockConceptService{
 		concepts: []concept.Concept{
-			{Name: "p", Path: "projects", Description: "Projects", HasItems: true},
+			{Name: "p", Path: "projects", Description: "Projects", HasItems: true, MaxDepth: intPtr(5)},
 		},
 		items: map[string][]concept.Item{
 			"p:": {
@@ -227,9 +231,10 @@ func TestConceptPicker_SelectFile(t *testing.T) {
 }
 
 func TestConceptPicker_BackspaceFromNested(t *testing.T) {
+	// Use MaxDepth so Enter auto-drills (infinite depth would require right/l to drill)
 	svc := mockConceptService{
 		concepts: []concept.Concept{
-			{Name: "p", Path: "projects", Description: "Projects", HasItems: true},
+			{Name: "p", Path: "projects", Description: "Projects", HasItems: true, MaxDepth: intPtr(5)},
 		},
 		items: map[string][]concept.Item{
 			"p:": {
@@ -427,10 +432,77 @@ func TestConceptPicker_ViewRendersCorrectly(t *testing.T) {
 	}
 }
 
-func TestConceptPicker_Breadcrumb(t *testing.T) {
+func TestConceptPicker_InfiniteDepthDrillWithRightKey(t *testing.T) {
+	// Infinite depth (MaxDepth nil): Enter selects, right/l drills
 	svc := mockConceptService{
 		concepts: []concept.Concept{
-			{Name: "p", Path: "projects", Description: "Projects", HasItems: true},
+			{Name: "f", Path: "festivals", Description: "Festivals", HasItems: true}, // No MaxDepth = infinite
+		},
+		items: map[string][]concept.Item{
+			"f:": {
+				{Name: "active", Path: "festivals/active", IsDir: true, Children: 1},
+			},
+			"f:active": {
+				{Name: "my-festival", Path: "festivals/active/my-festival", IsDir: true, Children: 0},
+			},
+		},
+	}
+
+	picker := NewConceptPickerModel(context.Background(), svc)
+
+	// Select concept type
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	// With infinite depth, Enter should SELECT, not drill
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if picker.step != stepDone {
+		t.Errorf("Expected Enter to select (stepDone) with infinite depth, got step %v", picker.step)
+	}
+
+	if picker.selectedPath != "festivals/active" {
+		t.Errorf("Expected selectedPath 'festivals/active', got %q", picker.selectedPath)
+	}
+}
+
+func TestConceptPicker_InfiniteDepthDrillWithLKey(t *testing.T) {
+	// Infinite depth (MaxDepth nil): right/l key drills
+	svc := mockConceptService{
+		concepts: []concept.Concept{
+			{Name: "f", Path: "festivals", Description: "Festivals", HasItems: true}, // No MaxDepth = infinite
+		},
+		items: map[string][]concept.Item{
+			"f:": {
+				{Name: "active", Path: "festivals/active", IsDir: true, Children: 1},
+			},
+			"f:active": {
+				{Name: "my-festival", Path: "festivals/active/my-festival", IsDir: true, Children: 0},
+			},
+		},
+	}
+
+	picker := NewConceptPickerModel(context.Background(), svc)
+
+	// Select concept type
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	// Use 'l' key to drill (vim style)
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
+
+	if picker.step != stepSelectingItem {
+		t.Errorf("Expected 'l' to drill (stay in stepSelectingItem), got step %v", picker.step)
+	}
+
+	if picker.currentSubpath != "active" {
+		t.Errorf("Expected currentSubpath 'active' after drill, got %q", picker.currentSubpath)
+	}
+}
+
+func TestConceptPicker_Breadcrumb(t *testing.T) {
+	// Use MaxDepth so Enter auto-drills (infinite depth would require right/l to drill)
+	svc := mockConceptService{
+		concepts: []concept.Concept{
+			{Name: "p", Path: "projects", Description: "Projects", HasItems: true, MaxDepth: intPtr(5)},
 		},
 		items: map[string][]concept.Item{
 			"p:": {

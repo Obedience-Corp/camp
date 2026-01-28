@@ -22,29 +22,6 @@ var (
 var rootCmd = &cobra.Command{
 	Use:   "camp",
 	Short: "Campaign management CLI for multi-project AI workspaces",
-	Long: `Camp manages multi-project AI workspaces with fast navigation.
-
-Camp provides structure and navigation for AI-powered development workflows.
-It creates standardized campaign directories, manages git submodules as projects,
-and enables lightning-fast navigation through category shortcuts and TUI fuzzy finding.
-
-GETTING STARTED:
-  camp init               Initialize a new campaign in the current directory
-  camp project list       List all projects in the campaign
-  camp list               Show all registered campaigns
-
-NAVIGATION (using cgo shell function):
-  cgo                     Navigate to campaign root
-  cgo p                   Navigate to projects directory
-  cgo f                   Navigate to festivals directory
-  cgo <name>              Fuzzy find and navigate to any target
-
-COMMON WORKFLOWS:
-  camp project add <url>  Add a git repo as a project submodule
-  camp run <command>      Run command from campaign root directory
-  camp shortcuts          View all available navigation shortcuts
-
-Run 'camp shell-init' to enable the cgo navigation function.`,
 	Version: fmt.Sprintf("%s (built %s, commit %s)", version.Version, version.BuildDate, version.Commit),
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		// Wire up the no-color flag
@@ -161,19 +138,103 @@ func loadShortcutsForExpansion() map[string]config.ShortcutConfig {
 }
 
 func init() {
+	// Register template functions for styled help
+	cobra.AddTemplateFunc("styleLabel", ui.Label)
+	cobra.AddTemplateFunc("styleCategory", ui.Category)
+	cobra.AddTemplateFunc("styleDim", ui.Dim)
+	cobra.AddTemplateFunc("styleAccent", ui.Accent)
+	cobra.AddTemplateFunc("styleBold", ui.BoldText)
+	cobra.AddTemplateFunc("styleHeader", ui.Header)
+	cobra.AddTemplateFunc("styleHelp", ui.StyleHelpText)
+
+	// Set styled Long description for root command
+	rootCmd.Long = styledLongDescription()
+
+	// Apply styled help and usage templates
+	rootCmd.SetHelpTemplate(styledHelpTemplate())
+	rootCmd.SetUsageTemplate(styledUsageTemplate())
+
 	// Define command groups for organized help output
 	rootCmd.AddGroup(
-		&cobra.Group{ID: "setup", Title: "Setup Commands:"},
-		&cobra.Group{ID: "campaign", Title: "Campaign Commands:"},
-		&cobra.Group{ID: "navigation", Title: "Navigation Commands:"},
-		&cobra.Group{ID: "registry", Title: "Registry Commands:"},
-		&cobra.Group{ID: "project", Title: "Project Commands:"},
-		&cobra.Group{ID: "planning", Title: "Planning Commands:"},
-		&cobra.Group{ID: "system", Title: "System Commands:"},
+		&cobra.Group{ID: "setup", Title: ui.Category("Setup Commands:")},
+		&cobra.Group{ID: "campaign", Title: ui.Category("Campaign Commands:")},
+		&cobra.Group{ID: "navigation", Title: ui.Category("Navigation Commands:")},
+		&cobra.Group{ID: "registry", Title: ui.Category("Registry Commands:")},
+		&cobra.Group{ID: "project", Title: ui.Category("Project Commands:")},
+		&cobra.Group{ID: "planning", Title: ui.Category("Planning Commands:")},
+		&cobra.Group{ID: "system", Title: ui.Category("System Commands:")},
 	)
 
 	// Global persistent flags
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: ~/.config/campaign/config.yaml)")
 	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "disable colored output")
 	rootCmd.PersistentFlags().BoolVar(&verbose, "verbose", false, "enable verbose output")
+}
+
+// styledLongDescription returns the styled long description for the root command.
+func styledLongDescription() string {
+	return `Camp manages multi-project AI workspaces with fast navigation.
+
+Camp provides structure and navigation for AI-powered development workflows.
+It creates standardized campaign directories, manages git submodules as projects,
+and enables lightning-fast navigation through category shortcuts and TUI fuzzy finding.
+
+` + ui.Category("GETTING STARTED:") + `
+  ` + ui.Accent("camp init") + `               Initialize a new campaign in the current directory
+  ` + ui.Accent("camp project list") + `       List all projects in the campaign
+  ` + ui.Accent("camp list") + `               Show all registered campaigns
+
+` + ui.Category("NAVIGATION (using cgo shell function):") + `
+  ` + ui.Accent("cgo") + `                     Navigate to campaign root
+  ` + ui.Accent("cgo p") + `                   Navigate to projects directory
+  ` + ui.Accent("cgo f") + `                   Navigate to festivals directory
+  ` + ui.Accent("cgo <name>") + `              Fuzzy find and navigate to any target
+
+` + ui.Category("COMMON WORKFLOWS:") + `
+  ` + ui.Accent("camp project add <url>") + `  Add a git repo as a project submodule
+  ` + ui.Accent("camp run <command>") + `      Run command from campaign root directory
+  ` + ui.Accent("camp shortcuts") + `          View all available navigation shortcuts
+
+Run '` + ui.Accent("camp shell-init") + `' to enable the cgo navigation function.`
+}
+
+// styledHelpTemplate returns a styled help template for cobra commands.
+func styledHelpTemplate() string {
+	return `{{if .Long}}{{styleHelp .Long}}
+
+{{end}}{{if or .Runnable .HasSubCommands}}{{.UsageString}}{{end}}`
+}
+
+// styledUsageTemplate returns a styled usage template for cobra commands.
+func styledUsageTemplate() string {
+	return `{{styleCategory "Usage:"}}
+  {{.UseLine}}{{if .HasAvailableSubCommands}}
+  {{.CommandPath}} [command]{{end}}{{if gt (len .Aliases) 0}}
+
+{{styleCategory "Aliases:"}}
+  {{.NameAndAliases}}{{end}}{{if .HasExample}}
+
+{{styleCategory "Examples:"}}
+{{.Example}}{{end}}{{if .HasAvailableSubCommands}}{{$cmds := .Commands}}{{if eq (len .Groups) 0}}
+
+{{styleCategory "Available Commands:"}}{{range $cmds}}{{if (or .IsAvailableCommand (eq .Name "help"))}}
+  {{styleAccent (rpad .Name .NamePadding)}} {{.Short}}{{end}}{{end}}{{else}}{{range $group := .Groups}}
+
+{{.Title}}{{range $cmds}}{{if (and (eq .GroupID $group.ID) (or .IsAvailableCommand (eq .Name "help")))}}
+  {{styleAccent (rpad .Name .NamePadding)}} {{.Short}}{{end}}{{end}}{{end}}{{if not .AllChildCommandsHaveGroup}}
+
+{{styleCategory "Additional Commands:"}}{{range $cmds}}{{if (and (eq .GroupID "") (or .IsAvailableCommand (eq .Name "help")))}}
+  {{styleAccent (rpad .Name .NamePadding)}} {{.Short}}{{end}}{{end}}{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
+
+{{styleCategory "Flags:"}}
+{{.LocalFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableInheritedFlags}}
+
+{{styleCategory "Global Flags:"}}
+{{.InheritedFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasHelpSubCommands}}
+
+{{styleCategory "Additional help topics:"}}{{range .Commands}}{{if .IsAdditionalHelpTopicCommand}}
+  {{rpad .CommandPath .CommandPathPadding}} {{.Short}}{{end}}{{end}}{{end}}{{if .HasAvailableSubCommands}}
+
+Use "{{.CommandPath}} [command] --help" for more information about a command.{{end}}
+`
 }

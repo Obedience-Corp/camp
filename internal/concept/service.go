@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/obediencecorp/camp/internal/config"
 )
@@ -20,47 +21,42 @@ var (
 // DefaultService implements the Service interface.
 type DefaultService struct {
 	campaignRoot string
-	shortcuts    map[string]config.ShortcutConfig
+	concepts     []config.ConceptEntry
 }
 
 // NewService creates a new concept service.
-func NewService(campaignRoot string, shortcuts map[string]config.ShortcutConfig) *DefaultService {
+func NewService(campaignRoot string, concepts []config.ConceptEntry) *DefaultService {
 	return &DefaultService{
 		campaignRoot: campaignRoot,
-		shortcuts:    shortcuts,
+		concepts:     concepts,
 	}
 }
 
-// List returns all available concepts from the shortcuts configuration.
-// Only shortcuts with Concept != "" are included.
+// List returns all available concepts (order preserved from config).
 func (s *DefaultService) List(ctx context.Context) ([]Concept, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("context cancelled: %w", err)
 	}
 
-	var concepts []Concept
-
-	for name, sc := range s.shortcuts {
-		if sc.Concept == "" {
+	var result []Concept
+	for _, c := range s.concepts {
+		if c.Path == "" {
 			continue
 		}
 
-		hasItems := s.hasItems(sc.Path)
+		hasItems := s.hasItemsWithIgnore(c.Path, c.Ignore, c.Depth)
 
-		concepts = append(concepts, Concept{
-			Name:        name,
-			Path:        sc.Path,
-			Description: sc.Description,
+		result = append(result, Concept{
+			Name:        c.Name,
+			Path:        c.Path,
+			Description: c.Description,
 			HasItems:    hasItems,
+			MaxDepth:    c.Depth,
+			Ignore:      c.Ignore,
 		})
 	}
 
-	// Sort by name for consistent display
-	sort.Slice(concepts, func(i, j int) bool {
-		return concepts[i].Name < concepts[j].Name
-	})
-
-	return concepts, nil
+	return result, nil
 }
 
 // ListItems returns subdirectories for a given concept.
@@ -79,13 +75,52 @@ func (s *DefaultService) ListItems(ctx context.Context, conceptName, subpath str
 		return []Item{}, nil
 	}
 
+	// Check depth limit
+	// depth: 0 means no drilling at all
+	if concept.MaxDepth != nil && *concept.MaxDepth == 0 {
+		return []Item{}, nil
+	}
+
+	// Check depth for deeper levels
+	currentDepth := countPathDepth(subpath) + 1 // +1 because we're listing children
+	if concept.MaxDepth != nil && currentDepth > *concept.MaxDepth {
+		return []Item{}, nil
+	}
+
 	// Build full path including optional subpath
 	fullPath := filepath.Join(s.campaignRoot, concept.Path)
 	if subpath != "" {
 		fullPath = filepath.Join(fullPath, subpath)
 	}
 
-	return s.listDirItems(fullPath)
+	// Build relative path (from campaign root) for item paths
+	relativePath := concept.Path
+	if subpath != "" {
+		relativePath = filepath.Join(concept.Path, subpath)
+	}
+
+	items, err := s.listDirItems(fullPath, relativePath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter out ignored paths (only at top level, subpath=="")
+	if subpath == "" && len(concept.Ignore) > 0 {
+		items = filterIgnored(items, concept.Ignore)
+	}
+
+	// Mark items as drill-disabled if at max depth
+	if concept.MaxDepth != nil {
+		currentDepth := countPathDepth(subpath)
+		atMaxDepth := currentDepth+1 >= *concept.MaxDepth
+		if atMaxDepth {
+			for i := range items {
+				items[i].DrillDisabled = true
+			}
+		}
+	}
+
+	return items, nil
 }
 
 // Resolve resolves a concept name and optional item to a full path.
@@ -106,28 +141,36 @@ func (s *DefaultService) Resolve(ctx context.Context, conceptName, item string) 
 	return filepath.Join(s.campaignRoot, concept.Path, item), nil
 }
 
-// Get retrieves a concept by its shortcut name.
+// Get retrieves a concept by name.
 func (s *DefaultService) Get(ctx context.Context, name string) (*Concept, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("context cancelled: %w", err)
 	}
 
-	sc, ok := s.shortcuts[name]
-	if !ok || sc.Concept == "" {
-		return nil, fmt.Errorf("%w: %s", ErrNotFound, name)
+	for _, c := range s.concepts {
+		if c.Name == name {
+			return &Concept{
+				Name:        c.Name,
+				Path:        c.Path,
+				Description: c.Description,
+				HasItems:    s.hasItemsWithIgnore(c.Path, c.Ignore, c.Depth),
+				MaxDepth:    c.Depth,
+				Ignore:      c.Ignore,
+			}, nil
+		}
 	}
 
-	return &Concept{
-		Name:        name,
-		Path:        sc.Path,
-		Description: sc.Description,
-		HasItems:    s.hasItems(sc.Path),
-	}, nil
+	return nil, fmt.Errorf("%w: %s", ErrNotFound, name)
 }
 
-// hasItems checks if the concept path has subdirectories.
-func (s *DefaultService) hasItems(path string) bool {
+// hasItemsWithIgnore checks if the concept path has subdirectories (excluding ignored).
+func (s *DefaultService) hasItemsWithIgnore(path string, ignore []string, depth *int) bool {
 	if path == "" {
+		return false
+	}
+
+	// depth: 0 means no drilling, so no items
+	if depth != nil && *depth == 0 {
 		return false
 	}
 
@@ -137,9 +180,13 @@ func (s *DefaultService) hasItems(path string) bool {
 		return false
 	}
 
+	ignoreSet := makeIgnoreSet(ignore)
+
 	for _, entry := range entries {
 		if entry.IsDir() && !isHidden(entry.Name()) {
-			return true
+			if !ignoreSet[entry.Name()+"/"] && !ignoreSet[entry.Name()] {
+				return true
+			}
 		}
 	}
 
@@ -147,8 +194,9 @@ func (s *DefaultService) hasItems(path string) bool {
 }
 
 // listDirItems returns directory entries as Items.
-func (s *DefaultService) listDirItems(path string) ([]Item, error) {
-	entries, err := os.ReadDir(path)
+// fullPath is the absolute path for reading, relativePath is the path from campaign root for Item.Path.
+func (s *DefaultService) listDirItems(fullPath, relativePath string) ([]Item, error) {
+	entries, err := os.ReadDir(fullPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return []Item{}, nil
@@ -164,13 +212,13 @@ func (s *DefaultService) listDirItems(path string) ([]Item, error) {
 
 		item := Item{
 			Name:  entry.Name(),
-			Path:  filepath.Join(path, entry.Name()),
+			Path:  filepath.Join(relativePath, entry.Name()), // Relative path from campaign root
 			IsDir: entry.IsDir(),
 		}
 
 		// Count children for directories
 		if entry.IsDir() {
-			item.Children = s.countChildren(filepath.Join(path, entry.Name()))
+			item.Children = s.countChildren(filepath.Join(fullPath, entry.Name()))
 		}
 
 		items = append(items, item)
@@ -206,6 +254,41 @@ func (s *DefaultService) countChildren(path string) int {
 // isHidden returns true if the name starts with a dot.
 func isHidden(name string) bool {
 	return len(name) > 0 && name[0] == '.'
+}
+
+// countPathDepth counts the number of path segments in a subpath.
+func countPathDepth(subpath string) int {
+	if subpath == "" {
+		return 0
+	}
+	return len(strings.Split(filepath.Clean(subpath), string(filepath.Separator)))
+}
+
+// makeIgnoreSet creates a set from ignore patterns for fast lookup.
+func makeIgnoreSet(ignore []string) map[string]bool {
+	set := make(map[string]bool, len(ignore))
+	for _, pattern := range ignore {
+		set[pattern] = true
+		// Also add without trailing slash
+		set[strings.TrimSuffix(pattern, "/")] = true
+	}
+	return set
+}
+
+// filterIgnored removes items matching ignore patterns.
+func filterIgnored(items []Item, ignore []string) []Item {
+	if len(ignore) == 0 {
+		return items
+	}
+
+	ignoreSet := makeIgnoreSet(ignore)
+	var filtered []Item
+	for _, item := range items {
+		if !ignoreSet[item.Name+"/"] && !ignoreSet[item.Name] {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
 }
 
 // ResolvePath validates a path exists and returns its Item details.
@@ -286,52 +369,47 @@ var _ Service = (*DefaultService)(nil)
 // FSService is a service implementation that uses an fs.FS for testability.
 type FSService struct {
 	campaignRoot string
-	shortcuts    map[string]config.ShortcutConfig
+	concepts     []config.ConceptEntry
 	fsys         fs.FS
 }
 
 // NewFSService creates a new concept service with a custom filesystem.
-func NewFSService(campaignRoot string, shortcuts map[string]config.ShortcutConfig, fsys fs.FS) *FSService {
+func NewFSService(campaignRoot string, concepts []config.ConceptEntry, fsys fs.FS) *FSService {
 	return &FSService{
 		campaignRoot: campaignRoot,
-		shortcuts:    shortcuts,
+		concepts:     concepts,
 		fsys:         fsys,
 	}
 }
 
-// List returns all available concepts from the shortcuts configuration.
+// List returns all available concepts (order preserved from config).
 func (s *FSService) List(ctx context.Context) ([]Concept, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("context cancelled: %w", err)
 	}
 
-	var concepts []Concept
-
-	for name, sc := range s.shortcuts {
-		if sc.Concept == "" {
+	var result []Concept
+	for _, c := range s.concepts {
+		if c.Path == "" {
 			continue
 		}
 
-		hasItems := s.hasItems(sc.Path)
+		hasItems := s.hasItemsWithIgnore(c.Path, c.Ignore, c.Depth)
 
-		concepts = append(concepts, Concept{
-			Name:        name,
-			Path:        sc.Path,
-			Description: sc.Description,
+		result = append(result, Concept{
+			Name:        c.Name,
+			Path:        c.Path,
+			Description: c.Description,
 			HasItems:    hasItems,
+			MaxDepth:    c.Depth,
+			Ignore:      c.Ignore,
 		})
 	}
 
-	// Sort by name for consistent display
-	sort.Slice(concepts, func(i, j int) bool {
-		return concepts[i].Name < concepts[j].Name
-	})
-
-	return concepts, nil
+	return result, nil
 }
 
 // ListItems returns subdirectories for a given concept.
-// The subpath parameter allows drilling into nested directories.
 func (s *FSService) ListItems(ctx context.Context, conceptName, subpath string) ([]Item, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("context cancelled: %w", err)
@@ -346,13 +424,44 @@ func (s *FSService) ListItems(ctx context.Context, conceptName, subpath string) 
 		return []Item{}, nil
 	}
 
+	// Check depth limit
+	if concept.MaxDepth != nil && *concept.MaxDepth == 0 {
+		return []Item{}, nil
+	}
+
+	currentDepth := countPathDepth(subpath) + 1
+	if concept.MaxDepth != nil && currentDepth > *concept.MaxDepth {
+		return []Item{}, nil
+	}
+
 	// Build path including optional subpath
 	targetPath := concept.Path
 	if subpath != "" {
 		targetPath = filepath.Join(concept.Path, subpath)
 	}
 
-	return s.listDirItemsFS(targetPath)
+	items, err := s.listDirItemsFS(targetPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter out ignored paths at top level
+	if subpath == "" && len(concept.Ignore) > 0 {
+		items = filterIgnored(items, concept.Ignore)
+	}
+
+	// Mark items as drill-disabled if at max depth
+	if concept.MaxDepth != nil {
+		currentDepth := countPathDepth(subpath)
+		atMaxDepth := currentDepth+1 >= *concept.MaxDepth
+		if atMaxDepth {
+			for i := range items {
+				items[i].DrillDisabled = true
+			}
+		}
+	}
+
+	return items, nil
 }
 
 // Resolve resolves a concept name and optional item to a full path.
@@ -373,28 +482,35 @@ func (s *FSService) Resolve(ctx context.Context, conceptName, item string) (stri
 	return filepath.Join(s.campaignRoot, concept.Path, item), nil
 }
 
-// Get retrieves a concept by its shortcut name.
+// Get retrieves a concept by name.
 func (s *FSService) Get(ctx context.Context, name string) (*Concept, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("context cancelled: %w", err)
 	}
 
-	sc, ok := s.shortcuts[name]
-	if !ok || sc.Concept == "" {
-		return nil, fmt.Errorf("%w: %s", ErrNotFound, name)
+	for _, c := range s.concepts {
+		if c.Name == name {
+			return &Concept{
+				Name:        c.Name,
+				Path:        c.Path,
+				Description: c.Description,
+				HasItems:    s.hasItemsWithIgnore(c.Path, c.Ignore, c.Depth),
+				MaxDepth:    c.Depth,
+				Ignore:      c.Ignore,
+			}, nil
+		}
 	}
 
-	return &Concept{
-		Name:        name,
-		Path:        sc.Path,
-		Description: sc.Description,
-		HasItems:    s.hasItems(sc.Path),
-	}, nil
+	return nil, fmt.Errorf("%w: %s", ErrNotFound, name)
 }
 
-// hasItems checks if the concept path has subdirectories via fs.FS.
-func (s *FSService) hasItems(path string) bool {
+// hasItemsWithIgnore checks if the concept path has subdirectories via fs.FS.
+func (s *FSService) hasItemsWithIgnore(path string, ignore []string, depth *int) bool {
 	if path == "" {
+		return false
+	}
+
+	if depth != nil && *depth == 0 {
 		return false
 	}
 
@@ -403,9 +519,13 @@ func (s *FSService) hasItems(path string) bool {
 		return false
 	}
 
+	ignoreSet := makeIgnoreSet(ignore)
+
 	for _, entry := range entries {
 		if entry.IsDir() && !isHidden(entry.Name()) {
-			return true
+			if !ignoreSet[entry.Name()+"/"] && !ignoreSet[entry.Name()] {
+				return true
+			}
 		}
 	}
 
@@ -413,6 +533,7 @@ func (s *FSService) hasItems(path string) bool {
 }
 
 // listDirItemsFS returns directory entries as Items via fs.FS.
+// path is relative to campaign root (used for both reading from fsys and storing in Item.Path).
 func (s *FSService) listDirItemsFS(path string) ([]Item, error) {
 	entries, err := fs.ReadDir(s.fsys, path)
 	if err != nil {
@@ -427,7 +548,7 @@ func (s *FSService) listDirItemsFS(path string) ([]Item, error) {
 
 		item := Item{
 			Name:  entry.Name(),
-			Path:  filepath.Join(s.campaignRoot, path, entry.Name()),
+			Path:  filepath.Join(path, entry.Name()), // Relative path from campaign root
 			IsDir: entry.IsDir(),
 		}
 

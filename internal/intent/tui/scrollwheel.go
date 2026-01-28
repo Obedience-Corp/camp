@@ -26,11 +26,25 @@ type ScrollWheel struct {
 }
 
 // NewScrollWheel creates a new scroll wheel with the given items.
+// Width is calculated dynamically from content, capped at 80 chars.
 func NewScrollWheel(items []string) ScrollWheel {
+	// Calculate max width from items (including prefix "  " or "> ")
+	maxWidth := 40 // minimum width
+	for _, item := range items {
+		itemWidth := len(item) + 2 // +2 for prefix
+		if itemWidth > maxWidth {
+			maxWidth = itemWidth
+		}
+	}
+	// Cap at reasonable max
+	if maxWidth > 80 {
+		maxWidth = 80
+	}
+
 	return ScrollWheel{
 		items:    items,
 		selected: 0,
-		width:    20,
+		width:    maxWidth,
 	}
 }
 

@@ -4,17 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
-	"github.com/charmbracelet/huh"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
+	"github.com/obediencecorp/camp/internal/concept"
 	"github.com/obediencecorp/camp/internal/config"
 	"github.com/obediencecorp/camp/internal/editor"
 	"github.com/obediencecorp/camp/internal/intent"
+	"github.com/obediencecorp/camp/internal/intent/tui"
 	"github.com/obediencecorp/camp/internal/paths"
-	"github.com/obediencecorp/camp/internal/project"
-	"github.com/obediencecorp/camp/internal/ui/theme"
 )
 
 var intentAddCmd = &cobra.Command{
@@ -23,16 +22,19 @@ var intentAddCmd = &cobra.Command{
 	Long: `Create a new intent with fast or deep capture mode.
 
 CAPTURE MODES:
-  Fast (default)    Quick huh form → direct file creation
-  Deep (--edit)     Full template in editor → validate → save
+  Ultra-fast          Title provided as argument → immediate creation
+  Fast TUI (default)  Step-through form (title, type, concept)
+  Full TUI (--full)   Step-through form including body textarea
+  Deep (--edit)       Full template in $EDITOR
 
-Fast capture is optimized for speed - ideas are saved immediately after
-the huh form with minimal overhead. Use --edit when you need the full
-template and want to add body content.
+Fast capture is optimized for speed - ideas are saved immediately.
+Use --full when you want to add a body description in the form.
+Use --edit when you need the complete template in your editor.
 
 Examples:
-  camp intent add                        Interactive form
-  camp intent add "Add dark mode"        Fast capture with title
+  camp intent add "Add dark mode"        Ultra-fast capture
+  camp intent add                        Fast TUI (3-step form)
+  camp intent add --full                 Full TUI (includes body)
   camp intent add -e "Complex feature"   Deep capture with editor
   camp intent add -t feature "New API"   Set type explicitly`,
 	Args: cobra.MaximumNArgs(1),
@@ -44,12 +46,8 @@ func init() {
 
 	flags := intentAddCmd.Flags()
 	flags.StringP("type", "t", "idea", "Intent type (idea, feature, bug, research, chore)")
-	flags.StringP("project", "p", "", "Related project")
 	flags.BoolP("edit", "e", false, "Open in $EDITOR for deep capture")
-	flags.String("priority", "medium", "Priority level (low, medium, high)")
-	flags.String("horizon", "later", "Time horizon (now, next, later)")
-	flags.StringSlice("blocked-by", nil, "Blocking dependencies")
-	flags.StringSlice("depends-on", nil, "Prerequisites")
+	flags.BoolP("full", "f", false, "Full TUI mode with body textarea")
 }
 
 func runIntentAdd(cmd *cobra.Command, args []string) error {
@@ -57,16 +55,10 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 
 	// Parse flags
 	intentType, _ := cmd.Flags().GetString("type")
-	projectName, _ := cmd.Flags().GetString("project")
 	useEditor, _ := cmd.Flags().GetBool("edit")
+	fullMode, _ := cmd.Flags().GetBool("full")
 
-	// Get title from args or empty for form
-	var title string
-	if len(args) > 0 {
-		title = args[0]
-	}
-
-	// Find campaign root first (needed for project list)
+	// Find campaign root
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
 		return fmt.Errorf("not in a campaign directory: %w", err)
@@ -75,28 +67,46 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	// Create path resolver
 	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
 
-	// Collect input via huh form if needed
-	var body string
-	title, intentType, projectName, body, err = collectIntentInput(ctx, campaignRoot, title, intentType, projectName)
-	if err != nil {
-		if errors.Is(err, huh.ErrUserAborted) {
-			return fmt.Errorf("intent creation cancelled")
-		}
-		return fmt.Errorf("failed to collect input: %w", err)
-	}
-
-	// Create service
+	// Create services
 	svc := intent.NewIntentService(campaignRoot, resolver.Intents())
+	conceptSvc := concept.NewService(campaignRoot, cfg.Concepts())
 
-	// Build create options
-	opts := intent.CreateOptions{
-		Title:   title,
-		Type:    intent.Type(intentType),
-		Concept: projectName, // projectName from CLI maps to Concept field
-		Body:    body,
+	// Ultra-fast path: title provided as argument
+	if len(args) > 0 {
+		opts := intent.CreateOptions{
+			Title: args[0],
+			Type:  intent.Type(intentType),
+		}
+
+		// Deep capture overrides ultra-fast
+		if useEditor {
+			return runDeepCapture(ctx, svc, opts)
+		}
+
+		return runFastCapture(ctx, svc, opts)
 	}
 
-	// Determine capture mode
+	// Run BubbleTea TUI
+	result, err := runIntentAddTUI(ctx, conceptSvc, tui.AddOptions{
+		DefaultType: intentType,
+		FullMode:    fullMode,
+	})
+	if err != nil {
+		return err
+	}
+	if result == nil {
+		return fmt.Errorf("intent creation cancelled")
+	}
+
+	// Build create options from TUI result
+	opts := intent.CreateOptions{
+		Title:   result.Title,
+		Type:    intent.Type(result.Type),
+		Concept: result.Concept,
+		Body:    result.Body,
+	}
+
+	// Deep capture if requested
 	if useEditor {
 		return runDeepCapture(ctx, svc, opts)
 	}
@@ -104,90 +114,25 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	return runFastCapture(ctx, svc, opts)
 }
 
-// collectIntentInput displays the huh form if title is not provided.
-// Returns title, intentType, project, body, error.
-func collectIntentInput(ctx context.Context, campaignRoot, title, intentType, projectName string) (string, string, string, string, error) {
-	var body string
+// runIntentAddTUI runs the BubbleTea intent creation form.
+func runIntentAddTUI(ctx context.Context, conceptSvc concept.Service, opts tui.AddOptions) (*tui.AddResult, error) {
+	model := tui.NewIntentAddModel(ctx, conceptSvc, opts)
 
-	// Skip form if title already provided (CLI fast path)
-	if title != "" {
-		if intentType == "" {
-			intentType = "idea"
-		}
-		return title, intentType, projectName, body, nil
-	}
-
-	// Default values
-	if intentType == "" {
-		intentType = "idea"
-	}
-
-	// Load project list for selector
-	projects, err := project.List(ctx, campaignRoot)
+	p := tea.NewProgram(model, tea.WithAltScreen())
+	finalModel, err := p.Run()
 	if err != nil {
-		return "", "", "", "", fmt.Errorf("loading projects: %w", err)
+		return nil, fmt.Errorf("TUI error: %w", err)
 	}
 
-	// Build project options: "None" first, then actual projects
-	projectOptions := []huh.Option[string]{
-		huh.NewOption("None", ""),
+	m, ok := finalModel.(tui.IntentAddModel)
+	if !ok {
+		return nil, fmt.Errorf("unexpected model type: %T", finalModel)
 	}
-	for _, p := range projects {
-		projectOptions = append(projectOptions, huh.NewOption(p.Name, p.Name))
-	}
-
-	// DEBUG: Test with all 4 fields (original form)
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewInput().
-				Title("Title").
-				Description("What's the intent? (required)").
-				Placeholder("Add dark mode toggle...").
-				Value(&title).
-				Validate(func(s string) error {
-					if strings.TrimSpace(s) == "" {
-						return errors.New("title is required")
-					}
-					return nil
-				}),
-
-			huh.NewSelect[string]().
-				Title("Type").
-				Description("Category of intent").
-				Options(
-					huh.NewOption("Idea", "idea"),
-					huh.NewOption("Feature", "feature"),
-					huh.NewOption("Bug", "bug"),
-					huh.NewOption("Research", "research"),
-					huh.NewOption("Chore", "chore"),
-				).
-				Value(&intentType),
-
-			huh.NewSelect[string]().
-				Title("Project").
-				Description("Related project").
-				Options(projectOptions...).
-				Value(&projectName),
-
-			huh.NewText().
-				Title("Description").
-				Description("What is this intent about? (required)").
-				Placeholder("Start typing here...").
-				Value(&body).
-				Validate(func(s string) error {
-					if strings.TrimSpace(s) == "" {
-						return errors.New("description is required")
-					}
-					return nil
-				}),
-		),
-	)
-
-	if err := theme.RunForm(ctx, form); err != nil {
-		return "", "", "", "", err
+	if m.Cancelled() {
+		return nil, nil
 	}
 
-	return title, intentType, projectName, body, nil
+	return m.Result(), nil
 }
 
 // runFastCapture creates intent file directly without editor.

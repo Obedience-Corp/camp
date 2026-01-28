@@ -31,10 +31,27 @@ type CampaignConfig struct {
 	CreatedAt time.Time `yaml:"created_at,omitempty"`
 	// Projects contains the list of project configurations.
 	Projects []ProjectConfig `yaml:"projects,omitempty"`
+	// ConceptList defines concepts for the picker (order is preserved).
+	// If empty, concepts are derived from Paths.
+	ConceptList []ConceptEntry `yaml:"concepts,omitempty"`
 
 	// Jumps holds the loaded jumps configuration (from .campaign/settings/jumps.yaml).
 	// This field is not serialized to campaign.yaml - it's loaded separately.
 	Jumps *JumpsConfig `yaml:"-"`
+}
+
+// ConceptEntry defines a concept for the picker with ordering and depth control.
+type ConceptEntry struct {
+	// Name is the concept name (e.g., "projects", "festivals").
+	Name string `yaml:"name"`
+	// Path is the relative path from campaign root.
+	Path string `yaml:"path"`
+	// Description provides human-readable help text.
+	Description string `yaml:"description,omitempty"`
+	// Depth controls drilling depth: nil=unlimited, 0=no drilling, 1+=levels.
+	Depth *int `yaml:"depth,omitempty"`
+	// Ignore lists subdirectories to exclude from listing.
+	Ignore []string `yaml:"ignore,omitempty"`
 }
 
 // Paths returns the campaign paths configuration.
@@ -53,6 +70,53 @@ func (c *CampaignConfig) Shortcuts() map[string]ShortcutConfig {
 		return c.Jumps.Shortcuts
 	}
 	return DefaultNavigationShortcuts()
+}
+
+// Concepts returns the concept list for the picker.
+// If ConceptList is defined in campaign.yaml, returns it directly (preserving order).
+// Otherwise, derives concepts from CampaignPaths as a fallback.
+func (c *CampaignConfig) Concepts() []ConceptEntry {
+	if len(c.ConceptList) > 0 {
+		return c.ConceptList
+	}
+	// Fallback: derive from CampaignPaths
+	return c.deriveConceptsFromPaths()
+}
+
+// deriveConceptsFromPaths creates ConceptEntry list from CampaignPaths.
+// This provides backwards compatibility when concepts aren't explicitly defined.
+func (c *CampaignConfig) deriveConceptsFromPaths() []ConceptEntry {
+	paths := c.Paths()
+	defs := []struct {
+		name        string
+		path        string
+		description string
+	}{
+		{"projects", paths.Projects, "Projects directory"},
+		{"worktrees", paths.Worktrees, "Git worktrees"},
+		{"festivals", paths.Festivals, "Festivals directory"},
+		{"intents", paths.Intents, "Intents directory"},
+		{"workflow", paths.Workflow, "Workflow directory"},
+		{"code_reviews", paths.CodeReviews, "Code reviews"},
+		{"pipelines", paths.Pipelines, "Pipelines"},
+		{"design", paths.Design, "Design documents"},
+		{"ai_docs", paths.AIDocs, "AI documentation"},
+		{"docs", paths.Docs, "Documentation"},
+		{"dungeon", paths.Dungeon, "Archived/paused work"},
+	}
+
+	var concepts []ConceptEntry
+	for _, def := range defs {
+		if def.path == "" {
+			continue
+		}
+		concepts = append(concepts, ConceptEntry{
+			Name:        def.name,
+			Path:        def.path,
+			Description: def.description,
+		})
+	}
+	return concepts
 }
 
 // CampaignPaths defines the directory structure for a campaign.

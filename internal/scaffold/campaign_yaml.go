@@ -71,6 +71,7 @@ func CreateCampaignConfig(ctx context.Context, campaignRoot string, opts InitOpt
 		Type:        opts.Type,
 		CreatedAt:   time.Now().UTC(),
 		Description: fmt.Sprintf("Campaign: %s", opts.Name),
+		ConceptList: config.DefaultConcepts(),
 	}
 
 	// Apply defaults
