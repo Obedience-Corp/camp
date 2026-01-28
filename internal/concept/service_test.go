@@ -8,71 +8,61 @@ import (
 	"github.com/obediencecorp/camp/internal/config"
 )
 
-// testShortcuts returns a set of shortcuts for testing.
-func testShortcuts() map[string]config.ShortcutConfig {
-	return map[string]config.ShortcutConfig{
-		"p": {
-			Path:        "projects",
-			Description: "Projects directory",
-			Concept:     "projects",
-		},
-		"f": {
-			Path:        "festivals",
-			Description: "Festivals directory",
-			Concept:     "festivals",
-		},
-		"go": {
-			Path:        "",
-			Description: "Go to...",
-			Concept:     "", // Not a concept
-		},
+// testPaths returns CampaignPaths for testing.
+func testPaths() config.CampaignPaths {
+	return config.CampaignPaths{
+		Projects:  "projects",
+		Festivals: "festivals",
+		Intents:   "workflow/intents",
 	}
 }
 
 // testFS returns a mock filesystem for testing.
 func testFS() fstest.MapFS {
 	return fstest.MapFS{
-		"projects/camp/file":       &fstest.MapFile{Data: []byte("")},
-		"projects/fest/file":       &fstest.MapFile{Data: []byte("")},
-		"projects/.hidden/file":    &fstest.MapFile{Data: []byte("")},
-		"festivals/active/file":    &fstest.MapFile{Data: []byte("")},
-		"festivals/planned/file":   &fstest.MapFile{Data: []byte("")},
-		"festivals/completed/file": &fstest.MapFile{Data: []byte("")},
+		"projects/camp/file":            &fstest.MapFile{Data: []byte("")},
+		"projects/fest/file":            &fstest.MapFile{Data: []byte("")},
+		"projects/.hidden/file":         &fstest.MapFile{Data: []byte("")},
+		"festivals/active/file":         &fstest.MapFile{Data: []byte("")},
+		"festivals/planned/file":        &fstest.MapFile{Data: []byte("")},
+		"festivals/completed/file":      &fstest.MapFile{Data: []byte("")},
+		"workflow/intents/inbox/file":   &fstest.MapFile{Data: []byte("")},
+		"workflow/intents/active/file":  &fstest.MapFile{Data: []byte("")},
 	}
 }
 
 func TestFSService_List(t *testing.T) {
 	tests := []struct {
 		name      string
-		shortcuts map[string]config.ShortcutConfig
+		paths     config.CampaignPaths
 		wantCount int
 		wantNames []string
 	}{
 		{
-			name:      "returns only concept shortcuts",
-			shortcuts: testShortcuts(),
-			wantCount: 2,                  // "p" and "f", not "go"
-			wantNames: []string{"f", "p"}, // sorted alphabetically
+			name:      "returns concepts from paths",
+			paths:     testPaths(),
+			wantCount: 3,                                         // projects, festivals, intents
+			wantNames: []string{"festivals", "intents", "projects"}, // sorted alphabetically
 		},
 		{
-			name:      "empty shortcuts",
-			shortcuts: map[string]config.ShortcutConfig{},
+			name:      "empty paths",
+			paths:     config.CampaignPaths{},
 			wantCount: 0,
 			wantNames: nil,
 		},
 		{
-			name: "all non-concept shortcuts",
-			shortcuts: map[string]config.ShortcutConfig{
-				"go": {Path: "", Description: "Go", Concept: ""},
+			name: "partial paths",
+			paths: config.CampaignPaths{
+				Projects: "projects",
 			},
-			wantCount: 0,
-			wantNames: nil,
+			wantCount: 1,
+			wantNames: []string{"projects"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := NewFSService("/test", tt.shortcuts, testFS())
+			svc := NewFSService("/test", tt.paths, testFS())
 
 			got, err := svc.List(context.Background())
 			if err != nil {
@@ -101,8 +91,8 @@ func TestFSService_ListItems(t *testing.T) {
 		"projects/camp/internal": &fstest.MapFile{Mode: 0o755},
 	}
 
-	shortcuts := map[string]config.ShortcutConfig{
-		"p": {Path: "projects", Description: "Projects", Concept: "projects"},
+	paths := config.CampaignPaths{
+		Projects: "projects",
 	}
 
 	tests := []struct {
@@ -114,14 +104,14 @@ func TestFSService_ListItems(t *testing.T) {
 	}{
 		{
 			name:        "list top level projects",
-			conceptName: "p",
+			conceptName: "projects",
 			subpath:     "",
 			wantCount:   2, // camp, fest (not .hidden)
 			wantErr:     false,
 		},
 		{
 			name:        "list with subpath",
-			conceptName: "p",
+			conceptName: "projects",
 			subpath:     "camp",
 			wantCount:   3, // cmd, internal, main.go
 			wantErr:     false,
@@ -137,7 +127,7 @@ func TestFSService_ListItems(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := NewFSService("/test", shortcuts, fsys)
+			svc := NewFSService("/test", paths, fsys)
 
 			got, err := svc.ListItems(context.Background(), tt.conceptName, tt.subpath)
 			if (err != nil) != tt.wantErr {
@@ -159,13 +149,13 @@ func TestFSService_ListItems_SkipsHiddenFiles(t *testing.T) {
 		"projects/visible/file": &fstest.MapFile{Data: []byte("")},
 	}
 
-	shortcuts := map[string]config.ShortcutConfig{
-		"p": {Path: "projects", Description: "Projects", Concept: "projects"},
+	paths := config.CampaignPaths{
+		Projects: "projects",
 	}
 
-	svc := NewFSService("/test", shortcuts, fsys)
+	svc := NewFSService("/test", paths, fsys)
 
-	items, err := svc.ListItems(context.Background(), "p", "")
+	items, err := svc.ListItems(context.Background(), "projects", "")
 	if err != nil {
 		t.Fatalf("ListItems() error = %v", err)
 	}
@@ -180,20 +170,19 @@ func TestFSService_ListItems_SkipsHiddenFiles(t *testing.T) {
 }
 
 func TestFSService_ListItems_SortsDirectoriesFirst(t *testing.T) {
-	// In fstest.MapFS, directories are implied by files within them
 	fsys := fstest.MapFS{
 		"projects/zfile.txt":      &fstest.MapFile{Data: []byte("content")},
-		"projects/adir/child.txt": &fstest.MapFile{Data: []byte("")}, // Creates adir as directory
+		"projects/adir/child.txt": &fstest.MapFile{Data: []byte("")},
 		"projects/bfile.txt":      &fstest.MapFile{Data: []byte("content")},
 	}
 
-	shortcuts := map[string]config.ShortcutConfig{
-		"p": {Path: "projects", Description: "Projects", Concept: "projects"},
+	paths := config.CampaignPaths{
+		Projects: "projects",
 	}
 
-	svc := NewFSService("/test", shortcuts, fsys)
+	svc := NewFSService("/test", paths, fsys)
 
-	items, err := svc.ListItems(context.Background(), "p", "")
+	items, err := svc.ListItems(context.Background(), "projects", "")
 	if err != nil {
 		t.Fatalf("ListItems() error = %v", err)
 	}
@@ -218,7 +207,7 @@ func TestFSService_ListItems_SortsDirectoriesFirst(t *testing.T) {
 }
 
 func TestFSService_Get(t *testing.T) {
-	shortcuts := testShortcuts()
+	paths := testPaths()
 
 	tests := []struct {
 		name        string
@@ -227,18 +216,25 @@ func TestFSService_Get(t *testing.T) {
 		wantPath    string
 	}{
 		{
-			name:        "existing concept",
-			conceptName: "p",
+			name:        "existing concept - projects",
+			conceptName: "projects",
 			wantErr:     false,
 			wantPath:    "projects",
 		},
 		{
-			name:        "non-concept shortcut",
-			conceptName: "go",
-			wantErr:     true,
+			name:        "existing concept - festivals",
+			conceptName: "festivals",
+			wantErr:     false,
+			wantPath:    "festivals",
 		},
 		{
-			name:        "unknown shortcut",
+			name:        "existing concept - intents",
+			conceptName: "intents",
+			wantErr:     false,
+			wantPath:    "workflow/intents",
+		},
+		{
+			name:        "unknown concept",
 			conceptName: "unknown",
 			wantErr:     true,
 		},
@@ -246,7 +242,7 @@ func TestFSService_Get(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := NewFSService("/test", shortcuts, testFS())
+			svc := NewFSService("/test", paths, testFS())
 
 			got, err := svc.Get(context.Background(), tt.conceptName)
 			if (err != nil) != tt.wantErr {
@@ -263,7 +259,7 @@ func TestFSService_Get(t *testing.T) {
 }
 
 func TestFSService_Resolve(t *testing.T) {
-	shortcuts := testShortcuts()
+	paths := testPaths()
 
 	tests := []struct {
 		name        string
@@ -274,14 +270,14 @@ func TestFSService_Resolve(t *testing.T) {
 	}{
 		{
 			name:        "concept only",
-			conceptName: "p",
+			conceptName: "projects",
 			item:        "",
 			wantPath:    "/test/projects",
 			wantErr:     false,
 		},
 		{
 			name:        "concept with item",
-			conceptName: "p",
+			conceptName: "projects",
 			item:        "camp",
 			wantPath:    "/test/projects/camp",
 			wantErr:     false,
@@ -296,7 +292,7 @@ func TestFSService_Resolve(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := NewFSService("/test", shortcuts, testFS())
+			svc := NewFSService("/test", paths, testFS())
 
 			got, err := svc.Resolve(context.Background(), tt.conceptName, tt.item)
 			if (err != nil) != tt.wantErr {
@@ -311,13 +307,12 @@ func TestFSService_Resolve(t *testing.T) {
 }
 
 func TestFSService_ResolvePath(t *testing.T) {
-	// In fstest.MapFS, directories are implied by files within them
 	fsys := fstest.MapFS{
-		"projects/camp/sub/file.txt": &fstest.MapFile{Data: []byte("")}, // Creates camp and sub as directories
+		"projects/camp/sub/file.txt": &fstest.MapFile{Data: []byte("")},
 		"projects/file.txt":          &fstest.MapFile{Data: []byte("content")},
 	}
 
-	shortcuts := testShortcuts()
+	paths := testPaths()
 
 	tests := []struct {
 		name     string
@@ -354,7 +349,7 @@ func TestFSService_ResolvePath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := NewFSService("/test", shortcuts, fsys)
+			svc := NewFSService("/test", paths, fsys)
 
 			got, err := svc.ResolvePath(context.Background(), tt.path)
 			if (err != nil) != tt.wantErr {
@@ -374,7 +369,7 @@ func TestFSService_ResolvePath(t *testing.T) {
 }
 
 func TestFSService_ConceptForPath(t *testing.T) {
-	shortcuts := testShortcuts()
+	paths := testPaths()
 
 	tests := []struct {
 		name        string
@@ -385,19 +380,25 @@ func TestFSService_ConceptForPath(t *testing.T) {
 		{
 			name:        "path within projects",
 			path:        "projects/camp",
-			wantConcept: "p",
+			wantConcept: "projects",
 			wantErr:     false,
 		},
 		{
 			name:        "exact concept path",
 			path:        "projects",
-			wantConcept: "p",
+			wantConcept: "projects",
 			wantErr:     false,
 		},
 		{
 			name:        "path within festivals",
 			path:        "festivals/active/some-fest",
-			wantConcept: "f",
+			wantConcept: "festivals",
+			wantErr:     false,
+		},
+		{
+			name:        "path within intents",
+			path:        "workflow/intents/inbox/task1",
+			wantConcept: "intents",
 			wantErr:     false,
 		},
 		{
@@ -409,7 +410,7 @@ func TestFSService_ConceptForPath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := NewFSService("/test", shortcuts, testFS())
+			svc := NewFSService("/test", paths, testFS())
 
 			got, err := svc.ConceptForPath(context.Background(), tt.path)
 			if (err != nil) != tt.wantErr {
@@ -427,7 +428,7 @@ func TestFSService_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	svc := NewFSService("/test", testShortcuts(), testFS())
+	svc := NewFSService("/test", testPaths(), testFS())
 
 	t.Run("List", func(t *testing.T) {
 		_, err := svc.List(ctx)
@@ -437,21 +438,21 @@ func TestFSService_ContextCancellation(t *testing.T) {
 	})
 
 	t.Run("ListItems", func(t *testing.T) {
-		_, err := svc.ListItems(ctx, "p", "")
+		_, err := svc.ListItems(ctx, "projects", "")
 		if err == nil {
 			t.Error("ListItems() should return error for cancelled context")
 		}
 	})
 
 	t.Run("Get", func(t *testing.T) {
-		_, err := svc.Get(ctx, "p")
+		_, err := svc.Get(ctx, "projects")
 		if err == nil {
 			t.Error("Get() should return error for cancelled context")
 		}
 	})
 
 	t.Run("Resolve", func(t *testing.T) {
-		_, err := svc.Resolve(ctx, "p", "")
+		_, err := svc.Resolve(ctx, "projects", "")
 		if err == nil {
 			t.Error("Resolve() should return error for cancelled context")
 		}
@@ -473,21 +474,20 @@ func TestFSService_ContextCancellation(t *testing.T) {
 }
 
 func TestFSService_ListItems_ChildrenCount(t *testing.T) {
-	// In fstest.MapFS, directories need files within them to exist
 	fsys := fstest.MapFS{
-		"projects/empty/.gitkeep":      &fstest.MapFile{Data: []byte("")}, // Empty dir with hidden file
+		"projects/empty/.gitkeep":      &fstest.MapFile{Data: []byte("")},
 		"projects/hasthree/one/file":   &fstest.MapFile{Data: []byte("")},
 		"projects/hasthree/two/file":   &fstest.MapFile{Data: []byte("")},
 		"projects/hasthree/three/file": &fstest.MapFile{Data: []byte("")},
 	}
 
-	shortcuts := map[string]config.ShortcutConfig{
-		"p": {Path: "projects", Description: "Projects", Concept: "projects"},
+	paths := config.CampaignPaths{
+		Projects: "projects",
 	}
 
-	svc := NewFSService("/test", shortcuts, fsys)
+	svc := NewFSService("/test", paths, fsys)
 
-	items, err := svc.ListItems(context.Background(), "p", "")
+	items, err := svc.ListItems(context.Background(), "projects", "")
 	if err != nil {
 		t.Fatalf("ListItems() error = %v", err)
 	}
@@ -562,5 +562,49 @@ func TestHasPathPrefix(t *testing.T) {
 				t.Errorf("hasPathPrefix(%q, %q) = %v, want %v", tt.path, tt.prefix, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestFSService_List_HasItemsDetection(t *testing.T) {
+	fsys := fstest.MapFS{
+		"projects/camp/file":  &fstest.MapFile{Data: []byte("")},
+		"festivals/.hidden":   &fstest.MapFile{Mode: 0o755}, // Only hidden directory
+	}
+
+	paths := config.CampaignPaths{
+		Projects:  "projects",
+		Festivals: "festivals",
+	}
+
+	svc := NewFSService("/test", paths, fsys)
+
+	concepts, err := svc.List(context.Background())
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+
+	// Find concepts by name
+	var projects, festivals *Concept
+	for i := range concepts {
+		switch concepts[i].Name {
+		case "projects":
+			projects = &concepts[i]
+		case "festivals":
+			festivals = &concepts[i]
+		}
+	}
+
+	if projects == nil || festivals == nil {
+		t.Fatal("Expected both concepts")
+	}
+
+	// projects has a visible directory
+	if !projects.HasItems {
+		t.Error("projects.HasItems should be true")
+	}
+
+	// festivals only has hidden directory
+	if festivals.HasItems {
+		t.Error("festivals.HasItems should be false (only hidden items)")
 	}
 }

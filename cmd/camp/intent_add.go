@@ -69,7 +69,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 
 	// Create services
 	svc := intent.NewIntentService(campaignRoot, resolver.Intents())
-	conceptSvc := concept.NewService(campaignRoot, cfg.Shortcuts())
+	conceptSvc := concept.NewService(campaignRoot, cfg.Paths())
 
 	// Ultra-fast path: title provided as argument
 	if len(args) > 0 {

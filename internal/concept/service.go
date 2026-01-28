@@ -20,37 +20,54 @@ var (
 // DefaultService implements the Service interface.
 type DefaultService struct {
 	campaignRoot string
-	shortcuts    map[string]config.ShortcutConfig
+	paths        config.CampaignPaths
 }
 
 // NewService creates a new concept service.
-func NewService(campaignRoot string, shortcuts map[string]config.ShortcutConfig) *DefaultService {
+func NewService(campaignRoot string, paths config.CampaignPaths) *DefaultService {
 	return &DefaultService{
 		campaignRoot: campaignRoot,
-		shortcuts:    shortcuts,
+		paths:        paths,
 	}
 }
 
-// List returns all available concepts from the shortcuts configuration.
-// Only shortcuts with Concept != "" are included.
+// List returns all available concepts from CampaignPaths.
 func (s *DefaultService) List(ctx context.Context) ([]Concept, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("context cancelled: %w", err)
 	}
 
-	var concepts []Concept
+	// Build concepts from CampaignPaths fields
+	conceptDefs := []struct {
+		name        string
+		path        string
+		description string
+	}{
+		{"projects", s.paths.Projects, "Projects directory"},
+		{"worktrees", s.paths.Worktrees, "Git worktrees"},
+		{"festivals", s.paths.Festivals, "Festivals directory"},
+		{"intents", s.paths.Intents, "Intents directory"},
+		{"workflow", s.paths.Workflow, "Workflow directory"},
+		{"code_reviews", s.paths.CodeReviews, "Code reviews"},
+		{"pipelines", s.paths.Pipelines, "Pipelines"},
+		{"design", s.paths.Design, "Design documents"},
+		{"ai_docs", s.paths.AIDocs, "AI documentation"},
+		{"docs", s.paths.Docs, "Documentation"},
+		{"dungeon", s.paths.Dungeon, "Archived/paused work"},
+	}
 
-	for name, sc := range s.shortcuts {
-		if sc.Concept == "" {
+	var concepts []Concept
+	for _, def := range conceptDefs {
+		if def.path == "" {
 			continue
 		}
 
-		hasItems := s.hasItems(sc.Path)
+		hasItems := s.hasItems(def.path)
 
 		concepts = append(concepts, Concept{
-			Name:        name,
-			Path:        sc.Path,
-			Description: sc.Description,
+			Name:        def.name,
+			Path:        def.path,
+			Description: def.description,
 			HasItems:    hasItems,
 		})
 	}
@@ -106,22 +123,40 @@ func (s *DefaultService) Resolve(ctx context.Context, conceptName, item string) 
 	return filepath.Join(s.campaignRoot, concept.Path, item), nil
 }
 
-// Get retrieves a concept by its shortcut name.
+// Get retrieves a concept by name.
 func (s *DefaultService) Get(ctx context.Context, name string) (*Concept, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("context cancelled: %w", err)
 	}
 
-	sc, ok := s.shortcuts[name]
-	if !ok || sc.Concept == "" {
+	// Map concept names to paths
+	pathMap := map[string]struct {
+		path        string
+		description string
+	}{
+		"projects":     {s.paths.Projects, "Projects directory"},
+		"worktrees":    {s.paths.Worktrees, "Git worktrees"},
+		"festivals":    {s.paths.Festivals, "Festivals directory"},
+		"intents":      {s.paths.Intents, "Intents directory"},
+		"workflow":     {s.paths.Workflow, "Workflow directory"},
+		"code_reviews": {s.paths.CodeReviews, "Code reviews"},
+		"pipelines":    {s.paths.Pipelines, "Pipelines"},
+		"design":       {s.paths.Design, "Design documents"},
+		"ai_docs":      {s.paths.AIDocs, "AI documentation"},
+		"docs":         {s.paths.Docs, "Documentation"},
+		"dungeon":      {s.paths.Dungeon, "Archived/paused work"},
+	}
+
+	info, ok := pathMap[name]
+	if !ok || info.path == "" {
 		return nil, fmt.Errorf("%w: %s", ErrNotFound, name)
 	}
 
 	return &Concept{
 		Name:        name,
-		Path:        sc.Path,
-		Description: sc.Description,
-		HasItems:    s.hasItems(sc.Path),
+		Path:        info.path,
+		Description: info.description,
+		HasItems:    s.hasItems(info.path),
 	}, nil
 }
 
@@ -286,38 +321,56 @@ var _ Service = (*DefaultService)(nil)
 // FSService is a service implementation that uses an fs.FS for testability.
 type FSService struct {
 	campaignRoot string
-	shortcuts    map[string]config.ShortcutConfig
+	paths        config.CampaignPaths
 	fsys         fs.FS
 }
 
 // NewFSService creates a new concept service with a custom filesystem.
-func NewFSService(campaignRoot string, shortcuts map[string]config.ShortcutConfig, fsys fs.FS) *FSService {
+func NewFSService(campaignRoot string, paths config.CampaignPaths, fsys fs.FS) *FSService {
 	return &FSService{
 		campaignRoot: campaignRoot,
-		shortcuts:    shortcuts,
+		paths:        paths,
 		fsys:         fsys,
 	}
 }
 
-// List returns all available concepts from the shortcuts configuration.
+// List returns all available concepts from CampaignPaths.
 func (s *FSService) List(ctx context.Context) ([]Concept, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("context cancelled: %w", err)
 	}
 
-	var concepts []Concept
+	// Build concepts from CampaignPaths fields
+	conceptDefs := []struct {
+		name        string
+		path        string
+		description string
+	}{
+		{"projects", s.paths.Projects, "Projects directory"},
+		{"worktrees", s.paths.Worktrees, "Git worktrees"},
+		{"festivals", s.paths.Festivals, "Festivals directory"},
+		{"intents", s.paths.Intents, "Intents directory"},
+		{"workflow", s.paths.Workflow, "Workflow directory"},
+		{"code_reviews", s.paths.CodeReviews, "Code reviews"},
+		{"pipelines", s.paths.Pipelines, "Pipelines"},
+		{"design", s.paths.Design, "Design documents"},
+		{"ai_docs", s.paths.AIDocs, "AI documentation"},
+		{"docs", s.paths.Docs, "Documentation"},
+		{"dungeon", s.paths.Dungeon, "Archived/paused work"},
+	}
 
-	for name, sc := range s.shortcuts {
-		if sc.Concept == "" {
+	var concepts []Concept
+	for _, def := range conceptDefs {
+		if def.path == "" {
 			continue
 		}
 
-		hasItems := s.hasItems(sc.Path)
+		hasItems := s.hasItems(def.path)
 
 		concepts = append(concepts, Concept{
-			Name:        name,
-			Path:        sc.Path,
-			Description: sc.Description,
+			Name:        def.name,
+			Path:        def.path,
+			Description: def.description,
 			HasItems:    hasItems,
 		})
 	}
@@ -373,22 +426,40 @@ func (s *FSService) Resolve(ctx context.Context, conceptName, item string) (stri
 	return filepath.Join(s.campaignRoot, concept.Path, item), nil
 }
 
-// Get retrieves a concept by its shortcut name.
+// Get retrieves a concept by name.
 func (s *FSService) Get(ctx context.Context, name string) (*Concept, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("context cancelled: %w", err)
 	}
 
-	sc, ok := s.shortcuts[name]
-	if !ok || sc.Concept == "" {
+	// Map concept names to paths
+	pathMap := map[string]struct {
+		path        string
+		description string
+	}{
+		"projects":     {s.paths.Projects, "Projects directory"},
+		"worktrees":    {s.paths.Worktrees, "Git worktrees"},
+		"festivals":    {s.paths.Festivals, "Festivals directory"},
+		"intents":      {s.paths.Intents, "Intents directory"},
+		"workflow":     {s.paths.Workflow, "Workflow directory"},
+		"code_reviews": {s.paths.CodeReviews, "Code reviews"},
+		"pipelines":    {s.paths.Pipelines, "Pipelines"},
+		"design":       {s.paths.Design, "Design documents"},
+		"ai_docs":      {s.paths.AIDocs, "AI documentation"},
+		"docs":         {s.paths.Docs, "Documentation"},
+		"dungeon":      {s.paths.Dungeon, "Archived/paused work"},
+	}
+
+	info, ok := pathMap[name]
+	if !ok || info.path == "" {
 		return nil, fmt.Errorf("%w: %s", ErrNotFound, name)
 	}
 
 	return &Concept{
 		Name:        name,
-		Path:        sc.Path,
-		Description: sc.Description,
-		HasItems:    s.hasItems(sc.Path),
+		Path:        info.path,
+		Description: info.description,
+		HasItems:    s.hasItems(info.path),
 	}, nil
 }
 
