@@ -284,4 +284,3 @@ func TestBuildNewPath(t *testing.T) {
 		})
 	}
 }
-
