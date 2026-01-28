@@ -250,10 +250,12 @@ func (m IntentViewerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.siblings) > 1 {
 				m.navigatePrev()
 			}
+			return m, nil
 		case "right", "l":
 			if len(m.siblings) > 1 {
 				m.navigateNext()
 			}
+			return m, nil
 
 		// Actions
 		case "e":
