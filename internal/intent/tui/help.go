@@ -156,7 +156,7 @@ func (h HelpOverlay) Update(msg tea.Msg) (HelpOverlay, tea.Cmd, bool) {
 // Styles for the help overlay.
 var helpBoxStyle = lipgloss.NewStyle().
 	Border(lipgloss.RoundedBorder()).
-	BorderForeground(lipgloss.Color("205")).
+	BorderForeground(pal.BorderFocus).
 	Padding(1, 2)
 
 // View renders the help overlay.

@@ -131,14 +131,14 @@ func (p PreviewPane) Update(msg tea.Msg) (PreviewPane, tea.Cmd) {
 var (
 	previewBorderStyle = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color("240"))
+				BorderForeground(pal.Border)
 
 	previewTitleStyle = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(lipgloss.Color("205"))
+				Foreground(pal.Accent)
 
 	previewEmptyStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("241")).
+				Foreground(pal.TextMuted).
 				Italic(true)
 )
 
@@ -154,7 +154,7 @@ func (p PreviewPane) View() string {
 
 	title := previewTitleStyle.Render(p.title)
 	scrollInfo := fmt.Sprintf(" %d%% ", int(p.viewport.ScrollPercent()*100))
-	scrollStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	scrollStyle := lipgloss.NewStyle().Foreground(pal.TextMuted)
 
 	header := lipgloss.JoinHorizontal(
 		lipgloss.Top,

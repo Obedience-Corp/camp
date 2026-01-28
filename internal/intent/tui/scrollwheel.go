@@ -136,10 +136,10 @@ func (sw ScrollWheel) View() string {
 	selectedStyle := lipgloss.NewStyle().
 		Width(sw.width).
 		Bold(true).
-		Foreground(lipgloss.Color("205"))
+		Foreground(pal.Accent)
 
 	if sw.focused {
-		selectedStyle = selectedStyle.Background(lipgloss.Color("237"))
+		selectedStyle = selectedStyle.Background(pal.BgSelected)
 	}
 
 	// Build view

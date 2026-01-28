@@ -1,22 +1,28 @@
 package tui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"github.com/charmbracelet/lipgloss"
+	"github.com/obediencecorp/camp/internal/ui/theme"
+)
+
+// pal is the TUI color palette for adaptive theming.
+var pal = theme.TUI()
 
 // Style definitions for the Intent Explorer TUI.
 var (
 	// Title styling
 	titleStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("205"))
+			Foreground(pal.Accent)
 
 	// Group header styles
 	groupHeaderStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("110"))
+				Foreground(pal.AccentAlt)
 
 	groupHeaderSelectedStyle = lipgloss.NewStyle().
-					Background(lipgloss.Color("237")).
+					Background(pal.BgSelected).
 					Bold(true).
-					Foreground(lipgloss.Color("110"))
+					Foreground(pal.AccentAlt)
 
 	// Intent row styles
 	intentRowStyle = lipgloss.NewStyle().
@@ -24,29 +30,29 @@ var (
 
 	intentRowSelectedStyle = lipgloss.NewStyle().
 				PaddingLeft(4).
-				Background(lipgloss.Color("237")).
+				Background(pal.BgSelected).
 				Bold(true)
 
 	// Intent field styles
 	intentTitleStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("255"))
+				Foreground(pal.TextPrimary)
 
 	intentTypeStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("245"))
+			Foreground(pal.TextSecondary)
 
 	intentDateStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241"))
+			Foreground(pal.TextMuted)
 
 	intentConceptStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("214"))
+				Foreground(pal.Warning)
 
 	// Help bar style
 	helpStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241"))
+			Foreground(pal.TextMuted)
 
 	// Error style
 	errorStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("196"))
+			Foreground(pal.Error)
 
 	// Cursor indicator
 	cursorIndicator = "›"

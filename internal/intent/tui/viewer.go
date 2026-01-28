@@ -476,7 +476,7 @@ func (m IntentViewerModel) View() string {
 
 	// Separator
 	separator := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("240")).
+		Foreground(pal.Border).
 		Render(strings.Repeat("─", m.width-2))
 	b.WriteString(separator)
 	b.WriteString("\n")
@@ -521,20 +521,25 @@ func (m IntentViewerModel) renderHeader() string {
 
 // renderStatusBadge renders a colored status badge.
 func (m IntentViewerModel) renderStatusBadge(s intent.Status) string {
-	var color lipgloss.Color
+	return renderStatusBadge(s)
+}
+
+// renderStatusBadge renders a colored status badge (shared helper).
+func renderStatusBadge(s intent.Status) string {
+	var color lipgloss.TerminalColor
 	switch s {
 	case intent.StatusInbox:
-		color = lipgloss.Color("214") // Orange
+		color = pal.Warning // Orange
 	case intent.StatusActive:
-		color = lipgloss.Color("82") // Green
+		color = pal.Success // Green
 	case intent.StatusReady:
-		color = lipgloss.Color("39") // Blue
+		color = pal.AccentAlt // Blue
 	case intent.StatusDone:
-		color = lipgloss.Color("245") // Gray
+		color = pal.TextMuted // Gray
 	case intent.StatusKilled:
-		color = lipgloss.Color("196") // Red
+		color = pal.Error // Red
 	default:
-		color = lipgloss.Color("245")
+		color = pal.TextMuted
 	}
 	return lipgloss.NewStyle().Foreground(color).Render(s.String())
 }
@@ -619,19 +624,19 @@ func (m IntentViewerModel) viewWithMoveOverlay() string {
 var (
 	viewerBoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("205")).
+			BorderForeground(pal.BorderFocus).
 			Padding(0, 1)
 
 	viewerTitleStyle = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(lipgloss.Color("205"))
+				Foreground(pal.Accent)
 
 	viewerBadgeStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("245"))
+				Foreground(pal.TextSecondary)
 
 	viewerMetaStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241"))
+			Foreground(pal.TextMuted)
 
 	viewerFooterStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("241"))
+				Foreground(pal.TextMuted)
 )
