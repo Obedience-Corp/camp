@@ -216,7 +216,7 @@ func (m IntentAddModel) updateConcept(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "tab":
 		// Skip concept selection
-		return m.finishConceptStep("")
+		return m.finishConceptStep()
 	}
 
 	// Pass to concept picker
@@ -229,29 +229,17 @@ func (m IntentAddModel) updateConcept(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.step = addStepType
 			return m, nil
 		}
-		return m.finishConceptStep(m.conceptPicker.SelectedPath())
+		return m.finishConceptStep()
 	}
 
 	return m, cmd
 }
 
-// finishConceptStep completes the concept step and moves to the next.
-func (m IntentAddModel) finishConceptStep(conceptPath string) (tea.Model, tea.Cmd) {
-	if m.fullMode {
-		m.step = addStepBody
-		m.bodyInput.Focus()
-		return m, textarea.Blink
-	}
-
-	// Fast mode: skip body, finish immediately
-	m.result = &AddResult{
-		Title:   strings.TrimSpace(m.titleInput.Value()),
-		Type:    intentTypes[m.typeIdx],
-		Concept: conceptPath,
-		Body:    "",
-	}
-	m.step = addStepDone
-	return m, tea.Quit
+// finishConceptStep completes the concept step and moves to body.
+func (m IntentAddModel) finishConceptStep() (tea.Model, tea.Cmd) {
+	m.step = addStepBody
+	m.bodyInput.Focus()
+	return m, textarea.Blink
 }
 
 // updateBody handles input during body textarea step.
