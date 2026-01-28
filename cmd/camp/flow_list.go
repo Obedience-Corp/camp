@@ -1,0 +1,88 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/obediencecorp/camp/internal/workflow"
+	"github.com/spf13/cobra"
+)
+
+var (
+	flowListAll  bool
+	flowListJSON bool
+)
+
+var flowListCmd = &cobra.Command{
+	Use:   "list [status]",
+	Short: "List items in a status directory",
+	Long: `List items in a status directory.
+
+If no status is specified, lists items in the default status (usually 'active').
+Use --all to list items in all status directories.
+
+Examples:
+  camp flow list              List items in default status
+  camp flow list active       List items in active/
+  camp flow list dungeon/completed  List items in dungeon/completed/
+  camp flow list --all        List items in all statuses`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: runFlowList,
+}
+
+func init() {
+	flowCmd.AddCommand(flowListCmd)
+	flowListCmd.Flags().BoolVarP(&flowListAll, "all", "a", false, "list all statuses")
+	flowListCmd.Flags().BoolVar(&flowListJSON, "json", false, "output as JSON")
+}
+
+func runFlowList(cmd *cobra.Command, args []string) error {
+	ctx := context.Background()
+
+	cwd, err := getCwd()
+	if err != nil {
+		return err
+	}
+
+	svc := workflow.NewService(cwd)
+	if err := svc.LoadSchema(ctx); err != nil {
+		return err
+	}
+
+	statuses := []string{}
+	if flowListAll {
+		statuses = svc.Schema().AllDirectories()
+	} else if len(args) > 0 {
+		statuses = []string{args[0]}
+	} else {
+		// Default to the schema's default status, or "active"
+		status := svc.Schema().DefaultStatus
+		if status == "" {
+			status = "active"
+		}
+		statuses = []string{status}
+	}
+
+	for _, status := range statuses {
+		result, err := svc.List(ctx, status, workflow.ListOptions{JSON: flowListJSON})
+		if err != nil {
+			fmt.Printf("Error listing %s: %v\n", status, err)
+			continue
+		}
+
+		if flowListAll {
+			fmt.Printf("\n%s/ (%d items)\n", status, len(result.Items))
+		}
+
+		for _, item := range result.Items {
+			typeChar := " "
+			if item.IsDir {
+				typeChar = "d"
+			}
+			fmt.Printf("  %s %-30s %s\n", typeChar, item.Name, item.ModTime.Format(time.RFC3339))
+		}
+	}
+
+	return nil
+}

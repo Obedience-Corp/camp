@@ -42,6 +42,12 @@ func init() {
 func runDungeonAdd(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
+	// Show deprecation warning
+	fmt.Fprintf(cmd.ErrOrStderr(), "%s 'camp dungeon add' is deprecated. Use 'camp flow init' instead.\n",
+		ui.WarningIcon())
+	fmt.Fprintf(cmd.ErrOrStderr(), "   The workflow system provides enhanced status management.\n")
+	fmt.Fprintf(cmd.ErrOrStderr(), "   Run 'camp flow init' to migrate or 'camp flow migrate' for existing dungeons.\n\n")
+
 	force, _ := cmd.Flags().GetBool("force")
 
 	// Load campaign config
