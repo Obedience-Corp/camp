@@ -103,13 +103,13 @@ func (s *DefaultService) ListItems(ctx context.Context, conceptName, subpath str
 		items = filterIgnored(items, concept.Ignore)
 	}
 
-	// Zero out children if we're at max depth (prevents drill arrows in TUI)
+	// Mark items as drill-disabled if at max depth
 	if concept.MaxDepth != nil {
 		currentDepth := countPathDepth(subpath)
 		atMaxDepth := currentDepth+1 >= *concept.MaxDepth
 		if atMaxDepth {
 			for i := range items {
-				items[i].Children = 0
+				items[i].DrillDisabled = true
 			}
 		}
 	}
@@ -443,13 +443,13 @@ func (s *FSService) ListItems(ctx context.Context, conceptName, subpath string) 
 		items = filterIgnored(items, concept.Ignore)
 	}
 
-	// Zero out children if we're at max depth (prevents drill arrows in TUI)
+	// Mark items as drill-disabled if at max depth
 	if concept.MaxDepth != nil {
 		currentDepth := countPathDepth(subpath)
 		atMaxDepth := currentDepth+1 >= *concept.MaxDepth
 		if atMaxDepth {
 			for i := range items {
-				items[i].Children = 0
+				items[i].DrillDisabled = true
 			}
 		}
 	}

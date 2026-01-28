@@ -42,6 +42,10 @@ type Item struct {
 	// Children is the count of non-hidden children for directories.
 	// Used by UI to show drill-down indicators.
 	Children int
+
+	// DrillDisabled indicates drilling is disabled (due to depth limit).
+	// When true, UI should not show drill arrow OR "(empty)" label.
+	DrillDisabled bool
 }
 
 // Service provides operations for working with concepts.

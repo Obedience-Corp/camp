@@ -134,7 +134,7 @@ func (m ConceptPickerModel) updateItemSelection(msg tea.KeyMsg) (ConceptPickerMo
 		idx := m.itemWheel.Selected()
 		if idx >= 0 && idx < len(m.items) {
 			item := m.items[idx]
-			if item.IsDir && item.Children > 0 {
+			if item.IsDir && item.Children > 0 && !item.DrillDisabled {
 				// Drill into subdirectory
 				m.pathHistory = append(m.pathHistory, m.currentSubpath)
 				if m.currentSubpath == "" {
@@ -203,7 +203,10 @@ func (m *ConceptPickerModel) loadItems(subpath string) {
 	names := make([]string, len(items))
 	for i, item := range items {
 		if item.IsDir {
-			if item.Children > 0 {
+			if item.DrillDisabled {
+				// Drilling disabled by depth limit - no arrow, no "(empty)"
+				names[i] = "  " + item.Name
+			} else if item.Children > 0 {
 				names[i] = "▸ " + item.Name
 			} else {
 				names[i] = "  " + item.Name + " (empty)"
