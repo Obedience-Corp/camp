@@ -19,6 +19,12 @@ type Concept struct {
 	// HasItems indicates whether this concept has subdirectory items.
 	// If true, the concept expands to show available items when selected.
 	HasItems bool
+
+	// MaxDepth controls drilling depth: nil=unlimited, 0=no drilling, 1+=levels.
+	MaxDepth *int
+
+	// Ignore lists subdirectory paths to exclude from listing.
+	Ignore []string
 }
 
 // Item represents a selectable item within a concept.

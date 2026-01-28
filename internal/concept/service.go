@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/obediencecorp/camp/internal/config"
 )
@@ -20,64 +21,42 @@ var (
 // DefaultService implements the Service interface.
 type DefaultService struct {
 	campaignRoot string
-	paths        config.CampaignPaths
+	concepts     []config.ConceptEntry
 }
 
 // NewService creates a new concept service.
-func NewService(campaignRoot string, paths config.CampaignPaths) *DefaultService {
+func NewService(campaignRoot string, concepts []config.ConceptEntry) *DefaultService {
 	return &DefaultService{
 		campaignRoot: campaignRoot,
-		paths:        paths,
+		concepts:     concepts,
 	}
 }
 
-// List returns all available concepts from CampaignPaths.
+// List returns all available concepts (order preserved from config).
 func (s *DefaultService) List(ctx context.Context) ([]Concept, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("context cancelled: %w", err)
 	}
 
-	// Build concepts from CampaignPaths fields
-	conceptDefs := []struct {
-		name        string
-		path        string
-		description string
-	}{
-		{"projects", s.paths.Projects, "Projects directory"},
-		{"worktrees", s.paths.Worktrees, "Git worktrees"},
-		{"festivals", s.paths.Festivals, "Festivals directory"},
-		{"intents", s.paths.Intents, "Intents directory"},
-		{"workflow", s.paths.Workflow, "Workflow directory"},
-		{"code_reviews", s.paths.CodeReviews, "Code reviews"},
-		{"pipelines", s.paths.Pipelines, "Pipelines"},
-		{"design", s.paths.Design, "Design documents"},
-		{"ai_docs", s.paths.AIDocs, "AI documentation"},
-		{"docs", s.paths.Docs, "Documentation"},
-		{"dungeon", s.paths.Dungeon, "Archived/paused work"},
-	}
-
-	var concepts []Concept
-	for _, def := range conceptDefs {
-		if def.path == "" {
+	var result []Concept
+	for _, c := range s.concepts {
+		if c.Path == "" {
 			continue
 		}
 
-		hasItems := s.hasItems(def.path)
+		hasItems := s.hasItemsWithIgnore(c.Path, c.Ignore, c.Depth)
 
-		concepts = append(concepts, Concept{
-			Name:        def.name,
-			Path:        def.path,
-			Description: def.description,
+		result = append(result, Concept{
+			Name:        c.Name,
+			Path:        c.Path,
+			Description: c.Description,
 			HasItems:    hasItems,
+			MaxDepth:    c.Depth,
+			Ignore:      c.Ignore,
 		})
 	}
 
-	// Sort by name for consistent display
-	sort.Slice(concepts, func(i, j int) bool {
-		return concepts[i].Name < concepts[j].Name
-	})
-
-	return concepts, nil
+	return result, nil
 }
 
 // ListItems returns subdirectories for a given concept.
@@ -96,13 +75,35 @@ func (s *DefaultService) ListItems(ctx context.Context, conceptName, subpath str
 		return []Item{}, nil
 	}
 
+	// Check depth limit
+	// depth: 0 means no drilling at all
+	if concept.MaxDepth != nil && *concept.MaxDepth == 0 {
+		return []Item{}, nil
+	}
+
+	// Check depth for deeper levels
+	currentDepth := countPathDepth(subpath) + 1 // +1 because we're listing children
+	if concept.MaxDepth != nil && currentDepth > *concept.MaxDepth {
+		return []Item{}, nil
+	}
+
 	// Build full path including optional subpath
 	fullPath := filepath.Join(s.campaignRoot, concept.Path)
 	if subpath != "" {
 		fullPath = filepath.Join(fullPath, subpath)
 	}
 
-	return s.listDirItems(fullPath)
+	items, err := s.listDirItems(fullPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter out ignored paths (only at top level, subpath=="")
+	if subpath == "" && len(concept.Ignore) > 0 {
+		items = filterIgnored(items, concept.Ignore)
+	}
+
+	return items, nil
 }
 
 // Resolve resolves a concept name and optional item to a full path.
@@ -129,40 +130,30 @@ func (s *DefaultService) Get(ctx context.Context, name string) (*Concept, error)
 		return nil, fmt.Errorf("context cancelled: %w", err)
 	}
 
-	// Map concept names to paths
-	pathMap := map[string]struct {
-		path        string
-		description string
-	}{
-		"projects":     {s.paths.Projects, "Projects directory"},
-		"worktrees":    {s.paths.Worktrees, "Git worktrees"},
-		"festivals":    {s.paths.Festivals, "Festivals directory"},
-		"intents":      {s.paths.Intents, "Intents directory"},
-		"workflow":     {s.paths.Workflow, "Workflow directory"},
-		"code_reviews": {s.paths.CodeReviews, "Code reviews"},
-		"pipelines":    {s.paths.Pipelines, "Pipelines"},
-		"design":       {s.paths.Design, "Design documents"},
-		"ai_docs":      {s.paths.AIDocs, "AI documentation"},
-		"docs":         {s.paths.Docs, "Documentation"},
-		"dungeon":      {s.paths.Dungeon, "Archived/paused work"},
+	for _, c := range s.concepts {
+		if c.Name == name {
+			return &Concept{
+				Name:        c.Name,
+				Path:        c.Path,
+				Description: c.Description,
+				HasItems:    s.hasItemsWithIgnore(c.Path, c.Ignore, c.Depth),
+				MaxDepth:    c.Depth,
+				Ignore:      c.Ignore,
+			}, nil
+		}
 	}
 
-	info, ok := pathMap[name]
-	if !ok || info.path == "" {
-		return nil, fmt.Errorf("%w: %s", ErrNotFound, name)
-	}
-
-	return &Concept{
-		Name:        name,
-		Path:        info.path,
-		Description: info.description,
-		HasItems:    s.hasItems(info.path),
-	}, nil
+	return nil, fmt.Errorf("%w: %s", ErrNotFound, name)
 }
 
-// hasItems checks if the concept path has subdirectories.
-func (s *DefaultService) hasItems(path string) bool {
+// hasItemsWithIgnore checks if the concept path has subdirectories (excluding ignored).
+func (s *DefaultService) hasItemsWithIgnore(path string, ignore []string, depth *int) bool {
 	if path == "" {
+		return false
+	}
+
+	// depth: 0 means no drilling, so no items
+	if depth != nil && *depth == 0 {
 		return false
 	}
 
@@ -172,9 +163,13 @@ func (s *DefaultService) hasItems(path string) bool {
 		return false
 	}
 
+	ignoreSet := makeIgnoreSet(ignore)
+
 	for _, entry := range entries {
 		if entry.IsDir() && !isHidden(entry.Name()) {
-			return true
+			if !ignoreSet[entry.Name()+"/"] && !ignoreSet[entry.Name()] {
+				return true
+			}
 		}
 	}
 
@@ -241,6 +236,41 @@ func (s *DefaultService) countChildren(path string) int {
 // isHidden returns true if the name starts with a dot.
 func isHidden(name string) bool {
 	return len(name) > 0 && name[0] == '.'
+}
+
+// countPathDepth counts the number of path segments in a subpath.
+func countPathDepth(subpath string) int {
+	if subpath == "" {
+		return 0
+	}
+	return len(strings.Split(filepath.Clean(subpath), string(filepath.Separator)))
+}
+
+// makeIgnoreSet creates a set from ignore patterns for fast lookup.
+func makeIgnoreSet(ignore []string) map[string]bool {
+	set := make(map[string]bool, len(ignore))
+	for _, pattern := range ignore {
+		set[pattern] = true
+		// Also add without trailing slash
+		set[strings.TrimSuffix(pattern, "/")] = true
+	}
+	return set
+}
+
+// filterIgnored removes items matching ignore patterns.
+func filterIgnored(items []Item, ignore []string) []Item {
+	if len(ignore) == 0 {
+		return items
+	}
+
+	ignoreSet := makeIgnoreSet(ignore)
+	var filtered []Item
+	for _, item := range items {
+		if !ignoreSet[item.Name+"/"] && !ignoreSet[item.Name] {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
 }
 
 // ResolvePath validates a path exists and returns its Item details.
@@ -321,70 +351,47 @@ var _ Service = (*DefaultService)(nil)
 // FSService is a service implementation that uses an fs.FS for testability.
 type FSService struct {
 	campaignRoot string
-	paths        config.CampaignPaths
+	concepts     []config.ConceptEntry
 	fsys         fs.FS
 }
 
 // NewFSService creates a new concept service with a custom filesystem.
-func NewFSService(campaignRoot string, paths config.CampaignPaths, fsys fs.FS) *FSService {
+func NewFSService(campaignRoot string, concepts []config.ConceptEntry, fsys fs.FS) *FSService {
 	return &FSService{
 		campaignRoot: campaignRoot,
-		paths:        paths,
+		concepts:     concepts,
 		fsys:         fsys,
 	}
 }
 
-// List returns all available concepts from CampaignPaths.
+// List returns all available concepts (order preserved from config).
 func (s *FSService) List(ctx context.Context) ([]Concept, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("context cancelled: %w", err)
 	}
 
-	// Build concepts from CampaignPaths fields
-	conceptDefs := []struct {
-		name        string
-		path        string
-		description string
-	}{
-		{"projects", s.paths.Projects, "Projects directory"},
-		{"worktrees", s.paths.Worktrees, "Git worktrees"},
-		{"festivals", s.paths.Festivals, "Festivals directory"},
-		{"intents", s.paths.Intents, "Intents directory"},
-		{"workflow", s.paths.Workflow, "Workflow directory"},
-		{"code_reviews", s.paths.CodeReviews, "Code reviews"},
-		{"pipelines", s.paths.Pipelines, "Pipelines"},
-		{"design", s.paths.Design, "Design documents"},
-		{"ai_docs", s.paths.AIDocs, "AI documentation"},
-		{"docs", s.paths.Docs, "Documentation"},
-		{"dungeon", s.paths.Dungeon, "Archived/paused work"},
-	}
-
-	var concepts []Concept
-	for _, def := range conceptDefs {
-		if def.path == "" {
+	var result []Concept
+	for _, c := range s.concepts {
+		if c.Path == "" {
 			continue
 		}
 
-		hasItems := s.hasItems(def.path)
+		hasItems := s.hasItemsWithIgnore(c.Path, c.Ignore, c.Depth)
 
-		concepts = append(concepts, Concept{
-			Name:        def.name,
-			Path:        def.path,
-			Description: def.description,
+		result = append(result, Concept{
+			Name:        c.Name,
+			Path:        c.Path,
+			Description: c.Description,
 			HasItems:    hasItems,
+			MaxDepth:    c.Depth,
+			Ignore:      c.Ignore,
 		})
 	}
 
-	// Sort by name for consistent display
-	sort.Slice(concepts, func(i, j int) bool {
-		return concepts[i].Name < concepts[j].Name
-	})
-
-	return concepts, nil
+	return result, nil
 }
 
 // ListItems returns subdirectories for a given concept.
-// The subpath parameter allows drilling into nested directories.
 func (s *FSService) ListItems(ctx context.Context, conceptName, subpath string) ([]Item, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("context cancelled: %w", err)
@@ -399,13 +406,33 @@ func (s *FSService) ListItems(ctx context.Context, conceptName, subpath string) 
 		return []Item{}, nil
 	}
 
+	// Check depth limit
+	if concept.MaxDepth != nil && *concept.MaxDepth == 0 {
+		return []Item{}, nil
+	}
+
+	currentDepth := countPathDepth(subpath) + 1
+	if concept.MaxDepth != nil && currentDepth > *concept.MaxDepth {
+		return []Item{}, nil
+	}
+
 	// Build path including optional subpath
 	targetPath := concept.Path
 	if subpath != "" {
 		targetPath = filepath.Join(concept.Path, subpath)
 	}
 
-	return s.listDirItemsFS(targetPath)
+	items, err := s.listDirItemsFS(targetPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter out ignored paths at top level
+	if subpath == "" && len(concept.Ignore) > 0 {
+		items = filterIgnored(items, concept.Ignore)
+	}
+
+	return items, nil
 }
 
 // Resolve resolves a concept name and optional item to a full path.
@@ -432,40 +459,29 @@ func (s *FSService) Get(ctx context.Context, name string) (*Concept, error) {
 		return nil, fmt.Errorf("context cancelled: %w", err)
 	}
 
-	// Map concept names to paths
-	pathMap := map[string]struct {
-		path        string
-		description string
-	}{
-		"projects":     {s.paths.Projects, "Projects directory"},
-		"worktrees":    {s.paths.Worktrees, "Git worktrees"},
-		"festivals":    {s.paths.Festivals, "Festivals directory"},
-		"intents":      {s.paths.Intents, "Intents directory"},
-		"workflow":     {s.paths.Workflow, "Workflow directory"},
-		"code_reviews": {s.paths.CodeReviews, "Code reviews"},
-		"pipelines":    {s.paths.Pipelines, "Pipelines"},
-		"design":       {s.paths.Design, "Design documents"},
-		"ai_docs":      {s.paths.AIDocs, "AI documentation"},
-		"docs":         {s.paths.Docs, "Documentation"},
-		"dungeon":      {s.paths.Dungeon, "Archived/paused work"},
+	for _, c := range s.concepts {
+		if c.Name == name {
+			return &Concept{
+				Name:        c.Name,
+				Path:        c.Path,
+				Description: c.Description,
+				HasItems:    s.hasItemsWithIgnore(c.Path, c.Ignore, c.Depth),
+				MaxDepth:    c.Depth,
+				Ignore:      c.Ignore,
+			}, nil
+		}
 	}
 
-	info, ok := pathMap[name]
-	if !ok || info.path == "" {
-		return nil, fmt.Errorf("%w: %s", ErrNotFound, name)
-	}
-
-	return &Concept{
-		Name:        name,
-		Path:        info.path,
-		Description: info.description,
-		HasItems:    s.hasItems(info.path),
-	}, nil
+	return nil, fmt.Errorf("%w: %s", ErrNotFound, name)
 }
 
-// hasItems checks if the concept path has subdirectories via fs.FS.
-func (s *FSService) hasItems(path string) bool {
+// hasItemsWithIgnore checks if the concept path has subdirectories via fs.FS.
+func (s *FSService) hasItemsWithIgnore(path string, ignore []string, depth *int) bool {
 	if path == "" {
+		return false
+	}
+
+	if depth != nil && *depth == 0 {
 		return false
 	}
 
@@ -474,9 +490,13 @@ func (s *FSService) hasItems(path string) bool {
 		return false
 	}
 
+	ignoreSet := makeIgnoreSet(ignore)
+
 	for _, entry := range entries {
 		if entry.IsDir() && !isHidden(entry.Name()) {
-			return true
+			if !ignoreSet[entry.Name()+"/"] && !ignoreSet[entry.Name()] {
+				return true
+			}
 		}
 	}
 

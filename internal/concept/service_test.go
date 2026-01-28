@@ -8,52 +8,52 @@ import (
 	"github.com/obediencecorp/camp/internal/config"
 )
 
-// testPaths returns CampaignPaths for testing.
-func testPaths() config.CampaignPaths {
-	return config.CampaignPaths{
-		Projects:  "projects",
-		Festivals: "festivals",
-		Intents:   "workflow/intents",
+// testConcepts returns ConceptEntry list for testing.
+func testConcepts() []config.ConceptEntry {
+	return []config.ConceptEntry{
+		{Name: "projects", Path: "projects"},
+		{Name: "festivals", Path: "festivals"},
+		{Name: "intents", Path: "workflow/intents"},
 	}
 }
 
 // testFS returns a mock filesystem for testing.
 func testFS() fstest.MapFS {
 	return fstest.MapFS{
-		"projects/camp/file":            &fstest.MapFile{Data: []byte("")},
-		"projects/fest/file":            &fstest.MapFile{Data: []byte("")},
-		"projects/.hidden/file":         &fstest.MapFile{Data: []byte("")},
-		"festivals/active/file":         &fstest.MapFile{Data: []byte("")},
-		"festivals/planned/file":        &fstest.MapFile{Data: []byte("")},
-		"festivals/completed/file":      &fstest.MapFile{Data: []byte("")},
-		"workflow/intents/inbox/file":   &fstest.MapFile{Data: []byte("")},
-		"workflow/intents/active/file":  &fstest.MapFile{Data: []byte("")},
+		"projects/camp/file":           &fstest.MapFile{Data: []byte("")},
+		"projects/fest/file":           &fstest.MapFile{Data: []byte("")},
+		"projects/.hidden/file":        &fstest.MapFile{Data: []byte("")},
+		"festivals/active/file":        &fstest.MapFile{Data: []byte("")},
+		"festivals/planned/file":       &fstest.MapFile{Data: []byte("")},
+		"festivals/completed/file":     &fstest.MapFile{Data: []byte("")},
+		"workflow/intents/inbox/file":  &fstest.MapFile{Data: []byte("")},
+		"workflow/intents/active/file": &fstest.MapFile{Data: []byte("")},
 	}
 }
 
 func TestFSService_List(t *testing.T) {
 	tests := []struct {
 		name      string
-		paths     config.CampaignPaths
+		concepts  []config.ConceptEntry
 		wantCount int
 		wantNames []string
 	}{
 		{
-			name:      "returns concepts from paths",
-			paths:     testPaths(),
-			wantCount: 3,                                         // projects, festivals, intents
-			wantNames: []string{"festivals", "intents", "projects"}, // sorted alphabetically
+			name:      "returns concepts from config",
+			concepts:  testConcepts(),
+			wantCount: 3,                                            // projects, festivals, intents
+			wantNames: []string{"projects", "festivals", "intents"}, // preserves order
 		},
 		{
-			name:      "empty paths",
-			paths:     config.CampaignPaths{},
+			name:      "empty concepts",
+			concepts:  []config.ConceptEntry{},
 			wantCount: 0,
 			wantNames: nil,
 		},
 		{
-			name: "partial paths",
-			paths: config.CampaignPaths{
-				Projects: "projects",
+			name: "single concept",
+			concepts: []config.ConceptEntry{
+				{Name: "projects", Path: "projects"},
 			},
 			wantCount: 1,
 			wantNames: []string{"projects"},
@@ -62,7 +62,7 @@ func TestFSService_List(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := NewFSService("/test", tt.paths, testFS())
+			svc := NewFSService("/test", tt.concepts, testFS())
 
 			got, err := svc.List(context.Background())
 			if err != nil {
@@ -91,8 +91,8 @@ func TestFSService_ListItems(t *testing.T) {
 		"projects/camp/internal": &fstest.MapFile{Mode: 0o755},
 	}
 
-	paths := config.CampaignPaths{
-		Projects: "projects",
+	concepts := []config.ConceptEntry{
+		{Name: "projects", Path: "projects"},
 	}
 
 	tests := []struct {
@@ -127,7 +127,7 @@ func TestFSService_ListItems(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := NewFSService("/test", paths, fsys)
+			svc := NewFSService("/test", concepts, fsys)
 
 			got, err := svc.ListItems(context.Background(), tt.conceptName, tt.subpath)
 			if (err != nil) != tt.wantErr {
@@ -149,11 +149,11 @@ func TestFSService_ListItems_SkipsHiddenFiles(t *testing.T) {
 		"projects/visible/file": &fstest.MapFile{Data: []byte("")},
 	}
 
-	paths := config.CampaignPaths{
-		Projects: "projects",
+	concepts := []config.ConceptEntry{
+		{Name: "projects", Path: "projects"},
 	}
 
-	svc := NewFSService("/test", paths, fsys)
+	svc := NewFSService("/test", concepts, fsys)
 
 	items, err := svc.ListItems(context.Background(), "projects", "")
 	if err != nil {
@@ -176,11 +176,11 @@ func TestFSService_ListItems_SortsDirectoriesFirst(t *testing.T) {
 		"projects/bfile.txt":      &fstest.MapFile{Data: []byte("content")},
 	}
 
-	paths := config.CampaignPaths{
-		Projects: "projects",
+	concepts := []config.ConceptEntry{
+		{Name: "projects", Path: "projects"},
 	}
 
-	svc := NewFSService("/test", paths, fsys)
+	svc := NewFSService("/test", concepts, fsys)
 
 	items, err := svc.ListItems(context.Background(), "projects", "")
 	if err != nil {
@@ -207,7 +207,7 @@ func TestFSService_ListItems_SortsDirectoriesFirst(t *testing.T) {
 }
 
 func TestFSService_Get(t *testing.T) {
-	paths := testPaths()
+	concepts := testConcepts()
 
 	tests := []struct {
 		name        string
@@ -242,7 +242,7 @@ func TestFSService_Get(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := NewFSService("/test", paths, testFS())
+			svc := NewFSService("/test", concepts, testFS())
 
 			got, err := svc.Get(context.Background(), tt.conceptName)
 			if (err != nil) != tt.wantErr {
@@ -259,7 +259,7 @@ func TestFSService_Get(t *testing.T) {
 }
 
 func TestFSService_Resolve(t *testing.T) {
-	paths := testPaths()
+	concepts := testConcepts()
 
 	tests := []struct {
 		name        string
@@ -292,7 +292,7 @@ func TestFSService_Resolve(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := NewFSService("/test", paths, testFS())
+			svc := NewFSService("/test", concepts, testFS())
 
 			got, err := svc.Resolve(context.Background(), tt.conceptName, tt.item)
 			if (err != nil) != tt.wantErr {
@@ -312,7 +312,7 @@ func TestFSService_ResolvePath(t *testing.T) {
 		"projects/file.txt":          &fstest.MapFile{Data: []byte("content")},
 	}
 
-	paths := testPaths()
+	concepts := testConcepts()
 
 	tests := []struct {
 		name     string
@@ -349,7 +349,7 @@ func TestFSService_ResolvePath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := NewFSService("/test", paths, fsys)
+			svc := NewFSService("/test", concepts, fsys)
 
 			got, err := svc.ResolvePath(context.Background(), tt.path)
 			if (err != nil) != tt.wantErr {
@@ -369,7 +369,7 @@ func TestFSService_ResolvePath(t *testing.T) {
 }
 
 func TestFSService_ConceptForPath(t *testing.T) {
-	paths := testPaths()
+	concepts := testConcepts()
 
 	tests := []struct {
 		name        string
@@ -410,7 +410,7 @@ func TestFSService_ConceptForPath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := NewFSService("/test", paths, testFS())
+			svc := NewFSService("/test", concepts, testFS())
 
 			got, err := svc.ConceptForPath(context.Background(), tt.path)
 			if (err != nil) != tt.wantErr {
@@ -428,7 +428,7 @@ func TestFSService_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	svc := NewFSService("/test", testPaths(), testFS())
+	svc := NewFSService("/test", testConcepts(), testFS())
 
 	t.Run("List", func(t *testing.T) {
 		_, err := svc.List(ctx)
@@ -481,11 +481,11 @@ func TestFSService_ListItems_ChildrenCount(t *testing.T) {
 		"projects/hasthree/three/file": &fstest.MapFile{Data: []byte("")},
 	}
 
-	paths := config.CampaignPaths{
-		Projects: "projects",
+	concepts := []config.ConceptEntry{
+		{Name: "projects", Path: "projects"},
 	}
 
-	svc := NewFSService("/test", paths, fsys)
+	svc := NewFSService("/test", concepts, fsys)
 
 	items, err := svc.ListItems(context.Background(), "projects", "")
 	if err != nil {
@@ -567,30 +567,30 @@ func TestHasPathPrefix(t *testing.T) {
 
 func TestFSService_List_HasItemsDetection(t *testing.T) {
 	fsys := fstest.MapFS{
-		"projects/camp/file":  &fstest.MapFile{Data: []byte("")},
-		"festivals/.hidden":   &fstest.MapFile{Mode: 0o755}, // Only hidden directory
+		"projects/camp/file": &fstest.MapFile{Data: []byte("")},
+		"festivals/.hidden":  &fstest.MapFile{Mode: 0o755}, // Only hidden directory
 	}
 
-	paths := config.CampaignPaths{
-		Projects:  "projects",
-		Festivals: "festivals",
+	concepts := []config.ConceptEntry{
+		{Name: "projects", Path: "projects"},
+		{Name: "festivals", Path: "festivals"},
 	}
 
-	svc := NewFSService("/test", paths, fsys)
+	svc := NewFSService("/test", concepts, fsys)
 
-	concepts, err := svc.List(context.Background())
+	concepts2, err := svc.List(context.Background())
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
 
 	// Find concepts by name
 	var projects, festivals *Concept
-	for i := range concepts {
-		switch concepts[i].Name {
+	for i := range concepts2 {
+		switch concepts2[i].Name {
 		case "projects":
-			projects = &concepts[i]
+			projects = &concepts2[i]
 		case "festivals":
-			festivals = &concepts[i]
+			festivals = &concepts2[i]
 		}
 	}
 
@@ -606,5 +606,268 @@ func TestFSService_List_HasItemsDetection(t *testing.T) {
 	// festivals only has hidden directory
 	if festivals.HasItems {
 		t.Error("festivals.HasItems should be false (only hidden items)")
+	}
+}
+
+// Tests for depth limiting functionality
+
+func TestFSService_ListItems_DepthZero(t *testing.T) {
+	fsys := fstest.MapFS{
+		"intents/inbox/task1.md":  &fstest.MapFile{Data: []byte("")},
+		"intents/active/task2.md": &fstest.MapFile{Data: []byte("")},
+	}
+
+	depthZero := 0
+	concepts := []config.ConceptEntry{
+		{Name: "intents", Path: "intents", Depth: &depthZero}, // No drilling
+	}
+
+	svc := NewFSService("/test", concepts, fsys)
+
+	// Depth 0 means no drilling at all - return empty list
+	items, err := svc.ListItems(context.Background(), "intents", "")
+	if err != nil {
+		t.Fatalf("ListItems() error = %v", err)
+	}
+
+	if len(items) != 0 {
+		t.Errorf("ListItems() with depth=0 should return 0 items, got %d", len(items))
+	}
+}
+
+func TestFSService_ListItems_DepthOne(t *testing.T) {
+	fsys := fstest.MapFS{
+		"projects/camp/cmd/main.go":      &fstest.MapFile{Data: []byte("")},
+		"projects/camp/internal/pkg.go":  &fstest.MapFile{Data: []byte("")},
+		"projects/fest/main.go":          &fstest.MapFile{Data: []byte("")},
+	}
+
+	depthOne := 1
+	concepts := []config.ConceptEntry{
+		{Name: "projects", Path: "projects", Depth: &depthOne}, // Only immediate children
+	}
+
+	svc := NewFSService("/test", concepts, fsys)
+
+	// Should show immediate children (camp, fest)
+	items, err := svc.ListItems(context.Background(), "projects", "")
+	if err != nil {
+		t.Fatalf("ListItems() error = %v", err)
+	}
+
+	if len(items) != 2 {
+		t.Errorf("ListItems() at root should return 2 items, got %d", len(items))
+	}
+
+	// Should NOT allow drilling deeper (subpath "camp" would be depth 2)
+	items, err = svc.ListItems(context.Background(), "projects", "camp")
+	if err != nil {
+		t.Fatalf("ListItems() error = %v", err)
+	}
+
+	if len(items) != 0 {
+		t.Errorf("ListItems() at depth>1 with depth=1 limit should return 0 items, got %d", len(items))
+	}
+}
+
+func TestFSService_ListItems_DepthUnlimited(t *testing.T) {
+	fsys := fstest.MapFS{
+		"festivals/active/fest1/phase1/seq1/task.md": &fstest.MapFile{Data: []byte("")},
+	}
+
+	concepts := []config.ConceptEntry{
+		{Name: "festivals", Path: "festivals"}, // Depth nil = unlimited
+	}
+
+	svc := NewFSService("/test", concepts, fsys)
+
+	// Should be able to drill to any depth
+	items, err := svc.ListItems(context.Background(), "festivals", "")
+	if err != nil {
+		t.Fatalf("ListItems() error = %v", err)
+	}
+	if len(items) != 1 {
+		t.Errorf("ListItems() at root should return 1 item, got %d", len(items))
+	}
+
+	items, err = svc.ListItems(context.Background(), "festivals", "active")
+	if err != nil {
+		t.Fatalf("ListItems() error = %v", err)
+	}
+	if len(items) != 1 {
+		t.Errorf("ListItems() at depth 2 should return 1 item, got %d", len(items))
+	}
+
+	items, err = svc.ListItems(context.Background(), "festivals", "active/fest1/phase1")
+	if err != nil {
+		t.Fatalf("ListItems() error = %v", err)
+	}
+	if len(items) != 1 {
+		t.Errorf("ListItems() at depth 4 should return 1 item, got %d", len(items))
+	}
+}
+
+// Tests for ignore functionality
+
+func TestFSService_ListItems_IgnorePaths(t *testing.T) {
+	fsys := fstest.MapFS{
+		"projects/camp/main.go":            &fstest.MapFile{Data: []byte("")},
+		"projects/fest/main.go":            &fstest.MapFile{Data: []byte("")},
+		"projects/worktrees/camp-feat/file": &fstest.MapFile{Data: []byte("")},
+	}
+
+	concepts := []config.ConceptEntry{
+		{
+			Name:   "projects",
+			Path:   "projects",
+			Ignore: []string{"worktrees"},
+		},
+	}
+
+	svc := NewFSService("/test", concepts, fsys)
+
+	items, err := svc.ListItems(context.Background(), "projects", "")
+	if err != nil {
+		t.Fatalf("ListItems() error = %v", err)
+	}
+
+	// Should return camp and fest, but NOT worktrees
+	if len(items) != 2 {
+		t.Errorf("ListItems() should return 2 items (ignoring worktrees), got %d", len(items))
+	}
+
+	for _, item := range items {
+		if item.Name == "worktrees" {
+			t.Errorf("ListItems() should not include ignored path 'worktrees'")
+		}
+	}
+}
+
+func TestFSService_ListItems_MultipleIgnorePaths(t *testing.T) {
+	fsys := fstest.MapFS{
+		"workflow/intents/inbox/file":  &fstest.MapFile{Data: []byte("")},
+		"workflow/design/doc.md":       &fstest.MapFile{Data: []byte("")},
+		"workflow/pipelines/ci.yaml":   &fstest.MapFile{Data: []byte("")},
+		"workflow/code_reviews/pr.md":  &fstest.MapFile{Data: []byte("")},
+	}
+
+	concepts := []config.ConceptEntry{
+		{
+			Name:   "workflow",
+			Path:   "workflow",
+			Ignore: []string{"intents", "design"},
+		},
+	}
+
+	svc := NewFSService("/test", concepts, fsys)
+
+	items, err := svc.ListItems(context.Background(), "workflow", "")
+	if err != nil {
+		t.Fatalf("ListItems() error = %v", err)
+	}
+
+	// Should return pipelines and code_reviews, but NOT intents or design
+	if len(items) != 2 {
+		t.Errorf("ListItems() should return 2 items, got %d", len(items))
+	}
+
+	for _, item := range items {
+		if item.Name == "intents" || item.Name == "design" {
+			t.Errorf("ListItems() should not include ignored path %q", item.Name)
+		}
+	}
+}
+
+func TestFSService_List_PreservesOrder(t *testing.T) {
+	fsys := fstest.MapFS{
+		"projects/file":  &fstest.MapFile{Data: []byte("")},
+		"festivals/file": &fstest.MapFile{Data: []byte("")},
+		"intents/file":   &fstest.MapFile{Data: []byte("")},
+	}
+
+	// Define concepts in a specific order (not alphabetical)
+	concepts := []config.ConceptEntry{
+		{Name: "intents", Path: "intents"},
+		{Name: "projects", Path: "projects"},
+		{Name: "festivals", Path: "festivals"},
+	}
+
+	svc := NewFSService("/test", concepts, fsys)
+
+	got, err := svc.List(context.Background())
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+
+	if len(got) != 3 {
+		t.Fatalf("List() returned %d concepts, want 3", len(got))
+	}
+
+	// Should preserve the order from config
+	expectedOrder := []string{"intents", "projects", "festivals"}
+	for i, want := range expectedOrder {
+		if got[i].Name != want {
+			t.Errorf("List()[%d].Name = %q, want %q (order not preserved)", i, got[i].Name, want)
+		}
+	}
+}
+
+func TestFSService_List_IncludesMaxDepthAndIgnore(t *testing.T) {
+	fsys := fstest.MapFS{
+		"projects/camp/file": &fstest.MapFile{Data: []byte("")},
+	}
+
+	depth := 1
+	concepts := []config.ConceptEntry{
+		{
+			Name:        "projects",
+			Path:        "projects",
+			Description: "Development projects",
+			Depth:       &depth,
+			Ignore:      []string{"worktrees"},
+		},
+	}
+
+	svc := NewFSService("/test", concepts, fsys)
+
+	got, err := svc.List(context.Background())
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+
+	if len(got) != 1 {
+		t.Fatalf("List() returned %d concepts, want 1", len(got))
+	}
+
+	c := got[0]
+	if c.MaxDepth == nil || *c.MaxDepth != 1 {
+		t.Errorf("Concept.MaxDepth should be 1, got %v", c.MaxDepth)
+	}
+	if len(c.Ignore) != 1 || c.Ignore[0] != "worktrees" {
+		t.Errorf("Concept.Ignore should be [worktrees], got %v", c.Ignore)
+	}
+	if c.Description != "Development projects" {
+		t.Errorf("Concept.Description = %q, want %q", c.Description, "Development projects")
+	}
+}
+
+func TestCountPathDepth(t *testing.T) {
+	tests := []struct {
+		path string
+		want int
+	}{
+		{"", 0},
+		{"a", 1},
+		{"a/b", 2},
+		{"a/b/c", 3},
+		{"a/b/c/d", 4},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			if got := countPathDepth(tt.path); got != tt.want {
+				t.Errorf("countPathDepth(%q) = %d, want %d", tt.path, got, tt.want)
+			}
+		})
 	}
 }
