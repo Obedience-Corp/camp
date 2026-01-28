@@ -57,23 +57,23 @@ func (d ConfirmationDialog) Confirmed() bool {
 var (
 	dialogBoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("205")).
+			BorderForeground(pal.BorderFocus).
 			Padding(1, 2).
 			Align(lipgloss.Center)
 
 	dialogTitleStyle = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(lipgloss.Color("196"))
+				Foreground(pal.Error)
 
 	dialogMessageStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("255"))
+				Foreground(pal.TextPrimary)
 
 	dialogButtonStyle = lipgloss.NewStyle().
 				Padding(0, 2)
 
 	dialogActiveButtonStyle = dialogButtonStyle.
-				Background(lipgloss.Color("205")).
-				Foreground(lipgloss.Color("0"))
+				Background(pal.Accent).
+				Foreground(lipgloss.Color("0")) // Black text on accent background
 )
 
 // View renders the confirmation dialog.

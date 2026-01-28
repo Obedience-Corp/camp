@@ -158,24 +158,24 @@ func (m ActionMenu) View() string {
 var (
 	actionMenuBoxStyle = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color("205")).
+				BorderForeground(pal.BorderFocus).
 				Padding(0, 1)
 
 	actionMenuTitleStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("205")).
+				Foreground(pal.Accent).
 				Bold(true)
 
 	actionMenuItemStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("255"))
+				Foreground(pal.TextPrimary)
 
 	actionMenuSelectedStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("205")).
+				Foreground(pal.Accent).
 				Bold(true)
 
 	actionMenuDisabledStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("241"))
+				Foreground(pal.TextDim)
 
 	actionMenuDisabledSelectedStyle = lipgloss.NewStyle().
-					Foreground(lipgloss.Color("241")).
+					Foreground(pal.TextDim).
 					Bold(true)
 )

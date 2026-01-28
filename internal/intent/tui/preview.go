@@ -7,7 +7,6 @@ import (
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -44,7 +43,7 @@ func (p *PreviewPane) SetContent(title, rawContent string) {
 	content := stripFrontmatter(rawContent)
 
 	// Render markdown
-	rendered := p.renderMarkdown(content)
+	rendered := p.renderPreviewMarkdown(content)
 
 	p.content = rendered
 	p.viewport.SetContent(rendered)
@@ -61,28 +60,15 @@ func (p *PreviewPane) SetSize(width, height int) {
 	// Re-render content with new width if we have content
 	if p.rawContent != "" {
 		content := stripFrontmatter(p.rawContent)
-		rendered := p.renderMarkdown(content)
+		rendered := p.renderPreviewMarkdown(content)
 		p.content = rendered
 		p.viewport.SetContent(rendered)
 	}
 }
 
-// renderMarkdown renders content using glamour.
-func (p *PreviewPane) renderMarkdown(content string) string {
-	renderer, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
-		glamour.WithWordWrap(p.width-6),
-	)
-	if err != nil {
-		return content // Fallback to plain text
-	}
-
-	rendered, err := renderer.Render(content)
-	if err != nil {
-		return content // Fallback to plain text
-	}
-
-	return strings.TrimSpace(rendered)
+// renderPreviewMarkdown renders content using the shared glamour renderer.
+func (p *PreviewPane) renderPreviewMarkdown(content string) string {
+	return renderMarkdown(content, p.width-6)
 }
 
 // stripFrontmatter removes YAML frontmatter from content.
@@ -131,14 +117,14 @@ func (p PreviewPane) Update(msg tea.Msg) (PreviewPane, tea.Cmd) {
 var (
 	previewBorderStyle = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color("240"))
+				BorderForeground(pal.Border)
 
 	previewTitleStyle = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(lipgloss.Color("205"))
+				Foreground(pal.Accent)
 
 	previewEmptyStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("241")).
+				Foreground(pal.TextMuted).
 				Italic(true)
 )
 
@@ -154,7 +140,7 @@ func (p PreviewPane) View() string {
 
 	title := previewTitleStyle.Render(p.title)
 	scrollInfo := fmt.Sprintf(" %d%% ", int(p.viewport.ScrollPercent()*100))
-	scrollStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	scrollStyle := lipgloss.NewStyle().Foreground(pal.TextMuted)
 
 	header := lipgloss.JoinHorizontal(
 		lipgloss.Top,

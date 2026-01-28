@@ -12,7 +12,6 @@ import (
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/obediencecorp/camp/internal/intent"
 )
@@ -128,25 +127,7 @@ func (m *IntentViewerModel) loadContent() {
 // renderContent renders the markdown content.
 func (m *IntentViewerModel) renderContent() {
 	content := stripFrontmatter(m.rawContent)
-
-	renderer, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
-		glamour.WithWordWrap(m.width-6),
-	)
-	if err != nil {
-		m.content = content
-		m.viewport.SetContent(m.content)
-		return
-	}
-
-	rendered, err := renderer.Render(content)
-	if err != nil {
-		m.content = content
-		m.viewport.SetContent(m.content)
-		return
-	}
-
-	m.content = strings.TrimSpace(rendered)
+	m.content = renderMarkdown(content, m.width-6)
 	m.viewport.SetContent(m.content)
 }
 
@@ -250,10 +231,12 @@ func (m IntentViewerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.siblings) > 1 {
 				m.navigatePrev()
 			}
+			return m, nil
 		case "right", "l":
 			if len(m.siblings) > 1 {
 				m.navigateNext()
 			}
+			return m, nil
 
 		// Actions
 		case "e":
@@ -315,14 +298,14 @@ func (m IntentViewerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case viewerArchiveFinishedMsg:
 		if msg.err == nil {
-			// Return to explorer after archive
+			m.refreshOnReturn = true
 			return m, m.closeViewer()
 		}
 		return m, nil
 
 	case viewerDeleteFinishedMsg:
 		if msg.err == nil {
-			// Return to explorer after delete
+			m.refreshOnReturn = true
 			return m, m.closeViewer()
 		}
 		return m, nil
@@ -345,26 +328,36 @@ func (m IntentViewerModel) closeViewer() tea.Cmd {
 
 // navigatePrev moves to the previous intent in the sibling list (wraps around).
 func (m *IntentViewerModel) navigatePrev() {
+	if len(m.siblings) == 0 {
+		return // Safety check
+	}
 	if m.currentIndex > 0 {
 		m.currentIndex--
 	} else {
 		m.currentIndex = len(m.siblings) - 1 // wrap to end
 	}
-	m.intent = m.siblings[m.currentIndex]
-	m.loadContent()
-	m.viewport.GotoTop()
+	if m.currentIndex >= 0 && m.currentIndex < len(m.siblings) {
+		m.intent = m.siblings[m.currentIndex]
+		m.loadContent()
+		m.viewport.GotoTop()
+	}
 }
 
 // navigateNext moves to the next intent in the sibling list (wraps around).
 func (m *IntentViewerModel) navigateNext() {
+	if len(m.siblings) == 0 {
+		return // Safety check
+	}
 	if m.currentIndex < len(m.siblings)-1 {
 		m.currentIndex++
 	} else {
 		m.currentIndex = 0 // wrap to start
 	}
-	m.intent = m.siblings[m.currentIndex]
-	m.loadContent()
-	m.viewport.GotoTop()
+	if m.currentIndex >= 0 && m.currentIndex < len(m.siblings) {
+		m.intent = m.siblings[m.currentIndex]
+		m.loadContent()
+		m.viewport.GotoTop()
+	}
 }
 
 // openInEditor opens the intent in $EDITOR.
@@ -476,7 +469,7 @@ func (m IntentViewerModel) View() string {
 
 	// Separator
 	separator := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("240")).
+		Foreground(pal.Border).
 		Render(strings.Repeat("─", m.width-2))
 	b.WriteString(separator)
 	b.WriteString("\n")
@@ -521,20 +514,25 @@ func (m IntentViewerModel) renderHeader() string {
 
 // renderStatusBadge renders a colored status badge.
 func (m IntentViewerModel) renderStatusBadge(s intent.Status) string {
-	var color lipgloss.Color
+	return renderStatusBadge(s)
+}
+
+// renderStatusBadge renders a colored status badge (shared helper).
+func renderStatusBadge(s intent.Status) string {
+	var color lipgloss.TerminalColor
 	switch s {
 	case intent.StatusInbox:
-		color = lipgloss.Color("214") // Orange
+		color = pal.Warning // Orange
 	case intent.StatusActive:
-		color = lipgloss.Color("82") // Green
+		color = pal.Success // Green
 	case intent.StatusReady:
-		color = lipgloss.Color("39") // Blue
+		color = pal.AccentAlt // Blue
 	case intent.StatusDone:
-		color = lipgloss.Color("245") // Gray
+		color = pal.TextMuted // Gray
 	case intent.StatusKilled:
-		color = lipgloss.Color("196") // Red
+		color = pal.Error // Red
 	default:
-		color = lipgloss.Color("245")
+		color = pal.TextMuted
 	}
 	return lipgloss.NewStyle().Foreground(color).Render(s.String())
 }
@@ -619,19 +617,19 @@ func (m IntentViewerModel) viewWithMoveOverlay() string {
 var (
 	viewerBoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("205")).
+			BorderForeground(pal.BorderFocus).
 			Padding(0, 1)
 
 	viewerTitleStyle = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(lipgloss.Color("205"))
+				Foreground(pal.Accent)
 
 	viewerBadgeStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("245"))
+				Foreground(pal.TextSecondary)
 
 	viewerMetaStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241"))
+			Foreground(pal.TextMuted)
 
 	viewerFooterStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("241"))
+				Foreground(pal.TextMuted)
 )

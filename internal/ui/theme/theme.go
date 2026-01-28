@@ -170,3 +170,55 @@ func buildTheme(p palette) *huh.Theme {
 
 	return t
 }
+
+// TUIPalette provides adaptive colors for custom TUI components (non-huh).
+// All colors use lipgloss.AdaptiveColor for automatic light/dark adaptation.
+type TUIPalette struct {
+	// Primary colors
+	Accent      lipgloss.TerminalColor // Primary accent (pink/magenta)
+	AccentAlt   lipgloss.TerminalColor // Secondary accent (blue)
+	Success     lipgloss.TerminalColor // Success/positive (green)
+	Warning     lipgloss.TerminalColor // Warning (orange/yellow)
+	Error       lipgloss.TerminalColor // Error/danger (red)
+
+	// Text colors
+	TextPrimary   lipgloss.TerminalColor // Main text (titles, content)
+	TextSecondary lipgloss.TerminalColor // Secondary text (types, badges)
+	TextMuted     lipgloss.TerminalColor // Muted text (dates, help, separators)
+	TextDim       lipgloss.TerminalColor // Very dim text (disabled, inactive)
+
+	// Background colors
+	BgSelected lipgloss.TerminalColor // Selected item background
+	BgOverlay  lipgloss.TerminalColor // Modal/overlay background
+
+	// Border colors
+	Border      lipgloss.TerminalColor // Default border
+	BorderFocus lipgloss.TerminalColor // Focused border
+}
+
+// TUI returns the global adaptive TUI palette.
+// Use this for all custom TUI components to ensure consistent theming.
+func TUI() TUIPalette {
+	return TUIPalette{
+		// Primary colors - visible on both light and dark
+		Accent:    lipgloss.AdaptiveColor{Light: "205", Dark: "205"}, // Pink/magenta
+		AccentAlt: lipgloss.AdaptiveColor{Light: "27", Dark: "110"}, // Blue
+		Success:   lipgloss.AdaptiveColor{Light: "28", Dark: "82"},  // Green
+		Warning:   lipgloss.AdaptiveColor{Light: "208", Dark: "214"}, // Orange
+		Error:     lipgloss.AdaptiveColor{Light: "124", Dark: "196"}, // Red
+
+		// Text colors - adjusted for contrast
+		TextPrimary:   lipgloss.AdaptiveColor{Light: "232", Dark: "255"}, // Near black / bright white
+		TextSecondary: lipgloss.AdaptiveColor{Light: "238", Dark: "250"}, // Dark grey / light grey
+		TextMuted:     lipgloss.AdaptiveColor{Light: "243", Dark: "246"}, // Medium grey (visible!)
+		TextDim:       lipgloss.AdaptiveColor{Light: "248", Dark: "242"}, // Light grey / medium grey
+
+		// Background colors
+		BgSelected: lipgloss.AdaptiveColor{Light: "254", Dark: "237"}, // Light grey / dark grey
+		BgOverlay:  lipgloss.AdaptiveColor{Light: "255", Dark: "236"}, // White / very dark grey
+
+		// Border colors
+		Border:      lipgloss.AdaptiveColor{Light: "250", Dark: "240"}, // Light grey / medium grey
+		BorderFocus: lipgloss.AdaptiveColor{Light: "205", Dark: "205"}, // Pink (matches accent)
+	}
+}
