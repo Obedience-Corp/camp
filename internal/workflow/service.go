@@ -194,7 +194,8 @@ func (s *Service) resolvePath(status string) string {
 }
 
 // Init creates a new workflow with the default structure.
-// It creates the schema file and all directories defined in the schema.
+// It creates the schema file, all directories defined in the schema,
+// and OBEY.md documentation files in active/, ready/, and dungeon/.
 // Returns ErrSchemaExists if a schema already exists and Force is false.
 func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, error) {
 	if ctx.Err() != nil {
@@ -243,6 +244,40 @@ func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, erro
 			return nil, fmt.Errorf("failed to create directory %s: %w", dirPath, err)
 		}
 		result.CreatedDirs = append(result.CreatedDirs, dirPath)
+	}
+
+	// Create OBEY.md files in active/, ready/, and dungeon/
+	obeyFiles := []struct {
+		path        string
+		getTemplate func() ([]byte, error)
+	}{
+		{filepath.Join(s.root, "active", "OBEY.md"), GetActiveOBEYTemplate},
+		{filepath.Join(s.root, "ready", "OBEY.md"), GetReadyOBEYTemplate},
+		{filepath.Join(s.root, "dungeon", "OBEY.md"), GetDungeonOBEYTemplate},
+	}
+
+	for _, obey := range obeyFiles {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+
+		// Skip if exists and not forcing
+		if _, err := os.Stat(obey.path); err == nil {
+			if !opts.Force {
+				result.Skipped = append(result.Skipped, obey.path)
+				continue
+			}
+		}
+
+		content, err := obey.getTemplate()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read template for %s: %w", obey.path, err)
+		}
+
+		if err := os.WriteFile(obey.path, content, 0644); err != nil {
+			return nil, fmt.Errorf("failed to write %s: %w", obey.path, err)
+		}
+		result.CreatedFiles = append(result.CreatedFiles, obey.path)
 	}
 
 	return result, nil
@@ -324,9 +359,19 @@ func (s *Service) List(ctx context.Context, status string, opts ListOptions) (*L
 		Items:  make([]Item, 0, len(entries)),
 	}
 
+	// System files to exclude from listings
+	excludedFiles := map[string]bool{
+		"OBEY.md": true,
+	}
+
 	for _, entry := range entries {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
+		}
+
+		// Skip excluded files
+		if excludedFiles[entry.Name()] {
+			continue
 		}
 
 		info, err := entry.Info()
@@ -513,6 +558,29 @@ func (s *Service) Migrate(ctx context.Context, opts MigrateOptions) (*MigrateRes
 					return nil, fmt.Errorf("failed to create directory dungeon/%s: %w", childName, err)
 				}
 				result.Created = append(result.Created, "dungeon/"+childName+"/")
+			}
+		}
+
+		// Create OBEY.md files if they don't exist
+		obeyFiles := []struct {
+			path        string
+			getTemplate func() ([]byte, error)
+		}{
+			{filepath.Join(s.root, "active", "OBEY.md"), GetActiveOBEYTemplate},
+			{filepath.Join(s.root, "ready", "OBEY.md"), GetReadyOBEYTemplate},
+			{filepath.Join(s.root, "dungeon", "OBEY.md"), GetDungeonOBEYTemplate},
+		}
+
+		for _, obey := range obeyFiles {
+			if _, err := os.Stat(obey.path); os.IsNotExist(err) {
+				content, err := obey.getTemplate()
+				if err != nil {
+					return nil, fmt.Errorf("failed to read template for %s: %w", obey.path, err)
+				}
+				if err := os.WriteFile(obey.path, content, 0644); err != nil {
+					return nil, fmt.Errorf("failed to write %s: %w", obey.path, err)
+				}
+				result.Created = append(result.Created, obey.path)
 			}
 		}
 

@@ -75,6 +75,14 @@ func TestService_Init(t *testing.T) {
 						t.Errorf("directory %q not created: %v", d, err)
 					}
 				}
+
+				// OBEY.md files should exist in active, ready, and dungeon
+				obeyFiles := []string{"active/OBEY.md", "ready/OBEY.md", "dungeon/OBEY.md"}
+				for _, f := range obeyFiles {
+					if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
+						t.Errorf("OBEY.md file %q not created: %v", f, err)
+					}
+				}
 			},
 		},
 		{

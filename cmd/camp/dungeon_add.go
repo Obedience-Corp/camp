@@ -19,8 +19,13 @@ var dungeonAddCmd = &cobra.Command{
 
 Creates the dungeon directory with:
   - OBEY.md: Documentation explaining the dungeon's purpose
-  - archived/: Directory for truly archived items
-  - archived/README.md: Instructions for recovery
+  - completed/: Successfully finished work
+  - archived/: Preserved for history, truly done
+  - someday/: Low priority, might revisit
+
+This creates the same dungeon structure as 'camp flow init' but without
+the full workflow (no .workflow.yaml, active/, or ready/ directories).
+Useful when you only need a dungeon for idea capture or temporary holding.
 
 This operation is idempotent - running it multiple times is safe.
 Use --force to overwrite existing files.
@@ -41,12 +46,6 @@ func init() {
 
 func runDungeonAdd(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-
-	// Show deprecation warning
-	fmt.Fprintf(cmd.ErrOrStderr(), "%s 'camp dungeon add' is deprecated. Use 'camp flow init' instead.\n",
-		ui.WarningIcon())
-	fmt.Fprintf(cmd.ErrOrStderr(), "   The workflow system provides enhanced status management.\n")
-	fmt.Fprintf(cmd.ErrOrStderr(), "   Run 'camp flow init' to migrate or 'camp flow migrate' for existing dungeons.\n\n")
 
 	force, _ := cmd.Flags().GetBool("force")
 
