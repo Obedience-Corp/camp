@@ -16,7 +16,7 @@ import (
 var registryCmd = &cobra.Command{
 	Use:   "registry",
 	Short: "Manage the campaign registry",
-	Long: `Manage the campaign registry at ~/.config/campaign/registry.json.
+	Long: `Manage the campaign registry at ~/.config/obey/campaign/registry.json.
 
 The registry tracks all known campaigns for quick navigation and lookup.
 Use these commands to maintain registry health and resolve issues.

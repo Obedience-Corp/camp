@@ -26,22 +26,26 @@ func TestService_Init(t *testing.T) {
 		t.Fatalf("Init failed: %v", err)
 	}
 
-	// Should create directories
-	if len(result.CreatedDirs) != 2 {
-		t.Errorf("expected 2 created dirs, got %d", len(result.CreatedDirs))
+	// Should create directories (dungeon, completed, archived, someday)
+	if len(result.CreatedDirs) != 4 {
+		t.Errorf("expected 4 created dirs, got %d: %v", len(result.CreatedDirs), result.CreatedDirs)
 	}
 
-	// Should create files
-	if len(result.CreatedFiles) != 2 {
-		t.Errorf("expected 2 created files, got %d", len(result.CreatedFiles))
+	// Should create files (OBEY.md only)
+	if len(result.CreatedFiles) != 1 {
+		t.Errorf("expected 1 created file, got %d: %v", len(result.CreatedFiles), result.CreatedFiles)
 	}
 
-	// Verify files exist
+	// Verify OBEY.md exists
 	if _, err := os.Stat(filepath.Join(dungeonPath, "OBEY.md")); os.IsNotExist(err) {
 		t.Error("OBEY.md was not created")
 	}
-	if _, err := os.Stat(filepath.Join(dungeonPath, "archived", "README.md")); os.IsNotExist(err) {
-		t.Error("archived/README.md was not created")
+
+	// Verify subdirectories exist
+	for _, subdir := range []string{"completed", "archived", "someday"} {
+		if _, err := os.Stat(filepath.Join(dungeonPath, subdir)); os.IsNotExist(err) {
+			t.Errorf("%s/ was not created", subdir)
+		}
 	}
 }
 
@@ -73,8 +77,9 @@ func TestService_Init_Idempotent(t *testing.T) {
 		t.Errorf("expected 0 created files on second init, got %d", len(result.CreatedFiles))
 	}
 
-	if len(result.Skipped) != 2 {
-		t.Errorf("expected 2 skipped files on second init, got %d", len(result.Skipped))
+	// Only OBEY.md should be skipped
+	if len(result.Skipped) != 1 {
+		t.Errorf("expected 1 skipped file on second init, got %d: %v", len(result.Skipped), result.Skipped)
 	}
 }
 
@@ -102,8 +107,9 @@ func TestService_Init_Force(t *testing.T) {
 		t.Fatalf("second Init with force failed: %v", err)
 	}
 
-	if len(result.CreatedFiles) != 2 {
-		t.Errorf("expected 2 created files with force, got %d", len(result.CreatedFiles))
+	// Only OBEY.md should be recreated with force
+	if len(result.CreatedFiles) != 1 {
+		t.Errorf("expected 1 created file with force, got %d: %v", len(result.CreatedFiles), result.CreatedFiles)
 	}
 }
 
@@ -142,7 +148,7 @@ func TestService_ListItems(t *testing.T) {
 		t.Fatalf("ListItems failed: %v", err)
 	}
 
-	// Should have 2 items (excluding archived/, OBEY.md, crawl.jsonl)
+	// Should have 2 items (excluding completed/, archived/, someday/, OBEY.md, crawl.jsonl)
 	if len(items) != 2 {
 		t.Errorf("expected 2 items, got %d", len(items))
 	}

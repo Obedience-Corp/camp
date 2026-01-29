@@ -5,6 +5,9 @@ import (
 	"path/filepath"
 )
 
+// OrgName is the organization directory name under .config.
+const OrgName = "obey"
+
 // AppName is the application name used in config paths.
 const AppName = "campaign"
 
@@ -12,10 +15,10 @@ const AppName = "campaign"
 // Respects XDG_CONFIG_HOME environment variable.
 func ConfigDir() string {
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		return filepath.Join(xdg, AppName)
+		return filepath.Join(xdg, OrgName, AppName)
 	}
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", AppName)
+	return filepath.Join(home, ".config", OrgName, AppName)
 }
 
 // GlobalConfigPath returns the path to the global config file.

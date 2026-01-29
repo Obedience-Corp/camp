@@ -45,6 +45,12 @@ type InitResult struct {
 }
 
 // Init creates the dungeon directory structure.
+// This creates the flow-compatible dungeon structure:
+// - dungeon/
+// - dungeon/completed/
+// - dungeon/archived/
+// - dungeon/someday/
+// - dungeon/OBEY.md
 // This operation is idempotent unless Force is true.
 func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, error) {
 	if err := ctx.Err(); err != nil {
@@ -53,10 +59,12 @@ func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, erro
 
 	result := &InitResult{}
 
-	// Create directories
+	// Create directories - flow-compatible structure
 	dirs := []string{
 		s.dungeonPath,
+		filepath.Join(s.dungeonPath, "completed"),
 		filepath.Join(s.dungeonPath, "archived"),
+		filepath.Join(s.dungeonPath, "someday"),
 	}
 
 	for _, dir := range dirs {
@@ -72,42 +80,36 @@ func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, erro
 		}
 	}
 
-	// Create template files
-	files := map[string]func() ([]byte, error){
-		filepath.Join(s.dungeonPath, "OBEY.md"):               GetOBEYTemplate,
-		filepath.Join(s.dungeonPath, "archived", "README.md"): GetArchivedREADME,
+	// Create OBEY.md template file only
+	obeyPath := filepath.Join(s.dungeonPath, "OBEY.md")
+
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("context cancelled: %w", err)
 	}
 
-	for path, getContent := range files {
-		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled: %w", err)
-		}
+	exists := false
+	if _, err := os.Stat(obeyPath); err == nil {
+		exists = true
+	}
 
-		exists := false
-		if _, err := os.Stat(path); err == nil {
-			exists = true
-		}
-
-		if exists && !opts.Force {
-			result.Skipped = append(result.Skipped, path)
-			continue
-		}
-
-		content, err := getContent()
+	if exists && !opts.Force {
+		result.Skipped = append(result.Skipped, obeyPath)
+	} else {
+		content, err := GetOBEYTemplate()
 		if err != nil {
-			return nil, fmt.Errorf("reading template for %s: %w", path, err)
+			return nil, fmt.Errorf("reading template for %s: %w", obeyPath, err)
 		}
 
-		if err := os.WriteFile(path, content, 0644); err != nil {
-			return nil, fmt.Errorf("writing %s: %w", path, err)
+		if err := os.WriteFile(obeyPath, content, 0644); err != nil {
+			return nil, fmt.Errorf("writing %s: %w", obeyPath, err)
 		}
-		result.CreatedFiles = append(result.CreatedFiles, path)
+		result.CreatedFiles = append(result.CreatedFiles, obeyPath)
 	}
 
 	return result, nil
 }
 
-// ListItems returns all items at the dungeon root (excluding archived/).
+// ListItems returns all items at the dungeon root (excluding subdirectories and system files).
 func (s *Service) ListItems(ctx context.Context) ([]DungeonItem, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("context cancelled: %w", err)
@@ -123,7 +125,9 @@ func (s *Service) ListItems(ctx context.Context) ([]DungeonItem, error) {
 
 	var items []DungeonItem
 	excludedNames := map[string]bool{
+		"completed":   true,
 		"archived":    true,
+		"someday":     true,
 		"OBEY.md":     true,
 		"crawl.jsonl": true,
 	}
