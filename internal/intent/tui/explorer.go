@@ -667,6 +667,10 @@ func (m ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				"Delete Intent",
 				fmt.Sprintf("Delete '%s'?\n\nThis cannot be undone.", selected.Title),
 			)
+		case "gather":
+			// Show instructions for using CLI gather command
+			// Full TUI multi-select coming soon
+			m.statusMessage = fmt.Sprintf("Use CLI: camp intent gather %s <other-id> --title \"Title\"", selected.ID)
 		}
 		return m, nil
 

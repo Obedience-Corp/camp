@@ -12,7 +12,7 @@ import (
 // ActionMenuItem represents an item in the action menu.
 type ActionMenuItem struct {
 	Label   string
-	Action  string // "view", "edit", "move", "promote", "archive", "delete", "open", "reveal"
+	Action  string // "view", "edit", "move", "promote", "archive", "gather", "delete", "open", "reveal"
 	Enabled bool
 }
 
@@ -38,6 +38,7 @@ func NewActionMenu(i *intent.Intent) ActionMenu {
 		{Label: "View full screen", Action: "view", Enabled: true},
 		{Label: "Edit in editor", Action: "edit", Enabled: true},
 		{Label: "Move to status", Action: "move", Enabled: true},
+		{Label: "Gather with...", Action: "gather", Enabled: i.Status != intent.StatusDone && i.Status != intent.StatusKilled},
 		{Label: "Promote", Action: "promote", Enabled: i.Status != intent.StatusDone},
 		{Label: "Archive", Action: "archive", Enabled: i.Status != intent.StatusKilled},
 		{Label: "Delete", Action: "delete", Enabled: true},
