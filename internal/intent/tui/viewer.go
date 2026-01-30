@@ -513,8 +513,12 @@ func (m IntentViewerModel) View() string {
 
 // renderHeader renders the header with intent metadata.
 func (m IntentViewerModel) renderHeader() string {
+	// DEBUG: Show path and content info
+	debugInfo := fmt.Sprintf("[DEBUG: Path=%s ContentLen=%d ViewportH=%d]",
+		m.intent.Path, len(m.content), m.viewport.Height)
+
 	// Title line
-	title := viewerTitleStyle.Render(m.intent.Title)
+	title := viewerTitleStyle.Render(m.intent.Title + "\n" + debugInfo)
 
 	// Metadata line
 	typeBadge := viewerBadgeStyle.Render(fmt.Sprintf("[%s]", m.intent.Type))
