@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/obediencecorp/camp/internal/ui"
@@ -26,6 +27,9 @@ Creates a .workflow.yaml configuration file and the following directories:
 
 Use --force to overwrite an existing workflow configuration.
 
+Note: Flows cannot be nested inside other flows. If you're inside a flow,
+navigate to a directory outside of it before running this command.
+
 Examples:
   camp flow init              Initialize workflow in current directory
   camp flow init --force      Overwrite existing workflow`,
@@ -49,6 +53,21 @@ func runFlowInit(cmd *cobra.Command, args []string) error {
 	svc := workflow.NewService(cwd)
 	result, err := svc.Init(ctx, workflow.InitOptions{Force: flowInitForce})
 	if err != nil {
+		// Handle flow nesting error with clear formatting
+		var nestedErr *workflow.FlowNestedError
+		if errors.As(err, &nestedErr) {
+			ui.Error("Cannot create flow inside existing flow")
+			fmt.Println()
+			fmt.Printf("Found parent flow at: %s\n", nestedErr.ParentSchemaPath)
+			fmt.Println()
+			fmt.Println("Flows cannot be nested because:")
+			fmt.Println("  - Path resolution becomes ambiguous")
+			fmt.Println("  - Active work tracking is complicated")
+			fmt.Println("  - Status directories would conflict")
+			fmt.Println()
+			fmt.Println("To create a new flow, navigate outside the current flow first.")
+			return nil // Return nil to avoid double-printing error
+		}
 		return err
 	}
 
