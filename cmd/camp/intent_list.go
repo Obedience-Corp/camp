@@ -85,6 +85,9 @@ func runIntentList(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to list intents: %w", err)
 	}
 
+	// Apply status filtering (exclude done/killed by default)
+	intents = filterStatuses(intents, includeAll, statuses)
+
 	// Apply limit
 	if limit > 0 && len(intents) > limit {
 		intents = intents[:limit]
@@ -142,23 +145,21 @@ func outputTable(intents []*intent.Intent) error {
 	}
 
 	// Build table data
-	headers := []string{"ID", "TITLE", "TYPE", "STATUS", "CONCEPT", "UPDATED"}
+	headers := []string{"TITLE", "TYPE", "STATUS", "CONCEPT", "UPDATED"}
 	rows := make([][]string, 0, len(intents))
 
 	for _, i := range intents {
-		id := truncate(i.ID, 20)
-		title := truncate(i.Title, 35)
+		title := truncate(i.Title, 40)
 		proj := i.Concept
 		if proj == "" {
 			proj = "-"
 		}
-		updated := relativeTime(i.UpdatedAt)
+		updated := formatTimestamp(i.UpdatedAt)
 		if i.UpdatedAt.IsZero() {
-			updated = relativeTime(i.CreatedAt)
+			updated = formatTimestamp(i.CreatedAt)
 		}
 
 		rows = append(rows, []string{
-			id,
 			title,
 			string(i.Type),
 			statusColor(i.Status),
@@ -255,6 +256,14 @@ func truncate(s string, max int) string {
 		return s[:max]
 	}
 	return s[:max-3] + "..."
+}
+
+// formatTimestamp returns a compact timestamp: "Jan 29 14:30"
+func formatTimestamp(t time.Time) string {
+	if t.IsZero() {
+		return "-"
+	}
+	return t.Format("Jan 02 15:04")
 }
 
 // relativeTime returns a human-readable relative time string.
