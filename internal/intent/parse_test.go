@@ -509,3 +509,229 @@ func TestParseIntent_DateFormats(t *testing.T) {
 		}
 	}
 }
+
+func TestParseIntent_GatheredFields(t *testing.T) {
+	content := `---
+id: gathered-20260129-143000
+title: Unified Camp Switch
+status: inbox
+created_at: 2026-01-29T14:30:00Z
+gathered_at: 2026-01-29T14:30:00Z
+gathered_from:
+  - id: 20260129-010311-camp-switch
+    title: camp switch command
+    filename: 20260129-010311-camp-switch.md
+    created_at: 2026-01-29T01:03:11Z
+    type: feature
+    concept: projects/camp
+    priority: medium
+    tags:
+      - cli
+  - id: 20260127-212226-camp-nav
+    title: camp navigation
+    filename: 20260127-212226-camp-nav.md
+    created_at: 2026-01-27T21:22:26Z
+    type: idea
+    author: lance
+---
+
+# Unified Camp Switch
+
+Gathered content.
+`
+	intent, err := ParseIntent([]byte(content))
+	if err != nil {
+		t.Fatalf("ParseIntent() error = %v", err)
+	}
+
+	// Verify GatheredAt
+	if intent.GatheredAt.IsZero() {
+		t.Error("GatheredAt should not be zero")
+	}
+
+	// Verify GatheredFrom
+	if len(intent.GatheredFrom) != 2 {
+		t.Fatalf("GatheredFrom length = %d, want 2", len(intent.GatheredFrom))
+	}
+
+	// Check first source
+	src1 := intent.GatheredFrom[0]
+	if src1.ID != "20260129-010311-camp-switch" {
+		t.Errorf("GatheredFrom[0].ID = %q, want %q", src1.ID, "20260129-010311-camp-switch")
+	}
+	if src1.Title != "camp switch command" {
+		t.Errorf("GatheredFrom[0].Title = %q, want %q", src1.Title, "camp switch command")
+	}
+	if src1.Filename != "20260129-010311-camp-switch.md" {
+		t.Errorf("GatheredFrom[0].Filename = %q, want %q", src1.Filename, "20260129-010311-camp-switch.md")
+	}
+	if src1.Type != TypeFeature {
+		t.Errorf("GatheredFrom[0].Type = %q, want %q", src1.Type, TypeFeature)
+	}
+	if src1.Concept != "projects/camp" {
+		t.Errorf("GatheredFrom[0].Concept = %q, want %q", src1.Concept, "projects/camp")
+	}
+	if len(src1.Tags) != 1 || src1.Tags[0] != "cli" {
+		t.Errorf("GatheredFrom[0].Tags = %v, want [cli]", src1.Tags)
+	}
+
+	// Check second source
+	src2 := intent.GatheredFrom[1]
+	if src2.ID != "20260127-212226-camp-nav" {
+		t.Errorf("GatheredFrom[1].ID = %q, want %q", src2.ID, "20260127-212226-camp-nav")
+	}
+	if src2.Author != "lance" {
+		t.Errorf("GatheredFrom[1].Author = %q, want %q", src2.Author, "lance")
+	}
+}
+
+func TestParseIntent_GatheredInto(t *testing.T) {
+	content := `---
+id: 20260129-010311-camp-switch
+title: camp switch command
+status: killed
+created_at: 2026-01-29T01:03:11Z
+gathered_into: gathered-20260129-143000
+---
+
+Original content.
+`
+	intent, err := ParseIntent([]byte(content))
+	if err != nil {
+		t.Fatalf("ParseIntent() error = %v", err)
+	}
+
+	if intent.GatheredInto != "gathered-20260129-143000" {
+		t.Errorf("GatheredInto = %q, want %q", intent.GatheredInto, "gathered-20260129-143000")
+	}
+}
+
+func TestSerializeIntent_GatheredFields(t *testing.T) {
+	intent := &Intent{
+		ID:        "gathered-20260129-143000",
+		Title:     "Unified Intent",
+		Status:    StatusInbox,
+		CreatedAt: time.Date(2026, 1, 29, 14, 30, 0, 0, time.UTC),
+		GatheredAt: time.Date(2026, 1, 29, 14, 30, 0, 0, time.UTC),
+		GatheredFrom: []GatheredSource{
+			{
+				ID:        "20260129-010311-src1",
+				Title:     "Source One",
+				Filename:  "20260129-010311-src1.md",
+				CreatedAt: time.Date(2026, 1, 29, 1, 3, 11, 0, time.UTC),
+				Type:      TypeFeature,
+				Tags:      []string{"cli", "navigation"},
+			},
+		},
+		Content: "# Gathered\n\nContent.",
+	}
+
+	data, err := SerializeIntent(intent)
+	if err != nil {
+		t.Fatalf("SerializeIntent() error = %v", err)
+	}
+
+	s := string(data)
+	if !strings.Contains(s, "gathered_at:") {
+		t.Error("should contain gathered_at")
+	}
+	if !strings.Contains(s, "gathered_from:") {
+		t.Error("should contain gathered_from")
+	}
+	if !strings.Contains(s, "id: 20260129-010311-src1") {
+		t.Error("should contain source ID")
+	}
+	if !strings.Contains(s, "filename: 20260129-010311-src1.md") {
+		t.Error("should contain source filename")
+	}
+}
+
+func TestSerializeIntent_GatheredInto(t *testing.T) {
+	intent := &Intent{
+		ID:           "20260129-010311-archived",
+		Title:        "Archived Source",
+		Status:       StatusKilled,
+		CreatedAt:    time.Date(2026, 1, 29, 1, 3, 11, 0, time.UTC),
+		GatheredInto: "gathered-20260129-143000",
+		Content:      "Original content.",
+	}
+
+	data, err := SerializeIntent(intent)
+	if err != nil {
+		t.Fatalf("SerializeIntent() error = %v", err)
+	}
+
+	s := string(data)
+	if !strings.Contains(s, "gathered_into: gathered-20260129-143000") {
+		t.Error("should contain gathered_into")
+	}
+}
+
+func TestGatheredFields_Roundtrip(t *testing.T) {
+	original := &Intent{
+		ID:        "roundtrip-gathered-20260129",
+		Title:     "Roundtrip Gathered Test",
+		Status:    StatusInbox,
+		CreatedAt: time.Date(2026, 1, 29, 14, 30, 0, 0, time.UTC),
+		GatheredAt: time.Date(2026, 1, 29, 14, 30, 0, 0, time.UTC),
+		GatheredFrom: []GatheredSource{
+			{
+				ID:        "src1-20260129",
+				Title:     "Source One",
+				Filename:  "src1-20260129.md",
+				CreatedAt: time.Date(2026, 1, 29, 1, 0, 0, 0, time.UTC),
+				Type:      TypeFeature,
+				Concept:   "projects/camp",
+				Priority:  PriorityHigh,
+				Tags:      []string{"test"},
+			},
+			{
+				ID:        "src2-20260128",
+				Title:     "Source Two",
+				Filename:  "src2-20260128.md",
+				CreatedAt: time.Date(2026, 1, 28, 12, 0, 0, 0, time.UTC),
+				Type:      TypeIdea,
+				Author:    "lance",
+			},
+		},
+		Content: "# Gathered\n\nRoundtrip content.\n",
+	}
+
+	// Serialize
+	data, err := SerializeIntent(original)
+	if err != nil {
+		t.Fatalf("SerializeIntent() error = %v", err)
+	}
+
+	// Parse back
+	parsed, err := ParseIntent(data)
+	if err != nil {
+		t.Fatalf("ParseIntent() error = %v", err)
+	}
+
+	// Verify GatheredAt
+	if !parsed.GatheredAt.Equal(original.GatheredAt) {
+		t.Errorf("GatheredAt = %v, want %v", parsed.GatheredAt, original.GatheredAt)
+	}
+
+	// Verify GatheredFrom length
+	if len(parsed.GatheredFrom) != len(original.GatheredFrom) {
+		t.Fatalf("GatheredFrom length = %d, want %d", len(parsed.GatheredFrom), len(original.GatheredFrom))
+	}
+
+	// Verify first source
+	if parsed.GatheredFrom[0].ID != original.GatheredFrom[0].ID {
+		t.Errorf("GatheredFrom[0].ID = %q, want %q", parsed.GatheredFrom[0].ID, original.GatheredFrom[0].ID)
+	}
+	if parsed.GatheredFrom[0].Filename != original.GatheredFrom[0].Filename {
+		t.Errorf("GatheredFrom[0].Filename = %q, want %q", parsed.GatheredFrom[0].Filename, original.GatheredFrom[0].Filename)
+	}
+	if parsed.GatheredFrom[0].Type != original.GatheredFrom[0].Type {
+		t.Errorf("GatheredFrom[0].Type = %q, want %q", parsed.GatheredFrom[0].Type, original.GatheredFrom[0].Type)
+	}
+
+	// Verify second source
+	if parsed.GatheredFrom[1].Author != original.GatheredFrom[1].Author {
+		t.Errorf("GatheredFrom[1].Author = %q, want %q", parsed.GatheredFrom[1].Author, original.GatheredFrom[1].Author)
+	}
+}

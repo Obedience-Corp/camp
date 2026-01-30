@@ -81,6 +81,33 @@ func (p Priority) String() string {
 // Horizon represents the time horizon for when work should be considered.
 type Horizon string
 
+// GatheredSource preserves the full metadata of an intent that was merged
+// into a gathered intent. This allows tracing the lineage of gathered ideas.
+type GatheredSource struct {
+	// Identity
+	ID       string `yaml:"id"`
+	Title    string `yaml:"title"`
+	Filename string `yaml:"filename"` // Original filename
+
+	// Timestamps
+	CreatedAt time.Time `yaml:"created_at"`
+	UpdatedAt time.Time `yaml:"updated_at,omitempty"`
+
+	// Classification
+	Type     Type     `yaml:"type,omitempty"`
+	Concept  string   `yaml:"concept,omitempty"`
+	Priority Priority `yaml:"priority,omitempty"`
+	Horizon  Horizon  `yaml:"horizon,omitempty"`
+
+	// Organization
+	Tags   []string `yaml:"tags,omitempty"`
+	Author string   `yaml:"author,omitempty"`
+
+	// Dependencies (preserved for reference)
+	BlockedBy []string `yaml:"blocked_by,omitempty"`
+	DependsOn []string `yaml:"depends_on,omitempty"`
+}
+
 const (
 	// HorizonNow indicates current focus area.
 	HorizonNow Horizon = "now"
@@ -121,6 +148,13 @@ type Intent struct {
 	// Promotion
 	PromotionCriteria string `yaml:"promotion_criteria,omitempty"`
 	PromotedTo        string `yaml:"promoted_to,omitempty"`
+
+	// Gathering - when this intent was created by merging others
+	GatheredFrom []GatheredSource `yaml:"gathered_from,omitempty"`
+	GatheredAt   time.Time        `yaml:"gathered_at,omitempty"`
+
+	// GatheredInto - when this intent was merged into another (set on archived sources)
+	GatheredInto string `yaml:"gathered_into,omitempty"`
 
 	// Tracking
 	UpdatedAt time.Time `yaml:"updated_at,omitempty"`
