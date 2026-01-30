@@ -74,9 +74,10 @@ type IntentAddModel struct {
 	width  int
 	height int
 
-	// Vim command mode
-	vimCmdMode bool
-	vimCmdBuf  string
+	// Vim mode state
+	vimCmdMode    bool   // In command line mode (:)
+	vimCmdBuf     string // Command buffer
+	vimInsertMode bool   // In insert mode (typing text)
 }
 
 // intentTypes are the available intent types.
@@ -267,6 +268,7 @@ func (m IntentAddModel) updateConcept(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // finishConceptStep completes the concept step and moves to body.
 func (m IntentAddModel) finishConceptStep() (tea.Model, tea.Cmd) {
 	m.step = addStepBody
+	m.vimInsertMode = true // Start in insert mode for immediate typing
 	w, h := m.calculateBodySize()
 	m.bodyInput.SetWidth(w)
 	m.bodyInput.SetHeight(h)
@@ -299,11 +301,17 @@ func (m IntentAddModel) calculateBodySize() (width, height int) {
 
 // updateBody handles input during body textarea step.
 func (m IntentAddModel) updateBody(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Handle vim command mode
+	// Handle vim command mode first
 	if m.vimCmdMode {
 		return m.handleVimCommand(msg)
 	}
 
+	// Handle normal mode (navigation/commands)
+	if !m.vimInsertMode {
+		return m.handleVimNormal(msg)
+	}
+
+	// Insert mode handling
 	switch msg.String() {
 	case "ctrl+c":
 		m.cancelled = true
@@ -311,9 +319,9 @@ func (m IntentAddModel) updateBody(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case "esc":
-		// Skip body, save intent without description
-		m.bodyInput.SetValue("")
-		return m.finishBodyStep()
+		// Exit insert mode, enter normal mode
+		m.vimInsertMode = false
+		return m, nil
 
 	case "ctrl+s":
 		// Save with body content
@@ -322,18 +330,86 @@ func (m IntentAddModel) updateBody(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+e":
 		// Open external editor
 		return m, m.openExternalEditor()
-
-	case ":":
-		// Enter vim command mode
-		m.vimCmdMode = true
-		m.vimCmdBuf = ""
-		return m, nil
 	}
 
 	// Pass to textarea (Enter inserts newline)
 	var cmd tea.Cmd
 	m.bodyInput, cmd = m.bodyInput.Update(msg)
 	return m, cmd
+}
+
+// handleVimNormal handles keys in vim normal mode.
+func (m IntentAddModel) handleVimNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	key := msg.String()
+
+	switch key {
+	// Enter insert mode
+	case "i":
+		m.vimInsertMode = true
+		return m, nil
+	case "a":
+		m.vimInsertMode = true
+		// Move cursor right before entering insert (handled by textarea)
+		return m, nil
+	case "I":
+		// Move to start of line and enter insert
+		m.vimInsertMode = true
+		return m, nil
+	case "A":
+		// Move to end of line and enter insert
+		m.vimInsertMode = true
+		return m, nil
+	case "o":
+		// Open line below and enter insert
+		m.vimInsertMode = true
+		m.bodyInput.SetValue(m.bodyInput.Value() + "\n")
+		return m, nil
+	case "O":
+		// Open line above and enter insert
+		m.vimInsertMode = true
+		m.bodyInput.SetValue("\n" + m.bodyInput.Value())
+		return m, nil
+
+	// Navigation (basic vim motions)
+	case "h", "left":
+		var cmd tea.Cmd
+		m.bodyInput, cmd = m.bodyInput.Update(tea.KeyMsg{Type: tea.KeyLeft})
+		return m, cmd
+	case "l", "right":
+		var cmd tea.Cmd
+		m.bodyInput, cmd = m.bodyInput.Update(tea.KeyMsg{Type: tea.KeyRight})
+		return m, cmd
+	case "j", "down":
+		var cmd tea.Cmd
+		m.bodyInput, cmd = m.bodyInput.Update(tea.KeyMsg{Type: tea.KeyDown})
+		return m, cmd
+	case "k", "up":
+		var cmd tea.Cmd
+		m.bodyInput, cmd = m.bodyInput.Update(tea.KeyMsg{Type: tea.KeyUp})
+		return m, cmd
+
+	// Command mode
+	case ":":
+		m.vimCmdMode = true
+		m.vimCmdBuf = ""
+		return m, nil
+
+	// Quick save
+	case "ctrl+s":
+		return m.finishBodyStep()
+
+	// External editor
+	case "ctrl+e":
+		return m, m.openExternalEditor()
+
+	// Cancel
+	case "ctrl+c":
+		m.cancelled = true
+		m.step = addStepDone
+		return m, tea.Quit
+	}
+
+	return m, nil
 }
 
 // handleVimCommand processes vim-style commands like :wq, :q, :q!
@@ -552,17 +628,29 @@ func (m IntentAddModel) viewConceptStep() string {
 func (m IntentAddModel) viewBodyStep() string {
 	var b strings.Builder
 
-	b.WriteString("Description (optional):\n")
+	// Show mode indicator
+	modeStr := "NORMAL"
+	if m.vimInsertMode {
+		modeStr = "INSERT"
+	}
+	if m.vimCmdMode {
+		modeStr = "COMMAND"
+	}
+	b.WriteString(helpStyle.Render("Description (optional) — " + modeStr) + "\n")
 	b.WriteString(m.bodyInput.View())
 	b.WriteString("\n")
 
 	// Show vim command buffer if in command mode
 	if m.vimCmdMode {
-		b.WriteString("\n:" + m.vimCmdBuf)
+		b.WriteString(":" + m.vimCmdBuf)
 	}
 
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("Ctrl+S/:wq: save • Esc/:q: skip • Ctrl+E: editor • Ctrl+C: cancel"))
+	if m.vimInsertMode {
+		b.WriteString(helpStyle.Render("Esc: normal mode • Ctrl+S: save • Ctrl+E: editor"))
+	} else {
+		b.WriteString(helpStyle.Render("i: insert • :wq: save • :q: skip • :q!: cancel • Ctrl+E: editor"))
+	}
 
 	return b.String()
 }

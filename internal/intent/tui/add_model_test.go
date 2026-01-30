@@ -324,6 +324,14 @@ func TestIntentAddModel_VimWQ(t *testing.T) {
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = model.(IntentAddModel)
 
+	// Exit insert mode first (body step starts in insert mode)
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = model.(IntentAddModel)
+
+	if m.vimInsertMode {
+		t.Error("Should be in normal mode after Esc")
+	}
+
 	// Type :wq
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{':'}})
 	m = model.(IntentAddModel)
@@ -370,6 +378,10 @@ func TestIntentAddModel_VimQBang(t *testing.T) {
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = model.(IntentAddModel)
 
+	// Exit insert mode first (body step starts in insert mode)
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = model.(IntentAddModel)
+
 	// Type :q!
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{':'}})
 	m = model.(IntentAddModel)
@@ -408,6 +420,10 @@ func TestIntentAddModel_VimEscCancelsCommand(t *testing.T) {
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = model.(IntentAddModel)
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(IntentAddModel)
+
+	// Exit insert mode first (body step starts in insert mode)
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = model.(IntentAddModel)
 
 	// Enter vim command mode
