@@ -1706,13 +1706,23 @@ func (m *ExplorerModel) shouldShowPreview() bool {
 
 // loadPreviewContent loads content from an intent file into the preview pane.
 func (m *ExplorerModel) loadPreviewContent(i *intent.Intent) {
-	if i == nil || i.Path == "" {
+	if i == nil {
+		m.previewPane.SetContent("DEBUG", "intent is nil")
+		return
+	}
+	if i.Path == "" {
+		m.previewPane.SetContent("DEBUG", fmt.Sprintf("intent.Path is empty\nID: %s\nTitle: %s", i.ID, i.Title))
 		return
 	}
 
 	content, err := os.ReadFile(i.Path)
 	if err != nil {
-		m.previewPane.SetContent(i.Title, "Error loading content: "+err.Error())
+		m.previewPane.SetContent(i.Title, fmt.Sprintf("DEBUG: Error reading\nPath: %s\nError: %s", i.Path, err.Error()))
+		return
+	}
+
+	if len(content) == 0 {
+		m.previewPane.SetContent(i.Title, fmt.Sprintf("DEBUG: File is empty\nPath: %s", i.Path))
 		return
 	}
 

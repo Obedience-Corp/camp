@@ -39,8 +39,26 @@ func (p *PreviewPane) SetContent(title, rawContent string) {
 	p.title = title
 	p.rawContent = rawContent
 
+	// Debug: check if raw content is empty
+	if rawContent == "" {
+		p.content = "DEBUG: rawContent is empty"
+		p.viewport.SetContent(p.content)
+		p.viewport.GotoTop()
+		return
+	}
+
 	// Strip YAML frontmatter
 	content := stripFrontmatter(rawContent)
+
+	// Debug: check if content is empty after stripping
+	if strings.TrimSpace(content) == "" {
+		debugMsg := fmt.Sprintf("DEBUG: Empty after stripFrontmatter\nRaw length: %d\nFirst 300 chars:\n%s",
+			len(rawContent), truncatePreview(rawContent, 300))
+		p.content = debugMsg
+		p.viewport.SetContent(debugMsg)
+		p.viewport.GotoTop()
+		return
+	}
 
 	// Render markdown
 	rendered := p.renderPreviewMarkdown(content)
@@ -48,6 +66,14 @@ func (p *PreviewPane) SetContent(title, rawContent string) {
 	p.content = rendered
 	p.viewport.SetContent(rendered)
 	p.viewport.GotoTop()
+}
+
+// truncatePreview truncates a string for debug display.
+func truncatePreview(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
 
 // SetSize updates the dimensions of the preview pane.

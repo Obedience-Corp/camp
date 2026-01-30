@@ -107,20 +107,42 @@ func NewIntentViewerModel(ctx context.Context, i *intent.Intent, siblings []*int
 
 // loadContent reads the intent file and renders markdown.
 func (m *IntentViewerModel) loadContent() {
-	if m.intent == nil || m.intent.Path == "" {
-		m.content = "No content available"
+	if m.intent == nil {
+		m.content = "DEBUG: intent is nil"
+		m.viewport.SetContent(m.content)
+		return
+	}
+
+	if m.intent.Path == "" {
+		m.content = fmt.Sprintf("DEBUG: intent.Path is empty\nIntent ID: %s\nIntent Title: %s", m.intent.ID, m.intent.Title)
 		m.viewport.SetContent(m.content)
 		return
 	}
 
 	data, err := os.ReadFile(m.intent.Path)
 	if err != nil {
-		m.content = "Error loading content: " + err.Error()
+		m.content = fmt.Sprintf("DEBUG: Error reading file\nPath: %s\nError: %s", m.intent.Path, err.Error())
+		m.viewport.SetContent(m.content)
+		return
+	}
+
+	if len(data) == 0 {
+		m.content = fmt.Sprintf("DEBUG: File is empty\nPath: %s", m.intent.Path)
 		m.viewport.SetContent(m.content)
 		return
 	}
 
 	m.rawContent = string(data)
+
+	// Check what stripFrontmatter returns
+	stripped := stripFrontmatter(m.rawContent)
+	if strings.TrimSpace(stripped) == "" {
+		m.content = fmt.Sprintf("DEBUG: Content empty after stripFrontmatter\nPath: %s\nRaw length: %d bytes\nFirst 500 chars:\n%s",
+			m.intent.Path, len(data), truncate(m.rawContent, 500))
+		m.viewport.SetContent(m.content)
+		return
+	}
+
 	m.renderContent()
 }
 
@@ -633,3 +655,11 @@ var (
 	viewerFooterStyle = lipgloss.NewStyle().
 				Foreground(pal.TextMuted)
 )
+
+// truncate truncates a string to maxLen characters.
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
+}
