@@ -2,6 +2,8 @@ package tui
 
 import (
 	"context"
+	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -9,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/obediencecorp/camp/internal/concept"
+	"github.com/obediencecorp/camp/internal/editor"
 )
 
 // addStep represents the current step in the intent creation process.
@@ -79,6 +82,12 @@ type IntentAddModel struct {
 // intentTypes are the available intent types.
 var intentTypes = []string{"idea", "feature", "bug", "research", "chore"}
 
+// editorFinishedBodyMsg is sent when the external editor for body closes.
+type editorFinishedBodyMsg struct {
+	tmpPath string
+	err     error
+}
+
 // NewIntentAddModel creates a new intent creation model.
 func NewIntentAddModel(ctx context.Context, conceptSvc concept.Service, opts AddOptions) IntentAddModel {
 	// Title input
@@ -144,6 +153,16 @@ func (m IntentAddModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.bodyInput.SetWidth(w)
 		m.bodyInput.SetHeight(h)
 		return m, nil
+
+	case editorFinishedBodyMsg:
+		if msg.err == nil && msg.tmpPath != "" {
+			if content, err := os.ReadFile(msg.tmpPath); err == nil {
+				m.bodyInput.SetValue(string(content))
+			}
+			os.Remove(msg.tmpPath)
+		}
+		m.bodyInput.Focus()
+		return m, textarea.Blink
 
 	case tea.KeyMsg:
 		switch m.step {
@@ -300,6 +319,10 @@ func (m IntentAddModel) updateBody(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Save with body content
 		return m.finishBodyStep()
 
+	case "ctrl+e":
+		// Open external editor
+		return m, m.openExternalEditor()
+
 	case ":":
 		// Enter vim command mode
 		m.vimCmdMode = true
@@ -360,6 +383,39 @@ func (m IntentAddModel) handleVimCommand(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+// openExternalEditor launches the user's editor with current body content.
+func (m IntentAddModel) openExternalEditor() tea.Cmd {
+	currentContent := m.bodyInput.Value()
+
+	// Create temp file with current content
+	tmpFile, err := os.CreateTemp("", "intent_body_*.md")
+	if err != nil {
+		return func() tea.Msg {
+			return editorFinishedBodyMsg{err: err}
+		}
+	}
+	tmpPath := tmpFile.Name()
+
+	// Write current content to temp file
+	if _, err := tmpFile.WriteString(currentContent); err != nil {
+		tmpFile.Close()
+		os.Remove(tmpPath)
+		return func() tea.Msg {
+			return editorFinishedBodyMsg{err: err}
+		}
+	}
+	tmpFile.Close()
+
+	// Get editor and build command
+	editorCmd := editor.GetEditor(context.Background())
+	c := exec.Command(editorCmd, tmpPath)
+
+	// Use tea.ExecProcess to properly handle the editor
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		return editorFinishedBodyMsg{tmpPath: tmpPath, err: err}
+	})
 }
 
 // finishBodyStep completes the body step and finishes creation.
@@ -506,7 +562,7 @@ func (m IntentAddModel) viewBodyStep() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("Ctrl+S/:wq: save • Esc/:q: skip • Ctrl+C: cancel"))
+	b.WriteString(helpStyle.Render("Ctrl+S/:wq: save • Esc/:q: skip • Ctrl+E: editor • Ctrl+C: cancel"))
 
 	return b.String()
 }
