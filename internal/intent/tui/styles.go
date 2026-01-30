@@ -113,7 +113,37 @@ var (
 	errorStyle = lipgloss.NewStyle().
 			Foreground(pal.Error)
 
+	// Success style
+	successStyle = lipgloss.NewStyle().
+			Foreground(pal.Success)
+
 	// Cursor indicator
 	cursorIndicator = "›"
 	noCursor        = " "
+
+	// Filter pill styles
+	filterPillStyle = lipgloss.NewStyle().
+			Background(pal.BgSelected).
+			Foreground(pal.TextPrimary).
+			Padding(0, 1)
+
+	filterPillActiveStyle = lipgloss.NewStyle().
+				Background(pal.Accent).
+				Foreground(pal.TextPrimary).
+				Padding(0, 1).
+				Bold(true)
+
+	// Checkbox styles for multi-select
+	checkboxCheckedStyle = lipgloss.NewStyle().
+				Foreground(pal.Success)
+
+	checkboxUncheckedStyle = lipgloss.NewStyle().
+				Foreground(pal.TextMuted)
+
+	// Selection count badge
+	selectionCountStyle = lipgloss.NewStyle().
+				Background(pal.Accent).
+				Foreground(pal.TextPrimary).
+				Padding(0, 1).
+				Bold(true)
 )

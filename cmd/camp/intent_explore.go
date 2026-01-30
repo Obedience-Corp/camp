@@ -73,11 +73,12 @@ func runIntentExplore(cmd *cobra.Command, args []string) error {
 
 	// Create path resolver and services
 	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
-	svc := intent.NewIntentService(campaignRoot, resolver.Intents())
+	intentsDir := resolver.Intents()
+	svc := intent.NewIntentService(campaignRoot, intentsDir)
 	conceptSvc := concept.NewService(campaignRoot, cfg.Concepts())
 
 	// Create and run the TUI
-	model := tui.NewExplorerModel(ctx, svc, conceptSvc)
+	model := tui.NewExplorerModel(ctx, svc, conceptSvc, intentsDir)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {

@@ -17,6 +17,7 @@ import (
 	"github.com/obediencecorp/camp/internal/concept"
 	"github.com/obediencecorp/camp/internal/config"
 	"github.com/obediencecorp/camp/internal/intent"
+	"github.com/obediencecorp/camp/internal/intent/gather"
 )
 
 // IntentGroup represents a collapsible group of intents by status.
@@ -41,6 +42,7 @@ const (
 	focusConfirm       // Confirmation dialog
 	focusActionMenu    // Action menu on intent
 	focusViewer        // Full-screen intent viewer
+	focusGatherDialog  // Gather dialog for combining intents
 )
 
 // layoutMode determines the responsive layout based on terminal width.
@@ -148,10 +150,18 @@ type ExplorerModel struct {
 	layoutMode        layoutMode
 	showConceptColumn bool
 	fullConceptPaths  bool
+
+	// Multi-select mode for gather
+	multiSelectMode bool
+	selectedIntents map[string]bool // intent ID -> selected
+
+	// Gather dialog state
+	gatherDialog GatherDialog
+	intentsDir   string // Base directory for intents (for gather service)
 }
 
 // NewExplorerModel creates a new Explorer model.
-func NewExplorerModel(ctx context.Context, svc *intent.IntentService, conceptSvc concept.Service) ExplorerModel {
+func NewExplorerModel(ctx context.Context, svc *intent.IntentService, conceptSvc concept.Service, intentsDir string) ExplorerModel {
 	// Initialize glamour style once at startup (handles adaptive detection).
 	// This avoids the slow OSC terminal query on every markdown render.
 	globalCfg, _ := config.LoadGlobalConfig(ctx)
@@ -179,16 +189,18 @@ func NewExplorerModel(ctx context.Context, svc *intent.IntentService, conceptSvc
 	titleIn.Width = 40
 
 	return ExplorerModel{
-		service:     svc,
-		ctx:         ctx,
-		conceptSvc:  conceptSvc,
-		cursorGroup: 0,
-		cursorItem:  -1, // Start on first group header
-		searchInput: ti,
-		typeWheel:   tw,
-		statusWheel: sw,
-		titleInput:  titleIn,
-		focus:       focusList,
+		service:         svc,
+		ctx:             ctx,
+		conceptSvc:      conceptSvc,
+		cursorGroup:     0,
+		cursorItem:      -1, // Start on first group header
+		searchInput:     ti,
+		typeWheel:       tw,
+		statusWheel:     sw,
+		titleInput:      titleIn,
+		focus:           focusList,
+		selectedIntents: make(map[string]bool),
+		intentsDir:      intentsDir,
 	}
 }
 
@@ -339,6 +351,19 @@ func (m ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.focus == focusActionMenu {
 			// Handle action menu
 			m.actionMenu, cmd = m.actionMenu.Update(msg)
+			return m, cmd
+		}
+
+		if m.focus == focusGatherDialog {
+			// Handle gather dialog
+			m.gatherDialog, cmd = m.gatherDialog.Update(msg)
+			if m.gatherDialog.Done() {
+				m.focus = focusList
+				if !m.gatherDialog.Cancelled() {
+					// Execute gather
+					return m, m.executeGather()
+				}
+			}
 			return m, cmd
 		}
 
@@ -545,8 +570,39 @@ func (m ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.previewPane, cmd = m.previewPane.Update(msg)
 				return m, cmd
 			}
-		case "enter", " ":
+		case "enter":
 			m.handleSelect()
+		case " ":
+			// Space toggles selection for multi-select gather
+			if selected := m.SelectedIntent(); selected != nil {
+				m.toggleSelection(selected)
+			} else if m.cursorItem == -1 {
+				// On group header, toggle group expansion
+				m.handleSelect()
+			}
+		case "ctrl+g":
+			// Open gather dialog if 2+ intents selected
+			if len(m.selectedIntents) >= 2 {
+				intents := m.getSelectedIntentObjects()
+				m.gatherDialog = NewGatherDialog(intents)
+				m.focus = focusGatherDialog
+			} else if len(m.selectedIntents) == 1 {
+				m.statusMessage = "Select at least 2 intents to gather (Space to select)"
+			} else {
+				m.statusMessage = "Select intents first (Space to select, then Ctrl-g to gather)"
+			}
+			return m, nil
+		case "esc":
+			// Clear selections and exit multi-select mode, or clear filters
+			if m.multiSelectMode {
+				m.exitMultiSelectMode()
+				return m, nil
+			}
+			// Clear active filters
+			if m.hasActiveFilters() {
+				m.clearAllFilters()
+				return m, nil
+			}
 		}
 
 	case tea.WindowSizeMsg:
@@ -668,9 +724,10 @@ func (m ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				fmt.Sprintf("Delete '%s'?\n\nThis cannot be undone.", selected.Title),
 			)
 		case "gather":
-			// Show instructions for using CLI gather command
-			// Full TUI multi-select coming soon
-			m.statusMessage = fmt.Sprintf("Use CLI: camp intent gather %s <other-id> --title \"Title\"", selected.ID)
+			// Enter multi-select mode with current intent pre-selected
+			m.multiSelectMode = true
+			m.selectedIntents[selected.ID] = true
+			m.statusMessage = "Select more intents with Space, then Ctrl-g to gather"
 		}
 		return m, nil
 
@@ -728,6 +785,17 @@ func (m ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		return m, nil
+
+	case gatherFinishedMsg:
+		// Handle gather completion
+		if msg.err != nil {
+			m.statusMessage = "Gather failed: " + msg.err.Error()
+		} else {
+			m.statusMessage = fmt.Sprintf("Gathered %d intents into: %s", msg.sourceCount, msg.gatheredTitle)
+		}
+		// Exit multi-select mode and clear selections
+		m.exitMultiSelectMode()
+		return m, m.loadIntents()
 	}
 
 	return m, nil
@@ -988,6 +1056,11 @@ func (m ExplorerModel) View() string {
 		return m.viewConfirmation()
 	}
 
+	// Show gather dialog if active
+	if m.focus == focusGatherDialog {
+		return m.viewGatherDialog()
+	}
+
 	// Show help overlay if active (rendered over main view)
 	if m.showHelp {
 		return m.viewHelp()
@@ -1000,54 +1073,57 @@ func (m ExplorerModel) View() string {
 
 	var b strings.Builder
 
-	// Title
+	// Title with optional selection count
 	b.WriteString(titleStyle.Render("Intent Explorer"))
+	if m.multiSelectMode && len(m.selectedIntents) > 0 {
+		b.WriteString("  ")
+		b.WriteString(selectionCountStyle.Render(fmt.Sprintf("%d selected", len(m.selectedIntents))))
+	}
 	if m.shouldShowPreview() && m.previewFocused {
 		b.WriteString(helpStyle.Render(" [preview focused]"))
 	}
 	b.WriteString("\n")
 
-	// Search input and type filter
-	b.WriteString(m.searchInput.View())
-	if m.focus == focusSearch {
-		b.WriteString("  ")
-		b.WriteString(helpStyle.Render("(enter to search, esc to cancel)"))
+	// Search input (only show when in focus or has value)
+	if m.focus == focusSearch || m.searchInput.Value() != "" {
+		b.WriteString(m.searchInput.View())
+		if m.focus == focusSearch {
+			b.WriteString("  ")
+			b.WriteString(helpStyle.Render("(enter to search, esc to cancel)"))
+		}
+		b.WriteString("\n")
 	}
-	b.WriteString("  ")
 
-	// Type filter indicator
-	typeValue := m.typeWheel.SelectedValue()
-	if m.focus == focusTypeFilter {
-		b.WriteString(helpStyle.Render("Type: "))
-		b.WriteString(intentConceptStyle.Render("[" + typeValue + "]"))
-		b.WriteString(" ")
-		b.WriteString(helpStyle.Render("(j/k to change, enter to select)"))
-	} else {
-		b.WriteString(helpStyle.Render("Type: [" + typeValue + "]"))
+	// Filter bar - show active filters as pills
+	filterBar := m.renderFilterBar()
+	if filterBar != "" {
+		b.WriteString(filterBar)
+		b.WriteString("\n")
 	}
-	b.WriteString("  ")
 
-	// Status filter indicator
-	statusValue := m.statusWheel.SelectedValue()
-	if m.focus == focusStatusFilter {
-		b.WriteString(helpStyle.Render("Status: "))
-		b.WriteString(intentConceptStyle.Render("[" + statusValue + "]"))
-		b.WriteString(" ")
-		b.WriteString(helpStyle.Render("(j/k to change, enter to select)"))
-	} else {
-		b.WriteString(helpStyle.Render("Status: [" + statusValue + "]"))
-	}
-	b.WriteString("  ")
+	// Only show filter wheels when actively filtering
+	if m.focus == focusTypeFilter || m.focus == focusStatusFilter {
+		// Type filter indicator
+		typeValue := m.typeWheel.SelectedValue()
+		if m.focus == focusTypeFilter {
+			b.WriteString(helpStyle.Render("Type: "))
+			b.WriteString(intentConceptStyle.Render("[" + typeValue + "]"))
+			b.WriteString(" ")
+			b.WriteString(helpStyle.Render("(j/k to change, enter to select)"))
+		}
 
-	// Concept filter indicator
-	conceptValue := "All"
-	if m.conceptFilterPath != "" {
-		// Show just the last part of the path for brevity
-		parts := strings.Split(m.conceptFilterPath, "/")
-		conceptValue = parts[len(parts)-1]
+		// Status filter indicator
+		statusValue := m.statusWheel.SelectedValue()
+		if m.focus == focusStatusFilter {
+			b.WriteString(helpStyle.Render("Status: "))
+			b.WriteString(intentConceptStyle.Render("[" + statusValue + "]"))
+			b.WriteString(" ")
+			b.WriteString(helpStyle.Render("(j/k to change, enter to select)"))
+		}
+		b.WriteString("\n")
 	}
-	b.WriteString(helpStyle.Render("Concept: [" + conceptValue + "]"))
-	b.WriteString("\n\n")
+
+	b.WriteString("\n")
 
 	// Calculate widths based on preview visibility and layout mode
 	listWidth := m.width
@@ -1149,10 +1225,24 @@ func (m ExplorerModel) renderIntentRow(i *intent.Intent, isSelected bool, maxTit
 		cursor = cursorIndicator
 	}
 
-	// Truncate title if needed
+	// Checkbox for multi-select mode
+	checkbox := ""
+	if m.multiSelectMode {
+		if m.selectedIntents[i.ID] {
+			checkbox = checkboxCheckedStyle.Render("☑ ")
+		} else {
+			checkbox = checkboxUncheckedStyle.Render("☐ ")
+		}
+	}
+
+	// Truncate title if needed (account for checkbox width in multi-select)
+	effectiveTitleWidth := maxTitleWidth
+	if m.multiSelectMode {
+		effectiveTitleWidth -= 3 // checkbox takes space
+	}
 	title := i.Title
-	if len(title) > maxTitleWidth {
-		title = title[:maxTitleWidth-3] + "..."
+	if len(title) > effectiveTitleWidth {
+		title = title[:effectiveTitleWidth-3] + "..."
 	}
 
 	// Format date
@@ -1167,11 +1257,11 @@ func (m ExplorerModel) renderIntentRow(i *intent.Intent, isSelected bool, maxTit
 
 	switch m.layoutMode {
 	case layoutNarrow:
-		// Minimal: cursor, title, type, date (no concept)
-		row = fmt.Sprintf("  %s  %s  %s  %s", cursor, titlePart, typePart, datePart)
+		// Minimal: cursor, checkbox, title, type, date (no concept)
+		row = fmt.Sprintf("  %s %s%s  %s  %s", cursor, checkbox, titlePart, typePart, datePart)
 
 	case layoutNormal:
-		// Normal: cursor, title, type, date, concept (truncated)
+		// Normal: cursor, checkbox, title, type, date, concept (truncated)
 		conceptName := "-"
 		if i.Concept != "" {
 			conceptName = i.ConceptName()
@@ -1180,10 +1270,10 @@ func (m ExplorerModel) renderIntentRow(i *intent.Intent, isSelected bool, maxTit
 			}
 		}
 		conceptPart := intentConceptStyle.Render(conceptName)
-		row = fmt.Sprintf("  %s  %s  %s  %s  %s", cursor, titlePart, typePart, datePart, conceptPart)
+		row = fmt.Sprintf("  %s %s%s  %s  %s  %s", cursor, checkbox, titlePart, typePart, datePart, conceptPart)
 
 	case layoutWide:
-		// Wide: cursor, title, type, date, full concept path
+		// Wide: cursor, checkbox, title, type, date, full concept path
 		concept := "-"
 		if i.Concept != "" {
 			if m.fullConceptPaths {
@@ -1193,7 +1283,7 @@ func (m ExplorerModel) renderIntentRow(i *intent.Intent, isSelected bool, maxTit
 			}
 		}
 		conceptPart := intentConceptStyle.Render(concept)
-		row = fmt.Sprintf("  %s  %s  %s  %s  %s", cursor, titlePart, typePart, datePart, conceptPart)
+		row = fmt.Sprintf("  %s %s%s  %s  %s  %s", cursor, checkbox, titlePart, typePart, datePart, conceptPart)
 	}
 
 	if isSelected {
@@ -1204,6 +1294,17 @@ func (m ExplorerModel) renderIntentRow(i *intent.Intent, isSelected bool, maxTit
 
 // renderStatusBar renders the status bar adapted to terminal width.
 func (m ExplorerModel) renderStatusBar() string {
+	// Add multi-select mode hints
+	if m.multiSelectMode {
+		count := len(m.selectedIntents)
+		switch m.layoutMode {
+		case layoutNarrow:
+			return helpStyle.Render(fmt.Sprintf("Space: select • Ctrl-g: gather (%d) • Esc: cancel", count))
+		default:
+			return helpStyle.Render(fmt.Sprintf("Space: toggle select • Ctrl-g: gather %d intents • Esc: exit multi-select • ?: help", count))
+		}
+	}
+
 	switch m.layoutMode {
 	case layoutNarrow:
 		// Minimal hints
@@ -1212,14 +1313,135 @@ func (m ExplorerModel) renderStatusBar() string {
 		if m.shouldShowPreview() {
 			return helpStyle.Render("j/k: nav • v: hide preview • tab: focus • /: search • n: new • q: quit")
 		}
-		return helpStyle.Render("j/k: nav • v: preview • /: search • t: type • s: status • n: new • q: quit")
+		return helpStyle.Render("j/k: nav • v: preview • /: search • t: type • s: status • Space: select • q: quit")
 	case layoutWide:
 		if m.shouldShowPreview() {
 			return helpStyle.Render("j/k: navigate • v: hide preview • tab: switch focus • /: search • f: full view • n: new • ?: help • q: quit")
 		}
-		return helpStyle.Render("j/k: navigate • v: show preview • /: search • t: type • s: status • c: concept • f: full view • n: new • ?: help • q: quit")
+		return helpStyle.Render("j/k: navigate • v: preview • /: search • t: type • s: status • Space: select • f: full • ?: help • q: quit")
 	}
 	return ""
+}
+
+// renderFilterBar renders the active filter pills and selection count.
+// Returns empty string if no filters are active and not in multi-select mode.
+func (m ExplorerModel) renderFilterBar() string {
+	var pills []string
+
+	// Check active filters
+	typeValue := m.typeWheel.SelectedValue()
+	if typeValue != "" && typeValue != "All" {
+		pills = append(pills, filterPillStyle.Render(fmt.Sprintf("type:%s ×", strings.ToLower(typeValue))))
+	}
+
+	statusValue := m.statusWheel.SelectedValue()
+	if statusValue != "" && statusValue != "All" {
+		pills = append(pills, filterPillStyle.Render(fmt.Sprintf("status:%s ×", strings.ToLower(statusValue))))
+	}
+
+	if m.conceptFilterPath != "" {
+		conceptName := m.conceptFilterPath
+		// Show just the last part for brevity
+		parts := strings.Split(m.conceptFilterPath, "/")
+		if len(parts) > 0 {
+			conceptName = parts[len(parts)-1]
+		}
+		pills = append(pills, filterPillStyle.Render(fmt.Sprintf("concept:%s ×", conceptName)))
+	}
+
+	if m.searchInput.Value() != "" && m.focus != focusSearch {
+		query := m.searchInput.Value()
+		if len(query) > 15 {
+			query = query[:12] + "..."
+		}
+		pills = append(pills, filterPillStyle.Render(fmt.Sprintf("search:%s ×", query)))
+	}
+
+	// Build the filter bar
+	var parts []string
+
+	// Selection count badge (always show when in multi-select)
+	if m.multiSelectMode {
+		count := len(m.selectedIntents)
+		parts = append(parts, selectionCountStyle.Render(fmt.Sprintf("%d selected", count)))
+	}
+
+	// Filter pills
+	if len(pills) > 0 {
+		parts = append(parts, strings.Join(pills, " "))
+		parts = append(parts, helpStyle.Render("[Esc: clear]"))
+	}
+
+	if len(parts) == 0 {
+		return ""
+	}
+
+	return "Active: " + strings.Join(parts, "  ")
+}
+
+// hasActiveFilters returns true if any filter is active.
+func (m ExplorerModel) hasActiveFilters() bool {
+	typeValue := m.typeWheel.SelectedValue()
+	statusValue := m.statusWheel.SelectedValue()
+	return (typeValue != "" && typeValue != "All") ||
+		(statusValue != "" && statusValue != "All") ||
+		m.conceptFilterPath != "" ||
+		(m.searchInput.Value() != "" && m.focus != focusSearch)
+}
+
+// clearAllFilters resets all filter values to their defaults.
+func (m *ExplorerModel) clearAllFilters() {
+	m.typeWheel.SetSelected(0) // "All"
+	m.statusWheel.SetSelected(0) // "All"
+	m.conceptFilterPath = ""
+	m.searchInput.SetValue("")
+	m.applyFilters()
+	m.statusMessage = "Filters cleared"
+}
+
+// toggleSelection toggles the selection state of an intent for multi-select gather.
+func (m *ExplorerModel) toggleSelection(i *intent.Intent) {
+	if i == nil {
+		return
+	}
+
+	if m.selectedIntents[i.ID] {
+		delete(m.selectedIntents, i.ID)
+		// Exit multi-select mode if no selections remain
+		if len(m.selectedIntents) == 0 {
+			m.multiSelectMode = false
+		}
+	} else {
+		m.selectedIntents[i.ID] = true
+		m.multiSelectMode = true
+	}
+}
+
+// exitMultiSelectMode clears all selections and exits multi-select mode.
+func (m *ExplorerModel) exitMultiSelectMode() {
+	m.selectedIntents = make(map[string]bool)
+	m.multiSelectMode = false
+	m.statusMessage = "Selection cleared"
+}
+
+// getSelectedIntentObjects returns the full Intent objects for all selected IDs.
+func (m ExplorerModel) getSelectedIntentObjects() []*intent.Intent {
+	var intents []*intent.Intent
+	for _, i := range m.intents {
+		if m.selectedIntents[i.ID] {
+			intents = append(intents, i)
+		}
+	}
+	return intents
+}
+
+// getSelectedIDs returns the IDs of all selected intents.
+func (m ExplorerModel) getSelectedIDs() []string {
+	ids := make([]string, 0, len(m.selectedIntents))
+	for id := range m.selectedIntents {
+		ids = append(ids, id)
+	}
+	return ids
 }
 
 // viewActionMenu renders the main view with action menu overlay.
@@ -1573,6 +1795,26 @@ type deleteFinishedMsg struct {
 	title string
 }
 
+// executeGather runs the gather operation using the gather service.
+func (m ExplorerModel) executeGather() tea.Cmd {
+	return func() tea.Msg {
+		svc := gather.NewService(m.service, m.intentsDir)
+		opts := gather.GatherOptions{
+			Title:          m.gatherDialog.Title(),
+			ArchiveSources: m.gatherDialog.ArchiveSources(),
+		}
+		result, err := svc.Gather(m.ctx, m.gatherDialog.IntentIDs(), opts)
+		if err != nil {
+			return gatherFinishedMsg{err: err}
+		}
+		return gatherFinishedMsg{
+			gatheredID:    result.Gathered.ID,
+			gatheredTitle: result.Gathered.Title,
+			sourceCount:   result.SourceCount,
+		}
+	}
+}
+
 // viewMove renders the move status picker.
 func (m ExplorerModel) viewMove() string {
 	var b strings.Builder
@@ -1618,6 +1860,17 @@ func (m ExplorerModel) viewConfirmation() string {
 // viewHelp renders the help overlay.
 func (m ExplorerModel) viewHelp() string {
 	return m.helpOverlay.View()
+}
+
+// viewGatherDialog renders the gather dialog overlay.
+func (m ExplorerModel) viewGatherDialog() string {
+	var b strings.Builder
+
+	b.WriteString(titleStyle.Render("Gather Intents"))
+	b.WriteString("\n\n")
+	b.WriteString(m.gatherDialog.View())
+
+	return b.String()
 }
 
 // recalculateLayout updates component sizes based on terminal dimensions.
