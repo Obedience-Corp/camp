@@ -139,8 +139,10 @@ func (m IntentAddModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.titleInput.Width = min(msg.Width-10, 60)
-		m.bodyInput.SetWidth(min(msg.Width-10, 70))
+		m.titleInput.Width = min(msg.Width-10, 80)
+		w, h := m.calculateBodySize()
+		m.bodyInput.SetWidth(w)
+		m.bodyInput.SetHeight(h)
 		return m, nil
 
 	case tea.KeyMsg:
@@ -246,8 +248,34 @@ func (m IntentAddModel) updateConcept(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // finishConceptStep completes the concept step and moves to body.
 func (m IntentAddModel) finishConceptStep() (tea.Model, tea.Cmd) {
 	m.step = addStepBody
+	w, h := m.calculateBodySize()
+	m.bodyInput.SetWidth(w)
+	m.bodyInput.SetHeight(h)
 	m.bodyInput.Focus()
 	return m, textarea.Blink
+}
+
+// calculateBodySize calculates the body textarea dimensions based on window size.
+func (m IntentAddModel) calculateBodySize() (width, height int) {
+	// Calculate reserved lines for the body step view:
+	// - "Create Intent" title: 1 line
+	// - Blank line after title: 1 line
+	// - Progress summary: 3 lines (title, type, concept) + 2 blank lines = 5 lines max
+	// - "Description (optional):" label: 1 line
+	// - Vim command line: 2 lines (line + preceding newline, visible when active)
+	// - Help text: 2 lines (line + preceding newline)
+	const reservedLines = 1 + 1 + 5 + 1 + 2 + 2 // = 12 lines
+
+	// Calculate dynamic height (minimum 6 lines, use available space)
+	height = max(m.height-reservedLines, 6)
+	// Cap at reasonable maximum to avoid excessive size
+	height = min(height, 30)
+
+	// Calculate dynamic width (cap at reasonable maximum for readability)
+	width = max(m.width-4, 40) // Account for textarea borders/padding
+	width = min(width, 120)
+
+	return width, height
 }
 
 // updateBody handles input during body textarea step.
