@@ -139,9 +139,18 @@ func outputTable(intents []*intent.Intent) error {
 	// Define styles using the central palette
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.CategoryColor)
 
-	// Status color function using palette
-	statusColor := func(s intent.Status) string {
+	// Style functions using the UI palette
+	statusStyle := func(s intent.Status) string {
 		return ui.GetIntentStatusStyle(string(s)).Render(string(s))
+	}
+	typeStyle := func(t intent.Type) string {
+		return ui.GetIntentTypeStyle(string(t)).Render(string(t))
+	}
+	conceptStyle := func(c string) string {
+		if c == "" {
+			c = "-"
+		}
+		return ui.GetConceptStyle(c).Render(c)
 	}
 
 	// Build table data
@@ -150,10 +159,6 @@ func outputTable(intents []*intent.Intent) error {
 
 	for _, i := range intents {
 		title := truncate(i.Title, 40)
-		proj := i.Concept
-		if proj == "" {
-			proj = "-"
-		}
 		updated := formatTimestamp(i.UpdatedAt)
 		if i.UpdatedAt.IsZero() {
 			updated = formatTimestamp(i.CreatedAt)
@@ -161,9 +166,9 @@ func outputTable(intents []*intent.Intent) error {
 
 		rows = append(rows, []string{
 			title,
-			string(i.Type),
-			statusColor(i.Status),
-			proj,
+			typeStyle(i.Type),
+			statusStyle(i.Status),
+			conceptStyle(i.Concept),
 			updated,
 		})
 	}

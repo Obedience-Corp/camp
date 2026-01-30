@@ -96,3 +96,38 @@ func GetIntentStatusStyle(status string) lipgloss.Style {
 		return lipgloss.NewStyle().Foreground(DimColor)
 	}
 }
+
+// Intent type colors
+var (
+	TypeFeatureColor  = lipgloss.Color("42")  // Green - new functionality
+	TypeBugColor      = lipgloss.Color("196") // Red - something broken
+	TypeIdeaColor     = lipgloss.Color("141") // Purple - creative/exploratory
+	TypeResearchColor = lipgloss.Color("33")  // Blue - investigation
+	TypeChoreColor    = lipgloss.Color("245") // Grey - maintenance
+)
+
+// GetIntentTypeStyle returns the style for an intent type
+func GetIntentTypeStyle(intentType string) lipgloss.Style {
+	switch intentType {
+	case "feature":
+		return lipgloss.NewStyle().Foreground(TypeFeatureColor)
+	case "bug":
+		return lipgloss.NewStyle().Foreground(TypeBugColor)
+	case "idea":
+		return lipgloss.NewStyle().Foreground(TypeIdeaColor)
+	case "research":
+		return lipgloss.NewStyle().Foreground(TypeResearchColor)
+	case "chore":
+		return lipgloss.NewStyle().Foreground(TypeChoreColor)
+	default:
+		return lipgloss.NewStyle().Foreground(DimColor)
+	}
+}
+
+// GetConceptStyle returns the style for a concept/project name
+func GetConceptStyle(concept string) lipgloss.Style {
+	if concept == "" || concept == "-" {
+		return lipgloss.NewStyle().Foreground(DimColor)
+	}
+	return lipgloss.NewStyle().Foreground(AccentColor)
+}
