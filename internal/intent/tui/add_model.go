@@ -26,6 +26,7 @@ const (
 type AddOptions struct {
 	DefaultType string // Default intent type (e.g., "idea")
 	FullMode    bool   // Include body textarea step
+	Author      string // Auto-populated author (e.g., from git config)
 }
 
 // AddResult contains the collected intent data.
@@ -34,6 +35,7 @@ type AddResult struct {
 	Type    string
 	Concept string
 	Body    string
+	Author  string
 }
 
 // IntentAddModel is a BubbleTea model for creating new intents.
@@ -59,6 +61,7 @@ type IntentAddModel struct {
 	// Configuration
 	fullMode    bool
 	defaultType string
+	author      string
 
 	// Result state
 	result    *AddResult
@@ -112,6 +115,7 @@ func NewIntentAddModel(ctx context.Context, conceptSvc concept.Service, opts Add
 		bodyInput:   ta,
 		fullMode:    opts.FullMode,
 		defaultType: opts.DefaultType,
+		author:      opts.Author,
 	}
 }
 
@@ -343,6 +347,7 @@ func (m IntentAddModel) finishBodyStep() (tea.Model, tea.Cmd) {
 		Type:    intentTypes[m.typeIdx],
 		Concept: conceptPath,
 		Body:    strings.TrimSpace(m.bodyInput.Value()),
+		Author:  m.author,
 	}
 	m.step = addStepDone
 	return m, tea.Quit

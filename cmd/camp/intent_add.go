@@ -11,6 +11,7 @@ import (
 	"github.com/obediencecorp/camp/internal/concept"
 	"github.com/obediencecorp/camp/internal/config"
 	"github.com/obediencecorp/camp/internal/editor"
+	"github.com/obediencecorp/camp/internal/git"
 	"github.com/obediencecorp/camp/internal/intent"
 	"github.com/obediencecorp/camp/internal/intent/tui"
 	"github.com/obediencecorp/camp/internal/paths"
@@ -71,11 +72,15 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	svc := intent.NewIntentService(campaignRoot, resolver.Intents())
 	conceptSvc := concept.NewService(campaignRoot, cfg.Concepts())
 
+	// Get author from git config (used for both paths)
+	author := git.GetUserName(ctx)
+
 	// Ultra-fast path: title provided as argument
 	if len(args) > 0 {
 		opts := intent.CreateOptions{
-			Title: args[0],
-			Type:  intent.Type(intentType),
+			Title:  args[0],
+			Type:   intent.Type(intentType),
+			Author: author,
 		}
 
 		// Deep capture overrides ultra-fast
@@ -90,6 +95,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	result, err := runIntentAddTUI(ctx, conceptSvc, tui.AddOptions{
 		DefaultType: intentType,
 		FullMode:    fullMode,
+		Author:      author,
 	})
 	if err != nil {
 		return err
@@ -104,6 +110,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 		Type:    intent.Type(result.Type),
 		Concept: result.Concept,
 		Body:    result.Body,
+		Author:  result.Author,
 	}
 
 	// Deep capture if requested
