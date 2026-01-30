@@ -140,6 +140,21 @@ func TestEditor_InsertMode(t *testing.T) {
 	}
 }
 
+func TestEditor_InsertModeSpace(t *testing.T) {
+	e := NewEditor("ab")
+
+	// Enter insert mode at start
+	e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+
+	// Type space
+	e.Update(tea.KeyMsg{Type: tea.KeySpace})
+
+	// Should have inserted space at start
+	if e.Content() != " ab" {
+		t.Errorf("Content() = %q, want \" ab\"", e.Content())
+	}
+}
+
 func TestEditor_VisualMode(t *testing.T) {
 	e := NewEditor("hello world")
 

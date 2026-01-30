@@ -543,6 +543,8 @@ func (e *Editor) handleInsert(msg tea.KeyMsg) (cmd string, quit bool) {
 		e.buffer.Insert("\n")
 	case tea.KeyTab:
 		e.buffer.Insert("\t")
+	case tea.KeySpace:
+		e.buffer.Insert(" ")
 	case tea.KeyRunes:
 		e.buffer.Insert(string(msg.Runes))
 	}
