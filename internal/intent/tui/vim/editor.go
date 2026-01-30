@@ -9,12 +9,13 @@ import (
 
 // Editor is a vim-style text editor component.
 type Editor struct {
-	buffer      *Buffer
-	state       *State
-	undoStack   *UndoStack
-	width       int
-	height      int
-	lastChange  string // For . command
+	buffer       *Buffer
+	state        *State
+	undoStack    *UndoStack
+	width        int
+	height       int
+	scrollOffset int    // First visible line
+	lastChange   string // For . command
 }
 
 // NewEditor creates a new vim editor with the given content.
@@ -98,22 +99,78 @@ func (e *Editor) offsetToPosition(offset int) Position {
 
 // Update handles key events and returns the updated editor.
 func (e *Editor) Update(msg tea.KeyMsg) (cmd string, quit bool) {
+	var result string
+	var q bool
+
 	switch e.state.Mode {
 	case ModeNormal:
-		return e.handleNormal(msg)
+		result, q = e.handleNormal(msg)
 	case ModeInsert:
-		return e.handleInsert(msg)
+		result, q = e.handleInsert(msg)
 	case ModeVisual, ModeVisualLine:
-		return e.handleVisual(msg)
+		result, q = e.handleVisual(msg)
 	case ModeCommand:
-		return e.handleCommand(msg)
+		result, q = e.handleCommand(msg)
 	}
-	return "", false
+
+	// Ensure cursor stays visible after any operation
+	e.EnsureCursorVisible()
+
+	return result, q
+}
+
+// State returns the current vim state (for external inspection).
+func (e *Editor) State() *State {
+	return e.state
 }
 
 // handleNormal processes keys in normal mode.
 func (e *Editor) handleNormal(msg tea.KeyMsg) (cmd string, quit bool) {
 	key := msg.String()
+
+	// Handle awaiting character input (f/F/t/T)
+	if e.state.AwaitingChar {
+		e.state.AwaitingChar = false
+		if len(key) == 1 {
+			char := rune(key[0])
+			count := e.state.GetCount()
+			if e.state.FindForward {
+				FindCharForward(e.buffer, char, count, e.state.FindTill)
+			} else {
+				FindCharBackward(e.buffer, char, count, e.state.FindTill)
+			}
+			e.state.LastFindChar = char
+			e.state.LastFindFwd = e.state.FindForward
+			e.state.LastFindTill = e.state.FindTill
+			e.EnsureCursorVisible()
+		}
+		return "", false
+	}
+
+	// Handle awaiting replacement character (r)
+	if e.state.AwaitingReplace {
+		e.state.AwaitingReplace = false
+		if len(key) == 1 {
+			e.saveUndo()
+			e.buffer.ReplaceChar(rune(key[0]))
+		}
+		return "", false
+	}
+
+	// Handle awaiting text object (diw, ci", etc.)
+	if e.state.AwaitingTextObj {
+		return e.handleTextObjectKey(key)
+	}
+
+	// Handle pending key (gg)
+	if e.state.PendingKey == 'g' {
+		e.state.PendingKey = 0
+		if key == "g" {
+			MoveToDocumentStart(e.buffer)
+			e.EnsureCursorVisible()
+		}
+		return "", false
+	}
 
 	// Handle counts
 	if len(key) == 1 && key[0] >= '1' && key[0] <= '9' {
@@ -205,7 +262,7 @@ func (e *Editor) handleNormal(msg tea.KeyMsg) (cmd string, quit bool) {
 		MoveBigWordEnd(e.buffer, count)
 	case "g":
 		// Wait for next key (gg)
-		// For now, handle common case
+		e.state.PendingKey = 'g'
 		return "", false
 	case "G":
 		if count > 1 {
@@ -222,7 +279,7 @@ func (e *Editor) handleNormal(msg tea.KeyMsg) (cmd string, quit bool) {
 	case "f", "F", "t", "T":
 		e.state.FindForward = key == "f" || key == "t"
 		e.state.FindTill = key == "t" || key == "T"
-		// Need next char - store state
+		e.state.AwaitingChar = true
 		return "", false
 	case ";":
 		if e.state.LastFindChar != 0 {
@@ -261,7 +318,8 @@ func (e *Editor) handleNormal(msg tea.KeyMsg) (cmd string, quit bool) {
 			e.buffer.DeleteCharBefore()
 		}
 	case "r":
-		// Replace char - need next key
+		// Replace char - wait for next key
+		e.state.AwaitingReplace = true
 		return "", false
 	case "J":
 		e.saveUndo()
@@ -367,11 +425,88 @@ func (e *Editor) handleOperatorPending(msg tea.KeyMsg, count int) (string, bool)
 	return "", false
 }
 
-// handleTextObject handles text object selection (iw, aw, i", etc.)
+// handleTextObject sets up state to wait for text object key (iw, aw, i", etc.)
 func (e *Editor) handleTextObject(op Operator, inner bool, count int) (string, bool) {
-	// Need to wait for the object type
-	// For simplicity, we'll handle common cases inline
+	e.state.AwaitingTextObj = true
+	e.state.TextObjInner = inner
+	e.state.TextObjOperator = op
+	return "", false
+}
+
+// handleTextObjectKey handles the actual text object key (w, ", ', (, etc.)
+func (e *Editor) handleTextObjectKey(key string) (string, bool) {
+	e.state.AwaitingTextObj = false
+	op := e.state.TextObjOperator
+	inner := e.state.TextObjInner
+
+	var obj TextObject
+
+	switch key {
+	case "w":
+		if inner {
+			obj = InnerWord(e.buffer)
+		} else {
+			obj = AroundWord(e.buffer)
+		}
+	case "W":
+		// Big word - same as word for now
+		if inner {
+			obj = InnerWord(e.buffer)
+		} else {
+			obj = AroundWord(e.buffer)
+		}
+	case "\"":
+		if inner {
+			obj = InnerQuote(e.buffer, '"')
+		} else {
+			obj = AroundQuote(e.buffer, '"')
+		}
+	case "'":
+		if inner {
+			obj = InnerQuote(e.buffer, '\'')
+		} else {
+			obj = AroundQuote(e.buffer, '\'')
+		}
+	case "`":
+		if inner {
+			obj = InnerQuote(e.buffer, '`')
+		} else {
+			obj = AroundQuote(e.buffer, '`')
+		}
+	case "(", ")", "b":
+		if inner {
+			obj = InnerBracket(e.buffer, '(', ')')
+		} else {
+			obj = AroundBracket(e.buffer, '(', ')')
+		}
+	case "{", "}", "B":
+		if inner {
+			obj = InnerBracket(e.buffer, '{', '}')
+		} else {
+			obj = AroundBracket(e.buffer, '{', '}')
+		}
+	case "[", "]":
+		if inner {
+			obj = InnerBracket(e.buffer, '[', ']')
+		} else {
+			obj = AroundBracket(e.buffer, '[', ']')
+		}
+	case "<", ">":
+		if inner {
+			obj = InnerBracket(e.buffer, '<', '>')
+		} else {
+			obj = AroundBracket(e.buffer, '<', '>')
+		}
+	default:
+		e.state.ClearOperator()
+		return "", false
+	}
+
+	if obj.Found {
+		e.applyOperator(op, obj.Start, obj.End)
+	}
 	e.state.ClearOperator()
+	e.EnsureCursorVisible()
 	return "", false
 }
 

@@ -75,6 +75,14 @@ type State struct {
 	LastFindTill   bool
 	VisualStart    int // Start position for visual mode
 	CommandBuffer  string
+
+	// Multi-key sequence state
+	PendingKey      rune     // For g (gg), z (zz), etc.
+	AwaitingChar    bool     // Waiting for character input (f/F/t/T)
+	AwaitingReplace bool     // Waiting for replacement character (r)
+	AwaitingTextObj bool     // Waiting for text object type (diw, ci", etc.)
+	TextObjInner    bool     // Inner vs around for text objects
+	TextObjOperator Operator // Operator to apply with text object
 }
 
 // NewState creates a new vim state in normal mode.
@@ -93,6 +101,12 @@ func (s *State) Reset() {
 	s.PendingMotion = false
 	s.FindChar = 0
 	s.CommandBuffer = ""
+	s.PendingKey = 0
+	s.AwaitingChar = false
+	s.AwaitingReplace = false
+	s.AwaitingTextObj = false
+	s.TextObjInner = false
+	s.TextObjOperator = OpNone
 }
 
 // EnterInsert switches to insert mode.

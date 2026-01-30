@@ -6,12 +6,12 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/obediencecorp/camp/internal/concept"
 	"github.com/obediencecorp/camp/internal/editor"
+	"github.com/obediencecorp/camp/internal/intent/tui/vim"
 )
 
 // addStep represents the current step in the intent creation process.
@@ -58,8 +58,8 @@ type IntentAddModel struct {
 	// Concept selection
 	conceptPicker ConceptPickerModel
 
-	// Body textarea (only used in full mode)
-	bodyInput textarea.Model
+	// Body vim editor (only used in full mode)
+	vimEditor *vim.Editor
 
 	// Configuration
 	fullMode    bool
@@ -73,11 +73,6 @@ type IntentAddModel struct {
 	// Display
 	width  int
 	height int
-
-	// Vim mode state
-	vimCmdMode    bool   // In command line mode (:)
-	vimCmdBuf     string // Command buffer
-	vimInsertMode bool   // In insert mode (typing text)
 }
 
 // intentTypes are the available intent types.
@@ -98,12 +93,9 @@ func NewIntentAddModel(ctx context.Context, conceptSvc concept.Service, opts Add
 	ti.Width = 50
 	ti.Focus()
 
-	// Body textarea
-	ta := textarea.New()
-	ta.Placeholder = "Describe the intent (optional)..."
-	ta.CharLimit = 2000
-	ta.SetWidth(60)
-	ta.SetHeight(6)
+	// Body vim editor
+	vimEd := vim.NewEditor("")
+	vimEd.SetSize(60, 6)
 
 	// Find default type index
 	typeIdx := 0
@@ -122,7 +114,7 @@ func NewIntentAddModel(ctx context.Context, conceptSvc concept.Service, opts Add
 		step:        addStepTitle,
 		titleInput:  ti,
 		typeIdx:     typeIdx,
-		bodyInput:   ta,
+		vimEditor:   vimEd,
 		fullMode:    opts.FullMode,
 		defaultType: opts.DefaultType,
 		author:      opts.Author,
@@ -151,19 +143,17 @@ func (m IntentAddModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.titleInput.Width = min(msg.Width-10, 80)
 		w, h := m.calculateBodySize()
-		m.bodyInput.SetWidth(w)
-		m.bodyInput.SetHeight(h)
+		m.vimEditor.SetSize(w, h)
 		return m, nil
 
 	case editorFinishedBodyMsg:
 		if msg.err == nil && msg.tmpPath != "" {
 			if content, err := os.ReadFile(msg.tmpPath); err == nil {
-				m.bodyInput.SetValue(string(content))
+				m.vimEditor.SetContent(string(content))
 			}
 			os.Remove(msg.tmpPath)
 		}
-		m.bodyInput.Focus()
-		return m, textarea.Blink
+		return m, nil
 
 	case tea.KeyMsg:
 		switch m.step {
@@ -268,12 +258,11 @@ func (m IntentAddModel) updateConcept(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // finishConceptStep completes the concept step and moves to body.
 func (m IntentAddModel) finishConceptStep() (tea.Model, tea.Cmd) {
 	m.step = addStepBody
-	m.vimInsertMode = true // Start in insert mode for immediate typing
 	w, h := m.calculateBodySize()
-	m.bodyInput.SetWidth(w)
-	m.bodyInput.SetHeight(h)
-	m.bodyInput.Focus()
-	return m, textarea.Blink
+	m.vimEditor.SetSize(w, h)
+	// Start in insert mode for immediate typing
+	m.vimEditor.State().EnterInsert()
+	return m, nil
 }
 
 // calculateBodySize calculates the body textarea dimensions based on window size.
@@ -299,163 +288,41 @@ func (m IntentAddModel) calculateBodySize() (width, height int) {
 	return width, height
 }
 
-// updateBody handles input during body textarea step.
+// updateBody handles input during body vim editor step.
 func (m IntentAddModel) updateBody(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Handle vim command mode first
-	if m.vimCmdMode {
-		return m.handleVimCommand(msg)
-	}
-
-	// Handle normal mode (navigation/commands)
-	if !m.vimInsertMode {
-		return m.handleVimNormal(msg)
-	}
-
-	// Insert mode handling
-	switch msg.String() {
-	case "ctrl+c":
-		m.cancelled = true
-		m.step = addStepDone
-		return m, tea.Quit
-
-	case "esc":
-		// Exit insert mode, enter normal mode
-		m.vimInsertMode = false
-		return m, nil
-
-	case "ctrl+s":
-		// Save with body content
-		return m.finishBodyStep()
-
-	case "ctrl+e":
-		// Open external editor
-		return m, m.openExternalEditor()
-	}
-
-	// Pass to textarea (Enter inserts newline)
-	var cmd tea.Cmd
-	m.bodyInput, cmd = m.bodyInput.Update(msg)
-	return m, cmd
-}
-
-// handleVimNormal handles keys in vim normal mode.
-func (m IntentAddModel) handleVimNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	key := msg.String()
-
-	switch key {
-	// Enter insert mode
-	case "i":
-		m.vimInsertMode = true
-		return m, nil
-	case "a":
-		m.vimInsertMode = true
-		// Move cursor right before entering insert (handled by textarea)
-		return m, nil
-	case "I":
-		// Move to start of line and enter insert
-		m.vimInsertMode = true
-		return m, nil
-	case "A":
-		// Move to end of line and enter insert
-		m.vimInsertMode = true
-		return m, nil
-	case "o":
-		// Open line below and enter insert
-		m.vimInsertMode = true
-		m.bodyInput.SetValue(m.bodyInput.Value() + "\n")
-		return m, nil
-	case "O":
-		// Open line above and enter insert
-		m.vimInsertMode = true
-		m.bodyInput.SetValue("\n" + m.bodyInput.Value())
-		return m, nil
-
-	// Navigation (basic vim motions)
-	case "h", "left":
-		var cmd tea.Cmd
-		m.bodyInput, cmd = m.bodyInput.Update(tea.KeyMsg{Type: tea.KeyLeft})
-		return m, cmd
-	case "l", "right":
-		var cmd tea.Cmd
-		m.bodyInput, cmd = m.bodyInput.Update(tea.KeyMsg{Type: tea.KeyRight})
-		return m, cmd
-	case "j", "down":
-		var cmd tea.Cmd
-		m.bodyInput, cmd = m.bodyInput.Update(tea.KeyMsg{Type: tea.KeyDown})
-		return m, cmd
-	case "k", "up":
-		var cmd tea.Cmd
-		m.bodyInput, cmd = m.bodyInput.Update(tea.KeyMsg{Type: tea.KeyUp})
-		return m, cmd
-
-	// Command mode
-	case ":":
-		m.vimCmdMode = true
-		m.vimCmdBuf = ""
-		return m, nil
-
-	// Quick save
-	case "ctrl+s":
-		return m.finishBodyStep()
-
-	// External editor
-	case "ctrl+e":
-		return m, m.openExternalEditor()
-
-	// Cancel
-	case "ctrl+c":
+	// Handle ctrl+c for cancel (always available)
+	if msg.String() == "ctrl+c" {
 		m.cancelled = true
 		m.step = addStepDone
 		return m, tea.Quit
 	}
 
-	return m, nil
-}
+	// Handle ctrl+e for external editor (always available)
+	if msg.String() == "ctrl+e" {
+		return m, m.openExternalEditor()
+	}
 
-// handleVimCommand processes vim-style commands like :wq, :q, :q!
-func (m IntentAddModel) handleVimCommand(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.Type {
-	case tea.KeyEnter:
-		// Execute command
-		cmd := m.vimCmdBuf
-		m.vimCmdMode = false
-		m.vimCmdBuf = ""
+	// Handle ctrl+s for quick save (always available)
+	if msg.String() == "ctrl+s" {
+		return m.finishBodyStep()
+	}
 
-		switch cmd {
-		case "w", "wq":
-			// Save with body
-			return m.finishBodyStep()
-		case "q":
-			// Skip body, save intent without description
-			m.bodyInput.SetValue("")
-			return m.finishBodyStep()
-		case "q!":
-			// Cancel entire intent
-			m.cancelled = true
-			m.step = addStepDone
-			return m, tea.Quit
-		}
-		return m, nil
+	// Pass to vim editor
+	cmd, _ := m.vimEditor.Update(msg)
 
-	case tea.KeyEsc:
-		// Cancel command mode
-		m.vimCmdMode = false
-		m.vimCmdBuf = ""
-		return m, nil
-
-	case tea.KeyBackspace:
-		if len(m.vimCmdBuf) > 0 {
-			m.vimCmdBuf = m.vimCmdBuf[:len(m.vimCmdBuf)-1]
-		}
-		if m.vimCmdBuf == "" {
-			// Exit command mode if buffer is empty
-			m.vimCmdMode = false
-		}
-		return m, nil
-
-	case tea.KeyRunes:
-		m.vimCmdBuf += string(msg.Runes)
-		return m, nil
+	// Handle command results from vim editor
+	switch cmd {
+	case "w", "wq":
+		return m.finishBodyStep()
+	case "q":
+		// Skip body, save intent without description
+		m.vimEditor.SetContent("")
+		return m.finishBodyStep()
+	case "q!":
+		// Cancel entire intent
+		m.cancelled = true
+		m.step = addStepDone
+		return m, tea.Quit
 	}
 
 	return m, nil
@@ -463,7 +330,7 @@ func (m IntentAddModel) handleVimCommand(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // openExternalEditor launches the user's editor with current body content.
 func (m IntentAddModel) openExternalEditor() tea.Cmd {
-	currentContent := m.bodyInput.Value()
+	currentContent := m.vimEditor.Content()
 
 	// Create temp file with current content
 	tmpFile, err := os.CreateTemp("", "intent_body_*.md")
@@ -506,7 +373,7 @@ func (m IntentAddModel) finishBodyStep() (tea.Model, tea.Cmd) {
 		Title:   strings.TrimSpace(m.titleInput.Value()),
 		Type:    intentTypes[m.typeIdx],
 		Concept: conceptPath,
-		Body:    strings.TrimSpace(m.bodyInput.Value()),
+		Body:    strings.TrimSpace(m.vimEditor.Content()),
 		Author:  m.author,
 	}
 	m.step = addStepDone
@@ -624,32 +491,36 @@ func (m IntentAddModel) viewConceptStep() string {
 	return b.String()
 }
 
-// viewBodyStep renders the body textarea step.
+// viewBodyStep renders the body vim editor step.
 func (m IntentAddModel) viewBodyStep() string {
 	var b strings.Builder
 
 	// Show mode indicator
-	modeStr := "NORMAL"
-	if m.vimInsertMode {
-		modeStr = "INSERT"
-	}
-	if m.vimCmdMode {
-		modeStr = "COMMAND"
-	}
+	modeStr := m.vimEditor.Mode().String()
 	b.WriteString(helpStyle.Render("Description (optional) — " + modeStr) + "\n")
-	b.WriteString(m.bodyInput.View())
+
+	// Render vim editor
+	cfg := vim.DefaultViewConfig()
+	b.WriteString(m.vimEditor.View(cfg))
 	b.WriteString("\n")
 
 	// Show vim command buffer if in command mode
-	if m.vimCmdMode {
-		b.WriteString(":" + m.vimCmdBuf)
+	if m.vimEditor.IsCommandMode() {
+		b.WriteString(":" + m.vimEditor.CommandBuffer())
 	}
 
 	b.WriteString("\n")
-	if m.vimInsertMode {
+
+	// Context-sensitive help
+	switch m.vimEditor.Mode() {
+	case vim.ModeInsert:
 		b.WriteString(helpStyle.Render("Esc: normal mode • Ctrl+S: save • Ctrl+E: editor"))
-	} else {
-		b.WriteString(helpStyle.Render("i: insert • :wq: save • :q: skip • :q!: cancel • Ctrl+E: editor"))
+	case vim.ModeVisual, vim.ModeVisualLine:
+		b.WriteString(helpStyle.Render("d: delete • y: yank • c: change • Esc: normal"))
+	case vim.ModeCommand:
+		b.WriteString(helpStyle.Render(":wq save • :q skip • :q! cancel • Esc: cancel"))
+	default:
+		b.WriteString(helpStyle.Render("i: insert • v: visual • :wq: save • :q: skip • Ctrl+E: editor"))
 	}
 
 	return b.String()
