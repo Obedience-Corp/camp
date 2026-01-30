@@ -263,6 +263,16 @@ func TestEditor_CommandMode(t *testing.T) {
 	}
 }
 
+func TestEditor_EnterInNormalModeSaves(t *testing.T) {
+	e := NewEditor("hello world")
+
+	// Press Enter in normal mode - should return "wq" command
+	cmd, _ := e.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != "wq" {
+		t.Errorf("Enter in normal mode: cmd = %q, want \"wq\"", cmd)
+	}
+}
+
 func TestEditor_TextObjectInnerWord(t *testing.T) {
 	e := NewEditor("hello world")
 	e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})

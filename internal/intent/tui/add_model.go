@@ -315,9 +315,9 @@ func (m IntentAddModel) updateBody(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "w", "wq":
 		return m.finishBodyStep()
 	case "q":
-		// Skip body, save intent without description
-		m.vimEditor.SetContent("")
-		return m.finishBodyStep()
+		// :q does nothing - body is required
+		// Just return to normal mode (already happened in vim editor)
+		return m, nil
 	case "q!":
 		// Cancel entire intent
 		m.cancelled = true
@@ -518,9 +518,9 @@ func (m IntentAddModel) viewBodyStep() string {
 	case vim.ModeVisual, vim.ModeVisualLine:
 		b.WriteString(helpStyle.Render("d: delete • y: yank • c: change • Esc: normal"))
 	case vim.ModeCommand:
-		b.WriteString(helpStyle.Render(":wq save • :q skip • :q! cancel • Esc: cancel"))
+		b.WriteString(helpStyle.Render(":wq save • :q! cancel • Esc: back"))
 	default:
-		b.WriteString(helpStyle.Render("i: insert • v: visual • :wq: save • :q: skip • Ctrl+E: editor"))
+		b.WriteString(helpStyle.Render("i: insert • v: visual • Enter/:wq: save • Ctrl+E: editor"))
 	}
 
 	return b.String()

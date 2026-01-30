@@ -27,7 +27,7 @@ func DefaultViewConfig() ViewConfig {
 		Selection:    lipgloss.NewStyle().Background(lipgloss.Color("240")),
 		LineNumber:   lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
 		CommandLine:  lipgloss.NewStyle().Foreground(lipgloss.Color("252")),
-		ShowLineNums: false,
+		ShowLineNums: true,
 	}
 }
 

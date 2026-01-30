@@ -348,6 +348,10 @@ func (e *Editor) handleNormal(msg tea.KeyMsg) (cmd string, quit bool) {
 	// Command mode
 	case ":":
 		e.state.EnterCommand()
+
+	// Enter in normal mode saves and quits (like :wq)
+	case "enter":
+		return "wq", false
 	}
 
 	return "", false
