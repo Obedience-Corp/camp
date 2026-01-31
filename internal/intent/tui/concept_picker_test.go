@@ -68,12 +68,46 @@ func TestConceptPicker_InitialState(t *testing.T) {
 		t.Errorf("Expected 2 concepts, got %d", len(picker.concepts))
 	}
 
+	// Initial selection should be 0 (NONE option)
+	if picker.typeWheel.Selected() != 0 {
+		t.Errorf("Expected initial selection to be 0 (NONE), got %d", picker.typeWheel.Selected())
+	}
+
 	if picker.Done() {
 		t.Error("Picker should not be done initially")
 	}
 
 	if picker.Cancelled() {
 		t.Error("Picker should not be cancelled initially")
+	}
+}
+
+func TestConceptPicker_SelectNone(t *testing.T) {
+	svc := mockConceptService{
+		concepts: []concept.Concept{
+			{Name: "p", Path: "projects", Description: "Projects", HasItems: true},
+		},
+	}
+
+	picker := NewConceptPickerModel(context.Background(), svc)
+
+	// Initial selection is 0 (NONE), press enter
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if picker.step != stepDone {
+		t.Errorf("Expected step to be stepDone after selecting NONE, got %v", picker.step)
+	}
+
+	if picker.selectedPath != "" {
+		t.Errorf("Expected empty selectedPath for NONE, got %q", picker.selectedPath)
+	}
+
+	if picker.Cancelled() {
+		t.Error("Picker should not be cancelled when NONE is selected")
+	}
+
+	if picker.selectedConcept != nil {
+		t.Error("Expected selectedConcept to be nil when NONE is selected")
 	}
 }
 
@@ -87,21 +121,27 @@ func TestConceptPicker_TypeSelectionNavigation(t *testing.T) {
 
 	picker := NewConceptPickerModel(context.Background(), svc)
 
-	// Initial selection should be 0
+	// Initial selection should be 0 (NONE)
 	if picker.typeWheel.Selected() != 0 {
 		t.Errorf("Expected initial selection 0, got %d", picker.typeWheel.Selected())
 	}
 
-	// Navigate down
+	// Navigate down to first concept (index 1)
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 	if picker.typeWheel.Selected() != 1 {
 		t.Errorf("Expected selection 1 after down, got %d", picker.typeWheel.Selected())
 	}
 
-	// Navigate up
+	// Navigate down to second concept (index 2)
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	if picker.typeWheel.Selected() != 2 {
+		t.Errorf("Expected selection 2 after second down, got %d", picker.typeWheel.Selected())
+	}
+
+	// Navigate up back to first concept
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
-	if picker.typeWheel.Selected() != 0 {
-		t.Errorf("Expected selection 0 after up, got %d", picker.typeWheel.Selected())
+	if picker.typeWheel.Selected() != 1 {
+		t.Errorf("Expected selection 1 after up, got %d", picker.typeWheel.Selected())
 	}
 }
 
@@ -118,6 +158,9 @@ func TestConceptPicker_SelectConceptType(t *testing.T) {
 	}
 
 	picker := NewConceptPickerModel(context.Background(), svc)
+
+	// Navigate past NONE to the first concept
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 
 	// Select the concept
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -145,6 +188,9 @@ func TestConceptPicker_SelectConceptWithoutItems(t *testing.T) {
 	}
 
 	picker := NewConceptPickerModel(context.Background(), svc)
+
+	// Navigate past NONE to the concept
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 
 	// Select the concept
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -178,7 +224,8 @@ func TestConceptPicker_DrillIntoDirectory(t *testing.T) {
 
 	picker := NewConceptPickerModel(context.Background(), svc)
 
-	// Select concept type
+	// Navigate past NONE to select concept type
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
 	// Drill into camp directory
@@ -211,7 +258,8 @@ func TestConceptPicker_SelectFile(t *testing.T) {
 
 	picker := NewConceptPickerModel(context.Background(), svc)
 
-	// Select concept type
+	// Navigate past NONE to select concept type
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
 	// Select file
@@ -252,7 +300,8 @@ func TestConceptPicker_BackspaceFromNested(t *testing.T) {
 	picker := NewConceptPickerModel(context.Background(), svc)
 
 	// Navigate to projects/camp/internal
-	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter}) // Select concept
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}) // Skip NONE
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})                     // Select concept
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter}) // Drill into camp
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter}) // Drill into internal
 
@@ -317,7 +366,8 @@ func TestConceptPicker_CancelFromItemSelection(t *testing.T) {
 
 	picker := NewConceptPickerModel(context.Background(), svc)
 
-	// Navigate to item selection
+	// Navigate to item selection (skip NONE first)
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
 	// Press Escape
@@ -346,7 +396,8 @@ func TestConceptPicker_LeftArrowNavigation(t *testing.T) {
 
 	picker := NewConceptPickerModel(context.Background(), svc)
 
-	// Navigate to item selection
+	// Navigate to item selection (skip NONE first)
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
 	// Use left arrow to go back
@@ -371,7 +422,8 @@ func TestConceptPicker_HKeyNavigation(t *testing.T) {
 
 	picker := NewConceptPickerModel(context.Background(), svc)
 
-	// Navigate to item selection
+	// Navigate to item selection (skip NONE first)
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
 	// Use 'h' to go back (vim style)
@@ -396,7 +448,8 @@ func TestConceptPicker_EmptyDirectory(t *testing.T) {
 
 	picker := NewConceptPickerModel(context.Background(), svc)
 
-	// Navigate to item selection
+	// Navigate to item selection (skip NONE first)
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
 	// The empty directory should show but not be drillable
@@ -450,7 +503,8 @@ func TestConceptPicker_InfiniteDepthDrillWithRightKey(t *testing.T) {
 
 	picker := NewConceptPickerModel(context.Background(), svc)
 
-	// Select concept type
+	// Select concept type (skip NONE first)
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
 	// With infinite depth, Enter should SELECT, not drill
@@ -483,7 +537,8 @@ func TestConceptPicker_InfiniteDepthDrillWithLKey(t *testing.T) {
 
 	picker := NewConceptPickerModel(context.Background(), svc)
 
-	// Select concept type
+	// Select concept type (skip NONE first)
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
 	// Use 'l' key to drill (vim style)
@@ -516,8 +571,9 @@ func TestConceptPicker_Breadcrumb(t *testing.T) {
 
 	picker := NewConceptPickerModel(context.Background(), svc)
 
-	// Navigate to projects/camp/internal
-	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter}) // Select concept
+	// Navigate to projects/camp/internal (skip NONE first)
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}) // Skip NONE
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})                     // Select concept
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter}) // Drill into camp
 
 	breadcrumb := picker.buildBreadcrumb()

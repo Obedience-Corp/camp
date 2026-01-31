@@ -17,6 +17,9 @@ const (
 	stepDone
 )
 
+// noneOptionLabel is displayed as the first option to skip concept selection.
+const noneOptionLabel = "(none) - No concept association"
+
 // ConceptPickerModel provides a cascading selection UI for concepts.
 // First, the user selects a concept type (e.g., Projects, Festivals).
 // Then, they can drill into items within that concept.
@@ -50,9 +53,11 @@ func NewConceptPickerModel(ctx context.Context, svc concept.Service) ConceptPick
 		concepts = nil
 	}
 
-	names := make([]string, len(concepts))
+	// Build names with NONE as first option, then concepts
+	names := make([]string, len(concepts)+1)
+	names[0] = noneOptionLabel
 	for i, c := range concepts {
-		names[i] = c.Name + " - " + c.Description
+		names[i+1] = c.Name + " - " + c.Description
 	}
 
 	tw := NewScrollWheel(names)
@@ -97,10 +102,17 @@ func (m ConceptPickerModel) updateTypeSelection(msg tea.KeyMsg) (ConceptPickerMo
 	case "down", "j":
 		m.typeWheel, _ = m.typeWheel.Update(msg)
 	case "enter":
-		// Get selected concept and advance to item selection
 		idx := m.typeWheel.Selected()
-		if idx >= 0 && idx < len(m.concepts) {
-			c := m.concepts[idx]
+		if idx == 0 {
+			// NONE selected - no concept association
+			m.selectedPath = ""
+			m.step = stepDone
+			return m, nil
+		}
+		// Adjust index for actual concepts (offset by 1 for NONE option)
+		conceptIdx := idx - 1
+		if conceptIdx >= 0 && conceptIdx < len(m.concepts) {
+			c := m.concepts[conceptIdx]
 			m.selectedConcept = &c
 
 			// If concept has items, advance to item selection
