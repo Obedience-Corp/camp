@@ -14,6 +14,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/obediencecorp/camp/internal/intent"
+	"github.com/obediencecorp/camp/internal/intent/gather"
 )
 
 // IntentViewerModel is a full-screen viewer for reading intent documents.
@@ -43,6 +44,15 @@ type IntentViewerModel struct {
 	showConfirm   bool
 	moveOverlay   bool
 	moveStatusIdx int
+
+	// Gather-similar overlay
+	gatherSvc       *gather.Service        // Gather service for finding similar intents
+	gatherOverlay   bool                   // Whether gather-similar overlay is shown
+	similarIntents  []gather.SimilarResult // Similar intents found
+	selectedSimilar map[string]bool        // Selected similar intent IDs
+	gatherCursorIdx int                    // Cursor position in similar list
+	gatherDialog    GatherDialog           // Title input dialog
+	showGatherTitle bool                   // Whether title input is shown
 
 	// Navigation return
 	refreshOnReturn bool // True if intent was modified
@@ -84,19 +94,26 @@ type ViewerDeleteFinishedMsg struct {
 // siblings contains all intents in the same status group for left/right navigation.
 // currentIndex is the position of the current intent within siblings.
 func NewIntentViewerModel(ctx context.Context, i *intent.Intent, siblings []*intent.Intent, currentIndex int, svc *intent.IntentService, width, height int) IntentViewerModel {
+	return NewIntentViewerModelWithGather(ctx, i, siblings, currentIndex, svc, nil, width, height)
+}
+
+// NewIntentViewerModelWithGather creates a viewer with gather service for gather-similar feature.
+func NewIntentViewerModelWithGather(ctx context.Context, i *intent.Intent, siblings []*intent.Intent, currentIndex int, svc *intent.IntentService, gatherSvc *gather.Service, width, height int) IntentViewerModel {
 	vp := viewport.New(width-4, height-8) // Account for header, footer, borders
 	vp.Style = lipgloss.NewStyle().Padding(0, 1)
 
 	m := IntentViewerModel{
-		intent:       i,
-		siblings:     siblings,
-		currentIndex: currentIndex,
-		service:      svc,
-		ctx:          ctx,
-		viewport:     vp,
-		width:        width,
-		height:       height,
-		ready:        true,
+		intent:          i,
+		siblings:        siblings,
+		currentIndex:    currentIndex,
+		service:         svc,
+		gatherSvc:       gatherSvc,
+		ctx:             ctx,
+		viewport:        vp,
+		width:           width,
+		height:          height,
+		ready:           true,
+		selectedSimilar: make(map[string]bool),
 	}
 
 	// Load and render content
@@ -331,6 +348,33 @@ func (m IntentViewerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.closeViewer()
 		}
 		return m, nil
+
+	case viewerSimilarFoundMsg:
+		if msg.err != nil {
+			// Could show error message, for now just ignore
+			return m, nil
+		}
+		if len(msg.similar) == 0 {
+			// No similar intents found
+			return m, nil
+		}
+		m.similarIntents = msg.similar
+		m.gatherOverlay = true
+		m.gatherCursorIdx = 0
+		m.selectedSimilar = make(map[string]bool)
+		return m, nil
+
+	case viewerGatherFinishedMsg:
+		if msg.err != nil {
+			// Could show error message, for now close overlay
+			m.showGatherTitle = false
+			m.gatherOverlay = false
+			m.selectedSimilar = make(map[string]bool)
+			return m, nil
+		}
+		// Gather succeeded - close viewer and refresh
+		m.refreshOnReturn = true
+		return m, m.closeViewer()
 	}
 
 	m.viewport, cmd = m.viewport.Update(msg)
@@ -469,6 +513,58 @@ func (m IntentViewerModel) revealInFileManager() tea.Cmd {
 	}
 }
 
+// viewerSimilarFoundMsg is sent when similar intents are found.
+type viewerSimilarFoundMsg struct {
+	similar []gather.SimilarResult
+	err     error
+}
+
+// viewerGatherFinishedMsg is sent when gather operation completes from viewer.
+type viewerGatherFinishedMsg struct {
+	gatheredID    string
+	gatheredTitle string
+	sourceCount   int
+	err           error
+}
+
+// findSimilarIntents searches for intents similar to the current one.
+func (m IntentViewerModel) findSimilarIntents() tea.Cmd {
+	return func() tea.Msg {
+		similar, err := m.gatherSvc.FindSimilar(m.ctx, m.intent.ID, 0.3)
+		return viewerSimilarFoundMsg{similar: similar, err: err}
+	}
+}
+
+// getSelectedSimilarIntents returns the full Intent objects for selected similar intents.
+func (m *IntentViewerModel) getSelectedSimilarIntents() []*intent.Intent {
+	var intents []*intent.Intent
+	for _, sim := range m.similarIntents {
+		if m.selectedSimilar[sim.Intent.ID] {
+			intents = append(intents, sim.Intent)
+		}
+	}
+	return intents
+}
+
+// executeViewerGather runs the gather operation with current + selected similar intents.
+func (m IntentViewerModel) executeViewerGather() tea.Cmd {
+	return func() tea.Msg {
+		opts := gather.GatherOptions{
+			Title:          m.gatherDialog.Title(),
+			ArchiveSources: m.gatherDialog.ArchiveSources(),
+		}
+		result, err := m.gatherSvc.Gather(m.ctx, m.gatherDialog.IntentIDs(), opts)
+		if err != nil {
+			return viewerGatherFinishedMsg{err: err}
+		}
+		return viewerGatherFinishedMsg{
+			gatheredID:    result.Gathered.ID,
+			gatheredTitle: result.Gathered.Title,
+			sourceCount:   result.SourceCount,
+		}
+	}
+}
+
 // View implements tea.Model.
 func (m IntentViewerModel) View() string {
 	if !m.ready {
@@ -481,6 +577,12 @@ func (m IntentViewerModel) View() string {
 	}
 	if m.moveOverlay {
 		return m.viewWithMoveOverlay()
+	}
+	if m.showGatherTitle {
+		return m.viewWithGatherTitleOverlay()
+	}
+	if m.gatherOverlay {
+		return m.viewWithGatherSimilarOverlay()
 	}
 
 	var b strings.Builder
@@ -565,8 +667,11 @@ func renderStatusBadge(s intent.Status) string {
 
 // renderFooter renders the footer with actions and scroll position.
 func (m IntentViewerModel) renderFooter() string {
-	// Actions
+	// Actions - include gather if gather service is available
 	actions := "[e]dit  [m]ove  [p]romote  [a]rchive  [d]elete  [o]pen  [O] reveal"
+	if m.gatherSvc != nil {
+		actions = "[e]dit  [g]ather  [m]ove  [p]romote  [a]rchive  [d]elete  [o]pen  [O] reveal"
+	}
 
 	// Scroll percentage
 	scrollPct := int(m.viewport.ScrollPercent() * 100)
@@ -635,6 +740,59 @@ func (m IntentViewerModel) viewWithMoveOverlay() string {
 
 	b.WriteString("\n")
 	b.WriteString(HelpStyle.Render("j/k: navigate • Enter: move • Esc: cancel"))
+
+	return b.String()
+}
+
+// viewWithGatherSimilarOverlay renders the view with gather-similar selection overlay.
+func (m IntentViewerModel) viewWithGatherSimilarOverlay() string {
+	var b strings.Builder
+
+	b.WriteString(viewerTitleStyle.Render("Gather Similar Intents"))
+	b.WriteString("\n\n")
+	b.WriteString("Current: " + m.intent.Title + "\n\n")
+	b.WriteString("Select similar intents to gather:\n")
+
+	if len(m.similarIntents) == 0 {
+		b.WriteString(HelpStyle.Render("  No similar intents found.\n"))
+	} else {
+		for i, sim := range m.similarIntents {
+			cursor := "  "
+			if i == m.gatherCursorIdx {
+				cursor = "> "
+			}
+			checkbox := "[ ]"
+			if m.selectedSimilar[sim.Intent.ID] {
+				checkbox = "[x]"
+			}
+			// Show title and similarity score
+			title := sim.Intent.Title
+			if len(title) > 40 {
+				title = title[:37] + "..."
+			}
+			score := fmt.Sprintf("%.0f%%", sim.Score*100)
+			b.WriteString(fmt.Sprintf("%s%s %s (%s)\n", cursor, checkbox, title, score))
+		}
+	}
+
+	selectedCount := len(m.selectedSimilar)
+	b.WriteString("\n")
+	if selectedCount > 0 {
+		b.WriteString(fmt.Sprintf("Selected: %d intent(s)\n", selectedCount))
+	}
+	b.WriteString("\n")
+	b.WriteString(HelpStyle.Render("j/k: navigate • Space: toggle • Enter: proceed • Esc: cancel"))
+
+	return b.String()
+}
+
+// viewWithGatherTitleOverlay renders the gather dialog for title input.
+func (m IntentViewerModel) viewWithGatherTitleOverlay() string {
+	var b strings.Builder
+
+	b.WriteString(viewerTitleStyle.Render("Gather Intents"))
+	b.WriteString("\n\n")
+	b.WriteString(m.gatherDialog.View())
 
 	return b.String()
 }

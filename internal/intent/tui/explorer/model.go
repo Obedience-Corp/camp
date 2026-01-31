@@ -9,6 +9,7 @@ import (
 	"github.com/obediencecorp/camp/internal/concept"
 	"github.com/obediencecorp/camp/internal/config"
 	"github.com/obediencecorp/camp/internal/intent"
+	"github.com/obediencecorp/camp/internal/intent/gather"
 	"github.com/obediencecorp/camp/internal/intent/tui"
 	"github.com/obediencecorp/camp/internal/intent/tui/filterchip"
 )
@@ -118,7 +119,8 @@ type Model struct {
 
 	// Gather dialog state
 	gatherDialog tui.GatherDialog
-	intentsDir   string // Base directory for intents (for gather service)
+	intentsDir   string          // Base directory for intents (for gather service)
+	gatherSvc    *gather.Service // Gather service for finding similar intents
 }
 
 // NewModel creates a new Explorer model.
@@ -160,6 +162,7 @@ func NewModel(ctx context.Context, svc *intent.IntentService, conceptSvc concept
 		focus:           focusList,
 		selectedIntents: make(map[string]bool),
 		intentsDir:      intentsDir,
+		gatherSvc:       gather.NewService(svc, intentsDir),
 	}
 }
 

@@ -82,10 +82,10 @@ func (m *Model) handleSelect() {
 		if selected := m.SelectedIntent(); selected != nil {
 			group := m.groups[m.cursorGroup]
 			m.focus = focusViewer
-			m.viewer = tui.NewIntentViewerModel(
+			m.viewer = tui.NewIntentViewerModelWithGather(
 				m.ctx, selected,
 				group.Intents, m.cursorItem,
-				m.service, m.width, m.height,
+				m.service, m.gatherSvc, m.width, m.height,
 			)
 		}
 	}

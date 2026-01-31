@@ -404,10 +404,10 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if selected := m.SelectedIntent(); selected != nil {
 			group := m.groups[m.cursorGroup]
 			m.focus = focusViewer
-			m.viewer = tui.NewIntentViewerModel(
+			m.viewer = tui.NewIntentViewerModelWithGather(
 				m.ctx, selected,
 				group.Intents, m.cursorItem,
-				m.service, m.width, m.height,
+				m.service, m.gatherSvc, m.width, m.height,
 			)
 		}
 		return m, nil
@@ -512,10 +512,10 @@ func (m Model) handleActionMenuSelection(msg tui.ActionMenuSelectedMsg) (tea.Mod
 		// Open full-screen viewer
 		group := m.groups[m.cursorGroup]
 		m.focus = focusViewer
-		m.viewer = tui.NewIntentViewerModel(
+		m.viewer = tui.NewIntentViewerModelWithGather(
 			m.ctx, selected,
 			group.Intents, m.cursorItem,
-			m.service, m.width, m.height,
+			m.service, m.gatherSvc, m.width, m.height,
 		)
 	case "edit":
 		return m, openInEditor(selected.Path)

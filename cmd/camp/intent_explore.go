@@ -39,6 +39,11 @@ ACTIONS
   d             Delete intent
   m             Move intent to status
 
+GATHER (Multi-Select)
+  Space         Toggle selection / enter gather mode
+  Ctrl+g        Gather selected intents
+  Escape        Exit multi-select mode
+
 FILTERS
   /             Search intents (fuzzy)
   t             Filter by type
