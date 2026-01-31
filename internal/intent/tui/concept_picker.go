@@ -20,6 +20,12 @@ const (
 // noneOptionLabel is displayed as the first option to skip concept selection.
 const noneOptionLabel = "(none) - No concept association"
 
+// newProjectLabel is displayed as an option for creating new project intents.
+const newProjectLabel = "+ New Project"
+
+// newProjectPath is the special path used for new project intents.
+const newProjectPath = "projects/new"
+
 // ConceptPickerModel provides a cascading selection UI for concepts.
 // First, the user selects a concept type (e.g., Projects, Festivals).
 // Then, they can drill into items within that concept.
@@ -226,12 +232,27 @@ func (m *ConceptPickerModel) loadItems(subpath string) {
 		return
 	}
 
+	// Prepend "New" option for projects concept at root level
+	if m.selectedConcept.Name == "p" && subpath == "" {
+		newItem := concept.Item{
+			Name:          newProjectLabel,
+			Path:          newProjectPath,
+			IsDir:         false,
+			Children:      0,
+			DrillDisabled: true,
+		}
+		items = append([]concept.Item{newItem}, items...)
+	}
+
 	m.items = items
 
 	// Build names for the scroll wheel with directory indicators
 	names := make([]string, len(items))
 	for i, item := range items {
-		if item.IsDir {
+		if item.Name == newProjectLabel {
+			// Special styling for "New" option
+			names[i] = "✨ " + item.Name
+		} else if item.IsDir {
 			if item.DrillDisabled {
 				// Drilling disabled by depth limit - no arrow, no "(empty)"
 				names[i] = "  " + item.Name
