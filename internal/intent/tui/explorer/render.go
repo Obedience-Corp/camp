@@ -100,37 +100,32 @@ func (m *Model) renderStatusBar() string {
 	switch m.layoutMode {
 	case layoutNarrow:
 		// Minimal hints
-		return tui.HelpStyle.Render("j/k . v . / . n . ? . q")
+		return tui.HelpStyle.Render("j/k . v . / . tab: filter . n . ? . q")
 	case layoutNormal:
 		if m.shouldShowPreview() {
 			return tui.HelpStyle.Render("j/k: nav . v: hide preview . tab: focus . /: search . n: new . q: quit")
 		}
-		return tui.HelpStyle.Render("j/k: nav . v: preview . /: search . t: type . s: status . Space: select . q: quit")
+		return tui.HelpStyle.Render("j/k: nav . v: preview . /: search . tab: filter . Space: select . q: quit")
 	case layoutWide:
 		if m.shouldShowPreview() {
 			return tui.HelpStyle.Render("j/k: navigate . v: hide preview . tab: switch focus . /: search . f: full view . n: new . ?: help . q: quit")
 		}
-		return tui.HelpStyle.Render("j/k: navigate . v: preview . /: search . t: type . s: status . Space: select . f: full . ?: help . q: quit")
+		return tui.HelpStyle.Render("j/k: navigate . v: preview . /: search . tab: filter . Space: select . f: full . ?: help . q: quit")
 	}
 	return ""
 }
 
-// renderFilterBar renders the active filter pills and selection count.
+// renderFilterBarComponent renders the interactive filter bar component.
+func (m *Model) renderFilterBarComponent() string {
+	return m.filterBar.View()
+}
+
+// renderActiveFilters renders a summary of active filters (pills below filter bar).
 // Returns empty string if no filters are active and not in multi-select mode.
-func (m *Model) renderFilterBar() string {
+func (m *Model) renderActiveFilters() string {
 	var pills []string
 
-	// Check active filters
-	typeValue := m.typeWheel.SelectedValue()
-	if typeValue != "" && typeValue != "All" {
-		pills = append(pills, tui.FilterPillStyle.Render(fmt.Sprintf("type:%s x", strings.ToLower(typeValue))))
-	}
-
-	statusValue := m.statusWheel.SelectedValue()
-	if statusValue != "" && statusValue != "All" {
-		pills = append(pills, tui.FilterPillStyle.Render(fmt.Sprintf("status:%s x", strings.ToLower(statusValue))))
-	}
-
+	// Check for concept filter (not in the filter bar chips)
 	if m.conceptFilterPath != "" {
 		conceptName := m.conceptFilterPath
 		// Show just the last part for brevity
@@ -138,18 +133,19 @@ func (m *Model) renderFilterBar() string {
 		if len(parts) > 0 {
 			conceptName = parts[len(parts)-1]
 		}
-		pills = append(pills, tui.FilterPillStyle.Render(fmt.Sprintf("concept:%s x", conceptName)))
+		pills = append(pills, tui.FilterPillStyle.Render(fmt.Sprintf("concept:%s", conceptName)))
 	}
 
+	// Check for active search
 	if m.searchInput.Value() != "" && m.focus != focusSearch {
 		query := m.searchInput.Value()
 		if len(query) > 15 {
 			query = query[:12] + "..."
 		}
-		pills = append(pills, tui.FilterPillStyle.Render(fmt.Sprintf("search:%s x", query)))
+		pills = append(pills, tui.FilterPillStyle.Render(fmt.Sprintf("search:%s", query)))
 	}
 
-	// Build the filter bar
+	// Build the active filters summary
 	var parts []string
 
 	// Selection count badge (always show when in multi-select)
@@ -158,17 +154,16 @@ func (m *Model) renderFilterBar() string {
 		parts = append(parts, tui.SelectionCountStyle.Render(fmt.Sprintf("%d selected", count)))
 	}
 
-	// Filter pills
+	// Filter pills (for things not in the filter bar)
 	if len(pills) > 0 {
 		parts = append(parts, strings.Join(pills, " "))
-		parts = append(parts, tui.HelpStyle.Render("[Esc: clear]"))
 	}
 
 	if len(parts) == 0 {
 		return ""
 	}
 
-	return "Active: " + strings.Join(parts, "  ")
+	return strings.Join(parts, "  ")
 }
 
 // viewActionMenu renders the main view with action menu overlay.
@@ -242,32 +237,14 @@ func (m *Model) buildMainView() string {
 		b.WriteString("\n")
 	}
 
-	// Filter bar - show active filters as pills
-	filterBar := m.renderFilterBar()
-	if filterBar != "" {
-		b.WriteString(filterBar)
-		b.WriteString("\n")
-	}
+	// Always show the filter bar chips
+	b.WriteString(m.renderFilterBarComponent())
+	b.WriteString("\n")
 
-	// Only show filter wheels when actively filtering
-	if m.focus == focusTypeFilter || m.focus == focusStatusFilter {
-		// Type filter indicator
-		typeValue := m.typeWheel.SelectedValue()
-		if m.focus == focusTypeFilter {
-			b.WriteString(tui.HelpStyle.Render("Type: "))
-			b.WriteString(tui.IntentConceptStyle.Render("[" + typeValue + "]"))
-			b.WriteString(" ")
-			b.WriteString(tui.HelpStyle.Render("(j/k to change, enter to select)"))
-		}
-
-		// Status filter indicator
-		statusValue := m.statusWheel.SelectedValue()
-		if m.focus == focusStatusFilter {
-			b.WriteString(tui.HelpStyle.Render("Status: "))
-			b.WriteString(tui.IntentConceptStyle.Render("[" + statusValue + "]"))
-			b.WriteString(" ")
-			b.WriteString(tui.HelpStyle.Render("(j/k to change, enter to select)"))
-		}
+	// Show active filters summary (concept, search) if any
+	activeFilters := m.renderActiveFilters()
+	if activeFilters != "" {
+		b.WriteString(activeFilters)
 		b.WriteString("\n")
 	}
 
@@ -297,8 +274,7 @@ func (m *Model) buildMainView() string {
 
 	// Handle empty state
 	if len(m.filteredIntents) == 0 {
-		if m.searchInput.Value() != "" || m.typeWheel.SelectedValue() != "All" ||
-			m.statusWheel.SelectedValue() != "All" || m.conceptFilterPath != "" {
+		if m.hasActiveFilters() {
 			listBuilder.WriteString(tui.HelpStyle.Render("\n  No intents match current filters.\n  Press Escape to clear filters.\n"))
 		} else {
 			listBuilder.WriteString(tui.HelpStyle.Render("\n  No intents found.\n  Press 'n' to create one.\n"))

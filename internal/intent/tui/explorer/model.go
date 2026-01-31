@@ -10,6 +10,7 @@ import (
 	"github.com/obediencecorp/camp/internal/config"
 	"github.com/obediencecorp/camp/internal/intent"
 	"github.com/obediencecorp/camp/internal/intent/tui"
+	"github.com/obediencecorp/camp/internal/intent/tui/filterchip"
 )
 
 // focusMode determines which component has keyboard focus.
@@ -18,9 +19,8 @@ type focusMode int
 const (
 	focusList focusMode = iota
 	focusSearch
-	focusTypeFilter
-	focusStatusFilter
-	focusConceptFilter // Filtering by concept
+	focusFilterBar     // Filter bar has focus (Tab navigation between chips)
+	focusConceptFilter // Filtering by concept (concept picker modal)
 	focusCreating      // Creating new intent
 	focusMove          // Moving intent to different status
 	focusConfirm       // Confirmation dialog
@@ -57,8 +57,7 @@ type Model struct {
 	searchInput textinput.Model
 
 	// Filters
-	typeWheel   tui.ScrollWheel
-	statusWheel tui.ScrollWheel
+	filterBar filterchip.Bar
 
 	// Focus mode
 	focus focusMode
@@ -138,11 +137,10 @@ func NewModel(ctx context.Context, svc *intent.IntentService, conceptSvc concept
 	ti.CharLimit = 100
 	ti.Width = 40
 
-	tw := tui.NewScrollWheel(typeFilterItems)
-	tw.SetWidth(12)
-
-	sw := tui.NewScrollWheel(statusFilterItems)
-	sw.SetWidth(12)
+	// Create filter bar with type, status, and concept chips
+	typeChip := filterchip.NewChip("Type", typeFilterItems)
+	statusChip := filterchip.NewChip("Status", statusFilterItems)
+	fb := filterchip.NewBar(typeChip, statusChip)
 
 	// Title input for new intent creation
 	titleIn := textinput.New()
@@ -157,8 +155,7 @@ func NewModel(ctx context.Context, svc *intent.IntentService, conceptSvc concept
 		cursorGroup:     0,
 		cursorItem:      -1, // Start on first group header
 		searchInput:     ti,
-		typeWheel:       tw,
-		statusWheel:     sw,
+		filterBar:       fb,
 		titleInput:      titleIn,
 		focus:           focusList,
 		selectedIntents: make(map[string]bool),

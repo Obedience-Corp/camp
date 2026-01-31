@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/obediencecorp/camp/internal/intent"
 	"github.com/obediencecorp/camp/internal/intent/tui"
+	"github.com/obediencecorp/camp/internal/intent/tui/filterchip"
 )
 
 // Update implements tea.Model.
@@ -20,12 +21,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateSearch(msg)
 		}
 
-		if m.focus == focusTypeFilter {
-			return m.updateTypeFilter(msg)
-		}
-
-		if m.focus == focusStatusFilter {
-			return m.updateStatusFilter(msg)
+		if m.focus == focusFilterBar {
+			return m.updateFilterBar(msg)
 		}
 
 		if m.focus == focusConceptFilter {
@@ -205,6 +202,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Exit multi-select mode and clear selections
 		m.exitMultiSelectMode()
 		return m, m.loadIntents()
+
+	case filterchip.FilterChangedMsg:
+		// A filter selection changed - apply filters
+		m.applyFilters()
+		return m, nil
 	}
 
 	return m, nil
@@ -234,35 +236,24 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// updateTypeFilter handles keys when type filter has focus.
-func (m Model) updateTypeFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+// updateFilterBar handles keys when filter bar has focus.
+func (m Model) updateFilterBar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
-	switch msg.String() {
-	case "esc", "enter", "t":
-		m.focus = focusList
-		m.typeWheel.Blur()
-		m.applyFilters()
-		return m, nil
-	}
-	// Pass to scroll wheel
-	m.typeWheel, cmd = m.typeWheel.Update(msg)
-	m.applyFilters()
-	return m, cmd
-}
 
-// updateStatusFilter handles keys when status filter has focus.
-func (m Model) updateStatusFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
 	switch msg.String() {
-	case "esc", "enter", "s":
+	case "esc":
+		// If dropdown is open, close it; otherwise exit filter bar
+		if m.filterBar.HasOpenDropdown() {
+			m.filterBar, cmd = m.filterBar.Update(msg)
+			return m, cmd
+		}
 		m.focus = focusList
-		m.statusWheel.Blur()
-		m.applyFilters()
+		m.filterBar.Blur()
 		return m, nil
 	}
-	// Pass to scroll wheel
-	m.statusWheel, cmd = m.statusWheel.Update(msg)
-	m.applyFilters()
+
+	// Pass to filter bar
+	m.filterBar, cmd = m.filterBar.Update(msg)
 	return m, cmd
 }
 
@@ -348,15 +339,15 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.focus = focusSearch
 		m.searchInput.Focus()
 		return m, textinput.Blink
-	case "t":
-		// Enter type filter mode
-		m.focus = focusTypeFilter
-		m.typeWheel.Focus()
-		return m, nil
-	case "s":
-		// Enter status filter mode
-		m.focus = focusStatusFilter
-		m.statusWheel.Focus()
+	case "tab":
+		// Tab navigates to filter bar when not on preview
+		if !m.showPreview || !m.previewFocused {
+			m.focus = focusFilterBar
+			m.filterBar.Focus()
+			return m, nil
+		}
+		// Otherwise toggle preview focus
+		m.previewFocused = !m.previewFocused
 		return m, nil
 	case "c":
 		// Enter concept filter mode
@@ -436,12 +427,6 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if selected := m.SelectedIntent(); selected != nil {
 				m.loadPreviewContent(selected)
 			}
-		}
-		return m, nil
-	case "tab":
-		// Switch focus between list and preview (only when preview visible)
-		if m.showPreview {
-			m.previewFocused = !m.previewFocused
 		}
 		return m, nil
 	case "j", "down":

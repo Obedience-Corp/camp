@@ -34,30 +34,36 @@ func (m *Model) applyFilters() {
 		}
 	}
 
-	// Apply type filter
-	typeSelection := m.typeWheel.SelectedValue()
-	if typeSelection != "All" && typeSelection != "" {
-		typeFiltered := make([]*intent.Intent, 0)
-		targetType := strings.ToLower(typeSelection)
-		for _, i := range filtered {
-			if string(i.Type) == targetType {
-				typeFiltered = append(typeFiltered, i)
+	// Apply type filter from filter bar
+	typeChip := m.filterBar.ChipByLabel("Type")
+	if typeChip != nil {
+		typeSelection := typeChip.SelectedValue()
+		if typeSelection != "All" && typeSelection != "" {
+			typeFiltered := make([]*intent.Intent, 0)
+			targetType := strings.ToLower(typeSelection)
+			for _, i := range filtered {
+				if string(i.Type) == targetType {
+					typeFiltered = append(typeFiltered, i)
+				}
 			}
+			filtered = typeFiltered
 		}
-		filtered = typeFiltered
 	}
 
-	// Apply status filter
-	statusSelection := m.statusWheel.SelectedValue()
-	if statusSelection != "All" && statusSelection != "" {
-		statusFiltered := make([]*intent.Intent, 0)
-		targetStatus := strings.ToLower(statusSelection)
-		for _, i := range filtered {
-			if string(i.Status) == targetStatus {
-				statusFiltered = append(statusFiltered, i)
+	// Apply status filter from filter bar
+	statusChip := m.filterBar.ChipByLabel("Status")
+	if statusChip != nil {
+		statusSelection := statusChip.SelectedValue()
+		if statusSelection != "All" && statusSelection != "" {
+			statusFiltered := make([]*intent.Intent, 0)
+			targetStatus := strings.ToLower(statusSelection)
+			for _, i := range filtered {
+				if string(i.Status) == targetStatus {
+					statusFiltered = append(statusFiltered, i)
+				}
 			}
+			filtered = statusFiltered
 		}
-		filtered = statusFiltered
 	}
 
 	// Apply concept filter
@@ -84,18 +90,24 @@ func (m *Model) applyFilters() {
 
 // hasActiveFilters returns true if any filter is active.
 func (m *Model) hasActiveFilters() bool {
-	typeValue := m.typeWheel.SelectedValue()
-	statusValue := m.statusWheel.SelectedValue()
-	return (typeValue != "" && typeValue != "All") ||
-		(statusValue != "" && statusValue != "All") ||
-		m.conceptFilterPath != "" ||
-		(m.searchInput.Value() != "" && m.focus != focusSearch)
+	// Check filter bar chips
+	if m.filterBar.HasActiveFilters() {
+		return true
+	}
+	// Check concept filter
+	if m.conceptFilterPath != "" {
+		return true
+	}
+	// Check search
+	if m.searchInput.Value() != "" && m.focus != focusSearch {
+		return true
+	}
+	return false
 }
 
 // clearAllFilters resets all filter values to their defaults.
 func (m *Model) clearAllFilters() {
-	m.typeWheel.SetSelected(0)   // "All"
-	m.statusWheel.SetSelected(0) // "All"
+	m.filterBar.ClearAll()
 	m.conceptFilterPath = ""
 	m.searchInput.SetValue("")
 	m.applyFilters()

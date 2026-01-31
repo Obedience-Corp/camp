@@ -186,8 +186,8 @@ func TestViewer_ClosedMsgIncludesFinalIndex(t *testing.T) {
 	closeCmd := m.closeViewer()
 	msg := closeCmd().(ViewerClosedMsg)
 
-	if msg.finalIndex != 3 {
-		t.Errorf("Expected finalIndex 3 in closed message, got %d", msg.finalIndex)
+	if msg.FinalIndex != 3 {
+		t.Errorf("Expected FinalIndex 3 in closed message, got %d", msg.FinalIndex)
 	}
 }
 
