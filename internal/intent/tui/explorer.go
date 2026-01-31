@@ -1313,12 +1313,12 @@ func (m ExplorerModel) renderStatusBar() string {
 		if m.shouldShowPreview() {
 			return helpStyle.Render("j/k: nav • v: hide preview • tab: focus • /: search • n: new • q: quit")
 		}
-		return helpStyle.Render("j/k: nav • v: preview • /: search • t: type • s: status • Space: select • q: quit")
+		return helpStyle.Render("j/k: nav • v: preview • /: search • t/s: filter • .: actions • Space->Ctrl-g: gather • q: quit")
 	case layoutWide:
 		if m.shouldShowPreview() {
 			return helpStyle.Render("j/k: navigate • v: hide preview • tab: switch focus • /: search • f: full view • n: new • ?: help • q: quit")
 		}
-		return helpStyle.Render("j/k: navigate • v: preview • /: search • t: type • s: status • Space: select • f: full • ?: help • q: quit")
+		return helpStyle.Render("j/k: navigate • v: preview • /: search • t/s: filter • .: actions • Space->Ctrl-g: gather • ?: help • q: quit")
 	}
 	return ""
 }
