@@ -51,33 +51,33 @@ type IntentViewerModel struct {
 	pendingAction string
 }
 
-// viewerClosedMsg is sent when the viewer is closed.
-type viewerClosedMsg struct {
-	intentID   string
-	refresh    bool // True if intent was modified
-	finalIndex int  // Index of intent when viewer closed (for cursor sync)
+// ViewerClosedMsg is sent when the viewer is closed.
+type ViewerClosedMsg struct {
+	IntentID   string
+	Refresh    bool // True if intent was modified
+	FinalIndex int  // Index of intent when viewer closed (for cursor sync)
 }
 
-// viewerEditorFinishedMsg is sent when editor closes from viewer.
-type viewerEditorFinishedMsg struct {
-	err  error
-	path string
+// ViewerEditorFinishedMsg is sent when editor closes from viewer.
+type ViewerEditorFinishedMsg struct {
+	Err  error
+	Path string
 }
 
-// viewerMoveFinishedMsg is sent when move completes from viewer.
-type viewerMoveFinishedMsg struct {
-	err       error
-	newStatus intent.Status
+// ViewerMoveFinishedMsg is sent when move completes from viewer.
+type ViewerMoveFinishedMsg struct {
+	Err       error
+	NewStatus intent.Status
 }
 
-// viewerArchiveFinishedMsg is sent when archive completes from viewer.
-type viewerArchiveFinishedMsg struct {
-	err error
+// ViewerArchiveFinishedMsg is sent when archive completes from viewer.
+type ViewerArchiveFinishedMsg struct {
+	Err error
 }
 
-// viewerDeleteFinishedMsg is sent when delete completes from viewer.
-type viewerDeleteFinishedMsg struct {
-	err error
+// ViewerDeleteFinishedMsg is sent when delete completes from viewer.
+type ViewerDeleteFinishedMsg struct {
+	Err error
 }
 
 // NewIntentViewerModel creates a new intent viewer for the given intent.
@@ -306,27 +306,27 @@ func (m IntentViewerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewport.Height = msg.Height - 8
 		m.renderContent()
 
-	case viewerEditorFinishedMsg:
+	case ViewerEditorFinishedMsg:
 		m.refreshOnReturn = true
 		m.loadContent() // Reload content after edit
 		return m, nil
 
-	case viewerMoveFinishedMsg:
-		if msg.err == nil {
-			m.intent.Status = msg.newStatus
+	case ViewerMoveFinishedMsg:
+		if msg.Err == nil {
+			m.intent.Status = msg.NewStatus
 			m.refreshOnReturn = true
 		}
 		return m, nil
 
-	case viewerArchiveFinishedMsg:
-		if msg.err == nil {
+	case ViewerArchiveFinishedMsg:
+		if msg.Err == nil {
 			m.refreshOnReturn = true
 			return m, m.closeViewer()
 		}
 		return m, nil
 
-	case viewerDeleteFinishedMsg:
-		if msg.err == nil {
+	case ViewerDeleteFinishedMsg:
+		if msg.Err == nil {
 			m.refreshOnReturn = true
 			return m, m.closeViewer()
 		}
@@ -340,10 +340,10 @@ func (m IntentViewerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // closeViewer returns a command to close the viewer.
 func (m IntentViewerModel) closeViewer() tea.Cmd {
 	return func() tea.Msg {
-		return viewerClosedMsg{
-			intentID:   m.intent.ID,
-			refresh:    m.refreshOnReturn,
-			finalIndex: m.currentIndex,
+		return ViewerClosedMsg{
+			IntentID:   m.intent.ID,
+			Refresh:    m.refreshOnReturn,
+			FinalIndex: m.currentIndex,
 		}
 	}
 }
@@ -386,9 +386,9 @@ func (m *IntentViewerModel) navigateNext() {
 func (m IntentViewerModel) openInEditor() tea.Cmd {
 	if _, err := os.Stat(m.intent.Path); os.IsNotExist(err) {
 		return func() tea.Msg {
-			return viewerEditorFinishedMsg{
-				err:  fmt.Errorf("file no longer exists: %s", filepath.Base(m.intent.Path)),
-				path: m.intent.Path,
+			return ViewerEditorFinishedMsg{
+				Err:  fmt.Errorf("file no longer exists: %s", filepath.Base(m.intent.Path)),
+				Path: m.intent.Path,
 			}
 		}
 	}
@@ -400,7 +400,7 @@ func (m IntentViewerModel) openInEditor() tea.Cmd {
 
 	c := exec.Command(editor, m.intent.Path)
 	return tea.ExecProcess(c, func(err error) tea.Msg {
-		return viewerEditorFinishedMsg{err: err, path: m.intent.Path}
+		return ViewerEditorFinishedMsg{Err: err, Path: m.intent.Path}
 	})
 }
 
@@ -408,9 +408,9 @@ func (m IntentViewerModel) openInEditor() tea.Cmd {
 func (m IntentViewerModel) moveIntent(newStatus intent.Status) tea.Cmd {
 	return func() tea.Msg {
 		_, err := m.service.Move(m.ctx, m.intent.ID, newStatus)
-		return viewerMoveFinishedMsg{
-			err:       err,
-			newStatus: newStatus,
+		return ViewerMoveFinishedMsg{
+			Err:       err,
+			NewStatus: newStatus,
 		}
 	}
 }
@@ -419,7 +419,7 @@ func (m IntentViewerModel) moveIntent(newStatus intent.Status) tea.Cmd {
 func (m IntentViewerModel) archiveIntent() tea.Cmd {
 	return func() tea.Msg {
 		_, err := m.service.Archive(m.ctx, m.intent.ID)
-		return viewerArchiveFinishedMsg{err: err}
+		return ViewerArchiveFinishedMsg{Err: err}
 	}
 }
 
@@ -427,7 +427,7 @@ func (m IntentViewerModel) archiveIntent() tea.Cmd {
 func (m IntentViewerModel) deleteIntent() tea.Cmd {
 	return func() tea.Msg {
 		err := m.service.Delete(m.ctx, m.intent.ID)
-		return viewerDeleteFinishedMsg{err: err}
+		return ViewerDeleteFinishedMsg{Err: err}
 	}
 }
 
@@ -634,7 +634,7 @@ func (m IntentViewerModel) viewWithMoveOverlay() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("j/k: navigate • Enter: move • Esc: cancel"))
+	b.WriteString(HelpStyle.Render("j/k: navigate • Enter: move • Esc: cancel"))
 
 	return b.String()
 }

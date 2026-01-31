@@ -388,7 +388,7 @@ func (m IntentAddModel) View() string {
 
 	var b strings.Builder
 
-	b.WriteString(titleStyle.Render("Create Intent"))
+	b.WriteString(TitleStyle.Render("Create Intent"))
 	b.WriteString("\n\n")
 
 	// Show progress summary
@@ -416,17 +416,17 @@ func (m IntentAddModel) viewProgress() string {
 
 	// Title
 	if m.step > addStepTitle {
-		parts = append(parts, helpStyle.Render("Title: ")+intentTitleStyle.Render(m.titleInput.Value()))
+		parts = append(parts, HelpStyle.Render("Title: ")+IntentTitleStyle.Render(m.titleInput.Value()))
 	}
 
 	// Type
 	if m.step > addStepType {
-		parts = append(parts, helpStyle.Render("Type: ")+intentTypeStyle.Render(intentTypes[m.typeIdx]))
+		parts = append(parts, HelpStyle.Render("Type: ")+IntentTypeStyle.Render(intentTypes[m.typeIdx]))
 	}
 
 	// Concept (if selected)
 	if m.step > addStepConcept && m.conceptPicker.SelectedPath() != "" {
-		parts = append(parts, helpStyle.Render("Concept: ")+intentConceptStyle.Render(m.conceptPicker.SelectedPath()))
+		parts = append(parts, HelpStyle.Render("Concept: ")+IntentConceptStyle.Render(m.conceptPicker.SelectedPath()))
 	}
 
 	if len(parts) == 0 {
@@ -443,7 +443,7 @@ func (m IntentAddModel) viewTitleStep() string {
 	b.WriteString("Title:\n")
 	b.WriteString(m.titleInput.View())
 	b.WriteString("\n\n")
-	b.WriteString(helpStyle.Render("Enter: continue • Esc: cancel"))
+	b.WriteString(HelpStyle.Render("Enter: continue • Esc: cancel"))
 
 	return b.String()
 }
@@ -475,7 +475,7 @@ func (m IntentAddModel) viewTypeStep() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("j/k: navigate • Enter: select • Esc: cancel"))
+	b.WriteString(HelpStyle.Render("j/k: navigate • Enter: select • Esc: cancel"))
 
 	return b.String()
 }
@@ -486,7 +486,7 @@ func (m IntentAddModel) viewConceptStep() string {
 
 	b.WriteString(m.conceptPicker.View())
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("Tab: skip • Enter: select • Backspace: back • Esc: cancel"))
+	b.WriteString(HelpStyle.Render("Tab: skip • Enter: select • Backspace: back • Esc: cancel"))
 
 	return b.String()
 }
@@ -497,7 +497,7 @@ func (m IntentAddModel) viewBodyStep() string {
 
 	// Show mode indicator
 	modeStr := m.vimEditor.Mode().String()
-	b.WriteString(helpStyle.Render("Description (optional) — " + modeStr) + "\n")
+	b.WriteString(HelpStyle.Render("Description (optional) — " + modeStr) + "\n")
 
 	// Render vim editor
 	cfg := vim.DefaultViewConfig()
@@ -514,13 +514,13 @@ func (m IntentAddModel) viewBodyStep() string {
 	// Context-sensitive help
 	switch m.vimEditor.Mode() {
 	case vim.ModeInsert:
-		b.WriteString(helpStyle.Render("Esc: normal mode • Ctrl+S: save • Ctrl+E: editor"))
+		b.WriteString(HelpStyle.Render("Esc: normal mode • Ctrl+S: save • Ctrl+E: editor"))
 	case vim.ModeVisual, vim.ModeVisualLine:
-		b.WriteString(helpStyle.Render("d: delete • y: yank • c: change • Esc: normal"))
+		b.WriteString(HelpStyle.Render("d: delete • y: yank • c: change • Esc: normal"))
 	case vim.ModeCommand:
-		b.WriteString(helpStyle.Render(":wq save • :q! cancel • Esc: back"))
+		b.WriteString(HelpStyle.Render(":wq save • :q! cancel • Esc: back"))
 	default:
-		b.WriteString(helpStyle.Render("i: insert • v: visual • Enter/:wq: save • Ctrl+E: editor"))
+		b.WriteString(HelpStyle.Render("i: insert • v: visual • Enter/:wq: save • Ctrl+E: editor"))
 	}
 
 	return b.String()

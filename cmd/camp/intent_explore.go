@@ -9,7 +9,7 @@ import (
 	"github.com/obediencecorp/camp/internal/concept"
 	"github.com/obediencecorp/camp/internal/config"
 	"github.com/obediencecorp/camp/internal/intent"
-	"github.com/obediencecorp/camp/internal/intent/tui"
+	"github.com/obediencecorp/camp/internal/intent/tui/explorer"
 	"github.com/obediencecorp/camp/internal/paths"
 )
 
@@ -78,7 +78,7 @@ func runIntentExplore(cmd *cobra.Command, args []string) error {
 	conceptSvc := concept.NewService(campaignRoot, cfg.Concepts())
 
 	// Create and run the TUI
-	model := tui.NewExplorerModel(ctx, svc, conceptSvc, intentsDir)
+	model := explorer.NewModel(ctx, svc, conceptSvc, intentsDir)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {

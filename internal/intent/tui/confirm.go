@@ -86,7 +86,7 @@ func (d ConfirmationDialog) View() string {
 	noBtn := dialogActiveButtonStyle.Render("[n] No")
 
 	buttons := lipgloss.JoinHorizontal(lipgloss.Center, yesBtn, "  ", noBtn)
-	hint := helpStyle.Render("\ny: confirm • n/Esc: cancel")
+	hint := HelpStyle.Render("\ny: confirm • n/Esc: cancel")
 
 	content := lipgloss.JoinVertical(
 		lipgloss.Center,

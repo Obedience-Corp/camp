@@ -16,10 +16,10 @@ var (
 	glamourStyleOnce sync.Once
 )
 
-// initGlamourStyle detects and caches the glamour style.
+// InitGlamourStyle detects and caches the glamour style.
 // Call this once at TUI startup with the user's theme preference.
 // This avoids the slow OSC terminal query on every render.
-func initGlamourStyle(themeName string) {
+func InitGlamourStyle(themeName string) {
 	glamourStyleOnce.Do(func() {
 		switch themeName {
 		case "dark":
@@ -68,80 +68,81 @@ func renderMarkdown(content string, width int) string {
 var pal = theme.TUI()
 
 // Style definitions for the Intent Explorer TUI.
+// Exported for use by explorer subpackage.
 var (
 	// Title styling
-	titleStyle = lipgloss.NewStyle().
+	TitleStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(pal.Accent)
 
 	// Group header styles
-	groupHeaderStyle = lipgloss.NewStyle().
+	GroupHeaderStyle = lipgloss.NewStyle().
 				Foreground(pal.AccentAlt)
 
-	groupHeaderSelectedStyle = lipgloss.NewStyle().
+	GroupHeaderSelectedStyle = lipgloss.NewStyle().
 					Background(pal.BgSelected).
 					Bold(true).
 					Foreground(pal.AccentAlt)
 
 	// Intent row styles
-	intentRowStyle = lipgloss.NewStyle().
+	IntentRowStyle = lipgloss.NewStyle().
 			PaddingLeft(4)
 
-	intentRowSelectedStyle = lipgloss.NewStyle().
+	IntentRowSelectedStyle = lipgloss.NewStyle().
 				PaddingLeft(4).
 				Background(pal.BgSelected).
 				Bold(true)
 
 	// Intent field styles
-	intentTitleStyle = lipgloss.NewStyle().
+	IntentTitleStyle = lipgloss.NewStyle().
 				Foreground(pal.TextPrimary)
 
-	intentTypeStyle = lipgloss.NewStyle().
+	IntentTypeStyle = lipgloss.NewStyle().
 			Foreground(pal.TextSecondary)
 
-	intentDateStyle = lipgloss.NewStyle().
+	IntentDateStyle = lipgloss.NewStyle().
 			Foreground(pal.TextMuted)
 
-	intentConceptStyle = lipgloss.NewStyle().
+	IntentConceptStyle = lipgloss.NewStyle().
 				Foreground(pal.Warning)
 
 	// Help bar style
-	helpStyle = lipgloss.NewStyle().
+	HelpStyle = lipgloss.NewStyle().
 			Foreground(pal.TextMuted)
 
 	// Error style
-	errorStyle = lipgloss.NewStyle().
+	ErrorStyle = lipgloss.NewStyle().
 			Foreground(pal.Error)
 
 	// Success style
-	successStyle = lipgloss.NewStyle().
+	SuccessStyle = lipgloss.NewStyle().
 			Foreground(pal.Success)
 
 	// Cursor indicator
-	cursorIndicator = "›"
-	noCursor        = " "
+	CursorIndicator = ">"
+	NoCursor        = " "
 
 	// Filter pill styles
-	filterPillStyle = lipgloss.NewStyle().
+	FilterPillStyle = lipgloss.NewStyle().
 			Background(pal.BgSelected).
 			Foreground(pal.TextPrimary).
 			Padding(0, 1)
 
-	filterPillActiveStyle = lipgloss.NewStyle().
+	FilterPillActiveStyle = lipgloss.NewStyle().
 				Background(pal.Accent).
 				Foreground(pal.TextPrimary).
 				Padding(0, 1).
 				Bold(true)
 
 	// Checkbox styles for multi-select
-	checkboxCheckedStyle = lipgloss.NewStyle().
+	CheckboxCheckedStyle = lipgloss.NewStyle().
 				Foreground(pal.Success)
 
-	checkboxUncheckedStyle = lipgloss.NewStyle().
+	CheckboxUncheckedStyle = lipgloss.NewStyle().
 				Foreground(pal.TextMuted)
 
 	// Selection count badge
-	selectionCountStyle = lipgloss.NewStyle().
+	SelectionCountStyle = lipgloss.NewStyle().
 				Background(pal.Accent).
 				Foreground(pal.TextPrimary).
 				Padding(0, 1).

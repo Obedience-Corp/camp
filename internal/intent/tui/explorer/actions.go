@@ -1,0 +1,197 @@
+package explorer
+
+import (
+	"fmt"
+	"strings"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/obediencecorp/camp/internal/intent"
+	"github.com/obediencecorp/camp/internal/intent/tui"
+)
+
+// moveStatusOptions are the available statuses for moving intents.
+var moveStatusOptions = []struct {
+	name   string
+	status intent.Status
+}{
+	{"Inbox", intent.StatusInbox},
+	{"Active", intent.StatusActive},
+	{"Ready", intent.StatusReady},
+	{"Done", intent.StatusDone},
+	{"Killed", intent.StatusKilled},
+}
+
+// statusWorkflow defines the promotion order for intents.
+// Killed is excluded as it's an archive/terminal state.
+var statusWorkflow = []intent.Status{
+	intent.StatusInbox,
+	intent.StatusActive,
+	intent.StatusReady,
+	intent.StatusDone,
+}
+
+// getNextStatus returns the next status in the promotion workflow.
+// Returns the same status if already at the final state.
+func getNextStatus(current intent.Status) intent.Status {
+	for i, s := range statusWorkflow {
+		if s == current && i < len(statusWorkflow)-1 {
+			return statusWorkflow[i+1]
+		}
+	}
+	return current // No change if at end or not in workflow
+}
+
+// updateMove handles key input during move action.
+func (m *Model) updateMove(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		// Cancel move
+		m.focus = focusList
+		m.intentToMove = nil
+		return m, nil
+	case "j", "down":
+		if m.moveStatusIdx < len(moveStatusOptions)-1 {
+			m.moveStatusIdx++
+		}
+	case "k", "up":
+		if m.moveStatusIdx > 0 {
+			m.moveStatusIdx--
+		}
+	case "enter":
+		// Execute move
+		if m.intentToMove != nil {
+			newStatus := moveStatusOptions[m.moveStatusIdx].status
+			if m.intentToMove.Status == newStatus {
+				// Already at this status
+				m.statusMessage = "Already at " + newStatus.String()
+				m.focus = focusList
+				m.intentToMove = nil
+				return m, nil
+			}
+			m.focus = focusList
+			return m, m.moveIntent(m.intentToMove, newStatus)
+		}
+	}
+	return m, nil
+}
+
+// moveIntent moves an intent to a new status.
+func (m *Model) moveIntent(i *intent.Intent, newStatus intent.Status) tea.Cmd {
+	return func() tea.Msg {
+		_, err := m.service.Move(m.ctx, i.ID, newStatus)
+		return moveFinishedMsg{
+			err:       err,
+			intentID:  i.ID,
+			newStatus: newStatus,
+		}
+	}
+}
+
+// archiveIntent archives an intent (moves to killed status).
+func (m *Model) archiveIntent(i *intent.Intent) tea.Cmd {
+	return func() tea.Msg {
+		_, err := m.service.Archive(m.ctx, i.ID)
+		return archiveFinishedMsg{
+			err:      err,
+			intentID: i.ID,
+		}
+	}
+}
+
+// deleteIntent permanently deletes an intent.
+func (m *Model) deleteIntent(i *intent.Intent) tea.Cmd {
+	return func() tea.Msg {
+		err := m.service.Delete(m.ctx, i.ID)
+		return deleteFinishedMsg{
+			err:   err,
+			title: i.Title,
+		}
+	}
+}
+
+// viewMove renders the move status picker.
+func (m *Model) viewMove() string {
+	var b strings.Builder
+
+	b.WriteString(tui.TitleStyle.Render("Move Intent"))
+	b.WriteString("\n\n")
+
+	if m.intentToMove != nil {
+		b.WriteString("Moving: " + m.intentToMove.Title + "\n")
+		b.WriteString("Current status: " + m.intentToMove.Status.String() + "\n\n")
+	}
+
+	b.WriteString("Select new status:\n")
+	for i, opt := range moveStatusOptions {
+		cursor := "  "
+		if i == m.moveStatusIdx {
+			cursor = "> "
+		}
+		// Mark current status
+		marker := ""
+		if m.intentToMove != nil && m.intentToMove.Status == opt.status {
+			marker = " (current)"
+		}
+		b.WriteString(cursor + opt.name + marker + "\n")
+	}
+	b.WriteString("\n")
+	b.WriteString(tui.HelpStyle.Render("j/k: navigate . Enter: move . Esc: cancel"))
+
+	return b.String()
+}
+
+// viewConfirmation renders the confirmation dialog.
+func (m *Model) viewConfirmation() string {
+	var b strings.Builder
+
+	b.WriteString(tui.TitleStyle.Render("Confirm Action"))
+	b.WriteString("\n\n")
+	b.WriteString(m.confirmDialog.View())
+
+	return b.String()
+}
+
+// handlePromoteAction promotes the selected intent to the next status.
+func (m *Model) handlePromoteAction() (tea.Model, tea.Cmd) {
+	if selected := m.SelectedIntent(); selected != nil {
+		nextStatus := getNextStatus(selected.Status)
+		if nextStatus == selected.Status {
+			m.statusMessage = "Already at final status: " + selected.Status.String()
+			return m, nil
+		}
+		return m, m.moveIntent(selected, nextStatus)
+	}
+	return m, nil
+}
+
+// handleArchiveAction archives the selected intent with confirmation.
+func (m *Model) handleArchiveAction() (tea.Model, tea.Cmd) {
+	if selected := m.SelectedIntent(); selected != nil {
+		if selected.Status == intent.StatusKilled {
+			m.statusMessage = "Already archived"
+			return m, nil
+		}
+		m.focus = focusConfirm
+		m.pendingAction = "archive"
+		m.pendingIntent = selected
+		m.confirmDialog = tui.NewConfirmationDialog(
+			"Archive Intent",
+			fmt.Sprintf("Archive '%s'?\n\nIt will be moved to killed status.", selected.Title),
+		)
+	}
+	return m, nil
+}
+
+// handleDeleteAction deletes the selected intent with confirmation.
+func (m *Model) handleDeleteAction() (tea.Model, tea.Cmd) {
+	if selected := m.SelectedIntent(); selected != nil {
+		m.focus = focusConfirm
+		m.pendingAction = "delete"
+		m.pendingIntent = selected
+		m.confirmDialog = tui.NewConfirmationDialog(
+			"Delete Intent",
+			fmt.Sprintf("Delete '%s'?\n\nThis cannot be undone.", selected.Title),
+		)
+	}
+	return m, nil
+}

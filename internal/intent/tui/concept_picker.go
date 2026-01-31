@@ -253,17 +253,17 @@ func (m ConceptPickerModel) View() string {
 func (m ConceptPickerModel) viewTypeSelection() string {
 	var b strings.Builder
 
-	b.WriteString(titleStyle.Render("Select concept type:"))
+	b.WriteString(TitleStyle.Render("Select concept type:"))
 	b.WriteString("\n\n")
 
 	if len(m.concepts) == 0 {
-		b.WriteString(helpStyle.Render("(no concepts configured)"))
+		b.WriteString(HelpStyle.Render("(no concepts configured)"))
 	} else {
 		b.WriteString(m.typeWheel.View())
 	}
 
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("↑/↓: navigate • Enter: select • Esc: cancel"))
+	b.WriteString(HelpStyle.Render("↑/↓: navigate • Enter: select • Esc: cancel"))
 
 	return b.String()
 }
@@ -274,11 +274,11 @@ func (m ConceptPickerModel) viewItemSelection() string {
 
 	// Show breadcrumb path with > separator for visual clarity
 	breadcrumb := m.buildBreadcrumb()
-	b.WriteString(titleStyle.Render("📁 " + breadcrumb))
+	b.WriteString(TitleStyle.Render("📁 " + breadcrumb))
 	b.WriteString("\n\n")
 
 	if len(m.items) == 0 {
-		b.WriteString(helpStyle.Render("(no items)"))
+		b.WriteString(HelpStyle.Render("(no items)"))
 	} else {
 		b.WriteString(m.itemWheel.View())
 	}
@@ -287,10 +287,10 @@ func (m ConceptPickerModel) viewItemSelection() string {
 	// Show different help based on depth mode
 	if m.selectedConcept.MaxDepth == nil {
 		// Infinite depth: Enter selects, Right/l drills
-		b.WriteString(helpStyle.Render("↑/↓: navigate • Enter: select • →/l: drill • Backspace: back • Esc: cancel"))
+		b.WriteString(HelpStyle.Render("↑/↓: navigate • Enter: select • →/l: drill • Backspace: back • Esc: cancel"))
 	} else {
 		// Configured depth: Enter auto-drills until max
-		b.WriteString(helpStyle.Render("↑/↓: navigate • Enter: select • Backspace: back • Esc: cancel"))
+		b.WriteString(HelpStyle.Render("↑/↓: navigate • Enter: select • Backspace: back • Esc: cancel"))
 	}
 
 	return b.String()
