@@ -354,20 +354,20 @@ func (m IntentViewerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case viewerSimilarFoundMsg:
-		if msg.err != nil {
+	case ViewerSimilarFoundMsg:
+		if msg.Err != nil {
 			// Could show error message, for now just ignore
 			return m, nil
 		}
 		// Show overlay even if empty so user sees "No similar intents found"
-		m.similarIntents = msg.similar
+		m.similarIntents = msg.Similar
 		m.gatherOverlay = true
 		m.gatherCursorIdx = 0
 		m.selectedSimilar = make(map[string]bool)
 		return m, nil
 
-	case viewerGatherFinishedMsg:
-		if msg.err != nil {
+	case ViewerGatherFinishedMsg:
+		if msg.Err != nil {
 			// Could show error message, for now close overlay
 			m.showGatherTitle = false
 			m.gatherOverlay = false
@@ -515,18 +515,18 @@ func (m IntentViewerModel) revealInFileManager() tea.Cmd {
 	}
 }
 
-// viewerSimilarFoundMsg is sent when similar intents are found.
-type viewerSimilarFoundMsg struct {
-	similar []gather.SimilarResult
-	err     error
+// ViewerSimilarFoundMsg is sent when similar intents are found.
+type ViewerSimilarFoundMsg struct {
+	Similar []gather.SimilarResult
+	Err     error
 }
 
-// viewerGatherFinishedMsg is sent when gather operation completes from viewer.
-type viewerGatherFinishedMsg struct {
-	gatheredID    string
-	gatheredTitle string
-	sourceCount   int
-	err           error
+// ViewerGatherFinishedMsg is sent when gather operation completes from viewer.
+type ViewerGatherFinishedMsg struct {
+	GatheredID    string
+	GatheredTitle string
+	SourceCount   int
+	Err           error
 }
 
 // findSimilarIntents searches for intents similar to the current one.
@@ -536,11 +536,11 @@ func (m IntentViewerModel) findSimilarIntents() tea.Cmd {
 		// Build index if empty (lazy initialization)
 		if m.gatherSvc.IndexSize() == 0 {
 			if err := m.gatherSvc.BuildIndex(m.ctx); err != nil {
-				return viewerSimilarFoundMsg{err: err}
+				return ViewerSimilarFoundMsg{Err: err}
 			}
 		}
 		similar, err := m.gatherSvc.FindSimilar(m.ctx, m.intent.ID, 0.3)
-		return viewerSimilarFoundMsg{similar: similar, err: err}
+		return ViewerSimilarFoundMsg{Similar: similar, Err: err}
 	}
 }
 
@@ -564,12 +564,12 @@ func (m IntentViewerModel) executeViewerGather() tea.Cmd {
 		}
 		result, err := m.gatherSvc.Gather(m.ctx, m.gatherDialog.IntentIDs(), opts)
 		if err != nil {
-			return viewerGatherFinishedMsg{err: err}
+			return ViewerGatherFinishedMsg{Err: err}
 		}
-		return viewerGatherFinishedMsg{
-			gatheredID:    result.Gathered.ID,
-			gatheredTitle: result.Gathered.Title,
-			sourceCount:   result.SourceCount,
+		return ViewerGatherFinishedMsg{
+			GatheredID:    result.Gathered.ID,
+			GatheredTitle: result.Gathered.Title,
+			SourceCount:   result.SourceCount,
 		}
 	}
 }

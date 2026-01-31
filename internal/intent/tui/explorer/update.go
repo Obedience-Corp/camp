@@ -192,6 +192,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case tui.ViewerSimilarFoundMsg:
+		if m.focus == focusViewer {
+			var viewerModel tea.Model
+			viewerModel, cmd = m.viewer.Update(msg)
+			m.viewer = viewerModel.(tui.IntentViewerModel)
+			return m, cmd
+		}
+		return m, nil
+
+	case tui.ViewerGatherFinishedMsg:
+		if m.focus == focusViewer {
+			var viewerModel tea.Model
+			viewerModel, cmd = m.viewer.Update(msg)
+			m.viewer = viewerModel.(tui.IntentViewerModel)
+			return m, cmd
+		}
+		return m, nil
+
 	case gatherFinishedMsg:
 		// Handle gather completion
 		if msg.err != nil {
