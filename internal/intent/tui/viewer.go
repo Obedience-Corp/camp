@@ -248,10 +248,15 @@ func (m IntentViewerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.PageDown()
 		case "ctrl+b", "pgup":
 			m.viewport.PageUp()
-		case "g", "home":
+		case "home":
 			m.viewport.GotoTop()
 		case "G", "end":
 			m.viewport.GotoBottom()
+		case "g":
+			// Gather-similar: find similar intents and show selection overlay
+			if m.gatherSvc != nil {
+				return m, m.findSimilarIntents()
+			}
 		case "H":
 			// Jump to screen top (already visible)
 			m.viewport.GotoTop()
@@ -354,10 +359,7 @@ func (m IntentViewerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Could show error message, for now just ignore
 			return m, nil
 		}
-		if len(msg.similar) == 0 {
-			// No similar intents found
-			return m, nil
-		}
+		// Show overlay even if empty so user sees "No similar intents found"
 		m.similarIntents = msg.similar
 		m.gatherOverlay = true
 		m.gatherCursorIdx = 0
@@ -528,8 +530,15 @@ type viewerGatherFinishedMsg struct {
 }
 
 // findSimilarIntents searches for intents similar to the current one.
+// It builds the index if needed before searching.
 func (m IntentViewerModel) findSimilarIntents() tea.Cmd {
 	return func() tea.Msg {
+		// Build index if empty (lazy initialization)
+		if m.gatherSvc.IndexSize() == 0 {
+			if err := m.gatherSvc.BuildIndex(m.ctx); err != nil {
+				return viewerSimilarFoundMsg{err: err}
+			}
+		}
 		similar, err := m.gatherSvc.FindSimilar(m.ctx, m.intent.ID, 0.3)
 		return viewerSimilarFoundMsg{similar: similar, err: err}
 	}
