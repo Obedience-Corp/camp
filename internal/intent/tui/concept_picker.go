@@ -17,6 +17,15 @@ const (
 	stepDone
 )
 
+// noneOptionLabel is displayed as the first option to skip concept selection.
+const noneOptionLabel = "(none) - No concept association"
+
+// newProjectLabel is displayed as an option for creating new project intents.
+const newProjectLabel = "+ New Project"
+
+// newProjectPath is the special path used for new project intents.
+const newProjectPath = "projects/new"
+
 // ConceptPickerModel provides a cascading selection UI for concepts.
 // First, the user selects a concept type (e.g., Projects, Festivals).
 // Then, they can drill into items within that concept.
@@ -50,9 +59,11 @@ func NewConceptPickerModel(ctx context.Context, svc concept.Service) ConceptPick
 		concepts = nil
 	}
 
-	names := make([]string, len(concepts))
+	// Build names with NONE as first option, then concepts
+	names := make([]string, len(concepts)+1)
+	names[0] = noneOptionLabel
 	for i, c := range concepts {
-		names[i] = c.Name + " - " + c.Description
+		names[i+1] = c.Name + " - " + c.Description
 	}
 
 	tw := NewScrollWheel(names)
@@ -97,10 +108,17 @@ func (m ConceptPickerModel) updateTypeSelection(msg tea.KeyMsg) (ConceptPickerMo
 	case "down", "j":
 		m.typeWheel, _ = m.typeWheel.Update(msg)
 	case "enter":
-		// Get selected concept and advance to item selection
 		idx := m.typeWheel.Selected()
-		if idx >= 0 && idx < len(m.concepts) {
-			c := m.concepts[idx]
+		if idx == 0 {
+			// NONE selected - no concept association
+			m.selectedPath = ""
+			m.step = stepDone
+			return m, nil
+		}
+		// Adjust index for actual concepts (offset by 1 for NONE option)
+		conceptIdx := idx - 1
+		if conceptIdx >= 0 && conceptIdx < len(m.concepts) {
+			c := m.concepts[conceptIdx]
 			m.selectedConcept = &c
 
 			// If concept has items, advance to item selection
@@ -214,12 +232,27 @@ func (m *ConceptPickerModel) loadItems(subpath string) {
 		return
 	}
 
+	// Prepend "New" option for projects concept at root level
+	if m.selectedConcept.Name == "p" && subpath == "" {
+		newItem := concept.Item{
+			Name:          newProjectLabel,
+			Path:          newProjectPath,
+			IsDir:         false,
+			Children:      0,
+			DrillDisabled: true,
+		}
+		items = append([]concept.Item{newItem}, items...)
+	}
+
 	m.items = items
 
 	// Build names for the scroll wheel with directory indicators
 	names := make([]string, len(items))
 	for i, item := range items {
-		if item.IsDir {
+		if item.Name == newProjectLabel {
+			// Special styling for "New" option
+			names[i] = "✨ " + item.Name
+		} else if item.IsDir {
 			if item.DrillDisabled {
 				// Drilling disabled by depth limit - no arrow, no "(empty)"
 				names[i] = "  " + item.Name
@@ -253,17 +286,17 @@ func (m ConceptPickerModel) View() string {
 func (m ConceptPickerModel) viewTypeSelection() string {
 	var b strings.Builder
 
-	b.WriteString(titleStyle.Render("Select concept type:"))
+	b.WriteString(TitleStyle.Render("Select concept type:"))
 	b.WriteString("\n\n")
 
 	if len(m.concepts) == 0 {
-		b.WriteString(helpStyle.Render("(no concepts configured)"))
+		b.WriteString(HelpStyle.Render("(no concepts configured)"))
 	} else {
 		b.WriteString(m.typeWheel.View())
 	}
 
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("↑/↓: navigate • Enter: select • Esc: cancel"))
+	b.WriteString(HelpStyle.Render("↑/↓: navigate • Enter: select • Esc: cancel"))
 
 	return b.String()
 }
@@ -274,11 +307,11 @@ func (m ConceptPickerModel) viewItemSelection() string {
 
 	// Show breadcrumb path with > separator for visual clarity
 	breadcrumb := m.buildBreadcrumb()
-	b.WriteString(titleStyle.Render("📁 " + breadcrumb))
+	b.WriteString(TitleStyle.Render("📁 " + breadcrumb))
 	b.WriteString("\n\n")
 
 	if len(m.items) == 0 {
-		b.WriteString(helpStyle.Render("(no items)"))
+		b.WriteString(HelpStyle.Render("(no items)"))
 	} else {
 		b.WriteString(m.itemWheel.View())
 	}
@@ -287,10 +320,10 @@ func (m ConceptPickerModel) viewItemSelection() string {
 	// Show different help based on depth mode
 	if m.selectedConcept.MaxDepth == nil {
 		// Infinite depth: Enter selects, Right/l drills
-		b.WriteString(helpStyle.Render("↑/↓: navigate • Enter: select • →/l: drill • Backspace: back • Esc: cancel"))
+		b.WriteString(HelpStyle.Render("↑/↓: navigate • Enter: select • →/l: drill • Backspace: back • Esc: cancel"))
 	} else {
 		// Configured depth: Enter auto-drills until max
-		b.WriteString(helpStyle.Render("↑/↓: navigate • Enter: select • Backspace: back • Esc: cancel"))
+		b.WriteString(HelpStyle.Render("↑/↓: navigate • Enter: select • Backspace: back • Esc: cancel"))
 	}
 
 	return b.String()

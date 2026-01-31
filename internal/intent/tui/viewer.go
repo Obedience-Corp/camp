@@ -14,6 +14,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/obediencecorp/camp/internal/intent"
+	"github.com/obediencecorp/camp/internal/intent/gather"
 )
 
 // IntentViewerModel is a full-screen viewer for reading intent documents.
@@ -44,6 +45,15 @@ type IntentViewerModel struct {
 	moveOverlay   bool
 	moveStatusIdx int
 
+	// Gather-similar overlay
+	gatherSvc       *gather.Service        // Gather service for finding similar intents
+	gatherOverlay   bool                   // Whether gather-similar overlay is shown
+	similarIntents  []gather.SimilarResult // Similar intents found
+	selectedSimilar map[string]bool        // Selected similar intent IDs
+	gatherCursorIdx int                    // Cursor position in similar list
+	gatherDialog    GatherDialog           // Title input dialog
+	showGatherTitle bool                   // Whether title input is shown
+
 	// Navigation return
 	refreshOnReturn bool // True if intent was modified
 
@@ -51,52 +61,59 @@ type IntentViewerModel struct {
 	pendingAction string
 }
 
-// viewerClosedMsg is sent when the viewer is closed.
-type viewerClosedMsg struct {
-	intentID   string
-	refresh    bool // True if intent was modified
-	finalIndex int  // Index of intent when viewer closed (for cursor sync)
+// ViewerClosedMsg is sent when the viewer is closed.
+type ViewerClosedMsg struct {
+	IntentID   string
+	Refresh    bool // True if intent was modified
+	FinalIndex int  // Index of intent when viewer closed (for cursor sync)
 }
 
-// viewerEditorFinishedMsg is sent when editor closes from viewer.
-type viewerEditorFinishedMsg struct {
-	err  error
-	path string
+// ViewerEditorFinishedMsg is sent when editor closes from viewer.
+type ViewerEditorFinishedMsg struct {
+	Err  error
+	Path string
 }
 
-// viewerMoveFinishedMsg is sent when move completes from viewer.
-type viewerMoveFinishedMsg struct {
-	err       error
-	newStatus intent.Status
+// ViewerMoveFinishedMsg is sent when move completes from viewer.
+type ViewerMoveFinishedMsg struct {
+	Err       error
+	NewStatus intent.Status
 }
 
-// viewerArchiveFinishedMsg is sent when archive completes from viewer.
-type viewerArchiveFinishedMsg struct {
-	err error
+// ViewerArchiveFinishedMsg is sent when archive completes from viewer.
+type ViewerArchiveFinishedMsg struct {
+	Err error
 }
 
-// viewerDeleteFinishedMsg is sent when delete completes from viewer.
-type viewerDeleteFinishedMsg struct {
-	err error
+// ViewerDeleteFinishedMsg is sent when delete completes from viewer.
+type ViewerDeleteFinishedMsg struct {
+	Err error
 }
 
 // NewIntentViewerModel creates a new intent viewer for the given intent.
 // siblings contains all intents in the same status group for left/right navigation.
 // currentIndex is the position of the current intent within siblings.
 func NewIntentViewerModel(ctx context.Context, i *intent.Intent, siblings []*intent.Intent, currentIndex int, svc *intent.IntentService, width, height int) IntentViewerModel {
+	return NewIntentViewerModelWithGather(ctx, i, siblings, currentIndex, svc, nil, width, height)
+}
+
+// NewIntentViewerModelWithGather creates a viewer with gather service for gather-similar feature.
+func NewIntentViewerModelWithGather(ctx context.Context, i *intent.Intent, siblings []*intent.Intent, currentIndex int, svc *intent.IntentService, gatherSvc *gather.Service, width, height int) IntentViewerModel {
 	vp := viewport.New(width-4, height-8) // Account for header, footer, borders
 	vp.Style = lipgloss.NewStyle().Padding(0, 1)
 
 	m := IntentViewerModel{
-		intent:       i,
-		siblings:     siblings,
-		currentIndex: currentIndex,
-		service:      svc,
-		ctx:          ctx,
-		viewport:     vp,
-		width:        width,
-		height:       height,
-		ready:        true,
+		intent:          i,
+		siblings:        siblings,
+		currentIndex:    currentIndex,
+		service:         svc,
+		gatherSvc:       gatherSvc,
+		ctx:             ctx,
+		viewport:        vp,
+		width:           width,
+		height:          height,
+		ready:           true,
+		selectedSimilar: make(map[string]bool),
 	}
 
 	// Load and render content
@@ -107,20 +124,42 @@ func NewIntentViewerModel(ctx context.Context, i *intent.Intent, siblings []*int
 
 // loadContent reads the intent file and renders markdown.
 func (m *IntentViewerModel) loadContent() {
-	if m.intent == nil || m.intent.Path == "" {
-		m.content = "No content available"
+	if m.intent == nil {
+		m.content = "DEBUG: intent is nil"
+		m.viewport.SetContent(m.content)
+		return
+	}
+
+	if m.intent.Path == "" {
+		m.content = fmt.Sprintf("DEBUG: intent.Path is empty\nIntent ID: %s\nIntent Title: %s", m.intent.ID, m.intent.Title)
 		m.viewport.SetContent(m.content)
 		return
 	}
 
 	data, err := os.ReadFile(m.intent.Path)
 	if err != nil {
-		m.content = "Error loading content: " + err.Error()
+		m.content = fmt.Sprintf("DEBUG: Error reading file\nPath: %s\nError: %s", m.intent.Path, err.Error())
+		m.viewport.SetContent(m.content)
+		return
+	}
+
+	if len(data) == 0 {
+		m.content = fmt.Sprintf("DEBUG: File is empty\nPath: %s", m.intent.Path)
 		m.viewport.SetContent(m.content)
 		return
 	}
 
 	m.rawContent = string(data)
+
+	// Check what stripFrontmatter returns
+	stripped := stripFrontmatter(m.rawContent)
+	if strings.TrimSpace(stripped) == "" {
+		m.content = fmt.Sprintf("DEBUG: Content empty after stripFrontmatter\nPath: %s\nRaw length: %d bytes\nFirst 500 chars:\n%s",
+			m.intent.Path, len(data), truncate(m.rawContent, 500))
+		m.viewport.SetContent(m.content)
+		return
+	}
+
 	m.renderContent()
 }
 
@@ -209,10 +248,15 @@ func (m IntentViewerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.PageDown()
 		case "ctrl+b", "pgup":
 			m.viewport.PageUp()
-		case "g", "home":
+		case "home":
 			m.viewport.GotoTop()
 		case "G", "end":
 			m.viewport.GotoBottom()
+		case "g":
+			// Gather-similar: find similar intents and show selection overlay
+			if m.gatherSvc != nil {
+				return m, m.findSimilarIntents()
+			}
 		case "H":
 			// Jump to screen top (already visible)
 			m.viewport.GotoTop()
@@ -284,31 +328,55 @@ func (m IntentViewerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewport.Height = msg.Height - 8
 		m.renderContent()
 
-	case viewerEditorFinishedMsg:
+	case ViewerEditorFinishedMsg:
 		m.refreshOnReturn = true
 		m.loadContent() // Reload content after edit
 		return m, nil
 
-	case viewerMoveFinishedMsg:
-		if msg.err == nil {
-			m.intent.Status = msg.newStatus
+	case ViewerMoveFinishedMsg:
+		if msg.Err == nil {
+			m.intent.Status = msg.NewStatus
 			m.refreshOnReturn = true
 		}
 		return m, nil
 
-	case viewerArchiveFinishedMsg:
-		if msg.err == nil {
+	case ViewerArchiveFinishedMsg:
+		if msg.Err == nil {
 			m.refreshOnReturn = true
 			return m, m.closeViewer()
 		}
 		return m, nil
 
-	case viewerDeleteFinishedMsg:
-		if msg.err == nil {
+	case ViewerDeleteFinishedMsg:
+		if msg.Err == nil {
 			m.refreshOnReturn = true
 			return m, m.closeViewer()
 		}
 		return m, nil
+
+	case ViewerSimilarFoundMsg:
+		if msg.Err != nil {
+			// Could show error message, for now just ignore
+			return m, nil
+		}
+		// Show overlay even if empty so user sees "No similar intents found"
+		m.similarIntents = msg.Similar
+		m.gatherOverlay = true
+		m.gatherCursorIdx = 0
+		m.selectedSimilar = make(map[string]bool)
+		return m, nil
+
+	case ViewerGatherFinishedMsg:
+		if msg.Err != nil {
+			// Could show error message, for now close overlay
+			m.showGatherTitle = false
+			m.gatherOverlay = false
+			m.selectedSimilar = make(map[string]bool)
+			return m, nil
+		}
+		// Gather succeeded - close viewer and refresh
+		m.refreshOnReturn = true
+		return m, m.closeViewer()
 	}
 
 	m.viewport, cmd = m.viewport.Update(msg)
@@ -318,10 +386,10 @@ func (m IntentViewerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // closeViewer returns a command to close the viewer.
 func (m IntentViewerModel) closeViewer() tea.Cmd {
 	return func() tea.Msg {
-		return viewerClosedMsg{
-			intentID:   m.intent.ID,
-			refresh:    m.refreshOnReturn,
-			finalIndex: m.currentIndex,
+		return ViewerClosedMsg{
+			IntentID:   m.intent.ID,
+			Refresh:    m.refreshOnReturn,
+			FinalIndex: m.currentIndex,
 		}
 	}
 }
@@ -364,9 +432,9 @@ func (m *IntentViewerModel) navigateNext() {
 func (m IntentViewerModel) openInEditor() tea.Cmd {
 	if _, err := os.Stat(m.intent.Path); os.IsNotExist(err) {
 		return func() tea.Msg {
-			return viewerEditorFinishedMsg{
-				err:  fmt.Errorf("file no longer exists: %s", filepath.Base(m.intent.Path)),
-				path: m.intent.Path,
+			return ViewerEditorFinishedMsg{
+				Err:  fmt.Errorf("file no longer exists: %s", filepath.Base(m.intent.Path)),
+				Path: m.intent.Path,
 			}
 		}
 	}
@@ -378,7 +446,7 @@ func (m IntentViewerModel) openInEditor() tea.Cmd {
 
 	c := exec.Command(editor, m.intent.Path)
 	return tea.ExecProcess(c, func(err error) tea.Msg {
-		return viewerEditorFinishedMsg{err: err, path: m.intent.Path}
+		return ViewerEditorFinishedMsg{Err: err, Path: m.intent.Path}
 	})
 }
 
@@ -386,9 +454,9 @@ func (m IntentViewerModel) openInEditor() tea.Cmd {
 func (m IntentViewerModel) moveIntent(newStatus intent.Status) tea.Cmd {
 	return func() tea.Msg {
 		_, err := m.service.Move(m.ctx, m.intent.ID, newStatus)
-		return viewerMoveFinishedMsg{
-			err:       err,
-			newStatus: newStatus,
+		return ViewerMoveFinishedMsg{
+			Err:       err,
+			NewStatus: newStatus,
 		}
 	}
 }
@@ -397,7 +465,7 @@ func (m IntentViewerModel) moveIntent(newStatus intent.Status) tea.Cmd {
 func (m IntentViewerModel) archiveIntent() tea.Cmd {
 	return func() tea.Msg {
 		_, err := m.service.Archive(m.ctx, m.intent.ID)
-		return viewerArchiveFinishedMsg{err: err}
+		return ViewerArchiveFinishedMsg{Err: err}
 	}
 }
 
@@ -405,7 +473,7 @@ func (m IntentViewerModel) archiveIntent() tea.Cmd {
 func (m IntentViewerModel) deleteIntent() tea.Cmd {
 	return func() tea.Msg {
 		err := m.service.Delete(m.ctx, m.intent.ID)
-		return viewerDeleteFinishedMsg{err: err}
+		return ViewerDeleteFinishedMsg{Err: err}
 	}
 }
 
@@ -447,6 +515,65 @@ func (m IntentViewerModel) revealInFileManager() tea.Cmd {
 	}
 }
 
+// ViewerSimilarFoundMsg is sent when similar intents are found.
+type ViewerSimilarFoundMsg struct {
+	Similar []gather.SimilarResult
+	Err     error
+}
+
+// ViewerGatherFinishedMsg is sent when gather operation completes from viewer.
+type ViewerGatherFinishedMsg struct {
+	GatheredID    string
+	GatheredTitle string
+	SourceCount   int
+	Err           error
+}
+
+// findSimilarIntents searches for intents similar to the current one.
+// It builds the index if needed before searching.
+func (m IntentViewerModel) findSimilarIntents() tea.Cmd {
+	return func() tea.Msg {
+		// Build index if empty (lazy initialization)
+		if m.gatherSvc.IndexSize() == 0 {
+			if err := m.gatherSvc.BuildIndex(m.ctx); err != nil {
+				return ViewerSimilarFoundMsg{Err: err}
+			}
+		}
+		similar, err := m.gatherSvc.FindSimilar(m.ctx, m.intent.ID, 0.3)
+		return ViewerSimilarFoundMsg{Similar: similar, Err: err}
+	}
+}
+
+// getSelectedSimilarIntents returns the full Intent objects for selected similar intents.
+func (m *IntentViewerModel) getSelectedSimilarIntents() []*intent.Intent {
+	var intents []*intent.Intent
+	for _, sim := range m.similarIntents {
+		if m.selectedSimilar[sim.Intent.ID] {
+			intents = append(intents, sim.Intent)
+		}
+	}
+	return intents
+}
+
+// executeViewerGather runs the gather operation with current + selected similar intents.
+func (m IntentViewerModel) executeViewerGather() tea.Cmd {
+	return func() tea.Msg {
+		opts := gather.GatherOptions{
+			Title:          m.gatherDialog.Title(),
+			ArchiveSources: m.gatherDialog.ArchiveSources(),
+		}
+		result, err := m.gatherSvc.Gather(m.ctx, m.gatherDialog.IntentIDs(), opts)
+		if err != nil {
+			return ViewerGatherFinishedMsg{Err: err}
+		}
+		return ViewerGatherFinishedMsg{
+			GatheredID:    result.Gathered.ID,
+			GatheredTitle: result.Gathered.Title,
+			SourceCount:   result.SourceCount,
+		}
+	}
+}
+
 // View implements tea.Model.
 func (m IntentViewerModel) View() string {
 	if !m.ready {
@@ -459,6 +586,12 @@ func (m IntentViewerModel) View() string {
 	}
 	if m.moveOverlay {
 		return m.viewWithMoveOverlay()
+	}
+	if m.showGatherTitle {
+		return m.viewWithGatherTitleOverlay()
+	}
+	if m.gatherOverlay {
+		return m.viewWithGatherSimilarOverlay()
 	}
 
 	var b strings.Builder
@@ -491,8 +624,12 @@ func (m IntentViewerModel) View() string {
 
 // renderHeader renders the header with intent metadata.
 func (m IntentViewerModel) renderHeader() string {
+	// DEBUG: Show path and content info
+	debugInfo := fmt.Sprintf("[DEBUG: Path=%s ContentLen=%d ViewportH=%d]",
+		m.intent.Path, len(m.content), m.viewport.Height)
+
 	// Title line
-	title := viewerTitleStyle.Render(m.intent.Title)
+	title := viewerTitleStyle.Render(m.intent.Title + "\n" + debugInfo)
 
 	// Metadata line
 	typeBadge := viewerBadgeStyle.Render(fmt.Sprintf("[%s]", m.intent.Type))
@@ -539,8 +676,11 @@ func renderStatusBadge(s intent.Status) string {
 
 // renderFooter renders the footer with actions and scroll position.
 func (m IntentViewerModel) renderFooter() string {
-	// Actions
+	// Actions - include gather if gather service is available
 	actions := "[e]dit  [m]ove  [p]romote  [a]rchive  [d]elete  [o]pen  [O] reveal"
+	if m.gatherSvc != nil {
+		actions = "[e]dit  [g]ather  [m]ove  [p]romote  [a]rchive  [d]elete  [o]pen  [O] reveal"
+	}
 
 	// Scroll percentage
 	scrollPct := int(m.viewport.ScrollPercent() * 100)
@@ -608,7 +748,60 @@ func (m IntentViewerModel) viewWithMoveOverlay() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("j/k: navigate • Enter: move • Esc: cancel"))
+	b.WriteString(HelpStyle.Render("j/k: navigate • Enter: move • Esc: cancel"))
+
+	return b.String()
+}
+
+// viewWithGatherSimilarOverlay renders the view with gather-similar selection overlay.
+func (m IntentViewerModel) viewWithGatherSimilarOverlay() string {
+	var b strings.Builder
+
+	b.WriteString(viewerTitleStyle.Render("Gather Similar Intents"))
+	b.WriteString("\n\n")
+	b.WriteString("Current: " + m.intent.Title + "\n\n")
+	b.WriteString("Select similar intents to gather:\n")
+
+	if len(m.similarIntents) == 0 {
+		b.WriteString(HelpStyle.Render("  No similar intents found.\n"))
+	} else {
+		for i, sim := range m.similarIntents {
+			cursor := "  "
+			if i == m.gatherCursorIdx {
+				cursor = "> "
+			}
+			checkbox := "[ ]"
+			if m.selectedSimilar[sim.Intent.ID] {
+				checkbox = "[x]"
+			}
+			// Show title and similarity score
+			title := sim.Intent.Title
+			if len(title) > 40 {
+				title = title[:37] + "..."
+			}
+			score := fmt.Sprintf("%.0f%%", sim.Score*100)
+			b.WriteString(fmt.Sprintf("%s%s %s (%s)\n", cursor, checkbox, title, score))
+		}
+	}
+
+	selectedCount := len(m.selectedSimilar)
+	b.WriteString("\n")
+	if selectedCount > 0 {
+		b.WriteString(fmt.Sprintf("Selected: %d intent(s)\n", selectedCount))
+	}
+	b.WriteString("\n")
+	b.WriteString(HelpStyle.Render("j/k: navigate • Space: toggle • Enter: proceed • Esc: cancel"))
+
+	return b.String()
+}
+
+// viewWithGatherTitleOverlay renders the gather dialog for title input.
+func (m IntentViewerModel) viewWithGatherTitleOverlay() string {
+	var b strings.Builder
+
+	b.WriteString(viewerTitleStyle.Render("Gather Intents"))
+	b.WriteString("\n\n")
+	b.WriteString(m.gatherDialog.View())
 
 	return b.String()
 }
@@ -633,3 +826,11 @@ var (
 	viewerFooterStyle = lipgloss.NewStyle().
 				Foreground(pal.TextMuted)
 )
+
+// truncate truncates a string to maxLen characters.
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
+}

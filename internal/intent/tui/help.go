@@ -21,7 +21,6 @@ NAVIGATION
   Ctrl+d      Half page down
   Ctrl+u      Half page up
   Enter       View intent / Toggle group
-  Space       Toggle group expansion
   Tab         Switch focus (list/preview)
   ←/→ h/l     Prev/next intent (in viewer)
 
@@ -37,13 +36,18 @@ QUICK ACTIONS
   d           Delete intent
   m           Move intent to status
 
+GATHER (Multi-Select)
+  Space       Select/deselect intent
+  Ctrl+g      Gather selected intents
+  Escape      Exit multi-select mode
+
 FILTERS
   /           Search intents (fuzzy)
   t           Filter by type
   s           Filter by status
   c           Filter by concept
   C           Clear concept filter
-  Escape      Clear filter/cancel
+  Escape      Clear filters
 
 VIEW
   v           Toggle preview pane

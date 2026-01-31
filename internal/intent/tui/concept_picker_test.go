@@ -68,6 +68,11 @@ func TestConceptPicker_InitialState(t *testing.T) {
 		t.Errorf("Expected 2 concepts, got %d", len(picker.concepts))
 	}
 
+	// Initial selection should be 0 (NONE option)
+	if picker.typeWheel.Selected() != 0 {
+		t.Errorf("Expected initial selection to be 0 (NONE), got %d", picker.typeWheel.Selected())
+	}
+
 	if picker.Done() {
 		t.Error("Picker should not be done initially")
 	}
@@ -77,35 +82,36 @@ func TestConceptPicker_InitialState(t *testing.T) {
 	}
 }
 
-func TestConceptPicker_TypeSelectionNavigation(t *testing.T) {
+func TestConceptPicker_SelectNone(t *testing.T) {
 	svc := mockConceptService{
 		concepts: []concept.Concept{
 			{Name: "p", Path: "projects", Description: "Projects", HasItems: true},
-			{Name: "f", Path: "festivals", Description: "Festivals", HasItems: true},
 		},
 	}
 
 	picker := NewConceptPickerModel(context.Background(), svc)
 
-	// Initial selection should be 0
-	if picker.typeWheel.Selected() != 0 {
-		t.Errorf("Expected initial selection 0, got %d", picker.typeWheel.Selected())
+	// Initial selection is 0 (NONE), press enter
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if picker.step != stepDone {
+		t.Errorf("Expected step to be stepDone after selecting NONE, got %v", picker.step)
 	}
 
-	// Navigate down
-	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
-	if picker.typeWheel.Selected() != 1 {
-		t.Errorf("Expected selection 1 after down, got %d", picker.typeWheel.Selected())
+	if picker.selectedPath != "" {
+		t.Errorf("Expected empty selectedPath for NONE, got %q", picker.selectedPath)
 	}
 
-	// Navigate up
-	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
-	if picker.typeWheel.Selected() != 0 {
-		t.Errorf("Expected selection 0 after up, got %d", picker.typeWheel.Selected())
+	if picker.Cancelled() {
+		t.Error("Picker should not be cancelled when NONE is selected")
+	}
+
+	if picker.selectedConcept != nil {
+		t.Error("Expected selectedConcept to be nil when NONE is selected")
 	}
 }
 
-func TestConceptPicker_SelectConceptType(t *testing.T) {
+func TestConceptPicker_NewProjectOption(t *testing.T) {
 	svc := mockConceptService{
 		concepts: []concept.Concept{
 			{Name: "p", Path: "projects", Description: "Projects", HasItems: true},
@@ -119,6 +125,88 @@ func TestConceptPicker_SelectConceptType(t *testing.T) {
 
 	picker := NewConceptPickerModel(context.Background(), svc)
 
+	// Navigate to projects concept (skip NONE)
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	// Should have 2 items: "New" option + "camp"
+	if len(picker.items) != 2 {
+		t.Errorf("Expected 2 items (New + camp), got %d", len(picker.items))
+	}
+
+	// First item should be the "New" option
+	if picker.items[0].Name != "+ New Project" {
+		t.Errorf("Expected first item to be '+ New Project', got %q", picker.items[0].Name)
+	}
+
+	if picker.items[0].Path != "projects/new" {
+		t.Errorf("Expected first item path to be 'projects/new', got %q", picker.items[0].Path)
+	}
+
+	// Select the "New" option (it's already selected as first item)
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if picker.step != stepDone {
+		t.Errorf("Expected step to be stepDone after selecting New, got %v", picker.step)
+	}
+
+	if picker.selectedPath != "projects/new" {
+		t.Errorf("Expected selectedPath to be 'projects/new', got %q", picker.selectedPath)
+	}
+}
+
+func TestConceptPicker_TypeSelectionNavigation(t *testing.T) {
+	svc := mockConceptService{
+		concepts: []concept.Concept{
+			{Name: "p", Path: "projects", Description: "Projects", HasItems: true},
+			{Name: "f", Path: "festivals", Description: "Festivals", HasItems: true},
+		},
+	}
+
+	picker := NewConceptPickerModel(context.Background(), svc)
+
+	// Initial selection should be 0 (NONE)
+	if picker.typeWheel.Selected() != 0 {
+		t.Errorf("Expected initial selection 0, got %d", picker.typeWheel.Selected())
+	}
+
+	// Navigate down to first concept (index 1)
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	if picker.typeWheel.Selected() != 1 {
+		t.Errorf("Expected selection 1 after down, got %d", picker.typeWheel.Selected())
+	}
+
+	// Navigate down to second concept (index 2)
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	if picker.typeWheel.Selected() != 2 {
+		t.Errorf("Expected selection 2 after second down, got %d", picker.typeWheel.Selected())
+	}
+
+	// Navigate up back to first concept
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+	if picker.typeWheel.Selected() != 1 {
+		t.Errorf("Expected selection 1 after up, got %d", picker.typeWheel.Selected())
+	}
+}
+
+func TestConceptPicker_SelectConceptType(t *testing.T) {
+	// Use a non-"p" concept to avoid the "New" item injection
+	svc := mockConceptService{
+		concepts: []concept.Concept{
+			{Name: "docs", Path: "docs", Description: "Documentation", HasItems: true},
+		},
+		items: map[string][]concept.Item{
+			"docs:": {
+				{Name: "api", Path: "docs/api", IsDir: true, Children: 1},
+			},
+		},
+	}
+
+	picker := NewConceptPickerModel(context.Background(), svc)
+
+	// Navigate past NONE to the first concept
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+
 	// Select the concept
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
@@ -128,8 +216,8 @@ func TestConceptPicker_SelectConceptType(t *testing.T) {
 
 	if picker.selectedConcept == nil {
 		t.Error("Expected selectedConcept to be set")
-	} else if picker.selectedConcept.Name != "p" {
-		t.Errorf("Expected selectedConcept.Name to be 'p', got %q", picker.selectedConcept.Name)
+	} else if picker.selectedConcept.Name != "docs" {
+		t.Errorf("Expected selectedConcept.Name to be 'docs', got %q", picker.selectedConcept.Name)
 	}
 
 	if len(picker.items) != 1 {
@@ -146,6 +234,9 @@ func TestConceptPicker_SelectConceptWithoutItems(t *testing.T) {
 
 	picker := NewConceptPickerModel(context.Background(), svc)
 
+	// Navigate past NONE to the concept
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+
 	// Select the concept
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
@@ -161,31 +252,33 @@ func TestConceptPicker_SelectConceptWithoutItems(t *testing.T) {
 
 func TestConceptPicker_DrillIntoDirectory(t *testing.T) {
 	// Use MaxDepth so Enter auto-drills (infinite depth would require right/l to drill)
+	// Use non-"p" concept to avoid "New" item injection
 	svc := mockConceptService{
 		concepts: []concept.Concept{
-			{Name: "p", Path: "projects", Description: "Projects", HasItems: true, MaxDepth: intPtr(5)},
+			{Name: "docs", Path: "docs", Description: "Documentation", HasItems: true, MaxDepth: intPtr(5)},
 		},
 		items: map[string][]concept.Item{
-			"p:": {
-				{Name: "camp", Path: "projects/camp", IsDir: true, Children: 2},
+			"docs:": {
+				{Name: "api", Path: "docs/api", IsDir: true, Children: 2},
 			},
-			"p:camp": {
-				{Name: "internal", Path: "projects/camp/internal", IsDir: true, Children: 1},
-				{Name: "main.go", Path: "projects/camp/main.go", IsDir: false},
+			"docs:api": {
+				{Name: "internal", Path: "docs/api/internal", IsDir: true, Children: 1},
+				{Name: "main.go", Path: "docs/api/main.go", IsDir: false},
 			},
 		},
 	}
 
 	picker := NewConceptPickerModel(context.Background(), svc)
 
-	// Select concept type
+	// Navigate past NONE to select concept type
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
-	// Drill into camp directory
+	// Drill into api directory
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
-	if picker.currentSubpath != "camp" {
-		t.Errorf("Expected currentSubpath to be 'camp', got %q", picker.currentSubpath)
+	if picker.currentSubpath != "api" {
+		t.Errorf("Expected currentSubpath to be 'api', got %q", picker.currentSubpath)
 	}
 
 	if len(picker.pathHistory) != 1 {
@@ -193,25 +286,27 @@ func TestConceptPicker_DrillIntoDirectory(t *testing.T) {
 	}
 
 	if len(picker.items) != 2 {
-		t.Errorf("Expected 2 items at camp level, got %d", len(picker.items))
+		t.Errorf("Expected 2 items at api level, got %d", len(picker.items))
 	}
 }
 
 func TestConceptPicker_SelectFile(t *testing.T) {
+	// Use non-"p" concept to avoid "New" item injection
 	svc := mockConceptService{
 		concepts: []concept.Concept{
-			{Name: "p", Path: "projects", Description: "Projects", HasItems: true},
+			{Name: "docs", Path: "docs", Description: "Documentation", HasItems: true},
 		},
 		items: map[string][]concept.Item{
-			"p:": {
-				{Name: "README.md", Path: "projects/README.md", IsDir: false},
+			"docs:": {
+				{Name: "README.md", Path: "docs/README.md", IsDir: false},
 			},
 		},
 	}
 
 	picker := NewConceptPickerModel(context.Background(), svc)
 
-	// Select concept type
+	// Navigate past NONE to select concept type
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
 	// Select file
@@ -221,8 +316,8 @@ func TestConceptPicker_SelectFile(t *testing.T) {
 		t.Errorf("Expected step to be stepDone after selecting file, got %v", picker.step)
 	}
 
-	if picker.selectedPath != "projects/README.md" {
-		t.Errorf("Expected selectedPath to be 'projects/README.md', got %q", picker.selectedPath)
+	if picker.selectedPath != "docs/README.md" {
+		t.Errorf("Expected selectedPath to be 'docs/README.md', got %q", picker.selectedPath)
 	}
 
 	if picker.Cancelled() {
@@ -232,39 +327,41 @@ func TestConceptPicker_SelectFile(t *testing.T) {
 
 func TestConceptPicker_BackspaceFromNested(t *testing.T) {
 	// Use MaxDepth so Enter auto-drills (infinite depth would require right/l to drill)
+	// Use non-"p" concept to avoid "New" item injection
 	svc := mockConceptService{
 		concepts: []concept.Concept{
-			{Name: "p", Path: "projects", Description: "Projects", HasItems: true, MaxDepth: intPtr(5)},
+			{Name: "docs", Path: "docs", Description: "Documentation", HasItems: true, MaxDepth: intPtr(5)},
 		},
 		items: map[string][]concept.Item{
-			"p:": {
-				{Name: "camp", Path: "projects/camp", IsDir: true, Children: 1},
+			"docs:": {
+				{Name: "api", Path: "docs/api", IsDir: true, Children: 1},
 			},
-			"p:camp": {
-				{Name: "internal", Path: "projects/camp/internal", IsDir: true, Children: 1},
+			"docs:api": {
+				{Name: "internal", Path: "docs/api/internal", IsDir: true, Children: 1},
 			},
-			"p:camp/internal": {
-				{Name: "file.go", Path: "projects/camp/internal/file.go", IsDir: false},
+			"docs:api/internal": {
+				{Name: "file.go", Path: "docs/api/internal/file.go", IsDir: false},
 			},
 		},
 	}
 
 	picker := NewConceptPickerModel(context.Background(), svc)
 
-	// Navigate to projects/camp/internal
-	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter}) // Select concept
-	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter}) // Drill into camp
-	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter}) // Drill into internal
+	// Navigate to docs/api/internal
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}) // Skip NONE
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})                     // Select concept
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})                     // Drill into api
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})                     // Drill into internal
 
-	if picker.currentSubpath != "camp/internal" {
-		t.Errorf("Expected currentSubpath to be 'camp/internal', got %q", picker.currentSubpath)
+	if picker.currentSubpath != "api/internal" {
+		t.Errorf("Expected currentSubpath to be 'api/internal', got %q", picker.currentSubpath)
 	}
 
-	// Backspace to go back to camp
+	// Backspace to go back to api
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyBackspace})
 
-	if picker.currentSubpath != "camp" {
-		t.Errorf("Expected currentSubpath to be 'camp' after backspace, got %q", picker.currentSubpath)
+	if picker.currentSubpath != "api" {
+		t.Errorf("Expected currentSubpath to be 'api' after backspace, got %q", picker.currentSubpath)
 	}
 
 	// Backspace to go back to root
@@ -317,7 +414,8 @@ func TestConceptPicker_CancelFromItemSelection(t *testing.T) {
 
 	picker := NewConceptPickerModel(context.Background(), svc)
 
-	// Navigate to item selection
+	// Navigate to item selection (skip NONE first)
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
 	// Press Escape
@@ -346,7 +444,8 @@ func TestConceptPicker_LeftArrowNavigation(t *testing.T) {
 
 	picker := NewConceptPickerModel(context.Background(), svc)
 
-	// Navigate to item selection
+	// Navigate to item selection (skip NONE first)
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
 	// Use left arrow to go back
@@ -371,7 +470,8 @@ func TestConceptPicker_HKeyNavigation(t *testing.T) {
 
 	picker := NewConceptPickerModel(context.Background(), svc)
 
-	// Navigate to item selection
+	// Navigate to item selection (skip NONE first)
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
 	// Use 'h' to go back (vim style)
@@ -383,20 +483,22 @@ func TestConceptPicker_HKeyNavigation(t *testing.T) {
 }
 
 func TestConceptPicker_EmptyDirectory(t *testing.T) {
+	// Use non-"p" concept to avoid "New" item injection
 	svc := mockConceptService{
 		concepts: []concept.Concept{
-			{Name: "p", Path: "projects", Description: "Projects", HasItems: true},
+			{Name: "docs", Path: "docs", Description: "Documentation", HasItems: true},
 		},
 		items: map[string][]concept.Item{
-			"p:": {
-				{Name: "empty", Path: "projects/empty", IsDir: true, Children: 0},
+			"docs:": {
+				{Name: "empty", Path: "docs/empty", IsDir: true, Children: 0},
 			},
 		},
 	}
 
 	picker := NewConceptPickerModel(context.Background(), svc)
 
-	// Navigate to item selection
+	// Navigate to item selection (skip NONE first)
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
 	// The empty directory should show but not be drillable
@@ -450,7 +552,8 @@ func TestConceptPicker_InfiniteDepthDrillWithRightKey(t *testing.T) {
 
 	picker := NewConceptPickerModel(context.Background(), svc)
 
-	// Select concept type
+	// Select concept type (skip NONE first)
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
 	// With infinite depth, Enter should SELECT, not drill
@@ -483,7 +586,8 @@ func TestConceptPicker_InfiniteDepthDrillWithLKey(t *testing.T) {
 
 	picker := NewConceptPickerModel(context.Background(), svc)
 
-	// Select concept type
+	// Select concept type (skip NONE first)
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
 	// Use 'l' key to drill (vim style)
@@ -500,28 +604,30 @@ func TestConceptPicker_InfiniteDepthDrillWithLKey(t *testing.T) {
 
 func TestConceptPicker_Breadcrumb(t *testing.T) {
 	// Use MaxDepth so Enter auto-drills (infinite depth would require right/l to drill)
+	// Use non-"p" concept to avoid "New" item injection
 	svc := mockConceptService{
 		concepts: []concept.Concept{
-			{Name: "p", Path: "projects", Description: "Projects", HasItems: true, MaxDepth: intPtr(5)},
+			{Name: "docs", Path: "docs", Description: "Documentation", HasItems: true, MaxDepth: intPtr(5)},
 		},
 		items: map[string][]concept.Item{
-			"p:": {
-				{Name: "camp", Path: "projects/camp", IsDir: true, Children: 1},
+			"docs:": {
+				{Name: "api", Path: "docs/api", IsDir: true, Children: 1},
 			},
-			"p:camp": {
-				{Name: "internal", Path: "projects/camp/internal", IsDir: true, Children: 1},
+			"docs:api": {
+				{Name: "internal", Path: "docs/api/internal", IsDir: true, Children: 1},
 			},
 		},
 	}
 
 	picker := NewConceptPickerModel(context.Background(), svc)
 
-	// Navigate to projects/camp/internal
-	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter}) // Select concept
-	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter}) // Drill into camp
+	// Navigate to docs/api (skip NONE first)
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}) // Skip NONE
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})                     // Select concept
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})                     // Drill into api
 
 	breadcrumb := picker.buildBreadcrumb()
-	expected := "p > camp"
+	expected := "docs > api"
 	if breadcrumb != expected {
 		t.Errorf("Expected breadcrumb %q, got %q", expected, breadcrumb)
 	}

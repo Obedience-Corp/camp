@@ -247,8 +247,15 @@ func (tc *TestContainer) RunCamp(args ...string) (string, error) {
 
 // RunCampInDir runs the camp command from a specific directory
 func (tc *TestContainer) RunCampInDir(dir string, args ...string) (string, error) {
+	// Quote each argument to handle spaces properly
+	quotedArgs := make([]string, len(args))
+	for i, arg := range args {
+		// Escape single quotes in the arg and wrap in single quotes
+		escaped := strings.ReplaceAll(arg, "'", "'\"'\"'")
+		quotedArgs[i] = "'" + escaped + "'"
+	}
 	// Use sh -c to change directory first
-	cmdStr := fmt.Sprintf("cd %s && /camp %s", dir, strings.Join(args, " "))
+	cmdStr := fmt.Sprintf("cd %s && /camp %s", dir, strings.Join(quotedArgs, " "))
 	cmd := []string{"sh", "-c", cmdStr}
 
 	exitCode, reader, err := tc.container.Exec(tc.ctx, cmd)

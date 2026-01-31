@@ -133,6 +133,14 @@ func completeInCategory(ctx context.Context, cat nav.Category, query string) ([]
 		return nil, err
 	}
 
+	// Special handling for flow paths (contains "/" and first segment is a flow)
+	// This enables syntax like: cgo de myflow/active/item
+	if strings.Contains(query, "/") {
+		if candidates, handled, err := CompleteFlowInCategory(ctx, cat, jumpResult.Path, query); handled {
+			return candidates, err
+		}
+	}
+
 	// Get or build index
 	idx, err := index.GetOrBuild(ctx, jumpResult.Path, false)
 	if err != nil {

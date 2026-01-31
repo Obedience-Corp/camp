@@ -1,6 +1,9 @@
 package workflow
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 // Package-level errors for workflow operations.
 var (
@@ -27,4 +30,21 @@ var (
 
 	// ErrAlreadyExists is returned when an item already exists at the destination.
 	ErrAlreadyExists = errors.New("item already exists at destination")
+
+	// ErrFlowNested is returned when trying to create a flow inside another flow.
+	ErrFlowNested = errors.New("cannot create flow inside existing flow")
 )
+
+// FlowNestedError provides details about the parent flow that prevents nesting.
+type FlowNestedError struct {
+	ParentSchemaPath string
+}
+
+func (e *FlowNestedError) Error() string {
+	return fmt.Sprintf("%s\n\nFound parent flow at: %s\n\nFlows cannot be nested because:\n  - Path resolution becomes ambiguous\n  - Active work tracking is complicated\n  - Status directories would conflict\n\nTo create a new flow, navigate outside the current flow first.",
+		ErrFlowNested, e.ParentSchemaPath)
+}
+
+func (e *FlowNestedError) Unwrap() error {
+	return ErrFlowNested
+}

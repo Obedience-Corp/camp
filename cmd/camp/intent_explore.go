@@ -9,7 +9,7 @@ import (
 	"github.com/obediencecorp/camp/internal/concept"
 	"github.com/obediencecorp/camp/internal/config"
 	"github.com/obediencecorp/camp/internal/intent"
-	"github.com/obediencecorp/camp/internal/intent/tui"
+	"github.com/obediencecorp/camp/internal/intent/tui/explorer"
 	"github.com/obediencecorp/camp/internal/paths"
 )
 
@@ -38,6 +38,11 @@ ACTIONS
   a             Archive intent
   d             Delete intent
   m             Move intent to status
+
+GATHER (Multi-Select)
+  Space         Toggle selection / enter gather mode
+  Ctrl+g        Gather selected intents
+  Escape        Exit multi-select mode
 
 FILTERS
   /             Search intents (fuzzy)
@@ -73,11 +78,12 @@ func runIntentExplore(cmd *cobra.Command, args []string) error {
 
 	// Create path resolver and services
 	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
-	svc := intent.NewIntentService(campaignRoot, resolver.Intents())
+	intentsDir := resolver.Intents()
+	svc := intent.NewIntentService(campaignRoot, intentsDir)
 	conceptSvc := concept.NewService(campaignRoot, cfg.Concepts())
 
 	// Create and run the TUI
-	model := tui.NewExplorerModel(ctx, svc, conceptSvc)
+	model := explorer.NewModel(ctx, svc, conceptSvc, intentsDir)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {

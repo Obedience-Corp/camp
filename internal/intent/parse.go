@@ -35,6 +35,9 @@ type parsedIntent struct {
 	DependsOn         []string  `yaml:"depends_on,omitempty"`
 	PromotionCriteria string    `yaml:"promotion_criteria,omitempty"`
 	PromotedTo        string    `yaml:"promoted_to,omitempty"`
+	GatheredFrom      []GatheredSource `yaml:"gathered_from,omitempty"`
+	GatheredAt        time.Time        `yaml:"gathered_at,omitempty"`
+	GatheredInto      string           `yaml:"gathered_into,omitempty"`
 	UpdatedAt         time.Time `yaml:"updated_at,omitempty"`
 }
 
@@ -54,6 +57,9 @@ func (p *parsedIntent) toIntent() *Intent {
 		DependsOn:         p.DependsOn,
 		PromotionCriteria: p.PromotionCriteria,
 		PromotedTo:        p.PromotedTo,
+		GatheredFrom:      p.GatheredFrom,
+		GatheredAt:        p.GatheredAt,
+		GatheredInto:      p.GatheredInto,
 		UpdatedAt:         p.UpdatedAt,
 	}
 

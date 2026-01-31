@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/obediencecorp/camp/internal/concept"
+	"github.com/obediencecorp/camp/internal/intent/tui/vim"
 )
 
 func TestIntentAddModel_InitialState(t *testing.T) {
@@ -324,11 +325,19 @@ func TestIntentAddModel_VimWQ(t *testing.T) {
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = model.(IntentAddModel)
 
+	// Exit insert mode first (body step starts in insert mode)
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = model.(IntentAddModel)
+
+	if m.vimEditor.Mode() == vim.ModeInsert {
+		t.Error("Should be in normal mode after Esc")
+	}
+
 	// Type :wq
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{':'}})
 	m = model.(IntentAddModel)
 
-	if !m.vimCmdMode {
+	if !m.vimEditor.IsCommandMode() {
 		t.Error("Should be in vim command mode after :")
 	}
 
@@ -368,6 +377,10 @@ func TestIntentAddModel_VimQBang(t *testing.T) {
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = model.(IntentAddModel)
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(IntentAddModel)
+
+	// Exit insert mode first (body step starts in insert mode)
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = model.(IntentAddModel)
 
 	// Type :q!
@@ -410,11 +423,15 @@ func TestIntentAddModel_VimEscCancelsCommand(t *testing.T) {
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = model.(IntentAddModel)
 
+	// Exit insert mode first (body step starts in insert mode)
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = model.(IntentAddModel)
+
 	// Enter vim command mode
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{':'}})
 	m = model.(IntentAddModel)
 
-	if !m.vimCmdMode {
+	if !m.vimEditor.IsCommandMode() {
 		t.Error("Should be in vim command mode")
 	}
 
@@ -422,7 +439,7 @@ func TestIntentAddModel_VimEscCancelsCommand(t *testing.T) {
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = model.(IntentAddModel)
 
-	if m.vimCmdMode {
+	if m.vimEditor.IsCommandMode() {
 		t.Error("Should exit vim command mode after Esc")
 	}
 	if m.Done() {

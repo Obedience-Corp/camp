@@ -46,6 +46,30 @@ func (s *Service) Root() string {
 	return s.root
 }
 
+// HasParentFlow checks if any parent directory of dir contains a .workflow.yaml file.
+// Returns the path to the parent schema file and true if found, empty string and false otherwise.
+// This is used to prevent flow nesting.
+func HasParentFlow(dir string) (string, bool) {
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return "", false
+	}
+
+	current := filepath.Dir(absDir)
+	for current != "/" && current != "." && current != absDir {
+		schemaPath := filepath.Join(current, SchemaFileName)
+		if _, err := os.Stat(schemaPath); err == nil {
+			return schemaPath, true
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			break
+		}
+		current = parent
+	}
+	return "", false
+}
+
 // Schema returns the loaded workflow schema, or nil if not loaded.
 func (s *Service) Schema() *Schema {
 	return s.schema
@@ -197,6 +221,7 @@ func (s *Service) resolvePath(status string) string {
 // It creates the schema file, all directories defined in the schema,
 // and OBEY.md documentation files in active/, ready/, and dungeon/.
 // Returns ErrSchemaExists if a schema already exists and Force is false.
+// Returns FlowNestedError if attempting to create a flow inside another flow.
 func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -206,6 +231,11 @@ func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, erro
 		CreatedDirs:  []string{},
 		CreatedFiles: []string{},
 		Skipped:      []string{},
+	}
+
+	// Check for flow nesting - cannot create a flow inside another flow
+	if parentPath, found := HasParentFlow(s.root); found {
+		return nil, &FlowNestedError{ParentSchemaPath: parentPath}
 	}
 
 	// Check if schema already exists

@@ -85,6 +85,9 @@ func runIntentList(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to list intents: %w", err)
 	}
 
+	// Apply status filtering (exclude done/killed by default)
+	intents = filterStatuses(intents, includeAll, statuses)
+
 	// Apply limit
 	if limit > 0 && len(intents) > limit {
 		intents = intents[:limit]
@@ -136,33 +139,36 @@ func outputTable(intents []*intent.Intent) error {
 	// Define styles using the central palette
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.CategoryColor)
 
-	// Status color function using palette
-	statusColor := func(s intent.Status) string {
+	// Style functions using the UI palette
+	statusStyle := func(s intent.Status) string {
 		return ui.GetIntentStatusStyle(string(s)).Render(string(s))
+	}
+	typeStyle := func(t intent.Type) string {
+		return ui.GetIntentTypeStyle(string(t)).Render(string(t))
+	}
+	conceptStyle := func(c string) string {
+		if c == "" {
+			c = "-"
+		}
+		return ui.GetConceptStyle(c).Render(c)
 	}
 
 	// Build table data
-	headers := []string{"ID", "TITLE", "TYPE", "STATUS", "CONCEPT", "UPDATED"}
+	headers := []string{"TITLE", "TYPE", "STATUS", "CONCEPT", "UPDATED"}
 	rows := make([][]string, 0, len(intents))
 
 	for _, i := range intents {
-		id := truncate(i.ID, 20)
-		title := truncate(i.Title, 35)
-		proj := i.Concept
-		if proj == "" {
-			proj = "-"
-		}
-		updated := relativeTime(i.UpdatedAt)
+		title := truncate(i.Title, 40)
+		updated := formatTimestamp(i.UpdatedAt)
 		if i.UpdatedAt.IsZero() {
-			updated = relativeTime(i.CreatedAt)
+			updated = formatTimestamp(i.CreatedAt)
 		}
 
 		rows = append(rows, []string{
-			id,
 			title,
-			string(i.Type),
-			statusColor(i.Status),
-			proj,
+			typeStyle(i.Type),
+			statusStyle(i.Status),
+			conceptStyle(i.Concept),
 			updated,
 		})
 	}
@@ -255,6 +261,14 @@ func truncate(s string, max int) string {
 		return s[:max]
 	}
 	return s[:max-3] + "..."
+}
+
+// formatTimestamp returns a compact timestamp: "Jan 29 14:30"
+func formatTimestamp(t time.Time) string {
+	if t.IsZero() {
+		return "-"
+	}
+	return t.Format("Jan 02 15:04")
 }
 
 // relativeTime returns a human-readable relative time string.
