@@ -73,6 +73,13 @@ func (e *Editor) View(cfg ViewConfig) string {
 
 		// Render line content with cursor/selection highlighting
 		renderedLine := e.renderLine(lineIdx, line, cursor, cfg, inVisual, selStartOff, selEndOff)
+
+		// Apply soft wrapping to fit within editor width
+		if e.width > 0 {
+			wrapStyle := lipgloss.NewStyle().Width(e.width)
+			renderedLine = wrapStyle.Render(renderedLine)
+		}
+
 		b.WriteString(renderedLine)
 
 		if lineIdx < endLine-1 {
