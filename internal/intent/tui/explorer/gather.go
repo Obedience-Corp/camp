@@ -2,6 +2,7 @@ package explorer
 
 import (
 	"fmt"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/obediencecorp/camp/internal/git"
@@ -75,11 +76,13 @@ func (m *Model) executeGather() tea.Cmd {
 				shortID = shortID[:8]
 			}
 
-			commitMsg := fmt.Sprintf("[OBEY-CAMPAIGN-%s] Gather: %s\n\nUnified %d intents into %q",
+			sourceIDs := m.gatherDialog.IntentIDs()
+			commitMsg := fmt.Sprintf("[OBEY-CAMPAIGN-%s] Gather: %s\n\nUnified %d intents into %q\nSources: %s",
 				shortID,
 				opts.Title,
 				result.SourceCount,
 				opts.Title,
+				strings.Join(sourceIDs, ", "),
 			)
 			if len(result.ArchivedPaths) > 0 {
 				commitMsg += fmt.Sprintf("\nArchived: %d source intents", len(result.ArchivedPaths))

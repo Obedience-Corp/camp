@@ -122,7 +122,10 @@ func (e *Editor) renderLine(lineIdx int, line string, cursor Position, cfg ViewC
 		isSelected := inVisual && charOffset >= selStartOff && charOffset <= selEndOff
 
 		switch {
-		case isCursor && e.state.Mode != ModeInsert:
+		case isCursor && e.state.Mode == ModeInsert:
+			// Insert mode cursor (underline) within line
+			result.WriteString(cfg.CursorInsert.Render(char))
+		case isCursor:
 			// Block cursor in normal/visual mode
 			result.WriteString(cfg.CursorBlock.Render(char))
 		case isSelected:

@@ -165,11 +165,12 @@ func runIntentGather(cmd *cobra.Command, args []string) error {
 			shortID = shortID[:8]
 		}
 
-		commitMsg := fmt.Sprintf("[OBEY-CAMPAIGN-%s] Gather: %s\n\nUnified %d intents into %q",
+		commitMsg := fmt.Sprintf("[OBEY-CAMPAIGN-%s] Gather: %s\n\nUnified %d intents into %q\nSources: %s",
 			shortID,
 			gatherTitle,
 			result.SourceCount,
 			gatherTitle,
+			strings.Join(ids, ", "),
 		)
 		if len(result.ArchivedPaths) > 0 {
 			commitMsg += fmt.Sprintf("\nArchived: %d source intents", len(result.ArchivedPaths))
