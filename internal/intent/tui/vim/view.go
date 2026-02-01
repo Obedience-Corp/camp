@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/obediencecorp/camp/internal/ui/theme"
 )
 
 // ViewConfig configures the editor view rendering.
@@ -18,15 +19,16 @@ type ViewConfig struct {
 	ShowLineNums  bool
 }
 
-// DefaultViewConfig returns default styles.
+// DefaultViewConfig returns default styles using the theme package for adaptive colors.
 func DefaultViewConfig() ViewConfig {
+	pal := theme.TUI()
 	return ViewConfig{
 		NormalText:   lipgloss.NewStyle(),
 		CursorBlock:  lipgloss.NewStyle().Reverse(true),
 		CursorInsert: lipgloss.NewStyle().Underline(true),
-		Selection:    lipgloss.NewStyle().Background(lipgloss.Color("240")),
-		LineNumber:   lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
-		CommandLine:  lipgloss.NewStyle().Foreground(lipgloss.Color("252")),
+		Selection:    lipgloss.NewStyle().Background(pal.BgSelected),
+		LineNumber:   lipgloss.NewStyle().Foreground(pal.TextMuted),
+		CommandLine:  lipgloss.NewStyle().Foreground(pal.TextSecondary),
 		ShowLineNums: true,
 	}
 }
