@@ -83,7 +83,7 @@ func runIntentExplore(cmd *cobra.Command, args []string) error {
 	conceptSvc := concept.NewService(campaignRoot, cfg.Concepts())
 
 	// Create and run the TUI
-	model := explorer.NewModel(ctx, svc, conceptSvc, intentsDir)
+	model := explorer.NewModel(ctx, svc, conceptSvc, intentsDir, campaignRoot, cfg.ID)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {

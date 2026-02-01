@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/obediencecorp/camp/internal/config"
+	"github.com/obediencecorp/camp/internal/git"
 	"github.com/obediencecorp/camp/internal/intent"
 	"github.com/obediencecorp/camp/internal/paths"
 )
@@ -39,12 +40,15 @@ Examples:
 
 func init() {
 	intentCmd.AddCommand(intentMoveCmd)
+
+	intentMoveCmd.Flags().Bool("no-commit", false, "Don't create a git commit")
 }
 
 func runIntentMove(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	id := args[0]
 	newStatus := args[1]
+	noCommit, _ := cmd.Flags().GetBool("no-commit")
 
 	// Validate status
 	status := intent.Status(newStatus)
@@ -65,6 +69,13 @@ func runIntentMove(cmd *cobra.Command, args []string) error {
 	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
 	svc := intent.NewIntentService(campaignRoot, resolver.Intents())
 
+	// Get intent title for commit message (before moving)
+	i, err := svc.Find(ctx, id)
+	if err != nil {
+		return fmt.Errorf("intent not found: %s", id)
+	}
+	intentTitle := i.Title
+
 	// Move the intent
 	result, err := svc.Move(ctx, id, status)
 	if err != nil {
@@ -72,5 +83,20 @@ func runIntentMove(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("✓ Intent moved to %s: %s\n", status, result.Path)
+
+	// Auto-commit (unless --no-commit)
+	if !noCommit {
+		commitResult := git.IntentCommitAll(ctx, git.IntentCommitOptions{
+			CampaignRoot: campaignRoot,
+			CampaignID:   cfg.ID,
+			Action:       git.IntentActionMove,
+			IntentTitle:  intentTitle,
+			Description:  fmt.Sprintf("Moved to %s status", status),
+		})
+		if commitResult.Message != "" {
+			fmt.Printf("  %s\n", commitResult.Message)
+		}
+	}
+
 	return nil
 }

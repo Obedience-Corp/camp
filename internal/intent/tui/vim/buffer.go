@@ -208,10 +208,17 @@ func (b *Buffer) DeleteChar() string {
 func (b *Buffer) DeleteCharBefore() string {
 	if b.cursor.Col > 0 {
 		line := b.CurrentLine()
-		deleted := string(line[b.cursor.Col-1])
-		b.lines[b.cursor.Line] = line[:b.cursor.Col-1] + line[b.cursor.Col:]
-		b.cursor.Col--
-		return deleted
+		// Bounds check - clamp cursor if beyond line content
+		if b.cursor.Col > len(line) {
+			b.cursor.Col = len(line)
+		}
+		// Check again after clamping
+		if b.cursor.Col > 0 {
+			deleted := string(line[b.cursor.Col-1])
+			b.lines[b.cursor.Line] = line[:b.cursor.Col-1] + line[b.cursor.Col:]
+			b.cursor.Col--
+			return deleted
+		}
 	}
 
 	// At start of line, join with previous line

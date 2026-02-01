@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/obediencecorp/camp/internal/config"
+	"github.com/obediencecorp/camp/internal/git"
 	"github.com/obediencecorp/camp/internal/intent"
 	"github.com/obediencecorp/camp/internal/intent/gather"
 	"github.com/obediencecorp/camp/internal/paths"
@@ -25,6 +26,7 @@ var (
 	gatherHorizon   string
 	gatherNoArchive bool
 	gatherDryRun    bool
+	gatherNoCommit  bool
 )
 
 var intentGatherCmd = &cobra.Command{
@@ -88,6 +90,7 @@ func init() {
 	// Behavior options
 	intentGatherCmd.Flags().BoolVar(&gatherNoArchive, "no-archive", false, "Don't archive source intents")
 	intentGatherCmd.Flags().BoolVar(&gatherDryRun, "dry-run", false, "Preview gather without making changes")
+	intentGatherCmd.Flags().BoolVar(&gatherNoCommit, "no-commit", false, "Don't create a git commit")
 }
 
 func runIntentGather(cmd *cobra.Command, args []string) error {
@@ -151,6 +154,30 @@ func runIntentGather(cmd *cobra.Command, args []string) error {
 	fmt.Printf("✓ Gathered %d intents into: %s\n", result.SourceCount, result.Gathered.Path)
 	if len(result.ArchivedPaths) > 0 {
 		fmt.Printf("  Archived %d source intents\n", len(result.ArchivedPaths))
+	}
+
+	// Git commit (unless --no-commit)
+	if !gatherNoCommit {
+		// Build description for commit message
+		description := fmt.Sprintf("Unified %d intents into %q\nSources: %s",
+			result.SourceCount,
+			gatherTitle,
+			strings.Join(ids, ", "),
+		)
+		if len(result.ArchivedPaths) > 0 {
+			description += fmt.Sprintf("\nArchived: %d source intents", len(result.ArchivedPaths))
+		}
+
+		commitResult := git.IntentCommitAll(ctx, git.IntentCommitOptions{
+			CampaignRoot: campaignRoot,
+			CampaignID:   cfg.ID,
+			Action:       git.IntentActionGather,
+			IntentTitle:  gatherTitle,
+			Description:  description,
+		})
+		if commitResult.Message != "" {
+			fmt.Printf("  %s\n", commitResult.Message)
+		}
 	}
 
 	return nil

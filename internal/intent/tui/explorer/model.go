@@ -121,10 +121,14 @@ type Model struct {
 	gatherDialog tui.GatherDialog
 	intentsDir   string          // Base directory for intents (for gather service)
 	gatherSvc    *gather.Service // Gather service for finding similar intents
+
+	// Campaign info for git commits
+	campaignRoot string
+	campaignID   string
 }
 
 // NewModel creates a new Explorer model.
-func NewModel(ctx context.Context, svc *intent.IntentService, conceptSvc concept.Service, intentsDir string) Model {
+func NewModel(ctx context.Context, svc *intent.IntentService, conceptSvc concept.Service, intentsDir, campaignRoot, campaignID string) Model {
 	// Initialize glamour style once at startup (handles adaptive detection).
 	// This avoids the slow OSC terminal query on every markdown render.
 	globalCfg, _ := config.LoadGlobalConfig(ctx)
@@ -163,6 +167,8 @@ func NewModel(ctx context.Context, svc *intent.IntentService, conceptSvc concept
 		selectedIntents: make(map[string]bool),
 		intentsDir:      intentsDir,
 		gatherSvc:       gather.NewService(svc, intentsDir),
+		campaignRoot:    campaignRoot,
+		campaignID:      campaignID,
 	}
 }
 

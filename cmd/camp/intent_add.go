@@ -49,6 +49,7 @@ func init() {
 	flags.StringP("type", "t", "idea", "Intent type (idea, feature, bug, research, chore)")
 	flags.BoolP("edit", "e", false, "Open in $EDITOR for deep capture")
 	flags.BoolP("full", "f", false, "Full TUI mode with body textarea")
+	flags.Bool("no-commit", false, "Don't create a git commit")
 }
 
 func runIntentAdd(cmd *cobra.Command, args []string) error {
@@ -58,6 +59,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	intentType, _ := cmd.Flags().GetString("type")
 	useEditor, _ := cmd.Flags().GetBool("edit")
 	fullMode, _ := cmd.Flags().GetBool("full")
+	noCommit, _ := cmd.Flags().GetBool("no-commit")
 
 	// Find campaign root
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
@@ -85,10 +87,10 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 
 		// Deep capture overrides ultra-fast
 		if useEditor {
-			return runDeepCapture(ctx, svc, opts)
+			return runDeepCapture(ctx, svc, cfg, campaignRoot, noCommit, opts)
 		}
 
-		return runFastCapture(ctx, svc, opts)
+		return runFastCapture(ctx, svc, cfg, campaignRoot, noCommit, opts)
 	}
 
 	// Run BubbleTea TUI
@@ -115,10 +117,10 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 
 	// Deep capture if requested
 	if useEditor {
-		return runDeepCapture(ctx, svc, opts)
+		return runDeepCapture(ctx, svc, cfg, campaignRoot, noCommit, opts)
 	}
 
-	return runFastCapture(ctx, svc, opts)
+	return runFastCapture(ctx, svc, cfg, campaignRoot, noCommit, opts)
 }
 
 // runIntentAddTUI runs the BubbleTea intent creation form.
@@ -143,18 +145,32 @@ func runIntentAddTUI(ctx context.Context, conceptSvc concept.Service, opts tui.A
 }
 
 // runFastCapture creates intent file directly without editor.
-func runFastCapture(ctx context.Context, svc *intent.IntentService, opts intent.CreateOptions) error {
+func runFastCapture(ctx context.Context, svc *intent.IntentService, cfg *config.CampaignConfig, campaignRoot string, noCommit bool, opts intent.CreateOptions) error {
 	result, err := svc.CreateDirect(ctx, opts)
 	if err != nil {
 		return fmt.Errorf("failed to create intent: %w", err)
 	}
 
 	fmt.Printf("✓ Intent created: %s\n", result.Path)
+
+	// Auto-commit (unless --no-commit)
+	if !noCommit {
+		commitResult := git.IntentCommitAll(ctx, git.IntentCommitOptions{
+			CampaignRoot: campaignRoot,
+			CampaignID:   cfg.ID,
+			Action:       git.IntentActionCreate,
+			IntentTitle:  opts.Title,
+		})
+		if commitResult.Message != "" {
+			fmt.Printf("  %s\n", commitResult.Message)
+		}
+	}
+
 	return nil
 }
 
 // runDeepCapture opens editor for full template expansion.
-func runDeepCapture(ctx context.Context, svc *intent.IntentService, opts intent.CreateOptions) error {
+func runDeepCapture(ctx context.Context, svc *intent.IntentService, cfg *config.CampaignConfig, campaignRoot string, noCommit bool, opts intent.CreateOptions) error {
 	// Use editor function from editor package
 	editorFn := func(ctx context.Context, path string) error {
 		return editor.Edit(ctx, path)
@@ -169,5 +185,19 @@ func runDeepCapture(ctx context.Context, svc *intent.IntentService, opts intent.
 	}
 
 	fmt.Printf("✓ Intent created: %s\n", result.Path)
+
+	// Auto-commit (unless --no-commit)
+	if !noCommit {
+		commitResult := git.IntentCommitAll(ctx, git.IntentCommitOptions{
+			CampaignRoot: campaignRoot,
+			CampaignID:   cfg.ID,
+			Action:       git.IntentActionCreate,
+			IntentTitle:  opts.Title,
+		})
+		if commitResult.Message != "" {
+			fmt.Printf("  %s\n", commitResult.Message)
+		}
+	}
+
 	return nil
 }

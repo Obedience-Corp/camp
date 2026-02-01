@@ -163,3 +163,115 @@ func JaccardSimilarity(wordsA, wordsB []string) float64 {
 
 	return float64(intersection) / float64(union)
 }
+
+// Composite similarity weights - tune these to adjust matching behavior
+const (
+	// WeightTFIDF is the weight for TF-IDF text similarity
+	WeightTFIDF = 0.50
+	// WeightTags is the weight for tag overlap (Jaccard similarity)
+	WeightTags = 0.25
+	// WeightConcept is the weight for same concept match
+	WeightConcept = 0.15
+	// WeightType is the weight for same type match
+	WeightType = 0.05
+	// WeightPriority is the weight for same priority match
+	WeightPriority = 0.025
+	// WeightHorizon is the weight for same horizon match
+	WeightHorizon = 0.025
+)
+
+// TagSimilarity returns Jaccard similarity between two tag sets.
+// Tags are case-insensitive for matching purposes.
+func TagSimilarity(tagsA, tagsB []string) float64 {
+	return JaccardSimilarity(tagsA, tagsB)
+}
+
+// MetadataBoost calculates a bonus score for matching metadata fields.
+// Each matching field contributes to the total boost based on its weight.
+func MetadataBoost(a, b *IndexedIntent) float64 {
+	var boost float64
+
+	// Same concept - strong signal of relatedness
+	if a.Concept != "" && a.Concept == b.Concept {
+		boost += WeightConcept
+	}
+
+	// Same type - moderate signal
+	if a.Type != "" && a.Type == b.Type {
+		boost += WeightType
+	}
+
+	// Same priority - weak signal
+	if a.Priority != "" && a.Priority == b.Priority {
+		boost += WeightPriority
+	}
+
+	// Same horizon - weak signal
+	if a.Horizon != "" && a.Horizon == b.Horizon {
+		boost += WeightHorizon
+	}
+
+	return boost
+}
+
+// CompositeSimilarity combines TF-IDF text similarity with metadata matching.
+// Returns a weighted composite score between 0 and 1.
+func CompositeSimilarity(a, b *IndexedIntent, tfidfScore float64) float64 {
+	// Start with weighted TF-IDF score
+	score := WeightTFIDF * tfidfScore
+
+	// Add weighted tag similarity
+	tagScore := TagSimilarity(a.Tags, b.Tags)
+	score += WeightTags * tagScore
+
+	// Add metadata boost
+	score += MetadataBoost(a, b)
+
+	return score
+}
+
+// FindSimilarWithMetadata finds documents similar to a reference using composite similarity.
+// It combines TF-IDF with tag overlap and metadata matching.
+// Returns results sorted by similarity score descending.
+func FindSimilarWithMetadata(
+	refVector TFIDFVector,
+	vectors map[string]TFIDFVector,
+	refIntent *IndexedIntent,
+	intents map[string]*IndexedIntent,
+	refID string,
+	minScore float64,
+) []SimilarResult {
+	var results []SimilarResult
+
+	for id, vector := range vectors {
+		// Skip the reference document itself
+		if id == refID {
+			continue
+		}
+
+		otherIntent := intents[id]
+		if otherIntent == nil {
+			continue
+		}
+
+		// Calculate TF-IDF similarity
+		tfidfScore := CosineSimilarity(refVector, vector)
+
+		// Calculate composite score
+		score := CompositeSimilarity(refIntent, otherIntent, tfidfScore)
+
+		if score >= minScore {
+			results = append(results, SimilarResult{
+				ID:    id,
+				Score: score,
+			})
+		}
+	}
+
+	// Sort by score descending
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Score > results[j].Score
+	})
+
+	return results
+}

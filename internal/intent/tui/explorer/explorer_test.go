@@ -9,7 +9,7 @@ import (
 
 func TestNewModel(t *testing.T) {
 	ctx := context.Background()
-	m := NewModel(ctx, nil, nil, "/tmp/intents")
+	m := NewModel(ctx, nil, nil, "/tmp/intents", "/tmp/campaign", "test-id")
 
 	// Verify filter bar is initialized with correct chips
 	if len(m.filterBar.Chips) != 2 {
@@ -32,7 +32,7 @@ func TestNewModel(t *testing.T) {
 
 func TestModel_TabToFilterBar(t *testing.T) {
 	ctx := context.Background()
-	m := NewModel(ctx, nil, nil, "/tmp/intents")
+	m := NewModel(ctx, nil, nil, "/tmp/intents", "/tmp/campaign", "test-id")
 
 	// Set ready state (normally done by WindowSizeMsg)
 	m.ready = true
@@ -55,7 +55,7 @@ func TestModel_TabToFilterBar(t *testing.T) {
 
 func TestModel_EscapeFromFilterBar(t *testing.T) {
 	ctx := context.Background()
-	m := NewModel(ctx, nil, nil, "/tmp/intents")
+	m := NewModel(ctx, nil, nil, "/tmp/intents", "/tmp/campaign", "test-id")
 
 	// Set ready state and focus filter bar
 	m.ready = true
@@ -80,7 +80,7 @@ func TestModel_EscapeFromFilterBar(t *testing.T) {
 
 func TestModel_FilterBarView(t *testing.T) {
 	ctx := context.Background()
-	m := NewModel(ctx, nil, nil, "/tmp/intents")
+	m := NewModel(ctx, nil, nil, "/tmp/intents", "/tmp/campaign", "test-id")
 
 	// Set ready state
 	m.ready = true
@@ -98,7 +98,7 @@ func TestModel_FilterBarView(t *testing.T) {
 
 func TestModel_FilterBarChipSelection(t *testing.T) {
 	ctx := context.Background()
-	m := NewModel(ctx, nil, nil, "/tmp/intents")
+	m := NewModel(ctx, nil, nil, "/tmp/intents", "/tmp/campaign", "test-id")
 
 	// Set ready state
 	m.ready = true

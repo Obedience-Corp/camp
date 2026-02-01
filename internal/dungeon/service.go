@@ -106,6 +106,22 @@ func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, erro
 		result.CreatedFiles = append(result.CreatedFiles, obeyPath)
 	}
 
+	// Create .gitkeep in empty status directories
+	statusDirs := []string{"completed", "archived", "someday"}
+	for _, dir := range statusDirs {
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("context cancelled: %w", err)
+		}
+
+		gitkeepPath := filepath.Join(s.dungeonPath, dir, ".gitkeep")
+		if _, err := os.Stat(gitkeepPath); os.IsNotExist(err) {
+			if err := os.WriteFile(gitkeepPath, []byte{}, 0644); err != nil {
+				return nil, fmt.Errorf("failed to create .gitkeep in %s: %w", dir, err)
+			}
+			result.CreatedFiles = append(result.CreatedFiles, filepath.Join(dir, ".gitkeep"))
+		}
+	}
+
 	return result, nil
 }
 

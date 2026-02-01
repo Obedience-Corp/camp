@@ -228,6 +228,72 @@ func (m IntentViewerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Handle gather-similar overlay
+	if m.gatherOverlay {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.String() {
+			case "esc":
+				m.gatherOverlay = false
+				m.selectedSimilar = make(map[string]bool)
+				return m, nil
+			case "j", "down":
+				if len(m.similarIntents) > 0 && m.gatherCursorIdx < len(m.similarIntents)-1 {
+					m.gatherCursorIdx++
+				}
+			case "k", "up":
+				if m.gatherCursorIdx > 0 {
+					m.gatherCursorIdx--
+				}
+			case " ":
+				// Toggle selection
+				if len(m.similarIntents) > 0 {
+					id := m.similarIntents[m.gatherCursorIdx].Intent.ID
+					if m.selectedSimilar[id] {
+						delete(m.selectedSimilar, id)
+					} else {
+						m.selectedSimilar[id] = true
+					}
+				}
+			case "enter":
+				// Proceed to title input if any selected
+				if len(m.selectedSimilar) > 0 {
+					m.gatherOverlay = false
+					m.showGatherTitle = true
+					// Collect intents for dialog: current + selected similar
+					intents := []*intent.Intent{m.intent}
+					for _, sim := range m.similarIntents {
+						if m.selectedSimilar[sim.Intent.ID] {
+							intents = append(intents, sim.Intent)
+						}
+					}
+					m.gatherDialog = NewGatherDialog(intents)
+				}
+			}
+		}
+		return m, nil
+	}
+
+	// Handle gather title input dialog
+	if m.showGatherTitle {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			var cmd tea.Cmd
+			m.gatherDialog, cmd = m.gatherDialog.Update(msg)
+			if m.gatherDialog.Done() {
+				if m.gatherDialog.Cancelled() {
+					m.showGatherTitle = false
+					m.gatherOverlay = true // Go back to selection
+				} else {
+					m.showGatherTitle = false
+					return m, m.executeViewerGather()
+				}
+			}
+			return m, cmd
+		}
+		return m, nil
+	}
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -539,7 +605,9 @@ func (m IntentViewerModel) findSimilarIntents() tea.Cmd {
 				return ViewerSimilarFoundMsg{Err: err}
 			}
 		}
-		similar, err := m.gatherSvc.FindSimilar(m.ctx, m.intent.ID, 0.3)
+		// Use lower threshold (0.15) since composite similarity includes
+		// metadata matching which produces lower scores than pure TF-IDF
+		similar, err := m.gatherSvc.FindSimilar(m.ctx, m.intent.ID, 0.15)
 		return ViewerSimilarFoundMsg{Similar: similar, Err: err}
 	}
 }

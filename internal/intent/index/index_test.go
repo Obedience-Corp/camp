@@ -22,7 +22,7 @@ func setupTestIntents(t *testing.T) string {
 		}
 	}
 
-	// Create test intents
+	// Create test intents with metadata fields for composite similarity testing
 	intents := map[string]string{
 		"inbox/20260129-auth-feature.md": `---
 id: 20260129-auth-feature
@@ -30,6 +30,9 @@ title: Authentication Feature
 status: inbox
 created_at: 2026-01-29
 type: feature
+concept: projects/camp
+priority: high
+horizon: now
 tags:
   - auth
   - security
@@ -45,6 +48,9 @@ title: Login Bug Fix
 status: inbox
 created_at: 2026-01-28
 type: bug
+concept: projects/camp
+priority: high
+horizon: now
 tags:
   - auth
   - bug
@@ -60,6 +66,9 @@ title: Navigation System
 status: active
 created_at: 2026-01-27
 type: feature
+concept: projects/fest
+priority: medium
+horizon: next
 tags:
   - navigation
   - ui
@@ -75,6 +84,9 @@ title: Unrelated Feature
 status: ready
 created_at: 2026-01-26
 type: feature
+concept: projects/guild
+priority: low
+horizon: later
 tags:
   - other
 ---
@@ -294,6 +306,73 @@ func TestIndex_GetIndexedIntent(t *testing.T) {
 
 	if len(indexed.Hashtags) < 2 {
 		t.Errorf("Hashtags length = %d, want at least 2", len(indexed.Hashtags))
+	}
+}
+
+func TestIndex_GetIndexedIntentMetadata(t *testing.T) {
+	tmpDir := setupTestIntents(t)
+
+	idx := NewIndex(tmpDir)
+	if err := idx.Build(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+
+	indexed := idx.GetIndexedIntent("20260129-auth-feature")
+	if indexed == nil {
+		t.Fatal("GetIndexedIntent() returned nil")
+	}
+
+	// Verify metadata fields are populated
+	if indexed.Type != intent.TypeFeature {
+		t.Errorf("Type = %q, want %q", indexed.Type, intent.TypeFeature)
+	}
+
+	if indexed.Concept != "projects/camp" {
+		t.Errorf("Concept = %q, want %q", indexed.Concept, "projects/camp")
+	}
+
+	if indexed.Priority != intent.PriorityHigh {
+		t.Errorf("Priority = %q, want %q", indexed.Priority, intent.PriorityHigh)
+	}
+
+	if indexed.Horizon != intent.HorizonNow {
+		t.Errorf("Horizon = %q, want %q", indexed.Horizon, intent.HorizonNow)
+	}
+}
+
+func TestIndex_FindSimilarWithMetadata(t *testing.T) {
+	tmpDir := setupTestIntents(t)
+
+	idx := NewIndex(tmpDir)
+	if err := idx.Build(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+
+	// Find intents similar to auth-feature
+	// With composite similarity, login-bug should rank higher because:
+	// - Same concept (projects/camp) - +0.15
+	// - Same priority (high) - +0.025
+	// - Same horizon (now) - +0.025
+	// - Shared tag (auth) - partial tag overlap
+	similar := idx.FindSimilar("20260129-auth-feature", 0.15)
+
+	if len(similar) == 0 {
+		t.Fatal("FindSimilar should return at least one result")
+	}
+
+	// login-bug should be the most similar (same concept + tags)
+	found := false
+	for i, s := range similar {
+		if s.ID == "20260128-login-bug" {
+			found = true
+			if i != 0 {
+				t.Errorf("login-bug should be the most similar, but was at position %d", i)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Error("FindSimilar should find login-bug as similar to auth-feature")
 	}
 }
 

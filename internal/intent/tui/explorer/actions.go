@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/obediencecorp/camp/internal/git"
 	"github.com/obediencecorp/camp/internal/intent"
 	"github.com/obediencecorp/camp/internal/intent/tui"
 )
@@ -79,6 +80,15 @@ func (m *Model) updateMove(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) moveIntent(i *intent.Intent, newStatus intent.Status) tea.Cmd {
 	return func() tea.Msg {
 		_, err := m.service.Move(m.ctx, i.ID, newStatus)
+		if err == nil && m.campaignRoot != "" && m.campaignID != "" {
+			_ = git.IntentCommitAll(m.ctx, git.IntentCommitOptions{
+				CampaignRoot: m.campaignRoot,
+				CampaignID:   m.campaignID,
+				Action:       git.IntentActionMove,
+				IntentTitle:  i.Title,
+				Description:  fmt.Sprintf("Moved to %s status", newStatus),
+			})
+		}
 		return moveFinishedMsg{
 			err:       err,
 			intentID:  i.ID,
@@ -91,6 +101,14 @@ func (m *Model) moveIntent(i *intent.Intent, newStatus intent.Status) tea.Cmd {
 func (m *Model) archiveIntent(i *intent.Intent) tea.Cmd {
 	return func() tea.Msg {
 		_, err := m.service.Archive(m.ctx, i.ID)
+		if err == nil && m.campaignRoot != "" && m.campaignID != "" {
+			_ = git.IntentCommitAll(m.ctx, git.IntentCommitOptions{
+				CampaignRoot: m.campaignRoot,
+				CampaignID:   m.campaignID,
+				Action:       git.IntentActionArchive,
+				IntentTitle:  i.Title,
+			})
+		}
 		return archiveFinishedMsg{
 			err:      err,
 			intentID: i.ID,
@@ -101,10 +119,19 @@ func (m *Model) archiveIntent(i *intent.Intent) tea.Cmd {
 // deleteIntent permanently deletes an intent.
 func (m *Model) deleteIntent(i *intent.Intent) tea.Cmd {
 	return func() tea.Msg {
+		title := i.Title // Capture before deletion
 		err := m.service.Delete(m.ctx, i.ID)
+		if err == nil && m.campaignRoot != "" && m.campaignID != "" {
+			_ = git.IntentCommitAll(m.ctx, git.IntentCommitOptions{
+				CampaignRoot: m.campaignRoot,
+				CampaignID:   m.campaignID,
+				Action:       git.IntentActionDelete,
+				IntentTitle:  title,
+			})
+		}
 		return deleteFinishedMsg{
 			err:   err,
-			title: i.Title,
+			title: title,
 		}
 	}
 }

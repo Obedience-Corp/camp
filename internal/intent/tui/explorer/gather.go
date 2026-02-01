@@ -1,7 +1,10 @@
 package explorer
 
 import (
+	"fmt"
+
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/obediencecorp/camp/internal/git"
 	"github.com/obediencecorp/camp/internal/intent"
 	"github.com/obediencecorp/camp/internal/intent/gather"
 	"github.com/obediencecorp/camp/internal/intent/tui"
@@ -60,10 +63,29 @@ func (m *Model) executeGather() tea.Cmd {
 			Title:          m.gatherDialog.Title(),
 			ArchiveSources: m.gatherDialog.ArchiveSources(),
 		}
-		result, err := svc.Gather(m.ctx, m.gatherDialog.IntentIDs(), opts)
+		sourceIDs := m.gatherDialog.IntentIDs()
+		result, err := svc.Gather(m.ctx, sourceIDs, opts)
 		if err != nil {
 			return gatherFinishedMsg{err: err}
 		}
+
+		// Auto-commit the gather operation using shared helper
+		if m.campaignRoot != "" && m.campaignID != "" {
+			description := fmt.Sprintf("Unified %d intents into %q\nSources: %v",
+				result.SourceCount, opts.Title, sourceIDs)
+			if len(result.ArchivedPaths) > 0 {
+				description += fmt.Sprintf("\nArchived: %d source intents", len(result.ArchivedPaths))
+			}
+
+			_ = git.IntentCommitAll(m.ctx, git.IntentCommitOptions{
+				CampaignRoot: m.campaignRoot,
+				CampaignID:   m.campaignID,
+				Action:       git.IntentActionGather,
+				IntentTitle:  opts.Title,
+				Description:  description,
+			})
+		}
+
 		return gatherFinishedMsg{
 			gatheredID:    result.Gathered.ID,
 			gatheredTitle: result.Gathered.Title,

@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/obediencecorp/camp/internal/ui/theme"
 )
 
 // ViewConfig configures the editor view rendering.
@@ -18,15 +19,16 @@ type ViewConfig struct {
 	ShowLineNums  bool
 }
 
-// DefaultViewConfig returns default styles.
+// DefaultViewConfig returns default styles using the theme package for adaptive colors.
 func DefaultViewConfig() ViewConfig {
+	pal := theme.TUI()
 	return ViewConfig{
 		NormalText:   lipgloss.NewStyle(),
 		CursorBlock:  lipgloss.NewStyle().Reverse(true),
 		CursorInsert: lipgloss.NewStyle().Underline(true),
-		Selection:    lipgloss.NewStyle().Background(lipgloss.Color("240")),
-		LineNumber:   lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
-		CommandLine:  lipgloss.NewStyle().Foreground(lipgloss.Color("252")),
+		Selection:    lipgloss.NewStyle().Background(pal.BgSelected),
+		LineNumber:   lipgloss.NewStyle().Foreground(pal.TextMuted),
+		CommandLine:  lipgloss.NewStyle().Foreground(pal.TextSecondary),
 		ShowLineNums: true,
 	}
 }
@@ -73,6 +75,13 @@ func (e *Editor) View(cfg ViewConfig) string {
 
 		// Render line content with cursor/selection highlighting
 		renderedLine := e.renderLine(lineIdx, line, cursor, cfg, inVisual, selStartOff, selEndOff)
+
+		// Apply soft wrapping to fit within editor width
+		if e.width > 0 {
+			wrapStyle := lipgloss.NewStyle().Width(e.width)
+			renderedLine = wrapStyle.Render(renderedLine)
+		}
+
 		b.WriteString(renderedLine)
 
 		if lineIdx < endLine-1 {
@@ -113,7 +122,10 @@ func (e *Editor) renderLine(lineIdx int, line string, cursor Position, cfg ViewC
 		isSelected := inVisual && charOffset >= selStartOff && charOffset <= selEndOff
 
 		switch {
-		case isCursor && e.state.Mode != ModeInsert:
+		case isCursor && e.state.Mode == ModeInsert:
+			// Insert mode cursor (underline) within line
+			result.WriteString(cfg.CursorInsert.Render(char))
+		case isCursor:
 			// Block cursor in normal/visual mode
 			result.WriteString(cfg.CursorBlock.Render(char))
 		case isSelected:

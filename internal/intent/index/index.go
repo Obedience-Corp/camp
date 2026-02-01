@@ -21,6 +21,12 @@ type IndexedIntent struct {
 	Words      []string       // Tokenized words
 	WordFreq   map[string]int // Word frequency
 	TotalWords int
+
+	// Metadata fields for composite similarity matching
+	Type     intent.Type     // Intent type (idea, feature, bug, etc.)
+	Concept  string          // Concept path (projects/camp, etc.)
+	Priority intent.Priority // Priority level
+	Horizon  intent.Horizon  // Time horizon
 }
 
 // Index provides fast content-based lookup for intents.
@@ -155,6 +161,11 @@ func (idx *Index) indexFile(path string, status intent.Status) error {
 		Words:      words,
 		WordFreq:   wordFreq,
 		TotalWords: len(words),
+		// Metadata fields for composite similarity
+		Type:     parsed.Type,
+		Concept:  parsed.Concept,
+		Priority: parsed.Priority,
+		Horizon:  parsed.Horizon,
 	}
 
 	idx.intents[parsed.ID] = indexed
@@ -212,7 +223,9 @@ func (idx *Index) FindByHashtag(hashtag string) []string {
 	return result
 }
 
-// FindSimilar returns intents similar to the given ID.
+// FindSimilar returns intents similar to the given ID using composite similarity.
+// The composite score combines TF-IDF text similarity with metadata matching
+// (tags, concept, type, priority, horizon).
 func (idx *Index) FindSimilar(id string, minScore float64) []SimilarResult {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -222,7 +235,12 @@ func (idx *Index) FindSimilar(id string, minScore float64) []SimilarResult {
 		return nil
 	}
 
-	return FindSimilar(refVector, idx.vectors, id, minScore)
+	refIntent := idx.intents[id]
+	if refIntent == nil {
+		return nil
+	}
+
+	return FindSimilarWithMetadata(refVector, idx.vectors, refIntent, idx.intents, id, minScore)
 }
 
 // GetAllTags returns all unique frontmatter tags.

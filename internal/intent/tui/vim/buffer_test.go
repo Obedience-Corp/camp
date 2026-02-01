@@ -242,3 +242,51 @@ func TestBuffer_SetCursorFromOffset(t *testing.T) {
 		t.Errorf("Cursor() = %+v, want {Line:1, Col:2}", pos)
 	}
 }
+
+func TestBuffer_DeleteCharBefore_CursorBeyondLine(t *testing.T) {
+	// Simulate cursor position exceeding line length (can happen in insert mode)
+	b := NewBuffer("a")
+	// Manually set cursor beyond line content to simulate the bug scenario
+	b.cursor.Col = 18 // Line has length 1, cursor at 18
+
+	// This should NOT panic - it should clamp and delete
+	deleted := b.DeleteCharBefore()
+
+	if deleted != "a" {
+		t.Errorf("DeleteCharBefore() = %q, want \"a\"", deleted)
+	}
+	if got := b.Content(); got != "" {
+		t.Errorf("Content() = %q, want \"\"", got)
+	}
+	if b.Cursor().Col != 0 {
+		t.Errorf("Cursor().Col = %d, want 0", b.Cursor().Col)
+	}
+}
+
+func TestBuffer_DeleteCharBefore_EmptyLine(t *testing.T) {
+	b := NewBuffer("")
+	b.cursor.Col = 0
+
+	deleted := b.DeleteCharBefore()
+
+	if deleted != "" {
+		t.Errorf("DeleteCharBefore() on empty buffer = %q, want \"\"", deleted)
+	}
+}
+
+func TestBuffer_DeleteCharBefore_JoinLines(t *testing.T) {
+	b := NewBuffer("hello\nworld")
+	b.SetCursor(Position{Line: 1, Col: 0})
+
+	deleted := b.DeleteCharBefore()
+
+	if deleted != "\n" {
+		t.Errorf("DeleteCharBefore() at line start = %q, want \"\\n\"", deleted)
+	}
+	if got := b.Content(); got != "helloworld" {
+		t.Errorf("Content() = %q, want \"helloworld\"", got)
+	}
+	if b.Cursor().Line != 0 || b.Cursor().Col != 5 {
+		t.Errorf("Cursor() = %+v, want {Line:0, Col:5}", b.Cursor())
+	}
+}
