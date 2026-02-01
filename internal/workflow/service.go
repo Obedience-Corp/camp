@@ -310,6 +310,22 @@ func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, erro
 		result.CreatedFiles = append(result.CreatedFiles, obey.path)
 	}
 
+	// Create .gitkeep in empty directories that won't get other files
+	emptyDirs := []string{"dungeon/completed", "dungeon/archived", "dungeon/someday"}
+	for _, dirPath := range emptyDirs {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+
+		gitkeepPath := filepath.Join(s.resolvePath(dirPath), ".gitkeep")
+		if _, err := os.Stat(gitkeepPath); os.IsNotExist(err) {
+			if err := os.WriteFile(gitkeepPath, []byte{}, 0644); err != nil {
+				return nil, fmt.Errorf("failed to create .gitkeep in %s: %w", dirPath, err)
+			}
+			result.CreatedFiles = append(result.CreatedFiles, filepath.Join(dirPath, ".gitkeep"))
+		}
+	}
+
 	return result, nil
 }
 
@@ -391,7 +407,8 @@ func (s *Service) List(ctx context.Context, status string, opts ListOptions) (*L
 
 	// System files to exclude from listings
 	excludedFiles := map[string]bool{
-		"OBEY.md": true,
+		"OBEY.md":  true,
+		".gitkeep": true,
 	}
 
 	for _, entry := range entries {

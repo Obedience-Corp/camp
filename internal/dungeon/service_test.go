@@ -31,9 +31,9 @@ func TestService_Init(t *testing.T) {
 		t.Errorf("expected 4 created dirs, got %d: %v", len(result.CreatedDirs), result.CreatedDirs)
 	}
 
-	// Should create files (OBEY.md only)
-	if len(result.CreatedFiles) != 1 {
-		t.Errorf("expected 1 created file, got %d: %v", len(result.CreatedFiles), result.CreatedFiles)
+	// Should create files (OBEY.md + 3 .gitkeep files)
+	if len(result.CreatedFiles) != 4 {
+		t.Errorf("expected 4 created files, got %d: %v", len(result.CreatedFiles), result.CreatedFiles)
 	}
 
 	// Verify OBEY.md exists
