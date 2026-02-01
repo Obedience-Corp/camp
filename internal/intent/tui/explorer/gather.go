@@ -2,7 +2,6 @@ package explorer
 
 import (
 	"fmt"
-	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/obediencecorp/camp/internal/git"
@@ -64,33 +63,27 @@ func (m *Model) executeGather() tea.Cmd {
 			Title:          m.gatherDialog.Title(),
 			ArchiveSources: m.gatherDialog.ArchiveSources(),
 		}
-		result, err := svc.Gather(m.ctx, m.gatherDialog.IntentIDs(), opts)
+		sourceIDs := m.gatherDialog.IntentIDs()
+		result, err := svc.Gather(m.ctx, sourceIDs, opts)
 		if err != nil {
 			return gatherFinishedMsg{err: err}
 		}
 
-		// Auto-commit the gather operation
+		// Auto-commit the gather operation using shared helper
 		if m.campaignRoot != "" && m.campaignID != "" {
-			shortID := m.campaignID
-			if len(shortID) > 8 {
-				shortID = shortID[:8]
-			}
-
-			sourceIDs := m.gatherDialog.IntentIDs()
-			commitMsg := fmt.Sprintf("[OBEY-CAMPAIGN-%s] Gather: %s\n\nUnified %d intents into %q\nSources: %s",
-				shortID,
-				opts.Title,
-				result.SourceCount,
-				opts.Title,
-				strings.Join(sourceIDs, ", "),
-			)
+			description := fmt.Sprintf("Unified %d intents into %q\nSources: %v",
+				result.SourceCount, opts.Title, sourceIDs)
 			if len(result.ArchivedPaths) > 0 {
-				commitMsg += fmt.Sprintf("\nArchived: %d source intents", len(result.ArchivedPaths))
+				description += fmt.Sprintf("\nArchived: %d source intents", len(result.ArchivedPaths))
 			}
 
-			// CommitAll has built-in lock handling with retry
-			// Ignore errors - don't fail gather just because commit failed
-			_ = git.CommitAll(m.ctx, m.campaignRoot, commitMsg)
+			_ = git.IntentCommitAll(m.ctx, git.IntentCommitOptions{
+				CampaignRoot: m.campaignRoot,
+				CampaignID:   m.campaignID,
+				Action:       git.IntentActionGather,
+				IntentTitle:  opts.Title,
+				Description:  description,
+			})
 		}
 
 		return gatherFinishedMsg{

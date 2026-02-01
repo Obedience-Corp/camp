@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/obediencecorp/camp/internal/config"
+	"github.com/obediencecorp/camp/internal/git"
 	"github.com/obediencecorp/camp/internal/intent"
 	"github.com/obediencecorp/camp/internal/paths"
 )
@@ -35,6 +36,7 @@ func init() {
 	flags := intentPromoteCmd.Flags()
 	flags.Bool("force", false, "Promote even if not in ready status")
 	flags.Bool("dry-run", false, "Preview promotion without making changes")
+	flags.Bool("no-commit", false, "Don't create a git commit")
 }
 
 func runIntentPromote(cmd *cobra.Command, args []string) error {
@@ -44,6 +46,7 @@ func runIntentPromote(cmd *cobra.Command, args []string) error {
 	// Parse flags
 	force, _ := cmd.Flags().GetBool("force")
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
+	noCommit, _ := cmd.Flags().GetBool("no-commit")
 
 	// Find campaign root
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
@@ -78,6 +81,8 @@ func runIntentPromote(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	prevStatus := i.Status
+
 	// Move to done status
 	result, err := svc.Move(ctx, i.ID, intent.StatusDone)
 	if err != nil {
@@ -87,6 +92,20 @@ func runIntentPromote(cmd *cobra.Command, args []string) error {
 	fmt.Printf("✓ Intent promoted: %s\n", result.Path)
 	fmt.Println("\nNext step: Create the Festival with:")
 	fmt.Printf("  fest create festival --name \"%s\"\n", i.Title)
+
+	// Auto-commit (unless --no-commit)
+	if !noCommit {
+		commitResult := git.IntentCommitAll(ctx, git.IntentCommitOptions{
+			CampaignRoot: campaignRoot,
+			CampaignID:   cfg.ID,
+			Action:       git.IntentActionPromote,
+			IntentTitle:  i.Title,
+			Description:  fmt.Sprintf("Promoted from %s to done", prevStatus),
+		})
+		if commitResult.Message != "" {
+			fmt.Printf("  %s\n", commitResult.Message)
+		}
+	}
 
 	return nil
 }

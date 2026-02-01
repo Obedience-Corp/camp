@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -159,34 +158,25 @@ func runIntentGather(cmd *cobra.Command, args []string) error {
 
 	// Git commit (unless --no-commit)
 	if !gatherNoCommit {
-		// Build commit message with campaign ID prefix
-		shortID := cfg.ID
-		if len(shortID) > 8 {
-			shortID = shortID[:8]
-		}
-
-		commitMsg := fmt.Sprintf("[OBEY-CAMPAIGN-%s] Gather: %s\n\nUnified %d intents into %q\nSources: %s",
-			shortID,
-			gatherTitle,
+		// Build description for commit message
+		description := fmt.Sprintf("Unified %d intents into %q\nSources: %s",
 			result.SourceCount,
 			gatherTitle,
 			strings.Join(ids, ", "),
 		)
 		if len(result.ArchivedPaths) > 0 {
-			commitMsg += fmt.Sprintf("\nArchived: %d source intents", len(result.ArchivedPaths))
+			description += fmt.Sprintf("\nArchived: %d source intents", len(result.ArchivedPaths))
 		}
 
-		// CommitAll has built-in lock handling with retry
-		if err := git.CommitAll(ctx, campaignRoot, commitMsg); err != nil {
-			// Don't fail the gather - just warn about commit failure
-			if errors.Is(err, git.ErrNoChanges) {
-				// This shouldn't happen after gather, but handle gracefully
-				fmt.Println("  (no changes to commit)")
-			} else {
-				fmt.Printf("  Warning: git commit failed: %v\n", err)
-			}
-		} else {
-			fmt.Println("  Committed changes to git")
+		commitResult := git.IntentCommitAll(ctx, git.IntentCommitOptions{
+			CampaignRoot: campaignRoot,
+			CampaignID:   cfg.ID,
+			Action:       git.IntentActionGather,
+			IntentTitle:  gatherTitle,
+			Description:  description,
+		})
+		if commitResult.Message != "" {
+			fmt.Printf("  %s\n", commitResult.Message)
 		}
 	}
 

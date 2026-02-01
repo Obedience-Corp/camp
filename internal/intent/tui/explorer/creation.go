@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/obediencecorp/camp/internal/git"
 	"github.com/obediencecorp/camp/internal/intent"
 	"github.com/obediencecorp/camp/internal/intent/tui"
 )
@@ -102,6 +103,16 @@ func (m *Model) finishIntentCreation(conceptPath string) (tea.Model, tea.Cmd) {
 		m.statusMessage = "Error creating intent: " + err.Error()
 		m.focus = focusList
 		return m, nil
+	}
+
+	// Auto-commit the creation using shared helper
+	if m.campaignRoot != "" && m.campaignID != "" {
+		_ = git.IntentCommitAll(m.ctx, git.IntentCommitOptions{
+			CampaignRoot: m.campaignRoot,
+			CampaignID:   m.campaignID,
+			Action:       git.IntentActionCreate,
+			IntentTitle:  title,
+		})
 	}
 
 	m.statusMessage = "Intent created: " + title
