@@ -539,7 +539,9 @@ func (m IntentViewerModel) findSimilarIntents() tea.Cmd {
 				return ViewerSimilarFoundMsg{Err: err}
 			}
 		}
-		similar, err := m.gatherSvc.FindSimilar(m.ctx, m.intent.ID, 0.3)
+		// Use lower threshold (0.15) since composite similarity includes
+		// metadata matching which produces lower scores than pure TF-IDF
+		similar, err := m.gatherSvc.FindSimilar(m.ctx, m.intent.ID, 0.15)
 		return ViewerSimilarFoundMsg{Similar: similar, Err: err}
 	}
 }
