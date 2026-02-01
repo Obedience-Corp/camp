@@ -1,7 +1,10 @@
 package explorer
 
 import (
+	"fmt"
+
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/obediencecorp/camp/internal/git"
 	"github.com/obediencecorp/camp/internal/intent"
 	"github.com/obediencecorp/camp/internal/intent/gather"
 	"github.com/obediencecorp/camp/internal/intent/tui"
@@ -64,6 +67,29 @@ func (m *Model) executeGather() tea.Cmd {
 		if err != nil {
 			return gatherFinishedMsg{err: err}
 		}
+
+		// Auto-commit the gather operation
+		if m.campaignRoot != "" && m.campaignID != "" {
+			shortID := m.campaignID
+			if len(shortID) > 8 {
+				shortID = shortID[:8]
+			}
+
+			commitMsg := fmt.Sprintf("[OBEY-CAMPAIGN-%s] Gather: %s\n\nUnified %d intents into %q",
+				shortID,
+				opts.Title,
+				result.SourceCount,
+				opts.Title,
+			)
+			if len(result.ArchivedPaths) > 0 {
+				commitMsg += fmt.Sprintf("\nArchived: %d source intents", len(result.ArchivedPaths))
+			}
+
+			// CommitAll has built-in lock handling with retry
+			// Ignore errors - don't fail gather just because commit failed
+			_ = git.CommitAll(m.ctx, m.campaignRoot, commitMsg)
+		}
+
 		return gatherFinishedMsg{
 			gatheredID:    result.Gathered.ID,
 			gatheredTitle: result.Gathered.Title,
