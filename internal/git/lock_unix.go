@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // LockInfo contains information about a lock file.
@@ -280,4 +281,64 @@ func CleanStaleLocks(ctx context.Context, repoRoot string, logger *slog.Logger) 
 		Skipped:    skipped,
 		TotalLocks: len(locks),
 	}, nil
+}
+
+// WaitForLockRelease waits for an active lock to be released.
+// It polls the lock status with exponential backoff until the lock is released
+// or the timeout is exceeded.
+// Returns nil if the lock was released, ErrLockTimeout if timeout exceeded.
+func WaitForLockRelease(ctx context.Context, lockPath string, timeout time.Duration, logger *slog.Logger) error {
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	deadline := time.Now().Add(timeout)
+	pollInterval := 100 * time.Millisecond
+	maxPollInterval := 500 * time.Millisecond
+
+	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		// Check if lock still exists
+		if _, err := os.Stat(lockPath); os.IsNotExist(err) {
+			logger.Info("lock released (file removed)", "path", lockPath)
+			return nil
+		}
+
+		// Check if lock is now stale
+		stale, info, err := IsLockStale(ctx, lockPath)
+		if err == nil && stale {
+			logger.Info("lock became stale", "path", lockPath)
+			return nil
+		}
+
+		// Log waiting status
+		remaining := time.Until(deadline).Round(100 * time.Millisecond)
+		if info != nil && info.ProcessID > 0 {
+			logger.Debug("waiting for lock release",
+				"path", lockPath,
+				"pid", info.ProcessID,
+				"remaining", remaining)
+		} else {
+			logger.Debug("waiting for lock release",
+				"path", lockPath,
+				"remaining", remaining)
+		}
+
+		// Wait before next poll
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(pollInterval):
+		}
+
+		// Exponential backoff for polling (capped)
+		pollInterval = min(pollInterval*2, maxPollInterval)
+	}
+
+	return ErrLockTimeout
 }

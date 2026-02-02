@@ -84,6 +84,9 @@ var (
 	// ErrLockRemovalFailed indicates we couldn't remove a stale lock.
 	ErrLockRemovalFailed = errors.New("failed to remove stale lock")
 
+	// ErrLockTimeout indicates the timeout was exceeded waiting for a lock to release.
+	ErrLockTimeout = errors.New("timeout waiting for lock release")
+
 	// ErrNotRepository indicates the path is not a git repository.
 	ErrNotRepository = errors.New("not a git repository")
 
