@@ -32,3 +32,4 @@ __debug_bin*
 # Local environment
 .env.local
 .envrc
+CLAUDE.md
