@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/obediencecorp/camp/internal/campaign"
+	"github.com/obediencecorp/camp/internal/config"
+	"github.com/obediencecorp/camp/internal/git"
 	"github.com/obediencecorp/camp/internal/project"
 	"github.com/obediencecorp/camp/internal/ui"
 	"github.com/spf13/cobra"
@@ -39,6 +41,7 @@ func init() {
 	projectRemoveCmd.Flags().BoolP("delete", "d", false, "Also delete project files (destructive)")
 	projectRemoveCmd.Flags().BoolP("force", "f", false, "Skip confirmation prompts")
 	projectRemoveCmd.Flags().Bool("dry-run", false, "Show what would be done without making changes")
+	projectRemoveCmd.Flags().Bool("no-commit", false, "Skip automatic git commit")
 }
 
 func runProjectRemove(cmd *cobra.Command, args []string) error {
@@ -48,6 +51,7 @@ func runProjectRemove(cmd *cobra.Command, args []string) error {
 	delete, _ := cmd.Flags().GetBool("delete")
 	force, _ := cmd.Flags().GetBool("force")
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
+	noCommit, _ := cmd.Flags().GetBool("no-commit")
 
 	// Confirm if deleting and not forced
 	if delete && !force && !dryRun {
@@ -105,6 +109,24 @@ func runProjectRemove(cmd *cobra.Command, args []string) error {
 	}
 	if result.WorktreeDeleted {
 		fmt.Printf("  %s Worktrees deleted\n", ui.SuccessIcon())
+	}
+
+	// Auto-commit if not disabled and not a dry run
+	if !noCommit && !dryRun {
+		cfg, _ := config.LoadCampaignConfig(ctx, root)
+		campaignID := ""
+		if cfg != nil {
+			campaignID = cfg.ID
+		}
+		commitResult := git.ProjectCommitAll(ctx, git.ProjectCommitOptions{
+			CampaignRoot: root,
+			CampaignID:   campaignID,
+			Action:       git.ProjectActionRemove,
+			ProjectName:  result.Name,
+		})
+		if commitResult.Message != "" {
+			fmt.Printf("  %s\n", commitResult.Message)
+		}
 	}
 
 	return nil

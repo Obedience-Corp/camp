@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/obediencecorp/camp/internal/campaign"
+	"github.com/obediencecorp/camp/internal/config"
+	"github.com/obediencecorp/camp/internal/git"
 	"github.com/obediencecorp/camp/internal/project"
 	"github.com/obediencecorp/camp/internal/ui"
 	"github.com/spf13/cobra"
@@ -39,6 +41,7 @@ func init() {
 	projectAddCmd.Flags().StringP("name", "n", "", "Override project name (defaults to repo name)")
 	projectAddCmd.Flags().StringP("path", "p", "", "Override destination path (defaults to projects/<name>)")
 	projectAddCmd.Flags().StringP("local", "l", "", "Add existing local repository instead of cloning")
+	projectAddCmd.Flags().Bool("no-commit", false, "Skip automatic git commit")
 }
 
 func runProjectAdd(cmd *cobra.Command, args []string) error {
@@ -48,6 +51,7 @@ func runProjectAdd(cmd *cobra.Command, args []string) error {
 	name, _ := cmd.Flags().GetString("name")
 	path, _ := cmd.Flags().GetString("path")
 	local, _ := cmd.Flags().GetString("local")
+	noCommit, _ := cmd.Flags().GetBool("no-commit")
 
 	// Detect campaign root
 	root, err := campaign.DetectCached(ctx)
@@ -83,6 +87,24 @@ func runProjectAdd(cmd *cobra.Command, args []string) error {
 	fmt.Println(ui.KeyValue("  Source:", result.Source))
 	if result.Type != "" {
 		fmt.Println(ui.KeyValue("  Type:", result.Type))
+	}
+
+	// Auto-commit if not disabled
+	if !noCommit {
+		cfg, _ := config.LoadCampaignConfig(ctx, root)
+		campaignID := ""
+		if cfg != nil {
+			campaignID = cfg.ID
+		}
+		commitResult := git.ProjectCommitAll(ctx, git.ProjectCommitOptions{
+			CampaignRoot: root,
+			CampaignID:   campaignID,
+			Action:       git.ProjectActionAdd,
+			ProjectName:  result.Name,
+		})
+		if commitResult.Message != "" {
+			fmt.Printf("  %s\n", commitResult.Message)
+		}
 	}
 
 	return nil
