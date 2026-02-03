@@ -2,23 +2,13 @@ package project
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/obediencecorp/camp/internal/git"
-)
-
-const (
-	maxRetryAttempts   = 3
-	initialBackoff     = 200 * time.Millisecond
-	maxBackoff         = 2 * time.Second
-	activeLockWaitTime = 5 * time.Second
 )
 
 // AddOptions configures the project add behavior.
@@ -164,79 +154,17 @@ func extractRepoName(url string) string {
 // - Active locks are waited on (up to 5 seconds) before retrying
 // - Exponential backoff between retry attempts
 func addRemoteAsSubmodule(ctx context.Context, campaignRoot, url, path string) error {
-	var lastErr error
-	backoff := initialBackoff
+	cfg := git.SubmoduleRetryConfig()
+	cfg.OperationName = "submodule add"
 
-	for attempt := 1; attempt <= maxRetryAttempts; attempt++ {
-		err := executeRemoteSubmoduleAdd(ctx, campaignRoot, url, path)
-		if err == nil {
-			return initializeSubmodule(ctx, campaignRoot, path)
-		}
-
-		// Check if it's a lock error
-		if !isSubmoduleLockError(err) {
-			return err // Non-lock error, don't retry
-		}
-
-		lastErr = err
-
-		// Try to clean stale locks
-		result, cleanErr := git.CleanStaleLocks(ctx, campaignRoot, nil)
-		if cleanErr != nil {
-			return fmt.Errorf("failed to clean locks (attempt %d): %w", attempt, cleanErr)
-		}
-
-		// If we removed stale locks, retry after brief delay
-		if len(result.Removed) > 0 {
-			slog.Info("retrying after stale lock cleanup",
-				"attempt", attempt,
-				"removed", len(result.Removed),
-				"path", path)
-			time.Sleep(backoff)
-			backoff = min(backoff*2, maxBackoff)
-			continue
-		}
-
-		// If active locks found, wait for them to release
-		if len(result.Skipped) > 0 {
-			slog.Info("waiting for active lock to release",
-				"attempt", attempt,
-				"active_locks", len(result.Skipped),
-				"path", path)
-
-			// Wait for the first active lock (usually there's only one)
-			waitErr := git.WaitForLockRelease(ctx, result.Skipped[0].Path, activeLockWaitTime, slog.Default())
-			if waitErr == nil {
-				// Lock released! Clean up any remaining stale locks and retry
-				git.CleanStaleLocks(ctx, campaignRoot, nil)
-				continue
-			}
-
-			// Timeout waiting for lock - but still have attempts left
-			if attempt < maxRetryAttempts {
-				slog.Warn("lock wait timeout, will retry",
-					"attempt", attempt,
-					"pid", result.Skipped[0].ProcessID,
-					"path", result.Skipped[0].Path)
-				time.Sleep(backoff)
-				backoff = min(backoff*2, maxBackoff)
-				continue
-			}
-
-			// Final attempt failed
-			return fmt.Errorf("cannot add submodule: lock held by active process (PID %d) after waiting: %w",
-				result.Skipped[0].ProcessID, lastErr)
-		}
-
-		// No locks found but still failed - apply backoff and retry
-		slog.Info("retrying submodule add",
-			"attempt", attempt,
-			"path", path)
-		time.Sleep(backoff)
-		backoff = min(backoff*2, maxBackoff)
+	err := git.WithLockRetry(ctx, campaignRoot, cfg, func() error {
+		return executeRemoteSubmoduleAdd(ctx, campaignRoot, url, path)
+	})
+	if err != nil {
+		return err
 	}
 
-	return fmt.Errorf("submodule add failed after %d attempts: %w", maxRetryAttempts, lastErr)
+	return initializeSubmodule(ctx, campaignRoot, path)
 }
 
 // executeRemoteSubmoduleAdd runs the git submodule add command for a remote URL.
@@ -289,79 +217,12 @@ func addLocalAsSubmodule(ctx context.Context, campaignRoot, localPath, destPath,
 			"Hint: Run 'git init' in the directory first, or provide a git repository URL instead", localPath)
 	}
 
-	var lastErr error
-	backoff := initialBackoff
+	cfg := git.SubmoduleRetryConfig()
+	cfg.OperationName = "local submodule add"
 
-	for attempt := 1; attempt <= maxRetryAttempts; attempt++ {
-		err := executeLocalSubmoduleAdd(ctx, campaignRoot, absLocal, destPath)
-		if err == nil {
-			return nil // Success
-		}
-
-		// Check if it's a lock error
-		if !isSubmoduleLockError(err) {
-			return err // Non-lock error, don't retry
-		}
-
-		lastErr = err
-
-		// Try to clean stale locks
-		result, cleanErr := git.CleanStaleLocks(ctx, campaignRoot, nil)
-		if cleanErr != nil {
-			return fmt.Errorf("failed to clean locks (attempt %d): %w", attempt, cleanErr)
-		}
-
-		// If we removed stale locks, retry after brief delay
-		if len(result.Removed) > 0 {
-			slog.Info("retrying after stale lock cleanup",
-				"attempt", attempt,
-				"removed", len(result.Removed),
-				"path", destPath)
-			time.Sleep(backoff)
-			backoff = min(backoff*2, maxBackoff)
-			continue
-		}
-
-		// If active locks found, wait for them to release
-		if len(result.Skipped) > 0 {
-			slog.Info("waiting for active lock to release",
-				"attempt", attempt,
-				"active_locks", len(result.Skipped),
-				"path", destPath)
-
-			// Wait for the first active lock (usually there's only one)
-			waitErr := git.WaitForLockRelease(ctx, result.Skipped[0].Path, activeLockWaitTime, slog.Default())
-			if waitErr == nil {
-				// Lock released! Clean up any remaining stale locks and retry
-				git.CleanStaleLocks(ctx, campaignRoot, nil)
-				continue
-			}
-
-			// Timeout waiting for lock - but still have attempts left
-			if attempt < maxRetryAttempts {
-				slog.Warn("lock wait timeout, will retry",
-					"attempt", attempt,
-					"pid", result.Skipped[0].ProcessID,
-					"path", result.Skipped[0].Path)
-				time.Sleep(backoff)
-				backoff = min(backoff*2, maxBackoff)
-				continue
-			}
-
-			// Final attempt failed
-			return fmt.Errorf("cannot add submodule: lock held by active process (PID %d) after waiting: %w",
-				result.Skipped[0].ProcessID, lastErr)
-		}
-
-		// No locks found but still failed - apply backoff and retry
-		slog.Info("retrying local submodule add",
-			"attempt", attempt,
-			"path", destPath)
-		time.Sleep(backoff)
-		backoff = min(backoff*2, maxBackoff)
-	}
-
-	return fmt.Errorf("local submodule add failed after %d attempts: %w", maxRetryAttempts, lastErr)
+	return git.WithLockRetry(ctx, campaignRoot, cfg, func() error {
+		return executeLocalSubmoduleAdd(ctx, campaignRoot, absLocal, destPath)
+	})
 }
 
 // executeLocalSubmoduleAdd runs the git submodule add command for a local path.
@@ -405,8 +266,3 @@ func checkIsGitRepo(ctx context.Context, campaignRoot string) error {
 	return nil
 }
 
-// isSubmoduleLockError checks if an error is a git lock-related error.
-func isSubmoduleLockError(err error) bool {
-	var lockErr *git.LockError
-	return errors.As(err, &lockErr)
-}

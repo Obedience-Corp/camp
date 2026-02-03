@@ -4,12 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os/exec"
 	"strings"
 )
-
-const maxRetryAttempts = 3
 
 // CommitOptions configures the commit operation.
 type CommitOptions struct {
@@ -36,39 +33,12 @@ func Commit(ctx context.Context, repoPath string, opts *CommitOptions) error {
 		return err
 	}
 
-	var lastErr error
-	for attempt := 1; attempt <= maxRetryAttempts; attempt++ {
-		err := executeCommit(ctx, repoPath, opts)
-		if err == nil {
-			return nil // Success
-		}
+	cfg := DefaultRetryConfig()
+	cfg.OperationName = "commit"
 
-		// Check if it's a lock error
-		if !isLockError(err) {
-			return err // Non-lock error, don't retry
-		}
-
-		lastErr = err
-
-		// Try to clean stale locks
-		result, cleanErr := CleanStaleLocks(ctx, repoPath, nil)
-		if cleanErr != nil {
-			return fmt.Errorf("failed to clean locks during commit retry (attempt %d): %w", attempt, cleanErr)
-		}
-
-		// If we couldn't remove any locks, don't retry
-		if len(result.Removed) == 0 && len(result.Skipped) > 0 {
-			return fmt.Errorf("cannot commit: lock held by active process: %w", lastErr)
-		}
-
-		// Log retry
-		slog.Info("retrying commit after lock cleanup",
-			"attempt", attempt,
-			"removed", len(result.Removed),
-			"repoPath", repoPath)
-	}
-
-	return fmt.Errorf("commit failed after %d attempts: %w", maxRetryAttempts, lastErr)
+	return WithLockRetry(ctx, repoPath, cfg, func() error {
+		return executeCommit(ctx, repoPath, opts)
+	})
 }
 
 // executeCommit runs the actual git commit command.
@@ -142,39 +112,12 @@ func CommitAll(ctx context.Context, repoPath, message string) error {
 // Stage adds files to the git index (staging area) with automatic lock handling.
 // If files is empty, stages all changes (git add .).
 func Stage(ctx context.Context, repoPath string, files []string) error {
-	var lastErr error
-	for attempt := 1; attempt <= maxRetryAttempts; attempt++ {
-		err := executeStage(ctx, repoPath, files)
-		if err == nil {
-			return nil // Success
-		}
+	cfg := DefaultRetryConfig()
+	cfg.OperationName = "stage"
 
-		// Check if it's a lock error
-		if !isLockError(err) {
-			return err // Non-lock error, don't retry
-		}
-
-		lastErr = err
-
-		// Try to clean stale locks
-		result, cleanErr := CleanStaleLocks(ctx, repoPath, nil)
-		if cleanErr != nil {
-			return fmt.Errorf("failed to clean locks during stage retry (attempt %d): %w", attempt, cleanErr)
-		}
-
-		// If we couldn't remove any locks, don't retry
-		if len(result.Removed) == 0 && len(result.Skipped) > 0 {
-			return fmt.Errorf("cannot stage: lock held by active process: %w", lastErr)
-		}
-
-		// Log retry
-		slog.Info("retrying stage after lock cleanup",
-			"attempt", attempt,
-			"removed", len(result.Removed),
-			"repoPath", repoPath)
-	}
-
-	return fmt.Errorf("stage failed after %d attempts: %w", maxRetryAttempts, lastErr)
+	return WithLockRetry(ctx, repoPath, cfg, func() error {
+		return executeStage(ctx, repoPath, files)
+	})
 }
 
 // executeStage runs the actual git add command.

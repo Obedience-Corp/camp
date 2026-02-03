@@ -3,11 +3,9 @@ package project
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"time"
 
 	"github.com/obediencecorp/camp/internal/git"
 )
@@ -157,150 +155,42 @@ func removeSubmodule(ctx context.Context, campaignRoot, name string) error {
 
 // executeSubmoduleDeinit runs git submodule deinit with lock handling.
 func executeSubmoduleDeinit(ctx context.Context, campaignRoot, submodulePath string) error {
-	var lastErr error
-	backoff := initialBackoff
+	cfg := git.SubmoduleRetryConfig()
+	cfg.OperationName = "submodule deinit"
 
-	for attempt := 1; attempt <= maxRetryAttempts; attempt++ {
+	return git.WithLockRetry(ctx, campaignRoot, cfg, func() error {
 		cmd := exec.CommandContext(ctx, "git", "submodule", "deinit", "-f", submodulePath)
 		cmd.Dir = campaignRoot
 		output, err := cmd.CombinedOutput()
-		if err == nil {
-			return nil
-		}
-
-		// Check if it's a lock error
-		errType := git.ClassifyGitError(string(output), cmd.ProcessState.ExitCode())
-		if errType != git.GitErrorLock {
+		if err != nil {
+			// Check if it's a lock error
+			errType := git.ClassifyGitError(string(output), cmd.ProcessState.ExitCode())
+			if errType == git.GitErrorLock {
+				return &git.LockError{Path: "index.lock", Err: err}
+			}
 			return fmt.Errorf("submodule deinit failed: %w", err)
 		}
-
-		lastErr = err
-
-		// Try to clean stale locks
-		result, cleanErr := git.CleanStaleLocks(ctx, campaignRoot, nil)
-		if cleanErr != nil {
-			return fmt.Errorf("failed to clean locks (attempt %d): %w", attempt, cleanErr)
-		}
-
-		// If we removed stale locks, retry after brief delay
-		if len(result.Removed) > 0 {
-			slog.Info("retrying deinit after stale lock cleanup",
-				"attempt", attempt,
-				"removed", len(result.Removed),
-				"path", submodulePath)
-			time.Sleep(backoff)
-			backoff = min(backoff*2, maxBackoff)
-			continue
-		}
-
-		// If active locks found, wait for them to release
-		if len(result.Skipped) > 0 {
-			slog.Info("waiting for active lock to release",
-				"attempt", attempt,
-				"active_locks", len(result.Skipped),
-				"path", submodulePath)
-
-			waitErr := git.WaitForLockRelease(ctx, result.Skipped[0].Path, activeLockWaitTime, slog.Default())
-			if waitErr == nil {
-				git.CleanStaleLocks(ctx, campaignRoot, nil)
-				continue
-			}
-
-			if attempt < maxRetryAttempts {
-				slog.Warn("lock wait timeout, will retry",
-					"attempt", attempt,
-					"pid", result.Skipped[0].ProcessID,
-					"path", result.Skipped[0].Path)
-				time.Sleep(backoff)
-				backoff = min(backoff*2, maxBackoff)
-				continue
-			}
-
-			return fmt.Errorf("submodule deinit failed: lock held by active process (PID %d) after waiting: %w",
-				result.Skipped[0].ProcessID, lastErr)
-		}
-
-		slog.Info("retrying submodule deinit",
-			"attempt", attempt,
-			"path", submodulePath)
-		time.Sleep(backoff)
-		backoff = min(backoff*2, maxBackoff)
-	}
-
-	return fmt.Errorf("submodule deinit failed after %d attempts: %w", maxRetryAttempts, lastErr)
+		return nil
+	})
 }
 
 // executeSubmoduleRm runs git rm with lock handling.
 func executeSubmoduleRm(ctx context.Context, campaignRoot, submodulePath string) error {
-	var lastErr error
-	backoff := initialBackoff
+	cfg := git.SubmoduleRetryConfig()
+	cfg.OperationName = "git rm"
 
-	for attempt := 1; attempt <= maxRetryAttempts; attempt++ {
+	return git.WithLockRetry(ctx, campaignRoot, cfg, func() error {
 		cmd := exec.CommandContext(ctx, "git", "rm", "-f", submodulePath)
 		cmd.Dir = campaignRoot
 		output, err := cmd.CombinedOutput()
-		if err == nil {
-			return nil
-		}
-
-		// Check if it's a lock error
-		errType := git.ClassifyGitError(string(output), cmd.ProcessState.ExitCode())
-		if errType != git.GitErrorLock {
+		if err != nil {
+			// Check if it's a lock error
+			errType := git.ClassifyGitError(string(output), cmd.ProcessState.ExitCode())
+			if errType == git.GitErrorLock {
+				return &git.LockError{Path: "index.lock", Err: err}
+			}
 			return fmt.Errorf("git rm failed: %w", err)
 		}
-
-		lastErr = err
-
-		// Try to clean stale locks
-		result, cleanErr := git.CleanStaleLocks(ctx, campaignRoot, nil)
-		if cleanErr != nil {
-			return fmt.Errorf("failed to clean locks (attempt %d): %w", attempt, cleanErr)
-		}
-
-		// If we removed stale locks, retry after brief delay
-		if len(result.Removed) > 0 {
-			slog.Info("retrying git rm after stale lock cleanup",
-				"attempt", attempt,
-				"removed", len(result.Removed),
-				"path", submodulePath)
-			time.Sleep(backoff)
-			backoff = min(backoff*2, maxBackoff)
-			continue
-		}
-
-		// If active locks found, wait for them to release
-		if len(result.Skipped) > 0 {
-			slog.Info("waiting for active lock to release",
-				"attempt", attempt,
-				"active_locks", len(result.Skipped),
-				"path", submodulePath)
-
-			waitErr := git.WaitForLockRelease(ctx, result.Skipped[0].Path, activeLockWaitTime, slog.Default())
-			if waitErr == nil {
-				git.CleanStaleLocks(ctx, campaignRoot, nil)
-				continue
-			}
-
-			if attempt < maxRetryAttempts {
-				slog.Warn("lock wait timeout, will retry",
-					"attempt", attempt,
-					"pid", result.Skipped[0].ProcessID,
-					"path", result.Skipped[0].Path)
-				time.Sleep(backoff)
-				backoff = min(backoff*2, maxBackoff)
-				continue
-			}
-
-			return fmt.Errorf("git rm failed: lock held by active process (PID %d) after waiting: %w",
-				result.Skipped[0].ProcessID, lastErr)
-		}
-
-		slog.Info("retrying git rm",
-			"attempt", attempt,
-			"path", submodulePath)
-		time.Sleep(backoff)
-		backoff = min(backoff*2, maxBackoff)
-	}
-
-	return fmt.Errorf("git rm failed after %d attempts: %w", maxRetryAttempts, lastErr)
+		return nil
+	})
 }
