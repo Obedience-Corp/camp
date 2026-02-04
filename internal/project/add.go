@@ -2,9 +2,7 @@ package project
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,8 +10,6 @@ import (
 
 	"github.com/obediencecorp/camp/internal/git"
 )
-
-const maxRetryAttempts = 3
 
 // AddOptions configures the project add behavior.
 type AddOptions struct {
@@ -153,40 +149,22 @@ func extractRepoName(url string) string {
 }
 
 // addRemoteAsSubmodule adds a remote git repository as a submodule.
-// It handles stale lock files automatically with retry logic.
+// It handles stale and active lock files with intelligent retry logic:
+// - Stale locks are removed immediately
+// - Active locks are waited on (up to 5 seconds) before retrying
+// - Exponential backoff between retry attempts
 func addRemoteAsSubmodule(ctx context.Context, campaignRoot, url, path string) error {
-	var lastErr error
-	for attempt := 1; attempt <= maxRetryAttempts; attempt++ {
-		err := executeRemoteSubmoduleAdd(ctx, campaignRoot, url, path)
-		if err == nil {
-			return initializeSubmodule(ctx, campaignRoot, path)
-		}
+	cfg := git.SubmoduleRetryConfig()
+	cfg.OperationName = "submodule add"
 
-		// Check if it's a lock error
-		if !isSubmoduleLockError(err) {
-			return err // Non-lock error, don't retry
-		}
-
-		lastErr = err
-
-		// Try to clean stale locks
-		result, cleanErr := git.CleanStaleLocks(ctx, campaignRoot, nil)
-		if cleanErr != nil {
-			return fmt.Errorf("failed to clean locks (attempt %d): %w", attempt, cleanErr)
-		}
-
-		// If we couldn't remove any locks, don't retry
-		if len(result.Removed) == 0 && len(result.Skipped) > 0 {
-			return fmt.Errorf("cannot add submodule: lock held by active process: %w", lastErr)
-		}
-
-		slog.Info("retrying submodule add after lock cleanup",
-			"attempt", attempt,
-			"removed", len(result.Removed),
-			"path", path)
+	err := git.WithLockRetry(ctx, campaignRoot, cfg, func() error {
+		return executeRemoteSubmoduleAdd(ctx, campaignRoot, url, path)
+	})
+	if err != nil {
+		return err
 	}
 
-	return fmt.Errorf("submodule add failed after %d attempts: %w", maxRetryAttempts, lastErr)
+	return initializeSubmodule(ctx, campaignRoot, path)
 }
 
 // executeRemoteSubmoduleAdd runs the git submodule add command for a remote URL.
@@ -221,7 +199,10 @@ func initializeSubmodule(ctx context.Context, campaignRoot, path string) error {
 }
 
 // addLocalAsSubmodule adds an existing local git repository as a submodule.
-// It handles stale lock files automatically with retry logic.
+// It handles stale and active lock files with intelligent retry logic:
+// - Stale locks are removed immediately
+// - Active locks are waited on (up to 5 seconds) before retrying
+// - Exponential backoff between retry attempts
 func addLocalAsSubmodule(ctx context.Context, campaignRoot, localPath, destPath, name string) error {
 	// Resolve to absolute path
 	absLocal, err := filepath.Abs(localPath)
@@ -236,38 +217,12 @@ func addLocalAsSubmodule(ctx context.Context, campaignRoot, localPath, destPath,
 			"Hint: Run 'git init' in the directory first, or provide a git repository URL instead", localPath)
 	}
 
-	var lastErr error
-	for attempt := 1; attempt <= maxRetryAttempts; attempt++ {
-		err := executeLocalSubmoduleAdd(ctx, campaignRoot, absLocal, destPath)
-		if err == nil {
-			return nil // Success
-		}
+	cfg := git.SubmoduleRetryConfig()
+	cfg.OperationName = "local submodule add"
 
-		// Check if it's a lock error
-		if !isSubmoduleLockError(err) {
-			return err // Non-lock error, don't retry
-		}
-
-		lastErr = err
-
-		// Try to clean stale locks
-		result, cleanErr := git.CleanStaleLocks(ctx, campaignRoot, nil)
-		if cleanErr != nil {
-			return fmt.Errorf("failed to clean locks (attempt %d): %w", attempt, cleanErr)
-		}
-
-		// If we couldn't remove any locks, don't retry
-		if len(result.Removed) == 0 && len(result.Skipped) > 0 {
-			return fmt.Errorf("cannot add submodule: lock held by active process: %w", lastErr)
-		}
-
-		slog.Info("retrying local submodule add after lock cleanup",
-			"attempt", attempt,
-			"removed", len(result.Removed),
-			"path", destPath)
-	}
-
-	return fmt.Errorf("local submodule add failed after %d attempts: %w", maxRetryAttempts, lastErr)
+	return git.WithLockRetry(ctx, campaignRoot, cfg, func() error {
+		return executeLocalSubmoduleAdd(ctx, campaignRoot, absLocal, destPath)
+	})
 }
 
 // executeLocalSubmoduleAdd runs the git submodule add command for a local path.
@@ -311,8 +266,3 @@ func checkIsGitRepo(ctx context.Context, campaignRoot string) error {
 	return nil
 }
 
-// isSubmoduleLockError checks if an error is a git lock-related error.
-func isSubmoduleLockError(err error) bool {
-	var lockErr *git.LockError
-	return errors.As(err, &lockErr)
-}

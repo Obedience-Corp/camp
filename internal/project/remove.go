@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"github.com/obediencecorp/camp/internal/git"
 )
 
 // RemoveOptions configures the project removal behavior.
@@ -131,22 +133,64 @@ func isGitSubmodule(ctx context.Context, campaignRoot, name string) (bool, error
 }
 
 // removeSubmodule properly removes a git submodule.
+// It handles stale and active lock files with intelligent retry logic:
+// - Stale locks are removed immediately
+// - Active locks are waited on (up to 5 seconds) before retrying
+// - Exponential backoff between retry attempts
 func removeSubmodule(ctx context.Context, campaignRoot, name string) error {
 	submodulePath := filepath.Join("projects", name)
 
-	// git submodule deinit -f projects/<name>
-	cmd := exec.CommandContext(ctx, "git", "submodule", "deinit", "-f", submodulePath)
-	cmd.Dir = campaignRoot
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("submodule deinit failed: %w", err)
+	// Execute deinit with lock handling
+	if err := executeSubmoduleDeinit(ctx, campaignRoot, submodulePath); err != nil {
+		return err
 	}
 
-	// git rm -f projects/<name>
-	cmd = exec.CommandContext(ctx, "git", "rm", "-f", submodulePath)
-	cmd.Dir = campaignRoot
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("git rm failed: %w", err)
+	// Execute rm with lock handling
+	if err := executeSubmoduleRm(ctx, campaignRoot, submodulePath); err != nil {
+		return err
 	}
 
 	return nil
+}
+
+// executeSubmoduleDeinit runs git submodule deinit with lock handling.
+func executeSubmoduleDeinit(ctx context.Context, campaignRoot, submodulePath string) error {
+	cfg := git.SubmoduleRetryConfig()
+	cfg.OperationName = "submodule deinit"
+
+	return git.WithLockRetry(ctx, campaignRoot, cfg, func() error {
+		cmd := exec.CommandContext(ctx, "git", "submodule", "deinit", "-f", submodulePath)
+		cmd.Dir = campaignRoot
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			// Check if it's a lock error
+			errType := git.ClassifyGitError(string(output), cmd.ProcessState.ExitCode())
+			if errType == git.GitErrorLock {
+				return &git.LockError{Path: "index.lock", Err: err}
+			}
+			return fmt.Errorf("submodule deinit failed: %w", err)
+		}
+		return nil
+	})
+}
+
+// executeSubmoduleRm runs git rm with lock handling.
+func executeSubmoduleRm(ctx context.Context, campaignRoot, submodulePath string) error {
+	cfg := git.SubmoduleRetryConfig()
+	cfg.OperationName = "git rm"
+
+	return git.WithLockRetry(ctx, campaignRoot, cfg, func() error {
+		cmd := exec.CommandContext(ctx, "git", "rm", "-f", submodulePath)
+		cmd.Dir = campaignRoot
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			// Check if it's a lock error
+			errType := git.ClassifyGitError(string(output), cmd.ProcessState.ExitCode())
+			if errType == git.GitErrorLock {
+				return &git.LockError{Path: "index.lock", Err: err}
+			}
+			return fmt.Errorf("git rm failed: %w", err)
+		}
+		return nil
+	})
 }
