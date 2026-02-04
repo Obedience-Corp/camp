@@ -27,6 +27,8 @@ type CampaignConfig struct {
 	Type CampaignType `yaml:"type"`
 	// Description is a brief description of the campaign.
 	Description string `yaml:"description,omitempty"`
+	// Mission is the campaign's mission statement - the goal or purpose.
+	Mission string `yaml:"mission,omitempty"`
 	// CreatedAt is when the campaign was created.
 	CreatedAt time.Time `yaml:"created_at,omitempty"`
 	// Projects contains the list of project configurations.
