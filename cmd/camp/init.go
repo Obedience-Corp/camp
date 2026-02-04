@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/huh"
+	"github.com/obediencecorp/camp/internal/campaign"
 	"github.com/obediencecorp/camp/internal/config"
 	"github.com/obediencecorp/camp/internal/fest"
 	"github.com/obediencecorp/camp/internal/nav/tui"
@@ -90,6 +91,19 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	ctx := cmd.Context()
 	isInteractive := tui.IsTerminal()
+
+	// Early detection: error if already inside a campaign (unless repairing)
+	if !repair && !dryRun {
+		existingRoot, _ := campaign.Detect(ctx, dir)
+		if existingRoot != "" {
+			cfg, _ := config.LoadCampaignConfig(ctx, existingRoot)
+			name := filepath.Base(existingRoot)
+			if cfg != nil && cfg.Name != "" {
+				name = cfg.Name
+			}
+			return fmt.Errorf("already inside campaign '%s' at %s\n       Use 'camp init --repair' to add missing files", name, existingRoot)
+		}
+	}
 
 	// Safety check for non-empty directory (skip for repair and dry-run)
 	if !repair && !dryRun {
