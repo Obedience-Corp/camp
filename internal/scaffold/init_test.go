@@ -414,3 +414,158 @@ func TestInit_DryRunNoGit(t *testing.T) {
 		t.Errorf(".git directory should not exist in dry run mode")
 	}
 }
+
+func TestInit_DescriptionAndMission(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	campaignDir := filepath.Join(tmpDir, "described-campaign")
+	os.MkdirAll(campaignDir, 0755)
+
+	ctx := context.Background()
+	_, err := Init(ctx, campaignDir, InitOptions{
+		Name:        "described",
+		Description: "A well-described campaign",
+		Mission:     "Build something awesome",
+		NoRegister:  true,
+	})
+
+	if err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+
+	// Load config and verify description and mission
+	cfg, err := config.LoadCampaignConfig(ctx, campaignDir)
+	if err != nil {
+		t.Fatalf("LoadCampaignConfig() error = %v", err)
+	}
+
+	if cfg.Description != "A well-described campaign" {
+		t.Errorf("Description = %q, want %q", cfg.Description, "A well-described campaign")
+	}
+	if cfg.Mission != "Build something awesome" {
+		t.Errorf("Mission = %q, want %q", cfg.Mission, "Build something awesome")
+	}
+}
+
+func TestInit_DefaultDescription(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	campaignDir := filepath.Join(tmpDir, "default-desc")
+	os.MkdirAll(campaignDir, 0755)
+
+	ctx := context.Background()
+	_, err := Init(ctx, campaignDir, InitOptions{
+		Name:       "default-desc",
+		NoRegister: true,
+		// No description provided - should get default
+	})
+
+	if err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+
+	cfg, err := config.LoadCampaignConfig(ctx, campaignDir)
+	if err != nil {
+		t.Fatalf("LoadCampaignConfig() error = %v", err)
+	}
+
+	expectedDesc := "Campaign: default-desc"
+	if cfg.Description != expectedDesc {
+		t.Errorf("Description = %q, want %q (default format)", cfg.Description, expectedDesc)
+	}
+}
+
+func TestInit_RepairPreservesMission(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	campaignDir := filepath.Join(tmpDir, "repair-mission")
+	os.MkdirAll(filepath.Join(campaignDir, config.CampaignDir), 0755)
+
+	ctx := context.Background()
+
+	// Create initial campaign with mission
+	initialCfg := &config.CampaignConfig{
+		ID:          "test-id",
+		Name:        "repair-mission",
+		Type:        config.CampaignTypeProduct,
+		Description: "Original description",
+		Mission:     "Original mission",
+		CreatedAt:   time.Now(),
+	}
+	if err := config.SaveCampaignConfig(ctx, campaignDir, initialCfg); err != nil {
+		t.Fatalf("SaveCampaignConfig() error = %v", err)
+	}
+
+	// Run repair without providing new mission
+	_, err := Init(ctx, campaignDir, InitOptions{
+		Name:       "repair-mission",
+		Repair:     true,
+		NoRegister: true,
+	})
+
+	if err != nil {
+		t.Fatalf("Init() with repair error = %v", err)
+	}
+
+	// Load config and verify mission was preserved
+	cfg, err := config.LoadCampaignConfig(ctx, campaignDir)
+	if err != nil {
+		t.Fatalf("LoadCampaignConfig() error = %v", err)
+	}
+
+	if cfg.Mission != "Original mission" {
+		t.Errorf("Mission = %q, want %q (should preserve existing)", cfg.Mission, "Original mission")
+	}
+}
+
+func TestInit_RepairUpdatesMission(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	campaignDir := filepath.Join(tmpDir, "repair-update")
+	os.MkdirAll(filepath.Join(campaignDir, config.CampaignDir), 0755)
+
+	ctx := context.Background()
+
+	// Create initial campaign with mission
+	initialCfg := &config.CampaignConfig{
+		ID:          "test-id",
+		Name:        "repair-update",
+		Type:        config.CampaignTypeProduct,
+		Description: "Original description",
+		Mission:     "Original mission",
+		CreatedAt:   time.Now(),
+	}
+	if err := config.SaveCampaignConfig(ctx, campaignDir, initialCfg); err != nil {
+		t.Fatalf("SaveCampaignConfig() error = %v", err)
+	}
+
+	// Run repair with new mission
+	_, err := Init(ctx, campaignDir, InitOptions{
+		Name:       "repair-update",
+		Mission:    "Updated mission via repair",
+		Repair:     true,
+		NoRegister: true,
+	})
+
+	if err != nil {
+		t.Fatalf("Init() with repair error = %v", err)
+	}
+
+	// Load config and verify mission was updated
+	cfg, err := config.LoadCampaignConfig(ctx, campaignDir)
+	if err != nil {
+		t.Fatalf("LoadCampaignConfig() error = %v", err)
+	}
+
+	if cfg.Mission != "Updated mission via repair" {
+		t.Errorf("Mission = %q, want %q (should update)", cfg.Mission, "Updated mission via repair")
+	}
+}
