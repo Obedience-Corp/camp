@@ -105,15 +105,14 @@ func Integration(verbose bool) error {
 		var testsPassed, testsFailed int
 		var failedTests []string
 
-		// Docker environment variables for Colima/testcontainers compatibility
+		// Disable ryuk reaper for Colima compatibility (testcontainers auto-detects DOCKER_HOST)
 		dockerEnv := append(os.Environ(),
-			"DOCKER_HOST=unix://"+os.Getenv("HOME")+"/.colima/default/docker.sock",
 			"TESTCONTAINERS_RYUK_DISABLED=true",
 		)
 
 		if verbose {
 			// In verbose mode, show output directly
-			cmd := exec.Command("go", "test", "-v", "-tags", "integration", "-timeout", "2m", "./"+suite)
+			cmd := exec.Command("go", "test", "-count=1", "-v", "-tags", "integration", "-timeout", "2m", "./"+suite)
 			cmd.Env = dockerEnv
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
@@ -121,7 +120,7 @@ func Integration(verbose bool) error {
 			pass = cmd.Run() == nil
 		} else {
 			// Run with -json for real-time progress
-			cmd := exec.Command("go", "test", "-json", "-tags", "integration", "-timeout", "2m", "./"+suite)
+			cmd := exec.Command("go", "test", "-count=1", "-json", "-tags", "integration", "-timeout", "2m", "./"+suite)
 			cmd.Env = dockerEnv
 			stdout, err := cmd.StdoutPipe()
 			if err != nil {

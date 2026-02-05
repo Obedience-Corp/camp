@@ -137,7 +137,7 @@ func TestInit_InvalidType(t *testing.T) {
 	tc := GetSharedContainer(t)
 
 	// Try to initialize with invalid type
-	output, err := tc.RunCamp("init", "/campaigns/test-invalid", "--name", "test-invalid", "--type", "invalid-type")
+	output, err := tc.RunCamp("init", "/campaigns/test-invalid", "--name", "test-invalid", "-d", "Test", "-m", "Test", "--type", "invalid-type")
 	require.Error(t, err, "camp init should fail with invalid type")
 	assert.Contains(t, strings.ToLower(output), "invalid", "error should mention invalid type")
 }
@@ -146,7 +146,7 @@ func TestInit_MissingName(t *testing.T) {
 	tc := GetSharedContainer(t)
 
 	// Try to initialize without name - should use directory name
-	output, err := tc.RunCamp("init", "/campaigns/auto-named-campaign")
+	output, err := tc.RunCamp("init", "/campaigns/auto-named-campaign", "-d", "Test", "-m", "Test")
 	require.NoError(t, err, "camp init without name should succeed (uses dir name)")
 	assert.Contains(t, output, "Campaign Initialized")
 

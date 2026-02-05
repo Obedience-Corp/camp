@@ -279,7 +279,7 @@ func (tc *TestContainer) RunCampInDir(dir string, args ...string) (string, error
 
 // InitCampaign creates a new campaign via camp init and initializes it as a git repo
 func (tc *TestContainer) InitCampaign(path, name, campType string) (string, error) {
-	args := []string{"init", path, "--name", name}
+	args := []string{"init", path, "--name", name, "-d", "Test campaign", "-m", "Test mission"}
 	if campType != "" {
 		args = append(args, "--type", campType)
 	}

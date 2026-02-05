@@ -60,7 +60,7 @@ func Test(verbose bool) error {
 		start := time.Now()
 
 		// Run with -json to get detailed test counts
-		cmd := exec.Command("go", "test", "-json", "-short", "-timeout", "30s", pkg)
+		cmd := exec.Command("go", "test", "-count=1", "-json", "-short", "-timeout", "30s", pkg)
 		output, _ := cmd.Output()
 		duration := time.Since(start)
 
