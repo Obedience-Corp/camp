@@ -20,8 +20,8 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "camp",
-	Short: "Campaign management CLI for multi-project AI workspaces",
+	Use:     "camp",
+	Short:   "Campaign management CLI for multi-project AI workspaces",
 	Version: fmt.Sprintf("%s (built %s, commit %s)", version.Version, version.BuildDate, version.Commit),
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		// Wire up the no-color flag

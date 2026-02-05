@@ -2,15 +2,15 @@ package vim
 
 // UndoEntry represents a single undoable change.
 type UndoEntry struct {
-	Content  string   // Buffer content before the change
-	Cursor   Position // Cursor position before the change
+	Content string   // Buffer content before the change
+	Cursor  Position // Cursor position before the change
 }
 
 // UndoStack manages undo/redo history.
 type UndoStack struct {
-	undos    []UndoEntry
-	redos    []UndoEntry
-	maxSize  int
+	undos   []UndoEntry
+	redos   []UndoEntry
+	maxSize int
 }
 
 // NewUndoStack creates a new undo stack with the given maximum size.

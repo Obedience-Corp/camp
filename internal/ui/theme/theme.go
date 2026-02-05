@@ -175,11 +175,11 @@ func buildTheme(p palette) *huh.Theme {
 // All colors use lipgloss.AdaptiveColor for automatic light/dark adaptation.
 type TUIPalette struct {
 	// Primary colors
-	Accent      lipgloss.TerminalColor // Primary accent (pink/magenta)
-	AccentAlt   lipgloss.TerminalColor // Secondary accent (blue)
-	Success     lipgloss.TerminalColor // Success/positive (green)
-	Warning     lipgloss.TerminalColor // Warning (orange/yellow)
-	Error       lipgloss.TerminalColor // Error/danger (red)
+	Accent    lipgloss.TerminalColor // Primary accent (pink/magenta)
+	AccentAlt lipgloss.TerminalColor // Secondary accent (blue)
+	Success   lipgloss.TerminalColor // Success/positive (green)
+	Warning   lipgloss.TerminalColor // Warning (orange/yellow)
+	Error     lipgloss.TerminalColor // Error/danger (red)
 
 	// Text colors
 	TextPrimary   lipgloss.TerminalColor // Main text (titles, content)
@@ -202,8 +202,8 @@ func TUI() TUIPalette {
 	return TUIPalette{
 		// Primary colors - visible on both light and dark
 		Accent:    lipgloss.AdaptiveColor{Light: "205", Dark: "205"}, // Pink/magenta
-		AccentAlt: lipgloss.AdaptiveColor{Light: "27", Dark: "110"}, // Blue
-		Success:   lipgloss.AdaptiveColor{Light: "28", Dark: "82"},  // Green
+		AccentAlt: lipgloss.AdaptiveColor{Light: "27", Dark: "110"},  // Blue
+		Success:   lipgloss.AdaptiveColor{Light: "28", Dark: "82"},   // Green
 		Warning:   lipgloss.AdaptiveColor{Light: "208", Dark: "214"}, // Orange
 		Error:     lipgloss.AdaptiveColor{Light: "124", Dark: "196"}, // Red
 

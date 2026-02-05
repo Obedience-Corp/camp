@@ -36,7 +36,7 @@ func TestInverseDocumentFrequency(t *testing.T) {
 		wantApprox   float64
 	}{
 		{"term in all docs", 10, 10, 0.0},
-		{"term in one doc", 10, 1, 2.302585}, // log(10)
+		{"term in one doc", 10, 1, 2.302585},   // log(10)
 		{"term in half docs", 10, 5, 0.693147}, // log(2)
 		{"zero docs with term", 10, 0, 0.0},
 	}

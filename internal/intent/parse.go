@@ -20,25 +20,25 @@ var (
 // parsedIntent is an intermediate struct for parsing that supports both
 // the new "concept" field and the legacy "project" field for backward compatibility.
 type parsedIntent struct {
-	ID                string    `yaml:"id"`
-	Title             string    `yaml:"title"`
-	Status            Status    `yaml:"status"`
-	CreatedAt         time.Time `yaml:"created_at"`
-	Type              Type      `yaml:"type,omitempty"`
-	Concept           string    `yaml:"concept,omitempty"`
-	Project           string    `yaml:"project,omitempty"` // Legacy field - maps to Concept
-	Author            string    `yaml:"author,omitempty"`
-	Priority          Priority  `yaml:"priority,omitempty"`
-	Horizon           Horizon   `yaml:"horizon,omitempty"`
-	Tags              []string  `yaml:"tags,omitempty"`
-	BlockedBy         []string  `yaml:"blocked_by,omitempty"`
-	DependsOn         []string  `yaml:"depends_on,omitempty"`
-	PromotionCriteria string    `yaml:"promotion_criteria,omitempty"`
-	PromotedTo        string    `yaml:"promoted_to,omitempty"`
+	ID                string           `yaml:"id"`
+	Title             string           `yaml:"title"`
+	Status            Status           `yaml:"status"`
+	CreatedAt         time.Time        `yaml:"created_at"`
+	Type              Type             `yaml:"type,omitempty"`
+	Concept           string           `yaml:"concept,omitempty"`
+	Project           string           `yaml:"project,omitempty"` // Legacy field - maps to Concept
+	Author            string           `yaml:"author,omitempty"`
+	Priority          Priority         `yaml:"priority,omitempty"`
+	Horizon           Horizon          `yaml:"horizon,omitempty"`
+	Tags              []string         `yaml:"tags,omitempty"`
+	BlockedBy         []string         `yaml:"blocked_by,omitempty"`
+	DependsOn         []string         `yaml:"depends_on,omitempty"`
+	PromotionCriteria string           `yaml:"promotion_criteria,omitempty"`
+	PromotedTo        string           `yaml:"promoted_to,omitempty"`
 	GatheredFrom      []GatheredSource `yaml:"gathered_from,omitempty"`
 	GatheredAt        time.Time        `yaml:"gathered_at,omitempty"`
 	GatheredInto      string           `yaml:"gathered_into,omitempty"`
-	UpdatedAt         time.Time `yaml:"updated_at,omitempty"`
+	UpdatedAt         time.Time        `yaml:"updated_at,omitempty"`
 }
 
 // toIntent converts a parsedIntent to an Intent, handling legacy field migration.

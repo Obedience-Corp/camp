@@ -126,10 +126,10 @@ func TestMergeIntents_ExplicitOverrides(t *testing.T) {
 
 	opts := MergeOptions{
 		Title:    "Override Test",
-		Type:     TypeFeature, // Override
-		Priority: PriorityHigh, // Override
+		Type:     TypeFeature,      // Override
+		Priority: PriorityHigh,     // Override
 		Concept:  "custom/concept", // Override
-		Horizon:  HorizonNow, // Override
+		Horizon:  HorizonNow,       // Override
 	}
 
 	merged, err := MergeIntents(sources, opts)

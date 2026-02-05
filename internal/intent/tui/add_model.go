@@ -497,7 +497,7 @@ func (m IntentAddModel) viewBodyStep() string {
 
 	// Show mode indicator
 	modeStr := m.vimEditor.Mode().String()
-	b.WriteString(HelpStyle.Render("Description (optional) — " + modeStr) + "\n")
+	b.WriteString(HelpStyle.Render("Description (optional) — "+modeStr) + "\n")
 
 	// Render vim editor
 	cfg := vim.DefaultViewConfig()

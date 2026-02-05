@@ -637,9 +637,9 @@ func TestFSService_ListItems_DepthZero(t *testing.T) {
 
 func TestFSService_ListItems_DepthOne(t *testing.T) {
 	fsys := fstest.MapFS{
-		"projects/camp/cmd/main.go":      &fstest.MapFile{Data: []byte("")},
-		"projects/camp/internal/pkg.go":  &fstest.MapFile{Data: []byte("")},
-		"projects/fest/main.go":          &fstest.MapFile{Data: []byte("")},
+		"projects/camp/cmd/main.go":     &fstest.MapFile{Data: []byte("")},
+		"projects/camp/internal/pkg.go": &fstest.MapFile{Data: []byte("")},
+		"projects/fest/main.go":         &fstest.MapFile{Data: []byte("")},
 	}
 
 	depthOne := 1
@@ -711,8 +711,8 @@ func TestFSService_ListItems_DepthUnlimited(t *testing.T) {
 
 func TestFSService_ListItems_IgnorePaths(t *testing.T) {
 	fsys := fstest.MapFS{
-		"projects/camp/main.go":            &fstest.MapFile{Data: []byte("")},
-		"projects/fest/main.go":            &fstest.MapFile{Data: []byte("")},
+		"projects/camp/main.go":             &fstest.MapFile{Data: []byte("")},
+		"projects/fest/main.go":             &fstest.MapFile{Data: []byte("")},
 		"projects/worktrees/camp-feat/file": &fstest.MapFile{Data: []byte("")},
 	}
 
@@ -745,10 +745,10 @@ func TestFSService_ListItems_IgnorePaths(t *testing.T) {
 
 func TestFSService_ListItems_MultipleIgnorePaths(t *testing.T) {
 	fsys := fstest.MapFS{
-		"workflow/intents/inbox/file":  &fstest.MapFile{Data: []byte("")},
-		"workflow/design/doc.md":       &fstest.MapFile{Data: []byte("")},
-		"workflow/pipelines/ci.yaml":   &fstest.MapFile{Data: []byte("")},
-		"workflow/code_reviews/pr.md":  &fstest.MapFile{Data: []byte("")},
+		"workflow/intents/inbox/file": &fstest.MapFile{Data: []byte("")},
+		"workflow/design/doc.md":      &fstest.MapFile{Data: []byte("")},
+		"workflow/pipelines/ci.yaml":  &fstest.MapFile{Data: []byte("")},
+		"workflow/code_reviews/pr.md": &fstest.MapFile{Data: []byte("")},
 	}
 
 	concepts := []config.ConceptEntry{

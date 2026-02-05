@@ -63,18 +63,18 @@ func (o Operator) String() string {
 
 // State holds the current vim editing state.
 type State struct {
-	Mode           Mode
-	PendingOp      Operator
-	Count          int  // Numeric count prefix (e.g., 3dw)
-	PendingMotion  bool // Waiting for a motion after operator
-	FindChar       rune // Character for f/F/t/T motions
-	FindForward    bool // Direction for find
-	FindTill       bool // Stop before (t/T) vs on (f/F) the character
-	LastFindChar   rune // Last character used in f/F/t/T
-	LastFindFwd    bool
-	LastFindTill   bool
-	VisualStart    int // Start position for visual mode
-	CommandBuffer  string
+	Mode          Mode
+	PendingOp     Operator
+	Count         int  // Numeric count prefix (e.g., 3dw)
+	PendingMotion bool // Waiting for a motion after operator
+	FindChar      rune // Character for f/F/t/T motions
+	FindForward   bool // Direction for find
+	FindTill      bool // Stop before (t/T) vs on (f/F) the character
+	LastFindChar  rune // Last character used in f/F/t/T
+	LastFindFwd   bool
+	LastFindTill  bool
+	VisualStart   int // Start position for visual mode
+	CommandBuffer string
 
 	// Multi-key sequence state
 	PendingKey      rune     // For g (gg), z (zz), etc.

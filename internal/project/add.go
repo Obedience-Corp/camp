@@ -265,4 +265,3 @@ func checkIsGitRepo(ctx context.Context, campaignRoot string) error {
 	}
 	return nil
 }
-

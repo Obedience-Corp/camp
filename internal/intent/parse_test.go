@@ -608,10 +608,10 @@ Original content.
 
 func TestSerializeIntent_GatheredFields(t *testing.T) {
 	intent := &Intent{
-		ID:        "gathered-20260129-143000",
-		Title:     "Unified Intent",
-		Status:    StatusInbox,
-		CreatedAt: time.Date(2026, 1, 29, 14, 30, 0, 0, time.UTC),
+		ID:         "gathered-20260129-143000",
+		Title:      "Unified Intent",
+		Status:     StatusInbox,
+		CreatedAt:  time.Date(2026, 1, 29, 14, 30, 0, 0, time.UTC),
 		GatheredAt: time.Date(2026, 1, 29, 14, 30, 0, 0, time.UTC),
 		GatheredFrom: []GatheredSource{
 			{
@@ -669,10 +669,10 @@ func TestSerializeIntent_GatheredInto(t *testing.T) {
 
 func TestGatheredFields_Roundtrip(t *testing.T) {
 	original := &Intent{
-		ID:        "roundtrip-gathered-20260129",
-		Title:     "Roundtrip Gathered Test",
-		Status:    StatusInbox,
-		CreatedAt: time.Date(2026, 1, 29, 14, 30, 0, 0, time.UTC),
+		ID:         "roundtrip-gathered-20260129",
+		Title:      "Roundtrip Gathered Test",
+		Status:     StatusInbox,
+		CreatedAt:  time.Date(2026, 1, 29, 14, 30, 0, 0, time.UTC),
 		GatheredAt: time.Date(2026, 1, 29, 14, 30, 0, 0, time.UTC),
 		GatheredFrom: []GatheredSource{
 			{
