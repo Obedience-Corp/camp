@@ -20,15 +20,23 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 		return nil, ctx.Err()
 	}
 
+	// Initialize progress reporter if not set
+	if c.progress == nil {
+		c.progress = &SilentReporter{}
+	}
+
 	result := &CloneResult{Success: true}
 
 	// Phase 1: Clone repository
+	c.progress.StartPhase("Cloning campaign repository")
 	targetDir, err := c.gitClone(ctx)
 	if err != nil {
+		c.progress.EndPhase("Clone", false)
 		result.Success = false
 		result.Errors = append(result.Errors, fmt.Errorf("clone failed: %w", err))
 		return result, err
 	}
+	c.progress.EndPhase("Clone", true)
 	result.Directory = targetDir
 
 	// Get the branch that was cloned
@@ -39,6 +47,7 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 
 	// Phase 2: URL synchronization (skip if no submodules requested)
 	if !c.options.NoSubmodules {
+		c.progress.StartPhase("Synchronizing submodule URLs")
 		// Use sync package if provided, otherwise fall back to basic git commands
 		if c.syncer != nil {
 			syncResult, err := c.syncer.Sync(ctx)
@@ -64,12 +73,15 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 				result.Warnings = append(result.Warnings, fmt.Sprintf("URL sync warning: %v", err))
 			}
 		}
+		c.progress.EndPhase("URL sync", true)
 
 		// Phase 3: Submodule update (ensure all are properly initialized)
+		c.progress.StartPhase("Updating submodules")
 		if err := c.gitSubmoduleUpdate(ctx, targetDir); err != nil {
 			// Submodule update failure may be partial - continue to collect results
 			result.Warnings = append(result.Warnings, fmt.Sprintf("submodule update warning: %v", err))
 		}
+		c.progress.EndPhase("Submodule update", true)
 
 		// Collect submodule results
 		submodules, err := c.gitSubmoduleStatus(ctx, targetDir)
@@ -78,18 +90,28 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 		}
 		result.Submodules = submodules
 
-		// Check for failed submodules
-		for _, sub := range result.Submodules {
-			if !sub.Success {
-				result.Errors = append(result.Errors, fmt.Errorf("submodule %s failed: %v", sub.Path, sub.Error))
+		// Report submodule progress
+		if len(result.Submodules) > 0 {
+			succeeded := 0
+			failed := 0
+			for _, sub := range result.Submodules {
+				if sub.Success {
+					succeeded++
+				} else {
+					failed++
+					result.Errors = append(result.Errors, fmt.Errorf("submodule %s failed: %v", sub.Path, sub.Error))
+				}
 			}
+			c.progress.EndSubmodules(succeeded, failed)
 		}
 	}
 
 	// Phase 4: Validation (unless --no-validate)
 	if !c.options.NoValidate {
+		c.progress.StartPhase("Validating setup")
 		result.Validation = c.validate(ctx, targetDir)
 		if result.Validation != nil && !result.Validation.Passed {
+			c.progress.EndPhase("Validation", false)
 			// Validation failure is an error
 			for _, issue := range result.Validation.Issues {
 				if issue.Severity == SeverityError {
@@ -98,6 +120,8 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 					result.Warnings = append(result.Warnings, fmt.Sprintf("validation: %s - %s", issue.Submodule, issue.Description))
 				}
 			}
+		} else {
+			c.progress.EndPhase("Validation", true)
 		}
 	}
 

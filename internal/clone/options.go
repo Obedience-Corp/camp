@@ -114,8 +114,9 @@ type ClonerOption func(*Cloner)
 
 // Cloner orchestrates clone operations for a campaign repository.
 type Cloner struct {
-	options CloneOptions
-	syncer  *sync.Syncer // Optional syncer for post-clone URL synchronization
+	options  CloneOptions
+	syncer   *sync.Syncer     // Optional syncer for post-clone URL synchronization
+	progress ProgressReporter // Progress reporter for output
 }
 
 // NewCloner creates a new Cloner with the given options.
@@ -195,6 +196,14 @@ func WithJSON(json bool) ClonerOption {
 func WithSyncer(s *sync.Syncer) ClonerOption {
 	return func(c *Cloner) {
 		c.syncer = s
+	}
+}
+
+// WithProgress sets the progress reporter for clone operations.
+// If not set, a SilentReporter is used.
+func WithProgress(p ProgressReporter) ClonerOption {
+	return func(c *Cloner) {
+		c.progress = p
 	}
 }
 
