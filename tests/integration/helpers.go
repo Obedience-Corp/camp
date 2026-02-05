@@ -254,8 +254,8 @@ func (tc *TestContainer) RunCampInDir(dir string, args ...string) (string, error
 		escaped := strings.ReplaceAll(arg, "'", "'\"'\"'")
 		quotedArgs[i] = "'" + escaped + "'"
 	}
-	// Use sh -c to change directory first
-	cmdStr := fmt.Sprintf("cd %s && /camp %s", dir, strings.Join(quotedArgs, " "))
+	// Use sh -c to change directory first, redirect stderr to stdout for error capture
+	cmdStr := fmt.Sprintf("cd %s && /camp %s 2>&1", dir, strings.Join(quotedArgs, " "))
 	cmd := []string{"sh", "-c", cmdStr}
 
 	exitCode, reader, err := tc.container.Exec(tc.ctx, cmd)

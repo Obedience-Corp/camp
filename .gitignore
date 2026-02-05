@@ -1,5 +1,6 @@
 # Binaries
 bin/
+camp
 *.exe
 *.exe~
 *.dll
@@ -11,6 +12,7 @@ bin/
 
 # Output directory (coverage, build artifacts)
 out/
+coverage.out
 
 # Dependency directories
 vendor/

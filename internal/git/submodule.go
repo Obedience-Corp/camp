@@ -1,9 +1,13 @@
 package git
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // IsSubmodule checks if the given path is a git submodule.
@@ -121,4 +125,99 @@ func GetSubmoduleInfo(path string) (*SubmoduleInfo, error) {
 		GitDir:     gitDir,
 		ParentRepo: parentRepo,
 	}, nil
+}
+
+// GetDeclaredURL returns the URL declared in .gitmodules for a submodule.
+// This is the shared, tracked URL that all clones should use.
+func GetDeclaredURL(ctx context.Context, repoRoot, submodulePath string) (string, error) {
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "-C", repoRoot,
+		"config", "-f", ".gitmodules",
+		fmt.Sprintf("submodule.%s.url", submodulePath))
+
+	output, err := cmd.Output()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			return "", fmt.Errorf("submodule %q not found in .gitmodules", submodulePath)
+		}
+		return "", fmt.Errorf("get declared URL for %s: %w", submodulePath, err)
+	}
+
+	return strings.TrimSpace(string(output)), nil
+}
+
+// GetActiveURL returns the URL currently configured in .git/config for a submodule.
+// This is the local URL that git actually uses for fetch/push operations.
+// Returns empty string if the submodule is not yet initialized.
+func GetActiveURL(ctx context.Context, repoRoot, submodulePath string) (string, error) {
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "-C", repoRoot,
+		"config", fmt.Sprintf("submodule.%s.url", submodulePath))
+
+	output, err := cmd.Output()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			// Exit code 1 means key not found - submodule not initialized
+			return "", nil
+		}
+		return "", fmt.Errorf("get active URL for %s: %w", submodulePath, err)
+	}
+
+	return strings.TrimSpace(string(output)), nil
+}
+
+// URLComparison contains the result of comparing declared and active URLs.
+type URLComparison struct {
+	// Match indicates whether the URLs match after normalization.
+	Match bool
+	// DeclaredURL is the URL from .gitmodules.
+	DeclaredURL string
+	// ActiveURL is the URL from .git/config (empty if not initialized).
+	ActiveURL string
+}
+
+// CompareURLs checks if the declared and active URLs match for a submodule.
+// Handles normalization of trailing slashes for accurate comparison.
+func CompareURLs(ctx context.Context, repoRoot, submodulePath string) (*URLComparison, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	declared, err := GetDeclaredURL(ctx, repoRoot, submodulePath)
+	if err != nil {
+		return nil, err
+	}
+
+	active, err := GetActiveURL(ctx, repoRoot, submodulePath)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &URLComparison{
+		DeclaredURL: declared,
+		ActiveURL:   active,
+	}
+
+	// Normalize URLs before comparison
+	normalizedDeclared := normalizeGitURL(declared)
+	normalizedActive := normalizeGitURL(active)
+
+	result.Match = normalizedDeclared == normalizedActive
+	return result, nil
+}
+
+// normalizeGitURL normalizes a git URL for comparison.
+// Removes trailing slashes but preserves .git suffix as it matters for some servers.
+func normalizeGitURL(url string) string {
+	url = strings.TrimSpace(url)
+	url = strings.TrimSuffix(url, "/")
+	return url
 }

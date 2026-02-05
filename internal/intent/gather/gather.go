@@ -117,9 +117,9 @@ type GatherOptions struct {
 
 // GatherResult contains the result of a gather operation.
 type GatherResult struct {
-	Gathered      *intent.Intent   // The newly created gathered intent
-	ArchivedPaths []string         // Paths of archived source intents
-	SourceCount   int              // Number of source intents gathered
+	Gathered      *intent.Intent // The newly created gathered intent
+	ArchivedPaths []string       // Paths of archived source intents
+	SourceCount   int            // Number of source intents gathered
 }
 
 // Gather combines multiple intents into a single gathered intent.

@@ -1,7 +1,9 @@
 package git
 
 import (
+	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -260,5 +262,244 @@ func TestGetSubmoduleInfo_NestedPath(t *testing.T) {
 
 	if info.Path != subDir {
 		t.Errorf("Path = %v, want %v", info.Path, subDir)
+	}
+}
+
+// setupSubmoduleConfig adds a submodule entry to .gitmodules and optionally .git/config.
+func setupSubmoduleConfig(t *testing.T, repoRoot, submodulePath, declaredURL, activeURL string) {
+	t.Helper()
+
+	// Add to .gitmodules
+	cmd := exec.Command("git", "-C", repoRoot, "config", "-f", ".gitmodules",
+		"submodule."+submodulePath+".url", declaredURL)
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("failed to set .gitmodules URL: %v", err)
+	}
+
+	cmd = exec.Command("git", "-C", repoRoot, "config", "-f", ".gitmodules",
+		"submodule."+submodulePath+".path", submodulePath)
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("failed to set .gitmodules path: %v", err)
+	}
+
+	// Add to .git/config if activeURL is provided
+	if activeURL != "" {
+		cmd = exec.Command("git", "-C", repoRoot, "config",
+			"submodule."+submodulePath+".url", activeURL)
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("failed to set .git/config URL: %v", err)
+		}
+	}
+}
+
+func TestGetDeclaredURL(t *testing.T) {
+	ctx := context.Background()
+	repoRoot := setupGitRepo(t)
+	submodulePath := "projects/test-sub"
+	expectedURL := "git@github.com:org/test-sub.git"
+
+	setupSubmoduleConfig(t, repoRoot, submodulePath, expectedURL, "")
+
+	url, err := GetDeclaredURL(ctx, repoRoot, submodulePath)
+	if err != nil {
+		t.Fatalf("GetDeclaredURL() error = %v", err)
+	}
+	if url != expectedURL {
+		t.Errorf("GetDeclaredURL() = %q, want %q", url, expectedURL)
+	}
+}
+
+func TestGetDeclaredURL_NotFound(t *testing.T) {
+	ctx := context.Background()
+	repoRoot := setupGitRepo(t)
+
+	_, err := GetDeclaredURL(ctx, repoRoot, "nonexistent")
+	if err == nil {
+		t.Error("GetDeclaredURL() expected error for nonexistent submodule")
+	}
+}
+
+func TestGetDeclaredURL_ContextCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	repoRoot := setupGitRepo(t)
+
+	_, err := GetDeclaredURL(ctx, repoRoot, "any")
+	if err != context.Canceled {
+		t.Errorf("GetDeclaredURL() error = %v, want context.Canceled", err)
+	}
+}
+
+func TestGetActiveURL(t *testing.T) {
+	ctx := context.Background()
+	repoRoot := setupGitRepo(t)
+	submodulePath := "projects/test-sub"
+	declaredURL := "git@github.com:org/test-sub.git"
+	activeURL := "git@github.com:other/test-sub.git"
+
+	setupSubmoduleConfig(t, repoRoot, submodulePath, declaredURL, activeURL)
+
+	url, err := GetActiveURL(ctx, repoRoot, submodulePath)
+	if err != nil {
+		t.Fatalf("GetActiveURL() error = %v", err)
+	}
+	if url != activeURL {
+		t.Errorf("GetActiveURL() = %q, want %q", url, activeURL)
+	}
+}
+
+func TestGetActiveURL_NotInitialized(t *testing.T) {
+	ctx := context.Background()
+	repoRoot := setupGitRepo(t)
+	submodulePath := "projects/test-sub"
+
+	// Only set .gitmodules, not .git/config (simulates uninitialized submodule)
+	setupSubmoduleConfig(t, repoRoot, submodulePath, "git@github.com:org/repo.git", "")
+
+	url, err := GetActiveURL(ctx, repoRoot, submodulePath)
+	if err != nil {
+		t.Fatalf("GetActiveURL() error = %v", err)
+	}
+	if url != "" {
+		t.Errorf("GetActiveURL() = %q, want empty string for uninitialized", url)
+	}
+}
+
+func TestGetActiveURL_ContextCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	repoRoot := setupGitRepo(t)
+
+	_, err := GetActiveURL(ctx, repoRoot, "any")
+	if err != context.Canceled {
+		t.Errorf("GetActiveURL() error = %v, want context.Canceled", err)
+	}
+}
+
+func TestCompareURLs_Match(t *testing.T) {
+	ctx := context.Background()
+	repoRoot := setupGitRepo(t)
+	submodulePath := "projects/test-sub"
+	url := "git@github.com:org/test-sub.git"
+
+	setupSubmoduleConfig(t, repoRoot, submodulePath, url, url)
+
+	result, err := CompareURLs(ctx, repoRoot, submodulePath)
+	if err != nil {
+		t.Fatalf("CompareURLs() error = %v", err)
+	}
+	if !result.Match {
+		t.Errorf("CompareURLs().Match = false, want true")
+	}
+	if result.DeclaredURL != url {
+		t.Errorf("DeclaredURL = %q, want %q", result.DeclaredURL, url)
+	}
+	if result.ActiveURL != url {
+		t.Errorf("ActiveURL = %q, want %q", result.ActiveURL, url)
+	}
+}
+
+func TestCompareURLs_Mismatch(t *testing.T) {
+	ctx := context.Background()
+	repoRoot := setupGitRepo(t)
+	submodulePath := "projects/test-sub"
+	declaredURL := "git@github.com:new-org/test-sub.git"
+	activeURL := "git@github.com:old-org/test-sub.git"
+
+	setupSubmoduleConfig(t, repoRoot, submodulePath, declaredURL, activeURL)
+
+	result, err := CompareURLs(ctx, repoRoot, submodulePath)
+	if err != nil {
+		t.Fatalf("CompareURLs() error = %v", err)
+	}
+	if result.Match {
+		t.Errorf("CompareURLs().Match = true, want false for different URLs")
+	}
+	if result.DeclaredURL != declaredURL {
+		t.Errorf("DeclaredURL = %q, want %q", result.DeclaredURL, declaredURL)
+	}
+	if result.ActiveURL != activeURL {
+		t.Errorf("ActiveURL = %q, want %q", result.ActiveURL, activeURL)
+	}
+}
+
+func TestCompareURLs_TrailingSlashNormalization(t *testing.T) {
+	ctx := context.Background()
+	repoRoot := setupGitRepo(t)
+	submodulePath := "projects/test-sub"
+	declaredURL := "https://github.com/org/repo/"
+	activeURL := "https://github.com/org/repo"
+
+	setupSubmoduleConfig(t, repoRoot, submodulePath, declaredURL, activeURL)
+
+	result, err := CompareURLs(ctx, repoRoot, submodulePath)
+	if err != nil {
+		t.Fatalf("CompareURLs() error = %v", err)
+	}
+	if !result.Match {
+		t.Errorf("CompareURLs().Match = false, want true (trailing slash should be normalized)")
+	}
+}
+
+func TestCompareURLs_UninitializedSubmodule(t *testing.T) {
+	ctx := context.Background()
+	repoRoot := setupGitRepo(t)
+	submodulePath := "projects/test-sub"
+	declaredURL := "git@github.com:org/test-sub.git"
+
+	// Only set .gitmodules
+	setupSubmoduleConfig(t, repoRoot, submodulePath, declaredURL, "")
+
+	result, err := CompareURLs(ctx, repoRoot, submodulePath)
+	if err != nil {
+		t.Fatalf("CompareURLs() error = %v", err)
+	}
+	if result.Match {
+		t.Errorf("CompareURLs().Match = true, want false for uninitialized submodule")
+	}
+	if result.DeclaredURL != declaredURL {
+		t.Errorf("DeclaredURL = %q, want %q", result.DeclaredURL, declaredURL)
+	}
+	if result.ActiveURL != "" {
+		t.Errorf("ActiveURL = %q, want empty string", result.ActiveURL)
+	}
+}
+
+func TestCompareURLs_ContextCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	repoRoot := setupGitRepo(t)
+
+	_, err := CompareURLs(ctx, repoRoot, "any")
+	if err != context.Canceled {
+		t.Errorf("CompareURLs() error = %v, want context.Canceled", err)
+	}
+}
+
+func TestNormalizeGitURL(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"no trailing slash", "git@github.com:org/repo.git", "git@github.com:org/repo.git"},
+		{"trailing slash", "https://github.com/org/repo/", "https://github.com/org/repo"},
+		{"with whitespace", "  git@github.com:org/repo.git  ", "git@github.com:org/repo.git"},
+		{"trailing slash and whitespace", "  https://github.com/org/repo/  ", "https://github.com/org/repo"},
+		{"empty string", "", ""},
+		{"relative path", "../repo.git", "../repo.git"},
+		{"relative with trailing slash", "../repo/", "../repo"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := normalizeGitURL(tt.input)
+			if result != tt.expected {
+				t.Errorf("normalizeGitURL(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
 	}
 }

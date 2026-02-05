@@ -10,13 +10,13 @@ import (
 // ViewConfig configures the editor view rendering.
 type ViewConfig struct {
 	// Styles
-	NormalText    lipgloss.Style
-	CursorBlock   lipgloss.Style // For normal mode cursor (inverted)
-	CursorInsert  lipgloss.Style // For insert mode cursor position
-	Selection     lipgloss.Style // For visual mode selection
-	LineNumber    lipgloss.Style
-	CommandLine   lipgloss.Style
-	ShowLineNums  bool
+	NormalText   lipgloss.Style
+	CursorBlock  lipgloss.Style // For normal mode cursor (inverted)
+	CursorInsert lipgloss.Style // For insert mode cursor position
+	Selection    lipgloss.Style // For visual mode selection
+	LineNumber   lipgloss.Style
+	CommandLine  lipgloss.Style
+	ShowLineNums bool
 }
 
 // DefaultViewConfig returns default styles using the theme package for adaptive colors.

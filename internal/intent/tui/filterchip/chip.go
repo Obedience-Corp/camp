@@ -218,5 +218,5 @@ func (c Chip) Width() int {
 	// Calculate content width: "Label: Value ▾" + padding + border
 	value := c.SelectedValue()
 	contentLen := len(c.Label) + 2 + len(value) + 2 // ": " + " ▾"
-	return contentLen + 4                            // padding (2) + border (2)
+	return contentLen + 4                           // padding (2) + border (2)
 }
