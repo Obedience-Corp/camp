@@ -63,7 +63,7 @@ integration-verbose:
     GOOS=linux GOARCH=amd64 go build -o bin/linux/camp ./cmd/camp
     echo "Running container-based integration tests (verbose)..."
     DOCKER_HOST="unix://${HOME}/.colima/default/docker.sock" \
-    TESTCONTAINERS_RYUK_DISABLED=true \
+    TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock \
     go test -v -tags=integration ./tests/integration/... -timeout 10m 2>&1
 
 # Run a specific integration test
@@ -76,7 +76,7 @@ integration-run TEST:
     GOOS=linux GOARCH=amd64 go build -o bin/linux/camp ./cmd/camp
     echo "Running integration test: {{TEST}}"
     DOCKER_HOST="unix://${HOME}/.colima/default/docker.sock" \
-    TESTCONTAINERS_RYUK_DISABLED=true \
+    TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock \
     go test -v -tags=integration ./tests/integration/... -run "{{TEST}}" -timeout 5m
 
 # Build Linux binary for integration tests (useful for debugging)
