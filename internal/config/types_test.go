@@ -13,6 +13,7 @@ func TestCampaignConfigYAML(t *testing.T) {
 name: test-campaign
 type: product
 description: A test campaign
+mission: Build amazing things
 created_at: 2026-01-14T10:00:00Z
 projects:
   - name: project-a
@@ -34,6 +35,9 @@ projects:
 	if cfg.Description != "A test campaign" {
 		t.Errorf("Description = %q, want %q", cfg.Description, "A test campaign")
 	}
+	if cfg.Mission != "Build amazing things" {
+		t.Errorf("Mission = %q, want %q", cfg.Mission, "Build amazing things")
+	}
 	// Paths() returns defaults when Jumps is nil
 	if cfg.Paths().Projects != "projects/" {
 		t.Errorf("Paths().Projects = %q, want %q", cfg.Paths().Projects, "projects/")
@@ -43,6 +47,28 @@ projects:
 	}
 	if cfg.Projects[0].Name != "project-a" {
 		t.Errorf("Projects[0].Name = %q, want %q", cfg.Projects[0].Name, "project-a")
+	}
+}
+
+func TestCampaignConfigYAML_MissionOptional(t *testing.T) {
+	// Test that mission field is optional (for backwards compatibility)
+	yamlData := `
+name: legacy-campaign
+type: product
+description: A legacy campaign without mission
+created_at: 2026-01-14T10:00:00Z
+`
+	var cfg CampaignConfig
+	err := yaml.Unmarshal([]byte(yamlData), &cfg)
+	if err != nil {
+		t.Fatalf("yaml.Unmarshal() error = %v", err)
+	}
+
+	if cfg.Name != "legacy-campaign" {
+		t.Errorf("Name = %q, want %q", cfg.Name, "legacy-campaign")
+	}
+	if cfg.Mission != "" {
+		t.Errorf("Mission = %q, want empty string for legacy config", cfg.Mission)
 	}
 }
 

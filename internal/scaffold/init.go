@@ -21,6 +21,10 @@ type InitOptions struct {
 	Name string
 	// Type is the campaign type.
 	Type config.CampaignType
+	// Description is a brief description of the campaign.
+	Description string
+	// Mission is the campaign's mission statement.
+	Mission string
 	// FromExisting migrates an existing workspace.
 	FromExisting bool
 	// NoRegister skips adding to global registry.
@@ -175,12 +179,18 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 	}
 
 	// Create campaign.yaml (metadata and concepts - paths/shortcuts go in jumps.yaml)
+	description := opts.Description
+	if description == "" {
+		description = fmt.Sprintf("Campaign: %s", name)
+	}
+
 	cfg := &config.CampaignConfig{
 		ID:          campaignID,
 		Name:        name,
 		Type:        opts.Type,
 		CreatedAt:   time.Now(),
-		Description: fmt.Sprintf("Campaign: %s", name),
+		Description: description,
+		Mission:     opts.Mission,
 		ConceptList: config.DefaultConcepts(),
 	}
 
@@ -189,6 +199,12 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 		cfg.CreatedAt = existingCfg.CreatedAt
 		cfg.Description = existingCfg.Description
 		cfg.Projects = existingCfg.Projects
+		// Preserve existing mission unless a new one was provided
+		if opts.Mission != "" {
+			cfg.Mission = opts.Mission
+		} else {
+			cfg.Mission = existingCfg.Mission
+		}
 		// Only add default concepts if none exist
 		if len(existingCfg.ConceptList) > 0 {
 			cfg.ConceptList = existingCfg.ConceptList
