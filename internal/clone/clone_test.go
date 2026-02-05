@@ -269,7 +269,7 @@ func TestCloneResult_ValidationIssues(t *testing.T) {
 		Validation: &ValidationResult{
 			Passed: false,
 			Issues: []ValidationIssue{
-				{Submodule: "projects/sub", Description: "not initialized", Severity: "error"},
+				{Submodule: "projects/sub", Description: "not initialized", Severity: SeverityError},
 			},
 		},
 	}
@@ -333,11 +333,13 @@ func TestURLChange_Fields(t *testing.T) {
 
 func TestValidationIssue_Severity(t *testing.T) {
 	tests := []struct {
-		name     string
-		severity string
+		name       string
+		severity   Severity
+		wantString string
 	}{
-		{"error severity", "error"},
-		{"warning severity", "warning"},
+		{"error severity", SeverityError, "error"},
+		{"warning severity", SeverityWarning, "warning"},
+		{"info severity", SeverityInfo, "info"},
 	}
 
 	for _, tt := range tests {
@@ -349,7 +351,11 @@ func TestValidationIssue_Severity(t *testing.T) {
 			}
 
 			if issue.Severity != tt.severity {
-				t.Errorf("Severity = %q, want %q", issue.Severity, tt.severity)
+				t.Errorf("Severity = %v, want %v", issue.Severity, tt.severity)
+			}
+
+			if tt.severity.String() != tt.wantString {
+				t.Errorf("Severity.String() = %q, want %q", tt.severity.String(), tt.wantString)
 			}
 		})
 	}

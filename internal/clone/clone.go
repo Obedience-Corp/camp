@@ -92,7 +92,7 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 		if result.Validation != nil && !result.Validation.Passed {
 			// Validation failure is an error
 			for _, issue := range result.Validation.Issues {
-				if issue.Severity == "error" {
+				if issue.Severity == SeverityError {
 					result.Errors = append(result.Errors, fmt.Errorf("validation: %s - %s", issue.Submodule, issue.Description))
 				} else {
 					result.Warnings = append(result.Warnings, fmt.Sprintf("validation: %s - %s", issue.Submodule, issue.Description))
@@ -114,7 +114,7 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 func (c *Cloner) validate(ctx context.Context, dir string) *ValidationResult {
 	if ctx.Err() != nil {
 		return &ValidationResult{Passed: false, Issues: []ValidationIssue{
-			{Description: "context cancelled", Severity: "error"},
+			{Description: "context cancelled", Severity: SeverityError},
 		}}
 	}
 
@@ -130,7 +130,7 @@ func (c *Cloner) validate(ctx context.Context, dir string) *ValidationResult {
 	if err != nil {
 		result.Issues = append(result.Issues, ValidationIssue{
 			Description: fmt.Sprintf("could not check submodule status: %v", err),
-			Severity:    "warning",
+			Severity:    SeverityWarning,
 		})
 	}
 
@@ -141,7 +141,7 @@ func (c *Cloner) validate(ctx context.Context, dir string) *ValidationResult {
 			result.Issues = append(result.Issues, ValidationIssue{
 				Submodule:   sub.Path,
 				Description: "not initialized",
-				Severity:    "error",
+				Severity:    SeverityError,
 			})
 		}
 	}

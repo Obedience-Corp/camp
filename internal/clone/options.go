@@ -89,16 +89,24 @@ type ValidationResult struct {
 	URLsMatch bool
 	// Issues contains any validation problems found.
 	Issues []ValidationIssue
+	// CheckResults contains per-check pass/fail status.
+	CheckResults map[string]bool
 }
 
 // ValidationIssue represents a validation problem found during post-clone checks.
 type ValidationIssue struct {
+	// CheckID identifies which check found this issue.
+	CheckID string
 	// Submodule is the submodule path where the issue was found.
 	Submodule string
+	// Severity indicates the importance of this issue.
+	Severity Severity
 	// Description explains the validation failure.
 	Description string
-	// Severity is either "error" or "warning".
-	Severity string
+	// FixCommand is a suggested command to fix the issue (if any).
+	FixCommand string
+	// AutoFixable indicates if this issue can be automatically fixed.
+	AutoFixable bool
 }
 
 // ClonerOption configures a Cloner.
