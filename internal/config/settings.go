@@ -15,6 +15,9 @@ const SettingsDir = "settings"
 // JumpsConfigFile is the name of the jumps configuration file.
 const JumpsConfigFile = "jumps.yaml"
 
+// PinsConfigFile is the name of the pins configuration file.
+const PinsConfigFile = "pins.json"
+
 // JumpsConfig represents .campaign/settings/jumps.yaml configuration.
 // It contains navigation paths and shortcuts for quick campaign navigation.
 type JumpsConfig struct {
@@ -27,6 +30,11 @@ type JumpsConfig struct {
 // JumpsConfigPath returns the path to jumps.yaml for a given campaign root.
 func JumpsConfigPath(campaignRoot string) string {
 	return filepath.Join(campaignRoot, CampaignDir, SettingsDir, JumpsConfigFile)
+}
+
+// PinsConfigPath returns the path to pins.json for a given campaign root.
+func PinsConfigPath(campaignRoot string) string {
+	return filepath.Join(campaignRoot, CampaignDir, SettingsDir, PinsConfigFile)
 }
 
 // SettingsDirPath returns the path to the settings directory for a given campaign root.

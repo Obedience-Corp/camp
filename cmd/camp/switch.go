@@ -1,16 +1,16 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 
-	"github.com/charmbracelet/huh"
+	"github.com/ktr0731/go-fuzzyfinder"
 	"github.com/spf13/cobra"
 
 	"github.com/obediencecorp/camp/internal/campaign"
 	"github.com/obediencecorp/camp/internal/config"
-	"github.com/obediencecorp/camp/internal/ui/theme"
 )
 
 var switchCmd = &cobra.Command{
@@ -114,34 +114,39 @@ func pickCampaign(cmd *cobra.Command, reg *config.Registry) (config.RegisteredCa
 	// Detect current campaign for highlighting
 	currentPath, _ := campaign.DetectCached(ctx)
 
-	options := make([]huh.Option[string], 0, len(all))
-	for _, c := range all {
-		label := c.Name
-		if c.Path == currentPath {
-			label = "* " + label
-		}
-		options = append(options, huh.NewOption(label, c.ID))
-	}
-
-	var selectedID string
-	form := huh.NewForm(huh.NewGroup(
-		huh.NewSelect[string]().
-			Title("Switch Campaign").
-			Description("Select a campaign to switch to").
-			Options(options...).
-			Value(&selectedID),
-	))
-
-	if err := theme.RunForm(ctx, form); err != nil {
-		if theme.IsCancelled(err) {
+	idx, err := fuzzyfinder.Find(
+		all,
+		func(i int) string {
+			c := all[i]
+			if c.Path == currentPath {
+				return "* " + c.Name
+			}
+			return "  " + c.Name
+		},
+		fuzzyfinder.WithPreviewWindow(func(i, w, h int) string {
+			if i < 0 || i >= len(all) {
+				return ""
+			}
+			c := all[i]
+			preview := fmt.Sprintf("  Name: %s\n  Path: %s", c.Name, c.Path)
+			if !c.LastAccess.IsZero() {
+				preview += fmt.Sprintf("\n  Last: %s", c.LastAccess.Format("Jan 2 15:04"))
+			}
+			if c.Path == currentPath {
+				preview += "\n\n  (current)"
+			}
+			return preview
+		}),
+		fuzzyfinder.WithPromptString("Switch to: "),
+		fuzzyfinder.WithHeader("  ↑/↓ navigate • type to filter • esc cancel"),
+		fuzzyfinder.WithContext(ctx),
+	)
+	if err != nil {
+		if errors.Is(err, fuzzyfinder.ErrAbort) {
 			return config.RegisteredCampaign{}, fmt.Errorf("cancelled")
 		}
-		return config.RegisteredCampaign{}, err
+		return config.RegisteredCampaign{}, fmt.Errorf("picker: %w", err)
 	}
 
-	c, ok := reg.GetByID(selectedID)
-	if !ok {
-		return config.RegisteredCampaign{}, fmt.Errorf("selected campaign not found")
-	}
-	return c, nil
+	return all[idx], nil
 }
