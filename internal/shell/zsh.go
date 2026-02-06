@@ -20,11 +20,9 @@ camp() {
     switch|sw)
       shift
       local dest
-      dest=$(command camp switch "$@" --print 2>/dev/null)
+      dest=$(command camp switch "$@" --print)
       if [[ -n "$dest" ]]; then
         cd "$dest"
-      else
-        command camp switch "$@"
       fi
       ;;
     go|g)

@@ -27,11 +27,9 @@ function camp --description "Camp CLI wrapper with directory-changing support"
     switch "$argv[1]"
         case switch sw
             set -l rest $argv[2..-1]
-            set -l dest (command camp switch $rest --print 2>/dev/null)
+            set -l dest (command camp switch $rest --print)
             if test -n "$dest"
                 cd $dest
-            else
-                command camp switch $rest
             end
         case go g
             set -l rest $argv[2..-1]
