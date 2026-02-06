@@ -63,14 +63,14 @@ func TestMatchProject(t *testing.T) {
 			want:  filepath.Join(tmpDir, "projects/gamma"),
 		},
 		{
-			name:    "prefix match ambiguous",
-			query:   "beta",
-			want:    filepath.Join(tmpDir, "projects/beta"),
+			name:  "prefix match ambiguous",
+			query: "beta",
+			want:  filepath.Join(tmpDir, "projects/beta"),
 		},
 		{
-			name:    "substring match unique",
-			query:   "lph",
-			want:    filepath.Join(tmpDir, "projects/alpha"),
+			name:  "substring match unique",
+			query: "lph",
+			want:  filepath.Join(tmpDir, "projects/alpha"),
 		},
 		{
 			name:    "no match",
