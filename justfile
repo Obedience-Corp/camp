@@ -65,6 +65,7 @@ install: build
     @echo "Installing camp..."
     @mkdir -p {{gobin}}
     cp {{bin_dir}}/{{binary_name}} {{gobin}}/{{binary_name}}
+    codesign -f -s - {{gobin}}/{{binary_name}}
     @echo "camp installed to {{gobin}}/{{binary_name}}"
 
 # Uninstall camp from $GOBIN
