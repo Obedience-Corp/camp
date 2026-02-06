@@ -21,42 +21,51 @@ function __camp_is_first_arg
     test (count $cmd) -eq 1
 end
 
-# Navigation function
+# Wrap camp binary so directory-changing subcommands work natively.
+# Uses "command camp" to call the real binary, avoiding recursion.
+function camp --description "Camp CLI wrapper with directory-changing support"
+    switch "$argv[1]"
+        case switch sw
+            set -l rest $argv[2..-1]
+            set -l dest (command camp switch $rest --print 2>/dev/null)
+            if test -n "$dest"
+                cd $dest
+            else
+                command camp switch $rest
+            end
+        case go g
+            set -l rest $argv[2..-1]
+            if test (count $rest) -eq 0
+                set -l dest (command camp go --print 2>/dev/null)
+                if test -n "$dest"
+                    cd $dest
+                end
+            else if test "$rest[1]" = "--help" -o "$rest[1]" = "-h"
+                command camp go --help
+            else if test "$rest[1]" = "-c"
+                command camp go $rest
+            else
+                set -l dest (command camp go $rest --print 2>/dev/null)
+                if test -n "$dest"
+                    cd $dest
+                else
+                    echo "camp: not found: $rest" >&2
+                    return 1
+                end
+            end
+        case '*'
+            command camp $argv
+    end
+end
+
+# Shorthand for camp go
 # Usage:
 #   cgo                 Interactive picker or jump to campaign root
 #   cgo p               Jump to projects/
 #   cgo p api           Fuzzy find "api" in projects/
 #   cgo -c p ls         Run "ls" in projects/ without changing directory
-function cgo --description "Navigate campaign directories"
-    if test (count $argv) -eq 0
-        # No args - jump to campaign root
-        set -l dest (camp go --print 2>/dev/null)
-        if test -n "$dest"
-            cd $dest
-        end
-    else if test "$argv[1]" = "--help" -o "$argv[1]" = "-h"
-        # Show help from camp go
-        camp go --help
-    else if test "$argv[1]" = "-c"
-        # Command execution mode: cgo -c <category> <command...>
-        set -l category $argv[2]
-        set -l cmd $argv[3..-1]
-        # Build -c args for each command argument
-        set -l args
-        for arg in $cmd
-            set args $args -c $arg
-        end
-        camp go $category $args
-    else
-        # Navigation mode
-        set -l dest (camp go $argv --print 2>/dev/null)
-        if test -n "$dest"
-            cd $dest
-        else
-            echo "camp: not found: $argv" >&2
-            return 1
-        end
-    end
+function cgo --description "Navigate campaign directories (shorthand for camp go)"
+    camp go $argv
 end
 
 # Tab completion for cgo - category shortcuts with descriptions
@@ -100,6 +109,7 @@ complete -c camp -f  # no file completion by default
 # Main commands
 complete -c camp -n __fish_use_subcommand -a "init" -d "Initialize a new campaign"
 complete -c camp -n __fish_use_subcommand -a "go" -d "Navigate to campaign directory"
+complete -c camp -n __fish_use_subcommand -a "switch" -d "Switch to a different campaign"
 complete -c camp -n __fish_use_subcommand -a "project" -d "Manage projects"
 complete -c camp -n __fish_use_subcommand -a "list" -d "List registered campaigns"
 complete -c camp -n __fish_use_subcommand -a "register" -d "Register campaign in registry"

@@ -21,44 +21,55 @@ if ! command -v camp &> /dev/null; then
   return 2>/dev/null || exit 0
 fi
 
-# Navigation function
+# Wrap camp binary so directory-changing subcommands work natively.
+# Uses "command camp" to call the real binary, avoiding recursion.
+camp() {
+  local dest
+  case "$1" in
+    switch|sw)
+      shift
+      dest=$(command camp switch "$@" --print 2>/dev/null)
+      if [ -n "$dest" ]; then
+        cd "$dest" || return 1
+      else
+        command camp switch "$@"
+      fi
+      ;;
+    go|g)
+      shift
+      if [ $# -eq 0 ]; then
+        dest=$(command camp go --print 2>/dev/null)
+        if [ -n "$dest" ]; then
+          cd "$dest" || return 1
+        fi
+      elif [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+        command camp go --help
+      elif [ "$1" = "-c" ]; then
+        command camp go "$@"
+      else
+        dest=$(command camp go "$@" --print 2>/dev/null)
+        if [ -n "$dest" ]; then
+          cd "$dest" || return 1
+        else
+          echo "camp: not found: $*" >&2
+          return 1
+        fi
+      fi
+      ;;
+    *)
+      command camp "$@"
+      ;;
+  esac
+}
+
+# Shorthand for camp go
 # Usage:
 #   cgo                 Interactive picker or jump to campaign root
 #   cgo p               Jump to projects/
 #   cgo p api           Fuzzy find "api" in projects/
 #   cgo -c p ls         Run "ls" in projects/ without changing directory
 cgo() {
-  local dest
-  if [ $# -eq 0 ]; then
-    # No args - jump to campaign root
-    dest=$(camp go --print 2>/dev/null)
-    if [ -n "$dest" ]; then
-      cd "$dest" || return 1
-    fi
-  elif [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
-    # Show help from camp go
-    camp go --help
-  elif [ "$1" = "-c" ]; then
-    # Command execution mode: cgo -c <category> <command...>
-    shift
-    local category="$1"
-    shift
-    # Build -c args for each command argument
-    local args=""
-    for arg in "$@"; do
-      args="$args -c $arg"
-    done
-    eval "camp go \"$category\" $args"
-  else
-    # Navigation mode
-    dest=$(camp go "$@" --print 2>/dev/null)
-    if [ -n "$dest" ]; then
-      cd "$dest" || return 1
-    else
-      echo "camp: not found: $*" >&2
-      return 1
-    fi
-  fi
+  camp go "$@"
 }
 
 # Tab completion for cgo
@@ -109,7 +120,7 @@ _camp_complete() {
 
   # First argument - commands
   if [ "$COMP_CWORD" -eq 1 ]; then
-    local commands="init go project list register unregister shell-init complete version"
+    local commands="init go switch project list register unregister shell-init complete version"
     COMPREPLY=($(compgen -W "$commands" -- "$cur"))
     return
   fi

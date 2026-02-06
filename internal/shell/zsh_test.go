@@ -17,11 +17,15 @@ func TestGenerateZsh(t *testing.T) {
 		name    string
 		content string
 	}{
+		{"camp wrapper function", "camp()"},
 		{"cgo function", "cgo()"},
 		{"cint function", "cint()"},
 		{"cint implementation", "camp intent add"},
 		{"cd command", "cd \"$dest\""},
 		{"camp go call", "camp go"},
+		{"command camp binary call", "command camp"},
+		{"switch subcommand", "switch|sw)"},
+		{"go subcommand", "go|g)"},
 		{"compdef cgo", "compdef _cgo cgo"},
 		{"compdef camp", "compdef _camp camp"},
 		{"category shortcuts", "'p:projects"},
@@ -151,6 +155,7 @@ func TestGenerateZsh_ContainsCommands(t *testing.T) {
 	commands := []string{
 		"'init:Initialize",
 		"'go:Navigate",
+		"'switch:Switch",
 		"'project:Manage",
 		"'shell-init:Output",
 	}
