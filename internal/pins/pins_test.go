@@ -176,6 +176,36 @@ func TestNames(t *testing.T) {
 	}
 }
 
+func TestFindByPath(t *testing.T) {
+	s := NewStore("")
+	_ = s.Add("alpha", "/home/user/a")
+	_ = s.Add("beta", "/home/user/b")
+
+	tests := []struct {
+		name  string
+		path  string
+		want  bool
+		wantN string
+	}{
+		{"found first", "/home/user/a", true, "alpha"},
+		{"found second", "/home/user/b", true, "beta"},
+		{"not found", "/home/user/c", false, ""},
+		{"empty path", "", false, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pin, ok := s.FindByPath(tt.path)
+			if ok != tt.want {
+				t.Errorf("FindByPath(%q) ok = %v, want %v", tt.path, ok, tt.want)
+			}
+			if ok && pin.Name != tt.wantN {
+				t.Errorf("FindByPath(%q).Name = %q, want %q", tt.path, pin.Name, tt.wantN)
+			}
+		})
+	}
+}
+
 func TestNamesEmpty(t *testing.T) {
 	s := NewStore("")
 	names := s.Names()
