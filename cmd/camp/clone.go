@@ -91,6 +91,7 @@ func init() {
 		"Output results as JSON for scripting")
 
 	rootCmd.AddCommand(cloneCmd)
+	cloneCmd.GroupID = "setup"
 }
 
 func runClone(cmd *cobra.Command, args []string) error {
