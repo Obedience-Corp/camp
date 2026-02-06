@@ -162,6 +162,7 @@ func init() {
 		&cobra.Group{ID: "registry", Title: ui.Category("Registry Commands:")},
 		&cobra.Group{ID: "project", Title: ui.Category("Project Commands:")},
 		&cobra.Group{ID: "planning", Title: ui.Category("Planning Commands:")},
+		&cobra.Group{ID: "global", Title: ui.Category("Global Commands:")},
 		&cobra.Group{ID: "system", Title: ui.Category("System Commands:")},
 	)
 

@@ -58,7 +58,7 @@ The --print flag outputs just the path for shell integration:
 
 func init() {
 	rootCmd.AddCommand(switchCmd)
-	switchCmd.GroupID = "navigation"
+	switchCmd.GroupID = "global"
 	switchCmd.Flags().Bool("print", false, "Print path only (for shell integration)")
 }
 
