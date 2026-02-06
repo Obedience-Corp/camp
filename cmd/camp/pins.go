@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"text/tabwriter"
 	"time"
 
 	"github.com/obediencecorp/camp/internal/campaign"
+	"github.com/obediencecorp/camp/internal/config"
 	"github.com/obediencecorp/camp/internal/pins"
 	"github.com/spf13/cobra"
 )
@@ -33,11 +35,13 @@ If path is omitted, the current working directory is used.`,
 }
 
 var unpinCmd = &cobra.Command{
-	Use:   "unpin <name>",
+	Use:   "unpin [name]",
 	Short: "Remove a directory bookmark",
-	Long:  `Remove a pinned directory bookmark by name.`,
-	Args:  cobra.ExactArgs(1),
-	RunE:  runUnpin,
+	Long: `Remove a pinned directory bookmark by name.
+
+Without arguments, detects and unpins the current directory.`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: runUnpin,
 	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) > 0 {
 			return nil, cobra.ShellCompDirectiveNoFileComp
@@ -60,19 +64,32 @@ func init() {
 	unpinCmd.GroupID = "navigation"
 }
 
-// loadPinStore loads the pin store from .campaign/pins.json.
+// loadPinStore loads the pin store from .campaign/settings/pins.json.
 func loadPinStore(cmd *cobra.Command) (*pins.Store, error) {
 	ctx := cmd.Context()
 	root, err := campaign.DetectCached(ctx)
 	if err != nil {
 		return nil, err
 	}
-	storePath := filepath.Join(root, campaign.CampaignDir, "pins.json")
+	migratePinsIfNeeded(root)
+	storePath := config.PinsConfigPath(root)
 	store := pins.NewStore(storePath)
 	if err := store.Load(); err != nil {
 		return nil, err
 	}
 	return store, nil
+}
+
+// migratePinsIfNeeded moves pins.json from .campaign/ to .campaign/settings/ if needed.
+func migratePinsIfNeeded(root string) {
+	oldPath := filepath.Join(root, campaign.CampaignDir, "pins.json")
+	newPath := config.PinsConfigPath(root)
+	if _, err := os.Stat(oldPath); err == nil {
+		if _, err := os.Stat(newPath); os.IsNotExist(err) {
+			_ = os.MkdirAll(filepath.Dir(newPath), 0755)
+			_ = os.Rename(oldPath, newPath)
+		}
+	}
 }
 
 func runPinsList(cmd *cobra.Command, args []string) error {
@@ -141,11 +158,25 @@ func runPin(cmd *cobra.Command, args []string) error {
 }
 
 func runUnpin(cmd *cobra.Command, args []string) error {
-	name := args[0]
-
 	store, err := loadPinStore(cmd)
 	if err != nil {
 		return err
+	}
+
+	var name string
+	if len(args) == 1 {
+		name = args[0]
+	} else {
+		// No args — detect pin from current directory
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("get working directory: %w", err)
+		}
+		pin, ok := store.FindByPath(cwd)
+		if !ok {
+			return fmt.Errorf("directory not pinned: %s", cwd)
+		}
+		name = pin.Name
 	}
 
 	if err := store.Remove(name); err != nil {
@@ -157,4 +188,13 @@ func runUnpin(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Unpinned %q\n", name)
 	return nil
+}
+
+// pinNotFoundError returns an error with suggestions for similar pin names.
+func pinNotFoundError(name string, store *pins.Store) error {
+	names := store.Names()
+	if len(names) == 0 {
+		return fmt.Errorf("pin %q not found (no pins saved — use 'camp pin' to create one)", name)
+	}
+	return fmt.Errorf("pin %q not found (available: %s)", name, strings.Join(names, ", "))
 }

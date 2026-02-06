@@ -11,6 +11,7 @@ import (
 	"github.com/obediencecorp/camp/internal/config"
 	"github.com/obediencecorp/camp/internal/nav"
 	"github.com/obediencecorp/camp/internal/nav/index"
+	"github.com/obediencecorp/camp/internal/pins"
 	"github.com/obediencecorp/camp/internal/state"
 	"github.com/obediencecorp/camp/internal/ui"
 	"github.com/spf13/cobra"
@@ -119,6 +120,30 @@ func runGo(cmd *cobra.Command, args []string) error {
 	if len(queryParts) > 1 {
 		result.Query = queryParts[0]
 		subShortcut = queryParts[1]
+	}
+
+	// When no shortcut matched, check if the query matches a pin name
+	if !result.IsShortcut && result.Query != "" {
+		if pinPath, ok := resolvePin(campaignRoot, result.Query); ok {
+			if len(command) > 0 {
+				execResult, err := nav.ExecInDir(ctx, pinPath, command)
+				if err != nil {
+					return err
+				}
+				if execResult.ExitCode != 0 {
+					os.Exit(execResult.ExitCode)
+				}
+				return nil
+			}
+			// Save as last location
+			_ = state.SetLastLocation(ctx, campaignRoot, pinPath)
+			if printOnly {
+				fmt.Println(pinPath)
+			} else {
+				fmt.Printf("cd %s\n", pinPath)
+			}
+			return nil
+		}
 	}
 
 	// Command execution mode
@@ -438,4 +463,18 @@ func formatConfigShortcuts(shortcuts map[string]config.ShortcutConfig) string {
 	}
 
 	return sb.String()
+}
+
+// resolvePin checks if the query matches a pin name and returns its path.
+func resolvePin(campaignRoot, query string) (string, bool) {
+	storePath := config.PinsConfigPath(campaignRoot)
+	store := pins.NewStore(storePath)
+	if err := store.Load(); err != nil {
+		return "", false
+	}
+	pin, ok := store.Get(query)
+	if !ok {
+		return "", false
+	}
+	return pin.Path, true
 }

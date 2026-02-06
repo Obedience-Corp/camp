@@ -108,6 +108,16 @@ func (s *Store) Remove(name string) error {
 	return fmt.Errorf("pin %q not found", name)
 }
 
+// FindByPath returns the pin whose path matches, or false if not found.
+func (s *Store) FindByPath(path string) (Pin, bool) {
+	for _, p := range s.pins {
+		if p.Path == path {
+			return p, true
+		}
+	}
+	return Pin{}, false
+}
+
 // Names returns all pin names (for tab completion).
 func (s *Store) Names() []string {
 	names := make([]string, len(s.pins))
