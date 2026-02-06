@@ -46,16 +46,16 @@ func init() {
 
 // repoStatus holds the status of a single repository.
 type repoStatus struct {
-	Name     string `json:"name"`
-	Path     string `json:"path"`
-	Branch   string `json:"branch"`
-	Clean    bool   `json:"clean"`
-	Ahead    int    `json:"ahead"`
-	Behind   int    `json:"behind"`
-	Staged   int    `json:"staged"`
-	Modified int    `json:"modified"`
-	Untracked int  `json:"untracked"`
-	Error    string `json:"error,omitempty"`
+	Name      string `json:"name"`
+	Path      string `json:"path"`
+	Branch    string `json:"branch"`
+	Clean     bool   `json:"clean"`
+	Ahead     int    `json:"ahead"`
+	Behind    int    `json:"behind"`
+	Staged    int    `json:"staged"`
+	Modified  int    `json:"modified"`
+	Untracked int    `json:"untracked"`
+	Error     string `json:"error,omitempty"`
 }
 
 // statusAllCache is the JSON cache format.
