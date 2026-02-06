@@ -1,50 +1,56 @@
 package main
 
 import (
-	"context"
 	"fmt"
-	"path/filepath"
+	"sort"
 	"strings"
 
-	"github.com/obediencecorp/camp/internal/campaign"
-	"github.com/obediencecorp/camp/internal/git"
+	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
+
+	"github.com/obediencecorp/camp/internal/campaign"
+	"github.com/obediencecorp/camp/internal/config"
+	"github.com/obediencecorp/camp/internal/ui/theme"
 )
 
 var switchCmd = &cobra.Command{
-	Use:   "switch <project>",
-	Short: "Switch to a project directory",
-	Long: `Switch to a project (submodule) directory by name.
+	Use:   "switch [campaign]",
+	Short: "Switch to a different campaign",
+	Long: `Switch to a registered campaign by name or ID.
 
-Supports fuzzy matching — partial names match if unambiguous.
+Without arguments, opens an interactive picker to select a campaign.
+With an argument, looks up the campaign by name or ID prefix.
+
 Use with the cgo shell function for instant navigation:
-  cgo switch fest      # cd to projects/fest
+  cgo switch                 # Interactive campaign picker
+  cgo switch my-campaign     # Switch by name
+  cgo switch a1b2             # Switch by ID prefix
 
 The --print flag outputs just the path for shell integration:
-  cd "$(camp switch fest --print)"`,
-	Example: `  camp switch fest           # Switch to fest project
-  camp switch obey           # Switch to obey-* (if unambiguous)
-  camp switch camp --print   # Print path only`,
+  cd "$(camp switch --print)"`,
+	Example: `  camp switch                    # Interactive picker
+  camp switch obey-campaign      # Switch by name
+  camp switch a1b2               # Switch by ID prefix
+  camp switch --print            # Picker, output path only`,
 	Aliases: []string{"sw"},
-	Args:    cobra.ExactArgs(1),
+	Args:    cobra.MaximumNArgs(1),
 	RunE:    runSwitch,
 	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) > 0 {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
 		ctx := cmd.Context()
-		root, err := campaign.DetectCached(ctx)
+		reg, err := config.LoadRegistry(ctx)
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveError
 		}
-		matches, err := git.ListSubmodulePathsFiltered(ctx, root, toComplete)
-		if err != nil {
-			return nil, cobra.ShellCompDirectiveError
-		}
-		// Return just the directory name (last segment of submodule path)
-		names := make([]string, 0, len(matches))
-		for _, m := range matches {
-			names = append(names, filepath.Base(m))
+		toComplete = strings.ToLower(toComplete)
+		var names []string
+		for _, c := range reg.ListAll() {
+			lower := strings.ToLower(c.Name)
+			if strings.HasPrefix(lower, toComplete) {
+				names = append(names, c.Name)
+			}
 		}
 		return names, cobra.ShellCompDirectiveNoFileComp
 	},
@@ -60,87 +66,82 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	printOnly, _ := cmd.Flags().GetBool("print")
 
-	root, err := campaign.DetectCached(ctx)
+	reg, err := config.LoadRegistry(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("load registry: %w", err)
+	}
+	if reg.Len() == 0 {
+		return fmt.Errorf("no campaigns registered (use 'camp init' to create one)")
 	}
 
-	query := args[0]
-	match, err := matchProject(ctx, root, query)
-	if err != nil {
-		return err
+	var selected config.RegisteredCampaign
+
+	if len(args) == 1 {
+		c, ok := reg.Get(args[0])
+		if !ok {
+			return fmt.Errorf("campaign %q not found in registry", args[0])
+		}
+		selected = c
+	} else {
+		c, err := pickCampaign(cmd, reg)
+		if err != nil {
+			return err
+		}
+		selected = c
 	}
+
+	// Update last access
+	reg.UpdateLastAccess(selected.ID)
+	_ = config.SaveRegistry(ctx, reg)
 
 	if printOnly {
-		fmt.Println(match)
+		fmt.Println(selected.Path)
 	} else {
-		fmt.Printf("cd %s\n", match)
+		fmt.Printf("cd %s\n", selected.Path)
 	}
 	return nil
 }
 
-// matchProject finds a project by name using exact, prefix, then substring matching.
-// Returns the absolute path to the matched project.
-func matchProject(ctx context.Context, campRoot, query string) (string, error) {
-	if ctx.Err() != nil {
-		return "", ctx.Err()
-	}
+func pickCampaign(cmd *cobra.Command, reg *config.Registry) (config.RegisteredCampaign, error) {
+	ctx := cmd.Context()
+	all := reg.ListAll()
 
-	all, err := git.ListSubmodulePaths(ctx, campRoot)
-	if err != nil {
-		return "", fmt.Errorf("list submodules: %w", err)
-	}
-	if len(all) == 0 {
-		return "", fmt.Errorf("no submodules found in campaign")
-	}
+	// Sort by last access descending (most recent first)
+	sort.Slice(all, func(i, j int) bool {
+		return all[i].LastAccess.After(all[j].LastAccess)
+	})
 
-	query = strings.ToLower(query)
+	// Detect current campaign for highlighting
+	currentPath, _ := campaign.DetectCached(ctx)
 
-	// Phase 1: Exact match on directory name
-	for _, p := range all {
-		name := strings.ToLower(filepath.Base(p))
-		if name == query {
-			return filepath.Join(campRoot, p), nil
+	options := make([]huh.Option[string], 0, len(all))
+	for _, c := range all {
+		label := c.Name
+		if c.Path == currentPath {
+			label = "* " + label
 		}
+		options = append(options, huh.NewOption(label, c.ID))
 	}
 
-	// Phase 2: Prefix match
-	var prefixMatches []string
-	for _, p := range all {
-		name := strings.ToLower(filepath.Base(p))
-		if strings.HasPrefix(name, query) {
-			prefixMatches = append(prefixMatches, p)
+	var selectedID string
+	form := huh.NewForm(huh.NewGroup(
+		huh.NewSelect[string]().
+			Title("Switch Campaign").
+			Description("Select a campaign to switch to").
+			Options(options...).
+			Value(&selectedID),
+	))
+
+	if err := theme.RunForm(ctx, form); err != nil {
+		if theme.IsCancelled(err) {
+			return config.RegisteredCampaign{}, fmt.Errorf("cancelled")
 		}
-	}
-	if len(prefixMatches) == 1 {
-		return filepath.Join(campRoot, prefixMatches[0]), nil
-	}
-	if len(prefixMatches) > 1 {
-		return "", ambiguousMatchError(query, prefixMatches)
+		return config.RegisteredCampaign{}, err
 	}
 
-	// Phase 3: Substring match
-	var substringMatches []string
-	for _, p := range all {
-		name := strings.ToLower(filepath.Base(p))
-		if strings.Contains(name, query) {
-			substringMatches = append(substringMatches, p)
-		}
+	c, ok := reg.GetByID(selectedID)
+	if !ok {
+		return config.RegisteredCampaign{}, fmt.Errorf("selected campaign not found")
 	}
-	if len(substringMatches) == 1 {
-		return filepath.Join(campRoot, substringMatches[0]), nil
-	}
-	if len(substringMatches) > 1 {
-		return "", ambiguousMatchError(query, substringMatches)
-	}
-
-	return "", fmt.Errorf("no project matching %q found", query)
-}
-
-func ambiguousMatchError(query string, matches []string) error {
-	names := make([]string, len(matches))
-	for i, m := range matches {
-		names[i] = filepath.Base(m)
-	}
-	return fmt.Errorf("ambiguous match for %q: %s", query, strings.Join(names, ", "))
+	return c, nil
 }
