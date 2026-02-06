@@ -57,6 +57,37 @@ type Schema struct {
 
 	// Metadata contains user-defined key-value pairs.
 	Metadata map[string]string `yaml:"metadata,omitempty" json:"metadata,omitempty"`
+
+	// AutoCommit configures automatic git commits on flow moves.
+	AutoCommit AutoCommitConfig `yaml:"auto_commit,omitempty" json:"auto_commit,omitempty"`
+}
+
+// AutoCommitConfig controls automatic git commits after flow moves.
+type AutoCommitConfig struct {
+	// Enabled turns auto-commit on/off globally.
+	Enabled bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+
+	// Transitions defines per-transition overrides.
+	Transitions []TransitionRule `yaml:"transitions,omitempty" json:"transitions,omitempty"`
+}
+
+// TransitionRule defines an auto-commit override for a specific transition.
+type TransitionRule struct {
+	From   string `yaml:"from" json:"from"`
+	To     string `yaml:"to" json:"to"`
+	Commit bool   `yaml:"commit" json:"commit"`
+}
+
+// ShouldAutoCommit returns whether a given transition should trigger a commit.
+func (c *AutoCommitConfig) ShouldAutoCommit(from, to string) bool {
+	// Check per-transition overrides first
+	for _, t := range c.Transitions {
+		if t.From == from && t.To == to {
+			return t.Commit
+		}
+	}
+	// Fall back to global setting
+	return c.Enabled
 }
 
 // Directory represents a status directory configuration.
