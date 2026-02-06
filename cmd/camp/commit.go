@@ -20,10 +20,15 @@ var commitCmd = &cobra.Command{
 Automatically stages all changes and creates a commit. Handles
 stale lock files from crashed processes.
 
+Use --sub to commit in the submodule detected from your current directory.
+Use -p/--project to commit in a specific project (e.g., -p projects/camp).
+
 Examples:
   camp commit -m "Add new feature"
   camp commit --amend -m "Fix typo"
-  camp commit -a -m "Stage and commit all"`,
+  camp commit -a -m "Stage and commit all"
+  camp commit --sub -m "Commit in current submodule"
+  camp commit -p projects/camp -m "Commit in camp project"`,
 	RunE: runCommit,
 }
 
@@ -31,15 +36,42 @@ var (
 	commitMessage string
 	commitAll     bool
 	commitAmend   bool
+	commitSub     bool
+	commitProject string
 )
 
 func init() {
 	commitCmd.Flags().StringVarP(&commitMessage, "message", "m", "", "Commit message (required)")
 	commitCmd.Flags().BoolVarP(&commitAll, "all", "a", true, "Stage all changes before committing")
 	commitCmd.Flags().BoolVar(&commitAmend, "amend", false, "Amend the previous commit")
+	commitCmd.Flags().BoolVar(&commitSub, "sub", false, "Operate on the submodule detected from current directory")
+	commitCmd.Flags().StringVarP(&commitProject, "project", "p", "", "Operate on a specific project/submodule path")
 
 	rootCmd.AddCommand(commitCmd)
 	commitCmd.GroupID = "campaign"
+
+	// Register completion for --project flag
+	commitCmd.RegisterFlagCompletionFunc("project", completeProjectFlag)
+}
+
+// completeProjectFlag provides tab completion for the --project flag.
+func completeProjectFlag(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	campRoot, err := campaign.DetectCached(ctx)
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	paths, err := git.ListSubmodulePathsFiltered(ctx, campRoot, toComplete)
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	return paths, cobra.ShellCompDirectiveNoFileComp
 }
 
 func runCommit(cmd *cobra.Command, args []string) error {
@@ -54,8 +86,18 @@ func runCommit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("not in a campaign: %w", err)
 	}
 
+	// Resolve target repository
+	target, err := git.ResolveTarget(ctx, campRoot, commitSub, commitProject)
+	if err != nil {
+		return fmt.Errorf("failed to resolve target: %w", err)
+	}
+
+	if target.IsSubmodule {
+		fmt.Println(ui.Info(fmt.Sprintf("Operating on submodule: %s", target.Name)))
+	}
+
 	// Create executor
-	executor, err := git.NewExecutor(campRoot)
+	executor, err := git.NewExecutor(target.Path)
 	if err != nil {
 		return fmt.Errorf("failed to initialize git: %w", err)
 	}
@@ -82,7 +124,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Show what will be committed
-	showStagedSummary(ctx, campRoot)
+	showStagedSummary(ctx, target.Path)
 
 	// Check for changes
 	hasChanges, err := executor.HasChanges(ctx)
@@ -109,7 +151,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("commit failed: %w", err)
 	}
 
-	fmt.Println(ui.Success("✓ Changes committed successfully"))
+	fmt.Println(ui.Success("Changes committed successfully"))
 	return nil
 }
 

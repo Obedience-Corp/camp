@@ -11,6 +11,7 @@ type ProjectAction string
 
 const (
 	ProjectActionAdd    ProjectAction = "Add"
+	ProjectActionNew    ProjectAction = "New"
 	ProjectActionRemove ProjectAction = "Remove"
 )
 

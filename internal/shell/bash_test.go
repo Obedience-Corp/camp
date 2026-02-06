@@ -19,11 +19,15 @@ func TestGenerateBash(t *testing.T) {
 		name    string
 		content string
 	}{
+		{"camp wrapper function", "camp()"},
 		{"cgo function", "cgo()"},
 		{"cint function", "cint()"},
 		{"cint calls intent add", "camp intent add"},
 		{"cd command", "cd \"$dest\""},
 		{"camp go call", "camp go"},
+		{"command camp binary call", "command camp"},
+		{"switch subcommand", "switch|sw)"},
+		{"go subcommand", "go|g)"},
 		{"complete builtin", "complete -F"},
 		{"cgo completion", "_cgo_complete"},
 		{"camp completion", "_camp_complete"},
@@ -123,6 +127,7 @@ func TestGenerateBash_ContainsCommands(t *testing.T) {
 	commands := []string{
 		"init",
 		"go",
+		"switch",
 		"project",
 		"shell-init",
 	}

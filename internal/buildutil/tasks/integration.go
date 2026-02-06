@@ -52,8 +52,8 @@ func Integration(verbose bool) error {
 			os.Setenv("DOCKER_HOST", "unix://"+colimaSocket)
 		}
 	}
-	// Disable ryuk reaper for Colima compatibility
-	os.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true")
+	// Override Docker socket path for Ryuk inside Colima VM
+	os.Setenv("TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE", "/var/run/docker.sock")
 
 	// Build Linux binary for Docker-based integration tests
 	ui.Task("Building", "Linux binary for Docker tests")
@@ -105,9 +105,8 @@ func Integration(verbose bool) error {
 		var testsPassed, testsFailed int
 		var failedTests []string
 
-		// Disable ryuk reaper for Colima compatibility (testcontainers auto-detects DOCKER_HOST)
 		dockerEnv := append(os.Environ(),
-			"TESTCONTAINERS_RYUK_DISABLED=true",
+			"TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock",
 		)
 
 		if verbose {

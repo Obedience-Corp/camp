@@ -6,6 +6,8 @@ import (
 	"os/exec"
 
 	"github.com/obediencecorp/camp/internal/campaign"
+	"github.com/obediencecorp/camp/internal/git"
+	"github.com/obediencecorp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -17,10 +19,15 @@ var statusCmd = &cobra.Command{
 Works from anywhere within the campaign - always shows the status
 of the campaign root repository.
 
+Use --sub to show status of the submodule detected from your current directory.
+Use --project/-p to show status of a specific project.
+
 Examples:
   camp status           # Full status
-  camp status -s        # Short format
-  camp status --short   # Short format`,
+  camp status -s        # Short format (git flag)
+  camp status --short   # Short format (git flag)
+  camp status --sub     # Status of current submodule
+  camp status -p projects/camp  # Status of camp project`,
 	RunE:               runStatus,
 	DisableFlagParsing: true,
 }
@@ -38,8 +45,20 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("not in a campaign: %w", err)
 	}
 
-	gitArgs := append([]string{"-C", campRoot, "status"}, args...)
-	gitCmd := exec.CommandContext(ctx, "git", gitArgs...)
+	// Extract camp-specific flags, pass rest to git
+	gitArgs, sub, project := git.ExtractSubFlags(args)
+
+	target, err := git.ResolveTarget(ctx, campRoot, sub, project)
+	if err != nil {
+		return fmt.Errorf("failed to resolve target: %w", err)
+	}
+
+	if target.IsSubmodule {
+		fmt.Fprintln(os.Stderr, ui.Info(fmt.Sprintf("Submodule: %s", target.Name)))
+	}
+
+	fullArgs := append([]string{"-C", target.Path, "status"}, gitArgs...)
+	gitCmd := exec.CommandContext(ctx, "git", fullArgs...)
 	gitCmd.Stdout = os.Stdout
 	gitCmd.Stderr = os.Stderr
 	gitCmd.Stdin = os.Stdin

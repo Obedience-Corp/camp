@@ -41,7 +41,7 @@ All arguments after 'run' (or '@shortcut') are passed directly to the shell.`,
 
 func init() {
 	rootCmd.AddCommand(runCmd)
-	runCmd.GroupID = "navigation"
+	runCmd.GroupID = "campaign"
 }
 
 func runRun(cmd *cobra.Command, args []string) error {

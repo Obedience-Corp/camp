@@ -3,15 +3,19 @@ package main
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 
+	"github.com/obediencecorp/camp/internal/git"
 	"github.com/obediencecorp/camp/internal/ui"
 	"github.com/obediencecorp/camp/internal/workflow"
 	"github.com/spf13/cobra"
 )
 
 var (
-	flowMoveReason string
-	flowMoveForce  bool
+	flowMoveReason   string
+	flowMoveForce    bool
+	flowMoveCommit   bool
+	flowMoveNoCommit bool
 )
 
 var flowMoveCmd = &cobra.Command{
@@ -22,11 +26,15 @@ var flowMoveCmd = &cobra.Command{
 The item is moved from wherever it currently exists to the specified status.
 Transitions are validated against the workflow schema unless --force is used.
 
+Auto-commit behavior is controlled by .workflow.yaml auto_commit settings.
+Use --commit to force a commit or --no-commit to skip it.
+
 Examples:
   camp flow move project-1 ready             Move to ready/
   camp flow move old-project dungeon/completed   Move to dungeon/completed/
   camp flow move project-1 ready --reason "Ready for review"
-  camp flow move project-1 active --force    Force move (skip validation)`,
+  camp flow move project-1 active --force    Force move (skip validation)
+  camp flow move project-1 ready --commit    Force auto-commit`,
 	Args: cobra.ExactArgs(2),
 	RunE: runFlowMove,
 }
@@ -35,6 +43,8 @@ func init() {
 	flowCmd.AddCommand(flowMoveCmd)
 	flowMoveCmd.Flags().StringVarP(&flowMoveReason, "reason", "r", "", "reason for the move")
 	flowMoveCmd.Flags().BoolVarP(&flowMoveForce, "force", "f", false, "force move (skip transition validation)")
+	flowMoveCmd.Flags().BoolVar(&flowMoveCommit, "commit", false, "force auto-commit after move")
+	flowMoveCmd.Flags().BoolVar(&flowMoveNoCommit, "no-commit", false, "skip auto-commit even if enabled in config")
 }
 
 func runFlowMove(cmd *cobra.Command, args []string) error {
@@ -62,5 +72,53 @@ func runFlowMove(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Reason: %s\n", result.Reason)
 	}
 
+	// Auto-commit logic
+	if err := maybeAutoCommit(ctx, svc, cwd, result); err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: auto-commit failed: %v\n", err)
+	}
+
+	return nil
+}
+
+// maybeAutoCommit handles the auto-commit logic after a successful move.
+func maybeAutoCommit(ctx context.Context, svc *workflow.Service, cwd string, result *workflow.MoveResult) error {
+	if flowMoveNoCommit {
+		return nil
+	}
+
+	shouldCommit := flowMoveCommit
+	if !shouldCommit && !flowMoveNoCommit {
+		// Ensure schema is loaded
+		_ = svc.LoadSchema(ctx)
+		if schema := svc.Schema(); schema != nil {
+			shouldCommit = schema.AutoCommit.ShouldAutoCommit(result.From, result.To)
+		}
+	}
+
+	if !shouldCommit {
+		return nil
+	}
+
+	transition := workflow.Transition{
+		Item: result.Item,
+		From: result.From,
+		To:   result.To,
+	}
+
+	// Stage the old and new paths
+	oldPath := filepath.Join(cwd, result.From, result.Item)
+	newPath := filepath.Join(cwd, result.To, result.Item)
+
+	if err := git.Stage(ctx, cwd, []string{oldPath, newPath}); err != nil {
+		return fmt.Errorf("stage files: %w", err)
+	}
+
+	if err := git.Commit(ctx, cwd, &git.CommitOptions{
+		Message: transition.CommitMessage(),
+	}); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+
+	fmt.Printf("Committed: %s\n", transition.CommitMessage())
 	return nil
 }
