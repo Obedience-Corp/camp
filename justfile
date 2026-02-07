@@ -74,6 +74,10 @@ uninstall:
     rm -f {{gobin}}/{{binary_name}}
     @echo "camp uninstalled"
 
+# Generate CLI reference docs
+docs: build
+    ./{{bin_dir}}/{{binary_name}} gendocs --output docs/cli-reference --format markdown --single
+
 # Run camp (for development)
 run *ARGS:
     go run ./cmd/camp {{ARGS}}
