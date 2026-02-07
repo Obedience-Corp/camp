@@ -87,7 +87,7 @@ func isValidStatus(s Status) bool {
 // isValidType returns true if the type is a known valid value.
 func isValidType(t Type) bool {
 	switch t {
-	case TypeIdea, TypeFeature, TypeBug, TypeResearch, TypeChore:
+	case TypeIdea, TypeFeature, TypeBug, TypeResearch, TypeChore, TypeFeedback:
 		return true
 	default:
 		return false

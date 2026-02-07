@@ -52,6 +52,9 @@ const (
 
 	// TypeChore represents maintenance or cleanup work.
 	TypeChore Type = "chore"
+
+	// TypeFeedback represents feedback gathered from festival observations.
+	TypeFeedback Type = "feedback"
 )
 
 // String returns the string representation of Type.

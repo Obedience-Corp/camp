@@ -19,7 +19,7 @@ const (
 )
 
 // createTypeOptions are the available types for new intents.
-var createTypeOptions = []string{"idea", "feature", "bug", "research", "chore"}
+var createTypeOptions = []string{"idea", "feature", "bug", "research", "chore", "feedback"}
 
 // updateCreating handles key input during new intent creation.
 func (m *Model) updateCreating(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
