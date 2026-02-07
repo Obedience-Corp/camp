@@ -7,15 +7,19 @@ import (
 	"time"
 )
 
-// RetryConfig configures lock-aware retry behavior.
+// RetryConfig configures lock-aware retry behavior using a cycle-based approach.
+// Within each cycle, fast retries execute immediately with no delay.
+// Between cycles, stale locks are cleaned and a backoff delay is applied.
 type RetryConfig struct {
-	// MaxAttempts is the maximum number of retry attempts.
-	MaxAttempts int
-	// InitialBackoff is the delay before the first retry.
+	// AttemptsPerCycle is the number of fast retries per cycle (no delay between them).
+	AttemptsPerCycle int
+	// MaxCycles is the number of cycles before giving up.
+	MaxCycles int
+	// InitialBackoff is the delay between cycles (not between individual attempts).
 	InitialBackoff time.Duration
-	// MaxBackoff caps the exponential backoff growth.
+	// MaxBackoff caps the exponential backoff growth between cycles.
 	MaxBackoff time.Duration
-	// WaitForActive enables waiting for active locks to be released.
+	// WaitForActive enables waiting for active locks to be released between cycles.
 	WaitForActive bool
 	// ActiveLockWait is how long to wait for active locks (if WaitForActive is true).
 	ActiveLockWait time.Duration
@@ -28,13 +32,14 @@ type RetryConfig struct {
 // DefaultRetryConfig returns standard retry settings.
 func DefaultRetryConfig() RetryConfig {
 	return RetryConfig{
-		MaxAttempts:    3,
-		InitialBackoff: 200 * time.Millisecond,
-		MaxBackoff:     2 * time.Second,
-		WaitForActive:  false,
-		ActiveLockWait: 5 * time.Second,
-		Logger:         slog.Default(),
-		OperationName:  "operation",
+		AttemptsPerCycle: 3,
+		MaxCycles:        2,
+		InitialBackoff:   200 * time.Millisecond,
+		MaxBackoff:       2 * time.Second,
+		WaitForActive:    false,
+		ActiveLockWait:   5 * time.Second,
+		Logger:           slog.Default(),
+		OperationName:    "operation",
 	}
 }
 
@@ -43,25 +48,31 @@ func DefaultRetryConfig() RetryConfig {
 // for active locks to be released.
 func SubmoduleRetryConfig() RetryConfig {
 	return RetryConfig{
-		MaxAttempts:    3,
-		InitialBackoff: 200 * time.Millisecond,
-		MaxBackoff:     2 * time.Second,
-		WaitForActive:  true,
-		ActiveLockWait: 5 * time.Second,
-		Logger:         slog.Default(),
-		OperationName:  "submodule",
+		AttemptsPerCycle: 3,
+		MaxCycles:        2,
+		InitialBackoff:   200 * time.Millisecond,
+		MaxBackoff:       2 * time.Second,
+		WaitForActive:    true,
+		ActiveLockWait:   5 * time.Second,
+		Logger:           slog.Default(),
+		OperationName:    "submodule",
 	}
 }
 
-// WithLockRetry executes an operation with automatic lock handling.
-// It retries on lock errors, cleans stale locks, and optionally waits for
-// active locks to be released.
+// WithLockRetry executes an operation with cycle-based lock handling.
+//
+// Within each cycle, fast retries execute immediately with no delay — this handles
+// transient locks that clear on their own. Between cycles, stale locks are actively
+// cleaned and a backoff delay is applied.
 //
 // The operation function should return a LockError when encountering git lock issues.
 // Other errors are returned immediately without retry.
 func WithLockRetry(ctx context.Context, repoPath string, cfg RetryConfig, operation func() error) error {
-	if cfg.MaxAttempts <= 0 {
-		cfg.MaxAttempts = 3
+	if cfg.AttemptsPerCycle <= 0 {
+		cfg.AttemptsPerCycle = 3
+	}
+	if cfg.MaxCycles <= 0 {
+		cfg.MaxCycles = 2
 	}
 	if cfg.InitialBackoff <= 0 {
 		cfg.InitialBackoff = 200 * time.Millisecond
@@ -79,90 +90,66 @@ func WithLockRetry(ctx context.Context, repoPath string, cfg RetryConfig, operat
 	var lastErr error
 	backoff := cfg.InitialBackoff
 
-	for attempt := 1; attempt <= cfg.MaxAttempts; attempt++ {
-		// Check context before each attempt
-		if ctx.Err() != nil {
-			return ctx.Err()
+	for cycle := 1; cycle <= cfg.MaxCycles; cycle++ {
+		// Fast retry loop — no delays, no lock cleanup
+		for attempt := 1; attempt <= cfg.AttemptsPerCycle; attempt++ {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+
+			err := operation()
+			if err == nil {
+				return nil
+			}
+
+			if !isLockError(err) {
+				return err
+			}
+
+			lastErr = err
 		}
 
-		err := operation()
-		if err == nil {
-			return nil // Success
-		}
-
-		// Check if it's a lock error
-		if !isLockError(err) {
-			return err // Non-lock error, don't retry
-		}
-
-		lastErr = err
-
-		// Try to clean stale locks
+		// All fast attempts in this cycle failed with lock errors.
+		// Actively intervene: clean stale locks.
 		result, cleanErr := CleanStaleLocks(ctx, repoPath, cfg.Logger)
 		if cleanErr != nil {
-			return fmt.Errorf("failed to clean locks during %s retry (attempt %d): %w",
-				cfg.OperationName, attempt, cleanErr)
+			return fmt.Errorf("failed to clean locks during %s (cycle %d): %w",
+				cfg.OperationName, cycle, cleanErr)
 		}
 
-		// If we removed stale locks, retry after brief delay
-		if len(result.Removed) > 0 {
-			cfg.Logger.Info("retrying after stale lock cleanup",
-				"operation", cfg.OperationName,
-				"attempt", attempt,
-				"removed", len(result.Removed))
-			time.Sleep(backoff)
-			backoff = min(backoff*2, cfg.MaxBackoff)
-			continue
-		}
+		cfg.Logger.Info("cycle completed, cleaning locks",
+			"operation", cfg.OperationName,
+			"cycle", cycle,
+			"removed", len(result.Removed),
+			"active", len(result.Skipped))
 
-		// If active locks found and we're configured to wait for them
+		// If active locks found and configured to wait
 		if len(result.Skipped) > 0 && cfg.WaitForActive {
-			cfg.Logger.Info("waiting for active lock to release",
-				"operation", cfg.OperationName,
-				"attempt", attempt,
-				"active_locks", len(result.Skipped))
-
-			// Wait for the first active lock (usually there's only one)
 			waitErr := WaitForLockRelease(ctx, result.Skipped[0].Path, cfg.ActiveLockWait, cfg.Logger)
 			if waitErr == nil {
-				// Lock released! Clean up any remaining stale locks and retry
 				CleanStaleLocks(ctx, repoPath, cfg.Logger)
-				continue
-			}
-
-			// Timeout waiting for lock - but still have attempts left
-			if attempt < cfg.MaxAttempts {
-				cfg.Logger.Warn("lock wait timeout, will retry",
-					"operation", cfg.OperationName,
-					"attempt", attempt,
-					"pid", result.Skipped[0].ProcessID,
-					"path", result.Skipped[0].Path)
-				time.Sleep(backoff)
-				backoff = min(backoff*2, cfg.MaxBackoff)
-				continue
-			}
-
-			// Final attempt failed with active lock
-			return fmt.Errorf("%s failed: lock held by active process (PID %d) after waiting: %w",
-				cfg.OperationName, result.Skipped[0].ProcessID, lastErr)
-		}
-
-		// Active locks found but we're not waiting for them
-		if len(result.Skipped) > 0 && !cfg.WaitForActive {
-			// If we couldn't remove any locks and there are active ones, don't retry
-			if len(result.Removed) == 0 {
-				return fmt.Errorf("%s failed: lock held by active process: %w",
-					cfg.OperationName, lastErr)
+				continue // Start next cycle immediately
 			}
 		}
 
-		// No locks found but still failed - apply backoff and retry
-		cfg.Logger.Info("retrying operation",
-			"operation", cfg.OperationName,
-			"attempt", attempt)
-		time.Sleep(backoff)
-		backoff = min(backoff*2, cfg.MaxBackoff)
+		// Active locks found but not waiting — fail fast
+		if len(result.Skipped) > 0 && !cfg.WaitForActive && len(result.Removed) == 0 {
+			return fmt.Errorf("%s failed: lock held by active process: %w",
+				cfg.OperationName, lastErr)
+		}
+
+		// Apply backoff between cycles
+		if cycle < cfg.MaxCycles {
+			cfg.Logger.Info("waiting before next cycle",
+				"operation", cfg.OperationName,
+				"cycle", cycle,
+				"backoff", backoff)
+			time.Sleep(backoff)
+			backoff = min(backoff*2, cfg.MaxBackoff)
+		}
 	}
 
-	return fmt.Errorf("%s failed after %d attempts: %w", cfg.OperationName, cfg.MaxAttempts, lastErr)
+	totalAttempts := cfg.MaxCycles * cfg.AttemptsPerCycle
+	return fmt.Errorf("%s failed after %d cycles (%d attempts): %w",
+		cfg.OperationName, cfg.MaxCycles, totalAttempts, lastErr)
 }

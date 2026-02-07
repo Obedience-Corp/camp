@@ -7,33 +7,44 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/obediencecorp/camp/internal/git"
+	"github.com/obediencecorp/camp/internal/config"
 )
 
-// ResolveCampaignPath resolves a "project:path" spec to an absolute path.
-// If spec has no colon, it is treated as relative to cwd.
-func ResolveCampaignPath(ctx context.Context, campRoot, spec string) (string, error) {
+// ResolveCampaignRelative resolves a path relative to the campaign root.
+// Absolute paths are returned cleaned. Relative paths are joined with campRoot.
+func ResolveCampaignRelative(campRoot, path string) string {
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path)
+	}
+	return filepath.Join(campRoot, path)
+}
+
+// ResolveCrossCampaignPath resolves a "campaign:path" spec to an absolute path.
+// If spec has no colon, the path is resolved relative to the current campaign root.
+// If spec has a colon, the prefix is looked up in the campaign registry.
+func ResolveCrossCampaignPath(ctx context.Context, currentCampRoot, spec string) (string, error) {
 	if ctx.Err() != nil {
 		return "", ctx.Err()
 	}
 
-	project, relPath, hasColon := parseSpec(spec)
+	campaign, relPath, hasColon := parseSpec(spec)
 	if !hasColon {
-		// Plain path — resolve relative to cwd
-		abs, err := filepath.Abs(spec)
-		if err != nil {
-			return "", fmt.Errorf("resolve path %q: %w", spec, err)
-		}
-		return abs, nil
+		// No campaign prefix — resolve relative to current campaign
+		return ResolveCampaignRelative(currentCampRoot, spec), nil
 	}
 
-	// Resolve project name to path
-	projectPath, err := resolveProject(ctx, campRoot, project)
+	// Look up campaign in registry
+	reg, err := config.LoadRegistry(ctx)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("load campaign registry: %w", err)
 	}
 
-	resolved := filepath.Join(projectPath, relPath)
+	entry, ok := reg.Get(campaign)
+	if !ok {
+		return "", fmt.Errorf("campaign %q not found in registry", campaign)
+	}
+
+	resolved := filepath.Join(entry.Path, relPath)
 	return resolved, nil
 }
 
@@ -45,8 +56,8 @@ func ValidatePathExists(path string) error {
 	return nil
 }
 
-// parseSpec splits "project:path" into its components.
-// Returns (project, relPath, true) if colon found, or (spec, "", false) otherwise.
+// parseSpec splits "prefix:path" into its components.
+// Returns (prefix, relPath, true) if colon found, or (spec, "", false) otherwise.
 func parseSpec(spec string) (string, string, bool) {
 	idx := strings.Index(spec, ":")
 	if idx < 0 {
@@ -55,39 +66,14 @@ func parseSpec(spec string) (string, string, bool) {
 	return spec[:idx], spec[idx+1:], true
 }
 
-// resolveProject looks up a project name in the campaign submodule list.
-func resolveProject(ctx context.Context, campRoot, name string) (string, error) {
-	all, err := git.ListSubmodulePaths(ctx, campRoot)
+// IsDestDir returns true if the path exists and is a directory, or ends with a path separator.
+func IsDestDir(path string) bool {
+	if strings.HasSuffix(path, "/") || strings.HasSuffix(path, string(filepath.Separator)) {
+		return true
+	}
+	info, err := os.Stat(path)
 	if err != nil {
-		return "", fmt.Errorf("list submodules: %w", err)
+		return false
 	}
-
-	nameLower := strings.ToLower(name)
-
-	// Exact match on directory name
-	for _, p := range all {
-		if strings.ToLower(filepath.Base(p)) == nameLower {
-			return filepath.Join(campRoot, p), nil
-		}
-	}
-
-	// Prefix match
-	var matches []string
-	for _, p := range all {
-		if strings.HasPrefix(strings.ToLower(filepath.Base(p)), nameLower) {
-			matches = append(matches, p)
-		}
-	}
-	if len(matches) == 1 {
-		return filepath.Join(campRoot, matches[0]), nil
-	}
-	if len(matches) > 1 {
-		names := make([]string, len(matches))
-		for i, m := range matches {
-			names[i] = filepath.Base(m)
-		}
-		return "", fmt.Errorf("ambiguous project %q: %s", name, strings.Join(names, ", "))
-	}
-
-	return "", fmt.Errorf("project %q not found", name)
+	return info.IsDir()
 }
