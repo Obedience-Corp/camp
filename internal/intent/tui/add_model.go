@@ -76,7 +76,7 @@ type IntentAddModel struct {
 }
 
 // intentTypes are the available intent types.
-var intentTypes = []string{"idea", "feature", "bug", "research", "chore"}
+var intentTypes = []string{"idea", "feature", "bug", "research", "chore", "feedback"}
 
 // editorFinishedBodyMsg is sent when the external editor for body closes.
 type editorFinishedBodyMsg struct {

@@ -342,7 +342,7 @@ func TestIsValidStatus(t *testing.T) {
 
 func TestIsValidType(t *testing.T) {
 	validTypes := []Type{
-		TypeIdea, TypeFeature, TypeBug, TypeResearch, TypeChore,
+		TypeIdea, TypeFeature, TypeBug, TypeResearch, TypeChore, TypeFeedback,
 	}
 
 	for _, typ := range validTypes {
@@ -453,7 +453,7 @@ func TestValidate_AllStatusValues(t *testing.T) {
 func TestValidate_AllTypeValues(t *testing.T) {
 	now := time.Now()
 	types := []Type{
-		TypeIdea, TypeFeature, TypeBug, TypeResearch, TypeChore,
+		TypeIdea, TypeFeature, TypeBug, TypeResearch, TypeChore, TypeFeedback,
 	}
 
 	for _, typ := range types {
