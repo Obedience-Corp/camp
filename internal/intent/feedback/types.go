@@ -50,21 +50,21 @@ type GatherOptions struct {
 
 // GatherResult contains the outcome of a feedback gathering operation.
 type GatherResult struct {
-	FestivalsScanned  int
-	NewObservations   int
-	IntentsCreated    int
-	IntentsUpdated    int
-	FestivalResults   []FestivalGatherResult
+	FestivalsScanned int
+	NewObservations  int
+	IntentsCreated   int
+	IntentsUpdated   int
+	FestivalResults  []FestivalGatherResult
 }
 
 // FestivalGatherResult contains per-festival gathering results.
 type FestivalGatherResult struct {
-	Festival        FestivalInfo
-	TotalObs        int
-	NewObs          int
-	IntentFile      string
-	IntentCreated   bool
-	IntentUpdated   bool
+	Festival      FestivalInfo
+	TotalObs      int
+	NewObs        int
+	IntentFile    string
+	IntentCreated bool
+	IntentUpdated bool
 }
 
 // GoalFrontmatter represents the YAML frontmatter from FESTIVAL_GOAL.md.
