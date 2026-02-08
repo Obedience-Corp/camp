@@ -296,9 +296,17 @@ func (m *Model) buildMainView() string {
 		listWidth = max(listWidth, 40)
 	}
 
-	titleWidth := listWidth - 35
+	// Estimate gutter width for line numbers (based on total visual lines)
+	totalVisual := m.totalVisualLines()
+	if totalVisual < 1 {
+		totalVisual = 1
+	}
+	gutterWidth := len(fmt.Sprintf("%d", totalVisual))
+	gutterSpace := gutterWidth + 1 // number + space
+
+	titleWidth := listWidth - 35 - gutterSpace
 	if m.layoutMode == layoutNarrow {
-		titleWidth = m.width - 28
+		titleWidth = m.width - 28 - gutterSpace
 	}
 	titleWidth = max(titleWidth, 20)
 
@@ -346,6 +354,12 @@ func (m *Model) buildMainView() string {
 				listLines = append(listLines, m.renderIntentRow(i, isSelected, titleWidth))
 			}
 		}
+	}
+
+	// Step 6b: Prepend line numbers (1-indexed, right-aligned)
+	for i, line := range listLines {
+		num := fmt.Sprintf("%*d", gutterWidth, i+1)
+		listLines[i] = tui.LineNumberStyle.Render(num) + " " + line
 	}
 
 	// Step 7: Apply scroll windowing (use local scrollOffset — View() is a value

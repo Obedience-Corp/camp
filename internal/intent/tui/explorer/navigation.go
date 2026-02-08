@@ -166,6 +166,34 @@ func (m *Model) moveToNextGroup() {
 	}
 }
 
+// jumpToVisualLine moves cursor to visual line n (0-indexed).
+// Used by Ngg to jump to a specific line number.
+func (m *Model) jumpToVisualLine(targetLine int) {
+	line := 0
+	for gi, group := range m.groups {
+		if line == targetLine {
+			m.cursorGroup = gi
+			m.cursorItem = -1
+			m.ensureCursorVisible()
+			return
+		}
+		line++
+		if group.Expanded {
+			for ii := range group.Intents {
+				if line == targetLine {
+					m.cursorGroup = gi
+					m.cursorItem = ii
+					m.ensureCursorVisible()
+					return
+				}
+				line++
+			}
+		}
+	}
+	// Past the end — jump to bottom
+	m.jumpToBottom()
+}
+
 // handleSelect handles Enter/Space key - toggle group or open viewer on item.
 func (m *Model) handleSelect() {
 	if len(m.groups) == 0 {
