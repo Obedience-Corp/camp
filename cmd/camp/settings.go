@@ -16,7 +16,12 @@ var settingsCmd = &cobra.Command{
 	Short:   "Manage camp configuration",
 	Long:    `Interactive menu for managing global and local camp settings.`,
 	GroupID: "system",
-	RunE:    runSettings,
+	Annotations: map[string]string{
+		"agent_allowed": "false",
+		"agent_reason":  "Fully interactive TUI menu",
+		"interactive":   "true",
+	},
+	RunE: runSettings,
 }
 
 func init() {

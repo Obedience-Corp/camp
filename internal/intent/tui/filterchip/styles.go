@@ -13,6 +13,7 @@ var (
 	chipStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(pal.Border).
+			Foreground(pal.TextPrimary).
 			Padding(0, 1)
 
 	// Focused chip (has keyboard focus)
@@ -29,11 +30,26 @@ var (
 			Padding(0, 1).
 			Foreground(pal.Accent)
 
-	// Dropdown container
+	// Dropdown container — subtle left border for visual hierarchy
 	dropdownStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
+			BorderLeft(true).
+			BorderStyle(lipgloss.NormalBorder()).
 			BorderForeground(pal.BorderFocus).
-			Padding(0, 1)
+			PaddingLeft(1)
+
+	// Inline chip styles (no border, used alongside open dropdowns)
+	chipInlineStyle = lipgloss.NewStyle().
+				Foreground(pal.TextPrimary).
+				Padding(0, 1)
+
+	chipFocusedInlineStyle = lipgloss.NewStyle().
+				Foreground(pal.TextPrimary).
+				Bold(true).
+				Padding(0, 1)
+
+	chipActiveInlineStyle = lipgloss.NewStyle().
+				Foreground(pal.Accent).
+				Padding(0, 1)
 
 	// Regular dropdown option
 	optionStyle = lipgloss.NewStyle().

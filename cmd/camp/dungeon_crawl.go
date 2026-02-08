@@ -31,6 +31,11 @@ Items in archived/ are excluded from the crawl.
 Examples:
   camp dungeon crawl    Start interactive review`,
 	Args: cobra.NoArgs,
+	Annotations: map[string]string{
+		"agent_allowed": "false",
+		"agent_reason":  "Interactive review session",
+		"interactive":   "true",
+	},
 	RunE: runDungeonCrawl,
 }
 

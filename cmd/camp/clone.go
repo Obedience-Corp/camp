@@ -64,6 +64,10 @@ EXAMPLES:
   # JSON output for scripting
   camp clone git@github.com:org/repo.git --json`,
 	Args: cobra.RangeArgs(1, 2),
+	Annotations: map[string]string{
+		"agent_allowed": "false",
+		"agent_reason":  "Clones repos, needs human judgment on URL/SSH",
+	},
 	RunE: runClone,
 }
 

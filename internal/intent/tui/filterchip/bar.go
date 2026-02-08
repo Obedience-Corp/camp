@@ -204,54 +204,34 @@ func (b Bar) View() string {
 		}
 	}
 
-	// If a dropdown is open, we need to render differently
-	// to show the dropdown below the appropriate chip
+	// If a dropdown is open, render all chips inline (borderless) in the top
+	// row, then show the open chip's dropdown below. Using ViewInline() avoids
+	// the border-splitting bug where lines[0] captured only the top border.
 	if openDropdownIdx >= 0 {
-		// Split views into before open, the open one, and after
-		var before, after []string
-		var openView string
-
-		for i, view := range chipViews {
-			if i < openDropdownIdx {
-				// For chips before, strip any vertical content
-				lines := strings.Split(view, "\n")
-				before = append(before, lines[0])
-			} else if i == openDropdownIdx {
-				openView = view
-			} else {
-				// For chips after, strip any vertical content
-				lines := strings.Split(view, "\n")
-				after = append(after, lines[0])
-			}
+		var topParts []string
+		for _, chip := range b.Chips {
+			closedChip := chip
+			closedChip.Open = false
+			topParts = append(topParts, closedChip.ViewInline())
 		}
-
-		// Build the top row (all chips, but open one is just first line)
-		openLines := strings.Split(openView, "\n")
-		topParts := append(before, openLines[0])
-		topParts = append(topParts, after...)
 		topRow := lipgloss.JoinHorizontal(lipgloss.Top, intersperse(topParts, "  ")...)
 
-		// If there's a dropdown (more lines), render it below
-		if len(openLines) > 1 {
-			dropdown := strings.Join(openLines[1:], "\n")
-			// Calculate offset for dropdown positioning
-			offset := 0
-			for i := 0; i < openDropdownIdx; i++ {
-				offset += lipgloss.Width(before[i]) + 2 // +2 for gap
-			}
-			// Pad dropdown to align under its chip
-			if offset > 0 {
-				dropdownLines := strings.Split(dropdown, "\n")
-				paddedLines := make([]string, len(dropdownLines))
-				for i, line := range dropdownLines {
-					paddedLines[i] = strings.Repeat(" ", offset) + line
-				}
-				dropdown = strings.Join(paddedLines, "\n")
-			}
-			return topRow + "\n" + dropdown
-		}
+		openChip := b.Chips[openDropdownIdx]
+		dropdown := openChip.renderDropdown()
 
-		return topRow
+		// Pad dropdown to align under its chip
+		offset := 0
+		for i := 0; i < openDropdownIdx; i++ {
+			offset += lipgloss.Width(topParts[i]) + 2 // +2 for "  " gap
+		}
+		if offset > 0 {
+			dropdownLines := strings.Split(dropdown, "\n")
+			for i, line := range dropdownLines {
+				dropdownLines[i] = strings.Repeat(" ", offset) + line
+			}
+			dropdown = strings.Join(dropdownLines, "\n")
+		}
+		return topRow + "\n" + dropdown
 	}
 
 	// No dropdown open - simple horizontal join

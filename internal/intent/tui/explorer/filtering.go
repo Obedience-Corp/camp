@@ -83,9 +83,10 @@ func (m *Model) applyFilters() {
 	// Rebuild groups from filtered intents
 	m.groups = groupIntentsByStatus(m.filteredIntents)
 
-	// Reset cursor position
+	// Reset cursor position and scroll
 	m.cursorGroup = 0
 	m.cursorItem = -1
+	m.scrollOffset = 0
 }
 
 // hasActiveFilters returns true if any filter is active.

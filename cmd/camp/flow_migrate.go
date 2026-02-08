@@ -29,6 +29,10 @@ Examples:
   camp flow migrate            Migrate with confirmation
   camp flow migrate --dry-run  Preview migration
   camp flow migrate --force    Migrate without confirmation`,
+	Annotations: map[string]string{
+		"agent_allowed": "false",
+		"agent_reason":  "Migrates legacy structure, destructive operation",
+	},
 	RunE: runFlowMigrate,
 }
 

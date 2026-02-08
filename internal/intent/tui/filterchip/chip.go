@@ -213,6 +213,27 @@ func (c Chip) renderDropdown() string {
 	return dropdownStyle.Render(strings.Join(lines, "\n"))
 }
 
+// ViewInline renders the chip without a border, for compact layouts
+// (e.g., when another chip's dropdown is open).
+func (c Chip) ViewInline() string {
+	value := c.SelectedValue()
+	arrow := " ▾"
+
+	content := labelStyle.Render(c.Label+": ") + valueStyle.Render(value) + arrowStyle.Render(arrow)
+
+	var style lipgloss.Style
+	switch {
+	case c.Focused:
+		style = chipFocusedInlineStyle
+	case c.IsActive():
+		style = chipActiveInlineStyle
+	default:
+		style = chipInlineStyle
+	}
+
+	return style.Render(content)
+}
+
 // Width returns the rendered width of the chip (closed state).
 func (c Chip) Width() int {
 	// Calculate content width: "Label: Value ▾" + padding + border

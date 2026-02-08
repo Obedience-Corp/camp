@@ -26,7 +26,12 @@ is placed inside it with the same basename.`,
   camp mv festivals/active/old-fest festivals/completed/`,
 	Aliases: []string{"mv"},
 	Args:    cobra.ExactArgs(2),
-	RunE:    runMove,
+	Annotations: map[string]string{
+		"agent_allowed": "false",
+		"agent_reason":  "Interactive project picker in no-arg mode",
+		"interactive":   "true",
+	},
+	RunE: runMove,
 }
 
 func init() {

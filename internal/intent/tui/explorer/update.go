@@ -471,24 +471,38 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.previewPane, cmd = m.previewPane.Update(msg)
 			return m, cmd
 		}
+		// Half-page down in list
+		halfPage := max(m.listHeight/2, 1)
+		m.moveCursorDownN(halfPage)
+		m.updatePreviewForSelection()
 	case "ctrl+u":
 		if m.previewFocused && m.showPreview {
 			var cmd tea.Cmd
 			m.previewPane, cmd = m.previewPane.Update(msg)
 			return m, cmd
 		}
+		// Half-page up in list
+		halfPage := max(m.listHeight/2, 1)
+		m.moveCursorUpN(halfPage)
+		m.updatePreviewForSelection()
 	case "g":
 		if m.previewFocused && m.showPreview {
 			var cmd tea.Cmd
 			m.previewPane, cmd = m.previewPane.Update(msg)
 			return m, cmd
 		}
+		// Jump to top of list
+		m.jumpToTop()
+		m.updatePreviewForSelection()
 	case "G":
 		if m.previewFocused && m.showPreview {
 			var cmd tea.Cmd
 			m.previewPane, cmd = m.previewPane.Update(msg)
 			return m, cmd
 		}
+		// Jump to bottom of list
+		m.jumpToBottom()
+		m.updatePreviewForSelection()
 	case "enter":
 		m.handleSelect()
 	case " ":

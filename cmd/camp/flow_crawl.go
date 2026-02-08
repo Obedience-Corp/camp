@@ -23,6 +23,11 @@ Examples:
   camp flow crawl              Review all statuses
   camp flow crawl active       Review items in active/ only`,
 	Args: cobra.MaximumNArgs(1),
+	Annotations: map[string]string{
+		"agent_allowed": "false",
+		"agent_reason":  "Interactive item review",
+		"interactive":   "true",
+	},
 	RunE: runFlowCrawl,
 }
 
