@@ -50,6 +50,11 @@ func (m *Model) recalculateLayout() {
 	contentHeight := m.height - estimatedHeaderFooter
 	contentHeight = max(contentHeight, 5)
 
+	// Set list height estimate for scroll calculations in Update().
+	// The exact value is computed per-render in buildMainView(), but we need
+	// a working estimate here so ensureCursorVisible() can function.
+	m.listHeight = max(m.height-estimatedHeaderFooter, 3)
+
 	switch m.layoutMode {
 	case layoutNarrow:
 		// Force hide preview on narrow terminals

@@ -283,7 +283,6 @@ func (m *Model) buildMainView() string {
 	if listHeight < 3 {
 		listHeight = 3
 	}
-	m.listHeight = listHeight
 
 	// Step 5: Calculate widths
 	listWidth := m.width
@@ -349,17 +348,15 @@ func (m *Model) buildMainView() string {
 		}
 	}
 
-	// Step 7: Apply scroll windowing
+	// Step 7: Apply scroll windowing (use local scrollOffset — View() is a value
+	// receiver so mutations to m.scrollOffset here would be lost)
+	scrollOffset := m.scrollOffset
 	visibleLines := listLines
 	if len(listLines) > listHeight {
 		maxOffset := len(listLines) - listHeight
-		if m.scrollOffset > maxOffset {
-			m.scrollOffset = maxOffset
-		}
-		if m.scrollOffset < 0 {
-			m.scrollOffset = 0
-		}
-		visibleLines = listLines[m.scrollOffset : m.scrollOffset+listHeight]
+		scrollOffset = min(scrollOffset, maxOffset)
+		scrollOffset = max(scrollOffset, 0)
+		visibleLines = listLines[scrollOffset : scrollOffset+listHeight]
 	}
 
 	// Pad to exactly listHeight for stable layout

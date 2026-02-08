@@ -450,17 +450,21 @@ func TestBuildMainView_ScrollOffset_Clamped(t *testing.T) {
 	m := makeTestModel(40, 0)
 	m.width = 100
 	m.height = 15
-	m.scrollOffset = 999 // way past end
+	m.listHeight = max(m.height-8, 3) // simulate recalculateLayout
+	m.scrollOffset = 999               // way past end
 
+	// ensureCursorVisible is the actual clamping mechanism (called in Update)
+	m.ensureCursorVisible()
+
+	if m.scrollOffset == 999 {
+		t.Error("scrollOffset was not clamped by ensureCursorVisible")
+	}
+
+	// Verify the view still renders at the correct height
 	view := m.buildMainView()
 	lines := strings.Split(view, "\n")
-
 	if len(lines) != m.height {
 		t.Errorf("buildMainView clamped scroll = %d lines, want %d", len(lines), m.height)
-	}
-	// scrollOffset should have been clamped down from 999
-	if m.scrollOffset == 999 {
-		t.Error("scrollOffset was not clamped")
 	}
 }
 

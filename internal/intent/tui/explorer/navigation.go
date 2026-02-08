@@ -40,7 +40,13 @@ func (m *Model) cursorVisualLine() int {
 
 // ensureCursorVisible adjusts scrollOffset so the cursor is within the visible window.
 func (m *Model) ensureCursorVisible() {
-	if m.listHeight <= 0 {
+	listHeight := m.listHeight
+	if listHeight <= 0 {
+		// Fallback: estimate from terminal height if recalculateLayout
+		// hasn't run yet (e.g., before first WindowSizeMsg).
+		listHeight = max(m.height-8, 3)
+	}
+	if listHeight <= 0 {
 		return
 	}
 
@@ -53,8 +59,8 @@ func (m *Model) ensureCursorVisible() {
 	}
 
 	// Cursor below visible area - scroll down
-	if line >= m.scrollOffset+m.listHeight {
-		m.scrollOffset = line - m.listHeight + 1
+	if line >= m.scrollOffset+listHeight {
+		m.scrollOffset = line - listHeight + 1
 	}
 }
 
@@ -169,6 +175,7 @@ func (m *Model) handleSelect() {
 	if m.cursorItem == -1 {
 		// On group header, toggle expansion
 		m.groups[m.cursorGroup].Expanded = !m.groups[m.cursorGroup].Expanded
+		m.ensureCursorVisible()
 	} else {
 		// On intent item - open full-screen viewer directly
 		if selected := m.SelectedIntent(); selected != nil {
