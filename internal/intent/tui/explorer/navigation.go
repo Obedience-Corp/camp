@@ -4,63 +4,15 @@ import (
 	"github.com/obediencecorp/camp/internal/intent/tui"
 )
 
-// moveCursorDown moves the cursor down through groups and items.
+// moveCursorDown moves the cursor down one position and adjusts scroll.
 func (m *Model) moveCursorDown() {
-	if len(m.groups) == 0 {
-		return
-	}
-
-	group := &m.groups[m.cursorGroup]
-
-	if m.cursorItem == -1 {
-		// On group header
-		if group.Expanded && len(group.Intents) > 0 {
-			// Move to first item in group
-			m.cursorItem = 0
-		} else {
-			// Move to next group header
-			m.moveToNextGroup()
-		}
-	} else {
-		// On an item
-		if m.cursorItem < len(group.Intents)-1 {
-			// Move to next item in group
-			m.cursorItem++
-		} else {
-			// Move to next group header
-			m.moveToNextGroup()
-		}
-	}
-
+	m.moveCursorDownOne()
 	m.ensureCursorVisible()
 }
 
-// moveCursorUp moves the cursor up through groups and items.
+// moveCursorUp moves the cursor up one position and adjusts scroll.
 func (m *Model) moveCursorUp() {
-	if len(m.groups) == 0 {
-		return
-	}
-
-	switch m.cursorItem {
-	case -1:
-		// On group header, move to previous group's last item
-		if m.cursorGroup > 0 {
-			m.cursorGroup--
-			prevGroup := &m.groups[m.cursorGroup]
-			if prevGroup.Expanded && len(prevGroup.Intents) > 0 {
-				m.cursorItem = len(prevGroup.Intents) - 1
-			} else {
-				m.cursorItem = -1
-			}
-		}
-	case 0:
-		// On first item, move to group header
-		m.cursorItem = -1
-	default:
-		// Move up within group
-		m.cursorItem--
-	}
-
+	m.moveCursorUpOne()
 	m.ensureCursorVisible()
 }
 
@@ -103,6 +55,100 @@ func (m *Model) ensureCursorVisible() {
 	// Cursor below visible area - scroll down
 	if line >= m.scrollOffset+m.listHeight {
 		m.scrollOffset = line - m.listHeight + 1
+	}
+}
+
+// jumpToTop moves the cursor to the first group header and resets scroll.
+func (m *Model) jumpToTop() {
+	if len(m.groups) == 0 {
+		return
+	}
+	m.cursorGroup = 0
+	m.cursorItem = -1
+	m.scrollOffset = 0
+}
+
+// jumpToBottom moves the cursor to the last visible item.
+func (m *Model) jumpToBottom() {
+	if len(m.groups) == 0 {
+		return
+	}
+	// Find last group, and if expanded, go to its last item
+	m.cursorGroup = len(m.groups) - 1
+	group := &m.groups[m.cursorGroup]
+	if group.Expanded && len(group.Intents) > 0 {
+		m.cursorItem = len(group.Intents) - 1
+	} else {
+		m.cursorItem = -1
+	}
+	m.ensureCursorVisible()
+}
+
+// moveCursorDownN moves the cursor down n positions.
+func (m *Model) moveCursorDownN(n int) {
+	for range n {
+		prev := m.cursorVisualLine()
+		m.moveCursorDownOne()
+		if m.cursorVisualLine() == prev {
+			break // hit bottom
+		}
+	}
+	m.ensureCursorVisible()
+}
+
+// moveCursorUpN moves the cursor up n positions.
+func (m *Model) moveCursorUpN(n int) {
+	for range n {
+		prev := m.cursorVisualLine()
+		m.moveCursorUpOne()
+		if m.cursorVisualLine() == prev {
+			break // hit top
+		}
+	}
+	m.ensureCursorVisible()
+}
+
+// moveCursorDownOne moves the cursor down one position without scroll adjustment.
+func (m *Model) moveCursorDownOne() {
+	if len(m.groups) == 0 {
+		return
+	}
+	group := &m.groups[m.cursorGroup]
+	if m.cursorItem == -1 {
+		if group.Expanded && len(group.Intents) > 0 {
+			m.cursorItem = 0
+		} else {
+			m.moveToNextGroup()
+		}
+	} else {
+		if m.cursorItem < len(group.Intents)-1 {
+			m.cursorItem++
+		} else {
+			m.moveToNextGroup()
+		}
+	}
+}
+
+// moveCursorUpOne moves the cursor up one position without scroll adjustment.
+func (m *Model) moveCursorUpOne() {
+	if len(m.groups) == 0 {
+		return
+	}
+	switch m.cursorItem {
+	case -1:
+		if m.cursorGroup > 0 {
+			m.cursorGroup--
+			prevGroup := &m.groups[m.cursorGroup]
+			if prevGroup.Expanded && len(prevGroup.Intents) > 0 {
+				m.cursorItem = len(prevGroup.Intents) - 1
+			} else {
+				m.cursorItem = -1
+			}
+		}
+	case 0:
+		m.cursorItem = -1
+	default:
+		m.cursorItem--
 	}
 }
 

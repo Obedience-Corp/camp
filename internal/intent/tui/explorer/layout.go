@@ -43,14 +43,12 @@ func (m *Model) recalculateLayout() {
 	oldMode := m.layoutMode
 	m.layoutMode = m.getLayoutMode()
 
-	// Reserve space for header (title, filters) and footer (help text)
-	headerHeight := 4 // Title + filters + spacing
-	footerHeight := 3 // Help text + status message
-	contentHeight := m.height - headerHeight - footerHeight
+	// Estimate content height for preview pane sizing.
+	// The list height is computed dynamically per render in buildMainView(),
+	// but the preview pane needs a size set here for its viewport.
+	estimatedHeaderFooter := 8 // Conservative estimate for title + filters + status
+	contentHeight := m.height - estimatedHeaderFooter
 	contentHeight = max(contentHeight, 5)
-
-	// Set list viewport height
-	m.listHeight = contentHeight
 
 	switch m.layoutMode {
 	case layoutNarrow:
@@ -76,7 +74,6 @@ func (m *Model) recalculateLayout() {
 		m.fullConceptPaths = true
 
 		if m.shouldShowPreview() {
-			// More generous 50/50 split for wide terminals
 			listWidth := m.width * 50 / 100
 			previewWidth := m.width - listWidth - 2
 			m.previewPane.SetSize(previewWidth, contentHeight)

@@ -235,44 +235,58 @@ func (m *Model) viewGatherDialog() string {
 }
 
 // buildMainView renders the main explorer view with groups and intents.
+// The output is always exactly m.height lines: header + list + footer.
 func (m *Model) buildMainView() string {
-	var b strings.Builder
-
-	// Title with optional selection count
-	b.WriteString(tui.TitleStyle.Render("Intent Explorer"))
+	// Step 1: Build header
+	var header strings.Builder
+	header.WriteString(tui.TitleStyle.Render("Intent Explorer"))
 	if m.multiSelectMode && len(m.selectedIntents) > 0 {
-		b.WriteString("  ")
-		b.WriteString(tui.SelectionCountStyle.Render(fmt.Sprintf("%d selected", len(m.selectedIntents))))
+		header.WriteString("  ")
+		header.WriteString(tui.SelectionCountStyle.Render(fmt.Sprintf("%d selected", len(m.selectedIntents))))
 	}
 	if m.shouldShowPreview() && m.previewFocused {
-		b.WriteString(tui.HelpStyle.Render(" [preview focused]"))
+		header.WriteString(tui.HelpStyle.Render(" [preview focused]"))
 	}
-	b.WriteString("\n")
 
-	// Search input (only show when in focus or has value)
 	if m.focus == focusSearch || m.searchInput.Value() != "" {
-		b.WriteString(m.searchInput.View())
+		header.WriteString("\n")
+		header.WriteString(m.searchInput.View())
 		if m.focus == focusSearch {
-			b.WriteString("  ")
-			b.WriteString(tui.HelpStyle.Render("(enter to search, esc to cancel)"))
+			header.WriteString("  ")
+			header.WriteString(tui.HelpStyle.Render("(enter to search, esc to cancel)"))
 		}
-		b.WriteString("\n")
 	}
 
-	// Always show the filter bar chips
-	b.WriteString(m.renderFilterBarComponent())
-	b.WriteString("\n")
+	header.WriteString("\n")
+	header.WriteString(m.renderFilterBarComponent())
 
-	// Show active filters summary (concept, search) if any
 	activeFilters := m.renderActiveFilters()
 	if activeFilters != "" {
-		b.WriteString(activeFilters)
-		b.WriteString("\n")
+		header.WriteString("\n")
+		header.WriteString(activeFilters)
 	}
 
-	b.WriteString("\n")
+	headerStr := header.String()
 
-	// Calculate widths based on preview visibility and layout mode
+	// Step 2: Build footer
+	footerStr := m.renderStatusBar()
+	if m.statusMessage != "" {
+		footerStr += "\n" + tui.ErrorStyle.Render(m.statusMessage)
+	}
+
+	// Step 3: Count actual line heights
+	headerLines := strings.Count(headerStr, "\n") + 1
+	footerLines := strings.Count(footerStr, "\n") + 1
+
+	// Step 4: Calculate list height from remaining space
+	// +2 accounts for the separator lines between header/list and list/footer
+	listHeight := m.height - headerLines - footerLines - 2
+	if listHeight < 3 {
+		listHeight = 3
+	}
+	m.listHeight = listHeight
+
+	// Step 5: Calculate widths
 	listWidth := m.width
 	if m.shouldShowPreview() {
 		switch m.layoutMode {
@@ -284,17 +298,15 @@ func (m *Model) buildMainView() string {
 		listWidth = max(listWidth, 40)
 	}
 
-	// Calculate available width for title within the list
 	titleWidth := listWidth - 35
 	if m.layoutMode == layoutNarrow {
-		titleWidth = m.width - 28 // cursor + type + date
+		titleWidth = m.width - 28
 	}
 	titleWidth = max(titleWidth, 20)
 
-	// Build list lines
+	// Step 6: Build list lines
 	var listLines []string
 
-	// Handle empty state
 	if len(m.filteredIntents) == 0 {
 		if m.hasActiveFilters() {
 			listLines = append(listLines,
@@ -312,7 +324,6 @@ func (m *Model) buildMainView() string {
 	}
 
 	for gi, group := range m.groups {
-		// Group header
 		indicator := ">"
 		if group.Expanded {
 			indicator = "v"
@@ -324,14 +335,13 @@ func (m *Model) buildMainView() string {
 			cursor = tui.CursorIndicator
 		}
 
-		header := fmt.Sprintf("%s %s %s (%d)", cursor, indicator, group.Name, len(group.Intents))
+		hdr := fmt.Sprintf("%s %s %s (%d)", cursor, indicator, group.Name, len(group.Intents))
 		if isGroupSelected && !m.previewFocused {
-			listLines = append(listLines, tui.GroupHeaderSelectedStyle.Render(header))
+			listLines = append(listLines, tui.GroupHeaderSelectedStyle.Render(hdr))
 		} else {
-			listLines = append(listLines, tui.GroupHeaderStyle.Render(header))
+			listLines = append(listLines, tui.GroupHeaderStyle.Render(hdr))
 		}
 
-		// Render items if expanded
 		if group.Expanded {
 			for ii, i := range group.Intents {
 				isSelected := gi == m.cursorGroup && ii == m.cursorItem && !m.previewFocused
@@ -340,52 +350,37 @@ func (m *Model) buildMainView() string {
 		}
 	}
 
-	// Apply scroll windowing: show only lines visible within listHeight
+	// Step 7: Apply scroll windowing
 	visibleLines := listLines
-	if m.listHeight > 0 && len(listLines) > m.listHeight {
-		// Clamp scrollOffset
-		maxOffset := len(listLines) - m.listHeight
+	if len(listLines) > listHeight {
+		maxOffset := len(listLines) - listHeight
 		if m.scrollOffset > maxOffset {
 			m.scrollOffset = maxOffset
 		}
 		if m.scrollOffset < 0 {
 			m.scrollOffset = 0
 		}
-		end := m.scrollOffset + m.listHeight
-		visibleLines = listLines[m.scrollOffset:end]
+		visibleLines = listLines[m.scrollOffset : m.scrollOffset+listHeight]
 	}
 
-	// Pad with empty lines if content is shorter than viewport
-	for len(visibleLines) < m.listHeight {
+	// Pad to exactly listHeight for stable layout
+	for len(visibleLines) < listHeight {
 		visibleLines = append(visibleLines, "")
 	}
 
 	listView := strings.Join(visibleLines, "\n")
 
-	// Combine list and preview if preview is visible
+	// Step 8: Combine list and preview
 	if m.shouldShowPreview() {
 		previewView := m.previewPane.View()
-
-		// Join horizontally with gap
-		combined := lipgloss.JoinHorizontal(
+		listView = lipgloss.JoinHorizontal(
 			lipgloss.Top,
 			listView,
-			"  ", // gap between list and preview
+			"  ",
 			previewView,
 		)
-		b.WriteString(combined)
-	} else {
-		b.WriteString(listView)
 	}
 
-	// Status bar - adaptive based on layout mode
-	b.WriteString("\n")
-	b.WriteString(m.renderStatusBar())
-
-	if m.statusMessage != "" {
-		b.WriteString("\n")
-		b.WriteString(tui.ErrorStyle.Render(m.statusMessage))
-	}
-
-	return b.String()
+	// Step 9: Assemble final output: header + list + footer
+	return headerStr + "\n" + listView + "\n" + footerStr
 }
