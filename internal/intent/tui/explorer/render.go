@@ -279,8 +279,7 @@ func (m *Model) buildMainView() string {
 	footerLines := strings.Count(footerStr, "\n") + 1
 
 	// Step 4: Calculate list height from remaining space
-	// +2 accounts for the separator lines between header/list and list/footer
-	listHeight := m.height - headerLines - footerLines - 2
+	listHeight := m.height - headerLines - footerLines
 	if listHeight < 3 {
 		listHeight = 3
 	}
