@@ -34,7 +34,12 @@ The --print flag outputs just the path for shell integration:
   camp switch --print            # Picker, output path only`,
 	Aliases: []string{"sw"},
 	Args:    cobra.MaximumNArgs(1),
-	RunE:    runSwitch,
+	Annotations: map[string]string{
+		"agent_allowed": "false",
+		"agent_reason":  "Interactive campaign picker — sandbox escape vector",
+		"interactive":   "true",
+	},
+	RunE: runSwitch,
 	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) > 0 {
 			return nil, cobra.ShellCompDirectiveNoFileComp

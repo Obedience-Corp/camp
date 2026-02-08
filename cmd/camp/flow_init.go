@@ -33,6 +33,10 @@ navigate to a directory outside of it before running this command.
 Examples:
   camp flow init              Initialize workflow in current directory
   camp flow init --force      Overwrite existing workflow`,
+	Annotations: map[string]string{
+		"agent_allowed": "false",
+		"agent_reason":  "Creates workflow structure, requires human decision",
+	},
 	RunE: runFlowInit,
 }
 

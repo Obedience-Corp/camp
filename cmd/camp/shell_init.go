@@ -38,7 +38,11 @@ The cgo function enables quick navigation:
   camp shell-init fish | source`,
 	Args:      cobra.ExactArgs(1),
 	ValidArgs: shell.SupportedShells,
-	RunE:      runShellInit,
+	Annotations: map[string]string{
+		"agent_allowed": "false",
+		"agent_reason":  "Shell config output, irrelevant to agents",
+	},
+	RunE: runShellInit,
 }
 
 func init() {

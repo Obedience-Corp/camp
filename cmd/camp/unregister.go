@@ -32,7 +32,11 @@ Examples:
   camp unregister old-project --force    # Remove without confirmation`,
 	Aliases: []string{"unreg"},
 	Args:    cobra.ExactArgs(1),
-	RunE:    runUnregister,
+	Annotations: map[string]string{
+		"agent_allowed": "false",
+		"agent_reason":  "Global registry modification",
+	},
+	RunE: runUnregister,
 }
 
 func init() {

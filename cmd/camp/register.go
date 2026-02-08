@@ -34,7 +34,11 @@ Examples:
   camp register . --type research        # Override the campaign type`,
 	Aliases: []string{"reg"},
 	Args:    cobra.MaximumNArgs(1),
-	RunE:    runRegister,
+	Annotations: map[string]string{
+		"agent_allowed": "false",
+		"agent_reason":  "Global registry modification",
+	},
+	RunE: runRegister,
 }
 
 func init() {

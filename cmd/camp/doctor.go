@@ -46,6 +46,10 @@ EXAMPLES:
 
   # JSON output for scripting
   camp doctor --json`,
+	Annotations: map[string]string{
+		"agent_allowed": "false",
+		"agent_reason":  "Has --fix mode that is destructive",
+	},
 	RunE: runDoctor,
 }
 

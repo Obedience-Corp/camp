@@ -51,6 +51,11 @@ Use --no-git to skip git initialization.`,
   camp init --no-git             Skip git initialization
   camp init --dry-run            Preview without creating anything`,
 	Args: cobra.MaximumNArgs(1),
+	Annotations: map[string]string{
+		"agent_allowed": "false",
+		"agent_reason":  "Interactive campaign creation with huh forms",
+		"interactive":   "true",
+	},
 	RunE: runInit,
 }
 
