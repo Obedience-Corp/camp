@@ -141,6 +141,10 @@ var (
 	CheckboxUncheckedStyle = lipgloss.NewStyle().
 				Foreground(pal.TextMuted)
 
+	// Line numbers in explorer list
+	LineNumberStyle = lipgloss.NewStyle().
+			Foreground(pal.TextMuted)
+
 	// Selection count badge
 	SelectionCountStyle = lipgloss.NewStyle().
 				Background(pal.Accent).

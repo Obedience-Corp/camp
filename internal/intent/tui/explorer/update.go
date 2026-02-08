@@ -341,7 +341,41 @@ func (m Model) updateViewer(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // updateNormal handles navigation mode keys.
 func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
+	key := msg.String()
+
+	// Accumulate digit count prefix (vim-style: 5j, 12gg, etc.)
+	if len(key) == 1 && key[0] >= '1' && key[0] <= '9' {
+		m.countBuffer = m.countBuffer*10 + int(key[0]-'0')
+		return m, nil
+	}
+	if len(key) == 1 && key[0] == '0' && m.countBuffer > 0 {
+		m.countBuffer = m.countBuffer * 10
+		return m, nil
+	}
+
+	// Retrieve and reset count (defaults to 1)
+	count := m.countBuffer
+	if count == 0 {
+		count = 1
+	}
+	m.countBuffer = 0
+
+	// Handle pending "g" key (for gg / Ngg)
+	if m.pendingKey == "g" {
+		m.pendingKey = ""
+		if key == "g" {
+			if count > 1 {
+				m.jumpToVisualLine(count - 1) // Ngg: 1-indexed → 0-indexed
+			} else {
+				m.jumpToTop()
+			}
+			m.updatePreviewForSelection()
+			return m, nil
+		}
+		// Not "g" — fall through to normal handling
+	}
+
+	switch key {
 	case "q", "ctrl+c":
 		m.quitting = true
 		return m, tea.Quit
@@ -449,21 +483,19 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "j", "down":
 		if m.previewFocused && m.showPreview {
-			// Scroll preview down
 			var cmd tea.Cmd
 			m.previewPane, cmd = m.previewPane.Update(msg)
 			return m, cmd
 		}
-		m.moveCursorDown()
+		m.moveCursorDownN(count)
 		m.updatePreviewForSelection()
 	case "k", "up":
 		if m.previewFocused && m.showPreview {
-			// Scroll preview up
 			var cmd tea.Cmd
 			m.previewPane, cmd = m.previewPane.Update(msg)
 			return m, cmd
 		}
-		m.moveCursorUp()
+		m.moveCursorUpN(count)
 		m.updatePreviewForSelection()
 	case "ctrl+d":
 		if m.previewFocused && m.showPreview {
@@ -471,7 +503,6 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.previewPane, cmd = m.previewPane.Update(msg)
 			return m, cmd
 		}
-		// Half-page down in list
 		halfPage := max(m.listHeight/2, 1)
 		m.moveCursorDownN(halfPage)
 		m.updatePreviewForSelection()
@@ -481,7 +512,6 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.previewPane, cmd = m.previewPane.Update(msg)
 			return m, cmd
 		}
-		// Half-page up in list
 		halfPage := max(m.listHeight/2, 1)
 		m.moveCursorUpN(halfPage)
 		m.updatePreviewForSelection()
@@ -491,17 +521,26 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.previewPane, cmd = m.previewPane.Update(msg)
 			return m, cmd
 		}
-		// Jump to top of list
-		m.jumpToTop()
-		m.updatePreviewForSelection()
+		// Set pending key — wait for second "g" to form "gg"
+		// Count is saved in countBuffer (already reset above, but the
+		// pending-g handler reads count which was captured before reset)
+		m.pendingKey = "g"
+		// Restore count so the pending handler can use it
+		if count > 1 {
+			m.countBuffer = count
+		}
+		return m, nil
 	case "G":
 		if m.previewFocused && m.showPreview {
 			var cmd tea.Cmd
 			m.previewPane, cmd = m.previewPane.Update(msg)
 			return m, cmd
 		}
-		// Jump to bottom of list
-		m.jumpToBottom()
+		if count > 1 {
+			m.jumpToVisualLine(count - 1) // NG: jump to line N
+		} else {
+			m.jumpToBottom()
+		}
 		m.updatePreviewForSelection()
 	case "enter":
 		m.handleSelect()

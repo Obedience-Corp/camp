@@ -117,6 +117,10 @@ type Model struct {
 	scrollOffset int // First visible line in the list
 	listHeight   int // Number of visible lines in the list area
 
+	// Vim-style count prefix (e.g., "5j" moves 5 lines)
+	countBuffer int    // Accumulated digit count (0 = no count entered)
+	pendingKey  string // For multi-key sequences like "gg"
+
 	// Multi-select mode for gather
 	multiSelectMode bool
 	selectedIntents map[string]bool // intent ID -> selected
