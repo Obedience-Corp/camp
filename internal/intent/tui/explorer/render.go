@@ -86,33 +86,55 @@ func (m *Model) renderIntentRow(i *intent.Intent, isSelected bool, maxTitleWidth
 
 // renderStatusBar renders the status bar adapted to terminal width.
 func (m *Model) renderStatusBar() string {
+	// Scroll indicator when list is scrollable
+	scrollIndicator := ""
+	if m.listHeight > 0 && m.totalVisualLines() > m.listHeight {
+		total := m.totalVisualLines() - m.listHeight
+		pct := 0
+		if total > 0 {
+			pct = m.scrollOffset * 100 / total
+		}
+		scrollIndicator = tui.HelpStyle.Render(fmt.Sprintf("[%d%%] ", pct))
+	}
+
 	// Add multi-select mode hints
 	if m.multiSelectMode {
 		count := len(m.selectedIntents)
 		switch m.layoutMode {
 		case layoutNarrow:
-			return tui.HelpStyle.Render(fmt.Sprintf("Space: select . Ctrl-g: gather (%d) . Esc: cancel", count))
+			return scrollIndicator + tui.HelpStyle.Render(fmt.Sprintf("Space: select . Ctrl-g: gather (%d) . Esc: cancel", count))
 		default:
-			return tui.HelpStyle.Render(fmt.Sprintf("Space: toggle select . Ctrl-g: gather %d intents . Esc: exit multi-select . ?: help", count))
+			return scrollIndicator + tui.HelpStyle.Render(fmt.Sprintf("Space: toggle select . Ctrl-g: gather %d intents . Esc: exit multi-select . ?: help", count))
 		}
 	}
 
 	switch m.layoutMode {
 	case layoutNarrow:
-		// Minimal hints
-		return tui.HelpStyle.Render("j/k . v . / . tab: filter . n . ? . q")
+		return scrollIndicator + tui.HelpStyle.Render("j/k . v . / . tab: filter . n . ? . q")
 	case layoutNormal:
 		if m.shouldShowPreview() {
-			return tui.HelpStyle.Render("j/k: nav . v: hide preview . tab: focus . /: search . n: new . q: quit")
+			return scrollIndicator + tui.HelpStyle.Render("j/k: nav . v: hide preview . tab: focus . /: search . n: new . q: quit")
 		}
-		return tui.HelpStyle.Render("j/k: nav . v: preview . /: search . tab: filter . Space: gather mode . q: quit")
+		return scrollIndicator + tui.HelpStyle.Render("j/k: nav . v: preview . /: search . tab: filter . Space: gather mode . q: quit")
 	case layoutWide:
 		if m.shouldShowPreview() {
-			return tui.HelpStyle.Render("j/k: navigate . v: hide preview . tab: switch focus . /: search . f: full view . n: new . ?: help . q: quit")
+			return scrollIndicator + tui.HelpStyle.Render("j/k: navigate . v: hide preview . tab: switch focus . /: search . f: full view . n: new . ?: help . q: quit")
 		}
-		return tui.HelpStyle.Render("j/k: navigate . v: preview . /: search . tab: filter . Space: gather mode . f: full . ?: help . q: quit")
+		return scrollIndicator + tui.HelpStyle.Render("j/k: navigate . v: preview . /: search . tab: filter . Space: gather mode . f: full . ?: help . q: quit")
 	}
 	return ""
+}
+
+// totalVisualLines returns the total number of visual lines in the list.
+func (m *Model) totalVisualLines() int {
+	lines := 0
+	for _, group := range m.groups {
+		lines++ // group header
+		if group.Expanded {
+			lines += len(group.Intents)
+		}
+	}
+	return lines
 }
 
 // renderFilterBarComponent renders the interactive filter bar component.
@@ -269,15 +291,23 @@ func (m *Model) buildMainView() string {
 	}
 	titleWidth = max(titleWidth, 20)
 
-	// Build the list view
-	var listBuilder strings.Builder
+	// Build list lines
+	var listLines []string
 
 	// Handle empty state
 	if len(m.filteredIntents) == 0 {
 		if m.hasActiveFilters() {
-			listBuilder.WriteString(tui.HelpStyle.Render("\n  No intents match current filters.\n  Press Escape to clear filters.\n"))
+			listLines = append(listLines,
+				"",
+				tui.HelpStyle.Render("  No intents match current filters."),
+				tui.HelpStyle.Render("  Press Escape to clear filters."),
+			)
 		} else {
-			listBuilder.WriteString(tui.HelpStyle.Render("\n  No intents found.\n  Press 'n' to create one.\n"))
+			listLines = append(listLines,
+				"",
+				tui.HelpStyle.Render("  No intents found."),
+				tui.HelpStyle.Render("  Press 'n' to create one."),
+			)
 		}
 	}
 
@@ -296,25 +326,44 @@ func (m *Model) buildMainView() string {
 
 		header := fmt.Sprintf("%s %s %s (%d)", cursor, indicator, group.Name, len(group.Intents))
 		if isGroupSelected && !m.previewFocused {
-			listBuilder.WriteString(tui.GroupHeaderSelectedStyle.Render(header))
+			listLines = append(listLines, tui.GroupHeaderSelectedStyle.Render(header))
 		} else {
-			listBuilder.WriteString(tui.GroupHeaderStyle.Render(header))
+			listLines = append(listLines, tui.GroupHeaderStyle.Render(header))
 		}
-		listBuilder.WriteString("\n")
 
 		// Render items if expanded
 		if group.Expanded {
 			for ii, i := range group.Intents {
 				isSelected := gi == m.cursorGroup && ii == m.cursorItem && !m.previewFocused
-				listBuilder.WriteString(m.renderIntentRow(i, isSelected, titleWidth))
-				listBuilder.WriteString("\n")
+				listLines = append(listLines, m.renderIntentRow(i, isSelected, titleWidth))
 			}
 		}
 	}
 
+	// Apply scroll windowing: show only lines visible within listHeight
+	visibleLines := listLines
+	if m.listHeight > 0 && len(listLines) > m.listHeight {
+		// Clamp scrollOffset
+		maxOffset := len(listLines) - m.listHeight
+		if m.scrollOffset > maxOffset {
+			m.scrollOffset = maxOffset
+		}
+		if m.scrollOffset < 0 {
+			m.scrollOffset = 0
+		}
+		end := m.scrollOffset + m.listHeight
+		visibleLines = listLines[m.scrollOffset:end]
+	}
+
+	// Pad with empty lines if content is shorter than viewport
+	for len(visibleLines) < m.listHeight {
+		visibleLines = append(visibleLines, "")
+	}
+
+	listView := strings.Join(visibleLines, "\n")
+
 	// Combine list and preview if preview is visible
 	if m.shouldShowPreview() {
-		listView := listBuilder.String()
 		previewView := m.previewPane.View()
 
 		// Join horizontally with gap
@@ -326,7 +375,7 @@ func (m *Model) buildMainView() string {
 		)
 		b.WriteString(combined)
 	} else {
-		b.WriteString(listBuilder.String())
+		b.WriteString(listView)
 	}
 
 	// Status bar - adaptive based on layout mode

@@ -49,6 +49,9 @@ func (m *Model) recalculateLayout() {
 	contentHeight := m.height - headerHeight - footerHeight
 	contentHeight = max(contentHeight, 5)
 
+	// Set list viewport height
+	m.listHeight = contentHeight
+
 	switch m.layoutMode {
 	case layoutNarrow:
 		// Force hide preview on narrow terminals

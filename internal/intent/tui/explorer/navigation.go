@@ -31,6 +31,8 @@ func (m *Model) moveCursorDown() {
 			m.moveToNextGroup()
 		}
 	}
+
+	m.ensureCursorVisible()
 }
 
 // moveCursorUp moves the cursor up through groups and items.
@@ -57,6 +59,50 @@ func (m *Model) moveCursorUp() {
 	default:
 		// Move up within group
 		m.cursorItem--
+	}
+
+	m.ensureCursorVisible()
+}
+
+// cursorVisualLine returns the 0-indexed visual line of the current cursor position,
+// accounting for group headers and collapsed groups.
+func (m *Model) cursorVisualLine() int {
+	line := 0
+	for gi, group := range m.groups {
+		if gi == m.cursorGroup && m.cursorItem == -1 {
+			return line
+		}
+		line++ // group header
+
+		if group.Expanded {
+			for ii := range group.Intents {
+				if gi == m.cursorGroup && ii == m.cursorItem {
+					return line
+				}
+				line++
+			}
+		}
+	}
+	return line
+}
+
+// ensureCursorVisible adjusts scrollOffset so the cursor is within the visible window.
+func (m *Model) ensureCursorVisible() {
+	if m.listHeight <= 0 {
+		return
+	}
+
+	line := m.cursorVisualLine()
+
+	// Cursor above visible area - scroll up
+	if line < m.scrollOffset {
+		m.scrollOffset = line
+		return
+	}
+
+	// Cursor below visible area - scroll down
+	if line >= m.scrollOffset+m.listHeight {
+		m.scrollOffset = line - m.listHeight + 1
 	}
 }
 

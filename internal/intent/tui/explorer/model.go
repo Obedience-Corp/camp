@@ -113,6 +113,10 @@ type Model struct {
 	showConceptColumn bool
 	fullConceptPaths  bool
 
+	// List scrolling
+	scrollOffset int // First visible line in the list
+	listHeight   int // Number of visible lines in the list area
+
 	// Multi-select mode for gather
 	multiSelectMode bool
 	selectedIntents map[string]bool // intent ID -> selected
