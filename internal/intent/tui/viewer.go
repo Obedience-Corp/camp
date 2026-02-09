@@ -596,14 +596,11 @@ type ViewerGatherFinishedMsg struct {
 }
 
 // findSimilarIntents searches for intents similar to the current one.
-// It builds the index if needed before searching.
+// Rebuilds the index each time to reflect any status changes during the session.
 func (m IntentViewerModel) findSimilarIntents() tea.Cmd {
 	return func() tea.Msg {
-		// Build index if empty (lazy initialization)
-		if m.gatherSvc.IndexSize() == 0 {
-			if err := m.gatherSvc.BuildIndex(m.ctx); err != nil {
-				return ViewerSimilarFoundMsg{Err: err}
-			}
+		if err := m.gatherSvc.BuildIndex(m.ctx); err != nil {
+			return ViewerSimilarFoundMsg{Err: err}
 		}
 		// Use lower threshold (0.15) since composite similarity includes
 		// metadata matching which produces lower scores than pure TF-IDF
