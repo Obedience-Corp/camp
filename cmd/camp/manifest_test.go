@@ -69,6 +69,7 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		"move":          false,
 		"doctor":        false,
 		"dungeon crawl": false,
+		"flow":          false,
 		"flow crawl":    false,
 		"flow init":     false,
 		"flow migrate":  false,
@@ -86,8 +87,8 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		}
 	}
 
-	if len(manifest.Commands) != 13 {
-		t.Errorf("expected exactly 13 restricted commands, got %d", len(manifest.Commands))
+	if len(manifest.Commands) != 14 {
+		t.Errorf("expected exactly 14 restricted commands, got %d", len(manifest.Commands))
 	}
 }
 

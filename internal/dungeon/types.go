@@ -11,10 +11,10 @@ import (
 type Decision string
 
 const (
-	DecisionKeep           Decision = "keep"
-	DecisionArchive        Decision = "archive"
-	DecisionSkip           Decision = "skip"
-	DecisionMoveToDungeon  Decision = "move_to_dungeon"
+	DecisionKeep          Decision = "keep"
+	DecisionArchive       Decision = "archive"
+	DecisionSkip          Decision = "skip"
+	DecisionMoveToDungeon Decision = "move_to_dungeon"
 )
 
 // ItemType identifies whether an item is a file or directory.
