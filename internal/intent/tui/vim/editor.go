@@ -194,14 +194,16 @@ func (e *Editor) handleNormal(msg tea.KeyMsg) (cmd string, quit bool) {
 	case "i":
 		e.state.EnterInsert()
 	case "a":
-		MoveRight(e.buffer, 1)
+		cur := e.buffer.Cursor()
+		e.buffer.SetCursorInsert(Position{Line: cur.Line, Col: cur.Col + 1})
 		e.state.EnterInsert()
 	case "I":
 		MoveToFirstNonBlank(e.buffer)
 		e.state.EnterInsert()
 	case "A":
-		MoveToLineEnd(e.buffer)
-		MoveRight(e.buffer, 1) // Move past last char
+		cur := e.buffer.Cursor()
+		lineLen := e.buffer.CurrentLineLen()
+		e.buffer.SetCursorInsert(Position{Line: cur.Line, Col: lineLen})
 		e.state.EnterInsert()
 	case "o":
 		e.saveUndo()

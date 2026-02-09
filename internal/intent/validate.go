@@ -76,12 +76,12 @@ func (i *Intent) Validate() []error {
 
 // isValidStatus returns true if the status is a known valid value.
 func isValidStatus(s Status) bool {
-	switch s {
-	case StatusInbox, StatusActive, StatusReady, StatusDone, StatusKilled:
-		return true
-	default:
-		return false
+	for _, valid := range AllStatuses() {
+		if s == valid {
+			return true
+		}
 	}
+	return false
 }
 
 // isValidType returns true if the type is a known valid value.

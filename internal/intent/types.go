@@ -1,6 +1,11 @@
 // Package intent provides types and operations for managing intents,
 // which are captured ideas, feature requests, or work items that may
 // eventually be promoted to Festivals.
+//
+// Intents follow a lifecycle from inbox → active → ready, then move to
+// one of four dungeon statuses: done (resolved), killed (abandoned),
+// archived (preserved but inactive), or someday (deferred).
+// The dungeon/ directory hierarchy mirrors the campaign-wide dungeon pattern.
 package intent
 
 import (
@@ -10,9 +15,14 @@ import (
 )
 
 // Status represents the lifecycle state of an intent.
+// Status values double as directory paths relative to the intents root —
+// active statuses map to top-level directories (e.g. "inbox"),
+// while dungeon statuses include the "dungeon/" prefix (e.g. "dungeon/done").
 type Status string
 
 const (
+	// Active statuses (top-level directories)
+
 	// StatusInbox indicates the intent has been captured but not reviewed.
 	StatusInbox Status = "inbox"
 
@@ -22,11 +32,19 @@ const (
 	// StatusReady indicates the intent is sufficiently clear for Festival promotion.
 	StatusReady Status = "ready"
 
+	// Dungeon statuses (under dungeon/ directory)
+
 	// StatusDone indicates the intent has been resolved (promoted, completed, or superseded).
-	StatusDone Status = "done"
+	StatusDone Status = "dungeon/done"
 
 	// StatusKilled indicates the intent has been abandoned.
-	StatusKilled Status = "killed"
+	StatusKilled Status = "dungeon/killed"
+
+	// StatusArchived indicates the intent has been preserved but is no longer active.
+	StatusArchived Status = "dungeon/archived"
+
+	// StatusSomeday indicates the intent is deferred — maybe later, low priority.
+	StatusSomeday Status = "dungeon/someday"
 )
 
 // String returns the string representation of Status.
@@ -34,10 +52,28 @@ func (s Status) String() string {
 	return string(s)
 }
 
-// IsFinal returns true if the status is a terminal state (done or killed).
-// Intents in final states are not eligible for gathering or indexing.
-func (s Status) IsFinal() bool {
-	return s == StatusDone || s == StatusKilled
+// InDungeon returns true if the status is a dungeon state.
+// Intents in dungeon states are not eligible for gathering or indexing.
+func (s Status) InDungeon() bool {
+	return strings.HasPrefix(string(s), "dungeon/")
+}
+
+// AllStatuses returns all valid intent statuses.
+func AllStatuses() []Status {
+	return []Status{
+		StatusInbox, StatusActive, StatusReady,
+		StatusDone, StatusKilled, StatusArchived, StatusSomeday,
+	}
+}
+
+// ActiveStatuses returns the non-dungeon statuses (the working set).
+func ActiveStatuses() []Status {
+	return []Status{StatusInbox, StatusActive, StatusReady}
+}
+
+// DungeonStatuses returns only the dungeon statuses.
+func DungeonStatuses() []Status {
+	return []Status{StatusDone, StatusKilled, StatusArchived, StatusSomeday}
 }
 
 // Type categorizes the nature of work described by an intent.

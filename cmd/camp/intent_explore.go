@@ -82,6 +82,11 @@ func runIntentExplore(cmd *cobra.Command, args []string) error {
 	svc := intent.NewIntentService(campaignRoot, intentsDir)
 	conceptSvc := concept.NewService(campaignRoot, cfg.Concepts())
 
+	// Ensure directories exist and migrate legacy layout
+	if err := svc.EnsureDirectories(ctx); err != nil {
+		return fmt.Errorf("ensuring intent directories: %w", err)
+	}
+
 	// Create and run the TUI
 	model := explorer.NewModel(ctx, svc, conceptSvc, intentsDir, campaignRoot, cfg.ID)
 	p := tea.NewProgram(model, tea.WithAltScreen())

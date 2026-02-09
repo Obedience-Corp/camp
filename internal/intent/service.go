@@ -184,7 +184,7 @@ func (s *IntentService) Find(ctx context.Context, id string) (*Intent, error) {
 		return nil, fmt.Errorf("context cancelled: %w", err)
 	}
 
-	statuses := []Status{StatusInbox, StatusActive, StatusReady, StatusDone, StatusKilled}
+	statuses := AllStatuses()
 
 	// First try exact match
 	for _, status := range statuses {
@@ -226,7 +226,7 @@ func (s *IntentService) Get(ctx context.Context, id string) (*Intent, error) {
 		return nil, fmt.Errorf("context cancelled: %w", err)
 	}
 
-	statuses := []Status{StatusInbox, StatusActive, StatusReady, StatusDone, StatusKilled}
+	statuses := AllStatuses()
 
 	for _, status := range statuses {
 		path := s.getIntentPath(status, id)
@@ -254,7 +254,7 @@ func (s *IntentService) List(ctx context.Context, opts *ListOptions) ([]*Intent,
 	}
 
 	var intents []*Intent
-	statuses := []Status{StatusInbox, StatusActive, StatusReady, StatusDone, StatusKilled}
+	statuses := AllStatuses()
 
 	if opts != nil && opts.Status != nil {
 		statuses = []Status{*opts.Status}
@@ -499,9 +499,9 @@ func (s *IntentService) Move(ctx context.Context, id string, newStatus Status) (
 	return intent, nil
 }
 
-// Archive moves an intent to the killed status.
+// Archive moves an intent to the archived dungeon status.
 func (s *IntentService) Archive(ctx context.Context, id string) (*Intent, error) {
-	return s.Move(ctx, id, StatusKilled)
+	return s.Move(ctx, id, StatusArchived)
 }
 
 // StatusCount holds the count of intents for a single status directory.
@@ -517,7 +517,7 @@ func (s *IntentService) Count(ctx context.Context) ([]StatusCount, int, error) {
 		return nil, 0, fmt.Errorf("context cancelled: %w", err)
 	}
 
-	statuses := []Status{StatusInbox, StatusActive, StatusReady, StatusDone, StatusKilled}
+	statuses := AllStatuses()
 	counts := make([]StatusCount, 0, len(statuses))
 	total := 0
 
@@ -588,4 +588,113 @@ func (s *IntentService) sortIntents(intents []*Intent, sortBy string, desc bool)
 		}
 		return less
 	})
+}
+
+// EnsureDirectories creates all status directories if missing and migrates
+// legacy top-level done/ and killed/ directories into the dungeon.
+func (s *IntentService) EnsureDirectories(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("context cancelled: %w", err)
+	}
+
+	// Create all status directories
+	for _, status := range AllStatuses() {
+		dir := filepath.Join(s.intentsDir, string(status))
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("creating directory %s: %w", dir, err)
+		}
+	}
+
+	// Migrate legacy top-level done/ and killed/ into dungeon
+	legacyMappings := map[string]Status{
+		"done":   StatusDone,
+		"killed": StatusKilled,
+	}
+
+	for legacyDir, newStatus := range legacyMappings {
+		if err := s.migrateLegacyDir(ctx, legacyDir, newStatus); err != nil {
+			return fmt.Errorf("migrating %s: %w", legacyDir, err)
+		}
+	}
+
+	return nil
+}
+
+// migrateLegacyDir moves intent files from a legacy top-level status directory
+// into the corresponding dungeon subdirectory, updating frontmatter status.
+func (s *IntentService) migrateLegacyDir(ctx context.Context, legacyDir string, newStatus Status) error {
+	srcDir := filepath.Join(s.intentsDir, legacyDir)
+
+	// Check if legacy directory exists
+	entries, err := os.ReadDir(srcDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // Nothing to migrate
+		}
+		return fmt.Errorf("reading directory %s: %w", srcDir, err)
+	}
+
+	dstDir := filepath.Join(s.intentsDir, string(newStatus))
+
+	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("context cancelled: %w", err)
+		}
+
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
+			continue
+		}
+
+		srcPath := filepath.Join(srcDir, entry.Name())
+		dstPath := filepath.Join(dstDir, entry.Name())
+
+		// Read, update status in frontmatter, write to new location
+		content, err := os.ReadFile(srcPath)
+		if err != nil {
+			return fmt.Errorf("reading %s: %w", srcPath, err)
+		}
+
+		intent, err := ParseIntentFromFile(srcPath, content)
+		if err != nil {
+			// Can't parse — just move the file as-is
+			if _, serr := os.Stat(dstPath); serr == nil {
+				// Already migrated (prior interrupted run) — remove source and skip
+				os.Remove(srcPath)
+				continue
+			}
+			if err := os.Rename(srcPath, dstPath); err != nil {
+				return fmt.Errorf("moving %s: %w", srcPath, err)
+			}
+			continue
+		}
+
+		// Update status and write to new location
+		intent.Status = newStatus
+		data, err := SerializeIntent(intent)
+		if err != nil {
+			return fmt.Errorf("serializing %s: %w", srcPath, err)
+		}
+
+		if _, serr := os.Stat(dstPath); serr == nil {
+			// Already migrated (prior interrupted run) — remove source and skip
+			os.Remove(srcPath)
+			continue
+		}
+
+		if err := os.WriteFile(dstPath, data, 0644); err != nil {
+			return fmt.Errorf("writing %s: %w", dstPath, err)
+		}
+
+		if err := os.Remove(srcPath); err != nil {
+			return fmt.Errorf("removing %s: %w", srcPath, err)
+		}
+	}
+
+	// Remove legacy directory if empty
+	remaining, err := os.ReadDir(srcDir)
+	if err == nil && len(remaining) == 0 {
+		os.Remove(srcDir)
+	}
+
+	return nil
 }

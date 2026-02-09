@@ -201,8 +201,16 @@ func (m *Model) handleSelect() {
 	}
 
 	if m.cursorItem == -1 {
-		// On group header, toggle expansion
-		m.groups[m.cursorGroup].Expanded = !m.groups[m.cursorGroup].Expanded
+		group := &m.groups[m.cursorGroup]
+		if group.IsDungeonParent {
+			// Toggle dungeon expansion and rebuild groups
+			m.dungeonExpanded = !m.dungeonExpanded
+			m.groups = groupIntentsByStatus(m.filteredIntents, m.dungeonExpanded)
+			m.ensureCursorVisible()
+			return
+		}
+		// On normal group header, toggle expansion
+		group.Expanded = !group.Expanded
 		m.ensureCursorVisible()
 	} else {
 		// On intent item - open full-screen viewer directly

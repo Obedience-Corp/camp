@@ -8,6 +8,7 @@ import (
 )
 
 // MoveStatusOptions are the available statuses for moving intents.
+// Dungeon statuses are visually indented to show hierarchy.
 var moveStatusOptions = []struct {
 	name   string
 	status intent.Status
@@ -15,12 +16,14 @@ var moveStatusOptions = []struct {
 	{"Inbox", intent.StatusInbox},
 	{"Active", intent.StatusActive},
 	{"Ready", intent.StatusReady},
-	{"Done", intent.StatusDone},
-	{"Killed", intent.StatusKilled},
+	{"  Done", intent.StatusDone},
+	{"  Killed", intent.StatusKilled},
+	{"  Archived", intent.StatusArchived},
+	{"  Someday", intent.StatusSomeday},
 }
 
 // StatusWorkflow defines the promotion order for intents.
-// Killed is excluded as it's an archive/terminal state.
+// Dungeon statuses are excluded — promotion ends at done.
 var statusWorkflow = []intent.Status{
 	intent.StatusInbox,
 	intent.StatusActive,

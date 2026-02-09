@@ -124,6 +124,10 @@ func renderStatusBadge(s intent.Status) string {
 		color = pal.TextMuted // Gray
 	case intent.StatusKilled:
 		color = pal.Error // Red
+	case intent.StatusArchived:
+		color = pal.TextMuted // Gray
+	case intent.StatusSomeday:
+		color = pal.AccentAlt // Blue
 	default:
 		color = pal.TextMuted
 	}
@@ -213,7 +217,13 @@ func (m IntentViewerModel) viewWithMoveOverlay() string {
 	b.WriteString("Current status: " + m.intent.Status.String() + "\n\n")
 	b.WriteString("Select new status:\n")
 
+	dungeonLabelShown := false
 	for i, opt := range moveStatusOptions {
+		// Show dungeon label before first dungeon status
+		if !dungeonLabelShown && opt.status.InDungeon() {
+			dungeonLabelShown = true
+			b.WriteString(HelpStyle.Render("  ── Dungeon ──") + "\n")
+		}
 		cursor := "  "
 		if i == m.moveStatusIdx {
 			cursor = "> "

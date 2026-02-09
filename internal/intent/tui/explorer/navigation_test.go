@@ -41,7 +41,8 @@ func makeTestModel(inboxCount, activeCount int) Model {
 
 	m.intents = intents
 	m.filteredIntents = intents
-	m.groups = groupIntentsByStatus(intents)
+	m.dungeonExpanded = true // expand for tests to see all groups
+	m.groups = groupIntentsByStatus(intents, m.dungeonExpanded)
 	m.listHeight = 20 // simulate reasonable terminal
 
 	return m
@@ -63,10 +64,13 @@ func TestCursorVisualLine(t *testing.T) {
 		{"second group header", 1, -1, 4},
 		{"second group first item", 1, 0, 5},
 		{"second group second item", 1, 1, 6},
-		// Groups 2-4 (Ready, Done, Killed) are collapsed, so just headers
-		{"third group header", 2, -1, 7},
-		{"fourth group header", 3, -1, 8},
-		{"fifth group header", 4, -1, 9},
+		// Groups 2-7 (Ready, Dungeon, Done, Killed, Archived, Someday) are collapsed, so just headers
+		{"third group header (Ready)", 2, -1, 7},
+		{"fourth group header (Dungeon)", 3, -1, 8},
+		{"fifth group header (Done)", 4, -1, 9},
+		{"sixth group header (Killed)", 5, -1, 10},
+		{"seventh group header (Archived)", 6, -1, 11},
+		{"eighth group header (Someday)", 7, -1, 12},
 	}
 
 	for _, tt := range tests {
@@ -103,10 +107,11 @@ func TestCursorVisualLine_CollapsedGroup(t *testing.T) {
 
 func TestTotalVisualLines(t *testing.T) {
 	m := makeTestModel(3, 2)
-	// 5 group headers + 3 inbox items + 2 active items = 10
+	// 8 group headers (Inbox, Active, Ready, Dungeon, Done, Killed, Archived, Someday)
+	// + 3 inbox items + 2 active items = 13
 	got := m.totalVisualLines()
-	if got != 10 {
-		t.Errorf("totalVisualLines() = %d, want 10", got)
+	if got != 13 {
+		t.Errorf("totalVisualLines() = %d, want 13", got)
 	}
 }
 
@@ -115,10 +120,10 @@ func TestTotalVisualLines_AllCollapsed(t *testing.T) {
 	for i := range m.groups {
 		m.groups[i].Expanded = false
 	}
-	// 5 group headers only
+	// 8 group headers only (Inbox, Active, Ready, Dungeon, Done, Killed, Archived, Someday)
 	got := m.totalVisualLines()
-	if got != 5 {
-		t.Errorf("totalVisualLines() all collapsed = %d, want 5", got)
+	if got != 8 {
+		t.Errorf("totalVisualLines() all collapsed = %d, want 8", got)
 	}
 }
 
@@ -226,24 +231,24 @@ func TestJumpToBottom(t *testing.T) {
 
 	m.jumpToBottom()
 
-	// Last group is Killed (index 4), collapsed, no items -> header
-	if m.cursorGroup != 4 || m.cursorItem != -1 {
-		t.Errorf("jumpToBottom: group=%d item=%d, want 4,-1", m.cursorGroup, m.cursorItem)
+	// Last group is Someday (index 7), collapsed, no items -> header
+	if m.cursorGroup != 7 || m.cursorItem != -1 {
+		t.Errorf("jumpToBottom: group=%d item=%d, want 7,-1", m.cursorGroup, m.cursorItem)
 	}
 }
 
 func TestJumpToBottom_LastGroupExpanded(t *testing.T) {
 	m := makeTestModel(3, 2)
-	// Expand the last group and add an item
-	m.groups[4].Expanded = true
-	m.groups[4].Intents = []*intent.Intent{
-		{ID: "killed-0", Title: "Killed Intent", Status: intent.StatusKilled, CreatedAt: time.Now()},
+	// Expand the last group (Someday, index 7) and add an item
+	m.groups[7].Expanded = true
+	m.groups[7].Intents = []*intent.Intent{
+		{ID: "someday-0", Title: "Someday Intent", Status: intent.StatusSomeday, CreatedAt: time.Now()},
 	}
 
 	m.jumpToBottom()
 
-	if m.cursorGroup != 4 || m.cursorItem != 0 {
-		t.Errorf("jumpToBottom expanded: group=%d item=%d, want 4,0", m.cursorGroup, m.cursorItem)
+	if m.cursorGroup != 7 || m.cursorItem != 0 {
+		t.Errorf("jumpToBottom expanded: group=%d item=%d, want 7,0", m.cursorGroup, m.cursorItem)
 	}
 }
 
@@ -281,15 +286,15 @@ func TestMoveCursorDownN_StopsAtBottom(t *testing.T) {
 	// Move down 100 positions (more than exist)
 	m.moveCursorDownN(100)
 
-	// Should stop at last group header (killed, index 4)
-	if m.cursorGroup != 4 || m.cursorItem != -1 {
-		t.Errorf("moveCursorDownN(100): group=%d item=%d, want 4,-1", m.cursorGroup, m.cursorItem)
+	// Should stop at last group header (Someday, index 7)
+	if m.cursorGroup != 7 || m.cursorItem != -1 {
+		t.Errorf("moveCursorDownN(100): group=%d item=%d, want 7,-1", m.cursorGroup, m.cursorItem)
 	}
 }
 
 func TestMoveCursorUpN_StopsAtTop(t *testing.T) {
 	m := makeTestModel(3, 0)
-	m.cursorGroup = 4
+	m.cursorGroup = 7
 	m.cursorItem = -1
 
 	// Move up 100 positions (more than exist)
@@ -475,7 +480,7 @@ func TestBuildMainView_ContainsScrollIndicator(t *testing.T) {
 
 	view := m.buildMainView()
 
-	// With 30 inbox items + 5 group headers = 35 lines, viewport ~10
+	// With 30 inbox items + 8 group headers = 38 lines, viewport ~10
 	// Should show scroll indicator
 	if !strings.Contains(view, "[") || !strings.Contains(view, "%]") {
 		t.Error("buildMainView should contain scroll percentage indicator")
@@ -489,8 +494,94 @@ func TestBuildMainView_NoScrollIndicator_WhenFits(t *testing.T) {
 
 	view := m.buildMainView()
 
-	// With 1 intent + 5 headers = 6 lines, viewport ~25 - should not scroll
+	// With 1 intent + 8 headers = 9 lines, viewport ~25 - should not scroll
 	if strings.Contains(view, "%]") {
 		t.Error("buildMainView should not show scroll indicator when content fits")
+	}
+}
+
+func TestDungeonCollapse_HidesChildren(t *testing.T) {
+	m := makeTestModel(3, 2)
+	// Default test model has dungeonExpanded=true -> 8 groups
+	if len(m.groups) != 8 {
+		t.Fatalf("expected 8 groups with dungeon expanded, got %d", len(m.groups))
+	}
+
+	// Collapse dungeon
+	m.dungeonExpanded = false
+	m.groups = groupIntentsByStatus(m.filteredIntents, m.dungeonExpanded)
+
+	// Should have 4 groups: Inbox, Active, Ready, Dungeon
+	if len(m.groups) != 4 {
+		t.Fatalf("expected 4 groups with dungeon collapsed, got %d", len(m.groups))
+	}
+
+	// Verify dungeon parent is at index 3
+	if !m.groups[3].IsDungeonParent {
+		t.Error("expected group 3 to be dungeon parent")
+	}
+	if m.groups[3].DungeonCount != 0 {
+		t.Errorf("expected 0 dungeon intents, got %d", m.groups[3].DungeonCount)
+	}
+}
+
+func TestDungeonToggle_PreservesGroupCount(t *testing.T) {
+	m := makeTestModel(2, 0)
+	m.dungeonExpanded = false
+	m.groups = groupIntentsByStatus(m.filteredIntents, m.dungeonExpanded)
+
+	// 4 groups collapsed
+	if len(m.groups) != 4 {
+		t.Fatalf("collapsed: expected 4 groups, got %d", len(m.groups))
+	}
+
+	// Put cursor on dungeon parent and select to toggle
+	m.cursorGroup = 3
+	m.cursorItem = -1
+	m.handleSelect()
+
+	// Should now have 8 groups
+	if len(m.groups) != 8 {
+		t.Fatalf("expanded: expected 8 groups, got %d", len(m.groups))
+	}
+
+	// Toggle again
+	m.cursorGroup = 3
+	m.cursorItem = -1
+	m.handleSelect()
+
+	// Back to 4
+	if len(m.groups) != 4 {
+		t.Fatalf("re-collapsed: expected 4 groups, got %d", len(m.groups))
+	}
+}
+
+func TestDungeonParent_ShowsAggregateCount(t *testing.T) {
+	ctx := context.Background()
+	m := NewModel(ctx, nil, nil, "/tmp/intents", "/tmp/campaign", "test-id")
+	m.ready = true
+	m.width = 120
+	m.height = 30
+
+	// Create intents in dungeon statuses
+	intents := []*intent.Intent{
+		{ID: "done-0", Title: "Done 0", Status: intent.StatusDone, Type: intent.TypeFeature, CreatedAt: time.Now()},
+		{ID: "done-1", Title: "Done 1", Status: intent.StatusDone, Type: intent.TypeFeature, CreatedAt: time.Now()},
+		{ID: "killed-0", Title: "Killed 0", Status: intent.StatusKilled, Type: intent.TypeFeature, CreatedAt: time.Now()},
+		{ID: "inbox-0", Title: "Inbox 0", Status: intent.StatusInbox, Type: intent.TypeFeature, CreatedAt: time.Now()},
+	}
+	m.intents = intents
+	m.filteredIntents = intents
+	m.dungeonExpanded = false
+	m.groups = groupIntentsByStatus(intents, m.dungeonExpanded)
+	m.listHeight = 20
+
+	// Dungeon parent should show aggregate count of 3 (2 done + 1 killed)
+	dungeonGroup := m.groups[3]
+	if !dungeonGroup.IsDungeonParent {
+		t.Fatal("expected dungeon parent at index 3")
+	}
+	if dungeonGroup.DungeonCount != 3 {
+		t.Errorf("expected DungeonCount=3, got %d", dungeonGroup.DungeonCount)
 	}
 }

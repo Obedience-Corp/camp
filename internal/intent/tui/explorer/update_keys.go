@@ -113,7 +113,7 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Promote to next status in workflow
 		return m.handlePromoteAction()
 	case "a":
-		// Archive (move to killed status) - requires confirmation
+		// Archive (move to dungeon) - requires confirmation
 		return m.handleArchiveAction()
 	case "d":
 		// Delete intent (permanently) - requires confirmation
