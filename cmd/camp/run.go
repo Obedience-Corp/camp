@@ -16,23 +16,34 @@ import (
 )
 
 var runCmd = &cobra.Command{
-	Use:   "run [@shortcut] <command> [args...]",
-	Short: "Execute command from campaign root or shortcut directory",
-	Long: `Execute any command from the campaign root directory.
+	Use:   "run [project | @shortcut] [command | recipe] [args...]",
+	Short: "Execute command from campaign root, or just recipe in a project",
+	Long: `Execute any command from the campaign root directory, or run just recipes
+in a project directory.
 
-This is useful when you're deep in a subdirectory but want to run a command
-as if you were at the campaign root. The command inherits your current
-environment (stdin, stdout, stderr).
+If the first argument exactly matches a project name (a directory in projects/
+with a git repo), camp dispatches to 'just' in that project's directory.
+Any remaining arguments are passed as the recipe and arguments to just.
+
+If the first argument does not match a project, it is treated as a shell command
+and executed from the campaign root directory.
 
 Use @shortcut prefix to run from a shortcut's directory instead of root.
 Only navigation shortcuts (those with paths) can be used.
 
 All arguments after 'run' (or '@shortcut') are passed directly to the shell.`,
-	Example: `  camp run ls -la             # List campaign root contents
-  camp run just --list        # Show just recipes from root
-  camp run @p ls              # List projects/ directory
-  camp run @f make test       # Run make from festivals/
-  camp run @p just build      # Run just from projects/`,
+	Example: `  # Project just dispatch (first arg matches a project name):
+  camp run fest              # Show just recipes for fest project
+  camp run fest build        # Run 'just build' in projects/fest/
+  camp run camp test all     # Run 'just test all' in projects/camp/
+
+  # Raw command from campaign root (first arg is not a project):
+  camp run ls -la            # List campaign root contents
+  camp run just --list       # Show just recipes from root
+
+  # Shortcut-based execution:
+  camp run @p ls             # List projects/ directory
+  camp run @f make test      # Run make from festivals/`,
 	Aliases:            []string{"r"},
 	Args:               cobra.MinimumNArgs(1),
 	DisableFlagParsing: true,
@@ -163,6 +174,14 @@ func runRun(cmd *cobra.Command, args []string) error {
 		commandArgs = args[1:]
 	}
 
+	// Project just dispatch: if first arg matches a project, run just in it.
+	// Exact match only — projects/<name> must exist and be a git repo.
+	if len(commandArgs) > 0 {
+		if projectDir, ok := isProject(root, commandArgs[0]); ok {
+			return executeCommand(ctx, "just", projectDir, commandArgs[1:])
+		}
+	}
+
 	if len(commandArgs) == 0 {
 		return fmt.Errorf("no command specified")
 	}
@@ -172,6 +191,20 @@ func runRun(cmd *cobra.Command, args []string) error {
 
 	// Execute from working directory
 	return executeCommand(ctx, fullCmd, workDir, nil)
+}
+
+// isProject checks if name matches a project directory in projects/<name>
+// by verifying the directory exists and contains a .git entry.
+func isProject(campaignRoot, name string) (string, bool) {
+	projectDir := filepath.Join(campaignRoot, "projects", name)
+	info, err := os.Stat(projectDir)
+	if err != nil || !info.IsDir() {
+		return "", false
+	}
+	if _, err := os.Stat(filepath.Join(projectDir, ".git")); err != nil {
+		return "", false
+	}
+	return projectDir, true
 }
 
 // executeCommand executes a shell command from the specified directory.
