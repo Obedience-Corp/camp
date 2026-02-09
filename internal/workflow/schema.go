@@ -232,7 +232,27 @@ func FindSchema(ctx context.Context, startPath string) (string, *Schema, error) 
 }
 
 // Validate checks the schema for internal consistency.
+// Supports both v1 and v2 schemas with version-specific rules.
 func (s *Schema) Validate() error {
+	// Version 0 is treated as v1 (unset/legacy schemas)
+	if s.Version != 0 && s.Version != 1 && s.Version != 2 {
+		return fmt.Errorf("%w: unsupported schema version %d (must be 1 or 2)", ErrInvalidSchema, s.Version)
+	}
+
+	// Common validation
+	if err := s.validateCommon(); err != nil {
+		return err
+	}
+
+	// Version-specific validation
+	if s.Version == 2 {
+		return s.validateV2()
+	}
+	return nil
+}
+
+// validateCommon contains validation rules shared between v1 and v2.
+func (s *Schema) validateCommon() error {
 	// Rule 1: Must have at least one directory
 	if len(s.Directories) == 0 {
 		return fmt.Errorf("%w: must have at least one directory", ErrInvalidSchema)
@@ -280,6 +300,32 @@ func (s *Schema) Validate() error {
 	if s.DefaultStatus != "" {
 		if _, ok := s.Directories[s.DefaultStatus]; !ok {
 			return fmt.Errorf("%w: default_status %q is not a valid directory", ErrInvalidSchema, s.DefaultStatus)
+		}
+	}
+
+	return nil
+}
+
+// validateV2 enforces v2-specific rules: root is default, all named
+// statuses live under dungeon/.
+func (s *Schema) validateV2() error {
+	// V2 must have "." as default status
+	if s.DefaultStatus != "." {
+		return fmt.Errorf("%w: v2 schema default_status must be \".\" (root), got %q", ErrInvalidSchema, s.DefaultStatus)
+	}
+
+	// V2 must have root "." directory
+	if _, ok := s.Directories["."]; !ok {
+		return fmt.Errorf("%w: v2 schema must have root directory \".\"", ErrInvalidSchema)
+	}
+
+	// V2: all non-root top-level directories must be nested (dungeon-like)
+	for name, dir := range s.Directories {
+		if name == "." {
+			continue
+		}
+		if !dir.Nested {
+			return fmt.Errorf("%w: v2 schema non-root directory %q must be nested (dungeon-centric model)", ErrInvalidSchema, name)
 		}
 	}
 
