@@ -1,11 +1,20 @@
 package index
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/obediencecorp/camp/internal/nav"
 	"github.com/obediencecorp/camp/internal/nav/fuzzy"
 )
+
+// CompletionCandidate represents a single completion suggestion with metadata.
+type CompletionCandidate struct {
+	Name     string // Target name
+	Path     string // Relative path from campaign root
+	Category string // Target category (e.g., "project", "festival", etc.)
+	Score    int    // Fuzzy match score (higher is better)
+}
 
 // Query provides index query operations.
 type Query struct {
@@ -135,6 +144,39 @@ func (q *Query) CompleteAny(partial string, cat nav.Category) []string {
 			candidates = append(candidates, t.Name)
 		}
 	}
+
+	return candidates
+}
+
+// FuzzyComplete returns completion candidates using fuzzy matching.
+// If cat is not CategoryAll, only targets in that category are considered.
+// Results are sorted by fuzzy match score (highest first).
+func (q *Query) FuzzyComplete(query string, cat nav.Category) []CompletionCandidate {
+	targets := q.ByCategory(cat)
+
+	names := make([]string, len(targets))
+	nameToTarget := make(map[string]*Target, len(targets))
+	for i := range targets {
+		names[i] = targets[i].Name
+		nameToTarget[targets[i].Name] = &targets[i]
+	}
+
+	matches := fuzzy.Filter(names, query)
+
+	candidates := make([]CompletionCandidate, 0, len(matches))
+	for _, m := range matches {
+		target := nameToTarget[m.Target]
+		candidates = append(candidates, CompletionCandidate{
+			Name:     target.Name,
+			Path:     target.RelativePath(q.index.CampaignRoot),
+			Category: string(target.Category),
+			Score:    m.Score,
+		})
+	}
+
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].Score > candidates[j].Score
+	})
 
 	return candidates
 }

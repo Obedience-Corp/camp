@@ -341,6 +341,91 @@ func TestQuery_Paths_NilIndex(t *testing.T) {
 	}
 }
 
+func TestQuery_FuzzyComplete(t *testing.T) {
+	idx := NewIndex("/home/user/campaign")
+	idx.AddTarget(Target{Name: "camp", Category: nav.CategoryProjects, Path: "/home/user/campaign/projects/camp"})
+	idx.AddTarget(Target{Name: "obey-daemon", Category: nav.CategoryProjects, Path: "/home/user/campaign/projects/obey-daemon"})
+	idx.AddTarget(Target{Name: "fest", Category: nav.CategoryProjects, Path: "/home/user/campaign/projects/fest"})
+	idx.AddTarget(Target{Name: "festival-001", Category: nav.CategoryFestivals, Path: "/home/user/campaign/festivals/planned/festival-001"})
+	q := NewQuery(idx)
+
+	tests := []struct {
+		name     string
+		query    string
+		category nav.Category
+		wantMin  int
+		wantTop  string
+	}{
+		{
+			name:     "fuzzy match camp",
+			query:    "camp",
+			category: nav.CategoryAll,
+			wantMin:  1,
+			wantTop:  "camp",
+		},
+		{
+			name:     "fuzzy match obey",
+			query:    "obey",
+			category: nav.CategoryAll,
+			wantMin:  1,
+			wantTop:  "obey-daemon",
+		},
+		{
+			name:     "category filter projects only",
+			query:    "fest",
+			category: nav.CategoryProjects,
+			wantMin:  1,
+			wantTop:  "fest",
+		},
+		{
+			name:     "empty query returns all",
+			query:    "",
+			category: nav.CategoryAll,
+			wantMin:  4,
+		},
+		{
+			name:     "no match",
+			query:    "zzzznothing",
+			category: nav.CategoryAll,
+			wantMin:  0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := q.FuzzyComplete(tt.query, tt.category)
+
+			if len(got) < tt.wantMin {
+				t.Errorf("FuzzyComplete() returned %d results, want at least %d", len(got), tt.wantMin)
+			}
+
+			if tt.wantTop != "" && len(got) > 0 {
+				if got[0].Name != tt.wantTop {
+					t.Errorf("FuzzyComplete() top result = %q, want %q", got[0].Name, tt.wantTop)
+				}
+				// Verify path is relative
+				if got[0].Path == "" {
+					t.Error("Path should not be empty")
+				}
+			}
+		})
+	}
+}
+
+func TestQuery_FuzzyComplete_RelativePaths(t *testing.T) {
+	idx := NewIndex("/home/user/campaign")
+	idx.AddTarget(Target{Name: "camp", Category: nav.CategoryProjects, Path: "/home/user/campaign/projects/camp"})
+	q := NewQuery(idx)
+
+	got := q.FuzzyComplete("camp", nav.CategoryAll)
+	if len(got) == 0 {
+		t.Fatal("Expected at least one result")
+	}
+	if got[0].Path != "projects/camp" {
+		t.Errorf("Expected relative path 'projects/camp', got %q", got[0].Path)
+	}
+}
+
 // createTestIndex creates a test index with sample targets.
 func createTestIndex() *Index {
 	idx := NewIndex("/test")

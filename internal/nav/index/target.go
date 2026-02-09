@@ -77,6 +77,16 @@ func (t *Target) ShortcutNames() []string {
 	return names
 }
 
+// RelativePath returns the target's path relative to the campaign root.
+// If the relative path cannot be computed, returns the absolute path.
+func (t *Target) RelativePath(campaignRoot string) string {
+	relPath, err := filepath.Rel(campaignRoot, t.Path)
+	if err != nil {
+		return t.Path
+	}
+	return relPath
+}
+
 // Index holds all navigation targets for a campaign.
 type Index struct {
 	// Targets is the list of all navigation targets.

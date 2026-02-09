@@ -3,6 +3,7 @@ package complete
 
 import (
 	"context"
+	"sort"
 	"strings"
 	"time"
 
@@ -10,6 +11,12 @@ import (
 	"github.com/obediencecorp/camp/internal/nav"
 	"github.com/obediencecorp/camp/internal/nav/index"
 )
+
+// RichCategoryGroup groups rich completion candidates by category.
+type RichCategoryGroup struct {
+	Category   string
+	Candidates []index.CompletionCandidate
+}
 
 // Timeout is the maximum time to spend generating completions.
 // Shell completion should be fast to feel responsive.
@@ -39,6 +46,71 @@ func Generate(ctx context.Context, args []string) ([]string, error) {
 
 	// Not a shortcut - complete from all targets and shortcuts
 	return completeAll(ctx, args[0], shortcuts)
+}
+
+// GenerateRich returns completion candidates with fuzzy matching and path descriptions.
+// Results are grouped by category.
+func GenerateRich(ctx context.Context, args []string) ([]RichCategoryGroup, error) {
+	ctx, cancel := context.WithTimeout(ctx, Timeout)
+	defer cancel()
+
+	// Determine query and category
+	var query string
+	var cat nav.Category
+	if len(args) > 0 {
+		query = args[0]
+	}
+
+	// Check if first arg is a category shortcut
+	shortcuts := loadShortcutMappings(ctx)
+	result := nav.ParseShortcut(args, shortcuts)
+	if result.IsShortcut {
+		cat = result.Category
+		query = result.Query
+	}
+
+	// Get campaign root
+	jumpResult, err := nav.DirectJump(ctx, nav.CategoryAll)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get or build index
+	idx, err := index.GetOrBuild(ctx, jumpResult.Path, false)
+	if err != nil {
+		return nil, err
+	}
+
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	// Get fuzzy completion candidates
+	q := index.NewQuery(idx)
+	if cat == "" {
+		cat = nav.CategoryAll
+	}
+	candidates := q.FuzzyComplete(query, cat)
+
+	// Group by category
+	categoryMap := make(map[string][]index.CompletionCandidate)
+	for _, c := range candidates {
+		categoryMap[c.Category] = append(categoryMap[c.Category], c)
+	}
+
+	grouped := make([]RichCategoryGroup, 0, len(categoryMap))
+	for catName, cands := range categoryMap {
+		grouped = append(grouped, RichCategoryGroup{
+			Category:   catName,
+			Candidates: cands,
+		})
+	}
+
+	sort.Slice(grouped, func(i, j int) bool {
+		return grouped[i].Category < grouped[j].Category
+	})
+
+	return grouped, nil
 }
 
 // loadShortcutMappings loads shortcuts from campaign config.
