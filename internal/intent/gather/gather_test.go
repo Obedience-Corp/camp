@@ -15,7 +15,7 @@ func setupTestDir(t *testing.T) (string, *intent.IntentService) {
 	tmpDir := t.TempDir()
 
 	// Create status directories
-	for _, status := range []string{"inbox", "active", "ready", "done", "killed"} {
+	for _, status := range []string{"inbox", "active", "ready", "dungeon/done", "dungeon/killed", "dungeon/archived"} {
 		if err := os.MkdirAll(filepath.Join(tmpDir, status), 0755); err != nil {
 			t.Fatal(err)
 		}

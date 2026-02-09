@@ -1,6 +1,11 @@
 // Package intent provides types and operations for managing intents,
 // which are captured ideas, feature requests, or work items that may
 // eventually be promoted to Festivals.
+//
+// Intents follow a lifecycle from inbox → active → ready, then move to
+// one of four dungeon statuses: done (resolved), killed (abandoned),
+// archived (preserved but inactive), or someday (deferred).
+// The dungeon/ directory hierarchy mirrors the campaign-wide dungeon pattern.
 package intent
 
 import (
@@ -10,6 +15,9 @@ import (
 )
 
 // Status represents the lifecycle state of an intent.
+// Status values double as directory paths relative to the intents root —
+// active statuses map to top-level directories (e.g. "inbox"),
+// while dungeon statuses include the "dungeon/" prefix (e.g. "dungeon/done").
 type Status string
 
 const (

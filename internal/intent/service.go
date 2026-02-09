@@ -657,6 +657,11 @@ func (s *IntentService) migrateLegacyDir(ctx context.Context, legacyDir string, 
 		intent, err := ParseIntentFromFile(srcPath, content)
 		if err != nil {
 			// Can't parse — just move the file as-is
+			if _, serr := os.Stat(dstPath); serr == nil {
+				// Already migrated (prior interrupted run) — remove source and skip
+				os.Remove(srcPath)
+				continue
+			}
 			if err := os.Rename(srcPath, dstPath); err != nil {
 				return fmt.Errorf("moving %s: %w", srcPath, err)
 			}
@@ -668,6 +673,12 @@ func (s *IntentService) migrateLegacyDir(ctx context.Context, legacyDir string, 
 		data, err := SerializeIntent(intent)
 		if err != nil {
 			return fmt.Errorf("serializing %s: %w", srcPath, err)
+		}
+
+		if _, serr := os.Stat(dstPath); serr == nil {
+			// Already migrated (prior interrupted run) — remove source and skip
+			os.Remove(srcPath)
+			continue
 		}
 
 		if err := os.WriteFile(dstPath, data, 0644); err != nil {

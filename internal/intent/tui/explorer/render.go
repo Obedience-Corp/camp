@@ -329,6 +329,8 @@ func (m *Model) buildMainView() string {
 		}
 	}
 
+	const dungeonIndent = "    "
+
 	for gi, group := range m.groups {
 		isGroupSelected := gi == m.cursorGroup && m.cursorItem == -1
 		cursor := tui.NoCursor
@@ -358,7 +360,7 @@ func (m *Model) buildMainView() string {
 
 		if group.IsDungeonChild {
 			// Dungeon children: indent header under the Dungeon parent
-			hdr := fmt.Sprintf("    %s %s %s (%d)", cursor, indicator, group.Name, len(group.Intents))
+			hdr := fmt.Sprintf(dungeonIndent+"%s %s %s (%d)", cursor, indicator, group.Name, len(group.Intents))
 			if isGroupSelected && !m.previewFocused {
 				listLines = append(listLines, tui.GroupHeaderSelectedStyle.Render(hdr))
 			} else {
@@ -368,7 +370,7 @@ func (m *Model) buildMainView() string {
 			if group.Expanded {
 				for ii, i := range group.Intents {
 					isSelected := gi == m.cursorGroup && ii == m.cursorItem && !m.previewFocused
-					listLines = append(listLines, "    "+m.renderIntentRow(i, isSelected, titleWidth))
+					listLines = append(listLines, dungeonIndent+m.renderIntentRow(i, isSelected, titleWidth))
 				}
 			}
 			continue

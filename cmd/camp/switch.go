@@ -206,7 +206,7 @@ func formatSwitchPreview(c config.RegisteredCampaign, cfg *config.CampaignConfig
 		// Wrap project names to fit preview width
 		lineWidth := w - 6 // account for padding + indent
 		if lineWidth < 20 {
-			lineWidth = 40
+			lineWidth = 20
 		}
 		line := pad + "  "
 		for i, p := range cfg.Projects {

@@ -126,7 +126,7 @@ type GatherResult struct {
 }
 
 // Gather combines multiple intents into a single gathered intent.
-// Source intents are archived (moved to killed) unless ArchiveSources is false.
+// Source intents are archived (moved to dungeon/archived) unless ArchiveSources is false.
 func (s *Service) Gather(ctx context.Context, ids []string, opts GatherOptions) (*GatherResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("context cancelled: %w", err)
@@ -207,8 +207,8 @@ func (s *Service) Gather(ctx context.Context, ids []string, opts GatherOptions) 
 				continue
 			}
 
-			// Move to killed status
-			archived, err := s.intentSvc.Move(ctx, src.ID, intent.StatusKilled)
+			// Move to archived status
+			archived, err := s.intentSvc.Move(ctx, src.ID, intent.StatusArchived)
 			if err != nil {
 				// Log but continue - non-fatal error
 				continue
