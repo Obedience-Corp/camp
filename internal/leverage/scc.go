@@ -1,0 +1,54 @@
+package leverage
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os/exec"
+)
+
+// SCCRunner implements Runner by shelling out to the scc binary.
+type SCCRunner struct {
+	binaryPath string
+}
+
+// NewSCCRunner creates an SCCRunner after verifying scc is installed.
+// Returns an error with installation instructions if scc is not in PATH.
+func NewSCCRunner() (*SCCRunner, error) {
+	path, err := exec.LookPath("scc")
+	if err != nil {
+		return nil, fmt.Errorf("scc not found: install with 'brew install scc' or visit https://github.com/boyter/scc")
+	}
+	return &SCCRunner{binaryPath: path}, nil
+}
+
+// Run executes scc on dir and returns the parsed json2 result.
+func (r *SCCRunner) Run(ctx context.Context, dir string) (*SCCResult, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	cmd := exec.CommandContext(ctx, r.binaryPath,
+		"--format", FormatJSON2,
+		"--cocomo-project-type", COCOMOOrganic,
+		dir,
+	)
+
+	output, err := cmd.Output()
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("scc cancelled: %w", ctx.Err())
+		}
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return nil, fmt.Errorf("scc failed on %s: %w\nstderr: %s", dir, err, exitErr.Stderr)
+		}
+		return nil, fmt.Errorf("scc failed on %s: %w", dir, err)
+	}
+
+	var result SCCResult
+	if err := json.Unmarshal(output, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse scc json2 output: %w", err)
+	}
+
+	return &result, nil
+}

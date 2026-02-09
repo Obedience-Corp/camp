@@ -401,9 +401,9 @@ func TestGatherDialog_ShiftTabCyclesReverse(t *testing.T) {
 
 func TestCommonPrefix(t *testing.T) {
 	tests := []struct {
-		name   string
-		input  []string
-		want   string
+		name  string
+		input []string
+		want  string
 	}{
 		{"empty", nil, ""},
 		{"single", []string{"hello"}, "hello"},
