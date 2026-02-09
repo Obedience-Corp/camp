@@ -85,7 +85,7 @@ func init() {
 	intentGatherCmd.Flags().StringVar(&gatherType, "type", "", "Override type (idea, feature, bug, research)")
 	intentGatherCmd.Flags().StringVar(&gatherConcept, "concept", "", "Override concept path")
 	intentGatherCmd.Flags().StringVar(&gatherPriority, "priority", "", "Override priority (low, medium, high)")
-	intentGatherCmd.Flags().StringVar(&gatherHorizon, "horizon", "", "Override horizon (now, next, later)")
+	intentGatherCmd.Flags().StringVar(&gatherHorizon, "horizon", "", "Override horizon (now, next, later, someday)")
 
 	// Behavior options
 	intentGatherCmd.Flags().BoolVar(&gatherNoArchive, "no-archive", false, "Don't archive source intents")

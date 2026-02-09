@@ -120,6 +120,9 @@ const (
 
 	// HorizonLater indicates future consideration.
 	HorizonLater Horizon = "later"
+
+	// HorizonSomeday indicates no specific timeframe — do it if/when it makes sense.
+	HorizonSomeday Horizon = "someday"
 )
 
 // String returns the string representation of Horizon.
