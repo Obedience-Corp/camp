@@ -95,15 +95,24 @@ func (m *Model) executeGather() tea.Cmd {
 }
 
 // handleGatherStart opens gather dialog if 2+ intents are selected.
+// If nothing is selected but 2+ intents are visible (filtered), auto-selects all.
 func (m *Model) handleGatherStart() (tea.Model, tea.Cmd) {
 	if len(m.selectedIntents) >= 2 {
 		intents := m.getSelectedIntentObjects()
 		m.gatherDialog = tui.NewGatherDialog(intents)
 		m.focus = focusGatherDialog
+	} else if len(m.selectedIntents) == 0 && len(m.filteredIntents) >= 2 {
+		// No manual selection — gather all visible/filtered intents
+		for _, i := range m.filteredIntents {
+			m.selectedIntents[i.ID] = true
+		}
+		m.multiSelectMode = true
+		m.gatherDialog = tui.NewGatherDialog(m.filteredIntents)
+		m.focus = focusGatherDialog
 	} else if len(m.selectedIntents) == 1 {
 		m.statusMessage = "Select at least 2 intents to gather (Space to select)"
 	} else {
-		m.statusMessage = "Select intents first (Space to select, then Ctrl-g to gather)"
+		m.statusMessage = "Not enough intents to gather"
 	}
 	return m, nil
 }
