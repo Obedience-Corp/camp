@@ -217,10 +217,12 @@ func resolveHorizon(sources []*Intent, explicit Horizon) Horizon {
 func horizonUrgency(h Horizon) int {
 	switch h {
 	case HorizonNow:
-		return 3
+		return 4
 	case HorizonNext:
-		return 2
+		return 3
 	case HorizonLater:
+		return 2
+	case HorizonSomeday:
 		return 1
 	default:
 		return 0

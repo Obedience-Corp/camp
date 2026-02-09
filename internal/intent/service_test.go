@@ -1352,6 +1352,131 @@ func TestIntentService_Search_ContextCancelled(t *testing.T) {
 	}
 }
 
+func TestIntentService_Count(t *testing.T) {
+	tmpDir := t.TempDir()
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
+	ctx := context.Background()
+
+	// Empty directories — all counts should be zero
+	counts, total, err := svc.Count(ctx)
+	if err != nil {
+		t.Fatalf("Count() error = %v", err)
+	}
+	if total != 0 {
+		t.Errorf("Count() total = %d, want 0", total)
+	}
+	for _, sc := range counts {
+		if sc.Count != 0 {
+			t.Errorf("Count() %s = %d, want 0", sc.Status, sc.Count)
+		}
+	}
+
+	// Create intents across multiple statuses
+	i1, err := svc.CreateDirect(ctx, CreateOptions{
+		Title:     "Count Test 1",
+		Timestamp: time.Date(2026, 2, 1, 10, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateDirect() error = %v", err)
+	}
+	_, err = svc.CreateDirect(ctx, CreateOptions{
+		Title:     "Count Test 2",
+		Timestamp: time.Date(2026, 2, 1, 11, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateDirect() error = %v", err)
+	}
+	_, err = svc.CreateDirect(ctx, CreateOptions{
+		Title:     "Count Test 3",
+		Timestamp: time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateDirect() error = %v", err)
+	}
+
+	// Move one to active
+	_, err = svc.Move(ctx, i1.ID, StatusActive)
+	if err != nil {
+		t.Fatalf("Move() error = %v", err)
+	}
+
+	counts, total, err = svc.Count(ctx)
+	if err != nil {
+		t.Fatalf("Count() error = %v", err)
+	}
+	if total != 3 {
+		t.Errorf("Count() total = %d, want 3", total)
+	}
+
+	// Build a map for easier assertions
+	countMap := make(map[Status]int)
+	for _, sc := range counts {
+		countMap[sc.Status] = sc.Count
+	}
+	if countMap[StatusInbox] != 2 {
+		t.Errorf("inbox count = %d, want 2", countMap[StatusInbox])
+	}
+	if countMap[StatusActive] != 1 {
+		t.Errorf("active count = %d, want 1", countMap[StatusActive])
+	}
+	if countMap[StatusReady] != 0 {
+		t.Errorf("ready count = %d, want 0", countMap[StatusReady])
+	}
+}
+
+func TestIntentService_Count_SkipsNonMarkdown(t *testing.T) {
+	tmpDir := t.TempDir()
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
+	ctx := context.Background()
+
+	// Create inbox with a non-markdown file
+	inboxDir := filepath.Join(tmpDir, "intents", "inbox")
+	if err := os.MkdirAll(inboxDir, 0755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(inboxDir, "README.txt"), []byte("not an intent"), 0644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	// Create one real intent
+	_, err := svc.CreateDirect(ctx, CreateOptions{
+		Title:     "Real Intent",
+		Timestamp: time.Date(2026, 2, 1, 13, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateDirect() error = %v", err)
+	}
+
+	counts, total, err := svc.Count(ctx)
+	if err != nil {
+		t.Fatalf("Count() error = %v", err)
+	}
+	if total != 1 {
+		t.Errorf("Count() total = %d, want 1 (should skip non-md files)", total)
+	}
+
+	countMap := make(map[Status]int)
+	for _, sc := range counts {
+		countMap[sc.Status] = sc.Count
+	}
+	if countMap[StatusInbox] != 1 {
+		t.Errorf("inbox count = %d, want 1", countMap[StatusInbox])
+	}
+}
+
+func TestIntentService_Count_ContextCancelled(t *testing.T) {
+	tmpDir := t.TempDir()
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, _, err := svc.Count(ctx)
+	if err == nil {
+		t.Fatal("Count() should fail with cancelled context")
+	}
+}
+
 func BenchmarkIntentService_Search(b *testing.B) {
 	tmpDir := b.TempDir()
 	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))

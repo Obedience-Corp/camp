@@ -386,7 +386,7 @@ func TestIsValidPriority(t *testing.T) {
 
 func TestIsValidHorizon(t *testing.T) {
 	validHorizons := []Horizon{
-		HorizonNow, HorizonNext, HorizonLater,
+		HorizonNow, HorizonNext, HorizonLater, HorizonSomeday,
 	}
 
 	for _, h := range validHorizons {

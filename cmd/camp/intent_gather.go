@@ -85,7 +85,7 @@ func init() {
 	intentGatherCmd.Flags().StringVar(&gatherType, "type", "", "Override type (idea, feature, bug, research)")
 	intentGatherCmd.Flags().StringVar(&gatherConcept, "concept", "", "Override concept path")
 	intentGatherCmd.Flags().StringVar(&gatherPriority, "priority", "", "Override priority (low, medium, high)")
-	intentGatherCmd.Flags().StringVar(&gatherHorizon, "horizon", "", "Override horizon (now, next, later)")
+	intentGatherCmd.Flags().StringVar(&gatherHorizon, "horizon", "", "Override horizon (now, next, later, someday)")
 
 	// Behavior options
 	intentGatherCmd.Flags().BoolVar(&gatherNoArchive, "no-archive", false, "Don't archive source intents")
@@ -115,7 +115,7 @@ func runIntentGather(cmd *cobra.Command, args []string) error {
 	}
 
 	// Discover intents to gather
-	ids, err := discoverIntentsToGather(ctx, gatherSvc, args)
+	ids, err := discoverIntentsToGather(ctx, gatherSvc, intentSvc, args)
 	if err != nil {
 		return err
 	}
@@ -183,7 +183,7 @@ func runIntentGather(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func discoverIntentsToGather(ctx context.Context, svc *gather.Service, args []string) ([]string, error) {
+func discoverIntentsToGather(ctx context.Context, svc *gather.Service, intentSvc *intent.IntentService, args []string) ([]string, error) {
 	// Count discovery methods specified
 	methods := 0
 	if len(args) > 0 {
@@ -240,6 +240,15 @@ func discoverIntentsToGather(ctx context.Context, svc *gather.Service, args []st
 
 	// By similarity
 	if gatherSimilar != "" {
+		// Validate reference intent is not in a final state
+		refIntent, err := intentSvc.Get(ctx, gatherSimilar)
+		if err != nil {
+			return nil, fmt.Errorf("reference intent %q not found: %w", gatherSimilar, err)
+		}
+		if refIntent.Status.IsFinal() {
+			return nil, fmt.Errorf("reference intent %q is in %s status — only inbox/active/ready intents can be gathered", gatherSimilar, refIntent.Status)
+		}
+
 		similar, err := svc.FindSimilar(ctx, gatherSimilar, gatherMinScore)
 		if err != nil {
 			return nil, fmt.Errorf("finding similar: %w", err)

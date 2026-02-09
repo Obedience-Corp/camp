@@ -34,6 +34,12 @@ func (s Status) String() string {
 	return string(s)
 }
 
+// IsFinal returns true if the status is a terminal state (done or killed).
+// Intents in final states are not eligible for gathering or indexing.
+func (s Status) IsFinal() bool {
+	return s == StatusDone || s == StatusKilled
+}
+
 // Type categorizes the nature of work described by an intent.
 type Type string
 
@@ -120,6 +126,9 @@ const (
 
 	// HorizonLater indicates future consideration.
 	HorizonLater Horizon = "later"
+
+	// HorizonSomeday indicates no specific timeframe — do it if/when it makes sense.
+	HorizonSomeday Horizon = "someday"
 )
 
 // String returns the string representation of Horizon.

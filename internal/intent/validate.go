@@ -107,7 +107,7 @@ func isValidPriority(p Priority) bool {
 // isValidHorizon returns true if the horizon is a known valid value.
 func isValidHorizon(h Horizon) bool {
 	switch h {
-	case HorizonNow, HorizonNext, HorizonLater:
+	case HorizonNow, HorizonNext, HorizonLater, HorizonSomeday:
 		return true
 	default:
 		return false

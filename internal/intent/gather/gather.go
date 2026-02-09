@@ -76,6 +76,9 @@ func (s *Service) FindSimilar(ctx context.Context, id string, minScore float64) 
 		if err != nil {
 			continue // Skip intents that can't be loaded
 		}
+		if i.Status.IsFinal() {
+			continue // Skip done/killed intents — not eligible for gathering
+		}
 		results = append(results, SimilarResult{
 			Intent: i,
 			Score:  sim.Score,
@@ -218,12 +221,16 @@ func (s *Service) Gather(ctx context.Context, ids []string, opts GatherOptions) 
 }
 
 // loadIntents loads full intent objects from a list of IDs.
+// Intents in final states (done/killed) are excluded.
 func (s *Service) loadIntents(ctx context.Context, ids []string) ([]*intent.Intent, error) {
 	intents := make([]*intent.Intent, 0, len(ids))
 	for _, id := range ids {
 		i, err := s.intentSvc.Get(ctx, id)
 		if err != nil {
 			continue // Skip intents that can't be loaded
+		}
+		if i.Status.IsFinal() {
+			continue // Skip done/killed intents — not eligible for gathering
 		}
 		intents = append(intents, i)
 	}
