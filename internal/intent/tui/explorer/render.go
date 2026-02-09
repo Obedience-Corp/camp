@@ -356,6 +356,24 @@ func (m *Model) buildMainView() string {
 			indicator = "v"
 		}
 
+		if group.IsDungeonChild {
+			// Dungeon children: indent header under the Dungeon parent
+			hdr := fmt.Sprintf("    %s %s %s (%d)", cursor, indicator, group.Name, len(group.Intents))
+			if isGroupSelected && !m.previewFocused {
+				listLines = append(listLines, tui.GroupHeaderSelectedStyle.Render(hdr))
+			} else {
+				listLines = append(listLines, tui.GroupHeaderStyle.Render(hdr))
+			}
+
+			if group.Expanded {
+				for ii, i := range group.Intents {
+					isSelected := gi == m.cursorGroup && ii == m.cursorItem && !m.previewFocused
+					listLines = append(listLines, "    "+m.renderIntentRow(i, isSelected, titleWidth))
+				}
+			}
+			continue
+		}
+
 		hdr := fmt.Sprintf("%s %s %s (%d)", cursor, indicator, group.Name, len(group.Intents))
 		if isGroupSelected && !m.previewFocused {
 			listLines = append(listLines, tui.GroupHeaderSelectedStyle.Render(hdr))

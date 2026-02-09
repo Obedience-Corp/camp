@@ -269,12 +269,12 @@ func (m Model) SelectedIntent() *intent.Intent {
 // When dungeonExpanded is false, only the Dungeon parent group is shown.
 // When true, the 4 child groups are appended after the parent.
 func groupIntentsByStatus(intents []*intent.Intent, dungeonExpanded bool) []IntentGroup {
-	// Dungeon child group definitions
+	// Dungeon child group definitions (indentation applied at render time)
 	dungeonChildren := []IntentGroup{
-		{Name: "  Done", Status: intent.StatusDone, Expanded: false, IsDungeonChild: true},
-		{Name: "  Killed", Status: intent.StatusKilled, Expanded: false, IsDungeonChild: true},
-		{Name: "  Archived", Status: intent.StatusArchived, Expanded: false, IsDungeonChild: true},
-		{Name: "  Someday", Status: intent.StatusSomeday, Expanded: false, IsDungeonChild: true},
+		{Name: "Done", Status: intent.StatusDone, Expanded: false, IsDungeonChild: true},
+		{Name: "Killed", Status: intent.StatusKilled, Expanded: false, IsDungeonChild: true},
+		{Name: "Archived", Status: intent.StatusArchived, Expanded: false, IsDungeonChild: true},
+		{Name: "Someday", Status: intent.StatusSomeday, Expanded: false, IsDungeonChild: true},
 	}
 
 	// Create a map for intent distribution
