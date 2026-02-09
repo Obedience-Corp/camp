@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 
 	"github.com/ktr0731/go-fuzzyfinder"
 	"github.com/spf13/cobra"
@@ -132,6 +133,21 @@ func pickCampaign(cmd *cobra.Command, reg *config.Registry) (config.RegisteredCa
 	// Detect current campaign for highlighting
 	currentPath, _ := campaign.DetectCached(ctx)
 
+	// Cache loaded configs to avoid re-reading on every preview render
+	cfgCache := map[string]*config.CampaignConfig{}
+	loadConfig := func(path string) *config.CampaignConfig {
+		if cfg, ok := cfgCache[path]; ok {
+			return cfg
+		}
+		cfg, err := config.LoadCampaignConfig(ctx, path)
+		if err != nil {
+			cfgCache[path] = nil
+			return nil
+		}
+		cfgCache[path] = cfg
+		return cfg
+	}
+
 	idx, err := fuzzyfinder.Find(
 		all,
 		func(i int) string {
@@ -146,14 +162,8 @@ func pickCampaign(cmd *cobra.Command, reg *config.Registry) (config.RegisteredCa
 				return ""
 			}
 			c := all[i]
-			preview := fmt.Sprintf("  Name: %s\n  Path: %s", c.Name, c.Path)
-			if !c.LastAccess.IsZero() {
-				preview += fmt.Sprintf("\n  Last: %s", c.LastAccess.Format("Jan 2 15:04"))
-			}
-			if c.Path == currentPath {
-				preview += "\n\n  (current)"
-			}
-			return preview
+			cfg := loadConfig(c.Path)
+			return formatSwitchPreview(c, cfg, currentPath, w)
 		}),
 		fuzzyfinder.WithPromptString("Switch to: "),
 		fuzzyfinder.WithHeader("  ↑/↓ navigate • type to filter • esc cancel"),
@@ -167,4 +177,64 @@ func pickCampaign(cmd *cobra.Command, reg *config.Registry) (config.RegisteredCa
 	}
 
 	return all[idx], nil
+}
+
+// formatSwitchPreview renders the preview pane for a campaign in the switch picker.
+// If cfg is non-nil, rich details (mission, description, projects) are shown.
+// Falls back to registry-only data when cfg is nil.
+func formatSwitchPreview(c config.RegisteredCampaign, cfg *config.CampaignConfig, currentPath string, w int) string {
+	var b strings.Builder
+	pad := "  "
+
+	b.WriteString(fmt.Sprintf("%s%s", pad, c.Name))
+	if c.Type != "" {
+		b.WriteString(fmt.Sprintf("  (%s)", c.Type))
+	}
+	b.WriteByte('\n')
+
+	if cfg != nil && cfg.Mission != "" {
+		b.WriteString(fmt.Sprintf("%s%s\n", pad, cfg.Mission))
+	}
+
+	if cfg != nil && cfg.Description != "" {
+		b.WriteString(fmt.Sprintf("%s%s\n", pad, cfg.Description))
+	}
+
+	if cfg != nil && len(cfg.Projects) > 0 {
+		b.WriteByte('\n')
+		b.WriteString(fmt.Sprintf("%sProjects: (%d)\n", pad, len(cfg.Projects)))
+		// Wrap project names to fit preview width
+		lineWidth := w - 6 // account for padding + indent
+		if lineWidth < 20 {
+			lineWidth = 40
+		}
+		line := pad + "  "
+		for i, p := range cfg.Projects {
+			name := p.Name
+			if i < len(cfg.Projects)-1 {
+				name += ", "
+			}
+			if len(line)+len(name) > lineWidth && line != pad+"  " {
+				b.WriteString(line + "\n")
+				line = pad + "  "
+			}
+			line += name
+		}
+		if line != pad+"  " {
+			b.WriteString(line + "\n")
+		}
+	}
+
+	b.WriteByte('\n')
+	b.WriteString(fmt.Sprintf("%sPath: %s\n", pad, c.Path))
+
+	if !c.LastAccess.IsZero() {
+		b.WriteString(fmt.Sprintf("%sLast: %s\n", pad, c.LastAccess.Format("Jan 2 15:04")))
+	}
+
+	if c.Path == currentPath {
+		b.WriteString(fmt.Sprintf("\n%s(current)\n", pad))
+	}
+
+	return b.String()
 }
