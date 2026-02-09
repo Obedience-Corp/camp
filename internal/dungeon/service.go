@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 // Service errors.
@@ -257,6 +258,94 @@ func (s *Service) AppendCrawlLog(ctx context.Context, entry CrawlEntry) error {
 	// Write with newline
 	if _, err := f.Write(append(data, '\n')); err != nil {
 		return fmt.Errorf("writing entry: %w", err)
+	}
+
+	return nil
+}
+
+// ListParentItems returns all items in the parent directory that are candidates
+// for moving into the dungeon. It excludes the dungeon directory itself,
+// campaign metadata, git directories, and other system files.
+func (s *Service) ListParentItems(ctx context.Context, parentPath string) ([]DungeonItem, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("context cancelled: %w", err)
+	}
+
+	entries, err := os.ReadDir(parentPath)
+	if err != nil {
+		return nil, fmt.Errorf("reading parent directory: %w", err)
+	}
+
+	excluded := map[string]bool{
+		"dungeon":    true,
+		".campaign":  true,
+		".git":       true,
+		"CLAUDE.md":  true,
+		".gitkeep":   true,
+		".gitignore": true,
+	}
+
+	var items []DungeonItem
+	for _, entry := range entries {
+		name := entry.Name()
+
+		if excluded[name] {
+			continue
+		}
+
+		// Skip hidden files not explicitly excluded
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
+
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+
+		itemType := ItemTypeFile
+		if entry.IsDir() {
+			itemType = ItemTypeDirectory
+		}
+
+		items = append(items, DungeonItem{
+			Name:    name,
+			Path:    filepath.Join(parentPath, name),
+			Type:    itemType,
+			ModTime: info.ModTime(),
+		})
+	}
+
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].ModTime.Before(items[j].ModTime)
+	})
+
+	return items, nil
+}
+
+// MoveToDungeon moves an item from the parent directory into the dungeon root.
+func (s *Service) MoveToDungeon(ctx context.Context, itemName, parentPath string) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("context cancelled: %w", err)
+	}
+
+	sourcePath := filepath.Join(parentPath, itemName)
+	targetPath := filepath.Join(s.dungeonPath, itemName)
+
+	if _, err := os.Stat(sourcePath); err != nil {
+		return fmt.Errorf("%w: %s", ErrNotFound, itemName)
+	}
+
+	if _, err := os.Stat(s.dungeonPath); err != nil {
+		return fmt.Errorf("dungeon directory does not exist: %w", err)
+	}
+
+	if _, err := os.Stat(targetPath); err == nil {
+		return fmt.Errorf("%w: %s already in dungeon", ErrAlreadyExists, itemName)
+	}
+
+	if err := os.Rename(sourcePath, targetPath); err != nil {
+		return fmt.Errorf("moving %s to dungeon: %w", itemName, err)
 	}
 
 	return nil
