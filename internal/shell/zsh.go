@@ -107,6 +107,12 @@ cr() {
   camp run "$@"
 }
 
+# Switch campaigns
+# Usage: csw [name]
+csw() {
+  camp switch "$@"
+}
+
 # Quick intent capture
 # Usage: cint "my idea"
 cint() {

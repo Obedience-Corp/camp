@@ -90,6 +90,12 @@ function cr --description "Run command from campaign root"
     camp run $argv
 end
 
+# Switch campaigns
+# Usage: csw [name]
+function csw --description "Switch campaigns (shorthand for camp switch)"
+    camp switch $argv
+end
+
 # Quick intent capture
 # Usage: cint "my idea"
 function cint --description "Quick intent capture"
