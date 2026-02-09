@@ -102,11 +102,11 @@ func TestCompleteWorktree_NoAt(t *testing.T) {
 	os.MkdirAll(campDir, 0755)
 
 	// Create worktree structure
-	worktreeDir := filepath.Join(root, "worktrees", "api-service", "feature-x")
+	worktreeDir := filepath.Join(root, "projects", "worktrees", "api-service", "feature-x")
 	os.MkdirAll(worktreeDir, 0755)
-	worktreeDir2 := filepath.Join(root, "worktrees", "api-service", "bugfix-y")
+	worktreeDir2 := filepath.Join(root, "projects", "worktrees", "api-service", "bugfix-y")
 	os.MkdirAll(worktreeDir2, 0755)
-	worktreeDir3 := filepath.Join(root, "worktrees", "web-app", "main")
+	worktreeDir3 := filepath.Join(root, "projects", "worktrees", "web-app", "main")
 	os.MkdirAll(worktreeDir3, 0755)
 
 	oldWd, _ := os.Getwd()
@@ -140,9 +140,9 @@ func TestCompleteWorktree_WithAt(t *testing.T) {
 	os.MkdirAll(campDir, 0755)
 
 	// Create worktree structure
-	worktreeDir := filepath.Join(root, "worktrees", "api-service", "feature-x")
+	worktreeDir := filepath.Join(root, "projects", "worktrees", "api-service", "feature-x")
 	os.MkdirAll(worktreeDir, 0755)
-	worktreeDir2 := filepath.Join(root, "worktrees", "api-service", "bugfix-y")
+	worktreeDir2 := filepath.Join(root, "projects", "worktrees", "api-service", "bugfix-y")
 	os.MkdirAll(worktreeDir2, 0755)
 
 	oldWd, _ := os.Getwd()
@@ -168,9 +168,9 @@ func TestCompleteWorktree_WithBranchPartial(t *testing.T) {
 	os.MkdirAll(campDir, 0755)
 
 	// Create worktree structure
-	worktreeDir := filepath.Join(root, "worktrees", "api-service", "feature-x")
+	worktreeDir := filepath.Join(root, "projects", "worktrees", "api-service", "feature-x")
 	os.MkdirAll(worktreeDir, 0755)
-	worktreeDir2 := filepath.Join(root, "worktrees", "api-service", "bugfix-y")
+	worktreeDir2 := filepath.Join(root, "projects", "worktrees", "api-service", "bugfix-y")
 	os.MkdirAll(worktreeDir2, 0755)
 
 	oldWd, _ := os.Getwd()

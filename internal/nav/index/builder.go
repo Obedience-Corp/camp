@@ -51,6 +51,11 @@ func (b *Builder) Build(ctx context.Context) (*Index, error) {
 			return nil, ctx.Err()
 		}
 
+		// Worktrees use nested project@branch scanning, handled below
+		if cat == nav.CategoryWorktrees {
+			continue
+		}
+
 		targets, err := b.scanCategory(ctx, cat)
 		if err != nil {
 			// Log but don't fail - some directories may not exist
@@ -130,7 +135,7 @@ func (b *Builder) scanCategory(ctx context.Context, cat nav.Category) ([]Target,
 // Worktrees are organized as: worktrees/<project>/<branch>
 // Targets are named as "project@branch".
 func (b *Builder) scanWorktrees(ctx context.Context) ([]Target, error) {
-	worktreesDir := filepath.Join(b.root, "worktrees")
+	worktreesDir := filepath.Join(b.root, nav.CategoryWorktrees.Dir())
 
 	// Check context
 	if ctx.Err() != nil {
@@ -218,6 +223,11 @@ func (b *Builder) BuildWithOptions(ctx context.Context, opts BuildOptions) (*Ind
 			return nil, ctx.Err()
 		}
 
+		// Worktrees use nested project@branch scanning, handled below
+		if cat == nav.CategoryWorktrees {
+			continue
+		}
+
 		targets, err := b.scanCategoryWithOptions(ctx, cat, opts)
 		if err != nil {
 			continue
@@ -289,7 +299,7 @@ func (b *Builder) scanCategoryWithOptions(ctx context.Context, cat nav.Category,
 }
 
 func (b *Builder) scanWorktreesWithOptions(ctx context.Context, opts BuildOptions) ([]Target, error) {
-	worktreesDir := filepath.Join(b.root, "worktrees")
+	worktreesDir := filepath.Join(b.root, nav.CategoryWorktrees.Dir())
 
 	if ctx.Err() != nil {
 		return nil, ctx.Err()

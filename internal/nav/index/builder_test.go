@@ -224,8 +224,8 @@ func TestBuilder_scanWorktrees(t *testing.T) {
 	root := t.TempDir()
 	root, _ = filepath.EvalSymlinks(root)
 
-	// Create worktrees directory structure: worktrees/<project>/<branch>
-	worktreesDir := filepath.Join(root, "worktrees")
+	// Create worktrees directory structure: projects/worktrees/<project>/<branch>
+	worktreesDir := filepath.Join(root, "projects", "worktrees")
 	if err := os.MkdirAll(filepath.Join(worktreesDir, "myproject", "feature-branch"), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -272,7 +272,7 @@ func TestBuilder_scanWorktrees_SkipsHidden(t *testing.T) {
 	root := t.TempDir()
 	root, _ = filepath.EvalSymlinks(root)
 
-	worktreesDir := filepath.Join(root, "worktrees")
+	worktreesDir := filepath.Join(root, "projects", "worktrees")
 	if err := os.MkdirAll(filepath.Join(worktreesDir, ".hidden-proj", "main"), 0755); err != nil {
 		t.Fatal(err)
 	}
