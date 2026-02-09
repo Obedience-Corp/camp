@@ -1,11 +1,11 @@
 package main
 
 import (
-	"context"
 	"fmt"
 
-	"github.com/obediencecorp/camp/internal/workflow"
 	"github.com/spf13/cobra"
+
+	"github.com/obediencecorp/camp/internal/workflow"
 )
 
 var flowStatusCmd = &cobra.Command{
@@ -25,7 +25,7 @@ func init() {
 }
 
 func runFlowStatus(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
 
 	cwd, err := getCwd()
 	if err != nil {
@@ -38,17 +38,22 @@ func runFlowStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	schema := svc.Schema()
-	fmt.Printf("Workflow: %s\n", schema.Name)
+	fmt.Printf("Workflow: %s (v%d)\n", schema.Name, schema.Version)
 	fmt.Printf("Location: %s\n", svc.Root())
 	fmt.Println()
 
-	// List each status with item count
 	for _, status := range schema.AllDirectories() {
 		result, err := svc.List(ctx, status, workflow.ListOptions{})
 		if err != nil {
 			continue
 		}
-		fmt.Printf("  %-20s %d items\n", status+"/", len(result.Items))
+
+		label := status + "/"
+		if status == "." {
+			label = "active (root)"
+		}
+
+		fmt.Printf("  %-20s %d items\n", label, len(result.Items))
 	}
 
 	return nil

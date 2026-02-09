@@ -30,7 +30,6 @@ MANAGING ITEMS:
   camp flow list              List registered flows
   camp flow items             List items in a status directory
   camp flow move <item> <to>  Move an item to a new status
-  camp flow crawl             Interactive review of items
 
 RUNNING FLOWS:
   camp flow run <name>        Execute a registered flow

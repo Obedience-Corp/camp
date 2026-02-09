@@ -70,8 +70,7 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		"doctor":        false,
 		"dungeon crawl": false,
 		"flow":          false,
-		"flow crawl":    false,
-		"flow init":     false,
+		"flow add":      false,
 		"flow migrate":  false,
 	}
 
@@ -87,8 +86,8 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		}
 	}
 
-	if len(manifest.Commands) != 14 {
-		t.Errorf("expected exactly 14 restricted commands, got %d", len(manifest.Commands))
+	if len(manifest.Commands) != 13 {
+		t.Errorf("expected exactly 13 restricted commands, got %d", len(manifest.Commands))
 	}
 }
 
@@ -136,7 +135,6 @@ func TestManifestCommand_InteractiveFlags(t *testing.T) {
 		"settings":      true,
 		"move":          true,
 		"dungeon crawl": true,
-		"flow crawl":    true,
 	}
 
 	nonInteractiveCommands := map[string]bool{
@@ -145,7 +143,7 @@ func TestManifestCommand_InteractiveFlags(t *testing.T) {
 		"unregister":   true,
 		"shell-init":   true,
 		"doctor":       true,
-		"flow init":    true,
+		"flow add":     true,
 		"flow migrate": true,
 	}
 
