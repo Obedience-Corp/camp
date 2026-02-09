@@ -287,6 +287,51 @@ func TestEditor_TextObjectInnerWord(t *testing.T) {
 	}
 }
 
+func TestEditor_AppendMode(t *testing.T) {
+	e := NewEditor("hello")
+
+	// Move to end of line
+	e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'$'}})
+	// Cursor should be on 'o' (col 4)
+
+	// Press 'a' to append
+	e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	if e.Mode() != ModeInsert {
+		t.Fatalf("Mode() = %v, want ModeInsert", e.Mode())
+	}
+
+	// Type a character — should go AFTER 'o'
+	e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'!'}})
+	if e.Content() != "hello!" {
+		t.Errorf("Content() = %q, want \"hello!\"", e.Content())
+	}
+}
+
+func TestEditor_AppendMidLine(t *testing.T) {
+	e := NewEditor("hello")
+
+	// Move to 'e' (col 1)
+	e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+
+	// Press 'a' to append after 'e'
+	e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'X'}})
+	if e.Content() != "heXllo" {
+		t.Errorf("Content() = %q, want \"heXllo\"", e.Content())
+	}
+}
+
+func TestEditor_AppendEndOfLine(t *testing.T) {
+	e := NewEditor("hi")
+
+	// 'A' appends at end of line
+	e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'A'}})
+	e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'!'}})
+	if e.Content() != "hi!" {
+		t.Errorf("Content() = %q, want \"hi!\"", e.Content())
+	}
+}
+
 func TestEditor_View(t *testing.T) {
 	e := NewEditor("hello\nworld")
 	e.SetSize(80, 10)
