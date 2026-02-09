@@ -1,88 +1,82 @@
 package main
 
 import (
-	"context"
 	"fmt"
-	"time"
+	"strings"
 
-	"github.com/obediencecorp/camp/internal/workflow"
 	"github.com/spf13/cobra"
+
+	"github.com/obediencecorp/camp/internal/campaign"
+	"github.com/obediencecorp/camp/internal/flow"
 )
 
-var (
-	flowListAll  bool
-	flowListJSON bool
-)
+var flowRegistryListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List registered flows from the registry",
+	Long: `List all flows registered in .campaign/flows/registry.yaml.
 
-var flowListCmd = &cobra.Command{
-	Use:   "list [status]",
-	Short: "List items in a status directory",
-	Long: `List items in a status directory.
-
-If no status is specified, lists items in the default status (usually 'active').
-Use --all to list items in all status directories.
+Shows flow name, description, and tags in table format.
 
 Examples:
-  camp flow list              List items in default status
-  camp flow list active       List items in active/
-  camp flow list dungeon/completed  List items in dungeon/completed/
-  camp flow list --all        List items in all statuses`,
-	Args: cobra.MaximumNArgs(1),
-	RunE: runFlowList,
+  camp flow list`,
+	Args: cobra.NoArgs,
+	RunE: runFlowRegistryList,
 }
 
 func init() {
-	flowCmd.AddCommand(flowListCmd)
-	flowListCmd.Flags().BoolVarP(&flowListAll, "all", "a", false, "list all statuses")
-	flowListCmd.Flags().BoolVar(&flowListJSON, "json", false, "output as JSON")
+	flowCmd.AddCommand(flowRegistryListCmd)
 }
 
-func runFlowList(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+func runFlowRegistryList(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
 
-	cwd, err := getCwd()
+	campaignRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("not in a campaign directory: %w", err)
 	}
 
-	svc := workflow.NewService(cwd)
-	if err := svc.LoadSchema(ctx); err != nil {
-		return err
+	registry, err := flow.LoadRegistry(campaignRoot)
+	if err != nil {
+		return fmt.Errorf("loading flow registry: %w", err)
 	}
 
-	statuses := []string{}
-	if flowListAll {
-		statuses = svc.Schema().AllDirectories()
-	} else if len(args) > 0 {
-		statuses = []string{args[0]}
-	} else {
-		// Default to the schema's default status, or "active"
-		status := svc.Schema().DefaultStatus
-		if status == "" {
-			status = "active"
-		}
-		statuses = []string{status}
+	names := registry.List()
+	if len(names) == 0 {
+		fmt.Printf("No flows registered.\n\n")
+		fmt.Printf("Add flows to: %s\n", flow.RegistryPath(campaignRoot))
+		return nil
 	}
 
-	for _, status := range statuses {
-		result, err := svc.List(ctx, status, workflow.ListOptions{JSON: flowListJSON})
-		if err != nil {
-			fmt.Printf("Error listing %s: %v\n", status, err)
-			continue
+	// Calculate column widths
+	maxNameLen := 4  // "Name"
+	maxDescLen := 11 // "Description"
+	for _, name := range names {
+		if len(name) > maxNameLen {
+			maxNameLen = len(name)
 		}
-
-		if flowListAll {
-			fmt.Printf("\n%s/ (%d items)\n", status, len(result.Items))
-		}
-
-		for _, item := range result.Items {
-			typeChar := " "
-			if item.IsDir {
-				typeChar = "d"
-			}
-			fmt.Printf("  %s %-30s %s\n", typeChar, item.Name, item.ModTime.Format(time.RFC3339))
+		f, _ := registry.Get(name)
+		if len(f.Description) > maxDescLen {
+			maxDescLen = len(f.Description)
 		}
 	}
 
+	// Print header
+	fmt.Printf("%-*s  %-*s  %s\n", maxNameLen, "Name", maxDescLen, "Description", "Tags")
+	fmt.Printf("%s  %s  %s\n",
+		strings.Repeat("-", maxNameLen),
+		strings.Repeat("-", maxDescLen),
+		strings.Repeat("-", 20))
+
+	// Print flows
+	for _, name := range names {
+		f, _ := registry.Get(name)
+		tags := strings.Join(f.Tags, ", ")
+		if tags == "" {
+			tags = "-"
+		}
+		fmt.Printf("%-*s  %-*s  %s\n", maxNameLen, name, maxDescLen, f.Description, tags)
+	}
+
+	fmt.Printf("\nTotal: %d flow(s)\n", len(names))
 	return nil
 }

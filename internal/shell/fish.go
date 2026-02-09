@@ -80,8 +80,9 @@ complete -c cgo -n "__camp_is_first_arg" -a "pi" -d "workflow/pipelines/"
 complete -c cgo -n "__camp_is_first_arg" -a "de" -d "workflow/design/"
 complete -c cgo -n "__camp_is_first_arg" -a "i" -d "workflow/intents/"
 
-# Dynamic completion from camp
-complete -c cgo -n "not __camp_is_first_arg" -a "(camp complete (commandline -opc)[2..-1] 2>/dev/null)"
+# Dynamic completion from camp with fuzzy matching and path descriptions
+# Fish natively supports tab-separated name\tdescription format
+complete -c cgo -n "not __camp_is_first_arg" -a "(camp complete --described (commandline -opc)[2..-1] 2>/dev/null)"
 
 # Run command from campaign root
 # Usage: cr <command> [args...]
@@ -117,7 +118,7 @@ complete -c camp -n __fish_use_subcommand -a "complete" -d "Generate completion 
 complete -c camp -n __fish_use_subcommand -a "version" -d "Show version information"
 
 # Subcommand completions
-complete -c camp -n "__fish_seen_subcommand_from go" -a "(camp complete (commandline -opc)[3..-1] 2>/dev/null)"
+complete -c camp -n "__fish_seen_subcommand_from go" -a "(camp complete --described (commandline -opc)[3..-1] 2>/dev/null)"
 complete -c camp -n "__fish_seen_subcommand_from shell-init" -a "zsh" -d "Zsh shell"
 complete -c camp -n "__fish_seen_subcommand_from shell-init" -a "bash" -d "Bash shell"
 complete -c camp -n "__fish_seen_subcommand_from shell-init" -a "fish" -d "Fish shell"

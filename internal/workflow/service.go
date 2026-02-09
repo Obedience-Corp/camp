@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -98,7 +99,8 @@ func (s *Service) LoadSchema(ctx context.Context) error {
 
 // InitOptions configures workflow initialization.
 type InitOptions struct {
-	Force bool // Overwrite existing files
+	Force         bool // Overwrite existing files
+	SchemaVersion int  // Schema version to use (0 or 1 = v1, 2 = v2)
 }
 
 // InitResult contains what was created during init.
@@ -247,7 +249,12 @@ func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, erro
 	}
 
 	// Get default schema
-	schema := DefaultSchema()
+	var schema *Schema
+	if opts.SchemaVersion == 2 {
+		schema = DefaultSchemaV2()
+	} else {
+		schema = DefaultSchema()
+	}
 
 	// Write schema file
 	data, err := yaml.Marshal(schema)
@@ -276,14 +283,27 @@ func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, erro
 		result.CreatedDirs = append(result.CreatedDirs, dirPath)
 	}
 
-	// Create OBEY.md files in active/, ready/, and dungeon/
-	obeyFiles := []struct {
+	// Create OBEY.md files based on schema version
+	var obeyFiles []struct {
 		path        string
 		getTemplate func() ([]byte, error)
-	}{
-		{filepath.Join(s.root, "active", "OBEY.md"), GetActiveOBEYTemplate},
-		{filepath.Join(s.root, "ready", "OBEY.md"), GetReadyOBEYTemplate},
-		{filepath.Join(s.root, "dungeon", "OBEY.md"), GetDungeonOBEYTemplate},
+	}
+	if schema.Version == 2 {
+		obeyFiles = []struct {
+			path        string
+			getTemplate func() ([]byte, error)
+		}{
+			{filepath.Join(s.root, "dungeon", "OBEY.md"), GetDungeonOBEYTemplate},
+		}
+	} else {
+		obeyFiles = []struct {
+			path        string
+			getTemplate func() ([]byte, error)
+		}{
+			{filepath.Join(s.root, "active", "OBEY.md"), GetActiveOBEYTemplate},
+			{filepath.Join(s.root, "ready", "OBEY.md"), GetReadyOBEYTemplate},
+			{filepath.Join(s.root, "dungeon", "OBEY.md"), GetDungeonOBEYTemplate},
+		}
 	}
 
 	for _, obey := range obeyFiles {
@@ -411,6 +431,9 @@ func (s *Service) List(ctx context.Context, status string, opts ListOptions) (*L
 		".gitkeep": true,
 	}
 
+	// For v2 root listing, also exclude dungeon dir and hidden entries
+	isRootListing := status == "." && s.schema != nil && s.schema.Version == 2
+
 	for _, entry := range entries {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -419,6 +442,16 @@ func (s *Service) List(ctx context.Context, status string, opts ListOptions) (*L
 		// Skip excluded files
 		if excludedFiles[entry.Name()] {
 			continue
+		}
+
+		// Skip hidden files and dungeon when listing root in v2
+		if isRootListing {
+			if strings.HasPrefix(entry.Name(), ".") {
+				continue
+			}
+			if entry.Name() == "dungeon" && entry.IsDir() {
+				continue
+			}
 		}
 
 		info, err := entry.Info()
@@ -633,6 +666,118 @@ func (s *Service) Migrate(ctx context.Context, opts MigrateOptions) (*MigrateRes
 
 		result.Schema = schema
 	}
+
+	return result, nil
+}
+
+// MigrateV1ToV2Result contains the result of a v1 to v2 migration.
+type MigrateV1ToV2Result struct {
+	MovedItems   []string // Items moved
+	RemovedDirs  []string // Directories removed
+	SchemaUpdate bool     // Whether schema was updated
+}
+
+// MigrateV1ToV2 upgrades a v1 workflow to v2 dungeon-centric model.
+// Moves active/ items to root, ready/ items to dungeon/ready/,
+// removes empty active/ and ready/ dirs, and updates schema to v2.
+func (s *Service) MigrateV1ToV2(ctx context.Context, dryRun bool) (*MigrateV1ToV2Result, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	if s.schema == nil {
+		if err := s.LoadSchema(ctx); err != nil {
+			return nil, err
+		}
+	}
+
+	if s.schema.Version == 2 {
+		return nil, fmt.Errorf("workflow is already v2")
+	}
+
+	result := &MigrateV1ToV2Result{}
+
+	// Ensure dungeon/ready exists
+	dungeonReadyPath := s.resolvePath("dungeon/ready")
+	if !dryRun {
+		if err := os.MkdirAll(dungeonReadyPath, 0755); err != nil {
+			return nil, fmt.Errorf("creating dungeon/ready: %w", err)
+		}
+	}
+
+	// Move active/ items to root
+	activePath := s.resolvePath("active")
+	if entries, err := os.ReadDir(activePath); err == nil {
+		for _, entry := range entries {
+			name := entry.Name()
+			if name == ".gitkeep" || name == "OBEY.md" {
+				continue
+			}
+			src := filepath.Join(activePath, name)
+			dst := filepath.Join(s.root, name)
+
+			if !dryRun {
+				if err := os.Rename(src, dst); err != nil {
+					return nil, fmt.Errorf("moving %s to root: %w", name, err)
+				}
+			}
+			result.MovedItems = append(result.MovedItems, fmt.Sprintf("active/%s → ./%s", name, name))
+		}
+	}
+
+	// Move ready/ items to dungeon/ready/
+	readyPath := s.resolvePath("ready")
+	if entries, err := os.ReadDir(readyPath); err == nil {
+		for _, entry := range entries {
+			name := entry.Name()
+			if name == ".gitkeep" || name == "OBEY.md" {
+				continue
+			}
+			src := filepath.Join(readyPath, name)
+			dst := filepath.Join(dungeonReadyPath, name)
+
+			if !dryRun {
+				if err := os.Rename(src, dst); err != nil {
+					return nil, fmt.Errorf("moving %s to dungeon/ready: %w", name, err)
+				}
+			}
+			result.MovedItems = append(result.MovedItems, fmt.Sprintf("ready/%s → dungeon/ready/%s", name, name))
+		}
+	}
+
+	// Remove empty active/ and ready/ directories
+	for _, dir := range []string{activePath, readyPath} {
+		if entries, err := os.ReadDir(dir); err == nil {
+			isEmpty := true
+			for _, e := range entries {
+				if e.Name() != ".gitkeep" && e.Name() != "OBEY.md" {
+					isEmpty = false
+					break
+				}
+			}
+			if isEmpty && !dryRun {
+				if err := os.RemoveAll(dir); err == nil {
+					result.RemovedDirs = append(result.RemovedDirs, dir)
+				}
+			} else if isEmpty {
+				result.RemovedDirs = append(result.RemovedDirs, dir)
+			}
+		}
+	}
+
+	// Update schema to v2
+	if !dryRun {
+		newSchema := DefaultSchemaV2()
+		data, err := yaml.Marshal(newSchema)
+		if err != nil {
+			return nil, fmt.Errorf("marshaling v2 schema: %w", err)
+		}
+		if err := os.WriteFile(s.schemaPath, data, 0644); err != nil {
+			return nil, fmt.Errorf("writing v2 schema: %w", err)
+		}
+		s.schema = newSchema
+	}
+	result.SchemaUpdate = true
 
 	return result, nil
 }

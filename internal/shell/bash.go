@@ -83,9 +83,9 @@ _cgo_complete() {
     return
   fi
 
-  # Second argument - get completion from camp
+  # Second argument - fuzzy match from camp (extract names from tab-separated output)
   local candidates
-  candidates=$(camp complete "${prev}" 2>/dev/null)
+  candidates=$(camp complete --described "${prev}" 2>/dev/null | cut -f1)
   if [ -n "$candidates" ]; then
     COMPREPLY=($(compgen -W "$candidates" -- "$cur"))
   fi

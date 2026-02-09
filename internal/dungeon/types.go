@@ -11,9 +11,10 @@ import (
 type Decision string
 
 const (
-	DecisionKeep    Decision = "keep"
-	DecisionArchive Decision = "archive"
-	DecisionSkip    Decision = "skip"
+	DecisionKeep          Decision = "keep"
+	DecisionArchive       Decision = "archive"
+	DecisionSkip          Decision = "skip"
+	DecisionMoveToDungeon Decision = "move_to_dungeon"
 )
 
 // ItemType identifies whether an item is a file or directory.
@@ -71,4 +72,18 @@ type CrawlSummary struct {
 // Total returns the total number of items processed.
 func (s CrawlSummary) Total() int {
 	return s.Kept + s.Archived + s.Skipped
+}
+
+// TriageSummary tracks the results of a triage crawl operation.
+// It counts how many parent items were moved to the dungeon,
+// kept in place, or skipped during review.
+type TriageSummary struct {
+	Moved   int // Items moved into dungeon
+	Kept    int // Items kept in parent directory
+	Skipped int // Items skipped during review
+}
+
+// Total returns the total number of items processed.
+func (s TriageSummary) Total() int {
+	return s.Moved + s.Kept + s.Skipped
 }

@@ -1,29 +1,30 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"fmt"
 
+	"github.com/spf13/cobra"
+
 	"github.com/obediencecorp/camp/internal/ui"
 	"github.com/obediencecorp/camp/internal/workflow"
-	"github.com/spf13/cobra"
 )
 
-var flowInitForce bool
+var flowAddForce bool
 
-var flowInitCmd = &cobra.Command{
-	Use:   "init",
-	Short: "Initialize a new workflow",
-	Long: `Initialize a new workflow with the default structure.
+var flowAddCmd = &cobra.Command{
+	Use:     "add",
+	Aliases: []string{"init"},
+	Short:   "Add workflow tracking to current directory",
+	Long: `Add workflow tracking to the current directory.
 
-Creates a .workflow.yaml configuration file and the following directories:
-  active/      Work in progress
-  ready/       Prepared for action
-  dungeon/
-    completed/ Successfully finished
-    archived/  Preserved but inactive
-    someday/   Maybe later
+Creates a .workflow.yaml file and dungeon/ directory structure.
+Uses workflow schema v2 (dungeon-centric model) where:
+  - Root directory (.) = active work
+  - dungeon/           = all other statuses
+
+If dungeon/ already exists, only creates .workflow.yaml.
+If both exist, displays a notice.
 
 Use --force to overwrite an existing workflow configuration.
 
@@ -31,33 +32,35 @@ Note: Flows cannot be nested inside other flows. If you're inside a flow,
 navigate to a directory outside of it before running this command.
 
 Examples:
-  camp flow init              Initialize workflow in current directory
-  camp flow init --force      Overwrite existing workflow`,
+  camp flow add              Add workflow to current directory
+  camp flow add --force      Overwrite existing workflow
+  camp flow init             Alias for 'add'`,
 	Annotations: map[string]string{
 		"agent_allowed": "false",
 		"agent_reason":  "Creates workflow structure, requires human decision",
 	},
-	RunE: runFlowInit,
+	RunE: runFlowAdd,
 }
 
 func init() {
-	flowCmd.AddCommand(flowInitCmd)
-	flowInitCmd.Flags().BoolVarP(&flowInitForce, "force", "f", false, "overwrite existing workflow")
+	flowCmd.AddCommand(flowAddCmd)
+	flowAddCmd.Flags().BoolVarP(&flowAddForce, "force", "f", false, "overwrite existing workflow")
 }
 
-func runFlowInit(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+func runFlowAdd(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
 
-	// Get current directory
 	cwd, err := getCwd()
 	if err != nil {
 		return err
 	}
 
 	svc := workflow.NewService(cwd)
-	result, err := svc.Init(ctx, workflow.InitOptions{Force: flowInitForce})
+	result, err := svc.Init(ctx, workflow.InitOptions{
+		Force:         flowAddForce,
+		SchemaVersion: 2,
+	})
 	if err != nil {
-		// Handle flow nesting error with clear formatting
 		var nestedErr *workflow.FlowNestedError
 		if errors.As(err, &nestedErr) {
 			ui.Error("Cannot create flow inside existing flow")
@@ -70,12 +73,11 @@ func runFlowInit(cmd *cobra.Command, args []string) error {
 			fmt.Println("  - Status directories would conflict")
 			fmt.Println()
 			fmt.Println("To create a new flow, navigate outside the current flow first.")
-			return nil // Return nil to avoid double-printing error
+			return nil
 		}
 		return err
 	}
 
-	// Print results
 	ui.Success("Workflow initialized!")
 	fmt.Println()
 

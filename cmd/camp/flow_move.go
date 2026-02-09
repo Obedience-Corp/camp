@@ -48,7 +48,7 @@ func init() {
 }
 
 func runFlowMove(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
 
 	item := args[0]
 	to := args[1]
@@ -59,6 +59,15 @@ func runFlowMove(cmd *cobra.Command, args []string) error {
 	}
 
 	svc := workflow.NewService(cwd)
+	if err := svc.LoadSchema(ctx); err != nil {
+		return err
+	}
+
+	// V2 shortcut: "active" → "." for root directory
+	if svc.Schema().Version == 2 && to == "active" {
+		to = "."
+	}
+
 	result, err := svc.Move(ctx, item, to, workflow.MoveOptions{
 		Reason: flowMoveReason,
 		Force:  flowMoveForce,

@@ -63,7 +63,7 @@ func runFlowShow(cmd *cobra.Command, args []string) error {
 	}
 
 	// Show formatted structure
-	fmt.Printf("Workflow: %s\n", schema.Name)
+	fmt.Printf("Workflow: %s (v%d)\n", schema.Name, schema.Version)
 	if schema.Description != "" {
 		fmt.Printf("Description: %s\n", schema.Description)
 	}
@@ -79,7 +79,11 @@ func runFlowShow(cmd *cobra.Command, args []string) error {
 				fmt.Printf("      %s\n", child.Description)
 			}
 		} else {
-			fmt.Printf("  %s/\n", name)
+			label := name + "/"
+			if name == "." {
+				label = ". (root = active work)"
+			}
+			fmt.Printf("  %s\n", label)
 			fmt.Printf("    %s\n", dir.Description)
 			if len(dir.TransitionOpts) > 0 {
 				fmt.Printf("    Transitions: %v\n", dir.TransitionOpts)

@@ -43,7 +43,7 @@ camp flow move old-item ready     # Queue it up
 
 Run the interactive crawl to review dungeon contents:
 ```bash
-camp flow crawl dungeon
+camp dungeon crawl
 ```
 
 ## Best Practices
@@ -51,4 +51,4 @@ camp flow crawl dungeon
 1. **completed/** - For things you might reference (successful experiments, shipped features)
 2. **archived/** - For true history (old versions, superseded designs)
 3. **someday/** - Be honest - if it's been here 6+ months, consider archiving
-4. Review periodically with `camp flow crawl dungeon`
+4. Review periodically with `camp dungeon crawl`
