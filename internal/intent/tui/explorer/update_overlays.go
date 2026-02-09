@@ -1,6 +1,8 @@
 package explorer
 
 import (
+	"fmt"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/obediencecorp/camp/internal/intent/tui"
 )
@@ -70,15 +72,24 @@ func (m Model) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.confirmDialog.HandleKey(msg.String())
 	if m.confirmDialog.IsDone() {
 		m.focus = focusList
-		if m.confirmDialog.Confirmed() && m.pendingIntent != nil {
+		if m.confirmDialog.Confirmed() {
 			switch m.pendingAction {
 			case "delete":
-				cmd := m.deleteIntent(m.pendingIntent)
-				m.pendingAction = ""
-				m.pendingIntent = nil
-				return m, cmd
+				if m.pendingIntent != nil {
+					cmd := m.deleteIntent(m.pendingIntent)
+					m.pendingAction = ""
+					m.pendingIntent = nil
+					return m, cmd
+				}
 			case "archive":
-				cmd := m.archiveIntent(m.pendingIntent)
+				if m.pendingIntent != nil {
+					cmd := m.archiveIntent(m.pendingIntent)
+					m.pendingAction = ""
+					m.pendingIntent = nil
+					return m, cmd
+				}
+			case "gather":
+				cmd := m.executeGather()
 				m.pendingAction = ""
 				m.pendingIntent = nil
 				return m, cmd
@@ -96,11 +107,24 @@ func (m Model) updateGatherDialog(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.gatherDialog, cmd = m.gatherDialog.Update(msg)
 	if m.gatherDialog.Done() {
-		m.focus = focusList
 		if !m.gatherDialog.Cancelled() {
-			// Execute gather
+			if m.gatherDialog.ArchiveSources() {
+				// Destructive action — require confirmation
+				m.focus = focusConfirm
+				m.pendingAction = "gather"
+				count := len(m.gatherDialog.Intents())
+				m.confirmDialog = tui.NewConfirmationDialog(
+					"Confirm Gather",
+					fmt.Sprintf("Gather %d intents into %q?\n\nSource intents will be archived (moved to killed).",
+						count, m.gatherDialog.Title()),
+				)
+				return m, nil
+			}
+			// Non-destructive — execute immediately
+			m.focus = focusList
 			return m, m.executeGather()
 		}
+		m.focus = focusList
 	}
 	return m, cmd
 }

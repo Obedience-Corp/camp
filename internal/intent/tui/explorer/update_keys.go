@@ -220,7 +220,11 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.handleSelect()
 		}
 	case "ctrl+g":
-		// Open gather dialog if 2+ intents selected
+		// On group header: gather all intents in that group
+		// On item or with selections: gather selected intents
+		if m.cursorItem == -1 && len(m.selectedIntents) == 0 {
+			return m.handleGatherGroup()
+		}
 		return m.handleGatherStart()
 	case "esc":
 		// Clear selections and exit multi-select mode, or clear filters

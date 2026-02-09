@@ -2,6 +2,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -21,6 +22,8 @@ type GatherDialog struct {
 	done           bool
 	cancelled      bool
 	width          int
+	scrollOffset   int // Scroll offset for intent list
+	maxVisible     int // Max intents visible at once
 }
 
 // gatherFinishedMsg is sent when a gather operation completes.
@@ -52,6 +55,7 @@ func NewGatherDialog(intents []*intent.Intent) GatherDialog {
 		archiveSources: true, // Default to archiving sources
 		focusedField:   0,
 		width:          60,
+		maxVisible:     15,
 	}
 }
 
@@ -149,6 +153,28 @@ func (d GatherDialog) Update(msg tea.Msg) (GatherDialog, tea.Cmd) {
 				d.archiveSources = !d.archiveSources
 				return d, nil
 			}
+
+		case "ctrl+d", "ctrl+f":
+			// Scroll intent list down
+			if d.scrollOffset+d.maxVisible < len(d.intents) {
+				d.scrollOffset += 5
+				maxOffset := len(d.intents) - d.maxVisible
+				if maxOffset < 0 {
+					maxOffset = 0
+				}
+				if d.scrollOffset > maxOffset {
+					d.scrollOffset = maxOffset
+				}
+			}
+			return d, nil
+
+		case "ctrl+u", "ctrl+b":
+			// Scroll intent list up
+			d.scrollOffset -= 5
+			if d.scrollOffset < 0 {
+				d.scrollOffset = 0
+			}
+			return d, nil
 		}
 	}
 
@@ -198,28 +224,43 @@ func (d GatherDialog) IntentIDs() []string {
 func (d GatherDialog) View() string {
 	var b strings.Builder
 
-	// Title
-	b.WriteString(gatherDialogTitleStyle.Render("Gather Intents"))
+	// Title with count
+	b.WriteString(gatherDialogTitleStyle.Render(fmt.Sprintf("Gather %d Intents", len(d.intents))))
 	b.WriteString("\n\n")
 
-	// Selected intents list
-	b.WriteString(gatherDialogLabelStyle.Render("Selected intents:"))
+	// Selected intents list — show all with scroll window
+	b.WriteString(gatherDialogLabelStyle.Render(fmt.Sprintf("Selected intents (%d):", len(d.intents))))
 	b.WriteString("\n")
-	for i, intent := range d.intents {
-		if i >= 5 {
-			remaining := len(d.intents) - 5
-			b.WriteString(gatherDialogMutedStyle.Render("  ... and " + string(rune('0'+remaining)) + " more"))
-			b.WriteString("\n")
-			break
-		}
-		bullet := "  • "
-		title := intent.Title
-		if len(title) > 40 {
-			title = title[:37] + "..."
-		}
-		b.WriteString(gatherDialogItemStyle.Render(bullet + title))
+
+	end := d.scrollOffset + d.maxVisible
+	if end > len(d.intents) {
+		end = len(d.intents)
+	}
+
+	// Show scroll-up indicator
+	if d.scrollOffset > 0 {
+		b.WriteString(gatherDialogMutedStyle.Render(fmt.Sprintf("  ▲ %d more above", d.scrollOffset)))
 		b.WriteString("\n")
 	}
+
+	for i := d.scrollOffset; i < end; i++ {
+		bullet := "  • "
+		title := d.intents[i].Title
+		if len(title) > 50 {
+			title = title[:47] + "..."
+		}
+		status := d.intents[i].Status.String()
+		line := fmt.Sprintf("%s%s [%s]", bullet, title, status)
+		b.WriteString(gatherDialogItemStyle.Render(line))
+		b.WriteString("\n")
+	}
+
+	// Show scroll-down indicator
+	if end < len(d.intents) {
+		b.WriteString(gatherDialogMutedStyle.Render(fmt.Sprintf("  ▼ %d more below", len(d.intents)-end)))
+		b.WriteString("\n")
+	}
+
 	b.WriteString("\n")
 
 	// Title input
