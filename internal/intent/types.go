@@ -34,6 +34,12 @@ func (s Status) String() string {
 	return string(s)
 }
 
+// IsFinal returns true if the status is a terminal state (done or killed).
+// Intents in final states are not eligible for gathering or indexing.
+func (s Status) IsFinal() bool {
+	return s == StatusDone || s == StatusKilled
+}
+
 // Type categorizes the nature of work described by an intent.
 type Type string
 

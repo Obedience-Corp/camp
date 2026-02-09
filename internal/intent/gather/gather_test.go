@@ -289,6 +289,91 @@ func TestService_Gather_WithOverrides(t *testing.T) {
 	}
 }
 
+func TestService_FindByTag_ExcludesFinalStates(t *testing.T) {
+	tmpDir, svc := setupTestDir(t)
+
+	// Create intents with same tag
+	createTestIntent(t, svc, "Auth Feature", []string{"auth"})
+	createTestIntent(t, svc, "Auth Bug", []string{"auth"})
+	doneIntent := createTestIntent(t, svc, "Auth Done", []string{"auth"})
+
+	// Move one to done status
+	_, err := svc.Move(context.Background(), doneIntent.ID, intent.StatusDone)
+	if err != nil {
+		t.Fatalf("moving intent to done: %v", err)
+	}
+
+	gatherSvc := NewService(svc, tmpDir)
+	if err := gatherSvc.BuildIndex(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	results, err := gatherSvc.FindByTag(context.Background(), "auth")
+	if err != nil {
+		t.Fatalf("FindByTag() error = %v", err)
+	}
+
+	// Should only return 2 (inbox intents), not the done one
+	if len(results) != 2 {
+		t.Errorf("FindByTag() returned %d results, want 2 (excluding done)", len(results))
+	}
+	for _, r := range results {
+		if r.Status.IsFinal() {
+			t.Errorf("FindByTag() returned intent %q with final status %s", r.ID, r.Status)
+		}
+	}
+}
+
+func TestService_FindSimilar_ExcludesFinalStates(t *testing.T) {
+	tmpDir, svc := setupTestDir(t)
+
+	// Create intents with similar content
+	ref := createTestIntent(t, svc, "Authentication login system", []string{"auth"})
+	createTestIntent(t, svc, "Authentication login feature", []string{"auth"})
+	killedIntent := createTestIntent(t, svc, "Authentication login module", []string{"auth"})
+
+	// Move one to killed status
+	_, err := svc.Move(context.Background(), killedIntent.ID, intent.StatusKilled)
+	if err != nil {
+		t.Fatalf("moving intent to killed: %v", err)
+	}
+
+	gatherSvc := NewService(svc, tmpDir)
+	if err := gatherSvc.BuildIndex(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	results, err := gatherSvc.FindSimilar(context.Background(), ref.ID, 0.0)
+	if err != nil {
+		t.Fatalf("FindSimilar() error = %v", err)
+	}
+
+	// None of the results should be in a final state
+	for _, r := range results {
+		if r.Intent.Status.IsFinal() {
+			t.Errorf("FindSimilar() returned intent %q with final status %s", r.Intent.ID, r.Intent.Status)
+		}
+	}
+}
+
+func TestStatus_IsFinal(t *testing.T) {
+	tests := []struct {
+		status intent.Status
+		want   bool
+	}{
+		{intent.StatusInbox, false},
+		{intent.StatusActive, false},
+		{intent.StatusReady, false},
+		{intent.StatusDone, true},
+		{intent.StatusKilled, true},
+	}
+	for _, tt := range tests {
+		if got := tt.status.IsFinal(); got != tt.want {
+			t.Errorf("Status(%q).IsFinal() = %v, want %v", tt.status, got, tt.want)
+		}
+	}
+}
+
 func TestService_ContextCancellation(t *testing.T) {
 	tmpDir, svc := setupTestDir(t)
 	gatherSvc := NewService(svc, tmpDir)
