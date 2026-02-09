@@ -3,14 +3,15 @@ package main
 import (
 	"errors"
 	"fmt"
+	"os"
 	"sort"
-	"strings"
 
 	"github.com/ktr0731/go-fuzzyfinder"
 	"github.com/spf13/cobra"
 
 	"github.com/obediencecorp/camp/internal/campaign"
 	"github.com/obediencecorp/camp/internal/config"
+	"github.com/obediencecorp/camp/internal/nav/fuzzy"
 )
 
 var switchCmd = &cobra.Command{
@@ -49,15 +50,12 @@ The --print flag outputs just the path for shell integration:
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveError
 		}
-		toComplete = strings.ToLower(toComplete)
-		var names []string
-		for _, c := range reg.ListAll() {
-			lower := strings.ToLower(c.Name)
-			if strings.HasPrefix(lower, toComplete) {
-				names = append(names, c.Name)
-			}
+		names := reg.List()
+		if toComplete == "" {
+			return names, cobra.ShellCompDirectiveNoFileComp
 		}
-		return names, cobra.ShellCompDirectiveNoFileComp
+		matches := fuzzy.Filter(names, toComplete)
+		return matches.Targets(), cobra.ShellCompDirectiveNoFileComp
 	},
 }
 
@@ -84,7 +82,22 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 	if len(args) == 1 {
 		c, ok := reg.Get(args[0])
 		if !ok {
-			return fmt.Errorf("campaign %q not found in registry", args[0])
+			// Fuzzy matching fallback (4th strategy after exact ID, ID prefix, name)
+			names := reg.List()
+			matches := fuzzy.Filter(names, args[0])
+			if len(matches) == 0 {
+				return fmt.Errorf("campaign %q not found in registry", args[0])
+			}
+
+			// Use best match (first result has highest score)
+			bestName := matches[0].Target
+			c, ok = reg.GetByName(bestName)
+			if !ok {
+				return fmt.Errorf("campaign %q not found in registry", args[0])
+			}
+
+			// Inform user of fuzzy match on stderr
+			fmt.Fprintf(os.Stderr, "Matched: %s -> %s\n", args[0], c.Name)
 		}
 		selected = c
 	} else {

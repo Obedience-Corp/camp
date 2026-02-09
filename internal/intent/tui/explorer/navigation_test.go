@@ -451,7 +451,7 @@ func TestBuildMainView_ScrollOffset_Clamped(t *testing.T) {
 	m.width = 100
 	m.height = 15
 	m.listHeight = max(m.height-8, 3) // simulate recalculateLayout
-	m.scrollOffset = 999               // way past end
+	m.scrollOffset = 999              // way past end
 
 	// ensureCursorVisible is the actual clamping mechanism (called in Update)
 	m.ensureCursorVisible()

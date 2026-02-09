@@ -39,8 +39,8 @@ var (
 
 	// Inline chip styles (no border, used alongside open dropdowns)
 	chipInlineStyle = lipgloss.NewStyle().
-				Foreground(pal.TextPrimary).
-				Padding(0, 1)
+			Foreground(pal.TextPrimary).
+			Padding(0, 1)
 
 	chipFocusedInlineStyle = lipgloss.NewStyle().
 				Foreground(pal.TextPrimary).
