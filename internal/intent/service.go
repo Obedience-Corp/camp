@@ -303,8 +303,8 @@ func (s *IntentService) List(ctx context.Context, opts *ListOptions) ([]*Intent,
 	if opts != nil && opts.SortBy != "" {
 		s.sortIntents(intents, opts.SortBy, opts.SortDesc)
 	} else {
-		// Default sort by created date descending (newest first)
-		s.sortIntents(intents, "created", true)
+		// Default sort by last-touched date descending (newest first)
+		s.sortIntents(intents, "updated", true)
 	}
 
 	return intents, nil
@@ -575,7 +575,15 @@ func (s *IntentService) sortIntents(intents []*Intent, sortBy string, desc bool)
 		case "created":
 			less = intents[i].CreatedAt.Before(intents[j].CreatedAt)
 		case "updated":
-			less = intents[i].UpdatedAt.Before(intents[j].UpdatedAt)
+			ui := intents[i].UpdatedAt
+			if ui.IsZero() {
+				ui = intents[i].CreatedAt
+			}
+			uj := intents[j].UpdatedAt
+			if uj.IsZero() {
+				uj = intents[j].CreatedAt
+			}
+			less = ui.Before(uj)
 		case "title":
 			less = intents[i].Title < intents[j].Title
 		case "priority":
