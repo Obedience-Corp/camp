@@ -349,12 +349,12 @@ func (m IntentViewerModel) updateViewerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		}
 	case "a":
 		// Archive - requires confirmation
-		if m.intent.Status != intent.StatusKilled {
+		if !m.intent.Status.InDungeon() {
 			m.showConfirm = true
 			m.pendingAction = "archive"
 			m.confirmDialog = NewConfirmationDialog(
 				"Archive Intent",
-				fmt.Sprintf("Archive '%s'?\n\nIt will be moved to killed status.", m.intent.Title),
+				fmt.Sprintf("Archive '%s'?\n\nIt will be moved to the dungeon.", m.intent.Title),
 			)
 		}
 		return m, nil

@@ -76,7 +76,7 @@ func (s *Service) FindSimilar(ctx context.Context, id string, minScore float64) 
 		if err != nil {
 			continue // Skip intents that can't be loaded
 		}
-		if i.Status.IsFinal() {
+		if i.Status.InDungeon() {
 			continue // Skip done/killed intents — not eligible for gathering
 		}
 		results = append(results, SimilarResult{
@@ -229,7 +229,7 @@ func (s *Service) loadIntents(ctx context.Context, ids []string) ([]*intent.Inte
 		if err != nil {
 			continue // Skip intents that can't be loaded
 		}
-		if i.Status.IsFinal() {
+		if i.Status.InDungeon() {
 			continue // Skip done/killed intents — not eligible for gathering
 		}
 		intents = append(intents, i)

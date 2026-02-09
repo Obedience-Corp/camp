@@ -17,10 +17,12 @@ var moveStatusOptions = []struct {
 	{"Ready", intent.StatusReady},
 	{"Done", intent.StatusDone},
 	{"Killed", intent.StatusKilled},
+	{"Archived", intent.StatusArchived},
+	{"Someday", intent.StatusSomeday},
 }
 
 // StatusWorkflow defines the promotion order for intents.
-// Killed is excluded as it's an archive/terminal state.
+// Dungeon statuses are excluded — promotion ends at done.
 var statusWorkflow = []intent.Status{
 	intent.StatusInbox,
 	intent.StatusActive,

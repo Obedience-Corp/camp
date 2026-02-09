@@ -245,7 +245,7 @@ func discoverIntentsToGather(ctx context.Context, svc *gather.Service, intentSvc
 		if err != nil {
 			return nil, fmt.Errorf("reference intent %q not found: %w", gatherSimilar, err)
 		}
-		if refIntent.Status.IsFinal() {
+		if refIntent.Status.InDungeon() {
 			return nil, fmt.Errorf("reference intent %q is in %s status — only inbox/active/ready intents can be gathered", gatherSimilar, refIntent.Status)
 		}
 

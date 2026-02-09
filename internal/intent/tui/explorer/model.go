@@ -268,6 +268,8 @@ func groupIntentsByStatus(intents []*intent.Intent) []IntentGroup {
 		{Name: "Ready", Status: intent.StatusReady, Expanded: false},
 		{Name: "Done", Status: intent.StatusDone, Expanded: false},
 		{Name: "Killed", Status: intent.StatusKilled, Expanded: false},
+		{Name: "Archived", Status: intent.StatusArchived, Expanded: false},
+		{Name: "Someday", Status: intent.StatusSomeday, Expanded: false},
 	}
 
 	// Create a map for quick lookup

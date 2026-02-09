@@ -38,9 +38,9 @@ func NewActionMenu(i *intent.Intent) ActionMenu {
 		{Label: "View full screen", Action: "view", Enabled: true},
 		{Label: "Edit in editor", Action: "edit", Enabled: true},
 		{Label: "Move to status", Action: "move", Enabled: true},
-		{Label: "Gather with...", Action: "gather", Enabled: i.Status != intent.StatusDone && i.Status != intent.StatusKilled},
-		{Label: "Promote", Action: "promote", Enabled: i.Status != intent.StatusDone},
-		{Label: "Archive", Action: "archive", Enabled: i.Status != intent.StatusKilled},
+		{Label: "Gather with...", Action: "gather", Enabled: !i.Status.InDungeon()},
+		{Label: "Promote", Action: "promote", Enabled: !i.Status.InDungeon()},
+		{Label: "Archive", Action: "archive", Enabled: !i.Status.InDungeon()},
 		{Label: "Delete", Action: "delete", Enabled: true},
 	}
 

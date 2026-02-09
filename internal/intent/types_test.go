@@ -169,8 +169,8 @@ func TestStatus_String(t *testing.T) {
 		{StatusInbox, "inbox"},
 		{StatusActive, "active"},
 		{StatusReady, "ready"},
-		{StatusDone, "done"},
-		{StatusKilled, "killed"},
+		{StatusDone, "dungeon/done"},
+		{StatusKilled, "dungeon/killed"},
 	}
 
 	for _, tt := range tests {

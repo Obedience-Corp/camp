@@ -318,8 +318,8 @@ func TestService_FindByTag_ExcludesFinalStates(t *testing.T) {
 		t.Errorf("FindByTag() returned %d results, want 2 (excluding done)", len(results))
 	}
 	for _, r := range results {
-		if r.Status.IsFinal() {
-			t.Errorf("FindByTag() returned intent %q with final status %s", r.ID, r.Status)
+		if r.Status.InDungeon() {
+			t.Errorf("FindByTag() returned intent %q with dungeon status %s", r.ID, r.Status)
 		}
 	}
 }
@@ -348,15 +348,15 @@ func TestService_FindSimilar_ExcludesFinalStates(t *testing.T) {
 		t.Fatalf("FindSimilar() error = %v", err)
 	}
 
-	// None of the results should be in a final state
+	// None of the results should be in a dungeon state
 	for _, r := range results {
-		if r.Intent.Status.IsFinal() {
-			t.Errorf("FindSimilar() returned intent %q with final status %s", r.Intent.ID, r.Intent.Status)
+		if r.Intent.Status.InDungeon() {
+			t.Errorf("FindSimilar() returned intent %q with dungeon status %s", r.Intent.ID, r.Intent.Status)
 		}
 	}
 }
 
-func TestStatus_IsFinal(t *testing.T) {
+func TestStatus_InDungeon(t *testing.T) {
 	tests := []struct {
 		status intent.Status
 		want   bool
@@ -366,10 +366,12 @@ func TestStatus_IsFinal(t *testing.T) {
 		{intent.StatusReady, false},
 		{intent.StatusDone, true},
 		{intent.StatusKilled, true},
+		{intent.StatusArchived, true},
+		{intent.StatusSomeday, true},
 	}
 	for _, tt := range tests {
-		if got := tt.status.IsFinal(); got != tt.want {
-			t.Errorf("Status(%q).IsFinal() = %v, want %v", tt.status, got, tt.want)
+		if got := tt.status.InDungeon(); got != tt.want {
+			t.Errorf("Status(%q).InDungeon() = %v, want %v", tt.status, got, tt.want)
 		}
 	}
 }

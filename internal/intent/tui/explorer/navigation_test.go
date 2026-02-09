@@ -63,10 +63,12 @@ func TestCursorVisualLine(t *testing.T) {
 		{"second group header", 1, -1, 4},
 		{"second group first item", 1, 0, 5},
 		{"second group second item", 1, 1, 6},
-		// Groups 2-4 (Ready, Done, Killed) are collapsed, so just headers
+		// Groups 2-6 (Ready, Done, Killed, Archived, Someday) are collapsed, so just headers
 		{"third group header", 2, -1, 7},
 		{"fourth group header", 3, -1, 8},
 		{"fifth group header", 4, -1, 9},
+		{"sixth group header", 5, -1, 10},
+		{"seventh group header", 6, -1, 11},
 	}
 
 	for _, tt := range tests {
@@ -103,10 +105,10 @@ func TestCursorVisualLine_CollapsedGroup(t *testing.T) {
 
 func TestTotalVisualLines(t *testing.T) {
 	m := makeTestModel(3, 2)
-	// 5 group headers + 3 inbox items + 2 active items = 10
+	// 7 group headers + 3 inbox items + 2 active items = 12
 	got := m.totalVisualLines()
-	if got != 10 {
-		t.Errorf("totalVisualLines() = %d, want 10", got)
+	if got != 12 {
+		t.Errorf("totalVisualLines() = %d, want 12", got)
 	}
 }
 
@@ -115,10 +117,10 @@ func TestTotalVisualLines_AllCollapsed(t *testing.T) {
 	for i := range m.groups {
 		m.groups[i].Expanded = false
 	}
-	// 5 group headers only
+	// 7 group headers only
 	got := m.totalVisualLines()
-	if got != 5 {
-		t.Errorf("totalVisualLines() all collapsed = %d, want 5", got)
+	if got != 7 {
+		t.Errorf("totalVisualLines() all collapsed = %d, want 7", got)
 	}
 }
 
@@ -226,24 +228,24 @@ func TestJumpToBottom(t *testing.T) {
 
 	m.jumpToBottom()
 
-	// Last group is Killed (index 4), collapsed, no items -> header
-	if m.cursorGroup != 4 || m.cursorItem != -1 {
-		t.Errorf("jumpToBottom: group=%d item=%d, want 4,-1", m.cursorGroup, m.cursorItem)
+	// Last group is Someday (index 6), collapsed, no items -> header
+	if m.cursorGroup != 6 || m.cursorItem != -1 {
+		t.Errorf("jumpToBottom: group=%d item=%d, want 6,-1", m.cursorGroup, m.cursorItem)
 	}
 }
 
 func TestJumpToBottom_LastGroupExpanded(t *testing.T) {
 	m := makeTestModel(3, 2)
-	// Expand the last group and add an item
-	m.groups[4].Expanded = true
-	m.groups[4].Intents = []*intent.Intent{
-		{ID: "killed-0", Title: "Killed Intent", Status: intent.StatusKilled, CreatedAt: time.Now()},
+	// Expand the last group (Someday, index 6) and add an item
+	m.groups[6].Expanded = true
+	m.groups[6].Intents = []*intent.Intent{
+		{ID: "someday-0", Title: "Someday Intent", Status: intent.StatusSomeday, CreatedAt: time.Now()},
 	}
 
 	m.jumpToBottom()
 
-	if m.cursorGroup != 4 || m.cursorItem != 0 {
-		t.Errorf("jumpToBottom expanded: group=%d item=%d, want 4,0", m.cursorGroup, m.cursorItem)
+	if m.cursorGroup != 6 || m.cursorItem != 0 {
+		t.Errorf("jumpToBottom expanded: group=%d item=%d, want 6,0", m.cursorGroup, m.cursorItem)
 	}
 }
 
@@ -281,15 +283,15 @@ func TestMoveCursorDownN_StopsAtBottom(t *testing.T) {
 	// Move down 100 positions (more than exist)
 	m.moveCursorDownN(100)
 
-	// Should stop at last group header (killed, index 4)
-	if m.cursorGroup != 4 || m.cursorItem != -1 {
-		t.Errorf("moveCursorDownN(100): group=%d item=%d, want 4,-1", m.cursorGroup, m.cursorItem)
+	// Should stop at last group header (someday, index 6)
+	if m.cursorGroup != 6 || m.cursorItem != -1 {
+		t.Errorf("moveCursorDownN(100): group=%d item=%d, want 6,-1", m.cursorGroup, m.cursorItem)
 	}
 }
 
 func TestMoveCursorUpN_StopsAtTop(t *testing.T) {
 	m := makeTestModel(3, 0)
-	m.cursorGroup = 4
+	m.cursorGroup = 6
 	m.cursorItem = -1
 
 	// Move up 100 positions (more than exist)
@@ -475,7 +477,7 @@ func TestBuildMainView_ContainsScrollIndicator(t *testing.T) {
 
 	view := m.buildMainView()
 
-	// With 30 inbox items + 5 group headers = 35 lines, viewport ~10
+	// With 30 inbox items + 7 group headers = 37 lines, viewport ~10
 	// Should show scroll indicator
 	if !strings.Contains(view, "[") || !strings.Contains(view, "%]") {
 		t.Error("buildMainView should contain scroll percentage indicator")
@@ -489,7 +491,7 @@ func TestBuildMainView_NoScrollIndicator_WhenFits(t *testing.T) {
 
 	view := m.buildMainView()
 
-	// With 1 intent + 5 headers = 6 lines, viewport ~25 - should not scroll
+	// With 1 intent + 7 headers = 8 lines, viewport ~25 - should not scroll
 	if strings.Contains(view, "%]") {
 		t.Error("buildMainView should not show scroll indicator when content fits")
 	}

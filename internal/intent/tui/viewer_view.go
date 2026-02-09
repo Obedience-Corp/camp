@@ -124,6 +124,10 @@ func renderStatusBadge(s intent.Status) string {
 		color = pal.TextMuted // Gray
 	case intent.StatusKilled:
 		color = pal.Error // Red
+	case intent.StatusArchived:
+		color = pal.TextMuted // Gray
+	case intent.StatusSomeday:
+		color = pal.AccentAlt // Blue
 	default:
 		color = pal.TextMuted
 	}

@@ -543,11 +543,11 @@ func TestIntentService_Archive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Archive() error = %v", err)
 	}
-	if archived.Status != StatusKilled {
-		t.Errorf("Status = %q, want %q", archived.Status, StatusKilled)
+	if archived.Status != StatusArchived {
+		t.Errorf("Status = %q, want %q", archived.Status, StatusArchived)
 	}
-	if !strings.Contains(archived.Path, "killed") {
-		t.Errorf("Path should contain 'killed', got %q", archived.Path)
+	if !strings.Contains(archived.Path, "archived") {
+		t.Errorf("Path should contain 'archived', got %q", archived.Path)
 	}
 }
 
@@ -1101,7 +1101,7 @@ func TestIntentService_getIntentPath(t *testing.T) {
 	}{
 		{StatusInbox, "test-id", "/campaign/intents/inbox/test-id.md"},
 		{StatusActive, "active-test", "/campaign/intents/active/active-test.md"},
-		{StatusKilled, "killed-test", "/campaign/intents/killed/killed-test.md"},
+		{StatusKilled, "killed-test", "/campaign/intents/dungeon/killed/killed-test.md"},
 	}
 
 	for _, tt := range tests {

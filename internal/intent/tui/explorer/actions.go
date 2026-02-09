@@ -20,10 +20,12 @@ var moveStatusOptions = []struct {
 	{"Ready", intent.StatusReady},
 	{"Done", intent.StatusDone},
 	{"Killed", intent.StatusKilled},
+	{"Archived", intent.StatusArchived},
+	{"Someday", intent.StatusSomeday},
 }
 
 // statusWorkflow defines the promotion order for intents.
-// Killed is excluded as it's an archive/terminal state.
+// Dungeon statuses are excluded — promotion ends at done.
 var statusWorkflow = []intent.Status{
 	intent.StatusInbox,
 	intent.StatusActive,
@@ -97,7 +99,7 @@ func (m *Model) moveIntent(i *intent.Intent, newStatus intent.Status) tea.Cmd {
 	}
 }
 
-// archiveIntent archives an intent (moves to killed status).
+// archiveIntent archives an intent (moves to dungeon/archived status).
 func (m *Model) archiveIntent(i *intent.Intent) tea.Cmd {
 	return func() tea.Msg {
 		_, err := m.service.Archive(m.ctx, i.ID)
@@ -194,8 +196,8 @@ func (m *Model) handlePromoteAction() (tea.Model, tea.Cmd) {
 // handleArchiveAction archives the selected intent with confirmation.
 func (m *Model) handleArchiveAction() (tea.Model, tea.Cmd) {
 	if selected := m.SelectedIntent(); selected != nil {
-		if selected.Status == intent.StatusKilled {
-			m.statusMessage = "Already archived"
+		if selected.Status.InDungeon() {
+			m.statusMessage = "Already in dungeon"
 			return m, nil
 		}
 		m.focus = focusConfirm
@@ -203,7 +205,7 @@ func (m *Model) handleArchiveAction() (tea.Model, tea.Cmd) {
 		m.pendingIntent = selected
 		m.confirmDialog = tui.NewConfirmationDialog(
 			"Archive Intent",
-			fmt.Sprintf("Archive '%s'?\n\nIt will be moved to killed status.", selected.Title),
+			fmt.Sprintf("Archive '%s'?\n\nIt will be moved to the dungeon.", selected.Title),
 		)
 	}
 	return m, nil

@@ -5,7 +5,6 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/obediencecorp/camp/internal/intent"
 	"github.com/obediencecorp/camp/internal/intent/tui"
 	"github.com/obediencecorp/camp/internal/intent/tui/filterchip"
 )
@@ -259,13 +258,13 @@ func (m Model) handleActionMenuSelection(msg tui.ActionMenuSelectedMsg) (tea.Mod
 		}
 		m.statusMessage = "Already at final status"
 	case "archive":
-		if selected.Status != intent.StatusKilled {
+		if !selected.Status.InDungeon() {
 			m.focus = focusConfirm
 			m.pendingAction = "archive"
 			m.pendingIntent = selected
 			m.confirmDialog = tui.NewConfirmationDialog(
 				"Archive Intent",
-				fmt.Sprintf("Archive '%s'?\n\nIt will be moved to killed status.", selected.Title),
+				fmt.Sprintf("Archive '%s'?\n\nIt will be moved to the dungeon.", selected.Title),
 			)
 		}
 	case "delete":
