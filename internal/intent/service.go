@@ -504,6 +504,47 @@ func (s *IntentService) Archive(ctx context.Context, id string) (*Intent, error)
 	return s.Move(ctx, id, StatusKilled)
 }
 
+// StatusCount holds the count of intents for a single status directory.
+type StatusCount struct {
+	Status Status
+	Count  int
+}
+
+// Count returns the number of intent files in each status directory.
+// This is lightweight — it counts files without parsing them.
+func (s *IntentService) Count(ctx context.Context) ([]StatusCount, int, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, 0, fmt.Errorf("context cancelled: %w", err)
+	}
+
+	statuses := []Status{StatusInbox, StatusActive, StatusReady, StatusDone, StatusKilled}
+	counts := make([]StatusCount, 0, len(statuses))
+	total := 0
+
+	for _, status := range statuses {
+		dir := filepath.Join(s.intentsDir, string(status))
+		files, err := os.ReadDir(dir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				counts = append(counts, StatusCount{Status: status, Count: 0})
+				continue
+			}
+			return nil, 0, fmt.Errorf("reading directory %s: %w", dir, err)
+		}
+
+		n := 0
+		for _, f := range files {
+			if !f.IsDir() && strings.HasSuffix(f.Name(), ".md") {
+				n++
+			}
+		}
+		counts = append(counts, StatusCount{Status: status, Count: n})
+		total += n
+	}
+
+	return counts, total, nil
+}
+
 // Helper methods
 
 // getIntentPath returns the file path for an intent given its status and ID.
