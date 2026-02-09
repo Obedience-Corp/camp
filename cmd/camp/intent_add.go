@@ -74,6 +74,11 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	svc := intent.NewIntentService(campaignRoot, resolver.Intents())
 	conceptSvc := concept.NewService(campaignRoot, cfg.Concepts())
 
+	// Ensure directories exist and migrate legacy layout
+	if err := svc.EnsureDirectories(ctx); err != nil {
+		return fmt.Errorf("ensuring intent directories: %w", err)
+	}
+
 	// Get author from git config (used for both paths)
 	author := git.GetUserName(ctx)
 

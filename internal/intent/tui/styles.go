@@ -84,6 +84,10 @@ var (
 					Bold(true).
 					Foreground(pal.AccentAlt)
 
+	// Dungeon parent header style (slightly muted, distinct from normal groups)
+	DungeonHeaderStyle = lipgloss.NewStyle().
+				Foreground(pal.TextMuted)
+
 	// Intent row styles
 	IntentRowStyle = lipgloss.NewStyle().
 			PaddingLeft(4)

@@ -82,7 +82,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.intents = msg.intents
 		m.filteredIntents = msg.intents
-		m.groups = groupIntentsByStatus(msg.intents)
+		m.groups = groupIntentsByStatus(msg.intents, m.dungeonExpanded)
 
 	case editorFinishedMsg:
 		if msg.err != nil {

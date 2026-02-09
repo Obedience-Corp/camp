@@ -11,6 +11,7 @@ import (
 )
 
 // moveStatusOptions are the available statuses for moving intents.
+// Dungeon statuses are visually indented to show hierarchy.
 var moveStatusOptions = []struct {
 	name   string
 	status intent.Status
@@ -18,10 +19,10 @@ var moveStatusOptions = []struct {
 	{"Inbox", intent.StatusInbox},
 	{"Active", intent.StatusActive},
 	{"Ready", intent.StatusReady},
-	{"Done", intent.StatusDone},
-	{"Killed", intent.StatusKilled},
-	{"Archived", intent.StatusArchived},
-	{"Someday", intent.StatusSomeday},
+	{"  Done", intent.StatusDone},
+	{"  Killed", intent.StatusKilled},
+	{"  Archived", intent.StatusArchived},
+	{"  Someday", intent.StatusSomeday},
 }
 
 // statusWorkflow defines the promotion order for intents.
@@ -151,7 +152,13 @@ func (m *Model) viewMove() string {
 	}
 
 	b.WriteString("Select new status:\n")
+	dungeonLabelShown := false
 	for i, opt := range moveStatusOptions {
+		// Show dungeon label before first dungeon status
+		if !dungeonLabelShown && opt.status.InDungeon() {
+			dungeonLabelShown = true
+			b.WriteString(tui.HelpStyle.Render("  ── Dungeon ──") + "\n")
+		}
 		cursor := "  "
 		if i == m.moveStatusIdx {
 			cursor = "> "

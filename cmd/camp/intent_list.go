@@ -76,6 +76,11 @@ func runIntentList(cmd *cobra.Command, args []string) error {
 	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
 	svc := intent.NewIntentService(campaignRoot, resolver.Intents())
 
+	// Ensure directories exist and migrate legacy layout
+	if err := svc.EnsureDirectories(ctx); err != nil {
+		return fmt.Errorf("ensuring intent directories: %w", err)
+	}
+
 	// Build list options
 	opts := buildListOptions(statuses, types, project, horizon, sortBy, includeAll)
 

@@ -81,7 +81,7 @@ func (m *Model) applyFilters() {
 	m.filteredIntents = filtered
 
 	// Rebuild groups from filtered intents
-	m.groups = groupIntentsByStatus(m.filteredIntents)
+	m.groups = groupIntentsByStatus(m.filteredIntents, m.dungeonExpanded)
 
 	// Reset cursor position and scroll
 	m.cursorGroup = 0

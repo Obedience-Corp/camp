@@ -330,15 +330,30 @@ func (m *Model) buildMainView() string {
 	}
 
 	for gi, group := range m.groups {
-		indicator := ">"
-		if group.Expanded {
-			indicator = "v"
-		}
-
 		isGroupSelected := gi == m.cursorGroup && m.cursorItem == -1
 		cursor := tui.NoCursor
 		if isGroupSelected && !m.previewFocused {
 			cursor = tui.CursorIndicator
+		}
+
+		if group.IsDungeonParent {
+			// Dungeon parent: show aggregate count, expand/collapse indicator
+			indicator := ">"
+			if group.Expanded {
+				indicator = "v"
+			}
+			hdr := fmt.Sprintf("%s %s %s (%d)", cursor, indicator, group.Name, group.DungeonCount)
+			if isGroupSelected && !m.previewFocused {
+				listLines = append(listLines, tui.GroupHeaderSelectedStyle.Render(hdr))
+			} else {
+				listLines = append(listLines, tui.DungeonHeaderStyle.Render(hdr))
+			}
+			continue
+		}
+
+		indicator := ">"
+		if group.Expanded {
+			indicator = "v"
 		}
 
 		hdr := fmt.Sprintf("%s %s %s (%d)", cursor, indicator, group.Name, len(group.Intents))

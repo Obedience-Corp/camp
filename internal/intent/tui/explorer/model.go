@@ -32,10 +32,13 @@ const (
 
 // IntentGroup represents a collapsible group of intents by status.
 type IntentGroup struct {
-	Name     string
-	Status   intent.Status
-	Intents  []*intent.Intent
-	Expanded bool
+	Name            string
+	Status          intent.Status
+	Intents         []*intent.Intent
+	Expanded        bool
+	IsDungeonParent bool // True for the "Dungeon" meta-group
+	IsDungeonChild  bool // True for Done/Killed/Archived/Someday under dungeon
+	DungeonCount    int  // Total intent count across all dungeon children (parent only)
 }
 
 // Model is the main model for the Intent Explorer TUI.
@@ -129,6 +132,9 @@ type Model struct {
 	gatherDialog tui.GatherDialog
 	intentsDir   string          // Base directory for intents (for gather service)
 	gatherSvc    *gather.Service // Gather service for finding similar intents
+
+	// Dungeon expansion state
+	dungeonExpanded bool
 
 	// Campaign info for git commits
 	campaignRoot string
@@ -258,24 +264,33 @@ func (m Model) SelectedIntent() *intent.Intent {
 }
 
 // groupIntentsByStatus organizes intents into groups by their status.
-// Groups are ordered: inbox, active, ready, done, killed.
-// Empty groups are still included to maintain consistent ordering.
-func groupIntentsByStatus(intents []*intent.Intent) []IntentGroup {
-	// Define groups in display order with default expansion
-	groups := []IntentGroup{
+// Groups are ordered: Inbox, Active, Ready, then a collapsible Dungeon parent
+// that contains Done, Killed, Archived, Someday as children.
+// When dungeonExpanded is false, only the Dungeon parent group is shown.
+// When true, the 4 child groups are appended after the parent.
+func groupIntentsByStatus(intents []*intent.Intent, dungeonExpanded bool) []IntentGroup {
+	// Dungeon child group definitions
+	dungeonChildren := []IntentGroup{
+		{Name: "  Done", Status: intent.StatusDone, Expanded: false, IsDungeonChild: true},
+		{Name: "  Killed", Status: intent.StatusKilled, Expanded: false, IsDungeonChild: true},
+		{Name: "  Archived", Status: intent.StatusArchived, Expanded: false, IsDungeonChild: true},
+		{Name: "  Someday", Status: intent.StatusSomeday, Expanded: false, IsDungeonChild: true},
+	}
+
+	// Create a map for intent distribution
+	groupMap := make(map[intent.Status]*IntentGroup)
+	for i := range dungeonChildren {
+		groupMap[dungeonChildren[i].Status] = &dungeonChildren[i]
+	}
+
+	// Top-level groups
+	topGroups := []IntentGroup{
 		{Name: "Inbox", Status: intent.StatusInbox, Expanded: true},
 		{Name: "Active", Status: intent.StatusActive, Expanded: true},
 		{Name: "Ready", Status: intent.StatusReady, Expanded: false},
-		{Name: "Done", Status: intent.StatusDone, Expanded: false},
-		{Name: "Killed", Status: intent.StatusKilled, Expanded: false},
-		{Name: "Archived", Status: intent.StatusArchived, Expanded: false},
-		{Name: "Someday", Status: intent.StatusSomeday, Expanded: false},
 	}
-
-	// Create a map for quick lookup
-	groupMap := make(map[intent.Status]*IntentGroup)
-	for i := range groups {
-		groupMap[groups[i].Status] = &groups[i]
+	for i := range topGroups {
+		groupMap[topGroups[i].Status] = &topGroups[i]
 	}
 
 	// Distribute intents to groups
@@ -283,6 +298,29 @@ func groupIntentsByStatus(intents []*intent.Intent) []IntentGroup {
 		if group, ok := groupMap[i.Status]; ok {
 			group.Intents = append(group.Intents, i)
 		}
+	}
+
+	// Calculate dungeon total count
+	dungeonTotal := 0
+	for _, g := range dungeonChildren {
+		dungeonTotal += len(g.Intents)
+	}
+
+	// Build dungeon parent
+	dungeonParent := IntentGroup{
+		Name:            "Dungeon",
+		IsDungeonParent: true,
+		Expanded:        dungeonExpanded,
+		DungeonCount:    dungeonTotal,
+	}
+
+	// Assemble final group list
+	groups := make([]IntentGroup, 0, len(topGroups)+1+len(dungeonChildren))
+	groups = append(groups, topGroups...)
+	groups = append(groups, dungeonParent)
+
+	if dungeonExpanded {
+		groups = append(groups, dungeonChildren...)
 	}
 
 	return groups
