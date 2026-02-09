@@ -85,10 +85,17 @@ _cgo() {
     )
     _describe 'category' targets
   elif (( CURRENT == 3 )); then
-    # Second argument - query/target name
+    # Second argument - fuzzy match with path descriptions
     local category="${words[2]}"
+    local query="${words[3]:-}"
     local -a completions
-    completions=($(camp complete "$category" 2>/dev/null))
+    local line
+
+    # Get completions with descriptions (name\tpath format)
+    while IFS=$'\t' read -r name path; do
+      [[ -n "$name" ]] && completions+=("$name:$path")
+    done < <(camp complete --described "$category" "$query" 2>/dev/null)
+
     _describe 'target' completions
   fi
 }
