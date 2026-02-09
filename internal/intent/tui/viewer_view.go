@@ -66,10 +66,15 @@ func (m IntentViewerModel) View() string {
 	b.WriteString(m.viewport.View())
 	b.WriteString("\n")
 
-	// Footer
-	b.WriteString(separator)
-	b.WriteString("\n")
-	b.WriteString(m.renderFooter())
+	// Search bar (when active) or footer
+	if m.searchMode {
+		b.WriteString(m.renderSearchBar())
+		b.WriteString("\n")
+	} else {
+		b.WriteString(separator)
+		b.WriteString("\n")
+		b.WriteString(m.renderFooter())
+	}
 
 	return viewerBoxStyle.
 		Width(m.width).
@@ -79,12 +84,8 @@ func (m IntentViewerModel) View() string {
 
 // renderHeader renders the header with intent metadata.
 func (m IntentViewerModel) renderHeader() string {
-	// DEBUG: Show path and content info
-	debugInfo := fmt.Sprintf("[DEBUG: Path=%s ContentLen=%d ViewportH=%d]",
-		m.intent.Path, len(m.content), m.viewport.Height)
-
 	// Title line
-	title := viewerTitleStyle.Render(m.intent.Title + "\n" + debugInfo)
+	title := viewerTitleStyle.Render(m.intent.Title)
 
 	// Metadata line
 	typeBadge := viewerBadgeStyle.Render(fmt.Sprintf("[%s]", m.intent.Type))
@@ -132,14 +133,24 @@ func renderStatusBadge(s intent.Status) string {
 // renderFooter renders the footer with actions and scroll position.
 func (m IntentViewerModel) renderFooter() string {
 	// Actions - include gather if gather service is available
-	actions := "[e]dit  [m]ove  [p]romote  [a]rchive  [d]elete  [o]pen  [O] reveal"
+	actions := "[e]dit  [m]ove  [p]romote  [a]rchive  [d]elete  [o]pen  [O] reveal  [/]search"
 	if m.gatherSvc != nil {
-		actions = "[e]dit  [g]ather  [m]ove  [p]romote  [a]rchive  [d]elete  [o]pen  [O] reveal"
+		actions = "[e]dit  [^g]ather  [m]ove  [p]romote  [a]rchive  [d]elete  [o]pen  [O] reveal  [/]search"
+	}
+
+	// Search match info (when query active but not in input mode)
+	var searchInfo string
+	if m.searchQuery != "" && !m.searchMode {
+		if len(m.searchMatches) > 0 {
+			searchInfo = fmt.Sprintf("[%d/%d matches] ", m.searchMatchIdx+1, len(m.searchMatches))
+		} else {
+			searchInfo = "[no matches] "
+		}
 	}
 
 	// Scroll percentage
 	scrollPct := int(m.viewport.ScrollPercent() * 100)
-	scrollInfo := fmt.Sprintf("%d%%", scrollPct)
+	scrollInfo := fmt.Sprintf("%s%d%%", searchInfo, scrollPct)
 
 	// Position indicator (only if multiple siblings for navigation)
 	var posInfo string
@@ -169,6 +180,18 @@ func (m IntentViewerModel) renderFooter() string {
 
 	spacer := strings.Repeat(" ", padding)
 	return viewerFooterStyle.Render(fmt.Sprintf("%s%s%s%s │ %s", actions, spacer, posInfo, scrollInfo, navHint))
+}
+
+// renderSearchBar renders the search input bar at the bottom.
+func (m IntentViewerModel) renderSearchBar() string {
+	searchLine := "/" + m.searchInput.View()
+	if len(m.searchMatches) > 0 {
+		matchInfo := fmt.Sprintf("  [%d/%d]", m.searchMatchIdx+1, len(m.searchMatches))
+		searchLine += viewerFooterStyle.Render(matchInfo)
+	} else if m.searchInput.Value() != "" {
+		searchLine += viewerFooterStyle.Render("  [no matches]")
+	}
+	return searchLine
 }
 
 // viewWithConfirmOverlay renders the view with confirmation dialog overlay.

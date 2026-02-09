@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -56,6 +57,16 @@ type IntentViewerModel struct {
 
 	// Pending action state (for confirmations)
 	pendingAction string
+
+	// Multi-key sequences (vim-style gg)
+	pendingKey string
+
+	// Search
+	searchMode     bool            // Whether search input is active
+	searchInput    textinput.Model // The search text input
+	searchQuery    string          // Active search query (persists after exiting input)
+	searchMatches  []int           // Line numbers with matches
+	searchMatchIdx int             // Current match index (-1 = none)
 }
 
 // ViewerClosedMsg is sent when the viewer is closed.
@@ -99,6 +110,10 @@ func NewIntentViewerModelWithGather(ctx context.Context, i *intent.Intent, sibli
 	vp := viewport.New(width-4, height-8) // Account for header, footer, borders
 	vp.Style = lipgloss.NewStyle().Padding(0, 1)
 
+	ti := textinput.New()
+	ti.Placeholder = "search..."
+	ti.CharLimit = 100
+
 	m := IntentViewerModel{
 		intent:          i,
 		siblings:        siblings,
@@ -111,6 +126,8 @@ func NewIntentViewerModelWithGather(ctx context.Context, i *intent.Intent, sibli
 		height:          height,
 		ready:           true,
 		selectedSimilar: make(map[string]bool),
+		searchInput:     ti,
+		searchMatchIdx:  -1,
 	}
 
 	// Load and render content
@@ -122,37 +139,35 @@ func NewIntentViewerModelWithGather(ctx context.Context, i *intent.Intent, sibli
 // loadContent reads the intent file and renders markdown.
 func (m *IntentViewerModel) loadContent() {
 	if m.intent == nil {
-		m.content = "DEBUG: intent is nil"
+		m.content = "No content available."
 		m.viewport.SetContent(m.content)
 		return
 	}
 
 	if m.intent.Path == "" {
-		m.content = fmt.Sprintf("DEBUG: intent.Path is empty\nIntent ID: %s\nIntent Title: %s", m.intent.ID, m.intent.Title)
+		m.content = "No file path for this intent."
 		m.viewport.SetContent(m.content)
 		return
 	}
 
 	data, err := os.ReadFile(m.intent.Path)
 	if err != nil {
-		m.content = fmt.Sprintf("DEBUG: Error reading file\nPath: %s\nError: %s", m.intent.Path, err.Error())
+		m.content = fmt.Sprintf("Error reading file: %s", err.Error())
 		m.viewport.SetContent(m.content)
 		return
 	}
 
 	if len(data) == 0 {
-		m.content = fmt.Sprintf("DEBUG: File is empty\nPath: %s", m.intent.Path)
+		m.content = "File is empty."
 		m.viewport.SetContent(m.content)
 		return
 	}
 
 	m.rawContent = string(data)
 
-	// Check what stripFrontmatter returns
 	stripped := stripFrontmatter(m.rawContent)
 	if strings.TrimSpace(stripped) == "" {
-		m.content = fmt.Sprintf("DEBUG: Content empty after stripFrontmatter\nPath: %s\nRaw length: %d bytes\nFirst 500 chars:\n%s",
-			m.intent.Path, len(data), truncate(m.rawContent, 500))
+		m.content = "No content after frontmatter."
 		m.viewport.SetContent(m.content)
 		return
 	}
@@ -164,7 +179,12 @@ func (m *IntentViewerModel) loadContent() {
 func (m *IntentViewerModel) renderContent() {
 	content := stripFrontmatter(m.rawContent)
 	m.content = renderMarkdown(content, m.width-6)
-	m.viewport.SetContent(m.content)
+	// Apply search highlights if active
+	if m.searchQuery != "" {
+		m.viewport.SetContent(m.applySearchHighlight(m.content))
+	} else {
+		m.viewport.SetContent(m.content)
+	}
 }
 
 // Init implements tea.Model.
@@ -215,4 +235,84 @@ func (m *IntentViewerModel) navigateNext() {
 		m.loadContent()
 		m.viewport.GotoTop()
 	}
+}
+
+// findSearchMatches scans content lines for case-insensitive substring matches.
+func (m *IntentViewerModel) findSearchMatches() {
+	m.searchMatches = nil
+	m.searchMatchIdx = -1
+
+	if m.searchQuery == "" {
+		return
+	}
+
+	query := strings.ToLower(m.searchQuery)
+	lines := strings.Split(m.content, "\n")
+	for i, line := range lines {
+		if strings.Contains(strings.ToLower(line), query) {
+			m.searchMatches = append(m.searchMatches, i)
+		}
+	}
+
+	if len(m.searchMatches) > 0 {
+		m.searchMatchIdx = 0
+	}
+}
+
+// scrollToMatch sets viewport offset to show the current match line.
+func (m *IntentViewerModel) scrollToMatch() {
+	if m.searchMatchIdx < 0 || m.searchMatchIdx >= len(m.searchMatches) {
+		return
+	}
+	lineNum := m.searchMatches[m.searchMatchIdx]
+	// Center the match in the viewport
+	offset := lineNum - m.viewport.Height/2
+	if offset < 0 {
+		offset = 0
+	}
+	m.viewport.SetYOffset(offset)
+}
+
+// nextMatch jumps to the next search match.
+func (m *IntentViewerModel) nextMatch() {
+	if len(m.searchMatches) == 0 {
+		return
+	}
+	m.searchMatchIdx = (m.searchMatchIdx + 1) % len(m.searchMatches)
+	m.scrollToMatch()
+}
+
+// prevMatch jumps to the previous search match.
+func (m *IntentViewerModel) prevMatch() {
+	if len(m.searchMatches) == 0 {
+		return
+	}
+	m.searchMatchIdx--
+	if m.searchMatchIdx < 0 {
+		m.searchMatchIdx = len(m.searchMatches) - 1
+	}
+	m.scrollToMatch()
+}
+
+// applySearchHighlight returns content with search matches highlighted.
+func (m IntentViewerModel) applySearchHighlight(content string) string {
+	if m.searchQuery == "" {
+		return content
+	}
+
+	highlightStyle := lipgloss.NewStyle().
+		Background(pal.Warning).
+		Foreground(lipgloss.Color("#000000"))
+
+	query := strings.ToLower(m.searchQuery)
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		lower := strings.ToLower(line)
+		if idx := strings.Index(lower, query); idx >= 0 {
+			// Highlight the first occurrence on each matching line
+			matchText := line[idx : idx+len(m.searchQuery)]
+			lines[i] = line[:idx] + highlightStyle.Render(matchText) + line[idx+len(m.searchQuery):]
+		}
+	}
+	return strings.Join(lines, "\n")
 }

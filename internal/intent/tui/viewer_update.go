@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/obediencecorp/camp/internal/intent"
 )
@@ -11,6 +12,49 @@ import (
 // Update implements tea.Model.
 func (m IntentViewerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
+
+	// Handle search mode
+	if m.searchMode {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.String() {
+			case "esc":
+				m.searchMode = false
+				m.searchInput.Blur()
+				m.searchInput.SetValue("")
+				m.searchQuery = ""
+				m.searchMatches = nil
+				m.searchMatchIdx = -1
+				// Re-render content without highlights
+				m.renderContent()
+				return m, nil
+			case "enter":
+				m.searchMode = false
+				m.searchInput.Blur()
+				// Keep query active for n/N navigation
+				m.searchQuery = m.searchInput.Value()
+				m.findSearchMatches()
+				if len(m.searchMatches) > 0 {
+					m.scrollToMatch()
+				}
+				// Re-render with highlights
+				m.viewport.SetContent(m.applySearchHighlight(m.content))
+				return m, nil
+			default:
+				m.searchInput, cmd = m.searchInput.Update(msg)
+				// Live update matches
+				m.searchQuery = m.searchInput.Value()
+				m.findSearchMatches()
+				if len(m.searchMatches) > 0 {
+					m.scrollToMatch()
+				}
+				// Re-render with highlights
+				m.viewport.SetContent(m.applySearchHighlight(m.content))
+				return m, cmd
+			}
+		}
+		return m, nil
+	}
 
 	// Handle confirmation dialog
 	if m.showConfirm {
@@ -195,10 +239,49 @@ func (m IntentViewerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // updateViewerKeys handles keyboard input in the viewer.
 func (m IntentViewerModel) updateViewerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
+	key := msg.String()
+
+	// Handle pending "g" key (for gg)
+	if m.pendingKey == "g" {
+		m.pendingKey = ""
+		if key == "g" {
+			m.viewport.GotoTop()
+			return m, nil
+		}
+		// Not "g" — fall through to normal handling
+	}
+
+	switch key {
 	// Exit keys
 	case "q", "esc", "backspace":
+		// If search is active, clear it first
+		if m.searchQuery != "" {
+			m.searchQuery = ""
+			m.searchMatches = nil
+			m.searchMatchIdx = -1
+			m.searchInput.SetValue("")
+			m.renderContent()
+			return m, nil
+		}
 		return m, m.closeViewer()
+
+	// Search
+	case "/":
+		m.searchMode = true
+		m.searchInput.Focus()
+		return m, textinput.Blink
+	case "n":
+		// Next search match
+		if m.searchQuery != "" {
+			m.nextMatch()
+		}
+		return m, nil
+	case "N":
+		// Previous search match
+		if m.searchQuery != "" {
+			m.prevMatch()
+		}
+		return m, nil
 
 	// Vim scrolling
 	case "j", "down":
@@ -218,6 +301,10 @@ func (m IntentViewerModel) updateViewerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 	case "G", "end":
 		m.viewport.GotoBottom()
 	case "g":
+		// Set pending key — wait for second "g" to form "gg"
+		m.pendingKey = "g"
+		return m, nil
+	case "ctrl+g":
 		// Gather-similar: find similar intents and show selection overlay
 		if m.gatherSvc != nil {
 			return m, m.findSimilarIntents()
