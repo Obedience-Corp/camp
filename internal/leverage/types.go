@@ -90,6 +90,32 @@ type LeverageScore struct {
 	TotalCode  int `json:"total_code"`
 }
 
+// ProjectEntry defines one project for leverage tracking.
+// When LeverageConfig.Projects is non-empty, these entries replace
+// the default project.List() discovery.
+type ProjectEntry struct {
+	// Path is the project directory relative to the campaign root.
+	Path string `json:"path"`
+
+	// Include controls whether the project is tracked. Set false to exclude.
+	Include bool `json:"include"`
+
+	// InMonorepo marks the project as a subdirectory within a larger git repo.
+	InMonorepo bool `json:"in_monorepo,omitempty"`
+
+	// MonorepoPath is the parent monorepo directory (relative to campaign root).
+	// Required when InMonorepo is true.
+	MonorepoPath string `json:"monorepo_path,omitempty"`
+
+	// GitRepo overrides git repository detection. Useful when the git root
+	// differs from the project path (e.g., nested submodules).
+	GitRepo string `json:"git_repo,omitempty"`
+
+	// FirstCommitOverride overrides the auto-detected first commit date
+	// for elapsed-months calculation.
+	FirstCommitOverride *time.Time `json:"first_commit_override,omitempty"`
+}
+
 // LeverageConfig is the schema for .campaign/leverage/config.json.
 type LeverageConfig struct {
 	// ActualPeople is the number of developers working on the campaign.
@@ -103,4 +129,9 @@ type LeverageConfig struct {
 
 	// AvgWage overrides the average yearly salary for cost estimation.
 	AvgWage float64 `json:"avg_wage,omitempty"`
+
+	// Projects maps project names to their configuration entries.
+	// When non-empty, replaces the default project.List() discovery.
+	// When empty or nil, falls back to project.List() for backward compatibility.
+	Projects map[string]ProjectEntry `json:"projects,omitempty"`
 }
