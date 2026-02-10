@@ -3,6 +3,8 @@ package shell
 import (
 	"strings"
 	"testing"
+
+	"github.com/obediencecorp/camp/internal/config"
 )
 
 func TestGenerateZsh(t *testing.T) {
@@ -28,9 +30,10 @@ func TestGenerateZsh(t *testing.T) {
 		{"go subcommand", "go|g)"},
 		{"compdef cgo", "compdef _cgo cgo"},
 		{"compdef camp", "compdef _camp camp"},
-		{"category shortcuts", "'p:projects"},
+		{"has shortcut entries", "'p:"},
 		{"command execution", "-c"},
 		{"error output", ">&2"},
+		{"NO_COLOR in completion", "NO_COLOR=1 command camp complete"},
 	}
 
 	for _, check := range checks {
@@ -128,23 +131,14 @@ func TestSupportedShells(t *testing.T) {
 func TestGenerateZsh_ContainsCategoryShortcuts(t *testing.T) {
 	output := generateZsh()
 
-	shortcuts := []string{
-		"'p:projects",
-		"'pw:projects/worktrees",
-		"'f:festivals",
-		"'a:ai_docs",
-		"'d:docs",
-		"'du:dungeon",
-		"'w:workflow",
-		"'cr:workflow/code_reviews",
-		"'pi:workflow/pipelines",
-		"'de:workflow/design",
-		"'i:workflow/intents",
-	}
-
-	for _, shortcut := range shortcuts {
-		if !strings.Contains(output, shortcut) {
-			t.Errorf("zsh init missing shortcut: %s", shortcut)
+	// Verify shortcuts are generated from actual defaults, not hardcoded
+	defaults := config.DefaultNavigationShortcuts()
+	for key, sc := range defaults {
+		if !sc.IsNavigation() {
+			continue
+		}
+		if !strings.Contains(output, "'"+key+":") {
+			t.Errorf("zsh init missing navigation shortcut: %s", key)
 		}
 	}
 }

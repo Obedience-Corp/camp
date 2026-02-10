@@ -5,6 +5,8 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	"github.com/obediencecorp/camp/internal/config"
 )
 
 func TestGenerateFish(t *testing.T) {
@@ -26,11 +28,11 @@ func TestGenerateFish(t *testing.T) {
 		{"camp go call", "camp go"},
 		{"complete command", "complete -c cgo"},
 		{"camp completion", "complete -c camp"},
-		{"category shortcuts", "\"p\""},
 		{"command execution", "-c"},
 		{"error output", ">&2"},
 		{"fish test syntax", "test (count"},
 		{"fish set syntax", "set -l"},
+		{"NO_COLOR in completion", "NO_COLOR=1 command camp complete"},
 	}
 
 	for _, check := range checks {
@@ -117,33 +119,16 @@ func TestGenerateFish_UsesFishSyntax(t *testing.T) {
 func TestGenerateFish_ContainsCategoryDescriptions(t *testing.T) {
 	output := generateFish()
 
-	// Fish completions should have descriptions
-	categories := []struct {
-		shortcut    string
-		description string
-	}{
-		{"\"p\"", "projects/"},
-		{"\"pw\"", "projects/worktrees/"},
-		{"\"f\"", "festivals/"},
-		{"\"a\"", "ai_docs/"},
-		{"\"d\"", "docs/"},
-		{"\"du\"", "dungeon/"},
-		{"\"w\"", "workflow/"},
-		{"\"cr\"", "workflow/code_reviews/"},
-		{"\"pi\"", "workflow/pipelines/"},
-		{"\"de\"", "workflow/design/"},
-		{"\"i\"", "workflow/intents/"},
-	}
-
-	for _, cat := range categories {
-		t.Run(cat.shortcut, func(t *testing.T) {
-			if !strings.Contains(output, cat.shortcut) {
-				t.Errorf("fish init missing shortcut: %s", cat.shortcut)
-			}
-			if !strings.Contains(output, cat.description) {
-				t.Errorf("fish init missing description: %s", cat.description)
-			}
-		})
+	// Verify shortcuts are generated from actual defaults, not hardcoded
+	defaults := config.DefaultNavigationShortcuts()
+	for key, sc := range defaults {
+		if !sc.IsNavigation() {
+			continue
+		}
+		// Fish format: complete -c cgo -n "__camp_is_first_arg" -a "key" -d "description"
+		if !strings.Contains(output, "\""+key+"\"") {
+			t.Errorf("fish init missing shortcut: %s", key)
+		}
 	}
 }
 

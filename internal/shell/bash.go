@@ -1,19 +1,21 @@
 package shell
 
+import "strings"
+
 // generateBash returns the bash initialization script.
-// This script is compatible with bash 3.2+ (the version shipped with macOS).
+// Shortcuts are injected dynamically from config.DefaultNavigationShortcuts().
 func generateBash() string {
-	return bashInit
+	return strings.Replace(bashInitTemplate, "{{SHORTCUT_WORDS}}", bashShortcutWords(), 1)
 }
 
-// bashInit is the full bash initialization script.
+// bashInitTemplate is the bash initialization script with a placeholder for shortcuts.
 // It is designed to be compatible with bash 3.2 (macOS default).
 // Compatibility notes:
 //   - Uses [ ] instead of [[ ]] for POSIX compatibility
 //   - Avoids associative arrays (declare -A)
 //   - Avoids ${var,,} lowercase syntax
 //   - Uses standard complete builtin syntax
-const bashInit = `# Camp CLI - Bash Integration
+const bashInitTemplate = `# Camp CLI - Bash Integration
 # Add to .bashrc: eval "$(camp shell-init bash)"
 
 # Check if camp is available
@@ -79,13 +81,15 @@ _cgo_complete() {
 
   # First argument - category shortcuts
   if [ "$COMP_CWORD" -eq 1 ]; then
-    COMPREPLY=($(compgen -W "p c f a d w r pi" -- "$cur"))
+    COMPREPLY=($(compgen -W "{{SHORTCUT_WORDS}}" -- "$cur"))
     return
   fi
 
   # Second argument - fuzzy match from camp (extract names from tab-separated output)
+  # NO_COLOR prevents lipgloss/termenv from querying the terminal via OSC
+  # escape sequences, which would corrupt the shell's completion state.
   local candidates
-  candidates=$(camp complete --described "${prev}" 2>/dev/null | cut -f1)
+  candidates=$(NO_COLOR=1 command camp complete --described "${prev}" 2>/dev/null | cut -f1)
   if [ -n "$candidates" ]; then
     COMPREPLY=($(compgen -W "$candidates" -- "$cur"))
   fi

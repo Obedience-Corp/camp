@@ -5,6 +5,8 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	"github.com/obediencecorp/camp/internal/config"
 )
 
 func TestGenerateBash(t *testing.T) {
@@ -31,9 +33,9 @@ func TestGenerateBash(t *testing.T) {
 		{"complete builtin", "complete -F"},
 		{"cgo completion", "_cgo_complete"},
 		{"camp completion", "_camp_complete"},
-		{"category shortcuts", "p c f a d w"},
 		{"command execution", "-c"},
 		{"error output", ">&2"},
+		{"NO_COLOR in completion", "NO_COLOR=1 command camp complete"},
 	}
 
 	for _, check := range checks {
@@ -42,6 +44,21 @@ func TestGenerateBash(t *testing.T) {
 				t.Errorf("bash init missing %s: %q", check.name, check.content)
 			}
 		})
+	}
+}
+
+func TestGenerateBash_ContainsDynamicShortcuts(t *testing.T) {
+	output := generateBash()
+
+	// Verify shortcuts come from actual defaults
+	defaults := config.DefaultNavigationShortcuts()
+	for key, sc := range defaults {
+		if !sc.IsNavigation() {
+			continue
+		}
+		if !strings.Contains(output, key) {
+			t.Errorf("bash init missing navigation shortcut key: %s", key)
+		}
 	}
 }
 
