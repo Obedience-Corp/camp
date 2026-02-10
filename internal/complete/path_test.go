@@ -121,16 +121,22 @@ func TestCompleteWorktree_NoAt(t *testing.T) {
 		t.Fatalf("CompleteWorktree failed: %v", err)
 	}
 
-	// Should return project@
-	found := false
+	// Should return project directory name and matching project@branch entries
+	foundDir := false
+	foundBranch := false
 	for _, c := range candidates {
-		if c == "api-service@" {
-			found = true
-			break
+		if c == "api-service" {
+			foundDir = true
+		}
+		if c == "api-service@feature-x" || c == "api-service@bugfix-y" {
+			foundBranch = true
 		}
 	}
-	if !found {
-		t.Errorf("Expected 'api-service@' in candidates: %v", candidates)
+	if !foundDir {
+		t.Errorf("Expected 'api-service' project dir in candidates: %v", candidates)
+	}
+	if !foundBranch {
+		t.Errorf("Expected project@branch entries in candidates: %v", candidates)
 	}
 }
 

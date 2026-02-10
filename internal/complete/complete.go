@@ -75,6 +75,18 @@ func GenerateRich(ctx context.Context, args []string) ([]RichCategoryGroup, erro
 		return nil, err
 	}
 
+	// Worktrees use hierarchical completion: project dirs first, then project@branch
+	if result.IsShortcut && cat == nav.CategoryWorktrees {
+		candidates, err := completeWorktreeRich(ctx, jumpResult.Path, query)
+		if err != nil {
+			return nil, err
+		}
+		return []RichCategoryGroup{{
+			Category:   string(nav.CategoryWorktrees),
+			Candidates: candidates,
+		}}, nil
+	}
+
 	// Get or build index
 	idx, err := index.GetOrBuild(ctx, jumpResult.Path, false)
 	if err != nil {
@@ -189,8 +201,8 @@ func completeInCategory(ctx context.Context, cat nav.Category, query string) ([]
 		return nil, ctx.Err()
 	}
 
-	// Special handling for worktrees with @ syntax
-	if cat == nav.CategoryWorktrees && (strings.Contains(query, "@") || query != "") {
+	// Worktrees use hierarchical completion: project dirs first, then project@branch
+	if cat == nav.CategoryWorktrees {
 		return CompleteWorktree(ctx, query)
 	}
 

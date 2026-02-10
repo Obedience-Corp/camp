@@ -65,49 +65,51 @@ func CompleteWorktree(ctx context.Context, partial string) ([]string, error) {
 	return completeBranches(ctx, partial)
 }
 
-// completeProjectsWithAt completes project names and adds @ suffix.
-// Also matches branch names directly so "lever<TAB>" finds "camp@leverage-score".
+// completeProjectsWithAt lists worktree project directories from the filesystem.
+// When partial is empty, returns all project directory names.
+// When partial is non-empty, also includes matching project@branch entries from the index.
 func completeProjectsWithAt(ctx context.Context, partial string) ([]string, error) {
-	// Get campaign root
 	jumpResult, err := nav.DirectJump(ctx, nav.CategoryAll)
 	if err != nil {
 		return nil, err
 	}
 
-	// Get or build index
-	idx, err := index.GetOrBuild(ctx, jumpResult.Path, false)
+	worktreesDir := filepath.Join(jumpResult.Path, nav.CategoryWorktrees.Dir())
+
+	entries, err := os.ReadDir(worktreesDir)
 	if err != nil {
-		return nil, err
+		return nil, nil
 	}
 
-	q := index.NewQuery(idx)
-	targets := q.ByCategory(nav.CategoryWorktrees)
-
-	seenProjects := make(map[string]bool)
-	seenFull := make(map[string]bool)
 	var candidates []string
 	partialLower := strings.ToLower(partial)
+	seen := make(map[string]bool)
 
-	for _, t := range targets {
-		// Parse "project@branch" format
-		atIdx := strings.Index(t.Name, "@")
-		if atIdx <= 0 {
+	for _, entry := range entries {
+		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
 			continue
 		}
-
-		project := t.Name[:atIdx]
-		branch := t.Name[atIdx+1:]
-
-		// Match project prefix → suggest "project@" for drilling down
-		if !seenProjects[project] && strings.HasPrefix(strings.ToLower(project), partialLower) {
-			seenProjects[project] = true
-			candidates = append(candidates, project+"@")
+		name := entry.Name()
+		if partial == "" || strings.HasPrefix(strings.ToLower(name), partialLower) {
+			if !seen[name] {
+				seen[name] = true
+				candidates = append(candidates, name)
+			}
 		}
+	}
 
-		// Match branch prefix → suggest full "project@branch"
-		if !seenFull[t.Name] && strings.HasPrefix(strings.ToLower(branch), partialLower) {
-			seenFull[t.Name] = true
-			candidates = append(candidates, t.Name)
+	// Also include matching project@branch entries from index
+	if partial != "" {
+		idx, err := index.GetOrBuild(ctx, jumpResult.Path, false)
+		if err == nil {
+			q := index.NewQuery(idx)
+			for _, t := range q.ByCategory(nav.CategoryWorktrees) {
+				tLower := strings.ToLower(t.Name)
+				if strings.HasPrefix(tLower, partialLower) && !seen[t.Name] {
+					seen[t.Name] = true
+					candidates = append(candidates, t.Name)
+				}
+			}
 		}
 	}
 
@@ -137,6 +139,97 @@ func completeBranches(ctx context.Context, partial string) ([]string, error) {
 	for _, t := range targets {
 		if strings.HasPrefix(strings.ToLower(t.Name), partialLower) {
 			candidates = append(candidates, t.Name)
+		}
+	}
+
+	return candidates, nil
+}
+
+// completeWorktreeRich returns rich completion candidates for worktrees.
+// Hierarchical: shows project directories first, then project@branch on drill-down.
+func completeWorktreeRich(ctx context.Context, campaignRoot, partial string) ([]index.CompletionCandidate, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	if strings.Contains(partial, "@") {
+		return completeBranchesRich(ctx, campaignRoot, partial)
+	}
+
+	worktreesDir := filepath.Join(campaignRoot, nav.CategoryWorktrees.Dir())
+	return completeWorktreeProjects(ctx, campaignRoot, worktreesDir, partial)
+}
+
+// completeWorktreeProjects scans the worktrees directory for project subdirectories.
+// Returns project directory names as candidates, plus matching project@branch from the index.
+func completeWorktreeProjects(ctx context.Context, campaignRoot, worktreesDir, partial string) ([]index.CompletionCandidate, error) {
+	entries, err := os.ReadDir(worktreesDir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	var candidates []index.CompletionCandidate
+	partialLower := strings.ToLower(partial)
+
+	for _, entry := range entries {
+		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		name := entry.Name()
+		if partial == "" || strings.HasPrefix(strings.ToLower(name), partialLower) {
+			relPath, _ := filepath.Rel(campaignRoot, filepath.Join(worktreesDir, name))
+			candidates = append(candidates, index.CompletionCandidate{
+				Name:     name,
+				Path:     relPath,
+				Category: string(nav.CategoryWorktrees),
+			})
+		}
+	}
+
+	// Also include matching project@branch entries from index
+	if partial != "" {
+		idx, err := index.GetOrBuild(ctx, campaignRoot, false)
+		if err == nil {
+			q := index.NewQuery(idx)
+			for _, t := range q.ByCategory(nav.CategoryWorktrees) {
+				tLower := strings.ToLower(t.Name)
+				if strings.HasPrefix(tLower, partialLower) {
+					candidates = append(candidates, index.CompletionCandidate{
+						Name:     t.Name,
+						Path:     t.RelativePath(campaignRoot),
+						Category: string(nav.CategoryWorktrees),
+					})
+				}
+			}
+		}
+	}
+
+	return candidates, nil
+}
+
+// completeBranchesRich returns rich completion candidates for project@branch entries.
+func completeBranchesRich(ctx context.Context, campaignRoot, partial string) ([]index.CompletionCandidate, error) {
+	idx, err := index.GetOrBuild(ctx, campaignRoot, false)
+	if err != nil {
+		return nil, err
+	}
+
+	q := index.NewQuery(idx)
+	targets := q.ByCategory(nav.CategoryWorktrees)
+
+	var candidates []index.CompletionCandidate
+	partialLower := strings.ToLower(partial)
+
+	for _, t := range targets {
+		if strings.HasPrefix(strings.ToLower(t.Name), partialLower) {
+			candidates = append(candidates, index.CompletionCandidate{
+				Name:     t.Name,
+				Path:     t.RelativePath(campaignRoot),
+				Category: string(nav.CategoryWorktrees),
+			})
 		}
 	}
 
