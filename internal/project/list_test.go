@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -211,6 +212,192 @@ func TestList_GitSubmodule(t *testing.T) {
 
 	if len(projects) != 1 {
 		t.Errorf("List() returned %d projects, want 1", len(projects))
+	}
+}
+
+func TestList_MonorepoExpansion(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+
+	projectsDir := filepath.Join(tmpDir, "projects")
+	os.MkdirAll(projectsDir, 0755)
+
+	// Create a monorepo with 3 subprojects
+	mono := filepath.Join(projectsDir, "my-monorepo")
+	os.MkdirAll(mono, 0755)
+	initGitRepo(t, mono)
+
+	// Root go.mod (monorepo root)
+	os.WriteFile(filepath.Join(mono, "go.mod"), []byte("module mono"), 0644)
+
+	// Subproject 1: Go
+	sub1 := filepath.Join(mono, "service-a")
+	os.MkdirAll(sub1, 0755)
+	os.WriteFile(filepath.Join(sub1, "go.mod"), []byte("module mono/service-a"), 0644)
+
+	// Subproject 2: Go
+	sub2 := filepath.Join(mono, "service-b")
+	os.MkdirAll(sub2, 0755)
+	os.WriteFile(filepath.Join(sub2, "go.mod"), []byte("module mono/service-b"), 0644)
+
+	// Subproject 3: Rust
+	sub3 := filepath.Join(mono, "rust-lib")
+	os.MkdirAll(sub3, 0755)
+	os.WriteFile(filepath.Join(sub3, "Cargo.toml"), []byte("[package]"), 0644)
+
+	// Non-subproject dir (no marker)
+	os.MkdirAll(filepath.Join(mono, "docs"), 0755)
+
+	ctx := context.Background()
+	projects, err := List(ctx, tmpDir)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+
+	if len(projects) != 3 {
+		t.Fatalf("List() returned %d projects, want 3", len(projects))
+	}
+
+	projectMap := make(map[string]Project)
+	for _, p := range projects {
+		projectMap[p.Name] = p
+	}
+
+	// Verify subprojects
+	for _, name := range []string{"my-monorepo/service-a", "my-monorepo/service-b", "my-monorepo/rust-lib"} {
+		p, ok := projectMap[name]
+		if !ok {
+			t.Errorf("missing expected subproject %q", name)
+			continue
+		}
+		if p.MonorepoRoot != "projects/my-monorepo" {
+			t.Errorf("%s MonorepoRoot = %q, want %q", name, p.MonorepoRoot, "projects/my-monorepo")
+		}
+	}
+
+	// Verify types
+	if p := projectMap["my-monorepo/service-a"]; p.Type != TypeGo {
+		t.Errorf("service-a type = %q, want %q", p.Type, TypeGo)
+	}
+	if p := projectMap["my-monorepo/rust-lib"]; p.Type != TypeRust {
+		t.Errorf("rust-lib type = %q, want %q", p.Type, TypeRust)
+	}
+}
+
+func TestList_StandaloneNotExpanded(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+
+	projectsDir := filepath.Join(tmpDir, "projects")
+	os.MkdirAll(projectsDir, 0755)
+
+	// Project with only 1 subdirectory marker — should NOT be expanded
+	proj := filepath.Join(projectsDir, "single-sub")
+	os.MkdirAll(proj, 0755)
+	initGitRepo(t, proj)
+	os.WriteFile(filepath.Join(proj, "go.mod"), []byte("module root"), 0644)
+
+	sub := filepath.Join(proj, "cmd")
+	os.MkdirAll(sub, 0755)
+	os.WriteFile(filepath.Join(sub, "go.mod"), []byte("module root/cmd"), 0644)
+
+	ctx := context.Background()
+	projects, err := List(ctx, tmpDir)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+
+	if len(projects) != 1 {
+		t.Fatalf("List() returned %d projects, want 1", len(projects))
+	}
+
+	if projects[0].Name != "single-sub" {
+		t.Errorf("project name = %q, want %q", projects[0].Name, "single-sub")
+	}
+	if projects[0].MonorepoRoot != "" {
+		t.Errorf("MonorepoRoot = %q, want empty (standalone)", projects[0].MonorepoRoot)
+	}
+}
+
+func TestList_MonorepoSkipsSymlinks(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+
+	projectsDir := filepath.Join(tmpDir, "projects")
+	os.MkdirAll(projectsDir, 0755)
+
+	// Create a monorepo
+	mono := filepath.Join(projectsDir, "mono")
+	os.MkdirAll(mono, 0755)
+	initGitRepo(t, mono)
+
+	// Two real subprojects
+	for _, name := range []string{"svc-a", "svc-b"} {
+		sub := filepath.Join(mono, name)
+		os.MkdirAll(sub, 0755)
+		os.WriteFile(filepath.Join(sub, "go.mod"), []byte("module mono/"+name), 0644)
+	}
+
+	// Symlink subdir (should be skipped)
+	externalDir := t.TempDir()
+	os.WriteFile(filepath.Join(externalDir, "go.mod"), []byte("module external"), 0644)
+	os.Symlink(externalDir, filepath.Join(mono, "linked-sub"))
+
+	ctx := context.Background()
+	projects, err := List(ctx, tmpDir)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+
+	if len(projects) != 2 {
+		t.Fatalf("List() returned %d projects, want 2 (symlink excluded)", len(projects))
+	}
+
+	for _, p := range projects {
+		if strings.Contains(p.Name, "linked-sub") {
+			t.Errorf("symlinked subdirectory should not appear as subproject: %s", p.Name)
+		}
+	}
+}
+
+func TestList_MonorepoSkipsExcludedDirs(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+
+	projectsDir := filepath.Join(tmpDir, "projects")
+	os.MkdirAll(projectsDir, 0755)
+
+	mono := filepath.Join(projectsDir, "mono")
+	os.MkdirAll(mono, 0755)
+	initGitRepo(t, mono)
+
+	// Two real subprojects
+	for _, name := range []string{"app", "lib"} {
+		sub := filepath.Join(mono, name)
+		os.MkdirAll(sub, 0755)
+		os.WriteFile(filepath.Join(sub, "package.json"), []byte("{}"), 0644)
+	}
+
+	// vendor/ and node_modules/ with markers (should be excluded)
+	for _, excluded := range []string{"vendor", "node_modules", "testdata"} {
+		dir := filepath.Join(mono, excluded)
+		os.MkdirAll(dir, 0755)
+		os.WriteFile(filepath.Join(dir, "package.json"), []byte("{}"), 0644)
+	}
+
+	// Hidden dir with marker (should be excluded)
+	hidden := filepath.Join(mono, ".internal")
+	os.MkdirAll(hidden, 0755)
+	os.WriteFile(filepath.Join(hidden, "go.mod"), []byte("module hidden"), 0644)
+
+	ctx := context.Background()
+	projects, err := List(ctx, tmpDir)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+
+	if len(projects) != 2 {
+		t.Fatalf("List() returned %d projects, want 2 (excluded dirs filtered)", len(projects))
 	}
 }
 

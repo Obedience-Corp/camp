@@ -199,6 +199,52 @@ func TestResolveProjects_EmptyMapFallback(t *testing.T) {
 	}
 }
 
+func TestResolveProjects_FallbackMonorepoExpansion(t *testing.T) {
+	root := t.TempDir()
+	root, _ = filepath.EvalSymlinks(root)
+
+	// Create a monorepo with 2+ subprojects so project.List() expands it
+	mono := filepath.Join(root, "projects", "my-mono")
+	if err := os.MkdirAll(mono, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("git", "init", mono)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init failed: %v\n%s", err, out)
+	}
+
+	// Two subprojects with language markers
+	for _, name := range []string{"svc-a", "svc-b"} {
+		sub := filepath.Join(mono, name)
+		os.MkdirAll(sub, 0o755)
+		os.WriteFile(filepath.Join(sub, "go.mod"), []byte("module mono/"+name), 0644)
+	}
+
+	cfg := &LeverageConfig{} // empty Projects → fallback to project.List()
+
+	got, err := ResolveProjects(context.Background(), root, cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(got) != 2 {
+		t.Fatalf("got %d projects, want 2", len(got))
+	}
+
+	for _, p := range got {
+		if !p.InMonorepo {
+			t.Errorf("%s: expected InMonorepo = true", p.Name)
+		}
+		wantGit := filepath.Join(root, "projects", "my-mono")
+		if p.GitDir != wantGit {
+			t.Errorf("%s: GitDir = %q, want %q", p.Name, p.GitDir, wantGit)
+		}
+		if p.SCCDir == p.GitDir {
+			t.Errorf("%s: SCCDir should differ from GitDir for monorepo subproject", p.Name)
+		}
+	}
+}
+
 func TestResolveProjects_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
