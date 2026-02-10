@@ -43,7 +43,7 @@ func (m *mockRunner) Run(ctx context.Context, dir string) (*leverage.SCCResult, 
 func sampleResult(estimatedPeople, estimatedMonths, estimatedCost float64, code int) *leverage.SCCResult {
 	return &leverage.SCCResult{
 		LanguageSummary: []leverage.LanguageEntry{
-			{Name: "Go", Lines: code + 200, Code: code, Comment: 100, Blank: 100},
+			{Name: "Go", Lines: code + 200, Code: code, Comment: 100, Blank: 100, Count: 42},
 		},
 		EstimatedCost:           estimatedCost,
 		EstimatedScheduleMonths: estimatedMonths,
@@ -93,13 +93,17 @@ func TestLeverageCommand_TableOutput(t *testing.T) {
 	}
 
 	wantStrings := []string{
-		"Campaign Leverage Score",
-		"Effort:",
-		"Team:",
+		"Campaign Leverage:",
+		"COCOMO Estimate:",
+		"Actual Effort:",
+		"Team Equivalent:",
 		"PROJECT",
+		"FILES",
 		"CODE",
+		"EST COST",
 		"EST PEOPLE",
-		"EFFORT",
+		"EST MONTHS",
+		"LEVERAGE",
 	}
 
 	for _, want := range wantStrings {

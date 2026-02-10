@@ -139,26 +139,36 @@ func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores
 		fmt.Fprintln(out)
 	}
 
-	fmt.Fprintf(out, "Campaign Leverage Score\n")
-	fmt.Fprintf(out, "  Effort:  %sx  (estimated_people x estimated_months) / (actual_people x elapsed_months)\n", fmtScore(agg.FullLeverage))
-	fmt.Fprintf(out, "  Team:    %sx  estimated_people / actual_people\n\n", fmtScore(agg.SimpleLeverage))
-	fmt.Fprintf(out, "Estimated: %.1f people x %.1f months | Actual: %d %s x %.1f months\n",
-		agg.EstimatedPeople, agg.EstimatedMonths, cfg.ActualPeople, pluralize(cfg.ActualPeople, "person", "people"), agg.ElapsedMonths)
-	fmt.Fprintf(out, "Total Code: %s lines | Estimated Cost: $%s\n", fmtInt(agg.TotalCode), fmtCost(agg.EstimatedCost))
-	fmt.Fprintf(out, "Since: %s (earliest commit across all projects)\n", cfg.ProjectStart.Format("Jan 2, 2006"))
+	// Header: headline leverage number
+	fmt.Fprintf(out, "Campaign Leverage: %sx\n\n", fmtScore(agg.FullLeverage))
+
+	// COCOMO vs Actual comparison
+	fmt.Fprintf(out, "  COCOMO Estimate:  %.1f people × %.1f months  ($%s)\n",
+		agg.EstimatedPeople, agg.EstimatedMonths, fmtCost(agg.EstimatedCost))
+	fmt.Fprintf(out, "  Actual Effort:    %d %s × %.1f months\n",
+		cfg.ActualPeople, pluralize(cfg.ActualPeople, "person", "people"), agg.ElapsedMonths)
+	fmt.Fprintf(out, "  Team Equivalent:  %sx\n\n", fmtScore(agg.SimpleLeverage))
+
+	// Summary line
+	fmt.Fprintf(out, "  %s lines of code across %d %s\n",
+		fmtInt(agg.TotalCode), len(scores), pluralize(len(scores), "project", "projects"))
+	fmt.Fprintf(out, "  Since %s\n", cfg.ProjectStart.Format("Jan 2, 2006"))
 	fmt.Fprintln(out)
 
+	// Project table
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "PROJECT\tCODE\tEST PEOPLE\tEFFORT\tTEAM")
-	fmt.Fprintln(w, "-------\t----\t----------\t------\t----")
+	fmt.Fprintln(w, "PROJECT\tFILES\tCODE\tEST COST\tEST PEOPLE\tEST MONTHS\tLEVERAGE")
+	fmt.Fprintln(w, "-------\t-----\t----\t--------\t----------\t----------\t--------")
 
 	for _, s := range scores {
-		fmt.Fprintf(w, "%s\t%s\t%.1f\t%sx\t%sx\n",
+		fmt.Fprintf(w, "%s\t%s\t%s\t$%s\t%.1f\t%.1f\t%sx\n",
 			s.ProjectName,
+			fmtInt(s.TotalFiles),
 			fmtInt(s.TotalCode),
+			fmtCost(s.EstimatedCost),
 			s.EstimatedPeople,
+			s.EstimatedMonths,
 			fmtScore(s.FullLeverage),
-			fmtScore(s.SimpleLeverage),
 		)
 	}
 	if err := w.Flush(); err != nil {
@@ -167,8 +177,7 @@ func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores
 
 	if !noLegend {
 		fmt.Fprintln(out)
-		fmt.Fprintln(out, "Effort = person-months leverage (how much faster and bigger than a traditional team)")
-		fmt.Fprintln(out, "Team   = headcount leverage (equivalent team size for this output)")
+		fmt.Fprintln(out, "Leverage = estimated effort / actual effort (COCOMO organic model via scc)")
 	}
 	return nil
 }

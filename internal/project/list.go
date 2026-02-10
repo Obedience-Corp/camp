@@ -233,7 +233,9 @@ func deduplicateByRemoteURL(ctx context.Context, campaignRoot string, projects [
 	bestDate := make(map[string]string)
 
 	for i, p := range projects {
-		if p.URL == "" {
+		// Skip dedup for monorepo subprojects — they are distinct codebases
+		// that share a single git remote URL.
+		if p.URL == "" || p.MonorepoRoot != "" {
 			continue
 		}
 
@@ -260,7 +262,7 @@ func deduplicateByRemoteURL(ctx context.Context, campaignRoot string, projects [
 
 	result := make([]Project, 0, len(projects))
 	for i, p := range projects {
-		if p.URL == "" || keep[i] {
+		if p.URL == "" || p.MonorepoRoot != "" || keep[i] {
 			result = append(result, p)
 		}
 	}
