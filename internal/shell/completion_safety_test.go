@@ -61,6 +61,19 @@ func TestCompletionOutputNoEscapeSequences(t *testing.T) {
 	}
 }
 
+// TestZshCompletionNoProcessSubstitution verifies that the zsh completion
+// function does NOT use process substitution `< <(...)`. Process substitution
+// inside zsh completion functions creates temporary named pipes that compete
+// with zsh's internal fd management, corrupting the completion state machine
+// and breaking the user's shell (ls, git, mv all stop working).
+// Use command substitution `$(...)` instead.
+func TestZshCompletionNoProcessSubstitution(t *testing.T) {
+	output := generateZsh()
+	if strings.Contains(output, "< <(") {
+		t.Error("zsh completion uses process substitution '< <(...)' which corrupts zsh's completion state machine; use command substitution '$()' instead")
+	}
+}
+
 // TestShortcutConsistencyAcrossShells verifies that all shell init scripts
 // contain the same set of navigation shortcuts, sourced from the same
 // config.DefaultNavigationShortcuts() data. Hardcoded shortcut lists

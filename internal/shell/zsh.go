@@ -82,14 +82,17 @@ const zshInitSuffix = `
     local category="${words[2]}"
     local query="${words[3]:-}"
     local -a completions
-    local line
+    local line output
 
-    # Get completions with descriptions (name\tpath format)
-    # NO_COLOR prevents lipgloss/termenv from querying the terminal via OSC
-    # escape sequences, which would corrupt zsh's completion state machine.
-    while IFS=$'\t' read -r name path; do
-      [[ -n "$name" ]] && completions+=("$name:$path")
-    done < <(NO_COLOR=1 command camp complete --described "$category" "$query" 2>/dev/null)
+    # Use command substitution instead of process substitution.
+    # Process substitution inside completion functions can corrupt
+    # zsh's fd management and break the command hash table.
+    output=$(NO_COLOR=1 command camp complete --described "$category" "$query" 2>/dev/null)
+    for line in ${(f)output}; do
+      local name="${line%%$'\t'*}"
+      local desc="${line#*$'\t'}"
+      [[ -n "$name" ]] && completions+=("$name:$desc")
+    done
 
     (( ${#completions} )) && _describe 'target' completions
   fi
