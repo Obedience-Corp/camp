@@ -3,13 +3,11 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"text/tabwriter"
 	"time"
 
 	"github.com/obediencecorp/camp/internal/campaign"
 	"github.com/obediencecorp/camp/internal/leverage"
-	"github.com/obediencecorp/camp/internal/project"
 	"github.com/spf13/cobra"
 )
 
@@ -92,10 +90,10 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 		runner = r
 	}
 
-	// Discover projects via project.List
-	projects, err := project.List(ctx, root)
+	// Resolve projects (config-driven or fallback to project.List)
+	resolved, err := leverage.ResolveProjects(ctx, root, cfg)
 	if err != nil {
-		return fmt.Errorf("listing projects: %w", err)
+		return fmt.Errorf("resolving projects: %w", err)
 	}
 
 	// Compute elapsed months
@@ -104,20 +102,16 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 
 	// Run scc and compute scores for each project
 	var scores []*leverage.LeverageScore
-	for _, proj := range projects {
+	for _, proj := range resolved {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 
-		// Skip if filtering and doesn't match
 		if projectFilter != "" && proj.Name != projectFilter {
 			continue
 		}
 
-		// proj.Path is relative (e.g., "projects/camp"), make absolute
-		absPath := filepath.Join(root, proj.Path)
-
-		result, err := runner.Run(ctx, absPath)
+		result, err := runner.Run(ctx, proj.SCCDir)
 		if err != nil {
 			fmt.Fprintf(cmd.ErrOrStderr(), "Warning: skipping %s: %v\n", proj.Name, err)
 			continue
