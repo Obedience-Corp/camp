@@ -1,11 +1,12 @@
 package shell
 
 // generateZsh returns the zsh initialization script.
+// Shortcuts are injected dynamically from config.DefaultNavigationShortcuts().
 func generateZsh() string {
-	return zshInit
+	return zshInitPrefix + zshShortcutTargets() + zshInitSuffix
 }
 
-const zshInit = `# Camp CLI - Zsh Integration
+const zshInitPrefix = `# Camp CLI - Zsh Integration
 # Add to .zshrc: eval "$(camp shell-init zsh)"
 
 # Check if camp is available
@@ -71,17 +72,9 @@ _cgo() {
   if (( CURRENT == 2 )); then
     # First argument - category shortcuts and targets
     targets=(
-      'p:projects directory'
-      'pw:projects/worktrees directory'
-      'f:festivals directory'
-      'a:ai_docs directory'
-      'd:docs directory'
-      'du:dungeon directory'
-      'w:workflow directory'
-      'cr:workflow/code_reviews directory'
-      'pi:workflow/pipelines directory'
-      'de:workflow/design directory'
-      'i:workflow/intents directory'
+`
+
+const zshInitSuffix = `
     )
     _describe 'category' targets
   elif (( CURRENT == 3 )); then
@@ -92,9 +85,11 @@ _cgo() {
     local line
 
     # Get completions with descriptions (name\tpath format)
+    # NO_COLOR prevents lipgloss/termenv from querying the terminal via OSC
+    # escape sequences, which would corrupt zsh's completion state machine.
     while IFS=$'\t' read -r name path; do
       [[ -n "$name" ]] && completions+=("$name:$path")
-    done < <(command camp complete --described "$category" "$query" 2>/dev/null)
+    done < <(NO_COLOR=1 command camp complete --described "$category" "$query" 2>/dev/null)
 
     (( ${#completions} )) && _describe 'target' completions
   fi

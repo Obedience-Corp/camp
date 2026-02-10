@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 	"github.com/obediencecorp/camp/internal/campaign"
 	"github.com/obediencecorp/camp/internal/config"
 	"github.com/obediencecorp/camp/internal/ui"
@@ -142,7 +144,32 @@ func loadShortcutsForExpansion() map[string]config.ShortcutConfig {
 	return result
 }
 
+// isCompletionMode returns true if the binary was invoked for shell completion.
+// Must be checked before any lipgloss rendering to prevent terminal OSC queries
+// that corrupt zsh's completion state machine via /dev/tty response leaks.
+func isCompletionMode() bool {
+	for _, arg := range os.Args[1:] {
+		if arg == "--" {
+			return false
+		}
+		if len(arg) > 0 && arg[0] == '-' {
+			continue
+		}
+		return arg == "complete"
+	}
+	return false
+}
+
 func init() {
+	// CRITICAL: Disable terminal queries before ANY lipgloss rendering.
+	// During shell completion, lipgloss/termenv must not send OSC escape
+	// sequences to /dev/tty — their responses leak into zsh's input buffer
+	// and corrupt the completion state machine, breaking the user's shell.
+	// This must run before styledLongDescription() and ui.Category() calls below.
+	if isCompletionMode() {
+		lipgloss.SetColorProfile(termenv.Ascii)
+	}
+
 	// Register template functions for styled help
 	cobra.AddTemplateFunc("styleLabel", ui.Label)
 	cobra.AddTemplateFunc("styleCategory", ui.Category)
