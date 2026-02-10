@@ -84,7 +84,7 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 	// Create SCC runner (use injected runner if set, e.g. in tests)
 	runner := sccRunner
 	if runner == nil {
-		r, err := leverage.NewSCCRunner()
+		r, err := leverage.NewSCCRunner(cfg.COCOMOProjectType)
 		if err != nil {
 			return err
 		}

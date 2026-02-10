@@ -56,9 +56,16 @@ func sampleResult(estimatedPeople, estimatedMonths, estimatedCost float64, code 
 func executeLeverage(t *testing.T, args ...string) (string, error) {
 	t.Helper()
 
-	// Reset Cobra flag state to avoid cross-test contamination
-	leverageCmd.Flags().Visit(func(f *pflag.Flag) { f.Changed = false })
-	leverageConfigCmd.Flags().Visit(func(f *pflag.Flag) { f.Changed = false })
+	// Reset Cobra flag state to avoid cross-test contamination.
+	// Must reset both Changed and Value — Changed alone leaves stale values.
+	leverageCmd.Flags().VisitAll(func(f *pflag.Flag) {
+		f.Changed = false
+		f.Value.Set(f.DefValue)
+	})
+	leverageConfigCmd.Flags().VisitAll(func(f *pflag.Flag) {
+		f.Changed = false
+		f.Value.Set(f.DefValue)
+	})
 
 	var buf bytes.Buffer
 	rootCmd.SetOut(&buf)
@@ -183,10 +190,13 @@ func TestLeverageCommand_RunnerError(t *testing.T) {
 
 	output, err := executeLeverage(t)
 
-	// When all projects fail with warnings, the output still has the campaign summary
-	// with zero values. Either warnings or error is acceptable.
-	if !strings.Contains(output, "Warning") && err == nil {
-		t.Logf("Output: %s", output)
+	// Command should succeed (project failures are warnings, not fatal).
+	if err != nil {
+		t.Fatalf("command should not error, got: %v", err)
+	}
+
+	if !strings.Contains(output, "Warning") {
+		t.Errorf("output should contain warnings for skipped projects\nGot:\n%s", output)
 	}
 }
 

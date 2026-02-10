@@ -57,7 +57,7 @@ func TestMockRunner_Error(t *testing.T) {
 
 func TestNewSCCRunner(t *testing.T) {
 	// scc is installed on this machine, so this should succeed.
-	runner, err := NewSCCRunner()
+	runner, err := NewSCCRunner(COCOMOOrganic)
 	if err != nil {
 		t.Skipf("scc not installed: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestNewSCCRunner(t *testing.T) {
 }
 
 func TestSCCRunner_Run(t *testing.T) {
-	runner, err := NewSCCRunner()
+	runner, err := NewSCCRunner(COCOMOOrganic)
 	if err != nil {
 		t.Skipf("scc not installed: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestSCCRunner_Run(t *testing.T) {
 }
 
 func TestSCCRunner_Run_ContextCancelled(t *testing.T) {
-	runner, err := NewSCCRunner()
+	runner, err := NewSCCRunner(COCOMOOrganic)
 	if err != nil {
 		t.Skipf("scc not installed: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestSCCRunner_Run_ContextCancelled(t *testing.T) {
 }
 
 func TestSCCRunner_Run_InvalidDir(t *testing.T) {
-	runner, err := NewSCCRunner()
+	runner, err := NewSCCRunner(COCOMOOrganic)
 	if err != nil {
 		t.Skipf("scc not installed: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestSCCRunner_Run_InvalidDir(t *testing.T) {
 }
 
 func TestSCCRunner_Run_EmptyDir(t *testing.T) {
-	runner, err := NewSCCRunner()
+	runner, err := NewSCCRunner(COCOMOOrganic)
 	if err != nil {
 		t.Skipf("scc not installed: %v", err)
 	}

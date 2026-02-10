@@ -10,16 +10,18 @@ import (
 // SCCRunner implements Runner by shelling out to the scc binary.
 type SCCRunner struct {
 	binaryPath string
+	cocomoType string
 }
 
 // NewSCCRunner creates an SCCRunner after verifying scc is installed.
+// cocomoType controls the COCOMO model variant passed to scc (e.g. "organic").
 // Returns an error with installation instructions if scc is not in PATH.
-func NewSCCRunner() (*SCCRunner, error) {
+func NewSCCRunner(cocomoType string) (*SCCRunner, error) {
 	path, err := exec.LookPath("scc")
 	if err != nil {
 		return nil, fmt.Errorf("scc not found: install with 'brew install scc' or visit https://github.com/boyter/scc")
 	}
-	return &SCCRunner{binaryPath: path}, nil
+	return &SCCRunner{binaryPath: path, cocomoType: cocomoType}, nil
 }
 
 // Run executes scc on dir and returns the parsed json2 result.
@@ -30,7 +32,7 @@ func (r *SCCRunner) Run(ctx context.Context, dir string) (*SCCResult, error) {
 
 	cmd := exec.CommandContext(ctx, r.binaryPath,
 		"--format", FormatJSON2,
-		"--cocomo-project-type", COCOMOOrganic,
+		"--cocomo-project-type", r.cocomoType,
 		dir,
 	)
 

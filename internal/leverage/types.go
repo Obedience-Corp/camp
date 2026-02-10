@@ -103,19 +103,4 @@ type LeverageConfig struct {
 
 	// AvgWage overrides the average yearly salary for cost estimation.
 	AvgWage float64 `json:"avg_wage,omitempty"`
-
-	// Projects holds per-project overrides. Key is the project name
-	// (e.g., "camp", "fest"). If a project is not listed here, campaign
-	// defaults apply.
-	Projects map[string]ProjectConfig `json:"projects,omitempty"`
-}
-
-// ProjectConfig holds per-project overrides within LeverageConfig.
-type ProjectConfig struct {
-	// Path overrides the project directory (relative to campaign root).
-	// Default: "projects/<name>"
-	Path string `json:"path,omitempty"`
-
-	// Include controls whether scc runs on this project. Default true.
-	Include *bool `json:"include,omitempty"`
 }
