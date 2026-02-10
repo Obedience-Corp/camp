@@ -3,13 +3,10 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"text/tabwriter"
 	"time"
 
-	"github.com/obediencecorp/camp/internal/campaign"
 	"github.com/obediencecorp/camp/internal/leverage"
-	"github.com/obediencecorp/camp/internal/project"
 	"github.com/spf13/cobra"
 )
 
@@ -54,48 +51,25 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 	projectFilter, _ := cmd.Flags().GetString("project")
 	peopleOverride, _ := cmd.Flags().GetInt("people")
 
-	// Detect campaign root
-	root, err := campaign.DetectCached(ctx)
+	setup, err := initLeverageSetup(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign: %w", err)
+		return err
 	}
-
-	// Load config; auto-detect if file doesn't exist
-	configPath := leverage.DefaultConfigPath(root)
-	cfg, err := leverage.LoadConfig(configPath)
-	if err != nil {
-		return fmt.Errorf("loading config: %w", err)
-	}
-
-	// If config has no ProjectStart, auto-detect it
-	autoDetected := cfg.ProjectStart.IsZero()
-	if autoDetected {
-		detected, err := leverage.AutoDetectConfig(ctx, root)
-		if err != nil {
-			return fmt.Errorf("auto-detecting config: %w", err)
-		}
-		cfg = detected
-	}
+	cfg := setup.Cfg
 
 	// Apply people override if specified
 	if peopleOverride > 0 {
 		cfg.ActualPeople = peopleOverride
 	}
 
-	// Create SCC runner (use injected runner if set, e.g. in tests)
-	runner := sccRunner
-	if runner == nil {
-		r, err := leverage.NewSCCRunner(cfg.COCOMOProjectType)
-		if err != nil {
-			return err
-		}
-		runner = r
+	runner, err := initRunner(cfg)
+	if err != nil {
+		return err
 	}
 
-	// Discover projects via project.List
-	projects, err := project.List(ctx, root)
+	resolved, err := leverage.ResolveProjects(ctx, setup.Root, cfg)
 	if err != nil {
-		return fmt.Errorf("listing projects: %w", err)
+		return fmt.Errorf("resolving projects: %w", err)
 	}
 
 	// Compute elapsed months
@@ -104,20 +78,16 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 
 	// Run scc and compute scores for each project
 	var scores []*leverage.LeverageScore
-	for _, proj := range projects {
+	for _, proj := range resolved {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 
-		// Skip if filtering and doesn't match
 		if projectFilter != "" && proj.Name != projectFilter {
 			continue
 		}
 
-		// proj.Path is relative (e.g., "projects/camp"), make absolute
-		absPath := filepath.Join(root, proj.Path)
-
-		result, err := runner.Run(ctx, absPath)
+		result, err := runner.Run(ctx, proj.SCCDir)
 		if err != nil {
 			fmt.Fprintf(cmd.ErrOrStderr(), "Warning: skipping %s: %v\n", proj.Name, err)
 			continue
@@ -140,7 +110,7 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 	if jsonOut {
 		return leverageOutputJSON(cmd, agg, scores)
 	}
-	return leverageOutputTable(cmd, agg, scores, cfg, autoDetected)
+	return leverageOutputTable(cmd, agg, scores, cfg, setup.AutoDetected)
 }
 
 func leverageOutputJSON(cmd *cobra.Command, agg *leverage.LeverageScore, scores []*leverage.LeverageScore) error {
