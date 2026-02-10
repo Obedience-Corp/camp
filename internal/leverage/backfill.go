@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 )
@@ -17,6 +18,7 @@ type Backfiller struct {
 	store      SnapshotStorer
 	workers    int
 	onProgress func(project string, current, total int)
+	onWarning  func(project, sample string, err error)
 }
 
 // NewBackfiller creates a Backfiller with the given dependencies.
@@ -34,6 +36,19 @@ func NewBackfiller(runner Runner, store SnapshotStorer, workers int) *Backfiller
 // SetProgressCallback sets the function called after each sample is processed.
 func (b *Backfiller) SetProgressCallback(fn func(project string, current, total int)) {
 	b.onProgress = fn
+}
+
+// SetWarningCallback sets the function called when a non-fatal error is skipped
+// (e.g., scc failure or blame error on an individual sample).
+func (b *Backfiller) SetWarningCallback(fn func(project, sample string, err error)) {
+	b.onWarning = fn
+}
+
+// warn emits a non-fatal warning if a callback is registered.
+func (b *Backfiller) warn(project, sample string, err error) {
+	if b.onWarning != nil {
+		b.onWarning(project, sample, err)
+	}
 }
 
 // Run backfills leverage data for the given projects.
@@ -81,32 +96,27 @@ func groupByGitDir(projects []ResolvedProject) []monorepoGroup {
 	return groups
 }
 
-// backfillGroup processes a group of projects sharing the same GitDir.
-func (b *Backfiller) backfillGroup(ctx context.Context, group monorepoGroup, cfg *LeverageConfig) error {
-	samples, err := SampleWeeklyCommits(ctx, group.GitDir, cfg.ProjectStart)
-	if err != nil {
-		return fmt.Errorf("sampling commits for %s: %w", group.GitDir, err)
-	}
+// pendingSample pairs a commit sample with the projects that still need a snapshot at that date.
+type pendingSample struct {
+	sample   CommitSample
+	projects []ResolvedProject
+}
 
-	// Determine which samples need processing (incremental behavior).
-	// A sample is skipped only if ALL projects in the group already have a snapshot for that date.
-	type pendingSample struct {
-		sample   CommitSample
-		projects []ResolvedProject // projects needing backfill at this date
-	}
-
+// buildPendingSamples filters samples to only those needing work for at least one project.
+// A sample is skipped if ALL projects already have a snapshot for that date.
+func (b *Backfiller) buildPendingSamples(ctx context.Context, samples []CommitSample, projects []ResolvedProject) ([]pendingSample, error) {
 	var pending []pendingSample
 	for _, s := range samples {
 		if err := ctx.Err(); err != nil {
-			return err
+			return nil, err
 		}
 
 		dateStr := s.Date.Format("2006-01-02")
 		var needWork []ResolvedProject
-		for _, proj := range group.Projects {
+		for _, proj := range projects {
 			existing, err := b.store.List(ctx, proj.Name)
 			if err != nil {
-				return fmt.Errorf("listing snapshots for %s: %w", proj.Name, err)
+				return nil, fmt.Errorf("listing snapshots for %s: %w", proj.Name, err)
 			}
 			if !containsDate(existing, dateStr) {
 				needWork = append(needWork, proj)
@@ -116,7 +126,20 @@ func (b *Backfiller) backfillGroup(ctx context.Context, group monorepoGroup, cfg
 			pending = append(pending, pendingSample{sample: s, projects: needWork})
 		}
 	}
+	return pending, nil
+}
 
+// backfillGroup processes a group of projects sharing the same GitDir.
+func (b *Backfiller) backfillGroup(ctx context.Context, group monorepoGroup, cfg *LeverageConfig) error {
+	samples, err := SampleWeeklyCommits(ctx, group.GitDir, cfg.ProjectStart)
+	if err != nil {
+		return fmt.Errorf("sampling commits for %s: %w", group.GitDir, err)
+	}
+
+	pending, err := b.buildPendingSamples(ctx, samples, group.Projects)
+	if err != nil {
+		return err
+	}
 	if len(pending) == 0 {
 		return nil
 	}
@@ -200,10 +223,12 @@ func (b *Backfiller) processSample(ctx context.Context, gitDir string, sample Co
 		}
 
 		// Determine scc scan directory within worktree
+		dateStr := sample.Date.Format("2006-01-02")
 		sccDir := worktreeDir
 		if proj.InMonorepo {
 			rel, err := filepath.Rel(proj.GitDir, proj.SCCDir)
 			if err != nil {
+				b.warn(proj.Name, dateStr, fmt.Errorf("resolving monorepo path: %w", err))
 				continue
 			}
 			sccDir = filepath.Join(worktreeDir, rel)
@@ -217,7 +242,8 @@ func (b *Backfiller) processSample(ctx context.Context, gitDir string, sample Co
 		// Run scc
 		result, err := b.runner.Run(ctx, sccDir)
 		if err != nil {
-			continue // scc failure is non-fatal for individual samples
+			b.warn(proj.Name, dateStr, fmt.Errorf("scc: %w", err))
+			continue
 		}
 
 		// Compute leverage score
@@ -225,25 +251,14 @@ func (b *Backfiller) processSample(ctx context.Context, gitDir string, sample Co
 		score.ProjectName = proj.Name
 
 		// Get author contributions via git blame
-		authors, _ := GetAuthorLOC(ctx, sccDir)
-
-		// Aggregate total lines
-		var totalLines int
-		for _, lang := range result.LanguageSummary {
-			totalLines += lang.Lines
+		authors, err := GetAuthorLOC(ctx, sccDir)
+		if err != nil {
+			b.warn(proj.Name, dateStr, fmt.Errorf("blame: %w", err))
 		}
 
 		// Build and persist snapshot
-		snapshot := &Snapshot{
-			Project:    proj.Name,
-			CommitHash: sample.Hash,
-			CommitDate: sample.Date,
-			SampledAt:  time.Now(),
-			SCC:        SCCResultToSnapshotSCC(result),
-			Leverage:   score,
-			Authors:    authors,
-			TotalLines: totalLines,
-		}
+		scc := SCCResultToSnapshotSCC(result)
+		snapshot := NewSnapshot(proj.Name, sample.Hash, sample.Date, time.Now(), scc, score, authors)
 
 		if err := b.store.Save(ctx, snapshot); err != nil {
 			return fmt.Errorf("saving snapshot for %s: %w", proj.Name, err)
@@ -305,12 +320,7 @@ func SCCResultToSnapshotSCC(result *SCCResult) *SnapshotSCC {
 	return scc
 }
 
-// containsDate checks if a sorted date list contains the given date string.
+// containsDate checks if a date list contains the given date string.
 func containsDate(dates []string, target string) bool {
-	for _, d := range dates {
-		if d == target {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(dates, target)
 }

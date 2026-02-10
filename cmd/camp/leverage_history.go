@@ -7,7 +7,6 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/obediencecorp/camp/internal/campaign"
 	"github.com/obediencecorp/camp/internal/leverage"
 	"github.com/spf13/cobra"
 )
@@ -43,26 +42,13 @@ func init() {
 func runLeverageHistory(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
-	root, err := campaign.DetectCached(ctx)
+	setup, err := initLeverageSetup(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign: %w", err)
+		return err
 	}
+	cfg := setup.Cfg
 
-	configPath := leverage.DefaultConfigPath(root)
-	cfg, err := leverage.LoadConfig(configPath)
-	if err != nil {
-		return fmt.Errorf("loading config: %w", err)
-	}
-
-	if cfg.ProjectStart.IsZero() {
-		detected, err := leverage.AutoDetectConfig(ctx, root)
-		if err != nil {
-			return fmt.Errorf("auto-detecting config: %w", err)
-		}
-		cfg = detected
-	}
-
-	store := leverage.NewFileSnapshotStore(leverage.DefaultSnapshotDir(root))
+	store := leverage.NewFileSnapshotStore(leverage.DefaultSnapshotDir(setup.Root))
 
 	// Determine project list
 	projectFilter, _ := cmd.Flags().GetString("project")

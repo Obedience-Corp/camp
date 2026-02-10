@@ -2,6 +2,7 @@ package leverage
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -447,5 +448,86 @@ func TestBackfiller_MonorepoMissingSubdir(t *testing.T) {
 	}
 	if missingCount != 0 {
 		t.Errorf("expected zero snapshots for missing-project, got %d", missingCount)
+	}
+}
+
+func TestBackfiller_WarningCallback(t *testing.T) {
+	// Create a runner that always fails
+	failRunner := &failingRunner{}
+	store := newMockSnapshotStore()
+	bf := NewBackfiller(failRunner, store, 1)
+
+	var warnings []string
+	bf.SetWarningCallback(func(project, sample string, err error) {
+		warnings = append(warnings, project+":"+sample+":"+err.Error())
+	})
+
+	// Set up a real git repo with one commit
+	dir := t.TempDir()
+	git := func(args ...string) {
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_DATE=2025-06-01T12:00:00+00:00", "GIT_COMMITTER_DATE=2025-06-01T12:00:00+00:00")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("init")
+	git("config", "user.email", "test@test.com")
+	git("config", "user.name", "Test")
+	os.WriteFile(filepath.Join(dir, "file.go"), []byte("package main\n"), 0o644)
+	git("add", ".")
+	git("commit", "-m", "init")
+
+	projects := []ResolvedProject{
+		{Name: "test", SCCDir: dir, GitDir: dir},
+	}
+	cfg := &LeverageConfig{
+		ActualPeople: 1,
+		ProjectStart: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+	}
+
+	// Run should succeed (errors are non-fatal) but produce warnings
+	err := bf.Run(context.Background(), projects, cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(warnings) == 0 {
+		t.Fatal("expected warnings from failing runner, got none")
+	}
+}
+
+// failingRunner is a Runner that always returns an error.
+type failingRunner struct{}
+
+func (f *failingRunner) Run(_ context.Context, _ string) (*SCCResult, error) {
+	return nil, fmt.Errorf("scc unavailable")
+}
+
+func TestBuildPendingSamples(t *testing.T) {
+	store := newMockSnapshotStore()
+	store.existing["camp"] = []string{"2025-06-01"}
+
+	bf := NewBackfiller(nil, store, 1)
+
+	samples := []CommitSample{
+		{Hash: "aaa", Date: time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)},
+		{Hash: "bbb", Date: time.Date(2025, 6, 8, 0, 0, 0, 0, time.UTC)},
+	}
+	projects := []ResolvedProject{
+		{Name: "camp"},
+	}
+
+	pending, err := bf.buildPendingSamples(context.Background(), samples, projects)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Only the second sample should be pending (first already exists)
+	if len(pending) != 1 {
+		t.Fatalf("got %d pending, want 1", len(pending))
+	}
+	if pending[0].sample.Hash != "bbb" {
+		t.Errorf("pending hash = %q, want %q", pending[0].sample.Hash, "bbb")
 	}
 }

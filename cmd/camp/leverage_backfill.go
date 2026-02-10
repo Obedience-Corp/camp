@@ -5,7 +5,6 @@ import (
 	"os/signal"
 	"time"
 
-	"github.com/obediencecorp/camp/internal/campaign"
 	"github.com/obediencecorp/camp/internal/leverage"
 	"github.com/spf13/cobra"
 )
@@ -42,24 +41,11 @@ func runLeverageBackfill(cmd *cobra.Command, args []string) error {
 	ctx, cancel := signal.NotifyContext(cmd.Context())
 	defer cancel()
 
-	root, err := campaign.DetectCached(ctx)
+	setup, err := initLeverageSetup(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign: %w", err)
+		return err
 	}
-
-	configPath := leverage.DefaultConfigPath(root)
-	cfg, err := leverage.LoadConfig(configPath)
-	if err != nil {
-		return fmt.Errorf("loading config: %w", err)
-	}
-
-	if cfg.ProjectStart.IsZero() {
-		detected, err := leverage.AutoDetectConfig(ctx, root)
-		if err != nil {
-			return fmt.Errorf("auto-detecting config: %w", err)
-		}
-		cfg = detected
-	}
+	cfg := setup.Cfg
 
 	// Parse --since to override project_start for sampling
 	sinceStr, _ := cmd.Flags().GetString("since")
@@ -71,44 +57,34 @@ func runLeverageBackfill(cmd *cobra.Command, args []string) error {
 		cfg.ProjectStart = since
 	}
 
-	// Create SCC runner
-	runner := sccRunner
-	if runner == nil {
-		r, err := leverage.NewSCCRunner(cfg.COCOMOProjectType)
-		if err != nil {
-			return err
-		}
-		runner = r
+	runner, err := initRunner(cfg)
+	if err != nil {
+		return err
 	}
 
-	resolved, err := leverage.ResolveProjects(ctx, root, cfg)
+	resolved, err := leverage.ResolveProjects(ctx, setup.Root, cfg)
 	if err != nil {
 		return fmt.Errorf("resolving projects: %w", err)
 	}
 
 	// Apply --project filter
 	projectFilter, _ := cmd.Flags().GetString("project")
-	if projectFilter != "" {
-		var filtered []leverage.ResolvedProject
-		for _, p := range resolved {
-			if p.Name == projectFilter {
-				filtered = append(filtered, p)
-			}
-		}
-		if len(filtered) == 0 {
-			return fmt.Errorf("project not found: %s", projectFilter)
-		}
-		resolved = filtered
+	resolved, err = leverage.FilterByName(resolved, projectFilter)
+	if err != nil {
+		return err
 	}
 
-	store := leverage.NewFileSnapshotStore(leverage.DefaultSnapshotDir(root))
+	store := leverage.NewFileSnapshotStore(leverage.DefaultSnapshotDir(setup.Root))
 	workers, _ := cmd.Flags().GetInt("workers")
 	backfiller := leverage.NewBackfiller(runner, store, workers)
 
-	// Set up progress output
+	// Set up progress and warning output
 	fmt.Fprintln(cmd.OutOrStdout(), "Backfilling leverage data...")
 	backfiller.SetProgressCallback(func(project string, current, total int) {
 		fmt.Fprintf(cmd.ErrOrStderr(), "  %s: %d/%d snapshots\n", project, current, total)
+	})
+	backfiller.SetWarningCallback(func(project, sample string, err error) {
+		fmt.Fprintf(cmd.ErrOrStderr(), "  warning: %s @ %s: %v\n", project, sample, err)
 	})
 
 	start := time.Now()

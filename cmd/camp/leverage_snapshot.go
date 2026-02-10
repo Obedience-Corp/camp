@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/obediencecorp/camp/internal/campaign"
 	"github.com/obediencecorp/camp/internal/leverage"
 	"github.com/spf13/cobra"
 )
@@ -38,41 +37,24 @@ func init() {
 func runLeverageSnapshot(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
-	root, err := campaign.DetectCached(ctx)
+	setup, err := initLeverageSetup(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign: %w", err)
+		return err
 	}
+	cfg := setup.Cfg
 
-	configPath := leverage.DefaultConfigPath(root)
-	cfg, err := leverage.LoadConfig(configPath)
+	runner, err := initRunner(cfg)
 	if err != nil {
-		return fmt.Errorf("loading config: %w", err)
+		return err
 	}
 
-	if cfg.ProjectStart.IsZero() {
-		detected, err := leverage.AutoDetectConfig(ctx, root)
-		if err != nil {
-			return fmt.Errorf("auto-detecting config: %w", err)
-		}
-		cfg = detected
-	}
-
-	runner := sccRunner
-	if runner == nil {
-		r, err := leverage.NewSCCRunner(cfg.COCOMOProjectType)
-		if err != nil {
-			return err
-		}
-		runner = r
-	}
-
-	resolved, err := leverage.ResolveProjects(ctx, root, cfg)
+	resolved, err := leverage.ResolveProjects(ctx, setup.Root, cfg)
 	if err != nil {
 		return fmt.Errorf("resolving projects: %w", err)
 	}
 
 	projectFilter, _ := cmd.Flags().GetString("project")
-	store := leverage.NewFileSnapshotStore(leverage.DefaultSnapshotDir(root))
+	store := leverage.NewFileSnapshotStore(leverage.DefaultSnapshotDir(setup.Root))
 
 	elapsed := leverage.ElapsedMonths(cfg.ProjectStart, time.Now())
 
@@ -112,23 +94,8 @@ func runLeverageSnapshot(cmd *cobra.Command, args []string) error {
 		}
 
 		// Build snapshot
-		snapshot := &leverage.Snapshot{
-			Project:    proj.Name,
-			CommitHash: hash,
-			CommitDate: commitDate,
-			SampledAt:  time.Now(),
-			SCC:        leverage.SCCResultToSnapshotSCC(result),
-			Leverage:   score,
-			Authors:    authors,
-			TotalLines: result.LanguageSummary[0].Lines, // Will be aggregated below
-		}
-
-		// Aggregate total lines from all languages
-		var totalLines int
-		for _, lang := range result.LanguageSummary {
-			totalLines += lang.Lines
-		}
-		snapshot.TotalLines = totalLines
+		scc := leverage.SCCResultToSnapshotSCC(result)
+		snapshot := leverage.NewSnapshot(proj.Name, hash, commitDate, time.Now(), scc, score, authors)
 
 		if err := store.Save(ctx, snapshot); err != nil {
 			return fmt.Errorf("saving snapshot for %s: %w", proj.Name, err)

@@ -56,6 +56,26 @@ type Snapshot struct {
 	TotalLines int                  `json:"total_lines"`
 }
 
+// NewSnapshot creates a Snapshot with Date derived from commitDate.
+// TotalLines is taken from scc.TotalLines to avoid duplicate aggregation.
+func NewSnapshot(project, commitHash string, commitDate, sampledAt time.Time, scc *SnapshotSCC, score *LeverageScore, authors []AuthorContribution) *Snapshot {
+	var totalLines int
+	if scc != nil {
+		totalLines = scc.TotalLines
+	}
+	return &Snapshot{
+		Project:    project,
+		CommitHash: commitHash,
+		CommitDate: commitDate,
+		SampledAt:  sampledAt,
+		Date:       commitDate.Format("2006-01-02"),
+		SCC:        scc,
+		Leverage:   score,
+		Authors:    authors,
+		TotalLines: totalLines,
+	}
+}
+
 // SnapshotStorer persists and retrieves leverage snapshots.
 type SnapshotStorer interface {
 	// Save persists a snapshot. Overwrites any existing snapshot for the same
@@ -92,6 +112,14 @@ func DefaultSnapshotDir(campaignRoot string) string {
 	return filepath.Join(campaignRoot, ".campaign", "leverage", "snapshots")
 }
 
+// validateProjectName ensures a project name is safe for filesystem paths.
+func validateProjectName(name string) error {
+	if name == "" || strings.Contains(name, "/") || strings.Contains(name, "\\") || strings.Contains(name, "..") {
+		return fmt.Errorf("invalid project name %q: must not be empty or contain path separators", name)
+	}
+	return nil
+}
+
 // Save persists a snapshot as a JSON file. Creates directories as needed.
 // Overwrites any existing snapshot for the same project and date.
 func (s *FileSnapshotStore) Save(ctx context.Context, snapshot *Snapshot) error {
@@ -99,8 +127,14 @@ func (s *FileSnapshotStore) Save(ctx context.Context, snapshot *Snapshot) error 
 		return err
 	}
 
-	date := snapshot.CommitDate.Format("2006-01-02")
-	snapshot.Date = date
+	if err := validateProjectName(snapshot.Project); err != nil {
+		return err
+	}
+
+	// Ensure Date is set (may already be set via NewSnapshot)
+	if snapshot.Date == "" {
+		snapshot.Date = snapshot.CommitDate.Format("2006-01-02")
+	}
 
 	dir := filepath.Join(s.baseDir, snapshot.Project)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -112,7 +146,7 @@ func (s *FileSnapshotStore) Save(ctx context.Context, snapshot *Snapshot) error 
 		return fmt.Errorf("marshaling snapshot: %w", err)
 	}
 
-	path := filepath.Join(dir, date+".json")
+	path := filepath.Join(dir, snapshot.Date+".json")
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		return fmt.Errorf("writing snapshot: %w", err)
 	}

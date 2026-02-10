@@ -104,3 +104,22 @@ func resolveFromConfig(campaignRoot string, projects map[string]ProjectEntry) ([
 
 	return resolved, nil
 }
+
+// FilterByName filters projects to only those matching name.
+// If name is empty, all projects are returned unchanged.
+// Returns an error if name is non-empty and no match is found.
+func FilterByName(projects []ResolvedProject, name string) ([]ResolvedProject, error) {
+	if name == "" {
+		return projects, nil
+	}
+	var filtered []ResolvedProject
+	for _, p := range projects {
+		if p.Name == name {
+			filtered = append(filtered, p)
+		}
+	}
+	if len(filtered) == 0 {
+		return nil, fmt.Errorf("project not found: %s", name)
+	}
+	return filtered, nil
+}

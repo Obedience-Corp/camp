@@ -317,3 +317,60 @@ func TestDefaultSnapshotDir(t *testing.T) {
 		t.Errorf("DefaultSnapshotDir = %q, want %q", got, want)
 	}
 }
+
+func TestNewSnapshot_DateSetImmediately(t *testing.T) {
+	commitDate := time.Date(2025, 6, 15, 10, 30, 0, 0, time.UTC)
+	scc := &SnapshotSCC{TotalLines: 5000, TotalCode: 3000}
+	score := &LeverageScore{FullLeverage: 5.0}
+	authors := []AuthorContribution{{Name: "Alice", Email: "a@b.com", Lines: 3000, Percentage: 100}}
+
+	snap := NewSnapshot("camp", "abc123", commitDate, time.Now(), scc, score, authors)
+
+	if snap.Date != "2025-06-15" {
+		t.Errorf("Date = %q, want %q", snap.Date, "2025-06-15")
+	}
+	if snap.TotalLines != 5000 {
+		t.Errorf("TotalLines = %d, want 5000 (from scc.TotalLines)", snap.TotalLines)
+	}
+	if snap.Project != "camp" {
+		t.Errorf("Project = %q, want %q", snap.Project, "camp")
+	}
+}
+
+func TestNewSnapshot_NilSCC(t *testing.T) {
+	snap := NewSnapshot("camp", "abc", time.Now(), time.Now(), nil, nil, nil)
+	if snap.TotalLines != 0 {
+		t.Errorf("TotalLines = %d, want 0 for nil SCC", snap.TotalLines)
+	}
+}
+
+func TestValidateProjectName(t *testing.T) {
+	tests := []struct {
+		name    string
+		wantErr bool
+	}{
+		{"camp", false},
+		{"my-project", false},
+		{"", true},
+		{"../etc", true},
+		{"path/traversal", true},
+		{"back\\slash", true},
+		{"..hidden", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateProjectName(tt.name)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateProjectName(%q) err = %v, wantErr = %v", tt.name, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestFileSnapshotStore_SaveRejectsTraversal(t *testing.T) {
+	store := NewFileSnapshotStore(t.TempDir())
+	snap := NewSnapshot("../escape", "abc", time.Now(), time.Now(), &SnapshotSCC{}, nil, nil)
+	if err := store.Save(context.Background(), snap); err == nil {
+		t.Fatal("expected error for path traversal project name")
+	}
+}

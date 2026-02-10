@@ -214,3 +214,40 @@ func TestResolveProjects_ContextCancellation(t *testing.T) {
 		t.Fatal("expected context error, got nil")
 	}
 }
+
+func TestFilterByName(t *testing.T) {
+	projects := []ResolvedProject{
+		{Name: "alpha", SCCDir: "/a", GitDir: "/a"},
+		{Name: "beta", SCCDir: "/b", GitDir: "/b"},
+		{Name: "gamma", SCCDir: "/g", GitDir: "/g"},
+	}
+
+	tests := []struct {
+		name      string
+		filter    string
+		wantCount int
+		wantErr   bool
+	}{
+		{"empty filter returns all", "", 3, false},
+		{"exact match", "beta", 1, false},
+		{"not found", "missing", 0, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := FilterByName(projects, tt.filter)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(got) != tt.wantCount {
+				t.Errorf("got %d projects, want %d", len(got), tt.wantCount)
+			}
+		})
+	}
+}
