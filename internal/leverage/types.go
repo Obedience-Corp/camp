@@ -116,6 +116,29 @@ type ProjectEntry struct {
 	FirstCommitOverride *time.Time `json:"first_commit_override,omitempty"`
 }
 
+// PeriodLeverageScore holds the computed leverage for a single period
+// between two consecutive snapshots.
+type PeriodLeverageScore struct {
+	// PeriodStart is the git commit date of the earlier snapshot.
+	PeriodStart time.Time `json:"period_start"`
+	// PeriodEnd is the git commit date of the later snapshot.
+	PeriodEnd time.Time `json:"period_end"`
+	// PeriodMonths is the elapsed time between the two commits.
+	PeriodMonths float64 `json:"period_months"`
+	// DeltaCode is the change in total code lines.
+	DeltaCode int `json:"delta_code"`
+	// DeltaEstCost is the change in estimated cost.
+	DeltaEstCost float64 `json:"delta_est_cost"`
+	// DeltaEstPersonMonths is the change in estimated person-months.
+	DeltaEstPersonMonths float64 `json:"delta_est_person_months"`
+	// PeriodLeverage is the delta-based leverage for this period.
+	PeriodLeverage float64 `json:"period_leverage"`
+	// IsFirst is true when this is the first period (no prior snapshot).
+	IsFirst bool `json:"is_first"`
+	// IsNegative is true when code was removed (delta < 0).
+	IsNegative bool `json:"is_negative"`
+}
+
 // LeverageConfig is the schema for .campaign/leverage/config.json.
 type LeverageConfig struct {
 	// ActualPeople is the number of developers working on the campaign.

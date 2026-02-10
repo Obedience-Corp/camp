@@ -54,6 +54,42 @@ func ComputeScore(result *SCCResult, actualPeople int, elapsedMonths float64) *L
 	return score
 }
 
+// ComputePeriodScore calculates leverage for a single period between two
+// consecutive snapshots. The period leverage measures new estimated effort
+// delivered per actual person-month in the period.
+//
+// T1 and T2 are git commit dates — git is the source of truth for timing.
+// If prev is nil (first snapshot), returns a score with IsFirst=true and
+// zero leverage. If periodMonths or actualPeople is zero, leverage is zero.
+func ComputePeriodScore(prev, current *LeverageScore, actualPeople int, periodMonths float64) *PeriodLeverageScore {
+	score := &PeriodLeverageScore{
+		PeriodMonths: periodMonths,
+	}
+
+	if prev == nil {
+		score.IsFirst = true
+		score.DeltaCode = current.TotalCode
+		score.DeltaEstCost = current.EstimatedCost
+		score.DeltaEstPersonMonths = current.EstimatedPeople * current.EstimatedMonths
+		return score
+	}
+
+	prevPersonMonths := prev.EstimatedPeople * prev.EstimatedMonths
+	currPersonMonths := current.EstimatedPeople * current.EstimatedMonths
+
+	score.DeltaCode = current.TotalCode - prev.TotalCode
+	score.DeltaEstCost = current.EstimatedCost - prev.EstimatedCost
+	score.DeltaEstPersonMonths = currPersonMonths - prevPersonMonths
+	score.IsNegative = score.DeltaEstPersonMonths < 0
+
+	if actualPeople > 0 && periodMonths > 0 {
+		actualPersonMonths := float64(actualPeople) * periodMonths
+		score.PeriodLeverage = score.DeltaEstPersonMonths / actualPersonMonths
+	}
+
+	return score
+}
+
 // AggregateScores combines multiple per-project scores into a single
 // campaign-wide score. It sums estimated person-months across all projects,
 // then divides by actual person-months.

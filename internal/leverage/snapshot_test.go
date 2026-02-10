@@ -29,7 +29,7 @@ func testSnapshot(project string, commitDate time.Time) *Snapshot {
 			},
 		},
 		Leverage: &LeverageScore{
-			ProjectName:    project,
+			ProjectName:     project,
 			EstimatedPeople: 5.17,
 			EstimatedMonths: 11.99,
 			EstimatedCost:   697323.22,

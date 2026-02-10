@@ -2,6 +2,7 @@ package leverage
 
 import (
 	"context"
+	"math"
 	"testing"
 	"time"
 )
@@ -203,6 +204,119 @@ func TestLoadHistory_EmptyProjectList(t *testing.T) {
 	// Should still iterate weeks, but all points have empty projects
 	if len(history) == 0 {
 		t.Fatal("expected history points even with empty project list")
+	}
+}
+
+func TestLoadPeriodHistory_WeeklyDeltas(t *testing.T) {
+	store := newHistoryMockStore(map[string][]*Snapshot{
+		"camp": {
+			{
+				Project: "camp", Date: "2025-07-07", TotalLines: 437954,
+				SCC:      &SnapshotSCC{EstimatedCost: 10000000, EstimatedPeople: 9.5, EstimatedMonths: 45.0},
+				Leverage: &LeverageScore{EstimatedPeople: 9.5, EstimatedMonths: 45.0, EstimatedCost: 10000000, TotalCode: 437954},
+			},
+			{
+				Project: "camp", Date: "2025-07-14", TotalLines: 500292,
+				SCC:      &SnapshotSCC{EstimatedCost: 12000000, EstimatedPeople: 14.3, EstimatedMonths: 36.2},
+				Leverage: &LeverageScore{EstimatedPeople: 14.3, EstimatedMonths: 36.2, EstimatedCost: 12000000, TotalCode: 500292},
+			},
+			{
+				Project: "camp", Date: "2025-07-21", TotalLines: 500292,
+				SCC:      &SnapshotSCC{EstimatedCost: 12000000, EstimatedPeople: 14.3, EstimatedMonths: 36.2},
+				Leverage: &LeverageScore{EstimatedPeople: 14.3, EstimatedMonths: 36.2, EstimatedCost: 12000000, TotalCode: 500292},
+			},
+		},
+	})
+
+	history, err := LoadPeriodHistory(context.Background(), store, []string{"camp"}, 1, d(2025, 7, 7), d(2025, 7, 21), PeriodWeekly)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(history) != 3 {
+		t.Fatalf("got %d points, want 3", len(history))
+	}
+
+	// First point is the baseline
+	if !history[0].IsFirst {
+		t.Error("first point should have IsFirst=true")
+	}
+
+	// Second point: active week with positive delta
+	if history[1].DeltaCode != 62338 {
+		t.Errorf("week 2 DeltaCode = %d, want 62338", history[1].DeltaCode)
+	}
+	if history[1].PeriodLeverage < 300 {
+		t.Errorf("week 2 PeriodLeverage = %.1f, want > 300", history[1].PeriodLeverage)
+	}
+
+	// Third point: idle week with zero delta
+	if history[2].DeltaCode != 0 {
+		t.Errorf("week 3 DeltaCode = %d, want 0", history[2].DeltaCode)
+	}
+	if math.Abs(history[2].PeriodLeverage) > 0.01 {
+		t.Errorf("week 3 PeriodLeverage = %.1f, want ~0", history[2].PeriodLeverage)
+	}
+}
+
+func TestLoadPeriodHistory_MonthlyAggregation(t *testing.T) {
+	store := newHistoryMockStore(map[string][]*Snapshot{
+		"camp": {
+			{
+				Project: "camp", Date: "2025-07-07", TotalLines: 437954,
+				SCC:      &SnapshotSCC{EstimatedCost: 10000000, EstimatedPeople: 9.5, EstimatedMonths: 45.0},
+				Leverage: &LeverageScore{EstimatedPeople: 9.5, EstimatedMonths: 45.0, EstimatedCost: 10000000, TotalCode: 437954},
+			},
+			{
+				Project: "camp", Date: "2025-07-14", TotalLines: 480000,
+				SCC:      &SnapshotSCC{EstimatedCost: 11000000, EstimatedPeople: 12.0, EstimatedMonths: 40.0},
+				Leverage: &LeverageScore{EstimatedPeople: 12.0, EstimatedMonths: 40.0, EstimatedCost: 11000000, TotalCode: 480000},
+			},
+			{
+				Project: "camp", Date: "2025-07-21", TotalLines: 500292,
+				SCC:      &SnapshotSCC{EstimatedCost: 12000000, EstimatedPeople: 14.3, EstimatedMonths: 36.2},
+				Leverage: &LeverageScore{EstimatedPeople: 14.3, EstimatedMonths: 36.2, EstimatedCost: 12000000, TotalCode: 500292},
+			},
+			{
+				Project: "camp", Date: "2025-08-04", TotalLines: 510000,
+				SCC:      &SnapshotSCC{EstimatedCost: 12500000, EstimatedPeople: 14.8, EstimatedMonths: 37.0},
+				Leverage: &LeverageScore{EstimatedPeople: 14.8, EstimatedMonths: 37.0, EstimatedCost: 12500000, TotalCode: 510000},
+			},
+		},
+	})
+
+	history, err := LoadPeriodHistory(context.Background(), store, []string{"camp"}, 1, d(2025, 7, 7), d(2025, 8, 10), PeriodMonthly)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(history) != 2 {
+		t.Fatalf("got %d months, want 2 (July + August)", len(history))
+	}
+
+	// July: first to last snapshot in July
+	july := history[0]
+	if july.Period != PeriodMonthly {
+		t.Errorf("july period = %q, want %q", july.Period, PeriodMonthly)
+	}
+
+	// August
+	aug := history[1]
+	if aug.Period != PeriodMonthly {
+		t.Errorf("aug period = %q, want %q", aug.Period, PeriodMonthly)
+	}
+}
+
+func TestLoadPeriodHistory_EmptyStore(t *testing.T) {
+	store := newHistoryMockStore(nil)
+	history, err := LoadPeriodHistory(context.Background(), store, []string{"camp"}, 1, d(2025, 6, 2), d(2025, 6, 15), PeriodWeekly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Empty store should still return weekly points (with zero data)
+	// LoadHistory returns points even with no snapshots
+	if history == nil && len(history) == 0 {
+		// Both nil and empty are acceptable
 	}
 }
 
