@@ -1,13 +1,12 @@
 package shell
 
 // generateFish returns the fish initialization script.
+// Shortcuts are injected dynamically from config.DefaultNavigationShortcuts().
 func generateFish() string {
-	return fishInit
+	return fishInitPrefix + fishShortcutCompletions() + fishInitSuffix
 }
 
-// fishInit is the full fish initialization script.
-// Fish has different syntax than bash/zsh and excellent completion support.
-const fishInit = `# Camp CLI - Fish Integration
+const fishInitPrefix = `# Camp CLI - Fish Integration
 # Add to config.fish: camp shell-init fish | source
 
 # Check if camp is available
@@ -68,21 +67,15 @@ end
 
 # Tab completion for cgo - category shortcuts with descriptions
 complete -c cgo -f  # no file completion
-complete -c cgo -n "__camp_is_first_arg" -a "p" -d "projects/"
-complete -c cgo -n "__camp_is_first_arg" -a "pw" -d "projects/worktrees/"
-complete -c cgo -n "__camp_is_first_arg" -a "f" -d "festivals/"
-complete -c cgo -n "__camp_is_first_arg" -a "a" -d "ai_docs/"
-complete -c cgo -n "__camp_is_first_arg" -a "d" -d "docs/"
-complete -c cgo -n "__camp_is_first_arg" -a "du" -d "dungeon/"
-complete -c cgo -n "__camp_is_first_arg" -a "w" -d "workflow/"
-complete -c cgo -n "__camp_is_first_arg" -a "cr" -d "workflow/code_reviews/"
-complete -c cgo -n "__camp_is_first_arg" -a "pi" -d "workflow/pipelines/"
-complete -c cgo -n "__camp_is_first_arg" -a "de" -d "workflow/design/"
-complete -c cgo -n "__camp_is_first_arg" -a "i" -d "workflow/intents/"
+`
+
+const fishInitSuffix = `
 
 # Dynamic completion from camp with fuzzy matching and path descriptions
 # Fish natively supports tab-separated name\tdescription format
-complete -c cgo -n "not __camp_is_first_arg" -a "(camp complete --described (commandline -opc)[2..-1] 2>/dev/null)"
+# NO_COLOR prevents lipgloss/termenv from querying the terminal via OSC
+# escape sequences, which would corrupt the shell's completion state.
+complete -c cgo -n "not __camp_is_first_arg" -a "(NO_COLOR=1 command camp complete --described (commandline -opc)[2..-1] 2>/dev/null)"
 
 # Run command from campaign root
 # Usage: cr <command> [args...]
@@ -124,7 +117,7 @@ complete -c camp -n __fish_use_subcommand -a "complete" -d "Generate completion 
 complete -c camp -n __fish_use_subcommand -a "version" -d "Show version information"
 
 # Subcommand completions
-complete -c camp -n "__fish_seen_subcommand_from go" -a "(camp complete --described (commandline -opc)[3..-1] 2>/dev/null)"
+complete -c camp -n "__fish_seen_subcommand_from go" -a "(NO_COLOR=1 command camp complete --described (commandline -opc)[3..-1] 2>/dev/null)"
 complete -c camp -n "__fish_seen_subcommand_from shell-init" -a "zsh" -d "Zsh shell"
 complete -c camp -n "__fish_seen_subcommand_from shell-init" -a "bash" -d "Bash shell"
 complete -c camp -n "__fish_seen_subcommand_from shell-init" -a "fish" -d "Fish shell"

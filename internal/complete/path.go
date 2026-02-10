@@ -66,6 +66,7 @@ func CompleteWorktree(ctx context.Context, partial string) ([]string, error) {
 }
 
 // completeProjectsWithAt completes project names and adds @ suffix.
+// Also matches branch names directly so "lever<TAB>" finds "camp@leverage-score".
 func completeProjectsWithAt(ctx context.Context, partial string) ([]string, error) {
 	// Get campaign root
 	jumpResult, err := nav.DirectJump(ctx, nav.CategoryAll)
@@ -82,24 +83,35 @@ func completeProjectsWithAt(ctx context.Context, partial string) ([]string, erro
 	q := index.NewQuery(idx)
 	targets := q.ByCategory(nav.CategoryWorktrees)
 
-	// Extract unique project names
-	seen := make(map[string]bool)
-	var projects []string
+	seenProjects := make(map[string]bool)
+	seenFull := make(map[string]bool)
+	var candidates []string
 	partialLower := strings.ToLower(partial)
 
 	for _, t := range targets {
 		// Parse "project@branch" format
-		if atIdx := strings.Index(t.Name, "@"); atIdx > 0 {
-			project := t.Name[:atIdx]
-			projectLower := strings.ToLower(project)
-			if !seen[project] && strings.HasPrefix(projectLower, partialLower) {
-				seen[project] = true
-				projects = append(projects, project+"@")
-			}
+		atIdx := strings.Index(t.Name, "@")
+		if atIdx <= 0 {
+			continue
+		}
+
+		project := t.Name[:atIdx]
+		branch := t.Name[atIdx+1:]
+
+		// Match project prefix → suggest "project@" for drilling down
+		if !seenProjects[project] && strings.HasPrefix(strings.ToLower(project), partialLower) {
+			seenProjects[project] = true
+			candidates = append(candidates, project+"@")
+		}
+
+		// Match branch prefix → suggest full "project@branch"
+		if !seenFull[t.Name] && strings.HasPrefix(strings.ToLower(branch), partialLower) {
+			seenFull[t.Name] = true
+			candidates = append(candidates, t.Name)
 		}
 	}
 
-	return projects, nil
+	return candidates, nil
 }
 
 // completeBranches completes full worktree names matching project@branch prefix.

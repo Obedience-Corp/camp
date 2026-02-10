@@ -96,10 +96,25 @@ func IsFresh(idx *Index) bool {
 }
 
 // IsStale checks if the cache should be rebuilt.
-// Returns true if the cache is nil, too old, or if project configuration changed.
+// Returns true if the cache is nil, too old, if the index version changed,
+// if the camp binary was rebuilt, or if project configuration changed.
 func IsStale(idx *Index, campaignRoot string) bool {
 	if !IsFresh(idx) {
 		return true
+	}
+
+	// Cache is stale if index version changed (format migration)
+	if idx.Version != IndexVersion {
+		return true
+	}
+
+	// Cache is stale if camp binary was rebuilt since cache was built
+	campBin, err := os.Executable()
+	if err == nil {
+		info, err := os.Stat(campBin)
+		if err == nil && info.ModTime().After(idx.BuildTime) {
+			return true
+		}
 	}
 
 	// Check if .gitmodules changed (projects added/removed via submodules)
