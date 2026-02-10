@@ -93,12 +93,13 @@ func TestLeverageCommand_TableOutput(t *testing.T) {
 	}
 
 	wantStrings := []string{
-		"Campaign Leverage Score:",
+		"Campaign Leverage Score",
+		"Effort:",
+		"Team:",
 		"PROJECT",
 		"CODE",
 		"EST PEOPLE",
-		"FULL LEV",
-		"SIMPLE LEV",
+		"EFFORT",
 	}
 
 	for _, want := range wantStrings {
