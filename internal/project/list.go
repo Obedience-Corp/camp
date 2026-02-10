@@ -69,6 +69,8 @@ func List(ctx context.Context, campaignRoot string) ([]Project, error) {
 		projects = append(projects, resolveProject(ctx, entry.Name(), projectPath)...)
 	}
 
+	projects = deduplicateByRemoteURL(ctx, campaignRoot, projects)
+
 	return projects, nil
 }
 
@@ -206,4 +208,61 @@ func getGitRemoteURL(ctx context.Context, path string) string {
 		return ""
 	}
 	return strings.TrimSpace(string(output))
+}
+
+// latestCommitDate returns the ISO 8601 date of the most recent commit in the
+// given project directory. Returns empty string on error.
+func latestCommitDate(ctx context.Context, absPath string) string {
+	cmd := exec.CommandContext(ctx, "git", "-C", absPath, "log", "-1", "--format=%cI")
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(output))
+}
+
+// deduplicateByRemoteURL groups projects by git remote URL and keeps only the
+// copy with the most recent commit. Projects with empty URL are always kept.
+func deduplicateByRemoteURL(ctx context.Context, campaignRoot string, projects []Project) []Project {
+	if ctx.Err() != nil {
+		return projects
+	}
+
+	// Index of the best (most recent) project per URL.
+	bestIdx := make(map[string]int)
+	bestDate := make(map[string]string)
+
+	for i, p := range projects {
+		if p.URL == "" {
+			continue
+		}
+
+		_, seen := bestIdx[p.URL]
+		if !seen {
+			bestIdx[p.URL] = i
+			bestDate[p.URL] = latestCommitDate(ctx, filepath.Join(campaignRoot, p.Path))
+			continue
+		}
+
+		// Compare commit dates to decide which copy to keep.
+		date := latestCommitDate(ctx, filepath.Join(campaignRoot, p.Path))
+		if date > bestDate[p.URL] {
+			bestIdx[p.URL] = i
+			bestDate[p.URL] = date
+		}
+	}
+
+	// Build set of indices to keep.
+	keep := make(map[int]bool, len(projects))
+	for _, idx := range bestIdx {
+		keep[idx] = true
+	}
+
+	result := make([]Project, 0, len(projects))
+	for i, p := range projects {
+		if p.URL == "" || keep[i] {
+			result = append(result, p)
+		}
+	}
+	return result
 }

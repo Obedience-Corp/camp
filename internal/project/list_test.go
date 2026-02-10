@@ -401,11 +401,104 @@ func TestList_MonorepoSkipsExcludedDirs(t *testing.T) {
 	}
 }
 
+func TestList_DeduplicatesByRemoteURL(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+
+	projectsDir := filepath.Join(tmpDir, "projects")
+	os.MkdirAll(projectsDir, 0755)
+
+	remoteURL := "git@github.com:Obedience-Corp/camp.git"
+
+	// Create first project with a commit
+	proj1 := filepath.Join(projectsDir, "camp")
+	os.MkdirAll(proj1, 0755)
+	initGitRepoWithRemoteAndCommit(t, proj1, remoteURL, "first commit")
+	os.WriteFile(filepath.Join(proj1, "go.mod"), []byte("module camp"), 0644)
+
+	// Create second project with the same remote (newer commit)
+	proj2 := filepath.Join(projectsDir, "camp-copy")
+	os.MkdirAll(proj2, 0755)
+	initGitRepoWithRemoteAndCommit(t, proj2, remoteURL, "second commit")
+	os.WriteFile(filepath.Join(proj2, "go.mod"), []byte("module camp"), 0644)
+
+	ctx := context.Background()
+	projects, err := List(ctx, tmpDir)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+
+	if len(projects) != 1 {
+		names := make([]string, len(projects))
+		for i, p := range projects {
+			names[i] = p.Name
+		}
+		t.Fatalf("List() returned %d projects %v, want 1 (deduped by URL)", len(projects), names)
+	}
+}
+
+func TestList_NoDedupeWithoutURL(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+
+	projectsDir := filepath.Join(tmpDir, "projects")
+	os.MkdirAll(projectsDir, 0755)
+
+	// Create two projects with no remote (empty URL)
+	for _, name := range []string{"local-a", "local-b"} {
+		proj := filepath.Join(projectsDir, name)
+		os.MkdirAll(proj, 0755)
+		initGitRepo(t, proj)
+		os.WriteFile(filepath.Join(proj, "go.mod"), []byte("module "+name), 0644)
+	}
+
+	ctx := context.Background()
+	projects, err := List(ctx, tmpDir)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+
+	if len(projects) != 2 {
+		t.Fatalf("List() returned %d projects, want 2 (no dedup for empty URL)", len(projects))
+	}
+}
+
 // Helper to initialize a git repo
 func initGitRepo(t *testing.T, path string) {
 	t.Helper()
 	cmd := exec.Command("git", "init", path)
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("failed to init git repo: %v", err)
+	}
+}
+
+// initGitRepoWithRemoteAndCommit initializes a git repo, sets a remote URL,
+// and creates an initial commit so that git log returns a date.
+func initGitRepoWithRemoteAndCommit(t *testing.T, path, remoteURL, message string) {
+	t.Helper()
+
+	cmds := [][]string{
+		{"git", "init", path},
+		{"git", "-C", path, "remote", "add", "origin", remoteURL},
+		{"git", "-C", path, "config", "user.email", "test@test.com"},
+		{"git", "-C", path, "config", "user.name", "Test"},
+	}
+
+	for _, args := range cmds {
+		cmd := exec.Command(args[0], args[1:]...)
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("command %v failed: %v", args, err)
+		}
+	}
+
+	// Create a file and commit it
+	os.WriteFile(filepath.Join(path, "README.md"), []byte(message), 0644)
+	cmd := exec.Command("git", "-C", path, "add", ".")
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("git add failed: %v", err)
+	}
+	cmd = exec.Command("git", "-C", path, "commit", "-m", message)
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("git commit failed: %v", err)
 	}
 }
