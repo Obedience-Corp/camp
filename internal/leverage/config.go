@@ -114,9 +114,11 @@ func defaultConfig() *LeverageConfig {
 }
 
 // earliestCommitDate returns the date of the first commit in a git repo.
+// Uses --all to search all branches, not just HEAD (handles repos checked out
+// on non-default branches with shorter history).
 func earliestCommitDate(ctx context.Context, repoPath string) (time.Time, error) {
 	cmd := exec.CommandContext(ctx, "git", "-C", repoPath,
-		"log", "--reverse", "--format=%cI", "--max-count=1")
+		"log", "--all", "--reverse", "--format=%cI", "--max-count=1")
 
 	output, err := cmd.Output()
 	if err != nil {

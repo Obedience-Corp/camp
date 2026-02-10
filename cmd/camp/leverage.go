@@ -175,7 +175,11 @@ func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores
 	fmt.Fprintf(out, "Estimated: %.1f people x %.1f months | Actual: %d %s x %.1f months\n",
 		agg.EstimatedPeople, agg.EstimatedMonths, cfg.ActualPeople, pluralize(cfg.ActualPeople, "person", "people"), agg.ElapsedMonths)
 	fmt.Fprintf(out, "Total Code: %s lines | Estimated Cost: $%s\n", fmtInt(agg.TotalCode), fmtCost(agg.EstimatedCost))
-	fmt.Fprintf(out, "Since: %s (earliest commit across all projects)\n\n", cfg.ProjectStart.Format("Jan 2, 2006"))
+	fmt.Fprintf(out, "Since: %s (earliest commit across all projects)\n", cfg.ProjectStart.Format("Jan 2, 2006"))
+	if autoDetected {
+		fmt.Fprintf(out, "Hint: If your project started earlier, run 'camp leverage config --start-date YYYY-MM-DD'\n")
+	}
+	fmt.Fprintln(out)
 
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "PROJECT\tCODE\tEST PEOPLE\tEFFORT\tTEAM")
