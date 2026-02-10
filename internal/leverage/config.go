@@ -114,11 +114,12 @@ func defaultConfig() *LeverageConfig {
 }
 
 // earliestCommitDate returns the date of the first commit in a git repo.
-// Uses --all to search all branches, not just HEAD (handles repos checked out
-// on non-default branches with shorter history).
+// Uses --max-parents=0 to find root commits (initial commits with no parents)
+// across all branches. This is correct unlike --reverse --max-count=1 where
+// git applies --max-count before --reverse, returning the latest commit.
 func earliestCommitDate(ctx context.Context, repoPath string) (time.Time, error) {
 	cmd := exec.CommandContext(ctx, "git", "-C", repoPath,
-		"log", "--all", "--reverse", "--format=%cI", "--max-count=1")
+		"log", "--all", "--max-parents=0", "--format=%cI")
 
 	output, err := cmd.Output()
 	if err != nil {
@@ -130,5 +131,26 @@ func earliestCommitDate(ctx context.Context, repoPath string) (time.Time, error)
 		return time.Time{}, fmt.Errorf("no commits in %s", repoPath)
 	}
 
-	return time.Parse(time.RFC3339, dateStr)
+	// There may be multiple root commits (merged unrelated histories).
+	// Find the earliest one.
+	var earliest time.Time
+	for _, line := range strings.Split(dateStr, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		t, err := time.Parse(time.RFC3339, line)
+		if err != nil {
+			continue
+		}
+		if earliest.IsZero() || t.Before(earliest) {
+			earliest = t
+		}
+	}
+
+	if earliest.IsZero() {
+		return time.Time{}, fmt.Errorf("no valid commit dates in %s", repoPath)
+	}
+
+	return earliest, nil
 }
