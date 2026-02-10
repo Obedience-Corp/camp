@@ -157,17 +157,18 @@ func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores
 
 	// Project table
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "PROJECT\tFILES\tCODE\tEST COST\tEST PEOPLE\tEST MONTHS\tLEVERAGE")
-	fmt.Fprintln(w, "-------\t-----\t----\t--------\t----------\t----------\t--------")
+	fmt.Fprintln(w, "PROJECT\tFILES\tCODE\tEST COST\tEST PEOPLE\tEST MONTHS\tACTUAL MONTHS\tLEVERAGE")
+	fmt.Fprintln(w, "-------\t-----\t----\t--------\t----------\t----------\t-------------\t--------")
 
 	for _, s := range scores {
-		fmt.Fprintf(w, "%s\t%s\t%s\t$%s\t%.1f\t%.1f\t%sx\n",
+		fmt.Fprintf(w, "%s\t%s\t%s\t$%s\t%.1f\t%.1f\t%.1f\t%sx\n",
 			s.ProjectName,
 			fmtInt(s.TotalFiles),
 			fmtInt(s.TotalCode),
 			fmtCost(s.EstimatedCost),
 			s.EstimatedPeople,
 			s.EstimatedMonths,
+			s.ElapsedMonths,
 			fmtScore(s.FullLeverage),
 		)
 	}
