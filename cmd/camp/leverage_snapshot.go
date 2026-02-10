@@ -131,4 +131,3 @@ func getHeadCommit(ctx context.Context, gitDir string) (string, time.Time, error
 
 	return lines[0], date, nil
 }
-

@@ -8,8 +8,31 @@ import (
 	"strings"
 )
 
+// languageMarkers are files that indicate an independently buildable subproject.
+var languageMarkers = []string{
+	"go.mod",
+	"Cargo.toml",
+	"package.json",
+	"pyproject.toml",
+	"setup.py",
+	"pom.xml",
+	"build.gradle",
+	"mix.exs",
+}
+
+// excludedSubdirs are directories that should never be treated as subprojects.
+var excludedSubdirs = map[string]bool{
+	"vendor":       true,
+	"node_modules": true,
+	".git":         true,
+	"testdata":     true,
+	"test":         true,
+	"tests":        true,
+}
+
 // List returns all projects in the campaign's projects directory.
-// It identifies git repositories and detects their project type.
+// It identifies git repositories, detects their project type, and expands
+// monorepos into individual subproject entries.
 func List(ctx context.Context, campaignRoot string) ([]Project, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -43,17 +66,107 @@ func List(ctx context.Context, campaignRoot string) ([]Project, error) {
 			continue
 		}
 
-		project := Project{
-			Name: entry.Name(),
-			Path: filepath.Join("projects", entry.Name()),
-			Type: detectProjectType(projectPath),
-			URL:  getGitRemoteURL(ctx, projectPath),
-		}
-
-		projects = append(projects, project)
+		projects = append(projects, resolveProject(ctx, entry.Name(), projectPath)...)
 	}
 
+	projects = deduplicateByRemoteURL(ctx, campaignRoot, projects)
+
 	return projects, nil
+}
+
+// resolveProject returns one or more Project entries for a discovered git repo.
+// Monorepos with 2+ language-marker subdirectories are expanded into individual
+// subproject entries; standalone projects return a single entry.
+func resolveProject(ctx context.Context, name, projectPath string) []Project {
+	url := getGitRemoteURL(ctx, projectPath)
+	relPath := filepath.Join("projects", name)
+
+	subprojects := detectMonorepoSubprojects(projectPath)
+	if len(subprojects) >= 2 {
+		expanded := make([]Project, 0, len(subprojects))
+		for _, sub := range subprojects {
+			expanded = append(expanded, Project{
+				Name:         name + "/" + sub.name,
+				Path:         filepath.Join(relPath, sub.name),
+				Type:         sub.projectType,
+				URL:          url,
+				MonorepoRoot: relPath,
+			})
+		}
+		return expanded
+	}
+
+	return []Project{{
+		Name: name,
+		Path: relPath,
+		Type: detectProjectType(projectPath),
+		URL:  url,
+	}}
+}
+
+type subproject struct {
+	name        string
+	projectType string
+}
+
+// detectMonorepoSubprojects scans immediate subdirectories for language markers.
+// Returns the list of subdirectories that have markers. If fewer than 2 are
+// found, the caller should treat the project as standalone.
+func detectMonorepoSubprojects(projectPath string) []subproject {
+	entries, err := os.ReadDir(projectPath)
+	if err != nil {
+		return nil
+	}
+
+	var subs []subproject
+	for _, entry := range entries {
+		name := entry.Name()
+
+		// Skip non-directories
+		if !entry.IsDir() {
+			continue
+		}
+
+		// Skip excluded directories
+		if excludedSubdirs[name] {
+			continue
+		}
+
+		// Skip hidden and underscore-prefixed directories
+		if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
+			continue
+		}
+
+		// Skip symlinks (avoid double-counting repos tracked independently)
+		info, err := os.Lstat(filepath.Join(projectPath, name))
+		if err != nil {
+			continue
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			continue
+		}
+
+		subPath := filepath.Join(projectPath, name)
+		if marker := findLanguageMarker(subPath); marker != "" {
+			subs = append(subs, subproject{
+				name:        name,
+				projectType: detectProjectType(subPath),
+			})
+		}
+	}
+
+	return subs
+}
+
+// findLanguageMarker checks if a directory contains any language project marker.
+// Returns the marker filename if found, empty string otherwise.
+func findLanguageMarker(dir string) string {
+	for _, marker := range languageMarkers {
+		if _, err := os.Stat(filepath.Join(dir, marker)); err == nil {
+			return marker
+		}
+	}
+	return ""
 }
 
 // detectProjectType attempts to determine the project type based on marker files.
@@ -95,4 +208,61 @@ func getGitRemoteURL(ctx context.Context, path string) string {
 		return ""
 	}
 	return strings.TrimSpace(string(output))
+}
+
+// latestCommitDate returns the ISO 8601 date of the most recent commit in the
+// given project directory. Returns empty string on error.
+func latestCommitDate(ctx context.Context, absPath string) string {
+	cmd := exec.CommandContext(ctx, "git", "-C", absPath, "log", "-1", "--format=%cI")
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(output))
+}
+
+// deduplicateByRemoteURL groups projects by git remote URL and keeps only the
+// copy with the most recent commit. Projects with empty URL are always kept.
+func deduplicateByRemoteURL(ctx context.Context, campaignRoot string, projects []Project) []Project {
+	if ctx.Err() != nil {
+		return projects
+	}
+
+	// Index of the best (most recent) project per URL.
+	bestIdx := make(map[string]int)
+	bestDate := make(map[string]string)
+
+	for i, p := range projects {
+		if p.URL == "" {
+			continue
+		}
+
+		_, seen := bestIdx[p.URL]
+		if !seen {
+			bestIdx[p.URL] = i
+			bestDate[p.URL] = latestCommitDate(ctx, filepath.Join(campaignRoot, p.Path))
+			continue
+		}
+
+		// Compare commit dates to decide which copy to keep.
+		date := latestCommitDate(ctx, filepath.Join(campaignRoot, p.Path))
+		if date > bestDate[p.URL] {
+			bestIdx[p.URL] = i
+			bestDate[p.URL] = date
+		}
+	}
+
+	// Build set of indices to keep.
+	keep := make(map[int]bool, len(projects))
+	for _, idx := range bestIdx {
+		keep[idx] = true
+	}
+
+	result := make([]Project, 0, len(projects))
+	for i, p := range projects {
+		if p.URL == "" || keep[i] {
+			result = append(result, p)
+		}
+	}
+	return result
 }

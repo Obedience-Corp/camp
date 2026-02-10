@@ -134,10 +134,10 @@ func TestSampleWeeklyCommits_AcrossWeeks(t *testing.T) {
 
 func TestSampleWeeklyCommits_SinceFilter(t *testing.T) {
 	dates := []time.Time{
-		time.Date(2025, 1, 6, 10, 0, 0, 0, time.UTC),  // Jan
-		time.Date(2025, 3, 3, 10, 0, 0, 0, time.UTC),  // Mar
-		time.Date(2025, 6, 2, 10, 0, 0, 0, time.UTC),  // Jun
-		time.Date(2025, 9, 1, 10, 0, 0, 0, time.UTC),  // Sep
+		time.Date(2025, 1, 6, 10, 0, 0, 0, time.UTC), // Jan
+		time.Date(2025, 3, 3, 10, 0, 0, 0, time.UTC), // Mar
+		time.Date(2025, 6, 2, 10, 0, 0, 0, time.UTC), // Jun
+		time.Date(2025, 9, 1, 10, 0, 0, 0, time.UTC), // Sep
 	}
 	dir := initGitRepoWithCommits(t, dates)
 
