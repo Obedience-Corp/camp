@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"os/signal"
 	"time"
 
@@ -38,7 +39,7 @@ func init() {
 
 func runLeverageBackfill(cmd *cobra.Command, args []string) error {
 	// Set up signal handling for clean Ctrl+C
-	ctx, cancel := signal.NotifyContext(cmd.Context())
+	ctx, cancel := signal.NotifyContext(cmd.Context(), os.Interrupt)
 	defer cancel()
 
 	setup, err := initLeverageSetup(ctx)
