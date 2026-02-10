@@ -188,10 +188,50 @@ func TestIsStale(t *testing.T) {
 	root := t.TempDir()
 	root, _ = filepath.EvalSymlinks(root)
 
-	// Fresh index, no trigger files
-	idx := &Index{BuildTime: time.Now()}
+	// Fresh index with current version, no trigger files
+	idx := &Index{BuildTime: time.Now(), Version: IndexVersion}
 	if IsStale(idx, root) {
 		t.Error("Fresh index should not be stale")
+	}
+}
+
+func TestIsStale_VersionMismatch(t *testing.T) {
+	root := t.TempDir()
+	root, _ = filepath.EvalSymlinks(root)
+
+	// Fresh index but with old version
+	idx := &Index{BuildTime: time.Now(), Version: IndexVersion - 1}
+	if !IsStale(idx, root) {
+		t.Error("Index with old version should be stale")
+	}
+}
+
+func TestIsStale_BinaryRebuilt(t *testing.T) {
+	root := t.TempDir()
+	root, _ = filepath.EvalSymlinks(root)
+
+	// Index built in the past, binary is newer
+	idx := &Index{
+		BuildTime: time.Now().Add(-1 * time.Hour),
+		Version:   IndexVersion,
+	}
+
+	// The running binary's mod time is likely after an hour ago,
+	// so this should detect staleness from the binary check.
+	campBin, err := os.Executable()
+	if err != nil {
+		t.Skip("cannot determine executable path")
+	}
+	info, err := os.Stat(campBin)
+	if err != nil {
+		t.Skip("cannot stat executable")
+	}
+
+	// Only assert stale if the binary is actually newer than build time
+	if info.ModTime().After(idx.BuildTime) {
+		if !IsStale(idx, root) {
+			t.Error("Index should be stale when binary is newer")
+		}
 	}
 }
 

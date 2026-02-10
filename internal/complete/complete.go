@@ -19,8 +19,8 @@ type RichCategoryGroup struct {
 }
 
 // Timeout is the maximum time to spend generating completions.
-// Shell completion should be fast to feel responsive.
-const Timeout = 50 * time.Millisecond
+// 200ms allows room for cold-start index rebuilds while staying responsive.
+const Timeout = 200 * time.Millisecond
 
 // Generate returns completion candidates for the given args.
 // It uses a timeout to ensure shell responsiveness.

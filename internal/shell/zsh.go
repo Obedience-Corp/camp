@@ -94,9 +94,9 @@ _cgo() {
     # Get completions with descriptions (name\tpath format)
     while IFS=$'\t' read -r name path; do
       [[ -n "$name" ]] && completions+=("$name:$path")
-    done < <(camp complete --described "$category" "$query" 2>/dev/null)
+    done < <(command camp complete --described "$category" "$query" 2>/dev/null)
 
-    _describe 'target' completions
+    (( ${#completions} )) && _describe 'target' completions
   fi
 }
 compdef _cgo cgo
