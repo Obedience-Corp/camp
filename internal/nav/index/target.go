@@ -100,7 +100,8 @@ type Index struct {
 }
 
 // IndexVersion is the current index format version.
-const IndexVersion = 1
+// Bump when the target format changes to invalidate stale caches.
+const IndexVersion = 2
 
 // NewIndex creates a new empty index for a campaign root.
 func NewIndex(campaignRoot string) *Index {

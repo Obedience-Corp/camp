@@ -24,7 +24,12 @@ var rootCmd = &cobra.Command{
 	Short:   "Campaign management CLI for multi-project AI workspaces",
 	Version: fmt.Sprintf("%s (built %s, commit %s)", version.Version, version.BuildDate, version.Commit),
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		// Wire up the no-color flag
+		// Skip color detection for completion commands to avoid
+		// termenv interfering with zsh's completion state machine.
+		if cmd.Name() == "complete" {
+			ui.SetNoColor(true)
+			return
+		}
 		ui.SetNoColor(noColor)
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
