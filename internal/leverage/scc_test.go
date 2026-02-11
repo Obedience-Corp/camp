@@ -12,7 +12,7 @@ type MockRunner struct {
 	Err    error
 }
 
-func (m *MockRunner) Run(ctx context.Context, dir string) (*SCCResult, error) {
+func (m *MockRunner) Run(ctx context.Context, dir string, excludeDirs []string) (*SCCResult, error) {
 	if m.Err != nil {
 		return nil, m.Err
 	}
@@ -35,7 +35,7 @@ func TestMockRunner_Success(t *testing.T) {
 	}
 
 	mock := &MockRunner{Result: expected}
-	result, err := mock.Run(context.Background(), "/any/path")
+	result, err := mock.Run(context.Background(), "/any/path", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestMockRunner_Success(t *testing.T) {
 
 func TestMockRunner_Error(t *testing.T) {
 	mock := &MockRunner{Err: errors.New("scc failed")}
-	result, err := mock.Run(context.Background(), "/any/path")
+	result, err := mock.Run(context.Background(), "/any/path", nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -74,7 +74,7 @@ func TestSCCRunner_Run(t *testing.T) {
 
 	// Run against the camp project itself
 	ctx := context.Background()
-	result, err := runner.Run(ctx, ".")
+	result, err := runner.Run(ctx, ".", nil)
 	if err != nil {
 		t.Fatalf("Run failed: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestSCCRunner_Run_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel immediately
 
-	_, err = runner.Run(ctx, ".")
+	_, err = runner.Run(ctx, ".", nil)
 	if err == nil {
 		t.Fatal("expected error from cancelled context")
 	}
@@ -112,7 +112,7 @@ func TestSCCRunner_Run_InvalidDir(t *testing.T) {
 	}
 
 	// Run against a nonexistent directory — scc should fail with exit error
-	_, err = runner.Run(context.Background(), "/nonexistent/dir/that/does/not/exist")
+	_, err = runner.Run(context.Background(), "/nonexistent/dir/that/does/not/exist", nil)
 	if err == nil {
 		t.Fatal("expected error for nonexistent directory")
 	}
@@ -126,7 +126,7 @@ func TestSCCRunner_Run_EmptyDir(t *testing.T) {
 
 	// scc on an empty dir produces valid json2 with zero results
 	dir := t.TempDir()
-	result, err := runner.Run(context.Background(), dir)
+	result, err := runner.Run(context.Background(), dir, nil)
 	if err != nil {
 		// Some scc versions may error on empty dirs, which is fine
 		return

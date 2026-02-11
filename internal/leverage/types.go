@@ -23,7 +23,7 @@ const (
 // The interface exists so tests can inject a mock without requiring
 // the scc binary to be installed.
 type Runner interface {
-	Run(ctx context.Context, dir string) (*SCCResult, error)
+	Run(ctx context.Context, dir string, excludeDirs []string) (*SCCResult, error)
 }
 
 // SCCResult is the top-level JSON object returned by `scc --format json2`.

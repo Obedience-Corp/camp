@@ -2,6 +2,7 @@ package leverage
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -203,7 +204,7 @@ func TestResolveProjects_FallbackMonorepoExpansion(t *testing.T) {
 	root := t.TempDir()
 	root, _ = filepath.EvalSymlinks(root)
 
-	// Create a monorepo with 2+ subprojects so project.List() expands it
+	// Create a repo with .gitmodules listing 2 submodules
 	mono := filepath.Join(root, "projects", "my-mono")
 	if err := os.MkdirAll(mono, 0o755); err != nil {
 		t.Fatal(err)
@@ -213,12 +214,15 @@ func TestResolveProjects_FallbackMonorepoExpansion(t *testing.T) {
 		t.Fatalf("git init failed: %v\n%s", err, out)
 	}
 
-	// Two subprojects with language markers
+	// Write .gitmodules declaring two submodules
+	gitmodules := ""
 	for _, name := range []string{"svc-a", "svc-b"} {
+		gitmodules += fmt.Sprintf("[submodule %q]\n\tpath = %s\n\turl = https://example.com/%s.git\n", name, name, name)
 		sub := filepath.Join(mono, name)
 		os.MkdirAll(sub, 0o755)
 		os.WriteFile(filepath.Join(sub, "go.mod"), []byte("module mono/"+name), 0644)
 	}
+	os.WriteFile(filepath.Join(mono, ".gitmodules"), []byte(gitmodules), 0644)
 
 	cfg := &LeverageConfig{} // empty Projects → fallback to project.List()
 
@@ -227,13 +231,23 @@ func TestResolveProjects_FallbackMonorepoExpansion(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(got) != 2 {
-		t.Fatalf("got %d projects, want 2", len(got))
+	// Expect 3: root entry + 2 submodule entries
+	if len(got) != 3 {
+		names := make([]string, len(got))
+		for i, p := range got {
+			names[i] = p.Name
+		}
+		t.Fatalf("got %d projects %v, want 3 (root + 2 submodules)", len(got), names)
 	}
 
+	// Check submodule entries
 	for _, p := range got {
 		if !p.InMonorepo {
-			t.Errorf("%s: expected InMonorepo = true", p.Name)
+			// Root entry should NOT be InMonorepo
+			if p.Name != "my-mono" {
+				t.Errorf("%s: expected InMonorepo = true", p.Name)
+			}
+			continue
 		}
 		wantGit := filepath.Join(root, "projects", "my-mono")
 		if p.GitDir != wantGit {
@@ -242,6 +256,21 @@ func TestResolveProjects_FallbackMonorepoExpansion(t *testing.T) {
 		if p.SCCDir == p.GitDir {
 			t.Errorf("%s: SCCDir should differ from GitDir for monorepo subproject", p.Name)
 		}
+	}
+
+	// Check root entry has ExcludeDirs
+	rootEntry := got[0] // sorted alphabetically, "my-mono" comes first
+	if rootEntry.Name != "my-mono" {
+		// Find the root entry
+		for _, p := range got {
+			if p.Name == "my-mono" {
+				rootEntry = p
+				break
+			}
+		}
+	}
+	if len(rootEntry.ExcludeDirs) != 2 {
+		t.Errorf("root ExcludeDirs = %v, want 2 entries", rootEntry.ExcludeDirs)
 	}
 }
 

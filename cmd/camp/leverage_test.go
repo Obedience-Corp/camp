@@ -24,7 +24,7 @@ type mockRunner struct {
 	err     error
 }
 
-func (m *mockRunner) Run(ctx context.Context, dir string) (*leverage.SCCResult, error) {
+func (m *mockRunner) Run(ctx context.Context, dir string, excludeDirs []string) (*leverage.SCCResult, error) {
 	if m.err != nil {
 		return nil, m.err
 	}

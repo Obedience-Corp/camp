@@ -2,10 +2,10 @@ package project
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 )
@@ -215,38 +215,40 @@ func TestList_GitSubmodule(t *testing.T) {
 	}
 }
 
-func TestList_MonorepoExpansion(t *testing.T) {
+func TestList_GitmodulesExpansion(t *testing.T) {
 	tmpDir := t.TempDir()
 	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
 
 	projectsDir := filepath.Join(tmpDir, "projects")
 	os.MkdirAll(projectsDir, 0755)
 
-	// Create a monorepo with 3 subprojects
+	// Create a repo with .gitmodules listing 2 submodules
 	mono := filepath.Join(projectsDir, "my-monorepo")
 	os.MkdirAll(mono, 0755)
 	initGitRepo(t, mono)
 
-	// Root go.mod (monorepo root)
+	// Root go.mod
 	os.WriteFile(filepath.Join(mono, "go.mod"), []byte("module mono"), 0644)
 
-	// Subproject 1: Go
+	// .gitmodules declares two submodules
+	writeGitmodules(t, mono, map[string]string{
+		"service-a": "service-a",
+		"service-b": "service-b",
+	})
+
+	// Create submodule directories with language markers
 	sub1 := filepath.Join(mono, "service-a")
 	os.MkdirAll(sub1, 0755)
 	os.WriteFile(filepath.Join(sub1, "go.mod"), []byte("module mono/service-a"), 0644)
 
-	// Subproject 2: Go
 	sub2 := filepath.Join(mono, "service-b")
 	os.MkdirAll(sub2, 0755)
-	os.WriteFile(filepath.Join(sub2, "go.mod"), []byte("module mono/service-b"), 0644)
+	os.WriteFile(filepath.Join(sub2, "Cargo.toml"), []byte("[package]"), 0644)
 
-	// Subproject 3: Rust
-	sub3 := filepath.Join(mono, "rust-lib")
-	os.MkdirAll(sub3, 0755)
-	os.WriteFile(filepath.Join(sub3, "Cargo.toml"), []byte("[package]"), 0644)
-
-	// Non-subproject dir (no marker)
-	os.MkdirAll(filepath.Join(mono, "docs"), 0755)
+	// Non-submodule dir with a language marker (should NOT become a subproject)
+	lib := filepath.Join(mono, "lib")
+	os.MkdirAll(lib, 0755)
+	os.WriteFile(filepath.Join(lib, "go.mod"), []byte("module mono/lib"), 0644)
 
 	ctx := context.Background()
 	projects, err := List(ctx, tmpDir)
@@ -254,8 +256,13 @@ func TestList_MonorepoExpansion(t *testing.T) {
 		t.Fatalf("List() error = %v", err)
 	}
 
+	// Expect: root entry + 2 submodule entries = 3 (NOT lib, it's not in .gitmodules)
 	if len(projects) != 3 {
-		t.Fatalf("List() returned %d projects, want 3", len(projects))
+		names := make([]string, len(projects))
+		for i, p := range projects {
+			names[i] = p.Name
+		}
+		t.Fatalf("List() returned %d projects %v, want 3 (root + 2 submodules)", len(projects), names)
 	}
 
 	projectMap := make(map[string]Project)
@@ -263,8 +270,24 @@ func TestList_MonorepoExpansion(t *testing.T) {
 		projectMap[p.Name] = p
 	}
 
-	// Verify subprojects
-	for _, name := range []string{"my-monorepo@service-a", "my-monorepo@service-b", "my-monorepo@rust-lib"} {
+	// Verify root entry exists
+	root, ok := projectMap["my-monorepo"]
+	if !ok {
+		t.Fatal("missing root entry 'my-monorepo'")
+	}
+	if root.MonorepoRoot != "" {
+		t.Errorf("root MonorepoRoot = %q, want empty", root.MonorepoRoot)
+	}
+	if root.Type != TypeGo {
+		t.Errorf("root type = %q, want %q", root.Type, TypeGo)
+	}
+	// Root entry should carry ExcludeDirs for scc double-count prevention
+	if len(root.ExcludeDirs) != 2 {
+		t.Errorf("root ExcludeDirs = %v, want 2 entries", root.ExcludeDirs)
+	}
+
+	// Verify submodule entries
+	for _, name := range []string{"my-monorepo@service-a", "my-monorepo@service-b"} {
 		p, ok := projectMap[name]
 		if !ok {
 			t.Errorf("missing expected subproject %q", name)
@@ -279,8 +302,64 @@ func TestList_MonorepoExpansion(t *testing.T) {
 	if p := projectMap["my-monorepo@service-a"]; p.Type != TypeGo {
 		t.Errorf("service-a type = %q, want %q", p.Type, TypeGo)
 	}
-	if p := projectMap["my-monorepo@rust-lib"]; p.Type != TypeRust {
-		t.Errorf("rust-lib type = %q, want %q", p.Type, TypeRust)
+	if p := projectMap["my-monorepo@service-b"]; p.Type != TypeRust {
+		t.Errorf("service-b type = %q, want %q", p.Type, TypeRust)
+	}
+
+	// Verify lib is NOT present (it's not in .gitmodules)
+	if _, ok := projectMap["my-monorepo@lib"]; ok {
+		t.Error("lib should not be a subproject — it's not in .gitmodules")
+	}
+}
+
+func TestList_NoGitmodulesStandalone(t *testing.T) {
+	// Regression test: repos without .gitmodules should NEVER be expanded,
+	// even if they have multiple subdirectories with language markers.
+	// This is the hermes bug — language markers caused false monorepo detection.
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+
+	projectsDir := filepath.Join(tmpDir, "projects")
+	os.MkdirAll(projectsDir, 0755)
+
+	// Create a repo that looks like hermes: multiple language-marker subdirs but NO .gitmodules
+	hermes := filepath.Join(projectsDir, "hermes")
+	os.MkdirAll(hermes, 0755)
+	initGitRepo(t, hermes)
+
+	// Root has no marker
+	// common/ and loadtests/ both have package.json
+	common := filepath.Join(hermes, "common")
+	os.MkdirAll(common, 0755)
+	os.WriteFile(filepath.Join(common, "package.json"), []byte("{}"), 0644)
+
+	loadtests := filepath.Join(hermes, "loadtests")
+	os.MkdirAll(loadtests, 0755)
+	os.WriteFile(filepath.Join(loadtests, "package.json"), []byte("{}"), 0644)
+
+	// services/ has no marker (but has real code)
+	os.MkdirAll(filepath.Join(hermes, "services"), 0755)
+
+	ctx := context.Background()
+	projects, err := List(ctx, tmpDir)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+
+	// Should be 1 standalone entry, NOT expanded
+	if len(projects) != 1 {
+		names := make([]string, len(projects))
+		for i, p := range projects {
+			names[i] = p.Name
+		}
+		t.Fatalf("List() returned %d projects %v, want 1 standalone entry (no .gitmodules = no expansion)", len(projects), names)
+	}
+
+	if projects[0].Name != "hermes" {
+		t.Errorf("project name = %q, want %q", projects[0].Name, "hermes")
+	}
+	if projects[0].MonorepoRoot != "" {
+		t.Errorf("MonorepoRoot = %q, want empty (standalone)", projects[0].MonorepoRoot)
 	}
 }
 
@@ -319,29 +398,38 @@ func TestList_StandaloneNotExpanded(t *testing.T) {
 	}
 }
 
-func TestList_MonorepoSkipsSymlinks(t *testing.T) {
+func TestList_GitmodulesSubmoduleDedupAgainstStandalone(t *testing.T) {
+	// When a .gitmodules repo has a submodule named "foo" and there's also
+	// a standalone project named "foo", the submodule entry should be deduped.
 	tmpDir := t.TempDir()
 	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
 
 	projectsDir := filepath.Join(tmpDir, "projects")
 	os.MkdirAll(projectsDir, 0755)
 
-	// Create a monorepo
+	remoteURL := "git@github.com:test/foo.git"
+
+	// Standalone "foo" project
+	foo := filepath.Join(projectsDir, "foo")
+	os.MkdirAll(foo, 0755)
+	initGitRepoWithRemoteAndCommit(t, foo, remoteURL, "standalone foo")
+	os.WriteFile(filepath.Join(foo, "go.mod"), []byte("module foo"), 0644)
+
+	// Monorepo with .gitmodules listing "foo" as a submodule
 	mono := filepath.Join(projectsDir, "mono")
 	os.MkdirAll(mono, 0755)
-	initGitRepo(t, mono)
+	initGitRepoWithRemoteAndCommit(t, mono, "git@github.com:test/mono.git", "mono init")
 
-	// Two real subprojects
-	for _, name := range []string{"svc-a", "svc-b"} {
-		sub := filepath.Join(mono, name)
-		os.MkdirAll(sub, 0755)
-		os.WriteFile(filepath.Join(sub, "go.mod"), []byte("module mono/"+name), 0644)
-	}
+	writeGitmodules(t, mono, map[string]string{
+		"foo": "foo",
+		"bar": "bar",
+	})
 
-	// Symlink subdir (should be skipped)
-	externalDir := t.TempDir()
-	os.WriteFile(filepath.Join(externalDir, "go.mod"), []byte("module external"), 0644)
-	os.Symlink(externalDir, filepath.Join(mono, "linked-sub"))
+	// Create submodule directories
+	os.MkdirAll(filepath.Join(mono, "foo"), 0755)
+	os.WriteFile(filepath.Join(mono, "foo", "go.mod"), []byte("module mono/foo"), 0644)
+	os.MkdirAll(filepath.Join(mono, "bar"), 0755)
+	os.WriteFile(filepath.Join(mono, "bar", "go.mod"), []byte("module mono/bar"), 0644)
 
 	ctx := context.Background()
 	projects, err := List(ctx, tmpDir)
@@ -349,55 +437,29 @@ func TestList_MonorepoSkipsSymlinks(t *testing.T) {
 		t.Fatalf("List() error = %v", err)
 	}
 
-	if len(projects) != 2 {
-		t.Fatalf("List() returned %d projects, want 2 (symlink excluded)", len(projects))
-	}
-
+	projectMap := make(map[string]Project)
 	for _, p := range projects {
-		if strings.Contains(p.Name, "linked-sub") {
-			t.Errorf("symlinked subdirectory should not appear as subproject: %s", p.Name)
-		}
-	}
-}
-
-func TestList_MonorepoSkipsExcludedDirs(t *testing.T) {
-	tmpDir := t.TempDir()
-	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
-
-	projectsDir := filepath.Join(tmpDir, "projects")
-	os.MkdirAll(projectsDir, 0755)
-
-	mono := filepath.Join(projectsDir, "mono")
-	os.MkdirAll(mono, 0755)
-	initGitRepo(t, mono)
-
-	// Two real subprojects
-	for _, name := range []string{"app", "lib"} {
-		sub := filepath.Join(mono, name)
-		os.MkdirAll(sub, 0755)
-		os.WriteFile(filepath.Join(sub, "package.json"), []byte("{}"), 0644)
+		projectMap[p.Name] = p
 	}
 
-	// vendor/ and node_modules/ with markers (should be excluded)
-	for _, excluded := range []string{"vendor", "node_modules", "testdata"} {
-		dir := filepath.Join(mono, excluded)
-		os.MkdirAll(dir, 0755)
-		os.WriteFile(filepath.Join(dir, "package.json"), []byte("{}"), 0644)
+	// "foo" standalone should exist
+	if _, ok := projectMap["foo"]; !ok {
+		t.Error("missing standalone 'foo' project")
 	}
 
-	// Hidden dir with marker (should be excluded)
-	hidden := filepath.Join(mono, ".internal")
-	os.MkdirAll(hidden, 0755)
-	os.WriteFile(filepath.Join(hidden, "go.mod"), []byte("module hidden"), 0644)
-
-	ctx := context.Background()
-	projects, err := List(ctx, tmpDir)
-	if err != nil {
-		t.Fatalf("List() error = %v", err)
+	// "mono@foo" should be deduped (standalone "foo" takes precedence)
+	if _, ok := projectMap["mono@foo"]; ok {
+		t.Error("mono@foo should be deduped against standalone 'foo'")
 	}
 
-	if len(projects) != 2 {
-		t.Fatalf("List() returned %d projects, want 2 (excluded dirs filtered)", len(projects))
+	// "mono@bar" should exist (no standalone "bar")
+	if _, ok := projectMap["mono@bar"]; !ok {
+		t.Error("missing mono@bar subproject")
+	}
+
+	// "mono" root entry should exist
+	if _, ok := projectMap["mono"]; !ok {
+		t.Error("missing mono root entry")
 	}
 }
 
@@ -469,6 +531,19 @@ func initGitRepo(t *testing.T, path string) {
 	cmd := exec.Command("git", "init", path)
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("failed to init git repo: %v", err)
+	}
+}
+
+// writeGitmodules writes a .gitmodules file to the given repo path.
+// submodules maps submodule name to relative path.
+func writeGitmodules(t *testing.T, repoPath string, submodules map[string]string) {
+	t.Helper()
+	var content string
+	for name, path := range submodules {
+		content += fmt.Sprintf("[submodule %q]\n\tpath = %s\n\turl = https://example.com/%s.git\n", name, path, name)
+	}
+	if err := os.WriteFile(filepath.Join(repoPath, ".gitmodules"), []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write .gitmodules: %v", err)
 	}
 }
 

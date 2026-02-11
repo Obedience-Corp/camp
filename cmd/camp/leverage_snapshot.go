@@ -76,7 +76,7 @@ func runLeverageSnapshot(cmd *cobra.Command, args []string) error {
 		}
 
 		// Run scc
-		result, err := runner.Run(ctx, proj.SCCDir)
+		result, err := runner.Run(ctx, proj.SCCDir, proj.ExcludeDirs)
 		if err != nil {
 			fmt.Fprintf(cmd.ErrOrStderr(), "Warning: skipping %s (scc): %v\n", proj.Name, err)
 			continue
