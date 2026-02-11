@@ -116,11 +116,18 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 	// Aggregate campaign-wide totals
 	agg := leverage.AggregateScores(scores, cfg.ActualPeople, elapsed)
 
+	// Compute recent leverage from snapshots
+	store := leverage.NewFileSnapshotStore(leverage.DefaultSnapshotDir(setup.Root))
+	week7, has7 := leverage.RecentLeverage(ctx, store, scores, cfg.ActualPeople, now.AddDate(0, 0, -7))
+	month30, has30 := leverage.RecentLeverage(ctx, store, scores, cfg.ActualPeople, now.AddDate(0, 0, -30))
+
 	// Output based on format
 	if jsonOut {
 		return leverageOutputJSON(cmd, agg, scores)
 	}
-	return leverageOutputTable(cmd, agg, scores, cfg, setup.AutoDetected)
+
+	recent := recentLeverage{week7: week7, has7: has7, month30: month30, has30: has30}
+	return leverageOutputTable(cmd, agg, scores, cfg, setup.AutoDetected, recent)
 }
 
 func leverageOutputJSON(cmd *cobra.Command, agg *leverage.LeverageScore, scores []*leverage.LeverageScore) error {
@@ -140,7 +147,13 @@ func leverageOutputJSON(cmd *cobra.Command, agg *leverage.LeverageScore, scores 
 	return nil
 }
 
-func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores []*leverage.LeverageScore, cfg *leverage.LeverageConfig, autoDetected bool) error {
+// recentLeverage holds optional 7-day and 30-day leverage computed from snapshots.
+type recentLeverage struct {
+	week7, month30 float64
+	has7, has30    bool
+}
+
+func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores []*leverage.LeverageScore, cfg *leverage.LeverageConfig, autoDetected bool, recent recentLeverage) error {
 	out := cmd.OutOrStdout()
 	noLegend, _ := cmd.Flags().GetBool("no-legend")
 
@@ -151,6 +164,17 @@ func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores
 
 	// Header: headline leverage number
 	fmt.Fprintf(out, "Campaign Leverage: %sx\n\n", fmtScore(agg.FullLeverage))
+
+	// Recent leverage from snapshots (omitted if no data)
+	if recent.has7 || recent.has30 {
+		if recent.has7 {
+			fmt.Fprintf(out, "  Last 7 days:   %sx\n", fmtRecentLeverage(recent.week7))
+		}
+		if recent.has30 {
+			fmt.Fprintf(out, "  Last 30 days:  %sx\n", fmtRecentLeverage(recent.month30))
+		}
+		fmt.Fprintln(out)
+	}
 
 	// COCOMO vs Actual comparison in person-months (the unit that sums correctly)
 	estPersonMonths := agg.EstimatedPeople * agg.EstimatedMonths
@@ -173,7 +197,7 @@ func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores
 
 	for _, s := range scores {
 		estPM := s.EstimatedPeople * s.EstimatedMonths
-		fmt.Fprintf(w, "%s\t%s\t%s\t$%s\t%s\t%.2f\t%sx\n",
+		fmt.Fprintf(w, "%s\t%s\t%s\t$%s\t%s\t%.3f\t%sx\n",
 			s.ProjectName,
 			fmtInt(s.TotalFiles),
 			fmtInt(s.TotalCode),
@@ -216,6 +240,15 @@ func fmtInt(n int) string {
 // fmtCost formats a float64 cost with comma separators (e.g., 28218013.0 → "28,218,013").
 func fmtCost(f float64) string {
 	return fmtInt(int(f))
+}
+
+// fmtRecentLeverage formats a recent period leverage value.
+// Handles negative leverage (code removal) and zero.
+func fmtRecentLeverage(f float64) string {
+	if f < 0 {
+		return fmt.Sprintf("%.1f (negative)", f)
+	}
+	return fmtScore(f)
 }
 
 // fmtScore formats a leverage score, using commas for large values.
