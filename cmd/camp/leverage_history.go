@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
-	"strings"
-	"text/tabwriter"
 	"time"
 
-	"github.com/obediencecorp/camp/internal/leverage"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/table"
 	"github.com/spf13/cobra"
+
+	"github.com/obediencecorp/camp/internal/leverage"
+	"github.com/obediencecorp/camp/internal/ui"
 )
 
 var leverageHistoryCmd = &cobra.Command{
@@ -65,7 +67,7 @@ func runLeverageHistory(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(projectNames) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "No snapshots found. Run `camp leverage backfill` to populate historical data.")
+		fmt.Fprintln(cmd.OutOrStdout(), ui.Dim("No snapshots found. Run `camp leverage backfill` to populate historical data."))
 		return nil
 	}
 
@@ -102,7 +104,7 @@ func runLeverageHistory(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(history) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "No snapshots found. Run `camp leverage backfill` to populate historical data.")
+		fmt.Fprintln(cmd.OutOrStdout(), ui.Dim("No snapshots found. Run `camp leverage backfill` to populate historical data."))
 		return nil
 	}
 
@@ -121,28 +123,51 @@ func runLeverageHistory(cmd *cobra.Command, args []string) error {
 
 func historyOutputTable(cmd *cobra.Command, history []leverage.HistoryPoint) error {
 	out := cmd.OutOrStdout()
-	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "DATE\tCODE LINES\tEST. COST\tLEVERAGE")
-	fmt.Fprintln(w, "----\t----------\t---------\t--------")
+	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.CategoryColor)
 
+	headers := []string{"DATE", "CODE LINES", "EST. COST", "LEVERAGE"}
+	var rows [][]string
 	for _, point := range history {
 		lev := "-"
 		if point.Aggregate != nil {
 			lev = fmtScore(point.Aggregate.FullLeverage) + "x"
 		}
-		fmt.Fprintf(w, "%s\t%s\t$%s\t%s\n",
+		rows = append(rows, []string{
 			point.Date.Format("2006-01-02"),
 			fmtInt(point.TotalCode),
-			fmtCost(point.TotalCost),
+			"$" + fmtCost(point.TotalCost),
 			lev,
-		)
+		})
 	}
-	return w.Flush()
+
+	t := table.New().
+		Border(lipgloss.ASCIIBorder()).
+		BorderStyle(lipgloss.NewStyle().Foreground(ui.DimColor)).
+		Headers(headers...).
+		Rows(rows...).
+		StyleFunc(func(row, col int) lipgloss.Style {
+			if row == table.HeaderRow {
+				return headerStyle
+			}
+			switch col {
+			case 0: // DATE
+				return lipgloss.NewStyle().Foreground(ui.DimColor)
+			case 2: // EST. COST
+				return lipgloss.NewStyle().Foreground(ui.WarningColor)
+			case 3: // LEVERAGE
+				return lipgloss.NewStyle().Foreground(ui.SuccessColor)
+			default:
+				return lipgloss.NewStyle()
+			}
+		})
+
+	fmt.Fprintln(out, t)
+	return nil
 }
 
 func historyOutputPeriodTable(cmd *cobra.Command, history []leverage.HistoryPoint, period leverage.HistoryPeriod) error {
 	out := cmd.OutOrStdout()
-	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.CategoryColor)
 
 	dateHeader := "MONTH"
 	dateFmt := "2006-01"
@@ -151,9 +176,8 @@ func historyOutputPeriodTable(cmd *cobra.Command, history []leverage.HistoryPoin
 		dateFmt = "2006-01-02"
 	}
 
-	fmt.Fprintf(w, "%s\tΔ CODE\tΔ EST. COST\tLEVERAGE\n", dateHeader)
-	fmt.Fprintf(w, "%s\t------\t-----------\t--------\n", strings.Repeat("-", len(dateHeader)))
-
+	headers := []string{dateHeader, "Δ CODE", "Δ EST. COST", "LEVERAGE"}
+	var rows [][]string
 	for _, point := range history {
 		lev := "-"
 		if point.IsFirst {
@@ -172,19 +196,43 @@ func historyOutputPeriodTable(cmd *cobra.Command, history []leverage.HistoryPoin
 			deltaCode = "-"
 			deltaCost = "-"
 		}
-		// Idle period: no delta, show dashes
 		if !point.IsFirst && point.DeltaCode == 0 && point.DeltaEstCost == 0 {
 			lev = "-"
 		}
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+		rows = append(rows, []string{
 			point.Date.Format(dateFmt),
 			deltaCode,
 			deltaCost,
 			lev,
-		)
+		})
 	}
-	return w.Flush()
+
+	t := table.New().
+		Border(lipgloss.ASCIIBorder()).
+		BorderStyle(lipgloss.NewStyle().Foreground(ui.DimColor)).
+		Headers(headers...).
+		Rows(rows...).
+		StyleFunc(func(row, col int) lipgloss.Style {
+			if row == table.HeaderRow {
+				return headerStyle
+			}
+			switch col {
+			case 0: // DATE/MONTH
+				return lipgloss.NewStyle().Foreground(ui.DimColor)
+			case 1: // Δ CODE
+				return lipgloss.NewStyle().Foreground(ui.AccentColor)
+			case 2: // Δ EST. COST
+				return lipgloss.NewStyle().Foreground(ui.WarningColor)
+			case 3: // LEVERAGE
+				return lipgloss.NewStyle().Foreground(ui.SuccessColor)
+			default:
+				return lipgloss.NewStyle()
+			}
+		})
+
+	fmt.Fprintln(out, t)
+	return nil
 }
 
 // fmtDelta formats an integer delta with +/- prefix.
@@ -211,10 +259,10 @@ func fmtDeltaCost(f float64) string {
 
 func historyOutputByAuthor(cmd *cobra.Command, history []leverage.HistoryPoint) error {
 	out := cmd.OutOrStdout()
-	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "DATE\tAUTHOR\tLINES OWNED\tOWNERSHIP %\tAUTHOR LEVERAGE")
-	fmt.Fprintln(w, "----\t------\t-----------\t-----------\t---------------")
+	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.CategoryColor)
 
+	headers := []string{"DATE", "AUTHOR", "LINES OWNED", "OWNERSHIP %", "AUTHOR LEVERAGE"}
+	var rows [][]string
 	for _, point := range history {
 		authors := aggregateAuthors(point.Projects)
 		for _, author := range authors {
@@ -222,16 +270,39 @@ func historyOutputByAuthor(cmd *cobra.Command, history []leverage.HistoryPoint) 
 			if point.Aggregate != nil {
 				authorLev = fmtScore(author.Percentage/100.0*point.Aggregate.FullLeverage) + "x"
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%.1f%%\t%s\n",
+			rows = append(rows, []string{
 				point.Date.Format("2006-01-02"),
 				author.Name,
 				fmtInt(author.Lines),
-				author.Percentage,
+				fmt.Sprintf("%.1f%%", author.Percentage),
 				authorLev,
-			)
+			})
 		}
 	}
-	return w.Flush()
+
+	t := table.New().
+		Border(lipgloss.ASCIIBorder()).
+		BorderStyle(lipgloss.NewStyle().Foreground(ui.DimColor)).
+		Headers(headers...).
+		Rows(rows...).
+		StyleFunc(func(row, col int) lipgloss.Style {
+			if row == table.HeaderRow {
+				return headerStyle
+			}
+			switch col {
+			case 0: // DATE
+				return lipgloss.NewStyle().Foreground(ui.DimColor)
+			case 1: // AUTHOR
+				return lipgloss.NewStyle().Foreground(ui.AccentColor)
+			case 4: // AUTHOR LEVERAGE
+				return lipgloss.NewStyle().Foreground(ui.SuccessColor)
+			default:
+				return lipgloss.NewStyle()
+			}
+		})
+
+	fmt.Fprintln(out, t)
+	return nil
 }
 
 func historyOutputJSON(cmd *cobra.Command, history []leverage.HistoryPoint) error {

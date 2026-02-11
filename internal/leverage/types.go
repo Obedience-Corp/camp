@@ -86,6 +86,7 @@ type LeverageScore struct {
 	SimpleLeverage float64 `json:"simple_leverage"`
 
 	// Summary stats from scc
+	TotalFiles int `json:"total_files"`
 	TotalLines int `json:"total_lines"`
 	TotalCode  int `json:"total_code"`
 }

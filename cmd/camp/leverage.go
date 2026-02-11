@@ -3,11 +3,14 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"text/tabwriter"
 	"time"
 
-	"github.com/obediencecorp/camp/internal/leverage"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/table"
 	"github.com/spf13/cobra"
+
+	"github.com/obediencecorp/camp/internal/leverage"
+	"github.com/obediencecorp/camp/internal/ui"
 )
 
 // sccRunner is the package-level runner used by the leverage command.
@@ -93,7 +96,17 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		score := leverage.ComputeScore(result, cfg.ActualPeople, elapsed)
+		// Per-project elapsed from git history (first commit → last commit).
+		projElapsed := elapsed
+		first, last, gitErr := leverage.GitDateRange(ctx, proj.GitDir)
+		if gitErr == nil {
+			projElapsed = leverage.ElapsedMonths(first, last)
+			if projElapsed <= 0 {
+				projElapsed = elapsed // single-commit projects fall back to campaign elapsed
+			}
+		}
+
+		score := leverage.ComputeScore(result, cfg.ActualPeople, projElapsed)
 		score.ProjectName = proj.Name
 		scores = append(scores, score)
 	}
@@ -106,11 +119,18 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 	// Aggregate campaign-wide totals
 	agg := leverage.AggregateScores(scores, cfg.ActualPeople, elapsed)
 
+	// Compute recent leverage from snapshots
+	store := leverage.NewFileSnapshotStore(leverage.DefaultSnapshotDir(setup.Root))
+	week7, has7 := leverage.RecentLeverage(ctx, store, scores, cfg.ActualPeople, now.AddDate(0, 0, -7))
+	month30, has30 := leverage.RecentLeverage(ctx, store, scores, cfg.ActualPeople, now.AddDate(0, 0, -30))
+
 	// Output based on format
 	if jsonOut {
 		return leverageOutputJSON(cmd, agg, scores)
 	}
-	return leverageOutputTable(cmd, agg, scores, cfg, setup.AutoDetected)
+
+	recent := recentLeverage{week7: week7, has7: has7, month30: month30, has30: has30}
+	return leverageOutputTable(cmd, agg, scores, cfg, setup.AutoDetected, recent)
 }
 
 func leverageOutputJSON(cmd *cobra.Command, agg *leverage.LeverageScore, scores []*leverage.LeverageScore) error {
@@ -130,45 +150,108 @@ func leverageOutputJSON(cmd *cobra.Command, agg *leverage.LeverageScore, scores 
 	return nil
 }
 
-func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores []*leverage.LeverageScore, cfg *leverage.LeverageConfig, autoDetected bool) error {
+// recentLeverage holds optional 7-day and 30-day leverage computed from snapshots.
+type recentLeverage struct {
+	week7, month30 float64
+	has7, has30    bool
+}
+
+func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores []*leverage.LeverageScore, cfg *leverage.LeverageConfig, autoDetected bool, recent recentLeverage) error {
 	out := cmd.OutOrStdout()
 	noLegend, _ := cmd.Flags().GetBool("no-legend")
 
 	if autoDetected {
-		fmt.Fprintln(out, "Note: Using auto-detected configuration. Run 'camp leverage config' to customize.")
+		fmt.Fprintln(out, ui.Warning("Note: Using auto-detected configuration. Run 'camp leverage config' to customize."))
 		fmt.Fprintln(out)
 	}
 
-	fmt.Fprintf(out, "Campaign Leverage Score\n")
-	fmt.Fprintf(out, "  Effort:  %sx  (estimated_people x estimated_months) / (actual_people x elapsed_months)\n", fmtScore(agg.FullLeverage))
-	fmt.Fprintf(out, "  Team:    %sx  estimated_people / actual_people\n\n", fmtScore(agg.SimpleLeverage))
-	fmt.Fprintf(out, "Estimated: %.1f people x %.1f months | Actual: %d %s x %.1f months\n",
-		agg.EstimatedPeople, agg.EstimatedMonths, cfg.ActualPeople, pluralize(cfg.ActualPeople, "person", "people"), agg.ElapsedMonths)
-	fmt.Fprintf(out, "Total Code: %s lines | Estimated Cost: $%s\n", fmtInt(agg.TotalCode), fmtCost(agg.EstimatedCost))
-	fmt.Fprintf(out, "Since: %s (earliest commit across all projects)\n", cfg.ProjectStart.Format("Jan 2, 2006"))
+	// Header: headline leverage number
+	fmt.Fprintf(out, "%s %s\n\n",
+		ui.Header("Campaign Leverage:"),
+		ui.Value(fmtScore(agg.FullLeverage)+"x", ui.AccentColor))
+
+	// Recent leverage from snapshots (omitted if no data)
+	if recent.has7 || recent.has30 {
+		if recent.has7 {
+			fmt.Fprintf(out, "  %s %s\n",
+				ui.Label("Last 7 days:"),
+				ui.Value(fmtRecentLeverage(recent.week7)+"x", ui.SuccessColor))
+		}
+		if recent.has30 {
+			fmt.Fprintf(out, "  %s %s\n",
+				ui.Label("Last 30 days:"),
+				ui.Value(fmtRecentLeverage(recent.month30)+"x", ui.SuccessColor))
+		}
+		fmt.Fprintf(out, "  %s\n", ui.Dim("(new estimated effort added in period vs actual effort spent)"))
+		fmt.Fprintln(out)
+	}
+
+	// COCOMO vs Actual comparison in person-months (the unit that sums correctly)
+	estPersonMonths := agg.EstimatedPeople * agg.EstimatedMonths
+	actualPersonMonths := agg.ActualPeople * agg.ElapsedMonths
+	fmt.Fprintf(out, "  %s %s  %s\n",
+		ui.Label("COCOMO Estimate:"),
+		ui.Value(fmtInt(int(estPersonMonths))+" person-months"),
+		ui.Value("($"+fmtCost(agg.EstimatedCost)+")", ui.WarningColor))
+	fmt.Fprintf(out, "  %s %s\n",
+		ui.Label("Actual Effort:"),
+		ui.Value(fmt.Sprintf("%.1f person-months", actualPersonMonths)))
+	fmt.Fprintf(out, "  %s %s\n\n",
+		ui.Label("Team Equivalent:"),
+		ui.Value(fmtScore(agg.SimpleLeverage)+"x", ui.AccentColor))
+
+	// Summary line
+	fmt.Fprintf(out, "  %s\n", ui.Dim(fmt.Sprintf("%s lines of code across %d %s",
+		fmtInt(agg.TotalCode), len(scores), pluralize(len(scores), "project", "projects"))))
+	fmt.Fprintf(out, "  %s\n", ui.Dim("Since "+cfg.ProjectStart.Format("Jan 2, 2006")))
 	fmt.Fprintln(out)
 
-	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "PROJECT\tCODE\tEST PEOPLE\tEFFORT\tTEAM")
-	fmt.Fprintln(w, "-------\t----\t----------\t------\t----")
+	// Project table
+	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.CategoryColor)
 
+	headers := []string{"PROJECT", "FILES", "CODE", "EST COST", "EST PERSON-MONTHS", "ACTUAL MONTHS", "LEVERAGE"}
+	var rows [][]string
 	for _, s := range scores {
-		fmt.Fprintf(w, "%s\t%s\t%.1f\t%sx\t%sx\n",
+		estPM := s.EstimatedPeople * s.EstimatedMonths
+		rows = append(rows, []string{
 			s.ProjectName,
+			fmtInt(s.TotalFiles),
 			fmtInt(s.TotalCode),
-			s.EstimatedPeople,
-			fmtScore(s.FullLeverage),
-			fmtScore(s.SimpleLeverage),
-		)
+			"$" + fmtCost(s.EstimatedCost),
+			fmtInt(int(estPM)),
+			fmt.Sprintf("%.3f", s.ElapsedMonths),
+			fmtScore(s.FullLeverage) + "x",
+		})
 	}
-	if err := w.Flush(); err != nil {
-		return err
-	}
+
+	t := table.New().
+		Border(lipgloss.ASCIIBorder()).
+		BorderStyle(lipgloss.NewStyle().Foreground(ui.DimColor)).
+		Headers(headers...).
+		Rows(rows...).
+		StyleFunc(func(row, col int) lipgloss.Style {
+			if row == table.HeaderRow {
+				return headerStyle
+			}
+			switch col {
+			case 0: // PROJECT
+				return lipgloss.NewStyle().Foreground(ui.AccentColor)
+			case 3: // EST COST
+				return lipgloss.NewStyle().Foreground(ui.WarningColor)
+			case 6: // LEVERAGE
+				return lipgloss.NewStyle().Foreground(ui.SuccessColor)
+			default:
+				return lipgloss.NewStyle()
+			}
+		})
+
+	fmt.Fprintln(out, t)
 
 	if !noLegend {
 		fmt.Fprintln(out)
-		fmt.Fprintln(out, "Effort = person-months leverage (how much faster and bigger than a traditional team)")
-		fmt.Fprintln(out, "Team   = headcount leverage (equivalent team size for this output)")
+		fmt.Fprintln(out, ui.Dim("Leverage = estimated effort / actual effort (COCOMO organic model via scc)"))
+		fmt.Fprintln(out, ui.Dim("Scores are for personal tracking — they vary widely by project type, language,"))
+		fmt.Fprintln(out, ui.Dim("and team. Use them to measure your own trends, not to compare across teams."))
 	}
 	return nil
 }
@@ -195,6 +278,15 @@ func fmtInt(n int) string {
 // fmtCost formats a float64 cost with comma separators (e.g., 28218013.0 → "28,218,013").
 func fmtCost(f float64) string {
 	return fmtInt(int(f))
+}
+
+// fmtRecentLeverage formats a recent period leverage value.
+// Handles negative leverage (code removal) and zero.
+func fmtRecentLeverage(f float64) string {
+	if f < 0 {
+		return fmt.Sprintf("%.1f (negative)", f)
+	}
+	return fmtScore(f)
 }
 
 // fmtScore formats a leverage score, using commas for large values.

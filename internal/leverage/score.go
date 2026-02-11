@@ -19,6 +19,15 @@ func SumLines(result *SCCResult) (totalLines, totalCode int) {
 	return totalLines, totalCode
 }
 
+// SumFiles totals the file count across all languages in an SCCResult.
+func SumFiles(result *SCCResult) int {
+	var total int
+	for _, lang := range result.LanguageSummary {
+		total += lang.Count
+	}
+	return total
+}
+
 // ComputeScore calculates the leverage score for a single project.
 //
 // Formula:
@@ -37,6 +46,7 @@ func ComputeScore(result *SCCResult, actualPeople int, elapsedMonths float64) *L
 		EstimatedCost:   result.EstimatedCost,
 		ActualPeople:    float64(actualPeople),
 		ElapsedMonths:   elapsedMonths,
+		TotalFiles:      SumFiles(result),
 		TotalLines:      totalLines,
 		TotalCode:       totalCode,
 	}
@@ -98,6 +108,7 @@ func AggregateScores(scores []*LeverageScore, actualPeople int, elapsedMonths fl
 		totalEstimatedPersonMonths float64
 		totalEstimatedPeople       float64
 		totalEstimatedCost         float64
+		totalFiles                 int
 		totalLines                 int
 		totalCode                  int
 	)
@@ -106,6 +117,7 @@ func AggregateScores(scores []*LeverageScore, actualPeople int, elapsedMonths fl
 		totalEstimatedPersonMonths += s.EstimatedPeople * s.EstimatedMonths
 		totalEstimatedPeople += s.EstimatedPeople
 		totalEstimatedCost += s.EstimatedCost
+		totalFiles += s.TotalFiles
 		totalLines += s.TotalLines
 		totalCode += s.TotalCode
 	}
@@ -115,6 +127,7 @@ func AggregateScores(scores []*LeverageScore, actualPeople int, elapsedMonths fl
 		EstimatedCost:   totalEstimatedCost,
 		ActualPeople:    float64(actualPeople),
 		ElapsedMonths:   elapsedMonths,
+		TotalFiles:      totalFiles,
 		TotalLines:      totalLines,
 		TotalCode:       totalCode,
 	}
