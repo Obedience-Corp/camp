@@ -80,7 +80,7 @@ func runStatusAll(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Enumerate submodules
-	paths, err := git.ListSubmodulePaths(ctx, campRoot)
+	paths, err := git.ListSubmodulePathsFiltered(ctx, campRoot, "projects/")
 	if err != nil {
 		return fmt.Errorf("failed to list submodules: %w", err)
 	}
