@@ -10,9 +10,11 @@ import (
 	"strings"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/obediencecorp/camp/internal/campaign"
 	"github.com/obediencecorp/camp/internal/git"
+	tuistatus "github.com/obediencecorp/camp/internal/tui/status"
 	"github.com/obediencecorp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -35,11 +37,13 @@ Examples:
 var (
 	statusAllJSON    bool
 	statusAllNoCache bool
+	statusAllView    bool
 )
 
 func init() {
 	statusAllCmd.Flags().BoolVar(&statusAllJSON, "json", false, "Output as JSON")
 	statusAllCmd.Flags().BoolVar(&statusAllNoCache, "no-cache", false, "Skip cache and refresh")
+	statusAllCmd.Flags().BoolVar(&statusAllView, "view", false, "Open interactive TUI viewer")
 
 	statusCmd.AddCommand(statusAllCmd)
 }
@@ -101,7 +105,35 @@ func runStatusAll(cmd *cobra.Command, _ []string) error {
 		return outputStatusJSON(allStatuses)
 	}
 
+	if statusAllView {
+		return runStatusTUI(allStatuses)
+	}
+
 	renderStatusTable(allStatuses)
+	return nil
+}
+
+func runStatusTUI(statuses []repoStatus) error {
+	repos := make([]tuistatus.RepoInfo, len(statuses))
+	for i, s := range statuses {
+		repos[i] = tuistatus.RepoInfo{
+			Name:      s.Name,
+			Path:      s.Path,
+			Branch:    s.Branch,
+			Staged:    s.Staged,
+			Modified:  s.Modified,
+			Untracked: s.Untracked,
+			Ahead:     s.Ahead,
+			Behind:    s.Behind,
+			Clean:     s.Clean,
+			Error:     s.Error,
+		}
+	}
+
+	p := tea.NewProgram(tuistatus.New(repos), tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		return fmt.Errorf("TUI error: %w", err)
+	}
 	return nil
 }
 
