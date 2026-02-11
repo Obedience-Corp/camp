@@ -86,7 +86,7 @@ func resolveProject(ctx context.Context, name, projectPath string) []Project {
 		expanded := make([]Project, 0, len(subprojects))
 		for _, sub := range subprojects {
 			expanded = append(expanded, Project{
-				Name:         name + "/" + sub.name,
+				Name:         name + "@" + sub.name,
 				Path:         filepath.Join(relPath, sub.name),
 				Type:         sub.projectType,
 				URL:          url,
@@ -223,6 +223,8 @@ func latestCommitDate(ctx context.Context, absPath string) string {
 
 // deduplicateByRemoteURL groups projects by git remote URL and keeps only the
 // copy with the most recent commit. Projects with empty URL are always kept.
+// Monorepo subprojects skip URL-based dedup (they share the parent's URL) but
+// are dropped if a standalone project with the same base name exists.
 func deduplicateByRemoteURL(ctx context.Context, campaignRoot string, projects []Project) []Project {
 	if ctx.Err() != nil {
 		return projects
@@ -232,8 +234,18 @@ func deduplicateByRemoteURL(ctx context.Context, campaignRoot string, projects [
 	bestIdx := make(map[string]int)
 	bestDate := make(map[string]string)
 
+	// Collect standalone project names for monorepo dedup.
+	standaloneNames := make(map[string]bool)
+	for _, p := range projects {
+		if p.MonorepoRoot == "" {
+			standaloneNames[p.Name] = true
+		}
+	}
+
 	for i, p := range projects {
-		if p.URL == "" {
+		// Skip monorepo subprojects — they share the parent's URL and are
+		// deduped by name against standalone repos instead.
+		if p.URL == "" || p.MonorepoRoot != "" {
 			continue
 		}
 
@@ -260,7 +272,16 @@ func deduplicateByRemoteURL(ctx context.Context, campaignRoot string, projects [
 
 	result := make([]Project, 0, len(projects))
 	for i, p := range projects {
-		if p.URL == "" || keep[i] {
+		switch {
+		case p.URL == "":
+			result = append(result, p)
+		case p.MonorepoRoot != "":
+			// Keep monorepo subproject only if no standalone repo has the same base name.
+			baseName := filepath.Base(p.Path)
+			if !standaloneNames[baseName] {
+				result = append(result, p)
+			}
+		case keep[i]:
 			result = append(result, p)
 		}
 	}

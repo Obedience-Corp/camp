@@ -259,6 +259,60 @@ func aggregateMonthly(weeklyDeltas []HistoryPoint, actualPeople int) []HistoryPo
 	return monthly
 }
 
+// RecentLeverage computes period leverage by comparing current scores against
+// the nearest snapshot on or before the cutoff date. Returns (leverage, true)
+// if at least one project had snapshot data, or (0, false) if no snapshots exist.
+func RecentLeverage(ctx context.Context, store SnapshotStorer, currentScores []*LeverageScore, actualPeople int, since time.Time) (float64, bool) {
+	if ctx.Err() != nil {
+		return 0, false
+	}
+
+	now := time.Now()
+	periodMonths := ElapsedMonths(since, now)
+	if periodMonths <= 0 || actualPeople <= 0 {
+		return 0, false
+	}
+
+	var totalCurrentPM, totalPriorPM float64
+	found := false
+
+	for _, score := range currentScores {
+		if ctx.Err() != nil {
+			return 0, false
+		}
+
+		currentPM := score.EstimatedPeople * score.EstimatedMonths
+		totalCurrentPM += currentPM
+
+		snapshots, err := store.LoadAll(ctx, score.ProjectName)
+		if err != nil || len(snapshots) == 0 {
+			continue
+		}
+
+		sort.Slice(snapshots, func(i, j int) bool {
+			return snapshots[i].Date < snapshots[j].Date
+		})
+
+		snap := findMostRecent(snapshots, since)
+		if snap == nil || snap.Leverage == nil {
+			continue
+		}
+
+		priorPM := snap.Leverage.EstimatedPeople * snap.Leverage.EstimatedMonths
+		totalPriorPM += priorPM
+		found = true
+	}
+
+	if !found {
+		return 0, false
+	}
+
+	deltaPM := totalCurrentPM - totalPriorPM
+	actualPM := float64(actualPeople) * periodMonths
+
+	return deltaPM / actualPM, true
+}
+
 // findMostRecent returns the most recent snapshot on or before the target date.
 // Snapshots must be sorted by date ascending. Returns nil if no snapshot exists
 // on or before the target date.
