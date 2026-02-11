@@ -8,6 +8,17 @@ development effort** to produce a productivity multiplier.
 A leverage score of 25x means the team delivered work that COCOMO estimates
 would require 25 person-months, using only 1 actual person-month.
 
+## Commands
+
+| Command | Purpose |
+|---------|---------|
+| `camp leverage` | Show current leverage scores for all projects |
+| `camp leverage config` | View or update leverage configuration |
+| `camp leverage backfill` | Reconstruct historical leverage data from git history |
+| `camp leverage snapshot` | Capture current leverage state as a point-in-time snapshot |
+| `camp leverage history` | Show leverage score history over time |
+| `camp leverage reset` | Clear cached snapshots to allow re-backfill |
+
 ## Formulas
 
 ### Full Leverage (effort-based)
@@ -32,10 +43,36 @@ SimpleLeverage = ─────────────────
 Expresses output as an equivalent team size. A score of 10x means one person
 is producing the output COCOMO would expect from a 10-person team.
 
+### Period Leverage (delta-based)
+
+```
+                    DeltaEstPersonMonths
+PeriodLeverage = ─────────────────────────
+                  ActualPeople × PeriodMonths
+```
+
+Where:
+
+```
+DeltaEstPersonMonths = (Est.People × Est.Months)_current − (Est.People × Est.Months)_previous
+PeriodMonths         = hours_between(prev_date, curr_date) / (24 × 30.44)
+```
+
+Measures estimated effort **delivered in a single period** (week or month).
+Unlike the cumulative formulas above, this answers: "how productive was this
+specific period?" Useful for spotting trends and regressions.
+
+Special cases:
+
+- **First period**: marked `IsFirst`, leverage is zero (no previous baseline)
+- **Negative delta**: marked `IsNegative`, occurs when code is removed or
+  refactored — the codebase shrank in estimated effort
+- **Zero actual people or period**: leverage is zero (not NaN/Inf)
+
 ### Elapsed Months
 
 ```
-ElapsedMonths = hours_between(start, now) / (24 × 30.44)
+ElapsedMonths = hours_between(start, end) / (24 × 30.44)
 ```
 
 Uses 30.44 days per month (the average accounting for leap years).
@@ -71,6 +108,12 @@ We use it as the baseline because:
 | `EstimatedPeople` | scc json2 `estimatedPeople` | COCOMO team size estimate |
 | `EstimatedScheduleMonths` | scc json2 `estimatedScheduleMonths` | COCOMO duration estimate |
 | `EstimatedCost` | scc json2 `estimatedCost` | Total cost estimate (USD) |
+
+scc is invoked as:
+
+```bash
+scc --format json2 --cocomo-project-type <type> <directory>
+```
 
 ### From configuration (actual)
 
@@ -111,36 +154,143 @@ AggEstimatedMonths = ───────────────────�
 
 This correctly weights longer/larger projects more heavily.
 
-## Historical Tracking
+## Snapshot System
 
-### Snapshots
+Snapshots are the foundation of all historical leverage tracking. Every metric
+displayed by `camp leverage history` originates from stored snapshots.
 
-A snapshot is a point-in-time capture of a project's metrics: scc results,
-computed leverage score, and author attributions. Snapshots are stored as JSON
-files at:
+### What a Snapshot Contains
+
+Each snapshot is a self-contained record of a project's state at a point in time:
+
+| Field | Description |
+|-------|-------------|
+| `project` | Project identifier |
+| `commit_hash` | Git commit hash at capture time |
+| `commit_date` | When the commit was authored |
+| `sampled_at` | When the snapshot was captured (wall clock) |
+| `date` | `YYYY-MM-DD` derived from `commit_date` (used as filename and key) |
+| `scc` | Full scc metrics: cost, schedule, people, files, lines, code, comments, blanks, complexity, per-language breakdown |
+| `leverage` | Computed `LeverageScore`: full leverage, simple leverage, estimated and actual values |
+| `authors` | Per-author LOC attribution from `git blame` (name, email, lines, percentage) |
+| `total_lines` | Convenience copy of `scc.total_lines` |
+
+### Storage Layout
 
 ```
-.campaign/leverage/snapshots/<project>/<YYYY-MM-DD>.json
+.campaign/leverage/snapshots/
+├── camp/
+│   ├── 2025-06-01.json
+│   ├── 2025-06-08.json
+│   └── 2025-06-15.json
+├── fest/
+│   ├── 2025-06-01.json
+│   └── 2025-06-08.json
+└── obey/
+    └── 2025-06-01.json
 ```
 
-### Backfill
+- **One JSON file per project per date**: `<project>/<YYYY-MM-DD>.json`
+- **Indented JSON**: human-readable, diffable, inspectable with `jq`
+- **Overwrite semantics**: re-running a snapshot for the same project and date
+  silently replaces the previous file
+- **Project name validation**: names cannot contain `/`, `\`, `..`, or be empty
+  (prevents path traversal)
+
+### How Snapshots Are Created
+
+There are two ways to generate snapshots:
+
+**`camp leverage snapshot`** — captures the current HEAD state:
+
+1. Resolves projects from config (or auto-discovery)
+2. For each project: gets HEAD commit hash and date via `git log -1`
+3. Runs `scc` on the project directory
+4. Computes leverage score using elapsed time from `ProjectStart` to now
+5. Runs `git blame --line-porcelain` on all tracked files for author attribution
+6. Saves snapshot as `<project>/<today>.json`
+
+**`camp leverage backfill`** — reconstructs history from git (see [Backfill](#backfill)).
+
+### Incrementality Guarantees
+
+Backfill is **incremental by default**. Before processing a commit sample, the
+backfiller checks if a snapshot file already exists for that project and date.
+If it does, that sample is skipped entirely.
+
+This means:
+
+- Re-running `camp leverage backfill` is safe and fast — only new dates are processed
+- To force regeneration, first run `camp leverage reset` to clear cached snapshots
+- The check is per-project: if project A has a snapshot for 2025-06-01 but project B
+  does not, only project B is processed for that date
+
+### Resetting Snapshots
+
+When you need to redo backfill (after fixing project detection, changing dedup
+logic, correcting config, etc.), use `camp leverage reset`:
+
+```bash
+camp leverage reset                    # Clear all snapshots
+camp leverage reset --project camp     # Clear only camp's snapshots
+```
+
+This removes snapshot files from disk. No other data is affected.
+
+## Backfill
 
 The backfill process reconstructs historical leverage data by walking git
-history:
+history. It is the primary way to populate snapshots for historical analysis.
 
-1. **Sample selection** — one commit per ISO week (the last commit in each
-   week), always including the first and latest commits as bookends
-2. **Worktree checkout** — each sample commit is checked out in an isolated
-   `git worktree` (no dirty working directory)
-3. **scc scan** — code metrics computed at that historical point
-4. **Score computation** — leverage calculated using elapsed time from
+### Commit Sampling
+
+Backfill samples **one commit per ISO week** from git history:
+
+1. Runs `git log --all --format=%H %cI --reverse` (optionally with `--since`)
+2. Groups all commits by ISO week (year + week number)
+3. **Selects the last commit per week** — captures the most complete state
+4. **Always includes the first and latest commits** as bookends, even if they
+   fall in the same ISO week as another sample
+5. Returns samples sorted chronologically
+
+The `--since` flag or `ProjectStart` config controls how far back sampling goes.
+
+### Processing Pipeline
+
+For each sample commit:
+
+1. **Worktree creation** — `git worktree add --detach <tempdir> <hash>` checks
+   out the commit in an isolated directory. No working directory pollution.
+2. **scc scan** — code metrics computed at that historical state
+3. **Score computation** — leverage calculated using elapsed time from
    `ProjectStart` to the sample commit date
-5. **Author attribution** — `git blame --line-porcelain` determines per-author
-   LOC ownership at each point
+4. **Author attribution** — `git blame --line-porcelain` on all tracked files
+   determines per-author LOC ownership at that point
+5. **Snapshot persistence** — results saved as JSON
 
-Backfill is incremental: re-running skips dates that already have snapshots.
-Monorepo projects sharing the same git repository are grouped and processed
-with shared worktrees for efficiency.
+### Monorepo Grouping
+
+Projects sharing the same `GitDir` are grouped and processed with shared
+worktrees. When multiple subprojects live in one git repository:
+
+- A single worktree is created per sample commit
+- Each subproject's scc scan targets its subdirectory within the worktree
+- If a subdirectory doesn't exist at a historical commit (project didn't exist
+  yet), that project is silently skipped for that date
+
+This avoids redundant git operations and dramatically speeds up monorepo backfill.
+
+### Concurrency
+
+Backfill uses a worker pool (default: 4, configurable via `--workers`).
+Multiple sample commits are processed in parallel, each with its own worktree.
+
+### Cleanup Safety
+
+Worktree cleanup uses `context.Background()` instead of the parent context.
+This ensures cleanup succeeds even when the user presses Ctrl+C mid-backfill.
+Both `git worktree remove --force` and `os.RemoveAll()` are called for
+belt-and-suspenders reliability.
 
 ### Author Attribution
 
@@ -149,26 +299,100 @@ Each snapshot includes per-author contribution data derived from `git blame`:
 - **Lines** — number of lines currently attributed to the author
 - **Percentage** — author's share of total LOC (`lines / total × 100`)
 
-This tracks how code ownership evolves over time across backfill snapshots.
+Attribution is computed by:
+
+1. Listing all git-tracked files via `git ls-files`
+2. Running `git blame --line-porcelain` on each file
+3. Parsing `author` and `author-mail` fields from porcelain output
+4. Counting content lines (lines prefixed with `\t`) per author email
+5. Computing percentage relative to total attributed lines
+
+Files that can't be blamed (binary, empty, etc.) are silently skipped.
+
+## History and Period Analysis
+
+`camp leverage history` visualizes leverage over time from stored snapshots.
+
+### Cumulative History
+
+For each calendar week between `--since` and `--until`:
+
+1. Finds the **most recent snapshot on or before that date** for each project
+2. Computes aggregate leverage across all projects at that point
+3. Returns a week-by-week progression showing cumulative growth
+
+### Period History
+
+Period history measures effort **delivered per period** rather than cumulative
+totals. Two granularities are available:
+
+**Weekly** (`--period weekly`): raw week-to-week deltas
+
+- `DeltaCode` = current week's total code - previous week's total code
+- `DeltaEstCost` = current estimated cost - previous estimated cost
+- `PeriodLeverage` = delta estimated person-months / (actual people x period months)
+
+**Monthly** (`--period monthly`, default): weekly deltas bucketed by calendar month
+
+- Groups weekly data points by `YYYY-MM`
+- Computes deltas from the first snapshot in the month to the last
+- Provides a smoother view of productivity trends
+
+### Author History
+
+`camp leverage history --by-author` provides per-contributor leverage breakdown:
+
+- Aggregates author contributions across all projects at each time point
+- Computes each author's share of the total campaign leverage proportional to
+  their LOC ownership (`ownership_percentage × campaign_leverage`)
+- Useful for understanding individual contribution patterns over time
 
 ## Project Configuration
 
 Projects can be auto-discovered or explicitly configured:
 
 **Auto-discovery** (default): Uses `project.List()` to find projects under
-the campaign root. Earliest commit date is auto-detected.
+the campaign root. Earliest commit date is auto-detected. Monorepo subprojects
+are detected automatically — `SCCDir` points to the subproject while `GitDir`
+points to the monorepo root.
 
 **Explicit configuration**: When `projects` is set in the config, each entry
 supports:
 
 | Field | Purpose |
 |-------|---------|
-| `path` | Project directory relative to campaign root |
-| `include` | Whether to include in scoring |
+| `path` | Project directory relative to campaign root (required) |
+| `include` | Whether to include in scoring (`false` = skip) |
 | `in_monorepo` | Project is a subdirectory of a larger git repo |
-| `monorepo_path` | Parent monorepo directory |
+| `monorepo_path` | Parent monorepo directory (used with `in_monorepo`) |
 | `git_repo` | Override git repository path |
 | `first_commit_override` | Override auto-detected start date |
 
 This handles monorepo layouts where scc scans a subdirectory but git
-operations run against the parent repository.
+operations (blame, log, worktree) run against the parent repository.
+
+Projects are always sorted alphabetically by name in output.
+
+## Data Integrity
+
+The snapshot system is designed to produce trustworthy, auditable data:
+
+- **Deterministic inputs**: scc and git blame produce identical output for
+  identical code. Re-running backfill on the same commit yields the same results.
+- **Commit-pinned**: every snapshot records the exact `commit_hash` it was
+  generated from. This is verifiable — you can check out that commit and re-run
+  scc to confirm the numbers.
+- **Self-contained**: each snapshot file contains all inputs needed to verify
+  its leverage score (scc metrics, actual people, elapsed months, computed score).
+  No external state is required to validate a snapshot.
+- **No interpolation**: snapshots only exist for dates where a commit was
+  actually sampled and analyzed. History queries return the most recent
+  available snapshot, never fabricated data.
+- **Overwrite-only**: snapshots can be replaced (same project + date) but never
+  partially modified. The file is either the complete result of an scc+blame
+  run or it doesn't exist.
+- **Incremental safety**: backfill checks for existing snapshots before
+  processing. This prevents redundant work but also means stale data persists
+  until explicitly cleared with `camp leverage reset`.
+- **Path traversal protection**: project names are validated to reject `/`, `\`,
+  and `..` before any filesystem operation.

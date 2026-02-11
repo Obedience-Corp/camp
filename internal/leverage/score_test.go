@@ -128,6 +128,140 @@ func TestComputeScore(t *testing.T) {
 	}
 }
 
+func TestComputePeriodScore(t *testing.T) {
+	tests := []struct {
+		name           string
+		prev           *LeverageScore
+		current        *LeverageScore
+		actualPeople   int
+		periodMonths   float64
+		wantLeverage   float64
+		wantDeltaCode  int
+		wantIsFirst    bool
+		wantIsNegative bool
+	}{
+		{
+			name: "normal period — design spec worked example",
+			prev: &LeverageScore{
+				EstimatedPeople: 9.5, EstimatedMonths: 45.0, // ~428 person-months
+				TotalCode: 437954, EstimatedCost: 10000000,
+			},
+			current: &LeverageScore{
+				EstimatedPeople: 14.3, EstimatedMonths: 36.2, // ~518 person-months
+				TotalCode: 500292, EstimatedCost: 12000000,
+			},
+			actualPeople: 1,
+			periodMonths: 0.23, // 1 week
+			// Delta = (14.3*36.2) - (9.5*45.0) = 517.66 - 427.5 = 90.16
+			// Leverage = 90.16 / (1 * 0.23) ≈ 392
+			wantLeverage:   392.0,
+			wantDeltaCode:  62338,
+			wantIsFirst:    false,
+			wantIsNegative: false,
+		},
+		{
+			name: "idle period — zero delta",
+			prev: &LeverageScore{
+				EstimatedPeople: 14.0, EstimatedMonths: 36.0,
+				TotalCode: 528822, EstimatedCost: 11000000,
+			},
+			current: &LeverageScore{
+				EstimatedPeople: 14.0, EstimatedMonths: 36.0,
+				TotalCode: 528822, EstimatedCost: 11000000,
+			},
+			actualPeople:   1,
+			periodMonths:   0.23,
+			wantLeverage:   0.0,
+			wantDeltaCode:  0,
+			wantIsFirst:    false,
+			wantIsNegative: false,
+		},
+		{
+			name:           "first period — no prior snapshot",
+			prev:           nil,
+			current:        &LeverageScore{EstimatedPeople: 5.0, EstimatedMonths: 10.0, TotalCode: 10000, EstimatedCost: 500000},
+			actualPeople:   1,
+			periodMonths:   1.0,
+			wantLeverage:   0.0, // first period has no leverage
+			wantDeltaCode:  10000,
+			wantIsFirst:    true,
+			wantIsNegative: false,
+		},
+		{
+			name: "negative delta — code removal",
+			prev: &LeverageScore{
+				EstimatedPeople: 10.0, EstimatedMonths: 20.0,
+				TotalCode: 100000, EstimatedCost: 5000000,
+			},
+			current: &LeverageScore{
+				EstimatedPeople: 8.0, EstimatedMonths: 18.0,
+				TotalCode: 80000, EstimatedCost: 4000000,
+			},
+			actualPeople: 1,
+			periodMonths: 0.23,
+			// Delta = (8*18) - (10*20) = 144 - 200 = -56
+			// Leverage = -56 / 0.23 ≈ -243.5
+			wantLeverage:   -243.5,
+			wantDeltaCode:  -20000,
+			wantIsFirst:    false,
+			wantIsNegative: true,
+		},
+		{
+			name: "zero period length",
+			prev: &LeverageScore{
+				EstimatedPeople: 5.0, EstimatedMonths: 10.0,
+				TotalCode: 50000,
+			},
+			current: &LeverageScore{
+				EstimatedPeople: 6.0, EstimatedMonths: 11.0,
+				TotalCode: 60000,
+			},
+			actualPeople:   1,
+			periodMonths:   0.0,
+			wantLeverage:   0.0,
+			wantDeltaCode:  10000,
+			wantIsFirst:    false,
+			wantIsNegative: false,
+		},
+		{
+			name: "zero actual people",
+			prev: &LeverageScore{
+				EstimatedPeople: 5.0, EstimatedMonths: 10.0,
+				TotalCode: 50000,
+			},
+			current: &LeverageScore{
+				EstimatedPeople: 6.0, EstimatedMonths: 11.0,
+				TotalCode: 60000,
+			},
+			actualPeople:   0,
+			periodMonths:   1.0,
+			wantLeverage:   0.0,
+			wantDeltaCode:  10000,
+			wantIsFirst:    false,
+			wantIsNegative: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			score := ComputePeriodScore(tt.prev, tt.current, tt.actualPeople, tt.periodMonths)
+
+			if score.IsFirst != tt.wantIsFirst {
+				t.Errorf("IsFirst = %v, want %v", score.IsFirst, tt.wantIsFirst)
+			}
+			if score.IsNegative != tt.wantIsNegative {
+				t.Errorf("IsNegative = %v, want %v", score.IsNegative, tt.wantIsNegative)
+			}
+			if score.DeltaCode != tt.wantDeltaCode {
+				t.Errorf("DeltaCode = %d, want %d", score.DeltaCode, tt.wantDeltaCode)
+			}
+			if math.Abs(score.PeriodLeverage-tt.wantLeverage) > 1.0 {
+				t.Errorf("PeriodLeverage = %.1f, want ~%.1f", score.PeriodLeverage, tt.wantLeverage)
+			}
+		})
+	}
+}
+
 func TestAggregateScores(t *testing.T) {
 	scores := []*LeverageScore{
 		{

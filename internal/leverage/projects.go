@@ -42,6 +42,8 @@ func ResolveProjects(ctx context.Context, campaignRoot string, cfg *LeverageConf
 }
 
 // resolveFromProjectList falls back to project.List() discovery.
+// Monorepo subprojects get SCCDir pointing to the subproject and GitDir
+// pointing to the monorepo root (where .git lives).
 func resolveFromProjectList(ctx context.Context, campaignRoot string) ([]ResolvedProject, error) {
 	projects, err := project.List(ctx, campaignRoot)
 	if err != nil {
@@ -50,11 +52,22 @@ func resolveFromProjectList(ctx context.Context, campaignRoot string) ([]Resolve
 
 	resolved := make([]ResolvedProject, 0, len(projects))
 	for _, p := range projects {
-		absDir := filepath.Join(campaignRoot, p.Path)
+		sccDir := filepath.Join(campaignRoot, p.Path)
+
+		var gitDir string
+		var inMonorepo bool
+		if p.MonorepoRoot != "" {
+			gitDir = filepath.Join(campaignRoot, p.MonorepoRoot)
+			inMonorepo = true
+		} else {
+			gitDir = sccDir
+		}
+
 		resolved = append(resolved, ResolvedProject{
-			Name:   p.Name,
-			SCCDir: absDir,
-			GitDir: absDir,
+			Name:       p.Name,
+			SCCDir:     sccDir,
+			GitDir:     gitDir,
+			InMonorepo: inMonorepo,
 		})
 	}
 

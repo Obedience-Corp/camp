@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -34,6 +35,7 @@ func init() {
 	leverageHistoryCmd.Flags().StringP("project", "p", "", "filter to specific project")
 	leverageHistoryCmd.Flags().String("since", "", "start date (YYYY-MM-DD)")
 	leverageHistoryCmd.Flags().String("until", "", "end date (YYYY-MM-DD, default: today)")
+	leverageHistoryCmd.Flags().String("period", "monthly", "aggregation period: weekly or monthly")
 	leverageHistoryCmd.Flags().Bool("json", false, "output as JSON")
 	leverageHistoryCmd.Flags().Bool("by-author", false, "show per-author leverage breakdown")
 	leverageCmd.AddCommand(leverageHistoryCmd)
@@ -86,8 +88,15 @@ func runLeverageHistory(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Load history
-	history, err := leverage.LoadHistory(ctx, store, projectNames, cfg.ActualPeople, since, until)
+	// Determine period mode
+	periodStr, _ := cmd.Flags().GetString("period")
+	period := leverage.PeriodMonthly
+	if periodStr == "weekly" {
+		period = leverage.PeriodWeekly
+	}
+
+	// Load history with period-based deltas
+	history, err := leverage.LoadPeriodHistory(ctx, store, projectNames, cfg.ActualPeople, since, until, period)
 	if err != nil {
 		return err
 	}
@@ -107,7 +116,7 @@ func runLeverageHistory(cmd *cobra.Command, args []string) error {
 	if byAuthor {
 		return historyOutputByAuthor(cmd, history)
 	}
-	return historyOutputTable(cmd, history)
+	return historyOutputPeriodTable(cmd, history, period)
 }
 
 func historyOutputTable(cmd *cobra.Command, history []leverage.HistoryPoint) error {
@@ -129,6 +138,75 @@ func historyOutputTable(cmd *cobra.Command, history []leverage.HistoryPoint) err
 		)
 	}
 	return w.Flush()
+}
+
+func historyOutputPeriodTable(cmd *cobra.Command, history []leverage.HistoryPoint, period leverage.HistoryPeriod) error {
+	out := cmd.OutOrStdout()
+	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+
+	dateHeader := "MONTH"
+	dateFmt := "2006-01"
+	if period == leverage.PeriodWeekly {
+		dateHeader = "DATE"
+		dateFmt = "2006-01-02"
+	}
+
+	fmt.Fprintf(w, "%s\tΔ CODE\tΔ EST. COST\tLEVERAGE\n", dateHeader)
+	fmt.Fprintf(w, "%s\t------\t-----------\t--------\n", strings.Repeat("-", len(dateHeader)))
+
+	for _, point := range history {
+		lev := "-"
+		if point.IsFirst {
+			lev = "-"
+		} else if point.IsNegative {
+			lev = "negative"
+		} else if point.PeriodLeverage > 0 {
+			lev = fmtScore(point.PeriodLeverage) + "x"
+		} else {
+			lev = "-"
+		}
+
+		deltaCode := fmtDelta(point.DeltaCode)
+		deltaCost := fmtDeltaCost(point.DeltaEstCost)
+		if point.IsFirst {
+			deltaCode = "-"
+			deltaCost = "-"
+		}
+		// Idle period: no delta, show dashes
+		if !point.IsFirst && point.DeltaCode == 0 && point.DeltaEstCost == 0 {
+			lev = "-"
+		}
+
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+			point.Date.Format(dateFmt),
+			deltaCode,
+			deltaCost,
+			lev,
+		)
+	}
+	return w.Flush()
+}
+
+// fmtDelta formats an integer delta with +/- prefix.
+func fmtDelta(n int) string {
+	if n > 0 {
+		return "+" + fmtInt(n)
+	}
+	if n < 0 {
+		return "-" + fmtInt(-n)
+	}
+	return "-"
+}
+
+// fmtDeltaCost formats a cost delta with +$/-$ prefix.
+func fmtDeltaCost(f float64) string {
+	if f > 0 {
+		return "+$" + fmtCost(f)
+	}
+	if f < 0 {
+		return "-$" + fmtCost(-f)
+	}
+	return "-"
 }
 
 func historyOutputByAuthor(cmd *cobra.Command, history []leverage.HistoryPoint) error {
