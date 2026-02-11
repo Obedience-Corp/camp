@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
+	"syscall"
 
 	"github.com/obediencecorp/camp/internal/campaign"
 	"github.com/obediencecorp/camp/internal/git"
@@ -40,6 +42,9 @@ func init() {
 
 func runLog(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
+
+	// Suppress "signal: broken pipe" when pager quits early
+	signal.Ignore(syscall.SIGPIPE)
 
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
