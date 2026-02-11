@@ -173,7 +173,7 @@ func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores
 
 	for _, s := range scores {
 		estPM := s.EstimatedPeople * s.EstimatedMonths
-		fmt.Fprintf(w, "%s\t%s\t%s\t$%s\t%s\t%.1f\t%sx\n",
+		fmt.Fprintf(w, "%s\t%s\t%s\t$%s\t%s\t%.2f\t%sx\n",
 			s.ProjectName,
 			fmtInt(s.TotalFiles),
 			fmtInt(s.TotalCode),
