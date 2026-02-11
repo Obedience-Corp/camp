@@ -224,7 +224,8 @@ func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores
 	}
 
 	t := table.New().
-		Border(lipgloss.HiddenBorder()).
+		Border(lipgloss.ASCIIBorder()).
+		BorderStyle(lipgloss.NewStyle().Foreground(ui.DimColor)).
 		Headers(headers...).
 		Rows(rows...).
 		StyleFunc(func(row, col int) lipgloss.Style {
