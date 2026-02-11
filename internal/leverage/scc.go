@@ -25,16 +25,22 @@ func NewSCCRunner(cocomoType string) (*SCCRunner, error) {
 }
 
 // Run executes scc on dir and returns the parsed json2 result.
-func (r *SCCRunner) Run(ctx context.Context, dir string) (*SCCResult, error) {
+// excludeDirs specifies subdirectory names to skip (passed as --exclude-dir flags).
+func (r *SCCRunner) Run(ctx context.Context, dir string, excludeDirs []string) (*SCCResult, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
 
-	cmd := exec.CommandContext(ctx, r.binaryPath,
+	args := []string{
 		"--format", FormatJSON2,
 		"--cocomo-project-type", r.cocomoType,
-		dir,
-	)
+	}
+	for _, d := range excludeDirs {
+		args = append(args, "--exclude-dir", d)
+	}
+	args = append(args, dir)
+
+	cmd := exec.CommandContext(ctx, r.binaryPath, args...)
 
 	output, err := cmd.Output()
 	if err != nil {

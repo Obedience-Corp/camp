@@ -500,7 +500,7 @@ func TestBackfiller_WarningCallback(t *testing.T) {
 // failingRunner is a Runner that always returns an error.
 type failingRunner struct{}
 
-func (f *failingRunner) Run(_ context.Context, _ string) (*SCCResult, error) {
+func (f *failingRunner) Run(_ context.Context, _ string, _ []string) (*SCCResult, error) {
 	return nil, fmt.Errorf("scc unavailable")
 }
 

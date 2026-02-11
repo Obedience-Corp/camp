@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -68,18 +69,16 @@ func NewSharedContainer() (*TestContainer, error) {
 		return nil, fmt.Errorf("failed to build camp binary: %w", err)
 	}
 
+	// Start container without bind-mounting the binary. Bind mounts go through
+	// the host's overlayfs (Colima virtualisation layer on macOS) which can
+	// serve stale or corrupted pages after heavy rm -rf / sync cycles, causing
+	// non-deterministic SIGSEGV when the kernel page-faults the binary. Copying
+	// the binary into the container's own writable layer avoids this entirely.
 	req := testcontainers.ContainerRequest{
 		Image:      "alpine:latest",
 		Cmd:        []string{"sleep", "3600"}, // Keep container running
 		WaitingFor: wait.ForExec([]string{"true"}).WithStartupTimeout(30 * time.Second),
 		AutoRemove: true,
-		Mounts: testcontainers.ContainerMounts{
-			{
-				Source:   testcontainers.GenericBindMountSource{HostPath: campBinary},
-				Target:   "/camp",
-				ReadOnly: false,
-			},
-		},
 	}
 
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
@@ -88,6 +87,12 @@ func NewSharedContainer() (*TestContainer, error) {
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to start container: %w", err)
+	}
+
+	// Copy camp binary into the container's own filesystem layer (not a bind mount).
+	if err := container.CopyFileToContainer(ctx, campBinary, "/camp", 0o755); err != nil {
+		container.Terminate(ctx)
+		return nil, fmt.Errorf("failed to copy camp binary into container: %w", err)
 	}
 
 	// Install git (required for project operations)
@@ -114,7 +119,7 @@ func NewSharedContainer() (*TestContainer, error) {
 		return nil, fmt.Errorf("failed to configure git name: %w", err)
 	}
 
-	// Check if camp binary exists and make it executable
+	// Verify camp binary was copied correctly
 	exitCode, output, err = container.Exec(ctx, []string{"ls", "-la", "/camp"})
 	if err != nil {
 		container.Terminate(ctx)
@@ -124,18 +129,6 @@ func NewSharedContainer() (*TestContainer, error) {
 		outputBytes, _ := io.ReadAll(output)
 		container.Terminate(ctx)
 		return nil, fmt.Errorf("camp binary not found, ls output: %s", string(outputBytes))
-	}
-
-	// Make camp executable in container
-	exitCode, output, err = container.Exec(ctx, []string{"chmod", "+x", "/camp"})
-	if err != nil {
-		container.Terminate(ctx)
-		return nil, fmt.Errorf("failed to make camp executable: %w", err)
-	}
-	if exitCode != 0 {
-		outputBytes, _ := io.ReadAll(output)
-		container.Terminate(ctx)
-		return nil, fmt.Errorf("chmod failed with exit code %d, output: %s", exitCode, string(outputBytes))
 	}
 
 	// Create initial working directories
@@ -175,8 +168,11 @@ func buildCampBinaryShared() (string, error) {
 
 	binaryPath := filepath.Join(binDir, "camp")
 
-	// Build the binary for Linux (required for Alpine containers)
-	cmd := fmt.Sprintf("cd %s && GOOS=linux GOARCH=amd64 go build -o %s ./cmd/camp", projectRoot, binaryPath)
+	// Build the binary for Linux matching the host architecture.
+	// Using runtime.GOARCH ensures native execution inside Colima's VM
+	// (which matches the host arch). Hardcoding amd64 on an arm64 host
+	// forces QEMU x86 emulation, causing non-deterministic SIGSEGV.
+	cmd := fmt.Sprintf("cd %s && GOOS=linux GOARCH=%s go build -o %s ./cmd/camp", projectRoot, runtime.GOARCH, binaryPath)
 	if err := runCommand(cmd); err != nil {
 		return "", fmt.Errorf("failed to build binary: %w", err)
 	}

@@ -90,7 +90,7 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		result, err := runner.Run(ctx, proj.SCCDir)
+		result, err := runner.Run(ctx, proj.SCCDir, proj.ExcludeDirs)
 		if err != nil {
 			fmt.Fprintf(cmd.ErrOrStderr(), "Warning: skipping %s: %v\n", proj.Name, err)
 			continue
