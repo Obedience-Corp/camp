@@ -182,6 +182,7 @@ func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores
 				ui.Label("Last 30 days:"),
 				ui.Value(fmtRecentLeverage(recent.month30)+"x", ui.SuccessColor))
 		}
+		fmt.Fprintf(out, "  %s\n", ui.Dim("(new estimated effort added in period vs actual effort spent)"))
 		fmt.Fprintln(out)
 	}
 
@@ -249,6 +250,8 @@ func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores
 	if !noLegend {
 		fmt.Fprintln(out)
 		fmt.Fprintln(out, ui.Dim("Leverage = estimated effort / actual effort (COCOMO organic model via scc)"))
+		fmt.Fprintln(out, ui.Dim("Scores are for personal tracking — they vary widely by project type, language,"))
+		fmt.Fprintln(out, ui.Dim("and team. Use them to measure your own trends, not to compare across teams."))
 	}
 	return nil
 }
