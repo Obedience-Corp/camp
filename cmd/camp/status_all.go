@@ -80,7 +80,7 @@ func runStatusAll(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Enumerate submodules
-	paths, err := git.ListSubmodulePaths(ctx, campRoot)
+	paths, err := git.ListSubmodulePathsFiltered(ctx, campRoot, "projects/")
 	if err != nil {
 		return fmt.Errorf("failed to list submodules: %w", err)
 	}
@@ -106,19 +106,23 @@ func runStatusAll(cmd *cobra.Command, _ []string) error {
 	}
 
 	if statusAllView {
-		return runStatusTUI(allStatuses)
+		return runStatusTUI(campRoot, allStatuses)
 	}
 
 	renderStatusTable(allStatuses)
 	return nil
 }
 
-func runStatusTUI(statuses []repoStatus) error {
+func runStatusTUI(campRoot string, statuses []repoStatus) error {
 	repos := make([]tuistatus.RepoInfo, len(statuses))
 	for i, s := range statuses {
+		path := s.Path
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(campRoot, path)
+		}
 		repos[i] = tuistatus.RepoInfo{
 			Name:      s.Name,
-			Path:      s.Path,
+			Path:      path,
 			Branch:    s.Branch,
 			Staged:    s.Staged,
 			Modified:  s.Modified,
