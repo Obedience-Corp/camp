@@ -35,7 +35,7 @@ Examples:
 
 func init() {
 	rootCmd.AddCommand(pushCmd)
-	pushCmd.GroupID = "campaign"
+	pushCmd.GroupID = "git"
 }
 
 func runPush(cmd *cobra.Command, args []string) error {

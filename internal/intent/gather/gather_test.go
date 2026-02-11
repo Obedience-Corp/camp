@@ -376,6 +376,45 @@ func TestStatus_InDungeon(t *testing.T) {
 	}
 }
 
+func TestLoadIntents_ExcludesDungeonStatuses(t *testing.T) {
+	tmpDir, svc := setupTestDir(t)
+
+	// Create intents
+	active1 := createTestIntent(t, svc, "Active Auth", []string{"auth"})
+	active2 := createTestIntent(t, svc, "Active Login", []string{"auth"})
+	doneIntent := createTestIntent(t, svc, "Done Auth", []string{"auth"})
+	killedIntent := createTestIntent(t, svc, "Killed Auth", []string{"auth"})
+
+	// Move some to dungeon statuses
+	_, err := svc.Move(context.Background(), doneIntent.ID, intent.StatusDone)
+	if err != nil {
+		t.Fatalf("moving to done: %v", err)
+	}
+	_, err = svc.Move(context.Background(), killedIntent.ID, intent.StatusKilled)
+	if err != nil {
+		t.Fatalf("moving to killed: %v", err)
+	}
+
+	gatherSvc := NewService(svc, tmpDir)
+
+	// loadIntents should exclude done and killed
+	ids := []string{active1.ID, active2.ID, doneIntent.ID, killedIntent.ID}
+	results, err := gatherSvc.loadIntents(context.Background(), ids)
+	if err != nil {
+		t.Fatalf("loadIntents() error = %v", err)
+	}
+
+	if len(results) != 2 {
+		t.Errorf("loadIntents() returned %d results, want 2 (only active intents)", len(results))
+	}
+
+	for _, r := range results {
+		if r.Status.InDungeon() {
+			t.Errorf("loadIntents() included dungeon intent %q with status %s", r.ID, r.Status)
+		}
+	}
+}
+
 func TestService_ContextCancellation(t *testing.T) {
 	tmpDir, svc := setupTestDir(t)
 	gatherSvc := NewService(svc, tmpDir)

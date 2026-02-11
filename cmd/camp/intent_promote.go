@@ -1,14 +1,22 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/obediencecorp/camp/internal/config"
+	"github.com/obediencecorp/camp/internal/fest"
 	"github.com/obediencecorp/camp/internal/git"
 	"github.com/obediencecorp/camp/internal/intent"
 	"github.com/obediencecorp/camp/internal/paths"
+	"github.com/obediencecorp/camp/internal/ui"
 )
 
 var intentPromoteCmd = &cobra.Command{
@@ -90,8 +98,6 @@ func runIntentPromote(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("✓ Intent promoted: %s\n", result.Path)
-	fmt.Println("\nNext step: Create the Festival with:")
-	fmt.Printf("  fest create festival --name \"%s\"\n", i.Title)
 
 	// Auto-commit (unless --no-commit)
 	if !noCommit {
@@ -107,5 +113,125 @@ func runIntentPromote(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Auto-create festival from promoted intent (best-effort).
+	createFestivalFromIntent(ctx, campaignRoot, i)
+
 	return nil
+}
+
+// createFestivalFromIntent attempts to create a festival via fest CLI
+// and copies the intent file into the festival's ingest directory.
+// This is best-effort: failures do not block the promote operation.
+func createFestivalFromIntent(ctx context.Context, campaignRoot string, i *intent.Intent) {
+	festPath, err := fest.FindFestCLI()
+	if err != nil {
+		fmt.Println()
+		fmt.Println(ui.Dim("Note: fest CLI not found. Skipping automatic festival creation."))
+		fmt.Println(ui.Dim("Install fest to enable promote-to-festival automation."))
+		fmt.Println()
+		fmt.Println("Next step: Create the Festival with:")
+		fmt.Printf("  fest create festival --name %q\n", i.Title)
+		return
+	}
+
+	festivalName := intent.GenerateSlug(i.Title)
+	festivalGoal := extractFirstParagraph(i.Content)
+
+	args := []string{"create", "festival", "--type", "standard", "--name", festivalName}
+	if festivalGoal != "" {
+		args = append(args, "--goal", festivalGoal)
+	}
+
+	cmd := exec.CommandContext(ctx, festPath, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		fmt.Println()
+		fmt.Printf("%s festival creation failed: %v\n", ui.WarningIcon(), err)
+		fmt.Println("Intent was promoted successfully. Create the festival manually with:")
+		fmt.Printf("  fest create festival --type standard --name %q\n", festivalName)
+		return
+	}
+
+	fmt.Printf("\n%s Festival '%s' created from promoted intent.\n", ui.SuccessIcon(), festivalName)
+
+	// Copy intent file to the festival's ingest directory (best-effort).
+	copyIntentToIngest(campaignRoot, festivalName, i)
+}
+
+// extractFirstParagraph returns the first non-header paragraph from markdown content.
+func extractFirstParagraph(content string) string {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return ""
+	}
+
+	paragraphs := strings.Split(content, "\n\n")
+	for _, p := range paragraphs {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+
+		// Skip paragraphs that are just markdown headers
+		if strings.HasPrefix(p, "#") {
+			lines := strings.SplitN(p, "\n", 2)
+			if len(lines) > 1 {
+				// Header + body in same paragraph: return the body
+				return strings.TrimSpace(lines[1])
+			}
+			// Only a header line, skip to next paragraph
+			continue
+		}
+
+		return p
+	}
+
+	return ""
+}
+
+// copyIntentToIngest copies the intent markdown file into the festival's ingest directory.
+// This is best-effort: if the copy fails, a warning is printed but the promote succeeds.
+func copyIntentToIngest(campaignRoot, festivalName string, i *intent.Intent) {
+	if i.Path == "" {
+		return
+	}
+
+	// fest creates festivals in festivals/active/ by default.
+	ingestDir := filepath.Join(campaignRoot, "festivals", "active", festivalName, "001_INGEST", "input_specs")
+
+	if _, err := os.Stat(ingestDir); os.IsNotExist(err) {
+		fmt.Printf("%s 001_INGEST/input_specs/ not found in new festival. Creating it.\n", ui.WarningIcon())
+		if err := os.MkdirAll(ingestDir, 0755); err != nil {
+			fmt.Printf("%s failed to create ingest directory: %v\n", ui.WarningIcon(), err)
+			return
+		}
+	}
+
+	destPath := filepath.Join(ingestDir, filepath.Base(i.Path))
+	if err := copyFile(i.Path, destPath); err != nil {
+		fmt.Printf("%s failed to copy intent to ingest: %v\n", ui.WarningIcon(), err)
+		return
+	}
+
+	rel, _ := filepath.Rel(campaignRoot, destPath)
+	fmt.Printf("  Intent copied to %s\n", rel)
+}
+
+// copyFile copies src to dst, creating the destination file.
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, in)
+	return err
 }

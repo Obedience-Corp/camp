@@ -120,6 +120,9 @@ func runIntentGather(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Deduplicate IDs — prevents content duplication in nested gathers
+	ids = deduplicateIDs(ids)
+
 	if len(ids) < 2 {
 		return fmt.Errorf("need at least 2 intents to gather, found %d", len(ids))
 	}
@@ -207,9 +210,21 @@ func discoverIntentsToGather(ctx context.Context, svc *gather.Service, intentSvc
 		return nil, fmt.Errorf("use only one discovery method: IDs, --tag, --hashtag, or --similar")
 	}
 
-	// By explicit IDs
+	// By explicit IDs — filter out done/killed/archived intents
 	if len(args) > 0 {
-		return args, nil
+		filtered := make([]string, 0, len(args))
+		for _, id := range args {
+			i, err := intentSvc.Get(ctx, id)
+			if err != nil {
+				return nil, fmt.Errorf("intent %q not found: %w", id, err)
+			}
+			if i.Status.InDungeon() {
+				fmt.Printf("  Skipping %s — status %s is not eligible for gathering\n", id, i.Status)
+				continue
+			}
+			filtered = append(filtered, id)
+		}
+		return filtered, nil
 	}
 
 	// By tag
@@ -287,4 +302,18 @@ func showDryRun(ctx context.Context, svc *intent.IntentService, ids []string, ti
 	}
 
 	return nil
+}
+
+// deduplicateIDs removes duplicate intent IDs while preserving order.
+func deduplicateIDs(ids []string) []string {
+	seen := make(map[string]bool, len(ids))
+	result := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		result = append(result, id)
+	}
+	return result
 }

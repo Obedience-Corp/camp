@@ -48,7 +48,7 @@ func init() {
 	commitCmd.Flags().StringVarP(&commitProject, "project", "p", "", "Operate on a specific project/submodule path")
 
 	rootCmd.AddCommand(commitCmd)
-	commitCmd.GroupID = "campaign"
+	commitCmd.GroupID = "git"
 
 	// Register completion for --project flag
 	commitCmd.RegisterFlagCompletionFunc("project", completeProjectFlag)

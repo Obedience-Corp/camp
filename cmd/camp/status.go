@@ -34,7 +34,7 @@ Examples:
 
 func init() {
 	rootCmd.AddCommand(statusCmd)
-	statusCmd.GroupID = "campaign"
+	statusCmd.GroupID = "git"
 }
 
 func runStatus(cmd *cobra.Command, args []string) error {

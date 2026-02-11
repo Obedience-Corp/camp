@@ -35,6 +35,9 @@ type InitOptions struct {
 	DryRun bool
 	// Repair adds missing files to an existing campaign.
 	Repair bool
+	// RepairPlan is the pre-computed repair plan (set by the caller after preview).
+	// When set, Init uses the merged jumps config from the plan instead of defaults.
+	RepairPlan *RepairPlan
 }
 
 // InitResult contains information about what was created.
@@ -218,8 +221,12 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 	}
 	result.FilesCreated = append(result.FilesCreated, config.CampaignConfigPath(absDir))
 
-	// Create jumps.yaml (paths and shortcuts)
+	// Create jumps.yaml (paths and shortcuts).
+	// In repair mode with a pre-computed plan, use the merged config that preserves user entries.
 	jumps := config.DefaultJumpsConfig()
+	if opts.Repair && opts.RepairPlan != nil && opts.RepairPlan.MergedJumps != nil {
+		jumps = *opts.RepairPlan.MergedJumps
+	}
 	if !opts.DryRun {
 		if err := config.SaveJumpsConfig(ctx, absDir, &jumps); err != nil {
 			return nil, fmt.Errorf("failed to create jumps config: %w", err)
