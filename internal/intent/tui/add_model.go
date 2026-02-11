@@ -182,6 +182,28 @@ func (m IntentAddModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // updateTitle handles input during title step.
 func (m IntentAddModel) updateTitle(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Handle completion popup when active
+	if m.completion.active {
+		switch msg.String() {
+		case "tab", "down":
+			if len(m.completion.candidates) > 0 {
+				m.completion.selected = (m.completion.selected + 1) % len(m.completion.candidates)
+			}
+			return m, nil
+		case "shift+tab", "up":
+			if len(m.completion.candidates) > 0 {
+				m.completion.selected = (m.completion.selected - 1 + len(m.completion.candidates)) % len(m.completion.candidates)
+			}
+			return m, nil
+		case "enter":
+			m.acceptTitleCompletion()
+			return m, nil
+		case "esc":
+			m.completion.active = false
+			return m, nil
+		}
+	}
+
 	switch msg.String() {
 	case "esc", "ctrl+c":
 		m.cancelled = true
@@ -196,9 +218,12 @@ func (m IntentAddModel) updateTitle(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "enter":
+		if m.completion.active {
+			m.acceptTitleCompletion()
+			return m, nil
+		}
 		title := strings.TrimSpace(m.titleInput.Value())
 		if title == "" {
-			// Don't proceed without a title
 			return m, nil
 		}
 		m.step = addStepType
@@ -209,7 +234,60 @@ func (m IntentAddModel) updateTitle(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Pass to text input
 	var cmd tea.Cmd
 	m.titleInput, cmd = m.titleInput.Update(msg)
+
+	// Update completion state for title input
+	m.updateTitleCompletion()
+
 	return m, cmd
+}
+
+// updateTitleCompletion checks for @ patterns in the title input.
+func (m *IntentAddModel) updateTitleCompletion() {
+	if m.campaignRoot == "" {
+		m.completion.active = false
+		return
+	}
+
+	val := m.titleInput.Value()
+	pos := m.titleInput.Position()
+	query, atCol := extractAtQuery(val, pos)
+	if atCol < 0 {
+		m.completion.active = false
+		return
+	}
+
+	candidates := atCompletionCandidates(query, m.campaignRoot)
+	if len(candidates) == 0 {
+		m.completion.active = false
+		return
+	}
+
+	m.completion.active = true
+	m.completion.query = query
+	m.completion.atOffset = atCol
+	m.completion.candidates = candidates
+	if m.completion.selected >= len(candidates) {
+		m.completion.selected = 0
+	}
+}
+
+// acceptTitleCompletion inserts the selected completion into the title input.
+func (m *IntentAddModel) acceptTitleCompletion() {
+	if !m.completion.active || len(m.completion.candidates) == 0 {
+		return
+	}
+
+	selected := m.completion.candidates[m.completion.selected]
+	val := m.titleInput.Value()
+	pos := m.titleInput.Position()
+
+	// Rebuild value: before @ + selected + after cursor
+	newVal := val[:m.completion.atOffset] + selected + val[pos:]
+	newCursor := m.completion.atOffset + len(selected)
+	m.titleInput.SetValue(newVal)
+	m.titleInput.SetCursor(newCursor)
+
+	m.completion.active = false
 }
 
 // updateType handles input during type selection step.
@@ -632,7 +710,15 @@ func (m IntentAddModel) viewTitleStep() string {
 
 	b.WriteString("Title:\n")
 	b.WriteString(m.titleInput.View())
-	b.WriteString("\n\n")
+	b.WriteString("\n")
+
+	// Show completion popup if active
+	if popup := completionView(&m.completion); popup != "" {
+		b.WriteString(popup)
+		b.WriteString("\n")
+	}
+
+	b.WriteString("\n")
 	b.WriteString(HelpStyle.Render("Enter: continue • Ctrl+N: save & new • Esc: cancel"))
 
 	return b.String()

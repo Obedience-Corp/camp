@@ -2,6 +2,8 @@ package tui
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -624,6 +626,49 @@ func TestIntentAddModel_CtrlN_ViewShowsSavedCount(t *testing.T) {
 	view = m.View()
 	if !containsText(view, "1 saved") {
 		t.Error("View should show '1 saved' after first Ctrl-N save")
+	}
+}
+
+func TestIntentAddModel_TitleCompletion_AtTrigger(t *testing.T) {
+	// Create a campaign directory with projects
+	root := t.TempDir()
+	os.MkdirAll(filepath.Join(root, "projects", "fest"), 0755)
+	os.MkdirAll(filepath.Join(root, "projects", "camp"), 0755)
+
+	ctx := context.Background()
+	svc := mockConceptService{}
+
+	m := NewIntentAddModel(ctx, svc, AddOptions{CampaignRoot: root})
+
+	// Type "@p/"
+	for _, char := range "@p/" {
+		model, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{char}})
+		m = model.(IntentAddModel)
+	}
+
+	// Completion should be active
+	if !m.completion.active {
+		t.Fatal("Expected completion to be active after typing @p/")
+	}
+	if len(m.completion.candidates) < 2 {
+		t.Errorf("Expected at least 2 candidates, got %d", len(m.completion.candidates))
+	}
+}
+
+func TestIntentAddModel_TitleCompletion_NoCampaignRoot(t *testing.T) {
+	ctx := context.Background()
+	svc := mockConceptService{}
+
+	// No campaign root = no completion
+	m := NewIntentAddModel(ctx, svc, AddOptions{})
+
+	for _, char := range "@p/" {
+		model, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{char}})
+		m = model.(IntentAddModel)
+	}
+
+	if m.completion.active {
+		t.Error("Completion should not be active without CampaignRoot")
 	}
 }
 
