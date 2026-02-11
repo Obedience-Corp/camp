@@ -231,11 +231,24 @@ func executeCommand(ctx context.Context, cmdStr string, workDir string, extraArg
 
 	if err := cmd.Run(); err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
-			// Command failed - exit with the same code
-			os.Exit(exitErr.ExitCode())
+			// Propagate the child's exit code through cobra instead of calling
+			// os.Exit() directly. This allows deferred cleanup to run and
+			// prevents stale file handles in shared test containers.
+			return &CommandExitError{Code: exitErr.ExitCode()}
 		}
 		return fmt.Errorf("failed to execute command: %w", err)
 	}
 
 	return nil
+}
+
+// CommandExitError signals that a child process exited with a non-zero code.
+// main.go checks for this and calls os.Exit with the code, keeping cleanup
+// paths intact through cobra's error propagation.
+type CommandExitError struct {
+	Code int
+}
+
+func (e *CommandExitError) Error() string {
+	return fmt.Sprintf("command exited with code %d", e.Code)
 }
