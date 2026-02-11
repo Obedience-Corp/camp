@@ -113,6 +113,43 @@ func defaultConfig() *LeverageConfig {
 	}
 }
 
+// GitDateRange returns the first and last commit dates for a git repository.
+// First is the earliest root commit; last is the most recent commit on any branch.
+func GitDateRange(ctx context.Context, repoPath string) (first, last time.Time, err error) {
+	first, err = earliestCommitDate(ctx, repoPath)
+	if err != nil {
+		return time.Time{}, time.Time{}, err
+	}
+	last, err = latestCommitDate(ctx, repoPath)
+	if err != nil {
+		return time.Time{}, time.Time{}, err
+	}
+	return first, last, nil
+}
+
+// latestCommitDate returns the date of the most recent commit in a git repo.
+func latestCommitDate(ctx context.Context, repoPath string) (time.Time, error) {
+	cmd := exec.CommandContext(ctx, "git", "-C", repoPath,
+		"log", "--all", "-1", "--format=%cI")
+
+	output, err := cmd.Output()
+	if err != nil {
+		return time.Time{}, fmt.Errorf("git log in %s: %w", repoPath, err)
+	}
+
+	dateStr := strings.TrimSpace(string(output))
+	if dateStr == "" {
+		return time.Time{}, fmt.Errorf("no commits in %s", repoPath)
+	}
+
+	t, err := time.Parse(time.RFC3339, dateStr)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("parsing commit date in %s: %w", repoPath, err)
+	}
+
+	return t, nil
+}
+
 // earliestCommitDate returns the date of the first commit in a git repo.
 // Uses --max-parents=0 to find root commits (initial commits with no parents)
 // across all branches. This is correct unlike --reverse --max-count=1 where

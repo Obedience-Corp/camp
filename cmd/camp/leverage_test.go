@@ -95,14 +95,14 @@ func TestLeverageCommand_TableOutput(t *testing.T) {
 	wantStrings := []string{
 		"Campaign Leverage:",
 		"COCOMO Estimate:",
+		"person-months",
 		"Actual Effort:",
 		"Team Equivalent:",
 		"PROJECT",
 		"FILES",
 		"CODE",
 		"EST COST",
-		"EST PEOPLE",
-		"EST MONTHS",
+		"EST PERSON-MONTHS",
 		"ACTUAL MONTHS",
 		"LEVERAGE",
 	}

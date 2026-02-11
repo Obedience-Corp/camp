@@ -93,7 +93,17 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		score := leverage.ComputeScore(result, cfg.ActualPeople, elapsed)
+		// Per-project elapsed from git history (first commit → last commit).
+		projElapsed := elapsed
+		first, last, gitErr := leverage.GitDateRange(ctx, proj.GitDir)
+		if gitErr == nil {
+			projElapsed = leverage.ElapsedMonths(first, last)
+			if projElapsed <= 0 {
+				projElapsed = elapsed // single-commit projects fall back to campaign elapsed
+			}
+		}
+
+		score := leverage.ComputeScore(result, cfg.ActualPeople, projElapsed)
 		score.ProjectName = proj.Name
 		scores = append(scores, score)
 	}
@@ -142,11 +152,12 @@ func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores
 	// Header: headline leverage number
 	fmt.Fprintf(out, "Campaign Leverage: %sx\n\n", fmtScore(agg.FullLeverage))
 
-	// COCOMO vs Actual comparison
-	fmt.Fprintf(out, "  COCOMO Estimate:  %.1f people × %.1f months  ($%s)\n",
-		agg.EstimatedPeople, agg.EstimatedMonths, fmtCost(agg.EstimatedCost))
-	fmt.Fprintf(out, "  Actual Effort:    %d %s × %.1f months\n",
-		cfg.ActualPeople, pluralize(cfg.ActualPeople, "person", "people"), agg.ElapsedMonths)
+	// COCOMO vs Actual comparison in person-months (the unit that sums correctly)
+	estPersonMonths := agg.EstimatedPeople * agg.EstimatedMonths
+	actualPersonMonths := agg.ActualPeople * agg.ElapsedMonths
+	fmt.Fprintf(out, "  COCOMO Estimate:  %s person-months  ($%s)\n",
+		fmtInt(int(estPersonMonths)), fmtCost(agg.EstimatedCost))
+	fmt.Fprintf(out, "  Actual Effort:    %.1f person-months\n", actualPersonMonths)
 	fmt.Fprintf(out, "  Team Equivalent:  %sx\n\n", fmtScore(agg.SimpleLeverage))
 
 	// Summary line
@@ -157,17 +168,17 @@ func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores
 
 	// Project table
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "PROJECT\tFILES\tCODE\tEST COST\tEST PEOPLE\tEST MONTHS\tACTUAL MONTHS\tLEVERAGE")
-	fmt.Fprintln(w, "-------\t-----\t----\t--------\t----------\t----------\t-------------\t--------")
+	fmt.Fprintln(w, "PROJECT\tFILES\tCODE\tEST COST\tEST PERSON-MONTHS\tACTUAL MONTHS\tLEVERAGE")
+	fmt.Fprintln(w, "-------\t-----\t----\t--------\t-----------------\t-------------\t--------")
 
 	for _, s := range scores {
-		fmt.Fprintf(w, "%s\t%s\t%s\t$%s\t%.1f\t%.1f\t%.1f\t%sx\n",
+		estPM := s.EstimatedPeople * s.EstimatedMonths
+		fmt.Fprintf(w, "%s\t%s\t%s\t$%s\t%s\t%.1f\t%sx\n",
 			s.ProjectName,
 			fmtInt(s.TotalFiles),
 			fmtInt(s.TotalCode),
 			fmtCost(s.EstimatedCost),
-			s.EstimatedPeople,
-			s.EstimatedMonths,
+			fmtInt(int(estPM)),
 			s.ElapsedMonths,
 			fmtScore(s.FullLeverage),
 		)
