@@ -99,15 +99,37 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	// Run BubbleTea TUI
-	result, err := runIntentAddTUI(ctx, conceptSvc, tui.AddOptions{
-		DefaultType: intentType,
-		FullMode:    fullMode,
-		Author:      author,
+	model, err := runIntentAddTUI(ctx, conceptSvc, tui.AddOptions{
+		DefaultType:  intentType,
+		FullMode:     fullMode,
+		Author:       author,
+		CampaignRoot: campaignRoot,
 	})
 	if err != nil {
 		return err
 	}
+
+	// Process intents saved via Ctrl-n during the session
+	for _, saved := range model.SavedResults() {
+		savedOpts := intent.CreateOptions{
+			Title:   saved.Title,
+			Type:    intent.Type(saved.Type),
+			Concept: saved.Concept,
+			Body:    saved.Body,
+			Author:  saved.Author,
+		}
+		if err := runFastCapture(ctx, svc, cfg, campaignRoot, noCommit, savedOpts); err != nil {
+			return err
+		}
+	}
+
+	// Process the final result (from normal save-and-quit)
+	result := model.Result()
 	if result == nil {
+		if len(model.SavedResults()) > 0 {
+			// User saved some intents via Ctrl-n, then cancelled the last one
+			return nil
+		}
 		return fmt.Errorf("intent creation cancelled")
 	}
 
@@ -129,7 +151,8 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 }
 
 // runIntentAddTUI runs the BubbleTea intent creation form.
-func runIntentAddTUI(ctx context.Context, conceptSvc concept.Service, opts tui.AddOptions) (*tui.AddResult, error) {
+// Returns the final model so callers can access both Result() and SavedResults().
+func runIntentAddTUI(ctx context.Context, conceptSvc concept.Service, opts tui.AddOptions) (*tui.IntentAddModel, error) {
 	model := tui.NewIntentAddModel(ctx, conceptSvc, opts)
 
 	p := tea.NewProgram(model, tea.WithAltScreen())
@@ -142,11 +165,8 @@ func runIntentAddTUI(ctx context.Context, conceptSvc concept.Service, opts tui.A
 	if !ok {
 		return nil, fmt.Errorf("unexpected model type: %T", finalModel)
 	}
-	if m.Cancelled() {
-		return nil, nil
-	}
 
-	return m.Result(), nil
+	return &m, nil
 }
 
 // runFastCapture creates intent file directly without editor.

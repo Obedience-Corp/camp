@@ -54,6 +54,11 @@ func (e *Editor) CursorOffset() int {
 	return e.buffer.CursorOffset()
 }
 
+// SetCursorInsert sets the cursor position for insert mode (allows col == lineLen).
+func (e *Editor) SetCursorInsert(pos Position) {
+	e.buffer.SetCursorInsert(pos)
+}
+
 // SetSize sets the editor dimensions.
 func (e *Editor) SetSize(width, height int) {
 	e.width = width

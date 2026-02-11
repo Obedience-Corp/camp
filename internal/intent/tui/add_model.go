@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -27,9 +28,10 @@ const (
 
 // AddOptions configures the IntentAddModel behavior.
 type AddOptions struct {
-	DefaultType string // Default intent type (e.g., "idea")
-	FullMode    bool   // Include body textarea step
-	Author      string // Auto-populated author (e.g., from git config)
+	DefaultType  string // Default intent type (e.g., "idea")
+	FullMode     bool   // Include body textarea step
+	Author       string // Auto-populated author (e.g., from git config)
+	CampaignRoot string // Campaign root for @ completion
 }
 
 // AddResult contains the collected intent data.
@@ -62,13 +64,19 @@ type IntentAddModel struct {
 	vimEditor *vim.Editor
 
 	// Configuration
-	fullMode    bool
-	defaultType string
-	author      string
+	fullMode     bool
+	defaultType  string
+	author       string
+	campaignRoot string
+
+	// Completion state
+	completion completionState
 
 	// Result state
-	result    *AddResult
-	cancelled bool
+	result       *AddResult
+	savedResults []*AddResult
+	cancelled    bool
+	savedCount   int
 
 	// Display
 	width  int
@@ -109,15 +117,16 @@ func NewIntentAddModel(ctx context.Context, conceptSvc concept.Service, opts Add
 	}
 
 	return IntentAddModel{
-		ctx:         ctx,
-		conceptSvc:  conceptSvc,
-		step:        addStepTitle,
-		titleInput:  ti,
-		typeIdx:     typeIdx,
-		vimEditor:   vimEd,
-		fullMode:    opts.FullMode,
-		defaultType: opts.DefaultType,
-		author:      opts.Author,
+		ctx:          ctx,
+		conceptSvc:   conceptSvc,
+		step:         addStepTitle,
+		titleInput:   ti,
+		typeIdx:      typeIdx,
+		vimEditor:    vimEd,
+		fullMode:     opts.FullMode,
+		defaultType:  opts.DefaultType,
+		author:       opts.Author,
+		campaignRoot: opts.CampaignRoot,
 	}
 }
 
@@ -179,6 +188,13 @@ func (m IntentAddModel) updateTitle(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.step = addStepDone
 		return m, tea.Quit
 
+	case "ctrl+n":
+		// Quick save: title-only intent, then reset for next
+		if strings.TrimSpace(m.titleInput.Value()) != "" {
+			return m.saveAndReset()
+		}
+		return m, nil
+
 	case "enter":
 		title := strings.TrimSpace(m.titleInput.Value())
 		if title == "" {
@@ -203,6 +219,9 @@ func (m IntentAddModel) updateType(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cancelled = true
 		m.step = addStepDone
 		return m, tea.Quit
+
+	case "ctrl+n":
+		return m.saveAndReset()
 
 	case "j", "down":
 		if m.typeIdx < len(intentTypes)-1 {
@@ -233,6 +252,9 @@ func (m IntentAddModel) updateConcept(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cancelled = true
 		m.step = addStepDone
 		return m, tea.Quit
+
+	case "ctrl+n":
+		return m.saveAndReset()
 
 	case "tab":
 		// Skip concept selection
@@ -302,9 +324,36 @@ func (m IntentAddModel) updateBody(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.openExternalEditor()
 	}
 
+	// Handle ctrl+n for save-and-new (always available)
+	if msg.String() == "ctrl+n" {
+		return m.saveAndReset()
+	}
+
 	// Handle ctrl+s for quick save (always available)
 	if msg.String() == "ctrl+s" {
 		return m.finishBodyStep()
+	}
+
+	// Handle completion popup when active
+	if m.completion.active {
+		switch msg.String() {
+		case "tab", "down":
+			if len(m.completion.candidates) > 0 {
+				m.completion.selected = (m.completion.selected + 1) % len(m.completion.candidates)
+			}
+			return m, nil
+		case "shift+tab", "up":
+			if len(m.completion.candidates) > 0 {
+				m.completion.selected = (m.completion.selected - 1 + len(m.completion.candidates)) % len(m.completion.candidates)
+			}
+			return m, nil
+		case "enter":
+			m.acceptCompletion()
+			return m, nil
+		case "esc":
+			m.completion.active = false
+			return m, nil
+		}
 	}
 
 	// Pass to vim editor
@@ -315,17 +364,89 @@ func (m IntentAddModel) updateBody(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "w", "wq":
 		return m.finishBodyStep()
 	case "q":
-		// :q does nothing - body is required
-		// Just return to normal mode (already happened in vim editor)
 		return m, nil
 	case "q!":
-		// Cancel entire intent
 		m.cancelled = true
 		m.step = addStepDone
 		return m, tea.Quit
 	}
 
+	// After vim processes the key, update completion state
+	m.updateCompletion()
+
 	return m, nil
+}
+
+// updateCompletion checks whether the cursor is in an @ word and updates candidates.
+func (m *IntentAddModel) updateCompletion() {
+	if m.vimEditor.Mode() != vim.ModeInsert || m.campaignRoot == "" {
+		m.completion.active = false
+		return
+	}
+
+	cur := m.vimEditor.Cursor()
+	content := m.vimEditor.Content()
+	if content == "" {
+		m.completion.active = false
+		return
+	}
+
+	lines := strings.Split(content, "\n")
+	if cur.Line >= len(lines) {
+		m.completion.active = false
+		return
+	}
+
+	line := lines[cur.Line]
+	query, atCol := extractAtQuery(line, cur.Col)
+	if atCol < 0 {
+		m.completion.active = false
+		return
+	}
+
+	candidates := atCompletionCandidates(query, m.campaignRoot)
+	if len(candidates) == 0 {
+		m.completion.active = false
+		return
+	}
+
+	// Update completion state
+	m.completion.active = true
+	m.completion.query = query
+	m.completion.atOffset = atCol
+	m.completion.candidates = candidates
+	if m.completion.selected >= len(candidates) {
+		m.completion.selected = 0
+	}
+}
+
+// acceptCompletion inserts the selected completion into the editor.
+func (m *IntentAddModel) acceptCompletion() {
+	if !m.completion.active || len(m.completion.candidates) == 0 {
+		return
+	}
+
+	selected := m.completion.candidates[m.completion.selected]
+	cur := m.vimEditor.Cursor()
+
+	content := m.vimEditor.Content()
+	lines := strings.Split(content, "\n")
+	if cur.Line >= len(lines) {
+		m.completion.active = false
+		return
+	}
+
+	line := lines[cur.Line]
+	// Rebuild line: before @ + selected + after cursor
+	newLine := line[:m.completion.atOffset] + selected + line[cur.Col:]
+	lines[cur.Line] = newLine
+	m.vimEditor.SetContent(strings.Join(lines, "\n"))
+
+	// Position cursor after the inserted text
+	newCol := m.completion.atOffset + len(selected)
+	m.vimEditor.SetCursorInsert(vim.Position{Line: cur.Line, Col: newCol})
+
+	m.completion.active = false
 }
 
 // openExternalEditor launches the user's editor with current body content.
@@ -380,6 +501,72 @@ func (m IntentAddModel) finishBodyStep() (tea.Model, tea.Cmd) {
 	return m, tea.Quit
 }
 
+// collectCurrentResult builds an AddResult from the model's current state.
+func (m IntentAddModel) collectCurrentResult() *AddResult {
+	title := strings.TrimSpace(m.titleInput.Value())
+	if title == "" {
+		return nil
+	}
+
+	conceptPath := ""
+	if m.step > addStepConcept && m.conceptPicker.SelectedConcept() != nil {
+		conceptPath = m.conceptPicker.SelectedPath()
+	}
+
+	body := ""
+	if m.step >= addStepBody {
+		body = strings.TrimSpace(m.vimEditor.Content())
+	}
+
+	return &AddResult{
+		Title:   title,
+		Type:    intentTypes[m.typeIdx],
+		Concept: conceptPath,
+		Body:    body,
+		Author:  m.author,
+	}
+}
+
+// saveAndReset saves the current intent to the accumulated list and resets the form.
+func (m IntentAddModel) saveAndReset() (tea.Model, tea.Cmd) {
+	result := m.collectCurrentResult()
+	if result == nil {
+		return m, nil
+	}
+
+	m.savedResults = append(m.savedResults, result)
+	m.savedCount++
+
+	// Reset form to fresh state
+	m.titleInput.Reset()
+	m.titleInput.Focus()
+	m.step = addStepTitle
+
+	// Reset type to default
+	m.typeIdx = 0
+	if m.defaultType != "" {
+		for i, t := range intentTypes {
+			if t == m.defaultType {
+				m.typeIdx = i
+				break
+			}
+		}
+	}
+
+	// Reset concept picker (will be recreated on step entry)
+	m.conceptPicker = ConceptPickerModel{}
+
+	// Reset vim editor
+	m.vimEditor.SetContent("")
+
+	return m, textinput.Blink
+}
+
+// SavedResults returns intents saved via Ctrl-n during the session.
+func (m IntentAddModel) SavedResults() []*AddResult {
+	return m.savedResults
+}
+
 // View implements tea.Model.
 func (m IntentAddModel) View() string {
 	if m.step == addStepDone {
@@ -389,6 +576,9 @@ func (m IntentAddModel) View() string {
 	var b strings.Builder
 
 	b.WriteString(TitleStyle.Render("Create Intent"))
+	if m.savedCount > 0 {
+		b.WriteString(SuccessStyle.Render(fmt.Sprintf("  [%d saved]", m.savedCount)))
+	}
 	b.WriteString("\n\n")
 
 	// Show progress summary
@@ -443,7 +633,7 @@ func (m IntentAddModel) viewTitleStep() string {
 	b.WriteString("Title:\n")
 	b.WriteString(m.titleInput.View())
 	b.WriteString("\n\n")
-	b.WriteString(HelpStyle.Render("Enter: continue • Esc: cancel"))
+	b.WriteString(HelpStyle.Render("Enter: continue • Ctrl+N: save & new • Esc: cancel"))
 
 	return b.String()
 }
@@ -475,7 +665,7 @@ func (m IntentAddModel) viewTypeStep() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(HelpStyle.Render("j/k: navigate • Enter: select • Esc: cancel"))
+	b.WriteString(HelpStyle.Render("j/k: navigate • Enter: select • Ctrl+N: save & new • Esc: cancel"))
 
 	return b.String()
 }
@@ -486,7 +676,7 @@ func (m IntentAddModel) viewConceptStep() string {
 
 	b.WriteString(m.conceptPicker.View())
 	b.WriteString("\n")
-	b.WriteString(HelpStyle.Render("Tab: skip • Enter: select • Backspace: back • Esc: cancel"))
+	b.WriteString(HelpStyle.Render("Tab: skip • Enter: select • Ctrl+N: save & new • Esc: cancel"))
 
 	return b.String()
 }
@@ -504,6 +694,12 @@ func (m IntentAddModel) viewBodyStep() string {
 	b.WriteString(m.vimEditor.View(cfg))
 	b.WriteString("\n")
 
+	// Show completion popup if active
+	if popup := completionView(&m.completion); popup != "" {
+		b.WriteString(popup)
+		b.WriteString("\n")
+	}
+
 	// Show vim command buffer if in command mode
 	if m.vimEditor.IsCommandMode() {
 		b.WriteString(":" + m.vimEditor.CommandBuffer())
@@ -514,13 +710,13 @@ func (m IntentAddModel) viewBodyStep() string {
 	// Context-sensitive help
 	switch m.vimEditor.Mode() {
 	case vim.ModeInsert:
-		b.WriteString(HelpStyle.Render("Esc: normal mode • Ctrl+S: save • Ctrl+E: editor"))
+		b.WriteString(HelpStyle.Render("Esc: normal mode • Ctrl+S: save • Ctrl+N: save & new • Ctrl+E: editor"))
 	case vim.ModeVisual, vim.ModeVisualLine:
 		b.WriteString(HelpStyle.Render("d: delete • y: yank • c: change • Esc: normal"))
 	case vim.ModeCommand:
 		b.WriteString(HelpStyle.Render(":wq save • :q! cancel • Esc: back"))
 	default:
-		b.WriteString(HelpStyle.Render("i: insert • v: visual • Enter/:wq: save • Ctrl+E: editor"))
+		b.WriteString(HelpStyle.Render("i: insert • v: visual • Enter/:wq: save • Ctrl+N: new • Ctrl+E: editor"))
 	}
 
 	return b.String()
