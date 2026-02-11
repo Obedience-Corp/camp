@@ -3,11 +3,14 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"text/tabwriter"
 	"time"
 
-	"github.com/obediencecorp/camp/internal/leverage"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/table"
 	"github.com/spf13/cobra"
+
+	"github.com/obediencecorp/camp/internal/leverage"
+	"github.com/obediencecorp/camp/internal/ui"
 )
 
 // sccRunner is the package-level runner used by the leverage command.
@@ -158,20 +161,26 @@ func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores
 	noLegend, _ := cmd.Flags().GetBool("no-legend")
 
 	if autoDetected {
-		fmt.Fprintln(out, "Note: Using auto-detected configuration. Run 'camp leverage config' to customize.")
+		fmt.Fprintln(out, ui.Warning("Note: Using auto-detected configuration. Run 'camp leverage config' to customize."))
 		fmt.Fprintln(out)
 	}
 
 	// Header: headline leverage number
-	fmt.Fprintf(out, "Campaign Leverage: %sx\n\n", fmtScore(agg.FullLeverage))
+	fmt.Fprintf(out, "%s %s\n\n",
+		ui.Header("Campaign Leverage:"),
+		ui.Value(fmtScore(agg.FullLeverage)+"x", ui.AccentColor))
 
 	// Recent leverage from snapshots (omitted if no data)
 	if recent.has7 || recent.has30 {
 		if recent.has7 {
-			fmt.Fprintf(out, "  Last 7 days:   %sx\n", fmtRecentLeverage(recent.week7))
+			fmt.Fprintf(out, "  %s %s\n",
+				ui.Label("Last 7 days:"),
+				ui.Value(fmtRecentLeverage(recent.week7)+"x", ui.SuccessColor))
 		}
 		if recent.has30 {
-			fmt.Fprintf(out, "  Last 30 days:  %sx\n", fmtRecentLeverage(recent.month30))
+			fmt.Fprintf(out, "  %s %s\n",
+				ui.Label("Last 30 days:"),
+				ui.Value(fmtRecentLeverage(recent.month30)+"x", ui.SuccessColor))
 		}
 		fmt.Fprintln(out)
 	}
@@ -179,41 +188,66 @@ func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores
 	// COCOMO vs Actual comparison in person-months (the unit that sums correctly)
 	estPersonMonths := agg.EstimatedPeople * agg.EstimatedMonths
 	actualPersonMonths := agg.ActualPeople * agg.ElapsedMonths
-	fmt.Fprintf(out, "  COCOMO Estimate:  %s person-months  ($%s)\n",
-		fmtInt(int(estPersonMonths)), fmtCost(agg.EstimatedCost))
-	fmt.Fprintf(out, "  Actual Effort:    %.1f person-months\n", actualPersonMonths)
-	fmt.Fprintf(out, "  Team Equivalent:  %sx\n\n", fmtScore(agg.SimpleLeverage))
+	fmt.Fprintf(out, "  %s %s  %s\n",
+		ui.Label("COCOMO Estimate:"),
+		ui.Value(fmtInt(int(estPersonMonths))+" person-months"),
+		ui.Value("($"+fmtCost(agg.EstimatedCost)+")", ui.WarningColor))
+	fmt.Fprintf(out, "  %s %s\n",
+		ui.Label("Actual Effort:"),
+		ui.Value(fmt.Sprintf("%.1f person-months", actualPersonMonths)))
+	fmt.Fprintf(out, "  %s %s\n\n",
+		ui.Label("Team Equivalent:"),
+		ui.Value(fmtScore(agg.SimpleLeverage)+"x", ui.AccentColor))
 
 	// Summary line
-	fmt.Fprintf(out, "  %s lines of code across %d %s\n",
-		fmtInt(agg.TotalCode), len(scores), pluralize(len(scores), "project", "projects"))
-	fmt.Fprintf(out, "  Since %s\n", cfg.ProjectStart.Format("Jan 2, 2006"))
+	fmt.Fprintf(out, "  %s\n", ui.Dim(fmt.Sprintf("%s lines of code across %d %s",
+		fmtInt(agg.TotalCode), len(scores), pluralize(len(scores), "project", "projects"))))
+	fmt.Fprintf(out, "  %s\n", ui.Dim("Since "+cfg.ProjectStart.Format("Jan 2, 2006")))
 	fmt.Fprintln(out)
 
 	// Project table
-	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "PROJECT\tFILES\tCODE\tEST COST\tEST PERSON-MONTHS\tACTUAL MONTHS\tLEVERAGE")
-	fmt.Fprintln(w, "-------\t-----\t----\t--------\t-----------------\t-------------\t--------")
+	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.CategoryColor)
 
+	headers := []string{"PROJECT", "FILES", "CODE", "EST COST", "EST PERSON-MONTHS", "ACTUAL MONTHS", "LEVERAGE"}
+	var rows [][]string
 	for _, s := range scores {
 		estPM := s.EstimatedPeople * s.EstimatedMonths
-		fmt.Fprintf(w, "%s\t%s\t%s\t$%s\t%s\t%.3f\t%sx\n",
+		rows = append(rows, []string{
 			s.ProjectName,
 			fmtInt(s.TotalFiles),
 			fmtInt(s.TotalCode),
-			fmtCost(s.EstimatedCost),
+			"$" + fmtCost(s.EstimatedCost),
 			fmtInt(int(estPM)),
-			s.ElapsedMonths,
-			fmtScore(s.FullLeverage),
-		)
+			fmt.Sprintf("%.3f", s.ElapsedMonths),
+			fmtScore(s.FullLeverage) + "x",
+		})
 	}
-	if err := w.Flush(); err != nil {
-		return err
-	}
+
+	t := table.New().
+		Border(lipgloss.HiddenBorder()).
+		Headers(headers...).
+		Rows(rows...).
+		StyleFunc(func(row, col int) lipgloss.Style {
+			if row == table.HeaderRow {
+				return headerStyle
+			}
+			switch col {
+			case 0: // PROJECT
+				return lipgloss.NewStyle().Foreground(ui.AccentColor)
+			case 3: // EST COST
+				return lipgloss.NewStyle().Foreground(ui.WarningColor)
+			case 6: // LEVERAGE
+				return lipgloss.NewStyle().Foreground(ui.SuccessColor)
+			default:
+				return lipgloss.NewStyle()
+			}
+		})
+
+	fmt.Fprintln(out, t)
 
 	if !noLegend {
 		fmt.Fprintln(out)
-		fmt.Fprintln(out, "Leverage = estimated effort / actual effort (COCOMO organic model via scc)")
+		fmt.Fprintln(out, ui.Dim("Leverage = estimated effort / actual effort (COCOMO organic model via scc)"))
 	}
 	return nil
 }
