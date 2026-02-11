@@ -72,6 +72,7 @@ func init() {
 	initCmd.Flags().Bool("no-git", false, "Skip git repository initialization")
 	initCmd.Flags().Bool("dry-run", false, "Show what would be done without creating anything")
 	initCmd.Flags().Bool("repair", false, "Add missing files to existing campaign")
+	initCmd.Flags().Bool("yes", false, "Skip repair confirmation prompt (for scripting)")
 	initCmd.Flags().Bool("skip-fest", false, "Skip automatic Festival Methodology initialization")
 }
 
@@ -92,6 +93,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	noGit, _ := cmd.Flags().GetBool("no-git")
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	repair, _ := cmd.Flags().GetBool("repair")
+	yes, _ := cmd.Flags().GetBool("yes")
 	skipFest, _ := cmd.Flags().GetBool("skip-fest")
 
 	ctx := cmd.Context()
@@ -149,6 +151,38 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// Validate options
 	if err := opts.Validate(); err != nil {
 		return err
+	}
+
+	// Repair mode: compute and preview changes before applying.
+	if repair && !dryRun {
+		plan, err := scaffold.ComputeRepairPlan(ctx, dir, opts)
+		if err != nil {
+			return fmt.Errorf("failed to compute repair plan: %w", err)
+		}
+
+		if !plan.HasChanges() {
+			fmt.Println(ui.Success("Campaign is up to date — nothing to repair."))
+			return nil
+		}
+
+		printRepairDiff(plan)
+
+		if !yes {
+			if !isInteractive {
+				return fmt.Errorf("repair requires confirmation\n       Use --yes to skip the prompt in non-interactive mode")
+			}
+			fmt.Print("\nApply changes? [y/N] ")
+			reader := bufio.NewReader(os.Stdin)
+			answer, _ := reader.ReadString('\n')
+			answer = strings.TrimSpace(strings.ToLower(answer))
+			if answer != "y" && answer != "yes" {
+				fmt.Println("Repair cancelled.")
+				return nil
+			}
+			fmt.Println()
+		}
+
+		opts.RepairPlan = plan
 	}
 
 	result, err := scaffold.Init(ctx, dir, opts)
@@ -461,4 +495,33 @@ func handleRepairMission(ctx context.Context, dir string, mission string, isInte
 	fmt.Println(ui.Dim("         Run 'camp init --repair' in an interactive terminal to add one"))
 	fmt.Println()
 	return "", nil
+}
+
+// printRepairDiff displays the proposed repair changes as a colored diff.
+func printRepairDiff(plan *scaffold.RepairPlan) {
+	fmt.Println(ui.Subheader("Repair Preview"))
+	fmt.Println()
+
+	for _, c := range plan.Changes {
+		switch c.Type {
+		case scaffold.RepairAdd:
+			fmt.Printf("  %s  %s  %s\n",
+				ui.Success("+"),
+				ui.Success(c.Key),
+				ui.Dim("("+c.Description+")"),
+			)
+		case scaffold.RepairModify:
+			fmt.Printf("  %s  %s  %s\n",
+				ui.Warning("~"),
+				ui.Warning(c.Key),
+				ui.Dim("("+c.Description+")"),
+			)
+		case scaffold.RepairPreserve:
+			fmt.Printf("  %s  %s  %s\n",
+				ui.Dim("✓"),
+				ui.Value(c.Key),
+				ui.Dim("(user-defined, preserved)"),
+			)
+		}
+	}
 }

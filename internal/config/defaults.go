@@ -84,22 +84,22 @@ func DefaultCampaignPaths() CampaignPaths {
 func DefaultNavigationShortcuts() map[string]ShortcutConfig {
 	return map[string]ShortcutConfig{
 		// Shortcuts with both navigation and command expansion
-		"p":  {Path: "projects/", Concept: "project", Description: "Projects directory and commands"},
-		"f":  {Path: "festivals/", Concept: "festival", Description: "Festivals directory and commands"},
-		"i":  {Path: "workflow/intents/", Concept: "intent", Description: "Intents directory and commands"},
-		"wt": {Path: "projects/worktrees/", Concept: "worktrees", Description: "Worktrees directory and commands"},
+		"p":  {Path: "projects/", Concept: "project", Description: "Projects directory and commands", Source: ShortcutSourceAuto},
+		"f":  {Path: "festivals/", Concept: "festival", Description: "Festivals directory and commands", Source: ShortcutSourceAuto},
+		"i":  {Path: "workflow/intents/", Concept: "intent", Description: "Intents directory and commands", Source: ShortcutSourceAuto},
+		"wt": {Path: "projects/worktrees/", Concept: "worktrees", Description: "Worktrees directory and commands", Source: ShortcutSourceAuto},
 
 		// Navigation-only shortcuts (no command expansion)
-		"w":  {Path: "workflow/", Description: "Jump to workflow directory"},
-		"a":  {Path: "ai_docs/", Description: "Jump to AI docs directory"},
-		"d":  {Path: "docs/", Description: "Jump to docs directory"},
-		"du": {Path: "dungeon/", Description: "Jump to dungeon directory"},
-		"cr": {Path: "workflow/code_reviews/", Description: "Jump to code reviews"},
-		"pi": {Path: "workflow/pipelines/", Description: "Jump to pipelines"},
-		"de": {Path: "workflow/design/", Description: "Jump to design"},
+		"w":  {Path: "workflow/", Description: "Jump to workflow directory", Source: ShortcutSourceAuto},
+		"a":  {Path: "ai_docs/", Description: "Jump to AI docs directory", Source: ShortcutSourceAuto},
+		"d":  {Path: "docs/", Description: "Jump to docs directory", Source: ShortcutSourceAuto},
+		"du": {Path: "dungeon/", Description: "Jump to dungeon directory", Source: ShortcutSourceAuto},
+		"cr": {Path: "workflow/code_reviews/", Description: "Jump to code reviews", Source: ShortcutSourceAuto},
+		"pi": {Path: "workflow/pipelines/", Description: "Jump to pipelines", Source: ShortcutSourceAuto},
+		"de": {Path: "workflow/design/", Description: "Jump to design", Source: ShortcutSourceAuto},
 
 		// Command-only shortcuts (no navigation path)
-		"cfg": {Concept: "config", Description: "Config commands"},
+		"cfg": {Concept: "config", Description: "Config commands", Source: ShortcutSourceAuto},
 	}
 }
 
