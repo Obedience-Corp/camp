@@ -264,7 +264,7 @@ func TestList_MonorepoExpansion(t *testing.T) {
 	}
 
 	// Verify subprojects
-	for _, name := range []string{"my-monorepo/service-a", "my-monorepo/service-b", "my-monorepo/rust-lib"} {
+	for _, name := range []string{"my-monorepo@service-a", "my-monorepo@service-b", "my-monorepo@rust-lib"} {
 		p, ok := projectMap[name]
 		if !ok {
 			t.Errorf("missing expected subproject %q", name)
@@ -276,10 +276,10 @@ func TestList_MonorepoExpansion(t *testing.T) {
 	}
 
 	// Verify types
-	if p := projectMap["my-monorepo/service-a"]; p.Type != TypeGo {
+	if p := projectMap["my-monorepo@service-a"]; p.Type != TypeGo {
 		t.Errorf("service-a type = %q, want %q", p.Type, TypeGo)
 	}
-	if p := projectMap["my-monorepo/rust-lib"]; p.Type != TypeRust {
+	if p := projectMap["my-monorepo@rust-lib"]; p.Type != TypeRust {
 		t.Errorf("rust-lib type = %q, want %q", p.Type, TypeRust)
 	}
 }

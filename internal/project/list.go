@@ -86,7 +86,7 @@ func resolveProject(ctx context.Context, name, projectPath string) []Project {
 		expanded := make([]Project, 0, len(subprojects))
 		for _, sub := range subprojects {
 			expanded = append(expanded, Project{
-				Name:         name + "/" + sub.name,
+				Name:         name + "@" + sub.name,
 				Path:         filepath.Join(relPath, sub.name),
 				Type:         sub.projectType,
 				URL:          url,
