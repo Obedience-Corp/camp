@@ -20,9 +20,10 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:     "camp",
-	Short:   "Campaign management CLI for multi-project AI workspaces",
-	Version: fmt.Sprintf("%s (built %s, commit %s)", version.Version, version.BuildDate, version.Commit),
+	Use:           "camp",
+	Short:         "Campaign management CLI for multi-project AI workspaces",
+	Version:       fmt.Sprintf("%s (built %s, commit %s)", version.Version, version.BuildDate, version.Commit),
+	SilenceErrors: true,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		// Skip color detection for completion commands to avoid
 		// termenv interfering with zsh's completion state machine.

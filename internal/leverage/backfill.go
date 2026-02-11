@@ -240,7 +240,7 @@ func (b *Backfiller) processSample(ctx context.Context, gitDir string, sample Co
 		}
 
 		// Run scc
-		result, err := b.runner.Run(ctx, sccDir)
+		result, err := b.runner.Run(ctx, sccDir, proj.ExcludeDirs)
 		if err != nil {
 			b.warn(proj.Name, dateStr, fmt.Errorf("scc: %w", err))
 			continue

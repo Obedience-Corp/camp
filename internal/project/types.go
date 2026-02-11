@@ -13,6 +13,9 @@ type Project struct {
 	// MonorepoRoot is the relative path to the parent monorepo, set when this
 	// project is a subproject expanded from a monorepo. Empty for standalone projects.
 	MonorepoRoot string
+	// ExcludeDirs lists subdirectory paths that scc should skip when scanning this
+	// project. Set on monorepo root entries to prevent double-counting submodule code.
+	ExcludeDirs []string
 }
 
 // ProjectType constants for common project types.

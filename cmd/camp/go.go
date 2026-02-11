@@ -131,7 +131,7 @@ func runGo(cmd *cobra.Command, args []string) error {
 					return err
 				}
 				if execResult.ExitCode != 0 {
-					os.Exit(execResult.ExitCode)
+					return &CommandExitError{Code: execResult.ExitCode}
 				}
 				return nil
 			}
@@ -152,9 +152,8 @@ func runGo(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		// Exit with the command's exit code
 		if execResult.ExitCode != 0 {
-			os.Exit(execResult.ExitCode)
+			return &CommandExitError{Code: execResult.ExitCode}
 		}
 		return nil
 	}
@@ -327,9 +326,8 @@ func handleCustomNavShortcut(ctx context.Context, sc config.ShortcutConfig, camp
 		if err != nil {
 			return err
 		}
-		// Exit with the command's exit code
 		if execResult.ExitCode != 0 {
-			os.Exit(execResult.ExitCode)
+			return &CommandExitError{Code: execResult.ExitCode}
 		}
 		return nil
 	}

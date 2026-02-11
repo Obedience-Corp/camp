@@ -24,6 +24,10 @@ type ResolvedProject struct {
 
 	// InMonorepo marks the project as a subdirectory within a larger git repo.
 	InMonorepo bool
+
+	// ExcludeDirs lists subdirectory names that scc should skip when scanning.
+	// Set on monorepo root entries to prevent double-counting submodule code.
+	ExcludeDirs []string
 }
 
 // ResolveProjects resolves project entries into absolute paths for leverage scoring.
@@ -64,10 +68,11 @@ func resolveFromProjectList(ctx context.Context, campaignRoot string) ([]Resolve
 		}
 
 		resolved = append(resolved, ResolvedProject{
-			Name:       p.Name,
-			SCCDir:     sccDir,
-			GitDir:     gitDir,
-			InMonorepo: inMonorepo,
+			Name:        p.Name,
+			SCCDir:      sccDir,
+			GitDir:      gitDir,
+			InMonorepo:  inMonorepo,
+			ExcludeDirs: p.ExcludeDirs,
 		})
 	}
 

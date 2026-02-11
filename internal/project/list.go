@@ -6,33 +6,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/obediencecorp/camp/internal/git"
 )
-
-// languageMarkers are files that indicate an independently buildable subproject.
-var languageMarkers = []string{
-	"go.mod",
-	"Cargo.toml",
-	"package.json",
-	"pyproject.toml",
-	"setup.py",
-	"pom.xml",
-	"build.gradle",
-	"mix.exs",
-}
-
-// excludedSubdirs are directories that should never be treated as subprojects.
-var excludedSubdirs = map[string]bool{
-	"vendor":       true,
-	"node_modules": true,
-	".git":         true,
-	"testdata":     true,
-	"test":         true,
-	"tests":        true,
-}
 
 // List returns all projects in the campaign's projects directory.
 // It identifies git repositories, detects their project type, and expands
-// monorepos into individual subproject entries.
+// repos with .gitmodules into root + submodule entries.
 func List(ctx context.Context, campaignRoot string) ([]Project, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -75,98 +55,46 @@ func List(ctx context.Context, campaignRoot string) ([]Project, error) {
 }
 
 // resolveProject returns one or more Project entries for a discovered git repo.
-// Monorepos with 2+ language-marker subdirectories are expanded into individual
-// subproject entries; standalone projects return a single entry.
+// Repos with .gitmodules are expanded into a root entry plus one entry per
+// submodule. Repos without .gitmodules are treated as standalone.
 func resolveProject(ctx context.Context, name, projectPath string) []Project {
 	url := getGitRemoteURL(ctx, projectPath)
 	relPath := filepath.Join("projects", name)
 
-	subprojects := detectMonorepoSubprojects(projectPath)
-	if len(subprojects) >= 2 {
-		expanded := make([]Project, 0, len(subprojects))
-		for _, sub := range subprojects {
-			expanded = append(expanded, Project{
-				Name:         name + "@" + sub.name,
-				Path:         filepath.Join(relPath, sub.name),
-				Type:         sub.projectType,
-				URL:          url,
-				MonorepoRoot: relPath,
-			})
-		}
-		return expanded
+	submodulePaths, _ := git.ListSubmodulePaths(ctx, projectPath)
+	if len(submodulePaths) == 0 {
+		// Standalone repo — single entry, scc scans entire directory.
+		return []Project{{
+			Name: name,
+			Path: relPath,
+			Type: detectProjectType(projectPath),
+			URL:  url,
+		}}
 	}
 
-	return []Project{{
-		Name: name,
-		Path: relPath,
-		Type: detectProjectType(projectPath),
-		URL:  url,
-	}}
-}
+	// Submodule-based repo — root entry + one entry per submodule.
+	expanded := make([]Project, 0, len(submodulePaths)+1)
 
-type subproject struct {
-	name        string
-	projectType string
-}
+	// Root entry captures root-level code (configs, docs, shared tooling).
+	expanded = append(expanded, Project{
+		Name:        name,
+		Path:        relPath,
+		Type:        detectProjectType(projectPath),
+		URL:         url,
+		ExcludeDirs: submodulePaths,
+	})
 
-// detectMonorepoSubprojects scans immediate subdirectories for language markers.
-// Returns the list of subdirectories that have markers. If fewer than 2 are
-// found, the caller should treat the project as standalone.
-func detectMonorepoSubprojects(projectPath string) []subproject {
-	entries, err := os.ReadDir(projectPath)
-	if err != nil {
-		return nil
+	for _, subPath := range submodulePaths {
+		subFullPath := filepath.Join(projectPath, subPath)
+		expanded = append(expanded, Project{
+			Name:         name + "@" + subPath,
+			Path:         filepath.Join(relPath, subPath),
+			Type:         detectProjectType(subFullPath),
+			URL:          url,
+			MonorepoRoot: relPath,
+		})
 	}
-
-	var subs []subproject
-	for _, entry := range entries {
-		name := entry.Name()
-
-		// Skip non-directories
-		if !entry.IsDir() {
-			continue
-		}
-
-		// Skip excluded directories
-		if excludedSubdirs[name] {
-			continue
-		}
-
-		// Skip hidden and underscore-prefixed directories
-		if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
-			continue
-		}
-
-		// Skip symlinks (avoid double-counting repos tracked independently)
-		info, err := os.Lstat(filepath.Join(projectPath, name))
-		if err != nil {
-			continue
-		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			continue
-		}
-
-		subPath := filepath.Join(projectPath, name)
-		if marker := findLanguageMarker(subPath); marker != "" {
-			subs = append(subs, subproject{
-				name:        name,
-				projectType: detectProjectType(subPath),
-			})
-		}
-	}
-
-	return subs
-}
-
-// findLanguageMarker checks if a directory contains any language project marker.
-// Returns the marker filename if found, empty string otherwise.
-func findLanguageMarker(dir string) string {
-	for _, marker := range languageMarkers {
-		if _, err := os.Stat(filepath.Join(dir, marker)); err == nil {
-			return marker
-		}
-	}
-	return ""
+	return expanded
 }
 
 // detectProjectType attempts to determine the project type based on marker files.
