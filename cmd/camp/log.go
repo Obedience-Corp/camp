@@ -37,7 +37,7 @@ Examples:
 
 func init() {
 	rootCmd.AddCommand(logCmd)
-	logCmd.GroupID = "campaign"
+	logCmd.GroupID = "git"
 }
 
 func runLog(cmd *cobra.Command, args []string) error {

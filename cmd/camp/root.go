@@ -163,6 +163,7 @@ func init() {
 	rootCmd.AddGroup(
 		&cobra.Group{ID: "setup", Title: ui.Category("Setup Commands:")},
 		&cobra.Group{ID: "campaign", Title: ui.Category("Campaign Commands:")},
+		&cobra.Group{ID: "git", Title: ui.Category("Git Commands:")},
 		&cobra.Group{ID: "navigation", Title: ui.Category("Navigation Commands:")},
 		&cobra.Group{ID: "registry", Title: ui.Category("Registry Commands:")},
 		&cobra.Group{ID: "project", Title: ui.Category("Project Commands:")},
