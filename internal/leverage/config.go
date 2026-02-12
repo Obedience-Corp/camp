@@ -105,6 +105,54 @@ func AutoDetectConfig(ctx context.Context, campaignRoot string) (*LeverageConfig
 	return cfg, nil
 }
 
+// PopulateProjects fills cfg.Projects from project.List() auto-discovery.
+// Existing entries (and their Include state) are preserved. Stale entries
+// for projects that no longer exist on disk are removed.
+func PopulateProjects(ctx context.Context, campaignRoot string, cfg *LeverageConfig) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	projects, err := project.List(ctx, campaignRoot)
+	if err != nil {
+		return fmt.Errorf("listing projects: %w", err)
+	}
+
+	if cfg.Projects == nil {
+		cfg.Projects = make(map[string]ProjectEntry, len(projects))
+	}
+
+	// Track discovered project names to prune stale entries.
+	discovered := make(map[string]bool, len(projects))
+
+	for _, p := range projects {
+		discovered[p.Name] = true
+
+		if _, exists := cfg.Projects[p.Name]; exists {
+			continue
+		}
+
+		entry := ProjectEntry{
+			Path:    p.Path,
+			Include: true,
+		}
+		if p.MonorepoRoot != "" {
+			entry.InMonorepo = true
+			entry.MonorepoPath = p.MonorepoRoot
+		}
+		cfg.Projects[p.Name] = entry
+	}
+
+	// Remove stale entries for projects no longer on disk.
+	for name := range cfg.Projects {
+		if !discovered[name] {
+			delete(cfg.Projects, name)
+		}
+	}
+
+	return nil
+}
+
 // defaultConfig returns a LeverageConfig with sensible defaults.
 func defaultConfig() *LeverageConfig {
 	return &LeverageConfig{
