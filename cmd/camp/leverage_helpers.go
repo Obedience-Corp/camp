@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/obediencecorp/camp/internal/campaign"
 	"github.com/obediencecorp/camp/internal/leverage"
@@ -16,6 +17,8 @@ type leverageSetup struct {
 }
 
 // initLeverageSetup detects the campaign, loads config, and auto-detects if needed.
+// On first use (no config file), it auto-creates the config with discovered projects.
+// For existing configs with an empty Projects map, it backfills from discovery.
 func initLeverageSetup(ctx context.Context) (*leverageSetup, error) {
 	root, err := campaign.DetectCached(ctx)
 	if err != nil {
@@ -23,6 +26,10 @@ func initLeverageSetup(ctx context.Context) (*leverageSetup, error) {
 	}
 
 	configPath := leverage.DefaultConfigPath(root)
+
+	_, statErr := os.Stat(configPath)
+	configExists := statErr == nil
+
 	cfg, err := leverage.LoadConfig(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("loading config: %w", err)
@@ -35,6 +42,21 @@ func initLeverageSetup(ctx context.Context) (*leverageSetup, error) {
 			return nil, fmt.Errorf("auto-detecting config: %w", err)
 		}
 		cfg = detected
+	}
+
+	// Populate projects from discovery if missing.
+	if len(cfg.Projects) == 0 {
+		if err := leverage.PopulateProjects(ctx, root, cfg); err != nil {
+			return nil, fmt.Errorf("populating projects: %w", err)
+		}
+
+		if err := leverage.SaveConfig(configPath, cfg); err != nil {
+			return nil, fmt.Errorf("saving config: %w", err)
+		}
+
+		if !configExists {
+			fmt.Println("Created leverage config at .campaign/leverage/config.json")
+		}
 	}
 
 	return &leverageSetup{Root: root, Cfg: cfg, AutoDetected: autoDetected}, nil

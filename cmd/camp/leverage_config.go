@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/obediencecorp/camp/internal/campaign"
@@ -23,12 +24,15 @@ Configuration parameters:
   --people       Number of developers on the team
   --start        Project start date (YYYY-MM-DD format)
   --cocomo-type  COCOMO project type (organic, semi-detached, embedded)
+  --exclude      Exclude a project from leverage scoring
+  --include      Include a previously excluded project
 
 Examples:
   camp leverage config                         Show current config
   camp leverage config --people 3              Set team size to 3
   camp leverage config --start 2025-01-01      Set project start date
-  camp leverage config --people 2 --start 2025-04-28  Set multiple values`,
+  camp leverage config --exclude obey-daemon   Exclude a project
+  camp leverage config --include obey-daemon   Re-include a project`,
 	RunE: runLeverageConfig,
 }
 
@@ -36,6 +40,8 @@ func init() {
 	leverageConfigCmd.Flags().Int("people", 0, "number of developers on the team")
 	leverageConfigCmd.Flags().String("start", "", "project start date (YYYY-MM-DD)")
 	leverageConfigCmd.Flags().String("cocomo-type", "", "COCOMO project type (organic, semi-detached, embedded)")
+	leverageConfigCmd.Flags().String("exclude", "", "exclude a project from leverage scoring")
+	leverageConfigCmd.Flags().String("include", "", "include a previously excluded project")
 	leverageCmd.AddCommand(leverageConfigCmd)
 }
 
@@ -54,8 +60,15 @@ func runLeverageConfig(cmd *cobra.Command, args []string) error {
 	peopleFlag := cmd.Flags().Lookup("people")
 	startFlag := cmd.Flags().Lookup("start")
 	cocomoFlag := cmd.Flags().Lookup("cocomo-type")
+	excludeFlag := cmd.Flags().Lookup("exclude")
+	includeFlag := cmd.Flags().Lookup("include")
 
 	hasUpdates := peopleFlag.Changed || startFlag.Changed || cocomoFlag.Changed
+	hasProjectUpdate := excludeFlag.Changed || includeFlag.Changed
+
+	if hasProjectUpdate {
+		return updateProjectInclusion(cmd, ctx, root, configPath, excludeFlag.Changed, includeFlag.Changed)
+	}
 
 	if !hasUpdates {
 		return displayLeverageConfig(cmd, ctx, root, configPath)
@@ -70,8 +83,11 @@ func displayLeverageConfig(cmd *cobra.Command, ctx context.Context, root, config
 	_, statErr := os.Stat(configPath)
 	configExists := statErr == nil
 
+	var cfg *leverage.LeverageConfig
+
 	if configExists {
-		cfg, err := leverage.LoadConfig(configPath)
+		var err error
+		cfg, err = leverage.LoadConfig(configPath)
 		if err != nil {
 			return fmt.Errorf("loading config: %w", err)
 		}
@@ -85,8 +101,8 @@ func displayLeverageConfig(cmd *cobra.Command, ctx context.Context, root, config
 			fmt.Fprintf(out, "Avg Wage:      $%.0f/year\n", cfg.AvgWage)
 		}
 	} else {
-		// Auto-detect and display
-		cfg, err := leverage.AutoDetectConfig(ctx, root)
+		var err error
+		cfg, err = leverage.AutoDetectConfig(ctx, root)
 		if err != nil {
 			return fmt.Errorf("auto-detecting config: %w", err)
 		}
@@ -102,10 +118,74 @@ func displayLeverageConfig(cmd *cobra.Command, ctx context.Context, root, config
 		fmt.Fprintf(out, "COCOMO Type:   %s\n", cfg.COCOMOProjectType)
 	}
 
+	// Show project inclusion status
+	if len(cfg.Projects) > 0 {
+		fmt.Fprintln(out)
+		fmt.Fprintln(out, "Projects:")
+		names := make([]string, 0, len(cfg.Projects))
+		for name := range cfg.Projects {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			entry := cfg.Projects[name]
+			status := "included"
+			if !entry.Include {
+				status = "excluded"
+			}
+			fmt.Fprintf(out, "  %-20s %s\n", name, status)
+		}
+	}
+
 	fmt.Fprintln(out)
 	fmt.Fprintf(out, "Config path:   %s\n", configPath)
 	fmt.Fprintln(out, "\nTo update: camp leverage config --people N --start YYYY-MM-DD")
 
+	return nil
+}
+
+func updateProjectInclusion(cmd *cobra.Command, ctx context.Context, root, configPath string, excludeChanged, includeChanged bool) error {
+	out := cmd.OutOrStdout()
+
+	cfg, err := leverage.LoadConfig(configPath)
+	if err != nil {
+		return fmt.Errorf("loading config: %w", err)
+	}
+
+	// Ensure projects are populated before modifying.
+	if len(cfg.Projects) == 0 {
+		if err := leverage.PopulateProjects(ctx, root, cfg); err != nil {
+			return fmt.Errorf("populating projects: %w", err)
+		}
+	}
+
+	if excludeChanged {
+		name, _ := cmd.Flags().GetString("exclude")
+		entry, exists := cfg.Projects[name]
+		if !exists {
+			return fmt.Errorf("project %q not found in config", name)
+		}
+		entry.Include = false
+		cfg.Projects[name] = entry
+		fmt.Fprintf(out, "Excluded project: %s\n", name)
+	}
+
+	if includeChanged {
+		name, _ := cmd.Flags().GetString("include")
+		entry, exists := cfg.Projects[name]
+		if !exists {
+			return fmt.Errorf("project %q not found in config", name)
+		}
+		entry.Include = true
+		cfg.Projects[name] = entry
+		fmt.Fprintf(out, "Included project: %s\n", name)
+	}
+
+	if err := leverage.SaveConfig(configPath, cfg); err != nil {
+		return fmt.Errorf("saving config: %w", err)
+	}
+
+	fmt.Fprintf(out, "Saved to: %s\n", configPath)
 	return nil
 }
 
