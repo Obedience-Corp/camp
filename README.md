@@ -2,15 +2,18 @@
 
 # camp
 
-Fast, fuzzy navigation for multi-project AI workspaces.
+Campaign workspace manager for multi-project AI development.
 
 ## Features
 
-- **Category Shortcuts** - Jump to any directory with single-letter shortcuts (p=projects, f=festivals)
-- **Fuzzy Finding** - Type partial names and camp finds the match
-- **Campaign Structure** - Standardized directory layout for AI development
-- **Shell Integration** - Native cd behavior with zsh, bash, and fish
-- **Tab Completion** - Smart completion for categories, projects, and paths
+- **Navigation** — Category shortcuts, fuzzy finding, bookmarks (`go`, `pin`, `shortcuts`)
+- **Project Management** — Git submodules, worktrees, and project scaffolding (`project add/list/remove/new/worktree`)
+- **Planning** — Intents, status flows, dungeon for deprioritized work (`intent`, `flow`, `dungeon`, `gather`)
+- **Productivity** — Leverage scoring to identify high-impact work (`leverage`)
+- **Git Integration** — Campaign-level git operations (`commit`, `log`, `push`, `status`)
+- **Campaign Ops** — Health checks, file operations, cross-campaign tools (`doctor`, `copy`, `move`, `sync`)
+- **Shell Integration** — Native cd behavior with zsh, bash, and fish (`shell-init`)
+- **Tab Completion** — Smart completion for categories, projects, and paths
 
 ## Installation
 
@@ -87,7 +90,7 @@ Navigate instantly with single-letter shortcuts:
 
 ## Commands
 
-### cgo - Navigate
+### Navigation — `cgo`
 
 The `cgo` shell function is your primary interface:
 
@@ -108,39 +111,104 @@ cgo -c p ls           # List contents of projects/
 cgo -c f fest status  # Run fest status from festivals/
 ```
 
-### camp init
+**Bookmarks**: Pin frequently visited directories for quick access:
 
-Initialize a new campaign:
+```bash
+camp pin             # Bookmark current directory
+camp pins            # List all bookmarks
+camp unpin           # Remove bookmark
+```
+
+**Shortcuts**: View all category shortcuts and custom shortcuts:
+
+```bash
+camp shortcuts       # List all available shortcuts
+```
+
+### Setup
 
 ```bash
 camp init                  # Initialize current directory
 camp init my-campaign      # Create and initialize new directory
-camp init --name "My Project"  # Set campaign name
+camp clone <url>           # Clone a campaign with full submodule setup
 ```
 
-### camp go
-
-Lower-level navigation (use `cgo` for shell integration):
+### Project Management
 
 ```bash
-camp go p             # Print cd command for projects/
-camp go p --print     # Print just the path
-camp go p -c ls       # Run command from category
+camp project add <url>     # Add git submodule
+camp project list          # List all projects
+camp project remove <name> # Remove a project
+camp project new <name>    # Create a new project
+camp project worktree      # Manage git worktrees
+camp project commit        # Commit within a project
 ```
 
-### camp project
+### Planning
 
-Manage projects within the campaign:
+Intents, status flows, and the dungeon provide lightweight planning tools:
 
 ```bash
-camp project add <url>    # Add git submodule
-camp project list         # List all projects
-camp project remove <name>  # Remove a project
+# Intents — capture ideas, goals, and work items
+camp intent                # Manage campaign intents
+camp gather                # Import external data into the intent system
+
+# Flows — track work status
+camp flow                  # Manage status workflows for organizing work
+
+# Dungeon — archive deprioritized work
+camp dungeon               # Move items to/from the dungeon
 ```
 
-### camp shell-init
+### Productivity
 
-Generate shell integration scripts:
+```bash
+# Leverage scoring — identify high-impact work
+camp leverage              # Compute leverage scores for campaign projects
+```
+
+See [docs/leverage-score.md](docs/leverage-score.md) for details on the scoring algorithm.
+
+### Git Integration
+
+Campaign-level git operations:
+
+```bash
+camp commit                # Commit changes in the campaign root
+camp log                   # Show git log of the campaign
+camp push                  # Push campaign changes to remote
+camp status                # Show git status of the campaign
+```
+
+### Campaign Operations
+
+```bash
+camp doctor                # Diagnose and fix campaign health issues
+camp sync                  # Safely synchronize submodules
+camp copy                  # Copy a file or directory within the campaign
+camp move                  # Move a file or directory within the campaign
+camp run                   # Execute command from campaign root, or just recipe in a project
+```
+
+### Global Commands
+
+```bash
+camp list                  # List all registered campaigns
+camp switch                # Switch to a different campaign
+camp transfer              # Copy files between campaigns
+camp register              # Register campaign in global registry
+camp unregister            # Remove campaign from registry
+```
+
+### System
+
+```bash
+camp settings              # Manage camp configuration
+camp date                  # Append date suffix to file or directory name
+camp version               # Show version information
+```
+
+### Shell Integration
 
 ```bash
 camp shell-init zsh       # Output zsh init script
@@ -200,16 +268,6 @@ source ~/.zshrc
 
 # Check if cgo is defined
 type cgo
-```
-
-### camp complete
-
-Generate completion candidates (used by shell integration):
-
-```bash
-camp complete             # Category shortcuts
-camp complete p           # Projects in category
-camp complete p api       # Projects matching "api"
 ```
 
 ## Campaign Directory Structure
@@ -310,20 +368,22 @@ default_type: product
 editor: code
 ```
 
+## Documentation
+
+Extended documentation is available in the `docs/` directory:
+
+- [Leverage Scoring](docs/leverage-score.md) — How leverage scores are computed
+- [Shortcuts](docs/SHORTCUTS.md) — Category shortcuts reference
+- [Shell Integration](docs/shell-integration.md) — Detailed shell setup guide
+
 ## Development
 
 ```bash
-# Build
-just build
-
-# Run tests
-just test
-
-# Run with arguments
-just run <args>
-
-# Install locally
-just install
+just              # List all commands
+just build        # Build camp binary
+just test         # Run tests
+just install      # Install locally
+just run <args>   # Run with arguments
 ```
 
 ## License
