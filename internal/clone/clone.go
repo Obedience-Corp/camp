@@ -7,18 +7,18 @@ import (
 
 // Clone performs a full campaign clone with submodule initialization.
 //
-// The clone process runs in six phases:
-//  1. Clone the repository with recursive submodules (git clone --recurse-submodules)
+// The clone process runs in five phases:
+//  1. Clone the main repository (WITHOUT --recurse-submodules)
 //  2. Synchronize URLs from .gitmodules to .git/config (git submodule sync)
-//  3. Update submodules to ensure all are at correct commits (git submodule update)
-//  3.5. Verify working trees, init nested submodules, checkout branches
+//  3. Initialize submodules gracefully, one-by-one with stale reference handling
 //  4. Validate the setup (all initialized, correct commits, matching URLs)
 //  5. Report results
 //
-// Phase 3.5 addresses common clone issues:
-//   - Empty working trees (git metadata exists but files not checked out)
-//   - Uninitialized nested submodules (submodules within submodules)
-//   - Detached HEAD state (checks out remote default branch instead)
+// Phase 3 uses graceful submodule initialization that:
+//   - Handles stale commit references (commit no longer exists on remote)
+//   - Falls back to the remote's default branch when needed
+//   - Initializes nested submodules recursively with the same graceful handling
+//   - Checks out the remote default branch instead of detached HEAD
 //
 // Returns a CloneResult containing the outcome of each phase and any errors.
 func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
@@ -33,7 +33,7 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 
 	result := &CloneResult{Success: true}
 
-	// Phase 1: Clone repository
+	// Phase 1: Clone repository (without --recurse-submodules to avoid all-or-nothing failure)
 	c.progress.StartPhase("Cloning campaign repository")
 	targetDir, err := c.gitClone(ctx)
 	if err != nil {
@@ -81,79 +81,96 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 		}
 		c.progress.EndPhase("URL sync", true)
 
-		// Phase 3: Submodule update (ensure all are properly initialized)
-		c.progress.StartPhase("Updating submodules")
-		if err := c.gitSubmoduleUpdate(ctx, targetDir); err != nil {
-			// Submodule update failure may be partial - continue to collect results
-			result.Warnings = append(result.Warnings, fmt.Sprintf("submodule update warning: %v", err))
-		}
-		c.progress.EndPhase("Submodule update", true)
-
-		// Collect submodule results
-		submodules, err := c.gitSubmoduleStatus(ctx, targetDir)
-		if err != nil {
-			result.Warnings = append(result.Warnings, fmt.Sprintf("could not get submodule status: %v", err))
-		}
-		result.Submodules = submodules
-
-		// Report submodule progress
-		if len(result.Submodules) > 0 {
-			succeeded := 0
-			failed := 0
-			for _, sub := range result.Submodules {
-				if sub.Success {
-					succeeded++
-				} else {
-					failed++
-					result.Errors = append(result.Errors, fmt.Errorf("submodule %s failed: %v", sub.Path, sub.Error))
-				}
-			}
-			c.progress.EndSubmodules(succeeded, failed)
-		}
-
-		// Phase 3.5: Verify working trees, init nested submodules, checkout branches
-		c.progress.StartPhase("Verifying submodule working trees")
+		// Phase 3: Initialize submodules gracefully (one-by-one with stale reference handling)
+		c.progress.StartPhase("Initializing submodules")
 		submoduleInfos, err := parseGitmodules(ctx, targetDir)
 		if err != nil {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("could not parse .gitmodules: %v", err))
 		}
 
-		fixedCount := 0
+		succeeded := 0
+		failed := 0
 		nestedCount := 0
 		branchCount := 0
+		staleRefCount := 0
+
 		for _, sub := range submoduleInfos {
-			// Step 1: Verify and fix empty working trees
-			if err := c.verifySubmoduleWorkingTree(ctx, targetDir, sub.Path); err != nil {
-				c.progress.Verbose(fmt.Sprintf("Fixing empty working tree: %s", sub.Path))
-				if fixErr := c.forceCheckoutSubmodule(ctx, targetDir, sub.Path); fixErr != nil {
+			if ctx.Err() != nil {
+				result.Errors = append(result.Errors, ctx.Err())
+				break
+			}
+
+			c.progress.Verbose(fmt.Sprintf("Initializing submodule: %s", sub.Path))
+
+			// Step 1: Initialize submodule gracefully (handles stale refs)
+			subErr := c.initSubmoduleGraceful(ctx, targetDir, sub.Path)
+			subResult := SubmoduleResult{
+				Name:    sub.Name,
+				Path:    sub.Path,
+				URL:     sub.URL,
+				Success: subErr == nil,
+				Error:   subErr,
+			}
+
+			if subErr != nil {
+				// Check if this was a stale reference that we recovered from
+				if c.isStaleRefError(subErr) {
+					staleRefCount++
 					result.Warnings = append(result.Warnings,
-						fmt.Sprintf("could not fix submodule %s: %v", sub.Path, fixErr))
-					continue // Skip remaining steps if checkout failed
+						fmt.Sprintf("submodule %s had stale commit reference, using default branch", sub.Path))
+					// We still mark as success if recovery worked (no error after fallback)
+					subResult.Success = true
+					subResult.Error = nil
+					succeeded++
+				} else {
+					failed++
+					result.Warnings = append(result.Warnings,
+						fmt.Sprintf("submodule %s: %v", sub.Path, subErr))
 				}
-				fixedCount++
+			} else {
+				succeeded++
 			}
 
-			// Step 2: Initialize nested submodules
-			if err := c.initNestedSubmodules(ctx, targetDir, sub.Path); err != nil {
-				result.Warnings = append(result.Warnings,
-					fmt.Sprintf("could not init nested submodules in %s: %v", sub.Path, err))
-			} else {
-				// Count nested submodules if any were initialized
-				nestedSubs, _ := parseGitmodules(ctx, fmt.Sprintf("%s/%s", targetDir, sub.Path))
-				nestedCount += len(nestedSubs)
+			// Step 2: Verify working tree has files
+			if subResult.Success {
+				if err := c.verifySubmoduleWorkingTree(ctx, targetDir, sub.Path); err != nil {
+					c.progress.Verbose(fmt.Sprintf("Fixing empty working tree: %s", sub.Path))
+					if fixErr := c.forceCheckoutSubmodule(ctx, targetDir, sub.Path); fixErr != nil {
+						result.Warnings = append(result.Warnings,
+							fmt.Sprintf("could not fix submodule %s: %v", sub.Path, fixErr))
+					}
+				}
 			}
 
-			// Step 3: Checkout branch instead of detached HEAD
-			if err := c.checkoutSubmoduleBranch(ctx, targetDir, sub.Path); err != nil {
-				c.progress.Verbose(fmt.Sprintf("Could not checkout branch for %s: %v", sub.Path, err))
-				// Non-fatal: some submodules may not have a remote configured
-			} else {
-				branchCount++
+			// Step 3: Initialize nested submodules (recursively with graceful handling)
+			if subResult.Success {
+				count, warnings := c.initNestedSubmodulesGraceful(ctx, targetDir, sub.Path)
+				nestedCount += count
+				result.Warnings = append(result.Warnings, warnings...)
 			}
+
+			// Step 4: Checkout branch instead of detached HEAD
+			if subResult.Success {
+				if err := c.checkoutSubmoduleBranch(ctx, targetDir, sub.Path); err != nil {
+					c.progress.Verbose(fmt.Sprintf("Could not checkout branch for %s: %v", sub.Path, err))
+					// Non-fatal: some submodules may not have a remote configured
+				} else {
+					branchCount++
+				}
+			}
+
+			// Get commit hash if initialized
+			if subResult.Success {
+				subResult.Commit, _ = c.getSubmoduleCommit(ctx, targetDir, sub.Path)
+			}
+
+			result.Submodules = append(result.Submodules, subResult)
 		}
 
-		if fixedCount > 0 {
-			c.progress.Message(fmt.Sprintf("Fixed %d submodules with empty working trees", fixedCount))
+		c.progress.EndSubmodules(succeeded, failed)
+
+		if staleRefCount > 0 {
+			c.progress.Message(fmt.Sprintf("Recovered %d submodules with stale commit references", staleRefCount))
 		}
 		if nestedCount > 0 {
 			c.progress.Message(fmt.Sprintf("Initialized %d nested submodules", nestedCount))
@@ -161,7 +178,7 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 		if branchCount > 0 {
 			c.progress.Message(fmt.Sprintf("Checked out branches for %d submodules", branchCount))
 		}
-		c.progress.EndPhase("Working tree verification", true)
+		c.progress.EndPhase("Submodule initialization", true)
 	}
 
 	// Phase 4: Validation (unless --no-validate)

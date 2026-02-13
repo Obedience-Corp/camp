@@ -111,6 +111,23 @@ csw() {
   camp switch "$@"
 }
 
+# Tab completion for csw (campaign switch)
+_csw() {
+  local -a campaigns
+  local output line
+
+  # Use Cobra's built-in completion mechanism
+  output=$(command camp __complete switch -- "${words[2]:-}" 2>/dev/null)
+  for line in ${(f)output}; do
+    # Skip directive line (starts with :)
+    [[ "$line" == :* ]] && continue
+    [[ -n "$line" ]] && campaigns+=("$line")
+  done
+
+  (( ${#campaigns} )) && compadd -a campaigns
+}
+compdef _csw csw
+
 # Quick intent capture
 # Usage: cint "my idea"
 cint() {
@@ -180,6 +197,9 @@ _camp() {
           ;;
         register|unregister)
           _directories
+          ;;
+        switch|sw)
+          _csw
           ;;
       esac
       ;;
