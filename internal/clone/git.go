@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -217,4 +218,114 @@ func extractRepoName(url string) string {
 
 	// Remove .git suffix
 	return strings.TrimSuffix(base, ".git")
+}
+
+// verifySubmoduleWorkingTree checks that a submodule has files checked out.
+// Returns an error if the working tree is empty (only .git file exists).
+func (c *Cloner) verifySubmoduleWorkingTree(ctx context.Context, repoDir, subPath string) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	subDir := filepath.Join(repoDir, subPath)
+	entries, err := os.ReadDir(subDir)
+	if err != nil {
+		return fmt.Errorf("cannot read submodule dir %s: %w", subPath, err)
+	}
+
+	// Count real files (not .git)
+	realEntries := 0
+	for _, e := range entries {
+		if e.Name() != ".git" {
+			realEntries++
+		}
+	}
+
+	if realEntries == 0 {
+		return fmt.Errorf("submodule %s has empty working tree", subPath)
+	}
+	return nil
+}
+
+// forceCheckoutSubmodule forces a checkout of HEAD in the submodule.
+func (c *Cloner) forceCheckoutSubmodule(ctx context.Context, repoDir, subPath string) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	subDir := filepath.Join(repoDir, subPath)
+	cmd := exec.CommandContext(ctx, "git", "-C", subDir, "checkout", "HEAD", "--", ".")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git checkout HEAD in %s: %s: %w", subPath, strings.TrimSpace(string(output)), err)
+	}
+	return nil
+}
+
+// initNestedSubmodules initializes nested submodules within a submodule.
+// This handles repos like obey-platform-monorepo that contain their own submodules.
+func (c *Cloner) initNestedSubmodules(ctx context.Context, repoDir, subPath string) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	subDir := filepath.Join(repoDir, subPath)
+
+	// Check if this submodule has its own .gitmodules
+	gitmodulesPath := filepath.Join(subDir, ".gitmodules")
+	if _, err := os.Stat(gitmodulesPath); os.IsNotExist(err) {
+		return nil // No nested submodules
+	}
+
+	// Initialize nested submodules
+	cmd := exec.CommandContext(ctx, "git", "-C", subDir, "submodule", "update", "--init", "--recursive")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git submodule update in %s: %s: %w", subPath, strings.TrimSpace(string(output)), err)
+	}
+	return nil
+}
+
+// checkoutSubmoduleBranch checks out the remote's default branch instead of detached HEAD.
+func (c *Cloner) checkoutSubmoduleBranch(ctx context.Context, repoDir, subPath string) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	subDir := filepath.Join(repoDir, subPath)
+
+	// Get remote default branch via: git remote show origin
+	cmd := exec.CommandContext(ctx, "git", "-C", subDir, "remote", "show", "origin")
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("could not get remote info for %s: %w", subPath, err)
+	}
+
+	// Parse "HEAD branch: main" from output
+	branch := parseDefaultBranch(string(output))
+	if branch == "" {
+		return fmt.Errorf("could not determine default branch for %s", subPath)
+	}
+
+	// Checkout the branch
+	cmd = exec.CommandContext(ctx, "git", "-C", subDir, "checkout", branch)
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("checkout %s in %s: %s: %w", branch, subPath, strings.TrimSpace(string(output)), err)
+	}
+
+	return nil
+}
+
+// parseDefaultBranch extracts the default branch from git remote show output.
+func parseDefaultBranch(remoteShowOutput string) string {
+	for _, line := range strings.Split(remoteShowOutput, "\n") {
+		if strings.Contains(line, "HEAD branch:") {
+			parts := strings.Split(line, ":")
+			if len(parts) >= 2 {
+				return strings.TrimSpace(parts[1])
+			}
+		}
+	}
+	return ""
 }

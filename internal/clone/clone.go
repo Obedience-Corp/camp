@@ -7,12 +7,18 @@ import (
 
 // Clone performs a full campaign clone with submodule initialization.
 //
-// The clone process runs in five phases:
+// The clone process runs in six phases:
 //  1. Clone the repository with recursive submodules (git clone --recurse-submodules)
 //  2. Synchronize URLs from .gitmodules to .git/config (git submodule sync)
 //  3. Update submodules to ensure all are at correct commits (git submodule update)
+//  3.5. Verify working trees, init nested submodules, checkout branches
 //  4. Validate the setup (all initialized, correct commits, matching URLs)
 //  5. Report results
+//
+// Phase 3.5 addresses common clone issues:
+//   - Empty working trees (git metadata exists but files not checked out)
+//   - Uninitialized nested submodules (submodules within submodules)
+//   - Detached HEAD state (checks out remote default branch instead)
 //
 // Returns a CloneResult containing the outcome of each phase and any errors.
 func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
@@ -104,6 +110,58 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 			}
 			c.progress.EndSubmodules(succeeded, failed)
 		}
+
+		// Phase 3.5: Verify working trees, init nested submodules, checkout branches
+		c.progress.StartPhase("Verifying submodule working trees")
+		submoduleInfos, err := parseGitmodules(ctx, targetDir)
+		if err != nil {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("could not parse .gitmodules: %v", err))
+		}
+
+		fixedCount := 0
+		nestedCount := 0
+		branchCount := 0
+		for _, sub := range submoduleInfos {
+			// Step 1: Verify and fix empty working trees
+			if err := c.verifySubmoduleWorkingTree(ctx, targetDir, sub.Path); err != nil {
+				c.progress.Verbose(fmt.Sprintf("Fixing empty working tree: %s", sub.Path))
+				if fixErr := c.forceCheckoutSubmodule(ctx, targetDir, sub.Path); fixErr != nil {
+					result.Warnings = append(result.Warnings,
+						fmt.Sprintf("could not fix submodule %s: %v", sub.Path, fixErr))
+					continue // Skip remaining steps if checkout failed
+				}
+				fixedCount++
+			}
+
+			// Step 2: Initialize nested submodules
+			if err := c.initNestedSubmodules(ctx, targetDir, sub.Path); err != nil {
+				result.Warnings = append(result.Warnings,
+					fmt.Sprintf("could not init nested submodules in %s: %v", sub.Path, err))
+			} else {
+				// Count nested submodules if any were initialized
+				nestedSubs, _ := parseGitmodules(ctx, fmt.Sprintf("%s/%s", targetDir, sub.Path))
+				nestedCount += len(nestedSubs)
+			}
+
+			// Step 3: Checkout branch instead of detached HEAD
+			if err := c.checkoutSubmoduleBranch(ctx, targetDir, sub.Path); err != nil {
+				c.progress.Verbose(fmt.Sprintf("Could not checkout branch for %s: %v", sub.Path, err))
+				// Non-fatal: some submodules may not have a remote configured
+			} else {
+				branchCount++
+			}
+		}
+
+		if fixedCount > 0 {
+			c.progress.Message(fmt.Sprintf("Fixed %d submodules with empty working trees", fixedCount))
+		}
+		if nestedCount > 0 {
+			c.progress.Message(fmt.Sprintf("Initialized %d nested submodules", nestedCount))
+		}
+		if branchCount > 0 {
+			c.progress.Message(fmt.Sprintf("Checked out branches for %d submodules", branchCount))
+		}
+		c.progress.EndPhase("Working tree verification", true)
 	}
 
 	// Phase 4: Validation (unless --no-validate)
