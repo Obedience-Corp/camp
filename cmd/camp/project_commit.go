@@ -112,6 +112,11 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 	// Show what's staged
 	showStagedSummary(ctx, resolvedPath)
 
+	// Prepend campaign tag (graceful degradation if config unavailable)
+	if cfg, cfgErr := config.LoadCampaignConfig(ctx, campRoot); cfgErr == nil {
+		message = git.PrependCampaignTag(cfg.ID, message)
+	}
+
 	// Commit
 	fmt.Println(ui.Info("Committing changes..."))
 	opts := &git.CommitOptions{
