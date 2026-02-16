@@ -40,15 +40,9 @@ func ProjectCommitAll(ctx context.Context, opts ProjectCommitOptions) IntentComm
 		}
 	}
 
-	// Truncate campaign ID to 8 chars
-	shortID := opts.CampaignID
-	if len(shortID) > 8 {
-		shortID = shortID[:8]
-	}
-
 	// Build commit message
-	commitMsg := fmt.Sprintf("[OBEY-CAMPAIGN-%s] %s: %s",
-		shortID,
+	commitMsg := fmt.Sprintf("%s %s: %s",
+		FormatCampaignTag(opts.CampaignID),
 		opts.Action,
 		opts.ProjectName,
 	)

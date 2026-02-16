@@ -120,6 +120,9 @@ func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 	// Show what's staged
 	showStagedSummary(ctx, wtCtx.WorktreePath)
 
+	// Prepend campaign tag
+	message = git.PrependCampaignTag(cfg.ID, message)
+
 	// Commit
 	fmt.Println(ui.Info("Committing changes..."))
 	opts := &git.CommitOptions{

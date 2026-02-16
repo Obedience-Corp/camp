@@ -1,11 +1,13 @@
 package workflow
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"text/template"
 
 	"gopkg.in/yaml.v3"
 )
@@ -99,8 +101,10 @@ func (s *Service) LoadSchema(ctx context.Context) error {
 
 // InitOptions configures workflow initialization.
 type InitOptions struct {
-	Force         bool // Overwrite existing files
-	SchemaVersion int  // Schema version to use (0 or 1 = v1, 2 = v2)
+	Force         bool   // Overwrite existing files
+	SchemaVersion int    // Schema version to use (0 or 1 = v1, 2 = v2)
+	Name          string // Workflow name (empty = default)
+	Description   string // Workflow description/purpose (empty = default)
 }
 
 // InitResult contains what was created during init.
@@ -248,12 +252,12 @@ func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, erro
 		result.Skipped = append(result.Skipped, s.schemaPath)
 	}
 
-	// Get default schema
+	// Get default schema with optional custom name/description
 	var schema *Schema
 	if opts.SchemaVersion == 2 {
-		schema = DefaultSchemaV2()
+		schema = DefaultSchemaV2WithInfo(opts.Name, opts.Description)
 	} else {
-		schema = DefaultSchema()
+		schema = DefaultSchemaWithInfo(opts.Name, opts.Description)
 	}
 
 	// Write schema file
@@ -328,6 +332,18 @@ func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, erro
 			return nil, fmt.Errorf("failed to write %s: %w", obey.path, err)
 		}
 		result.CreatedFiles = append(result.CreatedFiles, obey.path)
+	}
+
+	// Create root OBEY.md from Go template
+	rootOBEYPath := filepath.Join(s.root, "OBEY.md")
+	created, err := s.createRootOBEY(ctx, schema, opts.Force)
+	if err != nil {
+		return nil, err
+	}
+	if created {
+		result.CreatedFiles = append(result.CreatedFiles, rootOBEYPath)
+	} else {
+		result.Skipped = append(result.Skipped, rootOBEYPath)
 	}
 
 	// Create .gitkeep in empty directories that won't get other files
@@ -566,6 +582,50 @@ func (s *Service) findItem(ctx context.Context, itemName string) (string, string
 func (s *Service) appendHistory(ctx context.Context, entry HistoryEntry) error {
 	// TODO: Implement history file writing
 	return nil
+}
+
+// createRootOBEY renders and writes the root OBEY.md from the Go template.
+// Returns true if the file was written, false if skipped.
+func (s *Service) createRootOBEY(ctx context.Context, schema *Schema, force bool) (bool, error) {
+	if ctx.Err() != nil {
+		return false, ctx.Err()
+	}
+
+	obeyPath := filepath.Join(s.root, "OBEY.md")
+
+	// Skip if exists and not forcing
+	if _, err := os.Stat(obeyPath); err == nil && !force {
+		return false, nil
+	}
+
+	tmplBytes, err := GetFlowRootOBEYTemplate()
+	if err != nil {
+		return false, fmt.Errorf("failed to read root OBEY.md template: %w", err)
+	}
+
+	tmpl, err := template.New("root_obey").Parse(string(tmplBytes))
+	if err != nil {
+		return false, fmt.Errorf("failed to parse root OBEY.md template: %w", err)
+	}
+
+	data := struct {
+		Name        string
+		Description string
+	}{
+		Name:        schema.Name,
+		Description: schema.Description,
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return false, fmt.Errorf("failed to render root OBEY.md: %w", err)
+	}
+
+	if err := os.WriteFile(obeyPath, buf.Bytes(), 0644); err != nil {
+		return false, fmt.Errorf("failed to write root OBEY.md: %w", err)
+	}
+
+	return true, nil
 }
 
 // Migrate upgrades a legacy dungeon structure to a full workflow.

@@ -1,16 +1,27 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 
+	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
+	"github.com/obediencecorp/camp/internal/nav/tui"
 	"github.com/obediencecorp/camp/internal/ui"
+	"github.com/obediencecorp/camp/internal/ui/theme"
 	"github.com/obediencecorp/camp/internal/workflow"
 )
 
-var flowAddForce bool
+var (
+	flowAddForce       bool
+	flowAddName        string
+	flowAddDescription string
+	flowAddJSON        string
+)
 
 var flowAddCmd = &cobra.Command{
 	Use:     "add",
@@ -18,7 +29,7 @@ var flowAddCmd = &cobra.Command{
 	Short:   "Add workflow tracking to current directory",
 	Long: `Add workflow tracking to the current directory.
 
-Creates a .workflow.yaml file and dungeon/ directory structure.
+Creates a .workflow.yaml file, dungeon/ directory structure, and root OBEY.md.
 Uses workflow schema v2 (dungeon-centric model) where:
   - Root directory (.) = active work
   - dungeon/           = all other statuses
@@ -28,16 +39,23 @@ If both exist, displays a notice.
 
 Use --force to overwrite an existing workflow configuration.
 
+Provide name/description via flags, JSON, or interactive TUI:
+  --name/-n and --description/-d   Set via flags
+  --json/-j '{"name":"...","description":"..."}'  Set via JSON
+  --json -   Read JSON from stdin (for piping)
+
 Note: Flows cannot be nested inside other flows. If you're inside a flow,
 navigate to a directory outside of it before running this command.
 
 Examples:
-  camp flow add              Add workflow to current directory
-  camp flow add --force      Overwrite existing workflow
-  camp flow init             Alias for 'add'`,
+  camp flow add                                      Interactive TUI
+  camp flow add --name "API" --description "API dev" Via flags
+  camp flow add --json '{"name":"API","description":"API development"}'
+  echo '{"name":"X","description":"Y"}' | camp flow add --json -
+  camp flow add --force                              Overwrite existing`,
 	Annotations: map[string]string{
-		"agent_allowed": "false",
-		"agent_reason":  "Creates workflow structure, requires human decision",
+		"agent_allowed": "true",
+		"agent_reason":  "Agents can use --json or --name/--description flags",
 	},
 	RunE: runFlowAdd,
 }
@@ -45,6 +63,15 @@ Examples:
 func init() {
 	flowCmd.AddCommand(flowAddCmd)
 	flowAddCmd.Flags().BoolVarP(&flowAddForce, "force", "f", false, "overwrite existing workflow")
+	flowAddCmd.Flags().StringVarP(&flowAddName, "name", "n", "", "workflow name")
+	flowAddCmd.Flags().StringVarP(&flowAddDescription, "description", "d", "", "workflow description/purpose")
+	flowAddCmd.Flags().StringVarP(&flowAddJSON, "json", "j", "", `JSON input (use "-" for stdin)`)
+}
+
+// flowAddInput holds the collected name/description for flow init.
+type flowAddInput struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
 }
 
 func runFlowAdd(cmd *cobra.Command, args []string) error {
@@ -55,10 +82,18 @@ func runFlowAdd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Collect name/description: JSON > Flags > TUI
+	input, err := collectFlowAddInput(cmd)
+	if err != nil {
+		return err
+	}
+
 	svc := workflow.NewService(cwd)
 	result, err := svc.Init(ctx, workflow.InitOptions{
 		Force:         flowAddForce,
 		SchemaVersion: 2,
+		Name:          input.Name,
+		Description:   input.Description,
 	})
 	if err != nil {
 		var nestedErr *workflow.FlowNestedError
@@ -101,4 +136,99 @@ func runFlowAdd(cmd *cobra.Command, args []string) error {
 	fmt.Println("  - Run 'camp flow status' to see your workflow")
 
 	return nil
+}
+
+// collectFlowAddInput gathers name/description from JSON, flags, or TUI.
+// Priority: JSON > Flags > TUI.
+func collectFlowAddInput(cmd *cobra.Command) (*flowAddInput, error) {
+	ctx := cmd.Context()
+
+	// 1. JSON mode
+	if flowAddJSON != "" {
+		return parseFlowAddJSON(flowAddJSON)
+	}
+
+	// 2. Flags mode — if both provided, use directly
+	if flowAddName != "" && flowAddDescription != "" {
+		return &flowAddInput{Name: flowAddName, Description: flowAddDescription}, nil
+	}
+
+	// 3. Check if we have partial flags in non-interactive mode
+	hasPartial := flowAddName != "" || flowAddDescription != ""
+	isInteractive := tui.IsTerminal()
+
+	if !isInteractive {
+		if hasPartial {
+			if flowAddName == "" {
+				return nil, fmt.Errorf("--name is required in non-interactive mode\n       Use -n/--name flag, or run in an interactive terminal")
+			}
+			return nil, fmt.Errorf("--description is required in non-interactive mode\n       Use -d/--description flag, or run in an interactive terminal")
+		}
+		return nil, fmt.Errorf("--name and --description are required in non-interactive mode\n       Use -n/--name and -d/--description flags, --json, or run in an interactive terminal")
+	}
+
+	// 4. TUI mode — pre-fill from any partial flags
+	name := flowAddName
+	description := flowAddDescription
+
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Workflow Name").
+				Description("A short name for this workflow").
+				Placeholder("e.g., API Development").
+				Value(&name),
+			huh.NewText().
+				Title("Description").
+				Description("What is this workflow for?").
+				Placeholder("Describe the purpose of this workflow...").
+				CharLimit(500).
+				Value(&description),
+		),
+	)
+
+	if err := theme.RunForm(ctx, form); err != nil {
+		if theme.IsCancelled(err) {
+			return nil, fmt.Errorf("initialization cancelled")
+		}
+		return nil, fmt.Errorf("failed to collect workflow info: %w", err)
+	}
+
+	if name == "" {
+		return nil, fmt.Errorf("workflow name is required")
+	}
+	if description == "" {
+		return nil, fmt.Errorf("workflow description is required")
+	}
+
+	return &flowAddInput{Name: name, Description: description}, nil
+}
+
+// parseFlowAddJSON parses JSON input from a string or stdin (when value is "-").
+func parseFlowAddJSON(value string) (*flowAddInput, error) {
+	var data []byte
+	var err error
+
+	if value == "-" {
+		data, err = io.ReadAll(os.Stdin)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read JSON from stdin: %w", err)
+		}
+	} else {
+		data = []byte(value)
+	}
+
+	var input flowAddInput
+	if err := json.Unmarshal(data, &input); err != nil {
+		return nil, fmt.Errorf("invalid JSON: %w", err)
+	}
+
+	if input.Name == "" {
+		return nil, fmt.Errorf("JSON input requires \"name\" field")
+	}
+	if input.Description == "" {
+		return nil, fmt.Errorf("JSON input requires \"description\" field")
+	}
+
+	return &input, nil
 }

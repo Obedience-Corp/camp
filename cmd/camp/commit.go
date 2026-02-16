@@ -7,6 +7,7 @@ import (
 	"os/exec"
 
 	"github.com/obediencecorp/camp/internal/campaign"
+	"github.com/obediencecorp/camp/internal/config"
 	"github.com/obediencecorp/camp/internal/git"
 	"github.com/obediencecorp/camp/internal/ui"
 	"github.com/spf13/cobra"
@@ -134,6 +135,11 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	if !hasChanges && !commitAmend {
 		fmt.Println(ui.Success("Nothing to commit, working tree clean"))
 		return nil
+	}
+
+	// Prepend campaign tag (graceful degradation if config unavailable)
+	if cfg, cfgErr := config.LoadCampaignConfig(ctx, campRoot); cfgErr == nil {
+		message = git.PrependCampaignTag(cfg.ID, message)
 	}
 
 	// Perform commit

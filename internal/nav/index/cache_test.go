@@ -457,6 +457,42 @@ func TestInfo(t *testing.T) {
 	}
 }
 
+func TestIsStale_ProjectsDirChanged(t *testing.T) {
+	root := t.TempDir()
+	root, _ = filepath.EvalSymlinks(root)
+
+	// Create projects/ directory
+	projectsDir := filepath.Join(root, "projects")
+	if err := os.MkdirAll(projectsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Index built an hour ago
+	idx := &Index{BuildTime: time.Now().Add(-1 * time.Hour), Version: IndexVersion}
+
+	// Set projects/ dir mtime to now (simulating a directory add/remove/rename)
+	now := time.Now()
+	if err := os.Chtimes(projectsDir, now, now); err != nil {
+		t.Fatal(err)
+	}
+
+	if !IsStale(idx, root) {
+		t.Error("Index should be stale when projects/ directory is newer")
+	}
+}
+
+func TestIsStale_ProjectsDirDoesNotExist(t *testing.T) {
+	root := t.TempDir()
+	root, _ = filepath.EvalSymlinks(root)
+
+	// Fresh index, no projects/ directory
+	idx := &Index{BuildTime: time.Now(), Version: IndexVersion}
+
+	if IsStale(idx, root) {
+		t.Error("Index should not be stale when projects/ directory does not exist")
+	}
+}
+
 // Benchmarks
 
 func BenchmarkLoad(b *testing.B) {

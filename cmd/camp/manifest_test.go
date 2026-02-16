@@ -91,7 +91,7 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 	}
 }
 
-func TestManifestCommand_AllCommandsRestricted(t *testing.T) {
+func TestManifestCommand_AllCommandsHaveAnnotations(t *testing.T) {
 	buf := new(bytes.Buffer)
 	rootCmd.SetOut(buf)
 	rootCmd.SetArgs([]string{"__manifest"})
@@ -105,9 +105,17 @@ func TestManifestCommand_AllCommandsRestricted(t *testing.T) {
 		t.Fatalf("invalid JSON: %v", err)
 	}
 
+	// Commands that are explicitly agent-allowed (have non-interactive input modes)
+	agentAllowed := map[string]bool{
+		"flow add": true,
+	}
+
 	for _, cmd := range manifest.Commands {
-		if cmd.AgentAllowed {
-			t.Errorf("command %q should be restricted (agent_allowed=false) but got true", cmd.Path)
+		if cmd.AgentAllowed && !agentAllowed[cmd.Path] {
+			t.Errorf("command %q is agent_allowed=true but not in allowlist — add it or set agent_allowed=false", cmd.Path)
+		}
+		if !cmd.AgentAllowed && agentAllowed[cmd.Path] {
+			t.Errorf("command %q should be agent_allowed=true", cmd.Path)
 		}
 		if cmd.Reason == "" {
 			t.Errorf("command %q has empty reason", cmd.Path)
