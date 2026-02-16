@@ -2,6 +2,7 @@ package dungeon
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -304,3 +305,249 @@ func TestService_AppendCrawlLog(t *testing.T) {
 		t.Errorf("expected 2 lines in crawl log, got %d", lines)
 	}
 }
+
+func TestService_MoveToStatus(t *testing.T) {
+	ctx := context.Background()
+
+	for _, status := range ValidStatuses {
+		t.Run(status, func(t *testing.T) {
+			tmpDir, err := os.MkdirTemp("", "dungeon-test-*")
+			if err != nil {
+				t.Fatalf("failed to create temp dir: %v", err)
+			}
+			defer os.RemoveAll(tmpDir)
+
+			dungeonPath := filepath.Join(tmpDir, "dungeon")
+			svc := NewService(tmpDir, dungeonPath)
+
+			if _, err := svc.Init(ctx, InitOptions{}); err != nil {
+				t.Fatalf("Init failed: %v", err)
+			}
+
+			// Create test file in dungeon root
+			testFile := filepath.Join(dungeonPath, "test-item.txt")
+			if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+				t.Fatalf("failed to create test file: %v", err)
+			}
+
+			// Move to status
+			if err := svc.MoveToStatus(ctx, "test-item.txt", status); err != nil {
+				t.Fatalf("MoveToStatus(%s) failed: %v", status, err)
+			}
+
+			// Verify removed from root
+			if _, err := os.Stat(testFile); !os.IsNotExist(err) {
+				t.Error("file should not exist in dungeon root after move")
+			}
+
+			// Verify exists in status dir
+			movedFile := filepath.Join(dungeonPath, status, "test-item.txt")
+			if _, err := os.Stat(movedFile); os.IsNotExist(err) {
+				t.Errorf("file should exist in %s/ after move", status)
+			}
+		})
+	}
+}
+
+func TestService_MoveToStatus_InvalidStatus(t *testing.T) {
+	ctx := context.Background()
+
+	tmpDir, err := os.MkdirTemp("", "dungeon-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dungeonPath := filepath.Join(tmpDir, "dungeon")
+	svc := NewService(tmpDir, dungeonPath)
+
+	if _, err := svc.Init(ctx, InitOptions{}); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+
+	testFile := filepath.Join(dungeonPath, "test-item.txt")
+	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	err = svc.MoveToStatus(ctx, "test-item.txt", "invalid-status")
+	if err == nil {
+		t.Fatal("MoveToStatus should fail for invalid status")
+	}
+	if !errors.Is(err, ErrInvalidStatus) {
+		t.Errorf("expected ErrInvalidStatus, got: %v", err)
+	}
+}
+
+func TestService_MoveToStatus_NotFound(t *testing.T) {
+	ctx := context.Background()
+
+	tmpDir, err := os.MkdirTemp("", "dungeon-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dungeonPath := filepath.Join(tmpDir, "dungeon")
+	svc := NewService(tmpDir, dungeonPath)
+
+	if _, err := svc.Init(ctx, InitOptions{}); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+
+	err = svc.MoveToStatus(ctx, "nonexistent.txt", "completed")
+	if err == nil {
+		t.Fatal("MoveToStatus should fail for non-existent item")
+	}
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got: %v", err)
+	}
+}
+
+func TestService_MoveToStatus_Collision(t *testing.T) {
+	ctx := context.Background()
+
+	tmpDir, err := os.MkdirTemp("", "dungeon-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dungeonPath := filepath.Join(tmpDir, "dungeon")
+	svc := NewService(tmpDir, dungeonPath)
+
+	if _, err := svc.Init(ctx, InitOptions{}); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+
+	// Create file in dungeon root
+	testFile := filepath.Join(dungeonPath, "collide.txt")
+	if err := os.WriteFile(testFile, []byte("root"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	// Create same-named file already in completed/
+	existingFile := filepath.Join(dungeonPath, "completed", "collide.txt")
+	if err := os.WriteFile(existingFile, []byte("existing"), 0644); err != nil {
+		t.Fatalf("failed to create existing file: %v", err)
+	}
+
+	err = svc.MoveToStatus(ctx, "collide.txt", "completed")
+	if err == nil {
+		t.Fatal("MoveToStatus should fail on collision")
+	}
+	if !errors.Is(err, ErrAlreadyExists) {
+		t.Errorf("expected ErrAlreadyExists, got: %v", err)
+	}
+}
+
+func TestService_MoveToDungeonStatus(t *testing.T) {
+	ctx := context.Background()
+
+	for _, status := range ValidStatuses {
+		t.Run(status, func(t *testing.T) {
+			tmpDir, err := os.MkdirTemp("", "dungeon-test-*")
+			if err != nil {
+				t.Fatalf("failed to create temp dir: %v", err)
+			}
+			defer os.RemoveAll(tmpDir)
+
+			dungeonPath := filepath.Join(tmpDir, "dungeon")
+			svc := NewService(tmpDir, dungeonPath)
+
+			if _, err := svc.Init(ctx, InitOptions{}); err != nil {
+				t.Fatalf("Init failed: %v", err)
+			}
+
+			// Create test file in parent dir (tmpDir)
+			testFile := filepath.Join(tmpDir, "parent-item.txt")
+			if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+				t.Fatalf("failed to create test file: %v", err)
+			}
+
+			// Move directly to status
+			if err := svc.MoveToDungeonStatus(ctx, "parent-item.txt", tmpDir, status); err != nil {
+				t.Fatalf("MoveToDungeonStatus(%s) failed: %v", status, err)
+			}
+
+			// Verify removed from parent
+			if _, err := os.Stat(testFile); !os.IsNotExist(err) {
+				t.Error("file should not exist in parent after move")
+			}
+
+			// Verify exists in status dir
+			movedFile := filepath.Join(dungeonPath, status, "parent-item.txt")
+			if _, err := os.Stat(movedFile); os.IsNotExist(err) {
+				t.Errorf("file should exist in dungeon/%s/ after move", status)
+			}
+		})
+	}
+}
+
+func TestService_MoveToDungeonStatus_Collision(t *testing.T) {
+	ctx := context.Background()
+
+	tmpDir, err := os.MkdirTemp("", "dungeon-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dungeonPath := filepath.Join(tmpDir, "dungeon")
+	svc := NewService(tmpDir, dungeonPath)
+
+	if _, err := svc.Init(ctx, InitOptions{}); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+
+	// Create file in parent dir
+	testFile := filepath.Join(tmpDir, "collide.txt")
+	if err := os.WriteFile(testFile, []byte("parent"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	// Create same-named file already in archived/
+	existingFile := filepath.Join(dungeonPath, "archived", "collide.txt")
+	if err := os.WriteFile(existingFile, []byte("existing"), 0644); err != nil {
+		t.Fatalf("failed to create existing file: %v", err)
+	}
+
+	err = svc.MoveToDungeonStatus(ctx, "collide.txt", tmpDir, "archived")
+	if err == nil {
+		t.Fatal("MoveToDungeonStatus should fail on collision")
+	}
+	if !errors.Is(err, ErrAlreadyExists) {
+		t.Errorf("expected ErrAlreadyExists, got: %v", err)
+	}
+}
+
+func TestService_MoveToDungeonStatus_InvalidStatus(t *testing.T) {
+	ctx := context.Background()
+
+	tmpDir, err := os.MkdirTemp("", "dungeon-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dungeonPath := filepath.Join(tmpDir, "dungeon")
+	svc := NewService(tmpDir, dungeonPath)
+
+	if _, err := svc.Init(ctx, InitOptions{}); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+
+	testFile := filepath.Join(tmpDir, "item.txt")
+	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	err = svc.MoveToDungeonStatus(ctx, "item.txt", tmpDir, "bogus")
+	if err == nil {
+		t.Fatal("MoveToDungeonStatus should fail for invalid status")
+	}
+	if !errors.Is(err, ErrInvalidStatus) {
+		t.Errorf("expected ErrInvalidStatus, got: %v", err)
+	}
+}
+

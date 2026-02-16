@@ -138,19 +138,20 @@ func displayCrawlSummary(triage *dungeon.TriageSummary, inner *dungeon.CrawlSumm
 
 	if triage != nil && triage.Total() > 0 {
 		fmt.Printf("\n  Triage (Parent Items):\n")
-		fmt.Printf("  %s Moved to dungeon: %d\n", ui.BulletIcon(), triage.Moved)
-		fmt.Printf("  %s Kept in place:    %d\n", ui.BulletIcon(), triage.Kept)
-		fmt.Printf("  %s Skipped:          %d\n", ui.BulletIcon(), triage.Skipped)
+		fmt.Printf("  %s Moved to dungeon:   %d\n", ui.BulletIcon(), triage.Moved)
+		fmt.Printf("  %s Moved to completed: %d\n", ui.BulletIcon(), triage.Completed)
+		fmt.Printf("  %s Moved to archived:  %d\n", ui.BulletIcon(), triage.Archived)
+		fmt.Printf("  %s Moved to someday:   %d\n", ui.BulletIcon(), triage.Someday)
+		fmt.Printf("  %s Kept in place:      %d\n", ui.BulletIcon(), triage.Kept)
+		fmt.Printf("  %s Skipped:            %d\n", ui.BulletIcon(), triage.Skipped)
 	}
 
 	if inner != nil && inner.Total() > 0 {
 		fmt.Printf("\n  Inner Crawl (Dungeon Items):\n")
-		fmt.Printf("  %s Kept:     %d\n", ui.BulletIcon(), inner.Kept)
-		fmt.Printf("  %s Archived: %d\n", ui.BulletIcon(), inner.Archived)
-		fmt.Printf("  %s Skipped:  %d\n", ui.BulletIcon(), inner.Skipped)
-
-		if inner.Archived > 0 {
-			fmt.Printf("\n%s Archived items moved to %s\n", ui.InfoIcon(), ui.Value("./dungeon/archived/"))
-		}
+		fmt.Printf("  %s Kept:      %d\n", ui.BulletIcon(), inner.Kept)
+		fmt.Printf("  %s Completed: %d\n", ui.BulletIcon(), inner.Completed)
+		fmt.Printf("  %s Archived:  %d\n", ui.BulletIcon(), inner.Archived)
+		fmt.Printf("  %s Someday:   %d\n", ui.BulletIcon(), inner.Someday)
+		fmt.Printf("  %s Skipped:   %d\n", ui.BulletIcon(), inner.Skipped)
 	}
 }

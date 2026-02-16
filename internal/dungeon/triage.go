@@ -46,10 +46,13 @@ func RunTriageCrawl(ctx context.Context, svc *Service, parentPath string) (*Tria
 					Title(title).
 					Description(infoStr).
 					Options(
-						huh.NewOption("Move to dungeon", string(DecisionMoveToDungeon)),
-						huh.NewOption("Keep here", string(DecisionKeep)),
-						huh.NewOption("Skip", string(DecisionSkip)),
-						huh.NewOption("Quit", "quit"),
+						huh.NewOption("Move to dungeon - Unsorted, review later", string(DecisionMoveToDungeon)),
+						huh.NewOption("Move to completed - Directly into completed/", string(DecisionCompleted)),
+						huh.NewOption("Move to archived - Directly into archived/", string(DecisionArchive)),
+						huh.NewOption("Move to someday - Directly into someday/", string(DecisionSomeday)),
+						huh.NewOption("Keep here - Leave in parent directory", string(DecisionKeep)),
+						huh.NewOption("Skip - Come back to it another time", string(DecisionSkip)),
+						huh.NewOption("Quit - Stop crawling", "quit"),
 					).
 					Value(&decision),
 			),
@@ -73,6 +76,39 @@ func RunTriageCrawl(ctx context.Context, svc *Service, parentPath string) (*Tria
 			} else {
 				summary.Moved++
 				if err := logDecision(ctx, svc, item, DecisionMoveToDungeon, stats); err != nil {
+					fmt.Printf("Warning: failed to log decision: %v\n", err)
+				}
+			}
+
+		case string(DecisionCompleted):
+			if err := svc.MoveToDungeonStatus(ctx, item.Name, parentPath, "completed"); err != nil {
+				fmt.Printf("Error moving %s to completed: %v\n", item.Name, err)
+				summary.Skipped++
+			} else {
+				summary.Completed++
+				if err := logDecision(ctx, svc, item, DecisionCompleted, stats); err != nil {
+					fmt.Printf("Warning: failed to log decision: %v\n", err)
+				}
+			}
+
+		case string(DecisionArchive):
+			if err := svc.MoveToDungeonStatus(ctx, item.Name, parentPath, "archived"); err != nil {
+				fmt.Printf("Error moving %s to archived: %v\n", item.Name, err)
+				summary.Skipped++
+			} else {
+				summary.Archived++
+				if err := logDecision(ctx, svc, item, DecisionArchive, stats); err != nil {
+					fmt.Printf("Warning: failed to log decision: %v\n", err)
+				}
+			}
+
+		case string(DecisionSomeday):
+			if err := svc.MoveToDungeonStatus(ctx, item.Name, parentPath, "someday"); err != nil {
+				fmt.Printf("Error moving %s to someday: %v\n", item.Name, err)
+				summary.Skipped++
+			} else {
+				summary.Someday++
+				if err := logDecision(ctx, svc, item, DecisionSomeday, stats); err != nil {
 					fmt.Printf("Warning: failed to log decision: %v\n", err)
 				}
 			}

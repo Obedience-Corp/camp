@@ -52,8 +52,8 @@ func atCompletionCandidates(query, campaignRoot string) []string {
 
 	// Has a slash: resolve the prefix part and list directory contents.
 	// Split into prefix (e.g., "p") and rest (e.g., "" or "fe" or "fest/")
-	prefixKey := query[:slashIdx]  // e.g., "p"
-	rest := query[slashIdx+1:]     // e.g., "" or "fe"
+	prefixKey := query[:slashIdx] // e.g., "p"
+	rest := query[slashIdx+1:]    // e.g., "" or "fe"
 
 	resolved, err := concept.ResolveAtPath("@" + prefixKey)
 	if err != nil {

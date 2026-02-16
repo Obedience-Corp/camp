@@ -53,7 +53,9 @@ func RunCrawl(ctx context.Context, svc *Service) (*CrawlSummary, error) {
 					Description(infoStr).
 					Options(
 						huh.NewOption("Keep - Leave in dungeon for later", "keep"),
+						huh.NewOption("Completed - Move to completed/ (finished work)", "completed"),
 						huh.NewOption("Archive - Move to archived/ (truly out of the way)", "archive"),
+						huh.NewOption("Someday - Move to someday/ (low priority, maybe later)", "someday"),
 						huh.NewOption("Skip - Come back to it another time", "skip"),
 						huh.NewOption("Quit - Stop crawling", "quit"),
 					).
@@ -81,13 +83,35 @@ func RunCrawl(ctx context.Context, svc *Service) (*CrawlSummary, error) {
 				fmt.Printf("Warning: failed to log decision: %v\n", err)
 			}
 
+		case "completed":
+			if err := svc.MoveToStatus(ctx, item.Name, "completed"); err != nil {
+				fmt.Printf("Error moving %s to completed: %v\n", item.Name, err)
+				summary.Skipped++
+			} else {
+				summary.Completed++
+				if err := logDecision(ctx, svc, item, DecisionCompleted, stats); err != nil {
+					fmt.Printf("Warning: failed to log decision: %v\n", err)
+				}
+			}
+
 		case "archive":
-			if err := svc.Archive(ctx, item.Name); err != nil {
+			if err := svc.MoveToStatus(ctx, item.Name, "archived"); err != nil {
 				fmt.Printf("Error archiving %s: %v\n", item.Name, err)
-				summary.Skipped++ // Count as skipped on error
+				summary.Skipped++
 			} else {
 				summary.Archived++
 				if err := logDecision(ctx, svc, item, DecisionArchive, stats); err != nil {
+					fmt.Printf("Warning: failed to log decision: %v\n", err)
+				}
+			}
+
+		case "someday":
+			if err := svc.MoveToStatus(ctx, item.Name, "someday"); err != nil {
+				fmt.Printf("Error moving %s to someday: %v\n", item.Name, err)
+				summary.Skipped++
+			} else {
+				summary.Someday++
+				if err := logDecision(ctx, svc, item, DecisionSomeday, stats); err != nil {
 					fmt.Printf("Warning: failed to log decision: %v\n", err)
 				}
 			}

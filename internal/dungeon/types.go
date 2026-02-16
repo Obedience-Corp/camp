@@ -13,6 +13,8 @@ type Decision string
 const (
 	DecisionKeep          Decision = "keep"
 	DecisionArchive       Decision = "archive"
+	DecisionCompleted     Decision = "completed"
+	DecisionSomeday       Decision = "someday"
 	DecisionSkip          Decision = "skip"
 	DecisionMoveToDungeon Decision = "move_to_dungeon"
 )
@@ -64,26 +66,31 @@ func (e CrawlEntry) MarshalJSON() ([]byte, error) {
 
 // CrawlSummary contains the results of a crawl session.
 type CrawlSummary struct {
-	Kept     int
-	Archived int
-	Skipped  int
+	Kept      int
+	Completed int
+	Archived  int
+	Someday   int
+	Skipped   int
 }
 
 // Total returns the total number of items processed.
 func (s CrawlSummary) Total() int {
-	return s.Kept + s.Archived + s.Skipped
+	return s.Kept + s.Completed + s.Archived + s.Someday + s.Skipped
 }
 
 // TriageSummary tracks the results of a triage crawl operation.
 // It counts how many parent items were moved to the dungeon,
 // kept in place, or skipped during review.
 type TriageSummary struct {
-	Moved   int // Items moved into dungeon
-	Kept    int // Items kept in parent directory
-	Skipped int // Items skipped during review
+	Moved     int // Items moved to dungeon root (unsorted)
+	Completed int // Items moved directly to completed/
+	Archived  int // Items moved directly to archived/
+	Someday   int // Items moved directly to someday/
+	Kept      int // Items kept in parent directory
+	Skipped   int // Items skipped during review
 }
 
 // Total returns the total number of items processed.
 func (s TriageSummary) Total() int {
-	return s.Moved + s.Kept + s.Skipped
+	return s.Moved + s.Completed + s.Archived + s.Someday + s.Kept + s.Skipped
 }

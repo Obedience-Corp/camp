@@ -59,8 +59,35 @@ func TestCrawlSummary_Total(t *testing.T) {
 		},
 		{
 			name:     "mixed",
-			summary:  CrawlSummary{Kept: 3, Archived: 2, Skipped: 1},
-			expected: 6,
+			summary:  CrawlSummary{Kept: 3, Completed: 1, Archived: 2, Someday: 1, Skipped: 1},
+			expected: 8,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.summary.Total(); got != tt.expected {
+				t.Errorf("Total() = %d, want %d", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestTriageSummary_Total(t *testing.T) {
+	tests := []struct {
+		name     string
+		summary  TriageSummary
+		expected int
+	}{
+		{
+			name:     "empty",
+			summary:  TriageSummary{},
+			expected: 0,
+		},
+		{
+			name:     "mixed",
+			summary:  TriageSummary{Moved: 1, Completed: 2, Archived: 3, Someday: 4, Kept: 5, Skipped: 6},
+			expected: 21,
 		},
 	}
 
@@ -80,6 +107,12 @@ func TestDecision_Values(t *testing.T) {
 	}
 	if DecisionArchive != "archive" {
 		t.Errorf("DecisionArchive should be 'archive', got %s", DecisionArchive)
+	}
+	if DecisionCompleted != "completed" {
+		t.Errorf("DecisionCompleted should be 'completed', got %s", DecisionCompleted)
+	}
+	if DecisionSomeday != "someday" {
+		t.Errorf("DecisionSomeday should be 'someday', got %s", DecisionSomeday)
 	}
 	if DecisionSkip != "skip" {
 		t.Errorf("DecisionSkip should be 'skip', got %s", DecisionSkip)

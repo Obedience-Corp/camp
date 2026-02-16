@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -16,7 +17,11 @@ var (
 	ErrNotFound      = errors.New("item not found")
 	ErrAlreadyExists = errors.New("already exists")
 	ErrNotInDungeon  = errors.New("item not in dungeon")
+	ErrInvalidStatus = errors.New("invalid status")
 )
+
+// ValidStatuses lists the valid dungeon status directories.
+var ValidStatuses = []string{"completed", "archived", "someday"}
 
 // Service provides operations for managing the dungeon directory.
 type Service struct {
@@ -359,4 +364,98 @@ func (s *Service) Path() string {
 // ArchivedPath returns the full path to the archived directory.
 func (s *Service) ArchivedPath() string {
 	return filepath.Join(s.dungeonPath, "archived")
+}
+
+// MoveToStatus moves an item from the dungeon root to a status directory.
+// Status must be one of: completed, archived, someday.
+func (s *Service) MoveToStatus(ctx context.Context, itemName, status string) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("context cancelled: %w", err)
+	}
+
+	if !isValidStatus(status) {
+		return fmt.Errorf("%w: %s", ErrInvalidStatus, status)
+	}
+
+	itemName = filepath.Clean(itemName)
+	if itemName == "/" {
+		return fmt.Errorf("%w: invalid item name", ErrNotInDungeon)
+	}
+
+	srcPath := filepath.Join(s.dungeonPath, itemName)
+	dstPath := filepath.Join(s.dungeonPath, status, itemName)
+
+	// Verify source exists
+	if _, err := os.Stat(srcPath); os.IsNotExist(err) {
+		return fmt.Errorf("%w: %s", ErrNotFound, itemName)
+	}
+
+	// Verify source is in dungeon root (not a path traversal)
+	absSource, err := filepath.Abs(srcPath)
+	if err != nil {
+		return fmt.Errorf("resolving source path: %w", err)
+	}
+	absDungeon, err := filepath.Abs(s.dungeonPath)
+	if err != nil {
+		return fmt.Errorf("resolving dungeon path: %w", err)
+	}
+	if filepath.Dir(absSource) != absDungeon {
+		return fmt.Errorf("%w: %s", ErrNotInDungeon, itemName)
+	}
+
+	// Ensure status directory exists
+	statusDir := filepath.Join(s.dungeonPath, status)
+	if err := os.MkdirAll(statusDir, 0755); err != nil {
+		return fmt.Errorf("creating %s directory: %w", status, err)
+	}
+
+	// Check if destination already exists
+	if _, err := os.Stat(dstPath); err == nil {
+		return fmt.Errorf("%w: %s already in %s/", ErrAlreadyExists, itemName, status)
+	}
+
+	if err := os.Rename(srcPath, dstPath); err != nil {
+		return fmt.Errorf("moving %s to %s: %w", itemName, status, err)
+	}
+
+	return nil
+}
+
+// MoveToDungeonStatus moves an item from a parent directory directly into a dungeon status directory.
+// Status must be one of: completed, archived, someday.
+func (s *Service) MoveToDungeonStatus(ctx context.Context, itemName, parentPath, status string) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("context cancelled: %w", err)
+	}
+
+	if !isValidStatus(status) {
+		return fmt.Errorf("%w: %s", ErrInvalidStatus, status)
+	}
+
+	sourcePath := filepath.Join(parentPath, itemName)
+	targetPath := filepath.Join(s.dungeonPath, status, itemName)
+
+	if _, err := os.Stat(sourcePath); err != nil {
+		return fmt.Errorf("%w: %s", ErrNotFound, itemName)
+	}
+
+	// Ensure status directory exists
+	statusDir := filepath.Join(s.dungeonPath, status)
+	if err := os.MkdirAll(statusDir, 0755); err != nil {
+		return fmt.Errorf("creating %s directory: %w", status, err)
+	}
+
+	if _, err := os.Stat(targetPath); err == nil {
+		return fmt.Errorf("%w: %s already in %s/", ErrAlreadyExists, itemName, status)
+	}
+
+	if err := os.Rename(sourcePath, targetPath); err != nil {
+		return fmt.Errorf("moving %s to dungeon/%s: %w", itemName, status, err)
+	}
+
+	return nil
+}
+
+func isValidStatus(status string) bool {
+	return slices.Contains(ValidStatuses, status)
 }
