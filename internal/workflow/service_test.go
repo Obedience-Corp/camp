@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -76,12 +77,83 @@ func TestService_Init(t *testing.T) {
 					}
 				}
 
-				// OBEY.md files should exist in active, ready, and dungeon
-				obeyFiles := []string{"active/OBEY.md", "ready/OBEY.md", "dungeon/OBEY.md"}
+				// OBEY.md files should exist in active, ready, dungeon, and root
+				obeyFiles := []string{"active/OBEY.md", "ready/OBEY.md", "dungeon/OBEY.md", "OBEY.md"}
 				for _, f := range obeyFiles {
 					if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
 						t.Errorf("OBEY.md file %q not created: %v", f, err)
 					}
+				}
+			},
+		},
+		{
+			name: "creates v2 workflow with root OBEY.md",
+			opts: InitOptions{SchemaVersion: 2},
+			checkFunc: func(t *testing.T, dir string, result *InitResult) {
+				// Root OBEY.md should exist
+				obeyPath := filepath.Join(dir, "OBEY.md")
+				data, err := os.ReadFile(obeyPath)
+				if err != nil {
+					t.Fatalf("root OBEY.md not created: %v", err)
+				}
+				content := string(data)
+				if !strings.Contains(content, "Workflow") {
+					t.Error("root OBEY.md should contain default name 'Workflow'")
+				}
+
+				// dungeon/OBEY.md should also exist
+				if _, err := os.Stat(filepath.Join(dir, "dungeon", "OBEY.md")); err != nil {
+					t.Error("dungeon/OBEY.md not created")
+				}
+			},
+		},
+		{
+			name: "custom name and description in schema and OBEY.md",
+			opts: InitOptions{
+				SchemaVersion: 2,
+				Name:          "API Development",
+				Description:   "Tracks API feature work",
+			},
+			checkFunc: func(t *testing.T, dir string, result *InitResult) {
+				// Verify schema has custom values
+				svc := NewService(dir)
+				if err := svc.LoadSchema(context.Background()); err != nil {
+					t.Fatalf("failed to load schema: %v", err)
+				}
+				if svc.Schema().Name != "API Development" {
+					t.Errorf("schema Name = %q, want %q", svc.Schema().Name, "API Development")
+				}
+				if svc.Schema().Description != "Tracks API feature work" {
+					t.Errorf("schema Description = %q, want %q", svc.Schema().Description, "Tracks API feature work")
+				}
+
+				// Verify root OBEY.md has custom values
+				data, err := os.ReadFile(filepath.Join(dir, "OBEY.md"))
+				if err != nil {
+					t.Fatalf("root OBEY.md not created: %v", err)
+				}
+				content := string(data)
+				if !strings.Contains(content, "API Development") {
+					t.Error("root OBEY.md should contain custom name")
+				}
+				if !strings.Contains(content, "Tracks API feature work") {
+					t.Error("root OBEY.md should contain custom description")
+				}
+			},
+		},
+		{
+			name: "empty name and description use defaults",
+			opts: InitOptions{SchemaVersion: 2},
+			checkFunc: func(t *testing.T, dir string, result *InitResult) {
+				svc := NewService(dir)
+				if err := svc.LoadSchema(context.Background()); err != nil {
+					t.Fatalf("failed to load schema: %v", err)
+				}
+				if svc.Schema().Name != "Workflow" {
+					t.Errorf("schema Name = %q, want %q", svc.Schema().Name, "Workflow")
+				}
+				if svc.Schema().Description != "Dungeon-centric workflow for organizing work" {
+					t.Errorf("schema Description = %q, want %q", svc.Schema().Description, "Dungeon-centric workflow for organizing work")
 				}
 			},
 		},

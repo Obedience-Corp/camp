@@ -19,3 +19,8 @@ func GetReadyOBEYTemplate() ([]byte, error) {
 func GetDungeonOBEYTemplate() ([]byte, error) {
 	return templatesFS.ReadFile("templates/dungeon_obey.md")
 }
+
+// GetFlowRootOBEYTemplate returns the content of the root OBEY.md Go template.
+func GetFlowRootOBEYTemplate() ([]byte, error) {
+	return templatesFS.ReadFile("templates/flow_root_obey.md")
+}

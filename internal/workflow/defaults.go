@@ -7,11 +7,23 @@ package workflow
 //
 // This eliminates the need for separate `active/` and `ready/` directories.
 func DefaultSchemaV2() *Schema {
+	return DefaultSchemaV2WithInfo("", "")
+}
+
+// DefaultSchemaV2WithInfo returns a v2 schema with custom name and description.
+// Empty values fall back to defaults.
+func DefaultSchemaV2WithInfo(name, description string) *Schema {
+	if name == "" {
+		name = "Workflow"
+	}
+	if description == "" {
+		description = "Dungeon-centric workflow for organizing work"
+	}
 	return &Schema{
 		Version:       2,
 		Type:          SchemaType,
-		Name:          "Workflow",
-		Description:   "Dungeon-centric workflow for organizing work",
+		Name:          name,
+		Description:   description,
 		DefaultStatus: ".",
 		TrackHistory:  true,
 		HistoryFile:   DefaultHistoryFile,
@@ -54,11 +66,23 @@ func DefaultSchemaV2() *Schema {
 // - ready: Prepared for action
 // - dungeon: Archive area with nested subdirectories
 func DefaultSchema() *Schema {
+	return DefaultSchemaWithInfo("", "")
+}
+
+// DefaultSchemaWithInfo returns a v1 schema with custom name and description.
+// Empty values fall back to defaults.
+func DefaultSchemaWithInfo(name, description string) *Schema {
+	if name == "" {
+		name = "Workflow"
+	}
+	if description == "" {
+		description = "Status workflow for organizing work"
+	}
 	return &Schema{
 		Version:       CurrentSchemaVersion,
 		Type:          SchemaType,
-		Name:          "Workflow",
-		Description:   "Status workflow for organizing work",
+		Name:          name,
+		Description:   description,
 		DefaultStatus: "active",
 		TrackHistory:  true,
 		HistoryFile:   DefaultHistoryFile,
