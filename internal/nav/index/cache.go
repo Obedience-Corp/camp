@@ -131,6 +131,13 @@ func IsStale(idx *Index, campaignRoot string) bool {
 		return true
 	}
 
+	// Check if projects/ directory changed (directories added/removed/renamed)
+	projectsDir := filepath.Join(campaignRoot, "projects")
+	info, err = os.Stat(projectsDir)
+	if err == nil && info.ModTime().After(idx.BuildTime) {
+		return true
+	}
+
 	return false
 }
 
