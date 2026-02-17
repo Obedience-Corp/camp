@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/spf13/cobra"
 
@@ -82,7 +83,7 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	var triageSummary *dungeon.TriageSummary
+	var triageSummary *dungeon.CrawlSummary
 	var innerSummary *dungeon.CrawlSummary
 
 	// Run triage crawl if needed
@@ -128,7 +129,7 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func displayCrawlSummary(triage *dungeon.TriageSummary, inner *dungeon.CrawlSummary) {
+func displayCrawlSummary(triage *dungeon.CrawlSummary, inner *dungeon.CrawlSummary) {
 	if triage == nil && inner == nil {
 		return
 	}
@@ -138,19 +139,31 @@ func displayCrawlSummary(triage *dungeon.TriageSummary, inner *dungeon.CrawlSumm
 
 	if triage != nil && triage.Total() > 0 {
 		fmt.Printf("\n  Triage (Parent Items):\n")
-		fmt.Printf("  %s Moved to dungeon: %d\n", ui.BulletIcon(), triage.Moved)
-		fmt.Printf("  %s Kept in place:    %d\n", ui.BulletIcon(), triage.Kept)
-		fmt.Printf("  %s Skipped:          %d\n", ui.BulletIcon(), triage.Skipped)
+		printSummaryCounts(triage)
 	}
 
 	if inner != nil && inner.Total() > 0 {
 		fmt.Printf("\n  Inner Crawl (Dungeon Items):\n")
-		fmt.Printf("  %s Kept:     %d\n", ui.BulletIcon(), inner.Kept)
-		fmt.Printf("  %s Archived: %d\n", ui.BulletIcon(), inner.Archived)
-		fmt.Printf("  %s Skipped:  %d\n", ui.BulletIcon(), inner.Skipped)
+		printSummaryCounts(inner)
+	}
+}
 
-		if inner.Archived > 0 {
-			fmt.Printf("\n%s Archived items moved to %s\n", ui.InfoIcon(), ui.Value("./dungeon/archived/"))
+func printSummaryCounts(s *dungeon.CrawlSummary) {
+	// Print status moves sorted alphabetically
+	if len(s.StatusCounts) > 0 {
+		statuses := make([]string, 0, len(s.StatusCounts))
+		for status := range s.StatusCounts {
+			statuses = append(statuses, status)
 		}
+		sort.Strings(statuses)
+		for _, status := range statuses {
+			fmt.Printf("  %s Moved to %s: %d\n", ui.BulletIcon(), status, s.StatusCounts[status])
+		}
+	}
+	if s.Kept > 0 {
+		fmt.Printf("  %s Kept:    %d\n", ui.BulletIcon(), s.Kept)
+	}
+	if s.Skipped > 0 {
+		fmt.Printf("  %s Skipped: %d\n", ui.BulletIcon(), s.Skipped)
 	}
 }

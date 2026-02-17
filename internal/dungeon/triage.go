@@ -10,9 +10,10 @@ import (
 )
 
 // RunTriageCrawl performs a triage crawl of the parent directory,
-// presenting each item for review with options to move it to the dungeon,
-// keep it in place, or skip the decision.
-func RunTriageCrawl(ctx context.Context, svc *Service, parentPath string) (*TriageSummary, error) {
+// presenting each item for review with a two-step flow:
+// Step 1: Move | Keep | Skip | Quit
+// Step 2 (on Move): dynamic status directory picker
+func RunTriageCrawl(ctx context.Context, svc *Service, parentPath string) (*CrawlSummary, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("context cancelled: %w", err)
 	}
@@ -23,11 +24,17 @@ func RunTriageCrawl(ctx context.Context, svc *Service, parentPath string) (*Tria
 	}
 
 	if len(items) == 0 {
-		return &TriageSummary{}, nil
+		return &CrawlSummary{StatusCounts: map[string]int{}}, nil
+	}
+
+	// Fetch status dirs once before the loop
+	statusDirs, err := svc.ListStatusDirs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing status directories: %w", err)
 	}
 
 	gatherer := NewStatsGatherer()
-	summary := &TriageSummary{}
+	summary := &CrawlSummary{StatusCounts: map[string]int{}}
 
 	for i, item := range items {
 		if err := ctx.Err(); err != nil {
@@ -37,6 +44,7 @@ func RunTriageCrawl(ctx context.Context, svc *Service, parentPath string) (*Tria
 		stats := gatherer.Gather(ctx, item.Path)
 		infoStr := buildInfoString(item, stats)
 
+		// Step 1: high-level decision
 		var decision string
 		title := fmt.Sprintf("Triage %d/%d: %s", i+1, len(items), item.Name)
 
@@ -46,10 +54,10 @@ func RunTriageCrawl(ctx context.Context, svc *Service, parentPath string) (*Tria
 					Title(title).
 					Description(infoStr).
 					Options(
-						huh.NewOption("Move to dungeon", string(DecisionMoveToDungeon)),
-						huh.NewOption("Keep here", string(DecisionKeep)),
-						huh.NewOption("Skip", string(DecisionSkip)),
-						huh.NewOption("Quit", "quit"),
+						huh.NewOption("Move - Move to a dungeon status directory", "move"),
+						huh.NewOption("Keep here - Leave in parent directory", "keep"),
+						huh.NewOption("Skip - Come back to it another time", "skip"),
+						huh.NewOption("Quit - Stop crawling", "quit"),
 					).
 					Value(&decision),
 			),
@@ -66,24 +74,36 @@ func RunTriageCrawl(ctx context.Context, svc *Service, parentPath string) (*Tria
 		case "quit":
 			return summary, nil
 
-		case string(DecisionMoveToDungeon):
-			if err := svc.MoveToDungeon(ctx, item.Name, parentPath); err != nil {
-				fmt.Printf("Error moving %s to dungeon: %v\n", item.Name, err)
+		case "move":
+			status, err := promptStatusSelection(ctx, item.Name, statusDirs)
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				summary.Skipped++
+				continue
+			}
+			if status == "" {
+				// Cancelled step 2 = skip
+				summary.Skipped++
+				continue
+			}
+
+			if err := svc.MoveToDungeonStatus(ctx, item.Name, parentPath, status); err != nil {
+				fmt.Printf("Error moving %s to dungeon/%s: %v\n", item.Name, status, err)
 				summary.Skipped++
 			} else {
-				summary.Moved++
-				if err := logDecision(ctx, svc, item, DecisionMoveToDungeon, stats); err != nil {
+				summary.StatusCounts[status]++
+				if err := logDecision(ctx, svc, item, MoveDecision(status), stats); err != nil {
 					fmt.Printf("Warning: failed to log decision: %v\n", err)
 				}
 			}
 
-		case string(DecisionKeep):
+		case "keep":
 			summary.Kept++
 			if err := logDecision(ctx, svc, item, DecisionKeep, stats); err != nil {
 				fmt.Printf("Warning: failed to log decision: %v\n", err)
 			}
 
-		case string(DecisionSkip):
+		case "skip":
 			summary.Skipped++
 			if err := logDecision(ctx, svc, item, DecisionSkip, stats); err != nil {
 				fmt.Printf("Warning: failed to log decision: %v\n", err)

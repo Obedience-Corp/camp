@@ -10,7 +10,7 @@ func TestCrawlEntry_MarshalJSON(t *testing.T) {
 	entry := CrawlEntry{
 		Timestamp: time.Date(2026, 1, 22, 10, 30, 0, 0, time.UTC),
 		Item:      "test-item/",
-		Decision:  DecisionArchive,
+		Decision:  MoveDecision("archived"),
 		Info: &ItemStats{
 			Files:  12,
 			Code:   450,
@@ -23,21 +23,20 @@ func TestCrawlEntry_MarshalJSON(t *testing.T) {
 		t.Fatalf("MarshalJSON failed: %v", err)
 	}
 
-	// Verify format
-	expected := `{"timestamp":"2026-01-22T10:30:00Z","Item":"test-item/","Decision":"archive","Info":{"files":12,"code":450,"source":"scc"}}`
-
-	// Unmarshal both to compare as JSON (order-independent)
-	var got, want map[string]interface{}
+	// Unmarshal to check structure
+	var got map[string]interface{}
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatalf("failed to unmarshal result: %v", err)
-	}
-	if err := json.Unmarshal([]byte(expected), &want); err != nil {
-		t.Fatalf("failed to unmarshal expected: %v", err)
 	}
 
 	// Check timestamp format
 	if ts, ok := got["timestamp"].(string); !ok || ts != "2026-01-22T10:30:00Z" {
 		t.Errorf("timestamp not in RFC3339 format: got %v", got["timestamp"])
+	}
+
+	// Check decision value (json tag is lowercase "decision")
+	if d, ok := got["decision"].(string); !ok || d != "move:archived" {
+		t.Errorf("decision should be 'move:archived', got %v", got["decision"])
 	}
 }
 
@@ -58,9 +57,21 @@ func TestCrawlSummary_Total(t *testing.T) {
 			expected: 5,
 		},
 		{
-			name:     "mixed",
-			summary:  CrawlSummary{Kept: 3, Archived: 2, Skipped: 1},
-			expected: 6,
+			name: "mixed with status counts",
+			summary: CrawlSummary{
+				Kept:         3,
+				Skipped:      1,
+				StatusCounts: map[string]int{"completed": 1, "archived": 2, "someday": 1},
+			},
+			expected: 8,
+		},
+		{
+			name: "nil status counts",
+			summary: CrawlSummary{
+				Kept:    2,
+				Skipped: 3,
+			},
+			expected: 5,
 		},
 	}
 
@@ -74,15 +85,32 @@ func TestCrawlSummary_Total(t *testing.T) {
 }
 
 func TestDecision_Values(t *testing.T) {
-	// Verify decision values are correct strings for JSON
 	if DecisionKeep != "keep" {
 		t.Errorf("DecisionKeep should be 'keep', got %s", DecisionKeep)
 	}
-	if DecisionArchive != "archive" {
-		t.Errorf("DecisionArchive should be 'archive', got %s", DecisionArchive)
-	}
 	if DecisionSkip != "skip" {
 		t.Errorf("DecisionSkip should be 'skip', got %s", DecisionSkip)
+	}
+}
+
+func TestMoveDecision(t *testing.T) {
+	tests := []struct {
+		status   string
+		expected Decision
+	}{
+		{"completed", Decision("move:completed")},
+		{"archived", Decision("move:archived")},
+		{"someday", Decision("move:someday")},
+		{"ready", Decision("move:ready")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.status, func(t *testing.T) {
+			got := MoveDecision(tt.status)
+			if got != tt.expected {
+				t.Errorf("MoveDecision(%q) = %q, want %q", tt.status, got, tt.expected)
+			}
+		})
 	}
 }
 

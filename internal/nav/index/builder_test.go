@@ -443,6 +443,84 @@ func setupTestCampaign(t *testing.T) string {
 	return root
 }
 
+func TestBuilder_Build_SkipsDungeonCategory(t *testing.T) {
+	root := t.TempDir()
+	root, _ = filepath.EvalSymlinks(root)
+
+	// Create a dungeon category with entries
+	dungeonDir := filepath.Join(root, "dungeon")
+	if err := os.MkdirAll(filepath.Join(dungeonDir, "old-project"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dungeonDir, "deprecated-lib"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a non-dungeon category for comparison
+	if err := os.MkdirAll(filepath.Join(root, "projects", "active-project"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	builder := NewBuilder(root)
+	idx, err := builder.Build(context.Background())
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+
+	// Verify no dungeon targets were indexed
+	for _, target := range idx.Targets {
+		if target.Category == nav.CategoryDungeon {
+			t.Errorf("Dungeon target %q should not be in index", target.Name)
+		}
+	}
+
+	// Verify non-dungeon targets still work
+	found := false
+	for _, target := range idx.Targets {
+		if target.Name == "active-project" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("Expected active-project in index")
+	}
+}
+
+func TestBuilder_scanCategory_SkipsDungeonSubdirs(t *testing.T) {
+	root := t.TempDir()
+	root, _ = filepath.EvalSymlinks(root)
+
+	// Create festivals with a dungeon subdirectory alongside real entries
+	festivalsDir := filepath.Join(root, "festivals")
+	if err := os.MkdirAll(filepath.Join(festivalsDir, "camp-cli"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(festivalsDir, "dungeon", "old-fest"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(festivalsDir, "another-fest"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	builder := NewBuilder(root)
+	targets, err := builder.scanCategory(context.Background(), nav.CategoryFestivals)
+	if err != nil {
+		t.Fatalf("scanCategory() error = %v", err)
+	}
+
+	// Should have 2 targets: camp-cli and another-fest (not dungeon)
+	if len(targets) != 2 {
+		t.Errorf("Expected 2 targets (dungeon excluded), got %d", len(targets))
+	}
+
+	for _, target := range targets {
+		if target.Name == "dungeon" {
+			t.Error("Dungeon subdirectory should be excluded from category scan")
+		}
+	}
+}
+
 // Benchmarks
 
 func BenchmarkBuilder_Build(b *testing.B) {
