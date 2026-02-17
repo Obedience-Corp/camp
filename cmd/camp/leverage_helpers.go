@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/spf13/cobra"
+
 	"github.com/obediencecorp/camp/internal/campaign"
 	"github.com/obediencecorp/camp/internal/leverage"
 )
@@ -68,4 +70,85 @@ func initRunner(cfg *leverage.LeverageConfig) (leverage.Runner, error) {
 		return sccRunner, nil
 	}
 	return leverage.NewSCCRunner(cfg.COCOMOProjectType)
+}
+
+// resolveAndPopulateProjects resolves campaign projects, populates git metrics,
+// and optionally filters by author. Returns the resolved projects and the count
+// of projects excluded by the author filter.
+func resolveAndPopulateProjects(ctx context.Context, root string, cfg *leverage.LeverageConfig, authorFilter string) ([]leverage.ResolvedProject, int, error) {
+	resolved, err := leverage.ResolveProjects(ctx, root, cfg)
+	if err != nil {
+		return nil, 0, fmt.Errorf("resolving projects: %w", err)
+	}
+
+	leverage.PopulateProjectMetrics(ctx, resolved)
+
+	var authorExcluded int
+	if authorFilter != "" {
+		var filtered []leverage.ResolvedProject
+		for _, proj := range resolved {
+			hasCommits, gitErr := leverage.AuthorHasCommits(ctx, proj.GitDir, authorFilter)
+			if gitErr == nil && hasCommits {
+				filtered = append(filtered, proj)
+			} else {
+				authorExcluded++
+			}
+		}
+		resolved = filtered
+	}
+
+	return resolved, authorExcluded, nil
+}
+
+// printVerboseLeverageInfo writes diagnostic config and project resolution details to stderr.
+func printVerboseLeverageInfo(cmd *cobra.Command, cfg *leverage.LeverageConfig, setup *leverageSetup, resolved []leverage.ResolvedProject) {
+	configPath := leverage.DefaultConfigPath(setup.Root)
+	fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] Config path: %s\n", configPath)
+	fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] Auto-detected: %v\n", setup.AutoDetected)
+	fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] ActualPeople (config): %d\n", cfg.ActualPeople)
+	fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] ProjectStart: %s\n", cfg.ProjectStart.Format("2006-01-02"))
+
+	totalProjects := len(cfg.Projects)
+	var excludedNames []string
+	for name, entry := range cfg.Projects {
+		if !entry.Include {
+			excludedNames = append(excludedNames, name)
+		}
+	}
+	fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] Projects in config: %d total, %d excluded\n",
+		totalProjects, len(excludedNames))
+	for _, n := range excludedNames {
+		fmt.Fprintf(cmd.ErrOrStderr(), "[verbose]   excluded: %s\n", n)
+	}
+	fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] Resolved projects: %d\n", len(resolved))
+	for _, p := range resolved {
+		fmt.Fprintf(cmd.ErrOrStderr(), "[verbose]   %s -> scc:%s git:%s\n", p.Name, p.SCCDir, p.GitDir)
+	}
+}
+
+// buildScoreRows converts leverage scores into table row data.
+func buildScoreRows(scores []*leverage.LeverageScore) [][]string {
+	var rows [][]string
+	for _, s := range scores {
+		estPM := s.EstimatedPeople * s.EstimatedMonths
+		authors := "-"
+		if s.AuthorCount > 0 {
+			authors = fmt.Sprintf("%d", s.AuthorCount)
+		}
+		actualPM := s.ActualPersonMonths
+		if actualPM == 0 {
+			actualPM = s.ActualPeople * s.ElapsedMonths
+		}
+		rows = append(rows, []string{
+			s.ProjectName,
+			fmtInt(s.TotalFiles),
+			fmtInt(s.TotalCode),
+			authors,
+			"$" + fmtCost(s.EstimatedCost),
+			fmtInt(int(estPM)),
+			fmt.Sprintf("%.1f", actualPM),
+			fmtScore(s.FullLeverage) + "x",
+		})
+	}
+	return rows
 }

@@ -10,6 +10,41 @@ import (
 	"time"
 )
 
+// allAuthorDates returns earliest/latest commit dates per email in one git call.
+func allAuthorDates(ctx context.Context, gitDir string) (map[string]*authorDateSpan, error) {
+	cmd := exec.CommandContext(ctx, "git", "-C", gitDir, "log", "--all", "--format=%ae\t%cI")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git log: %w", err)
+	}
+
+	result := make(map[string]*authorDateSpan)
+	scanner := bufio.NewScanner(strings.NewReader(string(out)))
+	for scanner.Scan() {
+		parts := strings.SplitN(scanner.Text(), "\t", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		email, dateStr := parts[0], parts[1]
+		t, err := time.Parse(time.RFC3339, dateStr)
+		if err != nil {
+			continue
+		}
+		span, ok := result[email]
+		if !ok {
+			span = &authorDateSpan{}
+			result[email] = span
+		}
+		if span.earliest.IsZero() || t.Before(span.earliest) {
+			span.earliest = t
+		}
+		if span.latest.IsZero() || t.After(span.latest) {
+			span.latest = t
+		}
+	}
+	return result, nil
+}
+
 // authorAccum tracks per-author line counts during blame parsing.
 type authorAccum struct {
 	name  string
@@ -224,6 +259,9 @@ type authorDateSpan struct {
 
 // gitDirAuthors enumerates all non-bot authors in a git repo and computes their
 // date ranges. Returns a map keyed by normalized name.
+//
+// Uses allAuthorDates for a single git-log pass instead of spawning one git
+// process per email, reducing total git processes from 1+N to 2.
 func gitDirAuthors(ctx context.Context, gitDir string) (map[string]*authorDateSpan, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -266,23 +304,26 @@ func gitDirAuthors(ctx context.Context, gitDir string) (map[string]*authorDateSp
 		a.emails = append(a.emails, email)
 	}
 
+	// Fetch all author dates in a single git-log pass.
+	allDates, err := allAuthorDates(ctx, gitDir)
+	if err != nil {
+		return nil, fmt.Errorf("fetching author dates: %w", err)
+	}
+
 	// For each person, find earliest/latest across all their emails.
 	result := make(map[string]*authorDateSpan, len(byName))
 	for normName, info := range byName {
 		span := &authorDateSpan{}
 		for _, email := range info.emails {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			first, last, err := AuthorDateRange(ctx, gitDir, email)
-			if err != nil {
+			emailSpan, ok := allDates[email]
+			if !ok {
 				continue
 			}
-			if span.earliest.IsZero() || first.Before(span.earliest) {
-				span.earliest = first
+			if span.earliest.IsZero() || emailSpan.earliest.Before(span.earliest) {
+				span.earliest = emailSpan.earliest
 			}
-			if span.latest.IsZero() || last.After(span.latest) {
-				span.latest = last
+			if span.latest.IsZero() || emailSpan.latest.After(span.latest) {
+				span.latest = emailSpan.latest
 			}
 		}
 		result[normName] = span
