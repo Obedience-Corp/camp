@@ -103,14 +103,21 @@ func ComputePeriodScore(prev, current *LeverageScore, actualPeople int, periodMo
 // AggregateScores combines multiple per-project scores into a single
 // campaign-wide score. It sums estimated person-months across all projects,
 // then divides by actual person-months.
+//
+// Each score carries its own ActualPeople and ElapsedMonths, so per-project
+// actual effort is summed correctly (different team sizes per project).
+// The actualPeople and elapsedMonths params serve as fallbacks for scores
+// that have zero ActualPeople (backward compat with history/snapshot callers).
 func AggregateScores(scores []*LeverageScore, actualPeople int, elapsedMonths float64) *LeverageScore {
 	var (
 		totalEstimatedPersonMonths float64
 		totalEstimatedPeople       float64
 		totalEstimatedCost         float64
+		totalActualPersonMonths    float64
 		totalFiles                 int
 		totalLines                 int
 		totalCode                  int
+		maxAuthors                 int
 	)
 
 	for _, s := range scores {
@@ -120,6 +127,22 @@ func AggregateScores(scores []*LeverageScore, actualPeople int, elapsedMonths fl
 		totalFiles += s.TotalFiles
 		totalLines += s.TotalLines
 		totalCode += s.TotalCode
+
+		// Sum per-project actual person-months
+		ap := s.ActualPeople
+		em := s.ElapsedMonths
+		if ap > 0 && em > 0 {
+			totalActualPersonMonths += ap * em
+		}
+
+		if s.AuthorCount > maxAuthors {
+			maxAuthors = s.AuthorCount
+		}
+	}
+
+	// Fallback: if no per-project actual PM computed, use global params
+	if totalActualPersonMonths == 0 && actualPeople > 0 && elapsedMonths > 0 {
+		totalActualPersonMonths = float64(actualPeople) * elapsedMonths
 	}
 
 	agg := &LeverageScore{
@@ -130,20 +153,20 @@ func AggregateScores(scores []*LeverageScore, actualPeople int, elapsedMonths fl
 		TotalFiles:      totalFiles,
 		TotalLines:      totalLines,
 		TotalCode:       totalCode,
+		AuthorCount:     maxAuthors,
+	}
+
+	if totalActualPersonMonths > 0 {
+		agg.FullLeverage = totalEstimatedPersonMonths / totalActualPersonMonths
+		agg.ActualPersonMonths = totalActualPersonMonths
+
+		if totalEstimatedPeople > 0 {
+			agg.EstimatedMonths = totalEstimatedPersonMonths / totalEstimatedPeople
+		}
 	}
 
 	if actualPeople > 0 {
 		agg.SimpleLeverage = totalEstimatedPeople / float64(actualPeople)
-	}
-
-	if actualPeople > 0 && elapsedMonths > 0 {
-		actualPersonMonths := float64(actualPeople) * elapsedMonths
-		agg.FullLeverage = totalEstimatedPersonMonths / actualPersonMonths
-
-		// EstimatedMonths for aggregate: weighted average
-		if totalEstimatedPeople > 0 {
-			agg.EstimatedMonths = totalEstimatedPersonMonths / totalEstimatedPeople
-		}
 	}
 
 	return agg

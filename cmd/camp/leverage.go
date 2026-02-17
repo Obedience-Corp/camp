@@ -30,18 +30,22 @@ traditional estimation models predict for the same team and time.
   SimpleLeverage = EstimatedPeople / ActualPeople
 
 Examples:
-  camp leverage                     Show all project scores
-  camp leverage --project camp      Show score for specific project
-  camp leverage --json              Output as JSON
-  camp leverage --people 2          Override team size`,
+  camp leverage                              Show team leverage (auto-detect authors from git)
+  camp leverage --author lance@example.com   Show personal leverage
+  camp leverage --project camp               Show score for specific project
+  camp leverage --json                       Output as JSON
+  camp leverage --people 2                   Override team size
+  camp leverage --verbose                    Show diagnostic details`,
 	RunE: runLeverage,
 }
 
 func init() {
 	leverageCmd.Flags().Bool("json", false, "output as JSON")
 	leverageCmd.Flags().StringP("project", "p", "", "filter by project name")
-	leverageCmd.Flags().Int("people", 0, "override team size (0 = use config)")
+	leverageCmd.Flags().Int("people", 0, "override team size (0 = auto-detect from git)")
 	leverageCmd.Flags().Bool("no-legend", false, "hide the leverage formula legend")
+	leverageCmd.Flags().BoolP("verbose", "v", false, "show diagnostic details (config, project resolution, exclusions)")
+	leverageCmd.Flags().String("author", "", "show personal leverage for a specific author email")
 	rootCmd.AddCommand(leverageCmd)
 	leverageCmd.GroupID = "campaign"
 }
@@ -53,6 +57,8 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 	jsonOut, _ := cmd.Flags().GetBool("json")
 	projectFilter, _ := cmd.Flags().GetString("project")
 	peopleOverride, _ := cmd.Flags().GetInt("people")
+	verbose, _ := cmd.Flags().GetBool("verbose")
+	authorFilter, _ := cmd.Flags().GetString("author")
 
 	setup, err := initLeverageSetup(ctx)
 	if err != nil {
@@ -73,6 +79,58 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 	resolved, err := leverage.ResolveProjects(ctx, setup.Root, cfg)
 	if err != nil {
 		return fmt.Errorf("resolving projects: %w", err)
+	}
+
+	// Verbose: show config and project resolution details
+	if verbose {
+		configPath := leverage.DefaultConfigPath(setup.Root)
+		fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] Config path: %s\n", configPath)
+		fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] Auto-detected: %v\n", setup.AutoDetected)
+		fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] ActualPeople (config): %d\n", cfg.ActualPeople)
+		fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] ProjectStart: %s\n", cfg.ProjectStart.Format("2006-01-02"))
+
+		totalProjects := len(cfg.Projects)
+		var excludedNames []string
+		for name, entry := range cfg.Projects {
+			if !entry.Include {
+				excludedNames = append(excludedNames, name)
+			}
+		}
+		fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] Projects in config: %d total, %d excluded\n",
+			totalProjects, len(excludedNames))
+		for _, n := range excludedNames {
+			fmt.Fprintf(cmd.ErrOrStderr(), "[verbose]   excluded: %s\n", n)
+		}
+		fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] Resolved projects: %d\n", len(resolved))
+		for _, p := range resolved {
+			fmt.Fprintf(cmd.ErrOrStderr(), "[verbose]   %s -> scc:%s git:%s\n", p.Name, p.SCCDir, p.GitDir)
+		}
+	}
+
+	// Populate author counts for each resolved project
+	for i := range resolved {
+		count, gitErr := leverage.CountAuthors(ctx, resolved[i].GitDir)
+		if gitErr == nil {
+			resolved[i].AuthorCount = count
+		}
+	}
+
+	// Author filtering: only include projects where author has commits
+	var authorExcluded int
+	if authorFilter != "" {
+		var filtered []leverage.ResolvedProject
+		for _, proj := range resolved {
+			hasCommits, gitErr := leverage.AuthorHasCommits(ctx, proj.GitDir, authorFilter)
+			if gitErr == nil && hasCommits {
+				filtered = append(filtered, proj)
+			} else {
+				authorExcluded++
+				if verbose {
+					fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] Author filter excluded: %s (no commits by %s)\n", proj.Name, authorFilter)
+				}
+			}
+		}
+		resolved = filtered
 	}
 
 	// Compute elapsed months
@@ -96,18 +154,38 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		// Per-project elapsed from git history (first commit → last commit).
-		projElapsed := elapsed
-		first, last, gitErr := leverage.GitDateRange(ctx, proj.GitDir)
-		if gitErr == nil {
-			projElapsed = leverage.ElapsedMonths(first, last)
-			if projElapsed <= 0 {
-				projElapsed = elapsed // single-commit projects fall back to campaign elapsed
-			}
+		// Determine actual people for this project
+		projPeople := cfg.ActualPeople
+		if peopleOverride == 0 && proj.AuthorCount > 0 {
+			projPeople = proj.AuthorCount
+		}
+		// Personal leverage: always 1 person
+		if authorFilter != "" {
+			projPeople = 1
 		}
 
-		score := leverage.ComputeScore(result, cfg.ActualPeople, projElapsed)
+		// Per-project elapsed from git history
+		var projElapsed float64
+		if authorFilter != "" {
+			// Use author-specific date range
+			first, last, gitErr := leverage.AuthorDateRange(ctx, proj.GitDir, authorFilter)
+			if gitErr == nil {
+				projElapsed = leverage.ElapsedMonths(first, last)
+			}
+		}
+		if projElapsed <= 0 {
+			first, last, gitErr := leverage.GitDateRange(ctx, proj.GitDir)
+			if gitErr == nil {
+				projElapsed = leverage.ElapsedMonths(first, last)
+			}
+		}
+		if projElapsed <= 0 {
+			projElapsed = elapsed // fallback to campaign elapsed
+		}
+
+		score := leverage.ComputeScore(result, projPeople, projElapsed)
 		score.ProjectName = proj.Name
+		score.AuthorCount = proj.AuthorCount
 		scores = append(scores, score)
 	}
 
@@ -130,7 +208,11 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 	}
 
 	recent := recentLeverage{week7: week7, has7: has7, month30: month30, has30: has30}
-	return leverageOutputTable(cmd, agg, scores, cfg, setup.AutoDetected, recent)
+	opts := leverageOutputOpts{
+		authorFilter:   authorFilter,
+		authorExcluded: authorExcluded,
+	}
+	return leverageOutputTable(cmd, agg, scores, cfg, setup.AutoDetected, recent, opts)
 }
 
 func leverageOutputJSON(cmd *cobra.Command, agg *leverage.LeverageScore, scores []*leverage.LeverageScore) error {
@@ -156,7 +238,13 @@ type recentLeverage struct {
 	has7, has30    bool
 }
 
-func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores []*leverage.LeverageScore, cfg *leverage.LeverageConfig, autoDetected bool, recent recentLeverage) error {
+// leverageOutputOpts holds display options for the table output.
+type leverageOutputOpts struct {
+	authorFilter   string
+	authorExcluded int
+}
+
+func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores []*leverage.LeverageScore, cfg *leverage.LeverageConfig, autoDetected bool, recent recentLeverage, opts leverageOutputOpts) error {
 	out := cmd.OutOrStdout()
 	noLegend, _ := cmd.Flags().GetBool("no-legend")
 
@@ -166,9 +254,22 @@ func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores
 	}
 
 	// Header: headline leverage number
-	fmt.Fprintf(out, "%s %s\n\n",
-		ui.Header("Campaign Leverage:"),
-		ui.Value(fmtScore(agg.FullLeverage)+"x", ui.AccentColor))
+	if opts.authorFilter != "" {
+		fmt.Fprintf(out, "%s %s  %s\n\n",
+			ui.Header("Your Leverage:"),
+			ui.Value(fmtScore(agg.FullLeverage)+"x", ui.AccentColor),
+			ui.Dim("("+opts.authorFilter+")"))
+	} else {
+		authorInfo := ""
+		if agg.AuthorCount > 0 {
+			authorInfo = fmt.Sprintf("  %s", ui.Dim(fmt.Sprintf("(%d %s detected)",
+				agg.AuthorCount, pluralize(agg.AuthorCount, "author", "authors"))))
+		}
+		fmt.Fprintf(out, "%s %s%s\n\n",
+			ui.Header("Campaign Leverage:"),
+			ui.Value(fmtScore(agg.FullLeverage)+"x", ui.AccentColor),
+			authorInfo)
+	}
 
 	// Recent leverage from snapshots (omitted if no data)
 	if recent.has7 || recent.has30 {
@@ -186,37 +287,56 @@ func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores
 		fmt.Fprintln(out)
 	}
 
-	// COCOMO vs Actual comparison in person-months (the unit that sums correctly)
+	// COCOMO vs Actual comparison in person-months
 	estPersonMonths := agg.EstimatedPeople * agg.EstimatedMonths
-	actualPersonMonths := agg.ActualPeople * agg.ElapsedMonths
+	actualPersonMonths := agg.ActualPersonMonths
+	if actualPersonMonths == 0 {
+		actualPersonMonths = agg.ActualPeople * agg.ElapsedMonths
+	}
 	fmt.Fprintf(out, "  %s %s  %s\n",
 		ui.Label("COCOMO Estimate:"),
 		ui.Value(fmtInt(int(estPersonMonths))+" person-months"),
 		ui.Value("($"+fmtCost(agg.EstimatedCost)+")", ui.WarningColor))
-	fmt.Fprintf(out, "  %s %s\n",
-		ui.Label("Actual Effort:"),
-		ui.Value(fmt.Sprintf("%.1f person-months", actualPersonMonths)))
+
+	if opts.authorFilter != "" {
+		fmt.Fprintf(out, "  %s %s\n",
+			ui.Label("Your Effort:"),
+			ui.Value(fmt.Sprintf("%.1f person-months", actualPersonMonths)))
+	} else {
+		fmt.Fprintf(out, "  %s %s\n",
+			ui.Label("Actual Effort:"),
+			ui.Value(fmt.Sprintf("%.1f person-months", actualPersonMonths)))
+	}
 	fmt.Fprintf(out, "  %s %s\n\n",
 		ui.Label("Team Equivalent:"),
 		ui.Value(fmtScore(agg.SimpleLeverage)+"x", ui.AccentColor))
 
 	// Summary line
-	fmt.Fprintf(out, "  %s\n", ui.Dim(fmt.Sprintf("%s lines of code across %d %s",
-		fmtInt(agg.TotalCode), len(scores), pluralize(len(scores), "project", "projects"))))
+	summaryParts := fmt.Sprintf("%s lines of code across %d %s",
+		fmtInt(agg.TotalCode), len(scores), pluralize(len(scores), "project", "projects"))
+	if opts.authorExcluded > 0 {
+		summaryParts += fmt.Sprintf(" (%d excluded — no commits)", opts.authorExcluded)
+	}
+	fmt.Fprintf(out, "  %s\n", ui.Dim(summaryParts))
 	fmt.Fprintf(out, "  %s\n", ui.Dim("Since "+cfg.ProjectStart.Format("Jan 2, 2006")))
 	fmt.Fprintln(out)
 
 	// Project table
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.CategoryColor)
 
-	headers := []string{"PROJECT", "FILES", "CODE", "EST COST", "EST PERSON-MONTHS", "ACTUAL MONTHS", "LEVERAGE"}
+	headers := []string{"PROJECT", "FILES", "CODE", "AUTHORS", "EST COST", "EST PM", "ACTUAL MONTHS", "LEVERAGE"}
 	var rows [][]string
 	for _, s := range scores {
 		estPM := s.EstimatedPeople * s.EstimatedMonths
+		authors := "-"
+		if s.AuthorCount > 0 {
+			authors = fmt.Sprintf("%d", s.AuthorCount)
+		}
 		rows = append(rows, []string{
 			s.ProjectName,
 			fmtInt(s.TotalFiles),
 			fmtInt(s.TotalCode),
+			authors,
 			"$" + fmtCost(s.EstimatedCost),
 			fmtInt(int(estPM)),
 			fmt.Sprintf("%.3f", s.ElapsedMonths),
@@ -236,9 +356,9 @@ func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores
 			switch col {
 			case 0: // PROJECT
 				return lipgloss.NewStyle().Foreground(ui.AccentColor)
-			case 3: // EST COST
+			case 4: // EST COST
 				return lipgloss.NewStyle().Foreground(ui.WarningColor)
-			case 6: // LEVERAGE
+			case 7: // LEVERAGE
 				return lipgloss.NewStyle().Foreground(ui.SuccessColor)
 			default:
 				return lipgloss.NewStyle()

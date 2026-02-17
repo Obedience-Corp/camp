@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	"time"
 )
 
 // authorAccum tracks per-author line counts during blame parsing.
@@ -104,6 +105,134 @@ func blameFile(ctx context.Context, dir, file string, accum map[string]*authorAc
 	}
 
 	return nil
+}
+
+// CountAuthors returns the number of distinct human authors for a git repo.
+// Uses git shortlog for speed (no blame needed). Filters bot accounts and
+// deduplicates email aliases (same name = 1 person). Returns minimum 1.
+func CountAuthors(ctx context.Context, gitDir string) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "-C", gitDir, "shortlog", "-sne", "--all")
+	out, err := cmd.Output()
+	if err != nil {
+		return 1, nil // fallback: assume 1 author
+	}
+
+	// Parse "  123\tName <email>" lines
+	names := make(map[string]bool)
+	scanner := bufio.NewScanner(strings.NewReader(string(out)))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+
+		// Format: "  N\tName <email>"
+		parts := strings.SplitN(line, "\t", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		nameEmail := strings.TrimSpace(parts[1])
+		name, email := parseNameEmail(nameEmail)
+
+		if isBotEmail(email) {
+			continue
+		}
+
+		// Deduplicate by normalized name
+		normName := strings.ToLower(strings.TrimSpace(name))
+		if normName != "" {
+			names[normName] = true
+		}
+	}
+
+	if len(names) == 0 {
+		return 1, nil
+	}
+	return len(names), nil
+}
+
+// AuthorHasCommits returns true if the given author email has commits in the repo.
+func AuthorHasCommits(ctx context.Context, gitDir, authorEmail string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "-C", gitDir, "log", "--all",
+		"--author="+authorEmail, "--oneline", "-1")
+	out, err := cmd.Output()
+	if err != nil {
+		return false, nil
+	}
+	return strings.TrimSpace(string(out)) != "", nil
+}
+
+// AuthorDateRange returns the first and last commit dates for a specific author.
+func AuthorDateRange(ctx context.Context, gitDir, authorEmail string) (first, last time.Time, err error) {
+	if err := ctx.Err(); err != nil {
+		return time.Time{}, time.Time{}, err
+	}
+
+	// Earliest commit by author
+	cmd := exec.CommandContext(ctx, "git", "-C", gitDir, "log", "--all",
+		"--author="+authorEmail, "--reverse", "--format=%cI", "-1")
+	out, err := cmd.Output()
+	if err != nil {
+		return time.Time{}, time.Time{}, fmt.Errorf("git log (first): %w", err)
+	}
+	firstStr := strings.TrimSpace(string(out))
+	if firstStr == "" {
+		return time.Time{}, time.Time{}, fmt.Errorf("no commits by %s in %s", authorEmail, gitDir)
+	}
+	first, err = time.Parse(time.RFC3339, firstStr)
+	if err != nil {
+		return time.Time{}, time.Time{}, fmt.Errorf("parsing first commit date: %w", err)
+	}
+
+	// Latest commit by author
+	cmd = exec.CommandContext(ctx, "git", "-C", gitDir, "log", "--all",
+		"--author="+authorEmail, "--format=%cI", "-1")
+	out, err = cmd.Output()
+	if err != nil {
+		return time.Time{}, time.Time{}, fmt.Errorf("git log (last): %w", err)
+	}
+	lastStr := strings.TrimSpace(string(out))
+	if lastStr == "" {
+		return time.Time{}, time.Time{}, fmt.Errorf("no commits by %s in %s", authorEmail, gitDir)
+	}
+	last, err = time.Parse(time.RFC3339, lastStr)
+	if err != nil {
+		return time.Time{}, time.Time{}, fmt.Errorf("parsing last commit date: %w", err)
+	}
+
+	return first, last, nil
+}
+
+// parseNameEmail extracts name and email from "Name <email>" format.
+func parseNameEmail(s string) (name, email string) {
+	idx := strings.LastIndex(s, " <")
+	if idx == -1 {
+		return s, ""
+	}
+	name = s[:idx]
+	email = strings.TrimSuffix(s[idx+2:], ">")
+	return name, email
+}
+
+// isBotEmail returns true if the email looks like a bot account.
+func isBotEmail(email string) bool {
+	lower := strings.ToLower(email)
+	botPatterns := []string{"noreply", "bot@", "[bot]", "github-actions", "dependabot", "renovate"}
+	for _, pattern := range botPatterns {
+		if strings.Contains(lower, pattern) {
+			return true
+		}
+	}
+	return false
 }
 
 // buildContributions converts the accumulator map into sorted AuthorContribution slices.

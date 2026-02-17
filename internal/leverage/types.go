@@ -79,6 +79,13 @@ type LeverageScore struct {
 	ActualPeople  float64 `json:"actual_people"`
 	ElapsedMonths float64 `json:"elapsed_months"`
 
+	// ActualPersonMonths is the product of ActualPeople * ElapsedMonths.
+	// Populated by AggregateScores for the campaign aggregate.
+	ActualPersonMonths float64 `json:"actual_person_months,omitempty"`
+
+	// AuthorCount is the number of distinct human authors detected from git.
+	AuthorCount int `json:"author_count,omitempty"`
+
 	// Computed scores
 	// FullLeverage = (EstimatedPeople * EstimatedMonths) / (ActualPeople * ElapsedMonths)
 	FullLeverage float64 `json:"full_leverage"`

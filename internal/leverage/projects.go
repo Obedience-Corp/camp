@@ -28,6 +28,10 @@ type ResolvedProject struct {
 	// ExcludeDirs lists subdirectory names that scc should skip when scanning.
 	// Set on monorepo root entries to prevent double-counting submodule code.
 	ExcludeDirs []string
+
+	// AuthorCount is the number of distinct human authors detected from git.
+	// Zero means not yet populated.
+	AuthorCount int
 }
 
 // ResolveProjects resolves project entries into absolute paths for leverage scoring.
