@@ -260,6 +260,13 @@ func (b *Backfiller) processSample(ctx context.Context, gitDir string, sample Co
 		score.ProjectName = proj.Name
 		score.AuthorCount = proj.AuthorCount
 
+		// Override with contribution-based actual person-months
+		if cfg.ActualPeople == 0 && proj.ActualPersonMonths > 0 {
+			score.ActualPersonMonths = proj.ActualPersonMonths
+			estPM := result.EstimatedPeople * result.EstimatedScheduleMonths
+			score.FullLeverage = estPM / proj.ActualPersonMonths
+		}
+
 		// Get author contributions via git blame
 		authors, err := GetAuthorLOC(ctx, sccDir)
 		if err != nil {

@@ -104,7 +104,7 @@ func TestLeverageCommand_TableOutput(t *testing.T) {
 		"AUTHORS",
 		"EST COST",
 		"EST PM",
-		"ACTUAL MONTHS",
+		"ACTUAL PM",
 		"LEVERAGE",
 	}
 

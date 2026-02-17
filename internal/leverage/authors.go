@@ -172,44 +172,143 @@ func AuthorHasCommits(ctx context.Context, gitDir, authorEmail string) (bool, er
 }
 
 // AuthorDateRange returns the first and last commit dates for a specific author.
+// Gets all commit dates in one call and extracts the earliest and latest.
 func AuthorDateRange(ctx context.Context, gitDir, authorEmail string) (first, last time.Time, err error) {
 	if err := ctx.Err(); err != nil {
 		return time.Time{}, time.Time{}, err
 	}
 
-	// Earliest commit by author
+	// Get all commit dates for this author in one call.
+	// Note: --reverse with -1 does NOT work (git applies --max-count before --reverse).
 	cmd := exec.CommandContext(ctx, "git", "-C", gitDir, "log", "--all",
-		"--author="+authorEmail, "--reverse", "--format=%cI", "-1")
+		"--author="+authorEmail, "--format=%cI")
 	out, err := cmd.Output()
 	if err != nil {
-		return time.Time{}, time.Time{}, fmt.Errorf("git log (first): %w", err)
-	}
-	firstStr := strings.TrimSpace(string(out))
-	if firstStr == "" {
-		return time.Time{}, time.Time{}, fmt.Errorf("no commits by %s in %s", authorEmail, gitDir)
-	}
-	first, err = time.Parse(time.RFC3339, firstStr)
-	if err != nil {
-		return time.Time{}, time.Time{}, fmt.Errorf("parsing first commit date: %w", err)
+		return time.Time{}, time.Time{}, fmt.Errorf("git log: %w", err)
 	}
 
-	// Latest commit by author
-	cmd = exec.CommandContext(ctx, "git", "-C", gitDir, "log", "--all",
-		"--author="+authorEmail, "--format=%cI", "-1")
-	out, err = cmd.Output()
-	if err != nil {
-		return time.Time{}, time.Time{}, fmt.Errorf("git log (last): %w", err)
-	}
-	lastStr := strings.TrimSpace(string(out))
-	if lastStr == "" {
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) == 0 || lines[0] == "" {
 		return time.Time{}, time.Time{}, fmt.Errorf("no commits by %s in %s", authorEmail, gitDir)
 	}
-	last, err = time.Parse(time.RFC3339, lastStr)
-	if err != nil {
-		return time.Time{}, time.Time{}, fmt.Errorf("parsing last commit date: %w", err)
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		t, parseErr := time.Parse(time.RFC3339, line)
+		if parseErr != nil {
+			continue
+		}
+		if first.IsZero() || t.Before(first) {
+			first = t
+		}
+		if last.IsZero() || t.After(last) {
+			last = t
+		}
+	}
+
+	if first.IsZero() {
+		return time.Time{}, time.Time{}, fmt.Errorf("no valid commit dates by %s in %s", authorEmail, gitDir)
 	}
 
 	return first, last, nil
+}
+
+// ProjectActualPersonMonths computes total actual person-months for a project
+// by summing each distinct author's active duration (first commit to last commit).
+// This produces an accurate effort measure — an author who committed over 6 months
+// counts as 6 person-months, not N × totalProjectDuration.
+//
+// Authors with a single commit (first == last) are counted as minAuthorMonths
+// to represent their minimal but nonzero contribution.
+func ProjectActualPersonMonths(ctx context.Context, gitDir string) (float64, error) {
+	const minAuthorMonths = 0.1
+
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+
+	// Get all authors via shortlog
+	cmd := exec.CommandContext(ctx, "git", "-C", gitDir, "shortlog", "-sne", "--all")
+	out, err := cmd.Output()
+	if err != nil {
+		return 0, fmt.Errorf("git shortlog: %w", err)
+	}
+
+	// Deduplicate authors by normalized name, keeping all emails per person
+	type authorInfo struct {
+		emails []string
+	}
+	authors := make(map[string]*authorInfo) // key: normalized name
+	scanner := bufio.NewScanner(strings.NewReader(string(out)))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "\t", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		name, email := parseNameEmail(strings.TrimSpace(parts[1]))
+		if isBotEmail(email) {
+			continue
+		}
+		normName := strings.ToLower(strings.TrimSpace(name))
+		if normName == "" {
+			continue
+		}
+		a, ok := authors[normName]
+		if !ok {
+			a = &authorInfo{}
+			authors[normName] = a
+		}
+		a.emails = append(a.emails, email)
+	}
+
+	if len(authors) == 0 {
+		return minAuthorMonths, nil
+	}
+
+	// For each distinct person, find their earliest and latest commit across all emails
+	var totalPM float64
+	for _, info := range authors {
+		var earliest, latest time.Time
+
+		for _, email := range info.emails {
+			if ctx.Err() != nil {
+				return 0, ctx.Err()
+			}
+			first, last, err := AuthorDateRange(ctx, gitDir, email)
+			if err != nil {
+				continue
+			}
+			if earliest.IsZero() || first.Before(earliest) {
+				earliest = first
+			}
+			if latest.IsZero() || last.After(latest) {
+				latest = last
+			}
+		}
+
+		if earliest.IsZero() {
+			totalPM += minAuthorMonths
+			continue
+		}
+
+		months := ElapsedMonths(earliest, latest)
+		if months < minAuthorMonths {
+			months = minAuthorMonths
+		}
+		totalPM += months
+	}
+
+	if totalPM < minAuthorMonths {
+		totalPM = minAuthorMonths
+	}
+	return totalPM, nil
 }
 
 // parseNameEmail extracts name and email from "Name <email>" format.

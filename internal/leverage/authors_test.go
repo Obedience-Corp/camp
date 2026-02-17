@@ -389,6 +389,113 @@ func TestParseNameEmail(t *testing.T) {
 	}
 }
 
+// commitFileWithDate creates a file and commits it with a specific date.
+func commitFileWithDate(t *testing.T, dir, filename, content, authorName, authorEmail, date string) {
+	t.Helper()
+	path := filepath.Join(dir, filename)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	addCmd := exec.Command("git", "add", filename)
+	addCmd.Dir = dir
+	if out, err := addCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git add failed: %s: %v", out, err)
+	}
+
+	commitCmd := exec.Command("git",
+		"-c", "user.name="+authorName,
+		"-c", "user.email="+authorEmail,
+		"commit", "-m", "add "+filename, "--allow-empty")
+	commitCmd.Dir = dir
+	commitCmd.Env = append(os.Environ(),
+		"GIT_COMMITTER_DATE="+date,
+		"GIT_AUTHOR_DATE="+date,
+	)
+	if out, err := commitCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git commit failed: %s: %v", out, err)
+	}
+}
+
+func TestProjectActualPersonMonths_SingleAuthor(t *testing.T) {
+	dir := initGitRepo(t)
+
+	// Alice commits over 3 months
+	commitFileWithDate(t, dir, "a.go", "package a\n", "Alice", "alice@example.com", "2025-01-01T12:00:00+00:00")
+	commitFileWithDate(t, dir, "b.go", "package a\n", "Alice", "alice@example.com", "2025-04-01T12:00:00+00:00")
+
+	pm, err := ProjectActualPersonMonths(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("ProjectActualPersonMonths: %v", err)
+	}
+
+	// Should be ~3 months for one author
+	if pm < 2.5 || pm > 3.5 {
+		t.Errorf("pm = %.2f, want ~3.0 (one author active 3 months)", pm)
+	}
+}
+
+func TestProjectActualPersonMonths_TwoAuthors_DifferentDurations(t *testing.T) {
+	dir := initGitRepo(t)
+
+	// Alice active for 6 months (Jan-Jul)
+	commitFileWithDate(t, dir, "a1.go", "package a\n", "Alice", "alice@example.com", "2025-01-01T12:00:00+00:00")
+	commitFileWithDate(t, dir, "a2.go", "package a\nvar x = 1\n", "Alice", "alice@example.com", "2025-07-01T12:00:00+00:00")
+
+	// Bob active for 1 month only (Mar-Apr)
+	commitFileWithDate(t, dir, "b1.go", "package a\nvar y = 1\n", "Bob", "bob@example.com", "2025-03-01T12:00:00+00:00")
+	commitFileWithDate(t, dir, "b2.go", "package a\nvar z = 1\n", "Bob", "bob@example.com", "2025-04-01T12:00:00+00:00")
+
+	pm, err := ProjectActualPersonMonths(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("ProjectActualPersonMonths: %v", err)
+	}
+
+	// Alice ~6 months + Bob ~1 month = ~7 person-months
+	// NOT 2 people × 6 months = 12 (which is what the old calc would do)
+	if pm < 6.0 || pm > 8.0 {
+		t.Errorf("pm = %.2f, want ~7.0 (Alice 6mo + Bob 1mo)", pm)
+	}
+
+	// Verify this is LESS than naive calculation (2 * 6 = 12)
+	naivePM := 2.0 * 6.0
+	if pm >= naivePM {
+		t.Errorf("contribution-based PM (%.2f) should be less than naive (%.2f)", pm, naivePM)
+	}
+}
+
+func TestProjectActualPersonMonths_SingleCommitAuthor(t *testing.T) {
+	dir := initGitRepo(t)
+
+	// Author with a single commit should get minimum 0.1 months
+	commitFileWithDate(t, dir, "a.go", "package a\n", "Alice", "alice@example.com", "2025-01-01T12:00:00+00:00")
+
+	pm, err := ProjectActualPersonMonths(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("ProjectActualPersonMonths: %v", err)
+	}
+
+	if pm < 0.1 || pm > 0.2 {
+		t.Errorf("pm = %.2f, want ~0.1 (single commit = minimum)", pm)
+	}
+}
+
+func TestProjectActualPersonMonths_ContextCancelled(t *testing.T) {
+	dir := initGitRepo(t)
+	commitFileWithDate(t, dir, "a.go", "package a\n", "Alice", "alice@example.com", "2025-01-01T12:00:00+00:00")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := ProjectActualPersonMonths(ctx, dir)
+	if err == nil {
+		t.Fatal("expected error from cancelled context")
+	}
+}
+
 func TestBuildContributions_Sorted(t *testing.T) {
 	accum := map[string]*authorAccum{
 		"c@test.com": {name: "C", email: "c@test.com", lines: 10},

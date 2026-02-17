@@ -128,11 +128,17 @@ func AggregateScores(scores []*LeverageScore, actualPeople int, elapsedMonths fl
 		totalLines += s.TotalLines
 		totalCode += s.TotalCode
 
-		// Sum per-project actual person-months
-		ap := s.ActualPeople
-		em := s.ElapsedMonths
-		if ap > 0 && em > 0 {
-			totalActualPersonMonths += ap * em
+		// Prefer contribution-based actual person-months when available.
+		// This uses the sum of each author's individual active duration
+		// rather than numAuthors × totalElapsed.
+		if s.ActualPersonMonths > 0 {
+			totalActualPersonMonths += s.ActualPersonMonths
+		} else {
+			ap := s.ActualPeople
+			em := s.ElapsedMonths
+			if ap > 0 && em > 0 {
+				totalActualPersonMonths += ap * em
+			}
 		}
 
 		if s.AuthorCount > maxAuthors {
