@@ -58,6 +58,14 @@ func runLeverageSnapshot(cmd *cobra.Command, args []string) error {
 
 	elapsed := leverage.ElapsedMonths(cfg.ProjectStart, time.Now())
 
+	// Populate per-project author counts for auto-detect mode
+	for i := range resolved {
+		count, gitErr := leverage.CountAuthors(ctx, resolved[i].GitDir)
+		if gitErr == nil {
+			resolved[i].AuthorCount = count
+		}
+	}
+
 	var count int
 	for _, proj := range resolved {
 		if err := ctx.Err(); err != nil {
@@ -82,9 +90,19 @@ func runLeverageSnapshot(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
+		// Determine actual people: use config override, or git-detected authors
+		projPeople := cfg.ActualPeople
+		if projPeople == 0 && proj.AuthorCount > 0 {
+			projPeople = proj.AuthorCount
+		}
+		if projPeople == 0 {
+			projPeople = 1
+		}
+
 		// Compute leverage score
-		score := leverage.ComputeScore(result, cfg.ActualPeople, elapsed)
+		score := leverage.ComputeScore(result, projPeople, elapsed)
 		score.ProjectName = proj.Name
+		score.AuthorCount = proj.AuthorCount
 
 		// Get author contributions via git blame
 		authors, err := leverage.GetAuthorLOC(ctx, proj.SCCDir)

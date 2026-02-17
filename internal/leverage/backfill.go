@@ -246,9 +246,19 @@ func (b *Backfiller) processSample(ctx context.Context, gitDir string, sample Co
 			continue
 		}
 
+		// Determine actual people: use config override, or git-detected authors
+		projPeople := cfg.ActualPeople
+		if projPeople == 0 && proj.AuthorCount > 0 {
+			projPeople = proj.AuthorCount
+		}
+		if projPeople == 0 {
+			projPeople = 1
+		}
+
 		// Compute leverage score
-		score := ComputeScore(result, cfg.ActualPeople, elapsed)
+		score := ComputeScore(result, projPeople, elapsed)
 		score.ProjectName = proj.Name
+		score.AuthorCount = proj.AuthorCount
 
 		// Get author contributions via git blame
 		authors, err := GetAuthorLOC(ctx, sccDir)

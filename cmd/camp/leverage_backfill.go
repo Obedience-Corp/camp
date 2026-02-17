@@ -68,6 +68,14 @@ func runLeverageBackfill(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("resolving projects: %w", err)
 	}
 
+	// Populate per-project author counts for auto-detect mode
+	for i := range resolved {
+		count, gitErr := leverage.CountAuthors(ctx, resolved[i].GitDir)
+		if gitErr == nil {
+			resolved[i].AuthorCount = count
+		}
+	}
+
 	// Apply --project filter
 	projectFilter, _ := cmd.Flags().GetString("project")
 	resolved, err = leverage.FilterByName(resolved, projectFilter)

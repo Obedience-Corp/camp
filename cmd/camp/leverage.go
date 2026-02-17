@@ -199,13 +199,27 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("project not found: %s", projectFilter)
 	}
 
+	// Determine effective team size for aggregate calculations.
+	// When cfg.ActualPeople == 0 (auto-detect), use max author count from scores.
+	effectivePeople := cfg.ActualPeople
+	if effectivePeople == 0 {
+		for _, s := range scores {
+			if s.AuthorCount > effectivePeople {
+				effectivePeople = s.AuthorCount
+			}
+		}
+		if effectivePeople == 0 {
+			effectivePeople = 1
+		}
+	}
+
 	// Aggregate campaign-wide totals
-	agg := leverage.AggregateScores(scores, cfg.ActualPeople, elapsed)
+	agg := leverage.AggregateScores(scores, effectivePeople, elapsed)
 
 	// Compute recent leverage from snapshots
 	store := leverage.NewFileSnapshotStore(leverage.DefaultSnapshotDir(setup.Root))
-	week7, has7 := leverage.RecentLeverage(ctx, store, scores, cfg.ActualPeople, now.AddDate(0, 0, -7))
-	month30, has30 := leverage.RecentLeverage(ctx, store, scores, cfg.ActualPeople, now.AddDate(0, 0, -30))
+	week7, has7 := leverage.RecentLeverage(ctx, store, scores, effectivePeople, now.AddDate(0, 0, -7))
+	month30, has30 := leverage.RecentLeverage(ctx, store, scores, effectivePeople, now.AddDate(0, 0, -30))
 
 	// Output based on format
 	if jsonOut {
