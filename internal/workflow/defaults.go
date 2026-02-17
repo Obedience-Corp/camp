@@ -38,21 +38,17 @@ func DefaultSchemaV2WithInfo(name, description string) *Schema {
 				Order:       2,
 				Nested:      true,
 				Children: map[string]Directory{
-					"ready": {
-						Description: "Ready to work on",
-						Order:       1,
-					},
 					"completed": {
 						Description: "Successfully finished work",
-						Order:       2,
+						Order:       1,
 					},
 					"archived": {
 						Description: "Preserved but no longer active",
-						Order:       3,
+						Order:       2,
 					},
 					"someday": {
 						Description: "Maybe later, low priority",
-						Order:       4,
+						Order:       3,
 					},
 				},
 			},

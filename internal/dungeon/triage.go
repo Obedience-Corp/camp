@@ -54,8 +54,8 @@ func RunTriageCrawl(ctx context.Context, svc *Service, parentPath string) (*Craw
 					Title(title).
 					Description(infoStr).
 					Options(
-						huh.NewOption("Move - Move to a dungeon status directory", "move"),
 						huh.NewOption("Keep here - Leave in parent directory", "keep"),
+						huh.NewOption("Move - Move to a dungeon status directory", "move"),
 						huh.NewOption("Skip - Come back to it another time", "skip"),
 						huh.NewOption("Quit - Stop crawling", "quit"),
 					).

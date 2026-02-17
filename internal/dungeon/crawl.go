@@ -86,8 +86,8 @@ func RunCrawl(ctx context.Context, svc *Service) (*CrawlSummary, error) {
 					Title(title).
 					Description(infoStr).
 					Options(
-						huh.NewOption("Move - Move to a status directory", "move"),
 						huh.NewOption("Keep - Leave in dungeon for later", "keep"),
+						huh.NewOption("Move - Move to a status directory", "move"),
 						huh.NewOption("Skip - Come back to it another time", "skip"),
 						huh.NewOption("Quit - Stop crawling", "quit"),
 					).

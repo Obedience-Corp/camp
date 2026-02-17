@@ -738,7 +738,7 @@ type MigrateV1ToV2Result struct {
 }
 
 // MigrateV1ToV2 upgrades a v1 workflow to v2 dungeon-centric model.
-// Moves active/ items to root, ready/ items to dungeon/ready/,
+// Moves active/ and ready/ items to root (both are active work in v2),
 // removes empty active/ and ready/ dirs, and updates schema to v2.
 func (s *Service) MigrateV1ToV2(ctx context.Context, dryRun bool) (*MigrateV1ToV2Result, error) {
 	if ctx.Err() != nil {
@@ -757,56 +757,30 @@ func (s *Service) MigrateV1ToV2(ctx context.Context, dryRun bool) (*MigrateV1ToV
 
 	result := &MigrateV1ToV2Result{}
 
-	// Ensure dungeon/ready exists
-	dungeonReadyPath := s.resolvePath("dungeon/ready")
-	if !dryRun {
-		if err := os.MkdirAll(dungeonReadyPath, 0755); err != nil {
-			return nil, fmt.Errorf("creating dungeon/ready: %w", err)
-		}
-	}
-
-	// Move active/ items to root
-	activePath := s.resolvePath("active")
-	if entries, err := os.ReadDir(activePath); err == nil {
-		for _, entry := range entries {
-			name := entry.Name()
-			if name == ".gitkeep" || name == "OBEY.md" {
-				continue
-			}
-			src := filepath.Join(activePath, name)
-			dst := filepath.Join(s.root, name)
-
-			if !dryRun {
-				if err := os.Rename(src, dst); err != nil {
-					return nil, fmt.Errorf("moving %s to root: %w", name, err)
+	// Move active/ and ready/ items to root (both are active work in v2)
+	for _, statusDir := range []string{"active", "ready"} {
+		dirPath := s.resolvePath(statusDir)
+		if entries, err := os.ReadDir(dirPath); err == nil {
+			for _, entry := range entries {
+				name := entry.Name()
+				if name == ".gitkeep" || name == "OBEY.md" {
+					continue
 				}
-			}
-			result.MovedItems = append(result.MovedItems, fmt.Sprintf("active/%s → ./%s", name, name))
-		}
-	}
+				src := filepath.Join(dirPath, name)
+				dst := filepath.Join(s.root, name)
 
-	// Move ready/ items to dungeon/ready/
-	readyPath := s.resolvePath("ready")
-	if entries, err := os.ReadDir(readyPath); err == nil {
-		for _, entry := range entries {
-			name := entry.Name()
-			if name == ".gitkeep" || name == "OBEY.md" {
-				continue
-			}
-			src := filepath.Join(readyPath, name)
-			dst := filepath.Join(dungeonReadyPath, name)
-
-			if !dryRun {
-				if err := os.Rename(src, dst); err != nil {
-					return nil, fmt.Errorf("moving %s to dungeon/ready: %w", name, err)
+				if !dryRun {
+					if err := os.Rename(src, dst); err != nil {
+						return nil, fmt.Errorf("moving %s to root: %w", name, err)
+					}
 				}
+				result.MovedItems = append(result.MovedItems, fmt.Sprintf("%s/%s → ./%s", statusDir, name, name))
 			}
-			result.MovedItems = append(result.MovedItems, fmt.Sprintf("ready/%s → dungeon/ready/%s", name, name))
 		}
 	}
 
 	// Remove empty active/ and ready/ directories
-	for _, dir := range []string{activePath, readyPath} {
+	for _, dir := range []string{s.resolvePath("active"), s.resolvePath("ready")} {
 		if entries, err := os.ReadDir(dir); err == nil {
 			isEmpty := true
 			for _, e := range entries {

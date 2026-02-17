@@ -12,6 +12,7 @@ import (
 	"github.com/obediencecorp/camp/internal/campaign"
 	"github.com/obediencecorp/camp/internal/config"
 	"github.com/obediencecorp/camp/internal/fest"
+	"github.com/obediencecorp/camp/internal/git"
 	"github.com/obediencecorp/camp/internal/nav/tui"
 	"github.com/obediencecorp/camp/internal/scaffold"
 	"github.com/obediencecorp/camp/internal/ui"
@@ -188,6 +189,21 @@ func runInit(cmd *cobra.Command, args []string) error {
 	result, err := scaffold.Init(ctx, dir, opts)
 	if err != nil {
 		return err
+	}
+
+	// Execute migrations if repair detected misplaced directories.
+	var migrationCount int
+	if repair && opts.RepairPlan != nil && opts.RepairPlan.HasMigrations() {
+		moved, err := scaffold.ExecuteMigrations(opts.RepairPlan.Migrations)
+		if err != nil {
+			fmt.Printf("  %s Migration error: %v\n", ui.WarningIcon(), err)
+		}
+		migrationCount = moved
+	}
+
+	// Auto-commit after repair (scaffold creates + migrations).
+	if repair && !dryRun {
+		commitRepairChanges(ctx, result, opts.RepairPlan, migrationCount)
 	}
 
 	// Initialize Festival Methodology (unless skipped or dry-run)
@@ -497,6 +513,67 @@ func handleRepairMission(ctx context.Context, dir string, mission string, isInte
 	return "", nil
 }
 
+// commitRepairChanges creates a git commit after a successful repair.
+func commitRepairChanges(ctx context.Context, initResult *scaffold.InitResult, plan *scaffold.RepairPlan, migrationCount int) {
+	hasChanges := len(initResult.DirsCreated) > 0 || len(initResult.FilesCreated) > 0 || migrationCount > 0
+	if !hasChanges {
+		return
+	}
+
+	cfg, err := config.LoadCampaignConfig(ctx, initResult.CampaignRoot)
+	if err != nil {
+		return
+	}
+
+	description := buildRepairCommitMessage(initResult, plan, migrationCount)
+
+	result := git.IntentCommitAll(ctx, git.IntentCommitOptions{
+		CampaignRoot: initResult.CampaignRoot,
+		CampaignID:   cfg.ID,
+		Action:       git.IntentActionRepair,
+		IntentTitle:  "campaign repair",
+		Description:  description,
+	})
+
+	if result.Committed {
+		fmt.Printf("\n%s %s\n", ui.SuccessIcon(), result.Message)
+	} else if result.Message != "" {
+		fmt.Printf("\n%s %s\n", ui.InfoIcon(), result.Message)
+	}
+}
+
+// buildRepairCommitMessage constructs a descriptive commit body for repair operations.
+func buildRepairCommitMessage(initResult *scaffold.InitResult, plan *scaffold.RepairPlan, migrationCount int) string {
+	var b strings.Builder
+
+	if len(initResult.DirsCreated) > 0 {
+		fmt.Fprintf(&b, "Directories created:\n")
+		for _, d := range initResult.DirsCreated {
+			fmt.Fprintf(&b, "  - %s\n", d)
+		}
+		b.WriteString("\n")
+	}
+
+	if len(initResult.FilesCreated) > 0 {
+		fmt.Fprintf(&b, "Files created:\n")
+		for _, f := range initResult.FilesCreated {
+			fmt.Fprintf(&b, "  - %s\n", f)
+		}
+		b.WriteString("\n")
+	}
+
+	if plan != nil && migrationCount > 0 {
+		fmt.Fprintf(&b, "Migrated %d item(s):\n", migrationCount)
+		for _, m := range plan.Migrations {
+			for _, item := range m.Items {
+				fmt.Fprintf(&b, "  - %s → %s\n", filepath.Join(m.Source, item), m.Dest)
+			}
+		}
+	}
+
+	return strings.TrimRight(b.String(), "\n")
+}
+
 // printRepairDiff displays the proposed repair changes as a colored diff.
 func printRepairDiff(plan *scaffold.RepairPlan) {
 	fmt.Println(ui.Subheader("Repair Preview"))
@@ -521,6 +598,12 @@ func printRepairDiff(plan *scaffold.RepairPlan) {
 				ui.Dim("✓"),
 				ui.Value(c.Key),
 				ui.Dim("(user-defined, preserved)"),
+			)
+		case scaffold.RepairMigrate:
+			fmt.Printf("  %s  %s  %s\n",
+				ui.Warning("→"),
+				ui.Value(c.Key),
+				ui.Dim(c.Description),
 			)
 		}
 	}
