@@ -433,3 +433,98 @@ func bigWordEnd(content string, offset int) int {
 
 	return offset
 }
+
+// bracketPairs maps each bracket to its matching counterpart and direction.
+var bracketPairs = map[rune]rune{
+	'(': ')', ')': '(',
+	'{': '}', '}': '{',
+	'[': ']', ']': '[',
+}
+
+// isOpenBracket returns true for opening brackets.
+func isOpenBracket(r rune) bool {
+	return r == '(' || r == '{' || r == '['
+}
+
+// isBracket returns true for any bracket character.
+func isBracket(r rune) bool {
+	_, ok := bracketPairs[r]
+	return ok
+}
+
+// MatchBracket implements vim's % motion: jump to matching bracket.
+func MatchBracket(b *Buffer) Motion {
+	start := b.Cursor()
+	content := b.Content()
+	offset := b.CursorOffset()
+
+	ch := b.CharUnderCursor()
+
+	// If not on a bracket, scan forward on current line to find one.
+	if !isBracket(ch) {
+		line := b.CurrentLine()
+		found := false
+		for i := start.Col; i < len(line); i++ {
+			if isBracket(rune(line[i])) {
+				// Move cursor to this bracket, then match from there.
+				offset = offset + (i - start.Col)
+				ch = rune(line[i])
+				found = true
+				break
+			}
+		}
+		if !found {
+			return Motion{Start: start, End: start}
+		}
+	}
+
+	var matchOffset int
+	if isOpenBracket(ch) {
+		matchOffset = findMatchForward(content, offset, ch, bracketPairs[ch])
+	} else {
+		matchOffset = findMatchBackward(content, offset, bracketPairs[ch], ch)
+	}
+
+	if matchOffset == -1 {
+		return Motion{Start: start, End: start}
+	}
+
+	b.SetCursorFromOffset(matchOffset)
+	return Motion{Start: start, End: b.Cursor()}
+}
+
+// findMatchForward finds the matching close bracket scanning forward.
+// Cursor must be on the open bracket at offset.
+func findMatchForward(content string, offset int, open, close rune) int {
+	depth := 0
+	for i := offset; i < len(content); i++ {
+		ch := rune(content[i])
+		if ch == open {
+			depth++
+		} else if ch == close {
+			depth--
+			if depth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+// findMatchBackward finds the matching open bracket scanning backward.
+// Cursor must be on the close bracket at offset.
+func findMatchBackward(content string, offset int, open, close rune) int {
+	depth := 0
+	for i := offset; i >= 0; i-- {
+		ch := rune(content[i])
+		if ch == close {
+			depth++
+		} else if ch == open {
+			depth--
+			if depth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}

@@ -374,6 +374,146 @@ func TestEditor_ScrollOffset(t *testing.T) {
 	}
 }
 
+func TestEditor_MatchBracket(t *testing.T) {
+	pressPercent := func(e *Editor) {
+		e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'%'}})
+	}
+	moveTo := func(e *Editor, col int) {
+		// Reset to start then move right
+		e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'0'}})
+		for range col {
+			e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+		}
+	}
+
+	tests := []struct {
+		name     string
+		content  string
+		startCol int
+		wantLine int
+		wantCol  int
+	}{
+		{
+			name:     "open paren to close",
+			content:  "foo(bar)",
+			startCol: 3,
+			wantLine: 0, wantCol: 7,
+		},
+		{
+			name:     "close paren to open",
+			content:  "foo(bar)",
+			startCol: 7,
+			wantLine: 0, wantCol: 3,
+		},
+		{
+			name:     "open brace to close",
+			content:  "{hello}",
+			startCol: 0,
+			wantLine: 0, wantCol: 6,
+		},
+		{
+			name:     "close brace to open",
+			content:  "{hello}",
+			startCol: 6,
+			wantLine: 0, wantCol: 0,
+		},
+		{
+			name:     "open bracket to close",
+			content:  "a[b]c",
+			startCol: 1,
+			wantLine: 0, wantCol: 3,
+		},
+		{
+			name:     "close bracket to open",
+			content:  "a[b]c",
+			startCol: 3,
+			wantLine: 0, wantCol: 1,
+		},
+		{
+			name:     "nested parens outer",
+			content:  "((a))",
+			startCol: 0,
+			wantLine: 0, wantCol: 4,
+		},
+		{
+			name:     "nested parens inner",
+			content:  "((a))",
+			startCol: 1,
+			wantLine: 0, wantCol: 3,
+		},
+		{
+			name:     "not on bracket scans forward",
+			content:  "foo(bar)",
+			startCol: 0,
+			wantLine: 0, wantCol: 7,
+		},
+		{
+			name:     "no bracket on line",
+			content:  "hello",
+			startCol: 0,
+			wantLine: 0, wantCol: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := NewEditor(tt.content)
+			moveTo(e, tt.startCol)
+			pressPercent(e)
+			if e.Cursor().Line != tt.wantLine || e.Cursor().Col != tt.wantCol {
+				t.Errorf("got (%d,%d), want (%d,%d)",
+					e.Cursor().Line, e.Cursor().Col, tt.wantLine, tt.wantCol)
+			}
+		})
+	}
+}
+
+func TestEditor_MatchBracketMultiLine(t *testing.T) {
+	e := NewEditor("(\nhello\n)")
+
+	// Cursor starts on ( at line 0, col 0
+	e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'%'}})
+	if e.Cursor().Line != 2 || e.Cursor().Col != 0 {
+		t.Errorf("forward: got (%d,%d), want (2,0)", e.Cursor().Line, e.Cursor().Col)
+	}
+
+	// Now jump back
+	e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'%'}})
+	if e.Cursor().Line != 0 || e.Cursor().Col != 0 {
+		t.Errorf("backward: got (%d,%d), want (0,0)", e.Cursor().Line, e.Cursor().Col)
+	}
+}
+
+func TestEditor_MatchBracketOperator(t *testing.T) {
+	e := NewEditor("x(abc)y")
+
+	// Move to ( at col 1
+	e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+
+	// d% should delete from ( to ) inclusive
+	e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'%'}})
+	if e.Content() != "xy" {
+		t.Errorf("d%%: Content() = %q, want \"xy\"", e.Content())
+	}
+}
+
+func TestEditor_MatchBracketVisual(t *testing.T) {
+	e := NewEditor("(abc)")
+
+	// Enter visual mode on (
+	e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+
+	// % to extend selection to )
+	e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'%'}})
+
+	// Delete the visual selection
+	e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	if e.Content() != "" {
+		t.Errorf("v%%d: Content() = %q, want \"\"", e.Content())
+	}
+}
+
 func containsStr(s, substr string) bool {
 	for i := 0; i <= len(s)-len(substr); i++ {
 		if s[i:i+len(substr)] == substr {
