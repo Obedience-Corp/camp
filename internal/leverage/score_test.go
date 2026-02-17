@@ -283,7 +283,7 @@ func TestAggregateScores(t *testing.T) {
 	agg := AggregateScores(scores, 1, 10.0)
 
 	// Total estimated person-months = (5*4) + (3*6) = 20 + 18 = 38
-	// Actual person-months = 1 * 10 = 10
+	// Actual person-months = 1 * 10 = 10 (fallback since scores have no ActualPeople)
 	// FullLeverage = 38 / 10 = 3.8
 	if math.Abs(agg.FullLeverage-3.8) > 0.01 {
 		t.Errorf("FullLeverage: want 3.8, got %f", agg.FullLeverage)
@@ -299,5 +299,68 @@ func TestAggregateScores(t *testing.T) {
 	}
 	if agg.EstimatedCost != 125000 {
 		t.Errorf("EstimatedCost: want 125000, got %f", agg.EstimatedCost)
+	}
+}
+
+func TestAggregateScores_PerProjectActualPeople(t *testing.T) {
+	// Two projects with different team sizes and durations
+	scores := []*LeverageScore{
+		{
+			EstimatedPeople: 10.0,
+			EstimatedMonths: 5.0,
+			EstimatedCost:   100000,
+			ActualPeople:    1, // solo project
+			ElapsedMonths:   6.0,
+			AuthorCount:     1,
+			TotalCode:       5000,
+		},
+		{
+			EstimatedPeople: 20.0,
+			EstimatedMonths: 10.0,
+			EstimatedCost:   500000,
+			ActualPeople:    3, // 3-person project
+			ElapsedMonths:   4.0,
+			AuthorCount:     3,
+			TotalCode:       20000,
+		},
+	}
+
+	agg := AggregateScores(scores, 1, 10.0)
+
+	// Total estimated PM = (10*5) + (20*10) = 50 + 200 = 250
+	// Total actual PM = (1*6) + (3*4) = 6 + 12 = 18
+	// FullLeverage = 250 / 18 ≈ 13.89
+	wantLeverage := 250.0 / 18.0
+	if math.Abs(agg.FullLeverage-wantLeverage) > 0.1 {
+		t.Errorf("FullLeverage: want %.2f, got %.2f", wantLeverage, agg.FullLeverage)
+	}
+
+	if math.Abs(agg.ActualPersonMonths-18.0) > 0.01 {
+		t.Errorf("ActualPersonMonths: want 18.0, got %.2f", agg.ActualPersonMonths)
+	}
+
+	if agg.AuthorCount != 3 {
+		t.Errorf("AuthorCount: want 3 (max), got %d", agg.AuthorCount)
+	}
+}
+
+func TestAggregateScores_FallbackToGlobalParams(t *testing.T) {
+	// Scores without ActualPeople (legacy/snapshot scores)
+	scores := []*LeverageScore{
+		{
+			EstimatedPeople: 10.0,
+			EstimatedMonths: 5.0,
+			// No ActualPeople or ElapsedMonths set (zero values)
+			TotalCode: 5000,
+		},
+	}
+
+	agg := AggregateScores(scores, 2, 8.0)
+
+	// Should fall back to global: actual PM = 2 * 8 = 16
+	// Estimated PM = 10 * 5 = 50
+	// FullLeverage = 50 / 16 = 3.125
+	if math.Abs(agg.FullLeverage-3.125) > 0.01 {
+		t.Errorf("FullLeverage: want 3.125, got %.3f", agg.FullLeverage)
 	}
 }

@@ -213,6 +213,182 @@ func TestBuildContributions_ZeroLines(t *testing.T) {
 	}
 }
 
+func TestCountAuthors_SingleAuthor(t *testing.T) {
+	dir := initGitRepo(t)
+	commitFile(t, dir, "main.go", "package main\n", "Alice", "alice@example.com")
+
+	count, err := CountAuthors(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("CountAuthors: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("count = %d, want 1", count)
+	}
+}
+
+func TestCountAuthors_MultipleAuthors(t *testing.T) {
+	dir := initGitRepo(t)
+	commitFile(t, dir, "a.go", "package a\n", "Alice", "alice@example.com")
+	commitFile(t, dir, "b.go", "package a\n", "Bob", "bob@example.com")
+	commitFile(t, dir, "c.go", "package a\n", "Charlie", "charlie@example.com")
+
+	count, err := CountAuthors(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("CountAuthors: %v", err)
+	}
+	if count != 3 {
+		t.Errorf("count = %d, want 3", count)
+	}
+}
+
+func TestCountAuthors_DeduplicatesSameName(t *testing.T) {
+	dir := initGitRepo(t)
+	commitFile(t, dir, "a.go", "package a\n", "Alice", "alice@work.com")
+	commitFile(t, dir, "b.go", "package b\n", "Alice", "alice@personal.com")
+
+	count, err := CountAuthors(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("CountAuthors: %v", err)
+	}
+	// Same name "Alice" with different emails = 1 person
+	if count != 1 {
+		t.Errorf("count = %d, want 1 (same name dedup)", count)
+	}
+}
+
+func TestCountAuthors_FiltersBots(t *testing.T) {
+	dir := initGitRepo(t)
+	commitFile(t, dir, "a.go", "package a\n", "Alice", "alice@example.com")
+	commitFile(t, dir, "b.go", "package b\n", "dependabot[bot]", "dependabot[bot]@users.noreply.github.com")
+
+	count, err := CountAuthors(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("CountAuthors: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("count = %d, want 1 (bot should be filtered)", count)
+	}
+}
+
+func TestCountAuthors_MinimumOne(t *testing.T) {
+	dir := initGitRepo(t)
+	// Empty repo with no commits: CountAuthors should return 1 as minimum
+	cmd := exec.Command("git", "commit", "--allow-empty", "-m", "init")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %s: %v", out, err)
+	}
+
+	count, err := CountAuthors(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("CountAuthors: %v", err)
+	}
+	if count < 1 {
+		t.Errorf("count = %d, want >= 1", count)
+	}
+}
+
+func TestAuthorHasCommits(t *testing.T) {
+	dir := initGitRepo(t)
+	commitFile(t, dir, "a.go", "package a\n", "Alice", "alice@example.com")
+	commitFile(t, dir, "b.go", "package b\n", "Bob", "bob@example.com")
+
+	ctx := context.Background()
+
+	has, err := AuthorHasCommits(ctx, dir, "alice@example.com")
+	if err != nil {
+		t.Fatalf("AuthorHasCommits: %v", err)
+	}
+	if !has {
+		t.Error("expected Alice to have commits")
+	}
+
+	has, err = AuthorHasCommits(ctx, dir, "unknown@example.com")
+	if err != nil {
+		t.Fatalf("AuthorHasCommits: %v", err)
+	}
+	if has {
+		t.Error("expected unknown author to have no commits")
+	}
+}
+
+func TestAuthorDateRange(t *testing.T) {
+	dir := initGitRepo(t)
+	commitFile(t, dir, "a.go", "package a\n", "Alice", "alice@example.com")
+	commitFile(t, dir, "b.go", "package b\n", "Alice", "alice@example.com")
+
+	ctx := context.Background()
+	first, last, err := AuthorDateRange(ctx, dir, "alice@example.com")
+	if err != nil {
+		t.Fatalf("AuthorDateRange: %v", err)
+	}
+	if first.IsZero() || last.IsZero() {
+		t.Error("expected non-zero dates")
+	}
+	if last.Before(first) {
+		t.Errorf("last (%v) should be >= first (%v)", last, first)
+	}
+}
+
+func TestAuthorDateRange_NoCommits(t *testing.T) {
+	dir := initGitRepo(t)
+	commitFile(t, dir, "a.go", "package a\n", "Alice", "alice@example.com")
+
+	ctx := context.Background()
+	_, _, err := AuthorDateRange(ctx, dir, "unknown@example.com")
+	if err == nil {
+		t.Error("expected error for author with no commits")
+	}
+}
+
+func TestIsBotEmail(t *testing.T) {
+	tests := []struct {
+		email string
+		want  bool
+	}{
+		{"alice@example.com", false},
+		{"noreply@github.com", true},
+		{"dependabot[bot]@users.noreply.github.com", true},
+		{"renovate@whitesource.com", true},
+		{"github-actions@github.com", true},
+		{"bot@company.com", true},
+		{"alice@company.com", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.email, func(t *testing.T) {
+			got := isBotEmail(tt.email)
+			if got != tt.want {
+				t.Errorf("isBotEmail(%q) = %v, want %v", tt.email, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseNameEmail(t *testing.T) {
+	tests := []struct {
+		input     string
+		wantName  string
+		wantEmail string
+	}{
+		{"Alice <alice@example.com>", "Alice", "alice@example.com"},
+		{"Bob Smith <bob@test.com>", "Bob Smith", "bob@test.com"},
+		{"NoEmail", "NoEmail", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			name, email := parseNameEmail(tt.input)
+			if name != tt.wantName {
+				t.Errorf("name = %q, want %q", name, tt.wantName)
+			}
+			if email != tt.wantEmail {
+				t.Errorf("email = %q, want %q", email, tt.wantEmail)
+			}
+		})
+	}
+}
+
 func TestBuildContributions_Sorted(t *testing.T) {
 	accum := map[string]*authorAccum{
 		"c@test.com": {name: "C", email: "c@test.com", lines: 10},
