@@ -299,6 +299,20 @@ func (s *IntentService) List(ctx context.Context, opts *ListOptions) ([]*Intent,
 		}
 	}
 
+	// Deduplicate by ID — an intent file may exist in multiple status
+	// directories due to incomplete Move() operations. Keep the first
+	// occurrence (statuses are scanned in priority order).
+	seen := make(map[string]bool, len(intents))
+	deduped := make([]*Intent, 0, len(intents))
+	for _, i := range intents {
+		if seen[i.ID] {
+			continue
+		}
+		seen[i.ID] = true
+		deduped = append(deduped, i)
+	}
+	intents = deduped
+
 	// Sort results
 	if opts != nil && opts.SortBy != "" {
 		s.sortIntents(intents, opts.SortBy, opts.SortDesc)
@@ -494,6 +508,8 @@ func (s *IntentService) Move(ctx context.Context, id string, newStatus Status) (
 		os.Remove(newPath)
 		return nil, fmt.Errorf("removing old intent file: %w", err)
 	}
+	// Clean up any orphan copies in other status directories
+	s.removeAllCopies(id, newPath)
 
 	intent.Path = newPath
 	return intent, nil
@@ -550,6 +566,19 @@ func (s *IntentService) Count(ctx context.Context) ([]StatusCount, int, error) {
 // getIntentPath returns the file path for an intent given its status and ID.
 func (s *IntentService) getIntentPath(status Status, id string) string {
 	return filepath.Join(s.intentsDir, string(status), id+".md")
+}
+
+// removeAllCopies removes all files for the given intent ID across all
+// status directories except the one at exceptPath. Used by Move() to
+// clean up orphan copies left by incomplete prior moves.
+func (s *IntentService) removeAllCopies(id string, exceptPath string) {
+	for _, status := range AllStatuses() {
+		p := s.getIntentPath(status, id)
+		if p == exceptPath {
+			continue
+		}
+		os.Remove(p) // ignore errors — file may not exist
+	}
 }
 
 // loadIntent reads and parses an intent from a file path.

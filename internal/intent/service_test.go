@@ -1477,6 +1477,102 @@ func TestIntentService_Count_ContextCancelled(t *testing.T) {
 	}
 }
 
+func TestIntentService_List_DeduplicatesByID(t *testing.T) {
+	tmpDir := t.TempDir()
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
+	ctx := context.Background()
+
+	// Create an intent (lands in inbox/)
+	created, err := svc.CreateDirect(ctx, CreateOptions{
+		Title:     "Duplicate Bug Test",
+		Type:      TypeFeature,
+		Timestamp: time.Date(2026, 2, 17, 10, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateDirect() error = %v", err)
+	}
+
+	// Manually copy the file to dungeon/killed/ to simulate an orphan
+	killedDir := filepath.Join(tmpDir, "intents", string(StatusKilled))
+	if err := os.MkdirAll(killedDir, 0755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	srcContent, err := os.ReadFile(created.Path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	orphanPath := filepath.Join(killedDir, created.ID+".md")
+	if err := os.WriteFile(orphanPath, srcContent, 0644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	// List should return exactly 1 result, not 2
+	intents, err := svc.List(ctx, nil)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(intents) != 1 {
+		t.Errorf("List() count = %d, want 1 (dedup should remove orphan)", len(intents))
+	}
+
+	// The returned intent should be from inbox (higher priority)
+	if len(intents) > 0 && intents[0].Status != StatusInbox {
+		t.Errorf("Status = %q, want %q (inbox has higher priority)", intents[0].Status, StatusInbox)
+	}
+}
+
+func TestIntentService_Move_CleansUpOrphans(t *testing.T) {
+	tmpDir := t.TempDir()
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
+	ctx := context.Background()
+
+	// Create an intent (lands in inbox/)
+	created, err := svc.CreateDirect(ctx, CreateOptions{
+		Title:     "Orphan Cleanup Test",
+		Type:      TypeBug,
+		Timestamp: time.Date(2026, 2, 17, 11, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateDirect() error = %v", err)
+	}
+
+	// Manually copy the file to dungeon/killed/ to simulate an orphan
+	killedDir := filepath.Join(tmpDir, "intents", string(StatusKilled))
+	if err := os.MkdirAll(killedDir, 0755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	srcContent, err := os.ReadFile(created.Path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	orphanPath := filepath.Join(killedDir, created.ID+".md")
+	if err := os.WriteFile(orphanPath, srcContent, 0644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	// Move to active — should clean up both inbox and killed copies
+	moved, err := svc.Move(ctx, created.ID, StatusActive)
+	if err != nil {
+		t.Fatalf("Move() error = %v", err)
+	}
+
+	// Verify file exists only in active/
+	if _, err := os.Stat(moved.Path); err != nil {
+		t.Errorf("File should exist at active path: %v", err)
+	}
+
+	// Verify inbox copy is gone
+	inboxPath := svc.getIntentPath(StatusInbox, created.ID)
+	if _, err := os.Stat(inboxPath); !os.IsNotExist(err) {
+		t.Error("Inbox copy should not exist after Move()")
+	}
+
+	// Verify killed orphan is gone
+	if _, err := os.Stat(orphanPath); !os.IsNotExist(err) {
+		t.Error("Killed orphan copy should not exist after Move()")
+	}
+}
+
 func BenchmarkIntentService_Search(b *testing.B) {
 	tmpDir := b.TempDir()
 	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
