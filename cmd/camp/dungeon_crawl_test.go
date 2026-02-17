@@ -86,7 +86,7 @@ func TestBuildCrawlCommitMessage(t *testing.T) {
 				StatusCounts: map[string]int{},
 				MovedItems:   map[string][]string{},
 			},
-			inner:   nil,
+			inner:    nil,
 			contains: []string{},
 		},
 	}

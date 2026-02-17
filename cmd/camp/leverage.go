@@ -45,7 +45,7 @@ func init() {
 	leverageCmd.Flags().Int("people", 0, "override team size (0 = auto-detect from git)")
 	leverageCmd.Flags().Bool("no-legend", false, "hide the leverage formula legend")
 	leverageCmd.Flags().BoolP("verbose", "v", false, "show diagnostic details (config, project resolution, exclusions)")
-	leverageCmd.Flags().String("author", "", "show personal leverage for a specific author email")
+	leverageCmd.Flags().String("author", "", "filter by author email (git substring match — 'alice@co' matches 'alice@co.com')")
 	rootCmd.AddCommand(leverageCmd)
 	leverageCmd.GroupID = "campaign"
 }
@@ -81,65 +81,14 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	resolved, err := leverage.ResolveProjects(ctx, setup.Root, cfg)
+	resolved, authorExcluded, err := resolveAndPopulateProjects(ctx, setup.Root, cfg, authorFilter)
 	if err != nil {
-		return fmt.Errorf("resolving projects: %w", err)
+		return err
 	}
 
 	// Verbose: show config and project resolution details
 	if verbose {
-		configPath := leverage.DefaultConfigPath(setup.Root)
-		fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] Config path: %s\n", configPath)
-		fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] Auto-detected: %v\n", setup.AutoDetected)
-		fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] ActualPeople (config): %d\n", cfg.ActualPeople)
-		fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] ProjectStart: %s\n", cfg.ProjectStart.Format("2006-01-02"))
-
-		totalProjects := len(cfg.Projects)
-		var excludedNames []string
-		for name, entry := range cfg.Projects {
-			if !entry.Include {
-				excludedNames = append(excludedNames, name)
-			}
-		}
-		fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] Projects in config: %d total, %d excluded\n",
-			totalProjects, len(excludedNames))
-		for _, n := range excludedNames {
-			fmt.Fprintf(cmd.ErrOrStderr(), "[verbose]   excluded: %s\n", n)
-		}
-		fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] Resolved projects: %d\n", len(resolved))
-		for _, p := range resolved {
-			fmt.Fprintf(cmd.ErrOrStderr(), "[verbose]   %s -> scc:%s git:%s\n", p.Name, p.SCCDir, p.GitDir)
-		}
-	}
-
-	// Populate author counts and actual person-months for each resolved project
-	for i := range resolved {
-		count, gitErr := leverage.CountAuthors(ctx, resolved[i].GitDir)
-		if gitErr == nil {
-			resolved[i].AuthorCount = count
-		}
-		pm, pmErr := leverage.ProjectActualPersonMonths(ctx, resolved[i].GitDir)
-		if pmErr == nil {
-			resolved[i].ActualPersonMonths = pm
-		}
-	}
-
-	// Author filtering: only include projects where author has commits
-	var authorExcluded int
-	if authorFilter != "" {
-		var filtered []leverage.ResolvedProject
-		for _, proj := range resolved {
-			hasCommits, gitErr := leverage.AuthorHasCommits(ctx, proj.GitDir, authorFilter)
-			if gitErr == nil && hasCommits {
-				filtered = append(filtered, proj)
-			} else {
-				authorExcluded++
-				if verbose {
-					fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] Author filter excluded: %s (no commits by %s)\n", proj.Name, authorFilter)
-				}
-			}
-		}
-		resolved = filtered
+		printVerboseLeverageInfo(cmd, cfg, setup, resolved)
 	}
 
 	// Compute elapsed months
@@ -399,28 +348,7 @@ func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.CategoryColor)
 
 	headers := []string{"PROJECT", "FILES", "CODE", "AUTHORS", "EST COST", "EST PM", "ACTUAL PM", "LEVERAGE"}
-	var rows [][]string
-	for _, s := range scores {
-		estPM := s.EstimatedPeople * s.EstimatedMonths
-		authors := "-"
-		if s.AuthorCount > 0 {
-			authors = fmt.Sprintf("%d", s.AuthorCount)
-		}
-		actualPM := s.ActualPersonMonths
-		if actualPM == 0 {
-			actualPM = s.ActualPeople * s.ElapsedMonths
-		}
-		rows = append(rows, []string{
-			s.ProjectName,
-			fmtInt(s.TotalFiles),
-			fmtInt(s.TotalCode),
-			authors,
-			"$" + fmtCost(s.EstimatedCost),
-			fmtInt(int(estPM)),
-			fmt.Sprintf("%.1f", actualPM),
-			fmtScore(s.FullLeverage) + "x",
-		})
-	}
+	rows := buildScoreRows(scores)
 
 	t := table.New().
 		Border(lipgloss.ASCIIBorder()).

@@ -281,6 +281,8 @@ func (e *Editor) handleNormal(msg tea.KeyMsg) (cmd string, quit bool) {
 		MoveParagraphBackward(e.buffer, count)
 	case "}":
 		MoveParagraphForward(e.buffer, count)
+	case "%":
+		MatchBracket(e.buffer)
 
 	// Find
 	case "f", "F", "t", "T":
@@ -419,6 +421,8 @@ func (e *Editor) handleOperatorPending(msg tea.KeyMsg, count int) (string, bool)
 		motion = MoveDown(e.buffer, count)
 	case "k":
 		motion = MoveUp(e.buffer, count)
+	case "%":
+		motion = MatchBracket(e.buffer)
 	case "i":
 		// Text object inner
 		return e.handleTextObject(op, true, count)
@@ -587,6 +591,8 @@ func (e *Editor) handleVisual(msg tea.KeyMsg) (cmd string, quit bool) {
 		MoveToLineStart(e.buffer)
 	case "$":
 		MoveToLineEnd(e.buffer)
+	case "%":
+		MatchBracket(e.buffer)
 	case "o":
 		// Swap selection anchor
 		curPos := e.buffer.CursorOffset()

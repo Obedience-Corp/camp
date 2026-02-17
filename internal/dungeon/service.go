@@ -500,6 +500,19 @@ func (s *Service) MoveToDungeonStatus(ctx context.Context, itemName, parentPath,
 		return err
 	}
 
+	// Validate parentPath is within campaign root
+	absSource, err := filepath.Abs(filepath.Join(parentPath, itemName))
+	if err != nil {
+		return fmt.Errorf("resolving source path: %w", err)
+	}
+	absCampaignRoot, err := filepath.Abs(s.campaignRoot)
+	if err != nil {
+		return fmt.Errorf("resolving campaign root: %w", err)
+	}
+	if !strings.HasPrefix(absSource, absCampaignRoot+string(filepath.Separator)) {
+		return fmt.Errorf("%w: source outside campaign root", ErrNotInDungeon)
+	}
+
 	sourcePath := filepath.Join(parentPath, itemName)
 	targetPath := filepath.Join(s.dungeonPath, status, itemName)
 
