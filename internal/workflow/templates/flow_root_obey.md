@@ -16,7 +16,6 @@ directory holds active work, and the `dungeon/` directory holds everything else.
 ├── (your active work)   # Items you're working on right now
 └── dungeon/             # All non-active statuses
     ├── OBEY.md
-    ├── ready/           # Queued and ready to start
     ├── completed/       # Successfully finished
     ├── archived/        # Preserved for history
     └── someday/         # Deferred, low priority
@@ -27,7 +26,6 @@ directory holds active work, and the `dungeon/` directory holds everything else.
 ```bash
 camp flow status               # View workflow overview
 camp flow list                 # List active items
-camp flow list dungeon/ready   # List items ready to start
 camp flow move item dungeon/completed  # Mark item as done
 camp flow crawl                # Review items interactively
 ```
@@ -35,5 +33,4 @@ camp flow crawl                # Review items interactively
 ## Workflow
 
 Active work lives at the root level. When work is done, move it into the
-appropriate dungeon subdirectory. To start something new, move it from
-`dungeon/ready` to the root.
+appropriate dungeon subdirectory using `camp flow move` or `camp dungeon crawl`.

@@ -56,7 +56,7 @@ func RunCrawl(ctx context.Context, svc *Service) (*CrawlSummary, error) {
 	}
 
 	if len(items) == 0 {
-		return &CrawlSummary{StatusCounts: map[string]int{}}, nil
+		return &CrawlSummary{StatusCounts: map[string]int{}, MovedItems: map[string][]string{}}, nil
 	}
 
 	// Fetch status dirs once before the loop
@@ -66,7 +66,7 @@ func RunCrawl(ctx context.Context, svc *Service) (*CrawlSummary, error) {
 	}
 
 	gatherer := NewStatsGatherer()
-	summary := &CrawlSummary{StatusCounts: map[string]int{}}
+	summary := &CrawlSummary{StatusCounts: map[string]int{}, MovedItems: map[string][]string{}}
 
 	for i, item := range items {
 		if err := ctx.Err(); err != nil {
@@ -86,8 +86,8 @@ func RunCrawl(ctx context.Context, svc *Service) (*CrawlSummary, error) {
 					Title(title).
 					Description(infoStr).
 					Options(
-						huh.NewOption("Move - Move to a status directory", "move"),
 						huh.NewOption("Keep - Leave in dungeon for later", "keep"),
+						huh.NewOption("Move - Move to a status directory", "move"),
 						huh.NewOption("Skip - Come back to it another time", "skip"),
 						huh.NewOption("Quit - Stop crawling", "quit"),
 					).
@@ -123,7 +123,7 @@ func RunCrawl(ctx context.Context, svc *Service) (*CrawlSummary, error) {
 				fmt.Printf("Error moving %s to %s: %v\n", item.Name, status, err)
 				summary.Skipped++
 			} else {
-				summary.StatusCounts[status]++
+				summary.RecordMove(status, item.Name)
 				if err := logDecision(ctx, svc, item, MoveDecision(status), stats); err != nil {
 					fmt.Printf("Warning: failed to log decision: %v\n", err)
 				}

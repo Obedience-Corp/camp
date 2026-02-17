@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/obediencecorp/camp/internal/git"
+	"github.com/obediencecorp/camp/internal/git/commit"
 	"github.com/obediencecorp/camp/internal/intent"
 	"github.com/obediencecorp/camp/internal/intent/gather"
 	"github.com/obediencecorp/camp/internal/intent/tui"
@@ -77,12 +77,14 @@ func (m *Model) executeGather() tea.Cmd {
 				description += fmt.Sprintf("\nArchived: %d source intents", len(result.ArchivedPaths))
 			}
 
-			_ = git.IntentCommitAll(m.ctx, git.IntentCommitOptions{
-				CampaignRoot: m.campaignRoot,
-				CampaignID:   m.campaignID,
-				Action:       git.IntentActionGather,
-				IntentTitle:  opts.Title,
-				Description:  description,
+			_ = commit.Intent(m.ctx, commit.IntentOptions{
+				Options: commit.Options{
+					CampaignRoot: m.campaignRoot,
+					CampaignID:   m.campaignID,
+				},
+				Action:      commit.IntentGather,
+				IntentTitle: opts.Title,
+				Description: description,
 			})
 		}
 

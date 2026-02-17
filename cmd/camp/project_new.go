@@ -6,7 +6,7 @@ import (
 
 	"github.com/obediencecorp/camp/internal/campaign"
 	"github.com/obediencecorp/camp/internal/config"
-	"github.com/obediencecorp/camp/internal/git"
+	"github.com/obediencecorp/camp/internal/git/commit"
 	"github.com/obediencecorp/camp/internal/project"
 	"github.com/obediencecorp/camp/internal/ui"
 	"github.com/spf13/cobra"
@@ -74,11 +74,13 @@ func runProjectNew(cmd *cobra.Command, args []string) error {
 		if cfg != nil {
 			campaignID = cfg.ID
 		}
-		commitResult := git.ProjectCommitAll(ctx, git.ProjectCommitOptions{
-			CampaignRoot: root,
-			CampaignID:   campaignID,
-			Action:       git.ProjectActionNew,
-			ProjectName:  result.Name,
+		commitResult := commit.Project(ctx, commit.ProjectOptions{
+			Options: commit.Options{
+				CampaignRoot: root,
+				CampaignID:   campaignID,
+			},
+			Action:      commit.ProjectNew,
+			ProjectName: result.Name,
 		})
 		if commitResult.Message != "" {
 			fmt.Printf("  %s\n", commitResult.Message)

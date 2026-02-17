@@ -131,7 +131,7 @@ func TestDefaultSchemaV2(t *testing.T) {
 			t.Error("dungeon should be nested")
 		}
 
-		expectedChildren := []string{"ready", "completed", "archived", "someday"}
+		expectedChildren := []string{"completed", "archived", "someday"}
 		for _, name := range expectedChildren {
 			if _, ok := dungeon.Children[name]; !ok {
 				t.Errorf("missing dungeon child: %s", name)

@@ -2,6 +2,7 @@ package scaffold
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -21,6 +22,8 @@ const (
 	RepairModify RepairChangeType = "modify"
 	// RepairPreserve indicates a user-defined item will be kept.
 	RepairPreserve RepairChangeType = "preserve"
+	// RepairMigrate indicates items will be moved to the correct location.
+	RepairMigrate RepairChangeType = "migrate"
 )
 
 // RepairChange describes a single proposed change during repair.
@@ -35,16 +38,36 @@ type RepairChange struct {
 	Description string
 }
 
+// MigrationAction describes items to move from a misplaced directory to its correct location.
+type MigrationAction struct {
+	// Source is the absolute path to the misplaced directory (e.g., workflow/code_reviews/completed).
+	Source string
+	// Dest is the absolute path to the correct directory (e.g., workflow/code_reviews/dungeon/completed).
+	Dest string
+	// Items are the names of files/dirs to move.
+	Items []string
+}
+
 // RepairPlan holds all proposed changes for a repair operation.
 type RepairPlan struct {
 	// Changes lists all proposed changes in display order.
 	Changes []RepairChange
 	// MergedJumps is the computed jumps config after repair (preserving user entries).
 	MergedJumps *config.JumpsConfig
+	// Migrations lists directories whose contents need to be moved.
+	Migrations []MigrationAction
 }
 
-// HasChanges returns true if the plan contains any additions or modifications.
+// HasMigrations returns true if any migration actions are planned.
+func (p *RepairPlan) HasMigrations() bool {
+	return len(p.Migrations) > 0
+}
+
+// HasChanges returns true if the plan contains any additions, modifications, or migrations.
 func (p *RepairPlan) HasChanges() bool {
+	if p.HasMigrations() {
+		return true
+	}
 	for _, c := range p.Changes {
 		if c.Type == RepairAdd || c.Type == RepairModify {
 			return true
@@ -78,6 +101,10 @@ func ComputeRepairPlan(ctx context.Context, dir string, opts InitOptions) (*Repa
 
 	// Phase 3: Check for missing .gitignore and CLAUDE.md symlink.
 	computeMiscFileChanges(absDir, plan)
+
+	// Phase 4: Detect misplaced completed/ dirs that should be in dungeon/completed/.
+	// This runs after scaffold detection so we know which dungeon dirs will be created.
+	computeMigrationChanges(absDir, plan)
 
 	return plan, nil
 }
@@ -231,6 +258,137 @@ func computeMiscFileChanges(absDir string, plan *RepairPlan) {
 // Legacy entries without a Source field are treated as user-defined (safe default).
 func isUserDefined(sc config.ShortcutConfig) bool {
 	return sc.Source != config.ShortcutSourceAuto
+}
+
+// computeMigrationChanges walks the campaign tree looking for directories
+// that have both completed/ at root level and dungeon/completed/ as a subdirectory.
+// Items in completed/ should be migrated into dungeon/completed/.
+// This also considers dungeon dirs that will be created by scaffold repair.
+func computeMigrationChanges(absDir string, plan *RepairPlan) {
+	// Collect dirs that scaffold will create, so we can account for
+	// dungeon/completed dirs that don't exist yet but will after repair.
+	plannedDirs := make(map[string]bool)
+	for _, c := range plan.Changes {
+		if c.Category == "directory" {
+			plannedDirs[filepath.Join(absDir, c.Key)] = true
+		}
+	}
+
+	// Walk the campaign looking for completed/ + dungeon/completed/ pairs.
+	_ = filepath.WalkDir(absDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if !d.IsDir() {
+			return nil
+		}
+
+		name := d.Name()
+
+		// Skip system directories
+		if name == ".git" || name == "node_modules" || name == ".campaign" || name == "dungeon" {
+			return filepath.SkipDir
+		}
+
+		// Check: does this directory have both completed/ and dungeon/?
+		completedPath := filepath.Join(path, "completed")
+		dungeonCompletedPath := filepath.Join(path, "dungeon", "completed")
+
+		completedInfo, completedErr := os.Stat(completedPath)
+		if completedErr != nil || !completedInfo.IsDir() {
+			return nil
+		}
+
+		// dungeon/completed must exist on disk OR be planned for creation
+		dungeonCompletedExists := false
+		if info, err := os.Stat(dungeonCompletedPath); err == nil && info.IsDir() {
+			dungeonCompletedExists = true
+		}
+		if plannedDirs[dungeonCompletedPath] {
+			dungeonCompletedExists = true
+		}
+
+		if !dungeonCompletedExists {
+			return nil
+		}
+
+		// List items in completed/ (excluding .gitkeep)
+		entries, err := os.ReadDir(completedPath)
+		if err != nil {
+			return nil
+		}
+
+		var items []string
+		for _, entry := range entries {
+			if entry.Name() == ".gitkeep" {
+				continue
+			}
+			items = append(items, entry.Name())
+		}
+
+		if len(items) == 0 {
+			return nil
+		}
+
+		relSource, _ := filepath.Rel(absDir, completedPath)
+		relDest, _ := filepath.Rel(absDir, dungeonCompletedPath)
+
+		plan.Migrations = append(plan.Migrations, MigrationAction{
+			Source: completedPath,
+			Dest:   dungeonCompletedPath,
+			Items:  items,
+		})
+
+		for _, item := range items {
+			plan.Changes = append(plan.Changes, RepairChange{
+				Type:        RepairMigrate,
+				Category:    "migration",
+				Key:         filepath.Join(relSource, item),
+				Description: "→ " + relDest,
+			})
+		}
+
+		return nil
+	})
+}
+
+// ExecuteMigrations moves items from misplaced directories to their correct locations.
+// Returns the number of items moved and any error.
+func ExecuteMigrations(migrations []MigrationAction) (int, error) {
+	moved := 0
+	for _, m := range migrations {
+		// Ensure destination exists
+		if err := os.MkdirAll(m.Dest, 0755); err != nil {
+			return moved, fmt.Errorf("creating %s: %w", m.Dest, err)
+		}
+
+		for _, item := range m.Items {
+			src := filepath.Join(m.Source, item)
+			dst := filepath.Join(m.Dest, item)
+
+			if err := os.Rename(src, dst); err != nil {
+				return moved, fmt.Errorf("moving %s to %s: %w", src, dst, err)
+			}
+			moved++
+		}
+
+		// Remove the now-empty source directory (best effort)
+		// Only remove if empty or contains only .gitkeep
+		entries, err := os.ReadDir(m.Source)
+		if err == nil {
+			empty := true
+			for _, e := range entries {
+				if e.Name() != ".gitkeep" {
+					empty = false
+					break
+				}
+			}
+			if empty {
+				os.RemoveAll(m.Source)
+			}
+		}
+	}
+	return moved, nil
 }
 
 // sortedKeys returns map keys in sorted order.

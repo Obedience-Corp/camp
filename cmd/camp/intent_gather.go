@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/obediencecorp/camp/internal/config"
-	"github.com/obediencecorp/camp/internal/git"
+	"github.com/obediencecorp/camp/internal/git/commit"
 	"github.com/obediencecorp/camp/internal/intent"
 	"github.com/obediencecorp/camp/internal/intent/gather"
 	"github.com/obediencecorp/camp/internal/paths"
@@ -171,12 +171,14 @@ func runIntentGather(cmd *cobra.Command, args []string) error {
 			description += fmt.Sprintf("\nArchived: %d source intents", len(result.ArchivedPaths))
 		}
 
-		commitResult := git.IntentCommitAll(ctx, git.IntentCommitOptions{
-			CampaignRoot: campaignRoot,
-			CampaignID:   cfg.ID,
-			Action:       git.IntentActionGather,
-			IntentTitle:  gatherTitle,
-			Description:  description,
+		commitResult := commit.Intent(ctx, commit.IntentOptions{
+			Options: commit.Options{
+				CampaignRoot: campaignRoot,
+				CampaignID:   cfg.ID,
+			},
+			Action:      commit.IntentGather,
+			IntentTitle: gatherTitle,
+			Description: description,
 		})
 		if commitResult.Message != "" {
 			fmt.Printf("  %s\n", commitResult.Message)

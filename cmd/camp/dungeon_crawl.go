@@ -1,15 +1,18 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/obediencecorp/camp/internal/config"
 	"github.com/obediencecorp/camp/internal/dungeon"
+	"github.com/obediencecorp/camp/internal/git/commit"
 	"github.com/obediencecorp/camp/internal/ui"
 )
 
@@ -65,7 +68,6 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 	}
 	dungeonPath := filepath.Join(cwd, "dungeon")
 
-	_ = cfg
 	svc := dungeon.NewService(campaignRoot, dungeonPath)
 
 	// Determine modes
@@ -126,7 +128,71 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 	// Display summary
 	displayCrawlSummary(triageSummary, innerSummary)
 
+	// Autocommit if anything was moved
+	commitCrawlChanges(ctx, cfg, campaignRoot, cwd, triageSummary, innerSummary)
+
 	return nil
+}
+
+// commitCrawlChanges creates a git commit if any items were moved during crawl.
+func commitCrawlChanges(ctx context.Context, cfg *config.CampaignConfig, campaignRoot, cwd string, triage, inner *dungeon.CrawlSummary) {
+	hasMoves := (triage != nil && triage.HasMoves()) || (inner != nil && inner.HasMoves())
+	if !hasMoves {
+		return
+	}
+
+	description := buildCrawlCommitMessage(campaignRoot, cwd, triage, inner)
+
+	result := commit.Crawl(ctx, commit.CrawlOptions{
+		Options: commit.Options{
+			CampaignRoot: campaignRoot,
+			CampaignID:   cfg.ID,
+		},
+		Description: description,
+	})
+
+	if result.Committed {
+		fmt.Printf("\n%s %s\n", ui.SuccessIcon(), result.Message)
+	} else if result.Message != "" {
+		fmt.Printf("\n%s %s\n", ui.InfoIcon(), result.Message)
+	}
+}
+
+// buildCrawlCommitMessage builds the commit body listing moved items
+// with paths relative to the campaign root.
+func buildCrawlCommitMessage(campaignRoot, cwd string, triage, inner *dungeon.CrawlSummary) string {
+	relDir, err := filepath.Rel(campaignRoot, cwd)
+	if err != nil {
+		relDir = cwd
+	}
+
+	var b strings.Builder
+
+	writeMoves := func(summary *dungeon.CrawlSummary, prefix string) {
+		if summary == nil || !summary.HasMoves() {
+			return
+		}
+
+		statuses := make([]string, 0, len(summary.MovedItems))
+		for status := range summary.MovedItems {
+			statuses = append(statuses, status)
+		}
+		sort.Strings(statuses)
+
+		for _, status := range statuses {
+			items := summary.MovedItems[status]
+			fmt.Fprintf(&b, "Moved to %s/%s:\n", prefix, status)
+			for _, name := range items {
+				fmt.Fprintf(&b, "  - %s/%s\n", relDir, name)
+			}
+			b.WriteString("\n")
+		}
+	}
+
+	writeMoves(triage, "dungeon")
+	writeMoves(inner, "dungeon")
+
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func displayCrawlSummary(triage *dungeon.CrawlSummary, inner *dungeon.CrawlSummary) {

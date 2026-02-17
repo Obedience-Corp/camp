@@ -79,6 +79,13 @@ type LeverageScore struct {
 	ActualPeople  float64 `json:"actual_people"`
 	ElapsedMonths float64 `json:"elapsed_months"`
 
+	// ActualPersonMonths is the product of ActualPeople * ElapsedMonths.
+	// Populated by AggregateScores for the campaign aggregate.
+	ActualPersonMonths float64 `json:"actual_person_months,omitempty"`
+
+	// AuthorCount is the number of distinct human authors detected from git.
+	AuthorCount int `json:"author_count,omitempty"`
+
 	// Computed scores
 	// FullLeverage = (EstimatedPeople * EstimatedMonths) / (ActualPeople * ElapsedMonths)
 	FullLeverage float64 `json:"full_leverage"`
@@ -142,7 +149,9 @@ type PeriodLeverageScore struct {
 
 // LeverageConfig is the schema for .campaign/leverage/config.json.
 type LeverageConfig struct {
-	// ActualPeople is the number of developers working on the campaign.
+	// ActualPeople is the manual override for team size.
+	// 0 means auto-detect from git (default behavior).
+	// Non-zero = explicit override (backward compatible).
 	ActualPeople int `json:"actual_people"`
 
 	// ProjectStart is when development began (used to compute elapsed months).
@@ -153,6 +162,10 @@ type LeverageConfig struct {
 
 	// AvgWage overrides the average yearly salary for cost estimation.
 	AvgWage float64 `json:"avg_wage,omitempty"`
+
+	// AuthorEmail is the default email for --author filtering.
+	// When set, `camp leverage` defaults to personal leverage view.
+	AuthorEmail string `json:"author_email,omitempty"`
 
 	// Projects maps project names to their configuration entries.
 	// When non-empty, replaces the default project.List() discovery.

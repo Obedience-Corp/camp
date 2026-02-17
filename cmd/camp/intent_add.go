@@ -12,6 +12,7 @@ import (
 	"github.com/obediencecorp/camp/internal/config"
 	"github.com/obediencecorp/camp/internal/editor"
 	"github.com/obediencecorp/camp/internal/git"
+	"github.com/obediencecorp/camp/internal/git/commit"
 	"github.com/obediencecorp/camp/internal/intent"
 	"github.com/obediencecorp/camp/internal/intent/tui"
 	"github.com/obediencecorp/camp/internal/paths"
@@ -180,11 +181,13 @@ func runFastCapture(ctx context.Context, svc *intent.IntentService, cfg *config.
 
 	// Auto-commit (unless --no-commit)
 	if !noCommit {
-		commitResult := git.IntentCommitAll(ctx, git.IntentCommitOptions{
-			CampaignRoot: campaignRoot,
-			CampaignID:   cfg.ID,
-			Action:       git.IntentActionCreate,
-			IntentTitle:  opts.Title,
+		commitResult := commit.Intent(ctx, commit.IntentOptions{
+			Options: commit.Options{
+				CampaignRoot: campaignRoot,
+				CampaignID:   cfg.ID,
+			},
+			Action:      commit.IntentCreate,
+			IntentTitle: opts.Title,
 		})
 		if commitResult.Message != "" {
 			fmt.Printf("  %s\n", commitResult.Message)
@@ -213,11 +216,13 @@ func runDeepCapture(ctx context.Context, svc *intent.IntentService, cfg *config.
 
 	// Auto-commit (unless --no-commit)
 	if !noCommit {
-		commitResult := git.IntentCommitAll(ctx, git.IntentCommitOptions{
-			CampaignRoot: campaignRoot,
-			CampaignID:   cfg.ID,
-			Action:       git.IntentActionCreate,
-			IntentTitle:  opts.Title,
+		commitResult := commit.Intent(ctx, commit.IntentOptions{
+			Options: commit.Options{
+				CampaignRoot: campaignRoot,
+				CampaignID:   cfg.ID,
+			},
+			Action:      commit.IntentCreate,
+			IntentTitle: opts.Title,
 		})
 		if commitResult.Message != "" {
 			fmt.Printf("  %s\n", commitResult.Message)

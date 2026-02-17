@@ -38,6 +38,7 @@ var (
 	projectCommitMessage string
 	projectCommitAll     bool
 	projectCommitAmend   bool
+	projectCommitSync    bool
 )
 
 func init() {
@@ -45,6 +46,7 @@ func init() {
 	projectCommitCmd.Flags().StringVarP(&projectCommitMessage, "message", "m", "", "Commit message (required)")
 	projectCommitCmd.Flags().BoolVarP(&projectCommitAll, "all", "a", true, "Stage all changes")
 	projectCommitCmd.Flags().BoolVar(&projectCommitAmend, "amend", false, "Amend the previous commit")
+	projectCommitCmd.Flags().BoolVar(&projectCommitSync, "sync", true, "Auto-commit submodule ref in campaign root")
 
 	projectCmd.AddCommand(projectCommitCmd)
 }
@@ -112,8 +114,11 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 	// Show what's staged
 	showStagedSummary(ctx, resolvedPath)
 
+	// Load campaign config (used for tag and parent sync)
+	cfg, _ := config.LoadCampaignConfig(ctx, campRoot)
+
 	// Prepend campaign tag (graceful degradation if config unavailable)
-	if cfg, cfgErr := config.LoadCampaignConfig(ctx, campRoot); cfgErr == nil {
+	if cfg != nil {
 		message = git.PrependCampaignTag(cfg.ID, message)
 	}
 
@@ -133,12 +138,13 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 
 	fmt.Println(ui.Success("✓ Project changes committed"))
 
-	// Check if parent needs update
-	parentNeedsCommit := checkParentNeedsCommit(ctx, campRoot, resolvedPath)
-	if parentNeedsCommit {
-		fmt.Println()
-		fmt.Println(ui.Warning("Note: Campaign root shows this project as modified."))
-		fmt.Println(ui.Dim("Run 'camp commit' to update the submodule reference."))
+	// Auto-sync submodule ref in campaign root
+	if projectCommitSync && checkParentNeedsCommit(ctx, campRoot, resolvedPath) {
+		if err := syncParentRef(ctx, campRoot, relPath, cfg); err != nil {
+			fmt.Println()
+			fmt.Println(ui.Warning("Could not auto-sync campaign root: " + err.Error()))
+			fmt.Println(ui.Dim("Run 'camp commit' to update manually."))
+		}
 	}
 
 	return nil
@@ -213,6 +219,35 @@ func showProjectList(ctx context.Context, campRoot string) {
 		fmt.Printf("  - %s\n", proj.Path)
 	}
 	fmt.Println(ui.Dim("\nUse --path to specify a project, or navigate into one first."))
+}
+
+// syncParentRef stages and commits the submodule ref update in the campaign root.
+func syncParentRef(ctx context.Context, campRoot, relPath string, cfg *config.CampaignConfig) error {
+	parentExec, err := git.NewExecutor(campRoot)
+	if err != nil {
+		return fmt.Errorf("campaign root git: %w", err)
+	}
+
+	if err := parentExec.Stage(ctx, []string{relPath}); err != nil {
+		return fmt.Errorf("staging submodule ref: %w", err)
+	}
+
+	projName := filepath.Base(relPath)
+	msg := fmt.Sprintf("update %s submodule ref", projName)
+	if cfg != nil {
+		msg = git.PrependCampaignTag(cfg.ID, msg)
+	}
+
+	opts := &git.CommitOptions{Message: msg}
+	if err := parentExec.Commit(ctx, opts); err != nil {
+		if errors.Is(err, git.ErrNoChanges) {
+			return nil
+		}
+		return fmt.Errorf("commit: %w", err)
+	}
+
+	fmt.Println(ui.Success("✓ Campaign root synced (" + relPath + ")"))
+	return nil
 }
 
 // checkParentNeedsCommit checks if the parent repo shows the submodule as modified.

@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/obediencecorp/camp/internal/git"
+	"github.com/obediencecorp/camp/internal/git/commit"
 	"github.com/obediencecorp/camp/internal/intent"
 	"github.com/obediencecorp/camp/internal/intent/tui"
 )
@@ -107,11 +107,13 @@ func (m *Model) finishIntentCreation(conceptPath string) (tea.Model, tea.Cmd) {
 
 	// Auto-commit the creation using shared helper
 	if m.campaignRoot != "" && m.campaignID != "" {
-		_ = git.IntentCommitAll(m.ctx, git.IntentCommitOptions{
-			CampaignRoot: m.campaignRoot,
-			CampaignID:   m.campaignID,
-			Action:       git.IntentActionCreate,
-			IntentTitle:  title,
+		_ = commit.Intent(m.ctx, commit.IntentOptions{
+			Options: commit.Options{
+				CampaignRoot: m.campaignRoot,
+				CampaignID:   m.campaignID,
+			},
+			Action:      commit.IntentCreate,
+			IntentTitle: title,
 		})
 	}
 

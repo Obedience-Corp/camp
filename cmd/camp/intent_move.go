@@ -6,7 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/obediencecorp/camp/internal/config"
-	"github.com/obediencecorp/camp/internal/git"
+	"github.com/obediencecorp/camp/internal/git/commit"
 	"github.com/obediencecorp/camp/internal/intent"
 	"github.com/obediencecorp/camp/internal/paths"
 )
@@ -91,12 +91,14 @@ func runIntentMove(cmd *cobra.Command, args []string) error {
 
 	// Auto-commit (unless --no-commit)
 	if !noCommit {
-		commitResult := git.IntentCommitAll(ctx, git.IntentCommitOptions{
-			CampaignRoot: campaignRoot,
-			CampaignID:   cfg.ID,
-			Action:       git.IntentActionMove,
-			IntentTitle:  intentTitle,
-			Description:  fmt.Sprintf("Moved to %s status", status),
+		commitResult := commit.Intent(ctx, commit.IntentOptions{
+			Options: commit.Options{
+				CampaignRoot: campaignRoot,
+				CampaignID:   cfg.ID,
+			},
+			Action:      commit.IntentMove,
+			IntentTitle: intentTitle,
+			Description: fmt.Sprintf("Moved to %s status", status),
 		})
 		if commitResult.Message != "" {
 			fmt.Printf("  %s\n", commitResult.Message)

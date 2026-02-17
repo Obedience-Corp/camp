@@ -11,14 +11,14 @@ import (
 
 func TestRepairPlan_HasChanges(t *testing.T) {
 	tests := []struct {
-		name    string
-		changes []RepairChange
-		want    bool
+		name       string
+		changes    []RepairChange
+		migrations []MigrationAction
+		want       bool
 	}{
 		{
-			name:    "empty plan has no changes",
-			changes: nil,
-			want:    false,
+			name: "empty plan has no changes",
+			want: false,
 		},
 		{
 			name: "only preserve entries means no changes",
@@ -49,11 +49,18 @@ func TestRepairPlan_HasChanges(t *testing.T) {
 			},
 			want: true,
 		},
+		{
+			name: "migrations only means has changes",
+			migrations: []MigrationAction{
+				{Source: "/a/completed", Dest: "/a/dungeon/completed", Items: []string{"item1"}},
+			},
+			want: true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			plan := &RepairPlan{Changes: tt.changes}
+			plan := &RepairPlan{Changes: tt.changes, Migrations: tt.migrations}
 			if got := plan.HasChanges(); got != tt.want {
 				t.Errorf("HasChanges() = %v, want %v", got, tt.want)
 			}
@@ -470,6 +477,165 @@ func TestRepairInit_PreservesUserShortcuts(t *testing.T) {
 		t.Error("user shortcut 'custom' was not preserved after repair")
 	} else if sc.Source != config.ShortcutSourceUser {
 		t.Errorf("user shortcut source = %q, want %q", sc.Source, config.ShortcutSourceUser)
+	}
+}
+
+func TestComputeMigrationChanges_DetectsMisplacedCompleted(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a workflow dir with both completed/ and dungeon/completed/
+	workflowDir := filepath.Join(dir, "workflow", "code_reviews")
+	completedDir := filepath.Join(workflowDir, "completed")
+	dungeonCompletedDir := filepath.Join(workflowDir, "dungeon", "completed")
+
+	for _, d := range []string{completedDir, dungeonCompletedDir} {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Add items to misplaced completed/
+	os.WriteFile(filepath.Join(completedDir, "review-1.md"), []byte("review"), 0644)
+	os.WriteFile(filepath.Join(completedDir, "review-2.md"), []byte("review"), 0644)
+	os.WriteFile(filepath.Join(completedDir, ".gitkeep"), []byte(""), 0644) // should be excluded
+
+	plan := &RepairPlan{}
+	computeMigrationChanges(dir, plan)
+
+	if !plan.HasMigrations() {
+		t.Fatal("expected migrations to be detected")
+	}
+
+	if len(plan.Migrations) != 1 {
+		t.Fatalf("expected 1 migration action, got %d", len(plan.Migrations))
+	}
+
+	m := plan.Migrations[0]
+	if len(m.Items) != 2 {
+		t.Errorf("expected 2 items to migrate, got %d: %v", len(m.Items), m.Items)
+	}
+
+	// Check migrate changes were added
+	migrateCount := 0
+	for _, c := range plan.Changes {
+		if c.Type == RepairMigrate {
+			migrateCount++
+		}
+	}
+	if migrateCount != 2 {
+		t.Errorf("expected 2 migrate changes, got %d", migrateCount)
+	}
+}
+
+func TestComputeMigrationChanges_NoDungeonCompleted(t *testing.T) {
+	dir := t.TempDir()
+
+	// completed/ exists but no dungeon/completed/ — no migration
+	completedDir := filepath.Join(dir, "workflow", "reviews", "completed")
+	if err := os.MkdirAll(completedDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(completedDir, "item.md"), []byte("x"), 0644)
+
+	plan := &RepairPlan{}
+	computeMigrationChanges(dir, plan)
+
+	if plan.HasMigrations() {
+		t.Error("should not detect migrations without dungeon/completed")
+	}
+}
+
+func TestComputeMigrationChanges_PlannedDungeonCompleted(t *testing.T) {
+	dir := t.TempDir()
+
+	// completed/ exists with items
+	workflowDir := filepath.Join(dir, "workflow", "design")
+	completedDir := filepath.Join(workflowDir, "completed")
+	if err := os.MkdirAll(completedDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(completedDir, "doc.md"), []byte("x"), 0644)
+
+	// dungeon/completed does NOT exist on disk, but IS planned for creation
+	dungeonCompletedPath := filepath.Join(workflowDir, "dungeon", "completed")
+	relPath, _ := filepath.Rel(dir, dungeonCompletedPath)
+
+	plan := &RepairPlan{
+		Changes: []RepairChange{
+			{Type: RepairAdd, Category: "directory", Key: relPath},
+		},
+	}
+	computeMigrationChanges(dir, plan)
+
+	if !plan.HasMigrations() {
+		t.Error("should detect migration when dungeon/completed is planned for creation")
+	}
+}
+
+func TestExecuteMigrations_MovesItems(t *testing.T) {
+	dir := t.TempDir()
+
+	src := filepath.Join(dir, "completed")
+	dst := filepath.Join(dir, "dungeon", "completed")
+	os.MkdirAll(src, 0755)
+	os.MkdirAll(dst, 0755)
+
+	// Create items in source
+	os.WriteFile(filepath.Join(src, "item1.md"), []byte("one"), 0644)
+	os.WriteFile(filepath.Join(src, "item2.md"), []byte("two"), 0644)
+
+	migrations := []MigrationAction{
+		{Source: src, Dest: dst, Items: []string{"item1.md", "item2.md"}},
+	}
+
+	moved, err := ExecuteMigrations(migrations)
+	if err != nil {
+		t.Fatalf("ExecuteMigrations() error: %v", err)
+	}
+	if moved != 2 {
+		t.Errorf("moved = %d, want 2", moved)
+	}
+
+	// Verify items are in destination
+	for _, name := range []string{"item1.md", "item2.md"} {
+		if _, err := os.Stat(filepath.Join(dst, name)); err != nil {
+			t.Errorf("expected %s in destination, got error: %v", name, err)
+		}
+	}
+
+	// Source directory should be removed (was empty after move)
+	if _, err := os.Stat(src); !os.IsNotExist(err) {
+		t.Error("expected source directory to be removed after migration")
+	}
+}
+
+func TestExecuteMigrations_KeepsSourceWithRemainingItems(t *testing.T) {
+	dir := t.TempDir()
+
+	src := filepath.Join(dir, "completed")
+	dst := filepath.Join(dir, "dungeon", "completed")
+	os.MkdirAll(src, 0755)
+	os.MkdirAll(dst, 0755)
+
+	// Create items — only one will be migrated
+	os.WriteFile(filepath.Join(src, "migrate-me.md"), []byte("yes"), 0644)
+	os.WriteFile(filepath.Join(src, "stay-here.md"), []byte("no"), 0644)
+
+	migrations := []MigrationAction{
+		{Source: src, Dest: dst, Items: []string{"migrate-me.md"}},
+	}
+
+	moved, err := ExecuteMigrations(migrations)
+	if err != nil {
+		t.Fatalf("ExecuteMigrations() error: %v", err)
+	}
+	if moved != 1 {
+		t.Errorf("moved = %d, want 1", moved)
+	}
+
+	// Source should still exist (has remaining items)
+	if _, err := os.Stat(src); err != nil {
+		t.Error("source directory should still exist when it has remaining items")
 	}
 }
 

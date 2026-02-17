@@ -22,8 +22,8 @@ func TestLoadConfig_MissingFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error for missing file, got: %v", err)
 	}
-	if cfg.ActualPeople != 1 {
-		t.Errorf("ActualPeople default: want 1, got %d", cfg.ActualPeople)
+	if cfg.ActualPeople != 0 {
+		t.Errorf("ActualPeople default: want 0 (auto-detect), got %d", cfg.ActualPeople)
 	}
 	if cfg.COCOMOProjectType != COCOMOOrganic {
 		t.Errorf("COCOMOProjectType default: want %s, got %s", COCOMOOrganic, cfg.COCOMOProjectType)
@@ -87,8 +87,9 @@ func TestLoadConfig_ZeroValuesGetDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
-	if cfg.ActualPeople != 1 {
-		t.Errorf("ActualPeople: want 1 (default), got %d", cfg.ActualPeople)
+	// ActualPeople 0 is now valid (auto-detect from git), should stay 0
+	if cfg.ActualPeople != 0 {
+		t.Errorf("ActualPeople: want 0 (auto-detect), got %d", cfg.ActualPeople)
 	}
 	if cfg.COCOMOProjectType != COCOMOOrganic {
 		t.Errorf("COCOMOProjectType: want %s (default), got %s", COCOMOOrganic, cfg.COCOMOProjectType)
@@ -165,8 +166,8 @@ func TestAutoDetectConfig(t *testing.T) {
 		t.Fatalf("AutoDetectConfig: %v", err)
 	}
 
-	if cfg.ActualPeople != 1 {
-		t.Errorf("ActualPeople: want 1, got %d", cfg.ActualPeople)
+	if cfg.ActualPeople != 0 {
+		t.Errorf("ActualPeople: want 0 (auto-detect), got %d", cfg.ActualPeople)
 	}
 	if cfg.ProjectStart.IsZero() {
 		t.Error("ProjectStart should not be zero")
