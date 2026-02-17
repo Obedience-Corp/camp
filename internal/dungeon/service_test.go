@@ -927,3 +927,189 @@ func TestValidateStatusName(t *testing.T) {
 		})
 	}
 }
+
+// --- M-1: parentPath boundary validation tests ---
+
+func TestService_MoveToDungeonStatus_ParentPathTraversal(t *testing.T) {
+	ctx := context.Background()
+
+	tmpDir, err := os.MkdirTemp("", "dungeon-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dungeonPath := filepath.Join(tmpDir, "dungeon")
+	svc := NewService(tmpDir, dungeonPath)
+
+	if _, err := svc.Init(ctx, InitOptions{}); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+
+	// Create a file outside campaign root to ensure it's not moved
+	outsideDir := filepath.Join(tmpDir, "..", "outside-campaign")
+	if err := os.MkdirAll(outsideDir, 0755); err != nil {
+		t.Fatalf("failed to create outside dir: %v", err)
+	}
+	defer os.RemoveAll(outsideDir)
+
+	if err := os.WriteFile(filepath.Join(outsideDir, "secret.txt"), []byte("secret"), 0644); err != nil {
+		t.Fatalf("failed to create secret file: %v", err)
+	}
+
+	// Attempt path traversal via parentPath
+	err = svc.MoveToDungeonStatus(ctx, "secret.txt", "../../outside-campaign", "archived")
+	if err == nil {
+		t.Fatal("MoveToDungeonStatus should reject parentPath traversal")
+	}
+	if !errors.Is(err, ErrNotInDungeon) {
+		t.Errorf("expected ErrNotInDungeon, got: %v", err)
+	}
+}
+
+func TestService_MoveToDungeonStatus_ParentPathAbsolute(t *testing.T) {
+	ctx := context.Background()
+
+	tmpDir, err := os.MkdirTemp("", "dungeon-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dungeonPath := filepath.Join(tmpDir, "dungeon")
+	svc := NewService(tmpDir, dungeonPath)
+
+	if _, err := svc.Init(ctx, InitOptions{}); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+
+	// Create a file outside campaign root
+	outsideDir, err := os.MkdirTemp("", "outside-campaign-*")
+	if err != nil {
+		t.Fatalf("failed to create outside dir: %v", err)
+	}
+	defer os.RemoveAll(outsideDir)
+
+	if err := os.WriteFile(filepath.Join(outsideDir, "secret.txt"), []byte("secret"), 0644); err != nil {
+		t.Fatalf("failed to create secret file: %v", err)
+	}
+
+	// Attempt with absolute path outside campaign root
+	err = svc.MoveToDungeonStatus(ctx, "secret.txt", outsideDir, "archived")
+	if err == nil {
+		t.Fatal("MoveToDungeonStatus should reject absolute parentPath outside campaign root")
+	}
+	if !errors.Is(err, ErrNotInDungeon) {
+		t.Errorf("expected ErrNotInDungeon, got: %v", err)
+	}
+}
+
+// --- L-1: context cancellation tests ---
+
+func TestService_MoveToStatus_ContextCancelled(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "dungeon-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	svc := NewService(tmpDir, filepath.Join(tmpDir, "dungeon"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err = svc.MoveToStatus(ctx, "item", "status")
+	if err == nil {
+		t.Fatal("expected error for cancelled context")
+	}
+}
+
+func TestService_MoveToDungeonStatus_ContextCancelled(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "dungeon-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	svc := NewService(tmpDir, filepath.Join(tmpDir, "dungeon"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err = svc.MoveToDungeonStatus(ctx, "item", tmpDir, "archived")
+	if err == nil {
+		t.Fatal("expected error for cancelled context")
+	}
+}
+
+func TestService_ListStatusDirs_ContextCancelled(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "dungeon-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	svc := NewService(tmpDir, filepath.Join(tmpDir, "dungeon"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err = svc.ListStatusDirs(ctx)
+	if err == nil {
+		t.Fatal("expected error for cancelled context")
+	}
+}
+
+func TestService_ListItems_ContextCancelled(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "dungeon-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	svc := NewService(tmpDir, filepath.Join(tmpDir, "dungeon"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err = svc.ListItems(ctx)
+	if err == nil {
+		t.Fatal("expected error for cancelled context")
+	}
+}
+
+func TestService_ListParentItems_ContextCancelled(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "dungeon-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	svc := NewService(tmpDir, filepath.Join(tmpDir, "dungeon"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err = svc.ListParentItems(ctx, tmpDir)
+	if err == nil {
+		t.Fatal("expected error for cancelled context")
+	}
+}
+
+func TestService_AppendCrawlLog_ContextCancelled(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "dungeon-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	svc := NewService(tmpDir, filepath.Join(tmpDir, "dungeon"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err = svc.AppendCrawlLog(ctx, CrawlEntry{Item: "test", Decision: DecisionKeep})
+	if err == nil {
+		t.Fatal("expected error for cancelled context")
+	}
+}
