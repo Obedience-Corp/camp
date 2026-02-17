@@ -16,6 +16,7 @@ const (
 	IntentActionDelete  IntentAction = "Delete"
 	IntentActionGather  IntentAction = "Gather"
 	IntentActionPromote IntentAction = "Promote"
+	IntentActionCrawl   IntentAction = "Crawl"
 )
 
 // IntentCommitOptions configures intent-specific commits.

@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/obediencecorp/camp/internal/workflow"
 )
 
 // Service errors.
@@ -335,6 +337,18 @@ func (s *Service) ListParentItems(ctx context.Context, parentPath string) ([]Dun
 		".gitignore": true,
 	}
 
+	// Check .workflow.yaml for structural directory exclusions.
+	// If the parent has a workflow schema, all defined directories are structural
+	// and should not appear as triage candidates.
+	schemaPath := filepath.Join(parentPath, workflow.SchemaFileName)
+	if schema, err := workflow.LoadSchema(ctx, schemaPath); err == nil {
+		for name := range schema.Directories {
+			if name != "." {
+				excluded[name] = true
+			}
+		}
+	}
+
 	var items []DungeonItem
 	for _, entry := range entries {
 		name := entry.Name()
@@ -346,6 +360,15 @@ func (s *Service) ListParentItems(ctx context.Context, parentPath string) ([]Dun
 		// Skip hidden files not explicitly excluded
 		if strings.HasPrefix(name, ".") {
 			continue
+		}
+
+		// Skip directories that contain OBEY.md (managed campaign directories).
+		// These are structural directories that should not be triage candidates.
+		if entry.IsDir() {
+			obeyPath := filepath.Join(parentPath, name, "OBEY.md")
+			if _, err := os.Stat(obeyPath); err == nil {
+				continue
+			}
 		}
 
 		info, err := entry.Info()

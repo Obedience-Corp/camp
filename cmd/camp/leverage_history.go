@@ -97,8 +97,26 @@ func runLeverageHistory(cmd *cobra.Command, args []string) error {
 		period = leverage.PeriodWeekly
 	}
 
+	// Determine actual people for history calculations.
+	// When cfg.ActualPeople == 0 (auto-detect), resolve projects to get author counts.
+	historyPeople := cfg.ActualPeople
+	if historyPeople == 0 {
+		resolved, resolveErr := leverage.ResolveProjects(ctx, setup.Root, cfg)
+		if resolveErr == nil {
+			for _, proj := range resolved {
+				count, gitErr := leverage.CountAuthors(ctx, proj.GitDir)
+				if gitErr == nil && count > historyPeople {
+					historyPeople = count
+				}
+			}
+		}
+		if historyPeople == 0 {
+			historyPeople = 1
+		}
+	}
+
 	// Load history with period-based deltas
-	history, err := leverage.LoadPeriodHistory(ctx, store, projectNames, cfg.ActualPeople, since, until, period)
+	history, err := leverage.LoadPeriodHistory(ctx, store, projectNames, historyPeople, since, until, period)
 	if err != nil {
 		return err
 	}

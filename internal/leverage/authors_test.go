@@ -213,6 +213,289 @@ func TestBuildContributions_ZeroLines(t *testing.T) {
 	}
 }
 
+func TestCountAuthors_SingleAuthor(t *testing.T) {
+	dir := initGitRepo(t)
+	commitFile(t, dir, "main.go", "package main\n", "Alice", "alice@example.com")
+
+	count, err := CountAuthors(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("CountAuthors: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("count = %d, want 1", count)
+	}
+}
+
+func TestCountAuthors_MultipleAuthors(t *testing.T) {
+	dir := initGitRepo(t)
+	commitFile(t, dir, "a.go", "package a\n", "Alice", "alice@example.com")
+	commitFile(t, dir, "b.go", "package a\n", "Bob", "bob@example.com")
+	commitFile(t, dir, "c.go", "package a\n", "Charlie", "charlie@example.com")
+
+	count, err := CountAuthors(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("CountAuthors: %v", err)
+	}
+	if count != 3 {
+		t.Errorf("count = %d, want 3", count)
+	}
+}
+
+func TestCountAuthors_DeduplicatesSameName(t *testing.T) {
+	dir := initGitRepo(t)
+	commitFile(t, dir, "a.go", "package a\n", "Alice", "alice@work.com")
+	commitFile(t, dir, "b.go", "package b\n", "Alice", "alice@personal.com")
+
+	count, err := CountAuthors(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("CountAuthors: %v", err)
+	}
+	// Same name "Alice" with different emails = 1 person
+	if count != 1 {
+		t.Errorf("count = %d, want 1 (same name dedup)", count)
+	}
+}
+
+func TestCountAuthors_FiltersBots(t *testing.T) {
+	dir := initGitRepo(t)
+	commitFile(t, dir, "a.go", "package a\n", "Alice", "alice@example.com")
+	commitFile(t, dir, "b.go", "package b\n", "dependabot[bot]", "dependabot[bot]@users.noreply.github.com")
+
+	count, err := CountAuthors(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("CountAuthors: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("count = %d, want 1 (bot should be filtered)", count)
+	}
+}
+
+func TestCountAuthors_MinimumOne(t *testing.T) {
+	dir := initGitRepo(t)
+	// Empty repo with no commits: CountAuthors should return 1 as minimum
+	cmd := exec.Command("git", "commit", "--allow-empty", "-m", "init")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %s: %v", out, err)
+	}
+
+	count, err := CountAuthors(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("CountAuthors: %v", err)
+	}
+	if count < 1 {
+		t.Errorf("count = %d, want >= 1", count)
+	}
+}
+
+func TestAuthorHasCommits(t *testing.T) {
+	dir := initGitRepo(t)
+	commitFile(t, dir, "a.go", "package a\n", "Alice", "alice@example.com")
+	commitFile(t, dir, "b.go", "package b\n", "Bob", "bob@example.com")
+
+	ctx := context.Background()
+
+	has, err := AuthorHasCommits(ctx, dir, "alice@example.com")
+	if err != nil {
+		t.Fatalf("AuthorHasCommits: %v", err)
+	}
+	if !has {
+		t.Error("expected Alice to have commits")
+	}
+
+	has, err = AuthorHasCommits(ctx, dir, "unknown@example.com")
+	if err != nil {
+		t.Fatalf("AuthorHasCommits: %v", err)
+	}
+	if has {
+		t.Error("expected unknown author to have no commits")
+	}
+}
+
+func TestAuthorDateRange(t *testing.T) {
+	dir := initGitRepo(t)
+	commitFile(t, dir, "a.go", "package a\n", "Alice", "alice@example.com")
+	commitFile(t, dir, "b.go", "package b\n", "Alice", "alice@example.com")
+
+	ctx := context.Background()
+	first, last, err := AuthorDateRange(ctx, dir, "alice@example.com")
+	if err != nil {
+		t.Fatalf("AuthorDateRange: %v", err)
+	}
+	if first.IsZero() || last.IsZero() {
+		t.Error("expected non-zero dates")
+	}
+	if last.Before(first) {
+		t.Errorf("last (%v) should be >= first (%v)", last, first)
+	}
+}
+
+func TestAuthorDateRange_NoCommits(t *testing.T) {
+	dir := initGitRepo(t)
+	commitFile(t, dir, "a.go", "package a\n", "Alice", "alice@example.com")
+
+	ctx := context.Background()
+	_, _, err := AuthorDateRange(ctx, dir, "unknown@example.com")
+	if err == nil {
+		t.Error("expected error for author with no commits")
+	}
+}
+
+func TestIsBotEmail(t *testing.T) {
+	tests := []struct {
+		email string
+		want  bool
+	}{
+		{"alice@example.com", false},
+		{"noreply@github.com", true},
+		{"dependabot[bot]@users.noreply.github.com", true},
+		{"renovate@whitesource.com", true},
+		{"github-actions@github.com", true},
+		{"bot@company.com", true},
+		{"alice@company.com", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.email, func(t *testing.T) {
+			got := isBotEmail(tt.email)
+			if got != tt.want {
+				t.Errorf("isBotEmail(%q) = %v, want %v", tt.email, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseNameEmail(t *testing.T) {
+	tests := []struct {
+		input     string
+		wantName  string
+		wantEmail string
+	}{
+		{"Alice <alice@example.com>", "Alice", "alice@example.com"},
+		{"Bob Smith <bob@test.com>", "Bob Smith", "bob@test.com"},
+		{"NoEmail", "NoEmail", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			name, email := parseNameEmail(tt.input)
+			if name != tt.wantName {
+				t.Errorf("name = %q, want %q", name, tt.wantName)
+			}
+			if email != tt.wantEmail {
+				t.Errorf("email = %q, want %q", email, tt.wantEmail)
+			}
+		})
+	}
+}
+
+// commitFileWithDate creates a file and commits it with a specific date.
+func commitFileWithDate(t *testing.T, dir, filename, content, authorName, authorEmail, date string) {
+	t.Helper()
+	path := filepath.Join(dir, filename)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	addCmd := exec.Command("git", "add", filename)
+	addCmd.Dir = dir
+	if out, err := addCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git add failed: %s: %v", out, err)
+	}
+
+	commitCmd := exec.Command("git",
+		"-c", "user.name="+authorName,
+		"-c", "user.email="+authorEmail,
+		"commit", "-m", "add "+filename, "--allow-empty")
+	commitCmd.Dir = dir
+	commitCmd.Env = append(os.Environ(),
+		"GIT_COMMITTER_DATE="+date,
+		"GIT_AUTHOR_DATE="+date,
+	)
+	if out, err := commitCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git commit failed: %s: %v", out, err)
+	}
+}
+
+func TestProjectActualPersonMonths_SingleAuthor(t *testing.T) {
+	dir := initGitRepo(t)
+
+	// Alice commits over 3 months
+	commitFileWithDate(t, dir, "a.go", "package a\n", "Alice", "alice@example.com", "2025-01-01T12:00:00+00:00")
+	commitFileWithDate(t, dir, "b.go", "package a\n", "Alice", "alice@example.com", "2025-04-01T12:00:00+00:00")
+
+	pm, err := ProjectActualPersonMonths(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("ProjectActualPersonMonths: %v", err)
+	}
+
+	// Should be ~3 months for one author
+	if pm < 2.5 || pm > 3.5 {
+		t.Errorf("pm = %.2f, want ~3.0 (one author active 3 months)", pm)
+	}
+}
+
+func TestProjectActualPersonMonths_TwoAuthors_DifferentDurations(t *testing.T) {
+	dir := initGitRepo(t)
+
+	// Alice active for 6 months (Jan-Jul)
+	commitFileWithDate(t, dir, "a1.go", "package a\n", "Alice", "alice@example.com", "2025-01-01T12:00:00+00:00")
+	commitFileWithDate(t, dir, "a2.go", "package a\nvar x = 1\n", "Alice", "alice@example.com", "2025-07-01T12:00:00+00:00")
+
+	// Bob active for 1 month only (Mar-Apr)
+	commitFileWithDate(t, dir, "b1.go", "package a\nvar y = 1\n", "Bob", "bob@example.com", "2025-03-01T12:00:00+00:00")
+	commitFileWithDate(t, dir, "b2.go", "package a\nvar z = 1\n", "Bob", "bob@example.com", "2025-04-01T12:00:00+00:00")
+
+	pm, err := ProjectActualPersonMonths(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("ProjectActualPersonMonths: %v", err)
+	}
+
+	// Alice ~6 months + Bob ~1 month = ~7 person-months
+	// NOT 2 people × 6 months = 12 (which is what the old calc would do)
+	if pm < 6.0 || pm > 8.0 {
+		t.Errorf("pm = %.2f, want ~7.0 (Alice 6mo + Bob 1mo)", pm)
+	}
+
+	// Verify this is LESS than naive calculation (2 * 6 = 12)
+	naivePM := 2.0 * 6.0
+	if pm >= naivePM {
+		t.Errorf("contribution-based PM (%.2f) should be less than naive (%.2f)", pm, naivePM)
+	}
+}
+
+func TestProjectActualPersonMonths_SingleCommitAuthor(t *testing.T) {
+	dir := initGitRepo(t)
+
+	// Author with a single commit should get minimum 0.1 months
+	commitFileWithDate(t, dir, "a.go", "package a\n", "Alice", "alice@example.com", "2025-01-01T12:00:00+00:00")
+
+	pm, err := ProjectActualPersonMonths(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("ProjectActualPersonMonths: %v", err)
+	}
+
+	if pm < 0.1 || pm > 0.2 {
+		t.Errorf("pm = %.2f, want ~0.1 (single commit = minimum)", pm)
+	}
+}
+
+func TestProjectActualPersonMonths_ContextCancelled(t *testing.T) {
+	dir := initGitRepo(t)
+	commitFileWithDate(t, dir, "a.go", "package a\n", "Alice", "alice@example.com", "2025-01-01T12:00:00+00:00")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := ProjectActualPersonMonths(ctx, dir)
+	if err == nil {
+		t.Fatal("expected error from cancelled context")
+	}
+}
+
 func TestBuildContributions_Sorted(t *testing.T) {
 	accum := map[string]*authorAccum{
 		"c@test.com": {name: "C", email: "c@test.com", lines: 10},

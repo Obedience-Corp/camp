@@ -37,11 +37,12 @@ Examples:
 }
 
 func init() {
-	leverageConfigCmd.Flags().Int("people", 0, "number of developers on the team")
+	leverageConfigCmd.Flags().Int("people", 0, "number of developers on the team (0 = auto-detect from git)")
 	leverageConfigCmd.Flags().String("start", "", "project start date (YYYY-MM-DD)")
 	leverageConfigCmd.Flags().String("cocomo-type", "", "COCOMO project type (organic, semi-detached, embedded)")
 	leverageConfigCmd.Flags().String("exclude", "", "exclude a project from leverage scoring")
 	leverageConfigCmd.Flags().String("include", "", "include a previously excluded project")
+	leverageConfigCmd.Flags().String("author-email", "", "default author email for personal leverage (empty = team view)")
 	leverageCmd.AddCommand(leverageConfigCmd)
 }
 
@@ -62,8 +63,9 @@ func runLeverageConfig(cmd *cobra.Command, args []string) error {
 	cocomoFlag := cmd.Flags().Lookup("cocomo-type")
 	excludeFlag := cmd.Flags().Lookup("exclude")
 	includeFlag := cmd.Flags().Lookup("include")
+	authorEmailFlag := cmd.Flags().Lookup("author-email")
 
-	hasUpdates := peopleFlag.Changed || startFlag.Changed || cocomoFlag.Changed
+	hasUpdates := peopleFlag.Changed || startFlag.Changed || cocomoFlag.Changed || authorEmailFlag.Changed
 	hasProjectUpdate := excludeFlag.Changed || includeFlag.Changed
 
 	if hasProjectUpdate {
@@ -73,7 +75,7 @@ func runLeverageConfig(cmd *cobra.Command, args []string) error {
 	if !hasUpdates {
 		return displayLeverageConfig(cmd, ctx, root, configPath)
 	}
-	return updateLeverageConfig(cmd, configPath, peopleFlag.Changed, startFlag.Changed, cocomoFlag.Changed)
+	return updateLeverageConfig(cmd, configPath, peopleFlag.Changed, startFlag.Changed, cocomoFlag.Changed, authorEmailFlag.Changed)
 }
 
 func displayLeverageConfig(cmd *cobra.Command, ctx context.Context, root, configPath string) error {
@@ -94,11 +96,18 @@ func displayLeverageConfig(cmd *cobra.Command, ctx context.Context, root, config
 
 		fmt.Fprintln(out, "Configuration: saved (.campaign/leverage/config.json)")
 		fmt.Fprintln(out)
-		fmt.Fprintf(out, "Team Size:     %d developer(s)\n", cfg.ActualPeople)
+		if cfg.ActualPeople == 0 {
+			fmt.Fprintln(out, "Team Size:     auto-detect from git")
+		} else {
+			fmt.Fprintf(out, "Team Size:     %d developer(s) (override)\n", cfg.ActualPeople)
+		}
 		fmt.Fprintf(out, "Project Start: %s\n", cfg.ProjectStart.Format("2006-01-02"))
 		fmt.Fprintf(out, "COCOMO Type:   %s\n", cfg.COCOMOProjectType)
 		if cfg.AvgWage > 0 {
 			fmt.Fprintf(out, "Avg Wage:      $%.0f/year\n", cfg.AvgWage)
+		}
+		if cfg.AuthorEmail != "" {
+			fmt.Fprintf(out, "Author Email:  %s (default --author)\n", cfg.AuthorEmail)
 		}
 	} else {
 		var err error
@@ -109,7 +118,7 @@ func displayLeverageConfig(cmd *cobra.Command, ctx context.Context, root, config
 
 		fmt.Fprintln(out, "Configuration: auto-detected (no config file found)")
 		fmt.Fprintln(out)
-		fmt.Fprintf(out, "Team Size:     %d developer(s)\n", cfg.ActualPeople)
+		fmt.Fprintln(out, "Team Size:     auto-detect from git")
 		if !cfg.ProjectStart.IsZero() {
 			fmt.Fprintf(out, "Project Start: %s (earliest git commit)\n", cfg.ProjectStart.Format("2006-01-02"))
 		} else {
@@ -118,7 +127,16 @@ func displayLeverageConfig(cmd *cobra.Command, ctx context.Context, root, config
 		fmt.Fprintf(out, "COCOMO Type:   %s\n", cfg.COCOMOProjectType)
 	}
 
-	// Show project inclusion status
+	// Show project inclusion status with git-detected author counts
+	resolved, _ := leverage.ResolveProjects(ctx, root, cfg)
+	authorCounts := make(map[string]int)
+	for _, proj := range resolved {
+		count, err := leverage.CountAuthors(ctx, proj.GitDir)
+		if err == nil {
+			authorCounts[proj.Name] = count
+		}
+	}
+
 	if len(cfg.Projects) > 0 {
 		fmt.Fprintln(out)
 		fmt.Fprintln(out, "Projects:")
@@ -133,7 +151,11 @@ func displayLeverageConfig(cmd *cobra.Command, ctx context.Context, root, config
 			if !entry.Include {
 				status = "excluded"
 			}
-			fmt.Fprintf(out, "  %-20s %s\n", name, status)
+			authorInfo := ""
+			if count, ok := authorCounts[name]; ok && entry.Include {
+				authorInfo = fmt.Sprintf("  (%d %s)", count, pluralize(count, "author", "authors"))
+			}
+			fmt.Fprintf(out, "  %-20s %s%s\n", name, status, authorInfo)
 		}
 	}
 
@@ -189,7 +211,7 @@ func updateProjectInclusion(cmd *cobra.Command, ctx context.Context, root, confi
 	return nil
 }
 
-func updateLeverageConfig(cmd *cobra.Command, configPath string, peopleChanged, startChanged, cocomoChanged bool) error {
+func updateLeverageConfig(cmd *cobra.Command, configPath string, peopleChanged, startChanged, cocomoChanged, authorEmailChanged bool) error {
 	out := cmd.OutOrStdout()
 
 	// Load existing config (returns defaults if file doesn't exist)
@@ -201,10 +223,15 @@ func updateLeverageConfig(cmd *cobra.Command, configPath string, peopleChanged, 
 	// Apply updates
 	if peopleChanged {
 		people, _ := cmd.Flags().GetInt("people")
-		if people <= 0 {
-			return fmt.Errorf("people must be greater than 0")
+		if people < 0 {
+			return fmt.Errorf("people must be >= 0 (0 = auto-detect from git)")
 		}
 		cfg.ActualPeople = people
+	}
+
+	if authorEmailChanged {
+		email, _ := cmd.Flags().GetString("author-email")
+		cfg.AuthorEmail = email
 	}
 
 	if startChanged {
@@ -233,9 +260,16 @@ func updateLeverageConfig(cmd *cobra.Command, configPath string, peopleChanged, 
 	fmt.Fprintln(out, "Configuration updated successfully")
 	fmt.Fprintf(out, "Saved to: %s\n", configPath)
 	fmt.Fprintln(out)
-	fmt.Fprintf(out, "Team Size:     %d developer(s)\n", cfg.ActualPeople)
+	if cfg.ActualPeople == 0 {
+		fmt.Fprintln(out, "Team Size:     auto-detect from git")
+	} else {
+		fmt.Fprintf(out, "Team Size:     %d developer(s)\n", cfg.ActualPeople)
+	}
 	fmt.Fprintf(out, "Project Start: %s\n", cfg.ProjectStart.Format("2006-01-02"))
 	fmt.Fprintf(out, "COCOMO Type:   %s\n", cfg.COCOMOProjectType)
+	if cfg.AuthorEmail != "" {
+		fmt.Fprintf(out, "Author Email:  %s\n", cfg.AuthorEmail)
+	}
 
 	return nil
 }

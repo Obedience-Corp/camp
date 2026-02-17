@@ -283,7 +283,7 @@ func TestAggregateScores(t *testing.T) {
 	agg := AggregateScores(scores, 1, 10.0)
 
 	// Total estimated person-months = (5*4) + (3*6) = 20 + 18 = 38
-	// Actual person-months = 1 * 10 = 10
+	// Actual person-months = 1 * 10 = 10 (fallback since scores have no ActualPeople)
 	// FullLeverage = 38 / 10 = 3.8
 	if math.Abs(agg.FullLeverage-3.8) > 0.01 {
 		t.Errorf("FullLeverage: want 3.8, got %f", agg.FullLeverage)
@@ -299,5 +299,131 @@ func TestAggregateScores(t *testing.T) {
 	}
 	if agg.EstimatedCost != 125000 {
 		t.Errorf("EstimatedCost: want 125000, got %f", agg.EstimatedCost)
+	}
+}
+
+func TestAggregateScores_PerProjectActualPeople(t *testing.T) {
+	// Two projects with different team sizes and durations
+	scores := []*LeverageScore{
+		{
+			EstimatedPeople: 10.0,
+			EstimatedMonths: 5.0,
+			EstimatedCost:   100000,
+			ActualPeople:    1, // solo project
+			ElapsedMonths:   6.0,
+			AuthorCount:     1,
+			TotalCode:       5000,
+		},
+		{
+			EstimatedPeople: 20.0,
+			EstimatedMonths: 10.0,
+			EstimatedCost:   500000,
+			ActualPeople:    3, // 3-person project
+			ElapsedMonths:   4.0,
+			AuthorCount:     3,
+			TotalCode:       20000,
+		},
+	}
+
+	agg := AggregateScores(scores, 1, 10.0)
+
+	// Total estimated PM = (10*5) + (20*10) = 50 + 200 = 250
+	// Total actual PM = (1*6) + (3*4) = 6 + 12 = 18
+	// FullLeverage = 250 / 18 ≈ 13.89
+	wantLeverage := 250.0 / 18.0
+	if math.Abs(agg.FullLeverage-wantLeverage) > 0.1 {
+		t.Errorf("FullLeverage: want %.2f, got %.2f", wantLeverage, agg.FullLeverage)
+	}
+
+	if math.Abs(agg.ActualPersonMonths-18.0) > 0.01 {
+		t.Errorf("ActualPersonMonths: want 18.0, got %.2f", agg.ActualPersonMonths)
+	}
+
+	if agg.AuthorCount != 3 {
+		t.Errorf("AuthorCount: want 3 (max), got %d", agg.AuthorCount)
+	}
+}
+
+func TestAggregateScores_FallbackToGlobalParams(t *testing.T) {
+	// Scores without ActualPeople (legacy/snapshot scores)
+	scores := []*LeverageScore{
+		{
+			EstimatedPeople: 10.0,
+			EstimatedMonths: 5.0,
+			// No ActualPeople or ElapsedMonths set (zero values)
+			TotalCode: 5000,
+		},
+	}
+
+	agg := AggregateScores(scores, 2, 8.0)
+
+	// Should fall back to global: actual PM = 2 * 8 = 16
+	// Estimated PM = 10 * 5 = 50
+	// FullLeverage = 50 / 16 = 3.125
+	if math.Abs(agg.FullLeverage-3.125) > 0.01 {
+		t.Errorf("FullLeverage: want 3.125, got %.3f", agg.FullLeverage)
+	}
+}
+
+func TestAggregateScores_IncludeExcludeChangesAggregate(t *testing.T) {
+	// Simulate 3 projects — if one is excluded, aggregate should differ.
+	allScores := []*LeverageScore{
+		{
+			ProjectName:     "project-a",
+			EstimatedPeople: 10.0,
+			EstimatedMonths: 5.0,
+			EstimatedCost:   100000,
+			ActualPeople:    1,
+			ElapsedMonths:   6.0,
+			TotalCode:       10000,
+		},
+		{
+			ProjectName:     "project-b",
+			EstimatedPeople: 5.0,
+			EstimatedMonths: 3.0,
+			EstimatedCost:   30000,
+			ActualPeople:    1,
+			ElapsedMonths:   4.0,
+			TotalCode:       5000,
+		},
+		{
+			ProjectName:     "project-c",
+			EstimatedPeople: 20.0,
+			EstimatedMonths: 10.0,
+			EstimatedCost:   500000,
+			ActualPeople:    2,
+			ElapsedMonths:   8.0,
+			TotalCode:       50000,
+		},
+	}
+
+	// All included
+	aggAll := AggregateScores(allScores, 1, 10.0)
+
+	// Exclude project-c (the largest)
+	includedScores := allScores[:2]
+	aggFiltered := AggregateScores(includedScores, 1, 10.0)
+
+	// Aggregate leverage MUST differ
+	if math.Abs(aggAll.FullLeverage-aggFiltered.FullLeverage) < 0.01 {
+		t.Errorf("Excluding a project should change aggregate leverage: all=%.2f filtered=%.2f",
+			aggAll.FullLeverage, aggFiltered.FullLeverage)
+	}
+
+	// Total code must differ
+	if aggAll.TotalCode == aggFiltered.TotalCode {
+		t.Errorf("Excluding a project should change total code: all=%d filtered=%d",
+			aggAll.TotalCode, aggFiltered.TotalCode)
+	}
+
+	// Estimated cost must differ
+	if math.Abs(aggAll.EstimatedCost-aggFiltered.EstimatedCost) < 0.01 {
+		t.Errorf("Excluding a project should change estimated cost: all=%.0f filtered=%.0f",
+			aggAll.EstimatedCost, aggFiltered.EstimatedCost)
+	}
+
+	// Filtered should have less code
+	if aggFiltered.TotalCode >= aggAll.TotalCode {
+		t.Errorf("Filtered code (%d) should be less than all (%d)", aggFiltered.TotalCode, aggAll.TotalCode)
 	}
 }

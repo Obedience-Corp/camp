@@ -17,7 +17,11 @@ pipelines/
 ├── github/            # GitHub Actions workflows
 ├── docker/            # Dockerfiles and compose
 ├── scripts/           # Automation scripts
-└── terraform/         # Infrastructure as code
+├── terraform/         # Infrastructure as code
+└── dungeon/           # Archived pipelines
+    ├── completed/
+    ├── archived/
+    └── someday/
 ```
 
 ## Guidelines
@@ -25,3 +29,4 @@ pipelines/
 - Keep pipelines versioned with the code
 - Document required secrets and environment variables
 - Test pipelines in isolated environments
+- Use `camp dungeon crawl` to triage retired pipelines into dungeon

@@ -77,6 +77,18 @@ type CrawlSummary struct {
 	Kept         int
 	Skipped      int
 	StatusCounts map[string]int
+	MovedItems   map[string][]string // status → item names moved there
+}
+
+// RecordMove records an item being moved to a status directory.
+func (s *CrawlSummary) RecordMove(status, itemName string) {
+	s.StatusCounts[status]++
+	s.MovedItems[status] = append(s.MovedItems[status], itemName)
+}
+
+// HasMoves returns true if any items were moved during the crawl.
+func (s CrawlSummary) HasMoves() bool {
+	return len(s.MovedItems) > 0
 }
 
 // Total returns the total number of items processed.
