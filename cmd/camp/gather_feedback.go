@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/obediencecorp/camp/internal/config"
-	"github.com/obediencecorp/camp/internal/git"
+	"github.com/obediencecorp/camp/internal/git/commit"
 	"github.com/obediencecorp/camp/internal/intent/feedback"
 	"github.com/obediencecorp/camp/internal/paths"
 )
@@ -234,12 +234,14 @@ func commitGatherFeedback(ctx context.Context, campaignRoot, campaignID string, 
 	description := fmt.Sprintf("Gathered %d observations from %d festivals: %s",
 		result.NewObservations, len(ids), strings.Join(ids, ", "))
 
-	commitResult := git.IntentCommitAll(ctx, git.IntentCommitOptions{
-		CampaignRoot: campaignRoot,
-		CampaignID:   campaignID,
-		Action:       git.IntentActionGather,
-		IntentTitle:  "Gather festival feedback",
-		Description:  description,
+	commitResult := commit.Intent(ctx, commit.IntentOptions{
+		Options: commit.Options{
+			CampaignRoot: campaignRoot,
+			CampaignID:   campaignID,
+		},
+		Action:      commit.IntentGather,
+		IntentTitle: "Gather festival feedback",
+		Description: description,
 	})
 	if commitResult.Message != "" {
 		fmt.Printf("  %s\n", commitResult.Message)

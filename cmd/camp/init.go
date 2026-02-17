@@ -12,7 +12,7 @@ import (
 	"github.com/obediencecorp/camp/internal/campaign"
 	"github.com/obediencecorp/camp/internal/config"
 	"github.com/obediencecorp/camp/internal/fest"
-	"github.com/obediencecorp/camp/internal/git"
+	"github.com/obediencecorp/camp/internal/git/commit"
 	"github.com/obediencecorp/camp/internal/nav/tui"
 	"github.com/obediencecorp/camp/internal/scaffold"
 	"github.com/obediencecorp/camp/internal/ui"
@@ -527,12 +527,12 @@ func commitRepairChanges(ctx context.Context, initResult *scaffold.InitResult, p
 
 	description := buildRepairCommitMessage(initResult, plan, migrationCount)
 
-	result := git.IntentCommitAll(ctx, git.IntentCommitOptions{
-		CampaignRoot: initResult.CampaignRoot,
-		CampaignID:   cfg.ID,
-		Action:       git.IntentActionRepair,
-		IntentTitle:  "campaign repair",
-		Description:  description,
+	result := commit.Repair(ctx, commit.RepairOptions{
+		Options: commit.Options{
+			CampaignRoot: initResult.CampaignRoot,
+			CampaignID:   cfg.ID,
+		},
+		Description: description,
 	})
 
 	if result.Committed {

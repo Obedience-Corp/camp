@@ -12,7 +12,7 @@ import (
 
 	"github.com/obediencecorp/camp/internal/config"
 	"github.com/obediencecorp/camp/internal/dungeon"
-	"github.com/obediencecorp/camp/internal/git"
+	"github.com/obediencecorp/camp/internal/git/commit"
 	"github.com/obediencecorp/camp/internal/ui"
 )
 
@@ -143,12 +143,12 @@ func commitCrawlChanges(ctx context.Context, cfg *config.CampaignConfig, campaig
 
 	description := buildCrawlCommitMessage(campaignRoot, cwd, triage, inner)
 
-	result := git.IntentCommitAll(ctx, git.IntentCommitOptions{
-		CampaignRoot: campaignRoot,
-		CampaignID:   cfg.ID,
-		Action:       git.IntentActionCrawl,
-		IntentTitle:  "dungeon crawl completed",
-		Description:  description,
+	result := commit.Crawl(ctx, commit.CrawlOptions{
+		Options: commit.Options{
+			CampaignRoot: campaignRoot,
+			CampaignID:   cfg.ID,
+		},
+		Description: description,
 	})
 
 	if result.Committed {
