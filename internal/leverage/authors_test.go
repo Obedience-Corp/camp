@@ -525,3 +525,143 @@ func TestBuildContributions_Sorted(t *testing.T) {
 		t.Errorf("percentages sum = %f, want 100.0", totalPct)
 	}
 }
+
+func TestGitDirAuthors(t *testing.T) {
+	dir := initGitRepo(t)
+	commitFileWithDate(t, dir, "a.go", "package a\n", "Alice", "alice@example.com", "2025-01-01T12:00:00+00:00")
+	commitFileWithDate(t, dir, "b.go", "package a\nvar x = 1\n", "Alice", "alice@example.com", "2025-06-01T12:00:00+00:00")
+	commitFileWithDate(t, dir, "c.go", "package a\nvar y = 1\n", "Bob", "bob@example.com", "2025-03-01T12:00:00+00:00")
+
+	authors, err := gitDirAuthors(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("gitDirAuthors: %v", err)
+	}
+
+	if len(authors) != 2 {
+		t.Fatalf("got %d authors, want 2", len(authors))
+	}
+
+	alice, ok := authors["alice"]
+	if !ok {
+		t.Fatal("missing alice")
+	}
+	if alice.earliest.IsZero() || alice.latest.IsZero() {
+		t.Error("alice dates should be non-zero")
+	}
+
+	bob, ok := authors["bob"]
+	if !ok {
+		t.Fatal("missing bob")
+	}
+	if bob.earliest.IsZero() {
+		t.Error("bob earliest should be non-zero")
+	}
+}
+
+func TestCampaignActualPersonMonths_DeduplicatesAcrossRepos(t *testing.T) {
+	ctx := context.Background()
+
+	repo1 := initGitRepo(t)
+	repo2 := initGitRepo(t)
+
+	// Alice commits to repo1: Jan - Sep (8 months)
+	commitFileWithDate(t, repo1, "a.go", "package a\n", "Alice", "alice@example.com", "2025-01-01T12:00:00+00:00")
+	commitFileWithDate(t, repo1, "b.go", "package a\nvar x = 1\n", "Alice", "alice@example.com", "2025-09-01T12:00:00+00:00")
+
+	// Alice also commits to repo2: Mar - Jul (within the same span)
+	commitFileWithDate(t, repo2, "c.go", "package b\n", "Alice", "alice@example.com", "2025-03-01T12:00:00+00:00")
+	commitFileWithDate(t, repo2, "d.go", "package b\nvar y = 1\n", "Alice", "alice@example.com", "2025-07-01T12:00:00+00:00")
+
+	projects := []ResolvedProject{
+		{Name: "project1", GitDir: repo1, SCCDir: repo1},
+		{Name: "project2", GitDir: repo2, SCCDir: repo2},
+	}
+
+	campaignPM, err := CampaignActualPersonMonths(ctx, projects)
+	if err != nil {
+		t.Fatalf("CampaignActualPersonMonths: %v", err)
+	}
+
+	// Alice's campaign span is Jan-Sep = ~8 months, NOT repo1(8) + repo2(4) = 12
+	if campaignPM < 7.5 || campaignPM > 9.0 {
+		t.Errorf("campaignPM = %.2f, want ~8.0 (deduplicated across repos)", campaignPM)
+	}
+
+	// Must be less than naive sum of per-project PMs
+	pm1, _ := ProjectActualPersonMonths(ctx, repo1)
+	pm2, _ := ProjectActualPersonMonths(ctx, repo2)
+	naiveSum := pm1 + pm2
+	if campaignPM >= naiveSum {
+		t.Errorf("campaign PM (%.2f) should be less than naive sum (%.2f)", campaignPM, naiveSum)
+	}
+}
+
+func TestCampaignActualPersonMonths_DeduplicatesMonorepo(t *testing.T) {
+	ctx := context.Background()
+
+	// Single repo, two subprojects pointing to same GitDir
+	repo := initGitRepo(t)
+	commitFileWithDate(t, repo, "a.go", "package a\n", "Alice", "alice@example.com", "2025-01-01T12:00:00+00:00")
+	commitFileWithDate(t, repo, "b.go", "package a\nvar x = 1\n", "Alice", "alice@example.com", "2025-07-01T12:00:00+00:00")
+
+	projects := []ResolvedProject{
+		{Name: "sub1", GitDir: repo, SCCDir: repo + "/sub1", InMonorepo: true},
+		{Name: "sub2", GitDir: repo, SCCDir: repo + "/sub2", InMonorepo: true},
+	}
+
+	campaignPM, err := CampaignActualPersonMonths(ctx, projects)
+	if err != nil {
+		t.Fatalf("CampaignActualPersonMonths: %v", err)
+	}
+
+	// Single author, ~6 months. Should NOT be doubled.
+	singlePM, _ := ProjectActualPersonMonths(ctx, repo)
+	if math.Abs(campaignPM-singlePM) > 0.5 {
+		t.Errorf("campaignPM = %.2f, singlePM = %.2f; monorepo should not double-count", campaignPM, singlePM)
+	}
+}
+
+func TestCampaignActualPersonMonths_MultipleAuthors(t *testing.T) {
+	ctx := context.Background()
+
+	repo1 := initGitRepo(t)
+	repo2 := initGitRepo(t)
+
+	// Alice in repo1: Jan-Sep (~8 months)
+	commitFileWithDate(t, repo1, "a1.go", "package a\n", "Alice", "alice@example.com", "2025-01-01T12:00:00+00:00")
+	commitFileWithDate(t, repo1, "a2.go", "package a\nvar x = 1\n", "Alice", "alice@example.com", "2025-09-01T12:00:00+00:00")
+
+	// Bob in repo1: Jan-Mar (~2 months)
+	commitFileWithDate(t, repo1, "b1.go", "package a\nvar y = 1\n", "Bob", "bob@example.com", "2025-01-15T12:00:00+00:00")
+	commitFileWithDate(t, repo1, "b2.go", "package a\nvar z = 1\n", "Bob", "bob@example.com", "2025-03-15T12:00:00+00:00")
+
+	// Alice in repo2: Mar-Jul (within her repo1 span)
+	commitFileWithDate(t, repo2, "c1.go", "package b\n", "Alice", "alice@example.com", "2025-03-01T12:00:00+00:00")
+	commitFileWithDate(t, repo2, "c2.go", "package b\nvar w = 1\n", "Alice", "alice@example.com", "2025-07-01T12:00:00+00:00")
+
+	projects := []ResolvedProject{
+		{Name: "project1", GitDir: repo1, SCCDir: repo1},
+		{Name: "project2", GitDir: repo2, SCCDir: repo2},
+	}
+
+	campaignPM, err := CampaignActualPersonMonths(ctx, projects)
+	if err != nil {
+		t.Fatalf("CampaignActualPersonMonths: %v", err)
+	}
+
+	// Alice ~8 months (Jan-Sep), Bob ~2 months (Jan-Mar) = ~10 PM
+	if campaignPM < 9.0 || campaignPM > 11.0 {
+		t.Errorf("campaignPM = %.2f, want ~10 (Alice 8 + Bob 2)", campaignPM)
+	}
+}
+
+func TestCampaignActualPersonMonths_ContextCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	projects := []ResolvedProject{{Name: "p", GitDir: "/tmp/nonexistent"}}
+	_, err := CampaignActualPersonMonths(ctx, projects)
+	if err == nil {
+		t.Fatal("expected error from cancelled context")
+	}
+}

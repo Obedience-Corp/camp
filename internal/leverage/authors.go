@@ -216,32 +216,30 @@ func AuthorDateRange(ctx context.Context, gitDir, authorEmail string) (first, la
 	return first, last, nil
 }
 
-// ProjectActualPersonMonths computes total actual person-months for a project
-// by summing each distinct author's active duration (first commit to last commit).
-// This produces an accurate effort measure — an author who committed over 6 months
-// counts as 6 person-months, not N × totalProjectDuration.
-//
-// Authors with a single commit (first == last) are counted as minAuthorMonths
-// to represent their minimal but nonzero contribution.
-func ProjectActualPersonMonths(ctx context.Context, gitDir string) (float64, error) {
-	const minAuthorMonths = 0.1
+// authorDateSpan holds the earliest and latest commit dates for a single author.
+type authorDateSpan struct {
+	earliest time.Time
+	latest   time.Time
+}
 
+// gitDirAuthors enumerates all non-bot authors in a git repo and computes their
+// date ranges. Returns a map keyed by normalized name.
+func gitDirAuthors(ctx context.Context, gitDir string) (map[string]*authorDateSpan, error) {
 	if err := ctx.Err(); err != nil {
-		return 0, err
+		return nil, err
 	}
 
-	// Get all authors via shortlog
 	cmd := exec.CommandContext(ctx, "git", "-C", gitDir, "shortlog", "-sne", "--all")
 	out, err := cmd.Output()
 	if err != nil {
-		return 0, fmt.Errorf("git shortlog: %w", err)
+		return nil, fmt.Errorf("git shortlog: %w", err)
 	}
 
-	// Deduplicate authors by normalized name, keeping all emails per person
+	// Parse shortlog and group emails by normalized name.
 	type authorInfo struct {
 		emails []string
 	}
-	authors := make(map[string]*authorInfo) // key: normalized name
+	byName := make(map[string]*authorInfo)
 	scanner := bufio.NewScanner(strings.NewReader(string(out)))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -260,45 +258,138 @@ func ProjectActualPersonMonths(ctx context.Context, gitDir string) (float64, err
 		if normName == "" {
 			continue
 		}
-		a, ok := authors[normName]
+		a, ok := byName[normName]
 		if !ok {
 			a = &authorInfo{}
-			authors[normName] = a
+			byName[normName] = a
 		}
 		a.emails = append(a.emails, email)
+	}
+
+	// For each person, find earliest/latest across all their emails.
+	result := make(map[string]*authorDateSpan, len(byName))
+	for normName, info := range byName {
+		span := &authorDateSpan{}
+		for _, email := range info.emails {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			first, last, err := AuthorDateRange(ctx, gitDir, email)
+			if err != nil {
+				continue
+			}
+			if span.earliest.IsZero() || first.Before(span.earliest) {
+				span.earliest = first
+			}
+			if span.latest.IsZero() || last.After(span.latest) {
+				span.latest = last
+			}
+		}
+		result[normName] = span
+	}
+
+	return result, nil
+}
+
+// ProjectActualPersonMonths computes total actual person-months for a project
+// by summing each distinct author's active duration (first commit to last commit).
+// This produces an accurate effort measure — an author who committed over 6 months
+// counts as 6 person-months, not N × totalProjectDuration.
+//
+// Authors with a single commit (first == last) are counted as minAuthorMonths
+// to represent their minimal but nonzero contribution.
+func ProjectActualPersonMonths(ctx context.Context, gitDir string) (float64, error) {
+	const minAuthorMonths = 0.1
+
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+
+	authors, err := gitDirAuthors(ctx, gitDir)
+	if err != nil {
+		return minAuthorMonths, nil
 	}
 
 	if len(authors) == 0 {
 		return minAuthorMonths, nil
 	}
 
-	// For each distinct person, find their earliest and latest commit across all emails
 	var totalPM float64
-	for _, info := range authors {
-		var earliest, latest time.Time
-
-		for _, email := range info.emails {
-			if ctx.Err() != nil {
-				return 0, ctx.Err()
-			}
-			first, last, err := AuthorDateRange(ctx, gitDir, email)
-			if err != nil {
-				continue
-			}
-			if earliest.IsZero() || first.Before(earliest) {
-				earliest = first
-			}
-			if latest.IsZero() || last.After(latest) {
-				latest = last
-			}
-		}
-
-		if earliest.IsZero() {
+	for _, span := range authors {
+		if span.earliest.IsZero() {
 			totalPM += minAuthorMonths
 			continue
 		}
+		months := ElapsedMonths(span.earliest, span.latest)
+		if months < minAuthorMonths {
+			months = minAuthorMonths
+		}
+		totalPM += months
+	}
 
-		months := ElapsedMonths(earliest, latest)
+	if totalPM < minAuthorMonths {
+		totalPM = minAuthorMonths
+	}
+	return totalPM, nil
+}
+
+// CampaignActualPersonMonths computes deduplicated campaign-wide actual
+// person-months across multiple projects. Unlike summing ProjectActualPersonMonths
+// per project, this merges authors by normalized name ACROSS git repos, so a
+// single person contributing to 7 repos counts once with their widest date range.
+func CampaignActualPersonMonths(ctx context.Context, projects []ResolvedProject) (float64, error) {
+	const minAuthorMonths = 0.1
+
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+
+	// Deduplicate git dirs (monorepo subprojects share the same GitDir).
+	uniqueGitDirs := make(map[string]bool)
+	for _, p := range projects {
+		uniqueGitDirs[p.GitDir] = true
+	}
+
+	// For each unique git dir, get authors and merge by normalized name
+	// across ALL repos.
+	merged := make(map[string]*authorDateSpan)
+
+	for gitDir := range uniqueGitDirs {
+		if err := ctx.Err(); err != nil {
+			return 0, err
+		}
+
+		authors, err := gitDirAuthors(ctx, gitDir)
+		if err != nil {
+			continue
+		}
+
+		for normName, info := range authors {
+			span, ok := merged[normName]
+			if !ok {
+				span = &authorDateSpan{}
+				merged[normName] = span
+			}
+			if span.earliest.IsZero() || info.earliest.Before(span.earliest) {
+				span.earliest = info.earliest
+			}
+			if span.latest.IsZero() || info.latest.After(span.latest) {
+				span.latest = info.latest
+			}
+		}
+	}
+
+	if len(merged) == 0 {
+		return minAuthorMonths, nil
+	}
+
+	var totalPM float64
+	for _, span := range merged {
+		if span.earliest.IsZero() {
+			totalPM += minAuthorMonths
+			continue
+		}
+		months := ElapsedMonths(span.earliest, span.latest)
 		if months < minAuthorMonths {
 			months = minAuthorMonths
 		}

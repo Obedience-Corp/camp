@@ -258,6 +258,19 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 	// Aggregate campaign-wide totals
 	agg := leverage.AggregateScores(scores, effectivePeople, elapsed)
 
+	// Override with deduplicated campaign-wide actual person-months.
+	// AggregateScores naively sums per-project ActualPersonMonths, which
+	// double-counts authors who contribute across multiple repos.
+	// CampaignActualPersonMonths merges authors by name across all git dirs.
+	if authorFilter == "" && peopleOverride == 0 {
+		campaignPM, pmErr := leverage.CampaignActualPersonMonths(ctx, resolved)
+		if pmErr == nil && campaignPM > 0 {
+			estPM := agg.EstimatedPeople * agg.EstimatedMonths
+			agg.ActualPersonMonths = campaignPM
+			agg.FullLeverage = estPM / campaignPM
+		}
+	}
+
 	// Compute recent leverage from snapshots
 	store := leverage.NewFileSnapshotStore(leverage.DefaultSnapshotDir(setup.Root))
 	week7, has7 := leverage.RecentLeverage(ctx, store, scores, effectivePeople, now.AddDate(0, 0, -7))
