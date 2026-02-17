@@ -114,6 +114,74 @@ func TestMoveDecision(t *testing.T) {
 	}
 }
 
+func TestCrawlSummary_RecordMove(t *testing.T) {
+	s := &CrawlSummary{
+		StatusCounts: map[string]int{},
+		MovedItems:   map[string][]string{},
+	}
+
+	s.RecordMove("completed", "item1.txt")
+	s.RecordMove("completed", "item2.txt")
+	s.RecordMove("archived", "old-thing/")
+
+	if s.StatusCounts["completed"] != 2 {
+		t.Errorf("StatusCounts[completed] = %d, want 2", s.StatusCounts["completed"])
+	}
+	if s.StatusCounts["archived"] != 1 {
+		t.Errorf("StatusCounts[archived] = %d, want 1", s.StatusCounts["archived"])
+	}
+	if len(s.MovedItems["completed"]) != 2 {
+		t.Errorf("MovedItems[completed] len = %d, want 2", len(s.MovedItems["completed"]))
+	}
+	if s.MovedItems["completed"][0] != "item1.txt" {
+		t.Errorf("MovedItems[completed][0] = %q, want 'item1.txt'", s.MovedItems["completed"][0])
+	}
+	if s.MovedItems["archived"][0] != "old-thing/" {
+		t.Errorf("MovedItems[archived][0] = %q, want 'old-thing/'", s.MovedItems["archived"][0])
+	}
+}
+
+func TestCrawlSummary_HasMoves(t *testing.T) {
+	tests := []struct {
+		name     string
+		summary  CrawlSummary
+		expected bool
+	}{
+		{
+			name:     "empty",
+			summary:  CrawlSummary{},
+			expected: false,
+		},
+		{
+			name:     "nil moved items",
+			summary:  CrawlSummary{Kept: 3},
+			expected: false,
+		},
+		{
+			name: "empty moved items map",
+			summary: CrawlSummary{
+				MovedItems: map[string][]string{},
+			},
+			expected: false,
+		},
+		{
+			name: "has moves",
+			summary: CrawlSummary{
+				MovedItems: map[string][]string{"completed": {"item.txt"}},
+			},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.summary.HasMoves(); got != tt.expected {
+				t.Errorf("HasMoves() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
 func TestItemType_Values(t *testing.T) {
 	if ItemTypeFile != "file" {
 		t.Errorf("ItemTypeFile should be 'file', got %s", ItemTypeFile)
