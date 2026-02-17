@@ -286,6 +286,8 @@ func (s *Service) ListParentItems(ctx context.Context, parentPath string) ([]Dun
 		".campaign":  true,
 		".git":       true,
 		"CLAUDE.md":  true,
+		"OBEY.md":    true,
+		"README.md":  true,
 		".gitkeep":   true,
 		".gitignore": true,
 	}
