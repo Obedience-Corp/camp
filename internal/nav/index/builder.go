@@ -56,6 +56,11 @@ func (b *Builder) Build(ctx context.Context) (*Index, error) {
 			continue
 		}
 
+		// Dungeon contains archived/old work — exclude from fuzzy search
+		if cat == nav.CategoryDungeon {
+			continue
+		}
+
 		targets, err := b.scanCategory(ctx, cat)
 		if err != nil {
 			// Log but don't fail - some directories may not exist
@@ -104,6 +109,11 @@ func (b *Builder) scanCategory(ctx context.Context, cat nav.Category) ([]Target,
 	for _, entry := range entries {
 		// Skip hidden entries
 		if strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+
+		// Skip dungeon directories (archived/old work)
+		if entry.Name() == "dungeon" {
 			continue
 		}
 
@@ -173,6 +183,9 @@ func (b *Builder) scanWorktrees(ctx context.Context) ([]Target, error) {
 		if strings.HasPrefix(proj.Name(), ".") {
 			continue
 		}
+		if proj.Name() == "dungeon" {
+			continue
+		}
 
 		// Each subdirectory is a worktree branch
 		projDir := filepath.Join(worktreesDir, proj.Name())
@@ -228,6 +241,11 @@ func (b *Builder) BuildWithOptions(ctx context.Context, opts BuildOptions) (*Ind
 			continue
 		}
 
+		// Dungeon contains archived/old work — exclude from fuzzy search
+		if cat == nav.CategoryDungeon {
+			continue
+		}
+
 		targets, err := b.scanCategoryWithOptions(ctx, cat, opts)
 		if err != nil {
 			continue
@@ -272,6 +290,11 @@ func (b *Builder) scanCategoryWithOptions(ctx context.Context, cat nav.Category,
 	var targets []Target
 	for _, entry := range entries {
 		if !opts.IncludeHidden && strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+
+		// Skip dungeon directories (archived/old work)
+		if entry.Name() == "dungeon" {
 			continue
 		}
 
@@ -331,6 +354,9 @@ func (b *Builder) scanWorktreesWithOptions(ctx context.Context, opts BuildOption
 			continue
 		}
 		if !opts.IncludeHidden && strings.HasPrefix(proj.Name(), ".") {
+			continue
+		}
+		if proj.Name() == "dungeon" {
 			continue
 		}
 
