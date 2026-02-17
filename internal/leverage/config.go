@@ -35,10 +35,8 @@ func LoadConfig(path string) (*LeverageConfig, error) {
 		return nil, fmt.Errorf("parsing leverage config: %w", err)
 	}
 
-	// Apply defaults for zero values
-	if cfg.ActualPeople == 0 {
-		cfg.ActualPeople = 1
-	}
+	// Apply defaults for zero values.
+	// ActualPeople == 0 is valid (means auto-detect from git).
 	if cfg.COCOMOProjectType == "" {
 		cfg.COCOMOProjectType = COCOMOOrganic
 	}
@@ -154,9 +152,10 @@ func PopulateProjects(ctx context.Context, campaignRoot string, cfg *LeverageCon
 }
 
 // defaultConfig returns a LeverageConfig with sensible defaults.
+// ActualPeople defaults to 0 (auto-detect from git).
 func defaultConfig() *LeverageConfig {
 	return &LeverageConfig{
-		ActualPeople:      1,
+		ActualPeople:      0,
 		COCOMOProjectType: COCOMOOrganic,
 	}
 }

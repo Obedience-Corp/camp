@@ -71,6 +71,11 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 		cfg.ActualPeople = peopleOverride
 	}
 
+	// Default author from config if --author not set
+	if authorFilter == "" && cfg.AuthorEmail != "" {
+		authorFilter = cfg.AuthorEmail
+	}
+
 	runner, err := initRunner(cfg)
 	if err != nil {
 		return err

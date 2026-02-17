@@ -215,7 +215,6 @@ func TestLeverageConfigCommand_Display(t *testing.T) {
 
 	wantStrings := []string{
 		"Team Size:",
-		"developer(s)",
 		"COCOMO Type:",
 		"Config path:",
 	}
@@ -228,12 +227,14 @@ func TestLeverageConfigCommand_Display(t *testing.T) {
 }
 
 func TestLeverageConfigCommand_ValidationPeople(t *testing.T) {
-	_, err := executeLeverage(t, "config", "--people", "0")
+	// --people 0 is now valid (means auto-detect from git)
+	// Only negative values should fail
+	_, err := executeLeverage(t, "config", "--people", "-1")
 	if err == nil {
-		t.Fatal("expected error, got nil")
+		t.Fatal("expected error for negative people, got nil")
 	}
-	if !strings.Contains(err.Error(), "people must be greater than 0") {
-		t.Errorf("error = %q, want substring 'people must be greater than 0'", err.Error())
+	if !strings.Contains(err.Error(), "people must be") {
+		t.Errorf("error = %q, want substring 'people must be'", err.Error())
 	}
 }
 

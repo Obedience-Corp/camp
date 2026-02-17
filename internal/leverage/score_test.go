@@ -364,3 +364,66 @@ func TestAggregateScores_FallbackToGlobalParams(t *testing.T) {
 		t.Errorf("FullLeverage: want 3.125, got %.3f", agg.FullLeverage)
 	}
 }
+
+func TestAggregateScores_IncludeExcludeChangesAggregate(t *testing.T) {
+	// Simulate 3 projects — if one is excluded, aggregate should differ.
+	allScores := []*LeverageScore{
+		{
+			ProjectName:     "project-a",
+			EstimatedPeople: 10.0,
+			EstimatedMonths: 5.0,
+			EstimatedCost:   100000,
+			ActualPeople:    1,
+			ElapsedMonths:   6.0,
+			TotalCode:       10000,
+		},
+		{
+			ProjectName:     "project-b",
+			EstimatedPeople: 5.0,
+			EstimatedMonths: 3.0,
+			EstimatedCost:   30000,
+			ActualPeople:    1,
+			ElapsedMonths:   4.0,
+			TotalCode:       5000,
+		},
+		{
+			ProjectName:     "project-c",
+			EstimatedPeople: 20.0,
+			EstimatedMonths: 10.0,
+			EstimatedCost:   500000,
+			ActualPeople:    2,
+			ElapsedMonths:   8.0,
+			TotalCode:       50000,
+		},
+	}
+
+	// All included
+	aggAll := AggregateScores(allScores, 1, 10.0)
+
+	// Exclude project-c (the largest)
+	includedScores := allScores[:2]
+	aggFiltered := AggregateScores(includedScores, 1, 10.0)
+
+	// Aggregate leverage MUST differ
+	if math.Abs(aggAll.FullLeverage-aggFiltered.FullLeverage) < 0.01 {
+		t.Errorf("Excluding a project should change aggregate leverage: all=%.2f filtered=%.2f",
+			aggAll.FullLeverage, aggFiltered.FullLeverage)
+	}
+
+	// Total code must differ
+	if aggAll.TotalCode == aggFiltered.TotalCode {
+		t.Errorf("Excluding a project should change total code: all=%d filtered=%d",
+			aggAll.TotalCode, aggFiltered.TotalCode)
+	}
+
+	// Estimated cost must differ
+	if math.Abs(aggAll.EstimatedCost-aggFiltered.EstimatedCost) < 0.01 {
+		t.Errorf("Excluding a project should change estimated cost: all=%.0f filtered=%.0f",
+			aggAll.EstimatedCost, aggFiltered.EstimatedCost)
+	}
+
+	// Filtered should have less code
+	if aggFiltered.TotalCode >= aggAll.TotalCode {
+		t.Errorf("Filtered code (%d) should be less than all (%d)", aggFiltered.TotalCode, aggAll.TotalCode)
+	}
+}
