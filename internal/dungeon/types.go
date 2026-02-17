@@ -11,13 +11,14 @@ import (
 type Decision string
 
 const (
-	DecisionKeep          Decision = "keep"
-	DecisionArchive       Decision = "archive"
-	DecisionCompleted     Decision = "completed"
-	DecisionSomeday       Decision = "someday"
-	DecisionSkip          Decision = "skip"
-	DecisionMoveToDungeon Decision = "move_to_dungeon"
+	DecisionKeep Decision = "keep"
+	DecisionSkip Decision = "skip"
 )
+
+// MoveDecision returns a Decision for moving an item to a status directory.
+func MoveDecision(status string) Decision {
+	return Decision("move:" + status)
+}
 
 // ItemType identifies whether an item is a file or directory.
 type ItemType string
@@ -64,33 +65,25 @@ func (e CrawlEntry) MarshalJSON() ([]byte, error) {
 	})
 }
 
+// StatusDir represents a status subdirectory within the dungeon.
+type StatusDir struct {
+	Name      string // Directory name (e.g., "completed")
+	Path      string // Full path to the directory
+	ItemCount int    // Number of items (excluding .gitkeep)
+}
+
 // CrawlSummary contains the results of a crawl session.
 type CrawlSummary struct {
-	Kept      int
-	Completed int
-	Archived  int
-	Someday   int
-	Skipped   int
+	Kept         int
+	Skipped      int
+	StatusCounts map[string]int
 }
 
 // Total returns the total number of items processed.
 func (s CrawlSummary) Total() int {
-	return s.Kept + s.Completed + s.Archived + s.Someday + s.Skipped
-}
-
-// TriageSummary tracks the results of a triage crawl operation.
-// It counts how many parent items were moved to the dungeon,
-// kept in place, or skipped during review.
-type TriageSummary struct {
-	Moved     int // Items moved to dungeon root (unsorted)
-	Completed int // Items moved directly to completed/
-	Archived  int // Items moved directly to archived/
-	Someday   int // Items moved directly to someday/
-	Kept      int // Items kept in parent directory
-	Skipped   int // Items skipped during review
-}
-
-// Total returns the total number of items processed.
-func (s TriageSummary) Total() int {
-	return s.Moved + s.Completed + s.Archived + s.Someday + s.Kept + s.Skipped
+	total := s.Kept + s.Skipped
+	for _, count := range s.StatusCounts {
+		total += count
+	}
+	return total
 }

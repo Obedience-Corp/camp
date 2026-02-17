@@ -10,39 +10,73 @@ import (
 	"github.com/obediencecorp/camp/internal/ui/theme"
 )
 
-// RunCrawl executes the interactive crawl TUI.
+// promptStatusSelection presents a second-step selector showing available status
+// directories with item counts. Returns the chosen status name, or empty string
+// if the user cancels (treated as skip).
+func promptStatusSelection(ctx context.Context, itemName string, dirs []StatusDir) (string, error) {
+	if len(dirs) == 0 {
+		return "", fmt.Errorf("no status directories found. Run 'camp dungeon init' to create defaults")
+	}
+
+	var opts []huh.Option[string]
+	for _, d := range dirs {
+		label := fmt.Sprintf("%s/ (%d items)", d.Name, d.ItemCount)
+		opts = append(opts, huh.NewOption(label, d.Name))
+	}
+
+	var status string
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title(fmt.Sprintf("Move %s to:", itemName)).
+				Options(opts...).
+				Value(&status),
+		),
+	)
+
+	if err := theme.RunForm(ctx, form); err != nil {
+		if theme.IsCancelled(err) {
+			return "", nil // Cancel = skip
+		}
+		return "", fmt.Errorf("form error: %w", err)
+	}
+
+	return status, nil
+}
+
+// RunCrawl executes the interactive crawl TUI for items inside the dungeon.
 func RunCrawl(ctx context.Context, svc *Service) (*CrawlSummary, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("context cancelled: %w", err)
 	}
 
-	// List items to review
 	items, err := svc.ListItems(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing items: %w", err)
 	}
 
 	if len(items) == 0 {
-		return &CrawlSummary{}, nil
+		return &CrawlSummary{StatusCounts: map[string]int{}}, nil
 	}
 
-	// Initialize stats gatherer
-	gatherer := NewStatsGatherer()
+	// Fetch status dirs once before the loop
+	statusDirs, err := svc.ListStatusDirs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing status directories: %w", err)
+	}
 
-	summary := &CrawlSummary{}
+	gatherer := NewStatsGatherer()
+	summary := &CrawlSummary{StatusCounts: map[string]int{}}
 
 	for i, item := range items {
 		if err := ctx.Err(); err != nil {
 			return summary, fmt.Errorf("context cancelled: %w", err)
 		}
 
-		// Gather stats for this item
 		stats := gatherer.Gather(ctx, item.Path)
-
-		// Build info string
 		infoStr := buildInfoString(item, stats)
 
-		// Show selection form
+		// Step 1: high-level decision
 		var decision string
 		title := fmt.Sprintf("Item %d/%d: %s", i+1, len(items), item.Name)
 
@@ -52,10 +86,8 @@ func RunCrawl(ctx context.Context, svc *Service) (*CrawlSummary, error) {
 					Title(title).
 					Description(infoStr).
 					Options(
+						huh.NewOption("Move - Move to a status directory", "move"),
 						huh.NewOption("Keep - Leave in dungeon for later", "keep"),
-						huh.NewOption("Completed - Move to completed/ (finished work)", "completed"),
-						huh.NewOption("Archive - Move to archived/ (truly out of the way)", "archive"),
-						huh.NewOption("Someday - Move to someday/ (low priority, maybe later)", "someday"),
 						huh.NewOption("Skip - Come back to it another time", "skip"),
 						huh.NewOption("Quit - Stop crawling", "quit"),
 					).
@@ -65,55 +97,42 @@ func RunCrawl(ctx context.Context, svc *Service) (*CrawlSummary, error) {
 
 		if err := theme.RunForm(ctx, form); err != nil {
 			if theme.IsCancelled(err) {
-				// Ctrl+C during form - treat as quit
 				return summary, nil
 			}
 			return summary, fmt.Errorf("form error: %w", err)
 		}
 
-		// Handle decision
 		switch decision {
 		case "quit":
 			return summary, nil
 
+		case "move":
+			status, err := promptStatusSelection(ctx, item.Name, statusDirs)
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				summary.Skipped++
+				continue
+			}
+			if status == "" {
+				// Cancelled step 2 = skip
+				summary.Skipped++
+				continue
+			}
+
+			if err := svc.MoveToStatus(ctx, item.Name, status); err != nil {
+				fmt.Printf("Error moving %s to %s: %v\n", item.Name, status, err)
+				summary.Skipped++
+			} else {
+				summary.StatusCounts[status]++
+				if err := logDecision(ctx, svc, item, MoveDecision(status), stats); err != nil {
+					fmt.Printf("Warning: failed to log decision: %v\n", err)
+				}
+			}
+
 		case "keep":
 			summary.Kept++
 			if err := logDecision(ctx, svc, item, DecisionKeep, stats); err != nil {
-				// Log errors are non-fatal, just continue
 				fmt.Printf("Warning: failed to log decision: %v\n", err)
-			}
-
-		case "completed":
-			if err := svc.MoveToStatus(ctx, item.Name, "completed"); err != nil {
-				fmt.Printf("Error moving %s to completed: %v\n", item.Name, err)
-				summary.Skipped++
-			} else {
-				summary.Completed++
-				if err := logDecision(ctx, svc, item, DecisionCompleted, stats); err != nil {
-					fmt.Printf("Warning: failed to log decision: %v\n", err)
-				}
-			}
-
-		case "archive":
-			if err := svc.MoveToStatus(ctx, item.Name, "archived"); err != nil {
-				fmt.Printf("Error archiving %s: %v\n", item.Name, err)
-				summary.Skipped++
-			} else {
-				summary.Archived++
-				if err := logDecision(ctx, svc, item, DecisionArchive, stats); err != nil {
-					fmt.Printf("Warning: failed to log decision: %v\n", err)
-				}
-			}
-
-		case "someday":
-			if err := svc.MoveToStatus(ctx, item.Name, "someday"); err != nil {
-				fmt.Printf("Error moving %s to someday: %v\n", item.Name, err)
-				summary.Skipped++
-			} else {
-				summary.Someday++
-				if err := logDecision(ctx, svc, item, DecisionSomeday, stats); err != nil {
-					fmt.Printf("Warning: failed to log decision: %v\n", err)
-				}
 			}
 
 		case "skip":

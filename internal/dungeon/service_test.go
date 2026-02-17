@@ -132,12 +132,13 @@ func TestService_ListItems(t *testing.T) {
 		t.Fatalf("Init failed: %v", err)
 	}
 
-	// Add test items
+	// Add test file
 	testFile := filepath.Join(dungeonPath, "test-file.txt")
 	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
+	// Add test directory at dungeon root (should NOT appear - dirs are excluded as status dirs)
 	testDir := filepath.Join(dungeonPath, "test-dir")
 	if err := os.MkdirAll(testDir, 0755); err != nil {
 		t.Fatalf("failed to create test dir: %v", err)
@@ -149,28 +150,101 @@ func TestService_ListItems(t *testing.T) {
 		t.Fatalf("ListItems failed: %v", err)
 	}
 
-	// Should have 2 items (excluding completed/, archived/, someday/, OBEY.md, crawl.jsonl)
-	if len(items) != 2 {
-		t.Errorf("expected 2 items, got %d", len(items))
+	// Should have 1 item (only files; directories at root are treated as status dirs)
+	if len(items) != 1 {
+		t.Errorf("expected 1 item, got %d", len(items))
 	}
 
-	// Verify types
-	foundFile := false
-	foundDir := false
-	for _, item := range items {
-		if item.Name == "test-file.txt" && item.Type == ItemTypeFile {
-			foundFile = true
-		}
-		if item.Name == "test-dir/" && item.Type == ItemTypeDirectory {
-			foundDir = true
+	if len(items) > 0 && items[0].Name != "test-file.txt" {
+		t.Errorf("expected test-file.txt, got %s", items[0].Name)
+	}
+}
+
+func TestService_ListStatusDirs(t *testing.T) {
+	ctx := context.Background()
+
+	tmpDir, err := os.MkdirTemp("", "dungeon-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dungeonPath := filepath.Join(tmpDir, "dungeon")
+	svc := NewService(tmpDir, dungeonPath)
+
+	// Init dungeon (creates completed, archived, someday)
+	_, err = svc.Init(ctx, InitOptions{})
+	if err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+
+	// Add a custom status dir
+	readyDir := filepath.Join(dungeonPath, "ready")
+	if err := os.MkdirAll(readyDir, 0755); err != nil {
+		t.Fatalf("failed to create ready dir: %v", err)
+	}
+
+	// Add items to some dirs
+	if err := os.WriteFile(filepath.Join(dungeonPath, "completed", "item1.txt"), []byte("x"), 0644); err != nil {
+		t.Fatalf("failed to create item: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dungeonPath, "completed", "item2.txt"), []byte("x"), 0644); err != nil {
+		t.Fatalf("failed to create item: %v", err)
+	}
+
+	dirs, err := svc.ListStatusDirs(ctx)
+	if err != nil {
+		t.Fatalf("ListStatusDirs failed: %v", err)
+	}
+
+	// Should have 4 dirs: archived, completed, ready, someday (sorted alphabetically)
+	if len(dirs) != 4 {
+		t.Fatalf("expected 4 status dirs, got %d", len(dirs))
+	}
+
+	// Check alphabetical order
+	expected := []string{"archived", "completed", "ready", "someday"}
+	for i, d := range dirs {
+		if d.Name != expected[i] {
+			t.Errorf("dir[%d] = %s, want %s", i, d.Name, expected[i])
 		}
 	}
 
-	if !foundFile {
-		t.Error("test-file.txt not found or wrong type")
+	// Check completed has 2 items (+ .gitkeep = 3 entries, but .gitkeep excluded = 2)
+	for _, d := range dirs {
+		if d.Name == "completed" && d.ItemCount != 2 {
+			t.Errorf("completed should have 2 items, got %d", d.ItemCount)
+		}
+		if d.Name == "ready" && d.ItemCount != 0 {
+			t.Errorf("ready should have 0 items, got %d", d.ItemCount)
+		}
 	}
-	if !foundDir {
-		t.Error("test-dir/ not found or wrong type")
+}
+
+func TestService_ListStatusDirs_Empty(t *testing.T) {
+	ctx := context.Background()
+
+	tmpDir, err := os.MkdirTemp("", "dungeon-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create dungeon with no subdirs
+	dungeonPath := filepath.Join(tmpDir, "dungeon")
+	if err := os.MkdirAll(dungeonPath, 0755); err != nil {
+		t.Fatalf("failed to create dungeon dir: %v", err)
+	}
+
+	svc := NewService(tmpDir, dungeonPath)
+
+	dirs, err := svc.ListStatusDirs(ctx)
+	if err != nil {
+		t.Fatalf("ListStatusDirs failed: %v", err)
+	}
+
+	if len(dirs) != 0 {
+		t.Errorf("expected 0 status dirs, got %d", len(dirs))
 	}
 }
 
@@ -278,10 +352,10 @@ func TestService_AppendCrawlLog(t *testing.T) {
 		t.Error("crawl log should not be empty")
 	}
 
-	// Append another entry
+	// Append another entry with MoveDecision
 	entry2 := CrawlEntry{
 		Item:     "test-item-2",
-		Decision: DecisionArchive,
+		Decision: MoveDecision("archived"),
 	}
 
 	if err := svc.AppendCrawlLog(ctx, entry2); err != nil {
@@ -309,7 +383,7 @@ func TestService_AppendCrawlLog(t *testing.T) {
 func TestService_MoveToStatus(t *testing.T) {
 	ctx := context.Background()
 
-	for _, status := range ValidStatuses {
+	for _, status := range []string{"completed", "archived", "someday"} {
 		t.Run(status, func(t *testing.T) {
 			tmpDir, err := os.MkdirTemp("", "dungeon-test-*")
 			if err != nil {
@@ -349,6 +423,39 @@ func TestService_MoveToStatus(t *testing.T) {
 	}
 }
 
+func TestService_MoveToStatus_CustomDir(t *testing.T) {
+	ctx := context.Background()
+
+	tmpDir, err := os.MkdirTemp("", "dungeon-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dungeonPath := filepath.Join(tmpDir, "dungeon")
+	svc := NewService(tmpDir, dungeonPath)
+
+	if _, err := svc.Init(ctx, InitOptions{}); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+
+	// Create test file in dungeon root
+	testFile := filepath.Join(dungeonPath, "test-item.txt")
+	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	// Move to a custom status "ready" — should work (auto-creates dir)
+	if err := svc.MoveToStatus(ctx, "test-item.txt", "ready"); err != nil {
+		t.Fatalf("MoveToStatus(ready) failed: %v", err)
+	}
+
+	movedFile := filepath.Join(dungeonPath, "ready", "test-item.txt")
+	if _, err := os.Stat(movedFile); os.IsNotExist(err) {
+		t.Error("file should exist in ready/ after move")
+	}
+}
+
 func TestService_MoveToStatus_InvalidStatus(t *testing.T) {
 	ctx := context.Background()
 
@@ -370,9 +477,28 @@ func TestService_MoveToStatus_InvalidStatus(t *testing.T) {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
-	err = svc.MoveToStatus(ctx, "test-item.txt", "invalid-status")
+	// Path traversal should be rejected
+	err = svc.MoveToStatus(ctx, "test-item.txt", "../escape")
 	if err == nil {
-		t.Fatal("MoveToStatus should fail for invalid status")
+		t.Fatal("MoveToStatus should fail for path traversal")
+	}
+	if !errors.Is(err, ErrInvalidStatus) {
+		t.Errorf("expected ErrInvalidStatus, got: %v", err)
+	}
+
+	// Empty string should be rejected
+	err = svc.MoveToStatus(ctx, "test-item.txt", "")
+	if err == nil {
+		t.Fatal("MoveToStatus should fail for empty status")
+	}
+	if !errors.Is(err, ErrInvalidStatus) {
+		t.Errorf("expected ErrInvalidStatus, got: %v", err)
+	}
+
+	// Dot-dot should be rejected
+	err = svc.MoveToStatus(ctx, "test-item.txt", "..")
+	if err == nil {
+		t.Fatal("MoveToStatus should fail for '..'")
 	}
 	if !errors.Is(err, ErrInvalidStatus) {
 		t.Errorf("expected ErrInvalidStatus, got: %v", err)
@@ -444,7 +570,7 @@ func TestService_MoveToStatus_Collision(t *testing.T) {
 func TestService_MoveToDungeonStatus(t *testing.T) {
 	ctx := context.Background()
 
-	for _, status := range ValidStatuses {
+	for _, status := range []string{"completed", "archived", "someday"} {
 		t.Run(status, func(t *testing.T) {
 			tmpDir, err := os.MkdirTemp("", "dungeon-test-*")
 			if err != nil {
@@ -542,12 +668,46 @@ func TestService_MoveToDungeonStatus_InvalidStatus(t *testing.T) {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
-	err = svc.MoveToDungeonStatus(ctx, "item.txt", tmpDir, "bogus")
+	// Path traversal should be rejected
+	err = svc.MoveToDungeonStatus(ctx, "item.txt", tmpDir, "../escape")
 	if err == nil {
-		t.Fatal("MoveToDungeonStatus should fail for invalid status")
+		t.Fatal("MoveToDungeonStatus should fail for path traversal")
+	}
+	if !errors.Is(err, ErrInvalidStatus) {
+		t.Errorf("expected ErrInvalidStatus, got: %v", err)
+	}
+
+	// Empty status should be rejected
+	err = svc.MoveToDungeonStatus(ctx, "item.txt", tmpDir, "")
+	if err == nil {
+		t.Fatal("MoveToDungeonStatus should fail for empty status")
 	}
 	if !errors.Is(err, ErrInvalidStatus) {
 		t.Errorf("expected ErrInvalidStatus, got: %v", err)
 	}
 }
 
+func TestValidateStatusName(t *testing.T) {
+	tests := []struct {
+		name    string
+		status  string
+		wantErr bool
+	}{
+		{"valid simple", "completed", false},
+		{"valid custom", "ready", false},
+		{"empty", "", true},
+		{"dot-dot", "..", true},
+		{"dot", ".", true},
+		{"path separator", "foo/bar", true},
+		{"parent traversal", "../escape", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateStatusName(tt.status)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateStatusName(%q) error = %v, wantErr %v", tt.status, err, tt.wantErr)
+			}
+		})
+	}
+}

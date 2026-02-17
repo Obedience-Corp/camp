@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
 )
@@ -20,8 +19,11 @@ var (
 	ErrInvalidStatus = errors.New("invalid status")
 )
 
-// ValidStatuses lists the valid dungeon status directories.
-var ValidStatuses = []string{"completed", "archived", "someday"}
+// systemFiles are non-status entries excluded from item listings.
+var systemFiles = map[string]bool{
+	"OBEY.md":     true,
+	"crawl.jsonl": true,
+}
 
 // Service provides operations for managing the dungeon directory.
 type Service struct {
@@ -131,6 +133,55 @@ func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, erro
 	return result, nil
 }
 
+// ListStatusDirs scans the dungeon for all subdirectories, counts items in each
+// (excluding .gitkeep), and returns them sorted alphabetically.
+func (s *Service) ListStatusDirs(ctx context.Context) ([]StatusDir, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("context cancelled: %w", err)
+	}
+
+	entries, err := os.ReadDir(s.dungeonPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("reading dungeon directory: %w", err)
+	}
+
+	var dirs []StatusDir
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		dirPath := filepath.Join(s.dungeonPath, entry.Name())
+
+		// Count items (excluding .gitkeep)
+		subEntries, err := os.ReadDir(dirPath)
+		if err != nil {
+			continue
+		}
+		count := 0
+		for _, sub := range subEntries {
+			if sub.Name() != ".gitkeep" {
+				count++
+			}
+		}
+
+		dirs = append(dirs, StatusDir{
+			Name:      entry.Name(),
+			Path:      dirPath,
+			ItemCount: count,
+		})
+	}
+
+	sort.Slice(dirs, func(i, j int) bool {
+		return dirs[i].Name < dirs[j].Name
+	})
+
+	return dirs, nil
+}
+
 // ListItems returns all items at the dungeon root (excluding subdirectories and system files).
 func (s *Service) ListItems(ctx context.Context) ([]DungeonItem, error) {
 	if err := ctx.Err(); err != nil {
@@ -146,16 +197,15 @@ func (s *Service) ListItems(ctx context.Context) ([]DungeonItem, error) {
 	}
 
 	var items []DungeonItem
-	excludedNames := map[string]bool{
-		"completed":   true,
-		"archived":    true,
-		"someday":     true,
-		"OBEY.md":     true,
-		"crawl.jsonl": true,
-	}
 
 	for _, entry := range entries {
-		if excludedNames[entry.Name()] {
+		// Skip all subdirectories (they are status dirs)
+		if entry.IsDir() {
+			continue
+		}
+
+		// Skip system files
+		if systemFiles[entry.Name()] {
 			continue
 		}
 
@@ -164,17 +214,10 @@ func (s *Service) ListItems(ctx context.Context) ([]DungeonItem, error) {
 			continue // Skip entries we can't stat
 		}
 
-		itemType := ItemTypeFile
-		name := entry.Name()
-		if entry.IsDir() {
-			itemType = ItemTypeDirectory
-			name = entry.Name() + "/" // Indicate directory
-		}
-
 		items = append(items, DungeonItem{
-			Name:    name,
+			Name:    entry.Name(),
 			Path:    filepath.Join(s.dungeonPath, entry.Name()),
-			Type:    itemType,
+			Type:    ItemTypeFile,
 			ModTime: info.ModTime(),
 		})
 	}
@@ -369,14 +412,14 @@ func (s *Service) ArchivedPath() string {
 }
 
 // MoveToStatus moves an item from the dungeon root to a status directory.
-// Status must be one of: completed, archived, someday.
+// The status must be a simple directory name (no path separators).
 func (s *Service) MoveToStatus(ctx context.Context, itemName, status string) error {
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("context cancelled: %w", err)
 	}
 
-	if !isValidStatus(status) {
-		return fmt.Errorf("%w: %s", ErrInvalidStatus, status)
+	if err := validateStatusName(status); err != nil {
+		return err
 	}
 
 	itemName = filepath.Clean(itemName)
@@ -424,14 +467,14 @@ func (s *Service) MoveToStatus(ctx context.Context, itemName, status string) err
 }
 
 // MoveToDungeonStatus moves an item from a parent directory directly into a dungeon status directory.
-// Status must be one of: completed, archived, someday.
+// The status must be a simple directory name (no path separators).
 func (s *Service) MoveToDungeonStatus(ctx context.Context, itemName, parentPath, status string) error {
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("context cancelled: %w", err)
 	}
 
-	if !isValidStatus(status) {
-		return fmt.Errorf("%w: %s", ErrInvalidStatus, status)
+	if err := validateStatusName(status); err != nil {
+		return err
 	}
 
 	sourcePath := filepath.Join(parentPath, itemName)
@@ -458,6 +501,16 @@ func (s *Service) MoveToDungeonStatus(ctx context.Context, itemName, parentPath,
 	return nil
 }
 
-func isValidStatus(status string) bool {
-	return slices.Contains(ValidStatuses, status)
+// validateStatusName ensures a status name is safe (no path separators or traversal).
+func validateStatusName(status string) error {
+	if status == "" {
+		return fmt.Errorf("%w: empty status name", ErrInvalidStatus)
+	}
+	if strings.Contains(status, string(filepath.Separator)) || strings.Contains(status, "/") {
+		return fmt.Errorf("%w: %s (contains path separator)", ErrInvalidStatus, status)
+	}
+	if status == "." || status == ".." {
+		return fmt.Errorf("%w: %s", ErrInvalidStatus, status)
+	}
+	return nil
 }
