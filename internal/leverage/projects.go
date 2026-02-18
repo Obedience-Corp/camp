@@ -33,9 +33,13 @@ type ResolvedProject struct {
 	// Zero means not yet populated.
 	AuthorCount int
 
-	// ActualPersonMonths is the sum of each author's active duration.
-	// Computed by ProjectActualPersonMonths. Zero means not yet populated.
+	// ActualPersonMonths is the blame-weighted sum of each author's effort.
+	// Computed by BlameWeightedPersonMonths. Zero means not yet populated.
 	ActualPersonMonths float64
+
+	// Authors holds enriched author contributions with blame-weighted PM.
+	// Populated by PopulateProjectMetrics via BlameWeightedPersonMonths.
+	Authors []AuthorContribution
 }
 
 // ResolveProjects resolves project entries into absolute paths for leverage scoring.
@@ -131,8 +135,8 @@ func resolveFromConfig(campaignRoot string, projects map[string]ProjectEntry) ([
 	return resolved, nil
 }
 
-// PopulateProjectMetrics fills AuthorCount and ActualPersonMonths
-// on each ResolvedProject from git data.
+// PopulateProjectMetrics fills AuthorCount, ActualPersonMonths, and Authors
+// on each ResolvedProject from git data and blame attribution.
 func PopulateProjectMetrics(ctx context.Context, resolved []ResolvedProject) {
 	for i := range resolved {
 		if err := ctx.Err(); err != nil {
@@ -142,9 +146,10 @@ func PopulateProjectMetrics(ctx context.Context, resolved []ResolvedProject) {
 		if err == nil {
 			resolved[i].AuthorCount = count
 		}
-		pm, err := ProjectActualPersonMonths(ctx, resolved[i].GitDir)
+		pm, authors, err := BlameWeightedPersonMonths(ctx, resolved[i].GitDir, resolved[i].SCCDir)
 		if err == nil {
 			resolved[i].ActualPersonMonths = pm
+			resolved[i].Authors = authors
 		}
 	}
 }

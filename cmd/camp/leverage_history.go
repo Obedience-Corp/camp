@@ -279,20 +279,31 @@ func historyOutputByAuthor(cmd *cobra.Command, history []leverage.HistoryPoint) 
 	out := cmd.OutOrStdout()
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.CategoryColor)
 
-	headers := []string{"DATE", "AUTHOR", "LINES OWNED", "OWNERSHIP %", "AUTHOR LEVERAGE"}
+	headers := []string{"DATE", "AUTHOR", "LINES OWNED", "WEIGHTED PM", "AUTHOR LEVERAGE"}
 	var rows [][]string
 	for _, point := range history {
 		authors := aggregateAuthors(point.Projects)
+		totalWeightedPM := totalAuthorWeightedPM(authors)
 		for _, author := range authors {
 			authorLev := "-"
 			if point.Aggregate != nil {
-				authorLev = fmtScore(author.Percentage/100.0*point.Aggregate.FullLeverage) + "x"
+				if totalWeightedPM > 0 && author.WeightedPM > 0 {
+					// Use blame-weighted PM for leverage attribution.
+					authorLev = fmtScore(author.WeightedPM/totalWeightedPM*point.Aggregate.FullLeverage) + "x"
+				} else {
+					// Fallback for old snapshots without WeightedPM.
+					authorLev = fmtScore(author.Percentage/100.0*point.Aggregate.FullLeverage) + "x"
+				}
+			}
+			weightedPM := "-"
+			if author.WeightedPM > 0 {
+				weightedPM = fmt.Sprintf("%.2f", author.WeightedPM)
 			}
 			rows = append(rows, []string{
 				point.Date.Format("2006-01-02"),
 				author.Name,
 				fmtInt(author.Lines),
-				fmt.Sprintf("%.1f%%", author.Percentage),
+				weightedPM,
 				authorLev,
 			})
 		}
@@ -342,9 +353,10 @@ func aggregateAuthors(projects map[string]*leverage.Snapshot) []leverage.AuthorC
 			totalLines += a.Lines
 			if existing, ok := byEmail[a.Email]; ok {
 				existing.Lines += a.Lines
+				existing.WeightedPM += a.WeightedPM
 			} else {
-				copy := a
-				byEmail[a.Email] = &copy
+				cp := a
+				byEmail[a.Email] = &cp
 			}
 		}
 	}
@@ -360,4 +372,13 @@ func aggregateAuthors(projects map[string]*leverage.Snapshot) []leverage.AuthorC
 		return result[i].Lines > result[j].Lines
 	})
 	return result
+}
+
+// totalAuthorWeightedPM sums WeightedPM across all authors.
+func totalAuthorWeightedPM(authors []leverage.AuthorContribution) float64 {
+	var total float64
+	for _, a := range authors {
+		total += a.WeightedPM
+	}
+	return total
 }

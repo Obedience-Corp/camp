@@ -11,6 +11,11 @@ import (
 	"github.com/obediencecorp/camp/internal/leverage"
 )
 
+// populateMetrics is the function used to populate project metrics.
+// Production code uses leverage.PopulateProjectMetrics (runs blame-weighted PM).
+// Tests can replace this with a fast stub to avoid expensive git blame operations.
+var populateMetrics func(ctx context.Context, resolved []leverage.ResolvedProject)
+
 // leverageSetup holds common state initialized by all leverage subcommands.
 type leverageSetup struct {
 	Root         string
@@ -81,7 +86,11 @@ func resolveAndPopulateProjects(ctx context.Context, root string, cfg *leverage.
 		return nil, 0, fmt.Errorf("resolving projects: %w", err)
 	}
 
-	leverage.PopulateProjectMetrics(ctx, resolved)
+	if populateMetrics != nil {
+		populateMetrics(ctx, resolved)
+	} else {
+		leverage.PopulateProjectMetrics(ctx, resolved)
+	}
 
 	var authorExcluded int
 	if authorFilter != "" {

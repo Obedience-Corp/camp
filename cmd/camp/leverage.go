@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -46,6 +47,7 @@ func init() {
 	leverageCmd.Flags().Bool("no-legend", false, "hide the leverage formula legend")
 	leverageCmd.Flags().BoolP("verbose", "v", false, "show diagnostic details (config, project resolution, exclusions)")
 	leverageCmd.Flags().String("author", "", "filter by author email (git substring match — 'alice@co' matches 'alice@co.com')")
+	leverageCmd.Flags().Bool("by-author", false, "show per-author leverage breakdown")
 	rootCmd.AddCommand(leverageCmd)
 	leverageCmd.GroupID = "campaign"
 }
@@ -59,6 +61,7 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 	peopleOverride, _ := cmd.Flags().GetInt("people")
 	verbose, _ := cmd.Flags().GetBool("verbose")
 	authorFilter, _ := cmd.Flags().GetString("author")
+	byAuthor, _ := cmd.Flags().GetBool("by-author")
 
 	setup, err := initLeverageSetup(ctx)
 	if err != nil {
@@ -230,6 +233,10 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 		return leverageOutputJSON(cmd, agg, scores)
 	}
 
+	if byAuthor {
+		return leverageOutputByAuthor(cmd, agg, resolved)
+	}
+
 	recent := recentLeverage{week7: week7, has7: has7, month30: month30, has30: has30}
 	opts := leverageOutputOpts{
 		authorFilter:   authorFilter,
@@ -379,6 +386,92 @@ func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores
 		fmt.Fprintln(out, ui.Dim("Scores are for personal tracking — they vary widely by project type, language,"))
 		fmt.Fprintln(out, ui.Dim("and team. Use them to measure your own trends, not to compare across teams."))
 	}
+	return nil
+}
+
+// leverageOutputByAuthor displays a ranked table of each author's blame-weighted
+// PM and their share of campaign leverage.
+func leverageOutputByAuthor(cmd *cobra.Command, agg *leverage.LeverageScore, resolved []leverage.ResolvedProject) error {
+	out := cmd.OutOrStdout()
+	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.CategoryColor)
+
+	// Aggregate authors across all projects by email.
+	type authorAgg struct {
+		name       string
+		email      string
+		lines      int
+		weightedPM float64
+	}
+	byEmail := make(map[string]*authorAgg)
+	for _, proj := range resolved {
+		for _, a := range proj.Authors {
+			if existing, ok := byEmail[a.Email]; ok {
+				existing.lines += a.Lines
+				existing.weightedPM += a.WeightedPM
+			} else {
+				byEmail[a.Email] = &authorAgg{
+					name:       a.Name,
+					email:      a.Email,
+					lines:      a.Lines,
+					weightedPM: a.WeightedPM,
+				}
+			}
+		}
+	}
+
+	// Sort by weighted PM descending.
+	authors := make([]*authorAgg, 0, len(byEmail))
+	for _, a := range byEmail {
+		authors = append(authors, a)
+	}
+	sort.Slice(authors, func(i, j int) bool {
+		return authors[i].weightedPM > authors[j].weightedPM
+	})
+
+	// Build table rows.
+	headers := []string{"AUTHOR", "EMAIL", "LINES OWNED", "WEIGHTED PM", "LEVERAGE SHARE"}
+	var rows [][]string
+	for _, a := range authors {
+		levShare := 0.0
+		if agg.ActualPersonMonths > 0 {
+			levShare = (a.weightedPM / agg.ActualPersonMonths) * agg.FullLeverage
+		}
+		rows = append(rows, []string{
+			a.name,
+			a.email,
+			fmtInt(a.lines),
+			fmt.Sprintf("%.2f", a.weightedPM),
+			fmtScore(levShare) + "x",
+		})
+	}
+
+	fmt.Fprintf(out, "%s %s\n\n",
+		ui.Header("Campaign Leverage:"),
+		ui.Value(fmtScore(agg.FullLeverage)+"x", ui.AccentColor))
+
+	t := table.New().
+		Border(lipgloss.ASCIIBorder()).
+		BorderStyle(lipgloss.NewStyle().Foreground(ui.DimColor)).
+		Headers(headers...).
+		Rows(rows...).
+		StyleFunc(func(row, col int) lipgloss.Style {
+			if row == table.HeaderRow {
+				return headerStyle
+			}
+			switch col {
+			case 0: // AUTHOR
+				return lipgloss.NewStyle().Foreground(ui.AccentColor)
+			case 4: // LEVERAGE SHARE
+				return lipgloss.NewStyle().Foreground(ui.SuccessColor)
+			default:
+				return lipgloss.NewStyle()
+			}
+		})
+
+	fmt.Fprintln(out, t)
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, ui.Dim("Weighted PM = author's date span × (author's LOC / total LOC)"))
+	fmt.Fprintln(out, ui.Dim("Leverage Share = (author's weighted PM / total actual PM) × campaign leverage"))
 	return nil
 }
 

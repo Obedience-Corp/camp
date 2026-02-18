@@ -332,14 +332,87 @@ func gitDirAuthors(ctx context.Context, gitDir string) (map[string]*authorDateSp
 	return result, nil
 }
 
-// ProjectActualPersonMonths computes total actual person-months for a project
-// by summing each distinct author's active duration (first commit to last commit).
-// This produces an accurate effort measure — an author who committed over 6 months
-// counts as 6 person-months, not N × totalProjectDuration.
+// BlameWeightedPersonMonths computes blame-weighted person-months for a project.
+// Each author's PM is their date span weighted by their LOC ownership share,
+// producing accurate effort when low-contribution authors have wide date spans.
 //
-// Authors with a single commit (first == last) are counted as minAuthorMonths
-// to represent their minimal but nonzero contribution.
-func ProjectActualPersonMonths(ctx context.Context, gitDir string) (float64, error) {
+// Authors with < 1% LOC ownership are excluded from the effort calculation (D2).
+// Returns total weighted PM and enriched AuthorContribution slice with WeightedPM set.
+func BlameWeightedPersonMonths(ctx context.Context, gitDir, sccDir string) (float64, []AuthorContribution, error) {
+	const minAuthorMonths = 0.1
+	const minPercentage = 1.0
+
+	if err := ctx.Err(); err != nil {
+		return 0, nil, err
+	}
+
+	// Get date spans per author (keyed by normalized name).
+	dateSpans, err := gitDirAuthors(ctx, gitDir)
+	if err != nil {
+		return minAuthorMonths, nil, nil
+	}
+
+	// Get blame LOC per author.
+	contribs, err := GetAuthorLOC(ctx, sccDir)
+	if err != nil || len(contribs) == 0 {
+		// Fall back to unweighted date-span PM.
+		return dateSpanOnlyPM(dateSpans, minAuthorMonths), nil, nil
+	}
+
+	if len(dateSpans) == 0 {
+		return minAuthorMonths, nil, nil
+	}
+
+	var totalPM float64
+	enriched := make([]AuthorContribution, 0, len(contribs))
+
+	for _, c := range contribs {
+		if c.Percentage < minPercentage {
+			continue
+		}
+
+		normName := strings.ToLower(strings.TrimSpace(c.Name))
+		span, ok := dateSpans[normName]
+		if !ok {
+			// Author in blame but not matched in commit log by name.
+			// Use minimum PM weighted by their LOC share.
+			c.WeightedPM = minAuthorMonths * (c.Percentage / 100.0)
+			totalPM += c.WeightedPM
+			enriched = append(enriched, c)
+			continue
+		}
+
+		months := ElapsedMonths(span.earliest, span.latest)
+		if months < minAuthorMonths {
+			months = minAuthorMonths
+		}
+
+		c.WeightedPM = months * (c.Percentage / 100.0)
+		totalPM += c.WeightedPM
+		enriched = append(enriched, c)
+	}
+
+	if totalPM < minAuthorMonths {
+		totalPM = minAuthorMonths
+	}
+
+	return totalPM, enriched, nil
+}
+
+// ProjectActualPersonMonths computes blame-weighted actual person-months for a
+// project. Each author's date span is weighted by their LOC ownership share,
+// producing accurate effort when low-contribution authors have wide date spans.
+//
+// When sccDir is non-empty, uses blame-weighted calculation via
+// BlameWeightedPersonMonths. When sccDir is empty, falls back to unweighted
+// date-span calculation for backward compatibility.
+func ProjectActualPersonMonths(ctx context.Context, gitDir, sccDir string) (float64, error) {
+	if sccDir != "" {
+		pm, _, err := BlameWeightedPersonMonths(ctx, gitDir, sccDir)
+		return pm, err
+	}
+
+	// Fallback: unweighted date-span PM (no blame data available).
 	const minAuthorMonths = 0.1
 
 	if err := ctx.Err(); err != nil {
@@ -351,96 +424,7 @@ func ProjectActualPersonMonths(ctx context.Context, gitDir string) (float64, err
 		return minAuthorMonths, nil
 	}
 
-	if len(authors) == 0 {
-		return minAuthorMonths, nil
-	}
-
-	var totalPM float64
-	for _, span := range authors {
-		if span.earliest.IsZero() {
-			totalPM += minAuthorMonths
-			continue
-		}
-		months := ElapsedMonths(span.earliest, span.latest)
-		if months < minAuthorMonths {
-			months = minAuthorMonths
-		}
-		totalPM += months
-	}
-
-	if totalPM < minAuthorMonths {
-		totalPM = minAuthorMonths
-	}
-	return totalPM, nil
-}
-
-// CampaignActualPersonMonths computes deduplicated campaign-wide actual
-// person-months across multiple projects. Unlike summing ProjectActualPersonMonths
-// per project, this merges authors by normalized name ACROSS git repos, so a
-// single person contributing to 7 repos counts once with their widest date range.
-func CampaignActualPersonMonths(ctx context.Context, projects []ResolvedProject) (float64, error) {
-	const minAuthorMonths = 0.1
-
-	if err := ctx.Err(); err != nil {
-		return 0, err
-	}
-
-	// Deduplicate git dirs (monorepo subprojects share the same GitDir).
-	uniqueGitDirs := make(map[string]bool)
-	for _, p := range projects {
-		uniqueGitDirs[p.GitDir] = true
-	}
-
-	// For each unique git dir, get authors and merge by normalized name
-	// across ALL repos.
-	merged := make(map[string]*authorDateSpan)
-
-	for gitDir := range uniqueGitDirs {
-		if err := ctx.Err(); err != nil {
-			return 0, err
-		}
-
-		authors, err := gitDirAuthors(ctx, gitDir)
-		if err != nil {
-			continue
-		}
-
-		for normName, info := range authors {
-			span, ok := merged[normName]
-			if !ok {
-				span = &authorDateSpan{}
-				merged[normName] = span
-			}
-			if span.earliest.IsZero() || info.earliest.Before(span.earliest) {
-				span.earliest = info.earliest
-			}
-			if span.latest.IsZero() || info.latest.After(span.latest) {
-				span.latest = info.latest
-			}
-		}
-	}
-
-	if len(merged) == 0 {
-		return minAuthorMonths, nil
-	}
-
-	var totalPM float64
-	for _, span := range merged {
-		if span.earliest.IsZero() {
-			totalPM += minAuthorMonths
-			continue
-		}
-		months := ElapsedMonths(span.earliest, span.latest)
-		if months < minAuthorMonths {
-			months = minAuthorMonths
-		}
-		totalPM += months
-	}
-
-	if totalPM < minAuthorMonths {
-		totalPM = minAuthorMonths
-	}
-	return totalPM, nil
+	return dateSpanOnlyPM(authors, minAuthorMonths), nil
 }
 
 // parseNameEmail extracts name and email from "Name <email>" format.

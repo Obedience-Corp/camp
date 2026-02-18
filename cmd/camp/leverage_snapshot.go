@@ -58,8 +58,12 @@ func runLeverageSnapshot(cmd *cobra.Command, args []string) error {
 
 	elapsed := leverage.ElapsedMonths(cfg.ProjectStart, time.Now())
 
-	// Populate per-project author counts and actual person-months
-	leverage.PopulateProjectMetrics(ctx, resolved)
+	// Populate per-project author counts and actual person-months (with blame).
+	if populateMetrics != nil {
+		populateMetrics(ctx, resolved)
+	} else {
+		leverage.PopulateProjectMetrics(ctx, resolved)
+	}
 
 	var count int
 	for _, proj := range resolved {
@@ -106,12 +110,8 @@ func runLeverageSnapshot(cmd *cobra.Command, args []string) error {
 			score.FullLeverage = estPM / proj.ActualPersonMonths
 		}
 
-		// Get author contributions via git blame
-		authors, err := leverage.GetAuthorLOC(ctx, proj.SCCDir)
-		if err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %s author attribution failed: %v\n", proj.Name, err)
-			// Non-fatal: continue without author data
-		}
+		// Use enriched authors from PopulateProjectMetrics (includes WeightedPM).
+		authors := proj.Authors
 
 		// Build snapshot
 		scc := leverage.SCCResultToSnapshotSCC(result)
