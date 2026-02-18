@@ -57,13 +57,13 @@ func commitFile(t *testing.T, dir, filename, content, authorName, authorEmail st
 	}
 }
 
-func TestGetAuthorLOC_SingleAuthor(t *testing.T) {
+func TestAuthorLOC_SingleAuthor(t *testing.T) {
 	dir := initGitRepo(t)
 	commitFile(t, dir, "main.go", "package main\n\nfunc main() {\n}\n", "Alice", "alice@example.com")
 
-	authors, err := GetAuthorLOC(context.Background(), dir)
+	authors, err := AuthorLOC(context.Background(), dir)
 	if err != nil {
-		t.Fatalf("GetAuthorLOC: %v", err)
+		t.Fatalf("AuthorLOC: %v", err)
 	}
 
 	if len(authors) != 1 {
@@ -85,7 +85,7 @@ func TestGetAuthorLOC_SingleAuthor(t *testing.T) {
 	}
 }
 
-func TestGetAuthorLOC_MultipleAuthors(t *testing.T) {
+func TestAuthorLOC_MultipleAuthors(t *testing.T) {
 	dir := initGitRepo(t)
 
 	// Alice writes 6 lines
@@ -94,9 +94,9 @@ func TestGetAuthorLOC_MultipleAuthors(t *testing.T) {
 	// Bob writes 4 lines in a separate file
 	commitFile(t, dir, "b.go", "package a\n\nfunc B() {\n}\n", "Bob", "bob@example.com")
 
-	authors, err := GetAuthorLOC(context.Background(), dir)
+	authors, err := AuthorLOC(context.Background(), dir)
 	if err != nil {
-		t.Fatalf("GetAuthorLOC: %v", err)
+		t.Fatalf("AuthorLOC: %v", err)
 	}
 
 	if len(authors) != 2 {
@@ -132,7 +132,7 @@ func TestGetAuthorLOC_MultipleAuthors(t *testing.T) {
 	}
 }
 
-func TestGetAuthorLOC_EmptyRepo(t *testing.T) {
+func TestAuthorLOC_EmptyRepo(t *testing.T) {
 	dir := initGitRepo(t)
 
 	// Create an initial empty commit so git is valid
@@ -142,9 +142,9 @@ func TestGetAuthorLOC_EmptyRepo(t *testing.T) {
 		t.Fatalf("git commit: %s: %v", out, err)
 	}
 
-	authors, err := GetAuthorLOC(context.Background(), dir)
+	authors, err := AuthorLOC(context.Background(), dir)
 	if err != nil {
-		t.Fatalf("GetAuthorLOC: %v", err)
+		t.Fatalf("AuthorLOC: %v", err)
 	}
 
 	if authors != nil {
@@ -152,20 +152,20 @@ func TestGetAuthorLOC_EmptyRepo(t *testing.T) {
 	}
 }
 
-func TestGetAuthorLOC_ContextCancellation(t *testing.T) {
+func TestAuthorLOC_ContextCancellation(t *testing.T) {
 	dir := initGitRepo(t)
 	commitFile(t, dir, "main.go", "package main\n", "Alice", "alice@example.com")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := GetAuthorLOC(ctx, dir)
+	_, err := AuthorLOC(ctx, dir)
 	if err == nil {
 		t.Fatal("expected context error")
 	}
 }
 
-func TestGetAuthorLOC_MultipleFiles(t *testing.T) {
+func TestAuthorLOC_MultipleFiles(t *testing.T) {
 	dir := initGitRepo(t)
 
 	// Alice writes two files (3 + 3 = 6 lines)
@@ -175,9 +175,9 @@ func TestGetAuthorLOC_MultipleFiles(t *testing.T) {
 	// Bob writes one file (3 lines)
 	commitFile(t, dir, "z.go", "package x\n\nvar Z = 3\n", "Bob", "bob@example.com")
 
-	authors, err := GetAuthorLOC(context.Background(), dir)
+	authors, err := AuthorLOC(context.Background(), dir)
 	if err != nil {
-		t.Fatalf("GetAuthorLOC: %v", err)
+		t.Fatalf("AuthorLOC: %v", err)
 	}
 
 	if len(authors) != 2 {

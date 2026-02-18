@@ -268,7 +268,7 @@ func (b *Backfiller) processSample(ctx context.Context, gitDir string, sample Co
 		}
 
 		// Get author contributions via git blame
-		authors, err := GetAuthorLOC(ctx, sccDir)
+		authors, err := AuthorLOC(ctx, sccDir)
 		if err != nil {
 			b.warn(proj.Name, dateStr, fmt.Errorf("blame: %w", err))
 		}

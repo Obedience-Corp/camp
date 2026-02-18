@@ -2,7 +2,6 @@ package leverage
 
 import (
 	"context"
-	"strings"
 )
 
 // CampaignActualPersonMonths computes deduplicated, blame-weighted campaign-wide
@@ -15,9 +14,6 @@ import (
 //
 // Authors with < 1% of total campaign LOC are excluded from effort calculation.
 func CampaignActualPersonMonths(ctx context.Context, projects []ResolvedProject) (float64, error) {
-	const minAuthorMonths = 0.1
-	const minPercentage = 1.0
-
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
@@ -45,12 +41,7 @@ func CampaignActualPersonMonths(ctx context.Context, projects []ResolvedProject)
 				span = &authorDateSpan{}
 				mergedSpans[normName] = span
 			}
-			if span.earliest.IsZero() || info.earliest.Before(span.earliest) {
-				span.earliest = info.earliest
-			}
-			if span.latest.IsZero() || info.latest.After(span.latest) {
-				span.latest = info.latest
-			}
+			span.merge(info)
 		}
 	}
 
@@ -60,7 +51,7 @@ func CampaignActualPersonMonths(ctx context.Context, projects []ResolvedProject)
 
 	// Phase 2: Aggregate blame LOC across all projects by normalized author name.
 	// Use pre-populated Authors when available (from PopulateProjectMetrics),
-	// fall back to GetAuthorLOC only when Authors is nil.
+	// fall back to AuthorLOC only when Authors is nil.
 	type authorLOC struct {
 		lines int
 		name  string
@@ -79,14 +70,14 @@ func CampaignActualPersonMonths(ctx context.Context, projects []ResolvedProject)
 			contribs = p.Authors
 		} else {
 			var err error
-			contribs, err = GetAuthorLOC(ctx, p.SCCDir)
+			contribs, err = AuthorLOC(ctx, p.SCCDir)
 			if err != nil {
 				continue
 			}
 		}
 
 		for _, c := range contribs {
-			normName := strings.ToLower(strings.TrimSpace(c.Name))
+			normName := normalizeName(c.Name)
 			if a, ok := mergedLOC[normName]; ok {
 				a.lines += c.Lines
 			} else {
@@ -110,7 +101,7 @@ func CampaignActualPersonMonths(ctx context.Context, projects []ResolvedProject)
 		}
 
 		pct := float64(loc.lines) / float64(totalLines) * 100
-		if pct < minPercentage {
+		if pct < minAuthorPercentage {
 			continue
 		}
 

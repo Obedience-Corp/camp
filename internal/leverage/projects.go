@@ -54,7 +54,7 @@ func ResolveProjects(ctx context.Context, campaignRoot string, cfg *LeverageConf
 		return resolveFromProjectList(ctx, campaignRoot)
 	}
 
-	return resolveFromConfig(campaignRoot, cfg.Projects)
+	return resolveFromConfig(ctx, campaignRoot, cfg.Projects)
 }
 
 // resolveFromProjectList falls back to project.List() discovery.
@@ -96,7 +96,11 @@ func resolveFromProjectList(ctx context.Context, campaignRoot string) ([]Resolve
 }
 
 // resolveFromConfig resolves explicitly configured project entries.
-func resolveFromConfig(campaignRoot string, projects map[string]ProjectEntry) ([]ResolvedProject, error) {
+func resolveFromConfig(ctx context.Context, campaignRoot string, projects map[string]ProjectEntry) ([]ResolvedProject, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	resolved := make([]ResolvedProject, 0, len(projects))
 
 	for name, entry := range projects {

@@ -10,6 +10,22 @@ import (
 	"time"
 )
 
+const (
+	// minAuthorMonths is the minimum person-months floor for any single author.
+	// Prevents zero PM for single-commit authors.
+	minAuthorMonths = 0.1
+
+	// minAuthorPercentage is the minimum LOC ownership percentage for an author
+	// to be included in blame-weighted calculations (Decision D2).
+	minAuthorPercentage = 1.0
+)
+
+// normalizeName returns a lowercase, trimmed name used as a join key
+// across git shortlog, blame, and date-span data.
+func normalizeName(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
+}
+
 // allAuthorDates returns earliest/latest commit dates per email in one git call.
 func allAuthorDates(ctx context.Context, gitDir string) (map[string]*authorDateSpan, error) {
 	cmd := exec.CommandContext(ctx, "git", "-C", gitDir, "log", "--all", "--format=%ae\t%cI")
@@ -52,10 +68,10 @@ type authorAccum struct {
 	lines int
 }
 
-// GetAuthorLOC computes per-author LOC ownership for a directory using git blame.
+// AuthorLOC computes per-author LOC ownership for a directory using git blame.
 // It runs git blame --line-porcelain on each tracked source file, counts lines
 // per author email, and returns AuthorContribution slices sorted by lines descending.
-func GetAuthorLOC(ctx context.Context, dir string) ([]AuthorContribution, error) {
+func AuthorLOC(ctx context.Context, dir string) ([]AuthorContribution, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -179,7 +195,7 @@ func CountAuthors(ctx context.Context, gitDir string) (int, error) {
 		}
 
 		// Deduplicate by normalized name
-		normName := strings.ToLower(strings.TrimSpace(name))
+		normName := normalizeName(name)
 		if normName != "" {
 			names[normName] = true
 		}
@@ -257,6 +273,16 @@ type authorDateSpan struct {
 	latest   time.Time
 }
 
+// merge expands this span to include the range of other.
+func (s *authorDateSpan) merge(other *authorDateSpan) {
+	if s.earliest.IsZero() || other.earliest.Before(s.earliest) {
+		s.earliest = other.earliest
+	}
+	if s.latest.IsZero() || other.latest.After(s.latest) {
+		s.latest = other.latest
+	}
+}
+
 // gitDirAuthors enumerates all non-bot authors in a git repo and computes their
 // date ranges. Returns a map keyed by normalized name.
 //
@@ -292,7 +318,7 @@ func gitDirAuthors(ctx context.Context, gitDir string) (map[string]*authorDateSp
 		if isBotEmail(email) {
 			continue
 		}
-		normName := strings.ToLower(strings.TrimSpace(name))
+		normName := normalizeName(name)
 		if normName == "" {
 			continue
 		}
@@ -319,12 +345,7 @@ func gitDirAuthors(ctx context.Context, gitDir string) (map[string]*authorDateSp
 			if !ok {
 				continue
 			}
-			if span.earliest.IsZero() || emailSpan.earliest.Before(span.earliest) {
-				span.earliest = emailSpan.earliest
-			}
-			if span.latest.IsZero() || emailSpan.latest.After(span.latest) {
-				span.latest = emailSpan.latest
-			}
+			span.merge(emailSpan)
 		}
 		result[normName] = span
 	}
@@ -339,9 +360,6 @@ func gitDirAuthors(ctx context.Context, gitDir string) (map[string]*authorDateSp
 // Authors with < 1% LOC ownership are excluded from the effort calculation (D2).
 // Returns total weighted PM and enriched AuthorContribution slice with WeightedPM set.
 func BlameWeightedPersonMonths(ctx context.Context, gitDir, sccDir string) (float64, []AuthorContribution, error) {
-	const minAuthorMonths = 0.1
-	const minPercentage = 1.0
-
 	if err := ctx.Err(); err != nil {
 		return 0, nil, err
 	}
@@ -353,7 +371,7 @@ func BlameWeightedPersonMonths(ctx context.Context, gitDir, sccDir string) (floa
 	}
 
 	// Get blame LOC per author.
-	contribs, err := GetAuthorLOC(ctx, sccDir)
+	contribs, err := AuthorLOC(ctx, sccDir)
 	if err != nil || len(contribs) == 0 {
 		// Fall back to unweighted date-span PM.
 		return dateSpanOnlyPM(dateSpans, minAuthorMonths), nil, nil
@@ -367,11 +385,11 @@ func BlameWeightedPersonMonths(ctx context.Context, gitDir, sccDir string) (floa
 	enriched := make([]AuthorContribution, 0, len(contribs))
 
 	for _, c := range contribs {
-		if c.Percentage < minPercentage {
+		if c.Percentage < minAuthorPercentage {
 			continue
 		}
 
-		normName := strings.ToLower(strings.TrimSpace(c.Name))
+		normName := normalizeName(c.Name)
 		span, ok := dateSpans[normName]
 		if !ok {
 			// Author in blame but not matched in commit log by name.
@@ -413,8 +431,6 @@ func ProjectActualPersonMonths(ctx context.Context, gitDir, sccDir string) (floa
 	}
 
 	// Fallback: unweighted date-span PM (no blame data available).
-	const minAuthorMonths = 0.1
-
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}

@@ -18,9 +18,10 @@ var populateMetrics func(ctx context.Context, resolved []leverage.ResolvedProjec
 
 // leverageSetup holds common state initialized by all leverage subcommands.
 type leverageSetup struct {
-	Root         string
-	Cfg          *leverage.LeverageConfig
-	AutoDetected bool // true if config was auto-detected (no project_start in file)
+	Root          string
+	Cfg           *leverage.LeverageConfig
+	AutoDetected  bool // true if config was auto-detected (no project_start in file)
+	ConfigCreated bool // true if config file was auto-created on first use
 }
 
 // initLeverageSetup detects the campaign, loads config, and auto-detects if needed.
@@ -52,6 +53,7 @@ func initLeverageSetup(ctx context.Context) (*leverageSetup, error) {
 	}
 
 	// Populate projects from discovery if missing.
+	configCreated := false
 	if len(cfg.Projects) == 0 {
 		if err := leverage.PopulateProjects(ctx, root, cfg); err != nil {
 			return nil, fmt.Errorf("populating projects: %w", err)
@@ -61,12 +63,21 @@ func initLeverageSetup(ctx context.Context) (*leverageSetup, error) {
 			return nil, fmt.Errorf("saving config: %w", err)
 		}
 
-		if !configExists {
-			fmt.Println("Created leverage config at .campaign/leverage/config.json")
-		}
+		configCreated = !configExists
 	}
 
-	return &leverageSetup{Root: root, Cfg: cfg, AutoDetected: autoDetected}, nil
+	return &leverageSetup{Root: root, Cfg: cfg, AutoDetected: autoDetected, ConfigCreated: configCreated}, nil
+}
+
+// runPopulateMetrics calls the test-injected populateMetrics or the real
+// leverage.PopulateProjectMetrics. Centralizes the dispatch so every command
+// uses the same injection point.
+func runPopulateMetrics(ctx context.Context, resolved []leverage.ResolvedProject) {
+	if populateMetrics != nil {
+		populateMetrics(ctx, resolved)
+	} else {
+		leverage.PopulateProjectMetrics(ctx, resolved)
+	}
 }
 
 // initRunner returns the SCC runner (test-injected or newly created from config).
@@ -86,11 +97,7 @@ func resolveAndPopulateProjects(ctx context.Context, root string, cfg *leverage.
 		return nil, 0, fmt.Errorf("resolving projects: %w", err)
 	}
 
-	if populateMetrics != nil {
-		populateMetrics(ctx, resolved)
-	} else {
-		leverage.PopulateProjectMetrics(ctx, resolved)
-	}
+	runPopulateMetrics(ctx, resolved)
 
 	var authorExcluded int
 	if authorFilter != "" {
