@@ -70,13 +70,20 @@ func initLeverageSetup(ctx context.Context) (*leverageSetup, error) {
 }
 
 // runPopulateMetrics calls the test-injected populateMetrics or the real
-// leverage.PopulateProjectMetrics. Centralizes the dispatch so every command
-// uses the same injection point.
+// leverage.PopulateOneProject per project with progress output.
+// Centralizes the dispatch so every command uses the same injection point.
 func runPopulateMetrics(ctx context.Context, resolved []leverage.ResolvedProject) {
 	if populateMetrics != nil {
 		populateMetrics(ctx, resolved)
-	} else {
-		leverage.PopulateProjectMetrics(ctx, resolved)
+		return
+	}
+	total := len(resolved)
+	for i := range resolved {
+		if err := ctx.Err(); err != nil {
+			return
+		}
+		fmt.Fprintf(os.Stderr, "  Analyzing %s (%d/%d)...\n", resolved[i].Name, i+1, total)
+		leverage.PopulateOneProject(ctx, &resolved[i])
 	}
 }
 

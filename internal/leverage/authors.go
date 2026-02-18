@@ -5,8 +5,10 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -69,8 +71,9 @@ type authorAccum struct {
 }
 
 // AuthorLOC computes per-author LOC ownership for a directory using git blame.
-// It runs git blame --line-porcelain on each tracked source file, counts lines
-// per author email, and returns AuthorContribution slices sorted by lines descending.
+// It runs git blame --line-porcelain on each tracked source file concurrently
+// (bounded by NumCPU, max 8), counts lines per author email, and returns
+// AuthorContribution slices sorted by lines descending.
 func AuthorLOC(ctx context.Context, dir string) ([]AuthorContribution, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -85,18 +88,51 @@ func AuthorLOC(ctx context.Context, dir string) ([]AuthorContribution, error) {
 		return nil, nil
 	}
 
-	accum := make(map[string]*authorAccum)
+	// Blame files concurrently with bounded parallelism.
+	workers := runtime.NumCPU()
+	if workers > 8 {
+		workers = 8
+	}
+	if len(files) < workers {
+		workers = len(files)
+	}
+
+	var (
+		mu    sync.Mutex
+		accum = make(map[string]*authorAccum)
+		wg    sync.WaitGroup
+		sem   = make(chan struct{}, workers)
+	)
 
 	for _, file := range files {
-		if err := ctx.Err(); err != nil {
-			return nil, err
+		if ctx.Err() != nil {
+			break
 		}
 
-		if err := blameFile(ctx, dir, file, accum); err != nil {
-			// Skip files that can't be blamed (binary files, etc.)
-			continue
-		}
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(f string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			local := make(map[string]*authorAccum)
+			if err := blameFile(ctx, dir, f, local); err != nil {
+				return // skip files that can't be blamed
+			}
+
+			mu.Lock()
+			for email, la := range local {
+				if existing, ok := accum[email]; ok {
+					existing.lines += la.lines
+				} else {
+					accum[email] = la
+				}
+			}
+			mu.Unlock()
+		}(file)
 	}
+
+	wg.Wait()
 
 	return buildContributions(accum), nil
 }

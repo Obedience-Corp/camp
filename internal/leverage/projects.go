@@ -139,6 +139,20 @@ func resolveFromConfig(ctx context.Context, campaignRoot string, projects map[st
 	return resolved, nil
 }
 
+// PopulateOneProject fills AuthorCount, ActualPersonMonths, and Authors
+// for a single ResolvedProject from git data and blame attribution.
+func PopulateOneProject(ctx context.Context, p *ResolvedProject) {
+	count, err := CountAuthors(ctx, p.GitDir)
+	if err == nil {
+		p.AuthorCount = count
+	}
+	pm, authors, err := BlameWeightedPersonMonths(ctx, p.GitDir, p.SCCDir)
+	if err == nil {
+		p.ActualPersonMonths = pm
+		p.Authors = authors
+	}
+}
+
 // PopulateProjectMetrics fills AuthorCount, ActualPersonMonths, and Authors
 // on each ResolvedProject from git data and blame attribution.
 func PopulateProjectMetrics(ctx context.Context, resolved []ResolvedProject) {
@@ -146,15 +160,7 @@ func PopulateProjectMetrics(ctx context.Context, resolved []ResolvedProject) {
 		if err := ctx.Err(); err != nil {
 			return
 		}
-		count, err := CountAuthors(ctx, resolved[i].GitDir)
-		if err == nil {
-			resolved[i].AuthorCount = count
-		}
-		pm, authors, err := BlameWeightedPersonMonths(ctx, resolved[i].GitDir, resolved[i].SCCDir)
-		if err == nil {
-			resolved[i].ActualPersonMonths = pm
-			resolved[i].Authors = authors
-		}
+		PopulateOneProject(ctx, &resolved[i])
 	}
 }
 
