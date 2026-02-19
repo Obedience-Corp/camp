@@ -76,9 +76,26 @@ func executeLeverage(t *testing.T, args ...string) (string, error) {
 	return buf.String(), err
 }
 
+// stubPopulateMetrics returns a fast populate function that sets fixed values
+// to avoid expensive git blame operations in tests. Populates Authors so
+// CampaignActualPersonMonths uses pre-populated data instead of running blame.
+func stubPopulateMetrics() func(ctx context.Context, resolved []leverage.ResolvedProject) {
+	return func(ctx context.Context, resolved []leverage.ResolvedProject) {
+		for i := range resolved {
+			resolved[i].AuthorCount = 1
+			resolved[i].ActualPersonMonths = 1.0
+			resolved[i].Authors = []leverage.AuthorContribution{
+				{Name: "Test Author", Email: "test@test.com", Lines: 100, Percentage: 100, WeightedPM: 1.0},
+			}
+		}
+	}
+}
+
 func TestLeverageCommand_TableOutput(t *testing.T) {
 	origRunner := sccRunner
-	t.Cleanup(func() { sccRunner = origRunner })
+	origPopulate := populateMetrics
+	t.Cleanup(func() { sccRunner = origRunner; populateMetrics = origPopulate })
+	populateMetrics = stubPopulateMetrics()
 
 	sccRunner = &mockRunner{
 		results: map[string]*leverage.SCCResult{
@@ -117,7 +134,9 @@ func TestLeverageCommand_TableOutput(t *testing.T) {
 
 func TestLeverageCommand_JSONOutput(t *testing.T) {
 	origRunner := sccRunner
-	t.Cleanup(func() { sccRunner = origRunner })
+	origPopulate := populateMetrics
+	t.Cleanup(func() { sccRunner = origRunner; populateMetrics = origPopulate })
+	populateMetrics = stubPopulateMetrics()
 
 	sccRunner = &mockRunner{
 		results: map[string]*leverage.SCCResult{
@@ -155,7 +174,9 @@ func TestLeverageCommand_JSONOutput(t *testing.T) {
 
 func TestLeverageCommand_ProjectFilter(t *testing.T) {
 	origRunner := sccRunner
-	t.Cleanup(func() { sccRunner = origRunner })
+	origPopulate := populateMetrics
+	t.Cleanup(func() { sccRunner = origRunner; populateMetrics = origPopulate })
+	populateMetrics = stubPopulateMetrics()
 
 	sccRunner = &mockRunner{
 		results: map[string]*leverage.SCCResult{
@@ -189,7 +210,9 @@ func TestLeverageCommand_ProjectFilter(t *testing.T) {
 
 func TestLeverageCommand_RunnerError(t *testing.T) {
 	origRunner := sccRunner
-	t.Cleanup(func() { sccRunner = origRunner })
+	origPopulate := populateMetrics
+	t.Cleanup(func() { sccRunner = origRunner; populateMetrics = origPopulate })
+	populateMetrics = stubPopulateMetrics()
 
 	sccRunner = &mockRunner{
 		err: fmt.Errorf("scc not found: install with 'brew install scc'"),

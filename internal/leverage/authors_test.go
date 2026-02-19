@@ -2,6 +2,8 @@ package leverage
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"os/exec"
@@ -55,13 +57,13 @@ func commitFile(t *testing.T, dir, filename, content, authorName, authorEmail st
 	}
 }
 
-func TestGetAuthorLOC_SingleAuthor(t *testing.T) {
+func TestAuthorLOC_SingleAuthor(t *testing.T) {
 	dir := initGitRepo(t)
 	commitFile(t, dir, "main.go", "package main\n\nfunc main() {\n}\n", "Alice", "alice@example.com")
 
-	authors, err := GetAuthorLOC(context.Background(), dir)
+	authors, err := AuthorLOC(context.Background(), dir)
 	if err != nil {
-		t.Fatalf("GetAuthorLOC: %v", err)
+		t.Fatalf("AuthorLOC: %v", err)
 	}
 
 	if len(authors) != 1 {
@@ -83,7 +85,7 @@ func TestGetAuthorLOC_SingleAuthor(t *testing.T) {
 	}
 }
 
-func TestGetAuthorLOC_MultipleAuthors(t *testing.T) {
+func TestAuthorLOC_MultipleAuthors(t *testing.T) {
 	dir := initGitRepo(t)
 
 	// Alice writes 6 lines
@@ -92,9 +94,9 @@ func TestGetAuthorLOC_MultipleAuthors(t *testing.T) {
 	// Bob writes 4 lines in a separate file
 	commitFile(t, dir, "b.go", "package a\n\nfunc B() {\n}\n", "Bob", "bob@example.com")
 
-	authors, err := GetAuthorLOC(context.Background(), dir)
+	authors, err := AuthorLOC(context.Background(), dir)
 	if err != nil {
-		t.Fatalf("GetAuthorLOC: %v", err)
+		t.Fatalf("AuthorLOC: %v", err)
 	}
 
 	if len(authors) != 2 {
@@ -130,7 +132,7 @@ func TestGetAuthorLOC_MultipleAuthors(t *testing.T) {
 	}
 }
 
-func TestGetAuthorLOC_EmptyRepo(t *testing.T) {
+func TestAuthorLOC_EmptyRepo(t *testing.T) {
 	dir := initGitRepo(t)
 
 	// Create an initial empty commit so git is valid
@@ -140,9 +142,9 @@ func TestGetAuthorLOC_EmptyRepo(t *testing.T) {
 		t.Fatalf("git commit: %s: %v", out, err)
 	}
 
-	authors, err := GetAuthorLOC(context.Background(), dir)
+	authors, err := AuthorLOC(context.Background(), dir)
 	if err != nil {
-		t.Fatalf("GetAuthorLOC: %v", err)
+		t.Fatalf("AuthorLOC: %v", err)
 	}
 
 	if authors != nil {
@@ -150,20 +152,20 @@ func TestGetAuthorLOC_EmptyRepo(t *testing.T) {
 	}
 }
 
-func TestGetAuthorLOC_ContextCancellation(t *testing.T) {
+func TestAuthorLOC_ContextCancellation(t *testing.T) {
 	dir := initGitRepo(t)
 	commitFile(t, dir, "main.go", "package main\n", "Alice", "alice@example.com")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := GetAuthorLOC(ctx, dir)
+	_, err := AuthorLOC(ctx, dir)
 	if err == nil {
 		t.Fatal("expected context error")
 	}
 }
 
-func TestGetAuthorLOC_MultipleFiles(t *testing.T) {
+func TestAuthorLOC_MultipleFiles(t *testing.T) {
 	dir := initGitRepo(t)
 
 	// Alice writes two files (3 + 3 = 6 lines)
@@ -173,9 +175,9 @@ func TestGetAuthorLOC_MultipleFiles(t *testing.T) {
 	// Bob writes one file (3 lines)
 	commitFile(t, dir, "z.go", "package x\n\nvar Z = 3\n", "Bob", "bob@example.com")
 
-	authors, err := GetAuthorLOC(context.Background(), dir)
+	authors, err := AuthorLOC(context.Background(), dir)
 	if err != nil {
-		t.Fatalf("GetAuthorLOC: %v", err)
+		t.Fatalf("AuthorLOC: %v", err)
 	}
 
 	if len(authors) != 2 {
@@ -427,7 +429,7 @@ func TestProjectActualPersonMonths_SingleAuthor(t *testing.T) {
 	commitFileWithDate(t, dir, "a.go", "package a\n", "Alice", "alice@example.com", "2025-01-01T12:00:00+00:00")
 	commitFileWithDate(t, dir, "b.go", "package a\n", "Alice", "alice@example.com", "2025-04-01T12:00:00+00:00")
 
-	pm, err := ProjectActualPersonMonths(context.Background(), dir)
+	pm, err := ProjectActualPersonMonths(context.Background(), dir, dir)
 	if err != nil {
 		t.Fatalf("ProjectActualPersonMonths: %v", err)
 	}
@@ -449,21 +451,26 @@ func TestProjectActualPersonMonths_TwoAuthors_DifferentDurations(t *testing.T) {
 	commitFileWithDate(t, dir, "b1.go", "package a\nvar y = 1\n", "Bob", "bob@example.com", "2025-03-01T12:00:00+00:00")
 	commitFileWithDate(t, dir, "b2.go", "package a\nvar z = 1\n", "Bob", "bob@example.com", "2025-04-01T12:00:00+00:00")
 
-	pm, err := ProjectActualPersonMonths(context.Background(), dir)
+	pm, err := ProjectActualPersonMonths(context.Background(), dir, dir)
 	if err != nil {
 		t.Fatalf("ProjectActualPersonMonths: %v", err)
 	}
 
-	// Alice ~6 months + Bob ~1 month = ~7 person-months
-	// NOT 2 people × 6 months = 12 (which is what the old calc would do)
-	if pm < 6.0 || pm > 8.0 {
-		t.Errorf("pm = %.2f, want ~7.0 (Alice 6mo + Bob 1mo)", pm)
+	// Blame-weighted: Alice ~43% LOC × 6mo ≈ 2.57, Bob ~57% LOC × 1mo ≈ 0.57.
+	// Total ≈ 3.1 PM (much less than unweighted 7.0 because Bob's wide span
+	// is now weighted by his small LOC share... wait, Bob has MORE lines here).
+	// Alice: 3 lines (a1.go 1 line + a2.go 2 lines)
+	// Bob: 4 lines (b1.go 2 lines + b2.go 2 lines)
+	// Alice: 3/7 = 42.9% × 6mo = 2.57, Bob: 4/7 = 57.1% × 1mo = 0.57
+	// Total ≈ 3.14 PM
+	if pm < 2.5 || pm > 4.0 {
+		t.Errorf("pm = %.2f, want ~3.1 (blame-weighted: Alice 43%%×6mo + Bob 57%%×1mo)", pm)
 	}
 
 	// Verify this is LESS than naive calculation (2 * 6 = 12)
 	naivePM := 2.0 * 6.0
 	if pm >= naivePM {
-		t.Errorf("contribution-based PM (%.2f) should be less than naive (%.2f)", pm, naivePM)
+		t.Errorf("blame-weighted PM (%.2f) should be less than naive (%.2f)", pm, naivePM)
 	}
 }
 
@@ -473,7 +480,7 @@ func TestProjectActualPersonMonths_SingleCommitAuthor(t *testing.T) {
 	// Author with a single commit should get minimum 0.1 months
 	commitFileWithDate(t, dir, "a.go", "package a\n", "Alice", "alice@example.com", "2025-01-01T12:00:00+00:00")
 
-	pm, err := ProjectActualPersonMonths(context.Background(), dir)
+	pm, err := ProjectActualPersonMonths(context.Background(), dir, dir)
 	if err != nil {
 		t.Fatalf("ProjectActualPersonMonths: %v", err)
 	}
@@ -490,7 +497,7 @@ func TestProjectActualPersonMonths_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := ProjectActualPersonMonths(ctx, dir)
+	_, err := ProjectActualPersonMonths(ctx, dir, dir)
 	if err == nil {
 		t.Fatal("expected error from cancelled context")
 	}
@@ -588,8 +595,8 @@ func TestCampaignActualPersonMonths_DeduplicatesAcrossRepos(t *testing.T) {
 	}
 
 	// Must be less than naive sum of per-project PMs
-	pm1, _ := ProjectActualPersonMonths(ctx, repo1)
-	pm2, _ := ProjectActualPersonMonths(ctx, repo2)
+	pm1, _ := ProjectActualPersonMonths(ctx, repo1, repo1)
+	pm2, _ := ProjectActualPersonMonths(ctx, repo2, repo2)
 	naiveSum := pm1 + pm2
 	if campaignPM >= naiveSum {
 		t.Errorf("campaign PM (%.2f) should be less than naive sum (%.2f)", campaignPM, naiveSum)
@@ -615,7 +622,7 @@ func TestCampaignActualPersonMonths_DeduplicatesMonorepo(t *testing.T) {
 	}
 
 	// Single author, ~6 months. Should NOT be doubled.
-	singlePM, _ := ProjectActualPersonMonths(ctx, repo)
+	singlePM, _ := ProjectActualPersonMonths(ctx, repo, repo)
 	if math.Abs(campaignPM-singlePM) > 0.5 {
 		t.Errorf("campaignPM = %.2f, singlePM = %.2f; monorepo should not double-count", campaignPM, singlePM)
 	}
@@ -649,9 +656,13 @@ func TestCampaignActualPersonMonths_MultipleAuthors(t *testing.T) {
 		t.Fatalf("CampaignActualPersonMonths: %v", err)
 	}
 
-	// Alice ~8 months (Jan-Sep), Bob ~2 months (Jan-Mar) = ~10 PM
-	if campaignPM < 9.0 || campaignPM > 11.0 {
-		t.Errorf("campaignPM = %.2f, want ~10 (Alice 8 + Bob 2)", campaignPM)
+	// Blame-weighted across campaign:
+	// Alice: 6 lines total (3 in repo1 + 3 in repo2) = 60%
+	// Bob: 4 lines total (in repo1) = 40%
+	// Alice PM: 8mo × 0.6 = 4.8, Bob PM: 2mo × 0.4 = 0.8
+	// Total ≈ 5.6 PM
+	if campaignPM < 4.5 || campaignPM > 7.0 {
+		t.Errorf("campaignPM = %.2f, want ~5.6 (blame-weighted: Alice 60%%×8mo + Bob 40%%×2mo)", campaignPM)
 	}
 }
 
@@ -663,5 +674,156 @@ func TestCampaignActualPersonMonths_ContextCancelled(t *testing.T) {
 	_, err := CampaignActualPersonMonths(ctx, projects)
 	if err == nil {
 		t.Fatal("expected error from cancelled context")
+	}
+}
+
+// --- BlameWeightedPersonMonths tests ---
+
+func TestBlameWeightedPersonMonths_SingleAuthor(t *testing.T) {
+	dir := initGitRepo(t)
+	commitFileWithDate(t, dir, "main.go", "package main\n\nfunc main() {\n}\n", "Alice", "alice@example.com", "2025-01-01T12:00:00+00:00")
+	commitFileWithDate(t, dir, "util.go", "package main\n\nvar X = 1\n", "Alice", "alice@example.com", "2025-04-01T12:00:00+00:00")
+
+	pm, authors, err := BlameWeightedPersonMonths(context.Background(), dir, dir)
+	if err != nil {
+		t.Fatalf("BlameWeightedPersonMonths: %v", err)
+	}
+
+	// Single author = 100% LOC × ~3 months ≈ 3.0 PM
+	if pm < 2.5 || pm > 3.5 {
+		t.Errorf("pm = %.2f, want ~3.0 (100%% × 3 months)", pm)
+	}
+
+	if len(authors) != 1 {
+		t.Fatalf("got %d authors, want 1", len(authors))
+	}
+
+	a := authors[0]
+	if a.WeightedPM <= 0 {
+		t.Errorf("WeightedPM = %.4f, want > 0", a.WeightedPM)
+	}
+	if math.Abs(a.Percentage-100.0) > 0.01 {
+		t.Errorf("Percentage = %.2f, want 100.0", a.Percentage)
+	}
+}
+
+func TestBlameWeightedPersonMonths_MixedContributions(t *testing.T) {
+	dir := initGitRepo(t)
+
+	// Alice: 6 lines across 2 files, active Jan-Jul (6 months)
+	commitFileWithDate(t, dir, "a.go", "package a\n\nfunc A() {\n\treturn\n}\n\n", "Alice", "alice@example.com", "2025-01-01T12:00:00+00:00")
+	commitFileWithDate(t, dir, "a2.go", "package a\n", "Alice", "alice@example.com", "2025-07-01T12:00:00+00:00")
+
+	// Bob: 4 lines in 1 file, active Mar-Apr (1 month)
+	commitFileWithDate(t, dir, "b.go", "package a\n\nfunc B() {\n}\n", "Bob", "bob@example.com", "2025-03-01T12:00:00+00:00")
+	commitFileWithDate(t, dir, "b2.go", "package a\n", "Bob", "bob@example.com", "2025-04-01T12:00:00+00:00")
+
+	pm, authors, err := BlameWeightedPersonMonths(context.Background(), dir, dir)
+	if err != nil {
+		t.Fatalf("BlameWeightedPersonMonths: %v", err)
+	}
+
+	// Each author's PM is their months × their LOC share.
+	// Total should be significantly less than unweighted (6 + 1 = 7).
+	if pm >= 7.0 {
+		t.Errorf("blame-weighted PM (%.2f) should be less than unweighted sum (7.0)", pm)
+	}
+
+	if len(authors) < 2 {
+		t.Fatalf("got %d authors, want >= 2", len(authors))
+	}
+
+	// All authors should have WeightedPM set
+	for _, a := range authors {
+		if a.WeightedPM <= 0 {
+			t.Errorf("author %s has WeightedPM = %.4f, want > 0", a.Name, a.WeightedPM)
+		}
+	}
+}
+
+func TestBlameWeightedPersonMonths_FiltersBelowOnePercent(t *testing.T) {
+	dir := initGitRepo(t)
+
+	// Alice: writes 200+ lines (dominant contributor)
+	var bigContent string
+	for i := range 200 {
+		bigContent += fmt.Sprintf("var v%d = %d\n", i, i)
+	}
+	commitFileWithDate(t, dir, "big.go", "package a\n\n"+bigContent, "Alice", "alice@example.com", "2025-01-01T12:00:00+00:00")
+	commitFileWithDate(t, dir, "big2.go", "package a\n", "Alice", "alice@example.com", "2025-06-01T12:00:00+00:00")
+
+	// Bob: writes just 1 line (<1% of 203 total) but over 8 months
+	commitFileWithDate(t, dir, "tiny.go", "package a\n", "Bob", "bob@example.com", "2025-01-01T12:00:00+00:00")
+	commitFileWithDate(t, dir, "tiny2.go", "package a\n", "Bob", "bob@example.com", "2025-09-01T12:00:00+00:00")
+
+	pm, authors, err := BlameWeightedPersonMonths(context.Background(), dir, dir)
+	if err != nil {
+		t.Fatalf("BlameWeightedPersonMonths: %v", err)
+	}
+
+	// Bob should be filtered out (<1% LOC), so only Alice appears.
+	for _, a := range authors {
+		if a.Name == "Bob" {
+			t.Errorf("Bob should be filtered out (<1%% LOC), but got: %+v", a)
+		}
+	}
+
+	// Without Bob's 8-month span inflating the total, PM should be ~5 months (Alice only).
+	if pm > 6.0 {
+		t.Errorf("pm = %.2f, should be ~5 (Alice only, Bob filtered)", pm)
+	}
+	_ = authors // satisfy vet
+}
+
+func TestBlameWeightedPersonMonths_SingleCommitAuthor(t *testing.T) {
+	dir := initGitRepo(t)
+	commitFileWithDate(t, dir, "a.go", "package a\n", "Alice", "alice@example.com", "2025-01-01T12:00:00+00:00")
+
+	pm, _, err := BlameWeightedPersonMonths(context.Background(), dir, dir)
+	if err != nil {
+		t.Fatalf("BlameWeightedPersonMonths: %v", err)
+	}
+
+	// Single commit author gets minimum PM (0.1)
+	if pm < 0.09 || pm > 0.2 {
+		t.Errorf("pm = %.4f, want ~0.1 (single commit minimum)", pm)
+	}
+}
+
+func TestBlameWeightedPersonMonths_ContextCancelled(t *testing.T) {
+	dir := initGitRepo(t)
+	commitFileWithDate(t, dir, "a.go", "package a\n", "Alice", "alice@example.com", "2025-01-01T12:00:00+00:00")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, _, err := BlameWeightedPersonMonths(ctx, dir, dir)
+	if err == nil {
+		t.Fatal("expected error from cancelled context")
+	}
+}
+
+func TestAuthorContribution_WeightedPM_BackwardCompat(t *testing.T) {
+	// Old snapshots without WeightedPM should deserialize correctly.
+	oldJSON := `{"name":"Alice","email":"alice@test.com","lines":100,"percentage":50.0}`
+	var ac AuthorContribution
+	if err := json.Unmarshal([]byte(oldJSON), &ac); err != nil {
+		t.Fatalf("unmarshal old snapshot: %v", err)
+	}
+	if ac.WeightedPM != 0 {
+		t.Errorf("WeightedPM = %f, want 0 for old snapshot", ac.WeightedPM)
+	}
+	if ac.Name != "Alice" || ac.Lines != 100 {
+		t.Errorf("basic fields corrupted: %+v", ac)
+	}
+
+	// New snapshots with WeightedPM should round-trip.
+	newJSON := `{"name":"Bob","email":"bob@test.com","lines":200,"percentage":75.0,"weighted_pm":3.5}`
+	var ac2 AuthorContribution
+	if err := json.Unmarshal([]byte(newJSON), &ac2); err != nil {
+		t.Fatalf("unmarshal new snapshot: %v", err)
+	}
+	if ac2.WeightedPM != 3.5 {
+		t.Errorf("WeightedPM = %f, want 3.5", ac2.WeightedPM)
 	}
 }

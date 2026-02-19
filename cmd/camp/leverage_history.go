@@ -139,50 +139,6 @@ func runLeverageHistory(cmd *cobra.Command, args []string) error {
 	return historyOutputPeriodTable(cmd, history, period)
 }
 
-func historyOutputTable(cmd *cobra.Command, history []leverage.HistoryPoint) error {
-	out := cmd.OutOrStdout()
-	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.CategoryColor)
-
-	headers := []string{"DATE", "CODE LINES", "EST. COST", "LEVERAGE"}
-	var rows [][]string
-	for _, point := range history {
-		lev := "-"
-		if point.Aggregate != nil {
-			lev = fmtScore(point.Aggregate.FullLeverage) + "x"
-		}
-		rows = append(rows, []string{
-			point.Date.Format("2006-01-02"),
-			fmtInt(point.TotalCode),
-			"$" + fmtCost(point.TotalCost),
-			lev,
-		})
-	}
-
-	t := table.New().
-		Border(lipgloss.ASCIIBorder()).
-		BorderStyle(lipgloss.NewStyle().Foreground(ui.DimColor)).
-		Headers(headers...).
-		Rows(rows...).
-		StyleFunc(func(row, col int) lipgloss.Style {
-			if row == table.HeaderRow {
-				return headerStyle
-			}
-			switch col {
-			case 0: // DATE
-				return lipgloss.NewStyle().Foreground(ui.DimColor)
-			case 2: // EST. COST
-				return lipgloss.NewStyle().Foreground(ui.WarningColor)
-			case 3: // LEVERAGE
-				return lipgloss.NewStyle().Foreground(ui.SuccessColor)
-			default:
-				return lipgloss.NewStyle()
-			}
-		})
-
-	fmt.Fprintln(out, t)
-	return nil
-}
-
 func historyOutputPeriodTable(cmd *cobra.Command, history []leverage.HistoryPoint, period leverage.HistoryPeriod) error {
 	out := cmd.OutOrStdout()
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.CategoryColor)
@@ -279,20 +235,31 @@ func historyOutputByAuthor(cmd *cobra.Command, history []leverage.HistoryPoint) 
 	out := cmd.OutOrStdout()
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.CategoryColor)
 
-	headers := []string{"DATE", "AUTHOR", "LINES OWNED", "OWNERSHIP %", "AUTHOR LEVERAGE"}
+	headers := []string{"DATE", "AUTHOR", "LINES OWNED", "WEIGHTED PM", "AUTHOR LEVERAGE"}
 	var rows [][]string
 	for _, point := range history {
 		authors := aggregateAuthors(point.Projects)
+		totalWeightedPM := totalAuthorWeightedPM(authors)
 		for _, author := range authors {
 			authorLev := "-"
 			if point.Aggregate != nil {
-				authorLev = fmtScore(author.Percentage/100.0*point.Aggregate.FullLeverage) + "x"
+				if totalWeightedPM > 0 && author.WeightedPM > 0 {
+					// Use blame-weighted PM for leverage attribution.
+					authorLev = fmtScore(author.WeightedPM/totalWeightedPM*point.Aggregate.FullLeverage) + "x"
+				} else {
+					// Fallback for old snapshots without WeightedPM.
+					authorLev = fmtScore(author.Percentage/100.0*point.Aggregate.FullLeverage) + "x"
+				}
+			}
+			weightedPM := "-"
+			if author.WeightedPM > 0 {
+				weightedPM = fmt.Sprintf("%.2f", author.WeightedPM)
 			}
 			rows = append(rows, []string{
 				point.Date.Format("2006-01-02"),
 				author.Name,
 				fmtInt(author.Lines),
-				fmt.Sprintf("%.1f%%", author.Percentage),
+				weightedPM,
 				authorLev,
 			})
 		}
@@ -342,9 +309,10 @@ func aggregateAuthors(projects map[string]*leverage.Snapshot) []leverage.AuthorC
 			totalLines += a.Lines
 			if existing, ok := byEmail[a.Email]; ok {
 				existing.Lines += a.Lines
+				existing.WeightedPM += a.WeightedPM
 			} else {
-				copy := a
-				byEmail[a.Email] = &copy
+				cp := a
+				byEmail[a.Email] = &cp
 			}
 		}
 	}
@@ -360,4 +328,13 @@ func aggregateAuthors(projects map[string]*leverage.Snapshot) []leverage.AuthorC
 		return result[i].Lines > result[j].Lines
 	})
 	return result
+}
+
+// totalAuthorWeightedPM sums WeightedPM across all authors.
+func totalAuthorWeightedPM(authors []leverage.AuthorContribution) float64 {
+	var total float64
+	for _, a := range authors {
+		total += a.WeightedPM
+	}
+	return total
 }

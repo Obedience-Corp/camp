@@ -16,8 +16,9 @@ import (
 type AuthorContribution struct {
 	Name       string  `json:"name"`
 	Email      string  `json:"email"`
-	Lines      int     `json:"lines"`      // LOC owned (from git blame)
-	Percentage float64 `json:"percentage"` // lines / total_loc * 100
+	Lines      int     `json:"lines"`                    // LOC owned (from git blame)
+	Percentage float64 `json:"percentage"`               // lines / total_loc * 100
+	WeightedPM float64 `json:"weighted_pm,omitempty"`    // blame-weighted person-months
 }
 
 // LanguageSummary is a compact per-language summary stored in snapshots.
