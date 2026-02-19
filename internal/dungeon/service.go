@@ -211,6 +211,11 @@ func (s *Service) ListItems(ctx context.Context) ([]DungeonItem, error) {
 			continue
 		}
 
+		// Skip hidden files
+		if strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+
 		info, err := entry.Info()
 		if err != nil {
 			continue // Skip entries we can't stat
