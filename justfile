@@ -20,6 +20,13 @@ mod test '.justfiles/test.just'
 [doc('Cross-platform builds')]
 mod xbuild '.justfiles/build.just'
 
+[doc('Release and versioning')]
+mod release '.justfiles/release.just'
+
+# Create next release and push (patch|minor|major)
+release-next level="patch":
+    @just release release {{level}}
+
 [private]
 default:
     @echo "camp CLI - Campaign Management Tool"
