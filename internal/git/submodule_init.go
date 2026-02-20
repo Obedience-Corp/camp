@@ -27,8 +27,7 @@ func IsStaleRefError(err error) bool {
 //
 // Detection order:
 //  1. git symbolic-ref refs/remotes/origin/HEAD (local, set after clone/fetch)
-//  2. .gitmodules branch key in the parent repo
-//  3. Try "main" then "master" by checking refs/remotes/origin/<branch>
+//  2. Try "main" then "master" by checking refs/remotes/origin/<branch>
 func DetectDefaultBranch(ctx context.Context, subDir string) (string, error) {
 	if ctx.Err() != nil {
 		return "", ctx.Err()
@@ -55,7 +54,7 @@ func DetectDefaultBranch(ctx context.Context, subDir string) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("could not determine default branch for %s", subDir)
+	return "", fmt.Errorf("%w: %s", ErrBranchDetection, subDir)
 }
 
 // DetectDefaultBranchWithParent determines the default branch for a submodule,
@@ -96,7 +95,7 @@ func DetectDefaultBranchWithParent(ctx context.Context, repoDir, subPath, subDir
 		}
 	}
 
-	return "", fmt.Errorf("could not determine default branch for %s", subPath)
+	return "", fmt.Errorf("%w: %s", ErrBranchDetection, subPath)
 }
 
 // InitSubmoduleGraceful initializes a single submodule, handling stale commit references.
@@ -128,7 +127,7 @@ func InitSubmoduleGraceful(ctx context.Context, repoDir, subPath string) error {
 		return InitFromDefaultBranch(ctx, repoDir, subPath)
 	}
 
-	return fmt.Errorf("submodule update %s: %s: %w", subPath, strings.TrimSpace(outputStr), err)
+	return fmt.Errorf("%w %s: %s: %w", ErrSubmoduleUpdate, subPath, strings.TrimSpace(outputStr), err)
 }
 
 // InitFromDefaultBranch clones a submodule at its remote's default branch
@@ -142,22 +141,21 @@ func InitFromDefaultBranch(ctx context.Context, repoDir, subPath string) error {
 	// Get submodule URL from .gitmodules
 	url, err := getSubmoduleURL(ctx, repoDir, subPath)
 	if err != nil {
-		return fmt.Errorf("get URL for submodule %s: %w", subPath, err)
+		return fmt.Errorf("%w %s: %w", ErrSubmoduleURL, subPath, err)
 	}
 
 	subDir := filepath.Join(repoDir, subPath)
 
 	// Remove empty submodule directory if exists
 	if err := os.RemoveAll(subDir); err != nil {
-		return fmt.Errorf("remove stale submodule dir %s: %w", subPath, err)
+		return fmt.Errorf("%w %s: %w", ErrSubmoduleRemove, subPath, err)
 	}
 
 	// Clone directly to submodule path (will use remote's default branch)
 	cmd := exec.CommandContext(ctx, "git", "clone", url, subDir)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("clone submodule %s at default branch: %s: %w",
-			subPath, strings.TrimSpace(string(output)), err)
+		return fmt.Errorf("%w %s: %s: %w", ErrSubmoduleClone, subPath, strings.TrimSpace(string(output)), err)
 	}
 
 	return nil
@@ -178,7 +176,7 @@ func CheckoutDefaultBranch(ctx context.Context, subDir string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", "-C", subDir, "checkout", branch)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("checkout %s: %s: %w", branch, strings.TrimSpace(string(output)), err)
+		return "", fmt.Errorf("%w %s: %s: %w", ErrBranchCheckout, branch, strings.TrimSpace(string(output)), err)
 	}
 
 	return branch, nil
@@ -202,5 +200,5 @@ func getSubmoduleURL(ctx context.Context, repoDir, subPath string) (string, erro
 		return strings.TrimSpace(string(output)), nil
 	}
 
-	return "", fmt.Errorf("could not get URL for submodule %s", subPath)
+	return "", fmt.Errorf("%w: %s", ErrSubmoduleURL, subPath)
 }

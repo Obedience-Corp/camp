@@ -75,7 +75,7 @@ func (s *Syncer) listSubmodules(ctx context.Context) ([]string, error) {
 			// No submodules configured
 			return nil, nil
 		}
-		return nil, fmt.Errorf("list submodules: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrListSubmodules, err)
 	}
 
 	var paths []string
@@ -338,7 +338,7 @@ func (s *Syncer) RunPreflight(ctx context.Context) (*PreflightResult, error) {
 	// Fetch submodule paths once for all checks
 	paths, err := s.listSubmodules(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("list submodules: %w", err)
+		return nil, &SyncError{Op: "preflight-list", Cause: err}
 	}
 
 	result := &PreflightResult{Passed: true}
@@ -346,28 +346,28 @@ func (s *Syncer) RunPreflight(ctx context.Context) (*PreflightResult, error) {
 	// Check for uncommitted changes
 	uncommitted, err := s.checkUncommittedChanges(ctx, paths)
 	if err != nil {
-		return nil, fmt.Errorf("check uncommitted changes: %w", err)
+		return nil, &SyncError{Op: "check-uncommitted", Cause: err}
 	}
 	result.UncommittedChanges = uncommitted
 
 	// Check for unpushed commits
 	unpushed, err := s.checkUnpushedCommits(ctx, paths)
 	if err != nil {
-		return nil, fmt.Errorf("check unpushed commits: %w", err)
+		return nil, &SyncError{Op: "check-unpushed", Cause: err}
 	}
 	result.UnpushedCommits = unpushed
 
 	// Check for URL mismatches
 	mismatches, err := s.checkURLMismatches(ctx, paths)
 	if err != nil {
-		return nil, fmt.Errorf("check URL mismatches: %w", err)
+		return nil, &SyncError{Op: "check-urls", Cause: err}
 	}
 	result.URLMismatches = mismatches
 
 	// Check for detached HEADs
 	detached, err := s.checkDetachedHEADs(ctx, paths)
 	if err != nil {
-		return nil, fmt.Errorf("check detached HEADs: %w", err)
+		return nil, &SyncError{Op: "check-detached", Cause: err}
 	}
 	result.DetachedHEADs = detached
 

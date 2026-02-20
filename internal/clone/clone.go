@@ -2,6 +2,7 @@ package clone
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 )
@@ -40,7 +41,7 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 	if err != nil {
 		c.progress.EndPhase("Clone", false)
 		result.Success = false
-		result.Errors = append(result.Errors, fmt.Errorf("clone failed: %w", err))
+		result.Errors = append(result.Errors, &SubmoduleError{Op: "clone", Cause: err})
 		return result, err
 	}
 	c.progress.EndPhase("Clone", true)
@@ -247,7 +248,7 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 			// Validation failure is an error
 			for _, issue := range result.Validation.Issues {
 				if issue.Severity == SeverityError {
-					result.Errors = append(result.Errors, fmt.Errorf("validation: %s - %s", issue.Submodule, issue.Description))
+					result.Errors = append(result.Errors, &SubmoduleError{Op: "validation", Submodule: issue.Submodule, Cause: errors.New(issue.Description)})
 				} else {
 					result.Warnings = append(result.Warnings, fmt.Sprintf("validation: %s - %s", issue.Submodule, issue.Description))
 				}

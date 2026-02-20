@@ -47,7 +47,7 @@ func (c *Cloner) gitClone(ctx context.Context) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("git clone: %s: %w", strings.TrimSpace(string(output)), err)
+		return "", &SubmoduleError{Op: "clone", Cause: fmt.Errorf("%s: %w", strings.TrimSpace(string(output)), err)}
 	}
 
 	// Return absolute path to cloned directory
@@ -67,7 +67,7 @@ func (c *Cloner) gitSubmoduleSync(ctx context.Context, dir string) error {
 	cmd := exec.CommandContext(ctx, "git", "-C", dir, "submodule", "sync", "--recursive")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("git submodule sync: %s: %w", strings.TrimSpace(string(output)), err)
+		return &SubmoduleError{Op: "sync", Cause: fmt.Errorf("%s: %w", strings.TrimSpace(string(output)), err)}
 	}
 	return nil
 }
@@ -81,7 +81,7 @@ func (c *Cloner) gitSubmoduleUpdate(ctx context.Context, dir string) error {
 	cmd := exec.CommandContext(ctx, "git", "-C", dir, "submodule", "update", "--init", "--recursive")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("git submodule update: %s: %w", strings.TrimSpace(string(output)), err)
+		return fmt.Errorf("%w: %s: %w", ErrSubmoduleUpdate, strings.TrimSpace(string(output)), err)
 	}
 	return nil
 }
@@ -95,7 +95,7 @@ func (c *Cloner) gitGetBranch(ctx context.Context, dir string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "--abbrev-ref", "HEAD")
 	output, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("get branch: %w", err)
+		return "", fmt.Errorf("%w: %w", ErrBranchDetection, err)
 	}
 	return strings.TrimSpace(string(output)), nil
 }
@@ -110,7 +110,7 @@ func (c *Cloner) gitSubmoduleStatus(ctx context.Context, dir string) ([]Submodul
 	cmd := exec.CommandContext(ctx, "git", "-C", dir, "submodule", "status", "--recursive")
 	output, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("git submodule status: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrSubmoduleUpdate, err)
 	}
 
 	var results []SubmoduleResult
@@ -156,7 +156,7 @@ func (c *Cloner) gitSubmoduleURL(ctx context.Context, dir, submodulePath string)
 		return strings.TrimSpace(string(output)), nil
 	}
 
-	return "", fmt.Errorf("could not get URL for submodule %s", submodulePath)
+	return "", fmt.Errorf("%w: %s", ErrSubmoduleURL, submodulePath)
 }
 
 // parseSubmoduleStatus parses a line from git submodule status output.
@@ -174,7 +174,7 @@ func parseSubmoduleStatus(line string) SubmoduleResult {
 	switch prefix {
 	case '-':
 		result.Success = false
-		result.Error = fmt.Errorf("submodule not initialized")
+		result.Error = ErrSubmoduleNotInitialized
 		line = line[1:]
 	case '+':
 		// Commit differs - this might be OK after checkout
@@ -234,7 +234,7 @@ func (c *Cloner) verifySubmoduleWorkingTree(ctx context.Context, repoDir, subPat
 	subDir := filepath.Join(repoDir, subPath)
 	entries, err := os.ReadDir(subDir)
 	if err != nil {
-		return fmt.Errorf("cannot read submodule dir %s: %w", subPath, err)
+		return &SubmoduleError{Op: "read", Submodule: subPath, Cause: fmt.Errorf("%w: %w", ErrSubmoduleRead, err)}
 	}
 
 	// Count real files (not .git)
@@ -246,7 +246,7 @@ func (c *Cloner) verifySubmoduleWorkingTree(ctx context.Context, repoDir, subPat
 	}
 
 	if realEntries == 0 {
-		return fmt.Errorf("submodule %s has empty working tree", subPath)
+		return &SubmoduleError{Op: "verify", Submodule: subPath, Cause: ErrEmptyWorkingTree}
 	}
 	return nil
 }
@@ -261,7 +261,10 @@ func (c *Cloner) forceCheckoutSubmodule(ctx context.Context, repoDir, subPath st
 	cmd := exec.CommandContext(ctx, "git", "-C", subDir, "checkout", "HEAD", "--", ".")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("git checkout HEAD in %s: %s: %w", subPath, strings.TrimSpace(string(output)), err)
+		return &SubmoduleError{
+			Op: "checkout", Submodule: subPath,
+			Cause: fmt.Errorf("%w: %s: %w", ErrCheckoutFailed, strings.TrimSpace(string(output)), err),
+		}
 	}
 	return nil
 }
@@ -288,7 +291,10 @@ func (c *Cloner) checkoutSubmoduleBranch(ctx context.Context, repoDir, subPath s
 	cmd := exec.CommandContext(ctx, "git", "-C", subDir, "checkout", branch)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("checkout %s in %s: %s: %w", branch, subPath, strings.TrimSpace(string(output)), err)
+		return &SubmoduleError{
+			Op: "checkout-branch", Submodule: subPath,
+			Cause: fmt.Errorf("%w: %s in %s: %s", ErrBranchCheckout, branch, subPath, strings.TrimSpace(string(output))),
+		}
 	}
 
 	return nil
@@ -356,7 +362,10 @@ func (c *Cloner) initSubmoduleGraceful(ctx context.Context, repoDir, subPath str
 		return c.initSubmoduleFromDefaultBranch(ctx, repoDir, subPath)
 	}
 
-	return fmt.Errorf("submodule update %s: %s: %w", subPath, strings.TrimSpace(outputStr), err)
+	return &SubmoduleError{
+		Op: "update", Submodule: subPath,
+		Cause: fmt.Errorf("%w: %s", ErrSubmoduleUpdate, strings.TrimSpace(outputStr)),
+	}
 }
 
 // initSubmoduleFromDefaultBranch clones a submodule at its remote's default branch
@@ -370,22 +379,27 @@ func (c *Cloner) initSubmoduleFromDefaultBranch(ctx context.Context, repoDir, su
 	// Get submodule URL
 	url, err := c.gitSubmoduleURL(ctx, repoDir, subPath)
 	if err != nil {
-		return fmt.Errorf("get URL for submodule %s: %w", subPath, err)
+		return &SubmoduleError{Op: "url-resolve", Submodule: subPath, Cause: err}
 	}
 
 	subDir := filepath.Join(repoDir, subPath)
 
 	// Remove empty submodule directory if exists
 	if err := os.RemoveAll(subDir); err != nil {
-		return fmt.Errorf("remove stale submodule dir %s: %w", subPath, err)
+		return &SubmoduleError{
+			Op: "remove-stale", Submodule: subPath,
+			Cause: fmt.Errorf("%w: %w", ErrStaleRef, err),
+		}
 	}
 
 	// Clone directly to submodule path (will use remote's default branch)
 	cmd := exec.CommandContext(ctx, "git", "clone", url, subDir)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("clone submodule %s at default branch: %s: %w",
-			subPath, strings.TrimSpace(string(output)), err)
+		return &SubmoduleError{
+			Op: "clone-default-branch", Submodule: subPath,
+			Cause: fmt.Errorf("%w: %s", ErrCloneFailed, strings.TrimSpace(string(output))),
+		}
 	}
 
 	return nil
