@@ -5,9 +5,9 @@
 default:
     @just --list --unsorted --justfile {{source_file()}}
 
-# Create next release and push (patch|minor|major)
+# Bump version, tag, and push (patch|minor|major)
 [no-cd]
-release level="patch":
+next level="patch":
     #!/usr/bin/env bash
     set -euo pipefail
     suffix="alpha-stable"

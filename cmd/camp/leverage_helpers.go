@@ -12,9 +12,9 @@ import (
 )
 
 // populateMetrics is the function used to populate project metrics.
-// Production code uses leverage.PopulateProjectMetrics (runs blame-weighted PM).
+// Production code uses the three-tier blame cache (runs blame-weighted PM).
 // Tests can replace this with a fast stub to avoid expensive git blame operations.
-var populateMetrics func(ctx context.Context, resolved []leverage.ResolvedProject)
+var populateMetrics func(ctx context.Context, campaignRoot string, resolved []leverage.ResolvedProject)
 
 // leverageSetup holds common state initialized by all leverage subcommands.
 type leverageSetup struct {
@@ -69,22 +69,96 @@ func initLeverageSetup(ctx context.Context) (*leverageSetup, error) {
 	return &leverageSetup{Root: root, Cfg: cfg, AutoDetected: autoDetected, ConfigCreated: configCreated}, nil
 }
 
-// runPopulateMetrics calls the test-injected populateMetrics or the real
-// leverage.PopulateOneProject per project with progress output.
-// Centralizes the dispatch so every command uses the same injection point.
-func runPopulateMetrics(ctx context.Context, resolved []leverage.ResolvedProject) {
+// runPopulateMetrics uses three-tier blame caching for fast repeat runs:
+//   - Tier A: Exact hash match → populate from cache (<1ms)
+//   - Tier B: Hash differs, cache exists → incremental update (re-blame changed files)
+//   - Tier C: No cache → full compute and save
+//
+// Falls back to the test-injected populateMetrics if set.
+func runPopulateMetrics(ctx context.Context, campaignRoot string, resolved []leverage.ResolvedProject) {
 	if populateMetrics != nil {
-		populateMetrics(ctx, resolved)
+		populateMetrics(ctx, campaignRoot, resolved)
 		return
 	}
+
+	cache := leverage.NewBlameCache(leverage.DefaultCacheDir(campaignRoot))
 	total := len(resolved)
+	var cached, incremental, full int
+
 	for i := range resolved {
 		if err := ctx.Err(); err != nil {
 			return
 		}
-		fmt.Fprintf(os.Stderr, "  Analyzing %s (%d/%d)...\n", resolved[i].Name, i+1, total)
-		leverage.PopulateOneProject(ctx, &resolved[i])
+
+		p := &resolved[i]
+
+		hash, err := leverage.ProjectHash(ctx, p)
+		if err != nil {
+			// Can't determine hash; fall back to full compute.
+			fmt.Fprintf(os.Stderr, "  Analyzing %s (%d/%d)...\n", p.Name, i+1, total)
+			leverage.PopulateOneProject(ctx, p)
+			full++
+			continue
+		}
+
+		entry, _ := cache.Load(ctx, p.Name)
+
+		switch {
+		case entry != nil && entry.CommitHash == hash && entry.SCCDir == p.SCCDir:
+			// Tier A: exact match.
+			fmt.Fprintf(os.Stderr, "  %s (%d/%d) cached\n", p.Name, i+1, total)
+			p.AuthorCount = entry.AuthorCount
+			p.ActualPersonMonths = entry.ActualPM
+			p.Authors = entry.Authors
+			cached++
+
+		case entry != nil && entry.FileBlame != nil:
+			// Tier B: incremental update.
+			subpath := ""
+			if p.InMonorepo {
+				rel, relErr := leverage.RelPath(p.GitDir, p.SCCDir)
+				if relErr == nil {
+					subpath = rel
+				}
+			}
+
+			modified, added, deleted, diffErr := leverage.ChangedFiles(ctx, p.GitDir, entry.CommitHash, hash, subpath)
+			if diffErr != nil {
+				// Fall back to full compute.
+				fmt.Fprintf(os.Stderr, "  Analyzing %s (%d/%d)...\n", p.Name, i+1, total)
+				leverage.PopulateOneProjectCached(ctx, p, cache, hash)
+				full++
+				continue
+			}
+
+			totalChanged := len(modified) + len(added) + len(deleted)
+			fmt.Fprintf(os.Stderr, "  %s (%d/%d) updating %d files...\n", p.Name, i+1, total, totalChanged)
+
+			if err := entry.IncrementalUpdate(ctx, p.SCCDir, modified, added, deleted); err != nil {
+				// Fall back to full compute.
+				leverage.PopulateOneProjectCached(ctx, p, cache, hash)
+				full++
+				continue
+			}
+
+			entry.RecomputeAggregates()
+			entry.CommitHash = hash
+			entry.SCCDir = p.SCCDir
+
+			leverage.RecomputeProjectMetrics(ctx, p, entry)
+
+			_ = cache.Save(ctx, entry)
+			incremental++
+
+		default:
+			// Tier C: full compute.
+			fmt.Fprintf(os.Stderr, "  Analyzing %s (%d/%d)...\n", p.Name, i+1, total)
+			leverage.PopulateOneProjectCached(ctx, p, cache, hash)
+			full++
+		}
 	}
+
+	fmt.Fprintf(os.Stderr, "  Blame: %d cached, %d incremental, %d full\n", cached, incremental, full)
 }
 
 // initRunner returns the SCC runner (test-injected or newly created from config).
@@ -104,7 +178,7 @@ func resolveAndPopulateProjects(ctx context.Context, root string, cfg *leverage.
 		return nil, 0, fmt.Errorf("resolving projects: %w", err)
 	}
 
-	runPopulateMetrics(ctx, resolved)
+	runPopulateMetrics(ctx, root, resolved)
 
 	var authorExcluded int
 	if authorFilter != "" {

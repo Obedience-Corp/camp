@@ -59,7 +59,7 @@ func runLeverageSnapshot(cmd *cobra.Command, args []string) error {
 	elapsed := leverage.ElapsedMonths(cfg.ProjectStart, time.Now())
 
 	// Populate per-project author counts and actual person-months (with blame).
-	runPopulateMetrics(ctx, resolved)
+	runPopulateMetrics(ctx, setup.Root, resolved)
 
 	var count int
 	for _, proj := range resolved {
