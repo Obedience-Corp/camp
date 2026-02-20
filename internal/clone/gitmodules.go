@@ -46,18 +46,22 @@ func parseGitmodules(ctx context.Context, repoPath string) ([]SubmoduleInfo, err
 		key := parts[0]
 		value := parts[1]
 
-		// Extract submodule name from key like "submodule.name.path"
-		keyParts := strings.Split(key, ".")
-		if len(keyParts) < 3 {
+		// Extract submodule name from key like "submodule.<name>.path"
+		// Names can contain dots (e.g., "obediencecorp.com"), so we strip
+		// the "submodule." prefix and use the last "." to split name from property.
+		rest := strings.TrimPrefix(key, "submodule.")
+		lastDot := strings.LastIndex(rest, ".")
+		if lastDot <= 0 {
 			continue
 		}
-		name := keyParts[1]
+		name := rest[:lastDot]
+		prop := rest[lastDot+1:]
 
 		if submodules[name] == nil {
 			submodules[name] = &SubmoduleInfo{Name: name}
 		}
 
-		switch keyParts[2] {
+		switch prop {
 		case "path":
 			submodules[name].Path = value
 		case "url":
