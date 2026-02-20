@@ -3,6 +3,7 @@ package clone
 import (
 	"context"
 	"fmt"
+	"sync"
 )
 
 // Clone performs a full campaign clone with submodule initialization.
@@ -81,90 +82,146 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 		}
 		c.progress.EndPhase("URL sync", true)
 
-		// Phase 3: Initialize submodules gracefully (one-by-one with stale reference handling)
+		// Phase 3: Initialize submodules gracefully (parallel with stale reference handling)
 		c.progress.StartPhase("Initializing submodules")
 		submoduleInfos, err := parseGitmodules(ctx, targetDir)
 		if err != nil {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("could not parse .gitmodules: %v", err))
 		}
 
+		// Determine parallelism
+		parallel := c.options.Parallel
+		if parallel <= 0 {
+			parallel = 4
+		}
+		if parallel > len(submoduleInfos) {
+			parallel = len(submoduleInfos)
+		}
+
+		// subInitResult holds the outcome of initializing a single submodule.
+		type subInitResult struct {
+			index        int
+			result       SubmoduleResult
+			warnings     []string
+			staleRef     bool
+			nestedCount  int
+			branchOK     bool
+		}
+
+		results := make([]subInitResult, len(submoduleInfos))
+		sem := make(chan struct{}, parallel)
+		var wg sync.WaitGroup
+
+		for i, sub := range submoduleInfos {
+			if ctx.Err() != nil {
+				result.Errors = append(result.Errors, ctx.Err())
+				break
+			}
+
+			wg.Add(1)
+			go func(idx int, sub SubmoduleInfo) {
+				defer wg.Done()
+
+				// Acquire semaphore slot
+				select {
+				case sem <- struct{}{}:
+					defer func() { <-sem }()
+				case <-ctx.Done():
+					results[idx] = subInitResult{
+						index: idx,
+						result: SubmoduleResult{
+							Name: sub.Name, Path: sub.Path, URL: sub.URL,
+							Success: false, Error: ctx.Err(),
+						},
+					}
+					return
+				}
+
+				r := subInitResult{index: idx}
+				c.progress.Verbose(fmt.Sprintf("Initializing submodule: %s", sub.Path))
+
+				// Step 1: Initialize submodule gracefully (handles stale refs)
+				subErr := c.initSubmoduleGraceful(ctx, targetDir, sub.Path)
+				r.result = SubmoduleResult{
+					Name:    sub.Name,
+					Path:    sub.Path,
+					URL:     sub.URL,
+					Success: subErr == nil,
+					Error:   subErr,
+				}
+
+				if subErr != nil {
+					if c.isStaleRefError(subErr) {
+						r.staleRef = true
+						r.warnings = append(r.warnings,
+							fmt.Sprintf("submodule %s had stale commit reference, using default branch", sub.Path))
+						r.result.Success = true
+						r.result.Error = nil
+					} else {
+						r.warnings = append(r.warnings,
+							fmt.Sprintf("submodule %s: %v", sub.Path, subErr))
+					}
+				}
+
+				// Step 2: Verify working tree has files
+				if r.result.Success {
+					if err := c.verifySubmoduleWorkingTree(ctx, targetDir, sub.Path); err != nil {
+						c.progress.Verbose(fmt.Sprintf("Fixing empty working tree: %s", sub.Path))
+						if fixErr := c.forceCheckoutSubmodule(ctx, targetDir, sub.Path); fixErr != nil {
+							r.warnings = append(r.warnings,
+								fmt.Sprintf("could not fix submodule %s: %v", sub.Path, fixErr))
+						}
+					}
+				}
+
+				// Step 3: Initialize nested submodules (recursively with graceful handling)
+				if r.result.Success {
+					count, warnings := c.initNestedSubmodulesGraceful(ctx, targetDir, sub.Path)
+					r.nestedCount = count
+					r.warnings = append(r.warnings, warnings...)
+				}
+
+				// Step 4: Checkout branch instead of detached HEAD
+				if r.result.Success {
+					if err := c.checkoutSubmoduleBranch(ctx, targetDir, sub.Path); err != nil {
+						c.progress.Verbose(fmt.Sprintf("Could not checkout branch for %s: %v", sub.Path, err))
+					} else {
+						r.branchOK = true
+					}
+				}
+
+				// Get commit hash if initialized
+				if r.result.Success {
+					r.result.Commit, _ = c.getSubmoduleCommit(ctx, targetDir, sub.Path)
+				}
+
+				results[idx] = r
+			}(i, sub)
+		}
+		wg.Wait()
+
+		// Aggregate results (in original order)
 		succeeded := 0
 		failed := 0
 		nestedCount := 0
 		branchCount := 0
 		staleRefCount := 0
 
-		for _, sub := range submoduleInfos {
-			if ctx.Err() != nil {
-				result.Errors = append(result.Errors, ctx.Err())
-				break
-			}
-
-			c.progress.Verbose(fmt.Sprintf("Initializing submodule: %s", sub.Path))
-
-			// Step 1: Initialize submodule gracefully (handles stale refs)
-			subErr := c.initSubmoduleGraceful(ctx, targetDir, sub.Path)
-			subResult := SubmoduleResult{
-				Name:    sub.Name,
-				Path:    sub.Path,
-				URL:     sub.URL,
-				Success: subErr == nil,
-				Error:   subErr,
-			}
-
-			if subErr != nil {
-				// Check if this was a stale reference that we recovered from
-				if c.isStaleRefError(subErr) {
-					staleRefCount++
-					result.Warnings = append(result.Warnings,
-						fmt.Sprintf("submodule %s had stale commit reference, using default branch", sub.Path))
-					// We still mark as success if recovery worked (no error after fallback)
-					subResult.Success = true
-					subResult.Error = nil
-					succeeded++
-				} else {
-					failed++
-					result.Warnings = append(result.Warnings,
-						fmt.Sprintf("submodule %s: %v", sub.Path, subErr))
-				}
-			} else {
+		for _, r := range results {
+			result.Submodules = append(result.Submodules, r.result)
+			result.Warnings = append(result.Warnings, r.warnings...)
+			if r.result.Success {
 				succeeded++
+			} else {
+				failed++
 			}
-
-			// Step 2: Verify working tree has files
-			if subResult.Success {
-				if err := c.verifySubmoduleWorkingTree(ctx, targetDir, sub.Path); err != nil {
-					c.progress.Verbose(fmt.Sprintf("Fixing empty working tree: %s", sub.Path))
-					if fixErr := c.forceCheckoutSubmodule(ctx, targetDir, sub.Path); fixErr != nil {
-						result.Warnings = append(result.Warnings,
-							fmt.Sprintf("could not fix submodule %s: %v", sub.Path, fixErr))
-					}
-				}
+			if r.staleRef {
+				staleRefCount++
 			}
-
-			// Step 3: Initialize nested submodules (recursively with graceful handling)
-			if subResult.Success {
-				count, warnings := c.initNestedSubmodulesGraceful(ctx, targetDir, sub.Path)
-				nestedCount += count
-				result.Warnings = append(result.Warnings, warnings...)
+			nestedCount += r.nestedCount
+			if r.branchOK {
+				branchCount++
 			}
-
-			// Step 4: Checkout branch instead of detached HEAD
-			if subResult.Success {
-				if err := c.checkoutSubmoduleBranch(ctx, targetDir, sub.Path); err != nil {
-					c.progress.Verbose(fmt.Sprintf("Could not checkout branch for %s: %v", sub.Path, err))
-					// Non-fatal: some submodules may not have a remote configured
-				} else {
-					branchCount++
-				}
-			}
-
-			// Get commit hash if initialized
-			if subResult.Success {
-				subResult.Commit, _ = c.getSubmoduleCommit(ctx, targetDir, sub.Path)
-			}
-
-			result.Submodules = append(result.Submodules, subResult)
 		}
 
 		c.progress.EndSubmodules(succeeded, failed)

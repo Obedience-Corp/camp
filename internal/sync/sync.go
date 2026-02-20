@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/obediencecorp/camp/internal/git"
@@ -31,10 +30,16 @@ func (s *Syncer) Sync(ctx context.Context) (*SyncResult, error) {
 
 	result := &SyncResult{Success: true}
 
-	// Phase 1: Pre-flight checks
-	preflight, err := s.RunPreflight(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("pre-flight checks: %w", err)
+	// Phase 1: Pre-flight checks (reuse cached result if available)
+	var preflight *PreflightResult
+	if s.cachedPreflight != nil {
+		preflight = s.cachedPreflight
+	} else {
+		var err error
+		preflight, err = s.RunPreflight(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("pre-flight checks: %w", err)
+		}
 	}
 	result.PreflightPassed = preflight.Passed
 	result.Warnings = s.collectWarnings(preflight)
@@ -183,27 +188,51 @@ func (s *Syncer) diffURLs(before, after map[string]string) []URLChange {
 	return changes
 }
 
-// updateSubmodules runs git submodule update --init --recursive.
+// updateSubmodules initializes and updates submodules one-by-one with graceful
+// stale reference handling. This replaces the bulk `git submodule update --init --recursive`
+// which fails entirely if any single submodule has a stale ref.
 func (s *Syncer) updateSubmodules(ctx context.Context) ([]SubmoduleResult, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
 
-	args := []string{"-C", s.repoRoot, "submodule", "update", "--init", "--recursive"}
-
-	// Add parallel jobs if configured
-	if s.options.Parallel > 0 {
-		args = append(args, "--jobs", strconv.Itoa(s.options.Parallel))
-	}
-
-	cmd := exec.CommandContext(ctx, "git", args...)
-	output, err := cmd.CombinedOutput()
+	paths, err := s.listSubmodules(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("git submodule update: %s: %w", strings.TrimSpace(string(output)), err)
+		return nil, err
 	}
 
-	// Verify each submodule was updated successfully
-	return s.verifySubmodules(ctx)
+	var results []SubmoduleResult
+	for _, path := range paths {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+
+		result := SubmoduleResult{
+			Path:    path,
+			Name:    path,
+			Success: true,
+		}
+
+		// Use shared graceful init (handles stale refs with fallback)
+		if err := git.InitSubmoduleGraceful(ctx, s.repoRoot, path); err != nil {
+			result.Success = false
+			result.Error = fmt.Errorf("init %s: %w", path, err)
+			results = append(results, result)
+			continue
+		}
+
+		// Initialize nested submodules within this submodule
+		subDir := filepath.Join(s.repoRoot, path)
+		cmd := exec.CommandContext(ctx, "git", "-C", subDir, "submodule", "update", "--init", "--recursive")
+		if output, nestedErr := cmd.CombinedOutput(); nestedErr != nil {
+			// Nested failure is non-fatal for the parent submodule
+			result.Error = fmt.Errorf("nested submodules in %s: %s", path, strings.TrimSpace(string(output)))
+		}
+
+		results = append(results, result)
+	}
+
+	return results, nil
 }
 
 // verifySubmodules checks the status of all submodules after update.

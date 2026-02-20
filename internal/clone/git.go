@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	gitpkg "github.com/obediencecorp/camp/internal/git"
 )
 
 // gitClone performs the initial repository clone.
@@ -265,6 +267,7 @@ func (c *Cloner) forceCheckoutSubmodule(ctx context.Context, repoDir, subPath st
 }
 
 // checkoutSubmoduleBranch checks out the remote's default branch instead of detached HEAD.
+// Uses local-first branch detection to avoid a network roundtrip per submodule.
 func (c *Cloner) checkoutSubmoduleBranch(ctx context.Context, repoDir, subPath string) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
@@ -272,22 +275,15 @@ func (c *Cloner) checkoutSubmoduleBranch(ctx context.Context, repoDir, subPath s
 
 	subDir := filepath.Join(repoDir, subPath)
 
-	// Get remote default branch via: git remote show origin
-	cmd := exec.CommandContext(ctx, "git", "-C", subDir, "remote", "show", "origin")
-	output, err := cmd.Output()
+	// Detect default branch using local-first strategy (no network call)
+	branch, err := gitpkg.DetectDefaultBranchWithParent(ctx, repoDir, subPath, subDir)
 	if err != nil {
-		return fmt.Errorf("could not get remote info for %s: %w", subPath, err)
-	}
-
-	// Parse "HEAD branch: main" from output
-	branch := parseDefaultBranch(string(output))
-	if branch == "" {
-		return fmt.Errorf("could not determine default branch for %s", subPath)
+		return fmt.Errorf("could not determine default branch for %s: %w", subPath, err)
 	}
 
 	// Checkout the branch
-	cmd = exec.CommandContext(ctx, "git", "-C", subDir, "checkout", branch)
-	output, err = cmd.CombinedOutput()
+	cmd := exec.CommandContext(ctx, "git", "-C", subDir, "checkout", branch)
+	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("checkout %s in %s: %s: %w", branch, subPath, strings.TrimSpace(string(output)), err)
 	}
@@ -295,29 +291,17 @@ func (c *Cloner) checkoutSubmoduleBranch(ctx context.Context, repoDir, subPath s
 	return nil
 }
 
-// parseDefaultBranch extracts the default branch from git remote show output.
-func parseDefaultBranch(remoteShowOutput string) string {
-	for _, line := range strings.Split(remoteShowOutput, "\n") {
-		if strings.Contains(line, "HEAD branch:") {
-			parts := strings.Split(line, ":")
-			if len(parts) >= 2 {
-				return strings.TrimSpace(parts[1])
-			}
-		}
-	}
-	return ""
-}
-
 // isStaleRefError checks if an error indicates a stale commit reference.
 func (c *Cloner) isStaleRefError(err error) bool {
 	if err == nil {
 		return false
 	}
-	errStr := err.Error()
-	return strings.Contains(errStr, "not our ref") ||
-		strings.Contains(errStr, "did not contain") ||
-		strings.Contains(errStr, "reference is not a tree") ||
-		strings.Contains(errStr, "using default branch")
+	// Check via shared utility first
+	if gitpkg.IsStaleRefError(err) {
+		return true
+	}
+	// Also check for our own fallback marker
+	return strings.Contains(err.Error(), "using default branch")
 }
 
 // getSubmoduleCommit returns the current HEAD commit of a submodule.

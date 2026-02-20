@@ -79,8 +79,9 @@ type SyncerOption func(*Syncer)
 
 // Syncer orchestrates sync operations for a repository.
 type Syncer struct {
-	repoRoot string
-	options  SyncOptions
+	repoRoot        string
+	options         SyncOptions
+	cachedPreflight *PreflightResult // Optional pre-computed preflight result
 }
 
 // NewSyncer creates a new Syncer for the given repository root.
@@ -105,6 +106,12 @@ func (s *Syncer) RepoRoot() string {
 // Options returns the current sync options.
 func (s *Syncer) Options() SyncOptions {
 	return s.options
+}
+
+// SetPreflightResult injects a pre-computed preflight result so Sync()
+// won't re-run preflight checks.
+func (s *Syncer) SetPreflightResult(pr *PreflightResult) {
+	s.cachedPreflight = pr
 }
 
 // WithDryRun sets dry-run mode.
@@ -148,6 +155,15 @@ func WithNoFetch(noFetch bool) SyncerOption {
 func WithJSON(json bool) SyncerOption {
 	return func(s *Syncer) {
 		s.options.JSON = json
+	}
+}
+
+// WithPreflightResult provides a pre-computed preflight result to avoid running
+// preflight checks twice. If set, Sync() will use this result instead of
+// running RunPreflight() internally.
+func WithPreflightResult(pr *PreflightResult) SyncerOption {
+	return func(s *Syncer) {
+		s.cachedPreflight = pr
 	}
 }
 

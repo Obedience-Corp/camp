@@ -74,6 +74,7 @@ EXAMPLES:
 var cloneOpts struct {
 	branch       string
 	depth        int
+	parallel     int
 	noSubmodules bool
 	noValidate   bool
 	verbose      bool
@@ -85,6 +86,8 @@ func init() {
 		"Clone specific branch (default: repository default branch)")
 	cloneCmd.Flags().IntVar(&cloneOpts.depth, "depth", 0,
 		"Shallow clone depth (0 = full history)")
+	cloneCmd.Flags().IntVarP(&cloneOpts.parallel, "parallel", "p", 4,
+		"Number of parallel submodule initializations")
 	cloneCmd.Flags().BoolVar(&cloneOpts.noSubmodules, "no-submodules", false,
 		"Skip submodule initialization")
 	cloneCmd.Flags().BoolVar(&cloneOpts.noValidate, "no-validate", false,
@@ -124,6 +127,7 @@ func runClone(cmd *cobra.Command, args []string) error {
 		clone.WithDirectory(directory),
 		clone.WithBranch(cloneOpts.branch),
 		clone.WithDepth(cloneOpts.depth),
+		clone.WithParallel(cloneOpts.parallel),
 		clone.WithNoSubmodules(cloneOpts.noSubmodules),
 		clone.WithNoValidate(cloneOpts.noValidate),
 		clone.WithVerbose(cloneOpts.verbose),
