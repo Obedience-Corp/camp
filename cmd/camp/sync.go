@@ -110,11 +110,14 @@ func runSync(cmd *cobra.Command, args []string) error {
 		sync.WithSubmodules(args),
 	)
 
-	// Run preflight to get detailed results for output
+	// Run preflight once for display, then pass it into Sync to avoid double execution
 	preflight, err := syncer.RunPreflight(ctx)
 	if err != nil {
 		return fmt.Errorf("preflight checks: %w", err)
 	}
+
+	// Inject the preflight result so Sync() won't re-run it
+	syncer.SetPreflightResult(preflight)
 
 	// Run sync
 	result, err := syncer.Sync(ctx)

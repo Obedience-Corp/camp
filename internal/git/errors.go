@@ -92,6 +92,30 @@ var (
 
 	// ErrNoChanges indicates there are no changes to commit.
 	ErrNoChanges = errors.New("nothing to commit")
+
+	// ErrStaleRef indicates a stale commit reference (commit no longer exists on remote).
+	ErrStaleRef = errors.New("stale commit reference")
+
+	// ErrBranchDetection indicates the default branch could not be determined.
+	ErrBranchDetection = errors.New("could not determine default branch")
+
+	// ErrBranchCheckout indicates a branch checkout failed.
+	ErrBranchCheckout = errors.New("branch checkout failed")
+
+	// ErrSubmoduleUpdate indicates a submodule update operation failed.
+	ErrSubmoduleUpdate = errors.New("submodule update failed")
+
+	// ErrSubmoduleInit indicates a submodule init operation failed.
+	ErrSubmoduleInit = errors.New("submodule init failed")
+
+	// ErrSubmoduleURL indicates a submodule URL could not be resolved.
+	ErrSubmoduleURL = errors.New("could not resolve submodule URL")
+
+	// ErrSubmoduleClone indicates a submodule clone at default branch failed.
+	ErrSubmoduleClone = errors.New("submodule clone failed")
+
+	// ErrSubmoduleRemove indicates a stale submodule directory could not be removed.
+	ErrSubmoduleRemove = errors.New("failed to remove submodule directory")
 )
 
 // ClassifyGitError determines the error type from git stderr output.

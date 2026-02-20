@@ -75,7 +75,7 @@ func (s *Syncer) listSubmodules(ctx context.Context) ([]string, error) {
 			// No submodules configured
 			return nil, nil
 		}
-		return nil, fmt.Errorf("list submodules: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrListSubmodules, err)
 	}
 
 	var paths []string
@@ -108,14 +108,19 @@ func (s *Syncer) listSubmodules(ctx context.Context) ([]string, error) {
 }
 
 // CheckUncommittedChanges detects submodules with uncommitted changes.
+// Public wrapper that fetches submodule paths for standalone use.
 func (s *Syncer) CheckUncommittedChanges(ctx context.Context) ([]SubmoduleStatus, error) {
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-
 	paths, err := s.listSubmodules(ctx)
 	if err != nil {
 		return nil, err
+	}
+	return s.checkUncommittedChanges(ctx, paths)
+}
+
+// checkUncommittedChanges is the internal implementation that accepts pre-fetched paths.
+func (s *Syncer) checkUncommittedChanges(ctx context.Context, paths []string) ([]SubmoduleStatus, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
 	}
 
 	var results []SubmoduleStatus
@@ -163,14 +168,19 @@ func (s *Syncer) getChangesDetails(ctx context.Context, repoPath string) string 
 }
 
 // CheckUnpushedCommits detects submodules with local commits not on remote.
+// Public wrapper that fetches submodule paths for standalone use.
 func (s *Syncer) CheckUnpushedCommits(ctx context.Context) ([]SubmoduleStatus, error) {
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-
 	paths, err := s.listSubmodules(ctx)
 	if err != nil {
 		return nil, err
+	}
+	return s.checkUnpushedCommits(ctx, paths)
+}
+
+// checkUnpushedCommits is the internal implementation that accepts pre-fetched paths.
+func (s *Syncer) checkUnpushedCommits(ctx context.Context, paths []string) ([]SubmoduleStatus, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
 	}
 
 	var results []SubmoduleStatus
@@ -205,14 +215,19 @@ func (s *Syncer) CheckUnpushedCommits(ctx context.Context) ([]SubmoduleStatus, e
 }
 
 // CheckURLMismatches detects URL differences between .gitmodules and .git/config.
+// Public wrapper that fetches submodule paths for standalone use.
 func (s *Syncer) CheckURLMismatches(ctx context.Context) ([]URLMismatch, error) {
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-
 	paths, err := s.listSubmodules(ctx)
 	if err != nil {
 		return nil, err
+	}
+	return s.checkURLMismatches(ctx, paths)
+}
+
+// checkURLMismatches is the internal implementation that accepts pre-fetched paths.
+func (s *Syncer) checkURLMismatches(ctx context.Context, paths []string) ([]URLMismatch, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
 	}
 
 	var results []URLMismatch
@@ -240,14 +255,19 @@ func (s *Syncer) CheckURLMismatches(ctx context.Context) ([]URLMismatch, error) 
 }
 
 // CheckDetachedHEADs detects submodules in detached HEAD state.
+// Public wrapper that fetches submodule paths for standalone use.
 func (s *Syncer) CheckDetachedHEADs(ctx context.Context) ([]DetachedHEADStatus, error) {
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-
 	paths, err := s.listSubmodules(ctx)
 	if err != nil {
 		return nil, err
+	}
+	return s.checkDetachedHEADs(ctx, paths)
+}
+
+// checkDetachedHEADs is the internal implementation that accepts pre-fetched paths.
+func (s *Syncer) checkDetachedHEADs(ctx context.Context, paths []string) ([]DetachedHEADStatus, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
 	}
 
 	var results []DetachedHEADStatus
@@ -308,38 +328,46 @@ func (s *Syncer) countOrphanedCommits(ctx context.Context, repoPath string) int 
 }
 
 // RunPreflight executes all pre-flight checks.
+// Fetches the submodule list once and passes it to each check, avoiding
+// redundant .gitmodules parsing.
 func (s *Syncer) RunPreflight(ctx context.Context) (*PreflightResult, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
 
+	// Fetch submodule paths once for all checks
+	paths, err := s.listSubmodules(ctx)
+	if err != nil {
+		return nil, &SyncError{Op: "preflight-list", Cause: err}
+	}
+
 	result := &PreflightResult{Passed: true}
 
 	// Check for uncommitted changes
-	uncommitted, err := s.CheckUncommittedChanges(ctx)
+	uncommitted, err := s.checkUncommittedChanges(ctx, paths)
 	if err != nil {
-		return nil, fmt.Errorf("check uncommitted changes: %w", err)
+		return nil, &SyncError{Op: "check-uncommitted", Cause: err}
 	}
 	result.UncommittedChanges = uncommitted
 
 	// Check for unpushed commits
-	unpushed, err := s.CheckUnpushedCommits(ctx)
+	unpushed, err := s.checkUnpushedCommits(ctx, paths)
 	if err != nil {
-		return nil, fmt.Errorf("check unpushed commits: %w", err)
+		return nil, &SyncError{Op: "check-unpushed", Cause: err}
 	}
 	result.UnpushedCommits = unpushed
 
 	// Check for URL mismatches
-	mismatches, err := s.CheckURLMismatches(ctx)
+	mismatches, err := s.checkURLMismatches(ctx, paths)
 	if err != nil {
-		return nil, fmt.Errorf("check URL mismatches: %w", err)
+		return nil, &SyncError{Op: "check-urls", Cause: err}
 	}
 	result.URLMismatches = mismatches
 
 	// Check for detached HEADs
-	detached, err := s.CheckDetachedHEADs(ctx)
+	detached, err := s.checkDetachedHEADs(ctx, paths)
 	if err != nil {
-		return nil, fmt.Errorf("check detached HEADs: %w", err)
+		return nil, &SyncError{Op: "check-detached", Cause: err}
 	}
 	result.DetachedHEADs = detached
 

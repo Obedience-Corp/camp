@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/obediencecorp/camp/internal/git"
@@ -31,10 +30,16 @@ func (s *Syncer) Sync(ctx context.Context) (*SyncResult, error) {
 
 	result := &SyncResult{Success: true}
 
-	// Phase 1: Pre-flight checks
-	preflight, err := s.RunPreflight(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("pre-flight checks: %w", err)
+	// Phase 1: Pre-flight checks (reuse cached result if available)
+	var preflight *PreflightResult
+	if s.cachedPreflight != nil {
+		preflight = s.cachedPreflight
+	} else {
+		var err error
+		preflight, err = s.RunPreflight(ctx)
+		if err != nil {
+			return nil, &SyncError{Op: "preflight", Cause: err}
+		}
 	}
 	result.PreflightPassed = preflight.Passed
 	result.Warnings = s.collectWarnings(preflight)
@@ -126,20 +131,20 @@ func (s *Syncer) syncURLs(ctx context.Context) ([]URLChange, error) {
 	// Capture URL state before sync
 	beforeURLs, err := s.captureURLs(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("capture URLs before sync: %w", err)
+		return nil, &SyncError{Op: "capture-urls-before", Cause: err}
 	}
 
 	// Run git submodule sync --recursive
 	cmd := exec.CommandContext(ctx, "git", "-C", s.repoRoot,
 		"submodule", "sync", "--recursive")
 	if output, err := cmd.CombinedOutput(); err != nil {
-		return nil, fmt.Errorf("git submodule sync: %s: %w", strings.TrimSpace(string(output)), err)
+		return nil, &SyncError{Op: "submodule-sync", Cause: fmt.Errorf("%w: %s", ErrSubmoduleSync, strings.TrimSpace(string(output)))}
 	}
 
 	// Capture URL state after sync
 	afterURLs, err := s.captureURLs(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("capture URLs after sync: %w", err)
+		return nil, &SyncError{Op: "capture-urls-after", Cause: err}
 	}
 
 	// Compute what changed
@@ -183,27 +188,54 @@ func (s *Syncer) diffURLs(before, after map[string]string) []URLChange {
 	return changes
 }
 
-// updateSubmodules runs git submodule update --init --recursive.
+// updateSubmodules initializes and updates submodules one-by-one with graceful
+// stale reference handling. This replaces the bulk `git submodule update --init --recursive`
+// which fails entirely if any single submodule has a stale ref.
 func (s *Syncer) updateSubmodules(ctx context.Context) ([]SubmoduleResult, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
 
-	args := []string{"-C", s.repoRoot, "submodule", "update", "--init", "--recursive"}
-
-	// Add parallel jobs if configured
-	if s.options.Parallel > 0 {
-		args = append(args, "--jobs", strconv.Itoa(s.options.Parallel))
-	}
-
-	cmd := exec.CommandContext(ctx, "git", args...)
-	output, err := cmd.CombinedOutput()
+	paths, err := s.listSubmodules(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("git submodule update: %s: %w", strings.TrimSpace(string(output)), err)
+		return nil, err
 	}
 
-	// Verify each submodule was updated successfully
-	return s.verifySubmodules(ctx)
+	var results []SubmoduleResult
+	for _, path := range paths {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+
+		result := SubmoduleResult{
+			Path:    path,
+			Name:    path,
+			Success: true,
+		}
+
+		// Use shared graceful init (handles stale refs with fallback)
+		if err := git.InitSubmoduleGraceful(ctx, s.repoRoot, path); err != nil {
+			result.Success = false
+			result.Error = &SyncError{Op: "init", Submodule: path, Cause: err}
+			results = append(results, result)
+			continue
+		}
+
+		// Initialize nested submodules within this submodule
+		subDir := filepath.Join(s.repoRoot, path)
+		cmd := exec.CommandContext(ctx, "git", "-C", subDir, "submodule", "update", "--init", "--recursive")
+		if output, nestedErr := cmd.CombinedOutput(); nestedErr != nil {
+			// Nested failure is non-fatal for the parent submodule
+			result.Error = &SyncError{Op: "nested-init", Submodule: path, Cause: fmt.Errorf("%w: %s", ErrNestedSubmodules, strings.TrimSpace(string(output)))}
+		}
+
+		// Checkout default branch instead of leaving on detached HEAD
+		git.CheckoutDefaultBranch(ctx, subDir)
+
+		results = append(results, result)
+	}
+
+	return results, nil
 }
 
 // verifySubmodules checks the status of all submodules after update.
@@ -227,7 +259,7 @@ func (s *Syncer) verifySubmodules(ctx context.Context) ([]SubmoduleResult, error
 		cmd := exec.CommandContext(ctx, "git", "-C", fullPath, "rev-parse", "HEAD")
 		if _, err := cmd.Output(); err != nil {
 			result.Success = false
-			result.Error = fmt.Errorf("submodule not initialized")
+			result.Error = ErrSubmoduleNotInitialized
 		}
 
 		// Check for detached HEAD
@@ -257,7 +289,7 @@ func (s *Syncer) validateUpdate(ctx context.Context) error {
 		"submodule", "status", "--recursive")
 	output, err := cmd.Output()
 	if err != nil {
-		return fmt.Errorf("git submodule status: %w", err)
+		return &SyncError{Op: "validate", Cause: fmt.Errorf("%w: %w", ErrSubmoduleValidation, err)}
 	}
 
 	// Parse output for issues
@@ -274,10 +306,11 @@ func (s *Syncer) validateUpdate(ctx context.Context) error {
 		if strings.HasPrefix(line, "-") {
 			// Not initialized - extract path
 			parts := strings.Fields(line)
+			sub := line
 			if len(parts) >= 2 {
-				return fmt.Errorf("submodule not initialized: %s", parts[1])
+				sub = parts[1]
 			}
-			return fmt.Errorf("submodule not initialized: %s", line)
+			return &SyncError{Op: "validate", Submodule: sub, Cause: ErrSubmoduleNotInitialized}
 		}
 
 		// '+' prefix means commit differs, but this is expected after sync

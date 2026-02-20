@@ -29,6 +29,8 @@ type CloneOptions struct {
 	Verbose bool
 	// JSON outputs results as JSON for scripting.
 	JSON bool
+	// Parallel is the number of concurrent submodule initializations (default 4).
+	Parallel int
 }
 
 // CloneResult contains the outcome of a clone operation.
@@ -188,6 +190,15 @@ func WithVerbose(verbose bool) ClonerOption {
 func WithJSON(json bool) ClonerOption {
 	return func(c *Cloner) {
 		c.options.JSON = json
+	}
+}
+
+// WithParallel sets the number of concurrent submodule initializations.
+func WithParallel(n int) ClonerOption {
+	return func(c *Cloner) {
+		if n > 0 {
+			c.options.Parallel = n
+		}
 	}
 }
 
