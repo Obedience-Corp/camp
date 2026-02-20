@@ -229,6 +229,9 @@ func (s *Syncer) updateSubmodules(ctx context.Context) ([]SubmoduleResult, error
 			result.Error = fmt.Errorf("nested submodules in %s: %s", path, strings.TrimSpace(string(output)))
 		}
 
+		// Checkout default branch instead of leaving on detached HEAD
+		git.CheckoutDefaultBranch(ctx, subDir)
+
 		results = append(results, result)
 	}
 

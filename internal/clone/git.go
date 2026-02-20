@@ -267,7 +267,8 @@ func (c *Cloner) forceCheckoutSubmodule(ctx context.Context, repoDir, subPath st
 }
 
 // checkoutSubmoduleBranch checks out the remote's default branch instead of detached HEAD.
-// Uses local-first branch detection to avoid a network roundtrip per submodule.
+// Uses the parent-aware detection (checks .gitmodules branch key) then falls back to
+// the shared CheckoutDefaultBranch utility.
 func (c *Cloner) checkoutSubmoduleBranch(ctx context.Context, repoDir, subPath string) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
@@ -275,13 +276,15 @@ func (c *Cloner) checkoutSubmoduleBranch(ctx context.Context, repoDir, subPath s
 
 	subDir := filepath.Join(repoDir, subPath)
 
-	// Detect default branch using local-first strategy (no network call)
+	// Try parent-aware detection first (has access to .gitmodules branch key)
 	branch, err := gitpkg.DetectDefaultBranchWithParent(ctx, repoDir, subPath, subDir)
 	if err != nil {
-		return fmt.Errorf("could not determine default branch for %s: %w", subPath, err)
+		// Fall back to standard detection
+		_, err = gitpkg.CheckoutDefaultBranch(ctx, subDir)
+		return err
 	}
 
-	// Checkout the branch
+	// Checkout the detected branch
 	cmd := exec.CommandContext(ctx, "git", "-C", subDir, "checkout", branch)
 	output, err := cmd.CombinedOutput()
 	if err != nil {

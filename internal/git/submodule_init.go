@@ -163,6 +163,27 @@ func InitFromDefaultBranch(ctx context.Context, repoDir, subPath string) error {
 	return nil
 }
 
+// CheckoutDefaultBranch detects the default branch for a submodule and checks it out,
+// moving it from detached HEAD to a proper branch. Returns the branch name on success.
+func CheckoutDefaultBranch(ctx context.Context, subDir string) (string, error) {
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+
+	branch, err := DetectDefaultBranch(ctx, subDir)
+	if err != nil {
+		return "", err
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "-C", subDir, "checkout", branch)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("checkout %s: %s: %w", branch, strings.TrimSpace(string(output)), err)
+	}
+
+	return branch, nil
+}
+
 // getSubmoduleURL returns the URL for a submodule, trying .gitmodules then .git/config.
 func getSubmoduleURL(ctx context.Context, repoDir, subPath string) (string, error) {
 	// Try .gitmodules first
