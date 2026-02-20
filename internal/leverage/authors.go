@@ -75,17 +75,33 @@ type authorAccum struct {
 // (bounded by NumCPU, max 8), counts lines per author email, and returns
 // AuthorContribution slices sorted by lines descending.
 func AuthorLOC(ctx context.Context, dir string) ([]AuthorContribution, error) {
+	contribs, _, err := authorLOCInternal(ctx, dir)
+	return contribs, err
+}
+
+// AuthorLOCWithFiles computes per-author LOC ownership and also returns per-file
+// blame data. The returned map is file → email → lines. This is the same
+// concurrent pipeline as AuthorLOC but additionally captures per-file results
+// for use by the blame cache.
+func AuthorLOCWithFiles(ctx context.Context, dir string) ([]AuthorContribution, map[string]map[string]int, error) {
+	return authorLOCInternal(ctx, dir)
+}
+
+// authorLOCInternal is the shared implementation for AuthorLOC and
+// AuthorLOCWithFiles. Returns both aggregated contributions and per-file
+// blame data (file → email → lines).
+func authorLOCInternal(ctx context.Context, dir string) ([]AuthorContribution, map[string]map[string]int, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	files, err := trackedFiles(ctx, dir)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if len(files) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	// Blame files concurrently with bounded parallelism.
@@ -98,10 +114,11 @@ func AuthorLOC(ctx context.Context, dir string) ([]AuthorContribution, error) {
 	}
 
 	var (
-		mu    sync.Mutex
-		accum = make(map[string]*authorAccum)
-		wg    sync.WaitGroup
-		sem   = make(chan struct{}, workers)
+		mu        sync.Mutex
+		accum     = make(map[string]*authorAccum)
+		fileBlame = make(map[string]map[string]int)
+		wg        sync.WaitGroup
+		sem       = make(chan struct{}, workers)
 	)
 
 	for _, file := range files {
@@ -120,7 +137,14 @@ func AuthorLOC(ctx context.Context, dir string) ([]AuthorContribution, error) {
 				return // skip files that can't be blamed
 			}
 
+			// Build per-file map for this file.
+			perFile := make(map[string]int, len(local))
+			for email, la := range local {
+				perFile[email] = la.lines
+			}
+
 			mu.Lock()
+			fileBlame[f] = perFile
 			for email, la := range local {
 				if existing, ok := accum[email]; ok {
 					existing.lines += la.lines
@@ -134,7 +158,7 @@ func AuthorLOC(ctx context.Context, dir string) ([]AuthorContribution, error) {
 
 	wg.Wait()
 
-	return buildContributions(accum), nil
+	return buildContributions(accum), fileBlame, nil
 }
 
 // trackedFiles returns all git-tracked files under dir.
@@ -417,6 +441,14 @@ func BlameWeightedPersonMonths(ctx context.Context, gitDir, sccDir string) (floa
 		return minAuthorMonths, nil, nil
 	}
 
+	totalPM, enriched := blameWeightedPMFromContribs(contribs, dateSpans)
+	return totalPM, enriched, nil
+}
+
+// blameWeightedPMFromContribs computes blame-weighted PM from pre-computed
+// contributions and date spans. Extracted from BlameWeightedPersonMonths
+// so the cache can reuse the same logic without re-running blame.
+func blameWeightedPMFromContribs(contribs []AuthorContribution, dateSpans map[string]*authorDateSpan) (float64, []AuthorContribution) {
 	var totalPM float64
 	enriched := make([]AuthorContribution, 0, len(contribs))
 
@@ -450,7 +482,7 @@ func BlameWeightedPersonMonths(ctx context.Context, gitDir, sccDir string) (floa
 		totalPM = minAuthorMonths
 	}
 
-	return totalPM, enriched, nil
+	return totalPM, enriched
 }
 
 // ProjectActualPersonMonths computes blame-weighted actual person-months for a
