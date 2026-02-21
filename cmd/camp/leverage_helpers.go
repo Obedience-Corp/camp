@@ -107,7 +107,13 @@ func runPopulateMetrics(ctx context.Context, campaignRoot string, resolved []lev
 		case entry != nil && entry.CommitHash == hash && entry.SCCDir == p.SCCDir:
 			// Tier A: exact match.
 			fmt.Fprintf(os.Stderr, "  %s (%d/%d) cached\n", p.Name, i+1, total)
-			p.AuthorCount = entry.AuthorCount
+			// Always recompute author count (fast git shortlog call) so
+			// deduplication improvements take effect without cache busting.
+			if count, err := leverage.CountAuthors(ctx, p.GitDir); err == nil {
+				p.AuthorCount = count
+			} else {
+				p.AuthorCount = entry.AuthorCount
+			}
 			p.ActualPersonMonths = entry.ActualPM
 			p.Authors = entry.Authors
 			cached++
