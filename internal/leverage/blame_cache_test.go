@@ -381,7 +381,7 @@ func TestThreeTierIntegration(t *testing.T) {
 	}
 
 	// Full compute.
-	PopulateOneProjectCached(ctx, p, cache, hash1)
+	PopulateOneProjectCached(ctx, p, cache, hash1, NewAuthorResolver(nil))
 
 	if p.AuthorCount == 0 {
 		t.Error("AuthorCount should be > 0 after full compute")
@@ -457,7 +457,7 @@ func TestThreeTierIntegration(t *testing.T) {
 
 	// Recompute project metrics.
 	p3 := &ResolvedProject{Name: "test-proj", GitDir: dir, SCCDir: dir}
-	RecomputeProjectMetrics(ctx, p3, cached)
+	RecomputeProjectMetrics(ctx, p3, cached, NewAuthorResolver(nil))
 
 	if p3.AuthorCount == 0 {
 		t.Error("AuthorCount should be > 0 after incremental")

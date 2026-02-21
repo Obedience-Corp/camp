@@ -14,12 +14,13 @@ import (
 // populateMetrics is the function used to populate project metrics.
 // Production code uses the three-tier blame cache (runs blame-weighted PM).
 // Tests can replace this with a fast stub to avoid expensive git blame operations.
-var populateMetrics func(ctx context.Context, campaignRoot string, resolved []leverage.ResolvedProject)
+var populateMetrics func(ctx context.Context, campaignRoot string, resolved []leverage.ResolvedProject, resolver *leverage.AuthorResolver)
 
 // leverageSetup holds common state initialized by all leverage subcommands.
 type leverageSetup struct {
 	Root          string
 	Cfg           *leverage.LeverageConfig
+	Resolver      *leverage.AuthorResolver
 	AutoDetected  bool // true if config was auto-detected (no project_start in file)
 	ConfigCreated bool // true if config file was auto-created on first use
 }
@@ -63,7 +64,48 @@ func initLeverageSetup(ctx context.Context) (*leverageSetup, error) {
 
 	configCreated := !configExists
 
-	return &leverageSetup{Root: root, Cfg: cfg, AutoDetected: autoDetected, ConfigCreated: configCreated}, nil
+	// Load or auto-generate authors.json for canonical author resolution.
+	authorsPath := leverage.DefaultAuthorsPath(root)
+	authorCfg, err := leverage.LoadAuthorConfig(authorsPath)
+	if err != nil {
+		return nil, fmt.Errorf("loading authors config: %w", err)
+	}
+
+	// Resolve projects to collect git dirs for author auto-detection.
+	// ResolveProjects is lightweight (path resolution only, no git/scc).
+	resolved, resolveErr := leverage.ResolveProjects(ctx, root, cfg)
+	if resolveErr == nil && len(resolved) > 0 {
+		gitDirSet := make(map[string]bool, len(resolved))
+		for _, p := range resolved {
+			gitDirSet[p.GitDir] = true
+		}
+		gitDirs := make([]string, 0, len(gitDirSet))
+		for dir := range gitDirSet {
+			gitDirs = append(gitDirs, dir)
+		}
+
+		if authorCfg == nil {
+			// First run: auto-detect identity groups and save.
+			detected, detectErr := leverage.AutoDetectAuthors(ctx, gitDirs)
+			if detectErr == nil && len(detected.Authors) > 0 {
+				authorCfg = detected
+				_ = leverage.SaveAuthorConfig(authorsPath, authorCfg)
+				fmt.Fprintf(os.Stderr, "Created authors config at .campaign/leverage/authors.json (%d authors)\n", len(authorCfg.Authors))
+			}
+		} else {
+			// Subsequent run: sync newly discovered emails into existing config.
+			detected, detectErr := leverage.AutoDetectAuthors(ctx, gitDirs)
+			if detectErr == nil {
+				if leverage.SyncAuthors(authorCfg, detected) {
+					_ = leverage.SaveAuthorConfig(authorsPath, authorCfg)
+				}
+			}
+		}
+	}
+
+	resolver := leverage.NewAuthorResolver(authorCfg)
+
+	return &leverageSetup{Root: root, Cfg: cfg, Resolver: resolver, AutoDetected: autoDetected, ConfigCreated: configCreated}, nil
 }
 
 // runPopulateMetrics uses three-tier blame caching for fast repeat runs:
@@ -72,9 +114,9 @@ func initLeverageSetup(ctx context.Context) (*leverageSetup, error) {
 //   - Tier C: No cache → full compute and save
 //
 // Falls back to the test-injected populateMetrics if set.
-func runPopulateMetrics(ctx context.Context, campaignRoot string, resolved []leverage.ResolvedProject) {
+func runPopulateMetrics(ctx context.Context, campaignRoot string, resolved []leverage.ResolvedProject, resolver *leverage.AuthorResolver) {
 	if populateMetrics != nil {
-		populateMetrics(ctx, campaignRoot, resolved)
+		populateMetrics(ctx, campaignRoot, resolved, resolver)
 		return
 	}
 
@@ -93,7 +135,7 @@ func runPopulateMetrics(ctx context.Context, campaignRoot string, resolved []lev
 		if err != nil {
 			// Can't determine hash; fall back to full compute.
 			fmt.Fprintf(os.Stderr, "  Analyzing %s (%d/%d)...\n", p.Name, i+1, total)
-			leverage.PopulateOneProject(ctx, p)
+			leverage.PopulateOneProject(ctx, p, resolver)
 			full++
 			continue
 		}
@@ -106,7 +148,7 @@ func runPopulateMetrics(ctx context.Context, campaignRoot string, resolved []lev
 			fmt.Fprintf(os.Stderr, "  %s (%d/%d) cached\n", p.Name, i+1, total)
 			// Always recompute author count (fast git shortlog call) so
 			// deduplication improvements take effect without cache busting.
-			if count, err := leverage.CountAuthors(ctx, p.GitDir); err == nil {
+			if count, err := leverage.CountAuthors(ctx, p.GitDir, resolver); err == nil {
 				p.AuthorCount = count
 			} else {
 				p.AuthorCount = entry.AuthorCount
@@ -129,7 +171,7 @@ func runPopulateMetrics(ctx context.Context, campaignRoot string, resolved []lev
 			if diffErr != nil {
 				// Fall back to full compute.
 				fmt.Fprintf(os.Stderr, "  Analyzing %s (%d/%d)...\n", p.Name, i+1, total)
-				leverage.PopulateOneProjectCached(ctx, p, cache, hash)
+				leverage.PopulateOneProjectCached(ctx, p, cache, hash, resolver)
 				full++
 				continue
 			}
@@ -139,7 +181,7 @@ func runPopulateMetrics(ctx context.Context, campaignRoot string, resolved []lev
 
 			if err := entry.IncrementalUpdate(ctx, p.SCCDir, modified, added, deleted); err != nil {
 				// Fall back to full compute.
-				leverage.PopulateOneProjectCached(ctx, p, cache, hash)
+				leverage.PopulateOneProjectCached(ctx, p, cache, hash, resolver)
 				full++
 				continue
 			}
@@ -148,7 +190,7 @@ func runPopulateMetrics(ctx context.Context, campaignRoot string, resolved []lev
 			entry.CommitHash = hash
 			entry.SCCDir = p.SCCDir
 
-			leverage.RecomputeProjectMetrics(ctx, p, entry)
+			leverage.RecomputeProjectMetrics(ctx, p, entry, resolver)
 
 			_ = cache.Save(ctx, entry)
 			incremental++
@@ -156,7 +198,7 @@ func runPopulateMetrics(ctx context.Context, campaignRoot string, resolved []lev
 		default:
 			// Tier C: full compute.
 			fmt.Fprintf(os.Stderr, "  Analyzing %s (%d/%d)...\n", p.Name, i+1, total)
-			leverage.PopulateOneProjectCached(ctx, p, cache, hash)
+			leverage.PopulateOneProjectCached(ctx, p, cache, hash, resolver)
 			full++
 		}
 	}
@@ -175,13 +217,13 @@ func initRunner(cfg *leverage.LeverageConfig) (leverage.Runner, error) {
 // resolveAndPopulateProjects resolves campaign projects, populates git metrics,
 // and optionally filters by author. Returns the resolved projects and the count
 // of projects excluded by the author filter.
-func resolveAndPopulateProjects(ctx context.Context, root string, cfg *leverage.LeverageConfig, authorFilter string) ([]leverage.ResolvedProject, int, error) {
+func resolveAndPopulateProjects(ctx context.Context, root string, cfg *leverage.LeverageConfig, resolver *leverage.AuthorResolver, authorFilter string) ([]leverage.ResolvedProject, int, error) {
 	resolved, err := leverage.ResolveProjects(ctx, root, cfg)
 	if err != nil {
 		return nil, 0, fmt.Errorf("resolving projects: %w", err)
 	}
 
-	runPopulateMetrics(ctx, root, resolved)
+	runPopulateMetrics(ctx, root, resolved, resolver)
 
 	var authorExcluded int
 	if authorFilter != "" {

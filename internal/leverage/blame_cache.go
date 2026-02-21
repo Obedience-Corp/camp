@@ -273,24 +273,24 @@ func (entry *BlameCacheEntry) RecomputeAggregates() {
 // RecomputeProjectMetrics refreshes a ResolvedProject's metrics from a
 // cache entry without re-running the full blame pipeline. Gets fresh date
 // spans from git (fast) and combines with cached blame data.
-func RecomputeProjectMetrics(ctx context.Context, p *ResolvedProject, entry *BlameCacheEntry) {
+func RecomputeProjectMetrics(ctx context.Context, p *ResolvedProject, entry *BlameCacheEntry, resolver *AuthorResolver) {
 	if err := ctx.Err(); err != nil {
 		return
 	}
 
-	count, err := CountAuthors(ctx, p.GitDir)
+	count, err := CountAuthors(ctx, p.GitDir, resolver)
 	if err == nil {
 		p.AuthorCount = count
 	}
 
-	dateSpans, err := gitDirAuthors(ctx, p.GitDir)
+	dateSpans, err := gitDirAuthors(ctx, p.GitDir, resolver)
 	if err != nil || len(entry.Authors) == 0 {
 		p.ActualPersonMonths = entry.ActualPM
 		p.Authors = entry.Authors
 		return
 	}
 
-	totalPM, enriched := blameWeightedPMFromContribs(entry.Authors, dateSpans)
+	totalPM, enriched := blameWeightedPMFromContribs(entry.Authors, dateSpans, resolver)
 	p.ActualPersonMonths = totalPM
 	p.Authors = enriched
 
@@ -302,12 +302,12 @@ func RecomputeProjectMetrics(ctx context.Context, p *ResolvedProject, entry *Bla
 
 // PopulateOneProjectCached performs a full blame computation, captures per-file
 // data for caching, and saves the result. Populates the ResolvedProject fields.
-func PopulateOneProjectCached(ctx context.Context, p *ResolvedProject, cache *BlameCache, hash string) {
+func PopulateOneProjectCached(ctx context.Context, p *ResolvedProject, cache *BlameCache, hash string, resolver *AuthorResolver) {
 	if err := ctx.Err(); err != nil {
 		return
 	}
 
-	count, err := CountAuthors(ctx, p.GitDir)
+	count, err := CountAuthors(ctx, p.GitDir, resolver)
 	if err == nil {
 		p.AuthorCount = count
 	}
@@ -315,17 +315,17 @@ func PopulateOneProjectCached(ctx context.Context, p *ResolvedProject, cache *Bl
 	contribs, fileBlame, err := AuthorLOCWithFiles(ctx, p.SCCDir)
 	if err != nil || len(contribs) == 0 {
 		// Fall back to non-cached path.
-		PopulateOneProject(ctx, p)
+		PopulateOneProject(ctx, p, resolver)
 		return
 	}
 
-	dateSpans, err := gitDirAuthors(ctx, p.GitDir)
+	dateSpans, err := gitDirAuthors(ctx, p.GitDir, resolver)
 	if err != nil {
 		p.Authors = contribs
 		return
 	}
 
-	totalPM, enriched := blameWeightedPMFromContribs(contribs, dateSpans)
+	totalPM, enriched := blameWeightedPMFromContribs(contribs, dateSpans, resolver)
 	p.ActualPersonMonths = totalPM
 	p.Authors = enriched
 

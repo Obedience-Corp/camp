@@ -79,8 +79,8 @@ func executeLeverage(t *testing.T, args ...string) (string, error) {
 // stubPopulateMetrics returns a fast populate function that sets fixed values
 // to avoid expensive git blame operations in tests. Populates Authors so
 // CampaignActualPersonMonths uses pre-populated data instead of running blame.
-func stubPopulateMetrics() func(ctx context.Context, campaignRoot string, resolved []leverage.ResolvedProject) {
-	return func(ctx context.Context, _ string, resolved []leverage.ResolvedProject) {
+func stubPopulateMetrics() func(ctx context.Context, campaignRoot string, resolved []leverage.ResolvedProject, resolver *leverage.AuthorResolver) {
+	return func(ctx context.Context, _ string, resolved []leverage.ResolvedProject, _ *leverage.AuthorResolver) {
 		for i := range resolved {
 			resolved[i].AuthorCount = 1
 			resolved[i].ActualPersonMonths = 1.0

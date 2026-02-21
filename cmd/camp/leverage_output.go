@@ -159,37 +159,38 @@ func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores
 
 // leverageOutputByAuthor displays a ranked table of each author's blame-weighted
 // PM and their share of campaign leverage.
-func leverageOutputByAuthor(cmd *cobra.Command, agg *leverage.LeverageScore, resolved []leverage.ResolvedProject) error {
+func leverageOutputByAuthor(cmd *cobra.Command, agg *leverage.LeverageScore, resolved []leverage.ResolvedProject, resolver *leverage.AuthorResolver) error {
 	out := cmd.OutOrStdout()
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.CategoryColor)
 
-	// Aggregate authors across all projects by email.
+	// Aggregate authors across all projects by canonical author ID.
 	type authorAgg struct {
-		name       string
-		email      string
-		lines      int
-		weightedPM float64
+		displayName string
+		authorID    string
+		lines       int
+		weightedPM  float64
 	}
-	byEmail := make(map[string]*authorAgg)
+	byID := make(map[string]*authorAgg)
 	for _, proj := range resolved {
 		for _, a := range proj.Authors {
-			if existing, ok := byEmail[a.Email]; ok {
+			authorID := resolver.Resolve(a.Email)
+			if existing, ok := byID[authorID]; ok {
 				existing.lines += a.Lines
 				existing.weightedPM += a.WeightedPM
 			} else {
-				byEmail[a.Email] = &authorAgg{
-					name:       a.Name,
-					email:      a.Email,
-					lines:      a.Lines,
-					weightedPM: a.WeightedPM,
+				byID[authorID] = &authorAgg{
+					displayName: resolver.DisplayName(authorID),
+					authorID:    authorID,
+					lines:       a.Lines,
+					weightedPM:  a.WeightedPM,
 				}
 			}
 		}
 	}
 
 	// Sort by weighted PM descending.
-	authors := make([]*authorAgg, 0, len(byEmail))
-	for _, a := range byEmail {
+	authors := make([]*authorAgg, 0, len(byID))
+	for _, a := range byID {
 		authors = append(authors, a)
 	}
 	sort.Slice(authors, func(i, j int) bool {
@@ -197,7 +198,7 @@ func leverageOutputByAuthor(cmd *cobra.Command, agg *leverage.LeverageScore, res
 	})
 
 	// Build table rows.
-	headers := []string{"AUTHOR", "EMAIL", "LINES OWNED", "WEIGHTED PM", "LEVERAGE SHARE"}
+	headers := []string{"AUTHOR", "ID", "LINES OWNED", "WEIGHTED PM", "LEVERAGE SHARE"}
 	var rows [][]string
 	for _, a := range authors {
 		levShare := 0.0
@@ -205,8 +206,8 @@ func leverageOutputByAuthor(cmd *cobra.Command, agg *leverage.LeverageScore, res
 			levShare = (a.weightedPM / agg.ActualPersonMonths) * agg.FullLeverage
 		}
 		rows = append(rows, []string{
-			a.name,
-			a.email,
+			a.displayName,
+			a.authorID,
 			fmtInt(a.lines),
 			fmt.Sprintf("%.2f", a.weightedPM),
 			fmtScore(levShare) + "x",

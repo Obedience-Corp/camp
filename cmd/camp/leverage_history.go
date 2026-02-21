@@ -104,7 +104,7 @@ func runLeverageHistory(cmd *cobra.Command, args []string) error {
 		resolved, resolveErr := leverage.ResolveProjects(ctx, setup.Root, cfg)
 		if resolveErr == nil {
 			for _, proj := range resolved {
-				count, gitErr := leverage.CountAuthors(ctx, proj.GitDir)
+				count, gitErr := leverage.CountAuthors(ctx, proj.GitDir, setup.Resolver)
 				if gitErr == nil && count > historyPeople {
 					historyPeople = count
 				}

@@ -12,6 +12,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/table"
 	"github.com/obediencecorp/camp/internal/campaign"
 	"github.com/obediencecorp/camp/internal/git"
 	tuistatus "github.com/obediencecorp/camp/internal/tui/status"
@@ -225,20 +226,14 @@ func renderStatusTable(statuses []repoStatus) {
 	red := lipgloss.NewStyle().Foreground(ui.ErrorColor)
 	yellow := lipgloss.NewStyle().Foreground(ui.WarningColor)
 	dim := lipgloss.NewStyle().Foreground(ui.DimColor)
-	header := lipgloss.NewStyle().Foreground(ui.BrightColor).Bold(true)
+	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.BrightColor)
 
-	// Header
-	fmt.Printf("  %-20s %-14s %-8s %-10s %s\n",
-		header.Render("Name"),
-		header.Render("Branch"),
-		header.Render("Status"),
-		header.Render("Push"),
-		header.Render("Changes"))
-	fmt.Printf("  %s\n", dim.Render(strings.Repeat("─", 70)))
+	headers := []string{"NAME", "BRANCH", "STATUS", "PUSH", "CHANGES"}
+	var rows [][]string
 
 	for _, s := range statuses {
 		if s.Error != "" {
-			fmt.Printf("  %-20s %s\n", s.Name, red.Render(s.Error))
+			rows = append(rows, []string{s.Name, "", red.Render(s.Error), "", ""})
 			continue
 		}
 
@@ -263,20 +258,17 @@ func renderStatusTable(statuses []repoStatus) {
 		}
 
 		// Changes detail
-		var changes []string
+		var changeParts []string
 		if s.Staged > 0 {
-			changes = append(changes, green.Render(fmt.Sprintf("+%d", s.Staged)))
+			changeParts = append(changeParts, green.Render(fmt.Sprintf("+%d", s.Staged)))
 		}
 		if s.Modified > 0 {
-			changes = append(changes, red.Render(fmt.Sprintf("~%d", s.Modified)))
+			changeParts = append(changeParts, red.Render(fmt.Sprintf("~%d", s.Modified)))
 		}
 		if s.Untracked > 0 {
-			changes = append(changes, dim.Render(fmt.Sprintf("?%d", s.Untracked)))
+			changeParts = append(changeParts, dim.Render(fmt.Sprintf("?%d", s.Untracked)))
 		}
-		changeStr := ""
-		if len(changes) > 0 {
-			changeStr = strings.Join(changes, " ")
-		}
+		changeStr := strings.Join(changeParts, " ")
 
 		// Branch (truncate if needed)
 		branch := s.Branch
@@ -284,11 +276,27 @@ func renderStatusTable(statuses []repoStatus) {
 			branch = branch[:12] + "…"
 		}
 
-		fmt.Printf("  %-20s %-14s %-8s %-10s %s\n",
-			s.Name, dim.Render(branch), statusStr, pushStr, changeStr)
+		rows = append(rows, []string{s.Name, branch, statusStr, pushStr, changeStr})
 	}
 
-	fmt.Println()
+	t := table.New().
+		Border(lipgloss.ASCIIBorder()).
+		BorderStyle(lipgloss.NewStyle().Foreground(ui.DimColor)).
+		Headers(headers...).
+		Rows(rows...).
+		StyleFunc(func(row, col int) lipgloss.Style {
+			if row == table.HeaderRow {
+				return headerStyle
+			}
+			switch col {
+			case 1: // BRANCH
+				return lipgloss.NewStyle().Foreground(ui.DimColor)
+			default:
+				return lipgloss.NewStyle()
+			}
+		})
+
+	fmt.Println(t)
 }
 
 func outputStatusJSON(statuses []repoStatus) error {

@@ -69,7 +69,7 @@ func runLeverageBackfill(cmd *cobra.Command, args []string) error {
 	}
 
 	// Populate per-project author counts and actual person-months
-	leverage.PopulateProjectMetrics(ctx, resolved)
+	leverage.PopulateProjectMetrics(ctx, resolved, setup.Resolver)
 
 	// Apply --project filter
 	projectFilter, _ := cmd.Flags().GetString("project")

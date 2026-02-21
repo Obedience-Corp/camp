@@ -13,12 +13,12 @@ import (
 // when Authors is not populated.
 //
 // Authors with < 1% of total campaign LOC are excluded from effort calculation.
-func CampaignActualPersonMonths(ctx context.Context, projects []ResolvedProject) (float64, error) {
+func CampaignActualPersonMonths(ctx context.Context, projects []ResolvedProject, resolver *AuthorResolver) (float64, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
 
-	// Phase 1: Merge date spans across unique git dirs by normalized author name.
+	// Phase 1: Merge date spans across unique git dirs by canonical author ID.
 	uniqueGitDirs := make(map[string]bool)
 	for _, p := range projects {
 		uniqueGitDirs[p.GitDir] = true
@@ -30,16 +30,16 @@ func CampaignActualPersonMonths(ctx context.Context, projects []ResolvedProject)
 			return 0, err
 		}
 
-		authors, err := gitDirAuthors(ctx, gitDir)
+		authors, err := gitDirAuthors(ctx, gitDir, resolver)
 		if err != nil {
 			continue
 		}
 
-		for normName, info := range authors {
-			span, ok := mergedSpans[normName]
+		for authorID, info := range authors {
+			span, ok := mergedSpans[authorID]
 			if !ok {
 				span = &authorDateSpan{}
-				mergedSpans[normName] = span
+				mergedSpans[authorID] = span
 			}
 			span.merge(info)
 		}
@@ -77,11 +77,11 @@ func CampaignActualPersonMonths(ctx context.Context, projects []ResolvedProject)
 		}
 
 		for _, c := range contribs {
-			normName := normalizeName(c.Name)
-			if a, ok := mergedLOC[normName]; ok {
+			authorID := resolver.Resolve(c.Email)
+			if a, ok := mergedLOC[authorID]; ok {
 				a.lines += c.Lines
 			} else {
-				mergedLOC[normName] = &authorLOC{lines: c.Lines, name: c.Name, email: c.Email}
+				mergedLOC[authorID] = &authorLOC{lines: c.Lines, name: c.Name, email: c.Email}
 			}
 			totalLines += c.Lines
 		}
@@ -94,8 +94,8 @@ func CampaignActualPersonMonths(ctx context.Context, projects []ResolvedProject)
 
 	// Phase 3: Compute blame-weighted PM per qualifying author.
 	var totalPM float64
-	for normName, span := range mergedSpans {
-		loc, ok := mergedLOC[normName]
+	for authorID, span := range mergedSpans {
+		loc, ok := mergedLOC[authorID]
 		if !ok {
 			continue
 		}
