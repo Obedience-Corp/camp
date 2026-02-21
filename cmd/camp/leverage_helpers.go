@@ -52,19 +52,16 @@ func initLeverageSetup(ctx context.Context) (*leverageSetup, error) {
 		cfg = detected
 	}
 
-	// Populate projects from discovery if missing.
-	configCreated := false
-	if len(cfg.Projects) == 0 {
-		if err := leverage.PopulateProjects(ctx, root, cfg); err != nil {
-			return nil, fmt.Errorf("populating projects: %w", err)
-		}
-
-		if err := leverage.SaveConfig(configPath, cfg); err != nil {
-			return nil, fmt.Errorf("saving config: %w", err)
-		}
-
-		configCreated = !configExists
+	// Sync projects from discovery: adds new projects, removes stale entries.
+	if err := leverage.PopulateProjects(ctx, root, cfg); err != nil {
+		return nil, fmt.Errorf("populating projects: %w", err)
 	}
+
+	if err := leverage.SaveConfig(configPath, cfg); err != nil {
+		return nil, fmt.Errorf("saving config: %w", err)
+	}
+
+	configCreated := !configExists
 
 	return &leverageSetup{Root: root, Cfg: cfg, AutoDetected: autoDetected, ConfigCreated: configCreated}, nil
 }

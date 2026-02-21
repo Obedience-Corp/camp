@@ -20,9 +20,15 @@ type BlameCacheEntry struct {
 	CachedAt   time.Time                 `json:"cached_at"`
 	FileBlame  map[string]map[string]int `json:"file_blame"`
 
-	AuthorCount        int                  `json:"author_count"`
-	ActualPM           float64              `json:"actual_person_months"`
-	Authors            []AuthorContribution `json:"authors"`
+	// EmailToName maps author email → display name from git blame output.
+	// Used by RecomputeAggregates to resolve real author names from FileBlame
+	// (which only stores emails as keys). Without this mapping, the name-based
+	// join with git date spans fails and actual PM collapses to the 0.1 floor.
+	EmailToName map[string]string `json:"email_to_name,omitempty"`
+
+	AuthorCount int                  `json:"author_count"`
+	ActualPM    float64              `json:"actual_person_months"`
+	Authors     []AuthorContribution `json:"authors"`
 }
 
 // BlameCache provides three-tier caching for git blame data.
@@ -243,8 +249,16 @@ func (entry *BlameCacheEntry) RecomputeAggregates() {
 			if a, ok := accum[email]; ok {
 				a.lines += lines
 			} else {
+				// Resolve real author name from cached mapping.
+				// Falls back to email for old caches without EmailToName.
+				name := email
+				if entry.EmailToName != nil {
+					if n, ok := entry.EmailToName[email]; ok {
+						name = n
+					}
+				}
 				accum[email] = &authorAccum{
-					name:  email, // best we have from blame cache
+					name:  name,
 					email: email,
 					lines: lines,
 				}
@@ -315,6 +329,14 @@ func PopulateOneProjectCached(ctx context.Context, p *ResolvedProject, cache *Bl
 	p.ActualPersonMonths = totalPM
 	p.Authors = enriched
 
+	// Build email→name mapping from blame contributions for cache persistence.
+	emailToName := make(map[string]string, len(contribs))
+	for _, c := range contribs {
+		if c.Email != "" && c.Name != "" {
+			emailToName[c.Email] = c.Name
+		}
+	}
+
 	// Build and save cache entry.
 	entry := &BlameCacheEntry{
 		Project:     p.Name,
@@ -322,6 +344,7 @@ func PopulateOneProjectCached(ctx context.Context, p *ResolvedProject, cache *Bl
 		SCCDir:      p.SCCDir,
 		CachedAt:    time.Now(),
 		FileBlame:   fileBlame,
+		EmailToName: emailToName,
 		AuthorCount: p.AuthorCount,
 		ActualPM:    totalPM,
 		Authors:     enriched,

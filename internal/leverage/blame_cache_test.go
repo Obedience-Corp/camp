@@ -287,6 +287,58 @@ func TestRecomputeAggregates(t *testing.T) {
 	}
 }
 
+func TestRecomputeAggregates_WithEmailToName(t *testing.T) {
+	entry := &BlameCacheEntry{
+		FileBlame: map[string]map[string]int{
+			"a.go": {"alice@example.com": 10, "bob@example.com": 5},
+			"b.go": {"alice@example.com": 20},
+		},
+		EmailToName: map[string]string{
+			"alice@example.com": "Alice Smith",
+			"bob@example.com":   "Bob Jones",
+		},
+	}
+
+	entry.RecomputeAggregates()
+
+	if len(entry.Authors) != 2 {
+		t.Fatalf("Authors has %d entries, want 2", len(entry.Authors))
+	}
+
+	// Verify names come from EmailToName, not email addresses.
+	for _, a := range entry.Authors {
+		if a.Name == a.Email {
+			t.Errorf("Author name %q should not equal email — EmailToName mapping not applied", a.Name)
+		}
+	}
+	if entry.Authors[0].Name != "Alice Smith" {
+		t.Errorf("Authors[0].Name = %q, want %q", entry.Authors[0].Name, "Alice Smith")
+	}
+	if entry.Authors[1].Name != "Bob Jones" {
+		t.Errorf("Authors[1].Name = %q, want %q", entry.Authors[1].Name, "Bob Jones")
+	}
+}
+
+func TestRecomputeAggregates_NilEmailToName(t *testing.T) {
+	// Backwards compat: old cache files without EmailToName should still work.
+	entry := &BlameCacheEntry{
+		FileBlame: map[string]map[string]int{
+			"a.go": {"alice@example.com": 10},
+		},
+		EmailToName: nil,
+	}
+
+	entry.RecomputeAggregates()
+
+	if len(entry.Authors) != 1 {
+		t.Fatalf("Authors has %d entries, want 1", len(entry.Authors))
+	}
+	// Without mapping, name falls back to email.
+	if entry.Authors[0].Name != "alice@example.com" {
+		t.Errorf("Authors[0].Name = %q, want email fallback", entry.Authors[0].Name)
+	}
+}
+
 func TestRecomputeAggregates_Empty(t *testing.T) {
 	entry := &BlameCacheEntry{
 		FileBlame: map[string]map[string]int{},
