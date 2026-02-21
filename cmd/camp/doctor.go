@@ -19,6 +19,7 @@ var doctorCmd = &cobra.Command{
 	Long: `Check campaign for common issues and optionally fix them.
 
 CHECKS PERFORMED:
+  orphan      Orphaned gitlinks in index (no .gitmodules entry)
   url         URL consistency between .gitmodules and .git/config
   integrity   Submodule integrity (empty/broken directories)
   head        HEAD states (detached with local work)
@@ -71,7 +72,7 @@ func init() {
 	doctorCmd.Flags().BoolVar(&doctorOpts.submodulesOnly, "submodules-only", false,
 		"Only check submodule health")
 	doctorCmd.Flags().StringSliceVarP(&doctorOpts.checks, "check", "c", nil,
-		"Run specific check(s) only (url, integrity, head, working, commits)")
+		"Run specific check(s) only (orphan, url, integrity, head, working, commits)")
 
 	rootCmd.AddCommand(doctorCmd)
 	doctorCmd.GroupID = "campaign"
@@ -119,7 +120,9 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 }
 
 // registerChecks registers all health checks with the doctor.
+// OrphanCheck runs first because orphaned gitlinks can break other checks.
 func registerChecks(d *doctor.Doctor) {
+	d.RegisterCheck(checks.NewOrphanCheck())
 	d.RegisterCheck(checks.NewURLCheck())
 	d.RegisterCheck(checks.NewIntegrityCheck())
 	d.RegisterCheck(checks.NewHeadCheck())

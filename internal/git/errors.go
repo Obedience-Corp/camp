@@ -116,6 +116,9 @@ var (
 
 	// ErrSubmoduleRemove indicates a stale submodule directory could not be removed.
 	ErrSubmoduleRemove = errors.New("failed to remove submodule directory")
+
+	// ErrOrphanedGitlink indicates a gitlink exists in the index but has no entry in .gitmodules.
+	ErrOrphanedGitlink = errors.New("orphaned gitlink in index")
 )
 
 // ClassifyGitError determines the error type from git stderr output.

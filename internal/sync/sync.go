@@ -57,6 +57,15 @@ func (s *Syncer) Sync(ctx context.Context) (*SyncResult, error) {
 		return result, nil
 	}
 
+	// Phase 1.5: Clean orphaned gitlinks before URL sync
+	removedOrphans, orphanErr := s.cleanOrphanedGitlinks(ctx)
+	if orphanErr != nil {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("orphan cleanup warning: %v", orphanErr))
+	}
+	for _, path := range removedOrphans {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("removed orphaned gitlink: %s", path))
+	}
+
 	// Phase 2: URL synchronization
 	urlChanges, err := s.syncURLs(ctx)
 	if err != nil {
@@ -278,6 +287,30 @@ func (s *Syncer) verifySubmodules(ctx context.Context) ([]SubmoduleResult, error
 	return results, nil
 }
 
+// cleanOrphanedGitlinks detects and removes gitlink entries in the index that
+// have no corresponding .gitmodules declaration.
+func (s *Syncer) cleanOrphanedGitlinks(ctx context.Context) ([]string, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	orphans, err := git.ListOrphanedGitlinks(ctx, s.repoRoot)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(orphans) == 0 {
+		return nil, nil
+	}
+
+	removed, err := git.RemoveOrphanedGitlinks(ctx, s.repoRoot, orphans)
+	if err != nil {
+		return removed, err
+	}
+
+	return removed, nil
+}
+
 // validateUpdate checks that all submodules are at expected commits.
 func (s *Syncer) validateUpdate(ctx context.Context) error {
 	if ctx.Err() != nil {
@@ -287,8 +320,15 @@ func (s *Syncer) validateUpdate(ctx context.Context) error {
 	// git submodule status --recursive
 	cmd := exec.CommandContext(ctx, "git", "-C", s.repoRoot,
 		"submodule", "status", "--recursive")
-	output, err := cmd.Output()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
+		// Handle "no submodule mapping" errors gracefully - these indicate
+		// orphaned gitlinks that weren't fully cleaned up. Don't fail the
+		// entire validation for this.
+		outputStr := string(output)
+		if strings.Contains(outputStr, "no submodule mapping found") {
+			return nil
+		}
 		return &SyncError{Op: "validate", Cause: fmt.Errorf("%w: %w", ErrSubmoduleValidation, err)}
 	}
 

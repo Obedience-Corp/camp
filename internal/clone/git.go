@@ -199,6 +199,33 @@ func parseSubmoduleStatus(line string) SubmoduleResult {
 	return result
 }
 
+// cleanOrphanedGitlinks detects and removes gitlink entries in the index that
+// have no corresponding .gitmodules declaration. These orphans cause
+// `git submodule sync` and `git submodule status` to fail with
+// "no submodule mapping found in .gitmodules", which cascades and prevents
+// other submodules from initializing properly.
+func (c *Cloner) cleanOrphanedGitlinks(ctx context.Context, dir string) ([]string, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	orphans, err := gitpkg.ListOrphanedGitlinks(ctx, dir)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(orphans) == 0 {
+		return nil, nil
+	}
+
+	removed, err := gitpkg.RemoveOrphanedGitlinks(ctx, dir, orphans)
+	if err != nil {
+		return removed, err
+	}
+
+	return removed, nil
+}
+
 // extractRepoName extracts repository name from a git URL.
 func extractRepoName(url string) string {
 	// Handle various URL formats:
