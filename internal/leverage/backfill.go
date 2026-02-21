@@ -287,8 +287,20 @@ func (b *Backfiller) processSample(ctx context.Context, gitDir string, sample Co
 
 // createWorktree creates a detached git worktree and returns the path and cleanup function.
 // The cleanup function removes the worktree even if the parent context is cancelled.
+//
+// On macOS, git worktree add fails with "Undefined error: 0" when the worktree
+// is on a different filesystem than the git directory (e.g. /var/folders vs
+// /Users). This is especially common with submodules. To avoid this, we create
+// the temp directory on the same filesystem as the git repo.
 func createWorktree(ctx context.Context, gitDir, commitHash string) (string, func(), error) {
-	dir, err := os.MkdirTemp("", "camp-backfill-*")
+	// Use a temp directory on the same filesystem as the repo to avoid
+	// cross-filesystem issues with submodule gitlinks on macOS.
+	base := filepath.Join(filepath.Dir(gitDir), ".camp-worktrees")
+	if err := os.MkdirAll(base, 0o755); err != nil {
+		return "", nil, fmt.Errorf("creating worktree base dir: %w", err)
+	}
+
+	dir, err := os.MkdirTemp(base, "backfill-*")
 	if err != nil {
 		return "", nil, fmt.Errorf("creating temp dir: %w", err)
 	}
