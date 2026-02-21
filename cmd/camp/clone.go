@@ -32,6 +32,10 @@ This command provides a single-step setup for new devices:
      Verifies all submodules are initialized, at correct commits,
      and have matching URLs.
 
+  5. REGISTER CAMPAIGN
+     If .campaign/campaign.yaml exists, registers the campaign
+     in the global registry for navigation and discovery.
+
 EXIT CODES:
   0  Success
   1  Clone failed (no campaign created)
@@ -61,6 +65,9 @@ EXAMPLES:
   # Clone without validation
   camp clone git@github.com:org/repo.git --no-validate
 
+  # Clone without auto-registration
+  camp clone git@github.com:org/repo.git --no-register
+
   # JSON output for scripting
   camp clone git@github.com:org/repo.git --json`,
 	Args: cobra.RangeArgs(1, 2),
@@ -77,6 +84,7 @@ var cloneOpts struct {
 	parallel     int
 	noSubmodules bool
 	noValidate   bool
+	noRegister   bool
 	verbose      bool
 	json         bool
 }
@@ -92,6 +100,8 @@ func init() {
 		"Skip submodule initialization")
 	cloneCmd.Flags().BoolVar(&cloneOpts.noValidate, "no-validate", false,
 		"Skip post-clone validation")
+	cloneCmd.Flags().BoolVar(&cloneOpts.noRegister, "no-register", false,
+		"Skip auto-registration in global campaign registry")
 	cloneCmd.Flags().BoolVarP(&cloneOpts.verbose, "verbose", "v", false,
 		"Show detailed output for each operation")
 	cloneCmd.Flags().BoolVar(&cloneOpts.json, "json", false,
@@ -130,6 +140,7 @@ func runClone(cmd *cobra.Command, args []string) error {
 		clone.WithParallel(cloneOpts.parallel),
 		clone.WithNoSubmodules(cloneOpts.noSubmodules),
 		clone.WithNoValidate(cloneOpts.noValidate),
+		clone.WithNoRegister(cloneOpts.noRegister),
 		clone.WithVerbose(cloneOpts.verbose),
 		clone.WithJSON(cloneOpts.json),
 		clone.WithProgress(progress),
@@ -249,6 +260,16 @@ func formatCloneHuman(result *clone.CloneResult, verbose bool) {
 					fmt.Printf("      Fix: %s\n", issue.FixCommand)
 				}
 			}
+		}
+		fmt.Println()
+	}
+
+	// Registration section
+	if result.Registration != nil {
+		if result.Registration.Registered {
+			fmt.Printf("Registration: %s Registered as %q\n", ui.SuccessIcon(), result.Registration.CampaignName)
+		} else if result.Registration.Error != nil {
+			fmt.Printf("Registration: %s %v\n", ui.WarningIcon(), result.Registration.Error)
 		}
 		fmt.Println()
 	}

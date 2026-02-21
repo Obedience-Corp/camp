@@ -31,6 +31,8 @@ type CloneOptions struct {
 	JSON bool
 	// Parallel is the number of concurrent submodule initializations (default 4).
 	Parallel int
+	// NoRegister skips auto-registration in global campaign registry.
+	NoRegister bool
 }
 
 // CloneResult contains the outcome of a clone operation.
@@ -51,6 +53,20 @@ type CloneResult struct {
 	Errors []error
 	// Warnings contains non-fatal issues encountered.
 	Warnings []string
+	// Registration contains auto-registration results (nil if skipped or not a campaign).
+	Registration *RegistrationResult
+}
+
+// RegistrationResult contains the outcome of auto-registration.
+type RegistrationResult struct {
+	// Registered indicates whether the campaign was registered.
+	Registered bool
+	// CampaignID is the registered campaign's ID.
+	CampaignID string
+	// CampaignName is the registered campaign's name.
+	CampaignName string
+	// Error contains any registration error (non-fatal).
+	Error error
 }
 
 // URLChange represents a URL that was updated during synchronization.
@@ -207,6 +223,13 @@ func WithParallel(n int) ClonerOption {
 func WithSyncer(s *sync.Syncer) ClonerOption {
 	return func(c *Cloner) {
 		c.syncer = s
+	}
+}
+
+// WithNoRegister skips auto-registration in the global campaign registry.
+func WithNoRegister(noRegister bool) ClonerOption {
+	return func(c *Cloner) {
+		c.options.NoRegister = noRegister
 	}
 }
 

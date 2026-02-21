@@ -53,6 +53,18 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 		result.Branch = branch
 	}
 
+	// Phase 1.5: Clean orphaned gitlinks before submodule operations
+	if !c.options.NoSubmodules {
+		removed, err := c.cleanOrphanedGitlinks(ctx, targetDir)
+		if err != nil {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("orphan cleanup warning: %v", err))
+		}
+		for _, path := range removed {
+			c.progress.Verbose(fmt.Sprintf("Removed orphaned gitlink: %s", path))
+			result.Warnings = append(result.Warnings, fmt.Sprintf("removed orphaned gitlink: %s", path))
+		}
+	}
+
 	// Phase 2: URL synchronization (skip if no submodules requested)
 	if !c.options.NoSubmodules {
 		c.progress.StartPhase("Synchronizing submodule URLs")
@@ -258,8 +270,21 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 		}
 	}
 
-	// Phase 5: Determine overall success
+	// Phase 5: Auto-register campaign (unless --no-register)
+	if !c.options.NoRegister {
+		regResult := c.registerCampaign(ctx, targetDir)
+		result.Registration = regResult
+		if regResult != nil && regResult.Registered {
+			c.progress.Message(fmt.Sprintf("Registered campaign: %s", regResult.CampaignName))
+		} else if regResult != nil && regResult.Error != nil {
+			result.Warnings = append(result.Warnings,
+				fmt.Sprintf("auto-registration: %v", regResult.Error))
+		}
+	}
+
+	// Phase 6: Determine overall success
 	// Success if no fatal errors and validation passed (if run)
+	// Registration failures do not affect overall success
 	result.Success = len(result.Errors) == 0 &&
 		(result.Validation == nil || result.Validation.Passed)
 
@@ -267,7 +292,9 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 }
 
 // validate runs post-clone validation checks.
-// This is a placeholder - full implementation will be in the validation sequence.
+// Uses parseGitmodules as the canonical source of expected submodules (consistent
+// with Phase 3 initialization). Extra submodules found by git submodule status
+// but not declared in .gitmodules are reported as warnings, not errors.
 func (c *Cloner) validate(ctx context.Context, dir string) *ValidationResult {
 	if ctx.Err() != nil {
 		return &ValidationResult{Passed: false, Issues: []ValidationIssue{
@@ -282,23 +309,61 @@ func (c *Cloner) validate(ctx context.Context, dir string) *ValidationResult {
 		URLsMatch:      true,
 	}
 
-	// Check all submodules are initialized
-	submodules, err := c.gitSubmoduleStatus(ctx, dir)
+	// Use parseGitmodules as the canonical list (same source as Phase 3)
+	declared, err := parseGitmodules(ctx, dir)
+	if err != nil {
+		result.Issues = append(result.Issues, ValidationIssue{
+			Description: fmt.Sprintf("could not parse .gitmodules: %v", err),
+			Severity:    SeverityWarning,
+		})
+		return result
+	}
+
+	// Build set of declared paths
+	declaredPaths := make(map[string]bool, len(declared))
+	for _, sub := range declared {
+		declaredPaths[sub.Path] = true
+	}
+
+	// Get actual submodule state from git
+	statusResults, err := c.gitSubmoduleStatus(ctx, dir)
 	if err != nil {
 		result.Issues = append(result.Issues, ValidationIssue{
 			Description: fmt.Sprintf("could not check submodule status: %v", err),
 			Severity:    SeverityWarning,
 		})
+		return result
 	}
 
-	for _, sub := range submodules {
-		if !sub.Success {
+	// Build status lookup by path
+	statusByPath := make(map[string]SubmoduleResult, len(statusResults))
+	for _, sr := range statusResults {
+		statusByPath[sr.Path] = sr
+	}
+
+	// Validate declared submodules (from .gitmodules)
+	for _, sub := range declared {
+		sr, found := statusByPath[sub.Path]
+		if !found || !sr.Success {
 			result.AllInitialized = false
 			result.Passed = false
 			result.Issues = append(result.Issues, ValidationIssue{
 				Submodule:   sub.Path,
 				Description: "not initialized",
 				Severity:    SeverityError,
+				FixCommand:  "git submodule update --init " + sub.Path,
+				AutoFixable: true,
+			})
+		}
+	}
+
+	// Report undeclared submodules (found by git status but not in .gitmodules) as warnings
+	for _, sr := range statusResults {
+		if !declaredPaths[sr.Path] && !sr.Success {
+			result.Issues = append(result.Issues, ValidationIssue{
+				Submodule:   sr.Path,
+				Description: "not in .gitmodules but has a gitlink entry",
+				Severity:    SeverityWarning,
 			})
 		}
 	}

@@ -14,9 +14,10 @@ type JSONOutput struct {
 	Clone      ClonePhaseOutput  `json:"clone"`
 	Submodules SubmodulesOutput  `json:"submodules"`
 	URLChanges []URLChangeOutput `json:"urlChanges,omitempty"`
-	Validation *JSONValidation   `json:"validation,omitempty"`
-	Errors     []string          `json:"errors,omitempty"`
-	Warnings   []string          `json:"warnings,omitempty"`
+	Validation   *JSONValidation   `json:"validation,omitempty"`
+	Registration *JSONRegistration `json:"registration,omitempty"`
+	Errors       []string          `json:"errors,omitempty"`
+	Warnings     []string          `json:"warnings,omitempty"`
 }
 
 // ClonePhaseOutput represents the clone phase result.
@@ -71,6 +72,14 @@ type JSONIssue struct {
 	Description string `json:"description"`
 	FixCommand  string `json:"fixCommand,omitempty"`
 	AutoFixable bool   `json:"autoFixable,omitempty"`
+}
+
+// JSONRegistration represents registration results in JSON.
+type JSONRegistration struct {
+	Registered   bool   `json:"registered"`
+	CampaignID   string `json:"campaignId,omitempty"`
+	CampaignName string `json:"campaignName,omitempty"`
+	Error        string `json:"error,omitempty"`
 }
 
 // JSON converts CloneResult to JSON bytes.
@@ -146,6 +155,18 @@ func (r *CloneResult) JSON() ([]byte, error) {
 				FixCommand:  issue.FixCommand,
 				AutoFixable: issue.AutoFixable,
 			})
+		}
+	}
+
+	// Convert registration
+	if r.Registration != nil {
+		output.Registration = &JSONRegistration{
+			Registered:   r.Registration.Registered,
+			CampaignID:   r.Registration.CampaignID,
+			CampaignName: r.Registration.CampaignName,
+		}
+		if r.Registration.Error != nil {
+			output.Registration.Error = r.Registration.Error.Error()
 		}
 	}
 
@@ -225,6 +246,16 @@ func (r *CloneResult) Format() string {
 				}
 				sb.WriteString(fmt.Sprintf("  %s [%s] %s\n", icon, issue.Submodule, issue.Description))
 			}
+		}
+		sb.WriteString("\n")
+	}
+
+	// Registration section
+	if r.Registration != nil {
+		if r.Registration.Registered {
+			sb.WriteString(fmt.Sprintf("Registration: ✓ Registered as %q\n", r.Registration.CampaignName))
+		} else if r.Registration.Error != nil {
+			sb.WriteString(fmt.Sprintf("Registration: ⚠ %v\n", r.Registration.Error))
 		}
 		sb.WriteString("\n")
 	}
