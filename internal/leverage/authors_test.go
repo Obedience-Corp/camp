@@ -258,6 +258,41 @@ func TestCountAuthors_DeduplicatesSameName(t *testing.T) {
 	}
 }
 
+func TestCountAuthors_SameEmailDifferentNames(t *testing.T) {
+	dir := initGitRepo(t)
+	// Same email, different display names (the real-world bug)
+	commitFile(t, dir, "a.go", "package a\n", "lancekrogers", "lancekrogers@gmail.com")
+	commitFile(t, dir, "b.go", "package b\n", "Lance Rogers", "lancekrogers@gmail.com")
+
+	count, err := CountAuthors(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("CountAuthors: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("count = %d, want 1 (same email, different display names)", count)
+	}
+}
+
+func TestCountAuthors_TransitiveMerge(t *testing.T) {
+	dir := initGitRepo(t)
+	// A shares name with B (both "Alice"), B shares email with C
+	// A: "Alice" <alice@work.com>
+	// B: "Alice" <alice@personal.com>
+	// C: "A. Smith" <alice@personal.com>
+	// All three should merge to 1 person via transitive chain.
+	commitFile(t, dir, "a.go", "package a\n", "Alice", "alice@work.com")
+	commitFile(t, dir, "b.go", "package b\n", "Alice", "alice@personal.com")
+	commitFile(t, dir, "c.go", "package c\n", "A. Smith", "alice@personal.com")
+
+	count, err := CountAuthors(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("CountAuthors: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("count = %d, want 1 (transitive merge: name→name→email)", count)
+	}
+}
+
 func TestCountAuthors_FiltersBots(t *testing.T) {
 	dir := initGitRepo(t)
 	commitFile(t, dir, "a.go", "package a\n", "Alice", "alice@example.com")
