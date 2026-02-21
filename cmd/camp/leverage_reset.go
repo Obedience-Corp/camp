@@ -11,15 +11,16 @@ import (
 
 var leverageResetCmd = &cobra.Command{
 	Use:   "reset",
-	Short: "Clear cached leverage snapshots to allow re-backfill",
-	Long: `Reset deletes cached snapshot data so that backfill can regenerate it.
+	Short: "Clear all cached leverage data to allow full recomputation",
+	Long: `Reset deletes cached snapshots and blame data so that leverage can
+recompute from scratch.
 
-Without flags, all project snapshots are removed. Use --project to clear
-only a single project's snapshots.
+Without flags, all project caches are removed. Use --project to clear
+only a single project's data.
 
 Examples:
-  camp leverage reset                    Clear all snapshots
-  camp leverage reset --project camp     Clear only camp's snapshots`,
+  camp leverage reset                    Clear all cached data
+  camp leverage reset --project camp     Clear only camp's cached data`,
 	RunE: runLeverageReset,
 }
 
@@ -37,36 +38,55 @@ func runLeverageReset(cmd *cobra.Command, args []string) error {
 	}
 
 	snapshotDir := leverage.DefaultSnapshotDir(setup.Root)
+	cacheDir := leverage.DefaultCacheDir(setup.Root)
 	projectFilter, _ := cmd.Flags().GetString("project")
 
-	targetDir := snapshotDir
-	if projectFilter != "" {
-		targetDir = filepath.Join(snapshotDir, projectFilter)
-	}
+	cleared := false
 
-	// Check if the target exists before removing.
-	info, err := os.Stat(targetDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			fmt.Fprintln(cmd.OutOrStdout(), "No snapshots to clear.")
-			return nil
+	// Clear snapshots.
+	if projectFilter != "" {
+		if removeDirIfExists(filepath.Join(snapshotDir, projectFilter)) {
+			cleared = true
 		}
-		return fmt.Errorf("checking snapshot directory: %w", err)
-	}
-	if !info.IsDir() {
-		return fmt.Errorf("expected directory at %s", targetDir)
+	} else {
+		if removeDirIfExists(snapshotDir) {
+			cleared = true
+		}
 	}
 
-	if err := os.RemoveAll(targetDir); err != nil {
-		return fmt.Errorf("removing snapshots: %w", err)
+	// Clear blame cache.
+	if projectFilter != "" {
+		cacheFile := filepath.Join(cacheDir, projectFilter+".json")
+		if err := os.Remove(cacheFile); err == nil {
+			cleared = true
+		}
+	} else {
+		if removeDirIfExists(cacheDir) {
+			cleared = true
+		}
+	}
+
+	if !cleared {
+		fmt.Fprintln(cmd.OutOrStdout(), "No cached data to clear.")
+		return nil
 	}
 
 	if projectFilter != "" {
-		fmt.Fprintf(cmd.OutOrStdout(), "Cleared snapshots for project %q.\n", projectFilter)
+		fmt.Fprintf(cmd.OutOrStdout(), "Cleared cached data for project %q.\n", projectFilter)
 	} else {
-		fmt.Fprintln(cmd.OutOrStdout(), "Cleared all leverage snapshots.")
+		fmt.Fprintln(cmd.OutOrStdout(), "Cleared all cached leverage data.")
 	}
-	fmt.Fprintln(cmd.OutOrStdout(), "Run 'camp leverage backfill' to regenerate.")
+	fmt.Fprintln(cmd.OutOrStdout(), "Run 'camp leverage backfill' to regenerate snapshots.")
 
 	return nil
+}
+
+// removeDirIfExists removes a directory if it exists. Returns true if something
+// was removed.
+func removeDirIfExists(dir string) bool {
+	info, err := os.Stat(dir)
+	if err != nil || !info.IsDir() {
+		return false
+	}
+	return os.RemoveAll(dir) == nil
 }
