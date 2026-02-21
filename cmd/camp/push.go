@@ -25,7 +25,7 @@ the campaign root repository.
 
 Use --sub to push from the submodule detected from your current directory.
 Use --project/-p to push from a specific project.
-Use --all to push all repos that have unpushed commits.
+Use 'camp push all' to push all repos that have unpushed commits.
 
 Examples:
   camp push                    # Push current branch
@@ -34,8 +34,8 @@ Examples:
   camp push -u origin feature  # Push and set upstream
   camp push --sub              # Push current submodule
   camp push -p projects/camp   # Push camp project
-  camp push --all              # Push all repos with unpushed commits
-  camp push --all --force      # Force push all repos`,
+  camp push all                # Push all repos with unpushed commits
+  camp push all --force        # Force push all repos`,
 	RunE:               runPush,
 	DisableFlagParsing: true,
 }
@@ -43,21 +43,6 @@ Examples:
 func init() {
 	rootCmd.AddCommand(pushCmd)
 	pushCmd.GroupID = "git"
-}
-
-// extractAllFlag scans args for --all and strips it, returning the remaining args
-// and whether --all was present. This is done before ExtractSubFlags because --all
-// is push-specific and would conflict with git flags like `git fetch --all`.
-func extractAllFlag(args []string) (remaining []string, all bool) {
-	remaining = make([]string, 0, len(args))
-	for _, arg := range args {
-		if arg == "--all" {
-			all = true
-		} else {
-			remaining = append(remaining, arg)
-		}
-	}
-	return remaining, all
 }
 
 func runPush(cmd *cobra.Command, args []string) error {
@@ -68,20 +53,8 @@ func runPush(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("not in a campaign: %w", err)
 	}
 
-	// Extract --all before other flag parsing
-	args, pushAll := extractAllFlag(args)
-
 	// Extract camp-specific flags, pass rest to git
 	gitArgs, sub, project := git.ExtractSubFlags(args)
-
-	// --all is mutually exclusive with --sub and --project
-	if pushAll && (sub || project != "") {
-		return fmt.Errorf("--all cannot be combined with --sub or --project")
-	}
-
-	if pushAll {
-		return runPushAll(ctx, campRoot, gitArgs)
-	}
 
 	target, err := git.ResolveTarget(ctx, campRoot, sub, project)
 	if err != nil {
