@@ -50,16 +50,17 @@ func init() {
 
 // repoStatus holds the status of a single repository.
 type repoStatus struct {
-	Name      string `json:"name"`
-	Path      string `json:"path"`
-	Branch    string `json:"branch"`
-	Clean     bool   `json:"clean"`
-	Ahead     int    `json:"ahead"`
-	Behind    int    `json:"behind"`
-	Staged    int    `json:"staged"`
-	Modified  int    `json:"modified"`
-	Untracked int    `json:"untracked"`
-	Error     string `json:"error,omitempty"`
+	Name        string `json:"name"`
+	Path        string `json:"path"`
+	Branch      string `json:"branch"`
+	Clean       bool   `json:"clean"`
+	HasUpstream bool   `json:"has_upstream"`
+	Ahead       int    `json:"ahead"`
+	Behind      int    `json:"behind"`
+	Staged      int    `json:"staged"`
+	Modified    int    `json:"modified"`
+	Untracked   int    `json:"untracked"`
+	Error       string `json:"error,omitempty"`
 }
 
 // statusAllCache is the JSON cache format.
@@ -195,9 +196,10 @@ func getRepoStatus(ctx context.Context, repoPath, name string) repoStatus {
 		}
 	}
 
-	// Get ahead/behind
+	// Get ahead/behind — also determines if upstream tracking is configured
 	abOutput, err := gitOutput(ctx, repoPath, "rev-list", "--left-right", "--count", "HEAD...@{upstream}")
 	if err == nil {
+		rs.HasUpstream = true
 		parts := strings.Fields(abOutput)
 		if len(parts) == 2 {
 			fmt.Sscanf(parts[0], "%d", &rs.Ahead)
@@ -247,13 +249,17 @@ func renderStatusTable(statuses []repoStatus) {
 		}
 
 		// Push status
-		pushStr := green.Render("ok")
-		if s.Ahead > 0 && s.Behind > 0 {
+		var pushStr string
+		if !s.HasUpstream {
+			pushStr = red.Render("no track")
+		} else if s.Ahead > 0 && s.Behind > 0 {
 			pushStr = yellow.Render(fmt.Sprintf("↑%d ↓%d", s.Ahead, s.Behind))
 		} else if s.Ahead > 0 {
 			pushStr = yellow.Render(fmt.Sprintf("↑%d", s.Ahead))
 		} else if s.Behind > 0 {
 			pushStr = yellow.Render(fmt.Sprintf("↓%d", s.Behind))
+		} else {
+			pushStr = green.Render("ok")
 		}
 
 		// Changes detail
