@@ -82,7 +82,7 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	resolved, authorExcluded, err := resolveAndPopulateProjects(ctx, setup.Root, cfg, authorFilter)
+	resolved, authorExcluded, err := resolveAndPopulateProjects(ctx, setup.Root, cfg, setup.Resolver, authorFilter)
 	if err != nil {
 		return err
 	}
@@ -213,7 +213,7 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 	// double-counts authors who contribute across multiple repos.
 	// CampaignActualPersonMonths merges authors by name across all git dirs.
 	if authorFilter == "" && peopleOverride == 0 {
-		campaignPM, pmErr := leverage.CampaignActualPersonMonths(ctx, resolved)
+		campaignPM, pmErr := leverage.CampaignActualPersonMonths(ctx, resolved, setup.Resolver)
 		if pmErr == nil && campaignPM > 0 {
 			estPM := agg.EstimatedPeople * agg.EstimatedMonths
 			agg.ActualPersonMonths = campaignPM
@@ -232,7 +232,7 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 	}
 
 	if byAuthor {
-		return leverageOutputByAuthor(cmd, agg, resolved)
+		return leverageOutputByAuthor(cmd, agg, resolved, setup.Resolver)
 	}
 
 	recent := recentLeverage{week7: week7, has7: has7, month30: month30, has30: has30}

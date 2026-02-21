@@ -247,11 +247,9 @@ func (uf *unionFind) union(x, y int) {
 }
 
 // CountAuthors returns the number of distinct human authors for a git repo.
-// Uses git shortlog for speed (no blame needed). Filters bot accounts and
-// deduplicates identities sharing either a normalized name or an email address,
-// with transitive merging (A shares name with B, B shares email with C → all
-// one person). Returns minimum 1.
-func CountAuthors(ctx context.Context, gitDir string) (int, error) {
+// Uses the resolver to map emails to canonical author IDs and count unique
+// non-excluded identities. Returns minimum 1.
+func CountAuthors(ctx context.Context, gitDir string, resolver *AuthorResolver) (int, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
@@ -262,12 +260,7 @@ func CountAuthors(ctx context.Context, gitDir string) (int, error) {
 		return 1, nil // fallback: assume 1 author
 	}
 
-	// Collect all (name, email) identity pairs from shortlog.
-	type identity struct {
-		name  string
-		email string
-	}
-	var ids []identity
+	uniqueIDs := make(map[string]bool)
 	scanner := bufio.NewScanner(strings.NewReader(string(out)))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -281,53 +274,20 @@ func CountAuthors(ctx context.Context, gitDir string) (int, error) {
 			continue
 		}
 
-		name, email := parseNameEmail(strings.TrimSpace(parts[1]))
-		if isBotEmail(email) {
+		_, email := parseNameEmail(strings.TrimSpace(parts[1]))
+		if resolver.IsExcluded(email) {
 			continue
 		}
 
-		normName := normalizeName(name)
-		if normName == "" {
-			continue
-		}
-
-		ids = append(ids, identity{
-			name:  normName,
-			email: strings.ToLower(strings.TrimSpace(email)),
-		})
+		authorID := resolver.Resolve(email)
+		uniqueIDs[authorID] = true
 	}
 
-	if len(ids) == 0 {
+	if len(uniqueIDs) == 0 {
 		return 1, nil
 	}
 
-	// Union-find: merge identities sharing either name or email.
-	uf := newUnionFind(len(ids))
-	nameFirst := make(map[string]int)  // normalized name → first index
-	emailFirst := make(map[string]int) // email → first index
-
-	for i, id := range ids {
-		if prev, ok := nameFirst[id.name]; ok {
-			uf.union(i, prev)
-		} else {
-			nameFirst[id.name] = i
-		}
-		if id.email != "" {
-			if prev, ok := emailFirst[id.email]; ok {
-				uf.union(i, prev)
-			} else {
-				emailFirst[id.email] = i
-			}
-		}
-	}
-
-	// Count distinct roots.
-	roots := make(map[int]bool)
-	for i := range ids {
-		roots[uf.find(i)] = true
-	}
-
-	return len(roots), nil
+	return len(uniqueIDs), nil
 }
 
 // AuthorHasCommits returns true if the given author email has commits in the repo.
@@ -406,12 +366,12 @@ func (s *authorDateSpan) merge(other *authorDateSpan) {
 	}
 }
 
-// gitDirAuthors enumerates all non-bot authors in a git repo and computes their
-// date ranges. Returns a map keyed by normalized name.
+// gitDirAuthors enumerates all non-excluded authors in a git repo and computes
+// their date ranges. Returns a map keyed by canonical author ID from the resolver.
 //
 // Uses allAuthorDates for a single git-log pass instead of spawning one git
 // process per email, reducing total git processes from 1+N to 2.
-func gitDirAuthors(ctx context.Context, gitDir string) (map[string]*authorDateSpan, error) {
+func gitDirAuthors(ctx context.Context, gitDir string, resolver *AuthorResolver) (map[string]*authorDateSpan, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -422,11 +382,11 @@ func gitDirAuthors(ctx context.Context, gitDir string) (map[string]*authorDateSp
 		return nil, fmt.Errorf("git shortlog: %w", err)
 	}
 
-	// Parse shortlog and group emails by normalized name.
+	// Parse shortlog and group emails by canonical author ID.
 	type authorInfo struct {
 		emails []string
 	}
-	byName := make(map[string]*authorInfo)
+	byID := make(map[string]*authorInfo)
 	scanner := bufio.NewScanner(strings.NewReader(string(out)))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -437,18 +397,15 @@ func gitDirAuthors(ctx context.Context, gitDir string) (map[string]*authorDateSp
 		if len(parts) != 2 {
 			continue
 		}
-		name, email := parseNameEmail(strings.TrimSpace(parts[1]))
-		if isBotEmail(email) {
+		_, email := parseNameEmail(strings.TrimSpace(parts[1]))
+		if resolver.IsExcluded(email) {
 			continue
 		}
-		normName := normalizeName(name)
-		if normName == "" {
-			continue
-		}
-		a, ok := byName[normName]
+		authorID := resolver.Resolve(email)
+		a, ok := byID[authorID]
 		if !ok {
 			a = &authorInfo{}
-			byName[normName] = a
+			byID[authorID] = a
 		}
 		a.emails = append(a.emails, email)
 	}
@@ -460,8 +417,8 @@ func gitDirAuthors(ctx context.Context, gitDir string) (map[string]*authorDateSp
 	}
 
 	// For each person, find earliest/latest across all their emails.
-	result := make(map[string]*authorDateSpan, len(byName))
-	for normName, info := range byName {
+	result := make(map[string]*authorDateSpan, len(byID))
+	for authorID, info := range byID {
 		span := &authorDateSpan{}
 		for _, email := range info.emails {
 			emailSpan, ok := allDates[email]
@@ -470,7 +427,7 @@ func gitDirAuthors(ctx context.Context, gitDir string) (map[string]*authorDateSp
 			}
 			span.merge(emailSpan)
 		}
-		result[normName] = span
+		result[authorID] = span
 	}
 
 	return result, nil
@@ -482,13 +439,13 @@ func gitDirAuthors(ctx context.Context, gitDir string) (map[string]*authorDateSp
 //
 // Authors with < 1% LOC ownership are excluded from the effort calculation (D2).
 // Returns total weighted PM and enriched AuthorContribution slice with WeightedPM set.
-func BlameWeightedPersonMonths(ctx context.Context, gitDir, sccDir string) (float64, []AuthorContribution, error) {
+func BlameWeightedPersonMonths(ctx context.Context, gitDir, sccDir string, resolver *AuthorResolver) (float64, []AuthorContribution, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, nil, err
 	}
 
-	// Get date spans per author (keyed by normalized name).
-	dateSpans, err := gitDirAuthors(ctx, gitDir)
+	// Get date spans per author (keyed by canonical author ID).
+	dateSpans, err := gitDirAuthors(ctx, gitDir, resolver)
 	if err != nil {
 		return minAuthorMonths, nil, nil
 	}
@@ -504,14 +461,17 @@ func BlameWeightedPersonMonths(ctx context.Context, gitDir, sccDir string) (floa
 		return minAuthorMonths, nil, nil
 	}
 
-	totalPM, enriched := blameWeightedPMFromContribs(contribs, dateSpans)
+	totalPM, enriched := blameWeightedPMFromContribs(contribs, dateSpans, resolver)
 	return totalPM, enriched, nil
 }
 
 // blameWeightedPMFromContribs computes blame-weighted PM from pre-computed
 // contributions and date spans. Extracted from BlameWeightedPersonMonths
 // so the cache can reuse the same logic without re-running blame.
-func blameWeightedPMFromContribs(contribs []AuthorContribution, dateSpans map[string]*authorDateSpan) (float64, []AuthorContribution) {
+//
+// The resolver maps contribution emails to canonical author IDs, which must
+// match the keys in dateSpans (both produced via resolver.Resolve).
+func blameWeightedPMFromContribs(contribs []AuthorContribution, dateSpans map[string]*authorDateSpan, resolver *AuthorResolver) (float64, []AuthorContribution) {
 	var totalPM float64
 	enriched := make([]AuthorContribution, 0, len(contribs))
 
@@ -520,10 +480,10 @@ func blameWeightedPMFromContribs(contribs []AuthorContribution, dateSpans map[st
 			continue
 		}
 
-		normName := normalizeName(c.Name)
-		span, ok := dateSpans[normName]
+		authorID := resolver.Resolve(c.Email)
+		span, ok := dateSpans[authorID]
 		if !ok {
-			// Author in blame but not matched in commit log by name.
+			// Author in blame but not matched in commit log.
 			// Use minimum PM weighted by their LOC share.
 			c.WeightedPM = minAuthorMonths * (c.Percentage / 100.0)
 			totalPM += c.WeightedPM
@@ -555,9 +515,9 @@ func blameWeightedPMFromContribs(contribs []AuthorContribution, dateSpans map[st
 // When sccDir is non-empty, uses blame-weighted calculation via
 // BlameWeightedPersonMonths. When sccDir is empty, falls back to unweighted
 // date-span calculation for backward compatibility.
-func ProjectActualPersonMonths(ctx context.Context, gitDir, sccDir string) (float64, error) {
+func ProjectActualPersonMonths(ctx context.Context, gitDir, sccDir string, resolver *AuthorResolver) (float64, error) {
 	if sccDir != "" {
-		pm, _, err := BlameWeightedPersonMonths(ctx, gitDir, sccDir)
+		pm, _, err := BlameWeightedPersonMonths(ctx, gitDir, sccDir, resolver)
 		return pm, err
 	}
 
@@ -566,7 +526,7 @@ func ProjectActualPersonMonths(ctx context.Context, gitDir, sccDir string) (floa
 		return 0, err
 	}
 
-	authors, err := gitDirAuthors(ctx, gitDir)
+	authors, err := gitDirAuthors(ctx, gitDir, resolver)
 	if err != nil {
 		return minAuthorMonths, nil
 	}

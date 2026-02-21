@@ -219,7 +219,7 @@ func TestCountAuthors_SingleAuthor(t *testing.T) {
 	dir := initGitRepo(t)
 	commitFile(t, dir, "main.go", "package main\n", "Alice", "alice@example.com")
 
-	count, err := CountAuthors(context.Background(), dir)
+	count, err := CountAuthors(context.Background(), dir, NewAuthorResolver(nil))
 	if err != nil {
 		t.Fatalf("CountAuthors: %v", err)
 	}
@@ -234,7 +234,7 @@ func TestCountAuthors_MultipleAuthors(t *testing.T) {
 	commitFile(t, dir, "b.go", "package a\n", "Bob", "bob@example.com")
 	commitFile(t, dir, "c.go", "package a\n", "Charlie", "charlie@example.com")
 
-	count, err := CountAuthors(context.Background(), dir)
+	count, err := CountAuthors(context.Background(), dir, NewAuthorResolver(nil))
 	if err != nil {
 		t.Fatalf("CountAuthors: %v", err)
 	}
@@ -248,13 +248,14 @@ func TestCountAuthors_DeduplicatesSameName(t *testing.T) {
 	commitFile(t, dir, "a.go", "package a\n", "Alice", "alice@work.com")
 	commitFile(t, dir, "b.go", "package b\n", "Alice", "alice@personal.com")
 
-	count, err := CountAuthors(context.Background(), dir)
+	count, err := CountAuthors(context.Background(), dir, NewAuthorResolver(nil))
 	if err != nil {
 		t.Fatalf("CountAuthors: %v", err)
 	}
-	// Same name "Alice" with different emails = 1 person
-	if count != 1 {
-		t.Errorf("count = %d, want 1 (same name dedup)", count)
+	// With fallback resolver (email-as-ID), different emails = different people.
+	// Same-name dedup only happens with an explicit AuthorConfig.
+	if count != 2 {
+		t.Errorf("count = %d, want 2 (different emails → different IDs with fallback resolver)", count)
 	}
 }
 
@@ -264,7 +265,7 @@ func TestCountAuthors_SameEmailDifferentNames(t *testing.T) {
 	commitFile(t, dir, "a.go", "package a\n", "lancekrogers", "lancekrogers@gmail.com")
 	commitFile(t, dir, "b.go", "package b\n", "Lance Rogers", "lancekrogers@gmail.com")
 
-	count, err := CountAuthors(context.Background(), dir)
+	count, err := CountAuthors(context.Background(), dir, NewAuthorResolver(nil))
 	if err != nil {
 		t.Fatalf("CountAuthors: %v", err)
 	}
@@ -275,21 +276,19 @@ func TestCountAuthors_SameEmailDifferentNames(t *testing.T) {
 
 func TestCountAuthors_TransitiveMerge(t *testing.T) {
 	dir := initGitRepo(t)
-	// A shares name with B (both "Alice"), B shares email with C
-	// A: "Alice" <alice@work.com>
-	// B: "Alice" <alice@personal.com>
-	// C: "A. Smith" <alice@personal.com>
-	// All three should merge to 1 person via transitive chain.
+	// With the fallback resolver (email-as-ID), each unique email is a separate author.
+	// Transitive merges by name only happen with an explicit AuthorConfig.
 	commitFile(t, dir, "a.go", "package a\n", "Alice", "alice@work.com")
 	commitFile(t, dir, "b.go", "package b\n", "Alice", "alice@personal.com")
 	commitFile(t, dir, "c.go", "package c\n", "A. Smith", "alice@personal.com")
 
-	count, err := CountAuthors(context.Background(), dir)
+	count, err := CountAuthors(context.Background(), dir, NewAuthorResolver(nil))
 	if err != nil {
 		t.Fatalf("CountAuthors: %v", err)
 	}
-	if count != 1 {
-		t.Errorf("count = %d, want 1 (transitive merge: name→name→email)", count)
+	// Fallback resolver: alice@work.com and alice@personal.com are separate IDs.
+	if count != 2 {
+		t.Errorf("count = %d, want 2 (fallback resolver: each unique email is a separate author)", count)
 	}
 }
 
@@ -298,7 +297,7 @@ func TestCountAuthors_FiltersBots(t *testing.T) {
 	commitFile(t, dir, "a.go", "package a\n", "Alice", "alice@example.com")
 	commitFile(t, dir, "b.go", "package b\n", "dependabot[bot]", "dependabot[bot]@users.noreply.github.com")
 
-	count, err := CountAuthors(context.Background(), dir)
+	count, err := CountAuthors(context.Background(), dir, NewAuthorResolver(nil))
 	if err != nil {
 		t.Fatalf("CountAuthors: %v", err)
 	}
@@ -316,7 +315,7 @@ func TestCountAuthors_MinimumOne(t *testing.T) {
 		t.Fatalf("git commit: %s: %v", out, err)
 	}
 
-	count, err := CountAuthors(context.Background(), dir)
+	count, err := CountAuthors(context.Background(), dir, NewAuthorResolver(nil))
 	if err != nil {
 		t.Fatalf("CountAuthors: %v", err)
 	}
@@ -464,7 +463,7 @@ func TestProjectActualPersonMonths_SingleAuthor(t *testing.T) {
 	commitFileWithDate(t, dir, "a.go", "package a\n", "Alice", "alice@example.com", "2025-01-01T12:00:00+00:00")
 	commitFileWithDate(t, dir, "b.go", "package a\n", "Alice", "alice@example.com", "2025-04-01T12:00:00+00:00")
 
-	pm, err := ProjectActualPersonMonths(context.Background(), dir, dir)
+	pm, err := ProjectActualPersonMonths(context.Background(), dir, dir, NewAuthorResolver(nil))
 	if err != nil {
 		t.Fatalf("ProjectActualPersonMonths: %v", err)
 	}
@@ -486,7 +485,7 @@ func TestProjectActualPersonMonths_TwoAuthors_DifferentDurations(t *testing.T) {
 	commitFileWithDate(t, dir, "b1.go", "package a\nvar y = 1\n", "Bob", "bob@example.com", "2025-03-01T12:00:00+00:00")
 	commitFileWithDate(t, dir, "b2.go", "package a\nvar z = 1\n", "Bob", "bob@example.com", "2025-04-01T12:00:00+00:00")
 
-	pm, err := ProjectActualPersonMonths(context.Background(), dir, dir)
+	pm, err := ProjectActualPersonMonths(context.Background(), dir, dir, NewAuthorResolver(nil))
 	if err != nil {
 		t.Fatalf("ProjectActualPersonMonths: %v", err)
 	}
@@ -515,7 +514,7 @@ func TestProjectActualPersonMonths_SingleCommitAuthor(t *testing.T) {
 	// Author with a single commit should get minimum 0.1 months
 	commitFileWithDate(t, dir, "a.go", "package a\n", "Alice", "alice@example.com", "2025-01-01T12:00:00+00:00")
 
-	pm, err := ProjectActualPersonMonths(context.Background(), dir, dir)
+	pm, err := ProjectActualPersonMonths(context.Background(), dir, dir, NewAuthorResolver(nil))
 	if err != nil {
 		t.Fatalf("ProjectActualPersonMonths: %v", err)
 	}
@@ -532,7 +531,7 @@ func TestProjectActualPersonMonths_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := ProjectActualPersonMonths(ctx, dir, dir)
+	_, err := ProjectActualPersonMonths(ctx, dir, dir, NewAuthorResolver(nil))
 	if err == nil {
 		t.Fatal("expected error from cancelled context")
 	}
@@ -574,7 +573,8 @@ func TestGitDirAuthors(t *testing.T) {
 	commitFileWithDate(t, dir, "b.go", "package a\nvar x = 1\n", "Alice", "alice@example.com", "2025-06-01T12:00:00+00:00")
 	commitFileWithDate(t, dir, "c.go", "package a\nvar y = 1\n", "Bob", "bob@example.com", "2025-03-01T12:00:00+00:00")
 
-	authors, err := gitDirAuthors(context.Background(), dir)
+	resolver := NewAuthorResolver(nil)
+	authors, err := gitDirAuthors(context.Background(), dir, resolver)
 	if err != nil {
 		t.Fatalf("gitDirAuthors: %v", err)
 	}
@@ -583,17 +583,18 @@ func TestGitDirAuthors(t *testing.T) {
 		t.Fatalf("got %d authors, want 2", len(authors))
 	}
 
-	alice, ok := authors["alice"]
+	// With fallback resolver, keys are lowercase emails.
+	alice, ok := authors["alice@example.com"]
 	if !ok {
-		t.Fatal("missing alice")
+		t.Fatal("missing alice@example.com")
 	}
 	if alice.earliest.IsZero() || alice.latest.IsZero() {
 		t.Error("alice dates should be non-zero")
 	}
 
-	bob, ok := authors["bob"]
+	bob, ok := authors["bob@example.com"]
 	if !ok {
-		t.Fatal("missing bob")
+		t.Fatal("missing bob@example.com")
 	}
 	if bob.earliest.IsZero() {
 		t.Error("bob earliest should be non-zero")
@@ -619,7 +620,8 @@ func TestCampaignActualPersonMonths_DeduplicatesAcrossRepos(t *testing.T) {
 		{Name: "project2", GitDir: repo2, SCCDir: repo2},
 	}
 
-	campaignPM, err := CampaignActualPersonMonths(ctx, projects)
+	resolver := NewAuthorResolver(nil)
+	campaignPM, err := CampaignActualPersonMonths(ctx, projects, resolver)
 	if err != nil {
 		t.Fatalf("CampaignActualPersonMonths: %v", err)
 	}
@@ -630,8 +632,8 @@ func TestCampaignActualPersonMonths_DeduplicatesAcrossRepos(t *testing.T) {
 	}
 
 	// Must be less than naive sum of per-project PMs
-	pm1, _ := ProjectActualPersonMonths(ctx, repo1, repo1)
-	pm2, _ := ProjectActualPersonMonths(ctx, repo2, repo2)
+	pm1, _ := ProjectActualPersonMonths(ctx, repo1, repo1, resolver)
+	pm2, _ := ProjectActualPersonMonths(ctx, repo2, repo2, resolver)
 	naiveSum := pm1 + pm2
 	if campaignPM >= naiveSum {
 		t.Errorf("campaign PM (%.2f) should be less than naive sum (%.2f)", campaignPM, naiveSum)
@@ -651,13 +653,14 @@ func TestCampaignActualPersonMonths_DeduplicatesMonorepo(t *testing.T) {
 		{Name: "sub2", GitDir: repo, SCCDir: repo + "/sub2", InMonorepo: true},
 	}
 
-	campaignPM, err := CampaignActualPersonMonths(ctx, projects)
+	resolver := NewAuthorResolver(nil)
+	campaignPM, err := CampaignActualPersonMonths(ctx, projects, resolver)
 	if err != nil {
 		t.Fatalf("CampaignActualPersonMonths: %v", err)
 	}
 
 	// Single author, ~6 months. Should NOT be doubled.
-	singlePM, _ := ProjectActualPersonMonths(ctx, repo, repo)
+	singlePM, _ := ProjectActualPersonMonths(ctx, repo, repo, resolver)
 	if math.Abs(campaignPM-singlePM) > 0.5 {
 		t.Errorf("campaignPM = %.2f, singlePM = %.2f; monorepo should not double-count", campaignPM, singlePM)
 	}
@@ -686,7 +689,7 @@ func TestCampaignActualPersonMonths_MultipleAuthors(t *testing.T) {
 		{Name: "project2", GitDir: repo2, SCCDir: repo2},
 	}
 
-	campaignPM, err := CampaignActualPersonMonths(ctx, projects)
+	campaignPM, err := CampaignActualPersonMonths(ctx, projects, NewAuthorResolver(nil))
 	if err != nil {
 		t.Fatalf("CampaignActualPersonMonths: %v", err)
 	}
@@ -706,7 +709,7 @@ func TestCampaignActualPersonMonths_ContextCancelled(t *testing.T) {
 	cancel()
 
 	projects := []ResolvedProject{{Name: "p", GitDir: "/tmp/nonexistent"}}
-	_, err := CampaignActualPersonMonths(ctx, projects)
+	_, err := CampaignActualPersonMonths(ctx, projects, NewAuthorResolver(nil))
 	if err == nil {
 		t.Fatal("expected error from cancelled context")
 	}
@@ -719,7 +722,7 @@ func TestBlameWeightedPersonMonths_SingleAuthor(t *testing.T) {
 	commitFileWithDate(t, dir, "main.go", "package main\n\nfunc main() {\n}\n", "Alice", "alice@example.com", "2025-01-01T12:00:00+00:00")
 	commitFileWithDate(t, dir, "util.go", "package main\n\nvar X = 1\n", "Alice", "alice@example.com", "2025-04-01T12:00:00+00:00")
 
-	pm, authors, err := BlameWeightedPersonMonths(context.Background(), dir, dir)
+	pm, authors, err := BlameWeightedPersonMonths(context.Background(), dir, dir, NewAuthorResolver(nil))
 	if err != nil {
 		t.Fatalf("BlameWeightedPersonMonths: %v", err)
 	}
@@ -753,7 +756,7 @@ func TestBlameWeightedPersonMonths_MixedContributions(t *testing.T) {
 	commitFileWithDate(t, dir, "b.go", "package a\n\nfunc B() {\n}\n", "Bob", "bob@example.com", "2025-03-01T12:00:00+00:00")
 	commitFileWithDate(t, dir, "b2.go", "package a\n", "Bob", "bob@example.com", "2025-04-01T12:00:00+00:00")
 
-	pm, authors, err := BlameWeightedPersonMonths(context.Background(), dir, dir)
+	pm, authors, err := BlameWeightedPersonMonths(context.Background(), dir, dir, NewAuthorResolver(nil))
 	if err != nil {
 		t.Fatalf("BlameWeightedPersonMonths: %v", err)
 	}
@@ -791,7 +794,7 @@ func TestBlameWeightedPersonMonths_FiltersBelowOnePercent(t *testing.T) {
 	commitFileWithDate(t, dir, "tiny.go", "package a\n", "Bob", "bob@example.com", "2025-01-01T12:00:00+00:00")
 	commitFileWithDate(t, dir, "tiny2.go", "package a\n", "Bob", "bob@example.com", "2025-09-01T12:00:00+00:00")
 
-	pm, authors, err := BlameWeightedPersonMonths(context.Background(), dir, dir)
+	pm, authors, err := BlameWeightedPersonMonths(context.Background(), dir, dir, NewAuthorResolver(nil))
 	if err != nil {
 		t.Fatalf("BlameWeightedPersonMonths: %v", err)
 	}
@@ -814,7 +817,7 @@ func TestBlameWeightedPersonMonths_SingleCommitAuthor(t *testing.T) {
 	dir := initGitRepo(t)
 	commitFileWithDate(t, dir, "a.go", "package a\n", "Alice", "alice@example.com", "2025-01-01T12:00:00+00:00")
 
-	pm, _, err := BlameWeightedPersonMonths(context.Background(), dir, dir)
+	pm, _, err := BlameWeightedPersonMonths(context.Background(), dir, dir, NewAuthorResolver(nil))
 	if err != nil {
 		t.Fatalf("BlameWeightedPersonMonths: %v", err)
 	}
@@ -832,7 +835,7 @@ func TestBlameWeightedPersonMonths_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, _, err := BlameWeightedPersonMonths(ctx, dir, dir)
+	_, _, err := BlameWeightedPersonMonths(ctx, dir, dir, NewAuthorResolver(nil))
 	if err == nil {
 		t.Fatal("expected error from cancelled context")
 	}

@@ -129,9 +129,14 @@ func displayLeverageConfig(cmd *cobra.Command, ctx context.Context, root, config
 
 	// Show project inclusion status with git-detected author counts
 	resolved, _ := leverage.ResolveProjects(ctx, root, cfg)
+	// Load resolver for accurate author counting; fall back to email-as-ID if not configured.
+	authResolver := leverage.NewAuthorResolver(nil)
+	if authCfg, loadErr := leverage.LoadAuthorConfig(leverage.DefaultAuthorsPath(root)); loadErr == nil && authCfg != nil {
+		authResolver = leverage.NewAuthorResolver(authCfg)
+	}
 	authorCounts := make(map[string]int)
 	for _, proj := range resolved {
-		count, err := leverage.CountAuthors(ctx, proj.GitDir)
+		count, err := leverage.CountAuthors(ctx, proj.GitDir, authResolver)
 		if err == nil {
 			authorCounts[proj.Name] = count
 		}
