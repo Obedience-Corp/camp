@@ -218,9 +218,39 @@ func blameFile(ctx context.Context, dir, file string, accum map[string]*authorAc
 	return nil
 }
 
+// unionFind implements a simple union-find (disjoint set) for author deduplication.
+type unionFind struct {
+	parent []int
+}
+
+func newUnionFind(n int) *unionFind {
+	p := make([]int, n)
+	for i := range p {
+		p[i] = i
+	}
+	return &unionFind{parent: p}
+}
+
+func (uf *unionFind) find(x int) int {
+	for uf.parent[x] != x {
+		uf.parent[x] = uf.parent[uf.parent[x]] // path compression
+		x = uf.parent[x]
+	}
+	return x
+}
+
+func (uf *unionFind) union(x, y int) {
+	rx, ry := uf.find(x), uf.find(y)
+	if rx != ry {
+		uf.parent[rx] = ry
+	}
+}
+
 // CountAuthors returns the number of distinct human authors for a git repo.
 // Uses git shortlog for speed (no blame needed). Filters bot accounts and
-// deduplicates email aliases (same name = 1 person). Returns minimum 1.
+// deduplicates identities sharing either a normalized name or an email address,
+// with transitive merging (A shares name with B, B shares email with C → all
+// one person). Returns minimum 1.
 func CountAuthors(ctx context.Context, gitDir string) (int, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
@@ -232,8 +262,12 @@ func CountAuthors(ctx context.Context, gitDir string) (int, error) {
 		return 1, nil // fallback: assume 1 author
 	}
 
-	// Parse "  123\tName <email>" lines
-	names := make(map[string]bool)
+	// Collect all (name, email) identity pairs from shortlog.
+	type identity struct {
+		name  string
+		email string
+	}
+	var ids []identity
 	scanner := bufio.NewScanner(strings.NewReader(string(out)))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -247,24 +281,53 @@ func CountAuthors(ctx context.Context, gitDir string) (int, error) {
 			continue
 		}
 
-		nameEmail := strings.TrimSpace(parts[1])
-		name, email := parseNameEmail(nameEmail)
-
+		name, email := parseNameEmail(strings.TrimSpace(parts[1]))
 		if isBotEmail(email) {
 			continue
 		}
 
-		// Deduplicate by normalized name
 		normName := normalizeName(name)
-		if normName != "" {
-			names[normName] = true
+		if normName == "" {
+			continue
+		}
+
+		ids = append(ids, identity{
+			name:  normName,
+			email: strings.ToLower(strings.TrimSpace(email)),
+		})
+	}
+
+	if len(ids) == 0 {
+		return 1, nil
+	}
+
+	// Union-find: merge identities sharing either name or email.
+	uf := newUnionFind(len(ids))
+	nameFirst := make(map[string]int)  // normalized name → first index
+	emailFirst := make(map[string]int) // email → first index
+
+	for i, id := range ids {
+		if prev, ok := nameFirst[id.name]; ok {
+			uf.union(i, prev)
+		} else {
+			nameFirst[id.name] = i
+		}
+		if id.email != "" {
+			if prev, ok := emailFirst[id.email]; ok {
+				uf.union(i, prev)
+			} else {
+				emailFirst[id.email] = i
+			}
 		}
 	}
 
-	if len(names) == 0 {
-		return 1, nil
+	// Count distinct roots.
+	roots := make(map[int]bool)
+	for i := range ids {
+		roots[uf.find(i)] = true
 	}
-	return len(names), nil
+
+	return len(roots), nil
 }
 
 // AuthorHasCommits returns true if the given author email has commits in the repo.
