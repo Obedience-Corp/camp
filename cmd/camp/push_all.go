@@ -1,8 +1,6 @@
 package main
 
 import (
-	"fmt"
-
 	"github.com/obediencecorp/camp/internal/campaign"
 	"github.com/spf13/cobra"
 )
@@ -33,7 +31,7 @@ func runPushAllCmd(cmd *cobra.Command, args []string) error {
 
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign: %w", err)
+		return err
 	}
 
 	return runPushAll(ctx, campRoot, args)

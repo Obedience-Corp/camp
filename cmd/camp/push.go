@@ -50,7 +50,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign: %w", err)
+		return err
 	}
 
 	// Extract camp-specific flags, pass rest to git
