@@ -55,6 +55,60 @@ func TestMockRunner_Error(t *testing.T) {
 	}
 }
 
+func TestMergeExcludeDirs(t *testing.T) {
+	tests := []struct {
+		name     string
+		defaults []string
+		extras   []string
+		want     []string
+	}{
+		{
+			name:     "defaults only",
+			defaults: []string{"node_modules", "vendor"},
+			extras:   nil,
+			want:     []string{"node_modules", "vendor"},
+		},
+		{
+			name:     "extras only",
+			defaults: nil,
+			extras:   []string{"submodule-a"},
+			want:     []string{"submodule-a"},
+		},
+		{
+			name:     "deduplicates overlapping entries",
+			defaults: []string{"node_modules", "vendor"},
+			extras:   []string{"vendor", "custom"},
+			want:     []string{"node_modules", "vendor", "custom"},
+		},
+		{
+			name:     "both empty",
+			defaults: nil,
+			extras:   nil,
+			want:     []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := mergeExcludeDirs(tt.defaults, tt.extras)
+			if len(got) != len(tt.want) {
+				t.Fatalf("length mismatch: got %d, want %d\ngot:  %v\nwant: %v", len(got), len(tt.want), got, tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("index %d: got %q, want %q", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestDefaultExcludeDirs_NotEmpty(t *testing.T) {
+	if len(DefaultExcludeDirs) == 0 {
+		t.Fatal("DefaultExcludeDirs should not be empty")
+	}
+}
+
 func TestNewSCCRunner(t *testing.T) {
 	// scc is installed on this machine, so this should succeed.
 	runner, err := NewSCCRunner(COCOMOOrganic)
