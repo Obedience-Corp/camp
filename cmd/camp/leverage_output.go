@@ -51,6 +51,44 @@ func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores
 		fmt.Fprintln(out)
 	}
 
+	// Project table
+	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.CategoryColor)
+
+	headers := []string{"PROJECT", "FILES", "CODE", "AUTHORS", "EST COST", "EST PM", "ACTUAL PM", "LEVERAGE"}
+	rows := buildScoreRows(scores)
+
+	t := table.New().
+		Border(lipgloss.ASCIIBorder()).
+		BorderStyle(lipgloss.NewStyle().Foreground(ui.DimColor)).
+		Headers(headers...).
+		Rows(rows...).
+		StyleFunc(func(row, col int) lipgloss.Style {
+			if row == table.HeaderRow {
+				return headerStyle
+			}
+			switch col {
+			case 0: // PROJECT
+				return lipgloss.NewStyle().Foreground(ui.AccentColor)
+			case 4: // EST COST
+				return lipgloss.NewStyle().Foreground(ui.WarningColor)
+			case 7: // LEVERAGE
+				return lipgloss.NewStyle().Foreground(ui.SuccessColor)
+			default:
+				return lipgloss.NewStyle()
+			}
+		})
+
+	fmt.Fprintln(out, t)
+
+	if !noLegend {
+		fmt.Fprintln(out)
+		fmt.Fprintln(out, ui.Dim("Leverage = estimated effort / actual effort (COCOMO organic model via scc)"))
+		fmt.Fprintln(out, ui.Dim("Scores are for personal tracking — they vary widely by project type, language,"))
+		fmt.Fprintln(out, ui.Dim("and team. Use them to measure your own trends, not to compare across teams."))
+	}
+
+	fmt.Fprintln(out)
+
 	// Header: headline leverage number
 	if opts.authorFilter != "" {
 		fmt.Fprintf(out, "%s %s  %s\n\n",
@@ -117,43 +155,6 @@ func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores
 	}
 	fmt.Fprintf(out, "  %s\n", ui.Dim(summaryParts))
 	fmt.Fprintf(out, "  %s\n", ui.Dim("Since "+cfg.ProjectStart.Format("Jan 2, 2006")))
-	fmt.Fprintln(out)
-
-	// Project table
-	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.CategoryColor)
-
-	headers := []string{"PROJECT", "FILES", "CODE", "AUTHORS", "EST COST", "EST PM", "ACTUAL PM", "LEVERAGE"}
-	rows := buildScoreRows(scores)
-
-	t := table.New().
-		Border(lipgloss.ASCIIBorder()).
-		BorderStyle(lipgloss.NewStyle().Foreground(ui.DimColor)).
-		Headers(headers...).
-		Rows(rows...).
-		StyleFunc(func(row, col int) lipgloss.Style {
-			if row == table.HeaderRow {
-				return headerStyle
-			}
-			switch col {
-			case 0: // PROJECT
-				return lipgloss.NewStyle().Foreground(ui.AccentColor)
-			case 4: // EST COST
-				return lipgloss.NewStyle().Foreground(ui.WarningColor)
-			case 7: // LEVERAGE
-				return lipgloss.NewStyle().Foreground(ui.SuccessColor)
-			default:
-				return lipgloss.NewStyle()
-			}
-		})
-
-	fmt.Fprintln(out, t)
-
-	if !noLegend {
-		fmt.Fprintln(out)
-		fmt.Fprintln(out, ui.Dim("Leverage = estimated effort / actual effort (COCOMO organic model via scc)"))
-		fmt.Fprintln(out, ui.Dim("Scores are for personal tracking — they vary widely by project type, language,"))
-		fmt.Fprintln(out, ui.Dim("and team. Use them to measure your own trends, not to compare across teams."))
-	}
 	return nil
 }
 
