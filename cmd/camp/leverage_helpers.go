@@ -114,7 +114,7 @@ func initLeverageSetup(ctx context.Context) (*leverageSetup, error) {
 //   - Tier C: No cache → full compute and save
 //
 // Falls back to the test-injected populateMetrics if set.
-func runPopulateMetrics(ctx context.Context, campaignRoot string, resolved []leverage.ResolvedProject, resolver *leverage.AuthorResolver) {
+func runPopulateMetrics(ctx context.Context, campaignRoot string, resolved []leverage.ResolvedProject, resolver *leverage.AuthorResolver, verbose bool) {
 	if populateMetrics != nil {
 		populateMetrics(ctx, campaignRoot, resolved, resolver)
 		return
@@ -145,7 +145,9 @@ func runPopulateMetrics(ctx context.Context, campaignRoot string, resolved []lev
 		switch {
 		case entry != nil && entry.CommitHash == hash && entry.SCCDir == p.SCCDir:
 			// Tier A: exact match.
-			fmt.Fprintf(os.Stderr, "  %s (%d/%d) cached\n", p.Name, i+1, total)
+			if verbose {
+				fmt.Fprintf(os.Stderr, "  %s (%d/%d) cached\n", p.Name, i+1, total)
+			}
 			// Always recompute author count (fast git shortlog call) so
 			// deduplication improvements take effect without cache busting.
 			if count, err := leverage.CountAuthors(ctx, p.GitDir, resolver); err == nil {
@@ -203,7 +205,9 @@ func runPopulateMetrics(ctx context.Context, campaignRoot string, resolved []lev
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "  Blame: %d cached, %d incremental, %d full\n", cached, incremental, full)
+	if verbose || incremental > 0 || full > 0 {
+		fmt.Fprintf(os.Stderr, "  Blame: %d cached, %d incremental, %d full\n", cached, incremental, full)
+	}
 }
 
 // initRunner returns the SCC runner (test-injected or newly created from config).
@@ -217,13 +221,13 @@ func initRunner(cfg *leverage.LeverageConfig) (leverage.Runner, error) {
 // resolveAndPopulateProjects resolves campaign projects, populates git metrics,
 // and optionally filters by author. Returns the resolved projects and the count
 // of projects excluded by the author filter.
-func resolveAndPopulateProjects(ctx context.Context, root string, cfg *leverage.LeverageConfig, resolver *leverage.AuthorResolver, authorFilter string) ([]leverage.ResolvedProject, int, error) {
+func resolveAndPopulateProjects(ctx context.Context, root string, cfg *leverage.LeverageConfig, resolver *leverage.AuthorResolver, authorFilter string, verbose bool) ([]leverage.ResolvedProject, int, error) {
 	resolved, err := leverage.ResolveProjects(ctx, root, cfg)
 	if err != nil {
 		return nil, 0, fmt.Errorf("resolving projects: %w", err)
 	}
 
-	runPopulateMetrics(ctx, root, resolved, resolver)
+	runPopulateMetrics(ctx, root, resolved, resolver, verbose)
 
 	var authorExcluded int
 	if authorFilter != "" {

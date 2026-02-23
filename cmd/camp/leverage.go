@@ -82,7 +82,7 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	resolved, authorExcluded, err := resolveAndPopulateProjects(ctx, setup.Root, cfg, setup.Resolver, authorFilter)
+	resolved, authorExcluded, err := resolveAndPopulateProjects(ctx, setup.Root, cfg, setup.Resolver, authorFilter, verbose)
 	if err != nil {
 		return err
 	}

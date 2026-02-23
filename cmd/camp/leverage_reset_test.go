@@ -76,7 +76,7 @@ func TestLeverageReset_ClearsAllSnapshots(t *testing.T) {
 		t.Fatalf("command failed: %v\noutput: %s", err, output)
 	}
 
-	if !strings.Contains(output, "Cleared all leverage snapshots") {
+	if !strings.Contains(output, "Cleared all cached leverage data") {
 		t.Errorf("unexpected output: %s", output)
 	}
 	if !strings.Contains(output, "camp leverage backfill") {
@@ -102,7 +102,7 @@ func TestLeverageReset_ClearsProjectOnly(t *testing.T) {
 		t.Fatalf("command failed: %v\noutput: %s", err, output)
 	}
 
-	if !strings.Contains(output, `Cleared snapshots for project "camp"`) {
+	if !strings.Contains(output, `Cleared cached data for project "camp"`) {
 		t.Errorf("unexpected output: %s", output)
 	}
 
@@ -136,7 +136,7 @@ func TestLeverageReset_NoSnapshots(t *testing.T) {
 		t.Fatalf("command failed: %v\noutput: %s", err, output)
 	}
 
-	if !strings.Contains(output, "No snapshots to clear") {
-		t.Errorf("expected 'No snapshots to clear', got: %s", output)
+	if !strings.Contains(output, "No cached data to clear") {
+		t.Errorf("expected 'No cached data to clear', got: %s", output)
 	}
 }
