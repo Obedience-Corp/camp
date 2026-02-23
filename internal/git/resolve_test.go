@@ -190,6 +190,32 @@ func TestExtractSubFlags_ProjectAtEnd(t *testing.T) {
 	}
 }
 
+func TestHasPullStrategyFlag(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{"nil args", nil, false},
+		{"empty args", []string{}, false},
+		{"unrelated flags", []string{"--verbose", "-q"}, false},
+		{"rebase", []string{"--rebase"}, true},
+		{"no-rebase", []string{"--no-rebase"}, true},
+		{"ff-only", []string{"--ff-only"}, true},
+		{"ff", []string{"--ff"}, true},
+		{"no-ff", []string{"--no-ff"}, true},
+		{"strategy mixed with others", []string{"--verbose", "--rebase", "-q"}, true},
+		{"prefix should not match", []string{"--rebase-merges"}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := HasPullStrategyFlag(tt.args); got != tt.want {
+				t.Errorf("HasPullStrategyFlag(%v) = %v, want %v", tt.args, got, tt.want)
+			}
+		})
+	}
+}
+
 func initGitRepo(t *testing.T, dir string) {
 	t.Helper()
 	cmd := exec.Command("git", "init", dir)

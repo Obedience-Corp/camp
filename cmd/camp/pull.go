@@ -64,6 +64,13 @@ func runPull(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(os.Stderr, ui.Info(fmt.Sprintf("Submodule: %s", target.Name)))
 	}
 
+	// Default to --rebase when no pull strategy is specified.
+	// Campaigns are often worked on across multiple machines, making
+	// divergent branches common. Rebase keeps history linear.
+	if !git.HasPullStrategyFlag(gitArgs) {
+		gitArgs = append([]string{"--rebase"}, gitArgs...)
+	}
+
 	fullArgs := append([]string{"-C", target.Path, "pull"}, gitArgs...)
 	gitCmd := exec.CommandContext(ctx, "git", fullArgs...)
 	gitCmd.Stdout = os.Stdout
@@ -90,6 +97,11 @@ func runPullAll(ctx context.Context, campRoot string, gitArgs []string) error {
 
 	fmt.Println(ui.Info("Pulling all repos..."))
 	fmt.Println()
+
+	// Default to --rebase when no pull strategy is specified.
+	if !git.HasPullStrategyFlag(gitArgs) {
+		gitArgs = append([]string{"--rebase"}, gitArgs...)
+	}
 
 	// Discover submodules
 	paths, err := git.ListSubmodulePathsFiltered(ctx, campRoot, "projects/")
@@ -156,7 +168,9 @@ func runPullAll(ctx context.Context, campRoot string, gitArgs []string) error {
 		if err != nil {
 			fmt.Println(red.Render("failed"))
 			errMsg := strings.TrimSpace(string(output))
-			if errMsg == "" {
+			if isDivergentError(errMsg) {
+				errMsg = "branches diverged (try: camp pull all --rebase or resolve manually)"
+			} else if errMsg == "" {
 				errMsg = err.Error()
 			}
 			errors = append(errors, fmt.Sprintf("  %s: %s", t.name, errMsg))
@@ -193,4 +207,11 @@ func runPullAll(ctx context.Context, campRoot string, gitArgs []string) error {
 		return fmt.Errorf("%d repo(s) failed to pull", failed)
 	}
 	return nil
+}
+
+// isDivergentError checks if git output indicates divergent branches.
+func isDivergentError(output string) bool {
+	lower := strings.ToLower(output)
+	return strings.Contains(lower, "divergent branches") ||
+		strings.Contains(lower, "need to specify how to reconcile")
 }

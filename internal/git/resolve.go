@@ -96,6 +96,18 @@ func resolveFromCwd(_ context.Context, campaignRoot string) (*TargetResult, erro
 	}, nil
 }
 
+// HasPullStrategyFlag reports whether gitArgs contains a pull reconciliation
+// strategy flag (--rebase, --no-rebase, --ff-only, --ff, --no-ff).
+func HasPullStrategyFlag(gitArgs []string) bool {
+	for _, arg := range gitArgs {
+		switch arg {
+		case "--rebase", "--no-rebase", "--ff-only", "--ff", "--no-ff":
+			return true
+		}
+	}
+	return false
+}
+
 // ExtractSubFlags extracts --sub and --project/-p flags from a raw args slice.
 // Returns the remaining args (to pass to git) and the flag values.
 // This is used by commands with DisableFlagParsing that need to extract
