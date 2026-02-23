@@ -143,10 +143,10 @@ func TestIntegration_PullAll_DivergentBranchesRebase(t *testing.T) {
 	run(t, "git", "-C", subDir, "add", ".")
 	run(t, "git", "-C", subDir, "commit", "-m", "Local commit")
 
-	// Default pull (no flags) should succeed via rebase
-	err := runPullAll(ctx, campDir, nil)
+	// Explicit --rebase should succeed on divergent branches
+	err := runPullAll(ctx, campDir, []string{"--rebase"})
 	if err != nil {
-		t.Fatalf("runPullAll() should succeed with default rebase on divergent branches: %v", err)
+		t.Fatalf("runPullAll(--rebase) should succeed on divergent branches: %v", err)
 	}
 
 	// Verify both files exist (remote pulled + local preserved)
@@ -157,6 +157,27 @@ func TestIntegration_PullAll_DivergentBranchesRebase(t *testing.T) {
 	localFile := filepath.Join(subDir, "local.txt")
 	if _, err := os.Stat(localFile); os.IsNotExist(err) {
 		t.Error("local.txt was lost after rebase")
+	}
+}
+
+func TestIntegration_PullAll_DivergentBranchesDefaultFails(t *testing.T) {
+	campDir, bareDir := setupCampaignWithSubmodule(t)
+	ctx := context.Background()
+
+	// Push a new commit to the bare remote (creates remote-only change)
+	pushCommitToBare(t, bareDir, "remote.txt", "remote content", "Remote commit")
+
+	// Create a local commit in the submodule (creates divergence)
+	subDir := filepath.Join(campDir, "projects", "test-project")
+	os.WriteFile(filepath.Join(subDir, "local.txt"), []byte("local content"), 0644)
+	run(t, "git", "-C", subDir, "add", ".")
+	run(t, "git", "-C", subDir, "commit", "-m", "Local commit")
+
+	// Default pull (no strategy) should fail on divergent branches
+	// (git requires the user to specify a reconciliation strategy)
+	err := runPullAll(ctx, campDir, nil)
+	if err == nil {
+		t.Fatal("runPullAll() should fail with divergent branches and no strategy")
 	}
 }
 
@@ -174,7 +195,6 @@ func TestIntegration_PullAll_ExplicitFfOnlyOverride(t *testing.T) {
 	run(t, "git", "-C", subDir, "commit", "-m", "Local commit")
 
 	// Explicit --ff-only should fail on divergent branches
-	// (proves user flags override the default --rebase)
 	err := runPullAll(ctx, campDir, []string{"--ff-only"})
 	if err == nil {
 		t.Fatal("runPullAll(--ff-only) should fail with divergent branches")
@@ -198,5 +218,46 @@ func TestIntegration_PullAll_PassesThroughGitFlags(t *testing.T) {
 	ffFile := filepath.Join(campDir, "projects", "test-project", "ff-file.txt")
 	if _, err := os.Stat(ffFile); os.IsNotExist(err) {
 		t.Error("ff-file.txt was not pulled with --ff-only")
+	}
+}
+
+func TestIntegration_PullAll_RebaseConflictAutoAborts(t *testing.T) {
+	campDir, bareDir := setupCampaignWithSubmodule(t)
+	ctx := context.Background()
+
+	// Push a commit to remote that modifies README.md
+	cloneDir := t.TempDir()
+	run(t, "git", "clone", bareDir, cloneDir)
+	run(t, "git", "-C", cloneDir, "config", "user.email", "test@test.com")
+	run(t, "git", "-C", cloneDir, "config", "user.name", "Test")
+	os.WriteFile(filepath.Join(cloneDir, "README.md"), []byte("# Remote Version"), 0644)
+	run(t, "git", "-C", cloneDir, "add", ".")
+	run(t, "git", "-C", cloneDir, "commit", "-m", "Remote change to README")
+	run(t, "git", "-C", cloneDir, "push", "origin", "main")
+
+	// Create a conflicting local commit in the submodule
+	subDir := filepath.Join(campDir, "projects", "test-project")
+	os.WriteFile(filepath.Join(subDir, "README.md"), []byte("# Local Version"), 0644)
+	run(t, "git", "-C", subDir, "add", ".")
+	run(t, "git", "-C", subDir, "commit", "-m", "Local change to README")
+
+	// Pull with --rebase should fail on the submodule (conflict) but auto-abort
+	err := runPullAll(ctx, campDir, []string{"--rebase"})
+	if err == nil {
+		t.Fatal("expected error from rebase conflict, got nil")
+	}
+
+	// Verify the submodule is NOT left in a rebase-in-progress state
+	if isRebaseInProgress(ctx, subDir) {
+		t.Error("submodule should not be in rebase-in-progress state after pull all")
+	}
+
+	// Verify the submodule is on a clean branch (not detached, not rebasing)
+	branch, err := gitOutput(ctx, subDir, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		t.Fatalf("failed to get branch: %v", err)
+	}
+	if branch == "HEAD" {
+		t.Error("submodule should not be in detached HEAD state after abort")
 	}
 }

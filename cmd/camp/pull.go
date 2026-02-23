@@ -27,14 +27,16 @@ Use --sub to pull the submodule detected from your current directory.
 Use --project/-p to pull a specific project.
 Use 'camp pull all' to pull all repos with upstream tracking.
 
+Any git pull flags are passed through (e.g. --rebase, --ff-only).
+
 Examples:
-  camp pull                    # Pull current branch
+  camp pull                    # Pull current branch (merge)
   camp pull --rebase           # Pull with rebase
   camp pull --ff-only          # Fast-forward only
   camp pull --sub              # Pull current submodule
   camp pull -p projects/camp   # Pull camp project
   camp pull all                # Pull all repos
-  camp pull all --rebase       # Pull all repos with rebase`,
+  camp pull all --ff-only      # Pull all repos, fast-forward only`,
 	RunE:               runPull,
 	DisableFlagParsing: true,
 }
@@ -64,20 +66,28 @@ func runPull(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(os.Stderr, ui.Info(fmt.Sprintf("Submodule: %s", target.Name)))
 	}
 
-	// Default to --rebase when no pull strategy is specified.
-	// Campaigns are often worked on across multiple machines, making
-	// divergent branches common. Rebase keeps history linear.
-	if !git.HasPullStrategyFlag(gitArgs) {
-		gitArgs = append([]string{"--rebase"}, gitArgs...)
-	}
-
 	fullArgs := append([]string{"-C", target.Path, "pull"}, gitArgs...)
 	gitCmd := exec.CommandContext(ctx, "git", fullArgs...)
 	gitCmd.Stdout = os.Stdout
 	gitCmd.Stderr = os.Stderr
 	gitCmd.Stdin = os.Stdin
 
-	return gitCmd.Run()
+	if err := gitCmd.Run(); err != nil {
+		// Suppress cobra's usage output — this isn't a usage error.
+		cmd.SilenceUsage = true
+
+		if isRebaseInProgress(ctx, target.Path) {
+			fmt.Fprintln(os.Stderr)
+			fmt.Fprintln(os.Stderr, ui.Warning("Rebase conflict in "+target.Name))
+			fmt.Fprintln(os.Stderr, "  To abort:        git rebase --abort")
+			fmt.Fprintln(os.Stderr, "  To resolve:      fix conflicts, git add, git rebase --continue")
+			fmt.Fprintln(os.Stderr, "  To retry merge:  camp pull --no-rebase")
+		}
+
+		return err
+	}
+
+	return nil
 }
 
 // pullTarget holds information about a repo to potentially pull.
@@ -97,11 +107,6 @@ func runPullAll(ctx context.Context, campRoot string, gitArgs []string) error {
 
 	fmt.Println(ui.Info("Pulling all repos..."))
 	fmt.Println()
-
-	// Default to --rebase when no pull strategy is specified.
-	if !git.HasPullStrategyFlag(gitArgs) {
-		gitArgs = append([]string{"--rebase"}, gitArgs...)
-	}
 
 	// Discover submodules
 	paths, err := git.ListSubmodulePathsFiltered(ctx, campRoot, "projects/")
@@ -166,10 +171,20 @@ func runPullAll(ctx context.Context, campRoot string, gitArgs []string) error {
 		gitCmd := exec.CommandContext(ctx, "git", pullArgs...)
 		output, err := gitCmd.CombinedOutput()
 		if err != nil {
+			// If a rebase failed mid-way, abort it so the repo isn't left
+			// in a broken state. We can't stop to resolve during a batch.
+			if isRebaseInProgress(ctx, t.path) {
+				_ = abortRebase(ctx, t.path)
+				fmt.Println(red.Render("conflict (aborted rebase)"))
+				errors = append(errors, fmt.Sprintf("  %s: rebase conflict (try: camp pull -p %s --no-rebase)", t.name, t.name))
+				failed++
+				continue
+			}
+
 			fmt.Println(red.Render("failed"))
 			errMsg := strings.TrimSpace(string(output))
 			if isDivergentError(errMsg) {
-				errMsg = "branches diverged (try: camp pull all --rebase or resolve manually)"
+				errMsg = "branches diverged (try: camp pull all --ff-only, --rebase, or resolve manually)"
 			} else if errMsg == "" {
 				errMsg = err.Error()
 			}
@@ -214,4 +229,31 @@ func isDivergentError(output string) bool {
 	lower := strings.ToLower(output)
 	return strings.Contains(lower, "divergent branches") ||
 		strings.Contains(lower, "need to specify how to reconcile")
+}
+
+// isRebaseInProgress checks whether a git rebase is in progress for the repo
+// at the given path by looking for rebase-merge or rebase-apply directories.
+func isRebaseInProgress(ctx context.Context, repoPath string) bool {
+	gitDir, err := gitOutput(ctx, repoPath, "rev-parse", "--git-dir")
+	if err != nil {
+		return false
+	}
+
+	// Make gitDir absolute relative to repoPath if it's relative.
+	if !filepath.IsAbs(gitDir) {
+		gitDir = filepath.Join(repoPath, gitDir)
+	}
+
+	for _, dir := range []string{"rebase-merge", "rebase-apply"} {
+		if info, err := os.Stat(filepath.Join(gitDir, dir)); err == nil && info.IsDir() {
+			return true
+		}
+	}
+	return false
+}
+
+// abortRebase runs git rebase --abort for the repo at the given path.
+func abortRebase(ctx context.Context, repoPath string) error {
+	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "rebase", "--abort")
+	return cmd.Run()
 }
