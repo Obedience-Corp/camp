@@ -27,14 +27,16 @@ Use --sub to pull the submodule detected from your current directory.
 Use --project/-p to pull a specific project.
 Use 'camp pull all' to pull all repos with upstream tracking.
 
+Any git pull flags are passed through (e.g. --rebase, --ff-only).
+
 Examples:
-  camp pull                    # Pull current branch
+  camp pull                    # Pull current branch (merge)
   camp pull --rebase           # Pull with rebase
   camp pull --ff-only          # Fast-forward only
   camp pull --sub              # Pull current submodule
   camp pull -p projects/camp   # Pull camp project
   camp pull all                # Pull all repos
-  camp pull all --rebase       # Pull all repos with rebase`,
+  camp pull all --ff-only      # Pull all repos, fast-forward only`,
 	RunE:               runPull,
 	DisableFlagParsing: true,
 }
@@ -62,13 +64,6 @@ func runPull(cmd *cobra.Command, args []string) error {
 
 	if target.IsSubmodule {
 		fmt.Fprintln(os.Stderr, ui.Info(fmt.Sprintf("Submodule: %s", target.Name)))
-	}
-
-	// Default to --rebase when no pull strategy is specified.
-	// Campaigns are often worked on across multiple machines, making
-	// divergent branches common. Rebase keeps history linear.
-	if !git.HasPullStrategyFlag(gitArgs) {
-		gitArgs = append([]string{"--rebase"}, gitArgs...)
 	}
 
 	fullArgs := append([]string{"-C", target.Path, "pull"}, gitArgs...)
@@ -112,11 +107,6 @@ func runPullAll(ctx context.Context, campRoot string, gitArgs []string) error {
 
 	fmt.Println(ui.Info("Pulling all repos..."))
 	fmt.Println()
-
-	// Default to --rebase when no pull strategy is specified.
-	if !git.HasPullStrategyFlag(gitArgs) {
-		gitArgs = append([]string{"--rebase"}, gitArgs...)
-	}
 
 	// Discover submodules
 	paths, err := git.ListSubmodulePathsFiltered(ctx, campRoot, "projects/")
@@ -194,7 +184,7 @@ func runPullAll(ctx context.Context, campRoot string, gitArgs []string) error {
 			fmt.Println(red.Render("failed"))
 			errMsg := strings.TrimSpace(string(output))
 			if isDivergentError(errMsg) {
-				errMsg = "branches diverged (try: camp pull all --rebase or resolve manually)"
+				errMsg = "branches diverged (try: camp pull all --ff-only, --rebase, or resolve manually)"
 			} else if errMsg == "" {
 				errMsg = err.Error()
 			}
