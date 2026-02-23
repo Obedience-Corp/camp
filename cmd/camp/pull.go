@@ -1,0 +1,187 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/obediencecorp/camp/internal/campaign"
+	"github.com/obediencecorp/camp/internal/git"
+	"github.com/obediencecorp/camp/internal/ui"
+	"github.com/spf13/cobra"
+)
+
+var pullCmd = &cobra.Command{
+	Use:   "pull [flags] [remote] [branch]",
+	Short: "Pull latest changes from remote",
+	Long: `Pull latest changes from the remote repository.
+
+Works from anywhere within the campaign - always pulls to
+the campaign root repository.
+
+Use --sub to pull the submodule detected from your current directory.
+Use --project/-p to pull a specific project.
+Use 'camp pull all' to pull all repos with upstream tracking.
+
+Examples:
+  camp pull                    # Pull current branch
+  camp pull --rebase           # Pull with rebase
+  camp pull --ff-only          # Fast-forward only
+  camp pull --sub              # Pull current submodule
+  camp pull -p projects/camp   # Pull camp project
+  camp pull all                # Pull all repos
+  camp pull all --rebase       # Pull all repos with rebase`,
+	RunE:               runPull,
+	DisableFlagParsing: true,
+}
+
+func init() {
+	rootCmd.AddCommand(pullCmd)
+	pullCmd.GroupID = "git"
+}
+
+func runPull(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+
+	campRoot, err := campaign.DetectCached(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Extract camp-specific flags, pass rest to git
+	gitArgs, sub, project := git.ExtractSubFlags(args)
+
+	target, err := git.ResolveTarget(ctx, campRoot, sub, project)
+	if err != nil {
+		return fmt.Errorf("failed to resolve target: %w", err)
+	}
+
+	if target.IsSubmodule {
+		fmt.Fprintln(os.Stderr, ui.Info(fmt.Sprintf("Submodule: %s", target.Name)))
+	}
+
+	fullArgs := append([]string{"-C", target.Path, "pull"}, gitArgs...)
+	gitCmd := exec.CommandContext(ctx, "git", fullArgs...)
+	gitCmd.Stdout = os.Stdout
+	gitCmd.Stderr = os.Stderr
+	gitCmd.Stdin = os.Stdin
+
+	return gitCmd.Run()
+}
+
+// pullTarget holds information about a repo to potentially pull.
+type pullTarget struct {
+	name   string
+	path   string
+	branch string
+}
+
+// runPullAll discovers all submodules + campaign root, and pulls them.
+func runPullAll(ctx context.Context, campRoot string, gitArgs []string) error {
+	green := lipgloss.NewStyle().Foreground(ui.SuccessColor)
+	yellow := lipgloss.NewStyle().Foreground(ui.WarningColor)
+	red := lipgloss.NewStyle().Foreground(ui.ErrorColor)
+	dim := lipgloss.NewStyle().Foreground(ui.DimColor)
+
+	fmt.Println(ui.Info("Pulling all repos..."))
+	fmt.Println()
+
+	// Discover submodules
+	paths, err := git.ListSubmodulePathsFiltered(ctx, campRoot, "projects/")
+	if err != nil {
+		return fmt.Errorf("failed to list submodules: %w", err)
+	}
+
+	// Build target list: campaign root first, then submodules
+	targets := make([]pullTarget, 0, len(paths)+1)
+	targets = append(targets, pullTarget{
+		name: "campaign root",
+		path: campRoot,
+	})
+	for _, p := range paths {
+		fullPath := filepath.Join(campRoot, p)
+		branch, _ := gitOutput(ctx, fullPath, "rev-parse", "--abbrev-ref", "HEAD")
+		targets = append(targets, pullTarget{
+			name:   filepath.Base(p),
+			path:   fullPath,
+			branch: branch,
+		})
+	}
+
+	// Get campaign root branch
+	targets[0].branch, _ = gitOutput(ctx, campRoot, "rev-parse", "--abbrev-ref", "HEAD")
+
+	// Pull each target
+	var pulled, skipped, failed int
+	var errors []string
+
+	for _, t := range targets {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		// Skip detached HEAD
+		if t.branch == "" || t.branch == "HEAD" {
+			fmt.Printf("  %-20s %s\n", t.name, yellow.Render("detached HEAD"))
+			skipped++
+			continue
+		}
+
+		// Skip repos with no upstream tracking
+		if _, err := gitOutput(ctx, t.path, "rev-parse", "--abbrev-ref", "@{upstream}"); err != nil {
+			fmt.Printf("  %-20s %s\n", t.name, yellow.Render("no upstream"))
+			skipped++
+			continue
+		}
+
+		fmt.Printf("  %-20s %s  pulling... ",
+			t.name, dim.Render(t.branch))
+
+		pullArgs := append([]string{"-C", t.path, "pull"}, gitArgs...)
+		gitCmd := exec.CommandContext(ctx, "git", pullArgs...)
+		output, err := gitCmd.CombinedOutput()
+		if err != nil {
+			fmt.Println(red.Render("failed"))
+			errMsg := strings.TrimSpace(string(output))
+			if errMsg == "" {
+				errMsg = err.Error()
+			}
+			errors = append(errors, fmt.Sprintf("  %s: %s", t.name, errMsg))
+			failed++
+			continue
+		}
+
+		// Check if anything was actually pulled
+		outStr := strings.TrimSpace(string(output))
+		if strings.Contains(outStr, "Already up to date") {
+			fmt.Println(dim.Render("up-to-date"))
+			skipped++
+		} else {
+			fmt.Println(green.Render("done"))
+			pulled++
+		}
+	}
+
+	// Summary
+	fmt.Println()
+	total := pulled + failed
+	if total == 0 {
+		fmt.Println(ui.Info("All repos are up-to-date, nothing to pull"))
+	} else if failed == 0 {
+		fmt.Println(green.Render(fmt.Sprintf("Pulled %d/%d repos successfully", pulled, total)))
+	} else {
+		fmt.Println(yellow.Render(fmt.Sprintf("Pulled %d/%d repos (%d failed)", pulled, total, failed)))
+		for _, e := range errors {
+			fmt.Println(red.Render(e))
+		}
+	}
+
+	if failed > 0 {
+		return fmt.Errorf("%d repo(s) failed to pull", failed)
+	}
+	return nil
+}
