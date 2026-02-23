@@ -78,6 +78,7 @@ type pullTarget struct {
 	name   string
 	path   string
 	branch string
+	isRoot bool // campaign root repo (skip recursive submodule fetch)
 }
 
 // runPullAll discovers all submodules + campaign root, and pulls them.
@@ -99,8 +100,9 @@ func runPullAll(ctx context.Context, campRoot string, gitArgs []string) error {
 	// Build target list: campaign root first, then submodules
 	targets := make([]pullTarget, 0, len(paths)+1)
 	targets = append(targets, pullTarget{
-		name: "campaign root",
-		path: campRoot,
+		name:   "campaign root",
+		path:   campRoot,
+		isRoot: true,
 	})
 	for _, p := range paths {
 		fullPath := filepath.Join(campRoot, p)
@@ -141,7 +143,14 @@ func runPullAll(ctx context.Context, campRoot string, gitArgs []string) error {
 		fmt.Printf("  %-20s %s  pulling... ",
 			t.name, dim.Render(t.branch))
 
-		pullArgs := append([]string{"-C", t.path, "pull"}, gitArgs...)
+		pullArgs := []string{"-C", t.path, "pull"}
+		if t.isRoot {
+			// Campaign root: skip recursive submodule fetch since we pull
+			// each submodule individually. Prevents failures from stale
+			// submodule refs that no longer exist on their remotes.
+			pullArgs = append(pullArgs, "--no-recurse-submodules")
+		}
+		pullArgs = append(pullArgs, gitArgs...)
 		gitCmd := exec.CommandContext(ctx, "git", pullArgs...)
 		output, err := gitCmd.CombinedOutput()
 		if err != nil {
