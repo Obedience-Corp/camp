@@ -130,6 +130,57 @@ func TestIntegration_PullAll_ContextCancellation(t *testing.T) {
 	}
 }
 
+func TestIntegration_PullAll_DivergentBranchesRebase(t *testing.T) {
+	campDir, bareDir := setupCampaignWithSubmodule(t)
+	ctx := context.Background()
+
+	// Push a new commit to the bare remote (creates remote-only change)
+	pushCommitToBare(t, bareDir, "remote.txt", "remote content", "Remote commit")
+
+	// Create a local commit in the submodule (creates divergence)
+	subDir := filepath.Join(campDir, "projects", "test-project")
+	os.WriteFile(filepath.Join(subDir, "local.txt"), []byte("local content"), 0644)
+	run(t, "git", "-C", subDir, "add", ".")
+	run(t, "git", "-C", subDir, "commit", "-m", "Local commit")
+
+	// Default pull (no flags) should succeed via rebase
+	err := runPullAll(ctx, campDir, nil)
+	if err != nil {
+		t.Fatalf("runPullAll() should succeed with default rebase on divergent branches: %v", err)
+	}
+
+	// Verify both files exist (remote pulled + local preserved)
+	remoteFile := filepath.Join(subDir, "remote.txt")
+	if _, err := os.Stat(remoteFile); os.IsNotExist(err) {
+		t.Error("remote.txt was not pulled")
+	}
+	localFile := filepath.Join(subDir, "local.txt")
+	if _, err := os.Stat(localFile); os.IsNotExist(err) {
+		t.Error("local.txt was lost after rebase")
+	}
+}
+
+func TestIntegration_PullAll_ExplicitFfOnlyOverride(t *testing.T) {
+	campDir, bareDir := setupCampaignWithSubmodule(t)
+	ctx := context.Background()
+
+	// Push a new commit to remote
+	pushCommitToBare(t, bareDir, "remote.txt", "remote content", "Remote commit")
+
+	// Create local divergence
+	subDir := filepath.Join(campDir, "projects", "test-project")
+	os.WriteFile(filepath.Join(subDir, "local.txt"), []byte("local content"), 0644)
+	run(t, "git", "-C", subDir, "add", ".")
+	run(t, "git", "-C", subDir, "commit", "-m", "Local commit")
+
+	// Explicit --ff-only should fail on divergent branches
+	// (proves user flags override the default --rebase)
+	err := runPullAll(ctx, campDir, []string{"--ff-only"})
+	if err == nil {
+		t.Fatal("runPullAll(--ff-only) should fail with divergent branches")
+	}
+}
+
 func TestIntegration_PullAll_PassesThroughGitFlags(t *testing.T) {
 	campDir, bareDir := setupCampaignWithSubmodule(t)
 	ctx := context.Background()
