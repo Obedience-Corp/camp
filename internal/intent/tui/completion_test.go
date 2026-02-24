@@ -138,9 +138,12 @@ func TestAtCompletionCandidates_EmptyQuery(t *testing.T) {
 	sc := testShortcuts()
 	candidates := atCompletionCandidates("", "/tmp/nonexistent", sc)
 
-	// Should return all unique paths sorted
+	// Should return unique paths sorted, capped at maxCompletionCandidates
 	if len(candidates) == 0 {
 		t.Fatal("expected candidates for empty query")
+	}
+	if len(candidates) > maxCompletionCandidates {
+		t.Errorf("expected at most %d candidates, got %d", maxCompletionCandidates, len(candidates))
 	}
 
 	// Should be sorted
@@ -154,12 +157,12 @@ func TestAtCompletionCandidates_EmptyQuery(t *testing.T) {
 	// Should contain real paths, not shortcode keys
 	found := false
 	for _, c := range candidates {
-		if c == "@workflow/design/" {
+		if c == "@docs/" {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("expected @workflow/design/ in candidates, got %v", candidates)
+		t.Errorf("expected @docs/ in candidates, got %v", candidates)
 	}
 }
 

@@ -20,7 +20,7 @@ type completionState struct {
 }
 
 // maxCompletionCandidates limits the displayed candidate list.
-const maxCompletionCandidates = 8
+const maxCompletionCandidates = 4
 
 // atCompletionCandidates returns completion candidates for an @ prefix query.
 // query is the text after @ (e.g., "", "de", "workflow/", "workflow/design/arch").
@@ -38,6 +38,9 @@ func atCompletionCandidates(query, campaignRoot string, shortcuts map[string]str
 			}
 		}
 		sort.Strings(out)
+		if len(out) > maxCompletionCandidates {
+			out = out[:maxCompletionCandidates]
+		}
 		return out
 	}
 
@@ -58,6 +61,9 @@ func atCompletionCandidates(query, campaignRoot string, shortcuts map[string]str
 			}
 		}
 		sort.Strings(out)
+		if len(out) > maxCompletionCandidates {
+			out = out[:maxCompletionCandidates]
+		}
 		return out
 	}
 
