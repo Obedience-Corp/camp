@@ -28,10 +28,11 @@ const (
 
 // AddOptions configures the IntentAddModel behavior.
 type AddOptions struct {
-	DefaultType  string // Default intent type (e.g., "idea")
-	FullMode     bool   // Include body textarea step
-	Author       string // Auto-populated author (e.g., from git config)
-	CampaignRoot string // Campaign root for @ completion
+	DefaultType  string            // Default intent type (e.g., "idea")
+	FullMode     bool              // Include body textarea step
+	Author       string            // Auto-populated author (e.g., from git config)
+	CampaignRoot string            // Campaign root for @ completion
+	Shortcuts    map[string]string // Navigation shortcuts (key → campaign-relative path, e.g., "de" → "workflow/design/")
 }
 
 // AddResult contains the collected intent data.
@@ -68,6 +69,7 @@ type IntentAddModel struct {
 	defaultType  string
 	author       string
 	campaignRoot string
+	shortcuts    map[string]string // key → campaign-relative path
 
 	// Completion state
 	completion completionState
@@ -127,6 +129,7 @@ func NewIntentAddModel(ctx context.Context, conceptSvc concept.Service, opts Add
 		defaultType:  opts.DefaultType,
 		author:       opts.Author,
 		campaignRoot: opts.CampaignRoot,
+		shortcuts:    opts.Shortcuts,
 	}
 }
 
@@ -235,6 +238,9 @@ func (m IntentAddModel) updateTitle(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.titleInput, cmd = m.titleInput.Update(msg)
 
+	// Auto-expand shortcut on '/' key (e.g., @de/ → @workflow/design/)
+	m.autoExpandTitleShortcut()
+
 	// Update completion state for title input
 	m.updateTitleCompletion()
 
@@ -256,7 +262,7 @@ func (m *IntentAddModel) updateTitleCompletion() {
 		return
 	}
 
-	candidates := atCompletionCandidates(query, m.campaignRoot)
+	candidates := atCompletionCandidates(query, m.campaignRoot, m.shortcuts)
 	if len(candidates) == 0 {
 		m.completion.active = false
 		return
@@ -268,6 +274,43 @@ func (m *IntentAddModel) updateTitleCompletion() {
 	m.completion.candidates = candidates
 	if m.completion.selected >= len(candidates) {
 		m.completion.selected = 0
+	}
+}
+
+// autoExpandTitleShortcut checks if the user just typed '/' after a shortcut key
+// in the title input and expands it to the real path inline.
+func (m *IntentAddModel) autoExpandTitleShortcut() {
+	if len(m.shortcuts) == 0 {
+		return
+	}
+
+	val := m.titleInput.Value()
+	pos := m.titleInput.Position()
+	if pos == 0 || pos > len(val) {
+		return
+	}
+	// The character just typed must be '/'
+	if val[pos-1] != '/' {
+		return
+	}
+
+	// Walk backwards from pos-1 to find @
+	for i := pos - 2; i >= 0; i-- {
+		ch := val[i]
+		if ch == '@' {
+			key := val[i+1 : pos-1] // text between @ and /
+			if expanded, ok := m.shortcuts[key]; ok {
+				// Replace @key/ with @path
+				newVal := val[:i] + "@" + expanded + val[pos:]
+				newCursor := i + 1 + len(expanded)
+				m.titleInput.SetValue(newVal)
+				m.titleInput.SetCursor(newCursor)
+			}
+			return
+		}
+		if ch == ' ' || ch == '\t' {
+			return
+		}
 	}
 }
 
@@ -449,6 +492,9 @@ func (m IntentAddModel) updateBody(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 
+	// Auto-expand shortcut on '/' key (e.g., @de/ → @workflow/design/)
+	m.autoExpandBodyShortcut()
+
 	// After vim processes the key, update completion state
 	m.updateCompletion()
 
@@ -482,7 +528,7 @@ func (m *IntentAddModel) updateCompletion() {
 		return
 	}
 
-	candidates := atCompletionCandidates(query, m.campaignRoot)
+	candidates := atCompletionCandidates(query, m.campaignRoot, m.shortcuts)
 	if len(candidates) == 0 {
 		m.completion.active = false
 		return
@@ -495,6 +541,53 @@ func (m *IntentAddModel) updateCompletion() {
 	m.completion.candidates = candidates
 	if m.completion.selected >= len(candidates) {
 		m.completion.selected = 0
+	}
+}
+
+// autoExpandBodyShortcut checks if the user just typed '/' after a shortcut key
+// in the body vim editor and expands it to the real path inline.
+func (m *IntentAddModel) autoExpandBodyShortcut() {
+	if len(m.shortcuts) == 0 || m.vimEditor.Mode() != vim.ModeInsert {
+		return
+	}
+
+	cur := m.vimEditor.Cursor()
+	content := m.vimEditor.Content()
+	if content == "" {
+		return
+	}
+
+	lines := strings.Split(content, "\n")
+	if cur.Line >= len(lines) {
+		return
+	}
+
+	line := lines[cur.Line]
+	col := cur.Col
+	if col == 0 || col > len(line) {
+		return
+	}
+	if line[col-1] != '/' {
+		return
+	}
+
+	// Walk backwards to find @
+	for i := col - 2; i >= 0; i-- {
+		ch := line[i]
+		if ch == '@' {
+			key := line[i+1 : col-1]
+			if expanded, ok := m.shortcuts[key]; ok {
+				newLine := line[:i] + "@" + expanded + line[col:]
+				lines[cur.Line] = newLine
+				m.vimEditor.SetContent(strings.Join(lines, "\n"))
+				newCol := i + 1 + len(expanded)
+				m.vimEditor.SetCursorInsert(vim.Position{Line: cur.Line, Col: newCol})
+			}
+			return
+		}
+		if ch == ' ' || ch == '\t' {
+			return
+		}
 	}
 }
 

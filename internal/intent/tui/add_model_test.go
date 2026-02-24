@@ -638,15 +638,16 @@ func TestIntentAddModel_TitleCompletion_AtTrigger(t *testing.T) {
 	ctx := context.Background()
 	svc := mockConceptService{}
 
-	m := NewIntentAddModel(ctx, svc, AddOptions{CampaignRoot: root})
+	shortcuts := map[string]string{"p": "projects/"}
+	m := NewIntentAddModel(ctx, svc, AddOptions{CampaignRoot: root, Shortcuts: shortcuts})
 
-	// Type "@p/"
+	// Type "@p/" — auto-expand replaces @p/ with @projects/
 	for _, char := range "@p/" {
 		model, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{char}})
 		m = model.(IntentAddModel)
 	}
 
-	// Completion should be active
+	// Completion should be active (expanded to @projects/, listing directory)
 	if !m.completion.active {
 		t.Fatal("Expected completion to be active after typing @p/")
 	}

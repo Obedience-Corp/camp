@@ -6,6 +6,21 @@ import (
 	"testing"
 )
 
+// testShortcuts returns a standard set of shortcuts for testing.
+func testShortcuts() map[string]string {
+	return map[string]string{
+		"p":  "projects/",
+		"f":  "festivals/",
+		"w":  "workflow/",
+		"d":  "docs/",
+		"a":  "ai_docs/",
+		"de": "workflow/design/",
+		"cr": "workflow/code_reviews/",
+		"du": "dungeon/",
+		"i":  "workflow/intents/",
+	}
+}
+
 func TestExtractAtQuery(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -119,11 +134,13 @@ func TestFuzzyContains(t *testing.T) {
 	}
 }
 
-func TestAtCompletionCandidates_TopLevel(t *testing.T) {
-	// Empty query should return top-level shortcuts
-	candidates := atCompletionCandidates("", "/tmp/nonexistent")
-	if len(candidates) != 4 {
-		t.Fatalf("expected 4 top-level candidates, got %d: %v", len(candidates), candidates)
+func TestAtCompletionCandidates_EmptyQuery(t *testing.T) {
+	sc := testShortcuts()
+	candidates := atCompletionCandidates("", "/tmp/nonexistent", sc)
+
+	// Should return all unique paths sorted
+	if len(candidates) == 0 {
+		t.Fatal("expected candidates for empty query")
 	}
 
 	// Should be sorted
@@ -133,58 +150,110 @@ func TestAtCompletionCandidates_TopLevel(t *testing.T) {
 			break
 		}
 	}
-}
 
-func TestAtCompletionCandidates_FuzzyTopLevel(t *testing.T) {
-	// "p" should match @p/
-	candidates := atCompletionCandidates("z", "/tmp/nonexistent")
-	if len(candidates) != 0 {
-		t.Errorf("expected no matches for 'z', got %v", candidates)
-	}
-
-	candidates = atCompletionCandidates("w", "/tmp/nonexistent")
-	// "w" matches @w/
+	// Should contain real paths, not shortcode keys
 	found := false
 	for _, c := range candidates {
-		if c == "@w/" {
+		if c == "@workflow/design/" {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("expected @w/ in candidates for 'w', got %v", candidates)
+		t.Errorf("expected @workflow/design/ in candidates, got %v", candidates)
+	}
+}
+
+func TestAtCompletionCandidates_FuzzyMatchKey(t *testing.T) {
+	sc := testShortcuts()
+
+	// "de" should match shortcut key "de" → @workflow/design/
+	candidates := atCompletionCandidates("de", "/tmp/nonexistent", sc)
+	found := false
+	for _, c := range candidates {
+		if c == "@workflow/design/" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected @workflow/design/ for query 'de', got %v", candidates)
+	}
+}
+
+func TestAtCompletionCandidates_FuzzyMatchPath(t *testing.T) {
+	sc := testShortcuts()
+
+	// "design" should fuzzy-match path "workflow/design/"
+	candidates := atCompletionCandidates("design", "/tmp/nonexistent", sc)
+	found := false
+	for _, c := range candidates {
+		if c == "@workflow/design/" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected @workflow/design/ for query 'design', got %v", candidates)
+	}
+}
+
+func TestAtCompletionCandidates_NoMatch(t *testing.T) {
+	sc := testShortcuts()
+	candidates := atCompletionCandidates("zzz", "/tmp/nonexistent", sc)
+	if len(candidates) != 0 {
+		t.Errorf("expected no matches for 'zzz', got %v", candidates)
+	}
+}
+
+func TestAtCompletionCandidates_FuzzyMatchMultiple(t *testing.T) {
+	sc := testShortcuts()
+
+	// "w" should match key "w" (workflow/) and "wt" would too if present
+	candidates := atCompletionCandidates("w", "/tmp/nonexistent", sc)
+	if len(candidates) == 0 {
+		t.Fatal("expected candidates for 'w'")
+	}
+
+	// Should include @workflow/ (direct key match)
+	found := false
+	for _, c := range candidates {
+		if c == "@workflow/" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected @workflow/ in candidates for 'w', got %v", candidates)
 	}
 }
 
 func TestAtCompletionCandidates_DirectoryListing(t *testing.T) {
-	// Create a temp campaign directory structure
 	root := t.TempDir()
 	projectsDir := filepath.Join(root, "projects")
 	os.MkdirAll(filepath.Join(projectsDir, "fest"), 0755)
 	os.MkdirAll(filepath.Join(projectsDir, "camp"), 0755)
 	os.WriteFile(filepath.Join(projectsDir, "README.md"), []byte("hi"), 0644)
 
-	// @p/ should list directory contents
-	candidates := atCompletionCandidates("p/", root)
+	sc := testShortcuts()
+
+	// "projects/" should list directory contents (after shortcut expanded)
+	candidates := atCompletionCandidates("projects/", root, sc)
 	if len(candidates) < 2 {
-		t.Fatalf("expected at least 2 candidates for @p/, got %d: %v", len(candidates), candidates)
+		t.Fatalf("expected at least 2 candidates for projects/, got %d: %v", len(candidates), candidates)
 	}
 
-	// Should contain camp/ and fest/ as directories
 	foundCamp := false
 	foundFest := false
 	for _, c := range candidates {
-		if c == "@p/camp/" {
+		if c == "@projects/camp/" {
 			foundCamp = true
 		}
-		if c == "@p/fest/" {
+		if c == "@projects/fest/" {
 			foundFest = true
 		}
 	}
 	if !foundCamp {
-		t.Errorf("expected @p/camp/ in candidates, got %v", candidates)
+		t.Errorf("expected @projects/camp/ in candidates, got %v", candidates)
 	}
 	if !foundFest {
-		t.Errorf("expected @p/fest/ in candidates, got %v", candidates)
+		t.Errorf("expected @projects/fest/ in candidates, got %v", candidates)
 	}
 }
 
@@ -195,13 +264,15 @@ func TestAtCompletionCandidates_FuzzyFilter(t *testing.T) {
 	os.MkdirAll(filepath.Join(projectsDir, "camp"), 0755)
 	os.MkdirAll(filepath.Join(projectsDir, "obey-daemon"), 0755)
 
-	// @p/fe should fuzzy-match fest
-	candidates := atCompletionCandidates("p/fe", root)
+	sc := testShortcuts()
+
+	// "projects/fe" should fuzzy-match fest within the projects/ directory
+	candidates := atCompletionCandidates("projects/fe", root, sc)
 	if len(candidates) != 1 {
-		t.Fatalf("expected 1 candidate for @p/fe, got %d: %v", len(candidates), candidates)
+		t.Fatalf("expected 1 candidate for projects/fe, got %d: %v", len(candidates), candidates)
 	}
-	if candidates[0] != "@p/fest/" {
-		t.Errorf("expected @p/fest/, got %s", candidates[0])
+	if candidates[0] != "@projects/fest/" {
+		t.Errorf("expected @projects/fest/, got %s", candidates[0])
 	}
 }
 
@@ -211,11 +282,73 @@ func TestAtCompletionCandidates_HiddenFilesExcluded(t *testing.T) {
 	os.MkdirAll(filepath.Join(projectsDir, ".hidden"), 0755)
 	os.MkdirAll(filepath.Join(projectsDir, "visible"), 0755)
 
-	candidates := atCompletionCandidates("p/", root)
+	sc := testShortcuts()
+	candidates := atCompletionCandidates("projects/", root, sc)
 	for _, c := range candidates {
-		if c == "@p/.hidden/" {
+		if c == "@projects/.hidden/" {
 			t.Error("hidden directory should be excluded from candidates")
 		}
+	}
+}
+
+func TestAtCompletionCandidates_NestedPath(t *testing.T) {
+	root := t.TempDir()
+	designDir := filepath.Join(root, "workflow", "design")
+	os.MkdirAll(filepath.Join(designDir, "architecture"), 0755)
+	os.MkdirAll(filepath.Join(designDir, "mockups"), 0755)
+
+	sc := testShortcuts()
+
+	// After expanding @de → @workflow/design/, further typing navigates the real path
+	candidates := atCompletionCandidates("workflow/design/", root, sc)
+	if len(candidates) < 2 {
+		t.Fatalf("expected at least 2 candidates for workflow/design/, got %d: %v", len(candidates), candidates)
+	}
+
+	foundArch := false
+	for _, c := range candidates {
+		if c == "@workflow/design/architecture/" {
+			foundArch = true
+		}
+	}
+	if !foundArch {
+		t.Errorf("expected @workflow/design/architecture/ in candidates, got %v", candidates)
+	}
+}
+
+func TestAtCompletionCandidates_NestedPathFilter(t *testing.T) {
+	root := t.TempDir()
+	designDir := filepath.Join(root, "workflow", "design")
+	os.MkdirAll(filepath.Join(designDir, "architecture"), 0755)
+	os.MkdirAll(filepath.Join(designDir, "mockups"), 0755)
+
+	sc := testShortcuts()
+
+	// "workflow/design/arch" should fuzzy-match architecture
+	candidates := atCompletionCandidates("workflow/design/arch", root, sc)
+	if len(candidates) != 1 {
+		t.Fatalf("expected 1 candidate for workflow/design/arch, got %d: %v", len(candidates), candidates)
+	}
+	if candidates[0] != "@workflow/design/architecture/" {
+		t.Errorf("expected @workflow/design/architecture/, got %s", candidates[0])
+	}
+}
+
+func TestAtCompletionCandidates_DeduplicatesPaths(t *testing.T) {
+	// Multiple shortcut keys can map to the same path
+	sc := map[string]string{
+		"d":    "docs/",
+		"docs": "docs/",
+	}
+	candidates := atCompletionCandidates("", "/tmp/nonexistent", sc)
+	count := 0
+	for _, c := range candidates {
+		if c == "@docs/" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("expected @docs/ exactly once, found %d times in %v", count, candidates)
 	}
 }
 
@@ -229,17 +362,17 @@ func TestCompletionView_Empty(t *testing.T) {
 func TestCompletionView_WithCandidates(t *testing.T) {
 	cs := &completionState{
 		active:     true,
-		candidates: []string{"@p/", "@w/", "@f/"},
+		candidates: []string{"@projects/", "@workflow/", "@festivals/"},
 		selected:   1,
 	}
 	view := completionView(cs)
 	if view == "" {
 		t.Error("completion view should not be empty with candidates")
 	}
-	if !containsText(view, "@p/") {
-		t.Error("view should contain @p/")
+	if !containsText(view, "@projects/") {
+		t.Error("view should contain @projects/")
 	}
-	if !containsText(view, "@w/") {
-		t.Error("view should contain @w/")
+	if !containsText(view, "@workflow/") {
+		t.Error("view should contain @workflow/")
 	}
 }

@@ -99,12 +99,21 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 		return runFastCapture(ctx, svc, cfg, campaignRoot, noCommit, opts)
 	}
 
+	// Build navigation shortcuts map (key → path) for @ completion
+	shortcuts := make(map[string]string)
+	for key, sc := range cfg.Shortcuts() {
+		if sc.HasPath() {
+			shortcuts[key] = sc.Path
+		}
+	}
+
 	// Run BubbleTea TUI
 	model, err := runIntentAddTUI(ctx, conceptSvc, tui.AddOptions{
 		DefaultType:  intentType,
 		FullMode:     fullMode,
 		Author:       author,
 		CampaignRoot: campaignRoot,
+		Shortcuts:    shortcuts,
 	})
 	if err != nil {
 		return err
