@@ -282,9 +282,11 @@ my-campaign/
 │   ├── api-service/
 │   └── web-app/
 ├── festivals/           # Festival methodology
+│   ├── planning/
 │   ├── active/
-│   ├── planned/
-│   └── completed/
+│   ├── ready/
+│   ├── ritual/
+│   └── dungeon/         # completed/, archived/, someday/
 ├── ai_docs/             # AI documentation
 ├── docs/                # Human documentation
 ├── corpus/              # Reference materials
