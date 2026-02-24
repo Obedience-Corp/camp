@@ -42,8 +42,8 @@ func TestAuthorResolver_Resolve(t *testing.T) {
 	}{
 		{"lance@blockhead.consulting", "lance"},
 		{"lancekrogers@gmail.com", "lance"},
-		{"LANCE@blockhead.consulting", "lance"},    // case insensitive
-		{" lancekrogers@gmail.com ", "lance"},      // trimmed
+		{"LANCE@blockhead.consulting", "lance"},        // case insensitive
+		{" lancekrogers@gmail.com ", "lance"},          // trimmed
 		{"unknown@example.com", "unknown@example.com"}, // fallback
 	}
 
@@ -57,7 +57,7 @@ func TestAuthorResolver_Resolve(t *testing.T) {
 func TestAuthorResolver_DisplayName(t *testing.T) {
 	cfg := &AuthorConfig{
 		Authors: map[string]AuthorIdentity{
-			"lance": {DisplayName: "Lance Rogers", Emails: []string{"lance@example.com"}},
+			"lance":   {DisplayName: "Lance Rogers", Emails: []string{"lance@example.com"}},
 			"no-name": {Emails: []string{"anon@example.com"}},
 		},
 	}

@@ -118,6 +118,41 @@ func (s *Store) FindByPath(path string) (Pin, bool) {
 	return Pin{}, false
 }
 
+// ToggleResult describes what happened during a toggle operation.
+type ToggleResult int
+
+const (
+	// Pinned indicates a new pin was created.
+	Pinned ToggleResult = iota
+	// Unpinned indicates an existing pin was removed (same path toggle).
+	Unpinned
+	// Updated indicates an existing pin's path was changed.
+	Updated
+)
+
+// Toggle adds, removes, or updates a pin by name.
+// If name does not exist: adds it (returns Pinned).
+// If name exists with the same path: removes it (returns Unpinned).
+// If name exists with a different path: updates the path (returns Updated).
+func (s *Store) Toggle(name, path string) ToggleResult {
+	for i, p := range s.pins {
+		if p.Name == name {
+			if p.Path == path {
+				s.pins = append(s.pins[:i], s.pins[i+1:]...)
+				return Unpinned
+			}
+			s.pins[i].Path = path
+			return Updated
+		}
+	}
+	s.pins = append(s.pins, Pin{
+		Name:      name,
+		Path:      path,
+		CreatedAt: time.Now(),
+	})
+	return Pinned
+}
+
 // Names returns all pin names (for tab completion).
 func (s *Store) Names() []string {
 	names := make([]string, len(s.pins))

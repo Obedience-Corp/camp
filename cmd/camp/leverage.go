@@ -242,4 +242,3 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 	}
 	return leverageOutputTable(cmd, agg, scores, cfg, setup.AutoDetected, recent, opts)
 }
-

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -69,5 +70,27 @@ func runLog(cmd *cobra.Command, args []string) error {
 	gitCmd.Stderr = os.Stderr
 	gitCmd.Stdin = os.Stdin
 
-	return gitCmd.Run()
+	err = gitCmd.Run()
+	if err != nil && !isSigpipeError(err) {
+		return err
+	}
+	return nil
+}
+
+// isSigpipeError returns true if the error is caused by SIGPIPE (broken pipe).
+// This occurs when the pager exits before git finishes writing output.
+func isSigpipeError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, syscall.EPIPE) {
+		return true
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		if status, ok := exitErr.Sys().(syscall.WaitStatus); ok {
+			return status.Signal() == syscall.SIGPIPE
+		}
+	}
+	return false
 }

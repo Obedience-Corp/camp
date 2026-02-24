@@ -1,3 +1,52 @@
 # {{ .campaign_name }}
 
-A campaign workspace.
+{{ if .campaign_description }}{{ .campaign_description }}{{ else }}A campaign workspace managed by camp CLI.{{ end }}
+{{ if .campaign_mission }}
+## Mission
+
+{{ .campaign_mission }}
+{{ end }}
+## Directory Structure
+
+```text
+.
+├── .campaign/          Campaign configuration and settings
+├── projects/           Project repositories (submodules or worktrees)
+├── festivals/          Festival methodology planning workspace
+├── docs/               Human-authored documentation
+├── ai_docs/            AI-generated documentation and research
+├── workflow/           Workflow management (intents, reviews, pipelines)
+│   ├── intents/        Intent documents
+│   ├── code_reviews/   Code review notes
+│   ├── design/         Design documents
+│   └── pipelines/      CI/CD definitions
+├── dungeon/            Archived and deprioritized work
+├── AGENTS.md           AI agent instructions
+└── CLAUDE.md           Symlink to AGENTS.md
+```
+
+## Getting Started
+
+This campaign is managed with the **camp** CLI.
+
+```bash
+# Navigation
+camp go <shortcut>       # Jump to a shortcut location
+camp p <project>         # Jump to a project directory
+camp pins                # List pinned directories
+
+# Project management
+camp projects            # List all registered projects
+camp project add <path>  # Register a new project
+
+# Shortcuts
+camp shortcuts           # List all shortcuts
+camp shortcuts add       # Add a new shortcut (interactive)
+
+# Workflow
+camp log                 # Show campaign git log
+camp intent              # Manage intent documents
+
+# Help
+camp --help              # Full command reference
+```

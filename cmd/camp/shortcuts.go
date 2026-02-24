@@ -38,31 +38,43 @@ You can customize shortcuts by editing .campaign/campaign.yaml.`,
 }
 
 var shortcutsAddCmd = &cobra.Command{
-	Use:   "add [project] [name] [path]",
-	Short: "Add a sub-shortcut to a project",
-	Long: `Add a sub-shortcut to a project for quick directory navigation.
+	Use:   "add [name] [path] or [project] [name] [path]",
+	Short: "Add a shortcut (campaign-level or project sub-shortcut)",
+	Long: `Add a shortcut for quick navigation.
 
-The path is relative to the project root directory.
-Use 'default' as the shortcut name to set the default jump location.
+Campaign-level shortcut (2 args):
+  Adds a navigation shortcut to .campaign/settings/jumps.yaml.
+  Usage: camp shortcuts add <name> <path>
 
-With no arguments, launches an interactive TUI for selecting the project
-and entering shortcut details.`,
-	Example: `  camp shortcuts add                            Interactive TUI mode
-  camp shortcuts add festival-methodology default fest/
-  camp shortcuts add festival-methodology cli fest/cmd/fest/
-  camp shortcuts add guild-core db db/migrations/`,
+Project sub-shortcut (3 args):
+  Adds a sub-directory shortcut within a project.
+  Usage: camp shortcuts add <project> <name> <path>
+
+With no arguments, launches an interactive TUI for entering
+shortcut details.`,
+	Example: `  camp shortcuts add                                  Interactive TUI mode
+  camp shortcuts add api projects/api-service/        Campaign shortcut
+  camp shortcuts add api projects/api/ -d "API svc"   With description
+  camp shortcuts add cfg "" -c config                 Concept-only shortcut
+  camp shortcuts add camp default cmd/camp/            Project sub-shortcut`,
 	Args: cobra.MaximumNArgs(3),
 	RunE: runShortcutsAdd,
 }
 
 var shortcutsRemoveCmd = &cobra.Command{
-	Use:   "remove <project> <name>",
-	Short: "Remove a sub-shortcut from a project",
-	Long:  `Remove a sub-shortcut from a project.`,
-	Example: `  camp shortcuts remove festival-methodology cli
-  camp shortcuts remove guild-core db`,
+	Use:   "remove <name> or <project> <name>",
+	Short: "Remove a shortcut (campaign-level or project sub-shortcut)",
+	Long: `Remove a shortcut.
+
+Campaign-level shortcut (1 arg):
+  Usage: camp shortcuts remove <name>
+
+Project sub-shortcut (2 args):
+  Usage: camp shortcuts remove <project> <name>`,
+	Example: `  camp shortcuts remove api                           Remove campaign shortcut
+  camp shortcuts remove festival-methodology cli      Remove project sub-shortcut`,
 	Aliases: []string{"rm"},
-	Args:    cobra.ExactArgs(2),
+	Args:    cobra.RangeArgs(1, 2),
 	RunE:    runShortcutsRemove,
 }
 
@@ -78,33 +90,6 @@ If no project is specified, lists all campaign shortcuts.`,
 	RunE: runShortcutsList,
 }
 
-var shortcutsAddJumpCmd = &cobra.Command{
-	Use:   "add-jump [name] [path]",
-	Short: "Add a campaign-level navigation shortcut",
-	Long: `Add a shortcut to .campaign/settings/jumps.yaml for quick navigation.
-
-The path is relative to the campaign root. If no path is provided (or empty),
-the shortcut will be concept-only (used for command expansion).
-
-With no arguments, launches an interactive TUI for entering shortcut details.`,
-	Example: `  camp shortcuts add-jump                          Interactive TUI mode
-  camp shortcuts add-jump api projects/api-service/
-  camp shortcuts add-jump api projects/api-service/ -d "Jump to API service"
-  camp shortcuts add-jump cfg "" -c config -d "Config commands"`,
-	Args: cobra.MaximumNArgs(2),
-	RunE: runShortcutsAddJump,
-}
-
-var shortcutsRemoveJumpCmd = &cobra.Command{
-	Use:     "remove-jump <name>",
-	Short:   "Remove a campaign-level shortcut",
-	Long:    `Remove a shortcut from .campaign/settings/jumps.yaml.`,
-	Example: `  camp shortcuts remove-jump api`,
-	Aliases: []string{"rm-jump"},
-	Args:    cobra.ExactArgs(1),
-	RunE:    runShortcutsRemoveJump,
-}
-
 func init() {
 	rootCmd.AddCommand(shortcutsCmd)
 	shortcutsCmd.GroupID = "navigation"
@@ -113,12 +98,10 @@ func init() {
 	shortcutsCmd.AddCommand(shortcutsAddCmd)
 	shortcutsCmd.AddCommand(shortcutsRemoveCmd)
 	shortcutsCmd.AddCommand(shortcutsListCmd)
-	shortcutsCmd.AddCommand(shortcutsAddJumpCmd)
-	shortcutsCmd.AddCommand(shortcutsRemoveJumpCmd)
 
-	// Flags for add-jump command
-	shortcutsAddJumpCmd.Flags().StringP("description", "d", "", "Help text for the shortcut")
-	shortcutsAddJumpCmd.Flags().StringP("concept", "c", "", "Command group for expansion (e.g., 'project')")
+	// Flags for campaign-level shortcuts (metadata, not scope selectors)
+	shortcutsAddCmd.Flags().StringP("description", "d", "", "Help text for the shortcut")
+	shortcutsAddCmd.Flags().StringP("concept", "c", "", "Command group for expansion")
 }
 
 func runShortcuts(cmd *cobra.Command, args []string) error {
@@ -253,8 +236,13 @@ func printAllShortcuts(cfg *config.CampaignConfig, _ string) error {
 	return nil
 }
 
-// runShortcutsAdd adds a sub-shortcut to a project.
+// runShortcutsAdd adds a campaign-level shortcut (2 args) or a project sub-shortcut (3 args).
 func runShortcutsAdd(cmd *cobra.Command, args []string) error {
+	// Campaign-level shortcut: 2 args
+	if len(args) == 2 {
+		return runShortcutsAddJump(cmd, args)
+	}
+
 	ctx := cmd.Context()
 
 	// Load campaign config
@@ -282,7 +270,7 @@ func runShortcutsAdd(cmd *cobra.Command, args []string) error {
 		shortcutName = args[1]
 		shortcutPath = args[2]
 	} else {
-		return fmt.Errorf("expected 0 or 3 arguments, got %d (use TUI mode with no args or provide all 3)", len(args))
+		return fmt.Errorf("expected 0, 2, or 3 arguments, got %d\n  2 args: camp shortcuts add <name> <path> (campaign shortcut)\n  3 args: camp shortcuts add <project> <name> <path> (project sub-shortcut)", len(args))
 	}
 
 	// Find the project (fuzzy match)
@@ -332,8 +320,13 @@ func runShortcutsAdd(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// runShortcutsRemove removes a sub-shortcut from a project.
+// runShortcutsRemove removes a campaign-level shortcut (1 arg) or a project sub-shortcut (2 args).
 func runShortcutsRemove(cmd *cobra.Command, args []string) error {
+	// Campaign-level shortcut: 1 arg
+	if len(args) == 1 {
+		return runShortcutsRemoveJump(cmd, args)
+	}
+
 	ctx := cmd.Context()
 	projectName := args[0]
 	shortcutName := args[1]

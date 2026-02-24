@@ -146,14 +146,19 @@ func runPin(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if err := store.Add(name, absPath); err != nil {
-		return err
-	}
+	result := store.Toggle(name, absPath)
 	if err := store.Save(); err != nil {
 		return err
 	}
 
-	fmt.Printf("Pinned %q → %s\n", name, absPath)
+	switch result {
+	case pins.Pinned:
+		fmt.Printf("Pinned %q → %s\n", name, absPath)
+	case pins.Unpinned:
+		fmt.Printf("Unpinned %q (was already pinned to same path)\n", name)
+	case pins.Updated:
+		fmt.Printf("Updated pin %q → %s\n", name, absPath)
+	}
 	return nil
 }
 
