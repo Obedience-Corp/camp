@@ -3,6 +3,7 @@ module github.com/obediencecorp/camp
 go 1.25.6
 
 require (
+	github.com/alecthomas/chroma/v2 v2.23.1
 	github.com/charmbracelet/bubbles v0.21.1
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/glamour v0.10.0
@@ -12,6 +13,7 @@ require (
 	github.com/ktr0731/go-fuzzyfinder v0.9.0
 	github.com/lancekrogers/guild-scaffold v0.0.0-20260127172326-92f4536360f3
 	github.com/muesli/termenv v0.16.0
+	github.com/obediencecorp/obey-shared v0.0.0-00010101000000-000000000000
 	github.com/sahilm/fuzzy v0.1.1
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
@@ -25,7 +27,6 @@ require (
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
-	github.com/alecthomas/chroma/v2 v2.23.1 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect

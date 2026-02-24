@@ -14,9 +14,13 @@ type Editor struct {
 	undoStack    *UndoStack
 	width        int
 	height       int
-	scrollOffset int    // First visible line
-	lastChange   string // For . command
+	scrollOffset int            // First visible line
+	lastChange   string         // For . command
+	syntax       *SyntaxStyler  // nil = no highlighting
 }
+
+// SetSyntax enables syntax highlighting for the editor content.
+func (e *Editor) SetSyntax(s *SyntaxStyler) { e.syntax = s }
 
 // NewEditor creates a new vim editor with the given content.
 func NewEditor(content string) *Editor {
