@@ -2,6 +2,7 @@ package commitkit_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -307,5 +308,335 @@ func TestSyncSubmoduleRef(t *testing.T) {
 		err := commitkit.SyncSubmoduleRef(ctx, parent, "sub", "testid")
 		require.Error(t, err)
 		assert.ErrorIs(t, err, context.Canceled)
+	})
+}
+
+// ---------------------------------------------------------------------------
+// StageAll
+// ---------------------------------------------------------------------------
+
+func TestStageAll(t *testing.T) {
+	t.Run("stages new and modified files", func(t *testing.T) {
+		dir := t.TempDir()
+		makeGitRepo(t, dir)
+
+		// Create a new file.
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "new.txt"), []byte("hello\n"), 0644))
+
+		err := commitkit.StageAll(context.Background(), dir)
+		require.NoError(t, err)
+
+		has, err := commitkit.HasStagedChanges(context.Background(), dir)
+		require.NoError(t, err)
+		assert.True(t, has)
+	})
+
+	t.Run("stages deletions", func(t *testing.T) {
+		dir := t.TempDir()
+		makeGitRepo(t, dir)
+
+		// Delete the README that was committed in makeGitRepo.
+		require.NoError(t, os.Remove(filepath.Join(dir, "README.md")))
+
+		err := commitkit.StageAll(context.Background(), dir)
+		require.NoError(t, err)
+
+		has, err := commitkit.HasStagedChanges(context.Background(), dir)
+		require.NoError(t, err)
+		assert.True(t, has)
+	})
+
+	t.Run("no-op on clean repo", func(t *testing.T) {
+		dir := t.TempDir()
+		makeGitRepo(t, dir)
+
+		err := commitkit.StageAll(context.Background(), dir)
+		require.NoError(t, err)
+
+		has, err := commitkit.HasStagedChanges(context.Background(), dir)
+		require.NoError(t, err)
+		assert.False(t, has)
+	})
+
+	t.Run("returns error on cancelled context", func(t *testing.T) {
+		dir := t.TempDir()
+		makeGitRepo(t, dir)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		err := commitkit.StageAll(ctx, dir)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, context.Canceled)
+	})
+
+	t.Run("succeeds with stale lock file", func(t *testing.T) {
+		dir := t.TempDir()
+		makeGitRepo(t, dir)
+
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "new.txt"), []byte("data\n"), 0644))
+
+		// Create a stale lock (no process holding it).
+		lockPath := filepath.Join(dir, ".git", "index.lock")
+		require.NoError(t, os.WriteFile(lockPath, []byte{}, 0644))
+
+		err := commitkit.StageAll(context.Background(), dir)
+		require.NoError(t, err)
+
+		// Lock should have been cleaned up.
+		_, err = os.Stat(lockPath)
+		assert.True(t, os.IsNotExist(err), "stale lock should be removed")
+	})
+}
+
+// ---------------------------------------------------------------------------
+// StageFiles
+// ---------------------------------------------------------------------------
+
+func TestStageFiles(t *testing.T) {
+	t.Run("stages specific file only", func(t *testing.T) {
+		dir := t.TempDir()
+		makeGitRepo(t, dir)
+
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\n"), 0644))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "b.txt"), []byte("b\n"), 0644))
+
+		err := commitkit.StageFiles(context.Background(), dir, "a.txt")
+		require.NoError(t, err)
+
+		// Verify only a.txt is staged by checking diff output.
+		out, err := exec.Command("git", "-C", dir, "diff", "--cached", "--name-only").Output()
+		require.NoError(t, err)
+		assert.Contains(t, string(out), "a.txt")
+		assert.NotContains(t, string(out), "b.txt")
+	})
+
+	t.Run("returns error on cancelled context", func(t *testing.T) {
+		dir := t.TempDir()
+		makeGitRepo(t, dir)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		err := commitkit.StageFiles(ctx, dir, "file.txt")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, context.Canceled)
+	})
+}
+
+// ---------------------------------------------------------------------------
+// HasStagedChanges
+// ---------------------------------------------------------------------------
+
+func TestHasStagedChanges(t *testing.T) {
+	t.Run("returns false on clean repo", func(t *testing.T) {
+		dir := t.TempDir()
+		makeGitRepo(t, dir)
+
+		has, err := commitkit.HasStagedChanges(context.Background(), dir)
+		require.NoError(t, err)
+		assert.False(t, has)
+	})
+
+	t.Run("returns true with staged changes", func(t *testing.T) {
+		dir := t.TempDir()
+		makeGitRepo(t, dir)
+
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "new.txt"), []byte("hello\n"), 0644))
+		_, err := exec.Command("git", "-C", dir, "add", "new.txt").CombinedOutput()
+		require.NoError(t, err)
+
+		has, err := commitkit.HasStagedChanges(context.Background(), dir)
+		require.NoError(t, err)
+		assert.True(t, has)
+	})
+
+	t.Run("returns false with only unstaged changes", func(t *testing.T) {
+		dir := t.TempDir()
+		makeGitRepo(t, dir)
+
+		// Modify existing file without staging.
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "README.md"), []byte("modified\n"), 0644))
+
+		has, err := commitkit.HasStagedChanges(context.Background(), dir)
+		require.NoError(t, err)
+		assert.False(t, has)
+	})
+
+	t.Run("returns error on cancelled context", func(t *testing.T) {
+		dir := t.TempDir()
+		makeGitRepo(t, dir)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		_, err := commitkit.HasStagedChanges(ctx, dir)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, context.Canceled)
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Commit
+// ---------------------------------------------------------------------------
+
+func TestCommit(t *testing.T) {
+	t.Run("commits staged changes", func(t *testing.T) {
+		dir := t.TempDir()
+		makeGitRepo(t, dir)
+
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "file.txt"), []byte("content\n"), 0644))
+		require.NoError(t, commitkit.StageAll(context.Background(), dir))
+
+		err := commitkit.Commit(context.Background(), dir, commitkit.CommitOptions{
+			Message: "test commit",
+		})
+		require.NoError(t, err)
+
+		// Verify the commit message.
+		out, err := exec.Command("git", "-C", dir, "log", "--oneline", "-1").Output()
+		require.NoError(t, err)
+		assert.Contains(t, string(out), "test commit")
+	})
+
+	t.Run("returns ErrNoChanges when nothing staged", func(t *testing.T) {
+		dir := t.TempDir()
+		makeGitRepo(t, dir)
+
+		err := commitkit.Commit(context.Background(), dir, commitkit.CommitOptions{
+			Message: "empty",
+		})
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, commitkit.ErrNoChanges))
+	})
+
+	t.Run("succeeds with stale lock file", func(t *testing.T) {
+		dir := t.TempDir()
+		makeGitRepo(t, dir)
+
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "file.txt"), []byte("data\n"), 0644))
+		require.NoError(t, commitkit.StageAll(context.Background(), dir))
+
+		// Create a stale lock (no process holding it).
+		lockPath := filepath.Join(dir, ".git", "index.lock")
+		require.NoError(t, os.WriteFile(lockPath, []byte{}, 0644))
+
+		err := commitkit.Commit(context.Background(), dir, commitkit.CommitOptions{
+			Message: "commit with lock",
+		})
+		require.NoError(t, err)
+
+		// Lock should have been cleaned up.
+		_, err = os.Stat(lockPath)
+		assert.True(t, os.IsNotExist(err), "stale lock should be removed")
+	})
+
+	t.Run("returns error on cancelled context", func(t *testing.T) {
+		dir := t.TempDir()
+		makeGitRepo(t, dir)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		err := commitkit.Commit(ctx, dir, commitkit.CommitOptions{Message: "msg"})
+		require.Error(t, err)
+		assert.ErrorIs(t, err, context.Canceled)
+	})
+}
+
+// ---------------------------------------------------------------------------
+// CommitAll
+// ---------------------------------------------------------------------------
+
+func TestCommitAll(t *testing.T) {
+	t.Run("stages and commits all changes", func(t *testing.T) {
+		dir := t.TempDir()
+		makeGitRepo(t, dir)
+
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("aaa\n"), 0644))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "b.txt"), []byte("bbb\n"), 0644))
+
+		err := commitkit.CommitAll(context.Background(), dir, "commit all test")
+		require.NoError(t, err)
+
+		// Verify the commit.
+		out, err := exec.Command("git", "-C", dir, "log", "--oneline", "-1").Output()
+		require.NoError(t, err)
+		assert.Contains(t, string(out), "commit all test")
+
+		// Verify clean working tree.
+		has, err := commitkit.HasStagedChanges(context.Background(), dir)
+		require.NoError(t, err)
+		assert.False(t, has)
+	})
+
+	t.Run("returns ErrNoChanges on clean repo", func(t *testing.T) {
+		dir := t.TempDir()
+		makeGitRepo(t, dir)
+
+		err := commitkit.CommitAll(context.Background(), dir, "nothing here")
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, commitkit.ErrNoChanges))
+	})
+
+	t.Run("returns error on cancelled context", func(t *testing.T) {
+		dir := t.TempDir()
+		makeGitRepo(t, dir)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		err := commitkit.CommitAll(ctx, dir, "msg")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, context.Canceled)
+	})
+}
+
+// ---------------------------------------------------------------------------
+// ShortHash
+// ---------------------------------------------------------------------------
+
+func TestShortHash(t *testing.T) {
+	t.Run("returns non-empty hash", func(t *testing.T) {
+		dir := t.TempDir()
+		makeGitRepo(t, dir)
+
+		hash, err := commitkit.ShortHash(context.Background(), dir)
+		require.NoError(t, err)
+		assert.NotEmpty(t, hash)
+		// Short hashes are typically 7 chars.
+		assert.GreaterOrEqual(t, len(hash), 7)
+	})
+
+	t.Run("hash changes after new commit", func(t *testing.T) {
+		dir := t.TempDir()
+		makeGitRepo(t, dir)
+
+		hash1, err := commitkit.ShortHash(context.Background(), dir)
+		require.NoError(t, err)
+
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "new.txt"), []byte("data\n"), 0644))
+		require.NoError(t, commitkit.CommitAll(context.Background(), dir, "second commit"))
+
+		hash2, err := commitkit.ShortHash(context.Background(), dir)
+		require.NoError(t, err)
+
+		assert.NotEqual(t, hash1, hash2)
+	})
+
+	t.Run("returns error on cancelled context", func(t *testing.T) {
+		dir := t.TempDir()
+		makeGitRepo(t, dir)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		_, err := commitkit.ShortHash(ctx, dir)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, context.Canceled)
+	})
+}
+
+// ---------------------------------------------------------------------------
+// ErrNoChanges sentinel
+// ---------------------------------------------------------------------------
+
+func TestErrNoChanges(t *testing.T) {
+	t.Run("is compatible with errors.Is", func(t *testing.T) {
+		assert.True(t, errors.Is(commitkit.ErrNoChanges, commitkit.ErrNoChanges))
 	})
 }
