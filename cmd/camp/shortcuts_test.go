@@ -6,111 +6,82 @@ import (
 
 func TestShortcutsAddDispatch(t *testing.T) {
 	tests := []struct {
-		name     string
-		args     []string
-		jumpFlag bool
-		wantErr  bool
+		name    string
+		args    []string
+		wantErr bool
 	}{
 		{
-			name:     "project sub-shortcut with 3 args is valid",
-			args:     []string{"myproject", "sub", "subdir"},
-			jumpFlag: false,
-			wantErr:  false,
+			name:    "0 args is valid (TUI mode)",
+			args:    []string{},
+			wantErr: false,
 		},
 		{
-			name:     "jump shortcut with 2 args is valid",
-			args:     []string{"api", "projects/myproject/"},
-			jumpFlag: true,
-			wantErr:  false,
+			name:    "1 arg is invalid",
+			args:    []string{"onlyone"},
+			wantErr: true,
 		},
 		{
-			name:     "project mode with 1 arg is invalid",
-			args:     []string{"onlyone"},
-			jumpFlag: false,
-			wantErr:  true,
+			name:    "2 args is valid (campaign shortcut)",
+			args:    []string{"api", "projects/api/"},
+			wantErr: false,
 		},
 		{
-			name:     "project mode with 0 args is valid (TUI mode)",
-			args:     []string{},
-			jumpFlag: false,
-			wantErr:  false,
-		},
-		{
-			name:     "jump mode with 1 arg is valid",
-			args:     []string{"api"},
-			jumpFlag: true,
-			wantErr:  false,
+			name:    "3 args is valid (project sub-shortcut)",
+			args:    []string{"myproject", "sub", "subdir"},
+			wantErr: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var valid bool
-			if tt.jumpFlag {
-				valid = len(tt.args) >= 0 && len(tt.args) <= 2
-			} else {
-				valid = len(tt.args) == 0 || len(tt.args) == 3
-			}
+			valid := len(tt.args) == 0 || len(tt.args) == 2 || len(tt.args) == 3
 			hasErr := !valid
 			if hasErr != tt.wantErr {
-				t.Errorf("args=%v jump=%v: got err=%v, want err=%v", tt.args, tt.jumpFlag, hasErr, tt.wantErr)
+				t.Errorf("args=%v: got err=%v, want err=%v", tt.args, hasErr, tt.wantErr)
 			}
 		})
 	}
 }
 
-func TestAddJumpDeprecationAlias(t *testing.T) {
-	found := false
+func TestShortcutsAddHasMetadataFlags(t *testing.T) {
+	for _, flag := range []struct {
+		name      string
+		shorthand string
+	}{
+		{"description", "d"},
+		{"concept", "c"},
+	} {
+		f := shortcutsAddCmd.Flags().Lookup(flag.name)
+		if f == nil {
+			t.Fatalf("add command missing --%s flag", flag.name)
+		}
+		if f.Shorthand != flag.shorthand {
+			t.Errorf("--%s shorthand = %q, want %q", flag.name, f.Shorthand, flag.shorthand)
+		}
+	}
+}
+
+func TestShortcutsAddNoJumpFlag(t *testing.T) {
+	f := shortcutsAddCmd.Flags().Lookup("jump")
+	if f != nil {
+		t.Error("add command should not have --jump flag")
+	}
+}
+
+func TestShortcutsRemoveNoJumpFlag(t *testing.T) {
+	f := shortcutsRemoveCmd.Flags().Lookup("jump")
+	if f != nil {
+		t.Error("remove command should not have --jump flag")
+	}
+}
+
+func TestDeprecatedCommandsRemoved(t *testing.T) {
 	for _, sub := range shortcutsCmd.Commands() {
 		if sub.Name() == "add-jump" {
-			found = true
-			if !sub.Hidden {
-				t.Error("add-jump should be hidden")
-			}
-			if sub.Deprecated == "" {
-				t.Error("add-jump should have deprecation message")
-			}
+			t.Error("add-jump command should not exist")
 		}
-	}
-	if !found {
-		t.Error("add-jump command not found (should exist as hidden alias)")
-	}
-}
-
-func TestRemoveJumpDeprecationAlias(t *testing.T) {
-	found := false
-	for _, sub := range shortcutsCmd.Commands() {
 		if sub.Name() == "remove-jump" {
-			found = true
-			if !sub.Hidden {
-				t.Error("remove-jump should be hidden")
-			}
-			if sub.Deprecated == "" {
-				t.Error("remove-jump should have deprecation message")
-			}
+			t.Error("remove-jump command should not exist")
 		}
-	}
-	if !found {
-		t.Error("remove-jump command not found (should exist as hidden alias)")
-	}
-}
-
-func TestShortcutsAddHasJumpFlag(t *testing.T) {
-	f := shortcutsAddCmd.Flags().Lookup("jump")
-	if f == nil {
-		t.Fatal("add command missing --jump flag")
-	}
-	if f.Shorthand != "j" {
-		t.Errorf("jump flag shorthand = %q, want %q", f.Shorthand, "j")
-	}
-}
-
-func TestShortcutsRemoveHasJumpFlag(t *testing.T) {
-	f := shortcutsRemoveCmd.Flags().Lookup("jump")
-	if f == nil {
-		t.Fatal("remove command missing --jump flag")
-	}
-	if f.Shorthand != "j" {
-		t.Errorf("jump flag shorthand = %q, want %q", f.Shorthand, "j")
 	}
 }
