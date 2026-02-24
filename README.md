@@ -388,4 +388,4 @@ just run <args>   # Run with arguments
 
 ## License
 
-MIT
+Business Source License 1.1 - See [LICENSE](LICENSE) for details.
