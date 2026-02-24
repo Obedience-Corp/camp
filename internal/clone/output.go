@@ -8,12 +8,12 @@ import (
 
 // JSONOutput represents the complete clone result for JSON output.
 type JSONOutput struct {
-	Success    bool              `json:"success"`
-	Directory  string            `json:"directory"`
-	Branch     string            `json:"branch,omitempty"`
-	Clone      ClonePhaseOutput  `json:"clone"`
-	Submodules SubmodulesOutput  `json:"submodules"`
-	URLChanges []URLChangeOutput `json:"urlChanges,omitempty"`
+	Success      bool              `json:"success"`
+	Directory    string            `json:"directory"`
+	Branch       string            `json:"branch,omitempty"`
+	Clone        ClonePhaseOutput  `json:"clone"`
+	Submodules   SubmodulesOutput  `json:"submodules"`
+	URLChanges   []URLChangeOutput `json:"urlChanges,omitempty"`
 	Validation   *JSONValidation   `json:"validation,omitempty"`
 	Registration *JSONRegistration `json:"registration,omitempty"`
 	Errors       []string          `json:"errors,omitempty"`

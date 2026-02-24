@@ -113,12 +113,12 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 
 		// subInitResult holds the outcome of initializing a single submodule.
 		type subInitResult struct {
-			index        int
-			result       SubmoduleResult
-			warnings     []string
-			staleRef     bool
-			nestedCount  int
-			branchOK     bool
+			index       int
+			result      SubmoduleResult
+			warnings    []string
+			staleRef    bool
+			nestedCount int
+			branchOK    bool
 		}
 
 		results := make([]subInitResult, len(submoduleInfos))

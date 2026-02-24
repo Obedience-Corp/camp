@@ -213,3 +213,123 @@ func TestNamesEmpty(t *testing.T) {
 		t.Errorf("Names() = %d items, want 0", len(names))
 	}
 }
+
+func TestToggle(t *testing.T) {
+	tests := []struct {
+		name       string
+		setup      []Pin
+		toggleName string
+		togglePath string
+		wantResult ToggleResult
+		wantPins   []string
+	}{
+		{
+			name:       "fresh pin - no existing pins",
+			toggleName: "mypin",
+			togglePath: "/tmp/foo",
+			wantResult: Pinned,
+			wantPins:   []string{"mypin"},
+		},
+		{
+			name:       "fresh pin - other pins exist",
+			setup:      []Pin{{Name: "other", Path: "/tmp/other"}},
+			toggleName: "mypin",
+			togglePath: "/tmp/foo",
+			wantResult: Pinned,
+			wantPins:   []string{"other", "mypin"},
+		},
+		{
+			name:       "toggle off - same name same path",
+			setup:      []Pin{{Name: "mypin", Path: "/tmp/foo"}},
+			toggleName: "mypin",
+			togglePath: "/tmp/foo",
+			wantResult: Unpinned,
+			wantPins:   []string{},
+		},
+		{
+			name: "toggle off preserves other pins",
+			setup: []Pin{
+				{Name: "first", Path: "/tmp/first"},
+				{Name: "mypin", Path: "/tmp/foo"},
+				{Name: "last", Path: "/tmp/last"},
+			},
+			toggleName: "mypin",
+			togglePath: "/tmp/foo",
+			wantResult: Unpinned,
+			wantPins:   []string{"first", "last"},
+		},
+		{
+			name:       "update path - same name different path",
+			setup:      []Pin{{Name: "mypin", Path: "/tmp/old"}},
+			toggleName: "mypin",
+			togglePath: "/tmp/new",
+			wantResult: Updated,
+			wantPins:   []string{"mypin"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := NewStore("")
+			for _, p := range tt.setup {
+				_ = s.Add(p.Name, p.Path)
+			}
+
+			got := s.Toggle(tt.toggleName, tt.togglePath)
+			if got != tt.wantResult {
+				t.Errorf("Toggle() = %v, want %v", got, tt.wantResult)
+			}
+
+			gotNames := s.Names()
+			if len(gotNames) != len(tt.wantPins) {
+				t.Fatalf("got %d pins %v, want %d pins %v", len(gotNames), gotNames, len(tt.wantPins), tt.wantPins)
+			}
+			for i, name := range tt.wantPins {
+				if gotNames[i] != name {
+					t.Errorf("pin[%d] = %q, want %q", i, gotNames[i], name)
+				}
+			}
+
+			if tt.wantResult == Updated {
+				pin, ok := s.Get(tt.toggleName)
+				if !ok {
+					t.Fatal("pin not found after update")
+				}
+				if pin.Path != tt.togglePath {
+					t.Errorf("pin path = %q, want %q", pin.Path, tt.togglePath)
+				}
+			}
+		})
+	}
+}
+
+func TestTogglePersistence(t *testing.T) {
+	dir := t.TempDir()
+	storePath := filepath.Join(dir, "pins.json")
+
+	store1 := NewStore(storePath)
+	store1.Toggle("mypin", "/tmp/foo")
+	if err := store1.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	store2 := NewStore(storePath)
+	if err := store2.Load(); err != nil {
+		t.Fatal(err)
+	}
+	result := store2.Toggle("mypin", "/tmp/foo")
+	if result != Unpinned {
+		t.Errorf("expected Unpinned, got %v", result)
+	}
+	if err := store2.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	store3 := NewStore(storePath)
+	if err := store3.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if len(store3.List()) != 0 {
+		t.Errorf("expected 0 pins after toggle-off, got %d", len(store3.List()))
+	}
+}
