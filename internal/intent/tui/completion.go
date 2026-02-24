@@ -3,12 +3,11 @@ package tui
 import (
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"unicode"
 
 	"github.com/charmbracelet/lipgloss"
-
-	"github.com/obediencecorp/camp/internal/concept"
 )
 
 // completionState tracks @ prefix autocompletion in the body editor.
@@ -21,58 +20,68 @@ type completionState struct {
 }
 
 // maxCompletionCandidates limits the displayed candidate list.
-const maxCompletionCandidates = 8
+const maxCompletionCandidates = 4
 
 // atCompletionCandidates returns completion candidates for an @ prefix query.
-// query is the text after @ (e.g., "", "p", "p/", "p/fest").
-func atCompletionCandidates(query, campaignRoot string) []string {
+// query is the text after @ (e.g., "", "de", "workflow/", "workflow/design/arch").
+// shortcuts maps shortcut keys to campaign-relative paths (e.g., "de" → "workflow/design/").
+func atCompletionCandidates(query, campaignRoot string, shortcuts map[string]string) []string {
 	if query == "" {
-		// Show top-level @ shortcuts
+		// Show all shortcut paths as candidates
+		seen := make(map[string]bool)
 		var out []string
-		for prefix := range concept.DefaultAtPrefixes {
-			out = append(out, prefix+"/")
-		}
-		sortStrings(out)
-		return out
-	}
-
-	// Check if the query has a / (indicating a resolved prefix + path segment)
-	slashIdx := strings.IndexByte(query, '/')
-	if slashIdx < 0 {
-		// No slash: fuzzy-match against top-level prefixes (e.g., "p", "w")
-		var out []string
-		for prefix := range concept.DefaultAtPrefixes {
-			if fuzzyContains(prefix[1:], query) { // strip leading @
-				out = append(out, prefix+"/")
+		for _, path := range shortcuts {
+			display := "@" + path
+			if !seen[display] {
+				seen[display] = true
+				out = append(out, display)
 			}
 		}
-		sortStrings(out)
+		sort.Strings(out)
+		if len(out) > maxCompletionCandidates {
+			out = out[:maxCompletionCandidates]
+		}
 		return out
 	}
 
-	// Has a slash: resolve the prefix part and list directory contents.
-	// Split into prefix (e.g., "p") and rest (e.g., "" or "fe" or "fest/")
-	prefixKey := query[:slashIdx] // e.g., "p"
-	rest := query[slashIdx+1:]    // e.g., "" or "fe"
-
-	resolved, err := concept.ResolveAtPath("@" + prefixKey)
-	if err != nil {
-		return nil
+	slashIdx := strings.IndexByte(query, '/')
+	if slashIdx < 0 {
+		// No slash: fuzzy-match against shortcut keys AND shortcut paths
+		seen := make(map[string]bool)
+		var out []string
+		for key, path := range shortcuts {
+			display := "@" + path
+			if seen[display] {
+				continue
+			}
+			// Match against the shortcut key or the path
+			if fuzzyContains(key, query) || fuzzyContains(path, query) {
+				seen[display] = true
+				out = append(out, display)
+			}
+		}
+		sort.Strings(out)
+		if len(out) > maxCompletionCandidates {
+			out = out[:maxCompletionCandidates]
+		}
+		return out
 	}
 
-	// Determine the directory to list and the filter to apply.
-	dirRel := resolved
+	// Has a slash: treat the entire query as a campaign-relative path.
+	// Split into directory portion + filter.
+	dirRel := query[:slashIdx]
+	rest := query[slashIdx+1:]
+
 	filter := ""
 	if rest != "" && !strings.HasSuffix(rest, "/") {
-		// rest contains a partial name — split at last /
 		if lastSlash := strings.LastIndexByte(rest, '/'); lastSlash >= 0 {
-			dirRel = resolved + "/" + rest[:lastSlash]
+			dirRel = query[:slashIdx+1+lastSlash]
 			filter = rest[lastSlash+1:]
 		} else {
 			filter = rest
 		}
 	} else if strings.HasSuffix(rest, "/") {
-		dirRel = resolved + "/" + rest[:len(rest)-1]
+		dirRel = query[:len(query)-1]
 	}
 
 	fullPath := filepath.Join(campaignRoot, dirRel)
@@ -86,13 +95,8 @@ func atCompletionCandidates(query, campaignRoot string) []string {
 		return nil
 	}
 
-	// Build candidate prefix (the portion before the filter)
-	candidatePrefix := "@" + prefixKey + "/"
-	if rest != "" {
-		if lastSlash := strings.LastIndexByte(rest, '/'); lastSlash >= 0 {
-			candidatePrefix += rest[:lastSlash+1]
-		}
-	}
+	// Build the candidate prefix (everything up to the filter)
+	candidatePrefix := "@" + dirRel + "/"
 
 	var out []string
 	for _, e := range entries {
@@ -161,14 +165,6 @@ func fuzzyContains(haystack, needle string) bool {
 	return true
 }
 
-// sortStrings sorts a string slice in place.
-func sortStrings(s []string) {
-	for i := 1; i < len(s); i++ {
-		for j := i; j > 0 && s[j-1] > s[j]; j-- {
-			s[j-1], s[j] = s[j], s[j-1]
-		}
-	}
-}
 
 // completionView renders the completion popup.
 func completionView(cs *completionState) string {
