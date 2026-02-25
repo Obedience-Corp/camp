@@ -16,10 +16,14 @@ to git pull for each repo.
 
 Repos in detached HEAD state or without upstream tracking are skipped.
 
+By default, nested submodules (e.g. inside monorepos) are included.
+Use --no-recurse to only pull top-level submodules.
+
 Examples:
   camp pull all              # Pull all repos
   camp pull all --rebase     # Pull all repos with rebase
-  camp pull all --ff-only    # Fast-forward only for all repos`,
+  camp pull all --ff-only    # Fast-forward only for all repos
+  camp pull all --no-recurse # Only top-level submodules`,
 	RunE:               runPullAllCmd,
 	DisableFlagParsing: true,
 }
@@ -36,5 +40,9 @@ func runPullAllCmd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	return runPullAll(ctx, campRoot, args)
+	// Extract --no-recurse before passing remaining args to git.
+	var noRecurse bool
+	args, noRecurse = extractNoRecurse(args)
+
+	return runPullAll(ctx, campRoot, args, noRecurse)
 }

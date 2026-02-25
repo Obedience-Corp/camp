@@ -83,7 +83,7 @@ type pushTarget struct {
 
 // runPushAll discovers all submodules + campaign root, checks which have
 // unpushed commits, and pushes them.
-func runPushAll(ctx context.Context, campRoot string, gitArgs []string) error {
+func runPushAll(ctx context.Context, campRoot string, gitArgs []string, noRecurse bool) error {
 	green := lipgloss.NewStyle().Foreground(ui.SuccessColor)
 	yellow := lipgloss.NewStyle().Foreground(ui.WarningColor)
 	red := lipgloss.NewStyle().Foreground(ui.ErrorColor)
@@ -92,8 +92,16 @@ func runPushAll(ctx context.Context, campRoot string, gitArgs []string) error {
 	fmt.Println(ui.Info("Pushing all repos with unpushed changes..."))
 	fmt.Println()
 
-	// Discover submodules
-	paths, err := git.ListSubmodulePathsFiltered(ctx, campRoot, "projects/")
+	// Discover submodules (including nested monorepo submodules)
+	var (
+		paths []string
+		err   error
+	)
+	if noRecurse {
+		paths, err = git.ListSubmodulePathsFiltered(ctx, campRoot, "projects/")
+	} else {
+		paths, err = git.ListSubmodulePathsRecursive(ctx, campRoot, "projects/")
+	}
 	if err != nil {
 		return fmt.Errorf("failed to list submodules: %w", err)
 	}
@@ -102,7 +110,7 @@ func runPushAll(ctx context.Context, campRoot string, gitArgs []string) error {
 	targets := make([]pushTarget, 0, len(paths)+1)
 	for _, p := range paths {
 		targets = append(targets, pushTarget{
-			name: filepath.Base(p),
+			name: git.SubmoduleDisplayName(p),
 			path: filepath.Join(campRoot, p),
 		})
 	}
@@ -127,12 +135,12 @@ func runPushAll(ctx context.Context, campRoot string, gitArgs []string) error {
 		}
 
 		if t.ahead <= 0 {
-			fmt.Printf("  %-20s %s\n", t.name, dim.Render("synced"))
+			fmt.Printf("  %-30s %s\n", t.name, dim.Render("synced"))
 			skipped++
 			continue
 		}
 
-		fmt.Printf("  %-20s %s  pushing... ",
+		fmt.Printf("  %-30s %s  pushing... ",
 			t.name, yellow.Render(fmt.Sprintf("↑%d", t.ahead)))
 
 		pushArgs := append([]string{"-C", t.path, "push"}, gitArgs...)

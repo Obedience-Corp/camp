@@ -17,7 +17,7 @@ var ErrMultipleMatches = errors.New("multiple campaigns match that prefix")
 // ErrCampaignNotFound is returned when a campaign cannot be found.
 var ErrCampaignNotFound = errors.New("campaign not found")
 
-// LoadRegistry loads the campaign registry from ~/.config/obey/campaign/registry.json.
+// LoadRegistry loads the campaign registry from ~/.obey/campaign/registry.json.
 // Returns an empty registry if the file doesn't exist.
 func LoadRegistry(ctx context.Context) (*Registry, error) {
 	if ctx.Err() != nil {
@@ -60,7 +60,7 @@ func LoadRegistry(ctx context.Context) (*Registry, error) {
 	return &reg, nil
 }
 
-// SaveRegistry saves the campaign registry to ~/.config/obey/campaign/registry.json.
+// SaveRegistry saves the campaign registry to ~/.obey/campaign/registry.json.
 // Uses atomic write to prevent corruption.
 func SaveRegistry(ctx context.Context, reg *Registry) error {
 	if ctx.Err() != nil {

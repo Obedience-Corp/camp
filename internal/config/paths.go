@@ -18,7 +18,7 @@ func ConfigDir() string {
 		return filepath.Join(xdg, OrgName, AppName)
 	}
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", OrgName, AppName)
+	return filepath.Join(home, ".obey", AppName)
 }
 
 // GlobalConfigPath returns the path to the global config file.

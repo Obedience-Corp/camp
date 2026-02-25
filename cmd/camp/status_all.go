@@ -36,15 +36,17 @@ Examples:
 }
 
 var (
-	statusAllJSON    bool
-	statusAllNoCache bool
-	statusAllView    bool
+	statusAllJSON      bool
+	statusAllNoCache   bool
+	statusAllView      bool
+	statusAllNoRecurse bool
 )
 
 func init() {
 	statusAllCmd.Flags().BoolVar(&statusAllJSON, "json", false, "Output as JSON")
 	statusAllCmd.Flags().BoolVar(&statusAllNoCache, "no-cache", false, "Skip cache and refresh")
 	statusAllCmd.Flags().BoolVar(&statusAllView, "view", false, "Open interactive TUI viewer")
+	statusAllCmd.Flags().BoolVar(&statusAllNoRecurse, "no-recurse", false, "Only list top-level submodules")
 
 	statusCmd.AddCommand(statusAllCmd)
 }
@@ -81,8 +83,13 @@ func runStatusAll(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("not in a campaign: %w", err)
 	}
 
-	// Enumerate submodules
-	paths, err := git.ListSubmodulePathsFiltered(ctx, campRoot, "projects/")
+	// Enumerate submodules (including nested monorepo submodules)
+	var paths []string
+	if statusAllNoRecurse {
+		paths, err = git.ListSubmodulePathsFiltered(ctx, campRoot, "projects/")
+	} else {
+		paths, err = git.ListSubmodulePathsRecursive(ctx, campRoot, "projects/")
+	}
 	if err != nil {
 		return fmt.Errorf("failed to list submodules: %w", err)
 	}
@@ -148,7 +155,7 @@ func collectStatuses(ctx context.Context, campRoot string, paths []string) []rep
 
 	for _, p := range paths {
 		fullPath := filepath.Join(campRoot, p)
-		name := filepath.Base(p)
+		name := git.SubmoduleDisplayName(p)
 		status := getRepoStatus(ctx, fullPath, name)
 		status.Path = p
 		statuses = append(statuses, status)
