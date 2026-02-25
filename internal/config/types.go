@@ -258,7 +258,7 @@ type TUIConfig struct {
 	VimMode bool `json:"vim_mode,omitempty" yaml:"vim_mode,omitempty"`
 }
 
-// GlobalConfig represents ~/.config/obey/campaign/config.json configuration.
+// GlobalConfig represents ~/.obey/campaign/config.json configuration.
 // Contains only user preference fields - campaign-specific settings belong elsewhere.
 type GlobalConfig struct {
 	// Editor is the preferred editor command.
@@ -274,7 +274,7 @@ type GlobalConfig struct {
 // RegistryVersion is the current registry format version.
 const RegistryVersion = 2
 
-// Registry represents ~/.config/obey/campaign/registry.json for tracking campaigns.
+// Registry represents ~/.obey/campaign/registry.json for tracking campaigns.
 type Registry struct {
 	// Version is the registry format version.
 	Version int `json:"version" yaml:"version,omitempty"`

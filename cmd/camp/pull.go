@@ -99,7 +99,7 @@ type pullTarget struct {
 }
 
 // runPullAll discovers all submodules + campaign root, and pulls them.
-func runPullAll(ctx context.Context, campRoot string, gitArgs []string) error {
+func runPullAll(ctx context.Context, campRoot string, gitArgs []string, noRecurse bool) error {
 	green := lipgloss.NewStyle().Foreground(ui.SuccessColor)
 	yellow := lipgloss.NewStyle().Foreground(ui.WarningColor)
 	red := lipgloss.NewStyle().Foreground(ui.ErrorColor)
@@ -108,8 +108,16 @@ func runPullAll(ctx context.Context, campRoot string, gitArgs []string) error {
 	fmt.Println(ui.Info("Pulling all repos..."))
 	fmt.Println()
 
-	// Discover submodules
-	paths, err := git.ListSubmodulePathsFiltered(ctx, campRoot, "projects/")
+	// Discover submodules (including nested monorepo submodules)
+	var (
+		paths []string
+		err   error
+	)
+	if noRecurse {
+		paths, err = git.ListSubmodulePathsFiltered(ctx, campRoot, "projects/")
+	} else {
+		paths, err = git.ListSubmodulePathsRecursive(ctx, campRoot, "projects/")
+	}
 	if err != nil {
 		return fmt.Errorf("failed to list submodules: %w", err)
 	}
@@ -125,7 +133,7 @@ func runPullAll(ctx context.Context, campRoot string, gitArgs []string) error {
 		fullPath := filepath.Join(campRoot, p)
 		branch, _ := gitOutput(ctx, fullPath, "rev-parse", "--abbrev-ref", "HEAD")
 		targets = append(targets, pullTarget{
-			name:   filepath.Base(p),
+			name:   git.SubmoduleDisplayName(p),
 			path:   fullPath,
 			branch: branch,
 		})
@@ -145,19 +153,19 @@ func runPullAll(ctx context.Context, campRoot string, gitArgs []string) error {
 
 		// Skip detached HEAD
 		if t.branch == "" || t.branch == "HEAD" {
-			fmt.Printf("  %-20s %s\n", t.name, yellow.Render("detached HEAD"))
+			fmt.Printf("  %-30s %s\n", t.name, yellow.Render("detached HEAD"))
 			skipped++
 			continue
 		}
 
 		// Skip repos with no upstream tracking
 		if _, err := gitOutput(ctx, t.path, "rev-parse", "--abbrev-ref", "@{upstream}"); err != nil {
-			fmt.Printf("  %-20s %s\n", t.name, yellow.Render("no upstream"))
+			fmt.Printf("  %-30s %s\n", t.name, yellow.Render("no upstream"))
 			skipped++
 			continue
 		}
 
-		fmt.Printf("  %-20s %s  pulling... ",
+		fmt.Printf("  %-30s %s  pulling... ",
 			t.name, dim.Render(t.branch))
 
 		pullArgs := []string{"-C", t.path, "pull"}
