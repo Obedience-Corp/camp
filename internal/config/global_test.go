@@ -204,7 +204,7 @@ func TestConfigDir_Default(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "")
 
 	home, _ := os.UserHomeDir()
-	want := filepath.Join(home, ".config", OrgName, AppName)
+	want := filepath.Join(home, ".obey", AppName)
 
 	got := ConfigDir()
 	if got != want {
