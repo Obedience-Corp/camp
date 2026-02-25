@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -55,4 +56,44 @@ func ListSubmodulePathsFiltered(ctx context.Context, repoRoot, prefix string) ([
 		}
 	}
 	return filtered, nil
+}
+
+// ListSubmodulePathsRecursive returns submodule paths matching a prefix,
+// including nested submodules one level deep within monorepos.
+func ListSubmodulePathsRecursive(ctx context.Context, repoRoot, prefix string) ([]string, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	topLevel, err := ListSubmodulePathsFiltered(ctx, repoRoot, prefix)
+	if err != nil {
+		return nil, err
+	}
+
+	var result []string
+	for _, p := range topLevel {
+		result = append(result, p)
+
+		// Check for nested submodules one level deep.
+		nested, err := ListSubmodulePaths(ctx, filepath.Join(repoRoot, p))
+		if err != nil || len(nested) == 0 {
+			continue
+		}
+		for _, n := range nested {
+			result = append(result, filepath.Join(p, n))
+		}
+	}
+
+	return result, nil
+}
+
+// SubmoduleDisplayName returns a concise display name for a submodule path.
+// For nested submodules (3+ path components like "projects/monorepo/child"),
+// it returns "monorepo/child". For top-level submodules it returns the base name.
+func SubmoduleDisplayName(relPath string) string {
+	parts := strings.Split(filepath.ToSlash(relPath), "/")
+	if len(parts) > 2 {
+		return parts[len(parts)-2] + "/" + parts[len(parts)-1]
+	}
+	return filepath.Base(relPath)
 }
