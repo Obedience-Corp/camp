@@ -106,6 +106,7 @@ func NewIntentAddModel(ctx context.Context, conceptSvc concept.Service, opts Add
 	// Body vim editor
 	vimEd := vim.NewEditor("")
 	vimEd.SetSize(60, 6)
+	vimEd.SetSyntax(vim.NewMarkdownStyler())
 
 	// Find default type index
 	typeIdx := 0
