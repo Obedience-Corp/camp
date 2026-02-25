@@ -40,6 +40,11 @@ func (e *Editor) View(cfg ViewConfig) string {
 	lines := e.buffer.Lines()
 	cursor := e.buffer.Cursor()
 
+	// Update syntax highlighting if enabled.
+	if e.syntax != nil {
+		e.syntax.Update(e.buffer.Content(), cfg.NormalText)
+	}
+
 	// Calculate visible range based on scroll offset
 	startLine := e.scrollOffset
 	endLine := min(startLine+e.height, len(lines))
@@ -132,7 +137,11 @@ func (e *Editor) renderLine(lineIdx int, line string, cursor Position, cfg ViewC
 			// Visual selection
 			result.WriteString(cfg.Selection.Render(char))
 		default:
-			result.WriteString(cfg.NormalText.Render(char))
+			style := cfg.NormalText
+			if e.syntax != nil {
+				style = e.syntax.StyleAt(charOffset)
+			}
+			result.WriteString(style.Render(char))
 		}
 	}
 
