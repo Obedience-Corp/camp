@@ -22,6 +22,9 @@ type GitExecutor interface {
 	// StageAll stages all changes
 	StageAll(ctx context.Context) error
 
+	// StageAllExcludingSubmodules stages all changes but excludes submodule refs
+	StageAllExcludingSubmodules(ctx context.Context) error
+
 	// HasChanges returns true if there are uncommitted changes
 	HasChanges(ctx context.Context) (bool, error)
 
@@ -161,6 +164,14 @@ func (e *Executor) Stage(ctx context.Context, files []string) error {
 // StageAll stages all changes.
 func (e *Executor) StageAll(ctx context.Context) error {
 	return e.Stage(ctx, nil)
+}
+
+// StageAllExcludingSubmodules stages all changes but excludes submodule ref updates.
+func (e *Executor) StageAllExcludingSubmodules(ctx context.Context) error {
+	if e.config.Verbose {
+		e.logger.Debug("staging all excluding submodules", "path", e.path)
+	}
+	return StageAllExcludingSubmodules(ctx, e.path)
 }
 
 // HasChanges returns true if there are uncommitted changes.

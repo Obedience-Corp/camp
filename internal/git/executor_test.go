@@ -299,6 +299,10 @@ func (m *MockExecutor) StageAll(ctx context.Context) error {
 	return m.ReturnError
 }
 
+func (m *MockExecutor) StageAllExcludingSubmodules(ctx context.Context) error {
+	return m.ReturnError
+}
+
 func (m *MockExecutor) HasChanges(ctx context.Context) (bool, error) {
 	return m.ChangesExist, m.ReturnError
 }

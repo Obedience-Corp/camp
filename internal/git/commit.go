@@ -171,6 +171,54 @@ func StageFiles(ctx context.Context, repoPath string, files ...string) error {
 	return Stage(ctx, repoPath, files)
 }
 
+// StageAllExcluding stages all changes then unstages the specified paths.
+// This is used to exclude certain paths (like submodule refs) from broad staging.
+func StageAllExcluding(ctx context.Context, repoPath string, excludePaths []string) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	if err := StageAll(ctx, repoPath); err != nil {
+		return err
+	}
+
+	if len(excludePaths) == 0 {
+		return nil
+	}
+
+	// Unstage the excluded paths via git reset HEAD --
+	args := []string{"-C", repoPath, "reset", "HEAD", "--"}
+	args = append(args, excludePaths...)
+
+	cmd := exec.CommandContext(ctx, "git", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		// If reset fails because the paths aren't staged, that's fine
+		outStr := strings.TrimSpace(string(output))
+		if strings.Contains(outStr, "did not match any file") {
+			return nil
+		}
+		return fmt.Errorf("git reset HEAD failed: %s: %w", outStr, err)
+	}
+
+	return nil
+}
+
+// StageAllExcludingSubmodules stages all changes but excludes submodule ref updates.
+// It reads submodule paths from .gitmodules and unstages them after a broad stage.
+func StageAllExcludingSubmodules(ctx context.Context, repoPath string) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	paths, err := ListSubmodulePaths(ctx, repoPath)
+	if err != nil {
+		return fmt.Errorf("list submodule paths: %w", err)
+	}
+
+	return StageAllExcluding(ctx, repoPath, paths)
+}
+
 // HasStagedChanges checks if there are any staged changes ready to commit.
 func HasStagedChanges(ctx context.Context, repoPath string) (bool, error) {
 	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "diff", "--cached", "--quiet")

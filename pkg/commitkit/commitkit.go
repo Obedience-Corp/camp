@@ -122,6 +122,17 @@ func CommitAll(ctx context.Context, repoPath, message string) error {
 	return git.CommitAll(ctx, repoPath, message)
 }
 
+// StageAllExcludingSubmodules stages all changes but excludes submodule ref
+// updates. Reads submodule paths from .gitmodules and unstages them after
+// a broad stage. Use this instead of StageAll when committing at a campaign
+// root to prevent submodule refs from polluting commits.
+func StageAllExcludingSubmodules(ctx context.Context, repoPath string) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return git.StageAllExcludingSubmodules(ctx, repoPath)
+}
+
 // ShortHash returns the short commit hash of HEAD in the repository at repoPath.
 func ShortHash(ctx context.Context, repoPath string) (string, error) {
 	if ctx.Err() != nil {

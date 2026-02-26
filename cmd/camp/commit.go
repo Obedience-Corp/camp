@@ -119,8 +119,15 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	// Stage if requested
 	if commitAll {
 		fmt.Println(ui.Info("Staging changes..."))
-		if err := executor.StageAll(ctx); err != nil {
-			return fmt.Errorf("failed to stage: %w", err)
+		if target.IsSubmodule {
+			if err := executor.StageAll(ctx); err != nil {
+				return fmt.Errorf("failed to stage: %w", err)
+			}
+		} else {
+			// Campaign root: exclude submodule refs from staging
+			if err := executor.StageAllExcludingSubmodules(ctx); err != nil {
+				return fmt.Errorf("failed to stage: %w", err)
+			}
 		}
 	}
 
