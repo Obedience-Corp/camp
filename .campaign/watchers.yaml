@@ -1,0 +1,72 @@
+version: 1
+entries:
+    - id: campaign-metadata
+      path: .campaign/campaign.yaml
+      type: campaign.metadata
+      format: yaml
+      watch: file
+      owner: camp
+    - id: project-registry
+      path: .campaign/leverage/config.json
+      type: project.registry
+      format: json
+      watch: file
+      owner: camp
+    - id: festival-pins
+      path: .campaign/settings/pins.json
+      type: ui.pins
+      format: json
+      watch: file
+      owner: camp
+    - id: settings-jumps
+      path: .campaign/settings/jumps.yaml
+      type: settings.navigation
+      format: yaml
+      watch: file
+      owner: camp
+    - id: settings-allowlist
+      path: .campaign/settings/allowlist.json
+      type: settings.permissions
+      format: json
+      watch: file
+      owner: camp
+    - id: leverage-snapshots
+      path: .campaign/leverage/snapshots/
+      type: metrics.snapshots
+      format: directory
+      watch: directory
+      owner: camp
+    - id: intents-inbox
+      path: workflow/intents/inbox/
+      type: intent.status_dir
+      format: directory
+      watch: directory
+      owner: camp
+      status: inbox
+    - id: intents-ready
+      path: workflow/intents/ready/
+      type: intent.status_dir
+      format: directory
+      watch: directory
+      owner: camp
+      status: ready
+    - id: intents-active
+      path: workflow/intents/active/
+      type: intent.status_dir
+      format: directory
+      watch: directory
+      owner: camp
+      status: active
+    - id: intents-dungeon
+      path: workflow/intents/dungeon/
+      type: intent.status_dir
+      format: directory
+      watch: directory
+      owner: camp
+      status: archived
+    - id: workflow-design-config
+      path: workflow/design/.workflow.yaml
+      type: workflow.config
+      format: yaml
+      watch: file
+      owner: camp

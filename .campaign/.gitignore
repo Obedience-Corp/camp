@@ -1,0 +1,5 @@
+# Machine-specific state (navigation history, timestamps)
+state.yaml
+
+# Generated cache (navigation index, rebuilt automatically)
+cache/

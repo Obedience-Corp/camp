@@ -1,0 +1,30 @@
+# Design
+
+Design documents and specifications.
+
+## What Goes Here
+
+- Architecture diagrams and decisions
+- API design documents
+- UX/UI wireframes and mockups
+- Technical specifications
+
+## Structure
+
+```
+design/
+├── architecture/       # System architecture docs
+├── api/               # API specifications
+├── ux/                # User experience designs
+└── dungeon/           # Archived designs
+    ├── completed/
+    ├── archived/
+    └── someday/
+```
+
+## Guidelines
+
+- Link designs to related intents or festivals
+- Version control design iterations
+- Include rationale for design decisions
+- Use `camp dungeon crawl` to triage finished designs into dungeon

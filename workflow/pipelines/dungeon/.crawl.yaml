@@ -1,0 +1,7 @@
+# Directories in the parent that should be excluded from triage crawl.
+# These are resource directories for pipeline tooling, not pipeline items.
+excludes:
+  - docker
+  - github
+  - scripts
+  - terraform

@@ -1,0 +1,41 @@
+id: 38be50a6-4ed6-4e15-a44c-020810cbf387
+name: camp
+type: product
+description: 'Campaign: camp'
+created_at: 2026-02-26T11:18:34.616625-07:00
+concepts:
+    - name: projects
+      path: projects/
+      description: Active development projects
+      depth: 1
+      ignore:
+        - worktrees/
+    - name: worktrees
+      path: projects/worktrees/
+      description: Git worktrees
+      depth: 1
+    - name: festivals
+      path: festivals/
+      description: Planning cycles
+    - name: intents
+      path: workflow/intents/
+      description: Ideas and tasks
+      depth: 0
+    - name: workflow
+      path: workflow/
+      description: Work management
+      depth: 1
+      ignore:
+        - intents/
+        - design/
+    - name: design
+      path: workflow/design/
+      description: Design documents
+      depth: 1
+    - name: docs
+      path: docs/
+      description: Documentation
+      depth: 0
+    - name: dungeon
+      path: dungeon/
+      description: Archived work
