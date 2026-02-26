@@ -25,6 +25,7 @@ var goCmd = &cobra.Command{
 Usage patterns:
   camp go           Toggle between campaign root and last location
   camp go --root    Jump to campaign root (ignore toggle)
+  camp go t         Jump to last visited location (cd - equivalent)
   camp go p         Jump to projects/
   camp go f         Jump to festivals/
   camp go p api     Fuzzy search projects/ for "api"
@@ -32,6 +33,10 @@ Usage patterns:
 Toggle behavior (no args):
   - From anywhere: jump to campaign root, save current location
   - From campaign root: jump back to saved location
+
+Toggle keyword (t / toggle):
+  - Jump to the last visited location regardless of where you are
+  - Repeated calls alternate between two locations (like cd -)
 
 The --print flag outputs just the path for shell integration:
   cd "$(camp go p --print)"
@@ -46,6 +51,7 @@ Or use the cgo shell function for instant navigation:
   cgo p -c ls       Run ls in projects/ without changing directory`,
 	Example: `  camp go               # Toggle: root ↔ last location
   camp go --root        # Force jump to campaign root
+  camp go t             # Jump to last visited location (cd -)
   camp go p             # Jump to projects/
   camp go p api         # Fuzzy find "api" in projects/
   camp go p --print     # Print path (for shell scripts)
@@ -97,6 +103,11 @@ func runGo(cmd *cobra.Command, args []string) error {
 	// Build category mappings from config shortcuts
 	// This allows config shortcuts to work with fuzzy search
 	configMappings := buildCategoryMappings(cfg.Shortcuts())
+
+	// Handle toggle keyword: "t" or "toggle"
+	if len(args) > 0 && (args[0] == "toggle" || args[0] == "t") {
+		return handleToggle(ctx, campaignRoot, printOnly)
+	}
 
 	// Check if the first arg is a custom navigation shortcut with non-standard path
 	if len(args) > 0 {
@@ -264,6 +275,37 @@ func runGo(cmd *cobra.Command, args []string) error {
 		fmt.Println(resolveResult.Path)
 	} else {
 		fmt.Printf("cd %s\n", resolveResult.Path)
+	}
+	return nil
+}
+
+// handleToggle jumps to the last visited location from navigation history.
+// It saves the current directory before jumping so repeated calls alternate
+// between two locations, similar to "cd -".
+func handleToggle(ctx context.Context, campaignRoot string, printOnly bool) error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get current directory: %w", err)
+	}
+
+	lastLoc, err := state.GetLastLocation(ctx, campaignRoot)
+	if err != nil || lastLoc == "" {
+		return fmt.Errorf("no previous location in history")
+	}
+
+	cwdReal, _ := evalSymlinks(cwd)
+	lastReal, _ := evalSymlinks(lastLoc)
+	if cwdReal == lastReal {
+		return fmt.Errorf("already at last visited location")
+	}
+
+	// Save current location so calling toggle again bounces back
+	_ = state.SetLastLocation(ctx, campaignRoot, cwd)
+
+	if printOnly {
+		fmt.Println(lastLoc)
+	} else {
+		fmt.Printf("cd %s\n", lastLoc)
 	}
 	return nil
 }
