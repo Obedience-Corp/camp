@@ -63,6 +63,7 @@ type repoStatus struct {
 	Staged      int    `json:"staged"`
 	Modified    int    `json:"modified"`
 	Untracked   int    `json:"untracked"`
+	Unmerged    int    `json:"unmerged"`
 	Error       string `json:"error,omitempty"`
 }
 
@@ -138,6 +139,7 @@ func runStatusTUI(campRoot string, statuses []repoStatus) error {
 			Untracked: s.Untracked,
 			Ahead:     s.Ahead,
 			Behind:    s.Behind,
+			Unmerged:  s.Unmerged,
 			Clean:     s.Clean,
 			Error:     s.Error,
 		}
@@ -215,6 +217,9 @@ func getRepoStatus(ctx context.Context, repoPath, name string) repoStatus {
 		}
 	}
 
+	// Count unmerged branches
+	rs.Unmerged = git.UnmergedBranchCount(ctx, repoPath)
+
 	return rs
 }
 
@@ -235,12 +240,12 @@ func renderStatusTable(statuses []repoStatus) {
 	dim := lipgloss.NewStyle().Foreground(ui.DimColor)
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.BrightColor)
 
-	headers := []string{"NAME", "BRANCH", "STATUS", "PUSH", "CHANGES"}
+	headers := []string{"NAME", "BRANCH", "STATUS", "PUSH", "CHANGES", "BRANCHES"}
 	var rows [][]string
 
 	for _, s := range statuses {
 		if s.Error != "" {
-			rows = append(rows, []string{s.Name, "", red.Render(s.Error), "", ""})
+			rows = append(rows, []string{s.Name, "", red.Render(s.Error), "", "", ""})
 			continue
 		}
 
@@ -283,7 +288,15 @@ func renderStatusTable(statuses []repoStatus) {
 			branch = branch[:12] + "…"
 		}
 
-		rows = append(rows, []string{s.Name, branch, statusStr, pushStr, changeStr})
+		// Unmerged branches
+		var branchesStr string
+		if s.Unmerged > 0 {
+			branchesStr = yellow.Render(fmt.Sprintf("%d unmerged", s.Unmerged))
+		} else {
+			branchesStr = dim.Render("-")
+		}
+
+		rows = append(rows, []string{s.Name, branch, statusStr, pushStr, changeStr, branchesStr})
 	}
 
 	t := table.New().

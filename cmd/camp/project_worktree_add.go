@@ -1,14 +1,13 @@
 package main
 
 import (
-	"context"
+	"errors"
 	"fmt"
-	"path/filepath"
-	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/paths"
+	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/Obedience-Corp/camp/internal/worktree"
 	"github.com/spf13/cobra"
@@ -64,15 +63,14 @@ func init() {
 		"Base branch/commit for new branch (default: current branch)")
 	projectWorktreeAddCmd.Flags().StringVarP(&wtAddTrack, "track", "t", "",
 		"Remote branch to track (creates new local tracking branch)")
+
+	projectWorktreeAddCmd.RegisterFlagCompletionFunc("project", completeProjectName)
 }
 
 func runProjectWorktreeAdd(cmd *cobra.Command, args []string) error {
 	worktreeName := args[0]
 
 	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
 
 	// Find campaign root
 	campRoot, err := campaign.DetectCached(ctx)
@@ -87,11 +85,15 @@ func runProjectWorktreeAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	// Resolve project name
-	projectName, err := resolveProjectName(ctx, campRoot, cfg, wtAddProject)
+	resolved, err := project.Resolve(ctx, campRoot, wtAddProject)
 	if err != nil {
-		showProjectList(ctx, campRoot)
+		var notFound *project.ProjectNotFoundError
+		if errors.As(err, &notFound) {
+			fmt.Println(ui.Dim("\n" + project.FormatProjectList(notFound.AvailableProjects())))
+		}
 		return err
 	}
+	projectName := resolved.Name
 
 	// Create resolver and creator
 	resolver := paths.NewResolver(campRoot, cfg.Paths())
@@ -151,47 +153,3 @@ func runProjectWorktreeAdd(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// resolveProjectName determines the project name from flag or current directory.
-func resolveProjectName(ctx context.Context, campRoot string, cfg *config.CampaignConfig, flagProject string) (string, error) {
-	if flagProject != "" {
-		// Explicit project provided - validate it exists
-		for _, proj := range cfg.Projects {
-			if proj.Name == flagProject {
-				return proj.Name, nil
-			}
-		}
-		return "", fmt.Errorf("project '%s' not found in campaign", flagProject)
-	}
-
-	// Try to detect from current directory using existing logic
-	resolvedPath, err := resolveProjectPath(ctx, campRoot, "")
-	if err != nil {
-		return "", err
-	}
-
-	// Extract project name from resolved path
-	return projectNameFromPath(campRoot, cfg, resolvedPath)
-}
-
-// projectNameFromPath extracts the project name from a resolved project path.
-func projectNameFromPath(campRoot string, cfg *config.CampaignConfig, absPath string) (string, error) {
-	// First try to find in config
-	for _, proj := range cfg.Projects {
-		projPath := filepath.Join(campRoot, proj.Path)
-		if projPath == absPath {
-			return proj.Name, nil
-		}
-	}
-
-	// Fall back to extracting from path structure (projects/<name>)
-	projectsDir := filepath.Join(campRoot, "projects")
-	if rel, err := filepath.Rel(projectsDir, absPath); err == nil {
-		// rel should be the project name (first component)
-		parts := strings.SplitN(rel, string(filepath.Separator), 2)
-		if len(parts) > 0 && parts[0] != ".." && parts[0] != "." {
-			return parts[0], nil
-		}
-	}
-
-	return "", fmt.Errorf("could not determine project name for path: %s", absPath)
-}

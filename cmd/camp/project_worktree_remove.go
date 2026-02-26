@@ -1,12 +1,13 @@
 package main
 
 import (
-	"context"
+	"errors"
 	"fmt"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/paths"
+	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/Obedience-Corp/camp/internal/worktree"
 	"github.com/spf13/cobra"
@@ -46,15 +47,14 @@ func init() {
 		"Project name (auto-detected from cwd if not specified)")
 	projectWorktreeRemoveCmd.Flags().BoolVarP(&wtRemoveForce, "force", "f", false,
 		"Force removal even with uncommitted changes")
+
+	projectWorktreeRemoveCmd.RegisterFlagCompletionFunc("project", completeProjectName)
 }
 
 func runProjectWorktreeRemove(cmd *cobra.Command, args []string) error {
 	worktreeName := args[0]
 
 	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
 
 	// Find campaign root
 	campRoot, err := campaign.DetectCached(ctx)
@@ -69,11 +69,15 @@ func runProjectWorktreeRemove(cmd *cobra.Command, args []string) error {
 	}
 
 	// Resolve project name
-	projectName, err := resolveProjectName(ctx, campRoot, cfg, wtRemoveProject)
+	resolved, err := project.Resolve(ctx, campRoot, wtRemoveProject)
 	if err != nil {
-		showProjectList(ctx, campRoot)
+		var notFound *project.ProjectNotFoundError
+		if errors.As(err, &notFound) {
+			fmt.Println(ui.Dim("\n" + project.FormatProjectList(notFound.AvailableProjects())))
+		}
 		return err
 	}
+	projectName := resolved.Name
 
 	// Create resolver and path manager
 	resolver := paths.NewResolver(campRoot, cfg.Paths())
