@@ -99,7 +99,9 @@ type pullTarget struct {
 }
 
 // runPullAll discovers all submodules + campaign root, and pulls them.
-func runPullAll(ctx context.Context, campRoot string, gitArgs []string, noRecurse bool) error {
+// When useDefault is true, submodules on detached HEAD or without upstream
+// are switched to their remote's default branch before pulling.
+func runPullAll(ctx context.Context, campRoot string, gitArgs []string, noRecurse, useDefault bool) error {
 	green := lipgloss.NewStyle().Foreground(ui.SuccessColor)
 	yellow := lipgloss.NewStyle().Foreground(ui.WarningColor)
 	red := lipgloss.NewStyle().Foreground(ui.ErrorColor)
@@ -146,27 +148,78 @@ func runPullAll(ctx context.Context, campRoot string, gitArgs []string, noRecurs
 	var pulled, skipped, failed int
 	var errors []string
 
-	for _, t := range targets {
+	for i := range targets {
+		t := &targets[i]
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 
-		// Skip detached HEAD
+		originalBranch := t.branch
+
+		// Skip detached HEAD (or checkout default branch if --default-branch)
 		if t.branch == "" || t.branch == "HEAD" {
-			fmt.Printf("  %-30s %s\n", t.name, yellow.Render("detached HEAD"))
-			skipped++
-			continue
+			if useDefault && !t.isRoot {
+				branch, err := git.DetectDefaultBranch(ctx, t.path)
+				if err != nil {
+					fmt.Printf("  %-30s %s\n", t.name, yellow.Render("detached HEAD (no default found)"))
+					skipped++
+					continue
+				}
+				cmd := exec.CommandContext(ctx, "git", "-C", t.path, "checkout", branch)
+				if out, err := cmd.CombinedOutput(); err != nil {
+					fmt.Printf("  %-30s %s\n", t.name, red.Render(fmt.Sprintf("checkout %s failed", branch)))
+					errors = append(errors, fmt.Sprintf("  %s: checkout %s: %s", t.name, branch, strings.TrimSpace(string(out))))
+					failed++
+					continue
+				}
+				t.branch = branch
+			} else {
+				fmt.Printf("  %-30s %s\n", t.name, yellow.Render("detached HEAD"))
+				skipped++
+				continue
+			}
 		}
 
-		// Skip repos with no upstream tracking
+		// Skip repos with no upstream tracking (or checkout default branch if --default-branch)
 		if _, err := gitOutput(ctx, t.path, "rev-parse", "--abbrev-ref", "@{upstream}"); err != nil {
-			fmt.Printf("  %-30s %s\n", t.name, yellow.Render("no upstream"))
-			skipped++
-			continue
+			if useDefault && !t.isRoot {
+				branch, err := git.DetectDefaultBranch(ctx, t.path)
+				if err != nil {
+					fmt.Printf("  %-30s %s\n", t.name, yellow.Render("no upstream (no default found)"))
+					skipped++
+					continue
+				}
+				if t.branch != branch {
+					cmd := exec.CommandContext(ctx, "git", "-C", t.path, "checkout", branch)
+					if out, err := cmd.CombinedOutput(); err != nil {
+						fmt.Printf("  %-30s %s\n", t.name, red.Render(fmt.Sprintf("checkout %s failed", branch)))
+						errors = append(errors, fmt.Sprintf("  %s: checkout %s: %s", t.name, branch, strings.TrimSpace(string(out))))
+						failed++
+						continue
+					}
+					t.branch = branch
+				}
+				// Re-check upstream after checkout; skip if still missing
+				if _, err := gitOutput(ctx, t.path, "rev-parse", "--abbrev-ref", "@{upstream}"); err != nil {
+					fmt.Printf("  %-30s %s\n", t.name, yellow.Render("no upstream"))
+					skipped++
+					continue
+				}
+			} else {
+				fmt.Printf("  %-30s %s\n", t.name, yellow.Render("no upstream"))
+				skipped++
+				continue
+			}
 		}
 
-		fmt.Printf("  %-30s %s  pulling... ",
-			t.name, dim.Render(t.branch))
+		if originalBranch != "" && originalBranch != "HEAD" && originalBranch != t.branch {
+			fmt.Printf("  %-30s %s  %s  pulling... ",
+				t.name, dim.Render(t.branch),
+				dim.Render(fmt.Sprintf("(was %s)", originalBranch)))
+		} else {
+			fmt.Printf("  %-30s %s  pulling... ",
+				t.name, dim.Render(t.branch))
+		}
 
 		pullArgs := []string{"-C", t.path, "pull"}
 		if t.isRoot {
