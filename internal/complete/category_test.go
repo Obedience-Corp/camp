@@ -14,17 +14,19 @@ func TestCategories(t *testing.T) {
 
 	// Check we have all expected categories
 	expected := map[string]string{
-		"p":  "projects/",
-		"pw": "projects/worktrees/",
-		"f":  "festivals/",
-		"a":  "ai_docs/",
-		"d":  "docs/",
-		"du": "dungeon/",
-		"w":  "workflow/",
-		"cr": "workflow/code_reviews/",
-		"pi": "workflow/pipelines/",
-		"de": "workflow/design/",
-		"i":  "workflow/intents/",
+		"p":      "projects/",
+		"pw":     "projects/worktrees/",
+		"f":      "festivals/",
+		"a":      "ai_docs/",
+		"d":      "docs/",
+		"du":     "dungeon/",
+		"w":      "workflow/",
+		"cr":     "workflow/code_reviews/",
+		"pi":     "workflow/pipelines/",
+		"de":     "workflow/design/",
+		"i":      "workflow/intents/",
+		"t":      "toggle (last location)",
+		"toggle": "jump to last visited location",
 	}
 
 	if len(cats) != len(expected) {
