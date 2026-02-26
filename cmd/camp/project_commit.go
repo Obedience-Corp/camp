@@ -11,6 +11,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -188,14 +189,13 @@ func resolveProjectPath(ctx context.Context, campRoot, flagPath string) (string,
 
 // isRegisteredProject checks if path is in the campaign's project list.
 func isRegisteredProject(ctx context.Context, campRoot, absPath string) bool {
-	cfg, err := config.LoadCampaignConfig(ctx, campRoot)
+	projects, err := project.List(ctx, campRoot)
 	if err != nil {
 		return false
 	}
 
-	for _, proj := range cfg.Projects {
-		projPath := filepath.Join(campRoot, proj.Path)
-		if projPath == absPath {
+	for _, proj := range projects {
+		if filepath.Join(campRoot, proj.Path) == absPath {
 			return true
 		}
 	}
@@ -204,18 +204,14 @@ func isRegisteredProject(ctx context.Context, campRoot, absPath string) bool {
 
 // showProjectList displays available projects when detection fails.
 func showProjectList(ctx context.Context, campRoot string) {
-	cfg, err := config.LoadCampaignConfig(ctx, campRoot)
-	if err != nil {
-		return
-	}
-
-	if len(cfg.Projects) == 0 {
-		fmt.Println(ui.Dim("\nNo projects registered in this campaign."))
+	projects, err := project.List(ctx, campRoot)
+	if err != nil || len(projects) == 0 {
+		fmt.Println(ui.Dim("\nNo projects found in this campaign."))
 		return
 	}
 
 	fmt.Println(ui.Dim("\nAvailable projects:"))
-	for _, proj := range cfg.Projects {
+	for _, proj := range projects {
 		fmt.Printf("  - %s\n", proj.Path)
 	}
 	fmt.Println(ui.Dim("\nUse --path to specify a project, or navigate into one first."))
