@@ -221,3 +221,68 @@ func normalizeGitURL(url string) string {
 	url = strings.TrimSuffix(url, "/")
 	return url
 }
+
+// IsLocalFilesystemURL returns true if the URL is a local filesystem path
+// rather than a real remote URL (SSH or HTTPS). Matches absolute paths,
+// relative paths (./  ../), and file:// protocol URLs.
+func IsLocalFilesystemURL(url string) bool {
+	url = strings.TrimSpace(url)
+	if url == "" {
+		return false
+	}
+
+	// file:// protocol
+	if strings.HasPrefix(url, "file://") {
+		return true
+	}
+
+	// Absolute path (Unix)
+	if strings.HasPrefix(url, "/") {
+		return true
+	}
+
+	// Relative paths
+	if strings.HasPrefix(url, "./") || strings.HasPrefix(url, "../") {
+		return true
+	}
+
+	return false
+}
+
+// RemoteOriginURL returns the origin remote URL configured inside a submodule.
+// Returns empty string if no origin remote is configured.
+func RemoteOriginURL(ctx context.Context, submodulePath string) (string, error) {
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "-C", submodulePath, "remote", "get-url", "origin")
+	output, err := cmd.Output()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			// No origin remote configured
+			return "", nil
+		}
+		return "", fmt.Errorf("get remote origin URL for %s: %w", submodulePath, err)
+	}
+
+	return strings.TrimSpace(string(output)), nil
+}
+
+// SetDeclaredURL updates the URL in .gitmodules for a submodule.
+func SetDeclaredURL(ctx context.Context, repoRoot, submodulePath, newURL string) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "-C", repoRoot,
+		"config", "-f", ".gitmodules",
+		fmt.Sprintf("submodule.%s.url", submodulePath), newURL)
+
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("set declared URL for %s: %w: %s", submodulePath, err, strings.TrimSpace(string(output)))
+	}
+
+	return nil
+}
