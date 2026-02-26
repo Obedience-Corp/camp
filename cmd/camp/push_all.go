@@ -42,19 +42,20 @@ func runPushAllCmd(cmd *cobra.Command, args []string) error {
 
 	// Extract --no-recurse before passing remaining args to git.
 	var noRecurse bool
-	args, noRecurse = extractNoRecurse(args)
+	args, noRecurse = extractFlag(args, "--no-recurse")
 
 	return runPushAll(ctx, campRoot, args, noRecurse)
 }
 
-// extractNoRecurse removes --no-recurse from args and returns the filtered
+// extractFlag removes a camp-specific flag from args and returns the filtered
 // args plus whether the flag was present. Used by commands with
-// DisableFlagParsing that need to intercept camp-specific flags.
-func extractNoRecurse(args []string) ([]string, bool) {
+// DisableFlagParsing that need to intercept camp-specific flags before passing
+// remaining args through to git.
+func extractFlag(args []string, flag string) ([]string, bool) {
 	var filtered []string
 	var found bool
 	for _, a := range args {
-		if a == "--no-recurse" {
+		if a == flag {
 			found = true
 			continue
 		}

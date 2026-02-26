@@ -45,26 +45,12 @@ func runPullAllCmd(cmd *cobra.Command, args []string) error {
 	}
 
 	// Extract camp-specific flags before passing remaining args to git.
-	var noRecurse bool
-	args, noRecurse = extractNoRecurse(args)
+	var noRecurse, useDefault bool
+	args, noRecurse = extractFlag(args, "--no-recurse")
+	args, useDefault = extractFlag(args, "--default-branch")
 
-	var useDefault bool
-	args, useDefault = extractDefaultBranch(args)
-
-	return runPullAll(ctx, campRoot, args, noRecurse, useDefault)
-}
-
-// extractDefaultBranch removes --default-branch from args and returns the
-// filtered args plus whether the flag was present.
-func extractDefaultBranch(args []string) ([]string, bool) {
-	var filtered []string
-	var found bool
-	for _, a := range args {
-		if a == "--default-branch" {
-			found = true
-			continue
-		}
-		filtered = append(filtered, a)
-	}
-	return filtered, found
+	return runPullAll(ctx, campRoot, args, PullAllOptions{
+		NoRecurse:     noRecurse,
+		DefaultBranch: useDefault,
+	})
 }

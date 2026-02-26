@@ -67,7 +67,7 @@ var (
 func init() {
 	projectPruneCmd.Flags().StringVarP(&pruneProjectFlag, "project", "p", "", "Project name (auto-detected from cwd)")
 	projectPruneCmd.Flags().BoolVarP(&pruneDryRun, "dry-run", "n", false, "Preview without deleting")
-	projectPruneCmd.Flags().BoolVarP(&pruneForce, "force", "f", false, "Skip confirmation prompt for local deletion")
+	projectPruneCmd.Flags().BoolVarP(&pruneForce, "force", "f", false, "Skip local branch deletion confirmation")
 	projectPruneCmd.Flags().BoolVar(&pruneRemote, "remote", false, "Also prune stale remote tracking refs")
 	projectPruneCmd.Flags().BoolVar(&pruneRemoteDelete, "remote-delete", false, "Also delete merged branches on origin (destructive)")
 
@@ -146,10 +146,26 @@ func executePrune(ctx context.Context, name, path string, opts PruneOptions) pro
 		return pr
 	}
 
-	// Confirmation for local deletion (unless dry-run or force)
-	if len(merged) > 0 && !opts.DryRun && !opts.Force {
+	deleteLocalBranches(ctx, path, merged, opts, &pr)
+
+	// Remote branch deletion uses the original merged list intentionally —
+	// remote branches should be cleaned up regardless of local deletion outcome.
+	deleteRemoteBranches(ctx, path, merged, opts, &pr)
+
+	pruneTrackingRefs(ctx, path, opts, &pr)
+
+	return pr
+}
+
+// deleteLocalBranches handles confirmation and deletion of locally merged branches.
+func deleteLocalBranches(ctx context.Context, path string, merged []string, opts PruneOptions, pr *projectPruneResult) {
+	if len(merged) == 0 {
+		return
+	}
+
+	if !opts.DryRun && !opts.Force {
 		fmt.Printf("\n%s Will delete %d merged branch(es) in %s:\n",
-			ui.WarningIcon(), len(merged), ui.Value(name))
+			ui.WarningIcon(), len(merged), ui.Value(pr.Name))
 		for _, b := range merged {
 			fmt.Printf("  %s %s\n", ui.Dim("-"), b)
 		}
@@ -164,11 +180,10 @@ func executePrune(ctx context.Context, name, path string, opts PruneOptions) pro
 					Detail: "cancelled by user",
 				})
 			}
-			return pr
+			return
 		}
 	}
 
-	// Delete merged branches locally
 	for _, branch := range merged {
 		if opts.DryRun {
 			pr.Results = append(pr.Results, pruneResult{
@@ -191,77 +206,86 @@ func executePrune(ctx context.Context, name, path string, opts PruneOptions) pro
 			})
 		}
 	}
+}
 
-	// Remote branch deletion — separate confirmation gate (irreversible)
-	if opts.RemoteDelete && len(merged) > 0 {
-		if opts.DryRun {
-			for _, branch := range merged {
-				pr.Results = append(pr.Results, pruneResult{
-					Branch: "origin/" + branch,
-					Status: pruneStatusWouldDelete,
-					Detail: "remote",
-				})
-			}
-		} else {
-			// Always confirm remote deletion independently — --force only covers local
-			fmt.Printf("\n%s Will DELETE %d branch(es) from origin (irreversible):\n",
-				ui.WarningIcon(), len(merged))
-			for _, b := range merged {
-				fmt.Printf("  %s origin/%s\n", ui.Dim("-"), b)
-			}
-			fmt.Print("\nDelete from remote? [y/N] ")
-			var answer string
-			fmt.Scanln(&answer)
-			if strings.HasPrefix(strings.ToLower(answer), "y") {
-				for _, branch := range merged {
-					if err := git.DeleteRemoteBranch(ctx, path, branch); err != nil {
-						pr.Results = append(pr.Results, pruneResult{
-							Branch: "origin/" + branch,
-							Status: pruneStatusError,
-							Detail: err.Error(),
-						})
-					} else {
-						pr.Results = append(pr.Results, pruneResult{
-							Branch: "origin/" + branch,
-							Status: pruneStatusDeleted,
-							Detail: "remote",
-						})
-					}
-				}
-			} else {
-				for _, branch := range merged {
-					pr.Results = append(pr.Results, pruneResult{
-						Branch: "origin/" + branch,
-						Status: pruneStatusSkipped,
-						Detail: "remote deletion cancelled",
-					})
-				}
-			}
-		}
+// deleteRemoteBranches handles confirmation and deletion of merged branches on origin.
+func deleteRemoteBranches(ctx context.Context, path string, merged []string, opts PruneOptions, pr *projectPruneResult) {
+	if !opts.RemoteDelete || len(merged) == 0 {
+		return
 	}
 
-	// Prune stale remote tracking refs
-	if opts.Remote {
-		if opts.DryRun {
+	if opts.DryRun {
+		for _, branch := range merged {
 			pr.Results = append(pr.Results, pruneResult{
-				Branch: "(remote tracking refs)",
-				Status: pruneStatusWouldPrune,
+				Branch: "origin/" + branch,
+				Status: pruneStatusWouldDelete,
+				Detail: "remote",
+			})
+		}
+		return
+	}
+
+	// Always confirm remote deletion independently — --force only covers local
+	fmt.Printf("\n%s Will DELETE %d branch(es) from origin (irreversible):\n",
+		ui.WarningIcon(), len(merged))
+	for _, b := range merged {
+		fmt.Printf("  %s origin/%s\n", ui.Dim("-"), b)
+	}
+	fmt.Print("\nDelete from remote? [y/N] ")
+	var answer string
+	fmt.Scanln(&answer)
+	if !strings.HasPrefix(strings.ToLower(answer), "y") {
+		for _, branch := range merged {
+			pr.Results = append(pr.Results, pruneResult{
+				Branch: "origin/" + branch,
+				Status: pruneStatusSkipped,
+				Detail: "remote deletion cancelled",
+			})
+		}
+		return
+	}
+
+	for _, branch := range merged {
+		if err := git.DeleteRemoteBranch(ctx, path, branch); err != nil {
+			pr.Results = append(pr.Results, pruneResult{
+				Branch: "origin/" + branch,
+				Status: pruneStatusError,
+				Detail: err.Error(),
 			})
 		} else {
-			count, err := git.PruneRemote(ctx, path)
-			if err != nil {
-				pr.Results = append(pr.Results, pruneResult{
-					Branch: "(remote tracking refs)",
-					Status: pruneStatusError,
-					Detail: err.Error(),
-				})
-			} else {
-				pr.Pruned = count
-			}
+			pr.Results = append(pr.Results, pruneResult{
+				Branch: "origin/" + branch,
+				Status: pruneStatusDeleted,
+				Detail: "remote",
+			})
 		}
 	}
+}
 
-	return pr
+// pruneTrackingRefs handles pruning of stale remote tracking refs.
+func pruneTrackingRefs(ctx context.Context, path string, opts PruneOptions, pr *projectPruneResult) {
+	if !opts.Remote {
+		return
+	}
+
+	if opts.DryRun {
+		pr.Results = append(pr.Results, pruneResult{
+			Branch: "(remote tracking refs)",
+			Status: pruneStatusWouldPrune,
+		})
+		return
+	}
+
+	count, err := git.PruneRemote(ctx, path)
+	if err != nil {
+		pr.Results = append(pr.Results, pruneResult{
+			Branch: "(remote tracking refs)",
+			Status: pruneStatusError,
+			Detail: err.Error(),
+		})
+	} else {
+		pr.Pruned = count
+	}
 }
 
 // Package-level styles for prune output — allocated once.
@@ -287,52 +311,13 @@ func renderPruneResult(pr projectPruneResult) {
 	fmt.Printf("\n%s %s\n", ui.Subheader("Project:"), ui.Value(pr.Name))
 
 	if len(pr.Results) > 0 {
-		headers := []string{"BRANCH", "STATUS", "DETAIL"}
-		var rows [][]string
-
-		for _, r := range pr.Results {
-			var statusStr string
-			switch r.Status {
-			case pruneStatusDeleted:
-				statusStr = pruneStyleGreen.Render(string(r.Status))
-			case pruneStatusWouldDelete, pruneStatusWouldPrune:
-				statusStr = pruneStyleYellow.Render(string(r.Status))
-			case pruneStatusSkipped:
-				statusStr = pruneStyleDim.Render(string(r.Status))
-			case pruneStatusError:
-				statusStr = pruneStyleRed.Render(string(r.Status))
-			default:
-				statusStr = string(r.Status)
-			}
-
-			detail := r.Detail
-			if detail == "" {
-				detail = "-"
-			}
-
-			rows = append(rows, []string{r.Branch, statusStr, detail})
-		}
-
-		t := table.New().
-			Border(lipgloss.ASCIIBorder()).
-			BorderStyle(lipgloss.NewStyle().Foreground(ui.DimColor)).
-			Headers(headers...).
-			Rows(rows...).
-			StyleFunc(func(row, col int) lipgloss.Style {
-				if row == table.HeaderRow {
-					return pruneStyleHeader
-				}
-				return lipgloss.NewStyle()
-			})
-
-		fmt.Println(t)
+		fmt.Println(buildPruneTable(pr.Results))
 	}
 
 	if pr.Pruned > 0 {
 		fmt.Printf("%s Pruned %d stale remote tracking ref(s)\n", ui.SuccessIcon(), pr.Pruned)
 	}
 
-	// Summary line
 	deleted := 0
 	for _, r := range pr.Results {
 		if r.Status == pruneStatusDeleted {
@@ -342,4 +327,45 @@ func renderPruneResult(pr projectPruneResult) {
 	if deleted > 0 {
 		fmt.Printf("\n%s Pruned %d branch(es)\n", ui.SuccessIcon(), deleted)
 	}
+}
+
+// buildPruneTable constructs the lipgloss table for prune results.
+func buildPruneTable(results []pruneResult) *table.Table {
+	headers := []string{"BRANCH", "STATUS", "DETAIL"}
+	var rows [][]string
+
+	for _, r := range results {
+		var statusStr string
+		switch r.Status {
+		case pruneStatusDeleted:
+			statusStr = pruneStyleGreen.Render(string(r.Status))
+		case pruneStatusWouldDelete, pruneStatusWouldPrune:
+			statusStr = pruneStyleYellow.Render(string(r.Status))
+		case pruneStatusSkipped:
+			statusStr = pruneStyleDim.Render(string(r.Status))
+		case pruneStatusError:
+			statusStr = pruneStyleRed.Render(string(r.Status))
+		default:
+			statusStr = string(r.Status)
+		}
+
+		detail := r.Detail
+		if detail == "" {
+			detail = "-"
+		}
+
+		rows = append(rows, []string{r.Branch, statusStr, detail})
+	}
+
+	return table.New().
+		Border(lipgloss.ASCIIBorder()).
+		BorderStyle(lipgloss.NewStyle().Foreground(ui.DimColor)).
+		Headers(headers...).
+		Rows(rows...).
+		StyleFunc(func(row, col int) lipgloss.Style {
+			if row == table.HeaderRow {
+				return pruneStyleHeader
+			}
+			return lipgloss.NewStyle()
+		})
 }
