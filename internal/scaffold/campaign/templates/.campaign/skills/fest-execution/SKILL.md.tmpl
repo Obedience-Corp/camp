@@ -10,7 +10,7 @@ The execution loop: find next task, do the work, track progress, commit, validat
 ## The Execution Loop
 
 ```
-fest next → read task → do work → fest progress → fest commit → fest validate → fest next
+fest next → read task → do work → fest show --inprogress → fest commit → fest validate → fest next
 ```
 
 ### 1. Find Next Task
@@ -27,18 +27,25 @@ This shows:
 
 ### 2. Track Progress
 
+**Visualize progress** with `fest show`:
+
+```bash
+fest show --inprogress           # Expand only in-progress phases/sequences
+fest show --inprogress --watch   # Live-updating progress view (recommended)
+fest show --roadmap              # Full execution roadmap with task statuses
+fest show --summary              # Aggregate summary stats
+fest show --collapsed            # Collapsed tree with counters only
+```
+
+`fest show --inprogress --watch` is the most useful during execution — it continuously refreshes and shows only what you're working on, minimizing noise.
+
+**Update task status** with `fest progress` or `fest task`:
+
 ```bash
 fest progress --task <id> --in-progress    # Mark task as started
 fest progress --task <id> --complete       # Mark task as done
-fest progress                              # View overall progress
-```
-
-Or use the task command directly:
-
-```bash
-fest task complete                # Mark current task as complete
-fest task block --reason "..."   # Block task with reason
-fest task reset                  # Reset task status
+fest task complete                         # Mark current task as complete
+fest task block --reason "..."             # Block task with reason
 ```
 
 ### 3. Commit with Traceability
@@ -74,10 +81,11 @@ Run after completing each sequence to catch issues early.
 ## Status and Context
 
 ```bash
-fest status                      # Festival progress overview
+fest show --inprogress --watch   # Live progress view (primary tracking tool)
+fest show                        # Full festival structure tree
+fest status                      # Entity status details
 fest context                     # Current session context (festival + project)
 fest deps                        # Task dependency graph
-fest show                        # Display festival structure
 ```
 
 ## Quality Gates

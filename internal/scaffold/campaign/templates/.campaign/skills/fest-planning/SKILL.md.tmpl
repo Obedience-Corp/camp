@@ -101,11 +101,14 @@ fest list                        # List festivals by status
 fest list --status active        # Filter by status
 ```
 
-## Validation
+## Review and Validate
 
-Always validate structure before and after changes:
+Review festival structure and validate before execution:
 
 ```bash
+fest show --roadmap              # Full execution roadmap with task statuses
+fest show --inprogress           # Focus on in-progress work only
+fest show --goals                # Show goals for phases and sequences
 fest validate                    # Check structure compliance
 fest validate --fix              # Auto-fix common issues
 ```

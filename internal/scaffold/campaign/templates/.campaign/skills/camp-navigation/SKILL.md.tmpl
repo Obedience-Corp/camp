@@ -1,6 +1,6 @@
 ---
 name: camp-navigation
-description: Navigate campaign workspaces using cgo shell function, camp go, shortcuts, and pins. Use when you need to move between projects, festivals, workflow directories, or any campaign location.
+description: Navigate campaign workspaces using cgo shell function, camp go, and shortcuts. Use when you need to move between projects, festivals, workflow directories, or any campaign location.
 ---
 
 # Campaign Navigation
@@ -68,17 +68,6 @@ Depth is configurable per concept in `.campaign/campaign.yaml`.
 ```bash
 camp go p             # Prints absolute path to projects/
 camp go f             # Prints absolute path to festivals/
-```
-
-## Pins - Bookmarked Directories
-
-Pin frequently-accessed directories for quick access:
-
-```bash
-camp pin daemon       # Bookmark current directory as "daemon"
-camp pins             # List all pins
-camp unpin daemon     # Remove bookmark
-cgo daemon            # Navigate to pinned directory
 ```
 
 ## Shell Completions
