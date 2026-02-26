@@ -212,6 +212,9 @@ func runPullAll(ctx context.Context, campRoot string, gitArgs []string, noRecurs
 		}
 	}
 
+	// Post-pull: report submodules with changed refs in the parent
+	changedRefs := reportChangedRefs(ctx, campRoot, paths, yellow)
+
 	// Summary
 	fmt.Println()
 	total := pulled + failed
@@ -226,10 +229,39 @@ func runPullAll(ctx context.Context, campRoot string, gitArgs []string, noRecurs
 		}
 	}
 
+	if changedRefs > 0 {
+		fmt.Println()
+		fmt.Println(dim.Render("  Run 'camp commit' to record these ref updates."))
+	}
+
 	if failed > 0 {
 		return fmt.Errorf("%d repo(s) failed to pull", failed)
 	}
 	return nil
+}
+
+// reportChangedRefs checks which submodules have new refs after pulling
+// and prints a summary. Does not stage or commit anything.
+func reportChangedRefs(ctx context.Context, campRoot string, subPaths []string, style lipgloss.Style) int {
+	var changed []string
+	for _, p := range subPaths {
+		fullPath := filepath.Join(campRoot, p)
+		if checkParentNeedsCommit(ctx, campRoot, fullPath) {
+			changed = append(changed, p)
+		}
+	}
+
+	if len(changed) == 0 {
+		return 0
+	}
+
+	fmt.Println()
+	fmt.Println(style.Render("  Submodule refs updated (not yet committed):"))
+	for _, p := range changed {
+		fmt.Printf("    %-30s (new commits)\n", git.SubmoduleDisplayName(p))
+	}
+
+	return len(changed)
 }
 
 // isDivergentError checks if git output indicates divergent branches.

@@ -479,6 +479,35 @@ func TestCompareURLs_ContextCanceled(t *testing.T) {
 	}
 }
 
+func TestIsLocalFilesystemURL(t *testing.T) {
+	tests := []struct {
+		name     string
+		url      string
+		expected bool
+	}{
+		{"absolute path", "/Users/lance/Dev/repo", true},
+		{"absolute path with trailing slash", "/tmp/repos/project/", true},
+		{"relative dot-slash", "./sibling-repo", true},
+		{"relative dot-dot-slash", "../other-repo", true},
+		{"file protocol", "file:///Users/lance/Dev/repo", true},
+		{"SSH URL", "git@github.com:org/repo.git", false},
+		{"HTTPS URL", "https://github.com/org/repo.git", false},
+		{"HTTP URL", "http://gitlab.com/org/repo.git", false},
+		{"empty string", "", false},
+		{"whitespace only", "   ", false},
+		{"SSH with port", "ssh://git@github.com:22/org/repo.git", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := IsLocalFilesystemURL(tt.url)
+			if result != tt.expected {
+				t.Errorf("IsLocalFilesystemURL(%q) = %v, want %v", tt.url, result, tt.expected)
+			}
+		})
+	}
+}
+
 func TestNormalizeGitURL(t *testing.T) {
 	tests := []struct {
 		name     string
