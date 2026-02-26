@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 
@@ -22,20 +21,20 @@ var projectCommitCmd = &cobra.Command{
 	Long: `Commit changes within a project submodule.
 
 Auto-detects the current project from your working directory,
-or use --path to specify a project explicitly.
+or use --project to specify a project by name.
 
 Examples:
   # From within a project directory
   cd projects/my-api
   camp project commit -m "Fix bug"
 
-  # Specify project explicitly
-  camp project commit --path projects/my-api -m "Update deps"`,
+  # Specify project by name
+  camp project commit --project my-api -m "Update deps"`,
 	RunE: runProjectCommit,
 }
 
 var (
-	projectPath          string
+	projectCommitProject string
 	projectCommitMessage string
 	projectCommitAll     bool
 	projectCommitAmend   bool
@@ -43,7 +42,7 @@ var (
 )
 
 func init() {
-	projectCommitCmd.Flags().StringVarP(&projectPath, "path", "p", "", "Project path (relative to campaign root)")
+	projectCommitCmd.Flags().StringVarP(&projectCommitProject, "project", "p", "", "Project name (auto-detected from cwd if not specified)")
 	projectCommitCmd.Flags().StringVarP(&projectCommitMessage, "message", "m", "", "Commit message (required)")
 	projectCommitCmd.Flags().BoolVarP(&projectCommitAll, "all", "a", true, "Stage all changes")
 	projectCommitCmd.Flags().BoolVar(&projectCommitAmend, "amend", false, "Amend the previous commit")
@@ -54,9 +53,6 @@ func init() {
 
 func runProjectCommit(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
 
 	// Find campaign root
 	campRoot, err := campaign.DetectCached(ctx)
@@ -64,12 +60,17 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("not in a campaign: %w", err)
 	}
 
-	// Resolve project path
-	resolvedPath, err := resolveProjectPath(ctx, campRoot, projectPath)
+	// Resolve project
+	result, err := project.Resolve(ctx, campRoot, projectCommitProject)
 	if err != nil {
-		showProjectList(ctx, campRoot)
+		var notFound *project.ProjectNotFoundError
+		if errors.As(err, &notFound) {
+			fmt.Println(ui.Dim("\n" + project.FormatProjectList(notFound.AvailableProjects())))
+		}
 		return err
 	}
+
+	resolvedPath := result.Path
 
 	// Display which project
 	relPath, _ := filepath.Rel(campRoot, resolvedPath)
@@ -149,72 +150,6 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
-}
-
-// resolveProjectPath determines the project path from flags or current directory.
-func resolveProjectPath(ctx context.Context, campRoot, flagPath string) (string, error) {
-	if flagPath != "" {
-		// Explicit path provided - validate it's a registered project
-		absPath := filepath.Join(campRoot, flagPath)
-		if !isRegisteredProject(ctx, campRoot, absPath) {
-			return "", fmt.Errorf("'%s' is not a registered project", flagPath)
-		}
-		return absPath, nil
-	}
-
-	// Try to detect from current directory
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-
-	// Find project root from current directory
-	projectRoot, isSubmodule, err := git.FindProjectRootWithType(cwd)
-	if err != nil {
-		return "", fmt.Errorf("not inside a project directory: %w", err)
-	}
-
-	// Check if we're in the campaign root
-	if projectRoot == campRoot {
-		return "", errors.New("you're in the campaign root, not a project\nUse 'camp commit' for campaign-level commits")
-	}
-
-	// Verify it's a registered project (if not a submodule, might be untracked)
-	if !isSubmodule && !isRegisteredProject(ctx, campRoot, projectRoot) {
-		return "", fmt.Errorf("'%s' is not a registered project", projectRoot)
-	}
-
-	return projectRoot, nil
-}
-
-// isRegisteredProject checks if path is in the campaign's project list.
-func isRegisteredProject(ctx context.Context, campRoot, absPath string) bool {
-	projects, err := project.List(ctx, campRoot)
-	if err != nil {
-		return false
-	}
-
-	for _, proj := range projects {
-		if filepath.Join(campRoot, proj.Path) == absPath {
-			return true
-		}
-	}
-	return false
-}
-
-// showProjectList displays available projects when detection fails.
-func showProjectList(ctx context.Context, campRoot string) {
-	projects, err := project.List(ctx, campRoot)
-	if err != nil || len(projects) == 0 {
-		fmt.Println(ui.Dim("\nNo projects found in this campaign."))
-		return
-	}
-
-	fmt.Println(ui.Dim("\nAvailable projects:"))
-	for _, proj := range projects {
-		fmt.Printf("  - %s\n", proj.Path)
-	}
-	fmt.Println(ui.Dim("\nUse --path to specify a project, or navigate into one first."))
 }
 
 // syncParentRef stages and commits the submodule ref update in the campaign root.

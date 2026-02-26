@@ -26,6 +26,7 @@ type RepoInfo struct {
 	Untracked int
 	Ahead     int
 	Behind    int
+	Unmerged  int
 	Clean     bool
 	Error     string
 }
