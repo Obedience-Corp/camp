@@ -1,0 +1,119 @@
+---
+name: fest-planning
+description: Create and structure festivals using fest CLI - learn the methodology, create festivals/phases/sequences/tasks, link to projects, navigate with fgo, promote through lifecycle. Use when planning new work or setting up festival structure.
+---
+
+# Festival Planning
+
+Festivals are structured project plans with a 3-level hierarchy: Phases > Sequences > Tasks. The fest CLI manages their creation, validation, and lifecycle.
+
+## First Step: Learn the Methodology
+
+Before creating anything, run:
+
+```bash
+fest understand methodology    # Core principles
+fest understand structure      # 3-level hierarchy explained
+fest understand tasks          # When and how to create task files
+fest understand rules          # Naming conventions (required for automation)
+fest understand checklist      # Quick validation checklist
+```
+
+See [references/understand-topics.md](references/understand-topics.md) for the full topic index.
+
+## Shell Setup
+
+Enable the `fgo` navigation function:
+
+```bash
+# Add to ~/.zshrc or ~/.bashrc
+eval "$(fest shell-init zsh)"    # or bash/fish
+```
+
+`fgo` toggles between the festival directory and its linked project directory. `fgo <name>` jumps to a specific festival.
+
+## Creating Festivals
+
+### Interactive Creation (TUI)
+
+```bash
+fest create festival             # Create a new festival
+fest create phase                # Add a phase to current festival
+fest create sequence             # Add a sequence to current phase
+fest create task                 # Add a task to current sequence
+```
+
+### Scaffolding from Type
+
+```bash
+fest types                       # Discover available types
+fest scaffold                    # Auto-generate structure based on type
+```
+
+### Naming Conventions
+
+Festivals follow strict naming rules for automation:
+
+- Phases: `NNN_PHASE_NAME/` (e.g., `001_IMPLEMENT/`)
+- Sequences: `NN_sequence_name/` (e.g., `01_auth_module/`)
+- Tasks: `NN_task_description.md` (e.g., `01_create_auth_handler.md`)
+
+Run `fest rules` to see the full naming rules for the current festival.
+
+## Linking Festivals to Projects
+
+Connect a festival to its working directory:
+
+```bash
+fest link                        # Link current festival to a project (interactive)
+fest link --project projects/camp    # Link to specific project
+fest links                       # List all active links
+fest unlink                      # Remove link
+```
+
+Links enable:
+- `fgo` toggling between festival and project
+- `fest context` to show both festival and project state
+- `fest commit` to create commits with festival references
+
+## Navigation
+
+```bash
+fgo                              # Toggle between festival and linked project
+fgo my-festival                  # Jump to a specific festival
+fest go                          # Navigate to festivals root
+fest go <location>               # Navigate to specific phase/sequence
+```
+
+## Festival Lifecycle
+
+Festivals progress through statuses:
+
+```
+planning → ready → active → completed
+                      ↘ archived
+                      ↘ someday
+```
+
+```bash
+fest promote                     # Move festival to next lifecycle status
+fest list                        # List festivals by status
+fest list --status active        # Filter by status
+```
+
+## Validation
+
+Always validate structure before and after changes:
+
+```bash
+fest validate                    # Check structure compliance
+fest validate --fix              # Auto-fix common issues
+```
+
+## Common Mistakes
+
+- Not running `fest understand` first - leads to wrong structure and naming
+- Wrong naming conventions - automation depends on the `NNN_` and `NN_` prefixes
+- Creating tasks without sequence goals - every sequence needs a SEQUENCE_GOAL.md
+- Forgetting to link festival to project - `fgo` toggle won't work
+- Skipping validation - `fest validate` catches issues early
