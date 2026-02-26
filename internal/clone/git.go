@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	gitpkg "github.com/obediencecorp/camp/internal/git"
+	gitpkg "github.com/Obedience-Corp/camp/internal/git"
 )
 
 // gitClone performs the initial repository clone.

@@ -3,8 +3,8 @@ package main
 import (
 	"os"
 
-	"github.com/obediencecorp/camp/internal/campaign"
-	"github.com/obediencecorp/camp/internal/project"
+	"github.com/Obedience-Corp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/spf13/cobra"
 )
 

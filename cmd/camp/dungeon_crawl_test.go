@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/obediencecorp/camp/internal/dungeon"
+	"github.com/Obedience-Corp/camp/internal/dungeon"
 )
 
 func TestBuildCrawlCommitMessage(t *testing.T) {

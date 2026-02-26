@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/obediencecorp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/internal/campaign"
 )
 
 func TestExecInDir_Success(t *testing.T) {

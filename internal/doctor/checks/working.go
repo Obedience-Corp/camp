@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/obediencecorp/camp/internal/doctor"
+	"github.com/Obedience-Corp/camp/internal/doctor"
 )
 
 // WorkingCheck detects uncommitted changes in submodules.

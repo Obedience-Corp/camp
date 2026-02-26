@@ -1,7 +1,7 @@
 // Package explorer provides the Intent Explorer TUI component.
 package explorer
 
-import "github.com/obediencecorp/camp/internal/intent"
+import "github.com/Obedience-Corp/camp/internal/intent"
 
 // intentsLoadedMsg is sent when intents are loaded from the service.
 type intentsLoadedMsg struct {

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/obediencecorp/camp/internal/config"
-	"github.com/obediencecorp/camp/internal/nav"
+	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/nav"
 )
 
 // CategoryCandidate represents a completion candidate with metadata.

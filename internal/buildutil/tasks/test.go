@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/obediencecorp/camp/internal/buildutil/ui"
+	"github.com/Obedience-Corp/camp/internal/buildutil/ui"
 )
 
 // TestResult tracks test results for a package

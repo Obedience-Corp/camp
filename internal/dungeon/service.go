@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/obediencecorp/camp/internal/workflow"
+	"github.com/Obedience-Corp/camp/internal/workflow"
 )
 
 // Service errors.

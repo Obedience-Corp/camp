@@ -10,8 +10,8 @@ import (
 	"github.com/charmbracelet/lipgloss/table"
 	"github.com/spf13/cobra"
 
-	"github.com/obediencecorp/camp/internal/leverage"
-	"github.com/obediencecorp/camp/internal/ui"
+	"github.com/Obedience-Corp/camp/internal/leverage"
+	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
 var leverageHistoryCmd = &cobra.Command{

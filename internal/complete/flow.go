@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/obediencecorp/camp/internal/nav"
-	"github.com/obediencecorp/camp/internal/workflow"
+	"github.com/Obedience-Corp/camp/internal/nav"
+	"github.com/Obedience-Corp/camp/internal/workflow"
 )
 
 // CompleteFlow completes paths within a workflow directory.

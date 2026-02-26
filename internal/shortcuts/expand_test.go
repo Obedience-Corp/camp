@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/obediencecorp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/config"
 )
 
 func TestExpand(t *testing.T) {

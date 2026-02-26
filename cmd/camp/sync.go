@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/obediencecorp/camp/internal/campaign"
-	"github.com/obediencecorp/camp/internal/sync"
+	"github.com/Obedience-Corp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/internal/sync"
 	"github.com/spf13/cobra"
 )
 

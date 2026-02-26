@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/obediencecorp/camp/internal/config"
-	"github.com/obediencecorp/camp/internal/shortcuts"
+	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/shortcuts"
 )
 
 // Integration tests for shortcuts expansion workflow

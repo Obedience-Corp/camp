@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/obediencecorp/camp/internal/leverage"
+	"github.com/Obedience-Corp/camp/internal/leverage"
 )
 
 // sccRunner is the package-level runner used by the leverage command.

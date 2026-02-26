@@ -7,8 +7,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/obediencecorp/camp/internal/campaign"
-	"github.com/obediencecorp/camp/internal/leverage"
+	"github.com/Obedience-Corp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/internal/leverage"
 	"github.com/spf13/cobra"
 )
 

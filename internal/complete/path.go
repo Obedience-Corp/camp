@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/obediencecorp/camp/internal/nav"
-	"github.com/obediencecorp/camp/internal/nav/index"
+	"github.com/Obedience-Corp/camp/internal/nav"
+	"github.com/Obedience-Corp/camp/internal/nav/index"
 )
 
 // PathComplete completes partial path within a category.

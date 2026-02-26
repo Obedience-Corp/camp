@@ -6,8 +6,8 @@ import (
 	"io"
 	"sort"
 
-	"github.com/obediencecorp/camp/internal/config"
-	"github.com/obediencecorp/camp/internal/ui"
+	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
 // FeedbackWriter provides user feedback for shortcut expansion.

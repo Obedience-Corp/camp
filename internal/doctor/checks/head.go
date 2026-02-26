@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/obediencecorp/camp/internal/doctor"
+	"github.com/Obedience-Corp/camp/internal/doctor"
 )
 
 // HeadCheck identifies detached HEAD states with unpushed commits.

@@ -13,8 +13,8 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/ktr0731/go-fuzzyfinder"
 
-	"github.com/obediencecorp/camp/internal/project"
-	"github.com/obediencecorp/camp/internal/ui/theme"
+	"github.com/Obedience-Corp/camp/internal/project"
+	"github.com/Obedience-Corp/camp/internal/ui/theme"
 )
 
 // ErrAborted is returned when the user cancels selection.

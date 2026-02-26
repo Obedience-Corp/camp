@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/obediencecorp/camp/internal/project"
+	"github.com/Obedience-Corp/camp/internal/project"
 )
 
 // ResolvedProject is a project ready for leverage scoring.

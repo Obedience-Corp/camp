@@ -5,8 +5,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/obediencecorp/camp/internal/campaign"
-	"github.com/obediencecorp/camp/internal/transfer"
+	"github.com/Obedience-Corp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/transfer"
 	"github.com/spf13/cobra"
 )
 
@@ -15,19 +16,22 @@ var copyCmd = &cobra.Command{
 	Short: "Copy a file or directory within the campaign",
 	Long: `Copy a file or directory within the current campaign.
 
-Both source and destination are resolved relative to the campaign root,
-making it easy to copy things between campaign directories without
-painful relative paths.
+Paths are resolved relative to the current directory, matching standard
+'cp' behavior and tab completion.
+
+Use @ prefix for campaign shortcuts (e.g., @p/fest, @f/active/).
+Available shortcuts are defined in campaign config.
 
 If the destination is an existing directory or ends with '/', the source
 is placed inside it with the same basename. Directories are copied
 recursively.`,
-	Example: `  camp copy workflow/design/active/my-doc.md workflow/explore/my-doc.md
-  camp cp festivals/active/my-fest/OVERVIEW.md docs/
-  camp cp workflow/design/active/ workflow/explore/backup/`,
-	Aliases: []string{"cp"},
-	Args:    cobra.ExactArgs(2),
-	RunE:    runCopy,
+	Example: `  camp copy myfile.md ../docs/
+  camp cp @f/active/my-fest/OVERVIEW.md @d/
+  camp cp @w/design/active/ @w/explore/backup/`,
+	Aliases:           []string{"cp"},
+	Args:              cobra.ExactArgs(2),
+	ValidArgsFunction: completeTransferArgs,
+	RunE:              runCopy,
 }
 
 func init() {
@@ -45,8 +49,22 @@ func runCopy(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	src := transfer.ResolveCampaignRelative(root, args[0])
-	dest := transfer.ResolveCampaignRelative(root, args[1])
+	// Load campaign config for @ shortcut resolution
+	cfg, err := config.LoadCampaignConfig(ctx, root)
+	if err != nil {
+		return err
+	}
+	shortcuts := buildShortcutsMap(cfg)
+
+	// Resolve paths: @ prefix -> campaign shortcuts, otherwise -> cwd-relative
+	src, err := resolveTransferArg(root, args[0], shortcuts)
+	if err != nil {
+		return fmt.Errorf("source: %w", err)
+	}
+	dest, err := resolveTransferArg(root, args[1], shortcuts)
+	if err != nil {
+		return fmt.Errorf("destination: %w", err)
+	}
 
 	if err := transfer.ValidatePathExists(src); err != nil {
 		return fmt.Errorf("source: %w", err)

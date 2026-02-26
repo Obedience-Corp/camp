@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obediencecorp/camp/internal/nav"
+	"github.com/Obedience-Corp/camp/internal/nav"
 )
 
 func TestNewBuilder(t *testing.T) {

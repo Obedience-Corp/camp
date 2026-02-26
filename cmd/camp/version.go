@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/obediencecorp/camp/internal/version"
+	"github.com/Obedience-Corp/camp/internal/version"
 	"github.com/spf13/cobra"
 )
 

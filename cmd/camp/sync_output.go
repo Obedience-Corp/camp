@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/obediencecorp/camp/internal/sync"
-	"github.com/obediencecorp/camp/internal/ui"
+	"github.com/Obedience-Corp/camp/internal/sync"
+	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
 // formatSyncResult formats and displays the sync result.

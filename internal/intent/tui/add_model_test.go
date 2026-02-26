@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/obediencecorp/camp/internal/concept"
-	"github.com/obediencecorp/camp/internal/intent/tui/vim"
+	"github.com/Obedience-Corp/camp/internal/concept"
+	"github.com/Obedience-Corp/camp/internal/intent/tui/vim"
 )
 
 func TestIntentAddModel_InitialState(t *testing.T) {

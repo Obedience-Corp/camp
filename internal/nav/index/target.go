@@ -6,7 +6,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/obediencecorp/camp/internal/nav"
+	"github.com/Obedience-Corp/camp/internal/nav"
 )
 
 // Target represents a navigation target in the index.

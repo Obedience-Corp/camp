@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/obediencecorp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/config"
 )
 
 // ResolveCampaignRelative resolves a path relative to the campaign root.
@@ -64,6 +64,52 @@ func parseSpec(spec string) (string, string, bool) {
 		return spec, "", false
 	}
 	return spec[:idx], spec[idx+1:], true
+}
+
+// ResolveAtPrefix expands @ prefix shortcuts using campaign shortcuts configuration.
+// For example, "@p/fest" with shortcuts {"p": "projects/"} resolves to "<campRoot>/projects/fest".
+// Paths without @ prefix are returned unchanged with no error.
+// Returns the resolved absolute path, or an error if the @ shortcut is unknown.
+func ResolveAtPrefix(campRoot, path string, shortcuts map[string]string) (string, error) {
+	if !strings.HasPrefix(path, "@") {
+		return path, nil
+	}
+
+	raw := path[1:] // strip leading @
+	key := raw
+	rest := ""
+	if idx := strings.IndexByte(raw, '/'); idx != -1 {
+		key = raw[:idx]
+		rest = raw[idx+1:]
+	}
+
+	dir, ok := shortcuts[key]
+	if !ok {
+		var keys []string
+		for k := range shortcuts {
+			keys = append(keys, "@"+k)
+		}
+		return "", fmt.Errorf("unknown shortcut: @%s (valid: %s)", key, strings.Join(keys, ", "))
+	}
+
+	resolved := filepath.Join(campRoot, dir)
+	if rest != "" {
+		resolved = filepath.Join(resolved, rest)
+	}
+	return resolved, nil
+}
+
+// ResolveCwdRelative resolves a path relative to the current working directory.
+// Absolute paths are returned cleaned. Relative paths are joined with cwd.
+func ResolveCwdRelative(path string) (string, error) {
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path), nil
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("get working directory: %w", err)
+	}
+	return filepath.Join(cwd, path), nil
 }
 
 // IsDestDir returns true if the path exists and is a directory, or ends with a path separator.

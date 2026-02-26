@@ -2,18 +2,20 @@
 
 # camp
 
+> **Part of [Festival](https://github.com/Obedience-Corp/festival)** - mission-based AI workspace management. Camp handles workspace management; [fest](https://github.com/Obedience-Corp/fest) handles hierarchical planning. Together they give structure to how you work across multiple projects, contexts, and AI agents.
+
 Campaign workspace manager for multi-project AI development.
 
 ## Features
 
-- **Navigation** — Category shortcuts, fuzzy finding, bookmarks (`go`, `pin`, `shortcuts`)
-- **Project Management** — Git submodules, worktrees, and project scaffolding (`project add/list/remove/new/worktree`)
-- **Planning** — Intents, status flows, dungeon for deprioritized work (`intent`, `flow`, `dungeon`, `gather`)
-- **Productivity** — Leverage scoring to identify high-impact work (`leverage`)
-- **Git Integration** — Campaign-level git operations (`commit`, `log`, `push`, `status`)
-- **Campaign Ops** — Health checks, file operations, cross-campaign tools (`doctor`, `copy`, `move`, `sync`)
-- **Shell Integration** — Native cd behavior with zsh, bash, and fish (`shell-init`)
-- **Tab Completion** — Smart completion for categories, projects, and paths
+- **Navigation** - Category shortcuts, fuzzy finding, bookmarks (`go`, `pin`, `shortcuts`)
+- **Project Management** - Git submodules, worktrees, and project scaffolding (`project add/list/remove/new/worktree`)
+- **Planning** - Intents, status flows, dungeon for deprioritized work (`intent`, `flow`, `dungeon`, `gather`)
+- **Productivity** - Leverage scoring to identify high-impact work (`leverage`)
+- **Git Integration** - Campaign-level git operations (`commit`, `log`, `push`, `status`)
+- **Campaign Ops** - Health checks, file operations, cross-campaign tools (`doctor`, `copy`, `move`, `sync`)
+- **Shell Integration** - Native cd behavior with zsh, bash, and fish (`shell-init`)
+- **Tab Completion** - Smart completion for categories, projects, and paths
 
 ## Installation
 
@@ -90,7 +92,7 @@ Navigate instantly with single-letter shortcuts:
 
 ## Commands
 
-### Navigation — `cgo`
+### Navigation - `cgo`
 
 The `cgo` shell function is your primary interface:
 
@@ -149,21 +151,21 @@ camp project commit        # Commit within a project
 Intents, status flows, and the dungeon provide lightweight planning tools:
 
 ```bash
-# Intents — capture ideas, goals, and work items
+# Intents - capture ideas, goals, and work items
 camp intent                # Manage campaign intents
 camp gather                # Import external data into the intent system
 
-# Flows — track work status
+# Flows - track work status
 camp flow                  # Manage status workflows for organizing work
 
-# Dungeon — archive deprioritized work
+# Dungeon - archive deprioritized work
 camp dungeon               # Move items to/from the dungeon
 ```
 
 ### Productivity
 
 ```bash
-# Leverage scoring — identify high-impact work
+# Leverage scoring - identify high-impact work
 camp leverage              # Compute leverage scores for campaign projects
 ```
 
@@ -339,13 +341,13 @@ Add a `projects` section to `.campaign/campaign.yaml`:
 
 ```yaml
 projects:
-  - name: festival-methodology
+- name: festival-methodology
     path: projects/festival-methodology
     shortcuts:
       default: fest/           # Jump here by default
       cli: fest/cmd/fest/      # Named sub-shortcut
 
-  - name: api-service
+- name: api-service
     path: projects/api-service
     shortcuts:
       default: src/
@@ -374,9 +376,9 @@ editor: code
 
 Extended documentation is available in the `docs/` directory:
 
-- [Leverage Scoring](docs/leverage-score.md) — How leverage scores are computed
-- [Shortcuts](docs/SHORTCUTS.md) — Category shortcuts reference
-- [Shell Integration](docs/shell-integration.md) — Detailed shell setup guide
+- [Leverage Scoring](docs/leverage-score.md) - How leverage scores are computed
+- [Shortcuts](docs/SHORTCUTS.md) - Category shortcuts reference
+- [Shell Integration](docs/shell-integration.md) - Detailed shell setup guide
 
 ## Development
 
@@ -387,6 +389,14 @@ just test         # Run tests
 just install      # Install locally
 just run <args>   # Run with arguments
 ```
+
+## Part of Festival
+
+Camp is one half of the Festival product. The other half is [fest](https://github.com/Obedience-Corp/fest), which manages hierarchical planning - festivals, phases, sequences, and tasks that AI agents can execute autonomously. Together, camp + fest = Festival.
+
+- [Festival documentation](https://fest.build) - Full docs, methodology, tutorials
+- [fest CLI](https://github.com/Obedience-Corp/fest) - Festival planning and execution
+- [Festival repo](https://github.com/Obedience-Corp/festival) - Distribution hub and releases
 
 ## License
 

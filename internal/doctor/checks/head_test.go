@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/obediencecorp/camp/internal/doctor"
+	"github.com/Obedience-Corp/camp/internal/doctor"
 )
 
 func TestHeadCheck_ID(t *testing.T) {

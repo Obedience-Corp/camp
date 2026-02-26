@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/obediencecorp/camp/internal/config"
-	"github.com/obediencecorp/camp/internal/nav"
-	"github.com/obediencecorp/camp/internal/nav/index"
+	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/nav"
+	"github.com/Obedience-Corp/camp/internal/nav/index"
 )
 
 // RichCategoryGroup groups rich completion candidates by category.

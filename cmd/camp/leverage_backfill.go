@@ -6,7 +6,7 @@ import (
 	"os/signal"
 	"time"
 
-	"github.com/obediencecorp/camp/internal/leverage"
+	"github.com/Obedience-Corp/camp/internal/leverage"
 	"github.com/spf13/cobra"
 )
 

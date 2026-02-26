@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/obediencecorp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/config"
 )
 
 // ValidCampaignNameRegex defines the pattern for valid campaign names.

@@ -4,8 +4,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/obediencecorp/camp/internal/nav"
-	"github.com/obediencecorp/camp/internal/nav/fuzzy"
+	"github.com/Obedience-Corp/camp/internal/nav"
+	"github.com/Obedience-Corp/camp/internal/nav/fuzzy"
 )
 
 // CompletionCandidate represents a single completion suggestion with metadata.

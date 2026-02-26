@@ -1,7 +1,7 @@
 package explorer
 
 import (
-	"github.com/obediencecorp/camp/internal/intent/tui"
+	"github.com/Obedience-Corp/camp/internal/intent/tui"
 )
 
 // moveCursorDown moves the cursor down one position and adjusts scroll.

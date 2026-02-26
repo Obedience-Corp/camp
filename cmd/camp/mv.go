@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/obediencecorp/camp/internal/campaign"
-	"github.com/obediencecorp/camp/internal/concept"
-	"github.com/obediencecorp/camp/internal/transfer"
+	"github.com/Obedience-Corp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/transfer"
 	"github.com/spf13/cobra"
 )
 
@@ -18,15 +18,17 @@ var moveCmd = &cobra.Command{
 	Short: "Move a file or directory within the campaign",
 	Long: `Move a file or directory within the current campaign.
 
-Both source and destination are resolved relative to the campaign root,
-making it easy to move things between campaign directories without
-painful relative paths.
+Paths are resolved relative to the current directory, matching standard
+'mv' behavior and tab completion.
+
+Use @ prefix for campaign shortcuts (e.g., @p/fest, @f/active/).
+Available shortcuts are defined in campaign config.
 
 If the destination is an existing directory or ends with '/', the source
 is placed inside it with the same basename.`,
-	Example: `  camp move workflow/design/active/my-doc.md workflow/explore/my-doc.md
-  camp mv workflow/design/active/my-doc.md workflow/explore/
-  camp mv festivals/active/old-fest festivals/completed/`,
+	Example: `  camp move mydir/ ../docs/mydir/
+  camp mv @f/active/old-fest @f/completed/
+  camp mv draft.md @w/design/`,
 	Aliases: []string{"mv"},
 	Args:    cobra.ExactArgs(2),
 	Annotations: map[string]string{
@@ -34,7 +36,7 @@ is placed inside it with the same basename.`,
 		"agent_reason":  "Interactive project picker in no-arg mode",
 		"interactive":   "true",
 	},
-	ValidArgsFunction: completeMoveArgs,
+	ValidArgsFunction: completeTransferArgs,
 	RunE:              runMove,
 }
 
@@ -44,8 +46,8 @@ func init() {
 	moveCmd.Flags().BoolP("force", "f", false, "Overwrite destination without prompting")
 }
 
-// completeMoveArgs provides tab completion for camp mv arguments with @ prefix support.
-func completeMoveArgs(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+// completeTransferArgs provides tab completion for camp mv/cp arguments with @ prefix support.
+func completeTransferArgs(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	if len(args) >= 2 {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
@@ -55,69 +57,75 @@ func completeMoveArgs(cmd *cobra.Command, args []string, toComplete string) ([]s
 		ctx = context.Background()
 	}
 
-	campRoot, err := campaign.DetectCached(ctx)
-	if err != nil {
-		return nil, cobra.ShellCompDirectiveNoFileComp
-	}
-
-	// If starts with @, resolve and complete
+	// If starts with @, complete against campaign shortcuts
 	if strings.HasPrefix(toComplete, "@") {
-		return completeAtPath(campRoot, toComplete)
+		campRoot, err := campaign.DetectCached(ctx)
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		cfg, err := config.LoadCampaignConfig(ctx, campRoot)
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		shortcuts := buildShortcutsMap(cfg)
+		return completeAtPath(campRoot, toComplete, shortcuts)
 	}
 
-	// Default: filesystem completion relative to campaign root
+	// Default: filesystem completion relative to cwd
 	return nil, cobra.ShellCompDirectiveDefault
 }
 
-// completeAtPath provides completions for @-prefixed paths.
-func completeAtPath(campRoot, toComplete string) ([]string, cobra.ShellCompDirective) {
-	// Try to resolve the prefix
-	resolved, err := concept.ResolveAtPath(toComplete)
-	if err != nil {
-		// Maybe partial @ prefix — offer all @ shortcuts
+// completeAtPath provides completions for @-prefixed paths using campaign shortcuts.
+func completeAtPath(campRoot, toComplete string, shortcuts map[string]string) ([]string, cobra.ShellCompDirective) {
+	query := toComplete[1:] // strip leading @
+
+	slashIdx := strings.IndexByte(query, '/')
+	if slashIdx < 0 {
+		// No slash yet: offer matching shortcut keys
 		var completions []string
-		for prefix, dir := range concept.DefaultAtPrefixes {
-			if strings.HasPrefix(prefix, toComplete) {
-				completions = append(completions, prefix+"/\t"+dir)
+		for key, dir := range shortcuts {
+			if strings.HasPrefix(key, query) {
+				completions = append(completions, "@"+key+"/\t"+dir)
 			}
 		}
 		return completions, cobra.ShellCompDirectiveNoSpace
 	}
 
-	// List entries in the resolved directory
-	fullPath := filepath.Join(campRoot, resolved)
-	dir := fullPath
-	partial := ""
+	// Has slash: resolve the key and list directory entries
+	key := query[:slashIdx]
+	dir, ok := shortcuts[key]
+	if !ok {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
 
+	rest := query[slashIdx+1:]
+	fullPath := filepath.Join(campRoot, dir, rest)
+
+	dirToList := fullPath
+	partial := ""
 	info, err := os.Stat(fullPath)
 	if err != nil || !info.IsDir() {
-		// The resolved path might be a partial — split into dir + partial
-		dir = filepath.Dir(fullPath)
+		dirToList = filepath.Dir(fullPath)
 		partial = filepath.Base(fullPath)
 	}
 
-	entries, err := os.ReadDir(dir)
+	entries, err := os.ReadDir(dirToList)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
-	// Extract the @ prefix portion to reconstruct completions
-	atPrefix := toComplete
-	if idx := strings.IndexByte(toComplete, '/'); idx != -1 {
-		atPrefix = toComplete[:idx]
-	}
-
-	// Build the relative path within the concept dir
-	resolvedBase, _ := concept.ResolveAtPath(atPrefix + "/")
-	subpath := ""
-	if len(resolved) > len(resolvedBase) {
-		subpath = resolved[len(resolvedBase)+1:]
-		// Get the directory portion of subpath
-		if partial != "" && partial != filepath.Base(resolvedBase) {
-			subpath = filepath.Dir(subpath)
-			if subpath == "." {
-				subpath = ""
+	// Build completion prefix: @key/ + subdirectory path within the shortcut dir
+	prefix := "@" + key + "/"
+	if rest != "" {
+		subDir := rest
+		if partial != "" {
+			subDir = filepath.Dir(rest)
+			if subDir == "." {
+				subDir = ""
 			}
+		}
+		if subDir != "" {
+			prefix += subDir + "/"
 		}
 	}
 
@@ -131,15 +139,11 @@ func completeAtPath(campRoot, toComplete string) ([]string, cobra.ShellCompDirec
 		if partial != "" && !strings.HasPrefix(strings.ToLower(name), lowerPartial) {
 			continue
 		}
-		completion := atPrefix + "/"
-		if subpath != "" {
-			completion += subpath + "/"
-		}
-		completion += name
+		comp := prefix + name
 		if entry.IsDir() {
-			completion += "/"
+			comp += "/"
 		}
-		completions = append(completions, completion)
+		completions = append(completions, comp)
 	}
 
 	return completions, cobra.ShellCompDirectiveNoSpace
@@ -154,25 +158,29 @@ func runMove(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Resolve @ prefix shortcuts before path resolution
-	srcArg, err := concept.ResolveAtPath(args[0])
+	// Load campaign config for @ shortcut resolution
+	cfg, err := config.LoadCampaignConfig(ctx, root)
 	if err != nil {
 		return err
 	}
-	destArg, err := concept.ResolveAtPath(args[1])
-	if err != nil {
-		return err
-	}
+	shortcuts := buildShortcutsMap(cfg)
 
-	src := transfer.ResolveCampaignRelative(root, srcArg)
-	dest := transfer.ResolveCampaignRelative(root, destArg)
+	// Resolve paths: @ prefix -> campaign shortcuts, otherwise -> cwd-relative
+	src, err := resolveTransferArg(root, args[0], shortcuts)
+	if err != nil {
+		return fmt.Errorf("source: %w", err)
+	}
+	dest, err := resolveTransferArg(root, args[1], shortcuts)
+	if err != nil {
+		return fmt.Errorf("destination: %w", err)
+	}
 
 	if err := transfer.ValidatePathExists(src); err != nil {
 		return fmt.Errorf("source: %w", err)
 	}
 
 	// If dest is a directory or ends with /, place source inside it
-	if transfer.IsDestDir(dest) || transfer.IsDestDir(destArg) {
+	if transfer.IsDestDir(dest) || transfer.IsDestDir(args[1]) {
 		dest = filepath.Join(dest, filepath.Base(src))
 	}
 

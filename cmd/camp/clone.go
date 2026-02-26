@@ -6,8 +6,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/obediencecorp/camp/internal/clone"
-	"github.com/obediencecorp/camp/internal/ui"
+	"github.com/Obedience-Corp/camp/internal/clone"
+	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
 

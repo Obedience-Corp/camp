@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/obediencecorp/camp/internal/doctor"
-	"github.com/obediencecorp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/doctor"
+	"github.com/Obedience-Corp/camp/internal/git"
 )
 
 // OrphanCheck detects orphaned gitlinks in the git index that have no

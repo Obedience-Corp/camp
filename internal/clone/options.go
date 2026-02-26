@@ -9,7 +9,7 @@
 // This provides a reliable single-command bootstrap experience for new devices.
 package clone
 
-import "github.com/obediencecorp/camp/internal/sync"
+import "github.com/Obedience-Corp/camp/internal/sync"
 
 // CloneOptions configures clone behavior.
 type CloneOptions struct {

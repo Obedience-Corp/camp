@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/ktr0731/go-fuzzyfinder"
-	"github.com/obediencecorp/camp/internal/nav"
+	"github.com/Obedience-Corp/camp/internal/nav"
 )
 
 // ErrNoTargets is returned when attempting to pick from an empty list.

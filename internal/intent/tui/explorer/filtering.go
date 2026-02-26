@@ -3,7 +3,7 @@ package explorer
 import (
 	"strings"
 
-	"github.com/obediencecorp/camp/internal/intent"
+	"github.com/Obedience-Corp/camp/internal/intent"
 )
 
 // typeFilterItems are the available type filter options.
