@@ -336,6 +336,7 @@ func (s *Service) ListParentItems(ctx context.Context, parentPath string) ([]Dun
 		"dungeon":    true,
 		".campaign":  true,
 		".git":       true,
+		"AGENTS.md":  true,
 		"CLAUDE.md":  true,
 		"OBEY.md":    true,
 		"README.md":  true,
