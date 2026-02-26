@@ -2,6 +2,8 @@
 
 # camp
 
+> **Part of [Festival](https://github.com/Obedience-Corp/festival)** — mission-based AI workspace management. Camp handles workspace management; [fest](https://github.com/Obedience-Corp/fest) handles hierarchical planning. Together they give structure to how you work across multiple projects, contexts, and AI agents.
+
 Campaign workspace manager for multi-project AI development.
 
 ## Features
@@ -387,6 +389,14 @@ just test         # Run tests
 just install      # Install locally
 just run <args>   # Run with arguments
 ```
+
+## Part of Festival
+
+Camp is one half of the Festival product. The other half is [fest](https://github.com/Obedience-Corp/fest), which manages hierarchical planning — festivals, phases, sequences, and tasks that AI agents can execute autonomously. Together, camp + fest = Festival.
+
+- [Festival documentation](https://obedience-corp.github.io/festival) — Full docs, methodology, tutorials
+- [fest CLI](https://github.com/Obedience-Corp/fest) — Festival planning and execution
+- [Festival repo](https://github.com/Obedience-Corp/festival) — Distribution hub and releases
 
 ## License
 
