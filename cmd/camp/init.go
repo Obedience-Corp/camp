@@ -100,10 +100,13 @@ func runInit(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	isInteractive := tui.IsTerminal()
 
-	// Early detection: error if already inside a campaign (unless repairing)
-	if !repair && !dryRun {
-		existingRoot, _ := campaign.Detect(ctx, dir)
-		if existingRoot != "" {
+	// Early detection: error if already inside a campaign
+	existingRoot, _ := campaign.Detect(ctx, dir)
+	if existingRoot != "" {
+		if repair {
+			// Repair mode: use the detected campaign root regardless of where we are
+			dir = existingRoot
+		} else if !dryRun {
 			cfg, _ := config.LoadCampaignConfig(ctx, existingRoot)
 			name := filepath.Base(existingRoot)
 			if cfg != nil && cfg.Name != "" {
