@@ -48,6 +48,8 @@ func runProjectPruneAll(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
+	opts := pruneOptionsFromFlags()
+
 	var results []projectPruneResult
 	totalDeleted := 0
 	totalWouldDelete := 0
@@ -57,14 +59,14 @@ func runProjectPruneAll(cmd *cobra.Command, _ []string) error {
 		fullPath := filepath.Join(campRoot, p)
 		name := git.SubmoduleDisplayName(p)
 
-		pr := pruneProject_(ctx, name, fullPath)
+		pr := executePrune(ctx, name, fullPath, opts)
 		results = append(results, pr)
 
 		for _, r := range pr.Results {
 			switch r.Status {
-			case "deleted":
+			case pruneStatusDeleted:
 				totalDeleted++
-			case "would delete":
+			case pruneStatusWouldDelete:
 				totalWouldDelete++
 			}
 		}
@@ -84,7 +86,7 @@ func runProjectPruneAll(cmd *cobra.Command, _ []string) error {
 	// Summary
 	fmt.Println()
 	fmt.Println(ui.Separator(50))
-	if pruneDryRun {
+	if opts.DryRun {
 		fmt.Printf("%s Would prune %d branch(es) across %d project(s)\n",
 			ui.InfoIcon(), totalWouldDelete, projectsWithWork)
 	} else if totalDeleted > 0 {

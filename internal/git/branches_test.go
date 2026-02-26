@@ -377,3 +377,30 @@ func TestDeleteBranch_UnmergedFails(t *testing.T) {
 		t.Fatal("expected error deleting unmerged branch with -d, got nil")
 	}
 }
+
+func TestDeleteBranch_CancelledContext(t *testing.T) {
+	dir := initBranchTestRepo(t, "main")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := DeleteBranch(ctx, dir, "any-branch")
+	if err == nil {
+		t.Fatal("expected error for cancelled context, got nil")
+	}
+}
+
+func TestMergedBranches_CancelledContext(t *testing.T) {
+	dir := initBranchTestRepo(t, "main")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	branches, err := MergedBranches(ctx, dir)
+	if err == nil {
+		t.Fatal("expected error for cancelled context, got nil")
+	}
+	if branches != nil {
+		t.Fatalf("expected nil branches for cancelled context, got %v", branches)
+	}
+}

@@ -15,7 +15,7 @@ func UnmergedBranchCount(ctx context.Context, repoPath string) int {
 		return 0
 	}
 
-	defaultBranch := DefaultBranch(ctx, repoPath)
+	defaultBranch := defaultBranchLocal(ctx, repoPath)
 	if defaultBranch == "" {
 		return 0
 	}
@@ -43,7 +43,32 @@ func UnmergedBranchCount(ctx context.Context, repoPath string) int {
 	return count
 }
 
+// defaultBranchLocal determines the default branch using local-only heuristics
+// (no network calls). Used by latency-sensitive paths like status displays.
+func defaultBranchLocal(ctx context.Context, repoPath string) string {
+	if ctx.Err() != nil {
+		return ""
+	}
+
+	if branch := symbolicRefOriginHead(ctx, repoPath); branch != "" {
+		return branch
+	}
+
+	for _, candidate := range []string{"main", "master"} {
+		cmd := exec.CommandContext(ctx, "git", "-C", repoPath,
+			"rev-parse", "--verify", "--quiet", candidate)
+		if cmd.Run() == nil {
+			return candidate
+		}
+	}
+
+	return ""
+}
+
 // DefaultBranch determines the remote's default branch for a repository.
+// This may make a one-time network call if the local symbolic-ref cache
+// is not set. Use defaultBranchLocal for latency-sensitive paths.
+//
 // Strategy:
 //  1. Check local symbolic-ref cache of origin/HEAD
 //  2. If not set, run git remote set-head origin --auto (one-time network fetch)
@@ -166,7 +191,7 @@ func DeleteBranch(ctx context.Context, repoPath, branch string) error {
 		"branch", "-d", branch)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("delete branch %s: %s", branch, strings.TrimSpace(string(output)))
+		return fmt.Errorf("delete branch %s: %w: %s", branch, err, strings.TrimSpace(string(output)))
 	}
 	return nil
 }
@@ -182,7 +207,7 @@ func PruneRemote(ctx context.Context, repoPath string) (int, error) {
 		"remote", "prune", "origin")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return 0, fmt.Errorf("prune remote: %s", strings.TrimSpace(string(output)))
+		return 0, fmt.Errorf("prune remote: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 
 	// Count pruned lines (lines containing " * [pruned]")
@@ -206,7 +231,7 @@ func DeleteRemoteBranch(ctx context.Context, repoPath, branch string) error {
 		"push", "origin", "--delete", branch)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("delete remote branch %s: %s", branch, strings.TrimSpace(string(output)))
+		return fmt.Errorf("delete remote branch %s: %w: %s", branch, err, strings.TrimSpace(string(output)))
 	}
 	return nil
 }
