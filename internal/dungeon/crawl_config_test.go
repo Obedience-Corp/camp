@@ -34,6 +34,11 @@ func TestLoadCrawlConfig(t *testing.T) {
 			want:    []string{"templates"},
 		},
 		{
+			name:    "empty file",
+			content: "",
+			want:    nil,
+		},
+		{
 			name:    "invalid yaml",
 			content: ":::invalid",
 			wantErr: true,

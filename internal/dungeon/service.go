@@ -364,6 +364,9 @@ func (s *Service) ListParentItems(ctx context.Context, parentPath string) ([]Dun
 		for _, name := range cfg.Excludes {
 			excluded[name] = true
 		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		// File exists but failed to parse — warn so the user can fix it.
+		fmt.Fprintf(os.Stderr, "Warning: failed to parse %s: %v\n", crawlCfgPath, err)
 	}
 
 	var items []DungeonItem
