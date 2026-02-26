@@ -114,6 +114,119 @@ func TestValidatePathExists(t *testing.T) {
 	}
 }
 
+func TestResolveAtPrefix(t *testing.T) {
+	shortcuts := map[string]string{
+		"p":  "projects/",
+		"f":  "festivals/",
+		"w":  "workflow/",
+		"d":  "docs/",
+		"de": "workflow/design/",
+	}
+	campRoot := "/home/user/campaign"
+
+	tests := []struct {
+		name    string
+		path    string
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "simple shortcut",
+			path: "@p/fest",
+			want: "/home/user/campaign/projects/fest",
+		},
+		{
+			name: "shortcut with nested path",
+			path: "@f/active/my-fest/OVERVIEW.md",
+			want: "/home/user/campaign/festivals/active/my-fest/OVERVIEW.md",
+		},
+		{
+			name: "multi-char shortcut",
+			path: "@de/active/draft.md",
+			want: "/home/user/campaign/workflow/design/active/draft.md",
+		},
+		{
+			name: "shortcut alone (no subpath)",
+			path: "@w",
+			want: "/home/user/campaign/workflow",
+		},
+		{
+			name: "no @ prefix passes through",
+			path: "some/relative/path",
+			want: "some/relative/path",
+		},
+		{
+			name: "absolute path with @ not treated as shortcut",
+			path: "/absolute/path",
+			want: "/absolute/path",
+		},
+		{
+			name:    "unknown shortcut",
+			path:    "@zz/something",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ResolveAtPrefix(campRoot, tt.path, shortcuts)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveCwdRelative(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name string
+		path string
+		want string
+	}{
+		{
+			name: "relative path",
+			path: "foo/bar",
+			want: filepath.Join(cwd, "foo/bar"),
+		},
+		{
+			name: "absolute path",
+			path: "/absolute/path",
+			want: "/absolute/path",
+		},
+		{
+			name: "dot relative",
+			path: "./something",
+			want: filepath.Join(cwd, "something"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ResolveCwdRelative(tt.path)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestIsDestDir(t *testing.T) {
 	tmpDir := t.TempDir()
 
