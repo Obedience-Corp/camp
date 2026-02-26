@@ -3,7 +3,7 @@ package explorer
 import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/obediencecorp/camp/internal/intent/tui"
+	"github.com/Obedience-Corp/camp/internal/intent/tui"
 )
 
 // updateNormal handles navigation mode keys.

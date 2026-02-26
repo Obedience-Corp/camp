@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/obediencecorp/camp/internal/campaign"
-	"github.com/obediencecorp/camp/internal/config"
-	"github.com/obediencecorp/camp/internal/ui"
-	"github.com/obediencecorp/camp/internal/version"
+	"github.com/Obedience-Corp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/ui"
+	"github.com/Obedience-Corp/camp/internal/version"
 	"github.com/spf13/cobra"
 )
 

@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/obediencecorp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/config"
 )
 
 // completionEntry holds data for shell completion of a navigation shortcut.

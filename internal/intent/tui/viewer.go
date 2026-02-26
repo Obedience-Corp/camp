@@ -11,8 +11,8 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/obediencecorp/camp/internal/intent"
-	"github.com/obediencecorp/camp/internal/intent/gather"
+	"github.com/Obedience-Corp/camp/internal/intent"
+	"github.com/Obedience-Corp/camp/internal/intent/gather"
 )
 
 // IntentViewerModel is a full-screen viewer for reading intent documents.

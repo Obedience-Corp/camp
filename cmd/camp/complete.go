@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/obediencecorp/camp/internal/complete"
+	"github.com/Obedience-Corp/camp/internal/complete"
 	"github.com/spf13/cobra"
 )
 

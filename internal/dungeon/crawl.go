@@ -7,7 +7,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 
-	"github.com/obediencecorp/camp/internal/ui/theme"
+	"github.com/Obedience-Corp/camp/internal/ui/theme"
 )
 
 // promptStatusSelection presents a second-step selector showing available status

@@ -6,9 +6,9 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
-	"github.com/obediencecorp/camp/internal/campaign"
-	"github.com/obediencecorp/camp/internal/flow"
-	"github.com/obediencecorp/camp/internal/ui/theme"
+	"github.com/Obedience-Corp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/internal/flow"
+	"github.com/Obedience-Corp/camp/internal/ui/theme"
 )
 
 var flowCmd = &cobra.Command{

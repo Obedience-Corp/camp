@@ -8,8 +8,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/obediencecorp/camp/internal/buildutil/tasks"
-	"github.com/obediencecorp/camp/internal/buildutil/ui"
+	"github.com/Obedience-Corp/camp/internal/buildutil/tasks"
+	"github.com/Obedience-Corp/camp/internal/buildutil/ui"
 )
 
 var (

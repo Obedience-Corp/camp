@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/obediencecorp/camp/internal/project"
+	"github.com/Obedience-Corp/camp/internal/project"
 )
 
 // DefaultConfigPath returns the path to the leverage config file

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/obediencecorp/camp/internal/workflow"
+	"github.com/Obedience-Corp/camp/internal/workflow"
 )
 
 // createTestWorkflow creates a workflow with the given name in the campaign root.

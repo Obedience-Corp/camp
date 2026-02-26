@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/obediencecorp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/spf13/cobra"
 )
 

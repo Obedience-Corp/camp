@@ -8,8 +8,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/obediencecorp/camp/internal/doctor"
-	"github.com/obediencecorp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/doctor"
+	"github.com/Obedience-Corp/camp/internal/git"
 )
 
 // URLCheck verifies URL consistency between .gitmodules and .git/config.

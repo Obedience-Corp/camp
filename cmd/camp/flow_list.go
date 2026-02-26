@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/obediencecorp/camp/internal/campaign"
-	"github.com/obediencecorp/camp/internal/flow"
+	"github.com/Obedience-Corp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/internal/flow"
 )
 
 var flowRegistryListCmd = &cobra.Command{

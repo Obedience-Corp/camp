@@ -4,8 +4,8 @@ import (
 	"context"
 	"os"
 
-	"github.com/obediencecorp/camp/internal/config"
-	"github.com/obediencecorp/camp/internal/paths"
+	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/paths"
 )
 
 // CreateOptions configures worktree creation.

@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/obediencecorp/camp/internal/campaign"
-	"github.com/obediencecorp/camp/internal/doctor"
-	"github.com/obediencecorp/camp/internal/doctor/checks"
-	"github.com/obediencecorp/camp/internal/ui"
+	"github.com/Obedience-Corp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/internal/doctor"
+	"github.com/Obedience-Corp/camp/internal/doctor/checks"
+	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
 

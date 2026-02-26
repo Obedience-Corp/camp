@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obediencecorp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/internal/campaign"
 )
 
 func setupTestCampaign(t *testing.T) string {

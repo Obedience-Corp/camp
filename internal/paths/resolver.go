@@ -6,7 +6,7 @@ package paths
 import (
 	"path/filepath"
 
-	"github.com/obediencecorp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/config"
 )
 
 // Resolver provides methods to resolve full paths for campaign directories.

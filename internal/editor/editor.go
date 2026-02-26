@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/obediencecorp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/config"
 )
 
 // GetEditor returns the user's preferred editor by checking (in order):

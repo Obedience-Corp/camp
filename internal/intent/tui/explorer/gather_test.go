@@ -6,7 +6,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/obediencecorp/camp/internal/intent"
+	"github.com/Obedience-Corp/camp/internal/intent"
 )
 
 // modelFrom extracts a Model from tea.Model regardless of whether it's a value or pointer.

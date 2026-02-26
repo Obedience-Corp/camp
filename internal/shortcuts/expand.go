@@ -4,7 +4,7 @@ package shortcuts
 import (
 	"fmt"
 
-	"github.com/obediencecorp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/config"
 )
 
 // ExpansionResult contains the result of shortcut expansion.

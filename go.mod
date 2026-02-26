@@ -1,8 +1,9 @@
-module github.com/obediencecorp/camp
+module github.com/Obedience-Corp/camp
 
 go 1.25.6
 
 require (
+	github.com/Obedience-Corp/obey-shared v0.1.0
 	github.com/alecthomas/chroma/v2 v2.23.1
 	github.com/charmbracelet/bubbles v0.21.1
 	github.com/charmbracelet/bubbletea v1.3.10
@@ -13,7 +14,6 @@ require (
 	github.com/ktr0731/go-fuzzyfinder v0.9.0
 	github.com/lancekrogers/guild-scaffold v0.0.0-20260127172326-92f4536360f3
 	github.com/muesli/termenv v0.16.0
-	github.com/obediencecorp/obey-shared v0.0.0-00010101000000-000000000000
 	github.com/sahilm/fuzzy v0.1.1
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
@@ -120,5 +120,3 @@ require (
 	google.golang.org/grpc v1.75.1 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
-
-replace github.com/obediencecorp/obey-shared => ../obey-shared

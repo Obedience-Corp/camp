@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/obediencecorp/camp/internal/workflow"
+	"github.com/Obedience-Corp/camp/internal/workflow"
 	"github.com/spf13/cobra"
 )
 

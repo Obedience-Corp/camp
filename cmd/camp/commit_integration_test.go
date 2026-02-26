@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/obediencecorp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/git"
 )
 
 // setupTestRepo creates a test git repository

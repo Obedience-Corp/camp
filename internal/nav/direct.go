@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/obediencecorp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/internal/campaign"
 )
 
 // DirectJumpResult contains the result of a direct jump operation.

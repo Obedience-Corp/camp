@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obediencecorp/camp/internal/config"
-	"github.com/obediencecorp/camp/internal/nav/fuzzy"
+	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/nav/fuzzy"
 )
 
 func newTestRegistry(campaigns ...config.RegisteredCampaign) *config.Registry {

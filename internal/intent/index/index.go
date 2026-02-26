@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/obediencecorp/camp/internal/intent"
+	"github.com/Obedience-Corp/camp/internal/intent"
 )
 
 // IndexedIntent contains processed content for matching.

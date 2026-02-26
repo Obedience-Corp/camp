@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/obediencecorp/camp/internal/config"
-	"github.com/obediencecorp/camp/internal/paths"
+	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/paths"
 )
 
 func newTestPathManager(t *testing.T, root string) *PathManager {

@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/obediencecorp/camp/internal/campaign"
-	"github.com/obediencecorp/camp/internal/nav/index"
-	"github.com/obediencecorp/camp/internal/ui"
+	"github.com/Obedience-Corp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/internal/nav/index"
+	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
 

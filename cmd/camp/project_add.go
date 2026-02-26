@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/obediencecorp/camp/internal/campaign"
-	"github.com/obediencecorp/camp/internal/config"
-	"github.com/obediencecorp/camp/internal/git/commit"
-	"github.com/obediencecorp/camp/internal/project"
-	"github.com/obediencecorp/camp/internal/ui"
+	"github.com/Obedience-Corp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/git/commit"
+	"github.com/Obedience-Corp/camp/internal/project"
+	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
 

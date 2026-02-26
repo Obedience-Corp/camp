@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/obediencecorp/camp/internal/intent"
-	"github.com/obediencecorp/camp/internal/intent/tui"
+	"github.com/Obedience-Corp/camp/internal/intent"
+	"github.com/Obedience-Corp/camp/internal/intent/tui"
 )
 
 // renderIntentRow renders a single intent row with proper formatting.

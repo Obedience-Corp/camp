@@ -9,14 +9,14 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/huh"
-	"github.com/obediencecorp/camp/internal/campaign"
-	"github.com/obediencecorp/camp/internal/config"
-	"github.com/obediencecorp/camp/internal/fest"
-	"github.com/obediencecorp/camp/internal/git/commit"
-	"github.com/obediencecorp/camp/internal/nav/tui"
-	"github.com/obediencecorp/camp/internal/scaffold"
-	"github.com/obediencecorp/camp/internal/ui"
-	"github.com/obediencecorp/camp/internal/ui/theme"
+	"github.com/Obedience-Corp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/fest"
+	"github.com/Obedience-Corp/camp/internal/git/commit"
+	"github.com/Obedience-Corp/camp/internal/nav/tui"
+	"github.com/Obedience-Corp/camp/internal/scaffold"
+	"github.com/Obedience-Corp/camp/internal/ui"
+	"github.com/Obedience-Corp/camp/internal/ui/theme"
 	"github.com/spf13/cobra"
 )
 

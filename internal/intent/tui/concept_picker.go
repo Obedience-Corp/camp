@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/obediencecorp/camp/internal/concept"
+	"github.com/Obedience-Corp/camp/internal/concept"
 )
 
 // pickerStep represents the current step in the concept selection process.

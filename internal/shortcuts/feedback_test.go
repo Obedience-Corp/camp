@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/obediencecorp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/config"
 )
 
 func TestFeedbackWriter_ShowExpansion(t *testing.T) {

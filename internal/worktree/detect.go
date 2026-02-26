@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/obediencecorp/camp/internal/paths"
+	"github.com/Obedience-Corp/camp/internal/paths"
 )
 
 // Context represents the detected worktree context.

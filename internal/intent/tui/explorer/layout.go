@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/obediencecorp/camp/internal/intent"
+	"github.com/Obedience-Corp/camp/internal/intent"
 )
 
 // layoutMode determines the responsive layout based on terminal width.

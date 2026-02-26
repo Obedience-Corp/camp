@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/obediencecorp/camp/internal/shell"
+	"github.com/Obedience-Corp/camp/internal/shell"
 	"github.com/spf13/cobra"
 )
 

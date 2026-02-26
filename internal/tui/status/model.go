@@ -11,7 +11,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/obediencecorp/camp/internal/ui/theme"
+	"github.com/Obedience-Corp/camp/internal/ui/theme"
 )
 
 var pal = theme.TUI()

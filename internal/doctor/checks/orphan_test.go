@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/obediencecorp/camp/internal/doctor"
+	"github.com/Obedience-Corp/camp/internal/doctor"
 )
 
 // setupRepoWithOrphan creates a git repo with a declared submodule and an orphaned gitlink.

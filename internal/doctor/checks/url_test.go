@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/obediencecorp/camp/internal/doctor"
+	"github.com/Obedience-Corp/camp/internal/doctor"
 )
 
 func TestURLCheck_ID(t *testing.T) {

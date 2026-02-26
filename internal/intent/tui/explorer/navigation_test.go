@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obediencecorp/camp/internal/intent"
+	"github.com/Obedience-Corp/camp/internal/intent"
 )
 
 // makeTestModel creates a Model with test intents across groups.

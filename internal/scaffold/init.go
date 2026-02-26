@@ -11,10 +11,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lancekrogers/guild-scaffold/pkg/scaffold"
-	"github.com/obediencecorp/camp/internal/campaign"
-	"github.com/obediencecorp/camp/internal/config"
-	campcontract "github.com/obediencecorp/camp/internal/contract"
-	"github.com/obediencecorp/obey-shared/contract"
+	"github.com/Obedience-Corp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/internal/config"
+	campcontract "github.com/Obedience-Corp/camp/internal/contract"
+	"github.com/Obedience-Corp/obey-shared/contract"
 )
 
 // InitOptions configures the campaign initialization.

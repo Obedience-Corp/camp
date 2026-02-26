@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/obediencecorp/camp/internal/intent/tui"
+	"github.com/Obedience-Corp/camp/internal/intent/tui"
 )
 
 // updateSearch handles keys when search input has focus.

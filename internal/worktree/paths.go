@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/obediencecorp/camp/internal/paths"
+	"github.com/Obedience-Corp/camp/internal/paths"
 )
 
 // Valid worktree name pattern: alphanumeric start, then alphanumeric, hyphens, underscores.

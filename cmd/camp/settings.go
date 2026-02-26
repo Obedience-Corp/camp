@@ -7,8 +7,8 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
-	"github.com/obediencecorp/camp/internal/config"
-	"github.com/obediencecorp/camp/internal/ui/theme"
+	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/ui/theme"
 )
 
 var settingsCmd = &cobra.Command{

@@ -3,7 +3,7 @@ package index
 import (
 	"testing"
 
-	"github.com/obediencecorp/camp/internal/nav"
+	"github.com/Obedience-Corp/camp/internal/nav"
 )
 
 func TestNewQuery(t *testing.T) {

@@ -1,8 +1,8 @@
 package tui
 
 import (
-	"github.com/obediencecorp/camp/internal/intent"
-	"github.com/obediencecorp/camp/internal/intent/gather"
+	"github.com/Obedience-Corp/camp/internal/intent"
+	"github.com/Obedience-Corp/camp/internal/intent/gather"
 
 	tea "github.com/charmbracelet/bubbletea"
 )

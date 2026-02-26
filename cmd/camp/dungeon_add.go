@@ -7,9 +7,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/obediencecorp/camp/internal/config"
-	"github.com/obediencecorp/camp/internal/dungeon"
-	"github.com/obediencecorp/camp/internal/ui"
+	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/dungeon"
+	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
 var dungeonAddCmd = &cobra.Command{

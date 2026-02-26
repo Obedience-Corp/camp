@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obediencecorp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/config"
 )
 
 func TestInit(t *testing.T) {

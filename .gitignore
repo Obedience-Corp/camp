@@ -17,7 +17,8 @@ coverage.out
 # Dependency directories
 vendor/
 
-# Go workspace sum (generated, not needed)
+# Go workspace (local development only)
+go.work
 go.work.sum
 
 # IDE/Editor

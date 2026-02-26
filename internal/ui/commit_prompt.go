@@ -8,8 +8,8 @@ import (
 
 	"github.com/charmbracelet/huh"
 
-	"github.com/obediencecorp/camp/internal/git"
-	"github.com/obediencecorp/camp/internal/ui/theme"
+	"github.com/Obedience-Corp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/ui/theme"
 )
 
 // PromptCommitMessage shows an interactive prompt for the commit message.

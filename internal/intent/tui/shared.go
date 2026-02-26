@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/obediencecorp/camp/internal/intent"
+	"github.com/Obedience-Corp/camp/internal/intent"
 )
 
 // MoveStatusOptions are the available statuses for moving intents.

@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/obediencecorp/camp/pkg/commitkit"
+	"github.com/Obedience-Corp/camp/pkg/commitkit"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

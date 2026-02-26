@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/obediencecorp/camp/internal/campaign"
-	"github.com/obediencecorp/camp/internal/concept"
-	"github.com/obediencecorp/camp/internal/transfer"
+	"github.com/Obedience-Corp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/internal/concept"
+	"github.com/Obedience-Corp/camp/internal/transfer"
 	"github.com/spf13/cobra"
 )
 

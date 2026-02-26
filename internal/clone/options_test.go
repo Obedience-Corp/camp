@@ -3,7 +3,7 @@ package clone
 import (
 	"testing"
 
-	"github.com/obediencecorp/camp/internal/sync"
+	"github.com/Obedience-Corp/camp/internal/sync"
 )
 
 func TestNewCloner(t *testing.T) {

@@ -6,11 +6,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/obediencecorp/camp/internal/campaign"
-	"github.com/obediencecorp/camp/internal/config"
-	"github.com/obediencecorp/camp/internal/paths"
-	"github.com/obediencecorp/camp/internal/ui"
-	"github.com/obediencecorp/camp/internal/worktree"
+	"github.com/Obedience-Corp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/paths"
+	"github.com/Obedience-Corp/camp/internal/ui"
+	"github.com/Obedience-Corp/camp/internal/worktree"
 	"github.com/spf13/cobra"
 )
 

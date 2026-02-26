@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/obediencecorp/camp/internal/nav"
-	"github.com/obediencecorp/camp/internal/nav/fuzzy"
+	"github.com/Obedience-Corp/camp/internal/nav"
+	"github.com/Obedience-Corp/camp/internal/nav/fuzzy"
 )
 
 // ResolveResult contains the result of path resolution.

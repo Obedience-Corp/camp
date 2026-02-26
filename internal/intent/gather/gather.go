@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/obediencecorp/camp/internal/intent"
-	"github.com/obediencecorp/camp/internal/intent/index"
+	"github.com/Obedience-Corp/camp/internal/intent"
+	"github.com/Obedience-Corp/camp/internal/intent/index"
 )
 
 // Service provides gather operations for intents.

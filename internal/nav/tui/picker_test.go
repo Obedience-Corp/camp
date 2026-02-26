@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/obediencecorp/camp/internal/nav"
+	"github.com/Obedience-Corp/camp/internal/nav"
 )
 
 func TestFormatTarget(t *testing.T) {

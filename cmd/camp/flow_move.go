@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/obediencecorp/camp/internal/git"
-	"github.com/obediencecorp/camp/internal/ui"
-	"github.com/obediencecorp/camp/internal/workflow"
+	"github.com/Obedience-Corp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/ui"
+	"github.com/Obedience-Corp/camp/internal/workflow"
 	"github.com/spf13/cobra"
 )
 

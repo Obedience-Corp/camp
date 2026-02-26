@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/obediencecorp/camp/internal/campaign"
-	"github.com/obediencecorp/camp/internal/config"
-	"github.com/obediencecorp/camp/internal/nav"
-	"github.com/obediencecorp/camp/internal/nav/index"
+	"github.com/Obedience-Corp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/nav"
+	"github.com/Obedience-Corp/camp/internal/nav/index"
 	"github.com/spf13/cobra"
 )
 

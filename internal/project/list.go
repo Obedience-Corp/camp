@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/obediencecorp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/git"
 )
 
 // List returns all projects in the campaign's projects directory.

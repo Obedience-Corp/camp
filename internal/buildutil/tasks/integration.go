@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/obediencecorp/camp/internal/buildutil/ui"
+	"github.com/Obedience-Corp/camp/internal/buildutil/ui"
 )
 
 // integrationTestEvent represents a go test -json output line

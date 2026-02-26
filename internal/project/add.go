@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/obediencecorp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/git"
 )
 
 // AddOptions configures the project add behavior.

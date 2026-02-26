@@ -7,10 +7,10 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 
-	"github.com/obediencecorp/camp/internal/config"
-	"github.com/obediencecorp/camp/internal/intent"
-	"github.com/obediencecorp/camp/internal/paths"
-	"github.com/obediencecorp/camp/internal/ui"
+	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/intent"
+	"github.com/Obedience-Corp/camp/internal/paths"
+	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
 var intentCountCmd = &cobra.Command{

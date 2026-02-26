@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/obediencecorp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/git"
 )
 
 // Result contains the outcome of a commit attempt.
