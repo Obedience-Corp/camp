@@ -423,3 +423,157 @@ default_status: active
 		t.Error("unmanaged directory should be included")
 	}
 }
+
+func TestListParentItems_ExcludesCrawlConfigDirs(t *testing.T) {
+	ctx := context.Background()
+
+	tmpDir, err := os.MkdirTemp("", "dungeon-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dungeonPath := filepath.Join(tmpDir, "dungeon")
+	svc := NewService(tmpDir, dungeonPath)
+
+	if _, err := svc.Init(ctx, InitOptions{}); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+
+	// Create a .crawl.yaml in the dungeon with excludes
+	crawlCfg := "excludes:\n  - templates\n  - scripts\n"
+	if err := os.WriteFile(filepath.Join(dungeonPath, CrawlConfigFile), []byte(crawlCfg), 0644); err != nil {
+		t.Fatalf("failed to write crawl config: %v", err)
+	}
+
+	// Create excluded directories — should not appear in triage
+	for _, dir := range []string{"templates", "scripts"} {
+		if err := os.MkdirAll(filepath.Join(tmpDir, dir), 0755); err != nil {
+			t.Fatalf("failed to create dir %s: %v", dir, err)
+		}
+	}
+
+	// Create a non-excluded directory — should be included
+	if err := os.MkdirAll(filepath.Join(tmpDir, "my-review"), 0755); err != nil {
+		t.Fatalf("failed to create my-review dir: %v", err)
+	}
+
+	// Create a regular file — should be included
+	if err := os.WriteFile(filepath.Join(tmpDir, "notes.md"), []byte("notes"), 0644); err != nil {
+		t.Fatalf("failed to create file: %v", err)
+	}
+
+	items, err := svc.ListParentItems(ctx, tmpDir)
+	if err != nil {
+		t.Fatalf("ListParentItems failed: %v", err)
+	}
+
+	names := make(map[string]bool)
+	for _, item := range items {
+		names[item.Name] = true
+	}
+
+	// Crawl config-excluded directories should not appear
+	if names["templates"] {
+		t.Error("crawl config-excluded directory 'templates' should be excluded")
+	}
+	if names["scripts"] {
+		t.Error("crawl config-excluded directory 'scripts' should be excluded")
+	}
+
+	// Non-excluded items should be included
+	if !names["my-review"] {
+		t.Error("non-excluded directory should be included")
+	}
+	if !names["notes.md"] {
+		t.Error("regular file should be included")
+	}
+}
+
+func TestListParentItems_AllExclusionLayersCombined(t *testing.T) {
+	ctx := context.Background()
+
+	tmpDir, err := os.MkdirTemp("", "dungeon-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dungeonPath := filepath.Join(tmpDir, "dungeon")
+	svc := NewService(tmpDir, dungeonPath)
+
+	if _, err := svc.Init(ctx, InitOptions{}); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+
+	// Layer 2: Workflow schema defines "active" dir
+	schemaContent := `version: 1
+type: status-workflow
+name: test
+directories:
+  active:
+    description: "Active"
+default_status: active
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, workflow.SchemaFileName), []byte(schemaContent), 0644); err != nil {
+		t.Fatalf("failed to write schema: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(tmpDir, "active"), 0755); err != nil {
+		t.Fatalf("failed to create active dir: %v", err)
+	}
+
+	// Layer 3: OBEY.md-managed dir
+	managed := filepath.Join(tmpDir, "pipelines")
+	if err := os.MkdirAll(managed, 0755); err != nil {
+		t.Fatalf("failed to create managed dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(managed, "OBEY.md"), []byte("# Pipes"), 0644); err != nil {
+		t.Fatalf("failed to create OBEY.md: %v", err)
+	}
+
+	// Layer 4: Crawl config excludes
+	crawlCfg := "excludes:\n  - templates\n"
+	if err := os.WriteFile(filepath.Join(dungeonPath, CrawlConfigFile), []byte(crawlCfg), 0644); err != nil {
+		t.Fatalf("failed to write crawl config: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(tmpDir, "templates"), 0755); err != nil {
+		t.Fatalf("failed to create templates dir: %v", err)
+	}
+
+	// Regular content that should survive all layers
+	if err := os.WriteFile(filepath.Join(tmpDir, "leftover.txt"), []byte("x"), 0644); err != nil {
+		t.Fatalf("failed to create file: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(tmpDir, "old-review"), 0755); err != nil {
+		t.Fatalf("failed to create old-review dir: %v", err)
+	}
+
+	items, err := svc.ListParentItems(ctx, tmpDir)
+	if err != nil {
+		t.Fatalf("ListParentItems failed: %v", err)
+	}
+
+	names := make(map[string]bool)
+	for _, item := range items {
+		names[item.Name] = true
+	}
+
+	// All exclusion layers should work together
+	if names["active"] {
+		t.Error("workflow-defined 'active' should be excluded (Layer 2)")
+	}
+	if names["pipelines"] {
+		t.Error("OBEY.md-managed 'pipelines' should be excluded (Layer 3)")
+	}
+	if names["templates"] {
+		t.Error("crawl config-excluded 'templates' should be excluded (Layer 4)")
+	}
+
+	// Regular content survives
+	if !names["leftover.txt"] {
+		t.Error("regular file should be included")
+	}
+	if !names["old-review"] {
+		t.Error("unmanaged, non-excluded directory should be included")
+	}
+}

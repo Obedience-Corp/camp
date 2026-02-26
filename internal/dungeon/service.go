@@ -23,8 +23,9 @@ var (
 
 // systemFiles are non-status entries excluded from item listings.
 var systemFiles = map[string]bool{
-	"OBEY.md":     true,
-	"crawl.jsonl": true,
+	"OBEY.md":       true,
+	"crawl.jsonl":   true,
+	CrawlConfigFile: true,
 }
 
 // Service provides operations for managing the dungeon directory.
@@ -351,6 +352,16 @@ func (s *Service) ListParentItems(ctx context.Context, parentPath string) ([]Dun
 			if name != "." {
 				excluded[name] = true
 			}
+		}
+	}
+
+	// Check dungeon/.crawl.yaml for explicit parent-level exclusions.
+	// This allows each dungeon to declare which sibling directories are
+	// structural and should be skipped during triage.
+	crawlCfgPath := filepath.Join(s.dungeonPath, CrawlConfigFile)
+	if cfg, err := loadCrawlConfig(crawlCfgPath); err == nil {
+		for _, name := range cfg.Excludes {
+			excluded[name] = true
 		}
 	}
 

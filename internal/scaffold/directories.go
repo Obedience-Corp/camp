@@ -13,5 +13,6 @@ var DirectoryPurposes = map[string]string{
 	"workflow/code_reviews": "Code review notes and feedback documents.",
 	"workflow/pipelines":    "CI/CD pipeline definitions and automation scripts.",
 	"workflow/design":       "Design documents and specifications.",
+	"workflow/explore":      "Research, exploration, and investigation workspace.",
 	"workflow/intents":      "Future work items not yet ready for Festivals.",
 }
