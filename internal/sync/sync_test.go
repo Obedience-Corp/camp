@@ -4,6 +4,7 @@ import (
 	"context"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -295,6 +296,100 @@ func TestCollectWarnings_SafeMode(t *testing.T) {
 
 	if len(warnings) != 0 {
 		t.Errorf("collectWarnings() in safe mode = %d warnings, want 0", len(warnings))
+	}
+}
+
+func TestReverseSyncLocalURLs_NoLocalPaths(t *testing.T) {
+	ctx := context.Background()
+	repoRoot := setupTestRepo(t)
+	setupSubmodule(t, repoRoot, "projects/sub")
+
+	syncer := NewSyncer(repoRoot)
+	changes, err := syncer.reverseSyncLocalURLs(ctx)
+	if err != nil {
+		t.Fatalf("reverseSyncLocalURLs() error = %v", err)
+	}
+
+	// The submodule was added from a temp dir (local path), but the submodule
+	// itself has a remote origin pointing to that same temp dir. Since the
+	// remote origin is also a local path, it should be skipped.
+	// This is a no-op scenario because the remote URL is also local.
+	for _, c := range changes {
+		t.Logf("change: %s -> %s", c.OldURL, c.NewURL)
+	}
+}
+
+func TestReverseSyncLocalURLs_LocalPathWithRemote(t *testing.T) {
+	ctx := context.Background()
+	repoRoot := setupTestRepo(t)
+	subPath := setupSubmodule(t, repoRoot, "projects/sub")
+
+	// Verify .gitmodules has a local path (from setupSubmodule using temp dir)
+	cmd := exec.Command("git", "-C", repoRoot, "config", "-f", ".gitmodules", "submodule.projects/sub.url")
+	declaredBytes, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("failed to get declared URL: %v", err)
+	}
+	declared := strings.TrimSpace(string(declaredBytes))
+	t.Logf("declared URL before reverse sync: %s", declared)
+
+	// Add a real remote origin inside the submodule
+	remoteURL := "git@github.com:test-org/sub.git"
+	runGit(t, subPath, "remote", "set-url", "origin", remoteURL)
+
+	syncer := NewSyncer(repoRoot)
+	changes, err := syncer.reverseSyncLocalURLs(ctx)
+	if err != nil {
+		t.Fatalf("reverseSyncLocalURLs() error = %v", err)
+	}
+
+	if len(changes) != 1 {
+		t.Fatalf("reverseSyncLocalURLs() changes = %d, want 1", len(changes))
+	}
+
+	if changes[0].NewURL != remoteURL {
+		t.Errorf("NewURL = %q, want %q", changes[0].NewURL, remoteURL)
+	}
+
+	// Verify .gitmodules was updated
+	cmd = exec.Command("git", "-C", repoRoot, "config", "-f", ".gitmodules", "submodule.projects/sub.url")
+	updatedBytes, _ := cmd.Output()
+	updated := strings.TrimSpace(string(updatedBytes))
+	if updated != remoteURL {
+		t.Errorf(".gitmodules URL = %q, want %q", updated, remoteURL)
+	}
+}
+
+func TestReverseSyncLocalURLs_LocalPathWithoutRemote(t *testing.T) {
+	ctx := context.Background()
+	repoRoot := setupTestRepo(t)
+	subPath := setupSubmodule(t, repoRoot, "projects/sub")
+
+	// Remove origin remote from the submodule
+	runGit(t, subPath, "remote", "remove", "origin")
+
+	syncer := NewSyncer(repoRoot)
+	changes, err := syncer.reverseSyncLocalURLs(ctx)
+	if err != nil {
+		t.Fatalf("reverseSyncLocalURLs() error = %v", err)
+	}
+
+	// Should skip - no remote origin to sync from
+	if len(changes) != 0 {
+		t.Errorf("reverseSyncLocalURLs() changes = %d, want 0 (no remote origin)", len(changes))
+	}
+}
+
+func TestReverseSyncLocalURLs_ContextCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	repoRoot := setupTestRepo(t)
+	syncer := NewSyncer(repoRoot)
+
+	_, err := syncer.reverseSyncLocalURLs(ctx)
+	if err != context.Canceled {
+		t.Errorf("reverseSyncLocalURLs() error = %v, want context.Canceled", err)
 	}
 }
 

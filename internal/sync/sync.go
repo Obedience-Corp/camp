@@ -66,6 +66,13 @@ func (s *Syncer) Sync(ctx context.Context) (*SyncResult, error) {
 		result.Warnings = append(result.Warnings, fmt.Sprintf("removed orphaned gitlink: %s", path))
 	}
 
+	// Phase 1.7: Reverse-sync local filesystem URLs
+	reverseChanges, reverseErr := s.reverseSyncLocalURLs(ctx)
+	if reverseErr != nil {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("reverse URL sync: %v", reverseErr))
+	}
+	result.URLChanges = append(result.URLChanges, reverseChanges...)
+
 	// Phase 2: URL synchronization
 	urlChanges, err := s.syncURLs(ctx)
 	if err != nil {
@@ -73,7 +80,7 @@ func (s *Syncer) Sync(ctx context.Context) (*SyncResult, error) {
 		result.Errors = append(result.Errors, err)
 		return result, nil
 	}
-	result.URLChanges = urlChanges
+	result.URLChanges = append(result.URLChanges, urlChanges...)
 
 	// Phase 3: Submodule update
 	updateResults, err := s.updateSubmodules(ctx)
@@ -309,6 +316,68 @@ func (s *Syncer) cleanOrphanedGitlinks(ctx context.Context) ([]string, error) {
 	}
 
 	return removed, nil
+}
+
+// reverseSyncLocalURLs detects submodules where .gitmodules has a local
+// filesystem path but the submodule has a real remote origin configured,
+// and updates .gitmodules to use the remote URL.
+func (s *Syncer) reverseSyncLocalURLs(ctx context.Context) ([]URLChange, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	paths, err := s.listSubmodules(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var changes []URLChange
+	for _, path := range paths {
+		if ctx.Err() != nil {
+			return changes, ctx.Err()
+		}
+
+		declaredURL, err := git.GetDeclaredURL(ctx, s.repoRoot, path)
+		if err != nil {
+			continue
+		}
+
+		if !git.IsLocalFilesystemURL(declaredURL) {
+			continue
+		}
+
+		subFullPath := filepath.Join(s.repoRoot, path)
+		remoteURL, err := git.RemoteOriginURL(ctx, subFullPath)
+		if err != nil || remoteURL == "" {
+			continue
+		}
+
+		if git.IsLocalFilesystemURL(remoteURL) {
+			continue
+		}
+
+		if err := git.SetDeclaredURL(ctx, s.repoRoot, path, remoteURL); err != nil {
+			return changes, fmt.Errorf("reverse-sync %s: %w", path, err)
+		}
+
+		changes = append(changes, URLChange{
+			Submodule: path,
+			OldURL:    declaredURL,
+			NewURL:    remoteURL,
+		})
+	}
+
+	// Propagate changes to .git/config
+	if len(changes) > 0 {
+		cmd := exec.CommandContext(ctx, "git", "-C", s.repoRoot,
+			"submodule", "sync", "--recursive")
+		if output, syncErr := cmd.CombinedOutput(); syncErr != nil {
+			return changes, fmt.Errorf("submodule sync after reverse-sync: %w: %s",
+				syncErr, strings.TrimSpace(string(output)))
+		}
+	}
+
+	return changes, nil
 }
 
 // validateUpdate checks that all submodules are at expected commits.

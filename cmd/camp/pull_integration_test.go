@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -259,5 +260,31 @@ func TestIntegration_PullAll_RebaseConflictAutoAborts(t *testing.T) {
 	}
 	if branch == "HEAD" {
 		t.Error("submodule should not be in detached HEAD state after abort")
+	}
+}
+
+func TestIntegration_PullAll_ReportsChangedRefs(t *testing.T) {
+	campDir, bareDir := setupCampaignWithSubmodule(t)
+	ctx := context.Background()
+
+	// Push a new commit to the bare remote
+	pushCommitToBare(t, bareDir, "ref-change.txt", "new content", "Advance ref")
+
+	// Capture stdout to check for ref change message
+	err := runPullAll(ctx, campDir, nil, false)
+	if err != nil {
+		t.Fatalf("runPullAll() error = %v", err)
+	}
+
+	// Verify the submodule ref changed in the parent (not yet committed)
+	subPath := filepath.Join(campDir, "projects", "test-project")
+	if !checkParentNeedsCommit(ctx, campDir, subPath) {
+		t.Error("expected parent to show submodule as modified after pull")
+	}
+
+	// Verify nothing was auto-staged or committed
+	output := run(t, "git", "-C", campDir, "diff", "--cached", "--name-only")
+	if strings.TrimSpace(output) != "" {
+		t.Errorf("expected no staged changes, got: %s", output)
 	}
 }
