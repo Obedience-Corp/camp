@@ -48,6 +48,8 @@ func init() {
 	projectCommitCmd.Flags().BoolVar(&projectCommitAmend, "amend", false, "Amend the previous commit")
 	projectCommitCmd.Flags().BoolVar(&projectCommitSync, "sync", true, "Auto-commit submodule ref in campaign root")
 
+	projectCommitCmd.RegisterFlagCompletionFunc("project", completeProjectName)
+
 	projectCmd.AddCommand(projectCommitCmd)
 }
 

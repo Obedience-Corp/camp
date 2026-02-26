@@ -47,6 +47,8 @@ func init() {
 		"Project name (auto-detected from cwd if not specified)")
 	projectWorktreeRemoveCmd.Flags().BoolVarP(&wtRemoveForce, "force", "f", false,
 		"Force removal even with uncommitted changes")
+
+	projectWorktreeRemoveCmd.RegisterFlagCompletionFunc("project", completeProjectName)
 }
 
 func runProjectWorktreeRemove(cmd *cobra.Command, args []string) error {

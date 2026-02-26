@@ -63,6 +63,8 @@ func init() {
 		"Base branch/commit for new branch (default: current branch)")
 	projectWorktreeAddCmd.Flags().StringVarP(&wtAddTrack, "track", "t", "",
 		"Remote branch to track (creates new local tracking branch)")
+
+	projectWorktreeAddCmd.RegisterFlagCompletionFunc("project", completeProjectName)
 }
 
 func runProjectWorktreeAdd(cmd *cobra.Command, args []string) error {

@@ -38,6 +38,8 @@ func init() {
 
 	projectWorktreeListCmd.Flags().StringVarP(&wtListProject, "project", "p", "",
 		"Project name (auto-detected from cwd if not specified)")
+
+	projectWorktreeListCmd.RegisterFlagCompletionFunc("project", completeProjectName)
 }
 
 func runProjectWorktreeList(cmd *cobra.Command, args []string) error {
