@@ -146,6 +146,16 @@ camp project worktree      # Manage git worktrees
 camp project commit        # Commit within a project
 ```
 
+All project commands support `--project / -p` with tab completion to target a project by name:
+
+```bash
+camp project commit --project camp -m "Fix bug"   # Explicit project
+camp project commit -m "Fix bug"                   # Auto-detect from cwd
+camp project worktree add feature -p camp          # Worktree for specific project
+```
+
+Monorepo subprojects are addressable with `@` syntax (e.g., `obey-platform-monorepo@obey`).
+
 ### Planning
 
 Intents, status flows, and the dungeon provide lightweight planning tools:
@@ -179,7 +189,12 @@ Campaign-level git operations:
 camp commit                # Commit changes in the campaign root
 camp log                   # Show git log of the campaign
 camp push                  # Push campaign changes to remote
+camp push all              # Push all submodules with unpushed changes
+camp pull                  # Pull latest changes
+camp pull all              # Pull all submodules
 camp status                # Show git status of the campaign
+camp status all            # Dashboard of all submodules (branch, dirty/clean, push status, unmerged branches)
+camp status all --view     # Interactive TUI viewer with per-repo detail
 ```
 
 ### Campaign Operations
@@ -315,10 +330,15 @@ cgo w api-service@feat    # Jump to api-service@feature-x
 The shell integration includes intelligent tab completion:
 
 ```bash
-cgo <TAB>           # Shows: p c f a d w r pi
-cgo p <TAB>         # Shows: api-service web-app cli-tool
-cgo p api<TAB>      # Completes to: api-service api-gateway
-cgo w api@<TAB>     # Shows worktree branches
+# Navigation
+cgo <TAB>                              # Shows: p c f a d w r pi
+cgo p <TAB>                            # Shows: api-service web-app cli-tool
+cgo p api<TAB>                         # Completes to: api-service api-gateway
+cgo w api@<TAB>                        # Shows worktree branches
+
+# --project flag (all project commands)
+camp project commit -p <TAB>           # Shows project names from project list
+camp project worktree add -p <TAB>     # Same project name completion
 ```
 
 ## Configuration
@@ -374,11 +394,12 @@ editor: code
 
 ## Documentation
 
-Extended documentation is available in the `docs/` directory:
-
+- [CLI Reference](docs/cli-reference/camp-reference.md) - Complete reference for every command and flag
 - [Leverage Scoring](docs/leverage-score.md) - How leverage scores are computed
 - [Shortcuts](docs/SHORTCUTS.md) - Category shortcuts reference
 - [Shell Integration](docs/shell-integration.md) - Detailed shell setup guide
+
+Individual command docs are in [`docs/cli-reference/`](docs/cli-reference/) (auto-generated via `just docs`).
 
 ## Development
 
@@ -387,6 +408,7 @@ just              # List all commands
 just build        # Build camp binary
 just test         # Run tests
 just install      # Install locally
+just docs         # Regenerate CLI reference docs
 just run <args>   # Run with arguments
 ```
 
