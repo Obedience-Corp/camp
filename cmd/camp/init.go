@@ -100,10 +100,24 @@ func runInit(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	isInteractive := tui.IsTerminal()
 
-	// Early detection: error if already inside a campaign (unless repairing)
-	if !repair && !dryRun {
-		existingRoot, _ := campaign.Detect(ctx, dir)
-		if existingRoot != "" {
+	// Early detection: error if already inside a campaign
+	existingRoot, _ := campaign.Detect(ctx, dir)
+	if existingRoot != "" {
+		absDir, _ := filepath.Abs(dir)
+		absRoot, _ := filepath.Abs(existingRoot)
+
+		if repair {
+			// Repair mode: must be AT the campaign root, not inside a subdirectory
+			if absDir != absRoot {
+				cfg, _ := config.LoadCampaignConfig(ctx, existingRoot)
+				name := filepath.Base(existingRoot)
+				if cfg != nil && cfg.Name != "" {
+					name = cfg.Name
+				}
+				return fmt.Errorf("cannot repair from here — inside campaign '%s' at %s\n       Run repair from the campaign root: cd %s && camp init --repair", name, existingRoot, existingRoot)
+			}
+			// At campaign root — proceed with repair
+		} else if !dryRun {
 			cfg, _ := config.LoadCampaignConfig(ctx, existingRoot)
 			name := filepath.Base(existingRoot)
 			if cfg != nil && cfg.Name != "" {
