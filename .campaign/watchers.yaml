@@ -70,3 +70,109 @@ entries:
       format: yaml
       watch: file
       owner: camp
+    - id: festival-events
+      path: festivals/.festival/.state/festival_events.jsonl
+      type: festival.lifecycle
+      format: jsonl
+      watch: append
+      owner: fest
+    - id: festival-types
+      path: festivals/.festival/festival_types.yaml
+      type: festival.types
+      format: yaml
+      watch: file
+      owner: fest
+    - id: festival-id-registry
+      path: festivals/.festival/.state/id_registry.yaml.backup
+      type: festival.registry
+      format: yaml
+      watch: file
+      owner: fest
+    - id: festival-checksums
+      path: festivals/.festival/.state/.fest-checksums.json
+      type: festival.integrity
+      format: json
+      watch: file
+      owner: fest
+    - id: festival-navigation
+      path: .campaign/fest/navigation.yaml
+      type: festival.navigation
+      format: yaml
+      watch: file
+      owner: fest
+    - id: festivals-planning
+      path: festivals/planning/
+      type: festival.status_dir
+      format: directory
+      watch: directory
+      owner: fest
+      status: planning
+    - id: festivals-active
+      path: festivals/active/
+      type: festival.status_dir
+      format: directory
+      watch: directory
+      owner: fest
+      status: active
+    - id: festivals-ready
+      path: festivals/ready/
+      type: festival.status_dir
+      format: directory
+      watch: directory
+      owner: fest
+      status: ready
+    - id: festivals-ritual
+      path: festivals/ritual/
+      type: festival.status_dir
+      format: directory
+      watch: directory
+      owner: fest
+      status: ritual
+    - id: festivals-dungeon-archived
+      path: festivals/dungeon/archived/
+      type: festival.status_dir
+      format: directory
+      watch: directory
+      owner: fest
+      status: archived
+    - id: festivals-dungeon-completed
+      path: festivals/dungeon/completed/
+      type: festival.status_dir
+      format: directory
+      watch: directory
+      owner: fest
+      status: completed
+    - id: festivals-dungeon-someday
+      path: festivals/dungeon/someday/
+      type: festival.status_dir
+      format: directory
+      watch: directory
+      owner: fest
+      status: someday
+    - id: festival-metadata
+      path: '{festival}/fest.yaml'
+      type: festival.metadata
+      format: yaml
+      watch: file
+      owner: fest
+      template: true
+      fallback_paths:
+        - '{festival}/festival.yaml'
+    - id: festival-progress
+      path: '{festival}/.fest/progress_events.jsonl'
+      type: festival.progress
+      format: jsonl
+      watch: append
+      owner: fest
+      template: true
+      fallback_paths:
+        - '{festival}/.fest/progress.yaml'
+        - '{festival}/.fest/progress.json'
+    - id: festival-tasks
+      path: '{festival}/**/*.md'
+      type: festival.task
+      format: markdown_frontmatter
+      watch: directory
+      owner: fest
+      template: true
+      status_field: fest_status
