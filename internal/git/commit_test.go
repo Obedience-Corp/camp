@@ -485,6 +485,123 @@ func TestIsLockError(t *testing.T) {
 	})
 }
 
+func TestStageAllExcluding_ExcludesPaths(t *testing.T) {
+	tmpDir := initTestRepo(t)
+
+	// Create files in different directories
+	os.MkdirAll(filepath.Join(tmpDir, "projects", "camp"), 0755)
+	os.MkdirAll(filepath.Join(tmpDir, "festivals"), 0755)
+	os.WriteFile(filepath.Join(tmpDir, "festivals", "plan.md"), []byte("plan"), 0644)
+	os.WriteFile(filepath.Join(tmpDir, "projects", "camp", "main.go"), []byte("package main"), 0644)
+	os.WriteFile(filepath.Join(tmpDir, "README.md"), []byte("readme"), 0644)
+
+	ctx := context.Background()
+	err := StageAllExcluding(ctx, tmpDir, []string{"projects/camp"})
+	if err != nil {
+		t.Fatalf("StageAllExcluding() error = %v", err)
+	}
+
+	// Check what's staged
+	cmd := exec.Command("git", "-C", tmpDir, "diff", "--cached", "--name-only")
+	output, _ := cmd.Output()
+	staged := strings.TrimSpace(string(output))
+
+	if !strings.Contains(staged, "festivals/plan.md") {
+		t.Error("Expected festivals/plan.md to be staged")
+	}
+	if !strings.Contains(staged, "README.md") {
+		t.Error("Expected README.md to be staged")
+	}
+	if strings.Contains(staged, "projects/camp") {
+		t.Error("Expected projects/camp to be excluded from staging")
+	}
+}
+
+func TestStageAllExcluding_NoExclusions(t *testing.T) {
+	tmpDir := initTestRepo(t)
+
+	os.WriteFile(filepath.Join(tmpDir, "test.txt"), []byte("content"), 0644)
+
+	ctx := context.Background()
+	err := StageAllExcluding(ctx, tmpDir, nil)
+	if err != nil {
+		t.Fatalf("StageAllExcluding() with nil exclusions error = %v", err)
+	}
+
+	hasStaged, err := HasStagedChanges(ctx, tmpDir)
+	if err != nil {
+		t.Fatalf("HasStagedChanges() error = %v", err)
+	}
+	if !hasStaged {
+		t.Error("Expected staged changes when no exclusions provided")
+	}
+}
+
+func TestStageAllExcluding_EmptyExclusions(t *testing.T) {
+	tmpDir := initTestRepo(t)
+
+	os.WriteFile(filepath.Join(tmpDir, "test.txt"), []byte("content"), 0644)
+
+	ctx := context.Background()
+	err := StageAllExcluding(ctx, tmpDir, []string{})
+	if err != nil {
+		t.Fatalf("StageAllExcluding() with empty exclusions error = %v", err)
+	}
+
+	hasStaged, err := HasStagedChanges(ctx, tmpDir)
+	if err != nil {
+		t.Fatalf("HasStagedChanges() error = %v", err)
+	}
+	if !hasStaged {
+		t.Error("Expected staged changes when empty exclusions provided")
+	}
+}
+
+func TestStageAllExcluding_CancelledContext(t *testing.T) {
+	tmpDir := initTestRepo(t)
+	os.WriteFile(filepath.Join(tmpDir, "test.txt"), []byte("content"), 0644)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := StageAllExcluding(ctx, tmpDir, []string{"some/path"})
+	if err == nil {
+		t.Error("Expected error for cancelled context")
+	}
+}
+
+func TestStageAllExcluding_MultipleExclusions(t *testing.T) {
+	tmpDir := initTestRepo(t)
+
+	// Create files in multiple directories
+	os.MkdirAll(filepath.Join(tmpDir, "projects", "alpha"), 0755)
+	os.MkdirAll(filepath.Join(tmpDir, "projects", "beta"), 0755)
+	os.MkdirAll(filepath.Join(tmpDir, "docs"), 0755)
+	os.WriteFile(filepath.Join(tmpDir, "projects", "alpha", "go.mod"), []byte("module alpha"), 0644)
+	os.WriteFile(filepath.Join(tmpDir, "projects", "beta", "go.mod"), []byte("module beta"), 0644)
+	os.WriteFile(filepath.Join(tmpDir, "docs", "guide.md"), []byte("guide"), 0644)
+
+	ctx := context.Background()
+	err := StageAllExcluding(ctx, tmpDir, []string{"projects/alpha", "projects/beta"})
+	if err != nil {
+		t.Fatalf("StageAllExcluding() error = %v", err)
+	}
+
+	cmd := exec.Command("git", "-C", tmpDir, "diff", "--cached", "--name-only")
+	output, _ := cmd.Output()
+	staged := strings.TrimSpace(string(output))
+
+	if !strings.Contains(staged, "docs/guide.md") {
+		t.Error("Expected docs/guide.md to be staged")
+	}
+	if strings.Contains(staged, "projects/alpha") {
+		t.Error("Expected projects/alpha to be excluded")
+	}
+	if strings.Contains(staged, "projects/beta") {
+		t.Error("Expected projects/beta to be excluded")
+	}
+}
+
 func TestStage_WithStaleLock(t *testing.T) {
 	tmpDir := initTestRepo(t)
 

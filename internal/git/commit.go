@@ -171,6 +171,24 @@ func StageFiles(ctx context.Context, repoPath string, files ...string) error {
 	return Stage(ctx, repoPath, files)
 }
 
+// StageAllExcluding stages all changes except paths matching the given exclusions.
+// Uses git pathspec exclusion (`:!path`) for atomic single-operation staging.
+func StageAllExcluding(ctx context.Context, repoPath string, excludePaths []string) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	if len(excludePaths) == 0 {
+		return StageAll(ctx, repoPath)
+	}
+
+	files := []string{"--", "."}
+	for _, p := range excludePaths {
+		files = append(files, ":!"+p)
+	}
+	return Stage(ctx, repoPath, files)
+}
+
 // HasStagedChanges checks if there are any staged changes ready to commit.
 func HasStagedChanges(ctx context.Context, repoPath string) (bool, error) {
 	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "diff", "--cached", "--quiet")
