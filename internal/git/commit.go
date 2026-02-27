@@ -3,7 +3,6 @@ package git
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os/exec"
 	"strings"
 )
@@ -19,7 +18,7 @@ type CommitOptions struct {
 // Validate checks if options are valid.
 func (o *CommitOptions) Validate() error {
 	if o.Message == "" && !o.Amend {
-		return fmt.Errorf("commit message is required")
+		return ErrCommitMessageRequired
 	}
 	return nil
 }
@@ -27,7 +26,7 @@ func (o *CommitOptions) Validate() error {
 // Commit creates a git commit with automatic lock handling.
 func Commit(ctx context.Context, repoPath string, opts *CommitOptions) error {
 	if opts == nil {
-		return fmt.Errorf("commit options required")
+		return ErrCommitOptionsRequired
 	}
 	if err := opts.Validate(); err != nil {
 		return err
@@ -73,10 +72,12 @@ func executeCommit(ctx context.Context, repoPath string, opts *CommitOptions) er
 				Err:  err,
 			}
 		default:
-			return fmt.Errorf("git commit failed (type=%s): %s: %w",
-				errType.String(),
-				strings.TrimSpace(string(output)),
-				err)
+			return &GitOpError{
+				Op:      "commit",
+				ErrType: errType,
+				Detail:  strings.TrimSpace(string(output)),
+				Cause:   err,
+			}
 		}
 	}
 
@@ -93,7 +94,7 @@ func isLockError(err error) bool {
 func CommitAll(ctx context.Context, repoPath, message string) error {
 	// Stage all changes first
 	if err := StageAll(ctx, repoPath); err != nil {
-		return fmt.Errorf("failed to stage changes: %w", err)
+		return err
 	}
 
 	// Check if there's anything to commit
@@ -149,10 +150,12 @@ func executeStage(ctx context.Context, repoPath string, files []string) error {
 			}
 		}
 
-		return fmt.Errorf("git add failed (type=%s): %s: %w",
-			errType.String(),
-			strings.TrimSpace(string(output)),
-			err)
+		return &GitOpError{
+			Op:      "add",
+			ErrType: errType,
+			Detail:  strings.TrimSpace(string(output)),
+			Cause:   err,
+		}
 	}
 
 	return nil
@@ -166,7 +169,7 @@ func StageAll(ctx context.Context, repoPath string) error {
 // StageFiles stages specific files.
 func StageFiles(ctx context.Context, repoPath string, files ...string) error {
 	if len(files) == 0 {
-		return fmt.Errorf("no files specified for staging in %s", repoPath)
+		return ErrNoFilesSpecified
 	}
 	return Stage(ctx, repoPath, files)
 }
@@ -201,7 +204,7 @@ func HasStagedChanges(ctx context.Context, repoPath string) (bool, error) {
 				return true, nil
 			}
 		}
-		return false, fmt.Errorf("git diff --cached failed: %w", err)
+		return false, &GitOpError{Op: "diff --cached", Cause: err}
 	}
 
 	// Exit code 0 means no differences (nothing staged)
@@ -219,7 +222,7 @@ func HasUnstagedChanges(ctx context.Context, repoPath string) (bool, error) {
 				return true, nil
 			}
 		}
-		return false, fmt.Errorf("git diff failed: %w", err)
+		return false, &GitOpError{Op: "diff", Cause: err}
 	}
 
 	return false, nil
@@ -231,7 +234,7 @@ func HasUntrackedFiles(ctx context.Context, repoPath string) (bool, error) {
 	output, err := cmd.Output()
 
 	if err != nil {
-		return false, fmt.Errorf("git ls-files failed: %w", err)
+		return false, &GitOpError{Op: "ls-files", Cause: err}
 	}
 
 	return len(strings.TrimSpace(string(output))) > 0, nil

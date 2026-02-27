@@ -76,6 +76,31 @@ func (e *LockError) Unwrap() error {
 	return e.Err
 }
 
+// GitOpError wraps errors from git command execution with structured context.
+type GitOpError struct {
+	// Op is the git operation that failed (e.g., "commit", "add", "diff").
+	Op string
+	// ErrType is the classified error type from git stderr.
+	ErrType GitErrorType
+	// Detail is the trimmed git stderr output.
+	Detail string
+	// Cause is the underlying exec error.
+	Cause error
+}
+
+// Error implements the error interface.
+func (e *GitOpError) Error() string {
+	if e.Detail != "" {
+		return fmt.Sprintf("git %s failed (%s): %s", e.Op, e.ErrType.String(), e.Detail)
+	}
+	return fmt.Sprintf("git %s failed (%s)", e.Op, e.ErrType.String())
+}
+
+// Unwrap returns the underlying error for errors.Is/As support.
+func (e *GitOpError) Unwrap() error {
+	return e.Cause
+}
+
 // Sentinel errors for common git error cases.
 var (
 	// ErrLockActive indicates a lock file is held by a running process.
@@ -119,6 +144,24 @@ var (
 
 	// ErrOrphanedGitlink indicates a gitlink exists in the index but has no entry in .gitmodules.
 	ErrOrphanedGitlink = errors.New("orphaned gitlink in index")
+
+	// ErrStage indicates a staging (git add) operation failed.
+	ErrStage = errors.New("staging failed")
+
+	// ErrCommitFailed indicates a git commit operation failed.
+	ErrCommitFailed = errors.New("commit failed")
+
+	// ErrCommitCancelled indicates the user cancelled the commit.
+	ErrCommitCancelled = errors.New("commit cancelled")
+
+	// ErrCommitOptionsRequired indicates nil commit options were provided.
+	ErrCommitOptionsRequired = errors.New("commit options required")
+
+	// ErrCommitMessageRequired indicates a commit message was not provided.
+	ErrCommitMessageRequired = errors.New("commit message is required")
+
+	// ErrNoFilesSpecified indicates an empty file list was provided for staging.
+	ErrNoFilesSpecified = errors.New("no files specified for staging")
 )
 
 // ClassifyGitError determines the error type from git stderr output.
