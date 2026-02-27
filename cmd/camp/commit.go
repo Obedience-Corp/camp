@@ -91,7 +91,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	// Find campaign root
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign: %w", err)
+		return err
 	}
 
 	// Resolve target repository
@@ -119,7 +119,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("prompt failed: %w", promptErr)
 		}
 		if message == "" {
-			return fmt.Errorf("commit cancelled")
+			return git.ErrCommitCancelled
 		}
 	}
 
@@ -128,17 +128,17 @@ func runCommit(cmd *cobra.Command, args []string) error {
 		fmt.Println(ui.Info("Staging changes..."))
 		if target.IsSubmodule || commitIncludeRefs {
 			if err := executor.StageAll(ctx); err != nil {
-				return fmt.Errorf("failed to stage: %w", err)
+				return err
 			}
 		} else {
 			// Campaign root: exclude submodule refs to prevent accidental
 			// ref changes from polluting content commits.
 			paths, pathErr := git.ListSubmodulePaths(ctx, target.Path)
 			if pathErr != nil {
-				return fmt.Errorf("failed to list submodules: %w", pathErr)
+				return pathErr
 			}
 			if err := git.StageAllExcluding(ctx, target.Path, paths); err != nil {
-				return fmt.Errorf("failed to stage: %w", err)
+				return err
 			}
 		}
 	}
@@ -173,7 +173,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 			fmt.Println(ui.Success("Nothing to commit"))
 			return nil
 		}
-		return fmt.Errorf("commit failed: %w", err)
+		return err
 	}
 
 	fmt.Println(ui.Success("Changes committed successfully"))

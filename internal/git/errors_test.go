@@ -223,6 +223,12 @@ func TestSentinelErrors(t *testing.T) {
 		ErrLockRemovalFailed,
 		ErrNotRepository,
 		ErrNoChanges,
+		ErrStage,
+		ErrCommitFailed,
+		ErrCommitCancelled,
+		ErrCommitOptionsRequired,
+		ErrCommitMessageRequired,
+		ErrNoFilesSpecified,
 	}
 
 	for i, err1 := range sentinels {
@@ -231,5 +237,84 @@ func TestSentinelErrors(t *testing.T) {
 				t.Errorf("sentinel errors should be distinct: %v == %v", err1, err2)
 			}
 		}
+	}
+}
+
+func TestGitOpError_Error(t *testing.T) {
+	tests := []struct {
+		name    string
+		opErr   *GitOpError
+		wantMsg string
+	}{
+		{
+			name: "with detail",
+			opErr: &GitOpError{
+				Op:      "commit",
+				ErrType: GitErrorUnknown,
+				Detail:  "some git output",
+				Cause:   errors.New("exit status 1"),
+			},
+			wantMsg: "git commit failed (unknown): some git output",
+		},
+		{
+			name: "without detail",
+			opErr: &GitOpError{
+				Op:      "add",
+				ErrType: GitErrorPermission,
+				Cause:   errors.New("exit status 128"),
+			},
+			wantMsg: "git add failed (permission)",
+		},
+		{
+			name: "lock type with detail",
+			opErr: &GitOpError{
+				Op:      "diff --cached",
+				ErrType: GitErrorLock,
+				Detail:  "index.lock exists",
+				Cause:   errors.New("exit status 128"),
+			},
+			wantMsg: "git diff --cached failed (lock): index.lock exists",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.opErr.Error()
+			if got != tt.wantMsg {
+				t.Errorf("GitOpError.Error() = %q, want %q", got, tt.wantMsg)
+			}
+		})
+	}
+}
+
+func TestGitOpError_Unwrap(t *testing.T) {
+	underlying := errors.New("exit status 1")
+	opErr := &GitOpError{
+		Op:    "commit",
+		Cause: underlying,
+	}
+
+	if !errors.Is(opErr, underlying) {
+		t.Error("GitOpError.Unwrap() should allow errors.Is to find underlying error")
+	}
+}
+
+func TestGitOpError_As(t *testing.T) {
+	opErr := &GitOpError{
+		Op:      "add",
+		ErrType: GitErrorPermission,
+		Detail:  "permission denied",
+		Cause:   errors.New("exit status 128"),
+	}
+
+	var target *GitOpError
+	if !errors.As(opErr, &target) {
+		t.Fatal("errors.As should match *GitOpError")
+	}
+	if target.Op != "add" {
+		t.Errorf("GitOpError.Op = %q, want %q", target.Op, "add")
+	}
+	if target.ErrType != GitErrorPermission {
+		t.Errorf("GitOpError.ErrType = %v, want %v", target.ErrType, GitErrorPermission)
 	}
 }
