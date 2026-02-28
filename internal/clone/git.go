@@ -363,12 +363,8 @@ func (c *Cloner) initSubmoduleGraceful(ctx context.Context, repoDir, subPath str
 		return ctx.Err()
 	}
 
-	// Step 1: Register the submodule (init without update)
-	cmd := exec.CommandContext(ctx, "git", "-C", repoDir, "submodule", "init", subPath)
-	_ = cmd.Run() // Ignore error, may already be initialized
-
-	// Step 2: Try normal update
-	cmd = exec.CommandContext(ctx, "git", "-C", repoDir, "submodule", "update", subPath)
+	// Atomic init + update to avoid lock contention in parallel execution
+	cmd := exec.CommandContext(ctx, "git", "-C", repoDir, "submodule", "update", "--init", subPath)
 	output, err := cmd.CombinedOutput()
 
 	if err == nil {
