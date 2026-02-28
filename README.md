@@ -79,16 +79,19 @@ cgo p api      # Fuzzy find "api" in projects/
 
 Navigate instantly with single-letter shortcuts:
 
-| Shortcut | Directory      | Description                |
-|----------|----------------|----------------------------|
-| `p`      | projects/      | Project subdirectories     |
-| `c`      | corpus/        | Reference materials        |
-| `f`      | festivals/     | Festival methodology       |
-| `a`      | ai_docs/       | AI documentation           |
-| `d`      | docs/          | Human documentation        |
-| `w`      | worktrees/     | Git worktrees              |
-| `r`      | code_reviews/  | Code review materials      |
-| `pi`     | pipelines/     | CI/CD pipelines            |
+| Shortcut | Directory              | Description            |
+|----------|------------------------|------------------------|
+| `p`      | projects/              | Project subdirectories |
+| `f`      | festivals/             | Festival methodology   |
+| `w`      | workflow/              | Workflow directory     |
+| `a`      | ai_docs/               | AI documentation       |
+| `d`      | docs/                  | Human documentation    |
+| `i`      | workflow/intents/      | Intents                |
+| `wt`     | projects/worktrees/    | Git worktrees          |
+| `du`     | dungeon/               | Archived work          |
+| `cr`     | workflow/code_reviews/ | Code review materials  |
+| `pi`     | workflow/pipelines/    | CI/CD pipelines        |
+| `de`     | workflow/design/       | Design documents       |
 
 ## Commands
 
@@ -263,7 +266,7 @@ cgo p api                # Runs: cd "$(camp go p api --print)"
 cgo -c p ls              # Runs: camp go p -c ls (no cd)
 
 # 2. Tab completion for cgo
-cgo <TAB>                # Completes categories: p c f a d w r pi
+cgo <TAB>                # Completes categories: p f w a d i wt du cr pi de
 cgo p <TAB>              # Completes project names
 
 # 3. Tab completion for camp commands
@@ -297,22 +300,25 @@ my-campaign/
 │   └── campaign.yaml
 ├── projects/            # Git submodules
 │   ├── api-service/
-│   └── web-app/
-├── festivals/           # Festival methodology
+│   ├── web-app/
+│   └── worktrees/       # Git worktrees (cgo wt)
+│       └── api-service/
+│           ├── feature-x/
+│           └── bugfix-y/
+├── festivals/           # Festival methodology (cgo f)
 │   ├── planning/
 │   ├── active/
 │   ├── ready/
 │   ├── ritual/
 │   └── dungeon/         # completed/, archived/, someday/
-├── ai_docs/             # AI documentation
-├── docs/                # Human documentation
-├── corpus/              # Reference materials
-├── worktrees/           # Git worktrees
-│   └── api-service/
-│       ├── feature-x/
-│       └── bugfix-y/
-├── code_reviews/        # Review notes
-└── pipelines/           # CI/CD configs
+├── workflow/            # Workflow resources (cgo w)
+│   ├── intents/         # Intents (cgo i)
+│   ├── code_reviews/    # Review notes (cgo cr)
+│   ├── pipelines/       # CI/CD configs (cgo pi)
+│   └── design/          # Design documents (cgo de)
+├── ai_docs/             # AI documentation (cgo a)
+├── docs/                # Human documentation (cgo d)
+└── dungeon/             # Archived work (cgo du)
 ```
 
 ## Worktree Navigation
@@ -320,9 +326,9 @@ my-campaign/
 Navigate git worktrees with `@` syntax:
 
 ```bash
-cgo w                     # List all worktrees
-cgo w api-service@        # Show branches for api-service
-cgo w api-service@feat    # Jump to api-service@feature-x
+cgo wt                    # Jump to worktrees/
+cgo wt api-service@       # Show branches for api-service
+cgo wt api-service@feat   # Jump to api-service@feature-x
 ```
 
 ## Tab Completion
@@ -331,7 +337,7 @@ The shell integration includes intelligent tab completion:
 
 ```bash
 # Navigation
-cgo <TAB>                              # Shows: p c f a d w r pi
+cgo <TAB>                              # Shows: p f w a d i wt du cr pi de
 cgo p <TAB>                            # Shows: api-service web-app cli-tool
 cgo p api<TAB>                         # Completes to: api-service api-gateway
 cgo w api@<TAB>                        # Shows worktree branches
