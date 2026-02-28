@@ -3,36 +3,15 @@ package clone
 import (
 	"errors"
 	"fmt"
+
+	"github.com/Obedience-Corp/camp/internal/git"
 )
 
 // Sentinel errors for clone operations.
+// Shared sentinels are aliased from the git package to avoid duplication.
 var (
 	// ErrCloneFailed indicates the git clone operation failed.
 	ErrCloneFailed = errors.New("clone failed")
-
-	// ErrSubmoduleSync indicates git submodule sync failed.
-	ErrSubmoduleSync = errors.New("submodule sync failed")
-
-	// ErrSubmoduleUpdate indicates git submodule update failed.
-	ErrSubmoduleUpdate = errors.New("submodule update failed")
-
-	// ErrSubmoduleNotInitialized indicates a submodule was not properly initialized.
-	ErrSubmoduleNotInitialized = errors.New("submodule not initialized")
-
-	// ErrEmptyWorkingTree indicates a submodule has no checked-out files.
-	ErrEmptyWorkingTree = errors.New("submodule has empty working tree")
-
-	// ErrBranchDetection indicates the default branch could not be determined.
-	ErrBranchDetection = errors.New("could not determine default branch")
-
-	// ErrBranchCheckout indicates a branch checkout failed.
-	ErrBranchCheckout = errors.New("branch checkout failed")
-
-	// ErrSubmoduleURL indicates a submodule URL could not be resolved.
-	ErrSubmoduleURL = errors.New("could not resolve submodule URL")
-
-	// ErrStaleRef indicates a stale commit reference was detected.
-	ErrStaleRef = errors.New("stale commit reference")
 
 	// ErrGitmodulesParse indicates .gitmodules could not be parsed.
 	ErrGitmodulesParse = errors.New("could not parse .gitmodules")
@@ -40,8 +19,20 @@ var (
 	// ErrCheckoutFailed indicates a git checkout operation failed.
 	ErrCheckoutFailed = errors.New("git checkout failed")
 
+	// ErrEmptyWorkingTree indicates a submodule has no checked-out files.
+	ErrEmptyWorkingTree = errors.New("submodule has empty working tree")
+
 	// ErrSubmoduleRead indicates a submodule directory could not be read.
 	ErrSubmoduleRead = errors.New("cannot read submodule directory")
+
+	// Shared with git package -- aliased to avoid duplicate sentinel errors.
+	ErrSubmoduleSync           = git.ErrSubmoduleSync
+	ErrSubmoduleUpdate         = git.ErrSubmoduleUpdate
+	ErrSubmoduleNotInitialized = git.ErrSubmoduleNotInitialized
+	ErrBranchDetection         = git.ErrBranchDetection
+	ErrBranchCheckout          = git.ErrBranchCheckout
+	ErrSubmoduleURL            = git.ErrSubmoduleURL
+	ErrStaleRef                = git.ErrStaleRef
 )
 
 // SubmoduleError wraps submodule-specific errors with context.
