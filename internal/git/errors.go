@@ -145,6 +145,12 @@ var (
 	// ErrOrphanedGitlink indicates a gitlink exists in the index but has no entry in .gitmodules.
 	ErrOrphanedGitlink = errors.New("orphaned gitlink in index")
 
+	// ErrSubmoduleSync indicates a submodule sync operation failed.
+	ErrSubmoduleSync = errors.New("submodule sync failed")
+
+	// ErrSubmoduleNotInitialized indicates a submodule was not properly initialized.
+	ErrSubmoduleNotInitialized = errors.New("submodule not initialized")
+
 	// ErrStage indicates a staging (git add) operation failed.
 	ErrStage = errors.New("staging failed")
 

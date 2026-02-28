@@ -3,9 +3,12 @@ package sync
 import (
 	"errors"
 	"fmt"
+
+	"github.com/Obedience-Corp/camp/internal/git"
 )
 
 // Sentinel errors for sync operations.
+// Shared sentinels are aliased from the git package to avoid duplication.
 var (
 	// ErrPreflightFailed indicates pre-flight checks failed.
 	ErrPreflightFailed = errors.New("pre-flight checks failed")
@@ -16,20 +19,16 @@ var (
 	// ErrURLCapture indicates URL state capture failed.
 	ErrURLCapture = errors.New("failed to capture URL state")
 
-	// ErrSubmoduleSync indicates git submodule sync failed.
-	ErrSubmoduleSync = errors.New("git submodule sync failed")
-
-	// ErrSubmoduleInit indicates a submodule init/update failed.
-	ErrSubmoduleInit = errors.New("submodule init failed")
-
-	// ErrSubmoduleNotInitialized indicates a submodule was not initialized after update.
-	ErrSubmoduleNotInitialized = errors.New("submodule not initialized")
-
 	// ErrSubmoduleValidation indicates post-update validation failed.
 	ErrSubmoduleValidation = errors.New("submodule validation failed")
 
 	// ErrNestedSubmodules indicates nested submodule initialization failed.
 	ErrNestedSubmodules = errors.New("nested submodule init failed")
+
+	// Shared with git package -- aliased to avoid duplicate sentinel errors.
+	ErrSubmoduleSync           = git.ErrSubmoduleSync
+	ErrSubmoduleInit           = git.ErrSubmoduleInit
+	ErrSubmoduleNotInitialized = git.ErrSubmoduleNotInitialized
 )
 
 // SyncError wraps sync-specific errors with context.
