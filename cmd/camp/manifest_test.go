@@ -112,6 +112,7 @@ func TestManifestCommand_AllCommandsHaveAnnotations(t *testing.T) {
 		"dungeon list": true,
 		"dungeon move": true,
 		"flow add":     true,
+		"switch":       true,
 	}
 
 	for _, cmd := range manifest.Commands {
