@@ -1,6 +1,5 @@
 # Binaries
 bin/
-/camp
 *.exe
 *.exe~
 *.dll
