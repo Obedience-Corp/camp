@@ -48,6 +48,10 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	// Extract camp-specific flags, pass rest to git
 	gitArgs, sub, project := git.ExtractSubFlags(args)
 
+	// Extract --show-refs before passing to git
+	var showRefs bool
+	gitArgs, showRefs = extractShowRefs(gitArgs)
+
 	target, err := git.ResolveTarget(ctx, campRoot, sub, project)
 	if err != nil {
 		return fmt.Errorf("failed to resolve target: %w", err)
@@ -57,6 +61,11 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(os.Stderr, ui.Info(fmt.Sprintf("Submodule: %s", target.Name)))
 	}
 
+	// Hide submodule ref noise by default (only at campaign root)
+	if !showRefs && !target.IsSubmodule {
+		gitArgs = append(gitArgs, "--ignore-submodules=all")
+	}
+
 	fullArgs := append([]string{"-C", target.Path, "status"}, gitArgs...)
 	gitCmd := exec.CommandContext(ctx, "git", fullArgs...)
 	gitCmd.Stdout = os.Stdout
@@ -64,4 +73,19 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	gitCmd.Stdin = os.Stdin
 
 	return gitCmd.Run()
+}
+
+// extractShowRefs removes --show-refs from args and returns the filtered
+// args plus a boolean indicating whether the flag was present.
+func extractShowRefs(args []string) ([]string, bool) {
+	filtered := make([]string, 0, len(args))
+	found := false
+	for _, arg := range args {
+		if arg == "--show-refs" {
+			found = true
+		} else {
+			filtered = append(filtered, arg)
+		}
+	}
+	return filtered, found
 }
