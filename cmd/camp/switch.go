@@ -13,6 +13,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/nav/fuzzy"
+	"github.com/Obedience-Corp/camp/internal/nav/tui"
 )
 
 var switchCmd = &cobra.Command{
@@ -37,8 +38,8 @@ The --print flag outputs just the path for shell integration:
 	Aliases: []string{"sw"},
 	Args:    cobra.MaximumNArgs(1),
 	Annotations: map[string]string{
-		"agent_allowed": "false",
-		"agent_reason":  "Interactive campaign picker — sandbox escape vector",
+		"agent_allowed": "true",
+		"agent_reason":  "Agents use: camp switch <name> --print",
 		"interactive":   "true",
 	},
 	RunE: runSwitch,
@@ -102,6 +103,9 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 		}
 		selected = c
 	} else {
+		if !tui.IsTerminal() {
+			return fmt.Errorf("campaign name required in non-interactive mode\n       Usage: camp switch <name> --print")
+		}
 		c, err := pickCampaign(cmd, reg)
 		if err != nil {
 			return err
