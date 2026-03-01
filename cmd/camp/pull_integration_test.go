@@ -62,7 +62,7 @@ func TestIntegration_PullAll_UpToDate(t *testing.T) {
 	ctx := context.Background()
 
 	// Everything is up-to-date, should succeed with no errors
-	err := runPullAll(ctx, campDir, nil, false)
+	err := runPullAll(ctx, campDir, nil, PullAllOptions{})
 	if err != nil {
 		t.Fatalf("runPullAll() error = %v", err)
 	}
@@ -76,7 +76,7 @@ func TestIntegration_PullAll_PullsNewCommits(t *testing.T) {
 	pushCommitToBare(t, bareDir, "new-file.txt", "new content", "Add new file")
 
 	// Pull should succeed
-	err := runPullAll(ctx, campDir, nil, false)
+	err := runPullAll(ctx, campDir, nil, PullAllOptions{})
 	if err != nil {
 		t.Fatalf("runPullAll() error = %v", err)
 	}
@@ -98,7 +98,7 @@ func TestIntegration_PullAll_SkipsDetachedHEAD(t *testing.T) {
 	run(t, "git", "-C", subDir, "checkout", hash[:8])
 
 	// Should succeed (skips detached HEAD, doesn't fail)
-	err := runPullAll(ctx, campDir, nil, false)
+	err := runPullAll(ctx, campDir, nil, PullAllOptions{})
 	if err != nil {
 		t.Fatalf("runPullAll() error = %v", err)
 	}
@@ -113,7 +113,7 @@ func TestIntegration_PullAll_SkipsNoUpstream(t *testing.T) {
 	run(t, "git", "-C", subDir, "checkout", "-b", "local-only")
 
 	// Should succeed (skips no-upstream repos)
-	err := runPullAll(ctx, campDir, nil, false)
+	err := runPullAll(ctx, campDir, nil, PullAllOptions{})
 	if err != nil {
 		t.Fatalf("runPullAll() error = %v", err)
 	}
@@ -125,7 +125,7 @@ func TestIntegration_PullAll_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
-	err := runPullAll(ctx, campDir, nil, false)
+	err := runPullAll(ctx, campDir, nil, PullAllOptions{})
 	if err == nil {
 		t.Error("expected error from cancelled context, got nil")
 	}
@@ -145,7 +145,7 @@ func TestIntegration_PullAll_DivergentBranchesRebase(t *testing.T) {
 	run(t, "git", "-C", subDir, "commit", "-m", "Local commit")
 
 	// Explicit --rebase should succeed on divergent branches
-	err := runPullAll(ctx, campDir, []string{"--rebase"}, false)
+	err := runPullAll(ctx, campDir, []string{"--rebase"}, PullAllOptions{})
 	if err != nil {
 		t.Fatalf("runPullAll(--rebase) should succeed on divergent branches: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestIntegration_PullAll_DivergentBranchesDefaultFails(t *testing.T) {
 
 	// Default pull (no strategy) should fail on divergent branches
 	// (git requires the user to specify a reconciliation strategy)
-	err := runPullAll(ctx, campDir, nil, false)
+	err := runPullAll(ctx, campDir, nil, PullAllOptions{})
 	if err == nil {
 		t.Fatal("runPullAll() should fail with divergent branches and no strategy")
 	}
@@ -196,7 +196,7 @@ func TestIntegration_PullAll_ExplicitFfOnlyOverride(t *testing.T) {
 	run(t, "git", "-C", subDir, "commit", "-m", "Local commit")
 
 	// Explicit --ff-only should fail on divergent branches
-	err := runPullAll(ctx, campDir, []string{"--ff-only"}, false)
+	err := runPullAll(ctx, campDir, []string{"--ff-only"}, PullAllOptions{})
 	if err == nil {
 		t.Fatal("runPullAll(--ff-only) should fail with divergent branches")
 	}
@@ -210,7 +210,7 @@ func TestIntegration_PullAll_PassesThroughGitFlags(t *testing.T) {
 	pushCommitToBare(t, bareDir, "ff-file.txt", "ff content", "Fast-forward commit")
 
 	// Pull with --ff-only should succeed (this is a fast-forward)
-	err := runPullAll(ctx, campDir, []string{"--ff-only"}, false)
+	err := runPullAll(ctx, campDir, []string{"--ff-only"}, PullAllOptions{})
 	if err != nil {
 		t.Fatalf("runPullAll(--ff-only) error = %v", err)
 	}
@@ -243,7 +243,7 @@ func TestIntegration_PullAll_RebaseConflictAutoAborts(t *testing.T) {
 	run(t, "git", "-C", subDir, "commit", "-m", "Local change to README")
 
 	// Pull with --rebase should fail on the submodule (conflict) but auto-abort
-	err := runPullAll(ctx, campDir, []string{"--rebase"}, false)
+	err := runPullAll(ctx, campDir, []string{"--rebase"}, PullAllOptions{})
 	if err == nil {
 		t.Fatal("expected error from rebase conflict, got nil")
 	}
@@ -271,7 +271,7 @@ func TestIntegration_PullAll_ReportsChangedRefs(t *testing.T) {
 	pushCommitToBare(t, bareDir, "ref-change.txt", "new content", "Advance ref")
 
 	// Capture stdout to check for ref change message
-	err := runPullAll(ctx, campDir, nil, false)
+	err := runPullAll(ctx, campDir, nil, PullAllOptions{})
 	if err != nil {
 		t.Fatalf("runPullAll() error = %v", err)
 	}

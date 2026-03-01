@@ -241,6 +241,90 @@ func TestIntegration_FindProjectRoot(t *testing.T) {
 	}
 }
 
+// setupSyncTestRepo creates a campaign root with a single submodule for sync tests.
+// Returns (campaignRoot, submodulePath).
+func setupSyncTestRepo(t *testing.T) (string, string) {
+	t.Helper()
+
+	// Create the "submodule" repo
+	subRepo := setupTestRepo(t)
+	os.WriteFile(filepath.Join(subRepo, "init.txt"), []byte("initial"), 0644)
+	run(t, "git", "-C", subRepo, "add", "-A")
+	run(t, "git", "-C", subRepo, "commit", "-m", "initial commit")
+
+	// Create the campaign root and add the submodule
+	campRoot := setupTestRepo(t)
+	runWithEnv(t, campRoot, []string{"GIT_ALLOW_PROTOCOL=file"}, "git", "submodule", "add", subRepo, "projects/test-project")
+	run(t, "git", "-C", campRoot, "commit", "-m", "add submodule")
+
+	subPath := filepath.Join(campRoot, "projects", "test-project")
+	return campRoot, subPath
+}
+
+func TestIntegration_ProjectCommit_DefaultNoSync(t *testing.T) {
+	campRoot, subPath := setupSyncTestRepo(t)
+
+	// Make a change in the submodule and commit it
+	os.WriteFile(filepath.Join(subPath, "change.txt"), []byte("new content"), 0644)
+	run(t, "git", "-C", subPath, "add", "-A")
+	run(t, "git", "-C", subPath, "commit", "-m", "submodule change")
+
+	// Campaign root commit count BEFORE
+	beforeLog := run(t, "git", "-C", campRoot, "rev-list", "--count", "HEAD")
+	beforeCount := strings.TrimSpace(beforeLog)
+
+	// Verify submodule ref IS dirty in campaign root
+	cmd := exec.Command("git", "-C", campRoot, "diff", "--quiet", "--", "projects/test-project")
+	if err := cmd.Run(); err == nil {
+		t.Fatal("expected submodule ref to be dirty after submodule commit")
+	}
+
+	// With --sync defaulting to false, campaign root should NOT get a new commit.
+	// The sync only runs when projectCommitSync is true, which now requires explicit --sync.
+	// Verify campaign root commit count is unchanged.
+	afterLog := run(t, "git", "-C", campRoot, "rev-list", "--count", "HEAD")
+	afterCount := strings.TrimSpace(afterLog)
+
+	if beforeCount != afterCount {
+		t.Errorf("campaign root got unexpected commit: before=%s after=%s", beforeCount, afterCount)
+	}
+}
+
+func TestIntegration_ProjectCommit_ExplicitSync(t *testing.T) {
+	campRoot, subPath := setupSyncTestRepo(t)
+
+	// Make a change in the submodule and commit it
+	ctx := context.Background()
+	os.WriteFile(filepath.Join(subPath, "change.txt"), []byte("new content"), 0644)
+
+	executor, err := git.NewExecutor(subPath)
+	if err != nil {
+		t.Fatalf("NewExecutor() error = %v", err)
+	}
+	if err := executor.StageAll(ctx); err != nil {
+		t.Fatalf("StageAll() error = %v", err)
+	}
+	if err := executor.Commit(ctx, &git.CommitOptions{Message: "submodule change"}); err != nil {
+		t.Fatalf("Commit() error = %v", err)
+	}
+
+	// Verify submodule ref is dirty in campaign root
+	if !checkParentNeedsCommit(ctx, campRoot, subPath) {
+		t.Fatal("expected submodule ref to be dirty")
+	}
+
+	// syncParentRef should create a commit at campaign root (opt-in path)
+	if err := syncParentRef(ctx, campRoot, "projects/test-project", nil); err != nil {
+		t.Fatalf("syncParentRef() error = %v", err)
+	}
+
+	// Verify campaign root now has a sync commit
+	logOutput := run(t, "git", "-C", campRoot, "log", "--oneline", "-1")
+	if !strings.Contains(logOutput, "update test-project submodule ref") {
+		t.Errorf("expected sync commit message, got: %s", logOutput)
+	}
+}
+
 func TestIntegration_SubmoduleDetection(t *testing.T) {
 	// Create parent repo
 	parentDir := setupTestRepo(t)
