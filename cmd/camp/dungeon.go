@@ -15,10 +15,15 @@ It keeps items visible without them competing for your attention.
 Commands:
   add     Initialize dungeon structure with documentation
   crawl   Interactive review and archival of dungeon contents
+  list    List dungeon items (agent-friendly)
+  move    Move items between dungeon statuses (agent-friendly)
 
 Examples:
-  camp dungeon add            Initialize the dungeon
-  camp dungeon crawl          Review and archive dungeon items`,
+  camp dungeon add                        Initialize the dungeon
+  camp dungeon crawl                      Review and archive dungeon items
+  camp dungeon list                       List dungeon root items
+  camp dungeon list --triage              List parent items eligible for triage
+  camp dungeon move old-feature archived  Move item to archived status`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
 	},
