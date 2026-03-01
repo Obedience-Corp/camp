@@ -10,6 +10,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/ui"
+	"github.com/Obedience-Corp/camp/internal/worktree"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 	"github.com/spf13/cobra"
@@ -19,11 +20,13 @@ import (
 type pruneStatus string
 
 const (
-	pruneStatusDeleted     pruneStatus = "deleted"
-	pruneStatusWouldDelete pruneStatus = "would delete"
-	pruneStatusSkipped     pruneStatus = "skipped"
-	pruneStatusError       pruneStatus = "error"
-	pruneStatusWouldPrune  pruneStatus = "would prune"
+	pruneStatusDeleted             pruneStatus = "deleted"
+	pruneStatusWouldDelete         pruneStatus = "would delete"
+	pruneStatusSkipped             pruneStatus = "skipped"
+	pruneStatusError               pruneStatus = "error"
+	pruneStatusWouldPrune          pruneStatus = "would prune"
+	pruneStatusWorktreeRemoved     pruneStatus = "wt removed"
+	pruneStatusWorktreeWouldRemove pruneStatus = "wt would remove"
 )
 
 // PruneOptions holds configuration for a prune operation.
@@ -157,17 +160,47 @@ func executePrune(ctx context.Context, name, path string, opts PruneOptions) pro
 	return pr
 }
 
+// detectWorktreesForBranches lists worktrees and returns a map of branch name → worktree entry
+// for branches that appear in the merged set.
+func detectWorktreesForBranches(ctx context.Context, path string, merged []string) map[string]worktree.GitWorktreeEntry {
+	wt := worktree.NewGitWorktree(path)
+	entries, err := wt.List(ctx)
+	if err != nil {
+		return nil
+	}
+
+	mergedSet := make(map[string]struct{}, len(merged))
+	for _, b := range merged {
+		mergedSet[b] = struct{}{}
+	}
+
+	result := make(map[string]worktree.GitWorktreeEntry)
+	for _, e := range entries {
+		if _, ok := mergedSet[e.Branch]; ok {
+			result[e.Branch] = e
+		}
+	}
+	return result
+}
+
 // deleteLocalBranches handles confirmation and deletion of locally merged branches.
+// If a branch has an active worktree, the worktree is removed first.
 func deleteLocalBranches(ctx context.Context, path string, merged []string, opts PruneOptions, pr *projectPruneResult) {
 	if len(merged) == 0 {
 		return
 	}
 
+	wtMap := detectWorktreesForBranches(ctx, path, merged)
+
 	if !opts.DryRun && !opts.Force {
 		fmt.Printf("\n%s Will delete %d merged branch(es) in %s:\n",
 			ui.WarningIcon(), len(merged), ui.Value(pr.Name))
 		for _, b := range merged {
-			fmt.Printf("  %s %s\n", ui.Dim("-"), b)
+			if _, hasWT := wtMap[b]; hasWT {
+				fmt.Printf("  %s %s (has worktree — will be removed)\n", ui.Dim("-"), b)
+			} else {
+				fmt.Printf("  %s %s\n", ui.Dim("-"), b)
+			}
 		}
 		fmt.Print("\nProceed? [y/N] ")
 		var answer string
@@ -182,6 +215,37 @@ func deleteLocalBranches(ctx context.Context, path string, merged []string, opts
 			}
 			return
 		}
+	}
+
+	// Remove worktrees first for branches that have them.
+	wt := worktree.NewGitWorktree(path)
+	for branch, entry := range wtMap {
+		if opts.DryRun {
+			pr.Results = append(pr.Results, pruneResult{
+				Branch: branch,
+				Status: pruneStatusWorktreeWouldRemove,
+				Detail: entry.Path,
+			})
+			continue
+		}
+		if err := wt.Remove(ctx, entry.Path, true); err != nil {
+			pr.Results = append(pr.Results, pruneResult{
+				Branch: branch,
+				Status: pruneStatusError,
+				Detail: fmt.Sprintf("worktree remove: %s", err),
+			})
+		} else {
+			pr.Results = append(pr.Results, pruneResult{
+				Branch: branch,
+				Status: pruneStatusWorktreeRemoved,
+				Detail: entry.Path,
+			})
+		}
+	}
+
+	// Clean stale worktree refs after removals.
+	if !opts.DryRun && len(wtMap) > 0 {
+		wt.Prune(ctx, false)
 	}
 
 	for _, branch := range merged {
@@ -337,9 +401,9 @@ func buildPruneTable(results []pruneResult) *table.Table {
 	for _, r := range results {
 		var statusStr string
 		switch r.Status {
-		case pruneStatusDeleted:
+		case pruneStatusDeleted, pruneStatusWorktreeRemoved:
 			statusStr = pruneStyleGreen.Render(string(r.Status))
-		case pruneStatusWouldDelete, pruneStatusWouldPrune:
+		case pruneStatusWouldDelete, pruneStatusWouldPrune, pruneStatusWorktreeWouldRemove:
 			statusStr = pruneStyleYellow.Render(string(r.Status))
 		case pruneStatusSkipped:
 			statusStr = pruneStyleDim.Render(string(r.Status))
