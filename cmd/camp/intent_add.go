@@ -80,15 +80,12 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("ensuring intent directories: %w", err)
 	}
 
-	// Get author from git config (used for both paths)
-	author := git.GetUserName(ctx)
-
-	// Ultra-fast path: title provided as argument
+	// Ultra-fast path: title provided as argument (non-TUI = agent author)
 	if len(args) > 0 {
 		opts := intent.CreateOptions{
 			Title:  args[0],
 			Type:   intent.Type(intentType),
-			Author: author,
+			Author: "agent",
 		}
 
 		// Deep capture overrides ultra-fast
@@ -98,6 +95,9 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 
 		return runFastCapture(ctx, svc, cfg, campaignRoot, noCommit, opts)
 	}
+
+	// TUI path: use git config author (human)
+	author := git.GetUserName(ctx)
 
 	// Build navigation shortcuts map (key → path) for @ completion
 	shortcuts := make(map[string]string)
