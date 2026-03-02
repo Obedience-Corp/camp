@@ -165,7 +165,6 @@ func fuzzyContains(haystack, needle string) bool {
 	return true
 }
 
-
 // completionView renders the completion popup.
 func completionView(cs *completionState) string {
 	if !cs.active || len(cs.candidates) == 0 {

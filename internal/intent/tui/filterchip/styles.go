@@ -1,8 +1,8 @@
 package filterchip
 
 import (
-	"github.com/charmbracelet/lipgloss"
 	"github.com/Obedience-Corp/camp/internal/ui/theme"
+	"github.com/charmbracelet/lipgloss"
 )
 
 var pal = theme.TUI()

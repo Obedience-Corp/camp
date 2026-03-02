@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/Obedience-Corp/camp/internal/intent/tui"
 	"github.com/Obedience-Corp/camp/internal/intent/tui/filterchip"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // Update implements tea.Model.

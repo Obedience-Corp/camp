@@ -3,10 +3,10 @@ package explorer
 import (
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/intent/tui"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // creationStep represents the current step in new intent creation.

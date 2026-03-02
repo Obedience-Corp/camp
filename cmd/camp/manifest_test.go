@@ -74,6 +74,9 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		"flow":          false,
 		"flow add":      false,
 		"flow migrate":  false,
+		"skills link":   false,
+		"skills status": false,
+		"skills unlink": false,
 	}
 
 	for _, cmd := range manifest.Commands {
@@ -88,8 +91,8 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		}
 	}
 
-	if len(manifest.Commands) != 15 {
-		t.Errorf("expected exactly 15 restricted commands, got %d", len(manifest.Commands))
+	if len(manifest.Commands) != 18 {
+		t.Errorf("expected exactly 18 restricted commands, got %d", len(manifest.Commands))
 	}
 }
 
@@ -109,10 +112,13 @@ func TestManifestCommand_AllCommandsHaveAnnotations(t *testing.T) {
 
 	// Commands that are explicitly agent-allowed (have non-interactive input modes)
 	agentAllowed := map[string]bool{
-		"dungeon list": true,
-		"dungeon move": true,
-		"flow add":     true,
-		"switch":       true,
+		"dungeon list":  true,
+		"dungeon move":  true,
+		"flow add":      true,
+		"switch":        true,
+		"skills link":   true,
+		"skills status": true,
+		"skills unlink": true,
 	}
 
 	for _, cmd := range manifest.Commands {
@@ -151,15 +157,18 @@ func TestManifestCommand_InteractiveFlags(t *testing.T) {
 	}
 
 	nonInteractiveCommands := map[string]bool{
-		"clone":        true,
-		"register":     true,
-		"unregister":   true,
-		"shell-init":   true,
-		"doctor":       true,
-		"dungeon list": true,
-		"dungeon move": true,
-		"flow add":     true,
-		"flow migrate": true,
+		"clone":         true,
+		"register":      true,
+		"unregister":    true,
+		"shell-init":    true,
+		"doctor":        true,
+		"dungeon list":  true,
+		"dungeon move":  true,
+		"flow add":      true,
+		"flow migrate":  true,
+		"skills link":   true,
+		"skills status": true,
+		"skills unlink": true,
 	}
 
 	cmdMap := make(map[string]CommandEntry)

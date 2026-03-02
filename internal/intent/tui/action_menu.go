@@ -4,9 +4,9 @@ package tui
 import (
 	"strings"
 
+	"github.com/Obedience-Corp/camp/internal/intent"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/Obedience-Corp/camp/internal/intent"
 )
 
 // ActionMenuItem represents an item in the action menu.

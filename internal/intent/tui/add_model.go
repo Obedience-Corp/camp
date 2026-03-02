@@ -7,12 +7,12 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/Obedience-Corp/camp/internal/concept"
 	"github.com/Obedience-Corp/camp/internal/editor"
 	"github.com/Obedience-Corp/camp/internal/intent/tui/vim"
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // addStep represents the current step in the intent creation process.

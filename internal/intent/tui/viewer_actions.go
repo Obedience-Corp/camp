@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"runtime"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/Obedience-Corp/camp/internal/intent"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // openInEditor opens the intent in $EDITOR.

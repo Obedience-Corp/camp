@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/Obedience-Corp/camp/internal/intent"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // Styles for the intent viewer.

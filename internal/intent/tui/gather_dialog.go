@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/Obedience-Corp/camp/internal/intent"
 )
 
 // GatherDialog is a modal dialog for configuring a gather operation.
