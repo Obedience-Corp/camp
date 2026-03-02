@@ -16,6 +16,9 @@ var ErrOutsideBoundary = errors.New("path escapes boundary")
 // ErrBoundaryRootInvalid is returned when root cannot be resolved or is empty.
 var ErrBoundaryRootInvalid = errors.New("boundary root is invalid")
 
+// ErrInvalidSubmodulePath is returned when a submodule path fails validation.
+var ErrInvalidSubmodulePath = errors.New("invalid submodule path")
+
 // BoundaryError wraps a boundary violation with the specific paths involved.
 type BoundaryError struct {
 	Root   string
