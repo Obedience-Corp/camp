@@ -23,6 +23,32 @@ func Wrapf(err error, format string, args ...any) error {
 	return fmt.Errorf("%s: %w", fmt.Sprintf(format, args...), err)
 }
 
+// WrapJoin creates an error that wraps both sentinel and cause in the error chain.
+// This preserves errors.Is matching for both errors, unlike Wrap which only chains one.
+// Use when an operation has both a categorical sentinel (e.g., ErrSubmoduleInit) and
+// an underlying cause (e.g., exec error).
+// Returns nil if both sentinel and cause are nil.
+func WrapJoin(sentinel, cause error, msg string) error {
+	if sentinel == nil && cause == nil {
+		return nil
+	}
+	if sentinel == nil {
+		return Wrap(cause, msg)
+	}
+	if cause == nil {
+		return Wrap(sentinel, msg)
+	}
+	if msg == "" {
+		return fmt.Errorf("%w: %w", sentinel, cause)
+	}
+	return fmt.Errorf("%s: %w: %w", msg, sentinel, cause)
+}
+
+// WrapJoinf is like WrapJoin but accepts a format string for the message.
+func WrapJoinf(sentinel, cause error, format string, args ...any) error {
+	return WrapJoin(sentinel, cause, fmt.Sprintf(format, args...))
+}
+
 // Is delegates to errors.Is for convenience.
 func Is(err, target error) bool { return errors.Is(err, target) }
 

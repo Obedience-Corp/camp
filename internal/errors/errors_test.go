@@ -275,6 +275,83 @@ func TestWrapf(t *testing.T) {
 	}
 }
 
+func TestWrapJoin(t *testing.T) {
+	sentinel := New("sentinel")
+	cause := New("cause")
+
+	t.Run("both errors with message", func(t *testing.T) {
+		err := WrapJoin(sentinel, cause, "context")
+		if err == nil {
+			t.Fatal("WrapJoin returned nil")
+		}
+		if !Is(err, sentinel) {
+			t.Error("errors.Is(err, sentinel) = false, want true")
+		}
+		if !Is(err, cause) {
+			t.Error("errors.Is(err, cause) = false, want true")
+		}
+		if !strings.Contains(err.Error(), "context") {
+			t.Errorf("error message missing context: %q", err.Error())
+		}
+	})
+
+	t.Run("both errors without message", func(t *testing.T) {
+		err := WrapJoin(sentinel, cause, "")
+		if !Is(err, sentinel) {
+			t.Error("errors.Is(err, sentinel) = false, want true")
+		}
+		if !Is(err, cause) {
+			t.Error("errors.Is(err, cause) = false, want true")
+		}
+	})
+
+	t.Run("nil sentinel", func(t *testing.T) {
+		err := WrapJoin(nil, cause, "msg")
+		if err == nil {
+			t.Fatal("WrapJoin(nil, cause) returned nil")
+		}
+		if !Is(err, cause) {
+			t.Error("errors.Is(err, cause) = false, want true")
+		}
+	})
+
+	t.Run("nil cause", func(t *testing.T) {
+		err := WrapJoin(sentinel, nil, "msg")
+		if err == nil {
+			t.Fatal("WrapJoin(sentinel, nil) returned nil")
+		}
+		if !Is(err, sentinel) {
+			t.Error("errors.Is(err, sentinel) = false, want true")
+		}
+	})
+
+	t.Run("both nil", func(t *testing.T) {
+		err := WrapJoin(nil, nil, "msg")
+		if err != nil {
+			t.Errorf("WrapJoin(nil, nil) = %v, want nil", err)
+		}
+	})
+}
+
+func TestWrapJoinf(t *testing.T) {
+	sentinel := New("sentinel")
+	cause := New("cause")
+
+	err := WrapJoinf(sentinel, cause, "op %s", "test")
+	if err == nil {
+		t.Fatal("WrapJoinf returned nil")
+	}
+	if !Is(err, sentinel) {
+		t.Error("errors.Is(err, sentinel) = false, want true")
+	}
+	if !Is(err, cause) {
+		t.Error("errors.Is(err, cause) = false, want true")
+	}
+	if !strings.Contains(err.Error(), "op test") {
+		t.Errorf("error message missing formatted context: %q", err.Error())
+	}
+}
+
 func TestContextCancellation(t *testing.T) {
 	t.Run("wrap context.Canceled", func(t *testing.T) {
 		err := Wrap(context.Canceled, "fetching data")

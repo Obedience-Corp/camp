@@ -38,6 +38,9 @@ func ValidateSubmodulePath(repoRoot, subPath string) error {
 	}
 
 	cleaned := filepath.Clean(subPath)
+	if cleaned == "." {
+		return camperrors.Wrap(ErrInvalidSubmodulePath, "path must not reference repository root")
+	}
 	if strings.HasPrefix(cleaned, "..") {
 		return camperrors.Wrapf(ErrInvalidSubmodulePath, "path escapes root after cleaning: %q", subPath)
 	}

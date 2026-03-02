@@ -83,7 +83,7 @@ func (c *Cloner) gitSubmoduleUpdate(ctx context.Context, dir string) error {
 	cmd := exec.CommandContext(ctx, "git", "-C", dir, "submodule", "update", "--init", "--recursive")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return camperrors.Wrapf(err, "%s: %s", gitpkg.ErrSubmoduleUpdate.Error(), strings.TrimSpace(string(output)))
+		return camperrors.WrapJoinf(gitpkg.ErrSubmoduleUpdate, err, "%s", strings.TrimSpace(string(output)))
 	}
 	return nil
 }
@@ -97,7 +97,7 @@ func (c *Cloner) gitGetBranch(ctx context.Context, dir string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "--abbrev-ref", "HEAD")
 	output, err := cmd.Output()
 	if err != nil {
-		return "", camperrors.Wrap(err, gitpkg.ErrBranchDetection.Error())
+		return "", camperrors.WrapJoin(gitpkg.ErrBranchDetection, err, "")
 	}
 	return strings.TrimSpace(string(output)), nil
 }
@@ -112,7 +112,7 @@ func (c *Cloner) gitSubmoduleStatus(ctx context.Context, dir string) ([]Submodul
 	cmd := exec.CommandContext(ctx, "git", "-C", dir, "submodule", "status", "--recursive")
 	output, err := cmd.Output()
 	if err != nil {
-		return nil, camperrors.Wrap(err, gitpkg.ErrSubmoduleUpdate.Error())
+		return nil, camperrors.WrapJoin(gitpkg.ErrSubmoduleUpdate, err, "")
 	}
 
 	var results []SubmoduleResult
@@ -263,7 +263,7 @@ func (c *Cloner) verifySubmoduleWorkingTree(ctx context.Context, repoDir, subPat
 	subDir := filepath.Join(repoDir, subPath)
 	entries, err := os.ReadDir(subDir)
 	if err != nil {
-		return &SubmoduleError{Op: "read", Submodule: subPath, Cause: camperrors.Wrap(err, ErrSubmoduleRead.Error())}
+		return &SubmoduleError{Op: "read", Submodule: subPath, Cause: camperrors.WrapJoin(ErrSubmoduleRead, err, "")}
 	}
 
 	// Count real files (not .git)
@@ -292,7 +292,7 @@ func (c *Cloner) forceCheckoutSubmodule(ctx context.Context, repoDir, subPath st
 	if err != nil {
 		return &SubmoduleError{
 			Op: "checkout", Submodule: subPath,
-			Cause: camperrors.Wrapf(err, "%s: %s", ErrCheckoutFailed.Error(), strings.TrimSpace(string(output))),
+			Cause: camperrors.WrapJoinf(ErrCheckoutFailed, err, "%s", strings.TrimSpace(string(output))),
 		}
 	}
 	return nil
@@ -421,7 +421,7 @@ func (c *Cloner) initSubmoduleFromDefaultBranch(ctx context.Context, repoDir, su
 	if err := os.RemoveAll(subDir); err != nil {
 		return &SubmoduleError{
 			Op: "remove-stale", Submodule: subPath,
-			Cause: camperrors.Wrap(err, gitpkg.ErrStaleRef.Error()),
+			Cause: camperrors.WrapJoin(gitpkg.ErrStaleRef, err, ""),
 		}
 	}
 

@@ -110,7 +110,7 @@ func InitSubmoduleGraceful(ctx context.Context, repoDir, subPath string) error {
 	}
 
 	if err := pathutil.ValidateSubmodulePath(repoDir, subPath); err != nil {
-		return camperrors.Wrapf(err, "%s %s", ErrSubmoduleInit.Error(), subPath)
+		return camperrors.WrapJoinf(ErrSubmoduleInit, err, "%s", subPath)
 	}
 
 	// Step 1: Register the submodule (init without update)
@@ -134,7 +134,7 @@ func InitSubmoduleGraceful(ctx context.Context, repoDir, subPath string) error {
 		return InitFromDefaultBranch(ctx, repoDir, subPath)
 	}
 
-	return camperrors.Wrapf(err, "%s %s: %s", ErrSubmoduleUpdate.Error(), subPath, strings.TrimSpace(outputStr))
+	return camperrors.WrapJoinf(ErrSubmoduleUpdate, err, "%s: %s", subPath, strings.TrimSpace(outputStr))
 }
 
 // InitFromDefaultBranch clones a submodule at its remote's default branch
@@ -146,27 +146,27 @@ func InitFromDefaultBranch(ctx context.Context, repoDir, subPath string) error {
 	}
 
 	if err := pathutil.ValidateSubmodulePath(repoDir, subPath); err != nil {
-		return camperrors.Wrapf(err, "%s %s", ErrSubmoduleClone.Error(), subPath)
+		return camperrors.WrapJoinf(ErrSubmoduleClone, err, "%s", subPath)
 	}
 
 	// Get submodule URL from .gitmodules
 	url, err := getSubmoduleURL(ctx, repoDir, subPath)
 	if err != nil {
-		return camperrors.Wrapf(err, "%s %s", ErrSubmoduleURL.Error(), subPath)
+		return camperrors.WrapJoinf(ErrSubmoduleURL, err, "%s", subPath)
 	}
 
 	subDir := filepath.Join(repoDir, subPath)
 
 	// Remove empty submodule directory if exists
 	if err := os.RemoveAll(subDir); err != nil {
-		return camperrors.Wrapf(err, "%s %s", ErrSubmoduleRemove.Error(), subPath)
+		return camperrors.WrapJoinf(ErrSubmoduleRemove, err, "%s", subPath)
 	}
 
 	// Clone directly to submodule path (will use remote's default branch)
 	cmd := exec.CommandContext(ctx, "git", "clone", url, subDir)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return camperrors.Wrapf(err, "%s %s: %s", ErrSubmoduleClone.Error(), subPath, strings.TrimSpace(string(output)))
+		return camperrors.WrapJoinf(ErrSubmoduleClone, err, "%s: %s", subPath, strings.TrimSpace(string(output)))
 	}
 
 	return nil
@@ -187,7 +187,7 @@ func CheckoutDefaultBranch(ctx context.Context, subDir string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", "-C", subDir, "checkout", branch)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", camperrors.Wrapf(err, "%s %s: %s", ErrBranchCheckout.Error(), branch, strings.TrimSpace(string(output)))
+		return "", camperrors.WrapJoinf(ErrBranchCheckout, err, "%s: %s", branch, strings.TrimSpace(string(output)))
 	}
 
 	return branch, nil
