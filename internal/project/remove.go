@@ -2,12 +2,15 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
 
 // RemoveOptions configures the project removal behavior.
@@ -43,6 +46,11 @@ func (e *ErrProjectNotFound) Error() string {
 	return fmt.Sprintf("project not found: %s", e.Name)
 }
 
+// Unwrap returns ErrNotFound so errors.Is(err, camperrors.ErrNotFound) works.
+func (e *ErrProjectNotFound) Unwrap() error {
+	return camperrors.ErrNotFound
+}
+
 // Remove removes a project from the campaign.
 // By default it only removes git submodule tracking.
 // With Delete=true, it also removes all files.
@@ -51,7 +59,16 @@ func Remove(ctx context.Context, campaignRoot, name string, opts RemoveOptions) 
 		return nil, ctx.Err()
 	}
 
+	if err := ValidateProjectName(name); err != nil {
+		return nil, err
+	}
+
 	projectPath := filepath.Join(campaignRoot, "projects", name)
+
+	// Enforce boundary: projectPath must stay within campaignRoot.
+	if err := pathutil.ValidateBoundary(campaignRoot, projectPath); err != nil {
+		return nil, camperrors.Wrap(err, "project path boundary violation")
+	}
 
 	// Check project exists
 	if _, err := os.Stat(projectPath); os.IsNotExist(err) {
@@ -85,29 +102,43 @@ func Remove(ctx context.Context, campaignRoot, name string, opts RemoveOptions) 
 	// Remove from git submodules if applicable
 	if isSubmodule {
 		if err := removeSubmodule(ctx, campaignRoot, name); err != nil {
-			return nil, fmt.Errorf("failed to remove submodule: %w", err)
+			return nil, camperrors.Wrap(err, "failed to remove submodule")
 		}
 		result.SubmoduleRemoved = true
 	}
 
-	// Delete files if requested
+	// Delete files if requested. Errors are collected independently so
+	// partial success is reported accurately in RemoveResult.
 	if opts.Delete {
-		if err := os.RemoveAll(projectPath); err != nil {
-			return nil, fmt.Errorf("failed to delete project files: %w", err)
-		}
-		result.FilesDeleted = true
+		var errs []error
 
-		// Also remove worktree directory if exists
+		if err := os.RemoveAll(projectPath); err != nil {
+			errs = append(errs, camperrors.Wrapf(err, "delete project files %q", projectPath))
+		} else {
+			result.FilesDeleted = true
+		}
+
 		worktreePath := filepath.Join(campaignRoot, "worktrees", name)
-		if _, err := os.Stat(worktreePath); err == nil {
-			if err := os.RemoveAll(worktreePath); err == nil {
+		if boundErr := pathutil.ValidateBoundary(campaignRoot, worktreePath); boundErr != nil {
+			errs = append(errs, camperrors.Wrap(boundErr, "worktree path boundary violation"))
+		} else if _, statErr := os.Stat(worktreePath); statErr == nil {
+			if removeErr := os.RemoveAll(worktreePath); removeErr != nil {
+				errs = append(errs, camperrors.Wrapf(removeErr, "delete worktree %q", worktreePath))
+			} else {
 				result.WorktreeDeleted = true
 			}
 		}
 
-		// Clean up .git/modules/<name>
 		modulesPath := filepath.Join(campaignRoot, ".git", "modules", "projects", name)
-		os.RemoveAll(modulesPath) // Ignore errors
+		if boundErr := pathutil.ValidateBoundary(campaignRoot, modulesPath); boundErr != nil {
+			errs = append(errs, camperrors.Wrap(boundErr, "modules path boundary violation"))
+		} else {
+			os.RemoveAll(modulesPath)
+		}
+
+		if len(errs) > 0 {
+			return result, errors.Join(errs...)
+		}
 	}
 
 	return result, nil
@@ -168,7 +199,7 @@ func executeSubmoduleDeinit(ctx context.Context, campaignRoot, submodulePath str
 			if errType == git.GitErrorLock {
 				return &git.LockError{Path: "index.lock", Err: err}
 			}
-			return fmt.Errorf("submodule deinit failed: %w", err)
+			return camperrors.Wrap(err, "submodule deinit failed")
 		}
 		return nil
 	})
@@ -189,7 +220,7 @@ func executeSubmoduleRm(ctx context.Context, campaignRoot, submodulePath string)
 			if errType == git.GitErrorLock {
 				return &git.LockError{Path: "index.lock", Err: err}
 			}
-			return fmt.Errorf("git rm failed: %w", err)
+			return camperrors.Wrap(err, "git rm failed")
 		}
 		return nil
 	})

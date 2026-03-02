@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"sort"
 	"time"
 
@@ -62,7 +63,7 @@ func runLeverageHistory(cmd *cobra.Command, args []string) error {
 	} else {
 		projectNames, err = store.ListProjects(ctx)
 		if err != nil {
-			return fmt.Errorf("listing projects: %w", err)
+			return camperrors.Wrap(err, "listing projects")
 		}
 	}
 
@@ -77,7 +78,7 @@ func runLeverageHistory(cmd *cobra.Command, args []string) error {
 	if sinceStr != "" {
 		since, err = time.Parse("2006-01-02", sinceStr)
 		if err != nil {
-			return fmt.Errorf("invalid --since date %q (use YYYY-MM-DD): %w", sinceStr, err)
+			return camperrors.Wrapf(err, "invalid --since date %q (use YYYY-MM-DD)", sinceStr)
 		}
 	}
 
@@ -86,7 +87,7 @@ func runLeverageHistory(cmd *cobra.Command, args []string) error {
 	if untilStr != "" {
 		until, err = time.Parse("2006-01-02", untilStr)
 		if err != nil {
-			return fmt.Errorf("invalid --until date %q (use YYYY-MM-DD): %w", untilStr, err)
+			return camperrors.Wrapf(err, "invalid --until date %q (use YYYY-MM-DD)", untilStr)
 		}
 	}
 
@@ -293,7 +294,7 @@ func historyOutputByAuthor(cmd *cobra.Command, history []leverage.HistoryPoint) 
 func historyOutputJSON(cmd *cobra.Command, history []leverage.HistoryPoint) error {
 	data, err := json.MarshalIndent(history, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshaling JSON: %w", err)
+		return camperrors.Wrap(err, "marshaling JSON")
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), string(data))
 	return nil

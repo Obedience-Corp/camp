@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -99,7 +100,7 @@ func runIntentGather(cmd *cobra.Command, args []string) error {
 	// Find campaign root
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign directory: %w", err)
+		return camperrors.Wrap(err, "not in a campaign directory")
 	}
 
 	// Create services
@@ -110,7 +111,7 @@ func runIntentGather(cmd *cobra.Command, args []string) error {
 	// Build index for tag/hashtag/similar discovery
 	if gatherTag != "" || gatherHashtag != "" || gatherSimilar != "" {
 		if err := gatherSvc.BuildIndex(ctx); err != nil {
-			return fmt.Errorf("building index: %w", err)
+			return camperrors.Wrap(err, "building index")
 		}
 	}
 
@@ -150,7 +151,7 @@ func runIntentGather(cmd *cobra.Command, args []string) error {
 	// Execute gather
 	result, err := gatherSvc.Gather(ctx, ids, opts)
 	if err != nil {
-		return fmt.Errorf("gather failed: %w", err)
+		return camperrors.Wrap(err, "gather failed")
 	}
 
 	// Output results
@@ -218,7 +219,7 @@ func discoverIntentsToGather(ctx context.Context, svc *gather.Service, intentSvc
 		for _, id := range args {
 			i, err := intentSvc.Get(ctx, id)
 			if err != nil {
-				return nil, fmt.Errorf("intent %q not found: %w", id, err)
+				return nil, camperrors.Wrapf(err, "intent %q not found", id)
 			}
 			if i.Status.InDungeon() {
 				fmt.Printf("  Skipping %s — status %s is not eligible for gathering\n", id, i.Status)
@@ -233,7 +234,7 @@ func discoverIntentsToGather(ctx context.Context, svc *gather.Service, intentSvc
 	if gatherTag != "" {
 		intents, err := svc.FindByTag(ctx, gatherTag)
 		if err != nil {
-			return nil, fmt.Errorf("finding by tag: %w", err)
+			return nil, camperrors.Wrap(err, "finding by tag")
 		}
 		ids := make([]string, len(intents))
 		for i, intent := range intents {
@@ -246,7 +247,7 @@ func discoverIntentsToGather(ctx context.Context, svc *gather.Service, intentSvc
 	if gatherHashtag != "" {
 		intents, err := svc.FindByHashtag(ctx, gatherHashtag)
 		if err != nil {
-			return nil, fmt.Errorf("finding by hashtag: %w", err)
+			return nil, camperrors.Wrap(err, "finding by hashtag")
 		}
 		ids := make([]string, len(intents))
 		for i, intent := range intents {
@@ -260,7 +261,7 @@ func discoverIntentsToGather(ctx context.Context, svc *gather.Service, intentSvc
 		// Validate reference intent is not in a final state
 		refIntent, err := intentSvc.Get(ctx, gatherSimilar)
 		if err != nil {
-			return nil, fmt.Errorf("reference intent %q not found: %w", gatherSimilar, err)
+			return nil, camperrors.Wrapf(err, "reference intent %q not found", gatherSimilar)
 		}
 		if refIntent.Status.InDungeon() {
 			return nil, fmt.Errorf("reference intent %q is in %s status — only inbox/active/ready intents can be gathered", gatherSimilar, refIntent.Status)
@@ -268,7 +269,7 @@ func discoverIntentsToGather(ctx context.Context, svc *gather.Service, intentSvc
 
 		similar, err := svc.FindSimilar(ctx, gatherSimilar, gatherMinScore)
 		if err != nil {
-			return nil, fmt.Errorf("finding similar: %w", err)
+			return nil, camperrors.Wrap(err, "finding similar")
 		}
 		// Include the reference intent too
 		ids := []string{gatherSimilar}

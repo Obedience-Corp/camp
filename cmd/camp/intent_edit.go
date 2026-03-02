@@ -11,6 +11,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/editor"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/paths"
 )
@@ -57,7 +58,7 @@ func runIntentEdit(cmd *cobra.Command, args []string) error {
 	// Find campaign root
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign directory: %w", err)
+		return camperrors.Wrap(err, "not in a campaign directory")
 	}
 
 	// Create path resolver and service
@@ -91,7 +92,7 @@ func runIntentEdit(cmd *cobra.Command, args []string) error {
 
 	updated, err := svc.Edit(ctx, selectedIntent.ID, editorFn)
 	if err != nil {
-		return fmt.Errorf("failed to edit intent: %w", err)
+		return camperrors.Wrap(err, "failed to edit intent")
 	}
 
 	fmt.Printf("✓ Intent saved: %s\n", updated.Path)
@@ -107,11 +108,11 @@ func resolveIntentByPartialID(ctx context.Context, svc *intent.IntentService, pa
 	}
 
 	// If Find failed with not found, provide helpful error
-	if errors.Is(err, intent.ErrNotFound) {
+	if errors.Is(err, camperrors.ErrNotFound) {
 		return nil, fmt.Errorf("intent not found: %s", partialID)
 	}
 
-	return nil, fmt.Errorf("failed to find intent: %w", err)
+	return nil, camperrors.Wrap(err, "failed to find intent")
 }
 
 // pickIntent shows a fuzzy picker for intent selection.
@@ -135,7 +136,7 @@ func pickIntent(ctx context.Context, svc *intent.IntentService, status, typ, pro
 	// Get intents
 	intents, err := svc.List(ctx, opts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list intents: %w", err)
+		return nil, camperrors.Wrap(err, "failed to list intents")
 	}
 
 	if len(intents) == 0 {

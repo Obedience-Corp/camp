@@ -9,6 +9,8 @@ import (
 
 	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // CampaignConfigFile is the name of the campaign configuration file.
@@ -31,12 +33,12 @@ func LoadCampaignConfig(ctx context.Context, campaignRoot string) (*CampaignConf
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf("campaign config not found: %s", configPath)
 		}
-		return nil, fmt.Errorf("failed to read campaign config %s: %w", configPath, err)
+		return nil, camperrors.Wrapf(err, "failed to read campaign config %s", configPath)
 	}
 
 	var cfg CampaignConfig
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse campaign config %s: %w", configPath, err)
+		return nil, camperrors.Wrapf(err, "failed to parse campaign config %s", configPath)
 	}
 
 	// Apply defaults for missing optional fields
@@ -57,7 +59,7 @@ func LoadCampaignConfig(ctx context.Context, campaignRoot string) (*CampaignConf
 
 	// Validate required fields
 	if err := ValidateCampaignConfig(&cfg); err != nil {
-		return nil, fmt.Errorf("invalid campaign config %s: %w", configPath, err)
+		return nil, camperrors.Wrapf(err, "invalid campaign config %s", configPath)
 	}
 
 	return &cfg, nil
@@ -99,7 +101,7 @@ func LoadCampaignConfigFromCwd(ctx context.Context) (*CampaignConfig, string, er
 
 	cwd, err := os.Getwd()
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to get working directory: %w", err)
+		return nil, "", camperrors.Wrap(err, "failed to get working directory")
 	}
 
 	// Find campaign root by walking up
@@ -123,12 +125,12 @@ func findCampaignRoot(ctx context.Context, startDir string) (string, error) {
 	// Resolve symlinks
 	dir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
-		return "", fmt.Errorf("failed to resolve path: %w", err)
+		return "", camperrors.Wrap(err, "failed to resolve path")
 	}
 
 	dir, err = filepath.Abs(dir)
 	if err != nil {
-		return "", fmt.Errorf("failed to get absolute path: %w", err)
+		return "", camperrors.Wrap(err, "failed to get absolute path")
 	}
 
 	for {
@@ -167,16 +169,16 @@ func SaveCampaignConfig(ctx context.Context, campaignRoot string, cfg *CampaignC
 	// Ensure the .campaign directory exists
 	campaignDir := filepath.Join(campaignRoot, CampaignDir)
 	if err := os.MkdirAll(campaignDir, 0755); err != nil {
-		return fmt.Errorf("failed to create campaign directory: %w", err)
+		return camperrors.Wrap(err, "failed to create campaign directory")
 	}
 
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
-		return fmt.Errorf("failed to marshal campaign config: %w", err)
+		return camperrors.Wrap(err, "failed to marshal campaign config")
 	}
 
 	if err := os.WriteFile(configPath, data, 0644); err != nil {
-		return fmt.Errorf("failed to write campaign config: %w", err)
+		return camperrors.Wrap(err, "failed to write campaign config")
 	}
 
 	return nil

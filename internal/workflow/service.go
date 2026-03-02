@@ -9,6 +9,7 @@ import (
 	"strings"
 	"text/template"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"gopkg.in/yaml.v3"
 )
 
@@ -263,11 +264,11 @@ func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, erro
 	// Write schema file
 	data, err := yaml.Marshal(schema)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal schema: %w", err)
+		return nil, camperrors.Wrap(err, "failed to marshal schema")
 	}
 
 	if err := os.WriteFile(s.schemaPath, data, 0644); err != nil {
-		return nil, fmt.Errorf("failed to write schema file: %w", err)
+		return nil, camperrors.Wrap(err, "failed to write schema file")
 	}
 	result.CreatedFiles = append(result.CreatedFiles, s.schemaPath)
 
@@ -282,7 +283,7 @@ func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, erro
 
 		fullPath := s.resolvePath(dirPath)
 		if err := os.MkdirAll(fullPath, 0755); err != nil {
-			return nil, fmt.Errorf("failed to create directory %s: %w", dirPath, err)
+			return nil, camperrors.Wrapf(err, "failed to create directory %s", dirPath)
 		}
 		result.CreatedDirs = append(result.CreatedDirs, dirPath)
 	}
@@ -325,11 +326,11 @@ func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, erro
 
 		content, err := obey.getTemplate()
 		if err != nil {
-			return nil, fmt.Errorf("failed to read template for %s: %w", obey.path, err)
+			return nil, camperrors.Wrapf(err, "failed to read template for %s", obey.path)
 		}
 
 		if err := os.WriteFile(obey.path, content, 0644); err != nil {
-			return nil, fmt.Errorf("failed to write %s: %w", obey.path, err)
+			return nil, camperrors.Wrapf(err, "failed to write %s", obey.path)
 		}
 		result.CreatedFiles = append(result.CreatedFiles, obey.path)
 	}
@@ -356,7 +357,7 @@ func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, erro
 		gitkeepPath := filepath.Join(s.resolvePath(dirPath), ".gitkeep")
 		if _, err := os.Stat(gitkeepPath); os.IsNotExist(err) {
 			if err := os.WriteFile(gitkeepPath, []byte{}, 0644); err != nil {
-				return nil, fmt.Errorf("failed to create .gitkeep in %s: %w", dirPath, err)
+				return nil, camperrors.Wrapf(err, "failed to create .gitkeep in %s", dirPath)
 			}
 			result.CreatedFiles = append(result.CreatedFiles, filepath.Join(dirPath, ".gitkeep"))
 		}
@@ -398,7 +399,7 @@ func (s *Service) Sync(ctx context.Context, opts SyncOptions) (*SyncResult, erro
 		// Directory doesn't exist
 		if !opts.DryRun {
 			if err := os.MkdirAll(fullPath, 0755); err != nil {
-				return nil, fmt.Errorf("failed to create directory %s: %w", dirPath, err)
+				return nil, camperrors.Wrapf(err, "failed to create directory %s", dirPath)
 			}
 		}
 		result.Created = append(result.Created, dirPath)
@@ -424,16 +425,16 @@ func (s *Service) List(ctx context.Context, status string, opts ListOptions) (*L
 
 	// Validate status exists in schema
 	if !s.schema.HasDirectory(status) {
-		return nil, fmt.Errorf("%w: %s", ErrInvalidStatus, status)
+		return nil, camperrors.Wrap(ErrInvalidStatus, status)
 	}
 
 	statusPath := s.resolvePath(status)
 	entries, err := os.ReadDir(statusPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("%w: %s", ErrStatusNotFound, status)
+			return nil, camperrors.Wrap(ErrStatusNotFound, status)
 		}
-		return nil, fmt.Errorf("failed to read directory %s: %w", status, err)
+		return nil, camperrors.Wrapf(err, "failed to read directory %s", status)
 	}
 
 	result := &ListResult{
@@ -506,7 +507,7 @@ func (s *Service) Move(ctx context.Context, item, to string, opts MoveOptions) (
 
 	// Validate destination status exists
 	if !s.schema.HasDirectory(to) {
-		return nil, fmt.Errorf("%w: %s", ErrInvalidStatus, to)
+		return nil, camperrors.Wrap(ErrInvalidStatus, to)
 	}
 
 	// Find the item in the workflow
@@ -517,7 +518,7 @@ func (s *Service) Move(ctx context.Context, item, to string, opts MoveOptions) (
 
 	// Validate transition unless Force is set
 	if !opts.Force && !s.schema.IsValidTransition(from, to) {
-		return nil, fmt.Errorf("%w: cannot move from %s to %s", ErrInvalidTransition, from, to)
+		return nil, camperrors.Wrapf(ErrInvalidTransition, "cannot move from %s to %s", from, to)
 	}
 
 	// Destination path
@@ -525,17 +526,17 @@ func (s *Service) Move(ctx context.Context, item, to string, opts MoveOptions) (
 
 	// Check if destination already exists
 	if _, err := os.Stat(destPath); err == nil {
-		return nil, fmt.Errorf("%w: %s", ErrAlreadyExists, destPath)
+		return nil, camperrors.Wrap(ErrAlreadyExists, destPath)
 	}
 
 	// Ensure destination directory exists
 	if err := os.MkdirAll(s.resolvePath(to), 0755); err != nil {
-		return nil, fmt.Errorf("failed to create destination directory: %w", err)
+		return nil, camperrors.Wrap(err, "failed to create destination directory")
 	}
 
 	// Move the item
 	if err := os.Rename(itemPath, destPath); err != nil {
-		return nil, fmt.Errorf("failed to move item: %w", err)
+		return nil, camperrors.Wrap(err, "failed to move item")
 	}
 
 	result := &MoveResult{
@@ -575,7 +576,7 @@ func (s *Service) findItem(ctx context.Context, itemName string) (string, string
 		}
 	}
 
-	return "", "", fmt.Errorf("%w: %s", ErrItemNotFound, itemName)
+	return "", "", camperrors.Wrap(ErrItemNotFound, itemName)
 }
 
 // appendHistory adds an entry to the history file.
@@ -600,12 +601,12 @@ func (s *Service) createRootOBEY(ctx context.Context, schema *Schema, force bool
 
 	tmplBytes, err := GetFlowRootOBEYTemplate()
 	if err != nil {
-		return false, fmt.Errorf("failed to read root OBEY.md template: %w", err)
+		return false, camperrors.Wrap(err, "failed to read root OBEY.md template")
 	}
 
 	tmpl, err := template.New("root_obey").Parse(string(tmplBytes))
 	if err != nil {
-		return false, fmt.Errorf("failed to parse root OBEY.md template: %w", err)
+		return false, camperrors.Wrap(err, "failed to parse root OBEY.md template")
 	}
 
 	data := struct {
@@ -618,11 +619,11 @@ func (s *Service) createRootOBEY(ctx context.Context, schema *Schema, force bool
 
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, data); err != nil {
-		return false, fmt.Errorf("failed to render root OBEY.md: %w", err)
+		return false, camperrors.Wrap(err, "failed to render root OBEY.md")
 	}
 
 	if err := os.WriteFile(obeyPath, buf.Bytes(), 0644); err != nil {
-		return false, fmt.Errorf("failed to write root OBEY.md: %w", err)
+		return false, camperrors.Wrap(err, "failed to write root OBEY.md")
 	}
 
 	return true, nil
@@ -670,11 +671,11 @@ func (s *Service) Migrate(ctx context.Context, opts MigrateOptions) (*MigrateRes
 		schema := DefaultSchema()
 		data, err := yaml.Marshal(schema)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal schema: %w", err)
+			return nil, camperrors.Wrap(err, "failed to marshal schema")
 		}
 
 		if err := os.WriteFile(s.schemaPath, data, 0644); err != nil {
-			return nil, fmt.Errorf("failed to write schema file: %w", err)
+			return nil, camperrors.Wrap(err, "failed to write schema file")
 		}
 		result.Created = append(result.Created, s.schemaPath)
 		s.schema = schema
@@ -684,7 +685,7 @@ func (s *Service) Migrate(ctx context.Context, opts MigrateOptions) (*MigrateRes
 			dirPath := s.resolvePath(dir)
 			if _, err := os.Stat(dirPath); os.IsNotExist(err) {
 				if err := os.MkdirAll(dirPath, 0755); err != nil {
-					return nil, fmt.Errorf("failed to create directory %s: %w", dir, err)
+					return nil, camperrors.Wrapf(err, "failed to create directory %s", dir)
 				}
 				result.Created = append(result.Created, dir+"/")
 			}
@@ -695,7 +696,7 @@ func (s *Service) Migrate(ctx context.Context, opts MigrateOptions) (*MigrateRes
 			childPath := s.resolvePath("dungeon/" + childName)
 			if _, err := os.Stat(childPath); os.IsNotExist(err) {
 				if err := os.MkdirAll(childPath, 0755); err != nil {
-					return nil, fmt.Errorf("failed to create directory dungeon/%s: %w", childName, err)
+					return nil, camperrors.Wrapf(err, "failed to create directory dungeon/%s", childName)
 				}
 				result.Created = append(result.Created, "dungeon/"+childName+"/")
 			}
@@ -715,10 +716,10 @@ func (s *Service) Migrate(ctx context.Context, opts MigrateOptions) (*MigrateRes
 			if _, err := os.Stat(obey.path); os.IsNotExist(err) {
 				content, err := obey.getTemplate()
 				if err != nil {
-					return nil, fmt.Errorf("failed to read template for %s: %w", obey.path, err)
+					return nil, camperrors.Wrapf(err, "failed to read template for %s", obey.path)
 				}
 				if err := os.WriteFile(obey.path, content, 0644); err != nil {
-					return nil, fmt.Errorf("failed to write %s: %w", obey.path, err)
+					return nil, camperrors.Wrapf(err, "failed to write %s", obey.path)
 				}
 				result.Created = append(result.Created, obey.path)
 			}
@@ -771,7 +772,7 @@ func (s *Service) MigrateV1ToV2(ctx context.Context, dryRun bool) (*MigrateV1ToV
 
 				if !dryRun {
 					if err := os.Rename(src, dst); err != nil {
-						return nil, fmt.Errorf("moving %s to root: %w", name, err)
+						return nil, camperrors.Wrapf(err, "moving %s to root", name)
 					}
 				}
 				result.MovedItems = append(result.MovedItems, fmt.Sprintf("%s/%s → ./%s", statusDir, name, name))
@@ -804,10 +805,10 @@ func (s *Service) MigrateV1ToV2(ctx context.Context, dryRun bool) (*MigrateV1ToV
 		newSchema := DefaultSchemaV2()
 		data, err := yaml.Marshal(newSchema)
 		if err != nil {
-			return nil, fmt.Errorf("marshaling v2 schema: %w", err)
+			return nil, camperrors.Wrap(err, "marshaling v2 schema")
 		}
 		if err := os.WriteFile(s.schemaPath, data, 0644); err != nil {
-			return nil, fmt.Errorf("writing v2 schema: %w", err)
+			return nil, camperrors.Wrap(err, "writing v2 schema")
 		}
 		s.schema = newSchema
 	}

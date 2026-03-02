@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // ValidCampaignNameRegex defines the pattern for valid campaign names.
@@ -87,7 +88,7 @@ func CreateCampaignConfig(ctx context.Context, campaignRoot string, opts InitOpt
 	// Create jumps.yaml with default paths and shortcuts
 	jumps := config.DefaultJumpsConfig()
 	if err := config.SaveJumpsConfig(ctx, campaignRoot, &jumps); err != nil {
-		return nil, fmt.Errorf("failed to create jumps config: %w", err)
+		return nil, camperrors.Wrap(err, "failed to create jumps config")
 	}
 
 	// Attach jumps to the config for return

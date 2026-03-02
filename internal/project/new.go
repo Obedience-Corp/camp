@@ -6,11 +6,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
-)
 
-// validProjectName matches alphanumeric, hyphens, and underscores.
-var validProjectName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+)
 
 // NewOptions configures new project creation.
 type NewOptions struct {
@@ -33,7 +31,7 @@ func New(ctx context.Context, campaignRoot, name string, opts NewOptions) (*AddR
 		return nil, err
 	}
 
-	if err := validateProjectName(name); err != nil {
+	if err := ValidateProjectName(name); err != nil {
 		return nil, err
 	}
 
@@ -52,14 +50,14 @@ func New(ctx context.Context, campaignRoot, name string, opts NewOptions) (*AddR
 
 	// Create directory
 	if err := os.MkdirAll(fullPath, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create project directory: %w", err)
+		return nil, camperrors.Wrap(err, "failed to create project directory")
 	}
 
 	// Initialize git repo
 	if err := initProjectRepo(ctx, fullPath, name); err != nil {
 		// Clean up on failure
 		os.RemoveAll(fullPath)
-		return nil, fmt.Errorf("failed to initialize project: %w", err)
+		return nil, camperrors.Wrap(err, "failed to initialize project")
 	}
 
 	// Add as local submodule
@@ -82,19 +80,6 @@ func New(ctx context.Context, campaignRoot, name string, opts NewOptions) (*AddR
 	}, nil
 }
 
-// validateProjectName checks that the name is valid for use as a project directory.
-func validateProjectName(name string) error {
-	if name == "" {
-		return fmt.Errorf("project name is required")
-	}
-
-	if !validProjectName.MatchString(name) {
-		return fmt.Errorf("invalid project name %q: must start with alphanumeric and contain only alphanumeric, hyphens, or underscores", name)
-	}
-
-	return nil
-}
-
 // initProjectRepo initializes a git repo with a README and initial commit.
 func initProjectRepo(ctx context.Context, path, name string) error {
 	// git init
@@ -106,7 +91,7 @@ func initProjectRepo(ctx context.Context, path, name string) error {
 	// Write README
 	readme := fmt.Sprintf("# %s\n", name)
 	if err := os.WriteFile(filepath.Join(path, "README.md"), []byte(readme), 0644); err != nil {
-		return fmt.Errorf("failed to write README: %w", err)
+		return camperrors.Wrap(err, "failed to write README")
 	}
 
 	// git add + commit

@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"path/filepath"
 	"time"
@@ -60,12 +61,12 @@ func runDungeonList(cmd *cobra.Command, _ []string) error {
 	// Load campaign config
 	_, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign directory: %w", err)
+		return camperrors.Wrap(err, "not in a campaign directory")
 	}
 
 	cwd, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("getting current directory: %w", err)
+		return camperrors.Wrap(err, "getting current directory")
 	}
 	dungeonPath := filepath.Join(cwd, "dungeon")
 
@@ -74,14 +75,14 @@ func runDungeonList(cmd *cobra.Command, _ []string) error {
 	if triageMode {
 		items, err := svc.ListParentItems(ctx, cwd)
 		if err != nil {
-			return fmt.Errorf("listing parent items: %w", err)
+			return camperrors.Wrap(err, "listing parent items")
 		}
 		return outputDungeonItems(items, format, "triage")
 	}
 
 	items, err := svc.ListItems(ctx)
 	if err != nil {
-		return fmt.Errorf("listing dungeon items: %w", err)
+		return camperrors.Wrap(err, "listing dungeon items")
 	}
 	return outputDungeonItems(items, format, "dungeon")
 }
@@ -168,7 +169,7 @@ func outputDungeonJSON(items []dungeon.DungeonItem) error {
 
 	data, err := json.MarshalIndent(output, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal JSON: %w", err)
+		return camperrors.Wrap(err, "failed to marshal JSON")
 	}
 
 	fmt.Println(string(data))

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"io"
 	"os"
 	"os/exec"
@@ -59,7 +60,7 @@ func runIntentPromote(cmd *cobra.Command, args []string) error {
 	// Find campaign root
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign directory: %w", err)
+		return camperrors.Wrap(err, "not in a campaign directory")
 	}
 
 	// Create path resolver and service
@@ -94,7 +95,7 @@ func runIntentPromote(cmd *cobra.Command, args []string) error {
 	// Move to done status
 	result, err := svc.Move(ctx, i.ID, intent.StatusDone)
 	if err != nil {
-		return fmt.Errorf("failed to update intent status: %w", err)
+		return camperrors.Wrap(err, "failed to update intent status")
 	}
 
 	fmt.Printf("✓ Intent promoted: %s\n", result.Path)

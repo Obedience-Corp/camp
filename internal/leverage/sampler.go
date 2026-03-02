@@ -2,11 +2,12 @@ package leverage
 
 import (
 	"context"
-	"fmt"
 	"os/exec"
 	"sort"
 	"strings"
 	"time"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // CommitSample represents a single commit selected for backfill processing.
@@ -45,7 +46,7 @@ func SampleWeeklyCommits(ctx context.Context, gitDir string, since time.Time) ([
 	cmd := exec.CommandContext(ctx, "git", args...)
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("git log: %w", err)
+		return nil, camperrors.Wrap(err, "git log")
 	}
 
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")

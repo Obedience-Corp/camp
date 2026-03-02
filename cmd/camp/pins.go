@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -121,7 +122,7 @@ func runPin(cmd *cobra.Command, args []string) error {
 	} else {
 		cwd, err := os.Getwd()
 		if err != nil {
-			return fmt.Errorf("get working directory: %w", err)
+			return camperrors.Wrap(err, "get working directory")
 		}
 		dir = cwd
 	}
@@ -129,13 +130,13 @@ func runPin(cmd *cobra.Command, args []string) error {
 	// Resolve to absolute path
 	absPath, err := filepath.Abs(dir)
 	if err != nil {
-		return fmt.Errorf("resolve path: %w", err)
+		return camperrors.Wrap(err, "resolve path")
 	}
 
 	// Validate path exists and is a directory
 	info, err := os.Stat(absPath)
 	if err != nil {
-		return fmt.Errorf("path %q does not exist: %w", absPath, err)
+		return camperrors.Wrapf(err, "path %q does not exist", absPath)
 	}
 	if !info.IsDir() {
 		return fmt.Errorf("path %q is not a directory", absPath)
@@ -175,7 +176,7 @@ func runUnpin(cmd *cobra.Command, args []string) error {
 		// No args — detect pin from current directory
 		cwd, err := os.Getwd()
 		if err != nil {
-			return fmt.Errorf("get working directory: %w", err)
+			return camperrors.Wrap(err, "get working directory")
 		}
 		pin, ok := store.FindByPath(cwd)
 		if !ok {

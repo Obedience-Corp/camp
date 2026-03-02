@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -59,12 +60,12 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 	// Load campaign config
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign directory: %w", err)
+		return camperrors.Wrap(err, "not in a campaign directory")
 	}
 
 	cwd, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("getting current directory: %w", err)
+		return camperrors.Wrap(err, "getting current directory")
 	}
 	dungeonPath := filepath.Join(cwd, "dungeon")
 
@@ -92,13 +93,13 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 	if runTriage {
 		parentItems, err := svc.ListParentItems(ctx, cwd)
 		if err != nil {
-			return fmt.Errorf("listing parent items: %w", err)
+			return camperrors.Wrap(err, "listing parent items")
 		}
 		if len(parentItems) > 0 {
 			fmt.Printf("%s Triage crawl: %d parent item(s) to review...\n\n", ui.InfoIcon(), len(parentItems))
 			triageSummary, err = dungeon.RunTriageCrawl(ctx, svc, cwd)
 			if err != nil {
-				return fmt.Errorf("triage crawl failed: %w", err)
+				return camperrors.Wrap(err, "triage crawl failed")
 			}
 		} else {
 			fmt.Printf("%s No parent items to triage.\n", ui.InfoIcon())
@@ -109,7 +110,7 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 	if runInner {
 		dungeonItems, err := svc.ListItems(ctx)
 		if err != nil {
-			return fmt.Errorf("listing dungeon items: %w", err)
+			return camperrors.Wrap(err, "listing dungeon items")
 		}
 		if len(dungeonItems) > 0 {
 			if runTriage {
@@ -118,7 +119,7 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 			fmt.Printf("%s Inner crawl: %d dungeon item(s) to review...\n\n", ui.InfoIcon(), len(dungeonItems))
 			innerSummary, err = dungeon.RunCrawl(ctx, svc)
 			if err != nil {
-				return fmt.Errorf("inner crawl failed: %w", err)
+				return camperrors.Wrap(err, "inner crawl failed")
 			}
 		} else {
 			fmt.Printf("%s Dungeon is empty. Nothing to crawl.\n", ui.InfoIcon())

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 )
 
@@ -45,7 +46,7 @@ func ResolveByName(ctx context.Context, campRoot, name string) (string, error) {
 
 	projects, err := List(ctx, campRoot)
 	if err != nil {
-		return "", fmt.Errorf("failed to list projects: %w", err)
+		return "", camperrors.Wrap(err, "failed to list projects")
 	}
 
 	for _, proj := range projects {
@@ -70,12 +71,12 @@ func ResolveFromCwd(ctx context.Context, campRoot string) (*ResolveResult, error
 
 	cwd, err := os.Getwd()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get working directory: %w", err)
+		return nil, camperrors.Wrap(err, "failed to get working directory")
 	}
 
 	projectRoot, isSubmodule, err := git.FindProjectRootWithType(cwd)
 	if err != nil {
-		return nil, fmt.Errorf("not inside a project directory: %w", err)
+		return nil, camperrors.Wrap(err, "not inside a project directory")
 	}
 
 	// Resolve symlinks for reliable comparison (e.g., macOS /var → /private/var)
@@ -88,7 +89,7 @@ func ResolveFromCwd(ctx context.Context, campRoot string) (*ResolveResult, error
 	// Look up the project in the dynamic list
 	projects, listErr := List(ctx, campRoot)
 	if listErr != nil {
-		return nil, fmt.Errorf("failed to list projects: %w", listErr)
+		return nil, camperrors.Wrap(listErr, "failed to list projects")
 	}
 
 	for _, proj := range projects {
@@ -134,6 +135,11 @@ type ProjectNotFoundError struct {
 
 func (e *ProjectNotFoundError) Error() string {
 	return fmt.Sprintf("project %q not found in campaign", e.Name)
+}
+
+// Unwrap returns ErrNotFound so errors.Is(err, camperrors.ErrNotFound) works.
+func (e *ProjectNotFoundError) Unwrap() error {
+	return camperrors.ErrNotFound
 }
 
 // AvailableProjects returns the list of projects for display in error messages.

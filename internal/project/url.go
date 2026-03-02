@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // URLType represents the type of git URL.
@@ -100,7 +102,7 @@ func parseSSHURL(rawURL string) (*ParsedGitURL, error) {
 func parseSSHProtocolURL(rawURL string) (*ParsedGitURL, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return nil, fmt.Errorf("invalid SSH URL: %w", err)
+		return nil, camperrors.Wrap(err, "invalid SSH URL")
 	}
 
 	host := u.Host
@@ -128,7 +130,7 @@ func parseSSHProtocolURL(rawURL string) (*ParsedGitURL, error) {
 func parseHTTPSURL(rawURL string) (*ParsedGitURL, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return nil, fmt.Errorf("invalid HTTPS URL: %w", err)
+		return nil, camperrors.Wrap(err, "invalid HTTPS URL")
 	}
 
 	if u.Host == "" {

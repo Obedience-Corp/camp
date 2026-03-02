@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // AuthorIdentity represents a single author identity group.
@@ -51,12 +53,12 @@ func LoadAuthorConfig(path string) (*AuthorConfig, error) {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("reading authors config: %w", err)
+		return nil, camperrors.Wrap(err, "reading authors config")
 	}
 
 	var cfg AuthorConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parsing authors config: %w", err)
+		return nil, camperrors.Wrap(err, "parsing authors config")
 	}
 
 	return &cfg, nil
@@ -66,16 +68,16 @@ func LoadAuthorConfig(path string) (*AuthorConfig, error) {
 func SaveAuthorConfig(path string, cfg *AuthorConfig) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("creating authors config directory: %w", err)
+		return camperrors.Wrap(err, "creating authors config directory")
 	}
 
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshaling authors config: %w", err)
+		return camperrors.Wrap(err, "marshaling authors config")
 	}
 
 	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return fmt.Errorf("writing authors config: %w", err)
+		return camperrors.Wrap(err, "writing authors config")
 	}
 	return nil
 }
@@ -311,7 +313,7 @@ func shortlogIdentities(ctx context.Context, gitDir string) ([]shortlogIdentity,
 	cmd := exec.CommandContext(ctx, "git", "-C", gitDir, "shortlog", "-sne", "--all")
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("git shortlog: %w", err)
+		return nil, camperrors.Wrap(err, "git shortlog")
 	}
 
 	var ids []shortlogIdentity

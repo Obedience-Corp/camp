@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -60,12 +61,12 @@ func runDungeonMove(cmd *cobra.Command, args []string) error {
 	// Load campaign config
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign directory: %w", err)
+		return camperrors.Wrap(err, "not in a campaign directory")
 	}
 
 	cwd, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("getting current directory: %w", err)
+		return camperrors.Wrap(err, "getting current directory")
 	}
 	dungeonPath := filepath.Join(cwd, "dungeon")
 
@@ -77,14 +78,14 @@ func runDungeonMove(cmd *cobra.Command, args []string) error {
 		if status != "" {
 			// Triage directly to a status directory
 			if err := svc.MoveToDungeonStatus(ctx, itemName, cwd, status); err != nil {
-				return fmt.Errorf("moving %s to dungeon/%s: %w", itemName, status, err)
+				return camperrors.Wrapf(err, "moving %s to dungeon/%s", itemName, status)
 			}
 			fmt.Printf("%s Moved %s → dungeon/%s/\n", ui.SuccessIcon(), itemName, status)
 			description = fmt.Sprintf("Triage %s → dungeon/%s", itemName, status)
 		} else {
 			// Triage to dungeon root
 			if err := svc.MoveToDungeon(ctx, itemName, cwd); err != nil {
-				return fmt.Errorf("moving %s to dungeon: %w", itemName, err)
+				return camperrors.Wrapf(err, "moving %s to dungeon", itemName)
 			}
 			fmt.Printf("%s Moved %s → dungeon/\n", ui.SuccessIcon(), itemName)
 			description = fmt.Sprintf("Triage %s → dungeon", itemName)
@@ -95,7 +96,7 @@ func runDungeonMove(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("status is required when moving within the dungeon (e.g., completed, archived, someday)")
 		}
 		if err := svc.MoveToStatus(ctx, itemName, status); err != nil {
-			return fmt.Errorf("moving %s to %s: %w", itemName, status, err)
+			return camperrors.Wrapf(err, "moving %s to %s", itemName, status)
 		}
 		fmt.Printf("%s Moved %s → dungeon/%s/\n", ui.SuccessIcon(), itemName, status)
 

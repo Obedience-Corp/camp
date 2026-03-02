@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
@@ -110,7 +111,7 @@ func runProjectPrune(cmd *cobra.Command, args []string) error {
 
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign: %w", err)
+		return camperrors.Wrap(err, "not in a campaign")
 	}
 
 	// Resolve project: positional arg > flag > cwd

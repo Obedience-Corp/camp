@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // ProjectionSummary tracks the results of projecting skill bundles.
@@ -34,7 +36,7 @@ func IsManagedSkillEntryLink(linkPath, expectedTarget, skillsDir string) (bool, 
 		if os.IsNotExist(err) {
 			return false, nil
 		}
-		return false, fmt.Errorf("inspect skill link: %w", err)
+		return false, camperrors.Wrap(err, "inspect skill link")
 	}
 	if info.Mode()&os.ModeSymlink == 0 {
 		return false, nil
@@ -42,7 +44,7 @@ func IsManagedSkillEntryLink(linkPath, expectedTarget, skillsDir string) (bool, 
 
 	raw, err := os.Readlink(linkPath)
 	if err != nil {
-		return false, fmt.Errorf("read skill link: %w", err)
+		return false, camperrors.Wrap(err, "read skill link")
 	}
 	abs := resolveSymlinkTargetAbs(linkPath, raw)
 
@@ -117,7 +119,7 @@ func EnsureProjectionDirectory(destDir string, dryRun bool, errOut io.Writer) er
 			return nil
 		}
 		if err := os.MkdirAll(destDir, 0o755); err != nil {
-			return fmt.Errorf("create destination directory: %w", err)
+			return camperrors.Wrap(err, "create destination directory")
 		}
 		return nil
 
@@ -140,14 +142,14 @@ func CreateSkillProjectionLink(linkPath, sourcePath string, dryRun bool) error {
 		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(linkPath), 0o755); err != nil {
-		return fmt.Errorf("create parent directories: %w", err)
+		return camperrors.Wrap(err, "create parent directories")
 	}
 	relTarget, err := RelativeSymlinkTarget(linkPath, sourcePath)
 	if err != nil {
 		return err
 	}
 	if err := os.Symlink(relTarget, linkPath); err != nil {
-		return fmt.Errorf("create symlink: %w", err)
+		return camperrors.Wrap(err, "create symlink")
 	}
 	return nil
 }
@@ -162,7 +164,7 @@ func ProjectSkillEntries(destDir, skillsDir string, slugs []string, dryRun, forc
 
 		state, err := CheckLinkState(destPath, sourcePath)
 		if err != nil {
-			return summary, fmt.Errorf("check skill entry %q: %w", slug, err)
+			return summary, camperrors.Wrapf(err, "check skill entry %q", slug)
 		}
 
 		switch state {
@@ -171,7 +173,7 @@ func ProjectSkillEntries(destDir, skillsDir string, slugs []string, dryRun, forc
 
 		case StateMissing:
 			if err := CreateSkillProjectionLink(destPath, sourcePath, dryRun); err != nil {
-				return summary, fmt.Errorf("link skill %q: %w", slug, err)
+				return summary, camperrors.Wrapf(err, "link skill %q", slug)
 			}
 			summary.Created++
 
@@ -189,11 +191,11 @@ func ProjectSkillEntries(destDir, skillsDir string, slugs []string, dryRun, forc
 			}
 			if !dryRun {
 				if err := os.Remove(destPath); err != nil && !os.IsNotExist(err) {
-					return summary, fmt.Errorf("remove broken skill link %q: %w", slug, err)
+					return summary, camperrors.Wrapf(err, "remove broken skill link %q", slug)
 				}
 			}
 			if err := CreateSkillProjectionLink(destPath, sourcePath, dryRun); err != nil {
-				return summary, fmt.Errorf("relink skill %q: %w", slug, err)
+				return summary, camperrors.Wrapf(err, "relink skill %q", slug)
 			}
 			summary.Replaced++
 		}
@@ -218,7 +220,7 @@ func InspectSkillProjection(destDir, skillsDir string, slugs []string) (Projecti
 
 		linkState, err := CheckLinkState(destPath, sourcePath)
 		if err != nil {
-			return state, fmt.Errorf("check skill entry %q: %w", slug, err)
+			return state, camperrors.Wrapf(err, "check skill entry %q", slug)
 		}
 
 		switch linkState {
@@ -260,7 +262,7 @@ func RemoveProjectedSkillEntries(destDir, skillsDir string, slugs []string, dryR
 
 		linkState, err := CheckLinkState(destPath, sourcePath)
 		if err != nil {
-			return removed, fmt.Errorf("check skill entry %q: %w", slug, err)
+			return removed, camperrors.Wrapf(err, "check skill entry %q", slug)
 		}
 
 		shouldRemove := false
@@ -280,7 +282,7 @@ func RemoveProjectedSkillEntries(destDir, skillsDir string, slugs []string, dryR
 		}
 		if !dryRun {
 			if err := os.Remove(destPath); err != nil && !os.IsNotExist(err) {
-				return removed, fmt.Errorf("remove skill link %q: %w", slug, err)
+				return removed, camperrors.Wrapf(err, "remove skill link %q", slug)
 			}
 		}
 		removed++

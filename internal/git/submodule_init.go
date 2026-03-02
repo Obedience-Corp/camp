@@ -7,6 +7,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
 
 // IsStaleRefError checks if an error indicates a stale commit reference.
@@ -54,7 +57,7 @@ func DetectDefaultBranch(ctx context.Context, subDir string) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("%w: %s", ErrBranchDetection, subDir)
+	return "", camperrors.Wrapf(ErrBranchDetection, "%s", subDir)
 }
 
 // DetectDefaultBranchWithParent determines the default branch for a submodule,
@@ -95,7 +98,7 @@ func DetectDefaultBranchWithParent(ctx context.Context, repoDir, subPath, subDir
 		}
 	}
 
-	return "", fmt.Errorf("%w: %s", ErrBranchDetection, subPath)
+	return "", camperrors.Wrapf(ErrBranchDetection, "%s", subPath)
 }
 
 // InitSubmoduleGraceful initializes a single submodule, handling stale commit references.
@@ -104,6 +107,10 @@ func DetectDefaultBranchWithParent(ctx context.Context, repoDir, subPath, subDir
 func InitSubmoduleGraceful(ctx context.Context, repoDir, subPath string) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
+	}
+
+	if err := pathutil.ValidateSubmodulePath(repoDir, subPath); err != nil {
+		return camperrors.WrapJoinf(ErrSubmoduleInit, err, "%s", subPath)
 	}
 
 	// Step 1: Register the submodule (init without update)
@@ -127,7 +134,7 @@ func InitSubmoduleGraceful(ctx context.Context, repoDir, subPath string) error {
 		return InitFromDefaultBranch(ctx, repoDir, subPath)
 	}
 
-	return fmt.Errorf("%w %s: %s: %w", ErrSubmoduleUpdate, subPath, strings.TrimSpace(outputStr), err)
+	return camperrors.WrapJoinf(ErrSubmoduleUpdate, err, "%s: %s", subPath, strings.TrimSpace(outputStr))
 }
 
 // InitFromDefaultBranch clones a submodule at its remote's default branch
@@ -138,24 +145,28 @@ func InitFromDefaultBranch(ctx context.Context, repoDir, subPath string) error {
 		return ctx.Err()
 	}
 
+	if err := pathutil.ValidateSubmodulePath(repoDir, subPath); err != nil {
+		return camperrors.WrapJoinf(ErrSubmoduleClone, err, "%s", subPath)
+	}
+
 	// Get submodule URL from .gitmodules
 	url, err := getSubmoduleURL(ctx, repoDir, subPath)
 	if err != nil {
-		return fmt.Errorf("%w %s: %w", ErrSubmoduleURL, subPath, err)
+		return camperrors.WrapJoinf(ErrSubmoduleURL, err, "%s", subPath)
 	}
 
 	subDir := filepath.Join(repoDir, subPath)
 
 	// Remove empty submodule directory if exists
 	if err := os.RemoveAll(subDir); err != nil {
-		return fmt.Errorf("%w %s: %w", ErrSubmoduleRemove, subPath, err)
+		return camperrors.WrapJoinf(ErrSubmoduleRemove, err, "%s", subPath)
 	}
 
 	// Clone directly to submodule path (will use remote's default branch)
 	cmd := exec.CommandContext(ctx, "git", "clone", url, subDir)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("%w %s: %s: %w", ErrSubmoduleClone, subPath, strings.TrimSpace(string(output)), err)
+		return camperrors.WrapJoinf(ErrSubmoduleClone, err, "%s: %s", subPath, strings.TrimSpace(string(output)))
 	}
 
 	return nil
@@ -176,7 +187,7 @@ func CheckoutDefaultBranch(ctx context.Context, subDir string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", "-C", subDir, "checkout", branch)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("%w %s: %s: %w", ErrBranchCheckout, branch, strings.TrimSpace(string(output)), err)
+		return "", camperrors.WrapJoinf(ErrBranchCheckout, err, "%s: %s", branch, strings.TrimSpace(string(output)))
 	}
 
 	return branch, nil
@@ -200,5 +211,5 @@ func getSubmoduleURL(ctx context.Context, repoDir, subPath string) (string, erro
 		return strings.TrimSpace(string(output)), nil
 	}
 
-	return "", fmt.Errorf("%w: %s", ErrSubmoduleURL, subPath)
+	return "", camperrors.Wrapf(ErrSubmoduleURL, "%s", subPath)
 }

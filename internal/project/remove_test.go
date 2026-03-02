@@ -2,10 +2,14 @@ package project
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
+
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
 
 func TestRemove_ProjectNotFound(t *testing.T) {
@@ -235,5 +239,78 @@ func TestIsGitSubmodule_NoGitmodules(t *testing.T) {
 
 	if isSubmodule {
 		t.Error("should return false when no .gitmodules exists")
+	}
+}
+
+func TestRemove_BoundaryEnforcement(t *testing.T) {
+	tmp := t.TempDir()
+	tmp, _ = filepath.EvalSymlinks(tmp)
+
+	campaignRoot := filepath.Join(tmp, "campaign")
+	if err := os.MkdirAll(filepath.Join(campaignRoot, "projects"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create an outside directory that the symlink will point to.
+	outside := filepath.Join(tmp, "outside")
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Symlink: campaign/projects/escape -> outside (resolves outside root).
+	escapeLink := filepath.Join(campaignRoot, "projects", "escape")
+	if err := os.Symlink(outside, escapeLink); err != nil {
+		t.Skipf("symlink creation not supported: %v", err)
+	}
+
+	ctx := context.Background()
+	_, err := Remove(ctx, campaignRoot, "escape", RemoveOptions{Delete: true})
+	if err == nil {
+		t.Error("expected boundary error for symlink-escaped project, got nil")
+	}
+	if !errors.Is(err, pathutil.ErrOutsideBoundary) {
+		t.Errorf("expected ErrOutsideBoundary, got: %v", err)
+	}
+}
+
+func TestRemove_PartialFailureReportsAllErrors(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod not applicable on Windows")
+	}
+
+	tmp := t.TempDir()
+	tmp, _ = filepath.EvalSymlinks(tmp)
+
+	campaignRoot := filepath.Join(tmp, "campaign")
+	projectDir := filepath.Join(campaignRoot, "projects", "myproj")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	worktreeDir := filepath.Join(campaignRoot, "worktrees", "myproj")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Make worktrees parent read-only so RemoveAll on the child fails.
+	worktreesParent := filepath.Join(campaignRoot, "worktrees")
+	if err := os.Chmod(worktreesParent, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(worktreesParent, 0o755) })
+
+	ctx := context.Background()
+	result, err := Remove(ctx, campaignRoot, "myproj", RemoveOptions{Delete: true})
+
+	if result == nil || !result.FilesDeleted {
+		t.Error("expected FilesDeleted=true even on partial failure")
+	}
+
+	if err == nil {
+		t.Error("expected error about worktree deletion failure, got nil")
+	}
+
+	if result != nil && result.WorktreeDeleted {
+		t.Error("expected WorktreeDeleted=false when worktree deletion fails")
 	}
 }

@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // GitErrorType classifies git operation failures.
@@ -76,32 +78,9 @@ func (e *LockError) Unwrap() error {
 	return e.Err
 }
 
-// GitOpError wraps errors from git command execution with structured context.
-type GitOpError struct {
-	// Op is the git operation that failed (e.g., "commit", "add", "diff").
-	Op string
-	// ErrType is the classified error type from git stderr.
-	ErrType GitErrorType
-	// Detail is the trimmed git stderr output.
-	Detail string
-	// Cause is the underlying exec error.
-	Cause error
-}
-
-// Error implements the error interface.
-func (e *GitOpError) Error() string {
-	if e.Detail != "" {
-		return fmt.Sprintf("git %s failed (%s): %s", e.Op, e.ErrType.String(), e.Detail)
-	}
-	return fmt.Sprintf("git %s failed (%s)", e.Op, e.ErrType.String())
-}
-
-// Unwrap returns the underlying error for errors.Is/As support.
-func (e *GitOpError) Unwrap() error {
-	return e.Cause
-}
-
 // Sentinel errors for common git error cases.
+// Sentinels marked with %w wrap the canonical sentinel from internal/errors
+// to enable cross-package errors.Is() matching.
 var (
 	// ErrLockActive indicates a lock file is held by a running process.
 	ErrLockActive = errors.New("lock file held by active process")
@@ -110,10 +89,10 @@ var (
 	ErrLockRemovalFailed = errors.New("failed to remove stale lock")
 
 	// ErrLockTimeout indicates the timeout was exceeded waiting for a lock to release.
-	ErrLockTimeout = errors.New("timeout waiting for lock release")
+	ErrLockTimeout = camperrors.Wrap(camperrors.ErrTimeout, "timeout waiting for lock release")
 
 	// ErrNotRepository indicates the path is not a git repository.
-	ErrNotRepository = errors.New("not a git repository")
+	ErrNotRepository = camperrors.Wrap(camperrors.ErrNotInitialized, "not a git repository")
 
 	// ErrNoChanges indicates there are no changes to commit.
 	ErrNoChanges = errors.New("nothing to commit")
@@ -149,7 +128,7 @@ var (
 	ErrSubmoduleSync = errors.New("submodule sync failed")
 
 	// ErrSubmoduleNotInitialized indicates a submodule was not properly initialized.
-	ErrSubmoduleNotInitialized = errors.New("submodule not initialized")
+	ErrSubmoduleNotInitialized = camperrors.Wrap(camperrors.ErrNotInitialized, "submodule not initialized")
 
 	// ErrStage indicates a staging (git add) operation failed.
 	ErrStage = errors.New("staging failed")
@@ -158,16 +137,16 @@ var (
 	ErrCommitFailed = errors.New("commit failed")
 
 	// ErrCommitCancelled indicates the user cancelled the commit.
-	ErrCommitCancelled = errors.New("commit cancelled")
+	ErrCommitCancelled = camperrors.Wrap(camperrors.ErrCancelled, "commit cancelled")
 
 	// ErrCommitOptionsRequired indicates nil commit options were provided.
-	ErrCommitOptionsRequired = errors.New("commit options required")
+	ErrCommitOptionsRequired = camperrors.Wrap(camperrors.ErrInvalidInput, "commit options required")
 
 	// ErrCommitMessageRequired indicates a commit message was not provided.
-	ErrCommitMessageRequired = errors.New("commit message is required")
+	ErrCommitMessageRequired = camperrors.Wrap(camperrors.ErrInvalidInput, "commit message is required")
 
 	// ErrNoFilesSpecified indicates an empty file list was provided for staging.
-	ErrNoFilesSpecified = errors.New("no files specified for staging")
+	ErrNoFilesSpecified = camperrors.Wrap(camperrors.ErrInvalidInput, "no files specified for staging")
 )
 
 // ClassifyGitError determines the error type from git stderr output.

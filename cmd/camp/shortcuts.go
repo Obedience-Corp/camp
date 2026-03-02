@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -308,7 +309,7 @@ func runShortcutsAdd(cmd *cobra.Command, args []string) error {
 
 	// Save config
 	if err := config.SaveCampaignConfig(ctx, root, cfg); err != nil {
-		return fmt.Errorf("failed to save config: %w", err)
+		return camperrors.Wrap(err, "failed to save config")
 	}
 
 	fmt.Printf("\n%s %s %s %s\n",
@@ -359,7 +360,7 @@ func runShortcutsRemove(cmd *cobra.Command, args []string) error {
 
 	// Save config
 	if err := config.SaveCampaignConfig(ctx, root, cfg); err != nil {
-		return fmt.Errorf("failed to save config: %w", err)
+		return camperrors.Wrap(err, "failed to save config")
 	}
 
 	fmt.Printf("%s Removed shortcut '%s' from project '%s'\n",
@@ -481,7 +482,7 @@ func runShortcutsAddJump(cmd *cobra.Command, args []string) error {
 	// Load jumps config
 	jumps, err := config.LoadJumpsConfig(ctx, root)
 	if err != nil {
-		return fmt.Errorf("failed to load jumps config: %w", err)
+		return camperrors.Wrap(err, "failed to load jumps config")
 	}
 
 	// Create default jumps config if nil
@@ -528,7 +529,7 @@ func runShortcutsAddJump(cmd *cobra.Command, args []string) error {
 
 	// Save jumps config
 	if err := config.SaveJumpsConfig(ctx, root, jumps); err != nil {
-		return fmt.Errorf("failed to save jumps config: %w", err)
+		return camperrors.Wrap(err, "failed to save jumps config")
 	}
 
 	// Show usage info
@@ -557,7 +558,7 @@ func runShortcutsRemoveJump(cmd *cobra.Command, args []string) error {
 	// Load jumps config
 	jumps, err := config.LoadJumpsConfig(ctx, root)
 	if err != nil {
-		return fmt.Errorf("failed to load jumps config: %w", err)
+		return camperrors.Wrap(err, "failed to load jumps config")
 	}
 
 	// Check if jumps config exists
@@ -575,7 +576,7 @@ func runShortcutsRemoveJump(cmd *cobra.Command, args []string) error {
 
 	// Save jumps config
 	if err := config.SaveJumpsConfig(ctx, root, jumps); err != nil {
-		return fmt.Errorf("failed to save jumps config: %w", err)
+		return camperrors.Wrap(err, "failed to save jumps config")
 	}
 
 	fmt.Printf("%s Removed shortcut '%s'\n", ui.SuccessIcon(), shortcutName)

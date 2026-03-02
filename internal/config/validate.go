@@ -2,8 +2,9 @@ package config
 
 import (
 	"errors"
-	"fmt"
 	"strings"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // Validation errors
@@ -31,13 +32,13 @@ func ValidateCampaignConfig(cfg *CampaignConfig) error {
 	}
 
 	if !cfg.Type.Valid() {
-		return fmt.Errorf("%w: %q (valid: product, research, tools, personal)", ErrInvalidType, cfg.Type)
+		return camperrors.Wrapf(ErrInvalidType, "%q (valid: product, research, tools, personal)", cfg.Type)
 	}
 
 	// Validate projects if present
 	for i, p := range cfg.Projects {
 		if err := ValidateProjectConfig(&p); err != nil {
-			return fmt.Errorf("project %d: %w", i, err)
+			return camperrors.Wrapf(err, "project %d", i)
 		}
 	}
 
@@ -67,7 +68,7 @@ func ValidateRegisteredCampaign(c *RegisteredCampaign) error {
 		return errors.New("campaign path is required")
 	}
 	if c.Type != "" && !c.Type.Valid() {
-		return fmt.Errorf("%w: %q", ErrInvalidType, c.Type)
+		return camperrors.Wrapf(ErrInvalidType, "%q", c.Type)
 	}
 	return nil
 }

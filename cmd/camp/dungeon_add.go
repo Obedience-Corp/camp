@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"path/filepath"
 
@@ -52,13 +53,13 @@ func runDungeonAdd(cmd *cobra.Command, args []string) error {
 	// Load campaign config
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign directory: %w", err)
+		return camperrors.Wrap(err, "not in a campaign directory")
 	}
 
 	// Get current working directory for local dungeon
 	cwd, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("getting current directory: %w", err)
+		return camperrors.Wrap(err, "getting current directory")
 	}
 	dungeonPath := filepath.Join(cwd, "dungeon")
 
@@ -71,7 +72,7 @@ func runDungeonAdd(cmd *cobra.Command, args []string) error {
 		Force: force,
 	})
 	if err != nil {
-		return fmt.Errorf("initializing dungeon: %w", err)
+		return camperrors.Wrap(err, "initializing dungeon")
 	}
 
 	// Report results

@@ -2,9 +2,10 @@ package git
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"os/exec"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // GitExecutor defines the interface for git operations.
@@ -82,7 +83,7 @@ func NewExecutor(path string, opts ...ExecutorOption) (*Executor, error) {
 	// Validate path is a git repository
 	root, err := FindProjectRoot(path)
 	if err != nil {
-		return nil, fmt.Errorf("path is not a git repository %s: %w", path, err)
+		return nil, camperrors.Wrapf(err, "path is not a git repository %s", path)
 	}
 
 	e := &Executor{
@@ -236,7 +237,7 @@ func (e *SubmoduleExecutor) ParentNeedsCommit(ctx context.Context) (bool, error)
 		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
 			return true, nil // Submodule modified in parent
 		}
-		return false, fmt.Errorf("failed to check parent status: %w", err)
+		return false, camperrors.Wrap(err, "failed to check parent status")
 	}
 
 	return false, nil

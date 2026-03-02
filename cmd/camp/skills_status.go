@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"path/filepath"
 
@@ -87,7 +88,7 @@ func runSkillsStatus(cmd *cobra.Command, _ []string) error {
 
 		pathType, err := skills.CheckPathType(destPath)
 		if err != nil {
-			return fmt.Errorf("check %s: %w", tool, err)
+			return camperrors.Wrapf(err, "check %s", tool)
 		}
 
 		entry := skillStatusEntry{
@@ -108,7 +109,7 @@ func runSkillsStatus(cmd *cobra.Command, _ []string) error {
 		case skills.TypeDirectory:
 			projState, err := skills.InspectSkillProjection(destPath, skillsDir, slugs)
 			if err != nil {
-				return fmt.Errorf("inspect %s projection: %w", tool, err)
+				return camperrors.Wrapf(err, "inspect %s projection", tool)
 			}
 
 			switch {
@@ -141,7 +142,7 @@ func runSkillsStatus(cmd *cobra.Command, _ []string) error {
 	if jsonOutput {
 		data, err := json.MarshalIndent(entries, "", "  ")
 		if err != nil {
-			return fmt.Errorf("marshal JSON: %w", err)
+			return camperrors.Wrap(err, "marshal JSON")
 		}
 		fmt.Fprintln(out, string(data))
 	} else {

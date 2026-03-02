@@ -9,7 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	gitpkg "github.com/Obedience-Corp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
 
 // gitClone performs the initial repository clone.
@@ -47,7 +49,7 @@ func (c *Cloner) gitClone(ctx context.Context) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", &SubmoduleError{Op: "clone", Cause: fmt.Errorf("%s: %w", strings.TrimSpace(string(output)), err)}
+		return "", &SubmoduleError{Op: "clone", Cause: camperrors.Wrap(err, strings.TrimSpace(string(output)))}
 	}
 
 	// Return absolute path to cloned directory
@@ -67,7 +69,7 @@ func (c *Cloner) gitSubmoduleSync(ctx context.Context, dir string) error {
 	cmd := exec.CommandContext(ctx, "git", "-C", dir, "submodule", "sync", "--recursive")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return &SubmoduleError{Op: "sync", Cause: fmt.Errorf("%s: %w", strings.TrimSpace(string(output)), err)}
+		return &SubmoduleError{Op: "sync", Cause: camperrors.Wrap(err, strings.TrimSpace(string(output)))}
 	}
 	return nil
 }
@@ -81,7 +83,7 @@ func (c *Cloner) gitSubmoduleUpdate(ctx context.Context, dir string) error {
 	cmd := exec.CommandContext(ctx, "git", "-C", dir, "submodule", "update", "--init", "--recursive")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("%w: %s: %w", ErrSubmoduleUpdate, strings.TrimSpace(string(output)), err)
+		return camperrors.WrapJoinf(gitpkg.ErrSubmoduleUpdate, err, "%s", strings.TrimSpace(string(output)))
 	}
 	return nil
 }
@@ -95,7 +97,7 @@ func (c *Cloner) gitGetBranch(ctx context.Context, dir string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "--abbrev-ref", "HEAD")
 	output, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("%w: %w", ErrBranchDetection, err)
+		return "", camperrors.WrapJoin(gitpkg.ErrBranchDetection, err, "")
 	}
 	return strings.TrimSpace(string(output)), nil
 }
@@ -110,7 +112,7 @@ func (c *Cloner) gitSubmoduleStatus(ctx context.Context, dir string) ([]Submodul
 	cmd := exec.CommandContext(ctx, "git", "-C", dir, "submodule", "status", "--recursive")
 	output, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrSubmoduleUpdate, err)
+		return nil, camperrors.WrapJoin(gitpkg.ErrSubmoduleUpdate, err, "")
 	}
 
 	var results []SubmoduleResult
@@ -156,7 +158,7 @@ func (c *Cloner) gitSubmoduleURL(ctx context.Context, dir, submodulePath string)
 		return strings.TrimSpace(string(output)), nil
 	}
 
-	return "", fmt.Errorf("%w: %s", ErrSubmoduleURL, submodulePath)
+	return "", camperrors.Wrapf(gitpkg.ErrSubmoduleURL, "%s", submodulePath)
 }
 
 // parseSubmoduleStatus parses a line from git submodule status output.
@@ -174,7 +176,7 @@ func parseSubmoduleStatus(line string) SubmoduleResult {
 	switch prefix {
 	case '-':
 		result.Success = false
-		result.Error = ErrSubmoduleNotInitialized
+		result.Error = gitpkg.ErrSubmoduleNotInitialized
 		line = line[1:]
 	case '+':
 		// Commit differs - this might be OK after checkout
@@ -261,7 +263,7 @@ func (c *Cloner) verifySubmoduleWorkingTree(ctx context.Context, repoDir, subPat
 	subDir := filepath.Join(repoDir, subPath)
 	entries, err := os.ReadDir(subDir)
 	if err != nil {
-		return &SubmoduleError{Op: "read", Submodule: subPath, Cause: fmt.Errorf("%w: %w", ErrSubmoduleRead, err)}
+		return &SubmoduleError{Op: "read", Submodule: subPath, Cause: camperrors.WrapJoin(ErrSubmoduleRead, err, "")}
 	}
 
 	// Count real files (not .git)
@@ -290,7 +292,7 @@ func (c *Cloner) forceCheckoutSubmodule(ctx context.Context, repoDir, subPath st
 	if err != nil {
 		return &SubmoduleError{
 			Op: "checkout", Submodule: subPath,
-			Cause: fmt.Errorf("%w: %s: %w", ErrCheckoutFailed, strings.TrimSpace(string(output)), err),
+			Cause: camperrors.WrapJoinf(ErrCheckoutFailed, err, "%s", strings.TrimSpace(string(output))),
 		}
 	}
 	return nil
@@ -320,7 +322,7 @@ func (c *Cloner) checkoutSubmoduleBranch(ctx context.Context, repoDir, subPath s
 	if err != nil {
 		return &SubmoduleError{
 			Op: "checkout-branch", Submodule: subPath,
-			Cause: fmt.Errorf("%w: %s in %s: %s", ErrBranchCheckout, branch, subPath, strings.TrimSpace(string(output))),
+			Cause: camperrors.WrapJoinf(gitpkg.ErrBranchCheckout, err, "%s in %s: %s", branch, subPath, strings.TrimSpace(string(output))),
 		}
 	}
 
@@ -363,6 +365,10 @@ func (c *Cloner) initSubmoduleGraceful(ctx context.Context, repoDir, subPath str
 		return ctx.Err()
 	}
 
+	if err := pathutil.ValidateSubmodulePath(repoDir, subPath); err != nil {
+		return &SubmoduleError{Op: "validate-path", Submodule: subPath, Cause: err}
+	}
+
 	// Atomic init + update to avoid lock contention in parallel execution
 	cmd := exec.CommandContext(ctx, "git", "-C", repoDir, "submodule", "update", "--init", subPath)
 	output, err := cmd.CombinedOutput()
@@ -387,7 +393,7 @@ func (c *Cloner) initSubmoduleGraceful(ctx context.Context, repoDir, subPath str
 
 	return &SubmoduleError{
 		Op: "update", Submodule: subPath,
-		Cause: fmt.Errorf("%w: %s", ErrSubmoduleUpdate, strings.TrimSpace(outputStr)),
+		Cause: camperrors.WrapJoinf(gitpkg.ErrSubmoduleUpdate, err, "%s", strings.TrimSpace(outputStr)),
 	}
 }
 
@@ -397,6 +403,10 @@ func (c *Cloner) initSubmoduleGraceful(ctx context.Context, repoDir, subPath str
 func (c *Cloner) initSubmoduleFromDefaultBranch(ctx context.Context, repoDir, subPath string) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
+	}
+
+	if err := pathutil.ValidateSubmodulePath(repoDir, subPath); err != nil {
+		return &SubmoduleError{Op: "validate-path", Submodule: subPath, Cause: err}
 	}
 
 	// Get submodule URL
@@ -411,7 +421,7 @@ func (c *Cloner) initSubmoduleFromDefaultBranch(ctx context.Context, repoDir, su
 	if err := os.RemoveAll(subDir); err != nil {
 		return &SubmoduleError{
 			Op: "remove-stale", Submodule: subPath,
-			Cause: fmt.Errorf("%w: %w", ErrStaleRef, err),
+			Cause: camperrors.WrapJoin(gitpkg.ErrStaleRef, err, ""),
 		}
 	}
 
@@ -421,7 +431,7 @@ func (c *Cloner) initSubmoduleFromDefaultBranch(ctx context.Context, repoDir, su
 	if err != nil {
 		return &SubmoduleError{
 			Op: "clone-default-branch", Submodule: subPath,
-			Cause: fmt.Errorf("%w: %s", ErrCloneFailed, strings.TrimSpace(string(output))),
+			Cause: camperrors.WrapJoinf(ErrCloneFailed, err, "%s", strings.TrimSpace(string(output))),
 		}
 	}
 
@@ -449,6 +459,12 @@ func (c *Cloner) initNestedSubmodulesGraceful(ctx context.Context, repoDir, subP
 	for _, nested := range nestedSubs {
 		if ctx.Err() != nil {
 			break
+		}
+
+		if err := pathutil.ValidateSubmodulePath(subDir, nested.Path); err != nil {
+			warnings = append(warnings,
+				fmt.Sprintf("nested submodule %s/%s: invalid path: %v", subPath, nested.Path, err))
+			continue
 		}
 
 		// Use graceful init for each nested submodule

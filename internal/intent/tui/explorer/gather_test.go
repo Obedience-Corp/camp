@@ -252,15 +252,24 @@ func TestExitMultiSelectMode(t *testing.T) {
 	}
 }
 
-// --- Ctrl+G routing tests ---
+// --- ga (gather) leader sequence routing tests ---
 
-func TestCtrlG_OnGroupHeader_NoSelections(t *testing.T) {
+// sendGa simulates pressing g then a (the gather leader sequence).
+func sendGa(m Model) (tea.Model, tea.Cmd) {
+	gMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}}
+	result, _ := m.updateNormal(gMsg)
+	m = modelFrom(result)
+
+	aMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}
+	return m.updateNormal(aMsg)
+}
+
+func TestGa_OnGroupHeader_NoSelections(t *testing.T) {
 	m := makeTestModel(3, 2)
 	m.cursorGroup = 0
 	m.cursorItem = -1
 
-	msg := tea.KeyMsg{Type: tea.KeyCtrlG}
-	result, _ := m.updateNormal(msg)
+	result, _ := sendGa(m)
 	rm := modelFrom(result)
 
 	// Should call handleGatherGroup -> opens dialog for inbox group (3 intents)
@@ -269,15 +278,14 @@ func TestCtrlG_OnGroupHeader_NoSelections(t *testing.T) {
 	}
 }
 
-func TestCtrlG_OnItem_WithSelections(t *testing.T) {
+func TestGa_OnItem_WithSelections(t *testing.T) {
 	m := makeTestModel(3, 2)
 	m.cursorGroup = 0
 	m.cursorItem = 0
 	m.selectedIntents["inbox-0"] = true
 	m.selectedIntents["inbox-1"] = true
 
-	msg := tea.KeyMsg{Type: tea.KeyCtrlG}
-	result, _ := m.updateNormal(msg)
+	result, _ := sendGa(m)
 	rm := modelFrom(result)
 
 	// Should call handleGatherStart -> opens dialog with 2 selected
@@ -286,13 +294,12 @@ func TestCtrlG_OnItem_WithSelections(t *testing.T) {
 	}
 }
 
-func TestCtrlG_OnItem_NoSelections(t *testing.T) {
+func TestGa_OnItem_NoSelections(t *testing.T) {
 	m := makeTestModel(3, 2)
 	m.cursorGroup = 0
 	m.cursorItem = 0
 
-	msg := tea.KeyMsg{Type: tea.KeyCtrlG}
-	result, _ := m.updateNormal(msg)
+	result, _ := sendGa(m)
 	rm := modelFrom(result)
 
 	// Should call handleGatherStart -> shows "select 2+" message
@@ -304,15 +311,14 @@ func TestCtrlG_OnItem_NoSelections(t *testing.T) {
 	}
 }
 
-func TestCtrlG_OnGroupHeader_WithSelections(t *testing.T) {
+func TestGa_OnGroupHeader_WithSelections(t *testing.T) {
 	m := makeTestModel(3, 2)
 	m.cursorGroup = 0
 	m.cursorItem = -1
 	m.selectedIntents["active-0"] = true
 	m.selectedIntents["active-1"] = true
 
-	msg := tea.KeyMsg{Type: tea.KeyCtrlG}
-	result, _ := m.updateNormal(msg)
+	result, _ := sendGa(m)
 	rm := modelFrom(result)
 
 	// Has selections -> handleGatherStart, not handleGatherGroup

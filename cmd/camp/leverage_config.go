@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"sort"
 	"time"
@@ -52,7 +53,7 @@ func runLeverageConfig(cmd *cobra.Command, args []string) error {
 	// Detect campaign root
 	root, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign: %w", err)
+		return camperrors.Wrap(err, "not in a campaign")
 	}
 
 	configPath := leverage.DefaultConfigPath(root)
@@ -91,7 +92,7 @@ func displayLeverageConfig(cmd *cobra.Command, ctx context.Context, root, config
 		var err error
 		cfg, err = leverage.LoadConfig(configPath)
 		if err != nil {
-			return fmt.Errorf("loading config: %w", err)
+			return camperrors.Wrap(err, "loading config")
 		}
 
 		fmt.Fprintln(out, "Configuration: saved (.campaign/leverage/config.json)")
@@ -113,7 +114,7 @@ func displayLeverageConfig(cmd *cobra.Command, ctx context.Context, root, config
 		var err error
 		cfg, err = leverage.AutoDetectConfig(ctx, root)
 		if err != nil {
-			return fmt.Errorf("auto-detecting config: %w", err)
+			return camperrors.Wrap(err, "auto-detecting config")
 		}
 
 		fmt.Fprintln(out, "Configuration: auto-detected (no config file found)")
@@ -176,13 +177,13 @@ func updateProjectInclusion(cmd *cobra.Command, ctx context.Context, root, confi
 
 	cfg, err := leverage.LoadConfig(configPath)
 	if err != nil {
-		return fmt.Errorf("loading config: %w", err)
+		return camperrors.Wrap(err, "loading config")
 	}
 
 	// Ensure projects are populated before modifying.
 	if len(cfg.Projects) == 0 {
 		if err := leverage.PopulateProjects(ctx, root, cfg); err != nil {
-			return fmt.Errorf("populating projects: %w", err)
+			return camperrors.Wrap(err, "populating projects")
 		}
 	}
 
@@ -209,7 +210,7 @@ func updateProjectInclusion(cmd *cobra.Command, ctx context.Context, root, confi
 	}
 
 	if err := leverage.SaveConfig(configPath, cfg); err != nil {
-		return fmt.Errorf("saving config: %w", err)
+		return camperrors.Wrap(err, "saving config")
 	}
 
 	fmt.Fprintf(out, "Saved to: %s\n", configPath)
@@ -222,7 +223,7 @@ func updateLeverageConfig(cmd *cobra.Command, configPath string, peopleChanged, 
 	// Load existing config (returns defaults if file doesn't exist)
 	cfg, err := leverage.LoadConfig(configPath)
 	if err != nil {
-		return fmt.Errorf("loading config: %w", err)
+		return camperrors.Wrap(err, "loading config")
 	}
 
 	// Apply updates
@@ -243,7 +244,7 @@ func updateLeverageConfig(cmd *cobra.Command, configPath string, peopleChanged, 
 		startStr, _ := cmd.Flags().GetString("start")
 		startDate, err := time.Parse("2006-01-02", startStr)
 		if err != nil {
-			return fmt.Errorf("invalid date format, use YYYY-MM-DD: %w", err)
+			return camperrors.Wrap(err, "invalid date format, use YYYY-MM-DD")
 		}
 		cfg.ProjectStart = startDate
 	}
@@ -259,7 +260,7 @@ func updateLeverageConfig(cmd *cobra.Command, configPath string, peopleChanged, 
 
 	// Save configuration (SaveConfig creates directories as needed)
 	if err := leverage.SaveConfig(configPath, cfg); err != nil {
-		return fmt.Errorf("saving config: %w", err)
+		return camperrors.Wrap(err, "saving config")
 	}
 
 	fmt.Fprintln(out, "Configuration updated successfully")

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 const (
@@ -33,7 +35,7 @@ func allAuthorDates(ctx context.Context, gitDir string) (map[string]*authorDateS
 	cmd := exec.CommandContext(ctx, "git", "-C", gitDir, "log", "--all", "--format=%ae\t%cI")
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("git log: %w", err)
+		return nil, camperrors.Wrap(err, "git log")
 	}
 
 	result := make(map[string]*authorDateSpan)
@@ -166,7 +168,7 @@ func trackedFiles(ctx context.Context, dir string) ([]string, error) {
 	cmd := exec.CommandContext(ctx, "git", "-C", dir, "ls-files")
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("git ls-files: %w", err)
+		return nil, camperrors.Wrap(err, "git ls-files")
 	}
 
 	var files []string
@@ -318,7 +320,7 @@ func AuthorDateRange(ctx context.Context, gitDir, authorEmail string) (first, la
 		"--author="+authorEmail, "--format=%cI")
 	out, err := cmd.Output()
 	if err != nil {
-		return time.Time{}, time.Time{}, fmt.Errorf("git log: %w", err)
+		return time.Time{}, time.Time{}, camperrors.Wrap(err, "git log")
 	}
 
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
@@ -379,7 +381,7 @@ func gitDirAuthors(ctx context.Context, gitDir string, resolver *AuthorResolver)
 	cmd := exec.CommandContext(ctx, "git", "-C", gitDir, "shortlog", "-sne", "--all")
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("git shortlog: %w", err)
+		return nil, camperrors.Wrap(err, "git shortlog")
 	}
 
 	// Parse shortlog and group emails by canonical author ID.
@@ -413,7 +415,7 @@ func gitDirAuthors(ctx context.Context, gitDir string, resolver *AuthorResolver)
 	// Fetch all author dates in a single git-log pass.
 	allDates, err := allAuthorDates(ctx, gitDir)
 	if err != nil {
-		return nil, fmt.Errorf("fetching author dates: %w", err)
+		return nil, camperrors.Wrap(err, "fetching author dates")
 	}
 
 	// For each person, find earliest/latest across all their emails.

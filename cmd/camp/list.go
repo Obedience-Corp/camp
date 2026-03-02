@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"sort"
 	"strings"
@@ -70,13 +71,13 @@ func runList(cmd *cobra.Command, args []string) error {
 	// Verify and self-heal registry
 	report, err := reg.VerifyAndRepair(ctx)
 	if err != nil {
-		return fmt.Errorf("registry verification failed: %w", err)
+		return camperrors.Wrap(err, "registry verification failed")
 	}
 
 	// Save if changes made
 	if report.HasChanges() {
 		if err := config.SaveRegistry(ctx, reg); err != nil {
-			return fmt.Errorf("failed to save registry: %w", err)
+			return camperrors.Wrap(err, "failed to save registry")
 		}
 
 		verbose, _ := cmd.Flags().GetBool("verify-verbose")

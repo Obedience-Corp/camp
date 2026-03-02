@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // IsSubmodule checks if the given path is a git submodule.
@@ -20,7 +22,7 @@ func IsSubmodule(path string) (bool, error) {
 		if os.IsNotExist(err) {
 			return false, nil // No .git at all
 		}
-		return false, fmt.Errorf("cannot access .git at %s: %w", path, err)
+		return false, camperrors.Wrapf(err, "cannot access .git at %s", path)
 	}
 
 	// Submodules have .git as a file, regular repos have it as a directory
@@ -41,7 +43,7 @@ func FindProjectRoot(path string) (string, error) {
 	// Make path absolute
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		return "", fmt.Errorf("cannot resolve absolute path for %s: %w", path, err)
+		return "", camperrors.Wrapf(err, "cannot resolve absolute path for %s", path)
 	}
 
 	current := absPath
@@ -144,7 +146,7 @@ func GetDeclaredURL(ctx context.Context, repoRoot, submodulePath string) (string
 		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
 			return "", fmt.Errorf("submodule %q not found in .gitmodules", submodulePath)
 		}
-		return "", fmt.Errorf("get declared URL for %s: %w", submodulePath, err)
+		return "", camperrors.Wrapf(err, "get declared URL for %s", submodulePath)
 	}
 
 	return strings.TrimSpace(string(output)), nil
@@ -168,7 +170,7 @@ func GetActiveURL(ctx context.Context, repoRoot, submodulePath string) (string, 
 			// Exit code 1 means key not found - submodule not initialized
 			return "", nil
 		}
-		return "", fmt.Errorf("get active URL for %s: %w", submodulePath, err)
+		return "", camperrors.Wrapf(err, "get active URL for %s", submodulePath)
 	}
 
 	return strings.TrimSpace(string(output)), nil
@@ -264,7 +266,7 @@ func RemoteOriginURL(ctx context.Context, submodulePath string) (string, error) 
 			// No origin remote configured
 			return "", nil
 		}
-		return "", fmt.Errorf("get remote origin URL for %s: %w", submodulePath, err)
+		return "", camperrors.Wrapf(err, "get remote origin URL for %s", submodulePath)
 	}
 
 	return strings.TrimSpace(string(output)), nil
@@ -281,7 +283,7 @@ func SetDeclaredURL(ctx context.Context, repoRoot, submodulePath, newURL string)
 		fmt.Sprintf("submodule.%s.url", submodulePath), newURL)
 
 	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("set declared URL for %s: %w: %s", submodulePath, err, strings.TrimSpace(string(output)))
+		return camperrors.Wrapf(err, "set declared URL for %s: %s", submodulePath, strings.TrimSpace(string(output)))
 	}
 
 	return nil

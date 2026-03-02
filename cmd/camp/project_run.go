@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"path/filepath"
 	"strings"
 
@@ -66,7 +67,7 @@ func runProjectRun(cmd *cobra.Command, args []string) error {
 	// Detect campaign root.
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign: %w", err)
+		return camperrors.Wrap(err, "not in a campaign")
 	}
 
 	// Resolve project directory.
@@ -154,7 +155,7 @@ func pickProject(cmd *cobra.Command, campRoot string) (*project.Project, error) 
 
 	projects, err := project.List(ctx, campRoot)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list projects: %w", err)
+		return nil, camperrors.Wrap(err, "failed to list projects")
 	}
 	if len(projects) == 0 {
 		return nil, fmt.Errorf("no projects found in campaign")
@@ -183,7 +184,7 @@ func pickProject(cmd *cobra.Command, campRoot string) (*project.Project, error) 
 		if errors.Is(err, fuzzyfinder.ErrAbort) {
 			return nil, fmt.Errorf("cancelled")
 		}
-		return nil, fmt.Errorf("picker: %w", err)
+		return nil, camperrors.Wrap(err, "picker")
 	}
 
 	return &projects[idx], nil

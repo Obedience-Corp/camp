@@ -4,12 +4,13 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // BlameCacheEntry stores cached blame data for a single project.
@@ -82,17 +83,17 @@ func (c *BlameCache) Save(ctx context.Context, entry *BlameCacheEntry) error {
 	}
 
 	if err := os.MkdirAll(c.dir, 0o755); err != nil {
-		return fmt.Errorf("creating cache dir: %w", err)
+		return camperrors.Wrap(err, "creating cache dir")
 	}
 
 	data, err := json.MarshalIndent(entry, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshaling cache entry: %w", err)
+		return camperrors.Wrap(err, "marshaling cache entry")
 	}
 
 	path := c.cacheFile(entry.Project)
 	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return fmt.Errorf("writing cache file: %w", err)
+		return camperrors.Wrap(err, "writing cache file")
 	}
 
 	return nil
@@ -116,13 +117,13 @@ func ProjectHash(ctx context.Context, p *ResolvedProject) (string, error) {
 		// Tree hash for the subpath within the monorepo.
 		relPath, err := filepath.Rel(p.GitDir, p.SCCDir)
 		if err != nil {
-			return "", fmt.Errorf("computing relative path: %w", err)
+			return "", camperrors.Wrap(err, "computing relative path")
 		}
 		ref := "HEAD:" + relPath
 		cmd := exec.CommandContext(ctx, "git", "-C", p.GitDir, "rev-parse", ref)
 		out, err := cmd.Output()
 		if err != nil {
-			return "", fmt.Errorf("git rev-parse %s: %w", ref, err)
+			return "", camperrors.Wrapf(err, "git rev-parse %s", ref)
 		}
 		return strings.TrimSpace(string(out)), nil
 	}
@@ -130,7 +131,7 @@ func ProjectHash(ctx context.Context, p *ResolvedProject) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", "-C", p.GitDir, "rev-parse", "HEAD")
 	out, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("git rev-parse HEAD: %w", err)
+		return "", camperrors.Wrap(err, "git rev-parse HEAD")
 	}
 	return strings.TrimSpace(string(out)), nil
 }
@@ -150,7 +151,7 @@ func ChangedFiles(ctx context.Context, gitDir, oldHash, newHash, subpath string)
 	cmd := exec.CommandContext(ctx, "git", args...)
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("git diff --name-status: %w", err)
+		return nil, nil, nil, camperrors.Wrap(err, "git diff --name-status")
 	}
 
 	scanner := bufio.NewScanner(strings.NewReader(string(out)))

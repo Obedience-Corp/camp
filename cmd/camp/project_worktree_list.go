@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
@@ -48,13 +49,13 @@ func runProjectWorktreeList(cmd *cobra.Command, args []string) error {
 	// Find campaign root
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign: %w", err)
+		return camperrors.Wrap(err, "not in a campaign")
 	}
 
 	// Load campaign config
 	cfg, err := config.LoadCampaignConfig(ctx, campRoot)
 	if err != nil {
-		return fmt.Errorf("failed to load campaign config: %w", err)
+		return camperrors.Wrap(err, "failed to load campaign config")
 	}
 
 	// Resolve project name
@@ -77,13 +78,13 @@ func runProjectWorktreeList(cmd *cobra.Command, args []string) error {
 	git := worktree.NewGitWorktree(projectPath)
 	entries, err := git.List(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to list worktrees: %w", err)
+		return camperrors.Wrap(err, "failed to list worktrees")
 	}
 
 	// Get worktree names from path manager
 	names, err := pathManager.ListProjectWorktrees(projectName)
 	if err != nil {
-		return fmt.Errorf("failed to list worktree directories: %w", err)
+		return camperrors.Wrap(err, "failed to list worktree directories")
 	}
 
 	if len(names) == 0 {

@@ -81,7 +81,7 @@ const zshInitSuffix = `
     # Second argument - fuzzy match with path descriptions
     local category="${words[2]}"
     local query="${words[3]:-}"
-    local -a completions
+    local -a comp_names comp_descs
     local line output
 
     # Use command substitution instead of process substitution.
@@ -91,10 +91,18 @@ const zshInitSuffix = `
     for line in ${(f)output}; do
       local name="${line%%$'\t'*}"
       local desc="${line#*$'\t'}"
-      [[ -n "$name" ]] && completions+=("$name:$desc")
+      [[ -n "$name" ]] && {
+        comp_names+=("$name")
+        comp_descs+=("$name ($desc)")
+      }
     done
 
-    (( ${#completions} )) && _describe 'target' completions
+    # Use compadd -S '' to suppress trailing space after completions.
+    # This allows directory completions ending with "/" to continue
+    # being typed into (standard path-completion behavior).
+    if (( ${#comp_names} )); then
+      compadd -S '' -d comp_descs -a comp_names
+    fi
   fi
 }
 compdef _cgo cgo

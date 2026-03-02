@@ -2,8 +2,9 @@ package intent
 
 import (
 	"errors"
-	"fmt"
 	"regexp"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // Validation errors.
@@ -34,7 +35,7 @@ func (i *Intent) Validate() []error {
 	if i.ID == "" {
 		errs = append(errs, ErrIDRequired)
 	} else if !intentIDPattern.MatchString(i.ID) {
-		errs = append(errs, fmt.Errorf("%w: got %q", ErrInvalidIDFormat, i.ID))
+		errs = append(errs, camperrors.Wrapf(ErrInvalidIDFormat, "got %q", i.ID))
 	}
 
 	if i.Title == "" {
@@ -46,7 +47,7 @@ func (i *Intent) Validate() []error {
 	if i.Status == "" {
 		errs = append(errs, ErrStatusRequired)
 	} else if !isValidStatus(i.Status) {
-		errs = append(errs, fmt.Errorf("%w: %q", ErrInvalidStatus, i.Status))
+		errs = append(errs, camperrors.Wrapf(ErrInvalidStatus, "%q", i.Status))
 	}
 
 	if i.CreatedAt.IsZero() {
@@ -55,15 +56,15 @@ func (i *Intent) Validate() []error {
 
 	// Optional enum field validation
 	if i.Type != "" && !isValidType(i.Type) {
-		errs = append(errs, fmt.Errorf("%w: %q", ErrInvalidType, i.Type))
+		errs = append(errs, camperrors.Wrapf(ErrInvalidType, "%q", i.Type))
 	}
 
 	if i.Priority != "" && !isValidPriority(i.Priority) {
-		errs = append(errs, fmt.Errorf("%w: %q", ErrInvalidPriority, i.Priority))
+		errs = append(errs, camperrors.Wrapf(ErrInvalidPriority, "%q", i.Priority))
 	}
 
 	if i.Horizon != "" && !isValidHorizon(i.Horizon) {
-		errs = append(errs, fmt.Errorf("%w: %q", ErrInvalidHorizon, i.Horizon))
+		errs = append(errs, camperrors.Wrapf(ErrInvalidHorizon, "%q", i.Horizon))
 	}
 
 	// Consistency validation

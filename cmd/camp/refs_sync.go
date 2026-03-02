@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -54,13 +55,13 @@ func runRefsSync(cmd *cobra.Command, args []string) error {
 
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign: %w", err)
+		return camperrors.Wrap(err, "not in a campaign")
 	}
 
 	// Get submodule list
 	paths, err := git.ListSubmodulePaths(ctx, campRoot)
 	if err != nil {
-		return fmt.Errorf("listing submodules: %w", err)
+		return camperrors.Wrap(err, "listing submodules")
 	}
 	if len(args) > 0 {
 		paths = filterRefPaths(paths, args)
@@ -110,10 +111,10 @@ func runRefsSync(cmd *cobra.Command, args []string) error {
 	// Stage all changed refs
 	executor, err := git.NewExecutor(campRoot)
 	if err != nil {
-		return fmt.Errorf("git executor: %w", err)
+		return camperrors.Wrap(err, "git executor")
 	}
 	if err := executor.Stage(ctx, toSync); err != nil {
-		return fmt.Errorf("staging refs: %w", err)
+		return camperrors.Wrap(err, "staging refs")
 	}
 
 	// Create atomic commit
@@ -123,7 +124,7 @@ func runRefsSync(cmd *cobra.Command, args []string) error {
 		msg = git.PrependCampaignTag(cfg.ID, msg)
 	}
 	if err := executor.Commit(ctx, &git.CommitOptions{Message: msg}); err != nil {
-		return fmt.Errorf("commit: %w", err)
+		return camperrors.Wrap(err, "commit")
 	}
 
 	fmt.Println(ui.Success(fmt.Sprintf("✓ Synced %d submodule ref(s)", len(toSync))))

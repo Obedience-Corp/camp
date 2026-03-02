@@ -7,12 +7,13 @@ package workflow
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"gopkg.in/yaml.v3"
 )
 
@@ -158,16 +159,16 @@ func LoadSchema(ctx context.Context, path string) (*Schema, error) {
 		if os.IsNotExist(err) {
 			return nil, ErrNoSchema
 		}
-		return nil, fmt.Errorf("failed to read schema file %s: %w", path, err)
+		return nil, camperrors.Wrapf(err, "failed to read schema file %s", path)
 	}
 
 	if len(data) == 0 {
-		return nil, fmt.Errorf("%w: file is empty", ErrInvalidSchema)
+		return nil, camperrors.Wrap(ErrInvalidSchema, "file is empty")
 	}
 
 	var schema Schema
 	if err := yaml.Unmarshal(data, &schema); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInvalidSchema, err)
+		return nil, camperrors.Wrapf(ErrInvalidSchema, "%v", err)
 	}
 
 	if err := schema.Validate(); err != nil {
@@ -189,18 +190,18 @@ func FindSchema(ctx context.Context, startPath string) (string, *Schema, error) 
 	// Resolve symlinks
 	dir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to resolve path: %w", err)
+		return "", nil, camperrors.Wrap(err, "failed to resolve path")
 	}
 
 	dir, err = filepath.Abs(dir)
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to get absolute path: %w", err)
+		return "", nil, camperrors.Wrap(err, "failed to get absolute path")
 	}
 
 	// If startPath is a file, start from its directory
 	info, err := os.Stat(dir)
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to stat path: %w", err)
+		return "", nil, camperrors.Wrap(err, "failed to stat path")
 	}
 	if !info.IsDir() {
 		dir = filepath.Dir(dir)
@@ -236,7 +237,7 @@ func FindSchema(ctx context.Context, startPath string) (string, *Schema, error) 
 func (s *Schema) Validate() error {
 	// Version 0 is treated as v1 (unset/legacy schemas)
 	if s.Version != 0 && s.Version != 1 && s.Version != 2 {
-		return fmt.Errorf("%w: unsupported schema version %d (must be 1 or 2)", ErrInvalidSchema, s.Version)
+		return camperrors.Wrapf(ErrInvalidSchema, "unsupported schema version %d (must be 1 or 2)", s.Version)
 	}
 
 	// Common validation
@@ -255,13 +256,13 @@ func (s *Schema) Validate() error {
 func (s *Schema) validateCommon() error {
 	// Rule 1: Must have at least one directory
 	if len(s.Directories) == 0 {
-		return fmt.Errorf("%w: must have at least one directory", ErrInvalidSchema)
+		return camperrors.Wrap(ErrInvalidSchema, "must have at least one directory")
 	}
 
 	// Rule 2: Nested directories must have children
 	for name, dir := range s.Directories {
 		if dir.Nested && len(dir.Children) == 0 {
-			return fmt.Errorf("%w: nested directory %q must have children", ErrInvalidSchema, name)
+			return camperrors.Wrapf(ErrInvalidSchema, "nested directory %q must have children", name)
 		}
 	}
 
@@ -281,7 +282,7 @@ func (s *Schema) validateCommon() error {
 	for name, dir := range s.Directories {
 		for _, opt := range dir.TransitionOpts {
 			if !dirSet[opt] {
-				return fmt.Errorf("%w: directory %q has invalid transition target %q", ErrInvalidSchema, name, opt)
+				return camperrors.Wrapf(ErrInvalidSchema, "directory %q has invalid transition target %q", name, opt)
 			}
 		}
 		// Also validate children's transition opts
@@ -289,7 +290,7 @@ func (s *Schema) validateCommon() error {
 			for childName, child := range dir.Children {
 				for _, opt := range child.TransitionOpts {
 					if !dirSet[opt] {
-						return fmt.Errorf("%w: directory %q has invalid transition target %q", ErrInvalidSchema, name+"/"+childName, opt)
+						return camperrors.Wrapf(ErrInvalidSchema, "directory %q has invalid transition target %q", name+"/"+childName, opt)
 					}
 				}
 			}
@@ -299,7 +300,7 @@ func (s *Schema) validateCommon() error {
 	// Rule 4: Default status must be a valid top-level directory
 	if s.DefaultStatus != "" {
 		if _, ok := s.Directories[s.DefaultStatus]; !ok {
-			return fmt.Errorf("%w: default_status %q is not a valid directory", ErrInvalidSchema, s.DefaultStatus)
+			return camperrors.Wrapf(ErrInvalidSchema, "default_status %q is not a valid directory", s.DefaultStatus)
 		}
 	}
 
@@ -311,12 +312,12 @@ func (s *Schema) validateCommon() error {
 func (s *Schema) validateV2() error {
 	// V2 must have "." as default status
 	if s.DefaultStatus != "." {
-		return fmt.Errorf("%w: v2 schema default_status must be \".\" (root), got %q", ErrInvalidSchema, s.DefaultStatus)
+		return camperrors.Wrapf(ErrInvalidSchema, "v2 schema default_status must be \".\" (root), got %q", s.DefaultStatus)
 	}
 
 	// V2 must have root "." directory
 	if _, ok := s.Directories["."]; !ok {
-		return fmt.Errorf("%w: v2 schema must have root directory \".\"", ErrInvalidSchema)
+		return camperrors.Wrap(ErrInvalidSchema, "v2 schema must have root directory \".\"")
 	}
 
 	// V2: all non-root top-level directories must be nested (dungeon-like)
@@ -325,7 +326,7 @@ func (s *Schema) validateV2() error {
 			continue
 		}
 		if !dir.Nested {
-			return fmt.Errorf("%w: v2 schema non-root directory %q must be nested (dungeon-centric model)", ErrInvalidSchema, name)
+			return camperrors.Wrapf(ErrInvalidSchema, "v2 schema non-root directory %q must be nested (dungeon-centric model)", name)
 		}
 	}
 
@@ -375,6 +376,7 @@ func (s *Schema) GetDirectory(path string) (*Directory, bool) {
 
 // AllDirectories returns all directory paths including nested ones.
 // Paths are in the format "name" for top-level or "parent/child" for nested.
+// Results are sorted lexicographically for deterministic iteration order.
 func (s *Schema) AllDirectories() []string {
 	var paths []string
 	for name, dir := range s.Directories {
@@ -387,6 +389,7 @@ func (s *Schema) AllDirectories() []string {
 			paths = append(paths, name)
 		}
 	}
+	sort.Strings(paths)
 	return paths
 }
 

@@ -2,10 +2,13 @@ package main
 
 import (
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"path/filepath"
 
 	"github.com/Obedience-Corp/camp/internal/leverage"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
+	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/spf13/cobra"
 )
 
@@ -41,11 +44,23 @@ func runLeverageReset(cmd *cobra.Command, args []string) error {
 	cacheDir := leverage.DefaultCacheDir(setup.Root)
 	projectFilter, _ := cmd.Flags().GetString("project")
 
+	if projectFilter != "" {
+		if err := project.ValidateProjectName(projectFilter); err != nil {
+			return camperrors.Wrap(err, "--project flag")
+		}
+	}
+
 	cleared := false
 
 	// Clear snapshots.
 	if projectFilter != "" {
-		if removeDirIfExists(filepath.Join(snapshotDir, projectFilter)) {
+		snapshotTarget := filepath.Join(snapshotDir, projectFilter)
+		if dirExists(snapshotDir) {
+			if err := pathutil.ValidateBoundary(snapshotDir, snapshotTarget); err != nil {
+				return camperrors.Wrapf(err, "snapshot path boundary violation for --project %q", projectFilter)
+			}
+		}
+		if removeDirIfExists(snapshotTarget) {
 			cleared = true
 		}
 	} else {
@@ -57,6 +72,11 @@ func runLeverageReset(cmd *cobra.Command, args []string) error {
 	// Clear blame cache.
 	if projectFilter != "" {
 		cacheFile := filepath.Join(cacheDir, projectFilter+".json")
+		if dirExists(cacheDir) {
+			if err := pathutil.ValidateBoundary(cacheDir, cacheFile); err != nil {
+				return camperrors.Wrapf(err, "cache path boundary violation for --project %q", projectFilter)
+			}
+		}
 		if err := os.Remove(cacheFile); err == nil {
 			cleared = true
 		}
@@ -79,6 +99,12 @@ func runLeverageReset(cmd *cobra.Command, args []string) error {
 	fmt.Fprintln(cmd.OutOrStdout(), "Run 'camp leverage backfill' to regenerate snapshots.")
 
 	return nil
+}
+
+// dirExists returns true if dir exists and is a directory.
+func dirExists(dir string) bool {
+	info, err := os.Stat(dir)
+	return err == nil && info.IsDir()
 }
 
 // removeDirIfExists removes a directory if it exists. Returns true if something

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"gopkg.in/yaml.v3"
 )
 
@@ -36,12 +37,12 @@ func (t *Tracker) Load(festivalDir string) (*GatheredTracking, error) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("reading tracking file: %w", err)
+		return nil, camperrors.Wrap(err, "reading tracking file")
 	}
 
 	var tracking GatheredTracking
 	if err := yaml.Unmarshal(data, &tracking); err != nil {
-		return nil, fmt.Errorf("parsing tracking file: %w", err)
+		return nil, camperrors.Wrap(err, "parsing tracking file")
 	}
 
 	return &tracking, nil
@@ -53,16 +54,16 @@ func (t *Tracker) Save(festivalDir string, tracking *GatheredTracking) error {
 
 	// Ensure .fest directory exists
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return fmt.Errorf("creating .fest directory: %w", err)
+		return camperrors.Wrap(err, "creating .fest directory")
 	}
 
 	data, err := yaml.Marshal(tracking)
 	if err != nil {
-		return fmt.Errorf("marshaling tracking: %w", err)
+		return camperrors.Wrap(err, "marshaling tracking")
 	}
 
 	if err := os.WriteFile(path, data, 0644); err != nil {
-		return fmt.Errorf("writing tracking file: %w", err)
+		return camperrors.Wrap(err, "writing tracking file")
 	}
 
 	return nil

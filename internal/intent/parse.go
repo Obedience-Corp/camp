@@ -3,9 +3,9 @@ package intent
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"time"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"gopkg.in/yaml.v3"
 )
 
@@ -120,7 +120,7 @@ func ParseIntent(content []byte) (*Intent, error) {
 	// Parse YAML into intermediate struct (supports legacy project field)
 	var parsed parsedIntent
 	if err := yaml.Unmarshal(frontmatter, &parsed); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrFrontmatterParse, err)
+		return nil, camperrors.Wrapf(ErrFrontmatterParse, "%v", err)
 	}
 
 	// Convert to Intent (handles legacy field migration)
@@ -151,7 +151,7 @@ func SerializeIntent(intent *Intent) ([]byte, error) {
 	// Marshal frontmatter to YAML
 	frontmatter, err := yaml.Marshal(intent)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrFrontmatterMarshal, err)
+		return nil, camperrors.Wrapf(ErrFrontmatterMarshal, "%v", err)
 	}
 
 	// Combine frontmatter and body

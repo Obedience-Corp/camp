@@ -175,15 +175,17 @@ func TestGo_LastLocationAfterNavigation(t *testing.T) {
 	_, err = tc.RunCampInDir("/campaigns/last-loc-nav", "project", "add", "/test/navproject", "--local", "/test/navproject")
 	require.NoError(t, err)
 
-	// First navigation to projects
+	// Navigate to projects from campaign root — saves campaign root as last location (source-saving)
 	output1, err := tc.RunCampInDir("/campaigns/last-loc-nav", "go", "p", "--print")
 	require.NoError(t, err, "go p should succeed")
 	assert.Contains(t, output1, "projects", "first go p should return projects path")
 
-	// Second call to go without args should return last location (projects)
-	output2, err := tc.RunCampInDir("/campaigns/last-loc-nav", "go", "--print")
+	// Now run go without args from the projects dir — should toggle back to campaign root
+	projectsDir := strings.TrimSpace(output1)
+	output2, err := tc.RunCampInDir(projectsDir, "go", "--print")
 	require.NoError(t, err, "go without args should succeed")
-	assert.Contains(t, output2, "projects", "go without args should return last location (projects)")
+	assert.Contains(t, output2, "last-loc-nav", "go without args from projects should toggle back to campaign root")
+	assert.NotContains(t, output2, "projects", "should not stay in projects dir")
 }
 
 func TestGo_RootFlagIgnoresHistory(t *testing.T) {

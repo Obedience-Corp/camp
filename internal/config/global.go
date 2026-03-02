@@ -3,8 +3,9 @@ package config
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // LoadGlobalConfig loads the global configuration from ~/.obey/campaign/config.json.
@@ -23,12 +24,12 @@ func LoadGlobalConfig(ctx context.Context) (*GlobalConfig, error) {
 			_ = SaveGlobalConfig(ctx, &cfg) // Ignore error - may lack permissions
 			return &cfg, nil
 		}
-		return nil, fmt.Errorf("failed to read global config %s: %w", path, err)
+		return nil, camperrors.Wrapf(err, "failed to read global config %s", path)
 	}
 
 	var cfg GlobalConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse global config %s: %w", path, err)
+		return nil, camperrors.Wrapf(err, "failed to parse global config %s", path)
 	}
 
 	// Apply defaults for missing fields
@@ -36,7 +37,7 @@ func LoadGlobalConfig(ctx context.Context) (*GlobalConfig, error) {
 
 	// Validate
 	if err := ValidateGlobalConfig(&cfg); err != nil {
-		return nil, fmt.Errorf("invalid global config %s: %w", path, err)
+		return nil, camperrors.Wrapf(err, "invalid global config %s", path)
 	}
 
 	return &cfg, nil
@@ -50,12 +51,12 @@ func SaveGlobalConfig(ctx context.Context, cfg *GlobalConfig) error {
 
 	// Ensure config directory exists
 	if err := EnsureConfigDir(); err != nil {
-		return fmt.Errorf("failed to create config directory: %w", err)
+		return camperrors.Wrap(err, "failed to create config directory")
 	}
 
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal global config: %w", err)
+		return camperrors.Wrap(err, "failed to marshal global config")
 	}
 
 	path := GlobalConfigPath()
@@ -63,12 +64,12 @@ func SaveGlobalConfig(ctx context.Context, cfg *GlobalConfig) error {
 	// Atomic write via temp file
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0644); err != nil {
-		return fmt.Errorf("failed to write global config: %w", err)
+		return camperrors.Wrap(err, "failed to write global config")
 	}
 
 	if err := os.Rename(tmp, path); err != nil {
 		os.Remove(tmp) // Clean up temp file on rename failure
-		return fmt.Errorf("failed to save global config: %w", err)
+		return camperrors.Wrap(err, "failed to save global config")
 	}
 
 	return nil

@@ -11,6 +11,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	campcontract "github.com/Obedience-Corp/camp/internal/contract"
 	"github.com/Obedience-Corp/obey-shared/contract"
 	"github.com/google/uuid"
@@ -97,7 +98,7 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 	// Resolve to absolute path
 	absDir, err := filepath.Abs(dir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve path: %w", err)
+		return nil, camperrors.Wrap(err, "failed to resolve path")
 	}
 
 	// Check if already inside a campaign
@@ -153,7 +154,7 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 		// Use guild-scaffold to create the scaffold structure
 		templateFS, err := fs.Sub(CampaignScaffoldFS, "campaign/templates")
 		if err != nil {
-			return nil, fmt.Errorf("failed to get template sub-fs: %w", err)
+			return nil, camperrors.Wrap(err, "failed to get template sub-fs")
 		}
 
 		stats, scaffoldErr := scaffold.ScaffoldFromFS(ctx, CampaignScaffoldFS, scaffoldPath, scaffold.Options{
@@ -170,7 +171,7 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 			Overwrite: false,
 		})
 		if scaffoldErr != nil {
-			return nil, fmt.Errorf("failed to create scaffold: %w", scaffoldErr)
+			return nil, camperrors.Wrap(scaffoldErr, "failed to create scaffold")
 		}
 
 		// Use scaffold results directly - single source of truth
@@ -220,7 +221,7 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 
 	if !opts.DryRun {
 		if err := config.SaveCampaignConfig(ctx, absDir, cfg); err != nil {
-			return nil, fmt.Errorf("failed to create campaign config: %w", err)
+			return nil, camperrors.Wrap(err, "failed to create campaign config")
 		}
 	}
 	result.FilesCreated = append(result.FilesCreated, config.CampaignConfigPath(absDir))
@@ -233,7 +234,7 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 	}
 	if !opts.DryRun {
 		if err := config.SaveJumpsConfig(ctx, absDir, &jumps); err != nil {
-			return nil, fmt.Errorf("failed to create jumps config: %w", err)
+			return nil, camperrors.Wrap(err, "failed to create jumps config")
 		}
 	}
 	result.FilesCreated = append(result.FilesCreated, config.JumpsConfigPath(absDir))
@@ -265,7 +266,7 @@ state.yaml
 cache/
 `
 			if err := os.WriteFile(gitignorePath, []byte(gitignoreContent), 0644); err != nil {
-				return nil, fmt.Errorf("failed to create .gitignore: %w", err)
+				return nil, camperrors.Wrap(err, "failed to create .gitignore")
 			}
 			result.FilesCreated = append(result.FilesCreated, ".campaign/.gitignore")
 		}

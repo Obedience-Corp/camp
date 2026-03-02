@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -75,7 +76,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 		// Load campaign config to get shortcuts
 		cfg, _, err := config.LoadCampaignConfigFromCwd(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to load campaign config: %w", err)
+			return camperrors.Wrap(err, "failed to load campaign config")
 		}
 
 		// Look up shortcut
@@ -234,21 +235,11 @@ func executeCommand(ctx context.Context, cmdStr string, workDir string, extraArg
 			// Propagate the child's exit code through cobra instead of calling
 			// os.Exit() directly. This allows deferred cleanup to run and
 			// prevents stale file handles in shared test containers.
-			return &CommandExitError{Code: exitErr.ExitCode()}
+			return camperrors.NewCommand(fullCmd, exitErr.ExitCode(), "", exitErr)
 		}
-		return fmt.Errorf("failed to execute command: %w", err)
+		return camperrors.Wrap(err, "failed to execute command")
 	}
 
 	return nil
 }
 
-// CommandExitError signals that a child process exited with a non-zero code.
-// main.go checks for this and calls os.Exit with the code, keeping cleanup
-// paths intact through cobra's error propagation.
-type CommandExitError struct {
-	Code int
-}
-
-func (e *CommandExitError) Error() string {
-	return fmt.Sprintf("command exited with code %d", e.Code)
-}

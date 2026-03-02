@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"sort"
 
 	"github.com/charmbracelet/lipgloss"
@@ -36,7 +37,7 @@ func leverageOutputJSON(cmd *cobra.Command, agg *leverage.LeverageScore, scores 
 
 	data, err := json.MarshalIndent(output, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshaling JSON: %w", err)
+		return camperrors.Wrap(err, "marshaling JSON")
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), string(data))
 	return nil

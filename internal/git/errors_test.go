@@ -3,6 +3,8 @@ package git
 import (
 	"errors"
 	"testing"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 func TestGitErrorType_String(t *testing.T) {
@@ -240,81 +242,59 @@ func TestSentinelErrors(t *testing.T) {
 	}
 }
 
-func TestGitOpError_Error(t *testing.T) {
+func TestGitError_Error(t *testing.T) {
 	tests := []struct {
 		name    string
-		opErr   *GitOpError
+		gitErr  *camperrors.GitError
 		wantMsg string
 	}{
 		{
 			name: "with detail",
-			opErr: &GitOpError{
-				Op:      "commit",
-				ErrType: GitErrorUnknown,
-				Detail:  "some git output",
-				Cause:   errors.New("exit status 1"),
-			},
-			wantMsg: "git commit failed (unknown): some git output",
+			gitErr: camperrors.NewGit("commit", "", "unknown", "some git output", errors.New("exit status 1")),
+			wantMsg: "git commit failed: some git output",
 		},
 		{
 			name: "without detail",
-			opErr: &GitOpError{
-				Op:      "add",
-				ErrType: GitErrorPermission,
-				Cause:   errors.New("exit status 128"),
-			},
+			gitErr: camperrors.NewGit("add", "", "permission", "", errors.New("exit status 128")),
 			wantMsg: "git add failed (permission)",
 		},
 		{
 			name: "lock type with detail",
-			opErr: &GitOpError{
-				Op:      "diff --cached",
-				ErrType: GitErrorLock,
-				Detail:  "index.lock exists",
-				Cause:   errors.New("exit status 128"),
-			},
+			gitErr: camperrors.NewGit("diff --cached", "", "lock", "index.lock exists", errors.New("exit status 128")),
 			wantMsg: "git diff --cached failed (lock): index.lock exists",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := tt.opErr.Error()
+			got := tt.gitErr.Error()
 			if got != tt.wantMsg {
-				t.Errorf("GitOpError.Error() = %q, want %q", got, tt.wantMsg)
+				t.Errorf("GitError.Error() = %q, want %q", got, tt.wantMsg)
 			}
 		})
 	}
 }
 
-func TestGitOpError_Unwrap(t *testing.T) {
+func TestGitError_Unwrap(t *testing.T) {
 	underlying := errors.New("exit status 1")
-	opErr := &GitOpError{
-		Op:    "commit",
-		Cause: underlying,
-	}
+	gitErr := camperrors.NewGit("commit", "", "", "", underlying)
 
-	if !errors.Is(opErr, underlying) {
-		t.Error("GitOpError.Unwrap() should allow errors.Is to find underlying error")
+	if !errors.Is(gitErr, underlying) {
+		t.Error("GitError.Unwrap() should allow errors.Is to find underlying error")
 	}
 }
 
-func TestGitOpError_As(t *testing.T) {
-	opErr := &GitOpError{
-		Op:      "add",
-		ErrType: GitErrorPermission,
-		Detail:  "permission denied",
-		Cause:   errors.New("exit status 128"),
-	}
+func TestGitError_As(t *testing.T) {
+	gitErr := camperrors.NewGit("add", "", "permission", "permission denied", errors.New("exit status 128"))
 
-	var target *GitOpError
-	if !errors.As(opErr, &target) {
-		t.Fatal("errors.As should match *GitOpError")
+	var target *camperrors.GitError
+	if !errors.As(gitErr, &target) {
+		t.Fatal("errors.As should match *camperrors.GitError")
 	}
 	if target.Op != "add" {
-		t.Errorf("GitOpError.Op = %q, want %q", target.Op, "add")
+		t.Errorf("GitError.Op = %q, want %q", target.Op, "add")
 	}
-	if target.ErrType != GitErrorPermission {
-		t.Errorf("GitOpError.ErrType = %v, want %v", target.ErrType, GitErrorPermission)
+	if target.ErrType != "permission" {
+		t.Errorf("GitError.ErrType = %q, want %q", target.ErrType, "permission")
 	}
 }

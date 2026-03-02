@@ -3,12 +3,16 @@ package nav
 import (
 	"errors"
 	"fmt"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // Navigation errors.
+// Sentinels marked with %w wrap the canonical sentinel from internal/errors
+// to enable cross-package errors.Is() matching.
 var (
 	// ErrCategoryNotFound is returned when a category directory does not exist.
-	ErrCategoryNotFound = errors.New("category directory not found")
+	ErrCategoryNotFound = fmt.Errorf("category directory not found: %w", camperrors.ErrNotFound)
 
 	// ErrNotADirectory is returned when a category path exists but is not a directory.
 	ErrNotADirectory = errors.New("category path is not a directory")

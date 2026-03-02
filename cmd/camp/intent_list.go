@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"strings"
 	"time"
 
@@ -69,7 +70,7 @@ func runIntentList(cmd *cobra.Command, args []string) error {
 	// Find campaign root
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign directory: %w", err)
+		return camperrors.Wrap(err, "not in a campaign directory")
 	}
 
 	// Create path resolver and service
@@ -78,7 +79,7 @@ func runIntentList(cmd *cobra.Command, args []string) error {
 
 	// Ensure directories exist and migrate legacy layout
 	if err := svc.EnsureDirectories(ctx); err != nil {
-		return fmt.Errorf("ensuring intent directories: %w", err)
+		return camperrors.Wrap(err, "ensuring intent directories")
 	}
 
 	// Build list options
@@ -87,7 +88,7 @@ func runIntentList(cmd *cobra.Command, args []string) error {
 	// Get intents
 	intents, err := svc.List(ctx, opts)
 	if err != nil {
-		return fmt.Errorf("failed to list intents: %w", err)
+		return camperrors.Wrap(err, "failed to list intents")
 	}
 
 	// Apply status filtering (exclude done/killed by default)
@@ -250,7 +251,7 @@ func outputJSON(intents []*intent.Intent) error {
 
 	data, err := json.MarshalIndent(output, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal JSON: %w", err)
+		return camperrors.Wrap(err, "failed to marshal JSON")
 	}
 
 	fmt.Println(string(data))

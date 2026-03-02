@@ -87,6 +87,17 @@ func GenerateRich(ctx context.Context, args []string) ([]RichCategoryGroup, erro
 		}}, nil
 	}
 
+	// Subdirectory completion for queries containing "/"
+	if result.IsShortcut && strings.Contains(query, "/") {
+		subdirCandidates, err := CompleteSubdirectoryRich(ctx, jumpResult.Path, cat, query)
+		if err == nil && len(subdirCandidates) > 0 {
+			return []RichCategoryGroup{{
+				Category:   string(cat),
+				Candidates: subdirCandidates,
+			}}, nil
+		}
+	}
+
 	// Get or build index
 	idx, err := index.GetOrBuild(ctx, jumpResult.Path, false)
 	if err != nil {
@@ -222,6 +233,10 @@ func completeInCategory(ctx context.Context, cat nav.Category, query string) ([]
 	if strings.Contains(query, "/") {
 		if candidates, handled, err := CompleteFlowInCategory(ctx, cat, jumpResult.Path, query); handled {
 			return candidates, err
+		}
+		// Generic subdirectory completion for any "/" query not handled by flows
+		if candidates, err := CompleteSubdirectory(ctx, jumpResult.Path, cat, query); err == nil && len(candidates) > 0 {
+			return candidates, nil
 		}
 	}
 

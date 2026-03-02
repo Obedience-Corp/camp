@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // Builder generates and updates FEEDBACK intent markdown files.
@@ -28,7 +30,7 @@ func (b *Builder) BuildOrUpdate(festival FestivalInfo, observations []Observatio
 
 	// Ensure inbox directory exists
 	if err := os.MkdirAll(filepath.Dir(intentPath), 0755); err != nil {
-		return "", false, fmt.Errorf("creating inbox directory: %w", err)
+		return "", false, camperrors.Wrap(err, "creating inbox directory")
 	}
 
 	// Check if intent already exists
@@ -37,22 +39,22 @@ func (b *Builder) BuildOrUpdate(festival FestivalInfo, observations []Observatio
 		// Update existing intent
 		updated, err := b.updateIntent(string(existingContent), festival, observations)
 		if err != nil {
-			return "", false, fmt.Errorf("updating intent: %w", err)
+			return "", false, camperrors.Wrap(err, "updating intent")
 		}
 		if err := os.WriteFile(intentPath, []byte(updated), 0644); err != nil {
-			return "", false, fmt.Errorf("writing intent: %w", err)
+			return "", false, camperrors.Wrap(err, "writing intent")
 		}
 		return intentPath, false, nil
 	}
 
 	if !os.IsNotExist(err) {
-		return "", false, fmt.Errorf("reading existing intent: %w", err)
+		return "", false, camperrors.Wrap(err, "reading existing intent")
 	}
 
 	// Create new intent
 	content := b.buildIntent(festival, observations)
 	if err := os.WriteFile(intentPath, []byte(content), 0644); err != nil {
-		return "", false, fmt.Errorf("writing intent: %w", err)
+		return "", false, camperrors.Wrap(err, "writing intent")
 	}
 
 	return intentPath, true, nil

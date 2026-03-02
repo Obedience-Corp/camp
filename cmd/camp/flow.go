@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
@@ -67,12 +68,12 @@ func runFlowPicker(cmd *cobra.Command, args []string) error {
 
 	campaignRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign directory: %w", err)
+		return camperrors.Wrap(err, "not in a campaign directory")
 	}
 
 	registry, err := flow.LoadRegistry(campaignRoot)
 	if err != nil {
-		return fmt.Errorf("loading flow registry: %w", err)
+		return camperrors.Wrap(err, "loading flow registry")
 	}
 
 	if len(registry.Flows) == 0 {
@@ -120,7 +121,7 @@ func runFlowPicker(cmd *cobra.Command, args []string) error {
 	fmt.Printf("\n=== Running flow: %s ===\n\n", selected)
 
 	if err := runner.Run(ctx, flowDef, nil); err != nil {
-		return fmt.Errorf("running flow %q: %w", selected, err)
+		return camperrors.Wrapf(err, "running flow %q", selected)
 	}
 
 	return nil

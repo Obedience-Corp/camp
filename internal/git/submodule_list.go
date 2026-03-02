@@ -2,10 +2,11 @@ package git
 
 import (
 	"context"
-	"fmt"
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // ListSubmodulePaths returns the filesystem paths of all submodules in the repo.
@@ -42,7 +43,7 @@ func ListSubmodulePaths(ctx context.Context, repoRoot string) ([]string, error) 
 func ListSubmodulePathsFiltered(ctx context.Context, repoRoot, prefix string) ([]string, error) {
 	all, err := ListSubmodulePaths(ctx, repoRoot)
 	if err != nil {
-		return nil, fmt.Errorf("list submodules: %w", err)
+		return nil, camperrors.Wrap(err, "list submodules")
 	}
 
 	if prefix == "" {

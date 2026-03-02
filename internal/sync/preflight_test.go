@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
 
 // setupTestRepo creates a git repo with optional submodules for testing.
@@ -339,5 +341,25 @@ func TestRunPreflight_ContextCanceled(t *testing.T) {
 	_, err := syncer.RunPreflight(ctx)
 	if err != context.Canceled {
 		t.Errorf("RunPreflight() error = %v, want context.Canceled", err)
+	}
+}
+
+func TestRunPreflight_RejectsTraversalSubmodulePaths(t *testing.T) {
+	maliciousPaths := []string{
+		"../escape",
+		"projects/../../../etc",
+		"/absolute/path",
+		"..",
+	}
+
+	repoRoot := t.TempDir()
+
+	for _, p := range maliciousPaths {
+		t.Run(p, func(t *testing.T) {
+			err := pathutil.ValidateSubmodulePath(repoRoot, p)
+			if err == nil {
+				t.Errorf("ValidateSubmodulePath(%q): expected error for traversal path, got nil", p)
+			}
+		})
 	}
 }

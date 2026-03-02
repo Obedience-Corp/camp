@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"path/filepath"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
@@ -35,12 +36,12 @@ func runProjectPruneAll(cmd *cobra.Command, _ []string) error {
 
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign: %w", err)
+		return camperrors.Wrap(err, "not in a campaign")
 	}
 
 	paths, err := git.ListSubmodulePathsRecursive(ctx, campRoot, "projects/")
 	if err != nil {
-		return fmt.Errorf("failed to list submodules: %w", err)
+		return camperrors.Wrap(err, "failed to list submodules")
 	}
 
 	if len(paths) == 0 {

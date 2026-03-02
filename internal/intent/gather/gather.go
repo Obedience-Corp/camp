@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/intent/index"
 )
@@ -39,7 +40,7 @@ func (s *Service) IndexSize() int {
 // FindByTag returns intents matching a frontmatter tag.
 func (s *Service) FindByTag(ctx context.Context, tag string) ([]*intent.Intent, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("context cancelled: %w", err)
+		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
 	ids := s.index.FindByTag(tag)
@@ -49,7 +50,7 @@ func (s *Service) FindByTag(ctx context.Context, tag string) ([]*intent.Intent, 
 // FindByHashtag returns intents containing a hashtag in their content.
 func (s *Service) FindByHashtag(ctx context.Context, hashtag string) ([]*intent.Intent, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("context cancelled: %w", err)
+		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
 	ids := s.index.FindByHashtag(hashtag)
@@ -65,7 +66,7 @@ type SimilarResult struct {
 // FindSimilar returns intents similar to the given ID.
 func (s *Service) FindSimilar(ctx context.Context, id string, minScore float64) ([]SimilarResult, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("context cancelled: %w", err)
+		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
 	similar := s.index.FindSimilar(id, minScore)
@@ -129,7 +130,7 @@ type GatherResult struct {
 // Source intents are archived (moved to dungeon/archived) unless ArchiveSources is false.
 func (s *Service) Gather(ctx context.Context, ids []string, opts GatherOptions) (*GatherResult, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("context cancelled: %w", err)
+		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
 	if len(ids) < 2 {
@@ -145,7 +146,7 @@ func (s *Service) Gather(ctx context.Context, ids []string, opts GatherOptions) 
 	for _, id := range ids {
 		i, err := s.intentSvc.Get(ctx, id)
 		if err != nil {
-			return nil, fmt.Errorf("loading intent %s: %w", id, err)
+			return nil, camperrors.Wrapf(err, "loading intent %s", id)
 		}
 		sources = append(sources, i)
 	}
@@ -161,7 +162,7 @@ func (s *Service) Gather(ctx context.Context, ids []string, opts GatherOptions) 
 
 	merged, err := intent.MergeIntents(sources, mergeOpts)
 	if err != nil {
-		return nil, fmt.Errorf("merging intents: %w", err)
+		return nil, camperrors.Wrap(err, "merging intents")
 	}
 
 	// Save the gathered intent
@@ -175,7 +176,7 @@ func (s *Service) Gather(ctx context.Context, ids []string, opts GatherOptions) 
 	// Create the gathered intent file
 	gathered, err := s.intentSvc.CreateDirect(ctx, createOpts)
 	if err != nil {
-		return nil, fmt.Errorf("creating gathered intent: %w", err)
+		return nil, camperrors.Wrap(err, "creating gathered intent")
 	}
 
 	// Copy over the gathered metadata
@@ -189,7 +190,7 @@ func (s *Service) Gather(ctx context.Context, ids []string, opts GatherOptions) 
 
 	// Save with updated metadata
 	if err := s.intentSvc.Save(ctx, gathered); err != nil {
-		return nil, fmt.Errorf("saving gathered intent: %w", err)
+		return nil, camperrors.Wrap(err, "saving gathered intent")
 	}
 
 	result := &GatherResult{

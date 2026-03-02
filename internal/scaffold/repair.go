@@ -2,13 +2,13 @@ package scaffold
 
 import (
 	"context"
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/lancekrogers/guild-scaffold/pkg/scaffold"
 )
 
@@ -359,7 +359,7 @@ func ExecuteMigrations(migrations []MigrationAction) (int, error) {
 	for _, m := range migrations {
 		// Ensure destination exists
 		if err := os.MkdirAll(m.Dest, 0755); err != nil {
-			return moved, fmt.Errorf("creating %s: %w", m.Dest, err)
+			return moved, camperrors.Wrapf(err, "creating %s", m.Dest)
 		}
 
 		for _, item := range m.Items {
@@ -367,7 +367,7 @@ func ExecuteMigrations(migrations []MigrationAction) (int, error) {
 			dst := filepath.Join(m.Dest, item)
 
 			if err := os.Rename(src, dst); err != nil {
-				return moved, fmt.Errorf("moving %s to %s: %w", src, dst, err)
+				return moved, camperrors.Wrapf(err, "moving %s to %s", src, dst)
 			}
 			moved++
 		}

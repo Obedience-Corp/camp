@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -60,7 +61,7 @@ func runRegister(cmd *cobra.Command, args []string) error {
 
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		return fmt.Errorf("invalid path: %w", err)
+		return camperrors.Wrap(err, "invalid path")
 	}
 
 	// Check .campaign/ exists
@@ -95,7 +96,7 @@ func runRegister(cmd *cobra.Command, args []string) error {
 	// Load campaign config for name/type
 	cfg, err := config.LoadCampaignConfig(ctx, absPath)
 	if err != nil {
-		return fmt.Errorf("failed to load campaign config: %w", err)
+		return camperrors.Wrap(err, "failed to load campaign config")
 	}
 
 	// Allow overrides from flags
@@ -156,7 +157,7 @@ func runRegister(cmd *cobra.Command, args []string) error {
 
 	// Register using campaign ID
 	if err := reg.Register(cfg.ID, name, absPath, ctype); err != nil {
-		return fmt.Errorf("failed to register campaign: %w", err)
+		return camperrors.Wrap(err, "failed to register campaign")
 	}
 
 	// Save registry

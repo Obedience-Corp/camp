@@ -3,9 +3,10 @@ package git
 import (
 	"bufio"
 	"context"
-	"fmt"
 	"os/exec"
 	"strings"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // OrphanedGitlink represents a gitlink entry in the git index that has no
@@ -28,7 +29,7 @@ func ListOrphanedGitlinks(ctx context.Context, repoRoot string) ([]OrphanedGitli
 	// Get all gitlink entries from the index
 	indexLinks, err := listIndexGitlinks(ctx, repoRoot)
 	if err != nil {
-		return nil, fmt.Errorf("list index gitlinks: %w", err)
+		return nil, camperrors.Wrap(err, "list index gitlinks")
 	}
 
 	if len(indexLinks) == 0 {
@@ -38,7 +39,7 @@ func ListOrphanedGitlinks(ctx context.Context, repoRoot string) ([]OrphanedGitli
 	// Get declared submodule paths from .gitmodules
 	declared, err := ListSubmodulePaths(ctx, repoRoot)
 	if err != nil {
-		return nil, fmt.Errorf("list submodule paths: %w", err)
+		return nil, camperrors.Wrap(err, "list submodule paths")
 	}
 
 	// Build lookup set for declared paths
@@ -77,7 +78,7 @@ func RemoveOrphanedGitlinks(ctx context.Context, repoRoot string, orphans []Orph
 
 		cmd := exec.CommandContext(ctx, "git", "-C", repoRoot, "rm", "--cached", orphan.Path)
 		if output, err := cmd.CombinedOutput(); err != nil {
-			return removed, fmt.Errorf("%w: git rm --cached %s: %s", ErrOrphanedGitlink, orphan.Path, strings.TrimSpace(string(output)))
+			return removed, camperrors.Wrapf(ErrOrphanedGitlink, "git rm --cached %s: %s", orphan.Path, strings.TrimSpace(string(output)))
 		}
 		removed = append(removed, orphan.Path)
 	}
@@ -95,7 +96,7 @@ func listIndexGitlinks(ctx context.Context, repoRoot string) ([]OrphanedGitlink,
 	cmd := exec.CommandContext(ctx, "git", "-C", repoRoot, "ls-files", "--stage")
 	output, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("git ls-files --stage: %w", err)
+		return nil, camperrors.Wrap(err, "git ls-files --stage")
 	}
 
 	var links []OrphanedGitlink

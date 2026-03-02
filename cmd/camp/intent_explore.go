@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
@@ -41,7 +41,7 @@ ACTIONS
 
 GATHER (Multi-Select)
   Space         Toggle selection / enter gather mode
-  Ctrl+g        Gather selected intents
+  ga            Gather selected intents
   Escape        Exit multi-select mode
 
 FILTERS
@@ -73,7 +73,7 @@ func runIntentExplore(cmd *cobra.Command, args []string) error {
 	// Find campaign root
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign directory: %w", err)
+		return camperrors.Wrap(err, "not in a campaign directory")
 	}
 
 	// Create path resolver and services
@@ -84,7 +84,7 @@ func runIntentExplore(cmd *cobra.Command, args []string) error {
 
 	// Ensure directories exist and migrate legacy layout
 	if err := svc.EnsureDirectories(ctx); err != nil {
-		return fmt.Errorf("ensuring intent directories: %w", err)
+		return camperrors.Wrap(err, "ensuring intent directories")
 	}
 
 	// Create and run the TUI
@@ -92,7 +92,7 @@ func runIntentExplore(cmd *cobra.Command, args []string) error {
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {
-		return fmt.Errorf("running explorer: %w", err)
+		return camperrors.Wrap(err, "running explorer")
 	}
 
 	return nil

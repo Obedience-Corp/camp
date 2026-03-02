@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"os/exec"
 
@@ -42,7 +43,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign: %w", err)
+		return camperrors.Wrap(err, "not in a campaign")
 	}
 
 	// Extract camp-specific flags, pass rest to git
@@ -54,7 +55,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 
 	target, err := git.ResolveTarget(ctx, campRoot, sub, project)
 	if err != nil {
-		return fmt.Errorf("failed to resolve target: %w", err)
+		return camperrors.Wrap(err, "failed to resolve target")
 	}
 
 	if target.IsSubmodule {

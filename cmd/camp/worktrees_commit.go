@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
@@ -59,12 +60,12 @@ func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign: %w", err)
+		return camperrors.Wrap(err, "not in a campaign")
 	}
 
 	cfg, err := config.LoadCampaignConfig(ctx, campRoot)
 	if err != nil {
-		return fmt.Errorf("failed to load campaign config: %w", err)
+		return camperrors.Wrap(err, "failed to load campaign config")
 	}
 
 	resolver := paths.NewResolver(campRoot, cfg.Paths())
@@ -73,7 +74,7 @@ func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 	// Detect worktree from cwd
 	wtCtx, err := detector.DetectFromCwd()
 	if err != nil {
-		return fmt.Errorf("not inside a worktree: %w", err)
+		return camperrors.Wrap(err, "not inside a worktree")
 	}
 
 	// Display which worktree
@@ -84,7 +85,7 @@ func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 	// Create executor for the worktree
 	executor, err := git.NewExecutor(wtCtx.WorktreePath)
 	if err != nil {
-		return fmt.Errorf("failed to initialize git: %w", err)
+		return camperrors.Wrap(err, "failed to initialize git")
 	}
 
 	// Get commit message - prompt if not provided
@@ -92,7 +93,7 @@ func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 	if message == "" && !wtCommitAmend {
 		message, err = ui.PromptCommitMessageSimple(ctx, executor)
 		if err != nil {
-			return fmt.Errorf("prompt failed: %w", err)
+			return camperrors.Wrap(err, "prompt failed")
 		}
 		if message == "" {
 			return fmt.Errorf("commit cancelled")
@@ -103,7 +104,7 @@ func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 	if wtCommitAll {
 		fmt.Println(ui.Info("Staging changes..."))
 		if err := executor.StageAll(ctx); err != nil {
-			return fmt.Errorf("failed to stage: %w", err)
+			return camperrors.Wrap(err, "failed to stage")
 		}
 	}
 
@@ -134,7 +135,7 @@ func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 			fmt.Println(ui.Success("Nothing to commit"))
 			return nil
 		}
-		return fmt.Errorf("commit failed: %w", err)
+		return camperrors.Wrap(err, "commit failed")
 	}
 
 	fmt.Println(ui.Success("Changes committed in worktree"))

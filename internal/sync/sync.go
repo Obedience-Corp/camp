@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 )
 
@@ -154,7 +155,7 @@ func (s *Syncer) syncURLs(ctx context.Context) ([]URLChange, error) {
 	cmd := exec.CommandContext(ctx, "git", "-C", s.repoRoot,
 		"submodule", "sync", "--recursive")
 	if output, err := cmd.CombinedOutput(); err != nil {
-		return nil, &SyncError{Op: "submodule-sync", Cause: fmt.Errorf("%w: %s", ErrSubmoduleSync, strings.TrimSpace(string(output)))}
+		return nil, &SyncError{Op: "submodule-sync", Cause: camperrors.Wrapf(git.ErrSubmoduleSync, "%s", strings.TrimSpace(string(output)))}
 	}
 
 	// Capture URL state after sync
@@ -242,7 +243,7 @@ func (s *Syncer) updateSubmodules(ctx context.Context) ([]SubmoduleResult, error
 		cmd := exec.CommandContext(ctx, "git", "-C", subDir, "submodule", "update", "--init", "--recursive")
 		if output, nestedErr := cmd.CombinedOutput(); nestedErr != nil {
 			// Nested failure is non-fatal for the parent submodule
-			result.Error = &SyncError{Op: "nested-init", Submodule: path, Cause: fmt.Errorf("%w: %s", ErrNestedSubmodules, strings.TrimSpace(string(output)))}
+			result.Error = &SyncError{Op: "nested-init", Submodule: path, Cause: camperrors.Wrapf(ErrNestedSubmodules, "%s", strings.TrimSpace(string(output)))}
 		}
 
 		// Checkout default branch instead of leaving on detached HEAD
@@ -275,7 +276,7 @@ func (s *Syncer) verifySubmodules(ctx context.Context) ([]SubmoduleResult, error
 		cmd := exec.CommandContext(ctx, "git", "-C", fullPath, "rev-parse", "HEAD")
 		if _, err := cmd.Output(); err != nil {
 			result.Success = false
-			result.Error = ErrSubmoduleNotInitialized
+			result.Error = git.ErrSubmoduleNotInitialized
 		}
 
 		// Check for detached HEAD
@@ -357,7 +358,7 @@ func (s *Syncer) reverseSyncLocalURLs(ctx context.Context) ([]URLChange, error) 
 		}
 
 		if err := git.SetDeclaredURL(ctx, s.repoRoot, path, remoteURL); err != nil {
-			return changes, fmt.Errorf("reverse-sync %s: %w", path, err)
+			return changes, camperrors.Wrapf(err, "reverse-sync %s", path)
 		}
 
 		changes = append(changes, URLChange{
@@ -372,8 +373,8 @@ func (s *Syncer) reverseSyncLocalURLs(ctx context.Context) ([]URLChange, error) 
 		cmd := exec.CommandContext(ctx, "git", "-C", s.repoRoot,
 			"submodule", "sync", "--recursive")
 		if output, syncErr := cmd.CombinedOutput(); syncErr != nil {
-			return changes, fmt.Errorf("submodule sync after reverse-sync: %w: %s",
-				syncErr, strings.TrimSpace(string(output)))
+			return changes, camperrors.Wrapf(syncErr, "submodule sync after reverse-sync: %s",
+				strings.TrimSpace(string(output)))
 		}
 	}
 
@@ -398,7 +399,7 @@ func (s *Syncer) validateUpdate(ctx context.Context) error {
 		if strings.Contains(outputStr, "no submodule mapping found") {
 			return nil
 		}
-		return &SyncError{Op: "validate", Cause: fmt.Errorf("%w: %w", ErrSubmoduleValidation, err)}
+		return &SyncError{Op: "validate", Cause: camperrors.Wrap(err, ErrSubmoduleValidation.Error())}
 	}
 
 	// Parse output for issues
@@ -419,7 +420,7 @@ func (s *Syncer) validateUpdate(ctx context.Context) error {
 			if len(parts) >= 2 {
 				sub = parts[1]
 			}
-			return &SyncError{Op: "validate", Submodule: sub, Cause: ErrSubmoduleNotInitialized}
+			return &SyncError{Op: "validate", Submodule: sub, Cause: git.ErrSubmoduleNotInitialized}
 		}
 
 		// '+' prefix means commit differs, but this is expected after sync

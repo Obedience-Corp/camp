@@ -2,9 +2,10 @@ package git
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"time"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // RetryConfig configures lock-aware retry behavior using a cycle-based approach.
@@ -113,8 +114,8 @@ func WithLockRetry(ctx context.Context, repoPath string, cfg RetryConfig, operat
 		// Actively intervene: clean stale locks.
 		result, cleanErr := CleanStaleLocks(ctx, repoPath, cfg.Logger)
 		if cleanErr != nil {
-			return fmt.Errorf("failed to clean locks during %s (cycle %d): %w",
-				cfg.OperationName, cycle, cleanErr)
+			return camperrors.Wrapf(cleanErr, "failed to clean locks during %s (cycle %d)",
+				cfg.OperationName, cycle)
 		}
 
 		cfg.Logger.Info("cycle completed, cleaning locks",
@@ -134,8 +135,8 @@ func WithLockRetry(ctx context.Context, repoPath string, cfg RetryConfig, operat
 
 		// Active locks found but not waiting — fail fast
 		if len(result.Skipped) > 0 && !cfg.WaitForActive && len(result.Removed) == 0 {
-			return fmt.Errorf("%s failed: lock held by active process: %w",
-				cfg.OperationName, lastErr)
+			return camperrors.Wrapf(lastErr, "%s failed: lock held by active process",
+				cfg.OperationName)
 		}
 
 		// Apply backoff between cycles
@@ -150,6 +151,6 @@ func WithLockRetry(ctx context.Context, repoPath string, cfg RetryConfig, operat
 	}
 
 	totalAttempts := cfg.MaxCycles * cfg.AttemptsPerCycle
-	return fmt.Errorf("%s failed after %d cycles (%d attempts): %w",
-		cfg.OperationName, cfg.MaxCycles, totalAttempts, lastErr)
+	return camperrors.Wrapf(lastErr, "%s failed after %d cycles (%d attempts)",
+		cfg.OperationName, cfg.MaxCycles, totalAttempts)
 }

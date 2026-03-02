@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/campaign"
 )
 
@@ -64,13 +65,13 @@ func ToolNames() []string {
 func FindSkillsDir(ctx context.Context) (string, error) {
 	root, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return "", fmt.Errorf("find skills dir: %w", err)
+		return "", camperrors.Wrap(err, "find skills dir")
 	}
 
 	skillsDir := filepath.Join(root, campaign.CampaignDir, SkillsSubdir)
 	info, err := os.Stat(skillsDir)
 	if err != nil {
-		return "", fmt.Errorf("find skills dir: %w", err)
+		return "", camperrors.Wrap(err, "find skills dir")
 	}
 	if !info.IsDir() {
 		return "", fmt.Errorf("find skills dir: %s is not a directory", skillsDir)
@@ -86,7 +87,7 @@ func RelativeSymlinkTarget(linkPath, targetPath string) (string, error) {
 	linkDir := filepath.Dir(linkPath)
 	rel, err := filepath.Rel(linkDir, targetPath)
 	if err != nil {
-		return "", fmt.Errorf("compute relative symlink target: %w", err)
+		return "", camperrors.Wrap(err, "compute relative symlink target")
 	}
 	return rel, nil
 }
@@ -100,7 +101,7 @@ func CheckLinkState(path, expectedTarget string) (LinkState, error) {
 		if os.IsNotExist(err) {
 			return StateMissing, nil
 		}
-		return "", fmt.Errorf("check link state: %w", err)
+		return "", camperrors.Wrap(err, "check link state")
 	}
 
 	// Not a symlink
@@ -115,7 +116,7 @@ func CheckLinkState(path, expectedTarget string) (LinkState, error) {
 			// Broken symlink: target missing
 			return StateBroken, nil
 		}
-		return "", fmt.Errorf("check link state: resolve symlink: %w", err)
+		return "", camperrors.Wrap(err, "check link state: resolve symlink")
 	}
 
 	if expectedTarget == "" {
@@ -143,7 +144,7 @@ func CheckLinkState(path, expectedTarget string) (LinkState, error) {
 func DiscoverSkillSlugs(skillsDir string) ([]string, error) {
 	entries, err := os.ReadDir(skillsDir)
 	if err != nil {
-		return nil, fmt.Errorf("discover skill slugs: %w", err)
+		return nil, camperrors.Wrap(err, "discover skill slugs")
 	}
 
 	slugs := make([]string, 0, len(entries))
@@ -212,11 +213,11 @@ func ValidateDestination(dest, campaignRoot string) error {
 	// that lexically appears in-root cannot escape via a symlinked parent.
 	resolvedRoot, err := resolvePathWithExistingParent(campaignRoot)
 	if err != nil {
-		return fmt.Errorf("resolve campaign root: %w", err)
+		return camperrors.Wrap(err, "resolve campaign root")
 	}
 	resolvedDest, err := resolvePathWithExistingParent(dest)
 	if err != nil {
-		return fmt.Errorf("resolve destination: %w", err)
+		return camperrors.Wrap(err, "resolve destination")
 	}
 
 	// Reject filesystem root
@@ -256,7 +257,7 @@ func ValidateDestination(dest, campaignRoot string) error {
 func resolvePathWithExistingParent(path string) (string, error) {
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		return "", fmt.Errorf("resolve absolute path: %w", err)
+		return "", camperrors.Wrap(err, "resolve absolute path")
 	}
 	absPath = filepath.Clean(absPath)
 
@@ -269,7 +270,7 @@ func resolvePathWithExistingParent(path string) (string, error) {
 			break
 		}
 		if !os.IsNotExist(err) {
-			return "", fmt.Errorf("stat %s: %w", existing, err)
+			return "", camperrors.Wrapf(err, "stat %s", existing)
 		}
 
 		parent := filepath.Dir(existing)
@@ -282,7 +283,7 @@ func resolvePathWithExistingParent(path string) (string, error) {
 
 	resolvedExisting, err := filepath.EvalSymlinks(existing)
 	if err != nil {
-		return "", fmt.Errorf("resolve symlinks for %s: %w", existing, err)
+		return "", camperrors.Wrapf(err, "resolve symlinks for %s", existing)
 	}
 
 	resolved := resolvedExisting
@@ -315,7 +316,7 @@ func CheckPathType(path string) (PathType, error) {
 		if os.IsNotExist(err) {
 			return TypeMissing, nil
 		}
-		return "", fmt.Errorf("check path type: %w", err)
+		return "", camperrors.Wrap(err, "check path type")
 	}
 
 	if info.Mode()&os.ModeSymlink != 0 {

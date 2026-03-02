@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"os/signal"
 	"time"
@@ -53,7 +54,7 @@ func runLeverageBackfill(cmd *cobra.Command, args []string) error {
 	if sinceStr != "" {
 		since, err := time.Parse("2006-01-02", sinceStr)
 		if err != nil {
-			return fmt.Errorf("invalid --since date %q (use YYYY-MM-DD): %w", sinceStr, err)
+			return camperrors.Wrapf(err, "invalid --since date %q (use YYYY-MM-DD)", sinceStr)
 		}
 		cfg.ProjectStart = since
 	}
@@ -65,7 +66,7 @@ func runLeverageBackfill(cmd *cobra.Command, args []string) error {
 
 	resolved, err := leverage.ResolveProjects(ctx, setup.Root, cfg)
 	if err != nil {
-		return fmt.Errorf("resolving projects: %w", err)
+		return camperrors.Wrap(err, "resolving projects")
 	}
 
 	// Populate per-project author counts and actual person-months
