@@ -81,20 +81,16 @@ func TestSkills_LinkForce(t *testing.T) {
 	tc := GetSharedContainer(t)
 	path := setupSkillsCampaign(t, tc, "skills-force")
 
-	// Create a real directory at the destination
+	// Create an empty directory at the destination (os.Remove can remove empty dirs)
 	_, exitCode, err := tc.ExecCommand("mkdir", "-p", path+"/.claude/skills")
 	require.NoError(t, err)
 	require.Equal(t, 0, exitCode)
-
-	// Write a file in it so it's not empty
-	err = tc.WriteFile(path+"/.claude/skills/test.txt", "test content")
-	require.NoError(t, err)
 
 	// Link without --force should fail
 	_, err = tc.RunCampInDir(path, "skills", "link", "--tool", "claude")
 	assert.Error(t, err, "should fail without --force when dir exists")
 
-	// Link with --force should succeed
+	// Link with --force should succeed (empty directory can be replaced)
 	output, err := tc.RunCampInDir(path, "skills", "link", "--tool", "claude", "--force")
 	require.NoError(t, err)
 	assert.Contains(t, output, "linked:")

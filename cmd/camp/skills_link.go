@@ -89,22 +89,25 @@ func runSkillsLink(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	// Validate destination is safe
-	if err := skills.ValidateDestination(dest, root); err != nil {
-		return err
-	}
-
-	// Check current state of destination
+	// Check current state of destination before validation.
+	// An existing valid symlink is safe to short-circuit on — validation
+	// would reject it because the resolved path lands inside .campaign/.
 	state, err := skills.CheckLinkState(dest, skillsDir)
 	if err != nil {
 		return err
 	}
 
-	switch state {
-	case skills.StateValid:
+	if state == skills.StateValid {
 		fmt.Fprintf(out, "already linked: %s\n", dest)
 		return nil
+	}
 
+	// Validate destination is safe for new writes
+	if err := skills.ValidateDestination(dest, root); err != nil {
+		return err
+	}
+
+	switch state {
 	case skills.StateNotALink:
 		if !force {
 			return fmt.Errorf("destination exists and is not a symlink: %s\nUse --force to overwrite", dest)
