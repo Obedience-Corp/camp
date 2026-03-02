@@ -64,6 +64,7 @@ type repoStatus struct {
 	Modified    int    `json:"modified"`
 	Untracked   int    `json:"untracked"`
 	Unmerged    int    `json:"unmerged"`
+	StaleRefs   int    `json:"stale_refs"`
 	Error       string `json:"error,omitempty"`
 }
 
@@ -103,8 +104,8 @@ func runStatusAll(cmd *cobra.Command, _ []string) error {
 	// Collect status for each
 	statuses := collectStatuses(ctx, campRoot, paths)
 
-	// Add campaign root itself
-	rootStatus := getRepoStatus(ctx, campRoot, "campaign root")
+	// Add campaign root itself (with ref filtering)
+	rootStatus := getRepoStatus(ctx, campRoot, "campaign root", true)
 	allStatuses := append([]repoStatus{rootStatus}, statuses...)
 
 	// Cache results
@@ -140,6 +141,7 @@ func runStatusTUI(campRoot string, statuses []repoStatus) error {
 			Ahead:     s.Ahead,
 			Behind:    s.Behind,
 			Unmerged:  s.Unmerged,
+			StaleRefs: s.StaleRefs,
 			Clean:     s.Clean,
 			Error:     s.Error,
 		}
@@ -158,7 +160,7 @@ func collectStatuses(ctx context.Context, campRoot string, paths []string) []rep
 	for _, p := range paths {
 		fullPath := filepath.Join(campRoot, p)
 		name := git.SubmoduleDisplayName(p)
-		status := getRepoStatus(ctx, fullPath, name)
+		status := getRepoStatus(ctx, fullPath, name, false)
 		status.Path = p
 		statuses = append(statuses, status)
 	}
@@ -166,7 +168,7 @@ func collectStatuses(ctx context.Context, campRoot string, paths []string) []rep
 	return statuses
 }
 
-func getRepoStatus(ctx context.Context, repoPath, name string) repoStatus {
+func getRepoStatus(ctx context.Context, repoPath, name string, isCampaignRoot bool) repoStatus {
 	rs := repoStatus{
 		Name: name,
 		Path: repoPath,
@@ -180,8 +182,13 @@ func getRepoStatus(ctx context.Context, repoPath, name string) repoStatus {
 	}
 	rs.Branch = branch
 
-	// Get porcelain status
-	output, err := gitOutput(ctx, repoPath, "status", "--porcelain=v1")
+	// Get porcelain status — at campaign root, ignore submodule refs so they
+	// don't pollute the dirty state.
+	statusArgs := []string{"status", "--porcelain=v1"}
+	if isCampaignRoot {
+		statusArgs = append(statusArgs, "--ignore-submodules=all")
+	}
+	output, err := gitOutput(ctx, repoPath, statusArgs...)
 	if err != nil {
 		rs.Error = "status failed"
 		return rs
@@ -206,6 +213,11 @@ func getRepoStatus(ctx context.Context, repoPath, name string) repoStatus {
 		}
 	}
 
+	// Count stale submodule refs at campaign root
+	if isCampaignRoot {
+		rs.StaleRefs = countStaleRefs(ctx, repoPath)
+	}
+
 	// Get ahead/behind — also determines if upstream tracking is configured
 	abOutput, err := gitOutput(ctx, repoPath, "rev-list", "--left-right", "--count", "HEAD...@{upstream}")
 	if err == nil {
@@ -221,6 +233,23 @@ func getRepoStatus(ctx context.Context, repoPath, name string) repoStatus {
 	rs.Unmerged = git.UnmergedBranchCount(ctx, repoPath)
 
 	return rs
+}
+
+// countStaleRefs counts submodules whose checked-out commit differs from
+// the commit recorded in the superproject index. Lines starting with '+' in
+// `git submodule status` indicate such drift.
+func countStaleRefs(ctx context.Context, repoPath string) int {
+	output, err := gitOutput(ctx, repoPath, "submodule", "status")
+	if err != nil || output == "" {
+		return 0
+	}
+	count := 0
+	for _, line := range strings.Split(output, "\n") {
+		if len(line) > 0 && line[0] == '+' {
+			count++
+		}
+	}
+	return count
 }
 
 func gitOutput(ctx context.Context, repoPath string, args ...string) (string, error) {
@@ -240,12 +269,12 @@ func renderStatusTable(statuses []repoStatus) {
 	dim := lipgloss.NewStyle().Foreground(ui.DimColor)
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.BrightColor)
 
-	headers := []string{"NAME", "BRANCH", "STATUS", "PUSH", "CHANGES", "BRANCHES"}
+	headers := []string{"NAME", "BRANCH", "STATUS", "PUSH", "CHANGES", "REFS", "BRANCHES"}
 	var rows [][]string
 
 	for _, s := range statuses {
 		if s.Error != "" {
-			rows = append(rows, []string{s.Name, "", red.Render(s.Error), "", "", ""})
+			rows = append(rows, []string{s.Name, "", red.Render(s.Error), "", "", "", ""})
 			continue
 		}
 
@@ -288,6 +317,14 @@ func renderStatusTable(statuses []repoStatus) {
 			branch = branch[:12] + "…"
 		}
 
+		// Stale refs
+		var refsStr string
+		if s.StaleRefs > 0 {
+			refsStr = yellow.Render(fmt.Sprintf("%d stale", s.StaleRefs))
+		} else {
+			refsStr = dim.Render("-")
+		}
+
 		// Unmerged branches
 		var branchesStr string
 		if s.Unmerged > 0 {
@@ -296,7 +333,7 @@ func renderStatusTable(statuses []repoStatus) {
 			branchesStr = dim.Render("-")
 		}
 
-		rows = append(rows, []string{s.Name, branch, statusStr, pushStr, changeStr, branchesStr})
+		rows = append(rows, []string{s.Name, branch, statusStr, pushStr, changeStr, refsStr, branchesStr})
 	}
 
 	t := table.New().
