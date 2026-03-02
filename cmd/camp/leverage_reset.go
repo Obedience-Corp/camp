@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/Obedience-Corp/camp/internal/leverage"
+	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/spf13/cobra"
 )
 
@@ -40,6 +41,12 @@ func runLeverageReset(cmd *cobra.Command, args []string) error {
 	snapshotDir := leverage.DefaultSnapshotDir(setup.Root)
 	cacheDir := leverage.DefaultCacheDir(setup.Root)
 	projectFilter, _ := cmd.Flags().GetString("project")
+
+	if projectFilter != "" {
+		if err := project.ValidateProjectName(projectFilter); err != nil {
+			return fmt.Errorf("--project flag: %w", err)
+		}
+	}
 
 	cleared := false
 

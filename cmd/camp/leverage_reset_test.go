@@ -2,12 +2,14 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/Obedience-Corp/camp/internal/leverage"
+	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/spf13/pflag"
 )
 
@@ -138,5 +140,41 @@ func TestLeverageReset_NoSnapshots(t *testing.T) {
 
 	if !strings.Contains(output, "No cached data to clear") {
 		t.Errorf("expected 'No cached data to clear', got: %s", output)
+	}
+}
+
+func TestLeverageReset_ProjectFlagValidation(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tmpDir, ".campaign"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CAMP_ROOT", tmpDir)
+
+	tests := []struct {
+		name          string
+		projectFilter string
+		wantErr       bool
+	}{
+		{name: "traversal attempt", projectFilter: "../etc", wantErr: true},
+		{name: "dotdot alone", projectFilter: "..", wantErr: true},
+		{name: "absolute path", projectFilter: "/etc/passwd", wantErr: true},
+		{name: "forward slash", projectFilter: "proj/evil", wantErr: true},
+		{name: "backslash", projectFilter: `proj\evil`, wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := executeReset(t, "--project", tc.projectFilter)
+			if !tc.wantErr && err == nil {
+				return
+			}
+			if tc.wantErr && err == nil {
+				t.Errorf("expected error for --project=%q, got nil", tc.projectFilter)
+				return
+			}
+			if !errors.Is(err, project.ErrInvalidProjectName) {
+				t.Errorf("expected ErrInvalidProjectName for --project=%q, got: %v", tc.projectFilter, err)
+			}
+		})
 	}
 }
