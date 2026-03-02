@@ -89,6 +89,11 @@ func runSkillsLink(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
+	// Validate destination is safe
+	if err := skills.ValidateDestination(dest, root); err != nil {
+		return err
+	}
+
 	// Check current state of destination
 	state, err := skills.CheckLinkState(dest, skillsDir)
 	if err != nil {
@@ -126,10 +131,12 @@ func runSkillsLink(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	// Remove existing non-symlink if forced
+	// Remove existing non-symlink if forced.
+	// Use os.Remove (not os.RemoveAll) — fails on non-empty directories,
+	// which prevents catastrophic recursive deletion of real content.
 	if state == skills.StateNotALink && force {
-		if err := os.RemoveAll(dest); err != nil {
-			return fmt.Errorf("remove existing path: %w", err)
+		if err := os.Remove(dest); err != nil {
+			return fmt.Errorf("remove existing path (non-empty directories cannot be force-replaced): %w", err)
 		}
 	}
 

@@ -129,6 +129,49 @@ const (
 	TypeMissing   PathType = "missing"
 )
 
+// ValidateDestination checks whether dest is a safe symlink destination
+// relative to the campaign root. It rejects paths that could cause
+// catastrophic data loss if force-removed (campaign root, .campaign/,
+// filesystem root, or paths outside the campaign).
+func ValidateDestination(dest, campaignRoot string) error {
+	// Clean both paths for consistent comparison
+	cleanDest := filepath.Clean(dest)
+	cleanRoot := filepath.Clean(campaignRoot)
+
+	// Reject filesystem root
+	if cleanDest == "/" {
+		return fmt.Errorf("refusing to use filesystem root as destination")
+	}
+
+	// Reject campaign root itself
+	if cleanDest == cleanRoot {
+		return fmt.Errorf("refusing to use campaign root as destination: %s", cleanDest)
+	}
+
+	// Reject .campaign/ directory
+	campaignDir := filepath.Join(cleanRoot, campaign.CampaignDir)
+	if cleanDest == campaignDir || isSubpath(cleanDest, campaignDir) {
+		return fmt.Errorf("refusing to use .campaign/ directory as destination: %s", cleanDest)
+	}
+
+	// Reject paths outside the campaign root
+	if !isSubpath(cleanDest, cleanRoot) {
+		return fmt.Errorf("destination must be inside campaign root: %s", cleanDest)
+	}
+
+	return nil
+}
+
+// isSubpath returns true if child is a proper subdirectory of parent.
+func isSubpath(child, parent string) bool {
+	rel, err := filepath.Rel(parent, child)
+	if err != nil {
+		return false
+	}
+	// Must not start with ".." and must not be "."
+	return rel != "." && !filepath.IsAbs(rel) && (len(rel) < 2 || rel[:2] != "..")
+}
+
 // CheckPathType determines what kind of filesystem entry exists at path.
 func CheckPathType(path string) (PathType, error) {
 	info, err := os.Lstat(path)

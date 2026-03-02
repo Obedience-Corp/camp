@@ -250,6 +250,39 @@ func TestResolveToolPath(t *testing.T) {
 	}
 }
 
+func TestValidateDestination(t *testing.T) {
+	root := "/campaigns/mycamp"
+
+	tests := []struct {
+		name    string
+		dest    string
+		wantErr bool
+	}{
+		{name: "valid subpath", dest: "/campaigns/mycamp/.claude/skills", wantErr: false},
+		{name: "valid nested subpath", dest: "/campaigns/mycamp/tools/custom/skills", wantErr: false},
+		{name: "campaign root", dest: "/campaigns/mycamp", wantErr: true},
+		{name: "campaign root with trailing slash", dest: "/campaigns/mycamp/", wantErr: true},
+		{name: "dot path resolves to root", dest: "/campaigns/mycamp/.", wantErr: true},
+		{name: ".campaign dir", dest: "/campaigns/mycamp/.campaign", wantErr: true},
+		{name: ".campaign subdir", dest: "/campaigns/mycamp/.campaign/skills", wantErr: true},
+		{name: "filesystem root", dest: "/", wantErr: true},
+		{name: "outside campaign", dest: "/other/place", wantErr: true},
+		{name: "parent of campaign", dest: "/campaigns", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateDestination(tt.dest, root)
+			if tt.wantErr && err == nil {
+				t.Errorf("expected error for dest=%q, got nil", tt.dest)
+			}
+			if !tt.wantErr && err != nil {
+				t.Errorf("unexpected error for dest=%q: %v", tt.dest, err)
+			}
+		})
+	}
+}
+
 func TestCheckPathType(t *testing.T) {
 	tmpDir := resolvePath(t, t.TempDir())
 
