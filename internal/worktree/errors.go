@@ -3,6 +3,8 @@ package worktree
 import (
 	"errors"
 	"fmt"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // Error codes for worktree operations.
@@ -20,12 +22,14 @@ const (
 )
 
 // Sentinel errors for common cases.
+// Sentinels marked with %w wrap the canonical sentinel from internal/errors
+// to enable cross-package errors.Is() matching.
 var (
-	ErrProjectNotFound  = errors.New("project not found")
-	ErrWorktreeExists   = errors.New("worktree already exists")
-	ErrWorktreeNotFound = errors.New("worktree not found")
-	ErrBranchNotFound   = errors.New("branch not found")
-	ErrInvalidName      = errors.New("invalid worktree name")
+	ErrProjectNotFound  = fmt.Errorf("project not found: %w", camperrors.ErrNotFound)
+	ErrWorktreeExists   = fmt.Errorf("worktree already exists: %w", camperrors.ErrAlreadyExists)
+	ErrWorktreeNotFound = fmt.Errorf("worktree not found: %w", camperrors.ErrNotFound)
+	ErrBranchNotFound   = fmt.Errorf("branch not found: %w", camperrors.ErrNotFound)
+	ErrInvalidName      = fmt.Errorf("invalid worktree name: %w", camperrors.ErrInvalidInput)
 	ErrNotInWorktree    = errors.New("not inside a worktree")
 	ErrStaleWorktree    = errors.New("worktree is stale")
 	ErrCorrupted        = errors.New("worktree is corrupted")

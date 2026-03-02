@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // GitErrorType classifies git operation failures.
@@ -102,6 +104,8 @@ func (e *GitOpError) Unwrap() error {
 }
 
 // Sentinel errors for common git error cases.
+// Sentinels marked with %w wrap the canonical sentinel from internal/errors
+// to enable cross-package errors.Is() matching.
 var (
 	// ErrLockActive indicates a lock file is held by a running process.
 	ErrLockActive = errors.New("lock file held by active process")
@@ -110,10 +114,10 @@ var (
 	ErrLockRemovalFailed = errors.New("failed to remove stale lock")
 
 	// ErrLockTimeout indicates the timeout was exceeded waiting for a lock to release.
-	ErrLockTimeout = errors.New("timeout waiting for lock release")
+	ErrLockTimeout = fmt.Errorf("timeout waiting for lock release: %w", camperrors.ErrTimeout)
 
 	// ErrNotRepository indicates the path is not a git repository.
-	ErrNotRepository = errors.New("not a git repository")
+	ErrNotRepository = fmt.Errorf("not a git repository: %w", camperrors.ErrNotInitialized)
 
 	// ErrNoChanges indicates there are no changes to commit.
 	ErrNoChanges = errors.New("nothing to commit")
@@ -149,7 +153,7 @@ var (
 	ErrSubmoduleSync = errors.New("submodule sync failed")
 
 	// ErrSubmoduleNotInitialized indicates a submodule was not properly initialized.
-	ErrSubmoduleNotInitialized = errors.New("submodule not initialized")
+	ErrSubmoduleNotInitialized = fmt.Errorf("submodule not initialized: %w", camperrors.ErrNotInitialized)
 
 	// ErrStage indicates a staging (git add) operation failed.
 	ErrStage = errors.New("staging failed")
@@ -158,16 +162,16 @@ var (
 	ErrCommitFailed = errors.New("commit failed")
 
 	// ErrCommitCancelled indicates the user cancelled the commit.
-	ErrCommitCancelled = errors.New("commit cancelled")
+	ErrCommitCancelled = fmt.Errorf("commit cancelled: %w", camperrors.ErrCancelled)
 
 	// ErrCommitOptionsRequired indicates nil commit options were provided.
-	ErrCommitOptionsRequired = errors.New("commit options required")
+	ErrCommitOptionsRequired = fmt.Errorf("commit options required: %w", camperrors.ErrInvalidInput)
 
 	// ErrCommitMessageRequired indicates a commit message was not provided.
-	ErrCommitMessageRequired = errors.New("commit message is required")
+	ErrCommitMessageRequired = fmt.Errorf("commit message is required: %w", camperrors.ErrInvalidInput)
 
 	// ErrNoFilesSpecified indicates an empty file list was provided for staging.
-	ErrNoFilesSpecified = errors.New("no files specified for staging")
+	ErrNoFilesSpecified = fmt.Errorf("no files specified for staging: %w", camperrors.ErrInvalidInput)
 )
 
 // ClassifyGitError determines the error type from git stderr output.

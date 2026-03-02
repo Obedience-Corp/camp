@@ -82,7 +82,7 @@ func (c *Cloner) gitSubmoduleUpdate(ctx context.Context, dir string) error {
 	cmd := exec.CommandContext(ctx, "git", "-C", dir, "submodule", "update", "--init", "--recursive")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("%w: %s: %w", ErrSubmoduleUpdate, strings.TrimSpace(string(output)), err)
+		return fmt.Errorf("%w: %s: %w", gitpkg.ErrSubmoduleUpdate, strings.TrimSpace(string(output)), err)
 	}
 	return nil
 }
@@ -96,7 +96,7 @@ func (c *Cloner) gitGetBranch(ctx context.Context, dir string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "--abbrev-ref", "HEAD")
 	output, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("%w: %w", ErrBranchDetection, err)
+		return "", fmt.Errorf("%w: %w", gitpkg.ErrBranchDetection, err)
 	}
 	return strings.TrimSpace(string(output)), nil
 }
@@ -111,7 +111,7 @@ func (c *Cloner) gitSubmoduleStatus(ctx context.Context, dir string) ([]Submodul
 	cmd := exec.CommandContext(ctx, "git", "-C", dir, "submodule", "status", "--recursive")
 	output, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrSubmoduleUpdate, err)
+		return nil, fmt.Errorf("%w: %w", gitpkg.ErrSubmoduleUpdate, err)
 	}
 
 	var results []SubmoduleResult
@@ -157,7 +157,7 @@ func (c *Cloner) gitSubmoduleURL(ctx context.Context, dir, submodulePath string)
 		return strings.TrimSpace(string(output)), nil
 	}
 
-	return "", fmt.Errorf("%w: %s", ErrSubmoduleURL, submodulePath)
+	return "", fmt.Errorf("%w: %s", gitpkg.ErrSubmoduleURL, submodulePath)
 }
 
 // parseSubmoduleStatus parses a line from git submodule status output.
@@ -175,7 +175,7 @@ func parseSubmoduleStatus(line string) SubmoduleResult {
 	switch prefix {
 	case '-':
 		result.Success = false
-		result.Error = ErrSubmoduleNotInitialized
+		result.Error = gitpkg.ErrSubmoduleNotInitialized
 		line = line[1:]
 	case '+':
 		// Commit differs - this might be OK after checkout
@@ -321,7 +321,7 @@ func (c *Cloner) checkoutSubmoduleBranch(ctx context.Context, repoDir, subPath s
 	if err != nil {
 		return &SubmoduleError{
 			Op: "checkout-branch", Submodule: subPath,
-			Cause: fmt.Errorf("%w: %s in %s: %s", ErrBranchCheckout, branch, subPath, strings.TrimSpace(string(output))),
+			Cause: fmt.Errorf("%w: %s in %s: %s", gitpkg.ErrBranchCheckout, branch, subPath, strings.TrimSpace(string(output))),
 		}
 	}
 
@@ -392,7 +392,7 @@ func (c *Cloner) initSubmoduleGraceful(ctx context.Context, repoDir, subPath str
 
 	return &SubmoduleError{
 		Op: "update", Submodule: subPath,
-		Cause: fmt.Errorf("%w: %s", ErrSubmoduleUpdate, strings.TrimSpace(outputStr)),
+		Cause: fmt.Errorf("%w: %s", gitpkg.ErrSubmoduleUpdate, strings.TrimSpace(outputStr)),
 	}
 }
 
@@ -420,7 +420,7 @@ func (c *Cloner) initSubmoduleFromDefaultBranch(ctx context.Context, repoDir, su
 	if err := os.RemoveAll(subDir); err != nil {
 		return &SubmoduleError{
 			Op: "remove-stale", Submodule: subPath,
-			Cause: fmt.Errorf("%w: %w", ErrStaleRef, err),
+			Cause: fmt.Errorf("%w: %w", gitpkg.ErrStaleRef, err),
 		}
 	}
 

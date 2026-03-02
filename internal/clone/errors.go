@@ -3,12 +3,9 @@ package clone
 import (
 	"errors"
 	"fmt"
-
-	"github.com/Obedience-Corp/camp/internal/git"
 )
 
 // Sentinel errors for clone operations.
-// Shared sentinels are aliased from the git package to avoid duplication.
 var (
 	// ErrCloneFailed indicates the git clone operation failed.
 	ErrCloneFailed = errors.New("clone failed")
@@ -24,15 +21,6 @@ var (
 
 	// ErrSubmoduleRead indicates a submodule directory could not be read.
 	ErrSubmoduleRead = errors.New("cannot read submodule directory")
-
-	// Shared with git package -- aliased to avoid duplicate sentinel errors.
-	ErrSubmoduleSync           = git.ErrSubmoduleSync
-	ErrSubmoduleUpdate         = git.ErrSubmoduleUpdate
-	ErrSubmoduleNotInitialized = git.ErrSubmoduleNotInitialized
-	ErrBranchDetection         = git.ErrBranchDetection
-	ErrBranchCheckout          = git.ErrBranchCheckout
-	ErrSubmoduleURL            = git.ErrSubmoduleURL
-	ErrStaleRef                = git.ErrStaleRef
 )
 
 // SubmoduleError wraps submodule-specific errors with context.

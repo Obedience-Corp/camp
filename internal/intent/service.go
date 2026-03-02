@@ -2,7 +2,6 @@ package intent
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,15 +9,18 @@ import (
 	"strings"
 	"time"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/sahilm/fuzzy"
 )
 
 // Service errors.
+// Sentinels marked with %w wrap the canonical sentinel from internal/errors
+// to enable cross-package errors.Is() matching.
 var (
-	ErrNotFound    = errors.New("intent not found")
-	ErrCancelled   = errors.New("intent creation cancelled")
-	ErrFileExists  = errors.New("intent file already exists")
-	ErrInvalidPath = errors.New("invalid path")
+	ErrNotFound    = fmt.Errorf("intent not found: %w", camperrors.ErrNotFound)
+	ErrCancelled   = fmt.Errorf("intent creation cancelled: %w", camperrors.ErrCancelled)
+	ErrFileExists  = fmt.Errorf("intent file already exists: %w", camperrors.ErrAlreadyExists)
+	ErrInvalidPath = fmt.Errorf("invalid path: %w", camperrors.ErrInvalidInput)
 )
 
 // IntentService provides operations for managing intent files.

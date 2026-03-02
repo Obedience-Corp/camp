@@ -11,6 +11,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/editor"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/paths"
 )
@@ -107,7 +108,7 @@ func resolveIntentByPartialID(ctx context.Context, svc *intent.IntentService, pa
 	}
 
 	// If Find failed with not found, provide helpful error
-	if errors.Is(err, intent.ErrNotFound) {
+	if errors.Is(err, camperrors.ErrNotFound) {
 		return nil, fmt.Errorf("intent not found: %s", partialID)
 	}
 

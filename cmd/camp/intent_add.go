@@ -11,6 +11,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/concept"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/editor"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/intent"
@@ -215,7 +216,7 @@ func runDeepCapture(ctx context.Context, svc *intent.IntentService, cfg *config.
 
 	result, err := svc.CreateWithEditor(ctx, opts, editorFn)
 	if err != nil {
-		if errors.Is(err, intent.ErrCancelled) {
+		if errors.Is(err, camperrors.ErrCancelled) {
 			return fmt.Errorf("intent creation cancelled")
 		}
 		return fmt.Errorf("failed to create intent: %w", err)

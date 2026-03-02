@@ -10,15 +10,18 @@ import (
 	"sort"
 	"strings"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/workflow"
 )
 
 // Service errors.
+// Sentinels marked with %w wrap the canonical sentinel from internal/errors
+// to enable cross-package errors.Is() matching.
 var (
-	ErrNotFound      = errors.New("item not found")
-	ErrAlreadyExists = errors.New("already exists")
+	ErrNotFound      = fmt.Errorf("item not found: %w", camperrors.ErrNotFound)
+	ErrAlreadyExists = fmt.Errorf("already exists: %w", camperrors.ErrAlreadyExists)
 	ErrNotInDungeon  = errors.New("item not in dungeon")
-	ErrInvalidStatus = errors.New("invalid status")
+	ErrInvalidStatus = fmt.Errorf("invalid status: %w", camperrors.ErrInvalidInput)
 )
 
 // systemFiles are non-status entries excluded from item listings.
