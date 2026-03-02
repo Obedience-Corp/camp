@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -100,30 +101,38 @@ func Remove(ctx context.Context, campaignRoot, name string, opts RemoveOptions) 
 		result.SubmoduleRemoved = true
 	}
 
-	// Delete files if requested
+	// Delete files if requested. Errors are collected independently so
+	// partial success is reported accurately in RemoveResult.
 	if opts.Delete {
-		if err := os.RemoveAll(projectPath); err != nil {
-			return nil, fmt.Errorf("failed to delete project files: %w", err)
-		}
-		result.FilesDeleted = true
+		var errs []error
 
-		// Also remove worktree directory if exists
-		worktreePath := filepath.Join(campaignRoot, "worktrees", name)
-		if err := pathutil.ValidateBoundary(campaignRoot, worktreePath); err != nil {
-			return nil, fmt.Errorf("worktree path boundary violation: %w", err)
+		if err := os.RemoveAll(projectPath); err != nil {
+			errs = append(errs, fmt.Errorf("delete project files %q: %w", projectPath, err))
+		} else {
+			result.FilesDeleted = true
 		}
-		if _, err := os.Stat(worktreePath); err == nil {
-			if err := os.RemoveAll(worktreePath); err == nil {
+
+		worktreePath := filepath.Join(campaignRoot, "worktrees", name)
+		if boundErr := pathutil.ValidateBoundary(campaignRoot, worktreePath); boundErr != nil {
+			errs = append(errs, fmt.Errorf("worktree path boundary violation: %w", boundErr))
+		} else if _, statErr := os.Stat(worktreePath); statErr == nil {
+			if removeErr := os.RemoveAll(worktreePath); removeErr != nil {
+				errs = append(errs, fmt.Errorf("delete worktree %q: %w", worktreePath, removeErr))
+			} else {
 				result.WorktreeDeleted = true
 			}
 		}
 
-		// Clean up .git/modules/<name>
 		modulesPath := filepath.Join(campaignRoot, ".git", "modules", "projects", name)
-		if err := pathutil.ValidateBoundary(campaignRoot, modulesPath); err != nil {
-			return result, fmt.Errorf("modules path boundary violation: %w", err)
+		if boundErr := pathutil.ValidateBoundary(campaignRoot, modulesPath); boundErr != nil {
+			errs = append(errs, fmt.Errorf("modules path boundary violation: %w", boundErr))
+		} else {
+			os.RemoveAll(modulesPath)
 		}
-		os.RemoveAll(modulesPath) // Ignore errors
+
+		if len(errs) > 0 {
+			return result, errors.Join(errs...)
+		}
 	}
 
 	return result, nil
