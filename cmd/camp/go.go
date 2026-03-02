@@ -146,8 +146,9 @@ func runGo(cmd *cobra.Command, args []string) error {
 				}
 				return nil
 			}
-			// Save as last location
-			_ = state.SetLastLocation(ctx, campaignRoot, pinPath)
+			// Save current location (source) so toggle can return here
+			cwd, _ := os.Getwd()
+			_ = state.SetLastLocation(ctx, campaignRoot, cwd)
 			if printOnly {
 				fmt.Println(pinPath)
 			} else {
@@ -220,9 +221,10 @@ func runGo(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		// Save this as the last location (except when jumping to root with --root flag)
+		// Save current location (source) so toggle can return here
 		if result.Category != nav.CategoryAll || !forceRoot {
-			_ = state.SetLastLocation(ctx, rootResult.Path, jumpResult.Path)
+			cwd, _ := os.Getwd()
+			_ = state.SetLastLocation(ctx, rootResult.Path, cwd)
 		}
 
 		if printOnly {
@@ -259,8 +261,9 @@ func runGo(cmd *cobra.Command, args []string) error {
 		return listProjectShortcuts(resolveResult)
 	}
 
-	// Save this as the last location
-	_ = state.SetLastLocation(ctx, jumpResult.Path, resolveResult.Path)
+	// Save current location (source) so toggle can return here
+	cwd, _ := os.Getwd()
+	_ = state.SetLastLocation(ctx, jumpResult.Path, cwd)
 
 	// Multiple matches - inform user
 	if resolveResult.HasMultipleMatches() && !printOnly {
@@ -374,8 +377,9 @@ func handleCustomNavShortcut(ctx context.Context, sc config.ShortcutConfig, camp
 		return nil
 	}
 
-	// Save this as the last location
-	_ = state.SetLastLocation(ctx, campaignRoot, jumpResult.Path)
+	// Save current location (source) so toggle can return here
+	cwd, _ := os.Getwd()
+	_ = state.SetLastLocation(ctx, campaignRoot, cwd)
 
 	if printOnly {
 		fmt.Println(jumpResult.Path)
