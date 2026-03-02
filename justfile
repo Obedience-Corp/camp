@@ -12,6 +12,7 @@ version := env_var_or_default("VERSION", "dev")
 commit := `git rev-parse --short HEAD 2>/dev/null || echo "unknown"`
 build_date := `date -u +"%Y-%m-%dT%H:%M:%SZ"`
 ldflags := "-X " + version_pkg + ".Version=" + version + " -X " + version_pkg + ".Commit=" + commit + " -X " + version_pkg + ".BuildDate=" + build_date
+BUILDTOOL := "go run ./internal/buildutil"
 
 # Modules
 [doc('Testing (unit, coverage, benchmarks)')]
@@ -29,8 +30,12 @@ default:
     @echo ""
     @just --list --unsorted
 
-# Build camp binary
+# Build camp binary (vet + build via buildutil)
 build:
+    @{{BUILDTOOL}} build
+
+# Quick development build (no vet, just binary)
+build-only:
     @echo "Building camp..."
     @mkdir -p {{bin_dir}}
     go build -ldflags '{{ldflags}}' -o {{bin_dir}}/{{binary_name}} ./cmd/camp
