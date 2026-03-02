@@ -27,6 +27,7 @@ type RepoInfo struct {
 	Ahead     int
 	Behind    int
 	Unmerged  int
+	StaleRefs int
 	Clean     bool
 	Error     string
 }
