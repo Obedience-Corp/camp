@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Obedience-Corp/camp/internal/leverage"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/spf13/pflag"
 )
@@ -176,5 +177,35 @@ func TestLeverageReset_ProjectFlagValidation(t *testing.T) {
 				t.Errorf("expected ErrInvalidProjectName for --project=%q, got: %v", tc.projectFilter, err)
 			}
 		})
+	}
+}
+
+func TestLeverageReset_BoundaryEnforcement(t *testing.T) {
+	tmp := t.TempDir()
+	snapshotDir := filepath.Join(tmp, ".campaign", "leverage", "snapshots")
+	cacheDir := filepath.Join(tmp, ".campaign", "leverage", "cache")
+
+	if err := os.MkdirAll(snapshotDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Safe name stays within boundary.
+	safeFilter := "myproject"
+	if err := pathutil.ValidateBoundary(snapshotDir, filepath.Join(snapshotDir, safeFilter)); err != nil {
+		t.Errorf("expected no boundary error for safe snapshot path: %v", err)
+	}
+	if err := pathutil.ValidateBoundary(cacheDir, filepath.Join(cacheDir, safeFilter+".json")); err != nil {
+		t.Errorf("expected no boundary error for safe cache path: %v", err)
+	}
+
+	// Escaping paths must be caught.
+	if err := pathutil.ValidateBoundary(snapshotDir, filepath.Join(snapshotDir, "..", "..", "escape")); err == nil {
+		t.Error("expected boundary error for escaping snapshot target, got nil")
+	}
+	if err := pathutil.ValidateBoundary(cacheDir, filepath.Join(cacheDir, "..", "..", "escape.json")); err == nil {
+		t.Error("expected boundary error for escaping cache target, got nil")
 	}
 }
