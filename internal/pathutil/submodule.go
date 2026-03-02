@@ -35,6 +35,12 @@ func ValidateSubmodulePath(repoRoot, subPath string) error {
 		if segment == ".." {
 			return camperrors.Wrapf(ErrInvalidSubmodulePath, "path must not contain \"..\" segments: %q", subPath)
 		}
+		if segment == "." {
+			return camperrors.Wrapf(ErrInvalidSubmodulePath, "path must not contain \".\" segments: %q", subPath)
+		}
+		if segment == "" {
+			return camperrors.Wrapf(ErrInvalidSubmodulePath, "path must not contain empty segments: %q", subPath)
+		}
 	}
 
 	cleaned := filepath.Clean(subPath)

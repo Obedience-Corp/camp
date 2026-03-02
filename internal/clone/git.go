@@ -322,7 +322,7 @@ func (c *Cloner) checkoutSubmoduleBranch(ctx context.Context, repoDir, subPath s
 	if err != nil {
 		return &SubmoduleError{
 			Op: "checkout-branch", Submodule: subPath,
-			Cause: camperrors.Wrapf(gitpkg.ErrBranchCheckout, "%s in %s: %s", branch, subPath, strings.TrimSpace(string(output))),
+			Cause: camperrors.WrapJoinf(gitpkg.ErrBranchCheckout, err, "%s in %s: %s", branch, subPath, strings.TrimSpace(string(output))),
 		}
 	}
 
@@ -393,7 +393,7 @@ func (c *Cloner) initSubmoduleGraceful(ctx context.Context, repoDir, subPath str
 
 	return &SubmoduleError{
 		Op: "update", Submodule: subPath,
-		Cause: camperrors.Wrapf(gitpkg.ErrSubmoduleUpdate, "%s", strings.TrimSpace(outputStr)),
+		Cause: camperrors.WrapJoinf(gitpkg.ErrSubmoduleUpdate, err, "%s", strings.TrimSpace(outputStr)),
 	}
 }
 
@@ -431,7 +431,7 @@ func (c *Cloner) initSubmoduleFromDefaultBranch(ctx context.Context, repoDir, su
 	if err != nil {
 		return &SubmoduleError{
 			Op: "clone-default-branch", Submodule: subPath,
-			Cause: camperrors.Wrapf(ErrCloneFailed, "%s", strings.TrimSpace(string(output))),
+			Cause: camperrors.WrapJoinf(ErrCloneFailed, err, "%s", strings.TrimSpace(string(output))),
 		}
 	}
 

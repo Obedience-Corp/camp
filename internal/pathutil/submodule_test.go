@@ -18,8 +18,10 @@ func TestValidateSubmodulePath(t *testing.T) {
 		{name: "single component", subPath: "camp", wantErr: false},
 		{name: "with hyphen", subPath: "projects/my-proj", wantErr: false},
 
-		{name: "dot prefix valid", subPath: "./projects", wantErr: false},
-		{name: "trailing dot valid", subPath: "projects/.", wantErr: false},
+		{name: "dot prefix rejected", subPath: "./projects", wantErr: true},
+		{name: "trailing dot rejected", subPath: "projects/.", wantErr: true},
+		{name: "embedded dot rejected", subPath: "projects/./sub", wantErr: true},
+		{name: "empty segment rejected", subPath: "projects//sub", wantErr: true},
 
 		{name: "dot alone", subPath: ".", wantErr: true},
 		{name: "dot slash", subPath: "./", wantErr: true},
