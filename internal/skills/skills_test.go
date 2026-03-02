@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
+	"runtime"
 	"testing"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
@@ -215,6 +217,79 @@ func TestCheckLinkState(t *testing.T) {
 				t.Errorf("got %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestCheckLinkState_PermissionError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission semantics differ on Windows")
+	}
+
+	tmpDir := resolvePath(t, t.TempDir())
+	blockedDir := filepath.Join(tmpDir, "blocked")
+	if err := os.MkdirAll(blockedDir, 0755); err != nil {
+		t.Fatalf("mkdir blocked dir: %v", err)
+	}
+	blockedFile := filepath.Join(blockedDir, "target")
+	if err := os.WriteFile(blockedFile, []byte("x"), 0644); err != nil {
+		t.Fatalf("write blocked file: %v", err)
+	}
+
+	if err := os.Chmod(blockedDir, 0); err != nil {
+		t.Fatalf("chmod blocked dir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(blockedDir, 0755) })
+
+	linkPath := filepath.Join(tmpDir, "blocked-link")
+	if err := os.Symlink(blockedFile, linkPath); err != nil {
+		t.Fatalf("create symlink: %v", err)
+	}
+
+	_, err := CheckLinkState(linkPath, "")
+	if err == nil {
+		t.Fatal("expected permission error, got nil")
+	}
+}
+
+func TestDiscoverSkillSlugs(t *testing.T) {
+	tmpDir := resolvePath(t, t.TempDir())
+	skillsDir := filepath.Join(tmpDir, ".campaign", "skills")
+	if err := os.MkdirAll(skillsDir, 0755); err != nil {
+		t.Fatalf("mkdir skills root: %v", err)
+	}
+
+	// Valid bundles
+	for _, slug := range []string{"alpha", "beta"} {
+		dir := filepath.Join(skillsDir, slug)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatalf("mkdir %s: %v", slug, err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("name: "+slug), 0644); err != nil {
+			t.Fatalf("write %s SKILL.md: %v", slug, err)
+		}
+	}
+
+	// Invalid entries
+	if err := os.MkdirAll(filepath.Join(skillsDir, "no-skill-file"), 0755); err != nil {
+		t.Fatalf("mkdir invalid dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillsDir, "README.md"), []byte("ignore"), 0644); err != nil {
+		t.Fatalf("write readme: %v", err)
+	}
+
+	// Symlink bundle to a valid dir should also be discovered.
+	if err := os.Symlink(filepath.Join(skillsDir, "alpha"), filepath.Join(skillsDir, "alpha-link")); err != nil {
+		t.Fatalf("create skill symlink: %v", err)
+	}
+
+	got, err := DiscoverSkillSlugs(skillsDir)
+	if err != nil {
+		t.Fatalf("DiscoverSkillSlugs: %v", err)
+	}
+
+	want := []string{"alpha", "alpha-link", "beta"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("DiscoverSkillSlugs = %#v, want %#v", got, want)
 	}
 }
 

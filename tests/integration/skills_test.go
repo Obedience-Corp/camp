@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testSkillSlug = "code-review"
+
 // setupSkillsCampaign creates a campaign with a .campaign/skills/ directory.
 func setupSkillsCampaign(t *testing.T, tc *TestContainer, name string) string {
 	t.Helper()
@@ -19,10 +21,15 @@ func setupSkillsCampaign(t *testing.T, tc *TestContainer, name string) string {
 	_, err := tc.InitCampaign(path, name, "product")
 	require.NoError(t, err)
 
-	// Ensure .campaign/skills/ exists
-	_, exitCode, err := tc.ExecCommand("mkdir", "-p", path+"/.campaign/skills")
+	// Ensure .campaign/skills/<slug>/SKILL.md exists
+	_, exitCode, err := tc.ExecCommand("mkdir", "-p", path+"/.campaign/skills/"+testSkillSlug)
 	require.NoError(t, err)
 	require.Equal(t, 0, exitCode)
+	err = tc.WriteFile(path+"/.campaign/skills/"+testSkillSlug+"/SKILL.md", `---
+name: Code Review
+description: Review code for safety and correctness.
+---`)
+	require.NoError(t, err)
 
 	return path
 }
@@ -35,14 +42,14 @@ func TestSkills_LinkLifecycle(t *testing.T) {
 	// Link claude
 	output, err := tc.RunCampInDir(path, "skills", "link", "--tool", "claude")
 	require.NoError(t, err)
-	assert.Contains(t, output, "linked:")
+	assert.Contains(t, output, "projected")
 	assert.Contains(t, output, ".claude/skills")
 
-	// Verify symlink exists and points to the right place
-	linkTarget, exitCode, err := tc.ExecCommand("readlink", path+"/.claude/skills")
+	// Verify projected skill symlink exists and points to the right place
+	linkTarget, exitCode, err := tc.ExecCommand("readlink", path+"/.claude/skills/"+testSkillSlug)
 	require.NoError(t, err)
 	require.Equal(t, 0, exitCode)
-	assert.Contains(t, strings.TrimSpace(linkTarget), ".campaign/skills")
+	assert.Contains(t, strings.TrimSpace(linkTarget), ".campaign/skills/"+testSkillSlug)
 
 	// Status should show linked
 	output, err = tc.RunCampInDir(path, "skills", "status")
@@ -53,12 +60,12 @@ func TestSkills_LinkLifecycle(t *testing.T) {
 	// Unlink claude
 	output, err = tc.RunCampInDir(path, "skills", "unlink", "--tool", "claude")
 	require.NoError(t, err)
-	assert.Contains(t, output, "unlinked:")
+	assert.Contains(t, output, "unlinked")
 
-	// Verify symlink is gone
-	_, exitCode, err = tc.ExecCommand("test", "-e", path+"/.claude/skills")
+	// Verify projected symlink is gone
+	_, exitCode, err = tc.ExecCommand("test", "-e", path+"/.claude/skills/"+testSkillSlug)
 	require.NoError(t, err)
-	assert.NotEqual(t, 0, exitCode, "symlink should be removed")
+	assert.NotEqual(t, 0, exitCode, "projected skill symlink should be removed")
 }
 
 // TestSkills_LinkAlreadyLinked verifies idempotent linking.
@@ -76,30 +83,33 @@ func TestSkills_LinkAlreadyLinked(t *testing.T) {
 	assert.Contains(t, output, "already linked")
 }
 
-// TestSkills_LinkForce tests force overwriting an existing directory.
+// TestSkills_LinkForce tests force replacing a conflicting foreign symlink entry.
 func TestSkills_LinkForce(t *testing.T) {
 	tc := GetSharedContainer(t)
 	path := setupSkillsCampaign(t, tc, "skills-force")
 
-	// Create an empty directory at the destination (os.Remove can remove empty dirs)
+	// Create a foreign symlink at the projected skill entry.
 	_, exitCode, err := tc.ExecCommand("mkdir", "-p", path+"/.claude/skills")
 	require.NoError(t, err)
 	require.Equal(t, 0, exitCode)
-
-	// Link without --force should fail
-	_, err = tc.RunCampInDir(path, "skills", "link", "--tool", "claude")
-	assert.Error(t, err, "should fail without --force when dir exists")
-
-	// Link with --force should succeed (empty directory can be replaced)
-	output, err := tc.RunCampInDir(path, "skills", "link", "--tool", "claude", "--force")
-	require.NoError(t, err)
-	assert.Contains(t, output, "linked:")
-
-	// Verify it's now a symlink
-	linkTarget, exitCode, err := tc.ExecCommand("readlink", path+"/.claude/skills")
+	_, exitCode, err = tc.ExecCommand("ln", "-s", "/tmp", path+"/.claude/skills/"+testSkillSlug)
 	require.NoError(t, err)
 	require.Equal(t, 0, exitCode)
-	assert.Contains(t, strings.TrimSpace(linkTarget), ".campaign/skills")
+
+	// Link without --force should fail due conflict
+	_, err = tc.RunCampInDir(path, "skills", "link", "--tool", "claude")
+	assert.Error(t, err, "should fail without --force when conflicting symlink exists")
+
+	// Link with --force should replace conflicting symlink entry
+	output, err := tc.RunCampInDir(path, "skills", "link", "--tool", "claude", "--force")
+	require.NoError(t, err)
+	assert.Contains(t, output, "projected")
+
+	// Verify projected skill link now points to campaign skills
+	linkTarget, exitCode, err := tc.ExecCommand("readlink", path+"/.claude/skills/"+testSkillSlug)
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode)
+	assert.Contains(t, strings.TrimSpace(linkTarget), ".campaign/skills/"+testSkillSlug)
 }
 
 // TestSkills_StatusMixed tests status with mixed link states.
@@ -173,12 +183,12 @@ func TestSkills_DryRun(t *testing.T) {
 	// Dry run link — should show what would happen
 	output, err := tc.RunCampInDir(path, "skills", "link", "--tool", "claude", "--dry-run")
 	require.NoError(t, err)
-	assert.Contains(t, output, "would create:")
+	assert.Contains(t, output, "would project")
 
 	// Verify no symlink was actually created
-	_, exitCode, err := tc.ExecCommand("test", "-e", path+"/.claude/skills")
+	_, exitCode, err := tc.ExecCommand("test", "-e", path+"/.claude/skills/"+testSkillSlug)
 	require.NoError(t, err)
-	assert.NotEqual(t, 0, exitCode, "dry run should not create symlink")
+	assert.NotEqual(t, 0, exitCode, "dry run should not create projected symlink")
 
 	// Actually link it
 	_, err = tc.RunCampInDir(path, "skills", "link", "--tool", "claude")
@@ -187,12 +197,12 @@ func TestSkills_DryRun(t *testing.T) {
 	// Dry run unlink — should show what would happen
 	output, err = tc.RunCampInDir(path, "skills", "unlink", "--tool", "claude", "--dry-run")
 	require.NoError(t, err)
-	assert.Contains(t, output, "would remove:")
+	assert.Contains(t, output, "would remove")
 
-	// Verify symlink still exists after dry run
-	_, exitCode, err = tc.ExecCommand("test", "-L", path+"/.claude/skills")
+	// Verify projected symlink still exists after dry run
+	_, exitCode, err = tc.ExecCommand("test", "-L", path+"/.claude/skills/"+testSkillSlug)
 	require.NoError(t, err)
-	assert.Equal(t, 0, exitCode, "dry run should not remove symlink")
+	assert.Equal(t, 0, exitCode, "dry run should not remove projected symlink")
 }
 
 // TestSkills_LinkAgents tests linking the agents tool.
@@ -203,14 +213,14 @@ func TestSkills_LinkAgents(t *testing.T) {
 	// Link agents
 	output, err := tc.RunCampInDir(path, "skills", "link", "--tool", "agents")
 	require.NoError(t, err)
-	assert.Contains(t, output, "linked:")
+	assert.Contains(t, output, "projected")
 	assert.Contains(t, output, ".agents/skills")
 
-	// Verify symlink
-	linkTarget, exitCode, err := tc.ExecCommand("readlink", path+"/.agents/skills")
+	// Verify projected skill symlink
+	linkTarget, exitCode, err := tc.ExecCommand("readlink", path+"/.agents/skills/"+testSkillSlug)
 	require.NoError(t, err)
 	require.Equal(t, 0, exitCode)
-	assert.Contains(t, strings.TrimSpace(linkTarget), ".campaign/skills")
+	assert.Contains(t, strings.TrimSpace(linkTarget), ".campaign/skills/"+testSkillSlug)
 }
 
 // TestSkills_LinkCustomPath tests linking with --path flag.
@@ -221,13 +231,13 @@ func TestSkills_LinkCustomPath(t *testing.T) {
 	// Link with custom path
 	output, err := tc.RunCampInDir(path, "skills", "link", "--path", "custom/tools/skills")
 	require.NoError(t, err)
-	assert.Contains(t, output, "linked:")
+	assert.Contains(t, output, "projected")
 
-	// Verify symlink exists
-	linkTarget, exitCode, err := tc.ExecCommand("readlink", path+"/custom/tools/skills")
+	// Verify projected skill symlink exists
+	linkTarget, exitCode, err := tc.ExecCommand("readlink", path+"/custom/tools/skills/"+testSkillSlug)
 	require.NoError(t, err)
 	require.Equal(t, 0, exitCode)
-	assert.Contains(t, strings.TrimSpace(linkTarget), ".campaign/skills")
+	assert.Contains(t, strings.TrimSpace(linkTarget), ".campaign/skills/"+testSkillSlug)
 }
 
 // TestSkills_LinkRejectsSymlinkEscape ensures custom paths cannot escape the
@@ -251,7 +261,7 @@ func TestSkills_LinkRejectsSymlinkEscape(t *testing.T) {
 	assert.Error(t, err, "escaped symlink parent path should be rejected")
 
 	// Ensure no out-of-root symlink was created.
-	_, exitCode, err = tc.ExecCommand("test", "-L", outsideDir+"/customskills")
+	_, exitCode, err = tc.ExecCommand("test", "-L", outsideDir+"/customskills/"+testSkillSlug)
 	require.NoError(t, err)
 	assert.NotEqual(t, 0, exitCode, "escaped destination should not be created")
 

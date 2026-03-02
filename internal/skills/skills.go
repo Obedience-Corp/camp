@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
@@ -87,8 +88,11 @@ func CheckLinkState(path, expectedTarget string) (LinkState, error) {
 	// It's a symlink — resolve and compare
 	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {
-		// EvalSymlinks fails when the target doesn't exist
-		return StateBroken, nil
+		if os.IsNotExist(err) {
+			// Broken symlink: target missing
+			return StateBroken, nil
+		}
+		return "", fmt.Errorf("check link state: resolve symlink: %w", err)
 	}
 
 	if expectedTarget == "" {
@@ -108,6 +112,43 @@ func CheckLinkState(path, expectedTarget string) (LinkState, error) {
 	}
 
 	return StateBroken, nil
+}
+
+// DiscoverSkillSlugs returns canonical skill bundle directory names found under
+// skillsDir. A valid bundle is a directory (or symlink to a directory)
+// containing a SKILL.md file.
+func DiscoverSkillSlugs(skillsDir string) ([]string, error) {
+	entries, err := os.ReadDir(skillsDir)
+	if err != nil {
+		return nil, fmt.Errorf("discover skill slugs: %w", err)
+	}
+
+	slugs := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		entryPath := filepath.Join(skillsDir, entry.Name())
+
+		isDir := entry.IsDir()
+		if !isDir && entry.Type()&os.ModeSymlink != 0 {
+			info, statErr := os.Stat(entryPath)
+			if statErr != nil || !info.IsDir() {
+				continue
+			}
+			isDir = true
+		}
+		if !isDir {
+			continue
+		}
+
+		skillFile := filepath.Join(entryPath, "SKILL.md")
+		info, statErr := os.Stat(skillFile)
+		if statErr != nil || info.IsDir() {
+			continue
+		}
+		slugs = append(slugs, entry.Name())
+	}
+
+	sort.Strings(slugs)
+	return slugs, nil
 }
 
 // ResolveToolPath returns the relative destination directory for a given tool

@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -13,18 +11,19 @@ import (
 
 var skillsLinkCmd = &cobra.Command{
 	Use:   "link",
-	Short: "Create symlinks from tool-specific paths to .campaign/skills/",
-	Long: `Create symlinks from tool-specific paths to .campaign/skills/.
+	Short: "Project campaign skill bundles into tool-specific skills directories",
+	Long: `Project campaign skill bundles from .campaign/skills/ into tool-specific
+skills directories.
 
-Use --tool to link a known tool ecosystem, or --path for a custom destination.
-The symlink uses a relative path for portability across machines.
+This command creates one symlink per skill bundle. It does not replace entire
+provider skills directories, so existing user skills remain intact.
 
 Examples:
-  camp skills link --tool claude       Link .claude/skills -> .campaign/skills
-  camp skills link --tool agents       Link .agents/skills -> .campaign/skills
-  camp skills link --path custom/dir   Link custom/dir -> .campaign/skills
+  camp skills link --tool claude       Project skills into .claude/skills/
+  camp skills link --tool agents       Project skills into .agents/skills/
+  camp skills link --path custom/dir   Project skills into custom/dir
   camp skills link --tool claude -n    Dry run — show what would happen
-  camp skills link --tool claude -f    Overwrite existing non-symlink target`,
+  camp skills link --tool claude -f    Replace conflicting symlink entries`,
 	Args: cobra.NoArgs,
 	Annotations: map[string]string{
 		"agent_allowed": "true",
@@ -38,8 +37,8 @@ func init() {
 
 	flags := skillsLinkCmd.Flags()
 	flags.StringP("tool", "t", "", "Tool to link: claude, agents")
-	flags.StringP("path", "p", "", "Custom destination path")
-	flags.BoolP("force", "f", false, "Overwrite existing non-symlink destination")
+	flags.StringP("path", "p", "", "Custom destination directory")
+	flags.BoolP("force", "f", false, "Replace conflicting symlink entries (never files/directories)")
 	flags.BoolP("dry-run", "n", false, "Show what would happen without making changes")
 }
 
@@ -73,89 +72,52 @@ func runSkillsLink(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	// Resolve destination path
-	var dest string
-	if tool != "" {
-		relPath, err := skills.ResolveToolPath(tool)
-		if err != nil {
-			return err
-		}
-		dest = filepath.Join(root, relPath)
-	} else {
-		if filepath.IsAbs(destPath) {
-			dest = destPath
-		} else {
-			dest = filepath.Join(root, destPath)
-		}
-	}
-
-	// Check current state of destination before validation.
-	// An existing valid symlink is safe to short-circuit on — validation
-	// would reject it because the resolved path lands inside .campaign/.
-	state, err := skills.CheckLinkState(dest, skillsDir)
+	dest, err := resolveSkillsDestination(root, tool, destPath)
 	if err != nil {
 		return err
 	}
 
-	if state == skills.StateValid {
-		fmt.Fprintf(out, "already linked: %s\n", dest)
-		return nil
-	}
-
-	// Validate destination is safe for new writes
+	// Validate destination is safe for writes
 	if err := skills.ValidateDestination(dest, root); err != nil {
 		return err
 	}
 
-	switch state {
-	case skills.StateNotALink:
-		if !force {
-			return fmt.Errorf("destination exists and is not a symlink: %s\nUse --force to overwrite", dest)
-		}
-		fmt.Fprintf(errOut, "warning: overwriting existing path: %s\n", dest)
-
-	case skills.StateBroken:
-		// Broken symlink — we'll replace it
-		if !dryRun {
-			if err := os.Remove(dest); err != nil && !os.IsNotExist(err) {
-				return fmt.Errorf("remove broken symlink: %w", err)
-			}
-		}
+	slugs, err := skills.DiscoverSkillSlugs(skillsDir)
+	if err != nil {
+		return err
+	}
+	if len(slugs) == 0 {
+		fmt.Fprintf(out, "no skill bundles found in %s\n", skillsDir)
+		return nil
 	}
 
-	// Compute relative symlink target
-	relTarget, err := skills.RelativeSymlinkTarget(dest, skillsDir)
+	if err := ensureProjectionDirectory(dest, dryRun, errOut); err != nil {
+		return err
+	}
+
+	summary, err := projectSkillEntries(dest, skillsDir, slugs, dryRun, force)
 	if err != nil {
 		return err
 	}
 
+	verb := "projected"
 	if dryRun {
-		fmt.Fprintf(out, "would create: %s -> %s\n", dest, relTarget)
-		return nil
+		verb = "would project"
+	}
+	fmt.Fprintf(out, "%s %d skill bundle(s) into %s (created=%d replaced=%d unchanged=%d)\n",
+		verb, len(slugs), dest, summary.Created, summary.Replaced, summary.AlreadyLinked)
+
+	if summary.Conflicts > 0 {
+		return fmt.Errorf(
+			"projection incomplete: %d conflicting skill path(s) exist and were not overwritten: %v",
+			summary.Conflicts,
+			summary.ConflictNames,
+		)
 	}
 
-	// Remove existing non-symlink if forced.
-	// Use os.Remove (not os.RemoveAll) — fails on non-empty directories,
-	// which prevents catastrophic recursive deletion of real content.
-	if state == skills.StateNotALink && force {
-		if err := os.Remove(dest); err != nil {
-			return fmt.Errorf("remove existing path (non-empty directories cannot be force-replaced): %w", err)
-		}
+	if summary.Created == 0 && summary.Replaced == 0 && summary.AlreadyLinked == len(slugs) {
+		fmt.Fprintf(out, "already linked: all campaign skill bundles are projected into %s\n", dest)
 	}
 
-	// Create parent directories
-	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-		return fmt.Errorf("create parent directories: %w", err)
-	}
-
-	// Create symlink
-	if err := os.Symlink(relTarget, dest); err != nil {
-		if os.IsPermission(err) {
-			return fmt.Errorf("permission denied creating symlink (may require elevated privileges): %w", err)
-		}
-		return fmt.Errorf("create symlink: %w", err)
-	}
-
-	fmt.Fprintf(out, "linked: %s -> %s\n", dest, relTarget)
 	return nil
 }

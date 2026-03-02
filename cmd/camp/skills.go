@@ -7,22 +7,22 @@ import (
 var skillsCmd = &cobra.Command{
 	Use:   "skills",
 	Short: "Manage campaign skill directory links",
-	Long: `Manage campaign skill directory links for tool interoperability.
+	Long: `Manage campaign skill bundle projection for tool interoperability.
 
-Skills are centralized in .campaign/skills/ and exposed to tool ecosystems
-(Claude, agents, etc.) via symlinks. This keeps a single source of truth
-while making skills discoverable by each tool's native path conventions.
+Skills are centralized in .campaign/skills/ and projected into tool ecosystems
+(Claude, agents, etc.) as per-bundle symlinks. This keeps a single source of
+truth while preserving existing provider-native skills directories.
 
 Commands:
-  link     Create symlinks from tool-specific paths to .campaign/skills/
-  status   Show the current state of skill symlinks
-  unlink   Remove skill symlinks
+  link     Project per-skill symlinks into a tool-specific skills directory
+  status   Show projection status for tool-specific skills directories
+  unlink   Remove projected skill symlinks
 
 Examples:
-  camp skills link claude           Link skills into .claude/skills/
-  camp skills link agents           Link skills into .agents/skills/
-  camp skills status                Show all skill link states
-  camp skills unlink claude         Remove .claude/skills/ symlink`,
+  camp skills link --tool claude    Project skills into .claude/skills/
+  camp skills link --tool agents    Project skills into .agents/skills/
+  camp skills status                Show all skill projection states
+  camp skills unlink --tool claude  Remove projected symlinks from .claude/skills/`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
 	},

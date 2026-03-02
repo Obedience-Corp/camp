@@ -15,16 +15,17 @@ import (
 
 var skillsStatusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Show the current state of skill symlinks",
-	Long: `Show the current state of skill symlinks for all known tool targets.
+	Short: "Show the current state of projected skill bundle symlinks",
+	Long: `Show projection status for campaign skill bundles across tool targets.
 
-Reports whether each tool's skills directory is properly linked to
-.campaign/skills/, broken, missing, or blocked by an existing path.
+Reports whether each tool's skills directory has projected entries from
+.campaign/skills/, is partially projected, missing, broken, or blocked.
 
 Examples:
-  camp skills status          Show link states in table format
+  camp skills status          Show projection states in table format
   camp skills status --json   Machine-readable JSON output`,
-	Args: cobra.NoArgs,
+	Args:         cobra.NoArgs,
+	SilenceUsage: true,
 	Annotations: map[string]string{
 		"agent_allowed": "true",
 		"agent_reason":  "Non-interactive status listing",
@@ -60,9 +61,22 @@ func runSkillsStatus(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf(".campaign/skills/ not found: run 'camp init' or create the directory")
 	}
 
+	slugs, err := skills.DiscoverSkillSlugs(skillsDir)
+	if err != nil {
+		return err
+	}
+	if len(slugs) == 0 {
+		if jsonOutput {
+			fmt.Fprintln(out, "[]")
+		} else {
+			fmt.Fprintln(out, "No skill bundles found in .campaign/skills/")
+		}
+		return nil
+	}
+
 	// Collect status for each tool
 	var entries []skillStatusEntry
-	hasBroken := false
+	hasAttention := false
 
 	// Sort tool names for consistent output
 	toolNames := make([]string, 0, len(skills.ToolPaths))
@@ -75,7 +89,7 @@ func runSkillsStatus(cmd *cobra.Command, _ []string) error {
 		relPath := skills.ToolPaths[tool]
 		destPath := filepath.Join(root, relPath)
 
-		state, err := skills.CheckLinkState(destPath, skillsDir)
+		pathType, err := skills.CheckPathType(destPath)
 		if err != nil {
 			return fmt.Errorf("check %s: %w", tool, err)
 		}
@@ -85,26 +99,40 @@ func runSkillsStatus(cmd *cobra.Command, _ []string) error {
 			Path: relPath,
 		}
 
-		switch state {
-		case skills.StateValid:
-			// Read the raw symlink target for display
-			rawTarget, _ := os.Readlink(destPath)
-			entry.State = "linked"
-			entry.Target = rawTarget
-
-		case skills.StateBroken:
-			entry.State = "broken"
-			entry.Suggestion = fmt.Sprintf("run 'camp skills link --tool %s --force' to fix", tool)
-			hasBroken = true
-
-		case skills.StateNotALink:
-			entry.State = "blocked"
-			entry.Suggestion = fmt.Sprintf("non-symlink exists at %s; use --force to replace", relPath)
-			hasBroken = true
-
-		case skills.StateMissing:
+		switch pathType {
+		case skills.TypeMissing:
 			entry.State = "not linked"
-			entry.Suggestion = fmt.Sprintf("run 'camp skills link --tool %s' to create", tool)
+			entry.Suggestion = fmt.Sprintf("run 'camp skills link --tool %s' to project skill bundles", tool)
+
+		case skills.TypeFile, skills.TypeSymlink:
+			entry.State = "blocked"
+			entry.Suggestion = fmt.Sprintf("path exists but is not a directory: %s", relPath)
+			hasAttention = true
+
+		case skills.TypeDirectory:
+			projState, err := inspectSkillProjection(destPath, skillsDir, slugs)
+			if err != nil {
+				return fmt.Errorf("inspect %s projection: %w", tool, err)
+			}
+
+			switch {
+			case projState.Conflicts > 0:
+				entry.State = fmt.Sprintf("blocked (%d conflict)", projState.Conflicts)
+				entry.Suggestion = fmt.Sprintf("resolve conflicting entries in %s then rerun link", relPath)
+				hasAttention = true
+			case projState.Broken > 0:
+				entry.State = fmt.Sprintf("broken (%d)", projState.Broken)
+				entry.Suggestion = fmt.Sprintf("run 'camp skills link --tool %s --force' to repair broken symlink entries", tool)
+				hasAttention = true
+			case projState.Linked == 0:
+				entry.State = "not linked"
+				entry.Suggestion = fmt.Sprintf("run 'camp skills link --tool %s' to project skill bundles", tool)
+			case projState.Linked < projState.TotalSkills:
+				entry.State = fmt.Sprintf("partial (%d/%d)", projState.Linked, projState.TotalSkills)
+				entry.Suggestion = fmt.Sprintf("run 'camp skills link --tool %s' to sync missing skill bundle links", tool)
+			default:
+				entry.State = fmt.Sprintf("linked (%d/%d)", projState.Linked, projState.TotalSkills)
+			}
 		}
 
 		entries = append(entries, entry)
@@ -144,8 +172,8 @@ func runSkillsStatus(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	if hasBroken {
-		return fmt.Errorf("one or more skill links need attention")
+	if hasAttention {
+		return fmt.Errorf("one or more skill projection targets need attention")
 	}
 
 	return nil

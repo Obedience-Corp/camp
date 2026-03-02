@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -13,16 +11,16 @@ import (
 
 var skillsUnlinkCmd = &cobra.Command{
 	Use:   "unlink",
-	Short: "Remove skill symlinks",
-	Long: `Remove managed skill symlinks created by 'camp skills link'.
+	Short: "Remove projected skill bundle symlinks",
+	Long: `Remove managed skill bundle symlinks created by 'camp skills link'.
 
-Only removes symlinks that point to .campaign/skills/. Refuses to remove
-non-symlink files, directories, or symlinks that point elsewhere.
+Only removes projected symlink entries created from .campaign/skills bundles.
+It never removes non-symlink files/directories or foreign symlinks.
 
 Examples:
-  camp skills unlink --tool claude       Remove .claude/skills symlink
-  camp skills unlink --tool agents       Remove .agents/skills symlink
-  camp skills unlink --path custom/dir   Remove custom symlink
+  camp skills unlink --tool claude       Remove projected entries in .claude/skills/
+  camp skills unlink --tool agents       Remove projected entries in .agents/skills/
+  camp skills unlink --path custom/dir   Remove projected entries in custom/dir
   camp skills unlink --tool claude -n    Dry run — show what would happen`,
 	Args: cobra.NoArgs,
 	Annotations: map[string]string{
@@ -37,7 +35,7 @@ func init() {
 
 	flags := skillsUnlinkCmd.Flags()
 	flags.StringP("tool", "t", "", "Tool to unlink: claude, agents")
-	flags.StringP("path", "p", "", "Custom destination path to unlink")
+	flags.StringP("path", "p", "", "Custom destination directory to unlink")
 	flags.BoolP("dry-run", "n", false, "Show what would happen without making changes")
 }
 
@@ -68,69 +66,45 @@ func runSkillsUnlink(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	// Resolve destination path
-	var dest string
-	if tool != "" {
-		relPath, err := skills.ResolveToolPath(tool)
-		if err != nil {
-			return err
-		}
-		dest = filepath.Join(root, relPath)
-	} else {
-		if filepath.IsAbs(destPath) {
-			dest = destPath
-		} else {
-			dest = filepath.Join(root, destPath)
-		}
-	}
-
-	// Check current state
-	state, err := skills.CheckLinkState(dest, skillsDir)
+	dest, err := resolveSkillsDestination(root, tool, destPath)
 	if err != nil {
 		return err
 	}
 
-	switch state {
-	case skills.StateMissing:
+	slugs, err := skills.DiscoverSkillSlugs(skillsDir)
+	if err != nil {
+		return err
+	}
+	if len(slugs) == 0 {
+		fmt.Fprintf(out, "no skill bundles found in %s\n", skillsDir)
+		return nil
+	}
+
+	pathType, err := skills.CheckPathType(dest)
+	if err != nil {
+		return err
+	}
+
+	switch pathType {
+	case skills.TypeMissing:
 		fmt.Fprintf(out, "not linked: %s\n", dest)
 		return nil
-
-	case skills.StateNotALink:
-		return fmt.Errorf("path exists but is not a symlink — refusing to remove: %s", dest)
-
-	case skills.StateBroken:
-		// Broken symlink — check if it was a managed link by reading the raw target
-		rawTarget, readErr := os.Readlink(dest)
-		if readErr != nil {
-			return fmt.Errorf("read symlink: %w", readErr)
-		}
-		// Resolve relative targets against the symlink's directory
-		absTarget := rawTarget
-		if !filepath.IsAbs(rawTarget) {
-			absTarget = filepath.Join(filepath.Dir(dest), rawTarget)
-		}
-		// Check if this was supposed to point to our skills dir
-		resolvedSkills, _ := filepath.EvalSymlinks(skillsDir)
-		absTargetClean := filepath.Clean(absTarget)
-		if absTargetClean != skillsDir && absTargetClean != resolvedSkills {
-			return fmt.Errorf("symlink exists but is not managed by camp skills — refusing to remove: %s -> %s", dest, rawTarget)
-		}
-		// It was managed but target is gone — safe to remove
-
-	case skills.StateValid:
-		// Valid link pointing to .campaign/skills/ — safe to remove
+	case skills.TypeFile, skills.TypeSymlink:
+		return fmt.Errorf("destination is not a projection directory: %s", dest)
 	}
 
+	removed, err := removeProjectedSkillEntries(dest, skillsDir, slugs, dryRun)
+	if err != nil {
+		return err
+	}
 	if dryRun {
-		fmt.Fprintf(out, "would remove: %s\n", dest)
+		fmt.Fprintf(out, "would remove %d projected skill symlink(s) from %s\n", removed, dest)
 		return nil
 	}
-
-	// Use os.Remove — never os.RemoveAll — to avoid following the symlink
-	if err := os.Remove(dest); err != nil {
-		return fmt.Errorf("remove symlink: %w", err)
+	if removed == 0 {
+		fmt.Fprintf(out, "not linked: no projected skill symlinks found in %s\n", dest)
+		return nil
 	}
-
-	fmt.Fprintf(out, "unlinked: %s\n", dest)
+	fmt.Fprintf(out, "unlinked %d skill bundle(s) from %s\n", removed, dest)
 	return nil
 }
