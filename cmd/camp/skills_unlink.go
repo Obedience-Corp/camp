@@ -71,6 +71,11 @@ func runSkillsUnlink(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
+	// Validate destination is safe (security parity with link command).
+	if err := skills.ValidateDestination(dest, root); err != nil {
+		return err
+	}
+
 	slugs, err := skills.DiscoverSkillSlugs(skillsDir)
 	if err != nil {
 		return err
@@ -93,7 +98,7 @@ func runSkillsUnlink(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("destination is not a projection directory: %s", dest)
 	}
 
-	removed, err := removeProjectedSkillEntries(dest, skillsDir, slugs, dryRun)
+	removed, err := skills.RemoveProjectedSkillEntries(dest, skillsDir, slugs, dryRun)
 	if err != nil {
 		return err
 	}

@@ -185,7 +185,7 @@ func TestCheckLinkState(t *testing.T) {
 			name:           "valid symlink with wrong target",
 			path:           validLink,
 			expectedTarget: filepath.Join(tmpDir, "other"),
-			want:           StateBroken,
+			want:           StateMismatch,
 		},
 		{
 			name:           "broken symlink",

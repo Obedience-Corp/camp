@@ -23,16 +23,39 @@ const (
 	StateValid LinkState = "valid"
 	// StateBroken means the path is a symlink but the target does not exist.
 	StateBroken LinkState = "broken"
+	// StateMismatch means the path is a symlink that resolves to a valid path
+	// but does not match the expected target.
+	StateMismatch LinkState = "mismatch"
 	// StateNotALink means the path exists but is not a symlink.
 	StateNotALink LinkState = "not_a_link"
 	// StateMissing means nothing exists at the path.
 	StateMissing LinkState = "missing"
 )
 
-// ToolPaths maps tool names to their relative skill destination directories.
-var ToolPaths = map[string]string{
+// toolPaths maps tool names to their relative skill destination directories.
+var toolPaths = map[string]string{
 	"claude": ".claude/skills",
 	"agents": ".agents/skills",
+}
+
+// ToolPaths returns a copy of the tool-to-path mapping. Callers cannot mutate
+// the internal registry.
+func ToolPaths() map[string]string {
+	cp := make(map[string]string, len(toolPaths))
+	for k, v := range toolPaths {
+		cp[k] = v
+	}
+	return cp
+}
+
+// ToolNames returns sorted tool names from the registry.
+func ToolNames() []string {
+	names := make([]string, 0, len(toolPaths))
+	for k := range toolPaths {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // FindSkillsDir locates the .campaign/skills/ directory by detecting the
@@ -111,7 +134,7 @@ func CheckLinkState(path, expectedTarget string) (LinkState, error) {
 		return StateValid, nil
 	}
 
-	return StateBroken, nil
+	return StateMismatch, nil
 }
 
 // DiscoverSkillSlugs returns canonical skill bundle directory names found under
@@ -154,9 +177,9 @@ func DiscoverSkillSlugs(skillsDir string) ([]string, error) {
 // ResolveToolPath returns the relative destination directory for a given tool
 // name. Returns an error if the tool is not recognized.
 func ResolveToolPath(tool string) (string, error) {
-	p, ok := ToolPaths[tool]
+	p, ok := toolPaths[tool]
 	if !ok {
-		return "", fmt.Errorf("unknown tool %q: valid tools are: claude, agents", tool)
+		return "", fmt.Errorf("unknown tool %q: valid tools are: %s", tool, strings.Join(ToolNames(), ", "))
 	}
 	return p, nil
 }

@@ -91,11 +91,11 @@ func runSkillsLink(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	if err := ensureProjectionDirectory(dest, dryRun, errOut); err != nil {
+	if err := skills.EnsureProjectionDirectory(dest, dryRun, errOut); err != nil {
 		return err
 	}
 
-	summary, err := projectSkillEntries(dest, skillsDir, slugs, dryRun, force)
+	summary, err := skills.ProjectSkillEntries(dest, skillsDir, slugs, dryRun, force)
 	if err != nil {
 		return err
 	}
@@ -105,7 +105,7 @@ func runSkillsLink(cmd *cobra.Command, _ []string) error {
 		verb = "would project"
 	}
 	fmt.Fprintf(out, "%s %d skill bundle(s) into %s (created=%d replaced=%d unchanged=%d)\n",
-		verb, len(slugs), dest, summary.Created, summary.Replaced, summary.AlreadyLinked)
+		verb, summary.Created+summary.Replaced+summary.AlreadyLinked, dest, summary.Created, summary.Replaced, summary.AlreadyLinked)
 
 	if summary.Conflicts > 0 {
 		return fmt.Errorf(

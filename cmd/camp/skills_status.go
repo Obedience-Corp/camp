@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 
 	"github.com/spf13/cobra"
 
@@ -36,6 +35,7 @@ Examples:
 func init() {
 	skillsCmd.AddCommand(skillsStatusCmd)
 	skillsStatusCmd.Flags().Bool("json", false, "Output as JSON")
+	skillsStatusCmd.Flags().Bool("strict", false, "Return non-zero exit code when links need attention (for CI)")
 }
 
 type skillStatusEntry struct {
@@ -78,15 +78,11 @@ func runSkillsStatus(cmd *cobra.Command, _ []string) error {
 	var entries []skillStatusEntry
 	hasAttention := false
 
-	// Sort tool names for consistent output
-	toolNames := make([]string, 0, len(skills.ToolPaths))
-	for name := range skills.ToolPaths {
-		toolNames = append(toolNames, name)
-	}
-	sort.Strings(toolNames)
+	toolNames := skills.ToolNames()
+	paths := skills.ToolPaths()
 
 	for _, tool := range toolNames {
-		relPath := skills.ToolPaths[tool]
+		relPath := paths[tool]
 		destPath := filepath.Join(root, relPath)
 
 		pathType, err := skills.CheckPathType(destPath)
@@ -110,7 +106,7 @@ func runSkillsStatus(cmd *cobra.Command, _ []string) error {
 			hasAttention = true
 
 		case skills.TypeDirectory:
-			projState, err := inspectSkillProjection(destPath, skillsDir, slugs)
+			projState, err := skills.InspectSkillProjection(destPath, skillsDir, slugs)
 			if err != nil {
 				return fmt.Errorf("inspect %s projection: %w", tool, err)
 			}
@@ -123,6 +119,10 @@ func runSkillsStatus(cmd *cobra.Command, _ []string) error {
 			case projState.Broken > 0:
 				entry.State = fmt.Sprintf("broken (%d)", projState.Broken)
 				entry.Suggestion = fmt.Sprintf("run 'camp skills link --tool %s --force' to repair broken symlink entries", tool)
+				hasAttention = true
+			case projState.Mismatched > 0:
+				entry.State = fmt.Sprintf("mismatched (%d)", projState.Mismatched)
+				entry.Suggestion = fmt.Sprintf("run 'camp skills link --tool %s --force' to update mismatched symlink entries", tool)
 				hasAttention = true
 			case projState.Linked == 0:
 				entry.State = "not linked"
@@ -172,7 +172,8 @@ func runSkillsStatus(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	if hasAttention {
+	strict, _ := cmd.Flags().GetBool("strict")
+	if hasAttention && strict {
 		return fmt.Errorf("one or more skill projection targets need attention")
 	}
 
