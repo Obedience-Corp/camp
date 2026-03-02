@@ -11,6 +11,26 @@ import (
 	"github.com/Obedience-Corp/camp/internal/buildutil/ui"
 )
 
+const versionPkg = "github.com/Obedience-Corp/camp/internal/version"
+
+// buildLDFlags returns the -ldflags string that injects version metadata.
+func buildLDFlags() string {
+	version := os.Getenv("VERSION")
+	if version == "" {
+		version = "dev"
+	}
+
+	commit := "unknown"
+	if out, err := exec.Command("git", "rev-parse", "--short", "HEAD").Output(); err == nil {
+		commit = strings.TrimSpace(string(out))
+	}
+
+	buildDate := time.Now().UTC().Format("2006-01-02T15:04:05Z")
+
+	return fmt.Sprintf("-X %s.Version=%s -X %s.Commit=%s -X %s.BuildDate=%s",
+		versionPkg, version, versionPkg, commit, versionPkg, buildDate)
+}
+
 // PackageResult tracks build results for a package
 type PackageResult struct {
 	Package   string
@@ -85,7 +105,7 @@ func Build(verbose bool) error {
 	// Create bin directory
 	os.MkdirAll("bin", 0o755)
 
-	cmd := exec.Command("go", "build", "-o", "bin/camp", "./cmd/camp")
+	cmd := exec.Command("go", "build", "-ldflags", buildLDFlags(), "-o", "bin/camp", "./cmd/camp")
 	if verbose {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -246,7 +266,7 @@ func BuildOnly(verbose bool) error {
 	ui.Task("Building", "camp binary")
 
 	// Build main binary only
-	cmd := exec.Command("go", "build", "-o", "bin/camp", "./cmd/camp")
+	cmd := exec.Command("go", "build", "-ldflags", buildLDFlags(), "-o", "bin/camp", "./cmd/camp")
 	if verbose {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
