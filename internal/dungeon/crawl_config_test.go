@@ -8,10 +8,10 @@ import (
 
 func TestLoadCrawlConfig(t *testing.T) {
 	tests := []struct {
-		name     string
-		content  string
-		want     []string
-		wantErr  bool
+		name    string
+		content string
+		want    []string
+		wantErr bool
 	}{
 		{
 			name:    "valid config with excludes",

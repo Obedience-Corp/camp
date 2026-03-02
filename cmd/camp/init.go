@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/charmbracelet/huh"
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/fest"
@@ -17,6 +16,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/scaffold"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/Obedience-Corp/camp/internal/ui/theme"
+	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 )
 

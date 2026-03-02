@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/Obedience-Corp/camp/internal/concept"
 	"github.com/Obedience-Corp/camp/internal/intent/tui/vim"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestIntentAddModel_InitialState(t *testing.T) {

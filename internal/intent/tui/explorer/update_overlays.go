@@ -3,8 +3,8 @@ package explorer
 import (
 	"fmt"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/Obedience-Corp/camp/internal/intent/tui"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // updateSearch handles keys when search input has focus.

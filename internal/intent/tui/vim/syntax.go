@@ -3,10 +3,10 @@ package vim
 import (
 	"crypto/sha256"
 
+	"github.com/Obedience-Corp/camp/internal/ui/theme"
 	"github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/Obedience-Corp/camp/internal/ui/theme"
 )
 
 // SyntaxStyler tokenizes content and provides per-offset styles for rendering.

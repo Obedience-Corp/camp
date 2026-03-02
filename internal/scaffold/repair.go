@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/lancekrogers/guild-scaffold/pkg/scaffold"
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/lancekrogers/guild-scaffold/pkg/scaffold"
 )
 
 // RepairChangeType categorizes a proposed repair change.

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/Obedience-Corp/camp/internal/intent"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func makeTestIntents(count int) []*intent.Intent {

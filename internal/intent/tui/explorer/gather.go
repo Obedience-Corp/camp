@@ -3,11 +3,11 @@ package explorer
 import (
 	"fmt"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/intent/gather"
 	"github.com/Obedience-Corp/camp/internal/intent/tui"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // toggleSelection toggles the selection state of an intent for multi-select gather.

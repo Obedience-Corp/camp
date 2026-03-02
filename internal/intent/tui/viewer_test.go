@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/Obedience-Corp/camp/internal/intent"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // mockIntents creates test intents for viewer navigation tests.

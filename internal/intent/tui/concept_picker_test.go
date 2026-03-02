@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/Obedience-Corp/camp/internal/concept"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // mockConceptService is a test implementation of concept.Service.

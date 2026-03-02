@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/intent/tui"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // moveStatusOptions are the available statuses for moving intents.

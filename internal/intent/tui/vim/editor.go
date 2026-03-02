@@ -14,9 +14,9 @@ type Editor struct {
 	undoStack    *UndoStack
 	width        int
 	height       int
-	scrollOffset int            // First visible line
-	lastChange   string         // For . command
-	syntax       *SyntaxStyler  // nil = no highlighting
+	scrollOffset int           // First visible line
+	lastChange   string        // For . command
+	syntax       *SyntaxStyler // nil = no highlighting
 }
 
 // SetSyntax enables syntax highlighting for the editor content.

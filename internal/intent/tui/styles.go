@@ -5,10 +5,10 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/Obedience-Corp/camp/internal/ui/theme"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
-	"github.com/Obedience-Corp/camp/internal/ui/theme"
 )
 
 var (

@@ -4,14 +4,14 @@ package explorer
 import (
 	"context"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/Obedience-Corp/camp/internal/concept"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/intent/gather"
 	"github.com/Obedience-Corp/camp/internal/intent/tui"
 	"github.com/Obedience-Corp/camp/internal/intent/tui/filterchip"
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // focusMode determines which component has keyboard focus.

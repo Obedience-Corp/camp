@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/intent/tui"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // renderIntentRow renders a single intent row with proper formatting.
