@@ -281,6 +281,133 @@ func initGitRepoWithGoMod(t *testing.T, path string) {
 	}
 }
 
+func TestAdd_EmptyRemote_PreflightError(t *testing.T) {
+	ctx := context.Background()
+	campaignRoot := t.TempDir()
+	campaignRoot, _ = filepath.EvalSymlinks(campaignRoot)
+	initGitRepo(t, campaignRoot)
+	initGitRepoWithCommit(t, campaignRoot) // give campaign root a commit
+
+	// Create an empty remote (no commits).
+	emptyRemote := t.TempDir()
+	emptyRemote, _ = filepath.EvalSymlinks(emptyRemote)
+	initGitRepo(t, emptyRemote)
+
+	_, err := Add(ctx, campaignRoot, emptyRemote, AddOptions{})
+	if err == nil {
+		t.Fatal("expected error for empty repo, got nil")
+	}
+	if !strings.Contains(err.Error(), "cannot add empty repository") {
+		t.Errorf("unexpected error message: %q", err.Error())
+	}
+}
+
+func TestAdd_FailureCleanup_NoResidualState(t *testing.T) {
+	ctx := context.Background()
+	campaignRoot := t.TempDir()
+	campaignRoot, _ = filepath.EvalSymlinks(campaignRoot)
+	initGitRepo(t, campaignRoot)
+	initGitRepoWithCommit(t, campaignRoot)
+
+	emptyRemote := t.TempDir()
+	emptyRemote, _ = filepath.EvalSymlinks(emptyRemote)
+	initGitRepo(t, emptyRemote)
+
+	name := "empty-test"
+	_, _ = Add(ctx, campaignRoot, emptyRemote, AddOptions{Name: name})
+
+	// Project directory must not exist.
+	projectDir := filepath.Join(campaignRoot, "projects", name)
+	if _, err := os.Stat(projectDir); !os.IsNotExist(err) {
+		t.Errorf("expected projects/%s to be absent after failure, got: %v", name, err)
+	}
+
+	// .git/modules entry must not exist.
+	modulesDir := filepath.Join(campaignRoot, ".git", "modules", "projects", name)
+	if _, err := os.Stat(modulesDir); !os.IsNotExist(err) {
+		t.Errorf("expected .git/modules/projects/%s to be absent, got: %v", name, err)
+	}
+
+	// .gitmodules must not have a section for this submodule.
+	gitmodulesPath := filepath.Join(campaignRoot, ".gitmodules")
+	data, readErr := os.ReadFile(gitmodulesPath)
+	if readErr == nil {
+		if strings.Contains(string(data), name) {
+			t.Errorf(".gitmodules still contains reference to %q after cleanup:\n%s", name, data)
+		}
+	}
+}
+
+func TestAdd_RetryAfterCleanup_Succeeds(t *testing.T) {
+	ctx := context.Background()
+	campaignRoot := t.TempDir()
+	campaignRoot, _ = filepath.EvalSymlinks(campaignRoot)
+	initGitRepo(t, campaignRoot)
+	initGitRepoWithCommit(t, campaignRoot)
+
+	// First: empty remote (fails).
+	emptyRemote := t.TempDir()
+	emptyRemote, _ = filepath.EvalSymlinks(emptyRemote)
+	initGitRepo(t, emptyRemote)
+
+	name := "retry-project"
+	_, _ = Add(ctx, campaignRoot, emptyRemote, AddOptions{Name: name})
+
+	// Now populate the remote with a commit.
+	cmd := exec.Command("git", "-C", emptyRemote, "config", "user.email", "test@test.com")
+	cmd.Run()
+	cmd = exec.Command("git", "-C", emptyRemote, "config", "user.name", "Test")
+	cmd.Run()
+	os.WriteFile(filepath.Join(emptyRemote, "main.go"), []byte("package main"), 0644)
+	cmd = exec.Command("git", "-C", emptyRemote, "add", ".")
+	cmd.Run()
+	cmd = exec.Command("git", "-C", emptyRemote, "commit", "-m", "initial commit")
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("failed to commit in remote: %v", err)
+	}
+
+	// Retry with the same name via Local path — must succeed cleanly.
+	// (Uses Local because file:// protocol requires protocol.file.allow=always
+	// which only addLocalAsSubmodule sets.)
+	result, err := Add(ctx, campaignRoot, "unused", AddOptions{
+		Name:  name,
+		Local: emptyRemote,
+	})
+	if err != nil {
+		t.Fatalf("Add after cleanup failed: %v", err)
+	}
+	if result.Name != name {
+		t.Errorf("result.Name = %q, want %q", result.Name, name)
+	}
+}
+
+func TestAdd_NonEmptyLocal_Succeeds(t *testing.T) {
+	ctx := context.Background()
+	campaignRoot := t.TempDir()
+	campaignRoot, _ = filepath.EvalSymlinks(campaignRoot)
+	initGitRepo(t, campaignRoot)
+	initGitRepoWithCommit(t, campaignRoot)
+
+	remote := t.TempDir()
+	remote, _ = filepath.EvalSymlinks(remote)
+	initGitRepoWithCommit(t, remote)
+
+	result, err := Add(ctx, campaignRoot, remote, AddOptions{
+		Local: remote,
+	})
+	if err != nil {
+		t.Fatalf("Add non-empty repo failed: %v", err)
+	}
+	if result.Name == "" {
+		t.Error("result.Name is empty")
+	}
+	// Project directory must exist.
+	projectDir := filepath.Join(campaignRoot, result.Path)
+	if _, err := os.Stat(projectDir); err != nil {
+		t.Errorf("project directory %s not created: %v", projectDir, err)
+	}
+}
+
 // TestAdd_InvalidURL tests URL validation.
 func TestAdd_InvalidURL(t *testing.T) {
 	tmpDir := t.TempDir()

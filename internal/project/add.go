@@ -71,6 +71,10 @@ func Add(ctx context.Context, campaignRoot, source string, opts AddOptions) (*Ad
 		if _, err := ParseGitURL(source); err != nil {
 			return nil, err
 		}
+		// Pre-flight check: reject empty repositories before submodule add.
+		if err := checkRepoNotEmpty(ctx, source); err != nil {
+			return nil, err
+		}
 	}
 
 	// Determine project name
@@ -97,15 +101,17 @@ func Add(ctx context.Context, campaignRoot, source string, opts AddOptions) (*Ad
 	}
 
 	// Add as submodule
-	var err error
+	var addErr error
 	if opts.Local != "" {
-		err = addLocalAsSubmodule(ctx, campaignRoot, opts.Local, destPath, name)
+		addErr = addLocalAsSubmodule(ctx, campaignRoot, opts.Local, destPath, name)
 	} else {
-		err = addRemoteAsSubmodule(ctx, campaignRoot, source, destPath)
+		addErr = addRemoteAsSubmodule(ctx, campaignRoot, source, destPath)
 	}
 
-	if err != nil {
-		return nil, err
+	if addErr != nil {
+		// Always clean up partial state before returning the error.
+		cleanupFailedSubmoduleAdd(ctx, campaignRoot, destPath)
+		return nil, addErr
 	}
 
 	// Create worktree directory
@@ -198,6 +204,35 @@ func initializeSubmodule(ctx context.Context, campaignRoot, path string) error {
 	return nil
 }
 
+// cleanupFailedSubmoduleAdd removes partial state left by a failed git submodule add.
+// It removes the project directory, the .git/modules entry, the .gitmodules section,
+// and any staged gitlink entry. Cleanup errors are logged to stderr and never returned.
+func cleanupFailedSubmoduleAdd(ctx context.Context, campaignRoot, destPath string) {
+	// 1. Remove the checked-out directory (may be empty or partially cloned).
+	projectDir := filepath.Join(campaignRoot, destPath)
+	if err := os.RemoveAll(projectDir); err != nil && !os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "Warning: cleanup could not remove %s: %v\n", projectDir, err)
+	}
+
+	// 2. Remove the internal git modules directory.
+	modulesDir := filepath.Join(campaignRoot, ".git", "modules", destPath)
+	if err := os.RemoveAll(modulesDir); err != nil && !os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "Warning: cleanup could not remove %s: %v\n", modulesDir, err)
+	}
+
+	// 3. Remove the submodule section from .gitmodules.
+	sectionKey := "submodule." + destPath
+	rmSection := exec.CommandContext(ctx, "git", "config", "--file", ".gitmodules",
+		"--remove-section", sectionKey)
+	rmSection.Dir = campaignRoot
+	_ = rmSection.Run()
+
+	// 4. Unstage the gitlink entry (ignore failure — may not be staged).
+	rmCached := exec.CommandContext(ctx, "git", "rm", "--cached", "-f", destPath)
+	rmCached.Dir = campaignRoot
+	_ = rmCached.Run()
+}
+
 // addLocalAsSubmodule adds an existing local git repository as a submodule.
 // It handles stale and active lock files with intelligent retry logic:
 // - Stale locks are removed immediately
@@ -262,6 +297,26 @@ func checkIsGitRepo(ctx context.Context, campaignRoot string) error {
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("campaign directory is not a git repository\n" +
 			"Hint: Run 'git init' in the campaign root, or use 'camp init' to create a new campaign")
+	}
+	return nil
+}
+
+// checkRepoNotEmpty verifies that the remote repository has at least one branch/commit.
+// An empty repository (no commits pushed) cannot be added as a submodule.
+func checkRepoNotEmpty(ctx context.Context, url string) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	cmd := exec.CommandContext(ctx, "git", "ls-remote", "--heads", url)
+	output, err := cmd.Output()
+	if err != nil {
+		// ls-remote failed (bad URL, auth issue, etc.) — let git submodule add
+		// surface the real error with its diagnostics; do not block here.
+		return nil
+	}
+	if len(strings.TrimSpace(string(output))) == 0 {
+		return fmt.Errorf("cannot add empty repository %q — push at least one commit first\n"+
+			"Hint: Initialize the repo locally, make a commit, and push before adding it to a campaign", url)
 	}
 	return nil
 }
