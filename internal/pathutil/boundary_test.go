@@ -110,3 +110,69 @@ func TestBoundaryError_Unwrap(t *testing.T) {
 		t.Errorf("errors.Is did not find ErrOutsideBoundary through BoundaryError")
 	}
 }
+
+func TestValidateBoundary_Symlinks(t *testing.T) {
+	tmp := resolvePath(t, t.TempDir())
+	outside := resolvePath(t, t.TempDir())
+
+	realInside := filepath.Join(tmp, "projects", "real")
+	if err := os.MkdirAll(realInside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Symlink inside root pointing OUTSIDE root — must be rejected.
+	escapeLink := filepath.Join(tmp, "escape-link")
+	if err := os.Symlink(outside, escapeLink); err != nil {
+		t.Skipf("symlink creation failed (may lack permission): %v", err)
+	}
+
+	err := ValidateBoundary(tmp, escapeLink)
+	if err == nil {
+		t.Error("expected boundary violation for symlink pointing outside root, got nil")
+	}
+	if !errors.Is(err, ErrOutsideBoundary) {
+		t.Errorf("expected ErrOutsideBoundary, got: %v", err)
+	}
+
+	// Symlink inside root pointing to another directory INSIDE root — must be allowed.
+	internalLink := filepath.Join(tmp, "internal-link")
+	if err := os.Symlink(realInside, internalLink); err != nil {
+		t.Skipf("symlink creation failed: %v", err)
+	}
+
+	err = ValidateBoundary(tmp, internalLink)
+	if err != nil {
+		t.Errorf("expected no error for symlink pointing inside root, got: %v", err)
+	}
+
+	// Symlink simulating .claude pointing outside root.
+	claudeLink := filepath.Join(tmp, ".claude")
+	if err := os.Symlink(outside, claudeLink); err != nil {
+		t.Skipf("symlink creation failed: %v", err)
+	}
+
+	err = ValidateBoundary(tmp, claudeLink)
+	if err == nil {
+		t.Error("expected boundary violation for .claude symlink pointing outside root, got nil")
+	}
+	if !errors.Is(err, ErrOutsideBoundary) {
+		t.Errorf("expected ErrOutsideBoundary for .claude escape, got: %v", err)
+	}
+}
+
+func TestValidateBoundary_macOS_VarSymlink(t *testing.T) {
+	tmp := t.TempDir() // may be /var/... on macOS (unresolved)
+	resolvedTmp := resolvePath(t, tmp)
+
+	inside := filepath.Join(resolvedTmp, "subdir")
+	if err := os.MkdirAll(inside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Using the raw (possibly unresolved) tmp as root should still work because
+	// ValidateBoundary resolves root via EvalSymlinks internally.
+	err := ValidateBoundary(tmp, inside)
+	if err != nil {
+		t.Errorf("macOS symlink test: expected no error, got: %v", err)
+	}
+}
