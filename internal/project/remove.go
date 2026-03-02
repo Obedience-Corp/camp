@@ -51,6 +51,10 @@ func Remove(ctx context.Context, campaignRoot, name string, opts RemoveOptions) 
 		return nil, ctx.Err()
 	}
 
+	if err := ValidateProjectName(name); err != nil {
+		return nil, err
+	}
+
 	projectPath := filepath.Join(campaignRoot, "projects", name)
 
 	// Check project exists

@@ -131,36 +131,6 @@ func TestNew_NotInGitRepo(t *testing.T) {
 	}
 }
 
-func TestValidateProjectName(t *testing.T) {
-	tests := []struct {
-		name      string
-		wantError bool
-	}{
-		{"my-project", false},
-		{"my_project", false},
-		{"project123", false},
-		{"A-Project", false},
-		{"a", false},
-		{"", true},
-		{".hidden", true},
-		{"has space", true},
-		{"has/slash", true},
-		{"has\\backslash", true},
-		{"../escape", true},
-		{"-starts-with-dash", true},
-		{"_starts-with-underscore", true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := validateProjectName(tt.name)
-			if (err != nil) != tt.wantError {
-				t.Errorf("validateProjectName(%q) error = %v, wantError = %v", tt.name, err, tt.wantError)
-			}
-		})
-	}
-}
-
 func TestNew_CreatesWorktreeDir(t *testing.T) {
 	tmpDir := t.TempDir()
 	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
