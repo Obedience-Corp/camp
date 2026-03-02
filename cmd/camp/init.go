@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -161,7 +162,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if repair && !dryRun {
 		plan, err := scaffold.ComputeRepairPlan(ctx, dir, opts)
 		if err != nil {
-			return fmt.Errorf("failed to compute repair plan: %w", err)
+			return camperrors.Wrap(err, "failed to compute repair plan")
 		}
 
 		if !plan.HasChanges() {
@@ -346,7 +347,7 @@ func checkDirectoryEmpty(dir string, force, isInteractive bool) error {
 	// Resolve to absolute path
 	absDir, err := filepath.Abs(dir)
 	if err != nil {
-		return fmt.Errorf("failed to resolve directory path: %w", err)
+		return camperrors.Wrap(err, "failed to resolve directory path")
 	}
 
 	// Check if directory exists
@@ -356,7 +357,7 @@ func checkDirectoryEmpty(dir string, force, isInteractive bool) error {
 		return nil
 	}
 	if err != nil {
-		return fmt.Errorf("failed to check directory: %w", err)
+		return camperrors.Wrap(err, "failed to check directory")
 	}
 	if !info.IsDir() {
 		return fmt.Errorf("path exists but is not a directory: %s", absDir)
@@ -365,7 +366,7 @@ func checkDirectoryEmpty(dir string, force, isInteractive bool) error {
 	// Check if directory has contents
 	entries, err := os.ReadDir(absDir)
 	if err != nil {
-		return fmt.Errorf("failed to read directory: %w", err)
+		return camperrors.Wrap(err, "failed to read directory")
 	}
 
 	if len(entries) == 0 {
@@ -387,7 +388,7 @@ func checkDirectoryEmpty(dir string, force, isInteractive bool) error {
 		reader := bufio.NewReader(os.Stdin)
 		response, err := reader.ReadString('\n')
 		if err != nil {
-			return fmt.Errorf("failed to read response: %w", err)
+			return camperrors.Wrap(err, "failed to read response")
 		}
 
 		response = strings.TrimSpace(strings.ToLower(response))
@@ -444,7 +445,7 @@ func collectCampaignInfo(ctx context.Context, description, mission string, isInt
 		if theme.IsCancelled(err) {
 			return "", "", fmt.Errorf("initialization cancelled")
 		}
-		return "", "", fmt.Errorf("failed to collect campaign info: %w", err)
+		return "", "", camperrors.Wrap(err, "failed to collect campaign info")
 	}
 
 	// Validate that user provided values
@@ -503,7 +504,7 @@ func handleRepairMission(ctx context.Context, dir string, mission string, isInte
 				fmt.Println(ui.Dim("Skipping mission statement"))
 				return "", nil
 			}
-			return "", fmt.Errorf("failed to collect mission: %w", err)
+			return "", camperrors.Wrap(err, "failed to collect mission")
 		}
 
 		return mission, nil

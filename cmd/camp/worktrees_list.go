@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"text/tabwriter"
 	"time"
@@ -79,12 +80,12 @@ func runWorktreesList(cmd *cobra.Command, args []string) error {
 
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign: %w", err)
+		return camperrors.Wrap(err, "not in a campaign")
 	}
 
 	cfg, err := config.LoadCampaignConfig(ctx, campRoot)
 	if err != nil {
-		return fmt.Errorf("failed to load campaign config: %w", err)
+		return camperrors.Wrap(err, "failed to load campaign config")
 	}
 
 	resolver := paths.NewResolver(campRoot, cfg.Paths())

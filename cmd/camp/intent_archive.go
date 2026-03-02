@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/spf13/cobra"
 
@@ -43,7 +44,7 @@ func runIntentArchive(cmd *cobra.Command, args []string) error {
 	// Find campaign root
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign directory: %w", err)
+		return camperrors.Wrap(err, "not in a campaign directory")
 	}
 
 	// Create path resolver and service
@@ -60,7 +61,7 @@ func runIntentArchive(cmd *cobra.Command, args []string) error {
 	// Archive the intent (uses Archive method which calls Move with StatusKilled)
 	result, err := svc.Archive(ctx, id)
 	if err != nil {
-		return fmt.Errorf("failed to archive intent: %w", err)
+		return camperrors.Wrap(err, "failed to archive intent")
 	}
 
 	fmt.Printf("✓ Intent archived: %s\n", result.Path)

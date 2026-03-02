@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"path/filepath"
 
@@ -45,7 +46,7 @@ func runLeverageReset(cmd *cobra.Command, args []string) error {
 
 	if projectFilter != "" {
 		if err := project.ValidateProjectName(projectFilter); err != nil {
-			return fmt.Errorf("--project flag: %w", err)
+			return camperrors.Wrap(err, "--project flag")
 		}
 	}
 
@@ -56,7 +57,7 @@ func runLeverageReset(cmd *cobra.Command, args []string) error {
 		snapshotTarget := filepath.Join(snapshotDir, projectFilter)
 		if dirExists(snapshotDir) {
 			if err := pathutil.ValidateBoundary(snapshotDir, snapshotTarget); err != nil {
-				return fmt.Errorf("snapshot path boundary violation for --project %q: %w", projectFilter, err)
+				return camperrors.Wrapf(err, "snapshot path boundary violation for --project %q", projectFilter)
 			}
 		}
 		if removeDirIfExists(snapshotTarget) {
@@ -73,7 +74,7 @@ func runLeverageReset(cmd *cobra.Command, args []string) error {
 		cacheFile := filepath.Join(cacheDir, projectFilter+".json")
 		if dirExists(cacheDir) {
 			if err := pathutil.ValidateBoundary(cacheDir, cacheFile); err != nil {
-				return fmt.Errorf("cache path boundary violation for --project %q: %w", projectFilter, err)
+				return camperrors.Wrapf(err, "cache path boundary violation for --project %q", projectFilter)
 			}
 		}
 		if err := os.Remove(cacheFile); err == nil {

@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -59,7 +60,7 @@ func runIntentShow(cmd *cobra.Command, args []string) error {
 	// Find campaign root
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign directory: %w", err)
+		return camperrors.Wrap(err, "not in a campaign directory")
 	}
 
 	// Create path resolver and service
@@ -191,7 +192,7 @@ func showJSON(i *intent.Intent) error {
 
 	data, err := json.MarshalIndent(output, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal JSON: %w", err)
+		return camperrors.Wrap(err, "failed to marshal JSON")
 	}
 
 	fmt.Println(string(data))
@@ -243,7 +244,7 @@ func showYAML(i *intent.Intent) error {
 
 	data, err := yaml.Marshal(output)
 	if err != nil {
-		return fmt.Errorf("failed to marshal YAML: %w", err)
+		return camperrors.Wrap(err, "failed to marshal YAML")
 	}
 
 	fmt.Print(string(data))

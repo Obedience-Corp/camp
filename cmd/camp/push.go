@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -58,7 +59,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 
 	target, err := git.ResolveTarget(ctx, campRoot, sub, project)
 	if err != nil {
-		return fmt.Errorf("failed to resolve target: %w", err)
+		return camperrors.Wrap(err, "failed to resolve target")
 	}
 
 	if target.IsSubmodule {
@@ -103,7 +104,7 @@ func runPushAll(ctx context.Context, campRoot string, gitArgs []string, noRecurs
 		paths, err = git.ListSubmodulePathsRecursive(ctx, campRoot, "projects/")
 	}
 	if err != nil {
-		return fmt.Errorf("failed to list submodules: %w", err)
+		return camperrors.Wrap(err, "failed to list submodules")
 	}
 
 	// Build target list: submodules + campaign root

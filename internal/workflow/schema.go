@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"gopkg.in/yaml.v3"
 )
 
@@ -158,7 +159,7 @@ func LoadSchema(ctx context.Context, path string) (*Schema, error) {
 		if os.IsNotExist(err) {
 			return nil, ErrNoSchema
 		}
-		return nil, fmt.Errorf("failed to read schema file %s: %w", path, err)
+		return nil, camperrors.Wrapf(err, "failed to read schema file %s", path)
 	}
 
 	if len(data) == 0 {
@@ -189,18 +190,18 @@ func FindSchema(ctx context.Context, startPath string) (string, *Schema, error) 
 	// Resolve symlinks
 	dir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to resolve path: %w", err)
+		return "", nil, camperrors.Wrap(err, "failed to resolve path")
 	}
 
 	dir, err = filepath.Abs(dir)
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to get absolute path: %w", err)
+		return "", nil, camperrors.Wrap(err, "failed to get absolute path")
 	}
 
 	// If startPath is a file, start from its directory
 	info, err := os.Stat(dir)
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to stat path: %w", err)
+		return "", nil, camperrors.Wrap(err, "failed to stat path")
 	}
 	if !info.IsDir() {
 		dir = filepath.Dir(dir)

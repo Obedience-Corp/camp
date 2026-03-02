@@ -3,9 +3,10 @@ package config
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // AllowlistConfigFile is the name of the allowlist configuration file.
@@ -52,12 +53,12 @@ func LoadAllowlistConfig(ctx context.Context, campaignRoot string) (*AllowlistCo
 		if os.IsNotExist(err) {
 			return nil, nil // File doesn't exist, caller should use defaults
 		}
-		return nil, fmt.Errorf("failed to read allowlist config %s: %w", configPath, err)
+		return nil, camperrors.Wrapf(err, "failed to read allowlist config %s", configPath)
 	}
 
 	var cfg AllowlistConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse allowlist config %s: %w", configPath, err)
+		return nil, camperrors.Wrapf(err, "failed to parse allowlist config %s", configPath)
 	}
 
 	return &cfg, nil
@@ -71,17 +72,17 @@ func SaveAllowlistConfig(ctx context.Context, campaignRoot string, cfg *Allowlis
 
 	settingsDir := SettingsDirPath(campaignRoot)
 	if err := os.MkdirAll(settingsDir, 0755); err != nil {
-		return fmt.Errorf("failed to create settings directory: %w", err)
+		return camperrors.Wrap(err, "failed to create settings directory")
 	}
 
 	configPath := AllowlistConfigPath(campaignRoot)
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal allowlist config: %w", err)
+		return camperrors.Wrap(err, "failed to marshal allowlist config")
 	}
 
 	if err := os.WriteFile(configPath, data, 0644); err != nil {
-		return fmt.Errorf("failed to write allowlist config: %w", err)
+		return camperrors.Wrap(err, "failed to write allowlist config")
 	}
 
 	return nil

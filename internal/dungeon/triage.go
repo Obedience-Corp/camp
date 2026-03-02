@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/ui/theme"
 )
 
@@ -15,12 +16,12 @@ import (
 // Step 2 (on Move): dynamic status directory picker
 func RunTriageCrawl(ctx context.Context, svc *Service, parentPath string) (*CrawlSummary, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("context cancelled: %w", err)
+		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
 	items, err := svc.ListParentItems(ctx, parentPath)
 	if err != nil {
-		return nil, fmt.Errorf("listing parent items: %w", err)
+		return nil, camperrors.Wrap(err, "listing parent items")
 	}
 
 	if len(items) == 0 {
@@ -30,7 +31,7 @@ func RunTriageCrawl(ctx context.Context, svc *Service, parentPath string) (*Craw
 	// Fetch status dirs once before the loop
 	statusDirs, err := svc.ListStatusDirs(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("listing status directories: %w", err)
+		return nil, camperrors.Wrap(err, "listing status directories")
 	}
 
 	gatherer := NewStatsGatherer()
@@ -38,7 +39,7 @@ func RunTriageCrawl(ctx context.Context, svc *Service, parentPath string) (*Craw
 
 	for i, item := range items {
 		if err := ctx.Err(); err != nil {
-			return summary, fmt.Errorf("context cancelled: %w", err)
+			return summary, camperrors.Wrap(err, "context cancelled")
 		}
 
 		stats := gatherer.Gather(ctx, item.Path)
@@ -67,7 +68,7 @@ func RunTriageCrawl(ctx context.Context, svc *Service, parentPath string) (*Craw
 			if theme.IsCancelled(err) {
 				return summary, nil
 			}
-			return summary, fmt.Errorf("form error: %w", err)
+			return summary, camperrors.Wrap(err, "form error")
 		}
 
 		switch decision {

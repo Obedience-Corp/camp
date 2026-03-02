@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -32,12 +33,12 @@ func runFlowRegistryList(cmd *cobra.Command, args []string) error {
 
 	campaignRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign directory: %w", err)
+		return camperrors.Wrap(err, "not in a campaign directory")
 	}
 
 	registry, err := flow.LoadRegistry(campaignRoot)
 	if err != nil {
-		return fmt.Errorf("loading flow registry: %w", err)
+		return camperrors.Wrap(err, "loading flow registry")
 	}
 
 	names := registry.List()

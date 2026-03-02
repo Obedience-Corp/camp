@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // FindIndexLocks returns all index.lock files in the given git directory
@@ -22,7 +24,7 @@ func FindIndexLocks(ctx context.Context, gitDir string) ([]string, error) {
 	// Validate gitDir exists
 	info, err := os.Stat(gitDir)
 	if err != nil {
-		return nil, fmt.Errorf("git directory not accessible: %s: %w", gitDir, err)
+		return nil, camperrors.Wrapf(err, "git directory not accessible: %s", gitDir)
 	}
 	if !info.IsDir() {
 		return nil, fmt.Errorf("path is not a directory: %s", gitDir)
@@ -89,7 +91,7 @@ func ResolveGitDir(repoRoot string) (string, error) {
 
 	info, err := os.Stat(gitPath)
 	if err != nil {
-		return "", fmt.Errorf("cannot access .git at %s: %w", gitPath, err)
+		return "", camperrors.Wrapf(err, "cannot access .git at %s", gitPath)
 	}
 
 	// Regular repository - .git is a directory
@@ -100,7 +102,7 @@ func ResolveGitDir(repoRoot string) (string, error) {
 	// Submodule - .git is a file containing "gitdir: <path>"
 	content, err := os.ReadFile(gitPath)
 	if err != nil {
-		return "", fmt.Errorf("cannot read .git file at %s: %w", gitPath, err)
+		return "", camperrors.Wrapf(err, "cannot read .git file at %s", gitPath)
 	}
 
 	return parseGitdirFile(repoRoot, string(content))

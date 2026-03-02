@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -61,7 +62,7 @@ func runIntentFind(cmd *cobra.Command, args []string) error {
 	// Find campaign root
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign directory: %w", err)
+		return camperrors.Wrap(err, "not in a campaign directory")
 	}
 
 	// Create path resolver and service
@@ -71,7 +72,7 @@ func runIntentFind(cmd *cobra.Command, args []string) error {
 	// Search for intents
 	intents, err := svc.Search(ctx, query)
 	if err != nil {
-		return fmt.Errorf("failed to search intents: %w", err)
+		return camperrors.Wrap(err, "failed to search intents")
 	}
 
 	// Apply limit
@@ -188,7 +189,7 @@ func outputFindJSON(intents []*intent.Intent) error {
 
 	data, err := json.MarshalIndent(output, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal JSON: %w", err)
+		return camperrors.Wrap(err, "failed to marshal JSON")
 	}
 
 	fmt.Println(string(data))

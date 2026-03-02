@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // Transition represents a status transition for an item.
@@ -46,7 +48,7 @@ func DetectTransition(ctx context.Context, workflowRoot, item, destination strin
 func findItemStatus(workflowRoot, item string) (string, error) {
 	entries, err := os.ReadDir(workflowRoot)
 	if err != nil {
-		return "", fmt.Errorf("read workflow root: %w", err)
+		return "", camperrors.Wrap(err, "read workflow root")
 	}
 
 	for _, entry := range entries {

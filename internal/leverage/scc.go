@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // DefaultExcludeDirs are directories excluded from scc scans by default.
@@ -70,17 +72,17 @@ func (r *SCCRunner) Run(ctx context.Context, dir string, excludeDirs []string) (
 	output, err := cmd.Output()
 	if err != nil {
 		if ctx.Err() != nil {
-			return nil, fmt.Errorf("scc cancelled: %w", ctx.Err())
+			return nil, camperrors.Wrap(ctx.Err(), "scc cancelled")
 		}
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			return nil, fmt.Errorf("scc failed on %s: %w\nstderr: %s", dir, err, exitErr.Stderr)
 		}
-		return nil, fmt.Errorf("scc failed on %s: %w", dir, err)
+		return nil, camperrors.Wrapf(err, "scc failed on %s", dir)
 	}
 
 	var result SCCResult
 	if err := json.Unmarshal(output, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse scc json2 output: %w", err)
+		return nil, camperrors.Wrap(err, "failed to parse scc json2 output")
 	}
 
 	return &result, nil

@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
@@ -59,13 +60,13 @@ func runProjectWorktreeRemove(cmd *cobra.Command, args []string) error {
 	// Find campaign root
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign: %w", err)
+		return camperrors.Wrap(err, "not in a campaign")
 	}
 
 	// Load campaign config
 	cfg, err := config.LoadCampaignConfig(ctx, campRoot)
 	if err != nil {
-		return fmt.Errorf("failed to load campaign config: %w", err)
+		return camperrors.Wrap(err, "failed to load campaign config")
 	}
 
 	// Resolve project name
@@ -96,7 +97,7 @@ func runProjectWorktreeRemove(cmd *cobra.Command, args []string) error {
 	git := worktree.NewGitWorktree(projectPath)
 
 	if err := git.Remove(ctx, wtPath, wtRemoveForce); err != nil {
-		return fmt.Errorf("failed to remove worktree: %w", err)
+		return camperrors.Wrap(err, "failed to remove worktree")
 	}
 
 	fmt.Println(ui.Success(fmt.Sprintf("Removed worktree: %s/%s", projectName, worktreeName)))

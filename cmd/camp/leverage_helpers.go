@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -31,7 +32,7 @@ type leverageSetup struct {
 func initLeverageSetup(ctx context.Context) (*leverageSetup, error) {
 	root, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("not in a campaign: %w", err)
+		return nil, camperrors.Wrap(err, "not in a campaign")
 	}
 
 	configPath := leverage.DefaultConfigPath(root)
@@ -41,25 +42,25 @@ func initLeverageSetup(ctx context.Context) (*leverageSetup, error) {
 
 	cfg, err := leverage.LoadConfig(configPath)
 	if err != nil {
-		return nil, fmt.Errorf("loading config: %w", err)
+		return nil, camperrors.Wrap(err, "loading config")
 	}
 
 	autoDetected := cfg.ProjectStart.IsZero()
 	if autoDetected {
 		detected, err := leverage.AutoDetectConfig(ctx, root)
 		if err != nil {
-			return nil, fmt.Errorf("auto-detecting config: %w", err)
+			return nil, camperrors.Wrap(err, "auto-detecting config")
 		}
 		cfg = detected
 	}
 
 	// Sync projects from discovery: adds new projects, removes stale entries.
 	if err := leverage.PopulateProjects(ctx, root, cfg); err != nil {
-		return nil, fmt.Errorf("populating projects: %w", err)
+		return nil, camperrors.Wrap(err, "populating projects")
 	}
 
 	if err := leverage.SaveConfig(configPath, cfg); err != nil {
-		return nil, fmt.Errorf("saving config: %w", err)
+		return nil, camperrors.Wrap(err, "saving config")
 	}
 
 	configCreated := !configExists
@@ -68,7 +69,7 @@ func initLeverageSetup(ctx context.Context) (*leverageSetup, error) {
 	authorsPath := leverage.DefaultAuthorsPath(root)
 	authorCfg, err := leverage.LoadAuthorConfig(authorsPath)
 	if err != nil {
-		return nil, fmt.Errorf("loading authors config: %w", err)
+		return nil, camperrors.Wrap(err, "loading authors config")
 	}
 
 	// Resolve projects to collect git dirs for author auto-detection.
@@ -224,7 +225,7 @@ func initRunner(cfg *leverage.LeverageConfig) (leverage.Runner, error) {
 func resolveAndPopulateProjects(ctx context.Context, root string, cfg *leverage.LeverageConfig, resolver *leverage.AuthorResolver, authorFilter string, verbose bool) ([]leverage.ResolvedProject, int, error) {
 	resolved, err := leverage.ResolveProjects(ctx, root, cfg)
 	if err != nil {
-		return nil, 0, fmt.Errorf("resolving projects: %w", err)
+		return nil, 0, camperrors.Wrap(err, "resolving projects")
 	}
 
 	runPopulateMetrics(ctx, root, resolved, resolver, verbose)

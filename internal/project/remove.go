@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
@@ -61,7 +62,7 @@ func Remove(ctx context.Context, campaignRoot, name string, opts RemoveOptions) 
 
 	// Enforce boundary: projectPath must stay within campaignRoot.
 	if err := pathutil.ValidateBoundary(campaignRoot, projectPath); err != nil {
-		return nil, fmt.Errorf("project path boundary violation: %w", err)
+		return nil, camperrors.Wrap(err, "project path boundary violation")
 	}
 
 	// Check project exists
@@ -96,7 +97,7 @@ func Remove(ctx context.Context, campaignRoot, name string, opts RemoveOptions) 
 	// Remove from git submodules if applicable
 	if isSubmodule {
 		if err := removeSubmodule(ctx, campaignRoot, name); err != nil {
-			return nil, fmt.Errorf("failed to remove submodule: %w", err)
+			return nil, camperrors.Wrap(err, "failed to remove submodule")
 		}
 		result.SubmoduleRemoved = true
 	}
@@ -107,17 +108,17 @@ func Remove(ctx context.Context, campaignRoot, name string, opts RemoveOptions) 
 		var errs []error
 
 		if err := os.RemoveAll(projectPath); err != nil {
-			errs = append(errs, fmt.Errorf("delete project files %q: %w", projectPath, err))
+			errs = append(errs, camperrors.Wrapf(err, "delete project files %q", projectPath))
 		} else {
 			result.FilesDeleted = true
 		}
 
 		worktreePath := filepath.Join(campaignRoot, "worktrees", name)
 		if boundErr := pathutil.ValidateBoundary(campaignRoot, worktreePath); boundErr != nil {
-			errs = append(errs, fmt.Errorf("worktree path boundary violation: %w", boundErr))
+			errs = append(errs, camperrors.Wrap(boundErr, "worktree path boundary violation"))
 		} else if _, statErr := os.Stat(worktreePath); statErr == nil {
 			if removeErr := os.RemoveAll(worktreePath); removeErr != nil {
-				errs = append(errs, fmt.Errorf("delete worktree %q: %w", worktreePath, removeErr))
+				errs = append(errs, camperrors.Wrapf(removeErr, "delete worktree %q", worktreePath))
 			} else {
 				result.WorktreeDeleted = true
 			}
@@ -125,7 +126,7 @@ func Remove(ctx context.Context, campaignRoot, name string, opts RemoveOptions) 
 
 		modulesPath := filepath.Join(campaignRoot, ".git", "modules", "projects", name)
 		if boundErr := pathutil.ValidateBoundary(campaignRoot, modulesPath); boundErr != nil {
-			errs = append(errs, fmt.Errorf("modules path boundary violation: %w", boundErr))
+			errs = append(errs, camperrors.Wrap(boundErr, "modules path boundary violation"))
 		} else {
 			os.RemoveAll(modulesPath)
 		}
@@ -193,7 +194,7 @@ func executeSubmoduleDeinit(ctx context.Context, campaignRoot, submodulePath str
 			if errType == git.GitErrorLock {
 				return &git.LockError{Path: "index.lock", Err: err}
 			}
-			return fmt.Errorf("submodule deinit failed: %w", err)
+			return camperrors.Wrap(err, "submodule deinit failed")
 		}
 		return nil
 	})
@@ -214,7 +215,7 @@ func executeSubmoduleRm(ctx context.Context, campaignRoot, submodulePath string)
 			if errType == git.GitErrorLock {
 				return &git.LockError{Path: "index.lock", Err: err}
 			}
-			return fmt.Errorf("git rm failed: %w", err)
+			return camperrors.Wrap(err, "git rm failed")
 		}
 		return nil
 	})

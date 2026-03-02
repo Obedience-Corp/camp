@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
@@ -79,7 +80,7 @@ func runSettings(cmd *cobra.Command, args []string) error {
 func runGlobalSettings(ctx context.Context) error {
 	cfg, err := config.LoadGlobalConfig(ctx)
 	if err != nil {
-		return fmt.Errorf("loading global config: %w", err)
+		return camperrors.Wrap(err, "loading global config")
 	}
 
 	for {
@@ -125,12 +126,12 @@ func runGlobalSettings(ctx context.Context) error {
 		case "verbose":
 			cfg.Verbose = !cfg.Verbose
 			if err := config.SaveGlobalConfig(ctx, cfg); err != nil {
-				return fmt.Errorf("saving config: %w", err)
+				return camperrors.Wrap(err, "saving config")
 			}
 		case "no_color":
 			cfg.NoColor = !cfg.NoColor
 			if err := config.SaveGlobalConfig(ctx, cfg); err != nil {
-				return fmt.Errorf("saving config: %w", err)
+				return camperrors.Wrap(err, "saving config")
 			}
 		}
 	}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,15 +55,15 @@ func runTransfer(cmd *cobra.Command, args []string) error {
 
 	srcPath, err := transfer.ResolveCrossCampaignPath(ctx, root, args[0])
 	if err != nil {
-		return fmt.Errorf("resolve source: %w", err)
+		return camperrors.Wrap(err, "resolve source")
 	}
 	if err := transfer.ValidatePathExists(srcPath); err != nil {
-		return fmt.Errorf("source: %w", err)
+		return camperrors.Wrap(err, "source")
 	}
 
 	destPath, err := transfer.ResolveCrossCampaignPath(ctx, root, args[1])
 	if err != nil {
-		return fmt.Errorf("resolve destination: %w", err)
+		return camperrors.Wrap(err, "resolve destination")
 	}
 
 	// If dest is a directory or ends with /, place source inside it
@@ -83,19 +84,19 @@ func runTransfer(cmd *cobra.Command, args []string) error {
 
 	srcInfo, err := os.Stat(srcPath)
 	if err != nil {
-		return fmt.Errorf("stat source: %w", err)
+		return camperrors.Wrap(err, "stat source")
 	}
 
 	if srcInfo.IsDir() {
 		if err := transfer.CopyDir(srcPath, destPath); err != nil {
-			return fmt.Errorf("transfer directory: %w", err)
+			return camperrors.Wrap(err, "transfer directory")
 		}
 	} else {
 		if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
-			return fmt.Errorf("create destination directory: %w", err)
+			return camperrors.Wrap(err, "create destination directory")
 		}
 		if err := transfer.CopyFile(srcPath, destPath); err != nil {
-			return fmt.Errorf("transfer file: %w", err)
+			return camperrors.Wrap(err, "transfer file")
 		}
 	}
 

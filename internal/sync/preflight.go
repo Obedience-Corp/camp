@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/git"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
 
@@ -93,7 +94,7 @@ func (s *Syncer) listSubmodules(ctx context.Context) ([]string, error) {
 	// Validate all submodule paths before any downstream filesystem operations.
 	for _, p := range paths {
 		if err := pathutil.ValidateSubmodulePath(s.repoRoot, p); err != nil {
-			return nil, fmt.Errorf("malformed submodule path %q in .gitmodules: %w", p, err)
+			return nil, camperrors.Wrapf(err, "malformed submodule path %q in .gitmodules", p)
 		}
 	}
 

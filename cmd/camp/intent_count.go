@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
@@ -39,7 +40,7 @@ func runIntentCount(cmd *cobra.Command, args []string) error {
 
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign directory: %w", err)
+		return camperrors.Wrap(err, "not in a campaign directory")
 	}
 
 	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
@@ -47,12 +48,12 @@ func runIntentCount(cmd *cobra.Command, args []string) error {
 
 	// Ensure directories exist and migrate legacy layout
 	if err := svc.EnsureDirectories(ctx); err != nil {
-		return fmt.Errorf("ensuring intent directories: %w", err)
+		return camperrors.Wrap(err, "ensuring intent directories")
 	}
 
 	counts, total, err := svc.Count(ctx)
 	if err != nil {
-		return fmt.Errorf("counting intents: %w", err)
+		return camperrors.Wrap(err, "counting intents")
 	}
 
 	switch format {
@@ -119,7 +120,7 @@ func outputCountJSON(counts []intent.StatusCount, total int) error {
 
 	data, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshaling JSON: %w", err)
+		return camperrors.Wrap(err, "marshaling JSON")
 	}
 
 	fmt.Println(string(data))

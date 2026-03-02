@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -74,7 +75,7 @@ func runGatherFeedback(cmd *cobra.Command, args []string) error {
 	// Load campaign config
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign directory: %w", err)
+		return camperrors.Wrap(err, "not in a campaign directory")
 	}
 
 	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
@@ -98,7 +99,7 @@ func runGatherFeedback(cmd *cobra.Command, args []string) error {
 	scanner := feedback.NewScanner(resolver.Festivals())
 	festivals, err := scanner.Scan(ctx, opts)
 	if err != nil {
-		return fmt.Errorf("scanning festivals: %w", err)
+		return camperrors.Wrap(err, "scanning festivals")
 	}
 
 	if len(festivals) == 0 {
@@ -129,7 +130,7 @@ func gatherNewFeedback(ctx context.Context, festivals []feedback.FestivalFeedbac
 
 	for _, fest := range festivals {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled: %w", err)
+			return nil, camperrors.Wrap(err, "context cancelled")
 		}
 
 		result.FestivalsScanned++
@@ -137,7 +138,7 @@ func gatherNewFeedback(ctx context.Context, festivals []feedback.FestivalFeedbac
 		// Filter new observations
 		newObs, err := tracker.FilterNew(fest.Festival.Path, fest.Observations, opts.Force)
 		if err != nil {
-			return nil, fmt.Errorf("checking tracking for %s: %w", fest.Festival.ID, err)
+			return nil, camperrors.Wrapf(err, "checking tracking for %s", fest.Festival.ID)
 		}
 
 		festResult := feedback.FestivalGatherResult{
@@ -161,7 +162,7 @@ func gatherNewFeedback(ctx context.Context, festivals []feedback.FestivalFeedbac
 		// Build or update intent file
 		intentPath, created, err := builder.BuildOrUpdate(fest.Festival, newObs)
 		if err != nil {
-			return nil, fmt.Errorf("building intent for %s: %w", fest.Festival.ID, err)
+			return nil, camperrors.Wrapf(err, "building intent for %s", fest.Festival.ID)
 		}
 
 		festResult.IntentFile = intentPath
@@ -176,7 +177,7 @@ func gatherNewFeedback(ctx context.Context, festivals []feedback.FestivalFeedbac
 
 		// Record gathered observations in tracking file
 		if err := tracker.RecordGathered(fest.Festival.Path, newObs); err != nil {
-			return nil, fmt.Errorf("recording tracking for %s: %w", fest.Festival.ID, err)
+			return nil, camperrors.Wrapf(err, "recording tracking for %s", fest.Festival.ID)
 		}
 
 		result.FestivalResults = append(result.FestivalResults, festResult)

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/project"
 )
 
@@ -63,7 +64,7 @@ func ResolveProjects(ctx context.Context, campaignRoot string, cfg *LeverageConf
 func resolveFromProjectList(ctx context.Context, campaignRoot string) ([]ResolvedProject, error) {
 	projects, err := project.List(ctx, campaignRoot)
 	if err != nil {
-		return nil, fmt.Errorf("list projects: %w", err)
+		return nil, camperrors.Wrap(err, "list projects")
 	}
 
 	resolved := make([]ResolvedProject, 0, len(projects))

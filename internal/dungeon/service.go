@@ -68,7 +68,7 @@ type InitResult struct {
 // This operation is idempotent unless Force is true.
 func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("context cancelled: %w", err)
+		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
 	result := &InitResult{}
@@ -83,12 +83,12 @@ func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, erro
 
 	for _, dir := range dirs {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled: %w", err)
+			return nil, camperrors.Wrap(err, "context cancelled")
 		}
 
 		if _, err := os.Stat(dir); os.IsNotExist(err) {
 			if err := os.MkdirAll(dir, 0755); err != nil {
-				return nil, fmt.Errorf("creating directory %s: %w", dir, err)
+				return nil, camperrors.Wrapf(err, "creating directory %s", dir)
 			}
 			result.CreatedDirs = append(result.CreatedDirs, dir)
 		}
@@ -98,7 +98,7 @@ func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, erro
 	obeyPath := filepath.Join(s.dungeonPath, "OBEY.md")
 
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("context cancelled: %w", err)
+		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
 	exists := false
@@ -111,11 +111,11 @@ func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, erro
 	} else {
 		content, err := GetOBEYTemplate()
 		if err != nil {
-			return nil, fmt.Errorf("reading template for %s: %w", obeyPath, err)
+			return nil, camperrors.Wrapf(err, "reading template for %s", obeyPath)
 		}
 
 		if err := os.WriteFile(obeyPath, content, 0644); err != nil {
-			return nil, fmt.Errorf("writing %s: %w", obeyPath, err)
+			return nil, camperrors.Wrapf(err, "writing %s", obeyPath)
 		}
 		result.CreatedFiles = append(result.CreatedFiles, obeyPath)
 	}
@@ -124,13 +124,13 @@ func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, erro
 	statusDirs := []string{"completed", "archived", "someday"}
 	for _, dir := range statusDirs {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled: %w", err)
+			return nil, camperrors.Wrap(err, "context cancelled")
 		}
 
 		gitkeepPath := filepath.Join(s.dungeonPath, dir, ".gitkeep")
 		if _, err := os.Stat(gitkeepPath); os.IsNotExist(err) {
 			if err := os.WriteFile(gitkeepPath, []byte{}, 0644); err != nil {
-				return nil, fmt.Errorf("failed to create .gitkeep in %s: %w", dir, err)
+				return nil, camperrors.Wrapf(err, "failed to create .gitkeep in %s", dir)
 			}
 			result.CreatedFiles = append(result.CreatedFiles, filepath.Join(dir, ".gitkeep"))
 		}
@@ -143,7 +143,7 @@ func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, erro
 // (excluding .gitkeep), and returns them sorted alphabetically.
 func (s *Service) ListStatusDirs(ctx context.Context) ([]StatusDir, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("context cancelled: %w", err)
+		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
 	entries, err := os.ReadDir(s.dungeonPath)
@@ -151,7 +151,7 @@ func (s *Service) ListStatusDirs(ctx context.Context) ([]StatusDir, error) {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("reading dungeon directory: %w", err)
+		return nil, camperrors.Wrap(err, "reading dungeon directory")
 	}
 
 	var dirs []StatusDir
@@ -191,7 +191,7 @@ func (s *Service) ListStatusDirs(ctx context.Context) ([]StatusDir, error) {
 // ListItems returns all items at the dungeon root (excluding subdirectories and system files).
 func (s *Service) ListItems(ctx context.Context) ([]DungeonItem, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("context cancelled: %w", err)
+		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
 	entries, err := os.ReadDir(s.dungeonPath)
@@ -199,7 +199,7 @@ func (s *Service) ListItems(ctx context.Context) ([]DungeonItem, error) {
 		if os.IsNotExist(err) {
 			return nil, nil // Empty if dungeon doesn't exist
 		}
-		return nil, fmt.Errorf("reading dungeon directory: %w", err)
+		return nil, camperrors.Wrap(err, "reading dungeon directory")
 	}
 
 	var items []DungeonItem
@@ -244,7 +244,7 @@ func (s *Service) ListItems(ctx context.Context) ([]DungeonItem, error) {
 // Archive moves an item from the dungeon root to archived/.
 func (s *Service) Archive(ctx context.Context, itemName string) error {
 	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("context cancelled: %w", err)
+		return camperrors.Wrap(err, "context cancelled")
 	}
 
 	// Strip trailing slash if present
@@ -264,11 +264,11 @@ func (s *Service) Archive(ctx context.Context, itemName string) error {
 	// Verify source is in dungeon root (not a path traversal)
 	absSource, err := filepath.Abs(srcPath)
 	if err != nil {
-		return fmt.Errorf("resolving source path: %w", err)
+		return camperrors.Wrap(err, "resolving source path")
 	}
 	absDungeon, err := filepath.Abs(s.dungeonPath)
 	if err != nil {
-		return fmt.Errorf("resolving dungeon path: %w", err)
+		return camperrors.Wrap(err, "resolving dungeon path")
 	}
 	if filepath.Dir(absSource) != absDungeon {
 		return fmt.Errorf("%w: %s", ErrNotInDungeon, itemName)
@@ -277,7 +277,7 @@ func (s *Service) Archive(ctx context.Context, itemName string) error {
 	// Ensure archived directory exists
 	archivedDir := filepath.Join(s.dungeonPath, "archived")
 	if err := os.MkdirAll(archivedDir, 0755); err != nil {
-		return fmt.Errorf("creating archived directory: %w", err)
+		return camperrors.Wrap(err, "creating archived directory")
 	}
 
 	// Check if destination already exists
@@ -287,7 +287,7 @@ func (s *Service) Archive(ctx context.Context, itemName string) error {
 
 	// Move the item
 	if err := os.Rename(srcPath, dstPath); err != nil {
-		return fmt.Errorf("moving %s to archived: %w", itemName, err)
+		return camperrors.Wrapf(err, "moving %s to archived", itemName)
 	}
 
 	return nil
@@ -296,7 +296,7 @@ func (s *Service) Archive(ctx context.Context, itemName string) error {
 // AppendCrawlLog appends an entry to crawl.jsonl.
 func (s *Service) AppendCrawlLog(ctx context.Context, entry CrawlEntry) error {
 	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("context cancelled: %w", err)
+		return camperrors.Wrap(err, "context cancelled")
 	}
 
 	logPath := filepath.Join(s.dungeonPath, "crawl.jsonl")
@@ -304,19 +304,19 @@ func (s *Service) AppendCrawlLog(ctx context.Context, entry CrawlEntry) error {
 	// Open file in append mode, create if doesn't exist
 	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return fmt.Errorf("opening crawl log: %w", err)
+		return camperrors.Wrap(err, "opening crawl log")
 	}
 	defer f.Close()
 
 	// Marshal entry to JSON
 	data, err := json.Marshal(entry)
 	if err != nil {
-		return fmt.Errorf("marshaling entry: %w", err)
+		return camperrors.Wrap(err, "marshaling entry")
 	}
 
 	// Write with newline
 	if _, err := f.Write(append(data, '\n')); err != nil {
-		return fmt.Errorf("writing entry: %w", err)
+		return camperrors.Wrap(err, "writing entry")
 	}
 
 	return nil
@@ -327,12 +327,12 @@ func (s *Service) AppendCrawlLog(ctx context.Context, entry CrawlEntry) error {
 // campaign metadata, git directories, and other system files.
 func (s *Service) ListParentItems(ctx context.Context, parentPath string) ([]DungeonItem, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("context cancelled: %w", err)
+		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
 	entries, err := os.ReadDir(parentPath)
 	if err != nil {
-		return nil, fmt.Errorf("reading parent directory: %w", err)
+		return nil, camperrors.Wrap(err, "reading parent directory")
 	}
 
 	excluded := map[string]bool{
@@ -422,7 +422,7 @@ func (s *Service) ListParentItems(ctx context.Context, parentPath string) ([]Dun
 // MoveToDungeon moves an item from the parent directory into the dungeon root.
 func (s *Service) MoveToDungeon(ctx context.Context, itemName, parentPath string) error {
 	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("context cancelled: %w", err)
+		return camperrors.Wrap(err, "context cancelled")
 	}
 
 	sourcePath := filepath.Join(parentPath, itemName)
@@ -433,7 +433,7 @@ func (s *Service) MoveToDungeon(ctx context.Context, itemName, parentPath string
 	}
 
 	if _, err := os.Stat(s.dungeonPath); err != nil {
-		return fmt.Errorf("dungeon directory does not exist: %w", err)
+		return camperrors.Wrap(err, "dungeon directory does not exist")
 	}
 
 	if _, err := os.Stat(targetPath); err == nil {
@@ -441,7 +441,7 @@ func (s *Service) MoveToDungeon(ctx context.Context, itemName, parentPath string
 	}
 
 	if err := os.Rename(sourcePath, targetPath); err != nil {
-		return fmt.Errorf("moving %s to dungeon: %w", itemName, err)
+		return camperrors.Wrapf(err, "moving %s to dungeon", itemName)
 	}
 
 	return nil
@@ -461,7 +461,7 @@ func (s *Service) ArchivedPath() string {
 // The status must be a simple directory name (no path separators).
 func (s *Service) MoveToStatus(ctx context.Context, itemName, status string) error {
 	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("context cancelled: %w", err)
+		return camperrors.Wrap(err, "context cancelled")
 	}
 
 	if err := validateStatusName(status); err != nil {
@@ -484,11 +484,11 @@ func (s *Service) MoveToStatus(ctx context.Context, itemName, status string) err
 	// Verify source is in dungeon root (not a path traversal)
 	absSource, err := filepath.Abs(srcPath)
 	if err != nil {
-		return fmt.Errorf("resolving source path: %w", err)
+		return camperrors.Wrap(err, "resolving source path")
 	}
 	absDungeon, err := filepath.Abs(s.dungeonPath)
 	if err != nil {
-		return fmt.Errorf("resolving dungeon path: %w", err)
+		return camperrors.Wrap(err, "resolving dungeon path")
 	}
 	if filepath.Dir(absSource) != absDungeon {
 		return fmt.Errorf("%w: %s", ErrNotInDungeon, itemName)
@@ -497,7 +497,7 @@ func (s *Service) MoveToStatus(ctx context.Context, itemName, status string) err
 	// Ensure status directory exists
 	statusDir := filepath.Join(s.dungeonPath, status)
 	if err := os.MkdirAll(statusDir, 0755); err != nil {
-		return fmt.Errorf("creating %s directory: %w", status, err)
+		return camperrors.Wrapf(err, "creating %s directory", status)
 	}
 
 	// Check if destination already exists
@@ -506,7 +506,7 @@ func (s *Service) MoveToStatus(ctx context.Context, itemName, status string) err
 	}
 
 	if err := os.Rename(srcPath, dstPath); err != nil {
-		return fmt.Errorf("moving %s to %s: %w", itemName, status, err)
+		return camperrors.Wrapf(err, "moving %s to %s", itemName, status)
 	}
 
 	return nil
@@ -516,7 +516,7 @@ func (s *Service) MoveToStatus(ctx context.Context, itemName, status string) err
 // The status must be a simple directory name (no path separators).
 func (s *Service) MoveToDungeonStatus(ctx context.Context, itemName, parentPath, status string) error {
 	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("context cancelled: %w", err)
+		return camperrors.Wrap(err, "context cancelled")
 	}
 
 	if err := validateStatusName(status); err != nil {
@@ -526,11 +526,11 @@ func (s *Service) MoveToDungeonStatus(ctx context.Context, itemName, parentPath,
 	// Validate parentPath is within campaign root
 	absSource, err := filepath.Abs(filepath.Join(parentPath, itemName))
 	if err != nil {
-		return fmt.Errorf("resolving source path: %w", err)
+		return camperrors.Wrap(err, "resolving source path")
 	}
 	absCampaignRoot, err := filepath.Abs(s.campaignRoot)
 	if err != nil {
-		return fmt.Errorf("resolving campaign root: %w", err)
+		return camperrors.Wrap(err, "resolving campaign root")
 	}
 	if !strings.HasPrefix(absSource, absCampaignRoot+string(filepath.Separator)) {
 		return fmt.Errorf("%w: source outside campaign root", ErrNotInDungeon)
@@ -546,7 +546,7 @@ func (s *Service) MoveToDungeonStatus(ctx context.Context, itemName, parentPath,
 	// Ensure status directory exists
 	statusDir := filepath.Join(s.dungeonPath, status)
 	if err := os.MkdirAll(statusDir, 0755); err != nil {
-		return fmt.Errorf("creating %s directory: %w", status, err)
+		return camperrors.Wrapf(err, "creating %s directory", status)
 	}
 
 	if _, err := os.Stat(targetPath); err == nil {
@@ -554,7 +554,7 @@ func (s *Service) MoveToDungeonStatus(ctx context.Context, itemName, parentPath,
 	}
 
 	if err := os.Rename(sourcePath, targetPath); err != nil {
-		return fmt.Errorf("moving %s to dungeon/%s: %w", itemName, status, err)
+		return camperrors.Wrapf(err, "moving %s to dungeon/%s", itemName, status)
 	}
 
 	return nil

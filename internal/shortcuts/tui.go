@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/ktr0731/go-fuzzyfinder"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/ui/theme"
 )
@@ -44,7 +45,7 @@ func RunAddSubShortcutTUI(ctx context.Context, root string) (*AddSubShortcutResu
 	// Discover projects from filesystem
 	projects, err := project.List(ctx, root)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list projects: %w", err)
+		return nil, camperrors.Wrap(err, "failed to list projects")
 	}
 
 	if len(projects) == 0 {
@@ -57,7 +58,7 @@ func RunAddSubShortcutTUI(ctx context.Context, root string) (*AddSubShortcutResu
 		if errors.Is(err, fuzzyfinder.ErrAbort) {
 			return nil, ErrAborted
 		}
-		return nil, fmt.Errorf("failed to pick project: %w", err)
+		return nil, camperrors.Wrap(err, "failed to pick project")
 	}
 
 	proj := projects[projectIdx]

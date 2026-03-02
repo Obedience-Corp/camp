@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"sort"
 	"strings"
@@ -73,7 +74,7 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 
 	reg, err := config.LoadRegistry(ctx)
 	if err != nil {
-		return fmt.Errorf("load registry: %w", err)
+		return camperrors.Wrap(err, "load registry")
 	}
 	if reg.Len() == 0 {
 		return fmt.Errorf("no campaigns registered (use 'camp init' to create one)")
@@ -177,7 +178,7 @@ func pickCampaign(cmd *cobra.Command, reg *config.Registry) (config.RegisteredCa
 		if errors.Is(err, fuzzyfinder.ErrAbort) {
 			return config.RegisteredCampaign{}, fmt.Errorf("cancelled")
 		}
-		return config.RegisteredCampaign{}, fmt.Errorf("picker: %w", err)
+		return config.RegisteredCampaign{}, camperrors.Wrap(err, "picker")
 	}
 
 	return all[idx], nil

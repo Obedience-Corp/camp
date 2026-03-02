@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
@@ -87,7 +88,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	// Detect campaign root
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign: %w", err)
+		return camperrors.Wrap(err, "not in a campaign")
 	}
 
 	// Build doctor with options
@@ -105,7 +106,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	// Run doctor
 	result, err := d.Run(ctx)
 	if err != nil {
-		return fmt.Errorf("doctor failed: %w", err)
+		return camperrors.Wrap(err, "doctor failed")
 	}
 
 	// Output results

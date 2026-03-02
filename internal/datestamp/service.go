@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 var (
@@ -36,7 +38,7 @@ type Result struct {
 // Datestamp appends a date suffix to a file or directory name.
 func Datestamp(ctx context.Context, path string, opts Options) (*Result, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("context cancelled: %w", err)
+		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
 	// Set defaults
@@ -58,7 +60,7 @@ func Datestamp(ctx context.Context, path string, opts Options) (*Result, error) 
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf("%w: %s", ErrNotFound, path)
 		}
-		return nil, fmt.Errorf("stat failed: %w", err)
+		return nil, camperrors.Wrap(err, "stat failed")
 	}
 
 	// Determine which date to use
@@ -86,7 +88,7 @@ func Datestamp(ctx context.Context, path string, opts Options) (*Result, error) 
 
 	// Perform rename
 	if err := os.Rename(absPath, newPath); err != nil {
-		return nil, fmt.Errorf("rename failed: %w", err)
+		return nil, camperrors.Wrap(err, "rename failed")
 	}
 	result.Executed = true
 

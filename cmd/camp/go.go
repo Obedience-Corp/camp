@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -183,7 +184,7 @@ func runGo(cmd *cobra.Command, args []string) error {
 			// Get current working directory to check if we're at root
 			cwd, err := os.Getwd()
 			if err != nil {
-				return fmt.Errorf("failed to get current directory: %w", err)
+				return camperrors.Wrap(err, "failed to get current directory")
 			}
 
 			// Normalize paths for comparison (resolve symlinks)
@@ -242,6 +243,37 @@ func runGo(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Handle nested path queries containing "/"
+	// e.g. "cgo de festival_app/src" -> resolve "festival_app" then append "src"
+	if strings.Contains(result.Query, "/") && result.IsShortcut {
+		parts := strings.SplitN(result.Query, "/", 2)
+		targetName := parts[0]
+		subPath := parts[1]
+
+		// Resolve the first segment via the index
+		resolveResult, err := index.Resolve(ctx, index.ResolveOptions{
+			CampaignRoot: jumpResult.Path,
+			Category:     result.Category,
+			Query:        targetName,
+		})
+		if err == nil {
+			// Append the subpath and verify it exists
+			nestedPath := filepath.Join(resolveResult.Path, subPath)
+			if info, statErr := os.Stat(nestedPath); statErr == nil && info.IsDir() {
+				cwd, _ := os.Getwd()
+				_ = state.SetLastLocation(ctx, jumpResult.Path, cwd)
+				if printOnly {
+					fmt.Println(nestedPath)
+				} else {
+					fmt.Printf("cd %s\n", nestedPath)
+				}
+				return nil
+			}
+			// Path doesn't exist — fall through to standard resolution
+		}
+		// Index resolution failed — fall through to standard resolution
+	}
+
 	resolveResult, err := index.Resolve(ctx, index.ResolveOptions{
 		CampaignRoot: jumpResult.Path,
 		Category:     result.Category,
@@ -288,7 +320,7 @@ func runGo(cmd *cobra.Command, args []string) error {
 func handleToggle(ctx context.Context, campaignRoot string, printOnly bool) error {
 	cwd, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("failed to get current directory: %w", err)
+		return camperrors.Wrap(err, "failed to get current directory")
 	}
 
 	lastLoc, err := state.GetLastLocation(ctx, campaignRoot)

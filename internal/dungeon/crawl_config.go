@@ -1,9 +1,9 @@
 package dungeon
 
 import (
-	"fmt"
 	"os"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"gopkg.in/yaml.v3"
 )
 
@@ -24,12 +24,12 @@ type CrawlConfig struct {
 func loadCrawlConfig(path string) (*CrawlConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("reading crawl config: %w", err)
+		return nil, camperrors.Wrap(err, "reading crawl config")
 	}
 
 	var cfg CrawlConfig
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parsing crawl config: %w", err)
+		return nil, camperrors.Wrap(err, "parsing crawl config")
 	}
 
 	return &cfg, nil

@@ -52,7 +52,7 @@ type CreateOptions struct {
 // This is the "fast capture" mode for quick idea capture.
 func (s *IntentService) CreateDirect(ctx context.Context, opts CreateOptions) (*Intent, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("context cancelled: %w", err)
+		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
 	ts := opts.Timestamp
@@ -66,13 +66,13 @@ func (s *IntentService) CreateDirect(ctx context.Context, opts CreateOptions) (*
 	// Render template
 	content, err := RenderTemplate(data)
 	if err != nil {
-		return nil, fmt.Errorf("rendering template: %w", err)
+		return nil, camperrors.Wrap(err, "rendering template")
 	}
 
 	// Parse the rendered content to get an Intent struct
 	intent, err := ParseIntent([]byte(content))
 	if err != nil {
-		return nil, fmt.Errorf("parsing rendered template: %w", err)
+		return nil, camperrors.Wrap(err, "parsing rendered template")
 	}
 
 	// Determine final path (inbox by default)
@@ -80,7 +80,7 @@ func (s *IntentService) CreateDirect(ctx context.Context, opts CreateOptions) (*
 
 	// Ensure directory exists
 	if err := os.MkdirAll(filepath.Dir(finalPath), 0755); err != nil {
-		return nil, fmt.Errorf("creating directory: %w", err)
+		return nil, camperrors.Wrap(err, "creating directory")
 	}
 
 	// Check if file already exists
@@ -90,7 +90,7 @@ func (s *IntentService) CreateDirect(ctx context.Context, opts CreateOptions) (*
 
 	// Write intent file
 	if err := os.WriteFile(finalPath, []byte(content), 0644); err != nil {
-		return nil, fmt.Errorf("writing intent file: %w", err)
+		return nil, camperrors.Wrap(err, "writing intent file")
 	}
 
 	intent.Path = finalPath
@@ -102,7 +102,7 @@ func (s *IntentService) CreateDirect(ctx context.Context, opts CreateOptions) (*
 // The editorFn callback is used to open the editor, allowing for testing.
 func (s *IntentService) CreateWithEditor(ctx context.Context, opts CreateOptions, editorFn EditorFunc) (*Intent, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("context cancelled: %w", err)
+		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
 	ts := opts.Timestamp
@@ -116,13 +116,13 @@ func (s *IntentService) CreateWithEditor(ctx context.Context, opts CreateOptions
 	// Render template
 	content, err := RenderTemplate(data)
 	if err != nil {
-		return nil, fmt.Errorf("rendering template: %w", err)
+		return nil, camperrors.Wrap(err, "rendering template")
 	}
 
 	// Create temp file
 	tmpfile, err := os.CreateTemp("", "intent_*.md")
 	if err != nil {
-		return nil, fmt.Errorf("creating temp file: %w", err)
+		return nil, camperrors.Wrap(err, "creating temp file")
 	}
 	tmpPath := tmpfile.Name()
 	defer os.Remove(tmpPath) // Clean up temp file
@@ -130,21 +130,21 @@ func (s *IntentService) CreateWithEditor(ctx context.Context, opts CreateOptions
 	// Write template to temp file
 	if _, err := tmpfile.WriteString(content); err != nil {
 		tmpfile.Close()
-		return nil, fmt.Errorf("writing temp file: %w", err)
+		return nil, camperrors.Wrap(err, "writing temp file")
 	}
 	tmpfile.Close()
 
 	// Open editor (blocking)
 	if editorFn != nil {
 		if err := editorFn(ctx, tmpPath); err != nil {
-			return nil, fmt.Errorf("opening editor: %w", err)
+			return nil, camperrors.Wrap(err, "opening editor")
 		}
 	}
 
 	// Read modified content
 	modified, err := os.ReadFile(tmpPath)
 	if err != nil {
-		return nil, fmt.Errorf("reading edited file: %w", err)
+		return nil, camperrors.Wrap(err, "reading edited file")
 	}
 
 	// Check for cancellation (empty file or unchanged)
@@ -155,7 +155,7 @@ func (s *IntentService) CreateWithEditor(ctx context.Context, opts CreateOptions
 	// Parse and validate
 	intent, err := ParseIntent(modified)
 	if err != nil {
-		return nil, fmt.Errorf("parsing edited intent: %w", err)
+		return nil, camperrors.Wrap(err, "parsing edited intent")
 	}
 
 	if errs := intent.Validate(); len(errs) > 0 {
@@ -165,11 +165,11 @@ func (s *IntentService) CreateWithEditor(ctx context.Context, opts CreateOptions
 	// Move to final location
 	finalPath := s.getIntentPath(intent.Status, intent.ID)
 	if err := os.MkdirAll(filepath.Dir(finalPath), 0755); err != nil {
-		return nil, fmt.Errorf("creating directory: %w", err)
+		return nil, camperrors.Wrap(err, "creating directory")
 	}
 
 	if err := moveFile(tmpPath, finalPath); err != nil {
-		return nil, fmt.Errorf("moving intent file: %w", err)
+		return nil, camperrors.Wrap(err, "moving intent file")
 	}
 
 	intent.Path = finalPath
@@ -183,7 +183,7 @@ type EditorFunc func(ctx context.Context, path string) error
 // Supports fuzzy matching - partial IDs will match.
 func (s *IntentService) Find(ctx context.Context, id string) (*Intent, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("context cancelled: %w", err)
+		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
 	statuses := AllStatuses()
@@ -225,7 +225,7 @@ func (s *IntentService) Find(ctx context.Context, id string) (*Intent, error) {
 // Get retrieves an intent by its exact ID.
 func (s *IntentService) Get(ctx context.Context, id string) (*Intent, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("context cancelled: %w", err)
+		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
 	statuses := AllStatuses()
@@ -252,7 +252,7 @@ type ListOptions struct {
 // List returns all intents matching the given options.
 func (s *IntentService) List(ctx context.Context, opts *ListOptions) ([]*Intent, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("context cancelled: %w", err)
+		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
 	var intents []*Intent
@@ -264,7 +264,7 @@ func (s *IntentService) List(ctx context.Context, opts *ListOptions) ([]*Intent,
 
 	for _, status := range statuses {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled: %w", err)
+			return nil, camperrors.Wrap(err, "context cancelled")
 		}
 
 		dir := filepath.Join(s.intentsDir, string(status))
@@ -273,7 +273,7 @@ func (s *IntentService) List(ctx context.Context, opts *ListOptions) ([]*Intent,
 			if os.IsNotExist(err) {
 				continue
 			}
-			return nil, fmt.Errorf("reading directory %s: %w", dir, err)
+			return nil, camperrors.Wrapf(err, "reading directory %s", dir)
 		}
 
 		for _, file := range files {
@@ -341,13 +341,13 @@ func (is intentSource) Len() int {
 // Empty query returns all intents. Results are sorted by relevance score.
 func (s *IntentService) Search(ctx context.Context, query string) ([]*Intent, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("context cancelled: %w", err)
+		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
 	// Get all intents
 	allIntents, err := s.List(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("listing intents: %w", err)
+		return nil, camperrors.Wrap(err, "listing intents")
 	}
 
 	// Empty query returns all intents
@@ -370,7 +370,7 @@ func (s *IntentService) Search(ctx context.Context, query string) ([]*Intent, er
 // Edit opens an existing intent in an editor and saves changes.
 func (s *IntentService) Edit(ctx context.Context, id string, editorFn EditorFunc) (*Intent, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("context cancelled: %w", err)
+		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
 	intent, err := s.Find(ctx, id)
@@ -384,19 +384,19 @@ func (s *IntentService) Edit(ctx context.Context, id string, editorFn EditorFunc
 	// Open editor
 	if editorFn != nil {
 		if err := editorFn(ctx, intent.Path); err != nil {
-			return nil, fmt.Errorf("opening editor: %w", err)
+			return nil, camperrors.Wrap(err, "opening editor")
 		}
 	}
 
 	// Re-read and parse
 	content, err := os.ReadFile(intent.Path)
 	if err != nil {
-		return nil, fmt.Errorf("reading edited file: %w", err)
+		return nil, camperrors.Wrap(err, "reading edited file")
 	}
 
 	updated, err := ParseIntent(content)
 	if err != nil {
-		return nil, fmt.Errorf("parsing edited intent: %w", err)
+		return nil, camperrors.Wrap(err, "parsing edited intent")
 	}
 
 	if errs := updated.Validate(); len(errs) > 0 {
@@ -407,10 +407,10 @@ func (s *IntentService) Edit(ctx context.Context, id string, editorFn EditorFunc
 	if updated.Status != originalStatus {
 		newPath := s.getIntentPath(updated.Status, updated.ID)
 		if err := os.MkdirAll(filepath.Dir(newPath), 0755); err != nil {
-			return nil, fmt.Errorf("creating directory: %w", err)
+			return nil, camperrors.Wrap(err, "creating directory")
 		}
 		if err := moveFile(originalPath, newPath); err != nil {
-			return nil, fmt.Errorf("moving intent to new status: %w", err)
+			return nil, camperrors.Wrap(err, "moving intent to new status")
 		}
 		updated.Path = newPath
 	} else {
@@ -429,7 +429,7 @@ func (s *IntentService) Edit(ctx context.Context, id string, editorFn EditorFunc
 // Save writes an intent to its file path.
 func (s *IntentService) Save(ctx context.Context, intent *Intent) error {
 	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("context cancelled: %w", err)
+		return camperrors.Wrap(err, "context cancelled")
 	}
 
 	if intent.Path == "" {
@@ -438,11 +438,11 @@ func (s *IntentService) Save(ctx context.Context, intent *Intent) error {
 
 	data, err := SerializeIntent(intent)
 	if err != nil {
-		return fmt.Errorf("serializing intent: %w", err)
+		return camperrors.Wrap(err, "serializing intent")
 	}
 
 	if err := os.WriteFile(intent.Path, data, 0644); err != nil {
-		return fmt.Errorf("writing intent file: %w", err)
+		return camperrors.Wrap(err, "writing intent file")
 	}
 
 	return nil
@@ -451,7 +451,7 @@ func (s *IntentService) Save(ctx context.Context, intent *Intent) error {
 // Delete removes an intent file.
 func (s *IntentService) Delete(ctx context.Context, id string) error {
 	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("context cancelled: %w", err)
+		return camperrors.Wrap(err, "context cancelled")
 	}
 
 	intent, err := s.Find(ctx, id)
@@ -460,7 +460,7 @@ func (s *IntentService) Delete(ctx context.Context, id string) error {
 	}
 
 	if err := os.Remove(intent.Path); err != nil {
-		return fmt.Errorf("removing intent file: %w", err)
+		return camperrors.Wrap(err, "removing intent file")
 	}
 
 	return nil
@@ -469,7 +469,7 @@ func (s *IntentService) Delete(ctx context.Context, id string) error {
 // Move changes an intent's status by moving it to a different directory.
 func (s *IntentService) Move(ctx context.Context, id string, newStatus Status) (*Intent, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("context cancelled: %w", err)
+		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
 	intent, err := s.Find(ctx, id)
@@ -491,24 +491,24 @@ func (s *IntentService) Move(ctx context.Context, id string, newStatus Status) (
 
 	// Ensure directory exists
 	if err := os.MkdirAll(filepath.Dir(newPath), 0755); err != nil {
-		return nil, fmt.Errorf("creating directory: %w", err)
+		return nil, camperrors.Wrap(err, "creating directory")
 	}
 
 	// Serialize and write to new location
 	data, err := SerializeIntent(intent)
 	if err != nil {
-		return nil, fmt.Errorf("serializing intent: %w", err)
+		return nil, camperrors.Wrap(err, "serializing intent")
 	}
 
 	if err := os.WriteFile(newPath, data, 0644); err != nil {
-		return nil, fmt.Errorf("writing intent file: %w", err)
+		return nil, camperrors.Wrap(err, "writing intent file")
 	}
 
 	// Remove old file
 	if err := os.Remove(oldPath); err != nil {
 		// Try to clean up new file if remove fails
 		os.Remove(newPath)
-		return nil, fmt.Errorf("removing old intent file: %w", err)
+		return nil, camperrors.Wrap(err, "removing old intent file")
 	}
 	// Clean up any orphan copies in other status directories
 	s.removeAllCopies(id, newPath)
@@ -532,7 +532,7 @@ type StatusCount struct {
 // This is lightweight — it counts files without parsing them.
 func (s *IntentService) Count(ctx context.Context) ([]StatusCount, int, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, 0, fmt.Errorf("context cancelled: %w", err)
+		return nil, 0, camperrors.Wrap(err, "context cancelled")
 	}
 
 	statuses := AllStatuses()
@@ -547,7 +547,7 @@ func (s *IntentService) Count(ctx context.Context) ([]StatusCount, int, error) {
 				counts = append(counts, StatusCount{Status: status, Count: 0})
 				continue
 			}
-			return nil, 0, fmt.Errorf("reading directory %s: %w", dir, err)
+			return nil, 0, camperrors.Wrapf(err, "reading directory %s", dir)
 		}
 
 		n := 0
@@ -633,14 +633,14 @@ func (s *IntentService) sortIntents(intents []*Intent, sortBy string, desc bool)
 // legacy top-level done/ and killed/ directories into the dungeon.
 func (s *IntentService) EnsureDirectories(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("context cancelled: %w", err)
+		return camperrors.Wrap(err, "context cancelled")
 	}
 
 	// Create all status directories
 	for _, status := range AllStatuses() {
 		dir := filepath.Join(s.intentsDir, string(status))
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			return fmt.Errorf("creating directory %s: %w", dir, err)
+			return camperrors.Wrapf(err, "creating directory %s", dir)
 		}
 	}
 
@@ -652,7 +652,7 @@ func (s *IntentService) EnsureDirectories(ctx context.Context) error {
 
 	for legacyDir, newStatus := range legacyMappings {
 		if err := s.migrateLegacyDir(ctx, legacyDir, newStatus); err != nil {
-			return fmt.Errorf("migrating %s: %w", legacyDir, err)
+			return camperrors.Wrapf(err, "migrating %s", legacyDir)
 		}
 	}
 
@@ -670,14 +670,14 @@ func (s *IntentService) migrateLegacyDir(ctx context.Context, legacyDir string, 
 		if os.IsNotExist(err) {
 			return nil // Nothing to migrate
 		}
-		return fmt.Errorf("reading directory %s: %w", srcDir, err)
+		return camperrors.Wrapf(err, "reading directory %s", srcDir)
 	}
 
 	dstDir := filepath.Join(s.intentsDir, string(newStatus))
 
 	for _, entry := range entries {
 		if err := ctx.Err(); err != nil {
-			return fmt.Errorf("context cancelled: %w", err)
+			return camperrors.Wrap(err, "context cancelled")
 		}
 
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
@@ -690,7 +690,7 @@ func (s *IntentService) migrateLegacyDir(ctx context.Context, legacyDir string, 
 		// Read, update status in frontmatter, write to new location
 		content, err := os.ReadFile(srcPath)
 		if err != nil {
-			return fmt.Errorf("reading %s: %w", srcPath, err)
+			return camperrors.Wrapf(err, "reading %s", srcPath)
 		}
 
 		intent, err := ParseIntentFromFile(srcPath, content)
@@ -702,7 +702,7 @@ func (s *IntentService) migrateLegacyDir(ctx context.Context, legacyDir string, 
 				continue
 			}
 			if err := os.Rename(srcPath, dstPath); err != nil {
-				return fmt.Errorf("moving %s: %w", srcPath, err)
+				return camperrors.Wrapf(err, "moving %s", srcPath)
 			}
 			continue
 		}
@@ -711,7 +711,7 @@ func (s *IntentService) migrateLegacyDir(ctx context.Context, legacyDir string, 
 		intent.Status = newStatus
 		data, err := SerializeIntent(intent)
 		if err != nil {
-			return fmt.Errorf("serializing %s: %w", srcPath, err)
+			return camperrors.Wrapf(err, "serializing %s", srcPath)
 		}
 
 		if _, serr := os.Stat(dstPath); serr == nil {
@@ -721,11 +721,11 @@ func (s *IntentService) migrateLegacyDir(ctx context.Context, legacyDir string, 
 		}
 
 		if err := os.WriteFile(dstPath, data, 0644); err != nil {
-			return fmt.Errorf("writing %s: %w", dstPath, err)
+			return camperrors.Wrapf(err, "writing %s", dstPath)
 		}
 
 		if err := os.Remove(srcPath); err != nil {
-			return fmt.Errorf("removing %s: %w", srcPath, err)
+			return camperrors.Wrapf(err, "removing %s", srcPath)
 		}
 	}
 

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os/exec"
 	"strings"
 	"time"
@@ -50,7 +51,7 @@ func runLeverageSnapshot(cmd *cobra.Command, args []string) error {
 
 	resolved, err := leverage.ResolveProjects(ctx, setup.Root, cfg)
 	if err != nil {
-		return fmt.Errorf("resolving projects: %w", err)
+		return camperrors.Wrap(err, "resolving projects")
 	}
 
 	projectFilter, _ := cmd.Flags().GetString("project")
@@ -114,7 +115,7 @@ func runLeverageSnapshot(cmd *cobra.Command, args []string) error {
 		snapshot := leverage.NewSnapshot(proj.Name, hash, commitDate, time.Now(), scc, score, authors)
 
 		if err := store.Save(ctx, snapshot); err != nil {
-			return fmt.Errorf("saving snapshot for %s: %w", proj.Name, err)
+			return camperrors.Wrapf(err, "saving snapshot for %s", proj.Name)
 		}
 		count++
 	}
@@ -132,7 +133,7 @@ func getHeadCommit(ctx context.Context, gitDir string) (string, time.Time, error
 	cmd := exec.CommandContext(ctx, "git", "-C", gitDir, "log", "-1", "--format=%H%n%cI")
 	out, err := cmd.Output()
 	if err != nil {
-		return "", time.Time{}, fmt.Errorf("git log: %w", err)
+		return "", time.Time{}, camperrors.Wrap(err, "git log")
 	}
 
 	lines := strings.SplitN(strings.TrimSpace(string(out)), "\n", 2)
@@ -142,7 +143,7 @@ func getHeadCommit(ctx context.Context, gitDir string) (string, time.Time, error
 
 	date, err := time.Parse(time.RFC3339, lines[1])
 	if err != nil {
-		return "", time.Time{}, fmt.Errorf("parsing commit date: %w", err)
+		return "", time.Time{}, camperrors.Wrap(err, "parsing commit date")
 	}
 
 	return lines[0], date, nil

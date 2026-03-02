@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 )
 
@@ -242,7 +243,7 @@ func addLocalAsSubmodule(ctx context.Context, campaignRoot, localPath, destPath,
 	// Resolve to absolute path
 	absLocal, err := filepath.Abs(localPath)
 	if err != nil {
-		return fmt.Errorf("failed to resolve local path: %w", err)
+		return camperrors.Wrap(err, "failed to resolve local path")
 	}
 
 	// Verify it's a git repo

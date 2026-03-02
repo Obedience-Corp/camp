@@ -2,11 +2,12 @@ package config
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 
 	"gopkg.in/yaml.v3"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // SettingsDir is the name of the settings subdirectory within .campaign/.
@@ -55,12 +56,12 @@ func LoadJumpsConfig(ctx context.Context, campaignRoot string) (*JumpsConfig, er
 		if os.IsNotExist(err) {
 			return nil, nil // File doesn't exist, caller should use defaults
 		}
-		return nil, fmt.Errorf("failed to read jumps config %s: %w", configPath, err)
+		return nil, camperrors.Wrapf(err, "failed to read jumps config %s", configPath)
 	}
 
 	var cfg JumpsConfig
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse jumps config %s: %w", configPath, err)
+		return nil, camperrors.Wrapf(err, "failed to parse jumps config %s", configPath)
 	}
 
 	return &cfg, nil
@@ -74,17 +75,17 @@ func SaveJumpsConfig(ctx context.Context, campaignRoot string, cfg *JumpsConfig)
 
 	settingsDir := SettingsDirPath(campaignRoot)
 	if err := os.MkdirAll(settingsDir, 0755); err != nil {
-		return fmt.Errorf("failed to create settings directory: %w", err)
+		return camperrors.Wrap(err, "failed to create settings directory")
 	}
 
 	configPath := JumpsConfigPath(campaignRoot)
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
-		return fmt.Errorf("failed to marshal jumps config: %w", err)
+		return camperrors.Wrap(err, "failed to marshal jumps config")
 	}
 
 	if err := os.WriteFile(configPath, data, 0644); err != nil {
-		return fmt.Errorf("failed to write jumps config: %w", err)
+		return camperrors.Wrap(err, "failed to write jumps config")
 	}
 
 	return nil

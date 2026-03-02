@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -106,7 +107,7 @@ func runRegistryPrune(cmd *cobra.Command, args []string) error {
 
 	reg, err := config.LoadRegistry(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to load registry: %w", err)
+		return camperrors.Wrap(err, "failed to load registry")
 	}
 
 	if reg.Len() == 0 {
@@ -214,7 +215,7 @@ func runRegistryPrune(cmd *cobra.Command, args []string) error {
 
 	// Save registry
 	if err := config.SaveRegistry(ctx, reg); err != nil {
-		return fmt.Errorf("failed to save registry: %w", err)
+		return camperrors.Wrap(err, "failed to save registry")
 	}
 
 	fmt.Printf("%s Removed %d entries\n", ui.SuccessIcon(), len(toRemove))
@@ -227,13 +228,13 @@ func runRegistrySync(cmd *cobra.Command, args []string) error {
 	// Load campaign config
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return fmt.Errorf("not inside a campaign: %w", err)
+		return camperrors.Wrap(err, "not inside a campaign")
 	}
 
 	// Load registry
 	reg, err := config.LoadRegistry(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to load registry: %w", err)
+		return camperrors.Wrap(err, "failed to load registry")
 	}
 
 	// Check if campaign is already registered by ID
@@ -271,12 +272,12 @@ func runRegistrySync(cmd *cobra.Command, args []string) error {
 
 	// Register/update
 	if err := reg.Register(cfg.ID, cfg.Name, campaignRoot, cfg.Type); err != nil {
-		return fmt.Errorf("failed to register: %w", err)
+		return camperrors.Wrap(err, "failed to register")
 	}
 
 	// Save registry
 	if err := config.SaveRegistry(ctx, reg); err != nil {
-		return fmt.Errorf("failed to save registry: %w", err)
+		return camperrors.Wrap(err, "failed to save registry")
 	}
 
 	if conflictExists {
@@ -303,7 +304,7 @@ func runRegistryCheck(cmd *cobra.Command, args []string) error {
 
 	reg, err := config.LoadRegistry(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to load registry: %w", err)
+		return camperrors.Wrap(err, "failed to load registry")
 	}
 
 	if reg.Len() == 0 {

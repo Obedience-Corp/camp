@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -168,15 +169,15 @@ func runMove(cmd *cobra.Command, args []string) error {
 	// Resolve paths: @ prefix -> campaign shortcuts, otherwise -> cwd-relative
 	src, err := resolveTransferArg(root, args[0], shortcuts)
 	if err != nil {
-		return fmt.Errorf("source: %w", err)
+		return camperrors.Wrap(err, "source")
 	}
 	dest, err := resolveTransferArg(root, args[1], shortcuts)
 	if err != nil {
-		return fmt.Errorf("destination: %w", err)
+		return camperrors.Wrap(err, "destination")
 	}
 
 	if err := transfer.ValidatePathExists(src); err != nil {
-		return fmt.Errorf("source: %w", err)
+		return camperrors.Wrap(err, "source")
 	}
 
 	// If dest is a directory or ends with /, place source inside it
@@ -191,11 +192,11 @@ func runMove(cmd *cobra.Command, args []string) error {
 	}
 
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-		return fmt.Errorf("create destination directory: %w", err)
+		return camperrors.Wrap(err, "create destination directory")
 	}
 
 	if err := os.Rename(src, dest); err != nil {
-		return fmt.Errorf("move: %w", err)
+		return camperrors.Wrap(err, "move")
 	}
 
 	srcRel, _ := filepath.Rel(root, src)

@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // Validation errors
@@ -37,7 +39,7 @@ func ValidateCampaignConfig(cfg *CampaignConfig) error {
 	// Validate projects if present
 	for i, p := range cfg.Projects {
 		if err := ValidateProjectConfig(&p); err != nil {
-			return fmt.Errorf("project %d: %w", i, err)
+			return camperrors.Wrapf(err, "project %d", i)
 		}
 	}
 

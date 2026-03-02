@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -75,7 +76,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 		// Load campaign config to get shortcuts
 		cfg, _, err := config.LoadCampaignConfigFromCwd(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to load campaign config: %w", err)
+			return camperrors.Wrap(err, "failed to load campaign config")
 		}
 
 		// Look up shortcut
@@ -236,7 +237,7 @@ func executeCommand(ctx context.Context, cmdStr string, workDir string, extraArg
 			// prevents stale file handles in shared test containers.
 			return &CommandExitError{Code: exitErr.ExitCode()}
 		}
-		return fmt.Errorf("failed to execute command: %w", err)
+		return camperrors.Wrap(err, "failed to execute command")
 	}
 
 	return nil

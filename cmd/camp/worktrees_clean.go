@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"path/filepath"
 
@@ -79,12 +80,12 @@ func runWorktreesClean(cmd *cobra.Command, args []string) error {
 
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign: %w", err)
+		return camperrors.Wrap(err, "not in a campaign")
 	}
 
 	cfg, err := config.LoadCampaignConfig(ctx, campRoot)
 	if err != nil {
-		return fmt.Errorf("failed to load campaign config: %w", err)
+		return camperrors.Wrap(err, "failed to load campaign config")
 	}
 
 	resolver := paths.NewResolver(campRoot, cfg.Paths())
@@ -244,7 +245,7 @@ func cleanWorktree(ctx context.Context, cfg *config.CampaignConfig, resolver *pa
 
 	// Remove the directory
 	if err := os.RemoveAll(result.path); err != nil {
-		return fmt.Errorf("failed to remove directory: %w", err)
+		return camperrors.Wrap(err, "failed to remove directory")
 	}
 
 	return nil

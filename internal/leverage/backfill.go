@@ -2,13 +2,14 @@ package leverage
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"sync"
 	"time"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // Backfiller reconstructs historical leverage data by checking out past commits
@@ -116,7 +117,7 @@ func (b *Backfiller) buildPendingSamples(ctx context.Context, samples []CommitSa
 		for _, proj := range projects {
 			existing, err := b.store.List(ctx, proj.Name)
 			if err != nil {
-				return nil, fmt.Errorf("listing snapshots for %s: %w", proj.Name, err)
+				return nil, camperrors.Wrapf(err, "listing snapshots for %s", proj.Name)
 			}
 			if !containsDate(existing, dateStr) {
 				needWork = append(needWork, proj)
@@ -133,7 +134,7 @@ func (b *Backfiller) buildPendingSamples(ctx context.Context, samples []CommitSa
 func (b *Backfiller) backfillGroup(ctx context.Context, group monorepoGroup, cfg *LeverageConfig) error {
 	samples, err := SampleWeeklyCommits(ctx, group.GitDir, cfg.ProjectStart)
 	if err != nil {
-		return fmt.Errorf("sampling commits for %s: %w", group.GitDir, err)
+		return camperrors.Wrapf(err, "sampling commits for %s", group.GitDir)
 	}
 
 	pending, err := b.buildPendingSamples(ctx, samples, group.Projects)
@@ -228,7 +229,7 @@ func (b *Backfiller) processSample(ctx context.Context, gitDir string, sample Co
 		if proj.InMonorepo {
 			rel, err := filepath.Rel(proj.GitDir, proj.SCCDir)
 			if err != nil {
-				b.warn(proj.Name, dateStr, fmt.Errorf("resolving monorepo path: %w", err))
+				b.warn(proj.Name, dateStr, camperrors.Wrap(err, "resolving monorepo path"))
 				continue
 			}
 			sccDir = filepath.Join(worktreeDir, rel)
@@ -242,7 +243,7 @@ func (b *Backfiller) processSample(ctx context.Context, gitDir string, sample Co
 		// Run scc
 		result, err := b.runner.Run(ctx, sccDir, proj.ExcludeDirs)
 		if err != nil {
-			b.warn(proj.Name, dateStr, fmt.Errorf("scc: %w", err))
+			b.warn(proj.Name, dateStr, camperrors.Wrap(err, "scc"))
 			continue
 		}
 
@@ -270,7 +271,7 @@ func (b *Backfiller) processSample(ctx context.Context, gitDir string, sample Co
 		// Get author contributions via git blame
 		authors, err := AuthorLOC(ctx, sccDir)
 		if err != nil {
-			b.warn(proj.Name, dateStr, fmt.Errorf("blame: %w", err))
+			b.warn(proj.Name, dateStr, camperrors.Wrap(err, "blame"))
 		}
 
 		// Build and persist snapshot
@@ -278,7 +279,7 @@ func (b *Backfiller) processSample(ctx context.Context, gitDir string, sample Co
 		snapshot := NewSnapshot(proj.Name, sample.Hash, sample.Date, time.Now(), scc, score, authors)
 
 		if err := b.store.Save(ctx, snapshot); err != nil {
-			return fmt.Errorf("saving snapshot for %s: %w", proj.Name, err)
+			return camperrors.Wrapf(err, "saving snapshot for %s", proj.Name)
 		}
 	}
 
@@ -297,12 +298,12 @@ func createWorktree(ctx context.Context, gitDir, commitHash string) (string, fun
 	// cross-filesystem issues with submodule gitlinks on macOS.
 	base := filepath.Join(filepath.Dir(gitDir), ".camp-worktrees")
 	if err := os.MkdirAll(base, 0o755); err != nil {
-		return "", nil, fmt.Errorf("creating worktree base dir: %w", err)
+		return "", nil, camperrors.Wrap(err, "creating worktree base dir")
 	}
 
 	dir, err := os.MkdirTemp(base, "backfill-*")
 	if err != nil {
-		return "", nil, fmt.Errorf("creating temp dir: %w", err)
+		return "", nil, camperrors.Wrap(err, "creating temp dir")
 	}
 	// Remove the temp dir first — git worktree add needs a non-existing path
 	os.Remove(dir)
@@ -310,7 +311,7 @@ func createWorktree(ctx context.Context, gitDir, commitHash string) (string, fun
 	cmd := exec.CommandContext(ctx, "git", "-C", gitDir, "worktree", "add", "--detach", dir, commitHash)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		os.RemoveAll(dir)
-		return "", nil, fmt.Errorf("git worktree add: %s: %w", out, err)
+		return "", nil, camperrors.Wrapf(err, "git worktree add: %s", out)
 	}
 
 	cleanup := func() {

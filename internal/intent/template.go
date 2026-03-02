@@ -3,9 +3,10 @@ package intent
 import (
 	"bytes"
 	_ "embed"
-	"fmt"
 	"text/template"
 	"time"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 //go:embed templates/intent.md.tmpl
@@ -31,14 +32,14 @@ func RenderTemplate(data TemplateData) (string, error) {
 	if intentTemplate == nil {
 		tmpl, err := template.New("intent").Parse(intentTemplateContent)
 		if err != nil {
-			return "", fmt.Errorf("parsing intent template: %w", err)
+			return "", camperrors.Wrap(err, "parsing intent template")
 		}
 		intentTemplate = tmpl
 	}
 
 	var buf bytes.Buffer
 	if err := intentTemplate.Execute(&buf, data); err != nil {
-		return "", fmt.Errorf("executing intent template: %w", err)
+		return "", camperrors.Wrap(err, "executing intent template")
 	}
 
 	return buf.String(), nil

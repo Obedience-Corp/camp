@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -34,7 +35,7 @@ func init() {
 
 func runGendocs(cmd *cobra.Command, args []string) error {
 	if err := os.MkdirAll(gendocsOutput, 0755); err != nil {
-		return fmt.Errorf("create output dir: %w", err)
+		return camperrors.Wrap(err, "create output dir")
 	}
 
 	stripANSIFromTree(rootCmd)
@@ -43,12 +44,12 @@ func runGendocs(cmd *cobra.Command, args []string) error {
 	switch gendocsFormat {
 	case "markdown":
 		if err := doc.GenMarkdownTree(rootCmd, gendocsOutput); err != nil {
-			return fmt.Errorf("generate markdown: %w", err)
+			return camperrors.Wrap(err, "generate markdown")
 		}
 		fmt.Fprintf(os.Stderr, "Markdown docs written to %s\n", gendocsOutput)
 	case "yaml":
 		if err := doc.GenYamlTree(rootCmd, gendocsOutput); err != nil {
-			return fmt.Errorf("generate yaml: %w", err)
+			return camperrors.Wrap(err, "generate yaml")
 		}
 		fmt.Fprintf(os.Stderr, "YAML docs written to %s\n", gendocsOutput)
 	default:
@@ -57,7 +58,7 @@ func runGendocs(cmd *cobra.Command, args []string) error {
 
 	if gendocsSingle && gendocsFormat == "markdown" {
 		if err := combineSingleFile(gendocsOutput, "camp"); err != nil {
-			return fmt.Errorf("generate single file: %w", err)
+			return camperrors.Wrap(err, "generate single file")
 		}
 	}
 

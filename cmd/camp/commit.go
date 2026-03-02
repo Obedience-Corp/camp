@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os/exec"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
@@ -97,7 +98,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	// Resolve target repository
 	target, err := git.ResolveTarget(ctx, campRoot, commitSub, commitProject)
 	if err != nil {
-		return fmt.Errorf("failed to resolve target: %w", err)
+		return camperrors.Wrap(err, "failed to resolve target")
 	}
 
 	if target.IsSubmodule {
@@ -107,7 +108,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	// Create executor
 	executor, err := git.NewExecutor(target.Path)
 	if err != nil {
-		return fmt.Errorf("failed to initialize git: %w", err)
+		return camperrors.Wrap(err, "failed to initialize git")
 	}
 
 	// Get commit message - prompt if not provided
@@ -116,7 +117,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 		var promptErr error
 		message, promptErr = ui.PromptCommitMessageSimple(ctx, executor)
 		if promptErr != nil {
-			return fmt.Errorf("prompt failed: %w", promptErr)
+			return camperrors.Wrap(promptErr, "prompt failed")
 		}
 		if message == "" {
 			return git.ErrCommitCancelled

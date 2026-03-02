@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"gopkg.in/yaml.v3"
 )
 
@@ -24,7 +25,7 @@ func NewScanner(festivalsRoot string) *Scanner {
 // Scan walks festival directories and returns all festivals with feedback observations.
 func (s *Scanner) Scan(ctx context.Context, opts GatherOptions) ([]FestivalFeedback, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("context cancelled: %w", err)
+		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
 	statuses := opts.Statuses
@@ -36,7 +37,7 @@ func (s *Scanner) Scan(ctx context.Context, opts GatherOptions) ([]FestivalFeedb
 
 	for _, status := range statuses {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled: %w", err)
+			return nil, camperrors.Wrap(err, "context cancelled")
 		}
 
 		statusDir := filepath.Join(s.festivalsRoot, status)
@@ -45,7 +46,7 @@ func (s *Scanner) Scan(ctx context.Context, opts GatherOptions) ([]FestivalFeedb
 			continue
 		}
 		if err != nil {
-			return nil, fmt.Errorf("reading %s directory: %w", status, err)
+			return nil, camperrors.Wrapf(err, "reading %s directory", status)
 		}
 
 		for _, entry := range entries {
@@ -76,7 +77,7 @@ func (s *Scanner) Scan(ctx context.Context, opts GatherOptions) ([]FestivalFeedb
 // scanFestival reads a single festival directory for feedback observations.
 func (s *Scanner) scanFestival(ctx context.Context, festDir, statusDir string, opts GatherOptions) (*FestivalFeedback, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("context cancelled: %w", err)
+		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
 	// Read FESTIVAL_GOAL.md frontmatter
@@ -99,7 +100,7 @@ func (s *Scanner) scanFestival(ctx context.Context, festDir, statusDir string, o
 		return nil, nil // No feedback directory
 	}
 	if err != nil {
-		return nil, fmt.Errorf("reading observations: %w", err)
+		return nil, camperrors.Wrap(err, "reading observations")
 	}
 
 	var observations []Observation
@@ -142,12 +143,12 @@ func (s *Scanner) readGoalFrontmatter(festDir string) (*FestivalInfo, error) {
 	goalPath := filepath.Join(festDir, "FESTIVAL_GOAL.md")
 	data, err := os.ReadFile(goalPath)
 	if err != nil {
-		return nil, fmt.Errorf("reading FESTIVAL_GOAL.md: %w", err)
+		return nil, camperrors.Wrap(err, "reading FESTIVAL_GOAL.md")
 	}
 
 	fm, err := parseFrontmatter(data)
 	if err != nil {
-		return nil, fmt.Errorf("parsing frontmatter: %w", err)
+		return nil, camperrors.Wrap(err, "parsing frontmatter")
 	}
 
 	if fm.ID == "" {
@@ -169,7 +170,7 @@ func (s *Scanner) readObservation(path string) (*Observation, error) {
 
 	var obs Observation
 	if err := yaml.Unmarshal(data, &obs); err != nil {
-		return nil, fmt.Errorf("parsing observation: %w", err)
+		return nil, camperrors.Wrap(err, "parsing observation")
 	}
 
 	return &obs, nil
@@ -199,7 +200,7 @@ func parseFrontmatter(data []byte) (*GoalFrontmatter, error) {
 
 	var fm GoalFrontmatter
 	if err := yaml.Unmarshal([]byte(fmContent), &fm); err != nil {
-		return nil, fmt.Errorf("parsing YAML: %w", err)
+		return nil, camperrors.Wrap(err, "parsing YAML")
 	}
 
 	return &fm, nil

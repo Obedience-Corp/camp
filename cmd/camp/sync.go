@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
@@ -96,7 +96,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	// Detect campaign root
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign: %w", err)
+		return camperrors.Wrap(err, "not in a campaign")
 	}
 
 	// Build syncer with options
@@ -113,7 +113,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	// Run preflight once for display, then pass it into Sync to avoid double execution
 	preflight, err := syncer.RunPreflight(ctx)
 	if err != nil {
-		return fmt.Errorf("preflight checks: %w", err)
+		return camperrors.Wrap(err, "preflight checks")
 	}
 
 	// Inject the preflight result so Sync() won't re-run it

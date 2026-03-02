@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"time"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
@@ -57,7 +58,7 @@ func runCacheClear(cmd *cobra.Command, args []string) error {
 	}
 
 	if err := index.Delete(root); err != nil {
-		return fmt.Errorf("failed to delete cache: %w", err)
+		return camperrors.Wrap(err, "failed to delete cache")
 	}
 
 	fmt.Printf("%s Cache cleared\n", ui.SuccessIcon())
@@ -73,7 +74,7 @@ func runCacheRebuild(cmd *cobra.Command, args []string) error {
 
 	idx, err := index.GetOrBuild(ctx, root, true)
 	if err != nil {
-		return fmt.Errorf("failed to rebuild cache: %w", err)
+		return camperrors.Wrap(err, "failed to rebuild cache")
 	}
 
 	fmt.Printf("%s Cache rebuilt (%d targets)\n", ui.SuccessIcon(), len(idx.Targets))
@@ -89,7 +90,7 @@ func runCacheInfo(cmd *cobra.Command, args []string) error {
 
 	info, err := index.Info(root)
 	if err != nil {
-		return fmt.Errorf("failed to get cache info: %w", err)
+		return camperrors.Wrap(err, "failed to get cache info")
 	}
 
 	fmt.Println(ui.Subheader("Cache Info"))

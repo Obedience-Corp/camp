@@ -2,13 +2,14 @@ package fest
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 var (
@@ -79,7 +80,7 @@ func GetFestVersion(ctx context.Context, festPath string) (string, error) {
 	cmd := exec.CommandContext(ctx, festPath, "--version")
 	output, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("failed to get fest version: %w", err)
+		return "", camperrors.Wrap(err, "failed to get fest version")
 	}
 
 	// Parse version from output (typically "fest version X.Y.Z" or just "X.Y.Z")

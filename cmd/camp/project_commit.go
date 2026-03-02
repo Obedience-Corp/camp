@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os/exec"
 	"path/filepath"
 
@@ -59,7 +60,7 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 	// Find campaign root
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign: %w", err)
+		return camperrors.Wrap(err, "not in a campaign")
 	}
 
 	// Resolve project
@@ -81,7 +82,7 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 	// Create executor for the submodule
 	executor, err := git.NewExecutor(resolvedPath)
 	if err != nil {
-		return fmt.Errorf("failed to initialize git: %w", err)
+		return camperrors.Wrap(err, "failed to initialize git")
 	}
 
 	// Get commit message - prompt if not provided
@@ -90,7 +91,7 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 		var promptErr error
 		message, promptErr = ui.PromptCommitMessageSimple(ctx, executor)
 		if promptErr != nil {
-			return fmt.Errorf("prompt failed: %w", promptErr)
+			return camperrors.Wrap(promptErr, "prompt failed")
 		}
 		if message == "" {
 			return fmt.Errorf("commit cancelled")
@@ -101,7 +102,7 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 	if projectCommitAll {
 		fmt.Println(ui.Info("Staging changes..."))
 		if err := executor.StageAll(ctx); err != nil {
-			return fmt.Errorf("failed to stage: %w", err)
+			return camperrors.Wrap(err, "failed to stage")
 		}
 	}
 
@@ -137,7 +138,7 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 			fmt.Println(ui.Success("Nothing to commit"))
 			return nil
 		}
-		return fmt.Errorf("commit failed: %w", err)
+		return camperrors.Wrap(err, "commit failed")
 	}
 
 	fmt.Println(ui.Success("✓ Project changes committed"))
@@ -158,11 +159,11 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 func syncParentRef(ctx context.Context, campRoot, relPath string, cfg *config.CampaignConfig) error {
 	parentExec, err := git.NewExecutor(campRoot)
 	if err != nil {
-		return fmt.Errorf("campaign root git: %w", err)
+		return camperrors.Wrap(err, "campaign root git")
 	}
 
 	if err := parentExec.Stage(ctx, []string{relPath}); err != nil {
-		return fmt.Errorf("staging submodule ref: %w", err)
+		return camperrors.Wrap(err, "staging submodule ref")
 	}
 
 	projName := filepath.Base(relPath)
@@ -176,7 +177,7 @@ func syncParentRef(ctx context.Context, campRoot, relPath string, cfg *config.Ca
 		if errors.Is(err, git.ErrNoChanges) {
 			return nil
 		}
-		return fmt.Errorf("commit: %w", err)
+		return camperrors.Wrap(err, "commit")
 	}
 
 	fmt.Println(ui.Success("✓ Campaign root synced (" + relPath + ")"))

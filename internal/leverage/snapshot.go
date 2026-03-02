@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // AuthorContribution represents a single author's LOC ownership in a project,
@@ -139,17 +141,17 @@ func (s *FileSnapshotStore) Save(ctx context.Context, snapshot *Snapshot) error 
 
 	dir := filepath.Join(s.baseDir, snapshot.Project)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("creating snapshot directory: %w", err)
+		return camperrors.Wrap(err, "creating snapshot directory")
 	}
 
 	data, err := json.MarshalIndent(snapshot, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshaling snapshot: %w", err)
+		return camperrors.Wrap(err, "marshaling snapshot")
 	}
 
 	path := filepath.Join(dir, snapshot.Date+".json")
 	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return fmt.Errorf("writing snapshot: %w", err)
+		return camperrors.Wrap(err, "writing snapshot")
 	}
 
 	return nil
@@ -164,12 +166,12 @@ func (s *FileSnapshotStore) Load(ctx context.Context, project string, date strin
 	path := filepath.Join(s.baseDir, project, date+".json")
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("reading snapshot %s/%s: %w", project, date, err)
+		return nil, camperrors.Wrapf(err, "reading snapshot %s/%s", project, date)
 	}
 
 	var snap Snapshot
 	if err := json.Unmarshal(data, &snap); err != nil {
-		return nil, fmt.Errorf("unmarshaling snapshot %s/%s: %w", project, date, err)
+		return nil, camperrors.Wrapf(err, "unmarshaling snapshot %s/%s", project, date)
 	}
 
 	return &snap, nil
@@ -187,7 +189,7 @@ func (s *FileSnapshotStore) List(ctx context.Context, project string) ([]string,
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("reading snapshot directory: %w", err)
+		return nil, camperrors.Wrap(err, "reading snapshot directory")
 	}
 
 	var dates []string
@@ -240,7 +242,7 @@ func (s *FileSnapshotStore) ListProjects(ctx context.Context) ([]string, error) 
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("reading base directory: %w", err)
+		return nil, camperrors.Wrap(err, "reading base directory")
 	}
 
 	var projects []string

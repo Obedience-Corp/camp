@@ -2,9 +2,10 @@ package leverage
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"time"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // HistoryPeriod controls the aggregation granularity for history output.
@@ -50,7 +51,7 @@ func LoadHistory(ctx context.Context, store SnapshotStorer, projects []string, a
 		}
 		snapshots, err := store.LoadAll(ctx, proj)
 		if err != nil {
-			return nil, fmt.Errorf("loading snapshots for %s: %w", proj, err)
+			return nil, camperrors.Wrapf(err, "loading snapshots for %s", proj)
 		}
 		sort.Slice(snapshots, func(i, j int) bool {
 			return snapshots[i].Date < snapshots[j].Date

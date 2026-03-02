@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"path/filepath"
 
 	"github.com/Obedience-Corp/camp/internal/git"
@@ -119,13 +120,13 @@ func maybeAutoCommit(ctx context.Context, svc *workflow.Service, cwd string, res
 	newPath := filepath.Join(cwd, result.To, result.Item)
 
 	if err := git.Stage(ctx, cwd, []string{oldPath, newPath}); err != nil {
-		return fmt.Errorf("stage files: %w", err)
+		return camperrors.Wrap(err, "stage files")
 	}
 
 	if err := git.Commit(ctx, cwd, &git.CommitOptions{
 		Message: transition.CommitMessage(),
 	}); err != nil {
-		return fmt.Errorf("commit: %w", err)
+		return camperrors.Wrap(err, "commit")
 	}
 
 	fmt.Printf("Committed: %s\n", transition.CommitMessage())

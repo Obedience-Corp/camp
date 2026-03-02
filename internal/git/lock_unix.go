@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // LockInfo contains information about a lock file.
@@ -42,7 +44,7 @@ func IsLockStale(ctx context.Context, lockPath string) (bool, *LockInfo, error) 
 	// Fall back to lsof
 	stale, pid, cmd, err := checkWithLsof(ctx, lockPath)
 	if err != nil {
-		return false, info, fmt.Errorf("cannot determine lock status for %s: %w", lockPath, err)
+		return false, info, camperrors.Wrapf(err, "cannot determine lock status for %s", lockPath)
 	}
 
 	info.Stale = stale
@@ -101,7 +103,7 @@ func checkWithLsof(ctx context.Context, lockPath string) (stale bool, pid int, c
 				return true, 0, "", nil
 			}
 		}
-		return false, 0, "", fmt.Errorf("lsof command failed: %w", err)
+		return false, 0, "", camperrors.Wrap(err, "lsof command failed")
 	}
 
 	// Parse lsof output
@@ -159,7 +161,7 @@ func removeSingleLock(ctx context.Context, lockPath string, logger *slog.Logger)
 	// Step 2: Double-check staleness (critical for safety)
 	stale, info, err := IsLockStale(ctx, lockPath)
 	if err != nil {
-		return info, fmt.Errorf("cannot verify lock status before removal for %s: %w", lockPath, err)
+		return info, camperrors.Wrapf(err, "cannot verify lock status before removal for %s", lockPath)
 	}
 
 	if !stale {
@@ -173,7 +175,7 @@ func removeSingleLock(ctx context.Context, lockPath string, logger *slog.Logger)
 	// Step 3: Remove the lock file
 	logger.Info("removing stale lock", "path", lockPath)
 	if err := os.Remove(lockPath); err != nil {
-		return info, fmt.Errorf("failed to remove lock file %s: %w", lockPath, err)
+		return info, camperrors.Wrapf(err, "failed to remove lock file %s", lockPath)
 	}
 
 	info.Stale = true
@@ -263,7 +265,7 @@ func CleanStaleLocks(ctx context.Context, repoRoot string, logger *slog.Logger) 
 	// Find all locks
 	locks, err := FindLocksInRepository(ctx, repoRoot)
 	if err != nil {
-		return nil, fmt.Errorf("failed to find locks: %w", err)
+		return nil, camperrors.Wrap(err, "failed to find locks")
 	}
 
 	if len(locks) == 0 {

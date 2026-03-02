@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // Errors returned by the service.
@@ -35,7 +36,7 @@ func NewService(campaignRoot string, concepts []config.ConceptEntry) *DefaultSer
 // List returns all available concepts (order preserved from config).
 func (s *DefaultService) List(ctx context.Context) ([]Concept, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("context cancelled: %w", err)
+		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
 	var result []Concept
@@ -63,7 +64,7 @@ func (s *DefaultService) List(ctx context.Context) ([]Concept, error) {
 // The subpath parameter allows drilling into nested directories.
 func (s *DefaultService) ListItems(ctx context.Context, conceptName, subpath string) ([]Item, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("context cancelled: %w", err)
+		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
 	concept, err := s.Get(ctx, conceptName)
@@ -126,7 +127,7 @@ func (s *DefaultService) ListItems(ctx context.Context, conceptName, subpath str
 // Resolve resolves a concept name and optional item to a full path.
 func (s *DefaultService) Resolve(ctx context.Context, conceptName, item string) (string, error) {
 	if err := ctx.Err(); err != nil {
-		return "", fmt.Errorf("context cancelled: %w", err)
+		return "", camperrors.Wrap(err, "context cancelled")
 	}
 
 	concept, err := s.Get(ctx, conceptName)
@@ -144,7 +145,7 @@ func (s *DefaultService) Resolve(ctx context.Context, conceptName, item string) 
 // Get retrieves a concept by name.
 func (s *DefaultService) Get(ctx context.Context, name string) (*Concept, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("context cancelled: %w", err)
+		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
 	for _, c := range s.concepts {
@@ -201,7 +202,7 @@ func (s *DefaultService) listDirItems(fullPath, relativePath string) ([]Item, er
 		if os.IsNotExist(err) {
 			return []Item{}, nil
 		}
-		return nil, fmt.Errorf("reading directory: %w", err)
+		return nil, camperrors.Wrap(err, "reading directory")
 	}
 
 	var items []Item
@@ -294,7 +295,7 @@ func filterIgnored(items []Item, ignore []string) []Item {
 // ResolvePath validates a path exists and returns its Item details.
 func (s *DefaultService) ResolvePath(ctx context.Context, path string) (*Item, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("context cancelled: %w", err)
+		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
 	if path == "" {
@@ -313,7 +314,7 @@ func (s *DefaultService) ResolvePath(ctx context.Context, path string) (*Item, e
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf("path not found: %s", path)
 		}
-		return nil, fmt.Errorf("checking path: %w", err)
+		return nil, camperrors.Wrap(err, "checking path")
 	}
 
 	item := &Item{
@@ -332,7 +333,7 @@ func (s *DefaultService) ResolvePath(ctx context.Context, path string) (*Item, e
 // ConceptForPath returns the concept that contains the given path.
 func (s *DefaultService) ConceptForPath(ctx context.Context, path string) (*Concept, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("context cancelled: %w", err)
+		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
 	concepts, err := s.List(ctx)
@@ -385,7 +386,7 @@ func NewFSService(campaignRoot string, concepts []config.ConceptEntry, fsys fs.F
 // List returns all available concepts (order preserved from config).
 func (s *FSService) List(ctx context.Context) ([]Concept, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("context cancelled: %w", err)
+		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
 	var result []Concept
@@ -412,7 +413,7 @@ func (s *FSService) List(ctx context.Context) ([]Concept, error) {
 // ListItems returns subdirectories for a given concept.
 func (s *FSService) ListItems(ctx context.Context, conceptName, subpath string) ([]Item, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("context cancelled: %w", err)
+		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
 	concept, err := s.Get(ctx, conceptName)
@@ -467,7 +468,7 @@ func (s *FSService) ListItems(ctx context.Context, conceptName, subpath string) 
 // Resolve resolves a concept name and optional item to a full path.
 func (s *FSService) Resolve(ctx context.Context, conceptName, item string) (string, error) {
 	if err := ctx.Err(); err != nil {
-		return "", fmt.Errorf("context cancelled: %w", err)
+		return "", camperrors.Wrap(err, "context cancelled")
 	}
 
 	concept, err := s.Get(ctx, conceptName)
@@ -485,7 +486,7 @@ func (s *FSService) Resolve(ctx context.Context, conceptName, item string) (stri
 // Get retrieves a concept by name.
 func (s *FSService) Get(ctx context.Context, name string) (*Concept, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("context cancelled: %w", err)
+		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
 	for _, c := range s.concepts {
@@ -590,7 +591,7 @@ func (s *FSService) countChildrenFS(path string) int {
 // ResolvePath validates a path exists and returns its Item details via fs.FS.
 func (s *FSService) ResolvePath(ctx context.Context, path string) (*Item, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("context cancelled: %w", err)
+		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
 	if path == "" {
@@ -606,7 +607,7 @@ func (s *FSService) ResolvePath(ctx context.Context, path string) (*Item, error)
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf("path not found: %s", path)
 		}
-		return nil, fmt.Errorf("checking path: %w", err)
+		return nil, camperrors.Wrap(err, "checking path")
 	}
 
 	item := &Item{
@@ -625,7 +626,7 @@ func (s *FSService) ResolvePath(ctx context.Context, path string) (*Item, error)
 // ConceptForPath returns the concept that contains the given path via fs.FS.
 func (s *FSService) ConceptForPath(ctx context.Context, path string) (*Concept, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("context cancelled: %w", err)
+		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
 	concepts, err := s.List(ctx)

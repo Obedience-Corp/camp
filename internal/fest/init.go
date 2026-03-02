@@ -2,11 +2,12 @@ package fest
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"time"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // InitOptions configures the fest init operation.
@@ -43,7 +44,7 @@ func RunInit(ctx context.Context, opts *InitOptions) error {
 	}
 
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("fest init failed in %s: %w", festivalsDir, err)
+		return camperrors.Wrapf(err, "fest init failed in %s", festivalsDir)
 	}
 
 	return nil

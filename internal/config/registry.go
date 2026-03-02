@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // ErrMultipleMatches is returned when an ID prefix matches multiple campaigns.
@@ -30,12 +32,12 @@ func LoadRegistry(ctx context.Context) (*Registry, error) {
 		if os.IsNotExist(err) {
 			return NewRegistry(), nil
 		}
-		return nil, fmt.Errorf("failed to read registry %s: %w", path, err)
+		return nil, camperrors.Wrapf(err, "failed to read registry %s", path)
 	}
 
 	var reg Registry
 	if err := json.Unmarshal(data, &reg); err != nil {
-		return nil, fmt.Errorf("failed to parse registry %s: %w", path, err)
+		return nil, camperrors.Wrapf(err, "failed to parse registry %s", path)
 	}
 
 	// Initialize map if nil
@@ -69,7 +71,7 @@ func SaveRegistry(ctx context.Context, reg *Registry) error {
 
 	// Ensure config directory exists
 	if err := EnsureConfigDir(); err != nil {
-		return fmt.Errorf("failed to create config directory: %w", err)
+		return camperrors.Wrap(err, "failed to create config directory")
 	}
 
 	// Set version
@@ -77,7 +79,7 @@ func SaveRegistry(ctx context.Context, reg *Registry) error {
 
 	data, err := json.MarshalIndent(reg, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal registry: %w", err)
+		return camperrors.Wrap(err, "failed to marshal registry")
 	}
 
 	path := RegistryPath()
@@ -85,12 +87,12 @@ func SaveRegistry(ctx context.Context, reg *Registry) error {
 	// Atomic write via temp file
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0644); err != nil {
-		return fmt.Errorf("failed to write registry: %w", err)
+		return camperrors.Wrap(err, "failed to write registry")
 	}
 
 	if err := os.Rename(tmp, path); err != nil {
 		os.Remove(tmp) // Clean up temp file on rename failure
-		return fmt.Errorf("failed to save registry: %w", err)
+		return camperrors.Wrap(err, "failed to save registry")
 	}
 
 	return nil

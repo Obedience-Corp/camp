@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // UnmergedBranchCount returns the number of local branches not yet merged
@@ -161,7 +163,7 @@ func MergedBranches(ctx context.Context, repoPath string) ([]string, error) {
 		"branch", "--merged", defaultBranch, "--format=%(refname:short)")
 	output, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("list merged branches: %w", err)
+		return nil, camperrors.Wrap(err, "list merged branches")
 	}
 
 	trimmed := strings.TrimSpace(string(output))
@@ -191,7 +193,7 @@ func DeleteBranch(ctx context.Context, repoPath, branch string) error {
 		"branch", "-d", branch)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("delete branch %s: %w: %s", branch, err, strings.TrimSpace(string(output)))
+		return camperrors.Wrapf(err, "delete branch %s: %s", branch, strings.TrimSpace(string(output)))
 	}
 	return nil
 }
@@ -207,7 +209,7 @@ func PruneRemote(ctx context.Context, repoPath string) (int, error) {
 		"remote", "prune", "origin")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return 0, fmt.Errorf("prune remote: %w: %s", err, strings.TrimSpace(string(output)))
+		return 0, camperrors.Wrapf(err, "prune remote: %s", strings.TrimSpace(string(output)))
 	}
 
 	// Count pruned lines (lines containing " * [pruned]")
@@ -231,7 +233,7 @@ func DeleteRemoteBranch(ctx context.Context, repoPath, branch string) error {
 		"push", "origin", "--delete", branch)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("delete remote branch %s: %w: %s", branch, err, strings.TrimSpace(string(output)))
+		return camperrors.Wrapf(err, "delete remote branch %s: %s", branch, strings.TrimSpace(string(output)))
 	}
 	return nil
 }

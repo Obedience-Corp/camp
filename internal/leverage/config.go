@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/project"
 )
 
@@ -27,12 +28,12 @@ func LoadConfig(path string) (*LeverageConfig, error) {
 		if os.IsNotExist(err) {
 			return defaultConfig(), nil
 		}
-		return nil, fmt.Errorf("reading leverage config: %w", err)
+		return nil, camperrors.Wrap(err, "reading leverage config")
 	}
 
 	var cfg LeverageConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parsing leverage config: %w", err)
+		return nil, camperrors.Wrap(err, "parsing leverage config")
 	}
 
 	// Apply defaults for zero values.
@@ -48,16 +49,16 @@ func LoadConfig(path string) (*LeverageConfig, error) {
 func SaveConfig(path string, cfg *LeverageConfig) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("creating config directory: %w", err)
+		return camperrors.Wrap(err, "creating config directory")
 	}
 
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshaling leverage config: %w", err)
+		return camperrors.Wrap(err, "marshaling leverage config")
 	}
 
 	if err := os.WriteFile(path, data, 0644); err != nil {
-		return fmt.Errorf("writing leverage config: %w", err)
+		return camperrors.Wrap(err, "writing leverage config")
 	}
 	return nil
 }
@@ -72,7 +73,7 @@ func AutoDetectConfig(ctx context.Context, campaignRoot string) (*LeverageConfig
 
 	projects, err := project.List(ctx, campaignRoot)
 	if err != nil {
-		return nil, fmt.Errorf("listing projects: %w", err)
+		return nil, camperrors.Wrap(err, "listing projects")
 	}
 
 	cfg := defaultConfig()
@@ -113,7 +114,7 @@ func PopulateProjects(ctx context.Context, campaignRoot string, cfg *LeverageCon
 
 	projects, err := project.List(ctx, campaignRoot)
 	if err != nil {
-		return fmt.Errorf("listing projects: %w", err)
+		return camperrors.Wrap(err, "listing projects")
 	}
 
 	if cfg.Projects == nil {
@@ -181,7 +182,7 @@ func latestCommitDate(ctx context.Context, repoPath string) (time.Time, error) {
 
 	output, err := cmd.Output()
 	if err != nil {
-		return time.Time{}, fmt.Errorf("git log in %s: %w", repoPath, err)
+		return time.Time{}, camperrors.Wrapf(err, "git log in %s", repoPath)
 	}
 
 	dateStr := strings.TrimSpace(string(output))
@@ -191,7 +192,7 @@ func latestCommitDate(ctx context.Context, repoPath string) (time.Time, error) {
 
 	t, err := time.Parse(time.RFC3339, dateStr)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("parsing commit date in %s: %w", repoPath, err)
+		return time.Time{}, camperrors.Wrapf(err, "parsing commit date in %s", repoPath)
 	}
 
 	return t, nil
@@ -207,7 +208,7 @@ func earliestCommitDate(ctx context.Context, repoPath string) (time.Time, error)
 
 	output, err := cmd.Output()
 	if err != nil {
-		return time.Time{}, fmt.Errorf("git log in %s: %w", repoPath, err)
+		return time.Time{}, camperrors.Wrapf(err, "git log in %s", repoPath)
 	}
 
 	dateStr := strings.TrimSpace(string(output))

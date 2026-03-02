@@ -2,9 +2,10 @@ package intent
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"os"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // priorityRank returns a numeric rank for priority (higher = more urgent).
@@ -39,25 +40,25 @@ func moveFile(src, dst string) error {
 	// Fall back to copy + delete (cross-device)
 	srcFile, err := os.Open(src)
 	if err != nil {
-		return fmt.Errorf("opening source file: %w", err)
+		return camperrors.Wrap(err, "opening source file")
 	}
 	defer srcFile.Close()
 
 	dstFile, err := os.Create(dst)
 	if err != nil {
-		return fmt.Errorf("creating destination file: %w", err)
+		return camperrors.Wrap(err, "creating destination file")
 	}
 	defer dstFile.Close()
 
 	if _, err := io.Copy(dstFile, srcFile); err != nil {
 		os.Remove(dst)
-		return fmt.Errorf("copying file: %w", err)
+		return camperrors.Wrap(err, "copying file")
 	}
 
 	// Ensure data is flushed to disk
 	if err := dstFile.Sync(); err != nil {
 		os.Remove(dst)
-		return fmt.Errorf("syncing destination file: %w", err)
+		return camperrors.Wrap(err, "syncing destination file")
 	}
 
 	return os.Remove(src)

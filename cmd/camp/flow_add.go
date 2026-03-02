@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"io"
 	"os"
 
@@ -191,7 +192,7 @@ func collectFlowAddInput(cmd *cobra.Command) (*flowAddInput, error) {
 		if theme.IsCancelled(err) {
 			return nil, fmt.Errorf("initialization cancelled")
 		}
-		return nil, fmt.Errorf("failed to collect workflow info: %w", err)
+		return nil, camperrors.Wrap(err, "failed to collect workflow info")
 	}
 
 	if name == "" {
@@ -212,7 +213,7 @@ func parseFlowAddJSON(value string) (*flowAddInput, error) {
 	if value == "-" {
 		data, err = io.ReadAll(os.Stdin)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read JSON from stdin: %w", err)
+			return nil, camperrors.Wrap(err, "failed to read JSON from stdin")
 		}
 	} else {
 		data = []byte(value)
@@ -220,7 +221,7 @@ func parseFlowAddJSON(value string) (*flowAddInput, error) {
 
 	var input flowAddInput
 	if err := json.Unmarshal(data, &input); err != nil {
-		return nil, fmt.Errorf("invalid JSON: %w", err)
+		return nil, camperrors.Wrap(err, "invalid JSON")
 	}
 
 	if input.Name == "" {

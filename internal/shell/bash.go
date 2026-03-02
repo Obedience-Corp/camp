@@ -94,7 +94,7 @@ _cgo_complete() {
     COMPREPLY=($(compgen -W "$candidates" -- "$cur"))
   fi
 }
-complete -F _cgo_complete cgo
+complete -o nospace -F _cgo_complete cgo
 
 # Run command from campaign root
 # Usage: cr <command> [args...]

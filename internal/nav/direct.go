@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // DirectJumpResult contains the result of a direct jump operation.
@@ -147,7 +148,7 @@ func JumpToPathFromRoot(ctx context.Context, root string, relativePath string) (
 		return nil, fmt.Errorf("path does not exist: %s", relativePath)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to stat path %s: %w", relativePath, err)
+		return nil, camperrors.Wrapf(err, "failed to stat path %s", relativePath)
 	}
 	if !info.IsDir() {
 		return nil, fmt.Errorf("path is not a directory: %s", relativePath)

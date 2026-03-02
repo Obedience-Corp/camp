@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // TargetResult holds the resolved repository path and metadata.
@@ -57,7 +59,7 @@ func resolveProjectPath(_ context.Context, campaignRoot, project string) (*Targe
 	// Verify it's a git repository
 	root, isSubmodule, err := FindProjectRootWithType(targetPath)
 	if err != nil {
-		return nil, fmt.Errorf("project path %q is not a git repository: %w", project, err)
+		return nil, camperrors.Wrapf(err, "project path %q is not a git repository", project)
 	}
 
 	return &TargetResult{
@@ -71,7 +73,7 @@ func resolveProjectPath(_ context.Context, campaignRoot, project string) (*Targe
 func resolveFromCwd(_ context.Context, campaignRoot string) (*TargetResult, error) {
 	root, isSubmodule, err := FindProjectRootWithType(".")
 	if err != nil {
-		return nil, fmt.Errorf("cannot detect git repository from current directory: %w", err)
+		return nil, camperrors.Wrap(err, "cannot detect git repository from current directory")
 	}
 
 	// If we're in the campaign root, just return it

@@ -66,7 +66,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	// Find campaign root
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign directory: %w", err)
+		return camperrors.Wrap(err, "not in a campaign directory")
 	}
 
 	// Create path resolver
@@ -78,7 +78,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 
 	// Ensure directories exist and migrate legacy layout
 	if err := svc.EnsureDirectories(ctx); err != nil {
-		return fmt.Errorf("ensuring intent directories: %w", err)
+		return camperrors.Wrap(err, "ensuring intent directories")
 	}
 
 	// Ultra-fast path: title provided as argument (non-TUI = agent author)
@@ -169,7 +169,7 @@ func runIntentAddTUI(ctx context.Context, conceptSvc concept.Service, opts tui.A
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	finalModel, err := p.Run()
 	if err != nil {
-		return nil, fmt.Errorf("TUI error: %w", err)
+		return nil, camperrors.Wrap(err, "TUI error")
 	}
 
 	m, ok := finalModel.(tui.IntentAddModel)
@@ -184,7 +184,7 @@ func runIntentAddTUI(ctx context.Context, conceptSvc concept.Service, opts tui.A
 func runFastCapture(ctx context.Context, svc *intent.IntentService, cfg *config.CampaignConfig, campaignRoot string, noCommit bool, opts intent.CreateOptions) error {
 	result, err := svc.CreateDirect(ctx, opts)
 	if err != nil {
-		return fmt.Errorf("failed to create intent: %w", err)
+		return camperrors.Wrap(err, "failed to create intent")
 	}
 
 	fmt.Printf("✓ Intent created: %s\n", result.Path)
@@ -219,7 +219,7 @@ func runDeepCapture(ctx context.Context, svc *intent.IntentService, cfg *config.
 		if errors.Is(err, camperrors.ErrCancelled) {
 			return fmt.Errorf("intent creation cancelled")
 		}
-		return fmt.Errorf("failed to create intent: %w", err)
+		return camperrors.Wrap(err, "failed to create intent")
 	}
 
 	fmt.Printf("✓ Intent created: %s\n", result.Path)

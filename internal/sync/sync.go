@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 )
 
@@ -357,7 +358,7 @@ func (s *Syncer) reverseSyncLocalURLs(ctx context.Context) ([]URLChange, error) 
 		}
 
 		if err := git.SetDeclaredURL(ctx, s.repoRoot, path, remoteURL); err != nil {
-			return changes, fmt.Errorf("reverse-sync %s: %w", path, err)
+			return changes, camperrors.Wrapf(err, "reverse-sync %s", path)
 		}
 
 		changes = append(changes, URLChange{
@@ -372,8 +373,8 @@ func (s *Syncer) reverseSyncLocalURLs(ctx context.Context) ([]URLChange, error) 
 		cmd := exec.CommandContext(ctx, "git", "-C", s.repoRoot,
 			"submodule", "sync", "--recursive")
 		if output, syncErr := cmd.CombinedOutput(); syncErr != nil {
-			return changes, fmt.Errorf("submodule sync after reverse-sync: %w: %s",
-				syncErr, strings.TrimSpace(string(output)))
+			return changes, camperrors.Wrapf(syncErr, "submodule sync after reverse-sync: %s",
+				strings.TrimSpace(string(output)))
 		}
 	}
 

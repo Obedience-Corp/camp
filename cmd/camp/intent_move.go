@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/spf13/cobra"
 
@@ -62,7 +63,7 @@ func runIntentMove(cmd *cobra.Command, args []string) error {
 	// Find campaign root
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign directory: %w", err)
+		return camperrors.Wrap(err, "not in a campaign directory")
 	}
 
 	// Create path resolver and service
@@ -71,7 +72,7 @@ func runIntentMove(cmd *cobra.Command, args []string) error {
 
 	// Ensure directories exist and migrate legacy layout
 	if err := svc.EnsureDirectories(ctx); err != nil {
-		return fmt.Errorf("ensuring intent directories: %w", err)
+		return camperrors.Wrap(err, "ensuring intent directories")
 	}
 
 	// Get intent title for commit message (before moving)
@@ -84,7 +85,7 @@ func runIntentMove(cmd *cobra.Command, args []string) error {
 	// Move the intent
 	result, err := svc.Move(ctx, id, status)
 	if err != nil {
-		return fmt.Errorf("failed to move intent: %w", err)
+		return camperrors.Wrap(err, "failed to move intent")
 	}
 
 	fmt.Printf("✓ Intent moved to %s: %s\n", status, result.Path)

@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
@@ -75,13 +76,13 @@ func runProjectWorktreeAdd(cmd *cobra.Command, args []string) error {
 	// Find campaign root
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign: %w", err)
+		return camperrors.Wrap(err, "not in a campaign")
 	}
 
 	// Load campaign config
 	cfg, err := config.LoadCampaignConfig(ctx, campRoot)
 	if err != nil {
-		return fmt.Errorf("failed to load campaign config: %w", err)
+		return camperrors.Wrap(err, "failed to load campaign config")
 	}
 
 	// Resolve project name
@@ -131,7 +132,7 @@ func runProjectWorktreeAdd(cmd *cobra.Command, args []string) error {
 			git := worktree.NewGitWorktree(projectPath)
 			currentBranch, err := git.CurrentBranch(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to detect current branch: %w", err)
+				return camperrors.Wrap(err, "failed to detect current branch")
 			}
 			opts.StartPoint = currentBranch
 		}
