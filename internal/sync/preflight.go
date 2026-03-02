@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
 
 // PreflightResult contains the results of all pre-flight checks.
@@ -86,6 +87,13 @@ func (s *Syncer) listSubmodules(ctx context.Context) ([]string, error) {
 		parts := strings.SplitN(line, " ", 2)
 		if len(parts) == 2 {
 			paths = append(paths, parts[1])
+		}
+	}
+
+	// Validate all submodule paths before any downstream filesystem operations.
+	for _, p := range paths {
+		if err := pathutil.ValidateSubmodulePath(s.repoRoot, p); err != nil {
+			return nil, fmt.Errorf("malformed submodule path %q in .gitmodules: %w", p, err)
 		}
 	}
 
