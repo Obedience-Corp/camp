@@ -1,5 +1,12 @@
 package pathutil
 
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
 // ValidateBoundary checks that target is contained within root after resolving
 // all symlinks on both paths.
 //
@@ -23,5 +30,31 @@ package pathutil
 //	err = pathutil.ValidateBoundary("/campaign", "/campaign/../etc/passwd")
 //	// err wraps ErrOutsideBoundary
 func ValidateBoundary(root, target string) error {
-	panic("not yet implemented — see task 02_implement_boundary_check")
+	if root == "" {
+		return &BoundaryError{Root: root, Target: target, Cause: ErrBoundaryRootInvalid}
+	}
+
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return &BoundaryError{Root: root, Target: target, Cause: ErrBoundaryRootInvalid}
+	}
+
+	resolvedTarget, err := filepath.EvalSymlinks(target)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return &BoundaryError{Root: resolvedRoot, Target: target, Cause: ErrOutsideBoundary}
+		}
+		resolvedTarget = filepath.Clean(target)
+	}
+
+	rel, err := filepath.Rel(resolvedRoot, resolvedTarget)
+	if err != nil {
+		return &BoundaryError{Root: resolvedRoot, Target: resolvedTarget, Cause: ErrOutsideBoundary}
+	}
+
+	if strings.HasPrefix(rel, "..") {
+		return &BoundaryError{Root: resolvedRoot, Target: resolvedTarget, Cause: ErrOutsideBoundary}
+	}
+
+	return nil
 }
