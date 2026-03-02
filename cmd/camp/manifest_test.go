@@ -76,6 +76,7 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		"flow migrate":  false,
 		"skills link":   false,
 		"skills status": false,
+		"skills unlink": false,
 	}
 
 	for _, cmd := range manifest.Commands {
@@ -90,8 +91,8 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		}
 	}
 
-	if len(manifest.Commands) != 17 {
-		t.Errorf("expected exactly 17 restricted commands, got %d", len(manifest.Commands))
+	if len(manifest.Commands) != 18 {
+		t.Errorf("expected exactly 18 restricted commands, got %d", len(manifest.Commands))
 	}
 }
 
@@ -117,6 +118,7 @@ func TestManifestCommand_AllCommandsHaveAnnotations(t *testing.T) {
 		"switch":        true,
 		"skills link":   true,
 		"skills status": true,
+		"skills unlink": true,
 	}
 
 	for _, cmd := range manifest.Commands {
@@ -166,6 +168,7 @@ func TestManifestCommand_InteractiveFlags(t *testing.T) {
 		"flow migrate":  true,
 		"skills link":   true,
 		"skills status": true,
+		"skills unlink": true,
 	}
 
 	cmdMap := make(map[string]CommandEntry)
