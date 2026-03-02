@@ -38,7 +38,7 @@ QUICK ACTIONS
 
 GATHER (Multi-Select)
   Space       Select/deselect intent
-  Ctrl+g      Gather selected intents
+  ga          Gather selected intents
   Escape      Exit multi-select mode
 
 FILTERS

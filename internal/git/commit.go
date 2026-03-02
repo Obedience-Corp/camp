@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os/exec"
 	"strings"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // CommitOptions configures the commit operation.
@@ -72,12 +74,7 @@ func executeCommit(ctx context.Context, repoPath string, opts *CommitOptions) er
 				Err:  err,
 			}
 		default:
-			return &GitOpError{
-				Op:      "commit",
-				ErrType: errType,
-				Detail:  strings.TrimSpace(string(output)),
-				Cause:   err,
-			}
+			return camperrors.NewGit("commit", "", errType.String(), strings.TrimSpace(string(output)), err)
 		}
 	}
 
@@ -150,12 +147,7 @@ func executeStage(ctx context.Context, repoPath string, files []string) error {
 			}
 		}
 
-		return &GitOpError{
-			Op:      "add",
-			ErrType: errType,
-			Detail:  strings.TrimSpace(string(output)),
-			Cause:   err,
-		}
+		return camperrors.NewGit("add", "", errType.String(), strings.TrimSpace(string(output)), err)
 	}
 
 	return nil
@@ -204,7 +196,7 @@ func HasStagedChanges(ctx context.Context, repoPath string) (bool, error) {
 				return true, nil
 			}
 		}
-		return false, &GitOpError{Op: "diff --cached", Cause: err}
+		return false, camperrors.NewGit("diff --cached", "", "", "", err)
 	}
 
 	// Exit code 0 means no differences (nothing staged)
@@ -222,7 +214,7 @@ func HasUnstagedChanges(ctx context.Context, repoPath string) (bool, error) {
 				return true, nil
 			}
 		}
-		return false, &GitOpError{Op: "diff", Cause: err}
+		return false, camperrors.NewGit("diff", "", "", "", err)
 	}
 
 	return false, nil
@@ -234,7 +226,7 @@ func HasUntrackedFiles(ctx context.Context, repoPath string) (bool, error) {
 	output, err := cmd.Output()
 
 	if err != nil {
-		return false, &GitOpError{Op: "ls-files", Cause: err}
+		return false, camperrors.NewGit("ls-files", "", "", "", err)
 	}
 
 	return len(strings.TrimSpace(string(output))) > 0, nil

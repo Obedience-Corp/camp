@@ -78,31 +78,6 @@ func (e *LockError) Unwrap() error {
 	return e.Err
 }
 
-// GitOpError wraps errors from git command execution with structured context.
-type GitOpError struct {
-	// Op is the git operation that failed (e.g., "commit", "add", "diff").
-	Op string
-	// ErrType is the classified error type from git stderr.
-	ErrType GitErrorType
-	// Detail is the trimmed git stderr output.
-	Detail string
-	// Cause is the underlying exec error.
-	Cause error
-}
-
-// Error implements the error interface.
-func (e *GitOpError) Error() string {
-	if e.Detail != "" {
-		return fmt.Sprintf("git %s failed (%s): %s", e.Op, e.ErrType.String(), e.Detail)
-	}
-	return fmt.Sprintf("git %s failed (%s)", e.Op, e.ErrType.String())
-}
-
-// Unwrap returns the underlying error for errors.Is/As support.
-func (e *GitOpError) Unwrap() error {
-	return e.Cause
-}
-
 // Sentinel errors for common git error cases.
 // Sentinels marked with %w wrap the canonical sentinel from internal/errors
 // to enable cross-package errors.Is() matching.

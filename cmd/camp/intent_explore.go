@@ -41,7 +41,7 @@ ACTIONS
 
 GATHER (Multi-Select)
   Space         Toggle selection / enter gather mode
-  Ctrl+g        Gather selected intents
+  ga            Gather selected intents
   Escape        Exit multi-select mode
 
 FILTERS

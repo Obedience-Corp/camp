@@ -104,7 +104,7 @@ func (m *Model) handleGatherStart() (tea.Model, tea.Cmd) {
 		m.gatherDialog = tui.NewGatherDialog(intents)
 		m.focus = focusGatherDialog
 	} else {
-		m.statusMessage = "Select 2+ intents with Space, then Ctrl-g to gather"
+		m.statusMessage = "Select 2+ intents with Space, then ga to gather"
 	}
 	return m, nil
 }
@@ -132,5 +132,5 @@ func (m *Model) handleGatherGroup() (tea.Model, tea.Cmd) {
 func (m *Model) enterGatherModeFromAction(selected *intent.Intent) {
 	m.multiSelectMode = true
 	m.selectedIntents[selected.ID] = true
-	m.statusMessage = "Select more intents with Space, then Ctrl-g to gather"
+	m.statusMessage = "Select more intents with Space, then ga to gather"
 }

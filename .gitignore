@@ -36,3 +36,4 @@ __debug_bin*
 .env.local
 .envrc
 CLAUDE.md
+.claude/

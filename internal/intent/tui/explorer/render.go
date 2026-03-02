@@ -102,9 +102,9 @@ func (m *Model) renderStatusBar() string {
 		count := len(m.selectedIntents)
 		switch m.layoutMode {
 		case layoutNarrow:
-			return scrollIndicator + tui.HelpStyle.Render(fmt.Sprintf("Space: select . Ctrl-g: gather (%d) . Esc: cancel", count))
+			return scrollIndicator + tui.HelpStyle.Render(fmt.Sprintf("Space: select . ga: gather (%d) . Esc: cancel", count))
 		default:
-			return scrollIndicator + tui.HelpStyle.Render(fmt.Sprintf("Space: toggle select . Ctrl-g: gather %d intents . Esc: exit multi-select . ?: help", count))
+			return scrollIndicator + tui.HelpStyle.Render(fmt.Sprintf("Space: toggle select . ga: gather %d intents . Esc: exit multi-select . ?: help", count))
 		}
 	}
 

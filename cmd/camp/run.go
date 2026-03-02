@@ -235,7 +235,7 @@ func executeCommand(ctx context.Context, cmdStr string, workDir string, extraArg
 			// Propagate the child's exit code through cobra instead of calling
 			// os.Exit() directly. This allows deferred cleanup to run and
 			// prevents stale file handles in shared test containers.
-			return &CommandExitError{Code: exitErr.ExitCode()}
+			return camperrors.NewCommand(fullCmd, exitErr.ExitCode(), "", exitErr)
 		}
 		return camperrors.Wrap(err, "failed to execute command")
 	}
@@ -243,13 +243,3 @@ func executeCommand(ctx context.Context, cmdStr string, workDir string, extraArg
 	return nil
 }
 
-// CommandExitError signals that a child process exited with a non-zero code.
-// main.go checks for this and calls os.Exit with the code, keeping cleanup
-// paths intact through cobra's error propagation.
-type CommandExitError struct {
-	Code int
-}
-
-func (e *CommandExitError) Error() string {
-	return fmt.Sprintf("command exited with code %d", e.Code)
-}

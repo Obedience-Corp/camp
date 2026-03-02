@@ -143,7 +143,7 @@ func runGo(cmd *cobra.Command, args []string) error {
 					return err
 				}
 				if execResult.ExitCode != 0 {
-					return &CommandExitError{Code: execResult.ExitCode}
+					return camperrors.NewCommand("", execResult.ExitCode, "", nil)
 				}
 				return nil
 			}
@@ -166,7 +166,7 @@ func runGo(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		if execResult.ExitCode != 0 {
-			return &CommandExitError{Code: execResult.ExitCode}
+			return camperrors.NewCommand("", execResult.ExitCode, "", nil)
 		}
 		return nil
 	}
@@ -404,7 +404,7 @@ func handleCustomNavShortcut(ctx context.Context, sc config.ShortcutConfig, camp
 			return err
 		}
 		if execResult.ExitCode != 0 {
-			return &CommandExitError{Code: execResult.ExitCode}
+			return camperrors.NewCommand("", execResult.ExitCode, "", nil)
 		}
 		return nil
 	}

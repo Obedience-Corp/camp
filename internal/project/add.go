@@ -44,6 +44,11 @@ func (e *ErrProjectExists) Error() string {
 	return fmt.Sprintf("project already exists: %s at %s", e.Name, e.Path)
 }
 
+// Unwrap returns ErrAlreadyExists so errors.Is(err, camperrors.ErrAlreadyExists) works.
+func (e *ErrProjectExists) Unwrap() error {
+	return camperrors.ErrAlreadyExists
+}
+
 // Add adds a git repository as a submodule to the campaign.
 func Add(ctx context.Context, campaignRoot, source string, opts AddOptions) (*AddResult, error) {
 	if ctx.Err() != nil {

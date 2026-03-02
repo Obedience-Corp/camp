@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 func TestExecInDir_Success(t *testing.T) {
@@ -59,13 +60,13 @@ func TestExecInDir_CommandNotFound(t *testing.T) {
 		t.Fatal("Expected error for non-existent command")
 	}
 
-	var execErr *ExecError
-	if !errors.As(err, &execErr) {
-		t.Fatalf("Expected ExecError, got %T", err)
+	var cmdErr *camperrors.CommandError
+	if !errors.As(err, &cmdErr) {
+		t.Fatalf("Expected CommandError, got %T", err)
 	}
 
-	if execErr.Command != "nonexistent-command-12345" {
-		t.Errorf("Command = %q, want %q", execErr.Command, "nonexistent-command-12345")
+	if cmdErr.Command != "nonexistent-command-12345" {
+		t.Errorf("Command = %q, want %q", cmdErr.Command, "nonexistent-command-12345")
 	}
 }
 
@@ -225,34 +226,6 @@ func TestExecInCategory_CampaignRoot(t *testing.T) {
 
 	if result.Dir != dir {
 		t.Errorf("Dir = %q, want %q", result.Dir, dir)
-	}
-}
-
-func TestExecError_Error(t *testing.T) {
-	err := &ExecError{
-		Command: "ls",
-		Dir:     "/tmp/test",
-		Err:     errors.New("permission denied"),
-	}
-
-	msg := err.Error()
-	expected := "failed to execute 'ls' in /tmp/test: permission denied"
-	if msg != expected {
-		t.Errorf("Error() = %q, want %q", msg, expected)
-	}
-}
-
-func TestExecError_Unwrap(t *testing.T) {
-	underlying := errors.New("test error")
-	err := &ExecError{
-		Command: "ls",
-		Dir:     "/tmp",
-		Err:     underlying,
-	}
-
-	unwrapped := errors.Unwrap(err)
-	if unwrapped != underlying {
-		t.Errorf("Unwrap() = %v, want %v", unwrapped, underlying)
 	}
 }
 

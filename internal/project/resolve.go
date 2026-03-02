@@ -137,6 +137,11 @@ func (e *ProjectNotFoundError) Error() string {
 	return fmt.Sprintf("project %q not found in campaign", e.Name)
 }
 
+// Unwrap returns ErrNotFound so errors.Is(err, camperrors.ErrNotFound) works.
+func (e *ProjectNotFoundError) Unwrap() error {
+	return camperrors.ErrNotFound
+}
+
 // AvailableProjects returns the list of projects for display in error messages.
 func (e *ProjectNotFoundError) AvailableProjects() []Project {
 	return e.Projects

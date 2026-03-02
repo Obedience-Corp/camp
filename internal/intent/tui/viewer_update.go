@@ -241,14 +241,21 @@ func (m IntentViewerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m IntentViewerModel) updateViewerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 
-	// Handle pending "g" key (for gg)
+	// Handle pending "g" key (for gg / ga)
 	if m.pendingKey == "g" {
 		m.pendingKey = ""
-		if key == "g" {
+		switch key {
+		case "g":
 			m.viewport.GotoTop()
 			return m, nil
+		case "a":
+			// ga: gather-similar intents
+			if m.gatherSvc != nil {
+				return m, m.findSimilarIntents()
+			}
+			return m, nil
 		}
-		// Not "g" — fall through to normal handling
+		// Unrecognized — fall through to normal handling
 	}
 
 	switch key {
@@ -304,11 +311,6 @@ func (m IntentViewerModel) updateViewerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		// Set pending key — wait for second "g" to form "gg"
 		m.pendingKey = "g"
 		return m, nil
-	case "ctrl+g":
-		// Gather-similar: find similar intents and show selection overlay
-		if m.gatherSvc != nil {
-			return m, m.findSimilarIntents()
-		}
 	case "H":
 		// Jump to screen top (already visible)
 		m.viewport.GotoTop()

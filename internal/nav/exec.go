@@ -3,9 +3,10 @@ package nav
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"os/exec"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // ExecResult contains the result of command execution.
@@ -66,11 +67,7 @@ func ExecInDir(ctx context.Context, dir string, command []string) (*ExecResult, 
 			exitCode = exitErr.ExitCode()
 		} else {
 			// Command failed to start (e.g., not found)
-			return nil, &ExecError{
-				Command: command[0],
-				Dir:     dir,
-				Err:     err,
-			}
+			return nil, camperrors.NewCommand(command[0], 0, "", err)
 		}
 	}
 
@@ -80,20 +77,3 @@ func ExecInDir(ctx context.Context, dir string, command []string) (*ExecResult, 
 	}, nil
 }
 
-// ExecError provides detailed context for execution failures.
-type ExecError struct {
-	// Command that failed to execute.
-	Command string
-	// Dir where the command was supposed to run.
-	Dir string
-	// Err is the underlying error.
-	Err error
-}
-
-func (e *ExecError) Error() string {
-	return fmt.Sprintf("failed to execute '%s' in %s: %v", e.Command, e.Dir, e.Err)
-}
-
-func (e *ExecError) Unwrap() error {
-	return e.Err
-}

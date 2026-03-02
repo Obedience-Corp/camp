@@ -46,6 +46,11 @@ func (e *ErrProjectNotFound) Error() string {
 	return fmt.Sprintf("project not found: %s", e.Name)
 }
 
+// Unwrap returns ErrNotFound so errors.Is(err, camperrors.ErrNotFound) works.
+func (e *ErrProjectNotFound) Unwrap() error {
+	return camperrors.ErrNotFound
+}
+
 // Remove removes a project from the campaign.
 // By default it only removes git submodule tracking.
 // With Delete=true, it also removes all files.

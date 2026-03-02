@@ -184,7 +184,7 @@ func NewBoundary(op, path, root string, err error) *BoundaryError {
 }
 
 // GitError represents a structured git operation failure.
-// It consolidates git.GitOpError, project.GitError, and similar typed errors
+// It consolidates project.GitError and similar typed errors
 // into a single canonical type for the central errors package.
 type GitError struct {
 	// Op is the git operation that failed (e.g., "commit", "submodule add", "checkout").

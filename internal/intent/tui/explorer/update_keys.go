@@ -27,10 +27,11 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	m.countBuffer = 0
 
-	// Handle pending "g" key (for gg / Ngg)
+	// Handle pending "g" key (for gg / Ngg / ga)
 	if m.pendingKey == "g" {
 		m.pendingKey = ""
-		if key == "g" {
+		switch key {
+		case "g":
 			if count > 1 {
 				m.jumpToVisualLine(count - 1) // Ngg: 1-indexed → 0-indexed
 			} else {
@@ -38,8 +39,14 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.updatePreviewForSelection()
 			return m, nil
+		case "a":
+			// ga: gather intents
+			if m.cursorItem == -1 && len(m.selectedIntents) == 0 {
+				return m.handleGatherGroup()
+			}
+			return m.handleGatherStart()
 		}
-		// Not "g" — fall through to normal handling
+		// Unrecognized — fall through to normal handling
 	}
 
 	switch key {
@@ -219,13 +226,6 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// On group header, toggle group expansion
 			m.handleSelect()
 		}
-	case "ctrl+g":
-		// On group header: gather all intents in that group
-		// On item or with selections: gather selected intents
-		if m.cursorItem == -1 && len(m.selectedIntents) == 0 {
-			return m.handleGatherGroup()
-		}
-		return m.handleGatherStart()
 	case "esc":
 		// Clear selections and exit multi-select mode, or clear filters
 		if m.multiSelectMode {
