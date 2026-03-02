@@ -2,10 +2,13 @@ package project
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
 
 func TestRemove_ProjectNotFound(t *testing.T) {
@@ -235,5 +238,36 @@ func TestIsGitSubmodule_NoGitmodules(t *testing.T) {
 
 	if isSubmodule {
 		t.Error("should return false when no .gitmodules exists")
+	}
+}
+
+func TestRemove_BoundaryEnforcement(t *testing.T) {
+	tmp := t.TempDir()
+	tmp, _ = filepath.EvalSymlinks(tmp)
+
+	campaignRoot := filepath.Join(tmp, "campaign")
+	if err := os.MkdirAll(filepath.Join(campaignRoot, "projects"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create an outside directory that the symlink will point to.
+	outside := filepath.Join(tmp, "outside")
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Symlink: campaign/projects/escape -> outside (resolves outside root).
+	escapeLink := filepath.Join(campaignRoot, "projects", "escape")
+	if err := os.Symlink(outside, escapeLink); err != nil {
+		t.Skipf("symlink creation not supported: %v", err)
+	}
+
+	ctx := context.Background()
+	_, err := Remove(ctx, campaignRoot, "escape", RemoveOptions{Delete: true})
+	if err == nil {
+		t.Error("expected boundary error for symlink-escaped project, got nil")
+	}
+	if !errors.Is(err, pathutil.ErrOutsideBoundary) {
+		t.Errorf("expected ErrOutsideBoundary, got: %v", err)
 	}
 }

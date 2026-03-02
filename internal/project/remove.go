@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/Obedience-Corp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
 
 // RemoveOptions configures the project removal behavior.
@@ -57,6 +58,11 @@ func Remove(ctx context.Context, campaignRoot, name string, opts RemoveOptions) 
 
 	projectPath := filepath.Join(campaignRoot, "projects", name)
 
+	// Enforce boundary: projectPath must stay within campaignRoot.
+	if err := pathutil.ValidateBoundary(campaignRoot, projectPath); err != nil {
+		return nil, fmt.Errorf("project path boundary violation: %w", err)
+	}
+
 	// Check project exists
 	if _, err := os.Stat(projectPath); os.IsNotExist(err) {
 		return nil, &ErrProjectNotFound{Name: name}
@@ -103,6 +109,9 @@ func Remove(ctx context.Context, campaignRoot, name string, opts RemoveOptions) 
 
 		// Also remove worktree directory if exists
 		worktreePath := filepath.Join(campaignRoot, "worktrees", name)
+		if err := pathutil.ValidateBoundary(campaignRoot, worktreePath); err != nil {
+			return nil, fmt.Errorf("worktree path boundary violation: %w", err)
+		}
 		if _, err := os.Stat(worktreePath); err == nil {
 			if err := os.RemoveAll(worktreePath); err == nil {
 				result.WorktreeDeleted = true
@@ -111,6 +120,9 @@ func Remove(ctx context.Context, campaignRoot, name string, opts RemoveOptions) 
 
 		// Clean up .git/modules/<name>
 		modulesPath := filepath.Join(campaignRoot, ".git", "modules", "projects", name)
+		if err := pathutil.ValidateBoundary(campaignRoot, modulesPath); err != nil {
+			return result, fmt.Errorf("modules path boundary violation: %w", err)
+		}
 		os.RemoveAll(modulesPath) // Ignore errors
 	}
 
