@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 )
@@ -130,46 +131,117 @@ const (
 )
 
 // ValidateDestination checks whether dest is a safe symlink destination
-// relative to the campaign root. It rejects paths that could cause
-// catastrophic data loss if force-removed (campaign root, .campaign/,
-// filesystem root, or paths outside the campaign).
+// relative to the campaign root. It resolves symlinks in existing parent
+// directories before checking boundaries to prevent out-of-root escapes.
+//
+// It rejects paths that could cause catastrophic data loss if force-removed:
+// campaign root, .campaign/, filesystem root, or paths outside the campaign.
 func ValidateDestination(dest, campaignRoot string) error {
-	// Clean both paths for consistent comparison
-	cleanDest := filepath.Clean(dest)
-	cleanRoot := filepath.Clean(campaignRoot)
+	if strings.TrimSpace(dest) == "" {
+		return fmt.Errorf("destination path cannot be empty")
+	}
+	if strings.TrimSpace(campaignRoot) == "" {
+		return fmt.Errorf("campaign root cannot be empty")
+	}
+
+	// Resolve both paths through existing parent symlinks. This ensures a path
+	// that lexically appears in-root cannot escape via a symlinked parent.
+	resolvedRoot, err := resolvePathWithExistingParent(campaignRoot)
+	if err != nil {
+		return fmt.Errorf("resolve campaign root: %w", err)
+	}
+	resolvedDest, err := resolvePathWithExistingParent(dest)
+	if err != nil {
+		return fmt.Errorf("resolve destination: %w", err)
+	}
 
 	// Reject filesystem root
-	if cleanDest == "/" {
+	if resolvedDest == string(filepath.Separator) {
 		return fmt.Errorf("refusing to use filesystem root as destination")
 	}
 
 	// Reject campaign root itself
-	if cleanDest == cleanRoot {
-		return fmt.Errorf("refusing to use campaign root as destination: %s", cleanDest)
+	if resolvedDest == resolvedRoot {
+		return fmt.Errorf("refusing to use campaign root as destination: %s", resolvedDest)
 	}
 
 	// Reject .campaign/ directory
-	campaignDir := filepath.Join(cleanRoot, campaign.CampaignDir)
-	if cleanDest == campaignDir || isSubpath(cleanDest, campaignDir) {
-		return fmt.Errorf("refusing to use .campaign/ directory as destination: %s", cleanDest)
+	campaignDir := filepath.Join(resolvedRoot, campaign.CampaignDir)
+	if resolvedDest == campaignDir || isSubpath(resolvedDest, campaignDir) {
+		return fmt.Errorf("refusing to use .campaign/ directory as destination: %s", resolvedDest)
 	}
 
 	// Reject paths outside the campaign root
-	if !isSubpath(cleanDest, cleanRoot) {
-		return fmt.Errorf("destination must be inside campaign root: %s", cleanDest)
+	if !isSubpath(resolvedDest, resolvedRoot) {
+		return fmt.Errorf("destination must be inside campaign root: %s", resolvedDest)
 	}
 
 	return nil
 }
 
-// isSubpath returns true if child is a proper subdirectory of parent.
+// resolvePathWithExistingParent resolves symlinks in the deepest existing
+// ancestor of path, then rejoins any non-existent suffix.
+//
+// Example:
+//
+//	/campaign/escape/custom where "escape" is a symlink to /outside
+//
+// resolves to:
+//
+//	/outside/custom
+func resolvePathWithExistingParent(path string) (string, error) {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("resolve absolute path: %w", err)
+	}
+	absPath = filepath.Clean(absPath)
+
+	existing := absPath
+	missing := make([]string, 0, 4)
+
+	for {
+		_, err := os.Lstat(existing)
+		if err == nil {
+			break
+		}
+		if !os.IsNotExist(err) {
+			return "", fmt.Errorf("stat %s: %w", existing, err)
+		}
+
+		parent := filepath.Dir(existing)
+		if parent == existing {
+			break
+		}
+		missing = append([]string{filepath.Base(existing)}, missing...)
+		existing = parent
+	}
+
+	resolvedExisting, err := filepath.EvalSymlinks(existing)
+	if err != nil {
+		return "", fmt.Errorf("resolve symlinks for %s: %w", existing, err)
+	}
+
+	resolved := resolvedExisting
+	for _, part := range missing {
+		resolved = filepath.Join(resolved, part)
+	}
+
+	return filepath.Clean(resolved), nil
+}
+
+// isSubpath returns true if child is a proper subpath of parent.
 func isSubpath(child, parent string) bool {
 	rel, err := filepath.Rel(parent, child)
 	if err != nil {
 		return false
 	}
-	// Must not start with ".." and must not be "."
-	return rel != "." && !filepath.IsAbs(rel) && (len(rel) < 2 || rel[:2] != "..")
+	if rel == "." || filepath.IsAbs(rel) {
+		return false
+	}
+	if rel == ".." {
+		return false
+	}
+	return !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // CheckPathType determines what kind of filesystem entry exists at path.

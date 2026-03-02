@@ -233,3 +233,44 @@ func TestSkills_LinkCustomPath(t *testing.T) {
 	require.Equal(t, 0, exitCode)
 	assert.Contains(t, strings.TrimSpace(linkTarget), ".campaign/skills")
 }
+
+// TestSkills_LinkRejectsSymlinkEscape ensures custom paths cannot escape the
+// campaign root through symlinked parent directories.
+func TestSkills_LinkRejectsSymlinkEscape(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupSkillsCampaign(t, tc, "skills-symlink-escape")
+
+	// Create an out-of-root directory and a symlink inside campaign pointing to it.
+	outsideDir, exitCode, err := tc.ExecCommand("mktemp", "-d")
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode)
+	outsideDir = strings.TrimSpace(outsideDir)
+
+	_, exitCode, err = tc.ExecCommand("ln", "-s", outsideDir, path+"/escape")
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode)
+
+	// Without --force, link should reject escaped destination.
+	_, err = tc.RunCampInDir(path, "skills", "link", "--path", "escape/customskills")
+	assert.Error(t, err, "escaped symlink parent path should be rejected")
+
+	// Ensure no out-of-root symlink was created.
+	_, exitCode, err = tc.ExecCommand("test", "-L", outsideDir+"/customskills")
+	require.NoError(t, err)
+	assert.NotEqual(t, 0, exitCode, "escaped destination should not be created")
+
+	// With --force and an existing file, command should still reject and not mutate it.
+	err = tc.WriteFile(outsideDir+"/customskills", "keep me")
+	require.NoError(t, err)
+
+	_, err = tc.RunCampInDir(path, "skills", "link", "--path", "escape/customskills", "--force")
+	assert.Error(t, err, "escaped destination should be rejected even with --force")
+
+	_, exitCode, err = tc.ExecCommand("test", "-f", outsideDir+"/customskills")
+	require.NoError(t, err)
+	assert.Equal(t, 0, exitCode, "existing out-of-root file must remain")
+
+	_, exitCode, err = tc.ExecCommand("test", "-L", outsideDir+"/customskills")
+	require.NoError(t, err)
+	assert.NotEqual(t, 0, exitCode, "existing out-of-root file must not be replaced with symlink")
+}

@@ -251,23 +251,47 @@ func TestResolveToolPath(t *testing.T) {
 }
 
 func TestValidateDestination(t *testing.T) {
-	root := "/campaigns/mycamp"
+	rootBase := resolvePath(t, t.TempDir())
+	root := filepath.Join(rootBase, "mycamp")
+	if err := os.MkdirAll(filepath.Join(root, ".campaign", "skills"), 0755); err != nil {
+		t.Fatalf("create campaign root: %v", err)
+	}
+
+	outside := resolvePath(t, t.TempDir())
+
+	// Symlink inside campaign that points outside campaign root.
+	escapeLink := filepath.Join(root, "escape")
+	if err := os.Symlink(outside, escapeLink); err != nil {
+		t.Fatalf("create escape symlink: %v", err)
+	}
+
+	// Symlink inside campaign that points to another in-root directory.
+	inRootTarget := filepath.Join(root, "internal-target")
+	if err := os.MkdirAll(inRootTarget, 0755); err != nil {
+		t.Fatalf("create in-root target: %v", err)
+	}
+	inRootLink := filepath.Join(root, "internal-link")
+	if err := os.Symlink(inRootTarget, inRootLink); err != nil {
+		t.Fatalf("create in-root symlink: %v", err)
+	}
 
 	tests := []struct {
 		name    string
 		dest    string
 		wantErr bool
 	}{
-		{name: "valid subpath", dest: "/campaigns/mycamp/.claude/skills", wantErr: false},
-		{name: "valid nested subpath", dest: "/campaigns/mycamp/tools/custom/skills", wantErr: false},
-		{name: "campaign root", dest: "/campaigns/mycamp", wantErr: true},
-		{name: "campaign root with trailing slash", dest: "/campaigns/mycamp/", wantErr: true},
-		{name: "dot path resolves to root", dest: "/campaigns/mycamp/.", wantErr: true},
-		{name: ".campaign dir", dest: "/campaigns/mycamp/.campaign", wantErr: true},
-		{name: ".campaign subdir", dest: "/campaigns/mycamp/.campaign/skills", wantErr: true},
-		{name: "filesystem root", dest: "/", wantErr: true},
-		{name: "outside campaign", dest: "/other/place", wantErr: true},
-		{name: "parent of campaign", dest: "/campaigns", wantErr: true},
+		{name: "valid subpath", dest: filepath.Join(root, ".claude", "skills"), wantErr: false},
+		{name: "valid nested subpath", dest: filepath.Join(root, "tools", "custom", "skills"), wantErr: false},
+		{name: "valid in-root symlink parent", dest: filepath.Join(inRootLink, "skills"), wantErr: false},
+		{name: "campaign root", dest: root, wantErr: true},
+		{name: "campaign root with trailing slash", dest: root + string(filepath.Separator), wantErr: true},
+		{name: "dot path resolves to root", dest: filepath.Join(root, "."), wantErr: true},
+		{name: ".campaign dir", dest: filepath.Join(root, ".campaign"), wantErr: true},
+		{name: ".campaign subdir", dest: filepath.Join(root, ".campaign", "skills"), wantErr: true},
+		{name: "filesystem root", dest: string(filepath.Separator), wantErr: true},
+		{name: "outside campaign", dest: outside, wantErr: true},
+		{name: "parent of campaign", dest: filepath.Dir(root), wantErr: true},
+		{name: "symlink parent escapes campaign", dest: filepath.Join(escapeLink, "customskills"), wantErr: true},
 	}
 
 	for _, tt := range tests {
