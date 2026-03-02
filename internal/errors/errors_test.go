@@ -2,8 +2,10 @@ package errors
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"testing"
 )
 
@@ -343,6 +345,9 @@ func TestSentinelErrors(t *testing.T) {
 		{ErrCancelled, "operation cancelled"},
 		{ErrConflict, "conflict"},
 		{ErrNotInitialized, "not initialized"},
+		{ErrBoundaryViolation, "boundary violation"},
+		{ErrGitFailed, "git operation failed"},
+		{ErrCommandFailed, "command failed"},
 	}
 	for _, tt := range sentinels {
 		t.Run(tt.text, func(t *testing.T) {
@@ -351,4 +356,186 @@ func TestSentinelErrors(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBoundaryError(t *testing.T) {
+	inner := errors.New("symlink escape")
+
+	t.Run("Error format", func(t *testing.T) {
+		e := NewBoundary("validate", "/tmp/evil", "/home/user/campaign", inner)
+		got := e.Error()
+		if !strings.Contains(got, "boundary violation") {
+			t.Errorf("Error() missing 'boundary violation': %q", got)
+		}
+		if !strings.Contains(got, "/tmp/evil") {
+			t.Errorf("Error() missing path: %q", got)
+		}
+		if !strings.Contains(got, "/home/user/campaign") {
+			t.Errorf("Error() missing root: %q", got)
+		}
+		if !strings.Contains(got, "validate") {
+			t.Errorf("Error() missing op: %q", got)
+		}
+	})
+
+	t.Run("Unwrap returns inner error", func(t *testing.T) {
+		e := NewBoundary("remove", "/bad", "/root", inner)
+		if !errors.Is(e, inner) {
+			t.Error("errors.Is(e, inner) = false, want true")
+		}
+	})
+
+	t.Run("errors.Is matches ErrBoundaryViolation sentinel", func(t *testing.T) {
+		e := NewBoundary("write", "/bad", "/root", nil)
+		if !Is(e, ErrBoundaryViolation) {
+			t.Error("errors.Is(e, ErrBoundaryViolation) = false, want true")
+		}
+	})
+
+	t.Run("errors.As extracts BoundaryError", func(t *testing.T) {
+		e := NewBoundary("read", "/outside", "/campaign", nil)
+		wrapped := fmt.Errorf("operation failed: %w", e)
+		var be *BoundaryError
+		if !As(wrapped, &be) {
+			t.Fatal("errors.As failed to extract *BoundaryError")
+		}
+		if be.Path != "/outside" {
+			t.Errorf("be.Path = %q, want %q", be.Path, "/outside")
+		}
+		if be.Op != "read" {
+			t.Errorf("be.Op = %q, want %q", be.Op, "read")
+		}
+	})
+
+	t.Run("nil Err does not panic", func(t *testing.T) {
+		e := NewBoundary("test", "/p", "/r", nil)
+		_ = e.Error()
+		if e.Unwrap() != nil {
+			t.Error("Unwrap() of nil Err should return nil")
+		}
+	})
+}
+
+func TestGitError(t *testing.T) {
+	inner := errors.New("exit status 128")
+
+	t.Run("Error with all fields", func(t *testing.T) {
+		e := NewGit("commit", "/repo", "lock", "index.lock exists", inner)
+		got := e.Error()
+		if !strings.Contains(got, "git commit failed") {
+			t.Errorf("missing op: %q", got)
+		}
+		if !strings.Contains(got, "(lock)") {
+			t.Errorf("missing errType: %q", got)
+		}
+		if !strings.Contains(got, "/repo") {
+			t.Errorf("missing path: %q", got)
+		}
+		if !strings.Contains(got, "index.lock exists") {
+			t.Errorf("missing detail: %q", got)
+		}
+	})
+
+	t.Run("Error with unknown type omits parenthetical", func(t *testing.T) {
+		e := NewGit("add", "", "unknown", "", nil)
+		got := e.Error()
+		if strings.Contains(got, "(unknown)") {
+			t.Errorf("should not include '(unknown)': %q", got)
+		}
+	})
+
+	t.Run("Unwrap returns inner error", func(t *testing.T) {
+		e := NewGit("fetch", "", "network", "", inner)
+		if !errors.Is(e, inner) {
+			t.Error("errors.Is(e, inner) = false, want true")
+		}
+	})
+
+	t.Run("errors.Is matches ErrGitFailed sentinel", func(t *testing.T) {
+		e := NewGit("push", "", "permission", "", nil)
+		if !Is(e, ErrGitFailed) {
+			t.Error("errors.Is(e, ErrGitFailed) = false, want true")
+		}
+	})
+
+	t.Run("errors.As extracts GitError", func(t *testing.T) {
+		e := NewGit("checkout", "/path", "not_repo", "not a git repo", nil)
+		wrapped := fmt.Errorf("wrap: %w", e)
+		var ge *GitError
+		if !As(wrapped, &ge) {
+			t.Fatal("errors.As failed")
+		}
+		if ge.Op != "checkout" {
+			t.Errorf("ge.Op = %q, want %q", ge.Op, "checkout")
+		}
+		if ge.ErrType != "not_repo" {
+			t.Errorf("ge.ErrType = %q, want %q", ge.ErrType, "not_repo")
+		}
+	})
+}
+
+func TestCommandError(t *testing.T) {
+	inner := errors.New("exec: no such file")
+
+	t.Run("ExitCode failure Error format", func(t *testing.T) {
+		e := NewCommand("just build", 1, "build failed\n", nil)
+		got := e.Error()
+		if !strings.Contains(got, "just build") {
+			t.Errorf("missing command: %q", got)
+		}
+		if !strings.Contains(got, "code 1") {
+			t.Errorf("missing exit code: %q", got)
+		}
+		if !strings.Contains(got, "build failed") {
+			t.Errorf("missing stderr: %q", got)
+		}
+	})
+
+	t.Run("Launch failure Error format", func(t *testing.T) {
+		e := NewCommand("unknown-binary", 0, "", inner)
+		got := e.Error()
+		if !strings.Contains(got, "unknown-binary") {
+			t.Errorf("missing command: %q", got)
+		}
+		if !strings.Contains(got, "exec: no such file") {
+			t.Errorf("missing inner error: %q", got)
+		}
+	})
+
+	t.Run("Unwrap returns inner error", func(t *testing.T) {
+		e := NewCommand("ls", 0, "", inner)
+		if !errors.Is(e, inner) {
+			t.Error("errors.Is(e, inner) = false, want true")
+		}
+	})
+
+	t.Run("errors.Is matches ErrCommandFailed", func(t *testing.T) {
+		e := NewCommand("make", 2, "", nil)
+		if !Is(e, ErrCommandFailed) {
+			t.Error("errors.Is(e, ErrCommandFailed) = false, want true")
+		}
+	})
+
+	t.Run("errors.As extracts CommandError", func(t *testing.T) {
+		e := NewCommand("go test", 1, "FAIL", nil)
+		wrapped := fmt.Errorf("test run: %w", e)
+		var ce *CommandError
+		if !As(wrapped, &ce) {
+			t.Fatal("errors.As failed to extract *CommandError")
+		}
+		if ce.ExitCode != 1 {
+			t.Errorf("ce.ExitCode = %d, want 1", ce.ExitCode)
+		}
+		if ce.Stderr != "FAIL" {
+			t.Errorf("ce.Stderr = %q, want %q", ce.Stderr, "FAIL")
+		}
+	})
+
+	t.Run("Zero exit code no error", func(t *testing.T) {
+		e := NewCommand("nothing", 0, "", nil)
+		got := e.Error()
+		if !strings.Contains(got, "nothing") {
+			t.Errorf("fallback message missing command: %q", got)
+		}
+	})
 }

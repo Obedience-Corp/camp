@@ -27,4 +27,13 @@ var (
 
 	// ErrNotInitialized indicates a required resource has not been set up.
 	ErrNotInitialized = errors.New("not initialized")
+
+	// ErrBoundaryViolation indicates a path escaped the allowed campaign boundary.
+	ErrBoundaryViolation = errors.New("boundary violation")
+
+	// ErrGitFailed indicates a git operation failed.
+	ErrGitFailed = errors.New("git operation failed")
+
+	// ErrCommandFailed indicates a subprocess execution failed.
+	ErrCommandFailed = errors.New("command failed")
 )
