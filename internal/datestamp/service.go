@@ -3,7 +3,6 @@ package datestamp
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -49,7 +48,7 @@ func Datestamp(ctx context.Context, path string, opts Options) (*Result, error) 
 	// Resolve and validate path
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInvalidPath, err)
+		return nil, camperrors.Wrapf(ErrInvalidPath, "%v", err)
 	}
 
 	// Clean trailing slashes
@@ -58,7 +57,7 @@ func Datestamp(ctx context.Context, path string, opts Options) (*Result, error) 
 	info, err := os.Stat(absPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("%w: %s", ErrNotFound, path)
+			return nil, camperrors.Wrap(ErrNotFound, path)
 		}
 		return nil, camperrors.Wrap(err, "stat failed")
 	}
@@ -71,7 +70,7 @@ func Datestamp(ctx context.Context, path string, opts Options) (*Result, error) 
 
 	// Check if target exists
 	if _, err := os.Stat(newPath); err == nil {
-		return nil, fmt.Errorf("%w: %s", ErrAlreadyExists, newPath)
+		return nil, camperrors.Wrap(ErrAlreadyExists, newPath)
 	}
 
 	result := &Result{

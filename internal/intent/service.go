@@ -17,10 +17,10 @@ import (
 // Sentinels marked with %w wrap the canonical sentinel from internal/errors
 // to enable cross-package errors.Is() matching.
 var (
-	ErrNotFound    = fmt.Errorf("intent not found: %w", camperrors.ErrNotFound)
-	ErrCancelled   = fmt.Errorf("intent creation cancelled: %w", camperrors.ErrCancelled)
-	ErrFileExists  = fmt.Errorf("intent file already exists: %w", camperrors.ErrAlreadyExists)
-	ErrInvalidPath = fmt.Errorf("invalid path: %w", camperrors.ErrInvalidInput)
+	ErrNotFound    = camperrors.Wrap(camperrors.ErrNotFound, "intent not found")
+	ErrCancelled   = camperrors.Wrap(camperrors.ErrCancelled, "intent creation cancelled")
+	ErrFileExists  = camperrors.Wrap(camperrors.ErrAlreadyExists, "intent file already exists")
+	ErrInvalidPath = camperrors.Wrap(camperrors.ErrInvalidInput, "invalid path")
 )
 
 // IntentService provides operations for managing intent files.
@@ -85,7 +85,7 @@ func (s *IntentService) CreateDirect(ctx context.Context, opts CreateOptions) (*
 
 	// Check if file already exists
 	if _, err := os.Stat(finalPath); err == nil {
-		return nil, fmt.Errorf("%w: %s", ErrFileExists, finalPath)
+		return nil, camperrors.Wrap(ErrFileExists, finalPath)
 	}
 
 	// Write intent file
@@ -219,7 +219,7 @@ func (s *IntentService) Find(ctx context.Context, id string) (*Intent, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("%w: %s", ErrNotFound, id)
+	return nil, camperrors.Wrap(ErrNotFound, id)
 }
 
 // Get retrieves an intent by its exact ID.
@@ -237,7 +237,7 @@ func (s *IntentService) Get(ctx context.Context, id string) (*Intent, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("%w: %s", ErrNotFound, id)
+	return nil, camperrors.Wrap(ErrNotFound, id)
 }
 
 // ListOptions contains options for listing intents.
@@ -433,7 +433,7 @@ func (s *IntentService) Save(ctx context.Context, intent *Intent) error {
 	}
 
 	if intent.Path == "" {
-		return fmt.Errorf("%w: intent has no path", ErrInvalidPath)
+		return camperrors.Wrap(ErrInvalidPath, "intent has no path")
 	}
 
 	data, err := SerializeIntent(intent)

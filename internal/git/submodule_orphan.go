@@ -3,7 +3,6 @@ package git
 import (
 	"bufio"
 	"context"
-	"fmt"
 	"os/exec"
 	"strings"
 
@@ -79,7 +78,7 @@ func RemoveOrphanedGitlinks(ctx context.Context, repoRoot string, orphans []Orph
 
 		cmd := exec.CommandContext(ctx, "git", "-C", repoRoot, "rm", "--cached", orphan.Path)
 		if output, err := cmd.CombinedOutput(); err != nil {
-			return removed, fmt.Errorf("%w: git rm --cached %s: %s", ErrOrphanedGitlink, orphan.Path, strings.TrimSpace(string(output)))
+			return removed, camperrors.Wrapf(ErrOrphanedGitlink, "git rm --cached %s: %s", orphan.Path, strings.TrimSpace(string(output)))
 		}
 		removed = append(removed, orphan.Path)
 	}

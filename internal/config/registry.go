@@ -130,7 +130,7 @@ func (r *Registry) Register(id, name, path string, campaignType CampaignType) er
 
 	// Check if this path is already registered to a DIFFERENT ID
 	if existingID, exists := r.pathIndex[path]; exists && existingID != id {
-		return fmt.Errorf("%w: %s", ErrPathConflict, existingID)
+		return camperrors.Wrap(ErrPathConflict, existingID)
 	}
 
 	// If this ID exists with a different path, remove old path from index

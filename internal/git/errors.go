@@ -89,10 +89,10 @@ var (
 	ErrLockRemovalFailed = errors.New("failed to remove stale lock")
 
 	// ErrLockTimeout indicates the timeout was exceeded waiting for a lock to release.
-	ErrLockTimeout = fmt.Errorf("timeout waiting for lock release: %w", camperrors.ErrTimeout)
+	ErrLockTimeout = camperrors.Wrap(camperrors.ErrTimeout, "timeout waiting for lock release")
 
 	// ErrNotRepository indicates the path is not a git repository.
-	ErrNotRepository = fmt.Errorf("not a git repository: %w", camperrors.ErrNotInitialized)
+	ErrNotRepository = camperrors.Wrap(camperrors.ErrNotInitialized, "not a git repository")
 
 	// ErrNoChanges indicates there are no changes to commit.
 	ErrNoChanges = errors.New("nothing to commit")
@@ -128,7 +128,7 @@ var (
 	ErrSubmoduleSync = errors.New("submodule sync failed")
 
 	// ErrSubmoduleNotInitialized indicates a submodule was not properly initialized.
-	ErrSubmoduleNotInitialized = fmt.Errorf("submodule not initialized: %w", camperrors.ErrNotInitialized)
+	ErrSubmoduleNotInitialized = camperrors.Wrap(camperrors.ErrNotInitialized, "submodule not initialized")
 
 	// ErrStage indicates a staging (git add) operation failed.
 	ErrStage = errors.New("staging failed")
@@ -137,16 +137,16 @@ var (
 	ErrCommitFailed = errors.New("commit failed")
 
 	// ErrCommitCancelled indicates the user cancelled the commit.
-	ErrCommitCancelled = fmt.Errorf("commit cancelled: %w", camperrors.ErrCancelled)
+	ErrCommitCancelled = camperrors.Wrap(camperrors.ErrCancelled, "commit cancelled")
 
 	// ErrCommitOptionsRequired indicates nil commit options were provided.
-	ErrCommitOptionsRequired = fmt.Errorf("commit options required: %w", camperrors.ErrInvalidInput)
+	ErrCommitOptionsRequired = camperrors.Wrap(camperrors.ErrInvalidInput, "commit options required")
 
 	// ErrCommitMessageRequired indicates a commit message was not provided.
-	ErrCommitMessageRequired = fmt.Errorf("commit message is required: %w", camperrors.ErrInvalidInput)
+	ErrCommitMessageRequired = camperrors.Wrap(camperrors.ErrInvalidInput, "commit message is required")
 
 	// ErrNoFilesSpecified indicates an empty file list was provided for staging.
-	ErrNoFilesSpecified = fmt.Errorf("no files specified for staging: %w", camperrors.ErrInvalidInput)
+	ErrNoFilesSpecified = camperrors.Wrap(camperrors.ErrInvalidInput, "no files specified for staging")
 )
 
 // ClassifyGitError determines the error type from git stderr output.

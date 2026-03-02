@@ -77,7 +77,7 @@ func (s *Syncer) listSubmodules(ctx context.Context) ([]string, error) {
 			// No submodules configured
 			return nil, nil
 		}
-		return nil, fmt.Errorf("%w: %w", ErrListSubmodules, err)
+		return nil, camperrors.Wrap(err, ErrListSubmodules.Error())
 	}
 
 	var paths []string

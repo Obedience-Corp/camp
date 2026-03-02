@@ -425,14 +425,14 @@ func (s *Service) List(ctx context.Context, status string, opts ListOptions) (*L
 
 	// Validate status exists in schema
 	if !s.schema.HasDirectory(status) {
-		return nil, fmt.Errorf("%w: %s", ErrInvalidStatus, status)
+		return nil, camperrors.Wrap(ErrInvalidStatus, status)
 	}
 
 	statusPath := s.resolvePath(status)
 	entries, err := os.ReadDir(statusPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("%w: %s", ErrStatusNotFound, status)
+			return nil, camperrors.Wrap(ErrStatusNotFound, status)
 		}
 		return nil, camperrors.Wrapf(err, "failed to read directory %s", status)
 	}
@@ -507,7 +507,7 @@ func (s *Service) Move(ctx context.Context, item, to string, opts MoveOptions) (
 
 	// Validate destination status exists
 	if !s.schema.HasDirectory(to) {
-		return nil, fmt.Errorf("%w: %s", ErrInvalidStatus, to)
+		return nil, camperrors.Wrap(ErrInvalidStatus, to)
 	}
 
 	// Find the item in the workflow
@@ -518,7 +518,7 @@ func (s *Service) Move(ctx context.Context, item, to string, opts MoveOptions) (
 
 	// Validate transition unless Force is set
 	if !opts.Force && !s.schema.IsValidTransition(from, to) {
-		return nil, fmt.Errorf("%w: cannot move from %s to %s", ErrInvalidTransition, from, to)
+		return nil, camperrors.Wrapf(ErrInvalidTransition, "cannot move from %s to %s", from, to)
 	}
 
 	// Destination path
@@ -526,7 +526,7 @@ func (s *Service) Move(ctx context.Context, item, to string, opts MoveOptions) (
 
 	// Check if destination already exists
 	if _, err := os.Stat(destPath); err == nil {
-		return nil, fmt.Errorf("%w: %s", ErrAlreadyExists, destPath)
+		return nil, camperrors.Wrap(ErrAlreadyExists, destPath)
 	}
 
 	// Ensure destination directory exists
@@ -576,7 +576,7 @@ func (s *Service) findItem(ctx context.Context, itemName string) (string, string
 		}
 	}
 
-	return "", "", fmt.Errorf("%w: %s", ErrItemNotFound, itemName)
+	return "", "", camperrors.Wrap(ErrItemNotFound, itemName)
 }
 
 // appendHistory adds an entry to the history file.

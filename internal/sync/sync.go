@@ -155,7 +155,7 @@ func (s *Syncer) syncURLs(ctx context.Context) ([]URLChange, error) {
 	cmd := exec.CommandContext(ctx, "git", "-C", s.repoRoot,
 		"submodule", "sync", "--recursive")
 	if output, err := cmd.CombinedOutput(); err != nil {
-		return nil, &SyncError{Op: "submodule-sync", Cause: fmt.Errorf("%w: %s", git.ErrSubmoduleSync, strings.TrimSpace(string(output)))}
+		return nil, &SyncError{Op: "submodule-sync", Cause: camperrors.Wrapf(git.ErrSubmoduleSync, "%s", strings.TrimSpace(string(output)))}
 	}
 
 	// Capture URL state after sync
@@ -243,7 +243,7 @@ func (s *Syncer) updateSubmodules(ctx context.Context) ([]SubmoduleResult, error
 		cmd := exec.CommandContext(ctx, "git", "-C", subDir, "submodule", "update", "--init", "--recursive")
 		if output, nestedErr := cmd.CombinedOutput(); nestedErr != nil {
 			// Nested failure is non-fatal for the parent submodule
-			result.Error = &SyncError{Op: "nested-init", Submodule: path, Cause: fmt.Errorf("%w: %s", ErrNestedSubmodules, strings.TrimSpace(string(output)))}
+			result.Error = &SyncError{Op: "nested-init", Submodule: path, Cause: camperrors.Wrapf(ErrNestedSubmodules, "%s", strings.TrimSpace(string(output)))}
 		}
 
 		// Checkout default branch instead of leaving on detached HEAD
@@ -399,7 +399,7 @@ func (s *Syncer) validateUpdate(ctx context.Context) error {
 		if strings.Contains(outputStr, "no submodule mapping found") {
 			return nil
 		}
-		return &SyncError{Op: "validate", Cause: fmt.Errorf("%w: %w", ErrSubmoduleValidation, err)}
+		return &SyncError{Op: "validate", Cause: camperrors.Wrap(err, ErrSubmoduleValidation.Error())}
 	}
 
 	// Parse output for issues

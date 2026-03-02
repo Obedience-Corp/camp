@@ -25,11 +25,11 @@ const (
 // Sentinels marked with %w wrap the canonical sentinel from internal/errors
 // to enable cross-package errors.Is() matching.
 var (
-	ErrProjectNotFound  = fmt.Errorf("project not found: %w", camperrors.ErrNotFound)
-	ErrWorktreeExists   = fmt.Errorf("worktree already exists: %w", camperrors.ErrAlreadyExists)
-	ErrWorktreeNotFound = fmt.Errorf("worktree not found: %w", camperrors.ErrNotFound)
-	ErrBranchNotFound   = fmt.Errorf("branch not found: %w", camperrors.ErrNotFound)
-	ErrInvalidName      = fmt.Errorf("invalid worktree name: %w", camperrors.ErrInvalidInput)
+	ErrProjectNotFound  = camperrors.Wrap(camperrors.ErrNotFound, "project not found")
+	ErrWorktreeExists   = camperrors.Wrap(camperrors.ErrAlreadyExists, "worktree already exists")
+	ErrWorktreeNotFound = camperrors.Wrap(camperrors.ErrNotFound, "worktree not found")
+	ErrBranchNotFound   = camperrors.Wrap(camperrors.ErrNotFound, "branch not found")
+	ErrInvalidName      = camperrors.Wrap(camperrors.ErrInvalidInput, "invalid worktree name")
 	ErrNotInWorktree    = errors.New("not inside a worktree")
 	ErrStaleWorktree    = errors.New("worktree is stale")
 	ErrCorrupted        = errors.New("worktree is corrupted")
@@ -135,14 +135,14 @@ func BranchNotFoundError(project, branch string) error {
 func InvalidWorktreeName(name, reason string) error {
 	return NewError(ErrCodeInvalidName).
 		WithWorktree(name).
-		WithCause(fmt.Errorf("%w: %s", ErrInvalidName, reason))
+		WithCause(camperrors.Wrap(ErrInvalidName, reason))
 }
 
 // GitOperationFailed wraps a git command failure.
 func GitOperationFailed(project, operation string, err error) error {
 	return NewError(ErrCodeGitFailed).
 		WithProject(project).
-		WithCause(fmt.Errorf("%s: %w", operation, err))
+		WithCause(camperrors.Wrap(err, operation))
 }
 
 // StaleWorktreeError creates an error for a stale worktree.
@@ -150,7 +150,7 @@ func StaleWorktreeError(project, worktree, reason string) error {
 	return NewError(ErrCodeStaleWorktree).
 		WithProject(project).
 		WithWorktree(worktree).
-		WithCause(fmt.Errorf("%w: %s", ErrStaleWorktree, reason))
+		WithCause(camperrors.Wrap(ErrStaleWorktree, reason))
 }
 
 // RemovalFailed creates an error for worktree removal failure.

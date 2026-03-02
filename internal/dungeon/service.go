@@ -18,10 +18,10 @@ import (
 // Sentinels marked with %w wrap the canonical sentinel from internal/errors
 // to enable cross-package errors.Is() matching.
 var (
-	ErrNotFound      = fmt.Errorf("item not found: %w", camperrors.ErrNotFound)
-	ErrAlreadyExists = fmt.Errorf("already exists: %w", camperrors.ErrAlreadyExists)
+	ErrNotFound      = camperrors.Wrap(camperrors.ErrNotFound, "item not found")
+	ErrAlreadyExists = camperrors.Wrap(camperrors.ErrAlreadyExists, "already exists")
 	ErrNotInDungeon  = errors.New("item not in dungeon")
-	ErrInvalidStatus = fmt.Errorf("invalid status: %w", camperrors.ErrInvalidInput)
+	ErrInvalidStatus = camperrors.Wrap(camperrors.ErrInvalidInput, "invalid status")
 )
 
 // systemFiles are non-status entries excluded from item listings.
@@ -250,7 +250,7 @@ func (s *Service) Archive(ctx context.Context, itemName string) error {
 	// Strip trailing slash if present
 	itemName = filepath.Clean(itemName)
 	if itemName == "/" {
-		return fmt.Errorf("%w: invalid item name", ErrNotInDungeon)
+		return camperrors.Wrap(ErrNotInDungeon, "invalid item name")
 	}
 
 	srcPath := filepath.Join(s.dungeonPath, itemName)
@@ -258,7 +258,7 @@ func (s *Service) Archive(ctx context.Context, itemName string) error {
 
 	// Verify source exists
 	if _, err := os.Stat(srcPath); os.IsNotExist(err) {
-		return fmt.Errorf("%w: %s", ErrNotFound, itemName)
+		return camperrors.Wrap(ErrNotFound, itemName)
 	}
 
 	// Verify source is in dungeon root (not a path traversal)
@@ -271,7 +271,7 @@ func (s *Service) Archive(ctx context.Context, itemName string) error {
 		return camperrors.Wrap(err, "resolving dungeon path")
 	}
 	if filepath.Dir(absSource) != absDungeon {
-		return fmt.Errorf("%w: %s", ErrNotInDungeon, itemName)
+		return camperrors.Wrap(ErrNotInDungeon, itemName)
 	}
 
 	// Ensure archived directory exists
@@ -282,7 +282,7 @@ func (s *Service) Archive(ctx context.Context, itemName string) error {
 
 	// Check if destination already exists
 	if _, err := os.Stat(dstPath); err == nil {
-		return fmt.Errorf("%w: %s already in archived/", ErrAlreadyExists, itemName)
+		return camperrors.Wrapf(ErrAlreadyExists, "%s already in archived/", itemName)
 	}
 
 	// Move the item
@@ -429,7 +429,7 @@ func (s *Service) MoveToDungeon(ctx context.Context, itemName, parentPath string
 	targetPath := filepath.Join(s.dungeonPath, itemName)
 
 	if _, err := os.Stat(sourcePath); err != nil {
-		return fmt.Errorf("%w: %s", ErrNotFound, itemName)
+		return camperrors.Wrap(ErrNotFound, itemName)
 	}
 
 	if _, err := os.Stat(s.dungeonPath); err != nil {
@@ -437,7 +437,7 @@ func (s *Service) MoveToDungeon(ctx context.Context, itemName, parentPath string
 	}
 
 	if _, err := os.Stat(targetPath); err == nil {
-		return fmt.Errorf("%w: %s already in dungeon", ErrAlreadyExists, itemName)
+		return camperrors.Wrapf(ErrAlreadyExists, "%s already in dungeon", itemName)
 	}
 
 	if err := os.Rename(sourcePath, targetPath); err != nil {
@@ -470,7 +470,7 @@ func (s *Service) MoveToStatus(ctx context.Context, itemName, status string) err
 
 	itemName = filepath.Clean(itemName)
 	if itemName == "/" {
-		return fmt.Errorf("%w: invalid item name", ErrNotInDungeon)
+		return camperrors.Wrap(ErrNotInDungeon, "invalid item name")
 	}
 
 	srcPath := filepath.Join(s.dungeonPath, itemName)
@@ -478,7 +478,7 @@ func (s *Service) MoveToStatus(ctx context.Context, itemName, status string) err
 
 	// Verify source exists
 	if _, err := os.Stat(srcPath); os.IsNotExist(err) {
-		return fmt.Errorf("%w: %s", ErrNotFound, itemName)
+		return camperrors.Wrap(ErrNotFound, itemName)
 	}
 
 	// Verify source is in dungeon root (not a path traversal)
@@ -491,7 +491,7 @@ func (s *Service) MoveToStatus(ctx context.Context, itemName, status string) err
 		return camperrors.Wrap(err, "resolving dungeon path")
 	}
 	if filepath.Dir(absSource) != absDungeon {
-		return fmt.Errorf("%w: %s", ErrNotInDungeon, itemName)
+		return camperrors.Wrap(ErrNotInDungeon, itemName)
 	}
 
 	// Ensure status directory exists
@@ -502,7 +502,7 @@ func (s *Service) MoveToStatus(ctx context.Context, itemName, status string) err
 
 	// Check if destination already exists
 	if _, err := os.Stat(dstPath); err == nil {
-		return fmt.Errorf("%w: %s already in %s/", ErrAlreadyExists, itemName, status)
+		return camperrors.Wrapf(ErrAlreadyExists, "%s already in %s/", itemName, status)
 	}
 
 	if err := os.Rename(srcPath, dstPath); err != nil {
@@ -533,14 +533,14 @@ func (s *Service) MoveToDungeonStatus(ctx context.Context, itemName, parentPath,
 		return camperrors.Wrap(err, "resolving campaign root")
 	}
 	if !strings.HasPrefix(absSource, absCampaignRoot+string(filepath.Separator)) {
-		return fmt.Errorf("%w: source outside campaign root", ErrNotInDungeon)
+		return camperrors.Wrap(ErrNotInDungeon, "source outside campaign root")
 	}
 
 	sourcePath := filepath.Join(parentPath, itemName)
 	targetPath := filepath.Join(s.dungeonPath, status, itemName)
 
 	if _, err := os.Stat(sourcePath); err != nil {
-		return fmt.Errorf("%w: %s", ErrNotFound, itemName)
+		return camperrors.Wrap(ErrNotFound, itemName)
 	}
 
 	// Ensure status directory exists
@@ -550,7 +550,7 @@ func (s *Service) MoveToDungeonStatus(ctx context.Context, itemName, parentPath,
 	}
 
 	if _, err := os.Stat(targetPath); err == nil {
-		return fmt.Errorf("%w: %s already in %s/", ErrAlreadyExists, itemName, status)
+		return camperrors.Wrapf(ErrAlreadyExists, "%s already in %s/", itemName, status)
 	}
 
 	if err := os.Rename(sourcePath, targetPath); err != nil {
@@ -563,13 +563,13 @@ func (s *Service) MoveToDungeonStatus(ctx context.Context, itemName, parentPath,
 // validateStatusName ensures a status name is safe (no path separators or traversal).
 func validateStatusName(status string) error {
 	if status == "" {
-		return fmt.Errorf("%w: empty status name", ErrInvalidStatus)
+		return camperrors.Wrap(ErrInvalidStatus, "empty status name")
 	}
 	if strings.Contains(status, string(filepath.Separator)) || strings.Contains(status, "/") {
-		return fmt.Errorf("%w: %s (contains path separator)", ErrInvalidStatus, status)
+		return camperrors.Wrapf(ErrInvalidStatus, "%s (contains path separator)", status)
 	}
 	if status == "." || status == ".." {
-		return fmt.Errorf("%w: %s", ErrInvalidStatus, status)
+		return camperrors.Wrap(ErrInvalidStatus, status)
 	}
 	return nil
 }

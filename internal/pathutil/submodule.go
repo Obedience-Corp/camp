@@ -1,9 +1,10 @@
 package pathutil
 
 import (
-	"fmt"
 	"path/filepath"
 	"strings"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // ValidateSubmodulePath checks that subPath, when joined with repoRoot, resolves
@@ -23,31 +24,31 @@ import (
 // For existing paths, prefer ValidateBoundary which also resolves symlinks.
 func ValidateSubmodulePath(repoRoot, subPath string) error {
 	if subPath == "" {
-		return fmt.Errorf("%w: path must not be empty", ErrInvalidSubmodulePath)
+		return camperrors.Wrap(ErrInvalidSubmodulePath, "path must not be empty")
 	}
 
 	if filepath.IsAbs(subPath) {
-		return fmt.Errorf("%w: path must be relative, got %q", ErrInvalidSubmodulePath, subPath)
+		return camperrors.Wrapf(ErrInvalidSubmodulePath, "path must be relative, got %q", subPath)
 	}
 
 	for _, segment := range strings.Split(filepath.ToSlash(subPath), "/") {
 		if segment == ".." {
-			return fmt.Errorf("%w: path must not contain \"..\" segments: %q", ErrInvalidSubmodulePath, subPath)
+			return camperrors.Wrapf(ErrInvalidSubmodulePath, "path must not contain \"..\" segments: %q", subPath)
 		}
 	}
 
 	cleaned := filepath.Clean(subPath)
 	if strings.HasPrefix(cleaned, "..") {
-		return fmt.Errorf("%w: path escapes root after cleaning: %q", ErrInvalidSubmodulePath, subPath)
+		return camperrors.Wrapf(ErrInvalidSubmodulePath, "path escapes root after cleaning: %q", subPath)
 	}
 
 	fullPath := filepath.Join(repoRoot, cleaned)
 	rel, err := filepath.Rel(repoRoot, fullPath)
 	if err != nil {
-		return fmt.Errorf("%w: cannot compute relative path: %q", ErrInvalidSubmodulePath, subPath)
+		return camperrors.Wrapf(ErrInvalidSubmodulePath, "cannot compute relative path: %q", subPath)
 	}
 	if strings.HasPrefix(rel, "..") {
-		return fmt.Errorf("%w: path escapes repository root: %q", ErrInvalidSubmodulePath, subPath)
+		return camperrors.Wrapf(ErrInvalidSubmodulePath, "path escapes repository root: %q", subPath)
 	}
 
 	return nil

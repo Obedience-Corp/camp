@@ -2,9 +2,10 @@ package project
 
 import (
 	"errors"
-	"fmt"
 	"regexp"
 	"strings"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // ErrInvalidProjectName is returned when a project name fails validation.
@@ -19,16 +20,16 @@ var projectNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`)
 // that do not match the strict alphanumeric-plus-safe-chars pattern.
 func ValidateProjectName(name string) error {
 	if name == "" {
-		return fmt.Errorf("%w: name must not be empty", ErrInvalidProjectName)
+		return camperrors.Wrap(ErrInvalidProjectName, "name must not be empty")
 	}
 	if strings.Contains(name, "..") {
-		return fmt.Errorf("%w: name must not contain \"..\": %q", ErrInvalidProjectName, name)
+		return camperrors.Wrapf(ErrInvalidProjectName, "name must not contain \"..\": %q", name)
 	}
 	if strings.ContainsAny(name, `/\`) {
-		return fmt.Errorf("%w: name must not contain path separators: %q", ErrInvalidProjectName, name)
+		return camperrors.Wrapf(ErrInvalidProjectName, "name must not contain path separators: %q", name)
 	}
 	if !projectNameRe.MatchString(name) {
-		return fmt.Errorf("%w: name contains invalid characters: %q", ErrInvalidProjectName, name)
+		return camperrors.Wrapf(ErrInvalidProjectName, "name contains invalid characters: %q", name)
 	}
 	return nil
 }

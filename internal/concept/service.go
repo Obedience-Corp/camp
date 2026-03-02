@@ -161,7 +161,7 @@ func (s *DefaultService) Get(ctx context.Context, name string) (*Concept, error)
 		}
 	}
 
-	return nil, fmt.Errorf("%w: %s", ErrNotFound, name)
+	return nil, camperrors.Wrap(ErrNotFound, name)
 }
 
 // hasItemsWithIgnore checks if the concept path has subdirectories (excluding ignored).
@@ -502,7 +502,7 @@ func (s *FSService) Get(ctx context.Context, name string) (*Concept, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("%w: %s", ErrNotFound, name)
+	return nil, camperrors.Wrap(ErrNotFound, name)
 }
 
 // hasItemsWithIgnore checks if the concept path has subdirectories via fs.FS.
