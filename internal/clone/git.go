@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	gitpkg "github.com/Obedience-Corp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
 
 // gitClone performs the initial repository clone.
@@ -363,6 +364,10 @@ func (c *Cloner) initSubmoduleGraceful(ctx context.Context, repoDir, subPath str
 		return ctx.Err()
 	}
 
+	if err := pathutil.ValidateSubmodulePath(repoDir, subPath); err != nil {
+		return &SubmoduleError{Op: "validate-path", Submodule: subPath, Cause: err}
+	}
+
 	// Atomic init + update to avoid lock contention in parallel execution
 	cmd := exec.CommandContext(ctx, "git", "-C", repoDir, "submodule", "update", "--init", subPath)
 	output, err := cmd.CombinedOutput()
@@ -397,6 +402,10 @@ func (c *Cloner) initSubmoduleGraceful(ctx context.Context, repoDir, subPath str
 func (c *Cloner) initSubmoduleFromDefaultBranch(ctx context.Context, repoDir, subPath string) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
+	}
+
+	if err := pathutil.ValidateSubmodulePath(repoDir, subPath); err != nil {
+		return &SubmoduleError{Op: "validate-path", Submodule: subPath, Cause: err}
 	}
 
 	// Get submodule URL
@@ -449,6 +458,12 @@ func (c *Cloner) initNestedSubmodulesGraceful(ctx context.Context, repoDir, subP
 	for _, nested := range nestedSubs {
 		if ctx.Err() != nil {
 			break
+		}
+
+		if err := pathutil.ValidateSubmodulePath(subDir, nested.Path); err != nil {
+			warnings = append(warnings,
+				fmt.Sprintf("nested submodule %s/%s: invalid path: %v", subPath, nested.Path, err))
+			continue
 		}
 
 		// Use graceful init for each nested submodule

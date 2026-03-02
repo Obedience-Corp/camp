@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
 
 // IsStaleRefError checks if an error indicates a stale commit reference.
@@ -106,6 +108,10 @@ func InitSubmoduleGraceful(ctx context.Context, repoDir, subPath string) error {
 		return ctx.Err()
 	}
 
+	if err := pathutil.ValidateSubmodulePath(repoDir, subPath); err != nil {
+		return fmt.Errorf("%w %s: %w", ErrSubmoduleInit, subPath, err)
+	}
+
 	// Step 1: Register the submodule (init without update)
 	cmd := exec.CommandContext(ctx, "git", "-C", repoDir, "submodule", "init", subPath)
 	_ = cmd.Run() // Ignore error, may already be initialized
@@ -136,6 +142,10 @@ func InitSubmoduleGraceful(ctx context.Context, repoDir, subPath string) error {
 func InitFromDefaultBranch(ctx context.Context, repoDir, subPath string) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
+	}
+
+	if err := pathutil.ValidateSubmodulePath(repoDir, subPath); err != nil {
+		return fmt.Errorf("%w %s: %w", ErrSubmoduleClone, subPath, err)
 	}
 
 	// Get submodule URL from .gitmodules
