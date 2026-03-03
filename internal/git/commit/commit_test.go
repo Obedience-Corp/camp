@@ -244,6 +244,295 @@ func TestCrawl(t *testing.T) {
 	}
 }
 
+func TestCrawl_SelectiveStaging(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	if err := exec.Command("git", "-C", tmpDir, "init").Run(); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.email", "test@test.com").Run(); err != nil {
+		t.Fatalf("failed to configure git email: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.name", "Test").Run(); err != nil {
+		t.Fatalf("failed to configure git name: %v", err)
+	}
+
+	// Create initial commit so we have a baseline
+	initialFile := filepath.Join(tmpDir, "initial.txt")
+	if err := os.WriteFile(initialFile, []byte("initial"), 0644); err != nil {
+		t.Fatalf("failed to create initial file: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "add", ".").Run(); err != nil {
+		t.Fatalf("failed to add initial file: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "commit", "-m", "initial").Run(); err != nil {
+		t.Fatalf("failed to create initial commit: %v", err)
+	}
+
+	// Create a dungeon directory with a crawl file (intended change)
+	dungeonDir := filepath.Join(tmpDir, "dungeon")
+	if err := os.MkdirAll(dungeonDir, 0755); err != nil {
+		t.Fatalf("failed to create dungeon dir: %v", err)
+	}
+	crawlFile := filepath.Join(dungeonDir, "moved-item.txt")
+	if err := os.WriteFile(crawlFile, []byte("moved"), 0644); err != nil {
+		t.Fatalf("failed to create crawl file: %v", err)
+	}
+
+	// Create an unrelated file (should NOT be committed)
+	unrelatedFile := filepath.Join(tmpDir, "unrelated-change.txt")
+	if err := os.WriteFile(unrelatedFile, []byte("unrelated"), 0644); err != nil {
+		t.Fatalf("failed to create unrelated file: %v", err)
+	}
+
+	ctx := context.Background()
+
+	// Commit with Files set to only the dungeon directory
+	result := Crawl(ctx, CrawlOptions{
+		Options: Options{
+			CampaignRoot: tmpDir,
+			CampaignID:   "test1234",
+		},
+		Description: "Moved items to archive",
+		Files:       []string{"dungeon"},
+	})
+
+	if !result.Committed {
+		t.Errorf("expected commit to succeed, got message: %s", result.Message)
+	}
+
+	// Verify: the committed files should only include dungeon/moved-item.txt
+	out, err := exec.Command("git", "-C", tmpDir, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("failed to get committed files: %v", err)
+	}
+
+	committedFiles := strings.TrimSpace(string(out))
+	if !strings.Contains(committedFiles, "dungeon/moved-item.txt") {
+		t.Errorf("expected dungeon/moved-item.txt in commit, got: %s", committedFiles)
+	}
+	if strings.Contains(committedFiles, "unrelated-change.txt") {
+		t.Errorf("unrelated-change.txt should NOT be in commit, got: %s", committedFiles)
+	}
+
+	// Verify: unrelated file should still be untracked
+	statusOut, err := exec.Command("git", "-C", tmpDir, "status", "--porcelain").Output()
+	if err != nil {
+		t.Fatalf("failed to get git status: %v", err)
+	}
+	status := string(statusOut)
+	if !strings.Contains(status, "unrelated-change.txt") {
+		t.Errorf("unrelated-change.txt should still be untracked, status: %s", status)
+	}
+}
+
+func TestCrawl_SelectiveStaging_FromRoot(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	if err := exec.Command("git", "-C", tmpDir, "init").Run(); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.email", "test@test.com").Run(); err != nil {
+		t.Fatalf("failed to configure git email: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.name", "Test").Run(); err != nil {
+		t.Fatalf("failed to configure git name: %v", err)
+	}
+
+	// Create initial commit
+	initialFile := filepath.Join(tmpDir, "initial.txt")
+	if err := os.WriteFile(initialFile, []byte("initial"), 0644); err != nil {
+		t.Fatalf("failed to create initial file: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "add", ".").Run(); err != nil {
+		t.Fatalf("failed to add initial file: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "commit", "-m", "initial").Run(); err != nil {
+		t.Fatalf("failed to create initial commit: %v", err)
+	}
+
+	// Simulate crawl from campaign root: relCwd would be ".", relDungeon is "dungeon"
+	dungeonDir := filepath.Join(tmpDir, "dungeon")
+	if err := os.MkdirAll(dungeonDir, 0755); err != nil {
+		t.Fatalf("failed to create dungeon dir: %v", err)
+	}
+	crawlFile := filepath.Join(dungeonDir, "archived-item.txt")
+	if err := os.WriteFile(crawlFile, []byte("archived"), 0644); err != nil {
+		t.Fatalf("failed to create crawl file: %v", err)
+	}
+
+	// Unrelated file at root — must NOT be committed
+	unrelatedFile := filepath.Join(tmpDir, "wip-notes.txt")
+	if err := os.WriteFile(unrelatedFile, []byte("work in progress"), 0644); err != nil {
+		t.Fatalf("failed to create unrelated file: %v", err)
+	}
+
+	ctx := context.Background()
+
+	// Files = ["dungeon"] simulates the fixed behavior (no "." in the list)
+	result := Crawl(ctx, CrawlOptions{
+		Options: Options{
+			CampaignRoot: tmpDir,
+			CampaignID:   "test1234",
+		},
+		Description: "Crawl from root",
+		Files:       []string{"dungeon"},
+	})
+
+	if !result.Committed {
+		t.Errorf("expected commit to succeed, got message: %s", result.Message)
+	}
+
+	out, err := exec.Command("git", "-C", tmpDir, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("failed to get committed files: %v", err)
+	}
+
+	committedFiles := strings.TrimSpace(string(out))
+	if !strings.Contains(committedFiles, "dungeon/archived-item.txt") {
+		t.Errorf("expected dungeon/archived-item.txt in commit, got: %s", committedFiles)
+	}
+	if strings.Contains(committedFiles, "wip-notes.txt") {
+		t.Errorf("wip-notes.txt should NOT be in commit (root staging bug), got: %s", committedFiles)
+	}
+}
+
+func TestCrawl_SelectiveStaging_IgnoresPreStaged(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	if err := exec.Command("git", "-C", tmpDir, "init").Run(); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.email", "test@test.com").Run(); err != nil {
+		t.Fatalf("failed to configure git email: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.name", "Test").Run(); err != nil {
+		t.Fatalf("failed to configure git name: %v", err)
+	}
+
+	// Create initial commit
+	initialFile := filepath.Join(tmpDir, "initial.txt")
+	if err := os.WriteFile(initialFile, []byte("initial"), 0644); err != nil {
+		t.Fatalf("failed to create initial file: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "add", ".").Run(); err != nil {
+		t.Fatalf("failed to add initial file: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "commit", "-m", "initial").Run(); err != nil {
+		t.Fatalf("failed to create initial commit: %v", err)
+	}
+
+	// Create dungeon file (intended change)
+	dungeonDir := filepath.Join(tmpDir, "dungeon")
+	if err := os.MkdirAll(dungeonDir, 0755); err != nil {
+		t.Fatalf("failed to create dungeon dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dungeonDir, "crawled.txt"), []byte("crawled"), 0644); err != nil {
+		t.Fatalf("failed to create crawl file: %v", err)
+	}
+
+	// Pre-stage an unrelated file — this is the key scenario
+	unrelatedFile := filepath.Join(tmpDir, "unrelated.txt")
+	if err := os.WriteFile(unrelatedFile, []byte("unrelated"), 0644); err != nil {
+		t.Fatalf("failed to create unrelated file: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "add", "unrelated.txt").Run(); err != nil {
+		t.Fatalf("failed to pre-stage unrelated file: %v", err)
+	}
+
+	ctx := context.Background()
+
+	result := Crawl(ctx, CrawlOptions{
+		Options: Options{
+			CampaignRoot: tmpDir,
+			CampaignID:   "test1234",
+		},
+		Description: "Selective crawl with dirty index",
+		Files:       []string{"dungeon"},
+	})
+
+	if !result.Committed {
+		t.Fatalf("expected commit to succeed, got message: %s", result.Message)
+	}
+
+	// Verify only dungeon files were committed, not the pre-staged unrelated.txt
+	out, err := exec.Command("git", "-C", tmpDir, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("failed to get committed files: %v", err)
+	}
+
+	committedFiles := strings.TrimSpace(string(out))
+	if !strings.Contains(committedFiles, "dungeon/crawled.txt") {
+		t.Errorf("expected dungeon/crawled.txt in commit, got: %s", committedFiles)
+	}
+	if strings.Contains(committedFiles, "unrelated.txt") {
+		t.Errorf("pre-staged unrelated.txt should NOT be in commit, got: %s", committedFiles)
+	}
+
+	// Verify unrelated.txt is still staged (not lost)
+	statusOut, err := exec.Command("git", "-C", tmpDir, "status", "--porcelain").Output()
+	if err != nil {
+		t.Fatalf("failed to get git status: %v", err)
+	}
+	status := string(statusOut)
+	if !strings.Contains(status, "unrelated.txt") {
+		t.Errorf("unrelated.txt should still be staged, status: %s", status)
+	}
+}
+
+func TestDoCommit_EmptyFiles_StagesAll(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	if err := exec.Command("git", "-C", tmpDir, "init").Run(); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.email", "test@test.com").Run(); err != nil {
+		t.Fatalf("failed to configure git email: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.name", "Test").Run(); err != nil {
+		t.Fatalf("failed to configure git name: %v", err)
+	}
+
+	// Create two files — both should be committed when Files is empty
+	file1 := filepath.Join(tmpDir, "file1.txt")
+	if err := os.WriteFile(file1, []byte("one"), 0644); err != nil {
+		t.Fatalf("failed to create file1: %v", err)
+	}
+	file2 := filepath.Join(tmpDir, "file2.txt")
+	if err := os.WriteFile(file2, []byte("two"), 0644); err != nil {
+		t.Fatalf("failed to create file2: %v", err)
+	}
+
+	ctx := context.Background()
+
+	// Crawl with no Files (empty) should stage everything
+	result := Crawl(ctx, CrawlOptions{
+		Options: Options{
+			CampaignRoot: tmpDir,
+			CampaignID:   "test1234",
+		},
+		Description: "Full staging test",
+	})
+
+	if !result.Committed {
+		t.Errorf("expected commit to succeed, got message: %s", result.Message)
+	}
+
+	// Use --root for the initial commit (no parent to diff against)
+	out, err := exec.Command("git", "-C", tmpDir, "diff-tree", "--root", "--no-commit-id", "--name-only", "-r", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("failed to get committed files: %v", err)
+	}
+
+	committedFiles := strings.TrimSpace(string(out))
+	if !strings.Contains(committedFiles, "file1.txt") {
+		t.Errorf("expected file1.txt in commit, got: %s", committedFiles)
+	}
+	if !strings.Contains(committedFiles, "file2.txt") {
+		t.Errorf("expected file2.txt in commit, got: %s", committedFiles)
+	}
+}
+
 func TestRepair(t *testing.T) {
 	tmpDir := t.TempDir()
 

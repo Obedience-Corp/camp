@@ -144,12 +144,32 @@ func commitCrawlChanges(ctx context.Context, cfg *config.CampaignConfig, campaig
 
 	description := buildCrawlCommitMessage(campaignRoot, cwd, triage, inner)
 
+	// Build file list from actual moved paths, not parent directories.
+	// Staging relCwd wholesale would stage everything when running from root.
+	relCwd, err := filepath.Rel(campaignRoot, cwd)
+	if err != nil {
+		relCwd = cwd
+	}
+	relDungeon := filepath.Join(relCwd, "dungeon")
+
+	files := []string{relDungeon}
+
+	// For triage moves, stage the specific source paths (items removed from parent).
+	if triage != nil && triage.HasMoves() {
+		for _, items := range triage.MovedItems {
+			for _, name := range items {
+				files = append(files, filepath.Join(relCwd, name))
+			}
+		}
+	}
+
 	result := commit.Crawl(ctx, commit.CrawlOptions{
 		Options: commit.Options{
 			CampaignRoot: campaignRoot,
 			CampaignID:   cfg.ID,
 		},
 		Description: description,
+		Files:       files,
 	})
 
 	if result.Committed {
