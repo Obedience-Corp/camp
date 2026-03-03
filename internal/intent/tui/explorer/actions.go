@@ -145,18 +145,15 @@ func (m *Model) promoteToFestival(i *intent.Intent) tea.Cmd {
 			})
 		}
 
-		msg := promoteFinishedMsg{
-			err:         err,
-			intentID:    i.ID,
-			intentTitle: i.Title,
-			festNotFound: result.FestNotFound,
+		return promoteFinishedMsg{
+			err:             err,
+			intentID:        i.ID,
+			intentTitle:     i.Title,
+			festNotFound:    result.FestNotFound,
+			festivalCreated: result.FestivalCreated,
+			festivalName:    result.FestivalName,
+			festivalDir:     result.FestivalDir,
 		}
-		if result.FestivalCreated {
-			msg.festivalName = result.FestivalDir
-		} else {
-			msg.festivalName = result.FestivalName
-		}
-		return msg
 	}
 }
 

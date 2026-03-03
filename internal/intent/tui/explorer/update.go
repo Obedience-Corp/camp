@@ -213,10 +213,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusMessage = "Promote failed: " + msg.err.Error()
 		} else if msg.festNotFound {
 			m.statusMessage = fmt.Sprintf("Promoted '%s' to done (fest CLI not found, skipped festival creation)", msg.intentTitle)
-		} else if msg.festivalName != "" {
-			m.statusMessage = fmt.Sprintf("Promoted '%s' → festival '%s'", msg.intentTitle, msg.festivalName)
+		} else if msg.festivalCreated {
+			name := msg.festivalDir
+			if name == "" {
+				name = msg.festivalName
+			}
+			m.statusMessage = fmt.Sprintf("Promoted '%s' → festival '%s'", msg.intentTitle, name)
 		} else {
-			m.statusMessage = fmt.Sprintf("Promoted '%s' to done", msg.intentTitle)
+			m.statusMessage = fmt.Sprintf("Promoted '%s' to done (festival creation failed)", msg.intentTitle)
 		}
 		return m, m.loadIntents()
 
