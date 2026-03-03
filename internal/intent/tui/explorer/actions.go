@@ -6,6 +6,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/intent"
+	"github.com/Obedience-Corp/camp/internal/intent/promote"
 	"github.com/Obedience-Corp/camp/internal/intent/tui"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -23,26 +24,6 @@ var moveStatusOptions = []struct {
 	{"  Killed", intent.StatusKilled},
 	{"  Archived", intent.StatusArchived},
 	{"  Someday", intent.StatusSomeday},
-}
-
-// statusWorkflow defines the promotion order for intents.
-// Dungeon statuses are excluded — promotion ends at done.
-var statusWorkflow = []intent.Status{
-	intent.StatusInbox,
-	intent.StatusActive,
-	intent.StatusReady,
-	intent.StatusDone,
-}
-
-// getNextStatus returns the next status in the promotion workflow.
-// Returns the same status if already at the final state.
-func getNextStatus(current intent.Status) intent.Status {
-	for i, s := range statusWorkflow {
-		if s == current && i < len(statusWorkflow)-1 {
-			return statusWorkflow[i+1]
-		}
-	}
-	return current // No change if at end or not in workflow
 }
 
 // updateMove handles key input during move action.
@@ -145,6 +126,37 @@ func (m *Model) deleteIntent(i *intent.Intent) tea.Cmd {
 	}
 }
 
+// promoteToFestival promotes an intent to a festival via the promote package.
+func (m *Model) promoteToFestival(i *intent.Intent) tea.Cmd {
+	return func() tea.Msg {
+		result, err := promote.Promote(m.ctx, m.service, i, promote.Options{
+			CampaignRoot: m.campaignRoot,
+		})
+
+		if err == nil && m.campaignRoot != "" && m.campaignID != "" {
+			_ = commit.Intent(m.ctx, commit.IntentOptions{
+				Options: commit.Options{
+					CampaignRoot: m.campaignRoot,
+					CampaignID:   m.campaignID,
+				},
+				Action:      commit.IntentPromote,
+				IntentTitle: i.Title,
+				Description: "Promoted to festival",
+			})
+		}
+
+		return promoteFinishedMsg{
+			err:             err,
+			intentID:        i.ID,
+			intentTitle:     i.Title,
+			festNotFound:    result.FestNotFound,
+			festivalCreated: result.FestivalCreated,
+			festivalName:    result.FestivalName,
+			festivalDir:     result.FestivalDir,
+		}
+	}
+}
+
 // viewMove renders the move status picker.
 func (m *Model) viewMove() string {
 	var b strings.Builder
@@ -193,15 +205,21 @@ func (m *Model) viewConfirmation() string {
 	return b.String()
 }
 
-// handlePromoteAction promotes the selected intent to the next status.
+// handlePromoteAction shows a confirmation dialog for promoting to festival.
+// Only ready intents can be promoted.
 func (m *Model) handlePromoteAction() (tea.Model, tea.Cmd) {
 	if selected := m.SelectedIntent(); selected != nil {
-		nextStatus := getNextStatus(selected.Status)
-		if nextStatus == selected.Status {
-			m.statusMessage = "Already at final status: " + selected.Status.String()
+		if selected.Status != intent.StatusReady {
+			m.statusMessage = "Only ready intents can be promoted to festivals"
 			return m, nil
 		}
-		return m, m.moveIntent(selected, nextStatus)
+		m.focus = focusConfirm
+		m.pendingAction = "promote"
+		m.pendingIntent = selected
+		m.confirmDialog = tui.NewConfirmationDialog(
+			"Promote to Festival",
+			fmt.Sprintf("Promote '%s' to a festival?\n\nThis will move the intent to done and create a new festival.", selected.Title),
+		)
 	}
 	return m, nil
 }

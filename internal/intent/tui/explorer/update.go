@@ -208,6 +208,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case promoteFinishedMsg:
+		if msg.err != nil {
+			m.statusMessage = "Promote failed: " + msg.err.Error()
+		} else if msg.festNotFound {
+			m.statusMessage = fmt.Sprintf("Promoted '%s' to done (fest CLI not found, skipped festival creation)", msg.intentTitle)
+		} else if msg.festivalCreated {
+			name := msg.festivalDir
+			if name == "" {
+				name = msg.festivalName
+			}
+			m.statusMessage = fmt.Sprintf("Promoted '%s' → festival '%s'", msg.intentTitle, name)
+		} else {
+			m.statusMessage = fmt.Sprintf("Promoted '%s' to done (festival creation failed)", msg.intentTitle)
+		}
+		return m, m.loadIntents()
+
 	case gatherFinishedMsg:
 		// Handle gather completion
 		if msg.err != nil {
@@ -252,11 +268,7 @@ func (m Model) handleActionMenuSelection(msg tui.ActionMenuSelectedMsg) (tea.Mod
 		m.intentToMove = selected
 		m.moveStatusIdx = 0
 	case "promote":
-		nextStatus := getNextStatus(selected.Status)
-		if nextStatus != selected.Status {
-			return m, m.moveIntent(selected, nextStatus)
-		}
-		m.statusMessage = "Already at final status"
+		return m.handlePromoteAction()
 	case "archive":
 		if !selected.Status.InDungeon() {
 			m.focus = focusConfirm

@@ -46,3 +46,14 @@ type gatherFinishedMsg struct {
 	gatheredTitle string
 	sourceCount   int
 }
+
+// promoteFinishedMsg is sent when promote-to-festival completes.
+type promoteFinishedMsg struct {
+	err             error
+	intentID        string
+	intentTitle     string
+	festivalName    string
+	festivalDir     string
+	festNotFound    bool
+	festivalCreated bool
+}
