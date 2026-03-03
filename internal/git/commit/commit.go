@@ -16,8 +16,9 @@ type Result struct {
 
 // Options configures common commit parameters.
 type Options struct {
-	CampaignRoot string // Path to campaign root
-	CampaignID   string // Campaign ID (truncated to 8 chars)
+	CampaignRoot string   // Path to campaign root
+	CampaignID   string   // Campaign ID (truncated to 8 chars)
+	Files        []string // If set, stage only these paths instead of everything
 }
 
 // doCommit stages all changes and commits with standardized format.
@@ -45,7 +46,7 @@ func doCommit(ctx context.Context, opts Options, action, subject, description st
 		commitMsg += "\n\n" + description
 	}
 
-	if err := git.CommitAll(ctx, opts.CampaignRoot, commitMsg); err != nil {
+	if err := stageAndCommit(ctx, opts, commitMsg); err != nil {
 		if errors.Is(err, git.ErrNoChanges) {
 			return Result{
 				Committed: false,
@@ -62,4 +63,23 @@ func doCommit(ctx context.Context, opts Options, action, subject, description st
 		Committed: true,
 		Message:   "Committed changes to git",
 	}
+}
+
+// stageAndCommit stages files and commits. If opts.Files is set, only those
+// paths are staged. Otherwise all changes are staged (legacy behavior).
+func stageAndCommit(ctx context.Context, opts Options, message string) error {
+	if len(opts.Files) > 0 {
+		if err := git.StageFiles(ctx, opts.CampaignRoot, opts.Files...); err != nil {
+			return err
+		}
+		hasChanges, err := git.HasStagedChanges(ctx, opts.CampaignRoot)
+		if err != nil {
+			return err
+		}
+		if !hasChanges {
+			return git.ErrNoChanges
+		}
+		return git.Commit(ctx, opts.CampaignRoot, &git.CommitOptions{Message: message})
+	}
+	return git.CommitAll(ctx, opts.CampaignRoot, message)
 }

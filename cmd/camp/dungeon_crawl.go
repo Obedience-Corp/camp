@@ -144,12 +144,20 @@ func commitCrawlChanges(ctx context.Context, cfg *config.CampaignConfig, campaig
 
 	description := buildCrawlCommitMessage(campaignRoot, cwd, triage, inner)
 
+	// Stage only the directories affected by the crawl, not the entire campaign.
+	relCwd, err := filepath.Rel(campaignRoot, cwd)
+	if err != nil {
+		relCwd = cwd
+	}
+	relDungeon := filepath.Join(relCwd, "dungeon")
+
 	result := commit.Crawl(ctx, commit.CrawlOptions{
 		Options: commit.Options{
 			CampaignRoot: campaignRoot,
 			CampaignID:   cfg.ID,
 		},
 		Description: description,
+		Files:       []string{relCwd, relDungeon},
 	})
 
 	if result.Committed {
