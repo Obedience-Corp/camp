@@ -12,6 +12,10 @@ import (
 // It is initialized once in TestMain and cleaned up after all tests complete.
 var sharedContainer *TestContainer
 
+// festAvailable indicates whether the fest binary was successfully built and
+// copied into the shared container. Tests that require fest should skip if false.
+var festAvailable bool
+
 // TestMain sets up a shared container for all integration tests.
 // This avoids the overhead of spinning up a new container for each test.
 func TestMain(m *testing.M) {
