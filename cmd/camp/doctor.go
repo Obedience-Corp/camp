@@ -26,6 +26,7 @@ CHECKS PERFORMED:
   head        HEAD states (detached with local work)
   working     Working directory cleanliness
   commits     Parent-submodule commit alignment
+  lock        Stale git index.lock files
 
 EXIT CODES:
   0  All checks passed (no warnings or errors)
@@ -73,7 +74,7 @@ func init() {
 	doctorCmd.Flags().BoolVar(&doctorOpts.submodulesOnly, "submodules-only", false,
 		"Only check submodule health")
 	doctorCmd.Flags().StringSliceVarP(&doctorOpts.checks, "check", "c", nil,
-		"Run specific check(s) only (orphan, url, integrity, head, working, commits)")
+		"Run specific check(s) only (orphan, url, integrity, head, working, commits, lock)")
 
 	rootCmd.AddCommand(doctorCmd)
 	doctorCmd.GroupID = "campaign"
@@ -129,6 +130,7 @@ func registerChecks(d *doctor.Doctor) {
 	d.RegisterCheck(checks.NewHeadCheck())
 	d.RegisterCheck(checks.NewWorkingCheck())
 	d.RegisterCheck(checks.NewCommitsCheck())
+	d.RegisterCheck(checks.NewLockCheck())
 }
 
 // outputDoctorJSON outputs results as JSON.
