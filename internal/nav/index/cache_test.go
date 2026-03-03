@@ -493,6 +493,63 @@ func TestIsStale_ProjectsDirDoesNotExist(t *testing.T) {
 	}
 }
 
+func TestIsStale_WorktreesDirChanged(t *testing.T) {
+	root := t.TempDir()
+	root, _ = filepath.EvalSymlinks(root)
+
+	worktreesDir := filepath.Join(root, "projects", "worktrees")
+	if err := os.MkdirAll(worktreesDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	idx := &Index{
+		BuildTime: time.Now().Add(-1 * time.Hour),
+		Version:   IndexVersion,
+	}
+
+	now := time.Now()
+	if err := os.Chtimes(worktreesDir, now, now); err != nil {
+		t.Fatal(err)
+	}
+
+	if !IsStale(idx, root) {
+		t.Error("Index should be stale when projects/worktrees/ directory is newer")
+	}
+}
+
+func TestIsStale_WorktreeProjectDirChanged(t *testing.T) {
+	root := t.TempDir()
+	root, _ = filepath.EvalSymlinks(root)
+
+	worktreesDir := filepath.Join(root, "projects", "worktrees")
+	projectDir := filepath.Join(worktreesDir, "camp")
+	if err := os.MkdirAll(projectDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	buildTime := time.Now().Add(-1 * time.Hour)
+	idx := &Index{
+		BuildTime: buildTime,
+		Version:   IndexVersion,
+	}
+
+	// Keep projects/worktrees older than the index build time so this test
+	// specifically validates per-project worktree directory invalidation.
+	older := buildTime.Add(-1 * time.Minute)
+	if err := os.Chtimes(worktreesDir, older, older); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now()
+	if err := os.Chtimes(projectDir, now, now); err != nil {
+		t.Fatal(err)
+	}
+
+	if !IsStale(idx, root) {
+		t.Error("Index should be stale when projects/worktrees/<project>/ is newer")
+	}
+}
+
 // Benchmarks
 
 func BenchmarkLoad(b *testing.B) {
