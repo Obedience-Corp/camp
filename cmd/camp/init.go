@@ -320,7 +320,7 @@ func showFestInstallGuidance() {
 	fmt.Println(ui.Dim("Festival Methodology provides structured project planning."))
 	fmt.Println(ui.Dim("Install the fest CLI to enable it:"))
 	fmt.Println()
-	fmt.Println(ui.Dim("  go install github.com/obediencecorp/fest/cmd/fest@latest"))
+	fmt.Println(ui.Dim("  go install github.com/Obedience-Corp/fest/cmd/fest@latest"))
 	fmt.Println()
 	fmt.Println(ui.Dim("Then run: camp init --repair"))
 	fmt.Println(ui.Dim("Continuing without Festival Methodology..."))

@@ -9,7 +9,7 @@ echo "=== Camp Quick Start ==="
 # Step 1: Install camp
 echo ""
 echo "Step 1: Install camp"
-echo "  go install github.com/obediencecorp/camp@latest"
+echo "  go install github.com/Obedience-Corp/camp@latest"
 
 # Step 2: Create your first campaign
 echo ""
