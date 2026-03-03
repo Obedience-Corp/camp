@@ -66,20 +66,19 @@ func doCommit(ctx context.Context, opts Options, action, subject, description st
 }
 
 // stageAndCommit stages files and commits. If opts.Files is set, only those
-// paths are staged. Otherwise all changes are staged (legacy behavior).
+// paths are staged and committed (using --only to ignore pre-staged entries).
+// Otherwise all changes are staged (legacy behavior).
 func stageAndCommit(ctx context.Context, opts Options, message string) error {
 	if len(opts.Files) > 0 {
+		// Stage first so git knows about new/untracked files, then commit
+		// with --only to exclude any pre-existing staged entries.
 		if err := git.StageFiles(ctx, opts.CampaignRoot, opts.Files...); err != nil {
 			return err
 		}
-		hasChanges, err := git.HasStagedChanges(ctx, opts.CampaignRoot)
-		if err != nil {
-			return err
-		}
-		if !hasChanges {
-			return git.ErrNoChanges
-		}
-		return git.Commit(ctx, opts.CampaignRoot, &git.CommitOptions{Message: message})
+		return git.Commit(ctx, opts.CampaignRoot, &git.CommitOptions{
+			Message: message,
+			Only:    opts.Files,
+		})
 	}
 	return git.CommitAll(ctx, opts.CampaignRoot, message)
 }

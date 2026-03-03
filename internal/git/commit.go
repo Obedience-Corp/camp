@@ -14,7 +14,8 @@ type CommitOptions struct {
 	Message    string
 	Amend      bool
 	AllowEmpty bool
-	Author     string // Optional: "Name <email>"
+	Author     string   // Optional: "Name <email>"
+	Only       []string // If set, commit only these paths (git commit --only -- <paths>)
 }
 
 // Validate checks if options are valid.
@@ -57,6 +58,10 @@ func executeCommit(ctx context.Context, repoPath string, opts *CommitOptions) er
 	}
 	if opts.Message != "" {
 		args = append(args, "-m", opts.Message)
+	}
+	if len(opts.Only) > 0 {
+		args = append(args, "--only", "--")
+		args = append(args, opts.Only...)
 	}
 
 	cmd := exec.CommandContext(ctx, "git", args...)
