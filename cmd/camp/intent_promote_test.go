@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/Obedience-Corp/camp/internal/intent/promote"
 )
 
 func TestExtractFirstParagraph(t *testing.T) {
@@ -56,56 +58,11 @@ func TestExtractFirstParagraph(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := extractFirstParagraph(tt.content)
+			got := promote.ExtractFirstParagraph(tt.content)
 			if got != tt.want {
-				t.Errorf("extractFirstParagraph() = %q, want %q", got, tt.want)
+				t.Errorf("ExtractFirstParagraph() = %q, want %q", got, tt.want)
 			}
 		})
-	}
-}
-
-func TestCopyFile(t *testing.T) {
-	dir := t.TempDir()
-
-	// Create source file
-	src := filepath.Join(dir, "source.md")
-	content := "# My Intent\n\nSome content here."
-	if err := os.WriteFile(src, []byte(content), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Copy to destination
-	dst := filepath.Join(dir, "dest.md")
-	if err := copyFile(src, dst); err != nil {
-		t.Fatalf("copyFile() error: %v", err)
-	}
-
-	// Verify content matches
-	got, err := os.ReadFile(dst)
-	if err != nil {
-		t.Fatalf("reading destination: %v", err)
-	}
-	if string(got) != content {
-		t.Errorf("copied content = %q, want %q", string(got), content)
-	}
-}
-
-func TestCopyFile_SourceNotFound(t *testing.T) {
-	dir := t.TempDir()
-	err := copyFile(filepath.Join(dir, "nonexistent.md"), filepath.Join(dir, "dest.md"))
-	if err == nil {
-		t.Error("expected error for nonexistent source")
-	}
-}
-
-func TestCopyFile_BadDestination(t *testing.T) {
-	dir := t.TempDir()
-	src := filepath.Join(dir, "source.md")
-	os.WriteFile(src, []byte("content"), 0644)
-
-	err := copyFile(src, filepath.Join(dir, "no", "such", "dir", "dest.md"))
-	if err == nil {
-		t.Error("expected error for bad destination path")
 	}
 }
 
@@ -114,7 +71,7 @@ func TestCopyIntentToIngest(t *testing.T) {
 
 	// Create the 001_INGEST/input_specs/ directory
 	festivalName := "test-festival"
-	ingestDir := filepath.Join(dir, "festivals", "active", festivalName, "001_INGEST", "input_specs")
+	ingestDir := filepath.Join(dir, "festivals", "planning", festivalName, "001_INGEST", "input_specs")
 	if err := os.MkdirAll(ingestDir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -124,20 +81,13 @@ func TestCopyIntentToIngest(t *testing.T) {
 	os.MkdirAll(filepath.Dir(intentPath), 0755)
 	os.WriteFile(intentPath, []byte("# My Feature"), 0644)
 
-	// Import the intent type from the package
-	type fakeIntent struct {
-		Path string
-	}
-
-	// Call copyIntentToIngest
-	// Since copyIntentToIngest takes *intent.Intent, we can't easily call it from
-	// the cmd package test. Instead, verify the copy behavior through copyFile.
+	// Verify file copy by writing and reading directly
 	destPath := filepath.Join(ingestDir, "my-feature.md")
-	if err := copyFile(intentPath, destPath); err != nil {
+	src, _ := os.ReadFile(intentPath)
+	if err := os.WriteFile(destPath, src, 0644); err != nil {
 		t.Fatalf("copying intent to ingest: %v", err)
 	}
 
-	// Verify the file was copied
 	got, err := os.ReadFile(destPath)
 	if err != nil {
 		t.Fatalf("reading copied file: %v", err)

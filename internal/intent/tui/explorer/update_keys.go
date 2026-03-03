@@ -117,7 +117,7 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "p":
-		// Promote to next status in workflow
+		// Promote to festival (ready intents only)
 		return m.handlePromoteAction()
 	case "a":
 		// Archive (move to dungeon) - requires confirmation
