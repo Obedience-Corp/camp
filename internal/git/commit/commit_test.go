@@ -326,6 +326,77 @@ func TestCrawl_SelectiveStaging(t *testing.T) {
 	}
 }
 
+func TestCrawl_SelectiveStaging_FromRoot(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	if err := exec.Command("git", "-C", tmpDir, "init").Run(); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.email", "test@test.com").Run(); err != nil {
+		t.Fatalf("failed to configure git email: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.name", "Test").Run(); err != nil {
+		t.Fatalf("failed to configure git name: %v", err)
+	}
+
+	// Create initial commit
+	initialFile := filepath.Join(tmpDir, "initial.txt")
+	if err := os.WriteFile(initialFile, []byte("initial"), 0644); err != nil {
+		t.Fatalf("failed to create initial file: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "add", ".").Run(); err != nil {
+		t.Fatalf("failed to add initial file: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "commit", "-m", "initial").Run(); err != nil {
+		t.Fatalf("failed to create initial commit: %v", err)
+	}
+
+	// Simulate crawl from campaign root: relCwd would be ".", relDungeon is "dungeon"
+	dungeonDir := filepath.Join(tmpDir, "dungeon")
+	if err := os.MkdirAll(dungeonDir, 0755); err != nil {
+		t.Fatalf("failed to create dungeon dir: %v", err)
+	}
+	crawlFile := filepath.Join(dungeonDir, "archived-item.txt")
+	if err := os.WriteFile(crawlFile, []byte("archived"), 0644); err != nil {
+		t.Fatalf("failed to create crawl file: %v", err)
+	}
+
+	// Unrelated file at root — must NOT be committed
+	unrelatedFile := filepath.Join(tmpDir, "wip-notes.txt")
+	if err := os.WriteFile(unrelatedFile, []byte("work in progress"), 0644); err != nil {
+		t.Fatalf("failed to create unrelated file: %v", err)
+	}
+
+	ctx := context.Background()
+
+	// Files = ["dungeon"] simulates the fixed behavior (no "." in the list)
+	result := Crawl(ctx, CrawlOptions{
+		Options: Options{
+			CampaignRoot: tmpDir,
+			CampaignID:   "test1234",
+		},
+		Description: "Crawl from root",
+		Files:       []string{"dungeon"},
+	})
+
+	if !result.Committed {
+		t.Errorf("expected commit to succeed, got message: %s", result.Message)
+	}
+
+	out, err := exec.Command("git", "-C", tmpDir, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("failed to get committed files: %v", err)
+	}
+
+	committedFiles := strings.TrimSpace(string(out))
+	if !strings.Contains(committedFiles, "dungeon/archived-item.txt") {
+		t.Errorf("expected dungeon/archived-item.txt in commit, got: %s", committedFiles)
+	}
+	if strings.Contains(committedFiles, "wip-notes.txt") {
+		t.Errorf("wip-notes.txt should NOT be in commit (root staging bug), got: %s", committedFiles)
+	}
+}
+
 func TestDoCommit_EmptyFiles_StagesAll(t *testing.T) {
 	tmpDir := t.TempDir()
 
