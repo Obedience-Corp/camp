@@ -99,13 +99,13 @@ func combineSingleFile(dir, name string) error {
 	}
 
 	var parts []string
-	parts = append(parts, fmt.Sprintf("# %s CLI Reference\n", name))
+	parts = append(parts, fmt.Sprintf("---\ntitle: \"%s CLI Reference\"\nweight: 1\n---\n\n# %s CLI Reference\n", name, name))
 
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
 			continue
 		}
-		if entry.Name() == name+"-reference.md" {
+		if entry.Name() == name+"-reference.md" || entry.Name() == "_index.md" {
 			continue
 		}
 		data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
