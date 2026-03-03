@@ -129,7 +129,12 @@ func executeStage(ctx context.Context, repoPath string, files []string) error {
 		// Stage all changes
 		args = append(args, ".")
 	} else {
-		// Stage specific files
+		// Stage specific files — use "--" to prevent filenames from being
+		// interpreted as options (e.g. a file named "-abc").
+		// Skip if caller already provided "--" (e.g. StageAllExcluding).
+		if len(files) == 0 || files[0] != "--" {
+			args = append(args, "--")
+		}
 		args = append(args, files...)
 	}
 
