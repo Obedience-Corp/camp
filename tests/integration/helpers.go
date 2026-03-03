@@ -95,6 +95,20 @@ func NewSharedContainer() (*TestContainer, error) {
 		return nil, fmt.Errorf("failed to copy camp binary into container: %w", err)
 	}
 
+	// Build and copy fest binary (best-effort — fest is optional for most tests).
+	festBinary, err := buildFestBinaryShared()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "WARN: fest binary not available: %v\n", err)
+		festAvailable = false
+	} else {
+		if err := container.CopyFileToContainer(ctx, festBinary, "/usr/local/bin/fest", 0o755); err != nil {
+			fmt.Fprintf(os.Stderr, "WARN: failed to copy fest binary into container: %v\n", err)
+			festAvailable = false
+		} else {
+			festAvailable = true
+		}
+	}
+
 	// Install git (required for project operations)
 	exitCode, output, err := container.Exec(ctx, []string{"apk", "add", "--no-cache", "git"})
 	if err != nil {
@@ -175,6 +189,49 @@ func buildCampBinaryShared() (string, error) {
 	cmd := fmt.Sprintf("cd %s && GOOS=linux GOARCH=%s go build -o %s ./cmd/camp", projectRoot, runtime.GOARCH, binaryPath)
 	if err := runCommand(cmd); err != nil {
 		return "", fmt.Errorf("failed to build binary: %w", err)
+	}
+
+	return binaryPath, nil
+}
+
+// buildFestBinaryShared builds the fest binary from the sibling fest project.
+// Returns ("", error) if the fest source is not found or build fails — callers
+// should treat this as non-fatal since fest is optional for most integration tests.
+func buildFestBinaryShared() (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("failed to get working directory: %w", err)
+	}
+
+	// Navigate to camp project root (from tests/integration/)
+	projectRoot := filepath.Join(cwd, "../..")
+	projectRoot, err = filepath.Abs(projectRoot)
+	if err != nil {
+		return "", fmt.Errorf("failed to get absolute path: %w", err)
+	}
+
+	// fest lives alongside camp as a sibling submodule under projects/
+	festRoot := filepath.Join(projectRoot, "..", "fest")
+	festRoot, err = filepath.Abs(festRoot)
+	if err != nil {
+		return "", fmt.Errorf("failed to get fest absolute path: %w", err)
+	}
+
+	// Verify fest source exists
+	if _, err := os.Stat(filepath.Join(festRoot, "cmd", "fest")); err != nil {
+		return "", fmt.Errorf("fest source not found at %s: %w", festRoot, err)
+	}
+
+	binDir := filepath.Join(projectRoot, "bin", "linux")
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create bin/linux directory: %w", err)
+	}
+
+	binaryPath := filepath.Join(binDir, "fest")
+
+	cmd := fmt.Sprintf("cd %s && GOOS=linux GOARCH=%s go build -o %s ./cmd/fest", festRoot, runtime.GOARCH, binaryPath)
+	if err := runCommand(cmd); err != nil {
+		return "", fmt.Errorf("failed to build fest binary: %w", err)
 	}
 
 	return binaryPath, nil
