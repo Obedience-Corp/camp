@@ -138,6 +138,33 @@ func IsStale(idx *Index, campaignRoot string) bool {
 		return true
 	}
 
+	// Check worktree topology changes. Worktree add/remove operations mutate:
+	// 1) projects/worktrees/ when projects are added/removed
+	// 2) projects/worktrees/<project>/ when worktree dirs are added/removed
+	//
+	// We intentionally avoid checking individual worktree directories, so regular
+	// file edits inside a worktree do not invalidate the navigation cache.
+	worktreesDir := filepath.Join(projectsDir, "worktrees")
+	info, err = os.Stat(worktreesDir)
+	if err == nil && info.ModTime().After(idx.BuildTime) {
+		return true
+	}
+	if err == nil && info.IsDir() {
+		projectDirs, readErr := os.ReadDir(worktreesDir)
+		if readErr == nil {
+			for _, entry := range projectDirs {
+				if !entry.IsDir() {
+					continue
+				}
+				projectDirPath := filepath.Join(worktreesDir, entry.Name())
+				projectInfo, statErr := os.Stat(projectDirPath)
+				if statErr == nil && projectInfo.ModTime().After(idx.BuildTime) {
+					return true
+				}
+			}
+		}
+	}
+
 	return false
 }
 
