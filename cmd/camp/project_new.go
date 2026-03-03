@@ -74,10 +74,12 @@ func runProjectNew(cmd *cobra.Command, args []string) error {
 		if cfg != nil {
 			campaignID = cfg.ID
 		}
+		files := commit.NormalizeFiles(root, ".gitmodules", result.Path)
 		commitResult := commit.Project(ctx, commit.ProjectOptions{
 			Options: commit.Options{
 				CampaignRoot: root,
 				CampaignID:   campaignID,
+				Files:        files,
 			},
 			Action:      commit.ProjectNew,
 			ProjectName: result.Name,

@@ -530,11 +530,13 @@ func commitRepairChanges(ctx context.Context, initResult *scaffold.InitResult, p
 	}
 
 	description := buildRepairCommitMessage(initResult, plan, migrationCount)
+	files := buildRepairCommitFiles(initResult, plan)
 
 	result := commit.Repair(ctx, commit.RepairOptions{
 		Options: commit.Options{
 			CampaignRoot: initResult.CampaignRoot,
 			CampaignID:   cfg.ID,
+			Files:        files,
 		},
 		Description: description,
 	})
@@ -544,6 +546,24 @@ func commitRepairChanges(ctx context.Context, initResult *scaffold.InitResult, p
 	} else if result.Message != "" {
 		fmt.Printf("\n%s %s\n", ui.InfoIcon(), result.Message)
 	}
+}
+
+func buildRepairCommitFiles(initResult *scaffold.InitResult, plan *scaffold.RepairPlan) []string {
+	files := make([]string, 0, len(initResult.FilesCreated))
+	files = append(files, initResult.FilesCreated...)
+
+	if plan != nil {
+		for _, m := range plan.Migrations {
+			for _, item := range m.Items {
+				files = append(files,
+					filepath.Join(m.Source, item),
+					filepath.Join(m.Dest, item),
+				)
+			}
+		}
+	}
+
+	return commit.NormalizeFiles(initResult.CampaignRoot, files...)
 }
 
 // buildRepairCommitMessage constructs a descriptive commit body for repair operations.

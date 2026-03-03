@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -226,9 +227,14 @@ func printGatherResult(result *feedback.GatherResult, dryRun bool) {
 
 func commitGatherFeedback(ctx context.Context, campaignRoot, campaignID string, result *feedback.GatherResult) {
 	var ids []string
+	files := make([]string, 0, len(result.FestivalResults)*2)
 	for _, fr := range result.FestivalResults {
 		if fr.NewObs > 0 {
 			ids = append(ids, fr.Festival.ID)
+			if fr.IntentFile != "" {
+				files = append(files, fr.IntentFile)
+			}
+			files = append(files, filepath.Join(fr.Festival.Path, ".fest", "gathered_feedback.yaml"))
 		}
 	}
 
@@ -239,6 +245,7 @@ func commitGatherFeedback(ctx context.Context, campaignRoot, campaignID string, 
 		Options: commit.Options{
 			CampaignRoot: campaignRoot,
 			CampaignID:   campaignID,
+			Files:        commit.NormalizeFiles(campaignRoot, files...),
 		},
 		Action:      commit.IntentGather,
 		IntentTitle: "Gather festival feedback",

@@ -178,6 +178,71 @@ func TestIntent_WithDescription(t *testing.T) {
 	}
 }
 
+func TestIntent_SelectiveStaging(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	if err := exec.Command("git", "-C", tmpDir, "init").Run(); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.email", "test@test.com").Run(); err != nil {
+		t.Fatalf("failed to configure git email: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.name", "Test").Run(); err != nil {
+		t.Fatalf("failed to configure git name: %v", err)
+	}
+
+	initialFile := filepath.Join(tmpDir, "initial.txt")
+	if err := os.WriteFile(initialFile, []byte("initial"), 0644); err != nil {
+		t.Fatalf("failed to create initial file: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "add", ".").Run(); err != nil {
+		t.Fatalf("failed to add initial file: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "commit", "-m", "initial").Run(); err != nil {
+		t.Fatalf("failed to create initial commit: %v", err)
+	}
+
+	intended := filepath.Join(tmpDir, "workflow", "intents", "inbox", "intent.md")
+	if err := os.MkdirAll(filepath.Dir(intended), 0755); err != nil {
+		t.Fatalf("failed to create intended parent: %v", err)
+	}
+	if err := os.WriteFile(intended, []byte("intent"), 0644); err != nil {
+		t.Fatalf("failed to create intended file: %v", err)
+	}
+
+	unrelated := filepath.Join(tmpDir, "unrelated.txt")
+	if err := os.WriteFile(unrelated, []byte("wip"), 0644); err != nil {
+		t.Fatalf("failed to create unrelated file: %v", err)
+	}
+
+	ctx := context.Background()
+	result := Intent(ctx, IntentOptions{
+		Options: Options{
+			CampaignRoot: tmpDir,
+			CampaignID:   "test1234",
+			Files:        []string{filepath.Join("workflow", "intents", "inbox", "intent.md")},
+		},
+		Action:      IntentCreate,
+		IntentTitle: "Selective intent",
+	})
+
+	if !result.Committed {
+		t.Fatalf("expected commit to succeed, got message: %s", result.Message)
+	}
+
+	out, err := exec.Command("git", "-C", tmpDir, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("failed to get committed files: %v", err)
+	}
+	committed := string(out)
+	if !strings.Contains(committed, "workflow/intents/inbox/intent.md") {
+		t.Fatalf("expected intended file in commit, got: %s", committed)
+	}
+	if strings.Contains(committed, "unrelated.txt") {
+		t.Fatalf("unrelated file should not be committed: %s", committed)
+	}
+}
+
 func TestIntentAction_Values(t *testing.T) {
 	tests := []struct {
 		action   IntentAction
@@ -617,6 +682,79 @@ func TestProject(t *testing.T) {
 	commitMsg := string(out)
 	if !strings.Contains(commitMsg, "Add: my-service") {
 		t.Errorf("commit message should contain project action and name, got: %s", commitMsg)
+	}
+}
+
+func TestProject_SelectiveStaging(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	if err := exec.Command("git", "-C", tmpDir, "init").Run(); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.email", "test@test.com").Run(); err != nil {
+		t.Fatalf("failed to configure git email: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.name", "Test").Run(); err != nil {
+		t.Fatalf("failed to configure git name: %v", err)
+	}
+
+	initialFile := filepath.Join(tmpDir, "initial.txt")
+	if err := os.WriteFile(initialFile, []byte("initial"), 0644); err != nil {
+		t.Fatalf("failed to create initial file: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "add", ".").Run(); err != nil {
+		t.Fatalf("failed to add initial file: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "commit", "-m", "initial").Run(); err != nil {
+		t.Fatalf("failed to create initial commit: %v", err)
+	}
+
+	gitmodules := filepath.Join(tmpDir, ".gitmodules")
+	if err := os.WriteFile(gitmodules, []byte("[submodule \"projects/my-service\"]\n"), 0644); err != nil {
+		t.Fatalf("failed to create .gitmodules: %v", err)
+	}
+
+	projectFile := filepath.Join(tmpDir, "projects", "my-service", "README.md")
+	if err := os.MkdirAll(filepath.Dir(projectFile), 0755); err != nil {
+		t.Fatalf("failed to create project dir: %v", err)
+	}
+	if err := os.WriteFile(projectFile, []byte("# my-service"), 0644); err != nil {
+		t.Fatalf("failed to create project file: %v", err)
+	}
+
+	unrelated := filepath.Join(tmpDir, "notes.txt")
+	if err := os.WriteFile(unrelated, []byte("scratch"), 0644); err != nil {
+		t.Fatalf("failed to create unrelated file: %v", err)
+	}
+
+	ctx := context.Background()
+	result := Project(ctx, ProjectOptions{
+		Options: Options{
+			CampaignRoot: tmpDir,
+			CampaignID:   "test1234",
+			Files:        []string{".gitmodules", filepath.Join("projects", "my-service")},
+		},
+		Action:      ProjectAdd,
+		ProjectName: "my-service",
+	})
+
+	if !result.Committed {
+		t.Fatalf("expected commit to succeed, got message: %s", result.Message)
+	}
+
+	out, err := exec.Command("git", "-C", tmpDir, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("failed to get committed files: %v", err)
+	}
+	committed := string(out)
+	if !strings.Contains(committed, ".gitmodules") {
+		t.Fatalf("expected .gitmodules in commit, got: %s", committed)
+	}
+	if !strings.Contains(committed, "projects/my-service/README.md") {
+		t.Fatalf("expected project file in commit, got: %s", committed)
+	}
+	if strings.Contains(committed, "notes.txt") {
+		t.Fatalf("unrelated file should not be committed: %s", committed)
 	}
 }
 

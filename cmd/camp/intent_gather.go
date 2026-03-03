@@ -133,6 +133,15 @@ func runIntentGather(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("--title is required")
 	}
 
+	// Capture source file paths before gather potentially moves them.
+	sourcePaths := make([]string, 0, len(ids))
+	for _, id := range ids {
+		src, getErr := intentSvc.Get(ctx, id)
+		if getErr == nil && src.Path != "" {
+			sourcePaths = append(sourcePaths, src.Path)
+		}
+	}
+
 	// Dry run: just show what would be gathered
 	if gatherDryRun {
 		return showDryRun(ctx, intentSvc, ids, gatherTitle)
@@ -172,10 +181,18 @@ func runIntentGather(cmd *cobra.Command, args []string) error {
 			description += fmt.Sprintf("\nArchived: %d source intents", len(result.ArchivedPaths))
 		}
 
+		files := make([]string, 0, len(sourcePaths)+len(result.ArchivedPaths)+1)
+		files = append(files, sourcePaths...)
+		if result.Gathered != nil && result.Gathered.Path != "" {
+			files = append(files, result.Gathered.Path)
+		}
+		files = append(files, result.ArchivedPaths...)
+
 		commitResult := commit.Intent(ctx, commit.IntentOptions{
 			Options: commit.Options{
 				CampaignRoot: campaignRoot,
 				CampaignID:   cfg.ID,
+				Files:        commit.NormalizeFiles(campaignRoot, files...),
 			},
 			Action:      commit.IntentGather,
 			IntentTitle: gatherTitle,

@@ -22,7 +22,8 @@ type IntentOptions struct {
 	Description string       // Optional body text
 }
 
-// Intent stages all changes and commits for an intent operation.
+// Intent stages changes and commits for an intent operation.
+// If opts.Options.Files is set, only those paths are staged.
 func Intent(ctx context.Context, opts IntentOptions) Result {
 	return doCommit(ctx, opts.Options, string(opts.Action), opts.IntentTitle, opts.Description)
 }

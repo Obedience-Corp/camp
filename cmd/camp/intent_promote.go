@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -99,10 +100,21 @@ func runIntentPromote(cmd *cobra.Command, args []string) error {
 
 	// Auto-commit (unless --no-commit)
 	if !noCommit {
+		files := []string{i.Path}
+
+		movedIntent, findErr := svc.Get(ctx, i.ID)
+		if findErr == nil && movedIntent.Path != "" {
+			files = append(files, movedIntent.Path)
+		}
+		if result.FestivalCreated && result.FestivalDest != "" && result.FestivalDir != "" {
+			files = append(files, filepath.Join("festivals", result.FestivalDest, result.FestivalDir))
+		}
+
 		commitResult := commit.Intent(ctx, commit.IntentOptions{
 			Options: commit.Options{
 				CampaignRoot: campaignRoot,
 				CampaignID:   cfg.ID,
+				Files:        commit.NormalizeFiles(campaignRoot, files...),
 			},
 			Action:      commit.IntentPromote,
 			IntentTitle: i.Title,
