@@ -14,7 +14,7 @@ import (
 // inbox: n intents, active: n intents, ready/done/killed: 0
 func makeTestModel(inboxCount, activeCount int) Model {
 	ctx := context.Background()
-	m := NewModel(ctx, nil, nil, "/tmp/intents", "/tmp/campaign", "test-id")
+	m := NewModel(ctx, nil, nil, "/tmp/intents", "/tmp/campaign", "test-id", "", nil)
 	m.ready = true
 	m.width = 120
 	m.height = 30
@@ -558,7 +558,7 @@ func TestDungeonToggle_PreservesGroupCount(t *testing.T) {
 
 func TestDungeonParent_ShowsAggregateCount(t *testing.T) {
 	ctx := context.Background()
-	m := NewModel(ctx, nil, nil, "/tmp/intents", "/tmp/campaign", "test-id")
+	m := NewModel(ctx, nil, nil, "/tmp/intents", "/tmp/campaign", "test-id", "", nil)
 	m.ready = true
 	m.width = 120
 	m.height = 30

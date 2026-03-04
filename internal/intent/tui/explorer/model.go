@@ -22,12 +22,12 @@ const (
 	focusSearch
 	focusFilterBar     // Filter bar has focus (Tab navigation between chips)
 	focusConceptFilter // Filtering by concept (concept picker modal)
-	focusCreating      // Creating new intent
 	focusMove          // Moving intent to different status
 	focusConfirm       // Confirmation dialog
 	focusActionMenu    // Action menu on intent
 	focusViewer        // Full-screen intent viewer
 	focusGatherDialog  // Gather dialog for combining intents
+	focusAddTUI        // Full add TUI is active
 )
 
 // IntentGroup represents a collapsible group of intents by status.
@@ -75,12 +75,8 @@ type Model struct {
 	// Status message
 	statusMessage string
 
-	// New intent creation state
-	creationStep  creationStep
-	titleInput    textinput.Model
-	createTypeIdx int
-	conceptPicker tui.ConceptPickerModel
-	conceptSvc    concept.Service
+	// Concept service (for concept filter and add TUI)
+	conceptSvc concept.Service
 
 	// Concept filter state
 	conceptFilterPath   string                 // Active concept filter (empty = all)
@@ -139,10 +135,15 @@ type Model struct {
 	// Campaign info for git commits
 	campaignRoot string
 	campaignID   string
+
+	// Full add TUI integration
+	addModel  *tui.IntentAddModel
+	author    string
+	shortcuts map[string]string
 }
 
 // NewModel creates a new Explorer model.
-func NewModel(ctx context.Context, svc *intent.IntentService, conceptSvc concept.Service, intentsDir, campaignRoot, campaignID string) Model {
+func NewModel(ctx context.Context, svc *intent.IntentService, conceptSvc concept.Service, intentsDir, campaignRoot, campaignID, author string, shortcuts map[string]string) Model {
 	// Initialize glamour style once at startup (handles adaptive detection).
 	// This avoids the slow OSC terminal query on every markdown render.
 	globalCfg, _ := config.LoadGlobalConfig(ctx)
@@ -162,12 +163,6 @@ func NewModel(ctx context.Context, svc *intent.IntentService, conceptSvc concept
 	statusChip := filterchip.NewChip("Status", statusFilterItems)
 	fb := filterchip.NewBar(typeChip, statusChip)
 
-	// Title input for new intent creation
-	titleIn := textinput.New()
-	titleIn.Placeholder = "Enter intent title..."
-	titleIn.CharLimit = 100
-	titleIn.Width = 40
-
 	return Model{
 		service:         svc,
 		ctx:             ctx,
@@ -176,13 +171,14 @@ func NewModel(ctx context.Context, svc *intent.IntentService, conceptSvc concept
 		cursorItem:      -1, // Start on first group header
 		searchInput:     ti,
 		filterBar:       fb,
-		titleInput:      titleIn,
 		focus:           focusList,
 		selectedIntents: make(map[string]bool),
 		intentsDir:      intentsDir,
 		gatherSvc:       gather.NewService(svc, intentsDir),
 		campaignRoot:    campaignRoot,
 		campaignID:      campaignID,
+		author:          author,
+		shortcuts:       shortcuts,
 	}
 }
 
@@ -213,9 +209,9 @@ func (m Model) View() string {
 		return m.viewer.View()
 	}
 
-	// Show creation form if in creating mode
-	if m.focus == focusCreating {
-		return m.viewCreating()
+	// Show full add TUI if active
+	if m.focus == focusAddTUI {
+		return m.addModel.View()
 	}
 
 	// Show concept filter picker if active

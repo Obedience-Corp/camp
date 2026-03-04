@@ -86,13 +86,9 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.applyFilters()
 		return m, nil
 	case "n":
-		// Start new intent creation
-		m.focus = focusCreating
-		m.creationStep = stepTitle
-		m.titleInput.SetValue("")
-		m.titleInput.Focus()
-		m.createTypeIdx = 0
-		return m, textinput.Blink
+		// Launch full add TUI for new intent creation
+		m.startAddTUI()
+		return m, m.addModel.Init()
 	case "e":
 		// Open selected intent in $EDITOR
 		if selected := m.SelectedIntent(); selected != nil {

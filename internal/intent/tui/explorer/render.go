@@ -115,12 +115,12 @@ func (m *Model) renderStatusBar() string {
 		if m.shouldShowPreview() {
 			return scrollIndicator + tui.HelpStyle.Render("j/k: nav . v: hide preview . tab: focus . /: search . n: new . q: quit")
 		}
-		return scrollIndicator + tui.HelpStyle.Render("j/k: nav . v: preview . /: search . tab: filter . Space: gather mode . q: quit")
+		return scrollIndicator + tui.HelpStyle.Render("j/k: nav . v: preview . /: search . tab: filter . n: new . Space: gather mode . q: quit")
 	case layoutWide:
 		if m.shouldShowPreview() {
 			return scrollIndicator + tui.HelpStyle.Render("j/k: navigate . v: hide preview . tab: switch focus . /: search . f: full view . n: new . ?: help . q: quit")
 		}
-		return scrollIndicator + tui.HelpStyle.Render("j/k: navigate . v: preview . /: search . tab: filter . Space: gather mode . f: full . ?: help . q: quit")
+		return scrollIndicator + tui.HelpStyle.Render("j/k: navigate . v: preview . /: search . tab: filter . n: new . Space: gather mode . f: full . ?: help . q: quit")
 	}
 	return ""
 }
