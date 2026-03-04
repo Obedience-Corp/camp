@@ -570,7 +570,7 @@ func TestDoCommit_EmptyFiles_StagesAll(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Crawl with no Files (empty) should stage everything
+	// Crawl with no Files (nil) and SelectiveOnly=false should stage everything (legacy)
 	result := Crawl(ctx, CrawlOptions{
 		Options: Options{
 			CampaignRoot: tmpDir,
@@ -595,6 +595,63 @@ func TestDoCommit_EmptyFiles_StagesAll(t *testing.T) {
 	}
 	if !strings.Contains(committedFiles, "file2.txt") {
 		t.Errorf("expected file2.txt in commit, got: %s", committedFiles)
+	}
+}
+
+func TestSelectiveOnly_EmptyFiles_NoCommit(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	if err := exec.Command("git", "-C", tmpDir, "init").Run(); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.email", "test@test.com").Run(); err != nil {
+		t.Fatalf("failed to configure git email: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.name", "Test").Run(); err != nil {
+		t.Fatalf("failed to configure git name: %v", err)
+	}
+
+	// Create an initial commit so HEAD exists
+	seedFile := filepath.Join(tmpDir, "seed.txt")
+	if err := os.WriteFile(seedFile, []byte("seed"), 0644); err != nil {
+		t.Fatalf("failed to create seed file: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "add", ".").Run(); err != nil {
+		t.Fatalf("failed to stage seed: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "commit", "-m", "seed").Run(); err != nil {
+		t.Fatalf("failed to commit seed: %v", err)
+	}
+
+	// Create an unrelated dirty file that should NOT be committed
+	dirtyFile := filepath.Join(tmpDir, "dirty.txt")
+	if err := os.WriteFile(dirtyFile, []byte("wip"), 0644); err != nil {
+		t.Fatalf("failed to create dirty file: %v", err)
+	}
+
+	ctx := context.Background()
+
+	// Repair with SelectiveOnly=true and empty Files should NOT commit
+	result := Repair(ctx, RepairOptions{
+		Options: Options{
+			CampaignRoot:  tmpDir,
+			CampaignID:    "test1234",
+			SelectiveOnly: true,
+		},
+		Description: "Repair with no file targets",
+	})
+
+	if result.Committed {
+		t.Errorf("expected no commit when SelectiveOnly is true with empty Files")
+	}
+
+	// Verify the dirty file was NOT committed
+	out, err := exec.Command("git", "-C", tmpDir, "status", "--porcelain").Output()
+	if err != nil {
+		t.Fatalf("failed to get git status: %v", err)
+	}
+	if !strings.Contains(string(out), "dirty.txt") {
+		t.Errorf("dirty.txt should still be uncommitted, git status: %s", string(out))
 	}
 }
 

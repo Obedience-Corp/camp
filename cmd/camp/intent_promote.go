@@ -112,9 +112,10 @@ func runIntentPromote(cmd *cobra.Command, args []string) error {
 
 		commitResult := commit.Intent(ctx, commit.IntentOptions{
 			Options: commit.Options{
-				CampaignRoot: campaignRoot,
-				CampaignID:   cfg.ID,
-				Files:        commit.NormalizeFiles(campaignRoot, files...),
+				CampaignRoot:  campaignRoot,
+				CampaignID:    cfg.ID,
+				Files:         commit.NormalizeFiles(campaignRoot, files...),
+				SelectiveOnly: true,
 			},
 			Action:      commit.IntentPromote,
 			IntentTitle: i.Title,

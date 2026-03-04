@@ -16,9 +16,10 @@ type Result struct {
 
 // Options configures common commit parameters.
 type Options struct {
-	CampaignRoot string   // Path to campaign root
-	CampaignID   string   // Campaign ID (truncated to 8 chars)
-	Files        []string // If set, stage only these paths instead of everything
+	CampaignRoot  string   // Path to campaign root
+	CampaignID    string   // Campaign ID (truncated to 8 chars)
+	Files         []string // If set, stage only these paths instead of everything
+	SelectiveOnly bool     // When true, never fall back to CommitAll; no-op if Files is empty
 }
 
 // doCommit stages all changes and commits with standardized format.
@@ -67,7 +68,8 @@ func doCommit(ctx context.Context, opts Options, action, subject, description st
 
 // stageAndCommit stages files and commits. If opts.Files is set, only those
 // paths are staged and committed (using --only to ignore pre-staged entries).
-// Otherwise all changes are staged (legacy behavior).
+// When SelectiveOnly is true and Files is empty, returns ErrNoChanges instead
+// of falling back to CommitAll. Otherwise all changes are staged (legacy behavior).
 func stageAndCommit(ctx context.Context, opts Options, message string) error {
 	if len(opts.Files) > 0 {
 		// Stage first so git knows about new/untracked files, then commit
@@ -79,6 +81,9 @@ func stageAndCommit(ctx context.Context, opts Options, message string) error {
 			Message: message,
 			Only:    opts.Files,
 		})
+	}
+	if opts.SelectiveOnly {
+		return git.ErrNoChanges
 	}
 	return git.CommitAll(ctx, opts.CampaignRoot, message)
 }

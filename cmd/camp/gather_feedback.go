@@ -243,9 +243,10 @@ func commitGatherFeedback(ctx context.Context, campaignRoot, campaignID string, 
 
 	commitResult := commit.Intent(ctx, commit.IntentOptions{
 		Options: commit.Options{
-			CampaignRoot: campaignRoot,
-			CampaignID:   campaignID,
-			Files:        commit.NormalizeFiles(campaignRoot, files...),
+			CampaignRoot:  campaignRoot,
+			CampaignID:    campaignID,
+			Files:         commit.NormalizeFiles(campaignRoot, files...),
+			SelectiveOnly: true,
 		},
 		Action:      commit.IntentGather,
 		IntentTitle: "Gather festival feedback",

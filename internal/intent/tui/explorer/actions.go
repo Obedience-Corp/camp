@@ -69,9 +69,10 @@ func (m *Model) moveIntent(i *intent.Intent, newStatus intent.Status) tea.Cmd {
 		if err == nil && m.campaignRoot != "" && m.campaignID != "" {
 			_ = commit.Intent(m.ctx, commit.IntentOptions{
 				Options: commit.Options{
-					CampaignRoot: m.campaignRoot,
-					CampaignID:   m.campaignID,
-					Files:        commit.NormalizeFiles(m.campaignRoot, sourcePath, movedIntent.Path),
+					CampaignRoot:  m.campaignRoot,
+					CampaignID:    m.campaignID,
+					Files:         commit.NormalizeFiles(m.campaignRoot, sourcePath, movedIntent.Path),
+					SelectiveOnly: true,
 				},
 				Action:      commit.IntentMove,
 				IntentTitle: i.Title,
@@ -94,9 +95,10 @@ func (m *Model) archiveIntent(i *intent.Intent) tea.Cmd {
 		if err == nil && m.campaignRoot != "" && m.campaignID != "" {
 			_ = commit.Intent(m.ctx, commit.IntentOptions{
 				Options: commit.Options{
-					CampaignRoot: m.campaignRoot,
-					CampaignID:   m.campaignID,
-					Files:        commit.NormalizeFiles(m.campaignRoot, sourcePath, archivedIntent.Path),
+					CampaignRoot:  m.campaignRoot,
+					CampaignID:    m.campaignID,
+					Files:         commit.NormalizeFiles(m.campaignRoot, sourcePath, archivedIntent.Path),
+					SelectiveOnly: true,
 				},
 				Action:      commit.IntentArchive,
 				IntentTitle: i.Title,
@@ -118,9 +120,10 @@ func (m *Model) deleteIntent(i *intent.Intent) tea.Cmd {
 		if err == nil && m.campaignRoot != "" && m.campaignID != "" {
 			_ = commit.Intent(m.ctx, commit.IntentOptions{
 				Options: commit.Options{
-					CampaignRoot: m.campaignRoot,
-					CampaignID:   m.campaignID,
-					Files:        commit.NormalizeFiles(m.campaignRoot, sourcePath),
+					CampaignRoot:  m.campaignRoot,
+					CampaignID:    m.campaignID,
+					Files:         commit.NormalizeFiles(m.campaignRoot, sourcePath),
+					SelectiveOnly: true,
 				},
 				Action:      commit.IntentDelete,
 				IntentTitle: title,
@@ -152,9 +155,10 @@ func (m *Model) promoteToFestival(i *intent.Intent) tea.Cmd {
 
 			_ = commit.Intent(m.ctx, commit.IntentOptions{
 				Options: commit.Options{
-					CampaignRoot: m.campaignRoot,
-					CampaignID:   m.campaignID,
-					Files:        commit.NormalizeFiles(m.campaignRoot, files...),
+					CampaignRoot:  m.campaignRoot,
+					CampaignID:    m.campaignID,
+					Files:         commit.NormalizeFiles(m.campaignRoot, files...),
+					SelectiveOnly: true,
 				},
 				Action:      commit.IntentPromote,
 				IntentTitle: i.Title,

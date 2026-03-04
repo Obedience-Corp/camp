@@ -99,9 +99,10 @@ func runProjectAdd(cmd *cobra.Command, args []string) error {
 		files := commit.NormalizeFiles(root, ".gitmodules", result.Path)
 		commitResult := commit.Project(ctx, commit.ProjectOptions{
 			Options: commit.Options{
-				CampaignRoot: root,
-				CampaignID:   campaignID,
-				Files:        files,
+				CampaignRoot:  root,
+				CampaignID:    campaignID,
+				Files:         files,
+				SelectiveOnly: true,
 			},
 			Action:      commit.ProjectAdd,
 			ProjectName: result.Name,

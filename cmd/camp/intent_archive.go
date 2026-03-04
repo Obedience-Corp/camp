@@ -72,9 +72,10 @@ func runIntentArchive(cmd *cobra.Command, args []string) error {
 		files := commit.NormalizeFiles(campaignRoot, sourcePath, result.Path)
 		commitResult := commit.Intent(ctx, commit.IntentOptions{
 			Options: commit.Options{
-				CampaignRoot: campaignRoot,
-				CampaignID:   cfg.ID,
-				Files:        files,
+				CampaignRoot:  campaignRoot,
+				CampaignID:    cfg.ID,
+				Files:         files,
+				SelectiveOnly: true,
 			},
 			Action:      commit.IntentArchive,
 			IntentTitle: intentTitle,

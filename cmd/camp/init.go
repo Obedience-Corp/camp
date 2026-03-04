@@ -534,9 +534,10 @@ func commitRepairChanges(ctx context.Context, initResult *scaffold.InitResult, p
 
 	result := commit.Repair(ctx, commit.RepairOptions{
 		Options: commit.Options{
-			CampaignRoot: initResult.CampaignRoot,
-			CampaignID:   cfg.ID,
-			Files:        files,
+			CampaignRoot:  initResult.CampaignRoot,
+			CampaignID:    cfg.ID,
+			Files:         files,
+			SelectiveOnly: true,
 		},
 		Description: description,
 	})
@@ -549,8 +550,9 @@ func commitRepairChanges(ctx context.Context, initResult *scaffold.InitResult, p
 }
 
 func buildRepairCommitFiles(initResult *scaffold.InitResult, plan *scaffold.RepairPlan) []string {
-	files := make([]string, 0, len(initResult.FilesCreated))
+	files := make([]string, 0, len(initResult.FilesCreated)+len(initResult.DirsCreated))
 	files = append(files, initResult.FilesCreated...)
+	files = append(files, initResult.DirsCreated...)
 
 	if plan != nil {
 		for _, m := range plan.Migrations {
