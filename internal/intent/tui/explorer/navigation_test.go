@@ -12,6 +12,7 @@ import (
 
 // makeTestModel creates a Model with test intents across groups.
 // inbox: n intents, active: n intents, ready/done/killed: 0
+// Group order: Inbox(0), Ready(1), Active(2), Dungeon(3), Done(4), Killed(5), Archived(6), Someday(7)
 func makeTestModel(inboxCount, activeCount int) Model {
 	ctx := context.Background()
 	m := NewModel(ctx, nil, nil, "/tmp/intents", "/tmp/campaign", "test-id", "", nil)
@@ -57,15 +58,17 @@ func TestCursorVisualLine(t *testing.T) {
 		cursorItem  int
 		wantLine    int
 	}{
-		{"first group header", 0, -1, 0},
+		{"first group header (Inbox)", 0, -1, 0},
 		{"first group first item", 0, 0, 1},
 		{"first group second item", 0, 1, 2},
 		{"first group third item", 0, 2, 3},
-		{"second group header", 1, -1, 4},
-		{"second group first item", 1, 0, 5},
-		{"second group second item", 1, 1, 6},
-		// Groups 2-7 (Ready, Dungeon, Done, Killed, Archived, Someday) are collapsed, so just headers
-		{"third group header (Ready)", 2, -1, 7},
+		// Group 1 = Ready (expanded, 0 items → just header)
+		{"second group header (Ready)", 1, -1, 4},
+		// Group 2 = Active (expanded, 2 items)
+		{"third group header (Active)", 2, -1, 5},
+		{"third group first item", 2, 0, 6},
+		{"third group second item", 2, 1, 7},
+		// Groups 3-7: Dungeon parent, Done, Killed, Archived, Someday (all headers only)
 		{"fourth group header (Dungeon)", 3, -1, 8},
 		{"fifth group header (Done)", 4, -1, 9},
 		{"sixth group header (Killed)", 5, -1, 10},
@@ -90,24 +93,25 @@ func TestCursorVisualLine_CollapsedGroup(t *testing.T) {
 	// Collapse inbox group
 	m.groups[0].Expanded = false
 
-	// With inbox collapsed: header(0) | active-header(1) | active-0(2) | active-1(3)
-	m.cursorGroup = 1
+	// With inbox collapsed: inbox-header(0) | ready-header(1) | active-header(2) | active-0(3) | active-1(4)
+	m.cursorGroup = 1 // Ready header
 	m.cursorItem = -1
 	got := m.cursorVisualLine()
 	if got != 1 {
 		t.Errorf("cursorVisualLine() with collapsed group = %d, want 1", got)
 	}
 
+	m.cursorGroup = 2 // Active header
 	m.cursorItem = 0
 	got = m.cursorVisualLine()
-	if got != 2 {
-		t.Errorf("cursorVisualLine() first active item = %d, want 2", got)
+	if got != 3 {
+		t.Errorf("cursorVisualLine() first active item = %d, want 3", got)
 	}
 }
 
 func TestTotalVisualLines(t *testing.T) {
 	m := makeTestModel(3, 2)
-	// 8 group headers (Inbox, Active, Ready, Dungeon, Done, Killed, Archived, Someday)
+	// 8 group headers (Inbox, Ready, Active, Dungeon, Done, Killed, Archived, Someday)
 	// + 3 inbox items + 2 active items = 13
 	got := m.totalVisualLines()
 	if got != 13 {
@@ -120,7 +124,7 @@ func TestTotalVisualLines_AllCollapsed(t *testing.T) {
 	for i := range m.groups {
 		m.groups[i].Expanded = false
 	}
-	// 8 group headers only (Inbox, Active, Ready, Dungeon, Done, Killed, Archived, Someday)
+	// 8 group headers only (Inbox, Ready, Active, Dungeon, Done, Killed, Archived, Someday)
 	got := m.totalVisualLines()
 	if got != 8 {
 		t.Errorf("totalVisualLines() all collapsed = %d, want 8", got)
@@ -145,47 +149,59 @@ func TestMoveCursorDown(t *testing.T) {
 		t.Errorf("After second down: group=%d item=%d, want 0,1", m.cursorGroup, m.cursorItem)
 	}
 
-	// Down -> active group header
+	// Down -> Ready group header (group 1, empty)
 	m.moveCursorDown()
 	if m.cursorGroup != 1 || m.cursorItem != -1 {
-		t.Errorf("After third down: group=%d item=%d, want 1,-1", m.cursorGroup, m.cursorItem)
+		t.Errorf("After third down: group=%d item=%d, want 1,-1 (Ready header)", m.cursorGroup, m.cursorItem)
+	}
+
+	// Down -> Active group header (group 2)
+	m.moveCursorDown()
+	if m.cursorGroup != 2 || m.cursorItem != -1 {
+		t.Errorf("After fourth down: group=%d item=%d, want 2,-1 (Active header)", m.cursorGroup, m.cursorItem)
 	}
 
 	// Down -> first active item
 	m.moveCursorDown()
-	if m.cursorGroup != 1 || m.cursorItem != 0 {
-		t.Errorf("After fourth down: group=%d item=%d, want 1,0", m.cursorGroup, m.cursorItem)
+	if m.cursorGroup != 2 || m.cursorItem != 0 {
+		t.Errorf("After fifth down: group=%d item=%d, want 2,0", m.cursorGroup, m.cursorItem)
 	}
 }
 
 func TestMoveCursorUp(t *testing.T) {
 	m := makeTestModel(2, 1)
-	// Start at active item 0
-	m.cursorGroup = 1
+	// Start at active item 0 (group 2 in new order)
+	m.cursorGroup = 2
 	m.cursorItem = 0
 
 	// Up -> active header
 	m.moveCursorUp()
+	if m.cursorGroup != 2 || m.cursorItem != -1 {
+		t.Errorf("After first up: group=%d item=%d, want 2,-1", m.cursorGroup, m.cursorItem)
+	}
+
+	// Up -> Ready header (group 1, empty)
+	m.moveCursorUp()
 	if m.cursorGroup != 1 || m.cursorItem != -1 {
-		t.Errorf("After first up: group=%d item=%d, want 1,-1", m.cursorGroup, m.cursorItem)
+		t.Errorf("After second up: group=%d item=%d, want 1,-1 (Ready header)", m.cursorGroup, m.cursorItem)
 	}
 
 	// Up -> last inbox item
 	m.moveCursorUp()
 	if m.cursorGroup != 0 || m.cursorItem != 1 {
-		t.Errorf("After second up: group=%d item=%d, want 0,1", m.cursorGroup, m.cursorItem)
+		t.Errorf("After third up: group=%d item=%d, want 0,1", m.cursorGroup, m.cursorItem)
 	}
 
 	// Up -> first inbox item
 	m.moveCursorUp()
 	if m.cursorGroup != 0 || m.cursorItem != 0 {
-		t.Errorf("After third up: group=%d item=%d, want 0,0", m.cursorGroup, m.cursorItem)
+		t.Errorf("After fourth up: group=%d item=%d, want 0,0", m.cursorGroup, m.cursorItem)
 	}
 
 	// Up -> inbox header
 	m.moveCursorUp()
 	if m.cursorGroup != 0 || m.cursorItem != -1 {
-		t.Errorf("After fourth up: group=%d item=%d, want 0,-1", m.cursorGroup, m.cursorItem)
+		t.Errorf("After fifth up: group=%d item=%d, want 0,-1", m.cursorGroup, m.cursorItem)
 	}
 
 	// Up at top -> stays at top
@@ -203,10 +219,10 @@ func TestMoveCursorDown_SkipsCollapsedGroup(t *testing.T) {
 	m.cursorGroup = 0
 	m.cursorItem = -1
 
-	// Down should skip to active header (not into collapsed inbox items)
+	// Down should skip to Ready header (group 1, not into collapsed inbox items)
 	m.moveCursorDown()
 	if m.cursorGroup != 1 || m.cursorItem != -1 {
-		t.Errorf("After down from collapsed group: group=%d item=%d, want 1,-1", m.cursorGroup, m.cursorItem)
+		t.Errorf("After down from collapsed group: group=%d item=%d, want 1,-1 (Ready header)", m.cursorGroup, m.cursorItem)
 	}
 }
 
@@ -511,7 +527,7 @@ func TestDungeonCollapse_HidesChildren(t *testing.T) {
 	m.dungeonExpanded = false
 	m.groups = groupIntentsByStatus(m.filteredIntents, m.dungeonExpanded)
 
-	// Should have 4 groups: Inbox, Active, Ready, Dungeon
+	// Should have 4 groups: Inbox, Ready, Active, Dungeon
 	if len(m.groups) != 4 {
 		t.Fatalf("expected 4 groups with dungeon collapsed, got %d", len(m.groups))
 	}

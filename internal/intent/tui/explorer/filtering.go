@@ -10,7 +10,7 @@ import (
 var typeFilterItems = []string{"All", "Idea", "Feature", "Bug", "Research", "Chore"}
 
 // statusFilterItems are the available status filter options.
-var statusFilterItems = []string{"All", "Inbox", "Active", "Ready", "Done", "Killed"}
+var statusFilterItems = []string{"All", "Inbox", "Ready", "Active", "Done", "Killed"}
 
 // applyFilters filters intents using search query and type filter.
 func (m *Model) applyFilters() {

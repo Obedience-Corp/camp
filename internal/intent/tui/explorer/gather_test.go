@@ -530,7 +530,7 @@ func TestHandleGatherGroup_ActiveGroup(t *testing.T) {
 		intent.StatusInbox:  1,
 		intent.StatusActive: 4,
 	})
-	m.cursorGroup = 1 // Active group
+	m.cursorGroup = 2 // Active group (order: Inbox=0, Ready=1, Active=2)
 	m.cursorItem = -1
 
 	result, _ := m.handleGatherGroup()

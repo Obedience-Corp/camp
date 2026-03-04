@@ -95,6 +95,13 @@ func (m Model) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.pendingIntent = nil
 					return m, cmd
 				}
+			case "promote-ready":
+				if m.pendingIntent != nil {
+					cmd := m.promoteToReady(m.pendingIntent)
+					m.pendingAction = ""
+					m.pendingIntent = nil
+					return m, cmd
+				}
 			case "gather":
 				cmd := m.executeGather()
 				m.pendingAction = ""

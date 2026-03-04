@@ -2,7 +2,7 @@
 // which are captured ideas, feature requests, or work items that may
 // eventually be promoted to Festivals.
 //
-// Intents follow a lifecycle from inbox → active → ready, then move to
+// Intents follow a lifecycle from inbox → ready → active, then move to
 // one of four dungeon statuses: done (resolved), killed (abandoned),
 // archived (preserved but inactive), or someday (deferred).
 // The dungeon/ directory hierarchy mirrors the campaign-wide dungeon pattern.
@@ -26,11 +26,13 @@ const (
 	// StatusInbox indicates the intent has been captured but not reviewed.
 	StatusInbox Status = "inbox"
 
-	// StatusActive indicates the intent is being enriched by humans or agents.
-	StatusActive Status = "active"
-
-	// StatusReady indicates the intent is sufficiently clear for Festival promotion.
+	// StatusReady indicates the intent has been reviewed/enriched and is ready
+	// to be promoted out to a festival or design doc.
 	StatusReady Status = "ready"
+
+	// StatusActive indicates the intent has been promoted out to a festival or
+	// design doc and work is in progress.
+	StatusActive Status = "active"
 
 	// Dungeon statuses (under dungeon/ directory)
 
@@ -61,14 +63,14 @@ func (s Status) InDungeon() bool {
 // AllStatuses returns all valid intent statuses.
 func AllStatuses() []Status {
 	return []Status{
-		StatusInbox, StatusActive, StatusReady,
+		StatusInbox, StatusReady, StatusActive,
 		StatusDone, StatusKilled, StatusArchived, StatusSomeday,
 	}
 }
 
 // ActiveStatuses returns the non-dungeon statuses (the working set).
 func ActiveStatuses() []Status {
-	return []Status{StatusInbox, StatusActive, StatusReady}
+	return []Status{StatusInbox, StatusReady, StatusActive}
 }
 
 // DungeonStatuses returns only the dungeon statuses.

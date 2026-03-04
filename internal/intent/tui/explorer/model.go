@@ -20,14 +20,16 @@ type focusMode int
 const (
 	focusList focusMode = iota
 	focusSearch
-	focusFilterBar     // Filter bar has focus (Tab navigation between chips)
-	focusConceptFilter // Filtering by concept (concept picker modal)
-	focusMove          // Moving intent to different status
-	focusConfirm       // Confirmation dialog
-	focusActionMenu    // Action menu on intent
-	focusViewer        // Full-screen intent viewer
-	focusGatherDialog  // Gather dialog for combining intents
-	focusAddTUI        // Full add TUI is active
+	focusFilterBar      // Filter bar has focus (Tab navigation between chips)
+	focusConceptFilter  // Filtering by concept (concept picker modal)
+	focusMove           // Moving intent to different status
+	focusConfirm        // Confirmation dialog
+	focusActionMenu     // Action menu on intent
+	focusViewer         // Full-screen intent viewer
+	focusGatherDialog   // Gather dialog for combining intents
+	focusAddTUI         // Full add TUI is active
+	focusPromoteTarget  // Promote target picker
+	focusDungeonReason  // Text input for dungeon move reason
 )
 
 // IntentGroup represents a collapsible group of intents by status.
@@ -129,6 +131,15 @@ type Model struct {
 	intentsDir   string          // Base directory for intents (for gather service)
 	gatherSvc    *gather.Service // Gather service for finding similar intents
 
+	// Promote target picker state
+	promoteTargetIdx    int
+	promoteTargetIntent *intent.Intent
+
+	// Dungeon move reason state
+	dungeonReasonInput textinput.Model
+	dungeonReasonFor   intent.Status  // Which dungeon status we're moving to
+	dungeonReasonIntent *intent.Intent // Intent being moved to dungeon
+
 	// Dungeon expansion state
 	dungeonExpanded bool
 
@@ -219,6 +230,16 @@ func (m Model) View() string {
 		return m.viewConceptFilter()
 	}
 
+	// Show promote target picker if active
+	if m.focus == focusPromoteTarget {
+		return m.viewPromoteTarget()
+	}
+
+	// Show dungeon reason input if active
+	if m.focus == focusDungeonReason {
+		return m.viewDungeonReason()
+	}
+
 	// Show move status picker if active
 	if m.focus == focusMove {
 		return m.viewMove()
@@ -279,11 +300,11 @@ func groupIntentsByStatus(intents []*intent.Intent, dungeonExpanded bool) []Inte
 		groupMap[dungeonChildren[i].Status] = &dungeonChildren[i]
 	}
 
-	// Top-level groups
+	// Top-level groups (pipeline order: inbox → ready → active)
 	topGroups := []IntentGroup{
 		{Name: "Inbox", Status: intent.StatusInbox, Expanded: true},
+		{Name: "Ready", Status: intent.StatusReady, Expanded: true},
 		{Name: "Active", Status: intent.StatusActive, Expanded: true},
-		{Name: "Ready", Status: intent.StatusReady, Expanded: false},
 	}
 	for i := range topGroups {
 		groupMap[topGroups[i].Status] = &topGroups[i]
