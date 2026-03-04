@@ -8,6 +8,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/concept"
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/intent/tui/explorer"
 	"github.com/Obedience-Corp/camp/internal/paths"
@@ -87,8 +88,19 @@ func runIntentExplore(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "ensuring intent directories")
 	}
 
+	// Get author from git config
+	author := git.GetUserName(ctx)
+
+	// Build navigation shortcuts for @ completion
+	shortcuts := make(map[string]string)
+	for key, sc := range cfg.Shortcuts() {
+		if sc.HasPath() {
+			shortcuts[key] = sc.Path
+		}
+	}
+
 	// Create and run the TUI
-	model := explorer.NewModel(ctx, svc, conceptSvc, intentsDir, campaignRoot, cfg.ID)
+	model := explorer.NewModel(ctx, svc, conceptSvc, intentsDir, campaignRoot, cfg.ID, author, shortcuts)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {

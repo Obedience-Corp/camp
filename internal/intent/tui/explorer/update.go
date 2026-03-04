@@ -13,6 +13,15 @@ import (
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
+	// Full add TUI gets all messages when active
+	if m.focus == focusAddTUI {
+		if wsMsg, ok := msg.(tea.WindowSizeMsg); ok {
+			m.width = wsMsg.Width
+			m.height = wsMsg.Height
+		}
+		return m.updateAddTUI(msg)
+	}
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		if m.focus == focusSearch {
@@ -25,10 +34,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if m.focus == focusConceptFilter {
 			return m.updateConceptFilter(msg)
-		}
-
-		if m.focus == focusCreating {
-			return m.updateCreating(msg)
 		}
 
 		if m.focus == focusMove {
@@ -234,6 +239,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Exit multi-select mode and clear selections
 		m.exitMultiSelectMode()
 		return m, m.loadIntents()
+
+	case addTUIFinishedMsg:
+		return m.finishAddTUI()
 
 	case filterchip.FilterChangedMsg:
 		// A filter selection changed - apply filters
