@@ -64,6 +64,14 @@ func (m *Model) executeGather() tea.Cmd {
 			ArchiveSources: m.gatherDialog.ArchiveSources(),
 		}
 		sourceIDs := m.gatherDialog.IntentIDs()
+		sourcePaths := make([]string, 0, len(sourceIDs))
+		for _, id := range sourceIDs {
+			src, getErr := m.service.Get(m.ctx, id)
+			if getErr == nil && src.Path != "" {
+				sourcePaths = append(sourcePaths, src.Path)
+			}
+		}
+
 		result, err := svc.Gather(m.ctx, sourceIDs, opts)
 		if err != nil {
 			return gatherFinishedMsg{err: err}
@@ -77,10 +85,19 @@ func (m *Model) executeGather() tea.Cmd {
 				description += fmt.Sprintf("\nArchived: %d source intents", len(result.ArchivedPaths))
 			}
 
+			files := make([]string, 0, len(sourcePaths)+len(result.ArchivedPaths)+1)
+			files = append(files, sourcePaths...)
+			if result.Gathered != nil && result.Gathered.Path != "" {
+				files = append(files, result.Gathered.Path)
+			}
+			files = append(files, result.ArchivedPaths...)
+
 			_ = commit.Intent(m.ctx, commit.IntentOptions{
 				Options: commit.Options{
-					CampaignRoot: m.campaignRoot,
-					CampaignID:   m.campaignID,
+					CampaignRoot:  m.campaignRoot,
+					CampaignID:    m.campaignID,
+					Files:         commit.NormalizeFiles(m.campaignRoot, files...),
+					SelectiveOnly: true,
 				},
 				Action:      commit.IntentGather,
 				IntentTitle: opts.Title,

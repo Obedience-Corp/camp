@@ -2,6 +2,7 @@ package explorer
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/git/commit"
@@ -63,12 +64,15 @@ func (m *Model) updateMove(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // moveIntent moves an intent to a new status.
 func (m *Model) moveIntent(i *intent.Intent, newStatus intent.Status) tea.Cmd {
 	return func() tea.Msg {
-		_, err := m.service.Move(m.ctx, i.ID, newStatus)
+		sourcePath := i.Path
+		movedIntent, err := m.service.Move(m.ctx, i.ID, newStatus)
 		if err == nil && m.campaignRoot != "" && m.campaignID != "" {
 			_ = commit.Intent(m.ctx, commit.IntentOptions{
 				Options: commit.Options{
-					CampaignRoot: m.campaignRoot,
-					CampaignID:   m.campaignID,
+					CampaignRoot:  m.campaignRoot,
+					CampaignID:    m.campaignID,
+					Files:         commit.NormalizeFiles(m.campaignRoot, sourcePath, movedIntent.Path),
+					SelectiveOnly: true,
 				},
 				Action:      commit.IntentMove,
 				IntentTitle: i.Title,
@@ -86,12 +90,15 @@ func (m *Model) moveIntent(i *intent.Intent, newStatus intent.Status) tea.Cmd {
 // archiveIntent archives an intent (moves to dungeon/archived status).
 func (m *Model) archiveIntent(i *intent.Intent) tea.Cmd {
 	return func() tea.Msg {
-		_, err := m.service.Archive(m.ctx, i.ID)
+		sourcePath := i.Path
+		archivedIntent, err := m.service.Archive(m.ctx, i.ID)
 		if err == nil && m.campaignRoot != "" && m.campaignID != "" {
 			_ = commit.Intent(m.ctx, commit.IntentOptions{
 				Options: commit.Options{
-					CampaignRoot: m.campaignRoot,
-					CampaignID:   m.campaignID,
+					CampaignRoot:  m.campaignRoot,
+					CampaignID:    m.campaignID,
+					Files:         commit.NormalizeFiles(m.campaignRoot, sourcePath, archivedIntent.Path),
+					SelectiveOnly: true,
 				},
 				Action:      commit.IntentArchive,
 				IntentTitle: i.Title,
@@ -108,12 +115,15 @@ func (m *Model) archiveIntent(i *intent.Intent) tea.Cmd {
 func (m *Model) deleteIntent(i *intent.Intent) tea.Cmd {
 	return func() tea.Msg {
 		title := i.Title // Capture before deletion
+		sourcePath := i.Path
 		err := m.service.Delete(m.ctx, i.ID)
 		if err == nil && m.campaignRoot != "" && m.campaignID != "" {
 			_ = commit.Intent(m.ctx, commit.IntentOptions{
 				Options: commit.Options{
-					CampaignRoot: m.campaignRoot,
-					CampaignID:   m.campaignID,
+					CampaignRoot:  m.campaignRoot,
+					CampaignID:    m.campaignID,
+					Files:         commit.NormalizeFiles(m.campaignRoot, sourcePath),
+					SelectiveOnly: true,
 				},
 				Action:      commit.IntentDelete,
 				IntentTitle: title,
@@ -134,10 +144,21 @@ func (m *Model) promoteToFestival(i *intent.Intent) tea.Cmd {
 		})
 
 		if err == nil && m.campaignRoot != "" && m.campaignID != "" {
+			files := []string{i.Path}
+			movedIntent, findErr := m.service.Get(m.ctx, i.ID)
+			if findErr == nil && movedIntent.Path != "" {
+				files = append(files, movedIntent.Path)
+			}
+			if result.FestivalCreated && result.FestivalDest != "" && result.FestivalDir != "" {
+				files = append(files, filepath.Join("festivals", result.FestivalDest, result.FestivalDir))
+			}
+
 			_ = commit.Intent(m.ctx, commit.IntentOptions{
 				Options: commit.Options{
-					CampaignRoot: m.campaignRoot,
-					CampaignID:   m.campaignID,
+					CampaignRoot:  m.campaignRoot,
+					CampaignID:    m.campaignID,
+					Files:         commit.NormalizeFiles(m.campaignRoot, files...),
+					SelectiveOnly: true,
 				},
 				Action:      commit.IntentPromote,
 				IntentTitle: i.Title,

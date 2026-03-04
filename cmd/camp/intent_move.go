@@ -81,6 +81,7 @@ func runIntentMove(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("intent not found: %s", id)
 	}
 	intentTitle := i.Title
+	sourcePath := i.Path
 
 	// Move the intent
 	result, err := svc.Move(ctx, id, status)
@@ -92,10 +93,13 @@ func runIntentMove(cmd *cobra.Command, args []string) error {
 
 	// Auto-commit (unless --no-commit)
 	if !noCommit {
+		files := commit.NormalizeFiles(campaignRoot, sourcePath, result.Path)
 		commitResult := commit.Intent(ctx, commit.IntentOptions{
 			Options: commit.Options{
-				CampaignRoot: campaignRoot,
-				CampaignID:   cfg.ID,
+				CampaignRoot:  campaignRoot,
+				CampaignID:    cfg.ID,
+				Files:         files,
+				SelectiveOnly: true,
 			},
 			Action:      commit.IntentMove,
 			IntentTitle: intentTitle,

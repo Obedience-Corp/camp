@@ -320,7 +320,7 @@ func showFestInstallGuidance() {
 	fmt.Println(ui.Dim("Festival Methodology provides structured project planning."))
 	fmt.Println(ui.Dim("Install the fest CLI to enable it:"))
 	fmt.Println()
-	fmt.Println(ui.Dim("  go install github.com/obediencecorp/fest/cmd/fest@latest"))
+	fmt.Println(ui.Dim("  go install github.com/Obedience-Corp/fest/cmd/fest@latest"))
 	fmt.Println()
 	fmt.Println(ui.Dim("Then run: camp init --repair"))
 	fmt.Println(ui.Dim("Continuing without Festival Methodology..."))
@@ -530,11 +530,14 @@ func commitRepairChanges(ctx context.Context, initResult *scaffold.InitResult, p
 	}
 
 	description := buildRepairCommitMessage(initResult, plan, migrationCount)
+	files := buildRepairCommitFiles(initResult, plan)
 
 	result := commit.Repair(ctx, commit.RepairOptions{
 		Options: commit.Options{
-			CampaignRoot: initResult.CampaignRoot,
-			CampaignID:   cfg.ID,
+			CampaignRoot:  initResult.CampaignRoot,
+			CampaignID:    cfg.ID,
+			Files:         files,
+			SelectiveOnly: true,
 		},
 		Description: description,
 	})
@@ -544,6 +547,25 @@ func commitRepairChanges(ctx context.Context, initResult *scaffold.InitResult, p
 	} else if result.Message != "" {
 		fmt.Printf("\n%s %s\n", ui.InfoIcon(), result.Message)
 	}
+}
+
+func buildRepairCommitFiles(initResult *scaffold.InitResult, plan *scaffold.RepairPlan) []string {
+	files := make([]string, 0, len(initResult.FilesCreated)+len(initResult.DirsCreated))
+	files = append(files, initResult.FilesCreated...)
+	files = append(files, initResult.DirsCreated...)
+
+	if plan != nil {
+		for _, m := range plan.Migrations {
+			for _, item := range m.Items {
+				files = append(files,
+					filepath.Join(m.Source, item),
+					filepath.Join(m.Dest, item),
+				)
+			}
+		}
+	}
+
+	return commit.NormalizeFiles(initResult.CampaignRoot, files...)
 }
 
 // buildRepairCommitMessage constructs a descriptive commit body for repair operations.

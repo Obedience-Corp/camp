@@ -19,7 +19,8 @@ type ProjectOptions struct {
 	Description string        // Optional body text
 }
 
-// Project stages all changes and commits for a project operation.
+// Project stages changes and commits for a project operation.
+// If opts.Options.Files is set, only those paths are staged.
 func Project(ctx context.Context, opts ProjectOptions) Result {
 	return doCommit(ctx, opts.Options, string(opts.Action), opts.ProjectName, opts.Description)
 }

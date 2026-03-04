@@ -98,7 +98,7 @@ func (m *Model) finishIntentCreation(conceptPath string) (tea.Model, tea.Cmd) {
 		Concept: conceptPath,
 	}
 
-	_, err := m.service.CreateDirect(m.ctx, opts)
+	createdIntent, err := m.service.CreateDirect(m.ctx, opts)
 	if err != nil {
 		m.statusMessage = "Error creating intent: " + err.Error()
 		m.focus = focusList
@@ -109,8 +109,10 @@ func (m *Model) finishIntentCreation(conceptPath string) (tea.Model, tea.Cmd) {
 	if m.campaignRoot != "" && m.campaignID != "" {
 		_ = commit.Intent(m.ctx, commit.IntentOptions{
 			Options: commit.Options{
-				CampaignRoot: m.campaignRoot,
-				CampaignID:   m.campaignID,
+				CampaignRoot:  m.campaignRoot,
+				CampaignID:    m.campaignID,
+				Files:         commit.NormalizeFiles(m.campaignRoot, createdIntent.Path),
+				SelectiveOnly: true,
 			},
 			Action:      commit.IntentCreate,
 			IntentTitle: title,

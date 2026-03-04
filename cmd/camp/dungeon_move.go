@@ -73,6 +73,7 @@ func runDungeonMove(cmd *cobra.Command, args []string) error {
 	svc := dungeon.NewService(campaignRoot, dungeonPath)
 
 	var description string
+	var movedPaths []string
 
 	if triageMode {
 		if status != "" {
@@ -82,6 +83,10 @@ func runDungeonMove(cmd *cobra.Command, args []string) error {
 			}
 			fmt.Printf("%s Moved %s → dungeon/%s/\n", ui.SuccessIcon(), itemName, status)
 			description = fmt.Sprintf("Triage %s → dungeon/%s", itemName, status)
+			movedPaths = []string{
+				filepath.Join(cwd, itemName),
+				filepath.Join(cwd, "dungeon", status, itemName),
+			}
 		} else {
 			// Triage to dungeon root
 			if err := svc.MoveToDungeon(ctx, itemName, cwd); err != nil {
@@ -89,6 +94,10 @@ func runDungeonMove(cmd *cobra.Command, args []string) error {
 			}
 			fmt.Printf("%s Moved %s → dungeon/\n", ui.SuccessIcon(), itemName)
 			description = fmt.Sprintf("Triage %s → dungeon", itemName)
+			movedPaths = []string{
+				filepath.Join(cwd, itemName),
+				filepath.Join(cwd, "dungeon", itemName),
+			}
 		}
 	} else {
 		// Inner move: dungeon root → status directory
@@ -105,16 +114,22 @@ func runDungeonMove(cmd *cobra.Command, args []string) error {
 			relDir = cwd
 		}
 		description = fmt.Sprintf("Moved to dungeon/%s:\n  - %s/%s", status, relDir, itemName)
+		movedPaths = []string{
+			filepath.Join(cwd, "dungeon", itemName),
+			filepath.Join(cwd, "dungeon", status, itemName),
+		}
 	}
 
 	// Auto-commit
 	if !noCommit {
+		files := commit.NormalizeFiles(campaignRoot, movedPaths...)
 		result := commit.Crawl(ctx, commit.CrawlOptions{
 			Options: commit.Options{
 				CampaignRoot: campaignRoot,
 				CampaignID:   cfg.ID,
 			},
 			Description: strings.TrimSpace(description),
+			Files:       files,
 		})
 		if result.Committed {
 			fmt.Printf("%s %s\n", ui.SuccessIcon(), result.Message)

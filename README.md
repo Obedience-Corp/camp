@@ -22,13 +22,13 @@ Campaign workspace manager for multi-project AI development.
 ### Go Install
 
 ```bash
-go install github.com/obediencecorp/camp@latest
+go install github.com/Obedience-Corp/camp@latest
 ```
 
 ### From Source
 
 ```bash
-git clone https://github.com/obediencecorp/camp
+git clone https://github.com/Obedience-Corp/camp
 cd camp
 just install
 ```
