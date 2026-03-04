@@ -116,7 +116,7 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Promote to festival (ready intents only)
 		return m.handlePromoteAction()
 	case "a":
-		// Archive (move to dungeon) - requires confirmation
+		// Archive (move to dungeon/archived) - requires reason
 		return m.handleArchiveAction()
 	case "d":
 		// Delete intent (permanently) - requires confirmation

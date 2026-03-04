@@ -19,10 +19,9 @@ CAPTURE MODES:
 
 INTENT LIFECYCLE:
   inbox  → Captured, not yet reviewed
-  active → Being enriched with details
-  ready  → Ready for Festival promotion
-  done   → Resolved
-  killed → Abandoned
+  ready  → Reviewed/enriched, ready for promotion
+  active → Promoted to festival/design doc, work in progress
+  dungeon/* → Terminal statuses (done, killed, archived, someday)
 
 Examples:
   camp intent add "Add dark mode toggle"         Fast capture to inbox
@@ -31,8 +30,8 @@ Examples:
   camp intent list --status active               List active intents
   camp intent edit add-dark                      Edit intent (fuzzy match)
   camp intent show 20260119-153412-add-dark      Show intent details
-  camp intent move add-dark active               Move to active status
-  camp intent promote add-dark                   Promote to Festival
+  camp intent move add-dark ready                Mark as ready
+  camp intent promote add-dark                   Promote to active via festival
   camp intent archive add-dark                   Archive intent`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return cmd.Help()

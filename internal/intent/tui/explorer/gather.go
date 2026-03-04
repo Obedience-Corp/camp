@@ -5,6 +5,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/intent"
+	"github.com/Obedience-Corp/camp/internal/intent/audit"
 	"github.com/Obedience-Corp/camp/internal/intent/gather"
 	"github.com/Obedience-Corp/camp/internal/intent/tui"
 	tea "github.com/charmbracelet/bubbletea"
@@ -65,16 +66,43 @@ func (m *Model) executeGather() tea.Cmd {
 		}
 		sourceIDs := m.gatherDialog.IntentIDs()
 		sourcePaths := make([]string, 0, len(sourceIDs))
+		sourceStatusByID := make(map[string]intent.Status, len(sourceIDs))
 		for _, id := range sourceIDs {
 			src, getErr := m.service.Get(m.ctx, id)
 			if getErr == nil && src.Path != "" {
 				sourcePaths = append(sourcePaths, src.Path)
+				sourceStatusByID[id] = src.Status
 			}
 		}
 
 		result, err := svc.Gather(m.ctx, sourceIDs, opts)
 		if err != nil {
 			return gatherFinishedMsg{err: err}
+		}
+
+		if err := m.appendAuditEvent(audit.Event{
+			Type:  audit.EventGather,
+			ID:    result.Gathered.ID,
+			Title: result.Gathered.Title,
+			To:    string(result.Gathered.Status),
+		}); err != nil {
+			return gatherFinishedMsg{err: err}
+		}
+
+		if opts.ArchiveSources && len(result.ArchivedSources) > 0 {
+			reason := gather.ArchiveReason(result.Gathered.ID, result.Gathered.Title)
+			for _, archived := range result.ArchivedSources {
+				if err := m.appendAuditEvent(audit.Event{
+					Type:   audit.EventArchive,
+					ID:     archived.ID,
+					Title:  archived.Title,
+					From:   string(sourceStatusByID[archived.ID]),
+					To:     string(intent.StatusArchived),
+					Reason: reason,
+				}); err != nil {
+					return gatherFinishedMsg{err: err}
+				}
+			}
 		}
 
 		// Auto-commit the gather operation using shared helper

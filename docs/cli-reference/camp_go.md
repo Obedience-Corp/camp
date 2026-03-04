@@ -9,6 +9,7 @@ Navigate within the campaign using shortcuts.
 Usage patterns:
   camp go           Toggle between campaign root and last location
   camp go --root    Jump to campaign root (ignore toggle)
+  camp go t         Jump to last visited location (cd - equivalent)
   camp go p         Jump to projects/
   camp go f         Jump to festivals/
   camp go p api     Fuzzy search projects/ for "api"
@@ -16,6 +17,10 @@ Usage patterns:
 Toggle behavior (no args):
   - From anywhere: jump to campaign root, save current location
   - From campaign root: jump back to saved location
+
+Toggle keyword (t / toggle):
+  - Jump to the last visited location regardless of where you are
+  - Repeated calls alternate between two locations (like cd -)
 
 The --print flag outputs just the path for shell integration:
   cd "$(camp go p --print)"
@@ -38,6 +43,7 @@ camp go [shortcut] [query...] [flags]
 ```
   camp go               # Toggle: root ↔ last location
   camp go --root        # Force jump to campaign root
+  camp go t             # Jump to last visited location (cd -)
   camp go p             # Jump to projects/
   camp go p api         # Fuzzy find "api" in projects/
   camp go p --print     # Print path (for shell scripts)

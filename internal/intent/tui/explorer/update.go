@@ -288,15 +288,7 @@ func (m Model) handleActionMenuSelection(msg tui.ActionMenuSelectedMsg) (tea.Mod
 	case "promote":
 		return m.handlePromoteAction()
 	case "archive":
-		if !selected.Status.InDungeon() {
-			m.focus = focusConfirm
-			m.pendingAction = "archive"
-			m.pendingIntent = selected
-			m.confirmDialog = tui.NewConfirmationDialog(
-				"Archive Intent",
-				fmt.Sprintf("Archive '%s'?\n\nIt will be moved to the dungeon.", selected.Title),
-			)
-		}
+		return m.handleArchiveAction()
 	case "delete":
 		m.focus = focusConfirm
 		m.pendingAction = "delete"

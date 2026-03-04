@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Obedience-Corp/camp/internal/intent"
@@ -444,5 +445,48 @@ func TestService_ContextCancellation(t *testing.T) {
 	_, err = gatherSvc.Gather(ctx, []string{"a", "b"}, GatherOptions{Title: "Test"})
 	if err == nil {
 		t.Error("Gather() should error with cancelled context")
+	}
+}
+
+func TestArchiveReason(t *testing.T) {
+	got := ArchiveReason("unified-auth-20260304-160000", "Unified Auth Approach")
+	want := "Gathered into intent unified-auth-20260304-160000 (Unified Auth Approach)."
+	if got != want {
+		t.Fatalf("ArchiveReason() = %q, want %q", got, want)
+	}
+}
+
+func TestGather_AppendsDecisionRecordWhenArchiving(t *testing.T) {
+	tmpDir, svc := setupTestDir(t)
+
+	i1 := createTestIntent(t, svc, "Auth UI cleanup", []string{"auth"})
+	i2 := createTestIntent(t, svc, "Auth backend cleanup", []string{"auth"})
+
+	gatherSvc := NewService(svc, tmpDir)
+	result, err := gatherSvc.Gather(context.Background(), []string{i1.ID, i2.ID}, GatherOptions{
+		Title:          "Unified Auth Cleanup",
+		ArchiveSources: true,
+	})
+	if err != nil {
+		t.Fatalf("Gather() error = %v", err)
+	}
+
+	if len(result.ArchivedSources) == 0 {
+		t.Fatalf("ArchivedSources = 0, want > 0")
+	}
+
+	reason := ArchiveReason(result.Gathered.ID, result.Gathered.Title)
+	archived, err := svc.Get(context.Background(), i1.ID)
+	if err != nil {
+		t.Fatalf("Get() archived source error = %v", err)
+	}
+	if archived.Status != intent.StatusArchived {
+		t.Fatalf("archived source status = %q, want %q", archived.Status, intent.StatusArchived)
+	}
+	if !strings.Contains(archived.Content, "## Decision Record") {
+		t.Fatalf("archived source missing decision record section")
+	}
+	if !strings.Contains(archived.Content, reason) {
+		t.Fatalf("archived source missing gather reason %q", reason)
 	}
 }

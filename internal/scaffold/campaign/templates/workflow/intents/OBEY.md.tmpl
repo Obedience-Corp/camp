@@ -15,10 +15,12 @@ Future work items not yet ready for Festivals.
 Intents progress through status directories:
 
 1. **inbox/** - Captured but not reviewed
-2. **active/** - Being enriched with context
-3. **ready/** - Sufficiently clear for Festival promotion
-4. **done/** - Resolved (promoted, completed, or superseded)
-5. **killed/** - Abandoned
+2. **ready/** - Reviewed/enriched, ready for promotion
+3. **active/** - Promoted to festival or design doc, work in progress
+4. **dungeon/done/** - Completed
+5. **dungeon/killed/** - Abandoned
+6. **dungeon/archived/** - Preserved but inactive
+7. **dungeon/someday/** - Deferred
 
 ## Usage
 
@@ -36,7 +38,10 @@ camp intent list
 camp intent edit [id]
 
 # Move to a new status
-camp intent move [id] active
+camp intent move [id] ready
+
+# Move to dungeon with required reason
+camp intent move [id] archived --reason "preserve for reference"
 
 # Promote to a Festival
 camp intent promote [id]
@@ -46,11 +51,14 @@ camp intent promote [id]
 
 ```
 intents/
-├── inbox/          # Captured, not reviewed
-├── active/         # Being enriched
-├── ready/          # Ready for promotion
-├── done/           # Resolved
-└── killed/         # Abandoned
+├── inbox/             # Captured, not reviewed
+├── ready/             # Reviewed and ready for promotion
+├── active/            # Work in progress
+└── dungeon/
+    ├── done/          # Completed
+    ├── killed/        # Abandoned
+    ├── archived/      # Preserved
+    └── someday/       # Deferred
 ```
 
 ## Intent File Format

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -33,6 +34,7 @@ PIPELINE ORDER:
 
 Move is an escape hatch that allows any-to-any transitions.
 Dungeon moves require a --reason flag.
+You can use short dungeon names (done) or canonical paths (dungeon/done).
 
 Examples:
   camp intent move add-dark ready                         Mark as ready
@@ -55,26 +57,12 @@ func runIntentMove(cmd *cobra.Command, args []string) error {
 	newStatus := args[1]
 	noCommit, _ := cmd.Flags().GetBool("no-commit")
 	reason, _ := cmd.Flags().GetString("reason")
+	reason = strings.TrimSpace(reason)
 
 	// Validate status — accept short names for dungeon statuses
-	var status intent.Status
-	switch newStatus {
-	case "inbox":
-		status = intent.StatusInbox
-	case "ready":
-		status = intent.StatusReady
-	case "active":
-		status = intent.StatusActive
-	case "done":
-		status = intent.StatusDone
-	case "killed":
-		status = intent.StatusKilled
-	case "archived":
-		status = intent.StatusArchived
-	case "someday":
-		status = intent.StatusSomeday
-	default:
-		return fmt.Errorf("invalid status: %s (use inbox, ready, active, done, killed, archived, or someday)", newStatus)
+	status, err := parseIntentStatus(newStatus)
+	if err != nil {
+		return err
 	}
 
 	// Require reason for dungeon moves
@@ -104,11 +92,19 @@ func runIntentMove(cmd *cobra.Command, args []string) error {
 	}
 	intentTitle := i.Title
 	sourcePath := i.Path
+	prevStatus := i.Status
+
+	if prevStatus == status {
+		fmt.Printf("Intent already in %s status: %s\n", status, i.Path)
+		return nil
+	}
 
 	// Append decision record for dungeon moves
 	if status.InDungeon() && reason != "" {
 		intent.AppendDecisionRecord(i, status, reason)
-		_ = svc.Save(ctx, i)
+		if err := svc.Save(ctx, i); err != nil {
+			return camperrors.Wrap(err, "failed to save decision record")
+		}
 	}
 
 	// Move the intent
@@ -120,14 +116,16 @@ func runIntentMove(cmd *cobra.Command, args []string) error {
 	fmt.Printf("✓ Intent moved to %s: %s\n", status, result.Path)
 
 	// Log audit event
-	audit.AppendEvent(ctx, resolver.Intents(), audit.Event{
-		Type:  audit.EventMove,
-		ID:    i.ID,
-		Title: intentTitle,
-		From:  string(i.Status),
-		To:    string(status),
+	if err := appendIntentAuditEvent(ctx, resolver.Intents(), audit.Event{
+		Type:   audit.EventMove,
+		ID:     i.ID,
+		Title:  intentTitle,
+		From:   string(prevStatus),
+		To:     string(status),
 		Reason: reason,
-	})
+	}); err != nil {
+		return err
+	}
 
 	// Auto-commit (unless --no-commit)
 	if !noCommit {

@@ -36,7 +36,7 @@ const (
 
 	// Dungeon statuses (under dungeon/ directory)
 
-	// StatusDone indicates the intent has been resolved (promoted, completed, or superseded).
+	// StatusDone indicates the intent has been resolved (completed or superseded).
 	StatusDone Status = "dungeon/done"
 
 	// StatusKilled indicates the intent has been abandoned.

@@ -19,7 +19,7 @@ var (
 	ErrInvalidType       = errors.New("invalid type")
 	ErrInvalidPriority   = errors.New("invalid priority")
 	ErrInvalidHorizon    = errors.New("invalid horizon")
-	ErrPromotedToStatus  = errors.New("promoted_to can only be set when status is done")
+	ErrPromotedToStatus  = errors.New("promoted_to can only be set when status is active or in dungeon")
 )
 
 // intentIDPattern matches the expected ID format: slug-YYYYMMDD-HHMMSS.
@@ -68,7 +68,7 @@ func (i *Intent) Validate() []error {
 	}
 
 	// Consistency validation
-	if i.PromotedTo != "" && i.Status != StatusDone {
+	if i.PromotedTo != "" && i.Status != StatusActive && !i.Status.InDungeon() {
 		errs = append(errs, ErrPromotedToStatus)
 	}
 

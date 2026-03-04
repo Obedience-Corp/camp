@@ -20,16 +20,16 @@ type focusMode int
 const (
 	focusList focusMode = iota
 	focusSearch
-	focusFilterBar      // Filter bar has focus (Tab navigation between chips)
-	focusConceptFilter  // Filtering by concept (concept picker modal)
-	focusMove           // Moving intent to different status
-	focusConfirm        // Confirmation dialog
-	focusActionMenu     // Action menu on intent
-	focusViewer         // Full-screen intent viewer
-	focusGatherDialog   // Gather dialog for combining intents
-	focusAddTUI         // Full add TUI is active
-	focusPromoteTarget  // Promote target picker
-	focusDungeonReason  // Text input for dungeon move reason
+	focusFilterBar     // Filter bar has focus (Tab navigation between chips)
+	focusConceptFilter // Filtering by concept (concept picker modal)
+	focusMove          // Moving intent to different status
+	focusConfirm       // Confirmation dialog
+	focusActionMenu    // Action menu on intent
+	focusViewer        // Full-screen intent viewer
+	focusGatherDialog  // Gather dialog for combining intents
+	focusAddTUI        // Full add TUI is active
+	focusPromoteTarget // Promote target picker
+	focusDungeonReason // Text input for dungeon move reason
 )
 
 // IntentGroup represents a collapsible group of intents by status.
@@ -90,7 +90,7 @@ type Model struct {
 
 	// Confirmation dialog state
 	confirmDialog tui.ConfirmationDialog
-	pendingAction string         // "delete" or "archive"
+	pendingAction string         // "delete", "promote", "promote-ready", or "gather"
 	pendingIntent *intent.Intent // Intent for pending action
 
 	// Preview pane state
@@ -136,8 +136,9 @@ type Model struct {
 	promoteTargetIntent *intent.Intent
 
 	// Dungeon move reason state
-	dungeonReasonInput textinput.Model
-	dungeonReasonFor   intent.Status  // Which dungeon status we're moving to
+	dungeonReasonInput  textinput.Model
+	dungeonReasonFor    intent.Status  // Which dungeon status we're moving to
+	dungeonReasonAction string         // "move" or "archive"
 	dungeonReasonIntent *intent.Intent // Intent being moved to dungeon
 
 	// Dungeon expansion state

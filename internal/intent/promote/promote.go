@@ -48,14 +48,14 @@ type Options struct {
 
 // Result describes the outcome of a promote operation.
 type Result struct {
-	FestivalName    string // Slug name passed to fest create
-	FestivalDir     string // Actual directory created by fest (e.g. slug-id)
-	FestivalDest    string // Destination category (planning, ritual, etc.)
-	FestivalCreated bool   // True if fest successfully created the festival
-	IntentCopied    bool   // True if intent file was copied to ingest
-	FestNotFound    bool   // True if fest CLI was not found
-	DesignDir       string // Path to created design doc directory
-	DesignCreated   bool   // True if design doc was created
+	FestivalName    string        // Slug name passed to fest create
+	FestivalDir     string        // Actual directory created by fest (e.g. slug-id)
+	FestivalDest    string        // Destination category (planning, ritual, etc.)
+	FestivalCreated bool          // True if fest successfully created the festival
+	IntentCopied    bool          // True if intent file was copied to ingest
+	FestNotFound    bool          // True if fest CLI was not found
+	DesignDir       string        // Path to created design doc directory
+	DesignCreated   bool          // True if design doc was created
 	NewStatus       intent.Status // The status the intent was moved to
 }
 
@@ -127,7 +127,9 @@ func promoteToFestival(ctx context.Context, svc *intent.IntentService, i *intent
 	// Set PromotedTo if a festival was created.
 	if result.FestivalCreated && result.FestivalDir != "" {
 		moved.PromotedTo = result.FestivalDir
-		_ = svc.Save(ctx, moved)
+		if err := svc.Save(ctx, moved); err != nil {
+			return result, camperrors.Wrap(err, "saving promoted_to for festival")
+		}
 	}
 
 	return result, nil
@@ -158,7 +160,9 @@ func promoteToDesign(ctx context.Context, svc *intent.IntentService, i *intent.I
 
 	// Set PromotedTo.
 	moved.PromotedTo = designDir
-	_ = svc.Save(ctx, moved)
+	if err := svc.Save(ctx, moved); err != nil {
+		return result, camperrors.Wrap(err, "saving promoted_to for design doc")
+	}
 
 	return result, nil
 }

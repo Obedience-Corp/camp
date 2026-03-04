@@ -111,15 +111,22 @@ func runIntentPromote(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("%s Intent promoted to %s\n", ui.SuccessIcon(), result.NewStatus)
 
+	promotedTo := result.DesignDir
+	if promotedTo == "" {
+		promotedTo = result.FestivalDir
+	}
+
 	// Log audit event
-	audit.AppendEvent(ctx, resolver.Intents(), audit.Event{
+	if err := appendIntentAuditEvent(ctx, resolver.Intents(), audit.Event{
 		Type:       audit.EventPromote,
 		ID:         i.ID,
 		Title:      i.Title,
 		From:       string(prevStatus),
 		To:         string(result.NewStatus),
-		PromotedTo: result.FestivalDir + result.DesignDir,
-	})
+		PromotedTo: promotedTo,
+	}); err != nil {
+		return err
+	}
 
 	// Auto-commit (unless --no-commit)
 	if !noCommit {

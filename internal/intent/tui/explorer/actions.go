@@ -59,16 +59,8 @@ func (m *Model) updateMove(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			// Require reason for dungeon moves
 			if newStatus.InDungeon() {
-				m.dungeonReasonFor = newStatus
-				m.dungeonReasonIntent = m.intentToMove
+				m.startDungeonReasonInput(m.intentToMove, newStatus, "move")
 				m.intentToMove = nil
-				m.focus = focusDungeonReason
-				ti := textinput.New()
-				ti.Placeholder = "Enter reason..."
-				ti.CharLimit = 200
-				ti.Width = 60
-				ti.Focus()
-				m.dungeonReasonInput = ti
 				return m, nil
 			}
 			m.focus = focusList
@@ -76,6 +68,19 @@ func (m *Model) updateMove(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m *Model) startDungeonReasonInput(i *intent.Intent, newStatus intent.Status, action string) {
+	m.dungeonReasonFor = newStatus
+	m.dungeonReasonAction = action
+	m.dungeonReasonIntent = i
+	m.focus = focusDungeonReason
+	ti := textinput.New()
+	ti.Placeholder = "Enter reason..."
+	ti.CharLimit = 200
+	ti.Width = 60
+	ti.Focus()
+	m.dungeonReasonInput = ti
 }
 
 // moveIntent moves an intent to a new status (non-dungeon, no reason required).
@@ -86,27 +91,26 @@ func (m *Model) moveIntent(i *intent.Intent, newStatus intent.Status) tea.Cmd {
 		movedIntent, err := m.service.Move(m.ctx, i.ID, newStatus)
 		if err == nil {
 			// Log audit event
-			audit.AppendEvent(m.ctx, m.intentsDir, audit.Event{
+			err = m.appendAuditEvent(audit.Event{
 				Type:  audit.EventMove,
 				ID:    i.ID,
 				Title: i.Title,
 				From:  string(prevStatus),
 				To:    string(newStatus),
 			})
-
-			if m.campaignRoot != "" && m.campaignID != "" {
-				_ = commit.Intent(m.ctx, commit.IntentOptions{
-					Options: commit.Options{
-						CampaignRoot:  m.campaignRoot,
-						CampaignID:    m.campaignID,
-						Files:         commit.NormalizeFiles(m.campaignRoot, sourcePath, movedIntent.Path),
-						SelectiveOnly: true,
-					},
-					Action:      commit.IntentMove,
-					IntentTitle: i.Title,
-					Description: fmt.Sprintf("Moved to %s status", newStatus),
-				})
-			}
+		}
+		if err == nil && m.campaignRoot != "" && m.campaignID != "" {
+			_ = commit.Intent(m.ctx, commit.IntentOptions{
+				Options: commit.Options{
+					CampaignRoot:  m.campaignRoot,
+					CampaignID:    m.campaignID,
+					Files:         commit.NormalizeFiles(m.campaignRoot, sourcePath, movedIntent.Path),
+					SelectiveOnly: true,
+				},
+				Action:      commit.IntentMove,
+				IntentTitle: i.Title,
+				Description: fmt.Sprintf("Moved to %s status", newStatus),
+			})
 		}
 		return moveFinishedMsg{
 			err:       err,
@@ -116,33 +120,41 @@ func (m *Model) moveIntent(i *intent.Intent, newStatus intent.Status) tea.Cmd {
 	}
 }
 
-// archiveIntent archives an intent (moves to dungeon/archived status).
-func (m *Model) archiveIntent(i *intent.Intent) tea.Cmd {
+// archiveIntentWithReason archives an intent (moves to dungeon/archived status)
+// and records the reason in both markdown and audit trail.
+func (m *Model) archiveIntentWithReason(i *intent.Intent, reason string) tea.Cmd {
 	return func() tea.Msg {
 		sourcePath := i.Path
 		prevStatus := i.Status
-		archivedIntent, err := m.service.Archive(m.ctx, i.ID)
-		if err == nil {
-			audit.AppendEvent(m.ctx, m.intentsDir, audit.Event{
-				Type:  audit.EventArchive,
-				ID:    i.ID,
-				Title: i.Title,
-				From:  string(prevStatus),
-				To:    string(intent.StatusArchived),
-			})
+		intent.AppendDecisionRecord(i, intent.StatusArchived, reason)
+		err := m.service.Save(m.ctx, i)
+		if err != nil {
+			return archiveFinishedMsg{err: err, intentID: i.ID}
+		}
 
-			if m.campaignRoot != "" && m.campaignID != "" {
-				_ = commit.Intent(m.ctx, commit.IntentOptions{
-					Options: commit.Options{
-						CampaignRoot:  m.campaignRoot,
-						CampaignID:    m.campaignID,
-						Files:         commit.NormalizeFiles(m.campaignRoot, sourcePath, archivedIntent.Path),
-						SelectiveOnly: true,
-					},
-					Action:      commit.IntentArchive,
-					IntentTitle: i.Title,
-				})
-			}
+		archivedIntent, err := m.service.Move(m.ctx, i.ID, intent.StatusArchived)
+		if err == nil {
+			err = m.appendAuditEvent(audit.Event{
+				Type:   audit.EventArchive,
+				ID:     i.ID,
+				Title:  i.Title,
+				From:   string(prevStatus),
+				To:     string(intent.StatusArchived),
+				Reason: reason,
+			})
+		}
+		if err == nil && m.campaignRoot != "" && m.campaignID != "" {
+			_ = commit.Intent(m.ctx, commit.IntentOptions{
+				Options: commit.Options{
+					CampaignRoot:  m.campaignRoot,
+					CampaignID:    m.campaignID,
+					Files:         commit.NormalizeFiles(m.campaignRoot, sourcePath, archivedIntent.Path),
+					SelectiveOnly: true,
+				},
+				Action:      commit.IntentArchive,
+				IntentTitle: i.Title,
+				Description: fmt.Sprintf("Moved to %s status", intent.StatusArchived),
+			})
 		}
 		return archiveFinishedMsg{
 			err:      err,
@@ -159,25 +171,24 @@ func (m *Model) deleteIntent(i *intent.Intent) tea.Cmd {
 		prevStatus := i.Status
 		err := m.service.Delete(m.ctx, i.ID)
 		if err == nil {
-			audit.AppendEvent(m.ctx, m.intentsDir, audit.Event{
+			err = m.appendAuditEvent(audit.Event{
 				Type:  audit.EventDelete,
 				ID:    i.ID,
 				Title: title,
 				From:  string(prevStatus),
 			})
-
-			if m.campaignRoot != "" && m.campaignID != "" {
-				_ = commit.Intent(m.ctx, commit.IntentOptions{
-					Options: commit.Options{
-						CampaignRoot:  m.campaignRoot,
-						CampaignID:    m.campaignID,
-						Files:         commit.NormalizeFiles(m.campaignRoot, sourcePath),
-						SelectiveOnly: true,
-					},
-					Action:      commit.IntentDelete,
-					IntentTitle: title,
-				})
-			}
+		}
+		if err == nil && m.campaignRoot != "" && m.campaignID != "" {
+			_ = commit.Intent(m.ctx, commit.IntentOptions{
+				Options: commit.Options{
+					CampaignRoot:  m.campaignRoot,
+					CampaignID:    m.campaignID,
+					Files:         commit.NormalizeFiles(m.campaignRoot, sourcePath),
+					SelectiveOnly: true,
+				},
+				Action:      commit.IntentDelete,
+				IntentTitle: title,
+			})
 		}
 		return deleteFinishedMsg{
 			err:   err,
@@ -196,7 +207,7 @@ func (m *Model) promoteToFestival(i *intent.Intent) tea.Cmd {
 
 		if err == nil {
 			promotedTo := result.FestivalDir
-			audit.AppendEvent(m.ctx, m.intentsDir, audit.Event{
+			err = m.appendAuditEvent(audit.Event{
 				Type:       audit.EventPromote,
 				ID:         i.ID,
 				Title:      i.Title,
@@ -204,29 +215,28 @@ func (m *Model) promoteToFestival(i *intent.Intent) tea.Cmd {
 				To:         string(intent.StatusActive),
 				PromotedTo: promotedTo,
 			})
-
-			if m.campaignRoot != "" && m.campaignID != "" {
-				files := []string{i.Path}
-				movedIntent, findErr := m.service.Get(m.ctx, i.ID)
-				if findErr == nil && movedIntent.Path != "" {
-					files = append(files, movedIntent.Path)
-				}
-				if result.FestivalCreated && result.FestivalDest != "" && result.FestivalDir != "" {
-					files = append(files, filepath.Join("festivals", result.FestivalDest, result.FestivalDir))
-				}
-
-				_ = commit.Intent(m.ctx, commit.IntentOptions{
-					Options: commit.Options{
-						CampaignRoot:  m.campaignRoot,
-						CampaignID:    m.campaignID,
-						Files:         commit.NormalizeFiles(m.campaignRoot, files...),
-						SelectiveOnly: true,
-					},
-					Action:      commit.IntentPromote,
-					IntentTitle: i.Title,
-					Description: "Promoted to active via festival",
-				})
+		}
+		if err == nil && m.campaignRoot != "" && m.campaignID != "" {
+			files := []string{i.Path}
+			movedIntent, findErr := m.service.Get(m.ctx, i.ID)
+			if findErr == nil && movedIntent.Path != "" {
+				files = append(files, movedIntent.Path)
 			}
+			if result.FestivalCreated && result.FestivalDest != "" && result.FestivalDir != "" {
+				files = append(files, filepath.Join("festivals", result.FestivalDest, result.FestivalDir))
+			}
+
+			_ = commit.Intent(m.ctx, commit.IntentOptions{
+				Options: commit.Options{
+					CampaignRoot:  m.campaignRoot,
+					CampaignID:    m.campaignID,
+					Files:         commit.NormalizeFiles(m.campaignRoot, files...),
+					SelectiveOnly: true,
+				},
+				Action:      commit.IntentPromote,
+				IntentTitle: i.Title,
+				Description: "Promoted to active via festival",
+			})
 		}
 
 		return promoteFinishedMsg{
@@ -392,6 +402,16 @@ func (m *Model) promoteToReady(i *intent.Intent) tea.Cmd {
 			Target:       promote.TargetReady,
 		})
 
+		if err == nil {
+			err = m.appendAuditEvent(audit.Event{
+				Type:  audit.EventPromote,
+				ID:    i.ID,
+				Title: i.Title,
+				From:  string(i.Status),
+				To:    string(result.NewStatus),
+			})
+		}
+
 		if err == nil && m.campaignRoot != "" && m.campaignID != "" {
 			movedIntent, findErr := m.service.Get(m.ctx, i.ID)
 			var files []string
@@ -431,6 +451,17 @@ func (m *Model) promoteToDesignDoc(i *intent.Intent) tea.Cmd {
 			Target:       promote.TargetDesign,
 		})
 
+		if err == nil {
+			err = m.appendAuditEvent(audit.Event{
+				Type:       audit.EventPromote,
+				ID:         i.ID,
+				Title:      i.Title,
+				From:       string(i.Status),
+				To:         string(result.NewStatus),
+				PromotedTo: result.DesignDir,
+			})
+		}
+
 		if err == nil && m.campaignRoot != "" && m.campaignID != "" {
 			files := []string{i.Path}
 			movedIntent, findErr := m.service.Get(m.ctx, i.ID)
@@ -469,19 +500,25 @@ func (m *Model) updateDungeonReason(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.focus = focusList
 		m.dungeonReasonIntent = nil
+		m.dungeonReasonAction = ""
 		return m, nil
 	case "enter":
-		reason := m.dungeonReasonInput.Value()
+		reason := strings.TrimSpace(m.dungeonReasonInput.Value())
 		if reason == "" {
 			m.statusMessage = "Reason is required for dungeon moves"
 			return m, nil
 		}
 		i := m.dungeonReasonIntent
 		newStatus := m.dungeonReasonFor
+		action := m.dungeonReasonAction
 		m.dungeonReasonIntent = nil
+		m.dungeonReasonAction = ""
 		m.focus = focusList
 
 		// Append decision record and move
+		if action == "archive" {
+			return m, m.archiveIntentWithReason(i, reason)
+		}
 		return m, m.moveIntentWithReason(i, newStatus, reason)
 	default:
 		var cmd tea.Cmd
@@ -494,7 +531,14 @@ func (m *Model) updateDungeonReason(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) viewDungeonReason() string {
 	var b strings.Builder
 
-	b.WriteString(tui.TitleStyle.Render("Dungeon Move — Reason Required"))
+	title := "Dungeon Move — Reason Required"
+	prompt := "Why is this intent being moved to the dungeon?"
+	if m.dungeonReasonAction == "archive" {
+		title = "Archive Intent — Reason Required"
+		prompt = "Why is this intent being archived?"
+	}
+
+	b.WriteString(tui.TitleStyle.Render(title))
 	b.WriteString("\n\n")
 
 	if m.dungeonReasonIntent != nil {
@@ -502,7 +546,7 @@ func (m *Model) viewDungeonReason() string {
 		b.WriteString("Moving to: " + m.dungeonReasonFor.String() + "\n\n")
 	}
 
-	b.WriteString("Why is this intent being moved to the dungeon?\n\n")
+	b.WriteString(prompt + "\n\n")
 	b.WriteString(m.dungeonReasonInput.View())
 	b.WriteString("\n\n")
 	b.WriteString(tui.HelpStyle.Render("Enter: confirm . Esc: cancel"))
@@ -517,12 +561,19 @@ func (m *Model) moveIntentWithReason(i *intent.Intent, newStatus intent.Status, 
 
 		// Append decision record before moving
 		intent.AppendDecisionRecord(i, newStatus, reason)
-		_ = m.service.Save(m.ctx, i)
+		err := m.service.Save(m.ctx, i)
+		if err != nil {
+			return moveFinishedMsg{
+				err:       err,
+				intentID:  i.ID,
+				newStatus: newStatus,
+			}
+		}
 
 		movedIntent, err := m.service.Move(m.ctx, i.ID, newStatus)
-		if err == nil && m.campaignRoot != "" && m.campaignID != "" {
+		if err == nil {
 			// Log audit event
-			audit.AppendEvent(m.ctx, m.intentsDir, audit.Event{
+			err = m.appendAuditEvent(audit.Event{
 				Type:   audit.EventMove,
 				ID:     i.ID,
 				Title:  i.Title,
@@ -530,7 +581,9 @@ func (m *Model) moveIntentWithReason(i *intent.Intent, newStatus intent.Status, 
 				To:     string(newStatus),
 				Reason: reason,
 			})
+		}
 
+		if err == nil && m.campaignRoot != "" && m.campaignID != "" {
 			_ = commit.Intent(m.ctx, commit.IntentOptions{
 				Options: commit.Options{
 					CampaignRoot:  m.campaignRoot,
@@ -558,13 +611,7 @@ func (m *Model) handleArchiveAction() (tea.Model, tea.Cmd) {
 			m.statusMessage = "Already in dungeon"
 			return m, nil
 		}
-		m.focus = focusConfirm
-		m.pendingAction = "archive"
-		m.pendingIntent = selected
-		m.confirmDialog = tui.NewConfirmationDialog(
-			"Archive Intent",
-			fmt.Sprintf("Archive '%s'?\n\nIt will be moved to the dungeon.", selected.Title),
-		)
+		m.startDungeonReasonInput(selected, intent.StatusArchived, "archive")
 	}
 	return m, nil
 }

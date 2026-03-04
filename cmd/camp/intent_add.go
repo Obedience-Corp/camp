@@ -15,6 +15,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/intent"
+	"github.com/Obedience-Corp/camp/internal/intent/audit"
 	"github.com/Obedience-Corp/camp/internal/intent/tui"
 	"github.com/Obedience-Corp/camp/internal/paths"
 )
@@ -91,10 +92,10 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 
 		// Deep capture overrides ultra-fast
 		if useEditor {
-			return runDeepCapture(ctx, svc, cfg, campaignRoot, noCommit, opts)
+			return runDeepCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, opts)
 		}
 
-		return runFastCapture(ctx, svc, cfg, campaignRoot, noCommit, opts)
+		return runFastCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, opts)
 	}
 
 	// TUI path: use git config author (human)
@@ -129,7 +130,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 			Body:    saved.Body,
 			Author:  saved.Author,
 		}
-		if err := runFastCapture(ctx, svc, cfg, campaignRoot, noCommit, savedOpts); err != nil {
+		if err := runFastCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, savedOpts); err != nil {
 			return err
 		}
 	}
@@ -155,10 +156,10 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 
 	// Deep capture if requested
 	if useEditor {
-		return runDeepCapture(ctx, svc, cfg, campaignRoot, noCommit, opts)
+		return runDeepCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, opts)
 	}
 
-	return runFastCapture(ctx, svc, cfg, campaignRoot, noCommit, opts)
+	return runFastCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, opts)
 }
 
 // runIntentAddTUI runs the BubbleTea intent creation form.
@@ -181,10 +182,19 @@ func runIntentAddTUI(ctx context.Context, conceptSvc concept.Service, opts tui.A
 }
 
 // runFastCapture creates intent file directly without editor.
-func runFastCapture(ctx context.Context, svc *intent.IntentService, cfg *config.CampaignConfig, campaignRoot string, noCommit bool, opts intent.CreateOptions) error {
+func runFastCapture(ctx context.Context, svc *intent.IntentService, intentsDir string, cfg *config.CampaignConfig, campaignRoot string, noCommit bool, opts intent.CreateOptions) error {
 	result, err := svc.CreateDirect(ctx, opts)
 	if err != nil {
 		return camperrors.Wrap(err, "failed to create intent")
+	}
+
+	if err := appendIntentAuditEvent(ctx, intentsDir, audit.Event{
+		Type:  audit.EventCreate,
+		ID:    result.ID,
+		Title: result.Title,
+		To:    string(result.Status),
+	}); err != nil {
+		return err
 	}
 
 	fmt.Printf("✓ Intent created: %s\n", result.Path)
@@ -211,7 +221,7 @@ func runFastCapture(ctx context.Context, svc *intent.IntentService, cfg *config.
 }
 
 // runDeepCapture opens editor for full template expansion.
-func runDeepCapture(ctx context.Context, svc *intent.IntentService, cfg *config.CampaignConfig, campaignRoot string, noCommit bool, opts intent.CreateOptions) error {
+func runDeepCapture(ctx context.Context, svc *intent.IntentService, intentsDir string, cfg *config.CampaignConfig, campaignRoot string, noCommit bool, opts intent.CreateOptions) error {
 	// Use editor function from editor package
 	editorFn := func(ctx context.Context, path string) error {
 		return editor.Edit(ctx, path)
@@ -223,6 +233,15 @@ func runDeepCapture(ctx context.Context, svc *intent.IntentService, cfg *config.
 			return fmt.Errorf("intent creation cancelled")
 		}
 		return camperrors.Wrap(err, "failed to create intent")
+	}
+
+	if err := appendIntentAuditEvent(ctx, intentsDir, audit.Event{
+		Type:  audit.EventCreate,
+		ID:    result.ID,
+		Title: result.Title,
+		To:    string(result.Status),
+	}); err != nil {
+		return err
 	}
 
 	fmt.Printf("✓ Intent created: %s\n", result.Path)

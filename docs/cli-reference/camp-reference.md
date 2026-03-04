@@ -1,3 +1,8 @@
+---
+title: "camp CLI Reference"
+weight: 1
+---
+
 # camp CLI Reference
 
 ---
@@ -44,46 +49,6 @@ camp [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp cache](camp_cache.md)	 - Manage the navigation index cache
-* [camp clone](camp_clone.md)	 - Clone a campaign with full submodule setup
-* [camp commit](camp_commit.md)	 - Commit changes in the campaign root
-* [camp completion](camp_completion.md)	 - Generate the autocompletion script for the specified shell
-* [camp copy](camp_copy.md)	 - Copy a file or directory within the campaign
-* [camp date](camp_date.md)	 - Append date suffix to file or directory name
-* [camp doctor](camp_doctor.md)	 - Diagnose and fix campaign health issues
-* [camp dungeon](camp_dungeon.md)	 - Manage the campaign dungeon
-* [camp flow](camp_flow.md)	 - Manage status workflows for organizing work
-* [camp gather](camp_gather.md)	 - Import external data into the intent system
-* [camp go](camp_go.md)	 - Navigate to campaign directories
-* [camp init](camp_init.md)	 - Initialize a new campaign
-* [camp intent](camp_intent.md)	 - Manage campaign intents
-* [camp leverage](camp_leverage.md)	 - Compute leverage scores for campaign projects
-* [camp list](camp_list.md)	 - List all registered campaigns
-* [camp log](camp_log.md)	 - Show git log of the campaign
-* [camp move](camp_move.md)	 - Move a file or directory within the campaign
-* [camp pin](camp_pin.md)	 - Bookmark a directory
-* [camp pins](camp_pins.md)	 - List all pinned directories
-* [camp project](camp_project.md)	 - Manage campaign projects
-* [camp pull](camp_pull.md)	 - Pull latest changes from remote
-* [camp push](camp_push.md)	 - Push campaign changes to remote
-* [camp register](camp_register.md)	 - Register campaign in global registry
-* [camp registry](camp_registry.md)	 - Manage the campaign registry
-* [camp run](camp_run.md)	 - Execute command from campaign root, or just recipe in a project
-* [camp settings](camp_settings.md)	 - Manage camp configuration
-* [camp shell-init](camp_shell-init.md)	 - Output shell initialization code
-* [camp shortcuts](camp_shortcuts.md)	 - List all available shortcuts
-* [camp status](camp_status.md)	 - Show git status of the campaign
-* [camp switch](camp_switch.md)	 - Switch to a different campaign
-* [camp sync](camp_sync.md)	 - Safely synchronize submodules
-* [camp transfer](camp_transfer.md)	 - Copy files between campaigns
-* [camp unpin](camp_unpin.md)	 - Remove a directory bookmark
-* [camp unregister](camp_unregister.md)	 - Remove campaign from registry
-* [camp version](camp_version.md)	 - Show version information
-
-
 ---
 
 ## camp cache
@@ -111,15 +76,6 @@ camp cache [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-* [camp cache clear](camp_cache_clear.md)	 - Delete the navigation cache
-* [camp cache info](camp_cache_info.md)	 - Show cache status and metadata
-* [camp cache rebuild](camp_cache_rebuild.md)	 - Force rebuild the navigation cache
-
-
 ---
 
 ## camp cache clear
@@ -147,12 +103,6 @@ camp cache clear [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp cache](camp_cache.md)	 - Manage the navigation index cache
-
-
 ---
 
 ## camp cache info
@@ -180,12 +130,6 @@ camp cache info [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp cache](camp_cache.md)	 - Manage the navigation index cache
-
-
 ---
 
 ## camp cache rebuild
@@ -213,12 +157,6 @@ camp cache rebuild [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp cache](camp_cache.md)	 - Manage the navigation index cache
-
-
 ---
 
 ## camp clone
@@ -308,12 +246,6 @@ camp clone <url> [directory] [flags]
       --config string   config file (default: ~/.obey/campaign/config.yaml)
       --no-color        disable colored output
 ```
-
-### SEE ALSO
-
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-
-
 ---
 
 ## camp commit
@@ -327,6 +259,10 @@ Commit changes in the campaign root directory.
 Automatically stages all changes and creates a commit. Handles
 stale lock files from crashed processes.
 
+At the campaign root, submodule ref changes (projects/*) are excluded
+from staging by default to prevent accidental ref conflicts across
+machines. Use --include-refs to stage them explicitly.
+
 Use --sub to commit in the submodule detected from your current directory.
 Use -p/--project to commit in a specific project (e.g., -p projects/camp).
 
@@ -334,6 +270,7 @@ Examples:
   camp commit -m "Add new feature"
   camp commit --amend -m "Fix typo"
   camp commit -a -m "Stage and commit all"
+  camp commit --include-refs -m "Sync all submodule refs"
   camp commit --sub -m "Commit in current submodule"
   camp commit -p projects/camp -m "Commit in camp project"
 
@@ -347,6 +284,7 @@ camp commit [flags]
   -a, --all              Stage all changes before committing (default true)
       --amend            Amend the previous commit
   -h, --help             help for commit
+      --include-refs     Include submodule ref changes when staging at campaign root
   -m, --message string   Commit message (required)
   -p, --project string   Operate on a specific project/submodule path
       --sub              Operate on the submodule detected from current directory
@@ -359,12 +297,6 @@ camp commit [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-
-
 ---
 
 ## camp completion
@@ -390,16 +322,6 @@ See each sub-command's help for details on how to use the generated script.
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-* [camp completion bash](camp_completion_bash.md)	 - Generate the autocompletion script for bash
-* [camp completion fish](camp_completion_fish.md)	 - Generate the autocompletion script for fish
-* [camp completion powershell](camp_completion_powershell.md)	 - Generate the autocompletion script for powershell
-* [camp completion zsh](camp_completion_zsh.md)	 - Generate the autocompletion script for zsh
-
-
 ---
 
 ## camp completion bash
@@ -448,12 +370,6 @@ camp completion bash
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp completion](camp_completion.md)	 - Generate the autocompletion script for the specified shell
-
-
 ---
 
 ## camp completion fish
@@ -493,12 +409,6 @@ camp completion fish [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp completion](camp_completion.md)	 - Generate the autocompletion script for the specified shell
-
-
 ---
 
 ## camp completion powershell
@@ -535,12 +445,6 @@ camp completion powershell [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp completion](camp_completion.md)	 - Generate the autocompletion script for the specified shell
-
-
 ---
 
 ## camp completion zsh
@@ -591,12 +495,29 @@ camp completion zsh [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
+---
 
-### SEE ALSO
+## camp concepts
 
-* [camp completion](camp_completion.md)	 - Generate the autocompletion script for the specified shell
+List configured concepts
 
+```
+camp concepts [flags]
+```
 
+### Options
+
+```
+  -h, --help   help for concepts
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
 ---
 
 ## camp copy
@@ -643,12 +564,6 @@ camp copy <src> <dest> [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-
-
 ---
 
 ## camp date
@@ -697,12 +612,6 @@ camp date <path> [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-
-
 ---
 
 ## camp doctor
@@ -720,6 +629,7 @@ CHECKS PERFORMED:
   head        HEAD states (detached with local work)
   working     Working directory cleanliness
   commits     Parent-submodule commit alignment
+  lock        Stale git index.lock files
 
 EXIT CODES:
   0  All checks passed (no warnings or errors)
@@ -750,7 +660,7 @@ camp doctor [flags]
 ### Options
 
 ```
-  -c, --check strings     Run specific check(s) only (orphan, url, integrity, head, working, commits)
+  -c, --check strings     Run specific check(s) only (orphan, url, integrity, head, working, commits, lock)
   -f, --fix               Attempt automatic fixes for detected issues
   -h, --help              help for doctor
       --json              Output results as JSON
@@ -764,12 +674,6 @@ camp doctor [flags]
       --config string   config file (default: ~/.obey/campaign/config.yaml)
       --no-color        disable colored output
 ```
-
-### SEE ALSO
-
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-
-
 ---
 
 ## camp dungeon
@@ -786,10 +690,15 @@ It keeps items visible without them competing for your attention.
 Commands:
   add     Initialize dungeon structure with documentation
   crawl   Interactive review and archival of dungeon contents
+  list    List dungeon items (agent-friendly)
+  move    Move items between dungeon statuses (agent-friendly)
 
 Examples:
-  camp dungeon add            Initialize the dungeon
-  camp dungeon crawl          Review and archive dungeon items
+  camp dungeon add                        Initialize the dungeon
+  camp dungeon crawl                      Review and archive dungeon items
+  camp dungeon list                       List dungeon root items
+  camp dungeon list --triage              List parent items eligible for triage
+  camp dungeon move old-feature archived  Move item to archived status
 
 ```
 camp dungeon [flags]
@@ -808,14 +717,6 @@ camp dungeon [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-* [camp dungeon add](camp_dungeon_add.md)	 - Initialize dungeon structure
-* [camp dungeon crawl](camp_dungeon_crawl.md)	 - Interactive dungeon review
-
-
 ---
 
 ## camp dungeon add
@@ -861,12 +762,6 @@ camp dungeon add [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp dungeon](camp_dungeon.md)	 - Manage the campaign dungeon
-
-
 ---
 
 ## camp dungeon crawl
@@ -912,12 +807,89 @@ camp dungeon crawl [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
+---
 
-### SEE ALSO
+## camp dungeon list
 
-* [camp dungeon](camp_dungeon.md)	 - Manage the campaign dungeon
+List dungeon items
 
+### Synopsis
 
+List items in the dungeon or parent items eligible for triage.
+
+By default, lists items at the dungeon root (items already in the dungeon).
+Use --triage to list parent directory items that could be moved into the dungeon.
+
+OUTPUT FORMATS:
+  table (default)   Human-readable table with columns
+  simple            Names only, one per line (for scripting)
+  json              Full metadata in JSON format
+
+Examples:
+  camp dungeon list                  List dungeon root items
+  camp dungeon list --triage         List parent items eligible for triage
+  camp dungeon list -f json          JSON output for scripting
+  camp dungeon list -f simple        Names only, pipe to other commands
+
+```
+camp dungeon list [flags]
+```
+
+### Options
+
+```
+  -f, --format string   Output format: table, simple, json (default "table")
+  -h, --help            help for list
+      --triage          List parent items eligible for triage into dungeon
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
+## camp dungeon move
+
+Move dungeon items between statuses
+
+### Synopsis
+
+Move items within the dungeon or from the parent directory into the dungeon.
+
+Without --triage, moves an item already in the dungeon root to a status directory.
+With --triage, moves an item from the parent directory into the dungeon.
+
+Statuses: completed, archived, someday
+
+Examples:
+  camp dungeon move old-feature archived         Move dungeon item to archived
+  camp dungeon move stale-doc completed          Move dungeon item to completed
+  camp dungeon move old-project --triage         Move parent item into dungeon root
+  camp dungeon move old-project archived --triage Move parent item directly to archived
+
+```
+camp dungeon move <item> [status] [flags]
+```
+
+### Options
+
+```
+  -h, --help        help for move
+      --no-commit   Don't create a git commit
+      --triage      Move from parent directory (not from dungeon root)
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
 ---
 
 ## camp flow
@@ -978,21 +950,6 @@ camp flow [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-* [camp flow add](camp_flow_add.md)	 - Add workflow tracking to current directory
-* [camp flow items](camp_flow_items.md)	 - List items in a status directory
-* [camp flow list](camp_flow_list.md)	 - List registered flows from the registry
-* [camp flow migrate](camp_flow_migrate.md)	 - Migrate workflow to latest schema version
-* [camp flow move](camp_flow_move.md)	 - Move an item to a new status
-* [camp flow run](camp_flow_run.md)	 - Execute a registered flow by name
-* [camp flow show](camp_flow_show.md)	 - Show workflow structure
-* [camp flow status](camp_flow_status.md)	 - Show workflow statistics
-* [camp flow sync](camp_flow_sync.md)	 - Sync directories with schema
-
-
 ---
 
 ## camp flow add
@@ -1049,12 +1006,6 @@ camp flow add [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp flow](camp_flow.md)	 - Manage status workflows for organizing work
-
-
 ---
 
 ## camp flow items
@@ -1093,12 +1044,6 @@ camp flow items [status] [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp flow](camp_flow.md)	 - Manage status workflows for organizing work
-
-
 ---
 
 ## camp flow list
@@ -1131,12 +1076,6 @@ camp flow list [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp flow](camp_flow.md)	 - Manage status workflows for organizing work
-
-
 ---
 
 ## camp flow migrate
@@ -1184,12 +1123,6 @@ camp flow migrate [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp flow](camp_flow.md)	 - Manage status workflows for organizing work
-
-
 ---
 
 ## camp flow move
@@ -1234,12 +1167,6 @@ camp flow move <item> <status> [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp flow](camp_flow.md)	 - Manage status workflows for organizing work
-
-
 ---
 
 ## camp flow run
@@ -1274,12 +1201,6 @@ camp flow run <name> [-- extra-args...] [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp flow](camp_flow.md)	 - Manage status workflows for organizing work
-
-
 ---
 
 ## camp flow show
@@ -1318,12 +1239,6 @@ camp flow show [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp flow](camp_flow.md)	 - Manage status workflows for organizing work
-
-
 ---
 
 ## camp flow status
@@ -1356,12 +1271,6 @@ camp flow status [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp flow](camp_flow.md)	 - Manage status workflows for organizing work
-
-
 ---
 
 ## camp flow sync
@@ -1399,12 +1308,6 @@ camp flow sync [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp flow](camp_flow.md)	 - Manage status workflows for organizing work
-
-
 ---
 
 ## camp gather
@@ -1438,13 +1341,6 @@ camp gather [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-* [camp gather feedback](camp_gather_feedback.md)	 - Gather feedback observations from festivals into intents
-
-
 ---
 
 ## camp gather feedback
@@ -1506,12 +1402,6 @@ camp gather feedback [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp gather](camp_gather.md)	 - Import external data into the intent system
-
-
 ---
 
 ## camp go
@@ -1525,6 +1415,7 @@ Navigate within the campaign using shortcuts.
 Usage patterns:
   camp go           Toggle between campaign root and last location
   camp go --root    Jump to campaign root (ignore toggle)
+  camp go t         Jump to last visited location (cd - equivalent)
   camp go p         Jump to projects/
   camp go f         Jump to festivals/
   camp go p api     Fuzzy search projects/ for "api"
@@ -1532,6 +1423,10 @@ Usage patterns:
 Toggle behavior (no args):
   - From anywhere: jump to campaign root, save current location
   - From campaign root: jump back to saved location
+
+Toggle keyword (t / toggle):
+  - Jump to the last visited location regardless of where you are
+  - Repeated calls alternate between two locations (like cd -)
 
 The --print flag outputs just the path for shell integration:
   cd "$(camp go p --print)"
@@ -1554,6 +1449,7 @@ camp go [shortcut] [query...] [flags]
 ```
   camp go               # Toggle: root ↔ last location
   camp go --root        # Force jump to campaign root
+  camp go t             # Jump to last visited location (cd -)
   camp go p             # Jump to projects/
   camp go p api         # Fuzzy find "api" in projects/
   camp go p --print     # Print path (for shell scripts)
@@ -1577,12 +1473,6 @@ camp go [shortcut] [query...] [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-
-
 ---
 
 ## camp init
@@ -1653,12 +1543,6 @@ camp init [path] [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-
-
 ---
 
 ## camp intent
@@ -1679,10 +1563,9 @@ CAPTURE MODES:
 
 INTENT LIFECYCLE:
   inbox  → Captured, not yet reviewed
-  active → Being enriched with details
-  ready  → Ready for Festival promotion
-  done   → Resolved
-  killed → Abandoned
+  ready  → Reviewed/enriched, ready for promotion
+  active → Promoted to festival/design doc, work in progress
+  dungeon/* → Terminal statuses (done, killed, archived, someday)
 
 Examples:
   camp intent add "Add dark mode toggle"         Fast capture to inbox
@@ -1691,8 +1574,8 @@ Examples:
   camp intent list --status active               List active intents
   camp intent edit add-dark                      Edit intent (fuzzy match)
   camp intent show 20260119-153412-add-dark      Show intent details
-  camp intent move add-dark active               Move to active status
-  camp intent promote add-dark                   Promote to Festival
+  camp intent move add-dark ready                Mark as ready
+  camp intent promote add-dark                   Promote to active via festival
   camp intent archive add-dark                   Archive intent
 
 ```
@@ -1712,23 +1595,6 @@ camp intent [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-* [camp intent add](camp_intent_add.md)	 - Create a new intent
-* [camp intent archive](camp_intent_archive.md)	 - Archive an intent
-* [camp intent count](camp_intent_count.md)	 - Count intents by status directory
-* [camp intent edit](camp_intent_edit.md)	 - Edit an existing intent
-* [camp intent explore](camp_intent_explore.md)	 - Interactive intent explorer
-* [camp intent find](camp_intent_find.md)	 - Search for intents by title or content
-* [camp intent gather](camp_intent_gather.md)	 - Gather related intents into a unified document
-* [camp intent list](camp_intent_list.md)	 - List intents in the campaign
-* [camp intent move](camp_intent_move.md)	 - Move intent to a different status
-* [camp intent promote](camp_intent_promote.md)	 - Promote an intent to a Festival
-* [camp intent show](camp_intent_show.md)	 - Show detailed intent information
-
-
 ---
 
 ## camp intent add
@@ -1777,12 +1643,6 @@ camp intent add [title] [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp intent](camp_intent.md)	 - Manage campaign intents
-
-
 ---
 
 ## camp intent archive
@@ -1791,17 +1651,17 @@ Archive an intent
 
 ### Synopsis
 
-Archive an intent by moving it to the killed status.
+Archive an intent by moving it to dungeon/archived.
 
 This is a convenience command equivalent to:
-  camp intent move <id> killed
+  camp intent move <id> archived --reason "..."
 
-Archived intents are retained but hidden from default listings.
+Dungeon moves require a reason and append a decision record to the intent body.
 Use 'camp intent move <id> inbox' to un-archive if needed.
 
 Examples:
-  camp intent archive add-dark           Archive by partial ID
-  camp intent archive 20260119-153412    Archive by full ID
+  camp intent archive add-dark --reason "superseded by broader initiative"
+  camp intent archive 20260119-153412 --reason "preserve as reference"
 
 ```
 camp intent archive <id> [flags]
@@ -1810,8 +1670,9 @@ camp intent archive <id> [flags]
 ### Options
 
 ```
-  -h, --help        help for archive
-      --no-commit   Don't create a git commit
+  -h, --help            help for archive
+      --no-commit       Don't create a git commit
+      --reason string   Reason for archiving (required)
 ```
 
 ### Options inherited from parent commands
@@ -1821,12 +1682,6 @@ camp intent archive <id> [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp intent](camp_intent.md)	 - Manage campaign intents
-
-
 ---
 
 ## camp intent count
@@ -1863,12 +1718,6 @@ camp intent count [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp intent](camp_intent.md)	 - Manage campaign intents
-
-
 ---
 
 ## camp intent edit
@@ -1913,12 +1762,6 @@ camp intent edit [id] [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp intent](camp_intent.md)	 - Manage campaign intents
-
-
 ---
 
 ## camp intent explore
@@ -1952,7 +1795,7 @@ ACTIONS
 
 GATHER (Multi-Select)
   Space         Toggle selection / enter gather mode
-  Ctrl+g        Gather selected intents
+  ga            Gather selected intents
   Escape        Exit multi-select mode
 
 FILTERS
@@ -1988,12 +1831,6 @@ camp intent explore [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp intent](camp_intent.md)	 - Manage campaign intents
-
-
 ---
 
 ## camp intent find
@@ -2037,12 +1874,6 @@ camp intent find [query] [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp intent](camp_intent.md)	 - Manage campaign intents
-
-
 ---
 
 ## camp intent gather
@@ -2115,12 +1946,6 @@ camp intent gather [ids...] [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp intent](camp_intent.md)	 - Manage campaign intents
-
-
 ---
 
 ## camp intent list
@@ -2132,7 +1957,7 @@ List intents in the campaign
 List intents with filtering, sorting, and output format options.
 
 By default, lists intents in inbox, active, and ready status.
-Use --all to include done and killed intents.
+Use --all to include dungeon intents.
 
 OUTPUT FORMATS:
   table (default)   Human-readable table with columns
@@ -2153,7 +1978,7 @@ camp intent list [flags]
 ### Options
 
 ```
-  -a, --all              Include done/killed intents
+  -a, --all              Include dungeon intents
   -f, --format string    Output format: table, simple, json (default "table")
   -h, --help             help for list
       --horizon string   Filter by horizon
@@ -2171,12 +1996,6 @@ camp intent list [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp intent](camp_intent.md)	 - Manage campaign intents
-
-
 ---
 
 ## camp intent move
@@ -2188,23 +2007,25 @@ Move intent to a different status
 Transition an intent between lifecycle statuses.
 
 VALID STATUSES:
-  inbox    Captured, not yet reviewed
-  active   Being enriched with details
-  ready    Ready for Festival promotion
-  done     Resolved
-  killed   Abandoned
+  inbox      Captured, not yet reviewed
+  ready      Reviewed/enriched, ready to be promoted
+  active     Promoted to festival/design, work in progress
+  done       Resolved (dungeon)
+  killed     Abandoned (dungeon)
+  archived   Preserved but inactive (dungeon)
+  someday    Deferred (dungeon)
 
-VALID TRANSITIONS:
-  inbox  → active, killed
-  active → ready, inbox, killed
-  ready  → done, active, killed
-  killed → inbox (un-kill)
+PIPELINE ORDER:
+  inbox → ready → active → dungeon/done
+
+Move is an escape hatch that allows any-to-any transitions.
+Dungeon moves require a --reason flag.
+You can use short dungeon names (done) or canonical paths (dungeon/done).
 
 Examples:
-  camp intent move add-dark active        Move to active status
-  camp intent move add-dark ready         Mark as ready for promotion
-  camp intent move add-dark done          Mark as complete
-  camp intent move add-dark killed        Archive/abandon intent
+  camp intent move add-dark ready                         Mark as ready
+  camp intent move add-dark done --reason "completed"     Mark as done
+  camp intent move add-dark killed --reason "superseded"  Kill intent
 
 ```
 camp intent move <id> <status> [flags]
@@ -2213,8 +2034,9 @@ camp intent move <id> <status> [flags]
 ### Options
 
 ```
-  -h, --help        help for move
-      --no-commit   Don't create a git commit
+  -h, --help            help for move
+      --no-commit       Don't create a git commit
+      --reason string   Reason for the move (required for dungeon targets)
 ```
 
 ### Options inherited from parent commands
@@ -2224,32 +2046,29 @@ camp intent move <id> <status> [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp intent](camp_intent.md)	 - Manage campaign intents
-
-
 ---
 
 ## camp intent promote
 
-Promote an intent to a Festival
+Promote an intent through the pipeline
 
 ### Synopsis
 
-Promote a ready intent to a Festival.
+Promote an intent to the next pipeline stage.
 
-The intent should be in 'ready' status before promotion. Use --force to
-promote from any status.
+TARGETS:
+  ready      Move from inbox to ready (reviewed/enriched)
+  festival   Move from ready to active + create festival (default)
+  design     Move from ready to active + create design doc
 
-After promotion, the intent will be moved to 'done' status with a reference
-to the created Festival.
+The intent moves to active status when promoted to festival or design,
+because work is just beginning. Use --force to bypass status checks.
 
 Examples:
-  camp intent promote add-dark           Promote by partial ID
-  camp intent promote add-dark --force   Force promote from any status
-  camp intent promote add-dark --dry-run Preview without changes
+  camp intent promote add-dark                       Promote ready → festival
+  camp intent promote add-dark --target design       Promote ready → design doc
+  camp intent promote add-dark --target ready         Promote inbox → ready
+  camp intent promote add-dark --force                Force promote from any status
 
 ```
 camp intent promote <id> [flags]
@@ -2258,10 +2077,11 @@ camp intent promote <id> [flags]
 ### Options
 
 ```
-      --dry-run     Preview promotion without making changes
-      --force       Promote even if not in ready status
-  -h, --help        help for promote
-      --no-commit   Don't create a git commit
+      --dry-run         Preview promotion without making changes
+      --force           Promote even if not in expected status
+  -h, --help            help for promote
+      --no-commit       Don't create a git commit
+      --target string   Promote target: ready, festival, design (default "festival")
 ```
 
 ### Options inherited from parent commands
@@ -2271,12 +2091,6 @@ camp intent promote <id> [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp intent](camp_intent.md)	 - Manage campaign intents
-
-
 ---
 
 ## camp intent show
@@ -2321,12 +2135,6 @@ camp intent show <id> [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp intent](camp_intent.md)	 - Manage campaign intents
-
-
 ---
 
 ## camp leverage
@@ -2375,17 +2183,6 @@ camp leverage [flags]
       --config string   config file (default: ~/.obey/campaign/config.yaml)
       --no-color        disable colored output
 ```
-
-### SEE ALSO
-
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-* [camp leverage backfill](camp_leverage_backfill.md)	 - Reconstruct historical leverage data from git history
-* [camp leverage config](camp_leverage_config.md)	 - View or update leverage configuration
-* [camp leverage history](camp_leverage_history.md)	 - Show leverage score history over time
-* [camp leverage reset](camp_leverage_reset.md)	 - Clear all cached leverage data to allow full recomputation
-* [camp leverage snapshot](camp_leverage_snapshot.md)	 - Capture current leverage state as a snapshot
-
-
 ---
 
 ## camp leverage backfill
@@ -2429,12 +2226,6 @@ camp leverage backfill [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp leverage](camp_leverage.md)	 - Compute leverage scores for campaign projects
-
-
 ---
 
 ## camp leverage config
@@ -2485,12 +2276,6 @@ camp leverage config [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp leverage](camp_leverage.md)	 - Compute leverage scores for campaign projects
-
-
 ---
 
 ## camp leverage history
@@ -2536,12 +2321,6 @@ camp leverage history [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp leverage](camp_leverage.md)	 - Compute leverage scores for campaign projects
-
-
 ---
 
 ## camp leverage reset
@@ -2578,12 +2357,6 @@ camp leverage reset [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp leverage](camp_leverage.md)	 - Compute leverage scores for campaign projects
-
-
 ---
 
 ## camp leverage snapshot
@@ -2623,12 +2396,6 @@ camp leverage snapshot [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp leverage](camp_leverage.md)	 - Compute leverage scores for campaign projects
-
-
 ---
 
 ## camp list
@@ -2678,12 +2445,6 @@ camp list [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-
-
 ---
 
 ## camp log
@@ -2725,12 +2486,6 @@ camp log [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-
-
 ---
 
 ## camp move
@@ -2776,12 +2531,6 @@ camp move <src> <dest> [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-
-
 ---
 
 ## camp pin
@@ -2818,12 +2567,6 @@ camp pin <name> [path] [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-
-
 ---
 
 ## camp pins
@@ -2851,12 +2594,6 @@ camp pins [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-
-
 ---
 
 ## camp project
@@ -2892,18 +2629,6 @@ camp project [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-* [camp project add](camp_project_add.md)	 - Add a project to campaign
-* [camp project commit](camp_project_commit.md)	 - Commit changes in a project submodule
-* [camp project list](camp_project_list.md)	 - List projects in campaign
-* [camp project new](camp_project_new.md)	 - Create a new project in campaign
-* [camp project remove](camp_project_remove.md)	 - Remove a project from campaign
-* [camp project worktree](camp_project_worktree.md)	 - Manage worktrees for a project
-
-
 ---
 
 ## camp project add
@@ -2949,12 +2674,6 @@ camp project add <source> [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp project](camp_project.md)	 - Manage campaign projects
-
-
 ---
 
 ## camp project commit
@@ -2988,7 +2707,7 @@ camp project commit [flags]
   -h, --help             help for commit
   -m, --message string   Commit message (required)
   -p, --project string   Project name (auto-detected from cwd if not specified)
-      --sync             Auto-commit submodule ref in campaign root (default true)
+      --sync             Sync submodule ref at campaign root after commit (opt-in)
 ```
 
 ### Options inherited from parent commands
@@ -2998,12 +2717,6 @@ camp project commit [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp project](camp_project.md)	 - Manage campaign projects
-
-
 ---
 
 ## camp project list
@@ -3046,12 +2759,6 @@ camp project list [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp project](camp_project.md)	 - Manage campaign projects
-
-
 ---
 
 ## camp project new
@@ -3092,12 +2799,87 @@ camp project new <name> [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
+---
 
-### SEE ALSO
+## camp project prune
 
-* [camp project](camp_project.md)	 - Manage campaign projects
+Delete merged branches in a project
 
+### Synopsis
 
+Delete local branches that have been merged into the default branch.
+
+Auto-detects the current project from your working directory,
+or accepts a project name as a positional argument.
+
+Protected branches (default branch, current branch) are never deleted.
+
+Examples:
+  camp project prune                     # Prune current project
+  camp project prune camp                # Prune by name
+  camp project prune -p camp             # Prune by flag
+  camp project prune --dry-run           # Preview what would be deleted
+  camp project prune --remote            # Also prune stale remote tracking refs
+  camp project prune --remote-delete     # Also delete merged branches on origin
+
+```
+camp project prune [project-name] [flags]
+```
+
+### Options
+
+```
+  -n, --dry-run          Preview without deleting
+  -f, --force            Skip local branch deletion confirmation
+  -h, --help             help for prune
+  -p, --project string   Project name (auto-detected from cwd)
+      --remote           Also prune stale remote tracking refs
+      --remote-delete    Also delete merged branches on origin (destructive)
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
+## camp project prune all
+
+Delete merged branches across all projects
+
+### Synopsis
+
+Delete local branches that have been merged into the default branch,
+across every project submodule in the campaign.
+
+Produces a per-project summary showing what was (or would be) pruned.
+
+Examples:
+  camp project prune all                 # Prune all projects
+  camp project prune all --dry-run       # Preview across all projects
+  camp project prune all --force         # Skip confirmation for each project
+  camp project prune all --remote        # Also prune stale remote tracking refs
+
+```
+camp project prune all [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for all
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
 ---
 
 ## camp project remove
@@ -3141,12 +2923,54 @@ camp project remove <name> [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
+---
 
-### SEE ALSO
+## camp project run
 
-* [camp project](camp_project.md)	 - Manage campaign projects
+Run a command inside a project directory
 
+### Synopsis
 
+Run any shell command inside a project directory from anywhere in the campaign.
+
+The project is resolved in this order:
+  1. --project / -p flag (explicit project name)
+  2. Auto-detect from current working directory
+  3. Interactive fuzzy picker (if neither above applies)
+
+Use -- to separate camp flags from the command to execute.
+
+Examples:
+  # Interactive project picker, then run command
+  camp project run -- ls -la
+
+  # Specify project explicitly
+  camp project run -p fest -- just build
+  camp project run --project camp -- go test ./...
+
+  # Auto-detect from cwd (inside projects/fest/)
+  camp project run -- just test all
+
+  # Simple commands (no -- needed when no flags)
+  camp project run make build
+
+```
+camp project run [--project <name>] [--] <command> [args...] [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for run
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
 ---
 
 ## camp project worktree
@@ -3198,15 +3022,6 @@ camp project worktree [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp project](camp_project.md)	 - Manage campaign projects
-* [camp project worktree add](camp_project_worktree_add.md)	 - Create a new worktree for the project
-* [camp project worktree list](camp_project_worktree_list.md)	 - List worktrees for the project
-* [camp project worktree remove](camp_project_worktree_remove.md)	 - Remove a worktree
-
-
 ---
 
 ## camp project worktree add
@@ -3262,12 +3077,6 @@ camp project worktree add <name> [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp project worktree](camp_project_worktree.md)	 - Manage worktrees for a project
-
-
 ---
 
 ## camp project worktree list
@@ -3307,12 +3116,6 @@ camp project worktree list [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp project worktree](camp_project_worktree.md)	 - Manage worktrees for a project
-
-
 ---
 
 ## camp project worktree remove
@@ -3356,12 +3159,6 @@ camp project worktree remove <name> [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp project worktree](camp_project_worktree.md)	 - Manage worktrees for a project
-
-
 ---
 
 ## camp pull
@@ -3407,13 +3204,6 @@ camp pull [flags] [remote] [branch]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-* [camp pull all](camp_pull_all.md)	 - Pull latest changes for all repos
-
-
 ---
 
 ## camp pull all
@@ -3429,15 +3219,19 @@ branch with upstream, and pulls them. Any extra flags are passed through
 to git pull for each repo.
 
 Repos in detached HEAD state or without upstream tracking are skipped.
+Use --default-branch to auto-checkout each submodule's default branch
+before pulling. This is useful when submodules are on stale feature
+branches whose remote tracking branch has been deleted.
 
 By default, nested submodules (e.g. inside monorepos) are included.
 Use --no-recurse to only pull top-level submodules.
 
 Examples:
-  camp pull all              # Pull all repos
-  camp pull all --rebase     # Pull all repos with rebase
-  camp pull all --ff-only    # Fast-forward only for all repos
-  camp pull all --no-recurse # Only top-level submodules
+  camp pull all                      # Pull all repos
+  camp pull all --rebase             # Pull all repos with rebase
+  camp pull all --ff-only            # Fast-forward only for all repos
+  camp pull all --no-recurse         # Only top-level submodules
+  camp pull all --default-branch     # Checkout default branch first
 
 ```
 camp pull all [git pull flags] [flags]
@@ -3456,12 +3250,6 @@ camp pull all [git pull flags] [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp pull](camp_pull.md)	 - Pull latest changes from remote
-
-
 ---
 
 ## camp push
@@ -3506,13 +3294,6 @@ camp push [flags] [remote] [branch]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-* [camp push all](camp_push_all.md)	 - Push all repos with unpushed commits
-
-
 ---
 
 ## camp push all
@@ -3553,12 +3334,43 @@ camp push all [git push flags] [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
+---
 
-### SEE ALSO
+## camp refs-sync
 
-* [camp push](camp_push.md)	 - Push campaign changes to remote
+Sync submodule ref pointers in campaign root
 
+### Synopsis
 
+Update the campaign root's recorded submodule pointers to match
+each submodule's current HEAD. Creates a single atomic commit.
+
+Without arguments, syncs all submodules. Specify paths to sync specific ones.
+
+Examples:
+  camp refs-sync                      # Sync all dirty refs
+  camp refs-sync projects/camp        # Sync specific submodule
+  camp refs-sync --dry-run            # Show plan without executing
+
+```
+camp refs-sync [submodule...] [flags]
+```
+
+### Options
+
+```
+  -n, --dry-run   Show plan without executing
+  -f, --force     Skip safety checks (staged changes)
+  -h, --help      help for refs-sync
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
 ---
 
 ## camp register
@@ -3603,12 +3415,6 @@ camp register [path] [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-
-
 ---
 
 ## camp registry
@@ -3646,15 +3452,6 @@ Examples:
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-* [camp registry check](camp_registry_check.md)	 - Check registry integrity
-* [camp registry prune](camp_registry_prune.md)	 - Remove stale registry entries
-* [camp registry sync](camp_registry_sync.md)	 - Sync current campaign with registry
-
-
 ---
 
 ## camp registry check
@@ -3691,12 +3488,6 @@ camp registry check [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp registry](camp_registry.md)	 - Manage the campaign registry
-
-
 ---
 
 ## camp registry prune
@@ -3739,12 +3530,6 @@ camp registry prune [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp registry](camp_registry.md)	 - Manage the campaign registry
-
-
 ---
 
 ## camp registry sync
@@ -3779,12 +3564,6 @@ camp registry sync [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp registry](camp_registry.md)	 - Manage the campaign registry
-
-
 ---
 
 ## camp run
@@ -3842,12 +3621,6 @@ camp run [project | @shortcut] [command | recipe] [args...] [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-
-
 ---
 
 ## camp settings
@@ -3875,12 +3648,6 @@ camp settings [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-
-
 ---
 
 ## camp shell-init
@@ -3937,12 +3704,6 @@ camp shell-init <shell> [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-
-
 ---
 
 ## camp shortcuts
@@ -3989,15 +3750,6 @@ camp shortcuts [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-* [camp shortcuts add](camp_shortcuts_add.md)	 - Add a shortcut (campaign-level or project sub-shortcut)
-* [camp shortcuts list](camp_shortcuts_list.md)	 - List shortcuts for a specific project
-* [camp shortcuts remove](camp_shortcuts_remove.md)	 - Remove a shortcut (campaign-level or project sub-shortcut)
-
-
 ---
 
 ## camp shortcuts add
@@ -4048,12 +3800,6 @@ camp shortcuts add [name] [path] or [project] [name] [path] [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp shortcuts](camp_shortcuts.md)	 - List all available shortcuts
-
-
 ---
 
 ## camp shortcuts list
@@ -4090,12 +3836,6 @@ camp shortcuts list [project] [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp shortcuts](camp_shortcuts.md)	 - List all available shortcuts
-
-
 ---
 
 ## camp shortcuts remove
@@ -4136,12 +3876,165 @@ camp shortcuts remove <name> or <project> <name> [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
+---
 
-### SEE ALSO
+## camp skills
 
-* [camp shortcuts](camp_shortcuts.md)	 - List all available shortcuts
+Manage campaign skill directory links
 
+### Synopsis
 
+Manage campaign skill bundle projection for tool interoperability.
+
+Skills are centralized in .campaign/skills/ and projected into tool ecosystems
+(Claude, agents, etc.) as per-bundle symlinks. This keeps a single source of
+truth while preserving existing provider-native skills directories.
+
+Commands:
+  link     Project per-skill symlinks into a tool-specific skills directory
+  status   Show projection status for tool-specific skills directories
+  unlink   Remove projected skill symlinks
+
+Examples:
+  camp skills link --tool claude    Project skills into .claude/skills/
+  camp skills link --tool agents    Project skills into .agents/skills/
+  camp skills status                Show all skill projection states
+  camp skills unlink --tool claude  Remove projected symlinks from .claude/skills/
+
+```
+camp skills [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for skills
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
+## camp skills link
+
+Project campaign skill bundles into tool-specific skills directories
+
+### Synopsis
+
+Project campaign skill bundles from .campaign/skills/ into tool-specific
+skills directories.
+
+This command creates one symlink per skill bundle. It does not replace entire
+provider skills directories, so existing user skills remain intact.
+
+Examples:
+  camp skills link --tool claude       Project skills into .claude/skills/
+  camp skills link --tool agents       Project skills into .agents/skills/
+  camp skills link --path custom/dir   Project skills into custom/dir
+  camp skills link --tool claude -n    Dry run — show what would happen
+  camp skills link --tool claude -f    Replace conflicting symlink entries
+
+```
+camp skills link [flags]
+```
+
+### Options
+
+```
+  -n, --dry-run       Show what would happen without making changes
+  -f, --force         Replace conflicting symlink entries (never files/directories)
+  -h, --help          help for link
+  -p, --path string   Custom destination directory
+  -t, --tool string   Tool to link: claude, agents
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
+## camp skills status
+
+Show the current state of projected skill bundle symlinks
+
+### Synopsis
+
+Show projection status for campaign skill bundles across tool targets.
+
+Reports whether each tool's skills directory has projected entries from
+.campaign/skills/, is partially projected, missing, broken, or blocked.
+
+Examples:
+  camp skills status          Show projection states in table format
+  camp skills status --json   Machine-readable JSON output
+
+```
+camp skills status [flags]
+```
+
+### Options
+
+```
+  -h, --help     help for status
+      --json     Output as JSON
+      --strict   Return non-zero exit code when links need attention (for CI)
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
+## camp skills unlink
+
+Remove projected skill bundle symlinks
+
+### Synopsis
+
+Remove managed skill bundle symlinks created by 'camp skills link'.
+
+Only removes projected symlink entries created from .campaign/skills bundles.
+It never removes non-symlink files/directories or foreign symlinks.
+
+Examples:
+  camp skills unlink --tool claude       Remove projected entries in .claude/skills/
+  camp skills unlink --tool agents       Remove projected entries in .agents/skills/
+  camp skills unlink --path custom/dir   Remove projected entries in custom/dir
+  camp skills unlink --tool claude -n    Dry run — show what would happen
+
+```
+camp skills unlink [flags]
+```
+
+### Options
+
+```
+  -n, --dry-run       Show what would happen without making changes
+  -h, --help          help for unlink
+  -p, --path string   Custom destination directory to unlink
+  -t, --tool string   Tool to unlink: claude, agents
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
 ---
 
 ## camp status
@@ -4182,13 +4075,6 @@ camp status [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-* [camp status all](camp_status_all.md)	 - Show git status of all submodules
-
-
 ---
 
 ## camp status all
@@ -4228,12 +4114,6 @@ camp status all [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp status](camp_status.md)	 - Show git status of the campaign
-
-
 ---
 
 ## camp switch
@@ -4282,12 +4162,6 @@ camp switch [campaign] [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-
-
 ---
 
 ## camp sync
@@ -4362,12 +4236,6 @@ camp sync [submodule...] [flags]
       --config string   config file (default: ~/.obey/campaign/config.yaml)
       --no-color        disable colored output
 ```
-
-### SEE ALSO
-
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-
-
 ---
 
 ## camp transfer
@@ -4412,12 +4280,6 @@ camp transfer <src> <dest> [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-
-
 ---
 
 ## camp unpin
@@ -4447,12 +4309,6 @@ camp unpin [name] [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-
-
 ---
 
 ## camp unregister
@@ -4496,12 +4352,6 @@ camp unregister <name-or-id> [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-
-
 ---
 
 ## camp version
@@ -4536,8 +4386,3 @@ camp version [flags]
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
-
-### SEE ALSO
-
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-

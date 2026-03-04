@@ -78,7 +78,7 @@ func (s *Service) FindSimilar(ctx context.Context, id string, minScore float64) 
 			continue // Skip intents that can't be loaded
 		}
 		if i.Status.InDungeon() {
-			continue // Skip done/killed intents — not eligible for gathering
+			continue // Skip dungeon intents — not eligible for gathering
 		}
 		results = append(results, SimilarResult{
 			Intent: i,
@@ -121,9 +121,19 @@ type GatherOptions struct {
 
 // GatherResult contains the result of a gather operation.
 type GatherResult struct {
-	Gathered      *intent.Intent // The newly created gathered intent
-	ArchivedPaths []string       // Paths of archived source intents
-	SourceCount   int            // Number of source intents gathered
+	Gathered        *intent.Intent   // The newly created gathered intent
+	ArchivedPaths   []string         // Paths of archived source intents
+	ArchivedSources []*intent.Intent // Archived source intents after move
+	SourceCount     int              // Number of source intents gathered
+}
+
+// ArchiveReason returns the default decision-record reason used when source
+// intents are archived during gather.
+func ArchiveReason(gatheredID, gatheredTitle string) string {
+	if gatheredTitle == "" {
+		return fmt.Sprintf("Gathered into intent %s.", gatheredID)
+	}
+	return fmt.Sprintf("Gathered into intent %s (%s).", gatheredID, gatheredTitle)
 }
 
 // Gather combines multiple intents into a single gathered intent.
@@ -200,9 +210,11 @@ func (s *Service) Gather(ctx context.Context, ids []string, opts GatherOptions) 
 
 	// Archive source intents
 	if opts.ArchiveSources {
+		reason := ArchiveReason(gathered.ID, gathered.Title)
 		for _, src := range sources {
 			// Update source with gathered_into reference
 			src.GatheredInto = gathered.ID
+			intent.AppendDecisionRecord(src, intent.StatusArchived, reason)
 			if err := s.intentSvc.Save(ctx, src); err != nil {
 				// Log but continue - non-fatal error
 				continue
@@ -215,6 +227,7 @@ func (s *Service) Gather(ctx context.Context, ids []string, opts GatherOptions) 
 				continue
 			}
 			result.ArchivedPaths = append(result.ArchivedPaths, archived.Path)
+			result.ArchivedSources = append(result.ArchivedSources, archived)
 		}
 	}
 
@@ -222,7 +235,7 @@ func (s *Service) Gather(ctx context.Context, ids []string, opts GatherOptions) 
 }
 
 // loadIntents loads full intent objects from a list of IDs.
-// Intents in final states (done/killed) are excluded.
+// Intents in any dungeon status are excluded.
 func (s *Service) loadIntents(ctx context.Context, ids []string) ([]*intent.Intent, error) {
 	intents := make([]*intent.Intent, 0, len(ids))
 	for _, id := range ids {
@@ -231,7 +244,7 @@ func (s *Service) loadIntents(ctx context.Context, ids []string) ([]*intent.Inte
 			continue // Skip intents that can't be loaded
 		}
 		if i.Status.InDungeon() {
-			continue // Skip done/killed intents — not eligible for gathering
+			continue // Skip dungeon intents — not eligible for gathering
 		}
 		intents = append(intents, i)
 	}
