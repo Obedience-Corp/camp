@@ -45,4 +45,3 @@ func TestParseIntentStatus(t *testing.T) {
 		})
 	}
 }
-

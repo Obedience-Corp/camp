@@ -11,8 +11,8 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	campcontract "github.com/Obedience-Corp/camp/internal/contract"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/obey-shared/contract"
 	"github.com/google/uuid"
 	"github.com/lancekrogers/guild-scaffold/pkg/scaffold"

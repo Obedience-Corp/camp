@@ -249,18 +249,18 @@ func TestGitError_Error(t *testing.T) {
 		wantMsg string
 	}{
 		{
-			name: "with detail",
-			gitErr: camperrors.NewGit("commit", "", "unknown", "some git output", errors.New("exit status 1")),
+			name:    "with detail",
+			gitErr:  camperrors.NewGit("commit", "", "unknown", "some git output", errors.New("exit status 1")),
 			wantMsg: "git commit failed: some git output",
 		},
 		{
-			name: "without detail",
-			gitErr: camperrors.NewGit("add", "", "permission", "", errors.New("exit status 128")),
+			name:    "without detail",
+			gitErr:  camperrors.NewGit("add", "", "permission", "", errors.New("exit status 128")),
 			wantMsg: "git add failed (permission)",
 		},
 		{
-			name: "lock type with detail",
-			gitErr: camperrors.NewGit("diff --cached", "", "lock", "index.lock exists", errors.New("exit status 128")),
+			name:    "lock type with detail",
+			gitErr:  camperrors.NewGit("diff --cached", "", "lock", "index.lock exists", errors.New("exit status 128")),
 			wantMsg: "git diff --cached failed (lock): index.lock exists",
 		},
 	}

@@ -9,8 +9,8 @@ import (
 	"sort"
 	"strings"
 
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/campaign"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // SkillsSubdir is the subdirectory under .campaign/ that holds skills.
