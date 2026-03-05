@@ -150,13 +150,19 @@ func TestCreateDesignDoc_UsesUniqueDirectoryPerIntentID(t *testing.T) {
 		Content: "Second design content.",
 	}
 
-	firstDir, err := createDesignDoc(ctx, campaignRoot, first)
+	firstDir, createdFirst, err := createDesignDoc(ctx, campaignRoot, first)
 	if err != nil {
 		t.Fatalf("createDesignDoc(first) error = %v", err)
 	}
-	secondDir, err := createDesignDoc(ctx, campaignRoot, second)
+	if !createdFirst {
+		t.Fatalf("createDesignDoc(first) should create a new README")
+	}
+	secondDir, createdSecond, err := createDesignDoc(ctx, campaignRoot, second)
 	if err != nil {
 		t.Fatalf("createDesignDoc(second) error = %v", err)
+	}
+	if !createdSecond {
+		t.Fatalf("createDesignDoc(second) should create a new README")
 	}
 
 	if firstDir == secondDir {
@@ -183,9 +189,12 @@ func TestCreateDesignDoc_DoesNotOverwriteExistingReadme(t *testing.T) {
 		Content: "Original design content.",
 	}
 
-	designDir, err := createDesignDoc(ctx, campaignRoot, i)
+	designDir, created, err := createDesignDoc(ctx, campaignRoot, i)
 	if err != nil {
 		t.Fatalf("createDesignDoc() error = %v", err)
+	}
+	if !created {
+		t.Fatalf("createDesignDoc() should create README on first call")
 	}
 
 	readmePath := filepath.Join(campaignRoot, designDir, "README.md")
@@ -195,12 +204,15 @@ func TestCreateDesignDoc_DoesNotOverwriteExistingReadme(t *testing.T) {
 	}
 
 	i.Content = "Changed content that should not overwrite."
-	designDir2, err := createDesignDoc(ctx, campaignRoot, i)
+	designDir2, created2, err := createDesignDoc(ctx, campaignRoot, i)
 	if err != nil {
 		t.Fatalf("createDesignDoc(second call) error = %v", err)
 	}
 	if designDir2 != designDir {
 		t.Fatalf("designDir2 = %q, want %q", designDir2, designDir)
+	}
+	if created2 {
+		t.Fatalf("createDesignDoc(second call) should not rewrite existing README")
 	}
 
 	gotContent, err := os.ReadFile(readmePath)
@@ -209,6 +221,58 @@ func TestCreateDesignDoc_DoesNotOverwriteExistingReadme(t *testing.T) {
 	}
 	if string(gotContent) != string(customContent) {
 		t.Fatalf("README was overwritten:\n got: %q\nwant: %q", string(gotContent), string(customContent))
+	}
+}
+
+func TestPromoteToDesign_IsTransactionalOnDesignDocFailure(t *testing.T) {
+	ctx := context.Background()
+	campaignRoot := t.TempDir()
+	intentsDir := filepath.Join(campaignRoot, "workflow", "intents")
+	svc := intent.NewIntentService(campaignRoot, intentsDir)
+	if err := svc.EnsureDirectories(ctx); err != nil {
+		t.Fatalf("EnsureDirectories() error = %v", err)
+	}
+
+	created, err := svc.CreateDirect(ctx, intent.CreateOptions{
+		Title:  "Design API request signing flow",
+		Type:   intent.TypeResearch,
+		Author: "test",
+		Body:   "We need a clear signing strategy with replay protection.",
+	})
+	if err != nil {
+		t.Fatalf("CreateDirect() error = %v", err)
+	}
+	ready, err := svc.Move(ctx, created.ID, intent.StatusReady)
+	if err != nil {
+		t.Fatalf("Move() to ready error = %v", err)
+	}
+
+	workflowDir := filepath.Join(campaignRoot, "workflow")
+	if err := os.MkdirAll(workflowDir, 0755); err != nil {
+		t.Fatalf("MkdirAll(workflow) error = %v", err)
+	}
+	// Block design directory creation by creating a file where the directory should be.
+	if err := os.WriteFile(filepath.Join(workflowDir, "design"), []byte("blocked"), 0644); err != nil {
+		t.Fatalf("WriteFile(workflow/design blocker) error = %v", err)
+	}
+
+	_, err = Promote(ctx, svc, ready, Options{
+		CampaignRoot: campaignRoot,
+		Target:       TargetDesign,
+	})
+	if err == nil {
+		t.Fatal("Promote() expected error when design directory creation fails")
+	}
+
+	reloaded, err := svc.Get(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if reloaded.Status != intent.StatusReady {
+		t.Fatalf("Status = %q, want %q", reloaded.Status, intent.StatusReady)
+	}
+	if reloaded.PromotedTo != "" {
+		t.Fatalf("PromotedTo = %q, want empty", reloaded.PromotedTo)
 	}
 }
 

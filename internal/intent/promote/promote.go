@@ -141,42 +141,53 @@ func promoteToDesign(ctx context.Context, svc *intent.IntentService, i *intent.I
 		return Result{}, camperrors.New("intent is not ready for promotion (status: " + i.Status.String() + ")")
 	}
 
-	// Move to active status.
+	// Create design doc first for transactional semantics — if this fails, intent
+	// remains in ready and no status transition occurs.
+	designDir, createdNow, err := createDesignDoc(ctx, opts.CampaignRoot, i)
+	if err != nil {
+		return Result{}, camperrors.Wrap(err, "failed to create design doc")
+	}
+
+	// Move to active status only after design doc creation succeeded.
 	moved, err := svc.Move(ctx, i.ID, intent.StatusActive)
 	if err != nil {
+		// Best-effort rollback of newly created design artifacts.
+		if createdNow {
+			_ = removeCreatedDesignDoc(opts.CampaignRoot, designDir)
+		}
 		return Result{}, camperrors.Wrap(err, "failed to move intent to active")
 	}
-
-	// Create design doc.
-	designDir, err := createDesignDoc(ctx, opts.CampaignRoot, moved)
-	result := Result{NewStatus: intent.StatusActive}
-	if err != nil {
-		// Best-effort — intent was still moved to active.
-		return result, nil
-	}
-
-	result.DesignDir = designDir
-	result.DesignCreated = true
 
 	// Set PromotedTo.
 	moved.PromotedTo = designDir
 	if err := svc.Save(ctx, moved); err != nil {
-		return result, camperrors.Wrap(err, "saving promoted_to for design doc")
+		rollbackErr := rollbackIntentToReady(ctx, svc, i.ID)
+		if createdNow {
+			_ = removeCreatedDesignDoc(opts.CampaignRoot, designDir)
+		}
+		if rollbackErr != nil {
+			return Result{}, camperrors.Wrapf(err, "saving promoted_to for design doc (rollback failed: %v)", rollbackErr)
+		}
+		return Result{}, camperrors.Wrap(err, "saving promoted_to for design doc")
 	}
 
-	return result, nil
+	return Result{
+		NewStatus:     intent.StatusActive,
+		DesignDir:     designDir,
+		DesignCreated: true,
+	}, nil
 }
 
 // createDesignDoc creates a design document directory from intent content.
 // Returns the relative path to the design directory (e.g. "workflow/design/my-feature").
-func createDesignDoc(ctx context.Context, campaignRoot string, i *intent.Intent) (string, error) {
+func createDesignDoc(ctx context.Context, campaignRoot string, i *intent.Intent) (string, bool, error) {
 	if err := ctx.Err(); err != nil {
-		return "", camperrors.Wrap(err, "context cancelled before creating design doc")
+		return "", false, camperrors.Wrap(err, "context cancelled before creating design doc")
 	}
 
 	slug := intent.GenerateSlug(i.Title)
 	if slug == "" {
-		return "", camperrors.New("could not generate slug from intent title")
+		return "", false, camperrors.New("could not generate slug from intent title")
 	}
 
 	dirName := slug
@@ -188,7 +199,7 @@ func createDesignDoc(ctx context.Context, campaignRoot string, i *intent.Intent)
 	absDir := filepath.Join(campaignRoot, relDir)
 
 	if err := os.MkdirAll(absDir, 0755); err != nil {
-		return "", camperrors.Wrap(err, "creating design directory")
+		return "", false, camperrors.Wrap(err, "creating design directory")
 	}
 
 	// Build README content from intent.
@@ -211,16 +222,35 @@ func createDesignDoc(ctx context.Context, campaignRoot string, i *intent.Intent)
 	readmePath := filepath.Join(absDir, "README.md")
 	if _, err := os.Stat(readmePath); err == nil {
 		// Do not overwrite an existing design doc.
-		return relDir, nil
+		return relDir, false, nil
 	} else if !os.IsNotExist(err) {
-		return "", camperrors.Wrap(err, "checking design README")
+		return "", false, camperrors.Wrap(err, "checking design README")
 	}
 
 	if err := os.WriteFile(readmePath, []byte(content.String()), 0644); err != nil {
-		return "", camperrors.Wrap(err, "writing design README")
+		return "", false, camperrors.Wrap(err, "writing design README")
 	}
 
-	return relDir, nil
+	return relDir, true, nil
+}
+
+func rollbackIntentToReady(ctx context.Context, svc *intent.IntentService, id string) error {
+	_, err := svc.Move(ctx, id, intent.StatusReady)
+	return err
+}
+
+func removeCreatedDesignDoc(campaignRoot, relDir string) error {
+	if relDir == "" {
+		return nil
+	}
+
+	absDir := filepath.Clean(filepath.Join(campaignRoot, relDir))
+	designRoot := filepath.Clean(filepath.Join(campaignRoot, "workflow", "design"))
+	prefix := designRoot + string(os.PathSeparator)
+	if absDir != designRoot && !strings.HasPrefix(absDir, prefix) {
+		return camperrors.New("refusing to remove path outside workflow/design")
+	}
+	return os.RemoveAll(absDir)
 }
 
 // intentIDTimestampSuffix extracts the trailing YYYYMMDD-HHMMSS timestamp from

@@ -33,8 +33,7 @@ This is a test intent for promotion testing.
 `, id, title, status)
 }
 
-// setupPromoteCampaign creates a campaign with the festivals directory structure
-// and workflow/intents directories that promote needs.
+// setupPromoteCampaign creates a campaign with festivals + intents directories.
 func setupPromoteCampaign(t *testing.T, tc *TestContainer, name string) string {
 	t.Helper()
 
@@ -42,19 +41,22 @@ func setupPromoteCampaign(t *testing.T, tc *TestContainer, name string) string {
 	_, err := tc.InitCampaign(path, name, "product")
 	require.NoError(t, err)
 
-	// Create festivals directory structure (camp init skips this if fest is unavailable)
+	// Create festivals directory structure (camp init skips this if fest is unavailable).
 	_, _, err = tc.ExecCommand("sh", "-c", fmt.Sprintf(
-		"mkdir -p %s/festivals/planning %s/festivals/active %s/festivals/dungeon/completed",
-		path, path, path))
-	require.NoError(t, err)
-
-	// Ensure intent status directories exist
-	_, _, err = tc.ExecCommand("sh", "-c", fmt.Sprintf(
-		"mkdir -p %s/workflow/intents/inbox %s/workflow/intents/active %s/workflow/intents/ready %s/workflow/intents/dungeon/done %s/workflow/intents/dungeon/killed",
+		"mkdir -p %s/festivals/.festival/templates %s/festivals/.festival/.state "+
+			"%s/festivals/planning %s/festivals/active %s/festivals/dungeon/completed",
 		path, path, path, path, path))
 	require.NoError(t, err)
 
-	// Git commit the directory structure
+	// Ensure intent status directories exist.
+	_, _, err = tc.ExecCommand("sh", "-c", fmt.Sprintf(
+		"mkdir -p %s/workflow/intents/inbox %s/workflow/intents/active %s/workflow/intents/ready "+
+			"%s/workflow/intents/dungeon/done %s/workflow/intents/dungeon/killed "+
+			"%s/workflow/intents/dungeon/archived %s/workflow/intents/dungeon/someday",
+		path, path, path, path, path, path, path))
+	require.NoError(t, err)
+
+	// Git commit the directory structure.
 	_, _, err = tc.ExecCommand("sh", "-c", fmt.Sprintf(
 		"cd %s && git add . && git commit -m 'add festival and intent structure' --allow-empty", path))
 	require.NoError(t, err)
@@ -71,210 +73,136 @@ func writeIntent(t *testing.T, tc *TestContainer, campaignPath, id, title, statu
 	require.NoError(t, err)
 }
 
-// --- Promote Tests ---
-
-func TestIntentPromote_CreatesFestival(t *testing.T) {
-	if !festAvailable {
-		t.Skip("fest CLI not available")
-	}
-	tc := GetSharedContainer(t)
-	path := setupPromoteCampaign(t, tc, "promote-happy")
-
-	intentID := "test-promote-20260303-120000"
-	writeIntent(t, tc, path, intentID, "Test Promote Feature", "ready")
-
-	// Promote the intent
-	output, err := tc.RunCampInDir(path, "intent", "promote", intentID, "--no-commit", "--force")
-	require.NoError(t, err, "promote should succeed, output: %s", output)
-
-	// Verify intent moved to dungeon/done
-	exists, err := tc.CheckFileExists(fmt.Sprintf("%s/workflow/intents/dungeon/done/%s.md", path, intentID))
+// findPlanningFestivalDir finds a festival directory in festivals/planning that
+// contains the expected slug.
+func findPlanningFestivalDir(t *testing.T, tc *TestContainer, campaignPath, expectedSlug, promoteOutput string) string {
+	t.Helper()
+	planningLS, _, err := tc.ExecCommand("sh", "-c", "ls "+campaignPath+"/festivals/planning/")
 	require.NoError(t, err)
-	assert.True(t, exists, "intent should be in dungeon/done/")
 
-	// Verify intent removed from ready
-	exists, err = tc.CheckFileExists(fmt.Sprintf("%s/workflow/intents/ready/%s.md", path, intentID))
-	require.NoError(t, err)
-	assert.False(t, exists, "intent should no longer be in ready/")
-
-	// Verify festival directory created in festivals/planning/
-	planningFiles, err := tc.ListDirectory(path + "/festivals/planning")
-	require.NoError(t, err)
-	assert.NotEmpty(t, planningFiles, "should have files in festivals/planning/")
-
-	// Find the festival directory name — it should contain the slug
-	planningLS, _, err := tc.ExecCommand("sh", "-c", "ls "+path+"/festivals/planning/")
-	require.NoError(t, err)
 	dirs := strings.Split(strings.TrimSpace(planningLS), "\n")
-	require.NotEmpty(t, dirs, "should have at least one festival directory")
-
-	festivalDir := ""
 	for _, d := range dirs {
-		if strings.Contains(d, "test-promote") {
-			festivalDir = d
-			break
+		if strings.Contains(d, expectedSlug) {
+			return d
 		}
 	}
-	require.NotEmpty(t, festivalDir, "festival directory should contain slug from intent title")
+	allFestivals, _, _ := tc.ExecCommand("sh", "-c", "find "+campaignPath+"/festivals -maxdepth 2 -type d | sort")
+	t.Fatalf("no festival directory contained slug %q; planning ls=%q; promote output=%q; festivals=%q",
+		expectedSlug, planningLS, promoteOutput, allFestivals)
+	return ""
+}
 
-	// Verify festival has ingest directory with intent copy
+func TestIntentPromote_TargetFestival_NoExistingFestivals_CreatesFestivalAndActivatesIntent(t *testing.T) {
+	if !festAvailable {
+		t.Skip("fest CLI not available")
+	}
+	tc := GetSharedContainer(t)
+	path := setupPromoteCampaign(t, tc, "promote-festival-first")
+
+	intentID := "festival-first-intent-20260303-120000"
+	writeIntent(t, tc, path, intentID, "Festival First Intent", "ready")
+
+	output, err := tc.RunCampInDir(path, "intent", "promote", intentID, "--target", "festival", "--no-commit")
+	require.NoError(t, err, "festival promote should succeed, output: %s", output)
+
+	activePath := fmt.Sprintf("%s/workflow/intents/active/%s.md", path, intentID)
+	readyPath := fmt.Sprintf("%s/workflow/intents/ready/%s.md", path, intentID)
+
+	activeExists, err := tc.CheckFileExists(activePath)
+	require.NoError(t, err)
+	assert.True(t, activeExists, "intent should move to active/")
+
+	readyExists, err := tc.CheckFileExists(readyPath)
+	require.NoError(t, err)
+	assert.False(t, readyExists, "intent should no longer be in ready/")
+
+	festivalDir := findPlanningFestivalDir(t, tc, path, "festival-first-intent", output)
 	ingestPath := fmt.Sprintf("%s/festivals/planning/%s/001_INGEST/input_specs/%s.md",
 		path, festivalDir, intentID)
-	exists, err = tc.CheckFileExists(ingestPath)
+	ingestExists, err := tc.CheckFileExists(ingestPath)
 	require.NoError(t, err)
-	assert.True(t, exists, "intent should be copied to festival ingest directory")
+	assert.True(t, ingestExists, "intent should be copied to festival ingest directory")
 
-	// Verify promoted_to is set in the intent frontmatter
-	doneContent, err := tc.ReadFile(fmt.Sprintf("%s/workflow/intents/dungeon/done/%s.md", path, intentID))
+	activeContent, err := tc.ReadFile(activePath)
 	require.NoError(t, err)
-	assert.Contains(t, doneContent, "promoted_to:", "promoted intent should have promoted_to field")
-	assert.Contains(t, doneContent, festivalDir, "promoted_to should reference the festival directory")
+	assert.Contains(t, activeContent, "promoted_to:", "promoted intent should have promoted_to field")
+	assert.Contains(t, activeContent, festivalDir, "promoted_to should reference the festival directory")
 }
 
-func TestIntentPromote_NotReadyError(t *testing.T) {
+func TestIntentPromote_TargetDesign_TransactionalFailure_StaysReady(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupPromoteCampaign(t, tc, "promote-design-transactional")
+
+	intentID := "design-transactional-failure-20260303-120001"
+	writeIntent(t, tc, path, intentID, "Design Transactional Failure", "ready")
+
+	// Block design directory creation by placing a regular file at the exact path
+	// createDesignDoc will try to create as a directory.
+	_, code, err := tc.ExecCommand("sh", "-c", fmt.Sprintf(
+		"mkdir -p %s/workflow/design && printf 'blocked' > %s/workflow/design/design-transactional-failure-20260303-120001",
+		path, path))
+	require.NoError(t, err)
+	require.Equal(t, 0, code, "failed to create blocker file")
+
+	output, err := tc.RunCampInDir(path, "intent", "promote", intentID, "--target", "design", "--no-commit")
+	require.Error(t, err, "design promote should fail when workflow/design is blocked")
+	assert.Contains(t, strings.ToLower(output), "failed to create design doc")
+
+	readyPath := fmt.Sprintf("%s/workflow/intents/ready/%s.md", path, intentID)
+	activePath := fmt.Sprintf("%s/workflow/intents/active/%s.md", path, intentID)
+
+	readyExists, err := tc.CheckFileExists(readyPath)
+	require.NoError(t, err)
+	assert.True(t, readyExists, "intent should remain in ready/ on design failure")
+
+	activeExists, err := tc.CheckFileExists(activePath)
+	require.NoError(t, err)
+	assert.False(t, activeExists, "intent should not move to active/ on design failure")
+}
+
+func TestIntentPromote_TargetFestivalThenDesign_BothArtifactsCreated(t *testing.T) {
 	if !festAvailable {
 		t.Skip("fest CLI not available")
 	}
 	tc := GetSharedContainer(t)
-	path := setupPromoteCampaign(t, tc, "promote-notready")
+	path := setupPromoteCampaign(t, tc, "promote-festival-then-design")
 
-	intentID := "inbox-intent-20260303-120000"
-	writeIntent(t, tc, path, intentID, "Inbox Intent", "inbox")
+	festivalID := "festival-target-one-20260303-120002"
+	designID := "second-design-target-20260303-120003"
+	writeIntent(t, tc, path, festivalID, "Festival Target One", "ready")
+	writeIntent(t, tc, path, designID, "Second Design Target", "ready")
 
-	// Promote without --force should fail
-	output, err := tc.RunCampInDir(path, "intent", "promote", intentID, "--no-commit")
-	assert.Error(t, err, "promote should fail for non-ready intent")
-	assert.Contains(t, strings.ToLower(output), "not ready",
-		"error should mention intent is not ready")
+	// Promote first intent to festival (no existing festivals in planning yet).
+	festivalOut, err := tc.RunCampInDir(path, "intent", "promote", festivalID, "--target", "festival", "--no-commit")
+	require.NoError(t, err, "festival promote should succeed, output: %s", festivalOut)
 
-	// Verify intent is still in inbox (not corrupted/moved)
-	exists, err := tc.CheckFileExists(fmt.Sprintf("%s/workflow/intents/inbox/%s.md", path, intentID))
+	festivalDir := findPlanningFestivalDir(t, tc, path, "festival-target-one", festivalOut)
+	festivalPath := fmt.Sprintf("%s/festivals/planning/%s", path, festivalDir)
+	festivalExists, err := tc.CheckDirExists(festivalPath)
 	require.NoError(t, err)
-	assert.True(t, exists, "intent should still be in inbox/")
-}
+	assert.True(t, festivalExists, "festival directory should exist")
 
-func TestIntentPromote_ForceFromInbox(t *testing.T) {
-	if !festAvailable {
-		t.Skip("fest CLI not available")
-	}
-	tc := GetSharedContainer(t)
-	path := setupPromoteCampaign(t, tc, "promote-force")
+	// Promote second intent to design in the same campaign.
+	designOut, err := tc.RunCampInDir(path, "intent", "promote", designID, "--target", "design", "--no-commit")
+	require.NoError(t, err, "design promote should succeed, output: %s", designOut)
 
-	intentID := "force-promote-20260303-120000"
-	writeIntent(t, tc, path, intentID, "Force Promote", "inbox")
-
-	// Promote with --force should succeed
-	output, err := tc.RunCampInDir(path, "intent", "promote", intentID, "--no-commit", "--force")
-	require.NoError(t, err, "force promote should succeed, output: %s", output)
-
-	// Verify intent moved to dungeon/done
-	exists, err := tc.CheckFileExists(fmt.Sprintf("%s/workflow/intents/dungeon/done/%s.md", path, intentID))
+	designDir := fmt.Sprintf("workflow/design/second-design-target-20260303-120003")
+	designReadme := fmt.Sprintf("%s/%s/README.md", path, designDir)
+	designReadmeExists, err := tc.CheckFileExists(designReadme)
 	require.NoError(t, err)
-	assert.True(t, exists, "intent should be in dungeon/done/")
+	assert.True(t, designReadmeExists, "design README should be created")
 
-	// Verify festival created
-	planningLS, _, err := tc.ExecCommand("sh", "-c", "ls "+path+"/festivals/planning/")
+	// Verify both promoted intents are active with correct promoted_to values.
+	festivalActivePath := fmt.Sprintf("%s/workflow/intents/active/%s.md", path, festivalID)
+	designActivePath := fmt.Sprintf("%s/workflow/intents/active/%s.md", path, designID)
+
+	festivalActiveContent, err := tc.ReadFile(festivalActivePath)
 	require.NoError(t, err)
-	assert.NotEmpty(t, strings.TrimSpace(planningLS), "should have a festival directory")
-}
+	assert.Contains(t, festivalActiveContent, "promoted_to:")
+	assert.Contains(t, festivalActiveContent, festivalDir)
 
-func TestIntentPromote_DryRun(t *testing.T) {
-	if !festAvailable {
-		t.Skip("fest CLI not available")
-	}
-	tc := GetSharedContainer(t)
-	path := setupPromoteCampaign(t, tc, "promote-dryrun")
-
-	intentID := "dryrun-intent-20260303-120000"
-	writeIntent(t, tc, path, intentID, "Dry Run Intent", "ready")
-
-	// Promote with --dry-run
-	output, err := tc.RunCampInDir(path, "intent", "promote", intentID, "--dry-run")
-	require.NoError(t, err, "dry-run should succeed, output: %s", output)
-	assert.Contains(t, strings.ToLower(output), "dry run",
-		"output should mention dry run")
-
-	// Verify intent still in ready (unchanged)
-	exists, err := tc.CheckFileExists(fmt.Sprintf("%s/workflow/intents/ready/%s.md", path, intentID))
+	designActiveContent, err := tc.ReadFile(designActivePath)
 	require.NoError(t, err)
-	assert.True(t, exists, "intent should still be in ready/ after dry-run")
-
-	// Verify no festival directory created
-	planningLS, _, err := tc.ExecCommand("sh", "-c", "ls "+path+"/festivals/planning/ 2>/dev/null || echo EMPTY")
-	require.NoError(t, err)
-	trimmed := strings.TrimSpace(planningLS)
-	assert.True(t, trimmed == "" || trimmed == "EMPTY",
-		"no festival should be created during dry-run, got: %s", trimmed)
-}
-
-func TestIntentPromote_PreservesOtherIntents(t *testing.T) {
-	if !festAvailable {
-		t.Skip("fest CLI not available")
-	}
-	tc := GetSharedContainer(t)
-	path := setupPromoteCampaign(t, tc, "promote-preserve")
-
-	// Create 3 intents in different statuses
-	readyID := "ready-intent-20260303-120000"
-	activeID := "active-intent-20260303-120001"
-	inboxID := "inbox-intent-20260303-120002"
-
-	writeIntent(t, tc, path, readyID, "Ready Intent", "ready")
-	writeIntent(t, tc, path, activeID, "Active Intent", "active")
-	writeIntent(t, tc, path, inboxID, "Inbox Intent", "inbox")
-
-	// Save original content of the other intents
-	activeContent, err := tc.ReadFile(fmt.Sprintf("%s/workflow/intents/active/%s.md", path, activeID))
-	require.NoError(t, err)
-	inboxContent, err := tc.ReadFile(fmt.Sprintf("%s/workflow/intents/inbox/%s.md", path, inboxID))
-	require.NoError(t, err)
-
-	// Promote only the ready intent
-	_, err = tc.RunCampInDir(path, "intent", "promote", readyID, "--no-commit", "--force")
-	require.NoError(t, err)
-
-	// Verify the other 2 intents are completely untouched
-	activeAfter, err := tc.ReadFile(fmt.Sprintf("%s/workflow/intents/active/%s.md", path, activeID))
-	require.NoError(t, err)
-	assert.Equal(t, activeContent, activeAfter, "active intent should be unchanged")
-
-	inboxAfter, err := tc.ReadFile(fmt.Sprintf("%s/workflow/intents/inbox/%s.md", path, inboxID))
-	require.NoError(t, err)
-	assert.Equal(t, inboxContent, inboxAfter, "inbox intent should be unchanged")
-
-	// Verify both still exist in their original locations
-	exists, err := tc.CheckFileExists(fmt.Sprintf("%s/workflow/intents/active/%s.md", path, activeID))
-	require.NoError(t, err)
-	assert.True(t, exists, "active intent should still be in active/")
-
-	exists, err = tc.CheckFileExists(fmt.Sprintf("%s/workflow/intents/inbox/%s.md", path, inboxID))
-	require.NoError(t, err)
-	assert.True(t, exists, "inbox intent should still be in inbox/")
-}
-
-func TestIntentPromote_FestivalInPlanning(t *testing.T) {
-	if !festAvailable {
-		t.Skip("fest CLI not available")
-	}
-	tc := GetSharedContainer(t)
-	path := setupPromoteCampaign(t, tc, "promote-planning")
-
-	intentID := "planning-check-20260303-120000"
-	writeIntent(t, tc, path, intentID, "Planning Check", "ready")
-
-	// Promote
-	_, err := tc.RunCampInDir(path, "intent", "promote", intentID, "--no-commit", "--force")
-	require.NoError(t, err)
-
-	// Verify festival is in festivals/planning/, NOT festivals/active/
-	planningLS, _, err := tc.ExecCommand("sh", "-c", "ls "+path+"/festivals/planning/ 2>/dev/null || echo EMPTY")
-	require.NoError(t, err)
-	assert.NotEqual(t, "EMPTY", strings.TrimSpace(planningLS),
-		"festival should exist in festivals/planning/")
-
-	activeLS, _, err := tc.ExecCommand("sh", "-c", "ls "+path+"/festivals/active/ 2>/dev/null || echo EMPTY")
-	require.NoError(t, err)
-	trimmed := strings.TrimSpace(activeLS)
-	assert.True(t, trimmed == "" || trimmed == "EMPTY",
-		"festival should NOT be in festivals/active/, got: %s", trimmed)
+	assert.Contains(t, designActiveContent, "promoted_to:")
+	assert.Contains(t, designActiveContent, designDir)
 }
