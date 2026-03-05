@@ -168,6 +168,32 @@ func StageAll(ctx context.Context, repoPath string) error {
 	return Stage(ctx, repoPath, nil)
 }
 
+// StageTrackedChanges stages modifications and deletions of already-tracked files
+// under the given paths, without adding new untracked files (git add -u).
+func StageTrackedChanges(ctx context.Context, repoPath string, paths ...string) error {
+	if len(paths) == 0 {
+		return nil
+	}
+	cfg := DefaultRetryConfig()
+	cfg.OperationName = "stage-tracked"
+
+	return WithLockRetry(ctx, repoPath, cfg, func() error {
+		args := []string{"-C", repoPath, "add", "-u", "--"}
+		args = append(args, paths...)
+
+		cmd := exec.CommandContext(ctx, "git", args...)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			errType := ClassifyGitError(string(output), cmd.ProcessState.ExitCode())
+			if errType == GitErrorLock {
+				return &LockError{Path: "index.lock", Err: err}
+			}
+			return camperrors.NewGit("add -u", "", errType.String(), strings.TrimSpace(string(output)), err)
+		}
+		return nil
+	})
+}
+
 // StageFiles stages specific files.
 func StageFiles(ctx context.Context, repoPath string, files ...string) error {
 	if len(files) == 0 {
