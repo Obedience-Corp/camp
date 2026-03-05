@@ -417,6 +417,59 @@ func TestComputeRepairPlan_MissingFiles(t *testing.T) {
 	}
 }
 
+func TestRepairInit_RestoresMissingSkillFiles(t *testing.T) {
+	ctx := context.Background()
+
+	// Create a campaign, then delete skill files to simulate drift.
+	dir := t.TempDir()
+	if _, err := Init(ctx, dir, InitOptions{Name: "test", Type: config.CampaignTypeProduct}); err != nil {
+		t.Fatal(err)
+	}
+
+	removed := []string{
+		filepath.Join(dir, ".campaign", "skills", "camp-navigation", "SKILL.md"),
+		filepath.Join(dir, ".campaign", "skills", "references", "camp-command-contracts.md"),
+	}
+	for _, path := range removed {
+		if err := os.Remove(path); err != nil {
+			t.Fatalf("os.Remove(%q) error: %v", path, err)
+		}
+	}
+
+	plan, err := ComputeRepairPlan(ctx, dir, InitOptions{Name: "test", Type: config.CampaignTypeProduct, Repair: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found := map[string]bool{}
+	for _, c := range plan.Changes {
+		if c.Type == RepairAdd {
+			found[c.Key] = true
+		}
+	}
+	if !found[".campaign/skills/camp-navigation/SKILL.md"] {
+		t.Error("expected missing skill file to be flagged for creation")
+	}
+	if !found[".campaign/skills/references/camp-command-contracts.md"] {
+		t.Error("expected missing shared reference file to be flagged for creation")
+	}
+
+	if _, err := Init(ctx, dir, InitOptions{
+		Name:       "test",
+		Type:       config.CampaignTypeProduct,
+		Repair:     true,
+		RepairPlan: plan,
+	}); err != nil {
+		t.Fatalf("Init() repair error: %v", err)
+	}
+
+	for _, path := range removed {
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			t.Errorf("expected repaired file to exist: %s", path)
+		}
+	}
+}
+
 func TestRepairInit_PreservesUserShortcuts(t *testing.T) {
 	ctx := context.Background()
 

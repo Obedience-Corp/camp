@@ -47,6 +47,20 @@ func TestInit(t *testing.T) {
 		}
 	}
 
+	// Check key skill files were scaffolded
+	expectedSkillFiles := []string{
+		".campaign/skills/camp-navigation/SKILL.md",
+		".campaign/skills/campaign-commit/SKILL.md",
+		".campaign/skills/references/camp-command-contracts.md",
+		".campaign/skills/references/fest-command-contracts.md",
+	}
+	for _, relPath := range expectedSkillFiles {
+		path := filepath.Join(campaignDir, relPath)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			t.Errorf("skill file %s was not created", relPath)
+		}
+	}
+
 	// Check campaign.yaml was created
 	configPath := config.CampaignConfigPath(campaignDir)
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {

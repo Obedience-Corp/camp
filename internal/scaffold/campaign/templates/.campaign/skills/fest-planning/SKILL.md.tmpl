@@ -1,122 +1,115 @@
 ---
 name: fest-planning
-description: Create and structure festivals using fest CLI - learn the methodology, create festivals/phases/sequences/tasks, link to projects, navigate with fgo, promote through lifecycle. Use when planning new work or setting up festival structure.
+description: Plan and scaffold festivals. Use when creating festival/phase/sequence/task structure, enforcing naming rules, linking festivals to projects, and promoting lifecycle states.
 ---
 
 # Festival Planning
 
-Festivals are structured project plans with a 3-level hierarchy: Phases > Sequences > Tasks. The fest CLI manages their creation, validation, and lifecycle.
+Read shared contracts first: `../references/fest-command-contracts.md`.
 
-## First Step: Learn the Methodology
-
-Before creating anything, run:
+## Start Here
 
 ```bash
-fest understand methodology    # Core principles
-fest understand structure      # 3-level hierarchy explained
-fest understand tasks          # When and how to create task files
-fest understand rules          # Naming conventions (required for automation)
-fest understand checklist      # Quick validation checklist
+fest understand methodology
+fest understand structure
+fest understand tasks
+fest understand rules
+fest types festival
 ```
 
-See [references/understand-topics.md](references/understand-topics.md) for the full topic index.
+Topic index: `references/understand-topics.md`.
 
-## Shell Setup
+`fest types` is low-frequency but high-value: use it at festival setup time or whenever type choice is unclear.
 
-Enable the `fgo` navigation function:
+## Naming Rules (Automation-Critical)
+
+- Phase dir: `NNN_UPPER_CASE/` (example `001_IMPLEMENT/`)
+- Sequence dir: `NN_lower_snake_case/` (example `01_auth_module/`)
+- Task file: `NN_lower_snake_case.md` (example `01_create_handler.md`)
+
+Every sequence should include `SEQUENCE_GOAL.md`.
+
+## Festival Types (Choose Before Scaffolding)
+
+Use `fest types festival` / `fest types festival show <type>` as source of truth for your workspace.
+
+- `standard`: balanced default, use when work needs ingest + planning before implementation.
+- `implementation`: execution-only, use when specs/plan already exist and coding can start directly.
+- `research`: investigation-heavy, use when decisions depend on comparative analysis and synthesis.
+- `ritual`: recurring/custom pattern, use for repeatable non-standard workflows.
+
+Create with explicit type:
 
 ```bash
-# Add to ~/.zshrc or ~/.bashrc
-eval "$(fest shell-init zsh)"    # or bash/fish
+fest create festival --type standard --name <name>
+fest create festival --type implementation --name <name>
+fest create festival --type research --name <name>
+fest create festival --type ritual --name <name> --dest ritual
 ```
 
-`fgo` toggles between the festival directory and its linked project directory. `fgo <name>` jumps to a specific festival.
+## Phase Types (Choose by Work Shape)
 
-## Creating Festivals
+- `planning`: workflow phase for architecture/decision-making (`WORKFLOW.md`, no numbered sequences).
+- `research`: workflow phase for investigation and findings (`WORKFLOW.md`, sources/findings).
+- `ingest`: workflow phase for normalizing incoming context/specs (`WORKFLOW.md`, input/output specs).
+- `implementation`: sequence-driven coding phase (numbered sequences/tasks, quality gates).
+- `review`: freeform acceptance/signoff phase (goal-driven, not task-heavy).
+- `non_coding_action`: freeform operational actions (coordination, rollout, non-code tasks).
 
-### Interactive Creation (TUI)
+Create with explicit phase type:
 
 ```bash
-fest create festival             # Create a new festival
-fest create phase                # Add a phase to current festival
-fest create sequence             # Add a sequence to current phase
-fest create task                 # Add a task to current sequence
+fest create phase --name "001_IMPLEMENT" --type implementation
+fest create phase --name "002_RESEARCH" --type research
 ```
 
-### Scaffolding from Type
+## Create / Promote
 
 ```bash
-fest types                       # Discover available types
-fest scaffold                    # Auto-generate structure based on type
+fest create festival
+fest create phase
+fest create sequence
+fest create task
+
+fest promote
+fest validate
 ```
 
-### Naming Conventions
-
-Festivals follow strict naming rules for automation:
-
-- Phases: `NNN_PHASE_NAME/` (e.g., `001_IMPLEMENT/`)
-- Sequences: `NN_sequence_name/` (e.g., `01_auth_module/`)
-- Tasks: `NN_task_description.md` (e.g., `01_create_auth_handler.md`)
-
-Run `fest rules` to see the full naming rules for the current festival.
-
-## Linking Festivals to Projects
-
-Connect a festival to its working directory:
+## Link + FGO Navigation (Required for Project-Context Execution)
 
 ```bash
-fest link                        # Link current festival to a project (interactive)
-fest link --project projects/camp    # Link to specific project
-fest links                       # List all active links
-fest unlink                      # Remove link
+# In festival directory
+fest link [path]
+fest link --show
+fest links
+fest unlink
+
+# Shell helper after `eval "$(fest shell-init zsh)"`
+fgo
+fgo project
+fgo fest
 ```
 
-Links enable:
-- `fgo` toggling between festival and project
-- `fest context` to show both festival and project state
-- `fest commit` to create commits with festival references
+If the working project directory changes (new worktree, moved repo, different checkout), rerun `fest link` so `fgo`, `fest next`, and `fest commit` resolve correctly from the project path.
 
-## Navigation
+## Type and Scaffolding
 
 ```bash
-fgo                              # Toggle between festival and linked project
-fgo my-festival                  # Jump to a specific festival
-fest go                          # Navigate to festivals root
-fest go <location>               # Navigate to specific phase/sequence
+fest types list
+fest types show <type-name>
 ```
 
-## Festival Lifecycle
-
-Festivals progress through statuses:
-
-```
-planning → ready → active → completed
-                      ↘ archived
-                      ↘ someday
-```
+Advanced generation path (not the default planning entrypoint):
 
 ```bash
-fest promote                     # Move festival to next lifecycle status
-fest list                        # List festivals by status
-fest list --status active        # Filter by status
-```
-
-## Review and Validate
-
-Review festival structure and validate before execution:
-
-```bash
-fest show --roadmap              # Full execution roadmap with task statuses
-fest show --inprogress           # Focus on in-progress work only
-fest show --goals                # Show goals for phases and sequences
-fest validate                    # Check structure compliance
-fest validate --fix              # Auto-fix common issues
+fest scaffold from-plan --plan STRUCTURE.md --name my-festival
 ```
 
 ## Common Mistakes
 
-- Not running `fest understand` first - leads to wrong structure and naming
-- Wrong naming conventions - automation depends on the `NNN_` and `NN_` prefixes
-- Creating tasks without sequence goals - every sequence needs a SEQUENCE_GOAL.md
-- Forgetting to link festival to project - `fgo` toggle won't work
-- Skipping validation - `fest validate` catches issues early
+- Using `fest link --project ...` (invalid).
+- Assuming an old link still works after changing project directory location.
+- Picking `implementation` type when requirements are still unclear (should be `standard` or `research` first).
+- Using workflow phase types when you need numbered implementation task execution.
+- Using noncompliant naming patterns (`P1-...`, `S1-...`, `T1-...`).
+- Treating `fest scaffold` base command as if it performs generation by itself.

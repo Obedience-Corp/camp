@@ -1,83 +1,37 @@
 ---
 name: camp-navigation
-description: Navigate campaign workspaces using cgo shell function, camp go, and shortcuts. Use when you need to move between projects, festivals, workflow directories, or any campaign location.
+description: Navigate campaign workspaces with `cgo` and `camp go`. Use when you need to move between projects/festivals/workflow directories, switch context quickly, or resolve script-safe paths with `camp go --print`.
 ---
 
 # Campaign Navigation
 
-Camp provides fast navigation across multi-project workspaces through shell functions, shortcuts, and fuzzy finding.
+Use `cgo` for interactive directory changes and `camp go --print` for scripts.
 
-## Shell Setup
-
-The `cgo` shell function requires shell initialization:
+## Primary Commands
 
 ```bash
-# Add to ~/.zshrc or ~/.bashrc
-eval "$(camp shell-init zsh)"    # or bash/fish
+cgo                  # toggle campaign root <-> last location
+cgo p                # projects/
+cgo f                # festivals/
+cgo i                # workflow/intents/
+cgo cr               # workflow/code_reviews/
+cgo p camp           # projects/camp/
 ```
-
-Without this, `cgo` won't be available. `camp go` works without shell init but cannot change your shell's working directory.
-
-## cgo - Primary Navigation
-
-`cgo` is a shell function that changes your working directory using campaign concepts and shortcuts.
 
 ```bash
-cgo                   # Navigate to campaign root
-cgo p                 # Navigate to projects/
-cgo f                 # Navigate to festivals/
-cgo i                 # Navigate to workflow/intents/
-cgo w                 # Navigate to workflow/
-cgo <shortcut>        # Navigate to any configured shortcut
-cgo p camp            # Navigate to projects/camp/ (concept + item)
-cgo p fest            # Navigate to projects/festival/
+camp go p --print
+camp go f --print
+cd "$(camp go p --print)"
 ```
 
-### Standard Shortcuts
+## Notes
 
-| Shortcut | Target | Purpose |
-|----------|--------|---------|
-| `p` | `projects/` | Project submodules |
-| `f` | `festivals/` | Festival planning |
-| `i` | `workflow/intents/` | Ideas and future work |
-| `w` | `workflow/` | Work management |
-| `wt` | `projects/worktrees/` | Git worktrees |
-| `a` | `ai_docs/` | AI-generated docs |
-| `d` | `docs/` | Human documentation |
-| `du` | `dungeon/` | Archived work |
-| `cr` | `workflow/code_reviews/` | Code reviews |
-| `de` | `workflow/design/` | Design documents |
-| `pi` | `workflow/pipelines/` | CI/CD pipelines |
-
-### Concept Drilling
-
-Some shortcuts support drilling into subdirectories:
-
-```bash
-cgo p                 # Lists projects, fuzzy-find to pick one
-cgo f                 # Lists festivals at any depth
-cgo w                 # Lists workflow subdirectories (1 level deep)
-```
-
-Depth is configurable per concept in `.campaign/campaign.yaml`.
-
-## camp go - Programmatic Navigation
-
-`camp go` outputs the target path without changing directory. Useful in scripts or when `cgo` isn't available:
-
-```bash
-camp go p             # Prints absolute path to projects/
-camp go f             # Prints absolute path to festivals/
-```
-
-## Shell Completions
-
-```bash
-camp completion zsh > ~/.zfunc/_camp    # Generate completions
-```
+- `cgo` requires shell init: `eval "$(camp shell-init zsh)"`.
+- `camp go` does not change shell directory by itself.
+- Shortcut source of truth: `camp shortcuts`.
 
 ## Common Mistakes
 
-- Using raw `cd projects/camp` instead of `cgo p camp` - works but doesn't track navigation
-- Forgetting `eval "$(camp shell-init zsh)"` in shell config - `cgo` won't exist
-- Using `camp go` expecting it to change directory - it only prints the path; use `cgo` instead
+- Expecting `camp go` to behave like `cd`.
+- Using raw path `cd` everywhere instead of campaign shortcuts.
+- Forgetting shell init and then assuming `cgo` is broken.
