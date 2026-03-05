@@ -179,7 +179,12 @@ func createDesignDoc(ctx context.Context, campaignRoot string, i *intent.Intent)
 		return "", camperrors.New("could not generate slug from intent title")
 	}
 
-	relDir := filepath.Join("workflow", "design", slug)
+	dirName := slug
+	if suffix := intentIDTimestampSuffix(i.ID); suffix != "" {
+		dirName = slug + "-" + suffix
+	}
+
+	relDir := filepath.Join("workflow", "design", dirName)
 	absDir := filepath.Join(campaignRoot, relDir)
 
 	if err := os.MkdirAll(absDir, 0755); err != nil {
@@ -204,11 +209,41 @@ func createDesignDoc(ctx context.Context, campaignRoot string, i *intent.Intent)
 	}
 
 	readmePath := filepath.Join(absDir, "README.md")
+	if _, err := os.Stat(readmePath); err == nil {
+		// Do not overwrite an existing design doc.
+		return relDir, nil
+	} else if !os.IsNotExist(err) {
+		return "", camperrors.Wrap(err, "checking design README")
+	}
+
 	if err := os.WriteFile(readmePath, []byte(content.String()), 0644); err != nil {
 		return "", camperrors.Wrap(err, "writing design README")
 	}
 
 	return relDir, nil
+}
+
+// intentIDTimestampSuffix extracts the trailing YYYYMMDD-HHMMSS timestamp from
+// a generated intent ID. Returns empty string when unavailable.
+func intentIDTimestampSuffix(id string) string {
+	const suffixLen = len("20060102-150405")
+	if len(id) < suffixLen {
+		return ""
+	}
+
+	suffix := id[len(id)-suffixLen:]
+	for i, ch := range suffix {
+		if i == 8 {
+			if ch != '-' {
+				return ""
+			}
+			continue
+		}
+		if ch < '0' || ch > '9' {
+			return ""
+		}
+	}
+	return suffix
 }
 
 // ValidTargetsForStatus returns the valid promote targets for a given status.

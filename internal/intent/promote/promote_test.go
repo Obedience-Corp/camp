@@ -135,6 +135,119 @@ func TestPromoteToDesignRequiresReadyWithoutForce(t *testing.T) {
 	}
 }
 
+func TestCreateDesignDoc_UsesUniqueDirectoryPerIntentID(t *testing.T) {
+	ctx := context.Background()
+	campaignRoot := t.TempDir()
+
+	first := &intent.Intent{
+		ID:      "design-api-request-signing-flow-20260304-120000",
+		Title:   "Design API request signing flow",
+		Content: "First design content.",
+	}
+	second := &intent.Intent{
+		ID:      "design-api-request-signing-flow-20260304-120001",
+		Title:   "Design API request signing flow",
+		Content: "Second design content.",
+	}
+
+	firstDir, err := createDesignDoc(ctx, campaignRoot, first)
+	if err != nil {
+		t.Fatalf("createDesignDoc(first) error = %v", err)
+	}
+	secondDir, err := createDesignDoc(ctx, campaignRoot, second)
+	if err != nil {
+		t.Fatalf("createDesignDoc(second) error = %v", err)
+	}
+
+	if firstDir == secondDir {
+		t.Fatalf("design directories should differ, both were %q", firstDir)
+	}
+
+	wantFirst := filepath.Join("workflow", "design", "design-api-request-signing-flow-20260304-120000")
+	wantSecond := filepath.Join("workflow", "design", "design-api-request-signing-flow-20260304-120001")
+	if firstDir != wantFirst {
+		t.Fatalf("firstDir = %q, want %q", firstDir, wantFirst)
+	}
+	if secondDir != wantSecond {
+		t.Fatalf("secondDir = %q, want %q", secondDir, wantSecond)
+	}
+}
+
+func TestCreateDesignDoc_DoesNotOverwriteExistingReadme(t *testing.T) {
+	ctx := context.Background()
+	campaignRoot := t.TempDir()
+
+	i := &intent.Intent{
+		ID:      "design-api-request-signing-flow-20260304-120000",
+		Title:   "Design API request signing flow",
+		Content: "Original design content.",
+	}
+
+	designDir, err := createDesignDoc(ctx, campaignRoot, i)
+	if err != nil {
+		t.Fatalf("createDesignDoc() error = %v", err)
+	}
+
+	readmePath := filepath.Join(campaignRoot, designDir, "README.md")
+	customContent := []byte("# Existing Design\n\nKeep this content.\n")
+	if err := os.WriteFile(readmePath, customContent, 0644); err != nil {
+		t.Fatalf("WriteFile(custom README) error = %v", err)
+	}
+
+	i.Content = "Changed content that should not overwrite."
+	designDir2, err := createDesignDoc(ctx, campaignRoot, i)
+	if err != nil {
+		t.Fatalf("createDesignDoc(second call) error = %v", err)
+	}
+	if designDir2 != designDir {
+		t.Fatalf("designDir2 = %q, want %q", designDir2, designDir)
+	}
+
+	gotContent, err := os.ReadFile(readmePath)
+	if err != nil {
+		t.Fatalf("ReadFile(README) error = %v", err)
+	}
+	if string(gotContent) != string(customContent) {
+		t.Fatalf("README was overwritten:\n got: %q\nwant: %q", string(gotContent), string(customContent))
+	}
+}
+
+func TestIntentIDTimestampSuffix(t *testing.T) {
+	tests := []struct {
+		name string
+		id   string
+		want string
+	}{
+		{
+			name: "valid generated id",
+			id:   "design-api-request-signing-flow-20260304-120000",
+			want: "20260304-120000",
+		},
+		{
+			name: "timestamp only id",
+			id:   "20260304-120000",
+			want: "20260304-120000",
+		},
+		{
+			name: "invalid suffix",
+			id:   "design-api-request-signing-flow-20260304-12ab00",
+			want: "",
+		},
+		{
+			name: "too short",
+			id:   "bad-id",
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		got := intentIDTimestampSuffix(tt.id)
+		if got != tt.want {
+			t.Fatalf("%s: intentIDTimestampSuffix(%q) = %q, want %q", tt.name, tt.id, got, tt.want)
+		}
+	}
+}
+
 func TestValidTargetsForStatus(t *testing.T) {
 	tests := []struct {
 		status intent.Status
@@ -158,4 +271,3 @@ func TestValidTargetsForStatus(t *testing.T) {
 		}
 	}
 }
-
