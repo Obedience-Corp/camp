@@ -27,4 +27,3 @@ func parseIntentStatus(raw string) (intent.Status, error) {
 		return "", fmt.Errorf("invalid status: %s (use inbox, ready, active, done, killed, archived, someday, or dungeon/<status>)", raw)
 	}
 }
-

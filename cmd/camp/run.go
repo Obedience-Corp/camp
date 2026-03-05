@@ -242,4 +242,3 @@ func executeCommand(ctx context.Context, cmdStr string, workDir string, extraArg
 
 	return nil
 }
-

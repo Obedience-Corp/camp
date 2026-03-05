@@ -44,4 +44,3 @@ func TestFilterStatuses_AcceptsShortAndCanonicalStatusFilters(t *testing.T) {
 		t.Fatalf("canonical status filter mismatch: %#v", canonicalFiltered)
 	}
 }
-

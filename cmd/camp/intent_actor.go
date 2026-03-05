@@ -14,4 +14,3 @@ func resolveIntentActor(ctx context.Context) string {
 	}
 	return actor
 }
-

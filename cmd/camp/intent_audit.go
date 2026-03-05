@@ -16,4 +16,3 @@ func appendIntentAuditEvent(ctx context.Context, intentsDir string, event audit.
 	}
 	return nil
 }
-
