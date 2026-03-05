@@ -13,7 +13,6 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/dungeon"
-	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
@@ -151,16 +150,13 @@ func commitCrawlChanges(ctx context.Context, cfg *config.CampaignConfig, campaig
 	}
 	relDungeon := filepath.Join(relCwd, "dungeon")
 
-	// For triage moves, stage tracked-file deletions in the parent directory.
-	// Uses -u flag so only already-tracked files are updated (no untracked additions),
-	// making it safe even when running from the campaign root.
-	if triage != nil && triage.HasMoves() {
-		if err := git.StageTrackedChanges(ctx, campaignRoot, relCwd); err != nil {
-			fmt.Printf("%s Warning: could not stage source deletions: %v\n", ui.InfoIcon(), err)
-		}
-	}
-
 	files := []string{relDungeon}
+
+	// For triage moves, include the parent directory so source deletions
+	// are covered by both git add and git commit --only.
+	if triage != nil && triage.HasMoves() {
+		files = append(files, relCwd)
+	}
 
 	result := commit.Crawl(ctx, commit.CrawlOptions{
 		Options: commit.Options{
