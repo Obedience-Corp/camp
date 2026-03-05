@@ -10,7 +10,7 @@ import (
 var typeFilterItems = []string{"All", "Idea", "Feature", "Bug", "Research", "Chore"}
 
 // statusFilterItems are the available status filter options.
-var statusFilterItems = []string{"All", "Inbox", "Active", "Ready", "Done", "Killed"}
+var statusFilterItems = []string{"All", "Inbox", "Ready", "Active", "Done", "Killed"}
 
 // applyFilters filters intents using search query and type filter.
 func (m *Model) applyFilters() {
@@ -56,13 +56,14 @@ func (m *Model) applyFilters() {
 		statusSelection := statusChip.SelectedValue()
 		if statusSelection != "All" && statusSelection != "" {
 			statusFiltered := make([]*intent.Intent, 0)
-			targetStatus := strings.ToLower(statusSelection)
-			for _, i := range filtered {
-				if string(i.Status) == targetStatus {
-					statusFiltered = append(statusFiltered, i)
+			if targetStatus, ok := statusSelectionToStatus(statusSelection); ok {
+				for _, i := range filtered {
+					if i.Status == targetStatus {
+						statusFiltered = append(statusFiltered, i)
+					}
 				}
+				filtered = statusFiltered
 			}
-			filtered = statusFiltered
 		}
 	}
 
@@ -113,4 +114,25 @@ func (m *Model) clearAllFilters() {
 	m.searchInput.SetValue("")
 	m.applyFilters()
 	m.statusMessage = "Filters cleared"
+}
+
+func statusSelectionToStatus(selection string) (intent.Status, bool) {
+	switch strings.ToLower(strings.TrimSpace(selection)) {
+	case "inbox":
+		return intent.StatusInbox, true
+	case "ready":
+		return intent.StatusReady, true
+	case "active":
+		return intent.StatusActive, true
+	case "done", "dungeon/done":
+		return intent.StatusDone, true
+	case "killed", "dungeon/killed":
+		return intent.StatusKilled, true
+	case "archived", "dungeon/archived":
+		return intent.StatusArchived, true
+	case "someday", "dungeon/someday":
+		return intent.StatusSomeday, true
+	default:
+		return "", false
+	}
 }

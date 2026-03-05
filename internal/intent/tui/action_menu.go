@@ -39,7 +39,7 @@ func NewActionMenu(i *intent.Intent) ActionMenu {
 		{Label: "Edit in editor", Action: "edit", Enabled: true},
 		{Label: "Move to status", Action: "move", Enabled: true},
 		{Label: "Gather with...", Action: "gather", Enabled: !i.Status.InDungeon()},
-		{Label: "Promote to Festival", Action: "promote", Enabled: i.Status == intent.StatusReady},
+		{Label: "Promote", Action: "promote", Enabled: !i.Status.InDungeon() && i.Status != intent.StatusActive},
 		{Label: "Archive", Action: "archive", Enabled: !i.Status.InDungeon()},
 		{Label: "Delete", Action: "delete", Enabled: true},
 	}

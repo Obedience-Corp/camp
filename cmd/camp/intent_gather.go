@@ -11,6 +11,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/intent"
+	"github.com/Obedience-Corp/camp/internal/intent/audit"
 	"github.com/Obedience-Corp/camp/internal/intent/gather"
 	"github.com/Obedience-Corp/camp/internal/paths"
 )
@@ -135,8 +136,12 @@ func runIntentGather(cmd *cobra.Command, args []string) error {
 
 	// Capture source file paths before gather potentially moves them.
 	sourcePaths := make([]string, 0, len(ids))
+	sourceStatusByID := make(map[string]intent.Status, len(ids))
 	for _, id := range ids {
 		src, getErr := intentSvc.Get(ctx, id)
+		if getErr == nil {
+			sourceStatusByID[id] = src.Status
+		}
 		if getErr == nil && src.Path != "" {
 			sourcePaths = append(sourcePaths, src.Path)
 		}
@@ -161,6 +166,32 @@ func runIntentGather(cmd *cobra.Command, args []string) error {
 	result, err := gatherSvc.Gather(ctx, ids, opts)
 	if err != nil {
 		return camperrors.Wrap(err, "gather failed")
+	}
+
+	if err := appendIntentAuditEvent(ctx, resolver.Intents(), audit.Event{
+		Type:  audit.EventGather,
+		ID:    result.Gathered.ID,
+		Title: result.Gathered.Title,
+		To:    string(result.Gathered.Status),
+	}); err != nil {
+		return err
+	}
+
+	if !gatherNoArchive && len(result.ArchivedSources) > 0 {
+		reason := gather.ArchiveReason(result.Gathered.ID, result.Gathered.Title)
+		for _, archived := range result.ArchivedSources {
+			from := sourceStatusByID[archived.ID]
+			if err := appendIntentAuditEvent(ctx, resolver.Intents(), audit.Event{
+				Type:   audit.EventArchive,
+				ID:     archived.ID,
+				Title:  archived.Title,
+				From:   string(from),
+				To:     string(intent.StatusArchived),
+				Reason: reason,
+			}); err != nil {
+				return err
+			}
+		}
 	}
 
 	// Output results
@@ -231,7 +262,7 @@ func discoverIntentsToGather(ctx context.Context, svc *gather.Service, intentSvc
 		return nil, fmt.Errorf("use only one discovery method: IDs, --tag, --hashtag, or --similar")
 	}
 
-	// By explicit IDs — filter out done/killed/archived intents
+	// By explicit IDs — filter out dungeon intents
 	if len(args) > 0 {
 		filtered := make([]string, 0, len(args))
 		for _, id := range args {

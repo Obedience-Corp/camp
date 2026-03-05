@@ -2,8 +2,11 @@ package intent
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
+	"strings"
+	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
@@ -28,6 +31,15 @@ func isCancelled(original, modified string) bool {
 		return true
 	}
 	return original == modified
+}
+
+// AppendDecisionRecord appends a decision record section to an intent's content.
+// This is used when moving intents to dungeon statuses to capture the reason.
+func AppendDecisionRecord(i *Intent, newStatus Status, reason string) {
+	date := time.Now().Format("2006-01-02")
+	record := fmt.Sprintf("\n\n## Decision Record\n**Status**: %s | **Date**: %s\n%s", newStatus, date, strings.TrimSpace(reason))
+	i.Content += record
+	i.UpdatedAt = time.Now()
 }
 
 // moveFile moves a file from src to dst, handling cross-device moves.

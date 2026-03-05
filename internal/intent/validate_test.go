@@ -42,11 +42,11 @@ func TestIntent_Validate(t *testing.T) {
 			wantErrs: 0,
 		},
 		{
-			name: "valid done intent with promoted_to",
+			name: "valid active intent with promoted_to",
 			intent: Intent{
 				ID:         "promoted-20260119-153412",
 				Title:      "Promoted Intent",
-				Status:     StatusDone,
+				Status:     StatusActive,
 				CreatedAt:  now,
 				PromotedTo: "FEST-123",
 			},
@@ -230,11 +230,11 @@ func TestIntent_Validate(t *testing.T) {
 
 		// Consistency validation
 		{
-			name: "promoted_to with status not done",
+			name: "promoted_to with status not active or dungeon",
 			intent: Intent{
 				ID:         "test-20260119-153412",
 				Title:      "Test Intent",
-				Status:     StatusActive,
+				Status:     StatusReady,
 				PromotedTo: "FEST-123",
 				CreatedAt:  now,
 			},
@@ -251,7 +251,7 @@ func TestIntent_Validate(t *testing.T) {
 				Status:     Status("bad"),
 				PromotedTo: "FEST-123", // invalid with bad status
 			},
-			wantErrs: 5, // invalid id, title too short, invalid status, created_at missing, promoted_to requires done
+			wantErrs: 5, // invalid id, title too short, invalid status, created_at missing, promoted_to requires active/dungeon
 		},
 	}
 
@@ -320,7 +320,7 @@ func TestIntent_IsValid(t *testing.T) {
 
 func TestIsValidStatus(t *testing.T) {
 	validStatuses := []Status{
-		StatusInbox, StatusActive, StatusReady, StatusDone, StatusKilled,
+		StatusInbox, StatusActive, StatusReady, StatusDone, StatusKilled, StatusArchived, StatusSomeday,
 	}
 
 	for _, s := range validStatuses {

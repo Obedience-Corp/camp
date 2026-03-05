@@ -47,7 +47,7 @@ type gatherFinishedMsg struct {
 	sourceCount   int
 }
 
-// promoteFinishedMsg is sent when promote-to-festival completes.
+// promoteFinishedMsg is sent when promotion completes (festival or design doc).
 type promoteFinishedMsg struct {
 	err             error
 	intentID        string
@@ -56,4 +56,5 @@ type promoteFinishedMsg struct {
 	festivalDir     string
 	festNotFound    bool
 	festivalCreated bool
+	designDir       string // Set when promoted to design doc
 }

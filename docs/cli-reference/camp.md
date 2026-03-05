@@ -47,6 +47,7 @@ camp [flags]
 * [camp clone](camp_clone.md)	 - Clone a campaign with full submodule setup
 * [camp commit](camp_commit.md)	 - Commit changes in the campaign root
 * [camp completion](camp_completion.md)	 - Generate the autocompletion script for the specified shell
+* [camp concepts](camp_concepts.md)	 - List configured concepts
 * [camp copy](camp_copy.md)	 - Copy a file or directory within the campaign
 * [camp date](camp_date.md)	 - Append date suffix to file or directory name
 * [camp doctor](camp_doctor.md)	 - Diagnose and fix campaign health issues
@@ -65,12 +66,14 @@ camp [flags]
 * [camp project](camp_project.md)	 - Manage campaign projects
 * [camp pull](camp_pull.md)	 - Pull latest changes from remote
 * [camp push](camp_push.md)	 - Push campaign changes to remote
+* [camp refs-sync](camp_refs-sync.md)	 - Sync submodule ref pointers in campaign root
 * [camp register](camp_register.md)	 - Register campaign in global registry
 * [camp registry](camp_registry.md)	 - Manage the campaign registry
 * [camp run](camp_run.md)	 - Execute command from campaign root, or just recipe in a project
 * [camp settings](camp_settings.md)	 - Manage camp configuration
 * [camp shell-init](camp_shell-init.md)	 - Output shell initialization code
 * [camp shortcuts](camp_shortcuts.md)	 - List all available shortcuts
+* [camp skills](camp_skills.md)	 - Manage campaign skill directory links
 * [camp status](camp_status.md)	 - Show git status of the campaign
 * [camp switch](camp_switch.md)	 - Switch to a different campaign
 * [camp sync](camp_sync.md)	 - Safely synchronize submodules

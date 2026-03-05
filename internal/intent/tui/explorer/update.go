@@ -36,6 +36,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateConceptFilter(msg)
 		}
 
+		if m.focus == focusPromoteTarget {
+			return m.updatePromoteTarget(msg)
+		}
+
+		if m.focus == focusDungeonReason {
+			return m.updateDungeonReason(msg)
+		}
+
 		if m.focus == focusMove {
 			return m.updateMove(msg)
 		}
@@ -216,8 +224,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case promoteFinishedMsg:
 		if msg.err != nil {
 			m.statusMessage = "Promote failed: " + msg.err.Error()
+		} else if msg.designDir != "" {
+			m.statusMessage = fmt.Sprintf("Promoted '%s' → design doc '%s'", msg.intentTitle, msg.designDir)
 		} else if msg.festNotFound {
-			m.statusMessage = fmt.Sprintf("Promoted '%s' to done (fest CLI not found, skipped festival creation)", msg.intentTitle)
+			m.statusMessage = fmt.Sprintf("Promoted '%s' to active (fest CLI not found, skipped festival creation)", msg.intentTitle)
 		} else if msg.festivalCreated {
 			name := msg.festivalDir
 			if name == "" {
@@ -225,7 +235,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.statusMessage = fmt.Sprintf("Promoted '%s' → festival '%s'", msg.intentTitle, name)
 		} else {
-			m.statusMessage = fmt.Sprintf("Promoted '%s' to done (festival creation failed)", msg.intentTitle)
+			m.statusMessage = fmt.Sprintf("Promoted '%s' to active (festival creation failed)", msg.intentTitle)
 		}
 		return m, m.loadIntents()
 
@@ -278,15 +288,7 @@ func (m Model) handleActionMenuSelection(msg tui.ActionMenuSelectedMsg) (tea.Mod
 	case "promote":
 		return m.handlePromoteAction()
 	case "archive":
-		if !selected.Status.InDungeon() {
-			m.focus = focusConfirm
-			m.pendingAction = "archive"
-			m.pendingIntent = selected
-			m.confirmDialog = tui.NewConfirmationDialog(
-				"Archive Intent",
-				fmt.Sprintf("Archive '%s'?\n\nIt will be moved to the dungeon.", selected.Title),
-			)
-		}
+		return m.handleArchiveAction()
 	case "delete":
 		m.focus = focusConfirm
 		m.pendingAction = "delete"

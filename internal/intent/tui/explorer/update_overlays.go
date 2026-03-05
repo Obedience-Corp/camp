@@ -81,16 +81,16 @@ func (m Model) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.pendingIntent = nil
 					return m, cmd
 				}
-			case "archive":
+			case "promote":
 				if m.pendingIntent != nil {
-					cmd := m.archiveIntent(m.pendingIntent)
+					cmd := m.promoteToFestival(m.pendingIntent)
 					m.pendingAction = ""
 					m.pendingIntent = nil
 					return m, cmd
 				}
-			case "promote":
+			case "promote-ready":
 				if m.pendingIntent != nil {
-					cmd := m.promoteToFestival(m.pendingIntent)
+					cmd := m.promoteToReady(m.pendingIntent)
 					m.pendingAction = ""
 					m.pendingIntent = nil
 					return m, cmd
@@ -122,7 +122,7 @@ func (m Model) updateGatherDialog(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				count := len(m.gatherDialog.Intents())
 				m.confirmDialog = tui.NewConfirmationDialog(
 					"Confirm Gather",
-					fmt.Sprintf("Gather %d intents into %q?\n\nSource intents will be archived (moved to killed).",
+					fmt.Sprintf("Gather %d intents into %q?\n\nSource intents will be archived (moved to dungeon/archived).",
 						count, m.gatherDialog.Title()),
 				)
 				return m, nil

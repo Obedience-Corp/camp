@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"strings"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -24,7 +23,7 @@ var intentListCmd = &cobra.Command{
 	Long: `List intents with filtering, sorting, and output format options.
 
 By default, lists intents in inbox, active, and ready status.
-Use --all to include done and killed intents.
+Use --all to include dungeon intents.
 
 OUTPUT FORMATS:
   table (default)   Human-readable table with columns
@@ -51,7 +50,7 @@ func init() {
 	flags.StringP("project", "p", "", "Filter by project")
 	flags.String("horizon", "", "Filter by horizon")
 	flags.IntP("limit", "n", 0, "Limit results (0 = no limit)")
-	flags.BoolP("all", "a", false, "Include done/killed intents")
+	flags.BoolP("all", "a", false, "Include dungeon intents")
 }
 
 func runIntentList(cmd *cobra.Command, args []string) error {
@@ -83,7 +82,10 @@ func runIntentList(cmd *cobra.Command, args []string) error {
 	}
 
 	// Build list options
-	opts := buildListOptions(statuses, types, project, horizon, sortBy, includeAll)
+	opts, err := buildListOptions(statuses, types, project, horizon, sortBy, includeAll)
+	if err != nil {
+		return err
+	}
 
 	// Get intents
 	intents, err := svc.List(ctx, opts)
@@ -91,7 +93,7 @@ func runIntentList(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "failed to list intents")
 	}
 
-	// Apply status filtering (exclude done/killed by default)
+	// Apply status filtering (exclude dungeon statuses by default)
 	intents = filterStatuses(intents, includeAll, statuses)
 
 	// Apply limit
@@ -110,7 +112,7 @@ func runIntentList(cmd *cobra.Command, args []string) error {
 	}
 }
 
-func buildListOptions(statuses, types []string, project, horizon, sortBy string, includeAll bool) *intent.ListOptions {
+func buildListOptions(statuses, types []string, project, horizon, sortBy string, includeAll bool) (*intent.ListOptions, error) {
 	opts := &intent.ListOptions{
 		Concept:  project, // project from CLI maps to Concept field
 		SortBy:   sortBy,
@@ -118,12 +120,16 @@ func buildListOptions(statuses, types []string, project, horizon, sortBy string,
 	}
 
 	// Handle status filtering
-	if len(statuses) > 0 {
-		// Use first status for now (service takes single status)
-		s := intent.Status(statuses[0])
+	if len(statuses) == 1 {
+		s, err := parseIntentStatus(statuses[0])
+		if err != nil {
+			return nil, err
+		}
 		opts.Status = &s
+	} else if len(statuses) > 1 {
+		// Service takes a single status filter; apply multi-status filters client-side.
 	} else if !includeAll {
-		// By default, exclude done and killed (handled in list filtering later)
+		// By default, exclude dungeon statuses (handled in list filtering later)
 		// Note: service doesn't support "not in" filter, so we handle client-side
 	}
 
@@ -133,7 +139,7 @@ func buildListOptions(statuses, types []string, project, horizon, sortBy string,
 		opts.Type = &t
 	}
 
-	return opts
+	return opts, nil
 }
 
 func outputTable(intents []*intent.Intent) error {
@@ -321,19 +327,27 @@ func relativeTime(t time.Time) string {
 	}
 }
 
-// filterStatuses filters intents by excluding done/killed unless specified.
+// filterStatuses filters intents by excluding dungeon statuses unless specified.
 func filterStatuses(intents []*intent.Intent, includeAll bool, allowedStatuses []string) []*intent.Intent {
 	if includeAll && len(allowedStatuses) == 0 {
 		return intents
 	}
 
+	normalizedAllowed := make([]intent.Status, 0, len(allowedStatuses))
+	for _, raw := range allowedStatuses {
+		s, err := parseIntentStatus(raw)
+		if err == nil {
+			normalizedAllowed = append(normalizedAllowed, s)
+		}
+	}
+
 	result := make([]*intent.Intent, 0, len(intents))
 	for _, i := range intents {
 		// If specific statuses requested, check if matches
-		if len(allowedStatuses) > 0 {
+		if len(normalizedAllowed) > 0 {
 			found := false
-			for _, s := range allowedStatuses {
-				if strings.EqualFold(string(i.Status), s) {
+			for _, s := range normalizedAllowed {
+				if i.Status == s {
 					found = true
 					break
 				}
@@ -342,8 +356,8 @@ func filterStatuses(intents []*intent.Intent, includeAll bool, allowedStatuses [
 				continue
 			}
 		} else if !includeAll {
-			// Exclude done and killed by default
-			if i.Status == intent.StatusDone || i.Status == intent.StatusKilled {
+			// Exclude all dungeon statuses by default
+			if i.Status.InDungeon() {
 				continue
 			}
 		}

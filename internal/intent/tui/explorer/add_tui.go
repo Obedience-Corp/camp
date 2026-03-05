@@ -3,6 +3,7 @@ package explorer
 import (
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/intent"
+	"github.com/Obedience-Corp/camp/internal/intent/audit"
 	"github.com/Obedience-Corp/camp/internal/intent/tui"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -77,6 +78,16 @@ func (m *Model) createIntentFromAddResult(result *tui.AddResult) {
 	createdIntent, err := m.service.CreateDirect(m.ctx, opts)
 	if err != nil {
 		m.statusMessage = "Error creating intent: " + err.Error()
+		return
+	}
+
+	if err := m.appendAuditEvent(audit.Event{
+		Type:  audit.EventCreate,
+		ID:    createdIntent.ID,
+		Title: createdIntent.Title,
+		To:    string(createdIntent.Status),
+	}); err != nil {
+		m.statusMessage = "Error writing audit event: " + err.Error()
 		return
 	}
 

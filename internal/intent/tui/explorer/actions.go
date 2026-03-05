@@ -5,11 +5,14 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/intent"
+	"github.com/Obedience-Corp/camp/internal/intent/audit"
 	"github.com/Obedience-Corp/camp/internal/intent/promote"
 	"github.com/Obedience-Corp/camp/internal/intent/tui"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 // moveStatusOptions are the available statuses for moving intents.
@@ -19,8 +22,8 @@ var moveStatusOptions = []struct {
 	status intent.Status
 }{
 	{"Inbox", intent.StatusInbox},
-	{"Active", intent.StatusActive},
 	{"Ready", intent.StatusReady},
+	{"Active", intent.StatusActive},
 	{"  Done", intent.StatusDone},
 	{"  Killed", intent.StatusKilled},
 	{"  Archived", intent.StatusArchived},
@@ -54,6 +57,12 @@ func (m *Model) updateMove(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.intentToMove = nil
 				return m, nil
 			}
+			// Require reason for dungeon moves
+			if newStatus.InDungeon() {
+				m.startDungeonReasonInput(m.intentToMove, newStatus, "move")
+				m.intentToMove = nil
+				return m, nil
+			}
 			m.focus = focusList
 			return m, m.moveIntent(m.intentToMove, newStatus)
 		}
@@ -61,23 +70,37 @@ func (m *Model) updateMove(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// moveIntent moves an intent to a new status.
+func (m *Model) startDungeonReasonInput(i *intent.Intent, newStatus intent.Status, action string) {
+	m.dungeonReasonFor = newStatus
+	m.dungeonReasonAction = action
+	m.dungeonReasonIntent = i
+	m.focus = focusDungeonReason
+	ti := textinput.New()
+	ti.Placeholder = "Enter reason..."
+	ti.CharLimit = 200
+	ti.Width = 60
+	ti.Focus()
+	m.dungeonReasonInput = ti
+}
+
+// moveIntent moves an intent to a new status (non-dungeon, no reason required).
 func (m *Model) moveIntent(i *intent.Intent, newStatus intent.Status) tea.Cmd {
 	return func() tea.Msg {
 		sourcePath := i.Path
+		prevStatus := i.Status
 		movedIntent, err := m.service.Move(m.ctx, i.ID, newStatus)
-		if err == nil && m.campaignRoot != "" && m.campaignID != "" {
-			_ = commit.Intent(m.ctx, commit.IntentOptions{
-				Options: commit.Options{
-					CampaignRoot:  m.campaignRoot,
-					CampaignID:    m.campaignID,
-					Files:         commit.NormalizeFiles(m.campaignRoot, sourcePath, movedIntent.Path),
-					SelectiveOnly: true,
-				},
-				Action:      commit.IntentMove,
-				IntentTitle: i.Title,
-				Description: fmt.Sprintf("Moved to %s status", newStatus),
+		if err == nil {
+			// Log audit event
+			err = m.appendAuditEvent(audit.Event{
+				Type:  audit.EventMove,
+				ID:    i.ID,
+				Title: i.Title,
+				From:  string(prevStatus),
+				To:    string(newStatus),
 			})
+		}
+		if err == nil {
+			m.autoCommitIntent(commit.IntentMove, i.Title, fmt.Sprintf("Moved to %s status", newStatus), sourcePath, movedIntent.Path)
 		}
 		return moveFinishedMsg{
 			err:       err,
@@ -87,22 +110,31 @@ func (m *Model) moveIntent(i *intent.Intent, newStatus intent.Status) tea.Cmd {
 	}
 }
 
-// archiveIntent archives an intent (moves to dungeon/archived status).
-func (m *Model) archiveIntent(i *intent.Intent) tea.Cmd {
+// archiveIntentWithReason archives an intent (moves to dungeon/archived status)
+// and records the reason in both markdown and audit trail.
+func (m *Model) archiveIntentWithReason(i *intent.Intent, reason string) tea.Cmd {
 	return func() tea.Msg {
 		sourcePath := i.Path
-		archivedIntent, err := m.service.Archive(m.ctx, i.ID)
-		if err == nil && m.campaignRoot != "" && m.campaignID != "" {
-			_ = commit.Intent(m.ctx, commit.IntentOptions{
-				Options: commit.Options{
-					CampaignRoot:  m.campaignRoot,
-					CampaignID:    m.campaignID,
-					Files:         commit.NormalizeFiles(m.campaignRoot, sourcePath, archivedIntent.Path),
-					SelectiveOnly: true,
-				},
-				Action:      commit.IntentArchive,
-				IntentTitle: i.Title,
+		prevStatus := i.Status
+		intent.AppendDecisionRecord(i, intent.StatusArchived, reason)
+		err := m.service.Save(m.ctx, i)
+		if err != nil {
+			return archiveFinishedMsg{err: err, intentID: i.ID}
+		}
+
+		archivedIntent, err := m.service.Move(m.ctx, i.ID, intent.StatusArchived)
+		if err == nil {
+			err = m.appendAuditEvent(audit.Event{
+				Type:   audit.EventArchive,
+				ID:     i.ID,
+				Title:  i.Title,
+				From:   string(prevStatus),
+				To:     string(intent.StatusArchived),
+				Reason: reason,
 			})
+		}
+		if err == nil {
+			m.autoCommitIntent(commit.IntentArchive, i.Title, fmt.Sprintf("Moved to %s status", intent.StatusArchived), sourcePath, archivedIntent.Path)
 		}
 		return archiveFinishedMsg{
 			err:      err,
@@ -116,18 +148,18 @@ func (m *Model) deleteIntent(i *intent.Intent) tea.Cmd {
 	return func() tea.Msg {
 		title := i.Title // Capture before deletion
 		sourcePath := i.Path
+		prevStatus := i.Status
 		err := m.service.Delete(m.ctx, i.ID)
-		if err == nil && m.campaignRoot != "" && m.campaignID != "" {
-			_ = commit.Intent(m.ctx, commit.IntentOptions{
-				Options: commit.Options{
-					CampaignRoot:  m.campaignRoot,
-					CampaignID:    m.campaignID,
-					Files:         commit.NormalizeFiles(m.campaignRoot, sourcePath),
-					SelectiveOnly: true,
-				},
-				Action:      commit.IntentDelete,
-				IntentTitle: title,
+		if err == nil {
+			err = m.appendAuditEvent(audit.Event{
+				Type:  audit.EventDelete,
+				ID:    i.ID,
+				Title: title,
+				From:  string(prevStatus),
 			})
+		}
+		if err == nil {
+			m.autoCommitIntent(commit.IntentDelete, title, "", sourcePath)
 		}
 		return deleteFinishedMsg{
 			err:   err,
@@ -139,11 +171,24 @@ func (m *Model) deleteIntent(i *intent.Intent) tea.Cmd {
 // promoteToFestival promotes an intent to a festival via the promote package.
 func (m *Model) promoteToFestival(i *intent.Intent) tea.Cmd {
 	return func() tea.Msg {
+		prevStatus := i.Status
 		result, err := promote.Promote(m.ctx, m.service, i, promote.Options{
 			CampaignRoot: m.campaignRoot,
+			Target:       promote.TargetFestival,
 		})
 
-		if err == nil && m.campaignRoot != "" && m.campaignID != "" {
+		if err == nil {
+			promotedTo := result.FestivalDir
+			err = m.appendAuditEvent(audit.Event{
+				Type:       audit.EventPromote,
+				ID:         i.ID,
+				Title:      i.Title,
+				From:       string(prevStatus),
+				To:         string(intent.StatusActive),
+				PromotedTo: promotedTo,
+			})
+		}
+		if err == nil {
 			files := []string{i.Path}
 			movedIntent, findErr := m.service.Get(m.ctx, i.ID)
 			if findErr == nil && movedIntent.Path != "" {
@@ -152,18 +197,7 @@ func (m *Model) promoteToFestival(i *intent.Intent) tea.Cmd {
 			if result.FestivalCreated && result.FestivalDest != "" && result.FestivalDir != "" {
 				files = append(files, filepath.Join("festivals", result.FestivalDest, result.FestivalDir))
 			}
-
-			_ = commit.Intent(m.ctx, commit.IntentOptions{
-				Options: commit.Options{
-					CampaignRoot:  m.campaignRoot,
-					CampaignID:    m.campaignID,
-					Files:         commit.NormalizeFiles(m.campaignRoot, files...),
-					SelectiveOnly: true,
-				},
-				Action:      commit.IntentPromote,
-				IntentTitle: i.Title,
-				Description: "Promoted to festival",
-			})
+			m.autoCommitIntent(commit.IntentPromote, i.Title, "Promoted to active via festival", files...)
 		}
 
 		return promoteFinishedMsg{
@@ -226,23 +260,278 @@ func (m *Model) viewConfirmation() string {
 	return b.String()
 }
 
-// handlePromoteAction shows a confirmation dialog for promoting to festival.
-// Only ready intents can be promoted.
+// handlePromoteAction shows the promote target picker.
+// Valid for inbox (→ ready) and ready (→ festival or design doc) intents.
 func (m *Model) handlePromoteAction() (tea.Model, tea.Cmd) {
 	if selected := m.SelectedIntent(); selected != nil {
-		if selected.Status != intent.StatusReady {
-			m.statusMessage = "Only ready intents can be promoted to festivals"
+		targets := promote.ValidTargetsForStatus(selected.Status)
+		if len(targets) == 0 {
+			m.statusMessage = "No valid promote targets for " + selected.Status.String() + " status"
 			return m, nil
 		}
-		m.focus = focusConfirm
-		m.pendingAction = "promote"
-		m.pendingIntent = selected
-		m.confirmDialog = tui.NewConfirmationDialog(
-			"Promote to Festival",
-			fmt.Sprintf("Promote '%s' to a festival?\n\nThis will move the intent to done and create a new festival.", selected.Title),
-		)
+		// If only one target, go directly to confirmation
+		if len(targets) == 1 && targets[0] == promote.TargetReady {
+			m.focus = focusConfirm
+			m.pendingAction = "promote-ready"
+			m.pendingIntent = selected
+			m.confirmDialog = tui.NewConfirmationDialog(
+				"Promote to Ready",
+				fmt.Sprintf("Move '%s' from inbox to ready?", selected.Title),
+			)
+			return m, nil
+		}
+		m.focus = focusPromoteTarget
+		m.promoteTargetIdx = 0
+		m.promoteTargetIntent = selected
 	}
 	return m, nil
+}
+
+// promoteTargetOptions returns display names for promote targets.
+var promoteTargetOptions = []struct {
+	name   string
+	target promote.Target
+}{
+	{"Festival", promote.TargetFestival},
+	{"Design Doc", promote.TargetDesign},
+}
+
+// updatePromoteTarget handles key input during promote target selection.
+func (m *Model) updatePromoteTarget(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.focus = focusList
+		m.promoteTargetIntent = nil
+		return m, nil
+	case "j", "down":
+		if m.promoteTargetIdx < len(promoteTargetOptions)-1 {
+			m.promoteTargetIdx++
+		}
+	case "k", "up":
+		if m.promoteTargetIdx > 0 {
+			m.promoteTargetIdx--
+		}
+	case "enter":
+		if m.promoteTargetIntent != nil {
+			target := promoteTargetOptions[m.promoteTargetIdx].target
+			i := m.promoteTargetIntent
+			m.promoteTargetIntent = nil
+			m.focus = focusList
+
+			switch target {
+			case promote.TargetFestival:
+				return m, m.promoteToFestival(i)
+			case promote.TargetDesign:
+				return m, m.promoteToDesignDoc(i)
+			}
+		}
+	}
+	return m, nil
+}
+
+// viewPromoteTarget renders the promote target picker.
+func (m *Model) viewPromoteTarget() string {
+	var b strings.Builder
+
+	b.WriteString(tui.TitleStyle.Render("Promote Intent"))
+	b.WriteString("\n\n")
+
+	if m.promoteTargetIntent != nil {
+		b.WriteString("Intent: " + m.promoteTargetIntent.Title + "\n")
+		b.WriteString("Current status: " + m.promoteTargetIntent.Status.String() + "\n\n")
+	}
+
+	b.WriteString("Select promote target:\n")
+	for i, opt := range promoteTargetOptions {
+		cursor := "  "
+		if i == m.promoteTargetIdx {
+			cursor = "> "
+		}
+		b.WriteString(cursor + opt.name + "\n")
+	}
+	b.WriteString("\n")
+	b.WriteString(tui.HelpStyle.Render("j/k: navigate . Enter: promote . Esc: cancel"))
+
+	return b.String()
+}
+
+// promoteToReady promotes an inbox intent to ready status.
+func (m *Model) promoteToReady(i *intent.Intent) tea.Cmd {
+	return func() tea.Msg {
+		prevStatus := i.Status
+		result, err := promote.Promote(m.ctx, m.service, i, promote.Options{
+			CampaignRoot: m.campaignRoot,
+			Target:       promote.TargetReady,
+		})
+
+		if err == nil {
+			err = m.appendAuditEvent(audit.Event{
+				Type:  audit.EventPromote,
+				ID:    i.ID,
+				Title: i.Title,
+				From:  string(prevStatus),
+				To:    string(result.NewStatus),
+			})
+		}
+
+		if err == nil {
+			files := []string{i.Path}
+			movedIntent, findErr := m.service.Get(m.ctx, i.ID)
+			if findErr == nil && movedIntent.Path != "" {
+				files = append(files, movedIntent.Path)
+			}
+			m.autoCommitIntent(commit.IntentPromote, i.Title, "Promoted to ready", files...)
+		}
+
+		_ = result // no festival/design info for ready promotion
+		return moveFinishedMsg{
+			err:       err,
+			intentID:  i.ID,
+			newStatus: intent.StatusReady,
+		}
+	}
+}
+
+// promoteToDesignDoc promotes an intent to a design doc.
+func (m *Model) promoteToDesignDoc(i *intent.Intent) tea.Cmd {
+	return func() tea.Msg {
+		prevStatus := i.Status
+		result, err := promote.Promote(m.ctx, m.service, i, promote.Options{
+			CampaignRoot: m.campaignRoot,
+			Target:       promote.TargetDesign,
+		})
+
+		if err == nil {
+			err = m.appendAuditEvent(audit.Event{
+				Type:       audit.EventPromote,
+				ID:         i.ID,
+				Title:      i.Title,
+				From:       string(prevStatus),
+				To:         string(result.NewStatus),
+				PromotedTo: result.DesignDir,
+			})
+		}
+
+		if err == nil {
+			files := []string{i.Path}
+			movedIntent, findErr := m.service.Get(m.ctx, i.ID)
+			if findErr == nil && movedIntent.Path != "" {
+				files = append(files, movedIntent.Path)
+			}
+			if result.DesignCreated && result.DesignDir != "" {
+				files = append(files, result.DesignDir)
+			}
+			m.autoCommitIntent(commit.IntentPromote, i.Title, "Promoted to design doc", files...)
+		}
+
+		return promoteFinishedMsg{
+			err:         err,
+			intentID:    i.ID,
+			intentTitle: i.Title,
+			designDir:   result.DesignDir,
+		}
+	}
+}
+
+// updateDungeonReason handles key input for the dungeon reason text input.
+func (m *Model) updateDungeonReason(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.focus = focusList
+		m.dungeonReasonIntent = nil
+		m.dungeonReasonAction = ""
+		return m, nil
+	case "enter":
+		reason := strings.TrimSpace(m.dungeonReasonInput.Value())
+		if reason == "" {
+			m.statusMessage = "Reason is required for dungeon moves"
+			return m, nil
+		}
+		i := m.dungeonReasonIntent
+		newStatus := m.dungeonReasonFor
+		action := m.dungeonReasonAction
+		m.dungeonReasonIntent = nil
+		m.dungeonReasonAction = ""
+		m.focus = focusList
+
+		// Append decision record and move
+		if action == "archive" {
+			return m, m.archiveIntentWithReason(i, reason)
+		}
+		return m, m.moveIntentWithReason(i, newStatus, reason)
+	default:
+		var cmd tea.Cmd
+		m.dungeonReasonInput, cmd = m.dungeonReasonInput.Update(msg)
+		return m, cmd
+	}
+}
+
+// viewDungeonReason renders the dungeon reason text input.
+func (m *Model) viewDungeonReason() string {
+	var b strings.Builder
+
+	title := "Dungeon Move — Reason Required"
+	prompt := "Why is this intent being moved to the dungeon?"
+	if m.dungeonReasonAction == "archive" {
+		title = "Archive Intent — Reason Required"
+		prompt = "Why is this intent being archived?"
+	}
+
+	b.WriteString(tui.TitleStyle.Render(title))
+	b.WriteString("\n\n")
+
+	if m.dungeonReasonIntent != nil {
+		b.WriteString("Intent: " + m.dungeonReasonIntent.Title + "\n")
+		b.WriteString("Moving to: " + m.dungeonReasonFor.String() + "\n\n")
+	}
+
+	b.WriteString(prompt + "\n\n")
+	b.WriteString(m.dungeonReasonInput.View())
+	b.WriteString("\n\n")
+	b.WriteString(tui.HelpStyle.Render("Enter: confirm . Esc: cancel"))
+
+	return b.String()
+}
+
+// moveIntentWithReason moves an intent to a dungeon status with a decision record.
+func (m *Model) moveIntentWithReason(i *intent.Intent, newStatus intent.Status, reason string) tea.Cmd {
+	return func() tea.Msg {
+		sourcePath := i.Path
+		prevStatus := i.Status
+
+		// Append decision record before moving
+		intent.AppendDecisionRecord(i, newStatus, reason)
+		err := m.service.Save(m.ctx, i)
+		if err != nil {
+			return moveFinishedMsg{
+				err:       err,
+				intentID:  i.ID,
+				newStatus: newStatus,
+			}
+		}
+
+		movedIntent, err := m.service.Move(m.ctx, i.ID, newStatus)
+		if err == nil {
+			// Log audit event
+			err = m.appendAuditEvent(audit.Event{
+				Type:   audit.EventMove,
+				ID:     i.ID,
+				Title:  i.Title,
+				From:   string(prevStatus),
+				To:     string(newStatus),
+				Reason: reason,
+			})
+		}
+
+		if err == nil {
+			m.autoCommitIntent(commit.IntentMove, i.Title, fmt.Sprintf("Moved to %s status", newStatus), sourcePath, movedIntent.Path)
+		}
+		return moveFinishedMsg{
+			err:       err,
+			intentID:  i.ID,
+			newStatus: newStatus,
+		}
+	}
 }
 
 // handleArchiveAction archives the selected intent with confirmation.
@@ -252,13 +541,7 @@ func (m *Model) handleArchiveAction() (tea.Model, tea.Cmd) {
 			m.statusMessage = "Already in dungeon"
 			return m, nil
 		}
-		m.focus = focusConfirm
-		m.pendingAction = "archive"
-		m.pendingIntent = selected
-		m.confirmDialog = tui.NewConfirmationDialog(
-			"Archive Intent",
-			fmt.Sprintf("Archive '%s'?\n\nIt will be moved to the dungeon.", selected.Title),
-		)
+		m.startDungeonReasonInput(selected, intent.StatusArchived, "archive")
 	}
 	return m, nil
 }

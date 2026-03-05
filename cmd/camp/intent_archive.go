@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"strings"
+
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/spf13/cobra"
@@ -9,23 +11,24 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/intent"
+	"github.com/Obedience-Corp/camp/internal/intent/audit"
 	"github.com/Obedience-Corp/camp/internal/paths"
 )
 
 var intentArchiveCmd = &cobra.Command{
 	Use:   "archive <id>",
 	Short: "Archive an intent",
-	Long: `Archive an intent by moving it to the killed status.
+	Long: `Archive an intent by moving it to dungeon/archived.
 
 This is a convenience command equivalent to:
-  camp intent move <id> killed
+  camp intent move <id> archived --reason "..."
 
-Archived intents are retained but hidden from default listings.
+Dungeon moves require a reason and append a decision record to the intent body.
 Use 'camp intent move <id> inbox' to un-archive if needed.
 
 Examples:
-  camp intent archive add-dark           Archive by partial ID
-  camp intent archive 20260119-153412    Archive by full ID`,
+  camp intent archive add-dark --reason "superseded by broader initiative"
+  camp intent archive 20260119-153412 --reason "preserve as reference"`,
 	Args: cobra.ExactArgs(1),
 	RunE: runIntentArchive,
 }
@@ -34,12 +37,18 @@ func init() {
 	intentCmd.AddCommand(intentArchiveCmd)
 
 	intentArchiveCmd.Flags().Bool("no-commit", false, "Don't create a git commit")
+	intentArchiveCmd.Flags().String("reason", "", "Reason for archiving (required)")
 }
 
 func runIntentArchive(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	id := args[0]
 	noCommit, _ := cmd.Flags().GetBool("no-commit")
+	reason, _ := cmd.Flags().GetString("reason")
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return fmt.Errorf("--reason is required when archiving an intent")
+	}
 
 	// Find campaign root
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
@@ -50,6 +59,9 @@ func runIntentArchive(cmd *cobra.Command, args []string) error {
 	// Create path resolver and service
 	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
 	svc := intent.NewIntentService(campaignRoot, resolver.Intents())
+	if err := svc.EnsureDirectories(ctx); err != nil {
+		return camperrors.Wrap(err, "ensuring intent directories")
+	}
 
 	// Get intent title for commit message (before archiving)
 	i, err := svc.Find(ctx, id)
@@ -58,11 +70,33 @@ func runIntentArchive(cmd *cobra.Command, args []string) error {
 	}
 	intentTitle := i.Title
 	sourcePath := i.Path
+	prevStatus := i.Status
 
-	// Archive the intent (uses Archive method which calls Move with StatusKilled)
-	result, err := svc.Archive(ctx, id)
+	if prevStatus == intent.StatusArchived {
+		fmt.Printf("Intent already archived: %s\n", i.Path)
+		return nil
+	}
+
+	intent.AppendDecisionRecord(i, intent.StatusArchived, reason)
+	if err := svc.Save(ctx, i); err != nil {
+		return camperrors.Wrap(err, "failed to save decision record")
+	}
+
+	// Archive the intent (moves to dungeon/archived)
+	result, err := svc.Move(ctx, id, intent.StatusArchived)
 	if err != nil {
 		return camperrors.Wrap(err, "failed to archive intent")
+	}
+
+	if err := appendIntentAuditEvent(ctx, resolver.Intents(), audit.Event{
+		Type:   audit.EventArchive,
+		ID:     i.ID,
+		Title:  intentTitle,
+		From:   string(prevStatus),
+		To:     string(intent.StatusArchived),
+		Reason: reason,
+	}); err != nil {
+		return err
 	}
 
 	fmt.Printf("✓ Intent archived: %s\n", result.Path)
@@ -79,6 +113,7 @@ func runIntentArchive(cmd *cobra.Command, args []string) error {
 			},
 			Action:      commit.IntentArchive,
 			IntentTitle: intentTitle,
+			Description: fmt.Sprintf("Moved to %s status", intent.StatusArchived),
 		})
 		if commitResult.Message != "" {
 			fmt.Printf("  %s\n", commitResult.Message)
