@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 const auditFile = ".intents.jsonl"
@@ -43,14 +45,18 @@ type Event struct {
 // AppendEvent writes an audit event to the JSONL log file.
 // The intentsDir is the base intents directory (e.g. workflow/intents/).
 // If the timestamp is zero, it defaults to now.
-func AppendEvent(_ context.Context, intentsDir string, e Event) error {
+func AppendEvent(ctx context.Context, intentsDir string, e Event) error {
+	if err := ctx.Err(); err != nil {
+		return camperrors.Wrap(err, "context cancelled before writing audit event")
+	}
+
 	if e.Timestamp.IsZero() {
 		e.Timestamp = time.Now().UTC()
 	}
 
 	data, err := json.Marshal(e)
 	if err != nil {
-		return err
+		return camperrors.Wrap(err, "marshaling audit event")
 	}
 	data = append(data, '\n')
 
@@ -58,10 +64,13 @@ func AppendEvent(_ context.Context, intentsDir string, e Event) error {
 
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return err
+		return camperrors.Wrap(err, "opening audit log")
 	}
 	defer f.Close()
 
 	_, err = f.Write(data)
-	return err
+	if err != nil {
+		return camperrors.Wrap(err, "writing audit event")
+	}
+	return nil
 }

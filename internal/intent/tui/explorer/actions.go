@@ -99,18 +99,8 @@ func (m *Model) moveIntent(i *intent.Intent, newStatus intent.Status) tea.Cmd {
 				To:    string(newStatus),
 			})
 		}
-		if err == nil && m.campaignRoot != "" && m.campaignID != "" {
-			_ = commit.Intent(m.ctx, commit.IntentOptions{
-				Options: commit.Options{
-					CampaignRoot:  m.campaignRoot,
-					CampaignID:    m.campaignID,
-					Files:         commit.NormalizeFiles(m.campaignRoot, sourcePath, movedIntent.Path),
-					SelectiveOnly: true,
-				},
-				Action:      commit.IntentMove,
-				IntentTitle: i.Title,
-				Description: fmt.Sprintf("Moved to %s status", newStatus),
-			})
+		if err == nil {
+			m.autoCommitIntent(commit.IntentMove, i.Title, fmt.Sprintf("Moved to %s status", newStatus), sourcePath, movedIntent.Path)
 		}
 		return moveFinishedMsg{
 			err:       err,
@@ -143,18 +133,8 @@ func (m *Model) archiveIntentWithReason(i *intent.Intent, reason string) tea.Cmd
 				Reason: reason,
 			})
 		}
-		if err == nil && m.campaignRoot != "" && m.campaignID != "" {
-			_ = commit.Intent(m.ctx, commit.IntentOptions{
-				Options: commit.Options{
-					CampaignRoot:  m.campaignRoot,
-					CampaignID:    m.campaignID,
-					Files:         commit.NormalizeFiles(m.campaignRoot, sourcePath, archivedIntent.Path),
-					SelectiveOnly: true,
-				},
-				Action:      commit.IntentArchive,
-				IntentTitle: i.Title,
-				Description: fmt.Sprintf("Moved to %s status", intent.StatusArchived),
-			})
+		if err == nil {
+			m.autoCommitIntent(commit.IntentArchive, i.Title, fmt.Sprintf("Moved to %s status", intent.StatusArchived), sourcePath, archivedIntent.Path)
 		}
 		return archiveFinishedMsg{
 			err:      err,
@@ -178,17 +158,8 @@ func (m *Model) deleteIntent(i *intent.Intent) tea.Cmd {
 				From:  string(prevStatus),
 			})
 		}
-		if err == nil && m.campaignRoot != "" && m.campaignID != "" {
-			_ = commit.Intent(m.ctx, commit.IntentOptions{
-				Options: commit.Options{
-					CampaignRoot:  m.campaignRoot,
-					CampaignID:    m.campaignID,
-					Files:         commit.NormalizeFiles(m.campaignRoot, sourcePath),
-					SelectiveOnly: true,
-				},
-				Action:      commit.IntentDelete,
-				IntentTitle: title,
-			})
+		if err == nil {
+			m.autoCommitIntent(commit.IntentDelete, title, "", sourcePath)
 		}
 		return deleteFinishedMsg{
 			err:   err,
@@ -200,6 +171,7 @@ func (m *Model) deleteIntent(i *intent.Intent) tea.Cmd {
 // promoteToFestival promotes an intent to a festival via the promote package.
 func (m *Model) promoteToFestival(i *intent.Intent) tea.Cmd {
 	return func() tea.Msg {
+		prevStatus := i.Status
 		result, err := promote.Promote(m.ctx, m.service, i, promote.Options{
 			CampaignRoot: m.campaignRoot,
 			Target:       promote.TargetFestival,
@@ -211,12 +183,12 @@ func (m *Model) promoteToFestival(i *intent.Intent) tea.Cmd {
 				Type:       audit.EventPromote,
 				ID:         i.ID,
 				Title:      i.Title,
-				From:       string(i.Status),
+				From:       string(prevStatus),
 				To:         string(intent.StatusActive),
 				PromotedTo: promotedTo,
 			})
 		}
-		if err == nil && m.campaignRoot != "" && m.campaignID != "" {
+		if err == nil {
 			files := []string{i.Path}
 			movedIntent, findErr := m.service.Get(m.ctx, i.ID)
 			if findErr == nil && movedIntent.Path != "" {
@@ -225,18 +197,7 @@ func (m *Model) promoteToFestival(i *intent.Intent) tea.Cmd {
 			if result.FestivalCreated && result.FestivalDest != "" && result.FestivalDir != "" {
 				files = append(files, filepath.Join("festivals", result.FestivalDest, result.FestivalDir))
 			}
-
-			_ = commit.Intent(m.ctx, commit.IntentOptions{
-				Options: commit.Options{
-					CampaignRoot:  m.campaignRoot,
-					CampaignID:    m.campaignID,
-					Files:         commit.NormalizeFiles(m.campaignRoot, files...),
-					SelectiveOnly: true,
-				},
-				Action:      commit.IntentPromote,
-				IntentTitle: i.Title,
-				Description: "Promoted to active via festival",
-			})
+			m.autoCommitIntent(commit.IntentPromote, i.Title, "Promoted to active via festival", files...)
 		}
 
 		return promoteFinishedMsg{
@@ -397,6 +358,7 @@ func (m *Model) viewPromoteTarget() string {
 // promoteToReady promotes an inbox intent to ready status.
 func (m *Model) promoteToReady(i *intent.Intent) tea.Cmd {
 	return func() tea.Msg {
+		prevStatus := i.Status
 		result, err := promote.Promote(m.ctx, m.service, i, promote.Options{
 			CampaignRoot: m.campaignRoot,
 			Target:       promote.TargetReady,
@@ -407,31 +369,18 @@ func (m *Model) promoteToReady(i *intent.Intent) tea.Cmd {
 				Type:  audit.EventPromote,
 				ID:    i.ID,
 				Title: i.Title,
-				From:  string(i.Status),
+				From:  string(prevStatus),
 				To:    string(result.NewStatus),
 			})
 		}
 
-		if err == nil && m.campaignRoot != "" && m.campaignID != "" {
+		if err == nil {
+			files := []string{i.Path}
 			movedIntent, findErr := m.service.Get(m.ctx, i.ID)
-			var files []string
 			if findErr == nil && movedIntent.Path != "" {
-				files = []string{i.Path, movedIntent.Path}
-			} else {
-				files = []string{i.Path}
+				files = append(files, movedIntent.Path)
 			}
-
-			_ = commit.Intent(m.ctx, commit.IntentOptions{
-				Options: commit.Options{
-					CampaignRoot:  m.campaignRoot,
-					CampaignID:    m.campaignID,
-					Files:         commit.NormalizeFiles(m.campaignRoot, files...),
-					SelectiveOnly: true,
-				},
-				Action:      commit.IntentPromote,
-				IntentTitle: i.Title,
-				Description: "Promoted to ready",
-			})
+			m.autoCommitIntent(commit.IntentPromote, i.Title, "Promoted to ready", files...)
 		}
 
 		_ = result // no festival/design info for ready promotion
@@ -446,6 +395,7 @@ func (m *Model) promoteToReady(i *intent.Intent) tea.Cmd {
 // promoteToDesignDoc promotes an intent to a design doc.
 func (m *Model) promoteToDesignDoc(i *intent.Intent) tea.Cmd {
 	return func() tea.Msg {
+		prevStatus := i.Status
 		result, err := promote.Promote(m.ctx, m.service, i, promote.Options{
 			CampaignRoot: m.campaignRoot,
 			Target:       promote.TargetDesign,
@@ -456,13 +406,13 @@ func (m *Model) promoteToDesignDoc(i *intent.Intent) tea.Cmd {
 				Type:       audit.EventPromote,
 				ID:         i.ID,
 				Title:      i.Title,
-				From:       string(i.Status),
+				From:       string(prevStatus),
 				To:         string(result.NewStatus),
 				PromotedTo: result.DesignDir,
 			})
 		}
 
-		if err == nil && m.campaignRoot != "" && m.campaignID != "" {
+		if err == nil {
 			files := []string{i.Path}
 			movedIntent, findErr := m.service.Get(m.ctx, i.ID)
 			if findErr == nil && movedIntent.Path != "" {
@@ -471,18 +421,7 @@ func (m *Model) promoteToDesignDoc(i *intent.Intent) tea.Cmd {
 			if result.DesignCreated && result.DesignDir != "" {
 				files = append(files, result.DesignDir)
 			}
-
-			_ = commit.Intent(m.ctx, commit.IntentOptions{
-				Options: commit.Options{
-					CampaignRoot:  m.campaignRoot,
-					CampaignID:    m.campaignID,
-					Files:         commit.NormalizeFiles(m.campaignRoot, files...),
-					SelectiveOnly: true,
-				},
-				Action:      commit.IntentPromote,
-				IntentTitle: i.Title,
-				Description: "Promoted to design doc",
-			})
+			m.autoCommitIntent(commit.IntentPromote, i.Title, "Promoted to design doc", files...)
 		}
 
 		return promoteFinishedMsg{
@@ -558,6 +497,7 @@ func (m *Model) viewDungeonReason() string {
 func (m *Model) moveIntentWithReason(i *intent.Intent, newStatus intent.Status, reason string) tea.Cmd {
 	return func() tea.Msg {
 		sourcePath := i.Path
+		prevStatus := i.Status
 
 		// Append decision record before moving
 		intent.AppendDecisionRecord(i, newStatus, reason)
@@ -577,24 +517,14 @@ func (m *Model) moveIntentWithReason(i *intent.Intent, newStatus intent.Status, 
 				Type:   audit.EventMove,
 				ID:     i.ID,
 				Title:  i.Title,
-				From:   string(i.Status),
+				From:   string(prevStatus),
 				To:     string(newStatus),
 				Reason: reason,
 			})
 		}
 
-		if err == nil && m.campaignRoot != "" && m.campaignID != "" {
-			_ = commit.Intent(m.ctx, commit.IntentOptions{
-				Options: commit.Options{
-					CampaignRoot:  m.campaignRoot,
-					CampaignID:    m.campaignID,
-					Files:         commit.NormalizeFiles(m.campaignRoot, sourcePath, movedIntent.Path),
-					SelectiveOnly: true,
-				},
-				Action:      commit.IntentMove,
-				IntentTitle: i.Title,
-				Description: fmt.Sprintf("Moved to %s status", newStatus),
-			})
+		if err == nil {
+			m.autoCommitIntent(commit.IntentMove, i.Title, fmt.Sprintf("Moved to %s status", newStatus), sourcePath, movedIntent.Path)
 		}
 		return moveFinishedMsg{
 			err:       err,

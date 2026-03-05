@@ -148,7 +148,7 @@ func promoteToDesign(ctx context.Context, svc *intent.IntentService, i *intent.I
 	}
 
 	// Create design doc.
-	designDir, err := createDesignDoc(opts.CampaignRoot, moved)
+	designDir, err := createDesignDoc(ctx, opts.CampaignRoot, moved)
 	result := Result{NewStatus: intent.StatusActive}
 	if err != nil {
 		// Best-effort — intent was still moved to active.
@@ -169,7 +169,11 @@ func promoteToDesign(ctx context.Context, svc *intent.IntentService, i *intent.I
 
 // createDesignDoc creates a design document directory from intent content.
 // Returns the relative path to the design directory (e.g. "workflow/design/my-feature").
-func createDesignDoc(campaignRoot string, i *intent.Intent) (string, error) {
+func createDesignDoc(ctx context.Context, campaignRoot string, i *intent.Intent) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", camperrors.Wrap(err, "context cancelled before creating design doc")
+	}
+
 	slug := intent.GenerateSlug(i.Title)
 	if slug == "" {
 		return "", camperrors.New("could not generate slug from intent title")
@@ -293,18 +297,21 @@ func copyIntentToIngest(campaignRoot, dest, festivalDir string, i *intent.Intent
 func copyFile(src, dst string) error {
 	in, err := os.Open(src)
 	if err != nil {
-		return err
+		return camperrors.Wrap(err, "opening source file")
 	}
 	defer in.Close()
 
 	out, err := os.Create(dst)
 	if err != nil {
-		return err
+		return camperrors.Wrap(err, "creating destination file")
 	}
 	defer out.Close()
 
 	_, err = io.Copy(out, in)
-	return err
+	if err != nil {
+		return camperrors.Wrap(err, "copying file contents")
+	}
+	return nil
 }
 
 // ExtractFirstParagraph returns the first non-header paragraph from markdown content.
