@@ -14,9 +14,9 @@ import (
 
 // PromptCommitMessage shows an interactive prompt for the commit message.
 // Returns the message or empty string if cancelled.
-func PromptCommitMessage(ctx context.Context, executor git.GitExecutor) (string, error) {
+func PromptCommitMessage(ctx context.Context, executor git.GitExecutor, ignoreSubmodules bool) (string, error) {
 	// Show what's being committed
-	showChangeSummary(ctx, executor)
+	showChangeSummary(ctx, executor, ignoreSubmodules)
 
 	// Create the form
 	var message string
@@ -46,8 +46,8 @@ func PromptCommitMessage(ctx context.Context, executor git.GitExecutor) (string,
 }
 
 // PromptCommitMessageSimple shows a simple single-line prompt.
-func PromptCommitMessageSimple(ctx context.Context, executor git.GitExecutor) (string, error) {
-	showChangeSummary(ctx, executor)
+func PromptCommitMessageSimple(ctx context.Context, executor git.GitExecutor, ignoreSubmodules bool) (string, error) {
+	showChangeSummary(ctx, executor, ignoreSubmodules)
 
 	var message string
 
@@ -71,8 +71,8 @@ func PromptCommitMessageSimple(ctx context.Context, executor git.GitExecutor) (s
 }
 
 // PromptCommitMessageMultiline shows a prompt that supports multi-line messages.
-func PromptCommitMessageMultiline(ctx context.Context, executor git.GitExecutor) (string, error) {
-	showChangeSummary(ctx, executor)
+func PromptCommitMessageMultiline(ctx context.Context, executor git.GitExecutor, ignoreSubmodules bool) (string, error) {
+	showChangeSummary(ctx, executor, ignoreSubmodules)
 
 	var title string
 	var body string
@@ -123,10 +123,13 @@ func validateCommitMessage(s string) error {
 }
 
 // showChangeSummary displays what will be committed.
-func showChangeSummary(ctx context.Context, executor git.GitExecutor) {
+func showChangeSummary(ctx context.Context, executor git.GitExecutor, ignoreSubmodules bool) {
 	// Get diff stat for staged changes
-	cmd := exec.CommandContext(ctx, "git", "-C", executor.Path(),
-		"diff", "--cached", "--stat")
+	args := []string{"-C", executor.Path(), "diff", "--cached", "--stat"}
+	if ignoreSubmodules {
+		args = append(args, "--ignore-submodules=all")
+	}
+	cmd := exec.CommandContext(ctx, "git", args...)
 	output, err := cmd.Output()
 	if err != nil {
 		return // Non-fatal
@@ -137,8 +140,11 @@ func showChangeSummary(ctx context.Context, executor git.GitExecutor) {
 		fmt.Println(string(output))
 	} else {
 		// Check unstaged changes
-		cmd = exec.CommandContext(ctx, "git", "-C", executor.Path(),
-			"diff", "--stat")
+		args = []string{"-C", executor.Path(), "diff", "--stat"}
+		if ignoreSubmodules {
+			args = append(args, "--ignore-submodules=all")
+		}
+		cmd = exec.CommandContext(ctx, "git", args...)
 		output, _ = cmd.Output()
 		if len(output) > 0 {
 			fmt.Println("\nUnstaged changes (will be staged with --all):")

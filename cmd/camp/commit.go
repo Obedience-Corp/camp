@@ -115,7 +115,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	message := commitMessage
 	if message == "" && !commitAmend {
 		var promptErr error
-		message, promptErr = ui.PromptCommitMessageSimple(ctx, executor)
+		message, promptErr = ui.PromptCommitMessageSimple(ctx, executor, !target.IsSubmodule && !commitIncludeRefs)
 		if promptErr != nil {
 			return camperrors.Wrap(promptErr, "prompt failed")
 		}
