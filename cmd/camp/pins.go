@@ -47,7 +47,7 @@ Without arguments, detects and unpins the current directory.`,
 		if len(args) > 0 {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
-		store, err := loadPinStore(cmd)
+		store, _, err := loadPinStore(cmd)
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveError
 		}
@@ -66,22 +66,24 @@ func init() {
 }
 
 // loadPinStore loads the pin store from .campaign/settings/pins.json.
-func loadPinStore(cmd *cobra.Command) (*pins.Store, error) {
+// Returns the store and the campaign root path.
+func loadPinStore(cmd *cobra.Command) (*pins.Store, string, error) {
 	ctx := cmd.Context()
 	root, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	migratePinsIfNeeded(root)
 	storePath := config.PinsConfigPath(root)
 	store := pins.NewStore(storePath)
 	if err := store.Load(); err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return store, nil
+	return store, root, nil
 }
 
-// migratePinsIfNeeded moves pins.json from .campaign/ to .campaign/settings/ if needed.
+// migratePinsIfNeeded moves pins.json from .campaign/ to .campaign/settings/ if needed,
+// and converts any absolute paths to campaign-root-relative paths.
 func migratePinsIfNeeded(root string) {
 	oldPath := filepath.Join(root, campaign.CampaignDir, "pins.json")
 	newPath := config.PinsConfigPath(root)
@@ -91,10 +93,19 @@ func migratePinsIfNeeded(root string) {
 			_ = os.Rename(oldPath, newPath)
 		}
 	}
+
+	// Migrate absolute paths to relative
+	store := pins.NewStore(newPath)
+	if err := store.Load(); err != nil {
+		return
+	}
+	if store.MigrateAbsoluteToRelative(root) {
+		_ = store.Save()
+	}
 }
 
 func runPinsList(cmd *cobra.Command, args []string) error {
-	store, err := loadPinStore(cmd)
+	store, _, err := loadPinStore(cmd)
 	if err != nil {
 		return err
 	}
@@ -142,29 +153,35 @@ func runPin(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("path %q is not a directory", absPath)
 	}
 
-	store, err := loadPinStore(cmd)
+	store, campaignRoot, err := loadPinStore(cmd)
 	if err != nil {
 		return err
 	}
 
-	result := store.Toggle(name, absPath)
+	// Store path relative to campaign root for portability
+	relPath, err := filepath.Rel(campaignRoot, absPath)
+	if err != nil {
+		return camperrors.Wrapf(err, "compute relative path for %q", absPath)
+	}
+
+	result := store.Toggle(name, relPath)
 	if err := store.Save(); err != nil {
 		return err
 	}
 
 	switch result {
 	case pins.Pinned:
-		fmt.Printf("Pinned %q → %s\n", name, absPath)
+		fmt.Printf("Pinned %q → %s\n", name, relPath)
 	case pins.Unpinned:
 		fmt.Printf("Unpinned %q (was already pinned to same path)\n", name)
 	case pins.Updated:
-		fmt.Printf("Updated pin %q → %s\n", name, absPath)
+		fmt.Printf("Updated pin %q → %s\n", name, relPath)
 	}
 	return nil
 }
 
 func runUnpin(cmd *cobra.Command, args []string) error {
-	store, err := loadPinStore(cmd)
+	store, campaignRoot, err := loadPinStore(cmd)
 	if err != nil {
 		return err
 	}
@@ -178,9 +195,13 @@ func runUnpin(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return camperrors.Wrap(err, "get working directory")
 		}
-		pin, ok := store.FindByPath(cwd)
+		relCwd, err := filepath.Rel(campaignRoot, cwd)
+		if err != nil {
+			return camperrors.Wrap(err, "compute relative path")
+		}
+		pin, ok := store.FindByPath(relCwd)
 		if !ok {
-			return fmt.Errorf("directory not pinned: %s", cwd)
+			return fmt.Errorf("directory not pinned: %s", relCwd)
 		}
 		name = pin.Name
 	}

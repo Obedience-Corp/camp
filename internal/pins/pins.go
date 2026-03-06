@@ -153,6 +153,22 @@ func (s *Store) Toggle(name, path string) ToggleResult {
 	return Pinned
 }
 
+// MigrateAbsoluteToRelative converts any absolute paths to paths relative to
+// the given root. Returns true if any paths were converted.
+func (s *Store) MigrateAbsoluteToRelative(root string) bool {
+	changed := false
+	for i, p := range s.pins {
+		if filepath.IsAbs(p.Path) {
+			rel, err := filepath.Rel(root, p.Path)
+			if err == nil {
+				s.pins[i].Path = rel
+				changed = true
+			}
+		}
+	}
+	return changed
+}
+
 // Names returns all pin names (for tab completion).
 func (s *Store) Names() []string {
 	names := make([]string, len(s.pins))

@@ -541,7 +541,7 @@ func formatConfigShortcuts(shortcuts map[string]config.ShortcutConfig) string {
 	return sb.String()
 }
 
-// resolvePin checks if the query matches a pin name and returns its path.
+// resolvePin checks if the query matches a pin name and returns its absolute path.
 func resolvePin(campaignRoot, query string) (string, bool) {
 	storePath := config.PinsConfigPath(campaignRoot)
 	store := pins.NewStore(storePath)
@@ -552,5 +552,9 @@ func resolvePin(campaignRoot, query string) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	return pin.Path, true
+	// Pins are stored as campaign-root-relative paths
+	if filepath.IsAbs(pin.Path) {
+		return pin.Path, true
+	}
+	return filepath.Join(campaignRoot, pin.Path), true
 }
