@@ -14,7 +14,7 @@ import (
 var sccRunner leverage.Runner
 
 var leverageCmd = &cobra.Command{
-	Use:   "leverage",
+	Use:   "leverage [directory]",
 	Short: "Compute leverage scores for campaign projects",
 	Long: `Compute productivity leverage scores by comparing scc COCOMO estimates
 against actual development effort.
@@ -31,8 +31,11 @@ Examples:
   camp leverage --project camp               Show score for specific project
   camp leverage --json                       Output as JSON
   camp leverage --people 2                   Override team size
-  camp leverage --verbose                    Show diagnostic details`,
+  camp leverage --verbose                    Show diagnostic details
+  camp leverage .                            Score current directory only
+  camp leverage --dir /path/to/repo          Score a specific directory`,
 	RunE: runLeverage,
+	Args: cobra.MaximumNArgs(1),
 }
 
 func init() {
@@ -43,11 +46,25 @@ func init() {
 	leverageCmd.Flags().BoolP("verbose", "v", false, "show diagnostic details (config, project resolution, exclusions)")
 	leverageCmd.Flags().String("author", "", "filter by author email (git substring match — 'alice@co' matches 'alice@co.com')")
 	leverageCmd.Flags().Bool("by-author", false, "show per-author leverage breakdown")
+	leverageCmd.Flags().String("dir", "", "score a specific directory (skips campaign project resolution)")
 	rootCmd.AddCommand(leverageCmd)
 	leverageCmd.GroupID = "campaign"
 }
 
 func runLeverage(cmd *cobra.Command, args []string) error {
+	// Directory mode: early branch if --dir or positional arg provided
+	targetDir, err := resolveTargetDir(cmd, args)
+	if err != nil {
+		return err
+	}
+	if targetDir != "" {
+		projectFilter, _ := cmd.Flags().GetString("project")
+		if projectFilter != "" {
+			return fmt.Errorf("--project and --dir (or positional directory) are mutually exclusive")
+		}
+		return runLeverageDir(cmd, targetDir)
+	}
+
 	ctx := cmd.Context()
 
 	// Parse flags

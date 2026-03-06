@@ -24,6 +24,8 @@ type recentLeverage struct {
 type leverageOutputOpts struct {
 	authorFilter   string
 	authorExcluded int
+	directoryMode  bool
+	directoryName  string
 }
 
 func leverageOutputJSON(cmd *cobra.Command, agg *leverage.LeverageScore, scores []*leverage.LeverageScore) error {
@@ -102,8 +104,12 @@ func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores
 			authorInfo = fmt.Sprintf("  %s", ui.Dim(fmt.Sprintf("(%d %s detected)",
 				agg.AuthorCount, pluralize(agg.AuthorCount, "author", "authors"))))
 		}
+		label := "Campaign Leverage:"
+		if opts.directoryMode {
+			label = fmt.Sprintf("Directory Leverage (%s):", opts.directoryName)
+		}
 		fmt.Fprintf(out, "%s %s%s\n\n",
-			ui.Header("Campaign Leverage:"),
+			ui.Header(label),
 			ui.Value(fmtScore(agg.FullLeverage)+"x", ui.AccentColor),
 			authorInfo)
 	}
