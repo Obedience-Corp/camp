@@ -831,7 +831,7 @@ OUTPUT FORMATS:
 Examples:
   camp dungeon list                  List dungeon root items
   camp dungeon list --triage         List parent items eligible for triage
-  camp dungeon list                  (from nested dir) uses nearest dungeon context
+  cd workflow/design/subdir && camp dungeon list  Uses nearest dungeon context from nested path
   camp dungeon list -f json          JSON output for scripting
   camp dungeon list -f simple        Names only, pipe to other commands
 

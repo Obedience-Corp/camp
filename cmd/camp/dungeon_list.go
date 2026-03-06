@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"path/filepath"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -40,7 +39,7 @@ OUTPUT FORMATS:
 Examples:
   camp dungeon list                  List dungeon root items
   camp dungeon list --triage         List parent items eligible for triage
-  camp dungeon list                  (from nested dir) uses nearest dungeon context
+  cd workflow/design/subdir && camp dungeon list  Uses nearest dungeon context from nested path
   camp dungeon list -f json          JSON output for scripting
   camp dungeon list -f simple        Names only, pipe to other commands`,
 	Args: cobra.NoArgs,
@@ -96,25 +95,25 @@ func runDungeonList(cmd *cobra.Command, _ []string) error {
 	})
 }
 
-func outputDungeonItems(items []dungeon.DungeonItem, format string, ctx dungeonListOutputContext) error {
+func outputDungeonItems(items []dungeon.DungeonItem, format string, outCtx dungeonListOutputContext) error {
 	switch format {
 	case "json":
 		return outputDungeonJSON(items)
 	case "simple":
 		return outputDungeonSimple(items)
 	default:
-		return outputDungeonTable(items, ctx)
+		return outputDungeonTable(items, outCtx)
 	}
 }
 
-func outputDungeonTable(items []dungeon.DungeonItem, ctx dungeonListOutputContext) error {
+func outputDungeonTable(items []dungeon.DungeonItem, outCtx dungeonListOutputContext) error {
 	if len(items) == 0 {
-		fmt.Println(buildDungeonEmptyMessage(ctx.Source, ctx.DungeonRel))
+		fmt.Println(buildDungeonEmptyMessage(outCtx.Source, outCtx.DungeonRel))
 		return nil
 	}
 
-	if ctx.ContextLine != "" {
-		fmt.Println(ctx.ContextLine)
+	if outCtx.ContextLine != "" {
+		fmt.Println(outCtx.ContextLine)
 		fmt.Println()
 	}
 
@@ -145,7 +144,7 @@ func outputDungeonTable(items []dungeon.DungeonItem, ctx dungeonListOutputContex
 
 	fmt.Println(t)
 	label := "dungeon item(s)"
-	if ctx.Source == "triage" {
+	if outCtx.Source == "triage" {
 		label = "parent item(s) eligible for triage"
 	}
 	fmt.Printf("\n%d %s\n", len(items), label)
@@ -191,14 +190,6 @@ func formatDungeonTimestamp(t time.Time) string {
 		return "-"
 	}
 	return t.Format("Jan 02 15:04")
-}
-
-func relFromRoot(root, target string) string {
-	rel, err := filepath.Rel(root, target)
-	if err != nil || rel == "" {
-		return target
-	}
-	return rel
 }
 
 func buildDungeonListContextLine(source, parentRel, dungeonRel string) string {

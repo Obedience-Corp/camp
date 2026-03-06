@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/dungeon"
@@ -47,4 +48,12 @@ func resolveDungeonCommandContext(ctx context.Context) (*dungeonCommandContext, 
 		WorkingDir:   cwd,
 		Dungeon:      dungeonCtx,
 	}, nil
+}
+
+func relFromRoot(root, target string) string {
+	rel, err := filepath.Rel(root, target)
+	if err != nil || rel == "" {
+		return target
+	}
+	return rel
 }

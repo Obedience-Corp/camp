@@ -9,11 +9,7 @@ import (
 )
 
 func TestResolveDocsDestination(t *testing.T) {
-	root, err := os.MkdirTemp("", "dungeon-docs-resolve-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(root)
+	root := t.TempDir()
 
 	tests := []struct {
 		name        string
@@ -79,11 +75,8 @@ func TestResolveDocsDestination(t *testing.T) {
 func TestService_MoveToDocs(t *testing.T) {
 	ctx := context.Background()
 
-	root, err := os.MkdirTemp("", "dungeon-docs-move-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(root)
+	root := t.TempDir()
+	var err error
 
 	dungeonPath := filepath.Join(root, "dungeon")
 	if err := os.MkdirAll(dungeonPath, 0o755); err != nil {
@@ -126,11 +119,8 @@ func TestService_MoveToDocs(t *testing.T) {
 func TestService_MoveToDocs_RequiresExistingDestination(t *testing.T) {
 	ctx := context.Background()
 
-	root, err := os.MkdirTemp("", "dungeon-docs-missing-destination-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(root)
+	root := t.TempDir()
+	var err error
 
 	dungeonPath := filepath.Join(root, "dungeon")
 	if err := os.MkdirAll(dungeonPath, 0o755); err != nil {
@@ -167,11 +157,8 @@ func TestService_MoveToDocs_RequiresExistingDestination(t *testing.T) {
 func TestService_MoveToDocs_InvalidDestination(t *testing.T) {
 	ctx := context.Background()
 
-	root, err := os.MkdirTemp("", "dungeon-docs-invalid-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(root)
+	root := t.TempDir()
+	var err error
 
 	dungeonPath := filepath.Join(root, "dungeon")
 	if err := os.MkdirAll(dungeonPath, 0o755); err != nil {
