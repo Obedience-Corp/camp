@@ -194,6 +194,54 @@ func StageTrackedChanges(ctx context.Context, repoPath string, paths ...string) 
 	})
 }
 
+// FilterTracked returns only the paths from the input that git currently tracks.
+// For directories, a path is considered tracked if any file under it is in the index.
+// Useful for filtering commit scopes to avoid "pathspec did not match" errors.
+func FilterTracked(ctx context.Context, repoPath string, paths []string) ([]string, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+
+	args := []string{"-C", repoPath, "ls-files", "--"}
+	args = append(args, paths...)
+
+	cmd := exec.CommandContext(ctx, "git", args...)
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, camperrors.NewGit("ls-files", "", "", strings.TrimSpace(string(output)), err)
+	}
+
+	raw := strings.TrimSpace(string(output))
+	if raw == "" {
+		return nil, nil
+	}
+
+	// Build a set of tracked file paths returned by git
+	trackedFiles := strings.Split(raw, "\n")
+	trackedSet := make(map[string]bool, len(trackedFiles))
+	for _, f := range trackedFiles {
+		trackedSet[f] = true
+	}
+
+	var result []string
+	for _, p := range paths {
+		// Exact match (file path)
+		if trackedSet[p] {
+			result = append(result, p)
+			continue
+		}
+		// Directory match: check if any tracked file has this prefix
+		prefix := p + "/"
+		for t := range trackedSet {
+			if strings.HasPrefix(t, prefix) {
+				result = append(result, p)
+				break
+			}
+		}
+	}
+	return result, nil
+}
+
 // StageFiles stages specific files.
 func StageFiles(ctx context.Context, repoPath string, files ...string) error {
 	if len(files) == 0 {
