@@ -61,6 +61,8 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	svc := dungeon.NewService(cmdCtx.CampaignRoot, cmdCtx.Dungeon.DungeonPath)
+	relParent := relFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.ParentPath)
+	relDungeon := relFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.DungeonPath)
 
 	// Determine modes
 	runTriage, runInner := triageFlag, innerFlag
@@ -73,7 +75,7 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 	}
 
 	if !runTriage && !runInner {
-		fmt.Printf("%s Nothing to crawl: no parent items or dungeon items found.\n", ui.InfoIcon())
+		fmt.Printf("%s Nothing to crawl in context parent=%s dungeon=%s.\n", ui.InfoIcon(), relParent, relDungeon)
 		return nil
 	}
 
@@ -87,13 +89,19 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 			return camperrors.Wrap(err, "listing parent items")
 		}
 		if len(parentItems) > 0 {
-			fmt.Printf("%s Triage crawl: %d parent item(s) to review...\n\n", ui.InfoIcon(), len(parentItems))
+			fmt.Printf(
+				"%s Triage crawl: %d parent item(s) to review (parent=%s -> dungeon=%s)...\n\n",
+				ui.InfoIcon(),
+				len(parentItems),
+				relParent,
+				relDungeon,
+			)
 			triageSummary, err = dungeon.RunTriageCrawl(ctx, svc, cmdCtx.Dungeon.ParentPath)
 			if err != nil {
 				return camperrors.Wrap(err, "triage crawl failed")
 			}
 		} else {
-			fmt.Printf("%s No parent items to triage.\n", ui.InfoIcon())
+			fmt.Printf("%s No parent items to triage in %s.\n", ui.InfoIcon(), relParent)
 		}
 	}
 
@@ -107,13 +115,18 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 			if runTriage {
 				fmt.Println()
 			}
-			fmt.Printf("%s Inner crawl: %d dungeon item(s) to review...\n\n", ui.InfoIcon(), len(dungeonItems))
+			fmt.Printf(
+				"%s Inner crawl: %d dungeon item(s) to review in %s...\n\n",
+				ui.InfoIcon(),
+				len(dungeonItems),
+				relDungeon,
+			)
 			innerSummary, err = dungeon.RunCrawl(ctx, svc)
 			if err != nil {
 				return camperrors.Wrap(err, "inner crawl failed")
 			}
 		} else {
-			fmt.Printf("%s Dungeon is empty. Nothing to crawl.\n", ui.InfoIcon())
+			fmt.Printf("%s Dungeon is empty in %s. Nothing to crawl.\n", ui.InfoIcon(), relDungeon)
 		}
 	}
 

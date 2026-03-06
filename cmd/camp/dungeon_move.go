@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"path/filepath"
@@ -69,9 +70,11 @@ func runDungeonMove(cmd *cobra.Command, args []string) error {
 		if status != "" {
 			// Triage directly to a status directory
 			if err := svc.MoveToDungeonStatus(ctx, itemName, cmdCtx.Dungeon.ParentPath, status); err != nil {
-				return camperrors.Wrapf(err, "moving %s to dungeon/%s", itemName, status)
+				return wrapDungeonMoveError(err, itemName, status)
 			}
-			fmt.Printf("%s Moved %s → dungeon/%s/\n", ui.SuccessIcon(), itemName, status)
+			src := filepath.Join(relFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.ParentPath), itemName)
+			dst := filepath.Join(relFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.DungeonPath), status, itemName)
+			fmt.Printf("%s Moved %s (%s → %s)\n", ui.SuccessIcon(), itemName, src, dst)
 			description = fmt.Sprintf("Triage %s → dungeon/%s", itemName, status)
 			movedPaths = []string{
 				filepath.Join(cmdCtx.Dungeon.ParentPath, itemName),
@@ -80,9 +83,11 @@ func runDungeonMove(cmd *cobra.Command, args []string) error {
 		} else {
 			// Triage to dungeon root
 			if err := svc.MoveToDungeon(ctx, itemName, cmdCtx.Dungeon.ParentPath); err != nil {
-				return camperrors.Wrapf(err, "moving %s to dungeon", itemName)
+				return wrapDungeonMoveError(err, itemName, "dungeon")
 			}
-			fmt.Printf("%s Moved %s → dungeon/\n", ui.SuccessIcon(), itemName)
+			src := filepath.Join(relFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.ParentPath), itemName)
+			dst := filepath.Join(relFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.DungeonPath), itemName)
+			fmt.Printf("%s Moved %s (%s → %s)\n", ui.SuccessIcon(), itemName, src, dst)
 			description = fmt.Sprintf("Triage %s → dungeon", itemName)
 			movedPaths = []string{
 				filepath.Join(cmdCtx.Dungeon.ParentPath, itemName),
@@ -95,9 +100,11 @@ func runDungeonMove(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("status is required when moving within the dungeon (e.g., completed, archived, someday)")
 		}
 		if err := svc.MoveToStatus(ctx, itemName, status); err != nil {
-			return camperrors.Wrapf(err, "moving %s to %s", itemName, status)
+			return wrapDungeonMoveError(err, itemName, status)
 		}
-		fmt.Printf("%s Moved %s → dungeon/%s/\n", ui.SuccessIcon(), itemName, status)
+		src := filepath.Join(relFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.DungeonPath), itemName)
+		dst := filepath.Join(relFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.DungeonPath), status, itemName)
+		fmt.Printf("%s Moved %s (%s → %s)\n", ui.SuccessIcon(), itemName, src, dst)
 
 		relDir, relErr := filepath.Rel(cmdCtx.CampaignRoot, cmdCtx.Dungeon.ParentPath)
 		if relErr != nil {
@@ -129,4 +136,31 @@ func runDungeonMove(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+func wrapDungeonMoveError(err error, itemName, status string) error {
+	switch {
+	case errors.Is(err, dungeon.ErrAlreadyExists):
+		return fmt.Errorf(
+			"cannot move %q to %q because destination already exists; choose another status or rename the item: %w",
+			itemName,
+			status,
+			err,
+		)
+	case errors.Is(err, dungeon.ErrInvalidStatus):
+		return fmt.Errorf(
+			"invalid status %q for %q; use a single directory name like completed, archived, or someday: %w",
+			status,
+			itemName,
+			err,
+		)
+	case errors.Is(err, dungeon.ErrNotFound):
+		return fmt.Errorf(
+			"item %q was not found in the resolved context; run 'camp dungeon list --triage' or 'camp dungeon list' to confirm available items: %w",
+			itemName,
+			err,
+		)
+	default:
+		return camperrors.Wrapf(err, "moving %s to %s", itemName, status)
+	}
 }

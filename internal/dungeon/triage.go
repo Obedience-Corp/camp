@@ -90,6 +90,9 @@ func RunTriageCrawl(ctx context.Context, svc *Service, parentPath string) (*Craw
 
 			if err := svc.MoveToDungeonStatus(ctx, item.Name, parentPath, status); err != nil {
 				fmt.Printf("Error moving %s to dungeon/%s: %v\n", item.Name, status, err)
+				if hint := moveErrorHint(err); hint != "" {
+					fmt.Printf("Hint: %s\n", hint)
+				}
 				summary.Skipped++
 			} else {
 				summary.RecordMove(status, item.Name)

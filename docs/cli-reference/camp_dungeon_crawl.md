@@ -11,6 +11,9 @@ Without flags, auto-detects what to crawl:
   - Dungeon items exist → inner mode (keep/archive dungeon items)
   - Both exist → runs triage first, then inner
 
+Dungeon context is resolved by walking from current directory to campaign root
+and selecting the nearest dungeon.
+
 Use --triage or --inner to force a specific mode.
 
 For each item, you'll be prompted to decide its fate.
@@ -45,4 +48,3 @@ camp dungeon crawl [flags]
 ### SEE ALSO
 
 * [camp dungeon](camp_dungeon.md)	 - Manage the campaign dungeon
-

@@ -8,6 +8,8 @@ Move items within the dungeon or from the parent directory into the dungeon.
 
 Without --triage, moves an item already in the dungeon root to a status directory.
 With --triage, moves an item from the parent directory into the dungeon.
+Dungeon context is resolved by walking from current directory to campaign root
+and selecting the nearest dungeon.
 
 Statuses: completed, archived, someday
 
@@ -40,4 +42,3 @@ camp dungeon move <item> [status] [flags]
 ### SEE ALSO
 
 * [camp dungeon](camp_dungeon.md)	 - Manage the campaign dungeon
-

@@ -320,6 +320,72 @@ func TestDungeonMove_TriageDirectToStatus(t *testing.T) {
 	assert.False(t, exists, "file should not be in dungeon root")
 }
 
+func TestDungeonList_UsesNearestContextFromNestedDir(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupDungeonCampaign(t, tc, "dlist-nearest")
+
+	// Create a second, nearer dungeon context under workflow/design.
+	_, _, err := tc.ExecCommand("mkdir", "-p", path+"/workflow/design/dungeon", path+"/workflow/design/subdir")
+	require.NoError(t, err)
+
+	// Item in root dungeon should not be selected when running from nested context.
+	err = tc.WriteFile(path+"/dungeon/root-item.md", "# Root Item\n")
+	require.NoError(t, err)
+	// Item in nearest dungeon should be selected.
+	err = tc.WriteFile(path+"/workflow/design/dungeon/local-item.md", "# Local Item\n")
+	require.NoError(t, err)
+
+	output, err := tc.RunCampInDir(path+"/workflow/design/subdir", "dungeon", "list", "-f", "simple")
+	require.NoError(t, err)
+	assert.Contains(t, output, "local-item.md", "nearest dungeon item should be listed")
+	assert.NotContains(t, output, "root-item.md", "root dungeon item should not be listed from nearer context")
+}
+
+func TestDungeonMove_TriageFromNestedDirUsesNearestContext(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupDungeonCampaign(t, tc, "dmove-nearest")
+
+	// Create nearest dungeon context and nested execution path.
+	_, _, err := tc.ExecCommand("mkdir", "-p", path+"/workflow/design/dungeon", path+"/workflow/design/subdir")
+	require.NoError(t, err)
+
+	// Parent item for nearest context lives in workflow/design.
+	err = tc.WriteFile(path+"/workflow/design/nested-old.md", "# Nested Old\n")
+	require.NoError(t, err)
+
+	output, err := tc.RunCampInDir(path+"/workflow/design/subdir", "dungeon", "move", "nested-old.md", "--triage", "--no-commit")
+	require.NoError(t, err)
+	assert.Contains(t, output, "Moved nested-old.md", "should confirm move from nested context")
+
+	exists, err := tc.CheckFileExists(path + "/workflow/design/dungeon/nested-old.md")
+	require.NoError(t, err)
+	assert.True(t, exists, "file should move into nearest dungeon context")
+}
+
+func TestDungeonCommands_NoDungeonContextError(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := "/campaigns/dungeon-no-context"
+	_, err := tc.InitCampaign(path, "dungeon-no-context", "product")
+	require.NoError(t, err)
+	_, _, err = tc.ExecCommand("rm", "-rf", path+"/dungeon")
+	require.NoError(t, err)
+
+	err = tc.WriteFile(path+"/orphan.md", "# Orphan\n")
+	require.NoError(t, err)
+
+	output, err := tc.RunCampInDir(path, "dungeon", "list")
+	assert.Error(t, err)
+	assert.Contains(t, output, "no dungeon context found", "list should instruct user to create context")
+
+	output, err = tc.RunCampInDir(path, "dungeon", "move", "orphan.md", "--triage", "--no-commit")
+	assert.Error(t, err)
+	assert.Contains(t, output, "no dungeon context found", "move should instruct user to create context")
+
+	output, err = tc.RunCampInDir(path, "dungeon", "crawl", "--triage")
+	assert.Error(t, err)
+	assert.Contains(t, output, "no dungeon context found", "crawl should instruct user to create context")
+}
+
 // --- intent add agent author ---
 
 func TestIntentAdd_AgentAuthor(t *testing.T) {
