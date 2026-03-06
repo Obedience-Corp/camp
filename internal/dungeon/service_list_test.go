@@ -577,3 +577,131 @@ default_status: active
 		t.Error("unmanaged, non-excluded directory should be included")
 	}
 }
+
+func TestListParentItems_CrawlIgnoreGlobPatterns(t *testing.T) {
+	ctx := context.Background()
+
+	tmpDir := t.TempDir()
+	dungeonPath := filepath.Join(tmpDir, "dungeon")
+	svc := NewService(tmpDir, dungeonPath)
+
+	if _, err := svc.Init(ctx, InitOptions{}); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+
+	// Create .crawlignore with glob patterns
+	ignoreContent := "*.log\ntest-*\n"
+	if err := os.WriteFile(filepath.Join(tmpDir, CrawlIgnoreFile), []byte(ignoreContent), 0644); err != nil {
+		t.Fatalf("failed to write crawlignore: %v", err)
+	}
+
+	// Create files that should be excluded by patterns
+	for _, name := range []string{"debug.log", "error.log", "test-output"} {
+		if err := os.WriteFile(filepath.Join(tmpDir, name), []byte("x"), 0644); err != nil {
+			t.Fatalf("failed to create %s: %v", name, err)
+		}
+	}
+
+	// Create files/dirs that should survive
+	if err := os.WriteFile(filepath.Join(tmpDir, "notes.md"), []byte("x"), 0644); err != nil {
+		t.Fatalf("failed to create file: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(tmpDir, "my-project"), 0755); err != nil {
+		t.Fatalf("failed to create dir: %v", err)
+	}
+
+	items, err := svc.ListParentItems(ctx, tmpDir)
+	if err != nil {
+		t.Fatalf("ListParentItems failed: %v", err)
+	}
+
+	names := make(map[string]bool)
+	for _, item := range items {
+		names[item.Name] = true
+	}
+
+	if names["debug.log"] {
+		t.Error("debug.log should be excluded by *.log pattern")
+	}
+	if names["error.log"] {
+		t.Error("error.log should be excluded by *.log pattern")
+	}
+	if names["test-output"] {
+		t.Error("test-output should be excluded by test-* pattern")
+	}
+	if !names["notes.md"] {
+		t.Error("notes.md should be included")
+	}
+	if !names["my-project"] {
+		t.Error("my-project should be included")
+	}
+}
+
+func TestListParentItems_CrawlIgnoreNegation(t *testing.T) {
+	ctx := context.Background()
+
+	tmpDir := t.TempDir()
+	dungeonPath := filepath.Join(tmpDir, "dungeon")
+	svc := NewService(tmpDir, dungeonPath)
+
+	if _, err := svc.Init(ctx, InitOptions{}); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+
+	// Exclude all .log files, but keep important.log
+	ignoreContent := "*.log\n!important.log\n"
+	if err := os.WriteFile(filepath.Join(tmpDir, CrawlIgnoreFile), []byte(ignoreContent), 0644); err != nil {
+		t.Fatalf("failed to write crawlignore: %v", err)
+	}
+
+	for _, name := range []string{"debug.log", "important.log"} {
+		if err := os.WriteFile(filepath.Join(tmpDir, name), []byte("x"), 0644); err != nil {
+			t.Fatalf("failed to create %s: %v", name, err)
+		}
+	}
+
+	items, err := svc.ListParentItems(ctx, tmpDir)
+	if err != nil {
+		t.Fatalf("ListParentItems failed: %v", err)
+	}
+
+	names := make(map[string]bool)
+	for _, item := range items {
+		names[item.Name] = true
+	}
+
+	if names["debug.log"] {
+		t.Error("debug.log should be excluded")
+	}
+	if !names["important.log"] {
+		t.Error("important.log should be included via negation")
+	}
+}
+
+func TestListParentItems_CrawlIgnoreFileItself(t *testing.T) {
+	ctx := context.Background()
+
+	tmpDir := t.TempDir()
+	dungeonPath := filepath.Join(tmpDir, "dungeon")
+	svc := NewService(tmpDir, dungeonPath)
+
+	if _, err := svc.Init(ctx, InitOptions{}); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+
+	// Create .crawlignore — it should never appear as a triage candidate
+	if err := os.WriteFile(filepath.Join(tmpDir, CrawlIgnoreFile), []byte("*.tmp\n"), 0644); err != nil {
+		t.Fatalf("failed to write crawlignore: %v", err)
+	}
+
+	items, err := svc.ListParentItems(ctx, tmpDir)
+	if err != nil {
+		t.Fatalf("ListParentItems failed: %v", err)
+	}
+
+	for _, item := range items {
+		if item.Name == CrawlIgnoreFile {
+			t.Error(".crawlignore should not appear as a triage candidate")
+		}
+	}
+}
