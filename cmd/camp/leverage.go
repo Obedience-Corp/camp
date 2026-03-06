@@ -130,76 +130,11 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		// Determine actual person-months for this project.
-		// Use contribution-based actual PM (sum of each author's active duration)
-		// rather than naive numAuthors * totalElapsed.
-		var projActualPM float64
-		var projPeople int
-		var projElapsed float64
-
-		if authorFilter != "" {
-			// Personal leverage: 1 person, author-specific date range
-			projPeople = 1
-			first, last, gitErr := leverage.AuthorDateRange(ctx, proj.GitDir, authorFilter)
-			if gitErr == nil {
-				projElapsed = leverage.ElapsedMonths(first, last)
-			}
-			if projElapsed <= 0 {
-				projElapsed = 0.1 // minimum for single-commit authors
-			}
-			projActualPM = projElapsed
-		} else if peopleOverride > 0 {
-			// Manual override: use specified people count with project elapsed
-			projPeople = peopleOverride
-			first, last, gitErr := leverage.GitDateRange(ctx, proj.GitDir)
-			if gitErr == nil {
-				projElapsed = leverage.ElapsedMonths(first, last)
-			}
-			if projElapsed <= 0 {
-				projElapsed = elapsed
-			}
-			projActualPM = float64(projPeople) * projElapsed
-		} else if proj.ActualPersonMonths > 0 {
-			// Auto-detect: use git-derived actual person-months
-			projActualPM = proj.ActualPersonMonths
-			projPeople = proj.AuthorCount
-			if projPeople == 0 {
-				projPeople = 1
-			}
-			first, last, gitErr := leverage.GitDateRange(ctx, proj.GitDir)
-			if gitErr == nil {
-				projElapsed = leverage.ElapsedMonths(first, last)
-			}
-			if projElapsed <= 0 {
-				projElapsed = elapsed
-			}
-		} else {
-			// Fallback
-			projPeople = proj.AuthorCount
-			if projPeople == 0 {
-				projPeople = 1
-			}
-			first, last, gitErr := leverage.GitDateRange(ctx, proj.GitDir)
-			if gitErr == nil {
-				projElapsed = leverage.ElapsedMonths(first, last)
-			}
-			if projElapsed <= 0 {
-				projElapsed = elapsed
-			}
-			projActualPM = float64(projPeople) * projElapsed
-		}
-
-		score := leverage.ComputeScore(result, projPeople, projElapsed)
-		score.ProjectName = proj.Name
-		score.AuthorCount = proj.AuthorCount
-
-		// Override with contribution-based actual person-months
-		if projActualPM > 0 {
-			score.ActualPersonMonths = projActualPM
-			estPM := result.EstimatedPeople * result.EstimatedScheduleMonths
-			score.FullLeverage = estPM / projActualPM
-		}
-
+		score := computeProjectScore(ctx, proj, result, scoreParams{
+			AuthorFilter:    authorFilter,
+			PeopleOverride:  peopleOverride,
+			FallbackElapsed: elapsed,
+		})
 		scores = append(scores, score)
 	}
 
@@ -248,14 +183,15 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 		return leverageOutputJSON(cmd, agg, scores)
 	}
 
-	if byAuthor {
-		return leverageOutputByAuthor(cmd, agg, resolved, setup.Resolver)
-	}
-
 	recent := recentLeverage{week7: week7, has7: has7, month30: month30, has30: has30}
 	opts := leverageOutputOpts{
 		authorFilter:   authorFilter,
 		authorExcluded: authorExcluded,
 	}
+
+	if byAuthor {
+		return leverageOutputByAuthor(cmd, agg, resolved, setup.Resolver, opts)
+	}
+
 	return leverageOutputTable(cmd, agg, scores, cfg, setup.AutoDetected, recent, opts)
 }

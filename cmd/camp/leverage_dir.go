@@ -38,14 +38,15 @@ func resolveTargetDir(cmd *cobra.Command, args []string) (string, error) {
 
 // initDirectorySetup creates a leverageSetup for directory mode.
 // It opportunistically loads campaign config if available, otherwise uses sensible defaults.
-func initDirectorySetup(ctx context.Context, targetDir string) (*leverageSetup, error) {
+// gitRoot is the pre-computed git toplevel (empty if not a git repo).
+func initDirectorySetup(ctx context.Context, targetDir, gitRoot string) (*leverageSetup, error) {
 	// Validate directory exists
 	info, err := os.Stat(targetDir)
 	if err != nil {
 		return nil, camperrors.Wrap(err, "directory not found")
 	}
 	if !info.IsDir() {
-		return nil, fmt.Errorf("not a directory: %s", targetDir)
+		return nil, camperrors.Wrapf(fmt.Errorf("path is not a directory"), "%s", targetDir)
 	}
 
 	// Try to detect campaign opportunistically
@@ -79,8 +80,6 @@ func initDirectorySetup(ctx context.Context, targetDir string) (*leverageSetup, 
 			COCOMOProjectType: "organic",
 		}
 
-		// Try to detect project start from git
-		gitRoot := detectGitRoot(ctx, targetDir)
 		if gitRoot != "" {
 			first, _, gitErr := leverage.GitDateRange(ctx, gitRoot)
 			if gitErr == nil {
@@ -116,9 +115,8 @@ func detectGitRoot(ctx context.Context, dir string) string {
 }
 
 // resolveDirectoryProject builds a single ResolvedProject for the target directory.
-func resolveDirectoryProject(ctx context.Context, targetDir string) leverage.ResolvedProject {
-	gitRoot := detectGitRoot(ctx, targetDir)
-
+// gitRoot is the pre-computed git toplevel (empty if not a git repo).
+func resolveDirectoryProject(targetDir, gitRoot string) leverage.ResolvedProject {
 	proj := leverage.ResolvedProject{
 		Name:   filepath.Base(targetDir),
 		SCCDir: targetDir,
@@ -145,7 +143,10 @@ func runLeverageDir(cmd *cobra.Command, targetDir string) error {
 	authorFilter, _ := cmd.Flags().GetString("author")
 	byAuthor, _ := cmd.Flags().GetBool("by-author")
 
-	setup, err := initDirectorySetup(ctx, targetDir)
+	// Detect git root once, pass to both setup and project resolution
+	gitRoot := detectGitRoot(ctx, targetDir)
+
+	setup, err := initDirectorySetup(ctx, targetDir, gitRoot)
 	if err != nil {
 		return err
 	}
@@ -165,7 +166,7 @@ func runLeverageDir(cmd *cobra.Command, targetDir string) error {
 	}
 
 	// Build single project
-	proj := resolveDirectoryProject(ctx, targetDir)
+	proj := resolveDirectoryProject(targetDir, gitRoot)
 
 	// Populate metrics
 	resolved := []leverage.ResolvedProject{proj}
@@ -182,7 +183,7 @@ func runLeverageDir(cmd *cobra.Command, targetDir string) error {
 	if authorFilter != "" {
 		hasCommits, gitErr := leverage.AuthorHasCommits(ctx, proj.GitDir, authorFilter)
 		if gitErr != nil || !hasCommits {
-			return fmt.Errorf("no commits found for author %q in %s", authorFilter, proj.Name)
+			return camperrors.Wrapf(fmt.Errorf("no commits for author"), "%s in %s", authorFilter, proj.Name)
 		}
 	}
 
@@ -197,6 +198,11 @@ func runLeverageDir(cmd *cobra.Command, targetDir string) error {
 		fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] InMonorepo: %v\n", proj.InMonorepo)
 	}
 
+	// Check context before expensive scc run
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
 	// Compute elapsed
 	now := time.Now()
 	elapsed := leverage.ElapsedMonths(cfg.ProjectStart, now)
@@ -204,72 +210,15 @@ func runLeverageDir(cmd *cobra.Command, targetDir string) error {
 	// Run scc
 	result, err := runner.Run(ctx, proj.SCCDir, proj.ExcludeDirs)
 	if err != nil {
-		return camperrors.Wrap(err, fmt.Sprintf("running scc on %s", proj.Name))
+		return camperrors.Wrapf(err, "running scc on %s", proj.Name)
 	}
 
-	// Compute score (same logic as campaign mode per-project)
-	var projActualPM float64
-	var projPeople int
-	var projElapsed float64
-
-	if authorFilter != "" {
-		projPeople = 1
-		first, last, gitErr := leverage.AuthorDateRange(ctx, proj.GitDir, authorFilter)
-		if gitErr == nil {
-			projElapsed = leverage.ElapsedMonths(first, last)
-		}
-		if projElapsed <= 0 {
-			projElapsed = 0.1
-		}
-		projActualPM = projElapsed
-	} else if peopleOverride > 0 {
-		projPeople = peopleOverride
-		first, last, gitErr := leverage.GitDateRange(ctx, proj.GitDir)
-		if gitErr == nil {
-			projElapsed = leverage.ElapsedMonths(first, last)
-		}
-		if projElapsed <= 0 {
-			projElapsed = elapsed
-		}
-		projActualPM = float64(projPeople) * projElapsed
-	} else if proj.ActualPersonMonths > 0 {
-		projActualPM = proj.ActualPersonMonths
-		projPeople = proj.AuthorCount
-		if projPeople == 0 {
-			projPeople = 1
-		}
-		first, last, gitErr := leverage.GitDateRange(ctx, proj.GitDir)
-		if gitErr == nil {
-			projElapsed = leverage.ElapsedMonths(first, last)
-		}
-		if projElapsed <= 0 {
-			projElapsed = elapsed
-		}
-	} else {
-		projPeople = proj.AuthorCount
-		if projPeople == 0 {
-			projPeople = 1
-		}
-		first, last, gitErr := leverage.GitDateRange(ctx, proj.GitDir)
-		if gitErr == nil {
-			projElapsed = leverage.ElapsedMonths(first, last)
-		}
-		if projElapsed <= 0 {
-			projElapsed = elapsed
-		}
-		projActualPM = float64(projPeople) * projElapsed
-	}
-
-	score := leverage.ComputeScore(result, projPeople, projElapsed)
-	score.ProjectName = proj.Name
-	score.AuthorCount = proj.AuthorCount
-
-	if projActualPM > 0 {
-		score.ActualPersonMonths = projActualPM
-		estPM := result.EstimatedPeople * result.EstimatedScheduleMonths
-		score.FullLeverage = estPM / projActualPM
-	}
-
+	// Compute score using shared logic
+	score := computeProjectScore(ctx, proj, result, scoreParams{
+		AuthorFilter:    authorFilter,
+		PeopleOverride:  peopleOverride,
+		FallbackElapsed: elapsed,
+	})
 	scores := []*leverage.LeverageScore{score}
 
 	// Aggregate (single project, so aggregate == project score)
@@ -283,27 +232,27 @@ func runLeverageDir(cmd *cobra.Command, targetDir string) error {
 	agg := leverage.AggregateScores(scores, effectivePeople, elapsed)
 
 	// Override aggregate with project-level actual PM (single project, no dedup needed)
-	if projActualPM > 0 {
+	if score.ActualPersonMonths > 0 {
 		estPM := agg.EstimatedPeople * agg.EstimatedMonths
-		agg.ActualPersonMonths = projActualPM
-		agg.FullLeverage = estPM / projActualPM
+		agg.ActualPersonMonths = score.ActualPersonMonths
+		agg.FullLeverage = estPM / score.ActualPersonMonths
 	}
 
 	// Output
-	if jsonOut {
-		return leverageOutputJSON(cmd, agg, scores)
-	}
-
-	if byAuthor {
-		return leverageOutputByAuthor(cmd, agg, resolved, setup.Resolver)
-	}
-
-	// No snapshots in directory mode
-	recent := recentLeverage{}
 	opts := leverageOutputOpts{
 		authorFilter:  authorFilter,
 		directoryMode: true,
 		directoryName: proj.Name,
 	}
-	return leverageOutputTable(cmd, agg, scores, cfg, setup.AutoDetected, recent, opts)
+
+	if jsonOut {
+		return leverageOutputJSON(cmd, agg, scores)
+	}
+
+	if byAuthor {
+		return leverageOutputByAuthor(cmd, agg, resolved, setup.Resolver, opts)
+	}
+
+	// No snapshots in directory mode
+	return leverageOutputTable(cmd, agg, scores, cfg, setup.AutoDetected, recentLeverage{}, opts)
 }

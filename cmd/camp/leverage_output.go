@@ -49,7 +49,7 @@ func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores
 	out := cmd.OutOrStdout()
 	noLegend, _ := cmd.Flags().GetBool("no-legend")
 
-	if autoDetected {
+	if autoDetected && !opts.directoryMode {
 		fmt.Fprintln(out, ui.Warning("Note: Using auto-detected configuration. Run 'camp leverage config' to customize."))
 		fmt.Fprintln(out)
 	}
@@ -167,7 +167,7 @@ func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores
 
 // leverageOutputByAuthor displays a ranked table of each author's blame-weighted
 // PM and their share of campaign leverage.
-func leverageOutputByAuthor(cmd *cobra.Command, agg *leverage.LeverageScore, resolved []leverage.ResolvedProject, resolver *leverage.AuthorResolver) error {
+func leverageOutputByAuthor(cmd *cobra.Command, agg *leverage.LeverageScore, resolved []leverage.ResolvedProject, resolver *leverage.AuthorResolver, opts leverageOutputOpts) error {
 	out := cmd.OutOrStdout()
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.CategoryColor)
 
@@ -222,8 +222,12 @@ func leverageOutputByAuthor(cmd *cobra.Command, agg *leverage.LeverageScore, res
 		})
 	}
 
+	label := "Campaign Leverage:"
+	if opts.directoryMode {
+		label = fmt.Sprintf("Directory Leverage (%s):", opts.directoryName)
+	}
 	fmt.Fprintf(out, "%s %s\n\n",
-		ui.Header("Campaign Leverage:"),
+		ui.Header(label),
 		ui.Value(fmtScore(agg.FullLeverage)+"x", ui.AccentColor))
 
 	t := table.New().
