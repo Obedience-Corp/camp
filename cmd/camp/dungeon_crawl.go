@@ -153,9 +153,9 @@ func commitCrawlChanges(ctx context.Context, cfg *config.CampaignConfig, campaig
 
 	files := []string{relDungeon}
 
-	// For triage moves, stage source deletions and include specific
-	// source paths in the commit scope. Avoids using relCwd which
-	// would be "." at campaign root, capturing unrelated changes.
+	// For triage moves, include source deletions in the commit scope.
+	// Only include paths git actually tracks to avoid "pathspec did not
+	// match" errors when the parent directory was renamed or never committed.
 	if triage != nil && triage.HasMoves() {
 		var sourcePaths []string
 		for _, names := range triage.MovedItems {
@@ -164,10 +164,16 @@ func commitCrawlChanges(ctx context.Context, cfg *config.CampaignConfig, campaig
 			}
 		}
 		if len(sourcePaths) > 0 {
-			if err := git.StageTrackedChanges(ctx, campaignRoot, sourcePaths...); err != nil {
-				fmt.Printf("%s Warning: could not stage source deletions: %v\n", ui.InfoIcon(), err)
+			tracked, filterErr := git.FilterTracked(ctx, campaignRoot, sourcePaths)
+			if filterErr != nil {
+				fmt.Printf("%s Warning: could not check tracked paths: %v\n", ui.InfoIcon(), filterErr)
 			}
-			files = append(files, sourcePaths...)
+			if len(tracked) > 0 {
+				if err := git.StageTrackedChanges(ctx, campaignRoot, tracked...); err != nil {
+					fmt.Printf("%s Warning: could not stage source deletions: %v\n", ui.InfoIcon(), err)
+				}
+				files = append(files, tracked...)
+			}
 		}
 	}
 
