@@ -118,6 +118,34 @@ func TestInit_DirectoryStructure(t *testing.T) {
 	assert.True(t, exists, "campaign.yaml should exist")
 }
 
+func TestInit_WorkflowExploreScaffoldAndShortcut(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	_, err := tc.InitCampaign("/campaigns/test-explore", "test-explore", "product")
+	require.NoError(t, err)
+
+	// workflow/explore should be scaffolded.
+	exists, err := tc.CheckDirExists("/campaigns/test-explore/workflow/explore")
+	require.NoError(t, err)
+	assert.True(t, exists, "workflow/explore should exist in new campaign scaffold")
+
+	// workflow/explore guidance should differentiate it from workflow/design.
+	exploreObey, err := tc.ReadFile("/campaigns/test-explore/workflow/explore/OBEY.md")
+	require.NoError(t, err)
+	assert.Contains(t, exploreObey, "workflow/design", "explore guidance should reference design differentiation")
+
+	// jumps defaults should include the ex shortcut.
+	jumps, err := tc.ReadFile("/campaigns/test-explore/.campaign/settings/jumps.yaml")
+	require.NoError(t, err)
+	assert.Contains(t, jumps, "ex:", "jumps config should include ex shortcut")
+	assert.Contains(t, jumps, "workflow/explore/", "ex shortcut should target workflow/explore/")
+
+	// Shortcut should navigate to workflow/explore path.
+	output, err := tc.RunCampInDir("/campaigns/test-explore", "go", "ex", "--print")
+	require.NoError(t, err)
+	assert.Contains(t, output, "/campaigns/test-explore/workflow/explore")
+}
+
 func TestInit_CampaignYAMLContent(t *testing.T) {
 	tc := GetSharedContainer(t)
 

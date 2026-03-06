@@ -7,6 +7,10 @@ import "time"
 func DefaultConcepts() []ConceptEntry {
 	depth0 := 0
 	depth1 := 1
+
+	// Dungeon is intentionally not modeled as a default concept entry.
+	// Dungeon context is resolved dynamically by nearest-path lookup, and a
+	// static concept path implies root-only behavior that conflicts with that model.
 	return []ConceptEntry{
 		{
 			Name:        "projects",
@@ -38,7 +42,7 @@ func DefaultConcepts() []ConceptEntry {
 			Path:        "workflow/",
 			Description: "Work management",
 			Depth:       &depth1,
-			Ignore:      []string{"intents/", "design/"},
+			Ignore:      []string{"intents/", "design/", "explore/"},
 		},
 		{
 			Name:        "design",
@@ -47,16 +51,16 @@ func DefaultConcepts() []ConceptEntry {
 			Depth:       &depth1,
 		},
 		{
+			Name:        "explore",
+			Path:        "workflow/explore/",
+			Description: "Exploratory notes and discovery work",
+			Depth:       &depth1,
+		},
+		{
 			Name:        "docs",
 			Path:        "docs/",
 			Description: "Documentation",
 			Depth:       &depth0,
-		},
-		{
-			Name:        "dungeon",
-			Path:        "dungeon/",
-			Description: "Archived work",
-			// Depth nil = unlimited
 		},
 	}
 }
@@ -93,10 +97,11 @@ func DefaultNavigationShortcuts() map[string]ShortcutConfig {
 		"w":  {Path: "workflow/", Description: "Jump to workflow directory", Source: ShortcutSourceAuto},
 		"a":  {Path: "ai_docs/", Description: "Jump to AI docs directory", Source: ShortcutSourceAuto},
 		"d":  {Path: "docs/", Description: "Jump to docs directory", Source: ShortcutSourceAuto},
-		"du": {Path: "dungeon/", Description: "Jump to dungeon directory", Source: ShortcutSourceAuto},
+		"du": {Path: "dungeon/", Description: "Jump to dungeon directory (navigation only)", Source: ShortcutSourceAuto},
 		"cr": {Path: "workflow/code_reviews/", Description: "Jump to code reviews", Source: ShortcutSourceAuto},
 		"pi": {Path: "workflow/pipelines/", Description: "Jump to pipelines", Source: ShortcutSourceAuto},
 		"de": {Path: "workflow/design/", Description: "Jump to design", Source: ShortcutSourceAuto},
+		"ex": {Path: "workflow/explore/", Description: "Jump to explore", Source: ShortcutSourceAuto},
 
 		// Command-only shortcuts (no navigation path)
 		"cfg": {Concept: "config", Description: "Config commands", Source: ShortcutSourceAuto},

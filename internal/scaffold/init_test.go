@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -45,6 +46,22 @@ func TestInit(t *testing.T) {
 		if _, err := os.Stat(path); os.IsNotExist(err) {
 			t.Errorf("directory %s was not created", dir)
 		}
+	}
+
+	// workflow/explore should be scaffolded by default.
+	exploreDir := filepath.Join(campaignDir, "workflow", "explore")
+	if _, err := os.Stat(exploreDir); os.IsNotExist(err) {
+		t.Error("workflow/explore directory was not created")
+	}
+
+	// workflow/explore guidance should clearly differentiate from workflow/design.
+	exploreObeyPath := filepath.Join(exploreDir, "OBEY.md")
+	exploreObey, err := os.ReadFile(exploreObeyPath)
+	if err != nil {
+		t.Fatalf("failed to read workflow/explore/OBEY.md: %v", err)
+	}
+	if !strings.Contains(string(exploreObey), "workflow/design") {
+		t.Error("workflow/explore/OBEY.md should reference workflow/design differentiation")
 	}
 
 	// Check key skill files were scaffolded
@@ -581,5 +598,63 @@ func TestInit_RepairUpdatesMission(t *testing.T) {
 
 	if cfg.Mission != "Updated mission via repair" {
 		t.Errorf("Mission = %q, want %q (should update)", cfg.Mission, "Updated mission via repair")
+	}
+}
+
+func TestInit_RepairPreservesLegacyConceptList(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	campaignDir := filepath.Join(tmpDir, "repair-legacy-concepts")
+	if err := os.MkdirAll(filepath.Join(campaignDir, config.CampaignDir), 0755); err != nil {
+		t.Fatalf("failed to create campaign dir: %v", err)
+	}
+
+	ctx := context.Background()
+
+	initialCfg := &config.CampaignConfig{
+		ID:          "legacy-id",
+		Name:        "repair-legacy-concepts",
+		Type:        config.CampaignTypeProduct,
+		Description: "Legacy concept config",
+		Mission:     "Keep legacy concepts",
+		CreatedAt:   time.Now(),
+		ConceptList: []config.ConceptEntry{
+			{Name: "design", Path: "workflow/design/", Description: "Design"},
+			{Name: "dungeon", Path: "dungeon/", Description: "Legacy dungeon concept"},
+		},
+	}
+	if err := config.SaveCampaignConfig(ctx, campaignDir, initialCfg); err != nil {
+		t.Fatalf("SaveCampaignConfig() error = %v", err)
+	}
+
+	_, err := Init(ctx, campaignDir, InitOptions{
+		Name:       "repair-legacy-concepts",
+		Repair:     true,
+		NoRegister: true,
+	})
+	if err != nil {
+		t.Fatalf("Init() with repair error = %v", err)
+	}
+
+	cfg, err := config.LoadCampaignConfig(ctx, campaignDir)
+	if err != nil {
+		t.Fatalf("LoadCampaignConfig() error = %v", err)
+	}
+
+	if len(cfg.ConceptList) != 2 {
+		t.Fatalf("len(ConceptList) = %d, want 2", len(cfg.ConceptList))
+	}
+
+	var hasDungeon bool
+	for _, c := range cfg.ConceptList {
+		if c.Name == "dungeon" && c.Path == "dungeon/" {
+			hasDungeon = true
+			break
+		}
+	}
+	if !hasDungeon {
+		t.Fatal("repair should preserve explicit legacy dungeon concept entry")
 	}
 }

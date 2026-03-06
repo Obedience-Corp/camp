@@ -102,9 +102,9 @@ func (c *CampaignConfig) deriveConceptsFromPaths() []ConceptEntry {
 		{"code_reviews", paths.CodeReviews, "Code reviews"},
 		{"pipelines", paths.Pipelines, "Pipelines"},
 		{"design", paths.Design, "Design documents"},
+		{"explore", "workflow/explore/", "Exploratory notes and discovery work"},
 		{"ai_docs", paths.AIDocs, "AI documentation"},
 		{"docs", paths.Docs, "Documentation"},
-		{"dungeon", paths.Dungeon, "Archived/paused work"},
 	}
 
 	var concepts []ConceptEntry
