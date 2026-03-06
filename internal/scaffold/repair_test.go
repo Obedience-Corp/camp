@@ -69,22 +69,26 @@ func TestRepairPlan_HasChanges(t *testing.T) {
 }
 
 func TestIsUserDefined(t *testing.T) {
+	defaults := config.DefaultNavigationShortcuts()
+
 	tests := []struct {
-		name   string
-		source string
-		want   bool
+		name string
+		sc   config.ShortcutConfig
+		key  string
+		want bool
 	}{
-		{name: "auto source is not user-defined", source: config.ShortcutSourceAuto, want: false},
-		{name: "user source is user-defined", source: config.ShortcutSourceUser, want: true},
-		{name: "empty source is user-defined (legacy)", source: "", want: true},
-		{name: "unknown source is user-defined", source: "custom", want: true},
+		{name: "auto source is not user-defined", sc: config.ShortcutConfig{Source: config.ShortcutSourceAuto}, key: "p", want: false},
+		{name: "user source is user-defined", sc: config.ShortcutConfig{Source: config.ShortcutSourceUser}, key: "x", want: true},
+		{name: "empty source matching default is not user-defined", sc: config.ShortcutConfig{Path: "projects/", Concept: "project"}, key: "p", want: false},
+		{name: "empty source not matching any default is user-defined", sc: config.ShortcutConfig{Path: "custom/"}, key: "z", want: true},
+		{name: "empty source with default key but different path is user-defined", sc: config.ShortcutConfig{Path: "my-projects/"}, key: "p", want: true},
+		{name: "unknown source is user-defined", sc: config.ShortcutConfig{Source: "custom"}, key: "x", want: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			sc := config.ShortcutConfig{Source: tt.source}
-			if got := isUserDefined(sc); got != tt.want {
-				t.Errorf("isUserDefined(source=%q) = %v, want %v", tt.source, got, tt.want)
+			if got := isUserDefined(tt.sc, tt.key, defaults); got != tt.want {
+				t.Errorf("isUserDefined(key=%q, source=%q) = %v, want %v", tt.key, tt.sc.Source, got, tt.want)
 			}
 		})
 	}

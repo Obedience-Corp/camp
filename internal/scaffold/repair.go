@@ -201,10 +201,12 @@ func computeJumpsChanges(ctx context.Context, absDir string, plan *RepairPlan) e
 		merged.Shortcuts[k] = v
 	}
 
-	// Identify user-defined shortcuts (source != "auto" or source empty on legacy entries).
+	// Identify user-defined shortcuts — only show truly user-defined ones.
+	// Default shortcuts that already exist and match are silently kept.
+	defShortcuts := config.DefaultNavigationShortcuts()
 	for _, key := range sortedKeys(existing.Shortcuts) {
 		sc := existing.Shortcuts[key]
-		if isUserDefined(sc) {
+		if isUserDefined(sc, key, defShortcuts) {
 			plan.Changes = append(plan.Changes, RepairChange{
 				Type:        RepairPreserve,
 				Category:    "shortcut",
@@ -255,9 +257,24 @@ func computeMiscFileChanges(absDir string, plan *RepairPlan) {
 }
 
 // isUserDefined returns true if a shortcut was added by the user (not auto-generated).
-// Legacy entries without a Source field are treated as user-defined (safe default).
-func isUserDefined(sc config.ShortcutConfig) bool {
-	return sc.Source != config.ShortcutSourceAuto
+// Legacy entries (empty Source) are checked against known defaults before being classified.
+func isUserDefined(sc config.ShortcutConfig, key string, defaults map[string]config.ShortcutConfig) bool {
+	if sc.Source == config.ShortcutSourceAuto {
+		return false
+	}
+	if sc.Source == config.ShortcutSourceUser {
+		return true
+	}
+	// Legacy (empty Source): check if it matches a known default
+	if def, ok := defaults[key]; ok {
+		return !shortcutMatchesDefault(sc, def)
+	}
+	return true // Unknown shortcut with no source → treat as user-defined
+}
+
+// shortcutMatchesDefault returns true if a shortcut matches a default by path and concept.
+func shortcutMatchesDefault(sc, def config.ShortcutConfig) bool {
+	return sc.Path == def.Path && sc.Concept == def.Concept
 }
 
 // computeMigrationChanges walks the campaign tree looking for directories
