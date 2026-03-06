@@ -13,6 +13,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/dungeon"
+	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
@@ -144,8 +145,6 @@ func commitCrawlChanges(ctx context.Context, cfg *config.CampaignConfig, campaig
 
 	description := buildCrawlCommitMessage(campaignRoot, cwd, triage, inner)
 
-	// Build file list from actual moved paths, not parent directories.
-	// Staging relCwd wholesale would stage everything when running from root.
 	relCwd, err := filepath.Rel(campaignRoot, cwd)
 	if err != nil {
 		relCwd = cwd
@@ -154,12 +153,21 @@ func commitCrawlChanges(ctx context.Context, cfg *config.CampaignConfig, campaig
 
 	files := []string{relDungeon}
 
-	// For triage moves, stage the specific source paths (items removed from parent).
+	// For triage moves, stage source deletions and include specific
+	// source paths in the commit scope. Avoids using relCwd which
+	// would be "." at campaign root, capturing unrelated changes.
 	if triage != nil && triage.HasMoves() {
-		for _, items := range triage.MovedItems {
-			for _, name := range items {
-				files = append(files, filepath.Join(relCwd, name))
+		var sourcePaths []string
+		for _, names := range triage.MovedItems {
+			for _, name := range names {
+				sourcePaths = append(sourcePaths, filepath.Join(relCwd, name))
 			}
+		}
+		if len(sourcePaths) > 0 {
+			if err := git.StageTrackedChanges(ctx, campaignRoot, sourcePaths...); err != nil {
+				fmt.Printf("%s Warning: could not stage source deletions: %v\n", ui.InfoIcon(), err)
+			}
+			files = append(files, sourcePaths...)
 		}
 	}
 

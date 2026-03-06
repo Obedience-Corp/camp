@@ -79,8 +79,11 @@ func TestGo_CategoryShortcuts(t *testing.T) {
 		}
 	})
 
-	// Test category that doesn't exist (festivals) - should get "directory not found" error
+	// Test category that doesn't exist - should get "directory not found" error
 	t.Run("f_missing", func(t *testing.T) {
+		// Remove festivals dir if it was created by fest init during camp init
+		_, _, _ = tc.ExecCommand("rm", "-rf", "/campaigns/cat-test/festivals")
+
 		output, err := tc.RunCampInDir("/campaigns/cat-test", "go", "f", "--print")
 		require.Error(t, err, "should error when category directory doesn't exist")
 		assert.Contains(t, strings.ToLower(output), "not found", "error should mention not found")

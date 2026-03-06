@@ -91,7 +91,7 @@ func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 	// Get commit message - prompt if not provided
 	message := wtCommitMessage
 	if message == "" && !wtCommitAmend {
-		message, err = ui.PromptCommitMessageSimple(ctx, executor)
+		message, err = ui.PromptCommitMessageSimple(ctx, executor, false)
 		if err != nil {
 			return camperrors.Wrap(err, "prompt failed")
 		}
