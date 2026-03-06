@@ -29,6 +29,7 @@ CLI contract:
 
 Rules:
 - Destination is validated and resolved under campaign-root `docs/`.
+- Destination must be an existing docs subdirectory (the flow does not create new docs paths).
 - Traversal/escape destinations are rejected.
 - `--to-docs` requires `--triage` and cannot be combined with status argument.
 

@@ -64,11 +64,43 @@ func (s *Service) MoveToDocs(ctx context.Context, itemName, parentPath, destinat
 		return "", err
 	}
 
-	if err := os.MkdirAll(targetDir, 0755); err != nil {
-		return "", camperrors.Wrapf(err, "creating docs destination %s", destination)
+	docsRoot := filepath.Join(s.campaignRoot, docsDirName)
+	docsRootInfo, err := os.Stat(docsRoot)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", camperrors.Wrap(
+				ErrInvalidDocsDestination,
+				"campaign-root docs/ directory does not exist",
+			)
+		}
+		return "", camperrors.Wrap(err, "reading campaign docs directory")
+	}
+	if !docsRootInfo.IsDir() {
+		return "", camperrors.Wrap(
+			ErrInvalidDocsDestination,
+			"campaign-root docs/ path is not a directory",
+		)
 	}
 
-	docsRoot := filepath.Join(s.campaignRoot, docsDirName)
+	targetDirInfo, err := os.Stat(targetDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", camperrors.Wrapf(
+				ErrInvalidDocsDestination,
+				"%q does not exist under campaign-root docs/; choose an existing docs subdirectory",
+				destination,
+			)
+		}
+		return "", camperrors.Wrapf(err, "reading docs destination %s", destination)
+	}
+	if !targetDirInfo.IsDir() {
+		return "", camperrors.Wrapf(
+			ErrInvalidDocsDestination,
+			"%q must resolve to an existing docs subdirectory",
+			destination,
+		)
+	}
+
 	targetPath := filepath.Join(targetDir, itemName)
 	if err := pathutil.ValidateBoundary(docsRoot, targetPath); err != nil {
 		return "", camperrors.Wrapf(

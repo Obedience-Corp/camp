@@ -19,7 +19,7 @@ import (
 // presenting each item for review with a two-step flow:
 // Step 1: Move | Route to docs | Keep | Skip | Quit
 // Step 2 (on Move): dynamic status directory picker
-// Step 2 (on Route to docs): docs subdirectory picker with suggestions
+// Step 2 (on Route to docs): existing docs subdirectory picker with suggestions
 func RunTriageCrawl(ctx context.Context, svc *Service, parentPath string) (*CrawlSummary, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, camperrors.Wrap(err, "context cancelled")
@@ -161,8 +161,8 @@ func RunTriageCrawl(ctx context.Context, svc *Service, parentPath string) (*Craw
 func promptDocsDestination(ctx context.Context, itemName string, suggestions []string) (string, error) {
 	var destination string
 	input := huh.NewInput().
-		Title(fmt.Sprintf("Route %s to docs/ subdirectory:", itemName)).
-		Description("Select an existing subdirectory or type a new one (for example: architecture/api).").
+		Title(fmt.Sprintf("Route %s to an existing docs/ subdirectory:", itemName)).
+		Description("Select or type an existing docs subdirectory (for example: architecture/api).").
 		Placeholder("architecture/api").
 		Value(&destination)
 
@@ -188,12 +188,25 @@ func promptDocsDestination(ctx context.Context, itemName string, suggestions []s
 
 func listDocsSubdirectories(campaignRoot string) ([]string, error) {
 	docsRoot := filepath.Join(campaignRoot, docsDirName)
-	if err := os.MkdirAll(docsRoot, 0755); err != nil {
-		return nil, camperrors.Wrap(err, "creating docs root")
+	docsRootInfo, err := os.Stat(docsRoot)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, camperrors.Wrap(
+				ErrInvalidDocsDestination,
+				"campaign-root docs/ directory does not exist",
+			)
+		}
+		return nil, camperrors.Wrap(err, "reading docs root")
+	}
+	if !docsRootInfo.IsDir() {
+		return nil, camperrors.Wrap(
+			ErrInvalidDocsDestination,
+			"campaign-root docs/ path is not a directory",
+		)
 	}
 
 	var dirs []string
-	err := filepath.WalkDir(docsRoot, func(path string, d fs.DirEntry, walkErr error) error {
+	err = filepath.WalkDir(docsRoot, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}

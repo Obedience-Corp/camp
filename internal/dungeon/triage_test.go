@@ -1,6 +1,7 @@
 package dungeon
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -37,6 +38,22 @@ func TestListDocsSubdirectories(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("listDocsSubdirectories[%d]=%q, want=%q (%v)", i, got[i], want[i], got)
 		}
+	}
+}
+
+func TestListDocsSubdirectories_RequiresDocsRoot(t *testing.T) {
+	root, err := os.MkdirTemp("", "dungeon-triage-docs-missing-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(root)
+
+	_, err = listDocsSubdirectories(root)
+	if err == nil {
+		t.Fatal("expected missing docs root error")
+	}
+	if !errors.Is(err, ErrInvalidDocsDestination) {
+		t.Fatalf("expected ErrInvalidDocsDestination, got: %v", err)
 	}
 }
 

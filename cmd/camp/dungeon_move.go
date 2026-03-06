@@ -21,7 +21,7 @@ var dungeonMoveCmd = &cobra.Command{
 
 Without --triage, moves an item already in the dungeon root to a status directory.
 With --triage, moves an item from the parent directory into the dungeon.
-With --triage and --to-docs, routes an item to campaign-root docs/<subdirectory>.
+With --triage and --to-docs, routes an item to an existing campaign-root docs/<subdirectory>.
 
 Statuses: completed, archived, someday
 
@@ -44,7 +44,7 @@ func init() {
 
 	flags := dungeonMoveCmd.Flags()
 	flags.Bool("triage", false, "Move from parent directory (not from dungeon root)")
-	flags.String("to-docs", "", "Route triage item into campaign-root docs/<subdir> (requires --triage)")
+	flags.String("to-docs", "", "Route triage item into an existing campaign-root docs/<subdir> (requires --triage)")
 	flags.Bool("no-commit", false, "Don't create a git commit")
 }
 
@@ -202,7 +202,7 @@ func wrapDungeonDocsRouteError(err error, itemName, destination string) error {
 		)
 	case errors.Is(err, dungeon.ErrInvalidDocsDestination):
 		return fmt.Errorf(
-			"invalid docs destination %q; use a path under campaign-root docs/ (for example: --to-docs architecture/api): %w",
+			"invalid docs destination %q; use an existing subdirectory under campaign-root docs/ (for example: --to-docs architecture/api): %w",
 			destination,
 			err,
 		)

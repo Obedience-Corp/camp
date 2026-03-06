@@ -8,7 +8,7 @@ Move items within the dungeon or from the parent directory into the dungeon.
 
 Without --triage, moves an item already in the dungeon root to a status directory.
 With --triage, moves an item from the parent directory into the dungeon.
-With --triage and --to-docs, routes an item to campaign-root docs/<subdirectory>.
+With --triage and --to-docs, routes an item to an existing campaign-root docs/<subdirectory>.
 
 Statuses: completed, archived, someday
 
@@ -28,7 +28,7 @@ camp dungeon move <item> [status] [flags]
 ```
   -h, --help             help for move
       --no-commit        Don't create a git commit
-      --to-docs string   Route triage item into campaign-root docs/<subdir> (requires --triage)
+      --to-docs string   Route triage item into an existing campaign-root docs/<subdir> (requires --triage)
       --triage           Move from parent directory (not from dungeon root)
 ```
 

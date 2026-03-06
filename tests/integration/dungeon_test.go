@@ -324,8 +324,11 @@ func TestDungeonMove_TriageToDocsDestination(t *testing.T) {
 	tc := GetSharedContainer(t)
 	path := setupDungeonCampaign(t, tc, "dmove-triage-docs")
 
+	_, _, err := tc.ExecCommand("mkdir", "-p", path+"/docs/architecture/api")
+	require.NoError(t, err)
+
 	// Create item in parent directory.
-	err := tc.WriteFile(path+"/legacy-notes.md", "# Legacy Notes\n")
+	err = tc.WriteFile(path+"/legacy-notes.md", "# Legacy Notes\n")
 	require.NoError(t, err)
 
 	output, err := tc.RunCampInDir(
@@ -346,6 +349,29 @@ func TestDungeonMove_TriageToDocsDestination(t *testing.T) {
 	exists, err = tc.CheckFileExists(path + "/legacy-notes.md")
 	require.NoError(t, err)
 	assert.False(t, exists, "file should no longer be in parent")
+}
+
+func TestDungeonMove_TriageToDocsRequiresExistingSubdirectory(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupDungeonCampaign(t, tc, "dmove-triage-docs-missing-subdir")
+
+	err := tc.WriteFile(path+"/legacy-notes.md", "# Legacy Notes\n")
+	require.NoError(t, err)
+
+	output, err := tc.RunCampInDir(
+		path,
+		"dungeon", "move", "legacy-notes.md",
+		"--triage",
+		"--to-docs", "architecture/api",
+		"--no-commit",
+	)
+	assert.Error(t, err)
+	assert.Contains(t, output, "invalid docs destination", "error should explain destination rules")
+	assert.Contains(t, output, "does not exist under campaign-root docs", "error should require existing docs subdirectory")
+
+	exists, statErr := tc.CheckFileExists(path + "/legacy-notes.md")
+	require.NoError(t, statErr)
+	assert.True(t, exists, "file should remain in parent after failed docs routing")
 }
 
 func TestDungeonMove_ToDocsRequiresTriage(t *testing.T) {
@@ -393,6 +419,7 @@ func TestDungeonMove_TriageToDocsFromNestedDirAnchorsToCampaignRootDocs(t *testi
 		"mkdir", "-p",
 		path+"/workflow/design/dungeon",
 		path+"/workflow/design/subdir",
+		path+"/docs/architecture/reference",
 		path+"/workflow/design/docs/architecture/reference",
 	)
 	require.NoError(t, err)

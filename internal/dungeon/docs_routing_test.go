@@ -94,6 +94,10 @@ func TestService_MoveToDocs(t *testing.T) {
 	if err := os.MkdirAll(parentPath, 0o755); err != nil {
 		t.Fatalf("failed to create parent dir: %v", err)
 	}
+	targetDir := filepath.Join(root, "docs", "architecture", "api")
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatalf("failed to create docs destination dir: %v", err)
+	}
 
 	source := filepath.Join(parentPath, "old-notes.md")
 	if err := os.WriteFile(source, []byte("# Old Notes\n"), 0o644); err != nil {
@@ -116,6 +120,47 @@ func TestService_MoveToDocs(t *testing.T) {
 	}
 	if _, err := os.Stat(wantTarget); err != nil {
 		t.Fatalf("target should exist after move: %v", err)
+	}
+}
+
+func TestService_MoveToDocs_RequiresExistingDestination(t *testing.T) {
+	ctx := context.Background()
+
+	root, err := os.MkdirTemp("", "dungeon-docs-missing-destination-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(root)
+
+	dungeonPath := filepath.Join(root, "dungeon")
+	if err := os.MkdirAll(dungeonPath, 0o755); err != nil {
+		t.Fatalf("failed to create dungeon dir: %v", err)
+	}
+
+	parentPath := filepath.Join(root, "workflow", "design")
+	if err := os.MkdirAll(parentPath, 0o755); err != nil {
+		t.Fatalf("failed to create parent dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "docs"), 0o755); err != nil {
+		t.Fatalf("failed to create docs root: %v", err)
+	}
+
+	source := filepath.Join(parentPath, "old-notes.md")
+	if err := os.WriteFile(source, []byte("# Old Notes\n"), 0o644); err != nil {
+		t.Fatalf("failed to write source file: %v", err)
+	}
+
+	svc := NewService(root, dungeonPath)
+	_, err = svc.MoveToDocs(ctx, "old-notes.md", parentPath, "architecture/api")
+	if err == nil {
+		t.Fatal("MoveToDocs expected destination existence error")
+	}
+	if !errors.Is(err, ErrInvalidDocsDestination) {
+		t.Fatalf("expected ErrInvalidDocsDestination, got: %v", err)
+	}
+
+	if _, statErr := os.Stat(source); statErr != nil {
+		t.Fatalf("source should remain in place after failed move: %v", statErr)
 	}
 }
 
