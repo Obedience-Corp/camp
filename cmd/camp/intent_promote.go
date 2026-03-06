@@ -143,6 +143,7 @@ func runIntentPromote(cmd *cobra.Command, args []string) error {
 			files = append(files, result.DesignDir)
 		}
 
+		files = append(files, audit.FilePath(resolver.Intents()))
 		commitResult := commit.Intent(ctx, commit.IntentOptions{
 			Options: commit.Options{
 				CampaignRoot:  campaignRoot,
