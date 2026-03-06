@@ -602,6 +602,117 @@ func TestStageAllExcluding_MultipleExclusions(t *testing.T) {
 	}
 }
 
+func TestFilterTracked(t *testing.T) {
+	t.Run("empty paths", func(t *testing.T) {
+		tmpDir := initTestRepo(t)
+		ctx := context.Background()
+		result, err := FilterTracked(ctx, tmpDir, nil)
+		if err != nil {
+			t.Fatalf("FilterTracked() error = %v", err)
+		}
+		if result != nil {
+			t.Errorf("FilterTracked() = %v, want nil", result)
+		}
+	})
+
+	t.Run("tracked file returned", func(t *testing.T) {
+		tmpDir := initTestRepo(t)
+		os.WriteFile(filepath.Join(tmpDir, "a.txt"), []byte("a"), 0644)
+		exec.Command("git", "-C", tmpDir, "add", "a.txt").Run()
+		exec.Command("git", "-C", tmpDir, "commit", "-m", "init").Run()
+
+		ctx := context.Background()
+		result, err := FilterTracked(ctx, tmpDir, []string{"a.txt"})
+		if err != nil {
+			t.Fatalf("FilterTracked() error = %v", err)
+		}
+		if len(result) != 1 || result[0] != "a.txt" {
+			t.Errorf("FilterTracked() = %v, want [a.txt]", result)
+		}
+	})
+
+	t.Run("untracked file excluded", func(t *testing.T) {
+		tmpDir := initTestRepo(t)
+		os.WriteFile(filepath.Join(tmpDir, "a.txt"), []byte("a"), 0644)
+		exec.Command("git", "-C", tmpDir, "add", "a.txt").Run()
+		exec.Command("git", "-C", tmpDir, "commit", "-m", "init").Run()
+		os.WriteFile(filepath.Join(tmpDir, "b.txt"), []byte("b"), 0644)
+
+		ctx := context.Background()
+		result, err := FilterTracked(ctx, tmpDir, []string{"a.txt", "b.txt"})
+		if err != nil {
+			t.Fatalf("FilterTracked() error = %v", err)
+		}
+		if len(result) != 1 || result[0] != "a.txt" {
+			t.Errorf("FilterTracked() = %v, want [a.txt]", result)
+		}
+	})
+
+	t.Run("nonexistent path excluded", func(t *testing.T) {
+		tmpDir := initTestRepo(t)
+		os.WriteFile(filepath.Join(tmpDir, "a.txt"), []byte("a"), 0644)
+		exec.Command("git", "-C", tmpDir, "add", "a.txt").Run()
+		exec.Command("git", "-C", tmpDir, "commit", "-m", "init").Run()
+
+		ctx := context.Background()
+		result, err := FilterTracked(ctx, tmpDir, []string{"a.txt", "nonexistent.txt"})
+		if err != nil {
+			t.Fatalf("FilterTracked() error = %v", err)
+		}
+		if len(result) != 1 || result[0] != "a.txt" {
+			t.Errorf("FilterTracked() = %v, want [a.txt]", result)
+		}
+	})
+
+	t.Run("directory with tracked files", func(t *testing.T) {
+		tmpDir := initTestRepo(t)
+		os.MkdirAll(filepath.Join(tmpDir, "subdir"), 0755)
+		os.WriteFile(filepath.Join(tmpDir, "subdir", "file.txt"), []byte("content"), 0644)
+		exec.Command("git", "-C", tmpDir, "add", ".").Run()
+		exec.Command("git", "-C", tmpDir, "commit", "-m", "init").Run()
+
+		ctx := context.Background()
+		result, err := FilterTracked(ctx, tmpDir, []string{"subdir"})
+		if err != nil {
+			t.Fatalf("FilterTracked() error = %v", err)
+		}
+		if len(result) != 1 || result[0] != "subdir" {
+			t.Errorf("FilterTracked() = %v, want [subdir]", result)
+		}
+	})
+
+	t.Run("renamed directory not tracked", func(t *testing.T) {
+		tmpDir := initTestRepo(t)
+		os.MkdirAll(filepath.Join(tmpDir, "old-name"), 0755)
+		os.WriteFile(filepath.Join(tmpDir, "old-name", "file.txt"), []byte("content"), 0644)
+		exec.Command("git", "-C", tmpDir, "add", ".").Run()
+		exec.Command("git", "-C", tmpDir, "commit", "-m", "init").Run()
+
+		// Rename without telling git
+		os.Rename(filepath.Join(tmpDir, "old-name"), filepath.Join(tmpDir, "new-name"))
+
+		ctx := context.Background()
+		result, err := FilterTracked(ctx, tmpDir, []string{"new-name"})
+		if err != nil {
+			t.Fatalf("FilterTracked() error = %v", err)
+		}
+		if len(result) != 0 {
+			t.Errorf("FilterTracked() = %v, want empty (new-name was never tracked)", result)
+		}
+	})
+
+	t.Run("context cancellation", func(t *testing.T) {
+		tmpDir := initTestRepo(t)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		_, err := FilterTracked(ctx, tmpDir, []string{"anything"})
+		if err == nil {
+			t.Error("Expected error for cancelled context")
+		}
+	})
+}
+
 func TestStage_WithStaleLock(t *testing.T) {
 	tmpDir := initTestRepo(t)
 
