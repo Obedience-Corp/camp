@@ -87,6 +87,109 @@ func TestLoadCampaignConfig_DefaultsApplied(t *testing.T) {
 	}
 }
 
+func TestLoadCampaignConfig_PreservesLegacyDungeonConceptList(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+
+	campaignDir := filepath.Join(tmpDir, CampaignDir)
+	if err := os.MkdirAll(campaignDir, 0755); err != nil {
+		t.Fatalf("failed to create campaign dir: %v", err)
+	}
+
+	configContent := `
+name: legacy-campaign
+type: product
+concepts:
+  - name: design
+    path: workflow/design/
+    description: Design docs
+  - name: dungeon
+    path: dungeon/
+    description: Legacy dungeon concept
+`
+	configPath := filepath.Join(campaignDir, CampaignConfigFile)
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write campaign config: %v", err)
+	}
+
+	ctx := context.Background()
+	cfg, err := LoadCampaignConfig(ctx, tmpDir)
+	if err != nil {
+		t.Fatalf("LoadCampaignConfig() error = %v", err)
+	}
+
+	if len(cfg.ConceptList) != 2 {
+		t.Fatalf("len(ConceptList) = %d, want 2", len(cfg.ConceptList))
+	}
+
+	var hasDungeon bool
+	for _, c := range cfg.ConceptList {
+		if c.Name == "dungeon" && c.Path == "dungeon/" {
+			hasDungeon = true
+			break
+		}
+	}
+	if !hasDungeon {
+		t.Fatal("legacy dungeon concept entry should be preserved when explicitly configured")
+	}
+}
+
+func TestLoadCampaignConfig_PreservesLegacyShortcutsWithoutExplore(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+
+	campaignDir := filepath.Join(tmpDir, CampaignDir)
+	settingsDir := filepath.Join(campaignDir, SettingsDir)
+	if err := os.MkdirAll(settingsDir, 0755); err != nil {
+		t.Fatalf("failed to create settings dir: %v", err)
+	}
+
+	configContent := `
+name: legacy-shortcuts
+type: product
+`
+	if err := os.WriteFile(filepath.Join(campaignDir, CampaignConfigFile), []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write campaign config: %v", err)
+	}
+
+	// Legacy jumps config intentionally omits the new "ex" shortcut.
+	jumpsContent := `
+paths:
+  workflow: workflow/
+  design: workflow/design/
+  dungeon: dungeon/
+shortcuts:
+  de:
+    path: workflow/design/
+    description: Jump to design
+    source: auto
+  du:
+    path: dungeon/
+    description: Jump to dungeon directory
+    source: auto
+`
+	if err := os.WriteFile(filepath.Join(settingsDir, JumpsConfigFile), []byte(jumpsContent), 0644); err != nil {
+		t.Fatalf("failed to write jumps config: %v", err)
+	}
+
+	ctx := context.Background()
+	cfg, err := LoadCampaignConfig(ctx, tmpDir)
+	if err != nil {
+		t.Fatalf("LoadCampaignConfig() error = %v", err)
+	}
+
+	shortcuts := cfg.Shortcuts()
+	if _, ok := shortcuts["de"]; !ok {
+		t.Fatal("legacy design shortcut de should be preserved")
+	}
+	if _, ok := shortcuts["du"]; !ok {
+		t.Fatal("legacy dungeon shortcut du should be preserved")
+	}
+	if _, ok := shortcuts["ex"]; ok {
+		t.Fatal("legacy shortcuts should not be silently rewritten with new ex shortcut")
+	}
+}
+
 func TestLoadCampaignConfig_NotFound(t *testing.T) {
 	tmpDir := t.TempDir()
 	ctx := context.Background()

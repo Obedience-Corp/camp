@@ -320,6 +320,266 @@ func TestDungeonMove_TriageDirectToStatus(t *testing.T) {
 	assert.False(t, exists, "file should not be in dungeon root")
 }
 
+func TestDungeonMove_TriageToDocsDestination(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupDungeonCampaign(t, tc, "dmove-triage-docs")
+
+	_, _, err := tc.ExecCommand("mkdir", "-p", path+"/docs/architecture/api")
+	require.NoError(t, err)
+
+	// Create item in parent directory.
+	err = tc.WriteFile(path+"/legacy-notes.md", "# Legacy Notes\n")
+	require.NoError(t, err)
+
+	output, err := tc.RunCampInDir(
+		path,
+		"dungeon", "move", "legacy-notes.md",
+		"--triage",
+		"--to-docs", "architecture/api",
+		"--no-commit",
+	)
+	require.NoError(t, err)
+	assert.Contains(t, output, "Moved legacy-notes.md", "should confirm docs routing move")
+	assert.Contains(t, output, "docs/architecture/api/legacy-notes.md", "should show docs destination")
+
+	exists, err := tc.CheckFileExists(path + "/docs/architecture/api/legacy-notes.md")
+	require.NoError(t, err)
+	assert.True(t, exists, "file should be routed into campaign-root docs destination")
+
+	exists, err = tc.CheckFileExists(path + "/legacy-notes.md")
+	require.NoError(t, err)
+	assert.False(t, exists, "file should no longer be in parent")
+}
+
+func TestDungeonMove_TriageToDocsRequiresExistingSubdirectory(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupDungeonCampaign(t, tc, "dmove-triage-docs-missing-subdir")
+
+	err := tc.WriteFile(path+"/legacy-notes.md", "# Legacy Notes\n")
+	require.NoError(t, err)
+
+	output, err := tc.RunCampInDir(
+		path,
+		"dungeon", "move", "legacy-notes.md",
+		"--triage",
+		"--to-docs", "architecture/api",
+		"--no-commit",
+	)
+	assert.Error(t, err)
+	assert.Contains(t, output, "invalid docs destination", "error should explain destination rules")
+	assert.Contains(t, output, "does not exist under campaign-root docs", "error should require existing docs subdirectory")
+
+	exists, statErr := tc.CheckFileExists(path + "/legacy-notes.md")
+	require.NoError(t, statErr)
+	assert.True(t, exists, "file should remain in parent after failed docs routing")
+}
+
+func TestDungeonMove_ToDocsRequiresTriage(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupDungeonCampaign(t, tc, "dmove-docs-needs-triage")
+
+	output, err := tc.RunCampInDir(
+		path,
+		"dungeon", "move", "anything.md",
+		"--to-docs", "architecture/api",
+		"--no-commit",
+	)
+	assert.Error(t, err)
+	assert.Contains(t, output, "--to-docs requires --triage")
+}
+
+func TestDungeonMove_TriageToDocsRejectsTraversal(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupDungeonCampaign(t, tc, "dmove-triage-docs-invalid")
+
+	err := tc.WriteFile(path+"/legacy-notes.md", "# Legacy Notes\n")
+	require.NoError(t, err)
+
+	output, err := tc.RunCampInDir(
+		path,
+		"dungeon", "move", "legacy-notes.md",
+		"--triage",
+		"--to-docs", "../escape",
+		"--no-commit",
+	)
+	assert.Error(t, err)
+	assert.Contains(t, output, "invalid docs destination", "error should explain destination rules")
+
+	exists, statErr := tc.CheckFileExists(path + "/legacy-notes.md")
+	require.NoError(t, statErr)
+	assert.True(t, exists, "file should remain in parent after failed docs routing")
+}
+
+func TestDungeonMove_TriageToDocsRejectsTraversalItemName(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupDungeonCampaign(t, tc, "dmove-triage-docs-item-traversal")
+
+	// Add nested dungeon context and nested execution path.
+	_, _, err := tc.ExecCommand(
+		"mkdir", "-p",
+		path+"/workflow/design/dungeon",
+		path+"/workflow/design/subdir",
+		path+"/docs/architecture",
+	)
+	require.NoError(t, err)
+
+	// File outside nearest parent context that traversal would previously target.
+	err = tc.WriteFile(path+"/workflow/secret.md", "# Secret\n")
+	require.NoError(t, err)
+
+	output, err := tc.RunCampInDir(
+		path+"/workflow/design/subdir",
+		"dungeon", "move", "../secret.md",
+		"--triage",
+		"--to-docs", "architecture",
+		"--no-commit",
+	)
+	assert.Error(t, err)
+	assert.Contains(t, output, "invalid item path")
+
+	exists, statErr := tc.CheckFileExists(path + "/workflow/secret.md")
+	require.NoError(t, statErr)
+	assert.True(t, exists, "source file should remain in original location")
+
+	exists, statErr = tc.CheckFileExists(path + "/docs/secret.md")
+	require.NoError(t, statErr)
+	assert.False(t, exists, "docs-root bypass target should not be created")
+
+	exists, statErr = tc.CheckFileExists(path + "/docs/architecture/secret.md")
+	require.NoError(t, statErr)
+	assert.False(t, exists, "selected docs destination should not receive invalid path item")
+}
+
+func TestDungeonMove_TriageRejectsNestedItemPath(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupDungeonCampaign(t, tc, "dmove-triage-invalid-item-path")
+
+	_, _, err := tc.ExecCommand("mkdir", "-p", path+"/nested")
+	require.NoError(t, err)
+	err = tc.WriteFile(path+"/nested/legacy.md", "# Legacy\n")
+	require.NoError(t, err)
+
+	output, err := tc.RunCampInDir(
+		path,
+		"dungeon", "move", "nested/legacy.md",
+		"--triage",
+		"--no-commit",
+	)
+	assert.Error(t, err)
+	assert.Contains(t, output, "invalid item path")
+
+	exists, statErr := tc.CheckFileExists(path + "/nested/legacy.md")
+	require.NoError(t, statErr)
+	assert.True(t, exists, "nested source file should remain in place")
+
+	exists, statErr = tc.CheckFileExists(path + "/dungeon/nested/legacy.md")
+	require.NoError(t, statErr)
+	assert.False(t, exists, "invalid nested item path should not be moved into dungeon")
+}
+
+func TestDungeonMove_TriageToDocsFromNestedDirAnchorsToCampaignRootDocs(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupDungeonCampaign(t, tc, "dmove-docs-root-anchor")
+
+	// Add nested dungeon context and nested execution path.
+	_, _, err := tc.ExecCommand(
+		"mkdir", "-p",
+		path+"/workflow/design/dungeon",
+		path+"/workflow/design/subdir",
+		path+"/docs/architecture/reference",
+		path+"/workflow/design/docs/architecture/reference",
+	)
+	require.NoError(t, err)
+
+	// Parent item for nearest nested dungeon context.
+	err = tc.WriteFile(path+"/workflow/design/legacy-spec.md", "# Legacy Spec\n")
+	require.NoError(t, err)
+
+	output, err := tc.RunCampInDir(
+		path+"/workflow/design/subdir",
+		"dungeon", "move", "legacy-spec.md",
+		"--triage",
+		"--to-docs", "architecture/reference",
+		"--no-commit",
+	)
+	require.NoError(t, err)
+	assert.Contains(t, output, "docs/architecture/reference/legacy-spec.md")
+
+	exists, err := tc.CheckFileExists(path + "/docs/architecture/reference/legacy-spec.md")
+	require.NoError(t, err)
+	assert.True(t, exists, "file should route to campaign-root docs/")
+
+	exists, err = tc.CheckFileExists(path + "/workflow/design/docs/architecture/reference/legacy-spec.md")
+	require.NoError(t, err)
+	assert.False(t, exists, "file should not route to dungeon-local docs path")
+}
+
+func TestDungeonList_UsesNearestContextFromNestedDir(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupDungeonCampaign(t, tc, "dlist-nearest")
+
+	// Create a second, nearer dungeon context under workflow/design.
+	_, _, err := tc.ExecCommand("mkdir", "-p", path+"/workflow/design/dungeon", path+"/workflow/design/subdir")
+	require.NoError(t, err)
+
+	// Item in root dungeon should not be selected when running from nested context.
+	err = tc.WriteFile(path+"/dungeon/root-item.md", "# Root Item\n")
+	require.NoError(t, err)
+	// Item in nearest dungeon should be selected.
+	err = tc.WriteFile(path+"/workflow/design/dungeon/local-item.md", "# Local Item\n")
+	require.NoError(t, err)
+
+	output, err := tc.RunCampInDir(path+"/workflow/design/subdir", "dungeon", "list", "-f", "simple")
+	require.NoError(t, err)
+	assert.Contains(t, output, "local-item.md", "nearest dungeon item should be listed")
+	assert.NotContains(t, output, "root-item.md", "root dungeon item should not be listed from nearer context")
+}
+
+func TestDungeonMove_TriageFromNestedDirUsesNearestContext(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupDungeonCampaign(t, tc, "dmove-nearest")
+
+	// Create nearest dungeon context and nested execution path.
+	_, _, err := tc.ExecCommand("mkdir", "-p", path+"/workflow/design/dungeon", path+"/workflow/design/subdir")
+	require.NoError(t, err)
+
+	// Parent item for nearest context lives in workflow/design.
+	err = tc.WriteFile(path+"/workflow/design/nested-old.md", "# Nested Old\n")
+	require.NoError(t, err)
+
+	output, err := tc.RunCampInDir(path+"/workflow/design/subdir", "dungeon", "move", "nested-old.md", "--triage", "--no-commit")
+	require.NoError(t, err)
+	assert.Contains(t, output, "Moved nested-old.md", "should confirm move from nested context")
+
+	exists, err := tc.CheckFileExists(path + "/workflow/design/dungeon/nested-old.md")
+	require.NoError(t, err)
+	assert.True(t, exists, "file should move into nearest dungeon context")
+}
+
+func TestDungeonCommands_NoDungeonContextError(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := "/campaigns/dungeon-no-context"
+	_, err := tc.InitCampaign(path, "dungeon-no-context", "product")
+	require.NoError(t, err)
+	_, _, err = tc.ExecCommand("rm", "-rf", path+"/dungeon")
+	require.NoError(t, err)
+
+	err = tc.WriteFile(path+"/orphan.md", "# Orphan\n")
+	require.NoError(t, err)
+
+	output, err := tc.RunCampInDir(path, "dungeon", "list")
+	assert.Error(t, err)
+	assert.Contains(t, output, "no dungeon context found", "list should instruct user to create context")
+
+	output, err = tc.RunCampInDir(path, "dungeon", "move", "orphan.md", "--triage", "--no-commit")
+	assert.Error(t, err)
+	assert.Contains(t, output, "no dungeon context found", "move should instruct user to create context")
+
+	output, err = tc.RunCampInDir(path, "dungeon", "crawl", "--triage")
+	assert.Error(t, err)
+	assert.Contains(t, output, "no dungeon context found", "crawl should instruct user to create context")
+}
+
 // --- intent add agent author ---
 
 func TestIntentAdd_AgentAuthor(t *testing.T) {

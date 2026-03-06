@@ -4,18 +4,21 @@ import (
 	"encoding/json"
 	"fmt"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 	"github.com/spf13/cobra"
 
-	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/dungeon"
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
+
+type dungeonListOutputContext struct {
+	Source      string
+	ContextLine string
+	DungeonRel  string
+}
 
 var dungeonListCmd = &cobra.Command{
 	Use:     "list",
@@ -25,6 +28,8 @@ var dungeonListCmd = &cobra.Command{
 
 By default, lists items at the dungeon root (items already in the dungeon).
 Use --triage to list parent directory items that could be moved into the dungeon.
+The command resolves dungeon context by walking from the current directory up to
+campaign root and using the nearest available dungeon.
 
 OUTPUT FORMATS:
   table (default)   Human-readable table with columns
@@ -34,6 +39,7 @@ OUTPUT FORMATS:
 Examples:
   camp dungeon list                  List dungeon root items
   camp dungeon list --triage         List parent items eligible for triage
+  cd workflow/design/subdir && camp dungeon list  Uses nearest dungeon context from nested path
   camp dungeon list -f json          JSON output for scripting
   camp dungeon list -f simple        Names only, pipe to other commands`,
 	Args: cobra.NoArgs,
@@ -58,54 +64,57 @@ func runDungeonList(cmd *cobra.Command, _ []string) error {
 	format, _ := cmd.Flags().GetString("format")
 	triageMode, _ := cmd.Flags().GetBool("triage")
 
-	// Load campaign config
-	_, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
+	cmdCtx, err := resolveDungeonCommandContext(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return err
 	}
-
-	cwd, err := os.Getwd()
-	if err != nil {
-		return camperrors.Wrap(err, "getting current directory")
-	}
-	dungeonPath := filepath.Join(cwd, "dungeon")
-
-	svc := dungeon.NewService(campaignRoot, dungeonPath)
+	svc := dungeon.NewService(cmdCtx.CampaignRoot, cmdCtx.Dungeon.DungeonPath)
+	dungeonRel := relFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.DungeonPath)
+	parentRel := relFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.ParentPath)
 
 	if triageMode {
-		items, err := svc.ListParentItems(ctx, cwd)
+		items, err := svc.ListParentItems(ctx, cmdCtx.Dungeon.ParentPath)
 		if err != nil {
 			return camperrors.Wrap(err, "listing parent items")
 		}
-		return outputDungeonItems(items, format, "triage")
+		return outputDungeonItems(items, format, dungeonListOutputContext{
+			Source:      "triage",
+			ContextLine: buildDungeonListContextLine("triage", parentRel, dungeonRel),
+			DungeonRel:  dungeonRel,
+		})
 	}
 
 	items, err := svc.ListItems(ctx)
 	if err != nil {
 		return camperrors.Wrap(err, "listing dungeon items")
 	}
-	return outputDungeonItems(items, format, "dungeon")
+	return outputDungeonItems(items, format, dungeonListOutputContext{
+		Source:      "dungeon",
+		ContextLine: buildDungeonListContextLine("dungeon", parentRel, dungeonRel),
+		DungeonRel:  dungeonRel,
+	})
 }
 
-func outputDungeonItems(items []dungeon.DungeonItem, format, source string) error {
+func outputDungeonItems(items []dungeon.DungeonItem, format string, outCtx dungeonListOutputContext) error {
 	switch format {
 	case "json":
 		return outputDungeonJSON(items)
 	case "simple":
 		return outputDungeonSimple(items)
 	default:
-		return outputDungeonTable(items, source)
+		return outputDungeonTable(items, outCtx)
 	}
 }
 
-func outputDungeonTable(items []dungeon.DungeonItem, source string) error {
+func outputDungeonTable(items []dungeon.DungeonItem, outCtx dungeonListOutputContext) error {
 	if len(items) == 0 {
-		if source == "triage" {
-			fmt.Println("No parent items eligible for triage.")
-		} else {
-			fmt.Println("Dungeon is empty.")
-		}
+		fmt.Println(buildDungeonEmptyMessage(outCtx.Source, outCtx.DungeonRel))
 		return nil
+	}
+
+	if outCtx.ContextLine != "" {
+		fmt.Println(outCtx.ContextLine)
+		fmt.Println()
 	}
 
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.CategoryColor)
@@ -135,7 +144,7 @@ func outputDungeonTable(items []dungeon.DungeonItem, source string) error {
 
 	fmt.Println(t)
 	label := "dungeon item(s)"
-	if source == "triage" {
+	if outCtx.Source == "triage" {
 		label = "parent item(s) eligible for triage"
 	}
 	fmt.Printf("\n%d %s\n", len(items), label)
@@ -181,4 +190,18 @@ func formatDungeonTimestamp(t time.Time) string {
 		return "-"
 	}
 	return t.Format("Jan 02 15:04")
+}
+
+func buildDungeonListContextLine(source, parentRel, dungeonRel string) string {
+	if source == "triage" {
+		return fmt.Sprintf("Context: parent=%s -> dungeon=%s", parentRel, dungeonRel)
+	}
+	return fmt.Sprintf("Context: dungeon=%s", dungeonRel)
+}
+
+func buildDungeonEmptyMessage(source, dungeonRel string) string {
+	if source == "triage" {
+		return fmt.Sprintf("No parent items eligible for triage (context: %s).", dungeonRel)
+	}
+	return fmt.Sprintf("Dungeon is empty (context: %s).", dungeonRel)
 }

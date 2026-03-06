@@ -1,6 +1,7 @@
 package dungeon
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -106,5 +107,15 @@ func TestBuildInfoString_CodeVsLines(t *testing.T) {
 	result = buildInfoString(item, statsWithLines)
 	if !containsSubstring(result, "Lines: 100") {
 		t.Errorf("should show Lines when Code not available, got: %s", result)
+	}
+}
+
+func TestMoveErrorHint_InvalidItemPath(t *testing.T) {
+	hint := moveErrorHint(ErrInvalidItemPath)
+	if hint == "" {
+		t.Fatal("moveErrorHint should return guidance for ErrInvalidItemPath")
+	}
+	if !strings.Contains(hint, "direct child") {
+		t.Fatalf("hint should mention direct child requirement, got: %q", hint)
 	}
 }

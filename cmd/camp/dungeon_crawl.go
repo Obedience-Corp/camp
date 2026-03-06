@@ -4,14 +4,12 @@ import (
 	"context"
 	"fmt"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
 
-	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/dungeon"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
@@ -31,6 +29,7 @@ Without flags, auto-detects what to crawl:
 Use --triage or --inner to force a specific mode.
 
 For each item, you'll be prompted to decide its fate.
+Triage mode includes a route-to-docs action for existing campaign-root docs/<subdirectory>.
 Statistics are gathered when available (requires scc or fest).
 All decisions are logged to crawl.jsonl for history.
 
@@ -58,32 +57,26 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 	triageFlag, _ := cmd.Flags().GetBool("triage")
 	innerFlag, _ := cmd.Flags().GetBool("inner")
 
-	// Load campaign config
-	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
+	cmdCtx, err := resolveDungeonCommandContext(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return err
 	}
-
-	cwd, err := os.Getwd()
-	if err != nil {
-		return camperrors.Wrap(err, "getting current directory")
-	}
-	dungeonPath := filepath.Join(cwd, "dungeon")
-
-	svc := dungeon.NewService(campaignRoot, dungeonPath)
+	svc := dungeon.NewService(cmdCtx.CampaignRoot, cmdCtx.Dungeon.DungeonPath)
+	relParent := relFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.ParentPath)
+	relDungeon := relFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.DungeonPath)
 
 	// Determine modes
 	runTriage, runInner := triageFlag, innerFlag
 	if !triageFlag && !innerFlag {
 		// Auto-detect
-		parentItems, _ := svc.ListParentItems(ctx, cwd)
+		parentItems, _ := svc.ListParentItems(ctx, cmdCtx.Dungeon.ParentPath)
 		dungeonItems, _ := svc.ListItems(ctx)
 		runTriage = len(parentItems) > 0
 		runInner = len(dungeonItems) > 0
 	}
 
 	if !runTriage && !runInner {
-		fmt.Printf("%s Nothing to crawl: no parent items or dungeon items found.\n", ui.InfoIcon())
+		fmt.Printf("%s Nothing to crawl in context parent=%s dungeon=%s.\n", ui.InfoIcon(), relParent, relDungeon)
 		return nil
 	}
 
@@ -92,18 +85,24 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 
 	// Run triage crawl if needed
 	if runTriage {
-		parentItems, err := svc.ListParentItems(ctx, cwd)
+		parentItems, err := svc.ListParentItems(ctx, cmdCtx.Dungeon.ParentPath)
 		if err != nil {
 			return camperrors.Wrap(err, "listing parent items")
 		}
 		if len(parentItems) > 0 {
-			fmt.Printf("%s Triage crawl: %d parent item(s) to review...\n\n", ui.InfoIcon(), len(parentItems))
-			triageSummary, err = dungeon.RunTriageCrawl(ctx, svc, cwd)
+			fmt.Printf(
+				"%s Triage crawl: %d parent item(s) to review (parent=%s -> dungeon=%s)...\n\n",
+				ui.InfoIcon(),
+				len(parentItems),
+				relParent,
+				relDungeon,
+			)
+			triageSummary, err = dungeon.RunTriageCrawl(ctx, svc, cmdCtx.Dungeon.ParentPath)
 			if err != nil {
 				return camperrors.Wrap(err, "triage crawl failed")
 			}
 		} else {
-			fmt.Printf("%s No parent items to triage.\n", ui.InfoIcon())
+			fmt.Printf("%s No parent items to triage in %s.\n", ui.InfoIcon(), relParent)
 		}
 	}
 
@@ -117,13 +116,18 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 			if runTriage {
 				fmt.Println()
 			}
-			fmt.Printf("%s Inner crawl: %d dungeon item(s) to review...\n\n", ui.InfoIcon(), len(dungeonItems))
+			fmt.Printf(
+				"%s Inner crawl: %d dungeon item(s) to review in %s...\n\n",
+				ui.InfoIcon(),
+				len(dungeonItems),
+				relDungeon,
+			)
 			innerSummary, err = dungeon.RunCrawl(ctx, svc)
 			if err != nil {
 				return camperrors.Wrap(err, "inner crawl failed")
 			}
 		} else {
-			fmt.Printf("%s Dungeon is empty. Nothing to crawl.\n", ui.InfoIcon())
+			fmt.Printf("%s Dungeon is empty in %s. Nothing to crawl.\n", ui.InfoIcon(), relDungeon)
 		}
 	}
 
@@ -131,45 +135,49 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 	displayCrawlSummary(triageSummary, innerSummary)
 
 	// Autocommit if anything was moved
-	commitCrawlChanges(ctx, cfg, campaignRoot, cwd, triageSummary, innerSummary)
+	commitCrawlChanges(ctx, cmdCtx, triageSummary, innerSummary)
 
 	return nil
 }
 
 // commitCrawlChanges creates a git commit if any items were moved during crawl.
-func commitCrawlChanges(ctx context.Context, cfg *config.CampaignConfig, campaignRoot, cwd string, triage, inner *dungeon.CrawlSummary) {
+func commitCrawlChanges(ctx context.Context, cmdCtx *dungeonCommandContext, triage, inner *dungeon.CrawlSummary) {
 	hasMoves := (triage != nil && triage.HasMoves()) || (inner != nil && inner.HasMoves())
 	if !hasMoves {
 		return
 	}
 
-	description := buildCrawlCommitMessage(campaignRoot, cwd, triage, inner)
+	description := buildCrawlCommitMessage(cmdCtx.CampaignRoot, cmdCtx.Dungeon.ParentPath, triage, inner)
 
-	relCwd, err := filepath.Rel(campaignRoot, cwd)
+	relDungeon, err := filepath.Rel(cmdCtx.CampaignRoot, cmdCtx.Dungeon.DungeonPath)
 	if err != nil {
-		relCwd = cwd
+		relDungeon = cmdCtx.Dungeon.DungeonPath
 	}
-	relDungeon := filepath.Join(relCwd, "dungeon")
 
 	files := []string{relDungeon}
+	files = append(files, crawlDocsDestinationPaths(triage)...)
 
 	// For triage moves, include source deletions in the commit scope.
 	// Only include paths git actually tracks to avoid "pathspec did not
 	// match" errors when the parent directory was renamed or never committed.
 	if triage != nil && triage.HasMoves() {
+		relParent, relErr := filepath.Rel(cmdCtx.CampaignRoot, cmdCtx.Dungeon.ParentPath)
+		if relErr != nil {
+			relParent = cmdCtx.Dungeon.ParentPath
+		}
 		var sourcePaths []string
 		for _, names := range triage.MovedItems {
 			for _, name := range names {
-				sourcePaths = append(sourcePaths, filepath.Join(relCwd, name))
+				sourcePaths = append(sourcePaths, filepath.Join(relParent, name))
 			}
 		}
 		if len(sourcePaths) > 0 {
-			tracked, filterErr := git.FilterTracked(ctx, campaignRoot, sourcePaths)
+			tracked, filterErr := git.FilterTracked(ctx, cmdCtx.CampaignRoot, sourcePaths)
 			if filterErr != nil {
 				fmt.Printf("%s Warning: could not check tracked paths: %v\n", ui.InfoIcon(), filterErr)
 			}
 			if len(tracked) > 0 {
-				if err := git.StageTrackedChanges(ctx, campaignRoot, tracked...); err != nil {
+				if err := git.StageTrackedChanges(ctx, cmdCtx.CampaignRoot, tracked...); err != nil {
 					fmt.Printf("%s Warning: could not stage source deletions: %v\n", ui.InfoIcon(), err)
 				}
 				files = append(files, tracked...)
@@ -179,8 +187,8 @@ func commitCrawlChanges(ctx context.Context, cfg *config.CampaignConfig, campaig
 
 	result := commit.Crawl(ctx, commit.CrawlOptions{
 		Options: commit.Options{
-			CampaignRoot: campaignRoot,
-			CampaignID:   cfg.ID,
+			CampaignRoot: cmdCtx.CampaignRoot,
+			CampaignID:   cmdCtx.Config.ID,
 		},
 		Description: description,
 		Files:       files,
@@ -193,12 +201,12 @@ func commitCrawlChanges(ctx context.Context, cfg *config.CampaignConfig, campaig
 	}
 }
 
-// buildCrawlCommitMessage builds the commit body listing moved items
-// with paths relative to the campaign root.
-func buildCrawlCommitMessage(campaignRoot, cwd string, triage, inner *dungeon.CrawlSummary) string {
-	relDir, err := filepath.Rel(campaignRoot, cwd)
+// buildCrawlCommitMessage builds the commit body listing moved items with paths
+// relative to the campaign root.
+func buildCrawlCommitMessage(campaignRoot, parentPath string, triage, inner *dungeon.CrawlSummary) string {
+	relDir, err := filepath.Rel(campaignRoot, parentPath)
 	if err != nil {
-		relDir = cwd
+		relDir = parentPath
 	}
 
 	var b strings.Builder
@@ -216,7 +224,11 @@ func buildCrawlCommitMessage(campaignRoot, cwd string, triage, inner *dungeon.Cr
 
 		for _, status := range statuses {
 			items := summary.MovedItems[status]
-			fmt.Fprintf(&b, "Moved to %s/%s:\n", prefix, status)
+			if strings.HasPrefix(status, "docs/") {
+				fmt.Fprintf(&b, "Moved to %s:\n", status)
+			} else {
+				fmt.Fprintf(&b, "Moved to %s/%s:\n", prefix, status)
+			}
 			for _, name := range items {
 				fmt.Fprintf(&b, "  - %s/%s\n", relDir, name)
 			}
@@ -228,6 +240,36 @@ func buildCrawlCommitMessage(campaignRoot, cwd string, triage, inner *dungeon.Cr
 	writeMoves(inner, "dungeon")
 
 	return strings.TrimRight(b.String(), "\n")
+}
+
+func crawlDocsDestinationPaths(summary *dungeon.CrawlSummary) []string {
+	if summary == nil || !summary.HasMoves() {
+		return nil
+	}
+
+	seen := make(map[string]struct{})
+	var paths []string
+	for status := range summary.MovedItems {
+		if !strings.HasPrefix(status, "docs/") {
+			continue
+		}
+		subpath := strings.TrimPrefix(status, "docs/")
+		if subpath == "" || subpath == "." {
+			continue
+		}
+		cleanSubpath := filepath.Clean(subpath)
+		if cleanSubpath == "." || cleanSubpath == ".." || strings.HasPrefix(cleanSubpath, ".."+string(filepath.Separator)) {
+			continue
+		}
+		clean := filepath.Join("docs", cleanSubpath)
+		if _, ok := seen[clean]; ok {
+			continue
+		}
+		seen[clean] = struct{}{}
+		paths = append(paths, clean)
+	}
+	sort.Strings(paths)
+	return paths
 }
 
 func displayCrawlSummary(triage *dungeon.CrawlSummary, inner *dungeon.CrawlSummary) {

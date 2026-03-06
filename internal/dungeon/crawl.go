@@ -2,6 +2,7 @@ package dungeon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -122,6 +123,9 @@ func RunCrawl(ctx context.Context, svc *Service) (*CrawlSummary, error) {
 
 			if err := svc.MoveToStatus(ctx, item.Name, status); err != nil {
 				fmt.Printf("Error moving %s to %s: %v\n", item.Name, status, err)
+				if hint := moveErrorHint(err); hint != "" {
+					fmt.Printf("Hint: %s\n", hint)
+				}
 				summary.Skipped++
 			} else {
 				summary.RecordMove(status, item.Name)
@@ -177,4 +181,21 @@ func logDecision(ctx context.Context, svc *Service, item DungeonItem, decision D
 		Info:      stats,
 	}
 	return svc.AppendCrawlLog(ctx, entry)
+}
+
+func moveErrorHint(err error) string {
+	switch {
+	case errors.Is(err, ErrAlreadyExists):
+		return "Destination already contains this item. Choose a different status or rename the item."
+	case errors.Is(err, ErrInvalidStatus):
+		return "Status must be a single directory name (for example: completed, archived, someday)."
+	case errors.Is(err, ErrInvalidDocsDestination):
+		return "Docs destination must be an existing subdirectory under campaign-root docs/ (for example: architecture/api)."
+	case errors.Is(err, ErrInvalidItemPath):
+		return "Item must be a direct child name in the current context (no path separators or traversal)."
+	case errors.Is(err, ErrNotFound):
+		return "Item no longer exists in the expected source location. Refresh the crawl and retry."
+	default:
+		return ""
+	}
 }
