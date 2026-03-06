@@ -23,14 +23,18 @@ var gendocsCmd = &cobra.Command{
 	Short:  "Generate CLI reference documentation",
 	Long:   "Generate markdown or YAML reference documentation for all camp commands.",
 	Hidden: true,
-	RunE:   runGendocs,
+	Annotations: map[string]string{
+		"release_channel": "dev_only",
+	},
+	RunE: runGendocs,
 }
 
 func init() {
+	markDevOnlyCommand(gendocsCmd)
 	gendocsCmd.Flags().StringVar(&gendocsOutput, "output", "docs", "output directory")
 	gendocsCmd.Flags().StringVar(&gendocsFormat, "format", "markdown", "output format: markdown or yaml")
 	gendocsCmd.Flags().BoolVar(&gendocsSingle, "single", false, "generate a single combined reference file")
-	rootCmd.AddCommand(gendocsCmd)
+	addRootCommandByReleaseChannel(gendocsCmd)
 }
 
 func runGendocs(cmd *cobra.Command, args []string) error {

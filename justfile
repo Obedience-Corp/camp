@@ -34,12 +34,33 @@ default:
 build:
     @{{BUILDTOOL}} build
 
+# Build camp binary in stable profile (default command surface)
+build-stable:
+    BUILD_TAGS='' just build
+
+# Build camp binary in dev profile (includes dev-only commands)
+build-dev:
+    BUILD_TAGS=dev just build
+
 # Quick development build (no vet, just binary)
 build-only:
-    @echo "Building camp..."
-    @mkdir -p {{bin_dir}}
-    go build -ldflags '{{ldflags}}' -o {{bin_dir}}/{{binary_name}} ./cmd/camp
-    @echo "Built {{bin_dir}}/{{binary_name}}"
+    @{{BUILDTOOL}} build-only
+
+# Build only in stable profile
+build-only-stable:
+    BUILD_TAGS='' just build-only
+
+# Build only in dev profile
+build-only-dev:
+    BUILD_TAGS=dev just build-only
+
+# Cross-platform builds in stable profile
+xbuild-stable:
+    BUILD_TAGS='' just xbuild platforms
+
+# Cross-platform builds in dev profile
+xbuild-dev:
+    BUILD_TAGS=dev just xbuild platforms
 
 # Format Go code
 fmt:
@@ -87,7 +108,7 @@ uninstall:
     @echo "camp uninstalled"
 
 # Generate CLI reference docs
-docs: build
+docs: build-dev
     ./{{bin_dir}}/{{binary_name}} gendocs --output docs/cli-reference --format markdown --single
 
 # Run camp (for development)
