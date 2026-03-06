@@ -107,6 +107,82 @@ func TestDungeonList_TriageExcludesSystemFiles(t *testing.T) {
 	assert.NotContains(t, output, "CLAUDE.md")
 }
 
+// --- dungeon list --triage with .crawlignore ---
+
+func TestDungeonList_TriageCrawlIgnoreGlobs(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupDungeonCampaign(t, tc, "dlist-crawlignore")
+
+	// Create .crawlignore in the parent directory
+	err := tc.WriteFile(path+"/.crawlignore", "*.log\ntest-*\n")
+	require.NoError(t, err)
+
+	// Create files that should be excluded by glob patterns
+	err = tc.WriteFile(path+"/debug.log", "log data")
+	require.NoError(t, err)
+	err = tc.WriteFile(path+"/error.log", "error data")
+	require.NoError(t, err)
+	err = tc.WriteFile(path+"/test-output.md", "test output")
+	require.NoError(t, err)
+
+	// Create files that should survive the crawlignore
+	err = tc.WriteFile(path+"/old-experiment.md", "experiment")
+	require.NoError(t, err)
+	err = tc.WriteFile(path+"/review-notes.txt", "notes")
+	require.NoError(t, err)
+
+	output, err := tc.RunCampInDir(path, "dungeon", "list", "--triage", "-f", "simple")
+	require.NoError(t, err)
+
+	// Glob-excluded items should not appear
+	assert.NotContains(t, output, "debug.log", "*.log pattern should exclude debug.log")
+	assert.NotContains(t, output, "error.log", "*.log pattern should exclude error.log")
+	assert.NotContains(t, output, "test-output.md", "test-* pattern should exclude test-output.md")
+
+	// Non-matching items should appear
+	assert.Contains(t, output, "old-experiment.md", "non-matching file should be listed")
+	assert.Contains(t, output, "review-notes.txt", "non-matching file should be listed")
+}
+
+func TestDungeonList_TriageCrawlIgnoreNegation(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupDungeonCampaign(t, tc, "dlist-crawlignore-neg")
+
+	// Exclude all .log files, but re-include audit.log
+	err := tc.WriteFile(path+"/.crawlignore", "*.log\n!audit.log\n")
+	require.NoError(t, err)
+
+	err = tc.WriteFile(path+"/debug.log", "debug")
+	require.NoError(t, err)
+	err = tc.WriteFile(path+"/audit.log", "audit trail")
+	require.NoError(t, err)
+
+	output, err := tc.RunCampInDir(path, "dungeon", "list", "--triage", "-f", "simple")
+	require.NoError(t, err)
+
+	assert.NotContains(t, output, "debug.log", "debug.log should be excluded")
+	assert.Contains(t, output, "audit.log", "audit.log should survive via negation")
+}
+
+func TestDungeonList_TriageCrawlIgnoreSelfExcluded(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupDungeonCampaign(t, tc, "dlist-crawlignore-self")
+
+	// Create .crawlignore — the file itself should never appear in triage
+	err := tc.WriteFile(path+"/.crawlignore", "*.tmp\n")
+	require.NoError(t, err)
+
+	// Create a visible file so triage has something to list
+	err = tc.WriteFile(path+"/visible.md", "visible")
+	require.NoError(t, err)
+
+	output, err := tc.RunCampInDir(path, "dungeon", "list", "--triage", "-f", "simple")
+	require.NoError(t, err)
+
+	assert.NotContains(t, output, ".crawlignore", ".crawlignore should not appear as triage candidate")
+	assert.Contains(t, output, "visible.md", "other files should still appear")
+}
+
 // --- dungeon move (inner) ---
 
 func TestDungeonMove_ToStatus(t *testing.T) {

@@ -129,7 +129,7 @@ func runIntentMove(cmd *cobra.Command, args []string) error {
 
 	// Auto-commit (unless --no-commit)
 	if !noCommit {
-		files := commit.NormalizeFiles(campaignRoot, sourcePath, result.Path)
+		files := commit.NormalizeFiles(campaignRoot, sourcePath, result.Path, audit.FilePath(resolver.Intents()))
 		commitResult := commit.Intent(ctx, commit.IntentOptions{
 			Options: commit.Options{
 				CampaignRoot:  campaignRoot,
