@@ -18,10 +18,11 @@ import (
 // Sentinels marked with %w wrap the canonical sentinel from internal/errors
 // to enable cross-package errors.Is() matching.
 var (
-	ErrNotFound      = camperrors.Wrap(camperrors.ErrNotFound, "item not found")
-	ErrAlreadyExists = camperrors.Wrap(camperrors.ErrAlreadyExists, "already exists")
-	ErrNotInDungeon  = errors.New("item not in dungeon")
-	ErrInvalidStatus = camperrors.Wrap(camperrors.ErrInvalidInput, "invalid status")
+	ErrNotFound               = camperrors.Wrap(camperrors.ErrNotFound, "item not found")
+	ErrAlreadyExists          = camperrors.Wrap(camperrors.ErrAlreadyExists, "already exists")
+	ErrNotInDungeon           = errors.New("item not in dungeon")
+	ErrInvalidStatus          = camperrors.Wrap(camperrors.ErrInvalidInput, "invalid status")
+	ErrInvalidDocsDestination = camperrors.Wrap(camperrors.ErrInvalidInput, "invalid docs destination")
 )
 
 // systemFiles are non-status entries excluded from item listings.

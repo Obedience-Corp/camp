@@ -17,6 +17,7 @@ and selecting the nearest dungeon.
 Use --triage or --inner to force a specific mode.
 
 For each item, you'll be prompted to decide its fate.
+Triage mode includes a route-to-docs action for campaign-root docs/\<subdirectory\>.
 Statistics are gathered when available (requires scc or fest).
 All decisions are logged to crawl.jsonl for history.
 

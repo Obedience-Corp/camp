@@ -70,6 +70,25 @@ func TestBuildCrawlCommitMessage(t *testing.T) {
 			},
 		},
 		{
+			name:         "docs destination move formatting",
+			campaignRoot: "/home/user/campaign",
+			cwd:          "/home/user/campaign/workflow/design",
+			triage: &dungeon.CrawlSummary{
+				StatusCounts: map[string]int{"docs/architecture/api": 1},
+				MovedItems: map[string][]string{
+					"docs/architecture/api": {"legacy-notes.md"},
+				},
+			},
+			inner: nil,
+			contains: []string{
+				"Moved to docs/architecture/api:",
+				"workflow/design/legacy-notes.md",
+			},
+			notContains: []string{
+				"Moved to dungeon/docs/architecture/api:",
+			},
+		},
+		{
 			name:         "both nil summaries",
 			campaignRoot: "/home/user/campaign",
 			cwd:          "/home/user/campaign",
@@ -129,5 +148,60 @@ func TestBuildCrawlCommitMessage_SortedStatuses(t *testing.T) {
 
 	if archivedIdx >= completedIdx || completedIdx >= somedayIdx {
 		t.Errorf("statuses should be in alphabetical order, got:\n%s", result)
+	}
+}
+
+func TestCrawlDocsDestinationPaths(t *testing.T) {
+	tests := []struct {
+		name    string
+		summary *dungeon.CrawlSummary
+		want    []string
+	}{
+		{
+			name: "nil summary",
+		},
+		{
+			name: "no docs destinations",
+			summary: &dungeon.CrawlSummary{
+				MovedItems: map[string][]string{
+					"archived": {"old.md"},
+				},
+			},
+		},
+		{
+			name: "collect docs destinations sorted and unique",
+			summary: &dungeon.CrawlSummary{
+				MovedItems: map[string][]string{
+					"docs/api":          {"a.md"},
+					"docs/guides/setup": {"b.md"},
+					"completed":         {"c.md"},
+				},
+			},
+			want: []string{"docs/api", "docs/guides/setup"},
+		},
+		{
+			name: "drop unsafe docs paths",
+			summary: &dungeon.CrawlSummary{
+				MovedItems: map[string][]string{
+					"docs/../escape": {"a.md"},
+					"docs/safe":      {"b.md"},
+				},
+			},
+			want: []string{"docs/safe"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := crawlDocsDestinationPaths(tt.summary)
+			if len(got) != len(tt.want) {
+				t.Fatalf("crawlDocsDestinationPaths() len=%d, want=%d (%v)", len(got), len(tt.want), got)
+			}
+			for i := range tt.want {
+				if got[i] != tt.want[i] {
+					t.Fatalf("crawlDocsDestinationPaths()[%d]=%q, want=%q (full=%v)", i, got[i], tt.want[i], got)
+				}
+			}
+		})
 	}
 }

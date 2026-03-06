@@ -21,6 +21,7 @@ var dungeonMoveCmd = &cobra.Command{
 
 Without --triage, moves an item already in the dungeon root to a status directory.
 With --triage, moves an item from the parent directory into the dungeon.
+With --triage and --to-docs, routes an item to campaign-root docs/<subdirectory>.
 
 Statuses: completed, archived, someday
 
@@ -28,7 +29,8 @@ Examples:
   camp dungeon move old-feature archived         Move dungeon item to archived
   camp dungeon move stale-doc completed          Move dungeon item to completed
   camp dungeon move old-project --triage         Move parent item into dungeon root
-  camp dungeon move old-project archived --triage Move parent item directly to archived`,
+  camp dungeon move old-project archived --triage Move parent item directly to archived
+  camp dungeon move stale-note.md --triage --to-docs architecture/api Route to docs subdirectory`,
 	Args: cobra.RangeArgs(1, 2),
 	Annotations: map[string]string{
 		"agent_allowed": "true",
@@ -42,6 +44,7 @@ func init() {
 
 	flags := dungeonMoveCmd.Flags()
 	flags.Bool("triage", false, "Move from parent directory (not from dungeon root)")
+	flags.String("to-docs", "", "Route triage item into campaign-root docs/<subdir> (requires --triage)")
 	flags.Bool("no-commit", false, "Don't create a git commit")
 }
 
@@ -49,12 +52,22 @@ func runDungeonMove(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
 	triageMode, _ := cmd.Flags().GetBool("triage")
+	toDocs, _ := cmd.Flags().GetString("to-docs")
 	noCommit, _ := cmd.Flags().GetBool("no-commit")
 
 	itemName := args[0]
 	status := ""
 	if len(args) > 1 {
 		status = args[1]
+	}
+
+	if toDocs != "" {
+		if !triageMode {
+			return fmt.Errorf("--to-docs requires --triage because docs routing moves parent triage items")
+		}
+		if status != "" {
+			return fmt.Errorf("status argument cannot be combined with --to-docs; use either a dungeon status or --to-docs <subdir>")
+		}
 	}
 
 	cmdCtx, err := resolveDungeonCommandContext(ctx)
@@ -67,7 +80,20 @@ func runDungeonMove(cmd *cobra.Command, args []string) error {
 	var movedPaths []string
 
 	if triageMode {
-		if status != "" {
+		if toDocs != "" {
+			targetPath, err := svc.MoveToDocs(ctx, itemName, cmdCtx.Dungeon.ParentPath, toDocs)
+			if err != nil {
+				return wrapDungeonDocsRouteError(err, itemName, toDocs)
+			}
+			src := filepath.Join(relFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.ParentPath), itemName)
+			dst := relFromRoot(cmdCtx.CampaignRoot, targetPath)
+			fmt.Printf("%s Moved %s (%s → %s)\n", ui.SuccessIcon(), itemName, src, dst)
+			description = fmt.Sprintf("Route %s → %s", itemName, dst)
+			movedPaths = []string{
+				filepath.Join(cmdCtx.Dungeon.ParentPath, itemName),
+				targetPath,
+			}
+		} else if status != "" {
 			// Triage directly to a status directory
 			if err := svc.MoveToDungeonStatus(ctx, itemName, cmdCtx.Dungeon.ParentPath, status); err != nil {
 				return wrapDungeonMoveError(err, itemName, status)
@@ -162,5 +188,31 @@ func wrapDungeonMoveError(err error, itemName, status string) error {
 		)
 	default:
 		return camperrors.Wrapf(err, "moving %s to %s", itemName, status)
+	}
+}
+
+func wrapDungeonDocsRouteError(err error, itemName, destination string) error {
+	switch {
+	case errors.Is(err, dungeon.ErrAlreadyExists):
+		return fmt.Errorf(
+			"cannot route %q to docs/%s because destination already exists; choose another docs destination or rename the item: %w",
+			itemName,
+			destination,
+			err,
+		)
+	case errors.Is(err, dungeon.ErrInvalidDocsDestination):
+		return fmt.Errorf(
+			"invalid docs destination %q; use a path under campaign-root docs/ (for example: --to-docs architecture/api): %w",
+			destination,
+			err,
+		)
+	case errors.Is(err, dungeon.ErrNotFound):
+		return fmt.Errorf(
+			"item %q was not found in the resolved triage context; run 'camp dungeon list --triage' to confirm available items: %w",
+			itemName,
+			err,
+		)
+	default:
+		return camperrors.Wrapf(err, "routing %s to docs/%s", itemName, destination)
 	}
 }

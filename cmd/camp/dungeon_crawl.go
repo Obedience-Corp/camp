@@ -29,6 +29,7 @@ Without flags, auto-detects what to crawl:
 Use --triage or --inner to force a specific mode.
 
 For each item, you'll be prompted to decide its fate.
+Triage mode includes a route-to-docs action for campaign-root docs/<subdirectory>.
 Statistics are gathered when available (requires scc or fest).
 All decisions are logged to crawl.jsonl for history.
 
@@ -154,6 +155,7 @@ func commitCrawlChanges(ctx context.Context, cmdCtx *dungeonCommandContext, tria
 	}
 
 	files := []string{relDungeon}
+	files = append(files, crawlDocsDestinationPaths(triage)...)
 
 	// For triage moves, include source deletions in the commit scope.
 	// Only include paths git actually tracks to avoid "pathspec did not
@@ -222,7 +224,11 @@ func buildCrawlCommitMessage(campaignRoot, parentPath string, triage, inner *dun
 
 		for _, status := range statuses {
 			items := summary.MovedItems[status]
-			fmt.Fprintf(&b, "Moved to %s/%s:\n", prefix, status)
+			if strings.HasPrefix(status, "docs/") {
+				fmt.Fprintf(&b, "Moved to %s:\n", status)
+			} else {
+				fmt.Fprintf(&b, "Moved to %s/%s:\n", prefix, status)
+			}
 			for _, name := range items {
 				fmt.Fprintf(&b, "  - %s/%s\n", relDir, name)
 			}
@@ -234,6 +240,36 @@ func buildCrawlCommitMessage(campaignRoot, parentPath string, triage, inner *dun
 	writeMoves(inner, "dungeon")
 
 	return strings.TrimRight(b.String(), "\n")
+}
+
+func crawlDocsDestinationPaths(summary *dungeon.CrawlSummary) []string {
+	if summary == nil || !summary.HasMoves() {
+		return nil
+	}
+
+	seen := make(map[string]struct{})
+	var paths []string
+	for status := range summary.MovedItems {
+		if !strings.HasPrefix(status, "docs/") {
+			continue
+		}
+		subpath := strings.TrimPrefix(status, "docs/")
+		if subpath == "" || subpath == "." {
+			continue
+		}
+		cleanSubpath := filepath.Clean(subpath)
+		if cleanSubpath == "." || cleanSubpath == ".." || strings.HasPrefix(cleanSubpath, ".."+string(filepath.Separator)) {
+			continue
+		}
+		clean := filepath.Join("docs", cleanSubpath)
+		if _, ok := seen[clean]; ok {
+			continue
+		}
+		seen[clean] = struct{}{}
+		paths = append(paths, clean)
+	}
+	sort.Strings(paths)
+	return paths
 }
 
 func displayCrawlSummary(triage *dungeon.CrawlSummary, inner *dungeon.CrawlSummary) {
