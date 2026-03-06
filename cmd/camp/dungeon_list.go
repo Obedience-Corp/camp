@@ -4,15 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 	"github.com/spf13/cobra"
 
-	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/dungeon"
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
@@ -58,22 +55,14 @@ func runDungeonList(cmd *cobra.Command, _ []string) error {
 	format, _ := cmd.Flags().GetString("format")
 	triageMode, _ := cmd.Flags().GetBool("triage")
 
-	// Load campaign config
-	_, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
+	cmdCtx, err := resolveDungeonCommandContext(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return err
 	}
-
-	cwd, err := os.Getwd()
-	if err != nil {
-		return camperrors.Wrap(err, "getting current directory")
-	}
-	dungeonPath := filepath.Join(cwd, "dungeon")
-
-	svc := dungeon.NewService(campaignRoot, dungeonPath)
+	svc := dungeon.NewService(cmdCtx.CampaignRoot, cmdCtx.Dungeon.DungeonPath)
 
 	if triageMode {
-		items, err := svc.ListParentItems(ctx, cwd)
+		items, err := svc.ListParentItems(ctx, cmdCtx.Dungeon.ParentPath)
 		if err != nil {
 			return camperrors.Wrap(err, "listing parent items")
 		}
