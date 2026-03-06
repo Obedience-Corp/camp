@@ -81,6 +81,62 @@ func TestLoadCrawlIgnore(t *testing.T) {
 			input:   "production-output",
 			want:    false,
 		},
+		{
+			name:    "trailing slash pattern excludes directory",
+			content: "build/",
+			input:   "build",
+			isDir:   true,
+			want:    true,
+		},
+		{
+			name:    "trailing slash pattern does not exclude file",
+			content: "build/",
+			input:   "build",
+			isDir:   false,
+			want:    false,
+		},
+		{
+			name:    "negated trailing slash pattern re-includes directory",
+			content: "build/\n!build/",
+			input:   "build",
+			isDir:   true,
+			want:    false,
+		},
+		{
+			name:    "non-trailing pattern excludes both file and dir",
+			content: "build",
+			input:   "build",
+			isDir:   false,
+			want:    true,
+		},
+		{
+			name:    "non-trailing pattern excludes directory too",
+			content: "build",
+			input:   "build",
+			isDir:   true,
+			want:    true,
+		},
+		{
+			name:    "mixed dir-only and glob patterns",
+			content: "dist/\n*.log",
+			input:   "debug.log",
+			isDir:   false,
+			want:    true,
+		},
+		{
+			name:    "mixed patterns dir-only skipped for file",
+			content: "dist/\n*.log",
+			input:   "dist",
+			isDir:   false,
+			want:    false,
+		},
+		{
+			name:    "mixed patterns dir-only matches directory",
+			content: "dist/\n*.log",
+			input:   "dist",
+			isDir:   true,
+			want:    true,
+		},
 	}
 
 	for _, tt := range tests {

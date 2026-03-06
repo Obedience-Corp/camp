@@ -24,6 +24,7 @@ my-workspace/
 | `*.log` | Exclude all files ending in `.log` |
 | `test-*` | Exclude anything starting with `test-` |
 | `temp` | Exclude a file or directory named `temp` |
+| `build/` | Exclude a directory named `build` (trailing `/` = directories only) |
 | `!important.log` | Re-include `important.log` (negation) |
 | `# comment` | Lines starting with `#` are comments |
 | (blank line) | Empty lines are ignored |
