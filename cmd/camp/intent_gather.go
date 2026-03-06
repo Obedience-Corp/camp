@@ -218,6 +218,7 @@ func runIntentGather(cmd *cobra.Command, args []string) error {
 			files = append(files, result.Gathered.Path)
 		}
 		files = append(files, result.ArchivedPaths...)
+		files = append(files, audit.FilePath(resolver.Intents()))
 
 		commitResult := commit.Intent(ctx, commit.IntentOptions{
 			Options: commit.Options{

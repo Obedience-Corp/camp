@@ -201,7 +201,7 @@ func runFastCapture(ctx context.Context, svc *intent.IntentService, intentsDir s
 
 	// Auto-commit (unless --no-commit)
 	if !noCommit {
-		files := commit.NormalizeFiles(campaignRoot, result.Path)
+		files := commit.NormalizeFiles(campaignRoot, result.Path, audit.FilePath(intentsDir))
 		commitResult := commit.Intent(ctx, commit.IntentOptions{
 			Options: commit.Options{
 				CampaignRoot:  campaignRoot,
@@ -248,7 +248,7 @@ func runDeepCapture(ctx context.Context, svc *intent.IntentService, intentsDir s
 
 	// Auto-commit (unless --no-commit)
 	if !noCommit {
-		files := commit.NormalizeFiles(campaignRoot, result.Path)
+		files := commit.NormalizeFiles(campaignRoot, result.Path, audit.FilePath(intentsDir))
 		commitResult := commit.Intent(ctx, commit.IntentOptions{
 			Options: commit.Options{
 				CampaignRoot:  campaignRoot,

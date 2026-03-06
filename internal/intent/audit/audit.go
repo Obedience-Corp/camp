@@ -15,7 +15,13 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
-const auditFile = ".intents.jsonl"
+// AuditFile is the name of the append-only JSONL audit log in the intents directory.
+const AuditFile = ".intents.jsonl"
+
+// FilePath returns the full path to the audit log file within the given intents directory.
+func FilePath(intentsDir string) string {
+	return filepath.Join(intentsDir, AuditFile)
+}
 
 // EventType identifies the kind of audit event.
 type EventType string
@@ -60,7 +66,7 @@ func AppendEvent(ctx context.Context, intentsDir string, e Event) error {
 	}
 	data = append(data, '\n')
 
-	path := filepath.Join(intentsDir, auditFile)
+	path := FilePath(intentsDir)
 
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {

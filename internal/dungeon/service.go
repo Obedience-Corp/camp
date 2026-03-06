@@ -336,15 +336,16 @@ func (s *Service) ListParentItems(ctx context.Context, parentPath string) ([]Dun
 	}
 
 	excluded := map[string]bool{
-		"dungeon":    true,
-		".campaign":  true,
-		".git":       true,
-		"AGENTS.md":  true,
-		"CLAUDE.md":  true,
-		"OBEY.md":    true,
-		"README.md":  true,
-		".gitkeep":   true,
-		".gitignore": true,
+		"dungeon":      true,
+		".campaign":    true,
+		".git":         true,
+		"AGENTS.md":    true,
+		"CLAUDE.md":    true,
+		"OBEY.md":      true,
+		"README.md":    true,
+		".gitkeep":     true,
+		".gitignore":   true,
+		".crawlignore": true,
 	}
 
 	// Check .workflow.yaml for structural directory exclusions.
@@ -372,6 +373,15 @@ func (s *Service) ListParentItems(ctx context.Context, parentPath string) ([]Dun
 		fmt.Fprintf(os.Stderr, "Warning: failed to parse %s: %v\n", crawlCfgPath, err)
 	}
 
+	// Check parent/.crawlignore for gitignore-style pattern exclusions.
+	crawlIgnorePath := filepath.Join(parentPath, CrawlIgnoreFile)
+	var crawlIgnore *CrawlIgnoreMatcher
+	if m, err := LoadCrawlIgnore(crawlIgnorePath); err == nil {
+		crawlIgnore = m
+	} else if !errors.Is(err, os.ErrNotExist) {
+		fmt.Fprintf(os.Stderr, "Warning: failed to parse %s: %v\n", crawlIgnorePath, err)
+	}
+
 	var items []DungeonItem
 	for _, entry := range entries {
 		name := entry.Name()
@@ -390,6 +400,13 @@ func (s *Service) ListParentItems(ctx context.Context, parentPath string) ([]Dun
 		if entry.IsDir() {
 			obeyPath := filepath.Join(parentPath, name, "OBEY.md")
 			if _, err := os.Stat(obeyPath); err == nil {
+				continue
+			}
+		}
+
+		// Layer 5: gitignore-style pattern matching from .crawlignore.
+		if crawlIgnore != nil {
+			if matched, _ := crawlIgnore.Excludes(name, entry.IsDir()); matched {
 				continue
 			}
 		}
