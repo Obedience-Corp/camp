@@ -1,6 +1,7 @@
 package main
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -130,6 +131,39 @@ func TestLeverageDir_PositionalArg(t *testing.T) {
 
 	if !strings.Contains(output, "Directory Leverage") {
 		t.Errorf("positional arg should trigger directory mode\nGot:\n%s", output)
+	}
+}
+
+// TestLeverageDir_OutsideCampaign verifies that running --dir on a directory
+// outside any campaign does NOT load campaign config from cwd.
+// Regression test for PR #145 review finding.
+func TestLeverageDir_OutsideCampaign(t *testing.T) {
+	origRunner := sccRunner
+	origPopulate := populateMetrics
+	t.Cleanup(func() { sccRunner = origRunner; populateMetrics = origPopulate })
+	populateMetrics = stubPopulateMetrics()
+
+	// Create a temp dir that is definitely outside any campaign
+	tmpDir := t.TempDir()
+	dirName := filepath.Base(tmpDir)
+
+	sccRunner = &mockRunner{
+		results: map[string]*leverage.SCCResult{
+			dirName: sampleResult(2.0, 6.0, 500000, 10000),
+		},
+	}
+
+	output, err := executeLeverageDir(t, "--dir", tmpDir)
+	if err != nil {
+		t.Fatalf("command failed: %v", err)
+	}
+
+	// Should show "Directory Leverage", not "Campaign Leverage"
+	if !strings.Contains(output, "Directory Leverage") {
+		t.Errorf("output should contain 'Directory Leverage'\nGot:\n%s", output)
+	}
+	if strings.Contains(output, "Campaign Leverage") {
+		t.Errorf("output should NOT contain 'Campaign Leverage'\nGot:\n%s", output)
 	}
 }
 

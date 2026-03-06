@@ -50,7 +50,7 @@ func initDirectorySetup(ctx context.Context, targetDir, gitRoot string) (*levera
 	}
 
 	// Try to detect campaign opportunistically
-	root, campaignErr := campaign.DetectCached(ctx)
+	root, campaignErr := campaign.Detect(ctx, targetDir)
 	hasCampaign := campaignErr == nil && root != ""
 
 	var cfg *leverage.LeverageConfig
