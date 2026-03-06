@@ -180,6 +180,12 @@ func wrapDungeonMoveError(err error, itemName, status string) error {
 			itemName,
 			err,
 		)
+	case errors.Is(err, dungeon.ErrInvalidItemPath):
+		return fmt.Errorf(
+			"invalid item path %q; use a direct child file or directory name from the current dungeon context (no slashes or traversal). Run 'camp dungeon list --triage' or 'camp dungeon list' to confirm available items: %w",
+			itemName,
+			err,
+		)
 	case errors.Is(err, dungeon.ErrNotFound):
 		return fmt.Errorf(
 			"item %q was not found in the resolved context; run 'camp dungeon list --triage' or 'camp dungeon list' to confirm available items: %w",
@@ -204,6 +210,12 @@ func wrapDungeonDocsRouteError(err error, itemName, destination string) error {
 		return fmt.Errorf(
 			"invalid docs destination %q; use an existing subdirectory under campaign-root docs/ (for example: --to-docs architecture/api): %w",
 			destination,
+			err,
+		)
+	case errors.Is(err, dungeon.ErrInvalidItemPath):
+		return fmt.Errorf(
+			"invalid item path %q; use a direct child file or directory name from the resolved triage context (no slashes or traversal). Run 'camp dungeon list --triage' to confirm available items: %w",
+			itemName,
 			err,
 		)
 	case errors.Is(err, dungeon.ErrNotFound):

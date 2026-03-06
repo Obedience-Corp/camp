@@ -191,6 +191,8 @@ func moveErrorHint(err error) string {
 		return "Status must be a single directory name (for example: completed, archived, someday)."
 	case errors.Is(err, ErrInvalidDocsDestination):
 		return "Docs destination must be an existing subdirectory under campaign-root docs/ (for example: architecture/api)."
+	case errors.Is(err, ErrInvalidItemPath):
+		return "Item must be a direct child name in the current context (no path separators or traversal)."
 	case errors.Is(err, ErrNotFound):
 		return "Item no longer exists in the expected source location. Refresh the crawl and retry."
 	default:

@@ -188,3 +188,65 @@ func TestService_MoveToDocs_InvalidDestination(t *testing.T) {
 		t.Fatalf("source should remain in place after failed move: %v", statErr)
 	}
 }
+
+func TestService_MoveToDocs_InvalidItemPath(t *testing.T) {
+	ctx := context.Background()
+
+	root := t.TempDir()
+
+	dungeonPath := filepath.Join(root, "dungeon")
+	if err := os.MkdirAll(dungeonPath, 0o755); err != nil {
+		t.Fatalf("failed to create dungeon dir: %v", err)
+	}
+
+	parentPath := filepath.Join(root, "workflow", "design")
+	if err := os.MkdirAll(parentPath, 0o755); err != nil {
+		t.Fatalf("failed to create parent dir: %v", err)
+	}
+	targetDir := filepath.Join(root, "docs", "architecture")
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatalf("failed to create docs destination dir: %v", err)
+	}
+
+	source := filepath.Join(parentPath, "old-notes.md")
+	if err := os.WriteFile(source, []byte("# Old Notes\n"), 0o644); err != nil {
+		t.Fatalf("failed to write source file: %v", err)
+	}
+
+	// Sibling file used to verify traversal attempts cannot escape parentPath.
+	sibling := filepath.Join(root, "workflow", "secret.md")
+	if err := os.WriteFile(sibling, []byte("# Secret\n"), 0o644); err != nil {
+		t.Fatalf("failed to write sibling file: %v", err)
+	}
+
+	svc := NewService(root, dungeonPath)
+	for _, itemName := range []string{"../secret.md", "subdir/nested.md", "./old-notes.md", `subdir\note.md`, ".."} {
+		t.Run(itemName, func(t *testing.T) {
+			_, err := svc.MoveToDocs(ctx, itemName, parentPath, "architecture")
+			if err == nil {
+				t.Fatalf("MoveToDocs(%q) expected invalid item path error", itemName)
+			}
+			if !errors.Is(err, ErrInvalidItemPath) {
+				t.Fatalf("expected ErrInvalidItemPath, got: %v", err)
+			}
+
+			if _, statErr := os.Stat(source); statErr != nil {
+				t.Fatalf("parent source should remain in place after failed move: %v", statErr)
+			}
+			if _, statErr := os.Stat(sibling); statErr != nil {
+				t.Fatalf("sibling source should remain in place after failed move: %v", statErr)
+			}
+			if _, statErr := os.Stat(filepath.Join(root, "docs", "secret.md")); !os.IsNotExist(statErr) {
+				t.Fatalf("docs-root bypass target should not be created; stat err=%v", statErr)
+			}
+
+			entries, readErr := os.ReadDir(targetDir)
+			if readErr != nil {
+				t.Fatalf("failed to read docs destination: %v", readErr)
+			}
+			if len(entries) != 0 {
+				t.Fatalf("docs destination should remain empty on invalid item paths, got %d entries", len(entries))
+			}
+		})
+	}
+}

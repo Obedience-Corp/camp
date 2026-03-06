@@ -49,8 +49,20 @@ func (s *Service) MoveToDocs(ctx context.Context, itemName, parentPath, destinat
 	if err := ctx.Err(); err != nil {
 		return "", camperrors.Wrap(err, "context cancelled")
 	}
+	validName, err := validateDirectChildItemName(itemName)
+	if err != nil {
+		return "", err
+	}
+	itemName = validName
 
 	sourcePath := filepath.Join(parentPath, itemName)
+	if err := pathutil.ValidateBoundary(parentPath, sourcePath); err != nil {
+		return "", camperrors.Wrapf(
+			ErrInvalidItemPath,
+			"%q is not a direct child item name in the resolved triage context",
+			itemName,
+		)
+	}
 	if err := pathutil.ValidateBoundary(s.campaignRoot, sourcePath); err != nil {
 		return "", camperrors.Wrap(ErrNotInDungeon, "source outside campaign root")
 	}

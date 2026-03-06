@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 	"github.com/Obedience-Corp/camp/internal/workflow"
 )
 
@@ -23,6 +24,7 @@ var (
 	ErrNotInDungeon           = errors.New("item not in dungeon")
 	ErrInvalidStatus          = camperrors.Wrap(camperrors.ErrInvalidInput, "invalid status")
 	ErrInvalidDocsDestination = camperrors.Wrap(camperrors.ErrInvalidInput, "invalid docs destination")
+	ErrInvalidItemPath        = camperrors.Wrap(camperrors.ErrInvalidInput, "invalid item path")
 )
 
 // systemFiles are non-status entries excluded from item listings.
@@ -442,6 +444,11 @@ func (s *Service) MoveToDungeon(ctx context.Context, itemName, parentPath string
 	if err := ctx.Err(); err != nil {
 		return camperrors.Wrap(err, "context cancelled")
 	}
+	validName, err := validateDirectChildItemName(itemName)
+	if err != nil {
+		return err
+	}
+	itemName = validName
 
 	sourcePath := filepath.Join(parentPath, itemName)
 	targetPath := filepath.Join(s.dungeonPath, itemName)
@@ -485,11 +492,11 @@ func (s *Service) MoveToStatus(ctx context.Context, itemName, status string) err
 	if err := validateStatusName(status); err != nil {
 		return err
 	}
-
-	itemName = filepath.Clean(itemName)
-	if itemName == "/" {
-		return camperrors.Wrap(ErrNotInDungeon, "invalid item name")
+	validName, err := validateDirectChildItemName(itemName)
+	if err != nil {
+		return err
 	}
+	itemName = validName
 
 	srcPath := filepath.Join(s.dungeonPath, itemName)
 	dstPath := filepath.Join(s.dungeonPath, status, itemName)
@@ -540,21 +547,18 @@ func (s *Service) MoveToDungeonStatus(ctx context.Context, itemName, parentPath,
 	if err := validateStatusName(status); err != nil {
 		return err
 	}
+	validName, err := validateDirectChildItemName(itemName)
+	if err != nil {
+		return err
+	}
+	itemName = validName
 
 	// Validate parentPath is within campaign root
-	absSource, err := filepath.Abs(filepath.Join(parentPath, itemName))
-	if err != nil {
-		return camperrors.Wrap(err, "resolving source path")
-	}
-	absCampaignRoot, err := filepath.Abs(s.campaignRoot)
-	if err != nil {
-		return camperrors.Wrap(err, "resolving campaign root")
-	}
-	if !strings.HasPrefix(absSource, absCampaignRoot+string(filepath.Separator)) {
+	sourcePath := filepath.Join(parentPath, itemName)
+	if err := pathutil.ValidateBoundary(s.campaignRoot, sourcePath); err != nil {
 		return camperrors.Wrap(ErrNotInDungeon, "source outside campaign root")
 	}
 
-	sourcePath := filepath.Join(parentPath, itemName)
 	targetPath := filepath.Join(s.dungeonPath, status, itemName)
 
 	if _, err := os.Stat(sourcePath); err != nil {
@@ -590,4 +594,30 @@ func validateStatusName(status string) error {
 		return camperrors.Wrap(ErrInvalidStatus, status)
 	}
 	return nil
+}
+
+func validateDirectChildItemName(itemName string) (string, error) {
+	trimmed := strings.TrimSpace(itemName)
+	if trimmed == "" {
+		return "", camperrors.Wrapf(ErrInvalidItemPath, "%q is not a direct child item name", itemName)
+	}
+	if filepath.IsAbs(trimmed) {
+		return "", camperrors.Wrapf(ErrInvalidItemPath, "%q is not a direct child item name", itemName)
+	}
+
+	cleaned := filepath.Clean(trimmed)
+	if cleaned == "." || cleaned == ".." {
+		return "", camperrors.Wrapf(ErrInvalidItemPath, "%q is not a direct child item name", itemName)
+	}
+	if cleaned != trimmed {
+		return "", camperrors.Wrapf(ErrInvalidItemPath, "%q is not a direct child item name", itemName)
+	}
+	if cleaned != filepath.Base(cleaned) {
+		return "", camperrors.Wrapf(ErrInvalidItemPath, "%q is not a direct child item name", itemName)
+	}
+	if strings.Contains(cleaned, "/") || strings.Contains(cleaned, "\\") {
+		return "", camperrors.Wrapf(ErrInvalidItemPath, "%q is not a direct child item name", itemName)
+	}
+
+	return cleaned, nil
 }

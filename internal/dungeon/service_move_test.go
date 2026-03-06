@@ -454,6 +454,143 @@ func TestService_Archive_NotFound(t *testing.T) {
 	}
 }
 
+func TestValidateDirectChildItemName(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    string
+		wantErr bool
+	}{
+		{name: "simple file", input: "note.md", want: "note.md"},
+		{name: "simple directory name", input: "legacy-folder", want: "legacy-folder"},
+		{name: "trimmed whitespace", input: "  note.md  ", want: "note.md"},
+		{name: "empty", input: "", wantErr: true},
+		{name: "whitespace only", input: "   ", wantErr: true},
+		{name: "parent traversal", input: "../secret.md", wantErr: true},
+		{name: "nested path", input: "dir/file.md", wantErr: true},
+		{name: "dot slash", input: "./note.md", wantErr: true},
+		{name: "dot", input: ".", wantErr: true},
+		{name: "dot dot", input: "..", wantErr: true},
+		{name: "absolute path", input: "/tmp/note.md", wantErr: true},
+		{name: "windows style separators", input: "dir\\note.md", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := validateDirectChildItemName(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("validateDirectChildItemName(%q) expected error", tt.input)
+				}
+				if !errors.Is(err, ErrInvalidItemPath) {
+					t.Fatalf("expected ErrInvalidItemPath, got: %v", err)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("validateDirectChildItemName(%q) failed: %v", tt.input, err)
+			}
+			if got != tt.want {
+				t.Fatalf("validateDirectChildItemName(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestService_MoveToDungeon_InvalidItemPath(t *testing.T) {
+	ctx := context.Background()
+
+	tmpDir := t.TempDir()
+	dungeonPath := filepath.Join(tmpDir, "dungeon")
+	svc := NewService(tmpDir, dungeonPath)
+
+	if _, err := svc.Init(ctx, InitOptions{}); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "safe.md"), []byte("safe"), 0o644); err != nil {
+		t.Fatalf("failed to create source file: %v", err)
+	}
+
+	for _, itemName := range []string{"../safe.md", "dir/safe.md", "./safe.md", `dir\safe.md`} {
+		t.Run(itemName, func(t *testing.T) {
+			err := svc.MoveToDungeon(ctx, itemName, tmpDir)
+			if err == nil {
+				t.Fatalf("MoveToDungeon(%q) expected invalid item path error", itemName)
+			}
+			if !errors.Is(err, ErrInvalidItemPath) {
+				t.Fatalf("expected ErrInvalidItemPath, got: %v", err)
+			}
+		})
+	}
+
+	if _, err := os.Stat(filepath.Join(tmpDir, "safe.md")); err != nil {
+		t.Fatalf("source file should remain in parent after failed move: %v", err)
+	}
+}
+
+func TestService_MoveToStatus_InvalidItemPath(t *testing.T) {
+	ctx := context.Background()
+
+	tmpDir := t.TempDir()
+	dungeonPath := filepath.Join(tmpDir, "dungeon")
+	svc := NewService(tmpDir, dungeonPath)
+
+	if _, err := svc.Init(ctx, InitOptions{}); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dungeonPath, "safe.md"), []byte("safe"), 0o644); err != nil {
+		t.Fatalf("failed to create dungeon file: %v", err)
+	}
+
+	for _, itemName := range []string{"../safe.md", "dir/safe.md", "./safe.md", `dir\safe.md`} {
+		t.Run(itemName, func(t *testing.T) {
+			err := svc.MoveToStatus(ctx, itemName, "completed")
+			if err == nil {
+				t.Fatalf("MoveToStatus(%q) expected invalid item path error", itemName)
+			}
+			if !errors.Is(err, ErrInvalidItemPath) {
+				t.Fatalf("expected ErrInvalidItemPath, got: %v", err)
+			}
+		})
+	}
+
+	if _, err := os.Stat(filepath.Join(dungeonPath, "safe.md")); err != nil {
+		t.Fatalf("source file should remain in dungeon root after failed move: %v", err)
+	}
+}
+
+func TestService_MoveToDungeonStatus_InvalidItemPath(t *testing.T) {
+	ctx := context.Background()
+
+	tmpDir := t.TempDir()
+	dungeonPath := filepath.Join(tmpDir, "dungeon")
+	svc := NewService(tmpDir, dungeonPath)
+
+	if _, err := svc.Init(ctx, InitOptions{}); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "safe.md"), []byte("safe"), 0o644); err != nil {
+		t.Fatalf("failed to create parent file: %v", err)
+	}
+
+	for _, itemName := range []string{"../safe.md", "dir/safe.md", "./safe.md", `dir\safe.md`} {
+		t.Run(itemName, func(t *testing.T) {
+			err := svc.MoveToDungeonStatus(ctx, itemName, tmpDir, "archived")
+			if err == nil {
+				t.Fatalf("MoveToDungeonStatus(%q) expected invalid item path error", itemName)
+			}
+			if !errors.Is(err, ErrInvalidItemPath) {
+				t.Fatalf("expected ErrInvalidItemPath, got: %v", err)
+			}
+		})
+	}
+
+	if _, err := os.Stat(filepath.Join(tmpDir, "safe.md")); err != nil {
+		t.Fatalf("source file should remain in parent after failed move: %v", err)
+	}
+}
+
 func TestValidateStatusName(t *testing.T) {
 	tests := []struct {
 		name    string
