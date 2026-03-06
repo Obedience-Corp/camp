@@ -136,3 +136,8 @@ current:
 [no-cd]
 tags:
     @git tag -l "v*" --sort=-version:refname
+
+# Bump version, tag, and push (aliases to dev channel bump)
+[no-cd]
+next level="":
+    @just --justfile {{source_file()}} dev {{level}}
