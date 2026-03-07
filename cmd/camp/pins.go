@@ -160,8 +160,8 @@ func runPin(cmd *cobra.Command, args []string) error {
 
 	// Store path relative to campaign root for portability
 	relPath, err := filepath.Rel(campaignRoot, absPath)
-	if err != nil {
-		return camperrors.Wrapf(err, "compute relative path for %q", absPath)
+	if err != nil || strings.HasPrefix(relPath, "..") {
+		return fmt.Errorf("path %q is outside the campaign root", absPath)
 	}
 
 	result := store.Toggle(name, relPath)

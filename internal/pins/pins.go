@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -157,11 +158,16 @@ func (s *Store) Toggle(name, path string) ToggleResult {
 // the given root. Returns true if any paths were converted.
 func (s *Store) MigrateAbsoluteToRelative(root string) bool {
 	changed := false
-	for i, p := range s.pins {
+	for i := len(s.pins) - 1; i >= 0; i-- {
+		p := s.pins[i]
 		if filepath.IsAbs(p.Path) {
 			rel, err := filepath.Rel(root, p.Path)
-			if err == nil {
+			if err == nil && !strings.HasPrefix(rel, "..") {
 				s.pins[i].Path = rel
+				changed = true
+			} else {
+				// External pin — remove from list
+				s.pins = append(s.pins[:i], s.pins[i+1:]...)
 				changed = true
 			}
 		}

@@ -303,6 +303,92 @@ func TestToggle(t *testing.T) {
 	}
 }
 
+func TestMigrateAbsoluteToRelative(t *testing.T) {
+	root := "/home/user/campaign"
+
+	tests := []struct {
+		name     string
+		pins     []Pin
+		wantPins []Pin
+		wantChanged bool
+	}{
+		{
+			name: "converts internal absolute pin",
+			pins: []Pin{
+				{Name: "proj", Path: "/home/user/campaign/projects/foo"},
+			},
+			wantPins: []Pin{
+				{Name: "proj", Path: "projects/foo"},
+			},
+			wantChanged: true,
+		},
+		{
+			name: "drops external absolute pin",
+			pins: []Pin{
+				{Name: "ext", Path: "/tmp/outside"},
+			},
+			wantPins:    []Pin{},
+			wantChanged: true,
+		},
+		{
+			name: "mixed: converts internal, drops external",
+			pins: []Pin{
+				{Name: "inside", Path: "/home/user/campaign/docs"},
+				{Name: "outside", Path: "/etc/secrets"},
+				{Name: "relative", Path: "already/relative"},
+			},
+			wantPins: []Pin{
+				{Name: "inside", Path: "docs"},
+				{Name: "relative", Path: "already/relative"},
+			},
+			wantChanged: true,
+		},
+		{
+			name: "no change when all relative",
+			pins: []Pin{
+				{Name: "a", Path: "projects/a"},
+			},
+			wantPins: []Pin{
+				{Name: "a", Path: "projects/a"},
+			},
+			wantChanged: false,
+		},
+		{
+			name:        "empty list",
+			pins:        []Pin{},
+			wantPins:    []Pin{},
+			wantChanged: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := NewStore("")
+			for _, p := range tt.pins {
+				_ = s.Add(p.Name, p.Path)
+			}
+
+			changed := s.MigrateAbsoluteToRelative(root)
+			if changed != tt.wantChanged {
+				t.Errorf("MigrateAbsoluteToRelative() changed = %v, want %v", changed, tt.wantChanged)
+			}
+
+			got := s.List()
+			if len(got) != len(tt.wantPins) {
+				t.Fatalf("got %d pins, want %d", len(got), len(tt.wantPins))
+			}
+			for i, want := range tt.wantPins {
+				if got[i].Name != want.Name {
+					t.Errorf("pin[%d].Name = %q, want %q", i, got[i].Name, want.Name)
+				}
+				if got[i].Path != want.Path {
+					t.Errorf("pin[%d].Path = %q, want %q", i, got[i].Path, want.Path)
+				}
+			}
+		})
+	}
+}
+
 func TestTogglePersistence(t *testing.T) {
 	dir := t.TempDir()
 	storePath := filepath.Join(dir, "pins.json")
