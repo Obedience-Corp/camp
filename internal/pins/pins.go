@@ -162,7 +162,12 @@ func (s *Store) MigrateAbsoluteToRelative(root string) bool {
 	for i := len(s.pins) - 1; i >= 0; i-- {
 		p := s.pins[i]
 		if filepath.IsAbs(p.Path) {
-			rel, err := filepath.Rel(root, p.Path)
+			// Canonicalize to match the symlink-resolved root
+			resolved := p.Path
+			if r, err := filepath.EvalSymlinks(p.Path); err == nil {
+				resolved = r
+			}
+			rel, err := filepath.Rel(root, resolved)
 			if err == nil && rel != ".." && !strings.HasPrefix(rel, "../") {
 				s.pins[i].Path = rel
 				changed = true
