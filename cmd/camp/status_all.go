@@ -66,6 +66,7 @@ type repoStatus struct {
 	Untracked   int    `json:"untracked"`
 	Unmerged    int    `json:"unmerged"`
 	StaleRefs   int    `json:"stale_refs"`
+	Remote      string `json:"remote"`
 	Error       string `json:"error,omitempty"`
 }
 
@@ -183,6 +184,11 @@ func getRepoStatus(ctx context.Context, repoPath, name string, isCampaignRoot bo
 	}
 	rs.Branch = branch
 
+	// Get remote origin URL
+	if remote, err := gitOutput(ctx, repoPath, "remote", "get-url", "origin"); err == nil {
+		rs.Remote = shortenRemoteURL(remote)
+	}
+
 	// Get porcelain status — at campaign root, ignore submodule refs so they
 	// don't pollute the dirty state.
 	statusArgs := []string{"status", "--porcelain=v1"}
@@ -263,6 +269,19 @@ func gitOutput(ctx context.Context, repoPath string, args ...string) (string, er
 	return strings.TrimSpace(string(output)), nil
 }
 
+func shortenRemoteURL(url string) string {
+	// Handle HTTPS: https://github.com/Org/repo.git → Org/repo
+	url = strings.TrimSuffix(url, ".git")
+	if strings.HasPrefix(url, "https://github.com/") {
+		return strings.TrimPrefix(url, "https://github.com/")
+	}
+	// Handle SSH: git@github.com:Org/repo.git → Org/repo
+	if strings.HasPrefix(url, "git@github.com:") {
+		return strings.TrimPrefix(url, "git@github.com:")
+	}
+	return url
+}
+
 func renderStatusTable(statuses []repoStatus) {
 	green := lipgloss.NewStyle().Foreground(ui.SuccessColor)
 	red := lipgloss.NewStyle().Foreground(ui.ErrorColor)
@@ -270,12 +289,12 @@ func renderStatusTable(statuses []repoStatus) {
 	dim := lipgloss.NewStyle().Foreground(ui.DimColor)
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.BrightColor)
 
-	headers := []string{"NAME", "BRANCH", "STATUS", "PUSH", "CHANGES", "REFS", "BRANCHES"}
+	headers := []string{"NAME", "REMOTE", "BRANCH", "STATUS", "PUSH", "CHANGES", "REFS", "BRANCHES"}
 	var rows [][]string
 
 	for _, s := range statuses {
 		if s.Error != "" {
-			rows = append(rows, []string{s.Name, "", red.Render(s.Error), "", "", "", ""})
+			rows = append(rows, []string{s.Name, "", "", red.Render(s.Error), "", "", "", ""})
 			continue
 		}
 
@@ -334,7 +353,13 @@ func renderStatusTable(statuses []repoStatus) {
 			branchesStr = dim.Render("-")
 		}
 
-		rows = append(rows, []string{s.Name, branch, statusStr, pushStr, changeStr, refsStr, branchesStr})
+		// Remote (truncate if needed)
+		remote := s.Remote
+		if len(remote) > 30 {
+			remote = remote[:30] + "…"
+		}
+
+		rows = append(rows, []string{s.Name, remote, branch, statusStr, pushStr, changeStr, refsStr, branchesStr})
 	}
 
 	t := table.New().
@@ -347,7 +372,7 @@ func renderStatusTable(statuses []repoStatus) {
 				return headerStyle
 			}
 			switch col {
-			case 1: // BRANCH
+			case 1, 2: // REMOTE, BRANCH
 				return lipgloss.NewStyle().Foreground(ui.DimColor)
 			default:
 				return lipgloss.NewStyle()
