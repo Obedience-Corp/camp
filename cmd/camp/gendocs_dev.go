@@ -1,3 +1,5 @@
+//go:build dev
+
 package main
 
 import (
@@ -23,7 +25,10 @@ var gendocsCmd = &cobra.Command{
 	Short:  "Generate CLI reference documentation",
 	Long:   "Generate markdown or YAML reference documentation for all camp commands.",
 	Hidden: true,
-	RunE:   runGendocs,
+	Annotations: map[string]string{
+		"release_channel": "dev_only",
+	},
+	RunE: runGendocs,
 }
 
 func init() {

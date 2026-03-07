@@ -40,6 +40,33 @@ type PackageResult struct {
 	BuildTime time.Duration
 }
 
+func buildTags() string {
+	return strings.TrimSpace(os.Getenv("BUILD_TAGS"))
+}
+
+func appendBuildTags(args ...string) []string {
+	tags := buildTags()
+	if tags == "" {
+		return args
+	}
+	withTags := make([]string, 0, len(args)+2)
+	withTags = append(withTags, "-tags", tags)
+	withTags = append(withTags, args...)
+	return withTags
+}
+
+func goBuildArgs(args ...string) []string {
+	out := []string{"build"}
+	out = append(out, appendBuildTags(args...)...)
+	return out
+}
+
+func goVetArgs(args ...string) []string {
+	out := []string{"vet"}
+	out = append(out, appendBuildTags(args...)...)
+	return out
+}
+
 // Build runs go vet and go build on all packages
 func Build(verbose bool) error {
 	ui.Section("Building Camp CLI")
@@ -68,7 +95,7 @@ func Build(verbose bool) error {
 		// Vet
 		ui.Progress(i+1, total, fmt.Sprintf("Vetting %s", shortName))
 		start := time.Now()
-		cmd := exec.Command("go", "vet", pkg)
+		cmd := exec.Command("go", goVetArgs(pkg)...)
 		if verbose {
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
@@ -83,7 +110,7 @@ func Build(verbose bool) error {
 		// Build
 		ui.Progress(i+1, total, fmt.Sprintf("Building %s", shortName))
 		start = time.Now()
-		cmd = exec.Command("go", "build", "-o", "/dev/null", pkg)
+		cmd = exec.Command("go", goBuildArgs("-o", "/dev/null", pkg)...)
 		if verbose {
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
@@ -105,7 +132,7 @@ func Build(verbose bool) error {
 	// Create bin directory
 	os.MkdirAll("bin", 0o755)
 
-	cmd := exec.Command("go", "build", "-ldflags", buildLDFlags(), "-o", "bin/camp", "./cmd/camp")
+	cmd := exec.Command("go", goBuildArgs("-ldflags", buildLDFlags(), "-o", "bin/camp", "./cmd/camp")...)
 	if verbose {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -266,7 +293,7 @@ func BuildOnly(verbose bool) error {
 	ui.Task("Building", "camp binary")
 
 	// Build main binary only
-	cmd := exec.Command("go", "build", "-ldflags", buildLDFlags(), "-o", "bin/camp", "./cmd/camp")
+	cmd := exec.Command("go", goBuildArgs("-ldflags", buildLDFlags(), "-o", "bin/camp", "./cmd/camp")...)
 	if verbose {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
