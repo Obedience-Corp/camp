@@ -320,6 +320,70 @@ func TestDungeonMove_TriageDirectToStatus(t *testing.T) {
 	assert.False(t, exists, "file should not be in dungeon root")
 }
 
+func TestDungeonMove_TriageWithCommit_IncludesSourceDeletion(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupDungeonCampaign(t, tc, "dmove-triage-commit")
+
+	// Create and commit a tracked file in the parent directory
+	err := tc.WriteFile(path+"/tracked-item.md", "# Tracked Item\nContent here")
+	require.NoError(t, err)
+	_, _, err = tc.ExecCommand("sh", "-c", "cd "+path+" && git add . && git commit -m 'add tracked item'")
+	require.NoError(t, err)
+
+	// Triage move WITHOUT --no-commit — exercises commit.Crawl with source deletion
+	output, err := tc.RunCampInDir(path, "dungeon", "move", "tracked-item.md", "--triage")
+	require.NoError(t, err)
+	assert.Contains(t, output, "Moved tracked-item.md", "should confirm triage")
+	assert.Contains(t, output, "Committed", "should auto-commit")
+
+	// Verify file moved to dungeon
+	exists, err := tc.CheckFileExists(path + "/dungeon/tracked-item.md")
+	require.NoError(t, err)
+	assert.True(t, exists, "file should be in dungeon/")
+
+	// Verify source removed
+	exists, err = tc.CheckFileExists(path + "/tracked-item.md")
+	require.NoError(t, err)
+	assert.False(t, exists, "file should no longer be in parent")
+
+	// Verify git log shows the commit with both source and destination
+	gitOutput, _, err := tc.ExecCommand("sh", "-c", "cd "+path+" && git diff-tree --no-commit-id --name-status -r HEAD")
+	require.NoError(t, err)
+	assert.Contains(t, gitOutput, "tracked-item.md", "commit should reference the moved file")
+}
+
+func TestDungeonMove_TriageDirectToStatusWithCommit(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupDungeonCampaign(t, tc, "dmove-triage-status-commit")
+
+	// Create and commit a tracked file
+	err := tc.WriteFile(path+"/stale-doc.md", "# Stale Doc\nOutdated content")
+	require.NoError(t, err)
+	_, _, err = tc.ExecCommand("sh", "-c", "cd "+path+" && git add . && git commit -m 'add stale doc'")
+	require.NoError(t, err)
+
+	// Triage directly to archived status WITHOUT --no-commit
+	output, err := tc.RunCampInDir(path, "dungeon", "move", "stale-doc.md", "archived", "--triage")
+	require.NoError(t, err)
+	assert.Contains(t, output, "archived", "should mention target status")
+	assert.Contains(t, output, "Committed", "should auto-commit")
+
+	// Verify file at final destination
+	exists, err := tc.CheckFileExists(path + "/dungeon/archived/stale-doc.md")
+	require.NoError(t, err)
+	assert.True(t, exists, "file should be in dungeon/archived/")
+
+	// Verify source is gone
+	exists, err = tc.CheckFileExists(path + "/stale-doc.md")
+	require.NoError(t, err)
+	assert.False(t, exists, "file should no longer be in parent")
+
+	// Verify clean git status (no unstaged changes left behind)
+	statusOutput, _, err := tc.ExecCommand("sh", "-c", "cd "+path+" && git status --porcelain")
+	require.NoError(t, err)
+	assert.Empty(t, strings.TrimSpace(statusOutput), "git status should be clean after commit")
+}
+
 func TestDungeonMove_TriageToDocsDestination(t *testing.T) {
 	tc := GetSharedContainer(t)
 	path := setupDungeonCampaign(t, tc, "dmove-triage-docs")

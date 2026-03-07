@@ -14,7 +14,7 @@ type CrawlOptions struct {
 // SelectiveOnly is automatically enabled when Files or PreStaged is provided.
 func Crawl(ctx context.Context, opts CrawlOptions) Result {
 	opts.Options.Files = opts.Files
-	if opts.Files != nil || len(opts.Options.PreStaged) > 0 {
+	if len(opts.Files) > 0 || len(opts.Options.PreStaged) > 0 {
 		opts.Options.SelectiveOnly = true
 	}
 	return doCommit(ctx, opts.Options, "Crawl", "dungeon crawl completed", opts.Description)
