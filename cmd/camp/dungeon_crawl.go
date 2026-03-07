@@ -157,9 +157,11 @@ func commitCrawlChanges(ctx context.Context, cmdCtx *dungeonCommandContext, tria
 	files := []string{relDungeon}
 	files = append(files, crawlDocsDestinationPaths(triage)...)
 
-	// For triage moves, include source deletions in the commit scope.
-	// Only include paths git actually tracks to avoid "pathspec did not
-	// match" errors when the parent directory was renamed or never committed.
+	// For triage moves, stage source deletions separately via git add -u.
+	// These paths are already gone from disk, so they can't be re-staged with
+	// plain git add. We pass them as PreStaged so they're included in the
+	// commit scope (--only) without being re-staged.
+	var preStaged []string
 	if triage != nil && triage.HasMoves() {
 		relParent, relErr := filepath.Rel(cmdCtx.CampaignRoot, cmdCtx.Dungeon.ParentPath)
 		if relErr != nil {
@@ -180,7 +182,7 @@ func commitCrawlChanges(ctx context.Context, cmdCtx *dungeonCommandContext, tria
 				if err := git.StageTrackedChanges(ctx, cmdCtx.CampaignRoot, tracked...); err != nil {
 					fmt.Printf("%s Warning: could not stage source deletions: %v\n", ui.InfoIcon(), err)
 				}
-				files = append(files, tracked...)
+				preStaged = tracked
 			}
 		}
 	}
@@ -189,6 +191,7 @@ func commitCrawlChanges(ctx context.Context, cmdCtx *dungeonCommandContext, tria
 		Options: commit.Options{
 			CampaignRoot: cmdCtx.CampaignRoot,
 			CampaignID:   cmdCtx.Config.ID,
+			PreStaged:    preStaged,
 		},
 		Description: description,
 		Files:       files,
