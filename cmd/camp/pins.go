@@ -203,6 +203,10 @@ func runUnpin(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return camperrors.Wrap(err, "get working directory")
 		}
+		cwd, err = filepath.EvalSymlinks(cwd)
+		if err != nil {
+			return camperrors.Wrap(err, "resolve symlinks for working directory")
+		}
 		relCwd, err := filepath.Rel(campaignRoot, cwd)
 		if err != nil {
 			return camperrors.Wrap(err, "compute relative path")

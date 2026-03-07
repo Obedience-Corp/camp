@@ -158,19 +158,39 @@ func (s *Store) Toggle(name, path string) ToggleResult {
 // paths. Pins outside the campaign root are dropped. Returns true if any
 // pins were converted or removed.
 func (s *Store) MigrateAbsoluteToRelative(root string) bool {
+	// Canonicalize root so comparison is consistent even if caller
+	// passes a non-symlink-resolved path.
+	if r, err := filepath.EvalSymlinks(root); err == nil {
+		root = r
+	}
+
 	changed := false
 	for i := len(s.pins) - 1; i >= 0; i-- {
 		p := s.pins[i]
 		if filepath.IsAbs(p.Path) {
-			// Canonicalize to match the symlink-resolved root
+			// Try symlink-resolved path first, fall back to cleaned original
+			// (handles deleted directories whose symlink can't be resolved)
 			resolved := p.Path
 			if r, err := filepath.EvalSymlinks(p.Path); err == nil {
 				resolved = r
 			}
+
 			rel, err := filepath.Rel(root, resolved)
 			if err == nil && rel != ".." && !strings.HasPrefix(rel, "../") {
 				s.pins[i].Path = rel
 				changed = true
+			} else if resolved != p.Path {
+				// EvalSymlinks changed the path but Rel failed — try with
+				// the original cleaned path in case the resolved form
+				// diverged (e.g. /tmp vs /private/tmp on macOS for deleted dirs)
+				rel2, err2 := filepath.Rel(root, filepath.Clean(p.Path))
+				if err2 == nil && rel2 != ".." && !strings.HasPrefix(rel2, "../") {
+					s.pins[i].Path = rel2
+					changed = true
+				} else {
+					s.pins = append(s.pins[:i], s.pins[i+1:]...)
+					changed = true
+				}
 			} else {
 				// External pin — remove from list
 				s.pins = append(s.pins[:i], s.pins[i+1:]...)
