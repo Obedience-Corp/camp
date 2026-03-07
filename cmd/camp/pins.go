@@ -138,10 +138,15 @@ func runPin(cmd *cobra.Command, args []string) error {
 		dir = cwd
 	}
 
-	// Resolve to absolute path
+	// Resolve to canonical absolute path (follows symlinks so the
+	// comparison with the symlink-resolved campaign root is consistent)
 	absPath, err := filepath.Abs(dir)
 	if err != nil {
 		return camperrors.Wrap(err, "resolve path")
+	}
+	absPath, err = filepath.EvalSymlinks(absPath)
+	if err != nil {
+		return camperrors.Wrapf(err, "resolve symlinks for %q", dir)
 	}
 
 	// Validate path exists and is a directory
@@ -162,6 +167,9 @@ func runPin(cmd *cobra.Command, args []string) error {
 	relPath, err := filepath.Rel(campaignRoot, absPath)
 	if err != nil {
 		return camperrors.Wrapf(err, "compute relative path for %q", absPath)
+	}
+	if relPath == ".." || strings.HasPrefix(relPath, "../") {
+		return camperrors.Wrapf(fmt.Errorf("outside campaign root"), "pin path %q", absPath)
 	}
 
 	result := store.Toggle(name, relPath)
