@@ -1,3 +1,5 @@
+//go:build dev
+
 package main
 
 import (
@@ -30,11 +32,10 @@ var gendocsCmd = &cobra.Command{
 }
 
 func init() {
-	markDevOnlyCommand(gendocsCmd)
 	gendocsCmd.Flags().StringVar(&gendocsOutput, "output", "docs", "output directory")
 	gendocsCmd.Flags().StringVar(&gendocsFormat, "format", "markdown", "output format: markdown or yaml")
 	gendocsCmd.Flags().BoolVar(&gendocsSingle, "single", false, "generate a single combined reference file")
-	addRootCommandByReleaseChannel(gendocsCmd)
+	rootCmd.AddCommand(gendocsCmd)
 }
 
 func runGendocs(cmd *cobra.Command, args []string) error {
