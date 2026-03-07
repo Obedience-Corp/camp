@@ -154,15 +154,16 @@ func (s *Store) Toggle(name, path string) ToggleResult {
 	return Pinned
 }
 
-// MigrateAbsoluteToRelative converts any absolute paths to paths relative to
-// the given root. Returns true if any paths were converted.
+// MigrateAbsoluteToRelative converts absolute paths to campaign-root-relative
+// paths. Pins outside the campaign root are dropped. Returns true if any
+// pins were converted or removed.
 func (s *Store) MigrateAbsoluteToRelative(root string) bool {
 	changed := false
 	for i := len(s.pins) - 1; i >= 0; i-- {
 		p := s.pins[i]
 		if filepath.IsAbs(p.Path) {
 			rel, err := filepath.Rel(root, p.Path)
-			if err == nil && !strings.HasPrefix(rel, "..") {
+			if err == nil && rel != ".." && !strings.HasPrefix(rel, "../") {
 				s.pins[i].Path = rel
 				changed = true
 			} else {
