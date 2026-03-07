@@ -19,6 +19,7 @@ type Options struct {
 	CampaignRoot  string   // Path to campaign root
 	CampaignID    string   // Campaign ID (truncated to 8 chars)
 	Files         []string // If set, stage only these paths instead of everything
+	PreStaged     []string // Paths already staged (included in --only commit scope, not re-staged)
 	SelectiveOnly bool     // When true, never fall back to CommitAll; no-op if Files is empty
 }
 
@@ -67,19 +68,22 @@ func doCommit(ctx context.Context, opts Options, action, subject, description st
 }
 
 // stageAndCommit stages files and commits. If opts.Files is set, only those
-// paths are staged and committed (using --only to ignore pre-staged entries).
-// When SelectiveOnly is true and Files is empty, returns ErrNoChanges instead
+// paths are staged and committed (using --only to scope the commit).
+// opts.PreStaged paths are included in the --only commit scope but are NOT
+// re-staged (they were already staged externally, e.g. via git add -u).
+// When SelectiveOnly is true and no paths exist, returns ErrNoChanges instead
 // of falling back to CommitAll. Otherwise all changes are staged (legacy behavior).
 func stageAndCommit(ctx context.Context, opts Options, message string) error {
-	if len(opts.Files) > 0 {
-		// Stage first so git knows about new/untracked files, then commit
-		// with --only to exclude any pre-existing staged entries.
-		if err := git.StageFiles(ctx, opts.CampaignRoot, opts.Files...); err != nil {
-			return err
+	commitScope := append(append([]string{}, opts.Files...), opts.PreStaged...)
+	if len(commitScope) > 0 {
+		if len(opts.Files) > 0 {
+			if err := git.StageFiles(ctx, opts.CampaignRoot, opts.Files...); err != nil {
+				return err
+			}
 		}
 		return git.Commit(ctx, opts.CampaignRoot, &git.CommitOptions{
 			Message: message,
-			Only:    opts.Files,
+			Only:    commitScope,
 		})
 	}
 	if opts.SelectiveOnly {

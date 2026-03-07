@@ -11,10 +11,10 @@ type CrawlOptions struct {
 
 // Crawl stages changes and commits for a dungeon crawl operation.
 // If Files is set, only those paths are staged instead of everything.
-// SelectiveOnly is automatically enabled when Files is provided.
+// SelectiveOnly is automatically enabled when Files or PreStaged is provided.
 func Crawl(ctx context.Context, opts CrawlOptions) Result {
 	opts.Options.Files = opts.Files
-	if opts.Files != nil {
+	if len(opts.Files) > 0 || len(opts.Options.PreStaged) > 0 {
 		opts.Options.SelectiveOnly = true
 	}
 	return doCommit(ctx, opts.Options, "Crawl", "dungeon crawl completed", opts.Description)

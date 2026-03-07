@@ -831,3 +831,145 @@ func TestProjectAction_Values(t *testing.T) {
 		}
 	}
 }
+
+func TestCrawl_PreStagedOnly_CommitsDeletedPaths(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	if err := exec.Command("git", "-C", tmpDir, "init").Run(); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.email", "test@test.com").Run(); err != nil {
+		t.Fatalf("failed to configure git email: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.name", "Test").Run(); err != nil {
+		t.Fatalf("failed to configure git name: %v", err)
+	}
+
+	// Create and commit a file
+	sourceFile := filepath.Join(tmpDir, "source.txt")
+	if err := os.WriteFile(sourceFile, []byte("source content"), 0644); err != nil {
+		t.Fatalf("failed to create source file: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "add", ".").Run(); err != nil {
+		t.Fatalf("failed to add source file: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "commit", "-m", "initial").Run(); err != nil {
+		t.Fatalf("failed to create initial commit: %v", err)
+	}
+
+	// Delete the file from disk and stage the deletion with git add -u
+	if err := os.Remove(sourceFile); err != nil {
+		t.Fatalf("failed to delete source file: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "add", "-u", "source.txt").Run(); err != nil {
+		t.Fatalf("failed to stage deletion: %v", err)
+	}
+
+	ctx := context.Background()
+
+	// Crawl with no Files, only PreStaged — should commit the deletion
+	result := Crawl(ctx, CrawlOptions{
+		Options: Options{
+			CampaignRoot: tmpDir,
+			CampaignID:   "test1234",
+			PreStaged:    []string{"source.txt"},
+		},
+		Description: "PreStaged-only deletion",
+	})
+
+	if !result.Committed {
+		t.Fatalf("expected commit to succeed, got message: %s", result.Message)
+	}
+
+	// Verify source.txt was deleted in the commit
+	out, err := exec.Command("git", "-C", tmpDir, "diff-tree", "--no-commit-id", "--name-status", "-r", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("failed to get committed files: %v", err)
+	}
+
+	committedFiles := string(out)
+	if !strings.Contains(committedFiles, "D\tsource.txt") {
+		t.Errorf("expected source.txt deletion in commit, got: %s", committedFiles)
+	}
+}
+
+func TestCrawl_FilesAndPreStaged_CombinedScope(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	if err := exec.Command("git", "-C", tmpDir, "init").Run(); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.email", "test@test.com").Run(); err != nil {
+		t.Fatalf("failed to configure git email: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.name", "Test").Run(); err != nil {
+		t.Fatalf("failed to configure git name: %v", err)
+	}
+
+	// Create and commit two files
+	sourceFile := filepath.Join(tmpDir, "source.txt")
+	if err := os.WriteFile(sourceFile, []byte("source"), 0644); err != nil {
+		t.Fatalf("failed to create source file: %v", err)
+	}
+	untouchedFile := filepath.Join(tmpDir, "untouched.txt")
+	if err := os.WriteFile(untouchedFile, []byte("untouched"), 0644); err != nil {
+		t.Fatalf("failed to create untouched file: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "add", ".").Run(); err != nil {
+		t.Fatalf("failed to add files: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "commit", "-m", "initial").Run(); err != nil {
+		t.Fatalf("failed to create initial commit: %v", err)
+	}
+
+	// Create destination file (simulates triage move target)
+	dungeonDir := filepath.Join(tmpDir, "dungeon")
+	if err := os.MkdirAll(dungeonDir, 0755); err != nil {
+		t.Fatalf("failed to create dungeon dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dungeonDir, "moved.txt"), []byte("moved"), 0644); err != nil {
+		t.Fatalf("failed to create moved file: %v", err)
+	}
+
+	// Delete source and stage deletion (simulates triage source removal)
+	if err := os.Remove(sourceFile); err != nil {
+		t.Fatalf("failed to delete source file: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "add", "-u", "source.txt").Run(); err != nil {
+		t.Fatalf("failed to stage deletion: %v", err)
+	}
+
+	ctx := context.Background()
+
+	// Crawl with Files (destination) + PreStaged (source deletion)
+	result := Crawl(ctx, CrawlOptions{
+		Options: Options{
+			CampaignRoot: tmpDir,
+			CampaignID:   "test1234",
+			PreStaged:    []string{"source.txt"},
+		},
+		Description: "Files + PreStaged combined",
+		Files:       []string{"dungeon"},
+	})
+
+	if !result.Committed {
+		t.Fatalf("expected commit to succeed, got message: %s", result.Message)
+	}
+
+	// Verify both the addition and deletion appear in the commit
+	out, err := exec.Command("git", "-C", tmpDir, "diff-tree", "--no-commit-id", "--name-status", "-r", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("failed to get committed files: %v", err)
+	}
+
+	committedFiles := string(out)
+	if !strings.Contains(committedFiles, "A\tdungeon/moved.txt") {
+		t.Errorf("expected dungeon/moved.txt addition in commit, got: %s", committedFiles)
+	}
+	if !strings.Contains(committedFiles, "D\tsource.txt") {
+		t.Errorf("expected source.txt deletion in commit, got: %s", committedFiles)
+	}
+	if strings.Contains(committedFiles, "untouched.txt") {
+		t.Errorf("untouched.txt should NOT appear in commit, got: %s", committedFiles)
+	}
+}
