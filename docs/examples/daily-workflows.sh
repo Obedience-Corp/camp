@@ -36,7 +36,8 @@ echo "# Quick directory jumps"
 echo "cgo d                  # docs/ directory"
 echo "cgo a                  # ai_docs/ directory"
 echo "cgo c                  # corpus/ directory"
-echo "cgo w                  # worktrees/ directory"
+echo "cgo w                  # workflow/ directory"
+echo "cgo wt                 # worktrees/ directory"
 
 # -----------------------------------------------------------------------------
 # Work with festivals

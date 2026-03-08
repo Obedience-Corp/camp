@@ -57,8 +57,9 @@ camp shell-init fish | source
 | `f` | festivals/ | Festival methodology |
 | `a` | ai_docs/ | AI documentation |
 | `d` | docs/ | Human documentation |
-| `w` | worktrees/ | Git worktrees |
-| `r` | code_reviews/ | Review notes |
+| `w` | workflow/ | Workflow resources |
+| `wt` | worktrees/ | Git worktrees |
+| `cr` | code_reviews/ | Review notes |
 | `pi` | pipelines/ | CI/CD configs |
 
 ## Need Help?
