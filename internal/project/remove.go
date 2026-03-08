@@ -85,7 +85,7 @@ func Remove(ctx context.Context, campaignRoot, name string, opts RemoveOptions) 
 		result.SubmoduleRemoved = true
 		if opts.Delete {
 			result.FilesDeleted = true
-			worktreePath := filepath.Join(campaignRoot, "worktrees", name)
+			worktreePath := campaignProjectWorktreePath(ctx, campaignRoot, name)
 			if _, err := os.Stat(worktreePath); err == nil {
 				result.WorktreeDeleted = true
 			}
@@ -118,7 +118,7 @@ func Remove(ctx context.Context, campaignRoot, name string, opts RemoveOptions) 
 			result.FilesDeleted = true
 		}
 
-		worktreePath := filepath.Join(campaignRoot, "worktrees", name)
+		worktreePath := campaignProjectWorktreePath(ctx, campaignRoot, name)
 		if boundErr := pathutil.ValidateBoundary(campaignRoot, worktreePath); boundErr != nil {
 			errs = append(errs, camperrors.Wrap(boundErr, "worktree path boundary violation"))
 		} else if _, statErr := os.Stat(worktreePath); statErr == nil {

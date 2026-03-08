@@ -27,7 +27,7 @@ echo "  camp init"
 #   ai_docs/
 #   docs/
 #   corpus/
-#   worktrees/
+#   projects/worktrees/
 #   pipelines/
 #   code_reviews/
 #

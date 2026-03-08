@@ -121,7 +121,7 @@ func Add(ctx context.Context, campaignRoot, source string, opts AddOptions) (*Ad
 	}
 
 	// Create worktree directory
-	worktreePath := filepath.Join(campaignRoot, "worktrees", name)
+	worktreePath := campaignProjectWorktreePath(ctx, campaignRoot, name)
 	if mkErr := os.MkdirAll(worktreePath, 0755); mkErr != nil {
 		// Log warning but don't fail
 		fmt.Fprintf(os.Stderr, "Warning: could not create worktree directory: %v\n", mkErr)

@@ -74,7 +74,7 @@ func TestRemove_DryRunWithDelete(t *testing.T) {
 	projectPath := filepath.Join(projectsDir, "test-project")
 	os.MkdirAll(projectPath, 0755)
 
-	worktreesDir := filepath.Join(tmpDir, "worktrees")
+	worktreesDir := filepath.Join(tmpDir, "projects", "worktrees")
 	worktreePath := filepath.Join(worktreesDir, "test-project")
 	os.MkdirAll(worktreePath, 0755)
 
@@ -144,7 +144,7 @@ func TestRemove_DeleteWithWorktrees(t *testing.T) {
 	os.MkdirAll(projectPath, 0755)
 
 	// Create worktrees
-	worktreesDir := filepath.Join(tmpDir, "worktrees")
+	worktreesDir := filepath.Join(tmpDir, "projects", "worktrees")
 	worktreePath := filepath.Join(worktreesDir, "test-project")
 	os.MkdirAll(worktreePath, 0755)
 	os.WriteFile(filepath.Join(worktreePath, "branch.txt"), []byte("test"), 0644)
@@ -287,13 +287,13 @@ func TestRemove_PartialFailureReportsAllErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	worktreeDir := filepath.Join(campaignRoot, "worktrees", "myproj")
+	worktreeDir := filepath.Join(campaignRoot, "projects", "worktrees", "myproj")
 	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
 	// Make worktrees parent read-only so RemoveAll on the child fails.
-	worktreesParent := filepath.Join(campaignRoot, "worktrees")
+	worktreesParent := filepath.Join(campaignRoot, "projects", "worktrees")
 	if err := os.Chmod(worktreesParent, 0o555); err != nil {
 		t.Fatal(err)
 	}
