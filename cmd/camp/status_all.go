@@ -110,7 +110,7 @@ func runStatusAll(cmd *cobra.Command, _ []string) error {
 	statuses := collectStatuses(ctx, campRoot, paths)
 
 	// Add campaign root itself (with ref filtering)
-	rootStatus := getRepoStatus(ctx, campRoot, "campaign root", true)
+	rootStatus := getRepoStatus(ctx, campRoot, "campaign root", true, statusAllRemoteURL)
 	allStatuses := append([]repoStatus{rootStatus}, statuses...)
 
 	// Cache results
@@ -165,7 +165,7 @@ func collectStatuses(ctx context.Context, campRoot string, paths []string) []rep
 	for _, p := range paths {
 		fullPath := filepath.Join(campRoot, p)
 		name := git.SubmoduleDisplayName(p)
-		status := getRepoStatus(ctx, fullPath, name, false)
+		status := getRepoStatus(ctx, fullPath, name, false, statusAllRemoteURL)
 		status.Path = p
 		statuses = append(statuses, status)
 	}
@@ -173,7 +173,7 @@ func collectStatuses(ctx context.Context, campRoot string, paths []string) []rep
 	return statuses
 }
 
-func getRepoStatus(ctx context.Context, repoPath, name string, isCampaignRoot bool) repoStatus {
+func getRepoStatus(ctx context.Context, repoPath, name string, isCampaignRoot bool, showRemoteURL bool) repoStatus {
 	rs := repoStatus{
 		Name: name,
 		Path: repoPath,
@@ -188,7 +188,7 @@ func getRepoStatus(ctx context.Context, repoPath, name string, isCampaignRoot bo
 	rs.Branch = branch
 
 	// Get remote info
-	if statusAllRemoteURL {
+	if showRemoteURL {
 		if remote, err := gitOutput(ctx, repoPath, "remote", "get-url", "origin"); err == nil {
 			rs.Remote = shortenRemoteURL(remote)
 		}
