@@ -27,7 +27,7 @@ echo "  camp init"
 #   ai_docs/
 #   docs/
 #   corpus/
-#   worktrees/
+#   projects/worktrees/
 #   pipelines/
 #   code_reviews/
 #
@@ -68,8 +68,8 @@ echo "  cgo f            # Jump to festivals/"
 echo ""
 echo "=== Category Shortcuts ==="
 echo "  p  = projects/       c  = corpus/        f  = festivals/"
-echo "  a  = ai_docs/        d  = docs/          w  = worktrees/"
-echo "  r  = code_reviews/   pi = pipelines/"
+echo "  a  = ai_docs/        d  = docs/          w  = workflow/"
+echo "  wt = worktrees/      cr = code_reviews/ pi = pipelines/"
 
 echo ""
 echo "You're ready to go! Run 'cgo --help' for more options."

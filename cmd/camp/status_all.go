@@ -30,9 +30,10 @@ Displays a table with each submodule's name, branch, clean/dirty state,
 and push status. Results are cached for quick subsequent lookups.
 
 Examples:
-  camp status all           # Show all submodule statuses
-  camp status all --json    # Output as JSON
-  camp status all --no-cache  # Skip cache, refresh all`,
+  camp status all               # Show all submodule statuses
+  camp status all --remote-url  # Show remote URLs instead of names
+  camp status all --json        # Output as JSON
+  camp status all --no-cache    # Skip cache, refresh all`,
 	RunE: runStatusAll,
 }
 
@@ -41,6 +42,7 @@ var (
 	statusAllNoCache   bool
 	statusAllView      bool
 	statusAllNoRecurse bool
+	statusAllRemoteURL bool
 )
 
 func init() {
@@ -48,6 +50,7 @@ func init() {
 	statusAllCmd.Flags().BoolVar(&statusAllNoCache, "no-cache", false, "Skip cache and refresh")
 	statusAllCmd.Flags().BoolVar(&statusAllView, "view", false, "Open interactive TUI viewer")
 	statusAllCmd.Flags().BoolVar(&statusAllNoRecurse, "no-recurse", false, "Only list top-level submodules")
+	statusAllCmd.Flags().BoolVar(&statusAllRemoteURL, "remote-url", false, "Show remote URLs instead of remote names")
 
 	statusCmd.AddCommand(statusAllCmd)
 }
@@ -107,7 +110,7 @@ func runStatusAll(cmd *cobra.Command, _ []string) error {
 	statuses := collectStatuses(ctx, campRoot, paths)
 
 	// Add campaign root itself (with ref filtering)
-	rootStatus := getRepoStatus(ctx, campRoot, "campaign root", true)
+	rootStatus := getRepoStatus(ctx, campRoot, "campaign root", true, statusAllRemoteURL)
 	allStatuses := append([]repoStatus{rootStatus}, statuses...)
 
 	// Cache results
@@ -162,7 +165,7 @@ func collectStatuses(ctx context.Context, campRoot string, paths []string) []rep
 	for _, p := range paths {
 		fullPath := filepath.Join(campRoot, p)
 		name := git.SubmoduleDisplayName(p)
-		status := getRepoStatus(ctx, fullPath, name, false)
+		status := getRepoStatus(ctx, fullPath, name, false, statusAllRemoteURL)
 		status.Path = p
 		statuses = append(statuses, status)
 	}
@@ -170,7 +173,7 @@ func collectStatuses(ctx context.Context, campRoot string, paths []string) []rep
 	return statuses
 }
 
-func getRepoStatus(ctx context.Context, repoPath, name string, isCampaignRoot bool) repoStatus {
+func getRepoStatus(ctx context.Context, repoPath, name string, isCampaignRoot bool, showRemoteURL bool) repoStatus {
 	rs := repoStatus{
 		Name: name,
 		Path: repoPath,
@@ -184,9 +187,16 @@ func getRepoStatus(ctx context.Context, repoPath, name string, isCampaignRoot bo
 	}
 	rs.Branch = branch
 
-	// Get remote origin URL
-	if remote, err := gitOutput(ctx, repoPath, "remote", "get-url", "origin"); err == nil {
-		rs.Remote = shortenRemoteURL(remote)
+	// Get remote info
+	if showRemoteURL {
+		if remote, err := gitOutput(ctx, repoPath, "remote", "get-url", "origin"); err == nil {
+			rs.Remote = shortenRemoteURL(remote)
+		}
+	} else {
+		if remote, err := gitOutput(ctx, repoPath, "remote"); err == nil && remote != "" {
+			names := strings.Split(remote, "\n")
+			rs.Remote = strings.Join(names, ", ")
+		}
 	}
 
 	// Get porcelain status — at campaign root, ignore submodule refs so they

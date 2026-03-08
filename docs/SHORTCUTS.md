@@ -118,8 +118,8 @@ Built-in Navigation Shortcuts:
   f    -> festivals/
   p    -> projects/
   pi   -> pipelines/
-  r    -> code_reviews/
-  w    -> worktrees/
+  cr   -> code_reviews/
+  wt   -> worktrees/
 
 Custom Shortcuts:
 

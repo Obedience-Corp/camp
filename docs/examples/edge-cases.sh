@@ -68,10 +68,10 @@ echo "# Error: category directory does not exist: festivals"
 # -----------------------------------------------------------------------------
 echo ""
 echo "# Worktree navigation uses @ syntax"
-echo "cgo w api-service@"
+echo "cgo wt api-service@"
 echo "# Lists branches for api-service worktree"
 echo ""
-echo "cgo w api-service@feature"
+echo "cgo wt api-service@feature"
 echo "# Fuzzy matches to api-service@feature-branch"
 
 # -----------------------------------------------------------------------------

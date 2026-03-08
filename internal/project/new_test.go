@@ -137,7 +137,7 @@ func TestNew_CreatesWorktreeDir(t *testing.T) {
 
 	initGitRepo(t, tmpDir)
 	os.MkdirAll(filepath.Join(tmpDir, "projects"), 0755)
-	os.MkdirAll(filepath.Join(tmpDir, "worktrees"), 0755)
+	os.MkdirAll(filepath.Join(tmpDir, "projects", "worktrees"), 0755)
 
 	ctx := context.Background()
 	result, err := New(ctx, tmpDir, "wt-test", NewOptions{})
@@ -145,7 +145,7 @@ func TestNew_CreatesWorktreeDir(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 
-	worktreePath := filepath.Join(tmpDir, "worktrees", result.Name)
+	worktreePath := filepath.Join(tmpDir, "projects", "worktrees", result.Name)
 	if _, err := os.Stat(worktreePath); os.IsNotExist(err) {
 		t.Error("worktree directory should be created")
 	}

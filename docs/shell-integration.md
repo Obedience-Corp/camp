@@ -37,8 +37,9 @@ cgo f         # festivals/
 cgo c         # corpus/
 cgo d         # docs/
 cgo a         # ai_docs/
-cgo w         # worktrees/
-cgo r         # code_reviews/
+cgo w         # workflow/
+cgo wt        # worktrees/
+cgo cr        # code_reviews/
 cgo pi        # pipelines/
 
 # Fuzzy search within category
@@ -55,8 +56,9 @@ cgo f fest    # festivals/*fest* (fuzzy match)
 | f        | festivals/     | Festival planning       |
 | d        | docs/          | Documentation           |
 | a        | ai_docs/       | AI documentation        |
-| w        | worktrees/     | Git worktrees           |
-| r        | code_reviews/  | Code review materials   |
+| w        | workflow/      | Workflow resources      |
+| wt       | worktrees/     | Git worktrees           |
+| cr       | code_reviews/  | Code review materials   |
 | pi       | pipelines/     | CI/CD pipelines         |
 
 ### Running Commands

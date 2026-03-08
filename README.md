@@ -340,7 +340,7 @@ The shell integration includes intelligent tab completion:
 cgo <TAB>                              # Shows: p f w a d i wt du cr pi de
 cgo p <TAB>                            # Shows: api-service web-app cli-tool
 cgo p api<TAB>                         # Completes to: api-service api-gateway
-cgo w api@<TAB>                        # Shows worktree branches
+cgo wt api@<TAB>                       # Shows worktree branches
 
 # --project flag (all project commands)
 camp project commit -p <TAB>           # Shows project names from project list
