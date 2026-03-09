@@ -38,13 +38,10 @@ func runGendocs(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "create output dir")
 	}
 
-	// Remove previously generated command docs before regenerating so a stable
-	// docs run cannot keep stale files from a prior dev-profile generation.
-	stalePattern := filepath.Join(gendocsOutput, "camp_*.md")
-	if staleFiles, _ := filepath.Glob(stalePattern); len(staleFiles) > 0 {
-		for _, file := range staleFiles {
-			_ = os.Remove(file)
-		}
+	// Remove previously generated command docs before regenerating so switching
+	// formats or profiles does not leave stale generated files behind.
+	if err := removeGeneratedDocs(gendocsOutput, "camp"); err != nil {
+		return camperrors.Wrap(err, "clean generated docs")
 	}
 
 	rootForDocs := rootCmd
@@ -104,6 +101,28 @@ func disableAutoGenTag(cmd *cobra.Command) {
 	for _, child := range cmd.Commands() {
 		disableAutoGenTag(child)
 	}
+}
+
+func removeGeneratedDocs(dir, name string) error {
+	patterns := []string{
+		filepath.Join(dir, name+"_*.md"),
+		filepath.Join(dir, name+"_*.yaml"),
+		filepath.Join(dir, name+"-reference.md"),
+	}
+
+	for _, pattern := range patterns {
+		files, err := filepath.Glob(pattern)
+		if err != nil {
+			return err
+		}
+		for _, file := range files {
+			if err := os.Remove(file); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 // stripSeeAlso removes the "### SEE ALSO" section from markdown content.

@@ -3,10 +3,10 @@ binary_name := "camp"
 bin_dir := "bin"
 gobin := env_var_or_default("GOBIN", `go env GOPATH` + "/bin")
 
-# Show available install commands
-[private]
-default:
-    @just --list --unsorted --justfile {{source_file()}}
+# Default install path keeps `just install` compatible with the documented
+# stable-profile source install flow.
+[no-cd]
+default: stable
 
 # Install stable profile (default command surface)
 [no-cd]

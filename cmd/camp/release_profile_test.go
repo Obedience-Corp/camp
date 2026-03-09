@@ -30,8 +30,13 @@ func assertGendocsCommand(t *testing.T) {
 func TestRunGendocs_RemovesStaleFilesAndSkipsHiddenCommands(t *testing.T) {
 	dir := t.TempDir()
 
-	staleFile := filepath.Join(dir, "camp_fakecmd.md")
-	if err := os.WriteFile(staleFile, []byte("# stale"), 0644); err != nil {
+	staleMarkdownFile := filepath.Join(dir, "camp_fakecmd.md")
+	if err := os.WriteFile(staleMarkdownFile, []byte("# stale"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	staleYAMLFile := filepath.Join(dir, "camp_fakecmd.yaml")
+	if err := os.WriteFile(staleYAMLFile, []byte("stale: true\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -48,8 +53,12 @@ func TestRunGendocs_RemovesStaleFilesAndSkipsHiddenCommands(t *testing.T) {
 		t.Fatalf("runGendocs: %v", err)
 	}
 
-	if _, err := os.Stat(staleFile); !os.IsNotExist(err) {
-		t.Errorf("stale file %s still exists after gendocs", filepath.Base(staleFile))
+	if _, err := os.Stat(staleMarkdownFile); !os.IsNotExist(err) {
+		t.Errorf("stale file %s still exists after gendocs", filepath.Base(staleMarkdownFile))
+	}
+
+	if _, err := os.Stat(staleYAMLFile); !os.IsNotExist(err) {
+		t.Errorf("stale file %s still exists after gendocs", filepath.Base(staleYAMLFile))
 	}
 
 	if _, err := os.Stat(keepFile); err != nil {
