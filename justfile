@@ -24,6 +24,9 @@ mod xbuild '.justfiles/build.just'
 [doc('Release and versioning')]
 mod release '.justfiles/release.just'
 
+[doc('Install camp to $GOBIN (stable, dev, current)')]
+mod install '.justfiles/install.just'
+
 [private]
 default:
     @echo "camp CLI - Campaign Management Tool"
@@ -93,13 +96,6 @@ deps:
 tidy:
     go mod tidy
 
-# Install camp to $GOBIN
-install: build
-    @echo "Installing camp..."
-    @mkdir -p {{gobin}}
-    cp {{bin_dir}}/{{binary_name}} {{gobin}}/{{binary_name}}
-    codesign -f -s - {{gobin}}/{{binary_name}}
-    @echo "camp installed to {{gobin}}/{{binary_name}}"
 
 # Uninstall camp from $GOBIN
 uninstall:
