@@ -16,17 +16,7 @@ dev level="":
     latest=$(git tag -l "v*-dev.*" --sort=-version:refname | head -1)
 
     if [ -z "$latest" ]; then
-        # No dev tags — migrate from alpha-stable or start fresh
-        alpha=$(git tag -l "v*-alpha-stable" --sort=-version:refname | head -1)
-        if [ -n "$alpha" ]; then
-            nums="${alpha#v}"
-            nums="${nums%-alpha-stable}"
-            IFS='.' read -r major minor patch <<< "$nums"
-            minor=$((minor + 1))
-            patch=0
-        else
-            major=0; minor=1; patch=0
-        fi
+        major=0; minor=1; patch=0
         new="v${major}.${minor}.${patch}-dev.1"
     else
         # Parse: v0.2.0-dev.3
