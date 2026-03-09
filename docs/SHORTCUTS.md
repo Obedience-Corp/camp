@@ -119,6 +119,7 @@ Built-in Navigation Shortcuts:
   p    -> projects/
   pi   -> pipelines/
   cr   -> code_reviews/
+  w    -> workflow/
   wt   -> worktrees/
 
 Custom Shortcuts:
