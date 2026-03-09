@@ -1,15 +1,13 @@
-//go:build dev
-
 package main
 
 import (
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
 )
@@ -25,10 +23,7 @@ var gendocsCmd = &cobra.Command{
 	Short:  "Generate CLI reference documentation",
 	Long:   "Generate markdown or YAML reference documentation for all camp commands.",
 	Hidden: true,
-	Annotations: map[string]string{
-		"release_channel": "dev_only",
-	},
-	RunE: runGendocs,
+	RunE:   runGendocs,
 }
 
 func init() {
@@ -43,17 +38,31 @@ func runGendocs(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "create output dir")
 	}
 
-	stripANSIFromTree(rootCmd)
-	disableAutoGenTag(rootCmd)
+	// Remove previously generated command docs before regenerating so a stable
+	// docs run cannot keep stale files from a prior dev-profile generation.
+	stalePattern := filepath.Join(gendocsOutput, "camp_*.md")
+	if staleFiles, _ := filepath.Glob(stalePattern); len(staleFiles) > 0 {
+		for _, file := range staleFiles {
+			_ = os.Remove(file)
+		}
+	}
+
+	rootForDocs := rootCmd
+	if cmd != nil {
+		rootForDocs = cmd.Root()
+	}
+
+	stripANSIFromTree(rootForDocs)
+	disableAutoGenTag(rootForDocs)
 
 	switch gendocsFormat {
 	case "markdown":
-		if err := doc.GenMarkdownTree(rootCmd, gendocsOutput); err != nil {
+		if err := doc.GenMarkdownTree(rootForDocs, gendocsOutput); err != nil {
 			return camperrors.Wrap(err, "generate markdown")
 		}
 		fmt.Fprintf(os.Stderr, "Markdown docs written to %s\n", gendocsOutput)
 	case "yaml":
-		if err := doc.GenYamlTree(rootCmd, gendocsOutput); err != nil {
+		if err := doc.GenYamlTree(rootForDocs, gendocsOutput); err != nil {
 			return camperrors.Wrap(err, "generate yaml")
 		}
 		fmt.Fprintf(os.Stderr, "YAML docs written to %s\n", gendocsOutput)
