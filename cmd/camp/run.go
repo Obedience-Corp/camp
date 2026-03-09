@@ -34,13 +34,14 @@ Only navigation shortcuts (those with paths) can be used.
 
 All arguments after 'run' (or '@shortcut') are passed directly to the shell.`,
 	Example: `  # Project just dispatch (first arg matches a project name):
-  camp run fest              # Show just recipes for fest project
-  camp run fest build        # Run 'just build' in projects/fest/
+  camp run camp              # Show just recipes for camp project
   camp run camp test all     # Run 'just test all' in projects/camp/
+  camp run festival build    # Run 'just build' in projects/festival/
 
   # Raw command from campaign root (first arg is not a project):
-  camp run ls -la            # List campaign root contents
   camp run just --list       # Show just recipes from root
+  camp run git status        # Run git status from campaign root
+  camp run ls -la            # List campaign root contents
 
   # Shortcut-based execution:
   camp run @p ls             # List projects/ directory
