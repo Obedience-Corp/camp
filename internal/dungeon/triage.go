@@ -161,34 +161,76 @@ func RunTriageCrawl(ctx context.Context, svc *Service, parentPath string) (*Craw
 
 // promptDocsDestination presents a fuzzy-completion text input for selecting
 // a docs/ subdirectory. Suggestions are populated from real subdirectories
-// discovered under the campaign-root docs/ directory. Cancel returns "".
+// discovered under the campaign-root docs/ directory. Invalid input re-prompts
+// instead of failing. Cancel returns "".
 func promptDocsDestination(ctx context.Context, itemName string, campaignRoot string) (string, error) {
 	suggestions, err := listDocsSubdirectories(campaignRoot)
 	if err != nil {
 		return "", camperrors.Wrap(err, "listing docs subdirectories")
 	}
 
-	var destination string
-	input := huh.NewInput().
-		Title(fmt.Sprintf("Route %s to docs/ subdirectory:", itemName)).
-		Description("Type or press Tab to browse available subdirectories.").
-		Value(&destination)
+	// Build a set for fast validation
+	valid := make(map[string]bool, len(suggestions))
+	for _, s := range suggestions {
+		valid[s] = true
+	}
 
+	desc := "Type or press Tab to browse available subdirectories."
 	if len(suggestions) > 0 {
-		input = input.
-			Placeholder(suggestions[0]).
-			Suggestions(suggestions)
+		desc = fmt.Sprintf("Type or press Tab to browse (%d available). Examples: %s",
+			len(suggestions), formatExamples(suggestions, 3))
 	}
 
-	form := huh.NewForm(huh.NewGroup(input))
-	if err := theme.RunForm(ctx, form); err != nil {
-		if theme.IsCancelled(err) {
-			return "", nil // Cancel = back to Step 1 via continue itemLoop
+	for {
+		var destination string
+		input := huh.NewInput().
+			Title(fmt.Sprintf("Route %s to docs/ subdirectory:", itemName)).
+			Description(desc).
+			Value(&destination)
+
+		if len(suggestions) > 0 {
+			input = input.
+				Placeholder(suggestions[0]).
+				Suggestions(suggestions)
 		}
-		return "", camperrors.Wrap(err, "form error")
-	}
 
-	return destination, nil
+		form := huh.NewForm(huh.NewGroup(input))
+		if err := theme.RunForm(ctx, form); err != nil {
+			if theme.IsCancelled(err) {
+				return "", nil // Cancel = back to Step 1 via continue itemLoop
+			}
+			return "", camperrors.Wrap(err, "form error")
+		}
+
+		if destination == "" {
+			continue // empty input, re-prompt
+		}
+
+		if valid[destination] {
+			return destination, nil
+		}
+
+		fmt.Printf("Invalid destination %q — must be an existing docs/ subdirectory. Try Tab to browse.\n", destination)
+	}
+}
+
+// formatExamples returns up to n suggestions joined with ", ".
+func formatExamples(suggestions []string, n int) string {
+	if len(suggestions) <= n {
+		return joinStrings(suggestions)
+	}
+	return joinStrings(suggestions[:n])
+}
+
+func joinStrings(ss []string) string {
+	result := ""
+	for i, s := range ss {
+		if i > 0 {
+			result += ", "
+		}
+		result += s
+	}
+	return result
 }
 
 func listDocsSubdirectories(campaignRoot string) ([]string, error) {
