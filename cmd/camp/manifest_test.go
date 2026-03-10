@@ -6,6 +6,11 @@ import (
 	"testing"
 )
 
+func flowCommandsRegistered() bool {
+	cmd, _, err := rootCmd.Find([]string{"flow"})
+	return err == nil && cmd != nil && cmd.Name() == "flow"
+}
+
 func TestManifestCommand_OutputsValidJSON(t *testing.T) {
 	buf := new(bytes.Buffer)
 	rootCmd.SetOut(buf)
@@ -71,12 +76,14 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		"dungeon crawl": false,
 		"dungeon list":  false,
 		"dungeon move":  false,
-		"flow":          false,
-		"flow add":      false,
-		"flow migrate":  false,
 		"skills link":   false,
 		"skills status": false,
 		"skills unlink": false,
+	}
+	if flowCommandsRegistered() {
+		expectedCommands["flow"] = false
+		expectedCommands["flow add"] = false
+		expectedCommands["flow migrate"] = false
 	}
 
 	for _, cmd := range manifest.Commands {
@@ -91,8 +98,12 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		}
 	}
 
-	if len(manifest.Commands) != 18 {
-		t.Errorf("expected exactly 18 restricted commands, got %d", len(manifest.Commands))
+	wantCount := 15
+	if flowCommandsRegistered() {
+		wantCount = 18
+	}
+	if len(manifest.Commands) != wantCount {
+		t.Errorf("expected exactly %d restricted commands, got %d", wantCount, len(manifest.Commands))
 	}
 }
 
@@ -114,11 +125,13 @@ func TestManifestCommand_AllCommandsHaveAnnotations(t *testing.T) {
 	agentAllowed := map[string]bool{
 		"dungeon list":  true,
 		"dungeon move":  true,
-		"flow add":      true,
 		"switch":        true,
 		"skills link":   true,
 		"skills status": true,
 		"skills unlink": true,
+	}
+	if flowCommandsRegistered() {
+		agentAllowed["flow add"] = true
 	}
 
 	for _, cmd := range manifest.Commands {
@@ -164,11 +177,13 @@ func TestManifestCommand_InteractiveFlags(t *testing.T) {
 		"doctor":        true,
 		"dungeon list":  true,
 		"dungeon move":  true,
-		"flow add":      true,
-		"flow migrate":  true,
 		"skills link":   true,
 		"skills status": true,
 		"skills unlink": true,
+	}
+	if flowCommandsRegistered() {
+		nonInteractiveCommands["flow add"] = true
+		nonInteractiveCommands["flow migrate"] = true
 	}
 
 	cmdMap := make(map[string]CommandEntry)

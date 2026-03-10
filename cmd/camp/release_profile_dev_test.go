@@ -7,3 +7,7 @@ import "testing"
 func TestReleaseProfileDev_GendocsCommandHiddenButRegistered(t *testing.T) {
 	assertGendocsCommand(t)
 }
+
+func TestReleaseProfileDev_FlowCommandRegistered(t *testing.T) {
+	assertFlowCommandRegistered(t)
+}
