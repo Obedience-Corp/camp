@@ -1,4 +1,4 @@
-# Build recipes
+# Build recipes — local builds, profiles, and cross-platform targets
 binary_name := "camp"
 bin_dir := "bin"
 BUILDTOOL := "go run ./internal/buildutil"
@@ -8,25 +8,51 @@ build_tags := env_var_or_default("BUILD_TAGS", "")
 default:
     @just --list --unsorted --justfile {{source_file()}}
 
-# Build with dashboard (vet + build all packages)
+# ─── Local builds ───────────────────────────────────────────
+
+# Build camp binary (vet + build via buildutil)
 [no-cd]
-all:
+default-build:
     @{{BUILDTOOL}} build
 
 # Quick development build (no vet, just binary)
 [no-cd]
-dev:
+quick:
     @{{BUILDTOOL}} build-only
+
+# Full pipeline (clean, build, test, integration)
+[no-cd]
+full:
+    @{{BUILDTOOL}} all
 
 # Clean build artifacts
 [no-cd]
 clean:
     @{{BUILDTOOL}} clean
 
-# Run all tasks (clean, build, test, integration)
+# ─── Build profiles ─────────────────────────────────────────
+
+# Build in stable profile (default command surface)
 [no-cd]
-full:
-    @{{BUILDTOOL}} all
+stable:
+    BUILD_TAGS='' just build default-build
+
+# Build in dev profile (includes dev-only commands)
+[no-cd]
+dev:
+    BUILD_TAGS=dev just build default-build
+
+# Quick build in stable profile
+[no-cd]
+quick-stable:
+    BUILD_TAGS='' just build quick
+
+# Quick build in dev profile
+[no-cd]
+quick-dev:
+    BUILD_TAGS=dev just build quick
+
+# ─── Cross-platform targets ─────────────────────────────────
 
 # Build for Linux AMD64
 [no-cd]
@@ -76,3 +102,13 @@ windows:
 [no-cd]
 platforms: linux darwin darwin-arm64 windows
     @echo "All platform builds complete"
+
+# Cross-platform builds in stable profile
+[no-cd]
+platforms-stable:
+    BUILD_TAGS='' just build platforms
+
+# Cross-platform builds in dev profile
+[no-cd]
+platforms-dev:
+    BUILD_TAGS=dev just build platforms

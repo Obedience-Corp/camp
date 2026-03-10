@@ -12,17 +12,19 @@ version := env_var_or_default("VERSION", "dev")
 commit := `git rev-parse --short HEAD 2>/dev/null || echo "unknown"`
 build_date := `date -u +"%Y-%m-%dT%H:%M:%SZ"`
 ldflags := "-X " + version_pkg + ".Version=" + version + " -X " + version_pkg + ".Commit=" + commit + " -X " + version_pkg + ".BuildDate=" + build_date
-BUILDTOOL := "go run ./internal/buildutil"
 
 # Modules
+[doc('Build (local, profiles, cross-platform)')]
+mod build '.justfiles/build.just'
+
 [doc('Testing (unit, coverage, benchmarks)')]
 mod test '.justfiles/test.just'
 
-[doc('Cross-platform builds')]
-mod xbuild '.justfiles/build.just'
-
 [doc('Release and versioning')]
 mod release '.justfiles/release.just'
+
+[doc('Install camp to $GOBIN (stable, dev, current)')]
+mod install '.justfiles/install.just'
 
 [private]
 default:
@@ -30,37 +32,9 @@ default:
     @echo ""
     @just --list --unsorted
 
-# Build camp binary (vet + build via buildutil)
-build:
-    @{{BUILDTOOL}} build
-
-# Build camp binary in stable profile (default command surface)
-build-stable:
-    BUILD_TAGS='' just build
-
-# Build camp binary in dev profile (includes dev-only commands)
-build-dev:
-    BUILD_TAGS=dev just build
-
-# Quick development build (no vet, just binary)
-build-only:
-    @{{BUILDTOOL}} build-only
-
-# Build only in stable profile
-build-only-stable:
-    BUILD_TAGS='' just build-only
-
-# Build only in dev profile
-build-only-dev:
-    BUILD_TAGS=dev just build-only
-
-# Cross-platform builds in stable profile
-xbuild-stable:
-    BUILD_TAGS='' just xbuild platforms
-
-# Cross-platform builds in dev profile
-xbuild-dev:
-    BUILD_TAGS=dev just xbuild platforms
+# Build camp binary (shortcut for `just build default-build`)
+build-camp:
+    @go run ./internal/buildutil build
 
 # Format Go code
 fmt:
@@ -93,14 +67,6 @@ deps:
 tidy:
     go mod tidy
 
-# Install camp to $GOBIN
-install: build
-    @echo "Installing camp..."
-    @mkdir -p {{gobin}}
-    cp {{bin_dir}}/{{binary_name}} {{gobin}}/{{binary_name}}
-    codesign -f -s - {{gobin}}/{{binary_name}}
-    @echo "camp installed to {{gobin}}/{{binary_name}}"
-
 # Uninstall camp from $GOBIN
 uninstall:
     @echo "Uninstalling camp..."
@@ -108,7 +74,7 @@ uninstall:
     @echo "camp uninstalled"
 
 # Generate CLI reference docs
-docs: build-dev
+docs: build-camp
     ./{{bin_dir}}/{{binary_name}} gendocs --output docs/cli-reference --format markdown --single
 
 # Run camp (for development)

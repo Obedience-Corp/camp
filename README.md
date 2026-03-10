@@ -30,7 +30,7 @@ go install github.com/Obedience-Corp/camp@latest
 ```bash
 git clone https://github.com/Obedience-Corp/camp
 cd camp
-just install
+just install stable
 ```
 
 ### Shell Integration
@@ -410,12 +410,15 @@ Individual command docs are in [`docs/cli-reference/`](docs/cli-reference/) (aut
 ## Development
 
 ```bash
-just              # List all commands
-just build        # Build camp binary
-just test         # Run tests
-just install      # Install locally
-just docs         # Regenerate CLI reference docs
-just run <args>   # Run with arguments
+just                      # List all commands
+just build-camp           # Build camp binary (vet + build)
+just build                # Show all build recipes (profiles, cross-platform)
+just test                 # Show all test recipes
+just test all             # Run all tests
+just install              # Show install options (stable, dev, current)
+just install stable       # Install stable profile to $GOBIN
+just docs                 # Regenerate CLI reference docs
+just run <args>           # Run with arguments
 ```
 
 ## Part of Festival

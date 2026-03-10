@@ -1,15 +1,14 @@
-//go:build dev
-
 package main
 
 import (
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/commands/release"
 	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
 )
@@ -18,6 +17,7 @@ var (
 	gendocsOutput string
 	gendocsFormat string
 	gendocsSingle bool
+	gendocsStable bool
 )
 
 var gendocsCmd = &cobra.Command{
@@ -25,16 +25,14 @@ var gendocsCmd = &cobra.Command{
 	Short:  "Generate CLI reference documentation",
 	Long:   "Generate markdown or YAML reference documentation for all camp commands.",
 	Hidden: true,
-	Annotations: map[string]string{
-		"release_channel": "dev_only",
-	},
-	RunE: runGendocs,
+	RunE:   runGendocs,
 }
 
 func init() {
 	gendocsCmd.Flags().StringVar(&gendocsOutput, "output", "docs", "output directory")
 	gendocsCmd.Flags().StringVar(&gendocsFormat, "format", "markdown", "output format: markdown or yaml")
 	gendocsCmd.Flags().BoolVar(&gendocsSingle, "single", false, "generate a single combined reference file")
+	gendocsCmd.Flags().BoolVar(&gendocsStable, "stable", false, "exclude dev-only commands from generated docs")
 	rootCmd.AddCommand(gendocsCmd)
 }
 
@@ -43,17 +41,32 @@ func runGendocs(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "create output dir")
 	}
 
-	stripANSIFromTree(rootCmd)
-	disableAutoGenTag(rootCmd)
+	// Remove previously generated command docs before regenerating so switching
+	// formats or profiles does not leave stale generated files behind.
+	if err := removeGeneratedDocs(gendocsOutput, "camp"); err != nil {
+		return camperrors.Wrap(err, "clean generated docs")
+	}
+
+	rootForDocs := rootCmd
+	if cmd != nil {
+		rootForDocs = cmd.Root()
+	}
+
+	stripANSIFromTree(rootForDocs)
+	disableAutoGenTag(rootForDocs)
+
+	if gendocsStable {
+		hideDevOnlyCommands(rootForDocs)
+	}
 
 	switch gendocsFormat {
 	case "markdown":
-		if err := doc.GenMarkdownTree(rootCmd, gendocsOutput); err != nil {
+		if err := doc.GenMarkdownTree(rootForDocs, gendocsOutput); err != nil {
 			return camperrors.Wrap(err, "generate markdown")
 		}
 		fmt.Fprintf(os.Stderr, "Markdown docs written to %s\n", gendocsOutput)
 	case "yaml":
-		if err := doc.GenYamlTree(rootCmd, gendocsOutput); err != nil {
+		if err := doc.GenYamlTree(rootForDocs, gendocsOutput); err != nil {
 			return camperrors.Wrap(err, "generate yaml")
 		}
 		fmt.Fprintf(os.Stderr, "YAML docs written to %s\n", gendocsOutput)
@@ -95,6 +108,41 @@ func disableAutoGenTag(cmd *cobra.Command) {
 	for _, child := range cmd.Commands() {
 		disableAutoGenTag(child)
 	}
+}
+
+// hideDevOnlyCommands removes commands annotated as dev-only from the tree.
+// Cobra's doc generators only skip Hidden commands, not annotated ones,
+// so we remove dev-only commands entirely before generating stable docs.
+func hideDevOnlyCommands(parent *cobra.Command) {
+	for _, child := range parent.Commands() {
+		if child.Annotations[release.AnnotationReleaseChannel] == release.ReleaseChannelDevOnly {
+			parent.RemoveCommand(child)
+		} else {
+			hideDevOnlyCommands(child)
+		}
+	}
+}
+
+func removeGeneratedDocs(dir, name string) error {
+	patterns := []string{
+		filepath.Join(dir, name+"_*.md"),
+		filepath.Join(dir, name+"_*.yaml"),
+		filepath.Join(dir, name+"-reference.md"),
+	}
+
+	for _, pattern := range patterns {
+		files, err := filepath.Glob(pattern)
+		if err != nil {
+			return err
+		}
+		for _, file := range files {
+			if err := os.Remove(file); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 // stripSeeAlso removes the "### SEE ALSO" section from markdown content.
