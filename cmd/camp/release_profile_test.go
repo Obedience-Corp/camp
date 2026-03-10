@@ -9,6 +9,30 @@ import (
 	"github.com/Obedience-Corp/camp/internal/commands/release"
 )
 
+// devOnlyCommands is the single source of truth for commands gated behind
+// //go:build dev. Update this list when promoting a command to stable.
+var devOnlyCommands = []string{"flow", "fresh"}
+
+func assertDevCommandsRegistered(t *testing.T) {
+	t.Helper()
+	for _, name := range devOnlyCommands {
+		cmd, _, err := rootCmd.Find([]string{name})
+		if err != nil || cmd == nil || cmd.Name() != name {
+			t.Errorf("expected dev command %q to be registered in dev build", name)
+		}
+	}
+}
+
+func assertDevCommandsAbsent(t *testing.T) {
+	t.Helper()
+	for _, name := range devOnlyCommands {
+		cmd, _, err := rootCmd.Find([]string{name})
+		if err == nil && cmd != nil && cmd.Name() == name {
+			t.Errorf("dev command %q should not be registered in stable build", name)
+		}
+	}
+}
+
 func assertGendocsCommand(t *testing.T) {
 	t.Helper()
 
