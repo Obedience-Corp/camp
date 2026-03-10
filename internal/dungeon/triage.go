@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/huh"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -174,20 +175,16 @@ func promptDocsDestination(ctx context.Context, itemName string, campaignRoot st
 		valid[s] = true
 	}
 
-	// Print available directories so users can see what exists
-	if len(suggestions) > 0 {
-		fmt.Println("Available docs/ subdirectories:")
-		for _, s := range suggestions {
-			fmt.Printf("  %s\n", s)
-		}
-		fmt.Println()
-	}
+	// Custom keymap: Tab = accept suggestion, Enter = submit
+	km := huh.NewDefaultKeyMap()
+	km.Input.AcceptSuggestion = key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "complete"))
+	km.Input.Next = key.NewBinding(key.WithKeys("enter"))
 
 	for {
 		var destination string
 		input := huh.NewInput().
 			Title(fmt.Sprintf("Route %s to docs/ subdirectory:", itemName)).
-			Description("Type or Tab to autocomplete.").
+			Description("Tab to complete, Enter to confirm.").
 			Value(&destination)
 
 		if len(suggestions) > 0 {
@@ -196,7 +193,7 @@ func promptDocsDestination(ctx context.Context, itemName string, campaignRoot st
 				Suggestions(suggestions)
 		}
 
-		form := huh.NewForm(huh.NewGroup(input))
+		form := huh.NewForm(huh.NewGroup(input)).WithKeyMap(km)
 		if err := theme.RunForm(ctx, form); err != nil {
 			if theme.IsCancelled(err) {
 				return "", nil // Cancel = back to Step 1 via continue itemLoop
