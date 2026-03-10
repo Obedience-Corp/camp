@@ -13,7 +13,7 @@ default: stable
 stable:
     #!/usr/bin/env bash
     set -euo pipefail
-    BUILD_TAGS='' just build-only
+    BUILD_TAGS='' just build quick
     just install _copy
 
 # Install dev profile (includes dev-only commands)
@@ -21,7 +21,7 @@ stable:
 dev:
     #!/usr/bin/env bash
     set -euo pipefail
-    BUILD_TAGS=dev just build-only
+    BUILD_TAGS=dev just build quick
     just install _copy
 
 # Install from current bin/ (whatever was last built)
