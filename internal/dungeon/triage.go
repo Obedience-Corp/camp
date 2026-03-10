@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/charmbracelet/huh"
 
@@ -160,119 +159,36 @@ func RunTriageCrawl(ctx context.Context, svc *Service, parentPath string) (*Craw
 	return summary, nil
 }
 
-// promptDocsDestination presents a hierarchical directory browser for selecting
-// a docs/ subdirectory. Users drill down through directory levels with Select
-// pickers. Cancel at a nested level goes back up; cancel at top level returns "".
+// promptDocsDestination presents a fuzzy-completion text input for selecting
+// a docs/ subdirectory. Suggestions are populated from real subdirectories
+// discovered under the campaign-root docs/ directory. Cancel returns "".
 func promptDocsDestination(ctx context.Context, itemName string, campaignRoot string) (string, error) {
-	docsRoot := filepath.Join(campaignRoot, docsDirName)
-	currentPath := docsRoot
-	var pathParts []string
-
-	for {
-		subdirs, err := listImmediateSubdirs(currentPath)
-		if err != nil {
-			return "", camperrors.Wrap(err, "listing docs subdirectories")
-		}
-
-		// Leaf directory (no children) — show a "Place here" picker so the
-		// user can still back out via Escape instead of being auto-committed.
-		if len(subdirs) == 0 && len(pathParts) > 0 {
-			var confirm string
-			leafLabel := fmt.Sprintf(">> Place here (docs/%s)", strings.Join(pathParts, "/"))
-			leafForm := huh.NewForm(
-				huh.NewGroup(
-					huh.NewSelect[string]().
-						Title(fmt.Sprintf("Route %s to docs/%s", itemName, strings.Join(pathParts, "/"))).
-						Options(
-							huh.NewOption(leafLabel, "__place_here__"),
-						).
-						Value(&confirm),
-				),
-			)
-			if err := theme.RunForm(ctx, leafForm); err != nil {
-				if theme.IsCancelled(err) {
-					// Go back up one level
-					pathParts = pathParts[:len(pathParts)-1]
-					currentPath = filepath.Join(docsRoot, filepath.Join(pathParts...))
-					continue
-				}
-				return "", camperrors.Wrap(err, "form error")
-			}
-			return strings.Join(pathParts, "/"), nil
-		}
-
-		// No subdirectories at all under docs/
-		if len(subdirs) == 0 {
-			return "", camperrors.Wrap(
-				ErrInvalidDocsDestination,
-				"no subdirectories found under campaign-root docs/",
-			)
-		}
-
-		// Build select options
-		var opts []huh.Option[string]
-		if len(pathParts) > 0 {
-			label := fmt.Sprintf(">> Place here (docs/%s)", strings.Join(pathParts, "/"))
-			opts = append(opts, huh.NewOption(label, "__place_here__"))
-		}
-		for _, d := range subdirs {
-			opts = append(opts, huh.NewOption(d+"/", d))
-		}
-
-		var choice string
-		title := fmt.Sprintf("Route %s to docs/", itemName)
-		if len(pathParts) > 0 {
-			title = fmt.Sprintf("Route %s to docs/%s/...", itemName, strings.Join(pathParts, "/"))
-		}
-
-		form := huh.NewForm(
-			huh.NewGroup(
-				huh.NewSelect[string]().
-					Title(title).
-					Options(opts...).
-					Value(&choice),
-			),
-		)
-
-		if err := theme.RunForm(ctx, form); err != nil {
-			if theme.IsCancelled(err) {
-				if len(pathParts) > 0 {
-					// Go back up one level
-					pathParts = pathParts[:len(pathParts)-1]
-					currentPath = filepath.Join(docsRoot, filepath.Join(pathParts...))
-					continue
-				}
-				// At top level, cancel entirely
-				return "", nil
-			}
-			return "", camperrors.Wrap(err, "form error")
-		}
-
-		if choice == "__place_here__" {
-			return strings.Join(pathParts, "/"), nil
-		}
-
-		// Drill down into selected directory
-		pathParts = append(pathParts, choice)
-		currentPath = filepath.Join(currentPath, choice)
-	}
-}
-
-// listImmediateSubdirs returns the names of immediate subdirectories at the
-// given path, excluding hidden directories (those starting with ".").
-func listImmediateSubdirs(dirPath string) ([]string, error) {
-	entries, err := os.ReadDir(dirPath)
+	suggestions, err := listDocsSubdirectories(campaignRoot)
 	if err != nil {
-		return nil, err
+		return "", camperrors.Wrap(err, "listing docs subdirectories")
 	}
-	var dirs []string
-	for _, e := range entries {
-		if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
-			dirs = append(dirs, e.Name())
+
+	var destination string
+	input := huh.NewInput().
+		Title(fmt.Sprintf("Route %s to docs/ subdirectory:", itemName)).
+		Description("Type or press Tab to browse available subdirectories.").
+		Value(&destination)
+
+	if len(suggestions) > 0 {
+		input = input.
+			Placeholder(suggestions[0]).
+			Suggestions(suggestions)
+	}
+
+	form := huh.NewForm(huh.NewGroup(input))
+	if err := theme.RunForm(ctx, form); err != nil {
+		if theme.IsCancelled(err) {
+			return "", nil // Cancel = back to Step 1 via continue itemLoop
 		}
+		return "", camperrors.Wrap(err, "form error")
 	}
-	sort.Strings(dirs)
-	return dirs, nil
+
+	return destination, nil
 }
 
 func listDocsSubdirectories(campaignRoot string) ([]string, error) {
