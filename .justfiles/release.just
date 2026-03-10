@@ -88,7 +88,7 @@ stable level="patch":
             base="${dev%-dev.*}"
             new="$base"
         else
-            new="v0.2.0"
+            new="v0.1.0"
         fi
     else
         nums="${latest#v}"
