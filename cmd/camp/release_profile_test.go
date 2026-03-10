@@ -9,48 +9,6 @@ import (
 	"github.com/Obedience-Corp/camp/internal/commands/release"
 )
 
-func assertFlowCommandRegistered(t *testing.T) {
-	t.Helper()
-
-	cmd, _, err := rootCmd.Find([]string{"flow"})
-	if err != nil {
-		t.Fatalf("expected flow command in dev build: %v", err)
-	}
-	if cmd == nil || cmd.Name() != "flow" {
-		t.Fatalf("expected flow command, got %#v", cmd)
-	}
-}
-
-func assertFlowCommandAbsent(t *testing.T) {
-	t.Helper()
-
-	cmd, _, err := rootCmd.Find([]string{"flow"})
-	if err == nil && cmd != nil && cmd.Name() == "flow" {
-		t.Fatal("flow command should not be registered in stable build")
-	}
-}
-
-func assertFreshCommandRegistered(t *testing.T) {
-	t.Helper()
-
-	cmd, _, err := rootCmd.Find([]string{"fresh"})
-	if err != nil {
-		t.Fatalf("expected fresh command in dev build: %v", err)
-	}
-	if cmd == nil || cmd.Name() != "fresh" {
-		t.Fatalf("expected fresh command, got %#v", cmd)
-	}
-}
-
-func assertFreshCommandAbsent(t *testing.T) {
-	t.Helper()
-
-	cmd, _, err := rootCmd.Find([]string{"fresh"})
-	if err == nil && cmd != nil && cmd.Name() == "fresh" {
-		t.Fatal("fresh command should not be registered in stable build")
-	}
-}
-
 func assertGendocsCommand(t *testing.T) {
 	t.Helper()
 
