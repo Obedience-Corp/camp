@@ -145,3 +145,100 @@ func JumpsConfigExists(campaignRoot string) bool {
 	_, err := os.Stat(configPath)
 	return err == nil
 }
+
+// FreshConfigFile is the name of the fresh configuration file.
+const FreshConfigFile = "fresh.yaml"
+
+// FreshConfig represents .campaign/settings/fresh.yaml configuration.
+// It defines the post-merge branch cycling behavior for camp fresh.
+type FreshConfig struct {
+	// Branch to create after syncing. Empty means no branch creation.
+	Branch string `yaml:"branch,omitempty"`
+	// PushUpstream controls whether to push with --set-upstream after branch creation.
+	PushUpstream *bool `yaml:"push_upstream,omitempty"`
+	// Prune controls whether to prune merged branches.
+	Prune *bool `yaml:"prune,omitempty"`
+	// PruneRemote controls whether to prune stale remote tracking refs.
+	PruneRemote *bool `yaml:"prune_remote,omitempty"`
+	// Projects holds per-project overrides keyed by project name.
+	Projects map[string]FreshProjectConfig `yaml:"projects,omitempty"`
+}
+
+// FreshProjectConfig holds per-project overrides for fresh behavior.
+// Pointer types distinguish "not set" from "set to false/empty".
+type FreshProjectConfig struct {
+	Branch       *string `yaml:"branch,omitempty"`
+	PushUpstream *bool   `yaml:"push_upstream,omitempty"`
+}
+
+// FreshConfigPath returns the path to fresh.yaml for a given campaign root.
+func FreshConfigPath(campaignRoot string) string {
+	return filepath.Join(campaignRoot, CampaignDir, SettingsDir, FreshConfigFile)
+}
+
+// LoadFreshConfig loads .campaign/settings/fresh.yaml from the campaign root.
+// Returns an empty config with defaults if the file doesn't exist.
+func LoadFreshConfig(ctx context.Context, campaignRoot string) (*FreshConfig, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	configPath := FreshConfigPath(campaignRoot)
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return &FreshConfig{}, nil
+		}
+		return nil, camperrors.Wrapf(err, "failed to read fresh config %s", configPath)
+	}
+
+	var cfg FreshConfig
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, camperrors.Wrapf(err, "failed to parse fresh config %s", configPath)
+	}
+
+	return &cfg, nil
+}
+
+// ResolveFreshBranch resolves the branch name using the priority chain:
+// flag > project override > global config > default ("").
+func (c *FreshConfig) ResolveFreshBranch(flagBranch string, noBranch bool, projectName string) string {
+	if noBranch {
+		return ""
+	}
+	if flagBranch != "" {
+		return flagBranch
+	}
+	if pc, ok := c.Projects[projectName]; ok && pc.Branch != nil {
+		return *pc.Branch
+	}
+	return c.Branch
+}
+
+// ResolveFreshPushUpstream resolves push_upstream using the priority chain:
+// project override > global config > default (true).
+func (c *FreshConfig) ResolveFreshPushUpstream(projectName string) bool {
+	if pc, ok := c.Projects[projectName]; ok && pc.PushUpstream != nil {
+		return *pc.PushUpstream
+	}
+	if c.PushUpstream != nil {
+		return *c.PushUpstream
+	}
+	return true
+}
+
+// ResolveFreshPrune resolves prune using the global config or default (true).
+func (c *FreshConfig) ResolveFreshPrune() bool {
+	if c.Prune != nil {
+		return *c.Prune
+	}
+	return true
+}
+
+// ResolveFreshPruneRemote resolves prune_remote using the global config or default (true).
+func (c *FreshConfig) ResolveFreshPruneRemote() bool {
+	if c.PruneRemote != nil {
+		return *c.PruneRemote
+	}
+	return true
+}
