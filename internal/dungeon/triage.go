@@ -160,9 +160,8 @@ func RunTriageCrawl(ctx context.Context, svc *Service, parentPath string) (*Craw
 }
 
 // promptDocsDestination presents a fuzzy-completion text input for selecting
-// a docs/ subdirectory. Suggestions are populated from real subdirectories
-// discovered under the campaign-root docs/ directory. Invalid input re-prompts
-// instead of failing. Cancel returns "".
+// a docs/ subdirectory. Available subdirectories are listed above the prompt
+// for discoverability. Invalid input re-prompts. Cancel returns "".
 func promptDocsDestination(ctx context.Context, itemName string, campaignRoot string) (string, error) {
 	suggestions, err := listDocsSubdirectories(campaignRoot)
 	if err != nil {
@@ -175,17 +174,20 @@ func promptDocsDestination(ctx context.Context, itemName string, campaignRoot st
 		valid[s] = true
 	}
 
-	desc := "Type or press Tab to browse available subdirectories."
+	// Print available directories so users can see what exists
 	if len(suggestions) > 0 {
-		desc = fmt.Sprintf("Type or press Tab to browse (%d available). Examples: %s",
-			len(suggestions), formatExamples(suggestions, 3))
+		fmt.Println("Available docs/ subdirectories:")
+		for _, s := range suggestions {
+			fmt.Printf("  %s\n", s)
+		}
+		fmt.Println()
 	}
 
 	for {
 		var destination string
 		input := huh.NewInput().
 			Title(fmt.Sprintf("Route %s to docs/ subdirectory:", itemName)).
-			Description(desc).
+			Description("Type or Tab to autocomplete.").
 			Value(&destination)
 
 		if len(suggestions) > 0 {
@@ -210,27 +212,8 @@ func promptDocsDestination(ctx context.Context, itemName string, campaignRoot st
 			return destination, nil
 		}
 
-		fmt.Printf("Invalid destination %q — must be an existing docs/ subdirectory. Try Tab to browse.\n", destination)
+		fmt.Printf("Invalid destination %q — must match an existing docs/ subdirectory.\n", destination)
 	}
-}
-
-// formatExamples returns up to n suggestions joined with ", ".
-func formatExamples(suggestions []string, n int) string {
-	if len(suggestions) <= n {
-		return joinStrings(suggestions)
-	}
-	return joinStrings(suggestions[:n])
-}
-
-func joinStrings(ss []string) string {
-	result := ""
-	for i, s := range ss {
-		if i > 0 {
-			result += ", "
-		}
-		result += s
-	}
-	return result
 }
 
 func listDocsSubdirectories(campaignRoot string) ([]string, error) {
