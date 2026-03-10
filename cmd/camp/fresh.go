@@ -220,8 +220,7 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 			fmt.Printf("%s── Would create branch %s\n", prefix, opts.branch)
 		} else {
 			if err := git.CreateBranch(ctx, path, opts.branch); err != nil {
-				fmt.Fprintf(os.Stderr, "%s── Create branch %-19s %s\n", prefix, opts.branch,
-					freshStepRed.Render(err.Error()))
+				return camperrors.Wrapf(err, "create branch %s", opts.branch)
 			} else {
 				branchCreated = true
 				fmt.Printf("%s── Create branch %-19s %s\n", prefix, opts.branch, freshStepGreen.Render("done"))
@@ -235,8 +234,7 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 			fmt.Printf("%s── Would push %s -> origin\n", prefix, opts.branch)
 		} else {
 			if err := git.PushSetUpstream(ctx, path, opts.branch); err != nil {
-				fmt.Fprintf(os.Stderr, "%s── Push %-28s %s\n", prefix, opts.branch+" -> origin",
-					freshStepRed.Render("failed: "+err.Error()))
+				return camperrors.Wrapf(err, "push %s to origin", opts.branch)
 			} else {
 				fmt.Printf("%s── Push %-28s %s\n", prefix, opts.branch+" -> origin", freshStepGreen.Render("done"))
 			}
