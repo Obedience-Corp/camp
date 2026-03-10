@@ -174,8 +174,30 @@ func promptDocsDestination(ctx context.Context, itemName string, campaignRoot st
 			return "", camperrors.Wrap(err, "listing docs subdirectories")
 		}
 
-		// Leaf directory (no children) — auto-select it
+		// Leaf directory (no children) — show a "Place here" picker so the
+		// user can still back out via Escape instead of being auto-committed.
 		if len(subdirs) == 0 && len(pathParts) > 0 {
+			var confirm string
+			leafLabel := fmt.Sprintf(">> Place here (docs/%s)", strings.Join(pathParts, "/"))
+			leafForm := huh.NewForm(
+				huh.NewGroup(
+					huh.NewSelect[string]().
+						Title(fmt.Sprintf("Route %s to docs/%s", itemName, strings.Join(pathParts, "/"))).
+						Options(
+							huh.NewOption(leafLabel, "__place_here__"),
+						).
+						Value(&confirm),
+				),
+			)
+			if err := theme.RunForm(ctx, leafForm); err != nil {
+				if theme.IsCancelled(err) {
+					// Go back up one level
+					pathParts = pathParts[:len(pathParts)-1]
+					currentPath = filepath.Join(docsRoot, filepath.Join(pathParts...))
+					continue
+				}
+				return "", camperrors.Wrap(err, "form error")
+			}
 			return strings.Join(pathParts, "/"), nil
 		}
 
