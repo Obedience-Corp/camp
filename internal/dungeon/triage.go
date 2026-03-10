@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/huh"
@@ -160,31 +161,48 @@ func RunTriageCrawl(ctx context.Context, svc *Service, parentPath string) (*Craw
 	return summary, nil
 }
 
-// promptDocsDestination presents a fuzzy-completion text input for selecting
-// a docs/ subdirectory. Available subdirectories are listed above the prompt
-// for discoverability. Invalid input re-prompts. Cancel returns "".
+// promptDocsDestination presents a level-aware tab-completion browser for
+// selecting a docs/ subdirectory. Tab cycles through entries at the current
+// level only. Selecting a directory with children (trailing "/") drills down.
+// Escape goes back up one level. Cancel at root returns "".
 func promptDocsDestination(ctx context.Context, itemName string, campaignRoot string) (string, error) {
-	suggestions, err := listDocsSubdirectories(campaignRoot)
+	allDirs, err := listDocsSubdirectories(campaignRoot)
 	if err != nil {
 		return "", camperrors.Wrap(err, "listing docs subdirectories")
 	}
 
-	// Build a set for fast validation
-	valid := make(map[string]bool, len(suggestions))
-	for _, s := range suggestions {
+	// Build a set for final validation (accepts any known subdirectory)
+	valid := make(map[string]bool, len(allDirs))
+	for _, s := range allDirs {
 		valid[s] = true
 	}
+
+	docsRoot := filepath.Join(campaignRoot, docsDirName)
 
 	// Custom keymap: Tab = accept suggestion, Enter = submit
 	km := huh.NewDefaultKeyMap()
 	km.Input.AcceptSuggestion = key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "complete"))
 	km.Input.Next = key.NewBinding(key.WithKeys("enter"))
 
+	prefix := ""
 	for {
-		var destination string
+		suggestions := docsLevelSuggestions(docsRoot, prefix)
+
+		// If we've drilled into a leaf directory (no child dirs), select it
+		if len(suggestions) == 0 && prefix != "" {
+			return strings.TrimSuffix(prefix, "/"), nil
+		}
+
+		destination := prefix
+
+		desc := "Tab to complete, Enter to confirm."
+		if prefix != "" {
+			desc = fmt.Sprintf("Browsing docs/%s — Tab to complete, Esc to go back.", prefix)
+		}
+
 		input := huh.NewInput().
 			Title(fmt.Sprintf("Route %s to docs/ subdirectory:", itemName)).
-			Description("Tab to complete, Enter to confirm.").
+			Description(desc).
 			Value(&destination)
 
 		if len(suggestions) > 0 {
@@ -196,7 +214,11 @@ func promptDocsDestination(ctx context.Context, itemName string, campaignRoot st
 		form := huh.NewForm(huh.NewGroup(input)).WithKeyMap(km)
 		if err := theme.RunForm(ctx, form); err != nil {
 			if theme.IsCancelled(err) {
-				return "", nil // Cancel = back to Step 1 via continue itemLoop
+				if prefix == "" {
+					return "", nil // Cancel at root = back to Step 1
+				}
+				prefix = docsParentPrefix(prefix)
+				continue // Go up one level
 			}
 			return "", camperrors.Wrap(err, "form error")
 		}
@@ -205,12 +227,80 @@ func promptDocsDestination(ctx context.Context, itemName string, campaignRoot st
 			continue // empty input, re-prompt
 		}
 
+		// User hit Enter without changing the pre-filled prefix = select current dir
+		if destination == prefix && prefix != "" {
+			return strings.TrimSuffix(prefix, "/"), nil
+		}
+
+		// Drill down into a directory with children
+		if strings.HasSuffix(destination, "/") {
+			prefix = destination
+			continue
+		}
+
+		// Final selection of a leaf directory
 		if valid[destination] {
 			return destination, nil
 		}
 
 		fmt.Printf("Invalid destination %q — must match an existing docs/ subdirectory.\n", destination)
 	}
+}
+
+// docsLevelSuggestions returns tab-completion suggestions for the current
+// directory level. Each suggestion is the full path (prefix + child name).
+// Directories with their own subdirectories get a trailing "/".
+func docsLevelSuggestions(docsRoot, prefix string) []string {
+	dir := docsRoot
+	if prefix != "" {
+		dir = filepath.Join(docsRoot, strings.TrimSuffix(prefix, "/"))
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+
+	var suggestions []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		fullPath := prefix + e.Name()
+
+		// Check if child has its own subdirectories
+		childPath := filepath.Join(docsRoot, fullPath)
+		childEntries, _ := os.ReadDir(childPath)
+		hasChildren := false
+		for _, ce := range childEntries {
+			if ce.IsDir() {
+				hasChildren = true
+				break
+			}
+		}
+
+		if hasChildren {
+			suggestions = append(suggestions, fullPath+"/")
+		} else {
+			suggestions = append(suggestions, fullPath)
+		}
+	}
+
+	sort.Strings(suggestions)
+	return suggestions
+}
+
+// docsParentPrefix returns the parent prefix for back-navigation.
+// "architecture/"           → ""
+// "business/case-studies/"  → "business/"
+// ""                        → ""
+func docsParentPrefix(prefix string) string {
+	trimmed := strings.TrimSuffix(prefix, "/")
+	idx := strings.LastIndex(trimmed, "/")
+	if idx < 0 {
+		return ""
+	}
+	return trimmed[:idx+1]
 }
 
 func listDocsSubdirectories(campaignRoot string) ([]string, error) {

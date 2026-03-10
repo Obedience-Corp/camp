@@ -67,6 +67,82 @@ func TestDocsMoveSummaryKey(t *testing.T) {
 	}
 }
 
+func TestDocsLevelSuggestions(t *testing.T) {
+	root, err := os.MkdirTemp("", "dungeon-level-suggestions-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(root)
+
+	// Create structure:
+	// root/adr/          (leaf - no child dirs)
+	// root/business/articles/  (business has children)
+	// root/business/pricing/   (business has children)
+	// root/guides/             (leaf - no child dirs)
+	dirs := []string{
+		filepath.Join(root, "adr"),
+		filepath.Join(root, "business", "articles"),
+		filepath.Join(root, "business", "pricing"),
+		filepath.Join(root, "guides"),
+	}
+	for _, dir := range dirs {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("failed to create %s: %v", dir, err)
+		}
+	}
+
+	t.Run("top level", func(t *testing.T) {
+		got := docsLevelSuggestions(root, "")
+		want := []string{"adr", "business/", "guides"}
+		assertStringSlice(t, got, want)
+	})
+
+	t.Run("drill into business", func(t *testing.T) {
+		got := docsLevelSuggestions(root, "business/")
+		want := []string{"business/articles", "business/pricing"}
+		assertStringSlice(t, got, want)
+	})
+
+	t.Run("nonexistent prefix", func(t *testing.T) {
+		got := docsLevelSuggestions(root, "nonexistent/")
+		if got != nil {
+			t.Fatalf("expected nil, got %v", got)
+		}
+	})
+}
+
+func TestDocsParentPrefix(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"", ""},
+		{"architecture/", ""},
+		{"business/case-studies/", "business/"},
+		{"a/b/c/", "a/b/"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := docsParentPrefix(tt.input)
+			if got != tt.want {
+				t.Fatalf("docsParentPrefix(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func assertStringSlice(t *testing.T, got, want []string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("len=%d, want=%d (%v)", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("[%d]=%q, want=%q (%v)", i, got[i], want[i], got)
+		}
+	}
+}
+
 func TestAppendDocsSuggestion(t *testing.T) {
 	got := appendDocsSuggestion([]string{"guides"}, "architecture/api")
 	got = appendDocsSuggestion(got, "guides")
