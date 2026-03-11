@@ -176,7 +176,7 @@ func commitCrawlChanges(ctx context.Context, cmdCtx *dungeonCommandContext, tria
 		relDungeon = cmdCtx.Dungeon.DungeonPath
 	}
 
-	files := crawlMovedItemPaths(relDungeon, triage, inner)
+	files := crawlCommitPaths(relDungeon, triage, inner)
 	preStaged, err := stageTrackedCrawlSourceDeletions(
 		ctx,
 		cmdCtx.CampaignRoot,
@@ -293,6 +293,23 @@ func crawlMovedItemPaths(relDungeon string, summaries ...*dungeon.CrawlSummary) 
 
 	sort.Strings(paths)
 	return paths
+}
+
+func crawlCommitPaths(relDungeon string, summaries ...*dungeon.CrawlSummary) []string {
+	paths := crawlMovedItemPaths(relDungeon, summaries...)
+
+	logPath, ok := cleanCrawlCommitPath(filepath.Join(relDungeon, "crawl.jsonl"))
+	if !ok || !isSafeCrawlCommitPath(logPath) {
+		return paths
+	}
+
+	for _, path := range paths {
+		if path == logPath {
+			return paths
+		}
+	}
+
+	return append(paths, logPath)
 }
 
 func crawlMoveDestinationBase(relDungeon, status string) (string, bool) {

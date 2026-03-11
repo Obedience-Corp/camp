@@ -230,6 +230,31 @@ func TestCrawlMovedItemPaths(t *testing.T) {
 	}
 }
 
+func TestCrawlCommitPaths(t *testing.T) {
+	summary := &dungeon.CrawlSummary{
+		MovedItems: map[string][]string{
+			"docs/api":  {"routed.md"},
+			"completed": {"finished.md"},
+		},
+	}
+
+	got := crawlCommitPaths("workflow/design/dungeon", summary)
+	want := []string{
+		"docs/api/routed.md",
+		"workflow/design/dungeon/completed/finished.md",
+		"workflow/design/dungeon/crawl.jsonl",
+	}
+
+	if len(got) != len(want) {
+		t.Fatalf("crawlCommitPaths() len=%d, want=%d (%v)", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("crawlCommitPaths()[%d]=%q, want=%q (full=%v)", i, got[i], want[i], got)
+		}
+	}
+}
+
 func TestCrawlSourceDeletionPaths(t *testing.T) {
 	summary := &dungeon.CrawlSummary{
 		MovedItems: map[string][]string{
