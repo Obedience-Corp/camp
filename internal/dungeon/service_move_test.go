@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestService_MoveToStatus(t *testing.T) {
@@ -13,6 +14,8 @@ func TestService_MoveToStatus(t *testing.T) {
 
 	for _, status := range []string{"completed", "archived", "someday"} {
 		t.Run(status, func(t *testing.T) {
+			today := time.Now().Format("2006-01-02")
+
 			tmpDir, err := os.MkdirTemp("", "dungeon-test-*")
 			if err != nil {
 				t.Fatalf("failed to create temp dir: %v", err)
@@ -33,7 +36,7 @@ func TestService_MoveToStatus(t *testing.T) {
 			}
 
 			// Move to status
-			if err := svc.MoveToStatus(ctx, "test-item.txt", status); err != nil {
+			if _, err := svc.MoveToStatus(ctx, "test-item.txt", status); err != nil {
 				t.Fatalf("MoveToStatus(%s) failed: %v", status, err)
 			}
 
@@ -43,7 +46,7 @@ func TestService_MoveToStatus(t *testing.T) {
 			}
 
 			// Verify exists in status dir
-			movedFile := filepath.Join(dungeonPath, status, "test-item.txt")
+			movedFile := filepath.Join(dungeonPath, status, today, "test-item.txt")
 			if _, err := os.Stat(movedFile); os.IsNotExist(err) {
 				t.Errorf("file should exist in %s/ after move", status)
 			}
@@ -74,11 +77,12 @@ func TestService_MoveToStatus_CustomDir(t *testing.T) {
 	}
 
 	// Move to a custom status "ready" — should work (auto-creates dir)
-	if err := svc.MoveToStatus(ctx, "test-item.txt", "ready"); err != nil {
+	today := time.Now().Format("2006-01-02")
+	if _, err := svc.MoveToStatus(ctx, "test-item.txt", "ready"); err != nil {
 		t.Fatalf("MoveToStatus(ready) failed: %v", err)
 	}
 
-	movedFile := filepath.Join(dungeonPath, "ready", "test-item.txt")
+	movedFile := filepath.Join(dungeonPath, "ready", today, "test-item.txt")
 	if _, err := os.Stat(movedFile); os.IsNotExist(err) {
 		t.Error("file should exist in ready/ after move")
 	}
@@ -106,7 +110,7 @@ func TestService_MoveToStatus_InvalidStatus(t *testing.T) {
 	}
 
 	// Path traversal should be rejected
-	err = svc.MoveToStatus(ctx, "test-item.txt", "../escape")
+	_, err = svc.MoveToStatus(ctx, "test-item.txt", "../escape")
 	if err == nil {
 		t.Fatal("MoveToStatus should fail for path traversal")
 	}
@@ -115,7 +119,7 @@ func TestService_MoveToStatus_InvalidStatus(t *testing.T) {
 	}
 
 	// Empty string should be rejected
-	err = svc.MoveToStatus(ctx, "test-item.txt", "")
+	_, err = svc.MoveToStatus(ctx, "test-item.txt", "")
 	if err == nil {
 		t.Fatal("MoveToStatus should fail for empty status")
 	}
@@ -124,7 +128,7 @@ func TestService_MoveToStatus_InvalidStatus(t *testing.T) {
 	}
 
 	// Dot-dot should be rejected
-	err = svc.MoveToStatus(ctx, "test-item.txt", "..")
+	_, err = svc.MoveToStatus(ctx, "test-item.txt", "..")
 	if err == nil {
 		t.Fatal("MoveToStatus should fail for '..'")
 	}
@@ -149,7 +153,7 @@ func TestService_MoveToStatus_NotFound(t *testing.T) {
 		t.Fatalf("Init failed: %v", err)
 	}
 
-	err = svc.MoveToStatus(ctx, "nonexistent.txt", "completed")
+	_, err = svc.MoveToStatus(ctx, "nonexistent.txt", "completed")
 	if err == nil {
 		t.Fatal("MoveToStatus should fail for non-existent item")
 	}
@@ -181,12 +185,17 @@ func TestService_MoveToStatus_Collision(t *testing.T) {
 	}
 
 	// Create same-named file already in completed/
-	existingFile := filepath.Join(dungeonPath, "completed", "collide.txt")
+	today := time.Now().Format("2006-01-02")
+	existingDir := filepath.Join(dungeonPath, "completed", today)
+	if err := os.MkdirAll(existingDir, 0755); err != nil {
+		t.Fatalf("failed to create dated completed dir: %v", err)
+	}
+	existingFile := filepath.Join(existingDir, "collide.txt")
 	if err := os.WriteFile(existingFile, []byte("existing"), 0644); err != nil {
 		t.Fatalf("failed to create existing file: %v", err)
 	}
 
-	err = svc.MoveToStatus(ctx, "collide.txt", "completed")
+	_, err = svc.MoveToStatus(ctx, "collide.txt", "completed")
 	if err == nil {
 		t.Fatal("MoveToStatus should fail on collision")
 	}
@@ -200,6 +209,8 @@ func TestService_MoveToDungeonStatus(t *testing.T) {
 
 	for _, status := range []string{"completed", "archived", "someday"} {
 		t.Run(status, func(t *testing.T) {
+			today := time.Now().Format("2006-01-02")
+
 			tmpDir, err := os.MkdirTemp("", "dungeon-test-*")
 			if err != nil {
 				t.Fatalf("failed to create temp dir: %v", err)
@@ -220,7 +231,7 @@ func TestService_MoveToDungeonStatus(t *testing.T) {
 			}
 
 			// Move directly to status
-			if err := svc.MoveToDungeonStatus(ctx, "parent-item.txt", tmpDir, status); err != nil {
+			if _, err := svc.MoveToDungeonStatus(ctx, "parent-item.txt", tmpDir, status); err != nil {
 				t.Fatalf("MoveToDungeonStatus(%s) failed: %v", status, err)
 			}
 
@@ -230,7 +241,7 @@ func TestService_MoveToDungeonStatus(t *testing.T) {
 			}
 
 			// Verify exists in status dir
-			movedFile := filepath.Join(dungeonPath, status, "parent-item.txt")
+			movedFile := filepath.Join(dungeonPath, status, today, "parent-item.txt")
 			if _, err := os.Stat(movedFile); os.IsNotExist(err) {
 				t.Errorf("file should exist in dungeon/%s/ after move", status)
 			}
@@ -261,12 +272,17 @@ func TestService_MoveToDungeonStatus_Collision(t *testing.T) {
 	}
 
 	// Create same-named file already in archived/
-	existingFile := filepath.Join(dungeonPath, "archived", "collide.txt")
+	today := time.Now().Format("2006-01-02")
+	existingDir := filepath.Join(dungeonPath, "archived", today)
+	if err := os.MkdirAll(existingDir, 0755); err != nil {
+		t.Fatalf("failed to create dated archived dir: %v", err)
+	}
+	existingFile := filepath.Join(existingDir, "collide.txt")
 	if err := os.WriteFile(existingFile, []byte("existing"), 0644); err != nil {
 		t.Fatalf("failed to create existing file: %v", err)
 	}
 
-	err = svc.MoveToDungeonStatus(ctx, "collide.txt", tmpDir, "archived")
+	_, err = svc.MoveToDungeonStatus(ctx, "collide.txt", tmpDir, "archived")
 	if err == nil {
 		t.Fatal("MoveToDungeonStatus should fail on collision")
 	}
@@ -297,7 +313,7 @@ func TestService_MoveToDungeonStatus_InvalidStatus(t *testing.T) {
 	}
 
 	// Path traversal should be rejected
-	err = svc.MoveToDungeonStatus(ctx, "item.txt", tmpDir, "../escape")
+	_, err = svc.MoveToDungeonStatus(ctx, "item.txt", tmpDir, "../escape")
 	if err == nil {
 		t.Fatal("MoveToDungeonStatus should fail for path traversal")
 	}
@@ -306,7 +322,7 @@ func TestService_MoveToDungeonStatus_InvalidStatus(t *testing.T) {
 	}
 
 	// Empty status should be rejected
-	err = svc.MoveToDungeonStatus(ctx, "item.txt", tmpDir, "")
+	_, err = svc.MoveToDungeonStatus(ctx, "item.txt", tmpDir, "")
 	if err == nil {
 		t.Fatal("MoveToDungeonStatus should fail for empty status")
 	}
@@ -343,7 +359,7 @@ func TestService_MoveToDungeonStatus_ParentPathTraversal(t *testing.T) {
 	}
 
 	// Attempt path traversal via parentPath
-	err = svc.MoveToDungeonStatus(ctx, "secret.txt", "../../outside-campaign", "archived")
+	_, err = svc.MoveToDungeonStatus(ctx, "secret.txt", "../../outside-campaign", "archived")
 	if err == nil {
 		t.Fatal("MoveToDungeonStatus should reject parentPath traversal")
 	}
@@ -380,7 +396,7 @@ func TestService_MoveToDungeonStatus_ParentPathAbsolute(t *testing.T) {
 	}
 
 	// Attempt with absolute path outside campaign root
-	err = svc.MoveToDungeonStatus(ctx, "secret.txt", outsideDir, "archived")
+	_, err = svc.MoveToDungeonStatus(ctx, "secret.txt", outsideDir, "archived")
 	if err == nil {
 		t.Fatal("MoveToDungeonStatus should reject absolute parentPath outside campaign root")
 	}
@@ -423,7 +439,7 @@ func TestService_Archive(t *testing.T) {
 		t.Error("file should not exist in dungeon root after archive")
 	}
 
-	archivedFile := filepath.Join(dungeonPath, "archived", "to-archive.txt")
+	archivedFile := filepath.Join(dungeonPath, "archived", time.Now().Format("2006-01-02"), "to-archive.txt")
 	if _, err := os.Stat(archivedFile); os.IsNotExist(err) {
 		t.Error("file should exist in archived/ after archive")
 	}
@@ -545,7 +561,7 @@ func TestService_MoveToStatus_InvalidItemPath(t *testing.T) {
 
 	for _, itemName := range []string{"../safe.md", "dir/safe.md", "./safe.md", `dir\safe.md`} {
 		t.Run(itemName, func(t *testing.T) {
-			err := svc.MoveToStatus(ctx, itemName, "completed")
+			_, err := svc.MoveToStatus(ctx, itemName, "completed")
 			if err == nil {
 				t.Fatalf("MoveToStatus(%q) expected invalid item path error", itemName)
 			}
@@ -576,7 +592,7 @@ func TestService_MoveToDungeonStatus_InvalidItemPath(t *testing.T) {
 
 	for _, itemName := range []string{"../safe.md", "dir/safe.md", "./safe.md", `dir\safe.md`} {
 		t.Run(itemName, func(t *testing.T) {
-			err := svc.MoveToDungeonStatus(ctx, itemName, tmpDir, "archived")
+			_, err := svc.MoveToDungeonStatus(ctx, itemName, tmpDir, "archived")
 			if err == nil {
 				t.Fatalf("MoveToDungeonStatus(%q) expected invalid item path error", itemName)
 			}

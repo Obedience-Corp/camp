@@ -194,14 +194,14 @@ func completeFlowItems(ctx context.Context, campaignRoot string, parts []string)
 	// Determine status path - could be "active" or "dungeon/completed" etc.
 	// Try to find the longest valid status prefix
 	var statusPath string
-	var itemPartial string
+	var remaining []string
 
 	// Try two-level nested first (e.g., dungeon/completed)
 	if len(parts) >= 4 {
 		twoLevel := parts[1] + "/" + parts[2]
 		if schema.HasDirectory(twoLevel) {
 			statusPath = twoLevel
-			itemPartial = strings.Join(parts[3:], "/")
+			remaining = parts[3:]
 		}
 	}
 
@@ -209,15 +209,34 @@ func completeFlowItems(ctx context.Context, campaignRoot string, parts []string)
 	if statusPath == "" {
 		if schema.HasDirectory(parts[1]) {
 			statusPath = parts[1]
-			itemPartial = strings.Join(parts[2:], "/")
+			remaining = parts[2:]
 		} else {
 			return nil, nil
 		}
 	}
 
-	// List items in the status directory
-	statusDir := filepath.Join(flowRoot, statusPath)
-	entries, err := os.ReadDir(statusDir)
+	if len(remaining) == 0 {
+		return nil, nil
+	}
+
+	currentDir := filepath.Join(flowRoot, statusPath)
+	prefixParts := []string{flowName, statusPath}
+
+	for i := 0; i < len(remaining)-1; i++ {
+		if remaining[i] == "" {
+			continue
+		}
+		nextDir := filepath.Join(currentDir, remaining[i])
+		info, err := os.Stat(nextDir)
+		if err != nil || !info.IsDir() {
+			return nil, nil
+		}
+		currentDir = nextDir
+		prefixParts = append(prefixParts, remaining[i])
+	}
+
+	itemPartial := remaining[len(remaining)-1]
+	entries, err := os.ReadDir(currentDir)
 	if err != nil {
 		return nil, nil
 	}
@@ -238,7 +257,7 @@ func completeFlowItems(ctx context.Context, campaignRoot string, parts []string)
 			continue
 		}
 		if strings.HasPrefix(strings.ToLower(name), partialLower) {
-			fullPath := flowName + "/" + statusPath + "/" + name
+			fullPath := strings.Join(append(prefixParts, name), "/")
 			candidates = append(candidates, fullPath)
 		}
 	}

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/Obedience-Corp/camp/internal/workflow"
 )
@@ -80,10 +81,14 @@ func TestService_ListStatusDirs(t *testing.T) {
 	}
 
 	// Add items to some dirs
-	if err := os.WriteFile(filepath.Join(dungeonPath, "completed", "item1.txt"), []byte("x"), 0644); err != nil {
+	todayDir := filepath.Join(dungeonPath, "completed", time.Now().Format("2006-01-02"))
+	if err := os.MkdirAll(todayDir, 0755); err != nil {
+		t.Fatalf("failed to create dated completed dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(todayDir, "item1.txt"), []byte("x"), 0644); err != nil {
 		t.Fatalf("failed to create item: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dungeonPath, "completed", "item2.txt"), []byte("x"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(todayDir, "item2.txt"), []byte("x"), 0644); err != nil {
 		t.Fatalf("failed to create item: %v", err)
 	}
 

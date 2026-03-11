@@ -99,7 +99,7 @@ func RunTriageCrawl(ctx context.Context, svc *Service, parentPath string) (*Craw
 					continue itemLoop
 				}
 
-				if err := svc.MoveToDungeonStatus(ctx, item.Name, parentPath, status); err != nil {
+				if _, err := svc.MoveToDungeonStatus(ctx, item.Name, parentPath, status); err != nil {
 					fmt.Printf("Error moving %s to dungeon/%s: %v\n", item.Name, status, err)
 					if hint := moveErrorHint(err); hint != "" {
 						fmt.Printf("Hint: %s\n", hint)

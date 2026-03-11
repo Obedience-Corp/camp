@@ -64,6 +64,62 @@ func TestInit(t *testing.T) {
 		t.Error("workflow/explore/OBEY.md should reference workflow/design differentiation")
 	}
 
+	designObeyPath := filepath.Join(campaignDir, "workflow", "design", "OBEY.md")
+	designObey, err := os.ReadFile(designObeyPath)
+	if err != nil {
+		t.Fatalf("failed to read workflow/design/OBEY.md: %v", err)
+	}
+	if !strings.Contains(string(designObey), "not a general documentation bucket") {
+		t.Error("workflow/design/OBEY.md should explain that design is not a general documentation directory")
+	}
+	if !strings.Contains(string(designObey), "actually expect to implement") {
+		t.Error("workflow/design/OBEY.md should explain that design is for implementation-bound work")
+	}
+
+	intentsObeyPath := filepath.Join(campaignDir, "workflow", "intents", "OBEY.md")
+	intentsObey, err := os.ReadFile(intentsObeyPath)
+	if err != nil {
+		t.Fatalf("failed to read workflow/intents/OBEY.md: %v", err)
+	}
+	if !strings.Contains(strings.ToLower(string(intentsObey)), "quick-capture notebook") {
+		t.Error("workflow/intents/OBEY.md should describe intents as a quick-capture notebook")
+	}
+	if !strings.Contains(string(intentsObey), "workflow/explore") || !strings.Contains(string(intentsObey), "workflow/design") {
+		t.Error("workflow/intents/OBEY.md should explain its relationship to explore and design")
+	}
+
+	workflowObeyPath := filepath.Join(campaignDir, "workflow", "OBEY.md")
+	workflowObey, err := os.ReadFile(workflowObeyPath)
+	if err != nil {
+		t.Fatalf("failed to read workflow/OBEY.md: %v", err)
+	}
+	if !strings.Contains(string(workflowObey), "A pre-scaffolded directory with an `OBEY.md` file") {
+		t.Error("workflow/OBEY.md should explain the required-directory meaning of OBEY.md")
+	}
+	if !strings.Contains(string(workflowObey), "festivals/") {
+		t.Error("workflow/OBEY.md should explain how workflow planning complements festivals")
+	}
+
+	rootDungeonStatuses := []string{"completed", "archived", "someday"}
+	for _, status := range rootDungeonStatuses {
+		if _, err := os.Stat(filepath.Join(campaignDir, "dungeon", status)); os.IsNotExist(err) {
+			t.Errorf("dungeon/%s directory was not created", status)
+		}
+	}
+
+	standardDungeonObeys := []string{
+		filepath.Join(campaignDir, "dungeon", "OBEY.md"),
+		filepath.Join(campaignDir, "workflow", "code_reviews", "dungeon", "OBEY.md"),
+		filepath.Join(campaignDir, "workflow", "design", "dungeon", "OBEY.md"),
+		filepath.Join(campaignDir, "workflow", "explore", "dungeon", "OBEY.md"),
+		filepath.Join(campaignDir, "workflow", "pipelines", "dungeon", "OBEY.md"),
+	}
+	for _, obeyPath := range standardDungeonObeys {
+		if _, err := os.Stat(obeyPath); os.IsNotExist(err) {
+			t.Errorf("standard dungeon OBEY.md was not created at %s", obeyPath)
+		}
+	}
+
 	// Check key skill files were scaffolded
 	expectedSkillFiles := []string{
 		".campaign/skills/camp-navigation/SKILL.md",

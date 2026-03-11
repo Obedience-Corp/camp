@@ -28,6 +28,22 @@ func setupDungeonCampaign(t *testing.T, tc *TestContainer, name string) string {
 	return path
 }
 
+func checkDatedDungeonStatusItemExists(tc *TestContainer, statusPath, itemName string) (bool, error) {
+	output, _, err := tc.ExecCommand(
+		"find",
+		statusPath,
+		"-mindepth", "2",
+		"-maxdepth", "2",
+		"-name", itemName,
+		"-print",
+		"-quit",
+	)
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(output) != "", nil
+}
+
 // --- dungeon list ---
 
 func TestDungeonList_EmptyDungeon(t *testing.T) {
@@ -204,7 +220,7 @@ func TestDungeonMove_ToStatus(t *testing.T) {
 	assert.Contains(t, output, "archived", "should mention target status")
 
 	// Verify file moved
-	exists, err := tc.CheckFileExists(path + "/dungeon/archived/old-feature.md")
+	exists, err := checkDatedDungeonStatusItemExists(tc, path+"/dungeon/archived", "old-feature.md")
 	require.NoError(t, err)
 	assert.True(t, exists, "file should be in archived/")
 
@@ -225,7 +241,7 @@ func TestDungeonMove_ToCompleted(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, output, "completed")
 
-	exists, err := tc.CheckFileExists(path + "/dungeon/completed/done-work.md")
+	exists, err := checkDatedDungeonStatusItemExists(tc, path+"/dungeon/completed", "done-work.md")
 	require.NoError(t, err)
 	assert.True(t, exists, "file should be in completed/")
 }
@@ -241,7 +257,7 @@ func TestDungeonMove_ToSomeday(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, output, "someday")
 
-	exists, err := tc.CheckFileExists(path + "/dungeon/someday/maybe-later.md")
+	exists, err := checkDatedDungeonStatusItemExists(tc, path+"/dungeon/someday", "maybe-later.md")
 	require.NoError(t, err)
 	assert.True(t, exists, "file should be in someday/")
 }
@@ -306,7 +322,7 @@ func TestDungeonMove_TriageDirectToStatus(t *testing.T) {
 	assert.Contains(t, output, "archived", "should mention target status")
 
 	// Verify moved directly to archived
-	exists, err := tc.CheckFileExists(path + "/dungeon/archived/legacy-code.md")
+	exists, err := checkDatedDungeonStatusItemExists(tc, path+"/dungeon/archived", "legacy-code.md")
 	require.NoError(t, err)
 	assert.True(t, exists, "file should be in dungeon/archived/")
 
@@ -369,7 +385,7 @@ func TestDungeonMove_TriageDirectToStatusWithCommit(t *testing.T) {
 	assert.Contains(t, output, "Committed", "should auto-commit")
 
 	// Verify file at final destination
-	exists, err := tc.CheckFileExists(path + "/dungeon/archived/stale-doc.md")
+	exists, err := checkDatedDungeonStatusItemExists(tc, path+"/dungeon/archived", "stale-doc.md")
 	require.NoError(t, err)
 	assert.True(t, exists, "file should be in dungeon/archived/")
 

@@ -12,6 +12,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	campcontract "github.com/Obedience-Corp/camp/internal/contract"
+	dungeonscaffold "github.com/Obedience-Corp/camp/internal/dungeon/scaffold"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/obey-shared/contract"
 	"github.com/google/uuid"
@@ -146,6 +147,20 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 		CampaignRoot: absDir,
 	}
 
+	standardDungeonPaths := []string{
+		filepath.Join(absDir, "dungeon"),
+		filepath.Join(absDir, "workflow", "code_reviews", "dungeon"),
+		filepath.Join(absDir, "workflow", "design", "dungeon"),
+		filepath.Join(absDir, "workflow", "explore", "dungeon"),
+		filepath.Join(absDir, "workflow", "pipelines", "dungeon"),
+	}
+	preExistingDungeons := make(map[string]bool, len(standardDungeonPaths))
+	for _, path := range standardDungeonPaths {
+		if _, err := os.Stat(path); err == nil {
+			preExistingDungeons[path] = true
+		}
+	}
+
 	// Scaffold path
 	scaffoldPath := "campaign/scaffold.yaml"
 
@@ -183,6 +198,18 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 		}
 		for _, skipped := range stats.SkippedPaths {
 			result.Skipped = append(result.Skipped, filepath.Join(absDir, skipped))
+		}
+
+		for _, dungeonPath := range standardDungeonPaths {
+			dungeonResult, err := dungeonscaffold.Init(ctx, dungeonPath, dungeonscaffold.InitOptions{
+				Force: !preExistingDungeons[dungeonPath],
+			})
+			if err != nil {
+				return nil, camperrors.Wrapf(err, "failed to initialize dungeon scaffold %s", dungeonPath)
+			}
+			result.DirsCreated = appendUniquePaths(result.DirsCreated, dungeonResult.CreatedDirs...)
+			result.FilesCreated = appendUniquePaths(result.FilesCreated, dungeonResult.CreatedFiles...)
+			result.Skipped = appendUniquePaths(result.Skipped, dungeonResult.Skipped...)
 		}
 	}
 
@@ -323,6 +350,21 @@ cache/
 	}
 
 	return result, nil
+}
+
+func appendUniquePaths(existing []string, paths ...string) []string {
+	seen := make(map[string]struct{}, len(existing))
+	for _, path := range existing {
+		seen[path] = struct{}{}
+	}
+	for _, path := range paths {
+		if _, ok := seen[path]; ok {
+			continue
+		}
+		existing = append(existing, path)
+		seen[path] = struct{}{}
+	}
+	return existing
 }
 
 // Validate checks if the given options are valid.

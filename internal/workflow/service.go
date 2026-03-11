@@ -8,7 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 	"text/template"
+	"time"
 
+	dungeonscaffold "github.com/Obedience-Corp/camp/internal/dungeon/scaffold"
+	"github.com/Obedience-Corp/camp/internal/dungeon/statuspath"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"gopkg.in/yaml.v3"
 )
@@ -198,10 +201,12 @@ type MoveOptions struct {
 
 // MoveResult contains move outcomes.
 type MoveResult struct {
-	Item   string
-	From   string
-	To     string
-	Reason string
+	Item            string
+	From            string
+	To              string
+	Reason          string
+	SourcePath      string
+	DestinationPath string
 }
 
 // CrawlOptions configures crawl behavior.
@@ -280,6 +285,9 @@ func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, erro
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
+		if isStandardDungeonPath(dirPath) {
+			continue
+		}
 
 		fullPath := s.resolvePath(dirPath)
 		if err := os.MkdirAll(fullPath, 0755); err != nil {
@@ -293,21 +301,13 @@ func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, erro
 		path        string
 		getTemplate func() ([]byte, error)
 	}
-	if schema.Version == 2 {
-		obeyFiles = []struct {
-			path        string
-			getTemplate func() ([]byte, error)
-		}{
-			{filepath.Join(s.root, "dungeon", "OBEY.md"), GetDungeonOBEYTemplate},
-		}
-	} else {
+	if schema.Version != 2 {
 		obeyFiles = []struct {
 			path        string
 			getTemplate func() ([]byte, error)
 		}{
 			{filepath.Join(s.root, "active", "OBEY.md"), GetActiveOBEYTemplate},
 			{filepath.Join(s.root, "ready", "OBEY.md"), GetReadyOBEYTemplate},
-			{filepath.Join(s.root, "dungeon", "OBEY.md"), GetDungeonOBEYTemplate},
 		}
 	}
 
@@ -335,6 +335,14 @@ func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, erro
 		result.CreatedFiles = append(result.CreatedFiles, obey.path)
 	}
 
+	dungeonResult, err := dungeonscaffold.Init(ctx, s.resolvePath("dungeon"), dungeonscaffold.InitOptions{
+		Force: opts.Force,
+	})
+	if err != nil {
+		return nil, camperrors.Wrap(err, "failed to initialize dungeon")
+	}
+	appendStandardDungeonInitResult(result, s.root, dungeonResult)
+
 	// Create root OBEY.md from Go template
 	rootOBEYPath := filepath.Join(s.root, "OBEY.md")
 	created, err := s.createRootOBEY(ctx, schema, opts.Force)
@@ -345,22 +353,6 @@ func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, erro
 		result.CreatedFiles = append(result.CreatedFiles, rootOBEYPath)
 	} else {
 		result.Skipped = append(result.Skipped, rootOBEYPath)
-	}
-
-	// Create .gitkeep in empty directories that won't get other files
-	emptyDirs := []string{"dungeon/completed", "dungeon/archived", "dungeon/someday"}
-	for _, dirPath := range emptyDirs {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-
-		gitkeepPath := filepath.Join(s.resolvePath(dirPath), ".gitkeep")
-		if _, err := os.Stat(gitkeepPath); os.IsNotExist(err) {
-			if err := os.WriteFile(gitkeepPath, []byte{}, 0644); err != nil {
-				return nil, camperrors.Wrapf(err, "failed to create .gitkeep in %s", dirPath)
-			}
-			result.CreatedFiles = append(result.CreatedFiles, filepath.Join(dirPath, ".gitkeep"))
-		}
 	}
 
 	return result, nil
@@ -451,6 +443,9 @@ func (s *Service) List(ctx context.Context, status string, opts ListOptions) (*L
 	// For v2 root listing, also exclude dungeon dir and hidden entries
 	isRootListing := status == "." && s.schema != nil && s.schema.Version == 2
 
+	// For dungeon paths, flatten dated-bucket directories into logical items.
+	isDungeon := isStandardDungeonPath(status)
+
 	for _, entry := range entries {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -469,6 +464,32 @@ func (s *Service) List(ctx context.Context, status string, opts ListOptions) (*L
 			if entry.Name() == "dungeon" && entry.IsDir() {
 				continue
 			}
+		}
+
+		// Flatten dated-bucket directories for dungeon statuses
+		if isDungeon && entry.IsDir() && statuspath.IsDateDir(entry.Name()) {
+			bucketPath := filepath.Join(statusPath, entry.Name())
+			subEntries, subErr := os.ReadDir(bucketPath)
+			if subErr != nil {
+				continue
+			}
+			for _, sub := range subEntries {
+				if excludedFiles[sub.Name()] || strings.HasPrefix(sub.Name(), ".") {
+					continue
+				}
+				subInfo, infoErr := sub.Info()
+				if infoErr != nil {
+					continue
+				}
+				result.Items = append(result.Items, Item{
+					Name:    sub.Name(),
+					Path:    filepath.Join(bucketPath, sub.Name()),
+					IsDir:   sub.IsDir(),
+					ModTime: subInfo.ModTime(),
+					Size:    subInfo.Size(),
+				})
+			}
+			continue
 		}
 
 		info, err := entry.Info()
@@ -522,15 +543,17 @@ func (s *Service) Move(ctx context.Context, item, to string, opts MoveOptions) (
 	}
 
 	// Destination path
-	destPath := filepath.Join(s.resolvePath(to), filepath.Base(itemPath))
+	destPath := resolveWorkflowDestinationPath(s.root, to, filepath.Base(itemPath), time.Now())
 
-	// Check if destination already exists
-	if _, err := os.Stat(destPath); err == nil {
+	// Check if destination already exists in any dated or legacy bucket
+	if _, exists, err := resolveWorkflowItemPath(s.root, to, filepath.Base(itemPath)); err != nil {
+		return nil, camperrors.Wrap(err, "failed to check destination")
+	} else if exists {
 		return nil, camperrors.Wrap(ErrAlreadyExists, destPath)
 	}
 
 	// Ensure destination directory exists
-	if err := os.MkdirAll(s.resolvePath(to), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
 		return nil, camperrors.Wrap(err, "failed to create destination directory")
 	}
 
@@ -540,10 +563,12 @@ func (s *Service) Move(ctx context.Context, item, to string, opts MoveOptions) (
 	}
 
 	result := &MoveResult{
-		Item:   item,
-		From:   from,
-		To:     to,
-		Reason: opts.Reason,
+		Item:            item,
+		From:            from,
+		To:              to,
+		Reason:          opts.Reason,
+		SourcePath:      itemPath,
+		DestinationPath: destPath,
 	}
 
 	// Log to history if enabled
@@ -570,8 +595,11 @@ func (s *Service) findItem(ctx context.Context, itemName string) (string, string
 			return "", "", ctx.Err()
 		}
 
-		itemPath := filepath.Join(s.resolvePath(status), itemName)
-		if _, err := os.Stat(itemPath); err == nil {
+		itemPath, exists, err := resolveWorkflowItemPath(s.root, status, itemName)
+		if err != nil {
+			return "", "", camperrors.Wrap(err, "locating workflow item")
+		}
+		if exists {
 			return status, itemPath, nil
 		}
 	}
@@ -691,17 +719,6 @@ func (s *Service) Migrate(ctx context.Context, opts MigrateOptions) (*MigrateRes
 			}
 		}
 
-		// Create any missing dungeon subdirectories
-		for childName := range schema.Directories["dungeon"].Children {
-			childPath := s.resolvePath("dungeon/" + childName)
-			if _, err := os.Stat(childPath); os.IsNotExist(err) {
-				if err := os.MkdirAll(childPath, 0755); err != nil {
-					return nil, camperrors.Wrapf(err, "failed to create directory dungeon/%s", childName)
-				}
-				result.Created = append(result.Created, "dungeon/"+childName+"/")
-			}
-		}
-
 		// Create OBEY.md files if they don't exist
 		obeyFiles := []struct {
 			path        string
@@ -709,7 +726,6 @@ func (s *Service) Migrate(ctx context.Context, opts MigrateOptions) (*MigrateRes
 		}{
 			{filepath.Join(s.root, "active", "OBEY.md"), GetActiveOBEYTemplate},
 			{filepath.Join(s.root, "ready", "OBEY.md"), GetReadyOBEYTemplate},
-			{filepath.Join(s.root, "dungeon", "OBEY.md"), GetDungeonOBEYTemplate},
 		}
 
 		for _, obey := range obeyFiles {
@@ -725,10 +741,49 @@ func (s *Service) Migrate(ctx context.Context, opts MigrateOptions) (*MigrateRes
 			}
 		}
 
+		dungeonResult, err := dungeonscaffold.Init(ctx, s.resolvePath("dungeon"), dungeonscaffold.InitOptions{})
+		if err != nil {
+			return nil, camperrors.Wrap(err, "failed to initialize dungeon")
+		}
+		appendStandardDungeonMigrationResult(result, s.root, dungeonResult)
+
 		result.Schema = schema
 	}
 
 	return result, nil
+}
+
+func isStandardDungeonPath(path string) bool {
+	return strings.HasPrefix(path, "dungeon/")
+}
+
+func appendStandardDungeonInitResult(result *InitResult, root string, dungeonResult *dungeonscaffold.InitResult) {
+	for _, dir := range dungeonResult.CreatedDirs {
+		result.CreatedDirs = append(result.CreatedDirs, relativeWorkflowPath(root, dir))
+	}
+	for _, file := range dungeonResult.CreatedFiles {
+		result.CreatedFiles = append(result.CreatedFiles, relativeWorkflowPath(root, file))
+	}
+	for _, skipped := range dungeonResult.Skipped {
+		result.Skipped = append(result.Skipped, relativeWorkflowPath(root, skipped))
+	}
+}
+
+func appendStandardDungeonMigrationResult(result *MigrateResult, root string, dungeonResult *dungeonscaffold.InitResult) {
+	for _, dir := range dungeonResult.CreatedDirs {
+		result.Created = append(result.Created, relativeWorkflowPath(root, dir))
+	}
+	for _, file := range dungeonResult.CreatedFiles {
+		result.Created = append(result.Created, relativeWorkflowPath(root, file))
+	}
+}
+
+func relativeWorkflowPath(root, path string) string {
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return path
+	}
+	return rel
 }
 
 // MigrateV1ToV2Result contains the result of a v1 to v2 migration.
