@@ -121,7 +121,7 @@ func RunCrawl(ctx context.Context, svc *Service) (*CrawlSummary, error) {
 				continue
 			}
 
-			if err := svc.MoveToStatus(ctx, item.Name, status); err != nil {
+			if _, err := svc.MoveToStatus(ctx, item.Name, status); err != nil {
 				fmt.Printf("Error moving %s to %s: %v\n", item.Name, status, err)
 				if hint := moveErrorHint(err); hint != "" {
 					fmt.Printf("Hint: %s\n", hint)

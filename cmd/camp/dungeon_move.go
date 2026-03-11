@@ -95,16 +95,17 @@ func runDungeonMove(cmd *cobra.Command, args []string) error {
 			}
 		} else if status != "" {
 			// Triage directly to a status directory
-			if err := svc.MoveToDungeonStatus(ctx, itemName, cmdCtx.Dungeon.ParentPath, status); err != nil {
+			targetPath, err := svc.MoveToDungeonStatus(ctx, itemName, cmdCtx.Dungeon.ParentPath, status)
+			if err != nil {
 				return wrapDungeonMoveError(err, itemName, status)
 			}
 			src := filepath.Join(relFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.ParentPath), itemName)
-			dst := filepath.Join(relFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.DungeonPath), status, itemName)
+			dst := relFromRoot(cmdCtx.CampaignRoot, targetPath)
 			fmt.Printf("%s Moved %s (%s → %s)\n", ui.SuccessIcon(), itemName, src, dst)
 			description = fmt.Sprintf("Triage %s → dungeon/%s", itemName, status)
 			movedPaths = []string{
 				filepath.Join(cmdCtx.Dungeon.ParentPath, itemName),
-				filepath.Join(cmdCtx.Dungeon.DungeonPath, status, itemName),
+				targetPath,
 			}
 		} else {
 			// Triage to dungeon root
@@ -125,11 +126,12 @@ func runDungeonMove(cmd *cobra.Command, args []string) error {
 		if status == "" {
 			return fmt.Errorf("status is required when moving within the dungeon (e.g., completed, archived, someday)")
 		}
-		if err := svc.MoveToStatus(ctx, itemName, status); err != nil {
+		targetPath, err := svc.MoveToStatus(ctx, itemName, status)
+		if err != nil {
 			return wrapDungeonMoveError(err, itemName, status)
 		}
 		src := filepath.Join(relFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.DungeonPath), itemName)
-		dst := filepath.Join(relFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.DungeonPath), status, itemName)
+		dst := relFromRoot(cmdCtx.CampaignRoot, targetPath)
 		fmt.Printf("%s Moved %s (%s → %s)\n", ui.SuccessIcon(), itemName, src, dst)
 
 		relDir, relErr := filepath.Rel(cmdCtx.CampaignRoot, cmdCtx.Dungeon.ParentPath)
@@ -139,7 +141,7 @@ func runDungeonMove(cmd *cobra.Command, args []string) error {
 		description = fmt.Sprintf("Moved to dungeon/%s:\n  - %s/%s", status, relDir, itemName)
 		movedPaths = []string{
 			filepath.Join(cmdCtx.Dungeon.DungeonPath, itemName),
-			filepath.Join(cmdCtx.Dungeon.DungeonPath, status, itemName),
+			targetPath,
 		}
 	}
 

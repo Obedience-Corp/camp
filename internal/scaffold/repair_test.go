@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/Obedience-Corp/camp/internal/config"
 )
@@ -52,7 +53,7 @@ func TestRepairPlan_HasChanges(t *testing.T) {
 		{
 			name: "migrations only means has changes",
 			migrations: []MigrationAction{
-				{Source: "/a/completed", Dest: "/a/dungeon/completed", Items: []string{"item1"}},
+				{Source: "/a/completed", Dest: "/a/dungeon/completed/2026-03-10", Items: []string{"item1"}},
 			},
 			want: true,
 		},
@@ -570,6 +571,7 @@ func TestRepairInit_PreservesUserShortcuts(t *testing.T) {
 
 func TestComputeMigrationChanges_DetectsMisplacedCompleted(t *testing.T) {
 	dir := t.TempDir()
+	today := time.Now().Format("2006-01-02")
 
 	// Create a workflow dir with both completed/ and dungeon/completed/
 	workflowDir := filepath.Join(dir, "workflow", "code_reviews")
@@ -601,6 +603,9 @@ func TestComputeMigrationChanges_DetectsMisplacedCompleted(t *testing.T) {
 	m := plan.Migrations[0]
 	if len(m.Items) != 2 {
 		t.Errorf("expected 2 items to migrate, got %d: %v", len(m.Items), m.Items)
+	}
+	if got, want := m.Dest, filepath.Join(workflowDir, "dungeon", "completed", today); got != want {
+		t.Errorf("migration dest = %q, want %q", got, want)
 	}
 
 	// Check migrate changes were added
@@ -662,11 +667,11 @@ func TestComputeMigrationChanges_PlannedDungeonCompleted(t *testing.T) {
 
 func TestExecuteMigrations_MovesItems(t *testing.T) {
 	dir := t.TempDir()
+	today := time.Now().Format("2006-01-02")
 
 	src := filepath.Join(dir, "completed")
-	dst := filepath.Join(dir, "dungeon", "completed")
+	dst := filepath.Join(dir, "dungeon", "completed", today)
 	os.MkdirAll(src, 0755)
-	os.MkdirAll(dst, 0755)
 
 	// Create items in source
 	os.WriteFile(filepath.Join(src, "item1.md"), []byte("one"), 0644)
@@ -699,11 +704,11 @@ func TestExecuteMigrations_MovesItems(t *testing.T) {
 
 func TestExecuteMigrations_KeepsSourceWithRemainingItems(t *testing.T) {
 	dir := t.TempDir()
+	today := time.Now().Format("2006-01-02")
 
 	src := filepath.Join(dir, "completed")
-	dst := filepath.Join(dir, "dungeon", "completed")
+	dst := filepath.Join(dir, "dungeon", "completed", today)
 	os.MkdirAll(src, 0755)
-	os.MkdirAll(dst, 0755)
 
 	// Create items — only one will be migrated
 	os.WriteFile(filepath.Join(src, "migrate-me.md"), []byte("yes"), 0644)

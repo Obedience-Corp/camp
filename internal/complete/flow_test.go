@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/Obedience-Corp/camp/internal/workflow"
 )
@@ -267,15 +268,16 @@ func TestCompleteFlowItems(t *testing.T) {
 func TestCompleteFlowItems_NestedDungeon(t *testing.T) {
 	root := t.TempDir()
 	workflowDir := createTestWorkflow(t, root, "test-flow")
+	today := time.Now().Format("2006-01-02")
 
 	// Add items to dungeon/completed
-	createTestItem(t, workflowDir, "dungeon/completed", "old-feature")
-	createTestItem(t, workflowDir, "dungeon/completed", "archive-task")
+	createTestItem(t, workflowDir, filepath.Join("dungeon/completed", today), "old-feature")
+	createTestItem(t, workflowDir, filepath.Join("dungeon/completed", today), "archive-task")
 
 	ctx := context.Background()
 
 	// Test completion in nested dungeon path
-	parts := []string{"test-flow", "dungeon", "completed", ""}
+	parts := []string{"test-flow", "dungeon", "completed", today, ""}
 	candidates, err := completeFlowItems(ctx, root, parts)
 	if err != nil {
 		t.Fatalf("completeFlowItems error: %v", err)

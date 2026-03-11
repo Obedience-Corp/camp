@@ -6,8 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/dungeon/statuspath"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/lancekrogers/guild-scaffold/pkg/scaffold"
 )
@@ -42,7 +44,8 @@ type RepairChange struct {
 type MigrationAction struct {
 	// Source is the absolute path to the misplaced directory (e.g., workflow/code_reviews/completed).
 	Source string
-	// Dest is the absolute path to the correct directory (e.g., workflow/code_reviews/dungeon/completed).
+	// Dest is the absolute path to the correct destination bucket
+	// (e.g., workflow/code_reviews/dungeon/completed/YYYY-MM-DD).
 	Dest string
 	// Items are the names of files/dirs to move.
 	Items []string
@@ -105,7 +108,7 @@ func ComputeRepairPlan(ctx context.Context, dir string, opts InitOptions) (*Repa
 	// Phase 4: Account for shared standard-dungeon files created outside scaffold FS.
 	computeStandardDungeonScaffoldChanges(absDir, plan)
 
-	// Phase 5: Detect misplaced completed/ dirs that should be in dungeon/completed/.
+	// Phase 5: Detect misplaced completed/ dirs that should be in dungeon/completed/YYYY-MM-DD/.
 	// This runs after scaffold detection so we know which dungeon dirs will be created.
 	computeMigrationChanges(absDir, plan)
 
@@ -313,7 +316,7 @@ func shortcutMatchesDefault(sc, def config.ShortcutConfig) bool {
 
 // computeMigrationChanges walks the campaign tree looking for directories
 // that have both completed/ at root level and dungeon/completed/ as a subdirectory.
-// Items in completed/ should be migrated into dungeon/completed/.
+// Items in completed/ should be migrated into dungeon/completed/YYYY-MM-DD/.
 // This also considers dungeon dirs that will be created by scaffold repair.
 func computeMigrationChanges(absDir string, plan *RepairPlan) {
 	// Collect dirs that scaffold will create, so we can account for
@@ -381,12 +384,13 @@ func computeMigrationChanges(absDir string, plan *RepairPlan) {
 			return nil
 		}
 
+		datedDestPath := statuspath.DatedDir(dungeonCompletedPath, time.Now())
 		relSource, _ := filepath.Rel(absDir, completedPath)
-		relDest, _ := filepath.Rel(absDir, dungeonCompletedPath)
+		relDest, _ := filepath.Rel(absDir, datedDestPath)
 
 		plan.Migrations = append(plan.Migrations, MigrationAction{
 			Source: completedPath,
-			Dest:   dungeonCompletedPath,
+			Dest:   datedDestPath,
 			Items:  items,
 		})
 

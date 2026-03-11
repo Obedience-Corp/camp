@@ -6,8 +6,6 @@ import (
 	"context"
 	"fmt"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"path/filepath"
-
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/Obedience-Corp/camp/internal/workflow"
@@ -118,8 +116,8 @@ func maybeAutoCommit(ctx context.Context, svc *workflow.Service, cwd string, res
 	}
 
 	// Stage the old and new paths
-	oldPath := filepath.Join(cwd, result.From, result.Item)
-	newPath := filepath.Join(cwd, result.To, result.Item)
+	oldPath := result.SourcePath
+	newPath := result.DestinationPath
 
 	if err := git.Stage(ctx, cwd, []string{oldPath, newPath}); err != nil {
 		return camperrors.Wrap(err, "stage files")

@@ -12,25 +12,28 @@ current scope.
 
 The dungeon contains three categories of "done" work:
 
-- **completed/** - Successfully finished, kept for reference
+- **completed/** - Successfully finished work
 - **archived/** - Preserved for history, truly done
 - **someday/** - Deprioritized but might revisit
+
+Items moved into these status directories are organized into `YYYY-MM-DD/`
+subdirectories so humans and agents can see when work was moved there.
 
 ## Structure
 
 ```
 dungeon/
 ├── OBEY.md           # This file
-├── completed/        # Reference material
-├── archived/         # Historical archive
-└── someday/          # Low priority backlog
+├── completed/        # Completed work, bucketed by move date
+├── archived/         # Historical archive, bucketed by move date
+└── someday/          # Deferred work, bucketed by move date
 ```
 
 ## Workflow
 
 ### Finishing Work
 ```bash
-camp flow move some-item dungeon/completed   # Done, might reference
+camp flow move some-item dungeon/completed   # Done
 camp flow move some-item dungeon/archived    # Done, won't need again
 ```
 
@@ -48,7 +51,7 @@ camp dungeon crawl
 
 ## Best Practices
 
-1. **completed/** - For things you might reference later
+1. **completed/** - For work you completed
 2. **archived/** - For true history and superseded work
 3. **someday/** - For work you intentionally deferred
 4. Review periodically with `camp dungeon crawl`

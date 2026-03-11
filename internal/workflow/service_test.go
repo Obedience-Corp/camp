@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // testWorkflow creates a temporary workflow directory for testing.
@@ -361,7 +362,7 @@ func TestService_List(t *testing.T) {
 			setup: func(dir string) {
 				svc := NewService(dir)
 				svc.Init(context.Background(), InitOptions{})
-				os.MkdirAll(filepath.Join(dir, "dungeon/completed", "old-project"), 0755)
+				os.MkdirAll(filepath.Join(dir, "dungeon/completed", time.Now().Format("2006-01-02"), "old-project"), 0755)
 			},
 			checkFunc: func(t *testing.T, result *ListResult) {
 				if len(result.Items) != 1 {
@@ -456,7 +457,7 @@ func TestService_Move(t *testing.T) {
 				os.MkdirAll(filepath.Join(dir, "active", "old-project"), 0755)
 			},
 			checkFunc: func(t *testing.T, dir string, result *MoveResult) {
-				if _, err := os.Stat(filepath.Join(dir, "dungeon/completed", "old-project")); err != nil {
+				if _, err := os.Stat(filepath.Join(dir, "dungeon/completed", time.Now().Format("2006-01-02"), "old-project")); err != nil {
 					t.Errorf("item should exist at dungeon/completed: %v", err)
 				}
 			},
@@ -662,7 +663,7 @@ func TestService_findItem(t *testing.T) {
 	svc.Init(context.Background(), InitOptions{})
 
 	// Create item in nested directory
-	os.MkdirAll(filepath.Join(dir, "dungeon/completed", "old-project"), 0755)
+	os.MkdirAll(filepath.Join(dir, "dungeon/completed", time.Now().Format("2006-01-02"), "old-project"), 0755)
 
 	status, path, err := svc.findItem(context.Background(), "old-project")
 	if err != nil {

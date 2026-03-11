@@ -19,7 +19,7 @@ func TestService_MoveToStatus_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err = svc.MoveToStatus(ctx, "item", "status")
+	_, err = svc.MoveToStatus(ctx, "item", "status")
 	if err == nil {
 		t.Fatal("expected error for cancelled context")
 	}
@@ -37,7 +37,7 @@ func TestService_MoveToDungeonStatus_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err = svc.MoveToDungeonStatus(ctx, "item", tmpDir, "archived")
+	_, err = svc.MoveToDungeonStatus(ctx, "item", tmpDir, "archived")
 	if err == nil {
 		t.Fatal("expected error for cancelled context")
 	}

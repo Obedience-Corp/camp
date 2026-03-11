@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"text/template"
+	"time"
 
 	dungeonscaffold "github.com/Obedience-Corp/camp/internal/dungeon/scaffold"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -199,10 +200,12 @@ type MoveOptions struct {
 
 // MoveResult contains move outcomes.
 type MoveResult struct {
-	Item   string
-	From   string
-	To     string
-	Reason string
+	Item            string
+	From            string
+	To              string
+	Reason          string
+	SourcePath      string
+	DestinationPath string
 }
 
 // CrawlOptions configures crawl behavior.
@@ -510,15 +513,17 @@ func (s *Service) Move(ctx context.Context, item, to string, opts MoveOptions) (
 	}
 
 	// Destination path
-	destPath := filepath.Join(s.resolvePath(to), filepath.Base(itemPath))
+	destPath := resolveWorkflowDestinationPath(s.root, to, filepath.Base(itemPath), time.Now())
 
-	// Check if destination already exists
-	if _, err := os.Stat(destPath); err == nil {
+	// Check if destination already exists in any dated or legacy bucket
+	if _, exists, err := resolveWorkflowItemPath(s.root, to, filepath.Base(itemPath)); err != nil {
+		return nil, camperrors.Wrap(err, "failed to check destination")
+	} else if exists {
 		return nil, camperrors.Wrap(ErrAlreadyExists, destPath)
 	}
 
 	// Ensure destination directory exists
-	if err := os.MkdirAll(s.resolvePath(to), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
 		return nil, camperrors.Wrap(err, "failed to create destination directory")
 	}
 
@@ -528,10 +533,12 @@ func (s *Service) Move(ctx context.Context, item, to string, opts MoveOptions) (
 	}
 
 	result := &MoveResult{
-		Item:   item,
-		From:   from,
-		To:     to,
-		Reason: opts.Reason,
+		Item:            item,
+		From:            from,
+		To:              to,
+		Reason:          opts.Reason,
+		SourcePath:      itemPath,
+		DestinationPath: destPath,
 	}
 
 	// Log to history if enabled
@@ -558,8 +565,11 @@ func (s *Service) findItem(ctx context.Context, itemName string) (string, string
 			return "", "", ctx.Err()
 		}
 
-		itemPath := filepath.Join(s.resolvePath(status), itemName)
-		if _, err := os.Stat(itemPath); err == nil {
+		itemPath, exists, err := resolveWorkflowItemPath(s.root, status, itemName)
+		if err != nil {
+			return "", "", camperrors.Wrap(err, "locating workflow item")
+		}
+		if exists {
 			return status, itemPath, nil
 		}
 	}
