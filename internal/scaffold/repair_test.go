@@ -620,6 +620,30 @@ func TestComputeMigrationChanges_DetectsMisplacedCompleted(t *testing.T) {
 	}
 }
 
+func TestComputeMigrationChanges_IgnoresNonWorkflowRoots(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a completed/ + dungeon/completed/ pair under projects/ (submodule territory).
+	// This should NOT be picked up as a migration target.
+	submoduleDir := filepath.Join(dir, "projects", "some-repo")
+	completedDir := filepath.Join(submoduleDir, "completed")
+	dungeonCompletedDir := filepath.Join(submoduleDir, "dungeon", "completed")
+
+	for _, d := range []string{completedDir, dungeonCompletedDir} {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	os.WriteFile(filepath.Join(completedDir, "item.md"), []byte("x"), 0644)
+
+	plan := &RepairPlan{}
+	computeMigrationChanges(dir, plan)
+
+	if plan.HasMigrations() {
+		t.Error("should not detect migrations outside known workflow roots")
+	}
+}
+
 func TestComputeMigrationChanges_NoDungeonCompleted(t *testing.T) {
 	dir := t.TempDir()
 

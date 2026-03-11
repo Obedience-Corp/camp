@@ -11,6 +11,7 @@ import (
 	"time"
 
 	dungeonscaffold "github.com/Obedience-Corp/camp/internal/dungeon/scaffold"
+	"github.com/Obedience-Corp/camp/internal/dungeon/statuspath"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"gopkg.in/yaml.v3"
 )
@@ -442,6 +443,9 @@ func (s *Service) List(ctx context.Context, status string, opts ListOptions) (*L
 	// For v2 root listing, also exclude dungeon dir and hidden entries
 	isRootListing := status == "." && s.schema != nil && s.schema.Version == 2
 
+	// For dungeon paths, flatten dated-bucket directories into logical items.
+	isDungeon := isStandardDungeonPath(status)
+
 	for _, entry := range entries {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -460,6 +464,32 @@ func (s *Service) List(ctx context.Context, status string, opts ListOptions) (*L
 			if entry.Name() == "dungeon" && entry.IsDir() {
 				continue
 			}
+		}
+
+		// Flatten dated-bucket directories for dungeon statuses
+		if isDungeon && entry.IsDir() && statuspath.IsDateDir(entry.Name()) {
+			bucketPath := filepath.Join(statusPath, entry.Name())
+			subEntries, subErr := os.ReadDir(bucketPath)
+			if subErr != nil {
+				continue
+			}
+			for _, sub := range subEntries {
+				if excludedFiles[sub.Name()] || strings.HasPrefix(sub.Name(), ".") {
+					continue
+				}
+				subInfo, infoErr := sub.Info()
+				if infoErr != nil {
+					continue
+				}
+				result.Items = append(result.Items, Item{
+					Name:    sub.Name(),
+					Path:    filepath.Join(bucketPath, sub.Name()),
+					IsDir:   sub.IsDir(),
+					ModTime: subInfo.ModTime(),
+					Size:    subInfo.Size(),
+				})
+			}
+			continue
 		}
 
 		info, err := entry.Info()
