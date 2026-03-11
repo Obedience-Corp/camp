@@ -1,24 +1,46 @@
 # Workflow
 
-Development workflow artifacts and processes.
+Lightweight planning and coordination spaces that complement festivals.
 
-## What Goes Here
+## Purpose
 
-- Code reviews and feedback
-- CI/CD pipeline definitions
-- Design documents and specifications
-- Research and exploration
-- Future work items (intents)
+`workflow/` holds the less-structured planning surfaces that humans and agents use
+constantly while solving hard problems.
+
+These directories are not a replacement for `festivals/`. They sit alongside
+festivals and often become input material for a festival ingest or planning phase.
+
+## Camp Contract
+
+- A pre-scaffolded directory with an `OBEY.md` file is part of camp's expected
+  campaign structure.
+- If a pre-scaffolded directory does not have an `OBEY.md`, it is usually
+  optional in normal campaign use.
+
+## Planning Surfaces
+
+- `workflow/intents/` is the quick-capture notebook for ideas, rough specs, and
+  future work.
+- `workflow/explore/` is for research, topic exploration, prototypes, and
+  investigation when implementation is still uncertain.
+- `workflow/design/` is for implementation-bound design work you actually expect
+  to build.
+- `festivals/` is for hierarchical plans with explicit phases, sequences, and
+  tasks.
+
+`workflow/code_reviews/` and `workflow/pipelines/` support adjacent operational
+work, but the main planning split is between intents, explore, design, and
+festivals.
 
 ## Structure
 
 ```
 workflow/
-├── code_reviews/       # Code review notes and feedback
-├── design/             # Design documents
-├── explore/            # Research and exploration
-├── pipelines/          # CI/CD pipeline definitions
-└── intents/            # Future work items
+├── code_reviews/       # Review artifacts and quality notes
+├── design/             # Implementation-bound design work
+├── explore/            # Research, spikes, and prototypes
+├── pipelines/          # CI/CD and automation workflow material
+└── intents/            # Quick-capture notebook for future work
 ```
 
 ## Navigation

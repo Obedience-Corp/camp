@@ -421,6 +421,37 @@ func TestComputeRepairPlan_MissingFiles(t *testing.T) {
 	}
 }
 
+func TestComputeRepairPlan_MissingStandardDungeonOBEY(t *testing.T) {
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	if _, err := Init(ctx, dir, InitOptions{Name: "test", Type: config.CampaignTypeProduct}); err != nil {
+		t.Fatal(err)
+	}
+
+	missingPath := filepath.Join(dir, "workflow", "design", "dungeon", "OBEY.md")
+	if err := os.Remove(missingPath); err != nil {
+		t.Fatalf("failed to remove %s: %v", missingPath, err)
+	}
+
+	plan, err := ComputeRepairPlan(ctx, dir, InitOptions{Name: "test", Type: config.CampaignTypeProduct, Repair: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found := false
+	for _, c := range plan.Changes {
+		if c.Type == RepairAdd && c.Key == "workflow/design/dungeon/OBEY.md" {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Error("expected missing workflow/design/dungeon/OBEY.md to be included in repair plan")
+	}
+}
+
 func TestRepairInit_RestoresMissingSkillFiles(t *testing.T) {
 	ctx := context.Background()
 

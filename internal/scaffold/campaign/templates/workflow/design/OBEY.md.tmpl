@@ -1,30 +1,44 @@
 # Design
 
-Design documents and specifications.
+Implementation-bound design workspace.
+
+## Purpose
+
+`workflow/design/` is where humans and agents create one subdirectory per
+feature, system, or product change that you actually expect to implement.
+
+This is not a general documentation bucket. Use it to flesh out designs that
+are likely to turn into implementation work, festivals, or active project specs.
 
 ## What Goes Here
 
-- Architecture diagrams and decisions
-- API design documents
-- UX/UI wireframes and mockups
-- Technical specifications
+- Feature design packages and implementation specs
+- Architecture decisions tied to planned work
+- UX flows, wireframes, APIs, and technical tradeoff notes
+- Agent collaboration directories for iterating on a design
 
-## Structure
+## When To Use Something Else
+
+- Use `workflow/explore/` for research, spikes, prototypes, and comparisons
+  when you are not yet committed to building something.
+- Use `workflow/intents/` for quick capture, rough notes, and ideas that do not
+  deserve a design directory yet.
+- Use `festivals/` when the work needs a structured phase/sequence/task plan.
+
+## Typical Structure
 
 ```
 design/
-├── architecture/       # System architecture docs
-├── api/               # API specifications
-├── ux/                # User experience designs
-└── dungeon/           # Archived designs
+├── <feature-or-system>/ # One directory per design effort
+└── dungeon/             # Pre-scaffolded local archive for finished or stale work
     ├── completed/
     ├── archived/
     └── someday/
 ```
 
-## Guidelines
+## Workflow
 
-- Link designs to related intents or festivals
-- Version control design iterations
-- Include rationale for design decisions
-- Use `camp dungeon crawl` to triage finished designs into dungeon
+- Create a subdirectory when a design effort needs focused collaboration.
+- Keep implementation-bound design material together instead of scattering it
+  across general docs.
+- Use `camp dungeon crawl` regularly to triage stale or finished design work.

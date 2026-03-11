@@ -102,11 +102,45 @@ func ComputeRepairPlan(ctx context.Context, dir string, opts InitOptions) (*Repa
 	// Phase 3: Check for missing .gitignore and CLAUDE.md symlink.
 	computeMiscFileChanges(absDir, plan)
 
-	// Phase 4: Detect misplaced completed/ dirs that should be in dungeon/completed/.
+	// Phase 4: Account for shared standard-dungeon files created outside scaffold FS.
+	computeStandardDungeonScaffoldChanges(absDir, plan)
+
+	// Phase 5: Detect misplaced completed/ dirs that should be in dungeon/completed/.
 	// This runs after scaffold detection so we know which dungeon dirs will be created.
 	computeMigrationChanges(absDir, plan)
 
 	return plan, nil
+}
+
+func computeStandardDungeonScaffoldChanges(absDir string, plan *RepairPlan) {
+	standardDungeonObeys := []string{
+		"workflow/code_reviews/dungeon/OBEY.md",
+		"workflow/design/dungeon/OBEY.md",
+		"workflow/explore/dungeon/OBEY.md",
+		"workflow/pipelines/dungeon/OBEY.md",
+	}
+
+	seen := make(map[string]bool, len(plan.Changes))
+	for _, change := range plan.Changes {
+		seen[change.Key] = true
+	}
+
+	for _, relPath := range standardDungeonObeys {
+		absPath := filepath.Join(absDir, relPath)
+		if _, err := os.Stat(absPath); err == nil {
+			continue
+		}
+		if seen[relPath] {
+			continue
+		}
+
+		plan.Changes = append(plan.Changes, RepairChange{
+			Type:        RepairAdd,
+			Category:    "file",
+			Key:         relPath,
+			Description: "missing file",
+		})
+	}
 }
 
 // computeScaffoldChanges runs the scaffold in dry mode to identify missing directories and files.
