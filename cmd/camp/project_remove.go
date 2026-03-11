@@ -46,7 +46,7 @@ func init() {
 
 func runProjectRemove(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	name := args[0]
+	name := strings.TrimPrefix(args[0], "projects/")
 
 	delete, _ := cmd.Flags().GetBool("delete")
 	force, _ := cmd.Flags().GetBool("force")
