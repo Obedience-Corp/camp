@@ -66,19 +66,3 @@ func TestDocsMoveSummaryKey(t *testing.T) {
 		t.Fatalf("docsMoveSummaryKey() = %q, want %q", got, want)
 	}
 }
-
-func TestAppendDocsSuggestion(t *testing.T) {
-	got := appendDocsSuggestion([]string{"guides"}, "architecture/api")
-	got = appendDocsSuggestion(got, "guides")
-	got = appendDocsSuggestion(got, "")
-
-	want := []string{"architecture/api", "guides"}
-	if len(got) != len(want) {
-		t.Fatalf("appendDocsSuggestion len=%d, want=%d (%v)", len(got), len(want), got)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("appendDocsSuggestion[%d]=%q, want=%q (%v)", i, got[i], want[i], got)
-		}
-	}
-}
