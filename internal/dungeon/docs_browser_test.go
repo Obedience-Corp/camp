@@ -129,6 +129,54 @@ func TestDocsBrowserModel_EscAtRootCancels(t *testing.T) {
 	}
 }
 
+func TestDocsBrowserModel_TypingFiltersCurrentLevel(t *testing.T) {
+	root := makeDocsBrowserTree(t, []string{
+		"architecture",
+		"guides",
+		"reference/cli",
+	})
+
+	model := mustNewDocsBrowserModel(t, "note.md", root)
+	model = updateDocsBrowser(t, model, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	model = updateDocsBrowser(t, model, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+	model = updateDocsBrowser(t, model, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+
+	if model.mode != docsBrowserModeFilter {
+		t.Fatalf("mode = %v, want filter mode", model.mode)
+	}
+	if got := model.input.Value(); got != "ref" {
+		t.Fatalf("query = %q, want %q", got, "ref")
+	}
+	assertCurrentPath(t, model, "reference/")
+
+	model = updateDocsBrowser(t, model, tea.KeyMsg{Type: tea.KeyEsc})
+	if model.mode != docsBrowserModeNavigate {
+		t.Fatalf("mode after esc = %v, want navigate mode", model.mode)
+	}
+	if got := model.input.Value(); got != "" {
+		t.Fatalf("query after esc = %q, want empty", got)
+	}
+}
+
+func TestDocsBrowserModel_CtrlCAborts(t *testing.T) {
+	root := makeDocsBrowserTree(t, []string{
+		"architecture",
+	})
+
+	model := mustNewDocsBrowserModel(t, "note.md", root)
+	model = updateDocsBrowser(t, model, tea.KeyMsg{Type: tea.KeyCtrlC})
+
+	if !model.done {
+		t.Fatal("expected model to finish on ctrl+c")
+	}
+	if !model.aborted {
+		t.Fatal("expected model to be aborted on ctrl+c")
+	}
+	if model.cancelled {
+		t.Fatal("ctrl+c should abort, not cancel")
+	}
+}
+
 func makeDocsBrowserTree(t *testing.T, dirs []string) string {
 	t.Helper()
 

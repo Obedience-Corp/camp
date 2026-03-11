@@ -38,7 +38,7 @@ func promptStatusSelection(ctx context.Context, itemName string, dirs []StatusDi
 
 	if err := theme.RunForm(ctx, form); err != nil {
 		if theme.IsCancelled(err) {
-			return "", nil // Cancel = skip
+			return "", ErrCrawlAborted
 		}
 		return "", camperrors.Wrap(err, "form error")
 	}
@@ -101,9 +101,7 @@ func RunCrawl(ctx context.Context, svc *Service) (*CrawlSummary, error) {
 
 			if err := theme.RunForm(ctx, form); err != nil {
 				if theme.IsCancelled(err) {
-					// Escape at Step 1 = skip this item, not quit entire crawl
-					summary.Skipped++
-					break itemLoop
+					return summary, ErrCrawlAborted
 				}
 				return summary, camperrors.Wrap(err, "form error")
 			}
@@ -115,6 +113,9 @@ func RunCrawl(ctx context.Context, svc *Service) (*CrawlSummary, error) {
 			case "move":
 				status, err := promptStatusSelection(ctx, item.Name, statusDirs)
 				if err != nil {
+					if errors.Is(err, ErrCrawlAborted) {
+						return summary, err
+					}
 					fmt.Printf("Error: %v\n", err)
 					summary.Skipped++
 					break itemLoop

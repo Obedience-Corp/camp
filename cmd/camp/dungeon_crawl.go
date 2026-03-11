@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"path/filepath"
@@ -82,6 +83,7 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 
 	var triageSummary *dungeon.CrawlSummary
 	var innerSummary *dungeon.CrawlSummary
+	aborted := false
 
 	// Run triage crawl if needed
 	if runTriage {
@@ -99,11 +101,20 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 			)
 			triageSummary, err = dungeon.RunTriageCrawl(ctx, svc, cmdCtx.Dungeon.ParentPath)
 			if err != nil {
-				return camperrors.Wrap(err, "triage crawl failed")
+				if errors.Is(err, dungeon.ErrCrawlAborted) {
+					aborted = true
+				} else {
+					return camperrors.Wrap(err, "triage crawl failed")
+				}
 			}
 		} else {
 			fmt.Printf("%s No parent items to triage in %s.\n", ui.InfoIcon(), relParent)
 		}
+	}
+
+	if aborted {
+		displayCrawlSummary(fmt.Sprintf("%s Crawl cancelled.\n", ui.InfoIcon()), triageSummary, innerSummary)
+		return nil
 	}
 
 	// Run inner crawl if needed
@@ -124,15 +135,24 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 			)
 			innerSummary, err = dungeon.RunCrawl(ctx, svc)
 			if err != nil {
-				return camperrors.Wrap(err, "inner crawl failed")
+				if errors.Is(err, dungeon.ErrCrawlAborted) {
+					aborted = true
+				} else {
+					return camperrors.Wrap(err, "inner crawl failed")
+				}
 			}
 		} else {
 			fmt.Printf("%s Dungeon is empty in %s. Nothing to crawl.\n", ui.InfoIcon(), relDungeon)
 		}
 	}
 
+	if aborted {
+		displayCrawlSummary(fmt.Sprintf("%s Crawl cancelled.\n", ui.InfoIcon()), triageSummary, innerSummary)
+		return nil
+	}
+
 	// Display summary
-	displayCrawlSummary(triageSummary, innerSummary)
+	displayCrawlSummary(fmt.Sprintf("%s Crawl complete!\n", ui.SuccessIcon()), triageSummary, innerSummary)
 
 	// Autocommit if anything was moved
 	commitCrawlChanges(ctx, cmdCtx, triageSummary, innerSummary)
@@ -275,13 +295,13 @@ func crawlDocsDestinationPaths(summary *dungeon.CrawlSummary) []string {
 	return paths
 }
 
-func displayCrawlSummary(triage *dungeon.CrawlSummary, inner *dungeon.CrawlSummary) {
+func displayCrawlSummary(header string, triage *dungeon.CrawlSummary, inner *dungeon.CrawlSummary) {
 	if triage == nil && inner == nil {
 		return
 	}
 
 	fmt.Println()
-	fmt.Printf("%s Crawl complete!\n", ui.SuccessIcon())
+	fmt.Print(header)
 
 	if triage != nil && triage.Total() > 0 {
 		fmt.Printf("\n  Triage (Parent Items):\n")

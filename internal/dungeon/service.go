@@ -25,6 +25,7 @@ var (
 	ErrInvalidStatus          = camperrors.Wrap(camperrors.ErrInvalidInput, "invalid status")
 	ErrInvalidDocsDestination = camperrors.Wrap(camperrors.ErrInvalidInput, "invalid docs destination")
 	ErrInvalidItemPath        = camperrors.Wrap(camperrors.ErrInvalidInput, "invalid item path")
+	ErrCrawlAborted           = camperrors.Wrap(camperrors.ErrCancelled, "crawl aborted")
 )
 
 // systemFiles are non-status entries excluded from item listings.

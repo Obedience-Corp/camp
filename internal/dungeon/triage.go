@@ -2,6 +2,7 @@ package dungeon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -74,9 +75,7 @@ func RunTriageCrawl(ctx context.Context, svc *Service, parentPath string) (*Craw
 
 			if err := theme.RunForm(ctx, form); err != nil {
 				if theme.IsCancelled(err) {
-					// Escape at Step 1 = skip this item, not quit entire crawl
-					summary.Skipped++
-					break itemLoop
+					return summary, ErrCrawlAborted
 				}
 				return summary, camperrors.Wrap(err, "form error")
 			}
@@ -88,6 +87,9 @@ func RunTriageCrawl(ctx context.Context, svc *Service, parentPath string) (*Craw
 			case "move":
 				status, err := promptStatusSelection(ctx, item.Name, statusDirs)
 				if err != nil {
+					if errors.Is(err, ErrCrawlAborted) {
+						return summary, err
+					}
 					fmt.Printf("Error: %v\n", err)
 					summary.Skipped++
 					break itemLoop
@@ -114,6 +116,9 @@ func RunTriageCrawl(ctx context.Context, svc *Service, parentPath string) (*Craw
 			case "docs":
 				destination, err := promptDocsDestination(ctx, item.Name, svc.campaignRoot)
 				if err != nil {
+					if errors.Is(err, ErrCrawlAborted) {
+						return summary, err
+					}
 					fmt.Printf("Error: %v\n", err)
 					summary.Skipped++
 					break itemLoop
