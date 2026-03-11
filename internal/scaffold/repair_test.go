@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/Obedience-Corp/camp/internal/config"
 )
@@ -52,7 +53,7 @@ func TestRepairPlan_HasChanges(t *testing.T) {
 		{
 			name: "migrations only means has changes",
 			migrations: []MigrationAction{
-				{Source: "/a/completed", Dest: "/a/dungeon/completed", Items: []string{"item1"}},
+				{Source: "/a/completed", Dest: "/a/dungeon/completed/2026-03-10", Items: []string{"item1"}},
 			},
 			want: true,
 		},
@@ -421,6 +422,37 @@ func TestComputeRepairPlan_MissingFiles(t *testing.T) {
 	}
 }
 
+func TestComputeRepairPlan_MissingStandardDungeonOBEY(t *testing.T) {
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	if _, err := Init(ctx, dir, InitOptions{Name: "test", Type: config.CampaignTypeProduct}); err != nil {
+		t.Fatal(err)
+	}
+
+	missingPath := filepath.Join(dir, "workflow", "design", "dungeon", "OBEY.md")
+	if err := os.Remove(missingPath); err != nil {
+		t.Fatalf("failed to remove %s: %v", missingPath, err)
+	}
+
+	plan, err := ComputeRepairPlan(ctx, dir, InitOptions{Name: "test", Type: config.CampaignTypeProduct, Repair: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found := false
+	for _, c := range plan.Changes {
+		if c.Type == RepairAdd && c.Key == "workflow/design/dungeon/OBEY.md" {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Error("expected missing workflow/design/dungeon/OBEY.md to be included in repair plan")
+	}
+}
+
 func TestRepairInit_RestoresMissingSkillFiles(t *testing.T) {
 	ctx := context.Background()
 
@@ -539,6 +571,7 @@ func TestRepairInit_PreservesUserShortcuts(t *testing.T) {
 
 func TestComputeMigrationChanges_DetectsMisplacedCompleted(t *testing.T) {
 	dir := t.TempDir()
+	today := time.Now().Format("2006-01-02")
 
 	// Create a workflow dir with both completed/ and dungeon/completed/
 	workflowDir := filepath.Join(dir, "workflow", "code_reviews")
@@ -571,6 +604,9 @@ func TestComputeMigrationChanges_DetectsMisplacedCompleted(t *testing.T) {
 	if len(m.Items) != 2 {
 		t.Errorf("expected 2 items to migrate, got %d: %v", len(m.Items), m.Items)
 	}
+	if got, want := m.Dest, filepath.Join(workflowDir, "dungeon", "completed", today); got != want {
+		t.Errorf("migration dest = %q, want %q", got, want)
+	}
 
 	// Check migrate changes were added
 	migrateCount := 0
@@ -581,6 +617,30 @@ func TestComputeMigrationChanges_DetectsMisplacedCompleted(t *testing.T) {
 	}
 	if migrateCount != 2 {
 		t.Errorf("expected 2 migrate changes, got %d", migrateCount)
+	}
+}
+
+func TestComputeMigrationChanges_IgnoresNonWorkflowRoots(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a completed/ + dungeon/completed/ pair under projects/ (submodule territory).
+	// This should NOT be picked up as a migration target.
+	submoduleDir := filepath.Join(dir, "projects", "some-repo")
+	completedDir := filepath.Join(submoduleDir, "completed")
+	dungeonCompletedDir := filepath.Join(submoduleDir, "dungeon", "completed")
+
+	for _, d := range []string{completedDir, dungeonCompletedDir} {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	os.WriteFile(filepath.Join(completedDir, "item.md"), []byte("x"), 0644)
+
+	plan := &RepairPlan{}
+	computeMigrationChanges(dir, plan)
+
+	if plan.HasMigrations() {
+		t.Error("should not detect migrations outside known workflow roots")
 	}
 }
 
@@ -631,11 +691,11 @@ func TestComputeMigrationChanges_PlannedDungeonCompleted(t *testing.T) {
 
 func TestExecuteMigrations_MovesItems(t *testing.T) {
 	dir := t.TempDir()
+	today := time.Now().Format("2006-01-02")
 
 	src := filepath.Join(dir, "completed")
-	dst := filepath.Join(dir, "dungeon", "completed")
+	dst := filepath.Join(dir, "dungeon", "completed", today)
 	os.MkdirAll(src, 0755)
-	os.MkdirAll(dst, 0755)
 
 	// Create items in source
 	os.WriteFile(filepath.Join(src, "item1.md"), []byte("one"), 0644)
@@ -668,11 +728,11 @@ func TestExecuteMigrations_MovesItems(t *testing.T) {
 
 func TestExecuteMigrations_KeepsSourceWithRemainingItems(t *testing.T) {
 	dir := t.TempDir()
+	today := time.Now().Format("2006-01-02")
 
 	src := filepath.Join(dir, "completed")
-	dst := filepath.Join(dir, "dungeon", "completed")
+	dst := filepath.Join(dir, "dungeon", "completed", today)
 	os.MkdirAll(src, 0755)
-	os.MkdirAll(dst, 0755)
 
 	// Create items — only one will be migrated
 	os.WriteFile(filepath.Join(src, "migrate-me.md"), []byte("yes"), 0644)

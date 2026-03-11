@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	dungeonscaffold "github.com/Obedience-Corp/camp/internal/dungeon/scaffold"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"gopkg.in/yaml.v3"
 )
@@ -114,17 +115,6 @@ func (s *Service) Migrate(ctx context.Context, opts MigrateOptions) (*MigrateRes
 			}
 		}
 
-		// Create any missing dungeon subdirectories
-		for childName := range schema.Directories["dungeon"].Children {
-			childPath := s.resolvePath("dungeon/" + childName)
-			if _, err := os.Stat(childPath); os.IsNotExist(err) {
-				if err := os.MkdirAll(childPath, 0755); err != nil {
-					return nil, camperrors.Wrapf(err, "failed to create directory dungeon/%s", childName)
-				}
-				result.Created = append(result.Created, "dungeon/"+childName+"/")
-			}
-		}
-
 		// Create OBEY.md files if they don't exist
 		obeyFiles := []struct {
 			path        string
@@ -132,7 +122,6 @@ func (s *Service) Migrate(ctx context.Context, opts MigrateOptions) (*MigrateRes
 		}{
 			{filepath.Join(s.root, "active", "OBEY.md"), GetActiveOBEYTemplate},
 			{filepath.Join(s.root, "ready", "OBEY.md"), GetReadyOBEYTemplate},
-			{filepath.Join(s.root, "dungeon", "OBEY.md"), GetDungeonOBEYTemplate},
 		}
 
 		for _, obey := range obeyFiles {
@@ -147,6 +136,12 @@ func (s *Service) Migrate(ctx context.Context, opts MigrateOptions) (*MigrateRes
 				result.Created = append(result.Created, obey.path)
 			}
 		}
+
+		dungeonResult, err := dungeonscaffold.Init(ctx, s.resolvePath("dungeon"), dungeonscaffold.InitOptions{})
+		if err != nil {
+			return nil, camperrors.Wrap(err, "failed to initialize dungeon")
+		}
+		appendStandardDungeonMigrationResult(result, s.root, dungeonResult)
 
 		result.Schema = schema
 	}

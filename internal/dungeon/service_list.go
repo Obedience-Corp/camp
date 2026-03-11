@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Obedience-Corp/camp/internal/dungeon/statuspath"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/workflow"
 )
@@ -36,16 +37,9 @@ func (s *Service) ListStatusDirs(ctx context.Context) ([]StatusDir, error) {
 
 		dirPath := filepath.Join(s.dungeonPath, entry.Name())
 
-		// Count items (excluding .gitkeep)
-		subEntries, err := os.ReadDir(dirPath)
+		count, err := statuspath.CountItems(dirPath)
 		if err != nil {
 			continue
-		}
-		count := 0
-		for _, sub := range subEntries {
-			if sub.Name() != ".gitkeep" {
-				count++
-			}
 		}
 
 		dirs = append(dirs, StatusDir{

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"text/template"
 
+	dungeonscaffold "github.com/Obedience-Corp/camp/internal/dungeon/scaffold"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"gopkg.in/yaml.v3"
 )
@@ -67,6 +68,9 @@ func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, erro
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
+		if isStandardDungeonPath(dirPath) {
+			continue
+		}
 
 		fullPath := s.resolvePath(dirPath)
 		if err := os.MkdirAll(fullPath, 0755); err != nil {
@@ -80,21 +84,13 @@ func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, erro
 		path        string
 		getTemplate func() ([]byte, error)
 	}
-	if schema.Version == 2 {
-		obeyFiles = []struct {
-			path        string
-			getTemplate func() ([]byte, error)
-		}{
-			{filepath.Join(s.root, "dungeon", "OBEY.md"), GetDungeonOBEYTemplate},
-		}
-	} else {
+	if schema.Version != 2 {
 		obeyFiles = []struct {
 			path        string
 			getTemplate func() ([]byte, error)
 		}{
 			{filepath.Join(s.root, "active", "OBEY.md"), GetActiveOBEYTemplate},
 			{filepath.Join(s.root, "ready", "OBEY.md"), GetReadyOBEYTemplate},
-			{filepath.Join(s.root, "dungeon", "OBEY.md"), GetDungeonOBEYTemplate},
 		}
 	}
 
@@ -122,6 +118,14 @@ func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, erro
 		result.CreatedFiles = append(result.CreatedFiles, obey.path)
 	}
 
+	dungeonResult, err := dungeonscaffold.Init(ctx, s.resolvePath("dungeon"), dungeonscaffold.InitOptions{
+		Force: opts.Force,
+	})
+	if err != nil {
+		return nil, camperrors.Wrap(err, "failed to initialize dungeon")
+	}
+	appendStandardDungeonInitResult(result, s.root, dungeonResult)
+
 	// Create root OBEY.md from Go template
 	rootOBEYPath := filepath.Join(s.root, "OBEY.md")
 	created, err := s.createRootOBEY(ctx, schema, opts.Force)
@@ -132,22 +136,6 @@ func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, erro
 		result.CreatedFiles = append(result.CreatedFiles, rootOBEYPath)
 	} else {
 		result.Skipped = append(result.Skipped, rootOBEYPath)
-	}
-
-	// Create .gitkeep in empty directories that won't get other files
-	emptyDirs := []string{"dungeon/completed", "dungeon/archived", "dungeon/someday"}
-	for _, dirPath := range emptyDirs {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-
-		gitkeepPath := filepath.Join(s.resolvePath(dirPath), ".gitkeep")
-		if _, err := os.Stat(gitkeepPath); os.IsNotExist(err) {
-			if err := os.WriteFile(gitkeepPath, []byte{}, 0644); err != nil {
-				return nil, camperrors.Wrapf(err, "failed to create .gitkeep in %s", dirPath)
-			}
-			result.CreatedFiles = append(result.CreatedFiles, filepath.Join(dirPath, ".gitkeep"))
-		}
 	}
 
 	return result, nil

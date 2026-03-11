@@ -1,13 +1,17 @@
 package dungeon
 
-import "embed"
+import (
+	"embed"
 
-//go:embed templates/*
+	dungeonscaffold "github.com/Obedience-Corp/camp/internal/dungeon/scaffold"
+)
+
+//go:embed templates/archived_README.md
 var templatesFS embed.FS
 
 // GetOBEYTemplate returns the content of the OBEY.md template.
 func GetOBEYTemplate() ([]byte, error) {
-	return templatesFS.ReadFile("templates/OBEY.md")
+	return dungeonscaffold.GetOBEYTemplate()
 }
 
 // GetArchivedREADME returns the content of the archived README template.

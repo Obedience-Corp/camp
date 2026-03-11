@@ -198,10 +198,12 @@ type MoveOptions struct {
 
 // MoveResult contains move outcomes.
 type MoveResult struct {
-	Item   string
-	From   string
-	To     string
-	Reason string
+	Item            string
+	From            string
+	To              string
+	Reason          string
+	SourcePath      string
+	DestinationPath string
 }
 
 // CrawlOptions configures crawl behavior.
@@ -223,4 +225,3 @@ type CrawlResult struct {
 func (s *Service) resolvePath(status string) string {
 	return filepath.Join(s.root, status)
 }
-

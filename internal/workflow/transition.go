@@ -70,9 +70,13 @@ func findItemStatus(workflowRoot, item string) (string, error) {
 			if !nested.IsDir() || strings.HasPrefix(nested.Name(), ".") {
 				continue
 			}
-			nestedPath := filepath.Join(workflowRoot, status, nested.Name(), item)
-			if _, err := os.Stat(nestedPath); err == nil {
-				return status + "/" + nested.Name(), nil
+			nestedStatus := status + "/" + nested.Name()
+			nestedPath, found, err := resolveWorkflowItemPath(workflowRoot, nestedStatus, item)
+			if err != nil {
+				return "", camperrors.Wrap(err, "read nested workflow status")
+			}
+			if found && nestedPath != "" {
+				return nestedStatus, nil
 			}
 		}
 	}

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestDetectTransition(t *testing.T) {
@@ -13,7 +14,7 @@ func TestDetectTransition(t *testing.T) {
 	// Create status directories with an item
 	os.MkdirAll(filepath.Join(tmpDir, "inbox", "my-item"), 0755)
 	os.MkdirAll(filepath.Join(tmpDir, "active"), 0755)
-	os.MkdirAll(filepath.Join(tmpDir, "dungeon", "completed", "old-item"), 0755)
+	os.MkdirAll(filepath.Join(tmpDir, "dungeon", "completed", time.Now().Format("2006-01-02"), "old-item"), 0755)
 
 	ctx := context.Background()
 

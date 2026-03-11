@@ -6,8 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/dungeon/statuspath"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/lancekrogers/guild-scaffold/pkg/scaffold"
 )
@@ -42,7 +44,8 @@ type RepairChange struct {
 type MigrationAction struct {
 	// Source is the absolute path to the misplaced directory (e.g., workflow/code_reviews/completed).
 	Source string
-	// Dest is the absolute path to the correct directory (e.g., workflow/code_reviews/dungeon/completed).
+	// Dest is the absolute path to the correct destination bucket
+	// (e.g., workflow/code_reviews/dungeon/completed/YYYY-MM-DD).
 	Dest string
 	// Items are the names of files/dirs to move.
 	Items []string
@@ -102,11 +105,45 @@ func ComputeRepairPlan(ctx context.Context, dir string, opts InitOptions) (*Repa
 	// Phase 3: Check for missing .gitignore and CLAUDE.md symlink.
 	computeMiscFileChanges(absDir, plan)
 
-	// Phase 4: Detect misplaced completed/ dirs that should be in dungeon/completed/.
+	// Phase 4: Account for shared standard-dungeon files created outside scaffold FS.
+	computeStandardDungeonScaffoldChanges(absDir, plan)
+
+	// Phase 5: Detect misplaced completed/ dirs that should be in dungeon/completed/YYYY-MM-DD/.
 	// This runs after scaffold detection so we know which dungeon dirs will be created.
 	computeMigrationChanges(absDir, plan)
 
 	return plan, nil
+}
+
+func computeStandardDungeonScaffoldChanges(absDir string, plan *RepairPlan) {
+	standardDungeonObeys := []string{
+		"workflow/code_reviews/dungeon/OBEY.md",
+		"workflow/design/dungeon/OBEY.md",
+		"workflow/explore/dungeon/OBEY.md",
+		"workflow/pipelines/dungeon/OBEY.md",
+	}
+
+	seen := make(map[string]bool, len(plan.Changes))
+	for _, change := range plan.Changes {
+		seen[change.Key] = true
+	}
+
+	for _, relPath := range standardDungeonObeys {
+		absPath := filepath.Join(absDir, relPath)
+		if _, err := os.Stat(absPath); err == nil {
+			continue
+		}
+		if seen[relPath] {
+			continue
+		}
+
+		plan.Changes = append(plan.Changes, RepairChange{
+			Type:        RepairAdd,
+			Category:    "file",
+			Key:         relPath,
+			Description: "missing file",
+		})
+	}
 }
 
 // computeScaffoldChanges runs the scaffold in dry mode to identify missing directories and files.
@@ -277,9 +314,20 @@ func shortcutMatchesDefault(sc, def config.ShortcutConfig) bool {
 	return sc.Path == def.Path && sc.Concept == def.Concept
 }
 
-// computeMigrationChanges walks the campaign tree looking for directories
+// knownWorkflowRoots are the campaign workflow directories that may contain
+// completed/ items eligible for migration into dungeon/completed/YYYY-MM-DD/.
+// Only these roots are scanned, preventing accidental migration of items
+// inside projects/* submodules or other unrelated directories.
+var knownWorkflowRoots = []string{
+	"workflow/code_reviews",
+	"workflow/design",
+	"workflow/explore",
+	"workflow/pipelines",
+}
+
+// computeMigrationChanges checks known workflow roots for directories
 // that have both completed/ at root level and dungeon/completed/ as a subdirectory.
-// Items in completed/ should be migrated into dungeon/completed/.
+// Items in completed/ should be migrated into dungeon/completed/YYYY-MM-DD/.
 // This also considers dungeon dirs that will be created by scaffold repair.
 func computeMigrationChanges(absDir string, plan *RepairPlan) {
 	// Collect dirs that scaffold will create, so we can account for
@@ -291,29 +339,14 @@ func computeMigrationChanges(absDir string, plan *RepairPlan) {
 		}
 	}
 
-	// Walk the campaign looking for completed/ + dungeon/completed/ pairs.
-	_ = filepath.WalkDir(absDir, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if !d.IsDir() {
-			return nil
-		}
-
-		name := d.Name()
-
-		// Skip system directories
-		if name == ".git" || name == "node_modules" || name == ".campaign" || name == "dungeon" {
-			return filepath.SkipDir
-		}
-
-		// Check: does this directory have both completed/ and dungeon/?
-		completedPath := filepath.Join(path, "completed")
-		dungeonCompletedPath := filepath.Join(path, "dungeon", "completed")
+	for _, root := range knownWorkflowRoots {
+		rootPath := filepath.Join(absDir, root)
+		completedPath := filepath.Join(rootPath, "completed")
+		dungeonCompletedPath := filepath.Join(rootPath, "dungeon", "completed")
 
 		completedInfo, completedErr := os.Stat(completedPath)
 		if completedErr != nil || !completedInfo.IsDir() {
-			return nil
+			continue
 		}
 
 		// dungeon/completed must exist on disk OR be planned for creation
@@ -326,13 +359,13 @@ func computeMigrationChanges(absDir string, plan *RepairPlan) {
 		}
 
 		if !dungeonCompletedExists {
-			return nil
+			continue
 		}
 
 		// List items in completed/ (excluding .gitkeep)
 		entries, err := os.ReadDir(completedPath)
 		if err != nil {
-			return nil
+			continue
 		}
 
 		var items []string
@@ -344,15 +377,16 @@ func computeMigrationChanges(absDir string, plan *RepairPlan) {
 		}
 
 		if len(items) == 0 {
-			return nil
+			continue
 		}
 
+		datedDestPath := statuspath.DatedDir(dungeonCompletedPath, time.Now())
 		relSource, _ := filepath.Rel(absDir, completedPath)
-		relDest, _ := filepath.Rel(absDir, dungeonCompletedPath)
+		relDest, _ := filepath.Rel(absDir, datedDestPath)
 
 		plan.Migrations = append(plan.Migrations, MigrationAction{
 			Source: completedPath,
-			Dest:   dungeonCompletedPath,
+			Dest:   datedDestPath,
 			Items:  items,
 		})
 
@@ -364,9 +398,7 @@ func computeMigrationChanges(absDir string, plan *RepairPlan) {
 				Description: "→ " + relDest,
 			})
 		}
-
-		return nil
-	})
+	}
 }
 
 // ExecuteMigrations moves items from misplaced directories to their correct locations.

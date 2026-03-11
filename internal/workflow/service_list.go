@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Obedience-Corp/camp/internal/dungeon/statuspath"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
@@ -51,6 +52,7 @@ func (s *Service) List(ctx context.Context, status string, opts ListOptions) (*L
 
 	// For v2 root listing, also exclude dungeon dir and hidden entries
 	isRootListing := status == "." && s.schema != nil && s.schema.Version == 2
+	isDungeon := isStandardDungeonPath(status)
 
 	for _, entry := range entries {
 		if ctx.Err() != nil {
@@ -70,6 +72,31 @@ func (s *Service) List(ctx context.Context, status string, opts ListOptions) (*L
 			if entry.Name() == "dungeon" && entry.IsDir() {
 				continue
 			}
+		}
+
+		if isDungeon && entry.IsDir() && statuspath.IsDateDir(entry.Name()) {
+			bucketPath := filepath.Join(statusPath, entry.Name())
+			subEntries, subErr := os.ReadDir(bucketPath)
+			if subErr != nil {
+				continue
+			}
+			for _, sub := range subEntries {
+				if excludedFiles[sub.Name()] || strings.HasPrefix(sub.Name(), ".") {
+					continue
+				}
+				subInfo, infoErr := sub.Info()
+				if infoErr != nil {
+					continue
+				}
+				result.Items = append(result.Items, Item{
+					Name:    sub.Name(),
+					Path:    filepath.Join(bucketPath, sub.Name()),
+					IsDir:   sub.IsDir(),
+					ModTime: subInfo.ModTime(),
+					Size:    subInfo.Size(),
+				})
+			}
+			continue
 		}
 
 		info, err := entry.Info()
@@ -99,8 +126,11 @@ func (s *Service) findItem(ctx context.Context, itemName string) (string, string
 			return "", "", ctx.Err()
 		}
 
-		itemPath := filepath.Join(s.resolvePath(status), itemName)
-		if _, err := os.Stat(itemPath); err == nil {
+		itemPath, exists, err := resolveWorkflowItemPath(s.root, status, itemName)
+		if err != nil {
+			return "", "", camperrors.Wrap(err, "locating workflow item")
+		}
+		if exists {
 			return status, itemPath, nil
 		}
 	}

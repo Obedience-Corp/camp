@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // testWorkflow creates a temporary workflow directory for testing.
@@ -356,16 +357,40 @@ func TestService_List(t *testing.T) {
 			},
 		},
 		{
-			name:   "lists nested directory",
+			name:   "lists nested directory flattening dated buckets",
 			status: "dungeon/completed",
 			setup: func(dir string) {
 				svc := NewService(dir)
 				svc.Init(context.Background(), InitOptions{})
-				os.MkdirAll(filepath.Join(dir, "dungeon/completed", "old-project"), 0755)
+				os.MkdirAll(filepath.Join(dir, "dungeon/completed", time.Now().Format("2006-01-02"), "old-project"), 0755)
 			},
 			checkFunc: func(t *testing.T, result *ListResult) {
 				if len(result.Items) != 1 {
 					t.Errorf("got %d items, want 1", len(result.Items))
+				}
+				if len(result.Items) > 0 && result.Items[0].Name != "old-project" {
+					t.Errorf("got item name %q, want %q", result.Items[0].Name, "old-project")
+				}
+			},
+		},
+		{
+			name:   "flattens multiple dated buckets",
+			status: "dungeon/completed",
+			setup: func(dir string) {
+				svc := NewService(dir)
+				svc.Init(context.Background(), InitOptions{})
+				os.MkdirAll(filepath.Join(dir, "dungeon/completed", "2026-03-10", "project-a"), 0755)
+				os.MkdirAll(filepath.Join(dir, "dungeon/completed", "2026-03-11", "project-b"), 0755)
+				// Legacy flat item (not in a dated bucket) should also appear
+				os.MkdirAll(filepath.Join(dir, "dungeon/completed", "legacy-item"), 0755)
+			},
+			checkFunc: func(t *testing.T, result *ListResult) {
+				if len(result.Items) != 3 {
+					names := make([]string, len(result.Items))
+					for i, item := range result.Items {
+						names[i] = item.Name
+					}
+					t.Errorf("got %d items %v, want 3", len(result.Items), names)
 				}
 			},
 		},
@@ -456,7 +481,7 @@ func TestService_Move(t *testing.T) {
 				os.MkdirAll(filepath.Join(dir, "active", "old-project"), 0755)
 			},
 			checkFunc: func(t *testing.T, dir string, result *MoveResult) {
-				if _, err := os.Stat(filepath.Join(dir, "dungeon/completed", "old-project")); err != nil {
+				if _, err := os.Stat(filepath.Join(dir, "dungeon/completed", time.Now().Format("2006-01-02"), "old-project")); err != nil {
 					t.Errorf("item should exist at dungeon/completed: %v", err)
 				}
 			},
@@ -662,7 +687,7 @@ func TestService_findItem(t *testing.T) {
 	svc.Init(context.Background(), InitOptions{})
 
 	// Create item in nested directory
-	os.MkdirAll(filepath.Join(dir, "dungeon/completed", "old-project"), 0755)
+	os.MkdirAll(filepath.Join(dir, "dungeon/completed", time.Now().Format("2006-01-02"), "old-project"), 0755)
 
 	status, path, err := svc.findItem(context.Background(), "old-project")
 	if err != nil {
