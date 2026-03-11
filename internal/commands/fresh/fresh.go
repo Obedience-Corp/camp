@@ -1,6 +1,4 @@
-//go:build dev
-
-package main
+package fresh
 
 import (
 	"context"
@@ -17,13 +15,32 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/project"
+	"github.com/Obedience-Corp/camp/internal/prune"
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
-var freshCmd = &cobra.Command{
-	Use:   "fresh [project-name]",
-	Short: "Post-merge branch cycling: sync to default branch and optionally create a new working branch",
-	Long: `Reset a project to a fresh state after merging a PR.
+// freshStepStyle defines styles for step output.
+var (
+	freshStepDim   = lipgloss.NewStyle().Foreground(ui.DimColor)
+	freshStepGreen = lipgloss.NewStyle().Foreground(ui.SuccessColor)
+	freshStepRed   = lipgloss.NewStyle().Foreground(ui.ErrorColor)
+)
+
+// NewFreshCommand creates and returns the fresh cobra command with all subcommands.
+func NewFreshCommand() *cobra.Command {
+	var (
+		freshBranch      string
+		freshNoBranch    bool
+		freshNoPush      bool
+		freshNoPrune     bool
+		freshDryRun      bool
+		freshProjectFlag string
+	)
+
+	freshCmd := &cobra.Command{
+		Use:   "fresh [project-name]",
+		Short: "Post-merge branch cycling: sync to default branch and optionally create a new working branch",
+		Long: `Reset a project to a fresh state after merging a PR.
 
 Performs the post-merge cycle: checkout default branch, pull latest,
 prune merged branches, and optionally create a new working branch.
@@ -40,21 +57,52 @@ Examples:
   camp fresh camp -b feat/new-thing  # Sync camp project, create feature branch
   camp fresh --no-prune              # Sync without pruning
   camp fresh --dry-run               # Preview what would happen`,
-	Args:              cobra.MaximumNArgs(1),
-	RunE:              runFresh,
-	ValidArgsFunction: completeProjectName,
-}
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeProjectName,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
 
-var (
-	freshBranch      string
-	freshNoBranch    bool
-	freshNoPush      bool
-	freshNoPrune     bool
-	freshDryRun      bool
-	freshProjectFlag string
-)
+			campRoot, err := campaign.DetectCached(ctx)
+			if err != nil {
+				return camperrors.Wrap(err, "not in a campaign")
+			}
 
-func init() {
+			// Resolve project: positional arg > flag > cwd
+			projectName := freshProjectFlag
+			if len(args) > 0 {
+				projectName = args[0]
+			}
+
+			result, err := project.Resolve(ctx, campRoot, projectName)
+			if err != nil {
+				var notFound *project.ProjectNotFoundError
+				if errors.As(err, &notFound) {
+					fmt.Println(ui.Dim("\n" + project.FormatProjectList(notFound.AvailableProjects())))
+				}
+				return err
+			}
+
+			// Load fresh config
+			cfg, err := config.LoadFreshConfig(ctx, campRoot)
+			if err != nil {
+				return camperrors.Wrap(err, "loading fresh config")
+			}
+
+			// Resolve settings
+			branch := cfg.ResolveFreshBranch(freshBranch, freshNoBranch, result.Name)
+			doPrune := !freshNoPrune && cfg.ResolveFreshPrune()
+			doPush := !freshNoPush && cfg.ResolveFreshPushUpstream(result.Name)
+
+			return executeFresh(ctx, result.Name, result.Path, freshOptions{
+				branch:      branch,
+				prune:       doPrune,
+				pruneRemote: cfg.ResolveFreshPruneRemote(),
+				push:        doPush,
+				dryRun:      freshDryRun,
+			})
+		},
+	}
+
 	// Persistent flags are inherited by subcommands (e.g. fresh all --dry-run)
 	freshCmd.PersistentFlags().StringVarP(&freshBranch, "branch", "b", "", "Branch to create after syncing (overrides config)")
 	freshCmd.PersistentFlags().BoolVar(&freshNoBranch, "no-branch", false, "Skip branch creation even if configured")
@@ -64,58 +112,10 @@ func init() {
 	freshCmd.Flags().StringVarP(&freshProjectFlag, "project", "p", "", "Project name (auto-detected from cwd)")
 	freshCmd.RegisterFlagCompletionFunc("project", completeProjectName)
 
-	rootCmd.AddCommand(freshCmd)
-	freshCmd.GroupID = "git"
-}
+	// Add subcommand
+	freshCmd.AddCommand(newAllCommand(freshCmd))
 
-// freshStepStyle defines styles for step output.
-var (
-	freshStepDim   = lipgloss.NewStyle().Foreground(ui.DimColor)
-	freshStepGreen = lipgloss.NewStyle().Foreground(ui.SuccessColor)
-	freshStepRed   = lipgloss.NewStyle().Foreground(ui.ErrorColor)
-)
-
-func runFresh(cmd *cobra.Command, args []string) error {
-	ctx := cmd.Context()
-
-	campRoot, err := campaign.DetectCached(ctx)
-	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign")
-	}
-
-	// Resolve project: positional arg > flag > cwd
-	projectName := freshProjectFlag
-	if len(args) > 0 {
-		projectName = args[0]
-	}
-
-	result, err := project.Resolve(ctx, campRoot, projectName)
-	if err != nil {
-		var notFound *project.ProjectNotFoundError
-		if errors.As(err, &notFound) {
-			fmt.Println(ui.Dim("\n" + project.FormatProjectList(notFound.AvailableProjects())))
-		}
-		return err
-	}
-
-	// Load fresh config
-	cfg, err := config.LoadFreshConfig(ctx, campRoot)
-	if err != nil {
-		return camperrors.Wrap(err, "loading fresh config")
-	}
-
-	// Resolve settings
-	branch := cfg.ResolveFreshBranch(freshBranch, freshNoBranch, result.Name)
-	doPrune := !freshNoPrune && cfg.ResolveFreshPrune()
-	doPush := !freshNoPush && cfg.ResolveFreshPushUpstream(result.Name)
-
-	return executeFresh(ctx, result.Name, result.Path, freshOptions{
-		branch:      branch,
-		prune:       doPrune,
-		pruneRemote: cfg.ResolveFreshPruneRemote(),
-		push:        doPush,
-		dryRun:      freshDryRun,
-	})
+	return freshCmd
 }
 
 type freshOptions struct {
@@ -184,15 +184,15 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 				fmt.Printf("%s── Prune                           %s\n", prefix, freshStepDim.Render("nothing to prune"))
 			}
 		} else {
-			pruneOpts := PruneOptions{
+			pruneOpts := prune.Options{
 				Force:  true, // Skip confirmation — fresh is deliberate
 				Remote: opts.pruneRemote,
 			}
-			pr := executePrune(ctx, name, path, pruneOpts)
+			pr := prune.Execute(ctx, name, path, pruneOpts)
 			deleted := 0
 			var deletedNames []string
 			for _, r := range pr.Results {
-				if r.Status == pruneStatusDeleted {
+				if r.Status == prune.StatusDeleted {
 					deleted++
 					deletedNames = append(deletedNames, r.Branch)
 				}
@@ -266,7 +266,7 @@ func freshSafetyChecks(ctx context.Context, path string, dryRun bool) error {
 	}
 
 	// Check for rebase in progress
-	if isRebaseInProgress(ctx, path) {
+	if git.IsRebaseInProgress(ctx, path) {
 		return fmt.Errorf("rebase in progress — complete or abort first")
 	}
 
@@ -280,4 +280,39 @@ func freshSafetyChecks(ctx context.Context, path string, dryRun bool) error {
 	}
 
 	return nil
+}
+
+// completeProjectName provides tab completion for project names.
+func completeProjectName(cmd *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	ctx := cmd.Context()
+
+	campRoot, err := campaign.DetectCached(ctx)
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	projects, err := project.List(ctx, campRoot)
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	var names []string
+	for _, p := range projects {
+		if strings.HasPrefix(p.Name, toComplete) {
+			names = append(names, p.Name)
+		}
+	}
+
+	return names, cobra.ShellCompDirectiveNoFileComp
+}
+
+// getFreshFlags extracts persistent flags from the fresh command.
+// These are stored on the parent command (freshCmd) and accessed here.
+func getFreshFlags(freshCmd *cobra.Command) (branch string, noBranch, noPush, noPrune, dryRun bool) {
+	branch, _ = freshCmd.PersistentFlags().GetString("branch")
+	noBranch, _ = freshCmd.PersistentFlags().GetBool("no-branch")
+	noPush, _ = freshCmd.PersistentFlags().GetBool("no-push")
+	noPrune, _ = freshCmd.PersistentFlags().GetBool("no-prune")
+	dryRun, _ = freshCmd.PersistentFlags().GetBool("dry-run")
+	return
 }

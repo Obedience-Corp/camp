@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Obedience-Corp/camp/internal/git"
 )
 
 // setupCampaignWithSubmodule creates a campaign repo with a submodule
@@ -249,7 +251,7 @@ func TestIntegration_PullAll_RebaseConflictAutoAborts(t *testing.T) {
 	}
 
 	// Verify the submodule is NOT left in a rebase-in-progress state
-	if isRebaseInProgress(ctx, subDir) {
+	if git.IsRebaseInProgress(ctx, subDir) {
 		t.Error("submodule should not be in rebase-in-progress state after pull all")
 	}
 

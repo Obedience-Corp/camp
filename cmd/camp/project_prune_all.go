@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"path/filepath"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/prune"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/git"
@@ -51,7 +53,7 @@ func runProjectPruneAll(cmd *cobra.Command, _ []string) error {
 
 	opts := pruneOptionsFromFlags()
 
-	var results []projectPruneResult
+	var results []prune.ProjectResult
 	totalDeleted := 0
 	totalWouldDelete := 0
 	projectsWithWork := 0
@@ -60,14 +62,14 @@ func runProjectPruneAll(cmd *cobra.Command, _ []string) error {
 		fullPath := filepath.Join(campRoot, p)
 		name := git.SubmoduleDisplayName(p)
 
-		pr := executePrune(ctx, name, fullPath, opts)
+		pr := prune.Execute(ctx, name, fullPath, opts)
 		results = append(results, pr)
 
 		for _, r := range pr.Results {
 			switch r.Status {
-			case pruneStatusDeleted:
+			case prune.StatusDeleted:
 				totalDeleted++
-			case pruneStatusWouldDelete:
+			case prune.StatusWouldDelete:
 				totalWouldDelete++
 			}
 		}
