@@ -459,6 +459,74 @@ func TestCrawl_SelectiveStaging_DirectoryTarget(t *testing.T) {
 	}
 }
 
+func TestCrawl_SelectiveStaging_RenameScopeIncludesSourceDeletion(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	if err := exec.Command("git", "-C", tmpDir, "init").Run(); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.email", "test@test.com").Run(); err != nil {
+		t.Fatalf("failed to configure git email: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.name", "Test").Run(); err != nil {
+		t.Fatalf("failed to configure git name: %v", err)
+	}
+
+	sourcePath := filepath.Join(tmpDir, "stale-doc.md")
+	if err := os.WriteFile(sourcePath, []byte("stale"), 0644); err != nil {
+		t.Fatalf("failed to create source file: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "add", ".").Run(); err != nil {
+		t.Fatalf("failed to stage source file: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "commit", "-m", "seed").Run(); err != nil {
+		t.Fatalf("failed to commit seed: %v", err)
+	}
+
+	destDir := filepath.Join(tmpDir, "dungeon", "archived")
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		t.Fatalf("failed to create destination dir: %v", err)
+	}
+	destPath := filepath.Join(destDir, "stale-doc.md")
+	if err := os.Rename(sourcePath, destPath); err != nil {
+		t.Fatalf("failed to move source file: %v", err)
+	}
+
+	ctx := context.Background()
+	result := Crawl(ctx, CrawlOptions{
+		Options: Options{
+			CampaignRoot: tmpDir,
+			CampaignID:   "test1234",
+		},
+		Description: "Rename scope keeps source deletion",
+		Files:       []string{"stale-doc.md", "dungeon/archived/stale-doc.md"},
+	})
+
+	if !result.Committed {
+		t.Fatalf("expected commit to succeed, got message: %s", result.Message)
+	}
+
+	out, err := exec.Command("git", "-C", tmpDir, "diff-tree", "--no-commit-id", "--name-status", "-r", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("failed to get committed files: %v", err)
+	}
+	committedFiles := string(out)
+	if !strings.Contains(committedFiles, "A\tdungeon/archived/stale-doc.md") {
+		t.Fatalf("expected destination addition in commit, got: %s", committedFiles)
+	}
+	if !strings.Contains(committedFiles, "D\tstale-doc.md") {
+		t.Fatalf("expected source deletion in commit, got: %s", committedFiles)
+	}
+
+	statusOut, err := exec.Command("git", "-C", tmpDir, "status", "--porcelain").Output()
+	if err != nil {
+		t.Fatalf("failed to get git status: %v", err)
+	}
+	if strings.TrimSpace(string(statusOut)) != "" {
+		t.Fatalf("expected clean git status after commit, got: %s", string(statusOut))
+	}
+}
+
 func TestCrawl_IgnoresMissingPreStagedPathspecs(t *testing.T) {
 	tmpDir := t.TempDir()
 

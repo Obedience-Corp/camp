@@ -245,12 +245,14 @@ func FilterTracked(ctx context.Context, repoPath string, paths []string) ([]stri
 // ExpandTrackedPaths resolves the given pathspecs to actual staged file paths
 // currently present in the index. This expands directories to the staged file
 // paths they affect so they can be safely passed to `git commit --only`.
+// Staged renames are returned as both source and destination paths so a scoped
+// commit does not drop the source-side deletion.
 func ExpandTrackedPaths(ctx context.Context, repoPath string, paths []string) ([]string, error) {
 	if len(paths) == 0 {
 		return nil, nil
 	}
 
-	args := []string{"-C", repoPath, "diff", "--cached", "--name-only", "--"}
+	args := []string{"-C", repoPath, "diff", "--cached", "--name-status", "-z", "--"}
 	args = append(args, paths...)
 
 	cmd := exec.CommandContext(ctx, "git", args...)
@@ -259,23 +261,46 @@ func ExpandTrackedPaths(ctx context.Context, repoPath string, paths []string) ([
 		return nil, camperrors.NewGit("diff --cached", "", "", strings.TrimSpace(string(output)), err)
 	}
 
-	raw := strings.TrimSpace(string(output))
-	if raw == "" {
+	if len(output) == 0 {
 		return nil, nil
 	}
 
-	lines := strings.Split(raw, "\n")
-	seen := make(map[string]struct{}, len(lines))
-	result := make([]string, 0, len(lines))
-	for _, line := range lines {
-		if line == "" {
+	fields := strings.Split(string(output), "\x00")
+	seen := make(map[string]struct{}, len(fields))
+	result := make([]string, 0, len(fields))
+	addPath := func(path string) {
+		if path == "" {
+			return
+		}
+		if _, ok := seen[path]; ok {
+			return
+		}
+		seen[path] = struct{}{}
+		result = append(result, path)
+	}
+
+	for i := 0; i < len(fields); {
+		status := fields[i]
+		i++
+		if status == "" {
 			continue
 		}
-		if _, ok := seen[line]; ok {
-			continue
+
+		switch status[0] {
+		case 'R', 'C':
+			if i+1 >= len(fields) {
+				return nil, camperrors.NewGit("diff --cached", "", "", "malformed rename/copy status output", nil)
+			}
+			addPath(fields[i])
+			addPath(fields[i+1])
+			i += 2
+		default:
+			if i >= len(fields) {
+				return nil, camperrors.NewGit("diff --cached", "", "", "malformed diff status output", nil)
+			}
+			addPath(fields[i])
+			i++
 		}
-		seen[line] = struct{}{}
-		result = append(result, line)
 	}
 	return result, nil
 }

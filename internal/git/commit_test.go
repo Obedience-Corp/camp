@@ -764,6 +764,37 @@ func TestExpandTrackedPaths(t *testing.T) {
 			t.Fatalf("ExpandTrackedPaths() = %v, want [old-name/file.txt]", result)
 		}
 	})
+
+	t.Run("staged rename returns source and destination paths", func(t *testing.T) {
+		tmpDir := initTestRepo(t)
+		if err := os.MkdirAll(filepath.Join(tmpDir, "dungeon", "archived"), 0755); err != nil {
+			t.Fatalf("failed to create archived dir: %v", err)
+		}
+		sourcePath := filepath.Join(tmpDir, "stale-doc.md")
+		if err := os.WriteFile(sourcePath, []byte("content"), 0644); err != nil {
+			t.Fatalf("failed to create source file: %v", err)
+		}
+		exec.Command("git", "-C", tmpDir, "add", ".").Run()
+		exec.Command("git", "-C", tmpDir, "commit", "-m", "init").Run()
+
+		destPath := filepath.Join(tmpDir, "dungeon", "archived", "stale-doc.md")
+		if err := os.Rename(sourcePath, destPath); err != nil {
+			t.Fatalf("failed to rename source file: %v", err)
+		}
+
+		ctx := context.Background()
+		if err := StageFiles(ctx, tmpDir, "stale-doc.md", "dungeon/archived/stale-doc.md"); err != nil {
+			t.Fatalf("StageFiles() error = %v", err)
+		}
+
+		result, err := ExpandTrackedPaths(ctx, tmpDir, []string{"stale-doc.md", "dungeon/archived/stale-doc.md"})
+		if err != nil {
+			t.Fatalf("ExpandTrackedPaths() error = %v", err)
+		}
+		if len(result) != 2 || result[0] != "stale-doc.md" || result[1] != "dungeon/archived/stale-doc.md" {
+			t.Fatalf("ExpandTrackedPaths() = %v, want [stale-doc.md dungeon/archived/stale-doc.md]", result)
+		}
+	})
 }
 
 func TestStage_WithStaleLock(t *testing.T) {
