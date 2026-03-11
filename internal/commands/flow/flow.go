@@ -1,6 +1,4 @@
-//go:build dev
-
-package main
+package flow
 
 import (
 	"fmt"
@@ -14,11 +12,13 @@ import (
 	"github.com/Obedience-Corp/camp/internal/ui/theme"
 )
 
-var flowCmd = &cobra.Command{
-	Use:     "flow",
-	Aliases: []string{"workflow", "wf"},
-	Short:   "Manage status workflows for organizing work",
-	Long: `Manage status workflows for organizing work.
+// NewFlowCommand creates and returns the flow cobra command with all subcommands attached.
+func NewFlowCommand() *cobra.Command {
+	flowCmd := &cobra.Command{
+		Use:     "flow",
+		Aliases: []string{"workflow", "wf"},
+		Short:   "Manage status workflows for organizing work",
+		Long: `Manage status workflows for organizing work.
 
 A workflow defines status directories that items can move between,
 with optional transition rules and history tracking. The workflow is
@@ -52,17 +52,26 @@ DEFAULT STRUCTURE:
     someday/             Maybe later
 
 Customize by editing .workflow.yaml and running 'camp flow sync'.`,
-	Annotations: map[string]string{
-		"agent_allowed": "false",
-		"agent_reason":  "Interactive TUI picker",
-		"interactive":   "true",
-	},
-	RunE: runFlowPicker,
-}
+		Annotations: map[string]string{
+			"agent_allowed": "false",
+			"agent_reason":  "Interactive TUI picker",
+			"interactive":   "true",
+		},
+		RunE: runFlowPicker,
+	}
 
-func init() {
-	rootCmd.AddCommand(flowCmd)
-	flowCmd.GroupID = "planning"
+	// Attach all subcommands
+	flowCmd.AddCommand(newAddCommand(flowCmd))
+	flowCmd.AddCommand(newListCommand())
+	flowCmd.AddCommand(newMoveCommand())
+	flowCmd.AddCommand(newItemsCommand())
+	flowCmd.AddCommand(newStatusCommand())
+	flowCmd.AddCommand(newShowCommand())
+	flowCmd.AddCommand(newSyncCommand())
+	flowCmd.AddCommand(newMigrateCommand())
+	flowCmd.AddCommand(newRunCommand())
+
+	return flowCmd
 }
 
 func runFlowPicker(cmd *cobra.Command, args []string) error {

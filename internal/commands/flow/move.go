@@ -1,6 +1,4 @@
-//go:build dev
-
-package main
+package flow
 
 import (
 	"context"
@@ -14,17 +12,18 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	flowMoveReason   string
-	flowMoveForce    bool
-	flowMoveCommit   bool
-	flowMoveNoCommit bool
-)
+func newMoveCommand() *cobra.Command {
+	var (
+		flowMoveReason   string
+		flowMoveForce    bool
+		flowMoveCommit   bool
+		flowMoveNoCommit bool
+	)
 
-var flowMoveCmd = &cobra.Command{
-	Use:   "move <item> <status>",
-	Short: "Move an item to a new status",
-	Long: `Move an item from its current status to a new status.
+	cmd := &cobra.Command{
+		Use:   "move <item> <status>",
+		Short: "Move an item to a new status",
+		Long: `Move an item from its current status to a new status.
 
 The item is moved from wherever it currently exists to the specified status.
 Transitions are validated against the workflow schema unless --force is used.
@@ -38,62 +37,60 @@ Examples:
   camp flow move project-1 ready --reason "Ready for review"
   camp flow move project-1 active --force    Force move (skip validation)
   camp flow move project-1 ready --commit    Force auto-commit`,
-	Args: cobra.ExactArgs(2),
-	RunE: runFlowMove,
-}
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
 
-func init() {
-	flowCmd.AddCommand(flowMoveCmd)
-	flowMoveCmd.Flags().StringVarP(&flowMoveReason, "reason", "r", "", "reason for the move")
-	flowMoveCmd.Flags().BoolVarP(&flowMoveForce, "force", "f", false, "force move (skip transition validation)")
-	flowMoveCmd.Flags().BoolVar(&flowMoveCommit, "commit", false, "force auto-commit after move")
-	flowMoveCmd.Flags().BoolVar(&flowMoveNoCommit, "no-commit", false, "skip auto-commit even if enabled in config")
-}
+			item := args[0]
+			to := args[1]
 
-func runFlowMove(cmd *cobra.Command, args []string) error {
-	ctx := cmd.Context()
+			cwd, err := getCwd()
+			if err != nil {
+				return err
+			}
 
-	item := args[0]
-	to := args[1]
+			svc := workflow.NewService(cwd)
+			if err := svc.LoadSchema(ctx); err != nil {
+				return err
+			}
 
-	cwd, err := getCwd()
-	if err != nil {
-		return err
+			// V2 shortcut: "active" → "." for root directory
+			if svc.Schema().Version == 2 && to == "active" {
+				to = "."
+			}
+
+			result, err := svc.Move(ctx, item, to, workflow.MoveOptions{
+				Reason: flowMoveReason,
+				Force:  flowMoveForce,
+			})
+			if err != nil {
+				return err
+			}
+
+			ui.Success(fmt.Sprintf("Moved %s: %s → %s", result.Item, result.From, result.To))
+			if result.Reason != "" {
+				fmt.Printf("Reason: %s\n", result.Reason)
+			}
+
+			// Auto-commit logic
+			if err := maybeAutoCommit(ctx, svc, cwd, result, flowMoveCommit, flowMoveNoCommit); err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "Warning: auto-commit failed: %v\n", err)
+			}
+
+			return nil
+		},
 	}
 
-	svc := workflow.NewService(cwd)
-	if err := svc.LoadSchema(ctx); err != nil {
-		return err
-	}
+	cmd.Flags().StringVarP(&flowMoveReason, "reason", "r", "", "reason for the move")
+	cmd.Flags().BoolVarP(&flowMoveForce, "force", "f", false, "force move (skip transition validation)")
+	cmd.Flags().BoolVar(&flowMoveCommit, "commit", false, "force auto-commit after move")
+	cmd.Flags().BoolVar(&flowMoveNoCommit, "no-commit", false, "skip auto-commit even if enabled in config")
 
-	// V2 shortcut: "active" → "." for root directory
-	if svc.Schema().Version == 2 && to == "active" {
-		to = "."
-	}
-
-	result, err := svc.Move(ctx, item, to, workflow.MoveOptions{
-		Reason: flowMoveReason,
-		Force:  flowMoveForce,
-	})
-	if err != nil {
-		return err
-	}
-
-	ui.Success(fmt.Sprintf("Moved %s: %s → %s", result.Item, result.From, result.To))
-	if result.Reason != "" {
-		fmt.Printf("Reason: %s\n", result.Reason)
-	}
-
-	// Auto-commit logic
-	if err := maybeAutoCommit(ctx, svc, cwd, result); err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: auto-commit failed: %v\n", err)
-	}
-
-	return nil
+	return cmd
 }
 
 // maybeAutoCommit handles the auto-commit logic after a successful move.
-func maybeAutoCommit(ctx context.Context, svc *workflow.Service, cwd string, result *workflow.MoveResult) error {
+func maybeAutoCommit(ctx context.Context, svc *workflow.Service, cwd string, result *workflow.MoveResult, flowMoveCommit, flowMoveNoCommit bool) error {
 	if flowMoveNoCommit {
 		return nil
 	}

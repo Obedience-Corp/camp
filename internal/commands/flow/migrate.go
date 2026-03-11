@@ -1,6 +1,4 @@
-//go:build dev
-
-package main
+package flow
 
 import (
 	"context"
@@ -12,15 +10,16 @@ import (
 	"github.com/Obedience-Corp/camp/internal/workflow"
 )
 
-var (
-	flowMigrateDryRun bool
-	flowMigrateForce  bool
-)
+func newMigrateCommand() *cobra.Command {
+	var (
+		flowMigrateDryRun bool
+		flowMigrateForce  bool
+	)
 
-var flowMigrateCmd = &cobra.Command{
-	Use:   "migrate",
-	Short: "Migrate workflow to latest schema version",
-	Long: `Migrate a workflow to the latest schema version.
+	cmd := &cobra.Command{
+		Use:   "migrate",
+		Short: "Migrate workflow to latest schema version",
+		Long: `Migrate a workflow to the latest schema version.
 
 Supports two migration paths:
   - Legacy dungeon → v1 workflow (creates .workflow.yaml)
@@ -39,60 +38,58 @@ Examples:
   camp flow migrate            Migrate with confirmation
   camp flow migrate --dry-run  Preview migration
   camp flow migrate --force    Migrate without confirmation`,
-	Annotations: map[string]string{
-		"agent_allowed": "false",
-		"agent_reason":  "Migrates workflow structure, destructive operation",
-	},
-	RunE: runFlowMigrate,
+		Annotations: map[string]string{
+			"agent_allowed": "false",
+			"agent_reason":  "Migrates workflow structure, destructive operation",
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+
+			cwd, err := getCwd()
+			if err != nil {
+				return err
+			}
+
+			svc := workflow.NewService(cwd)
+
+			// Check if workflow schema exists
+			if !svc.HasSchema() {
+				// Legacy dungeon → v1 migration
+				return runLegacyMigrate(ctx, svc, flowMigrateDryRun, flowMigrateForce)
+			}
+
+			// Load schema to check version
+			if err := svc.LoadSchema(ctx); err != nil {
+				return err
+			}
+
+			schema := svc.Schema()
+			if schema.Version == 2 {
+				fmt.Println("Workflow is already v2. No migration needed.")
+				return nil
+			}
+
+			// v1 → v2 migration
+			return runV1ToV2Migrate(ctx, svc, flowMigrateDryRun)
+		},
+	}
+
+	cmd.Flags().BoolVarP(&flowMigrateDryRun, "dry-run", "n", false, "preview migration without making changes")
+	cmd.Flags().BoolVarP(&flowMigrateForce, "force", "f", false, "skip confirmation")
+
+	return cmd
 }
 
-func init() {
-	flowCmd.AddCommand(flowMigrateCmd)
-	flowMigrateCmd.Flags().BoolVarP(&flowMigrateDryRun, "dry-run", "n", false, "preview migration without making changes")
-	flowMigrateCmd.Flags().BoolVarP(&flowMigrateForce, "force", "f", false, "skip confirmation")
-}
-
-func runFlowMigrate(cmd *cobra.Command, args []string) error {
-	ctx := cmd.Context()
-
-	cwd, err := getCwd()
-	if err != nil {
-		return err
-	}
-
-	svc := workflow.NewService(cwd)
-
-	// Check if workflow schema exists
-	if !svc.HasSchema() {
-		// Legacy dungeon → v1 migration
-		return runLegacyMigrate(ctx, svc)
-	}
-
-	// Load schema to check version
-	if err := svc.LoadSchema(ctx); err != nil {
-		return err
-	}
-
-	schema := svc.Schema()
-	if schema.Version == 2 {
-		fmt.Println("Workflow is already v2. No migration needed.")
-		return nil
-	}
-
-	// v1 → v2 migration
-	return runV1ToV2Migrate(ctx, svc)
-}
-
-func runLegacyMigrate(ctx context.Context, svc *workflow.Service) error {
+func runLegacyMigrate(ctx context.Context, svc *workflow.Service, dryRun, force bool) error {
 	result, err := svc.Migrate(ctx, workflow.MigrateOptions{
-		DryRun: flowMigrateDryRun,
-		Force:  flowMigrateForce,
+		DryRun: dryRun,
+		Force:  force,
 	})
 	if err != nil {
 		return err
 	}
 
-	if flowMigrateDryRun {
+	if dryRun {
 		fmt.Println("Dry run - no changes made")
 		fmt.Println()
 		if len(result.Created) > 0 {
@@ -120,20 +117,20 @@ func runLegacyMigrate(ctx context.Context, svc *workflow.Service) error {
 	return nil
 }
 
-func runV1ToV2Migrate(ctx context.Context, svc *workflow.Service) error {
-	result, err := svc.MigrateV1ToV2(ctx, flowMigrateDryRun)
+func runV1ToV2Migrate(ctx context.Context, svc *workflow.Service, dryRun bool) error {
+	result, err := svc.MigrateV1ToV2(ctx, dryRun)
 	if err != nil {
 		return err
 	}
 
-	if flowMigrateDryRun {
+	if dryRun {
 		fmt.Println("Dry run - v1 → v2 migration preview")
 		fmt.Println()
 	}
 
 	if len(result.MovedItems) > 0 {
 		label := "Would move:"
-		if !flowMigrateDryRun {
+		if !dryRun {
 			label = "Moved:"
 		}
 		fmt.Println(label)
@@ -144,7 +141,7 @@ func runV1ToV2Migrate(ctx context.Context, svc *workflow.Service) error {
 
 	if len(result.RemovedDirs) > 0 {
 		label := "\nWould remove:"
-		if !flowMigrateDryRun {
+		if !dryRun {
 			label = "\nRemoved:"
 		}
 		fmt.Println(label)
@@ -154,14 +151,14 @@ func runV1ToV2Migrate(ctx context.Context, svc *workflow.Service) error {
 	}
 
 	if result.SchemaUpdate {
-		if flowMigrateDryRun {
+		if dryRun {
 			fmt.Println("\nWould update schema to v2")
 		} else {
 			fmt.Println("\nSchema updated to v2")
 		}
 	}
 
-	if flowMigrateDryRun {
+	if dryRun {
 		fmt.Println("\nDry run complete. No changes made.")
 	} else {
 		fmt.Println()
