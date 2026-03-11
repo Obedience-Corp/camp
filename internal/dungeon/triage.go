@@ -164,10 +164,9 @@ func RunTriageCrawl(ctx context.Context, svc *Service, parentPath string) (*Craw
 	return summary, nil
 }
 
-// promptDocsDestination presents a level-aware tab-completion browser for
-// selecting a docs/ subdirectory. Tab cycles through entries at the current
-// level only. Selecting a directory with children (trailing "/") drills down.
-// Escape goes back up one level. Cancel at root returns "".
+// promptDocsDestination presents a level-aware docs browser for selecting a
+// docs/ subdirectory. Enter selects the current directory. Right/l drills into
+// children. Escape goes back up one level, and Escape at root returns "".
 func promptDocsDestination(ctx context.Context, itemName string, campaignRoot string) (string, error) {
 	return runDocsBrowser(ctx, itemName, campaignRoot)
 }

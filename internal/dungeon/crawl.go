@@ -14,36 +14,9 @@ import (
 
 // promptStatusSelection presents a second-step selector showing available status
 // directories with item counts. Returns the chosen status name, or empty string
-// if the user cancels (treated as skip).
+// if the user goes back to the previous crawl menu.
 func promptStatusSelection(ctx context.Context, itemName string, dirs []StatusDir) (string, error) {
-	if len(dirs) == 0 {
-		return "", fmt.Errorf("no status directories found. Run 'camp dungeon init' to create defaults")
-	}
-
-	var opts []huh.Option[string]
-	for _, d := range dirs {
-		label := fmt.Sprintf("%s/ (%d items)", d.Name, d.ItemCount)
-		opts = append(opts, huh.NewOption(label, d.Name))
-	}
-
-	var status string
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title(fmt.Sprintf("Move %s to:", itemName)).
-				Options(opts...).
-				Value(&status),
-		),
-	)
-
-	if err := theme.RunForm(ctx, form); err != nil {
-		if theme.IsCancelled(err) {
-			return "", ErrCrawlAborted
-		}
-		return "", camperrors.Wrap(err, "form error")
-	}
-
-	return status, nil
+	return runStatusPicker(ctx, itemName, dirs)
 }
 
 // RunCrawl executes the interactive crawl TUI for items inside the dungeon.

@@ -128,6 +128,12 @@ func TestIntent_NoChanges(t *testing.T) {
 	if result.Committed {
 		t.Error("expected Committed to be false when there are no changes")
 	}
+	if !result.NoChanges {
+		t.Error("expected NoChanges to be true when there are no changes")
+	}
+	if result.Err != nil {
+		t.Errorf("expected Err to be nil when there are no changes, got: %v", result.Err)
+	}
 	if result.Message != "(no changes to commit)" {
 		t.Errorf("expected 'no changes to commit' message, got: %s", result.Message)
 	}
@@ -388,6 +394,59 @@ func TestCrawl_SelectiveStaging(t *testing.T) {
 	status := string(statusOut)
 	if !strings.Contains(status, "unrelated-change.txt") {
 		t.Errorf("unrelated-change.txt should still be untracked, status: %s", status)
+	}
+}
+
+func TestCrawl_CommitFailureExposesError(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	if err := exec.Command("git", "-C", tmpDir, "init").Run(); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.email", "test@test.com").Run(); err != nil {
+		t.Fatalf("failed to configure git email: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.name", "Test").Run(); err != nil {
+		t.Fatalf("failed to configure git name: %v", err)
+	}
+
+	initialFile := filepath.Join(tmpDir, "seed.txt")
+	if err := os.WriteFile(initialFile, []byte("seed"), 0644); err != nil {
+		t.Fatalf("failed to create seed file: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "add", ".").Run(); err != nil {
+		t.Fatalf("failed to stage seed: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "commit", "-m", "seed").Run(); err != nil {
+		t.Fatalf("failed to commit seed: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(tmpDir, "real.txt"), []byte("content"), 0644); err != nil {
+		t.Fatalf("failed to create real file: %v", err)
+	}
+
+	ctx := context.Background()
+	result := Crawl(ctx, CrawlOptions{
+		Options: Options{
+			CampaignRoot: tmpDir,
+			CampaignID:   "test1234",
+			PreStaged:    []string{"missing/pathspec.txt"},
+		},
+		Description: "Pathspec failure",
+		Files:       []string{"real.txt"},
+	})
+
+	if result.Committed {
+		t.Fatal("expected commit to fail")
+	}
+	if result.NoChanges {
+		t.Fatal("expected commit failure, not no-changes")
+	}
+	if result.Err == nil {
+		t.Fatal("expected commit failure to set Err")
+	}
+	if !strings.Contains(result.Message, "git commit failed:") {
+		t.Fatalf("expected failure message, got %q", result.Message)
 	}
 }
 

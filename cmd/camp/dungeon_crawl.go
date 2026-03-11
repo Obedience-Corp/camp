@@ -155,16 +155,18 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 	displayCrawlSummary(fmt.Sprintf("%s Crawl complete!\n", ui.SuccessIcon()), triageSummary, innerSummary)
 
 	// Autocommit if anything was moved
-	commitCrawlChanges(ctx, cmdCtx, triageSummary, innerSummary)
+	if err := commitCrawlChanges(ctx, cmdCtx, triageSummary, innerSummary); err != nil {
+		return err
+	}
 
 	return nil
 }
 
 // commitCrawlChanges creates a git commit if any items were moved during crawl.
-func commitCrawlChanges(ctx context.Context, cmdCtx *dungeonCommandContext, triage, inner *dungeon.CrawlSummary) {
+func commitCrawlChanges(ctx context.Context, cmdCtx *dungeonCommandContext, triage, inner *dungeon.CrawlSummary) error {
 	hasMoves := (triage != nil && triage.HasMoves()) || (inner != nil && inner.HasMoves())
 	if !hasMoves {
-		return
+		return nil
 	}
 
 	description := buildCrawlCommitMessage(cmdCtx.CampaignRoot, cmdCtx.Dungeon.ParentPath, triage, inner)
@@ -174,37 +176,17 @@ func commitCrawlChanges(ctx context.Context, cmdCtx *dungeonCommandContext, tria
 		relDungeon = cmdCtx.Dungeon.DungeonPath
 	}
 
-	files := []string{relDungeon}
-	files = append(files, crawlDocsDestinationPaths(triage)...)
-
-	// For triage moves, stage source deletions separately via git add -u.
-	// These paths are already gone from disk, so they can't be re-staged with
-	// plain git add. We pass them as PreStaged so they're included in the
-	// commit scope (--only) without being re-staged.
-	var preStaged []string
-	if triage != nil && triage.HasMoves() {
-		relParent, relErr := filepath.Rel(cmdCtx.CampaignRoot, cmdCtx.Dungeon.ParentPath)
-		if relErr != nil {
-			relParent = cmdCtx.Dungeon.ParentPath
-		}
-		var sourcePaths []string
-		for _, names := range triage.MovedItems {
-			for _, name := range names {
-				sourcePaths = append(sourcePaths, filepath.Join(relParent, name))
-			}
-		}
-		if len(sourcePaths) > 0 {
-			tracked, filterErr := git.FilterTracked(ctx, cmdCtx.CampaignRoot, sourcePaths)
-			if filterErr != nil {
-				fmt.Printf("%s Warning: could not check tracked paths: %v\n", ui.InfoIcon(), filterErr)
-			}
-			if len(tracked) > 0 {
-				if err := git.StageTrackedChanges(ctx, cmdCtx.CampaignRoot, tracked...); err != nil {
-					fmt.Printf("%s Warning: could not stage source deletions: %v\n", ui.InfoIcon(), err)
-				}
-				preStaged = tracked
-			}
-		}
+	files := crawlMovedItemPaths(relDungeon, triage, inner)
+	preStaged, err := stageTrackedCrawlSourceDeletions(
+		ctx,
+		cmdCtx.CampaignRoot,
+		cmdCtx.Dungeon.ParentPath,
+		relDungeon,
+		triage,
+		inner,
+	)
+	if err != nil {
+		return camperrors.Wrap(err, "staging crawl source deletions")
 	}
 
 	result := commit.Crawl(ctx, commit.CrawlOptions{
@@ -219,9 +201,21 @@ func commitCrawlChanges(ctx context.Context, cmdCtx *dungeonCommandContext, tria
 
 	if result.Committed {
 		fmt.Printf("\n%s %s\n", ui.SuccessIcon(), result.Message)
-	} else if result.Message != "" {
+		return nil
+	}
+	if result.NoChanges {
+		fmt.Printf("\n%s %s\n", ui.InfoIcon(), result.Message)
+		return nil
+	}
+	if result.Err != nil {
+		fmt.Printf("\n%s Crawl changes were applied on disk, but auto-commit failed.\n", ui.WarningIcon())
+		fmt.Printf("%s %v\n", ui.WarningIcon(), result.Err)
+		return camperrors.Wrap(result.Err, "auto-committing crawl changes")
+	}
+	if result.Message != "" {
 		fmt.Printf("\n%s %s\n", ui.InfoIcon(), result.Message)
 	}
+	return nil
 }
 
 // buildCrawlCommitMessage builds the commit body listing moved items with paths
@@ -265,34 +259,172 @@ func buildCrawlCommitMessage(campaignRoot, parentPath string, triage, inner *dun
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func crawlDocsDestinationPaths(summary *dungeon.CrawlSummary) []string {
-	if summary == nil || !summary.HasMoves() {
-		return nil
-	}
-
+func crawlMovedItemPaths(relDungeon string, summaries ...*dungeon.CrawlSummary) []string {
 	seen := make(map[string]struct{})
 	var paths []string
-	for status := range summary.MovedItems {
-		if !strings.HasPrefix(status, "docs/") {
+
+	for _, summary := range summaries {
+		if summary == nil || !summary.HasMoves() {
 			continue
 		}
-		subpath := strings.TrimPrefix(status, "docs/")
-		if subpath == "" || subpath == "." {
-			continue
+		for status, names := range summary.MovedItems {
+			base, ok := crawlMoveDestinationBase(relDungeon, status)
+			if !ok {
+				continue
+			}
+			for _, name := range names {
+				cleanName, ok := cleanCrawlCommitName(name)
+				if !ok {
+					continue
+				}
+				path := filepath.Join(base, cleanName)
+				path = filepath.Clean(path)
+				if !isSafeCrawlCommitPath(path) {
+					continue
+				}
+				if _, exists := seen[path]; exists {
+					continue
+				}
+				seen[path] = struct{}{}
+				paths = append(paths, path)
+			}
 		}
-		cleanSubpath := filepath.Clean(subpath)
-		if cleanSubpath == "." || cleanSubpath == ".." || strings.HasPrefix(cleanSubpath, ".."+string(filepath.Separator)) {
-			continue
-		}
-		clean := filepath.Join("docs", cleanSubpath)
-		if _, ok := seen[clean]; ok {
-			continue
-		}
-		seen[clean] = struct{}{}
-		paths = append(paths, clean)
 	}
+
 	sort.Strings(paths)
 	return paths
+}
+
+func crawlMoveDestinationBase(relDungeon, status string) (string, bool) {
+	if status == "docs" || strings.HasPrefix(status, "docs"+string(filepath.Separator)) {
+		cleanStatus, ok := cleanCrawlCommitPath(status)
+		if !ok {
+			return "", false
+		}
+		if cleanStatus != "docs" && !strings.HasPrefix(cleanStatus, "docs"+string(filepath.Separator)) {
+			return "", false
+		}
+		return cleanStatus, true
+	}
+
+	cleanStatus, ok := cleanCrawlCommitPath(status)
+	if !ok {
+		return "", false
+	}
+
+	cleanDungeon, ok := cleanCrawlCommitPath(relDungeon)
+	if !ok {
+		return "", false
+	}
+	return filepath.Join(cleanDungeon, cleanStatus), true
+}
+
+func stageTrackedCrawlSourceDeletions(
+	ctx context.Context,
+	campaignRoot string,
+	parentPath string,
+	relDungeon string,
+	triage *dungeon.CrawlSummary,
+	inner *dungeon.CrawlSummary,
+) ([]string, error) {
+	sourcePaths := crawlSourceDeletionPaths(campaignRoot, parentPath, relDungeon, triage, inner)
+	if len(sourcePaths) == 0 {
+		return nil, nil
+	}
+
+	tracked, err := git.FilterTracked(ctx, campaignRoot, sourcePaths)
+	if err != nil {
+		return nil, err
+	}
+	if len(tracked) == 0 {
+		return nil, nil
+	}
+	if err := git.StageTrackedChanges(ctx, campaignRoot, tracked...); err != nil {
+		return nil, err
+	}
+	return tracked, nil
+}
+
+func crawlSourceDeletionPaths(
+	campaignRoot string,
+	parentPath string,
+	relDungeon string,
+	triage *dungeon.CrawlSummary,
+	inner *dungeon.CrawlSummary,
+) []string {
+	seen := make(map[string]struct{})
+	var paths []string
+
+	relParent, err := filepath.Rel(campaignRoot, parentPath)
+	if err != nil {
+		relParent = parentPath
+	}
+
+	appendSummary := func(base string, summary *dungeon.CrawlSummary) {
+		if summary == nil || !summary.HasMoves() {
+			return
+		}
+		cleanBase := ""
+		if base != "." && base != "" {
+			var ok bool
+			cleanBase, ok = cleanCrawlCommitPath(base)
+			if !ok {
+				return
+			}
+		}
+		for _, names := range summary.MovedItems {
+			for _, name := range names {
+				cleanName, ok := cleanCrawlCommitName(name)
+				if !ok {
+					continue
+				}
+				path := cleanName
+				if cleanBase != "" {
+					path = filepath.Join(cleanBase, cleanName)
+				}
+				path = filepath.Clean(path)
+				if !isSafeCrawlCommitPath(path) {
+					continue
+				}
+				if _, exists := seen[path]; exists {
+					continue
+				}
+				seen[path] = struct{}{}
+				paths = append(paths, path)
+			}
+		}
+	}
+
+	appendSummary(relParent, triage)
+	appendSummary(relDungeon, inner)
+	sort.Strings(paths)
+	return paths
+}
+
+func cleanCrawlCommitName(name string) (string, bool) {
+	clean := filepath.Clean(name)
+	if clean == "." || clean == "" || clean == ".." {
+		return "", false
+	}
+	if filepath.Base(clean) != clean {
+		return "", false
+	}
+	return clean, true
+}
+
+func cleanCrawlCommitPath(path string) (string, bool) {
+	clean := filepath.Clean(path)
+	if clean == "." || clean == "" || filepath.IsAbs(clean) {
+		return "", false
+	}
+	return clean, isSafeCrawlCommitPath(clean)
+}
+
+func isSafeCrawlCommitPath(path string) bool {
+	if path == "" || path == "." || path == ".." || filepath.IsAbs(path) {
+		return false
+	}
+	return !strings.HasPrefix(path, ".."+string(filepath.Separator))
 }
 
 func displayCrawlSummary(header string, triage *dungeon.CrawlSummary, inner *dungeon.CrawlSummary) {

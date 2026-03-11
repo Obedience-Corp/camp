@@ -11,6 +11,8 @@ import (
 // Result contains the outcome of a commit attempt.
 type Result struct {
 	Committed bool   // True if commit succeeded
+	NoChanges bool   // True if there was nothing to commit
+	Err       error  // Set when a commit attempt failed
 	Message   string // User-facing message
 }
 
@@ -52,12 +54,14 @@ func doCommit(ctx context.Context, opts Options, action, subject, description st
 		if errors.Is(err, git.ErrNoChanges) {
 			return Result{
 				Committed: false,
+				NoChanges: true,
 				Message:   "(no changes to commit)",
 			}
 		}
 		return Result{
 			Committed: false,
-			Message:   fmt.Sprintf("Warning: git commit failed: %v", err),
+			Err:       err,
+			Message:   fmt.Sprintf("git commit failed: %v", err),
 		}
 	}
 

@@ -82,7 +82,7 @@ func TestDocsBrowserModel_EnterLeafSelectsPath(t *testing.T) {
 	}
 }
 
-func TestDocsBrowserModel_EnterDescendsAndEscRestoresParentSelection(t *testing.T) {
+func TestDocsBrowserModel_EnterSelectsBranchPath(t *testing.T) {
 	root := makeDocsBrowserTree(t, []string{
 		"architecture",
 		"business/articles",
@@ -95,6 +95,27 @@ func TestDocsBrowserModel_EnterDescendsAndEscRestoresParentSelection(t *testing.
 	assertCurrentPath(t, model, "business/")
 
 	model = updateDocsBrowser(t, model, tea.KeyMsg{Type: tea.KeyEnter})
+	if !model.done {
+		t.Fatal("expected model to finish when selecting a branch path")
+	}
+	if model.selected != "business" {
+		t.Fatalf("selected = %q, want %q", model.selected, "business")
+	}
+}
+
+func TestDocsBrowserModel_RightDescendsAndEscRestoresParentSelection(t *testing.T) {
+	root := makeDocsBrowserTree(t, []string{
+		"architecture",
+		"business/articles",
+		"business/pricing",
+		"guides",
+	})
+
+	model := mustNewDocsBrowserModel(t, "note.md", root)
+	model = updateDocsBrowser(t, model, tea.KeyMsg{Type: tea.KeyTab})
+	assertCurrentPath(t, model, "business/")
+
+	model = updateDocsBrowser(t, model, tea.KeyMsg{Type: tea.KeyRight})
 	if len(model.levels) != 2 {
 		t.Fatalf("expected 2 levels after descend, got %d", len(model.levels))
 	}
@@ -158,6 +179,57 @@ func TestDocsBrowserModel_TypingFiltersCurrentLevel(t *testing.T) {
 	}
 }
 
+func TestDocsBrowserModel_TypingAfterDrillFiltersCurrentLevel(t *testing.T) {
+	root := makeDocsBrowserTree(t, []string{
+		"business/articles",
+		"business/pricing",
+		"business/reference",
+		"guides",
+	})
+
+	model := mustNewDocsBrowserModel(t, "note.md", root)
+	model = updateDocsBrowser(t, model, tea.KeyMsg{Type: tea.KeyRight})
+	if len(model.levels) != 2 {
+		t.Fatalf("expected drill into business, got %d levels", len(model.levels))
+	}
+
+	model = updateDocsBrowser(t, model, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
+	if model.mode != docsBrowserModeFilter {
+		t.Fatalf("mode = %v, want filter mode", model.mode)
+	}
+	if got := model.input.Value(); got != "p" {
+		t.Fatalf("query = %q, want %q", got, "p")
+	}
+	assertCurrentPath(t, model, "business/pricing")
+}
+
+func TestDocsBrowserModel_FilterModeArrowNavigation(t *testing.T) {
+	root := makeDocsBrowserTree(t, []string{
+		"architecture",
+		"guides",
+		"reference/cli",
+	})
+
+	model := mustNewDocsBrowserModel(t, "note.md", root)
+	model = updateDocsBrowser(t, model, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+	if model.mode != docsBrowserModeFilter {
+		t.Fatalf("mode = %v, want filter mode", model.mode)
+	}
+
+	before, ok := model.currentEntry()
+	if !ok {
+		t.Fatal("expected current entry before navigation")
+	}
+	model = updateDocsBrowser(t, model, tea.KeyMsg{Type: tea.KeyDown})
+	after, ok := model.currentEntry()
+	if !ok {
+		t.Fatal("expected current entry after navigation")
+	}
+	if after.path == before.path {
+		t.Fatalf("expected selection to move in filter mode, stayed on %q", after.path)
+	}
+}
+
 func TestDocsBrowserModel_CtrlCAborts(t *testing.T) {
 	root := makeDocsBrowserTree(t, []string{
 		"architecture",
@@ -175,6 +247,38 @@ func TestDocsBrowserModel_CtrlCAborts(t *testing.T) {
 	if model.cancelled {
 		t.Fatal("ctrl+c should abort, not cancel")
 	}
+}
+
+func TestDocsBrowserModel_BackspaceUpdatesFilterSmoothly(t *testing.T) {
+	root := makeDocsBrowserTree(t, []string{
+		"architecture",
+		"guides",
+		"reference/cli",
+	})
+
+	model := mustNewDocsBrowserModel(t, "note.md", root)
+	for _, ch := range []string{"r", "e", "f"} {
+		model = updateDocsBrowser(t, model, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(ch)})
+	}
+
+	model = updateDocsBrowser(t, model, tea.KeyMsg{Type: tea.KeyBackspace})
+	if got := model.input.Value(); got != "re" {
+		t.Fatalf("query after first backspace = %q, want %q", got, "re")
+	}
+
+	model = updateDocsBrowser(t, model, tea.KeyMsg{Type: tea.KeyBackspace})
+	if got := model.input.Value(); got != "r" {
+		t.Fatalf("query after second backspace = %q, want %q", got, "r")
+	}
+
+	model = updateDocsBrowser(t, model, tea.KeyMsg{Type: tea.KeyBackspace})
+	if got := model.input.Value(); got != "" {
+		t.Fatalf("query after third backspace = %q, want empty", got)
+	}
+	if model.mode != docsBrowserModeFilter {
+		t.Fatalf("mode after backspacing to empty = %v, want filter mode", model.mode)
+	}
+	assertCurrentPath(t, model, "reference/")
 }
 
 func makeDocsBrowserTree(t *testing.T, dirs []string) string {

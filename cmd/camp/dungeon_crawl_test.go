@@ -151,57 +151,117 @@ func TestBuildCrawlCommitMessage_SortedStatuses(t *testing.T) {
 	}
 }
 
-func TestCrawlDocsDestinationPaths(t *testing.T) {
+func TestCrawlMovedItemPaths(t *testing.T) {
 	tests := []struct {
 		name    string
+		dungeon string
 		summary *dungeon.CrawlSummary
 		want    []string
 	}{
 		{
-			name: "nil summary",
+			name:    "nil summary",
+			dungeon: "workflow/design/dungeon",
 		},
 		{
-			name: "no docs destinations",
+			name:    "no moves",
+			dungeon: "workflow/design/dungeon",
 			summary: &dungeon.CrawlSummary{
 				MovedItems: map[string][]string{
 					"archived": {"old.md"},
 				},
 			},
+			want: []string{"workflow/design/dungeon/archived/old.md"},
 		},
 		{
-			name: "collect docs destinations sorted and unique",
+			name:    "collect docs and dungeon destinations sorted and unique",
+			dungeon: "workflow/design/dungeon",
 			summary: &dungeon.CrawlSummary{
 				MovedItems: map[string][]string{
-					"docs/api":          {"a.md"},
+					"docs/api":          {"a.md", "a.md"},
 					"docs/guides/setup": {"b.md"},
 					"completed":         {"c.md"},
 				},
 			},
-			want: []string{"docs/api", "docs/guides/setup"},
+			want: []string{
+				"docs/api/a.md",
+				"docs/guides/setup/b.md",
+				"workflow/design/dungeon/completed/c.md",
+			},
 		},
 		{
-			name: "drop unsafe docs paths",
+			name:    "drop unsafe paths",
+			dungeon: "workflow/design/dungeon",
 			summary: &dungeon.CrawlSummary{
 				MovedItems: map[string][]string{
 					"docs/../escape": {"a.md"},
 					"docs/safe":      {"b.md"},
+					"completed":      {"../bad.md", "good.md"},
 				},
 			},
-			want: []string{"docs/safe"},
+			want: []string{
+				"docs/safe/b.md",
+				"workflow/design/dungeon/completed/good.md",
+			},
+		},
+		{
+			name:    "support direct docs root destination",
+			dungeon: "workflow/design/dungeon",
+			summary: &dungeon.CrawlSummary{
+				MovedItems: map[string][]string{
+					"docs": {"top-level.md"},
+				},
+			},
+			want: []string{"docs/top-level.md"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := crawlDocsDestinationPaths(tt.summary)
+			got := crawlMovedItemPaths(tt.dungeon, tt.summary)
 			if len(got) != len(tt.want) {
-				t.Fatalf("crawlDocsDestinationPaths() len=%d, want=%d (%v)", len(got), len(tt.want), got)
+				t.Fatalf("crawlMovedItemPaths() len=%d, want=%d (%v)", len(got), len(tt.want), got)
 			}
 			for i := range tt.want {
 				if got[i] != tt.want[i] {
-					t.Fatalf("crawlDocsDestinationPaths()[%d]=%q, want=%q (full=%v)", i, got[i], tt.want[i], got)
+					t.Fatalf("crawlMovedItemPaths()[%d]=%q, want=%q (full=%v)", i, got[i], tt.want[i], got)
 				}
 			}
 		})
+	}
+}
+
+func TestCrawlSourceDeletionPaths(t *testing.T) {
+	summary := &dungeon.CrawlSummary{
+		MovedItems: map[string][]string{
+			"docs/api":  {"routed.md"},
+			"completed": {"finished.md"},
+		},
+	}
+	inner := &dungeon.CrawlSummary{
+		MovedItems: map[string][]string{
+			"archived": {"old-root.md"},
+		},
+	}
+
+	got := crawlSourceDeletionPaths(
+		"/home/user/campaign",
+		"/home/user/campaign/workflow/design",
+		"workflow/design/dungeon",
+		summary,
+		inner,
+	)
+
+	want := []string{
+		"workflow/design/dungeon/old-root.md",
+		"workflow/design/finished.md",
+		"workflow/design/routed.md",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("crawlSourceDeletionPaths() len=%d, want=%d (%v)", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("crawlSourceDeletionPaths()[%d]=%q, want=%q (full=%v)", i, got[i], want[i], got)
+		}
 	}
 }

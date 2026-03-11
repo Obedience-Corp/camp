@@ -114,7 +114,7 @@ func newDocsBrowserModel(itemName, campaignRoot string) (docsBrowserModel, error
 		width:    80,
 		mode:     docsBrowserModeNavigate,
 	}
-	model.syncInput()
+	model.syncInput(true)
 	return model, nil
 }
 
@@ -228,7 +228,7 @@ func (m docsBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = max(64, min(msg.Width-4, 110))
-		m.syncInput()
+		m.syncInput(false)
 		return m, nil
 
 	case tea.KeyMsg:
@@ -243,9 +243,9 @@ func (m docsBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "shift+tab", "up", "ctrl+p":
 			m.prev()
 			return m, nil
-		case "enter", "right":
-			m.selectCurrent()
-			m.syncInput()
+		case "enter":
+			m.chooseCurrent()
+			m.syncInput(false)
 			if m.done {
 				return m, tea.Quit
 			}
@@ -260,16 +260,27 @@ func (m docsBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "k":
 				m.prev()
 				return m, nil
+			case "/":
+				m.mode = docsBrowserModeFilter
+				m.syncInput(false)
+				return m, nil
 			case "l":
-				m.selectCurrent()
-				m.syncInput()
+				m.drillCurrent()
+				m.syncInput(true)
+				if m.done {
+					return m, tea.Quit
+				}
+				return m, nil
+			case "right":
+				m.drillCurrent()
+				m.syncInput(true)
 				if m.done {
 					return m, tea.Quit
 				}
 				return m, nil
 			case "h", "left", "esc":
 				m.back()
-				m.syncInput()
+				m.syncInput(true)
 				if m.done {
 					return m, tea.Quit
 				}
@@ -278,22 +289,40 @@ func (m docsBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			if isDocsBrowserFilterInput(msg) {
 				m.mode = docsBrowserModeFilter
-				m.syncInput()
+				m.syncInput(false)
 			}
-		} else if msg.String() == "esc" {
-			if m.input.Value() != "" {
-				m.setQuery("")
+		} else {
+			switch msg.String() {
+			case "right":
+				m.drillCurrent()
+				m.syncInput(true)
+				if m.done {
+					return m, tea.Quit
+				}
+				return m, nil
+			case "left":
 				m.mode = docsBrowserModeNavigate
-				m.syncInput()
+				m.back()
+				m.syncInput(true)
+				if m.done {
+					return m, tea.Quit
+				}
+				return m, nil
+			case "esc":
+				if m.input.Value() != "" {
+					m.setQuery("")
+					m.mode = docsBrowserModeNavigate
+					m.syncInput(true)
+					return m, nil
+				}
+				m.mode = docsBrowserModeNavigate
+				m.back()
+				m.syncInput(true)
+				if m.done {
+					return m, tea.Quit
+				}
 				return m, nil
 			}
-			m.mode = docsBrowserModeNavigate
-			m.back()
-			m.syncInput()
-			if m.done {
-				return m, tea.Quit
-			}
-			return m, nil
 		}
 	}
 
@@ -301,7 +330,6 @@ func (m docsBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
 		m.setQuery(m.input.Value())
-		m.syncInput()
 		return m, cmd
 	}
 
@@ -321,7 +349,7 @@ func (m *docsBrowserModel) setQuery(query string) {
 	m.ensureSelection()
 }
 
-func (m *docsBrowserModel) syncInput() {
+func (m *docsBrowserModel) syncInput(resetValue bool) {
 	level := m.currentLevel()
 	if level == nil {
 		return
@@ -333,7 +361,9 @@ func (m *docsBrowserModel) syncInput() {
 	}
 
 	m.input.Prompt = prefix
-	m.input.SetValue(level.query)
+	if resetValue {
+		m.input.SetValue(level.query)
+	}
 	m.input.Width = max(16, m.width-lipgloss.Width(prefix)-8)
 
 	if m.mode == docsBrowserModeFilter {
@@ -425,26 +455,35 @@ func (m *docsBrowserModel) prev() {
 	level.selectedPath = matches[(idx-1+len(matches))%len(matches)].path
 }
 
-func (m *docsBrowserModel) selectCurrent() {
+func (m *docsBrowserModel) chooseCurrent() {
 	entry, ok := m.currentEntry()
 	if !ok {
 		return
 	}
 
-	if entry.hasChildren {
-		level, err := newDocsBrowserLevel(m.docsRoot, entry.path)
-		if err != nil {
-			m.err = err
-			m.done = true
-			return
-		}
-		m.levels = append(m.levels, level)
-		m.mode = docsBrowserModeNavigate
+	m.selected = entry.path
+	m.done = true
+}
+
+func (m *docsBrowserModel) drillCurrent() {
+	entry, ok := m.currentEntry()
+	if !ok {
 		return
 	}
 
-	m.selected = entry.path
-	m.done = true
+	if !entry.hasChildren {
+		m.chooseCurrent()
+		return
+	}
+
+	level, err := newDocsBrowserLevel(m.docsRoot, entry.path)
+	if err != nil {
+		m.err = err
+		m.done = true
+		return
+	}
+	m.levels = append(m.levels, level)
+	m.mode = docsBrowserModeNavigate
 }
 
 func (m *docsBrowserModel) back() {
@@ -576,7 +615,7 @@ func (m docsBrowserModel) View() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(sectionStyle.Render("Children"))
+	b.WriteString(sectionStyle.Render("Subdirectories Under Selection"))
 	b.WriteString("\n")
 	switch {
 	case !hasSelection:
@@ -584,6 +623,8 @@ func (m docsBrowserModel) View() string {
 	case len(selectedEntry.childPreview) == 0:
 		b.WriteString(mutedStyle.Render("Leaf directory. Press Enter to route here."))
 	default:
+		b.WriteString(mutedStyle.Render("Press Right or l to browse below. Press Enter to route here."))
+		b.WriteString("\n")
 		preview := min(len(selectedEntry.childPreview), 6)
 		for i := 0; i < preview; i++ {
 			b.WriteString(normalStyle.Render("  " + selectedEntry.childPreview[i].displayName()))
@@ -597,9 +638,9 @@ func (m docsBrowserModel) View() string {
 
 	b.WriteString("\n")
 	if m.mode == docsBrowserModeFilter {
-		b.WriteString(mutedStyle.Render("Type to fuzzy filter • ↑/↓/Tab move • Enter/→ select • Esc clear filter/back • Ctrl+C quit"))
+		b.WriteString(mutedStyle.Render("Type to fuzzy filter • ↑/↓/Tab move • Enter route here • → drill • Esc clear filter/back • Ctrl+C quit"))
 	} else {
-		b.WriteString(mutedStyle.Render("↑/↓/Tab or j/k move • Enter/→ or l open/select • Esc/← or h back • Type to filter • Ctrl+C quit"))
+		b.WriteString(mutedStyle.Render("↑/↓/Tab or j/k move • Enter route here • → or l drill • Esc/← or h back • Type or / to filter • Ctrl+C quit"))
 	}
 
 	return b.String()
