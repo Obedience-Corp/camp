@@ -85,9 +85,16 @@ func stageAndCommit(ctx context.Context, opts Options, message string) error {
 				return err
 			}
 		}
+		expandedScope, err := git.ExpandTrackedPaths(ctx, opts.CampaignRoot, commitScope)
+		if err != nil {
+			return err
+		}
+		if len(expandedScope) == 0 {
+			return git.ErrNoChanges
+		}
 		return git.Commit(ctx, opts.CampaignRoot, &git.CommitOptions{
 			Message: message,
-			Only:    commitScope,
+			Only:    expandedScope,
 		})
 	}
 	if opts.SelectiveOnly {

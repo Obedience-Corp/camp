@@ -242,6 +242,44 @@ func FilterTracked(ctx context.Context, repoPath string, paths []string) ([]stri
 	return result, nil
 }
 
+// ExpandTrackedPaths resolves the given pathspecs to actual staged file paths
+// currently present in the index. This expands directories to the staged file
+// paths they affect so they can be safely passed to `git commit --only`.
+func ExpandTrackedPaths(ctx context.Context, repoPath string, paths []string) ([]string, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+
+	args := []string{"-C", repoPath, "diff", "--cached", "--name-only", "--"}
+	args = append(args, paths...)
+
+	cmd := exec.CommandContext(ctx, "git", args...)
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, camperrors.NewGit("diff --cached", "", "", strings.TrimSpace(string(output)), err)
+	}
+
+	raw := strings.TrimSpace(string(output))
+	if raw == "" {
+		return nil, nil
+	}
+
+	lines := strings.Split(raw, "\n")
+	seen := make(map[string]struct{}, len(lines))
+	result := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		if _, ok := seen[line]; ok {
+			continue
+		}
+		seen[line] = struct{}{}
+		result = append(result, line)
+	}
+	return result, nil
+}
+
 // StageFiles stages specific files.
 func StageFiles(ctx context.Context, repoPath string, files ...string) error {
 	if len(files) == 0 {

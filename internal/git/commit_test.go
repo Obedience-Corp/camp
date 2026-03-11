@@ -713,6 +713,59 @@ func TestFilterTracked(t *testing.T) {
 	})
 }
 
+func TestExpandTrackedPaths(t *testing.T) {
+	t.Run("staged directory expands to tracked descendants", func(t *testing.T) {
+		tmpDir := initTestRepo(t)
+		if err := os.MkdirAll(filepath.Join(tmpDir, "docs", "T1", "test3"), 0755); err != nil {
+			t.Fatalf("failed to create nested dir: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(tmpDir, "docs", "T1", "test3", "note.md"), []byte("content"), 0644); err != nil {
+			t.Fatalf("failed to create nested file: %v", err)
+		}
+
+		ctx := context.Background()
+		if err := StageFiles(ctx, tmpDir, "docs/T1/test3"); err != nil {
+			t.Fatalf("StageFiles() error = %v", err)
+		}
+
+		result, err := ExpandTrackedPaths(ctx, tmpDir, []string{"docs/T1/test3"})
+		if err != nil {
+			t.Fatalf("ExpandTrackedPaths() error = %v", err)
+		}
+		if len(result) != 1 || result[0] != "docs/T1/test3/note.md" {
+			t.Fatalf("ExpandTrackedPaths() = %v, want [docs/T1/test3/note.md]", result)
+		}
+	})
+
+	t.Run("staged deleted directory expands to deleted descendants", func(t *testing.T) {
+		tmpDir := initTestRepo(t)
+		if err := os.MkdirAll(filepath.Join(tmpDir, "old-name"), 0755); err != nil {
+			t.Fatalf("failed to create dir: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(tmpDir, "old-name", "file.txt"), []byte("content"), 0644); err != nil {
+			t.Fatalf("failed to create file: %v", err)
+		}
+		exec.Command("git", "-C", tmpDir, "add", ".").Run()
+		exec.Command("git", "-C", tmpDir, "commit", "-m", "init").Run()
+		if err := os.RemoveAll(filepath.Join(tmpDir, "old-name")); err != nil {
+			t.Fatalf("failed to remove dir: %v", err)
+		}
+
+		ctx := context.Background()
+		if err := StageTrackedChanges(ctx, tmpDir, "old-name"); err != nil {
+			t.Fatalf("StageTrackedChanges() error = %v", err)
+		}
+
+		result, err := ExpandTrackedPaths(ctx, tmpDir, []string{"old-name"})
+		if err != nil {
+			t.Fatalf("ExpandTrackedPaths() error = %v", err)
+		}
+		if len(result) != 1 || result[0] != "old-name/file.txt" {
+			t.Fatalf("ExpandTrackedPaths() = %v, want [old-name/file.txt]", result)
+		}
+	})
+}
+
 func TestStage_WithStaleLock(t *testing.T) {
 	tmpDir := initTestRepo(t)
 

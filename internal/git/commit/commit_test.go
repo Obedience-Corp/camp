@@ -397,7 +397,69 @@ func TestCrawl_SelectiveStaging(t *testing.T) {
 	}
 }
 
-func TestCrawl_CommitFailureExposesError(t *testing.T) {
+func TestCrawl_SelectiveStaging_DirectoryTarget(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	if err := exec.Command("git", "-C", tmpDir, "init").Run(); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.email", "test@test.com").Run(); err != nil {
+		t.Fatalf("failed to configure git email: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.name", "Test").Run(); err != nil {
+		t.Fatalf("failed to configure git name: %v", err)
+	}
+
+	initialFile := filepath.Join(tmpDir, "seed.txt")
+	if err := os.WriteFile(initialFile, []byte("seed"), 0644); err != nil {
+		t.Fatalf("failed to create seed file: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "add", ".").Run(); err != nil {
+		t.Fatalf("failed to stage seed: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "commit", "-m", "seed").Run(); err != nil {
+		t.Fatalf("failed to commit seed: %v", err)
+	}
+
+	targetDir := filepath.Join(tmpDir, "docs", "T1", "test3")
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		t.Fatalf("failed to create target dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(targetDir, "note.md"), []byte("hello"), 0644); err != nil {
+		t.Fatalf("failed to create routed file: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "unrelated.txt"), []byte("unrelated"), 0644); err != nil {
+		t.Fatalf("failed to create unrelated file: %v", err)
+	}
+
+	ctx := context.Background()
+	result := Crawl(ctx, CrawlOptions{
+		Options: Options{
+			CampaignRoot: tmpDir,
+			CampaignID:   "test1234",
+		},
+		Description: "Route directory target",
+		Files:       []string{"docs/T1/test3"},
+	})
+
+	if !result.Committed {
+		t.Fatalf("expected commit to succeed, got message: %s", result.Message)
+	}
+
+	out, err := exec.Command("git", "-C", tmpDir, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("failed to get committed files: %v", err)
+	}
+	committedFiles := strings.TrimSpace(string(out))
+	if !strings.Contains(committedFiles, "docs/T1/test3/note.md") {
+		t.Fatalf("expected routed file in commit, got: %s", committedFiles)
+	}
+	if strings.Contains(committedFiles, "unrelated.txt") {
+		t.Fatalf("unrelated file should not be committed: %s", committedFiles)
+	}
+}
+
+func TestCrawl_IgnoresMissingPreStagedPathspecs(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	if err := exec.Command("git", "-C", tmpDir, "init").Run(); err != nil {
@@ -432,21 +494,27 @@ func TestCrawl_CommitFailureExposesError(t *testing.T) {
 			CampaignID:   "test1234",
 			PreStaged:    []string{"missing/pathspec.txt"},
 		},
-		Description: "Pathspec failure",
+		Description: "Ignore missing pathspec",
 		Files:       []string{"real.txt"},
 	})
 
-	if result.Committed {
-		t.Fatal("expected commit to fail")
+	if !result.Committed {
+		t.Fatalf("expected commit to succeed, got message: %s", result.Message)
 	}
 	if result.NoChanges {
-		t.Fatal("expected commit failure, not no-changes")
+		t.Fatal("expected a real commit, not no-changes")
 	}
-	if result.Err == nil {
-		t.Fatal("expected commit failure to set Err")
+	if result.Err != nil {
+		t.Fatalf("expected missing pre-staged path to be ignored, got err: %v", result.Err)
 	}
-	if !strings.Contains(result.Message, "git commit failed:") {
-		t.Fatalf("expected failure message, got %q", result.Message)
+
+	out, err := exec.Command("git", "-C", tmpDir, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("failed to get committed files: %v", err)
+	}
+	committedFiles := strings.TrimSpace(string(out))
+	if committedFiles != "real.txt" {
+		t.Fatalf("expected only real.txt in commit, got %q", committedFiles)
 	}
 }
 
