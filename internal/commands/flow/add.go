@@ -1,6 +1,4 @@
-//go:build dev
-
-package main
+package flow
 
 import (
 	"encoding/json"
@@ -19,18 +17,19 @@ import (
 	"github.com/Obedience-Corp/camp/internal/workflow"
 )
 
-var (
-	flowAddForce       bool
-	flowAddName        string
-	flowAddDescription string
-	flowAddJSON        string
-)
+func newAddCommand(flowCmd *cobra.Command) *cobra.Command {
+	var (
+		flowAddForce       bool
+		flowAddName        string
+		flowAddDescription string
+		flowAddJSON        string
+	)
 
-var flowAddCmd = &cobra.Command{
-	Use:     "add",
-	Aliases: []string{"init"},
-	Short:   "Add workflow tracking to current directory",
-	Long: `Add workflow tracking to the current directory.
+	cmd := &cobra.Command{
+		Use:     "add",
+		Aliases: []string{"init"},
+		Short:   "Add workflow tracking to current directory",
+		Long: `Add workflow tracking to the current directory.
 
 Creates a .workflow.yaml file, dungeon/ directory structure, and root OBEY.md.
 Uses workflow schema v2 (dungeon-centric model) where:
@@ -56,19 +55,81 @@ Examples:
   camp flow add --json '{"name":"API","description":"API development"}'
   echo '{"name":"X","description":"Y"}' | camp flow add --json -
   camp flow add --force                              Overwrite existing`,
-	Annotations: map[string]string{
-		"agent_allowed": "true",
-		"agent_reason":  "Agents can use --json or --name/--description flags",
-	},
-	RunE: runFlowAdd,
-}
+		Annotations: map[string]string{
+			"agent_allowed": "true",
+			"agent_reason":  "Agents can use --json or --name/--description flags",
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
 
-func init() {
-	flowCmd.AddCommand(flowAddCmd)
-	flowAddCmd.Flags().BoolVarP(&flowAddForce, "force", "f", false, "overwrite existing workflow")
-	flowAddCmd.Flags().StringVarP(&flowAddName, "name", "n", "", "workflow name")
-	flowAddCmd.Flags().StringVarP(&flowAddDescription, "description", "d", "", "workflow description/purpose")
-	flowAddCmd.Flags().StringVarP(&flowAddJSON, "json", "j", "", `JSON input (use "-" for stdin)`)
+			cwd, err := getCwd()
+			if err != nil {
+				return err
+			}
+
+			// Collect name/description: JSON > Flags > TUI
+			input, err := collectFlowAddInput(cmd, flowAddJSON, flowAddName, flowAddDescription)
+			if err != nil {
+				return err
+			}
+
+			svc := workflow.NewService(cwd)
+			result, err := svc.Init(ctx, workflow.InitOptions{
+				Force:         flowAddForce,
+				SchemaVersion: 2,
+				Name:          input.Name,
+				Description:   input.Description,
+			})
+			if err != nil {
+				var nestedErr *workflow.FlowNestedError
+				if errors.As(err, &nestedErr) {
+					ui.Error("Cannot create flow inside existing flow")
+					fmt.Println()
+					fmt.Printf("Found parent flow at: %s\n", nestedErr.ParentSchemaPath)
+					fmt.Println()
+					fmt.Println("Flows cannot be nested because:")
+					fmt.Println("  - Path resolution becomes ambiguous")
+					fmt.Println("  - Active work tracking is complicated")
+					fmt.Println("  - Status directories would conflict")
+					fmt.Println()
+					fmt.Println("To create a new flow, navigate outside the current flow first.")
+					return nil
+				}
+				return err
+			}
+
+			ui.Success("Workflow initialized!")
+			fmt.Println()
+
+			if len(result.CreatedFiles) > 0 {
+				fmt.Println("Created files:")
+				for _, f := range result.CreatedFiles {
+					fmt.Printf("  %s\n", f)
+				}
+			}
+
+			if len(result.CreatedDirs) > 0 {
+				fmt.Println("\nCreated directories:")
+				for _, d := range result.CreatedDirs {
+					fmt.Printf("  %s/\n", d)
+				}
+			}
+
+			fmt.Println("\nNext steps:")
+			fmt.Println("  - Edit .workflow.yaml to customize your workflow")
+			fmt.Println("  - Run 'camp flow sync' to create any new directories")
+			fmt.Println("  - Run 'camp flow status' to see your workflow")
+
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVarP(&flowAddForce, "force", "f", false, "overwrite existing workflow")
+	cmd.Flags().StringVarP(&flowAddName, "name", "n", "", "workflow name")
+	cmd.Flags().StringVarP(&flowAddDescription, "description", "d", "", "workflow description/purpose")
+	cmd.Flags().StringVarP(&flowAddJSON, "json", "j", "", `JSON input (use "-" for stdin)`)
+
+	return cmd
 }
 
 // flowAddInput holds the collected name/description for flow init.
@@ -77,73 +138,9 @@ type flowAddInput struct {
 	Description string `json:"description"`
 }
 
-func runFlowAdd(cmd *cobra.Command, args []string) error {
-	ctx := cmd.Context()
-
-	cwd, err := getCwd()
-	if err != nil {
-		return err
-	}
-
-	// Collect name/description: JSON > Flags > TUI
-	input, err := collectFlowAddInput(cmd)
-	if err != nil {
-		return err
-	}
-
-	svc := workflow.NewService(cwd)
-	result, err := svc.Init(ctx, workflow.InitOptions{
-		Force:         flowAddForce,
-		SchemaVersion: 2,
-		Name:          input.Name,
-		Description:   input.Description,
-	})
-	if err != nil {
-		var nestedErr *workflow.FlowNestedError
-		if errors.As(err, &nestedErr) {
-			ui.Error("Cannot create flow inside existing flow")
-			fmt.Println()
-			fmt.Printf("Found parent flow at: %s\n", nestedErr.ParentSchemaPath)
-			fmt.Println()
-			fmt.Println("Flows cannot be nested because:")
-			fmt.Println("  - Path resolution becomes ambiguous")
-			fmt.Println("  - Active work tracking is complicated")
-			fmt.Println("  - Status directories would conflict")
-			fmt.Println()
-			fmt.Println("To create a new flow, navigate outside the current flow first.")
-			return nil
-		}
-		return err
-	}
-
-	ui.Success("Workflow initialized!")
-	fmt.Println()
-
-	if len(result.CreatedFiles) > 0 {
-		fmt.Println("Created files:")
-		for _, f := range result.CreatedFiles {
-			fmt.Printf("  %s\n", f)
-		}
-	}
-
-	if len(result.CreatedDirs) > 0 {
-		fmt.Println("\nCreated directories:")
-		for _, d := range result.CreatedDirs {
-			fmt.Printf("  %s/\n", d)
-		}
-	}
-
-	fmt.Println("\nNext steps:")
-	fmt.Println("  - Edit .workflow.yaml to customize your workflow")
-	fmt.Println("  - Run 'camp flow sync' to create any new directories")
-	fmt.Println("  - Run 'camp flow status' to see your workflow")
-
-	return nil
-}
-
 // collectFlowAddInput gathers name/description from JSON, flags, or TUI.
 // Priority: JSON > Flags > TUI.
-func collectFlowAddInput(cmd *cobra.Command) (*flowAddInput, error) {
+func collectFlowAddInput(cmd *cobra.Command, flowAddJSON, flowAddName, flowAddDescription string) (*flowAddInput, error) {
 	ctx := cmd.Context()
 
 	// 1. JSON mode

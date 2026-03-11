@@ -77,7 +77,7 @@ func runPull(cmd *cobra.Command, args []string) error {
 		// Suppress cobra's usage output — this isn't a usage error.
 		cmd.SilenceUsage = true
 
-		if isRebaseInProgress(ctx, target.Path) {
+		if git.IsRebaseInProgress(ctx, target.Path) {
 			fmt.Fprintln(os.Stderr)
 			fmt.Fprintln(os.Stderr, ui.Warning("Rebase conflict in "+target.Name))
 			fmt.Fprintln(os.Stderr, "  To abort:        git rebase --abort")
@@ -263,7 +263,7 @@ func pullSingleTarget(
 
 // handlePullError processes a failed git pull, aborting any in-progress rebase.
 func handlePullError(ctx context.Context, t *pullTarget, output []byte, err error, red lipgloss.Style) pullResult {
-	if isRebaseInProgress(ctx, t.path) {
+	if git.IsRebaseInProgress(ctx, t.path) {
 		_ = abortRebase(ctx, t.path)
 		fmt.Println(red.Render("conflict (aborted rebase)"))
 		return pullResult{
@@ -373,27 +373,6 @@ func isDivergentError(output string) bool {
 	lower := strings.ToLower(output)
 	return strings.Contains(lower, "divergent branches") ||
 		strings.Contains(lower, "need to specify how to reconcile")
-}
-
-// isRebaseInProgress checks whether a git rebase is in progress for the repo
-// at the given path by looking for rebase-merge or rebase-apply directories.
-func isRebaseInProgress(ctx context.Context, repoPath string) bool {
-	gitDir, err := gitOutput(ctx, repoPath, "rev-parse", "--git-dir")
-	if err != nil {
-		return false
-	}
-
-	// Make gitDir absolute relative to repoPath if it's relative.
-	if !filepath.IsAbs(gitDir) {
-		gitDir = filepath.Join(repoPath, gitDir)
-	}
-
-	for _, dir := range []string{"rebase-merge", "rebase-apply"} {
-		if info, err := os.Stat(filepath.Join(gitDir, dir)); err == nil && info.IsDir() {
-			return true
-		}
-	}
-	return false
 }
 
 // abortRebase runs git rebase --abort for the repo at the given path.

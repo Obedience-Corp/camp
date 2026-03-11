@@ -3,8 +3,8 @@ package release
 import "github.com/spf13/cobra"
 
 // Register attaches release-profile-specific commands to the root command.
-// camp currently has no user-facing dev-only commands, but this centralizes
-// profile-specific wiring so it matches fest and is ready for future additions.
+// In dev builds, registerDev (from register_dev.go) wires up the flow and fresh
+// commands which live in internal/commands/flow and internal/commands/fresh.
 func Register(root *cobra.Command) {
 	registerDev(root)
 }
