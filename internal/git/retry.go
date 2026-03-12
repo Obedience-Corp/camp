@@ -31,6 +31,7 @@ type RetryConfig struct {
 }
 
 // DefaultRetryConfig returns standard retry settings.
+// WaitForActive defaults to true; callers that need fail-fast should override.
 func DefaultRetryConfig() RetryConfig {
 	return RetryConfig{
 		AttemptsPerCycle: 3,
@@ -138,6 +139,7 @@ func WithLockRetry(ctx context.Context, repoPath string, cfg RetryConfig, operat
 				CleanStaleLocks(ctx, repoPath, cfg.Logger)
 				continue // Start next cycle immediately
 			}
+			// When WaitForActive is true, an active-lock timeout is terminal — MaxCycles does not apply.
 			return camperrors.WrapJoinf(ErrLockActive, waitErr, "%s failed: active lock persisted at %s",
 				cfg.OperationName, result.Active[0].Path)
 		}

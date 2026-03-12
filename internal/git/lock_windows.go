@@ -16,6 +16,11 @@ type LockRemovalFailure struct {
 	Err  error
 }
 
+// Unwrap returns the underlying error.
+func (f *LockRemovalFailure) Unwrap() error {
+	return f.Err
+}
+
 // RemovalResult summarizes the outcome of a lock removal operation.
 type RemovalResult struct {
 	Removed    []LockInfo
@@ -69,6 +74,12 @@ type LockInfo struct {
 	Stale     bool
 	ProcessID int
 	Command   string
+}
+
+// RemoveStaleLocks is a no-op on Windows. Lock staleness detection requires
+// Unix-specific tools (fuser/lsof) that are not available on Windows.
+func RemoveStaleLocks(_ context.Context, _ []string, _ *slog.Logger) (removed, active []LockInfo, failed []LockRemovalFailure, err error) {
+	return nil, nil, nil, nil
 }
 
 // CleanStaleLocks is a no-op on Windows. Lock staleness detection requires

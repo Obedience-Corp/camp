@@ -188,6 +188,11 @@ type LockRemovalFailure struct {
 	Err  error
 }
 
+// Unwrap returns the underlying error.
+func (f *LockRemovalFailure) Unwrap() error {
+	return f.Err
+}
+
 // RemoveStaleLocks attempts to remove all stale lock files from the provided list.
 // Returns lists of successfully removed locks, active locks, and stale-lock removal failures.
 func RemoveStaleLocks(ctx context.Context, locks []string, logger *slog.Logger) (removed, active []LockInfo, failed []LockRemovalFailure, err error) {

@@ -849,7 +849,7 @@ func TestStage_WaitsForBriefActiveLock(t *testing.T) {
 	})
 
 	go func() {
-		time.Sleep(150 * time.Millisecond)
+		time.Sleep(300 * time.Millisecond)
 		_ = f.Close()
 		_ = os.Remove(lockPath)
 	}()
