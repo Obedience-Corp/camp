@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func initTestRepo(t *testing.T) string {
@@ -826,5 +827,81 @@ func TestStage_WithStaleLock(t *testing.T) {
 	}
 	if !hasStaged {
 		t.Error("File was not staged after lock cleanup")
+	}
+}
+
+func TestStage_WaitsForBriefActiveLock(t *testing.T) {
+	tmpDir := initTestRepo(t)
+
+	// Create a file to stage.
+	if err := os.WriteFile(filepath.Join(tmpDir, "test.txt"), []byte("content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	lockPath := filepath.Join(tmpDir, ".git", "index.lock")
+	f, err := os.Create(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = f.Close()
+		_ = os.Remove(lockPath)
+	})
+
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		_ = f.Close()
+		_ = os.Remove(lockPath)
+	}()
+
+	ctx := context.Background()
+	if err := StageAll(ctx, tmpDir); err != nil {
+		t.Fatalf("StageAll() error = %v (should have waited for active lock release)", err)
+	}
+
+	hasStaged, err := HasStagedChanges(ctx, tmpDir)
+	if err != nil {
+		t.Fatalf("HasStagedChanges() error = %v", err)
+	}
+	if !hasStaged {
+		t.Error("File was not staged after active lock release")
+	}
+}
+
+func TestStage_ReturnsRemovalFailureForStaleLock(t *testing.T) {
+	tmpDir := initTestRepo(t)
+
+	if err := os.WriteFile(filepath.Join(tmpDir, "test.txt"), []byte("content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	lockPath := filepath.Join(tmpDir, ".git", "index.lock")
+	if err := os.WriteFile(lockPath, []byte{}, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	gitDir := filepath.Join(tmpDir, ".git")
+	info, err := os.Stat(gitDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = os.Chmod(gitDir, info.Mode().Perm())
+		_ = os.Remove(lockPath)
+	}()
+
+	if err := os.Chmod(gitDir, 0555); err != nil {
+		t.Fatalf("failed to make .git read-only: %v", err)
+	}
+
+	err = StageAll(context.Background(), tmpDir)
+	if err == nil {
+		t.Fatal("StageAll() error = nil, want stale lock removal failure")
+	}
+	if !errors.Is(err, ErrLockRemovalFailed) {
+		t.Fatalf("StageAll() error = %v, want ErrLockRemovalFailed", err)
+	}
+	if errors.Is(err, ErrLockActive) {
+		t.Fatalf("StageAll() error = %v, did not want ErrLockActive", err)
 	}
 }

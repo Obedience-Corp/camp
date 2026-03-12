@@ -10,10 +10,17 @@ import (
 	"time"
 )
 
+// LockRemovalFailure captures a stale lock cleanup failure with path context.
+type LockRemovalFailure struct {
+	Info LockInfo
+	Err  error
+}
+
 // RemovalResult summarizes the outcome of a lock removal operation.
 type RemovalResult struct {
 	Removed    []LockInfo
-	Skipped    []LockInfo
+	Active     []LockInfo
+	Failed     []LockRemovalFailure
 	TotalLocks int
 }
 
@@ -29,9 +36,9 @@ func (r *RemovalResult) Summary() string {
 		}
 	}
 
-	if len(r.Skipped) > 0 {
-		sb.WriteString(fmt.Sprintf("  Skipped (active or error): %d\n", len(r.Skipped)))
-		for _, info := range r.Skipped {
+	if len(r.Active) > 0 {
+		sb.WriteString(fmt.Sprintf("  Active (waiting or blocked): %d\n", len(r.Active)))
+		for _, info := range r.Active {
 			if info.ProcessID > 0 {
 				sb.WriteString(fmt.Sprintf("    - %s (PID %d: %s)\n",
 					info.Path, info.ProcessID, info.Command))
@@ -41,12 +48,19 @@ func (r *RemovalResult) Summary() string {
 		}
 	}
 
+	if len(r.Failed) > 0 {
+		sb.WriteString(fmt.Sprintf("  Failed to remove (stale): %d\n", len(r.Failed)))
+		for _, failure := range r.Failed {
+			sb.WriteString(fmt.Sprintf("    - %s (%v)\n", failure.Info.Path, failure.Err))
+		}
+	}
+
 	return sb.String()
 }
 
 // AllRemoved returns true if all locks were successfully removed.
 func (r *RemovalResult) AllRemoved() bool {
-	return len(r.Skipped) == 0
+	return len(r.Active) == 0 && len(r.Failed) == 0
 }
 
 // LockInfo contains information about a lock file.
