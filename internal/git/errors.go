@@ -147,6 +147,12 @@ var (
 
 	// ErrNoFilesSpecified indicates an empty file list was provided for staging.
 	ErrNoFilesSpecified = camperrors.Wrap(camperrors.ErrInvalidInput, "no files specified for staging")
+
+	// ErrRemoteNotReachable indicates the remote host could not be contacted.
+	ErrRemoteNotReachable = camperrors.Wrap(camperrors.ErrGitFailed, "remote not reachable")
+
+	// ErrRemoteAuthFailed indicates authentication to the remote failed.
+	ErrRemoteAuthFailed = camperrors.Wrap(camperrors.ErrGitFailed, "remote authentication failed")
 )
 
 // ClassifyGitError determines the error type from git stderr output.
