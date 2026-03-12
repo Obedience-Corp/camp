@@ -32,31 +32,31 @@ type RemovalResult struct {
 // Summary returns a human-readable summary.
 func (r *RemovalResult) Summary() string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Processed %d lock file(s)\n", r.TotalLocks))
+	fmt.Fprintf(&sb, "Processed %d lock file(s)\n", r.TotalLocks)
 
 	if len(r.Removed) > 0 {
-		sb.WriteString(fmt.Sprintf("  Removed (stale): %d\n", len(r.Removed)))
+		fmt.Fprintf(&sb, "  Removed (stale): %d\n", len(r.Removed))
 		for _, info := range r.Removed {
-			sb.WriteString(fmt.Sprintf("    - %s\n", info.Path))
+			fmt.Fprintf(&sb, "    - %s\n", info.Path)
 		}
 	}
 
 	if len(r.Active) > 0 {
-		sb.WriteString(fmt.Sprintf("  Active (waiting or blocked): %d\n", len(r.Active)))
+		fmt.Fprintf(&sb, "  Active (waiting or blocked): %d\n", len(r.Active))
 		for _, info := range r.Active {
 			if info.ProcessID > 0 {
-				sb.WriteString(fmt.Sprintf("    - %s (PID %d: %s)\n",
-					info.Path, info.ProcessID, info.Command))
+				fmt.Fprintf(&sb, "    - %s (PID %d: %s)\n",
+					info.Path, info.ProcessID, info.Command)
 			} else {
-				sb.WriteString(fmt.Sprintf("    - %s\n", info.Path))
+				fmt.Fprintf(&sb, "    - %s\n", info.Path)
 			}
 		}
 	}
 
 	if len(r.Failed) > 0 {
-		sb.WriteString(fmt.Sprintf("  Failed to remove (stale): %d\n", len(r.Failed)))
+		fmt.Fprintf(&sb, "  Failed to remove (stale): %d\n", len(r.Failed))
 		for _, failure := range r.Failed {
-			sb.WriteString(fmt.Sprintf("    - %s (%v)\n", failure.Info.Path, failure.Err))
+			fmt.Fprintf(&sb, "    - %s (%v)\n", failure.Info.Path, failure.Err)
 		}
 	}
 
@@ -74,6 +74,17 @@ type LockInfo struct {
 	Stale     bool
 	ProcessID int
 	Command   string
+}
+
+// CheckLocksStaleness is a no-op on Windows. Lock staleness detection requires
+// Unix-specific tools (fuser/lsof) that are not available on Windows.
+// All locks are reported as active since staleness cannot be determined.
+func CheckLocksStaleness(_ context.Context, locks []string) (stale, active []LockInfo, err error) {
+	var activeLocks []LockInfo
+	for _, l := range locks {
+		activeLocks = append(activeLocks, LockInfo{Path: l, Stale: false})
+	}
+	return nil, activeLocks, nil
 }
 
 // RemoveStaleLocks is a no-op on Windows. Lock staleness detection requires
