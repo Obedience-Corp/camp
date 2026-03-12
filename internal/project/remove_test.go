@@ -9,6 +9,9 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
 
 func mustRunCmd(t *testing.T, dir string, args ...string) {
@@ -145,6 +148,89 @@ func TestRemove_ModulesCleanedWithoutDelete(t *testing.T) {
 
 	if _, err := os.Stat(modulesPath); !os.IsNotExist(err) {
 		t.Error("expected .git/modules/projects/myproj to be cleaned up without --delete")
+	}
+}
+
+func TestRemove_BoundaryEnforcement(t *testing.T) {
+	tmp := t.TempDir()
+	tmp, _ = filepath.EvalSymlinks(tmp)
+
+	campaignRoot := filepath.Join(tmp, "campaign")
+	if err := os.MkdirAll(filepath.Join(campaignRoot, "projects"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	outside := filepath.Join(tmp, "outside")
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	escapeLink := filepath.Join(campaignRoot, "projects", "escape")
+	if err := os.Symlink(outside, escapeLink); err != nil {
+		t.Skipf("symlink creation not supported: %v", err)
+	}
+
+	ctx := context.Background()
+	_, err := Remove(ctx, campaignRoot, "escape", RemoveOptions{Delete: true})
+	if err == nil {
+		t.Error("expected boundary error for symlink-escaped project, got nil")
+	}
+	if !errors.Is(err, pathutil.ErrOutsideBoundary) {
+		t.Errorf("expected ErrOutsideBoundary, got: %v", err)
+	}
+}
+
+func TestRemove_ContextCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := Remove(ctx, "/some/path", "test", RemoveOptions{})
+	if err != context.Canceled {
+		t.Errorf("Remove() error = %v, want %v", err, context.Canceled)
+	}
+}
+
+func TestRemove_ContextTimeout(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Nanosecond)
+	defer cancel()
+	time.Sleep(1 * time.Millisecond)
+
+	_, err := Remove(ctx, "/some/path", "test", RemoveOptions{})
+	if err != context.DeadlineExceeded {
+		t.Errorf("Remove() error = %v, want %v", err, context.DeadlineExceeded)
+	}
+}
+
+func TestRemove_ProjectNotFound(t *testing.T) {
+	tmp := t.TempDir()
+	tmp, _ = filepath.EvalSymlinks(tmp)
+
+	os.MkdirAll(filepath.Join(tmp, "projects"), 0o755)
+
+	_, err := Remove(context.Background(), tmp, "nonexistent", RemoveOptions{})
+	if err == nil {
+		t.Fatal("Remove() should return error for nonexistent project")
+	}
+	if _, ok := err.(*ErrProjectNotFound); !ok {
+		t.Errorf("error type = %T, want *ErrProjectNotFound", err)
+	}
+}
+
+func TestRemove_NoDeleteKeepsFiles(t *testing.T) {
+	tmp := t.TempDir()
+	tmp, _ = filepath.EvalSymlinks(tmp)
+
+	projectPath := filepath.Join(tmp, "projects", "test-project")
+	os.MkdirAll(projectPath, 0o755)
+	os.WriteFile(filepath.Join(projectPath, "file.txt"), []byte("test"), 0o644)
+
+	_, err := Remove(context.Background(), tmp, "test-project", RemoveOptions{Delete: false})
+	if err != nil {
+		t.Fatalf("Remove() error = %v", err)
+	}
+
+	if _, err := os.Stat(projectPath); os.IsNotExist(err) {
+		t.Error("Files should remain when Delete=false")
 	}
 }
 

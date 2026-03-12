@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/git"
@@ -21,12 +22,15 @@ var projectRemoteRemoveCmd = &cobra.Command{
 Removing the "origin" remote is blocked by default because it is the
 canonical remote for submodule tracking. Use --force to override.
 
-Note: this does NOT modify .gitmodules. If you want to change the
-canonical URL, use "camp project remote set-url" instead.
+When --force is used to remove origin from a submodule project, the
+.gitmodules entry is also cleaned up to keep the campaign consistent.
+
+Note: if you want to change the canonical URL instead of removing it,
+use "camp project remote set-url".
 
 Examples:
   camp project remote remove upstream
-  camp project remote remove origin --force   # dangerous, use with care`,
+  camp project remote remove origin --force   # also cleans .gitmodules`,
 	Args: cobra.ExactArgs(1),
 	RunE: runProjectRemoteRemove,
 }
@@ -69,6 +73,34 @@ func runProjectRemoteRemove(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("%s Removed remote %s from project %s\n",
 		ui.SuccessIcon(), ui.Value(remoteName), ui.Value(resolved.Name))
+
+	// Campaign-sync: if we just removed origin from a submodule, clean up .gitmodules
+	if remoteName == "origin" {
+		isSubmodule, _ := git.IsSubmodule(resolved.Path)
+		if isSubmodule {
+			submodulePath := strings.TrimPrefix(resolved.Path, campRoot+"/")
+			if err := git.RemoveDeclaredSubmodule(ctx, campRoot, submodulePath); err != nil {
+				fmt.Printf("%s Could not clean .gitmodules entry: %s\n",
+					ui.WarningIcon(), ui.Dim(err.Error()))
+				fmt.Printf("  %s Manual cleanup: git -C %s config -f .gitmodules --remove-section submodule.%s\n",
+					ui.Dim("→"), campRoot, submodulePath)
+			} else {
+				fmt.Printf("%s Removed .gitmodules entry for %s\n",
+					ui.SuccessIcon(), ui.Value(submodulePath))
+			}
+
+			// Stage the .gitmodules change
+			stageErr := git.WithLockRetry(ctx, campRoot, git.DefaultRetryConfig(), func() error {
+				return git.StageFiles(ctx, campRoot, ".gitmodules")
+			})
+			if stageErr != nil {
+				fmt.Printf("%s Could not stage .gitmodules: %s\n",
+					ui.WarningIcon(), ui.Dim(stageErr.Error()))
+			} else {
+				fmt.Printf("%s Staged .gitmodules\n", ui.SuccessIcon())
+			}
+		}
+	}
 
 	return nil
 }

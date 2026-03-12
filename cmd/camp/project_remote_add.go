@@ -4,8 +4,6 @@ package main
 
 import (
 	"fmt"
-	"os/exec"
-	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/git"
@@ -62,25 +60,16 @@ func runProjectRemoteAdd(cmd *cobra.Command, args []string) error {
 	// Fetch to verify and count branches
 	fmt.Printf("  %s Fetching from %s...\n", ui.BulletIcon(), ui.Value(remoteName))
 
-	fetchCmd := exec.CommandContext(ctx, "git", "-C", resolved.Path, "fetch", remoteName)
-	fetchOut, fetchErr := fetchCmd.CombinedOutput()
-
-	if fetchErr != nil {
-		fmt.Printf("  %s Fetch failed: %s\n", ui.WarningIcon(), ui.Dim(strings.TrimSpace(string(fetchOut))))
+	if fetchErr := git.FetchRemote(ctx, resolved.Path, remoteName); fetchErr != nil {
+		fmt.Printf("  %s Fetch failed: %s\n", ui.WarningIcon(), ui.Dim(fetchErr.Error()))
 		fmt.Printf("  %s Remote added but could not verify connectivity\n", ui.WarningIcon())
 		return nil
 	}
 
-	// Count branches available under this remote
-	lsCmd := exec.CommandContext(ctx, "git", "-C", resolved.Path,
-		"branch", "-r", "--list", remoteName+"/*")
-	lsOut, _ := lsCmd.Output()
-
-	count := 0
-	for _, line := range strings.Split(string(lsOut), "\n") {
-		if strings.TrimSpace(line) != "" {
-			count++
-		}
+	count, countErr := git.CountRemoteBranches(ctx, resolved.Path, remoteName)
+	if countErr != nil {
+		fmt.Printf("  %s Fetch succeeded but could not count branches\n", ui.WarningIcon())
+		return nil
 	}
 
 	if count > 0 {
@@ -93,4 +82,3 @@ func runProjectRemoteAdd(cmd *cobra.Command, args []string) error {
 
 	return nil
 }
-
