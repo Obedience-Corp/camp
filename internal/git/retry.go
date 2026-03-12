@@ -31,13 +31,14 @@ type RetryConfig struct {
 }
 
 // DefaultRetryConfig returns standard retry settings.
+// WaitForActive defaults to true; callers that need fail-fast should override.
 func DefaultRetryConfig() RetryConfig {
 	return RetryConfig{
 		AttemptsPerCycle: 3,
 		MaxCycles:        2,
 		InitialBackoff:   200 * time.Millisecond,
 		MaxBackoff:       2 * time.Second,
-		WaitForActive:    false,
+		WaitForActive:    true,
 		ActiveLockWait:   5 * time.Second,
 		Logger:           slog.Default(),
 		OperationName:    "operation",
@@ -122,19 +123,29 @@ func WithLockRetry(ctx context.Context, repoPath string, cfg RetryConfig, operat
 			"operation", cfg.OperationName,
 			"cycle", cycle,
 			"removed", len(result.Removed),
-			"active", len(result.Skipped))
+			"active", len(result.Active),
+			"failed", len(result.Failed))
+
+		if len(result.Failed) > 0 {
+			first := result.Failed[0]
+			return camperrors.Wrapf(first.Err, "%s failed while removing stale lock %s",
+				cfg.OperationName, first.Info.Path)
+		}
 
 		// If active locks found and configured to wait
-		if len(result.Skipped) > 0 && cfg.WaitForActive {
-			waitErr := WaitForLockRelease(ctx, result.Skipped[0].Path, cfg.ActiveLockWait, cfg.Logger)
+		if len(result.Active) > 0 && cfg.WaitForActive {
+			waitErr := WaitForLockRelease(ctx, result.Active[0].Path, cfg.ActiveLockWait, cfg.Logger)
 			if waitErr == nil {
 				CleanStaleLocks(ctx, repoPath, cfg.Logger)
 				continue // Start next cycle immediately
 			}
+			// When WaitForActive is true, an active-lock timeout is terminal — MaxCycles does not apply.
+			return camperrors.WrapJoinf(ErrLockActive, waitErr, "%s failed: active lock persisted at %s",
+				cfg.OperationName, result.Active[0].Path)
 		}
 
 		// Active locks found but not waiting — fail fast
-		if len(result.Skipped) > 0 && !cfg.WaitForActive && len(result.Removed) == 0 {
+		if len(result.Active) > 0 && !cfg.WaitForActive && len(result.Removed) == 0 {
 			return camperrors.Wrapf(lastErr, "%s failed: lock held by active process",
 				cfg.OperationName)
 		}

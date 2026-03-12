@@ -132,7 +132,7 @@ func (c *LockCheck) Fix(ctx context.Context, repoRoot string, issues []doctor.Is
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	removed, _, err := git.RemoveStaleLocks(ctx, stalePaths, logger)
+	removed, _, _, err := git.RemoveStaleLocks(ctx, stalePaths, logger)
 	if err != nil {
 		return nil, fmt.Errorf("remove stale locks: %w", err)
 	}
