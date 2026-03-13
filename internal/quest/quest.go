@@ -3,7 +3,6 @@ package quest
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -93,12 +92,12 @@ func Load(ctx context.Context, path string) (*Quest, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, ErrQuestNotFound
 		}
-		return nil, fmt.Errorf("read quest file %s: %w", path, err)
+		return nil, camperrors.Wrapf(err, "read quest file %s", path)
 	}
 
 	var q Quest
 	if err := yaml.Unmarshal(data, &q); err != nil {
-		return nil, fmt.Errorf("parse quest file %s: %w", path, err)
+		return nil, camperrors.Wrapf(err, "parse quest file %s", path)
 	}
 	q.Path = path
 	if filepath.Base(path) == DefaultFileName {
@@ -127,7 +126,7 @@ func ReadActiveID(ctx context.Context, campaignRoot string) (string, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return "", nil
 		}
-		return "", fmt.Errorf("read active quest: %w", err)
+		return "", camperrors.Wrap(err, "read active quest")
 	}
 	return strings.TrimSpace(string(data)), nil
 }
@@ -141,7 +140,7 @@ func WriteActiveID(ctx context.Context, campaignRoot, questID string) error {
 		questID = DefaultQuestID
 	}
 	if err := os.MkdirAll(QuestsDir(campaignRoot), 0755); err != nil {
-		return fmt.Errorf("create quests dir: %w", err)
+		return camperrors.Wrap(err, "create quests dir")
 	}
 	return os.WriteFile(ActiveQuestPath(campaignRoot), []byte(questID+"\n"), 0644)
 }
@@ -164,7 +163,7 @@ func List(ctx context.Context, campaignRoot string, includeDungeon bool) ([]*Que
 
 	rootEntries, err := os.ReadDir(QuestsDir(campaignRoot))
 	if err != nil {
-		return nil, fmt.Errorf("read quests dir: %w", err)
+		return nil, camperrors.Wrap(err, "read quests dir")
 	}
 	for _, entry := range rootEntries {
 		if !entry.IsDir() || entry.Name() == "dungeon" {
@@ -185,7 +184,7 @@ func List(ctx context.Context, campaignRoot string, includeDungeon bool) ([]*Que
 				if errors.Is(err, os.ErrNotExist) {
 					continue
 				}
-				return nil, fmt.Errorf("read quest dungeon %s: %w", statusDir, err)
+				return nil, camperrors.Wrapf(err, "read quest dungeon %s", statusDir)
 			}
 			for _, entry := range entries {
 				if !entry.IsDir() {
@@ -238,7 +237,7 @@ func Resolve(ctx context.Context, campaignRoot, identifier string) (*Quest, erro
 	case 1:
 		return nameMatches[0], nil
 	default:
-		return nil, fmt.Errorf("%w: %q matches %d quests", ErrQuestAmbiguous, identifier, len(nameMatches))
+		return nil, camperrors.Wrapf(ErrQuestAmbiguous, "%q matches %d quests", identifier, len(nameMatches))
 	}
 }
 
@@ -310,7 +309,7 @@ func writeQuestFile(path string, q *Quest) error {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return fmt.Errorf("create quest directory: %w", err)
+		return camperrors.Wrap(err, "create quest directory")
 	}
 
 	clone := *q
@@ -318,10 +317,10 @@ func writeQuestFile(path string, q *Quest) error {
 	clone.Slug = ""
 	data, err := yaml.Marshal(&clone)
 	if err != nil {
-		return fmt.Errorf("marshal quest %q: %w", q.Name, err)
+		return camperrors.Wrapf(err, "marshal quest %q", q.Name)
 	}
 	if err := os.WriteFile(path, data, 0644); err != nil {
-		return fmt.Errorf("write quest file %s: %w", path, err)
+		return camperrors.Wrapf(err, "write quest file %s", path)
 	}
 	q.Path = path
 	if filepath.Base(path) == DefaultFileName {

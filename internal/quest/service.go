@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/Obedience-Corp/camp/internal/editor"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // MutationResult contains the resulting quest plus the paths that should be
@@ -120,7 +122,7 @@ func (s *Service) ReadRaw(ctx context.Context, identifier string) ([]byte, *Ques
 	}
 	data, err := os.ReadFile(q.Path)
 	if err != nil {
-		return nil, nil, fmt.Errorf("read quest %s: %w", q.Path, err)
+		return nil, nil, camperrors.Wrapf(err, "read quest %s", q.Path)
 	}
 	return data, q, nil
 }
@@ -151,7 +153,7 @@ func (s *Service) List(ctx context.Context, opts *ListOptions) ([]*Quest, error)
 		if len(opts.Statuses) == 0 && !opts.All && !opts.Dungeon && q.Status.InDungeon() {
 			continue
 		}
-		if len(opts.Statuses) > 0 && !containsStatus(opts.Statuses, q.Status) {
+		if len(opts.Statuses) > 0 && !slices.Contains(opts.Statuses, q.Status) {
 			continue
 		}
 		filtered = append(filtered, q)
@@ -188,7 +190,7 @@ func (s *Service) CreateWithEditor(ctx context.Context, name, purpose, descripti
 
 	tmp, err := os.CreateTemp("", "quest_*.yaml")
 	if err != nil {
-		return nil, fmt.Errorf("create temp quest file: %w", err)
+		return nil, camperrors.Wrap(err, "create temp quest file")
 	}
 	tmpPath := tmp.Name()
 	defer os.Remove(tmpPath)
@@ -198,7 +200,7 @@ func (s *Service) CreateWithEditor(ctx context.Context, name, purpose, descripti
 		return nil, err
 	}
 	if err := tmp.Close(); err != nil {
-		return nil, fmt.Errorf("close temp quest file: %w", err)
+		return nil, camperrors.Wrap(err, "close temp quest file")
 	}
 
 	if editorFn == nil {
@@ -252,7 +254,7 @@ func (s *Service) Edit(ctx context.Context, identifier string, editorFn EditorFu
 
 	tmp, err := os.CreateTemp("", "quest_edit_*.yaml")
 	if err != nil {
-		return nil, fmt.Errorf("create temp quest file: %w", err)
+		return nil, camperrors.Wrap(err, "create temp quest file")
 	}
 	tmpPath := tmp.Name()
 	defer os.Remove(tmpPath)
@@ -262,7 +264,7 @@ func (s *Service) Edit(ctx context.Context, identifier string, editorFn EditorFu
 		return nil, err
 	}
 	if err := tmp.Close(); err != nil {
-		return nil, fmt.Errorf("close temp quest file: %w", err)
+		return nil, camperrors.Wrap(err, "close temp quest file")
 	}
 
 	if editorFn == nil {
@@ -349,19 +351,19 @@ func (s *Service) Restore(ctx context.Context, identifier string) (*MutationResu
 		return nil, ErrDefaultQuestReadOnly
 	}
 	if q.Status != StatusCompleted && q.Status != StatusArchived {
-		return nil, fmt.Errorf("%w: cannot restore quest from %s", ErrInvalidTransition, q.Status)
+		return nil, camperrors.Wrapf(ErrInvalidTransition, "cannot restore quest from %s", q.Status)
 	}
 
 	oldDir := filepath.Dir(q.Path)
 	newDir := QuestDir(s.campaignRoot, q.Slug)
 	if _, err := os.Stat(newDir); err == nil {
-		return nil, fmt.Errorf("quest directory already exists: %s", newDir)
+		return nil, camperrors.Wrapf(camperrors.ErrInvalidInput, "quest directory already exists: %s", newDir)
 	}
 	if err := os.MkdirAll(QuestsDir(s.campaignRoot), 0755); err != nil {
-		return nil, fmt.Errorf("create quests dir: %w", err)
+		return nil, camperrors.Wrap(err, "create quests dir")
 	}
 	if err := os.Rename(oldDir, newDir); err != nil {
-		return nil, fmt.Errorf("restore quest directory: %w", err)
+		return nil, camperrors.Wrap(err, "restore quest directory")
 	}
 
 	q.Status = StatusOpen
@@ -405,7 +407,7 @@ func (s *Service) uniqueQuestDir(ctx context.Context, name string, now time.Time
 		}
 	}
 
-	return "", fmt.Errorf("could not allocate quest directory for %q", name)
+	return "", camperrors.Wrapf(camperrors.ErrInvalidInput, "could not allocate quest directory for %q", name)
 }
 
 func (s *Service) updateInPlace(ctx context.Context, identifier string, from, to Status) (*MutationResult, error) {
@@ -421,7 +423,7 @@ func (s *Service) updateInPlace(ctx context.Context, identifier string, from, to
 		return nil, ErrDefaultQuestReadOnly
 	}
 	if q.Status != from {
-		return nil, fmt.Errorf("%w: expected %s, found %s", ErrInvalidTransition, from, q.Status)
+		return nil, camperrors.Wrapf(ErrInvalidTransition, "expected %s, found %s", from, q.Status)
 	}
 
 	q.Status = to
@@ -464,20 +466,20 @@ func (s *Service) moveToStatus(ctx context.Context, identifier string, from []St
 	if q.IsDefault() {
 		return nil, ErrDefaultQuestReadOnly
 	}
-	if !containsStatus(from, q.Status) {
-		return nil, fmt.Errorf("%w: cannot move quest from %s to %s", ErrInvalidTransition, q.Status, target)
+	if !slices.Contains(from, q.Status) {
+		return nil, camperrors.Wrapf(ErrInvalidTransition, "cannot move quest from %s to %s", q.Status, target)
 	}
 
 	oldDir := filepath.Dir(q.Path)
 	newDir := filepath.Join(DungeonStatusDir(s.campaignRoot, target), q.Slug)
 	if _, err := os.Stat(newDir); err == nil {
-		return nil, fmt.Errorf("quest directory already exists: %s", newDir)
+		return nil, camperrors.Wrapf(camperrors.ErrInvalidInput, "quest directory already exists: %s", newDir)
 	}
 	if err := os.MkdirAll(filepath.Dir(newDir), 0755); err != nil {
-		return nil, fmt.Errorf("create quest dungeon dir: %w", err)
+		return nil, camperrors.Wrap(err, "create quest dungeon dir")
 	}
 	if err := os.Rename(oldDir, newDir); err != nil {
-		return nil, fmt.Errorf("move quest directory: %w", err)
+		return nil, camperrors.Wrap(err, "move quest directory")
 	}
 
 	q.Status = target
@@ -500,15 +502,6 @@ func (s *Service) moveToStatus(ctx context.Context, identifier string, from []St
 		Files:     files,
 		PreStaged: []string{oldDir},
 	}, nil
-}
-
-func containsStatus(statuses []Status, target Status) bool {
-	for _, status := range statuses {
-		if status == target {
-			return true
-		}
-	}
-	return false
 }
 
 func normalizeTags(tags []string) []string {
