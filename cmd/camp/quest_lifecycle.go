@@ -132,7 +132,9 @@ func runQuestLifecycle(cmd *cobra.Command, selector, action string) error {
 
 	fmt.Printf("✓ Quest %s: %s (%s)\n", action, result.Quest.Name, result.Quest.Status)
 	if !noCommit {
-		autoCommitQuest(ctx, qctx, commitType, result, desc)
+		if err := autoCommitQuest(ctx, qctx, commitType, result, desc); err != nil {
+			return fmt.Errorf("quest %s succeeded, but auto-commit failed: %w", action, err)
+		}
 	}
 	return nil
 }

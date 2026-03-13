@@ -47,7 +47,9 @@ func runQuestRename(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("✓ Quest renamed: %s\n", result.Quest.Name)
 	if !noCommit {
-		autoCommitQuest(ctx, qctx, commit.QuestRename, result, "Renamed quest")
+		if err := autoCommitQuest(ctx, qctx, commit.QuestRename, result, "Renamed quest"); err != nil {
+			return fmt.Errorf("quest renamed, but auto-commit failed: %w", err)
+		}
 	}
 	return nil
 }

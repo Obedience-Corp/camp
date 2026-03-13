@@ -157,9 +157,9 @@ func outputQuestShow(qctx *questCommandContext, q *quest.Quest) {
 	}
 }
 
-func autoCommitQuest(ctx context.Context, qctx *questCommandContext, action commit.QuestAction, result *quest.MutationResult, detail string) {
+func autoCommitQuest(ctx context.Context, qctx *questCommandContext, action commit.QuestAction, result *quest.MutationResult, detail string) error {
 	if result == nil || result.Quest == nil {
-		return
+		return nil
 	}
 	files := commit.NormalizeFiles(qctx.campaignRoot, result.Files...)
 	preStaged := commit.NormalizeFiles(qctx.campaignRoot, result.PreStaged...)
@@ -169,7 +169,7 @@ func autoCommitQuest(ctx context.Context, qctx *questCommandContext, action comm
 	// must be explicitly removed from the index before committing.
 	if len(preStaged) > 0 {
 		if err := git.RemoveCached(ctx, qctx.campaignRoot, preStaged...); err != nil {
-			fmt.Printf("  warning: could not stage deletion of old quest path: %v\n", err)
+			return camperrors.Wrap(err, "stage deletion of old quest path for auto-commit")
 		}
 	}
 
@@ -187,7 +187,11 @@ func autoCommitQuest(ctx context.Context, qctx *questCommandContext, action comm
 		QuestName: result.Quest.Name,
 		Detail:    detail,
 	})
+	if commitResult.Err != nil {
+		return camperrors.Wrap(commitResult.Err, "auto-commit quest changes")
+	}
 	if commitResult.Message != "" {
 		fmt.Printf("  %s\n", commitResult.Message)
 	}
+	return nil
 }

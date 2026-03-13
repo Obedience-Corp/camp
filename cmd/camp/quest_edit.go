@@ -52,7 +52,9 @@ func runQuestEdit(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("✓ Quest updated: %s\n", quest.RelativePath(qctx.campaignRoot, result.Quest.Path))
 	if !noCommit {
-		autoCommitQuest(ctx, qctx, commit.QuestEdit, result, "Edited quest metadata")
+		if err := autoCommitQuest(ctx, qctx, commit.QuestEdit, result, "Edited quest metadata"); err != nil {
+			return fmt.Errorf("quest updated, but auto-commit failed: %w", err)
+		}
 	}
 	return nil
 }

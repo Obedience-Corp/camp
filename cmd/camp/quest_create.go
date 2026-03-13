@@ -98,7 +98,9 @@ func runQuestCreate(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  %s\n", quest.RelativePath(qctx.campaignRoot, result.Quest.Path))
 
 	if !noCommit {
-		autoCommitQuest(ctx, qctx, commit.QuestCreate, result, "Created quest")
+		if err := autoCommitQuest(ctx, qctx, commit.QuestCreate, result, "Created quest"); err != nil {
+			return fmt.Errorf("quest created, but auto-commit failed: %w", err)
+		}
 	}
 	return nil
 }
