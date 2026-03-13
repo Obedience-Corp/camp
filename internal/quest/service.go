@@ -470,9 +470,6 @@ func (s *Service) moveToStatus(ctx context.Context, identifier string, from []St
 
 	oldDir := filepath.Dir(q.Path)
 	newDir := filepath.Join(DungeonStatusDir(s.campaignRoot, target), q.Slug)
-	if target == StatusArchived && q.Status == StatusCompleted {
-		newDir = filepath.Join(DungeonStatusDir(s.campaignRoot, StatusArchived), q.Slug)
-	}
 	if _, err := os.Stat(newDir); err == nil {
 		return nil, fmt.Errorf("quest directory already exists: %s", newDir)
 	}

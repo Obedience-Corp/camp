@@ -15,6 +15,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/quest"
 )
@@ -162,6 +163,16 @@ func autoCommitQuest(ctx context.Context, qctx *questCommandContext, action comm
 	}
 	files := commit.NormalizeFiles(qctx.campaignRoot, result.Files...)
 	preStaged := commit.NormalizeFiles(qctx.campaignRoot, result.PreStaged...)
+
+	// PreStaged paths are old directories that were renamed away by os.Rename.
+	// git does not detect directory moves automatically, so the deletion side
+	// must be explicitly removed from the index before committing.
+	if len(preStaged) > 0 {
+		if err := git.RemoveCached(ctx, qctx.campaignRoot, preStaged...); err != nil {
+			fmt.Printf("  warning: could not stage deletion of old quest path: %v\n", err)
+		}
+	}
+
 	commitResult := commit.Quest(ctx, commit.QuestOptions{
 		Options: commit.Options{
 			CampaignRoot:  qctx.campaignRoot,
