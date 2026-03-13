@@ -184,6 +184,47 @@ func TestIntent_WithDescription(t *testing.T) {
 	}
 }
 
+func TestIntent_WithQuestTag(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	if err := exec.Command("git", "-C", tmpDir, "init").Run(); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.email", "test@test.com").Run(); err != nil {
+		t.Fatalf("failed to configure git email: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.name", "Test").Run(); err != nil {
+		t.Fatalf("failed to configure git name: %v", err)
+	}
+
+	testFile := filepath.Join(tmpDir, "quest.txt")
+	if err := os.WriteFile(testFile, []byte("quest content"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	result := Intent(context.Background(), IntentOptions{
+		Options: Options{
+			CampaignRoot: tmpDir,
+			CampaignID:   "abcdef12",
+			QuestID:      "qst_20260313_abc123",
+		},
+		Action:      IntentCreate,
+		IntentTitle: "Quest tagged intent",
+	})
+
+	if !result.Committed {
+		t.Fatalf("expected commit to succeed, got %s", result.Message)
+	}
+
+	out, err := exec.Command("git", "-C", tmpDir, "log", "-1", "--format=%B").Output()
+	if err != nil {
+		t.Fatalf("failed to get git log: %v", err)
+	}
+	if !strings.Contains(string(out), "[OBEY-CAMPAIGN-abcdef12][qst_20260313_abc123]") {
+		t.Fatalf("commit message missing quest tag: %s", string(out))
+	}
+}
+
 func TestIntent_SelectiveStaging(t *testing.T) {
 	tmpDir := t.TempDir()
 

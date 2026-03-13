@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/quest"
 )
 
 func TestRepairPlan_HasChanges(t *testing.T) {
@@ -450,6 +451,49 @@ func TestComputeRepairPlan_MissingStandardDungeonOBEY(t *testing.T) {
 
 	if !found {
 		t.Error("expected missing workflow/design/dungeon/OBEY.md to be included in repair plan")
+	}
+}
+
+func TestComputeRepairPlan_MissingQuestScaffold(t *testing.T) {
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	if _, err := Init(ctx, dir, InitOptions{Name: "test", Type: config.CampaignTypeProduct}); err != nil {
+		t.Fatal(err)
+	}
+
+	missing := []string{
+		filepath.Join(dir, quest.RootDirName, quest.DefaultFileName),
+		filepath.Join(dir, quest.RootDirName, quest.ActiveFileName),
+		filepath.Join(dir, quest.RootDirName, "dungeon", "OBEY.md"),
+	}
+	for _, path := range missing {
+		if err := os.Remove(path); err != nil {
+			t.Fatalf("failed to remove %s: %v", path, err)
+		}
+	}
+
+	plan, err := ComputeRepairPlan(ctx, dir, InitOptions{Name: "test", Type: config.CampaignTypeProduct, Repair: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found := map[string]bool{}
+	for _, c := range plan.Changes {
+		if c.Type == RepairAdd {
+			found[c.Key] = true
+		}
+	}
+
+	expected := []string{
+		filepath.ToSlash(filepath.Join(quest.RootDirName, quest.DefaultFileName)),
+		filepath.ToSlash(filepath.Join(quest.RootDirName, quest.ActiveFileName)),
+		filepath.ToSlash(filepath.Join(quest.RootDirName, "dungeon", "OBEY.md")),
+	}
+	for _, key := range expected {
+		if !found[key] {
+			t.Errorf("expected missing quest scaffold path %q to be included in repair plan", key)
+		}
 	}
 }
 

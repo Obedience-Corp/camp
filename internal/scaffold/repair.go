@@ -11,6 +11,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/dungeon/statuspath"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/quest"
 	"github.com/lancekrogers/guild-scaffold/pkg/scaffold"
 )
 
@@ -108,7 +109,10 @@ func ComputeRepairPlan(ctx context.Context, dir string, opts InitOptions) (*Repa
 	// Phase 4: Account for shared standard-dungeon files created outside scaffold FS.
 	computeStandardDungeonScaffoldChanges(absDir, plan)
 
-	// Phase 5: Detect misplaced completed/ dirs that should be in dungeon/completed/YYYY-MM-DD/.
+	// Phase 5: Account for imperative quest scaffold files created outside scaffold FS.
+	computeQuestScaffoldChanges(absDir, plan)
+
+	// Phase 6: Detect misplaced completed/ dirs that should be in dungeon/completed/YYYY-MM-DD/.
 	// This runs after scaffold detection so we know which dungeon dirs will be created.
 	computeMigrationChanges(absDir, plan)
 
@@ -142,6 +146,61 @@ func computeStandardDungeonScaffoldChanges(absDir string, plan *RepairPlan) {
 			Category:    "file",
 			Key:         relPath,
 			Description: "missing file",
+		})
+	}
+}
+
+func computeQuestScaffoldChanges(absDir string, plan *RepairPlan) {
+	requiredDirs := []string{
+		quest.RootDirName,
+		filepath.ToSlash(filepath.Join(quest.RootDirName, "dungeon")),
+		filepath.ToSlash(filepath.Join(quest.RootDirName, "dungeon", "completed")),
+		filepath.ToSlash(filepath.Join(quest.RootDirName, "dungeon", "archived")),
+		filepath.ToSlash(filepath.Join(quest.RootDirName, "dungeon", "someday")),
+	}
+	requiredFiles := []string{
+		filepath.ToSlash(filepath.Join(quest.RootDirName, quest.DefaultFileName)),
+		filepath.ToSlash(filepath.Join(quest.RootDirName, quest.ActiveFileName)),
+		filepath.ToSlash(filepath.Join(quest.RootDirName, "dungeon", "OBEY.md")),
+		filepath.ToSlash(filepath.Join(quest.RootDirName, "dungeon", "completed", ".gitkeep")),
+		filepath.ToSlash(filepath.Join(quest.RootDirName, "dungeon", "archived", ".gitkeep")),
+		filepath.ToSlash(filepath.Join(quest.RootDirName, "dungeon", "someday", ".gitkeep")),
+	}
+
+	seen := make(map[string]bool, len(plan.Changes))
+	for _, change := range plan.Changes {
+		seen[change.Key] = true
+	}
+
+	for _, relPath := range requiredDirs {
+		absPath := filepath.Join(absDir, filepath.FromSlash(relPath))
+		if info, err := os.Stat(absPath); err == nil && info.IsDir() {
+			continue
+		}
+		if seen[relPath] {
+			continue
+		}
+		plan.Changes = append(plan.Changes, RepairChange{
+			Type:        RepairAdd,
+			Category:    "directory",
+			Key:         relPath,
+			Description: "missing quest directory",
+		})
+	}
+
+	for _, relPath := range requiredFiles {
+		absPath := filepath.Join(absDir, filepath.FromSlash(relPath))
+		if _, err := os.Stat(absPath); err == nil {
+			continue
+		}
+		if seen[relPath] {
+			continue
+		}
+		plan.Changes = append(plan.Changes, RepairChange{
+			Type:        RepairAdd,
+			Category:    "file",
+			Key:         relPath,
+			Description: "missing quest scaffold file",
 		})
 	}
 }
