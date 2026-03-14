@@ -259,57 +259,33 @@ func buildCrawlCommitMessage(campaignRoot, parentPath string, triage, inner *dun
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func crawlMovedItemPaths(relDungeon string, summaries ...*dungeon.CrawlSummary) []string {
-	seen := make(map[string]struct{})
-	var paths []string
-
-	for _, summary := range summaries {
-		if summary == nil || !summary.HasMoves() {
-			continue
-		}
-		for status, names := range summary.MovedItems {
-			base, ok := crawlMoveDestinationBase(relDungeon, status)
-			if !ok {
-				continue
-			}
-			for _, name := range names {
-				cleanName, ok := cleanCrawlCommitName(name)
-				if !ok {
-					continue
-				}
-				path := filepath.Join(base, cleanName)
-				path = filepath.Clean(path)
-				if !isSafeCrawlCommitPath(path) {
-					continue
-				}
-				if _, exists := seen[path]; exists {
-					continue
-				}
-				seen[path] = struct{}{}
-				paths = append(paths, path)
-			}
-		}
-	}
-
-	sort.Strings(paths)
-	return paths
+// crawlPathSet accumulates unique, safe relative paths for a crawl commit.
+// Call append to add a candidate path and sorted to retrieve the deduplicated result.
+type crawlPathSet struct {
+	seen  map[string]struct{}
+	paths []string
 }
 
-func crawlCommitPaths(relDungeon string, summaries ...*dungeon.CrawlSummary) []string {
-	paths := crawlMovedItemPaths(relDungeon, summaries...)
+func newCrawlPathSet() *crawlPathSet {
+	return &crawlPathSet{seen: make(map[string]struct{})}
+}
 
-	logPath, ok := cleanCrawlCommitPath(filepath.Join(relDungeon, "crawl.jsonl"))
-	if !ok || !isSafeCrawlCommitPath(logPath) {
-		return paths
+// appendSafe cleans path, verifies it is safe, and adds it if not already present.
+func (s *crawlPathSet) appendSafe(path string) {
+	path = filepath.Clean(path)
+	if !isSafeCrawlCommitPath(path) {
+		return
 	}
-
-	for _, path := range paths {
-		if path == logPath {
-			return paths
-		}
+	if _, exists := s.seen[path]; exists {
+		return
 	}
+	s.seen[path] = struct{}{}
+	s.paths = append(s.paths, path)
+}
 
-	return append(paths, logPath)
+func (s *crawlPathSet) sorted() []string {
+	sort.Strings(s.paths)
+	return s.paths
 }
 
 func crawlMoveDestinationBase(relDungeon, status string) (string, bool) {
@@ -334,6 +310,49 @@ func crawlMoveDestinationBase(relDungeon, status string) (string, bool) {
 		return "", false
 	}
 	return filepath.Join(cleanDungeon, cleanStatus), true
+}
+
+// populateMovedPaths appends the destination paths for all moved items in the
+// given summaries into ps. This is the single source of truth for the
+// summary → status → name iteration used by both crawlMovedItemPaths and
+// crawlCommitPaths.
+func populateMovedPaths(ps *crawlPathSet, relDungeon string, summaries ...*dungeon.CrawlSummary) {
+	for _, summary := range summaries {
+		if summary == nil || !summary.HasMoves() {
+			continue
+		}
+		for status, names := range summary.MovedItems {
+			base, ok := crawlMoveDestinationBase(relDungeon, status)
+			if !ok {
+				continue
+			}
+			for _, name := range names {
+				cleanName, ok := cleanCrawlCommitName(name)
+				if !ok {
+					continue
+				}
+				ps.appendSafe(filepath.Join(base, cleanName))
+			}
+		}
+	}
+}
+
+func crawlMovedItemPaths(relDungeon string, summaries ...*dungeon.CrawlSummary) []string {
+	ps := newCrawlPathSet()
+	populateMovedPaths(ps, relDungeon, summaries...)
+	return ps.sorted()
+}
+
+// crawlCommitPaths returns the full set of paths to include in a crawl auto-commit:
+// destination paths for moved items, plus the crawl log.
+func crawlCommitPaths(relDungeon string, summaries ...*dungeon.CrawlSummary) []string {
+	ps := newCrawlPathSet()
+	populateMovedPaths(ps, relDungeon, summaries...)
+
+	// Always include the crawl log.
+	ps.appendSafe(filepath.Join(relDungeon, "crawl.jsonl"))
+
+	return ps.sorted()
 }
 
 func stageTrackedCrawlSourceDeletions(
@@ -362,6 +381,8 @@ func stageTrackedCrawlSourceDeletions(
 	return tracked, nil
 }
 
+// crawlSourceDeletionPaths returns the relative source paths that were moved
+// (and therefore deleted from their origin) so they can be staged for removal.
 func crawlSourceDeletionPaths(
 	campaignRoot string,
 	parentPath string,
@@ -369,15 +390,14 @@ func crawlSourceDeletionPaths(
 	triage *dungeon.CrawlSummary,
 	inner *dungeon.CrawlSummary,
 ) []string {
-	seen := make(map[string]struct{})
-	var paths []string
-
 	relParent, err := filepath.Rel(campaignRoot, parentPath)
 	if err != nil {
 		relParent = parentPath
 	}
 
-	appendSummary := func(base string, summary *dungeon.CrawlSummary) {
+	ps := newCrawlPathSet()
+
+	appendSummarySourcePaths := func(base string, summary *dungeon.CrawlSummary) {
 		if summary == nil || !summary.HasMoves() {
 			return
 		}
@@ -399,23 +419,14 @@ func crawlSourceDeletionPaths(
 				if cleanBase != "" {
 					path = filepath.Join(cleanBase, cleanName)
 				}
-				path = filepath.Clean(path)
-				if !isSafeCrawlCommitPath(path) {
-					continue
-				}
-				if _, exists := seen[path]; exists {
-					continue
-				}
-				seen[path] = struct{}{}
-				paths = append(paths, path)
+				ps.appendSafe(path)
 			}
 		}
 	}
 
-	appendSummary(relParent, triage)
-	appendSummary(relDungeon, inner)
-	sort.Strings(paths)
-	return paths
+	appendSummarySourcePaths(relParent, triage)
+	appendSummarySourcePaths(relDungeon, inner)
+	return ps.sorted()
 }
 
 func cleanCrawlCommitName(name string) (string, bool) {
