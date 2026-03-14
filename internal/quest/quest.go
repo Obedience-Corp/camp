@@ -47,11 +47,6 @@ func DefaultQuestPath(campaignRoot string) string {
 	return filepath.Join(QuestsDir(campaignRoot), DefaultFileName)
 }
 
-// ActiveQuestPath returns the active quest marker file path.
-func ActiveQuestPath(campaignRoot string) string {
-	return filepath.Join(QuestsDir(campaignRoot), ActiveFileName)
-}
-
 // QuestDir returns the directory path for a quest slug at the root.
 func QuestDir(campaignRoot, slug string) string {
 	return filepath.Join(QuestsDir(campaignRoot), slug)
@@ -114,35 +109,6 @@ func Load(ctx context.Context, path string) (*Quest, error) {
 // LoadDefault loads the canonical default quest.
 func LoadDefault(ctx context.Context, campaignRoot string) (*Quest, error) {
 	return Load(ctx, DefaultQuestPath(campaignRoot))
-}
-
-// ReadActiveID reads the active quest marker. Empty string means no marker.
-func ReadActiveID(ctx context.Context, campaignRoot string) (string, error) {
-	if err := ctx.Err(); err != nil {
-		return "", err
-	}
-	data, err := os.ReadFile(ActiveQuestPath(campaignRoot))
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return "", nil
-		}
-		return "", camperrors.Wrap(err, "read active quest")
-	}
-	return strings.TrimSpace(string(data)), nil
-}
-
-// WriteActiveID writes the active quest marker.
-func WriteActiveID(ctx context.Context, campaignRoot, questID string) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if questID == "" {
-		questID = DefaultQuestID
-	}
-	if err := os.MkdirAll(QuestsDir(campaignRoot), 0755); err != nil {
-		return camperrors.Wrap(err, "create quests dir")
-	}
-	return os.WriteFile(ActiveQuestPath(campaignRoot), []byte(questID+"\n"), 0644)
 }
 
 // List returns quests from the root and optionally the dungeon.
@@ -241,8 +207,9 @@ func Resolve(ctx context.Context, campaignRoot, identifier string) (*Quest, erro
 	}
 }
 
-// ResolveContext resolves quest context from explicit flag, env, active marker,
-// or default quest.
+// ResolveContext resolves quest context from an explicit flag or the CAMP_QUEST
+// environment variable. Returns nil (no quest context) when neither is set.
+// Multiple quests may be open simultaneously; there is no "active" marker file.
 func ResolveContext(ctx context.Context, campaignRoot, explicit string) (*Quest, error) {
 	if strings.TrimSpace(explicit) != "" {
 		return Resolve(ctx, campaignRoot, explicit)
@@ -252,21 +219,7 @@ func ResolveContext(ctx context.Context, campaignRoot, explicit string) (*Quest,
 		return Resolve(ctx, campaignRoot, envID)
 	}
 
-	activeID, err := ReadActiveID(ctx, campaignRoot)
-	if err != nil {
-		return nil, err
-	}
-	if activeID != "" {
-		if q, err := Resolve(ctx, campaignRoot, activeID); err == nil {
-			return q, nil
-		}
-	}
-
-	q, err := LoadDefault(ctx, campaignRoot)
-	if errors.Is(err, ErrQuestNotFound) || !Exists(campaignRoot) {
-		return nil, nil
-	}
-	return q, err
+	return nil, nil
 }
 
 // SortForList sorts quests for list output.

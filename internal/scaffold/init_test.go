@@ -138,7 +138,6 @@ func TestInit(t *testing.T) {
 	expectedQuestPaths := []string{
 		quest.RootDirName,
 		filepath.Join(quest.RootDirName, quest.DefaultFileName),
-		filepath.Join(quest.RootDirName, quest.ActiveFileName),
 		filepath.Join(quest.RootDirName, "dungeon", "OBEY.md"),
 		filepath.Join(quest.RootDirName, "dungeon", "completed", ".gitkeep"),
 		filepath.Join(quest.RootDirName, "dungeon", "archived", ".gitkeep"),
@@ -151,12 +150,10 @@ func TestInit(t *testing.T) {
 		}
 	}
 
-	activeQuestID, err := quest.ReadActiveID(ctx, campaignDir)
-	if err != nil {
-		t.Fatalf("ReadActiveID() error = %v", err)
-	}
-	if activeQuestID != quest.DefaultQuestID {
-		t.Errorf("active quest id = %q, want %q", activeQuestID, quest.DefaultQuestID)
+	// Verify .active file is NOT created (quest context is via --quest flag or CAMP_QUEST env var)
+	activePath := filepath.Join(campaignDir, quest.RootDirName, ".active")
+	if _, err := os.Stat(activePath); !os.IsNotExist(err) {
+		t.Errorf(".active file should not be created: %s", activePath)
 	}
 
 	// Check campaign.yaml was created
@@ -760,7 +757,6 @@ func TestInit_RepairRestoresQuestScaffold(t *testing.T) {
 
 	removed := []string{
 		filepath.Join(campaignDir, quest.RootDirName, quest.DefaultFileName),
-		filepath.Join(campaignDir, quest.RootDirName, quest.ActiveFileName),
 		filepath.Join(campaignDir, quest.RootDirName, "dungeon", "OBEY.md"),
 	}
 	for _, path := range removed {
@@ -783,11 +779,9 @@ func TestInit_RepairRestoresQuestScaffold(t *testing.T) {
 		}
 	}
 
-	activeQuestID, err := quest.ReadActiveID(ctx, campaignDir)
-	if err != nil {
-		t.Fatalf("ReadActiveID() error = %v", err)
-	}
-	if activeQuestID != quest.DefaultQuestID {
-		t.Errorf("repaired active quest id = %q, want %q", activeQuestID, quest.DefaultQuestID)
+	// Verify .active file is NOT recreated on repair
+	activePath := filepath.Join(campaignDir, quest.RootDirName, ".active")
+	if _, err := os.Stat(activePath); !os.IsNotExist(err) {
+		t.Errorf(".active file should not be created on repair: %s", activePath)
 	}
 }

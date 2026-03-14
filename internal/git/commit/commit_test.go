@@ -220,7 +220,7 @@ func TestIntent_WithQuestTag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get git log: %v", err)
 	}
-	if !strings.Contains(string(out), "[OBEY-CAMPAIGN-abcdef12][qst_20260313_abc123]") {
+	if !strings.Contains(string(out), "[OBEY-CAMPAIGN-abcdef12-qst_20260313_abc123]") {
 		t.Fatalf("commit message missing quest tag: %s", string(out))
 	}
 }

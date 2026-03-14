@@ -31,8 +31,6 @@ const (
 	FileName = "quest.yaml"
 	// DefaultFileName stores the special default quest metadata.
 	DefaultFileName = "default.yaml"
-	// ActiveFileName stores the active quest ID.
-	ActiveFileName = ".active"
 )
 
 // Quest represents one execution context inside a campaign.

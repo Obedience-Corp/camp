@@ -96,13 +96,10 @@ func (s *Service) Create(ctx context.Context, name, purpose, description string,
 	if err := Save(ctx, path, q); err != nil {
 		return nil, err
 	}
-	if err := WriteActiveID(ctx, s.campaignRoot, q.ID); err != nil {
-		return nil, err
-	}
 
 	return &MutationResult{
 		Quest: q,
-		Files: []string{path, ActiveQuestPath(s.campaignRoot)},
+		Files: []string{path},
 	}, nil
 }
 
@@ -228,13 +225,10 @@ func (s *Service) CreateWithEditor(ctx context.Context, name, purpose, descripti
 	if err := Save(ctx, path, edited); err != nil {
 		return nil, err
 	}
-	if err := WriteActiveID(ctx, s.campaignRoot, edited.ID); err != nil {
-		return nil, err
-	}
 
 	return &MutationResult{
 		Quest: edited,
-		Files: []string{path, ActiveQuestPath(s.campaignRoot)},
+		Files: []string{path},
 	}, nil
 }
 
@@ -372,13 +366,10 @@ func (s *Service) Restore(ctx context.Context, identifier string) (*MutationResu
 	if err := Save(ctx, q.Path, q); err != nil {
 		return nil, err
 	}
-	if err := WriteActiveID(ctx, s.campaignRoot, q.ID); err != nil {
-		return nil, err
-	}
 
 	return &MutationResult{
 		Quest:     q,
-		Files:     []string{newDir, ActiveQuestPath(s.campaignRoot)},
+		Files:     []string{newDir},
 		PreStaged: []string{oldDir},
 	}, nil
 }
@@ -432,25 +423,9 @@ func (s *Service) updateInPlace(ctx context.Context, identifier string, from, to
 		return nil, err
 	}
 
-	files := []string{q.Path}
-	if to == StatusPaused {
-		if activeID, err := ReadActiveID(ctx, s.campaignRoot); err == nil && activeID == q.ID {
-			if err := WriteActiveID(ctx, s.campaignRoot, DefaultQuestID); err != nil {
-				return nil, err
-			}
-			files = append(files, ActiveQuestPath(s.campaignRoot))
-		}
-	}
-	if to == StatusOpen {
-		if err := WriteActiveID(ctx, s.campaignRoot, q.ID); err != nil {
-			return nil, err
-		}
-		files = append(files, ActiveQuestPath(s.campaignRoot))
-	}
-
 	return &MutationResult{
 		Quest: q,
-		Files: files,
+		Files: []string{q.Path},
 	}, nil
 }
 
@@ -489,17 +464,9 @@ func (s *Service) moveToStatus(ctx context.Context, identifier string, from []St
 		return nil, err
 	}
 
-	files := []string{newDir}
-	if activeID, err := ReadActiveID(ctx, s.campaignRoot); err == nil && activeID == q.ID {
-		if err := WriteActiveID(ctx, s.campaignRoot, DefaultQuestID); err != nil {
-			return nil, err
-		}
-		files = append(files, ActiveQuestPath(s.campaignRoot))
-	}
-
 	return &MutationResult{
 		Quest:     q,
-		Files:     files,
+		Files:     []string{newDir},
 		PreStaged: []string{oldDir},
 	}, nil
 }

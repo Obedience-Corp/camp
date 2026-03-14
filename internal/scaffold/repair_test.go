@@ -464,7 +464,6 @@ func TestComputeRepairPlan_MissingQuestScaffold(t *testing.T) {
 
 	missing := []string{
 		filepath.Join(dir, quest.RootDirName, quest.DefaultFileName),
-		filepath.Join(dir, quest.RootDirName, quest.ActiveFileName),
 		filepath.Join(dir, quest.RootDirName, "dungeon", "OBEY.md"),
 	}
 	for _, path := range missing {
@@ -487,13 +486,18 @@ func TestComputeRepairPlan_MissingQuestScaffold(t *testing.T) {
 
 	expected := []string{
 		filepath.ToSlash(filepath.Join(quest.RootDirName, quest.DefaultFileName)),
-		filepath.ToSlash(filepath.Join(quest.RootDirName, quest.ActiveFileName)),
 		filepath.ToSlash(filepath.Join(quest.RootDirName, "dungeon", "OBEY.md")),
 	}
 	for _, key := range expected {
 		if !found[key] {
 			t.Errorf("expected missing quest scaffold path %q to be included in repair plan", key)
 		}
+	}
+
+	// Verify .active is NOT in the repair plan (no active file by design)
+	activeKey := filepath.ToSlash(filepath.Join(quest.RootDirName, ".active"))
+	if found[activeKey] {
+		t.Errorf(".active should NOT be in repair plan, but it was")
 	}
 }
 

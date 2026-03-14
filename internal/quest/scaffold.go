@@ -28,11 +28,6 @@ func DefaultPath(campaignRoot string) string {
 	return filepath.Join(RootPath(campaignRoot), DefaultFileName)
 }
 
-// ActivePath returns the active quest marker path.
-func ActivePath(campaignRoot string) string {
-	return filepath.Join(RootPath(campaignRoot), ActiveFileName)
-}
-
 // DungeonPath returns the quest dungeon root.
 func DungeonPath(campaignRoot string) string {
 	return filepath.Join(RootPath(campaignRoot), "dungeon")
@@ -56,9 +51,6 @@ func EnsureScaffold(ctx context.Context, campaignRoot string) (*ScaffoldResult, 
 	}
 
 	if err := ensureDefaultQuest(ctx, campaignRoot, result); err != nil {
-		return nil, err
-	}
-	if err := ensureActiveMarker(ctx, campaignRoot, result); err != nil {
 		return nil, err
 	}
 
@@ -102,24 +94,6 @@ func ensureDefaultQuest(ctx context.Context, campaignRoot string, result *Scaffo
 	q := DefaultQuest(time.Now().UTC())
 	if err := Save(ctx, path, q); err != nil {
 		return camperrors.Wrap(err, "writing default quest")
-	}
-	result.CreatedFiles = appendUnique(result.CreatedFiles, path)
-	return nil
-}
-
-func ensureActiveMarker(ctx context.Context, campaignRoot string, result *ScaffoldResult) error {
-	if err := ctx.Err(); err != nil {
-		return camperrors.Wrap(err, "context cancelled")
-	}
-
-	path := ActivePath(campaignRoot)
-	if _, err := os.Stat(path); err == nil {
-		result.Skipped = appendUnique(result.Skipped, path)
-		return nil
-	}
-
-	if err := os.WriteFile(path, []byte(DefaultQuestID+"\n"), 0644); err != nil {
-		return camperrors.Wrap(err, "writing active quest marker")
 	}
 	result.CreatedFiles = appendUnique(result.CreatedFiles, path)
 	return nil

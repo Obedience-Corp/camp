@@ -37,14 +37,6 @@ func TestServiceCreatePauseResumeCompleteRestore(t *testing.T) {
 		t.Fatal("created quest slug should be set")
 	}
 
-	activeID, err := ReadActiveID(ctx, root)
-	if err != nil {
-		t.Fatalf("ReadActiveID() error = %v", err)
-	}
-	if activeID != created.Quest.ID {
-		t.Fatalf("active quest id = %q, want %q", activeID, created.Quest.ID)
-	}
-
 	paused, err := svc.Pause(ctx, created.Quest.ID)
 	if err != nil {
 		t.Fatalf("Pause() error = %v", err)
@@ -53,28 +45,12 @@ func TestServiceCreatePauseResumeCompleteRestore(t *testing.T) {
 		t.Fatalf("paused quest status = %q, want %q", paused.Quest.Status, StatusPaused)
 	}
 
-	activeID, err = ReadActiveID(ctx, root)
-	if err != nil {
-		t.Fatalf("ReadActiveID() after pause error = %v", err)
-	}
-	if activeID != DefaultQuestID {
-		t.Fatalf("active quest id after pause = %q, want %q", activeID, DefaultQuestID)
-	}
-
 	resumed, err := svc.Resume(ctx, created.Quest.ID)
 	if err != nil {
 		t.Fatalf("Resume() error = %v", err)
 	}
 	if resumed.Quest.Status != StatusOpen {
 		t.Fatalf("resumed quest status = %q, want %q", resumed.Quest.Status, StatusOpen)
-	}
-
-	activeID, err = ReadActiveID(ctx, root)
-	if err != nil {
-		t.Fatalf("ReadActiveID() after resume error = %v", err)
-	}
-	if activeID != created.Quest.ID {
-		t.Fatalf("active quest id after resume = %q, want %q", activeID, created.Quest.ID)
 	}
 
 	completed, err := svc.Complete(ctx, created.Quest.ID)
@@ -88,14 +64,6 @@ func TestServiceCreatePauseResumeCompleteRestore(t *testing.T) {
 		t.Fatalf("completed quest directory = %q", got)
 	}
 
-	activeID, err = ReadActiveID(ctx, root)
-	if err != nil {
-		t.Fatalf("ReadActiveID() after complete error = %v", err)
-	}
-	if activeID != DefaultQuestID {
-		t.Fatalf("active quest id after complete = %q, want %q", activeID, DefaultQuestID)
-	}
-
 	restored, err := svc.Restore(ctx, created.Quest.ID)
 	if err != nil {
 		t.Fatalf("Restore() error = %v", err)
@@ -107,13 +75,16 @@ func TestServiceCreatePauseResumeCompleteRestore(t *testing.T) {
 		t.Fatalf("restored quest directory = %q", got)
 	}
 
-	activeID, err = ReadActiveID(ctx, root)
+	// Verify quest is findable (no .active file needed — multiple quests can be open)
+	found, err := svc.Find(ctx, created.Quest.ID)
 	if err != nil {
-		t.Fatalf("ReadActiveID() after restore error = %v", err)
+		t.Fatalf("Find() after restore error = %v", err)
 	}
-	if activeID != created.Quest.ID {
-		t.Fatalf("active quest id after restore = %q, want %q", activeID, created.Quest.ID)
+	if found.Status != StatusOpen {
+		t.Fatalf("restored quest status via Find = %q, want %q", found.Status, StatusOpen)
 	}
+
+	_ = root // root used by DungeonStatusDir/QuestsDir above
 }
 
 func TestServiceEditAndList(t *testing.T) {
@@ -181,12 +152,22 @@ func TestServiceEditAndList(t *testing.T) {
 		t.Fatalf("Find() id = %q, want %q", found.ID, second.Quest.ID)
 	}
 
-	current, err := ResolveContext(ctx, root, "")
+	// ResolveContext with no flag and no env var returns nil (no implicit active quest).
+	noContext, err := ResolveContext(ctx, root, "")
 	if err != nil {
-		t.Fatalf("ResolveContext() error = %v", err)
+		t.Fatalf("ResolveContext(empty) error = %v", err)
 	}
-	if current == nil || current.ID != second.Quest.ID {
-		t.Fatalf("ResolveContext() id = %#v, want %q", current, second.Quest.ID)
+	if noContext != nil {
+		t.Fatalf("ResolveContext(empty) = %#v, want nil (no implicit active quest)", noContext)
+	}
+
+	// ResolveContext with explicit ID resolves the correct quest.
+	explicit, err := ResolveContext(ctx, root, second.Quest.ID)
+	if err != nil {
+		t.Fatalf("ResolveContext(explicit) error = %v", err)
+	}
+	if explicit == nil || explicit.ID != second.Quest.ID {
+		t.Fatalf("ResolveContext(explicit) id = %#v, want %q", explicit, second.Quest.ID)
 	}
 }
 

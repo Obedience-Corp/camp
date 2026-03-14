@@ -160,7 +160,6 @@ func computeQuestScaffoldChanges(absDir string, plan *RepairPlan) {
 	}
 	requiredFiles := []string{
 		filepath.ToSlash(filepath.Join(quest.RootDirName, quest.DefaultFileName)),
-		filepath.ToSlash(filepath.Join(quest.RootDirName, quest.ActiveFileName)),
 		filepath.ToSlash(filepath.Join(quest.RootDirName, "dungeon", "OBEY.md")),
 		filepath.ToSlash(filepath.Join(quest.RootDirName, "dungeon", "completed", ".gitkeep")),
 		filepath.ToSlash(filepath.Join(quest.RootDirName, "dungeon", "archived", ".gitkeep")),
