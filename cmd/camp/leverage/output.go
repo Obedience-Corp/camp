@@ -1,26 +1,23 @@
-package main
+package leverage
 
 import (
 	"encoding/json"
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"sort"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	intleverage "github.com/Obedience-Corp/camp/internal/leverage"
+	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 	"github.com/spf13/cobra"
-
-	"github.com/Obedience-Corp/camp/internal/leverage"
-	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
-// recentLeverage holds optional 7-day and 30-day leverage computed from snapshots.
 type recentLeverage struct {
 	week7, month30 float64
 	has7, has30    bool
 }
 
-// leverageOutputOpts holds display options for the table output.
 type leverageOutputOpts struct {
 	authorFilter   string
 	authorExcluded int
@@ -28,10 +25,10 @@ type leverageOutputOpts struct {
 	directoryName  string
 }
 
-func leverageOutputJSON(cmd *cobra.Command, agg *leverage.LeverageScore, scores []*leverage.LeverageScore) error {
+func leverageOutputJSON(cmd *cobra.Command, agg *intleverage.LeverageScore, scores []*intleverage.LeverageScore) error {
 	output := struct {
-		Campaign *leverage.LeverageScore   `json:"campaign"`
-		Projects []*leverage.LeverageScore `json:"projects"`
+		Campaign *intleverage.LeverageScore   `json:"campaign"`
+		Projects []*intleverage.LeverageScore `json:"projects"`
 	}{
 		Campaign: agg,
 		Projects: scores,
@@ -45,7 +42,7 @@ func leverageOutputJSON(cmd *cobra.Command, agg *leverage.LeverageScore, scores 
 	return nil
 }
 
-func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores []*leverage.LeverageScore, cfg *leverage.LeverageConfig, autoDetected bool, recent recentLeverage, opts leverageOutputOpts) error {
+func leverageOutputTable(cmd *cobra.Command, agg *intleverage.LeverageScore, scores []*intleverage.LeverageScore, cfg *intleverage.LeverageConfig, autoDetected bool, recent recentLeverage, opts leverageOutputOpts) error {
 	out := cmd.OutOrStdout()
 	noLegend, _ := cmd.Flags().GetBool("no-legend")
 
@@ -54,9 +51,7 @@ func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores
 		fmt.Fprintln(out)
 	}
 
-	// Project table
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.CategoryColor)
-
 	headers := []string{"PROJECT", "FILES", "CODE", "AUTHORS", "EST COST", "EST PM", "ACTUAL PM", "LEVERAGE"}
 	rows := buildScoreRows(scores)
 
@@ -70,11 +65,11 @@ func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores
 				return headerStyle
 			}
 			switch col {
-			case 0: // PROJECT
+			case 0:
 				return lipgloss.NewStyle().Foreground(ui.AccentColor)
-			case 4: // EST COST
+			case 4:
 				return lipgloss.NewStyle().Foreground(ui.WarningColor)
-			case 7: // LEVERAGE
+			case 7:
 				return lipgloss.NewStyle().Foreground(ui.SuccessColor)
 			default:
 				return lipgloss.NewStyle()
@@ -92,7 +87,6 @@ func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores
 
 	fmt.Fprintln(out)
 
-	// Header: headline leverage number
 	if opts.authorFilter != "" {
 		fmt.Fprintf(out, "%s %s  %s\n\n",
 			ui.Header("Your Leverage:"),
@@ -114,7 +108,6 @@ func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores
 			authorInfo)
 	}
 
-	// Recent leverage from snapshots (omitted if no data)
 	if recent.has7 || recent.has30 {
 		if recent.has7 {
 			fmt.Fprintf(out, "  %s %s\n",
@@ -130,7 +123,6 @@ func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores
 		fmt.Fprintln(out)
 	}
 
-	// COCOMO vs Actual comparison in person-months
 	estPersonMonths := agg.EstimatedPeople * agg.EstimatedMonths
 	actualPersonMonths := agg.ActualPersonMonths
 	if actualPersonMonths == 0 {
@@ -154,7 +146,6 @@ func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores
 		ui.Label("Team Equivalent:"),
 		ui.Value(fmtScore(agg.SimpleLeverage)+"x", ui.AccentColor))
 
-	// Summary line
 	summaryParts := fmt.Sprintf("%s lines of code across %d %s",
 		fmtInt(agg.TotalCode), len(scores), pluralize(len(scores), "project", "projects"))
 	if opts.authorExcluded > 0 {
@@ -165,19 +156,17 @@ func leverageOutputTable(cmd *cobra.Command, agg *leverage.LeverageScore, scores
 	return nil
 }
 
-// leverageOutputByAuthor displays a ranked table of each author's blame-weighted
-// PM and their share of campaign leverage.
-func leverageOutputByAuthor(cmd *cobra.Command, agg *leverage.LeverageScore, resolved []leverage.ResolvedProject, resolver *leverage.AuthorResolver, opts leverageOutputOpts) error {
+func leverageOutputByAuthor(cmd *cobra.Command, agg *intleverage.LeverageScore, resolved []intleverage.ResolvedProject, resolver *intleverage.AuthorResolver, opts leverageOutputOpts) error {
 	out := cmd.OutOrStdout()
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.CategoryColor)
 
-	// Aggregate authors across all projects by canonical author ID.
 	type authorAgg struct {
 		displayName string
 		authorID    string
 		lines       int
 		weightedPM  float64
 	}
+
 	byID := make(map[string]*authorAgg)
 	for _, proj := range resolved {
 		for _, a := range proj.Authors {
@@ -185,18 +174,17 @@ func leverageOutputByAuthor(cmd *cobra.Command, agg *leverage.LeverageScore, res
 			if existing, ok := byID[authorID]; ok {
 				existing.lines += a.Lines
 				existing.weightedPM += a.WeightedPM
-			} else {
-				byID[authorID] = &authorAgg{
-					displayName: resolver.DisplayName(authorID),
-					authorID:    authorID,
-					lines:       a.Lines,
-					weightedPM:  a.WeightedPM,
-				}
+				continue
+			}
+			byID[authorID] = &authorAgg{
+				displayName: resolver.DisplayName(authorID),
+				authorID:    authorID,
+				lines:       a.Lines,
+				weightedPM:  a.WeightedPM,
 			}
 		}
 	}
 
-	// Sort by weighted PM descending.
 	authors := make([]*authorAgg, 0, len(byID))
 	for _, a := range byID {
 		authors = append(authors, a)
@@ -205,7 +193,6 @@ func leverageOutputByAuthor(cmd *cobra.Command, agg *leverage.LeverageScore, res
 		return authors[i].weightedPM > authors[j].weightedPM
 	})
 
-	// Build table rows.
 	headers := []string{"AUTHOR", "ID", "LINES OWNED", "WEIGHTED PM", "LEVERAGE SHARE"}
 	var rows [][]string
 	for _, a := range authors {
@@ -240,9 +227,9 @@ func leverageOutputByAuthor(cmd *cobra.Command, agg *leverage.LeverageScore, res
 				return headerStyle
 			}
 			switch col {
-			case 0: // AUTHOR
+			case 0:
 				return lipgloss.NewStyle().Foreground(ui.AccentColor)
-			case 4: // LEVERAGE SHARE
+			case 4:
 				return lipgloss.NewStyle().Foreground(ui.SuccessColor)
 			default:
 				return lipgloss.NewStyle()
@@ -256,7 +243,6 @@ func leverageOutputByAuthor(cmd *cobra.Command, agg *leverage.LeverageScore, res
 	return nil
 }
 
-// fmtInt formats an integer with comma separators (e.g., 805433 → "805,433").
 func fmtInt(n int) string {
 	if n < 0 {
 		return "-" + fmtInt(-n)
@@ -275,13 +261,10 @@ func fmtInt(n int) string {
 	return string(result)
 }
 
-// fmtCost formats a float64 cost with comma separators (e.g., 28218013.0 → "28,218,013").
 func fmtCost(f float64) string {
 	return fmtInt(int(f))
 }
 
-// fmtRecentLeverage formats a recent period leverage value.
-// Handles negative leverage (code removal) and zero.
 func fmtRecentLeverage(f float64) string {
 	if f < 0 {
 		return fmt.Sprintf("%.1f (negative)", f)
@@ -289,7 +272,6 @@ func fmtRecentLeverage(f float64) string {
 	return fmtScore(f)
 }
 
-// fmtScore formats a leverage score, using commas for large values.
 func fmtScore(f float64) string {
 	if f >= 1000 {
 		return fmt.Sprintf("%s.%d", fmtInt(int(f)), int(f*10)%10)
@@ -297,7 +279,6 @@ func fmtScore(f float64) string {
 	return fmt.Sprintf("%.1f", f)
 }
 
-// pluralize returns singular if n == 1, plural otherwise.
 func pluralize(n int, singular, plural string) string {
 	if n == 1 {
 		return singular

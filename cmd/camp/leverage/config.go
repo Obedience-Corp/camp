@@ -1,15 +1,15 @@
-package main
+package leverage
 
 import (
 	"context"
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"sort"
 	"time"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
-	"github.com/Obedience-Corp/camp/internal/leverage"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	intleverage "github.com/Obedience-Corp/camp/internal/leverage"
 	"github.com/spf13/cobra"
 )
 
@@ -44,21 +44,19 @@ func init() {
 	leverageConfigCmd.Flags().String("exclude", "", "exclude a project from leverage scoring")
 	leverageConfigCmd.Flags().String("include", "", "include a previously excluded project")
 	leverageConfigCmd.Flags().String("author-email", "", "default author email for personal leverage (empty = team view)")
-	leverageCmd.AddCommand(leverageConfigCmd)
+	Cmd.AddCommand(leverageConfigCmd)
 }
 
 func runLeverageConfig(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
-	// Detect campaign root
 	root, err := campaign.DetectCached(ctx)
 	if err != nil {
 		return camperrors.Wrap(err, "not in a campaign")
 	}
 
-	configPath := leverage.DefaultConfigPath(root)
+	configPath := intleverage.DefaultConfigPath(root)
 
-	// Check if any flags were set
 	peopleFlag := cmd.Flags().Lookup("people")
 	startFlag := cmd.Flags().Lookup("start")
 	cocomoFlag := cmd.Flags().Lookup("cocomo-type")
@@ -72,7 +70,6 @@ func runLeverageConfig(cmd *cobra.Command, args []string) error {
 	if hasProjectUpdate {
 		return updateProjectInclusion(cmd, ctx, root, configPath, excludeFlag.Changed, includeFlag.Changed)
 	}
-
 	if !hasUpdates {
 		return displayLeverageConfig(cmd, ctx, root, configPath)
 	}
@@ -82,15 +79,14 @@ func runLeverageConfig(cmd *cobra.Command, args []string) error {
 func displayLeverageConfig(cmd *cobra.Command, ctx context.Context, root, configPath string) error {
 	out := cmd.OutOrStdout()
 
-	// Check if config file exists on disk
 	_, statErr := os.Stat(configPath)
 	configExists := statErr == nil
 
-	var cfg *leverage.LeverageConfig
+	var cfg *intleverage.LeverageConfig
 
 	if configExists {
 		var err error
-		cfg, err = leverage.LoadConfig(configPath)
+		cfg, err = intleverage.LoadConfig(configPath)
 		if err != nil {
 			return camperrors.Wrap(err, "loading config")
 		}
@@ -112,7 +108,7 @@ func displayLeverageConfig(cmd *cobra.Command, ctx context.Context, root, config
 		}
 	} else {
 		var err error
-		cfg, err = leverage.AutoDetectConfig(ctx, root)
+		cfg, err = intleverage.AutoDetectConfig(ctx, root)
 		if err != nil {
 			return camperrors.Wrap(err, "auto-detecting config")
 		}
@@ -128,16 +124,14 @@ func displayLeverageConfig(cmd *cobra.Command, ctx context.Context, root, config
 		fmt.Fprintf(out, "COCOMO Type:   %s\n", cfg.COCOMOProjectType)
 	}
 
-	// Show project inclusion status with git-detected author counts
-	resolved, _ := leverage.ResolveProjects(ctx, root, cfg)
-	// Load resolver for accurate author counting; fall back to email-as-ID if not configured.
-	authResolver := leverage.NewAuthorResolver(nil)
-	if authCfg, loadErr := leverage.LoadAuthorConfig(leverage.DefaultAuthorsPath(root)); loadErr == nil && authCfg != nil {
-		authResolver = leverage.NewAuthorResolver(authCfg)
+	resolved, _ := intleverage.ResolveProjects(ctx, root, cfg)
+	authResolver := intleverage.NewAuthorResolver(nil)
+	if authCfg, loadErr := intleverage.LoadAuthorConfig(intleverage.DefaultAuthorsPath(root)); loadErr == nil && authCfg != nil {
+		authResolver = intleverage.NewAuthorResolver(authCfg)
 	}
 	authorCounts := make(map[string]int)
 	for _, proj := range resolved {
-		count, err := leverage.CountAuthors(ctx, proj.GitDir, authResolver)
+		count, err := intleverage.CountAuthors(ctx, proj.GitDir, authResolver)
 		if err == nil {
 			authorCounts[proj.Name] = count
 		}
@@ -175,14 +169,13 @@ func displayLeverageConfig(cmd *cobra.Command, ctx context.Context, root, config
 func updateProjectInclusion(cmd *cobra.Command, ctx context.Context, root, configPath string, excludeChanged, includeChanged bool) error {
 	out := cmd.OutOrStdout()
 
-	cfg, err := leverage.LoadConfig(configPath)
+	cfg, err := intleverage.LoadConfig(configPath)
 	if err != nil {
 		return camperrors.Wrap(err, "loading config")
 	}
 
-	// Ensure projects are populated before modifying.
 	if len(cfg.Projects) == 0 {
-		if err := leverage.PopulateProjects(ctx, root, cfg); err != nil {
+		if err := intleverage.PopulateProjects(ctx, root, cfg); err != nil {
 			return camperrors.Wrap(err, "populating projects")
 		}
 	}
@@ -209,7 +202,7 @@ func updateProjectInclusion(cmd *cobra.Command, ctx context.Context, root, confi
 		fmt.Fprintf(out, "Included project: %s\n", name)
 	}
 
-	if err := leverage.SaveConfig(configPath, cfg); err != nil {
+	if err := intleverage.SaveConfig(configPath, cfg); err != nil {
 		return camperrors.Wrap(err, "saving config")
 	}
 
@@ -220,13 +213,11 @@ func updateProjectInclusion(cmd *cobra.Command, ctx context.Context, root, confi
 func updateLeverageConfig(cmd *cobra.Command, configPath string, peopleChanged, startChanged, cocomoChanged, authorEmailChanged bool) error {
 	out := cmd.OutOrStdout()
 
-	// Load existing config (returns defaults if file doesn't exist)
-	cfg, err := leverage.LoadConfig(configPath)
+	cfg, err := intleverage.LoadConfig(configPath)
 	if err != nil {
 		return camperrors.Wrap(err, "loading config")
 	}
 
-	// Apply updates
 	if peopleChanged {
 		people, _ := cmd.Flags().GetInt("people")
 		if people < 0 {
@@ -258,8 +249,7 @@ func updateLeverageConfig(cmd *cobra.Command, configPath string, peopleChanged, 
 		cfg.COCOMOProjectType = cocomoType
 	}
 
-	// Save configuration (SaveConfig creates directories as needed)
-	if err := leverage.SaveConfig(configPath, cfg); err != nil {
+	if err := intleverage.SaveConfig(configPath, cfg); err != nil {
 		return camperrors.Wrap(err, "saving config")
 	}
 

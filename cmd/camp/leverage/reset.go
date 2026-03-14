@@ -1,12 +1,12 @@
-package main
+package leverage
 
 import (
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"path/filepath"
 
-	"github.com/Obedience-Corp/camp/internal/leverage"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	intleverage "github.com/Obedience-Corp/camp/internal/leverage"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
 	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/spf13/cobra"
@@ -29,7 +29,7 @@ Examples:
 
 func init() {
 	leverageResetCmd.Flags().StringP("project", "p", "", "clear snapshots for a single project")
-	leverageCmd.AddCommand(leverageResetCmd)
+	Cmd.AddCommand(leverageResetCmd)
 }
 
 func runLeverageReset(cmd *cobra.Command, args []string) error {
@@ -40,8 +40,8 @@ func runLeverageReset(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	snapshotDir := leverage.DefaultSnapshotDir(setup.Root)
-	cacheDir := leverage.DefaultCacheDir(setup.Root)
+	snapshotDir := intleverage.DefaultSnapshotDir(setup.Root)
+	cacheDir := intleverage.DefaultCacheDir(setup.Root)
 	projectFilter, _ := cmd.Flags().GetString("project")
 
 	if projectFilter != "" {
@@ -52,7 +52,6 @@ func runLeverageReset(cmd *cobra.Command, args []string) error {
 
 	cleared := false
 
-	// Clear snapshots.
 	if projectFilter != "" {
 		snapshotTarget := filepath.Join(snapshotDir, projectFilter)
 		if dirExists(snapshotDir) {
@@ -63,13 +62,10 @@ func runLeverageReset(cmd *cobra.Command, args []string) error {
 		if removeDirIfExists(snapshotTarget) {
 			cleared = true
 		}
-	} else {
-		if removeDirIfExists(snapshotDir) {
-			cleared = true
-		}
+	} else if removeDirIfExists(snapshotDir) {
+		cleared = true
 	}
 
-	// Clear blame cache.
 	if projectFilter != "" {
 		cacheFile := filepath.Join(cacheDir, projectFilter+".json")
 		if dirExists(cacheDir) {
@@ -80,10 +76,8 @@ func runLeverageReset(cmd *cobra.Command, args []string) error {
 		if err := os.Remove(cacheFile); err == nil {
 			cleared = true
 		}
-	} else {
-		if removeDirIfExists(cacheDir) {
-			cleared = true
-		}
+	} else if removeDirIfExists(cacheDir) {
+		cleared = true
 	}
 
 	if !cleared {
@@ -101,14 +95,11 @@ func runLeverageReset(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// dirExists returns true if dir exists and is a directory.
 func dirExists(dir string) bool {
 	info, err := os.Stat(dir)
 	return err == nil && info.IsDir()
 }
 
-// removeDirIfExists removes a directory if it exists. Returns true if something
-// was removed.
 func removeDirIfExists(dir string) bool {
 	info, err := os.Stat(dir)
 	if err != nil || !info.IsDir() {

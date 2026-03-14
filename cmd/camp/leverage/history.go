@@ -1,18 +1,17 @@
-package main
+package leverage
 
 import (
 	"encoding/json"
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"sort"
 	"time"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	intleverage "github.com/Obedience-Corp/camp/internal/leverage"
+	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 	"github.com/spf13/cobra"
-
-	"github.com/Obedience-Corp/camp/internal/leverage"
-	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
 var leverageHistoryCmd = &cobra.Command{
@@ -41,7 +40,7 @@ func init() {
 	leverageHistoryCmd.Flags().String("period", "monthly", "aggregation period: weekly or monthly")
 	leverageHistoryCmd.Flags().Bool("json", false, "output as JSON")
 	leverageHistoryCmd.Flags().Bool("by-author", false, "show per-author leverage breakdown")
-	leverageCmd.AddCommand(leverageHistoryCmd)
+	Cmd.AddCommand(leverageHistoryCmd)
 }
 
 func runLeverageHistory(cmd *cobra.Command, args []string) error {
@@ -53,9 +52,8 @@ func runLeverageHistory(cmd *cobra.Command, args []string) error {
 	}
 	cfg := setup.Cfg
 
-	store := leverage.NewFileSnapshotStore(leverage.DefaultSnapshotDir(setup.Root))
+	store := intleverage.NewFileSnapshotStore(intleverage.DefaultSnapshotDir(setup.Root))
 
-	// Determine project list
 	projectFilter, _ := cmd.Flags().GetString("project")
 	var projectNames []string
 	if projectFilter != "" {
@@ -72,7 +70,6 @@ func runLeverageHistory(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Parse date range
 	since := cfg.ProjectStart
 	sinceStr, _ := cmd.Flags().GetString("since")
 	if sinceStr != "" {
@@ -91,21 +88,18 @@ func runLeverageHistory(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Determine period mode
 	periodStr, _ := cmd.Flags().GetString("period")
-	period := leverage.PeriodMonthly
+	period := intleverage.PeriodMonthly
 	if periodStr == "weekly" {
-		period = leverage.PeriodWeekly
+		period = intleverage.PeriodWeekly
 	}
 
-	// Determine actual people for history calculations.
-	// When cfg.ActualPeople == 0 (auto-detect), resolve projects to get author counts.
 	historyPeople := cfg.ActualPeople
 	if historyPeople == 0 {
-		resolved, resolveErr := leverage.ResolveProjects(ctx, setup.Root, cfg)
+		resolved, resolveErr := intleverage.ResolveProjects(ctx, setup.Root, cfg)
 		if resolveErr == nil {
 			for _, proj := range resolved {
-				count, gitErr := leverage.CountAuthors(ctx, proj.GitDir, setup.Resolver)
+				count, gitErr := intleverage.CountAuthors(ctx, proj.GitDir, setup.Resolver)
 				if gitErr == nil && count > historyPeople {
 					historyPeople = count
 				}
@@ -116,8 +110,7 @@ func runLeverageHistory(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Load history with period-based deltas
-	history, err := leverage.LoadPeriodHistory(ctx, store, projectNames, historyPeople, since, until, period)
+	history, err := intleverage.LoadPeriodHistory(ctx, store, projectNames, historyPeople, since, until, period)
 	if err != nil {
 		return err
 	}
@@ -127,7 +120,6 @@ func runLeverageHistory(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Output
 	jsonFlag, _ := cmd.Flags().GetBool("json")
 	byAuthor, _ := cmd.Flags().GetBool("by-author")
 
@@ -140,13 +132,13 @@ func runLeverageHistory(cmd *cobra.Command, args []string) error {
 	return historyOutputPeriodTable(cmd, history, period)
 }
 
-func historyOutputPeriodTable(cmd *cobra.Command, history []leverage.HistoryPoint, period leverage.HistoryPeriod) error {
+func historyOutputPeriodTable(cmd *cobra.Command, history []intleverage.HistoryPoint, period intleverage.HistoryPeriod) error {
 	out := cmd.OutOrStdout()
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.CategoryColor)
 
 	dateHeader := "MONTH"
 	dateFmt := "2006-01"
-	if period == leverage.PeriodWeekly {
+	if period == intleverage.PeriodWeekly {
 		dateHeader = "DATE"
 		dateFmt = "2006-01-02"
 	}
@@ -161,8 +153,6 @@ func historyOutputPeriodTable(cmd *cobra.Command, history []leverage.HistoryPoin
 			lev = "negative"
 		} else if point.PeriodLeverage > 0 {
 			lev = fmtScore(point.PeriodLeverage) + "x"
-		} else {
-			lev = "-"
 		}
 
 		deltaCode := fmtDelta(point.DeltaCode)
@@ -193,13 +183,13 @@ func historyOutputPeriodTable(cmd *cobra.Command, history []leverage.HistoryPoin
 				return headerStyle
 			}
 			switch col {
-			case 0: // DATE/MONTH
+			case 0:
 				return lipgloss.NewStyle().Foreground(ui.DimColor)
-			case 1: // Δ CODE
+			case 1:
 				return lipgloss.NewStyle().Foreground(ui.AccentColor)
-			case 2: // Δ EST. COST
+			case 2:
 				return lipgloss.NewStyle().Foreground(ui.WarningColor)
-			case 3: // LEVERAGE
+			case 3:
 				return lipgloss.NewStyle().Foreground(ui.SuccessColor)
 			default:
 				return lipgloss.NewStyle()
@@ -210,7 +200,6 @@ func historyOutputPeriodTable(cmd *cobra.Command, history []leverage.HistoryPoin
 	return nil
 }
 
-// fmtDelta formats an integer delta with +/- prefix.
 func fmtDelta(n int) string {
 	if n > 0 {
 		return "+" + fmtInt(n)
@@ -221,7 +210,6 @@ func fmtDelta(n int) string {
 	return "-"
 }
 
-// fmtDeltaCost formats a cost delta with +$/-$ prefix.
 func fmtDeltaCost(f float64) string {
 	if f > 0 {
 		return "+$" + fmtCost(f)
@@ -232,7 +220,7 @@ func fmtDeltaCost(f float64) string {
 	return "-"
 }
 
-func historyOutputByAuthor(cmd *cobra.Command, history []leverage.HistoryPoint) error {
+func historyOutputByAuthor(cmd *cobra.Command, history []intleverage.HistoryPoint) error {
 	out := cmd.OutOrStdout()
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.CategoryColor)
 
@@ -245,10 +233,8 @@ func historyOutputByAuthor(cmd *cobra.Command, history []leverage.HistoryPoint) 
 			authorLev := "-"
 			if point.Aggregate != nil {
 				if totalWeightedPM > 0 && author.WeightedPM > 0 {
-					// Use blame-weighted PM for leverage attribution.
 					authorLev = fmtScore(author.WeightedPM/totalWeightedPM*point.Aggregate.FullLeverage) + "x"
 				} else {
-					// Fallback for old snapshots without WeightedPM.
 					authorLev = fmtScore(author.Percentage/100.0*point.Aggregate.FullLeverage) + "x"
 				}
 			}
@@ -276,11 +262,11 @@ func historyOutputByAuthor(cmd *cobra.Command, history []leverage.HistoryPoint) 
 				return headerStyle
 			}
 			switch col {
-			case 0: // DATE
+			case 0:
 				return lipgloss.NewStyle().Foreground(ui.DimColor)
-			case 1: // AUTHOR
+			case 1:
 				return lipgloss.NewStyle().Foreground(ui.AccentColor)
-			case 4: // AUTHOR LEVERAGE
+			case 4:
 				return lipgloss.NewStyle().Foreground(ui.SuccessColor)
 			default:
 				return lipgloss.NewStyle()
@@ -291,7 +277,7 @@ func historyOutputByAuthor(cmd *cobra.Command, history []leverage.HistoryPoint) 
 	return nil
 }
 
-func historyOutputJSON(cmd *cobra.Command, history []leverage.HistoryPoint) error {
+func historyOutputJSON(cmd *cobra.Command, history []intleverage.HistoryPoint) error {
 	data, err := json.MarshalIndent(history, "", "  ")
 	if err != nil {
 		return camperrors.Wrap(err, "marshaling JSON")
@@ -300,9 +286,8 @@ func historyOutputJSON(cmd *cobra.Command, history []leverage.HistoryPoint) erro
 	return nil
 }
 
-// aggregateAuthors combines author contributions across all projects at a point in time.
-func aggregateAuthors(projects map[string]*leverage.Snapshot) []leverage.AuthorContribution {
-	byEmail := make(map[string]*leverage.AuthorContribution)
+func aggregateAuthors(projects map[string]*intleverage.Snapshot) []intleverage.AuthorContribution {
+	byEmail := make(map[string]*intleverage.AuthorContribution)
 	var totalLines int
 
 	for _, snap := range projects {
@@ -311,14 +296,14 @@ func aggregateAuthors(projects map[string]*leverage.Snapshot) []leverage.AuthorC
 			if existing, ok := byEmail[a.Email]; ok {
 				existing.Lines += a.Lines
 				existing.WeightedPM += a.WeightedPM
-			} else {
-				cp := a
-				byEmail[a.Email] = &cp
+				continue
 			}
+			cp := a
+			byEmail[a.Email] = &cp
 		}
 	}
 
-	result := make([]leverage.AuthorContribution, 0, len(byEmail))
+	result := make([]intleverage.AuthorContribution, 0, len(byEmail))
 	for _, a := range byEmail {
 		if totalLines > 0 {
 			a.Percentage = float64(a.Lines) / float64(totalLines) * 100
@@ -331,8 +316,7 @@ func aggregateAuthors(projects map[string]*leverage.Snapshot) []leverage.AuthorC
 	return result
 }
 
-// totalAuthorWeightedPM sums WeightedPM across all authors.
-func totalAuthorWeightedPM(authors []leverage.AuthorContribution) float64 {
+func totalAuthorWeightedPM(authors []intleverage.AuthorContribution) float64 {
 	var total float64
 	for _, a := range authors {
 		total += a.WeightedPM

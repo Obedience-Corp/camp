@@ -1,4 +1,4 @@
-package main
+package leverage
 
 import (
 	"bytes"
@@ -8,55 +8,44 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Obedience-Corp/camp/internal/leverage"
+	intleverage "github.com/Obedience-Corp/camp/internal/leverage"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
 	"github.com/Obedience-Corp/camp/internal/project"
-	"github.com/spf13/pflag"
 )
 
-// executeReset runs "leverage reset" with the given args via rootCmd.
 func executeReset(t *testing.T, args ...string) (string, error) {
 	t.Helper()
-
-	// Disable campaign detection cache so each test uses its own CAMP_ROOT.
 	t.Setenv("CAMP_CACHE_DISABLE", "1")
 
-	leverageResetCmd.Flags().VisitAll(func(f *pflag.Flag) {
-		f.Changed = false
-		f.Value.Set(f.DefValue)
-	})
+	resetFlagSet(leverageResetCmd.Flags())
 
 	var buf bytes.Buffer
-	rootCmd.SetOut(&buf)
-	rootCmd.SetErr(&buf)
-	rootCmd.SetArgs(append([]string{"leverage", "reset"}, args...))
+	root := newTestRootCmd()
+	root.SetOut(&buf)
+	root.SetErr(&buf)
+	root.SetArgs(append([]string{"leverage", "reset"}, args...))
 
-	err := rootCmd.Execute()
+	err := root.Execute()
 	return buf.String(), err
 }
 
-// setupSnapshotDir creates a temp campaign with snapshot files for testing.
-// Returns the campaign root and a cleanup function.
 func setupSnapshotDir(t *testing.T, projects map[string][]string) string {
 	t.Helper()
 
 	tmpDir := t.TempDir()
-
-	// Create .campaign marker so campaign detection works.
-	if err := os.MkdirAll(filepath.Join(tmpDir, ".campaign"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(tmpDir, ".campaign"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	snapshotDir := leverage.DefaultSnapshotDir(tmpDir)
-
+	snapshotDir := intleverage.DefaultSnapshotDir(tmpDir)
 	for proj, dates := range projects {
 		projDir := filepath.Join(snapshotDir, proj)
-		if err := os.MkdirAll(projDir, 0755); err != nil {
+		if err := os.MkdirAll(projDir, 0o755); err != nil {
 			t.Fatal(err)
 		}
 		for _, date := range dates {
 			path := filepath.Join(projDir, date+".json")
-			if err := os.WriteFile(path, []byte(`{}`), 0644); err != nil {
+			if err := os.WriteFile(path, []byte(`{}`), 0o644); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -70,15 +59,12 @@ func TestLeverageReset_ClearsAllSnapshots(t *testing.T) {
 		"camp": {"2025-06-01", "2025-06-08"},
 		"fest": {"2025-06-01"},
 	})
-
-	// Override campaign detection to use our temp dir.
 	t.Setenv("CAMP_ROOT", root)
 
 	output, err := executeReset(t)
 	if err != nil {
 		t.Fatalf("command failed: %v\noutput: %s", err, output)
 	}
-
 	if !strings.Contains(output, "Cleared all cached leverage data") {
 		t.Errorf("unexpected output: %s", output)
 	}
@@ -86,7 +72,7 @@ func TestLeverageReset_ClearsAllSnapshots(t *testing.T) {
 		t.Errorf("output should remind user to re-backfill: %s", output)
 	}
 
-	snapshotDir := leverage.DefaultSnapshotDir(root)
+	snapshotDir := intleverage.DefaultSnapshotDir(root)
 	if _, err := os.Stat(snapshotDir); !os.IsNotExist(err) {
 		t.Errorf("snapshot directory should not exist after reset, got err: %v", err)
 	}
@@ -97,26 +83,22 @@ func TestLeverageReset_ClearsProjectOnly(t *testing.T) {
 		"camp": {"2025-06-01", "2025-06-08"},
 		"fest": {"2025-06-01", "2025-06-15"},
 	})
-
 	t.Setenv("CAMP_ROOT", root)
 
 	output, err := executeReset(t, "--project", "camp")
 	if err != nil {
 		t.Fatalf("command failed: %v\noutput: %s", err, output)
 	}
-
 	if !strings.Contains(output, `Cleared cached data for project "camp"`) {
 		t.Errorf("unexpected output: %s", output)
 	}
 
-	// camp snapshots should be gone.
-	campDir := filepath.Join(leverage.DefaultSnapshotDir(root), "camp")
+	campDir := filepath.Join(intleverage.DefaultSnapshotDir(root), "camp")
 	if _, err := os.Stat(campDir); !os.IsNotExist(err) {
 		t.Errorf("camp snapshot directory should not exist, got err: %v", err)
 	}
 
-	// fest snapshots should survive.
-	festDir := filepath.Join(leverage.DefaultSnapshotDir(root), "fest")
+	festDir := filepath.Join(intleverage.DefaultSnapshotDir(root), "fest")
 	entries, err := os.ReadDir(festDir)
 	if err != nil {
 		t.Fatalf("fest dir should still exist: %v", err)
@@ -128,17 +110,15 @@ func TestLeverageReset_ClearsProjectOnly(t *testing.T) {
 
 func TestLeverageReset_NoSnapshots(t *testing.T) {
 	tmpDir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(tmpDir, ".campaign"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(tmpDir, ".campaign"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-
 	t.Setenv("CAMP_ROOT", tmpDir)
 
 	output, err := executeReset(t)
 	if err != nil {
 		t.Fatalf("command failed: %v\noutput: %s", err, output)
 	}
-
 	if !strings.Contains(output, "No cached data to clear") {
 		t.Errorf("expected 'No cached data to clear', got: %s", output)
 	}
@@ -146,7 +126,7 @@ func TestLeverageReset_NoSnapshots(t *testing.T) {
 
 func TestLeverageReset_ProjectFlagValidation(t *testing.T) {
 	tmpDir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(tmpDir, ".campaign"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(tmpDir, ".campaign"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("CAMP_ROOT", tmpDir)
@@ -192,7 +172,6 @@ func TestLeverageReset_BoundaryEnforcement(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Safe name stays within boundary.
 	safeFilter := "myproject"
 	if err := pathutil.ValidateBoundary(snapshotDir, filepath.Join(snapshotDir, safeFilter)); err != nil {
 		t.Errorf("expected no boundary error for safe snapshot path: %v", err)
@@ -201,7 +180,6 @@ func TestLeverageReset_BoundaryEnforcement(t *testing.T) {
 		t.Errorf("expected no boundary error for safe cache path: %v", err)
 	}
 
-	// Escaping paths must be caught.
 	if err := pathutil.ValidateBoundary(snapshotDir, filepath.Join(snapshotDir, "..", "..", "escape")); err == nil {
 		t.Error("expected boundary error for escaping snapshot target, got nil")
 	}

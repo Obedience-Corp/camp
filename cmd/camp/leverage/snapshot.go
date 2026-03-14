@@ -1,14 +1,14 @@
-package main
+package leverage
 
 import (
 	"context"
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os/exec"
 	"strings"
 	"time"
 
-	"github.com/Obedience-Corp/camp/internal/leverage"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	intleverage "github.com/Obedience-Corp/camp/internal/leverage"
 	"github.com/spf13/cobra"
 )
 
@@ -32,7 +32,7 @@ Examples:
 
 func init() {
 	leverageSnapshotCmd.Flags().StringP("project", "p", "", "snapshot a specific project only")
-	leverageCmd.AddCommand(leverageSnapshotCmd)
+	Cmd.AddCommand(leverageSnapshotCmd)
 }
 
 func runLeverageSnapshot(cmd *cobra.Command, args []string) error {
@@ -49,17 +49,15 @@ func runLeverageSnapshot(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	resolved, err := leverage.ResolveProjects(ctx, setup.Root, cfg)
+	resolved, err := intleverage.ResolveProjects(ctx, setup.Root, cfg)
 	if err != nil {
 		return camperrors.Wrap(err, "resolving projects")
 	}
 
 	projectFilter, _ := cmd.Flags().GetString("project")
-	store := leverage.NewFileSnapshotStore(leverage.DefaultSnapshotDir(setup.Root))
+	store := intleverage.NewFileSnapshotStore(intleverage.DefaultSnapshotDir(setup.Root))
+	elapsed := intleverage.ElapsedMonths(cfg.ProjectStart, time.Now())
 
-	elapsed := leverage.ElapsedMonths(cfg.ProjectStart, time.Now())
-
-	// Populate per-project author counts and actual person-months (with blame).
 	runPopulateMetrics(ctx, setup.Root, resolved, setup.Resolver, false)
 
 	var count int
@@ -67,26 +65,22 @@ func runLeverageSnapshot(cmd *cobra.Command, args []string) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-
 		if projectFilter != "" && proj.Name != projectFilter {
 			continue
 		}
 
-		// Get HEAD commit info
 		hash, commitDate, err := getHeadCommit(ctx, proj.GitDir)
 		if err != nil {
 			fmt.Fprintf(cmd.ErrOrStderr(), "Warning: skipping %s: %v\n", proj.Name, err)
 			continue
 		}
 
-		// Run scc
 		result, err := runner.Run(ctx, proj.SCCDir, proj.ExcludeDirs)
 		if err != nil {
 			fmt.Fprintf(cmd.ErrOrStderr(), "Warning: skipping %s (scc): %v\n", proj.Name, err)
 			continue
 		}
 
-		// Determine actual people and person-months
 		projPeople := cfg.ActualPeople
 		if projPeople == 0 && proj.AuthorCount > 0 {
 			projPeople = proj.AuthorCount
@@ -95,24 +89,18 @@ func runLeverageSnapshot(cmd *cobra.Command, args []string) error {
 			projPeople = 1
 		}
 
-		// Compute leverage score
-		score := leverage.ComputeScore(result, projPeople, elapsed)
+		score := intleverage.ComputeScore(result, projPeople, elapsed)
 		score.ProjectName = proj.Name
 		score.AuthorCount = proj.AuthorCount
 
-		// Override with contribution-based actual person-months
 		if cfg.ActualPeople == 0 && proj.ActualPersonMonths > 0 {
 			score.ActualPersonMonths = proj.ActualPersonMonths
 			estPM := result.EstimatedPeople * result.EstimatedScheduleMonths
 			score.FullLeverage = estPM / proj.ActualPersonMonths
 		}
 
-		// Use enriched authors from PopulateProjectMetrics (includes WeightedPM).
-		authors := proj.Authors
-
-		// Build snapshot
-		scc := leverage.SCCResultToSnapshotSCC(result)
-		snapshot := leverage.NewSnapshot(proj.Name, hash, commitDate, time.Now(), scc, score, authors)
+		scc := intleverage.SCCResultToSnapshotSCC(result)
+		snapshot := intleverage.NewSnapshot(proj.Name, hash, commitDate, time.Now(), scc, score, proj.Authors)
 
 		if err := store.Save(ctx, snapshot); err != nil {
 			return camperrors.Wrapf(err, "saving snapshot for %s", proj.Name)
@@ -128,7 +116,6 @@ func runLeverageSnapshot(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// getHeadCommit returns the HEAD commit hash and date for a git directory.
 func getHeadCommit(ctx context.Context, gitDir string) (string, time.Time, error) {
 	cmd := exec.CommandContext(ctx, "git", "-C", gitDir, "log", "-1", "--format=%H%n%cI")
 	out, err := cmd.Output()
