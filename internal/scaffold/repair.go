@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	dungeonscaffold "github.com/Obedience-Corp/camp/internal/dungeon/scaffold"
 	"github.com/Obedience-Corp/camp/internal/dungeon/statuspath"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/quest"
@@ -154,18 +155,16 @@ func computeQuestScaffoldChanges(absDir string, plan *RepairPlan) {
 	// The quests directory and default.yaml are now handled by the scaffold
 	// template system (they live under campaign/templates/.campaign/quests/).
 	// Only the dungeon subdirectories and their files are created imperatively
-	// via dungeonscaffold.Init(), so we list those here.
-	requiredDirs := []string{
-		filepath.ToSlash(filepath.Join(quest.RootDirName, "dungeon")),
-		filepath.ToSlash(filepath.Join(quest.RootDirName, "dungeon", "completed")),
-		filepath.ToSlash(filepath.Join(quest.RootDirName, "dungeon", "archived")),
-		filepath.ToSlash(filepath.Join(quest.RootDirName, "dungeon", "someday")),
+	// via dungeonscaffold.Init(), so we derive the expected paths from the
+	// same StandardStatuses slice that dungeonscaffold.Init() uses.
+	dungeonBase := filepath.Join(quest.RootDirName, "dungeon")
+	requiredDirs := []string{filepath.ToSlash(dungeonBase)}
+	for _, status := range dungeonscaffold.StandardStatuses {
+		requiredDirs = append(requiredDirs, filepath.ToSlash(filepath.Join(dungeonBase, status)))
 	}
-	requiredFiles := []string{
-		filepath.ToSlash(filepath.Join(quest.RootDirName, "dungeon", "OBEY.md")),
-		filepath.ToSlash(filepath.Join(quest.RootDirName, "dungeon", "completed", ".gitkeep")),
-		filepath.ToSlash(filepath.Join(quest.RootDirName, "dungeon", "archived", ".gitkeep")),
-		filepath.ToSlash(filepath.Join(quest.RootDirName, "dungeon", "someday", ".gitkeep")),
+	requiredFiles := []string{filepath.ToSlash(filepath.Join(dungeonBase, "OBEY.md"))}
+	for _, status := range dungeonscaffold.StandardStatuses {
+		requiredFiles = append(requiredFiles, filepath.ToSlash(filepath.Join(dungeonBase, status, ".gitkeep")))
 	}
 
 	seen := make(map[string]bool, len(plan.Changes))
