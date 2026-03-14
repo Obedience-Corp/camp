@@ -1,4 +1,4 @@
-package main
+package worktrees
 
 import (
 	"context"
@@ -43,7 +43,7 @@ Examples:
 }
 
 func init() {
-	worktreesCmd.AddCommand(worktreesCommitCmd)
+	Cmd.AddCommand(worktreesCommitCmd)
 
 	worktreesCommitCmd.Flags().StringVarP(&wtCommitMessage, "message", "m", "",
 		"Commit message")

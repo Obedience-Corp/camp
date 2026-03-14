@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
-	projectcmd "github.com/Obedience-Corp/camp/cmd/camp/project"
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/git"
@@ -50,7 +49,7 @@ func init() {
 	projectCommitCmd.Flags().BoolVar(&projectCommitAmend, "amend", false, "Amend the previous commit")
 	projectCommitCmd.Flags().BoolVar(&projectCommitSync, "sync", false, "Sync submodule ref at campaign root after commit (opt-in)")
 
-	if err := projectCommitCmd.RegisterFlagCompletionFunc("project", projectcmd.CompleteProjectName); err != nil {
+	if err := projectCommitCmd.RegisterFlagCompletionFunc("project", cmdutil.CompleteProjectName); err != nil {
 		panic(err)
 	}
 

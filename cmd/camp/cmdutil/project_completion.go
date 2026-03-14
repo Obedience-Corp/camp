@@ -1,4 +1,4 @@
-package project
+package cmdutil
 
 import (
 	"strings"

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	projectcmd "github.com/Obedience-Corp/camp/cmd/camp/project"
+	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/prune"
 
@@ -31,11 +31,11 @@ Examples:
   camp project prune camp                # Prune by name
   camp project prune -p camp             # Prune by flag
   camp project prune --dry-run           # Preview what would be deleted
-  camp project prune --remote            # Also prune stale remote tracking refs
+	camp project prune --remote            # Also prune stale remote tracking refs
   camp project prune --remote-delete     # Also delete merged branches on origin`,
 	Args:              cobra.MaximumNArgs(1),
 	RunE:              runProjectPrune,
-	ValidArgsFunction: projectcmd.CompleteProjectName,
+	ValidArgsFunction: cmdutil.CompleteProjectName,
 }
 
 var (
@@ -53,7 +53,7 @@ func init() {
 	projectPruneCmd.Flags().BoolVar(&pruneRemote, "remote", false, "Also prune stale remote tracking refs")
 	projectPruneCmd.Flags().BoolVar(&pruneRemoteDelete, "remote-delete", false, "Also delete merged branches on origin (destructive)")
 
-	if err := projectPruneCmd.RegisterFlagCompletionFunc("project", projectcmd.CompleteProjectName); err != nil {
+	if err := projectPruneCmd.RegisterFlagCompletionFunc("project", cmdutil.CompleteProjectName); err != nil {
 		panic(err)
 	}
 

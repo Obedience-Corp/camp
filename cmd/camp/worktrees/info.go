@@ -1,4 +1,4 @@
-package main
+package worktrees
 
 import (
 	"context"
@@ -43,7 +43,7 @@ Examples:
 }
 
 func init() {
-	worktreesCmd.AddCommand(worktreesInfoCmd)
+	Cmd.AddCommand(worktreesInfoCmd)
 
 	worktreesInfoCmd.Flags().StringVarP(&infoPath, "path", "p", "",
 		"Worktree path (defaults to current directory)")

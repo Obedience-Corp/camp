@@ -1,4 +1,4 @@
-package main
+package worktrees
 
 import (
 	"context"
@@ -44,7 +44,7 @@ Examples:
 }
 
 func init() {
-	worktreesCmd.AddCommand(worktreesListCmd)
+	Cmd.AddCommand(worktreesListCmd)
 
 	worktreesListCmd.Flags().StringVarP(&listProject, "project", "p", "",
 		"Filter by project name")

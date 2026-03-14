@@ -1,4 +1,4 @@
-package main
+package worktrees
 
 import (
 	"context"
@@ -47,7 +47,7 @@ Examples:
 }
 
 func init() {
-	worktreesCmd.AddCommand(worktreesCleanCmd)
+	Cmd.AddCommand(worktreesCleanCmd)
 
 	worktreesCleanCmd.Flags().StringVarP(&cleanProject, "project", "p", "",
 		"Clean worktrees for specific project only")

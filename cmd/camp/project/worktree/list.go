@@ -1,17 +1,17 @@
-package main
+package worktree
 
 import (
 	"errors"
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
-	projectcmd "github.com/Obedience-Corp/camp/cmd/camp/project"
+	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/ui"
-	"github.com/Obedience-Corp/camp/internal/worktree"
+	intworktree "github.com/Obedience-Corp/camp/internal/worktree"
 	"github.com/spf13/cobra"
 )
 
@@ -36,12 +36,10 @@ Examples:
 }
 
 func init() {
-	projectWorktreeCmd.AddCommand(projectWorktreeListCmd)
+	Cmd.AddCommand(projectWorktreeListCmd)
+	projectWorktreeListCmd.Flags().StringVarP(&wtListProject, "project", "p", "", "Project name (auto-detected from cwd if not specified)")
 
-	projectWorktreeListCmd.Flags().StringVarP(&wtListProject, "project", "p", "",
-		"Project name (auto-detected from cwd if not specified)")
-
-	if err := projectWorktreeListCmd.RegisterFlagCompletionFunc("project", projectcmd.CompleteProjectName); err != nil {
+	if err := projectWorktreeListCmd.RegisterFlagCompletionFunc("project", cmdutil.CompleteProjectName); err != nil {
 		panic(err)
 	}
 }
@@ -49,19 +47,16 @@ func init() {
 func runProjectWorktreeList(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
-	// Find campaign root
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
 		return camperrors.Wrap(err, "not in a campaign")
 	}
 
-	// Load campaign config
 	cfg, err := config.LoadCampaignConfig(ctx, campRoot)
 	if err != nil {
 		return camperrors.Wrap(err, "failed to load campaign config")
 	}
 
-	// Resolve project name
 	resolved, err := project.Resolve(ctx, campRoot, wtListProject)
 	if err != nil {
 		var notFound *project.ProjectNotFoundError
@@ -72,19 +67,16 @@ func runProjectWorktreeList(cmd *cobra.Command, args []string) error {
 	}
 	projectName := resolved.Name
 
-	// Create resolver and path manager
 	resolver := paths.NewResolver(campRoot, cfg.Paths())
-	pathManager := worktree.NewPathManager(resolver)
+	pathManager := intworktree.NewPathManager(resolver)
 
-	// Get git worktree list for detailed info
 	projectPath := resolver.Project(projectName)
-	git := worktree.NewGitWorktree(projectPath)
+	git := intworktree.NewGitWorktree(projectPath)
 	entries, err := git.List(ctx)
 	if err != nil {
 		return camperrors.Wrap(err, "failed to list worktrees")
 	}
 
-	// Get worktree names from path manager
 	names, err := pathManager.ListProjectWorktrees(projectName)
 	if err != nil {
 		return camperrors.Wrap(err, "failed to list worktree directories")
@@ -98,8 +90,7 @@ func runProjectWorktreeList(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Worktrees for %s:\n\n", ui.Value(projectName))
 
-	// Build a map of path to entry for lookup
-	entryMap := make(map[string]worktree.GitWorktreeEntry)
+	entryMap := make(map[string]intworktree.GitWorktreeEntry)
 	for _, e := range entries {
 		entryMap[e.Path] = e
 	}
@@ -109,7 +100,6 @@ func runProjectWorktreeList(cmd *cobra.Command, args []string) error {
 		relPath := pathManager.RelativeWorktreePath(projectName, name)
 
 		fmt.Printf("  %s\n", ui.Value(name))
-
 		if entry, ok := entryMap[wtPath]; ok {
 			fmt.Printf("    Branch: %s\n", ui.Dim(entry.Branch))
 			if entry.IsLocked {
