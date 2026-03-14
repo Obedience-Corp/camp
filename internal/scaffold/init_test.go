@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/quest"
 )
 
 func TestInit(t *testing.T) {
@@ -132,6 +133,27 @@ func TestInit(t *testing.T) {
 		if _, err := os.Stat(path); os.IsNotExist(err) {
 			t.Errorf("skill file %s was not created", relPath)
 		}
+	}
+
+	expectedQuestPaths := []string{
+		quest.RootDirName,
+		filepath.Join(quest.RootDirName, quest.DefaultFileName),
+		filepath.Join(quest.RootDirName, "dungeon", "OBEY.md"),
+		filepath.Join(quest.RootDirName, "dungeon", "completed", ".gitkeep"),
+		filepath.Join(quest.RootDirName, "dungeon", "archived", ".gitkeep"),
+		filepath.Join(quest.RootDirName, "dungeon", "someday", ".gitkeep"),
+	}
+	for _, relPath := range expectedQuestPaths {
+		path := filepath.Join(campaignDir, relPath)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			t.Errorf("quest scaffold path %s was not created", relPath)
+		}
+	}
+
+	// Verify .active file is NOT created (quest context is via --quest flag or CAMP_QUEST env var)
+	activePath := filepath.Join(campaignDir, quest.RootDirName, ".active")
+	if _, err := os.Stat(activePath); !os.IsNotExist(err) {
+		t.Errorf(".active file should not be created: %s", activePath)
 	}
 
 	// Check campaign.yaml was created
@@ -712,5 +734,54 @@ func TestInit_RepairPreservesLegacyConceptList(t *testing.T) {
 	}
 	if !hasDungeon {
 		t.Fatal("repair should preserve explicit legacy dungeon concept entry")
+	}
+}
+
+func TestInit_RepairRestoresQuestScaffold(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	campaignDir := filepath.Join(tmpDir, "repair-quest")
+	if err := os.MkdirAll(campaignDir, 0755); err != nil {
+		t.Fatalf("failed to create campaign dir: %v", err)
+	}
+
+	ctx := context.Background()
+	if _, err := Init(ctx, campaignDir, InitOptions{
+		Name:       "repair-quest",
+		NoRegister: true,
+	}); err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+
+	removed := []string{
+		filepath.Join(campaignDir, quest.RootDirName, quest.DefaultFileName),
+		filepath.Join(campaignDir, quest.RootDirName, "dungeon", "OBEY.md"),
+	}
+	for _, path := range removed {
+		if err := os.Remove(path); err != nil {
+			t.Fatalf("os.Remove(%q) error = %v", path, err)
+		}
+	}
+
+	if _, err := Init(ctx, campaignDir, InitOptions{
+		Name:       "repair-quest",
+		Repair:     true,
+		NoRegister: true,
+	}); err != nil {
+		t.Fatalf("Init() with repair error = %v", err)
+	}
+
+	for _, path := range removed {
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			t.Errorf("expected repaired quest scaffold path to exist: %s", path)
+		}
+	}
+
+	// Verify .active file is NOT recreated on repair
+	activePath := filepath.Join(campaignDir, quest.RootDirName, ".active")
+	if _, err := os.Stat(activePath); !os.IsNotExist(err) {
+		t.Errorf(".active file should not be created on repair: %s", activePath)
 	}
 }

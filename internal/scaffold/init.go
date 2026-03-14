@@ -14,6 +14,7 @@ import (
 	campcontract "github.com/Obedience-Corp/camp/internal/contract"
 	dungeonscaffold "github.com/Obedience-Corp/camp/internal/dungeon/scaffold"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/quest"
 	"github.com/Obedience-Corp/obey-shared/contract"
 	"github.com/google/uuid"
 	"github.com/lancekrogers/guild-scaffold/pkg/scaffold"
@@ -211,6 +212,14 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 			result.FilesCreated = appendUniquePaths(result.FilesCreated, dungeonResult.CreatedFiles...)
 			result.Skipped = appendUniquePaths(result.Skipped, dungeonResult.Skipped...)
 		}
+
+		questResult, err := quest.EnsureQuestDungeon(ctx, absDir)
+		if err != nil {
+			return nil, camperrors.Wrap(err, "failed to initialize quest dungeon")
+		}
+		result.DirsCreated = appendUniquePaths(result.DirsCreated, questResult.CreatedDirs...)
+		result.FilesCreated = appendUniquePaths(result.FilesCreated, questResult.CreatedFiles...)
+		result.Skipped = appendUniquePaths(result.Skipped, questResult.Skipped...)
 	}
 
 	// Create campaign.yaml (metadata and concepts - paths/shortcuts go in jumps.yaml)
