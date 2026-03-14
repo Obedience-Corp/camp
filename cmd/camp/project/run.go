@@ -1,4 +1,4 @@
-package main
+package project
 
 import (
 	"errors"
@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
-	"github.com/Obedience-Corp/camp/internal/project"
+	projectsvc "github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
@@ -46,7 +46,7 @@ Examples:
 }
 
 func init() {
-	projectCmd.AddCommand(projectRunCmd)
+	Cmd.AddCommand(projectRunCmd)
 }
 
 func runProjectRun(cmd *cobra.Command, args []string) error {
@@ -77,11 +77,11 @@ func runProjectRun(cmd *cobra.Command, args []string) error {
 	switch {
 	case projectName != "":
 		// Explicit project flag.
-		absPath, err := project.ResolveByName(ctx, campRoot, projectName)
+		absPath, err := projectsvc.ResolveByName(ctx, campRoot, projectName)
 		if err != nil {
-			var notFound *project.ProjectNotFoundError
+			var notFound *projectsvc.ProjectNotFoundError
 			if errors.As(err, &notFound) {
-				fmt.Println(ui.Dim("\n" + project.FormatProjectList(notFound.AvailableProjects())))
+				fmt.Println(ui.Dim("\n" + projectsvc.FormatProjectList(notFound.AvailableProjects())))
 			}
 			return err
 		}
@@ -89,7 +89,7 @@ func runProjectRun(cmd *cobra.Command, args []string) error {
 
 	default:
 		// Try auto-detect from cwd first.
-		result, cwdErr := project.ResolveFromCwd(ctx, campRoot)
+		result, cwdErr := projectsvc.ResolveFromCwd(ctx, campRoot)
 		if cwdErr == nil {
 			projectDir = result.Path
 		} else {
@@ -151,10 +151,10 @@ func parseProjectRunArgs(args []string) (projectName string, command []string) {
 }
 
 // pickProject launches an interactive fuzzy finder for project selection.
-func pickProject(cmd *cobra.Command, campRoot string) (*project.Project, error) {
+func pickProject(cmd *cobra.Command, campRoot string) (*projectsvc.Project, error) {
 	ctx := cmd.Context()
 
-	projects, err := project.List(ctx, campRoot)
+	projects, err := projectsvc.List(ctx, campRoot)
 	if err != nil {
 		return nil, camperrors.Wrap(err, "failed to list projects")
 	}
@@ -192,7 +192,7 @@ func pickProject(cmd *cobra.Command, campRoot string) (*project.Project, error) 
 }
 
 // formatProjectPreview renders preview info for a project in the fuzzy picker.
-func formatProjectPreview(p project.Project) string {
+func formatProjectPreview(p projectsvc.Project) string {
 	var b strings.Builder
 	pad := "  "
 

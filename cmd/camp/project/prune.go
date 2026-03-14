@@ -1,4 +1,4 @@
-package main
+package project
 
 import (
 	"errors"
@@ -9,7 +9,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/prune"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
-	"github.com/Obedience-Corp/camp/internal/project"
+	projectsvc "github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
@@ -57,7 +57,7 @@ func init() {
 		panic(err)
 	}
 
-	projectCmd.AddCommand(projectPruneCmd)
+	Cmd.AddCommand(projectPruneCmd)
 }
 
 // pruneOptionsFromFlags constructs prune.Options from the package-level flag vars.
@@ -84,11 +84,11 @@ func runProjectPrune(cmd *cobra.Command, args []string) error {
 		projectName = args[0]
 	}
 
-	result, err := project.Resolve(ctx, campRoot, projectName)
+	result, err := projectsvc.Resolve(ctx, campRoot, projectName)
 	if err != nil {
-		var notFound *project.ProjectNotFoundError
+		var notFound *projectsvc.ProjectNotFoundError
 		if errors.As(err, &notFound) {
-			fmt.Println(ui.Dim("\n" + project.FormatProjectList(notFound.AvailableProjects())))
+			fmt.Println(ui.Dim("\n" + projectsvc.FormatProjectList(notFound.AvailableProjects())))
 		}
 		return err
 	}

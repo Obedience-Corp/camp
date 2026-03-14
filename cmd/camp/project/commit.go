@@ -1,4 +1,4 @@
-package main
+package project
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/git"
-	"github.com/Obedience-Corp/camp/internal/project"
+	projectsvc "github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -53,7 +53,7 @@ func init() {
 		panic(err)
 	}
 
-	projectCmd.AddCommand(projectCommitCmd)
+	Cmd.AddCommand(projectCommitCmd)
 }
 
 func runProjectCommit(cmd *cobra.Command, args []string) error {
@@ -66,11 +66,11 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Resolve project
-	result, err := project.Resolve(ctx, campRoot, projectCommitProject)
+	result, err := projectsvc.Resolve(ctx, campRoot, projectCommitProject)
 	if err != nil {
-		var notFound *project.ProjectNotFoundError
+		var notFound *projectsvc.ProjectNotFoundError
 		if errors.As(err, &notFound) {
-			fmt.Println(ui.Dim("\n" + project.FormatProjectList(notFound.AvailableProjects())))
+			fmt.Println(ui.Dim("\n" + projectsvc.FormatProjectList(notFound.AvailableProjects())))
 		}
 		return err
 	}

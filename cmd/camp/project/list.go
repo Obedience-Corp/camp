@@ -1,10 +1,10 @@
-package main
+package project
 
 import (
 	"os"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
-	"github.com/Obedience-Corp/camp/internal/project"
+	projectsvc "github.com/Obedience-Corp/camp/internal/project"
 	"github.com/spf13/cobra"
 )
 
@@ -31,7 +31,7 @@ Examples:
 }
 
 func init() {
-	projectCmd.AddCommand(projectListCmd)
+	Cmd.AddCommand(projectListCmd)
 
 	projectListCmd.Flags().StringP("format", "f", "table", "Output format (table, simple, json)")
 }
@@ -46,15 +46,15 @@ func runProjectList(cmd *cobra.Command, args []string) error {
 	}
 
 	// List projects
-	projects, err := project.List(ctx, root)
+	projects, err := projectsvc.List(ctx, root)
 	if err != nil {
 		return err
 	}
 
 	// Get format flag
 	formatStr, _ := cmd.Flags().GetString("format")
-	format := project.OutputFormat(formatStr)
+	format := projectsvc.OutputFormat(formatStr)
 
 	// Output projects
-	return project.FormatProjects(os.Stdout, projects, format)
+	return projectsvc.FormatProjects(os.Stdout, projects, format)
 }

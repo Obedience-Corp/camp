@@ -1,4 +1,4 @@
-package main
+package project
 
 import (
 	"bufio"
@@ -9,7 +9,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
-	"github.com/Obedience-Corp/camp/internal/project"
+	projectsvc "github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -36,7 +36,7 @@ Examples:
 }
 
 func init() {
-	projectCmd.AddCommand(projectRemoveCmd)
+	Cmd.AddCommand(projectRemoveCmd)
 
 	projectRemoveCmd.Flags().BoolP("delete", "d", false, "Also delete project files (destructive)")
 	projectRemoveCmd.Flags().BoolP("force", "f", false, "Skip confirmation prompts")
@@ -72,13 +72,13 @@ func runProjectRemove(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	opts := project.RemoveOptions{
+	opts := projectsvc.RemoveOptions{
 		Delete: delete,
 		Force:  force,
 		DryRun: dryRun,
 	}
 
-	result, err := project.Remove(ctx, root, name, opts)
+	result, err := projectsvc.Remove(ctx, root, name, opts)
 	if err != nil {
 		return err
 	}

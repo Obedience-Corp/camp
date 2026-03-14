@@ -1,4 +1,4 @@
-package main
+package project
 
 import (
 	"errors"
@@ -8,7 +8,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
-	"github.com/Obedience-Corp/camp/internal/project"
+	projectsvc "github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -36,7 +36,7 @@ Examples:
 }
 
 func init() {
-	projectCmd.AddCommand(projectAddCmd)
+	Cmd.AddCommand(projectAddCmd)
 
 	projectAddCmd.Flags().StringP("name", "n", "", "Override project name (defaults to repo name)")
 	projectAddCmd.Flags().StringP("path", "p", "", "Override destination path (defaults to projects/<name>)")
@@ -59,7 +59,7 @@ func runProjectAdd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	opts := project.AddOptions{
+	opts := projectsvc.AddOptions{
 		Name:  name,
 		Path:  path,
 		Local: local,
@@ -70,10 +70,10 @@ func runProjectAdd(cmd *cobra.Command, args []string) error {
 		source = local
 	}
 
-	result, err := project.Add(ctx, root, source, opts)
+	result, err := projectsvc.Add(ctx, root, source, opts)
 	if err != nil {
 		// Check if it's a GitError and format it nicely
-		var gitErr *project.GitError
+		var gitErr *projectsvc.GitError
 		if errors.As(err, &gitErr) {
 			return formatGitError(gitErr)
 		}
@@ -116,7 +116,7 @@ func runProjectAdd(cmd *cobra.Command, args []string) error {
 }
 
 // formatGitError formats a GitError with nice visual indicators.
-func formatGitError(gitErr *project.GitError) error {
+func formatGitError(gitErr *projectsvc.GitError) error {
 	var b strings.Builder
 
 	// Header with X indicator

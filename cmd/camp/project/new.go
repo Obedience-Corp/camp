@@ -1,4 +1,4 @@
-package main
+package project
 
 import (
 	"errors"
@@ -7,7 +7,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
-	"github.com/Obedience-Corp/camp/internal/project"
+	projectsvc "github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -32,7 +32,7 @@ Examples:
 }
 
 func init() {
-	projectCmd.AddCommand(projectNewCmd)
+	Cmd.AddCommand(projectNewCmd)
 
 	projectNewCmd.Flags().StringP("path", "p", "", "Override destination path (defaults to projects/<name>)")
 	projectNewCmd.Flags().Bool("no-commit", false, "Skip automatic git commit")
@@ -50,13 +50,13 @@ func runProjectNew(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	opts := project.NewOptions{
+	opts := projectsvc.NewOptions{
 		Path: path,
 	}
 
-	result, err := project.New(ctx, root, name, opts)
+	result, err := projectsvc.New(ctx, root, name, opts)
 	if err != nil {
-		var gitErr *project.GitError
+		var gitErr *projectsvc.GitError
 		if errors.As(err, &gitErr) {
 			return formatGitError(gitErr)
 		}
