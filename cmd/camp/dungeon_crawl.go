@@ -271,18 +271,16 @@ func newCrawlPathSet() *crawlPathSet {
 }
 
 // appendSafe cleans path, verifies it is safe, and adds it if not already present.
-// Returns true when the path was added.
-func (s *crawlPathSet) appendSafe(path string) bool {
+func (s *crawlPathSet) appendSafe(path string) {
 	path = filepath.Clean(path)
 	if !isSafeCrawlCommitPath(path) {
-		return false
+		return
 	}
 	if _, exists := s.seen[path]; exists {
-		return false
+		return
 	}
 	s.seen[path] = struct{}{}
 	s.paths = append(s.paths, path)
-	return true
 }
 
 func (s *crawlPathSet) sorted() []string {
@@ -314,9 +312,11 @@ func crawlMoveDestinationBase(relDungeon, status string) (string, bool) {
 	return filepath.Join(cleanDungeon, cleanStatus), true
 }
 
-func crawlMovedItemPaths(relDungeon string, summaries ...*dungeon.CrawlSummary) []string {
-	ps := newCrawlPathSet()
-
+// populateMovedPaths appends the destination paths for all moved items in the
+// given summaries into ps. This is the single source of truth for the
+// summary → status → name iteration used by both crawlMovedItemPaths and
+// crawlCommitPaths.
+func populateMovedPaths(ps *crawlPathSet, relDungeon string, summaries ...*dungeon.CrawlSummary) {
 	for _, summary := range summaries {
 		if summary == nil || !summary.HasMoves() {
 			continue
@@ -335,7 +335,11 @@ func crawlMovedItemPaths(relDungeon string, summaries ...*dungeon.CrawlSummary) 
 			}
 		}
 	}
+}
 
+func crawlMovedItemPaths(relDungeon string, summaries ...*dungeon.CrawlSummary) []string {
+	ps := newCrawlPathSet()
+	populateMovedPaths(ps, relDungeon, summaries...)
 	return ps.sorted()
 }
 
@@ -343,26 +347,7 @@ func crawlMovedItemPaths(relDungeon string, summaries ...*dungeon.CrawlSummary) 
 // destination paths for moved items, plus the crawl log.
 func crawlCommitPaths(relDungeon string, summaries ...*dungeon.CrawlSummary) []string {
 	ps := newCrawlPathSet()
-
-	// Moved destination paths.
-	for _, summary := range summaries {
-		if summary == nil || !summary.HasMoves() {
-			continue
-		}
-		for status, names := range summary.MovedItems {
-			base, ok := crawlMoveDestinationBase(relDungeon, status)
-			if !ok {
-				continue
-			}
-			for _, name := range names {
-				cleanName, ok := cleanCrawlCommitName(name)
-				if !ok {
-					continue
-				}
-				ps.appendSafe(filepath.Join(base, cleanName))
-			}
-		}
-	}
+	populateMovedPaths(ps, relDungeon, summaries...)
 
 	// Always include the crawl log.
 	ps.appendSafe(filepath.Join(relDungeon, "crawl.jsonl"))
