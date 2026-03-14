@@ -364,6 +364,10 @@ func (s *Service) Restore(ctx context.Context, identifier string) (*MutationResu
 	q.UpdatedAt = time.Now().UTC()
 	q.Path = QuestPathForDir(newDir)
 	if err := Save(ctx, q.Path, q); err != nil {
+		// Rollback: move the directory back to prevent a stranded quest.
+		if rbErr := os.Rename(newDir, oldDir); rbErr == nil {
+			q.Path = QuestPathForDir(oldDir)
+		}
 		return nil, err
 	}
 
@@ -461,6 +465,10 @@ func (s *Service) moveToStatus(ctx context.Context, identifier string, from []St
 	q.UpdatedAt = time.Now().UTC()
 	q.Path = QuestPathForDir(newDir)
 	if err := Save(ctx, q.Path, q); err != nil {
+		// Rollback: move the directory back to prevent a stranded quest.
+		if rbErr := os.Rename(newDir, oldDir); rbErr == nil {
+			q.Path = QuestPathForDir(oldDir)
+		}
 		return nil, err
 	}
 

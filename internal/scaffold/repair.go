@@ -151,15 +151,17 @@ func computeStandardDungeonScaffoldChanges(absDir string, plan *RepairPlan) {
 }
 
 func computeQuestScaffoldChanges(absDir string, plan *RepairPlan) {
+	// The quests directory and default.yaml are now handled by the scaffold
+	// template system (they live under campaign/templates/.campaign/quests/).
+	// Only the dungeon subdirectories and their files are created imperatively
+	// via dungeonscaffold.Init(), so we list those here.
 	requiredDirs := []string{
-		quest.RootDirName,
 		filepath.ToSlash(filepath.Join(quest.RootDirName, "dungeon")),
 		filepath.ToSlash(filepath.Join(quest.RootDirName, "dungeon", "completed")),
 		filepath.ToSlash(filepath.Join(quest.RootDirName, "dungeon", "archived")),
 		filepath.ToSlash(filepath.Join(quest.RootDirName, "dungeon", "someday")),
 	}
 	requiredFiles := []string{
-		filepath.ToSlash(filepath.Join(quest.RootDirName, quest.DefaultFileName)),
 		filepath.ToSlash(filepath.Join(quest.RootDirName, "dungeon", "OBEY.md")),
 		filepath.ToSlash(filepath.Join(quest.RootDirName, "dungeon", "completed", ".gitkeep")),
 		filepath.ToSlash(filepath.Join(quest.RootDirName, "dungeon", "archived", ".gitkeep")),

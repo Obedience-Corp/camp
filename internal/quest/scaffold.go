@@ -3,7 +3,6 @@ package quest
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -18,23 +17,33 @@ type ScaffoldResult struct {
 	Skipped      []string
 }
 
-// RootPath returns the quest root path for a campaign.
-func RootPath(campaignRoot string) string {
-	return filepath.Join(campaignRoot, RootDirName)
+// EnsureQuestDungeon creates the quest dungeon structure when missing.
+// The quests directory and default.yaml are handled by the scaffold template
+// system; this function only initialises the imperative dungeon subdirectory.
+func EnsureQuestDungeon(ctx context.Context, campaignRoot string) (*ScaffoldResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, camperrors.Wrap(err, "context cancelled")
+	}
+
+	result := &ScaffoldResult{}
+
+	dungeonRoot := DungeonPath(campaignRoot)
+	dungeonResult, err := dungeonscaffold.Init(ctx, dungeonRoot, dungeonscaffold.InitOptions{})
+	if err != nil {
+		return nil, camperrors.Wrap(err, "initializing quest dungeon")
+	}
+
+	result.CreatedDirs = appendUnique(result.CreatedDirs, dungeonResult.CreatedDirs...)
+	result.CreatedFiles = appendUnique(result.CreatedFiles, dungeonResult.CreatedFiles...)
+	result.Skipped = appendUnique(result.Skipped, dungeonResult.Skipped...)
+
+	return result, nil
 }
 
-// DefaultPath returns the default quest metadata file path.
-func DefaultPath(campaignRoot string) string {
-	return filepath.Join(RootPath(campaignRoot), DefaultFileName)
-}
-
-// DungeonPath returns the quest dungeon root.
-func DungeonPath(campaignRoot string) string {
-	return filepath.Join(RootPath(campaignRoot), "dungeon")
-}
-
-// EnsureScaffold creates the quest metadata root, default quest, active marker,
-// and quest dungeon structure when missing.
+// EnsureScaffold creates the quest directory, default quest file, and dungeon
+// structure when missing. In production init flows the quests directory and
+// default.yaml are created by the scaffold template system; this function
+// remains for runtime "ensure" calls (e.g. quest commands) and tests.
 func EnsureScaffold(ctx context.Context, campaignRoot string) (*ScaffoldResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, camperrors.Wrap(err, "context cancelled")
@@ -54,12 +63,10 @@ func EnsureScaffold(ctx context.Context, campaignRoot string) (*ScaffoldResult, 
 		return nil, err
 	}
 
-	dungeonRoot := DungeonPath(campaignRoot)
-	dungeonResult, err := dungeonscaffold.Init(ctx, dungeonRoot, dungeonscaffold.InitOptions{})
+	dungeonResult, err := EnsureQuestDungeon(ctx, campaignRoot)
 	if err != nil {
-		return nil, camperrors.Wrap(err, "initializing quest dungeon")
+		return nil, err
 	}
-
 	result.CreatedDirs = appendUnique(result.CreatedDirs, dungeonResult.CreatedDirs...)
 	result.CreatedFiles = appendUnique(result.CreatedFiles, dungeonResult.CreatedFiles...)
 	result.Skipped = appendUnique(result.Skipped, dungeonResult.Skipped...)
@@ -97,6 +104,21 @@ func ensureDefaultQuest(ctx context.Context, campaignRoot string, result *Scaffo
 	}
 	result.CreatedFiles = appendUnique(result.CreatedFiles, path)
 	return nil
+}
+
+// RootPath returns the quest root path for a campaign.
+func RootPath(campaignRoot string) string {
+	return QuestsDir(campaignRoot)
+}
+
+// DefaultPath returns the default quest metadata file path.
+func DefaultPath(campaignRoot string) string {
+	return DefaultQuestPath(campaignRoot)
+}
+
+// DungeonPath returns the quest dungeon root.
+func DungeonPath(campaignRoot string) string {
+	return DungeonDir(campaignRoot)
 }
 
 func appendUnique(dst []string, items ...string) []string {

@@ -213,9 +213,9 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 			result.Skipped = appendUniquePaths(result.Skipped, dungeonResult.Skipped...)
 		}
 
-		questResult, err := quest.EnsureScaffold(ctx, absDir)
+		questResult, err := quest.EnsureQuestDungeon(ctx, absDir)
 		if err != nil {
-			return nil, camperrors.Wrap(err, "failed to initialize quest scaffold")
+			return nil, camperrors.Wrap(err, "failed to initialize quest dungeon")
 		}
 		result.DirsCreated = appendUniquePaths(result.DirsCreated, questResult.CreatedDirs...)
 		result.FilesCreated = appendUniquePaths(result.FilesCreated, questResult.CreatedFiles...)
