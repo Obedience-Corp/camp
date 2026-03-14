@@ -73,35 +73,17 @@ func loadPinStore(cmd *cobra.Command) (*pins.Store, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	migratePinsIfNeeded(root)
+	pins.MigrateLegacyStore(
+		root,
+		filepath.Join(root, campaign.CampaignDir, "pins.json"),
+		config.PinsConfigPath(root),
+	)
 	storePath := config.PinsConfigPath(root)
 	store := pins.NewStore(storePath)
 	if err := store.Load(); err != nil {
 		return nil, "", err
 	}
 	return store, root, nil
-}
-
-// migratePinsIfNeeded moves pins.json from .campaign/ to .campaign/settings/ if needed,
-// and converts any absolute paths to campaign-root-relative paths.
-func migratePinsIfNeeded(root string) {
-	oldPath := filepath.Join(root, campaign.CampaignDir, "pins.json")
-	newPath := config.PinsConfigPath(root)
-	if _, err := os.Stat(oldPath); err == nil {
-		if _, err := os.Stat(newPath); os.IsNotExist(err) {
-			_ = os.MkdirAll(filepath.Dir(newPath), 0755)
-			_ = os.Rename(oldPath, newPath)
-		}
-	}
-
-	// Migrate absolute paths to relative
-	store := pins.NewStore(newPath)
-	if err := store.Load(); err != nil {
-		return
-	}
-	if store.MigrateAbsoluteToRelative(root) {
-		_ = store.Save()
-	}
 }
 
 func runPinsList(cmd *cobra.Command, args []string) error {

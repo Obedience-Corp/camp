@@ -192,6 +192,7 @@ func init() {
 	rootCmd.AddCommand(skillspkg.Cmd)
 	rootCmd.AddCommand(cachepkg.Cmd)
 	rootCmd.AddCommand(navigationpkg.Cmd)
+	rootCmd.AddCommand(navigationpkg.ShortcutsCmd)
 	rootCmd.AddCommand(registrypkg.Cmd)
 	rootCmd.AddCommand(projectpkg.Cmd)
 	rootCmd.AddCommand(dungeonpkg.Cmd)

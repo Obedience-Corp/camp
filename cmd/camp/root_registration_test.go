@@ -26,6 +26,7 @@ func TestRootRegistersPackageOwnedCommandPointers(t *testing.T) {
 		skillspkg.Cmd,
 		cachepkg.Cmd,
 		navigationpkg.Cmd,
+		navigationpkg.ShortcutsCmd,
 		registrypkg.Cmd,
 		projectpkg.Cmd,
 		dungeonpkg.Cmd,

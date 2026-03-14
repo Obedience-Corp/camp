@@ -201,6 +201,25 @@ func (s *Store) MigrateAbsoluteToRelative(root string) bool {
 	return changed
 }
 
+// MigrateLegacyStore moves a legacy pins.json into the current store location
+// and rewrites any absolute paths to campaign-root-relative paths.
+func MigrateLegacyStore(root, oldPath, newPath string) {
+	if _, err := os.Stat(oldPath); err == nil {
+		if _, err := os.Stat(newPath); os.IsNotExist(err) {
+			_ = os.MkdirAll(filepath.Dir(newPath), 0755)
+			_ = os.Rename(oldPath, newPath)
+		}
+	}
+
+	store := NewStore(newPath)
+	if err := store.Load(); err != nil {
+		return
+	}
+	if store.MigrateAbsoluteToRelative(root) {
+		_ = store.Save()
+	}
+}
+
 // Names returns all pin names (for tab completion).
 func (s *Store) Names() []string {
 	names := make([]string, len(s.pins))
