@@ -6,6 +6,7 @@ import (
 	"fmt"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
+	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/git"
@@ -119,7 +120,7 @@ func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Show what's staged
-	showStagedSummary(ctx, wtCtx.WorktreePath)
+	cmdutil.ShowStagedSummary(ctx, wtCtx.WorktreePath)
 
 	// Prepend campaign tag
 	message = git.PrependCampaignTag(cfg.ID, message)

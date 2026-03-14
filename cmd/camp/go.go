@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
+	navigationpkg "github.com/Obedience-Corp/camp/cmd/camp/navigation"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/nav"
 	"github.com/Obedience-Corp/camp/internal/nav/index"
@@ -18,52 +20,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var goCmd = &cobra.Command{
-	Use:   "go [shortcut] [query...]",
-	Short: "Navigate to campaign directories",
-	Long: `Navigate within the campaign using shortcuts.
-
-Usage patterns:
-  camp go           Toggle between campaign root and last location
-  camp go --root    Jump to campaign root (ignore toggle)
-  camp go t         Jump to last visited location (cd - equivalent)
-  camp go p         Jump to projects/
-  camp go f         Jump to festivals/
-  camp go p api     Fuzzy search projects/ for "api"
-
-Toggle behavior (no args):
-  - From anywhere: jump to campaign root, save current location
-  - From campaign root: jump back to saved location
-
-Toggle keyword (t / toggle):
-  - Jump to the last visited location regardless of where you are
-  - Repeated calls alternate between two locations (like cd -)
-
-The --print flag outputs just the path for shell integration:
-  cd "$(camp go p --print)"
-
-The -c flag runs a command from the directory without changing to it:
-  camp go p -c ls           List contents of projects/
-  camp go f -c fest status  Run fest status from festivals/
-
-Or use the cgo shell function for instant navigation:
-  cgo               Toggle between root and last location
-  cgo p             Equivalent to: cd "$(camp go p --print)"
-  cgo p -c ls       Run ls in projects/ without changing directory`,
-	Example: `  camp go               # Toggle: root ↔ last location
-  camp go --root        # Force jump to campaign root
-  camp go t             # Jump to last visited location (cd -)
-  camp go p             # Jump to projects/
-  camp go p api         # Fuzzy find "api" in projects/
-  camp go p --print     # Print path (for shell scripts)
-  camp go f -c ls       # List festivals/ without cd`,
-	Aliases: []string{"g"},
-	RunE:    runGo,
-}
+var goCmd = navigationpkg.Cmd
 
 func init() {
-	rootCmd.AddCommand(goCmd)
-	goCmd.GroupID = "navigation"
+	goCmd.RunE = runGo
 
 	// Custom help to show dynamic shortcuts from campaign config
 	defaultHelp := goCmd.HelpFunc()
@@ -90,6 +50,10 @@ func init() {
 
 func runGo(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	printOnly, _ := cmd.Flags().GetBool("print")
 	command, _ := cmd.Flags().GetStringArray("command")
 	forceRoot, _ := cmd.Flags().GetBool("root")
@@ -103,7 +67,7 @@ func runGo(cmd *cobra.Command, args []string) error {
 
 	// Build category mappings from config shortcuts
 	// This allows config shortcuts to work with fuzzy search
-	configMappings := buildCategoryMappings(cfg.Shortcuts())
+	configMappings := nav.BuildCategoryMappings(cfg.Shortcuts())
 
 	// Handle toggle keyword: "t" or "toggle"
 	if len(args) > 0 && (args[0] == "toggle" || args[0] == "t") {
@@ -116,7 +80,7 @@ func runGo(cmd *cobra.Command, args []string) error {
 		if sc, ok := cfg.Shortcuts()[shortcutName]; ok && sc.IsNavigation() {
 			// If this is a custom path (not a standard directory), use direct navigation
 			// Standard paths are handled below via ParseShortcut for fuzzy search support
-			if !isStandardPath(sc.Path) {
+			if !nav.IsStandardPath(sc.Path) {
 				return handleCustomNavShortcut(ctx, sc, campaignRoot, printOnly, command)
 			}
 		}
@@ -283,7 +247,7 @@ func runGo(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		// Handle invalid sub-shortcut error
 		if subErr, ok := err.(*index.InvalidSubShortcutError); ok {
-			return formatSubShortcutError(subErr)
+			return cmdutil.FormatSubShortcutError(subErr)
 		}
 		return err
 	}
@@ -343,25 +307,6 @@ func handleToggle(ctx context.Context, campaignRoot string, printOnly bool) erro
 		fmt.Printf("cd %s\n", lastLoc)
 	}
 	return nil
-}
-
-// formatSubShortcutError formats an InvalidSubShortcutError for user display.
-func formatSubShortcutError(err *index.InvalidSubShortcutError) error {
-	var msg strings.Builder
-	msg.WriteString(fmt.Sprintf("Error: Unknown shortcut '%s' for project '%s'\n",
-		err.SubShortcut, err.ProjectName))
-
-	if len(err.AvailableNames) > 0 {
-		msg.WriteString("Available shortcuts: ")
-		msg.WriteString(strings.Join(err.AvailableNames, ", "))
-		msg.WriteString("\n")
-	} else {
-		msg.WriteString("No shortcuts configured for this project.\n")
-	}
-
-	msg.WriteString("\nSee: camp shortcuts --help")
-
-	return fmt.Errorf("%s", msg.String())
 }
 
 // listProjectShortcuts displays available sub-shortcuts for a project.
@@ -428,52 +373,6 @@ func evalSymlinks(path string) (string, error) {
 		return path, err
 	}
 	return resolved, nil
-}
-
-// standardPaths maps standard directory paths to their nav categories.
-var standardPaths = map[string]nav.Category{
-	"projects/":              nav.CategoryProjects,
-	"projects":               nav.CategoryProjects,
-	"projects/worktrees/":    nav.CategoryWorktrees,
-	"projects/worktrees":     nav.CategoryWorktrees,
-	"festivals/":             nav.CategoryFestivals,
-	"festivals":              nav.CategoryFestivals,
-	"ai_docs/":               nav.CategoryAIDocs,
-	"ai_docs":                nav.CategoryAIDocs,
-	"docs/":                  nav.CategoryDocs,
-	"docs":                   nav.CategoryDocs,
-	"dungeon/":               nav.CategoryDungeon,
-	"dungeon":                nav.CategoryDungeon,
-	"workflow/":              nav.CategoryWorkflow,
-	"workflow":               nav.CategoryWorkflow,
-	"workflow/code_reviews/": nav.CategoryCodeReviews,
-	"workflow/code_reviews":  nav.CategoryCodeReviews,
-	"workflow/pipelines/":    nav.CategoryPipelines,
-	"workflow/pipelines":     nav.CategoryPipelines,
-	"workflow/design/":       nav.CategoryDesign,
-	"workflow/design":        nav.CategoryDesign,
-	"workflow/intents/":      nav.CategoryIntents,
-	"workflow/intents":       nav.CategoryIntents,
-}
-
-// isStandardPath returns true if the path maps to a known category.
-func isStandardPath(path string) bool {
-	_, ok := standardPaths[path]
-	return ok
-}
-
-// buildCategoryMappings converts config shortcuts to nav.Category mappings.
-// Only shortcuts with standard paths are included; custom paths are handled separately.
-func buildCategoryMappings(shortcuts map[string]config.ShortcutConfig) map[string]nav.Category {
-	mappings := make(map[string]nav.Category)
-	for name, sc := range shortcuts {
-		if sc.IsNavigation() {
-			if cat, ok := standardPaths[sc.Path]; ok {
-				mappings[name] = cat
-			}
-		}
-	}
-	return mappings
 }
 
 // formatShortcutsHelp generates the shortcuts section for help output.

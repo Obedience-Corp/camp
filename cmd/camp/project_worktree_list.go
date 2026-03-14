@@ -5,6 +5,7 @@ import (
 	"fmt"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
+	projectcmd "github.com/Obedience-Corp/camp/cmd/camp/project"
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/paths"
@@ -40,7 +41,9 @@ func init() {
 	projectWorktreeListCmd.Flags().StringVarP(&wtListProject, "project", "p", "",
 		"Project name (auto-detected from cwd if not specified)")
 
-	projectWorktreeListCmd.RegisterFlagCompletionFunc("project", completeProjectName)
+	if err := projectWorktreeListCmd.RegisterFlagCompletionFunc("project", projectcmd.CompleteProjectName); err != nil {
+		panic(err)
+	}
 }
 
 func runProjectWorktreeList(cmd *cobra.Command, args []string) error {

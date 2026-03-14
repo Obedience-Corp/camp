@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"time"
 
+	leveragepkg "github.com/Obedience-Corp/camp/cmd/camp/leverage"
 	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/camp/internal/leverage"
@@ -13,32 +15,11 @@ import (
 // Tests can replace this to inject a mock.
 var sccRunner leverage.Runner
 
-var leverageCmd = &cobra.Command{
-	Use:   "leverage [directory]",
-	Short: "Compute leverage scores for campaign projects",
-	Long: `Compute productivity leverage scores by comparing scc COCOMO estimates
-against actual development effort.
-
-Leverage score measures how much more output you produce versus what
-traditional estimation models predict for the same team and time.
-
-  FullLeverage   = (EstimatedPeople x EstimatedMonths) / (ActualPeople x ElapsedMonths)
-  SimpleLeverage = EstimatedPeople / ActualPeople
-
-Examples:
-  camp leverage                              Show team leverage (auto-detect authors from git)
-  camp leverage --author lance@example.com   Show personal leverage
-  camp leverage --project camp               Show score for specific project
-  camp leverage --json                       Output as JSON
-  camp leverage --people 2                   Override team size
-  camp leverage --verbose                    Show diagnostic details
-  camp leverage .                            Score current directory only
-  camp leverage --dir /path/to/repo          Score a specific directory`,
-	RunE: runLeverage,
-	Args: cobra.MaximumNArgs(1),
-}
+var leverageCmd = leveragepkg.Cmd
 
 func init() {
+	leverageCmd.RunE = runLeverage
+	leverageCmd.Args = cobra.MaximumNArgs(1)
 	leverageCmd.Flags().Bool("json", false, "output as JSON")
 	leverageCmd.Flags().StringP("project", "p", "", "filter by project name")
 	leverageCmd.Flags().Int("people", 0, "override team size (0 = auto-detect from git)")
@@ -47,8 +28,6 @@ func init() {
 	leverageCmd.Flags().String("author", "", "filter by author email (git substring match — 'alice@co' matches 'alice@co.com')")
 	leverageCmd.Flags().Bool("by-author", false, "show per-author leverage breakdown")
 	leverageCmd.Flags().String("dir", "", "score a specific directory (skips campaign project resolution)")
-	rootCmd.AddCommand(leverageCmd)
-	leverageCmd.GroupID = "campaign"
 }
 
 func runLeverage(cmd *cobra.Command, args []string) error {
@@ -66,6 +45,9 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 	}
 
 	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	// Parse flags
 	jsonOut, _ := cmd.Flags().GetBool("json")

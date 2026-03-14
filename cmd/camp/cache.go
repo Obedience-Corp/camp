@@ -5,20 +5,14 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"time"
 
+	cachepkg "github.com/Obedience-Corp/camp/cmd/camp/cache"
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/nav/index"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
 
-var cacheCmd = &cobra.Command{
-	Use:   "cache",
-	Short: "Manage the navigation index cache",
-	Long:  `Manage the navigation index cache used for fast project lookups.`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return cmd.Help()
-	},
-}
+var cacheCmd = cachepkg.Cmd
 
 var cacheClearCmd = &cobra.Command{
 	Use:   "clear",
@@ -42,9 +36,6 @@ var cacheInfoCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.AddCommand(cacheCmd)
-	cacheCmd.GroupID = "navigation"
-
 	cacheCmd.AddCommand(cacheClearCmd)
 	cacheCmd.AddCommand(cacheRebuildCmd)
 	cacheCmd.AddCommand(cacheInfoCmd)

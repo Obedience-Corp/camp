@@ -143,46 +143,7 @@ func loadShortcutMappings(ctx context.Context) map[string]nav.Category {
 	if err != nil {
 		return nil
 	}
-	return buildCategoryMappings(cfg.Shortcuts())
-}
-
-// buildCategoryMappings converts config shortcuts to nav.Category mappings.
-func buildCategoryMappings(shortcuts map[string]config.ShortcutConfig) map[string]nav.Category {
-	// Standard paths that map to categories
-	standardPaths := map[string]nav.Category{
-		"projects/":              nav.CategoryProjects,
-		"projects":               nav.CategoryProjects,
-		"projects/worktrees/":    nav.CategoryWorktrees,
-		"projects/worktrees":     nav.CategoryWorktrees,
-		"festivals/":             nav.CategoryFestivals,
-		"festivals":              nav.CategoryFestivals,
-		"ai_docs/":               nav.CategoryAIDocs,
-		"ai_docs":                nav.CategoryAIDocs,
-		"docs/":                  nav.CategoryDocs,
-		"docs":                   nav.CategoryDocs,
-		"dungeon/":               nav.CategoryDungeon,
-		"dungeon":                nav.CategoryDungeon,
-		"workflow/":              nav.CategoryWorkflow,
-		"workflow":               nav.CategoryWorkflow,
-		"workflow/code_reviews/": nav.CategoryCodeReviews,
-		"workflow/code_reviews":  nav.CategoryCodeReviews,
-		"workflow/pipelines/":    nav.CategoryPipelines,
-		"workflow/pipelines":     nav.CategoryPipelines,
-		"workflow/design/":       nav.CategoryDesign,
-		"workflow/design":        nav.CategoryDesign,
-		"workflow/intents/":      nav.CategoryIntents,
-		"workflow/intents":       nav.CategoryIntents,
-	}
-
-	mappings := make(map[string]nav.Category)
-	for name, sc := range shortcuts {
-		if sc.IsNavigation() {
-			if cat, ok := standardPaths[sc.Path]; ok {
-				mappings[name] = cat
-			}
-		}
-	}
-	return mappings
+	return nav.BuildCategoryMappings(cfg.Shortcuts())
 }
 
 // shortcutKeys returns the keys from a shortcuts map.

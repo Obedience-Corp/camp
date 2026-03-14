@@ -309,7 +309,7 @@ func TestIntegration_ProjectCommit_ExplicitSync(t *testing.T) {
 	}
 
 	// Verify submodule ref is dirty in campaign root
-	if !checkParentNeedsCommit(ctx, campRoot, subPath) {
+	if !git.HasPathDiff(ctx, campRoot, subPath) {
 		t.Fatal("expected submodule ref to be dirty")
 	}
 

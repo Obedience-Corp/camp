@@ -9,7 +9,7 @@ import (
 // IsRebaseInProgress checks whether a git rebase is in progress for the repo
 // at the given path by looking for rebase-merge or rebase-apply directories.
 func IsRebaseInProgress(ctx context.Context, repoPath string) bool {
-	gitDir, err := gitOutput(ctx, repoPath, "rev-parse", "--git-dir")
+	gitDir, err := Output(ctx, repoPath, "rev-parse", "--git-dir")
 	if err != nil {
 		return false
 	}

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -180,7 +179,7 @@ func getRepoStatus(ctx context.Context, repoPath, name string, isCampaignRoot bo
 	}
 
 	// Get current branch
-	branch, err := gitOutput(ctx, repoPath, "rev-parse", "--abbrev-ref", "HEAD")
+	branch, err := git.Output(ctx, repoPath, "rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
 		rs.Error = "not a git repo"
 		return rs
@@ -189,11 +188,11 @@ func getRepoStatus(ctx context.Context, repoPath, name string, isCampaignRoot bo
 
 	// Get remote info
 	if showRemoteURL {
-		if remote, err := gitOutput(ctx, repoPath, "remote", "get-url", "origin"); err == nil {
+		if remote, err := git.Output(ctx, repoPath, "remote", "get-url", "origin"); err == nil {
 			rs.Remote = shortenRemoteURL(remote)
 		}
 	} else {
-		if remote, err := gitOutput(ctx, repoPath, "remote"); err == nil && remote != "" {
+		if remote, err := git.Output(ctx, repoPath, "remote"); err == nil && remote != "" {
 			names := strings.Split(remote, "\n")
 			rs.Remote = strings.Join(names, ", ")
 		}
@@ -205,7 +204,7 @@ func getRepoStatus(ctx context.Context, repoPath, name string, isCampaignRoot bo
 	if isCampaignRoot {
 		statusArgs = append(statusArgs, "--ignore-submodules=all")
 	}
-	output, err := gitOutput(ctx, repoPath, statusArgs...)
+	output, err := git.Output(ctx, repoPath, statusArgs...)
 	if err != nil {
 		rs.Error = "status failed"
 		return rs
@@ -236,7 +235,7 @@ func getRepoStatus(ctx context.Context, repoPath, name string, isCampaignRoot bo
 	}
 
 	// Get ahead/behind — also determines if upstream tracking is configured
-	abOutput, err := gitOutput(ctx, repoPath, "rev-list", "--left-right", "--count", "HEAD...@{upstream}")
+	abOutput, err := git.Output(ctx, repoPath, "rev-list", "--left-right", "--count", "HEAD...@{upstream}")
 	if err == nil {
 		rs.HasUpstream = true
 		parts := strings.Fields(abOutput)
@@ -256,7 +255,7 @@ func getRepoStatus(ctx context.Context, repoPath, name string, isCampaignRoot bo
 // the commit recorded in the superproject index. Lines starting with '+' in
 // `git submodule status` indicate such drift.
 func countStaleRefs(ctx context.Context, repoPath string) int {
-	output, err := gitOutput(ctx, repoPath, "submodule", "status")
+	output, err := git.Output(ctx, repoPath, "submodule", "status")
 	if err != nil || output == "" {
 		return 0
 	}
@@ -267,16 +266,6 @@ func countStaleRefs(ctx context.Context, repoPath string) int {
 		}
 	}
 	return count
-}
-
-func gitOutput(ctx context.Context, repoPath string, args ...string) (string, error) {
-	fullArgs := append([]string{"-C", repoPath}, args...)
-	cmd := exec.CommandContext(ctx, "git", fullArgs...)
-	output, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(output)), nil
 }
 
 func shortenRemoteURL(url string) string {

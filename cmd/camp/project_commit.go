@@ -5,9 +5,10 @@ import (
 	"errors"
 	"fmt"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"os/exec"
 	"path/filepath"
 
+	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
+	projectcmd "github.com/Obedience-Corp/camp/cmd/camp/project"
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/git"
@@ -49,7 +50,9 @@ func init() {
 	projectCommitCmd.Flags().BoolVar(&projectCommitAmend, "amend", false, "Amend the previous commit")
 	projectCommitCmd.Flags().BoolVar(&projectCommitSync, "sync", false, "Sync submodule ref at campaign root after commit (opt-in)")
 
-	projectCommitCmd.RegisterFlagCompletionFunc("project", completeProjectName)
+	if err := projectCommitCmd.RegisterFlagCompletionFunc("project", projectcmd.CompleteProjectName); err != nil {
+		panic(err)
+	}
 
 	projectCmd.AddCommand(projectCommitCmd)
 }
@@ -117,7 +120,7 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Show what's staged
-	showStagedSummary(ctx, resolvedPath)
+	cmdutil.ShowStagedSummary(ctx, resolvedPath)
 
 	// Load campaign config (used for tag and parent sync)
 	cfg, _ := config.LoadCampaignConfig(ctx, campRoot)
@@ -144,7 +147,7 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 	fmt.Println(ui.Success("✓ Project changes committed"))
 
 	// Auto-sync submodule ref in campaign root
-	if projectCommitSync && checkParentNeedsCommit(ctx, campRoot, resolvedPath) {
+	if projectCommitSync && git.HasPathDiff(ctx, campRoot, resolvedPath) {
 		if err := syncParentRef(ctx, campRoot, relPath, cfg); err != nil {
 			fmt.Println()
 			fmt.Println(ui.Warning("Could not auto-sync campaign root: " + err.Error()))
@@ -182,20 +185,4 @@ func syncParentRef(ctx context.Context, campRoot, relPath string, cfg *config.Ca
 
 	fmt.Println(ui.Success("✓ Campaign root synced (" + relPath + ")"))
 	return nil
-}
-
-// checkParentNeedsCommit checks if the parent repo shows the submodule as modified.
-func checkParentNeedsCommit(ctx context.Context, campRoot, projectPath string) bool {
-	// Check if submodule is modified in parent
-	cmd := exec.CommandContext(ctx, "git", "-C", campRoot,
-		"diff", "--quiet", "--", projectPath)
-	err := cmd.Run()
-
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
-			return true // Submodule modified in parent
-		}
-	}
-
-	return false
 }

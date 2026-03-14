@@ -5,6 +5,7 @@ import (
 	"fmt"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
+	projectcmd "github.com/Obedience-Corp/camp/cmd/camp/project"
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/paths"
@@ -65,7 +66,9 @@ func init() {
 	projectWorktreeAddCmd.Flags().StringVarP(&wtAddTrack, "track", "t", "",
 		"Remote branch to track (creates new local tracking branch)")
 
-	projectWorktreeAddCmd.RegisterFlagCompletionFunc("project", completeProjectName)
+	if err := projectWorktreeAddCmd.RegisterFlagCompletionFunc("project", projectcmd.CompleteProjectName); err != nil {
+		panic(err)
+	}
 }
 
 func runProjectWorktreeAdd(cmd *cobra.Command, args []string) error {

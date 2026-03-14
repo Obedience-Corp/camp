@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/ktr0731/go-fuzzyfinder"
 	"github.com/spf13/cobra"
 
@@ -111,7 +112,7 @@ func runProjectRun(cmd *cobra.Command, args []string) error {
 
 	// Execute command in the project directory.
 	fullCmd := strings.Join(commandArgs, " ")
-	return executeCommand(ctx, fullCmd, projectDir, nil)
+	return cmdutil.ExecuteCommand(ctx, fullCmd, projectDir, nil)
 }
 
 // parseProjectRunArgs extracts --project/-p from args and returns the project

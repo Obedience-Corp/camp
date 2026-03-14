@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	refspkg "github.com/Obedience-Corp/camp/cmd/camp/refs"
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/git"
@@ -15,20 +16,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var refsSyncCmd = &cobra.Command{
-	Use:   "refs-sync [submodule...]",
-	Short: "Sync submodule ref pointers in campaign root",
-	Long: `Update the campaign root's recorded submodule pointers to match
-each submodule's current HEAD. Creates a single atomic commit.
-
-Without arguments, syncs all submodules. Specify paths to sync specific ones.
-
-Examples:
-  camp refs-sync                      # Sync all dirty refs
-  camp refs-sync projects/camp        # Sync specific submodule
-  camp refs-sync --dry-run            # Show plan without executing`,
-	RunE: runRefsSync,
-}
+var refsSyncCmd = refspkg.Cmd
 
 var refsSyncOpts struct {
 	dryRun bool
@@ -36,10 +24,9 @@ var refsSyncOpts struct {
 }
 
 func init() {
+	refsSyncCmd.RunE = runRefsSync
 	refsSyncCmd.Flags().BoolVarP(&refsSyncOpts.dryRun, "dry-run", "n", false, "Show plan without executing")
 	refsSyncCmd.Flags().BoolVarP(&refsSyncOpts.force, "force", "f", false, "Skip safety checks (staged changes)")
-
-	rootCmd.AddCommand(refsSyncCmd)
 }
 
 type refChange struct {
@@ -52,6 +39,9 @@ type refChange struct {
 
 func runRefsSync(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {

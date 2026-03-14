@@ -9,31 +9,13 @@ import (
 	"sort"
 	"strings"
 
+	registrypkg "github.com/Obedience-Corp/camp/cmd/camp/registry"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
 
-var registryCmd = &cobra.Command{
-	Use:   "registry",
-	Short: "Manage the campaign registry",
-	Long: `Manage the campaign registry at ~/.obey/campaign/registry.json.
-
-The registry tracks all known campaigns for quick navigation and lookup.
-Use these commands to maintain registry health and resolve issues.
-
-Commands:
-  prune   Remove stale entries (campaigns that no longer exist)
-  sync    Update registry entry for current campaign
-  check   Validate registry integrity
-
-Examples:
-  camp registry prune             Remove entries for non-existent campaigns
-  camp registry prune --dry-run   Show what would be removed
-  camp registry sync              Update path for current campaign
-  camp registry check             Check for issues`,
-	Aliases: []string{"reg"},
-}
+var registryCmd = registrypkg.Cmd
 
 var registryPruneCmd = &cobra.Command{
 	Use:   "prune",
@@ -86,9 +68,6 @@ Examples:
 }
 
 func init() {
-	rootCmd.AddCommand(registryCmd)
-	registryCmd.GroupID = "registry"
-
 	// Add subcommands
 	registryCmd.AddCommand(registryPruneCmd)
 	registryCmd.AddCommand(registrySyncCmd)

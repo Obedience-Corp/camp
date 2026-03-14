@@ -1,16 +1,16 @@
-package main
+package project
 
 import (
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
-	"github.com/Obedience-Corp/camp/internal/project"
+	projectsvc "github.com/Obedience-Corp/camp/internal/project"
 	"github.com/spf13/cobra"
 )
 
-// completeProjectName provides tab completion for --project flags that accept
-// a project name (as returned by project.List).
-func completeProjectName(cmd *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+// CompleteProjectName provides tab completion for flags and args that accept
+// a project name from project.List.
+func CompleteProjectName(cmd *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	ctx := cmd.Context()
 
 	campRoot, err := campaign.DetectCached(ctx)
@@ -18,7 +18,7 @@ func completeProjectName(cmd *cobra.Command, _ []string, toComplete string) ([]s
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
-	projects, err := project.List(ctx, campRoot)
+	projects, err := projectsvc.List(ctx, campRoot)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}

@@ -2,7 +2,6 @@ package git
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -73,7 +72,7 @@ func IsMergeInProgress(ctx context.Context, repoPath string) bool {
 		return false
 	}
 
-	gitDir, err := gitOutput(ctx, repoPath, "rev-parse", "--git-dir")
+	gitDir, err := Output(ctx, repoPath, "rev-parse", "--git-dir")
 	if err != nil {
 		return false
 	}
@@ -100,16 +99,4 @@ func PushSetUpstream(ctx context.Context, repoPath, branch string) error {
 			branch, strings.TrimSpace(string(output)))
 	}
 	return nil
-}
-
-// gitOutput runs a git command and returns trimmed stdout.
-// This is a convenience helper for short git queries.
-func gitOutput(ctx context.Context, repoPath string, args ...string) (string, error) {
-	fullArgs := append([]string{"-C", repoPath}, args...)
-	cmd := exec.CommandContext(ctx, "git", fullArgs...)
-	output, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
-	}
-	return strings.TrimSpace(string(output)), nil
 }
