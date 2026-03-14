@@ -1,12 +1,11 @@
-package main
+package skills
 
 import (
 	"fmt"
 
-	"github.com/spf13/cobra"
-
 	"github.com/Obedience-Corp/camp/internal/campaign"
-	"github.com/Obedience-Corp/camp/internal/skills"
+	intskills "github.com/Obedience-Corp/camp/internal/skills"
+	"github.com/spf13/cobra"
 )
 
 var skillsUnlinkCmd = &cobra.Command{
@@ -31,7 +30,7 @@ Examples:
 }
 
 func init() {
-	skillsCmd.AddCommand(skillsUnlinkCmd)
+	Cmd.AddCommand(skillsUnlinkCmd)
 
 	flags := skillsUnlinkCmd.Flags()
 	flags.StringP("tool", "t", "", "Tool to unlink: claude, agents")
@@ -47,7 +46,6 @@ func runSkillsUnlink(cmd *cobra.Command, _ []string) error {
 	destPath, _ := cmd.Flags().GetString("path")
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 
-	// Validate mutual exclusivity
 	if tool != "" && destPath != "" {
 		return fmt.Errorf("--tool and --path are mutually exclusive; use one or the other")
 	}
@@ -55,13 +53,12 @@ func runSkillsUnlink(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("specify --tool <name> or --path <destination>\n\nAvailable tools: claude, agents")
 	}
 
-	// Get campaign root and skills dir
 	root, err := campaign.DetectCached(ctx)
 	if err != nil {
 		return err
 	}
 
-	skillsDir, err := skills.FindSkillsDir(ctx)
+	skillsDir, err := intskills.FindSkillsDir(ctx)
 	if err != nil {
 		return err
 	}
@@ -71,45 +68,54 @@ func runSkillsUnlink(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	// Validate destination is safe (security parity with link command).
-	if err := skills.ValidateDestination(dest, root); err != nil {
+	if err := intskills.ValidateDestination(dest, root); err != nil {
 		return err
 	}
 
-	slugs, err := skills.DiscoverSkillSlugs(skillsDir)
+	slugs, err := intskills.DiscoverSkillSlugs(skillsDir)
 	if err != nil {
 		return err
 	}
 	if len(slugs) == 0 {
-		fmt.Fprintf(out, "no skill bundles found in %s\n", skillsDir)
+		if _, err := fmt.Fprintf(out, "no skill bundles found in %s\n", skillsDir); err != nil {
+			return err
+		}
 		return nil
 	}
 
-	pathType, err := skills.CheckPathType(dest)
+	pathType, err := intskills.CheckPathType(dest)
 	if err != nil {
 		return err
 	}
 
 	switch pathType {
-	case skills.TypeMissing:
-		fmt.Fprintf(out, "not linked: %s\n", dest)
+	case intskills.TypeMissing:
+		if _, err := fmt.Fprintf(out, "not linked: %s\n", dest); err != nil {
+			return err
+		}
 		return nil
-	case skills.TypeFile, skills.TypeSymlink:
+	case intskills.TypeFile, intskills.TypeSymlink:
 		return fmt.Errorf("destination is not a projection directory: %s", dest)
 	}
 
-	removed, err := skills.RemoveProjectedSkillEntries(dest, skillsDir, slugs, dryRun)
+	removed, err := intskills.RemoveProjectedSkillEntries(dest, skillsDir, slugs, dryRun)
 	if err != nil {
 		return err
 	}
 	if dryRun {
-		fmt.Fprintf(out, "would remove %d projected skill symlink(s) from %s\n", removed, dest)
+		if _, err := fmt.Fprintf(out, "would remove %d projected skill symlink(s) from %s\n", removed, dest); err != nil {
+			return err
+		}
 		return nil
 	}
 	if removed == 0 {
-		fmt.Fprintf(out, "not linked: no projected skill symlinks found in %s\n", dest)
+		if _, err := fmt.Fprintf(out, "not linked: no projected skill symlinks found in %s\n", dest); err != nil {
+			return err
+		}
 		return nil
 	}
-	fmt.Fprintf(out, "unlinked %d skill bundle(s) from %s\n", removed, dest)
+	if _, err := fmt.Fprintf(out, "unlinked %d skill bundle(s) from %s\n", removed, dest); err != nil {
+		return err
+	}
 	return nil
 }

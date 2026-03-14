@@ -1,15 +1,15 @@
-package main
+package skills
 
 import (
 	"path/filepath"
 
-	"github.com/Obedience-Corp/camp/internal/skills"
+	intskills "github.com/Obedience-Corp/camp/internal/skills"
 )
 
 // resolveSkillsDestination maps --tool or --path flags to an absolute destination.
 func resolveSkillsDestination(root, tool, destPath string) (string, error) {
 	if tool != "" {
-		relPath, err := skills.ResolveToolPath(tool)
+		relPath, err := intskills.ResolveToolPath(tool)
 		if err != nil {
 			return "", err
 		}

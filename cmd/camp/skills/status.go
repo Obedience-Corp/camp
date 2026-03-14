@@ -1,16 +1,15 @@
-package main
+package skills
 
 import (
 	"encoding/json"
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"path/filepath"
 
-	"github.com/spf13/cobra"
-
 	"github.com/Obedience-Corp/camp/internal/campaign"
-	"github.com/Obedience-Corp/camp/internal/skills"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	intskills "github.com/Obedience-Corp/camp/internal/skills"
+	"github.com/spf13/cobra"
 )
 
 var skillsStatusCmd = &cobra.Command{
@@ -34,7 +33,7 @@ Examples:
 }
 
 func init() {
-	skillsCmd.AddCommand(skillsStatusCmd)
+	Cmd.AddCommand(skillsStatusCmd)
 	skillsStatusCmd.Flags().Bool("json", false, "Output as JSON")
 	skillsStatusCmd.Flags().Bool("strict", false, "Return non-zero exit code when links need attention (for CI)")
 }
@@ -57,36 +56,39 @@ func runSkillsStatus(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	skillsDir := filepath.Join(root, campaign.CampaignDir, skills.SkillsSubdir)
+	skillsDir := filepath.Join(root, campaign.CampaignDir, intskills.SkillsSubdir)
 	if _, err := os.Stat(skillsDir); err != nil {
 		return fmt.Errorf(".campaign/skills/ not found: run 'camp init' or create the directory")
 	}
 
-	slugs, err := skills.DiscoverSkillSlugs(skillsDir)
+	slugs, err := intskills.DiscoverSkillSlugs(skillsDir)
 	if err != nil {
 		return err
 	}
 	if len(slugs) == 0 {
 		if jsonOutput {
-			fmt.Fprintln(out, "[]")
+			if _, err := fmt.Fprintln(out, "[]"); err != nil {
+				return err
+			}
 		} else {
-			fmt.Fprintln(out, "No skill bundles found in .campaign/skills/")
+			if _, err := fmt.Fprintln(out, "No skill bundles found in .campaign/skills/"); err != nil {
+				return err
+			}
 		}
 		return nil
 	}
 
-	// Collect status for each tool
 	var entries []skillStatusEntry
 	hasAttention := false
 
-	toolNames := skills.ToolNames()
-	paths := skills.ToolPaths()
+	toolNames := intskills.ToolNames()
+	paths := intskills.ToolPaths()
 
 	for _, tool := range toolNames {
 		relPath := paths[tool]
 		destPath := filepath.Join(root, relPath)
 
-		pathType, err := skills.CheckPathType(destPath)
+		pathType, err := intskills.CheckPathType(destPath)
 		if err != nil {
 			return camperrors.Wrapf(err, "check %s", tool)
 		}
@@ -97,17 +99,17 @@ func runSkillsStatus(cmd *cobra.Command, _ []string) error {
 		}
 
 		switch pathType {
-		case skills.TypeMissing:
+		case intskills.TypeMissing:
 			entry.State = "not linked"
 			entry.Suggestion = fmt.Sprintf("run 'camp skills link --tool %s' to project skill bundles", tool)
 
-		case skills.TypeFile, skills.TypeSymlink:
+		case intskills.TypeFile, intskills.TypeSymlink:
 			entry.State = "blocked"
 			entry.Suggestion = fmt.Sprintf("path exists but is not a directory: %s", relPath)
 			hasAttention = true
 
-		case skills.TypeDirectory:
-			projState, err := skills.InspectSkillProjection(destPath, skillsDir, slugs)
+		case intskills.TypeDirectory:
+			projState, err := intskills.InspectSkillProjection(destPath, skillsDir, slugs)
 			if err != nil {
 				return camperrors.Wrapf(err, "inspect %s projection", tool)
 			}
@@ -144,30 +146,39 @@ func runSkillsStatus(cmd *cobra.Command, _ []string) error {
 		if err != nil {
 			return camperrors.Wrap(err, "marshal JSON")
 		}
-		fmt.Fprintln(out, string(data))
+		if _, err := fmt.Fprintln(out, string(data)); err != nil {
+			return err
+		}
 	} else {
-		// Table output
-		fmt.Fprintf(out, "%-10s %-20s %s\n", "Tool", "Path", "Status")
-		fmt.Fprintf(out, "%-10s %-20s %s\n", "----", "----", "------")
+		if _, err := fmt.Fprintf(out, "%-10s %-20s %s\n", "Tool", "Path", "Status"); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(out, "%-10s %-20s %s\n", "----", "----", "------"); err != nil {
+			return err
+		}
 
 		for _, e := range entries {
 			status := e.State
 			if e.Target != "" {
 				status = fmt.Sprintf("%s -> %s", status, e.Target)
 			}
-			fmt.Fprintf(out, "%-10s %-20s %s\n", e.Tool, e.Path, status)
-		}
-
-		// Print suggestions
-		for _, e := range entries {
-			if e.Suggestion != "" {
-				fmt.Fprintf(out, "\n  %s: %s", e.Tool, e.Suggestion)
+			if _, err := fmt.Fprintf(out, "%-10s %-20s %s\n", e.Tool, e.Path, status); err != nil {
+				return err
 			}
 		}
-		// Trailing newline if suggestions were printed
+
 		for _, e := range entries {
 			if e.Suggestion != "" {
-				fmt.Fprintln(out)
+				if _, err := fmt.Fprintf(out, "\n  %s: %s", e.Tool, e.Suggestion); err != nil {
+					return err
+				}
+			}
+		}
+		for _, e := range entries {
+			if e.Suggestion != "" {
+				if _, err := fmt.Fprintln(out); err != nil {
+					return err
+				}
 				break
 			}
 		}

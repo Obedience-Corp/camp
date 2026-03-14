@@ -103,10 +103,6 @@ func TestNavigationRootUsesMainHandler(t *testing.T) {
 
 func TestRefsSyncRootUsesMainHandler(t *testing.T) {
 	resetCommandFlags(t, refspkg.Cmd)
-	refsSyncOpts = struct {
-		dryRun bool
-		force  bool
-	}{}
 
 	tempDir := t.TempDir()
 	origDir, err := os.Getwd()

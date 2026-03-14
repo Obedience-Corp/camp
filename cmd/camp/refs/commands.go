@@ -1,32 +1,23 @@
-package main
+package refs
 
 import (
 	"context"
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
-	refspkg "github.com/Obedience-Corp/camp/cmd/camp/refs"
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
 
-var refsSyncCmd = refspkg.Cmd
-
 var refsSyncOpts struct {
 	dryRun bool
 	force  bool
-}
-
-func init() {
-	refsSyncCmd.RunE = runRefsSync
-	refsSyncCmd.Flags().BoolVarP(&refsSyncOpts.dryRun, "dry-run", "n", false, "Show plan without executing")
-	refsSyncCmd.Flags().BoolVarP(&refsSyncOpts.force, "force", "f", false, "Skip safety checks (staged changes)")
 }
 
 type refChange struct {
@@ -35,6 +26,12 @@ type refChange struct {
 	RecordedSHA string
 	CurrentSHA  string
 	Changed     bool
+}
+
+func init() {
+	Cmd.RunE = runRefsSync
+	Cmd.Flags().BoolVarP(&refsSyncOpts.dryRun, "dry-run", "n", false, "Show plan without executing")
+	Cmd.Flags().BoolVarP(&refsSyncOpts.force, "force", "f", false, "Skip safety checks (staged changes)")
 }
 
 func runRefsSync(cmd *cobra.Command, args []string) error {
@@ -48,7 +45,6 @@ func runRefsSync(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "not in a campaign")
 	}
 
-	// Get submodule list
 	paths, err := git.ListSubmodulePaths(ctx, campRoot)
 	if err != nil {
 		return camperrors.Wrap(err, "listing submodules")
@@ -61,7 +57,6 @@ func runRefsSync(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Safety: check for existing staged changes
 	if !refsSyncOpts.force {
 		stagedCmd := exec.CommandContext(ctx, "git", "-C", campRoot, "diff", "--cached", "--quiet")
 		if err := stagedCmd.Run(); err != nil {
@@ -69,16 +64,13 @@ func runRefsSync(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Detect ref changes
 	changes, err := detectRefChanges(ctx, campRoot, paths)
 	if err != nil {
 		return err
 	}
 
-	// Display plan
 	displayRefPlan(changes)
 
-	// Filter to only changed refs
 	var toSync []string
 	var names []string
 	for _, c := range changes {
@@ -98,7 +90,6 @@ func runRefsSync(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Stage all changed refs
 	executor, err := git.NewExecutor(campRoot)
 	if err != nil {
 		return camperrors.Wrap(err, "git executor")
@@ -107,7 +98,6 @@ func runRefsSync(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "staging refs")
 	}
 
-	// Create atomic commit
 	cfg, _ := config.LoadCampaignConfig(ctx, campRoot)
 	msg := fmt.Sprintf("sync submodule refs: %s", strings.Join(names, ", "))
 	if cfg != nil {
@@ -126,7 +116,6 @@ func detectRefChanges(ctx context.Context, campRoot string, paths []string) ([]r
 	for _, p := range paths {
 		fullPath := filepath.Join(campRoot, p)
 
-		// Get SHA recorded in campaign root's index
 		lsTreeOut, err := exec.CommandContext(ctx, "git", "-C", campRoot,
 			"ls-tree", "HEAD", "--", p).Output()
 		if err != nil {
@@ -138,7 +127,6 @@ func detectRefChanges(ctx context.Context, campRoot string, paths []string) ([]r
 		}
 		recordedSHA := fields[2]
 
-		// Get submodule's current HEAD
 		headOut, err := exec.CommandContext(ctx, "git", "-C", fullPath,
 			"rev-parse", "HEAD").Output()
 		if err != nil {

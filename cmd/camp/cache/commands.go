@@ -1,18 +1,15 @@
-package main
+package cache
 
 import (
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"time"
 
-	cachepkg "github.com/Obedience-Corp/camp/cmd/camp/cache"
 	"github.com/Obedience-Corp/camp/internal/campaign"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/nav/index"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
-
-var cacheCmd = cachepkg.Cmd
 
 var cacheClearCmd = &cobra.Command{
 	Use:   "clear",
@@ -36,9 +33,9 @@ var cacheInfoCmd = &cobra.Command{
 }
 
 func init() {
-	cacheCmd.AddCommand(cacheClearCmd)
-	cacheCmd.AddCommand(cacheRebuildCmd)
-	cacheCmd.AddCommand(cacheInfoCmd)
+	Cmd.AddCommand(cacheClearCmd)
+	Cmd.AddCommand(cacheRebuildCmd)
+	Cmd.AddCommand(cacheInfoCmd)
 }
 
 func runCacheClear(cmd *cobra.Command, args []string) error {
@@ -96,7 +93,7 @@ func runCacheInfo(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  %s %s\n", ui.Label("Size:"), ui.Value(formatBytes(info.Size)))
 	fmt.Printf("  %s %s\n", ui.Label("Age:"), ui.Value(formatDuration(info.Age)))
 
-	// Load index for target count and staleness
+	// Load index for target count and staleness.
 	idx, loadErr := index.Load(root)
 	if loadErr == nil && idx != nil {
 		fmt.Printf("  %s %s\n", ui.Label("Targets:"), ui.Value(fmt.Sprintf("%d", len(idx.Targets))))
