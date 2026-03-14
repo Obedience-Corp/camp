@@ -18,15 +18,17 @@ import (
 var questCreateCmd = &cobra.Command{
 	Use:   "create [name]",
 	Short: "Create a new quest",
-	Long: `Create a new quest for a bounded execution context.
+	Long: `Create a new working context within a campaign.
 
-Provide --purpose/--description/--tags to create non-interactively.
-Without --no-editor, camp opens your preferred editor on a YAML quest template.
+A quest is a long-lived scope of work — not a single feature or task, but a
+broader initiative that may span projects, sessions, and festivals. Provide
+--purpose/--description/--tags to create non-interactively. Without
+--no-editor, camp opens your preferred editor on a YAML quest template.
 
 Examples:
-  camp quest create runtime-hardening --no-editor --purpose "stabilize runtime"
-  camp quest create ui-refresh --description "Refine workspace layout"
-  camp quest create daemon-pivot`,
+  camp quest create platform-launch --no-editor --purpose "get v1 out the door"
+  camp quest create observability-overhaul --description "Unified logging, tracing, and metrics"
+  camp quest create cost-reduction`,
 	Args: cobra.MaximumNArgs(1),
 	Annotations: map[string]string{
 		"agent_allowed": "true",

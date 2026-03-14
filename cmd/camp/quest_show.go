@@ -18,8 +18,8 @@ var questShowCmd = &cobra.Command{
 
 Examples:
   camp quest show qst_default
-  camp quest show runtime-hardening --json
-  camp quest show runtime-hardening --yaml`,
+  camp quest show platform-launch --json
+  camp quest show platform-launch --yaml`,
 	Args: cobra.ExactArgs(1),
 	Annotations: map[string]string{
 		"agent_allowed": "true",

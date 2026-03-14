@@ -17,7 +17,7 @@ var questRenameCmd = &cobra.Command{
 	Long: `Rename a quest without changing its immutable directory slug.
 
 Examples:
-  camp quest rename runtime-hardening runtime-stabilization`,
+  camp quest rename cost-reduction infrastructure-efficiency`,
 	Args: cobra.ExactArgs(2),
 	Annotations: map[string]string{
 		"agent_allowed": "true",

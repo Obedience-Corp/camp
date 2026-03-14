@@ -21,7 +21,7 @@ This opens a temporary YAML file, validates the edited result, and writes the
 updated quest back to its canonical location.
 
 Examples:
-  camp quest edit runtime-hardening`,
+  camp quest edit platform-launch`,
 	Args: cobra.ExactArgs(1),
 	Annotations: map[string]string{
 		"agent_allowed": "false",
