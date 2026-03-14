@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/quest"
 )
@@ -53,7 +54,7 @@ func runQuestEdit(cmd *cobra.Command, args []string) error {
 	fmt.Printf("✓ Quest updated: %s\n", quest.RelativePath(qctx.campaignRoot, result.Quest.Path))
 	if !noCommit {
 		if err := autoCommitQuest(ctx, qctx, commit.QuestEdit, result, "Edited quest metadata"); err != nil {
-			return fmt.Errorf("quest updated, but auto-commit failed: %w", err)
+			return camperrors.Wrap(err, "quest updated, but auto-commit failed")
 		}
 	}
 	return nil

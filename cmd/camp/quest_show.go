@@ -4,10 +4,11 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 var questShowCmd = &cobra.Command{
@@ -39,7 +40,7 @@ func runQuestShow(cmd *cobra.Command, args []string) error {
 	jsonOut, _ := cmd.Flags().GetBool("json")
 	yamlOut, _ := cmd.Flags().GetBool("yaml")
 	if jsonOut && yamlOut {
-		return fmt.Errorf("use only one of --json or --yaml")
+		return camperrors.New("use only one of --json or --yaml")
 	}
 
 	qctx, err := loadQuestCommandContext(ctx, false)

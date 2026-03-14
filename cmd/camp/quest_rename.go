@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 )
 
@@ -48,7 +49,7 @@ func runQuestRename(cmd *cobra.Command, args []string) error {
 	fmt.Printf("✓ Quest renamed: %s\n", result.Quest.Name)
 	if !noCommit {
 		if err := autoCommitQuest(ctx, qctx, commit.QuestRename, result, "Renamed quest"); err != nil {
-			return fmt.Errorf("quest renamed, but auto-commit failed: %w", err)
+			return camperrors.Wrap(err, "quest renamed, but auto-commit failed")
 		}
 	}
 	return nil

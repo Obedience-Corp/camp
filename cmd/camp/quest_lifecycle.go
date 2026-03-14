@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/quest"
 )
@@ -133,7 +134,7 @@ func runQuestLifecycle(cmd *cobra.Command, selector, action string) error {
 	fmt.Printf("✓ Quest %s: %s (%s)\n", action, result.Quest.Name, result.Quest.Status)
 	if !noCommit {
 		if err := autoCommitQuest(ctx, qctx, commitType, result, desc); err != nil {
-			return fmt.Errorf("quest %s succeeded, but auto-commit failed: %w", action, err)
+			return camperrors.Wrapf(err, "quest %s succeeded, but auto-commit failed", action)
 		}
 	}
 	return nil

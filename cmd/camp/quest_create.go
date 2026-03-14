@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/nav/tui"
 	"github.com/Obedience-Corp/camp/internal/quest"
@@ -60,7 +61,7 @@ func runQuestCreate(cmd *cobra.Command, args []string) error {
 
 	if name == "" {
 		if !tui.IsTerminal() {
-			return fmt.Errorf("quest name is required in non-interactive mode\n       Provide a name argument or run in an interactive terminal")
+			return camperrors.New("quest name is required in non-interactive mode\n       Provide a name argument or run in an interactive terminal")
 		}
 		form := huh.NewForm(
 			huh.NewGroup(
@@ -70,12 +71,12 @@ func runQuestCreate(cmd *cobra.Command, args []string) error {
 		)
 		if err := theme.RunForm(ctx, form); err != nil {
 			if theme.IsCancelled(err) {
-				return fmt.Errorf("quest creation cancelled")
+				return camperrors.New("quest creation cancelled")
 			}
 			return err
 		}
 		if name == "" {
-			return fmt.Errorf("quest name is required")
+			return camperrors.New("quest name is required")
 		}
 	}
 
@@ -99,7 +100,7 @@ func runQuestCreate(cmd *cobra.Command, args []string) error {
 
 	if !noCommit {
 		if err := autoCommitQuest(ctx, qctx, commit.QuestCreate, result, "Created quest"); err != nil {
-			return fmt.Errorf("quest created, but auto-commit failed: %w", err)
+			return camperrors.Wrap(err, "quest created, but auto-commit failed")
 		}
 	}
 	return nil
