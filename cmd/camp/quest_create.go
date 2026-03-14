@@ -26,9 +26,9 @@ broader initiative that may span projects, sessions, and festivals. Provide
 --no-editor, camp opens your preferred editor on a YAML quest template.
 
 Examples:
-  camp quest create platform-launch --no-editor --purpose "get v1 out the door"
-  camp quest create observability-overhaul --description "Unified logging, tracing, and metrics"
-  camp quest create cost-reduction`,
+  camp quest create q2-reliability --no-editor --purpose "harden platform for Q2 launch"
+  camp quest create data-pipeline-rethink --description "Rethink ingestion, storage, and query layers"
+  camp quest create customer-onboarding`,
 	Args: cobra.MaximumNArgs(1),
 	Annotations: map[string]string{
 		"agent_allowed": "true",

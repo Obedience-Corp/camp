@@ -22,11 +22,11 @@ lives in festivals). A quest groups related activity; a festival plans and
 executes specific deliverables within that activity.
 
 Examples:
-  camp quest create "platform-launch" --purpose "get v1 out the door"
-  camp quest create "observability-overhaul" --no-editor
+  camp quest create "q2-reliability" --purpose "harden platform for Q2 launch"
+  camp quest create "data-pipeline-rethink" --no-editor
   camp quest list
-  camp quest pause platform-launch
-  camp quest complete observability-overhaul`,
+  camp quest pause q2-reliability
+  camp quest complete data-pipeline-rethink`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
 	},
