@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/Obedience-Corp/camp/internal/concept"
+	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -25,7 +25,7 @@ func init() {
 func runConcepts(cmd *cobra.Command, _ []string) error {
 	ctx := cmd.Context()
 
-	cfg, campaignRoot, err := cmdutil.LoadCampaignConfigSafe(ctx)
+	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
 		fmt.Println(ui.Warning("Not in a campaign"))
 		fmt.Println()

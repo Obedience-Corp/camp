@@ -1,7 +1,6 @@
 package leverage
 
 import (
-	"context"
 	"fmt"
 	"time"
 
@@ -15,7 +14,6 @@ var sccRunner intleverage.Runner
 
 func init() {
 	Cmd.RunE = runLeverage
-	Cmd.Args = cobra.MaximumNArgs(1)
 	Cmd.Flags().Bool("json", false, "output as JSON")
 	Cmd.Flags().StringP("project", "p", "", "filter by project name")
 	Cmd.Flags().Int("people", 0, "override team size (0 = auto-detect from git)")
@@ -40,9 +38,6 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 	}
 
 	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
 
 	jsonOut, _ := cmd.Flags().GetBool("json")
 	projectFilter, _ := cmd.Flags().GetString("project")

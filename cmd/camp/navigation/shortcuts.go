@@ -9,7 +9,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/shortcuts"
 	"github.com/Obedience-Corp/camp/internal/ui"
@@ -35,6 +34,7 @@ You can customize shortcuts by editing .campaign/campaign.yaml.`,
   camp go api                 # Use navigation shortcut
   camp run build              # Use command shortcut`,
 	Aliases: []string{"sc"},
+	GroupID: "navigation",
 	RunE:    runShortcuts,
 }
 
@@ -92,8 +92,6 @@ If no project is specified, lists all campaign shortcuts.`,
 }
 
 func init() {
-	ShortcutsCmd.GroupID = "navigation"
-
 	// Add subcommands
 	ShortcutsCmd.AddCommand(shortcutsAddCmd)
 	ShortcutsCmd.AddCommand(shortcutsRemoveCmd)
@@ -108,7 +106,7 @@ func runShortcuts(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
 	// Load campaign config to get custom shortcuts
-	cfg, campaignRoot, err := cmdutil.LoadCampaignConfigSafe(ctx)
+	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
 		// Not in a campaign - just show defaults
 		return printDefaultShortcuts()

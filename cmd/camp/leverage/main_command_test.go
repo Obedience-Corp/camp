@@ -74,6 +74,7 @@ func executeLeverage(t *testing.T, args ...string) (string, error) {
 
 	var buf bytes.Buffer
 	root := newTestRootCmd()
+	root.SetContext(context.Background())
 	root.SetOut(&buf)
 	root.SetErr(&buf)
 	root.SetArgs(append([]string{"leverage"}, args...))

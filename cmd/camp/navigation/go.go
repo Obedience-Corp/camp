@@ -47,9 +47,6 @@ func init() {
 
 func runGo(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
 
 	printOnly, _ := cmd.Flags().GetBool("print")
 	command, _ := cmd.Flags().GetStringArray("command")
