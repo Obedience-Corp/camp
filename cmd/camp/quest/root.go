@@ -1,15 +1,16 @@
 //go:build dev
 
-package main
+package quest
 
 import (
-	"github.com/Obedience-Corp/camp/internal/commands/release"
 	"github.com/spf13/cobra"
 )
 
-var questCmd = &cobra.Command{
-	Use:   "quest",
-	Short: "Manage working contexts within a campaign",
+// Cmd is the root quest command exposed for registration by the parent package.
+var Cmd = &cobra.Command{
+	Use:     "quest",
+	Short:   "Manage working contexts within a campaign",
+	GroupID: "campaign",
 	Long: `Manage working contexts within a campaign.
 
 A quest is a long-lived working context — a sub-initiative that may span
@@ -30,10 +31,4 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
 	},
-}
-
-func init() {
-	release.MarkDevOnly(questCmd)
-	questCmd.GroupID = "campaign"
-	rootCmd.AddCommand(questCmd)
 }

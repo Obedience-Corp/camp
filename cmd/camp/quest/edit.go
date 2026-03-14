@@ -1,6 +1,6 @@
 //go:build dev
 
-package main
+package quest
 
 import (
 	"fmt"
@@ -32,7 +32,7 @@ Examples:
 }
 
 func init() {
-	questCmd.AddCommand(questEditCmd)
+	Cmd.AddCommand(questEditCmd)
 	questEditCmd.Flags().Bool("no-commit", false, "Don't create a git commit")
 	questEditCmd.ValidArgsFunction = completeQuestSelector
 }

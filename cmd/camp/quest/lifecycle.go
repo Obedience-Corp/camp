@@ -1,6 +1,6 @@
 //go:build dev
 
-package main
+package quest
 
 import (
 	"fmt"
@@ -83,7 +83,7 @@ func init() {
 		questArchiveCmd,
 		questRestoreCmd,
 	} {
-		questCmd.AddCommand(sub)
+		Cmd.AddCommand(sub)
 		sub.Flags().Bool("no-commit", false, "Don't create a git commit")
 		sub.ValidArgsFunction = completeQuestSelector
 	}

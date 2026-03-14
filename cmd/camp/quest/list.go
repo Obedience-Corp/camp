@@ -1,6 +1,6 @@
 //go:build dev
 
-package main
+package quest
 
 import (
 	"github.com/Obedience-Corp/camp/internal/quest"
@@ -25,7 +25,7 @@ var questListCmd = &cobra.Command{
 }
 
 func init() {
-	questCmd.AddCommand(questListCmd)
+	Cmd.AddCommand(questListCmd)
 	questListCmd.Flags().BoolVar(&questListAll, "all", false, "Include dungeon quests")
 	questListCmd.Flags().BoolVar(&questListDungeon, "dungeon", false, "Show only dungeon quests")
 	questListCmd.Flags().BoolVar(&questListJSON, "json", false, "Emit JSON output")

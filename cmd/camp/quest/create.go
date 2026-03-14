@@ -1,6 +1,6 @@
 //go:build dev
 
-package main
+package quest
 
 import (
 	"fmt"
@@ -38,7 +38,7 @@ Examples:
 }
 
 func init() {
-	questCmd.AddCommand(questCreateCmd)
+	Cmd.AddCommand(questCreateCmd)
 
 	flags := questCreateCmd.Flags()
 	flags.String("purpose", "", "Short purpose statement")

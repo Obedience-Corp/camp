@@ -1,6 +1,6 @@
 //go:build dev
 
-package main
+package quest
 
 import (
 	"encoding/json"
@@ -29,7 +29,7 @@ Examples:
 }
 
 func init() {
-	questCmd.AddCommand(questShowCmd)
+	Cmd.AddCommand(questShowCmd)
 	questShowCmd.Flags().Bool("json", false, "Output JSON")
 	questShowCmd.Flags().Bool("yaml", false, "Output raw YAML")
 	questShowCmd.ValidArgsFunction = completeQuestSelector
