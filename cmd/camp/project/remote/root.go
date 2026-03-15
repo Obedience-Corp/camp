@@ -45,7 +45,5 @@ func init() {
 	Cmd.PersistentFlags().StringVarP(&flagRemoteProject, "project", "p", "",
 		"Project name (auto-detected from cwd if not specified)")
 
-	if err := Cmd.RegisterFlagCompletionFunc("project", cmdutil.CompleteProjectName); err != nil {
-		_ = err
-	}
+	_ = Cmd.RegisterFlagCompletionFunc("project", cmdutil.CompleteProjectName)
 }

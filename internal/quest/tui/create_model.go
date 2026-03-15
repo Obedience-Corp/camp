@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/editor"
@@ -133,9 +132,11 @@ func (m QuestCreateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case editorFinishedMsg:
-		if msg.err == nil && msg.tmpPath != "" {
-			if content, err := os.ReadFile(msg.tmpPath); err == nil {
-				m.vimEditor.SetContent(string(content))
+		if msg.tmpPath != "" {
+			if msg.err == nil {
+				if content, err := os.ReadFile(msg.tmpPath); err == nil {
+					m.vimEditor.SetContent(string(content))
+				}
 			}
 			os.Remove(msg.tmpPath)
 		}
@@ -302,8 +303,8 @@ func (m QuestCreateModel) openExternalEditor() tea.Cmd {
 	}
 	tmpFile.Close()
 
-	editorCmd := editor.GetEditor(context.Background())
-	c := exec.Command(editorCmd, tmpPath)
+	editorCmd := editor.GetEditor(m.ctx)
+	c := editor.BuildEditorCommand(m.ctx, editorCmd, tmpPath)
 
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return editorFinishedMsg{tmpPath: tmpPath, err: err}

@@ -20,9 +20,6 @@ var (
 	ErrorStyle = lipgloss.NewStyle().
 			Foreground(pal.Error)
 
-	SuccessStyle = lipgloss.NewStyle().
-			Foreground(pal.Success)
-
 	FieldLabelStyle = lipgloss.NewStyle().
 			Foreground(pal.TextSecondary)
 

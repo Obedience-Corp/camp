@@ -100,7 +100,7 @@ func runQuestCreate(cmd *cobra.Command, args []string) error {
 
 	m, ok := finalModel.(questtui.QuestCreateModel)
 	if !ok {
-		return fmt.Errorf("unexpected model type: %T", finalModel)
+		return camperrors.New("unexpected TUI model type returned")
 	}
 
 	if m.Cancelled() {
