@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"os/exec"
 
+	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/git"
@@ -145,7 +145,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Show what will be committed
-	showStagedSummary(ctx, target.Path)
+	cmdutil.ShowStagedSummary(ctx, target.Path)
 
 	// Check for changes
 	hasChanges, err := executor.HasChanges(ctx)
@@ -179,20 +179,4 @@ func runCommit(cmd *cobra.Command, args []string) error {
 
 	fmt.Println(ui.Success("Changes committed successfully"))
 	return nil
-}
-
-// showStagedSummary displays what will be committed.
-func showStagedSummary(ctx context.Context, repoPath string) {
-	cmd := exec.CommandContext(ctx, "git", "-C", repoPath,
-		"diff", "--cached", "--stat")
-	output, err := cmd.Output()
-	if err != nil {
-		return // Non-fatal
-	}
-
-	if len(output) > 0 {
-		fmt.Println("\nChanges to be committed:")
-		fmt.Print(string(output))
-		fmt.Println()
-	}
 }

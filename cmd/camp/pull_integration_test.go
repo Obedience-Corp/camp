@@ -256,7 +256,7 @@ func TestIntegration_PullAll_RebaseConflictAutoAborts(t *testing.T) {
 	}
 
 	// Verify the submodule is on a clean branch (not detached, not rebasing)
-	branch, err := gitOutput(ctx, subDir, "rev-parse", "--abbrev-ref", "HEAD")
+	branch, err := git.Output(ctx, subDir, "rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
 		t.Fatalf("failed to get branch: %v", err)
 	}
@@ -280,7 +280,7 @@ func TestIntegration_PullAll_ReportsChangedRefs(t *testing.T) {
 
 	// Verify the submodule ref changed in the parent (not yet committed)
 	subPath := filepath.Join(campDir, "projects", "test-project")
-	if !checkParentNeedsCommit(ctx, campDir, subPath) {
+	if !git.HasPathDiff(ctx, campDir, subPath) {
 		t.Error("expected parent to show submodule as modified after pull")
 	}
 

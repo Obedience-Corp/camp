@@ -1,14 +1,13 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/nav"
@@ -93,9 +92,9 @@ func runRun(cmd *cobra.Command, args []string) error {
 
 		// Check if this is a standard path that supports project sub-shortcuts
 		// e.g., @p fest cli -> projects/festival-methodology/fest/cmd/fest/
-		if isStandardPath(sc.Path) {
+		if nav.IsStandardPath(sc.Path) {
 			// Build category mappings from config shortcuts
-			configMappings := buildCategoryMappings(cfg.Shortcuts())
+			configMappings := nav.BuildCategoryMappings(cfg.Shortcuts())
 
 			// Parse the remaining args to see if there's a project + optional sub-shortcut
 			remainingArgs := args[1:]
@@ -139,7 +138,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 					if err != nil {
 						// Handle invalid sub-shortcut error
 						if subErr, ok := err.(*index.InvalidSubShortcutError); ok {
-							return formatSubShortcutError(subErr)
+							return cmdutil.FormatSubShortcutError(subErr)
 						}
 						return err
 					}
@@ -159,7 +158,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 
 					// Build and execute command
 					fullCmd := strings.Join(commandArgs, " ")
-					return executeCommand(ctx, fullCmd, workDir, nil)
+					return cmdutil.ExecuteCommand(ctx, fullCmd, workDir, nil)
 				}
 			}
 		}
@@ -180,7 +179,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 	// Exact match only — projects/<name> must exist and be a git repo.
 	if len(commandArgs) > 0 {
 		if projectDir, ok := isProject(root, commandArgs[0]); ok {
-			return executeCommand(ctx, "just", projectDir, commandArgs[1:])
+			return cmdutil.ExecuteCommand(ctx, "just", projectDir, commandArgs[1:])
 		}
 	}
 
@@ -192,7 +191,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 	fullCmd := strings.Join(commandArgs, " ")
 
 	// Execute from working directory
-	return executeCommand(ctx, fullCmd, workDir, nil)
+	return cmdutil.ExecuteCommand(ctx, fullCmd, workDir, nil)
 }
 
 // isProject checks if name matches a project directory in projects/<name>
@@ -207,39 +206,4 @@ func isProject(campaignRoot, name string) (string, bool) {
 		return "", false
 	}
 	return projectDir, true
-}
-
-// executeCommand executes a shell command from the specified directory.
-func executeCommand(ctx context.Context, cmdStr string, workDir string, extraArgs []string) error {
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-
-	// Build the full command with extra args
-	fullCmd := cmdStr
-	if len(extraArgs) > 0 {
-		fullCmd = fmt.Sprintf("%s %s", cmdStr, strings.Join(extraArgs, " "))
-	}
-
-	// Use sh -c to execute the command (supports pipes, redirects, etc.)
-	cmd := exec.CommandContext(ctx, "sh", "-c", fullCmd)
-	cmd.Dir = workDir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
-
-	// Set environment
-	cmd.Env = os.Environ()
-
-	if err := cmd.Run(); err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			// Propagate the child's exit code through cobra instead of calling
-			// os.Exit() directly. This allows deferred cleanup to run and
-			// prevents stale file handles in shared test containers.
-			return camperrors.NewCommand(fullCmd, exitErr.ExitCode(), "", exitErr)
-		}
-		return camperrors.Wrap(err, "failed to execute command")
-	}
-
-	return nil
 }

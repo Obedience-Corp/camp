@@ -5,6 +5,16 @@ import (
 	"fmt"
 	"os"
 
+	cachepkg "github.com/Obedience-Corp/camp/cmd/camp/cache"
+	dungeonpkg "github.com/Obedience-Corp/camp/cmd/camp/dungeon"
+	intentpkg "github.com/Obedience-Corp/camp/cmd/camp/intent"
+	leveragepkg "github.com/Obedience-Corp/camp/cmd/camp/leverage"
+	navigationpkg "github.com/Obedience-Corp/camp/cmd/camp/navigation"
+	projectpkg "github.com/Obedience-Corp/camp/cmd/camp/project"
+	refspkg "github.com/Obedience-Corp/camp/cmd/camp/refs"
+	registrypkg "github.com/Obedience-Corp/camp/cmd/camp/registry"
+	skillspkg "github.com/Obedience-Corp/camp/cmd/camp/skills"
+	worktreespkg "github.com/Obedience-Corp/camp/cmd/camp/worktrees"
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/commands/release"
 	"github.com/Obedience-Corp/camp/internal/config"
@@ -178,6 +188,18 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: ~/.obey/campaign/config.yaml)")
 	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "disable colored output")
 	rootCmd.PersistentFlags().BoolVar(&verbose, "verbose", false, "enable verbose output")
+
+	rootCmd.AddCommand(skillspkg.Cmd)
+	rootCmd.AddCommand(cachepkg.Cmd)
+	rootCmd.AddCommand(navigationpkg.Cmd)
+	rootCmd.AddCommand(navigationpkg.ShortcutsCmd)
+	rootCmd.AddCommand(registrypkg.Cmd)
+	rootCmd.AddCommand(projectpkg.Cmd)
+	rootCmd.AddCommand(dungeonpkg.Cmd)
+	rootCmd.AddCommand(intentpkg.Cmd)
+	rootCmd.AddCommand(leveragepkg.Cmd)
+	rootCmd.AddCommand(worktreespkg.Cmd)
+	rootCmd.AddCommand(refspkg.Cmd)
 
 	release.Register(rootCmd)
 }

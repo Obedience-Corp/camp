@@ -244,7 +244,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if len(result.Skipped) > 0 && verbose {
+	verboseOutput, _ := cmd.Flags().GetBool("verbose")
+	if len(result.Skipped) > 0 && verboseOutput {
 		fmt.Println()
 		fmt.Println(ui.Subheader("Skipped (already exist):"))
 		for _, s := range result.Skipped {

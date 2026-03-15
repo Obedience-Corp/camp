@@ -209,7 +209,7 @@ func pullSingleTarget(
 	}
 
 	// Check upstream tracking
-	if _, err := gitOutput(ctx, t.path, "rev-parse", "--abbrev-ref", "@{upstream}"); err != nil {
+	if _, err := git.Output(ctx, t.path, "rev-parse", "--abbrev-ref", "@{upstream}"); err != nil {
 		if opts.DefaultBranch && !t.isRoot {
 			branch, checkoutErr := git.CheckoutDefaultBranch(ctx, t.path)
 			if checkoutErr != nil {
@@ -220,7 +220,7 @@ func pullSingleTarget(
 				t.branch = branch
 			}
 			// Re-check upstream after checkout
-			if _, err := gitOutput(ctx, t.path, "rev-parse", "--abbrev-ref", "@{upstream}"); err != nil {
+			if _, err := git.Output(ctx, t.path, "rev-parse", "--abbrev-ref", "@{upstream}"); err != nil {
 				fmt.Printf("  %-30s %s\n", t.name, yellow.Render("no upstream"))
 				return pullResult{outcome: pullOutcomeSkipped}
 			}
@@ -304,7 +304,7 @@ func discoverSubmodules(ctx context.Context, campRoot string, noRecurse bool) ([
 // buildPullTargets constructs the target list: campaign root first, then submodules.
 func buildPullTargets(ctx context.Context, campRoot string, paths []string) []pullTarget {
 	targets := make([]pullTarget, 0, len(paths)+1)
-	rootBranch, _ := gitOutput(ctx, campRoot, "rev-parse", "--abbrev-ref", "HEAD")
+	rootBranch, _ := git.Output(ctx, campRoot, "rev-parse", "--abbrev-ref", "HEAD")
 	targets = append(targets, pullTarget{
 		name:   "campaign root",
 		path:   campRoot,
@@ -313,7 +313,7 @@ func buildPullTargets(ctx context.Context, campRoot string, paths []string) []pu
 	})
 	for _, p := range paths {
 		fullPath := filepath.Join(campRoot, p)
-		branch, _ := gitOutput(ctx, fullPath, "rev-parse", "--abbrev-ref", "HEAD")
+		branch, _ := git.Output(ctx, fullPath, "rev-parse", "--abbrev-ref", "HEAD")
 		targets = append(targets, pullTarget{
 			name:   git.SubmoduleDisplayName(p),
 			path:   fullPath,
@@ -350,7 +350,7 @@ func reportChangedRefs(ctx context.Context, campRoot string, subPaths []string, 
 	var changed []string
 	for _, p := range subPaths {
 		fullPath := filepath.Join(campRoot, p)
-		if checkParentNeedsCommit(ctx, campRoot, fullPath) {
+		if git.HasPathDiff(ctx, campRoot, fullPath) {
 			changed = append(changed, p)
 		}
 	}
