@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/Obedience-Corp/camp/internal/concept"
-	"github.com/Obedience-Corp/camp/internal/intent/tui/vim"
+	"github.com/Obedience-Corp/camp/internal/tui/vim"
 	tea "github.com/charmbracelet/bubbletea"
 )
 

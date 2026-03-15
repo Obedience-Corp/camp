@@ -5,14 +5,14 @@ package quest
 import (
 	"fmt"
 
-	"github.com/charmbracelet/huh"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
-	"github.com/Obedience-Corp/camp/internal/nav/tui"
+	navtui "github.com/Obedience-Corp/camp/internal/nav/tui"
 	"github.com/Obedience-Corp/camp/internal/quest"
-	"github.com/Obedience-Corp/camp/internal/ui/theme"
+	questtui "github.com/Obedience-Corp/camp/internal/quest/tui"
 )
 
 var questCreateCmd = &cobra.Command{
@@ -21,14 +21,19 @@ var questCreateCmd = &cobra.Command{
 	Long: `Create a new working context within a campaign.
 
 A quest is a long-lived scope of work — not a single feature or task, but a
-broader initiative that may span projects, sessions, and festivals. Provide
---purpose/--description/--tags to create non-interactively. Without
---no-editor, camp opens your preferred editor on a YAML quest template.
+broader initiative that may span projects, sessions, and festivals.
+
+CAPTURE MODES:
+  TUI (default)         Step-through form (name, purpose, description, tags)
+  Non-interactive       Provide --no-editor or --description for agent use
+  Deep (--edit)         Full YAML template in $EDITOR
 
 Examples:
-  camp quest create q2-reliability --no-editor --purpose "harden platform for Q2 launch"
-  camp quest create data-pipeline-rethink --description "Rethink ingestion, storage, and query layers"
-  camp quest create customer-onboarding`,
+  camp quest create                                    Interactive TUI
+  camp quest create q2-reliability                     TUI with name pre-filled
+  camp quest create q2-reliability --no-editor --purpose "harden platform"
+  camp quest create data-pipeline --description "..."  Non-interactive
+  camp quest create -e customer-onboarding             Deep capture with $EDITOR`,
 	Args: cobra.MaximumNArgs(1),
 	Annotations: map[string]string{
 		"agent_allowed": "true",
@@ -45,6 +50,7 @@ func init() {
 	flags.String("description", "", "Full description")
 	flags.String("tags", "", "Comma-separated tags")
 	flags.Bool("no-editor", false, "Skip editor and create directly from flags")
+	flags.BoolP("edit", "e", false, "Open in $EDITOR for deep capture")
 	flags.Bool("no-commit", false, "Don't create a git commit")
 }
 
@@ -59,40 +65,63 @@ func runQuestCreate(cmd *cobra.Command, args []string) error {
 	description, _ := cmd.Flags().GetString("description")
 	tags, _ := cmd.Flags().GetString("tags")
 	noEditor, _ := cmd.Flags().GetBool("no-editor")
+	useEditor, _ := cmd.Flags().GetBool("edit")
 	noCommit, _ := cmd.Flags().GetBool("no-commit")
 
-	if name == "" {
-		if !tui.IsTerminal() {
-			return camperrors.New("quest name is required in non-interactive mode\n       Provide a name argument or run in an interactive terminal")
-		}
-		form := huh.NewForm(
-			huh.NewGroup(
-				huh.NewInput().Title("Quest Name").Value(&name),
-				huh.NewInput().Title("Purpose").Description("Optional short purpose statement").Value(&purpose),
-			),
-		)
-		if err := theme.RunForm(ctx, form); err != nil {
-			if theme.IsCancelled(err) {
-				return camperrors.New("quest creation cancelled")
-			}
-			return err
-		}
+	// Non-interactive path: flags provide all data
+	if noEditor || description != "" {
 		if name == "" {
-			return camperrors.New("quest name is required")
+			return camperrors.New("quest name is required in non-interactive mode\n       Provide a name argument or use the interactive TUI")
 		}
+		return createQuestDirect(cmd, name, purpose, description, tags, noCommit)
 	}
 
-	qctx, err := loadQuestCommandContext(ctx, true)
+	// Deep capture: open $EDITOR on YAML template
+	if useEditor {
+		return createQuestWithEditor(cmd, name, purpose, description, tags, noCommit)
+	}
+
+	// Interactive TUI path
+	if !navtui.IsTerminal() {
+		return camperrors.New("quest name is required in non-interactive mode\n       Provide a name argument or run in an interactive terminal")
+	}
+
+	model := questtui.NewQuestCreateModel(ctx, questtui.CreateOptions{
+		DefaultName:    name,
+		DefaultPurpose: purpose,
+		DefaultTags:    tags,
+	})
+
+	p := tea.NewProgram(model, tea.WithAltScreen())
+	finalModel, err := p.Run()
+	if err != nil {
+		return camperrors.Wrap(err, "TUI error")
+	}
+
+	m, ok := finalModel.(questtui.QuestCreateModel)
+	if !ok {
+		return fmt.Errorf("unexpected model type: %T", finalModel)
+	}
+
+	if m.Cancelled() {
+		return camperrors.New("quest creation cancelled")
+	}
+
+	result := m.Result()
+	if result == nil {
+		return camperrors.New("quest creation cancelled")
+	}
+
+	return createQuestDirect(cmd, result.Name, result.Purpose, result.Description, result.Tags, noCommit)
+}
+
+func createQuestDirect(cmd *cobra.Command, name, purpose, description, tags string, noCommit bool) error {
+	qctx, err := loadQuestCommandContext(cmd.Context(), true)
 	if err != nil {
 		return err
 	}
 
-	var result *quest.MutationResult
-	if noEditor || description != "" {
-		result, err = qctx.service.Create(ctx, name, purpose, description, parseQuestTags(tags))
-	} else {
-		result, err = qctx.service.CreateWithEditor(ctx, name, purpose, description, parseQuestTags(tags), quest.OpenInEditor)
-	}
+	result, err := qctx.service.Create(cmd.Context(), name, purpose, description, parseQuestTags(tags))
 	if err != nil {
 		return err
 	}
@@ -101,7 +130,33 @@ func runQuestCreate(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  %s\n", quest.RelativePath(qctx.campaignRoot, result.Quest.Path))
 
 	if !noCommit {
-		if err := autoCommitQuest(ctx, qctx, commit.QuestCreate, result, "Created quest"); err != nil {
+		if err := autoCommitQuest(cmd.Context(), qctx, commit.QuestCreate, result, "Created quest"); err != nil {
+			return camperrors.Wrap(err, "quest created, but auto-commit failed")
+		}
+	}
+	return nil
+}
+
+func createQuestWithEditor(cmd *cobra.Command, name, purpose, description, tags string, noCommit bool) error {
+	if name == "" {
+		return camperrors.New("quest name is required for --edit mode\n       Provide a name argument")
+	}
+
+	qctx, err := loadQuestCommandContext(cmd.Context(), true)
+	if err != nil {
+		return err
+	}
+
+	result, err := qctx.service.CreateWithEditor(cmd.Context(), name, purpose, description, parseQuestTags(tags), quest.OpenInEditor)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("✓ Quest created: %s (%s)\n", result.Quest.Name, result.Quest.ID)
+	fmt.Printf("  %s\n", quest.RelativePath(qctx.campaignRoot, result.Quest.Path))
+
+	if !noCommit {
+		if err := autoCommitQuest(cmd.Context(), qctx, commit.QuestCreate, result, "Created quest"); err != nil {
 			return camperrors.Wrap(err, "quest created, but auto-commit failed")
 		}
 	}
