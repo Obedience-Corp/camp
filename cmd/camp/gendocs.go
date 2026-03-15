@@ -7,8 +7,8 @@ import (
 	"regexp"
 	"strings"
 
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/commands/release"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
 )

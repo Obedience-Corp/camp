@@ -11,6 +11,11 @@ func flowCommandsRegistered() bool {
 	return err == nil && cmd != nil && cmd.Name() == "flow"
 }
 
+func questCommandsRegistered() bool {
+	cmd, _, err := rootCmd.Find([]string{"quest"})
+	return err == nil && cmd != nil && cmd.Name() == "quest"
+}
+
 func TestManifestCommand_OutputsValidJSON(t *testing.T) {
 	buf := new(bytes.Buffer)
 	rootCmd.SetOut(buf)
@@ -85,6 +90,18 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		expectedCommands["flow add"] = false
 		expectedCommands["flow migrate"] = false
 	}
+	if questCommandsRegistered() {
+		expectedCommands["quest archive"] = false
+		expectedCommands["quest complete"] = false
+		expectedCommands["quest create"] = false
+		expectedCommands["quest edit"] = false
+		expectedCommands["quest list"] = false
+		expectedCommands["quest pause"] = false
+		expectedCommands["quest rename"] = false
+		expectedCommands["quest restore"] = false
+		expectedCommands["quest resume"] = false
+		expectedCommands["quest show"] = false
+	}
 
 	for _, cmd := range manifest.Commands {
 		if _, ok := expectedCommands[cmd.Path]; ok {
@@ -101,6 +118,9 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 	wantCount := 15
 	if flowCommandsRegistered() {
 		wantCount = 18
+	}
+	if questCommandsRegistered() {
+		wantCount += 10
 	}
 	if len(manifest.Commands) != wantCount {
 		t.Errorf("expected exactly %d restricted commands, got %d", wantCount, len(manifest.Commands))
@@ -132,6 +152,17 @@ func TestManifestCommand_AllCommandsHaveAnnotations(t *testing.T) {
 	}
 	if flowCommandsRegistered() {
 		agentAllowed["flow add"] = true
+	}
+	if questCommandsRegistered() {
+		agentAllowed["quest archive"] = true
+		agentAllowed["quest complete"] = true
+		agentAllowed["quest create"] = true
+		agentAllowed["quest list"] = true
+		agentAllowed["quest pause"] = true
+		agentAllowed["quest rename"] = true
+		agentAllowed["quest restore"] = true
+		agentAllowed["quest resume"] = true
+		agentAllowed["quest show"] = true
 	}
 
 	for _, cmd := range manifest.Commands {
@@ -168,6 +199,9 @@ func TestManifestCommand_InteractiveFlags(t *testing.T) {
 		"move":          true,
 		"dungeon crawl": true,
 	}
+	if questCommandsRegistered() {
+		interactiveCommands["quest edit"] = true
+	}
 
 	nonInteractiveCommands := map[string]bool{
 		"clone":         true,
@@ -184,6 +218,17 @@ func TestManifestCommand_InteractiveFlags(t *testing.T) {
 	if flowCommandsRegistered() {
 		nonInteractiveCommands["flow add"] = true
 		nonInteractiveCommands["flow migrate"] = true
+	}
+	if questCommandsRegistered() {
+		nonInteractiveCommands["quest archive"] = true
+		nonInteractiveCommands["quest complete"] = true
+		nonInteractiveCommands["quest create"] = true
+		nonInteractiveCommands["quest list"] = true
+		nonInteractiveCommands["quest pause"] = true
+		nonInteractiveCommands["quest rename"] = true
+		nonInteractiveCommands["quest restore"] = true
+		nonInteractiveCommands["quest resume"] = true
+		nonInteractiveCommands["quest show"] = true
 	}
 
 	cmdMap := make(map[string]CommandEntry)

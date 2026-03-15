@@ -20,6 +20,7 @@ type Result struct {
 type Options struct {
 	CampaignRoot  string   // Path to campaign root
 	CampaignID    string   // Campaign ID (truncated to 8 chars)
+	QuestID       string   // Optional quest ID for additive commit context
 	Files         []string // If set, stage only these paths instead of everything
 	PreStaged     []string // Paths already staged (included in --only commit scope, not re-staged)
 	SelectiveOnly bool     // When true, never fall back to CommitAll; no-op if Files is empty
@@ -42,7 +43,7 @@ func doCommit(ctx context.Context, opts Options, action, subject, description st
 	}
 
 	commitMsg := fmt.Sprintf("%s %s: %s",
-		git.FormatCampaignTag(opts.CampaignID),
+		git.FormatContextTags(opts.CampaignID, opts.QuestID),
 		action,
 		subject,
 	)

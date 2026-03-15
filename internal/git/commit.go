@@ -350,6 +350,35 @@ func HasStagedChanges(ctx context.Context, repoPath string) (bool, error) {
 	return false, nil
 }
 
+// RemoveCached removes the given paths from the git index without deleting
+// the working tree files (git rm -r --cached). This is the correct way to
+// stage directory deletions after an os.Rename has moved a tracked directory
+// to a new location — the old path is gone from disk but still tracked in git.
+// Paths that are not tracked are silently skipped.
+func RemoveCached(ctx context.Context, repoPath string, paths ...string) error {
+	if len(paths) == 0 {
+		return nil
+	}
+	cfg := DefaultRetryConfig()
+	cfg.OperationName = "rm-cached"
+
+	return WithLockRetry(ctx, repoPath, cfg, func() error {
+		args := []string{"-C", repoPath, "rm", "-r", "--cached", "--ignore-unmatch", "--"}
+		args = append(args, paths...)
+
+		cmd := exec.CommandContext(ctx, "git", args...)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			errType := ClassifyGitError(string(output), cmd.ProcessState.ExitCode())
+			if errType == GitErrorLock {
+				return &LockError{Path: "index.lock", Err: err}
+			}
+			return camperrors.NewGit("rm --cached", "", errType.String(), strings.TrimSpace(string(output)), err)
+		}
+		return nil
+	})
+}
+
 // HasUnstagedChanges checks if there are any unstaged changes.
 func HasUnstagedChanges(ctx context.Context, repoPath string) (bool, error) {
 	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "diff", "--quiet")

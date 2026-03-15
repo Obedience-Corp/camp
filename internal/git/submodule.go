@@ -288,3 +288,23 @@ func SetDeclaredURL(ctx context.Context, repoRoot, submodulePath, newURL string)
 
 	return nil
 }
+
+// RemoveDeclaredSubmodule removes a submodule's section from .gitmodules.
+// This is used when removing origin from a submodule to keep .gitmodules
+// consistent with the project's actual remote configuration.
+func RemoveDeclaredSubmodule(ctx context.Context, repoRoot, submodulePath string) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	section := fmt.Sprintf("submodule.%s", submodulePath)
+	cmd := exec.CommandContext(ctx, "git", "-C", repoRoot,
+		"config", "-f", ".gitmodules", "--remove-section", section)
+
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return camperrors.Wrapf(err, "remove submodule section %s from .gitmodules: %s",
+			submodulePath, strings.TrimSpace(string(output)))
+	}
+
+	return nil
+}
