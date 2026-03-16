@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
 
 var (
@@ -33,9 +34,13 @@ func DetectLinkType(path string) string {
 	}
 }
 
-// ValidateLinkPath confirms the path exists relative to the campaign root.
+// ValidateLinkPath confirms the path exists relative to the campaign root
+// and does not escape the campaign boundary.
 func ValidateLinkPath(campaignRoot, path string) error {
 	abs := filepath.Join(campaignRoot, path)
+	if err := pathutil.ValidateBoundary(campaignRoot, abs); err != nil {
+		return camperrors.Wrapf(camperrors.ErrInvalidInput, "link path escapes campaign root: %s", path)
+	}
 	if _, err := os.Stat(abs); err != nil {
 		return camperrors.Wrapf(camperrors.ErrNotFound, "link target does not exist: %s", path)
 	}

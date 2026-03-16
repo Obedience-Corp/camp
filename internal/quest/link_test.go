@@ -56,6 +56,26 @@ func TestValidateLinkPath(t *testing.T) {
 			t.Error("expected error for missing path")
 		}
 	})
+
+	t.Run("relative traversal rejected", func(t *testing.T) {
+		err := ValidateLinkPath(root, "../outside")
+		if err == nil {
+			t.Error("expected error for path traversal with ..")
+		}
+	})
+
+	t.Run("absolute path outside campaign rejected", func(t *testing.T) {
+		outside := filepath.Join(root, "..", "outside-campaign")
+		if err := os.MkdirAll(outside, 0755); err != nil {
+			t.Fatal(err)
+		}
+		// Convert to relative — this produces ../outside-campaign
+		rel, _ := filepath.Rel(root, outside)
+		err := ValidateLinkPath(root, rel)
+		if err == nil {
+			t.Error("expected error for path outside campaign root")
+		}
+	})
 }
 
 func TestAddLink(t *testing.T) {
