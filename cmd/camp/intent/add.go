@@ -264,36 +264,7 @@ func runFastCapture(ctx context.Context, svc *intent.IntentService, intentsDir s
 		return camperrors.Wrap(err, "failed to create intent")
 	}
 
-	if err := appendIntentAuditEvent(ctx, intentsDir, audit.Event{
-		Type:  audit.EventCreate,
-		ID:    result.ID,
-		Title: result.Title,
-		To:    string(result.Status),
-	}); err != nil {
-		return err
-	}
-
-	fmt.Printf("✓ Intent created: %s\n", result.Path)
-
-	// Auto-commit (unless --no-commit)
-	if !noCommit {
-		files := commit.NormalizeFiles(campaignRoot, result.Path, audit.FilePath(intentsDir))
-		commitResult := commit.Intent(ctx, commit.IntentOptions{
-			Options: commit.Options{
-				CampaignRoot:  campaignRoot,
-				CampaignID:    cfg.ID,
-				Files:         files,
-				SelectiveOnly: true,
-			},
-			Action:      commit.IntentCreate,
-			IntentTitle: opts.Title,
-		})
-		if commitResult.Message != "" {
-			fmt.Printf("  %s\n", commitResult.Message)
-		}
-	}
-
-	return nil
+	return finalizeCreatedIntent(ctx, result, intentsDir, cfg, campaignRoot, noCommit)
 }
 
 // runDeepCapture opens editor for full template expansion.
@@ -311,6 +282,10 @@ func runDeepCapture(ctx context.Context, svc *intent.IntentService, intentsDir s
 		return camperrors.Wrap(err, "failed to create intent")
 	}
 
+	return finalizeCreatedIntent(ctx, result, intentsDir, cfg, campaignRoot, noCommit)
+}
+
+func finalizeCreatedIntent(ctx context.Context, result *intent.Intent, intentsDir string, cfg *config.CampaignConfig, campaignRoot string, noCommit bool) error {
 	if err := appendIntentAuditEvent(ctx, intentsDir, audit.Event{
 		Type:  audit.EventCreate,
 		ID:    result.ID,
@@ -333,7 +308,7 @@ func runDeepCapture(ctx context.Context, svc *intent.IntentService, intentsDir s
 				SelectiveOnly: true,
 			},
 			Action:      commit.IntentCreate,
-			IntentTitle: opts.Title,
+			IntentTitle: result.Title,
 		})
 		if commitResult.Message != "" {
 			fmt.Printf("  %s\n", commitResult.Message)

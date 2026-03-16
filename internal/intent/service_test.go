@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 func TestNewIntentService(t *testing.T) {
@@ -969,6 +971,16 @@ func TestIntentService_Edit_ValidationError(t *testing.T) {
 	if err == nil {
 		t.Fatal("Edit() should fail when validation fails")
 	}
+	var validationErr *camperrors.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("Edit() error = %v, want ValidationError", err)
+	}
+	if validationErr.Field != "intent" {
+		t.Fatalf("ValidationError field = %q, want %q", validationErr.Field, "intent")
+	}
+	if !errors.Is(err, ErrTitleRequired) {
+		t.Fatalf("Edit() error = %v, want ErrTitleRequired in chain", err)
+	}
 }
 
 func TestIntentService_List_AllSortOptions(t *testing.T) {
@@ -1066,6 +1078,16 @@ func TestIntentService_CreateWithEditor_ValidationFails(t *testing.T) {
 
 	if err == nil {
 		t.Fatal("CreateWithEditor() should fail when validation fails")
+	}
+	var validationErr *camperrors.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("CreateWithEditor() error = %v, want ValidationError", err)
+	}
+	if validationErr.Field != "intent" {
+		t.Fatalf("ValidationError field = %q, want %q", validationErr.Field, "intent")
+	}
+	if !errors.Is(err, ErrTitleRequired) {
+		t.Fatalf("CreateWithEditor() error = %v, want ErrTitleRequired in chain", err)
 	}
 }
 
