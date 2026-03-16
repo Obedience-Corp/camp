@@ -170,7 +170,7 @@ func buildPruneTable(results []prune.Result) *table.Table {
 	}
 
 	return table.New().
-		Border(lipgloss.ASCIIBorder()).
+		Border(lipgloss.RoundedBorder()).
 		BorderStyle(lipgloss.NewStyle().Foreground(ui.DimColor)).
 		Headers(headers...).
 		Rows(rows...).
