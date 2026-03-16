@@ -2412,7 +2412,7 @@ Examples:
   camp project prune camp                # Prune by name
   camp project prune -p camp             # Prune by flag
   camp project prune --dry-run           # Preview what would be deleted
-	camp project prune --remote            # Also prune stale remote tracking refs
+  camp project prune --remote            # Also prune stale remote tracking refs
   camp project prune --remote-delete     # Also delete merged branches on origin
 
 ```

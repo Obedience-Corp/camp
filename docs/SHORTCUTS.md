@@ -24,7 +24,7 @@ shortcuts:
     description: "Deploy the API service"
 ```
 
-For a fuller example, see [`docs/examples/jumps.yaml`](examples/jumps.yaml).
+For the full scaffolded file shape, initialize a fresh campaign with `camp init` and inspect `.campaign/settings/jumps.yaml` directly.
 
 ## Shortcut Types
 

@@ -8,13 +8,13 @@ The examples here are reference material, not a comprehensive tutorial set. If a
 
 | File | Purpose |
 |------|---------|
-| [jumps.yaml](jumps.yaml) | Example `.campaign/settings/jumps.yaml` with navigation and command shortcuts |
 | [project-management.sh](project-management.sh) | Project add/list/remove flows and a simple scripting loop |
 
 ## Usage
 
 - Read the files directly for copy-pasteable examples.
 - Use `camp --help`, `camp project --help`, and `camp shortcuts --help` for the authoritative command contract.
+- For scaffolded system files such as `.campaign/settings/jumps.yaml`, create a fresh campaign with `camp init` and inspect the generated files directly.
 
 ## Shell integration
 

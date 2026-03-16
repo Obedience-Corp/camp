@@ -16,7 +16,7 @@ Examples:
   camp project prune camp                # Prune by name
   camp project prune -p camp             # Prune by flag
   camp project prune --dry-run           # Preview what would be deleted
-	camp project prune --remote            # Also prune stale remote tracking refs
+  camp project prune --remote            # Also prune stale remote tracking refs
   camp project prune --remote-delete     # Also delete merged branches on origin
 
 ```
@@ -46,4 +46,3 @@ camp project prune [project-name] [flags]
 
 * [camp project](camp_project.md)	 - Manage campaign projects
 * [camp project prune all](camp_project_prune_all.md)	 - Delete merged branches across all projects
-
