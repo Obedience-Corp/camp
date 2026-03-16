@@ -2412,7 +2412,7 @@ Examples:
   camp project prune camp                # Prune by name
   camp project prune -p camp             # Prune by flag
   camp project prune --dry-run           # Preview what would be deleted
-  camp project prune --remote            # Also prune stale remote tracking refs
+	camp project prune --remote            # Also prune stale remote tracking refs
   camp project prune --remote-delete     # Also delete merged branches on origin
 
 ```
@@ -3662,6 +3662,48 @@ camp shortcuts add [name] [path] or [project] [name] [path] [flags]
 ```
 ---
 
+## camp shortcuts diff
+
+Show differences between current and default shortcuts
+
+### Synopsis
+
+Compare your campaign's shortcuts against the current defaults.
+
+Shows:
+  + Missing    defaults not in your config (available to add)
+  - Stale      auto-generated shortcuts no longer in defaults
+  ~ Modified   shortcuts where path or concept differs from default
+  = Up to date shortcuts matching defaults (count only)
+  * Custom     user-defined shortcuts (always preserved)
+
+Run 'camp shortcuts reset' to apply missing defaults and remove stale entries.
+
+```
+camp shortcuts diff [flags]
+```
+
+### Examples
+
+```
+  camp shortcuts diff
+```
+
+### Options
+
+```
+  -h, --help   help for diff
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
 ## camp shortcuts list
 
 List shortcuts for a specific project
@@ -3727,6 +3769,56 @@ camp shortcuts remove <name> or <project> <name> [flags]
 
 ```
   -h, --help   help for remove
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
+## camp shortcuts reset
+
+Reset auto-generated shortcuts to current defaults
+
+### Synopsis
+
+Reset shortcuts to match current defaults while preserving user-defined shortcuts.
+
+Default behavior:
+  - Adds missing default shortcuts
+  - Removes stale auto-generated shortcuts (no longer in defaults)
+  - Updates modified auto-generated shortcuts to match defaults
+  - Preserves all user-defined shortcuts
+
+With --all:
+  - Replaces entire shortcuts config with defaults
+  - Removes all user-defined shortcuts (with confirmation)
+
+With --dry-run:
+  - Shows what would change without saving
+
+```
+camp shortcuts reset [flags]
+```
+
+### Examples
+
+```
+  camp shortcuts reset             # Reset auto shortcuts, preserve custom
+  camp shortcuts reset --dry-run   # Preview changes
+  camp shortcuts reset --all       # Full reset (drops custom shortcuts)
+```
+
+### Options
+
+```
+      --all       Reset all shortcuts including user-defined ones
+      --dry-run   Show what would change without saving
+  -h, --help      help for reset
 ```
 
 ### Options inherited from parent commands

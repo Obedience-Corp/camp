@@ -95,7 +95,7 @@ func TestNavigationOnlyShortcutError(t *testing.T) {
 	expander := shortcuts.NewExpander(shortcutMap)
 
 	// Test navigation-only shortcuts (d, w, etc.)
-	navOnlyShortcuts := []string{"d", "w", "a", "du", "cr", "pi", "de"}
+	navOnlyShortcuts := []string{"d", "w", "ai", "du", "cr", "pi", "de", "ex"}
 
 	for _, sc := range navOnlyShortcuts {
 		t.Run(sc, func(t *testing.T) {
