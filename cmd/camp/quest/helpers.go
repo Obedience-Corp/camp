@@ -152,6 +152,12 @@ func outputQuestShow(qctx *questCommandContext, q *quest.Quest) {
 	if q.Path != "" {
 		fmt.Printf("Path:        %s\n", quest.RelativePath(qctx.campaignRoot, q.Path))
 	}
+	if len(q.Links) > 0 {
+		fmt.Printf("Links:\n")
+		for _, link := range q.Links {
+			fmt.Printf("  %-10s %s\n", link.Type, link.Path)
+		}
+	}
 	if q.Description != "" {
 		fmt.Printf("\n%s\n", q.Description)
 	}

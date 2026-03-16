@@ -14,6 +14,8 @@ const (
 	QuestComplete QuestAction = "QuestComplete"
 	QuestArchive  QuestAction = "QuestArchive"
 	QuestRestore  QuestAction = "QuestRestore"
+	QuestLink     QuestAction = "QuestLink"
+	QuestUnlink   QuestAction = "QuestUnlink"
 )
 
 // QuestOptions configures a quest commit.

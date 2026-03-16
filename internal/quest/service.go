@@ -378,6 +378,97 @@ func (s *Service) Restore(ctx context.Context, identifier string) (*MutationResu
 	}, nil
 }
 
+// Link associates a campaign artifact with a quest.
+// If linkType is empty, the type is auto-detected from the path.
+func (s *Service) Link(ctx context.Context, identifier, path, linkType string) (*MutationResult, error) {
+	if err := s.ensureInitialized(); err != nil {
+		return nil, err
+	}
+
+	q, err := Resolve(ctx, s.campaignRoot, identifier)
+	if err != nil {
+		return nil, err
+	}
+	if q.IsDefault() {
+		return nil, ErrDefaultQuestReadOnly
+	}
+
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil, errors.New("link path is required")
+	}
+
+	if err := ValidateLinkPath(s.campaignRoot, path); err != nil {
+		return nil, err
+	}
+
+	if linkType == "" {
+		linkType = DetectLinkType(path)
+	}
+
+	link := Link{
+		Path:    path,
+		Type:    linkType,
+		AddedAt: time.Now().UTC(),
+	}
+	if err := AddLink(q, link); err != nil {
+		return nil, err
+	}
+
+	q.UpdatedAt = time.Now().UTC()
+	if err := Save(ctx, q.Path, q); err != nil {
+		return nil, err
+	}
+
+	return &MutationResult{
+		Quest: q,
+		Files: []string{q.Path},
+	}, nil
+}
+
+// Unlink removes a linked artifact from a quest.
+func (s *Service) Unlink(ctx context.Context, identifier, path string) (*MutationResult, error) {
+	if err := s.ensureInitialized(); err != nil {
+		return nil, err
+	}
+
+	q, err := Resolve(ctx, s.campaignRoot, identifier)
+	if err != nil {
+		return nil, err
+	}
+	if q.IsDefault() {
+		return nil, ErrDefaultQuestReadOnly
+	}
+
+	if err := RemoveLink(q, path); err != nil {
+		return nil, err
+	}
+
+	q.UpdatedAt = time.Now().UTC()
+	if err := Save(ctx, q.Path, q); err != nil {
+		return nil, err
+	}
+
+	return &MutationResult{
+		Quest: q,
+		Files: []string{q.Path},
+	}, nil
+}
+
+// Links returns all links associated with a quest.
+func (s *Service) Links(ctx context.Context, identifier string) ([]Link, error) {
+	if err := s.ensureInitialized(); err != nil {
+		return nil, err
+	}
+
+	q, err := Resolve(ctx, s.campaignRoot, identifier)
+	if err != nil {
+		return nil, err
+	}
+
+	return q.Links, nil
+}
+
 func (s *Service) ensureInitialized() error {
 	if !Exists(s.campaignRoot) || !IsInitialized(s.campaignRoot) {
 		return ErrNotInitialized

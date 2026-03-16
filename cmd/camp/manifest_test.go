@@ -95,12 +95,15 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		expectedCommands["quest complete"] = false
 		expectedCommands["quest create"] = false
 		expectedCommands["quest edit"] = false
+		expectedCommands["quest link"] = false
+		expectedCommands["quest links"] = false
 		expectedCommands["quest list"] = false
 		expectedCommands["quest pause"] = false
 		expectedCommands["quest rename"] = false
 		expectedCommands["quest restore"] = false
 		expectedCommands["quest resume"] = false
 		expectedCommands["quest show"] = false
+		expectedCommands["quest unlink"] = false
 	}
 
 	for _, cmd := range manifest.Commands {
@@ -120,7 +123,7 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		wantCount = 18
 	}
 	if questCommandsRegistered() {
-		wantCount += 10
+		wantCount += 13
 	}
 	if len(manifest.Commands) != wantCount {
 		t.Errorf("expected exactly %d restricted commands, got %d", wantCount, len(manifest.Commands))
@@ -157,12 +160,15 @@ func TestManifestCommand_AllCommandsHaveAnnotations(t *testing.T) {
 		agentAllowed["quest archive"] = true
 		agentAllowed["quest complete"] = true
 		agentAllowed["quest create"] = true
+		agentAllowed["quest link"] = true
+		agentAllowed["quest links"] = true
 		agentAllowed["quest list"] = true
 		agentAllowed["quest pause"] = true
 		agentAllowed["quest rename"] = true
 		agentAllowed["quest restore"] = true
 		agentAllowed["quest resume"] = true
 		agentAllowed["quest show"] = true
+		agentAllowed["quest unlink"] = true
 	}
 
 	for _, cmd := range manifest.Commands {
@@ -223,12 +229,15 @@ func TestManifestCommand_InteractiveFlags(t *testing.T) {
 		nonInteractiveCommands["quest archive"] = true
 		nonInteractiveCommands["quest complete"] = true
 		nonInteractiveCommands["quest create"] = true
+		nonInteractiveCommands["quest link"] = true
+		nonInteractiveCommands["quest links"] = true
 		nonInteractiveCommands["quest list"] = true
 		nonInteractiveCommands["quest pause"] = true
 		nonInteractiveCommands["quest rename"] = true
 		nonInteractiveCommands["quest restore"] = true
 		nonInteractiveCommands["quest resume"] = true
 		nonInteractiveCommands["quest show"] = true
+		nonInteractiveCommands["quest unlink"] = true
 	}
 
 	cmdMap := make(map[string]CommandEntry)
