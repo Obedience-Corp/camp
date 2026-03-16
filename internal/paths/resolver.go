@@ -89,6 +89,11 @@ func (r *Resolver) Design() string {
 	return filepath.Join(r.root, r.paths.Design)
 }
 
+// Explore returns the full path to the explore directory.
+func (r *Resolver) Explore() string {
+	return filepath.Join(r.Workflow(), "explore")
+}
+
 // Dungeon returns the full path to the dungeon directory.
 func (r *Resolver) Dungeon() string {
 	return filepath.Join(r.root, r.paths.Dungeon)
