@@ -82,7 +82,7 @@ Examples:
 				if len(items) == 0 {
 					return fmt.Errorf("no work items found")
 				}
-				fmt.Println(items[0].AbsolutePath)
+				fmt.Println(items[0].AbsPath(campaignRoot))
 				return nil
 			case flagPrint:
 				return runTUI(ctx, items, true, campaignRoot, resolver)
@@ -152,9 +152,9 @@ func runTUI(ctx context.Context, items []wkitem.WorkItem, printOnly bool, campai
 		return nil
 	}
 	if printOnly {
-		fmt.Println(m.Selected.AbsolutePath)
+		fmt.Println(m.Selected.AbsPath(campaignRoot))
 	} else {
-		fmt.Printf("cd %s\n", m.Selected.AbsolutePath)
+		fmt.Printf("cd %s\n", m.Selected.AbsPath(campaignRoot))
 	}
 	return nil
 }

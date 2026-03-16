@@ -3,7 +3,7 @@ package workitem
 import "time"
 
 // SchemaVersion is the JSON contract version for workitem output.
-const SchemaVersion = "workitems/v1alpha1"
+const SchemaVersion = "workitems/v1alpha2"
 
 // Payload is the top-level JSON output for camp workitem --json.
 type Payload struct {

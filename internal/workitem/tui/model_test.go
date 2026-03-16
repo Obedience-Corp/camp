@@ -21,7 +21,6 @@ func makeTestItems(n int) []workitem.WorkItem {
 			WorkflowType:   workitem.WorkflowTypeDesign,
 			Title:          "Item " + string(rune('A'+i)),
 			RelativePath:   "workflow/design/item-" + string(rune('a'+i)),
-			AbsolutePath:   "/tmp/campaign/workflow/design/item-" + string(rune('a'+i)),
 			ItemKind:       workitem.ItemKindDirectory,
 			SortTimestamp:  now.Add(-time.Duration(i) * time.Hour),
 			CreatedAt:      now.Add(-time.Duration(i) * time.Hour),

@@ -55,8 +55,7 @@ func discoverIntents(ctx context.Context, campaignRoot string, resolver *paths.R
 				LifecycleStage: stage,
 				Title:          i.Title,
 				RelativePath:   relPath,
-				AbsolutePath:   filePath,
-				PrimaryDoc:     filePath,
+				PrimaryDoc:     relPath, // intent file IS its own primary doc
 				ItemKind:       ItemKindFile,
 				CreatedAt:      i.CreatedAt,
 				UpdatedAt:      i.UpdatedAt,

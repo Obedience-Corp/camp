@@ -70,7 +70,7 @@ func discoverFestivals(ctx context.Context, campaignRoot string, resolver *paths
 				title = title + " (" + meta.ID + ")"
 			}
 
-			primaryDoc := findFestivalPrimaryDoc(dirPath)
+			primaryDocAbs := findFestivalPrimaryDoc(dirPath)
 			scanEarliest, scanLatest := ScanDirTimestamps(ctx, dirPath)
 			created := meta.CreatedAt
 			if created.IsZero() {
@@ -78,14 +78,18 @@ func discoverFestivals(ctx context.Context, campaignRoot string, resolver *paths
 			}
 			updated := scanLatest
 
+			var primaryDocRel string
+			if primaryDocAbs != "" {
+				primaryDocRel, _ = filepath.Rel(campaignRoot, primaryDocAbs)
+			}
+
 			item := WorkItem{
 				Key:            "festival:" + relPath,
 				WorkflowType:   WorkflowTypeFestival,
 				LifecycleStage: stage,
 				Title:          title,
 				RelativePath:   relPath,
-				AbsolutePath:   dirPath,
-				PrimaryDoc:     primaryDoc,
+				PrimaryDoc:     primaryDocRel,
 				ItemKind:       ItemKindDirectory,
 				CreatedAt:      created,
 				UpdatedAt:      updated,
@@ -95,8 +99,8 @@ func discoverFestivals(ctx context.Context, campaignRoot string, resolver *paths
 				},
 			}
 			item.SortTimestamp = DeriveSortTimestamp(item.UpdatedAt, item.CreatedAt)
-			if primaryDoc != "" {
-				item.Summary = extractSummaryFromFile(primaryDoc, 200)
+			if primaryDocAbs != "" {
+				item.Summary = extractSummaryFromFile(primaryDocAbs, 200)
 			}
 			items = append(items, item)
 		}

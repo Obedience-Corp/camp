@@ -7,8 +7,8 @@ import (
 
 func TestNewPayload_SchemaVersion(t *testing.T) {
 	p := NewPayload("/tmp/campaign", nil)
-	if p.SchemaVersion != "workitems/v1alpha1" {
-		t.Errorf("schema = %q, want workitems/v1alpha1", p.SchemaVersion)
+	if p.SchemaVersion != SchemaVersion {
+		t.Errorf("schema = %q, want %s", p.SchemaVersion, SchemaVersion)
 	}
 }
 

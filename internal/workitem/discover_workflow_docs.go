@@ -41,15 +41,20 @@ func discoverWorkflowDocs(ctx context.Context, campaignRoot, rootDir string, wfT
 			continue // skip items with unresolvable relative paths
 		}
 
-		primaryDoc := findPrimaryDoc(dirPath)
+		primaryDocAbs := findPrimaryDoc(dirPath)
 		title := humanizeBasename(name)
-		if primaryDoc != "" {
-			if heading := extractFirstHeading(primaryDoc); heading != "" {
+		if primaryDocAbs != "" {
+			if heading := extractFirstHeading(primaryDocAbs); heading != "" {
 				title = heading
 			}
 		}
 
 		created, updated := ScanDirTimestamps(ctx, dirPath)
+
+		var primaryDocRel string
+		if primaryDocAbs != "" {
+			primaryDocRel, _ = filepath.Rel(campaignRoot, primaryDocAbs)
+		}
 
 		item := WorkItem{
 			Key:            string(wfType) + ":" + relPath,
@@ -57,18 +62,17 @@ func discoverWorkflowDocs(ctx context.Context, campaignRoot, rootDir string, wfT
 			LifecycleStage: "",
 			Title:          title,
 			RelativePath:   relPath,
-			AbsolutePath:   dirPath,
-			PrimaryDoc:     primaryDoc,
+			PrimaryDoc:     primaryDocRel,
 			ItemKind:       ItemKindDirectory,
 			CreatedAt:      created,
 			UpdatedAt:      updated,
 			SourceMetadata: map[string]any{
-				"has_readme": primaryDoc != "" && filepath.Base(primaryDoc) == "README.md",
+				"has_readme": primaryDocAbs != "" && filepath.Base(primaryDocAbs) == "README.md",
 			},
 		}
 		item.SortTimestamp = DeriveSortTimestamp(item.UpdatedAt, item.CreatedAt)
-		if primaryDoc != "" {
-			item.Summary = extractSummaryFromFile(primaryDoc, 200)
+		if primaryDocAbs != "" {
+			item.Summary = extractSummaryFromFile(primaryDocAbs, 200)
 		}
 		items = append(items, item)
 	}

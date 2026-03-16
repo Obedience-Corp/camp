@@ -181,14 +181,15 @@ func (m Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) openEditor() (tea.Model, tea.Cmd) {
 	item := m.currentItem()
-	if item.PrimaryDoc == "" {
+	absDoc := item.AbsPrimaryDoc(m.campaignRoot)
+	if absDoc == "" {
 		return m, nil
 	}
 	editor := os.Getenv("EDITOR")
 	if editor == "" {
 		editor = "vi"
 	}
-	c := exec.Command(editor, item.PrimaryDoc)
+	c := exec.Command(editor, absDoc)
 	c.Stdin = os.Stdin
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
@@ -199,15 +200,16 @@ func (m Model) openEditor() (tea.Model, tea.Cmd) {
 
 func (m Model) openSystemHandler() (tea.Model, tea.Cmd) {
 	item := m.currentItem()
-	if item.AbsolutePath == "" {
+	if item.RelativePath == "" {
 		return m, nil
 	}
+	absPath := item.AbsPath(m.campaignRoot)
 	var c *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
-		c = exec.Command("open", item.AbsolutePath)
+		c = exec.Command("open", absPath)
 	default:
-		c = exec.Command("xdg-open", item.AbsolutePath)
+		c = exec.Command("xdg-open", absPath)
 	}
 	if err := c.Start(); err != nil {
 		cmd := m.setStatus("open failed: " + err.Error())
@@ -219,9 +221,10 @@ func (m Model) openSystemHandler() (tea.Model, tea.Cmd) {
 
 func (m Model) copyPath() (tea.Model, tea.Cmd) {
 	item := m.currentItem()
-	if item.AbsolutePath == "" {
+	if item.RelativePath == "" {
 		return m, nil
 	}
+	absPath := item.AbsPath(m.campaignRoot)
 	var c *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
@@ -229,7 +232,7 @@ func (m Model) copyPath() (tea.Model, tea.Cmd) {
 	default:
 		c = exec.Command("xclip", "-selection", "clipboard")
 	}
-	c.Stdin = strings.NewReader(item.AbsolutePath)
+	c.Stdin = strings.NewReader(absPath)
 	if err := c.Run(); err != nil {
 		cmd := m.setStatus("copy failed: " + err.Error())
 		return m, cmd
