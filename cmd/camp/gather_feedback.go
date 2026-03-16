@@ -31,7 +31,7 @@ var gatherFeedbackCmd = &cobra.Command{
 trackable FEEDBACK intent files with checkboxes.
 
 Each festival with feedback observations gets a FEEDBACK_<fest_id>.md intent
-in workflow/intents/inbox/. Observations are grouped by criteria with
+in .campaign/intents/inbox/. Observations are grouped by criteria with
 checkboxes for tracking addressed status.
 
 Deduplication tracking ensures observations are only gathered once.

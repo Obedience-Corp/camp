@@ -17,10 +17,10 @@ func setupTestCampaign(t *testing.T) (string, *paths.Resolver) {
 
 	// Create standard campaign directories
 	dirs := []string{
-		"workflow/intents/inbox",
-		"workflow/intents/active",
-		"workflow/intents/ready",
-		"workflow/intents/dungeon/done",
+		".campaign/intents/inbox",
+		".campaign/intents/active",
+		".campaign/intents/ready",
+		".campaign/intents/dungeon/done",
 		"workflow/design",
 		"workflow/design/dungeon",
 		"workflow/explore",
@@ -55,11 +55,11 @@ func TestDiscoverIntents_ActiveOnly(t *testing.T) {
 	root, resolver := setupTestCampaign(t)
 	ctx := context.Background()
 
-	writeFile(t, filepath.Join(root, "workflow/intents/inbox/test-intent.md"),
+	writeFile(t, filepath.Join(root, ".campaign/intents/inbox/test-intent.md"),
 		"---\nid: test-20260101\ntitle: Test Intent\nstatus: inbox\ncreated_at: 2026-01-01\ntype: feature\n---\n\n# Test Intent\n\nBody text here.")
 
 	// Dungeon intent should NOT be discovered (we don't scan dungeon dirs)
-	writeFile(t, filepath.Join(root, "workflow/intents/dungeon/done/old.md"),
+	writeFile(t, filepath.Join(root, ".campaign/intents/dungeon/done/old.md"),
 		"---\nid: old-20250101\ntitle: Old Done\nstatus: dungeon/done\ncreated_at: 2025-01-01\n---\n\n# Old")
 
 	items, err := discoverIntents(ctx, root, resolver)
@@ -88,7 +88,7 @@ func TestDiscoverIntents_SkipsGitkeep(t *testing.T) {
 	root, resolver := setupTestCampaign(t)
 	ctx := context.Background()
 
-	writeFile(t, filepath.Join(root, "workflow/intents/inbox/.gitkeep"), "")
+	writeFile(t, filepath.Join(root, ".campaign/intents/inbox/.gitkeep"), "")
 
 	items, err := discoverIntents(ctx, root, resolver)
 	if err != nil {
@@ -212,7 +212,7 @@ func TestDiscover_FullIntegration(t *testing.T) {
 	ctx := context.Background()
 
 	// Intent
-	writeFile(t, filepath.Join(root, "workflow/intents/inbox/idea.md"),
+	writeFile(t, filepath.Join(root, ".campaign/intents/inbox/idea.md"),
 		"---\nid: idea-1\ntitle: My Idea\nstatus: inbox\ncreated_at: 2026-01-15\n---\n\n# My Idea")
 
 	// Design

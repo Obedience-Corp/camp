@@ -29,6 +29,7 @@ var initCmd = &cobra.Command{
 Creates the standard campaign directories:
   .campaign/              - Campaign configuration and metadata
   .campaign/quests/       - Quest execution contexts and active quest marker
+  .campaign/intents/      - System-managed intent state
   projects/               - Project repositories (submodules or worktrees)
   projects/worktrees/     - Git worktrees for parallel development
   festivals/              - Festival methodology workspace (via fest init)
@@ -39,7 +40,6 @@ Creates the standard campaign directories:
   workflow/code_reviews/  - Code review notes and feedback
   workflow/pipelines/     - CI/CD pipeline definitions
   workflow/design/        - Design documents
-  workflow/intents/       - Intent documents
 
 Also creates:
   AGENTS.md     - AI agent instruction file

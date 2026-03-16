@@ -20,7 +20,7 @@ var questLinkCmd = &cobra.Command{
 with a quest for traceability.
 
 The link type is auto-detected from the path:
-  workflow/intents/  → intent
+  .campaign/intents/ → intent
   workflow/design/   → design
   workflow/explore/  → explore
   festivals/         → festival
@@ -30,7 +30,7 @@ The link type is auto-detected from the path:
 Use --type to override auto-detection.
 
 Examples:
-  camp quest link myquest workflow/intents/some-intent.yaml
+  camp quest link myquest .campaign/intents/inbox/some-intent.md
   camp quest link myquest projects/camp
   camp quest link myquest docs/spec.md --type spec`,
 	Args: cobra.ExactArgs(2),
