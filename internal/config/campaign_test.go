@@ -138,7 +138,7 @@ concepts:
 	}
 }
 
-func TestLoadCampaignConfig_PreservesLegacyShortcutsWithoutExplore(t *testing.T) {
+func TestLoadCampaignConfig_PreservesLegacyShortcutsWithoutExploreAndAddsIntentShortcut(t *testing.T) {
 	tmpDir := t.TempDir()
 	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
 
@@ -183,6 +183,13 @@ shortcuts:
 	}
 
 	shortcuts := cfg.Shortcuts()
+	intentShortcut, ok := shortcuts["i"]
+	if !ok {
+		t.Fatal("legacy shortcuts should gain canonical intent shortcut i")
+	}
+	if intentShortcut.Path != ".campaign/intents/" {
+		t.Fatalf("intent shortcut path = %q, want %q", intentShortcut.Path, ".campaign/intents/")
+	}
 	if _, ok := shortcuts["de"]; !ok {
 		t.Fatal("legacy design shortcut de should be preserved")
 	}
@@ -191,6 +198,10 @@ shortcuts:
 	}
 	if _, ok := shortcuts["ex"]; ok {
 		t.Fatal("legacy shortcuts should not be silently rewritten with new ex shortcut")
+	}
+
+	if cfg.Paths().Intents != ".campaign/intents/" {
+		t.Fatalf("Paths().Intents = %q, want %q", cfg.Paths().Intents, ".campaign/intents/")
 	}
 }
 
