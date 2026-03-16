@@ -3,6 +3,7 @@ package quest
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -18,7 +19,7 @@ type ScaffoldResult struct {
 }
 
 // EnsureQuestDungeon creates the quest dungeon structure when missing.
-// The quests directory and default.yaml are handled by the scaffold template
+// The quests directory and default quest are handled by the scaffold template
 // system; this function only initialises the imperative dungeon subdirectory.
 func EnsureQuestDungeon(ctx context.Context, campaignRoot string) (*ScaffoldResult, error) {
 	if err := ctx.Err(); err != nil {
@@ -40,9 +41,9 @@ func EnsureQuestDungeon(ctx context.Context, campaignRoot string) (*ScaffoldResu
 	return result, nil
 }
 
-// EnsureScaffold creates the quest directory, default quest file, and dungeon
+// EnsureScaffold creates the quest directory, default quest, and dungeon
 // structure when missing. In production init flows the quests directory and
-// default.yaml are created by the scaffold template system; this function
+// default/quest.yaml are created by the scaffold template system; this function
 // remains for runtime "ensure" calls (e.g. quest commands) and tests.
 func EnsureScaffold(ctx context.Context, campaignRoot string) (*ScaffoldResult, error) {
 	if err := ctx.Err(); err != nil {
@@ -93,6 +94,26 @@ func DefaultQuest(now time.Time) *Quest {
 
 func ensureDefaultQuest(ctx context.Context, campaignRoot string, result *ScaffoldResult) error {
 	path := DefaultPath(campaignRoot)
+
+	// Migrate legacy flat-file default.yaml → default/quest.yaml.
+	legacyPath := LegacyDefaultPath(campaignRoot)
+	if _, err := os.Stat(legacyPath); err == nil {
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			dir := filepath.Dir(path)
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				return camperrors.Wrapf(err, "creating default quest directory %s", dir)
+			}
+			if err := os.Rename(legacyPath, path); err != nil {
+				return camperrors.Wrap(err, "migrating legacy default.yaml to default/quest.yaml")
+			}
+			result.CreatedDirs = appendUnique(result.CreatedDirs, dir)
+			result.CreatedFiles = appendUnique(result.CreatedFiles, path)
+			return nil
+		}
+		// Both exist — remove the legacy file, keep the directory version.
+		os.Remove(legacyPath)
+	}
+
 	if _, err := os.Stat(path); err == nil {
 		result.Skipped = appendUnique(result.Skipped, path)
 		return nil
