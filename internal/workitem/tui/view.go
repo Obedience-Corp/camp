@@ -98,19 +98,17 @@ func (m Model) renderList(width, height int) string {
 	}
 
 	var b strings.Builder
-	for i, item := range m.filteredItems {
-		if i >= height {
-			break
-		}
-		row := renderRow(item, width, i == m.cursor)
+	end := min(m.scrollOffset+height, len(m.filteredItems))
+	for i := m.scrollOffset; i < end; i++ {
+		row := renderRow(m.filteredItems[i], width, i == m.cursor)
 		b.WriteString(row)
-		if i < len(m.filteredItems)-1 && i < height-1 {
+		if i < end-1 {
 			b.WriteString("\n")
 		}
 	}
 
 	// Pad remaining lines
-	rendered := strings.Count(b.String(), "\n") + 1
+	rendered := end - m.scrollOffset
 	for i := rendered; i < height; i++ {
 		b.WriteString("\n")
 	}

@@ -20,10 +20,11 @@ type Model struct {
 	err           error
 
 	// Navigation
-	cursor int
-	width  int
-	height int
-	ready  bool
+	cursor       int
+	scrollOffset int // first visible row index for list viewport
+	width        int
+	height       int
+	ready        bool
 
 	// Search
 	searchMode  bool
@@ -89,6 +90,20 @@ func (m *Model) refilter() {
 	m.filteredItems = workitem.Filter(m.allItems, types, nil, m.searchQuery)
 	if m.cursor >= len(m.filteredItems) {
 		m.cursor = max(0, len(m.filteredItems)-1)
+	}
+}
+
+// ensureCursorVisible adjusts scrollOffset so the cursor row is within the
+// visible window. Call after any cursor movement or filter change.
+func (m *Model) ensureCursorVisible(viewportHeight int) {
+	if viewportHeight <= 0 {
+		return
+	}
+	if m.cursor < m.scrollOffset {
+		m.scrollOffset = m.cursor
+	}
+	if m.cursor >= m.scrollOffset+viewportHeight {
+		m.scrollOffset = m.cursor - viewportHeight + 1
 	}
 }
 

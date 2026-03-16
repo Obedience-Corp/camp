@@ -46,6 +46,7 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if key == "g" {
 		if m.lastKeyWasG {
 			m.cursor = 0
+			m.scrollOffset = 0
 			m.lastKeyWasG = false
 			return m, nil
 		}
@@ -171,6 +172,7 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.refilter()
 		}
 	}
+	m.ensureCursorVisible(m.height - 3)
 	return m, nil
 }
 
@@ -193,5 +195,6 @@ func (m Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Live filter as user types
 	m.searchQuery = m.searchInput.Value()
 	m.refilter()
+	m.ensureCursorVisible(m.height - 3)
 	return m, cmd
 }

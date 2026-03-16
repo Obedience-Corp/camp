@@ -173,6 +173,86 @@ func TestModel_HelpToggle(t *testing.T) {
 	}
 }
 
+func TestModel_ScrollViewport_CursorBeyondVisibleHeight(t *testing.T) {
+	// 20 items but only 5 visible rows — cursor must scroll into view
+	items := makeTestItems(20)
+	m := New(context.Background(), items, "", nil)
+	m.width = 80
+	m.height = 8 // 8 - 3 (header/footer) = 5 visible rows
+	m.ready = true
+
+	// Move cursor down past visible area
+	for i := 0; i < 10; i++ {
+		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		m = result.(Model)
+	}
+
+	if m.cursor != 10 {
+		t.Fatalf("cursor = %d, want 10", m.cursor)
+	}
+
+	// scrollOffset must have advanced so cursor is visible
+	viewportHeight := m.height - 3
+	if m.scrollOffset+viewportHeight <= m.cursor {
+		t.Errorf("cursor %d is below visible window [%d, %d)", m.cursor, m.scrollOffset, m.scrollOffset+viewportHeight)
+	}
+	if m.cursor < m.scrollOffset {
+		t.Errorf("cursor %d is above visible window starting at %d", m.cursor, m.scrollOffset)
+	}
+
+	// Verify the rendered view contains the selected item's title
+	view := m.View()
+	if !strings.Contains(view, items[10].Title) {
+		t.Errorf("view should contain cursor item title %q but doesn't", items[10].Title)
+	}
+
+	// Verify going back up also scrolls
+	for i := 0; i < 10; i++ {
+		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+		m = result.(Model)
+	}
+
+	if m.cursor != 0 {
+		t.Fatalf("cursor after going back up = %d, want 0", m.cursor)
+	}
+	if m.scrollOffset != 0 {
+		t.Errorf("scrollOffset after going back to top = %d, want 0", m.scrollOffset)
+	}
+}
+
+func TestModel_GJumpUpdatesScroll(t *testing.T) {
+	items := makeTestItems(20)
+	m := New(context.Background(), items, "", nil)
+	m.width = 80
+	m.height = 8
+	m.ready = true
+
+	// G jumps to bottom — scroll must follow
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	m = result.(Model)
+
+	if m.cursor != 19 {
+		t.Fatalf("cursor after G = %d, want 19", m.cursor)
+	}
+	viewportHeight := m.height - 3
+	if m.scrollOffset+viewportHeight <= m.cursor {
+		t.Errorf("cursor %d is not visible after G (scroll=%d, vp=%d)", m.cursor, m.scrollOffset, viewportHeight)
+	}
+
+	// gg jumps to top — scroll must follow
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	m = result.(Model)
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	m = result.(Model)
+
+	if m.cursor != 0 {
+		t.Fatalf("cursor after gg = %d, want 0", m.cursor)
+	}
+	if m.scrollOffset != 0 {
+		t.Errorf("scrollOffset after gg = %d, want 0", m.scrollOffset)
+	}
+}
+
 func TestFormatRecency(t *testing.T) {
 	tests := []struct {
 		name string
