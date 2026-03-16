@@ -77,7 +77,7 @@ Examples:
 			case flagJSON:
 				return outputJSON(campaignRoot, items)
 			case flagPrint:
-				return runSelector(ctx, items, true)
+				return runSelector(ctx, items, true, campaignRoot, resolver)
 			default:
 				return runDashboard(ctx, items, campaignRoot, resolver)
 			}
@@ -128,12 +128,12 @@ func outputJSON(campaignRoot string, items []wkitem.WorkItem) error {
 	return enc.Encode(payload)
 }
 
-func runSelector(ctx context.Context, items []wkitem.WorkItem, printOnly bool) error {
+func runSelector(ctx context.Context, items []wkitem.WorkItem, printOnly bool, campaignRoot string, resolver *paths.Resolver) error {
 	if len(items) == 0 {
 		return fmt.Errorf("no work items found")
 	}
 
-	model := wktui.New(ctx, items, "", nil)
+	model := wktui.New(ctx, items, campaignRoot, resolver)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	result, err := p.Run()
 	if err != nil {

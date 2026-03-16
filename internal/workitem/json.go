@@ -57,7 +57,7 @@ func NewPayload(campaignRoot string, items []WorkItem) Payload {
 		GeneratedAt:   time.Now().UTC(),
 		CampaignRoot:  campaignRoot,
 		Sort: SortInfo{
-			Primary:   "updated_at",
+			Primary:   "sort_timestamp",
 			Secondary: "created_at",
 			Direction: "desc",
 		},

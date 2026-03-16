@@ -60,8 +60,8 @@ func TestNewPayload_NilItemsBecomesEmptyArray(t *testing.T) {
 
 func TestNewPayload_SortInfo(t *testing.T) {
 	p := NewPayload("/tmp", nil)
-	if p.Sort.Primary != "updated_at" {
-		t.Errorf("sort.primary = %q, want updated_at", p.Sort.Primary)
+	if p.Sort.Primary != "sort_timestamp" {
+		t.Errorf("sort.primary = %q, want sort_timestamp", p.Sort.Primary)
 	}
 	if p.Sort.Secondary != "created_at" {
 		t.Errorf("sort.secondary = %q, want created_at", p.Sort.Secondary)
