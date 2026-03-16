@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"os"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/paths"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
+	wktui "github.com/Obedience-Corp/camp/internal/workitem/tui"
 )
 
 // NewWorkitemCommand creates the camp workitem command.
@@ -77,7 +79,7 @@ Examples:
 			case flagPrint:
 				return runSelector(ctx, items, true)
 			default:
-				return runDashboard(ctx, items)
+				return runDashboard(ctx, items, campaignRoot, resolver)
 			}
 		},
 	}
@@ -126,21 +128,38 @@ func outputJSON(campaignRoot string, items []wkitem.WorkItem) error {
 	return enc.Encode(payload)
 }
 
-func runSelector(_ context.Context, items []wkitem.WorkItem, printOnly bool) error {
+func runSelector(ctx context.Context, items []wkitem.WorkItem, printOnly bool) error {
 	if len(items) == 0 {
 		return fmt.Errorf("no work items found")
 	}
-	// Temporary: select first item. TUI selector replaces this in sequence 03.
-	selected := items[0]
+
+	model := wktui.New(ctx, items, "", nil)
+	p := tea.NewProgram(model, tea.WithAltScreen())
+	result, err := p.Run()
+	if err != nil {
+		return camperrors.Wrap(err, "TUI error")
+	}
+	m, ok := result.(wktui.Model)
+	if !ok || m.Selected == nil {
+		return nil
+	}
 	if printOnly {
-		fmt.Println(selected.AbsolutePath)
+		fmt.Println(m.Selected.AbsolutePath)
 	} else {
-		fmt.Printf("cd %s\n", selected.AbsolutePath)
+		fmt.Printf("cd %s\n", m.Selected.AbsolutePath)
 	}
 	return nil
 }
 
-// runDashboard launches the TUI dashboard. Implemented in sequence 03.
-func runDashboard(_ context.Context, _ []wkitem.WorkItem) error {
-	return fmt.Errorf("dashboard not yet implemented (sequence 03)")
+func runDashboard(ctx context.Context, items []wkitem.WorkItem, campaignRoot string, resolver *paths.Resolver) error {
+	model := wktui.New(ctx, items, campaignRoot, resolver)
+	p := tea.NewProgram(model, tea.WithAltScreen())
+	result, err := p.Run()
+	if err != nil {
+		return camperrors.Wrap(err, "TUI error")
+	}
+	if m, ok := result.(wktui.Model); ok && m.Selected != nil {
+		fmt.Printf("cd %s\n", m.Selected.AbsolutePath)
+	}
+	return nil
 }
