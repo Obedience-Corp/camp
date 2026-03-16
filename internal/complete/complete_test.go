@@ -44,7 +44,7 @@ shortcuts:
     path: "workflow/design/"
     description: "Jump to design"
   i:
-    path: "workflow/intents/"
+    path: ".campaign/intents/"
     description: "Jump to intents"
 `
 

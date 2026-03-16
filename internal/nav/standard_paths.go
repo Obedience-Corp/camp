@@ -23,8 +23,8 @@ var standardPathCategories = map[string]Category{
 	"workflow/pipelines":     CategoryPipelines,
 	"workflow/design/":       CategoryDesign,
 	"workflow/design":        CategoryDesign,
-	"workflow/intents/":      CategoryIntents,
-	"workflow/intents":       CategoryIntents,
+	".campaign/intents/":     CategoryIntents,
+	".campaign/intents":      CategoryIntents,
 }
 
 // CategoryForStandardPath resolves a well-known navigation path to a category.
