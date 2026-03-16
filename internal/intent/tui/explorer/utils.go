@@ -63,6 +63,8 @@ func openInEditor(filePath string) tea.Cmd {
 
 	editorName := editor.GetEditor(context.Background())
 	c := editor.BuildEditorCommand(context.Background(), editorName, filePath)
+	// Process group isolation via BuildEditorCommand ensures the editor doesn't inherit parent signals.
+	// Terminal editors exit when the controlling terminal closes on parent exit.
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return editorFinishedMsg{err: err, path: filePath}
 	})

@@ -192,6 +192,8 @@ func (m Model) openEditor() (tea.Model, tea.Cmd) {
 	c.Stdin = os.Stdin
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
+	// Process group isolation via BuildEditorCommand ensures the editor doesn't inherit parent signals.
+	// Terminal editors exit when the controlling terminal closes on parent exit.
 	return m, tea.ExecProcess(c, func(err error) tea.Msg {
 		return editorFinishedMsg{err: err}
 	})

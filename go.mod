@@ -3,7 +3,7 @@ module github.com/Obedience-Corp/camp
 go 1.25.6
 
 require (
-	github.com/Obedience-Corp/obey-shared v0.1.0
+	github.com/Obedience-Corp/obey-shared v0.1.1-0.20260316095053-8004f57cd24b
 	github.com/alecthomas/chroma/v2 v2.23.1
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
@@ -119,5 +119,3 @@ require (
 	google.golang.org/grpc v1.75.1 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
-
-replace github.com/Obedience-Corp/obey-shared => ../obey-shared

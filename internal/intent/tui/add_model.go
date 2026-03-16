@@ -647,6 +647,8 @@ func (m IntentAddModel) openExternalEditor() tea.Cmd {
 	editorCmd := editor.GetEditor(m.ctx)
 	c := editor.BuildEditorCommand(m.ctx, editorCmd, tmpPath)
 
+	// Process group isolation via BuildEditorCommand ensures the editor doesn't inherit parent signals.
+	// Terminal editors exit when the controlling terminal closes on parent exit.
 	// Use tea.ExecProcess to properly handle the editor
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return editorFinishedBodyMsg{tmpPath: tmpPath, err: err}
