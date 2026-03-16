@@ -24,13 +24,13 @@ func TestBuildCrawlCommitMessage(t *testing.T) {
 			triage: &intdungeon.CrawlSummary{
 				StatusCounts: map[string]int{"completed": 2},
 				MovedItems: map[string][]string{
-					"completed": {"old-feature/", "done-thing.md"},
+					"completed": {"workflow/design/dungeon/completed/2026-03-15/old-feature", "workflow/design/dungeon/completed/2026-03-15/done-thing.md"},
 				},
 			},
 			inner: nil,
 			contains: []string{
 				"Moved to dungeon/completed:",
-				"workflow/design/old-feature/",
+				"workflow/design/old-feature",
 				"workflow/design/done-thing.md",
 			},
 		},
@@ -42,7 +42,7 @@ func TestBuildCrawlCommitMessage(t *testing.T) {
 			inner: &intdungeon.CrawlSummary{
 				StatusCounts: map[string]int{"archived": 1},
 				MovedItems: map[string][]string{
-					"archived": {"deprecated.md"},
+					"archived": {"workflow/design/dungeon/archived/2026-03-15/deprecated.md"},
 				},
 			},
 			contains: []string{
@@ -57,8 +57,8 @@ func TestBuildCrawlCommitMessage(t *testing.T) {
 			triage: &intdungeon.CrawlSummary{
 				StatusCounts: map[string]int{"someday": 1, "completed": 1},
 				MovedItems: map[string][]string{
-					"someday":   {"maybe-later.md"},
-					"completed": {"finished.md"},
+					"someday":   {"docs/dungeon/someday/2026-03-15/maybe-later.md"},
+					"completed": {"docs/dungeon/completed/2026-03-15/finished.md"},
 				},
 			},
 			inner: nil,
@@ -76,7 +76,7 @@ func TestBuildCrawlCommitMessage(t *testing.T) {
 			triage: &intdungeon.CrawlSummary{
 				StatusCounts: map[string]int{"docs/architecture/api": 1},
 				MovedItems: map[string][]string{
-					"docs/architecture/api": {"legacy-notes.md"},
+					"docs/architecture/api": {"docs/architecture/api/legacy-notes.md"},
 				},
 			},
 			inner: nil,
@@ -133,9 +133,9 @@ func TestBuildCrawlCommitMessage_SortedStatuses(t *testing.T) {
 	triage := &intdungeon.CrawlSummary{
 		StatusCounts: map[string]int{"someday": 1, "archived": 1, "completed": 1},
 		MovedItems: map[string][]string{
-			"someday":   {"z.md"},
-			"archived":  {"b.md"},
-			"completed": {"a.md"},
+			"someday":   {"dir/dungeon/someday/2026-03-15/z.md"},
+			"archived":  {"dir/dungeon/archived/2026-03-15/b.md"},
+			"completed": {"dir/dungeon/completed/2026-03-15/a.md"},
 		},
 	}
 
@@ -154,61 +154,52 @@ func TestBuildCrawlCommitMessage_SortedStatuses(t *testing.T) {
 func TestCrawlMovedItemPaths(t *testing.T) {
 	tests := []struct {
 		name    string
-		dungeon string
 		summary *intdungeon.CrawlSummary
 		want    []string
 	}{
 		{
-			name:    "nil summary",
-			dungeon: "workflow/design/dungeon",
+			name: "nil summary",
 		},
 		{
-			name:    "no moves",
-			dungeon: "workflow/design/dungeon",
+			name: "single move with dated path",
 			summary: &intdungeon.CrawlSummary{
 				MovedItems: map[string][]string{
-					"archived": {"old.md"},
+					"archived": {"workflow/design/dungeon/archived/2026-03-15/old.md"},
 				},
 			},
-			want: []string{"workflow/design/dungeon/archived/old.md"},
+			want: []string{"workflow/design/dungeon/archived/2026-03-15/old.md"},
 		},
 		{
-			name:    "collect docs and dungeon destinations sorted and unique",
-			dungeon: "workflow/design/dungeon",
+			name: "collect docs and dungeon destinations sorted and unique",
 			summary: &intdungeon.CrawlSummary{
 				MovedItems: map[string][]string{
-					"docs/api":          {"a.md", "a.md"},
-					"docs/guides/setup": {"b.md"},
-					"completed":         {"c.md"},
+					"docs/api":          {"docs/api/a.md", "docs/api/a.md"},
+					"docs/guides/setup": {"docs/guides/setup/b.md"},
+					"completed":         {"workflow/design/dungeon/completed/2026-03-15/c.md"},
 				},
 			},
 			want: []string{
 				"docs/api/a.md",
 				"docs/guides/setup/b.md",
-				"workflow/design/dungeon/completed/c.md",
+				"workflow/design/dungeon/completed/2026-03-15/c.md",
 			},
 		},
 		{
-			name:    "drop unsafe paths",
-			dungeon: "workflow/design/dungeon",
+			name: "drop unsafe paths",
 			summary: &intdungeon.CrawlSummary{
 				MovedItems: map[string][]string{
-					"docs/../escape": {"a.md"},
-					"docs/safe":      {"b.md"},
-					"completed":      {"../bad.md", "good.md"},
+					"completed": {"../bad.md", "workflow/design/dungeon/completed/2026-03-15/good.md"},
 				},
 			},
 			want: []string{
-				"docs/safe/b.md",
-				"workflow/design/dungeon/completed/good.md",
+				"workflow/design/dungeon/completed/2026-03-15/good.md",
 			},
 		},
 		{
-			name:    "support direct docs root destination",
-			dungeon: "workflow/design/dungeon",
+			name: "support direct docs root destination",
 			summary: &intdungeon.CrawlSummary{
 				MovedItems: map[string][]string{
-					"docs": {"top-level.md"},
+					"docs": {"docs/top-level.md"},
 				},
 			},
 			want: []string{"docs/top-level.md"},
@@ -217,7 +208,7 @@ func TestCrawlMovedItemPaths(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := crawlMovedItemPaths(tt.dungeon, tt.summary)
+			got := crawlMovedItemPaths(tt.summary)
 			if len(got) != len(tt.want) {
 				t.Fatalf("crawlMovedItemPaths() len=%d, want=%d (%v)", len(got), len(tt.want), got)
 			}
@@ -233,15 +224,15 @@ func TestCrawlMovedItemPaths(t *testing.T) {
 func TestCrawlCommitPaths(t *testing.T) {
 	summary := &intdungeon.CrawlSummary{
 		MovedItems: map[string][]string{
-			"docs/api":  {"routed.md"},
-			"completed": {"finished.md"},
+			"docs/api":  {"docs/api/routed.md"},
+			"completed": {"workflow/design/dungeon/completed/2026-03-15/finished.md"},
 		},
 	}
 
 	got := crawlCommitPaths("workflow/design/dungeon", summary)
 	want := []string{
 		"docs/api/routed.md",
-		"workflow/design/dungeon/completed/finished.md",
+		"workflow/design/dungeon/completed/2026-03-15/finished.md",
 		"workflow/design/dungeon/crawl.jsonl",
 	}
 
@@ -258,13 +249,13 @@ func TestCrawlCommitPaths(t *testing.T) {
 func TestCrawlSourceDeletionPaths(t *testing.T) {
 	summary := &intdungeon.CrawlSummary{
 		MovedItems: map[string][]string{
-			"docs/api":  {"routed.md"},
-			"completed": {"finished.md"},
+			"docs/api":  {"docs/api/routed.md"},
+			"completed": {"workflow/design/dungeon/completed/2026-03-15/finished.md"},
 		},
 	}
 	inner := &intdungeon.CrawlSummary{
 		MovedItems: map[string][]string{
-			"archived": {"old-root.md"},
+			"archived": {"workflow/design/dungeon/archived/2026-03-15/old-root.md"},
 		},
 	}
 

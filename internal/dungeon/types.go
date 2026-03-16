@@ -77,13 +77,14 @@ type CrawlSummary struct {
 	Kept         int
 	Skipped      int
 	StatusCounts map[string]int
-	MovedItems   map[string][]string // status → item names moved there
+	MovedItems map[string][]string // status → campaign-relative destination paths
 }
 
 // RecordMove records an item being moved to a status directory.
-func (s *CrawlSummary) RecordMove(status, itemName string) {
+// relPath is the campaign-root-relative destination path.
+func (s *CrawlSummary) RecordMove(status, relPath string) {
 	s.StatusCounts[status]++
-	s.MovedItems[status] = append(s.MovedItems[status], itemName)
+	s.MovedItems[status] = append(s.MovedItems[status], relPath)
 }
 
 // HasMoves returns true if any items were moved during the crawl.

@@ -120,9 +120,9 @@ func TestCrawlSummary_RecordMove(t *testing.T) {
 		MovedItems:   map[string][]string{},
 	}
 
-	s.RecordMove("completed", "item1.txt")
-	s.RecordMove("completed", "item2.txt")
-	s.RecordMove("archived", "old-thing/")
+	s.RecordMove("completed", "dungeon/completed/2026-03-15/item1.txt")
+	s.RecordMove("completed", "dungeon/completed/2026-03-15/item2.txt")
+	s.RecordMove("archived", "dungeon/archived/2026-03-15/old-thing")
 
 	if s.StatusCounts["completed"] != 2 {
 		t.Errorf("StatusCounts[completed] = %d, want 2", s.StatusCounts["completed"])
@@ -133,11 +133,11 @@ func TestCrawlSummary_RecordMove(t *testing.T) {
 	if len(s.MovedItems["completed"]) != 2 {
 		t.Errorf("MovedItems[completed] len = %d, want 2", len(s.MovedItems["completed"]))
 	}
-	if s.MovedItems["completed"][0] != "item1.txt" {
-		t.Errorf("MovedItems[completed][0] = %q, want 'item1.txt'", s.MovedItems["completed"][0])
+	if s.MovedItems["completed"][0] != "dungeon/completed/2026-03-15/item1.txt" {
+		t.Errorf("MovedItems[completed][0] = %q, want dated path", s.MovedItems["completed"][0])
 	}
-	if s.MovedItems["archived"][0] != "old-thing/" {
-		t.Errorf("MovedItems[archived][0] = %q, want 'old-thing/'", s.MovedItems["archived"][0])
+	if s.MovedItems["archived"][0] != "dungeon/archived/2026-03-15/old-thing" {
+		t.Errorf("MovedItems[archived][0] = %q, want dated path", s.MovedItems["archived"][0])
 	}
 }
 

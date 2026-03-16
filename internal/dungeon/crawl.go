@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/charmbracelet/huh"
@@ -98,14 +99,15 @@ func RunCrawl(ctx context.Context, svc *Service) (*CrawlSummary, error) {
 					continue itemLoop
 				}
 
-				if _, err := svc.MoveToStatus(ctx, item.Name, status); err != nil {
+				if dstPath, err := svc.MoveToStatus(ctx, item.Name, status); err != nil {
 					fmt.Printf("Error moving %s to %s: %v\n", item.Name, status, err)
 					if hint := moveErrorHint(err); hint != "" {
 						fmt.Printf("Hint: %s\n", hint)
 					}
 					summary.Skipped++
 				} else {
-					summary.RecordMove(status, item.Name)
+					relDst, _ := filepath.Rel(svc.campaignRoot, dstPath)
+					summary.RecordMove(status, relDst)
 					if err := logDecision(ctx, svc, item, MoveDecision(status), stats); err != nil {
 						fmt.Printf("Warning: failed to log decision: %v\n", err)
 					}
