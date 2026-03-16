@@ -36,7 +36,7 @@ cgo p         # projects/
 cgo f         # festivals/
 cgo c         # corpus/
 cgo d         # docs/
-cgo a         # ai_docs/
+cgo ai        # ai_docs/
 cgo w         # workflow/
 cgo wt        # worktrees/
 cgo cr        # code_reviews/

@@ -27,7 +27,7 @@ func TestParseShortcut_SingleLetterShortcuts(t *testing.T) {
 		{[]string{"p"}, CategoryProjects, ""},
 		{[]string{"pw"}, CategoryWorktrees, ""},
 		{[]string{"f"}, CategoryFestivals, ""},
-		{[]string{"a"}, CategoryAIDocs, ""},
+		{[]string{"ai"}, CategoryAIDocs, ""},
 		{[]string{"d"}, CategoryDocs, ""},
 		{[]string{"du"}, CategoryDungeon, ""},
 		{[]string{"w"}, CategoryWorkflow, ""},
