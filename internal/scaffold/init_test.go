@@ -785,7 +785,8 @@ func TestInit_RepairMigratesLegacyIntentState(t *testing.T) {
 		t.Fatalf("failed to write legacy intent: %v", err)
 	}
 	legacyObeyPath := filepath.Join(campaignDir, "workflow", "intents", "OBEY.md")
-	if err := os.WriteFile(legacyObeyPath, []byte("# legacy intent docs\n"), 0644); err != nil {
+	legacyObey := "# legacy intent docs\n"
+	if err := os.WriteFile(legacyObeyPath, []byte(legacyObey), 0644); err != nil {
 		t.Fatalf("failed to write legacy intent OBEY.md: %v", err)
 	}
 	legacyAuditPath := filepath.Join(campaignDir, "workflow", "intents", ".intents.jsonl")
@@ -826,6 +827,14 @@ func TestInit_RepairMigratesLegacyIntentState(t *testing.T) {
 	canonicalAuditPath := filepath.Join(campaignDir, ".campaign", "intents", ".intents.jsonl")
 	if _, err := os.Stat(canonicalAuditPath); err != nil {
 		t.Fatalf("expected canonical audit log at %s: %v", canonicalAuditPath, err)
+	}
+	canonicalObeyPath := filepath.Join(campaignDir, ".campaign", "intents", "OBEY.md")
+	canonicalObey, err := os.ReadFile(canonicalObeyPath)
+	if err != nil {
+		t.Fatalf("expected canonical intent marker at %s: %v", canonicalObeyPath, err)
+	}
+	if string(canonicalObey) != legacyObey {
+		t.Fatalf("canonical intent marker = %q, want %q", string(canonicalObey), legacyObey)
 	}
 	if _, err := os.Stat(legacyAuditPath); !os.IsNotExist(err) {
 		t.Fatalf("legacy audit log should be removed after repair, err = %v", err)

@@ -11,7 +11,6 @@ import (
 )
 
 var legacyIntentScaffoldFiles = []string{
-	"OBEY.md",
 	filepath.Join(string(StatusInbox), ".gitkeep"),
 	filepath.Join(string(StatusReady), ".gitkeep"),
 	filepath.Join(string(StatusActive), ".gitkeep"),
@@ -76,6 +75,10 @@ func (s *IntentService) ensureCanonicalIntentRoot(ctx context.Context) error {
 	if err != nil {
 		return camperrors.Wrapf(err, "inspecting legacy intent root %s", legacyRoot)
 	}
+	legacyHasMarker, err := hasIntentMarker(legacyRoot)
+	if err != nil {
+		return camperrors.Wrapf(err, "inspecting legacy intent marker %s", legacyRoot)
+	}
 
 	if legacyHasState && canonicalHasState {
 		return camperrors.Wrapf(
@@ -86,7 +89,7 @@ func (s *IntentService) ensureCanonicalIntentRoot(ctx context.Context) error {
 		)
 	}
 
-	if !legacyHasState {
+	if !legacyHasState && !legacyHasMarker {
 		return nil
 	}
 
@@ -118,6 +121,10 @@ func (s *IntentService) PlanLegacyIntentRootMigration() ([]PlannedPathMove, erro
 	if err != nil {
 		return nil, camperrors.Wrapf(err, "inspecting legacy intent root %s", legacyRoot)
 	}
+	legacyHasMarker, err := hasIntentMarker(legacyRoot)
+	if err != nil {
+		return nil, camperrors.Wrapf(err, "inspecting legacy intent marker %s", legacyRoot)
+	}
 
 	if legacyHasState && canonicalHasState {
 		return nil, camperrors.Wrapf(
@@ -128,7 +135,7 @@ func (s *IntentService) PlanLegacyIntentRootMigration() ([]PlannedPathMove, erro
 		)
 	}
 
-	if !legacyHasState {
+	if !legacyHasState && !legacyHasMarker {
 		return nil, nil
 	}
 
@@ -149,6 +156,9 @@ func (s *IntentService) PlanLegacyIntentRootMigration() ([]PlannedPathMove, erro
 	}
 
 	if err := collectIntentAuditMove(legacyRoot, s.intentsDir, &moves); err != nil {
+		return nil, err
+	}
+	if err := collectIntentMarkerMove(legacyRoot, s.intentsDir, &moves); err != nil {
 		return nil, err
 	}
 
@@ -175,6 +185,10 @@ func (s *IntentService) CleanupLegacyIntentScaffold() error {
 	}
 
 	return cleanupLegacyIntentScaffold(legacyRoot)
+}
+
+func intentMarkerPath(root string) string {
+	return filepath.Join(root, "OBEY.md")
 }
 
 func hasIntentState(root string) (bool, error) {
@@ -218,6 +232,20 @@ func hasIntentState(root string) (bool, error) {
 	}
 
 	return false, nil
+}
+
+func hasIntentMarker(root string) (bool, error) {
+	info, err := os.Stat(intentMarkerPath(root))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, camperrors.Wrapf(err, "stat %s", intentMarkerPath(root))
+	}
+	if info.IsDir() {
+		return false, camperrors.Wrapf(ErrInvalidPath, "%s is not a file", intentMarkerPath(root))
+	}
+	return true, nil
 }
 
 func hasNonEmptyFile(path string) (bool, error) {
@@ -270,6 +298,9 @@ func (s *IntentService) migrateLegacyIntentRoot(legacyRoot string) error {
 	}
 
 	if err := moveIntentAuditFile(legacyRoot, s.intentsDir); err != nil {
+		return err
+	}
+	if err := moveIntentMarkerFile(legacyRoot, s.intentsDir); err != nil {
 		return err
 	}
 

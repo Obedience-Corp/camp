@@ -1,6 +1,7 @@
 package intent
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 
@@ -59,6 +60,57 @@ func collectIntentAuditMove(legacyRoot, canonicalRoot string, moves *[]PlannedPa
 	}
 
 	*moves = append(*moves, PlannedPathMove{Source: srcPath, Dest: dstPath})
+	return nil
+}
+
+func moveIntentMarkerFile(legacyRoot, canonicalRoot string) error {
+	srcPath := intentMarkerPath(legacyRoot)
+	srcData, err := os.ReadFile(srcPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return camperrors.Wrapf(err, "reading %s", srcPath)
+	}
+
+	dstPath := intentMarkerPath(canonicalRoot)
+	if dstData, err := os.ReadFile(dstPath); err == nil {
+		if bytes.Equal(dstData, srcData) {
+			if err := os.Remove(srcPath); err != nil {
+				return camperrors.Wrapf(err, "removing %s", srcPath)
+			}
+			return nil
+		}
+	} else if !os.IsNotExist(err) {
+		return camperrors.Wrapf(err, "reading %s", dstPath)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
+		return camperrors.Wrapf(err, "creating directory %s", filepath.Dir(dstPath))
+	}
+	if err := os.WriteFile(dstPath, srcData, 0644); err != nil {
+		return camperrors.Wrapf(err, "writing %s", dstPath)
+	}
+	if err := os.Remove(srcPath); err != nil {
+		return camperrors.Wrapf(err, "removing %s", srcPath)
+	}
+
+	return nil
+}
+
+func collectIntentMarkerMove(legacyRoot, canonicalRoot string, moves *[]PlannedPathMove) error {
+	srcPath := intentMarkerPath(legacyRoot)
+	if _, err := os.Stat(srcPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return camperrors.Wrapf(err, "stat %s", srcPath)
+	}
+
+	*moves = append(*moves, PlannedPathMove{
+		Source: srcPath,
+		Dest:   intentMarkerPath(canonicalRoot),
+	})
 	return nil
 }
 
