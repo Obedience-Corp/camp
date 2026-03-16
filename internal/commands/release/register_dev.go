@@ -5,6 +5,7 @@ package release
 import (
 	flowcmd "github.com/Obedience-Corp/camp/internal/commands/flow"
 	freshcmd "github.com/Obedience-Corp/camp/internal/commands/fresh"
+	workitemcmd "github.com/Obedience-Corp/camp/internal/commands/workitem"
 	"github.com/spf13/cobra"
 )
 
@@ -18,4 +19,9 @@ func registerDev(root *cobra.Command) {
 	freshCmd.GroupID = "git"
 	MarkDevOnly(freshCmd)
 	root.AddCommand(freshCmd)
+
+	workitemCmd := workitemcmd.NewWorkitemCommand()
+	workitemCmd.GroupID = "planning"
+	MarkDevOnly(workitemCmd)
+	root.AddCommand(workitemCmd)
 }
