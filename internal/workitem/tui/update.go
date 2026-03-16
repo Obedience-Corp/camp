@@ -212,10 +212,10 @@ func (m Model) openSystemHandler() (tea.Model, tea.Cmd) {
 		c = exec.Command("xdg-open", absPath)
 	}
 	if err := c.Start(); err != nil {
-		cmd := m.setStatus("open failed: " + err.Error())
+		cmd := m.setStatus("open failed: "+err.Error(), true)
 		return m, cmd
 	}
-	cmd := m.setStatus("opened")
+	cmd := m.setStatus("opened", false)
 	return m, cmd
 }
 
@@ -234,10 +234,10 @@ func (m Model) copyPath() (tea.Model, tea.Cmd) {
 	}
 	c.Stdin = strings.NewReader(absPath)
 	if err := c.Run(); err != nil {
-		cmd := m.setStatus("copy failed: " + err.Error())
+		cmd := m.setStatus("copy failed: "+err.Error(), true)
 		return m, cmd
 	}
-	cmd := m.setStatus("copied!")
+	cmd := m.setStatus("copied!", false)
 	return m, cmd
 }
 

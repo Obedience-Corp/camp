@@ -56,7 +56,8 @@ type Model struct {
 	helpVisible    bool
 
 	// Transient status message shown in footer (e.g. "copied!", "clipboard unavailable")
-	statusMsg string
+	statusMsg     string
+	statusIsError bool
 
 	// Vim navigation
 	lastKeyWasG bool
@@ -169,8 +170,9 @@ func (m Model) refreshCmd() tea.Cmd {
 }
 
 // setStatus sets a transient footer message and returns a command to clear it after 2 seconds.
-func (m *Model) setStatus(msg string) tea.Cmd {
+func (m *Model) setStatus(msg string, isError bool) tea.Cmd {
 	m.statusMsg = msg
+	m.statusIsError = isError
 	return tea.Tick(2*time.Second, func(time.Time) tea.Msg {
 		return clearStatusMsg{}
 	})

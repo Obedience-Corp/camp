@@ -46,7 +46,8 @@ func (m Model) renderWideLayout() string {
 	left := m.renderList(listWidth, contentHeight)
 	right := renderPreview(m.currentItem(), previewWidth, contentHeight)
 
-	content := lipgloss.JoinHorizontal(lipgloss.Top, left, "│", right)
+	sep := lipgloss.NewStyle().Foreground(pal.Border).Render("│")
+	content := lipgloss.JoinHorizontal(lipgloss.Top, left, sep, right)
 	return m.renderHeader() + "\n" + content + "\n" + m.renderFooter()
 }
 
@@ -63,36 +64,39 @@ func (m Model) renderPreviewOverlay() string {
 }
 
 func (m Model) renderHeader() string {
-	title := "camp workitem"
+	title := headerStyle.Render("camp workitem")
 	var filters []string
 	if m.typeFilter != "" {
-		filters = append(filters, "type:"+m.typeFilter)
+		filters = append(filters, filterActiveStyle.Render("type:"+m.typeFilter))
 	}
 	if m.searchQuery != "" {
-		filters = append(filters, "search:"+m.searchQuery)
+		filters = append(filters, filterActiveStyle.Render("search:"+m.searchQuery))
 	}
 	if len(filters) > 0 {
 		title += "  " + strings.Join(filters, " ")
 	}
 	if m.searchMode {
-		title += "  /" + m.searchInput.Value()
+		title += "  " + footerStyle.Render("/"+m.searchInput.Value())
 	}
-	return lipgloss.NewStyle().Bold(true).Render(title)
+	return title
 }
 
 func (m Model) renderFooter() string {
 	if m.searchMode {
-		return "type search query, Enter to confirm, Esc to cancel"
+		return footerStyle.Render("type search query, Enter to confirm, Esc to cancel")
 	}
 	if m.statusMsg != "" {
-		return m.statusMsg
+		if m.statusIsError {
+			return statusErrorStyle.Render(m.statusMsg)
+		}
+		return statusSuccessStyle.Render(m.statusMsg)
 	}
 	count := fmt.Sprintf("%d items", len(m.filteredItems))
 	keys := "j/k move  / search  1-4 filter  0 all  tab preview  r refresh  ? help  q quit"
 	if len(keys)+len(count)+2 > m.width {
 		keys = "j/k / 1-4 tab r ? q"
 	}
-	return fmt.Sprintf("%s  %s", count, keys)
+	return footerStyle.Render(fmt.Sprintf("%s  %s", count, keys))
 }
 
 func (m Model) renderList(width, height int) string {
@@ -118,19 +122,26 @@ func (m Model) renderList(width, height int) string {
 	return b.String()
 }
 
-func (m Model) renderEmpty(width, height int) string {
+func (m Model) renderEmpty(_, height int) string {
 	var b strings.Builder
-	b.WriteString("\n  No work items found.\n\n")
-	b.WriteString("  Scanned:\n")
-	b.WriteString("    workflow/intents/{inbox,active,ready}\n")
-	b.WriteString("    workflow/design/\n")
-	b.WriteString("    workflow/explore/\n")
-	b.WriteString("    festivals/{planning,ready,active}\n")
+	b.WriteString("\n  ")
+	b.WriteString(emptyMsgStyle.Render("No work items found."))
+	b.WriteString("\n\n")
+	b.WriteString(footerStyle.Render("  Scanned:"))
+	b.WriteString("\n")
+	b.WriteString(footerStyle.Render("    workflow/intents/{inbox,active,ready}"))
+	b.WriteString("\n")
+	b.WriteString(footerStyle.Render("    workflow/design/"))
+	b.WriteString("\n")
+	b.WriteString(footerStyle.Render("    workflow/explore/"))
+	b.WriteString("\n")
+	b.WriteString(footerStyle.Render("    festivals/{planning,ready,active}"))
+	b.WriteString("\n")
 	if m.typeFilter != "" {
-		b.WriteString(fmt.Sprintf("\n  Filter active: type=%s\n", m.typeFilter))
+		b.WriteString(fmt.Sprintf("\n  Filter active: %s\n", filterActiveStyle.Render("type="+m.typeFilter)))
 	}
 	if m.searchQuery != "" {
-		b.WriteString(fmt.Sprintf("  Search: %s\n", m.searchQuery))
+		b.WriteString(fmt.Sprintf("  Search: %s\n", filterActiveStyle.Render(m.searchQuery)))
 	}
 
 	// Pad
@@ -142,20 +153,27 @@ func (m Model) renderEmpty(width, height int) string {
 }
 
 func renderRow(item workitem.WorkItem, width int, selected bool) string {
+	// Pad plain strings first, then apply color to avoid ANSI width issues
 	wfType := padRight(string(item.WorkflowType), 9)
 	stage := padRight(item.LifecycleStage, 9)
-	recency := formatRecency(item.SortTimestamp)
+	rec := formatRecency(item.SortTimestamp)
 
-	titleWidth := width - 9 - 9 - len(recency) - 4
+	titleWidth := width - 9 - 9 - len(rec) - 4
 	if titleWidth < 10 {
 		titleWidth = 10
 	}
 	title := truncate(item.Title, titleWidth)
 	title = padRight(title, titleWidth)
 
-	row := fmt.Sprintf(" %s %s %s %s", wfType, stage, title, recency)
+	// Apply styles to already-padded segments
+	styledType := workflowStyle(item.WorkflowType).Render(wfType)
+	styledStage := stageStyle(item.LifecycleStage).Render(stage)
+	styledTitle := rowTitleStyle.Render(title)
+	styledRecency := recencyStyle(item.SortTimestamp).Render(rec)
+
+	row := fmt.Sprintf(" %s %s %s %s", styledType, styledStage, styledTitle, styledRecency)
 	if selected {
-		return lipgloss.NewStyle().Reverse(true).Render(row)
+		return rowSelectedStyle.Width(width).Render(row)
 	}
 	return row
 }
@@ -185,10 +203,10 @@ func renderPreview(item workitem.WorkItem, width, height int) string {
 	}
 
 	var b strings.Builder
-	b.WriteString(lipgloss.NewStyle().Bold(true).Render(item.Title))
+	b.WriteString(previewTitleStyle.Render(item.Title))
 	b.WriteString("\n")
 	sep := strings.Repeat("─", min(width-1, 40))
-	b.WriteString(sep)
+	b.WriteString(previewSepStyle.Render(sep))
 	b.WriteString("\n\n")
 
 	stage := item.LifecycleStage
@@ -196,24 +214,35 @@ func renderPreview(item workitem.WorkItem, width, height int) string {
 		stage = "—"
 	}
 
-	b.WriteString(fmt.Sprintf("type:       %s\n", item.WorkflowType))
-	b.WriteString(fmt.Sprintf("stage:      %s\n", stage))
-	b.WriteString(fmt.Sprintf("updated:    %s\n", item.UpdatedAt.Format("2006-01-02 15:04")))
-	b.WriteString(fmt.Sprintf("created:    %s\n", item.CreatedAt.Format("2006-01-02 15:04")))
-	b.WriteString(fmt.Sprintf("path:       %s\n", item.RelativePath))
+	b.WriteString(fmt.Sprintf("%s  %s\n",
+		previewLabelStyle.Render("type:"),
+		workflowStyle(item.WorkflowType).Render(string(item.WorkflowType))))
+	b.WriteString(fmt.Sprintf("%s %s\n",
+		previewLabelStyle.Render("stage:"),
+		stageStyle(stage).Render(stage)))
+	b.WriteString(fmt.Sprintf("%s %s\n",
+		previewLabelStyle.Render("updated:"),
+		previewValueStyle.Render(item.UpdatedAt.Format("2006-01-02 15:04"))))
+	b.WriteString(fmt.Sprintf("%s %s\n",
+		previewLabelStyle.Render("created:"),
+		previewValueStyle.Render(item.CreatedAt.Format("2006-01-02 15:04"))))
+	b.WriteString(fmt.Sprintf("%s  %s\n",
+		previewLabelStyle.Render("path:"),
+		previewValueStyle.Render(item.RelativePath)))
 	if item.PrimaryDoc != "" {
-		b.WriteString(fmt.Sprintf("primary:    %s\n", filepath.Base(item.PrimaryDoc)))
+		b.WriteString(fmt.Sprintf("%s %s\n",
+			previewLabelStyle.Render("primary:"),
+			previewValueStyle.Render(filepath.Base(item.PrimaryDoc))))
 	}
 
 	if item.Summary != "" {
 		b.WriteString("\n")
-		// Wrap summary to width
-		b.WriteString(item.Summary)
+		b.WriteString(lipgloss.NewStyle().Foreground(pal.TextPrimary).Render(item.Summary))
 		b.WriteString("\n")
 	}
 
 	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().Faint(true).Render("Enter select  e edit  o open  y copy"))
+	b.WriteString(previewHelpStyle.Render("Enter select  e edit  o open  y copy"))
 
 	// Pad remaining height
 	lines := strings.Count(b.String(), "\n") + 1
@@ -224,38 +253,58 @@ func renderPreview(item workitem.WorkItem, width, height int) string {
 }
 
 func (m Model) renderHelp() string {
-	help := `
-  WORKITEM DASHBOARD HELP
-  ───────────────────────
+	var b strings.Builder
+	b.WriteString("\n")
+	b.WriteString("  " + helpTitleStyle.Render("WORKITEM DASHBOARD HELP"))
+	b.WriteString("\n")
+	b.WriteString("  " + previewSepStyle.Render("───────────────────────"))
+	b.WriteString("\n\n")
 
-  Navigation
-    j / ↓         Move cursor down
-    k / ↑         Move cursor up
-    g g           Jump to top
-    G             Jump to bottom
+	sections := []struct {
+		title string
+		keys  [][2]string
+	}{
+		{"Navigation", [][2]string{
+			{"j / ↓", "Move cursor down"},
+			{"k / ↑", "Move cursor up"},
+			{"g g", "Jump to top"},
+			{"G", "Jump to bottom"},
+		}},
+		{"Search & Filter", [][2]string{
+			{"/", "Start search"},
+			{"Esc", "Clear search / close overlay"},
+			{"0", "Show all types"},
+			{"1", "Filter: intent"},
+			{"2", "Filter: design"},
+			{"3", "Filter: explore"},
+			{"4", "Filter: festival"},
+		}},
+		{"Actions", [][2]string{
+			{"Enter", "Select item and exit"},
+			{"e", "Open primary doc in $EDITOR"},
+			{"o", "Open with system handler"},
+			{"y", "Copy absolute path"},
+			{"Tab / p", "Toggle preview pane"},
+			{"r", "Refresh (re-scan)"},
+		}},
+		{"Other", [][2]string{
+			{"?", "Toggle this help"},
+			{"q", "Quit"},
+		}},
+	}
 
-  Search & Filter
-    /             Start search
-    Esc           Clear search / close overlay
-    0             Show all types
-    1             Filter: intent
-    2             Filter: design
-    3             Filter: explore
-    4             Filter: festival
+	for _, sec := range sections {
+		b.WriteString("  " + helpSectionStyle.Render(sec.title))
+		b.WriteString("\n")
+		for _, kv := range sec.keys {
+			b.WriteString(fmt.Sprintf("    %s  %s\n",
+				helpKeyStyle.Render(padRight(kv[0], 14)),
+				helpDescStyle.Render(kv[1])))
+		}
+		b.WriteString("\n")
+	}
 
-  Actions
-    Enter         Select item and exit
-    e             Open primary doc in $EDITOR
-    o             Open with system handler
-    y             Copy absolute path
-    Tab / p       Toggle preview pane
-    r             Refresh (re-scan)
-
-  Other
-    ?             Toggle this help
-    q             Quit
-
-  Press ? or Esc to close this help.
-`
-	return help
+	b.WriteString("  " + previewHelpStyle.Render("Press ? or Esc to close this help."))
+	b.WriteString("\n")
+	return b.String()
 }
