@@ -136,6 +136,84 @@ func TestModel_EnterSelectsItem(t *testing.T) {
 	}
 }
 
+func TestModel_SearchEnterCommits(t *testing.T) {
+	items := []workitem.WorkItem{
+		{WorkflowType: workitem.WorkflowTypeIntent, Title: "Auth Feature"},
+		{WorkflowType: workitem.WorkflowTypeDesign, Title: "Dashboard Design"},
+	}
+	m := New(context.Background(), items, "", nil)
+	m.width = 80
+	m.height = 24
+	m.ready = true
+
+	// Enter search mode
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = result.(Model)
+
+	// Type "auth"
+	for _, r := range "auth" {
+		result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = result.(Model)
+	}
+
+	// Live filter should show 1 item
+	if len(m.filteredItems) != 1 {
+		t.Fatalf("during search: %d items, want 1", len(m.filteredItems))
+	}
+
+	// Press Enter to commit
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = result.(Model)
+
+	if m.searchMode {
+		t.Error("should have exited search mode")
+	}
+	if m.searchQuery != "auth" {
+		t.Errorf("searchQuery = %q, want 'auth'", m.searchQuery)
+	}
+	if len(m.filteredItems) != 1 {
+		t.Errorf("after Enter: %d items, want 1 (filter committed)", len(m.filteredItems))
+	}
+}
+
+func TestModel_SearchEscCancels(t *testing.T) {
+	items := []workitem.WorkItem{
+		{WorkflowType: workitem.WorkflowTypeIntent, Title: "Auth Feature"},
+		{WorkflowType: workitem.WorkflowTypeDesign, Title: "Dashboard Design"},
+	}
+	m := New(context.Background(), items, "", nil)
+	m.width = 80
+	m.height = 24
+	m.ready = true
+
+	// Enter search mode
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = result.(Model)
+
+	// Type "auth" — live filter narrows to 1 item
+	for _, r := range "auth" {
+		result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = result.(Model)
+	}
+	if len(m.filteredItems) != 1 {
+		t.Fatalf("during search: %d items, want 1", len(m.filteredItems))
+	}
+
+	// Press Esc to cancel — should restore original unfiltered list
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	m = result.(Model)
+
+	if m.searchMode {
+		t.Error("should have exited search mode")
+	}
+	if m.searchQuery != "" {
+		t.Errorf("searchQuery = %q, want empty (cancelled)", m.searchQuery)
+	}
+	if len(m.filteredItems) != 2 {
+		t.Errorf("after Esc: %d items, want 2 (filter cancelled, all items restored)", len(m.filteredItems))
+	}
+}
+
 func TestModel_EmptyView(t *testing.T) {
 	m := New(context.Background(), nil, "", nil)
 	m.width = 80

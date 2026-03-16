@@ -42,9 +42,10 @@ type Model struct {
 	ready        bool
 
 	// Search
-	searchMode  bool
-	searchInput textinput.Model
-	searchQuery string
+	searchMode       bool
+	searchInput      textinput.Model
+	searchQuery      string // committed search query used for filtering
+	savedSearchQuery string // snapshot of committed query when search mode starts
 
 	// Filters
 	typeFilter string // empty = all, or "intent"/"design"/"explore"/"festival"

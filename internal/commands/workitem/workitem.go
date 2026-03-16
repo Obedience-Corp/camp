@@ -53,8 +53,9 @@ Examples:
 				return err
 			}
 
-			if !isInteractive() && !flagJSON {
-				return fmt.Errorf("non-interactive use requires --json flag")
+			interactive := isInteractive()
+			if !interactive && !flagJSON && !flagPrint {
+				return fmt.Errorf("non-interactive use requires --json or --print flag")
 			}
 
 			cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
@@ -76,6 +77,13 @@ Examples:
 			switch {
 			case flagJSON:
 				return outputJSON(campaignRoot, items)
+			case flagPrint && !interactive:
+				// Non-interactive --print: output first item path directly
+				if len(items) == 0 {
+					return fmt.Errorf("no work items found")
+				}
+				fmt.Println(items[0].AbsolutePath)
+				return nil
 			case flagPrint:
 				return runTUI(ctx, items, true, campaignRoot, resolver)
 			default:

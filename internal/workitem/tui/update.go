@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/Obedience-Corp/camp/internal/workitem"
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -83,6 +85,7 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Search
 	case "/":
 		m.searchMode = true
+		m.savedSearchQuery = m.searchQuery // snapshot for Esc restore
 		m.searchInput.Focus()
 		m.clampScroll()
 		return m, nil
@@ -141,22 +144,34 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "enter", "esc":
+	case "enter":
 		m.searchMode = false
 		m.searchInput.Blur()
-		if msg.String() == "esc" {
-			m.searchInput.SetValue(m.searchQuery)
-		} else {
-			m.searchQuery = m.searchInput.Value()
-			m.refilter()
-		}
+		m.searchQuery = m.searchInput.Value()
+		m.refilter()
+		return m, nil
+	case "esc":
+		m.searchMode = false
+		m.searchInput.Blur()
+		m.searchQuery = m.savedSearchQuery
+		m.searchInput.SetValue(m.savedSearchQuery)
+		m.refilter()
 		return m, nil
 	}
 
+	// Live preview: filter as user types using a draft, but don't commit to searchQuery
 	var cmd tea.Cmd
 	m.searchInput, cmd = m.searchInput.Update(msg)
-	m.searchQuery = m.searchInput.Value()
-	m.refilter()
+	draftQuery := m.searchInput.Value()
+	var types []string
+	if m.typeFilter != "" {
+		types = []string{m.typeFilter}
+	}
+	m.filteredItems = workitem.Filter(m.allItems, types, nil, draftQuery)
+	if m.cursor >= len(m.filteredItems) {
+		m.cursor = max(0, len(m.filteredItems)-1)
+	}
+	m.clampScroll()
 	return m, cmd
 }
 
