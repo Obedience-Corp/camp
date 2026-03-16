@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -24,8 +23,8 @@ func (m IntentViewerModel) openInEditor() tea.Cmd {
 		}
 	}
 
-	editorName := editor.GetEditor(context.Background())
-	c := editor.BuildEditorCommand(context.Background(), editorName, m.intent.Path)
+	editorName := editor.GetEditor(m.ctx)
+	c := editor.BuildEditorCommand(m.ctx, editorName, m.intent.Path)
 	// Process group isolation via BuildEditorCommand ensures the editor doesn't inherit parent signals.
 	// Terminal editors exit when the controlling terminal closes on parent exit.
 	return tea.ExecProcess(c, func(err error) tea.Msg {

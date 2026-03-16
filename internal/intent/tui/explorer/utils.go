@@ -50,7 +50,7 @@ func formatRelativeTime(t time.Time) string {
 }
 
 // openInEditor opens a file in the user's $EDITOR.
-func openInEditor(filePath string) tea.Cmd {
+func openInEditor(ctx context.Context, filePath string) tea.Cmd {
 	// Check file exists before opening
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		return func() tea.Msg {
@@ -61,8 +61,8 @@ func openInEditor(filePath string) tea.Cmd {
 		}
 	}
 
-	editorName := editor.GetEditor(context.Background())
-	c := editor.BuildEditorCommand(context.Background(), editorName, filePath)
+	editorName := editor.GetEditor(ctx)
+	c := editor.BuildEditorCommand(ctx, editorName, filePath)
 	// Process group isolation via BuildEditorCommand ensures the editor doesn't inherit parent signals.
 	// Terminal editors exit when the controlling terminal closes on parent exit.
 	return tea.ExecProcess(c, func(err error) tea.Msg {

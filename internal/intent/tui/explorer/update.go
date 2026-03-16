@@ -280,7 +280,7 @@ func (m Model) handleActionMenuSelection(msg tui.ActionMenuSelectedMsg) (tea.Mod
 			m.service, m.gatherSvc, m.width, m.height,
 		)
 	case "edit":
-		return m, openInEditor(selected.Path)
+		return m, openInEditor(m.ctx, selected.Path)
 	case "move":
 		m.focus = focusMove
 		m.intentToMove = selected

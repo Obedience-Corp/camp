@@ -171,6 +171,11 @@ var guiEditors = map[string]bool{
 // BuildEditorCommand constructs an exec.Cmd for launching the specified editor.
 // For GUI editors that fork to background (VS Code, Sublime, Atom), it adds
 // the --wait flag to make them block until the file is closed.
+//
+// SetProcessGroup is called here to ensure process group isolation for TUI
+// callers (BubbleTea tea.ExecProcess paths) that do not use RunWithCleanup.
+// CLI callers via OpenEditor also call RunWithCleanup which calls SetProcessGroup
+// internally, making it a no-op on the second call — this is intentional and safe.
 func BuildEditorCommand(ctx context.Context, editor, path string) *exec.Cmd {
 	base := filepath.Base(editor)
 
