@@ -1,6 +1,7 @@
 package explorer
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,6 +10,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/Obedience-Corp/camp/internal/editor"
 )
 
 // formatRelativeTime returns a human-friendly relative time string.
@@ -58,12 +61,8 @@ func openInEditor(filePath string) tea.Cmd {
 		}
 	}
 
-	editor := os.Getenv("EDITOR")
-	if editor == "" {
-		editor = "vi"
-	}
-
-	c := exec.Command(editor, filePath)
+	editorName := editor.GetEditor(context.Background())
+	c := editor.BuildEditorCommand(context.Background(), editorName, filePath)
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return editorFinishedMsg{err: err, path: filePath}
 	})

@@ -12,6 +12,7 @@ import (
 	"runtime"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/obey-shared/procutil"
 )
 
 // GetEditor returns the user's preferred editor by checking (in order):
@@ -173,11 +174,15 @@ var guiEditors = map[string]bool{
 func BuildEditorCommand(ctx context.Context, editor, path string) *exec.Cmd {
 	base := filepath.Base(editor)
 
+	var cmd *exec.Cmd
 	if guiEditors[base] {
-		return exec.CommandContext(ctx, editor, "--wait", path)
+		cmd = exec.CommandContext(ctx, editor, "--wait", path)
+	} else {
+		cmd = exec.CommandContext(ctx, editor, path)
 	}
 
-	return exec.CommandContext(ctx, editor, path)
+	procutil.SetProcessGroup(cmd)
+	return cmd
 }
 
 // OpenEditor opens the specified file in the user's editor and waits for editing to complete.
@@ -189,7 +194,7 @@ func OpenEditor(ctx context.Context, editor, path string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	if err := cmd.Run(); err != nil {
+	if err := procutil.RunWithCleanup(ctx, cmd); err != nil {
 		return fmt.Errorf("running editor %q with %q: %w", editor, path, err)
 	}
 

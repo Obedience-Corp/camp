@@ -1,12 +1,14 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 
+	"github.com/Obedience-Corp/camp/internal/editor"
 	"github.com/Obedience-Corp/camp/internal/intent"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -22,12 +24,8 @@ func (m IntentViewerModel) openInEditor() tea.Cmd {
 		}
 	}
 
-	editor := os.Getenv("EDITOR")
-	if editor == "" {
-		editor = "vi"
-	}
-
-	c := exec.Command(editor, m.intent.Path)
+	editorName := editor.GetEditor(context.Background())
+	c := editor.BuildEditorCommand(context.Background(), editorName, m.intent.Path)
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return ViewerEditorFinishedMsg{Err: err, Path: m.intent.Path}
 	})

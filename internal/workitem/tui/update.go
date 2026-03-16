@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"runtime"
@@ -8,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/Obedience-Corp/camp/internal/editor"
 	"github.com/Obedience-Corp/camp/internal/workitem"
 )
 
@@ -185,11 +187,8 @@ func (m Model) openEditor() (tea.Model, tea.Cmd) {
 	if absDoc == "" {
 		return m, nil
 	}
-	editor := os.Getenv("EDITOR")
-	if editor == "" {
-		editor = "vi"
-	}
-	c := exec.Command(editor, absDoc)
+	editorName := editor.GetEditor(context.Background())
+	c := editor.BuildEditorCommand(context.Background(), editorName, absDoc)
 	c.Stdin = os.Stdin
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
