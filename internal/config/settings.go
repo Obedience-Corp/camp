@@ -70,11 +70,7 @@ func LoadJumpsConfig(ctx context.Context, campaignRoot string) (*JumpsConfig, er
 		return nil, camperrors.Wrapf(err, "failed to parse jumps config %s", configPath)
 	}
 
-	if cfg.NormalizeIntentNavigation() {
-		// Persist the focused intent-path rewrite when possible, but keep the
-		// normalized config in memory even if write-back is unavailable.
-		_ = SaveJumpsConfig(ctx, campaignRoot, &cfg)
-	}
+	cfg.NormalizeIntentNavigation()
 
 	return &cfg, nil
 }
@@ -91,7 +87,16 @@ func SaveJumpsConfig(ctx context.Context, campaignRoot string, cfg *JumpsConfig)
 	}
 
 	configPath := JumpsConfigPath(campaignRoot)
-	data, err := yaml.Marshal(cfg)
+	normalized := *cfg
+	if cfg.Shortcuts != nil {
+		normalized.Shortcuts = make(map[string]ShortcutConfig, len(cfg.Shortcuts))
+		for key, shortcut := range cfg.Shortcuts {
+			normalized.Shortcuts[key] = shortcut
+		}
+	}
+	normalized.NormalizeIntentNavigation()
+
+	data, err := yaml.Marshal(&normalized)
 	if err != nil {
 		return camperrors.Wrap(err, "failed to marshal jumps config")
 	}
@@ -118,7 +123,7 @@ func (j *JumpsConfig) NormalizeIntentNavigation() bool {
 	changed := false
 	canonicalIntentsPath := DefaultCampaignPaths().Intents
 
-	if j.Paths.Intents == legacyIntentsPath {
+	if isLegacyIntentsPath(j.Paths.Intents) {
 		j.Paths.Intents = canonicalIntentsPath
 		changed = true
 	}
@@ -129,16 +134,23 @@ func (j *JumpsConfig) NormalizeIntentNavigation() bool {
 	}
 
 	if j.Shortcuts == nil {
-		j.Shortcuts = make(map[string]ShortcutConfig)
+		return changed
 	}
 
 	intentShortcut, ok := j.Shortcuts["i"]
-	if !ok || intentShortcut.Path == legacyIntentsPath {
+	if !ok || isLegacyIntentsPath(intentShortcut.Path) {
 		j.Shortcuts["i"] = defaultIntentShortcut
 		changed = true
 	}
 
 	return changed
+}
+
+func isLegacyIntentsPath(path string) bool {
+	if path == "" {
+		return false
+	}
+	return filepath.Clean(path) == filepath.Clean(legacyIntentsPath)
 }
 
 // ApplyDefaults fills in missing fields with default values.

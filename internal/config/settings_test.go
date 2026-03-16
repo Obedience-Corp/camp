@@ -12,11 +12,11 @@ import (
 func TestJumpsConfigNormalizeIntentNavigation(t *testing.T) {
 	jumps := &JumpsConfig{
 		Paths: CampaignPaths{
-			Intents: legacyIntentsPath,
+			Intents: "workflow/intents",
 		},
 		Shortcuts: map[string]ShortcutConfig{
 			"i": {
-				Path:        legacyIntentsPath,
+				Path:        "workflow/intents",
 				Concept:     "intent",
 				Description: "Legacy intents shortcut",
 				Source:      ShortcutSourceAuto,
@@ -54,7 +54,7 @@ func TestJumpsConfigNormalizeIntentNavigation(t *testing.T) {
 	}
 }
 
-func TestLoadJumpsConfig_NormalizesLegacyIntentNavigationAndPersists(t *testing.T) {
+func TestLoadJumpsConfig_NormalizesLegacyIntentNavigationWithoutPersisting(t *testing.T) {
 	root := t.TempDir()
 	settingsDir := SettingsDirPath(root)
 	if err := os.MkdirAll(settingsDir, 0755); err != nil {
@@ -109,11 +109,75 @@ shortcuts:
 		t.Fatalf("failed to parse persisted jumps config: %v", err)
 	}
 
-	if got := persisted.Paths.Intents; got != ".campaign/intents/" {
-		t.Fatalf("persisted Paths.Intents = %q, want %q", got, ".campaign/intents/")
+	if got := persisted.Paths.Intents; got != "workflow/intents/" {
+		t.Fatalf("persisted Paths.Intents = %q, want %q", got, "workflow/intents/")
 	}
 
 	if got := persisted.Shortcuts["api"].Path; got != "projects/api/" {
 		t.Fatalf("persisted api shortcut path = %q, want %q", got, "projects/api/")
+	}
+}
+
+func TestLoadJumpsConfig_NoShortcutsBlockKeepsShortcutsNil(t *testing.T) {
+	root := t.TempDir()
+	settingsDir := SettingsDirPath(root)
+	if err := os.MkdirAll(settingsDir, 0755); err != nil {
+		t.Fatalf("failed to create settings dir: %v", err)
+	}
+
+	raw := `
+paths:
+  intents: workflow/intents/
+`
+	configPath := filepath.Join(settingsDir, JumpsConfigFile)
+	if err := os.WriteFile(configPath, []byte(raw), 0644); err != nil {
+		t.Fatalf("failed to write jumps config: %v", err)
+	}
+
+	cfg, err := LoadJumpsConfig(context.Background(), root)
+	if err != nil {
+		t.Fatalf("LoadJumpsConfig() error = %v", err)
+	}
+
+	if cfg.Shortcuts != nil {
+		t.Fatalf("Shortcuts should remain nil when no shortcuts block is present, got %#v", cfg.Shortcuts)
+	}
+}
+
+func TestSaveJumpsConfig_NormalizesLegacyIntentNavigation(t *testing.T) {
+	root := t.TempDir()
+	cfg := &JumpsConfig{
+		Paths: CampaignPaths{
+			Intents: "workflow/intents",
+		},
+		Shortcuts: map[string]ShortcutConfig{
+			"i": {
+				Path:        "workflow/intents",
+				Concept:     "intent",
+				Description: "Legacy intents",
+				Source:      ShortcutSourceAuto,
+			},
+		},
+	}
+
+	if err := SaveJumpsConfig(context.Background(), root, cfg); err != nil {
+		t.Fatalf("SaveJumpsConfig() error = %v", err)
+	}
+
+	data, err := os.ReadFile(JumpsConfigPath(root))
+	if err != nil {
+		t.Fatalf("failed to read saved jumps config: %v", err)
+	}
+
+	var saved JumpsConfig
+	if err := yaml.Unmarshal(data, &saved); err != nil {
+		t.Fatalf("failed to parse saved jumps config: %v", err)
+	}
+
+	if got := saved.Paths.Intents; got != ".campaign/intents/" {
+		t.Fatalf("saved Paths.Intents = %q, want %q", got, ".campaign/intents/")
+	}
+	if got := saved.Shortcuts["i"].Path; got != ".campaign/intents/" {
+		t.Fatalf("saved shortcut i path = %q, want %q", got, ".campaign/intents/")
 	}
 }

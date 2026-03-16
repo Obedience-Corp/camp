@@ -205,6 +205,51 @@ shortcuts:
 	}
 }
 
+func TestLoadCampaignConfig_LegacyIntentPathWithoutShortcutsPreservesDefaults(t *testing.T) {
+	tmpDir := t.TempDir()
+	campaignDir := filepath.Join(tmpDir, CampaignDir)
+	settingsDir := filepath.Join(campaignDir, SettingsDir)
+	if err := os.MkdirAll(settingsDir, 0755); err != nil {
+		t.Fatalf("failed to create settings dir: %v", err)
+	}
+
+	configContent := `
+name: legacy-path-defaults
+type: product
+`
+	if err := os.WriteFile(filepath.Join(campaignDir, CampaignConfigFile), []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write campaign config: %v", err)
+	}
+
+	jumpsContent := `
+paths:
+  intents: workflow/intents
+`
+	if err := os.WriteFile(filepath.Join(settingsDir, JumpsConfigFile), []byte(jumpsContent), 0644); err != nil {
+		t.Fatalf("failed to write jumps config: %v", err)
+	}
+
+	cfg, err := LoadCampaignConfig(context.Background(), tmpDir)
+	if err != nil {
+		t.Fatalf("LoadCampaignConfig() error = %v", err)
+	}
+
+	shortcuts := cfg.Shortcuts()
+	if _, ok := shortcuts["p"]; !ok {
+		t.Fatal("default shortcut p should still be available when jumps.yaml omits shortcuts")
+	}
+	intentShortcut, ok := shortcuts["i"]
+	if !ok {
+		t.Fatal("default shortcut i should still be available when jumps.yaml omits shortcuts")
+	}
+	if intentShortcut.Path != ".campaign/intents/" {
+		t.Fatalf("shortcut i path = %q, want %q", intentShortcut.Path, ".campaign/intents/")
+	}
+	if cfg.Paths().Intents != ".campaign/intents/" {
+		t.Fatalf("Paths().Intents = %q, want %q", cfg.Paths().Intents, ".campaign/intents/")
+	}
+}
+
 func TestLoadCampaignConfig_NotFound(t *testing.T) {
 	tmpDir := t.TempDir()
 	ctx := context.Background()

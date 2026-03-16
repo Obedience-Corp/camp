@@ -118,10 +118,10 @@ func TestCampEntries_SpecificPaths(t *testing.T) {
 		"settings-jumps":         ".campaign/settings/jumps.yaml",
 		"settings-allowlist":     ".campaign/settings/allowlist.json",
 		"leverage-snapshots":     ".campaign/leverage/snapshots/",
-		"intents-inbox":          "workflow/intents/inbox/",
-		"intents-ready":          "workflow/intents/ready/",
-		"intents-active":         "workflow/intents/active/",
-		"intents-dungeon":        "workflow/intents/dungeon/",
+		"intents-inbox":          ".campaign/intents/inbox/",
+		"intents-ready":          ".campaign/intents/ready/",
+		"intents-active":         ".campaign/intents/active/",
+		"intents-dungeon":        ".campaign/intents/dungeon/",
 		"workflow-design-config": "workflow/design/.workflow.yaml",
 	}
 

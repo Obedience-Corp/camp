@@ -1226,6 +1226,48 @@ func TestIntentService_EnsureDirectories_ConflictWhenBothRootsContainIntentData(
 	}
 }
 
+func TestIntentService_PlanLegacyIntentRootMigration(t *testing.T) {
+	campaignRoot := t.TempDir()
+	legacyRoot := filepath.Join(campaignRoot, "workflow", "intents")
+	svc := NewIntentService(campaignRoot, filepath.Join(campaignRoot, ".campaign", "intents"))
+
+	if err := os.MkdirAll(filepath.Join(svc.intentsDir, "inbox"), 0755); err != nil {
+		t.Fatalf("failed to create canonical inbox dir: %v", err)
+	}
+
+	legacyIntent := mustWriteIntentFile(t, filepath.Join(legacyRoot, "inbox", "20260316-legacy-plan.md"), StatusInbox, "legacy-plan")
+	if err := os.WriteFile(filepath.Join(legacyRoot, ".intents.jsonl"), []byte("{\"event\":\"create\"}\n"), 0644); err != nil {
+		t.Fatalf("failed to write legacy audit log: %v", err)
+	}
+
+	moves, err := svc.PlanLegacyIntentRootMigration()
+	if err != nil {
+		t.Fatalf("PlanLegacyIntentRootMigration() error = %v", err)
+	}
+
+	if len(moves) != 2 {
+		t.Fatalf("expected 2 planned moves, got %d: %#v", len(moves), moves)
+	}
+
+	want := map[string]string{
+		filepath.Join(legacyRoot, "inbox", legacyIntent.ID+".md"): filepath.Join(svc.intentsDir, "inbox", legacyIntent.ID+".md"),
+		filepath.Join(legacyRoot, ".intents.jsonl"):               filepath.Join(svc.intentsDir, ".intents.jsonl"),
+	}
+	for _, move := range moves {
+		dst, ok := want[move.Source]
+		if !ok {
+			t.Fatalf("unexpected planned move: %s -> %s", move.Source, move.Dest)
+		}
+		if move.Dest != dst {
+			t.Fatalf("planned move dest = %s, want %s", move.Dest, dst)
+		}
+		delete(want, move.Source)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing planned moves: %#v", want)
+	}
+}
+
 func TestIntentService_List_EmptyDirectories(t *testing.T) {
 	tmpDir := t.TempDir()
 	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))

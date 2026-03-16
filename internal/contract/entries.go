@@ -83,13 +83,13 @@ func CampEntries() []contract.Entry {
 		},
 
 		// ============================================================
-		// Intent Status Directories (workflow/intents/)
+		// Intent Status Directories (.campaign/intents/)
 		// ============================================================
 
 		// Intents inbox -- newly created intents awaiting triage.
 		{
 			ID:     "intents-inbox",
-			Path:   "workflow/intents/inbox/",
+			Path:   ".campaign/intents/inbox/",
 			Type:   contract.TypeIntentStatusDir,
 			Format: contract.FormatDirectory,
 			Watch:  contract.WatchDirectory,
@@ -100,7 +100,7 @@ func CampEntries() []contract.Entry {
 		// Intents ready -- triaged intents ready for execution.
 		{
 			ID:     "intents-ready",
-			Path:   "workflow/intents/ready/",
+			Path:   ".campaign/intents/ready/",
 			Type:   contract.TypeIntentStatusDir,
 			Format: contract.FormatDirectory,
 			Watch:  contract.WatchDirectory,
@@ -111,7 +111,7 @@ func CampEntries() []contract.Entry {
 		// Intents active -- currently executing intents.
 		{
 			ID:     "intents-active",
-			Path:   "workflow/intents/active/",
+			Path:   ".campaign/intents/active/",
 			Type:   contract.TypeIntentStatusDir,
 			Format: contract.FormatDirectory,
 			Watch:  contract.WatchDirectory,
@@ -122,7 +122,7 @@ func CampEntries() []contract.Entry {
 		// Intents dungeon -- archived/completed intents.
 		{
 			ID:     "intents-dungeon",
-			Path:   "workflow/intents/dungeon/",
+			Path:   ".campaign/intents/dungeon/",
 			Type:   contract.TypeIntentStatusDir,
 			Format: contract.FormatDirectory,
 			Watch:  contract.WatchDirectory,

@@ -31,6 +31,12 @@ type IntentService struct {
 	intentsDir   string
 }
 
+// PlannedPathMove describes a filesystem move that migration would perform.
+type PlannedPathMove struct {
+	Source string
+	Dest   string
+}
+
 // NewIntentService creates a new IntentService.
 // intentsDir is the full path to the intents directory (e.g., from PathResolver.Intents()).
 func NewIntentService(campaignRoot, intentsDir string) *IntentService {
@@ -713,6 +719,60 @@ func (s *IntentService) legacyIntentsDir() string {
 	return filepath.Join(s.campaignRoot, "workflow", "intents")
 }
 
+// PlanLegacyIntentRootMigration returns the filesystem moves required to migrate
+// legacy workflow/intents state into the canonical intent root.
+func (s *IntentService) PlanLegacyIntentRootMigration() ([]PlannedPathMove, error) {
+	legacyRoot := s.legacyIntentsDir()
+	if filepath.Clean(legacyRoot) == filepath.Clean(s.intentsDir) {
+		return nil, nil
+	}
+
+	canonicalHasState, err := hasIntentState(s.intentsDir)
+	if err != nil {
+		return nil, camperrors.Wrapf(err, "inspecting canonical intent root %s", s.intentsDir)
+	}
+
+	legacyHasState, err := hasIntentState(legacyRoot)
+	if err != nil {
+		return nil, camperrors.Wrapf(err, "inspecting legacy intent root %s", legacyRoot)
+	}
+
+	if legacyHasState && canonicalHasState {
+		return nil, camperrors.Wrapf(
+			ErrIntentMigrationConflict,
+			"both %s and %s contain intent state; resolve with repair before retrying",
+			legacyRoot,
+			s.intentsDir,
+		)
+	}
+
+	if !legacyHasState {
+		return nil, nil
+	}
+
+	mappings := [][2]string{
+		{filepath.Join(legacyRoot, string(StatusInbox)), filepath.Join(s.intentsDir, string(StatusInbox))},
+		{filepath.Join(legacyRoot, string(StatusReady)), filepath.Join(s.intentsDir, string(StatusReady))},
+		{filepath.Join(legacyRoot, string(StatusActive)), filepath.Join(s.intentsDir, string(StatusActive))},
+		{filepath.Join(legacyRoot, "dungeon"), filepath.Join(s.intentsDir, "dungeon")},
+		{filepath.Join(legacyRoot, "done"), filepath.Join(s.intentsDir, "dungeon", string(StatusDone))},
+		{filepath.Join(legacyRoot, "killed"), filepath.Join(s.intentsDir, "dungeon", string(StatusKilled))},
+	}
+
+	var moves []PlannedPathMove
+	for _, mapping := range mappings {
+		if err := collectIntentTreeMoves(mapping[0], mapping[1], &moves); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := collectIntentAuditMove(legacyRoot, s.intentsDir, &moves); err != nil {
+		return nil, err
+	}
+
+	return moves, nil
+}
+
 func hasIntentState(root string) (bool, error) {
 	if info, err := os.Stat(root); err != nil {
 		if os.IsNotExist(err) {
@@ -839,6 +899,74 @@ func moveIntentAuditFile(legacyRoot, canonicalRoot string) error {
 
 	if err := os.Rename(srcPath, dstPath); err != nil {
 		return camperrors.Wrapf(err, "moving audit log %s", srcPath)
+	}
+
+	return nil
+}
+
+func collectIntentAuditMove(legacyRoot, canonicalRoot string, moves *[]PlannedPathMove) error {
+	srcPath := intentaudit.FilePath(legacyRoot)
+	if _, err := os.Stat(srcPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return camperrors.Wrapf(err, "stat %s", srcPath)
+	}
+
+	dstPath := intentaudit.FilePath(canonicalRoot)
+	if info, err := os.Stat(dstPath); err == nil {
+		if info.Size() > 0 {
+			return camperrors.Wrapf(ErrIntentMigrationConflict, "audit log already exists at %s", dstPath)
+		}
+	} else if !os.IsNotExist(err) {
+		return camperrors.Wrapf(err, "stat %s", dstPath)
+	}
+
+	*moves = append(*moves, PlannedPathMove{Source: srcPath, Dest: dstPath})
+	return nil
+}
+
+func collectIntentTreeMoves(srcDir, dstDir string, moves *[]PlannedPathMove) error {
+	if _, err := os.Stat(srcDir); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return camperrors.Wrapf(err, "stat %s", srcDir)
+	}
+
+	if _, err := os.Stat(dstDir); os.IsNotExist(err) {
+		*moves = append(*moves, PlannedPathMove{Source: srcDir, Dest: dstDir})
+		return nil
+	} else if err != nil {
+		return camperrors.Wrapf(err, "stat %s", dstDir)
+	}
+
+	entries, err := os.ReadDir(srcDir)
+	if err != nil {
+		return camperrors.Wrapf(err, "reading directory %s", srcDir)
+	}
+
+	for _, entry := range entries {
+		srcPath := filepath.Join(srcDir, entry.Name())
+		dstPath := filepath.Join(dstDir, entry.Name())
+
+		if entry.IsDir() {
+			if err := collectIntentTreeMoves(srcPath, dstPath, moves); err != nil {
+				return err
+			}
+			continue
+		}
+
+		if _, err := os.Stat(dstPath); err == nil {
+			if entry.Name() == ".gitkeep" {
+				continue
+			}
+			return camperrors.Wrapf(ErrIntentMigrationConflict, "destination already exists for %s", dstPath)
+		} else if !os.IsNotExist(err) {
+			return camperrors.Wrapf(err, "stat %s", dstPath)
+		}
+
+		*moves = append(*moves, PlannedPathMove{Source: srcPath, Dest: dstPath})
 	}
 
 	return nil

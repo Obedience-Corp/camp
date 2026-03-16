@@ -44,6 +44,13 @@ func TestRepairPlan_HasChanges(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "migrate change means has changes",
+			changes: []RepairChange{
+				{Type: RepairMigrate, Key: "workflow/intents/inbox/legacy.md"},
+			},
+			want: true,
+		},
+		{
 			name: "mixed preserve and add",
 			changes: []RepairChange{
 				{Type: RepairPreserve, Key: "x"},
@@ -735,6 +742,75 @@ func TestComputeMigrationChanges_PlannedDungeonCompleted(t *testing.T) {
 
 	if !plan.HasMigrations() {
 		t.Error("should detect migration when dungeon/completed is planned for creation")
+	}
+}
+
+func TestComputeIntentMigrationChanges_DetectsLegacyIntentRoot(t *testing.T) {
+	dir := t.TempDir()
+	legacyRoot := filepath.Join(dir, "workflow", "intents")
+	canonicalRoot := filepath.Join(dir, config.CampaignDir, "intents")
+
+	if err := os.MkdirAll(filepath.Join(canonicalRoot, "inbox"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(legacyRoot, "inbox"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyRoot, "inbox", "legacy.md"), []byte("# legacy\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyRoot, ".intents.jsonl"), []byte("{\"event\":\"create\"}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	plan := &RepairPlan{}
+	if err := computeIntentMigrationChanges(dir, plan); err != nil {
+		t.Fatalf("computeIntentMigrationChanges() error: %v", err)
+	}
+
+	if !plan.HasChanges() {
+		t.Fatal("expected migrate-only intent plan to count as changes")
+	}
+	if len(plan.IntentMigrations) != 2 {
+		t.Fatalf("expected 2 intent migrations, got %d", len(plan.IntentMigrations))
+	}
+
+	found := false
+	for _, c := range plan.Changes {
+		if c.Category == "intent_migration" && c.Key == "workflow/intents/inbox/legacy.md" {
+			found = true
+			if c.Description != "→ .campaign/intents/inbox/legacy.md" {
+				t.Fatalf("intent migration description = %q", c.Description)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected file-level intent migration change for legacy inbox item")
+	}
+}
+
+func TestComputeIntentMigrationChanges_Conflict(t *testing.T) {
+	dir := t.TempDir()
+	legacyRoot := filepath.Join(dir, "workflow", "intents", "inbox")
+	canonicalRoot := filepath.Join(dir, config.CampaignDir, "intents", "inbox")
+
+	if err := os.MkdirAll(legacyRoot, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(canonicalRoot, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyRoot, "legacy.md"), []byte("# legacy\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(canonicalRoot, "canonical.md"), []byte("# canonical\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	plan := &RepairPlan{}
+	err := computeIntentMigrationChanges(dir, plan)
+	if err == nil {
+		t.Fatal("expected conflict error when both legacy and canonical intent roots have state")
 	}
 }
 

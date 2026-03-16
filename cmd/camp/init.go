@@ -198,7 +198,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Execute migrations if repair detected misplaced directories.
 	var migrationCount int
-	if repair && opts.RepairPlan != nil && opts.RepairPlan.HasMigrations() {
+	if repair && opts.RepairPlan != nil && len(opts.RepairPlan.Migrations) > 0 {
 		moved, err := scaffold.ExecuteMigrations(opts.RepairPlan.Migrations)
 		if err != nil {
 			fmt.Printf("  %s Migration error: %v\n", ui.WarningIcon(), err)
@@ -522,6 +522,9 @@ func handleRepairMission(ctx context.Context, dir string, mission string, isInte
 // commitRepairChanges creates a git commit after a successful repair.
 func commitRepairChanges(ctx context.Context, initResult *scaffold.InitResult, plan *scaffold.RepairPlan, migrationCount int) {
 	hasChanges := len(initResult.DirsCreated) > 0 || len(initResult.FilesCreated) > 0 || migrationCount > 0
+	if plan != nil && len(plan.IntentMigrations) > 0 {
+		hasChanges = true
+	}
 	if !hasChanges {
 		return
 	}
@@ -565,6 +568,14 @@ func buildRepairCommitFiles(initResult *scaffold.InitResult, plan *scaffold.Repa
 				)
 			}
 		}
+		for _, m := range plan.IntentMigrations {
+			for _, item := range m.Items {
+				files = append(files,
+					filepath.Join(m.Source, item),
+					filepath.Join(m.Dest, item),
+				)
+			}
+		}
 	}
 
 	return commit.NormalizeFiles(initResult.CampaignRoot, files...)
@@ -599,7 +610,27 @@ func buildRepairCommitMessage(initResult *scaffold.InitResult, plan *scaffold.Re
 		}
 	}
 
+	if plan != nil && len(plan.IntentMigrations) > 0 {
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		fmt.Fprintf(&b, "Migrated %d legacy intent item(s):\n", countMigrationItems(plan.IntentMigrations))
+		for _, m := range plan.IntentMigrations {
+			for _, item := range m.Items {
+				fmt.Fprintf(&b, "  - %s → %s\n", filepath.Join(m.Source, item), m.Dest)
+			}
+		}
+	}
+
 	return strings.TrimRight(b.String(), "\n")
+}
+
+func countMigrationItems(migrations []scaffold.MigrationAction) int {
+	total := 0
+	for _, m := range migrations {
+		total += len(m.Items)
+	}
+	return total
 }
 
 // printRepairDiff displays the proposed repair changes as a colored diff.
