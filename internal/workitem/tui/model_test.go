@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -250,6 +251,86 @@ func TestModel_GJumpUpdatesScroll(t *testing.T) {
 	}
 	if m.scrollOffset != 0 {
 		t.Errorf("scrollOffset after gg = %d, want 0", m.scrollOffset)
+	}
+}
+
+func TestModel_RefilterShrinksViewport(t *testing.T) {
+	// Simulate: user scrolls down in 20 items, then refresh returns only 2 items.
+	// scrollOffset must clamp so the viewport doesn't start past the end.
+	items := makeTestItems(20)
+	m := New(context.Background(), items, "", nil)
+	m.width = 80
+	m.height = 8 // viewport = 5 rows
+	m.ready = true
+
+	// Scroll to bottom
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	m = result.(Model)
+	if m.cursor != 19 {
+		t.Fatalf("cursor = %d, want 19", m.cursor)
+	}
+	if m.scrollOffset == 0 {
+		t.Fatal("scrollOffset should be non-zero after scrolling to bottom")
+	}
+
+	// Simulate refresh returning only 2 items
+	smallItems := makeTestItems(2)
+	result, _ = m.Update(refreshMsg{items: smallItems})
+	m = result.(Model)
+
+	// cursor should be clamped to last item
+	if m.cursor != 1 {
+		t.Errorf("cursor after shrink = %d, want 1", m.cursor)
+	}
+	// scrollOffset must be 0 since all items fit in viewport
+	if m.scrollOffset != 0 {
+		t.Errorf("scrollOffset after shrink to 2 items = %d, want 0", m.scrollOffset)
+	}
+
+	// Verify view renders without panic and shows items
+	view := m.View()
+	if !strings.Contains(view, smallItems[0].Title) {
+		t.Error("view should contain first item after shrink")
+	}
+}
+
+func TestModel_TypeFilterShrinksViewport(t *testing.T) {
+	// User scrolls down, then applies type filter that reduces list to 1 item.
+	items := make([]workitem.WorkItem, 20)
+	now := time.Now()
+	for i := range items {
+		items[i] = workitem.WorkItem{
+			Key:           fmt.Sprintf("test:%d", i),
+			WorkflowType:  workitem.WorkflowTypeDesign,
+			Title:         fmt.Sprintf("Design %d", i),
+			SortTimestamp: now.Add(-time.Duration(i) * time.Hour),
+		}
+	}
+	// Add one intent
+	items[0].WorkflowType = workitem.WorkflowTypeIntent
+	items[0].Title = "The Intent"
+
+	m := New(context.Background(), items, "", nil)
+	m.width = 80
+	m.height = 8
+	m.ready = true
+
+	// Scroll to bottom
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	m = result.(Model)
+
+	// Filter to intents only — should shrink to 1 item
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}})
+	m = result.(Model)
+
+	if len(m.filteredItems) != 1 {
+		t.Fatalf("filtered = %d, want 1", len(m.filteredItems))
+	}
+	if m.cursor != 0 {
+		t.Errorf("cursor = %d, want 0", m.cursor)
+	}
+	if m.scrollOffset != 0 {
+		t.Errorf("scrollOffset = %d, want 0", m.scrollOffset)
 	}
 }
 

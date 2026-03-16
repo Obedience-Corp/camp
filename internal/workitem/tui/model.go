@@ -91,6 +91,15 @@ func (m *Model) refilter() {
 	if m.cursor >= len(m.filteredItems) {
 		m.cursor = max(0, len(m.filteredItems)-1)
 	}
+	// Clamp scrollOffset so the viewport doesn't start past the end of the
+	// list after a refresh or filter change that shrinks the result set.
+	maxOffset := max(0, len(m.filteredItems)-(m.height-3))
+	if m.scrollOffset > maxOffset {
+		m.scrollOffset = maxOffset
+	}
+	if m.scrollOffset < 0 {
+		m.scrollOffset = 0
+	}
 }
 
 // ensureCursorVisible adjusts scrollOffset so the cursor row is within the
