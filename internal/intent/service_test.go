@@ -1184,6 +1184,10 @@ func TestIntentService_EnsureDirectories_MigratesLegacyRootAndAudit(t *testing.T
 	if _, err := os.Stat(filepath.Join(legacyRoot, ".intents.jsonl")); !os.IsNotExist(err) {
 		t.Fatalf("legacy audit log should be removed, err = %v", err)
 	}
+
+	if err := svc.CleanupLegacyIntentScaffold(); err != nil {
+		t.Fatalf("CleanupLegacyIntentScaffold() error = %v", err)
+	}
 	if _, err := os.Stat(filepath.Join(legacyRoot, "OBEY.md")); !os.IsNotExist(err) {
 		t.Fatalf("legacy intent scaffold docs should be removed, err = %v", err)
 	}
@@ -1192,11 +1196,10 @@ func TestIntentService_EnsureDirectories_MigratesLegacyRootAndAudit(t *testing.T
 	}
 }
 
-func TestIntentService_EnsureDirectories_RemovesLegacyScaffoldOnlyRoot(t *testing.T) {
+func TestIntentService_CleanupLegacyIntentScaffold_RemovesLegacyScaffoldOnlyRoot(t *testing.T) {
 	campaignRoot := t.TempDir()
 	legacyRoot := filepath.Join(campaignRoot, "workflow", "intents")
 	svc := NewIntentService(campaignRoot, filepath.Join(campaignRoot, ".campaign", "intents"))
-	ctx := context.Background()
 
 	for _, relPath := range []string{
 		"OBEY.md",
@@ -1215,8 +1218,8 @@ func TestIntentService_EnsureDirectories_RemovesLegacyScaffoldOnlyRoot(t *testin
 		}
 	}
 
-	if err := svc.EnsureDirectories(ctx); err != nil {
-		t.Fatalf("EnsureDirectories() error = %v", err)
+	if err := svc.CleanupLegacyIntentScaffold(); err != nil {
+		t.Fatalf("CleanupLegacyIntentScaffold() error = %v", err)
 	}
 
 	if _, err := os.Stat(legacyRoot); !os.IsNotExist(err) {

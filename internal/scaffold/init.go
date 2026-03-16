@@ -275,10 +275,13 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 		}
 
 		// Reuse the intent service setup path during init/repair so canonical
-		// intent migration and legacy scaffold cleanup stay centralized.
+		// intent migration stays centralized in one helper.
 		intentSvc := intent.NewIntentService(absDir, filepath.Join(absDir, jumps.Paths.Intents))
 		if err := intentSvc.EnsureDirectories(ctx); err != nil {
 			return nil, camperrors.Wrap(err, "failed to initialize intent directories")
+		}
+		if err := intentSvc.CleanupLegacyIntentScaffold(); err != nil {
+			return nil, camperrors.Wrap(err, "failed to remove legacy intent scaffold")
 		}
 	}
 	result.FilesCreated = append(result.FilesCreated, config.JumpsConfigPath(absDir))

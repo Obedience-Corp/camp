@@ -714,14 +714,14 @@ func (s *IntentService) ensureCanonicalIntentRoot(ctx context.Context) error {
 	}
 
 	if !legacyHasState {
-		return cleanupLegacyIntentScaffold(legacyRoot)
+		return nil
 	}
 
 	if err := s.migrateLegacyIntentRoot(legacyRoot); err != nil {
 		return camperrors.Wrapf(err, "migrating legacy intent root %s", legacyRoot)
 	}
 
-	return cleanupLegacyIntentScaffold(legacyRoot)
+	return nil
 }
 
 func (s *IntentService) legacyIntentsDir() string {
@@ -791,6 +791,17 @@ func (s *IntentService) PlanLegacyIntentRootCleanup() ([]string, error) {
 	}
 
 	return collectLegacyIntentScaffoldFiles(legacyRoot)
+}
+
+// CleanupLegacyIntentScaffold removes obsolete workflow/intents scaffold files.
+// This is intended for explicit init/repair normalization, not routine commands.
+func (s *IntentService) CleanupLegacyIntentScaffold() error {
+	legacyRoot := s.legacyIntentsDir()
+	if filepath.Clean(legacyRoot) == filepath.Clean(s.intentsDir) {
+		return nil
+	}
+
+	return cleanupLegacyIntentScaffold(legacyRoot)
 }
 
 func hasIntentState(root string) (bool, error) {
