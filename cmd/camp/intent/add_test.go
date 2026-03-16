@@ -3,10 +3,15 @@ package intent
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	intentcore "github.com/Obedience-Corp/camp/internal/intent"
+	"github.com/Obedience-Corp/camp/internal/paths"
 )
 
 func testRegistry(t *testing.T) *config.Registry {
@@ -140,5 +145,103 @@ func TestIntentAddCampaignResolver_BareCampaignNonInteractiveFails(t *testing.T)
 	}
 	if !strings.Contains(err.Error(), "campaign name required in non-interactive mode") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestIntentAdd_TargetCampaignSmoke(t *testing.T) {
+	ctx := context.Background()
+	currentRoot := t.TempDir()
+	targetRoot := t.TempDir()
+
+	writeCampaign := func(root, id, name string) {
+		cfg := &config.CampaignConfig{
+			ID:        id,
+			Name:      name,
+			Type:      config.CampaignTypeProduct,
+			CreatedAt: time.Now(),
+		}
+		if err := config.SaveCampaignConfig(ctx, root, cfg); err != nil {
+			t.Fatalf("SaveCampaignConfig(%s) error = %v", root, err)
+		}
+		jumps := config.DefaultJumpsConfig()
+		if err := config.SaveJumpsConfig(ctx, root, &jumps); err != nil {
+			t.Fatalf("SaveJumpsConfig(%s) error = %v", root, err)
+		}
+	}
+
+	writeCampaign(currentRoot, "current-id", "current-campaign")
+	writeCampaign(targetRoot, "target-id", "target-campaign")
+
+	reg := config.NewRegistry()
+	if err := reg.Register("current-id", "current-campaign", currentRoot, config.CampaignTypeProduct); err != nil {
+		t.Fatalf("Register(current) error = %v", err)
+	}
+	if err := reg.Register("target-id", "target-campaign", targetRoot, config.CampaignTypeProduct); err != nil {
+		t.Fatalf("Register(target) error = %v", err)
+	}
+
+	registryPath := filepath.Join(t.TempDir(), "registry.json")
+	t.Setenv("CAMP_REGISTRY_PATH", registryPath)
+	if err := config.SaveRegistry(ctx, reg); err != nil {
+		t.Fatalf("SaveRegistry() error = %v", err)
+	}
+
+	originalWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	if err := os.Chdir(currentRoot); err != nil {
+		t.Fatalf("Chdir(%s) error = %v", currentRoot, err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(originalWD)
+	})
+
+	resolver := newIntentAddCampaignResolver(&bytes.Buffer{})
+	cfg, campaignRoot, err := resolver.resolve(ctx, "target-campaign", true)
+	if err != nil {
+		t.Fatalf("resolve() error = %v", err)
+	}
+	if campaignRoot != targetRoot {
+		t.Fatalf("campaignRoot = %q, want %q", campaignRoot, targetRoot)
+	}
+
+	pathResolver := paths.NewResolverFromConfig(campaignRoot, cfg)
+	intentSvc := intentcore.NewIntentService(campaignRoot, pathResolver.Intents())
+	if err := intentSvc.EnsureDirectories(ctx); err != nil {
+		t.Fatalf("EnsureDirectories() error = %v", err)
+	}
+
+	if err := runFastCapture(ctx, intentSvc, pathResolver.Intents(), cfg, campaignRoot, true, intentcore.CreateOptions{
+		Title:  "Targeted intent",
+		Type:   intentcore.TypeIdea,
+		Author: "agent",
+	}); err != nil {
+		t.Fatalf("runFastCapture() error = %v", err)
+	}
+
+	targetInbox := filepath.Join(targetRoot, ".campaign", "intents", "inbox")
+	entries, err := os.ReadDir(targetInbox)
+	if err != nil {
+		t.Fatalf("ReadDir(target inbox) error = %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("target inbox entries = %d, want 1", len(entries))
+	}
+
+	if _, err := os.Stat(filepath.Join(targetRoot, ".campaign", "intents", ".intents.jsonl")); err != nil {
+		t.Fatalf("expected audit log in target campaign: %v", err)
+	}
+
+	currentInbox := filepath.Join(currentRoot, ".campaign", "intents", "inbox")
+	currentEntries, err := os.ReadDir(currentInbox)
+	if os.IsNotExist(err) {
+		return
+	}
+	if err != nil {
+		t.Fatalf("ReadDir(current inbox) error = %v", err)
+	}
+	if len(currentEntries) != 0 {
+		t.Fatalf("current inbox entries = %d, want 0", len(currentEntries))
 	}
 }
