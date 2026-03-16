@@ -1,15 +1,15 @@
-//go:build dev
-
-package main
+package remote
 
 import (
+	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/spf13/cobra"
 )
 
 // flagRemoteProject is the shared --project flag for all remote subcommands.
 var flagRemoteProject string
 
-var projectRemoteCmd = &cobra.Command{
+// Cmd is the scaffold root for the project remote command family.
+var Cmd = &cobra.Command{
 	Use:     "remote",
 	Short:   "Manage remotes for a project",
 	Aliases: []string{"rem"},
@@ -42,10 +42,8 @@ Examples:
 }
 
 func init() {
-	projectCmd.AddCommand(projectRemoteCmd)
-
-	projectRemoteCmd.PersistentFlags().StringVarP(&flagRemoteProject, "project", "p", "",
+	Cmd.PersistentFlags().StringVarP(&flagRemoteProject, "project", "p", "",
 		"Project name (auto-detected from cwd if not specified)")
 
-	projectRemoteCmd.RegisterFlagCompletionFunc("project", completeProjectName)
+	_ = Cmd.RegisterFlagCompletionFunc("project", cmdutil.CompleteProjectName)
 }

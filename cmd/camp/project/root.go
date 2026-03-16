@@ -1,6 +1,7 @@
 package project
 
 import (
+	projectremote "github.com/Obedience-Corp/camp/cmd/camp/project/remote"
 	projectworktree "github.com/Obedience-Corp/camp/cmd/camp/project/worktree"
 	"github.com/spf13/cobra"
 )
@@ -25,5 +26,6 @@ Examples:
 }
 
 func init() {
+	Cmd.AddCommand(projectremote.Cmd)
 	Cmd.AddCommand(projectworktree.Cmd)
 }

@@ -1,6 +1,4 @@
-//go:build dev
-
-package main
+package remote
 
 import (
 	"fmt"
@@ -37,7 +35,7 @@ Examples:
 }
 
 func init() {
-	projectRemoteCmd.AddCommand(projectRemoteRenameCmd)
+	Cmd.AddCommand(projectRemoteRenameCmd)
 
 	projectRemoteRenameCmd.Flags().BoolP("force", "f", false,
 		"Allow renaming away from origin (submodule tracking may break)")

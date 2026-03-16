@@ -1,6 +1,4 @@
-//go:build dev
-
-package main
+package remote
 
 import (
 	"fmt"
@@ -36,7 +34,7 @@ Examples:
 }
 
 func init() {
-	projectRemoteCmd.AddCommand(projectRemoteRemoveCmd)
+	Cmd.AddCommand(projectRemoteRemoveCmd)
 
 	projectRemoteRemoveCmd.Flags().BoolP("force", "f", false,
 		"Allow removing the origin remote (dangerous)")

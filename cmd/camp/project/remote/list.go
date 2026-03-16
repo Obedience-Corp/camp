@@ -1,6 +1,4 @@
-//go:build dev
-
-package main
+package remote
 
 import (
 	"fmt"
@@ -29,7 +27,7 @@ Examples:
 }
 
 func init() {
-	projectRemoteCmd.AddCommand(projectRemoteListCmd)
+	Cmd.AddCommand(projectRemoteListCmd)
 }
 
 func runProjectRemoteList(cmd *cobra.Command, args []string) error {

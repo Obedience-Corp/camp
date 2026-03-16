@@ -1,6 +1,4 @@
-//go:build dev
-
-package main
+package remote
 
 import (
 	"context"
@@ -44,7 +42,7 @@ Examples:
 }
 
 func init() {
-	projectRemoteCmd.AddCommand(projectRemoteSetURLCmd)
+	Cmd.AddCommand(projectRemoteSetURLCmd)
 
 	projectRemoteSetURLCmd.Flags().StringP("name", "n", "origin", "Remote name to update")
 	projectRemoteSetURLCmd.Flags().Bool("no-verify", false, "Skip connectivity check after updating")
@@ -86,9 +84,6 @@ func (s *setURLState) rollback(ctx context.Context) []string {
 			)
 		}
 	}
-
-	// Undo step 2: re-sync (after restoring .gitmodules)
-	// This is handled implicitly by restoring .gitmodules + sync below.
 
 	// Undo step 1: restore .gitmodules
 	if s.gitmodulesUpdated && s.oldDeclaredURL != "" {

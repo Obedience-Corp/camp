@@ -1,6 +1,4 @@
-//go:build dev
-
-package main
+package remote
 
 import (
 	"context"
