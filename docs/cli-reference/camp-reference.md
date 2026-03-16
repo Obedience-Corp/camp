@@ -942,7 +942,7 @@ Scan festival directories for feedback observations and create
 trackable FEEDBACK intent files with checkboxes.
 
 Each festival with feedback observations gets a FEEDBACK_<fest_id>.md intent
-in workflow/intents/inbox/. Observations are grouped by criteria with
+in .campaign/intents/inbox/. Observations are grouped by criteria with
 checkboxes for tracking addressed status.
 
 Deduplication tracking ensures observations are only gathered once.
@@ -1108,6 +1108,7 @@ Initialize a new campaign directory structure.
 Creates the standard campaign directories:
   .campaign/              - Campaign configuration and metadata
   .campaign/quests/       - Quest execution contexts and active quest marker
+  .campaign/intents/      - System-managed intent state
   projects/               - Project repositories (submodules or worktrees)
   projects/worktrees/     - Git worktrees for parallel development
   festivals/              - Festival methodology workspace (via fest init)
@@ -1118,7 +1119,6 @@ Creates the standard campaign directories:
   workflow/code_reviews/  - Code review notes and feedback
   workflow/pipelines/     - CI/CD pipeline definitions
   workflow/design/        - Design documents
-  workflow/intents/       - Intent documents
 
 Also creates:
   AGENTS.md     - AI agent instruction file
@@ -1240,7 +1240,9 @@ Use --edit when you need the complete template in your editor.
 
 Examples:
   camp intent add "Add dark mode"        Ultra-fast capture
+  camp intent add -c obey-campaign "Add dark mode"
   camp intent add                        Fast TUI (3-step form)
+  camp intent add --campaign             Pick a target campaign interactively
   camp intent add --full                 Full TUI (includes body)
   camp intent add -e "Complex feature"   Deep capture with editor
   camp intent add -t feature "New API"   Set type explicitly
@@ -1252,11 +1254,12 @@ camp intent add [title] [flags]
 ### Options
 
 ```
-  -e, --edit          Open in $EDITOR for deep capture
-  -f, --full          Full TUI mode with body textarea
-  -h, --help          help for add
-      --no-commit     Don't create a git commit
-  -t, --type string   Intent type (idea, feature, bug, research, chore) (default "idea")
+  -c, --campaign string   Target campaign by name or ID; omit value to pick interactively
+  -e, --edit              Open in $EDITOR for deep capture
+  -f, --full              Full TUI mode with body textarea
+  -h, --help              help for add
+      --no-commit         Don't create a git commit
+  -t, --type string       Intent type (idea, feature, bug, research, chore) (default "idea")
 ```
 
 ### Options inherited from parent commands

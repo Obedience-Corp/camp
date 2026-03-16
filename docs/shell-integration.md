@@ -34,7 +34,7 @@ cgo
 # Jump to a category
 cgo p         # projects/
 cgo f         # festivals/
-cgo i         # workflow/intents/
+cgo i         # .campaign/intents/
 cgo d         # docs/
 cgo ai        # ai_docs/
 cgo w         # workflow/
@@ -55,7 +55,7 @@ cgo f fest    # festivals/*fest* (fuzzy match)
 |----------|----------------|-------------------------|
 | p        | projects/      | Project directories     |
 | f        | festivals/     | Festival planning       |
-| i        | workflow/intents/ | Intents              |
+| i        | .campaign/intents/ | Intents via `camp intent` |
 | d        | docs/          | Documentation           |
 | ai       | ai_docs/       | AI documentation        |
 | w        | workflow/      | Workflow resources      |
@@ -64,6 +64,10 @@ cgo f fest    # festivals/*fest* (fuzzy match)
 | pi       | workflow/pipelines/ | CI/CD pipelines     |
 | de       | workflow/design/ | Design documents       |
 | ex       | workflow/explore/ | Exploratory notes     |
+
+`cgo i` is intentionally still available for operators who need the underlying
+files, but day-to-day intent capture and editing should go through
+`camp intent`.
 
 ### Running Commands
 
