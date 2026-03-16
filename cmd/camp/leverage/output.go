@@ -56,7 +56,7 @@ func leverageOutputTable(cmd *cobra.Command, agg *intleverage.LeverageScore, sco
 	rows := buildScoreRows(scores)
 
 	t := table.New().
-		Border(lipgloss.ASCIIBorder()).
+		Border(lipgloss.RoundedBorder()).
 		BorderStyle(lipgloss.NewStyle().Foreground(ui.DimColor)).
 		Headers(headers...).
 		Rows(rows...).
@@ -218,7 +218,7 @@ func leverageOutputByAuthor(cmd *cobra.Command, agg *intleverage.LeverageScore, 
 		ui.Value(fmtScore(agg.FullLeverage)+"x", ui.AccentColor))
 
 	t := table.New().
-		Border(lipgloss.ASCIIBorder()).
+		Border(lipgloss.RoundedBorder()).
 		BorderStyle(lipgloss.NewStyle().Foreground(ui.DimColor)).
 		Headers(headers...).
 		Rows(rows...).

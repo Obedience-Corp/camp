@@ -362,7 +362,7 @@ func renderStatusTable(statuses []repoStatus) {
 	}
 
 	t := table.New().
-		Border(lipgloss.ASCIIBorder()).
+		Border(lipgloss.RoundedBorder()).
 		BorderStyle(lipgloss.NewStyle().Foreground(ui.DimColor)).
 		Headers(headers...).
 		Rows(rows...).

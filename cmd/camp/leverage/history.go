@@ -174,7 +174,7 @@ func historyOutputPeriodTable(cmd *cobra.Command, history []intleverage.HistoryP
 	}
 
 	t := table.New().
-		Border(lipgloss.ASCIIBorder()).
+		Border(lipgloss.RoundedBorder()).
 		BorderStyle(lipgloss.NewStyle().Foreground(ui.DimColor)).
 		Headers(headers...).
 		Rows(rows...).
@@ -253,7 +253,7 @@ func historyOutputByAuthor(cmd *cobra.Command, history []intleverage.HistoryPoin
 	}
 
 	t := table.New().
-		Border(lipgloss.ASCIIBorder()).
+		Border(lipgloss.RoundedBorder()).
 		BorderStyle(lipgloss.NewStyle().Foreground(ui.DimColor)).
 		Headers(headers...).
 		Rows(rows...).
