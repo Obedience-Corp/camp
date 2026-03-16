@@ -55,6 +55,7 @@ camp [flags]
 * [camp flow](camp_flow.md)	 - Manage status workflows for organizing work
 * [camp gather](camp_gather.md)	 - Import external data into the intent system
 * [camp go](camp_go.md)	 - Navigate to campaign directories
+* [camp id](camp_id.md)	 - Print the current campaign ID
 * [camp init](camp_init.md)	 - Initialize a new campaign
 * [camp intent](camp_intent.md)	 - Manage campaign intents
 * [camp leverage](camp_leverage.md)	 - Compute leverage scores for campaign projects
@@ -81,4 +82,3 @@ camp [flags]
 * [camp unpin](camp_unpin.md)	 - Remove a directory bookmark
 * [camp unregister](camp_unregister.md)	 - Remove campaign from registry
 * [camp version](camp_version.md)	 - Show version information
-
