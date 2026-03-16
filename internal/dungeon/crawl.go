@@ -106,7 +106,12 @@ func RunCrawl(ctx context.Context, svc *Service) (*CrawlSummary, error) {
 					}
 					summary.Skipped++
 				} else {
-					relDst, _ := filepath.Rel(svc.campaignRoot, dstPath)
+					// Safe: dstPath is always under campaignRoot (constructed from dungeonPath).
+					relDst, relErr := filepath.Rel(svc.campaignRoot, dstPath)
+					if relErr != nil {
+						fmt.Printf("Warning: could not resolve relative path for %s: %v\n", dstPath, relErr)
+						relDst = item.Name // fallback to item name for commit
+					}
 					summary.RecordMove(status, relDst)
 					if err := logDecision(ctx, svc, item, MoveDecision(status), stats); err != nil {
 						fmt.Printf("Warning: failed to log decision: %v\n", err)

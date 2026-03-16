@@ -106,7 +106,12 @@ func RunTriageCrawl(ctx context.Context, svc *Service, parentPath string) (*Craw
 					}
 					summary.Skipped++
 				} else {
-					relDst, _ := filepath.Rel(svc.campaignRoot, dstPath)
+					// Safe: dstPath is always under campaignRoot (constructed from dungeonPath).
+					relDst, relErr := filepath.Rel(svc.campaignRoot, dstPath)
+					if relErr != nil {
+						fmt.Printf("Warning: could not resolve relative path for %s: %v\n", dstPath, relErr)
+						relDst = item.Name
+					}
 					summary.RecordMove(status, relDst)
 					if err := logDecision(ctx, svc, item, MoveDecision(status), stats); err != nil {
 						fmt.Printf("Warning: failed to log decision: %v\n", err)
@@ -138,7 +143,12 @@ func RunTriageCrawl(ctx context.Context, svc *Service, parentPath string) (*Craw
 					summary.Skipped++
 				} else {
 					destinationKey := docsMoveSummaryKey(svc.campaignRoot, targetPath)
-					relDst, _ := filepath.Rel(svc.campaignRoot, targetPath)
+					// Safe: targetPath is always under campaignRoot (docs routing validates boundary).
+					relDst, relErr := filepath.Rel(svc.campaignRoot, targetPath)
+					if relErr != nil {
+						fmt.Printf("Warning: could not resolve relative path for %s: %v\n", targetPath, relErr)
+						relDst = item.Name
+					}
 					summary.RecordMove(destinationKey, relDst)
 					if err := logDecision(ctx, svc, item, MoveDecision(destinationKey), stats); err != nil {
 						fmt.Printf("Warning: failed to log decision: %v\n", err)
