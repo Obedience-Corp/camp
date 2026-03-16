@@ -1,0 +1,34 @@
+paths:
+  projects: "projects/"
+  worktrees: "projects/worktrees/"
+  ai_docs: "ai_docs/"
+  docs: "docs/"
+  festivals: "festivals/"
+  workflow: "workflow/"
+  intents: "workflow/intents/"
+  code_reviews: "workflow/code_reviews/"
+  pipelines: "workflow/pipelines/"
+  design: "workflow/design/"
+  dungeon: "dungeon/"
+
+shortcuts:
+  api:
+    path: "projects/api-service"
+    description: "Jump to the API service"
+
+  web:
+    path: "projects/web-frontend"
+    description: "Jump to the web frontend"
+
+  build:
+    command: "just build"
+    description: "Build the current project set"
+
+  test:
+    command: "just test"
+    description: "Run the test suite"
+
+  deploy:
+    command: "just deploy staging"
+    workdir: "projects/api-service"
+    description: "Deploy the API service from its project directory"

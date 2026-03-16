@@ -20,6 +20,10 @@ Examples:
   camp registry sync              Update path for current campaign
   camp registry check             Check for issues
 
+```
+camp registry [flags]
+```
+
 ### Options
 
 ```

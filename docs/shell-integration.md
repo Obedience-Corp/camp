@@ -34,13 +34,15 @@ cgo
 # Jump to a category
 cgo p         # projects/
 cgo f         # festivals/
-cgo c         # corpus/
+cgo i         # workflow/intents/
 cgo d         # docs/
 cgo ai        # ai_docs/
 cgo w         # workflow/
-cgo wt        # worktrees/
-cgo cr        # code_reviews/
-cgo pi        # pipelines/
+cgo wt        # projects/worktrees/
+cgo cr        # workflow/code_reviews/
+cgo pi        # workflow/pipelines/
+cgo de        # workflow/design/
+cgo ex        # workflow/explore/
 
 # Fuzzy search within category
 cgo p api     # projects/api-* (fuzzy match)
@@ -52,14 +54,16 @@ cgo f fest    # festivals/*fest* (fuzzy match)
 | Shortcut | Directory      | Description             |
 |----------|----------------|-------------------------|
 | p        | projects/      | Project directories     |
-| c        | corpus/        | Reference materials     |
 | f        | festivals/     | Festival planning       |
+| i        | workflow/intents/ | Intents              |
 | d        | docs/          | Documentation           |
-| a        | ai_docs/       | AI documentation        |
+| ai       | ai_docs/       | AI documentation        |
 | w        | workflow/      | Workflow resources      |
-| wt       | worktrees/     | Git worktrees           |
-| cr       | code_reviews/  | Code review materials   |
-| pi       | pipelines/     | CI/CD pipelines         |
+| wt       | projects/worktrees/ | Git worktrees     |
+| cr       | workflow/code_reviews/ | Code review materials |
+| pi       | workflow/pipelines/ | CI/CD pipelines     |
+| de       | workflow/design/ | Design documents       |
+| ex       | workflow/explore/ | Exploratory notes     |
 
 ### Running Commands
 

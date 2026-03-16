@@ -19,7 +19,7 @@ import (
 var ShortcutsCmd = &cobra.Command{
 	Use:   "shortcuts",
 	Short: "List all available shortcuts",
-	Long: `List all navigation and command shortcuts from .campaign/campaign.yaml.
+	Long: `List all navigation and command shortcuts from .campaign/settings/jumps.yaml.
 
 Navigation shortcuts (path-based):
   These shortcuts jump to directories within the campaign.
@@ -30,7 +30,7 @@ Command shortcuts (command-based):
   Usage: camp run <shortcut> [args...]
 
 Default shortcuts are added when you run 'camp init'.
-You can customize shortcuts by editing .campaign/campaign.yaml.`,
+You can customize shortcuts by editing .campaign/settings/jumps.yaml.`,
 	Example: `  camp shortcuts              # List all shortcuts
   camp go api                 # Use navigation shortcut
   camp run build              # Use command shortcut`,

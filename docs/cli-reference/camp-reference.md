@@ -899,424 +899,6 @@ camp dungeon move <item> [status] [flags]
 ```
 ---
 
-## camp flow
-
-Manage status workflows for organizing work
-
-### Synopsis
-
-Manage status workflows for organizing work.
-
-A workflow defines status directories that items can move between,
-with optional transition rules and history tracking. The workflow is
-configured via a .workflow.yaml file.
-
-GETTING STARTED:
-  camp flow init              Initialize a new workflow
-  camp flow sync              Create missing directories from schema
-  camp flow status            Show workflow statistics
-
-MANAGING ITEMS:
-  camp flow list              List registered flows
-  camp flow items             List items in a status directory
-  camp flow move <item> <to>  Move an item to a new status
-
-RUNNING FLOWS:
-  camp flow run <name>        Execute a registered flow
-  camp flow                   Interactive flow picker
-
-OTHER COMMANDS:
-  camp flow show              Display workflow structure
-  camp flow history           View transition history
-  camp flow migrate           Upgrade legacy dungeon structure
-
-DEFAULT STRUCTURE:
-  active/                Work in progress
-  ready/                 Prepared for action
-  dungeon/
-    completed/           Successfully finished
-    archived/            Preserved but inactive
-    someday/             Maybe later
-
-Customize by editing .workflow.yaml and running 'camp flow sync'.
-
-```
-camp flow [flags]
-```
-
-### Options
-
-```
-  -h, --help   help for flow
-```
-
-### Options inherited from parent commands
-
-```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
-      --no-color        disable colored output
-      --verbose         enable verbose output
-```
----
-
-## camp flow add
-
-Add workflow tracking to current directory
-
-### Synopsis
-
-Add workflow tracking to the current directory.
-
-Creates a .workflow.yaml file, dungeon/ directory structure, and root OBEY.md.
-Uses workflow schema v2 (dungeon-centric model) where:
-  - Root directory (.) = active work
-  - dungeon/           = all other statuses
-
-If dungeon/ already exists, only creates .workflow.yaml.
-If both exist, displays a notice.
-
-Use --force to overwrite an existing workflow configuration.
-
-Provide name/description via flags, JSON, or interactive TUI:
-  --name/-n and --description/-d   Set via flags
-  --json/-j '{"name":"...","description":"..."}'  Set via JSON
-  --json -   Read JSON from stdin (for piping)
-
-Note: Flows cannot be nested inside other flows. If you're inside a flow,
-navigate to a directory outside of it before running this command.
-
-Examples:
-  camp flow add                                      Interactive TUI
-  camp flow add --name "API" --description "API dev" Via flags
-  camp flow add --json '{"name":"API","description":"API development"}'
-  echo '{"name":"X","description":"Y"}' | camp flow add --json -
-  camp flow add --force                              Overwrite existing
-
-```
-camp flow add [flags]
-```
-
-### Options
-
-```
-  -d, --description string   workflow description/purpose
-  -f, --force                overwrite existing workflow
-  -h, --help                 help for add
-  -j, --json string          JSON input (use "-" for stdin)
-  -n, --name string          workflow name
-```
-
-### Options inherited from parent commands
-
-```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
-      --no-color        disable colored output
-      --verbose         enable verbose output
-```
----
-
-## camp flow items
-
-List items in a status directory
-
-### Synopsis
-
-List items in a status directory.
-
-If no status is specified, lists items in the default status (usually 'active').
-Use --all to list items in all status directories.
-
-Examples:
-  camp flow items              List items in default status
-  camp flow items active       List items in active/
-  camp flow items dungeon/completed  List items in dungeon/completed/
-  camp flow items --all        List items in all statuses
-
-```
-camp flow items [status] [flags]
-```
-
-### Options
-
-```
-  -a, --all    list all statuses
-  -h, --help   help for items
-      --json   output as JSON
-```
-
-### Options inherited from parent commands
-
-```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
-      --no-color        disable colored output
-      --verbose         enable verbose output
-```
----
-
-## camp flow list
-
-List registered flows from the registry
-
-### Synopsis
-
-List all flows registered in .campaign/flows/registry.yaml.
-
-Shows flow name, description, and tags in table format.
-
-Examples:
-  camp flow list
-
-```
-camp flow list [flags]
-```
-
-### Options
-
-```
-  -h, --help   help for list
-```
-
-### Options inherited from parent commands
-
-```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
-      --no-color        disable colored output
-      --verbose         enable verbose output
-```
----
-
-## camp flow migrate
-
-Migrate workflow to latest schema version
-
-### Synopsis
-
-Migrate a workflow to the latest schema version.
-
-Supports two migration paths:
-  - Legacy dungeon → v1 workflow (creates .workflow.yaml)
-  - v1 → v2 (dungeon-centric model)
-
-For v1→v2 migration:
-  - active/ items move to root directory
-  - ready/ items move to dungeon/ready/
-  - Empty active/ and ready/ directories are removed
-  - Schema is updated to version 2
-
-Use --dry-run to preview changes without applying them.
-Use --force to skip confirmation prompts.
-
-Examples:
-  camp flow migrate            Migrate with confirmation
-  camp flow migrate --dry-run  Preview migration
-  camp flow migrate --force    Migrate without confirmation
-
-```
-camp flow migrate [flags]
-```
-
-### Options
-
-```
-  -n, --dry-run   preview migration without making changes
-  -f, --force     skip confirmation
-  -h, --help      help for migrate
-```
-
-### Options inherited from parent commands
-
-```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
-      --no-color        disable colored output
-      --verbose         enable verbose output
-```
----
-
-## camp flow move
-
-Move an item to a new status
-
-### Synopsis
-
-Move an item from its current status to a new status.
-
-The item is moved from wherever it currently exists to the specified status.
-Transitions are validated against the workflow schema unless --force is used.
-
-Auto-commit behavior is controlled by .workflow.yaml auto_commit settings.
-Use --commit to force a commit or --no-commit to skip it.
-
-Examples:
-  camp flow move project-1 ready             Move to ready/
-  camp flow move old-project dungeon/completed   Move to dungeon/completed/
-  camp flow move project-1 ready --reason "Ready for review"
-  camp flow move project-1 active --force    Force move (skip validation)
-  camp flow move project-1 ready --commit    Force auto-commit
-
-```
-camp flow move <item> <status> [flags]
-```
-
-### Options
-
-```
-      --commit          force auto-commit after move
-  -f, --force           force move (skip transition validation)
-  -h, --help            help for move
-      --no-commit       skip auto-commit even if enabled in config
-  -r, --reason string   reason for the move
-```
-
-### Options inherited from parent commands
-
-```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
-      --no-color        disable colored output
-      --verbose         enable verbose output
-```
----
-
-## camp flow run
-
-Execute a registered flow by name
-
-### Synopsis
-
-Execute a registered flow from .campaign/flows/registry.yaml.
-
-Extra arguments after -- are appended to the flow's command.
-
-Examples:
-  camp flow run build
-  camp flow run test -- --verbose
-  camp flow run deploy -- production
-
-```
-camp flow run <name> [-- extra-args...] [flags]
-```
-
-### Options
-
-```
-  -h, --help   help for run
-```
-
-### Options inherited from parent commands
-
-```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
-      --no-color        disable colored output
-      --verbose         enable verbose output
-```
----
-
-## camp flow show
-
-Show workflow structure
-
-### Synopsis
-
-Display the workflow structure and configuration.
-
-Shows the directories defined in the workflow, their descriptions,
-and transition rules.
-
-Use --schema to display the raw .workflow.yaml file.
-
-Examples:
-  camp flow show             Show workflow structure
-  camp flow show --schema    Show raw schema file
-
-```
-camp flow show [flags]
-```
-
-### Options
-
-```
-  -h, --help     help for show
-  -s, --schema   show raw schema file
-  -t, --tree     display as tree
-```
-
-### Options inherited from parent commands
-
-```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
-      --no-color        disable colored output
-      --verbose         enable verbose output
-```
----
-
-## camp flow status
-
-Show workflow statistics
-
-### Synopsis
-
-Show workflow statistics including item counts per status.
-
-Displays the workflow name, location, and counts for each status directory.
-
-Examples:
-  camp flow status            Show workflow statistics
-
-```
-camp flow status [flags]
-```
-
-### Options
-
-```
-  -h, --help   help for status
-```
-
-### Options inherited from parent commands
-
-```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
-      --no-color        disable colored output
-      --verbose         enable verbose output
-```
----
-
-## camp flow sync
-
-Sync directories with schema
-
-### Synopsis
-
-Synchronize directories with the workflow schema.
-
-Creates any directories defined in .workflow.yaml that don't exist yet.
-Does not remove directories that aren't in the schema.
-
-Use --dry-run to see what would be created without making changes.
-
-Examples:
-  camp flow sync              Create missing directories
-  camp flow sync --dry-run    Preview changes without creating
-
-```
-camp flow sync [flags]
-```
-
-### Options
-
-```
-  -n, --dry-run   preview changes without creating directories
-  -h, --help      help for sync
-```
-
-### Options inherited from parent commands
-
-```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
-      --no-color        disable colored output
-      --verbose         enable verbose output
-```
----
-
 ## camp gather
 
 Import external data into the intent system
@@ -1492,6 +1074,7 @@ Initialize a new campaign directory structure.
 
 Creates the standard campaign directories:
   .campaign/              - Campaign configuration and metadata
+  .campaign/quests/       - Quest execution contexts and active quest marker
   projects/               - Project repositories (submodules or worktrees)
   projects/worktrees/     - Git worktrees for parallel development
   festivals/              - Festival methodology workspace (via fest init)
@@ -2166,9 +1749,11 @@ Examples:
   camp leverage --json                       Output as JSON
   camp leverage --people 2                   Override team size
   camp leverage --verbose                    Show diagnostic details
+  camp leverage .                            Score current directory only
+  camp leverage --dir /path/to/repo          Score a specific directory
 
 ```
-camp leverage [flags]
+camp leverage [directory] [flags]
 ```
 
 ### Options
@@ -2176,6 +1761,7 @@ camp leverage [flags]
 ```
       --author string    filter by author email (git substring match — 'alice@co' matches 'alice@co.com')
       --by-author        show per-author leverage breakdown
+      --dir string       score a specific directory (skips campaign project resolution)
   -h, --help             help for leverage
       --json             output as JSON
       --no-legend        hide the leverage formula legend
@@ -2826,7 +2412,7 @@ Examples:
   camp project prune camp                # Prune by name
   camp project prune -p camp             # Prune by flag
   camp project prune --dry-run           # Preview what would be deleted
-  camp project prune --remote            # Also prune stale remote tracking refs
+	camp project prune --remote            # Also prune stale remote tracking refs
   camp project prune --remote-delete     # Also delete merged branches on origin
 
 ```
@@ -2886,6 +2472,268 @@ camp project prune all [flags]
       --config string   config file (default: ~/.obey/campaign/config.yaml)
       --no-color        disable colored output
       --verbose         enable verbose output
+```
+---
+
+## camp project remote
+
+Manage remotes for a project
+
+### Synopsis
+
+Manage git remotes for a campaign project.
+
+Auto-detects the current project from your working directory, or use --project
+to specify explicitly.
+
+Commands:
+  list      List remotes (default)
+  set-url   Update a remote URL atomically across all locations
+  add       Add a new remote
+  remove    Remove a remote
+  rename    Rename a remote
+
+Examples:
+  # From within a project directory
+  cd projects/my-api
+  camp project remote                          # List remotes
+  camp project remote set-url git@github.com:org/new-repo.git
+  camp project remote add upstream git@github.com:org/upstream.git
+  camp project remote remove upstream
+  camp project remote rename upstream fork
+
+  # With explicit project
+  camp project remote list --project my-api
+
+```
+camp project remote [flags]
+```
+
+### Options
+
+```
+  -h, --help             help for remote
+  -p, --project string   Project name (auto-detected from cwd if not specified)
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
+## camp project remote add
+
+Add a new remote to the project
+
+### Synopsis
+
+Add a new git remote to the project repository.
+
+This does NOT modify .gitmodules — use set-url to change the canonical
+origin for a submodule. Use this command to add secondary remotes such
+as an upstream fork or a mirror.
+
+After adding, a git fetch is performed to verify connectivity and
+report how many refs are available.
+
+Examples:
+  camp project remote add upstream git@github.com:org/upstream.git
+  camp project remote add mirror https://gitlab.com/org/repo.git
+
+```
+camp project remote add <name> <url> [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for add
+```
+
+### Options inherited from parent commands
+
+```
+      --config string    config file (default: ~/.obey/campaign/config.yaml)
+      --no-color         disable colored output
+  -p, --project string   Project name (auto-detected from cwd if not specified)
+      --verbose          enable verbose output
+```
+---
+
+## camp project remote list
+
+List remotes for the project
+
+### Synopsis
+
+List all git remotes configured for the current project.
+
+For submodule projects, also shows whether the origin URL matches
+the canonical URL declared in .gitmodules.
+
+Examples:
+  camp project remote list
+  camp project remote list --project my-api
+
+```
+camp project remote list [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for list
+```
+
+### Options inherited from parent commands
+
+```
+      --config string    config file (default: ~/.obey/campaign/config.yaml)
+      --no-color         disable colored output
+  -p, --project string   Project name (auto-detected from cwd if not specified)
+      --verbose          enable verbose output
+```
+---
+
+## camp project remote remove
+
+Remove a remote from the project
+
+### Synopsis
+
+Remove a git remote from the project repository.
+
+Removing the "origin" remote is blocked by default because it is the
+canonical remote for submodule tracking. Use --force to override.
+
+When --force is used to remove origin from a submodule project, the
+.gitmodules entry is also cleaned up to keep the campaign consistent.
+
+Note: if you want to change the canonical URL instead of removing it,
+use "camp project remote set-url".
+
+Examples:
+  camp project remote remove upstream
+  camp project remote remove origin --force   # also cleans .gitmodules
+
+```
+camp project remote remove <name> [flags]
+```
+
+### Options
+
+```
+  -f, --force   Allow removing the origin remote (dangerous)
+  -h, --help    help for remove
+```
+
+### Options inherited from parent commands
+
+```
+      --config string    config file (default: ~/.obey/campaign/config.yaml)
+      --no-color         disable colored output
+  -p, --project string   Project name (auto-detected from cwd if not specified)
+      --verbose          enable verbose output
+```
+---
+
+## camp project remote rename
+
+Rename a remote in the project
+
+### Synopsis
+
+Rename a git remote in the project repository.
+
+Renaming away from "origin" is blocked by default for submodule projects
+because submodule tracking depends on the "origin" remote name. A future
+"git submodule sync" would recreate origin from .gitmodules, undoing the
+rename and leaving the project in a confusing state.
+
+Use --force to override this guard. If you need to change the URL instead,
+use "camp project remote set-url".
+
+Renaming TO "origin" is allowed and will update .gitmodules to use the
+new remote's URL as the canonical submodule URL.
+
+Examples:
+  camp project remote rename upstream fork
+  camp project remote rename origin old-origin --force
+
+```
+camp project remote rename <old> <new> [flags]
+```
+
+### Options
+
+```
+  -f, --force   Allow renaming away from origin (submodule tracking may break)
+  -h, --help    help for rename
+```
+
+### Options inherited from parent commands
+
+```
+      --config string    config file (default: ~/.obey/campaign/config.yaml)
+      --no-color         disable colored output
+  -p, --project string   Project name (auto-detected from cwd if not specified)
+      --verbose          enable verbose output
+```
+---
+
+## camp project remote set-url
+
+Update a remote URL for the project
+
+### Synopsis
+
+Update a remote URL across all tracked locations with automatic rollback.
+
+For submodule projects, updates three locations in order:
+  1. .gitmodules  (canonical, tracked in git)
+  2. local git submodule config (.git/config of the campaign root)
+  3. remote config inside the project repo
+
+If any step fails, previous steps are automatically rolled back to keep
+all locations consistent. If rollback also fails, recovery instructions
+are printed so you can fix it manually.
+
+For non-submodule projects, only the remote config is updated.
+
+Flags:
+  --name      Remote name to update (default: origin)
+  --no-verify Skip connectivity check after updating
+  --no-stage  Skip auto-staging .gitmodules
+
+Examples:
+  camp project remote set-url git@github.com:org/new-name.git
+  camp project remote set-url https://github.com/org/repo.git --name upstream
+  camp project remote set-url git@github.com:org/repo.git --no-verify
+
+```
+camp project remote set-url <url> [flags]
+```
+
+### Options
+
+```
+  -h, --help          help for set-url
+  -n, --name string   Remote name to update (default "origin")
+      --no-stage      Skip auto-staging .gitmodules
+      --no-verify     Skip connectivity check after updating
+```
+
+### Options inherited from parent commands
+
+```
+      --config string    config file (default: ~/.obey/campaign/config.yaml)
+      --no-color         disable colored output
+  -p, --project string   Project name (auto-detected from cwd if not specified)
+      --verbose          enable verbose output
 ```
 ---
 
@@ -3446,6 +3294,10 @@ Examples:
   camp registry sync              Update path for current campaign
   camp registry check             Check for issues
 
+```
+camp registry [flags]
+```
+
 ### Options
 
 ```
@@ -3602,13 +3454,14 @@ camp run [project | @shortcut] [command | recipe] [args...] [flags]
 
 ```
   # Project just dispatch (first arg matches a project name):
-  camp run fest              # Show just recipes for fest project
-  camp run fest build        # Run 'just build' in projects/fest/
+  camp run camp              # Show just recipes for camp project
   camp run camp test all     # Run 'just test all' in projects/camp/
+  camp run festival build    # Run 'just build' in projects/festival/
 
   # Raw command from campaign root (first arg is not a project):
-  camp run ls -la            # List campaign root contents
   camp run just --list       # Show just recipes from root
+  camp run git status        # Run git status from campaign root
+  camp run ls -la            # List campaign root contents
 
   # Shortcut-based execution:
   camp run @p ls             # List projects/ directory
@@ -3719,7 +3572,7 @@ List all available shortcuts
 
 ### Synopsis
 
-List all navigation and command shortcuts from .campaign/campaign.yaml.
+List all navigation and command shortcuts from .campaign/settings/jumps.yaml.
 
 Navigation shortcuts (path-based):
   These shortcuts jump to directories within the campaign.
@@ -3730,7 +3583,7 @@ Command shortcuts (command-based):
   Usage: camp run <shortcut> [args...]
 
 Default shortcuts are added when you run 'camp init'.
-You can customize shortcuts by editing .campaign/campaign.yaml.
+You can customize shortcuts by editing .campaign/settings/jumps.yaml.
 
 ```
 camp shortcuts [flags]
@@ -4096,9 +3949,10 @@ Displays a table with each submodule's name, branch, clean/dirty state,
 and push status. Results are cached for quick subsequent lookups.
 
 Examples:
-  camp status all           # Show all submodule statuses
-  camp status all --json    # Output as JSON
-  camp status all --no-cache  # Skip cache, refresh all
+  camp status all               # Show all submodule statuses
+  camp status all --remote-url  # Show remote URLs instead of names
+  camp status all --json        # Output as JSON
+  camp status all --no-cache    # Skip cache, refresh all
 
 ```
 camp status all [flags]
@@ -4111,6 +3965,7 @@ camp status all [flags]
       --json         Output as JSON
       --no-cache     Skip cache and refresh
       --no-recurse   Only list top-level submodules
+      --remote-url   Show remote URLs instead of remote names
       --view         Open interactive TUI viewer
 ```
 
