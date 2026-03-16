@@ -33,7 +33,9 @@ func TestLoadRegistry_FromFile(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
 	configDir := filepath.Join(dir, OrgName, AppName)
-	os.MkdirAll(configDir, 0755)
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatalf("failed to create config dir: %v", err)
+	}
 
 	// JSON format: campaigns keyed by ID with name field
 	registryContent := `{
@@ -52,7 +54,9 @@ func TestLoadRegistry_FromFile(t *testing.T) {
   }
 }`
 	registryPath := filepath.Join(configDir, "registry.json")
-	os.WriteFile(registryPath, []byte(registryContent), 0644)
+	if err := os.WriteFile(registryPath, []byte(registryContent), 0644); err != nil {
+		t.Fatalf("failed to write registry file: %v", err)
+	}
 
 	ctx := context.Background()
 	reg, err := LoadRegistry(ctx)

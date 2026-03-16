@@ -22,6 +22,14 @@ func TestDefaultConcepts_ExploreIncludedDungeonExcluded(t *testing.T) {
 		t.Fatal("default concepts should not include dungeon concept")
 	}
 
+	intents, ok := byName["intents"]
+	if !ok {
+		t.Fatal("default concepts should include intents concept")
+	}
+	if intents.Path != ".campaign/intents/" {
+		t.Fatalf("intents path = %q, want %q", intents.Path, ".campaign/intents/")
+	}
+
 	workflow, ok := byName["workflow"]
 	if !ok {
 		t.Fatal("default concepts should include workflow concept")
@@ -39,6 +47,10 @@ func TestCampaignConfigConcepts_FallbackExcludesDungeonIncludesExplore(t *testin
 	hasDungeon := false
 	for _, c := range concepts {
 		switch c.Name {
+		case "intents":
+			if c.Path != ".campaign/intents/" {
+				t.Fatalf("fallback intents path = %q, want %q", c.Path, ".campaign/intents/")
+			}
 		case "explore":
 			hasExplore = true
 			if c.Path != "workflow/explore/" {
@@ -59,6 +71,17 @@ func TestCampaignConfigConcepts_FallbackExcludesDungeonIncludesExplore(t *testin
 
 func TestDefaultNavigationShortcuts_DungeonIsNavigationOnly(t *testing.T) {
 	shortcuts := DefaultNavigationShortcuts()
+
+	intent, ok := shortcuts["i"]
+	if !ok {
+		t.Fatal("default navigation shortcuts should include i")
+	}
+	if intent.Path != ".campaign/intents/" {
+		t.Fatalf("i path = %q, want %q", intent.Path, ".campaign/intents/")
+	}
+	if intent.Concept != "intent" {
+		t.Fatalf("i concept = %q, want %q", intent.Concept, "intent")
+	}
 
 	ex, ok := shortcuts["ex"]
 	if !ok {

@@ -135,7 +135,7 @@ type CampaignPaths struct {
 	Festivals string `yaml:"festivals,omitempty"`
 	// Workflow is the path to the workflow directory.
 	Workflow string `yaml:"workflow,omitempty"`
-	// Intents is the path to intents directory (under workflow/).
+	// Intents is the canonical path to the intents directory (under .campaign/).
 	Intents string `yaml:"intents,omitempty"`
 	// CodeReviews is the path to code reviews directory (under workflow/).
 	CodeReviews string `yaml:"code_reviews,omitempty"`

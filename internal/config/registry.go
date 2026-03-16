@@ -91,7 +91,7 @@ func SaveRegistry(ctx context.Context, reg *Registry) error {
 	}
 
 	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp) // Clean up temp file on rename failure
+		_ = os.Remove(tmp) // Clean up temp file on rename failure
 		return camperrors.Wrap(err, "failed to save registry")
 	}
 

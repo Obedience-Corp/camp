@@ -193,8 +193,8 @@ func TestDefaultCampaignPaths(t *testing.T) {
 	if paths.Workflow != "workflow/" {
 		t.Errorf("Workflow = %q, want %q", paths.Workflow, "workflow/")
 	}
-	if paths.Intents != "workflow/intents/" {
-		t.Errorf("Intents = %q, want %q", paths.Intents, "workflow/intents/")
+	if paths.Intents != ".campaign/intents/" {
+		t.Errorf("Intents = %q, want %q", paths.Intents, ".campaign/intents/")
 	}
 	if paths.CodeReviews != "workflow/code_reviews/" {
 		t.Errorf("CodeReviews = %q, want %q", paths.CodeReviews, "workflow/code_reviews/")

@@ -61,14 +61,18 @@ func TestLoadGlobalConfig_FromFile(t *testing.T) {
 
 	// Create config file
 	configDir := filepath.Join(dir, OrgName, AppName)
-	os.MkdirAll(configDir, 0755)
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatalf("failed to create config dir: %v", err)
+	}
 
 	configContent := `{
   "editor": "nvim",
   "no_color": true
 }`
 	configPath := filepath.Join(configDir, "config.json")
-	os.WriteFile(configPath, []byte(configContent), 0644)
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write config file: %v", err)
+	}
 
 	ctx := context.Background()
 	cfg, err := LoadGlobalConfig(ctx)
@@ -89,10 +93,14 @@ func TestLoadGlobalConfig_InvalidJSON(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
 	configDir := filepath.Join(dir, OrgName, AppName)
-	os.MkdirAll(configDir, 0755)
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatalf("failed to create config dir: %v", err)
+	}
 
 	configPath := filepath.Join(configDir, "config.json")
-	os.WriteFile(configPath, []byte("{invalid json"), 0644)
+	if err := os.WriteFile(configPath, []byte("{invalid json"), 0644); err != nil {
+		t.Fatalf("failed to write config file: %v", err)
+	}
 
 	ctx := context.Background()
 	_, err := LoadGlobalConfig(ctx)

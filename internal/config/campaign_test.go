@@ -62,12 +62,16 @@ func TestLoadCampaignConfig_DefaultsApplied(t *testing.T) {
 	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
 
 	campaignDir := filepath.Join(tmpDir, CampaignDir)
-	os.MkdirAll(campaignDir, 0755)
+	if err := os.MkdirAll(campaignDir, 0755); err != nil {
+		t.Fatalf("failed to create campaign dir: %v", err)
+	}
 
 	// Minimal config - just name, no type
 	configContent := `name: minimal`
 	configPath := filepath.Join(campaignDir, CampaignConfigFile)
-	os.WriteFile(configPath, []byte(configContent), 0644)
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write campaign config: %v", err)
+	}
 
 	ctx := context.Background()
 	cfg, err := LoadCampaignConfig(ctx, tmpDir)
@@ -203,11 +207,15 @@ func TestLoadCampaignConfig_NotFound(t *testing.T) {
 func TestLoadCampaignConfig_InvalidYAML(t *testing.T) {
 	tmpDir := t.TempDir()
 	campaignDir := filepath.Join(tmpDir, CampaignDir)
-	os.MkdirAll(campaignDir, 0755)
+	if err := os.MkdirAll(campaignDir, 0755); err != nil {
+		t.Fatalf("failed to create campaign dir: %v", err)
+	}
 
 	// Invalid YAML
 	configPath := filepath.Join(campaignDir, CampaignConfigFile)
-	os.WriteFile(configPath, []byte("name: [invalid yaml"), 0644)
+	if err := os.WriteFile(configPath, []byte("name: [invalid yaml"), 0644); err != nil {
+		t.Fatalf("failed to write campaign config: %v", err)
+	}
 
 	ctx := context.Background()
 	_, err := LoadCampaignConfig(ctx, tmpDir)
@@ -219,12 +227,16 @@ func TestLoadCampaignConfig_InvalidYAML(t *testing.T) {
 func TestLoadCampaignConfig_MissingName(t *testing.T) {
 	tmpDir := t.TempDir()
 	campaignDir := filepath.Join(tmpDir, CampaignDir)
-	os.MkdirAll(campaignDir, 0755)
+	if err := os.MkdirAll(campaignDir, 0755); err != nil {
+		t.Fatalf("failed to create campaign dir: %v", err)
+	}
 
 	// Missing required name field
 	configContent := `type: product`
 	configPath := filepath.Join(campaignDir, CampaignConfigFile)
-	os.WriteFile(configPath, []byte(configContent), 0644)
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write campaign config: %v", err)
+	}
 
 	ctx := context.Background()
 	_, err := LoadCampaignConfig(ctx, tmpDir)
@@ -236,14 +248,18 @@ func TestLoadCampaignConfig_MissingName(t *testing.T) {
 func TestLoadCampaignConfig_InvalidType(t *testing.T) {
 	tmpDir := t.TempDir()
 	campaignDir := filepath.Join(tmpDir, CampaignDir)
-	os.MkdirAll(campaignDir, 0755)
+	if err := os.MkdirAll(campaignDir, 0755); err != nil {
+		t.Fatalf("failed to create campaign dir: %v", err)
+	}
 
 	configContent := `
 name: test
-type: invalid-type
+	type: invalid-type
 `
 	configPath := filepath.Join(campaignDir, CampaignConfigFile)
-	os.WriteFile(configPath, []byte(configContent), 0644)
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write campaign config: %v", err)
+	}
 
 	ctx := context.Background()
 	_, err := LoadCampaignConfig(ctx, tmpDir)
@@ -337,8 +353,12 @@ func TestFindCampaignRoot(t *testing.T) {
 	campaignDir := filepath.Join(campaignRoot, CampaignDir)
 	nestedDir := filepath.Join(campaignRoot, "projects", "subproject")
 
-	os.MkdirAll(campaignDir, 0755)
-	os.MkdirAll(nestedDir, 0755)
+	if err := os.MkdirAll(campaignDir, 0755); err != nil {
+		t.Fatalf("failed to create campaign dir: %v", err)
+	}
+	if err := os.MkdirAll(nestedDir, 0755); err != nil {
+		t.Fatalf("failed to create nested dir: %v", err)
+	}
 
 	ctx := context.Background()
 
