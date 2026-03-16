@@ -33,6 +33,13 @@ const (
 	DefaultFileName = "default.yaml"
 )
 
+// Link associates a campaign artifact with a quest.
+type Link struct {
+	Path    string    `yaml:"path" json:"path"`
+	Type    string    `yaml:"type" json:"type"`
+	AddedAt time.Time `yaml:"added_at" json:"added_at"`
+}
+
 // Quest represents one execution context inside a campaign.
 type Quest struct {
 	ID          string    `yaml:"id" json:"id"`
@@ -43,6 +50,7 @@ type Quest struct {
 	CreatedAt   time.Time `yaml:"created_at" json:"created_at"`
 	UpdatedAt   time.Time `yaml:"updated_at" json:"updated_at"`
 	Tags        []string  `yaml:"tags,omitempty" json:"tags,omitempty"`
+	Links       []Link    `yaml:"links,omitempty" json:"links,omitempty"`
 
 	Slug string `yaml:"-" json:"slug"`
 	Path string `yaml:"-" json:"path"`
@@ -56,6 +64,10 @@ func (q *Quest) Clone() *Quest {
 	clone := *q
 	if len(q.Tags) > 0 {
 		clone.Tags = append([]string{}, q.Tags...)
+	}
+	if len(q.Links) > 0 {
+		clone.Links = make([]Link, len(q.Links))
+		copy(clone.Links, q.Links)
 	}
 	return &clone
 }

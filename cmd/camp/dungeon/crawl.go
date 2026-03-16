@@ -245,8 +245,9 @@ func buildCrawlCommitMessage(campaignRoot, parentPath string, triage, inner *int
 			} else {
 				fmt.Fprintf(&b, "Moved to %s/%s:\n", prefix, status)
 			}
-			for _, name := range items {
-				fmt.Fprintf(&b, "  - %s/%s\n", relDir, name)
+			for _, relPath := range items {
+				itemName := filepath.Base(relPath)
+				fmt.Fprintf(&b, "  - %s/%s\n", relDir, itemName)
 			}
 			b.WriteString("\n")
 		}
@@ -287,58 +288,25 @@ func (s *crawlPathSet) sorted() []string {
 	return s.paths
 }
 
-func crawlMoveDestinationBase(relDungeon, status string) (string, bool) {
-	if status == "docs" || strings.HasPrefix(status, "docs"+string(filepath.Separator)) {
-		cleanStatus, ok := cleanCrawlCommitPath(status)
-		if !ok {
-			return "", false
-		}
-		if cleanStatus != "docs" && !strings.HasPrefix(cleanStatus, "docs"+string(filepath.Separator)) {
-			return "", false
-		}
-		return cleanStatus, true
-	}
-
-	cleanStatus, ok := cleanCrawlCommitPath(status)
-	if !ok {
-		return "", false
-	}
-
-	cleanDungeon, ok := cleanCrawlCommitPath(relDungeon)
-	if !ok {
-		return "", false
-	}
-	return filepath.Join(cleanDungeon, cleanStatus), true
-}
-
 // populateMovedPaths appends the destination paths for all moved items in the
-// given summaries into ps. This is the single source of truth for the
-// summary → status → name iteration used by both crawlMovedItemPaths and
-// crawlCommitPaths.
-func populateMovedPaths(ps *crawlPathSet, relDungeon string, summaries ...*intdungeon.CrawlSummary) {
+// given summaries into ps. MovedItems values are campaign-root-relative
+// destination paths stored at move time, so no path reconstruction is needed.
+func populateMovedPaths(ps *crawlPathSet, summaries ...*intdungeon.CrawlSummary) {
 	for _, summary := range summaries {
 		if summary == nil || !summary.HasMoves() {
 			continue
 		}
-		for status, names := range summary.MovedItems {
-			base, ok := crawlMoveDestinationBase(relDungeon, status)
-			if !ok {
-				continue
-			}
-			for _, name := range names {
-				cleanName, ok := cleanCrawlCommitName(name)
-				if !ok {
-					continue
-				}
-				ps.appendSafe(filepath.Join(base, cleanName))
+		for _, paths := range summary.MovedItems {
+			for _, relPath := range paths {
+				ps.appendSafe(relPath)
 			}
 		}
 	}
 }
 
-func crawlMovedItemPaths(relDungeon string, summaries ...*intdungeon.CrawlSummary) []string {
+func crawlMovedItemPaths(summaries ...*intdungeon.CrawlSummary) []string {
 	ps := newCrawlPathSet()
-	populateMovedPaths(ps, relDungeon, summaries...)
+	populateMovedPaths(ps, summaries...)
 	return ps.sorted()
 }
 
@@ -346,7 +314,7 @@ func crawlMovedItemPaths(relDungeon string, summaries ...*intdungeon.CrawlSummar
 // destination paths for moved items, plus the crawl log.
 func crawlCommitPaths(relDungeon string, summaries ...*intdungeon.CrawlSummary) []string {
 	ps := newCrawlPathSet()
-	populateMovedPaths(ps, relDungeon, summaries...)
+	populateMovedPaths(ps, summaries...)
 
 	// Always include the crawl log.
 	ps.appendSafe(filepath.Join(relDungeon, "crawl.jsonl"))
@@ -408,9 +376,10 @@ func crawlSourceDeletionPaths(
 				return
 			}
 		}
-		for _, names := range summary.MovedItems {
-			for _, name := range names {
-				cleanName, ok := cleanCrawlCommitName(name)
+		for _, paths := range summary.MovedItems {
+			for _, relPath := range paths {
+				itemName := filepath.Base(relPath)
+				cleanName, ok := cleanCrawlCommitName(itemName)
 				if !ok {
 					continue
 				}
