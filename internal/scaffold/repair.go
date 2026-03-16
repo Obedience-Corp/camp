@@ -120,8 +120,8 @@ func ComputeRepairPlan(ctx context.Context, dir string, opts InitOptions) (*Repa
 	// This runs after scaffold detection so we know which dungeon dirs will be created.
 	computeMigrationChanges(absDir, plan)
 
-	// Phase 7: Detect legacy workflow/intents state that repair will migrate
-	// into the canonical .campaign/intents root during Init.
+	// Phase 7: Detect legacy workflow/intents state or scaffold residue that
+	// repair will normalize into the canonical .campaign/intents root during Init.
 	if err := computeIntentMigrationChanges(absDir, plan); err != nil {
 		return nil, err
 	}
@@ -496,6 +496,23 @@ func computeIntentMigrationChanges(absDir string, plan *RepairPlan) error {
 			Category:    "intent_migration",
 			Key:         filepath.ToSlash(relSource),
 			Description: "→ " + filepath.ToSlash(relDest),
+		})
+	}
+
+	cleanupPaths, err := intentSvc.PlanLegacyIntentRootCleanup()
+	if err != nil {
+		return err
+	}
+	for _, cleanupPath := range cleanupPaths {
+		relPath, err := filepath.Rel(absDir, cleanupPath)
+		if err != nil {
+			return camperrors.Wrapf(err, "computing relative path for %s", cleanupPath)
+		}
+		plan.Changes = append(plan.Changes, RepairChange{
+			Type:        RepairModify,
+			Category:    "intent_cleanup",
+			Key:         filepath.ToSlash(relPath),
+			Description: "remove legacy workflow/intents scaffold after canonical normalization",
 		})
 	}
 

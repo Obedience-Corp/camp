@@ -1,18 +1,23 @@
 # Intents
 
-Quick-capture notebook for future work.
+System-owned intent state managed through `camp intent`.
 
 ## Purpose
 
-`workflow/intents/` is the fastest place to record what you might want to do
-next: rough ideas, bugs, chores, half-formed specs, or fully written proposals.
+`.campaign/intents/` is camp's canonical storage root for captured intents and
+their status buckets.
 
-This directory is pre-scaffolded because camp expects a stable inbox for work
-before it becomes an exploration, a design, or a festival.
+Use `camp intent` and `camp gather` to create, move, review, and promote items
+here. Treat this directory as camp-managed state, not as a second human-owned
+`workflow/` notebook.
+
+This directory is pre-scaffolded because camp needs a stable intent inbox even
+though the normal interface is the CLI.
 
 ## Relationship To Other Planning Workflows
 
-- `workflow/intents/` captures ideas quickly with minimal commitment.
+- `camp intent` captures ideas quickly with minimal commitment and stores them
+  under `.campaign/intents/`.
 - `workflow/explore/` investigates uncertain topics and prototypes.
 - `workflow/design/` develops concrete designs for work you plan to implement.
 - `festivals/` handles structured hierarchical plans.
@@ -21,12 +26,14 @@ Any of these can become inputs to a future festival ingest or planning phase.
 
 ## What Goes Here
 
-- Raw ideas captured quickly before they're lost
-- Feature requests and enhancement proposals
-- Bug reports and issues
-- Research prompts and open questions
-- Chores and maintenance tasks
-- Full specs that you want to capture before deciding how to execute them
+- Intent files created through `camp intent add`
+- Gathered or imported work items managed by camp commands
+- Status transitions handled by `camp intent move` and `camp intent promote`
+- Supporting audit/state files maintained by camp alongside the intent buckets
+
+Avoid treating this directory as a long-lived freeform notebook. If you need
+general planning material, use `workflow/explore/`, `workflow/design/`, or
+`docs/`.
 
 ## Lifecycle
 
@@ -67,8 +74,8 @@ camp intent promote [id]
 
 ## Structure
 
-```
-intents/
+```text
+.campaign/intents/
 ├── inbox/             # Captured, not reviewed
 ├── ready/             # Reviewed and ready for promotion
 ├── active/            # Work in progress
@@ -102,4 +109,5 @@ created_at: 2026-01-19
 
 > **Capture should never require commitment.**
 > If an idea requires structure before it can be saved, it will be lost.
-> The system allows ideas to exist in an unrefined state and earn their complexity later.
+> The system allows ideas to exist in an unrefined state and earn their
+> complexity later.

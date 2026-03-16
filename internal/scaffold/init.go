@@ -274,8 +274,8 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 			return nil, camperrors.Wrap(err, "failed to create jumps config")
 		}
 
-		// Reuse the intent service setup path during init/repair so the
-		// canonical intent migration stays centralized in one helper.
+		// Reuse the intent service setup path during init/repair so canonical
+		// intent migration and legacy scaffold cleanup stay centralized.
 		intentSvc := intent.NewIntentService(absDir, filepath.Join(absDir, jumps.Paths.Intents))
 		if err := intentSvc.EnsureDirectories(ctx); err != nil {
 			return nil, camperrors.Wrap(err, "failed to initialize intent directories")

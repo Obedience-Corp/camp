@@ -1139,6 +1139,12 @@ func TestIntentService_EnsureDirectories_MigratesLegacyRootAndAudit(t *testing.T
 	svc := NewIntentService(campaignRoot, filepath.Join(campaignRoot, ".campaign", "intents"))
 	ctx := context.Background()
 
+	if err := os.MkdirAll(legacyRoot, 0755); err != nil {
+		t.Fatalf("failed to create legacy intent root: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyRoot, "OBEY.md"), []byte("# legacy intent docs\n"), 0644); err != nil {
+		t.Fatalf("failed to write legacy OBEY.md: %v", err)
+	}
 	inboxIntent := mustWriteIntentFile(t, filepath.Join(legacyRoot, "inbox", "20260316-legacy-inbox.md"), StatusInbox, "legacy-inbox")
 	doneIntent := mustWriteIntentFile(t, filepath.Join(legacyRoot, "done", "20260316-legacy-done.md"), StatusDone, "legacy-done")
 	if err := os.WriteFile(filepath.Join(legacyRoot, ".intents.jsonl"), []byte("{\"event\":\"create\"}\n"), 0644); err != nil {
@@ -1177,6 +1183,44 @@ func TestIntentService_EnsureDirectories_MigratesLegacyRootAndAudit(t *testing.T
 	}
 	if _, err := os.Stat(filepath.Join(legacyRoot, ".intents.jsonl")); !os.IsNotExist(err) {
 		t.Fatalf("legacy audit log should be removed, err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(legacyRoot, "OBEY.md")); !os.IsNotExist(err) {
+		t.Fatalf("legacy intent scaffold docs should be removed, err = %v", err)
+	}
+	if _, err := os.Stat(legacyRoot); !os.IsNotExist(err) {
+		t.Fatalf("legacy intent root should be removed when empty, err = %v", err)
+	}
+}
+
+func TestIntentService_EnsureDirectories_RemovesLegacyScaffoldOnlyRoot(t *testing.T) {
+	campaignRoot := t.TempDir()
+	legacyRoot := filepath.Join(campaignRoot, "workflow", "intents")
+	svc := NewIntentService(campaignRoot, filepath.Join(campaignRoot, ".campaign", "intents"))
+	ctx := context.Background()
+
+	for _, relPath := range []string{
+		"OBEY.md",
+		filepath.Join("inbox", ".gitkeep"),
+		filepath.Join("ready", ".gitkeep"),
+		filepath.Join("active", ".gitkeep"),
+		filepath.Join("dungeon", ".gitkeep"),
+		filepath.Join("dungeon", ".crawl.yaml"),
+	} {
+		path := filepath.Join(legacyRoot, relPath)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatalf("failed to create %s: %v", path, err)
+		}
+		if err := os.WriteFile(path, []byte("legacy scaffold\n"), 0644); err != nil {
+			t.Fatalf("failed to write %s: %v", path, err)
+		}
+	}
+
+	if err := svc.EnsureDirectories(ctx); err != nil {
+		t.Fatalf("EnsureDirectories() error = %v", err)
+	}
+
+	if _, err := os.Stat(legacyRoot); !os.IsNotExist(err) {
+		t.Fatalf("legacy intent root should be removed when it only contains scaffold residue, err = %v", err)
 	}
 }
 
@@ -1265,6 +1309,47 @@ func TestIntentService_PlanLegacyIntentRootMigration(t *testing.T) {
 	}
 	if len(want) != 0 {
 		t.Fatalf("missing planned moves: %#v", want)
+	}
+}
+
+func TestIntentService_PlanLegacyIntentRootCleanup(t *testing.T) {
+	campaignRoot := t.TempDir()
+	legacyRoot := filepath.Join(campaignRoot, "workflow", "intents")
+	svc := NewIntentService(campaignRoot, filepath.Join(campaignRoot, ".campaign", "intents"))
+
+	for _, relPath := range []string{
+		"OBEY.md",
+		filepath.Join("inbox", ".gitkeep"),
+		filepath.Join("dungeon", ".crawl.yaml"),
+	} {
+		path := filepath.Join(legacyRoot, relPath)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatalf("failed to create %s: %v", path, err)
+		}
+		if err := os.WriteFile(path, []byte("legacy scaffold\n"), 0644); err != nil {
+			t.Fatalf("failed to write %s: %v", path, err)
+		}
+	}
+
+	cleanup, err := svc.PlanLegacyIntentRootCleanup()
+	if err != nil {
+		t.Fatalf("PlanLegacyIntentRootCleanup() error = %v", err)
+	}
+
+	want := map[string]bool{
+		filepath.Join(legacyRoot, "OBEY.md"):                false,
+		filepath.Join(legacyRoot, "inbox", ".gitkeep"):      false,
+		filepath.Join(legacyRoot, "dungeon", ".crawl.yaml"): false,
+	}
+	for _, path := range cleanup {
+		if _, ok := want[path]; ok {
+			want[path] = true
+		}
+	}
+	for path, found := range want {
+		if !found {
+			t.Fatalf("expected cleanup plan to include %s, got %#v", path, cleanup)
+		}
 	}
 }
 

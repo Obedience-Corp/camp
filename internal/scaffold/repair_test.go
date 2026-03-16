@@ -789,6 +789,45 @@ func TestComputeIntentMigrationChanges_DetectsLegacyIntentRoot(t *testing.T) {
 	}
 }
 
+func TestComputeIntentMigrationChanges_DetectsLegacyIntentScaffoldCleanup(t *testing.T) {
+	dir := t.TempDir()
+	legacyRoot := filepath.Join(dir, "workflow", "intents")
+
+	for _, relPath := range []string{
+		"OBEY.md",
+		filepath.Join("inbox", ".gitkeep"),
+		filepath.Join("dungeon", ".crawl.yaml"),
+	} {
+		path := filepath.Join(legacyRoot, relPath)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("legacy scaffold\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	plan := &RepairPlan{}
+	if err := computeIntentMigrationChanges(dir, plan); err != nil {
+		t.Fatalf("computeIntentMigrationChanges() error: %v", err)
+	}
+
+	if !plan.HasChanges() {
+		t.Fatal("expected scaffold-only legacy intent root to count as a repair change")
+	}
+
+	foundCleanup := false
+	for _, c := range plan.Changes {
+		if c.Category == "intent_cleanup" && c.Key == "workflow/intents/OBEY.md" {
+			foundCleanup = true
+			break
+		}
+	}
+	if !foundCleanup {
+		t.Fatal("expected repair plan to include legacy intent scaffold cleanup")
+	}
+}
+
 func TestComputeIntentMigrationChanges_Conflict(t *testing.T) {
 	dir := t.TempDir()
 	legacyRoot := filepath.Join(dir, "workflow", "intents", "inbox")

@@ -31,6 +31,15 @@ type IntentService struct {
 	intentsDir   string
 }
 
+var legacyIntentScaffoldFiles = []string{
+	"OBEY.md",
+	filepath.Join(string(StatusInbox), ".gitkeep"),
+	filepath.Join(string(StatusReady), ".gitkeep"),
+	filepath.Join(string(StatusActive), ".gitkeep"),
+	filepath.Join("dungeon", ".gitkeep"),
+	filepath.Join("dungeon", ".crawl.yaml"),
+}
+
 // PlannedPathMove describes a filesystem move that migration would perform.
 type PlannedPathMove struct {
 	Source string
@@ -705,14 +714,14 @@ func (s *IntentService) ensureCanonicalIntentRoot(ctx context.Context) error {
 	}
 
 	if !legacyHasState {
-		return nil
+		return cleanupLegacyIntentScaffold(legacyRoot)
 	}
 
 	if err := s.migrateLegacyIntentRoot(legacyRoot); err != nil {
 		return camperrors.Wrapf(err, "migrating legacy intent root %s", legacyRoot)
 	}
 
-	return nil
+	return cleanupLegacyIntentScaffold(legacyRoot)
 }
 
 func (s *IntentService) legacyIntentsDir() string {
@@ -771,6 +780,17 @@ func (s *IntentService) PlanLegacyIntentRootMigration() ([]PlannedPathMove, erro
 	}
 
 	return moves, nil
+}
+
+// PlanLegacyIntentRootCleanup returns scaffold-generated legacy intent paths
+// that can be removed after normalization to the canonical root.
+func (s *IntentService) PlanLegacyIntentRootCleanup() ([]string, error) {
+	legacyRoot := s.legacyIntentsDir()
+	if filepath.Clean(legacyRoot) == filepath.Clean(s.intentsDir) {
+		return nil, nil
+	}
+
+	return collectLegacyIntentScaffoldFiles(legacyRoot)
 }
 
 func hasIntentState(root string) (bool, error) {
@@ -969,6 +989,72 @@ func collectIntentTreeMoves(srcDir, dstDir string, moves *[]PlannedPathMove) err
 		*moves = append(*moves, PlannedPathMove{Source: srcPath, Dest: dstPath})
 	}
 
+	return nil
+}
+
+func collectLegacyIntentScaffoldFiles(legacyRoot string) ([]string, error) {
+	var cleanup []string
+	for _, relPath := range legacyIntentScaffoldFiles {
+		absPath := filepath.Join(legacyRoot, relPath)
+		if _, err := os.Stat(absPath); err == nil {
+			cleanup = append(cleanup, absPath)
+			continue
+		} else if !os.IsNotExist(err) {
+			return nil, camperrors.Wrapf(err, "stat %s", absPath)
+		}
+	}
+	return cleanup, nil
+}
+
+func cleanupLegacyIntentScaffold(legacyRoot string) error {
+	cleanupFiles, err := collectLegacyIntentScaffoldFiles(legacyRoot)
+	if err != nil {
+		return err
+	}
+
+	for _, path := range cleanupFiles {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return camperrors.Wrapf(err, "removing %s", path)
+		}
+	}
+
+	for _, relDir := range []string{
+		filepath.Join("dungeon", string(StatusDone)),
+		filepath.Join("dungeon", string(StatusKilled)),
+		filepath.Join("dungeon", string(StatusArchived)),
+		filepath.Join("dungeon", string(StatusSomeday)),
+		"dungeon",
+		string(StatusInbox),
+		string(StatusReady),
+		string(StatusActive),
+		"",
+	} {
+		dir := legacyRoot
+		if relDir != "" {
+			dir = filepath.Join(legacyRoot, relDir)
+		}
+		if err := removeDirIfEmpty(dir); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func removeDirIfEmpty(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return camperrors.Wrapf(err, "reading directory %s", dir)
+	}
+	if len(entries) != 0 {
+		return nil
+	}
+	if err := os.Remove(dir); err != nil && !os.IsNotExist(err) {
+		return camperrors.Wrapf(err, "removing %s", dir)
+	}
 	return nil
 }
 
