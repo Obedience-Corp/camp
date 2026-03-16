@@ -123,7 +123,6 @@ func List(ctx context.Context, campaignRoot string, includeDungeon bool) ([]*Que
 	}
 
 	var quests []*Quest
-
 	rootEntries, err := os.ReadDir(QuestsDir(campaignRoot))
 	if err != nil {
 		return nil, camperrors.Wrap(err, "read quests dir")

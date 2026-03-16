@@ -111,7 +111,9 @@ func ensureDefaultQuest(ctx context.Context, campaignRoot string, result *Scaffo
 			return nil
 		}
 		// Both exist — remove the legacy file, keep the directory version.
-		os.Remove(legacyPath)
+		// Best-effort: permission errors here are non-fatal since the
+		// directory version is already authoritative.
+		_ = os.Remove(legacyPath)
 	}
 
 	if _, err := os.Stat(path); err == nil {
