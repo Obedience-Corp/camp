@@ -84,6 +84,9 @@ func (m Model) renderFooter() string {
 	if m.searchMode {
 		return "type search query, Enter to confirm, Esc to cancel"
 	}
+	if m.statusMsg != "" {
+		return m.statusMsg
+	}
 	count := fmt.Sprintf("%d items", len(m.filteredItems))
 	keys := "j/k move  / search  1-4 filter  0 all  tab preview  r refresh  ? help  q quit"
 	if len(keys)+len(count)+2 > m.width {

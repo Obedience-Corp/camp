@@ -4,6 +4,7 @@ package tui
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -52,6 +53,9 @@ type Model struct {
 	showPreview    bool
 	previewOverlay bool // narrow mode: overlay preview on top of list
 	helpVisible    bool
+
+	// Transient status message shown in footer (e.g. "copied!", "clipboard unavailable")
+	statusMsg string
 
 	// Vim navigation
 	lastKeyWasG bool
@@ -150,6 +154,9 @@ type editorFinishedMsg struct {
 	err error
 }
 
+// clearStatusMsg clears the transient status message after a timeout.
+type clearStatusMsg struct{}
+
 func (m Model) refreshCmd() tea.Cmd {
 	ctx := m.ctx
 	root := m.campaignRoot
@@ -158,6 +165,14 @@ func (m Model) refreshCmd() tea.Cmd {
 		items, err := workitem.Discover(ctx, root, resolver)
 		return refreshMsg{items: items, err: err}
 	}
+}
+
+// setStatus sets a transient footer message and returns a command to clear it after 2 seconds.
+func (m *Model) setStatus(msg string) tea.Cmd {
+	m.statusMsg = msg
+	return tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+		return clearStatusMsg{}
+	})
 }
 
 func truncate(s string, maxLen int) string {

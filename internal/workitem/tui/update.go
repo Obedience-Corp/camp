@@ -29,6 +29,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case editorFinishedMsg:
 		return m, nil
 
+	case clearStatusMsg:
+		m.statusMsg = ""
+		return m, nil
+
 	case tea.KeyMsg:
 		if m.searchMode {
 			return m.handleSearchKey(msg)
@@ -111,9 +115,9 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "e":
 		return m.openEditor()
 	case "o":
-		m.openSystemHandler()
+		return m.openSystemHandler()
 	case "y":
-		m.copyPath()
+		return m.copyPath()
 
 	// Quit
 	case "q", "ctrl+c":
@@ -178,10 +182,10 @@ func (m Model) openEditor() (tea.Model, tea.Cmd) {
 	})
 }
 
-func (m Model) openSystemHandler() {
+func (m Model) openSystemHandler() (tea.Model, tea.Cmd) {
 	item := m.currentItem()
 	if item.AbsolutePath == "" {
-		return
+		return m, nil
 	}
 	var c *exec.Cmd
 	switch runtime.GOOS {
@@ -190,13 +194,18 @@ func (m Model) openSystemHandler() {
 	default:
 		c = exec.Command("xdg-open", item.AbsolutePath)
 	}
-	_ = c.Start()
+	if err := c.Start(); err != nil {
+		cmd := m.setStatus("open failed: " + err.Error())
+		return m, cmd
+	}
+	cmd := m.setStatus("opened")
+	return m, cmd
 }
 
-func (m Model) copyPath() {
+func (m Model) copyPath() (tea.Model, tea.Cmd) {
 	item := m.currentItem()
 	if item.AbsolutePath == "" {
-		return
+		return m, nil
 	}
 	var c *exec.Cmd
 	switch runtime.GOOS {
@@ -206,5 +215,11 @@ func (m Model) copyPath() {
 		c = exec.Command("xclip", "-selection", "clipboard")
 	}
 	c.Stdin = strings.NewReader(item.AbsolutePath)
-	_ = c.Run()
+	if err := c.Run(); err != nil {
+		cmd := m.setStatus("copy failed: " + err.Error())
+		return m, cmd
+	}
+	cmd := m.setStatus("copied!")
+	return m, cmd
 }
+
