@@ -17,7 +17,7 @@ func TestCategories(t *testing.T) {
 		"p":      "projects/",
 		"pw":     "projects/worktrees/",
 		"f":      "festivals/",
-		"a":      "ai_docs/",
+		"ai":     "ai_docs/",
 		"d":      "docs/",
 		"du":     "dungeon/",
 		"w":      "workflow/",
@@ -60,7 +60,7 @@ func TestCategories_HasCorrectCategories(t *testing.T) {
 		{"p", nav.CategoryProjects},
 		{"pw", nav.CategoryWorktrees},
 		{"f", nav.CategoryFestivals},
-		{"a", nav.CategoryAIDocs},
+		{"ai", nav.CategoryAIDocs},
 		{"d", nav.CategoryDocs},
 		{"du", nav.CategoryDungeon},
 		{"w", nav.CategoryWorkflow},
@@ -110,7 +110,7 @@ func TestGenerateWithDescriptions_NoArgs(t *testing.T) {
 	}
 
 	// First candidates should be category shortcuts
-	shortcuts := map[string]bool{"p": true, "pw": true, "f": true, "a": true, "d": true, "du": true, "w": true, "cr": true, "pi": true, "de": true, "i": true}
+	shortcuts := map[string]bool{"p": true, "pw": true, "f": true, "ai": true, "d": true, "du": true, "w": true, "cr": true, "pi": true, "de": true, "i": true}
 	foundShortcuts := 0
 	for _, c := range candidates {
 		if shortcuts[c.Value] {
@@ -216,7 +216,7 @@ func TestCategoryByShortcut(t *testing.T) {
 		{"p", nav.CategoryProjects},
 		{"pw", nav.CategoryWorktrees},
 		{"f", nav.CategoryFestivals},
-		{"a", nav.CategoryAIDocs},
+		{"ai", nav.CategoryAIDocs},
 		{"d", nav.CategoryDocs},
 		{"du", nav.CategoryDungeon},
 		{"w", nav.CategoryWorkflow},
