@@ -44,7 +44,8 @@ type Model struct {
 	// Selection result (read by command layer after Run)
 	Selected *workitem.WorkItem
 
-	// Refresh context
+	// Refresh context — stored here because Bubble Tea's Update() receives
+	// tea.Msg, not context.Context. The ctx is only used by refreshCmd().
 	ctx          context.Context
 	campaignRoot string
 	resolver     *paths.Resolver

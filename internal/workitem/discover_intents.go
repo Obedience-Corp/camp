@@ -37,12 +37,12 @@ func discoverIntents(ctx context.Context, resolver *paths.Resolver) ([]WorkItem,
 			filePath := filepath.Join(stageDir, entry.Name())
 			content, err := os.ReadFile(filePath)
 			if err != nil {
-				continue
+				continue // skip unreadable files
 			}
 
 			i, err := intent.ParseIntentFromFile(filePath, content)
 			if err != nil {
-				continue
+				continue // skip malformed intent files — dev tool, not worth erroring
 			}
 
 			relPath, _ := filepath.Rel(resolver.Root(), filePath)

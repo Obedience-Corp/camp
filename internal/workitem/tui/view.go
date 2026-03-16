@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -200,7 +201,7 @@ func renderPreview(item workitem.WorkItem, width, height int) string {
 	b.WriteString(fmt.Sprintf("created:    %s\n", item.CreatedAt.Format("2006-01-02 15:04")))
 	b.WriteString(fmt.Sprintf("path:       %s\n", item.RelativePath))
 	if item.PrimaryDoc != "" {
-		b.WriteString(fmt.Sprintf("primary:    %s\n", item.PrimaryDoc))
+		b.WriteString(fmt.Sprintf("primary:    %s\n", filepath.Base(item.PrimaryDoc)))
 	}
 
 	if item.Summary != "" {

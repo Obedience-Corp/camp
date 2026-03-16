@@ -68,11 +68,12 @@ func discoverFestivals(ctx context.Context, campaignRoot string, resolver *paths
 			}
 
 			primaryDoc := findFestivalPrimaryDoc(dirPath)
+			scanEarliest, scanLatest := ScanDirTimestamps(ctx, dirPath)
 			created := meta.CreatedAt
 			if created.IsZero() {
-				created, _ = ScanDirTimestamps(ctx, dirPath)
+				created = scanEarliest
 			}
-			_, updated := ScanDirTimestamps(ctx, dirPath)
+			updated := scanLatest
 
 			item := WorkItem{
 				Key:            "festival:" + relPath,
