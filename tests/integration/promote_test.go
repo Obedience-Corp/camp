@@ -33,7 +33,8 @@ This is a test intent for promotion testing.
 `, id, title, status)
 }
 
-// setupPromoteCampaign creates a campaign with festivals + intents directories.
+// setupPromoteCampaign creates a campaign with festivals and a legacy intent tree.
+// Promotion should migrate legacy intent content into the canonical intent root.
 func setupPromoteCampaign(t *testing.T, tc *TestContainer, name string) string {
 	t.Helper()
 
@@ -48,7 +49,7 @@ func setupPromoteCampaign(t *testing.T, tc *TestContainer, name string) string {
 		path, path, path, path, path))
 	require.NoError(t, err)
 
-	// Ensure intent status directories exist.
+	// Seed a legacy intent tree so promote exercises migration compatibility.
 	_, _, err = tc.ExecCommand("sh", "-c", fmt.Sprintf(
 		"mkdir -p %s/workflow/intents/inbox %s/workflow/intents/active %s/workflow/intents/ready "+
 			"%s/workflow/intents/dungeon/done %s/workflow/intents/dungeon/killed "+
@@ -64,7 +65,7 @@ func setupPromoteCampaign(t *testing.T, tc *TestContainer, name string) string {
 	return path
 }
 
-// writeIntent creates an intent file in the given status directory.
+// writeIntent creates an intent file in the legacy status directory.
 func writeIntent(t *testing.T, tc *TestContainer, campaignPath, id, title, status string) {
 	t.Helper()
 	content := intentContent(id, title, status)
@@ -105,8 +106,8 @@ func TestIntentPromote_TargetFestival_NoExistingFestivals_CreatesFestivalAndActi
 	output, err := tc.RunCampInDir(path, "intent", "promote", intentID, "--target", "festival", "--no-commit")
 	require.NoError(t, err, "festival promote should succeed, output: %s", output)
 
-	activePath := fmt.Sprintf("%s/workflow/intents/active/%s.md", path, intentID)
-	readyPath := fmt.Sprintf("%s/workflow/intents/ready/%s.md", path, intentID)
+	activePath := fmt.Sprintf("%s/.campaign/intents/active/%s.md", path, intentID)
+	readyPath := fmt.Sprintf("%s/.campaign/intents/ready/%s.md", path, intentID)
 
 	activeExists, err := tc.CheckFileExists(activePath)
 	require.NoError(t, err)
@@ -148,8 +149,8 @@ func TestIntentPromote_TargetDesign_TransactionalFailure_StaysReady(t *testing.T
 	require.Error(t, err, "design promote should fail when workflow/design is blocked")
 	assert.Contains(t, strings.ToLower(output), "failed to create design doc")
 
-	readyPath := fmt.Sprintf("%s/workflow/intents/ready/%s.md", path, intentID)
-	activePath := fmt.Sprintf("%s/workflow/intents/active/%s.md", path, intentID)
+	readyPath := fmt.Sprintf("%s/.campaign/intents/ready/%s.md", path, intentID)
+	activePath := fmt.Sprintf("%s/.campaign/intents/active/%s.md", path, intentID)
 
 	readyExists, err := tc.CheckFileExists(readyPath)
 	require.NoError(t, err)
@@ -193,8 +194,8 @@ func TestIntentPromote_TargetFestivalThenDesign_BothArtifactsCreated(t *testing.
 	assert.True(t, designReadmeExists, "design README should be created")
 
 	// Verify both promoted intents are active with correct promoted_to values.
-	festivalActivePath := fmt.Sprintf("%s/workflow/intents/active/%s.md", path, festivalID)
-	designActivePath := fmt.Sprintf("%s/workflow/intents/active/%s.md", path, designID)
+	festivalActivePath := fmt.Sprintf("%s/.campaign/intents/active/%s.md", path, festivalID)
+	designActivePath := fmt.Sprintf("%s/.campaign/intents/active/%s.md", path, designID)
 
 	festivalActiveContent, err := tc.ReadFile(festivalActivePath)
 	require.NoError(t, err)

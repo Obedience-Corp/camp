@@ -107,6 +107,9 @@ func runIntentGather(cmd *cobra.Command, args []string) error {
 	// Create services
 	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
 	intentSvc := intent.NewIntentService(campaignRoot, resolver.Intents())
+	if err := intentSvc.EnsureDirectories(ctx); err != nil {
+		return camperrors.Wrap(err, "failed to ensure intent directories")
+	}
 	gatherSvc := gather.NewService(intentSvc, resolver.Intents())
 
 	// Build index for tag/hashtag/similar discovery

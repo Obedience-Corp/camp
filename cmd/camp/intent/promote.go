@@ -81,6 +81,9 @@ func runIntentPromote(cmd *cobra.Command, args []string) error {
 	// Create path resolver and service
 	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
 	svc := intent.NewIntentService(campaignRoot, resolver.Intents())
+	if err := svc.EnsureDirectories(ctx); err != nil {
+		return camperrors.Wrap(err, "failed to ensure intent directories")
+	}
 
 	// Find the intent
 	i, err := svc.Find(ctx, id)

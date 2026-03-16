@@ -64,6 +64,9 @@ func runIntentEdit(cmd *cobra.Command, args []string) error {
 	// Create path resolver and service
 	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
 	svc := intent.NewIntentService(campaignRoot, resolver.Intents())
+	if err := svc.EnsureDirectories(ctx); err != nil {
+		return camperrors.Wrap(err, "failed to ensure intent directories")
+	}
 
 	var selectedIntent *intent.Intent
 

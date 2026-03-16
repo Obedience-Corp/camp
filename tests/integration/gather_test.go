@@ -42,7 +42,7 @@ func TestIntentGather_ByIDs(t *testing.T) {
 	t.Logf("Intent list: %s", listOutput)
 
 	// Get intent IDs from inbox directory
-	lsOutput, err := execLS(tc, "/campaigns/gather-ids/workflow/intents/inbox")
+	lsOutput, err := execLS(tc, "/campaigns/gather-ids/.campaign/intents/inbox")
 	require.NoError(t, err)
 
 	// Parse out intent IDs (remove .md extension)
@@ -108,6 +108,8 @@ tags:
 
 Not related to auth.
 `
+	_, _, err = tc.ExecCommand("mkdir", "-p", "/campaigns/gather-tag/workflow/intents/inbox")
+	require.NoError(t, err)
 	err = tc.WriteFile("/campaigns/gather-tag/workflow/intents/inbox/20260129-auth1.md", intent1)
 	require.NoError(t, err)
 	err = tc.WriteFile("/campaigns/gather-tag/workflow/intents/inbox/20260129-auth2.md", intent2)
@@ -135,7 +137,7 @@ func TestIntentGather_DryRun(t *testing.T) {
 	require.NoError(t, err)
 
 	// Get intent IDs
-	lsOutput, err := execLS(tc, "/campaigns/gather-dry/workflow/intents/inbox")
+	lsOutput, err := execLS(tc, "/campaigns/gather-dry/.campaign/intents/inbox")
 	require.NoError(t, err)
 	files := strings.Split(strings.TrimSpace(lsOutput), "\n")
 	require.GreaterOrEqual(t, len(files), 2)
@@ -150,7 +152,7 @@ func TestIntentGather_DryRun(t *testing.T) {
 	assert.Contains(t, output, "Source intents", "output should list sources")
 
 	// Verify no actual changes (intents still in inbox)
-	lsAfter, err := execLS(tc, "/campaigns/gather-dry/workflow/intents/inbox")
+	lsAfter, err := execLS(tc, "/campaigns/gather-dry/.campaign/intents/inbox")
 	require.NoError(t, err)
 	assert.Equal(t, lsOutput, lsAfter, "inbox should be unchanged after dry run")
 }
@@ -169,7 +171,7 @@ func TestIntentGather_NoArchive(t *testing.T) {
 	require.NoError(t, err)
 
 	// Get intent IDs
-	lsOutput, err := execLS(tc, "/campaigns/gather-noarch/workflow/intents/inbox")
+	lsOutput, err := execLS(tc, "/campaigns/gather-noarch/.campaign/intents/inbox")
 	require.NoError(t, err)
 	files := strings.Split(strings.TrimSpace(lsOutput), "\n")
 	require.GreaterOrEqual(t, len(files), 2)
@@ -184,11 +186,11 @@ func TestIntentGather_NoArchive(t *testing.T) {
 	assert.NotContains(t, output, "Archived", "should not mention archiving")
 
 	// Verify source intents still exist in inbox
-	exists1, err := tc.CheckFileExists("/campaigns/gather-noarch/workflow/intents/inbox/" + id1 + ".md")
+	exists1, err := tc.CheckFileExists("/campaigns/gather-noarch/.campaign/intents/inbox/" + id1 + ".md")
 	require.NoError(t, err)
 	assert.True(t, exists1, "source intent 1 should still exist")
 
-	exists2, err := tc.CheckFileExists("/campaigns/gather-noarch/workflow/intents/inbox/" + id2 + ".md")
+	exists2, err := tc.CheckFileExists("/campaigns/gather-noarch/.campaign/intents/inbox/" + id2 + ".md")
 	require.NoError(t, err)
 	assert.True(t, exists2, "source intent 2 should still exist")
 }
@@ -205,7 +207,7 @@ func TestIntentGather_ErrorTooFewIntents(t *testing.T) {
 	require.NoError(t, err)
 
 	// Get intent ID
-	lsOutput, err := execLS(tc, "/campaigns/gather-err/workflow/intents/inbox")
+	lsOutput, err := execLS(tc, "/campaigns/gather-err/.campaign/intents/inbox")
 	require.NoError(t, err)
 	files := strings.Split(strings.TrimSpace(lsOutput), "\n")
 	require.Equal(t, 1, len(files))
@@ -232,7 +234,7 @@ func TestIntentGather_ErrorNoTitle(t *testing.T) {
 	require.NoError(t, err)
 
 	// Get intent IDs
-	lsOutput, err := execLS(tc, "/campaigns/gather-notitle/workflow/intents/inbox")
+	lsOutput, err := execLS(tc, "/campaigns/gather-notitle/.campaign/intents/inbox")
 	require.NoError(t, err)
 	files := strings.Split(strings.TrimSpace(lsOutput), "\n")
 
