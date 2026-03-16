@@ -16,6 +16,11 @@ func questCommandsRegistered() bool {
 	return err == nil && cmd != nil && cmd.Name() == "quest"
 }
 
+func workitemCommandRegistered() bool {
+	cmd, _, err := rootCmd.Find([]string{"workitem"})
+	return err == nil && cmd != nil && cmd.Name() == "workitem"
+}
+
 func TestManifestCommand_OutputsValidJSON(t *testing.T) {
 	buf := new(bytes.Buffer)
 	rootCmd.SetOut(buf)
@@ -105,6 +110,9 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		expectedCommands["quest show"] = false
 		expectedCommands["quest unlink"] = false
 	}
+	if workitemCommandRegistered() {
+		expectedCommands["workitem"] = false
+	}
 
 	for _, cmd := range manifest.Commands {
 		if _, ok := expectedCommands[cmd.Path]; ok {
@@ -124,6 +132,9 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 	}
 	if questCommandsRegistered() {
 		wantCount += 13
+	}
+	if workitemCommandRegistered() {
+		wantCount += 1
 	}
 	if len(manifest.Commands) != wantCount {
 		t.Errorf("expected exactly %d restricted commands, got %d", wantCount, len(manifest.Commands))
@@ -169,6 +180,9 @@ func TestManifestCommand_AllCommandsHaveAnnotations(t *testing.T) {
 		agentAllowed["quest resume"] = true
 		agentAllowed["quest show"] = true
 		agentAllowed["quest unlink"] = true
+	}
+	if workitemCommandRegistered() {
+		agentAllowed["workitem"] = true
 	}
 
 	for _, cmd := range manifest.Commands {
@@ -238,6 +252,9 @@ func TestManifestCommand_InteractiveFlags(t *testing.T) {
 		nonInteractiveCommands["quest resume"] = true
 		nonInteractiveCommands["quest show"] = true
 		nonInteractiveCommands["quest unlink"] = true
+	}
+	if workitemCommandRegistered() {
+		nonInteractiveCommands["workitem"] = true
 	}
 
 	cmdMap := make(map[string]CommandEntry)
