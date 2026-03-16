@@ -84,7 +84,7 @@ Navigate instantly with single-letter shortcuts:
 | `p`      | projects/              | Project subdirectories |
 | `f`      | festivals/             | Festival methodology   |
 | `w`      | workflow/              | Workflow directory     |
-| `a`      | ai_docs/               | AI documentation       |
+| `ai`     | ai_docs/               | AI documentation       |
 | `d`      | docs/                  | Human documentation    |
 | `i`      | workflow/intents/      | Intents                |
 | `wt`     | projects/worktrees/    | Git worktrees          |
@@ -92,6 +92,7 @@ Navigate instantly with single-letter shortcuts:
 | `cr`     | workflow/code_reviews/ | Code review materials  |
 | `pi`     | workflow/pipelines/    | CI/CD pipelines        |
 | `de`     | workflow/design/       | Design documents       |
+| `ex`     | workflow/explore/      | Exploratory notes      |
 
 ## Commands
 
@@ -337,7 +338,7 @@ The shell integration includes intelligent tab completion:
 
 ```bash
 # Navigation
-cgo <TAB>                              # Shows: p f w a d i wt du cr pi de
+cgo <TAB>                              # Shows: p f w ai d i wt du cr pi de ex
 cgo p <TAB>                            # Shows: api-service web-app cli-tool
 cgo p api<TAB>                         # Completes to: api-service api-gateway
 cgo wt api@<TAB>                       # Shows worktree branches
