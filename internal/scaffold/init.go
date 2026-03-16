@@ -14,6 +14,7 @@ import (
 	campcontract "github.com/Obedience-Corp/camp/internal/contract"
 	dungeonscaffold "github.com/Obedience-Corp/camp/internal/dungeon/scaffold"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/quest"
 	"github.com/Obedience-Corp/obey-shared/contract"
 	"github.com/google/uuid"
@@ -271,6 +272,13 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 	if !opts.DryRun {
 		if err := config.SaveJumpsConfig(ctx, absDir, &jumps); err != nil {
 			return nil, camperrors.Wrap(err, "failed to create jumps config")
+		}
+
+		// Reuse the intent service setup path during init/repair so the
+		// canonical intent migration stays centralized in one helper.
+		intentSvc := intent.NewIntentService(absDir, filepath.Join(absDir, jumps.Paths.Intents))
+		if err := intentSvc.EnsureDirectories(ctx); err != nil {
+			return nil, camperrors.Wrap(err, "failed to initialize intent directories")
 		}
 	}
 	result.FilesCreated = append(result.FilesCreated, config.JumpsConfigPath(absDir))

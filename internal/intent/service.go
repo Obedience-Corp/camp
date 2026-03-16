@@ -10,6 +10,7 @@ import (
 	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	intentaudit "github.com/Obedience-Corp/camp/internal/intent/audit"
 	"github.com/sahilm/fuzzy"
 )
 
@@ -17,10 +18,11 @@ import (
 // Sentinels marked with %w wrap the canonical sentinel from internal/errors
 // to enable cross-package errors.Is() matching.
 var (
-	ErrNotFound    = camperrors.Wrap(camperrors.ErrNotFound, "intent not found")
-	ErrCancelled   = camperrors.Wrap(camperrors.ErrCancelled, "intent creation cancelled")
-	ErrFileExists  = camperrors.Wrap(camperrors.ErrAlreadyExists, "intent file already exists")
-	ErrInvalidPath = camperrors.Wrap(camperrors.ErrInvalidInput, "invalid path")
+	ErrNotFound                = camperrors.Wrap(camperrors.ErrNotFound, "intent not found")
+	ErrCancelled               = camperrors.Wrap(camperrors.ErrCancelled, "intent creation cancelled")
+	ErrFileExists              = camperrors.Wrap(camperrors.ErrAlreadyExists, "intent file already exists")
+	ErrInvalidPath             = camperrors.Wrap(camperrors.ErrInvalidInput, "invalid path")
+	ErrIntentMigrationConflict = camperrors.Wrap(camperrors.ErrConflict, "intent migration conflict")
 )
 
 // IntentService provides operations for managing intent files.
@@ -125,14 +127,18 @@ func (s *IntentService) CreateWithEditor(ctx context.Context, opts CreateOptions
 		return nil, camperrors.Wrap(err, "creating temp file")
 	}
 	tmpPath := tmpfile.Name()
-	defer os.Remove(tmpPath) // Clean up temp file
+	defer func() {
+		_ = os.Remove(tmpPath) // Clean up temp file
+	}()
 
 	// Write template to temp file
 	if _, err := tmpfile.WriteString(content); err != nil {
-		tmpfile.Close()
+		_ = tmpfile.Close()
 		return nil, camperrors.Wrap(err, "writing temp file")
 	}
-	tmpfile.Close()
+	if err := tmpfile.Close(); err != nil {
+		return nil, camperrors.Wrap(err, "closing temp file")
+	}
 
 	// Open editor (blocking)
 	if editorFn != nil {
@@ -636,6 +642,10 @@ func (s *IntentService) EnsureDirectories(ctx context.Context) error {
 		return camperrors.Wrap(err, "context cancelled")
 	}
 
+	if err := s.ensureCanonicalIntentRoot(ctx); err != nil {
+		return camperrors.Wrap(err, "ensuring canonical intent root")
+	}
+
 	// Create all status directories
 	for _, status := range AllStatuses() {
 		dir := filepath.Join(s.intentsDir, string(status))
@@ -654,6 +664,241 @@ func (s *IntentService) EnsureDirectories(ctx context.Context) error {
 		if err := s.migrateLegacyDir(ctx, legacyDir, newStatus); err != nil {
 			return camperrors.Wrapf(err, "migrating %s", legacyDir)
 		}
+	}
+
+	return nil
+}
+
+func (s *IntentService) ensureCanonicalIntentRoot(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return camperrors.Wrap(err, "context cancelled")
+	}
+
+	legacyRoot := s.legacyIntentsDir()
+	if filepath.Clean(legacyRoot) == filepath.Clean(s.intentsDir) {
+		return nil
+	}
+
+	canonicalHasState, err := hasIntentState(s.intentsDir)
+	if err != nil {
+		return camperrors.Wrapf(err, "inspecting canonical intent root %s", s.intentsDir)
+	}
+
+	legacyHasState, err := hasIntentState(legacyRoot)
+	if err != nil {
+		return camperrors.Wrapf(err, "inspecting legacy intent root %s", legacyRoot)
+	}
+
+	if legacyHasState && canonicalHasState {
+		return camperrors.Wrapf(
+			ErrIntentMigrationConflict,
+			"both %s and %s contain intent state; resolve with repair before retrying",
+			legacyRoot,
+			s.intentsDir,
+		)
+	}
+
+	if !legacyHasState {
+		return nil
+	}
+
+	if err := s.migrateLegacyIntentRoot(legacyRoot); err != nil {
+		return camperrors.Wrapf(err, "migrating legacy intent root %s", legacyRoot)
+	}
+
+	return nil
+}
+
+func (s *IntentService) legacyIntentsDir() string {
+	return filepath.Join(s.campaignRoot, "workflow", "intents")
+}
+
+func hasIntentState(root string) (bool, error) {
+	if info, err := os.Stat(root); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, camperrors.Wrapf(err, "stat %s", root)
+	} else if !info.IsDir() {
+		return false, camperrors.Wrapf(ErrInvalidPath, "%s is not a directory", root)
+	}
+
+	hasAudit, err := hasNonEmptyFile(intentaudit.FilePath(root))
+	if err != nil {
+		return false, err
+	}
+	if hasAudit {
+		return true, nil
+	}
+
+	stateDirs := []string{
+		string(StatusInbox),
+		string(StatusReady),
+		string(StatusActive),
+		string(StatusDone),
+		string(StatusKilled),
+		string(StatusArchived),
+		string(StatusSomeday),
+		"done",
+		"killed",
+	}
+
+	for _, relDir := range stateDirs {
+		hasMarkdown, err := hasMarkdownFiles(filepath.Join(root, relDir))
+		if err != nil {
+			return false, err
+		}
+		if hasMarkdown {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+func hasNonEmptyFile(path string) (bool, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, camperrors.Wrapf(err, "stat %s", path)
+	}
+	if info.IsDir() {
+		return false, camperrors.Wrapf(ErrInvalidPath, "%s is not a file", path)
+	}
+	return info.Size() > 0, nil
+}
+
+func hasMarkdownFiles(dir string) (bool, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, camperrors.Wrapf(err, "reading directory %s", dir)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		if strings.HasSuffix(entry.Name(), ".md") {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+func (s *IntentService) migrateLegacyIntentRoot(legacyRoot string) error {
+	for _, relDir := range []string{
+		string(StatusInbox),
+		string(StatusReady),
+		string(StatusActive),
+		"dungeon",
+		"done",
+		"killed",
+	} {
+		if err := moveIntentTree(filepath.Join(legacyRoot, relDir), filepath.Join(s.intentsDir, relDir)); err != nil {
+			return err
+		}
+	}
+
+	if err := moveIntentAuditFile(legacyRoot, s.intentsDir); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func moveIntentAuditFile(legacyRoot, canonicalRoot string) error {
+	srcPath := intentaudit.FilePath(legacyRoot)
+	if _, err := os.Stat(srcPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return camperrors.Wrapf(err, "stat %s", srcPath)
+	}
+
+	dstPath := intentaudit.FilePath(canonicalRoot)
+	if info, err := os.Stat(dstPath); err == nil {
+		if info.Size() > 0 {
+			return camperrors.Wrapf(ErrIntentMigrationConflict, "audit log already exists at %s", dstPath)
+		}
+		if err := os.Remove(dstPath); err != nil {
+			return camperrors.Wrapf(err, "removing empty audit log %s", dstPath)
+		}
+	} else if !os.IsNotExist(err) {
+		return camperrors.Wrapf(err, "stat %s", dstPath)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
+		return camperrors.Wrapf(err, "creating directory %s", filepath.Dir(dstPath))
+	}
+
+	if err := os.Rename(srcPath, dstPath); err != nil {
+		return camperrors.Wrapf(err, "moving audit log %s", srcPath)
+	}
+
+	return nil
+}
+
+func moveIntentTree(srcDir, dstDir string) error {
+	if _, err := os.Stat(srcDir); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return camperrors.Wrapf(err, "stat %s", srcDir)
+	}
+
+	if _, err := os.Stat(dstDir); os.IsNotExist(err) {
+		if err := os.MkdirAll(filepath.Dir(dstDir), 0755); err != nil {
+			return camperrors.Wrapf(err, "creating directory %s", filepath.Dir(dstDir))
+		}
+		if err := os.Rename(srcDir, dstDir); err != nil {
+			return camperrors.Wrapf(err, "moving %s", srcDir)
+		}
+		return nil
+	} else if err != nil {
+		return camperrors.Wrapf(err, "stat %s", dstDir)
+	}
+
+	entries, err := os.ReadDir(srcDir)
+	if err != nil {
+		return camperrors.Wrapf(err, "reading directory %s", srcDir)
+	}
+
+	for _, entry := range entries {
+		srcPath := filepath.Join(srcDir, entry.Name())
+		dstPath := filepath.Join(dstDir, entry.Name())
+
+		if entry.IsDir() {
+			if err := moveIntentTree(srcPath, dstPath); err != nil {
+				return err
+			}
+			continue
+		}
+
+		if _, err := os.Stat(dstPath); err == nil {
+			if entry.Name() == ".gitkeep" {
+				if err := os.Remove(srcPath); err != nil {
+					return camperrors.Wrapf(err, "removing %s", srcPath)
+				}
+				continue
+			}
+			return camperrors.Wrapf(ErrIntentMigrationConflict, "destination already exists for %s", dstPath)
+		} else if !os.IsNotExist(err) {
+			return camperrors.Wrapf(err, "stat %s", dstPath)
+		}
+
+		if err := os.Rename(srcPath, dstPath); err != nil {
+			return camperrors.Wrapf(err, "moving %s", srcPath)
+		}
+	}
+
+	if remaining, err := os.ReadDir(srcDir); err == nil && len(remaining) == 0 {
+		_ = os.Remove(srcDir)
 	}
 
 	return nil

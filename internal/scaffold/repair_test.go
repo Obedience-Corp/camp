@@ -191,9 +191,9 @@ func TestComputeJumpsChanges_ExistingWithUserShortcuts(t *testing.T) {
 		t.Errorf("expected 2 preserved shortcuts, got %d: %v", preserveCount, preservedKeys)
 	}
 
-	// All defaults except "p" should be added (it already exists)
+	// All defaults except "p" and normalized "i" should be added.
 	defaults := config.DefaultNavigationShortcuts()
-	expectedAdds := len(defaults) - 1 // minus "p" which exists
+	expectedAdds := len(defaults) - 2 // minus "p" and normalized "i"
 	if addCount != expectedAdds {
 		t.Errorf("expected %d added shortcuts, got %d: %v", expectedAdds, addCount, addedKeys)
 	}
@@ -374,10 +374,11 @@ func TestComputeJumpsChanges_OnlyUserEntries(t *testing.T) {
 		t.Errorf("expected 1 preserved shortcut, got %d", preserveCount)
 	}
 
-	// All 12 defaults should be added
+	// All defaults except normalized "i" should be added.
 	defaults := config.DefaultNavigationShortcuts()
-	if addCount != len(defaults) {
-		t.Errorf("expected %d added shortcuts, got %d", len(defaults), addCount)
+	expectedAdds := len(defaults) - 1 // normalized "i" is already restored on load
+	if addCount != expectedAdds {
+		t.Errorf("expected %d added shortcuts, got %d", expectedAdds, addCount)
 	}
 
 	// "myapp" must survive in merged config

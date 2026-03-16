@@ -1,8 +1,8 @@
 // Package audit provides an append-only event log for intent lifecycle events.
 //
-// Events are written as JSONL to .intents.jsonl in the intents directory,
-// providing a complete audit trail of all status transitions, promotions,
-// and other intent operations.
+// Events are written as JSONL to .intents.jsonl in the canonical intents
+// directory, providing a complete audit trail of all status transitions,
+// promotions, and other intent operations.
 package audit
 
 import (
@@ -49,7 +49,7 @@ type Event struct {
 }
 
 // AppendEvent writes an audit event to the JSONL log file.
-// The intentsDir is the base intents directory (e.g. workflow/intents/).
+// The intentsDir is the base intents directory (e.g. .campaign/intents/).
 // If the timestamp is zero, it defaults to now.
 func AppendEvent(ctx context.Context, intentsDir string, e Event) error {
 	if err := ctx.Err(); err != nil {
@@ -72,7 +72,9 @@ func AppendEvent(ctx context.Context, intentsDir string, e Event) error {
 	if err != nil {
 		return camperrors.Wrap(err, "opening audit log")
 	}
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+	}()
 
 	_, err = f.Write(data)
 	if err != nil {

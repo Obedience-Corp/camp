@@ -1112,6 +1112,120 @@ func TestIntentService_getIntentPath(t *testing.T) {
 	}
 }
 
+func TestIntentService_EnsureDirectories_CreatesCanonicalLayout(t *testing.T) {
+	campaignRoot := t.TempDir()
+	svc := NewIntentService(campaignRoot, filepath.Join(campaignRoot, ".campaign", "intents"))
+	ctx := context.Background()
+
+	if err := svc.EnsureDirectories(ctx); err != nil {
+		t.Fatalf("EnsureDirectories() error = %v", err)
+	}
+
+	for _, status := range AllStatuses() {
+		dir := filepath.Join(svc.intentsDir, string(status))
+		info, err := os.Stat(dir)
+		if err != nil {
+			t.Fatalf("expected status directory %s to exist: %v", dir, err)
+		}
+		if !info.IsDir() {
+			t.Fatalf("expected %s to be a directory", dir)
+		}
+	}
+}
+
+func TestIntentService_EnsureDirectories_MigratesLegacyRootAndAudit(t *testing.T) {
+	campaignRoot := t.TempDir()
+	legacyRoot := filepath.Join(campaignRoot, "workflow", "intents")
+	svc := NewIntentService(campaignRoot, filepath.Join(campaignRoot, ".campaign", "intents"))
+	ctx := context.Background()
+
+	inboxIntent := mustWriteIntentFile(t, filepath.Join(legacyRoot, "inbox", "20260316-legacy-inbox.md"), StatusInbox, "legacy-inbox")
+	doneIntent := mustWriteIntentFile(t, filepath.Join(legacyRoot, "done", "20260316-legacy-done.md"), StatusDone, "legacy-done")
+	if err := os.WriteFile(filepath.Join(legacyRoot, ".intents.jsonl"), []byte("{\"event\":\"create\"}\n"), 0644); err != nil {
+		t.Fatalf("failed to write legacy audit log: %v", err)
+	}
+
+	if err := svc.EnsureDirectories(ctx); err != nil {
+		t.Fatalf("EnsureDirectories() error = %v", err)
+	}
+
+	inboxPath := filepath.Join(svc.intentsDir, string(StatusInbox), inboxIntent.ID+".md")
+	if _, err := os.Stat(inboxPath); err != nil {
+		t.Fatalf("expected migrated inbox intent at %s: %v", inboxPath, err)
+	}
+
+	donePath := filepath.Join(svc.intentsDir, string(StatusDone), doneIntent.ID+".md")
+	if _, err := os.Stat(donePath); err != nil {
+		t.Fatalf("expected migrated done intent at %s: %v", donePath, err)
+	}
+
+	migratedDone, err := svc.loadIntent(donePath)
+	if err != nil {
+		t.Fatalf("loadIntent() error = %v", err)
+	}
+	if migratedDone.Status != StatusDone {
+		t.Fatalf("migrated done status = %q, want %q", migratedDone.Status, StatusDone)
+	}
+
+	auditPath := filepath.Join(svc.intentsDir, ".intents.jsonl")
+	if _, err := os.Stat(auditPath); err != nil {
+		t.Fatalf("expected migrated audit log at %s: %v", auditPath, err)
+	}
+
+	if _, err := os.Stat(filepath.Join(legacyRoot, "inbox", inboxIntent.ID+".md")); !os.IsNotExist(err) {
+		t.Fatalf("legacy inbox intent should be removed, err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(legacyRoot, ".intents.jsonl")); !os.IsNotExist(err) {
+		t.Fatalf("legacy audit log should be removed, err = %v", err)
+	}
+}
+
+func TestIntentService_EnsureDirectories_RerunAfterPartialCanonicalSetup(t *testing.T) {
+	campaignRoot := t.TempDir()
+	legacyRoot := filepath.Join(campaignRoot, "workflow", "intents")
+	svc := NewIntentService(campaignRoot, filepath.Join(campaignRoot, ".campaign", "intents"))
+	ctx := context.Background()
+
+	if err := os.MkdirAll(filepath.Join(svc.intentsDir, "inbox"), 0755); err != nil {
+		t.Fatalf("failed to create canonical inbox dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(svc.intentsDir, "dungeon", "done"), 0755); err != nil {
+		t.Fatalf("failed to create canonical dungeon dir: %v", err)
+	}
+
+	legacyIntent := mustWriteIntentFile(t, filepath.Join(legacyRoot, "inbox", "20260316-legacy-rerun.md"), StatusInbox, "legacy-rerun")
+
+	if err := svc.EnsureDirectories(ctx); err != nil {
+		t.Fatalf("first EnsureDirectories() error = %v", err)
+	}
+	if err := svc.EnsureDirectories(ctx); err != nil {
+		t.Fatalf("second EnsureDirectories() error = %v", err)
+	}
+
+	migratedPath := filepath.Join(svc.intentsDir, string(StatusInbox), legacyIntent.ID+".md")
+	if _, err := os.Stat(migratedPath); err != nil {
+		t.Fatalf("expected migrated intent at %s: %v", migratedPath, err)
+	}
+}
+
+func TestIntentService_EnsureDirectories_ConflictWhenBothRootsContainIntentData(t *testing.T) {
+	campaignRoot := t.TempDir()
+	legacyRoot := filepath.Join(campaignRoot, "workflow", "intents")
+	svc := NewIntentService(campaignRoot, filepath.Join(campaignRoot, ".campaign", "intents"))
+	ctx := context.Background()
+
+	mustWriteIntentFile(t, filepath.Join(legacyRoot, "inbox", "20260316-legacy-conflict.md"), StatusInbox, "legacy-conflict")
+	mustWriteIntentFile(t, filepath.Join(svc.intentsDir, "inbox", "20260316-canonical-conflict.md"), StatusInbox, "canonical-conflict")
+
+	err := svc.EnsureDirectories(ctx)
+	if err == nil {
+		t.Fatal("EnsureDirectories() should fail when both legacy and canonical roots contain intent data")
+	}
+	if !errors.Is(err, ErrIntentMigrationConflict) {
+		t.Fatalf("EnsureDirectories() error = %v, want ErrIntentMigrationConflict", err)
+	}
+}
+
 func TestIntentService_List_EmptyDirectories(t *testing.T) {
 	tmpDir := t.TempDir()
 	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
@@ -1597,4 +1711,32 @@ func BenchmarkIntentService_Search(b *testing.B) {
 			b.Fatalf("Search() error = %v", err)
 		}
 	}
+}
+
+func mustWriteIntentFile(t *testing.T, path string, status Status, slug string) *Intent {
+	t.Helper()
+
+	intent := &Intent{
+		ID:        "20260316-" + slug,
+		Title:     "Intent " + slug,
+		Status:    status,
+		Type:      TypeFeature,
+		CreatedAt: time.Date(2026, 3, 16, 12, 0, 0, 0, time.UTC),
+		UpdatedAt: time.Date(2026, 3, 16, 12, 0, 0, 0, time.UTC),
+		Content:   "test intent\n",
+	}
+
+	data, err := SerializeIntent(intent)
+	if err != nil {
+		t.Fatalf("SerializeIntent() error = %v", err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatalf("failed to create parent dir for %s: %v", path, err)
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatalf("failed to write %s: %v", path, err)
+	}
+
+	return intent
 }
