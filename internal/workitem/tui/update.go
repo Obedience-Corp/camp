@@ -27,7 +27,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case editorFinishedMsg:
-		// Editor exited, nothing to do
 		return m, nil
 
 	case tea.KeyMsg:
@@ -46,14 +45,21 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if key == "g" {
 		if m.lastKeyWasG {
 			m.cursor = 0
-			m.scrollOffset = 0
 			m.lastKeyWasG = false
+			m.clampScroll()
 			return m, nil
 		}
 		m.lastKeyWasG = true
 		return m, nil
 	}
 	m.lastKeyWasG = false
+
+	// Type filter keys (0-4) — handled via lookup table
+	if filter, ok := typeFilterKeys[key]; ok {
+		m.typeFilter = filter
+		m.refilter()
+		return m, nil
+	}
 
 	switch key {
 	// Navigation
@@ -74,24 +80,8 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "/":
 		m.searchMode = true
 		m.searchInput.Focus()
+		m.clampScroll()
 		return m, nil
-
-	// Type filters
-	case "0":
-		m.typeFilter = ""
-		m.refilter()
-	case "1":
-		m.typeFilter = "intent"
-		m.refilter()
-	case "2":
-		m.typeFilter = "design"
-		m.refilter()
-	case "3":
-		m.typeFilter = "explore"
-		m.refilter()
-	case "4":
-		m.typeFilter = "festival"
-		m.refilter()
 
 	// Preview toggle
 	case "tab", "p":
@@ -119,42 +109,11 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Quick actions (read-only)
 	case "e":
-		if item := m.currentItem(); item.PrimaryDoc != "" {
-			editor := os.Getenv("EDITOR")
-			if editor == "" {
-				editor = "vi"
-			}
-			c := exec.Command(editor, item.PrimaryDoc)
-			c.Stdin = os.Stdin
-			c.Stdout = os.Stdout
-			c.Stderr = os.Stderr
-			return m, tea.ExecProcess(c, func(err error) tea.Msg {
-				return editorFinishedMsg{err: err}
-			})
-		}
+		return m.openEditor()
 	case "o":
-		if item := m.currentItem(); item.AbsolutePath != "" {
-			var c *exec.Cmd
-			switch runtime.GOOS {
-			case "darwin":
-				c = exec.Command("open", item.AbsolutePath)
-			default:
-				c = exec.Command("xdg-open", item.AbsolutePath)
-			}
-			_ = c.Start()
-		}
+		m.openSystemHandler()
 	case "y":
-		if item := m.currentItem(); item.AbsolutePath != "" {
-			var c *exec.Cmd
-			switch runtime.GOOS {
-			case "darwin":
-				c = exec.Command("pbcopy")
-			default:
-				c = exec.Command("xclip", "-selection", "clipboard")
-			}
-			c.Stdin = strings.NewReader(item.AbsolutePath)
-			_ = c.Run()
-		}
+		m.copyPath()
 
 	// Quit
 	case "q", "ctrl+c":
@@ -172,7 +131,7 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.refilter()
 		}
 	}
-	m.ensureCursorVisible(m.height - 3)
+	m.clampScroll()
 	return m, nil
 }
 
@@ -182,7 +141,7 @@ func (m Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.searchMode = false
 		m.searchInput.Blur()
 		if msg.String() == "esc" {
-			m.searchInput.SetValue(m.searchQuery) // restore previous
+			m.searchInput.SetValue(m.searchQuery)
 		} else {
 			m.searchQuery = m.searchInput.Value()
 			m.refilter()
@@ -192,9 +151,60 @@ func (m Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	var cmd tea.Cmd
 	m.searchInput, cmd = m.searchInput.Update(msg)
-	// Live filter as user types
 	m.searchQuery = m.searchInput.Value()
 	m.refilter()
-	m.ensureCursorVisible(m.height - 3)
 	return m, cmd
+}
+
+// --- Quick action implementations ---
+// Extracted from the switch to keep key handling readable and action
+// logic (platform-specific exec, env vars) in focused methods.
+
+func (m Model) openEditor() (tea.Model, tea.Cmd) {
+	item := m.currentItem()
+	if item.PrimaryDoc == "" {
+		return m, nil
+	}
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "vi"
+	}
+	c := exec.Command(editor, item.PrimaryDoc)
+	c.Stdin = os.Stdin
+	c.Stdout = os.Stdout
+	c.Stderr = os.Stderr
+	return m, tea.ExecProcess(c, func(err error) tea.Msg {
+		return editorFinishedMsg{err: err}
+	})
+}
+
+func (m Model) openSystemHandler() {
+	item := m.currentItem()
+	if item.AbsolutePath == "" {
+		return
+	}
+	var c *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		c = exec.Command("open", item.AbsolutePath)
+	default:
+		c = exec.Command("xdg-open", item.AbsolutePath)
+	}
+	_ = c.Start()
+}
+
+func (m Model) copyPath() {
+	item := m.currentItem()
+	if item.AbsolutePath == "" {
+		return
+	}
+	var c *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		c = exec.Command("pbcopy")
+	default:
+		c = exec.Command("xclip", "-selection", "clipboard")
+	}
+	c.Stdin = strings.NewReader(item.AbsolutePath)
+	_ = c.Run()
 }

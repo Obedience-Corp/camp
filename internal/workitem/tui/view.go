@@ -41,7 +41,7 @@ func (m Model) View() string {
 func (m Model) renderWideLayout() string {
 	listWidth := max(minListWidth, m.width*60/100)
 	previewWidth := m.width - listWidth - 1
-	contentHeight := m.height - 3 // header + footer + separator
+	contentHeight := m.viewportHeight() // header + footer + separator
 
 	left := m.renderList(listWidth, contentHeight)
 	right := renderPreview(m.currentItem(), previewWidth, contentHeight)
@@ -51,13 +51,13 @@ func (m Model) renderWideLayout() string {
 }
 
 func (m Model) renderListOnly() string {
-	contentHeight := m.height - 3
+	contentHeight := m.viewportHeight()
 	list := m.renderList(m.width, contentHeight)
 	return m.renderHeader() + "\n" + list + "\n" + m.renderFooter()
 }
 
 func (m Model) renderPreviewOverlay() string {
-	contentHeight := m.height - 3
+	contentHeight := m.viewportHeight()
 	preview := renderPreview(m.currentItem(), m.width, contentHeight)
 	return m.renderHeader() + "\n" + preview + "\n" + m.renderFooter()
 }

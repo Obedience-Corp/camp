@@ -12,6 +12,20 @@ import (
 	"github.com/Obedience-Corp/camp/internal/workitem"
 )
 
+// chromeHeight is the number of lines consumed by header + footer + separator.
+// Update this if the layout structure changes.
+const chromeHeight = 3
+
+// typeFilterKeys maps keyboard shortcuts to workflow type filter values.
+// Empty string means "show all".
+var typeFilterKeys = map[string]string{
+	"0": "",
+	"1": "intent",
+	"2": "design",
+	"3": "explore",
+	"4": "festival",
+}
+
 // Model is the Bubble Tea model for the workitem dashboard.
 type Model struct {
 	// Data
@@ -73,6 +87,15 @@ func (m Model) Init() tea.Cmd {
 	return nil
 }
 
+// viewportHeight returns the number of visible list rows.
+func (m Model) viewportHeight() int {
+	h := m.height - chromeHeight
+	if h < 0 {
+		return 0
+	}
+	return h
+}
+
 // currentItem returns the work item under the cursor, or a zero-value item if empty.
 func (m Model) currentItem() workitem.WorkItem {
 	if len(m.filteredItems) == 0 || m.cursor >= len(m.filteredItems) {
@@ -81,7 +104,8 @@ func (m Model) currentItem() workitem.WorkItem {
 	return m.filteredItems[m.cursor]
 }
 
-// refilter applies current type filter and search query to allItems.
+// refilter applies current type filter and search query to allItems,
+// then clamps cursor and scrollOffset to stay within bounds.
 func (m *Model) refilter() {
 	var types []string
 	if m.typeFilter != "" {
@@ -91,28 +115,27 @@ func (m *Model) refilter() {
 	if m.cursor >= len(m.filteredItems) {
 		m.cursor = max(0, len(m.filteredItems)-1)
 	}
-	// Clamp scrollOffset so the viewport doesn't start past the end of the
-	// list after a refresh or filter change that shrinks the result set.
-	maxOffset := max(0, len(m.filteredItems)-(m.height-3))
+	m.clampScroll()
+}
+
+// clampScroll ensures scrollOffset is valid for the current item count and viewport.
+func (m *Model) clampScroll() {
+	vp := m.viewportHeight()
+	maxOffset := max(0, len(m.filteredItems)-vp)
 	if m.scrollOffset > maxOffset {
 		m.scrollOffset = maxOffset
 	}
 	if m.scrollOffset < 0 {
 		m.scrollOffset = 0
 	}
-}
-
-// ensureCursorVisible adjusts scrollOffset so the cursor row is within the
-// visible window. Call after any cursor movement or filter change.
-func (m *Model) ensureCursorVisible(viewportHeight int) {
-	if viewportHeight <= 0 {
-		return
-	}
-	if m.cursor < m.scrollOffset {
-		m.scrollOffset = m.cursor
-	}
-	if m.cursor >= m.scrollOffset+viewportHeight {
-		m.scrollOffset = m.cursor - viewportHeight + 1
+	// Also ensure cursor is visible within the viewport
+	if vp > 0 {
+		if m.cursor < m.scrollOffset {
+			m.scrollOffset = m.cursor
+		}
+		if m.cursor >= m.scrollOffset+vp {
+			m.scrollOffset = m.cursor - vp + 1
+		}
 	}
 }
 
