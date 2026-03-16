@@ -52,10 +52,10 @@ func TestExtractSummary(t *testing.T) {
 			maxLen: 40,
 		},
 		{
-			name:   "skips frontmatter delimiters",
-			text:   "---\ntitle: foo\n---\n\nReal content here.",
+			name:   "skips frontmatter completely",
+			text:   "---\ntitle: foo\nstatus: active\n---\n\nReal content here.",
 			maxLen: 100,
-			want:   "title: foo Real content here.",
+			want:   "Real content here.",
 		},
 	}
 	for _, tt := range tests {

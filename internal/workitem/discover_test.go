@@ -62,7 +62,7 @@ func TestDiscoverIntents_ActiveOnly(t *testing.T) {
 	writeFile(t, filepath.Join(root, "workflow/intents/dungeon/done/old.md"),
 		"---\nid: old-20250101\ntitle: Old Done\nstatus: dungeon/done\ncreated_at: 2025-01-01\n---\n\n# Old")
 
-	items, err := discoverIntents(ctx, resolver)
+	items, err := discoverIntents(ctx, root, resolver)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestDiscoverIntents_SkipsGitkeep(t *testing.T) {
 
 	writeFile(t, filepath.Join(root, "workflow/intents/inbox/.gitkeep"), "")
 
-	items, err := discoverIntents(ctx, resolver)
+	items, err := discoverIntents(ctx, root, resolver)
 	if err != nil {
 		t.Fatal(err)
 	}

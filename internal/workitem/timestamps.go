@@ -107,5 +107,10 @@ func walkDirFallback(dir string) ([]string, error) {
 // shouldIgnoreFile returns true for files that should be excluded from timestamp scanning.
 func shouldIgnoreFile(path string) bool {
 	base := filepath.Base(path)
-	return base == ".gitkeep" || strings.HasPrefix(base, ".")
+	if base == ".gitkeep" || strings.HasPrefix(base, ".") {
+		return true
+	}
+	// Exclude dungeon paths consistently with walkDirFallback
+	normalized := filepath.ToSlash(path)
+	return strings.Contains(normalized, "/dungeon/")
 }

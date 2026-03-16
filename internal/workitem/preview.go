@@ -33,15 +33,18 @@ func extractSummary(text string, maxLen int) string {
 		return ""
 	}
 
-	// Skip heading lines at the start
 	var lines []string
+	inFrontmatter := false
 	for _, line := range strings.Split(text, "\n") {
 		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+		if trimmed == "---" {
+			inFrontmatter = !inFrontmatter
 			continue
 		}
-		// Skip frontmatter delimiters
-		if trimmed == "---" {
+		if inFrontmatter {
+			continue
+		}
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
 		lines = append(lines, trimmed)

@@ -36,7 +36,10 @@ func discoverWorkflowDocs(ctx context.Context, campaignRoot, rootDir string, wfT
 		}
 
 		dirPath := filepath.Join(rootDir, name)
-		relPath, _ := filepath.Rel(campaignRoot, dirPath)
+		relPath, err := filepath.Rel(campaignRoot, dirPath)
+		if err != nil {
+			continue // skip items with unresolvable relative paths
+		}
 
 		primaryDoc := findPrimaryDoc(dirPath)
 		title := humanizeBasename(name)

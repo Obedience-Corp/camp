@@ -43,5 +43,6 @@ func toSet(vals []string) map[string]bool {
 func matchesQuery(item WorkItem, query string) bool {
 	return strings.Contains(strings.ToLower(item.Title), query) ||
 		strings.Contains(strings.ToLower(item.RelativePath), query) ||
-		strings.Contains(strings.ToLower(item.Summary), query)
+		strings.Contains(strings.ToLower(item.Summary), query) ||
+		strings.Contains(strings.ToLower(item.SourceID), query)
 }

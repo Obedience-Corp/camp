@@ -12,7 +12,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/paths"
 )
 
-func discoverIntents(ctx context.Context, resolver *paths.Resolver) ([]WorkItem, error) {
+func discoverIntents(ctx context.Context, campaignRoot string, resolver *paths.Resolver) ([]WorkItem, error) {
 	intentsRoot := resolver.Intents()
 	var items []WorkItem
 
@@ -45,7 +45,10 @@ func discoverIntents(ctx context.Context, resolver *paths.Resolver) ([]WorkItem,
 				continue // skip malformed intent files — dev tool, not worth erroring
 			}
 
-			relPath, _ := filepath.Rel(resolver.Root(), filePath)
+			relPath, err := filepath.Rel(campaignRoot, filePath)
+			if err != nil {
+				continue // skip items with unresolvable relative paths
+			}
 			item := WorkItem{
 				Key:            "intent:" + relPath,
 				WorkflowType:   WorkflowTypeIntent,

@@ -48,7 +48,10 @@ func discoverFestivals(ctx context.Context, campaignRoot string, resolver *paths
 			}
 
 			dirPath := filepath.Join(stageDir, name)
-			relPath, _ := filepath.Rel(campaignRoot, dirPath)
+			relPath, err := filepath.Rel(campaignRoot, dirPath)
+			if err != nil {
+				continue // skip items with unresolvable relative paths
+			}
 
 			var meta festMetadata
 			festPath := filepath.Join(dirPath, "fest.yaml")
