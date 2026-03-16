@@ -79,6 +79,12 @@ func TestGo_CategoryShortcuts(t *testing.T) {
 		}
 	})
 
+	t.Run("i", func(t *testing.T) {
+		output, err := tc.RunCampInDir("/campaigns/cat-test", "go", "i", "--print")
+		require.NoError(t, err, "shortcut 'i' should resolve on a new campaign")
+		assert.Contains(t, output, ".campaign/intents", "output should contain the canonical intents path")
+	})
+
 	// Test category that doesn't exist - should get "directory not found" error
 	t.Run("f_missing", func(t *testing.T) {
 		// Remove festivals dir if it was created by fest init during camp init

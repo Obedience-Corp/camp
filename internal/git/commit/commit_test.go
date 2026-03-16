@@ -249,7 +249,7 @@ func TestIntent_SelectiveStaging(t *testing.T) {
 		t.Fatalf("failed to create initial commit: %v", err)
 	}
 
-	intended := filepath.Join(tmpDir, "workflow", "intents", "inbox", "intent.md")
+	intended := filepath.Join(tmpDir, ".campaign", "intents", "inbox", "intent.md")
 	if err := os.MkdirAll(filepath.Dir(intended), 0755); err != nil {
 		t.Fatalf("failed to create intended parent: %v", err)
 	}
@@ -267,7 +267,7 @@ func TestIntent_SelectiveStaging(t *testing.T) {
 		Options: Options{
 			CampaignRoot: tmpDir,
 			CampaignID:   "test1234",
-			Files:        []string{filepath.Join("workflow", "intents", "inbox", "intent.md")},
+			Files:        []string{filepath.Join(".campaign", "intents", "inbox", "intent.md")},
 		},
 		Action:      IntentCreate,
 		IntentTitle: "Selective intent",
@@ -282,7 +282,7 @@ func TestIntent_SelectiveStaging(t *testing.T) {
 		t.Fatalf("failed to get committed files: %v", err)
 	}
 	committed := string(out)
-	if !strings.Contains(committed, "workflow/intents/inbox/intent.md") {
+	if !strings.Contains(committed, ".campaign/intents/inbox/intent.md") {
 		t.Fatalf("expected intended file in commit, got: %s", committed)
 	}
 	if strings.Contains(committed, "unrelated.txt") {
