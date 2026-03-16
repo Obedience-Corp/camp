@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"github.com/Obedience-Corp/camp/internal/editor"
 	"github.com/Obedience-Corp/camp/internal/intent"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -22,12 +23,10 @@ func (m IntentViewerModel) openInEditor() tea.Cmd {
 		}
 	}
 
-	editor := os.Getenv("EDITOR")
-	if editor == "" {
-		editor = "vi"
-	}
-
-	c := exec.Command(editor, m.intent.Path)
+	editorName := editor.GetEditor(m.ctx)
+	c := editor.BuildEditorCommand(m.ctx, editorName, m.intent.Path)
+	// Process group isolation via BuildEditorCommand ensures the editor doesn't inherit parent signals.
+	// Terminal editors exit when the controlling terminal closes on parent exit.
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return ViewerEditorFinishedMsg{Err: err, Path: m.intent.Path}
 	})

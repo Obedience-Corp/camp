@@ -12,6 +12,7 @@ import (
 	"runtime"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/obey-shared/procutil"
 )
 
 // GetEditor returns the user's preferred editor by checking (in order):
@@ -170,14 +171,23 @@ var guiEditors = map[string]bool{
 // BuildEditorCommand constructs an exec.Cmd for launching the specified editor.
 // For GUI editors that fork to background (VS Code, Sublime, Atom), it adds
 // the --wait flag to make them block until the file is closed.
+//
+// SetProcessGroup is called here to ensure process group isolation for TUI
+// callers (BubbleTea tea.ExecProcess paths) that do not use RunWithCleanup.
+// CLI callers via OpenEditor also call RunWithCleanup which calls SetProcessGroup
+// internally, making it a no-op on the second call — this is intentional and safe.
 func BuildEditorCommand(ctx context.Context, editor, path string) *exec.Cmd {
 	base := filepath.Base(editor)
 
+	var cmd *exec.Cmd
 	if guiEditors[base] {
-		return exec.CommandContext(ctx, editor, "--wait", path)
+		cmd = exec.CommandContext(ctx, editor, "--wait", path)
+	} else {
+		cmd = exec.CommandContext(ctx, editor, path)
 	}
 
-	return exec.CommandContext(ctx, editor, path)
+	procutil.SetProcessGroup(cmd)
+	return cmd
 }
 
 // OpenEditor opens the specified file in the user's editor and waits for editing to complete.
@@ -189,7 +199,7 @@ func OpenEditor(ctx context.Context, editor, path string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	if err := cmd.Run(); err != nil {
+	if err := procutil.RunWithCleanup(ctx, cmd); err != nil {
 		return fmt.Errorf("running editor %q with %q: %w", editor, path, err)
 	}
 

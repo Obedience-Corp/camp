@@ -3,6 +3,8 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -17,13 +19,13 @@ func makeTestItems(n int) []workitem.WorkItem {
 	now := time.Now()
 	for i := range items {
 		items[i] = workitem.WorkItem{
-			Key:            "test:" + string(rune('a'+i)),
-			WorkflowType:   workitem.WorkflowTypeDesign,
-			Title:          "Item " + string(rune('A'+i)),
-			RelativePath:   "workflow/design/item-" + string(rune('a'+i)),
-			ItemKind:       workitem.ItemKindDirectory,
-			SortTimestamp:  now.Add(-time.Duration(i) * time.Hour),
-			CreatedAt:      now.Add(-time.Duration(i) * time.Hour),
+			Key:           "test:" + string(rune('a'+i)),
+			WorkflowType:  workitem.WorkflowTypeDesign,
+			Title:         "Item " + string(rune('A'+i)),
+			RelativePath:  "workflow/design/item-" + string(rune('a'+i)),
+			ItemKind:      workitem.ItemKindDirectory,
+			SortTimestamp: now.Add(-time.Duration(i) * time.Hour),
+			CreatedAt:     now.Add(-time.Duration(i) * time.Hour),
 		}
 	}
 	return items
@@ -222,6 +224,38 @@ func TestModel_EmptyView(t *testing.T) {
 	view := m.View()
 	if !strings.Contains(view, "No work items") {
 		t.Error("empty state should show 'No work items' message")
+	}
+}
+
+func TestModel_OpenEditorUsesModelContext(t *testing.T) {
+	tempDir := t.TempDir()
+	docPath := filepath.Join(tempDir, "item.md")
+	if err := os.WriteFile(docPath, []byte("test"), 0o644); err != nil {
+		t.Fatalf("write doc: %v", err)
+	}
+
+	editorPath := filepath.Join(tempDir, "sleep-editor.sh")
+	editorScript := "#!/bin/sh\nsleep 2\n"
+	if err := os.WriteFile(editorPath, []byte(editorScript), 0o755); err != nil {
+		t.Fatalf("write editor script: %v", err)
+	}
+	t.Setenv("EDITOR", editorPath)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	item := workitem.WorkItem{PrimaryDoc: filepath.Base(docPath)}
+	m := New(ctx, []workitem.WorkItem{item}, tempDir, nil)
+
+	start := time.Now()
+	err := m.editorCommand(docPath).Run()
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected canceled model context to stop the editor")
+	}
+	if elapsed > time.Second {
+		t.Fatalf("editor command ignored model context cancellation; elapsed=%v", elapsed)
 	}
 }
 

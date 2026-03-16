@@ -92,7 +92,7 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "e":
 		// Open selected intent in $EDITOR
 		if selected := m.SelectedIntent(); selected != nil {
-			return m, openInEditor(selected.Path)
+			return m, openInEditor(m.ctx, selected.Path)
 		}
 	case "o":
 		// Open selected intent with system default handler

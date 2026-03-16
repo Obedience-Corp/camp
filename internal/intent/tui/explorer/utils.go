@@ -1,6 +1,7 @@
 package explorer
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,6 +10,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/Obedience-Corp/camp/internal/editor"
 )
 
 // formatRelativeTime returns a human-friendly relative time string.
@@ -47,7 +50,7 @@ func formatRelativeTime(t time.Time) string {
 }
 
 // openInEditor opens a file in the user's $EDITOR.
-func openInEditor(filePath string) tea.Cmd {
+func openInEditor(ctx context.Context, filePath string) tea.Cmd {
 	// Check file exists before opening
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		return func() tea.Msg {
@@ -58,12 +61,10 @@ func openInEditor(filePath string) tea.Cmd {
 		}
 	}
 
-	editor := os.Getenv("EDITOR")
-	if editor == "" {
-		editor = "vi"
-	}
-
-	c := exec.Command(editor, filePath)
+	editorName := editor.GetEditor(ctx)
+	c := editor.BuildEditorCommand(ctx, editorName, filePath)
+	// Process group isolation via BuildEditorCommand ensures the editor doesn't inherit parent signals.
+	// Terminal editors exit when the controlling terminal closes on parent exit.
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return editorFinishedMsg{err: err, path: filePath}
 	})

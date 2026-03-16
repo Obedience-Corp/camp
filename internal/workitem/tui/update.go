@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/Obedience-Corp/camp/internal/editor"
 	"github.com/Obedience-Corp/camp/internal/workitem"
 )
 
@@ -185,17 +186,21 @@ func (m Model) openEditor() (tea.Model, tea.Cmd) {
 	if absDoc == "" {
 		return m, nil
 	}
-	editor := os.Getenv("EDITOR")
-	if editor == "" {
-		editor = "vi"
-	}
-	c := exec.Command(editor, absDoc)
-	c.Stdin = os.Stdin
-	c.Stdout = os.Stdout
-	c.Stderr = os.Stderr
+	c := m.editorCommand(absDoc)
+	// Process group isolation via BuildEditorCommand ensures the editor doesn't inherit parent signals.
+	// Terminal editors exit when the controlling terminal closes on parent exit.
 	return m, tea.ExecProcess(c, func(err error) tea.Msg {
 		return editorFinishedMsg{err: err}
 	})
+}
+
+func (m Model) editorCommand(absDoc string) *exec.Cmd {
+	editorName := editor.GetEditor(m.ctx)
+	c := editor.BuildEditorCommand(m.ctx, editorName, absDoc)
+	c.Stdin = os.Stdin
+	c.Stdout = os.Stdout
+	c.Stderr = os.Stderr
+	return c
 }
 
 func (m Model) openSystemHandler() (tea.Model, tea.Cmd) {
@@ -240,4 +245,3 @@ func (m Model) copyPath() (tea.Model, tea.Cmd) {
 	cmd := m.setStatus("copied!", false)
 	return m, cmd
 }
-
