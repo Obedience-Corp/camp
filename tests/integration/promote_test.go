@@ -113,6 +113,10 @@ func TestIntentPromote_MigratesLegacyIntentMarkerToCanonicalRoot(t *testing.T) {
 	legacyExists, err := tc.CheckFileExists(fmt.Sprintf("%s/workflow/intents/OBEY.md", path))
 	require.NoError(t, err)
 	assert.False(t, legacyExists, "legacy marker should be removed after command-path migration")
+
+	legacyDirExists, err := tc.CheckDirExists(fmt.Sprintf("%s/workflow/intents", path))
+	require.NoError(t, err)
+	assert.False(t, legacyDirExists, "legacy intent root should be removed once migration empties it")
 }
 
 func TestIntentPromote_TargetFestival_NoExistingFestivals_CreatesFestivalAndActivatesIntent(t *testing.T) {

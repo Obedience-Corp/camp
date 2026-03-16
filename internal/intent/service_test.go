@@ -1218,12 +1218,12 @@ func TestIntentService_EnsureDirectories_MigratesLegacyRootAndAudit(t *testing.T
 	if _, err := os.Stat(filepath.Join(legacyRoot, "OBEY.md")); !os.IsNotExist(err) {
 		t.Fatalf("legacy intent marker should be removed, err = %v", err)
 	}
+	if _, err := os.Stat(legacyRoot); !os.IsNotExist(err) {
+		t.Fatalf("legacy intent root should be removed once migration leaves it empty, err = %v", err)
+	}
 
 	if err := svc.CleanupLegacyIntentScaffold(); err != nil {
 		t.Fatalf("CleanupLegacyIntentScaffold() error = %v", err)
-	}
-	if _, err := os.Stat(legacyRoot); !os.IsNotExist(err) {
-		t.Fatalf("legacy intent root should be removed when empty, err = %v", err)
 	}
 }
 
@@ -1290,6 +1290,9 @@ func TestIntentService_EnsureDirectories_MigratesLegacyMarkerWithoutIntentState(
 	}
 	if _, err := os.Stat(filepath.Join(legacyRoot, "OBEY.md")); !os.IsNotExist(err) {
 		t.Fatalf("legacy OBEY.md should be removed after migration, err = %v", err)
+	}
+	if _, err := os.Stat(legacyRoot); !os.IsNotExist(err) {
+		t.Fatalf("legacy intent root should be removed after marker-only migration, err = %v", err)
 	}
 }
 

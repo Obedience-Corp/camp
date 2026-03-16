@@ -141,8 +141,10 @@ Use this checklist when validating an upgraded branch or release candidate.
    - Confirm intent files and `.intents.jsonl` move to `.campaign/intents/`.
    - Confirm `workflow/intents/OBEY.md` migrates to `.campaign/intents/OBEY.md`
      so the canonical root stays daemon-recognized as camp-managed state.
-   - Confirm legacy scaffold residue is only removed during repair/init
-     normalization, not ordinary command execution.
+   - Confirm the legacy `workflow/intents/` root is removed automatically once
+     migration leaves it empty.
+   - Confirm any remaining scaffold-only residue still requires repair/init
+     normalization rather than being removed blindly during ordinary commands.
 3. Explicit dual-populated conflict
    - Create intent data in both `workflow/intents/` and `.campaign/intents/`.
    - Run repair or initialization.

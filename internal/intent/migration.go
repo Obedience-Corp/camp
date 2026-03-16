@@ -303,6 +303,9 @@ func (s *IntentService) migrateLegacyIntentRoot(legacyRoot string) error {
 	if err := moveIntentMarkerFile(legacyRoot, s.intentsDir); err != nil {
 		return err
 	}
+	if err := removeDirIfEmpty(legacyRoot); err != nil {
+		return err
+	}
 
 	return nil
 }
