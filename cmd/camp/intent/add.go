@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
+	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/Obedience-Corp/camp/internal/concept"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/editor"
@@ -17,6 +19,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/intent/audit"
 	"github.com/Obedience-Corp/camp/internal/intent/tui"
+	navtui "github.com/Obedience-Corp/camp/internal/nav/tui"
 	"github.com/Obedience-Corp/camp/internal/paths"
 )
 
@@ -37,7 +40,9 @@ Use --edit when you need the complete template in your editor.
 
 Examples:
   camp intent add "Add dark mode"        Ultra-fast capture
+  camp intent add -c obey-campaign "Add dark mode"
   camp intent add                        Fast TUI (3-step form)
+  camp intent add --campaign             Pick a target campaign interactively
   camp intent add --full                 Full TUI (includes body)
   camp intent add -e "Complex feature"   Deep capture with editor
   camp intent add -t feature "New API"   Set type explicitly`,
@@ -52,7 +57,9 @@ func init() {
 	flags.StringP("type", "t", "idea", "Intent type (idea, feature, bug, research, chore)")
 	flags.BoolP("edit", "e", false, "Open in $EDITOR for deep capture")
 	flags.BoolP("full", "f", false, "Full TUI mode with body textarea")
+	flags.StringP("campaign", "c", "", "Target campaign by name or ID; omit value to pick interactively")
 	flags.Bool("no-commit", false, "Don't create a git commit")
+	flags.Lookup("campaign").NoOptDefVal = ""
 }
 
 func runIntentAdd(cmd *cobra.Command, args []string) error {
@@ -62,12 +69,13 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	intentType, _ := cmd.Flags().GetString("type")
 	useEditor, _ := cmd.Flags().GetBool("edit")
 	fullMode, _ := cmd.Flags().GetBool("full")
+	targetCampaign, _ := cmd.Flags().GetString("campaign")
 	noCommit, _ := cmd.Flags().GetBool("no-commit")
 
-	// Find campaign root
-	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
+	campaignResolver := newIntentAddCampaignResolver(cmd.ErrOrStderr())
+	cfg, campaignRoot, err := campaignResolver.resolve(ctx, targetCampaign, cmd.Flags().Changed("campaign"))
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return err
 	}
 
 	// Create path resolver
@@ -160,6 +168,74 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	return runFastCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, opts)
+}
+
+type intentAddCampaignResolver struct {
+	stderr        io.Writer
+	isInteractive func() bool
+	loadCurrent   func(context.Context) (*config.CampaignConfig, string, error)
+	loadRegistry  func(context.Context) (*config.Registry, error)
+	loadCampaign  func(context.Context, string) (*config.CampaignConfig, error)
+	saveRegistry  func(context.Context, *config.Registry) error
+	pickCampaign  func(context.Context, *config.Registry) (config.RegisteredCampaign, error)
+}
+
+func newIntentAddCampaignResolver(stderr io.Writer) intentAddCampaignResolver {
+	return intentAddCampaignResolver{
+		stderr:        stderr,
+		isInteractive: navtui.IsTerminal,
+		loadCurrent:   config.LoadCampaignConfigFromCwd,
+		loadRegistry:  config.LoadRegistry,
+		loadCampaign:  config.LoadCampaignConfig,
+		saveRegistry:  config.SaveRegistry,
+		pickCampaign:  cmdutil.PickCampaign,
+	}
+}
+
+func (r intentAddCampaignResolver) resolve(ctx context.Context, targetCampaign string, targetChanged bool) (*config.CampaignConfig, string, error) {
+	if !targetChanged {
+		cfg, campaignRoot, err := r.loadCurrent(ctx)
+		if err != nil {
+			return nil, "", camperrors.Wrap(err, "not in a campaign directory")
+		}
+		return cfg, campaignRoot, nil
+	}
+
+	reg, err := r.loadRegistry(ctx)
+	if err != nil {
+		return nil, "", camperrors.Wrap(err, "load registry")
+	}
+	if reg.Len() == 0 {
+		return nil, "", fmt.Errorf("no campaigns registered (use 'camp init' to create one)")
+	}
+
+	var selected config.RegisteredCampaign
+	if targetCampaign == "" {
+		if !r.isInteractive() {
+			return nil, "", fmt.Errorf("campaign name required in non-interactive mode\n       Usage: camp intent add --campaign <name> [title]")
+		}
+		selected, err = r.pickCampaign(ctx, reg)
+		if err != nil {
+			return nil, "", err
+		}
+	} else {
+		selected, err = cmdutil.ResolveCampaignSelection(targetCampaign, reg, r.stderr)
+		if err != nil {
+			return nil, "", err
+		}
+	}
+
+	reg.UpdateLastAccess(selected.ID)
+	if r.saveRegistry != nil {
+		_ = r.saveRegistry(ctx, reg)
+	}
+
+	cfg, err := r.loadCampaign(ctx, selected.Path)
+	if err != nil {
+		return nil, "", camperrors.Wrapf(err, "load target campaign %s", selected.Path)
+	}
+
+	return cfg, selected.Path, nil
 }
 
 // runIntentAddTUI runs the BubbleTea intent creation form.
