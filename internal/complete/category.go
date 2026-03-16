@@ -25,7 +25,7 @@ func Categories() []CategoryCandidate {
 		{Value: "p", Description: "projects/", Category: nav.CategoryProjects},
 		{Value: "pw", Description: "projects/worktrees/", Category: nav.CategoryWorktrees},
 		{Value: "f", Description: "festivals/", Category: nav.CategoryFestivals},
-		{Value: "a", Description: "ai_docs/", Category: nav.CategoryAIDocs},
+		{Value: "ai", Description: "ai_docs/", Category: nav.CategoryAIDocs},
 		{Value: "d", Description: "docs/", Category: nav.CategoryDocs},
 		{Value: "du", Description: "dungeon/", Category: nav.CategoryDungeon},
 		{Value: "w", Description: "workflow/", Category: nav.CategoryWorkflow},

@@ -4,7 +4,7 @@ List all available shortcuts
 
 ### Synopsis
 
-List all navigation and command shortcuts from .campaign/campaign.yaml.
+List all navigation and command shortcuts from .campaign/settings/jumps.yaml.
 
 Navigation shortcuts (path-based):
   These shortcuts jump to directories within the campaign.
@@ -15,7 +15,7 @@ Command shortcuts (command-based):
   Usage: camp run <shortcut> [args...]
 
 Default shortcuts are added when you run 'camp init'.
-You can customize shortcuts by editing .campaign/campaign.yaml.
+You can customize shortcuts by editing .campaign/settings/jumps.yaml.
 
 ```
 camp shortcuts [flags]
@@ -47,6 +47,8 @@ camp shortcuts [flags]
 
 * [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
 * [camp shortcuts add](camp_shortcuts_add.md)	 - Add a shortcut (campaign-level or project sub-shortcut)
+* [camp shortcuts diff](camp_shortcuts_diff.md)	 - Show differences between current and default shortcuts
 * [camp shortcuts list](camp_shortcuts_list.md)	 - List shortcuts for a specific project
 * [camp shortcuts remove](camp_shortcuts_remove.md)	 - Remove a shortcut (campaign-level or project sub-shortcut)
+* [camp shortcuts reset](camp_shortcuts_reset.md)	 - Reset auto-generated shortcuts to current defaults
 

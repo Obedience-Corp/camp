@@ -95,7 +95,7 @@ func DefaultNavigationShortcuts() map[string]ShortcutConfig {
 
 		// Navigation-only shortcuts (no command expansion)
 		"w":  {Path: "workflow/", Description: "Jump to workflow directory", Source: ShortcutSourceAuto},
-		"a":  {Path: "ai_docs/", Description: "Jump to AI docs directory", Source: ShortcutSourceAuto},
+		"ai": {Path: "ai_docs/", Description: "Jump to AI docs directory", Source: ShortcutSourceAuto},
 		"d":  {Path: "docs/", Description: "Jump to docs directory", Source: ShortcutSourceAuto},
 		"du": {Path: "dungeon/", Description: "Jump to dungeon directory (navigation only)", Source: ShortcutSourceAuto},
 		"cr": {Path: "workflow/code_reviews/", Description: "Jump to code reviews", Source: ShortcutSourceAuto},
