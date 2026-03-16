@@ -32,7 +32,7 @@ func Categories() []CategoryCandidate {
 		{Value: "cr", Description: "workflow/code_reviews/", Category: nav.CategoryCodeReviews},
 		{Value: "pi", Description: "workflow/pipelines/", Category: nav.CategoryPipelines},
 		{Value: "de", Description: "workflow/design/", Category: nav.CategoryDesign},
-		{Value: "i", Description: "workflow/intents/", Category: nav.CategoryIntents},
+		{Value: "i", Description: ".campaign/intents/", Category: nav.CategoryIntents},
 		{Value: "t", Description: "toggle (last location)"},
 		{Value: "toggle", Description: "jump to last visited location"},
 	}

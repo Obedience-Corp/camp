@@ -19,7 +19,7 @@ func DetectLinkType(path string) string {
 	normalized := filepath.ToSlash(path)
 
 	switch {
-	case strings.HasPrefix(normalized, "workflow/intents/"):
+	case strings.HasPrefix(normalized, ".campaign/intents/"):
 		return "intent"
 	case strings.HasPrefix(normalized, "workflow/design/"):
 		return "design"

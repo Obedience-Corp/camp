@@ -89,7 +89,7 @@ These defaults are written by `camp init` and can be overridden per campaign:
 |----------|------|-------|
 | `p` | `projects/` | navigation plus command expansion |
 | `f` | `festivals/` | navigation plus command expansion |
-| `i` | `workflow/intents/` | navigation plus command expansion |
+| `i` | `.campaign/intents/` | navigation plus command expansion |
 | `wt` | `projects/worktrees/` | navigation plus command expansion |
 | `w` | `workflow/` | navigation only |
 | `ai` | `ai_docs/` | navigation only |
@@ -100,6 +100,9 @@ These defaults are written by `camp init` and can be overridden per campaign:
 | `de` | `workflow/design/` | navigation only |
 | `ex` | `workflow/explore/` | navigation only |
 | `cfg` | no path | command expansion only |
+
+`camp go i` and `cgo i` remain available as operator shortcuts, but the primary
+human interface for this state is `camp intent`.
 
 ## Listing shortcuts
 

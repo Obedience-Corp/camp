@@ -13,8 +13,8 @@ func TestDetectLinkType(t *testing.T) {
 		path     string
 		expected string
 	}{
-		{"workflow/intents/my-intent.yaml", "intent"},
-		{"workflow/intents/nested/deep.yaml", "intent"},
+		{".campaign/intents/my-intent.yaml", "intent"},
+		{".campaign/intents/nested/deep.yaml", "intent"},
 		{"workflow/design/spec.md", "design"},
 		{"workflow/explore/notes.md", "explore"},
 		{"festivals/active/my-fest/", "festival"},
@@ -114,7 +114,7 @@ func TestAddLink(t *testing.T) {
 
 	t.Run("different path succeeds", func(t *testing.T) {
 		other := Link{
-			Path:    "workflow/intents/foo.yaml",
+			Path:    ".campaign/intents/foo.yaml",
 			Type:    "intent",
 			AddedAt: time.Now().UTC(),
 		}
@@ -136,7 +136,7 @@ func TestRemoveLink(t *testing.T) {
 		UpdatedAt: time.Now(),
 		Links: []Link{
 			{Path: "projects/camp", Type: "project", AddedAt: time.Now()},
-			{Path: "workflow/intents/foo.yaml", Type: "intent", AddedAt: time.Now()},
+			{Path: ".campaign/intents/foo.yaml", Type: "intent", AddedAt: time.Now()},
 		},
 	}
 
@@ -147,7 +147,7 @@ func TestRemoveLink(t *testing.T) {
 		if len(q.Links) != 1 {
 			t.Fatalf("expected 1 link remaining, got %d", len(q.Links))
 		}
-		if q.Links[0].Path != "workflow/intents/foo.yaml" {
+		if q.Links[0].Path != ".campaign/intents/foo.yaml" {
 			t.Errorf("wrong link remaining: %q", q.Links[0].Path)
 		}
 	})
@@ -177,7 +177,7 @@ func TestLinksSurviveSaveLoad(t *testing.T) {
 		UpdatedAt: now,
 		Links: []Link{
 			{Path: "projects/camp", Type: "project", AddedAt: now},
-			{Path: "workflow/intents/foo.yaml", Type: "intent", AddedAt: now},
+			{Path: ".campaign/intents/foo.yaml", Type: "intent", AddedAt: now},
 		},
 	}
 
@@ -201,8 +201,8 @@ func TestLinksSurviveSaveLoad(t *testing.T) {
 	if loaded.Links[0].Type != "project" {
 		t.Errorf("link[0].Type = %q, want 'project'", loaded.Links[0].Type)
 	}
-	if loaded.Links[1].Path != "workflow/intents/foo.yaml" {
-		t.Errorf("link[1].Path = %q, want 'workflow/intents/foo.yaml'", loaded.Links[1].Path)
+	if loaded.Links[1].Path != ".campaign/intents/foo.yaml" {
+		t.Errorf("link[1].Path = %q, want '.campaign/intents/foo.yaml'", loaded.Links[1].Path)
 	}
 	if loaded.Links[1].Type != "intent" {
 		t.Errorf("link[1].Type = %q, want 'intent'", loaded.Links[1].Type)

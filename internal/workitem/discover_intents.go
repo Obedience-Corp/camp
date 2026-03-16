@@ -13,6 +13,8 @@ import (
 )
 
 func discoverIntents(ctx context.Context, campaignRoot string, resolver *paths.Resolver) ([]WorkItem, error) {
+	// Resolver-owned intent paths keep workitem discovery aligned with the
+	// canonical .campaign/intents root.
 	intentsRoot := resolver.Intents()
 	var items []WorkItem
 

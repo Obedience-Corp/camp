@@ -10,6 +10,8 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
+const legacyIntentsPath = "workflow/intents/"
+
 // SettingsDir is the name of the settings subdirectory within .campaign/.
 const SettingsDir = "settings"
 
@@ -45,6 +47,10 @@ func SettingsDirPath(campaignRoot string) string {
 
 // LoadJumpsConfig loads .campaign/settings/jumps.yaml from the campaign root.
 // Returns nil if the file doesn't exist (caller should use defaults).
+//
+// Loading the stored jumps config is also the normalization trigger for legacy
+// intent navigation state. That keeps navigation, repair, and migration flows
+// aligned because they all read jumps.yaml through this loader.
 func LoadJumpsConfig(ctx context.Context, campaignRoot string) (*JumpsConfig, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -64,6 +70,8 @@ func LoadJumpsConfig(ctx context.Context, campaignRoot string) (*JumpsConfig, er
 		return nil, camperrors.Wrapf(err, "failed to parse jumps config %s", configPath)
 	}
 
+	cfg.NormalizeIntentNavigation()
+
 	return &cfg, nil
 }
 
@@ -79,7 +87,16 @@ func SaveJumpsConfig(ctx context.Context, campaignRoot string, cfg *JumpsConfig)
 	}
 
 	configPath := JumpsConfigPath(campaignRoot)
-	data, err := yaml.Marshal(cfg)
+	normalized := *cfg
+	if cfg.Shortcuts != nil {
+		normalized.Shortcuts = make(map[string]ShortcutConfig, len(cfg.Shortcuts))
+		for key, shortcut := range cfg.Shortcuts {
+			normalized.Shortcuts[key] = shortcut
+		}
+	}
+	normalized.NormalizeIntentNavigation()
+
+	data, err := yaml.Marshal(&normalized)
 	if err != nil {
 		return camperrors.Wrap(err, "failed to marshal jumps config")
 	}
@@ -97,6 +114,43 @@ func DefaultJumpsConfig() JumpsConfig {
 		Paths:     DefaultCampaignPaths(),
 		Shortcuts: DefaultNavigationShortcuts(),
 	}
+}
+
+// NormalizeIntentNavigation rewrites only the canonical intent path and the
+// default "i" shortcut so legacy campaigns converge on .campaign/intents/
+// without disturbing unrelated jumps entries.
+func (j *JumpsConfig) NormalizeIntentNavigation() bool {
+	changed := false
+	canonicalIntentsPath := DefaultCampaignPaths().Intents
+
+	if isLegacyIntentsPath(j.Paths.Intents) {
+		j.Paths.Intents = canonicalIntentsPath
+		changed = true
+	}
+
+	defaultIntentShortcut, ok := DefaultNavigationShortcuts()["i"]
+	if !ok {
+		return changed
+	}
+
+	if j.Shortcuts == nil {
+		return changed
+	}
+
+	intentShortcut, ok := j.Shortcuts["i"]
+	if !ok || isLegacyIntentsPath(intentShortcut.Path) {
+		j.Shortcuts["i"] = defaultIntentShortcut
+		changed = true
+	}
+
+	return changed
+}
+
+func isLegacyIntentsPath(path string) bool {
+	if path == "" {
+		return false
+	}
+	return filepath.Clean(path) == filepath.Clean(legacyIntentsPath)
 }
 
 // ApplyDefaults fills in missing fields with default values.

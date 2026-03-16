@@ -68,7 +68,7 @@ func SaveGlobalConfig(ctx context.Context, cfg *GlobalConfig) error {
 	}
 
 	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp) // Clean up temp file on rename failure
+		_ = os.Remove(tmp) // Clean up temp file on rename failure
 		return camperrors.Wrap(err, "failed to save global config")
 	}
 

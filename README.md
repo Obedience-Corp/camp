@@ -86,13 +86,16 @@ Navigate instantly with single-letter shortcuts:
 | `w`      | workflow/              | Workflow directory     |
 | `ai`     | ai_docs/               | AI documentation       |
 | `d`      | docs/                  | Human documentation    |
-| `i`      | workflow/intents/      | Intents                |
+| `i`      | .campaign/intents/     | Intents via `camp intent` |
 | `wt`     | projects/worktrees/    | Git worktrees          |
 | `du`     | dungeon/               | Archived work          |
 | `cr`     | workflow/code_reviews/ | Code review materials  |
 | `pi`     | workflow/pipelines/    | CI/CD pipelines        |
 | `de`     | workflow/design/       | Design documents       |
 | `ex`     | workflow/explore/      | Exploratory notes      |
+
+`cgo i` remains available as an operator shortcut into the hidden intent state,
+but the normal human interface is `camp intent`.
 
 ## Commands
 
@@ -167,6 +170,7 @@ Intents, status flows, and the dungeon provide lightweight planning tools:
 ```bash
 # Intents - capture ideas, goals, and work items
 camp intent                # Manage campaign intents
+camp intent add --campaign other-campaign "Capture idea"  # Cross-campaign capture (add only)
 camp gather                # Import external data into the intent system
 
 # Flows - track work status
@@ -297,8 +301,9 @@ A campaign provides a standardized layout for AI development:
 
 ```
 my-campaign/
-├── .campaign/           # Campaign configuration
-│   └── campaign.yaml
+├── .campaign/           # Campaign configuration and system state
+│   ├── campaign.yaml
+│   └── intents/         # System-managed intents (camp intent, cgo i)
 ├── projects/            # Git submodules
 │   ├── api-service/
 │   ├── web-app/
@@ -313,7 +318,6 @@ my-campaign/
 │   ├── ritual/
 │   └── dungeon/         # completed/, archived/, someday/
 ├── workflow/            # Workflow resources (cgo w)
-│   ├── intents/         # Intents (cgo i)
 │   ├── code_reviews/    # Review notes (cgo cr)
 │   ├── pipelines/       # CI/CD configs (cgo pi)
 │   └── design/          # Design documents (cgo de)

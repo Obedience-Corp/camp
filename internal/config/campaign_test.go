@@ -62,12 +62,16 @@ func TestLoadCampaignConfig_DefaultsApplied(t *testing.T) {
 	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
 
 	campaignDir := filepath.Join(tmpDir, CampaignDir)
-	os.MkdirAll(campaignDir, 0755)
+	if err := os.MkdirAll(campaignDir, 0755); err != nil {
+		t.Fatalf("failed to create campaign dir: %v", err)
+	}
 
 	// Minimal config - just name, no type
 	configContent := `name: minimal`
 	configPath := filepath.Join(campaignDir, CampaignConfigFile)
-	os.WriteFile(configPath, []byte(configContent), 0644)
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write campaign config: %v", err)
+	}
 
 	ctx := context.Background()
 	cfg, err := LoadCampaignConfig(ctx, tmpDir)
@@ -134,7 +138,7 @@ concepts:
 	}
 }
 
-func TestLoadCampaignConfig_PreservesLegacyShortcutsWithoutExplore(t *testing.T) {
+func TestLoadCampaignConfig_PreservesLegacyShortcutsWithoutExploreAndAddsIntentShortcut(t *testing.T) {
 	tmpDir := t.TempDir()
 	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
 
@@ -179,6 +183,13 @@ shortcuts:
 	}
 
 	shortcuts := cfg.Shortcuts()
+	intentShortcut, ok := shortcuts["i"]
+	if !ok {
+		t.Fatal("legacy shortcuts should gain canonical intent shortcut i")
+	}
+	if intentShortcut.Path != ".campaign/intents/" {
+		t.Fatalf("intent shortcut path = %q, want %q", intentShortcut.Path, ".campaign/intents/")
+	}
 	if _, ok := shortcuts["de"]; !ok {
 		t.Fatal("legacy design shortcut de should be preserved")
 	}
@@ -187,6 +198,55 @@ shortcuts:
 	}
 	if _, ok := shortcuts["ex"]; ok {
 		t.Fatal("legacy shortcuts should not be silently rewritten with new ex shortcut")
+	}
+
+	if cfg.Paths().Intents != ".campaign/intents/" {
+		t.Fatalf("Paths().Intents = %q, want %q", cfg.Paths().Intents, ".campaign/intents/")
+	}
+}
+
+func TestLoadCampaignConfig_LegacyIntentPathWithoutShortcutsPreservesDefaults(t *testing.T) {
+	tmpDir := t.TempDir()
+	campaignDir := filepath.Join(tmpDir, CampaignDir)
+	settingsDir := filepath.Join(campaignDir, SettingsDir)
+	if err := os.MkdirAll(settingsDir, 0755); err != nil {
+		t.Fatalf("failed to create settings dir: %v", err)
+	}
+
+	configContent := `
+name: legacy-path-defaults
+type: product
+`
+	if err := os.WriteFile(filepath.Join(campaignDir, CampaignConfigFile), []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write campaign config: %v", err)
+	}
+
+	jumpsContent := `
+paths:
+  intents: workflow/intents
+`
+	if err := os.WriteFile(filepath.Join(settingsDir, JumpsConfigFile), []byte(jumpsContent), 0644); err != nil {
+		t.Fatalf("failed to write jumps config: %v", err)
+	}
+
+	cfg, err := LoadCampaignConfig(context.Background(), tmpDir)
+	if err != nil {
+		t.Fatalf("LoadCampaignConfig() error = %v", err)
+	}
+
+	shortcuts := cfg.Shortcuts()
+	if _, ok := shortcuts["p"]; !ok {
+		t.Fatal("default shortcut p should still be available when jumps.yaml omits shortcuts")
+	}
+	intentShortcut, ok := shortcuts["i"]
+	if !ok {
+		t.Fatal("default shortcut i should still be available when jumps.yaml omits shortcuts")
+	}
+	if intentShortcut.Path != ".campaign/intents/" {
+		t.Fatalf("shortcut i path = %q, want %q", intentShortcut.Path, ".campaign/intents/")
+	}
+	if cfg.Paths().Intents != ".campaign/intents/" {
+		t.Fatalf("Paths().Intents = %q, want %q", cfg.Paths().Intents, ".campaign/intents/")
 	}
 }
 
@@ -203,11 +263,15 @@ func TestLoadCampaignConfig_NotFound(t *testing.T) {
 func TestLoadCampaignConfig_InvalidYAML(t *testing.T) {
 	tmpDir := t.TempDir()
 	campaignDir := filepath.Join(tmpDir, CampaignDir)
-	os.MkdirAll(campaignDir, 0755)
+	if err := os.MkdirAll(campaignDir, 0755); err != nil {
+		t.Fatalf("failed to create campaign dir: %v", err)
+	}
 
 	// Invalid YAML
 	configPath := filepath.Join(campaignDir, CampaignConfigFile)
-	os.WriteFile(configPath, []byte("name: [invalid yaml"), 0644)
+	if err := os.WriteFile(configPath, []byte("name: [invalid yaml"), 0644); err != nil {
+		t.Fatalf("failed to write campaign config: %v", err)
+	}
 
 	ctx := context.Background()
 	_, err := LoadCampaignConfig(ctx, tmpDir)
@@ -219,12 +283,16 @@ func TestLoadCampaignConfig_InvalidYAML(t *testing.T) {
 func TestLoadCampaignConfig_MissingName(t *testing.T) {
 	tmpDir := t.TempDir()
 	campaignDir := filepath.Join(tmpDir, CampaignDir)
-	os.MkdirAll(campaignDir, 0755)
+	if err := os.MkdirAll(campaignDir, 0755); err != nil {
+		t.Fatalf("failed to create campaign dir: %v", err)
+	}
 
 	// Missing required name field
 	configContent := `type: product`
 	configPath := filepath.Join(campaignDir, CampaignConfigFile)
-	os.WriteFile(configPath, []byte(configContent), 0644)
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write campaign config: %v", err)
+	}
 
 	ctx := context.Background()
 	_, err := LoadCampaignConfig(ctx, tmpDir)
@@ -236,14 +304,18 @@ func TestLoadCampaignConfig_MissingName(t *testing.T) {
 func TestLoadCampaignConfig_InvalidType(t *testing.T) {
 	tmpDir := t.TempDir()
 	campaignDir := filepath.Join(tmpDir, CampaignDir)
-	os.MkdirAll(campaignDir, 0755)
+	if err := os.MkdirAll(campaignDir, 0755); err != nil {
+		t.Fatalf("failed to create campaign dir: %v", err)
+	}
 
 	configContent := `
 name: test
-type: invalid-type
+	type: invalid-type
 `
 	configPath := filepath.Join(campaignDir, CampaignConfigFile)
-	os.WriteFile(configPath, []byte(configContent), 0644)
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write campaign config: %v", err)
+	}
 
 	ctx := context.Background()
 	_, err := LoadCampaignConfig(ctx, tmpDir)
@@ -337,8 +409,12 @@ func TestFindCampaignRoot(t *testing.T) {
 	campaignDir := filepath.Join(campaignRoot, CampaignDir)
 	nestedDir := filepath.Join(campaignRoot, "projects", "subproject")
 
-	os.MkdirAll(campaignDir, 0755)
-	os.MkdirAll(nestedDir, 0755)
+	if err := os.MkdirAll(campaignDir, 0755); err != nil {
+		t.Fatalf("failed to create campaign dir: %v", err)
+	}
+	if err := os.MkdirAll(nestedDir, 0755); err != nil {
+		t.Fatalf("failed to create nested dir: %v", err)
+	}
 
 	ctx := context.Background()
 

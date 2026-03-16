@@ -33,7 +33,7 @@ func DefaultConcepts() []ConceptEntry {
 		},
 		{
 			Name:        "intents",
-			Path:        "workflow/intents/",
+			Path:        ".campaign/intents/",
 			Description: "Ideas and tasks",
 			Depth:       &depth0,
 		},
@@ -74,7 +74,7 @@ func DefaultCampaignPaths() CampaignPaths {
 		Docs:        "docs/",
 		Festivals:   "festivals/",
 		Workflow:    "workflow/",
-		Intents:     "workflow/intents/",
+		Intents:     ".campaign/intents/",
 		CodeReviews: "workflow/code_reviews/",
 		Pipelines:   "workflow/pipelines/",
 		Design:      "workflow/design/",
@@ -90,7 +90,7 @@ func DefaultNavigationShortcuts() map[string]ShortcutConfig {
 		// Shortcuts with both navigation and command expansion
 		"p":  {Path: "projects/", Concept: "project", Description: "Projects directory and commands", Source: ShortcutSourceAuto},
 		"f":  {Path: "festivals/", Concept: "festival", Description: "Festivals directory and commands", Source: ShortcutSourceAuto},
-		"i":  {Path: "workflow/intents/", Concept: "intent", Description: "Intents directory and commands", Source: ShortcutSourceAuto},
+		"i":  {Path: ".campaign/intents/", Concept: "intent", Description: "Intents directory and commands", Source: ShortcutSourceAuto},
 		"wt": {Path: "projects/worktrees/", Concept: "worktrees", Description: "Worktrees directory and commands", Source: ShortcutSourceAuto},
 
 		// Navigation-only shortcuts (no command expansion)

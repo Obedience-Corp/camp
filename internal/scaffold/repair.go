@@ -12,6 +12,7 @@ import (
 	dungeonscaffold "github.com/Obedience-Corp/camp/internal/dungeon/scaffold"
 	"github.com/Obedience-Corp/camp/internal/dungeon/statuspath"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/quest"
 	"github.com/lancekrogers/guild-scaffold/pkg/scaffold"
 )
@@ -61,11 +62,13 @@ type RepairPlan struct {
 	MergedJumps *config.JumpsConfig
 	// Migrations lists directories whose contents need to be moved.
 	Migrations []MigrationAction
+	// IntentMigrations lists legacy intent-root moves handled internally by Init.
+	IntentMigrations []MigrationAction
 }
 
 // HasMigrations returns true if any migration actions are planned.
 func (p *RepairPlan) HasMigrations() bool {
-	return len(p.Migrations) > 0
+	return len(p.Migrations) > 0 || len(p.IntentMigrations) > 0
 }
 
 // HasChanges returns true if the plan contains any additions, modifications, or migrations.
@@ -74,7 +77,7 @@ func (p *RepairPlan) HasChanges() bool {
 		return true
 	}
 	for _, c := range p.Changes {
-		if c.Type == RepairAdd || c.Type == RepairModify {
+		if c.Type == RepairAdd || c.Type == RepairModify || c.Type == RepairMigrate {
 			return true
 		}
 	}
@@ -116,6 +119,12 @@ func ComputeRepairPlan(ctx context.Context, dir string, opts InitOptions) (*Repa
 	// Phase 6: Detect misplaced completed/ dirs that should be in dungeon/completed/YYYY-MM-DD/.
 	// This runs after scaffold detection so we know which dungeon dirs will be created.
 	computeMigrationChanges(absDir, plan)
+
+	// Phase 7: Detect legacy workflow/intents state or scaffold residue that
+	// repair will normalize into the canonical .campaign/intents root during Init.
+	if err := computeIntentMigrationChanges(absDir, plan); err != nil {
+		return nil, err
+	}
 
 	return plan, nil
 }
@@ -458,6 +467,56 @@ func computeMigrationChanges(absDir string, plan *RepairPlan) {
 			})
 		}
 	}
+}
+
+func computeIntentMigrationChanges(absDir string, plan *RepairPlan) error {
+	intentSvc := intent.NewIntentService(absDir, filepath.Join(absDir, config.CampaignDir, "intents"))
+	moves, err := intentSvc.PlanLegacyIntentRootMigration()
+	if err != nil {
+		return err
+	}
+
+	for _, move := range moves {
+		relSource, err := filepath.Rel(absDir, move.Source)
+		if err != nil {
+			return camperrors.Wrapf(err, "computing relative path for %s", move.Source)
+		}
+		relDest, err := filepath.Rel(absDir, move.Dest)
+		if err != nil {
+			return camperrors.Wrapf(err, "computing relative path for %s", move.Dest)
+		}
+
+		plan.IntentMigrations = append(plan.IntentMigrations, MigrationAction{
+			Source: filepath.Dir(move.Source),
+			Dest:   filepath.Dir(move.Dest),
+			Items:  []string{filepath.Base(move.Source)},
+		})
+		plan.Changes = append(plan.Changes, RepairChange{
+			Type:        RepairMigrate,
+			Category:    "intent_migration",
+			Key:         filepath.ToSlash(relSource),
+			Description: "→ " + filepath.ToSlash(relDest),
+		})
+	}
+
+	cleanupPaths, err := intentSvc.PlanLegacyIntentRootCleanup()
+	if err != nil {
+		return err
+	}
+	for _, cleanupPath := range cleanupPaths {
+		relPath, err := filepath.Rel(absDir, cleanupPath)
+		if err != nil {
+			return camperrors.Wrapf(err, "computing relative path for %s", cleanupPath)
+		}
+		plan.Changes = append(plan.Changes, RepairChange{
+			Type:        RepairModify,
+			Category:    "intent_cleanup",
+			Key:         filepath.ToSlash(relPath),
+			Description: "remove legacy workflow/intents scaffold after canonical normalization",
+		})
+	}
+
+	return nil
 }
 
 // ExecuteMigrations moves items from misplaced directories to their correct locations.

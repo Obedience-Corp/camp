@@ -10,13 +10,14 @@
 
 ```text
 .
-├── .campaign/          Campaign configuration and settings
+├── .campaign/          Campaign configuration and system state
+│   ├── intents/        System-managed intent state (use camp intent)
+│   └── settings/       Campaign settings and shortcuts
 ├── projects/           Project repositories (submodules or worktrees)
 ├── festivals/          Festival methodology planning workspace
 ├── docs/               Human-authored documentation
 ├── ai_docs/            AI-generated documentation and research
-├── workflow/           Workflow management (intents, reviews, pipelines)
-│   ├── intents/        Intent documents
+├── workflow/           Workflow management (reviews, design, explore, pipelines)
 │   ├── code_reviews/   Code review notes
 │   ├── design/         Design documents
 │   ├── explore/        Exploratory research and discovery notes
@@ -46,7 +47,7 @@ camp shortcuts add       # Add a new shortcut (interactive)
 
 # Workflow
 camp log                 # Show campaign git log
-camp intent              # Manage intent documents
+camp intent              # Manage campaign intents in .campaign/intents/
 
 # Help
 camp --help              # Full command reference

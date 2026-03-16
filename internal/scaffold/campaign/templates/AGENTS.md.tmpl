@@ -31,7 +31,7 @@ This is the AI agent instruction file for the {{ .vars.campaign_name }} campaign
 | workflow/pipelines/ | CI/CD and automation |
 | workflow/design/ | Design documents and specifications |
 | workflow/explore/ | Exploratory research and discovery notes |
-| workflow/intents/ | Future work items |
+| .campaign/intents/ | System-managed intent state used by `camp intent` |
 
 ## Navigation Shortcuts
 
@@ -48,13 +48,13 @@ This is the AI agent instruction file for the {{ .vars.campaign_name }} campaign
 | `cgo pi` | workflow/pipelines/ |
 | `cgo de` | workflow/design/ |
 | `cgo ex` | workflow/explore/ |
-| `cgo i` | workflow/intents/ |
+| `cgo i` | .campaign/intents/ |
 
 ## AI Instructions
 
 <!-- Add specific instructions for AI agents -->
 
-Planning-layer rule of thumb: use intents for fast capture and small actionable work, `workflow/design/` for architecture or exploratory thinking, and festivals for structured multi-step execution. Canonical guide: https://fest.build/guides/intent-design-festival/
+Planning-layer rule of thumb: use `camp intent` for fast capture and small actionable work, `workflow/design/` for architecture or exploratory thinking, and festivals for structured multi-step execution. Intent state is stored under `.campaign/intents/`. Canonical guide: https://fest.build/guides/intent-design-festival/
 
 ---
 

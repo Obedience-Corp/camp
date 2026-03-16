@@ -24,7 +24,7 @@ func TestCategories(t *testing.T) {
 		"cr":     "workflow/code_reviews/",
 		"pi":     "workflow/pipelines/",
 		"de":     "workflow/design/",
-		"i":      "workflow/intents/",
+		"i":      ".campaign/intents/",
 		"t":      "toggle (last location)",
 		"toggle": "jump to last visited location",
 	}

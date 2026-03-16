@@ -674,13 +674,13 @@ func TestIntentAdd_AgentAuthor(t *testing.T) {
 	require.NoError(t, err)
 
 	// Find the created intent file
-	lsOutput, err := execLS(tc, "/campaigns/intent-agent/workflow/intents/inbox")
+	lsOutput, err := execLS(tc, "/campaigns/intent-agent/.campaign/intents/inbox")
 	require.NoError(t, err)
 	files := strings.Split(strings.TrimSpace(lsOutput), "\n")
 	require.GreaterOrEqual(t, len(files), 1, "should have at least 1 intent")
 
 	// Read intent frontmatter
-	content, err := tc.ReadFile("/campaigns/intent-agent/workflow/intents/inbox/" + files[0])
+	content, err := tc.ReadFile("/campaigns/intent-agent/.campaign/intents/inbox/" + files[0])
 	require.NoError(t, err)
 
 	assert.Contains(t, content, "author: agent", "non-TUI intent should have author: agent")
@@ -700,7 +700,7 @@ func TestIntentAdd_AgentAuthor_WithEditorFlag(t *testing.T) {
 	require.NoError(t, err)
 
 	// Find intent files
-	lsOutput, err := execLS(tc, "/campaigns/intent-agent-e/workflow/intents/inbox")
+	lsOutput, err := execLS(tc, "/campaigns/intent-agent-e/.campaign/intents/inbox")
 	require.NoError(t, err)
 
 	if strings.TrimSpace(lsOutput) == "" {
@@ -708,7 +708,7 @@ func TestIntentAdd_AgentAuthor_WithEditorFlag(t *testing.T) {
 	}
 
 	files := strings.Split(strings.TrimSpace(lsOutput), "\n")
-	content, err := tc.ReadFile("/campaigns/intent-agent-e/workflow/intents/inbox/" + files[0])
+	content, err := tc.ReadFile("/campaigns/intent-agent-e/.campaign/intents/inbox/" + files[0])
 	require.NoError(t, err)
 	assert.Contains(t, content, "author: agent", "editor-based intent should also have author: agent")
 }

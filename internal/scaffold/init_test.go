@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/quest"
 )
 
@@ -77,16 +78,22 @@ func TestInit(t *testing.T) {
 		t.Error("workflow/design/OBEY.md should explain that design is for implementation-bound work")
 	}
 
-	intentsObeyPath := filepath.Join(campaignDir, "workflow", "intents", "OBEY.md")
+	intentsObeyPath := filepath.Join(campaignDir, ".campaign", "intents", "OBEY.md")
 	intentsObey, err := os.ReadFile(intentsObeyPath)
 	if err != nil {
-		t.Fatalf("failed to read workflow/intents/OBEY.md: %v", err)
+		t.Fatalf("failed to read .campaign/intents/OBEY.md: %v", err)
 	}
-	if !strings.Contains(strings.ToLower(string(intentsObey)), "quick-capture notebook") {
-		t.Error("workflow/intents/OBEY.md should describe intents as a quick-capture notebook")
+	if !strings.Contains(string(intentsObey), ".campaign/intents/") {
+		t.Error(".campaign/intents/OBEY.md should describe the canonical intent root")
+	}
+	if !strings.Contains(string(intentsObey), "camp intent") {
+		t.Error(".campaign/intents/OBEY.md should direct operators to use camp intent")
 	}
 	if !strings.Contains(string(intentsObey), "workflow/explore") || !strings.Contains(string(intentsObey), "workflow/design") {
-		t.Error("workflow/intents/OBEY.md should explain its relationship to explore and design")
+		t.Error(".campaign/intents/OBEY.md should explain its relationship to explore and design")
+	}
+	if strings.Contains(string(intentsObey), "workflow/intents/") {
+		t.Error(".campaign/intents/OBEY.md should not describe workflow/intents as the canonical root")
 	}
 
 	workflowObeyPath := filepath.Join(campaignDir, "workflow", "OBEY.md")
@@ -99,6 +106,16 @@ func TestInit(t *testing.T) {
 	}
 	if !strings.Contains(string(workflowObey), "festivals/") {
 		t.Error("workflow/OBEY.md should explain how workflow planning complements festivals")
+	}
+	if !strings.Contains(string(workflowObey), ".campaign/intents/") {
+		t.Error("workflow/OBEY.md should point intent capture at .campaign/intents/")
+	}
+	if strings.Contains(string(workflowObey), "workflow/intents/") {
+		t.Error("workflow/OBEY.md should not present workflow/intents as a planning surface")
+	}
+
+	if _, err := os.Stat(filepath.Join(campaignDir, "workflow", "intents")); !os.IsNotExist(err) {
+		t.Error("workflow/intents should not be scaffolded for new campaigns")
 	}
 
 	rootDungeonStatuses := []string{"completed", "archived", "someday"}
@@ -166,6 +183,31 @@ func TestInit(t *testing.T) {
 	agentsPath := filepath.Join(campaignDir, "AGENTS.md")
 	if _, err := os.Stat(agentsPath); os.IsNotExist(err) {
 		t.Error("AGENTS.md was not created")
+	}
+	agentsContent, err := os.ReadFile(agentsPath)
+	if err != nil {
+		t.Fatalf("failed to read AGENTS.md: %v", err)
+	}
+	if !strings.Contains(string(agentsContent), ".campaign/intents/") {
+		t.Error("AGENTS.md should point intent navigation at .campaign/intents/")
+	}
+	if strings.Contains(string(agentsContent), "workflow/intents/") {
+		t.Error("AGENTS.md should not describe workflow/intents as the intent root")
+	}
+
+	readmePath := filepath.Join(campaignDir, "README.md")
+	readmeContent, err := os.ReadFile(readmePath)
+	if err != nil {
+		t.Fatalf("failed to read README.md: %v", err)
+	}
+	if !strings.Contains(string(readmeContent), ".campaign/          Campaign configuration and system state") {
+		t.Error("README.md should describe .campaign as configuration and system state")
+	}
+	if !strings.Contains(string(readmeContent), "├── intents/        System-managed intent state (use camp intent)") {
+		t.Error("README.md should document the canonical intent root under .campaign/")
+	}
+	if strings.Contains(string(readmeContent), "workflow/           Workflow management (intents, reviews, pipelines)") {
+		t.Error("README.md should not describe intents as part of the workflow tree")
 	}
 
 	// Check CLAUDE.md symlink was created
@@ -368,13 +410,23 @@ func TestInit_SkipsExistingDirs(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
 	campaignDir := filepath.Join(tmpDir, "partial-campaign")
-	os.MkdirAll(campaignDir, 0755)
+	if err := os.MkdirAll(campaignDir, 0755); err != nil {
+		t.Fatalf("failed to create campaign dir: %v", err)
+	}
 
 	// Pre-create some directories with files in them so scaffold sees them as existing
-	os.MkdirAll(filepath.Join(campaignDir, "projects"), 0755)
-	os.WriteFile(filepath.Join(campaignDir, "projects", "OBEY.md"), []byte("existing"), 0644)
-	os.MkdirAll(filepath.Join(campaignDir, "docs"), 0755)
-	os.WriteFile(filepath.Join(campaignDir, "docs", "OBEY.md"), []byte("existing"), 0644)
+	if err := os.MkdirAll(filepath.Join(campaignDir, "projects"), 0755); err != nil {
+		t.Fatalf("failed to create projects dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(campaignDir, "projects", "OBEY.md"), []byte("existing"), 0644); err != nil {
+		t.Fatalf("failed to write projects/OBEY.md: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(campaignDir, "docs"), 0755); err != nil {
+		t.Fatalf("failed to create docs dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(campaignDir, "docs", "OBEY.md"), []byte("existing"), 0644); err != nil {
+		t.Fatalf("failed to write docs/OBEY.md: %v", err)
+	}
 
 	ctx := context.Background()
 	result, err := Init(ctx, campaignDir, InitOptions{Name: "partial", NoRegister: true})
@@ -588,6 +640,44 @@ func TestInit_DefaultDescription(t *testing.T) {
 	}
 }
 
+func TestInit_CreatesCanonicalIntentDirectories(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	campaignDir := filepath.Join(tmpDir, "canonical-intents")
+	if err := os.MkdirAll(campaignDir, 0755); err != nil {
+		t.Fatalf("failed to create campaign dir: %v", err)
+	}
+
+	ctx := context.Background()
+	_, err := Init(ctx, campaignDir, InitOptions{
+		Name:        "canonical-intents",
+		NoRegister:  true,
+		SkipGitInit: true,
+	})
+	if err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+
+	for _, relDir := range []string{
+		".campaign/intents/inbox",
+		".campaign/intents/ready",
+		".campaign/intents/active",
+		".campaign/intents/dungeon/done",
+		".campaign/intents/dungeon/killed",
+		".campaign/intents/dungeon/archived",
+		".campaign/intents/dungeon/someday",
+	} {
+		path := filepath.Join(campaignDir, filepath.FromSlash(relDir))
+		if info, statErr := os.Stat(path); statErr != nil {
+			t.Fatalf("expected canonical intent directory %s to exist: %v", relDir, statErr)
+		} else if !info.IsDir() {
+			t.Fatalf("expected %s to be a directory", relDir)
+		}
+	}
+}
+
 func TestInit_RepairPreservesMission(t *testing.T) {
 	tmpDir := t.TempDir()
 	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
@@ -630,6 +720,121 @@ func TestInit_RepairPreservesMission(t *testing.T) {
 
 	if cfg.Mission != "Original mission" {
 		t.Errorf("Mission = %q, want %q (should preserve existing)", cfg.Mission, "Original mission")
+	}
+}
+
+func TestInit_RepairMigratesLegacyIntentState(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	campaignDir := filepath.Join(tmpDir, "repair-intents")
+	if err := os.MkdirAll(filepath.Join(campaignDir, config.CampaignDir), 0755); err != nil {
+		t.Fatalf("failed to create campaign dir: %v", err)
+	}
+
+	ctx := context.Background()
+	initialCfg := &config.CampaignConfig{
+		ID:          "repair-intents-id",
+		Name:        "repair-intents",
+		Type:        config.CampaignTypeProduct,
+		Description: "Repair intents",
+		CreatedAt:   time.Now(),
+	}
+	if err := config.SaveCampaignConfig(ctx, campaignDir, initialCfg); err != nil {
+		t.Fatalf("SaveCampaignConfig() error = %v", err)
+	}
+
+	legacyJumps := &config.JumpsConfig{
+		Paths: config.CampaignPaths{
+			Workflow: "workflow/",
+			Intents:  "workflow/intents/",
+		},
+		Shortcuts: map[string]config.ShortcutConfig{
+			"i": {
+				Path:        "workflow/intents/",
+				Concept:     "intent",
+				Description: "Legacy intents shortcut",
+				Source:      config.ShortcutSourceAuto,
+			},
+		},
+	}
+	if err := config.SaveJumpsConfig(ctx, campaignDir, legacyJumps); err != nil {
+		t.Fatalf("SaveJumpsConfig() error = %v", err)
+	}
+
+	legacyIntent := &intent.Intent{
+		ID:        "20260316-repair-intent",
+		Title:     "Repair Intent",
+		Status:    intent.StatusInbox,
+		Type:      intent.TypeFeature,
+		CreatedAt: time.Date(2026, 3, 16, 12, 0, 0, 0, time.UTC),
+		UpdatedAt: time.Date(2026, 3, 16, 12, 0, 0, 0, time.UTC),
+		Content:   "legacy intent\n",
+	}
+	legacyData, err := intent.SerializeIntent(legacyIntent)
+	if err != nil {
+		t.Fatalf("SerializeIntent() error = %v", err)
+	}
+
+	legacyIntentPath := filepath.Join(campaignDir, "workflow", "intents", "inbox", legacyIntent.ID+".md")
+	if err := os.MkdirAll(filepath.Dir(legacyIntentPath), 0755); err != nil {
+		t.Fatalf("failed to create legacy intent dir: %v", err)
+	}
+	if err := os.WriteFile(legacyIntentPath, legacyData, 0644); err != nil {
+		t.Fatalf("failed to write legacy intent: %v", err)
+	}
+	legacyObeyPath := filepath.Join(campaignDir, "workflow", "intents", "OBEY.md")
+	if err := os.WriteFile(legacyObeyPath, []byte("# legacy intent docs\n"), 0644); err != nil {
+		t.Fatalf("failed to write legacy intent OBEY.md: %v", err)
+	}
+	legacyAuditPath := filepath.Join(campaignDir, "workflow", "intents", ".intents.jsonl")
+	if err := os.WriteFile(legacyAuditPath, []byte("{\"event\":\"create\"}\n"), 0644); err != nil {
+		t.Fatalf("failed to write legacy audit log: %v", err)
+	}
+
+	plan, err := ComputeRepairPlan(ctx, campaignDir, InitOptions{
+		Name:       "repair-intents",
+		Type:       config.CampaignTypeProduct,
+		Repair:     true,
+		NoRegister: true,
+	})
+	if err != nil {
+		t.Fatalf("ComputeRepairPlan() error = %v", err)
+	}
+
+	_, err = Init(ctx, campaignDir, InitOptions{
+		Name:        "repair-intents",
+		Type:        config.CampaignTypeProduct,
+		Repair:      true,
+		RepairPlan:  plan,
+		NoRegister:  true,
+		SkipGitInit: true,
+	})
+	if err != nil {
+		t.Fatalf("Init() with repair error = %v", err)
+	}
+
+	canonicalIntentPath := filepath.Join(campaignDir, ".campaign", "intents", "inbox", legacyIntent.ID+".md")
+	if _, err := os.Stat(canonicalIntentPath); err != nil {
+		t.Fatalf("expected canonical intent at %s: %v", canonicalIntentPath, err)
+	}
+	if _, err := os.Stat(legacyIntentPath); !os.IsNotExist(err) {
+		t.Fatalf("legacy intent should be removed after repair, err = %v", err)
+	}
+
+	canonicalAuditPath := filepath.Join(campaignDir, ".campaign", "intents", ".intents.jsonl")
+	if _, err := os.Stat(canonicalAuditPath); err != nil {
+		t.Fatalf("expected canonical audit log at %s: %v", canonicalAuditPath, err)
+	}
+	if _, err := os.Stat(legacyAuditPath); !os.IsNotExist(err) {
+		t.Fatalf("legacy audit log should be removed after repair, err = %v", err)
+	}
+	if _, err := os.Stat(legacyObeyPath); !os.IsNotExist(err) {
+		t.Fatalf("legacy intent scaffold docs should be removed after repair, err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(campaignDir, "workflow", "intents")); !os.IsNotExist(err) {
+		t.Fatalf("legacy workflow/intents tree should be removed after repair, err = %v", err)
 	}
 }
 

@@ -80,7 +80,7 @@ func runGo(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Parse shortcuts using config mappings (with hardcoded defaults as fallback)
+	// Parse shortcuts using config mappings resolved from the campaign config.
 	result := nav.ParseShortcut(args, configMappings)
 
 	// Check for sub-shortcut in remaining args

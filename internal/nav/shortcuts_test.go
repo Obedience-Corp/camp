@@ -217,7 +217,7 @@ func TestCategoryDir(t *testing.T) {
 		{CategoryCodeReviews, "workflow/code_reviews"},
 		{CategoryPipelines, "workflow/pipelines"},
 		{CategoryDesign, "workflow/design"},
-		{CategoryIntents, "workflow/intents"},
+		{CategoryIntents, ".campaign/intents"},
 		{CategoryAll, ""},
 	}
 

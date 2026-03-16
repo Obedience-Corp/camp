@@ -29,8 +29,8 @@ const (
 	CategoryPipelines Category = "workflow/pipelines"
 	// CategoryDesign is the design directory (under workflow/).
 	CategoryDesign Category = "workflow/design"
-	// CategoryIntents is the intents directory (under workflow/).
-	CategoryIntents Category = "workflow/intents"
+	// CategoryIntents is the canonical intents directory (under .campaign/).
+	CategoryIntents Category = ".campaign/intents"
 	// CategoryAll represents all directories (no specific category).
 	CategoryAll Category = ""
 )

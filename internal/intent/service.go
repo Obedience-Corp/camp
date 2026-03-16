@@ -2,25 +2,23 @@ package intent
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"github.com/sahilm/fuzzy"
 )
 
 // Service errors.
 // Sentinels marked with %w wrap the canonical sentinel from internal/errors
 // to enable cross-package errors.Is() matching.
 var (
-	ErrNotFound    = camperrors.Wrap(camperrors.ErrNotFound, "intent not found")
-	ErrCancelled   = camperrors.Wrap(camperrors.ErrCancelled, "intent creation cancelled")
-	ErrFileExists  = camperrors.Wrap(camperrors.ErrAlreadyExists, "intent file already exists")
-	ErrInvalidPath = camperrors.Wrap(camperrors.ErrInvalidInput, "invalid path")
+	ErrNotFound                = camperrors.Wrap(camperrors.ErrNotFound, "intent not found")
+	ErrCancelled               = camperrors.Wrap(camperrors.ErrCancelled, "intent creation cancelled")
+	ErrFileExists              = camperrors.Wrap(camperrors.ErrAlreadyExists, "intent file already exists")
+	ErrInvalidPath             = camperrors.Wrap(camperrors.ErrInvalidInput, "invalid path")
+	ErrIntentMigrationConflict = camperrors.Wrap(camperrors.ErrConflict, "intent migration conflict")
 )
 
 // IntentService provides operations for managing intent files.
@@ -125,14 +123,18 @@ func (s *IntentService) CreateWithEditor(ctx context.Context, opts CreateOptions
 		return nil, camperrors.Wrap(err, "creating temp file")
 	}
 	tmpPath := tmpfile.Name()
-	defer os.Remove(tmpPath) // Clean up temp file
+	defer func() {
+		_ = os.Remove(tmpPath) // Clean up temp file
+	}()
 
 	// Write template to temp file
 	if _, err := tmpfile.WriteString(content); err != nil {
-		tmpfile.Close()
+		_ = tmpfile.Close()
 		return nil, camperrors.Wrap(err, "writing temp file")
 	}
-	tmpfile.Close()
+	if err := tmpfile.Close(); err != nil {
+		return nil, camperrors.Wrap(err, "closing temp file")
+	}
 
 	// Open editor (blocking)
 	if editorFn != nil {
@@ -159,7 +161,7 @@ func (s *IntentService) CreateWithEditor(ctx context.Context, opts CreateOptions
 	}
 
 	if errs := intent.Validate(); len(errs) > 0 {
-		return nil, fmt.Errorf("validation failed: %v", errs)
+		return nil, intentValidationError(errs)
 	}
 
 	// Move to final location
@@ -178,194 +180,6 @@ func (s *IntentService) CreateWithEditor(ctx context.Context, opts CreateOptions
 
 // EditorFunc is a callback for opening an editor on a file.
 type EditorFunc func(ctx context.Context, path string) error
-
-// Find locates an intent by ID across all status directories.
-// Supports fuzzy matching - partial IDs will match.
-func (s *IntentService) Find(ctx context.Context, id string) (*Intent, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, camperrors.Wrap(err, "context cancelled")
-	}
-
-	statuses := AllStatuses()
-
-	// First try exact match
-	for _, status := range statuses {
-		path := s.getIntentPath(status, id)
-		if intent, err := s.loadIntent(path); err == nil {
-			return intent, nil
-		}
-	}
-
-	// Try fuzzy match (ID contains the search term)
-	for _, status := range statuses {
-		dir := filepath.Join(s.intentsDir, string(status))
-		files, err := os.ReadDir(dir)
-		if err != nil {
-			continue // Directory may not exist
-		}
-
-		for _, file := range files {
-			if !strings.HasSuffix(file.Name(), ".md") {
-				continue
-			}
-			// Check if filename contains the search ID
-			baseName := strings.TrimSuffix(file.Name(), ".md")
-			if strings.Contains(baseName, id) {
-				path := filepath.Join(dir, file.Name())
-				if intent, err := s.loadIntent(path); err == nil {
-					return intent, nil
-				}
-			}
-		}
-	}
-
-	return nil, camperrors.Wrap(ErrNotFound, id)
-}
-
-// Get retrieves an intent by its exact ID.
-func (s *IntentService) Get(ctx context.Context, id string) (*Intent, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, camperrors.Wrap(err, "context cancelled")
-	}
-
-	statuses := AllStatuses()
-
-	for _, status := range statuses {
-		path := s.getIntentPath(status, id)
-		if intent, err := s.loadIntent(path); err == nil {
-			return intent, nil
-		}
-	}
-
-	return nil, camperrors.Wrap(ErrNotFound, id)
-}
-
-// ListOptions contains options for listing intents.
-type ListOptions struct {
-	Status   *Status // Filter by status (nil for all)
-	Type     *Type   // Filter by type (nil for all)
-	Concept  string  // Filter by concept (empty for all)
-	SortBy   string  // Sort field: "created", "updated", "title", "priority"
-	SortDesc bool    // Sort in descending order
-}
-
-// List returns all intents matching the given options.
-func (s *IntentService) List(ctx context.Context, opts *ListOptions) ([]*Intent, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, camperrors.Wrap(err, "context cancelled")
-	}
-
-	var intents []*Intent
-	statuses := AllStatuses()
-
-	if opts != nil && opts.Status != nil {
-		statuses = []Status{*opts.Status}
-	}
-
-	for _, status := range statuses {
-		if err := ctx.Err(); err != nil {
-			return nil, camperrors.Wrap(err, "context cancelled")
-		}
-
-		dir := filepath.Join(s.intentsDir, string(status))
-		files, err := os.ReadDir(dir)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return nil, camperrors.Wrapf(err, "reading directory %s", dir)
-		}
-
-		for _, file := range files {
-			if !strings.HasSuffix(file.Name(), ".md") {
-				continue
-			}
-			path := filepath.Join(dir, file.Name())
-			intent, err := s.loadIntent(path)
-			if err != nil {
-				// Log warning but continue
-				continue
-			}
-
-			// Apply filters
-			if opts != nil {
-				if opts.Type != nil && intent.Type != *opts.Type {
-					continue
-				}
-				if opts.Concept != "" && intent.Concept != opts.Concept {
-					continue
-				}
-			}
-
-			intents = append(intents, intent)
-		}
-	}
-
-	// Deduplicate by ID — an intent file may exist in multiple status
-	// directories due to incomplete Move() operations. Keep the first
-	// occurrence (statuses are scanned in priority order).
-	seen := make(map[string]bool, len(intents))
-	deduped := make([]*Intent, 0, len(intents))
-	for _, i := range intents {
-		if seen[i.ID] {
-			continue
-		}
-		seen[i.ID] = true
-		deduped = append(deduped, i)
-	}
-	intents = deduped
-
-	// Sort results
-	if opts != nil && opts.SortBy != "" {
-		s.sortIntents(intents, opts.SortBy, opts.SortDesc)
-	} else {
-		// Default sort by last-touched date descending (newest first)
-		s.sortIntents(intents, "updated", true)
-	}
-
-	return intents, nil
-}
-
-// intentSource implements fuzzy.Source interface for intent searching.
-type intentSource []*Intent
-
-func (is intentSource) String(i int) string {
-	return is[i].Title
-}
-
-func (is intentSource) Len() int {
-	return len(is)
-}
-
-// Search returns intents matching the query string using fuzzy matching.
-// Empty query returns all intents. Results are sorted by relevance score.
-func (s *IntentService) Search(ctx context.Context, query string) ([]*Intent, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, camperrors.Wrap(err, "context cancelled")
-	}
-
-	// Get all intents
-	allIntents, err := s.List(ctx, nil)
-	if err != nil {
-		return nil, camperrors.Wrap(err, "listing intents")
-	}
-
-	// Empty query returns all intents
-	if query == "" {
-		return allIntents, nil
-	}
-
-	// Use fuzzy matching on titles
-	matches := fuzzy.FindFrom(query, intentSource(allIntents))
-
-	// Build results from matches (already sorted by score)
-	results := make([]*Intent, len(matches))
-	for i, match := range matches {
-		results[i] = allIntents[match.Index]
-	}
-
-	return results, nil
-}
 
 // Edit opens an existing intent in an editor and saves changes.
 func (s *IntentService) Edit(ctx context.Context, id string, editorFn EditorFunc) (*Intent, error) {
@@ -400,7 +214,7 @@ func (s *IntentService) Edit(ctx context.Context, id string, editorFn EditorFunc
 	}
 
 	if errs := updated.Validate(); len(errs) > 0 {
-		return nil, fmt.Errorf("validation failed: %v", errs)
+		return nil, intentValidationError(errs)
 	}
 
 	// Handle status change (move to new directory)
@@ -598,142 +412,6 @@ func (s *IntentService) loadIntent(path string) (*Intent, error) {
 	return intent, nil
 }
 
-// sortIntents sorts a slice of intents by the given field.
-func (s *IntentService) sortIntents(intents []*Intent, sortBy string, desc bool) {
-	sort.Slice(intents, func(i, j int) bool {
-		var less bool
-		switch sortBy {
-		case "created":
-			less = intents[i].CreatedAt.Before(intents[j].CreatedAt)
-		case "updated":
-			ui := intents[i].UpdatedAt
-			if ui.IsZero() {
-				ui = intents[i].CreatedAt
-			}
-			uj := intents[j].UpdatedAt
-			if uj.IsZero() {
-				uj = intents[j].CreatedAt
-			}
-			less = ui.Before(uj)
-		case "title":
-			less = intents[i].Title < intents[j].Title
-		case "priority":
-			less = priorityRank(intents[i].Priority) < priorityRank(intents[j].Priority)
-		default:
-			less = intents[i].CreatedAt.Before(intents[j].CreatedAt)
-		}
-		if desc {
-			return !less
-		}
-		return less
-	})
-}
-
-// EnsureDirectories creates all status directories if missing and migrates
-// legacy top-level done/ and killed/ directories into the dungeon.
-func (s *IntentService) EnsureDirectories(ctx context.Context) error {
-	if err := ctx.Err(); err != nil {
-		return camperrors.Wrap(err, "context cancelled")
-	}
-
-	// Create all status directories
-	for _, status := range AllStatuses() {
-		dir := filepath.Join(s.intentsDir, string(status))
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return camperrors.Wrapf(err, "creating directory %s", dir)
-		}
-	}
-
-	// Migrate legacy top-level done/ and killed/ into dungeon
-	legacyMappings := map[string]Status{
-		"done":   StatusDone,
-		"killed": StatusKilled,
-	}
-
-	for legacyDir, newStatus := range legacyMappings {
-		if err := s.migrateLegacyDir(ctx, legacyDir, newStatus); err != nil {
-			return camperrors.Wrapf(err, "migrating %s", legacyDir)
-		}
-	}
-
-	return nil
-}
-
-// migrateLegacyDir moves intent files from a legacy top-level status directory
-// into the corresponding dungeon subdirectory, updating frontmatter status.
-func (s *IntentService) migrateLegacyDir(ctx context.Context, legacyDir string, newStatus Status) error {
-	srcDir := filepath.Join(s.intentsDir, legacyDir)
-
-	// Check if legacy directory exists
-	entries, err := os.ReadDir(srcDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil // Nothing to migrate
-		}
-		return camperrors.Wrapf(err, "reading directory %s", srcDir)
-	}
-
-	dstDir := filepath.Join(s.intentsDir, string(newStatus))
-
-	for _, entry := range entries {
-		if err := ctx.Err(); err != nil {
-			return camperrors.Wrap(err, "context cancelled")
-		}
-
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
-			continue
-		}
-
-		srcPath := filepath.Join(srcDir, entry.Name())
-		dstPath := filepath.Join(dstDir, entry.Name())
-
-		// Read, update status in frontmatter, write to new location
-		content, err := os.ReadFile(srcPath)
-		if err != nil {
-			return camperrors.Wrapf(err, "reading %s", srcPath)
-		}
-
-		intent, err := ParseIntentFromFile(srcPath, content)
-		if err != nil {
-			// Can't parse — just move the file as-is
-			if _, serr := os.Stat(dstPath); serr == nil {
-				// Already migrated (prior interrupted run) — remove source and skip
-				os.Remove(srcPath)
-				continue
-			}
-			if err := os.Rename(srcPath, dstPath); err != nil {
-				return camperrors.Wrapf(err, "moving %s", srcPath)
-			}
-			continue
-		}
-
-		// Update status and write to new location
-		intent.Status = newStatus
-		data, err := SerializeIntent(intent)
-		if err != nil {
-			return camperrors.Wrapf(err, "serializing %s", srcPath)
-		}
-
-		if _, serr := os.Stat(dstPath); serr == nil {
-			// Already migrated (prior interrupted run) — remove source and skip
-			os.Remove(srcPath)
-			continue
-		}
-
-		if err := os.WriteFile(dstPath, data, 0644); err != nil {
-			return camperrors.Wrapf(err, "writing %s", dstPath)
-		}
-
-		if err := os.Remove(srcPath); err != nil {
-			return camperrors.Wrapf(err, "removing %s", srcPath)
-		}
-	}
-
-	// Remove legacy directory if empty
-	remaining, err := os.ReadDir(srcDir)
-	if err == nil && len(remaining) == 0 {
-		os.Remove(srcDir)
-	}
-
-	return nil
+func intentValidationError(errs []error) error {
+	return camperrors.NewValidation("intent", "one or more fields failed validation", camperrors.Join(errs...))
 }

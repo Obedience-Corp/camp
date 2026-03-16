@@ -13,13 +13,13 @@ func TestFilePath(t *testing.T) {
 	}{
 		{
 			name:       "standard path",
-			intentsDir: "workflow/intents",
-			want:       filepath.Join("workflow/intents", AuditFile),
+			intentsDir: ".campaign/intents",
+			want:       filepath.Join(".campaign/intents", AuditFile),
 		},
 		{
 			name:       "absolute path",
-			intentsDir: "/home/user/campaign/workflow/intents",
-			want:       filepath.Join("/home/user/campaign/workflow/intents", AuditFile),
+			intentsDir: "/home/user/campaign/.campaign/intents",
+			want:       filepath.Join("/home/user/campaign/.campaign/intents", AuditFile),
 		},
 	}
 

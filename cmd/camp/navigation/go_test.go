@@ -4,8 +4,10 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/state"
 )
 
@@ -134,5 +136,23 @@ func TestHandleToggle_BounceBack(t *testing.T) {
 	dirBReal, _ := evalSymlinks(dirB)
 	if lastReal != dirBReal {
 		t.Errorf("after second toggle: last = %q, want %q", lastReal, dirBReal)
+	}
+}
+
+func TestFormatConfigShortcuts_ShowsCanonicalIntentPath(t *testing.T) {
+	output := formatConfigShortcuts(map[string]config.ShortcutConfig{
+		"i": {
+			Path: ".campaign/intents/",
+		},
+	})
+
+	if !strings.Contains(output, "i") {
+		t.Fatalf("formatConfigShortcuts() missing intent shortcut: %q", output)
+	}
+	if !strings.Contains(output, ".campaign/intents") {
+		t.Fatalf("formatConfigShortcuts() missing canonical intent path: %q", output)
+	}
+	if strings.Contains(output, "workflow/intents") {
+		t.Fatalf("formatConfigShortcuts() should not mention legacy intent path: %q", output)
 	}
 }

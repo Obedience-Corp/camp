@@ -47,9 +47,8 @@ func LoadCampaignConfig(ctx context.Context, campaignRoot string) (*CampaignConf
 	// Generate ID for campaigns that don't have one
 	if cfg.ID == "" {
 		cfg.ID = uuid.New().String()
-		if err := SaveCampaignConfig(ctx, campaignRoot, &cfg); err != nil {
-			// Log warning but don't fail - can retry next time
-		}
+		// Best-effort persistence: keep loading even if saving the generated ID fails.
+		_ = SaveCampaignConfig(ctx, campaignRoot, &cfg)
 	}
 
 	// Load jumps.yaml for navigation configuration

@@ -19,7 +19,7 @@ var questUnlinkCmd = &cobra.Command{
 The path must match exactly as it was linked (campaign-root-relative).
 
 Examples:
-  camp quest unlink myquest workflow/intents/some-intent.yaml
+  camp quest unlink myquest .campaign/intents/inbox/some-intent.md
   camp quest unlink myquest projects/camp`,
 	Args: cobra.ExactArgs(2),
 	Annotations: map[string]string{
