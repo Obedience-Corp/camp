@@ -795,7 +795,9 @@ func runShortcutsReset(cmd *cobra.Command, _ []string) error {
 
 		// Add missing defaults
 		for _, key := range diff.missing {
-			jumps.Shortcuts[key] = defaults[key]
+			if !dryRun {
+				jumps.Shortcuts[key] = defaults[key]
+			}
 			fmt.Printf("  %s  Added    %-10s %s %s\n",
 				ui.SuccessIcon(), ui.Accent(key), ui.ArrowIcon(), ui.Value(defaults[key].Path))
 		}
@@ -811,7 +813,9 @@ func runShortcutsReset(cmd *cobra.Command, _ []string) error {
 
 		// Update modified auto shortcuts
 		for _, key := range diff.modified {
-			jumps.Shortcuts[key] = defaults[key]
+			if !dryRun {
+				jumps.Shortcuts[key] = defaults[key]
+			}
 			fmt.Printf("  %s  Updated  %-10s %s %s\n",
 				ui.WarningIcon(), ui.Accent(key), ui.ArrowIcon(), ui.Value(defaults[key].Path))
 		}

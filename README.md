@@ -316,7 +316,7 @@ my-campaign/
 │   ├── code_reviews/    # Review notes (cgo cr)
 │   ├── pipelines/       # CI/CD configs (cgo pi)
 │   └── design/          # Design documents (cgo de)
-├── ai_docs/             # AI documentation (cgo a)
+├── ai_docs/             # AI documentation (cgo ai)
 ├── docs/                # Human documentation (cgo d)
 └── dungeon/             # Archived work (cgo du)
 ```
