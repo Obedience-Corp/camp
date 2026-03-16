@@ -137,7 +137,7 @@ func TestInit(t *testing.T) {
 
 	expectedQuestPaths := []string{
 		quest.RootDirName,
-		filepath.Join(quest.RootDirName, quest.DefaultFileName),
+		filepath.Join(quest.RootDirName, quest.DefaultDirName, quest.FileName),
 		filepath.Join(quest.RootDirName, "dungeon", "OBEY.md"),
 		filepath.Join(quest.RootDirName, "dungeon", "completed", ".gitkeep"),
 		filepath.Join(quest.RootDirName, "dungeon", "archived", ".gitkeep"),
@@ -756,7 +756,7 @@ func TestInit_RepairRestoresQuestScaffold(t *testing.T) {
 	}
 
 	removed := []string{
-		filepath.Join(campaignDir, quest.RootDirName, quest.DefaultFileName),
+		filepath.Join(campaignDir, quest.RootDirName, quest.DefaultDirName, quest.FileName),
 		filepath.Join(campaignDir, quest.RootDirName, "dungeon", "OBEY.md"),
 	}
 	for _, path := range removed {

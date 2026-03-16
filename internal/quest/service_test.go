@@ -3,8 +3,10 @@ package quest
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func setupQuestCampaign(t *testing.T) (context.Context, string, *Service) {
@@ -177,4 +179,112 @@ func TestServiceDefaultQuestLifecycleProtected(t *testing.T) {
 	if _, err := svc.Pause(ctx, DefaultQuestID); !errors.Is(err, ErrDefaultQuestReadOnly) {
 		t.Fatalf("Pause(default) error = %v, want %v", err, ErrDefaultQuestReadOnly)
 	}
+}
+
+func TestEnsureScaffoldMigrationPaths(t *testing.T) {
+	t.Run("legacy flat file migrated to directory", func(t *testing.T) {
+		ctx := context.Background()
+		root := t.TempDir()
+
+		// Create quests dir with legacy default.yaml (old layout).
+		questsDir := filepath.Join(root, RootDirName)
+		if err := os.MkdirAll(questsDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		legacyPath := filepath.Join(questsDir, "default.yaml")
+		q := DefaultQuest(time.Now().UTC())
+		if err := writeQuestFile(legacyPath, q); err != nil {
+			t.Fatal(err)
+		}
+
+		result, err := EnsureScaffold(ctx, root)
+		if err != nil {
+			t.Fatalf("EnsureScaffold() error = %v", err)
+		}
+
+		// New path should exist.
+		newPath := DefaultPath(root)
+		if _, err := os.Stat(newPath); err != nil {
+			t.Fatalf("new default quest not found at %s: %v", newPath, err)
+		}
+
+		// Legacy path should be gone.
+		if _, err := os.Stat(legacyPath); !os.IsNotExist(err) {
+			t.Fatalf("legacy default.yaml should have been removed, got err = %v", err)
+		}
+
+		// Result should report the migration.
+		found := false
+		for _, f := range result.CreatedFiles {
+			if f == newPath {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Error("migration should report new path in CreatedFiles")
+		}
+	})
+
+	t.Run("both exist keeps directory version", func(t *testing.T) {
+		ctx := context.Background()
+		root := t.TempDir()
+
+		questsDir := filepath.Join(root, RootDirName)
+		defaultDir := filepath.Join(questsDir, DefaultDirName)
+		if err := os.MkdirAll(defaultDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+
+		// Write both legacy and new.
+		q := DefaultQuest(time.Now().UTC())
+		legacyPath := filepath.Join(questsDir, "default.yaml")
+		if err := writeQuestFile(legacyPath, q); err != nil {
+			t.Fatal(err)
+		}
+		newPath := filepath.Join(defaultDir, FileName)
+		if err := writeQuestFile(newPath, q); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := EnsureScaffold(ctx, root); err != nil {
+			t.Fatalf("EnsureScaffold() error = %v", err)
+		}
+
+		// New path should still exist.
+		if _, err := os.Stat(newPath); err != nil {
+			t.Fatalf("directory quest.yaml should still exist: %v", err)
+		}
+
+		// Legacy should be removed.
+		if _, err := os.Stat(legacyPath); !os.IsNotExist(err) {
+			t.Fatalf("legacy default.yaml should be removed, got err = %v", err)
+		}
+	})
+
+	t.Run("fresh scaffold creates directory layout", func(t *testing.T) {
+		ctx := context.Background()
+		root := t.TempDir()
+
+		if _, err := EnsureScaffold(ctx, root); err != nil {
+			t.Fatalf("EnsureScaffold() error = %v", err)
+		}
+
+		newPath := DefaultPath(root)
+		info, err := os.Stat(newPath)
+		if err != nil {
+			t.Fatalf("default quest not created at %s: %v", newPath, err)
+		}
+		if info.IsDir() {
+			t.Fatal("quest.yaml should be a file, not a directory")
+		}
+
+		loaded, err := LoadDefault(ctx, root)
+		if err != nil {
+			t.Fatalf("LoadDefault() error = %v", err)
+		}
+		if loaded.Slug != DefaultDirName {
+			t.Errorf("slug = %q, want %q", loaded.Slug, DefaultDirName)
+		}
+	})
 }

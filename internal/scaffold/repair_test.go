@@ -463,7 +463,7 @@ func TestComputeRepairPlan_MissingQuestScaffold(t *testing.T) {
 	}
 
 	missing := []string{
-		filepath.Join(dir, quest.RootDirName, quest.DefaultFileName),
+		filepath.Join(dir, quest.RootDirName, quest.DefaultDirName, quest.FileName),
 		filepath.Join(dir, quest.RootDirName, "dungeon", "OBEY.md"),
 	}
 	for _, path := range missing {
@@ -485,7 +485,7 @@ func TestComputeRepairPlan_MissingQuestScaffold(t *testing.T) {
 	}
 
 	expected := []string{
-		filepath.ToSlash(filepath.Join(quest.RootDirName, quest.DefaultFileName)),
+		filepath.ToSlash(filepath.Join(quest.RootDirName, quest.DefaultDirName, quest.FileName)),
 		filepath.ToSlash(filepath.Join(quest.RootDirName, "dungeon", "OBEY.md")),
 	}
 	for _, key := range expected {

@@ -27,10 +27,10 @@ const (
 	DefaultQuestName = "default"
 	// RootDirName is the hidden campaign metadata directory for quests.
 	RootDirName = ".campaign/quests"
-	// FileName is the quest metadata filename for directory-backed quests.
+	// FileName is the quest metadata filename inside every quest directory.
 	FileName = "quest.yaml"
-	// DefaultFileName stores the special default quest metadata.
-	DefaultFileName = "default.yaml"
+	// DefaultDirName is the directory name for the campaign default quest.
+	DefaultDirName = "default"
 )
 
 // Link associates a campaign artifact with a quest.

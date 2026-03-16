@@ -152,7 +152,7 @@ func computeStandardDungeonScaffoldChanges(absDir string, plan *RepairPlan) {
 }
 
 func computeQuestScaffoldChanges(absDir string, plan *RepairPlan) {
-	// The quests directory and default.yaml are now handled by the scaffold
+	// The quests directory and default/quest.yaml are handled by the scaffold
 	// template system (they live under campaign/templates/.campaign/quests/).
 	// Only the dungeon subdirectories and their files are created imperatively
 	// via dungeonscaffold.Init(), so we derive the expected paths from the

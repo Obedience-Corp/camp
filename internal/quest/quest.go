@@ -44,7 +44,7 @@ func DungeonStatusDir(campaignRoot string, status Status) string {
 
 // DefaultQuestPath returns the default quest metadata path.
 func DefaultQuestPath(campaignRoot string) string {
-	return filepath.Join(QuestsDir(campaignRoot), DefaultFileName)
+	return filepath.Join(QuestsDir(campaignRoot), DefaultDirName, FileName)
 }
 
 // QuestDir returns the directory path for a quest slug at the root.
@@ -67,6 +67,12 @@ func Exists(campaignRoot string) bool {
 func IsInitialized(campaignRoot string) bool {
 	info, err := os.Stat(DefaultQuestPath(campaignRoot))
 	return err == nil && !info.IsDir()
+}
+
+// LegacyDefaultPath returns the pre-directory default quest path (default.yaml).
+// Used only for migration from the old flat-file layout.
+func LegacyDefaultPath(campaignRoot string) string {
+	return filepath.Join(QuestsDir(campaignRoot), "default.yaml")
 }
 
 // Save writes quest metadata to disk.
@@ -95,11 +101,7 @@ func Load(ctx context.Context, path string) (*Quest, error) {
 		return nil, camperrors.Wrapf(err, "parse quest file %s", path)
 	}
 	q.Path = path
-	if filepath.Base(path) == DefaultFileName {
-		q.Slug = DefaultQuestName
-	} else {
-		q.Slug = filepath.Base(filepath.Dir(path))
-	}
+	q.Slug = filepath.Base(filepath.Dir(path))
 	if err := q.Validate(); err != nil {
 		return nil, err
 	}
@@ -121,12 +123,6 @@ func List(ctx context.Context, campaignRoot string, includeDungeon bool) ([]*Que
 	}
 
 	var quests []*Quest
-	if q, err := LoadDefault(ctx, campaignRoot); err == nil {
-		quests = append(quests, q)
-	} else if !errors.Is(err, ErrQuestNotFound) {
-		return nil, err
-	}
-
 	rootEntries, err := os.ReadDir(QuestsDir(campaignRoot))
 	if err != nil {
 		return nil, camperrors.Wrap(err, "read quests dir")
@@ -276,11 +272,7 @@ func writeQuestFile(path string, q *Quest) error {
 		return camperrors.Wrapf(err, "write quest file %s", path)
 	}
 	q.Path = path
-	if filepath.Base(path) == DefaultFileName {
-		q.Slug = DefaultQuestName
-	} else {
-		q.Slug = filepath.Base(filepath.Dir(path))
-	}
+	q.Slug = filepath.Base(filepath.Dir(path))
 	return nil
 }
 
