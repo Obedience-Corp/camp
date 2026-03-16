@@ -131,3 +131,63 @@ func GetConceptStyle(concept string) lipgloss.Style {
 	}
 	return lipgloss.NewStyle().Foreground(AccentColor)
 }
+
+// Workflow type colors (adaptive for light/dark terminals)
+var (
+	WorkflowIntentColor   = lipgloss.AdaptiveColor{Light: "30", Dark: "51"}   // Cyan — raw ideas
+	WorkflowDesignColor   = lipgloss.AdaptiveColor{Light: "27", Dark: "110"}  // Blue — architecture
+	WorkflowExploreColor  = lipgloss.AdaptiveColor{Light: "178", Dark: "220"} // Yellow — investigation
+	WorkflowFestivalColor = lipgloss.AdaptiveColor{Light: "28", Dark: "82"}   // Green — active execution
+)
+
+// GetWorkflowTypeStyle returns the style for a workflow type (intent, design, explore, festival).
+func GetWorkflowTypeStyle(wfType string) lipgloss.Style {
+	switch wfType {
+	case "intent":
+		return lipgloss.NewStyle().Foreground(WorkflowIntentColor)
+	case "design":
+		return lipgloss.NewStyle().Foreground(WorkflowDesignColor)
+	case "explore":
+		return lipgloss.NewStyle().Foreground(WorkflowExploreColor)
+	case "festival":
+		return lipgloss.NewStyle().Foreground(WorkflowFestivalColor)
+	default:
+		return lipgloss.NewStyle().Foreground(DimColor)
+	}
+}
+
+// GetWorkflowTypeColor returns the color for a workflow type.
+func GetWorkflowTypeColor(wfType string) lipgloss.TerminalColor {
+	switch wfType {
+	case "intent":
+		return WorkflowIntentColor
+	case "design":
+		return WorkflowDesignColor
+	case "explore":
+		return WorkflowExploreColor
+	case "festival":
+		return WorkflowFestivalColor
+	default:
+		return DimColor
+	}
+}
+
+// GetLifecycleStageStyle returns the style for a lifecycle stage.
+func GetLifecycleStageStyle(stage string) lipgloss.Style {
+	switch stage {
+	case "inbox":
+		return lipgloss.NewStyle().Foreground(StatusInboxColor)
+	case "active":
+		return lipgloss.NewStyle().Foreground(StatusActiveColor)
+	case "ready":
+		return lipgloss.NewStyle().Foreground(StatusReadyColor)
+	case "planning":
+		return lipgloss.NewStyle().Foreground(InfoColor)
+	case "done":
+		return lipgloss.NewStyle().Foreground(StatusDoneColor)
+	case "killed":
+		return lipgloss.NewStyle().Foreground(StatusKilledColor)
+	default:
+		return lipgloss.NewStyle().Foreground(DimColor)
+	}
+}
