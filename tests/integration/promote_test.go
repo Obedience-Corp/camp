@@ -56,6 +56,8 @@ func setupPromoteCampaign(t *testing.T, tc *TestContainer, name string) string {
 			"%s/workflow/intents/dungeon/archived %s/workflow/intents/dungeon/someday",
 		path, path, path, path, path, path, path))
 	require.NoError(t, err)
+	err = tc.WriteFile(path+"/workflow/intents/OBEY.md", "# legacy intent marker\n")
+	require.NoError(t, err)
 
 	// Git commit the directory structure.
 	_, _, err = tc.ExecCommand("sh", "-c", fmt.Sprintf(
@@ -91,6 +93,30 @@ func findPlanningFestivalDir(t *testing.T, tc *TestContainer, campaignPath, expe
 	t.Fatalf("no festival directory contained slug %q; planning ls=%q; promote output=%q; festivals=%q",
 		expectedSlug, planningLS, promoteOutput, allFestivals)
 	return ""
+}
+
+func TestIntentPromote_MigratesLegacyIntentMarkerToCanonicalRoot(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupPromoteCampaign(t, tc, "promote-marker-migration")
+
+	intentID := "marker-migration-intent-20260303-120004"
+	writeIntent(t, tc, path, intentID, "Marker Migration Intent", "ready")
+
+	output, err := tc.RunCampInDir(path, "intent", "promote", intentID, "--target", "design", "--no-commit")
+	require.NoError(t, err, "design promote should succeed, output: %s", output)
+
+	canonicalObeyPath := fmt.Sprintf("%s/.campaign/intents/OBEY.md", path)
+	canonicalObey, err := tc.ReadFile(canonicalObeyPath)
+	require.NoError(t, err)
+	assert.Equal(t, "# legacy intent marker\n", canonicalObey, "canonical marker should preserve migrated legacy content")
+
+	legacyExists, err := tc.CheckFileExists(fmt.Sprintf("%s/workflow/intents/OBEY.md", path))
+	require.NoError(t, err)
+	assert.False(t, legacyExists, "legacy marker should be removed after command-path migration")
+
+	legacyDirExists, err := tc.CheckDirExists(fmt.Sprintf("%s/workflow/intents", path))
+	require.NoError(t, err)
+	assert.False(t, legacyDirExists, "legacy intent root should be removed once migration empties it")
 }
 
 func TestIntentPromote_TargetFestival_NoExistingFestivals_CreatesFestivalAndActivatesIntent(t *testing.T) {

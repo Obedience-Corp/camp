@@ -139,8 +139,12 @@ Use this checklist when validating an upgraded branch or release candidate.
      jumps config.
    - Run repair or an intent command that initializes the service.
    - Confirm intent files and `.intents.jsonl` move to `.campaign/intents/`.
-   - Confirm legacy scaffold residue is only removed during repair/init
-     normalization, not ordinary command execution.
+   - Confirm `workflow/intents/OBEY.md` migrates to `.campaign/intents/OBEY.md`
+     so the canonical root stays daemon-recognized as camp-managed state.
+   - Confirm the legacy `workflow/intents/` root is removed automatically once
+     migration leaves it empty.
+   - Confirm any remaining scaffold-only residue still requires repair/init
+     normalization rather than being removed blindly during ordinary commands.
 3. Explicit dual-populated conflict
    - Create intent data in both `workflow/intents/` and `.campaign/intents/`.
    - Run repair or initialization.
@@ -161,5 +165,7 @@ Existing campaigns remain supported during rollout:
 - legacy jumps data is normalized to canonical intent navigation at load/save
   time
 - legacy `workflow/intents/` content migrates into `.campaign/intents/`
+- legacy `workflow/intents/OBEY.md` migrates into `.campaign/intents/OBEY.md`
+  so camp-managed ownership markers survive normalization
 - explicit conflict states fail closed instead of auto-merging ambiguous data
 - first-rollout cross-campaign behavior remains limited to `camp intent add`

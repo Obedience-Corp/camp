@@ -759,6 +759,9 @@ func TestComputeIntentMigrationChanges_DetectsLegacyIntentRoot(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(legacyRoot, "inbox", "legacy.md"), []byte("# legacy\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(legacyRoot, "OBEY.md"), []byte("# legacy marker\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(legacyRoot, ".intents.jsonl"), []byte("{\"event\":\"create\"}\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -771,8 +774,8 @@ func TestComputeIntentMigrationChanges_DetectsLegacyIntentRoot(t *testing.T) {
 	if !plan.HasChanges() {
 		t.Fatal("expected migrate-only intent plan to count as changes")
 	}
-	if len(plan.IntentMigrations) != 2 {
-		t.Fatalf("expected 2 intent migrations, got %d", len(plan.IntentMigrations))
+	if len(plan.IntentMigrations) != 3 {
+		t.Fatalf("expected 3 intent migrations, got %d", len(plan.IntentMigrations))
 	}
 
 	found := false
@@ -787,6 +790,56 @@ func TestComputeIntentMigrationChanges_DetectsLegacyIntentRoot(t *testing.T) {
 	if !found {
 		t.Fatal("expected file-level intent migration change for legacy inbox item")
 	}
+
+	foundMarker := false
+	for _, c := range plan.Changes {
+		if c.Category == "intent_migration" && c.Key == "workflow/intents/OBEY.md" {
+			foundMarker = true
+			if c.Description != "→ .campaign/intents/OBEY.md" {
+				t.Fatalf("intent marker migration description = %q", c.Description)
+			}
+		}
+	}
+	if !foundMarker {
+		t.Fatal("expected file-level intent migration change for legacy marker")
+	}
+}
+
+func TestComputeIntentMigrationChanges_DetectsLegacyIntentMarkerWithoutIntentFiles(t *testing.T) {
+	dir := t.TempDir()
+	legacyRoot := filepath.Join(dir, "workflow", "intents")
+
+	if err := os.MkdirAll(legacyRoot, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyRoot, "OBEY.md"), []byte("# legacy marker\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	plan := &RepairPlan{}
+	if err := computeIntentMigrationChanges(dir, plan); err != nil {
+		t.Fatalf("computeIntentMigrationChanges() error: %v", err)
+	}
+
+	if !plan.HasChanges() {
+		t.Fatal("expected marker-only legacy intent root to count as a repair change")
+	}
+	if len(plan.IntentMigrations) != 1 {
+		t.Fatalf("expected 1 intent migration, got %d", len(plan.IntentMigrations))
+	}
+
+	foundMarker := false
+	for _, c := range plan.Changes {
+		if c.Category == "intent_migration" && c.Key == "workflow/intents/OBEY.md" {
+			foundMarker = true
+			if c.Description != "→ .campaign/intents/OBEY.md" {
+				t.Fatalf("intent marker migration description = %q", c.Description)
+			}
+		}
+	}
+	if !foundMarker {
+		t.Fatal("expected marker-only legacy intent root to plan marker migration")
+	}
 }
 
 func TestComputeIntentMigrationChanges_DetectsLegacyIntentScaffoldCleanup(t *testing.T) {
@@ -794,7 +847,6 @@ func TestComputeIntentMigrationChanges_DetectsLegacyIntentScaffoldCleanup(t *tes
 	legacyRoot := filepath.Join(dir, "workflow", "intents")
 
 	for _, relPath := range []string{
-		"OBEY.md",
 		filepath.Join("inbox", ".gitkeep"),
 		filepath.Join("dungeon", ".crawl.yaml"),
 	} {
@@ -818,9 +870,11 @@ func TestComputeIntentMigrationChanges_DetectsLegacyIntentScaffoldCleanup(t *tes
 
 	foundCleanup := false
 	for _, c := range plan.Changes {
-		if c.Category == "intent_cleanup" && c.Key == "workflow/intents/OBEY.md" {
+		if c.Category == "intent_cleanup" && c.Key == "workflow/intents/inbox/.gitkeep" {
 			foundCleanup = true
-			break
+		}
+		if c.Key == "workflow/intents/OBEY.md" {
+			t.Fatal("legacy intent marker should not be classified as cleanup residue")
 		}
 	}
 	if !foundCleanup {
