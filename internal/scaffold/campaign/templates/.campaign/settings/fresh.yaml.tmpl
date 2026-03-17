@@ -1,0 +1,31 @@
+# fresh.yaml — Post-merge branch cycling configuration for `camp fresh`.
+#
+# After merging a PR, `camp fresh` syncs your project to its default branch,
+# prunes merged branches, and optionally creates a new working branch.
+#
+# Usage:
+#   camp fresh                    # Sync current project using this config
+#   camp fresh --branch feat/x   # Override branch for this run
+#   camp fresh all                # Sync all project submodules
+#   camp fresh --dry-run          # Preview without changes
+
+# Branch to create after syncing. Leave empty to stay on the default branch.
+# branch: develop
+
+# Push new branches upstream with --set-upstream (default: true).
+# push_upstream: true
+
+# Prune local branches already merged into the default branch (default: true).
+# prune: true
+
+# Prune stale remote tracking refs via `git remote prune origin` (default: true).
+# prune_remote: true
+
+# Per-project overrides. Keys are project names (directory name under projects/).
+# projects:
+#   camp:
+#     branch: feat/camp
+#     push_upstream: true
+#   fest:
+#     branch: feat/fest
+#     push_upstream: false
