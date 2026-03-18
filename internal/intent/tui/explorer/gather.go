@@ -120,17 +120,7 @@ func (m *Model) executeGather() tea.Cmd {
 			}
 			files = append(files, result.ArchivedPaths...)
 
-			_ = commit.Intent(m.ctx, commit.IntentOptions{
-				Options: commit.Options{
-					CampaignRoot:  m.campaignRoot,
-					CampaignID:    m.campaignID,
-					Files:         commit.NormalizeFiles(m.campaignRoot, files...),
-					SelectiveOnly: true,
-				},
-				Action:      commit.IntentGather,
-				IntentTitle: opts.Title,
-				Description: description,
-			})
+			m.autoCommitIntent(commit.IntentGather, opts.Title, description, files...)
 		}
 
 		return gatherFinishedMsg{
