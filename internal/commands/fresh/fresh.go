@@ -398,7 +398,7 @@ func freshSafetyChecks(ctx context.Context, path string, dryRun bool) error {
 	}
 
 	// Check for uncommitted changes
-	hasChanges, err := git.HasChanges(ctx, path)
+	hasChanges, err := git.HasNonSubmoduleChanges(ctx, path)
 	if err != nil {
 		return camperrors.Wrap(err, "checking for uncommitted changes")
 	}

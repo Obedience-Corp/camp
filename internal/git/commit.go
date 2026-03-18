@@ -433,3 +433,21 @@ func HasChanges(ctx context.Context, repoPath string) (bool, error) {
 
 	return untracked, nil
 }
+
+// HasNonSubmoduleChanges checks for parent-repo changes while ignoring
+// submodule path drift. This is useful for monorepos that intentionally pin
+// submodule refs while developers keep nested submodules checked out elsewhere.
+func HasNonSubmoduleChanges(ctx context.Context, repoPath string) (bool, error) {
+	if ctx.Err() != nil {
+		return false, ctx.Err()
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "-C", repoPath,
+		"status", "--short", "--ignore-submodules=all")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return false, camperrors.NewGit("status --short", "", "", strings.TrimSpace(string(output)), err)
+	}
+
+	return strings.TrimSpace(string(output)) != "", nil
+}

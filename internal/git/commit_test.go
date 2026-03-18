@@ -25,6 +25,56 @@ func initTestRepo(t *testing.T) string {
 	return tmpDir
 }
 
+func runGit(t *testing.T, dir string, env []string, args ...string) string {
+	t.Helper()
+
+	cmd := exec.Command("git", args...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	cmd.Env = append(os.Environ(), env...)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v failed: %v\nOutput: %s", args, err, strings.TrimSpace(string(output)))
+	}
+
+	return strings.TrimSpace(string(output))
+}
+
+func setupRepoWithNestedSubmodule(t *testing.T) (string, string) {
+	t.Helper()
+
+	nestedBare := t.TempDir()
+	runGit(t, "", nil, "init", "--bare", nestedBare)
+
+	nestedSeed := t.TempDir()
+	runGit(t, "", nil, "clone", nestedBare, nestedSeed)
+	runGit(t, nestedSeed, nil, "config", "user.email", "test@test.com")
+	runGit(t, nestedSeed, nil, "config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(nestedSeed, "README.md"), []byte("nested\n"), 0o644); err != nil {
+		t.Fatalf("write nested README: %v", err)
+	}
+	runGit(t, nestedSeed, nil, "add", ".")
+	runGit(t, nestedSeed, nil, "commit", "-m", "init nested")
+	runGit(t, nestedSeed, nil, "push", "origin", "main")
+
+	parent := initTestRepo(t)
+	if err := os.WriteFile(filepath.Join(parent, "README.md"), []byte("parent\n"), 0o644); err != nil {
+		t.Fatalf("write parent README: %v", err)
+	}
+	runGit(t, parent, nil, "add", ".")
+	runGit(t, parent, nil, "commit", "-m", "init parent")
+	runGit(t, parent, []string{"GIT_ALLOW_PROTOCOL=file"}, "submodule", "add", nestedBare, "vendor/tool")
+	runGit(t, parent, nil, "commit", "-m", "add nested submodule")
+
+	submoduleDir := filepath.Join(parent, "vendor", "tool")
+	runGit(t, submoduleDir, nil, "config", "user.email", "test@test.com")
+	runGit(t, submoduleDir, nil, "config", "user.name", "Test")
+
+	return parent, submoduleDir
+}
+
 func TestStageAll(t *testing.T) {
 	tmpDir := initTestRepo(t)
 
@@ -226,6 +276,44 @@ func TestHasChanges(t *testing.T) {
 		}
 		if !hasChanges {
 			t.Error("Expected changes with staged file")
+		}
+	})
+}
+
+func TestHasNonSubmoduleChanges(t *testing.T) {
+	t.Run("ignores nested submodule drift", func(t *testing.T) {
+		parent, submoduleDir := setupRepoWithNestedSubmodule(t)
+
+		if err := os.WriteFile(filepath.Join(submoduleDir, "nested.txt"), []byte("nested change\n"), 0o644); err != nil {
+			t.Fatalf("write nested change: %v", err)
+		}
+		runGit(t, submoduleDir, nil, "add", ".")
+		runGit(t, submoduleDir, nil, "commit", "-m", "nested drift")
+
+		ctx := context.Background()
+		hasChanges, err := HasNonSubmoduleChanges(ctx, parent)
+		if err != nil {
+			t.Fatalf("HasNonSubmoduleChanges() error = %v", err)
+		}
+		if hasChanges {
+			t.Fatal("expected nested submodule drift to be ignored")
+		}
+	})
+
+	t.Run("reports parent repo changes", func(t *testing.T) {
+		parent, _ := setupRepoWithNestedSubmodule(t)
+
+		if err := os.WriteFile(filepath.Join(parent, "README.md"), []byte("parent change\n"), 0o644); err != nil {
+			t.Fatalf("write parent change: %v", err)
+		}
+
+		ctx := context.Background()
+		hasChanges, err := HasNonSubmoduleChanges(ctx, parent)
+		if err != nil {
+			t.Fatalf("HasNonSubmoduleChanges() error = %v", err)
+		}
+		if !hasChanges {
+			t.Fatal("expected parent repo changes to be reported")
 		}
 	})
 }
