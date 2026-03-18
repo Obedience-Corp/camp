@@ -157,13 +157,30 @@ func MergedBranches(ctx context.Context, repoPath string) ([]string, error) {
 		return nil, fmt.Errorf("could not determine default branch")
 	}
 
+	return MergedBranchesFromRef(ctx, repoPath, defaultBranch)
+}
+
+// MergedBranchesFromRef returns local branches that have been merged into the
+// given base ref, excluding the base ref itself and the current branch.
+func MergedBranchesFromRef(ctx context.Context, repoPath, baseRef string) ([]string, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if strings.TrimSpace(baseRef) == "" {
+		return nil, fmt.Errorf("base ref is required")
+	}
+
 	currentBranch := CurrentBranch(ctx, repoPath)
+	baseBranch := baseRef
+	if parts := strings.Split(baseRef, "/"); len(parts) > 0 {
+		baseBranch = parts[len(parts)-1]
+	}
 
 	cmd := exec.CommandContext(ctx, "git", "-C", repoPath,
-		"branch", "--merged", defaultBranch, "--format=%(refname:short)")
+		"branch", "--merged", baseRef, "--format=%(refname:short)")
 	output, err := cmd.Output()
 	if err != nil {
-		return nil, camperrors.Wrap(err, "list merged branches")
+		return nil, camperrors.Wrapf(err, "list merged branches into %s", baseRef)
 	}
 
 	trimmed := strings.TrimSpace(string(output))
@@ -174,7 +191,7 @@ func MergedBranches(ctx context.Context, repoPath string) ([]string, error) {
 	var branches []string
 	for _, line := range strings.Split(trimmed, "\n") {
 		branch := strings.TrimSpace(line)
-		if branch == "" || branch == defaultBranch || branch == currentBranch {
+		if branch == "" || branch == baseRef || branch == baseBranch || branch == currentBranch {
 			continue
 		}
 		branches = append(branches, branch)

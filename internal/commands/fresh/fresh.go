@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -17,6 +18,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/prune"
 	"github.com/Obedience-Corp/camp/internal/ui"
+	"github.com/Obedience-Corp/camp/internal/worktree"
 )
 
 // freshStepStyle defines styles for step output.
@@ -126,6 +128,14 @@ type freshOptions struct {
 	dryRun      bool
 }
 
+type freshSyncState struct {
+	defaultBranch string
+	baseRef       string
+	displayRef    string
+	detached      bool
+	worktreePath  string
+}
+
 func executeFresh(ctx context.Context, name, path string, opts freshOptions) error {
 	prefix := "  "
 	if opts.dryRun {
@@ -146,7 +156,31 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 	}
 
 	currentBranch := git.CurrentBranch(ctx, path)
-	if currentBranch == defaultBranch {
+	syncState, err := resolveFreshSyncState(ctx, path, currentBranch, defaultBranch)
+	if err != nil {
+		return camperrors.Wrap(err, "prepare fresh sync state")
+	}
+
+	if syncState.detached {
+		note := freshSyncWorktreeNote(syncState)
+		if opts.dryRun {
+			fmt.Printf("%s── Would fetch %-22s %s\n", prefix, "origin",
+				freshStepDim.Render(fmt.Sprintf("(for %s)", syncState.baseRef)))
+			fmt.Printf("%s── Would use %-24s %s\n", prefix, syncState.displayRef,
+				freshStepDim.Render(note))
+		} else {
+			if err := git.FetchRemote(ctx, path, "origin"); err != nil {
+				return camperrors.Wrap(err, "fetch origin")
+			}
+			fmt.Printf("%s── Fetch %-28s %s\n", prefix, "origin", freshStepGreen.Render("done"))
+
+			if err := git.CheckoutDetached(ctx, path, syncState.baseRef); err != nil {
+				return camperrors.Wrapf(err, "checkout detached %s", syncState.baseRef)
+			}
+			fmt.Printf("%s── Checkout %-25s %s\n", prefix, syncState.displayRef,
+				freshStepGreen.Render("done")+" "+freshStepDim.Render(note))
+		}
+	} else if currentBranch == defaultBranch {
 		fmt.Printf("%s── Checkout %-24s %s\n", prefix, defaultBranch, freshStepDim.Render("already on it"))
 	} else if opts.dryRun {
 		fmt.Printf("%s── Would checkout %-19s %s\n", prefix, defaultBranch,
@@ -159,54 +193,66 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 	}
 
 	// Step 2: Pull (ff-only)
-	if opts.dryRun {
-		fmt.Printf("%s── Would pull (ff-only)\n", prefix)
-	} else {
-		output, err := git.PullFFOnly(ctx, path)
-		if err != nil {
-			return camperrors.Wrapf(err, "pull failed — resolve manually")
+	if !syncState.detached {
+		if opts.dryRun {
+			fmt.Printf("%s── Would pull (ff-only)\n", prefix)
+		} else {
+			output, err := git.PullFFOnly(ctx, path)
+			if err != nil {
+				return camperrors.Wrapf(err, "pull failed — resolve manually")
+			}
+			detail := "up-to-date"
+			if !strings.Contains(output, "Already up to date") {
+				detail = "updated"
+			}
+			fmt.Printf("%s── Pull (ff-only)                  %s\n", prefix, freshStepGreen.Render(detail))
 		}
-		detail := "up-to-date"
-		if !strings.Contains(output, "Already up to date") {
-			detail = "updated"
-		}
-		fmt.Printf("%s── Pull (ff-only)                  %s\n", prefix, freshStepGreen.Render(detail))
 	}
 
 	// Step 3: Prune merged branches
 	if opts.prune {
-		if opts.dryRun {
-			merged, _ := git.MergedBranches(ctx, path)
-			if len(merged) > 0 {
-				fmt.Printf("%s── Would prune %d branch(es)        %s\n", prefix,
-					len(merged), freshStepDim.Render(strings.Join(merged, ", ")))
-			} else {
-				fmt.Printf("%s── Prune                           %s\n", prefix, freshStepDim.Render("nothing to prune"))
+		pruneOpts := prune.Options{
+			DryRun:               opts.dryRun,
+			Force:                true, // Skip confirmation — fresh is deliberate
+			Remote:               opts.pruneRemote,
+			BaseRef:              syncState.baseRef,
+			SkipWorktreeBranches: true,
+		}
+		pr := prune.Execute(ctx, name, path, pruneOpts)
+		if pr.Error != "" {
+			return camperrors.Wrapf(errors.New(pr.Error), "prune merged branches")
+		}
+
+		deletedNames := pruneResultNames(pr.Results, prune.StatusDeleted, prune.StatusWouldDelete)
+		skippedWorktreeNames := pruneSkippedWorktreeNames(pr.Results)
+
+		switch {
+		case len(deletedNames) > 0:
+			action := "deleted"
+			style := freshStepGreen
+			if opts.dryRun {
+				action = "would delete"
+				style = freshStepDim
 			}
-		} else {
-			pruneOpts := prune.Options{
-				Force:  true, // Skip confirmation — fresh is deliberate
-				Remote: opts.pruneRemote,
+			detail := fmt.Sprintf("%s: %s", action, strings.Join(deletedNames, ", "))
+			if len(skippedWorktreeNames) > 0 {
+				detail += fmt.Sprintf("; kept worktrees: %s", strings.Join(skippedWorktreeNames, ", "))
 			}
-			pr := prune.Execute(ctx, name, path, pruneOpts)
-			deleted := 0
-			var deletedNames []string
-			for _, r := range pr.Results {
-				if r.Status == prune.StatusDeleted {
-					deleted++
-					deletedNames = append(deletedNames, r.Branch)
-				}
+			fmt.Printf("%s── Prune merged branches           %s\n", prefix, style.Render(detail))
+		case len(skippedWorktreeNames) > 0:
+			fmt.Printf("%s── Prune merged branches           %s\n", prefix,
+				freshStepDim.Render(fmt.Sprintf("kept worktrees: %s", strings.Join(skippedWorktreeNames, ", "))))
+		default:
+			fmt.Printf("%s── Prune merged branches           %s\n", prefix, freshStepDim.Render("nothing to prune"))
+		}
+		if pr.Pruned > 0 {
+			detail := fmt.Sprintf("%d stale refs", pr.Pruned)
+			style := freshStepGreen
+			if opts.dryRun {
+				detail = "would prune stale refs"
+				style = freshStepDim
 			}
-			if deleted > 0 {
-				fmt.Printf("%s── Prune merged branches           %s\n", prefix,
-					freshStepGreen.Render(fmt.Sprintf("deleted: %s", strings.Join(deletedNames, ", "))))
-			} else {
-				fmt.Printf("%s── Prune merged branches           %s\n", prefix, freshStepDim.Render("nothing to prune"))
-			}
-			if pr.Pruned > 0 {
-				fmt.Printf("%s── Prune remote tracking refs      %s\n", prefix,
-					freshStepGreen.Render(fmt.Sprintf("%d stale refs", pr.Pruned)))
-			}
+			fmt.Printf("%s── Prune remote tracking refs      %s\n", prefix, style.Render(detail))
 		}
 	}
 
@@ -215,9 +261,10 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 	if opts.branch != "" {
 		if git.BranchExists(ctx, path, opts.branch) {
 			fmt.Fprintf(os.Stderr, "%s── Branch %-25s %s\n", prefix, opts.branch,
-				freshStepDim.Render(fmt.Sprintf("already exists, staying on %s", defaultBranch)))
+				freshStepDim.Render(fmt.Sprintf("already exists, staying on %s", syncState.displayRef)))
 		} else if opts.dryRun {
-			fmt.Printf("%s── Would create branch %s\n", prefix, opts.branch)
+			fmt.Printf("%s── Would create branch %-12s %s\n", prefix, opts.branch,
+				freshStepDim.Render(fmt.Sprintf("(from %s)", syncState.baseRef)))
 		} else {
 			if err := git.CreateBranch(ctx, path, opts.branch); err != nil {
 				return camperrors.Wrapf(err, "create branch %s", opts.branch)
@@ -247,11 +294,91 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 		fmt.Println(freshStepDim.Render("  (dry-run — no changes made)"))
 	} else if branchCreated {
 		fmt.Printf("  %s Ready to work on %s.\n", freshStepGreen.Render("Fresh!"), ui.Value(opts.branch))
+	} else if syncState.detached {
+		fmt.Printf("  %s Synced to %s.\n", freshStepGreen.Render("Fresh!"), ui.Value(syncState.displayRef))
 	} else {
 		fmt.Printf("  %s Synced to %s.\n", freshStepGreen.Render("Fresh!"), ui.Value(defaultBranch))
 	}
 
 	return nil
+}
+
+func resolveFreshSyncState(ctx context.Context, path, currentBranch, defaultBranch string) (freshSyncState, error) {
+	state := freshSyncState{
+		defaultBranch: defaultBranch,
+		baseRef:       defaultBranch,
+		displayRef:    defaultBranch,
+	}
+
+	entry, err := findBranchInOtherWorktree(ctx, path, currentBranch, defaultBranch)
+	if err != nil {
+		return state, err
+	}
+	if entry == nil {
+		return state, nil
+	}
+
+	state.baseRef = "origin/" + defaultBranch
+	state.displayRef = state.baseRef + " (detached)"
+	state.detached = true
+	state.worktreePath = entry.Path
+
+	return state, nil
+}
+
+func findBranchInOtherWorktree(ctx context.Context, path, currentBranch, branch string) (*worktree.GitWorktreeEntry, error) {
+	if currentBranch == branch {
+		return nil, nil
+	}
+
+	entries, err := worktree.NewGitWorktree(path).List(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, entry := range entries {
+		if entry.Branch != branch {
+			continue
+		}
+		entryCopy := entry
+		return &entryCopy, nil
+	}
+
+	return nil, nil
+}
+
+func freshSyncWorktreeNote(state freshSyncState) string {
+	if state.worktreePath == "" {
+		return ""
+	}
+	return fmt.Sprintf("(%s in %s)", state.defaultBranch, filepath.Base(state.worktreePath))
+}
+
+func pruneResultNames(results []prune.Result, statuses ...prune.Status) []string {
+	allowed := make(map[prune.Status]struct{}, len(statuses))
+	for _, status := range statuses {
+		allowed[status] = struct{}{}
+	}
+
+	var names []string
+	for _, result := range results {
+		if _, ok := allowed[result.Status]; ok {
+			names = append(names, result.Branch)
+		}
+	}
+	return names
+}
+
+func pruneSkippedWorktreeNames(results []prune.Result) []string {
+	var names []string
+	for _, result := range results {
+		if result.Status == prune.StatusSkipped &&
+			(strings.HasPrefix(result.Detail, "active worktree:") ||
+				strings.HasPrefix(result.Detail, "would keep active worktree:")) {
+			names = append(names, result.Branch)
+		}
+	}
+	return names
 }
 
 // freshSafetyChecks verifies the repo is in a safe state for fresh.

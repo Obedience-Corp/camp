@@ -128,3 +128,56 @@ func TestIntegration_ExecuteFresh_DoesNotPushExistingBranch(t *testing.T) {
 		t.Fatalf("expected existing branch to remain without upstream, got %s", strings.TrimSpace(string(output)))
 	}
 }
+
+func TestIntegration_ExecuteFresh_HandlesDefaultBranchInAnotherWorktree(t *testing.T) {
+	campDir, _ := setupCampaignWithSubmodule(t)
+	subDir := filepath.Join(campDir, "projects", "test-project")
+
+	run(t, "git", "-C", subDir, "checkout", "-b", "feature-merged")
+	if err := os.WriteFile(filepath.Join(subDir, "feature.txt"), []byte("feature"), 0o644); err != nil {
+		t.Fatalf("failed to write feature.txt: %v", err)
+	}
+	run(t, "git", "-C", subDir, "add", ".")
+	run(t, "git", "-C", subDir, "commit", "-m", "Feature work")
+
+	mainWorktree := t.TempDir()
+	run(t, "git", "-C", subDir, "worktree", "add", mainWorktree, "main")
+
+	stableWorktree := t.TempDir()
+	run(t, "git", "-C", subDir, "worktree", "add", "-b", "stable-v0.1.2", stableWorktree, "main")
+
+	run(t, "git", "-C", mainWorktree, "merge", "feature-merged")
+	run(t, "git", "-C", mainWorktree, "push", "origin", "main")
+
+	err := executeFresh(context.Background(), "test-project", subDir, freshOptions{
+		branch: "develop",
+		prune:  true,
+		push:   false,
+	})
+	if err != nil {
+		t.Fatalf("executeFresh() error = %v", err)
+	}
+
+	current := strings.TrimSpace(run(t, "git", "-C", subDir, "rev-parse", "--abbrev-ref", "HEAD"))
+	if current != "develop" {
+		t.Fatalf("current branch = %q, want %q", current, "develop")
+	}
+
+	cmd := exec.Command("git", "-C", subDir, "rev-parse", "--verify", "--quiet", "refs/heads/feature-merged")
+	if output, err := cmd.CombinedOutput(); err == nil {
+		t.Fatalf("expected merged branch to be deleted, got %s", strings.TrimSpace(string(output)))
+	}
+
+	stableRef := exec.Command("git", "-C", subDir, "rev-parse", "--verify", "--quiet", "refs/heads/stable-v0.1.2")
+	if output, err := stableRef.CombinedOutput(); err != nil {
+		t.Fatalf("expected stable worktree branch to remain, err=%v output=%s", err, strings.TrimSpace(string(output)))
+	}
+
+	worktrees := run(t, "git", "-C", subDir, "worktree", "list", "--porcelain")
+	if !strings.Contains(worktrees, mainWorktree) {
+		t.Fatalf("expected main worktree to remain listed, got:\n%s", worktrees)
+	}
+	if !strings.Contains(worktrees, stableWorktree) {
+		t.Fatalf("expected stable worktree to remain listed, got:\n%s", worktrees)
+	}
+}

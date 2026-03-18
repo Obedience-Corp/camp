@@ -26,14 +26,39 @@ func Checkout(ctx context.Context, repoPath, branch string) error {
 
 // CreateBranch creates a new local branch from the current HEAD.
 func CreateBranch(ctx context.Context, repoPath, branch string) error {
+	return CreateBranchFromStartPoint(ctx, repoPath, branch, "")
+}
+
+// CreateBranchFromStartPoint creates a new local branch from the given start
+// point, or from the current HEAD if startPoint is empty.
+func CreateBranchFromStartPoint(ctx context.Context, repoPath, branch, startPoint string) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
 
-	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "checkout", "-b", branch)
+	args := []string{"-C", repoPath, "checkout", "-b", branch}
+	if strings.TrimSpace(startPoint) != "" {
+		args = append(args, startPoint)
+	}
+
+	cmd := exec.CommandContext(ctx, "git", args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return camperrors.Wrapf(err, "create branch %s: %s", branch, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
+// CheckoutDetached switches to a detached HEAD at the given ref.
+func CheckoutDetached(ctx context.Context, repoPath, ref string) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "checkout", "--detach", ref)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return camperrors.Wrapf(err, "checkout --detach %s: %s", ref, strings.TrimSpace(string(output)))
 	}
 	return nil
 }

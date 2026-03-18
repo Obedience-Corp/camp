@@ -29,6 +29,11 @@ type Options struct {
 	Force        bool
 	Remote       bool
 	RemoteDelete bool
+	BaseRef      string
+
+	// SkipWorktreeBranches preserves merged branches that still have active
+	// worktrees instead of removing the worktree and deleting the branch.
+	SkipWorktreeBranches bool
 }
 
 // Result holds the outcome for a single branch.
@@ -51,7 +56,16 @@ type ProjectResult struct {
 func Execute(ctx context.Context, name, path string, opts Options) ProjectResult {
 	pr := ProjectResult{Name: name, Path: path}
 
-	merged, err := git.MergedBranches(ctx, path)
+	baseRef := strings.TrimSpace(opts.BaseRef)
+	var (
+		merged []string
+		err    error
+	)
+	if baseRef == "" {
+		merged, err = git.MergedBranches(ctx, path)
+	} else {
+		merged, err = git.MergedBranchesFromRef(ctx, path, baseRef)
+	}
 	if err != nil {
 		pr.Error = err.Error()
 		return pr
@@ -103,12 +117,39 @@ func deleteLocalBranches(ctx context.Context, path string, merged []string, opts
 	}
 
 	wtMap := detectWorktreesForBranches(ctx, path, merged)
+	branchesToDelete := make([]string, 0, len(merged))
+	worktreesToRemove := make(map[string]worktree.GitWorktreeEntry)
+
+	for _, branch := range merged {
+		entry, hasWT := wtMap[branch]
+		if hasWT && opts.SkipWorktreeBranches {
+			detail := fmt.Sprintf("active worktree: %s", entry.Path)
+			if opts.DryRun {
+				detail = fmt.Sprintf("would keep active worktree: %s", entry.Path)
+			}
+			pr.Results = append(pr.Results, Result{
+				Branch: branch,
+				Status: StatusSkipped,
+				Detail: detail,
+			})
+			continue
+		}
+
+		branchesToDelete = append(branchesToDelete, branch)
+		if hasWT {
+			worktreesToRemove[branch] = entry
+		}
+	}
+
+	if len(branchesToDelete) == 0 {
+		return
+	}
 
 	if !opts.DryRun && !opts.Force {
 		fmt.Printf("\n%s Will delete %d merged branch(es) in %s:\n",
-			ui.WarningIcon(), len(merged), ui.Value(pr.Name))
-		for _, b := range merged {
-			if _, hasWT := wtMap[b]; hasWT {
+			ui.WarningIcon(), len(branchesToDelete), ui.Value(pr.Name))
+		for _, b := range branchesToDelete {
+			if _, hasWT := worktreesToRemove[b]; hasWT {
 				fmt.Printf("  %s %s (has worktree — will be removed)\n", ui.Dim("-"), b)
 			} else {
 				fmt.Printf("  %s %s\n", ui.Dim("-"), b)
@@ -118,7 +159,7 @@ func deleteLocalBranches(ctx context.Context, path string, merged []string, opts
 		var answer string
 		fmt.Scanln(&answer)
 		if !strings.HasPrefix(strings.ToLower(answer), "y") {
-			for _, b := range merged {
+			for _, b := range branchesToDelete {
 				pr.Results = append(pr.Results, Result{
 					Branch: b,
 					Status: StatusSkipped,
@@ -131,7 +172,7 @@ func deleteLocalBranches(ctx context.Context, path string, merged []string, opts
 
 	// Remove worktrees first for branches that have them.
 	wt := worktree.NewGitWorktree(path)
-	for branch, entry := range wtMap {
+	for branch, entry := range worktreesToRemove {
 		if opts.DryRun {
 			pr.Results = append(pr.Results, Result{
 				Branch: branch,
@@ -156,11 +197,11 @@ func deleteLocalBranches(ctx context.Context, path string, merged []string, opts
 	}
 
 	// Clean stale worktree refs after removals.
-	if !opts.DryRun && len(wtMap) > 0 {
+	if !opts.DryRun && len(worktreesToRemove) > 0 {
 		wt.Prune(ctx, false)
 	}
 
-	for _, branch := range merged {
+	for _, branch := range branchesToDelete {
 		if opts.DryRun {
 			pr.Results = append(pr.Results, Result{
 				Branch: branch,
