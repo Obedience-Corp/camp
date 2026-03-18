@@ -303,7 +303,11 @@ A campaign provides a standardized layout for AI development:
 my-campaign/
 ├── .campaign/           # Campaign configuration and system state
 │   ├── campaign.yaml
-│   └── intents/         # System-managed intents (camp intent, cgo i)
+│   ├── watchers.yaml
+│   ├── intents/         # System-managed intents (camp intent, cgo i)
+│   ├── quests/          # Quest execution contexts
+│   ├── settings/        # Campaign-local settings and defaults
+│   └── skills/          # Campaign skill bundles
 ├── projects/            # Git submodules
 │   ├── api-service/
 │   ├── web-app/

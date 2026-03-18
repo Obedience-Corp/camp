@@ -16,27 +16,58 @@ see, what creates them, and whether they are intended for direct editing.
 | `~/.obey/campaign/registry.json` | Global | JSON | `camp register`, `camp list`, `camp switch` flows | Usually no |
 | `.campaign/campaign.yaml` | Campaign | YAML | `camp init` / `camp init --repair` | Yes |
 | `.campaign/settings/jumps.yaml` | Campaign | YAML | `camp init`, `camp init --repair`, or auto-created on load if missing | Yes |
-| `.campaign/settings/fresh.yaml` | Campaign | YAML | Manual | Yes |
+| `.campaign/settings/fresh.yaml` | Campaign | YAML | `camp init` / `camp init --repair` | Yes |
 | `.campaign/settings/pins.json` | Campaign | JSON | `camp pin` / `camp unpin` | Usually no |
-| `.campaign/settings/allowlist.json` | Campaign | JSON | Manual or tooling that saves allowlist config | Sometimes |
+| `.campaign/settings/allowlist.json` | Campaign | JSON | `camp init`, `camp init --repair`, or tooling that saves allowlist config | Sometimes |
 | `.campaign/watchers.yaml` | Campaign | YAML | `camp init`, `camp init --repair`, `fest`, contract writers | No |
 
 ## What `camp init` And `camp init --repair` Create
 
 Today, `camp init` and `camp init --repair` reliably scaffold:
 
+- `.campaign/.gitignore`
 - `.campaign/campaign.yaml`
+- `.campaign/intents/`
+- `.campaign/quests/`
+- `.campaign/settings/fresh.yaml`
 - `.campaign/settings/jumps.yaml`
+- `.campaign/settings/allowlist.json`
+- `.campaign/skills/`
 - `.campaign/watchers.yaml`
 
 They do not currently scaffold:
 
-- `.campaign/settings/fresh.yaml`
 - `.campaign/settings/pins.json`
-- `.campaign/settings/allowlist.json`
 
-That is why a repaired campaign may still have no `fresh.yaml`: the file is
-optional and only read if you create it yourself.
+Files like `.campaign/settings/pins.json` and `.campaign/leverage/` are created
+later when the corresponding feature is used.
+
+## Typical `.campaign/` Layout
+
+After `camp init`, the hidden campaign directory typically looks like this:
+
+```text
+.campaign/
+├── .gitignore
+├── campaign.yaml
+├── intents/
+├── quests/
+├── settings/
+│   ├── allowlist.json
+│   ├── fresh.yaml
+│   └── jumps.yaml
+├── skills/
+└── watchers.yaml
+```
+
+Not everything under `.campaign/` is the same kind of file:
+
+- `campaign.yaml`, `settings/fresh.yaml`, and `settings/jumps.yaml` are normal
+  user-editable configuration
+- `watchers.yaml`, `pins.json`, and most quest/runtime state are tool-managed
+- `skills/` is campaign content that camp scaffolds and skill-related commands
+  consume
+- `leverage/` appears later when leverage commands write config or snapshots
 
 ## Global Files
 
@@ -155,6 +186,7 @@ Behavior:
 - `projects.<name>.branch` overrides the top-level `branch` for one project.
 - `projects.<name>.push_upstream` overrides the top-level `push_upstream` for
   one project.
+- `camp init` scaffolds this file with commented examples and field guidance.
 
 Branch resolution order:
 
@@ -169,7 +201,6 @@ Current limitations:
 - The branch name is literal text. There is no templating from git user name
   or initials yet.
 - Camp only creates the branch if it does not already exist locally.
-- `fresh.yaml` is not scaffolded by `camp init` or `camp init --repair` today.
 
 ### `.campaign/settings/pins.json`
 
@@ -219,12 +250,13 @@ Example:
 
 Notes:
 
+- `camp init` scaffolds a starter allowlist file with the current default
+  command set.
 - If the file is missing, callers are expected to use default allowlist
   behavior.
 - `inherit_defaults: true` means the campaign file extends the daemon defaults.
 - `inherit_defaults: false` means only commands listed in this file are
   explicitly allowed.
-- Camp does not currently scaffold this file during init or repair.
 
 ### `.campaign/watchers.yaml`
 
