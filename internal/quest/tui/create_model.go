@@ -306,6 +306,8 @@ func (m QuestCreateModel) openExternalEditor() tea.Cmd {
 	editorCmd := editor.GetEditor(m.ctx)
 	c := editor.BuildEditorCommand(m.ctx, editorCmd, tmpPath)
 
+	// Use tea.ExecProcess so Bubble Tea can hand terminal control to the editor
+	// and restore the TUI afterward.
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return editorFinishedMsg{tmpPath: tmpPath, err: err}
 	})
