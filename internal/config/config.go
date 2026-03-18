@@ -2,9 +2,9 @@
 //
 // Camp uses a two-level configuration system:
 //   - Campaign config: .campaign/campaign.yaml in the campaign root
-//   - Global config: ~/.obey/campaign/config.yaml for user preferences
+//   - Global config: ~/.obey/campaign/config.json for user preferences
 //
-// Additionally, a registry at ~/.obey/campaign/registry.yaml tracks
+// Additionally, a registry at ~/.obey/campaign/registry.json tracks
 // all known campaigns for quick navigation.
 package config
 

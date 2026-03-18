@@ -35,7 +35,7 @@ camp [flags]
 ### Options
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
   -h, --help            help for camp
       --no-color        disable colored output
       --verbose         enable verbose output
@@ -52,6 +52,7 @@ camp [flags]
 * [camp date](camp_date.md)	 - Append date suffix to file or directory name
 * [camp doctor](camp_doctor.md)	 - Diagnose and fix campaign health issues
 * [camp dungeon](camp_dungeon.md)	 - Manage the campaign dungeon
+* [camp fresh](camp_fresh.md)	 - Post-merge branch cycling: sync to default branch and optionally create a new working branch
 * [camp gather](camp_gather.md)	 - Import external data into the intent system
 * [camp go](camp_go.md)	 - Navigate to campaign directories
 * [camp id](camp_id.md)	 - Print the current campaign ID
@@ -81,3 +82,4 @@ camp [flags]
 * [camp unpin](camp_unpin.md)	 - Remove a directory bookmark
 * [camp unregister](camp_unregister.md)	 - Remove campaign from registry
 * [camp version](camp_version.md)	 - Show version information
+

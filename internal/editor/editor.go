@@ -18,7 +18,7 @@ import (
 // GetEditor returns the user's preferred editor by checking (in order):
 //  1. $EDITOR environment variable
 //  2. $VISUAL environment variable
-//  3. GlobalConfig.Editor from config.yaml
+//  3. GlobalConfig.Editor from config.json
 //  4. Platform-specific fallback (nano for Unix, notepad for Windows)
 //
 // The function silently ignores config loading errors and falls back to

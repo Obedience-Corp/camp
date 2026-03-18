@@ -44,7 +44,7 @@ camp [flags]
 ### Options
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
   -h, --help            help for camp
       --no-color        disable colored output
       --verbose         enable verbose output
@@ -72,7 +72,7 @@ camp cache [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -99,7 +99,7 @@ camp cache clear [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -126,7 +126,7 @@ camp cache info [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -153,7 +153,7 @@ camp cache rebuild [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -243,7 +243,7 @@ camp clone <url> [directory] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
 ```
 ---
@@ -293,7 +293,7 @@ camp commit [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -318,7 +318,7 @@ See each sub-command's help for details on how to use the generated script.
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -366,7 +366,7 @@ camp completion bash
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -405,7 +405,7 @@ camp completion fish [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -441,7 +441,7 @@ camp completion powershell [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -491,7 +491,7 @@ camp completion zsh [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -514,7 +514,7 @@ camp concepts [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -560,7 +560,7 @@ camp copy <src> <dest> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -608,7 +608,7 @@ camp date <path> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -671,7 +671,7 @@ camp doctor [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
 ```
 ---
@@ -713,7 +713,7 @@ camp dungeon [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -758,7 +758,7 @@ camp dungeon add [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -804,7 +804,7 @@ camp dungeon crawl [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -850,7 +850,7 @@ camp dungeon list [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -893,8 +893,96 @@ camp dungeon move <item> [status] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
+## camp fresh
+
+Post-merge branch cycling: sync to default branch and optionally create a new working branch
+
+### Synopsis
+
+Reset a project to a fresh state after merging a PR.
+
+Performs the post-merge cycle: checkout default branch, pull latest,
+prune merged branches, and optionally create a new working branch.
+
+Auto-detects the current project from your working directory,
+or accepts a project name as a positional argument.
+
+Without configuration, syncs to the default branch and prunes.
+Configure .campaign/settings/fresh.yaml to set a default working branch.
+
+Examples:
+  camp fresh                         # Sync current project (checkout default, pull, prune)
+  camp fresh --branch develop        # Sync and create develop branch
+  camp fresh camp -b feat/new-thing  # Sync camp project, create feature branch
+  camp fresh --no-prune              # Sync without pruning
+  camp fresh --dry-run               # Preview what would happen
+
+```
+camp fresh [project-name] [flags]
+```
+
+### Options
+
+```
+  -b, --branch string    Branch to create after syncing (overrides config)
+  -n, --dry-run          Preview without making changes
+  -h, --help             help for fresh
+      --no-branch        Skip branch creation even if configured
+      --no-prune         Skip pruning merged branches
+      --no-push          Skip pushing the new branch upstream
+  -p, --project string   Project name (auto-detected from cwd)
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.json)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
+## camp fresh all
+
+Run fresh across all project submodules
+
+### Synopsis
+
+Run the fresh cycle (checkout default, pull, prune, optional branch)
+across every project submodule in the campaign.
+
+Examples:
+  camp fresh all                     # Sync all projects
+  camp fresh all --branch develop    # Sync all and create develop branch
+  camp fresh all --dry-run           # Preview across all projects
+  camp fresh all --no-prune          # Sync without pruning
+
+```
+camp fresh all [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for all
+```
+
+### Options inherited from parent commands
+
+```
+  -b, --branch string   Branch to create after syncing (overrides config)
+      --config string   config file (default: ~/.obey/campaign/config.json)
+  -n, --dry-run         Preview without making changes
+      --no-branch       Skip branch creation even if configured
+      --no-color        disable colored output
+      --no-prune        Skip pruning merged branches
+      --no-push         Skip pushing the new branch upstream
       --verbose         enable verbose output
 ```
 ---
@@ -926,7 +1014,7 @@ camp gather [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -987,7 +1075,7 @@ camp gather feedback [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -1058,7 +1146,7 @@ camp go [shortcut] [query...] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -1091,7 +1179,7 @@ camp id [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -1107,7 +1195,7 @@ Initialize a new campaign directory structure.
 
 Creates the standard campaign directories:
   .campaign/              - Campaign configuration and metadata
-  .campaign/quests/       - Quest execution contexts and active quest marker
+  .campaign/quests/       - Quest execution contexts
   .campaign/intents/      - System-managed intent state
   projects/               - Project repositories (submodules or worktrees)
   projects/worktrees/     - Git worktrees for parallel development
@@ -1162,7 +1250,7 @@ camp init [path] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -1214,7 +1302,7 @@ camp intent [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -1265,7 +1353,7 @@ camp intent add [title] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -1304,7 +1392,7 @@ camp intent archive <id> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -1340,7 +1428,7 @@ camp intent count [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -1384,7 +1472,7 @@ camp intent edit [id] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -1453,7 +1541,7 @@ camp intent explore [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -1496,7 +1584,7 @@ camp intent find [query] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -1568,7 +1656,7 @@ camp intent gather [ids...] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -1618,7 +1706,7 @@ camp intent list [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -1668,7 +1756,7 @@ camp intent move <id> <status> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -1713,7 +1801,7 @@ camp intent promote <id> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -1757,7 +1845,7 @@ camp intent show <id> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -1809,7 +1897,7 @@ camp leverage [directory] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
 ```
 ---
@@ -1851,7 +1939,7 @@ camp leverage backfill [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -1901,7 +1989,7 @@ camp leverage config [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -1946,7 +2034,7 @@ camp leverage history [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -1982,7 +2070,7 @@ camp leverage reset [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -2021,7 +2109,7 @@ camp leverage snapshot [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -2070,7 +2158,7 @@ camp list [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -2111,7 +2199,7 @@ camp log [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -2156,7 +2244,7 @@ camp move <src> <dest> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -2192,7 +2280,7 @@ camp pin <name> [path] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -2219,7 +2307,7 @@ camp pins [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -2254,7 +2342,7 @@ camp project [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -2299,7 +2387,7 @@ camp project add <source> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -2342,7 +2430,7 @@ camp project commit [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -2384,7 +2472,7 @@ camp project list [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -2424,7 +2512,7 @@ camp project new <name> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -2469,7 +2557,7 @@ camp project prune [project-name] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -2505,7 +2593,7 @@ camp project prune all [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -2555,7 +2643,7 @@ camp project remote [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -2593,7 +2681,7 @@ camp project remote add <name> <url> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string    config file (default: ~/.obey/campaign/config.yaml)
+      --config string    config file (default: ~/.obey/campaign/config.json)
       --no-color         disable colored output
   -p, --project string   Project name (auto-detected from cwd if not specified)
       --verbose          enable verbose output
@@ -2628,7 +2716,7 @@ camp project remote list [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string    config file (default: ~/.obey/campaign/config.yaml)
+      --config string    config file (default: ~/.obey/campaign/config.json)
       --no-color         disable colored output
   -p, --project string   Project name (auto-detected from cwd if not specified)
       --verbose          enable verbose output
@@ -2670,7 +2758,7 @@ camp project remote remove <name> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string    config file (default: ~/.obey/campaign/config.yaml)
+      --config string    config file (default: ~/.obey/campaign/config.json)
       --no-color         disable colored output
   -p, --project string   Project name (auto-detected from cwd if not specified)
       --verbose          enable verbose output
@@ -2714,7 +2802,7 @@ camp project remote rename <old> <new> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string    config file (default: ~/.obey/campaign/config.yaml)
+      --config string    config file (default: ~/.obey/campaign/config.json)
       --no-color         disable colored output
   -p, --project string   Project name (auto-detected from cwd if not specified)
       --verbose          enable verbose output
@@ -2766,7 +2854,7 @@ camp project remote set-url <url> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string    config file (default: ~/.obey/campaign/config.yaml)
+      --config string    config file (default: ~/.obey/campaign/config.json)
       --no-color         disable colored output
   -p, --project string   Project name (auto-detected from cwd if not specified)
       --verbose          enable verbose output
@@ -2810,7 +2898,7 @@ camp project remove <name> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -2858,7 +2946,7 @@ camp project run [--project <name>] [--] <command> [args...] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -2909,7 +2997,7 @@ camp project worktree [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -2964,7 +3052,7 @@ camp project worktree add <name> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -3003,7 +3091,7 @@ camp project worktree list [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -3046,7 +3134,7 @@ camp project worktree remove <name> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -3091,7 +3179,7 @@ camp pull [flags] [remote] [branch]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -3137,7 +3225,7 @@ camp pull all [git pull flags] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -3181,7 +3269,7 @@ camp push [flags] [remote] [branch]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -3221,7 +3309,7 @@ camp push all [git push flags] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -3258,7 +3346,7 @@ camp refs-sync [submodule...] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -3302,7 +3390,7 @@ camp register [path] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -3343,7 +3431,7 @@ camp registry [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -3379,7 +3467,7 @@ camp registry check [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -3421,7 +3509,7 @@ camp registry prune [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -3455,7 +3543,7 @@ camp registry sync [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -3513,7 +3601,7 @@ camp run [project | @shortcut] [command | recipe] [args...] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -3525,10 +3613,24 @@ Manage camp configuration
 
 ### Synopsis
 
-Interactive menu for managing global and local camp settings.
+Interactive menu for managing camp configuration.
+
+Today, this command edits global user preferences in
+~/.obey/campaign/config.json.
+
+Campaign-local settings still live in files under .campaign/, and the
+"Local Settings" menu is currently a scaffold rather than a full editor.
+See docs/campaign-settings-files.md in the camp repository for the current
+file layout.
 
 ```
 camp settings [flags]
+```
+
+### Examples
+
+```
+  camp settings   # Edit global editor/theme preferences
 ```
 
 ### Options
@@ -3540,7 +3642,7 @@ camp settings [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -3596,7 +3698,7 @@ camp shell-init <shell> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -3642,7 +3744,7 @@ camp shortcuts [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -3692,7 +3794,7 @@ camp shortcuts add [name] [path] or [project] [name] [path] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -3734,7 +3836,7 @@ camp shortcuts diff [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -3770,7 +3872,7 @@ camp shortcuts list [project] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -3810,7 +3912,7 @@ camp shortcuts remove <name> or <project> <name> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -3860,7 +3962,7 @@ camp shortcuts reset [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -3902,7 +4004,7 @@ camp skills [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -3944,7 +4046,7 @@ camp skills link [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -3980,7 +4082,7 @@ camp skills status [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -4019,7 +4121,7 @@ camp skills unlink [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -4059,7 +4161,7 @@ camp status [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -4100,7 +4202,7 @@ camp status all [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -4148,7 +4250,7 @@ camp switch [campaign] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -4223,7 +4325,7 @@ camp sync [submodule...] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
 ```
 ---
@@ -4266,7 +4368,7 @@ camp transfer <src> <dest> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -4295,7 +4397,7 @@ camp unpin [name] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -4338,7 +4440,7 @@ camp unregister <name-or-id> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
@@ -4372,7 +4474,7 @@ camp version [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.yaml)
+      --config string   config file (default: ~/.obey/campaign/config.json)
       --no-color        disable colored output
       --verbose         enable verbose output
 ```
