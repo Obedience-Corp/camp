@@ -8,7 +8,7 @@ Initialize a new campaign directory structure.
 
 Creates the standard campaign directories:
   .campaign/              - Campaign configuration and metadata
-  .campaign/quests/       - Quest execution contexts and active quest marker
+  .campaign/quests/       - Quest execution contexts
   .campaign/intents/      - System-managed intent state
   projects/               - Project repositories (submodules or worktrees)
   projects/worktrees/     - Git worktrees for parallel development

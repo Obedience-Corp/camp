@@ -418,6 +418,7 @@ full file-by-file reference, including which files are scaffolded by
 ## Documentation
 
 - [CLI Reference](docs/cli-reference/camp-reference.md) - Complete reference for every command and flag
+- [`.campaign/` Directory Reference](docs/campaign-directory-reference.md) - Hidden campaign metadata layout and ownership
 - [Campaign Settings Files](docs/campaign-settings-files.md) - Global and local config/state files explained
 - [Leverage Scoring](docs/leverage-score.md) - How leverage scores are computed
 - [Shortcuts](docs/SHORTCUTS.md) - Category shortcuts reference

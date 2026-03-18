@@ -8,6 +8,10 @@ Camp uses two scopes of configuration:
 This guide documents the settings and state files users are most likely to
 see, what creates them, and whether they are intended for direct editing.
 
+For the full `.campaign/` directory layout, including `quests/`, `skills/`,
+`cache/`, and `leverage/`, see
+[campaign-directory-reference.md](campaign-directory-reference.md).
+
 ## Quick Reference
 
 | File | Scope | Format | Created by | Edit directly? |
