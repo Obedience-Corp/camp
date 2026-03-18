@@ -3,13 +3,14 @@ module github.com/Obedience-Corp/camp
 go 1.25.6
 
 require (
-	github.com/Obedience-Corp/obey-shared v0.1.1
+	github.com/Obedience-Corp/obey-shared v0.1.2
 	github.com/alecthomas/chroma/v2 v2.23.1
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/glamour v0.10.0
 	github.com/charmbracelet/huh v0.8.0
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
+	github.com/creack/pty v1.1.24
 	github.com/google/uuid v1.6.0
 	github.com/ktr0731/go-fuzzyfinder v0.9.0
 	github.com/lancekrogers/guild-scaffold v0.0.0-20260127172326-92f4536360f3
