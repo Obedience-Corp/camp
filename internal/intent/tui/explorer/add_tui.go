@@ -93,16 +93,7 @@ func (m *Model) createIntentFromAddResult(result *tui.AddResult) {
 
 	// Auto-commit
 	if m.campaignRoot != "" && m.campaignID != "" {
-		_ = commit.Intent(m.ctx, commit.IntentOptions{
-			Options: commit.Options{
-				CampaignRoot:  m.campaignRoot,
-				CampaignID:    m.campaignID,
-				Files:         commit.NormalizeFiles(m.campaignRoot, createdIntent.Path),
-				SelectiveOnly: true,
-			},
-			Action:      commit.IntentCreate,
-			IntentTitle: result.Title,
-		})
+		m.autoCommitIntent(commit.IntentCreate, result.Title, "", createdIntent.Path)
 	}
 
 	m.statusMessage = "Intent created: " + result.Title

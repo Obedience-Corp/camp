@@ -22,6 +22,13 @@ func (m *Model) appendAuditEvent(event audit.Event) error {
 	return audit.AppendEvent(m.ctx, m.intentsDir, event)
 }
 
+func (m *Model) autoCommitFiles(files ...string) []string {
+	if m.intentsDir != "" {
+		files = append(files, audit.FilePath(m.intentsDir))
+	}
+	return commit.NormalizeFiles(m.campaignRoot, files...)
+}
+
 // autoCommitIntent performs a best-effort intent commit if campaign context is available.
 func (m *Model) autoCommitIntent(action commit.IntentAction, title, description string, files ...string) {
 	if m.campaignRoot == "" || m.campaignID == "" {
@@ -31,7 +38,7 @@ func (m *Model) autoCommitIntent(action commit.IntentAction, title, description 
 		Options: commit.Options{
 			CampaignRoot:  m.campaignRoot,
 			CampaignID:    m.campaignID,
-			Files:         commit.NormalizeFiles(m.campaignRoot, files...),
+			Files:         m.autoCommitFiles(files...),
 			SelectiveOnly: true,
 		},
 		Action:      action,
