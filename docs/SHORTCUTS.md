@@ -2,6 +2,10 @@
 
 Camp loads navigation paths and shortcuts from `.campaign/settings/jumps.yaml`.
 
+For the broader `.campaign/settings/` layout, including `fresh.yaml`,
+`pins.json`, `allowlist.json`, and `.campaign/watchers.yaml`, see
+[campaign-settings-files.md](campaign-settings-files.md).
+
 `camp init` creates that file with the current default paths and built-in shortcuts. If you want to add or override shortcuts for a specific campaign, edit `jumps.yaml`.
 
 ## Configuration

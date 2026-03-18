@@ -394,18 +394,27 @@ cgo p api        # Jumps to projects/api-service/src/ (uses default)
 
 Without a `default` shortcut, navigation jumps to the project root.
 
-### Global Config
+### Config Files
 
-Located at `~/.obey/campaign/config.yaml`:
+Camp uses a small set of configuration and state files:
 
-```yaml
-default_type: product
-editor: code
-```
+- `~/.obey/campaign/config.json` for global user preferences such as editor,
+  theme, `no_color`, and `verbose`
+- `.campaign/campaign.yaml` for campaign metadata, project entries, and picker
+  concepts
+- `.campaign/settings/jumps.yaml` for campaign-local navigation paths and
+  shortcuts
+- `.campaign/settings/fresh.yaml` for optional `camp fresh` defaults
+- `.campaign/watchers.yaml` for the camp/fest watcher contract
+
+See [docs/campaign-settings-files.md](docs/campaign-settings-files.md) for the
+full file-by-file reference, including which files are scaffolded by
+`camp init` and which are only created on first use.
 
 ## Documentation
 
 - [CLI Reference](docs/cli-reference/camp-reference.md) - Complete reference for every command and flag
+- [Campaign Settings Files](docs/campaign-settings-files.md) - Global and local config/state files explained
 - [Leverage Scoring](docs/leverage-score.md) - How leverage scores are computed
 - [Shortcuts](docs/SHORTCUTS.md) - Category shortcuts reference
 - [Shell Integration](docs/shell-integration.md) - Detailed shell setup guide
