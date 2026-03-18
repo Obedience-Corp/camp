@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -187,8 +186,8 @@ func (m Model) openEditor() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	c := m.editorCommand(absDoc)
-	// Process group isolation via BuildEditorCommand ensures the editor doesn't inherit parent signals.
-	// Terminal editors exit when the controlling terminal closes on parent exit.
+	// Leave TTY ownership to Bubble Tea so terminal editors become the
+	// foreground process while tea.ExecProcess is running.
 	return m, tea.ExecProcess(c, func(err error) tea.Msg {
 		return editorFinishedMsg{err: err}
 	})
@@ -196,11 +195,7 @@ func (m Model) openEditor() (tea.Model, tea.Cmd) {
 
 func (m Model) editorCommand(absDoc string) *exec.Cmd {
 	editorName := editor.GetEditor(m.ctx)
-	c := editor.BuildEditorCommand(m.ctx, editorName, absDoc)
-	c.Stdin = os.Stdin
-	c.Stdout = os.Stdout
-	c.Stderr = os.Stderr
-	return c
+	return editor.BuildEditorCommand(m.ctx, editorName, absDoc)
 }
 
 func (m Model) openSystemHandler() (tea.Model, tea.Cmd) {

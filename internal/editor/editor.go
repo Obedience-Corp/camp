@@ -172,10 +172,11 @@ var guiEditors = map[string]bool{
 // For GUI editors that fork to background (VS Code, Sublime, Atom), it adds
 // the --wait flag to make them block until the file is closed.
 //
-// SetProcessGroup is called here to ensure process group isolation for TUI
-// callers (BubbleTea tea.ExecProcess paths) that do not use RunWithCleanup.
-// CLI callers via OpenEditor also call RunWithCleanup which calls SetProcessGroup
-// internally, making it a no-op on the second call — this is intentional and safe.
+// The returned command intentionally does not modify process-group behavior.
+// Bubble Tea's tea.ExecProcess needs the editor to stay in the foreground
+// process group so terminal editors can take control of the TTY correctly.
+// CLI callers that need subprocess cleanup should use OpenEditor, which applies
+// process-group isolation via procutil.RunWithCleanup.
 func BuildEditorCommand(ctx context.Context, editor, path string) *exec.Cmd {
 	base := filepath.Base(editor)
 
@@ -186,7 +187,6 @@ func BuildEditorCommand(ctx context.Context, editor, path string) *exec.Cmd {
 		cmd = exec.CommandContext(ctx, editor, path)
 	}
 
-	procutil.SetProcessGroup(cmd)
 	return cmd
 }
 

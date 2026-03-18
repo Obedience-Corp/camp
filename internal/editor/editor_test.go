@@ -626,6 +626,16 @@ func TestBuildEditorCommand_ContextCancellation(t *testing.T) {
 	}
 }
 
+func TestBuildEditorCommand_DoesNotSetProcessGroup(t *testing.T) {
+	cmd := BuildEditorCommand(context.Background(), "nvim", "/tmp/test.md")
+	if cmd == nil {
+		t.Fatal("BuildEditorCommand returned nil")
+	}
+	if cmd.SysProcAttr != nil && cmd.SysProcAttr.Setpgid {
+		t.Fatal("BuildEditorCommand should not force a separate process group")
+	}
+}
+
 func TestEdit(t *testing.T) {
 	// Save original env vars
 	origEditor := os.Getenv("EDITOR")

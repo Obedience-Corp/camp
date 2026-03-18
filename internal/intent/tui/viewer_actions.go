@@ -25,8 +25,8 @@ func (m IntentViewerModel) openInEditor() tea.Cmd {
 
 	editorName := editor.GetEditor(m.ctx)
 	c := editor.BuildEditorCommand(m.ctx, editorName, m.intent.Path)
-	// Process group isolation via BuildEditorCommand ensures the editor doesn't inherit parent signals.
-	// Terminal editors exit when the controlling terminal closes on parent exit.
+	// Use tea.ExecProcess so Bubble Tea can hand terminal control to the editor
+	// and restore the viewer afterward.
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return ViewerEditorFinishedMsg{Err: err, Path: m.intent.Path}
 	})

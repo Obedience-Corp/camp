@@ -63,8 +63,8 @@ func openInEditor(ctx context.Context, filePath string) tea.Cmd {
 
 	editorName := editor.GetEditor(ctx)
 	c := editor.BuildEditorCommand(ctx, editorName, filePath)
-	// Process group isolation via BuildEditorCommand ensures the editor doesn't inherit parent signals.
-	// Terminal editors exit when the controlling terminal closes on parent exit.
+	// Use tea.ExecProcess so Bubble Tea can hand terminal control to the editor
+	// and restore the explorer afterward.
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return editorFinishedMsg{err: err, path: filePath}
 	})
