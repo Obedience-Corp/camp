@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"testing"
 )
 
@@ -326,6 +327,42 @@ func TestMergedBranches_ExcludesDefaultAndCurrent(t *testing.T) {
 	for _, b := range branches {
 		if b == "main" {
 			t.Fatal("default branch 'main' should be excluded from merged list")
+		}
+	}
+}
+
+func TestMergedBranchesFromRef_ExcludesOnlyMatchingRemoteBaseBranch(t *testing.T) {
+	dir := initBranchTestRepo(t, "feature/main")
+	run := gitRunner(t, dir)
+
+	run("branch", "main")
+
+	run("checkout", "-b", "feature-done")
+	if err := os.WriteFile(filepath.Join(dir, "done.txt"), []byte("done\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", ".")
+	run("commit", "-m", "feature done")
+	run("checkout", "feature/main")
+	run("merge", "feature-done")
+
+	run("update-ref", "refs/remotes/origin/feature/main", "refs/heads/feature/main")
+	run("checkout", "-b", "scratch")
+
+	ctx := context.Background()
+	branches, err := MergedBranchesFromRef(ctx, dir, "origin/feature/main")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sort.Strings(branches)
+	want := []string{"feature-done", "main"}
+	if len(branches) != len(want) {
+		t.Fatalf("expected %d merged branches, got %d: %v", len(want), len(branches), branches)
+	}
+	for i := range want {
+		if branches[i] != want[i] {
+			t.Fatalf("MergedBranchesFromRef() = %v, want %v", branches, want)
 		}
 	}
 }
