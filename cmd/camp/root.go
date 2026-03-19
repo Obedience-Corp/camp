@@ -54,6 +54,16 @@ var rootCmd = &cobra.Command{
 func Execute() error {
 	// Expand shortcuts before command execution
 	expandShortcuts()
+
+	// Try git-style plugin dispatch for unknown subcommands.
+	// A camp-<name> binary on PATH becomes "camp <name> [args...]".
+	if err := dispatchPlugin(); err != nil {
+		if err == errPluginHandled {
+			return nil
+		}
+		return err
+	}
+
 	return rootCmd.Execute()
 }
 
@@ -200,6 +210,7 @@ func init() {
 	rootCmd.AddCommand(leveragepkg.Cmd)
 	rootCmd.AddCommand(worktreespkg.Cmd)
 	rootCmd.AddCommand(refspkg.Cmd)
+	rootCmd.AddCommand(pluginsCmd)
 
 	release.Register(rootCmd)
 }
