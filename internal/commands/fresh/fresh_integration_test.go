@@ -71,6 +71,60 @@ func setupCampaignWithSubmodule(t *testing.T) (string, string) {
 	return campDir, bareDir
 }
 
+func setupCampaignWithNestedSubmoduleProject(t *testing.T) string {
+	t.Helper()
+
+	nestedBare := t.TempDir()
+	run(t, "git", "init", "--bare", nestedBare)
+
+	nestedSeed := t.TempDir()
+	run(t, "git", "clone", nestedBare, nestedSeed)
+	run(t, "git", "-C", nestedSeed, "config", "user.email", "test@test.com")
+	run(t, "git", "-C", nestedSeed, "config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(nestedSeed, "README.md"), []byte("# Nested Project"), 0o644); err != nil {
+		t.Fatalf("failed to write nested README: %v", err)
+	}
+	run(t, "git", "-C", nestedSeed, "add", ".")
+	run(t, "git", "-C", nestedSeed, "commit", "-m", "Initial nested commit")
+	run(t, "git", "-C", nestedSeed, "push", "origin", "main")
+
+	projectBare := t.TempDir()
+	run(t, "git", "init", "--bare", projectBare)
+
+	projectSeed := t.TempDir()
+	run(t, "git", "clone", projectBare, projectSeed)
+	run(t, "git", "-C", projectSeed, "config", "user.email", "test@test.com")
+	run(t, "git", "-C", projectSeed, "config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(projectSeed, "README.md"), []byte("# Monorepo Project"), 0o644); err != nil {
+		t.Fatalf("failed to write monorepo README: %v", err)
+	}
+	run(t, "git", "-C", projectSeed, "add", ".")
+	run(t, "git", "-C", projectSeed, "commit", "-m", "Initial project commit")
+	runWithEnv(t, projectSeed, []string{"GIT_ALLOW_PROTOCOL=file"},
+		"git", "submodule", "add", nestedBare, "vendor/tool")
+	run(t, "git", "-C", projectSeed, "commit", "-m", "Add nested submodule")
+	run(t, "git", "-C", projectSeed, "push", "origin", "main")
+
+	campDir := t.TempDir()
+	run(t, "git", "init", campDir)
+	run(t, "git", "-C", campDir, "config", "user.email", "test@test.com")
+	run(t, "git", "-C", campDir, "config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(campDir, "README.md"), []byte("# Campaign"), 0o644); err != nil {
+		t.Fatalf("failed to write campaign README: %v", err)
+	}
+	run(t, "git", "-C", campDir, "add", ".")
+	run(t, "git", "-C", campDir, "commit", "-m", "Initial campaign commit")
+	runWithEnv(t, campDir, []string{"GIT_ALLOW_PROTOCOL=file"},
+		"git", "submodule", "add", projectBare, "projects/test-project")
+	run(t, "git", "-C", campDir, "commit", "-m", "Add monorepo project")
+
+	projectDir := filepath.Join(campDir, "projects", "test-project")
+	runWithEnv(t, projectDir, []string{"GIT_ALLOW_PROTOCOL=file"},
+		"git", "submodule", "update", "--init", "--recursive")
+
+	return campDir
+}
+
 func TestIntegration_ExecuteFresh_CreatesAndPushesNewBranch(t *testing.T) {
 	campDir, _ := setupCampaignWithSubmodule(t)
 	subDir := filepath.Join(campDir, "projects", "test-project")
@@ -126,5 +180,91 @@ func TestIntegration_ExecuteFresh_DoesNotPushExistingBranch(t *testing.T) {
 	cmd := exec.Command("git", "-C", subDir, "rev-parse", "--abbrev-ref", "develop@{upstream}")
 	if output, err := cmd.CombinedOutput(); err == nil {
 		t.Fatalf("expected existing branch to remain without upstream, got %s", strings.TrimSpace(string(output)))
+	}
+}
+
+func TestIntegration_ExecuteFresh_HandlesDefaultBranchInAnotherWorktree(t *testing.T) {
+	campDir, _ := setupCampaignWithSubmodule(t)
+	subDir := filepath.Join(campDir, "projects", "test-project")
+
+	run(t, "git", "-C", subDir, "checkout", "-b", "feature-merged")
+	if err := os.WriteFile(filepath.Join(subDir, "feature.txt"), []byte("feature"), 0o644); err != nil {
+		t.Fatalf("failed to write feature.txt: %v", err)
+	}
+	run(t, "git", "-C", subDir, "add", ".")
+	run(t, "git", "-C", subDir, "commit", "-m", "Feature work")
+
+	mainWorktree := t.TempDir()
+	run(t, "git", "-C", subDir, "worktree", "add", mainWorktree, "main")
+
+	stableWorktree := t.TempDir()
+	run(t, "git", "-C", subDir, "worktree", "add", "-b", "stable-v0.1.2", stableWorktree, "main")
+
+	run(t, "git", "-C", mainWorktree, "merge", "feature-merged")
+	run(t, "git", "-C", mainWorktree, "push", "origin", "main")
+
+	err := executeFresh(context.Background(), "test-project", subDir, freshOptions{
+		branch: "develop",
+		prune:  true,
+		push:   false,
+	})
+	if err != nil {
+		t.Fatalf("executeFresh() error = %v", err)
+	}
+
+	current := strings.TrimSpace(run(t, "git", "-C", subDir, "rev-parse", "--abbrev-ref", "HEAD"))
+	if current != "develop" {
+		t.Fatalf("current branch = %q, want %q", current, "develop")
+	}
+
+	cmd := exec.Command("git", "-C", subDir, "rev-parse", "--verify", "--quiet", "refs/heads/feature-merged")
+	if output, err := cmd.CombinedOutput(); err == nil {
+		t.Fatalf("expected merged branch to be deleted, got %s", strings.TrimSpace(string(output)))
+	}
+
+	stableRef := exec.Command("git", "-C", subDir, "rev-parse", "--verify", "--quiet", "refs/heads/stable-v0.1.2")
+	if output, err := stableRef.CombinedOutput(); err != nil {
+		t.Fatalf("expected stable worktree branch to remain, err=%v output=%s", err, strings.TrimSpace(string(output)))
+	}
+
+	worktrees := run(t, "git", "-C", subDir, "worktree", "list", "--porcelain")
+	if !strings.Contains(worktrees, mainWorktree) {
+		t.Fatalf("expected main worktree to remain listed, got:\n%s", worktrees)
+	}
+	if !strings.Contains(worktrees, stableWorktree) {
+		t.Fatalf("expected stable worktree to remain listed, got:\n%s", worktrees)
+	}
+}
+
+func TestIntegration_ExecuteFresh_IgnoresNestedSubmoduleRefDrift(t *testing.T) {
+	campDir := setupCampaignWithNestedSubmoduleProject(t)
+	projectDir := filepath.Join(campDir, "projects", "test-project")
+	nestedDir := filepath.Join(projectDir, "vendor", "tool")
+
+	run(t, "git", "-C", nestedDir, "config", "user.email", "test@test.com")
+	run(t, "git", "-C", nestedDir, "config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(nestedDir, "drift.txt"), []byte("drift"), 0o644); err != nil {
+		t.Fatalf("failed to write drift.txt: %v", err)
+	}
+	run(t, "git", "-C", nestedDir, "add", ".")
+	run(t, "git", "-C", nestedDir, "commit", "-m", "Nested drift")
+
+	status := run(t, "git", "-C", projectDir, "status", "--short", "--ignore-submodules=none")
+	if !strings.Contains(status, "vendor/tool") {
+		t.Fatalf("expected monorepo status to show nested submodule drift, got:\n%s", status)
+	}
+
+	err := executeFresh(context.Background(), "test-project", projectDir, freshOptions{
+		branch: "develop",
+		prune:  false,
+		push:   false,
+	})
+	if err != nil {
+		t.Fatalf("executeFresh() error = %v", err)
+	}
+
+	current := strings.TrimSpace(run(t, "git", "-C", projectDir, "rev-parse", "--abbrev-ref", "HEAD"))
+	if current != "develop" {
+		t.Fatalf("current branch = %q, want %q", current, "develop")
 	}
 }
