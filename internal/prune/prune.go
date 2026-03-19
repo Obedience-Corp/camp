@@ -13,6 +13,9 @@ import (
 // Status represents the outcome of a single branch prune operation.
 type Status string
 
+// SkipReason identifies why a prune result was skipped.
+type SkipReason string
+
 const (
 	StatusDeleted             Status = "deleted"
 	StatusWouldDelete         Status = "would delete"
@@ -21,6 +24,8 @@ const (
 	StatusWouldPrune          Status = "would prune"
 	StatusWorktreeRemoved     Status = "wt removed"
 	StatusWorktreeWouldRemove Status = "wt would remove"
+
+	SkipReasonActiveWorktree SkipReason = "active_worktree"
 )
 
 // Options holds configuration for a prune operation.
@@ -38,9 +43,10 @@ type Options struct {
 
 // Result holds the outcome for a single branch.
 type Result struct {
-	Branch string
-	Status Status
-	Detail string
+	Branch     string
+	Status     Status
+	Detail     string
+	SkipReason SkipReason
 }
 
 // ProjectResult holds all results for a single project.
@@ -128,9 +134,10 @@ func deleteLocalBranches(ctx context.Context, path string, merged []string, opts
 				detail = fmt.Sprintf("would keep active worktree: %s", entry.Path)
 			}
 			pr.Results = append(pr.Results, Result{
-				Branch: branch,
-				Status: StatusSkipped,
-				Detail: detail,
+				Branch:     branch,
+				Status:     StatusSkipped,
+				Detail:     detail,
+				SkipReason: SkipReasonActiveWorktree,
 			})
 			continue
 		}

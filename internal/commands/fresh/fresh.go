@@ -372,9 +372,7 @@ func pruneResultNames(results []prune.Result, statuses ...prune.Status) []string
 func pruneSkippedWorktreeNames(results []prune.Result) []string {
 	var names []string
 	for _, result := range results {
-		if result.Status == prune.StatusSkipped &&
-			(strings.HasPrefix(result.Detail, "active worktree:") ||
-				strings.HasPrefix(result.Detail, "would keep active worktree:")) {
+		if result.Status == prune.StatusSkipped && result.SkipReason == prune.SkipReasonActiveWorktree {
 			names = append(names, result.Branch)
 		}
 	}

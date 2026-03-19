@@ -171,10 +171,8 @@ func MergedBranchesFromRef(ctx context.Context, repoPath, baseRef string) ([]str
 	}
 
 	currentBranch := CurrentBranch(ctx, repoPath)
-	baseBranch := baseRef
-	if parts := strings.Split(baseRef, "/"); len(parts) > 0 {
-		baseBranch = parts[len(parts)-1]
-	}
+	localBaseRef := strings.TrimPrefix(baseRef, "refs/remotes/")
+	localBaseRef = strings.TrimPrefix(localBaseRef, "origin/")
 
 	cmd := exec.CommandContext(ctx, "git", "-C", repoPath,
 		"branch", "--merged", baseRef, "--format=%(refname:short)")
@@ -191,7 +189,7 @@ func MergedBranchesFromRef(ctx context.Context, repoPath, baseRef string) ([]str
 	var branches []string
 	for _, line := range strings.Split(trimmed, "\n") {
 		branch := strings.TrimSpace(line)
-		if branch == "" || branch == baseRef || branch == baseBranch || branch == currentBranch {
+		if branch == "" || branch == baseRef || branch == localBaseRef || branch == currentBranch {
 			continue
 		}
 		branches = append(branches, branch)
