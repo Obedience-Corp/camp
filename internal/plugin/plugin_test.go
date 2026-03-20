@@ -185,8 +185,12 @@ func TestExecute_CancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	p := Plugin{Name: "test", Path: "/bin/true"}
-	err := Execute(ctx, p, nil, "")
+	truePath, err := exec.LookPath("true")
+	if err != nil {
+		t.Skip("true binary not found on PATH")
+	}
+	p := Plugin{Name: "test", Path: truePath}
+	err = Execute(ctx, p, nil, "")
 	if err == nil {
 		t.Error("expected error from cancelled context")
 	}

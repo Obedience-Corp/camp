@@ -22,6 +22,12 @@ var errPluginHandled = errors.New("plugin handled")
 // subcommand backed by a camp-<name> binary on PATH. If so, it executes
 // the plugin and returns errPluginHandled (success) or a CommandError.
 // Returns nil to fall through to Cobra's normal dispatch.
+//
+// Note: global flags appearing before the plugin name (e.g. --verbose, --config)
+// are consumed by camp's own arg scanner and are NOT forwarded to the plugin.
+// Only arguments after the plugin name are passed through. This matches git's
+// plugin convention where "git --no-pager foo arg" does not pass --no-pager to
+// git-foo.
 func dispatchPlugin() error {
 	name, argIdx := firstSubcommand()
 	if name == "" {
