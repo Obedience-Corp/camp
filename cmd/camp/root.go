@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
@@ -58,7 +59,7 @@ func Execute() error {
 	// Try git-style plugin dispatch for unknown subcommands.
 	// A camp-<name> binary on PATH becomes "camp <name> [args...]".
 	if err := dispatchPlugin(); err != nil {
-		if err == errPluginHandled {
+		if errors.Is(err, errPluginHandled) {
 			return nil
 		}
 		return err

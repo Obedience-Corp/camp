@@ -102,7 +102,10 @@ func findFirstPositionalArg(args []string) (string, int) {
 		}
 
 		// Strip leading dashes to get the flag name.
-		name := strings.TrimLeft(arg, "-")
+		// Use TrimPrefix twice (not TrimLeft) so we remove the prefix "--" or "-"
+		// rather than stripping individual '-' runes, which would mangle flag names
+		// containing '-' if short flags are ever added.
+		name := strings.TrimPrefix(strings.TrimPrefix(arg, "--"), "-")
 
 		// Look up the flag in persistent flags to check if it takes a value.
 		if f := pflags.Lookup(name); f != nil && f.NoOptDefVal == "" {

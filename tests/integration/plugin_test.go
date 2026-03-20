@@ -4,6 +4,7 @@
 package integration
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -31,7 +32,7 @@ echo "plugin-camproot: $CAMP_ROOT"
 func installMockPluginExitCode(tc *TestContainer, name string, exitCode int) error {
 	script := `#!/bin/sh
 echo "plugin-name: ` + name + `"
-exit ` + string(rune('0'+exitCode))
+exit ` + fmt.Sprintf("%d", exitCode)
 	path := "/usr/local/bin/camp-" + name
 	if err := tc.WriteFile(path, script); err != nil {
 		return err
