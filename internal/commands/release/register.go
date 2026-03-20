@@ -13,5 +13,7 @@ func Register(root *cobra.Command) {
 	freshCmd.GroupID = "git"
 	root.AddCommand(freshCmd)
 
+	root.AddCommand(NewProfileCommand(root))
+
 	registerDev(root)
 }
