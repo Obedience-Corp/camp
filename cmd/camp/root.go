@@ -70,33 +70,10 @@ func Execute() error {
 // expandShortcuts expands shortcut aliases in os.Args before cobra parses them.
 // For example, "camp p list" becomes "camp project list" if "p" maps to "project".
 func expandShortcuts() {
-	// Need at least 2 args (program name + subcommand)
-	if len(os.Args) < 2 {
+	firstArg, argIndex := findFirstPositionalArg(os.Args)
+	if firstArg == "" {
 		return
 	}
-
-	// Find the first non-flag argument after the program name
-	argIndex := 1
-	for argIndex < len(os.Args) {
-		arg := os.Args[argIndex]
-		if len(arg) > 0 && arg[0] == '-' {
-			// Skip flags
-			if arg == "--" {
-				// Everything after -- is positional
-				argIndex++
-				break
-			}
-			argIndex++
-			continue
-		}
-		break
-	}
-
-	if argIndex >= len(os.Args) {
-		return
-	}
-
-	firstArg := os.Args[argIndex]
 
 	// Skip certain commands that shouldn't be expanded
 	if firstArg == "help" || firstArg == "completion" {

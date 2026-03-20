@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/plugin"
@@ -60,23 +61,55 @@ func dispatchPlugin() error {
 
 // firstSubcommand returns the first non-flag argument from os.Args and its
 // index. Returns ("", 0) if no subcommand is present.
+//
+// It consults the root command's persistent flags so that flags which take
+// values (e.g. --config <file>) have their value skipped rather than being
+// mistaken for a subcommand name.
 func firstSubcommand() (string, int) {
-	if len(os.Args) < 2 {
+	return findFirstPositionalArg(os.Args)
+}
+
+// findFirstPositionalArg scans args (where args[0] is the program name) and
+// returns the first positional (non-flag) argument and its index.
+// It correctly skips values consumed by flags like --config <file> and
+// handles --flag=value, --, and boolean flags.
+func findFirstPositionalArg(args []string) (string, int) {
+	if len(args) < 2 {
 		return "", 0
 	}
 
-	for i := 1; i < len(os.Args); i++ {
-		arg := os.Args[i]
+	pflags := rootCmd.PersistentFlags()
+
+	for i := 1; i < len(args); i++ {
+		arg := args[i]
+
+		// "--" terminates flag parsing; the next arg is the first positional.
 		if arg == "--" {
-			if i+1 < len(os.Args) {
-				return os.Args[i+1], i + 1
+			if i+1 < len(args) {
+				return args[i+1], i + 1
 			}
 			return "", 0
 		}
-		if len(arg) > 0 && arg[0] == '-' {
+
+		if len(arg) == 0 || arg[0] != '-' {
+			return arg, i
+		}
+
+		// It's a flag. Determine whether it consumes the next argument.
+		// Flags using --flag=value syntax never consume the next arg.
+		if strings.Contains(arg, "=") {
 			continue
 		}
-		return arg, i
+
+		// Strip leading dashes to get the flag name.
+		name := strings.TrimLeft(arg, "-")
+
+		// Look up the flag in persistent flags to check if it takes a value.
+		if f := pflags.Lookup(name); f != nil && f.NoOptDefVal == "" {
+			// Flag takes a value — skip the next argument.
+			i++
+			continue
+		}
 	}
 	return "", 0
 }
