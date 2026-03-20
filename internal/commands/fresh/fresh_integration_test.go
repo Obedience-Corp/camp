@@ -199,8 +199,22 @@ func TestIntegration_ExecuteFresh_HandlesDefaultBranchInAnotherWorktree(t *testi
 
 	stableWorktree := t.TempDir()
 	run(t, "git", "-C", subDir, "worktree", "add", "-b", "stable-v0.1.2", stableWorktree, "main")
+	if err := os.WriteFile(filepath.Join(stableWorktree, "release.txt"), []byte("release"), 0o644); err != nil {
+		t.Fatalf("failed to write release.txt: %v", err)
+	}
+	run(t, "git", "-C", stableWorktree, "add", ".")
+	run(t, "git", "-C", stableWorktree, "commit", "-m", "Release branch work")
+
+	mergedSiblingWorktree := t.TempDir()
+	run(t, "git", "-C", subDir, "worktree", "add", "-b", "feature-sidecar", mergedSiblingWorktree, "main")
+	if err := os.WriteFile(filepath.Join(mergedSiblingWorktree, "sidecar.txt"), []byte("sidecar"), 0o644); err != nil {
+		t.Fatalf("failed to write sidecar.txt: %v", err)
+	}
+	run(t, "git", "-C", mergedSiblingWorktree, "add", ".")
+	run(t, "git", "-C", mergedSiblingWorktree, "commit", "-m", "Sidecar work")
 
 	run(t, "git", "-C", mainWorktree, "merge", "feature-merged")
+	run(t, "git", "-C", mainWorktree, "merge", "feature-sidecar")
 	run(t, "git", "-C", mainWorktree, "push", "origin", "main")
 
 	err := executeFresh(context.Background(), "test-project", subDir, freshOptions{
@@ -222,6 +236,11 @@ func TestIntegration_ExecuteFresh_HandlesDefaultBranchInAnotherWorktree(t *testi
 		t.Fatalf("expected merged branch to be deleted, got %s", strings.TrimSpace(string(output)))
 	}
 
+	sidecarRef := exec.Command("git", "-C", subDir, "rev-parse", "--verify", "--quiet", "refs/heads/feature-sidecar")
+	if output, err := sidecarRef.CombinedOutput(); err == nil {
+		t.Fatalf("expected merged sibling worktree branch to be deleted, got %s", strings.TrimSpace(string(output)))
+	}
+
 	stableRef := exec.Command("git", "-C", subDir, "rev-parse", "--verify", "--quiet", "refs/heads/stable-v0.1.2")
 	if output, err := stableRef.CombinedOutput(); err != nil {
 		t.Fatalf("expected stable worktree branch to remain, err=%v output=%s", err, strings.TrimSpace(string(output)))
@@ -233,6 +252,9 @@ func TestIntegration_ExecuteFresh_HandlesDefaultBranchInAnotherWorktree(t *testi
 	}
 	if !strings.Contains(worktrees, stableWorktree) {
 		t.Fatalf("expected stable worktree to remain listed, got:\n%s", worktrees)
+	}
+	if strings.Contains(worktrees, mergedSiblingWorktree) {
+		t.Fatalf("expected merged sibling worktree to be removed, got:\n%s", worktrees)
 	}
 }
 
@@ -266,5 +288,37 @@ func TestIntegration_ExecuteFresh_IgnoresNestedSubmoduleRefDrift(t *testing.T) {
 	current := strings.TrimSpace(run(t, "git", "-C", projectDir, "rev-parse", "--abbrev-ref", "HEAD"))
 	if current != "develop" {
 		t.Fatalf("current branch = %q, want %q", current, "develop")
+	}
+}
+
+func TestIntegration_ExecuteFresh_DoesNotDeleteRemoteBranches(t *testing.T) {
+	campDir, bareDir := setupCampaignWithSubmodule(t)
+	subDir := filepath.Join(campDir, "projects", "test-project")
+
+	run(t, "git", "-C", subDir, "checkout", "-b", "feature-remote")
+	if err := os.WriteFile(filepath.Join(subDir, "feature-remote.txt"), []byte("feature remote"), 0o644); err != nil {
+		t.Fatalf("failed to write feature-remote.txt: %v", err)
+	}
+	run(t, "git", "-C", subDir, "add", ".")
+	run(t, "git", "-C", subDir, "commit", "-m", "Feature remote work")
+	run(t, "git", "-C", subDir, "push", "-u", "origin", "feature-remote")
+
+	mainWorktree := t.TempDir()
+	run(t, "git", "-C", subDir, "worktree", "add", mainWorktree, "main")
+	run(t, "git", "-C", mainWorktree, "merge", "feature-remote")
+	run(t, "git", "-C", mainWorktree, "push", "origin", "main")
+
+	err := executeFresh(context.Background(), "test-project", subDir, freshOptions{
+		prune:       true,
+		pruneRemote: true,
+		push:        false,
+	})
+	if err != nil {
+		t.Fatalf("executeFresh() error = %v", err)
+	}
+
+	remoteHeads := run(t, "git", "--git-dir", bareDir, "show-ref", "--verify", "refs/heads/feature-remote")
+	if !strings.Contains(remoteHeads, "refs/heads/feature-remote") {
+		t.Fatalf("expected remote feature branch to remain, got:\n%s", remoteHeads)
 	}
 }

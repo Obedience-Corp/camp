@@ -212,11 +212,10 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 	// Step 3: Prune merged branches
 	if opts.prune {
 		pruneOpts := prune.Options{
-			DryRun:               opts.dryRun,
-			Force:                true, // Skip confirmation — fresh is deliberate
-			Remote:               opts.pruneRemote,
-			BaseRef:              syncState.baseRef,
-			SkipWorktreeBranches: true,
+			DryRun:  opts.dryRun,
+			Force:   true, // Skip confirmation — fresh is deliberate
+			Remote:  opts.pruneRemote,
+			BaseRef: syncState.baseRef,
 		}
 		pr := prune.Execute(ctx, name, path, pruneOpts)
 		if pr.Error != "" {
@@ -224,7 +223,6 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 		}
 
 		deletedNames := pruneResultNames(pr.Results, prune.StatusDeleted, prune.StatusWouldDelete)
-		skippedWorktreeNames := pruneSkippedWorktreeNames(pr.Results)
 
 		switch {
 		case len(deletedNames) > 0:
@@ -235,13 +233,7 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 				style = freshStepDim
 			}
 			detail := fmt.Sprintf("%s: %s", action, strings.Join(deletedNames, ", "))
-			if len(skippedWorktreeNames) > 0 {
-				detail += fmt.Sprintf("; kept worktrees: %s", strings.Join(skippedWorktreeNames, ", "))
-			}
 			fmt.Printf("%s── Prune merged branches           %s\n", prefix, style.Render(detail))
-		case len(skippedWorktreeNames) > 0:
-			fmt.Printf("%s── Prune merged branches           %s\n", prefix,
-				freshStepDim.Render(fmt.Sprintf("kept worktrees: %s", strings.Join(skippedWorktreeNames, ", "))))
 		default:
 			fmt.Printf("%s── Prune merged branches           %s\n", prefix, freshStepDim.Render("nothing to prune"))
 		}
@@ -363,16 +355,6 @@ func pruneResultNames(results []prune.Result, statuses ...prune.Status) []string
 	var names []string
 	for _, result := range results {
 		if _, ok := allowed[result.Status]; ok {
-			names = append(names, result.Branch)
-		}
-	}
-	return names
-}
-
-func pruneSkippedWorktreeNames(results []prune.Result) []string {
-	var names []string
-	for _, result := range results {
-		if result.Status == prune.StatusSkipped && result.SkipReason == prune.SkipReasonActiveWorktree {
 			names = append(names, result.Branch)
 		}
 	}
