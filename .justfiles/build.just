@@ -52,6 +52,12 @@ quick-stable:
 quick-dev:
     BUILD_TAGS=dev just build quick
 
+# Show which commands are in dev vs stable release channels
+[no-cd]
+profile:
+    BUILD_TAGS=dev just build quick
+    ./bin/camp build-profile
+
 # ─── Cross-platform targets ─────────────────────────────────
 
 # Build for Linux AMD64

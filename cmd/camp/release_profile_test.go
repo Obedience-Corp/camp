@@ -33,6 +33,18 @@ func assertDevCommandsAbsent(t *testing.T) {
 	}
 }
 
+func assertBuildProfileCommand(t *testing.T) {
+	t.Helper()
+
+	cmd, _, err := rootCmd.Find([]string{"build-profile"})
+	if err != nil || cmd == nil || cmd.Name() != "build-profile" {
+		t.Fatal("build-profile command should be registered in all builds")
+	}
+	if !cmd.Hidden {
+		t.Fatal("build-profile should be hidden")
+	}
+}
+
 func assertGendocsCommand(t *testing.T) {
 	t.Helper()
 
