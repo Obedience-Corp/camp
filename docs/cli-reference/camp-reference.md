@@ -2124,7 +2124,7 @@ List all registered campaigns
 List all campaigns registered in the global registry.
 
 Campaigns are registered when created with 'camp init' or manually
-with 'camp register'. The registry lives at ~/.obey/campaign/registry.yaml.
+with 'camp register'. The registry lives at ~/.obey/campaign/registry.json.
 
 Output formats:
   table   - Aligned columns with headers (default)
@@ -3360,7 +3360,7 @@ Register campaign in global registry
 
 Register an existing campaign in the global registry.
 
-This adds the campaign to the registry at ~/.obey/campaign/registry.yaml,
+This adds the campaign to the registry at ~/.obey/campaign/registry.json,
 enabling it to appear in 'camp list' and be accessible via navigation commands.
 
 Note: 'camp init' automatically registers new campaigns. This command is for

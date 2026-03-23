@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -41,6 +42,27 @@ func TestSave(t *testing.T) {
 	}
 	if len(data) == 0 {
 		t.Error("Cache file is empty")
+	}
+}
+
+func TestSave_OmitsTargetLastAccess(t *testing.T) {
+	root := t.TempDir()
+	root, _ = filepath.EvalSymlinks(root)
+
+	idx := NewIndex(root)
+	idx.AddTarget(Target{Name: "test", Path: "/test/path", Category: "projects"})
+
+	if err := Save(idx, root); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	data, err := os.ReadFile(CachePath(root))
+	if err != nil {
+		t.Fatalf("Failed to read cache file: %v", err)
+	}
+
+	if strings.Contains(string(data), "\"last_access\"") {
+		t.Fatalf("cache file should not persist target last_access: %s", data)
 	}
 }
 

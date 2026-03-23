@@ -17,8 +17,6 @@ type Target struct {
 	Path string `json:"path"`
 	// Category is the category this target belongs to.
 	Category nav.Category `json:"category"`
-	// LastAccess tracks when this target was last navigated to.
-	LastAccess time.Time `json:"last_access,omitempty"`
 	// Shortcuts maps shortcut names to relative paths within the target.
 	// Used for project sub-shortcuts (e.g., "cli" -> "fest/cmd/fest/").
 	Shortcuts map[string]string `json:"shortcuts,omitempty"`
@@ -100,8 +98,9 @@ type Index struct {
 }
 
 // IndexVersion is the current index format version.
-// Bump when the target format changes to invalidate stale caches.
-const IndexVersion = 2
+// Version 3 drops the unused per-target last_access cache field. Navigation
+// history remains in .campaign/cache/state.jsonl.
+const IndexVersion = 3
 
 // NewIndex creates a new empty index for a campaign root.
 func NewIndex(campaignRoot string) *Index {

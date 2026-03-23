@@ -19,7 +19,7 @@ var registerCmd = &cobra.Command{
 	Short: "Register campaign in global registry",
 	Long: `Register an existing campaign in the global registry.
 
-This adds the campaign to the registry at ~/.obey/campaign/registry.yaml,
+This adds the campaign to the registry at ~/.obey/campaign/registry.json,
 enabling it to appear in 'camp list' and be accessible via navigation commands.
 
 Note: 'camp init' automatically registers new campaigns. This command is for
