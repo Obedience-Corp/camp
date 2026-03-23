@@ -974,6 +974,89 @@ func TestExecuteMigrations_KeepsSourceWithRemainingItems(t *testing.T) {
 	}
 }
 
+func TestComputeConceptChanges_UpdatesStalePaths(t *testing.T) {
+	dir := t.TempDir()
+	setupCampaignDir(t, dir)
+
+	depth0 := 0
+	depth1 := 1
+
+	// Write a campaign.yaml with stale intents path and missing "explore" concept.
+	staleCfg := &config.CampaignConfig{
+		ID:        "test-id",
+		Name:      "test",
+		Type:      config.CampaignTypeProduct,
+		CreatedAt: time.Now(),
+		ConceptList: []config.ConceptEntry{
+			{Name: "projects", Path: "projects/", Description: "Active development projects", Depth: &depth1, Ignore: []string{"worktrees/"}},
+			{Name: "intents", Path: "workflow/intents/", Description: "Ideas and tasks", Depth: &depth0},
+			{Name: "custom", Path: "my/custom/", Description: "User concept"},
+		},
+	}
+	ctx := context.Background()
+	if err := config.SaveCampaignConfig(ctx, dir, staleCfg); err != nil {
+		t.Fatal(err)
+	}
+
+	plan := &RepairPlan{}
+	if err := computeConceptChanges(ctx, dir, plan); err != nil {
+		t.Fatalf("computeConceptChanges() error: %v", err)
+	}
+
+	// Check merged concepts.
+	if len(plan.MergedConcepts) == 0 {
+		t.Fatal("expected merged concepts, got none")
+	}
+
+	// Verify intents path was updated.
+	var intentsPath string
+	for _, c := range plan.MergedConcepts {
+		if c.Name == "intents" {
+			intentsPath = c.Path
+			break
+		}
+	}
+	if intentsPath != ".campaign/intents/" {
+		t.Errorf("intents path = %q, want %q", intentsPath, ".campaign/intents/")
+	}
+
+	// Verify user-defined "custom" concept is preserved.
+	var foundCustom bool
+	for _, c := range plan.MergedConcepts {
+		if c.Name == "custom" {
+			foundCustom = true
+			if c.Path != "my/custom/" {
+				t.Errorf("custom path = %q, want %q", c.Path, "my/custom/")
+			}
+		}
+	}
+	if !foundCustom {
+		t.Error("user-defined 'custom' concept was not preserved")
+	}
+
+	// Verify missing default "explore" was added.
+	var foundExplore bool
+	for _, c := range plan.MergedConcepts {
+		if c.Name == "explore" {
+			foundExplore = true
+		}
+	}
+	if !foundExplore {
+		t.Error("missing default 'explore' concept was not added")
+	}
+
+	// Verify plan changes contain the intents modify entry.
+	var foundModify bool
+	for _, ch := range plan.Changes {
+		if ch.Category == "concept" && ch.Key == "intents" && ch.Type == RepairModify {
+			foundModify = true
+		}
+	}
+	if !foundModify {
+		t.Error("expected RepairModify change for intents concept path update")
+	}
+}
+
 // setupCampaignDir creates the minimal .campaign directory structure.
 func setupCampaignDir(t *testing.T, dir string) {
 	t.Helper()
