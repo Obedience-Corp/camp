@@ -30,7 +30,7 @@ var listCmd = &cobra.Command{
 	Long: `List all campaigns registered in the global registry.
 
 Campaigns are registered when created with 'camp init' or manually
-with 'camp register'. The registry lives at ~/.obey/campaign/registry.yaml.
+with 'camp register'. The registry lives at ~/.obey/campaign/registry.json.
 
 Output formats:
   table   - Aligned columns with headers (default)
