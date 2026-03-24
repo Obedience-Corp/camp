@@ -2313,6 +2313,29 @@ camp pins [flags]
 ```
 ---
 
+## camp plugins
+
+List discovered camp plugins on PATH
+
+```
+camp plugins [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for plugins
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.json)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
 ## camp project
 
 Manage campaign projects
@@ -3538,6 +3561,41 @@ camp registry sync [flags]
 
 ```
   -h, --help   help for sync
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.json)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
+## camp root
+
+Print the current campaign root
+
+### Synopsis
+
+Print the current campaign root relative to the current working directory.
+
+```
+camp root [flags]
+```
+
+### Examples
+
+```
+  camp root
+  camp root --json
+```
+
+### Options
+
+```
+  -h, --help   help for root
+      --json   output as JSON
 ```
 
 ### Options inherited from parent commands
