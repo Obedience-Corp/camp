@@ -239,7 +239,7 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 		ConceptList: config.DefaultConcepts(),
 	}
 
-	// In repair mode, preserve existing config values but add missing concepts
+	// In repair mode, preserve existing config values and merge concepts
 	if opts.Repair && existingCfg != nil {
 		cfg.CreatedAt = existingCfg.CreatedAt
 		cfg.Description = existingCfg.Description
@@ -250,8 +250,10 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 		} else {
 			cfg.Mission = existingCfg.Mission
 		}
-		// Only add default concepts if none exist
-		if len(existingCfg.ConceptList) > 0 {
+		// Use merged concepts from repair plan (updates stale paths, adds missing defaults)
+		if opts.RepairPlan != nil && len(opts.RepairPlan.MergedConcepts) > 0 {
+			cfg.ConceptList = opts.RepairPlan.MergedConcepts
+		} else if len(existingCfg.ConceptList) > 0 {
 			cfg.ConceptList = existingCfg.ConceptList
 		}
 	}

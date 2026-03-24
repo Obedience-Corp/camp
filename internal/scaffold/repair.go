@@ -2,6 +2,7 @@ package scaffold
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -60,6 +61,8 @@ type RepairPlan struct {
 	Changes []RepairChange
 	// MergedJumps is the computed jumps config after repair (preserving user entries).
 	MergedJumps *config.JumpsConfig
+	// MergedConcepts is the computed concept list after repair (updating stale default paths).
+	MergedConcepts []config.ConceptEntry
 	// Migrations lists directories whose contents need to be moved.
 	Migrations []MigrationAction
 	// IntentMigrations lists legacy intent-root moves handled internally by Init.
@@ -102,25 +105,30 @@ func ComputeRepairPlan(ctx context.Context, dir string, opts InitOptions) (*Repa
 		return nil, err
 	}
 
-	// Phase 2: Compute jumps.yaml changes (shortcuts with user-defined preservation).
+	// Phase 2: Compute concept changes (update stale default paths, add missing defaults).
+	if err := computeConceptChanges(ctx, absDir, plan); err != nil {
+		return nil, err
+	}
+
+	// Phase 3: Compute jumps.yaml changes (shortcuts with user-defined preservation).
 	if err := computeJumpsChanges(ctx, absDir, plan); err != nil {
 		return nil, err
 	}
 
-	// Phase 3: Check for missing .gitignore and CLAUDE.md symlink.
+	// Phase 4: Check for missing .gitignore and CLAUDE.md symlink.
 	computeMiscFileChanges(absDir, plan)
 
-	// Phase 4: Account for shared standard-dungeon files created outside scaffold FS.
+	// Phase 5: Account for shared standard-dungeon files created outside scaffold FS.
 	computeStandardDungeonScaffoldChanges(absDir, plan)
 
-	// Phase 5: Account for imperative quest scaffold files created outside scaffold FS.
+	// Phase 6: Account for imperative quest scaffold files created outside scaffold FS.
 	computeQuestScaffoldChanges(absDir, plan)
 
-	// Phase 6: Detect misplaced completed/ dirs that should be in dungeon/completed/YYYY-MM-DD/.
+	// Phase 7: Detect misplaced completed/ dirs that should be in dungeon/completed/YYYY-MM-DD/.
 	// This runs after scaffold detection so we know which dungeon dirs will be created.
 	computeMigrationChanges(absDir, plan)
 
-	// Phase 7: Detect legacy workflow/intents state or scaffold residue that
+	// Phase 8: Detect legacy workflow/intents state or scaffold residue that
 	// repair will normalize into the canonical .campaign/intents root during Init.
 	if err := computeIntentMigrationChanges(absDir, plan); err != nil {
 		return nil, err
@@ -266,6 +274,73 @@ func computeScaffoldChanges(ctx context.Context, absDir string, opts InitOptions
 		})
 	}
 
+	return nil
+}
+
+// computeConceptChanges compares existing campaign concepts with defaults.
+// Default concepts with stale paths are updated. Missing defaults are added.
+// User-defined concepts (names not in defaults) are preserved.
+func computeConceptChanges(ctx context.Context, absDir string, plan *RepairPlan) error {
+	existing, err := config.LoadCampaignConfig(ctx, absDir)
+	if err != nil || existing == nil {
+		return nil // No campaign.yaml yet; init will create it fresh.
+	}
+
+	if len(existing.ConceptList) == 0 {
+		return nil // No concepts; init will use defaults.
+	}
+
+	defaults := config.DefaultConcepts()
+	defaultsByName := make(map[string]config.ConceptEntry, len(defaults))
+	for _, d := range defaults {
+		defaultsByName[d.Name] = d
+	}
+
+	existingByName := make(map[string]config.ConceptEntry, len(existing.ConceptList))
+	for _, e := range existing.ConceptList {
+		existingByName[e.Name] = e
+	}
+
+	var merged []config.ConceptEntry
+
+	// Update existing concepts that match defaults by name.
+	for _, e := range existing.ConceptList {
+		if def, ok := defaultsByName[e.Name]; ok {
+			if e.Path != def.Path {
+				plan.Changes = append(plan.Changes, RepairChange{
+					Type:        RepairModify,
+					Category:    "concept",
+					Key:         e.Name,
+					Description: fmt.Sprintf("update path: %s → %s", e.Path, def.Path),
+				})
+			}
+			merged = append(merged, def)
+		} else {
+			// User-defined concept — preserve it.
+			plan.Changes = append(plan.Changes, RepairChange{
+				Type:        RepairPreserve,
+				Category:    "concept",
+				Key:         e.Name,
+				Description: e.Description,
+			})
+			merged = append(merged, e)
+		}
+	}
+
+	// Add missing default concepts.
+	for _, def := range defaults {
+		if _, exists := existingByName[def.Name]; !exists {
+			plan.Changes = append(plan.Changes, RepairChange{
+				Type:        RepairAdd,
+				Category:    "concept",
+				Key:         def.Name,
+				Description: def.Description,
+			})
+			merged = append(merged, def)
+		}
+	}
+
+	plan.MergedConcepts = merged
 	return nil
 }
 
