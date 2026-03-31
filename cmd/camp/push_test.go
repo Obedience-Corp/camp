@@ -15,7 +15,7 @@ func TestRunPushAll_PushesWhenRemoteURLChanges(t *testing.T) {
 
 	subDir := filepath.Join(campDir, "projects", "test-project")
 	newRemote := t.TempDir()
-	runPushTestCmd(t, "git", "init", "--bare", newRemote)
+	runPushTestCmd(t, "git", "init", "--bare", "--initial-branch=main", newRemote)
 	runPushTestCmd(t, "git", "-C", subDir, "remote", "set-url", "origin", newRemote)
 
 	if err := runPushAll(ctx, campDir, nil, false); err != nil {
@@ -32,12 +32,13 @@ func setupPushAllCampaignWithSubmodule(t *testing.T) (string, string) {
 	t.Helper()
 
 	remoteDir := t.TempDir()
-	runPushTestCmd(t, "git", "init", "--bare", remoteDir)
+	runPushTestCmd(t, "git", "init", "--bare", "--initial-branch=main", remoteDir)
 
 	seedDir := t.TempDir()
 	runPushTestCmd(t, "git", "clone", remoteDir, seedDir)
 	runPushTestCmd(t, "git", "-C", seedDir, "config", "user.email", "test@test.com")
 	runPushTestCmd(t, "git", "-C", seedDir, "config", "user.name", "Test")
+	runPushTestCmd(t, "git", "-C", seedDir, "checkout", "-B", "main")
 	if err := os.WriteFile(filepath.Join(seedDir, "README.md"), []byte("# Test Project"), 0644); err != nil {
 		t.Fatalf("write seed README: %v", err)
 	}
@@ -46,7 +47,7 @@ func setupPushAllCampaignWithSubmodule(t *testing.T) (string, string) {
 	runPushTestCmd(t, "git", "-C", seedDir, "push", "origin", "main")
 
 	campDir := t.TempDir()
-	runPushTestCmd(t, "git", "init", campDir)
+	runPushTestCmd(t, "git", "init", "--initial-branch=main", campDir)
 	runPushTestCmd(t, "git", "-C", campDir, "config", "user.email", "test@test.com")
 	runPushTestCmd(t, "git", "-C", campDir, "config", "user.name", "Test")
 	if err := os.WriteFile(filepath.Join(campDir, "README.md"), []byte("# Campaign"), 0644); err != nil {
