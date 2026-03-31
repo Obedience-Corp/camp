@@ -77,9 +77,26 @@ func runPush(cmd *cobra.Command, args []string) error {
 
 // pushTarget holds information about a repo to potentially push.
 type pushTarget struct {
-	name  string
-	path  string
-	ahead int
+	name string
+	path string
+}
+
+type pushProbeStatus int
+
+const (
+	pushProbeReady pushProbeStatus = iota
+	pushProbeSynced
+	pushProbeNoUpstream
+	pushProbeDetached
+	pushProbeNoDestination
+	pushProbeRejected
+	pushProbeCheckFailed
+)
+
+type pushProbe struct {
+	status pushProbeStatus
+	detail string
+	output string
 }
 
 // runPushAll discovers all submodules + campaign root, checks which have
@@ -120,14 +137,7 @@ func runPushAll(ctx context.Context, campRoot string, gitArgs []string, noRecurs
 		path: campRoot,
 	})
 
-	// Check ahead counts for each target
-	for i := range targets {
-		ahead := getAheadCount(ctx, targets[i].path)
-		targets[i].ahead = ahead
-	}
-
-	// Push repos that are ahead
-	var pushed, skipped, failed int
+	var pushed, synced, manual, failed int
 	var errors []string
 
 	for _, t := range targets {
@@ -135,14 +145,43 @@ func runPushAll(ctx context.Context, campRoot string, gitArgs []string, noRecurs
 			return ctx.Err()
 		}
 
-		if t.ahead <= 0 {
+		probe := probePushTarget(ctx, t.path, gitArgs)
+
+		switch probe.status {
+		case pushProbeSynced:
 			fmt.Printf("  %-30s %s\n", t.name, dim.Render("synced"))
-			skipped++
+			synced++
+			continue
+		case pushProbeNoUpstream:
+			fmt.Printf("  %-30s %s\n", t.name, yellow.Render("no upstream"))
+			manual++
+			continue
+		case pushProbeDetached:
+			fmt.Printf("  %-30s %s\n", t.name, yellow.Render("detached HEAD"))
+			manual++
+			continue
+		case pushProbeNoDestination:
+			fmt.Printf("  %-30s %s\n", t.name, yellow.Render("no push destination"))
+			manual++
+			continue
+		case pushProbeRejected:
+			fmt.Printf("  %-30s %s\n", t.name, red.Render("rejected"))
+			errors = append(errors, fmt.Sprintf("  %s: %s", t.name, summarizePushOutput(probe.output)))
+			failed++
+			continue
+		case pushProbeCheckFailed:
+			fmt.Printf("  %-30s %s\n", t.name, red.Render("check failed"))
+			errors = append(errors, fmt.Sprintf("  %s: %s", t.name, summarizePushOutput(probe.output)))
+			failed++
 			continue
 		}
 
+		detail := probe.detail
+		if detail == "" {
+			detail = "needs push"
+		}
 		fmt.Printf("  %-30s %s  pushing... ",
-			t.name, yellow.Render(fmt.Sprintf("↑%d", t.ahead)))
+			t.name, yellow.Render(detail))
 
 		pushArgs := append([]string{"-C", t.path, "push"}, gitArgs...)
 		gitCmd := exec.CommandContext(ctx, "git", pushArgs...)
@@ -153,7 +192,7 @@ func runPushAll(ctx context.Context, campRoot string, gitArgs []string, noRecurs
 			if errMsg == "" {
 				errMsg = err.Error()
 			}
-			errors = append(errors, fmt.Sprintf("  %s: %s", t.name, errMsg))
+			errors = append(errors, fmt.Sprintf("  %s: %s", t.name, summarizePushOutput(errMsg)))
 			failed++
 			continue
 		}
@@ -164,16 +203,24 @@ func runPushAll(ctx context.Context, campRoot string, gitArgs []string, noRecurs
 
 	// Summary
 	fmt.Println()
-	total := pushed + failed
-	if total == 0 {
+	switch {
+	case pushed == 0 && failed == 0 && manual == 0:
 		fmt.Println(ui.Info("All repos are synced, nothing to push"))
-	} else if failed == 0 {
-		fmt.Println(green.Render(fmt.Sprintf("Pushed %d/%d repos successfully", pushed, total)))
-	} else {
-		fmt.Println(yellow.Render(fmt.Sprintf("Pushed %d/%d repos (%d failed)", pushed, total, failed)))
+	case pushed == 0 && failed == 0:
+		fmt.Println(yellow.Render("No repos were pushed"))
+	case failed == 0:
+		fmt.Println(green.Render(fmt.Sprintf("Pushed %d repo(s) successfully", pushed)))
+	default:
+		fmt.Println(yellow.Render(fmt.Sprintf("Pushed %d repo(s) (%d failed)", pushed, failed)))
 		for _, e := range errors {
 			fmt.Println(red.Render(e))
 		}
+	}
+	if synced > 0 && (pushed > 0 || manual > 0 || failed > 0) {
+		fmt.Println(dim.Render(fmt.Sprintf("%d repo(s) already synced", synced)))
+	}
+	if manual > 0 {
+		fmt.Println(yellow.Render(fmt.Sprintf("%d repo(s) need manual attention", manual)))
 	}
 
 	if failed > 0 {
@@ -200,4 +247,79 @@ func getAheadCount(ctx context.Context, repoPath string) int {
 	var ahead int
 	fmt.Sscanf(parts[0], "%d", &ahead)
 	return ahead
+}
+
+func probePushTarget(ctx context.Context, repoPath string, gitArgs []string) pushProbe {
+	args := append([]string{"-C", repoPath, "push", "--dry-run"}, gitArgs...)
+	cmd := exec.CommandContext(ctx, "git", args...)
+	output, err := cmd.CombinedOutput()
+	out := strings.TrimSpace(string(output))
+	if err == nil {
+		if isPushUpToDateOutput(out) {
+			return pushProbe{status: pushProbeSynced}
+		}
+
+		return pushProbe{
+			status: pushProbeReady,
+			detail: describePendingPush(out, getAheadCount(ctx, repoPath)),
+			output: out,
+		}
+	}
+
+	lower := strings.ToLower(out)
+	switch {
+	case strings.Contains(lower, "has no upstream branch"):
+		return pushProbe{status: pushProbeNoUpstream, output: out}
+	case strings.Contains(lower, "not currently on a branch"):
+		return pushProbe{status: pushProbeDetached, output: out}
+	case strings.Contains(lower, "no configured push destination"):
+		return pushProbe{status: pushProbeNoDestination, output: out}
+	case strings.Contains(lower, "[rejected]"), strings.Contains(lower, "failed to push some refs"):
+		return pushProbe{status: pushProbeRejected, output: out}
+	default:
+		if out == "" {
+			out = err.Error()
+		}
+		return pushProbe{status: pushProbeCheckFailed, output: out}
+	}
+}
+
+func isPushUpToDateOutput(output string) bool {
+	lower := strings.ToLower(strings.TrimSpace(output))
+	return strings.Contains(lower, "everything up-to-date") ||
+		strings.Contains(lower, "everything up to date") ||
+		strings.Contains(lower, "[up to date]")
+}
+
+func describePendingPush(output string, ahead int) string {
+	if ahead > 0 {
+		return fmt.Sprintf("↑%d", ahead)
+	}
+
+	lower := strings.ToLower(output)
+	switch {
+	case strings.Contains(lower, "[new branch]"):
+		return "new branch"
+	case strings.Contains(lower, "forced update"):
+		return "forced update"
+	default:
+		return "needs push"
+	}
+}
+
+func summarizePushOutput(output string) string {
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		lower := strings.ToLower(line)
+		if strings.HasPrefix(lower, "to ") || strings.HasPrefix(lower, "hint:") {
+			continue
+		}
+		return line
+	}
+
+	return strings.TrimSpace(output)
 }
