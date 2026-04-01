@@ -203,7 +203,8 @@ func renderPreview(item workitem.WorkItem, width, height int) string {
 	}
 
 	var b strings.Builder
-	b.WriteString(previewTitleStyle.Render(item.Title))
+	titleStyle := previewTitleStyle.Width(max(width-1, 20))
+	b.WriteString(titleStyle.Render(item.Title))
 	b.WriteString("\n")
 	sep := strings.Repeat("─", min(width-1, 40))
 	b.WriteString(previewSepStyle.Render(sep))
@@ -213,6 +214,9 @@ func renderPreview(item workitem.WorkItem, width, height int) string {
 	if stage == "" {
 		stage = "—"
 	}
+
+	// Truncate the path value to fit the preview width minus the label.
+	maxValueWidth := max(width-12, 10)
 
 	b.WriteString(fmt.Sprintf("%s  %s\n",
 		previewLabelStyle.Render("type:"),
@@ -228,16 +232,19 @@ func renderPreview(item workitem.WorkItem, width, height int) string {
 		previewValueStyle.Render(item.CreatedAt.Format("2006-01-02 15:04"))))
 	b.WriteString(fmt.Sprintf("%s  %s\n",
 		previewLabelStyle.Render("path:"),
-		previewValueStyle.Render(item.RelativePath)))
+		previewValueStyle.Render(truncate(item.RelativePath, maxValueWidth))))
 	if item.PrimaryDoc != "" {
 		b.WriteString(fmt.Sprintf("%s %s\n",
 			previewLabelStyle.Render("primary:"),
-			previewValueStyle.Render(filepath.Base(item.PrimaryDoc))))
+			previewValueStyle.Render(truncate(filepath.Base(item.PrimaryDoc), maxValueWidth))))
 	}
 
 	if item.Summary != "" {
 		b.WriteString("\n")
-		b.WriteString(lipgloss.NewStyle().Foreground(pal.TextPrimary).Render(item.Summary))
+		summaryStyle := lipgloss.NewStyle().
+			Foreground(pal.TextPrimary).
+			Width(max(width-2, 20))
+		b.WriteString(summaryStyle.Render(item.Summary))
 		b.WriteString("\n")
 	}
 
