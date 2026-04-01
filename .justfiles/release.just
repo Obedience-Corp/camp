@@ -6,6 +6,11 @@
 default:
     @just --list --unsorted --justfile {{source_file()}}
 
+[private]
+[no-cd]
+notes tag repo="Obedience-Corp/camp":
+    go run ./tools/release-notes --repo "{{repo}}" --tag "{{tag}}" --output dist/release-notes.md
+
 # Create a dev pre-release tag (bumps dev counter, or pass patch|minor|major to bump base version)
 [no-cd]
 dev level="":
@@ -44,7 +49,8 @@ dev level="":
     echo "Creating dev release: $new"
     git tag -a "$new" -m "$new"
     git push origin "$new"
-    gh release create "$new" --title "$new" --generate-notes --prerelease
+    just --justfile {{source_file()}} notes "$new"
+    gh release create "$new" --title "$new" --notes-file dist/release-notes.md --prerelease
     echo "Released $new"
 
 # Create an RC release tag from the current branch
@@ -67,7 +73,8 @@ rc version n="1":
     echo "Creating rc release: $tag"
     git tag -a "$tag" -m "$tag"
     git push origin "$tag"
-    gh release create "$tag" --title "$tag" --generate-notes --prerelease
+    just --justfile {{source_file()}} notes "$tag"
+    gh release create "$tag" --title "$tag" --notes-file dist/release-notes.md --prerelease
     echo "Released $tag"
 
 # Create a stable release tag (patch|minor|major)
@@ -106,7 +113,8 @@ stable level="patch":
     echo "Creating stable release: $new"
     git tag -a "$new" -m "$new"
     git push origin "$new"
-    gh release create "$new" --title "$new" --generate-notes --latest
+    just --justfile {{source_file()}} notes "$new"
+    gh release create "$new" --title "$new" --notes-file dist/release-notes.md --latest
     echo "Released $new"
 
 # Promote the latest RC for a version to stable by stripping the -rc.N suffix
@@ -136,7 +144,8 @@ promote-rc version="":
     echo "Promoting $latest_rc -> $stable_tag"
     git tag -a "$stable_tag" -m "Promote $latest_rc to stable $stable_tag"
     git push origin "$stable_tag"
-    gh release create "$stable_tag" --title "$stable_tag" --generate-notes --latest
+    just --justfile {{source_file()}} notes "$stable_tag"
+    gh release create "$stable_tag" --title "$stable_tag" --notes-file dist/release-notes.md --latest
     echo "Released $stable_tag"
 
 # Promote latest dev version to stable (strips -dev.N suffix)
@@ -163,7 +172,8 @@ promote:
     echo "Promoting $latest_dev -> $base"
     git tag -a "$base" -m "Promote $latest_dev to stable $base"
     git push origin "$base"
-    gh release create "$base" --title "$base" --generate-notes --latest
+    just --justfile {{source_file()}} notes "$base"
+    gh release create "$base" --title "$base" --notes-file dist/release-notes.md --latest
     echo "Released $base"
 
 # Show current version for each channel
