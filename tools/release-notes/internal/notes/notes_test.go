@@ -112,3 +112,28 @@ func TestRender(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderDeduplicatesChangesByText(t *testing.T) {
+	t.Parallel()
+
+	tag, err := ParseTag("v0.2.2")
+	if err != nil {
+		t.Fatalf("ParseTag() error = %v", err)
+	}
+
+	rendered, err := Render("Obedience-Corp/camp", tag, "v0.2.0", []Change{
+		{Text: "Verify actual remote in push all", Category: CategoryFix},
+		{Text: "Verify actual remote in push all", PRNumber: 200, Category: CategoryFix},
+	})
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	want := "Verify actual remote in push all ([#200](https://github.com/Obedience-Corp/camp/pull/200))"
+	if strings.Count(rendered, want) != 1 {
+		t.Fatalf("Render() should keep one PR-linked entry, got:\n%s", rendered)
+	}
+	if strings.Count(rendered, "Verify actual remote in push all") != 1 {
+		t.Fatalf("Render() should suppress duplicate section entries when only one user-facing change exists, got:\n%s", rendered)
+	}
+}

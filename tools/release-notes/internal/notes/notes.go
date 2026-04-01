@@ -153,6 +153,8 @@ func Render(repo string, current TagInfo, previousTag string, changes []Change) 
 		return "", fmt.Errorf("repo is required")
 	}
 
+	changes = dedupeChanges(changes)
+
 	var b strings.Builder
 	writeLine := func(s string) {
 		b.WriteString(s)
@@ -363,6 +365,60 @@ func filterChanges(changes []Change, category ChangeCategory) []Change {
 		}
 	}
 	return filtered
+}
+
+func dedupeChanges(changes []Change) []Change {
+	if len(changes) < 2 {
+		return changes
+	}
+
+	var deduped []Change
+	indexByKey := map[string]int{}
+
+	for _, change := range changes {
+		key := normalizedChangeKey(change)
+		if idx, ok := indexByKey[key]; ok {
+			deduped[idx] = preferChange(deduped[idx], change)
+			continue
+		}
+
+		indexByKey[key] = len(deduped)
+		deduped = append(deduped, change)
+	}
+
+	return deduped
+}
+
+func normalizedChangeKey(change Change) string {
+	return strings.ToLower(strings.TrimSpace(change.Text))
+}
+
+func preferChange(current, candidate Change) Change {
+	switch {
+	case current.PRNumber == 0 && candidate.PRNumber != 0:
+		return candidate
+	case current.PRNumber != 0 && candidate.PRNumber == 0:
+		return current
+	case categoryRank(candidate.Category) < categoryRank(current.Category):
+		return candidate
+	default:
+		return current
+	}
+}
+
+func categoryRank(category ChangeCategory) int {
+	switch category {
+	case CategoryFeature:
+		return 0
+	case CategoryFix:
+		return 1
+	case CategoryDocs:
+		return 2
+	case CategoryMaintenance:
+		return 3
+	default:
+		return 4
+	}
 }
 
 func countUserFacing(changes []Change) int {
