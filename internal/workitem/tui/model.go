@@ -11,6 +11,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/workitem"
+	"github.com/Obedience-Corp/camp/internal/workitem/priority"
 )
 
 // chromeHeight is the number of lines consumed by header + footer + separator.
@@ -70,10 +71,14 @@ type Model struct {
 	ctx          context.Context
 	campaignRoot string
 	resolver     *paths.Resolver
+
+	// Priority store for TUI mutations (set/clear priority).
+	priorityStore *priority.Store
+	storePath     string
 }
 
 // New creates the dashboard model from a pre-discovered item list.
-func New(ctx context.Context, items []workitem.WorkItem, campaignRoot string, resolver *paths.Resolver) Model {
+func New(ctx context.Context, items []workitem.WorkItem, campaignRoot string, resolver *paths.Resolver, store *priority.Store, storePath string) Model {
 	ti := textinput.New()
 	ti.Placeholder = "search..."
 	ti.CharLimit = 64
@@ -86,6 +91,8 @@ func New(ctx context.Context, items []workitem.WorkItem, campaignRoot string, re
 		ctx:           ctx,
 		campaignRoot:  campaignRoot,
 		resolver:      resolver,
+		priorityStore: store,
+		storePath:     storePath,
 	}
 }
 

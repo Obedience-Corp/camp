@@ -9,6 +9,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/editor"
 	"github.com/Obedience-Corp/camp/internal/workitem"
+	"github.com/Obedience-Corp/camp/internal/workitem/priority"
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -23,7 +24,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.err = msg.err
 		} else {
-			m.allItems = msg.items
+			items := priority.Apply(m.priorityStore, msg.items)
+			workitem.Sort(items)
+			m.allItems = items
 			m.refilter()
 		}
 		return m, nil
