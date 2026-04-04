@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Obedience-Corp/camp/internal/workitem"
 )
 
 func TestLoad_InvalidJSON(t *testing.T) {
@@ -302,6 +304,59 @@ func TestStorePath(t *testing.T) {
 	}
 }
 
-// TODO: TestApply_DecoratesMatchingItems - enable after WorkItem.ManualPriority field is added in sequence 02
-// TODO: TestApply_IgnoresUnknownItems - enable after WorkItem.ManualPriority field is added in sequence 02
-// TODO: TestApply_EmptyStore - enable after WorkItem.ManualPriority field is added in sequence 02
+func TestApply_DecoratesMatchingItems(t *testing.T) {
+	s := NewStore()
+	Set(s, "intent:a", High)
+	Set(s, "design:b", Medium)
+
+	items := []workitem.WorkItem{
+		{Key: "intent:a"},
+		{Key: "design:b"},
+		{Key: "explore:c"},
+	}
+	items = Apply(s, items)
+
+	if items[0].ManualPriority != "high" {
+		t.Errorf("intent:a ManualPriority = %q, want high", items[0].ManualPriority)
+	}
+	if items[1].ManualPriority != "medium" {
+		t.Errorf("design:b ManualPriority = %q, want medium", items[1].ManualPriority)
+	}
+	if items[2].ManualPriority != "" {
+		t.Errorf("explore:c ManualPriority = %q, want empty", items[2].ManualPriority)
+	}
+}
+
+func TestApply_ClearsStaleValues(t *testing.T) {
+	s := NewStore()
+	Set(s, "intent:a", High)
+
+	items := []workitem.WorkItem{
+		{Key: "intent:a", ManualPriority: "high"},
+		{Key: "design:b", ManualPriority: "medium"}, // stale: not in store
+	}
+	items = Apply(s, items)
+
+	if items[0].ManualPriority != "high" {
+		t.Errorf("intent:a ManualPriority = %q, want high", items[0].ManualPriority)
+	}
+	if items[1].ManualPriority != "" {
+		t.Errorf("design:b ManualPriority = %q, want empty (cleared by Apply)", items[1].ManualPriority)
+	}
+}
+
+func TestApply_EmptyStore(t *testing.T) {
+	s := NewStore()
+	items := []workitem.WorkItem{
+		{Key: "intent:a", ManualPriority: "high"}, // stale value
+		{Key: "design:b"},
+	}
+	items = Apply(s, items)
+
+	if items[0].ManualPriority != "" {
+		t.Errorf("intent:a ManualPriority = %q, want empty (empty store clears all)", items[0].ManualPriority)
+	}
+	if items[1].ManualPriority != "" {
+		t.Errorf("design:b ManualPriority = %q, want empty", items[1].ManualPriority)
+	}
+}

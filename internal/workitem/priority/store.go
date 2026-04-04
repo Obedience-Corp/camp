@@ -98,12 +98,14 @@ func Prune(store *Store, validKeys map[string]bool) bool {
 	return len(stale) > 0
 }
 
-// Apply decorates each WorkItem with its stored manual priority. Items whose Key
-// is not in the store are left unchanged.
+// Apply decorates each WorkItem with its stored manual priority. Items not in
+// the store have their ManualPriority cleared to ensure idempotency after Clear.
 func Apply(store *Store, items []workitem.WorkItem) []workitem.WorkItem {
 	for i := range items {
 		if entry, ok := store.ManualPriorities[items[i].Key]; ok {
 			items[i].ManualPriority = string(entry.Priority)
+		} else {
+			items[i].ManualPriority = ""
 		}
 	}
 	return items

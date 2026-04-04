@@ -294,7 +294,11 @@ func (m Model) assignPriority(p priority.ManualPriority) (tea.Model, tea.Cmd) {
 	}
 	selectedKey := item.Key
 	priority.Set(m.priorityStore, item.Key, p)
-	_ = priority.SaveOrDelete(m.priorityStorePath(), m.priorityStore)
+	if err := priority.SaveOrDelete(m.priorityStorePath(), m.priorityStore); err != nil {
+		m.exitPriorityMode()
+		cmd := m.setStatus("save failed: "+err.Error(), true)
+		return m, cmd
+	}
 	m.allItems = priority.Apply(m.priorityStore, m.allItems)
 	workitem.Sort(m.allItems)
 	m.refilter()
@@ -312,7 +316,11 @@ func (m Model) clearPriority() (tea.Model, tea.Cmd) {
 	}
 	selectedKey := item.Key
 	priority.Clear(m.priorityStore, item.Key)
-	_ = priority.SaveOrDelete(m.priorityStorePath(), m.priorityStore)
+	if err := priority.SaveOrDelete(m.priorityStorePath(), m.priorityStore); err != nil {
+		m.exitPriorityMode()
+		cmd := m.setStatus("save failed: "+err.Error(), true)
+		return m, cmd
+	}
 	m.allItems = priority.Apply(m.priorityStore, m.allItems)
 	workitem.Sort(m.allItems)
 	m.refilter()
