@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/Obedience-Corp/camp/internal/workitem"
 )
 
 // StorePath returns the absolute path to the priority store file within a campaign.
@@ -96,8 +98,16 @@ func Prune(store *Store, validKeys map[string]bool) bool {
 	return len(stale) > 0
 }
 
-// TODO: Apply(store *Store, items []workitem.WorkItem) []workitem.WorkItem
-// Deferred until WorkItem.ManualPriority field is added in sequence 02.
+// Apply decorates each WorkItem with its stored manual priority. Items whose Key
+// is not in the store are left unchanged.
+func Apply(store *Store, items []workitem.WorkItem) []workitem.WorkItem {
+	for i := range items {
+		if entry, ok := store.ManualPriorities[items[i].Key]; ok {
+			items[i].ManualPriority = string(entry.Priority)
+		}
+	}
+	return items
+}
 
 // SaveOrDelete saves the store if it contains entries, or deletes the file if empty.
 func SaveOrDelete(path string, store *Store) error {

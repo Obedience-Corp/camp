@@ -42,6 +42,7 @@ type WorkItem struct {
 	CreatedAt      time.Time      `json:"created_at"`
 	UpdatedAt      time.Time      `json:"updated_at"`
 	SortTimestamp  time.Time      `json:"sort_timestamp"`
+	ManualPriority string `json:"manual_priority,omitempty"`
 	Summary        string         `json:"summary"`
 	SourceID       string         `json:"source_id"`
 	SourceMetadata map[string]any `json:"source_metadata"`

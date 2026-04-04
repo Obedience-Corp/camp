@@ -68,3 +68,92 @@ func TestDeriveSortTimestamp_FallsBackToCreated(t *testing.T) {
 		t.Errorf("expected created_at when updated_at is zero, got %v", ts)
 	}
 }
+
+func TestSort_ManualPriorityBuckets(t *testing.T) {
+	now := time.Now()
+
+	tests := []struct {
+		name  string
+		items []WorkItem
+		want  []string // expected RelativePath order
+	}{
+		{
+			name: "high before medium",
+			items: []WorkItem{
+				{RelativePath: "med", ManualPriority: "medium", SortTimestamp: now},
+				{RelativePath: "hi", ManualPriority: "high", SortTimestamp: now},
+			},
+			want: []string{"hi", "med"},
+		},
+		{
+			name: "medium before low",
+			items: []WorkItem{
+				{RelativePath: "lo", ManualPriority: "low", SortTimestamp: now},
+				{RelativePath: "med", ManualPriority: "medium", SortTimestamp: now},
+			},
+			want: []string{"med", "lo"},
+		},
+		{
+			name: "low before unset",
+			items: []WorkItem{
+				{RelativePath: "unset", SortTimestamp: now},
+				{RelativePath: "lo", ManualPriority: "low", SortTimestamp: now},
+			},
+			want: []string{"lo", "unset"},
+		},
+		{
+			name: "full bucket order",
+			items: []WorkItem{
+				{RelativePath: "unset", SortTimestamp: now},
+				{RelativePath: "lo", ManualPriority: "low", SortTimestamp: now},
+				{RelativePath: "hi", ManualPriority: "high", SortTimestamp: now},
+				{RelativePath: "med", ManualPriority: "medium", SortTimestamp: now},
+			},
+			want: []string{"hi", "med", "lo", "unset"},
+		},
+		{
+			name: "same priority uses recency",
+			items: []WorkItem{
+				{RelativePath: "old", ManualPriority: "high", SortTimestamp: now.Add(-time.Hour)},
+				{RelativePath: "new", ManualPriority: "high", SortTimestamp: now},
+			},
+			want: []string{"new", "old"},
+		},
+		{
+			name: "same priority same timestamp uses path",
+			items: []WorkItem{
+				{RelativePath: "b", ManualPriority: "medium", SortTimestamp: now, CreatedAt: now},
+				{RelativePath: "a", ManualPriority: "medium", SortTimestamp: now, CreatedAt: now},
+			},
+			want: []string{"a", "b"},
+		},
+		{
+			name: "all unset backward compat",
+			items: []WorkItem{
+				{RelativePath: "c", SortTimestamp: now.Add(-2 * time.Hour)},
+				{RelativePath: "a", SortTimestamp: now},
+				{RelativePath: "b", SortTimestamp: now.Add(-time.Hour)},
+			},
+			want: []string{"a", "b", "c"},
+		},
+		{
+			name: "priority wins over recency",
+			items: []WorkItem{
+				{RelativePath: "new-unset", SortTimestamp: now},
+				{RelativePath: "old-high", ManualPriority: "high", SortTimestamp: now.Add(-time.Hour)},
+			},
+			want: []string{"old-high", "new-unset"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			Sort(tt.items)
+			for i, wantPath := range tt.want {
+				if tt.items[i].RelativePath != wantPath {
+					t.Errorf("items[%d].RelativePath = %q, want %q", i, tt.items[i].RelativePath, wantPath)
+				}
+			}
+		})
+	}
+}
