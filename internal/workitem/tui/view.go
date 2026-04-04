@@ -91,10 +91,13 @@ func (m Model) renderFooter() string {
 		}
 		return statusSuccessStyle.Render(m.statusMsg)
 	}
+	if m.isPriorityMode() {
+		return footerStyle.Render("priority: h high  m medium  l low  0 clear  Esc cancel")
+	}
 	count := fmt.Sprintf("%d items", len(m.filteredItems))
-	keys := "j/k move  / search  1-4 filter  0 all  tab preview  r refresh  ? help  q quit"
+	keys := "j/k move  / search  1-4 filter  0 all  P priority  tab preview  r refresh  ? help  q quit"
 	if len(keys)+len(count)+2 > m.width {
-		keys = "j/k / 1-4 tab r ? q"
+		keys = "j/k / 1-4 P tab r ? q"
 	}
 	return footerStyle.Render(fmt.Sprintf("%s  %s", count, keys))
 }
@@ -152,13 +155,29 @@ func (m Model) renderEmpty(_, height int) string {
 	return b.String()
 }
 
+func priorityBadge(p string) (string, lipgloss.Style) {
+	switch p {
+	case "high":
+		return "H ", priorityHighStyle
+	case "medium":
+		return "M ", priorityMediumStyle
+	case "low":
+		return "L ", priorityLowStyle
+	default:
+		return "", lipgloss.NewStyle()
+	}
+}
+
 func renderRow(item workitem.WorkItem, width int, selected bool) string {
 	// Pad plain strings first, then apply color to avoid ANSI width issues
 	wfType := padRight(string(item.WorkflowType), 9)
 	stage := padRight(item.LifecycleStage, 9)
 	rec := formatRecency(item.SortTimestamp)
 
-	titleWidth := width - 9 - 9 - len(rec) - 4
+	badgeText, badgeStyle := priorityBadge(item.ManualPriority)
+	badgeWidth := len(badgeText)
+
+	titleWidth := width - 9 - 9 - len(rec) - 4 - badgeWidth
 	if titleWidth < 10 {
 		titleWidth = 10
 	}
@@ -168,10 +187,14 @@ func renderRow(item workitem.WorkItem, width int, selected bool) string {
 	// Apply styles to already-padded segments
 	styledType := workflowStyle(item.WorkflowType).Render(wfType)
 	styledStage := stageStyle(item.LifecycleStage).Render(stage)
+	styledBadge := ""
+	if badgeText != "" {
+		styledBadge = badgeStyle.Render(badgeText)
+	}
 	styledTitle := rowTitleStyle.Render(title)
 	styledRecency := recencyStyle(item.SortTimestamp).Render(rec)
 
-	row := fmt.Sprintf(" %s %s %s %s", styledType, styledStage, styledTitle, styledRecency)
+	row := fmt.Sprintf(" %s %s %s%s %s", styledType, styledStage, styledBadge, styledTitle, styledRecency)
 	if selected {
 		return rowSelectedStyle.Width(width).Render(row)
 	}
@@ -224,6 +247,21 @@ func renderPreview(item workitem.WorkItem, width, height int) string {
 	b.WriteString(fmt.Sprintf("%s %s\n",
 		previewLabelStyle.Render("stage:"),
 		stageStyle(stage).Render(stage)))
+	if item.ManualPriority != "" {
+		_, style := priorityBadge(item.ManualPriority)
+		b.WriteString(fmt.Sprintf("%s %s\n",
+			previewLabelStyle.Render("priority:"),
+			style.Render(item.ManualPriority)))
+	}
+	if item.WorkflowType == workitem.WorkflowTypeIntent {
+		if srcPrio, ok := item.SourceMetadata["priority"]; ok {
+			if prioStr, ok := srcPrio.(string); ok && prioStr != "" {
+				b.WriteString(fmt.Sprintf("%s %s\n",
+					previewLabelStyle.Render("intent priority:"),
+					previewValueStyle.Render(prioStr)))
+			}
+		}
+	}
 	b.WriteString(fmt.Sprintf("%s %s\n",
 		previewLabelStyle.Render("updated:"),
 		previewValueStyle.Render(item.UpdatedAt.Format("2006-01-02 15:04"))))
@@ -293,6 +331,14 @@ func (m Model) renderHelp() string {
 			{"y", "Copy absolute path"},
 			{"Tab / p", "Toggle preview pane"},
 			{"r", "Refresh (re-scan)"},
+		}},
+		{"Priority", [][2]string{
+			{"P", "Assign manual priority to selected item"},
+			{"h / 1", "Set high priority (in priority mode)"},
+			{"m / 2", "Set medium priority (in priority mode)"},
+			{"l / 3", "Set low priority (in priority mode)"},
+			{"0", "Clear manual priority (in priority mode)"},
+			{"Esc", "Cancel priority mode"},
 		}},
 		{"Other", [][2]string{
 			{"?", "Toggle this help"},
