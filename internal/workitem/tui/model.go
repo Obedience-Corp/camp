@@ -75,6 +75,7 @@ type Model struct {
 	// Priority store for TUI mutations (set/clear priority).
 	priorityStore *priority.Store
 	storePath     string
+	priorityMode  bool
 }
 
 // New creates the dashboard model from a pre-discovered item list.
@@ -150,6 +151,45 @@ func (m *Model) clampScroll() {
 			m.scrollOffset = m.cursor - vp + 1
 		}
 	}
+}
+
+// preserveSelection moves the cursor to the item matching key after a resort.
+// If the key is not found in filteredItems, the cursor is clamped to the
+// nearest valid index.
+func (m *Model) preserveSelection(key string) {
+	if key == "" || len(m.filteredItems) == 0 {
+		m.cursor = 0
+		m.clampScroll()
+		return
+	}
+	for i, item := range m.filteredItems {
+		if item.Key == key {
+			m.cursor = i
+			m.clampScroll()
+			return
+		}
+	}
+	if m.cursor >= len(m.filteredItems) {
+		m.cursor = len(m.filteredItems) - 1
+	}
+	m.clampScroll()
+}
+
+// enterPriorityMode activates the priority picker if items are available.
+func (m *Model) enterPriorityMode() {
+	if len(m.filteredItems) > 0 && m.priorityStore != nil {
+		m.priorityMode = true
+	}
+}
+
+// exitPriorityMode returns to normal navigation mode.
+func (m *Model) exitPriorityMode() {
+	m.priorityMode = false
+}
+
+// isPriorityMode reports whether the priority picker is active.
+func (m Model) isPriorityMode() bool {
+	return m.priorityMode
 }
 
 // refreshMsg carries the result of a background re-discovery.

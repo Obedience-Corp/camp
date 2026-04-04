@@ -481,3 +481,45 @@ func TestFormatRecency_ZeroTime(t *testing.T) {
 		t.Errorf("formatRecency(zero) = %q, want '  -'", got)
 	}
 }
+
+func TestModel_PreserveSelection_KeyFound(t *testing.T) {
+	items := makeTestItems(10)
+	m := New(context.Background(), items, "", nil, priority.NewStore(), "")
+	m.cursor = 5
+	targetKey := items[5].Key
+
+	// Reverse the filteredItems to simulate a resort.
+	reversed := make([]workitem.WorkItem, len(items))
+	for i, item := range items {
+		reversed[len(items)-1-i] = item
+	}
+	m.filteredItems = reversed
+	m.preserveSelection(targetKey)
+
+	if m.filteredItems[m.cursor].Key != targetKey {
+		t.Errorf("cursor at %d points to %q, want %q", m.cursor, m.filteredItems[m.cursor].Key, targetKey)
+	}
+}
+
+func TestModel_PreserveSelection_KeyNotFound(t *testing.T) {
+	items := makeTestItems(5)
+	m := New(context.Background(), items, "", nil, priority.NewStore(), "")
+	m.cursor = 10 // intentionally out of range
+
+	m.preserveSelection("nonexistent:key")
+
+	if m.cursor != 4 {
+		t.Errorf("cursor = %d, want 4 (clamped to last item)", m.cursor)
+	}
+}
+
+func TestModel_PreserveSelection_EmptyList(t *testing.T) {
+	m := New(context.Background(), nil, "", nil, priority.NewStore(), "")
+	m.cursor = 5
+
+	m.preserveSelection("some:key")
+
+	if m.cursor != 0 {
+		t.Errorf("cursor = %d, want 0 (empty list)", m.cursor)
+	}
+}
