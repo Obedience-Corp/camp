@@ -66,14 +66,20 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.searchInput.Focus()
 		return m, textinput.Blink
 	case "tab":
-		// Tab navigates to filter bar when not on preview
-		if !m.showPreview || !m.previewFocused {
+		if !m.shouldShowPreview() {
+			m.previewFocused = false
 			m.focus = focusFilterBar
 			m.filterBar.Focus()
 			return m, nil
 		}
-		// Otherwise toggle preview focus
+		// With the preview visible, Tab switches focus between the list and preview.
 		m.previewFocused = !m.previewFocused
+		return m, nil
+	case "t":
+		m.focusFilterChip(0)
+		return m, nil
+	case "s":
+		m.focusFilterChip(1)
 		return m, nil
 	case "c":
 		// Enter concept filter mode
@@ -236,4 +242,29 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+func (m *Model) focusFilterChip(index int) {
+	m.previewFocused = false
+	m.focus = focusFilterBar
+	m.filterBar.Blur()
+
+	if len(m.filterBar.Chips) == 0 {
+		return
+	}
+	if index < 0 || index >= len(m.filterBar.Chips) {
+		index = 0
+	}
+
+	m.filterBar.FocusedChip = index
+	for i := range m.filterBar.Chips {
+		if i == index {
+			m.filterBar.Chips[i].Focus()
+			if !m.filterBar.Chips[i].Open {
+				m.filterBar.Chips[i].Toggle()
+			}
+			continue
+		}
+		m.filterBar.Chips[i].Blur()
+	}
 }
