@@ -12,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Obedience-Corp/camp/internal/workitem"
+	"github.com/Obedience-Corp/camp/internal/workitem/priority"
 )
 
 func makeTestItems(n int) []workitem.WorkItem {
@@ -33,7 +34,7 @@ func makeTestItems(n int) []workitem.WorkItem {
 
 func TestModel_CursorDown(t *testing.T) {
 	items := makeTestItems(5)
-	m := New(context.Background(), items, "", nil)
+	m := New(context.Background(), items, "", nil, priority.NewStore(), "")
 
 	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
 	m = result.(Model)
@@ -44,7 +45,7 @@ func TestModel_CursorDown(t *testing.T) {
 
 func TestModel_CursorUp(t *testing.T) {
 	items := makeTestItems(5)
-	m := New(context.Background(), items, "", nil)
+	m := New(context.Background(), items, "", nil, priority.NewStore(), "")
 	m.cursor = 3
 
 	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
@@ -56,7 +57,7 @@ func TestModel_CursorUp(t *testing.T) {
 
 func TestModel_CursorDoesNotGoBelowZero(t *testing.T) {
 	items := makeTestItems(5)
-	m := New(context.Background(), items, "", nil)
+	m := New(context.Background(), items, "", nil, priority.NewStore(), "")
 	m.cursor = 0
 
 	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
@@ -68,7 +69,7 @@ func TestModel_CursorDoesNotGoBelowZero(t *testing.T) {
 
 func TestModel_GJumpsToBottom(t *testing.T) {
 	items := makeTestItems(5)
-	m := New(context.Background(), items, "", nil)
+	m := New(context.Background(), items, "", nil, priority.NewStore(), "")
 
 	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
 	m = result.(Model)
@@ -79,7 +80,7 @@ func TestModel_GJumpsToBottom(t *testing.T) {
 
 func TestModel_GGJumpsToTop(t *testing.T) {
 	items := makeTestItems(5)
-	m := New(context.Background(), items, "", nil)
+	m := New(context.Background(), items, "", nil, priority.NewStore(), "")
 	m.cursor = 4
 
 	// First g
@@ -99,7 +100,7 @@ func TestModel_TypeFilter(t *testing.T) {
 		{WorkflowType: workitem.WorkflowTypeDesign, Title: "design"},
 		{WorkflowType: workitem.WorkflowTypeFestival, Title: "fest"},
 	}
-	m := New(context.Background(), items, "", nil)
+	m := New(context.Background(), items, "", nil, priority.NewStore(), "")
 
 	// Press 1 to filter intents
 	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}})
@@ -121,7 +122,7 @@ func TestModel_TypeFilter(t *testing.T) {
 
 func TestModel_EnterSelectsItem(t *testing.T) {
 	items := makeTestItems(3)
-	m := New(context.Background(), items, "", nil)
+	m := New(context.Background(), items, "", nil, priority.NewStore(), "")
 	// Move to second item
 	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
 	m = result.(Model)
@@ -142,7 +143,7 @@ func TestModel_SearchEnterCommits(t *testing.T) {
 		{WorkflowType: workitem.WorkflowTypeIntent, Title: "Auth Feature"},
 		{WorkflowType: workitem.WorkflowTypeDesign, Title: "Dashboard Design"},
 	}
-	m := New(context.Background(), items, "", nil)
+	m := New(context.Background(), items, "", nil, priority.NewStore(), "")
 	m.width = 80
 	m.height = 24
 	m.ready = true
@@ -182,7 +183,7 @@ func TestModel_SearchEscCancels(t *testing.T) {
 		{WorkflowType: workitem.WorkflowTypeIntent, Title: "Auth Feature"},
 		{WorkflowType: workitem.WorkflowTypeDesign, Title: "Dashboard Design"},
 	}
-	m := New(context.Background(), items, "", nil)
+	m := New(context.Background(), items, "", nil, priority.NewStore(), "")
 	m.width = 80
 	m.height = 24
 	m.ready = true
@@ -216,7 +217,7 @@ func TestModel_SearchEscCancels(t *testing.T) {
 }
 
 func TestModel_EmptyView(t *testing.T) {
-	m := New(context.Background(), nil, "", nil)
+	m := New(context.Background(), nil, "", nil, priority.NewStore(), "")
 	m.width = 80
 	m.height = 24
 	m.ready = true
@@ -251,7 +252,7 @@ func TestModel_OpenEditorUsesModelContext(t *testing.T) {
 	cancel()
 
 	item := workitem.WorkItem{PrimaryDoc: filepath.Base(docPath)}
-	m := New(ctx, []workitem.WorkItem{item}, tempDir, nil)
+	m := New(ctx, []workitem.WorkItem{item}, tempDir, nil, priority.NewStore(), "")
 
 	start := time.Now()
 	err := m.editorCommand(docPath).Run()
@@ -266,7 +267,7 @@ func TestModel_OpenEditorUsesModelContext(t *testing.T) {
 }
 
 func TestModel_HelpToggle(t *testing.T) {
-	m := New(context.Background(), makeTestItems(1), "", nil)
+	m := New(context.Background(), makeTestItems(1), "", nil, priority.NewStore(), "")
 	m.width = 80
 	m.height = 24
 	m.ready = true
@@ -294,7 +295,7 @@ func TestModel_HelpToggle(t *testing.T) {
 func TestModel_ScrollViewport_CursorBeyondVisibleHeight(t *testing.T) {
 	// 20 items but only 5 visible rows — cursor must scroll into view
 	items := makeTestItems(20)
-	m := New(context.Background(), items, "", nil)
+	m := New(context.Background(), items, "", nil, priority.NewStore(), "")
 	m.width = 80
 	m.height = 8 // 8 - 3 (header/footer) = 5 visible rows
 	m.ready = true
@@ -340,7 +341,7 @@ func TestModel_ScrollViewport_CursorBeyondVisibleHeight(t *testing.T) {
 
 func TestModel_GJumpUpdatesScroll(t *testing.T) {
 	items := makeTestItems(20)
-	m := New(context.Background(), items, "", nil)
+	m := New(context.Background(), items, "", nil, priority.NewStore(), "")
 	m.width = 80
 	m.height = 8
 	m.ready = true
@@ -375,7 +376,7 @@ func TestModel_RefilterShrinksViewport(t *testing.T) {
 	// Simulate: user scrolls down in 20 items, then refresh returns only 2 items.
 	// scrollOffset must clamp so the viewport doesn't start past the end.
 	items := makeTestItems(20)
-	m := New(context.Background(), items, "", nil)
+	m := New(context.Background(), items, "", nil, priority.NewStore(), "")
 	m.width = 80
 	m.height = 8 // viewport = 5 rows
 	m.ready = true
@@ -427,7 +428,7 @@ func TestModel_TypeFilterShrinksViewport(t *testing.T) {
 	items[0].WorkflowType = workitem.WorkflowTypeIntent
 	items[0].Title = "The Intent"
 
-	m := New(context.Background(), items, "", nil)
+	m := New(context.Background(), items, "", nil, priority.NewStore(), "")
 	m.width = 80
 	m.height = 8
 	m.ready = true
@@ -478,5 +479,47 @@ func TestFormatRecency_ZeroTime(t *testing.T) {
 	got := formatRecency(time.Time{})
 	if got != "  -" {
 		t.Errorf("formatRecency(zero) = %q, want '  -'", got)
+	}
+}
+
+func TestModel_PreserveSelection_KeyFound(t *testing.T) {
+	items := makeTestItems(10)
+	m := New(context.Background(), items, "", nil, priority.NewStore(), "")
+	m.cursor = 5
+	targetKey := items[5].Key
+
+	// Reverse the filteredItems to simulate a resort.
+	reversed := make([]workitem.WorkItem, len(items))
+	for i, item := range items {
+		reversed[len(items)-1-i] = item
+	}
+	m.filteredItems = reversed
+	m.preserveSelection(targetKey)
+
+	if m.filteredItems[m.cursor].Key != targetKey {
+		t.Errorf("cursor at %d points to %q, want %q", m.cursor, m.filteredItems[m.cursor].Key, targetKey)
+	}
+}
+
+func TestModel_PreserveSelection_KeyNotFound(t *testing.T) {
+	items := makeTestItems(5)
+	m := New(context.Background(), items, "", nil, priority.NewStore(), "")
+	m.cursor = 10 // intentionally out of range
+
+	m.preserveSelection("nonexistent:key")
+
+	if m.cursor != 4 {
+		t.Errorf("cursor = %d, want 4 (clamped to last item)", m.cursor)
+	}
+}
+
+func TestModel_PreserveSelection_EmptyList(t *testing.T) {
+	m := New(context.Background(), nil, "", nil, priority.NewStore(), "")
+	m.cursor = 5
+
+	m.preserveSelection("some:key")
+
+	if m.cursor != 0 {
+		t.Errorf("cursor = %d, want 0 (empty list)", m.cursor)
 	}
 }

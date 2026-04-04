@@ -9,7 +9,12 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/editor"
 	"github.com/Obedience-Corp/camp/internal/workitem"
+	"github.com/Obedience-Corp/camp/internal/workitem/priority"
 )
+
+func (m Model) priorityStorePath() string {
+	return priority.StorePath(m.campaignRoot)
+}
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -23,8 +28,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.err = msg.err
 		} else {
-			m.allItems = msg.items
+			selectedKey := m.currentItem().Key
+			items := msg.items
+			if m.priorityStore != nil {
+				validKeys := make(map[string]bool, len(items))
+				for _, item := range items {
+					validKeys[item.Key] = true
+				}
+				if priority.Prune(m.priorityStore, validKeys) {
+					_ = priority.SaveOrDelete(m.priorityStorePath(), m.priorityStore)
+				}
+				items = priority.Apply(m.priorityStore, items)
+			}
+			workitem.Sort(items)
+			m.allItems = items
 			m.refilter()
+			m.preserveSelection(selectedKey)
 		}
 		return m, nil
 
@@ -36,6 +55,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if m.isPriorityMode() {
+			return m.handlePriorityKey(msg)
+		}
 		if m.searchMode {
 			return m.handleSearchKey(msg)
 		}
@@ -113,6 +135,10 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.Selected = &item
 			return m, tea.Quit
 		}
+
+	// Priority mode
+	case "P":
+		m.enterPriorityMode()
 
 	// Quick actions (read-only)
 	case "e":
@@ -238,5 +264,68 @@ func (m Model) copyPath() (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 	cmd := m.setStatus("copied!", false)
+	return m, cmd
+}
+
+// --- Priority mode handlers ---
+
+func (m Model) handlePriorityKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "h", "1":
+		return m.assignPriority(priority.High)
+	case "m", "2":
+		return m.assignPriority(priority.Medium)
+	case "l", "3":
+		return m.assignPriority(priority.Low)
+	case "0":
+		return m.clearPriority()
+	case "esc":
+		m.exitPriorityMode()
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m Model) assignPriority(p priority.ManualPriority) (tea.Model, tea.Cmd) {
+	item := m.currentItem()
+	if item.Key == "" {
+		m.exitPriorityMode()
+		return m, nil
+	}
+	selectedKey := item.Key
+	priority.Set(m.priorityStore, item.Key, p)
+	if err := priority.SaveOrDelete(m.priorityStorePath(), m.priorityStore); err != nil {
+		m.exitPriorityMode()
+		cmd := m.setStatus("save failed: "+err.Error(), true)
+		return m, cmd
+	}
+	m.allItems = priority.Apply(m.priorityStore, m.allItems)
+	workitem.Sort(m.allItems)
+	m.refilter()
+	m.preserveSelection(selectedKey)
+	m.exitPriorityMode()
+	cmd := m.setStatus("priority set: "+string(p), false)
+	return m, cmd
+}
+
+func (m Model) clearPriority() (tea.Model, tea.Cmd) {
+	item := m.currentItem()
+	if item.Key == "" {
+		m.exitPriorityMode()
+		return m, nil
+	}
+	selectedKey := item.Key
+	priority.Clear(m.priorityStore, item.Key)
+	if err := priority.SaveOrDelete(m.priorityStorePath(), m.priorityStore); err != nil {
+		m.exitPriorityMode()
+		cmd := m.setStatus("save failed: "+err.Error(), true)
+		return m, cmd
+	}
+	m.allItems = priority.Apply(m.priorityStore, m.allItems)
+	workitem.Sort(m.allItems)
+	m.refilter()
+	m.preserveSelection(selectedKey)
+	m.exitPriorityMode()
+	cmd := m.setStatus("priority cleared", false)
 	return m, cmd
 }
