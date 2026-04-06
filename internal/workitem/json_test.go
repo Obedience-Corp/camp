@@ -2,6 +2,7 @@ package workitem
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -60,11 +61,11 @@ func TestNewPayload_NilItemsBecomesEmptyArray(t *testing.T) {
 
 func TestNewPayload_SortInfo(t *testing.T) {
 	p := NewPayload("/tmp", nil)
-	if p.Sort.Primary != "sort_timestamp" {
-		t.Errorf("sort.primary = %q, want sort_timestamp", p.Sort.Primary)
+	if p.Sort.Primary != "manual_priority" {
+		t.Errorf("sort.primary = %q, want manual_priority", p.Sort.Primary)
 	}
-	if p.Sort.Secondary != "created_at" {
-		t.Errorf("sort.secondary = %q, want created_at", p.Sort.Secondary)
+	if p.Sort.Secondary != "sort_timestamp" {
+		t.Errorf("sort.secondary = %q, want sort_timestamp", p.Sort.Secondary)
 	}
 	if p.Sort.Direction != "desc" {
 		t.Errorf("sort.direction = %q, want desc", p.Sort.Direction)
@@ -75,5 +76,19 @@ func TestNewPayload_CampaignRoot(t *testing.T) {
 	p := NewPayload("/my/campaign", nil)
 	if p.CampaignRoot != "/my/campaign" {
 		t.Errorf("campaign_root = %q, want /my/campaign", p.CampaignRoot)
+	}
+}
+
+func TestWorkItem_ManualPriorityOmitEmpty(t *testing.T) {
+	item := WorkItem{Key: "intent:foo"}
+	data, _ := json.Marshal(item)
+	if strings.Contains(string(data), "manual_priority") {
+		t.Error("manual_priority should be omitted when empty")
+	}
+
+	item.ManualPriority = "high"
+	data, _ = json.Marshal(item)
+	if !strings.Contains(string(data), `"manual_priority":"high"`) {
+		t.Errorf("manual_priority should be present, got: %s", data)
 	}
 }

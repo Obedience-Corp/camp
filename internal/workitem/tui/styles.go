@@ -58,6 +58,13 @@ var (
 	helpDescStyle    = lipgloss.NewStyle().Foreground(pal.TextMuted)
 )
 
+// Priority badge styles
+var (
+	priorityHighStyle   = lipgloss.NewStyle().Bold(true).Foreground(pal.Error)
+	priorityMediumStyle = lipgloss.NewStyle().Bold(true).Foreground(pal.Warning)
+	priorityLowStyle    = lipgloss.NewStyle().Foreground(pal.TextDim)
+)
+
 // Empty state
 var (
 	emptyMsgStyle = lipgloss.NewStyle().Foreground(pal.Warning)

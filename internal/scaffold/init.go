@@ -313,6 +313,9 @@ state.yaml
 
 # Generated cache (navigation index, rebuilt automatically)
 cache/
+
+# Tool-managed state (workitem priorities, regenerated automatically)
+settings/workitems.json
 `
 			if err := os.WriteFile(gitignorePath, []byte(gitignoreContent), 0644); err != nil {
 				return nil, camperrors.Wrap(err, "failed to create .gitignore")

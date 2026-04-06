@@ -3,7 +3,7 @@ package workitem
 import "time"
 
 // SchemaVersion is the JSON contract version for workitem output.
-const SchemaVersion = "workitems/v1alpha2"
+const SchemaVersion = "workitems/v1alpha3"
 
 // Payload is the top-level JSON output for camp workitem --json.
 type Payload struct {
@@ -57,8 +57,8 @@ func NewPayload(campaignRoot string, items []WorkItem) Payload {
 		GeneratedAt:   time.Now().UTC(),
 		CampaignRoot:  campaignRoot,
 		Sort: SortInfo{
-			Primary:   "sort_timestamp",
-			Secondary: "created_at",
+			Primary:   "manual_priority",
+			Secondary: "sort_timestamp",
 			Direction: "desc",
 		},
 		Items:  items,

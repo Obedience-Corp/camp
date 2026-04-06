@@ -85,6 +85,10 @@ func (m *Model) recalculateLayout() {
 		}
 	}
 
+	if !m.shouldShowPreview() {
+		m.previewFocused = false
+	}
+
 	// Notify user of layout mode change
 	if oldMode != m.layoutMode && m.ready {
 		switch m.layoutMode {

@@ -13,6 +13,7 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/paths"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
+	"github.com/Obedience-Corp/camp/internal/workitem/priority"
 	wktui "github.com/Obedience-Corp/camp/internal/workitem/tui"
 )
 
@@ -69,6 +70,26 @@ Examples:
 				return camperrors.Wrap(err, "discovering work items")
 			}
 
+			// Load priority store and prune stale entries against full discovery set.
+			storePath := priority.StorePath(campaignRoot)
+			store, err := priority.Load(storePath)
+			if err != nil {
+				return camperrors.Wrap(err, "loading priority store")
+			}
+			validKeys := make(map[string]bool, len(items))
+			for _, item := range items {
+				validKeys[item.Key] = true
+			}
+			if priority.Prune(store, validKeys) {
+				if err := priority.SaveOrDelete(storePath, store); err != nil {
+					return camperrors.Wrap(err, "saving pruned priority store")
+				}
+			}
+
+			// Apply priority overlay and re-sort with priority buckets.
+			items = priority.Apply(store, items)
+			wkitem.Sort(items)
+
 			items = wkitem.Filter(items, flagTypes, flagStages, flagQuery)
 			if flagLimit > 0 && flagLimit < len(items) {
 				items = items[:flagLimit]
@@ -85,9 +106,9 @@ Examples:
 				fmt.Println(items[0].AbsPath(campaignRoot))
 				return nil
 			case flagPrint:
-				return runTUI(ctx, items, true, campaignRoot, resolver)
+				return runTUI(ctx, items, true, campaignRoot, resolver, store, storePath)
 			default:
-				return runTUI(ctx, items, false, campaignRoot, resolver)
+				return runTUI(ctx, items, false, campaignRoot, resolver, store, storePath)
 			}
 		},
 	}
@@ -136,12 +157,12 @@ func outputJSON(campaignRoot string, items []wkitem.WorkItem) error {
 	return enc.Encode(payload)
 }
 
-func runTUI(ctx context.Context, items []wkitem.WorkItem, printOnly bool, campaignRoot string, resolver *paths.Resolver) error {
+func runTUI(ctx context.Context, items []wkitem.WorkItem, printOnly bool, campaignRoot string, resolver *paths.Resolver, store *priority.Store, storePath string) error {
 	if len(items) == 0 {
 		return fmt.Errorf("no work items found")
 	}
 
-	model := wktui.New(ctx, items, campaignRoot, resolver)
+	model := wktui.New(ctx, items, campaignRoot, resolver, store, storePath)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	result, err := p.Run()
 	if err != nil {
