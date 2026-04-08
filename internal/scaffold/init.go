@@ -311,6 +311,9 @@ state.yaml
 
 # Generated cache (navigation index, rebuilt automatically)
 cache/
+
+# Linked project registry (machine-local symlink metadata)
+linked-projects.json
 `
 			if err := os.WriteFile(gitignorePath, []byte(gitignoreContent), 0644); err != nil {
 				return nil, camperrors.Wrap(err, "failed to create .gitignore")

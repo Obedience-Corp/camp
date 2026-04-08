@@ -25,13 +25,22 @@ Source can be:
   - SSH URL:   git@github.com:org/repo.git
   - HTTPS URL: https://github.com/org/repo.git
   - Local path (with --local): ./existing-repo
+  - Local path (with --link):  ~/code/my-project
+
+The --link flag creates a symlink to an external directory instead of
+cloning. This is useful for projects already on your machine that you
+want to include in the campaign without copying. Linked projects can
+be git repos or plain directories. The symlink and metadata are
+machine-local and won't be committed to the campaign repo.
 
 Examples:
   camp project add git@github.com:org/api.git           # Add remote repo
   camp project add https://github.com/org/web.git       # Add via HTTPS
-  camp project add --local ./my-repo --name my-project  # Add existing local repo
+  camp project add --local ./my-repo --name my-project  # Add existing local repo as submodule
+  camp project add --link ~/code/my-app                 # Link external project
+  camp project add --link ~/code/my-app --name app      # Link with custom name
   camp project add git@github.com:org/api.git --name backend  # Custom name`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.MaximumNArgs(1),
 	RunE: runProjectAdd,
 }
 
@@ -40,17 +49,18 @@ func init() {
 
 	projectAddCmd.Flags().StringP("name", "n", "", "Override project name (defaults to repo name)")
 	projectAddCmd.Flags().StringP("path", "p", "", "Override destination path (defaults to projects/<name>)")
-	projectAddCmd.Flags().StringP("local", "l", "", "Add existing local repository instead of cloning")
+	projectAddCmd.Flags().StringP("local", "l", "", "Add existing local repository as submodule (clones into campaign)")
+	projectAddCmd.Flags().String("link", "", "Link an external directory via symlink (no cloning, machine-local)")
 	projectAddCmd.Flags().Bool("no-commit", false, "Skip automatic git commit")
 }
 
 func runProjectAdd(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	source := args[0]
 
 	name, _ := cmd.Flags().GetString("name")
 	path, _ := cmd.Flags().GetString("path")
 	local, _ := cmd.Flags().GetString("local")
+	link, _ := cmd.Flags().GetString("link")
 	noCommit, _ := cmd.Flags().GetBool("no-commit")
 
 	// Detect campaign root
@@ -58,6 +68,41 @@ func runProjectAdd(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+
+	// Handle --link: create symlink to external project
+	if link != "" {
+		linkOpts := projectsvc.LinkOptions{
+			Name: name,
+			Path: path,
+		}
+		linkResult, err := projectsvc.AddLinked(ctx, root, link, linkOpts)
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("%s %s\n", ui.SuccessIcon(), ui.Success("Linked project: "+linkResult.Name))
+		fmt.Println()
+		fmt.Println(ui.KeyValue("  Path:", linkResult.Path))
+		fmt.Println(ui.KeyValue("  Source:", linkResult.Source))
+		if linkResult.Type != "" {
+			fmt.Println(ui.KeyValue("  Type:", linkResult.Type))
+		}
+		if linkResult.IsGit {
+			fmt.Println(ui.KeyValue("  Git:", "yes"))
+		} else {
+			fmt.Println(ui.KeyValue("  Git:", "no (non-git directory)"))
+		}
+		fmt.Println()
+		fmt.Println(ui.Dim("  Linked projects are machine-local and not committed to the campaign repo."))
+		return nil
+	}
+
+	// Require source arg for non-link add
+	if len(args) == 0 {
+		return fmt.Errorf("source URL is required\n" +
+			"Hint: Provide a git URL, or use --link to symlink an existing directory")
+	}
+	source := args[0]
 
 	opts := projectsvc.AddOptions{
 		Name:  name,

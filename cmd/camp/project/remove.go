@@ -88,6 +88,9 @@ func runProjectRemove(cmd *cobra.Command, args []string) error {
 		fmt.Println(ui.Warning("Dry run - would remove:"))
 		fmt.Println()
 		fmt.Println(ui.KeyValue("  Project:", result.Name))
+		if result.LinkRemoved {
+			fmt.Printf("    %s Remove linked project symlink and manifest entry\n", ui.BulletIcon())
+		}
 		if result.SubmoduleRemoved {
 			fmt.Printf("    %s Remove from git submodule tracking\n", ui.BulletIcon())
 		}
@@ -101,6 +104,9 @@ func runProjectRemove(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("%s %s\n", ui.SuccessIcon(), ui.Success("Removed project: "+result.Name))
+	if result.LinkRemoved {
+		fmt.Printf("  %s Linked project unlinked (original files untouched)\n", ui.SuccessIcon())
+	}
 	if result.SubmoduleRemoved {
 		fmt.Printf("  %s Submodule unregistered\n", ui.SuccessIcon())
 	}
@@ -111,8 +117,9 @@ func runProjectRemove(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  %s Worktrees deleted\n", ui.SuccessIcon())
 	}
 
-	// Auto-commit if not disabled and not a dry run
-	if !noCommit && !dryRun {
+	// Auto-commit if not disabled, not a dry run, and not a linked project
+	// (linked project removal doesn't change tracked files)
+	if !noCommit && !dryRun && !result.LinkRemoved {
 		cfg, _ := config.LoadCampaignConfig(ctx, root)
 		campaignID := ""
 		if cfg != nil {

@@ -10,6 +10,12 @@ type Project struct {
 	Type string
 	// URL is the git remote origin URL.
 	URL string
+	// Source indicates how the project was added to the campaign.
+	// One of SourceSubmodule, SourceLinked, or SourceLinkedNonGit.
+	Source string
+	// LinkedPath is the absolute path to the original project on disk.
+	// Only set when Source is SourceLinked or SourceLinkedNonGit.
+	LinkedPath string
 	// MonorepoRoot is the relative path to the parent monorepo, set when this
 	// project is a subproject expanded from a monorepo. Empty for standalone projects.
 	MonorepoRoot string
@@ -25,4 +31,14 @@ const (
 	TypeTypeScript = "typescript"
 	TypePython     = "python"
 	TypeUnknown    = ""
+)
+
+// Project source constants indicate how a project was added.
+const (
+	// SourceSubmodule is a project added as a git submodule (default).
+	SourceSubmodule = "submodule"
+	// SourceLinked is a git project symlinked from an external path.
+	SourceLinked = "linked"
+	// SourceLinkedNonGit is a non-git project symlinked from an external path.
+	SourceLinkedNonGit = "linked-non-git"
 )

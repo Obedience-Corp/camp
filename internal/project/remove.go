@@ -36,6 +36,8 @@ type RemoveResult struct {
 	Path string
 	// SubmoduleRemoved indicates if git submodule was deinitialized.
 	SubmoduleRemoved bool
+	// LinkRemoved indicates if a linked project symlink was removed.
+	LinkRemoved bool
 	// FilesDeleted indicates if project files were deleted.
 	FilesDeleted bool
 	// WorktreeDeleted indicates if worktree directory was deleted.
@@ -93,11 +95,22 @@ func Remove(ctx context.Context, campaignRoot, name string, opts RemoveOptions) 
 		Path: projectPath,
 	}
 
+	// Check if this is a linked project (symlink)
+	isLinked, _, linkedErr := IsLinkedProject(campaignRoot, name)
+	if linkedErr != nil {
+		return nil, linkedErr
+	}
+
 	// Dry run just reports what would happen
 	if opts.DryRun {
-		addStep(result, "would deinit and remove submodule from git tracking")
-		result.SubmoduleRemoved = true
-		if opts.Delete {
+		if isLinked {
+			addStep(result, "would remove linked project symlink and manifest entry")
+			result.LinkRemoved = true
+		} else {
+			addStep(result, "would deinit and remove submodule from git tracking")
+			result.SubmoduleRemoved = true
+		}
+		if opts.Delete && !isLinked {
 			addStep(result, fmt.Sprintf("would delete project directory %s", projectPath))
 			result.FilesDeleted = true
 			worktreePath := campaignProjectWorktreePath(ctx, campaignRoot, name)
@@ -105,6 +118,19 @@ func Remove(ctx context.Context, campaignRoot, name string, opts RemoveOptions) 
 				addStep(result, fmt.Sprintf("would delete worktree directory %s", worktreePath))
 				result.WorktreeDeleted = true
 			}
+		}
+		return result, nil
+	}
+
+	// Handle linked project removal
+	if isLinked {
+		unlinked, err := UnlinkProject(ctx, campaignRoot, name)
+		if err != nil {
+			return nil, camperrors.Wrap(err, "failed to unlink project")
+		}
+		if unlinked {
+			addStep(result, "symlink removed and manifest entry cleaned up")
+			result.LinkRemoved = true
 		}
 		return result, nil
 	}

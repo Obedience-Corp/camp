@@ -12,10 +12,17 @@ import (
 
 // List returns all projects in the campaign's projects directory.
 // It identifies git repositories, detects their project type, and expands
-// repos with .gitmodules into root + submodule entries.
+// repos with .gitmodules into root + submodule entries. Symlinked directories
+// (linked projects) are included and annotated with their source type.
 func List(ctx context.Context, campaignRoot string) ([]Project, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
+	}
+
+	// Load linked project manifest for source annotation
+	manifest, _ := LoadManifest(campaignRoot)
+	if manifest == nil {
+		manifest = &LinkedProjectManifest{Projects: make(map[string]LinkedProjectEntry)}
 	}
 
 	projectsDir := filepath.Join(campaignRoot, "projects")
@@ -34,11 +41,29 @@ func List(ctx context.Context, campaignRoot string) ([]Project, error) {
 			return nil, ctx.Err()
 		}
 
-		if !entry.IsDir() {
+		name := entry.Name()
+		projectPath := filepath.Join(projectsDir, name)
+
+		// Check if this is a symlink (linked project)
+		if entry.Type()&os.ModeSymlink != 0 {
+			// Resolve symlink target to check if it's valid
+			resolved, err := filepath.EvalSymlinks(projectPath)
+			if err != nil {
+				// Broken symlink — skip
+				continue
+			}
+			info, err := os.Stat(resolved)
+			if err != nil || !info.IsDir() {
+				continue
+			}
+
+			projects = append(projects, resolveLinkedProject(ctx, name, resolved, manifest)...)
 			continue
 		}
 
-		projectPath := filepath.Join(projectsDir, entry.Name())
+		if !entry.IsDir() {
+			continue
+		}
 
 		// Check if it's a git repo (has .git file or directory)
 		gitPath := filepath.Join(projectPath, ".git")
@@ -46,12 +71,85 @@ func List(ctx context.Context, campaignRoot string) ([]Project, error) {
 			continue
 		}
 
-		projects = append(projects, resolveProject(ctx, entry.Name(), projectPath)...)
+		resolved := resolveProject(ctx, name, projectPath)
+		// Annotate submodule source type
+		for i := range resolved {
+			resolved[i].Source = SourceSubmodule
+		}
+		projects = append(projects, resolved...)
 	}
 
 	projects = deduplicateByRemoteURL(ctx, campaignRoot, projects)
 
 	return projects, nil
+}
+
+// resolveLinkedProject returns Project entries for a symlinked directory.
+// It handles both git and non-git linked projects.
+func resolveLinkedProject(ctx context.Context, name, resolvedPath string, manifest *LinkedProjectManifest) []Project {
+	entry, inManifest := manifest.Projects[name]
+
+	isGit := isGitRepo(resolvedPath)
+
+	source := SourceLinked
+	if !isGit {
+		source = SourceLinkedNonGit
+	}
+	// Trust manifest source if available
+	if inManifest {
+		source = entry.Source
+	}
+
+	linkedPath := resolvedPath
+	if inManifest {
+		linkedPath = entry.AbsPath
+	}
+
+	url := ""
+	if isGit {
+		url = getGitRemoteURL(ctx, resolvedPath)
+	}
+
+	relPath := filepath.Join("projects", name)
+
+	// For git repos, check for monorepo expansion
+	if isGit {
+		submodulePaths, _ := git.ListSubmodulePaths(ctx, resolvedPath)
+		if len(submodulePaths) > 0 {
+			expanded := make([]Project, 0, len(submodulePaths)+1)
+			expanded = append(expanded, Project{
+				Name:        name,
+				Path:        relPath,
+				Type:        detectProjectType(resolvedPath),
+				URL:         url,
+				Source:      source,
+				LinkedPath:  linkedPath,
+				ExcludeDirs: submodulePaths,
+			})
+			for _, subPath := range submodulePaths {
+				subFullPath := filepath.Join(resolvedPath, subPath)
+				expanded = append(expanded, Project{
+					Name:         name + "@" + subPath,
+					Path:         filepath.Join(relPath, subPath),
+					Type:         detectProjectType(subFullPath),
+					URL:          url,
+					Source:       source,
+					LinkedPath:   linkedPath,
+					MonorepoRoot: relPath,
+				})
+			}
+			return expanded
+		}
+	}
+
+	return []Project{{
+		Name:       name,
+		Path:       relPath,
+		Type:       detectProjectType(resolvedPath),
+		URL:        url,
+		Source:     source,
+		LinkedPath: linkedPath,
+	}}
 }
 
 // resolveProject returns one or more Project entries for a discovered git repo.

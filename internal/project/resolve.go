@@ -74,24 +74,46 @@ func ResolveFromCwd(ctx context.Context, campRoot string) (*ResolveResult, error
 		return nil, camperrors.Wrap(err, "failed to get working directory")
 	}
 
-	projectRoot, isSubmodule, err := git.FindProjectRootWithType(cwd)
-	if err != nil {
-		return nil, camperrors.Wrap(err, "not inside a project directory")
-	}
-
-	// Resolve symlinks for reliable comparison (e.g., macOS /var → /private/var)
-	resolvedRoot, _ := filepath.EvalSymlinks(projectRoot)
+	// Resolve symlinks in cwd so we can match against both symlink and target paths
+	resolvedCwd, _ := filepath.EvalSymlinks(cwd)
 	resolvedCamp, _ := filepath.EvalSymlinks(campRoot)
-	if resolvedRoot == resolvedCamp || projectRoot == campRoot {
-		return nil, errors.New("you're in the campaign root, not a project\nUse 'camp commit' for campaign-level commits")
-	}
 
-	// Look up the project in the dynamic list
+	// Look up the project in the dynamic list first — this covers linked projects
+	// (symlinks) which may not have a .git directory at all.
 	projects, listErr := List(ctx, campRoot)
 	if listErr != nil {
 		return nil, camperrors.Wrap(listErr, "failed to list projects")
 	}
 
+	for _, proj := range projects {
+		projPath := filepath.Join(campRoot, proj.Path)
+		resolvedProj, _ := filepath.EvalSymlinks(projPath)
+
+		// Check if cwd is the project root or inside it
+		if isPathWithin(resolvedCwd, resolvedProj) || isPathWithin(cwd, projPath) {
+			return &ResolveResult{Name: proj.Name, Path: resolvedProj}, nil
+		}
+
+		// For linked projects, also check against the linked target path
+		if proj.LinkedPath != "" {
+			if isPathWithin(resolvedCwd, proj.LinkedPath) {
+				return &ResolveResult{Name: proj.Name, Path: proj.LinkedPath}, nil
+			}
+		}
+	}
+
+	// Fall back to git-based detection for submodules
+	projectRoot, isSubmodule, err := git.FindProjectRootWithType(cwd)
+	if err != nil {
+		return nil, camperrors.Wrap(err, "not inside a project directory")
+	}
+
+	resolvedRoot, _ := filepath.EvalSymlinks(projectRoot)
+	if resolvedRoot == resolvedCamp || projectRoot == campRoot {
+		return nil, errors.New("you're in the campaign root, not a project\nUse 'camp commit' for campaign-level commits")
+	}
+
+	// Check again against the list with the git-detected root
 	for _, proj := range projects {
 		projPath := filepath.Join(campRoot, proj.Path)
 		resolvedProj, _ := filepath.EvalSymlinks(projPath)
@@ -111,6 +133,18 @@ func ResolveFromCwd(ctx context.Context, campRoot string) (*ResolveResult, error
 		CampRoot: campRoot,
 		Projects: projects,
 	}
+}
+
+// isPathWithin returns true if child is equal to or a subdirectory of parent.
+func isPathWithin(child, parent string) bool {
+	if child == parent {
+		return true
+	}
+	rel, err := filepath.Rel(parent, child)
+	if err != nil {
+		return false
+	}
+	return !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && rel != ".."
 }
 
 // nameFromPath extracts a project name from its absolute path relative to
