@@ -59,7 +59,7 @@ func init() {
 	flags.BoolP("full", "f", false, "Full TUI mode with body textarea")
 	flags.StringP("campaign", "c", "", "Target campaign by name or ID; omit value to pick interactively")
 	flags.Bool("no-commit", false, "Don't create a git commit")
-	flags.Lookup("campaign").NoOptDefVal = ""
+	flags.Lookup("campaign").NoOptDefVal = "__picker__"
 }
 
 func runIntentAdd(cmd *cobra.Command, args []string) error {
@@ -70,6 +70,9 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	useEditor, _ := cmd.Flags().GetBool("edit")
 	fullMode, _ := cmd.Flags().GetBool("full")
 	targetCampaign, _ := cmd.Flags().GetString("campaign")
+	if targetCampaign == "__picker__" {
+		targetCampaign = ""
+	}
 	noCommit, _ := cmd.Flags().GetBool("no-commit")
 
 	campaignResolver := newIntentAddCampaignResolver(cmd.ErrOrStderr())
