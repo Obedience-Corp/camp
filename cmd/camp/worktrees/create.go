@@ -8,6 +8,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/paths"
+	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/Obedience-Corp/camp/internal/worktree"
 	"github.com/spf13/cobra"
@@ -81,6 +82,14 @@ func runWorktreesCreate(cmd *cobra.Command, args []string) error {
 	resolver := paths.NewResolver(campRoot, cfg.Paths())
 	creator := worktree.NewCreator(resolver, cfg)
 
+	resolved, err := project.Resolve(ctx, campRoot, projectName)
+	if err != nil {
+		return err
+	}
+	if resolved.Source == project.SourceLinkedNonGit {
+		return fmt.Errorf("project %q is a linked non-git directory and does not support git worktrees", projectName)
+	}
+
 	// Build options based on new semantics:
 	// - Default: create new branch with worktree name, based on current branch
 	// - --branch: checkout existing branch
@@ -88,6 +97,7 @@ func runWorktreesCreate(cmd *cobra.Command, args []string) error {
 	// - --track: track remote branch
 	opts := &worktree.CreateOptions{
 		Project:     projectName,
+		ProjectPath: resolved.Path,
 		Name:        worktreeName,
 		TrackRemote: createTrack,
 	}
@@ -109,8 +119,7 @@ func runWorktreesCreate(cmd *cobra.Command, args []string) error {
 			opts.StartPoint = createStartPoint
 		} else {
 			// Get current branch as default start point
-			projectPath := resolver.Project(projectName)
-			git := worktree.NewGitWorktree(projectPath)
+			git := worktree.NewGitWorktree(resolved.Path)
 			currentBranch, err := git.CurrentBranch(ctx)
 			if err != nil {
 				return camperrors.Wrap(err, "failed to detect current branch")

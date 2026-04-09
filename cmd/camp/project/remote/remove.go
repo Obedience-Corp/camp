@@ -2,7 +2,6 @@ package remote
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/git"
@@ -64,6 +63,9 @@ func runProjectRemoteRemove(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if resolved.Source == project.SourceLinkedNonGit {
+		return fmt.Errorf("project %q is a linked non-git directory and does not support git remotes", resolved.Name)
+	}
 
 	if err := git.RemoveRemote(ctx, resolved.Path, remoteName); err != nil {
 		return fmt.Errorf("remove remote: %w", err)
@@ -74,9 +76,9 @@ func runProjectRemoteRemove(cmd *cobra.Command, args []string) error {
 
 	// Campaign-sync: if we just removed origin from a submodule, clean up .gitmodules
 	if remoteName == "origin" {
-		isSubmodule, _ := git.IsSubmodule(resolved.Path)
+		isSubmodule := resolved.Source == project.SourceSubmodule
 		if isSubmodule {
-			submodulePath := strings.TrimPrefix(resolved.Path, campRoot+"/")
+			submodulePath := resolved.LogicalPath
 			if err := git.RemoveDeclaredSubmodule(ctx, campRoot, submodulePath); err != nil {
 				fmt.Printf("%s Could not clean .gitmodules entry: %s\n",
 					ui.WarningIcon(), ui.Dim(err.Error()))

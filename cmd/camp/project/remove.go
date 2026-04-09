@@ -88,6 +88,9 @@ func runProjectRemove(cmd *cobra.Command, args []string) error {
 		fmt.Println(ui.Warning("Dry run - would remove:"))
 		fmt.Println()
 		fmt.Println(ui.KeyValue("  Project:", result.Name))
+		if result.LinkRemoved {
+			fmt.Printf("    %s Unlink linked project\n", ui.BulletIcon())
+		}
 		if result.SubmoduleRemoved {
 			fmt.Printf("    %s Remove from git submodule tracking\n", ui.BulletIcon())
 		}
@@ -101,6 +104,9 @@ func runProjectRemove(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("%s %s\n", ui.SuccessIcon(), ui.Success("Removed project: "+result.Name))
+	if result.LinkRemoved {
+		fmt.Printf("  %s Linked project unlinked\n", ui.SuccessIcon())
+	}
 	if result.SubmoduleRemoved {
 		fmt.Printf("  %s Submodule unregistered\n", ui.SuccessIcon())
 	}
@@ -112,7 +118,7 @@ func runProjectRemove(cmd *cobra.Command, args []string) error {
 	}
 
 	// Auto-commit if not disabled and not a dry run
-	if !noCommit && !dryRun {
+	if !noCommit && !dryRun && result.SubmoduleRemoved {
 		cfg, _ := config.LoadCampaignConfig(ctx, root)
 		campaignID := ""
 		if cfg != nil {

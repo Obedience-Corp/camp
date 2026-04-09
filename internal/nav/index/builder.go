@@ -117,8 +117,12 @@ func (b *Builder) scanCategory(ctx context.Context, cat nav.Category) ([]Target,
 			continue
 		}
 
-		// Only include directories
-		if !entry.IsDir() {
+		isDir := entry.IsDir()
+		if !isDir && entry.Type()&os.ModeSymlink != 0 {
+			targetInfo, err := os.Stat(filepath.Join(dir, entry.Name()))
+			isDir = err == nil && targetInfo.IsDir()
+		}
+		if !isDir {
 			continue
 		}
 

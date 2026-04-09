@@ -75,6 +75,9 @@ func runProjectWorktreeRemove(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	projectName := resolved.Name
+	if resolved.Source == project.SourceLinkedNonGit {
+		return fmt.Errorf("project %q is a linked non-git directory and does not support git worktrees", projectName)
+	}
 
 	resolver := paths.NewResolver(campRoot, cfg.Paths())
 	pathManager := intworktree.NewPathManager(resolver)
@@ -83,8 +86,7 @@ func runProjectWorktreeRemove(cmd *cobra.Command, args []string) error {
 	}
 
 	wtPath := pathManager.WorktreePath(projectName, worktreeName)
-	projectPath := resolver.Project(projectName)
-	git := intworktree.NewGitWorktree(projectPath)
+	git := intworktree.NewGitWorktree(resolved.Path)
 	if err := git.Remove(ctx, wtPath, wtRemoveForce); err != nil {
 		return camperrors.Wrap(err, "failed to remove worktree")
 	}

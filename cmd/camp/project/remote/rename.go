@@ -2,7 +2,6 @@ package remote
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/git"
@@ -56,9 +55,12 @@ func runProjectRemoteRename(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if resolved.Source == project.SourceLinkedNonGit {
+		return fmt.Errorf("project %q is a linked non-git directory and does not support git remotes", resolved.Name)
+	}
 
-	isSubmodule, _ := git.IsSubmodule(resolved.Path)
-	submodulePath := strings.TrimPrefix(resolved.Path, campRoot+"/")
+	isSubmodule := resolved.Source == project.SourceSubmodule
+	submodulePath := resolved.LogicalPath
 
 	// Guard: renaming away from origin on submodule projects
 	if oldName == "origin" && isSubmodule && !force {

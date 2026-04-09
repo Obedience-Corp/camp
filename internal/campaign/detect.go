@@ -2,8 +2,10 @@ package campaign
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -20,21 +22,10 @@ const EnvCampaignRoot = "CAMP_ROOT"
 // Detect finds the campaign root by walking up from startDir.
 // Returns the directory containing .campaign/, not .campaign/ itself.
 // If startDir is empty, uses the current working directory.
-// If CAMP_ROOT environment variable is set, uses that instead of detection.
 func Detect(ctx context.Context, startDir string) (string, error) {
 	// Check context cancellation
 	if ctx.Err() != nil {
 		return "", ctx.Err()
-	}
-
-	// Check for environment variable override
-	if envRoot := os.Getenv(EnvCampaignRoot); envRoot != "" {
-		// Verify the env var points to a valid campaign
-		campaignPath := filepath.Join(envRoot, CampaignDir)
-		if info, err := os.Stat(campaignPath); err == nil && info.IsDir() {
-			return envRoot, nil
-		}
-		// If env var is set but invalid, continue with detection
 	}
 
 	// Start from given directory or cwd
@@ -47,17 +38,43 @@ func Detect(ctx context.Context, startDir string) (string, error) {
 		}
 	}
 
-	// Resolve to absolute path and follow symlinks
-	dir, err := filepath.EvalSymlinks(dir)
-	if err != nil {
-		return "", err
-	}
-	dir, err = filepath.Abs(dir)
+	dir, err := filepath.Abs(dir)
 	if err != nil {
 		return "", err
 	}
 
-	// Walk up directory tree
+	// Try the logical path first, then the resolved path if it differs.
+	if root, err := detectCampaignByWalking(ctx, dir); err == nil {
+		return root, nil
+	} else if !errors.Is(err, ErrNotInCampaign) {
+		return "", err
+	}
+
+	realDir, err := filepath.EvalSymlinks(dir)
+	if err == nil && realDir != dir {
+		if root, walkErr := detectCampaignByWalking(ctx, realDir); walkErr == nil {
+			return root, nil
+		} else if !errors.Is(walkErr, ErrNotInCampaign) {
+			return "", walkErr
+		}
+	}
+
+	// Validate CAMP_ROOT as a compatibility fallback instead of a blind override.
+	if envRoot := os.Getenv(EnvCampaignRoot); envRoot != "" {
+		envRoot, err = filepath.Abs(envRoot)
+		if err == nil && IsCampaignRoot(envRoot) {
+			if isPathWithin(dir, envRoot) || (realDir != "" && isPathWithin(realDir, envRoot)) {
+				return envRoot, nil
+			}
+		}
+	}
+
+	return "", ErrNotInCampaign
+}
+
+func detectCampaignByWalking(ctx context.Context, startDir string) (string, error) {
+	dir := startDir
+
 	for {
 		// Check context on each iteration for long walks
 		if ctx.Err() != nil {
@@ -67,7 +84,19 @@ func Detect(ctx context.Context, startDir string) (string, error) {
 		campaignPath := filepath.Join(dir, CampaignDir)
 		info, err := os.Stat(campaignPath)
 		if err == nil && info.IsDir() {
+			if resolved, resolveErr := filepath.EvalSymlinks(dir); resolveErr == nil {
+				return resolved, nil
+			}
 			return dir, nil
+		}
+
+		markerPath := filepath.Join(dir, LinkMarkerFile)
+		marker, markerErr := ReadMarkerFile(markerPath)
+		if markerErr == nil && marker.CampaignRoot != "" {
+			root, absErr := filepath.Abs(marker.CampaignRoot)
+			if absErr == nil && IsCampaignRoot(root) {
+				return root, nil
+			}
 		}
 
 		// Handle permission errors gracefully - just keep walking up
@@ -80,11 +109,24 @@ func Detect(ctx context.Context, startDir string) (string, error) {
 
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			// Reached filesystem root
 			return "", ErrNotInCampaign
 		}
 		dir = parent
 	}
+}
+
+func isPathWithin(child, parent string) bool {
+	if child == "" || parent == "" {
+		return false
+	}
+	if child == parent {
+		return true
+	}
+	rel, err := filepath.Rel(parent, child)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && rel != "." && rel != "" && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // DetectWithTimeout detects campaign root with a timeout.

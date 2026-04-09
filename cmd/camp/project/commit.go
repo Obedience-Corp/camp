@@ -77,8 +77,15 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 
 	resolvedPath := result.Path
 
+	if result.Source == projectsvc.SourceLinkedNonGit {
+		return fmt.Errorf("project %q is a linked non-git directory and cannot be committed with camp", result.Name)
+	}
+
 	// Display which project
-	relPath, _ := filepath.Rel(campRoot, resolvedPath)
+	relPath := result.LogicalPath
+	if relPath == "" {
+		relPath, _ = filepath.Rel(campRoot, resolvedPath)
+	}
 	fmt.Printf("Project: %s\n", ui.Value(relPath))
 
 	// Create executor for the submodule

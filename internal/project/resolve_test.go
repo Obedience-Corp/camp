@@ -158,6 +158,12 @@ func TestResolve_WithFlag(t *testing.T) {
 	if result.Path != expected {
 		t.Fatalf("got path %q, want %q", result.Path, expected)
 	}
+	if result.LogicalPath != filepath.Join("projects", "web") {
+		t.Fatalf("got logical path %q, want %q", result.LogicalPath, filepath.Join("projects", "web"))
+	}
+	if result.Source != SourceSubmodule {
+		t.Fatalf("got source %q, want %q", result.Source, SourceSubmodule)
+	}
 }
 
 func TestResolve_WithFlag_NotFound(t *testing.T) {

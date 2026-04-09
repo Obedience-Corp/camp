@@ -10,6 +10,10 @@ type Project struct {
 	Type string
 	// URL is the git remote origin URL.
 	URL string
+	// Source indicates how the project is realized on this machine.
+	Source string
+	// LinkedPath is the resolved external target path for linked projects.
+	LinkedPath string
 	// MonorepoRoot is the relative path to the parent monorepo, set when this
 	// project is a subproject expanded from a monorepo. Empty for standalone projects.
 	MonorepoRoot string
@@ -25,4 +29,11 @@ const (
 	TypeTypeScript = "typescript"
 	TypePython     = "python"
 	TypeUnknown    = ""
+)
+
+// Project source kinds.
+const (
+	SourceSubmodule    = "submodule"
+	SourceLinked       = "linked"
+	SourceLinkedNonGit = "linked-non-git"
 )

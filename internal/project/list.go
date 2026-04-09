@@ -12,7 +12,8 @@ import (
 
 // List returns all projects in the campaign's projects directory.
 // It identifies git repositories, detects their project type, and expands
-// repos with .gitmodules into root + submodule entries.
+// repos with .gitmodules into root + submodule entries. Symlinked project
+// entries are treated as linked projects.
 func List(ctx context.Context, campaignRoot string) ([]Project, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -34,11 +35,25 @@ func List(ctx context.Context, campaignRoot string) ([]Project, error) {
 			return nil, ctx.Err()
 		}
 
-		if !entry.IsDir() {
+		name := entry.Name()
+		projectPath := filepath.Join(projectsDir, name)
+
+		if entry.Type()&os.ModeSymlink != 0 {
+			resolvedPath, err := filepath.EvalSymlinks(projectPath)
+			if err != nil {
+				continue
+			}
+			info, err := os.Stat(resolvedPath)
+			if err != nil || !info.IsDir() {
+				continue
+			}
+			projects = append(projects, resolveLinkedProject(ctx, name, projectPath, resolvedPath)...)
 			continue
 		}
 
-		projectPath := filepath.Join(projectsDir, entry.Name())
+		if !entry.IsDir() {
+			continue
+		}
 
 		// Check if it's a git repo (has .git file or directory)
 		gitPath := filepath.Join(projectPath, ".git")
@@ -46,12 +61,66 @@ func List(ctx context.Context, campaignRoot string) ([]Project, error) {
 			continue
 		}
 
-		projects = append(projects, resolveProject(ctx, entry.Name(), projectPath)...)
+		resolved := resolveProject(ctx, name, projectPath)
+		for i := range resolved {
+			resolved[i].Source = SourceSubmodule
+		}
+		projects = append(projects, resolved...)
 	}
 
 	projects = deduplicateByRemoteURL(ctx, campaignRoot, projects)
 
 	return projects, nil
+}
+
+func resolveLinkedProject(ctx context.Context, name, logicalPath, resolvedPath string) []Project {
+	source := SourceLinked
+	if !isGitRepo(resolvedPath) {
+		source = SourceLinkedNonGit
+	}
+
+	url := ""
+	if source == SourceLinked {
+		url = getGitRemoteURL(ctx, resolvedPath)
+	}
+
+	relPath := filepath.Join("projects", name)
+
+	submodulePaths, _ := git.ListSubmodulePaths(ctx, resolvedPath)
+	if source == SourceLinked && len(submodulePaths) > 0 {
+		expanded := make([]Project, 0, len(submodulePaths)+1)
+		expanded = append(expanded, Project{
+			Name:        name,
+			Path:        relPath,
+			Type:        detectProjectType(resolvedPath),
+			URL:         url,
+			Source:      source,
+			LinkedPath:  resolvedPath,
+			ExcludeDirs: submodulePaths,
+		})
+		for _, subPath := range submodulePaths {
+			subFullPath := filepath.Join(resolvedPath, subPath)
+			expanded = append(expanded, Project{
+				Name:         name + "@" + subPath,
+				Path:         filepath.Join(relPath, subPath),
+				Type:         detectProjectType(subFullPath),
+				URL:          url,
+				Source:       source,
+				LinkedPath:   resolvedPath,
+				MonorepoRoot: relPath,
+			})
+		}
+		return expanded
+	}
+
+	return []Project{{
+		Name:       name,
+		Path:       relPath,
+		Type:       detectProjectType(resolvedPath),
+		URL:        url,
+		Source:     source,
+		LinkedPath: resolvedPath,
+	}}
 }
 
 // resolveProject returns one or more Project entries for a discovered git repo.
@@ -136,6 +205,11 @@ func getGitRemoteURL(ctx context.Context, path string) string {
 		return ""
 	}
 	return strings.TrimSpace(string(output))
+}
+
+func isGitRepo(path string) bool {
+	_, err := os.Stat(filepath.Join(path, ".git"))
+	return err == nil
 }
 
 // latestCommitDate returns the ISO 8601 date of the most recent commit in the

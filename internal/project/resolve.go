@@ -14,8 +14,11 @@ import (
 
 // ResolveResult holds the resolved project name and absolute path.
 type ResolveResult struct {
-	Name string
-	Path string
+	Name        string
+	Path        string
+	LogicalPath string
+	Source      string
+	LinkedPath  string
 }
 
 // Resolve determines the project from a flag value or the current working directory.
@@ -27,11 +30,17 @@ func Resolve(ctx context.Context, campRoot, flagProject string) (*ResolveResult,
 	}
 
 	if flagProject != "" {
-		absPath, err := ResolveByName(ctx, campRoot, flagProject)
+		proj, err := findProjectByName(ctx, campRoot, flagProject)
 		if err != nil {
 			return nil, err
 		}
-		return &ResolveResult{Name: flagProject, Path: absPath}, nil
+		return &ResolveResult{
+			Name:        proj.Name,
+			Path:        ResolveProjectPath(campRoot, proj),
+			LogicalPath: proj.Path,
+			Source:      proj.Source,
+			LinkedPath:  proj.LinkedPath,
+		}, nil
 	}
 
 	return ResolveFromCwd(ctx, campRoot)
@@ -40,22 +49,30 @@ func Resolve(ctx context.Context, campRoot, flagProject string) (*ResolveResult,
 // ResolveByName looks up a project by name using project.List().
 // Returns the absolute path to the project directory.
 func ResolveByName(ctx context.Context, campRoot, name string) (string, error) {
+	proj, err := findProjectByName(ctx, campRoot, name)
+	if err != nil {
+		return "", err
+	}
+	return ResolveProjectPath(campRoot, proj), nil
+}
+
+func findProjectByName(ctx context.Context, campRoot, name string) (Project, error) {
 	if ctx.Err() != nil {
-		return "", ctx.Err()
+		return Project{}, ctx.Err()
 	}
 
 	projects, err := List(ctx, campRoot)
 	if err != nil {
-		return "", camperrors.Wrap(err, "failed to list projects")
+		return Project{}, camperrors.Wrap(err, "failed to list projects")
 	}
 
 	for _, proj := range projects {
 		if proj.Name == name {
-			return filepath.Join(campRoot, proj.Path), nil
+			return proj, nil
 		}
 	}
 
-	return "", &ProjectNotFoundError{
+	return Project{}, &ProjectNotFoundError{
 		Name:     name,
 		CampRoot: campRoot,
 		Projects: projects,
@@ -74,6 +91,26 @@ func ResolveFromCwd(ctx context.Context, campRoot string) (*ResolveResult, error
 		return nil, camperrors.Wrap(err, "failed to get working directory")
 	}
 
+	resolvedCwd, _ := filepath.EvalSymlinks(cwd)
+
+	projects, listErr := List(ctx, campRoot)
+	if listErr != nil {
+		return nil, camperrors.Wrap(listErr, "failed to list projects")
+	}
+
+	for _, proj := range projects {
+		projectPath := ResolveProjectPath(campRoot, proj)
+		if isPathWithin(resolvedCwd, projectPath) || isPathWithin(cwd, filepath.Join(campRoot, proj.Path)) {
+			return &ResolveResult{
+				Name:        proj.Name,
+				Path:        projectPath,
+				LogicalPath: proj.Path,
+				Source:      proj.Source,
+				LinkedPath:  proj.LinkedPath,
+			}, nil
+		}
+	}
+
 	projectRoot, isSubmodule, err := git.FindProjectRootWithType(cwd)
 	if err != nil {
 		return nil, camperrors.Wrap(err, "not inside a project directory")
@@ -86,24 +123,29 @@ func ResolveFromCwd(ctx context.Context, campRoot string) (*ResolveResult, error
 		return nil, errors.New("you're in the campaign root, not a project\nUse 'camp commit' for campaign-level commits")
 	}
 
-	// Look up the project in the dynamic list
-	projects, listErr := List(ctx, campRoot)
-	if listErr != nil {
-		return nil, camperrors.Wrap(listErr, "failed to list projects")
-	}
-
 	for _, proj := range projects {
-		projPath := filepath.Join(campRoot, proj.Path)
-		resolvedProj, _ := filepath.EvalSymlinks(projPath)
-		if resolvedProj == resolvedRoot || projPath == projectRoot {
-			return &ResolveResult{Name: proj.Name, Path: projectRoot}, nil
+		projPath := ResolveProjectPath(campRoot, proj)
+		logicalPath := filepath.Join(campRoot, proj.Path)
+		if resolvedProj, _ := filepath.EvalSymlinks(projPath); resolvedProj == resolvedRoot || logicalPath == projectRoot || projPath == projectRoot {
+			return &ResolveResult{
+				Name:        proj.Name,
+				Path:        projPath,
+				LogicalPath: proj.Path,
+				Source:      proj.Source,
+				LinkedPath:  proj.LinkedPath,
+			}, nil
 		}
 	}
 
 	// If it's a submodule but not in our list, still accept it
 	if isSubmodule {
 		name := nameFromPath(campRoot, projectRoot)
-		return &ResolveResult{Name: name, Path: projectRoot}, nil
+		return &ResolveResult{
+			Name:        name,
+			Path:        projectRoot,
+			LogicalPath: filepath.Join("projects", name),
+			Source:      SourceSubmodule,
+		}, nil
 	}
 
 	return nil, &ProjectNotFoundError{
@@ -111,6 +153,37 @@ func ResolveFromCwd(ctx context.Context, campRoot string) (*ResolveResult, error
 		CampRoot: campRoot,
 		Projects: projects,
 	}
+}
+
+// ResolveProjectPath returns the real working directory for a project entry.
+func ResolveProjectPath(campRoot string, proj Project) string {
+	absPath := filepath.Join(campRoot, proj.Path)
+	if proj.Source == SourceLinked || proj.Source == SourceLinkedNonGit || proj.LinkedPath != "" {
+		if resolved, err := filepath.EvalSymlinks(absPath); err == nil {
+			return resolved
+		}
+	}
+	if proj.Source == "" || proj.Source == SourceSubmodule {
+		return absPath
+	}
+	if resolved, err := filepath.EvalSymlinks(absPath); err == nil {
+		return resolved
+	}
+	return absPath
+}
+
+func isPathWithin(child, parent string) bool {
+	if child == "" || parent == "" {
+		return false
+	}
+	if child == parent {
+		return true
+	}
+	rel, err := filepath.Rel(parent, child)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // nameFromPath extracts a project name from its absolute path relative to

@@ -11,6 +11,7 @@ import (
 // CreateOptions configures worktree creation.
 type CreateOptions struct {
 	Project     string // Project name from campaign
+	ProjectPath string // Resolved git repository path, when already known
 	Name        string // Worktree directory name
 	Branch      string // Branch to checkout or create
 	NewBranch   bool   // Create new branch with worktree name
@@ -51,9 +52,13 @@ func (c *Creator) Create(ctx context.Context, opts *CreateOptions) (*CreateResul
 	}
 
 	// 2. Resolve project
-	projectPath, err := c.resolveProject(opts.Project)
-	if err != nil {
-		return nil, err
+	projectPath := opts.ProjectPath
+	if projectPath == "" {
+		var err error
+		projectPath, err = c.resolveProject(opts.Project)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// 3. Check worktree doesn't already exist
@@ -111,6 +116,10 @@ func (c *Creator) Create(ctx context.Context, opts *CreateOptions) (*CreateResul
 
 // resolveProject finds the project path from campaign config or filesystem.
 func (c *Creator) resolveProject(name string) (string, error) {
+	if name == "" {
+		return "", ProjectNotFound(name)
+	}
+
 	// First check configured projects
 	for _, proj := range c.cfg.Projects {
 		if proj.Name == name || proj.Path == "projects/"+name {

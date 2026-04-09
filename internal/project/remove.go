@@ -36,6 +36,8 @@ type RemoveResult struct {
 	Path string
 	// SubmoduleRemoved indicates if git submodule was deinitialized.
 	SubmoduleRemoved bool
+	// LinkRemoved indicates if a linked project symlink was removed.
+	LinkRemoved bool
 	// FilesDeleted indicates if project files were deleted.
 	FilesDeleted bool
 	// WorktreeDeleted indicates if worktree directory was deleted.
@@ -78,19 +80,39 @@ func Remove(ctx context.Context, campaignRoot, name string, opts RemoveOptions) 
 
 	projectPath := filepath.Join(campaignRoot, "projects", name)
 
-	// Enforce boundary: projectPath must stay within campaignRoot.
-	if err := pathutil.ValidateBoundary(campaignRoot, projectPath); err != nil {
+	// Enforce boundary on the managed entry path without following symlinks.
+	// Linked projects intentionally point outside the campaign root.
+	if err := validateManagedProjectPath(campaignRoot, projectPath); err != nil {
 		return nil, camperrors.Wrap(err, "project path boundary violation")
 	}
 
 	// Check project exists
-	if _, err := os.Stat(projectPath); os.IsNotExist(err) {
+	if _, err := os.Lstat(projectPath); os.IsNotExist(err) {
 		return nil, &ErrProjectNotFound{Name: name}
 	}
 
 	result := &RemoveResult{
 		Name: name,
 		Path: projectPath,
+	}
+
+	if linked, target, err := linkedProjectTarget(projectPath); err != nil {
+		return nil, err
+	} else if linked {
+		if opts.Delete {
+			return nil, fmt.Errorf("linked projects can only be unlinked; deleting external targets is not supported")
+		}
+		if opts.DryRun {
+			addStep(result, "would unlink project symlink and remove local marker state")
+			result.LinkRemoved = true
+			return result, nil
+		}
+		if err := UnlinkProject(ctx, campaignRoot, name, target); err != nil {
+			return nil, camperrors.Wrap(err, "failed to unlink project")
+		}
+		addStep(result, "linked project unlinked")
+		result.LinkRemoved = true
+		return result, nil
 	}
 
 	// Dry run just reports what would happen
@@ -178,6 +200,48 @@ func Remove(ctx context.Context, campaignRoot, name string, opts RemoveOptions) 
 	}
 
 	return result, nil
+}
+
+func linkedProjectTarget(projectPath string) (bool, string, error) {
+	info, err := os.Lstat(projectPath)
+	if err != nil {
+		return false, "", err
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		return false, "", nil
+	}
+	target, err := filepath.EvalSymlinks(projectPath)
+	if err != nil {
+		target, err = os.Readlink(projectPath)
+		if err != nil {
+			return true, "", nil
+		}
+	}
+	return true, target, nil
+}
+
+func validateManagedProjectPath(root, target string) error {
+	if root == "" {
+		return &pathutil.BoundaryError{Root: root, Target: target, Cause: pathutil.ErrBoundaryRootInvalid}
+	}
+
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return &pathutil.BoundaryError{Root: root, Target: target, Cause: pathutil.ErrBoundaryRootInvalid}
+	}
+	absTarget, err := filepath.Abs(target)
+	if err != nil {
+		return &pathutil.BoundaryError{Root: absRoot, Target: target, Cause: pathutil.ErrOutsideBoundary}
+	}
+
+	rel, err := filepath.Rel(absRoot, absTarget)
+	if err != nil {
+		return &pathutil.BoundaryError{Root: absRoot, Target: absTarget, Cause: pathutil.ErrOutsideBoundary}
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return &pathutil.BoundaryError{Root: absRoot, Target: absTarget, Cause: pathutil.ErrOutsideBoundary}
+	}
+	return nil
 }
 
 // buildRecoveryInstructions generates manual recovery commands based on which
