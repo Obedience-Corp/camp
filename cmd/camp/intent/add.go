@@ -23,6 +23,12 @@ import (
 	"github.com/Obedience-Corp/camp/internal/paths"
 )
 
+// noOptCampaign is the NoOptDefVal for the --campaign flag. Cobra requires a
+// non-empty string to allow a flag without a value (bare --campaign). The
+// resolver treats this sentinel identically to "" so no real campaign name is
+// reserved.
+const noOptCampaign = "\x00pick"
+
 var intentAddCmd = &cobra.Command{
 	Use:   "add [title]",
 	Short: "Create a new intent",
@@ -59,7 +65,7 @@ func init() {
 	flags.BoolP("full", "f", false, "Full TUI mode with body textarea")
 	flags.StringP("campaign", "c", "", "Target campaign by name or ID; omit value to pick interactively")
 	flags.Bool("no-commit", false, "Don't create a git commit")
-	flags.Lookup("campaign").NoOptDefVal = "__picker__"
+	flags.Lookup("campaign").NoOptDefVal = noOptCampaign
 }
 
 func runIntentAdd(cmd *cobra.Command, args []string) error {
@@ -70,9 +76,6 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	useEditor, _ := cmd.Flags().GetBool("edit")
 	fullMode, _ := cmd.Flags().GetBool("full")
 	targetCampaign, _ := cmd.Flags().GetString("campaign")
-	if targetCampaign == "__picker__" {
-		targetCampaign = ""
-	}
 	noCommit, _ := cmd.Flags().GetBool("no-commit")
 
 	campaignResolver := newIntentAddCampaignResolver(cmd.ErrOrStderr())
@@ -196,6 +199,11 @@ func newIntentAddCampaignResolver(stderr io.Writer) intentAddCampaignResolver {
 }
 
 func (r intentAddCampaignResolver) resolve(ctx context.Context, targetCampaign string, targetChanged bool) (*config.CampaignConfig, string, error) {
+	// Normalize the Cobra NoOptDefVal sentinel — bare --campaign means "pick interactively".
+	if targetCampaign == noOptCampaign {
+		targetCampaign = ""
+	}
+
 	if !targetChanged {
 		cfg, campaignRoot, err := r.loadCurrent(ctx)
 		if err != nil {
