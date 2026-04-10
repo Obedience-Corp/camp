@@ -39,9 +39,25 @@ func IsStandardPath(path string) bool {
 	return ok
 }
 
-// BuildCategoryMappings converts config shortcuts to nav.Category mappings.
-func BuildCategoryMappings(shortcuts map[string]config.ShortcutConfig) map[string]Category {
+// BuildCategoryMappings converts config shortcuts and an optional raw paths
+// map to nav.Category mappings. Explicit shortcuts take precedence; path
+// concept names (e.g. "docs", "ai_docs", "festivals") fill in the gaps so
+// that both `cgo d` and `cgo docs` resolve correctly.
+//
+// pathsMap is the raw concept-name→directory map from jumps.yaml (via
+// CampaignConfig.PathsMap()). Pass nil to skip concept-name mappings.
+func BuildCategoryMappings(shortcuts map[string]config.ShortcutConfig, pathsMap map[string]string) map[string]Category {
 	mappings := make(map[string]Category)
+
+	// First, add concept-name mappings from the paths config so that
+	// full directory names work as navigation targets.
+	for name, path := range pathsMap {
+		if cat, ok := CategoryForStandardPath(path); ok {
+			mappings[name] = cat
+		}
+	}
+
+	// Then layer explicit shortcuts on top (they win on collision).
 	for name, sc := range shortcuts {
 		if !sc.IsNavigation() {
 			continue

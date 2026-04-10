@@ -65,6 +65,15 @@ func (c *CampaignConfig) Paths() CampaignPaths {
 	return DefaultCampaignPaths()
 }
 
+// PathsMap returns the raw concept-name→path map from jumps.yaml.
+// Returns from Jumps if loaded, otherwise returns defaults.
+func (c *CampaignConfig) PathsMap() map[string]string {
+	if c.Jumps != nil && c.Jumps.PathsMap != nil {
+		return c.Jumps.PathsMap
+	}
+	return DefaultCampaignPaths().asMap()
+}
+
 // Shortcuts returns the campaign shortcuts configuration.
 // Returns from Jumps if loaded, otherwise returns defaults.
 func (c *CampaignConfig) Shortcuts() map[string]ShortcutConfig {
@@ -145,6 +154,29 @@ type CampaignPaths struct {
 	Design string `yaml:"design,omitempty"`
 	// Dungeon is the path to dungeon directory (archived/paused work).
 	Dungeon string `yaml:"dungeon,omitempty"`
+}
+
+// asMap returns a fallback concept-name→path map derived from the struct fields.
+// This is only used when no jumps.yaml is present and we need defaults.
+func (p CampaignPaths) asMap() map[string]string {
+	m := make(map[string]string)
+	add := func(name, path string) {
+		if path != "" {
+			m[name] = path
+		}
+	}
+	add("projects", p.Projects)
+	add("worktrees", p.Worktrees)
+	add("ai_docs", p.AIDocs)
+	add("docs", p.Docs)
+	add("festivals", p.Festivals)
+	add("workflow", p.Workflow)
+	add("intents", p.Intents)
+	add("code_reviews", p.CodeReviews)
+	add("pipelines", p.Pipelines)
+	add("design", p.Design)
+	add("dungeon", p.Dungeon)
+	return m
 }
 
 // ProjectConfig holds configuration for a single project in the campaign.

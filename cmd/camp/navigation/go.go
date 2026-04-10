@@ -61,7 +61,7 @@ func runGo(cmd *cobra.Command, args []string) error {
 
 	// Build category mappings from config shortcuts
 	// This allows config shortcuts to work with fuzzy search
-	configMappings := nav.BuildCategoryMappings(cfg.Shortcuts())
+	configMappings := nav.BuildCategoryMappings(cfg.Shortcuts(), cfg.PathsMap())
 
 	// Handle toggle keyword: "t" or "toggle"
 	if len(args) > 0 && (args[0] == "toggle" || args[0] == "t") {

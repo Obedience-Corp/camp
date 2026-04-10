@@ -54,7 +54,7 @@ func TestBuildCategoryMappings(t *testing.T) {
 		},
 	}
 
-	got := BuildCategoryMappings(shortcuts)
+	got := BuildCategoryMappings(shortcuts, nil)
 
 	if got["p"] != CategoryProjects {
 		t.Fatalf("projects shortcut = %q, want %q", got["p"], CategoryProjects)
@@ -64,5 +64,42 @@ func TestBuildCategoryMappings(t *testing.T) {
 	}
 	if _, ok := got["custom"]; ok {
 		t.Fatal("custom non-standard path should not be mapped to a built-in category")
+	}
+}
+
+func TestBuildCategoryMappings_WithPathsMap(t *testing.T) {
+	shortcuts := map[string]config.ShortcutConfig{
+		"d":  {Path: "docs/"},
+		"ai": {Path: "ai_docs/"},
+	}
+	pathsMap := map[string]string{
+		"docs":      "docs/",
+		"ai_docs":   "ai_docs/",
+		"projects":  "projects/",
+		"festivals": "festivals/",
+	}
+
+	got := BuildCategoryMappings(shortcuts, pathsMap)
+
+	// Shortcut keys still work
+	if got["d"] != CategoryDocs {
+		t.Fatalf("shortcut 'd' = %q, want %q", got["d"], CategoryDocs)
+	}
+	if got["ai"] != CategoryAIDocs {
+		t.Fatalf("shortcut 'ai' = %q, want %q", got["ai"], CategoryAIDocs)
+	}
+
+	// Concept names from paths map also work
+	if got["docs"] != CategoryDocs {
+		t.Fatalf("path name 'docs' = %q, want %q", got["docs"], CategoryDocs)
+	}
+	if got["ai_docs"] != CategoryAIDocs {
+		t.Fatalf("path name 'ai_docs' = %q, want %q", got["ai_docs"], CategoryAIDocs)
+	}
+	if got["projects"] != CategoryProjects {
+		t.Fatalf("path name 'projects' = %q, want %q", got["projects"], CategoryProjects)
+	}
+	if got["festivals"] != CategoryFestivals {
+		t.Fatalf("path name 'festivals' = %q, want %q", got["festivals"], CategoryFestivals)
 	}
 }

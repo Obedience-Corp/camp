@@ -28,6 +28,10 @@ type JumpsConfig struct {
 	Paths CampaignPaths `yaml:"paths,omitempty"`
 	// Shortcuts defines custom navigation and command shortcuts.
 	Shortcuts map[string]ShortcutConfig `yaml:"shortcuts,omitempty"`
+	// PathsMap is the raw paths section from jumps.yaml as a name→path map.
+	// Populated during loading; not serialized. Use this for dynamic lookups
+	// instead of hardcoding struct field names.
+	PathsMap map[string]string `yaml:"-"`
 }
 
 // JumpsConfigPath returns the path to jumps.yaml for a given campaign root.
@@ -68,6 +72,15 @@ func LoadJumpsConfig(ctx context.Context, campaignRoot string) (*JumpsConfig, er
 	var cfg JumpsConfig
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, camperrors.Wrapf(err, "failed to parse jumps config %s", configPath)
+	}
+
+	// Capture the raw paths map so callers can use concept names dynamically
+	// without hardcoding struct field names.
+	var raw struct {
+		Paths map[string]string `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(data, &raw); err == nil && raw.Paths != nil {
+		cfg.PathsMap = raw.Paths
 	}
 
 	cfg.NormalizeIntentNavigation()
