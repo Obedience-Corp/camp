@@ -143,7 +143,7 @@ func loadShortcutMappings(ctx context.Context) map[string]nav.Category {
 	if err != nil {
 		return nil
 	}
-	return nav.BuildCategoryMappings(cfg.Shortcuts())
+	return nav.BuildCategoryMappings(cfg.Shortcuts(), cfg.PathsMap())
 }
 
 // shortcutKeys returns the keys from a shortcuts map.

@@ -87,9 +87,9 @@ func TestGenerate_NoArgs(t *testing.T) {
 		t.Fatalf("Generate failed: %v", err)
 	}
 
-	// Should return category shortcuts from config
-	if len(candidates) != 11 {
-		t.Errorf("Got %d candidates, want 11", len(candidates))
+	// Should return category shortcuts from config (11 shortcut keys + 11 path concept names)
+	if len(candidates) != 22 {
+		t.Errorf("Got %d candidates, want 22", len(candidates))
 	}
 }
 
@@ -261,9 +261,9 @@ func TestCategoryShortcuts(t *testing.T) {
 
 	shortcuts := CategoryShortcuts()
 
-	// Should have 11 shortcuts from campaign.yaml
-	if len(shortcuts) != 11 {
-		t.Errorf("Got %d shortcuts, want 11", len(shortcuts))
+	// Should have 22 entries (11 shortcut keys + 11 path concept names)
+	if len(shortcuts) != 22 {
+		t.Errorf("Got %d shortcuts, want 22", len(shortcuts))
 	}
 }
 

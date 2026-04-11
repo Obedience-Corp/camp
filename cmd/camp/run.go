@@ -94,7 +94,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 		// e.g., @p fest cli -> projects/festival-methodology/fest/cmd/fest/
 		if nav.IsStandardPath(sc.Path) {
 			// Build category mappings from config shortcuts
-			configMappings := nav.BuildCategoryMappings(cfg.Shortcuts())
+			configMappings := nav.BuildCategoryMappings(cfg.Shortcuts(), cfg.PathsMap())
 
 			// Parse the remaining args to see if there's a project + optional sub-shortcut
 			remainingArgs := args[1:]
