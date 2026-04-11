@@ -65,7 +65,7 @@ func (c *CampaignConfig) Paths() CampaignPaths {
 	return DefaultCampaignPaths()
 }
 
-// PathsMap returns the raw concept-name→path map from jumps.yaml.
+// PathsMap returns the effective concept-name→path map for navigation aliases.
 // Returns from Jumps if loaded, otherwise returns defaults.
 func (c *CampaignConfig) PathsMap() map[string]string {
 	if c.Jumps != nil && c.Jumps.PathsMap != nil {

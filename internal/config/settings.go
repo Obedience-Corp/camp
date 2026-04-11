@@ -28,9 +28,9 @@ type JumpsConfig struct {
 	Paths CampaignPaths `yaml:"paths,omitempty"`
 	// Shortcuts defines custom navigation and command shortcuts.
 	Shortcuts map[string]ShortcutConfig `yaml:"shortcuts,omitempty"`
-	// PathsMap is the raw paths section from jumps.yaml as a name→path map.
-	// Populated during loading; not serialized. Use this for dynamic lookups
-	// instead of hardcoding struct field names.
+	// PathsMap is the effective name→path map for jumps paths.
+	// It starts with the raw YAML keys, then overlays the normalized/defaulted
+	// standard campaign paths so alias lookups stay aligned with runtime config.
 	PathsMap map[string]string `yaml:"-"`
 }
 
@@ -74,8 +74,7 @@ func LoadJumpsConfig(ctx context.Context, campaignRoot string) (*JumpsConfig, er
 		return nil, camperrors.Wrapf(err, "failed to parse jumps config %s", configPath)
 	}
 
-	// Capture the raw paths map so callers can use concept names dynamically
-	// without hardcoding struct field names.
+	// Capture the raw paths map so callers can preserve custom aliases.
 	var raw struct {
 		Paths map[string]string `yaml:"paths"`
 	}
@@ -84,6 +83,7 @@ func LoadJumpsConfig(ctx context.Context, campaignRoot string) (*JumpsConfig, er
 	}
 
 	cfg.NormalizeIntentNavigation()
+	cfg.refreshPathsMap()
 
 	return &cfg, nil
 }
@@ -108,6 +108,7 @@ func SaveJumpsConfig(ctx context.Context, campaignRoot string, cfg *JumpsConfig)
 		}
 	}
 	normalized.NormalizeIntentNavigation()
+	normalized.refreshPathsMap()
 
 	data, err := yaml.Marshal(&normalized)
 	if err != nil {
@@ -203,6 +204,18 @@ func (j *JumpsConfig) ApplyDefaults() {
 	}
 	if j.Paths.Dungeon == "" {
 		j.Paths.Dungeon = defaults.Paths.Dungeon
+	}
+
+	j.refreshPathsMap()
+}
+
+func (j *JumpsConfig) refreshPathsMap() {
+	if j.PathsMap == nil {
+		j.PathsMap = make(map[string]string)
+	}
+
+	for name, path := range j.Paths.asMap() {
+		j.PathsMap[name] = path
 	}
 }
 

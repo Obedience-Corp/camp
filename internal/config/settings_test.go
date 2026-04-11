@@ -181,3 +181,33 @@ func TestSaveJumpsConfig_NormalizesLegacyIntentNavigation(t *testing.T) {
 		t.Fatalf("saved shortcut i path = %q, want %q", got, ".campaign/intents/")
 	}
 }
+
+func TestJumpsConfigRefreshPathsMapUsesEffectivePaths(t *testing.T) {
+	jumps := &JumpsConfig{
+		Paths: CampaignPaths{
+			Intents: "workflow/intents/",
+		},
+		PathsMap: map[string]string{
+			"intents":       "workflow/intents/",
+			"documentation": "docs/",
+		},
+	}
+
+	if changed := jumps.NormalizeIntentNavigation(); !changed {
+		t.Fatal("NormalizeIntentNavigation() = false, want true for legacy intents path")
+	}
+
+	jumps.ApplyDefaults()
+
+	if got := jumps.PathsMap["intents"]; got != ".campaign/intents/" {
+		t.Fatalf("PathsMap[intents] = %q, want %q", got, ".campaign/intents/")
+	}
+
+	if got := jumps.PathsMap["projects"]; got != "projects/" {
+		t.Fatalf("PathsMap[projects] = %q, want %q", got, "projects/")
+	}
+
+	if got := jumps.PathsMap["documentation"]; got != "docs/" {
+		t.Fatalf("PathsMap[documentation] = %q, want %q", got, "docs/")
+	}
+}
