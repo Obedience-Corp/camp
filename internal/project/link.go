@@ -56,6 +56,14 @@ func AddLinked(ctx context.Context, campaignRoot, localPath string, opts LinkOpt
 		return nil, fmt.Errorf("path is not a directory: %s", localPath)
 	}
 
+	normalizedCampaignRoot, err := normalizeCampaignRoot(campaignRoot)
+	if err != nil {
+		return nil, camperrors.Wrap(err, "resolve campaign root")
+	}
+	if err := ensureLinkMarkerAvailable(absLocal, normalizedCampaignRoot); err != nil {
+		return nil, err
+	}
+
 	name := opts.Name
 	if name == "" {
 		name = filepath.Base(absLocal)
@@ -87,10 +95,10 @@ func AddLinked(ctx context.Context, campaignRoot, localPath string, opts LinkOpt
 	isGit := isGitRepo(absLocal)
 	marker := campaign.LinkMarker{
 		Version:      1,
-		CampaignRoot: campaignRoot,
+		CampaignRoot: normalizedCampaignRoot,
 		ProjectName:  name,
 	}
-	if cfg, err := config.LoadCampaignConfig(ctx, campaignRoot); err == nil {
+	if cfg, err := config.LoadCampaignConfig(ctx, normalizedCampaignRoot); err == nil {
 		marker.CampaignID = cfg.ID
 	}
 	if err := campaign.WriteMarker(absLocal, marker); err != nil {
@@ -124,7 +132,11 @@ func UnlinkProject(ctx context.Context, campaignRoot, name, targetPath string) e
 	}
 
 	if targetPath != "" {
-		if marker, err := campaign.ReadMarker(targetPath); err == nil && marker.CampaignRoot == campaignRoot {
+		normalizedCampaignRoot, rootErr := normalizeCampaignRoot(campaignRoot)
+		if rootErr != nil {
+			return camperrors.Wrap(rootErr, "resolve campaign root")
+		}
+		if marker, err := campaign.ReadMarker(targetPath); err == nil && sameCampaignRoot(marker.CampaignRoot, normalizedCampaignRoot) {
 			if err := campaign.RemoveMarker(targetPath); err != nil {
 				return err
 			}
@@ -137,6 +149,61 @@ func UnlinkProject(ctx context.Context, campaignRoot, name, targetPath string) e
 	}
 
 	return removeInfoExclude(ctx, campaignRoot, filepath.ToSlash(filepath.Join("projects", name)))
+}
+
+func ensureLinkMarkerAvailable(projectDir, campaignRoot string) error {
+	marker, err := campaign.ReadMarker(projectDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return camperrors.Wrap(err, "read existing .camp marker")
+	}
+
+	if marker.CampaignRoot == "" {
+		return nil
+	}
+
+	if sameCampaignRoot(marker.CampaignRoot, campaignRoot) {
+		return nil
+	}
+
+	markerRoot, err := normalizeCampaignRoot(marker.CampaignRoot)
+	if err != nil {
+		return camperrors.Wrap(err, "resolve existing marker campaign root")
+	}
+	if !campaign.IsCampaignRoot(markerRoot) {
+		return nil
+	}
+
+	return fmt.Errorf("linked project is already linked to another campaign: %s", markerRoot)
+}
+
+func sameCampaignRoot(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+
+	rootA, err := normalizeCampaignRoot(a)
+	if err != nil {
+		return false
+	}
+	rootB, err := normalizeCampaignRoot(b)
+	if err != nil {
+		return false
+	}
+	return rootA == rootB
+}
+
+func normalizeCampaignRoot(root string) (string, error) {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	if resolvedRoot, err := filepath.EvalSymlinks(absRoot); err == nil {
+		return resolvedRoot, nil
+	}
+	return absRoot, nil
 }
 
 func ensureInfoExclude(ctx context.Context, repoRoot, pattern string) error {

@@ -82,6 +82,35 @@ func TestProject_AddLink_NonGitDir(t *testing.T) {
 	assert.Contains(t, err.Error(), "linked non-git")
 }
 
+func TestProject_AddLink_RejectsRepoAlreadyLinkedToAnotherCampaign(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campaignA := "/campaigns/proj-link-a"
+	campaignB := "/campaigns/proj-link-b"
+	linkedPath := "/test/shared-linked-app"
+
+	_, err := tc.InitCampaign(campaignA, "proj-link-a", "product")
+	require.NoError(t, err)
+	_, err = tc.InitCampaign(campaignB, "proj-link-b", "product")
+	require.NoError(t, err)
+	require.NoError(t, tc.CreateGitRepo(linkedPath))
+
+	_, err = tc.RunCampInDir(campaignA, "project", "add", "--link", linkedPath)
+	require.NoError(t, err)
+
+	output, err := tc.RunCampInDir(campaignB, "project", "add", "--link", linkedPath)
+	require.Error(t, err, "second campaign should be rejected")
+	assert.Contains(t, output, "already linked to another campaign")
+	assert.Contains(t, output, campaignA)
+
+	marker, err := tc.ReadFile(linkedPath + "/.camp")
+	require.NoError(t, err)
+	assert.Contains(t, marker, "\"campaign_root\": \""+campaignA+"\"")
+
+	_, exitCode, err := tc.ExecCommand("test", "-L", campaignB+"/projects/shared-linked-app")
+	require.NoError(t, err)
+	assert.NotEqual(t, 0, exitCode, "second campaign should not create a symlink")
+}
+
 func TestProject_Remove_LinkedProject(t *testing.T) {
 	tc := GetSharedContainer(t)
 	campaignPath := "/campaigns/proj-unlink"
