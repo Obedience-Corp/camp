@@ -83,7 +83,7 @@ func LoadJumpsConfig(ctx context.Context, campaignRoot string) (*JumpsConfig, er
 	}
 
 	cfg.NormalizeIntentNavigation()
-	cfg.refreshPathsMap()
+	cfg.ApplyDefaults()
 
 	return &cfg, nil
 }
@@ -108,7 +108,6 @@ func SaveJumpsConfig(ctx context.Context, campaignRoot string, cfg *JumpsConfig)
 		}
 	}
 	normalized.NormalizeIntentNavigation()
-	normalized.refreshPathsMap()
 
 	data, err := yaml.Marshal(&normalized)
 	if err != nil {

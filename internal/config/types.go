@@ -156,8 +156,9 @@ type CampaignPaths struct {
 	Dungeon string `yaml:"dungeon,omitempty"`
 }
 
-// asMap returns a fallback concept-name→path map derived from the struct fields.
-// This is only used when no jumps.yaml is present and we need defaults.
+// asMap returns the canonical concept-name→path map derived from the current
+// CampaignPaths struct values. JumpsConfig.refreshPathsMap uses it to keep the
+// effective alias map aligned with normalized and defaulted runtime paths.
 func (p CampaignPaths) asMap() map[string]string {
 	m := make(map[string]string)
 	add := func(name, path string) {
