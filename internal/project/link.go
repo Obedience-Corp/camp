@@ -70,6 +70,9 @@ func AddLinked(ctx context.Context, campaignRoot, localPath string, opts LinkOpt
 	if err := ensureLinkMarkerAvailable(ctx, absLocal, normalizedCampaignRoot, cfg.ID); err != nil {
 		return nil, err
 	}
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
 
 	name := opts.Name
 	if name == "" {
@@ -167,33 +170,28 @@ func ensureLinkMarkerAvailable(ctx context.Context, projectDir, campaignRoot, ca
 		return camperrors.Wrap(err, "read existing .camp marker")
 	}
 
-	existingID := marker.EffectiveCampaignID()
-	if existingID == "" {
-		if markerMatchesCampaign(marker, campaignID, campaignRoot) {
-			return nil
-		}
+	if markerMatchesCampaign(marker, campaignID, campaignRoot) {
 		return nil
 	}
 
-	if existingID == campaignID {
-		return nil
+	existingID := marker.EffectiveCampaignID()
+	if existingID == "" {
+		return fmt.Errorf("linked project has an existing legacy .camp marker for another campaign; remove it before linking")
 	}
 
 	msg := "linked project is already linked to another campaign"
 	reg, err := config.LoadRegistry(ctx)
-	if err != nil {
-		return camperrors.Wrap(err, "load registry")
-	}
-	existingCampaign, ok := reg.GetByID(existingID)
-	if ok {
-		markerRoot, err := normalizeCampaignRoot(existingCampaign.Path)
-		if err != nil {
-			return camperrors.Wrap(err, "resolve existing campaign root")
+	if err == nil {
+		existingCampaign, ok := reg.GetByID(existingID)
+		if ok {
+			markerRoot, err := normalizeCampaignRoot(existingCampaign.Path)
+			if err == nil && markerRoot == campaignRoot {
+				return nil
+			}
+			if err == nil {
+				msg = fmt.Sprintf("%s: %s", msg, markerRoot)
+			}
 		}
-		if markerRoot == campaignRoot {
-			return nil
-		}
-		msg = fmt.Sprintf("%s: %s", msg, markerRoot)
 	}
 	return fmt.Errorf("%s", msg)
 }
@@ -307,7 +305,7 @@ func ensurePatternInFile(path, pattern string) error {
 		content += "\n"
 	}
 	content += pattern + "\n"
-	return os.WriteFile(path, []byte(content), 0644)
+	return writeFileAtomically(path, []byte(content), 0644)
 }
 
 func removePatternFromFile(path, pattern string) error {
@@ -332,5 +330,42 @@ func removePatternFromFile(path, pattern string) error {
 	if content != "" {
 		content += "\n"
 	}
-	return os.WriteFile(path, []byte(content), 0644)
+	return writeFileAtomically(path, []byte(content), 0644)
+}
+
+func writeFileAtomically(path string, content []byte, defaultMode os.FileMode) error {
+	mode := defaultMode
+	if info, err := os.Stat(path); err == nil {
+		mode = info.Mode().Perm()
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	dir := filepath.Dir(path)
+	tmpFile, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmpFile.Name()
+	defer func() {
+		_ = os.Remove(tmpPath)
+	}()
+
+	if _, err := tmpFile.Write(content); err != nil {
+		_ = tmpFile.Close()
+		return err
+	}
+	if err := tmpFile.Chmod(mode); err != nil {
+		_ = tmpFile.Close()
+		return err
+	}
+	if err := tmpFile.Sync(); err != nil {
+		_ = tmpFile.Close()
+		return err
+	}
+	if err := tmpFile.Close(); err != nil {
+		return err
+	}
+
+	return os.Rename(tmpPath, path)
 }

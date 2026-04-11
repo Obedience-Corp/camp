@@ -284,6 +284,96 @@ func TestAddLinked_RejectsProjectLinkedToAnotherCampaign(t *testing.T) {
 	}
 }
 
+func TestAddLinked_RejectsLegacyMarkerFromAnotherCampaign(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+
+	campaignRootA := filepath.Join(tmpDir, "campaign-a")
+	campaignRootB := filepath.Join(tmpDir, "campaign-b")
+	linkedPath := filepath.Join(tmpDir, "external", "shared-linked")
+
+	for _, root := range []string{campaignRootA, campaignRootB} {
+		if err := os.MkdirAll(filepath.Join(root, campaign.CampaignDir), 0o755); err != nil {
+			t.Fatalf("create campaign marker dir: %v", err)
+		}
+		if err := os.MkdirAll(filepath.Join(root, "projects"), 0o755); err != nil {
+			t.Fatalf("create projects dir: %v", err)
+		}
+		writeCampaignConfig(t, root, filepath.Base(root)+"-id")
+	}
+	if err := os.MkdirAll(linkedPath, 0o755); err != nil {
+		t.Fatalf("create linked path: %v", err)
+	}
+	initGitRepo(t, linkedPath)
+
+	normalizedCampaignA, err := normalizeCampaignRoot(campaignRootA)
+	if err != nil {
+		t.Fatalf("normalizeCampaignRoot() error = %v", err)
+	}
+	if err := campaign.WriteMarker(linkedPath, campaign.LinkMarker{
+		Version:      1,
+		CampaignRoot: normalizedCampaignA,
+	}); err != nil {
+		t.Fatalf("write legacy marker: %v", err)
+	}
+
+	_, err = AddLinked(context.Background(), campaignRootB, linkedPath, LinkOptions{})
+	if err == nil {
+		t.Fatal("expected AddLinked() to fail for mismatched legacy marker")
+	}
+	if !strings.Contains(err.Error(), "legacy .camp marker") {
+		t.Fatalf("AddLinked() error = %v, want legacy marker guidance", err)
+	}
+
+	if _, err := os.Lstat(filepath.Join(campaignRootB, "projects", "shared-linked")); !os.IsNotExist(err) {
+		t.Fatalf("expected second campaign symlink to be absent, got err = %v", err)
+	}
+}
+
+func TestEnsurePatternInFile_Deduplicates(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "info", "exclude")
+	const pattern = "projects/linked"
+
+	if err := ensurePatternInFile(path, pattern); err != nil {
+		t.Fatalf("ensurePatternInFile() first call error = %v", err)
+	}
+	if err := ensurePatternInFile(path, pattern); err != nil {
+		t.Fatalf("ensurePatternInFile() second call error = %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if string(data) != pattern+"\n" {
+		t.Fatalf("exclude contents = %q, want %q", string(data), pattern+"\n")
+	}
+}
+
+func TestRemovePatternFromFile_RemovesOnlyMatchingLine(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "info", "exclude")
+	initial := "projects/keep\nprojects/remove\nprojects/keep-too\n"
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(path, []byte(initial), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	if err := removePatternFromFile(path, "projects/remove"); err != nil {
+		t.Fatalf("removePatternFromFile() error = %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	want := "projects/keep\nprojects/keep-too\n"
+	if string(data) != want {
+		t.Fatalf("exclude contents = %q, want %q", string(data), want)
+	}
+}
+
 func writeCampaignConfig(t *testing.T, campaignRoot, campaignID string) {
 	t.Helper()
 
