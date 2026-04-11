@@ -57,8 +57,8 @@ func TestDetect(t *testing.T) {
 			wantErr:  ErrNotInCampaign,
 		},
 		{
-			name:     "env var override",
-			startDir: tmpDir, // would fail without env var
+			name:     "validated env var inside campaign",
+			startDir: filepath.Join(campaignRoot, "projects"),
 			setupEnv: campaignRoot,
 			want:     campaignRoot,
 			cleanEnv: true,

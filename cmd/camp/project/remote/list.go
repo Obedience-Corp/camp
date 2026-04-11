@@ -42,6 +42,9 @@ func runProjectRemoteList(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if resolved.Source == project.SourceLinkedNonGit {
+		return fmt.Errorf("project %q is a linked non-git directory and does not support git remotes", resolved.Name)
+	}
 
 	remotes, err := git.ListRemotes(ctx, resolved.Path)
 	if err != nil {
@@ -54,8 +57,8 @@ func runProjectRemoteList(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	isSubmodule, _ := git.IsSubmodule(resolved.Path)
-	submodulePath := strings.TrimPrefix(resolved.Path, campRoot+"/")
+	isSubmodule := resolved.Source == project.SourceSubmodule
+	submodulePath := resolved.LogicalPath
 
 	var urlCmp *git.URLComparison
 	if isSubmodule {

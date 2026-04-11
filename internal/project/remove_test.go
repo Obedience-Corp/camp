@@ -10,8 +10,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
 
 func mustRunCmd(t *testing.T, dir string, args ...string) {
@@ -151,7 +149,7 @@ func TestRemove_ModulesCleanedWithoutDelete(t *testing.T) {
 	}
 }
 
-func TestRemove_BoundaryEnforcement(t *testing.T) {
+func TestRemove_LinkedDeleteBlocked(t *testing.T) {
 	tmp := t.TempDir()
 	tmp, _ = filepath.EvalSymlinks(tmp)
 
@@ -173,10 +171,10 @@ func TestRemove_BoundaryEnforcement(t *testing.T) {
 	ctx := context.Background()
 	_, err := Remove(ctx, campaignRoot, "escape", RemoveOptions{Delete: true})
 	if err == nil {
-		t.Error("expected boundary error for symlink-escaped project, got nil")
+		t.Fatal("expected delete to be blocked for linked project")
 	}
-	if !errors.Is(err, pathutil.ErrOutsideBoundary) {
-		t.Errorf("expected ErrOutsideBoundary, got: %v", err)
+	if !strings.Contains(err.Error(), "linked projects can only be unlinked") {
+		t.Fatalf("expected linked delete error, got: %v", err)
 	}
 }
 

@@ -38,9 +38,12 @@ func setupCampaign(t *testing.T) string {
 func TestFindSkillsDir(t *testing.T) {
 	campaignRoot := setupCampaign(t)
 
-	// Clear cache and set env override for campaign detection
+	origDir, _ := os.Getwd()
+	requireChdir(t, campaignRoot)
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+
 	campaign.ClearCache()
-	t.Setenv(campaign.EnvCampaignRoot, campaignRoot)
+	t.Setenv(campaign.EnvCampaignRoot, "")
 	t.Setenv(campaign.EnvCacheDisable, "1")
 
 	ctx := context.Background()
@@ -86,13 +89,23 @@ func TestFindSkillsDir_NoSkillsDir(t *testing.T) {
 	}
 
 	campaign.ClearCache()
-	t.Setenv(campaign.EnvCampaignRoot, tmpDir)
+	origDir, _ := os.Getwd()
+	requireChdir(t, tmpDir)
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+	t.Setenv(campaign.EnvCampaignRoot, "")
 	t.Setenv(campaign.EnvCacheDisable, "1")
 
 	ctx := context.Background()
 	_, err := FindSkillsDir(ctx)
 	if err == nil {
 		t.Fatal("FindSkillsDir should have returned error when skills dir missing")
+	}
+}
+
+func requireChdir(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir %s: %v", dir, err)
 	}
 }
 

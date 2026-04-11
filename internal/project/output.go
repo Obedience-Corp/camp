@@ -38,17 +38,43 @@ func formatTable(w io.Writer, projects []Project) error {
 		return nil
 	}
 
+	showLinked := false
+	for _, p := range projects {
+		if p.Source == SourceLinked || p.Source == SourceLinkedNonGit {
+			showLinked = true
+			break
+		}
+	}
+
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintf(tw, "%s\t%s\t%s\n", ui.Label("NAME"), ui.Label("PATH"), ui.Label("TYPE"))
+	if showLinked {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", ui.Label("NAME"), ui.Label("PATH"), ui.Label("SOURCE"), ui.Label("TARGET"), ui.Label("TYPE"))
+	} else {
+		fmt.Fprintf(tw, "%s\t%s\t%s\n", ui.Label("NAME"), ui.Label("PATH"), ui.Label("TYPE"))
+	}
 	for _, p := range projects {
 		projectType := p.Type
 		if projectType == "" {
 			projectType = "-"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\n",
-			ui.Value(p.Name),
-			ui.Dim(p.Path),
-			getProjectTypeStyled(projectType))
+		if showLinked {
+			source := p.Source
+			if source == "" {
+				source = SourceSubmodule
+			}
+			target := p.LinkedPath
+			if target == "" {
+				target = "-"
+			}
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
+				ui.Value(p.Name),
+				ui.Dim(p.Path),
+				ui.Dim(source),
+				ui.Dim(target),
+				getProjectTypeStyled(projectType))
+			continue
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\n", ui.Value(p.Name), ui.Dim(p.Path), getProjectTypeStyled(projectType))
 	}
 	return tw.Flush()
 }

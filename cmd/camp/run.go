@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/nav"
 	"github.com/Obedience-Corp/camp/internal/nav/index"
+	projectsvc "github.com/Obedience-Corp/camp/internal/project"
 	"github.com/spf13/cobra"
 )
 
@@ -176,9 +178,9 @@ func runRun(cmd *cobra.Command, args []string) error {
 	}
 
 	// Project just dispatch: if first arg matches a project, run just in it.
-	// Exact match only — projects/<name> must exist and be a git repo.
+	// Exact match only.
 	if len(commandArgs) > 0 {
-		if projectDir, ok := isProject(root, commandArgs[0]); ok {
+		if projectDir, ok := isProjectCtx(ctx, root, commandArgs[0]); ok {
 			return cmdutil.ExecuteCommand(ctx, "just", projectDir, commandArgs[1:])
 		}
 	}
@@ -194,15 +196,13 @@ func runRun(cmd *cobra.Command, args []string) error {
 	return cmdutil.ExecuteCommand(ctx, fullCmd, workDir, nil)
 }
 
-// isProject checks if name matches a project directory in projects/<name>
-// by verifying the directory exists and contains a .git entry.
 func isProject(campaignRoot, name string) (string, bool) {
-	projectDir := filepath.Join(campaignRoot, "projects", name)
-	info, err := os.Stat(projectDir)
-	if err != nil || !info.IsDir() {
-		return "", false
-	}
-	if _, err := os.Stat(filepath.Join(projectDir, ".git")); err != nil {
+	return isProjectCtx(context.Background(), campaignRoot, name)
+}
+
+func isProjectCtx(ctx context.Context, campaignRoot, name string) (string, bool) {
+	projectDir, err := projectsvc.ResolveByName(ctx, campaignRoot, name)
+	if err != nil {
 		return "", false
 	}
 	return projectDir, true

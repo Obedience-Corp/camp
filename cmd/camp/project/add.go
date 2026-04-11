@@ -14,7 +14,7 @@ import (
 )
 
 var projectAddCmd = &cobra.Command{
-	Use:   "add <source>",
+	Use:   "add [source]",
 	Short: "Add a project to campaign",
 	Long: `Add a git repository as a project in the campaign.
 
@@ -25,13 +25,15 @@ Source can be:
   - SSH URL:   git@github.com:org/repo.git
   - HTTPS URL: https://github.com/org/repo.git
   - Local path (with --local): ./existing-repo
+  - Local path (with --link):  ~/code/my-project
 
 Examples:
   camp project add git@github.com:org/api.git           # Add remote repo
   camp project add https://github.com/org/web.git       # Add via HTTPS
   camp project add --local ./my-repo --name my-project  # Add existing local repo
+  camp project add --link ~/code/my-project             # Link an existing project
   camp project add git@github.com:org/api.git --name backend  # Custom name`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.MaximumNArgs(1),
 	RunE: runProjectAdd,
 }
 
@@ -41,23 +43,59 @@ func init() {
 	projectAddCmd.Flags().StringP("name", "n", "", "Override project name (defaults to repo name)")
 	projectAddCmd.Flags().StringP("path", "p", "", "Override destination path (defaults to projects/<name>)")
 	projectAddCmd.Flags().StringP("local", "l", "", "Add existing local repository instead of cloning")
+	projectAddCmd.Flags().String("link", "", "Link an existing local directory without cloning")
 	projectAddCmd.Flags().Bool("no-commit", false, "Skip automatic git commit")
 }
 
 func runProjectAdd(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	source := args[0]
 
 	name, _ := cmd.Flags().GetString("name")
 	path, _ := cmd.Flags().GetString("path")
 	local, _ := cmd.Flags().GetString("local")
+	link, _ := cmd.Flags().GetString("link")
 	noCommit, _ := cmd.Flags().GetBool("no-commit")
+
+	if local != "" && link != "" {
+		return fmt.Errorf("use either --local or --link, not both")
+	}
 
 	// Detect campaign root
 	root, err := campaign.DetectCached(ctx)
 	if err != nil {
 		return err
 	}
+
+	if link != "" {
+		result, err := projectsvc.AddLinked(ctx, root, link, projectsvc.LinkOptions{
+			Name: name,
+			Path: path,
+		})
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("%s %s\n", ui.SuccessIcon(), ui.Success("Linked project: "+result.Name))
+		fmt.Println()
+		fmt.Println(ui.KeyValue("  Path:", result.Path))
+		fmt.Println(ui.KeyValue("  Source:", result.Source))
+		if result.Type != "" {
+			fmt.Println(ui.KeyValue("  Type:", result.Type))
+		}
+		if result.IsGit {
+			fmt.Println(ui.KeyValue("  Git:", "yes"))
+		} else {
+			fmt.Println(ui.KeyValue("  Git:", "no"))
+		}
+		fmt.Println()
+		fmt.Println(ui.Dim("  Linked projects are machine-local and are not auto-committed."))
+		return nil
+	}
+
+	if len(args) == 0 {
+		return fmt.Errorf("source URL is required")
+	}
+	source := args[0]
 
 	opts := projectsvc.AddOptions{
 		Name:  name,

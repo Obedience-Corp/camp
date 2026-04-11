@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/Obedience-Corp/camp/internal/campaign"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
@@ -27,6 +28,9 @@ func ExecuteCommand(ctx context.Context, cmdStr, workDir string, extraArgs []str
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
 	cmd.Env = os.Environ()
+	if campRoot, err := campaign.Detect(ctx, workDir); err == nil && campRoot != "" {
+		cmd.Env = append(cmd.Env, campaign.EnvCampaignRoot+"="+campRoot)
+	}
 
 	if err := cmd.Run(); err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {

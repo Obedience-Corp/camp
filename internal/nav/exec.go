@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 
+	"github.com/Obedience-Corp/camp/internal/campaign"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
@@ -56,6 +57,10 @@ func ExecInDir(ctx context.Context, dir string, command []string) (*ExecResult, 
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	cmd.Env = os.Environ()
+	if campRoot, err := campaign.Detect(ctx, dir); err == nil && campRoot != "" {
+		cmd.Env = append(cmd.Env, campaign.EnvCampaignRoot+"="+campRoot)
+	}
 
 	// Run and capture exit code
 	err := cmd.Run()
