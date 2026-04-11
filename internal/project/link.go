@@ -60,7 +60,14 @@ func AddLinked(ctx context.Context, campaignRoot, localPath string, opts LinkOpt
 	if err != nil {
 		return nil, camperrors.Wrap(err, "resolve campaign root")
 	}
-	if err := ensureLinkMarkerAvailable(absLocal, normalizedCampaignRoot); err != nil {
+	cfg, err := config.LoadCampaignConfig(ctx, normalizedCampaignRoot)
+	if err != nil {
+		return nil, camperrors.Wrap(err, "load campaign config")
+	}
+	if cfg.ID == "" {
+		return nil, fmt.Errorf("campaign config is missing an ID")
+	}
+	if err := ensureLinkMarkerAvailable(ctx, absLocal, normalizedCampaignRoot, cfg.ID); err != nil {
 		return nil, err
 	}
 
@@ -94,12 +101,8 @@ func AddLinked(ctx context.Context, campaignRoot, localPath string, opts LinkOpt
 
 	isGit := isGitRepo(absLocal)
 	marker := campaign.LinkMarker{
-		Version:      1,
-		CampaignRoot: normalizedCampaignRoot,
-		ProjectName:  name,
-	}
-	if cfg, err := config.LoadCampaignConfig(ctx, normalizedCampaignRoot); err == nil {
-		marker.CampaignID = cfg.ID
+		Version:          campaign.LinkMarkerVersion,
+		ActiveCampaignID: cfg.ID,
 	}
 	if err := campaign.WriteMarker(absLocal, marker); err != nil {
 		_ = os.Remove(fullPath)
@@ -136,7 +139,11 @@ func UnlinkProject(ctx context.Context, campaignRoot, name, targetPath string) e
 		if rootErr != nil {
 			return camperrors.Wrap(rootErr, "resolve campaign root")
 		}
-		if marker, err := campaign.ReadMarker(targetPath); err == nil && sameCampaignRoot(marker.CampaignRoot, normalizedCampaignRoot) {
+		currentCampaignID, idErr := loadCampaignID(ctx, normalizedCampaignRoot)
+		if idErr != nil {
+			return idErr
+		}
+		if marker, err := campaign.ReadMarker(targetPath); err == nil && markerMatchesCampaign(marker, currentCampaignID, normalizedCampaignRoot) {
 			if err := campaign.RemoveMarker(targetPath); err != nil {
 				return err
 			}
@@ -151,7 +158,7 @@ func UnlinkProject(ctx context.Context, campaignRoot, name, targetPath string) e
 	return removeInfoExclude(ctx, campaignRoot, filepath.ToSlash(filepath.Join("projects", name)))
 }
 
-func ensureLinkMarkerAvailable(projectDir, campaignRoot string) error {
+func ensureLinkMarkerAvailable(ctx context.Context, projectDir, campaignRoot, campaignID string) error {
 	marker, err := campaign.ReadMarker(projectDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -160,23 +167,59 @@ func ensureLinkMarkerAvailable(projectDir, campaignRoot string) error {
 		return camperrors.Wrap(err, "read existing .camp marker")
 	}
 
-	if marker.CampaignRoot == "" {
+	existingID := marker.EffectiveCampaignID()
+	if existingID == "" {
+		if markerMatchesCampaign(marker, campaignID, campaignRoot) {
+			return nil
+		}
 		return nil
 	}
 
-	if sameCampaignRoot(marker.CampaignRoot, campaignRoot) {
+	if existingID == campaignID {
 		return nil
 	}
 
-	markerRoot, err := normalizeCampaignRoot(marker.CampaignRoot)
+	msg := "linked project is already linked to another campaign"
+	reg, err := config.LoadRegistry(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "resolve existing marker campaign root")
+		return camperrors.Wrap(err, "load registry")
 	}
-	if !campaign.IsCampaignRoot(markerRoot) {
-		return nil
+	existingCampaign, ok := reg.GetByID(existingID)
+	if ok {
+		markerRoot, err := normalizeCampaignRoot(existingCampaign.Path)
+		if err != nil {
+			return camperrors.Wrap(err, "resolve existing campaign root")
+		}
+		if markerRoot == campaignRoot {
+			return nil
+		}
+		msg = fmt.Sprintf("%s: %s", msg, markerRoot)
 	}
+	return fmt.Errorf("%s", msg)
+}
 
-	return fmt.Errorf("linked project is already linked to another campaign: %s", markerRoot)
+func markerMatchesCampaign(marker *campaign.LinkMarker, campaignID, campaignRoot string) bool {
+	if marker == nil {
+		return false
+	}
+	if campaignID != "" && marker.EffectiveCampaignID() == campaignID {
+		return true
+	}
+	if marker.CampaignRoot != "" && sameCampaignRoot(marker.CampaignRoot, campaignRoot) {
+		return true
+	}
+	return false
+}
+
+func loadCampaignID(ctx context.Context, campaignRoot string) (string, error) {
+	cfg, err := config.LoadCampaignConfig(ctx, campaignRoot)
+	if err != nil {
+		return "", camperrors.Wrap(err, "load campaign config")
+	}
+	if cfg.ID == "" {
+		return "", fmt.Errorf("campaign config is missing an ID")
+	}
+	return cfg.ID, nil
 }
 
 func sameCampaignRoot(a, b string) bool {

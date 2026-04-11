@@ -19,6 +19,7 @@ func TestProject_AddLink_GitRepo(t *testing.T) {
 	_, err := tc.InitCampaign(campaignPath, "proj-link", "product")
 	require.NoError(t, err)
 	require.NoError(t, tc.CreateGitRepo(linkedPath))
+	campaignID := readCampaignID(t, tc, campaignPath)
 
 	output, err := tc.RunCampInDir(campaignPath, "project", "add", "--link", linkedPath)
 	require.NoError(t, err, "project add --link should succeed")
@@ -34,8 +35,9 @@ func TestProject_AddLink_GitRepo(t *testing.T) {
 
 	marker, err := tc.ReadFile(linkedPath + "/.camp")
 	require.NoError(t, err)
-	assert.Contains(t, marker, "\"campaign_root\": \""+campaignPath+"\"")
-	assert.Contains(t, marker, "\"project_name\": \"linked-app\"")
+	assert.Contains(t, marker, "\"active_campaign_id\": \""+campaignID+"\"")
+	assert.NotContains(t, marker, "\"campaign_root\"")
+	assert.NotContains(t, marker, "\"project_name\"")
 
 	gitmodulesExists, err := tc.CheckFileExists(campaignPath + "/.gitmodules")
 	require.NoError(t, err)
@@ -93,6 +95,7 @@ func TestProject_AddLink_RejectsRepoAlreadyLinkedToAnotherCampaign(t *testing.T)
 	_, err = tc.InitCampaign(campaignB, "proj-link-b", "product")
 	require.NoError(t, err)
 	require.NoError(t, tc.CreateGitRepo(linkedPath))
+	campaignIDA := readCampaignID(t, tc, campaignA)
 
 	_, err = tc.RunCampInDir(campaignA, "project", "add", "--link", linkedPath)
 	require.NoError(t, err)
@@ -104,7 +107,7 @@ func TestProject_AddLink_RejectsRepoAlreadyLinkedToAnotherCampaign(t *testing.T)
 
 	marker, err := tc.ReadFile(linkedPath + "/.camp")
 	require.NoError(t, err)
-	assert.Contains(t, marker, "\"campaign_root\": \""+campaignA+"\"")
+	assert.Contains(t, marker, "\"active_campaign_id\": \""+campaignIDA+"\"")
 
 	_, exitCode, err := tc.ExecCommand("test", "-L", campaignB+"/projects/shared-linked-app")
 	require.NoError(t, err)
@@ -191,4 +194,20 @@ func TestRun_ProjectDispatch_LinkedProject(t *testing.T) {
 	require.NoError(t, err, "run should dispatch linked project recipes in the external repo")
 	assert.Contains(t, output, "just-dispatch: build")
 	assert.Contains(t, output, "just-workdir: "+linkedPath)
+}
+
+func readCampaignID(t *testing.T, tc *TestContainer, campaignPath string) string {
+	t.Helper()
+
+	content, err := tc.ReadFile(campaignPath + "/.campaign/campaign.yaml")
+	require.NoError(t, err)
+
+	for _, line := range strings.Split(content, "\n") {
+		if strings.HasPrefix(line, "id: ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "id: "))
+		}
+	}
+
+	t.Fatalf("campaign ID not found in %s/.campaign/campaign.yaml", campaignPath)
+	return ""
 }

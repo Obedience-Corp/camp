@@ -92,9 +92,10 @@ func detectCampaignByWalking(ctx context.Context, startDir string) (string, erro
 
 		markerPath := filepath.Join(dir, LinkMarkerFile)
 		marker, markerErr := ReadMarkerFile(markerPath)
-		if markerErr == nil && marker.CampaignRoot != "" {
-			root, absErr := filepath.Abs(marker.CampaignRoot)
-			if absErr == nil && IsCampaignRoot(root) {
+		if markerErr == nil {
+			if root, ok, resolveErr := resolveMarkerCampaignRoot(marker); resolveErr != nil {
+				return "", resolveErr
+			} else if ok {
 				return root, nil
 			}
 		}
@@ -127,6 +128,38 @@ func isPathWithin(child, parent string) bool {
 		return false
 	}
 	return rel != ".." && rel != "." && rel != "" && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+func resolveMarkerCampaignRoot(marker *LinkMarker) (string, bool, error) {
+	if marker == nil {
+		return "", false, nil
+	}
+
+	if activeID := marker.EffectiveCampaignID(); activeID != "" {
+		root, found, err := lookupRegisteredCampaignRoot(activeID)
+		if err != nil {
+			return "", false, err
+		}
+		if found && IsCampaignRoot(root) {
+			return root, true, nil
+		}
+	}
+
+	// Legacy fallback for pre-v2 markers that persisted campaign roots.
+	if marker.CampaignRoot != "" {
+		root, err := filepath.Abs(marker.CampaignRoot)
+		if err != nil {
+			return "", false, err
+		}
+		if resolved, err := filepath.EvalSymlinks(root); err == nil {
+			root = resolved
+		}
+		if IsCampaignRoot(root) {
+			return root, true, nil
+		}
+	}
+
+	return "", false, nil
 }
 
 // DetectWithTimeout detects campaign root with a timeout.

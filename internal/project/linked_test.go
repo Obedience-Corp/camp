@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/internal/config"
 )
 
 func setupLinkedProjectFixture(t *testing.T, name string, gitRepo bool) (string, string) {
@@ -44,8 +45,8 @@ func setupLinkedProjectFixture(t *testing.T, name string, gitRepo bool) (string,
 		t.Fatalf("create project symlink: %v", err)
 	}
 	if err := campaign.WriteMarker(projectRoot, campaign.LinkMarker{
-		CampaignRoot: campaignRoot,
-		ProjectName:  name,
+		Version:          campaign.LinkMarkerVersion,
+		ActiveCampaignID: filepath.Base(campaignRoot) + "-id",
 	}); err != nil {
 		t.Fatalf("write marker: %v", err)
 	}
@@ -76,8 +77,8 @@ func addLinkedProjectFixture(t *testing.T, campaignRoot, name string, gitRepo bo
 		t.Fatalf("create project symlink: %v", err)
 	}
 	if err := campaign.WriteMarker(projectRoot, campaign.LinkMarker{
-		CampaignRoot: campaignRoot,
-		ProjectName:  name,
+		Version:          campaign.LinkMarkerVersion,
+		ActiveCampaignID: filepath.Base(campaignRoot) + "-id",
 	}); err != nil {
 		t.Fatalf("write marker: %v", err)
 	}
@@ -203,6 +204,7 @@ func TestRemove_LinkedProject_UnlinksAndRemovesMarker(t *testing.T) {
 	if err := os.MkdirAll(linkedPath, 0o755); err != nil {
 		t.Fatalf("create linked path: %v", err)
 	}
+	writeCampaignConfig(t, campaignRoot, "campaign-id")
 
 	mustRunCmd(t, campaignRoot, "git", "init", "-b", "main")
 	mustRunCmd(t, campaignRoot, "git", "-C", campaignRoot, "config", "user.email", "test@test.com")
@@ -236,14 +238,21 @@ func TestAddLinked_RejectsProjectLinkedToAnotherCampaign(t *testing.T) {
 	campaignRootA := filepath.Join(tmpDir, "campaign-a")
 	campaignRootB := filepath.Join(tmpDir, "campaign-b")
 	linkedPath := filepath.Join(tmpDir, "external", "shared-linked")
+	campaignIDA := "campaign-a-id"
+	campaignIDB := "campaign-b-id"
 
-	for _, root := range []string{campaignRootA, campaignRootB} {
+	for i, root := range []string{campaignRootA, campaignRootB} {
 		if err := os.MkdirAll(filepath.Join(root, campaign.CampaignDir), 0o755); err != nil {
 			t.Fatalf("create campaign marker dir: %v", err)
 		}
 		if err := os.MkdirAll(filepath.Join(root, "projects"), 0o755); err != nil {
 			t.Fatalf("create projects dir: %v", err)
 		}
+		id := campaignIDA
+		if i == 1 {
+			id = campaignIDB
+		}
+		writeCampaignConfig(t, root, id)
 	}
 	if err := os.MkdirAll(linkedPath, 0o755); err != nil {
 		t.Fatalf("create linked path: %v", err)
@@ -266,11 +275,24 @@ func TestAddLinked_RejectsProjectLinkedToAnotherCampaign(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadMarker() error = %v", err)
 	}
-	if marker.CampaignRoot != campaignRootA {
-		t.Fatalf("marker CampaignRoot = %q, want %q", marker.CampaignRoot, campaignRootA)
+	if marker.ActiveCampaignID != campaignIDA {
+		t.Fatalf("marker ActiveCampaignID = %q, want %q", marker.ActiveCampaignID, campaignIDA)
 	}
 
 	if _, err := os.Lstat(filepath.Join(campaignRootB, "projects", "shared-linked")); !os.IsNotExist(err) {
 		t.Fatalf("expected second campaign symlink to be absent, got err = %v", err)
+	}
+}
+
+func writeCampaignConfig(t *testing.T, campaignRoot, campaignID string) {
+	t.Helper()
+
+	cfg := &config.CampaignConfig{
+		ID:   campaignID,
+		Name: filepath.Base(campaignRoot),
+		Type: config.CampaignTypeProduct,
+	}
+	if err := config.SaveCampaignConfig(context.Background(), campaignRoot, cfg); err != nil {
+		t.Fatalf("SaveCampaignConfig() error = %v", err)
 	}
 }

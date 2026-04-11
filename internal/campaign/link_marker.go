@@ -10,11 +10,17 @@ import (
 // recover campaign context from the resolved external cwd.
 const LinkMarkerFile = ".camp"
 
-// LinkMarker records the campaign associated with a linked project.
+// LinkMarkerVersion is the current .camp schema version.
+const LinkMarkerVersion = 2
+
+// LinkMarker records the active campaign context for a linked project.
 type LinkMarker struct {
-	Version      int    `json:"version"`
+	Version          int    `json:"version"`
+	ActiveCampaignID string `json:"active_campaign_id,omitempty"`
+
+	// Legacy fields kept for backward-compatible reads only.
 	CampaignID   string `json:"campaign_id,omitempty"`
-	CampaignRoot string `json:"campaign_root"`
+	CampaignRoot string `json:"campaign_root,omitempty"`
 	ProjectName  string `json:"project_name,omitempty"`
 }
 
@@ -43,6 +49,9 @@ func ReadMarkerFile(path string) (*LinkMarker, error) {
 	if marker.Version == 0 {
 		marker.Version = 1
 	}
+	if marker.ActiveCampaignID == "" && marker.CampaignID != "" {
+		marker.ActiveCampaignID = marker.CampaignID
+	}
 
 	return &marker, nil
 }
@@ -50,7 +59,7 @@ func ReadMarkerFile(path string) (*LinkMarker, error) {
 // WriteMarker writes the link marker for a linked project directory.
 func WriteMarker(projectDir string, marker LinkMarker) error {
 	if marker.Version == 0 {
-		marker.Version = 1
+		marker.Version = LinkMarkerVersion
 	}
 
 	data, err := json.MarshalIndent(marker, "", "  ")
@@ -69,4 +78,13 @@ func RemoveMarker(projectDir string) error {
 		return nil
 	}
 	return err
+}
+
+// EffectiveCampaignID returns the campaign ID that should be used for context
+// resolution, including compatibility with legacy markers.
+func (m LinkMarker) EffectiveCampaignID() string {
+	if m.ActiveCampaignID != "" {
+		return m.ActiveCampaignID
+	}
+	return m.CampaignID
 }
