@@ -60,10 +60,6 @@ func runGo(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Resolve configured navigation from shortcuts, long-form directory aliases,
-	// and configured concepts.
-	resolved := nav.ResolveConfiguredTarget(cfg, args)
-
 	// Handle toggle keyword: "t" or "toggle"
 	if len(args) > 0 && (args[0] == "toggle" || args[0] == "t") {
 		return handleToggle(ctx, campaignRoot, printOnly)
@@ -80,6 +76,11 @@ func runGo(cmd *cobra.Command, args []string) error {
 			}
 		}
 	}
+
+	// Resolve configured navigation from shortcuts, long-form directory aliases,
+	// and configured concepts. Deferred until after the short-circuits above so
+	// toggle and custom-path shortcuts don't pay the resolution cost.
+	resolved := nav.ResolveConfiguredTarget(cfg, args)
 
 	result := nav.ParseResult{
 		Category:   nav.CategoryAll,
@@ -408,6 +409,10 @@ func handleRelativePathNavigation(ctx context.Context, campaignRoot, relativePat
 }
 
 func resolveRelativePathNavigation(ctx context.Context, campaignRoot, relativePath, query string) (string, error) {
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+
 	if query == "" {
 		jumpResult, err := nav.JumpToPathFromRoot(ctx, campaignRoot, relativePath)
 		if err != nil {
@@ -428,11 +433,14 @@ func resolveRelativePathNavigation(ctx context.Context, campaignRoot, relativePa
 		if err != nil {
 			return "", err
 		}
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
 		nestedPath := filepath.Join(prefixPath, parts[1])
 		if info, err := os.Stat(nestedPath); err == nil && info.IsDir() {
 			return nestedPath, nil
 		}
-		return "", fmt.Errorf("path does not exist: %s/%s", strings.TrimRight(relativePath, "/"), query)
+		return "", camperrors.Wrapf(errNavigationPathNotFound, "%s/%s", strings.TrimRight(relativePath, "/"), query)
 	}
 
 	return fuzzyResolveDirectory(ctx, basePath, query, relativePath)
@@ -446,7 +454,7 @@ func fuzzyResolveDirectory(ctx context.Context, basePath, query, relativePath st
 	entries, err := os.ReadDir(basePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", fmt.Errorf("path does not exist: %s", relativePath)
+			return "", camperrors.Wrap(errNavigationPathNotFound, relativePath)
 		}
 		return "", camperrors.Wrap(err, "failed to read navigation path")
 	}
@@ -461,11 +469,18 @@ func fuzzyResolveDirectory(ctx context.Context, basePath, query, relativePath st
 
 	matches := fuzzy.FilterMulti(names, query)
 	if len(matches) == 0 {
-		return "", fmt.Errorf("no directories matching %q in %s", query, strings.TrimRight(relativePath, "/"))
+		return "", camperrors.Wrapf(errNavigationNoMatch, "%q in %s", query, strings.TrimRight(relativePath, "/"))
 	}
 
 	return filepath.Join(basePath, matches[0].Target), nil
 }
+
+// errNavigationPathNotFound indicates the requested navigation target directory
+// could not be resolved to an existing path under the campaign root.
+var errNavigationPathNotFound = camperrors.New("navigation path does not exist")
+
+// errNavigationNoMatch indicates fuzzy resolution found no matching directory.
+var errNavigationNoMatch = camperrors.New("no directories match navigation query")
 
 // evalSymlinks resolves symlinks in a path, returning the original path if resolution fails.
 func evalSymlinks(path string) (string, error) {

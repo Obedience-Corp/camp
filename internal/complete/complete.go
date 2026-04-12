@@ -159,18 +159,6 @@ func GenerateRich(ctx context.Context, args []string) ([]RichCategoryGroup, erro
 	return grouped, nil
 }
 
-// shortcutKeys returns the keys from a shortcuts map.
-func shortcutKeys(shortcuts map[string]nav.Category) []string {
-	if len(shortcuts) == 0 {
-		return nil
-	}
-	keys := make([]string, 0, len(shortcuts))
-	for k := range shortcuts {
-		keys = append(keys, k)
-	}
-	return keys
-}
-
 // CategoryShortcuts returns category shortcut keys from campaign config.
 // Returns nil if not in a campaign.
 func CategoryShortcuts() []string {
@@ -250,9 +238,13 @@ func completeInCategory(ctx context.Context, cat nav.Category, query string) ([]
 func completeAll(ctx context.Context, query string, topLevelNames []string) ([]string, error) {
 	var candidates []string
 
-	// Add matching top-level navigation names first.
+	// Add matching top-level navigation names first. Normalize both sides
+	// (lowercase + trim trailing slash) so queries like "design/" still match
+	// the "design" top-level name; this mirrors how ResolveConfiguredTarget
+	// normalizes tokens elsewhere.
+	normalizedQuery := nav.NormalizeNavigationName(query)
 	for _, name := range topLevelNames {
-		if strings.HasPrefix(strings.ToLower(name), strings.ToLower(query)) {
+		if strings.HasPrefix(nav.NormalizeNavigationName(name), normalizedQuery) {
 			candidates = append(candidates, name)
 		}
 	}
@@ -352,9 +344,9 @@ func completeDrillInCategoryRich(ctx context.Context, campaignRoot string, cat n
 }
 
 func listPathCandidates(ctx context.Context, absPath, prefix string) ([]string, error) {
-	entries, err := os.ReadDir(absPath)
+	entries, err := readDirForCompletion(absPath)
 	if err != nil {
-		return nil, nil
+		return nil, err
 	}
 
 	var candidates []string
@@ -379,9 +371,9 @@ func listPathCandidates(ctx context.Context, absPath, prefix string) ([]string, 
 }
 
 func listPathCandidatesRich(ctx context.Context, absPath, relativePath, prefix string) ([]index.CompletionCandidate, error) {
-	entries, err := os.ReadDir(absPath)
+	entries, err := readDirForCompletion(absPath)
 	if err != nil {
-		return nil, nil
+		return nil, err
 	}
 
 	var candidates []index.CompletionCandidate
@@ -411,15 +403,30 @@ func listPathCandidatesRich(ctx context.Context, absPath, relativePath, prefix s
 	return candidates, nil
 }
 
+// readDirForCompletion reads a directory for completion purposes.
+// A missing directory is not an error (returns nil entries), but real I/O
+// failures — permission denied, bad symlinks, etc. — are surfaced so callers
+// can decide how to handle them instead of silently degrading to "no matches".
+func readDirForCompletion(absPath string) ([]os.DirEntry, error) {
+	entries, err := os.ReadDir(absPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return entries, nil
+}
+
 func completeSubdirectoryInPath(ctx context.Context, basePath, query string) ([]string, error) {
 	lastSlash := strings.LastIndex(query, "/")
 	dirPath := query[:lastSlash]
 	filter := query[lastSlash+1:]
 
 	absDir := filepath.Join(basePath, dirPath)
-	entries, err := os.ReadDir(absDir)
+	entries, err := readDirForCompletion(absDir)
 	if err != nil {
-		return nil, nil
+		return nil, err
 	}
 
 	var candidates []string
@@ -449,9 +456,9 @@ func completeSubdirectoryInPathRich(ctx context.Context, basePath, relativePath,
 	filter := query[lastSlash+1:]
 
 	absDir := filepath.Join(basePath, dirPath)
-	entries, err := os.ReadDir(absDir)
+	entries, err := readDirForCompletion(absDir)
 	if err != nil {
-		return nil, nil
+		return nil, err
 	}
 
 	var candidates []index.CompletionCandidate
