@@ -123,12 +123,7 @@ func TestGenerateWithDescriptions_NoArgs(t *testing.T) {
 }
 
 func TestGenerateWithDescriptions_WithArgs(t *testing.T) {
-	// Create test campaign
-	root := t.TempDir()
-	campDir := filepath.Join(root, ".campaign")
-	if err := os.MkdirAll(campDir, 0755); err != nil {
-		t.Fatalf("Failed to create .campaign: %v", err)
-	}
+	root := createTestCampaign(t)
 
 	projPath := filepath.Join(root, "projects", "test-project")
 	if err := os.MkdirAll(projPath, 0755); err != nil {

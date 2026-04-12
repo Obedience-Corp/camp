@@ -54,7 +54,7 @@ func TestBuildCategoryMappings(t *testing.T) {
 		},
 	}
 
-	got := BuildCategoryMappings(shortcuts, nil)
+	got := BuildCategoryMappings(shortcuts)
 
 	if got["p"] != CategoryProjects {
 		t.Fatalf("projects shortcut = %q, want %q", got["p"], CategoryProjects)
@@ -67,39 +67,26 @@ func TestBuildCategoryMappings(t *testing.T) {
 	}
 }
 
-func TestBuildCategoryMappings_WithPathsMap(t *testing.T) {
+func TestBuildPathAliasMappings(t *testing.T) {
 	shortcuts := map[string]config.ShortcutConfig{
 		"d":  {Path: "docs/"},
 		"ai": {Path: "ai_docs/"},
-	}
-	pathsMap := map[string]string{
-		"docs":      "docs/",
-		"ai_docs":   "ai_docs/",
-		"projects":  "projects/",
-		"festivals": "festivals/",
+		"de": {Path: "workflow/design/"},
+		"cx": {Path: "custom/path/"},
 	}
 
-	got := BuildCategoryMappings(shortcuts, pathsMap)
+	got := BuildPathAliasMappings(shortcuts)
 
-	// Shortcut keys still work
-	if got["d"] != CategoryDocs {
-		t.Fatalf("shortcut 'd' = %q, want %q", got["d"], CategoryDocs)
+	if got["docs"].Category != CategoryDocs {
+		t.Fatalf("docs alias category = %q, want %q", got["docs"].Category, CategoryDocs)
 	}
-	if got["ai"] != CategoryAIDocs {
-		t.Fatalf("shortcut 'ai' = %q, want %q", got["ai"], CategoryAIDocs)
+	if got["ai_docs"].Category != CategoryAIDocs {
+		t.Fatalf("ai_docs alias category = %q, want %q", got["ai_docs"].Category, CategoryAIDocs)
 	}
-
-	// Concept names from paths map also work
-	if got["docs"] != CategoryDocs {
-		t.Fatalf("path name 'docs' = %q, want %q", got["docs"], CategoryDocs)
+	if got["design"].Category != CategoryDesign {
+		t.Fatalf("design alias category = %q, want %q", got["design"].Category, CategoryDesign)
 	}
-	if got["ai_docs"] != CategoryAIDocs {
-		t.Fatalf("path name 'ai_docs' = %q, want %q", got["ai_docs"], CategoryAIDocs)
-	}
-	if got["projects"] != CategoryProjects {
-		t.Fatalf("path name 'projects' = %q, want %q", got["projects"], CategoryProjects)
-	}
-	if got["festivals"] != CategoryFestivals {
-		t.Fatalf("path name 'festivals' = %q, want %q", got["festivals"], CategoryFestivals)
+	if got["path"].RelativePath != "custom/path/" {
+		t.Fatalf("path alias relative path = %q, want %q", got["path"].RelativePath, "custom/path/")
 	}
 }

@@ -3,6 +3,8 @@ package complete
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -29,23 +31,32 @@ func Generate(ctx context.Context, args []string) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, Timeout)
 	defer cancel()
 
-	// Load shortcuts from campaign config
-	shortcuts := loadShortcutMappings(ctx)
+	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
+	if err != nil {
+		return nil, nil
+	}
+
+	topLevelNames := nav.TopLevelNavigationNames(cfg)
 
 	// No args - complete category shortcuts
 	if len(args) == 0 {
-		return shortcutKeys(shortcuts), nil
+		return topLevelNames, nil
 	}
 
-	// Check if first arg is a category shortcut
-	result := nav.ParseShortcut(args, shortcuts)
-	if result.IsShortcut {
+	resolved := nav.ResolveConfiguredTarget(cfg, args)
+	if resolved.Matched {
+		if resolved.RelativePath != "" {
+			return completeInRelativePath(ctx, campaignRoot, resolved.RelativePath, resolved.Query)
+		}
+		if resolved.Drill {
+			return completeDrillInCategory(ctx, campaignRoot, resolved.Category, resolved.Query)
+		}
 		// Complete within category
-		return completeInCategory(ctx, result.Category, result.Query)
+		return completeInCategory(ctx, resolved.Category, resolved.Query)
 	}
 
 	// Not a shortcut - complete from all targets and shortcuts
-	return completeAll(ctx, args[0], shortcuts)
+	return completeAll(ctx, args[0], topLevelNames)
 }
 
 // GenerateRich returns completion candidates with fuzzy matching and path descriptions.
@@ -54,30 +65,45 @@ func GenerateRich(ctx context.Context, args []string) ([]RichCategoryGroup, erro
 	ctx, cancel := context.WithTimeout(ctx, Timeout)
 	defer cancel()
 
-	// Determine query and category
-	var query string
-	var cat nav.Category
+	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
+	if err != nil {
+		return nil, nil
+	}
+
+	resolved := nav.ResolveConfiguredTarget(cfg, args)
+	query := ""
 	if len(args) > 0 {
 		query = args[0]
 	}
-
-	// Check if first arg is a category shortcut
-	shortcuts := loadShortcutMappings(ctx)
-	result := nav.ParseShortcut(args, shortcuts)
-	if result.IsShortcut {
-		cat = result.Category
-		query = result.Query
-	}
-
-	// Get campaign root
-	jumpResult, err := nav.DirectJump(ctx, nav.CategoryAll)
-	if err != nil {
-		return nil, err
+	cat := nav.CategoryAll
+	if resolved.Matched {
+		if resolved.RelativePath != "" {
+			candidates, err := completeInRelativePathRich(ctx, campaignRoot, resolved.RelativePath, resolved.Query)
+			if err != nil {
+				return nil, err
+			}
+			return []RichCategoryGroup{{
+				Category:   strings.TrimRight(resolved.RelativePath, "/"),
+				Candidates: candidates,
+			}}, nil
+		}
+		if resolved.Drill {
+			candidates, err := completeDrillInCategoryRich(ctx, campaignRoot, resolved.Category, resolved.Query)
+			if err != nil {
+				return nil, err
+			}
+			return []RichCategoryGroup{{
+				Category:   string(resolved.Category),
+				Candidates: candidates,
+			}}, nil
+		}
+		cat = resolved.Category
+		query = resolved.Query
 	}
 
 	// Worktrees use hierarchical completion: project dirs first, then project@branch
-	if result.IsShortcut && cat == nav.CategoryWorktrees {
-		candidates, err := completeWorktreeRich(ctx, jumpResult.Path, query)
+	if resolved.Matched && cat == nav.CategoryWorktrees {
+		candidates, err := completeWorktreeRich(ctx, campaignRoot, query)
 		if err != nil {
 			return nil, err
 		}
@@ -88,8 +114,8 @@ func GenerateRich(ctx context.Context, args []string) ([]RichCategoryGroup, erro
 	}
 
 	// Subdirectory completion for queries containing "/"
-	if result.IsShortcut && strings.Contains(query, "/") {
-		subdirCandidates, err := CompleteSubdirectoryRich(ctx, jumpResult.Path, cat, query)
+	if resolved.Matched && strings.Contains(query, "/") {
+		subdirCandidates, err := CompleteSubdirectoryRich(ctx, campaignRoot, cat, query)
 		if err == nil && len(subdirCandidates) > 0 {
 			return []RichCategoryGroup{{
 				Category:   string(cat),
@@ -99,7 +125,7 @@ func GenerateRich(ctx context.Context, args []string) ([]RichCategoryGroup, erro
 	}
 
 	// Get or build index
-	idx, err := index.GetOrBuild(ctx, jumpResult.Path, false)
+	idx, err := index.GetOrBuild(ctx, campaignRoot, false)
 	if err != nil {
 		return nil, err
 	}
@@ -110,9 +136,6 @@ func GenerateRich(ctx context.Context, args []string) ([]RichCategoryGroup, erro
 
 	// Get fuzzy completion candidates
 	q := index.NewQuery(idx)
-	if cat == "" {
-		cat = nav.CategoryAll
-	}
 	candidates := q.FuzzyComplete(query, cat)
 
 	// Group by category
@@ -136,16 +159,6 @@ func GenerateRich(ctx context.Context, args []string) ([]RichCategoryGroup, erro
 	return grouped, nil
 }
 
-// loadShortcutMappings loads shortcuts from campaign config.
-// Returns empty map if not in a campaign or on error.
-func loadShortcutMappings(ctx context.Context) map[string]nav.Category {
-	cfg, _, err := config.LoadCampaignConfigFromCwd(ctx)
-	if err != nil {
-		return nil
-	}
-	return nav.BuildCategoryMappings(cfg.Shortcuts(), cfg.PathsMap())
-}
-
 // shortcutKeys returns the keys from a shortcuts map.
 func shortcutKeys(shortcuts map[string]nav.Category) []string {
 	if len(shortcuts) == 0 {
@@ -162,8 +175,11 @@ func shortcutKeys(shortcuts map[string]nav.Category) []string {
 // Returns nil if not in a campaign.
 func CategoryShortcuts() []string {
 	ctx := context.Background()
-	shortcuts := loadShortcutMappings(ctx)
-	return shortcutKeys(shortcuts)
+	cfg, _, err := config.LoadCampaignConfigFromCwd(ctx)
+	if err != nil {
+		return nil
+	}
+	return nav.TopLevelNavigationNames(cfg)
 }
 
 // completeInCategory returns completion candidates within a specific category.
@@ -231,13 +247,13 @@ func completeInCategory(ctx context.Context, cat nav.Category, query string) ([]
 }
 
 // completeAll returns completion candidates from all categories plus shortcuts.
-func completeAll(ctx context.Context, query string, shortcuts map[string]nav.Category) ([]string, error) {
+func completeAll(ctx context.Context, query string, topLevelNames []string) ([]string, error) {
 	var candidates []string
 
-	// Add matching category shortcuts first
-	for shortcut := range shortcuts {
-		if strings.HasPrefix(shortcut, query) {
-			candidates = append(candidates, shortcut)
+	// Add matching top-level navigation names first.
+	for _, name := range topLevelNames {
+		if strings.HasPrefix(strings.ToLower(name), strings.ToLower(query)) {
+			candidates = append(candidates, name)
 		}
 	}
 
@@ -269,5 +285,198 @@ func completeAll(ctx context.Context, query string, shortcuts map[string]nav.Cat
 	targetCandidates := q.CompleteAny(query, nav.CategoryAll)
 	candidates = append(candidates, targetCandidates...)
 
+	return candidates, nil
+}
+
+func completeInRelativePath(ctx context.Context, campaignRoot, relativePath, query string) ([]string, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	basePath := filepath.Join(campaignRoot, relativePath)
+	if query == "" {
+		return listPathCandidates(ctx, basePath, "")
+	}
+
+	if strings.Contains(query, "/") {
+		return completeSubdirectoryInPath(ctx, basePath, query)
+	}
+
+	return listPathCandidates(ctx, basePath, query)
+}
+
+func completeInRelativePathRich(ctx context.Context, campaignRoot, relativePath, query string) ([]index.CompletionCandidate, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	basePath := filepath.Join(campaignRoot, relativePath)
+	if query == "" {
+		return listPathCandidatesRich(ctx, basePath, relativePath, "")
+	}
+
+	if strings.Contains(query, "/") {
+		return completeSubdirectoryInPathRich(ctx, basePath, relativePath, query)
+	}
+
+	return listPathCandidatesRich(ctx, basePath, relativePath, query)
+}
+
+func completeDrillInCategory(ctx context.Context, campaignRoot string, cat nav.Category, query string) ([]string, error) {
+	basePath := categoryAbsDir(campaignRoot, cat)
+	if basePath == "" {
+		return nil, nil
+	}
+	if query == "" {
+		return listPathCandidates(ctx, basePath, "")
+	}
+	if strings.Contains(query, "/") {
+		return CompleteSubdirectory(ctx, campaignRoot, cat, query)
+	}
+	return listPathCandidates(ctx, basePath, query)
+}
+
+func completeDrillInCategoryRich(ctx context.Context, campaignRoot string, cat nav.Category, query string) ([]index.CompletionCandidate, error) {
+	basePath := categoryAbsDir(campaignRoot, cat)
+	if basePath == "" {
+		return nil, nil
+	}
+	relativePath := string(cat)
+	if query == "" {
+		return listPathCandidatesRich(ctx, basePath, relativePath, "")
+	}
+	if strings.Contains(query, "/") {
+		return CompleteSubdirectoryRich(ctx, campaignRoot, cat, query)
+	}
+	return listPathCandidatesRich(ctx, basePath, relativePath, query)
+}
+
+func listPathCandidates(ctx context.Context, absPath, prefix string) ([]string, error) {
+	entries, err := os.ReadDir(absPath)
+	if err != nil {
+		return nil, nil
+	}
+
+	var candidates []string
+	prefixLower := strings.ToLower(prefix)
+	for _, entry := range entries {
+		if ctx.Err() != nil {
+			return candidates, ctx.Err()
+		}
+		if strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		if prefixLower != "" && !strings.HasPrefix(strings.ToLower(entry.Name()), prefixLower) {
+			continue
+		}
+		name := entry.Name()
+		if entry.IsDir() {
+			name += "/"
+		}
+		candidates = append(candidates, name)
+	}
+	return candidates, nil
+}
+
+func listPathCandidatesRich(ctx context.Context, absPath, relativePath, prefix string) ([]index.CompletionCandidate, error) {
+	entries, err := os.ReadDir(absPath)
+	if err != nil {
+		return nil, nil
+	}
+
+	var candidates []index.CompletionCandidate
+	prefixLower := strings.ToLower(prefix)
+	for _, entry := range entries {
+		if ctx.Err() != nil {
+			return candidates, ctx.Err()
+		}
+		if strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		if prefixLower != "" && !strings.HasPrefix(strings.ToLower(entry.Name()), prefixLower) {
+			continue
+		}
+
+		name := entry.Name()
+		if entry.IsDir() {
+			name += "/"
+		}
+
+		candidates = append(candidates, index.CompletionCandidate{
+			Name:     name,
+			Path:     filepath.Join(relativePath, entry.Name()),
+			Category: strings.TrimRight(relativePath, "/"),
+		})
+	}
+	return candidates, nil
+}
+
+func completeSubdirectoryInPath(ctx context.Context, basePath, query string) ([]string, error) {
+	lastSlash := strings.LastIndex(query, "/")
+	dirPath := query[:lastSlash]
+	filter := query[lastSlash+1:]
+
+	absDir := filepath.Join(basePath, dirPath)
+	entries, err := os.ReadDir(absDir)
+	if err != nil {
+		return nil, nil
+	}
+
+	var candidates []string
+	filterLower := strings.ToLower(filter)
+	for _, entry := range entries {
+		if ctx.Err() != nil {
+			return candidates, ctx.Err()
+		}
+		if strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		if filterLower != "" && !strings.HasPrefix(strings.ToLower(entry.Name()), filterLower) {
+			continue
+		}
+		name := dirPath + "/" + entry.Name()
+		if entry.IsDir() {
+			name += "/"
+		}
+		candidates = append(candidates, name)
+	}
+	return candidates, nil
+}
+
+func completeSubdirectoryInPathRich(ctx context.Context, basePath, relativePath, query string) ([]index.CompletionCandidate, error) {
+	lastSlash := strings.LastIndex(query, "/")
+	dirPath := query[:lastSlash]
+	filter := query[lastSlash+1:]
+
+	absDir := filepath.Join(basePath, dirPath)
+	entries, err := os.ReadDir(absDir)
+	if err != nil {
+		return nil, nil
+	}
+
+	var candidates []index.CompletionCandidate
+	filterLower := strings.ToLower(filter)
+	for _, entry := range entries {
+		if ctx.Err() != nil {
+			return candidates, ctx.Err()
+		}
+		if strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		if filterLower != "" && !strings.HasPrefix(strings.ToLower(entry.Name()), filterLower) {
+			continue
+		}
+
+		name := dirPath + "/" + entry.Name()
+		if entry.IsDir() {
+			name += "/"
+		}
+
+		candidates = append(candidates, index.CompletionCandidate{
+			Name:     name,
+			Path:     filepath.Join(relativePath, dirPath, entry.Name()),
+			Category: strings.TrimRight(relativePath, "/"),
+		})
+	}
 	return candidates, nil
 }

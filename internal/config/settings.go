@@ -213,9 +213,30 @@ func (j *JumpsConfig) refreshPathsMap() {
 		j.PathsMap = make(map[string]string)
 	}
 
-	for name, path := range j.Paths.asMap() {
+	for name, path := range effectivePathsMap(j.Paths) {
 		j.PathsMap[name] = path
 	}
+}
+
+func effectivePathsMap(paths CampaignPaths) map[string]string {
+	m := make(map[string]string)
+	add := func(name, path string) {
+		if path != "" {
+			m[name] = path
+		}
+	}
+	add("projects", paths.Projects)
+	add("worktrees", paths.Worktrees)
+	add("ai_docs", paths.AIDocs)
+	add("docs", paths.Docs)
+	add("festivals", paths.Festivals)
+	add("workflow", paths.Workflow)
+	add("intents", paths.Intents)
+	add("code_reviews", paths.CodeReviews)
+	add("pipelines", paths.Pipelines)
+	add("design", paths.Design)
+	add("dungeon", paths.Dungeon)
+	return m
 }
 
 // JumpsConfigExists checks if jumps.yaml exists for the given campaign root.

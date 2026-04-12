@@ -70,6 +70,27 @@ _cgo() {
   local -a targets
   # Get completion candidates from camp
   if (( CURRENT == 2 )); then
+    local current_word="${words[2]:-}"
+    if [[ "$current_word" == */* || "$current_word" == *@* ]]; then
+      local -a comp_names comp_descs
+      local line output
+
+      output=$(NO_COLOR=1 command camp complete --described "$current_word" 2>/dev/null)
+      for line in ${(f)output}; do
+        local name="${line%%$'\t'*}"
+        local desc="${line#*$'\t'}"
+        [[ -n "$name" ]] && {
+          comp_names+=("$name")
+          comp_descs+=("$name ($desc)")
+        }
+      done
+
+      if (( ${#comp_names} )); then
+        compadd -S '' -d comp_descs -a comp_names
+        return
+      fi
+    fi
+
     # First argument - category shortcuts and targets
     targets=(
 `
