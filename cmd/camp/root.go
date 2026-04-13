@@ -56,6 +56,13 @@ func Execute() error {
 	// Expand shortcuts before command execution
 	expandShortcuts()
 
+	// Rewrite `--flag value` → `--flag=value` for optional-value flags (those
+	// with NoOptDefVal set on their pflag definition). Without this, cobra's
+	// pflag library never consumes the space-separated next token, which
+	// makes `camp intent add --campaign <name> "Title"` misparse <name> as a
+	// positional arg.
+	os.Args = normalizeOptionalValueFlagArgs(os.Args)
+
 	// Try git-style plugin dispatch for unknown subcommands.
 	// A camp-<name> binary on PATH becomes "camp <name> [args...]".
 	if err := dispatchPlugin(); err != nil {
