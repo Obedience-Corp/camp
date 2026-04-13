@@ -51,6 +51,9 @@ func TopLevelNavigationNames(cfg *config.CampaignConfig) []string {
 		return nil
 	}
 
+	shortcuts := cfg.Shortcuts()
+	aliases := BuildPathAliasMappings(shortcuts)
+
 	seen := make(map[string]string)
 	add := func(name string) {
 		normalized := NormalizeNavigationName(name)
@@ -63,13 +66,13 @@ func TopLevelNavigationNames(cfg *config.CampaignConfig) []string {
 		seen[normalized] = name
 	}
 
-	for key, shortcut := range cfg.Shortcuts() {
+	for key, shortcut := range shortcuts {
 		if shortcut.IsNavigation() {
 			add(key)
 		}
 	}
 
-	for alias := range BuildPathAliasMappings(cfg.Shortcuts()) {
+	for alias := range aliases {
 		add(alias)
 	}
 
@@ -88,18 +91,31 @@ func TopLevelNavigationNames(cfg *config.CampaignConfig) []string {
 // ResolveConfiguredTarget resolves the first navigation argument against the
 // current campaign configuration.
 //
-// Resolution order:
-//  1. Configured shortcut keys from jumps.yaml
-//  2. Configured concept names from campaign.yaml
-//  3. Long-form directory aliases derived from configured navigation shortcuts
+// Resolution order (first match wins):
+//  1. Shortcut-drill form "<key>@<query>" (e.g. "de@festival_app")
+//  2. Plain shortcut key from jumps.yaml (e.g. "de")
+//  3. Slash-drill form "<token>/<query>" (e.g. "design/festival_app"),
+//     where <token> is resolved via step 4 or 5 below
+//  4. Configured concept name from campaign.yaml (e.g. "design")
+//  5. Long-form directory alias derived from a navigation shortcut's target
+//     path (e.g. shortcut "de" → path "workflow/design/" → alias "design")
+//
+// Concepts shadow path aliases at the same normalized name by design:
+// concepts are an explicit authoring surface and should win over aliases
+// derived implicitly from shortcut paths.
 func ResolveConfiguredTarget(cfg *config.CampaignConfig, args []string) ConfiguredTarget {
-	if cfg == nil {
+	if cfg == nil || len(args) == 0 {
 		return ConfiguredTarget{}
 	}
 
-	parsedArgs, shortcutDrill := splitShortcutDrillArgs(args)
-	if shortcutDrill {
-		shortcutMappings := BuildCategoryMappings(cfg.Shortcuts())
+	// Compute shortcut and alias maps once — both branches below may consult
+	// them, and this is on the shell-completion hot path.
+	shortcuts := cfg.Shortcuts()
+	shortcutMappings := BuildCategoryMappings(shortcuts)
+	aliases := BuildPathAliasMappings(shortcuts)
+
+	// (1) Shortcut-drill form: "de@foo"
+	if parsedArgs, ok := splitShortcutDrillArgs(args); ok {
 		parsed := ParseShortcut(parsedArgs, shortcutMappings)
 		if parsed.IsShortcut {
 			return ConfiguredTarget{
@@ -111,9 +127,8 @@ func ResolveConfiguredTarget(cfg *config.CampaignConfig, args []string) Configur
 		}
 	}
 
-	shortcutMappings := BuildCategoryMappings(cfg.Shortcuts())
-	parsed := ParseShortcut(args, shortcutMappings)
-	if parsed.IsShortcut {
+	// (2) Plain shortcut key: "de"
+	if parsed := ParseShortcut(args, shortcutMappings); parsed.IsShortcut {
 		return ConfiguredTarget{
 			Category: parsed.Category,
 			Query:    parsed.Query,
@@ -121,20 +136,18 @@ func ResolveConfiguredTarget(cfg *config.CampaignConfig, args []string) Configur
 		}
 	}
 
-	if len(args) == 0 {
-		return ConfiguredTarget{}
-	}
-
+	// (3) Slash-drill form: "design/foo" — resolve token via concept/alias.
 	if drillArgs, ok := splitSlashDrillArgs(args); ok {
-		target := resolveDrillTarget(cfg, drillArgs)
+		target := resolveDrillTarget(cfg, aliases, drillArgs)
 		target.Drill = target.Matched
 		return target
 	}
 
-	return resolveDrillTarget(cfg, args)
+	// (4)/(5) Plain concept or path alias: "design" or "ai_docs"
+	return resolveDrillTarget(cfg, aliases, args)
 }
 
-func resolveDrillTarget(cfg *config.CampaignConfig, args []string) ConfiguredTarget {
+func resolveDrillTarget(cfg *config.CampaignConfig, aliases map[string]PathAliasTarget, args []string) ConfiguredTarget {
 	token := args[0]
 	query := ""
 	if len(args) > 1 {
@@ -156,7 +169,7 @@ func resolveDrillTarget(cfg *config.CampaignConfig, args []string) ConfiguredTar
 		}
 	}
 
-	if alias, ok := BuildPathAliasMappings(cfg.Shortcuts())[NormalizeNavigationName(token)]; ok {
+	if alias, ok := aliases[NormalizeNavigationName(token)]; ok {
 		return ConfiguredTarget{
 			Category:     alias.Category,
 			RelativePath: alias.RelativePath,

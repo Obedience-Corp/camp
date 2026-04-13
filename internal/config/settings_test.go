@@ -182,37 +182,7 @@ func TestSaveJumpsConfig_NormalizesLegacyIntentNavigation(t *testing.T) {
 	}
 }
 
-func TestJumpsConfigRefreshPathsMapUsesEffectivePaths(t *testing.T) {
-	jumps := &JumpsConfig{
-		Paths: CampaignPaths{
-			Intents: "workflow/intents/",
-		},
-		PathsMap: map[string]string{
-			"intents":       "workflow/intents/",
-			"documentation": "docs/",
-		},
-	}
-
-	if changed := jumps.NormalizeIntentNavigation(); !changed {
-		t.Fatal("NormalizeIntentNavigation() = false, want true for legacy intents path")
-	}
-
-	jumps.ApplyDefaults()
-
-	if got := jumps.PathsMap["intents"]; got != ".campaign/intents/" {
-		t.Fatalf("PathsMap[intents] = %q, want %q", got, ".campaign/intents/")
-	}
-
-	if got := jumps.PathsMap["projects"]; got != "projects/" {
-		t.Fatalf("PathsMap[projects] = %q, want %q", got, "projects/")
-	}
-
-	if got := jumps.PathsMap["documentation"]; got != "docs/" {
-		t.Fatalf("PathsMap[documentation] = %q, want %q", got, "docs/")
-	}
-}
-
-func TestLoadJumpsConfig_AppliesDefaultsAndPreservesRawAliases(t *testing.T) {
+func TestLoadJumpsConfig_AppliesDefaults(t *testing.T) {
 	root := t.TempDir()
 	settingsDir := SettingsDirPath(root)
 	if err := os.MkdirAll(settingsDir, 0755); err != nil {
@@ -222,7 +192,6 @@ func TestLoadJumpsConfig_AppliesDefaultsAndPreservesRawAliases(t *testing.T) {
 	raw := `
 paths:
   intents: workflow/intents/
-  documentation: docs/
 `
 	configPath := filepath.Join(settingsDir, JumpsConfigFile)
 	if err := os.WriteFile(configPath, []byte(raw), 0644); err != nil {
@@ -239,41 +208,5 @@ paths:
 	}
 	if got := cfg.Paths.Projects; got != "projects/" {
 		t.Fatalf("Paths.Projects = %q, want %q", got, "projects/")
-	}
-	if got := cfg.PathsMap["intents"]; got != ".campaign/intents/" {
-		t.Fatalf("PathsMap[intents] = %q, want %q", got, ".campaign/intents/")
-	}
-	if got := cfg.PathsMap["projects"]; got != "projects/" {
-		t.Fatalf("PathsMap[projects] = %q, want %q", got, "projects/")
-	}
-	if got := cfg.PathsMap["documentation"]; got != "docs/" {
-		t.Fatalf("PathsMap[documentation] = %q, want %q", got, "docs/")
-	}
-}
-
-func TestSaveJumpsConfig_DoesNotMutateCallerPathsMap(t *testing.T) {
-	root := t.TempDir()
-	cfg := &JumpsConfig{
-		Paths: CampaignPaths{
-			Intents: "workflow/intents/",
-		},
-		PathsMap: map[string]string{
-			"documentation": "docs/",
-			"intents":       "workflow/intents/",
-		},
-	}
-
-	if err := SaveJumpsConfig(context.Background(), root, cfg); err != nil {
-		t.Fatalf("SaveJumpsConfig() error = %v", err)
-	}
-
-	if got := cfg.PathsMap["intents"]; got != "workflow/intents/" {
-		t.Fatalf("caller PathsMap[intents] = %q, want %q", got, "workflow/intents/")
-	}
-	if got := cfg.PathsMap["documentation"]; got != "docs/" {
-		t.Fatalf("caller PathsMap[documentation] = %q, want %q", got, "docs/")
-	}
-	if _, ok := cfg.PathsMap["projects"]; ok {
-		t.Fatalf("caller PathsMap unexpectedly gained projects default: %#v", cfg.PathsMap)
 	}
 }

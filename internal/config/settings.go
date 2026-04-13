@@ -28,10 +28,6 @@ type JumpsConfig struct {
 	Paths CampaignPaths `yaml:"paths,omitempty"`
 	// Shortcuts defines custom navigation and command shortcuts.
 	Shortcuts map[string]ShortcutConfig `yaml:"shortcuts,omitempty"`
-	// PathsMap is the effective name→path map for jumps paths.
-	// It starts with the raw YAML keys, then overlays the normalized/defaulted
-	// standard campaign paths so alias lookups stay aligned with runtime config.
-	PathsMap map[string]string `yaml:"-"`
 }
 
 // JumpsConfigPath returns the path to jumps.yaml for a given campaign root.
@@ -72,14 +68,6 @@ func LoadJumpsConfig(ctx context.Context, campaignRoot string) (*JumpsConfig, er
 	var cfg JumpsConfig
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, camperrors.Wrapf(err, "failed to parse jumps config %s", configPath)
-	}
-
-	// Capture the raw paths map so callers can preserve custom aliases.
-	var raw struct {
-		Paths map[string]string `yaml:"paths"`
-	}
-	if err := yaml.Unmarshal(data, &raw); err == nil && raw.Paths != nil {
-		cfg.PathsMap = raw.Paths
 	}
 
 	cfg.NormalizeIntentNavigation()
@@ -204,39 +192,6 @@ func (j *JumpsConfig) ApplyDefaults() {
 	if j.Paths.Dungeon == "" {
 		j.Paths.Dungeon = defaults.Paths.Dungeon
 	}
-
-	j.refreshPathsMap()
-}
-
-func (j *JumpsConfig) refreshPathsMap() {
-	if j.PathsMap == nil {
-		j.PathsMap = make(map[string]string)
-	}
-
-	for name, path := range effectivePathsMap(j.Paths) {
-		j.PathsMap[name] = path
-	}
-}
-
-func effectivePathsMap(paths CampaignPaths) map[string]string {
-	m := make(map[string]string)
-	add := func(name, path string) {
-		if path != "" {
-			m[name] = path
-		}
-	}
-	add("projects", paths.Projects)
-	add("worktrees", paths.Worktrees)
-	add("ai_docs", paths.AIDocs)
-	add("docs", paths.Docs)
-	add("festivals", paths.Festivals)
-	add("workflow", paths.Workflow)
-	add("intents", paths.Intents)
-	add("code_reviews", paths.CodeReviews)
-	add("pipelines", paths.Pipelines)
-	add("design", paths.Design)
-	add("dungeon", paths.Dungeon)
-	return m
 }
 
 // JumpsConfigExists checks if jumps.yaml exists for the given campaign root.
