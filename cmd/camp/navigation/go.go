@@ -12,6 +12,7 @@ import (
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/nav"
+	"github.com/Obedience-Corp/camp/internal/nav/fuzzy"
 	"github.com/Obedience-Corp/camp/internal/nav/index"
 	"github.com/Obedience-Corp/camp/internal/pins"
 	"github.com/Obedience-Corp/camp/internal/state"
@@ -59,10 +60,6 @@ func runGo(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Build category mappings from config shortcuts
-	// This allows config shortcuts to work with fuzzy search
-	configMappings := nav.BuildCategoryMappings(cfg.Shortcuts())
-
 	// Handle toggle keyword: "t" or "toggle"
 	if len(args) > 0 && (args[0] == "toggle" || args[0] == "t") {
 		return handleToggle(ctx, campaignRoot, printOnly)
@@ -80,8 +77,29 @@ func runGo(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Parse shortcuts using config mappings resolved from the campaign config.
-	result := nav.ParseShortcut(args, configMappings)
+	// Resolve configured navigation from shortcuts, long-form directory aliases,
+	// and configured concepts. Deferred until after the short-circuits above so
+	// toggle and custom-path shortcuts don't pay the resolution cost.
+	resolved := nav.ResolveConfiguredTarget(cfg, args)
+
+	result := nav.ParseResult{
+		Category:   nav.CategoryAll,
+		Query:      strings.Join(args, " "),
+		IsShortcut: false,
+	}
+	if resolved.Matched {
+		if resolved.RelativePath != "" {
+			return handleRelativePathNavigation(ctx, campaignRoot, resolved.RelativePath, resolved.Query, printOnly, command)
+		}
+		if resolved.Drill {
+			return handleRelativePathNavigation(ctx, campaignRoot, resolved.Category.Dir(), resolved.Query, printOnly, command)
+		}
+		result = nav.ParseResult{
+			Category:   resolved.Category,
+			Query:      resolved.Query,
+			IsShortcut: true,
+		}
+	}
 
 	// Check for sub-shortcut in remaining args
 	// Example: "camp p fest cli" -> result.Query="fest", subShortcut="cli"
@@ -359,6 +377,110 @@ func handleCustomNavShortcut(ctx context.Context, sc config.ShortcutConfig, camp
 	}
 	return nil
 }
+
+// handleRelativePathNavigation resolves a configured relative path plus optional
+// query and executes the standard camp go output flow for the resolved target.
+func handleRelativePathNavigation(ctx context.Context, campaignRoot, relativePath, query string, printOnly bool, command []string) error {
+	targetPath, err := resolveRelativePathNavigation(ctx, campaignRoot, relativePath, query)
+	if err != nil {
+		return err
+	}
+
+	if len(command) > 0 {
+		execResult, err := nav.ExecInDir(ctx, targetPath, command)
+		if err != nil {
+			return err
+		}
+		if execResult.ExitCode != 0 {
+			return camperrors.NewCommand("", execResult.ExitCode, "", nil)
+		}
+		return nil
+	}
+
+	cwd, _ := os.Getwd()
+	_ = state.SetLastLocation(ctx, campaignRoot, cwd)
+
+	if printOnly {
+		fmt.Println(targetPath)
+	} else {
+		fmt.Printf("cd %s\n", targetPath)
+	}
+	return nil
+}
+
+func resolveRelativePathNavigation(ctx context.Context, campaignRoot, relativePath, query string) (string, error) {
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+
+	if query == "" {
+		jumpResult, err := nav.JumpToPathFromRoot(ctx, campaignRoot, relativePath)
+		if err != nil {
+			return "", err
+		}
+		return jumpResult.Path, nil
+	}
+
+	basePath := filepath.Join(campaignRoot, relativePath)
+	exactPath := filepath.Join(basePath, query)
+	if info, err := os.Stat(exactPath); err == nil && info.IsDir() {
+		return exactPath, nil
+	}
+
+	if strings.Contains(query, "/") {
+		parts := strings.SplitN(query, "/", 2)
+		prefixPath, err := fuzzyResolveDirectory(ctx, basePath, parts[0], relativePath)
+		if err != nil {
+			return "", err
+		}
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		nestedPath := filepath.Join(prefixPath, parts[1])
+		if info, err := os.Stat(nestedPath); err == nil && info.IsDir() {
+			return nestedPath, nil
+		}
+		return "", camperrors.Wrapf(errNavigationPathNotFound, "%s/%s", strings.TrimRight(relativePath, "/"), query)
+	}
+
+	return fuzzyResolveDirectory(ctx, basePath, query, relativePath)
+}
+
+func fuzzyResolveDirectory(ctx context.Context, basePath, query, relativePath string) (string, error) {
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+
+	entries, err := os.ReadDir(basePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", camperrors.Wrap(errNavigationPathNotFound, relativePath)
+		}
+		return "", camperrors.Wrap(err, "failed to read navigation path")
+	}
+
+	var names []string
+	for _, entry := range entries {
+		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		names = append(names, entry.Name())
+	}
+
+	matches := fuzzy.FilterMulti(names, query)
+	if len(matches) == 0 {
+		return "", camperrors.Wrapf(errNavigationNoMatch, "%q in %s", query, strings.TrimRight(relativePath, "/"))
+	}
+
+	return filepath.Join(basePath, matches[0].Target), nil
+}
+
+// errNavigationPathNotFound indicates the requested navigation target directory
+// could not be resolved to an existing path under the campaign root.
+var errNavigationPathNotFound = camperrors.New("navigation path does not exist")
+
+// errNavigationNoMatch indicates fuzzy resolution found no matching directory.
+var errNavigationNoMatch = camperrors.New("no directories match navigation query")
 
 // evalSymlinks resolves symlinks in a path, returning the original path if resolution fails.
 func evalSymlinks(path string) (string, error) {

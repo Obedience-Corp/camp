@@ -181,3 +181,32 @@ func TestSaveJumpsConfig_NormalizesLegacyIntentNavigation(t *testing.T) {
 		t.Fatalf("saved shortcut i path = %q, want %q", got, ".campaign/intents/")
 	}
 }
+
+func TestLoadJumpsConfig_AppliesDefaults(t *testing.T) {
+	root := t.TempDir()
+	settingsDir := SettingsDirPath(root)
+	if err := os.MkdirAll(settingsDir, 0755); err != nil {
+		t.Fatalf("failed to create settings dir: %v", err)
+	}
+
+	raw := `
+paths:
+  intents: workflow/intents/
+`
+	configPath := filepath.Join(settingsDir, JumpsConfigFile)
+	if err := os.WriteFile(configPath, []byte(raw), 0644); err != nil {
+		t.Fatalf("failed to write jumps config: %v", err)
+	}
+
+	cfg, err := LoadJumpsConfig(context.Background(), root)
+	if err != nil {
+		t.Fatalf("LoadJumpsConfig() error = %v", err)
+	}
+
+	if got := cfg.Paths.Intents; got != ".campaign/intents/" {
+		t.Fatalf("Paths.Intents = %q, want %q", got, ".campaign/intents/")
+	}
+	if got := cfg.Paths.Projects; got != "projects/" {
+		t.Fatalf("Paths.Projects = %q, want %q", got, "projects/")
+	}
+}

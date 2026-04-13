@@ -71,6 +71,7 @@ func LoadJumpsConfig(ctx context.Context, campaignRoot string) (*JumpsConfig, er
 	}
 
 	cfg.NormalizeIntentNavigation()
+	cfg.ApplyDefaults()
 
 	return &cfg, nil
 }

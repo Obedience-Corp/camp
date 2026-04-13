@@ -74,7 +74,6 @@ func loadJumps(ctx context.Context, campaignRoot string, cfg *CampaignConfig) er
 
 	if jumps != nil {
 		// jumps.yaml exists, use it
-		jumps.ApplyDefaults()
 		cfg.Jumps = jumps
 		return nil
 	}

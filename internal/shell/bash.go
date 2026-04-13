@@ -81,6 +81,16 @@ _cgo_complete() {
 
   # First argument - category shortcuts
   if [ "$COMP_CWORD" -eq 1 ]; then
+    case "$cur" in
+      */*|*@*)
+        local candidates
+        candidates=$(NO_COLOR=1 command camp complete --described "$cur" 2>/dev/null | cut -f1)
+        if [ -n "$candidates" ]; then
+          COMPREPLY=($(compgen -W "$candidates" -- "$cur"))
+          return
+        fi
+        ;;
+    esac
     COMPREPLY=($(compgen -W "{{SHORTCUT_WORDS}}" -- "$cur"))
     return
   fi

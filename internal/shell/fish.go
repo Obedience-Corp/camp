@@ -17,7 +17,21 @@ end
 # Helper to check if completing first argument
 function __camp_is_first_arg
     set -l cmd (commandline -opc)
-    test (count $cmd) -eq 1
+    if test (count $cmd) -ne 1
+        return 1
+    end
+    set -l token (commandline -ct)
+    not string match -rq '[/@]' -- $token
+end
+
+# Helper to check if the first argument is in drill mode (design/... or de@...)
+function __camp_is_first_arg_drill
+    set -l cmd (commandline -opc)
+    if test (count $cmd) -ne 1
+        return 1
+    end
+    set -l token (commandline -ct)
+    string match -rq '[/@]' -- $token
 end
 
 # Wrap camp binary so directory-changing subcommands work natively.
@@ -75,7 +89,8 @@ const fishInitSuffix = `
 # Fish natively supports tab-separated name\tdescription format
 # NO_COLOR prevents lipgloss/termenv from querying the terminal via OSC
 # escape sequences, which would corrupt the shell's completion state.
-complete -c cgo -n "not __camp_is_first_arg" -a "(NO_COLOR=1 command camp complete --described (commandline -opc)[2..-1] 2>/dev/null)"
+complete -c cgo -n "__camp_is_first_arg_drill" -a "(NO_COLOR=1 command camp complete --described (commandline -ct) 2>/dev/null)"
+complete -c cgo -n "not __camp_is_first_arg; and not __camp_is_first_arg_drill" -a "(NO_COLOR=1 command camp complete --described (commandline -opc)[2..-1] 2>/dev/null)"
 
 # Run command from campaign root
 # Usage: cr <command> [args...]

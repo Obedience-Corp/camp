@@ -39,15 +39,19 @@ func IsStandardPath(path string) bool {
 	return ok
 }
 
-// BuildCategoryMappings converts config shortcuts to nav.Category mappings.
+// BuildCategoryMappings converts configured shortcut keys to nav.Category
+// mappings. Only explicit navigation shortcuts are included here. Long-form
+// directory aliases and configured concepts are resolved separately so those
+// layers do not get conflated with shortcut keys.
 func BuildCategoryMappings(shortcuts map[string]config.ShortcutConfig) map[string]Category {
 	mappings := make(map[string]Category)
+
 	for name, sc := range shortcuts {
 		if !sc.IsNavigation() {
 			continue
 		}
 		if cat, ok := CategoryForStandardPath(sc.Path); ok {
-			mappings[name] = cat
+			mappings[NormalizeNavigationName(name)] = cat
 		}
 	}
 	return mappings
