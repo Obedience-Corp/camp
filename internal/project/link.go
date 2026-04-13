@@ -11,6 +11,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
 
@@ -305,7 +306,7 @@ func ensurePatternInFile(path, pattern string) error {
 		content += "\n"
 	}
 	content += pattern + "\n"
-	return writeFileAtomically(path, []byte(content), 0644)
+	return fsutil.WriteFileAtomically(path, []byte(content), 0644)
 }
 
 func removePatternFromFile(path, pattern string) error {
@@ -330,42 +331,5 @@ func removePatternFromFile(path, pattern string) error {
 	if content != "" {
 		content += "\n"
 	}
-	return writeFileAtomically(path, []byte(content), 0644)
-}
-
-func writeFileAtomically(path string, content []byte, defaultMode os.FileMode) error {
-	mode := defaultMode
-	if info, err := os.Stat(path); err == nil {
-		mode = info.Mode().Perm()
-	} else if !os.IsNotExist(err) {
-		return err
-	}
-
-	dir := filepath.Dir(path)
-	tmpFile, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmpFile.Name()
-	defer func() {
-		_ = os.Remove(tmpPath)
-	}()
-
-	if _, err := tmpFile.Write(content); err != nil {
-		_ = tmpFile.Close()
-		return err
-	}
-	if err := tmpFile.Chmod(mode); err != nil {
-		_ = tmpFile.Close()
-		return err
-	}
-	if err := tmpFile.Sync(); err != nil {
-		_ = tmpFile.Close()
-		return err
-	}
-	if err := tmpFile.Close(); err != nil {
-		return err
-	}
-
-	return os.Rename(tmpPath, path)
+	return fsutil.WriteFileAtomically(path, []byte(content), 0644)
 }

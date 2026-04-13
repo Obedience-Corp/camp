@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+
+	"github.com/Obedience-Corp/camp/internal/fsutil"
 )
 
 // LinkMarkerFile is the marker written into linked project roots so camp can
@@ -68,7 +70,7 @@ func WriteMarker(projectDir string, marker LinkMarker) error {
 	}
 	data = append(data, '\n')
 
-	return writeFileAtomically(MarkerPath(projectDir), data, 0644)
+	return fsutil.WriteFileAtomically(MarkerPath(projectDir), data, 0644)
 }
 
 // RemoveMarker removes the link marker from a linked project directory.
@@ -87,41 +89,4 @@ func (m LinkMarker) EffectiveCampaignID() string {
 		return m.ActiveCampaignID
 	}
 	return m.CampaignID
-}
-
-func writeFileAtomically(path string, content []byte, defaultMode os.FileMode) error {
-	mode := defaultMode
-	if info, err := os.Stat(path); err == nil {
-		mode = info.Mode().Perm()
-	} else if !os.IsNotExist(err) {
-		return err
-	}
-
-	dir := filepath.Dir(path)
-	tmpFile, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmpFile.Name()
-	defer func() {
-		_ = os.Remove(tmpPath)
-	}()
-
-	if _, err := tmpFile.Write(content); err != nil {
-		_ = tmpFile.Close()
-		return err
-	}
-	if err := tmpFile.Chmod(mode); err != nil {
-		_ = tmpFile.Close()
-		return err
-	}
-	if err := tmpFile.Sync(); err != nil {
-		_ = tmpFile.Close()
-		return err
-	}
-	if err := tmpFile.Close(); err != nil {
-		return err
-	}
-
-	return os.Rename(tmpPath, path)
 }
