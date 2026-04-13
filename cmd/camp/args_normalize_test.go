@@ -3,6 +3,9 @@ package main
 import (
 	"reflect"
 	"testing"
+
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 func TestNormalizeOptionalValueFlagArgs(t *testing.T) {
@@ -85,5 +88,73 @@ func TestNormalizeOptionalValueFlagArgs(t *testing.T) {
 				t.Errorf("normalizeOptionalValueFlagArgs(%v)\n  got:  %v\n  want: %v", tc.in, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestOptionalValueFlagsCoverNoOptDefValFlags guards against silent drift
+// between the hand-maintained optionalValueFlags map and the set of
+// non-bool flags with NoOptDefVal set across the cobra command tree.
+//
+// pflag auto-assigns NoOptDefVal="true" on every bool flag (so bare
+// --verbose means --verbose=true); those are a built-in pflag mechanism,
+// not the "optional string value" pattern the preprocessor targets and
+// they are excluded from this check.
+//
+// For non-bool flags, NoOptDefVal is the deliberate "bare flag means
+// sentinel default" pattern — see cmd/camp/intent/add.go for the only
+// current example. Without this guard, someone adding a second such flag
+// would reintroduce the original bug: `--flag value` never consumes the
+// space-separated token, leaving `value` as a stray positional argument.
+//
+// If this test fails, add every reported flag token to optionalValueFlags
+// in cmd/camp/args_normalize.go.
+func TestOptionalValueFlagsCoverNoOptDefValFlags(t *testing.T) {
+	var missing []string
+	seen := map[string]struct{}{}
+
+	check := func(f *pflag.Flag) {
+		if f.NoOptDefVal == "" {
+			return
+		}
+		// Bool flags get NoOptDefVal="true" automatically from pflag and
+		// must not be rewritten to `--flag=value` (which would fail bool
+		// parsing on anything that isn't a bool literal). Skip them.
+		if f.Value.Type() == "bool" {
+			return
+		}
+		long := "--" + f.Name
+		if _, ok := seen[long]; !ok {
+			seen[long] = struct{}{}
+			if _, ok := optionalValueFlags[long]; !ok {
+				missing = append(missing, long)
+			}
+		}
+		if f.Shorthand != "" {
+			short := "-" + f.Shorthand
+			if _, ok := seen[short]; !ok {
+				seen[short] = struct{}{}
+				if _, ok := optionalValueFlags[short]; !ok {
+					missing = append(missing, short)
+				}
+			}
+		}
+	}
+
+	var walk func(cmd *cobra.Command)
+	walk = func(cmd *cobra.Command) {
+		cmd.PersistentFlags().VisitAll(check)
+		cmd.Flags().VisitAll(check)
+		for _, child := range cmd.Commands() {
+			walk(child)
+		}
+	}
+	walk(rootCmd)
+
+	if len(missing) > 0 {
+		t.Errorf(
+			"non-bool flags with NoOptDefVal set but missing from optionalValueFlags in cmd/camp/args_normalize.go:\n  %v\n\n"+
+				"Add each token to the optionalValueFlags map so space-separated `--flag value` parses correctly.",
+			missing,
+		)
 	}
 }
