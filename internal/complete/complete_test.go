@@ -87,10 +87,10 @@ func TestGenerate_NoArgs(t *testing.T) {
 		t.Fatalf("Generate failed: %v", err)
 	}
 
-	// Should return category shortcuts from config
-	if len(candidates) != 11 {
-		t.Errorf("Got %d candidates, want 11", len(candidates))
-	}
+	assertContainsCandidate(t, candidates, "de")
+	assertContainsCandidate(t, candidates, "design")
+	assertContainsCandidate(t, candidates, "ai")
+	assertContainsCandidate(t, candidates, "ai_docs")
 }
 
 func TestGenerate_NoArgs_NotInCampaign(t *testing.T) {
@@ -261,10 +261,62 @@ func TestCategoryShortcuts(t *testing.T) {
 
 	shortcuts := CategoryShortcuts()
 
-	// Should have 11 shortcuts from campaign.yaml
-	if len(shortcuts) != 11 {
-		t.Errorf("Got %d shortcuts, want 11", len(shortcuts))
+	assertContainsCandidate(t, shortcuts, "de")
+	assertContainsCandidate(t, shortcuts, "design")
+	assertContainsCandidate(t, shortcuts, "ai")
+	assertContainsCandidate(t, shortcuts, "ai_docs")
+}
+
+func TestGenerate_FirstArgSlashDrill(t *testing.T) {
+	root := createTestCampaign(t)
+
+	for _, path := range []string{
+		filepath.Join(root, "workflow", "design", "festival_app"),
+		filepath.Join(root, "workflow", "design", "festival_site"),
+	} {
+		if err := os.MkdirAll(path, 0755); err != nil {
+			t.Fatalf("Failed to create design entry: %v", err)
+		}
 	}
+
+	oldWd, _ := os.Getwd()
+	defer os.Chdir(oldWd)
+	os.Chdir(root)
+
+	ctx := context.Background()
+	candidates, err := Generate(ctx, []string{"design/"})
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	assertContainsCandidate(t, candidates, "festival_app/")
+	assertContainsCandidate(t, candidates, "festival_site/")
+}
+
+func TestGenerate_FirstArgShortcutDrill(t *testing.T) {
+	root := createTestCampaign(t)
+
+	for _, path := range []string{
+		filepath.Join(root, "workflow", "design", "festival_app"),
+		filepath.Join(root, "workflow", "design", "festival_site"),
+	} {
+		if err := os.MkdirAll(path, 0755); err != nil {
+			t.Fatalf("Failed to create design entry: %v", err)
+		}
+	}
+
+	oldWd, _ := os.Getwd()
+	defer os.Chdir(oldWd)
+	os.Chdir(root)
+
+	ctx := context.Background()
+	candidates, err := Generate(ctx, []string{"de@"})
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	assertContainsCandidate(t, candidates, "festival_app/")
+	assertContainsCandidate(t, candidates, "festival_site/")
 }
 
 func TestCategoryShortcuts_NotInCampaign(t *testing.T) {
@@ -385,4 +437,14 @@ func BenchmarkGenerate_CategoryShortcut(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_, _ = Generate(ctx, []string{"p"})
 	}
+}
+
+func assertContainsCandidate(t *testing.T, candidates []string, want string) {
+	t.Helper()
+	for _, candidate := range candidates {
+		if candidate == want {
+			return
+		}
+	}
+	t.Fatalf("candidates %v do not contain %q", candidates, want)
 }

@@ -74,7 +74,7 @@ func ParseShortcut(args []string, customMappings map[string]Category) ParseResul
 		return ParseResult{Category: CategoryAll, Query: "", IsShortcut: false}
 	}
 
-	first := strings.ToLower(args[0])
+	first := NormalizeNavigationName(args[0])
 
 	// Check for shortcut match in custom mappings only
 	if cat, ok := customMappings[first]; ok {

@@ -66,3 +66,27 @@ func TestBuildCategoryMappings(t *testing.T) {
 		t.Fatal("custom non-standard path should not be mapped to a built-in category")
 	}
 }
+
+func TestBuildPathAliasMappings(t *testing.T) {
+	shortcuts := map[string]config.ShortcutConfig{
+		"d":  {Path: "docs/"},
+		"ai": {Path: "ai_docs/"},
+		"de": {Path: "workflow/design/"},
+		"cx": {Path: "custom/path/"},
+	}
+
+	got := BuildPathAliasMappings(shortcuts)
+
+	if got["docs"].Category != CategoryDocs {
+		t.Fatalf("docs alias category = %q, want %q", got["docs"].Category, CategoryDocs)
+	}
+	if got["ai_docs"].Category != CategoryAIDocs {
+		t.Fatalf("ai_docs alias category = %q, want %q", got["ai_docs"].Category, CategoryAIDocs)
+	}
+	if got["design"].Category != CategoryDesign {
+		t.Fatalf("design alias category = %q, want %q", got["design"].Category, CategoryDesign)
+	}
+	if got["path"].RelativePath != "custom/path/" {
+		t.Fatalf("path alias relative path = %q, want %q", got["path"].RelativePath, "custom/path/")
+	}
+}

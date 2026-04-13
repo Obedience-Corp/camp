@@ -79,6 +79,36 @@ func TestGo_CategoryShortcuts(t *testing.T) {
 		}
 	})
 
+	t.Run("design", func(t *testing.T) {
+		output, err := tc.RunCampInDir("/campaigns/cat-test", "go", "design", "--print")
+		require.NoError(t, err, "long-form concept 'design' should resolve on a new campaign")
+		assert.Contains(t, output, "workflow/design", "output should contain design path")
+	})
+
+	t.Run("ai_docs", func(t *testing.T) {
+		output, err := tc.RunCampInDir("/campaigns/cat-test", "go", "ai_docs", "--print")
+		require.NoError(t, err, "long-form directory alias 'ai_docs' should resolve on a new campaign")
+		assert.Contains(t, output, "ai_docs", "output should contain ai_docs path")
+	})
+
+	t.Run("design_slash_drill", func(t *testing.T) {
+		_, _, err := tc.ExecCommand("mkdir", "-p", "/campaigns/cat-test/workflow/design/festival_app")
+		require.NoError(t, err)
+
+		output, err := tc.RunCampInDir("/campaigns/cat-test", "go", "design/festival_app", "--print")
+		require.NoError(t, err, "slash drill should resolve through long-form concept alias")
+		assert.Contains(t, output, "workflow/design/festival_app", "output should contain drilled design path")
+	})
+
+	t.Run("de_at_drill", func(t *testing.T) {
+		_, _, err := tc.ExecCommand("mkdir", "-p", "/campaigns/cat-test/workflow/design/festival_site")
+		require.NoError(t, err)
+
+		output, err := tc.RunCampInDir("/campaigns/cat-test", "go", "de@festival_site", "--print")
+		require.NoError(t, err, "shortcut drill should resolve through @ syntax")
+		assert.Contains(t, output, "workflow/design/festival_site", "output should contain drilled shortcut path")
+	})
+
 	t.Run("i", func(t *testing.T) {
 		output, err := tc.RunCampInDir("/campaigns/cat-test", "go", "i", "--print")
 		require.NoError(t, err, "shortcut 'i' should resolve on a new campaign")
