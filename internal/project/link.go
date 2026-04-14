@@ -99,6 +99,23 @@ func AddLinked(ctx context.Context, campaignRoot, localPath string, opts LinkOpt
 		return nil, &ErrProjectExists{Name: name, Path: destPath}
 	}
 
+	// Reject if another symlink in this campaign already points to the same
+	// target. Two aliases of the same linked directory would survive the
+	// symlink creation but collide inside List()'s URL-based dedup, which
+	// would silently hide one alias from `project list`, `project run`, and
+	// `leverage`. Failing up front with a clear error beats a silent trap.
+	existing, err := findExistingLinkToTarget(campaignRoot, absLocal, fullPath)
+	if err != nil {
+		return nil, camperrors.Wrap(err, "checking existing linked projects")
+	}
+	if existing != "" {
+		return nil, &ErrProjectAlreadyLinked{
+			ExistingName:  existing,
+			Target:        absLocal,
+			AttemptedName: name,
+		}
+	}
+
 	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
 		return nil, camperrors.Wrap(err, "create parent directory")
 	}
@@ -163,6 +180,51 @@ func UnlinkProject(ctx context.Context, campaignRoot, name, targetPath string) e
 	}
 
 	return removeInfoExclude(ctx, campaignRoot, filepath.ToSlash(filepath.Join("projects", name)))
+}
+
+// findExistingLinkToTarget scans campaignRoot/projects for a symlink that
+// resolves to the same target as absTarget. Returns the name of the first
+// match, or "" if none. The ignorePath parameter is the destination path
+// under construction — typically equal to fullPath in AddLinked — which is
+// skipped to avoid false positives when the check runs before the new symlink
+// is even created. Both sides are passed through filepath.EvalSymlinks so
+// path-shape differences (e.g., /private/var vs /var on macOS) don't cause
+// false negatives.
+func findExistingLinkToTarget(campaignRoot, absTarget, ignorePath string) (string, error) {
+	resolvedTarget, err := filepath.EvalSymlinks(absTarget)
+	if err != nil {
+		// If the target itself can't be resolved, don't block linking —
+		// the symlink creation path will surface a clearer error.
+		resolvedTarget = absTarget
+	}
+
+	projectsDir := filepath.Join(campaignRoot, "projects")
+	entries, err := os.ReadDir(projectsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", err
+	}
+
+	for _, entry := range entries {
+		if entry.Type()&os.ModeSymlink == 0 {
+			continue
+		}
+		entryPath := filepath.Join(projectsDir, entry.Name())
+		if entryPath == ignorePath {
+			continue
+		}
+		resolved, err := filepath.EvalSymlinks(entryPath)
+		if err != nil {
+			// Broken symlink — not a collision candidate; skip.
+			continue
+		}
+		if resolved == resolvedTarget {
+			return entry.Name(), nil
+		}
+	}
+	return "", nil
 }
 
 func ensureLinkMarkerAvailable(ctx context.Context, projectDir, campaignRoot, campaignID string) error {
