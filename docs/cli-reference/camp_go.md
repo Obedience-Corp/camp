@@ -24,7 +24,7 @@ Toggle keyword (t / toggle):
   - Repeated calls alternate between two locations (like cd -)
 
 Pins:
-  - Create a named bookmark with 'camp pin <name> [path]'
+  - Create a named pin with 'camp pin <name> [path]'
   - Jump to an exact pin with 'camp go <name>' or 'cgo <name>'
   - Pin jumps save your current location first, so 'camp go t' or 'cgo t'
     can bounce back to where you came from

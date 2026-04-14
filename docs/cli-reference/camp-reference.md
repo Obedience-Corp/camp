@@ -1107,7 +1107,7 @@ Toggle keyword (t / toggle):
   - Repeated calls alternate between two locations (like cd -)
 
 Pins:
-  - Create a named bookmark with 'camp pin <name> [path]'
+  - Create a named pin with 'camp pin <name> [path]'
   - Jump to an exact pin with 'camp go <name>' or 'cgo <name>'
   - Pin jumps save your current location first, so 'camp go t' or 'cgo t'
     can bounce back to where you came from
@@ -2262,11 +2262,11 @@ camp move <src> <dest> [flags]
 
 ## camp pin
 
-Bookmark a directory
+Pin a directory
 
 ### Synopsis
 
-Bookmark a directory for quick navigation with 'camp go <name>' or 'cgo <name>'.
+Pin a directory for quick navigation with 'camp go <name>' or 'cgo <name>'.
 
 If path is omitted, the current working directory is used.
 
@@ -2304,7 +2304,7 @@ List all pinned directories
 
 ### Synopsis
 
-List all pinned directory bookmarks. Use 'camp pin' to add and 'camp unpin' to remove.
+List all saved pins. Use 'camp pin' to add and 'camp unpin' to remove.
 
 ```
 camp pins [flags]
@@ -4446,11 +4446,11 @@ camp transfer <src> <dest> [flags]
 
 ## camp unpin
 
-Remove a directory bookmark
+Remove a saved pin
 
 ### Synopsis
 
-Remove a pinned directory bookmark by name.
+Remove a saved pin by name.
 
 Without arguments, detects and unpins the current directory.
 

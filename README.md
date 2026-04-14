@@ -8,7 +8,7 @@ Campaign workspace manager for multi-project AI development.
 
 ## Features
 
-- **Navigation** - Category shortcuts, fuzzy finding, bookmarks (`go`, `pin`, `shortcuts`)
+- **Navigation** - Category shortcuts, fuzzy finding, and pins (`go`, `pin`, `shortcuts`)
 - **Project Management** - Git submodules, worktrees, and project scaffolding (`project add/list/remove/new/worktree`)
 - **Planning** - Intents, status flows, dungeon for deprioritized work (`intent`, `flow`, `dungeon`, `gather`)
 - **Productivity** - Leverage scoring to identify high-impact work (`leverage`)

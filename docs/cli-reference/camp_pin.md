@@ -1,10 +1,10 @@
 ## camp pin
 
-Bookmark a directory
+Pin a directory
 
 ### Synopsis
 
-Bookmark a directory for quick navigation with 'camp go <name>' or 'cgo <name>'.
+Pin a directory for quick navigation with 'camp go <name>' or 'cgo <name>'.
 
 If path is omitted, the current working directory is used.
 

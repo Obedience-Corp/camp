@@ -4,7 +4,7 @@ List all pinned directories
 
 ### Synopsis
 
-List all pinned directory bookmarks. Use 'camp pin' to add and 'camp unpin' to remove.
+List all saved pins. Use 'camp pin' to add and 'camp unpin' to remove.
 
 ```
 camp pins [flags]
@@ -27,4 +27,3 @@ camp pins [flags]
 ### SEE ALSO
 
 * [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-

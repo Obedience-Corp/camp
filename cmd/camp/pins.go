@@ -18,15 +18,14 @@ import (
 var pinsCmd = &cobra.Command{
 	Use:     "pins",
 	Short:   "List all pinned directories",
-	Long:    `List all pinned directory bookmarks. Use 'camp pin' to add and 'camp unpin' to remove.`,
-	Aliases: []string{"bookmarks"},
+	Long:    `List all saved pins. Use 'camp pin' to add and 'camp unpin' to remove.`,
 	RunE:    runPinsList,
 }
 
 var pinCmd = &cobra.Command{
 	Use:   "pin <name> [path]",
-	Short: "Bookmark a directory",
-	Long: `Bookmark a directory for quick navigation with 'camp go <name>' or 'cgo <name>'.
+	Short: "Pin a directory",
+	Long: `Pin a directory for quick navigation with 'camp go <name>' or 'cgo <name>'.
 
 If path is omitted, the current working directory is used.`,
 	Example: `  camp pin code                        # Pin current directory as "code"
@@ -39,8 +38,8 @@ If path is omitted, the current working directory is used.`,
 
 var unpinCmd = &cobra.Command{
 	Use:   "unpin [name]",
-	Short: "Remove a directory bookmark",
-	Long: `Remove a pinned directory bookmark by name.
+	Short: "Remove a saved pin",
+	Long: `Remove a saved pin by name.
 
 Without arguments, detects and unpins the current directory.`,
 	Args: cobra.MaximumNArgs(1),
@@ -96,7 +95,7 @@ func runPinsList(cmd *cobra.Command, args []string) error {
 
 	pinList := store.List()
 	if len(pinList) == 0 {
-		fmt.Println("No pins saved. Use 'camp pin <name>' to bookmark a directory.")
+		fmt.Println("No pins saved. Use 'camp pin <name>' to pin a directory.")
 		return nil
 	}
 
