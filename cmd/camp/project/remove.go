@@ -117,14 +117,19 @@ func runProjectRemove(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  %s Worktrees deleted\n", ui.SuccessIcon())
 	}
 
-	// Auto-commit if not disabled and not a dry run
-	if !noCommit && !dryRun && result.SubmoduleRemoved {
+	// Auto-commit structural campaign changes unless disabled.
+	if !noCommit && !dryRun && (result.SubmoduleRemoved || result.LinkRemoved) {
 		cfg, _ := config.LoadCampaignConfig(ctx, root)
 		campaignID := ""
 		if cfg != nil {
 			campaignID = cfg.ID
 		}
-		files := commit.NormalizeFiles(root, ".gitmodules", result.Path)
+		files := commit.NormalizeFiles(root, result.Path)
+		action := commit.ProjectUnlink
+		if result.SubmoduleRemoved {
+			files = commit.NormalizeFiles(root, ".gitmodules", result.Path)
+			action = commit.ProjectRemove
+		}
 		commitResult := commit.Project(ctx, commit.ProjectOptions{
 			Options: commit.Options{
 				CampaignRoot:  root,
@@ -132,7 +137,7 @@ func runProjectRemove(cmd *cobra.Command, args []string) error {
 				Files:         files,
 				SelectiveOnly: true,
 			},
-			Action:      commit.ProjectRemove,
+			Action:      action,
 			ProjectName: result.Name,
 		})
 		if commitResult.Message != "" {

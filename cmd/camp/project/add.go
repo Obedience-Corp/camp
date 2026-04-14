@@ -120,7 +120,26 @@ func runProjectAdd(cmd *cobra.Command, args []string) error {
 			fmt.Println(ui.KeyValue("  Git:", "no"))
 		}
 		fmt.Println()
-		fmt.Println(ui.Dim("  Linked projects are machine-local and are not auto-committed."))
+		fmt.Println(ui.Dim("  Linked projects are tracked in campaign git history. Linked git repos can still be committed with camp project commit."))
+		if !noCommit {
+			campaignID := ""
+			if cfg != nil {
+				campaignID = cfg.ID
+			}
+			commitResult := commit.Project(ctx, commit.ProjectOptions{
+				Options: commit.Options{
+					CampaignRoot:  root,
+					CampaignID:    campaignID,
+					Files:         commit.NormalizeFiles(root, result.Path),
+					SelectiveOnly: true,
+				},
+				Action:      commit.ProjectLink,
+				ProjectName: result.Name,
+			})
+			if commitResult.Message != "" {
+				fmt.Printf("  %s\n", commitResult.Message)
+			}
+		}
 		return nil
 	}
 

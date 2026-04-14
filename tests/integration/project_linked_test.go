@@ -24,6 +24,7 @@ func TestProject_AddLink_GitRepo(t *testing.T) {
 	output, err := tc.RunCampInDir(campaignPath, "project", "add", "--link", linkedPath)
 	require.NoError(t, err, "project add --link should succeed")
 	assert.Contains(t, output, "Linked project: linked-app")
+	assert.Contains(t, output, "Committed changes to git")
 
 	_, exitCode, err := tc.ExecCommand("test", "-L", campaignPath+"/projects/linked-app")
 	require.NoError(t, err)
@@ -43,9 +44,18 @@ func TestProject_AddLink_GitRepo(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, gitmodulesExists, "linked projects should not modify .gitmodules")
 
+	_, exitCode, err = tc.ExecCommand("sh", "-c", "cd "+campaignPath+" && git ls-files --error-unmatch projects/linked-app")
+	require.NoError(t, err)
+	assert.Equal(t, 0, exitCode, "linked project symlink should be tracked in the campaign repo")
+
+	linkLog, exitCode, err := tc.ExecCommand("sh", "-c", "cd "+campaignPath+" && git log -1 --pretty=%s")
+	require.NoError(t, err)
+	assert.Equal(t, 0, exitCode)
+	assert.Contains(t, strings.TrimSpace(linkLog), "Link: linked-app")
+
 	campaignStatus, _, err := tc.ExecCommand("sh", "-c", "cd "+campaignPath+" && git status --porcelain")
 	require.NoError(t, err)
-	assert.Equal(t, "", strings.TrimSpace(campaignStatus), "campaign repo should stay clean after linking")
+	assert.Equal(t, "", strings.TrimSpace(campaignStatus), "campaign repo should stay clean after auto-committing the link")
 
 	linkedStatus, _, err := tc.ExecCommand("sh", "-c", "cd "+linkedPath+" && git status --porcelain")
 	require.NoError(t, err)
@@ -69,10 +79,16 @@ func TestProject_AddLink_TargetCampaignOutsideCurrentContext(t *testing.T) {
 	output, err := tc.RunCampInDir("/test", "project", "add", "--campaign", "proj-link-target", "--link", linkedPath)
 	require.NoError(t, err, "project add --link should succeed outside a campaign when --campaign is provided")
 	assert.Contains(t, output, "Linked project: outside-linked-app")
+	assert.Contains(t, output, "Committed changes to git")
 
 	_, exitCode, err := tc.ExecCommand("test", "-L", campaignPath+"/projects/outside-linked-app")
 	require.NoError(t, err)
 	assert.Equal(t, 0, exitCode, "linked project entry should be created in the selected campaign")
+
+	linkLog, exitCode, err := tc.ExecCommand("sh", "-c", "cd "+campaignPath+" && git log -1 --pretty=%s")
+	require.NoError(t, err)
+	assert.Equal(t, 0, exitCode)
+	assert.Contains(t, strings.TrimSpace(linkLog), "Link: outside-linked-app")
 }
 
 func TestProject_AddLink_NonGitDir(t *testing.T) {
@@ -169,6 +185,7 @@ func TestProject_Remove_LinkedProject(t *testing.T) {
 	output, err := tc.RunCampInDir(campaignPath, "project", "remove", "remove-linked")
 	require.NoError(t, err, "linked project remove should unlink successfully")
 	assert.Contains(t, output, "Linked project unlinked")
+	assert.Contains(t, output, "Committed changes to git")
 
 	_, exitCode, err := tc.ExecCommand("test", "-L", campaignPath+"/projects/remove-linked")
 	require.NoError(t, err)
@@ -178,9 +195,18 @@ func TestProject_Remove_LinkedProject(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, exists, ".camp marker should be removed on unlink")
 
+	_, exitCode, err = tc.ExecCommand("sh", "-c", "cd "+campaignPath+" && git ls-files --error-unmatch projects/remove-linked")
+	require.NoError(t, err)
+	assert.NotEqual(t, 0, exitCode, "linked project symlink should be removed from the campaign index")
+
+	unlinkLog, exitCode, err := tc.ExecCommand("sh", "-c", "cd "+campaignPath+" && git log -1 --pretty=%s")
+	require.NoError(t, err)
+	assert.Equal(t, 0, exitCode)
+	assert.Contains(t, strings.TrimSpace(unlinkLog), "Unlink: remove-linked")
+
 	campaignStatus, _, err := tc.ExecCommand("sh", "-c", "cd "+campaignPath+" && git status --porcelain")
 	require.NoError(t, err)
-	assert.Equal(t, "", strings.TrimSpace(campaignStatus), "campaign repo should stay clean after unlinking")
+	assert.Equal(t, "", strings.TrimSpace(campaignStatus), "campaign repo should stay clean after auto-committing the unlink")
 }
 
 func TestProjectRun_AutoDetectFromLinkedCwd(t *testing.T) {
