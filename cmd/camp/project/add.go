@@ -1,17 +1,26 @@
 package project
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"io"
+	"path/filepath"
 	"strings"
 
-	"github.com/Obedience-Corp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
+	navtui "github.com/Obedience-Corp/camp/internal/nav/tui"
 	projectsvc "github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
+
+// noOptProjectAddCampaign is the NoOptDefVal for the --campaign flag.
+// A bare --campaign opens the shared picker in interactive terminals.
+const noOptProjectAddCampaign = "\x00pick"
 
 var projectAddCmd = &cobra.Command{
 	Use:   "add [source]",
@@ -20,6 +29,10 @@ var projectAddCmd = &cobra.Command{
 
 The project is cloned as a git submodule into the projects/ directory.
 A worktree directory is also created for future parallel development.
+
+If you're already inside a campaign, that campaign is used by default.
+Outside a campaign, use --campaign <name-or-id> or a bare --campaign to
+select a registered target campaign.
 
 Source can be:
   - SSH URL:   git@github.com:org/repo.git
@@ -32,19 +45,24 @@ Examples:
   camp project add https://github.com/org/web.git       # Add via HTTPS
   camp project add --local ./my-repo --name my-project  # Add existing local repo
   camp project add --link ~/code/my-project             # Link an existing project
+  camp project add --campaign platform --local ./my-repo # Add outside current campaign
+  camp project add --campaign --link ~/code/my-project   # Pick a target campaign
   camp project add git@github.com:org/api.git --name backend  # Custom name`,
-	Args: cobra.MaximumNArgs(1),
+	Args: validateProjectAddArgs,
 	RunE: runProjectAdd,
 }
 
 func init() {
 	Cmd.AddCommand(projectAddCmd)
 
-	projectAddCmd.Flags().StringP("name", "n", "", "Override project name (defaults to repo name)")
-	projectAddCmd.Flags().StringP("path", "p", "", "Override destination path (defaults to projects/<name>)")
-	projectAddCmd.Flags().StringP("local", "l", "", "Add existing local repository instead of cloning")
-	projectAddCmd.Flags().String("link", "", "Link an existing local directory without cloning")
-	projectAddCmd.Flags().Bool("no-commit", false, "Skip automatic git commit")
+	flags := projectAddCmd.Flags()
+	flags.StringP("name", "n", "", "Override project name (defaults to repo name)")
+	flags.StringP("path", "p", "", "Override destination path (defaults to projects/<name>)")
+	flags.StringP("local", "l", "", "Add existing local repository instead of cloning")
+	flags.String("link", "", "Link an existing local directory without cloning")
+	flags.StringP("campaign", "c", "", "Target campaign by name or ID; omit value to pick interactively")
+	flags.Bool("no-commit", false, "Skip automatic git commit")
+	flags.Lookup("campaign").NoOptDefVal = noOptProjectAddCampaign
 }
 
 func runProjectAdd(cmd *cobra.Command, args []string) error {
@@ -54,14 +72,28 @@ func runProjectAdd(cmd *cobra.Command, args []string) error {
 	path, _ := cmd.Flags().GetString("path")
 	local, _ := cmd.Flags().GetString("local")
 	link, _ := cmd.Flags().GetString("link")
+	targetCampaign, _ := cmd.Flags().GetString("campaign")
 	noCommit, _ := cmd.Flags().GetBool("no-commit")
+	targetCampaign, args = normalizeProjectAddCampaignArgs(args, targetCampaign, local, link)
 
 	if local != "" && link != "" {
 		return fmt.Errorf("use either --local or --link, not both")
 	}
 
-	// Detect campaign root
-	root, err := campaign.DetectCached(ctx)
+	source := ""
+	switch {
+	case link != "":
+		// Linked adds take their source from --link.
+	case local != "":
+		source = local
+	case len(args) == 0:
+		return fmt.Errorf("source URL is required")
+	default:
+		source = args[0]
+	}
+
+	campaignResolver := newProjectAddCampaignResolver(cmd.ErrOrStderr())
+	cfg, root, err := campaignResolver.resolve(ctx, targetCampaign, cmd.Flags().Changed("campaign"))
 	if err != nil {
 		return err
 	}
@@ -92,20 +124,10 @@ func runProjectAdd(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	if len(args) == 0 {
-		return fmt.Errorf("source URL is required")
-	}
-	source := args[0]
-
 	opts := projectsvc.AddOptions{
 		Name:  name,
 		Path:  path,
 		Local: local,
-	}
-
-	// If --local flag is set, use its value as source
-	if local != "" {
-		source = local
 	}
 
 	result, err := projectsvc.Add(ctx, root, source, opts)
@@ -129,7 +151,6 @@ func runProjectAdd(cmd *cobra.Command, args []string) error {
 
 	// Auto-commit if not disabled
 	if !noCommit {
-		cfg, _ := config.LoadCampaignConfig(ctx, root)
 		campaignID := ""
 		if cfg != nil {
 			campaignID = cfg.ID
@@ -151,6 +172,171 @@ func runProjectAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+func validateProjectAddArgs(cmd *cobra.Command, args []string) error {
+	maxArgs := 1
+
+	targetCampaign, _ := cmd.Flags().GetString("campaign")
+	local, _ := cmd.Flags().GetString("local")
+	link, _ := cmd.Flags().GetString("link")
+	if targetCampaign == noOptProjectAddCampaign && local == "" && link == "" {
+		maxArgs = 2
+	}
+
+	return cobra.MaximumNArgs(maxArgs)(cmd, args)
+}
+
+func normalizeProjectAddCampaignArgs(args []string, targetCampaign, local, link string) (string, []string) {
+	if targetCampaign != noOptProjectAddCampaign {
+		return targetCampaign, args
+	}
+
+	switch {
+	case len(args) == 0:
+		return "", args
+	case local != "" || link != "":
+		return args[0], args[1:]
+	case len(args) > 1:
+		return args[0], args[1:]
+	case looksLikeProjectAddSource(args[0]):
+		return "", args
+	default:
+		return args[0], args[1:]
+	}
+}
+
+func looksLikeProjectAddSource(arg string) bool {
+	return strings.HasPrefix(arg, "git@") ||
+		strings.Contains(arg, "://") ||
+		strings.HasPrefix(arg, "/") ||
+		strings.HasPrefix(arg, "./") ||
+		strings.HasPrefix(arg, "../") ||
+		strings.HasPrefix(arg, "~")
+}
+
+type projectAddCampaignResolver struct {
+	stderr        io.Writer
+	isInteractive func() bool
+	loadCurrent   func(context.Context) (*config.CampaignConfig, string, error)
+	loadRegistry  func(context.Context) (*config.Registry, error)
+	loadCampaign  func(context.Context, string) (*config.CampaignConfig, error)
+	saveRegistry  func(context.Context, *config.Registry) error
+	pickCampaign  func(context.Context, *config.Registry) (config.RegisteredCampaign, error)
+}
+
+func newProjectAddCampaignResolver(stderr io.Writer) projectAddCampaignResolver {
+	return projectAddCampaignResolver{
+		stderr:        stderr,
+		isInteractive: navtui.IsTerminal,
+		loadCurrent:   config.LoadCampaignConfigFromCwd,
+		loadRegistry:  config.LoadRegistry,
+		loadCampaign:  config.LoadCampaignConfig,
+		saveRegistry:  config.SaveRegistry,
+		pickCampaign:  cmdutil.PickCampaign,
+	}
+}
+
+func (r projectAddCampaignResolver) resolve(ctx context.Context, targetCampaign string, targetChanged bool) (*config.CampaignConfig, string, error) {
+	if targetCampaign == noOptProjectAddCampaign {
+		targetCampaign = ""
+	}
+
+	if !targetChanged {
+		cfg, campaignRoot, err := r.loadCurrent(ctx)
+		if err == nil {
+			reg, regErr := r.loadRegistry(ctx)
+			if regErr != nil {
+				return nil, "", camperrors.Wrap(regErr, "load registry")
+			}
+			if err := ensureProjectAddCampaignRegistered(reg, cfg, campaignRoot); err != nil {
+				return nil, "", err
+			}
+			return cfg, campaignRoot, nil
+		}
+	}
+
+	reg, err := r.loadRegistry(ctx)
+	if err != nil {
+		return nil, "", camperrors.Wrap(err, "load registry")
+	}
+	if reg.Len() == 0 {
+		return nil, "", fmt.Errorf("no campaigns registered (use 'camp init' to create one)")
+	}
+
+	var selected config.RegisteredCampaign
+	switch {
+	case targetCampaign == "":
+		if !r.isInteractive() {
+			return nil, "", fmt.Errorf("campaign name required in non-interactive mode\n       Usage: camp project add --campaign <name> [source]")
+		}
+		selected, err = r.pickCampaign(ctx, reg)
+		if err != nil {
+			return nil, "", err
+		}
+	default:
+		selected, err = cmdutil.ResolveCampaignSelection(targetCampaign, reg, r.stderr)
+		if err != nil {
+			return nil, "", err
+		}
+	}
+
+	cfg, err := r.loadCampaign(ctx, selected.Path)
+	if err != nil {
+		return nil, "", camperrors.Wrapf(err, "load target campaign %s", selected.Path)
+	}
+	if err := ensureProjectAddCampaignRegistered(reg, cfg, selected.Path); err != nil {
+		return nil, "", err
+	}
+
+	reg.UpdateLastAccess(selected.ID)
+	if r.saveRegistry != nil {
+		_ = r.saveRegistry(ctx, reg)
+	}
+
+	return cfg, selected.Path, nil
+}
+
+func ensureProjectAddCampaignRegistered(reg *config.Registry, cfg *config.CampaignConfig, campaignRoot string) error {
+	if cfg == nil {
+		return fmt.Errorf("target campaign config could not be loaded")
+	}
+
+	normalizedRoot, err := normalizeProjectAddCampaignRoot(campaignRoot)
+	if err != nil {
+		return camperrors.Wrap(err, "resolve target campaign root")
+	}
+
+	for _, entry := range reg.ListAll() {
+		if entry.ID != cfg.ID {
+			continue
+		}
+
+		normalizedEntryPath, err := normalizeProjectAddCampaignRoot(entry.Path)
+		if err != nil {
+			continue
+		}
+		if normalizedEntryPath == normalizedRoot {
+			return nil
+		}
+	}
+
+	name := cfg.Name
+	if strings.TrimSpace(name) == "" {
+		name = normalizedRoot
+	}
+	return fmt.Errorf("target campaign %q is not registered\n       Run 'camp register %s' before adding projects", name, normalizedRoot)
+}
+
+func normalizeProjectAddCampaignRoot(root string) (string, error) {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	if resolvedRoot, err := filepath.EvalSymlinks(absRoot); err == nil {
+		return resolvedRoot, nil
+	}
+	return absRoot, nil
 }
 
 // formatGitError formats a GitError with nice visual indicators.

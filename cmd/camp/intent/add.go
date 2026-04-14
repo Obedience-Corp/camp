@@ -52,7 +52,7 @@ Examples:
   camp intent add --full                 Full TUI (includes body)
   camp intent add -e "Complex feature"   Deep capture with editor
   camp intent add -t feature "New API"   Set type explicitly`,
-	Args: cobra.MaximumNArgs(1),
+	Args: validateIntentAddArgs,
 	RunE: runIntentAdd,
 }
 
@@ -77,6 +77,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	fullMode, _ := cmd.Flags().GetBool("full")
 	targetCampaign, _ := cmd.Flags().GetString("campaign")
 	noCommit, _ := cmd.Flags().GetBool("no-commit")
+	targetCampaign, args = normalizeIntentAddCampaignArgs(args, targetCampaign)
 
 	campaignResolver := newIntentAddCampaignResolver(cmd.ErrOrStderr())
 	cfg, campaignRoot, err := campaignResolver.resolve(ctx, targetCampaign, cmd.Flags().Changed("campaign"))
@@ -174,6 +175,27 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	return runFastCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, opts)
+}
+
+func validateIntentAddArgs(cmd *cobra.Command, args []string) error {
+	maxArgs := 1
+
+	targetCampaign, _ := cmd.Flags().GetString("campaign")
+	if targetCampaign == noOptCampaign {
+		maxArgs = 2
+	}
+
+	return cobra.MaximumNArgs(maxArgs)(cmd, args)
+}
+
+func normalizeIntentAddCampaignArgs(args []string, targetCampaign string) (string, []string) {
+	if targetCampaign != noOptCampaign {
+		return targetCampaign, args
+	}
+	if len(args) > 1 {
+		return args[0], args[1:]
+	}
+	return "", args
 }
 
 type intentAddCampaignResolver struct {

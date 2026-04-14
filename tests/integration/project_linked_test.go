@@ -57,6 +57,24 @@ func TestProject_AddLink_GitRepo(t *testing.T) {
 	assert.Contains(t, listOutput, "linked")
 }
 
+func TestProject_AddLink_TargetCampaignOutsideCurrentContext(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campaignPath := "/campaigns/proj-link-target"
+	linkedPath := "/test/outside-linked-app"
+
+	_, err := tc.InitCampaign(campaignPath, "proj-link-target", "product")
+	require.NoError(t, err)
+	require.NoError(t, tc.CreateGitRepo(linkedPath))
+
+	output, err := tc.RunCampInDir("/test", "project", "add", "--campaign", "proj-link-target", "--link", linkedPath)
+	require.NoError(t, err, "project add --link should succeed outside a campaign when --campaign is provided")
+	assert.Contains(t, output, "Linked project: outside-linked-app")
+
+	_, exitCode, err := tc.ExecCommand("test", "-L", campaignPath+"/projects/outside-linked-app")
+	require.NoError(t, err)
+	assert.Equal(t, 0, exitCode, "linked project entry should be created in the selected campaign")
+}
+
 func TestProject_AddLink_NonGitDir(t *testing.T) {
 	tc := GetSharedContainer(t)
 	campaignPath := "/campaigns/proj-link-dir"
@@ -112,6 +130,28 @@ func TestProject_AddLink_RejectsRepoAlreadyLinkedToAnotherCampaign(t *testing.T)
 	_, exitCode, err := tc.ExecCommand("test", "-L", campaignB+"/projects/shared-linked-app")
 	require.NoError(t, err)
 	assert.NotEqual(t, 0, exitCode, "second campaign should not create a symlink")
+}
+
+func TestProject_AddLink_RejectsDuplicateTargetWithinCampaign(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campaignPath := "/campaigns/proj-link-dup-target"
+	linkedPath := "/test/dup-target-linked-app"
+
+	_, err := tc.InitCampaign(campaignPath, "proj-link-dup-target", "product")
+	require.NoError(t, err)
+	require.NoError(t, tc.CreateGitRepo(linkedPath))
+
+	_, err = tc.RunCampInDir(campaignPath, "project", "add", "--link", linkedPath)
+	require.NoError(t, err)
+
+	output, err := tc.RunCampInDir(campaignPath, "project", "add", "--link", linkedPath, "--name", "dup-target-alias")
+	require.Error(t, err, "adding the same linked target under a second alias should fail")
+	assert.Contains(t, output, "already present in this campaign")
+	assert.Contains(t, output, "projects/dup-target-linked-app")
+
+	_, exitCode, err := tc.ExecCommand("test", "-L", campaignPath+"/projects/dup-target-alias")
+	require.NoError(t, err)
+	assert.NotEqual(t, 0, exitCode, "duplicate alias should not create a second symlink")
 }
 
 func TestProject_Remove_LinkedProject(t *testing.T) {

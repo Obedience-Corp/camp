@@ -91,6 +91,9 @@ func AddLinked(ctx context.Context, campaignRoot, localPath string, opts LinkOpt
 	if err := pathutil.ValidateBoundary(campaignRoot, fullPath); err != nil {
 		return nil, camperrors.Wrap(err, "project path boundary violation")
 	}
+	if err := ensureLinkedTargetUnique(normalizedCampaignRoot, absLocal, fullPath); err != nil {
+		return nil, err
+	}
 
 	if _, err := os.Lstat(fullPath); err == nil {
 		return nil, &ErrProjectExists{Name: name, Path: destPath}
@@ -195,6 +198,42 @@ func ensureLinkMarkerAvailable(ctx context.Context, projectDir, campaignRoot, ca
 		}
 	}
 	return fmt.Errorf("%s", msg)
+}
+
+func ensureLinkedTargetUnique(campaignRoot, targetPath, destPath string) error {
+	projectsDir := filepath.Join(campaignRoot, "projects")
+	normalizedDestPath, err := filepath.Abs(destPath)
+	if err != nil {
+		return camperrors.Wrap(err, "resolve destination path")
+	}
+
+	entries, err := os.ReadDir(projectsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return camperrors.Wrap(err, "read projects directory")
+	}
+
+	for _, entry := range entries {
+		if entry.Type()&os.ModeSymlink == 0 {
+			continue
+		}
+
+		entryPath := filepath.Join(projectsDir, entry.Name())
+		normalizedEntryPath, err := normalizeCampaignRoot(entryPath)
+		if err != nil {
+			continue
+		}
+		if normalizedEntryPath == targetPath {
+			if filepath.Clean(entryPath) == filepath.Clean(normalizedDestPath) {
+				return nil
+			}
+			return fmt.Errorf("linked project target is already present in this campaign at %s", filepath.Join("projects", entry.Name()))
+		}
+	}
+
+	return nil
 }
 
 func markerMatchesCampaign(marker *campaign.LinkMarker, campaignID, campaignRoot string) bool {
