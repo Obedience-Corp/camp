@@ -91,6 +91,37 @@ func TestProject_Link_TargetCampaignOutsideCurrentContext(t *testing.T) {
 	assert.Contains(t, strings.TrimSpace(linkLog), "Link: outside-linked-app")
 }
 
+func TestProject_Link_PicksCampaignOutsideCurrentContext(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campaignA := "/campaigns/proj-link-pick-alpha"
+	campaignB := "/campaigns/proj-link-pick-bravo"
+	linkedPath := "/test/picker-linked-app"
+
+	_, err := tc.InitCampaign(campaignA, "proj-link-pick-alpha", "product")
+	require.NoError(t, err)
+	_, err = tc.InitCampaign(campaignB, "proj-link-pick-bravo", "product")
+	require.NoError(t, err)
+	require.NoError(t, tc.CreateGitRepo(linkedPath))
+	campaignIDB := readCampaignID(t, tc, campaignB)
+
+	output, err := tc.RunCampInteractiveInDir(linkedPath, "Switch to:", "bravo\r", "project", "link")
+	require.NoError(t, err, "project link should open the campaign picker outside campaign context")
+	assert.Contains(t, output, "Linked project: picker-linked-app")
+	assert.Contains(t, output, "Committed changes to git")
+
+	_, exitCode, err := tc.ExecCommand("test", "-L", campaignB+"/projects/picker-linked-app")
+	require.NoError(t, err)
+	assert.Equal(t, 0, exitCode, "selected campaign should receive the linked project symlink")
+
+	_, exitCode, err = tc.ExecCommand("test", "-L", campaignA+"/projects/picker-linked-app")
+	require.NoError(t, err)
+	assert.NotEqual(t, 0, exitCode, "non-selected campaign should not receive the linked project symlink")
+
+	marker, err := tc.ReadFile(linkedPath + "/.camp")
+	require.NoError(t, err)
+	assert.Contains(t, marker, "\"active_campaign_id\": \""+campaignIDB+"\"")
+}
+
 func TestProject_Link_NonGitDir(t *testing.T) {
 	tc := GetSharedContainer(t)
 	campaignPath := "/campaigns/proj-link-dir"
