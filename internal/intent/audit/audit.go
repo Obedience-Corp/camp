@@ -28,6 +28,7 @@ type EventType string
 
 const (
 	EventCreate  EventType = "create"
+	EventEdit    EventType = "edit"
 	EventMove    EventType = "move"
 	EventPromote EventType = "promote"
 	EventArchive EventType = "archive"
@@ -35,17 +36,25 @@ const (
 	EventGather  EventType = "gather"
 )
 
+// FieldChange records a single field's old and new value within an edit event.
+type FieldChange struct {
+	Field string `json:"field"`
+	Old   string `json:"old"`
+	New   string `json:"new"`
+}
+
 // Event represents a single audit trail entry.
 type Event struct {
-	Timestamp  time.Time `json:"ts"`
-	Type       EventType `json:"event"`
-	ID         string    `json:"id"`
-	Title      string    `json:"title"`
-	From       string    `json:"from,omitempty"`
-	To         string    `json:"to,omitempty"`
-	Reason     string    `json:"reason,omitempty"`
-	PromotedTo string    `json:"promoted_to,omitempty"`
-	Actor      string    `json:"actor,omitempty"`
+	Timestamp  time.Time     `json:"ts"`
+	Type       EventType     `json:"event"`
+	ID         string        `json:"id"`
+	Title      string        `json:"title"`
+	From       string        `json:"from,omitempty"`
+	To         string        `json:"to,omitempty"`
+	Reason     string        `json:"reason,omitempty"`
+	PromotedTo string        `json:"promoted_to,omitempty"`
+	Actor      string        `json:"actor,omitempty"`
+	Changes    []FieldChange `json:"changes,omitempty"`
 }
 
 // AppendEvent writes an audit event to the JSONL log file.

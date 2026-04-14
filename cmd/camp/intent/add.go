@@ -44,6 +44,16 @@ Fast capture is optimized for speed - ideas are saved immediately.
 Use --full when you want to add a body description in the form.
 Use --edit when you need the complete template in your editor.
 
+PROGRAMMATIC (agent) FLAGS:
+  --body              Set intent body from a literal string
+  --body-file         Read intent body from a file (- for stdin)
+  --concept           Set the concept field (e.g., "projects/camp")
+  --author            Override the default author attribution
+
+  --body and --body-file are mutually exclusive.
+  --full + body flags is a usage error.
+  --edit + body flags pre-fills the editor template.
+
 Examples:
   camp intent add "Add dark mode"        Ultra-fast capture
   camp intent add -c obey-campaign "Add dark mode"
@@ -51,7 +61,10 @@ Examples:
   camp intent add --campaign             Pick a target campaign interactively
   camp intent add --full                 Full TUI (includes body)
   camp intent add -e "Complex feature"   Deep capture with editor
-  camp intent add -t feature "New API"   Set type explicitly`,
+  camp intent add -t feature "New API"   Set type explicitly
+  camp intent add "Fix login" --body "The login page returns 500"
+  camp intent add "Migrate DB" --body-file spec.md --concept projects/camp
+  echo "body" | camp intent add "Idea" --body-file -`,
 	Args: validateIntentAddArgs,
 	RunE: runIntentAdd,
 }
@@ -66,6 +79,12 @@ func init() {
 	flags.StringP("campaign", "c", "", "Target campaign by name or ID; omit value to pick interactively")
 	flags.Bool("no-commit", false, "Don't create a git commit")
 	flags.Lookup("campaign").NoOptDefVal = noOptCampaign
+
+	// Programmatic (agent) flags
+	flags.String("body", "", "Set intent body as a literal string")
+	flags.String("body-file", "", "Read intent body from file (- for stdin, 10 MiB cap)")
+	flags.String("concept", "", "Set the concept field (e.g., projects/camp)")
+	flags.String("author", "", "Override the default author attribution")
 }
 
 func runIntentAdd(cmd *cobra.Command, args []string) error {
@@ -78,6 +97,19 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	targetCampaign, _ := cmd.Flags().GetString("campaign")
 	noCommit, _ := cmd.Flags().GetBool("no-commit")
 	targetCampaign, args = normalizeIntentAddCampaignArgs(args, targetCampaign)
+	conceptFlag, _ := cmd.Flags().GetString("concept")
+	authorFlag, _ := cmd.Flags().GetString("author")
+
+	// Resolve body from --body / --body-file (mutual exclusivity checked inside)
+	body, bodySet, err := resolveBody(cmd)
+	if err != nil {
+		return err
+	}
+
+	// --full + body flags = usage error (body in TUI conflicts with programmatic body)
+	if fullMode && bodySet {
+		return fmt.Errorf("--full and --body/--body-file are mutually exclusive")
+	}
 
 	campaignResolver := newIntentAddCampaignResolver(cmd.ErrOrStderr())
 	cfg, campaignRoot, err := campaignResolver.resolve(ctx, targetCampaign, cmd.Flags().Changed("campaign"))
@@ -97,15 +129,23 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "ensuring intent directories")
 	}
 
-	// Ultra-fast path: title provided as argument (non-TUI = agent author)
+	// Ultra-fast path: title provided as argument
 	if len(args) > 0 {
-		opts := intent.CreateOptions{
-			Title:  args[0],
-			Type:   intent.Type(intentType),
-			Author: "agent",
+		// Default author for CLI-with-title is "agent", but --author overrides
+		author := "agent"
+		if cmd.Flags().Changed("author") {
+			author = authorFlag
 		}
 
-		// Deep capture overrides ultra-fast
+		opts := intent.CreateOptions{
+			Title:   args[0],
+			Type:    intent.Type(intentType),
+			Author:  author,
+			Body:    body,
+			Concept: conceptFlag,
+		}
+
+		// Deep capture overrides ultra-fast; body flags pre-fill the template
 		if useEditor {
 			return runDeepCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, opts)
 		}
@@ -113,10 +153,20 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 		return runFastCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, opts)
 	}
 
-	// TUI path: use git config author (human)
-	author := git.GetUserName(ctx)
+	// No title argument: non-TTY always requires a title (can't launch TUI)
+	// Programmatic flags like --body/--concept/--author supplement a title,
+	// they don't replace it.
+	if !navtui.IsTerminal() {
+		return fmt.Errorf("title argument required in non-interactive mode\n       Usage: camp intent add <title> [flags]")
+	}
 
-	// Build navigation shortcuts map (key → path) for @ completion
+	// TUI path: use git config author (human), unless --author overrides
+	author := git.GetUserName(ctx)
+	if cmd.Flags().Changed("author") {
+		author = authorFlag
+	}
+
+	// Build navigation shortcuts map (key -> path) for @ completion
 	shortcuts := make(map[string]string)
 	for key, sc := range cfg.Shortcuts() {
 		if sc.HasPath() {

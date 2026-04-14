@@ -264,13 +264,6 @@ func (r projectAddCampaignResolver) resolve(ctx context.Context, targetCampaign 
 	if !targetChanged {
 		cfg, campaignRoot, err := r.loadCurrent(ctx)
 		if err == nil {
-			reg, regErr := r.loadRegistry(ctx)
-			if regErr != nil {
-				return nil, "", camperrors.Wrap(regErr, "load registry")
-			}
-			if err := ensureProjectAddCampaignRegistered(reg, cfg, campaignRoot); err != nil {
-				return nil, "", err
-			}
 			return cfg, campaignRoot, nil
 		}
 	}
