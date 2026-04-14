@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestProject_AddLink_GitRepo(t *testing.T) {
+func TestProject_Link_GitRepo(t *testing.T) {
 	tc := GetSharedContainer(t)
 	campaignPath := "/campaigns/proj-link"
 	linkedPath := "/test/linked-app"
@@ -21,8 +21,8 @@ func TestProject_AddLink_GitRepo(t *testing.T) {
 	require.NoError(t, tc.CreateGitRepo(linkedPath))
 	campaignID := readCampaignID(t, tc, campaignPath)
 
-	output, err := tc.RunCampInDir(campaignPath, "project", "add", "--link", linkedPath)
-	require.NoError(t, err, "project add --link should succeed")
+	output, err := tc.RunCampInDir(campaignPath, "project", "link", linkedPath)
+	require.NoError(t, err, "project link should succeed")
 	assert.Contains(t, output, "Linked project: linked-app")
 
 	_, exitCode, err := tc.ExecCommand("test", "-L", campaignPath+"/projects/linked-app")
@@ -57,7 +57,7 @@ func TestProject_AddLink_GitRepo(t *testing.T) {
 	assert.Contains(t, listOutput, "linked")
 }
 
-func TestProject_AddLink_TargetCampaignOutsideCurrentContext(t *testing.T) {
+func TestProject_Link_TargetCampaignOutsideCurrentContext(t *testing.T) {
 	tc := GetSharedContainer(t)
 	campaignPath := "/campaigns/proj-link-target"
 	linkedPath := "/test/outside-linked-app"
@@ -66,8 +66,8 @@ func TestProject_AddLink_TargetCampaignOutsideCurrentContext(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, tc.CreateGitRepo(linkedPath))
 
-	output, err := tc.RunCampInDir("/test", "project", "add", "--campaign", "proj-link-target", "--link", linkedPath)
-	require.NoError(t, err, "project add --link should succeed outside a campaign when --campaign is provided")
+	output, err := tc.RunCampInDir("/test", "project", "link", linkedPath, "--campaign", "proj-link-target")
+	require.NoError(t, err, "project link should succeed outside a campaign when --campaign is provided")
 	assert.Contains(t, output, "Linked project: outside-linked-app")
 
 	_, exitCode, err := tc.ExecCommand("test", "-L", campaignPath+"/projects/outside-linked-app")
@@ -75,7 +75,7 @@ func TestProject_AddLink_TargetCampaignOutsideCurrentContext(t *testing.T) {
 	assert.Equal(t, 0, exitCode, "linked project entry should be created in the selected campaign")
 }
 
-func TestProject_AddLink_NonGitDir(t *testing.T) {
+func TestProject_Link_NonGitDir(t *testing.T) {
 	tc := GetSharedContainer(t)
 	campaignPath := "/campaigns/proj-link-dir"
 	linkedPath := "/test/plain-linked-dir"
@@ -87,7 +87,7 @@ func TestProject_AddLink_NonGitDir(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, tc.WriteFile(linkedPath+"/package.json", "{}"))
 
-	output, err := tc.RunCampInDir(campaignPath, "project", "add", "--link", linkedPath)
+	output, err := tc.RunCampInDir(campaignPath, "project", "link", linkedPath)
 	require.NoError(t, err)
 	assert.Contains(t, output, "Linked project: plain-linked-dir")
 	assert.Contains(t, output, "Git:")
@@ -102,7 +102,7 @@ func TestProject_AddLink_NonGitDir(t *testing.T) {
 	assert.Contains(t, err.Error(), "linked non-git")
 }
 
-func TestProject_AddLink_RejectsRepoAlreadyLinkedToAnotherCampaign(t *testing.T) {
+func TestProject_Link_RejectsRepoAlreadyLinkedToAnotherCampaign(t *testing.T) {
 	tc := GetSharedContainer(t)
 	campaignA := "/campaigns/proj-link-a"
 	campaignB := "/campaigns/proj-link-b"
@@ -115,10 +115,10 @@ func TestProject_AddLink_RejectsRepoAlreadyLinkedToAnotherCampaign(t *testing.T)
 	require.NoError(t, tc.CreateGitRepo(linkedPath))
 	campaignIDA := readCampaignID(t, tc, campaignA)
 
-	_, err = tc.RunCampInDir(campaignA, "project", "add", "--link", linkedPath)
+	_, err = tc.RunCampInDir(campaignA, "project", "link", linkedPath)
 	require.NoError(t, err)
 
-	output, err := tc.RunCampInDir(campaignB, "project", "add", "--link", linkedPath)
+	output, err := tc.RunCampInDir(campaignB, "project", "link", linkedPath)
 	require.Error(t, err, "second campaign should be rejected")
 	assert.Contains(t, output, "already linked to another campaign")
 	assert.Contains(t, output, campaignA)
@@ -132,7 +132,7 @@ func TestProject_AddLink_RejectsRepoAlreadyLinkedToAnotherCampaign(t *testing.T)
 	assert.NotEqual(t, 0, exitCode, "second campaign should not create a symlink")
 }
 
-func TestProject_AddLink_RejectsDuplicateTargetWithinCampaign(t *testing.T) {
+func TestProject_Link_RejectsDuplicateTargetWithinCampaign(t *testing.T) {
 	tc := GetSharedContainer(t)
 	campaignPath := "/campaigns/proj-link-dup-target"
 	linkedPath := "/test/dup-target-linked-app"
@@ -141,20 +141,20 @@ func TestProject_AddLink_RejectsDuplicateTargetWithinCampaign(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, tc.CreateGitRepo(linkedPath))
 
-	_, err = tc.RunCampInDir(campaignPath, "project", "add", "--link", linkedPath)
+	_, err = tc.RunCampInDir(campaignPath, "project", "link", linkedPath)
 	require.NoError(t, err)
 
-	output, err := tc.RunCampInDir(campaignPath, "project", "add", "--link", linkedPath, "--name", "dup-target-alias")
+	output, err := tc.RunCampInDir(campaignPath, "project", "link", linkedPath, "--name", "dup-target-alias")
 	require.Error(t, err, "adding the same linked target under a second alias should fail")
-	assert.Contains(t, output, "already present in this campaign")
-	assert.Contains(t, output, "projects/dup-target-linked-app")
+	assert.Contains(t, output, "already linked as")
+	assert.Contains(t, output, "dup-target-linked-app")
 
 	_, exitCode, err := tc.ExecCommand("test", "-L", campaignPath+"/projects/dup-target-alias")
 	require.NoError(t, err)
 	assert.NotEqual(t, 0, exitCode, "duplicate alias should not create a second symlink")
 }
 
-func TestProject_Remove_LinkedProject(t *testing.T) {
+func TestProject_Unlink_LinkedProject(t *testing.T) {
 	tc := GetSharedContainer(t)
 	campaignPath := "/campaigns/proj-unlink"
 	linkedPath := "/test/remove-linked"
@@ -163,12 +163,12 @@ func TestProject_Remove_LinkedProject(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, tc.CreateGitRepo(linkedPath))
 
-	_, err = tc.RunCampInDir(campaignPath, "project", "add", "--link", linkedPath)
+	_, err = tc.RunCampInDir(campaignPath, "project", "link", linkedPath)
 	require.NoError(t, err)
 
-	output, err := tc.RunCampInDir(campaignPath, "project", "remove", "remove-linked")
-	require.NoError(t, err, "linked project remove should unlink successfully")
-	assert.Contains(t, output, "Linked project unlinked")
+	output, err := tc.RunCampInDir(campaignPath, "project", "unlink", "remove-linked")
+	require.NoError(t, err, "project unlink should succeed")
+	assert.Contains(t, output, "Unlinked project: remove-linked")
 
 	_, exitCode, err := tc.ExecCommand("test", "-L", campaignPath+"/projects/remove-linked")
 	require.NoError(t, err)
@@ -191,7 +191,7 @@ func TestProjectRun_AutoDetectFromLinkedCwd(t *testing.T) {
 	_, err := tc.InitCampaign(campaignPath, "pr-linked-autodetect", "product")
 	require.NoError(t, err)
 	require.NoError(t, tc.CreateGitRepo(linkedPath))
-	_, err = tc.RunCampInDir(campaignPath, "project", "add", "--link", linkedPath)
+	_, err = tc.RunCampInDir(campaignPath, "project", "link", linkedPath)
 	require.NoError(t, err)
 
 	_, _, err = tc.ExecCommand("mkdir", "-p", linkedPath+"/src/pkg")
@@ -212,7 +212,7 @@ func TestGo_FromLinkedProjectCwd(t *testing.T) {
 	_, err := tc.InitCampaign(campaignPath, "go-linked", "product")
 	require.NoError(t, err)
 	require.NoError(t, tc.CreateGitRepo(linkedPath))
-	_, err = tc.RunCampInDir(campaignPath, "project", "add", "--link", linkedPath)
+	_, err = tc.RunCampInDir(campaignPath, "project", "link", linkedPath)
 	require.NoError(t, err)
 
 	output, err := tc.RunCampInDir(linkedPath, "go", "p", "go-linked-project", "--print")
@@ -227,7 +227,7 @@ func TestRun_ProjectDispatch_LinkedProject(t *testing.T) {
 
 	setupRunTestCampaign(t, tc, campaignPath, "run-linked")
 	require.NoError(t, tc.CreateGitRepo(linkedPath))
-	_, err := tc.RunCampInDir(campaignPath, "project", "add", "--link", linkedPath)
+	_, err := tc.RunCampInDir(campaignPath, "project", "link", linkedPath)
 	require.NoError(t, err)
 
 	output, err := tc.RunCampInDir(campaignPath, "run", "run-linked-project", "build")
@@ -236,12 +236,12 @@ func TestRun_ProjectDispatch_LinkedProject(t *testing.T) {
 	assert.Contains(t, output, "just-workdir: "+linkedPath)
 }
 
-// TestProject_AddLink_RejectsDuplicateTargetInSameCampaign verifies that
+// TestProject_Link_RejectsDuplicateTargetInSameCampaign verifies that
 // linking the same external directory twice into one campaign under different
 // aliases is rejected up front. Without the guard, both symlinks would be
 // created but the URL-based dedup in List() would silently drop one,
 // hiding it from `project list`, `project run`, and `leverage`.
-func TestProject_AddLink_RejectsDuplicateTargetInSameCampaign(t *testing.T) {
+func TestProject_Link_RejectsDuplicateTargetInSameCampaign(t *testing.T) {
 	tc := GetSharedContainer(t)
 	campaignPath := "/campaigns/proj-link-dup"
 	linkedPath := "/test/dup-target-app"
@@ -251,13 +251,13 @@ func TestProject_AddLink_RejectsDuplicateTargetInSameCampaign(t *testing.T) {
 	require.NoError(t, tc.CreateGitRepo(linkedPath))
 
 	// First link under default alias (derived from path basename).
-	firstOutput, err := tc.RunCampInDir(campaignPath, "project", "add", "--link", linkedPath)
-	require.NoError(t, err, "first project add --link should succeed")
+	firstOutput, err := tc.RunCampInDir(campaignPath, "project", "link", linkedPath)
+	require.NoError(t, err, "first project link should succeed")
 	assert.Contains(t, firstOutput, "Linked project: dup-target-app")
 
 	// Second link under a different --name must be rejected.
-	secondOutput, err := tc.RunCampInDir(campaignPath, "project", "add", "--link", linkedPath, "--name", "other-alias")
-	require.Error(t, err, "second project add --link with different --name should fail")
+	secondOutput, err := tc.RunCampInDir(campaignPath, "project", "link", linkedPath, "--name", "other-alias")
+	require.Error(t, err, "second project link with different --name should fail")
 	assert.Contains(t, secondOutput, "already linked",
 		"error message should explain that the target is already linked")
 	assert.Contains(t, secondOutput, "dup-target-app",
@@ -281,10 +281,10 @@ func TestProject_AddLink_RejectsDuplicateTargetInSameCampaign(t *testing.T) {
 		"rejected alias should not appear in project list")
 }
 
-// TestProject_AddLink_AllowsRelinkAfterUnlink verifies that the duplicate
+// TestProject_Link_AllowsRelinkAfterUnlink verifies that the duplicate
 // rejection is scoped to active duplicates only. After unlinking an alias,
 // the same target can be re-linked under any name.
-func TestProject_AddLink_AllowsRelinkAfterUnlink(t *testing.T) {
+func TestProject_Link_AllowsRelinkAfterUnlink(t *testing.T) {
 	tc := GetSharedContainer(t)
 	campaignPath := "/campaigns/proj-link-relink"
 	linkedPath := "/test/relink-target-app"
@@ -294,17 +294,17 @@ func TestProject_AddLink_AllowsRelinkAfterUnlink(t *testing.T) {
 	require.NoError(t, tc.CreateGitRepo(linkedPath))
 
 	// Link under alias "alpha".
-	_, err = tc.RunCampInDir(campaignPath, "project", "add", "--link", linkedPath, "--name", "alpha")
+	_, err = tc.RunCampInDir(campaignPath, "project", "link", linkedPath, "--name", "alpha")
 	require.NoError(t, err, "initial link under alpha should succeed")
 
-	// Unlink alpha. For a linked project `project remove` only unlinks the
-	// symlink and cleans up the marker — no --delete, no confirmation.
-	_, err = tc.RunCampInDir(campaignPath, "project", "remove", "alpha")
+	// Unlink alpha. The dedicated unlink command should remove only the
+	// symlink and linked-project marker state.
+	_, err = tc.RunCampInDir(campaignPath, "project", "unlink", "alpha")
 	require.NoError(t, err, "unlinking alpha should succeed")
 
 	// Re-link under a different alias "beta" — rejection must not fire
 	// because there is no active alias pointing at the target any more.
-	output, err := tc.RunCampInDir(campaignPath, "project", "add", "--link", linkedPath, "--name", "beta")
+	output, err := tc.RunCampInDir(campaignPath, "project", "link", linkedPath, "--name", "beta")
 	require.NoError(t, err, "re-linking under beta after unlink should succeed")
 	assert.Contains(t, output, "Linked project: beta")
 

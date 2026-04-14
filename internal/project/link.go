@@ -30,6 +30,28 @@ type LinkResult struct {
 	IsGit  bool
 }
 
+// UnlinkOptions configures linked-project unlink behavior.
+type UnlinkOptions struct {
+	DryRun bool
+}
+
+// UnlinkResult describes a linked-project unlink operation.
+type UnlinkResult struct {
+	Name   string
+	Path   string
+	Target string
+}
+
+// ErrProjectNotLinked is returned when a command expects a linked project but
+// the named project is a normal in-campaign submodule.
+type ErrProjectNotLinked struct {
+	Name string
+}
+
+func (e *ErrProjectNotLinked) Error() string {
+	return fmt.Sprintf("project %q is not a linked project\n       Use 'camp project remove %s' for submodules", e.Name, e.Name)
+}
+
 // AddLinked links an existing local directory into the campaign via symlink.
 func AddLinked(ctx context.Context, campaignRoot, localPath string, opts LinkOptions) (*LinkResult, error) {
 	if ctx.Err() != nil {
@@ -91,29 +113,12 @@ func AddLinked(ctx context.Context, campaignRoot, localPath string, opts LinkOpt
 	if err := pathutil.ValidateBoundary(campaignRoot, fullPath); err != nil {
 		return nil, camperrors.Wrap(err, "project path boundary violation")
 	}
-	if err := ensureLinkedTargetUnique(normalizedCampaignRoot, absLocal, fullPath); err != nil {
+	if err := ensureLinkedTargetUnique(normalizedCampaignRoot, absLocal, fullPath, name); err != nil {
 		return nil, err
 	}
 
 	if _, err := os.Lstat(fullPath); err == nil {
 		return nil, &ErrProjectExists{Name: name, Path: destPath}
-	}
-
-	// Reject if another symlink in this campaign already points to the same
-	// target. Two aliases of the same linked directory would survive the
-	// symlink creation but collide inside List()'s URL-based dedup, which
-	// would silently hide one alias from `project list`, `project run`, and
-	// `leverage`. Failing up front with a clear error beats a silent trap.
-	existing, err := findExistingLinkToTarget(campaignRoot, absLocal, fullPath)
-	if err != nil {
-		return nil, camperrors.Wrap(err, "checking existing linked projects")
-	}
-	if existing != "" {
-		return nil, &ErrProjectAlreadyLinked{
-			ExistingName:  existing,
-			Target:        absLocal,
-			AttemptedName: name,
-		}
 	}
 
 	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
@@ -149,6 +154,49 @@ func AddLinked(ctx context.Context, campaignRoot, localPath string, opts LinkOpt
 		Type:   detectProjectType(absLocal),
 		IsGit:  isGit,
 	}, nil
+}
+
+// Unlink removes a linked project from the selected campaign without touching
+// the external workspace contents.
+func Unlink(ctx context.Context, campaignRoot, name string, opts UnlinkOptions) (*UnlinkResult, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	if err := ValidateProjectName(name); err != nil {
+		return nil, err
+	}
+
+	projectPath := filepath.Join(campaignRoot, "projects", name)
+	if err := validateManagedProjectPath(campaignRoot, projectPath); err != nil {
+		return nil, camperrors.Wrap(err, "project path boundary violation")
+	}
+	if _, err := os.Lstat(projectPath); os.IsNotExist(err) {
+		return nil, &ErrProjectNotFound{Name: name}
+	}
+
+	linked, target, err := linkedProjectTarget(projectPath)
+	if err != nil {
+		return nil, err
+	}
+	if !linked {
+		return nil, &ErrProjectNotLinked{Name: name}
+	}
+
+	result := &UnlinkResult{
+		Name:   name,
+		Path:   filepath.Join("projects", name),
+		Target: target,
+	}
+	if opts.DryRun {
+		return result, nil
+	}
+
+	if err := UnlinkProject(ctx, campaignRoot, name, target); err != nil {
+		return nil, camperrors.Wrap(err, "failed to unlink project")
+	}
+
+	return result, nil
 }
 
 // UnlinkProject removes a linked project symlink and local marker state.
@@ -262,40 +310,19 @@ func ensureLinkMarkerAvailable(ctx context.Context, projectDir, campaignRoot, ca
 	return fmt.Errorf("%s", msg)
 }
 
-func ensureLinkedTargetUnique(campaignRoot, targetPath, destPath string) error {
-	projectsDir := filepath.Join(campaignRoot, "projects")
-	normalizedDestPath, err := filepath.Abs(destPath)
+func ensureLinkedTargetUnique(campaignRoot, targetPath, destPath, attemptedName string) error {
+	existing, err := findExistingLinkToTarget(campaignRoot, targetPath, destPath)
 	if err != nil {
-		return camperrors.Wrap(err, "resolve destination path")
+		return camperrors.Wrap(err, "checking existing linked projects")
 	}
-
-	entries, err := os.ReadDir(projectsDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return camperrors.Wrap(err, "read projects directory")
+	if existing == "" {
+		return nil
 	}
-
-	for _, entry := range entries {
-		if entry.Type()&os.ModeSymlink == 0 {
-			continue
-		}
-
-		entryPath := filepath.Join(projectsDir, entry.Name())
-		normalizedEntryPath, err := normalizeCampaignRoot(entryPath)
-		if err != nil {
-			continue
-		}
-		if normalizedEntryPath == targetPath {
-			if filepath.Clean(entryPath) == filepath.Clean(normalizedDestPath) {
-				return nil
-			}
-			return fmt.Errorf("linked project target is already present in this campaign at %s", filepath.Join("projects", entry.Name()))
-		}
+	return &ErrProjectAlreadyLinked{
+		ExistingName:  existing,
+		Target:        targetPath,
+		AttemptedName: attemptedName,
 	}
-
-	return nil
 }
 
 func markerMatchesCampaign(marker *campaign.LinkMarker, campaignID, campaignRoot string) bool {

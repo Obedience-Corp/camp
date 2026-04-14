@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -284,6 +285,50 @@ func TestAddLinked_RejectsProjectLinkedToAnotherCampaign(t *testing.T) {
 	}
 }
 
+func TestAddLinked_RejectsDuplicateTargetWithinCampaign(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+
+	campaignRoot := filepath.Join(tmpDir, "campaign")
+	linkedPath := filepath.Join(tmpDir, "external", "shared-linked")
+
+	if err := os.MkdirAll(filepath.Join(campaignRoot, campaign.CampaignDir), 0o755); err != nil {
+		t.Fatalf("create campaign marker dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(campaignRoot, "projects"), 0o755); err != nil {
+		t.Fatalf("create projects dir: %v", err)
+	}
+	writeCampaignConfig(t, campaignRoot, "campaign-id")
+	if err := os.MkdirAll(linkedPath, 0o755); err != nil {
+		t.Fatalf("create linked path: %v", err)
+	}
+	initGitRepo(t, linkedPath)
+
+	if _, err := AddLinked(context.Background(), campaignRoot, linkedPath, LinkOptions{Name: "alpha"}); err != nil {
+		t.Fatalf("AddLinked() first alias error = %v", err)
+	}
+
+	_, err := AddLinked(context.Background(), campaignRoot, linkedPath, LinkOptions{Name: "beta"})
+	if err == nil {
+		t.Fatal("expected duplicate linked target to fail")
+	}
+
+	var linkedErr *ErrProjectAlreadyLinked
+	if !errors.As(err, &linkedErr) {
+		t.Fatalf("AddLinked() error = %T %v, want ErrProjectAlreadyLinked", err, err)
+	}
+	if linkedErr.ExistingName != "alpha" {
+		t.Fatalf("ExistingName = %q, want %q", linkedErr.ExistingName, "alpha")
+	}
+	if linkedErr.AttemptedName != "beta" {
+		t.Fatalf("AttemptedName = %q, want %q", linkedErr.AttemptedName, "beta")
+	}
+
+	if _, err := os.Lstat(filepath.Join(campaignRoot, "projects", "beta")); !os.IsNotExist(err) {
+		t.Fatalf("expected duplicate alias to be absent, got err = %v", err)
+	}
+}
+
 func TestAddLinked_RejectsLegacyMarkerFromAnotherCampaign(t *testing.T) {
 	tmpDir := t.TempDir()
 	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
@@ -327,6 +372,28 @@ func TestAddLinked_RejectsLegacyMarkerFromAnotherCampaign(t *testing.T) {
 
 	if _, err := os.Lstat(filepath.Join(campaignRootB, "projects", "shared-linked")); !os.IsNotExist(err) {
 		t.Fatalf("expected second campaign symlink to be absent, got err = %v", err)
+	}
+}
+
+func TestUnlink_RejectsNonLinkedProject(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+
+	campaignRoot := filepath.Join(tmpDir, "campaign")
+	projectPath := filepath.Join(campaignRoot, "projects", "alpha")
+
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("create project path: %v", err)
+	}
+
+	_, err := Unlink(context.Background(), campaignRoot, "alpha", UnlinkOptions{})
+	if err == nil {
+		t.Fatal("expected Unlink() to reject non-linked project")
+	}
+
+	var notLinkedErr *ErrProjectNotLinked
+	if !errors.As(err, &notLinkedErr) {
+		t.Fatalf("Unlink() error = %T %v, want ErrProjectNotLinked", err, err)
 	}
 }
 

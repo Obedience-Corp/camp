@@ -44,7 +44,7 @@ func TestProjectAddCampaignResolver_CurrentCampaignFromCwd(t *testing.T) {
 	wantCfg := &config.CampaignConfig{ID: "current-1111", Name: "current"}
 	reg := testProjectAddRegistry(t)
 
-	r := projectAddCampaignResolver{
+	r := projectCampaignResolver{
 		loadCurrent: func(context.Context) (*config.CampaignConfig, string, error) {
 			return wantCfg, "/campaigns/current", nil
 		},
@@ -66,7 +66,7 @@ func TestProjectAddCampaignResolver_CurrentCampaignFromCwd(t *testing.T) {
 }
 
 func TestProjectAddCampaignResolver_CurrentCampaignMustBeRegistered(t *testing.T) {
-	r := projectAddCampaignResolver{
+	r := projectCampaignResolver{
 		loadCurrent: func(context.Context) (*config.CampaignConfig, string, error) {
 			return &config.CampaignConfig{ID: "current-1111", Name: "current"}, "/campaigns/current", nil
 		},
@@ -88,7 +88,7 @@ func TestProjectAddCampaignResolver_NoCurrentCampaignUsesPicker(t *testing.T) {
 	reg := testProjectAddRegistry(t)
 	pickCalls := 0
 
-	r := projectAddCampaignResolver{
+	r := projectCampaignResolver{
 		isInteractive: func() bool { return true },
 		loadCurrent: func(context.Context) (*config.CampaignConfig, string, error) {
 			return nil, "", errors.New("not inside a campaign")
@@ -125,7 +125,7 @@ func TestProjectAddCampaignResolver_NoCurrentCampaignUsesPicker(t *testing.T) {
 func TestProjectAddCampaignResolver_NoCurrentCampaignNonInteractiveFails(t *testing.T) {
 	reg := testProjectAddRegistry(t)
 
-	r := projectAddCampaignResolver{
+	r := projectCampaignResolver{
 		isInteractive: func() bool { return false },
 		loadCurrent: func(context.Context) (*config.CampaignConfig, string, error) {
 			return nil, "", errors.New("not inside a campaign")
@@ -149,7 +149,7 @@ func TestProjectAddCampaignResolver_ExplicitCampaignLookup(t *testing.T) {
 	var matched bytes.Buffer
 	saveCalls := 0
 
-	r := projectAddCampaignResolver{
+	r := projectCampaignResolver{
 		stderr:        &matched,
 		isInteractive: func() bool { return true },
 		loadRegistry: func(context.Context) (*config.Registry, error) {
@@ -186,7 +186,7 @@ func TestProjectAddCampaignResolver_BareCampaignUsesPicker(t *testing.T) {
 	reg := testProjectAddRegistry(t)
 	pickCalls := 0
 
-	r := projectAddCampaignResolver{
+	r := projectCampaignResolver{
 		isInteractive: func() bool { return true },
 		loadRegistry: func(context.Context) (*config.Registry, error) {
 			return reg, nil
@@ -220,7 +220,7 @@ func TestProjectAddCampaignResolver_BareCampaignUsesPicker(t *testing.T) {
 func TestNormalizeProjectAddCampaignArgs_ExplicitCampaignAndRemoteSource(t *testing.T) {
 	targetCampaign, args := normalizeProjectAddCampaignArgs(
 		[]string{"beta", "git@github.com:org/repo.git"},
-		noOptProjectAddCampaign,
+		noOptProjectCampaign,
 		"",
 		"",
 	)
@@ -236,7 +236,7 @@ func TestNormalizeProjectAddCampaignArgs_ExplicitCampaignAndRemoteSource(t *test
 func TestNormalizeProjectAddCampaignArgs_BareCampaignKeepsSourceLikeArg(t *testing.T) {
 	targetCampaign, args := normalizeProjectAddCampaignArgs(
 		[]string{"git@github.com:org/repo.git"},
-		noOptProjectAddCampaign,
+		noOptProjectCampaign,
 		"",
 		"",
 	)

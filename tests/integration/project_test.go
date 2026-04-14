@@ -200,8 +200,10 @@ func TestProject_Help(t *testing.T) {
 	output, err := tc.RunCamp("project", "--help")
 	require.NoError(t, err, "project --help should succeed")
 	assert.Contains(t, output, "add", "help should list add subcommand")
+	assert.Contains(t, output, "link", "help should list link subcommand")
 	assert.Contains(t, output, "list", "help should list list subcommand")
 	assert.Contains(t, output, "remove", "help should list remove subcommand")
+	assert.Contains(t, output, "unlink", "help should list unlink subcommand")
 }
 
 func TestProject_NotInCampaign(t *testing.T) {
