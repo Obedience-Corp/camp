@@ -3,8 +3,9 @@ package shell
 import (
 	"bytes"
 	"embed"
-	"fmt"
 	"text/template"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 //go:embed templates/*.tmpl
@@ -31,7 +32,7 @@ var parsedTemplates = template.Must(
 func renderTemplate(name string, data templateData) (string, error) {
 	var buf bytes.Buffer
 	if err := parsedTemplates.ExecuteTemplate(&buf, name, data); err != nil {
-		return "", fmt.Errorf("render template %s: %w", name, err)
+		return "", camperrors.Wrapf(err, "render template %s", name)
 	}
 	return buf.String(), nil
 }
