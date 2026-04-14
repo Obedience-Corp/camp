@@ -16,6 +16,7 @@ Usage patterns:
   camp go t         Jump to last visited location (cd - equivalent)
   camp go p         Jump to projects/
   camp go f         Jump to festivals/
+  camp go design    Jump to an exact pin name
   camp go p api     Fuzzy search projects/ for "api"
 
 Toggle behavior (no args):
@@ -25,6 +26,12 @@ Toggle behavior (no args):
 Toggle keyword (t / toggle):
   - Jump to the last visited location regardless of where you are
   - Repeated calls alternate between two locations (like cd -)
+
+Pins:
+  - Create a named pin with 'camp pin <name> [path]'
+  - Jump to an exact pin with 'camp go <name>' or 'cgo <name>'
+  - Pin jumps save your current location first, so 'camp go t' or 'cgo t'
+    can bounce back to where you came from
 
 The --print flag outputs just the path for shell integration:
   cd "$(camp go p --print)"
@@ -41,8 +48,11 @@ Or use the cgo shell function for instant navigation:
   camp go --root        # Force jump to campaign root
   camp go t             # Jump to last visited location (cd -)
   camp go p             # Jump to projects/
+  camp go design        # Jump to exact pin "design"
   camp go p api         # Fuzzy find "api" in projects/
   camp go p --print     # Print path (for shell scripts)
+  cgo design            # Shell jump to exact pin "design"
+  cgo t                 # Jump back after a pin jump
   camp go f -c ls       # List festivals/ without cd`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
