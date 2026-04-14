@@ -2,7 +2,7 @@ package config
 
 import (
 	"context"
-	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/google/uuid"
@@ -10,7 +10,6 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"os"
 )
 
 // CampaignConfigFile is the name of the campaign configuration file.
@@ -31,7 +30,7 @@ func LoadCampaignConfig(ctx context.Context, campaignRoot string) (*CampaignConf
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("campaign config not found: %s", configPath)
+			return nil, camperrors.NewNotFound("campaign config", configPath, nil)
 		}
 		return nil, camperrors.Wrapf(err, "failed to read campaign config %s", configPath)
 	}

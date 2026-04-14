@@ -95,7 +95,7 @@ func Add(ctx context.Context, campaignRoot, source string, opts AddOptions) (*Ad
 	// Validate source
 	source = strings.TrimSpace(source)
 	if source == "" && opts.Local == "" {
-		return nil, fmt.Errorf("source URL is required\n" +
+		return nil, camperrors.Wrap(camperrors.ErrInvalidInput, "source URL is required\n"+
 			"Hint: Provide a git URL like 'git@github.com:org/repo.git' or use --local for existing repos")
 	}
 
@@ -281,7 +281,7 @@ func addLocalAsSubmodule(ctx context.Context, campaignRoot, localPath, destPath,
 	// Verify it's a git repo
 	gitPath := filepath.Join(absLocal, ".git")
 	if _, err := os.Stat(gitPath); os.IsNotExist(err) {
-		return fmt.Errorf("local path is not a git repository: %s\n"+
+		return camperrors.Wrapf(camperrors.ErrInvalidInput, "local path is not a git repository: %s\n"+
 			"Hint: Run 'git init' in the directory first, or provide a git repository URL instead", localPath)
 	}
 
@@ -318,7 +318,7 @@ func executeLocalSubmoduleAdd(ctx context.Context, campaignRoot, absLocal, destP
 func checkGitInstalled(ctx context.Context) error {
 	cmd := exec.CommandContext(ctx, "git", "--version")
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("git is not installed or not in PATH\n" +
+		return camperrors.Wrap(camperrors.ErrNotInitialized, "git is not installed or not in PATH\n"+
 			"Please install git: https://git-scm.com/downloads")
 	}
 	return nil
@@ -328,7 +328,7 @@ func checkGitInstalled(ctx context.Context) error {
 func checkIsGitRepo(ctx context.Context, campaignRoot string) error {
 	cmd := exec.CommandContext(ctx, "git", "-C", campaignRoot, "rev-parse", "--git-dir")
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("campaign directory is not a git repository\n" +
+		return camperrors.Wrap(camperrors.ErrNotInitialized, "campaign directory is not a git repository\n"+
 			"Hint: Run 'git init' in the campaign root, or use 'camp init' to create a new campaign")
 	}
 	return nil
@@ -348,7 +348,7 @@ func checkRepoNotEmpty(ctx context.Context, url string) error {
 		return nil
 	}
 	if len(strings.TrimSpace(string(output))) == 0 {
-		return fmt.Errorf("cannot add empty repository %q — push at least one commit first\n"+
+		return camperrors.Wrapf(camperrors.ErrInvalidInput, "cannot add empty repository %q — push at least one commit first\n"+
 			"Hint: Initialize the repo locally, make a commit, and push before adding it to a campaign", url)
 	}
 	return nil

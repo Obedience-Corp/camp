@@ -105,7 +105,7 @@ func runProjectRun(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(commandArgs) == 0 {
-		return fmt.Errorf("no command specified")
+		return camperrors.Wrap(camperrors.ErrInvalidInput, "no command specified")
 	}
 
 	// Show which project we're running in.
@@ -163,7 +163,7 @@ func pickProject(cmd *cobra.Command, campRoot string) (*projectsvc.Project, erro
 		return nil, camperrors.Wrap(err, "failed to list projects")
 	}
 	if len(projects) == 0 {
-		return nil, fmt.Errorf("no projects found in campaign")
+		return nil, camperrors.Wrap(camperrors.ErrNotFound, "no projects found in campaign")
 	}
 
 	idx, err := fuzzyfinder.Find(
@@ -187,7 +187,7 @@ func pickProject(cmd *cobra.Command, campRoot string) (*projectsvc.Project, erro
 	)
 	if err != nil {
 		if errors.Is(err, fuzzyfinder.ErrAbort) {
-			return nil, fmt.Errorf("cancelled")
+			return nil, camperrors.Wrap(camperrors.ErrCancelled, "cancelled")
 		}
 		return nil, camperrors.Wrap(err, "picker")
 	}

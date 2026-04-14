@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/creack/pty"
 )
 
@@ -35,7 +36,7 @@ func (tc *TestContainer) RunCampInteractiveInDir(dir, waitFor, input string, arg
 	cmd := exec.CommandContext(ctx, "docker", "exec", "-i", "-t", tc.container.GetContainerID(), "sh", "-lc", cmdStr)
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 40, Cols: 120})
 	if err != nil {
-		return "", fmt.Errorf("failed to start interactive docker exec: %w", err)
+		return "", camperrors.Wrap(err, "failed to start interactive docker exec")
 	}
 	defer func() { _ = ptmx.Close() }()
 
@@ -60,7 +61,7 @@ func (tc *TestContainer) RunCampInteractiveInDir(dir, waitFor, input string, arg
 			case <-readerDone:
 			case <-time.After(time.Second):
 			}
-			return output.String(), fmt.Errorf("interactive camp session did not reach %q: %w\nterminal tail:\n%s", waitFor, err, output.Tail(4000))
+			return output.String(), camperrors.Wrapf(err, "interactive camp session did not reach %q\nterminal tail:\n%s", waitFor, output.Tail(4000))
 		}
 	} else {
 		time.Sleep(250 * time.Millisecond)
@@ -75,7 +76,7 @@ func (tc *TestContainer) RunCampInteractiveInDir(dir, waitFor, input string, arg
 			case <-readerDone:
 			case <-time.After(time.Second):
 			}
-			return output.String(), fmt.Errorf("failed to send interactive input: %w\nterminal tail:\n%s", err, output.Tail(4000))
+			return output.String(), camperrors.Wrapf(err, "failed to send interactive input\nterminal tail:\n%s", output.Tail(4000))
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
@@ -96,7 +97,7 @@ func (tc *TestContainer) RunCampInteractiveInDir(dir, waitFor, input string, arg
 	}
 
 	if waitErr != nil {
-		return output.String(), fmt.Errorf("interactive camp command failed: %w\nterminal tail:\n%s", waitErr, output.Tail(4000))
+		return output.String(), camperrors.Wrapf(waitErr, "interactive camp command failed\nterminal tail:\n%s", output.Tail(4000))
 	}
 
 	return output.String(), nil
@@ -136,7 +137,7 @@ func waitForBufferContains(output *lockedBuffer, want string, timeout time.Durat
 		time.Sleep(25 * time.Millisecond)
 	}
 
-	return fmt.Errorf("timed out waiting for %q", want)
+	return camperrors.Wrapf(camperrors.ErrTimeout, "timed out waiting for %q", want)
 }
 
 func shellQuote(s string) string {

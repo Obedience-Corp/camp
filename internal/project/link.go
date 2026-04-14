@@ -59,7 +59,7 @@ func AddLinked(ctx context.Context, campaignRoot, localPath string, opts LinkOpt
 
 	localPath = strings.TrimSpace(localPath)
 	if localPath == "" {
-		return nil, fmt.Errorf("link path is required")
+		return nil, camperrors.Wrap(camperrors.ErrInvalidInput, "link path is required")
 	}
 
 	absLocal, err := filepath.Abs(localPath)
@@ -75,7 +75,7 @@ func AddLinked(ctx context.Context, campaignRoot, localPath string, opts LinkOpt
 		return nil, camperrors.Wrap(err, "stat local path")
 	}
 	if !info.IsDir() {
-		return nil, fmt.Errorf("path is not a directory: %s", localPath)
+		return nil, camperrors.Wrapf(camperrors.ErrInvalidInput, "path is not a directory: %s", localPath)
 	}
 
 	normalizedCampaignRoot, err := normalizeCampaignRoot(campaignRoot)
@@ -87,7 +87,7 @@ func AddLinked(ctx context.Context, campaignRoot, localPath string, opts LinkOpt
 		return nil, camperrors.Wrap(err, "load campaign config")
 	}
 	if cfg.ID == "" {
-		return nil, fmt.Errorf("campaign config is missing an ID")
+		return nil, camperrors.Wrap(camperrors.ErrInvalidInput, "campaign config is missing an ID")
 	}
 	if err := ensureLinkMarkerAvailable(ctx, absLocal, normalizedCampaignRoot, cfg.ID); err != nil {
 		return nil, err
@@ -283,7 +283,7 @@ func ensureLinkMarkerAvailable(ctx context.Context, projectDir, campaignRoot, ca
 
 	existingID := marker.EffectiveCampaignID()
 	if existingID == "" {
-		return fmt.Errorf("linked project has an existing legacy .camp marker for another campaign; remove it before linking")
+		return camperrors.Wrap(camperrors.ErrConflict, "linked project has an existing legacy .camp marker for another campaign; remove it before linking")
 	}
 
 	msg := "linked project is already linked to another campaign"
@@ -300,7 +300,7 @@ func ensureLinkMarkerAvailable(ctx context.Context, projectDir, campaignRoot, ca
 			}
 		}
 	}
-	return fmt.Errorf("%s", msg)
+	return camperrors.Wrap(camperrors.ErrConflict, msg)
 }
 
 func ensureLinkedTargetUnique(campaignRoot, targetPath, destPath, attemptedName string) error {
@@ -337,7 +337,7 @@ func loadCampaignID(ctx context.Context, campaignRoot string) (string, error) {
 		return "", camperrors.Wrap(err, "load campaign config")
 	}
 	if cfg.ID == "" {
-		return "", fmt.Errorf("campaign config is missing an ID")
+		return "", camperrors.Wrap(camperrors.ErrInvalidInput, "campaign config is missing an ID")
 	}
 	return cfg.ID, nil
 }

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	projectsvc "github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/ui"
@@ -143,7 +144,7 @@ func resolveLinkSourcePath(campaignRoot string, args []string) (string, error) {
 		return "", err
 	}
 	if isWithinTargetCampaign(cwd, campaignRoot) {
-		return "", fmt.Errorf("link path required when current directory is already inside the target campaign")
+		return "", camperrors.Wrap(camperrors.ErrInvalidInput, "link path required when current directory is already inside the target campaign")
 	}
 	return cwd, nil
 }
@@ -155,7 +156,7 @@ func resolveUnlinkName(ctx context.Context, campaignRoot string, args []string) 
 
 	resolved, err := projectsvc.Resolve(ctx, campaignRoot, "")
 	if err != nil {
-		return "", fmt.Errorf("could not infer linked project from current directory: %w\n       Use 'camp project unlink <name>' to target it explicitly", err)
+		return "", camperrors.Wrap(err, "could not infer linked project from current directory\n       Use 'camp project unlink <name>' to target it explicitly")
 	}
 	return strings.TrimPrefix(resolved.Name, "projects/"), nil
 }
