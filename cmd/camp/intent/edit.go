@@ -2,7 +2,6 @@ package intent
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/ktr0731/go-fuzzyfinder"
@@ -134,13 +133,13 @@ func runIntentEdit(cmd *cobra.Command, args []string) error {
 	} else {
 		// No ID + programmatic flags + no TTY = deterministic error
 		if programmatic && !navtui.IsTerminal() {
-			return fmt.Errorf("intent ID required in non-interactive mode\n       Usage: camp intent edit <id> [flags]")
+			return camperrors.Wrap(camperrors.ErrInvalidInput, "intent ID required in non-interactive mode")
 		}
 		// No ID - show fuzzy picker
 		selectedIntent, err = pickIntent(ctx, svc, statusFilter, typeFilter, projectFilter)
 		if err != nil {
-			if errors.Is(err, fuzzyfinder.ErrAbort) {
-				return fmt.Errorf("edit cancelled")
+			if camperrors.Is(err, fuzzyfinder.ErrAbort) {
+				return camperrors.Wrap(camperrors.ErrCancelled, "edit")
 			}
 			return err
 		}
@@ -342,13 +341,13 @@ func validateEditBodyFlags(cmd *cobra.Command) error {
 	appendFileSet := cmd.Flags().Changed("append-body-file")
 
 	if bodySet && bodyFileSet {
-		return fmt.Errorf("--body and --body-file are mutually exclusive")
+		return camperrors.Wrap(camperrors.ErrInvalidInput, "--body and --body-file are mutually exclusive")
 	}
 	if appendSet && appendFileSet {
-		return fmt.Errorf("--append-body and --append-body-file are mutually exclusive")
+		return camperrors.Wrap(camperrors.ErrInvalidInput, "--append-body and --append-body-file are mutually exclusive")
 	}
 	if (bodySet || bodyFileSet) && (appendSet || appendFileSet) {
-		return fmt.Errorf("--body/--body-file and --append-body/--append-body-file are mutually exclusive (replace vs append)")
+		return camperrors.Wrap(camperrors.ErrInvalidInput, "--body/--body-file and --append-body/--append-body-file are mutually exclusive")
 	}
 	return nil
 }

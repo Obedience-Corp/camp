@@ -1,7 +1,6 @@
 package intent
 
 import (
-	"fmt"
 	"io"
 	"os"
 
@@ -24,7 +23,7 @@ func resolveBody(cmd *cobra.Command) (string, bool, error) {
 	bodyFileSet := cmd.Flags().Changed("body-file")
 
 	if bodySet && bodyFileSet {
-		return "", false, fmt.Errorf("--body and --body-file are mutually exclusive")
+		return "", false, camperrors.Wrap(camperrors.ErrInvalidInput, "--body and --body-file are mutually exclusive")
 	}
 
 	if bodySet {
@@ -66,7 +65,7 @@ func readBodySource(path string) (string, error) {
 		return "", camperrors.Wrap(err, "reading body input")
 	}
 	if len(data) > maxBodyFileSize {
-		return "", fmt.Errorf("body input exceeds maximum size of 10 MiB")
+		return "", camperrors.Wrap(camperrors.ErrInvalidInput, "body input exceeds maximum size of 10 MiB")
 	}
 
 	return string(data), nil
