@@ -73,7 +73,7 @@ func runProjectAdd(cmd *cobra.Command, args []string) error {
 	case local != "":
 		source = local
 	case len(args) == 0:
-		return fmt.Errorf("source URL is required")
+		return camperrors.Wrap(camperrors.ErrInvalidInput, "source URL is required")
 	default:
 		source = args[0]
 	}
@@ -215,14 +215,14 @@ func (r projectCampaignResolver) Resolve(ctx context.Context, targetCampaign str
 		return nil, "", camperrors.Wrap(err, "load registry")
 	}
 	if reg.Len() == 0 {
-		return nil, "", fmt.Errorf("no campaigns registered (use 'camp init' to create one)")
+		return nil, "", camperrors.Wrap(camperrors.ErrNotInitialized, "no campaigns registered (use 'camp init' to create one)")
 	}
 
 	var selected config.RegisteredCampaign
 	switch {
 	case targetCampaign == "":
 		if !r.isInteractive() {
-			return nil, "", fmt.Errorf("campaign name required in non-interactive mode\n       Usage: %s", r.usage())
+			return nil, "", camperrors.Wrapf(camperrors.ErrInvalidInput, "campaign name required in non-interactive mode\n       Usage: %s", r.usage())
 		}
 		selected, err = r.pickCampaign(ctx, reg)
 		if err != nil {
@@ -260,7 +260,7 @@ func (r projectCampaignResolver) usage() string {
 
 func ensureProjectCampaignRegistered(reg *config.Registry, cfg *config.CampaignConfig, campaignRoot string) error {
 	if cfg == nil {
-		return fmt.Errorf("target campaign config could not be loaded")
+		return camperrors.Wrap(camperrors.ErrNotFound, "target campaign config could not be loaded")
 	}
 
 	normalizedRoot, err := normalizeProjectCampaignRoot(campaignRoot)
@@ -286,7 +286,7 @@ func ensureProjectCampaignRegistered(reg *config.Registry, cfg *config.CampaignC
 	if strings.TrimSpace(name) == "" {
 		name = normalizedRoot
 	}
-	return fmt.Errorf("target campaign %q is not registered\n       Run 'camp register %s' before adding projects", name, normalizedRoot)
+	return camperrors.Wrapf(camperrors.ErrNotFound, "target campaign %q is not registered\n       Run 'camp register %s' before adding projects", name, normalizedRoot)
 }
 
 func normalizeProjectCampaignRoot(root string) (string, error) {
@@ -326,5 +326,5 @@ func formatGitError(gitErr *projectsvc.GitError) error {
 		b.WriteString("\n")
 	}
 
-	return fmt.Errorf("%s", b.String())
+	return camperrors.New(b.String())
 }

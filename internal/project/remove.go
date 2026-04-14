@@ -100,7 +100,7 @@ func Remove(ctx context.Context, campaignRoot, name string, opts RemoveOptions) 
 		return nil, err
 	} else if linked {
 		if opts.Delete {
-			return nil, fmt.Errorf("linked projects can only be unlinked; deleting external targets is not supported")
+			return nil, camperrors.Wrap(camperrors.ErrInvalidInput, "linked projects can only be unlinked; deleting external targets is not supported")
 		}
 		if opts.DryRun {
 			addStep(result, "would unlink project symlink and remove local marker state")

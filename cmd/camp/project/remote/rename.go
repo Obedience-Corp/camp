@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/ui"
@@ -70,7 +71,7 @@ func runProjectRemoteRename(cmd *cobra.Command, args []string) error {
 		fmt.Println(ui.Dim("  A future 'git submodule sync' would recreate origin, undoing this rename."))
 		fmt.Println(ui.Dim("  To change the URL instead: camp project remote set-url <url>"))
 		fmt.Println(ui.Dim("  To rename anyway:          camp project remote rename origin <new> --force"))
-		return fmt.Errorf("use --force to rename origin in submodule project")
+		return camperrors.Wrap(camperrors.ErrInvalidInput, "use --force to rename origin in submodule project")
 	}
 
 	if oldName == "origin" && !isSubmodule {
@@ -93,7 +94,7 @@ func runProjectRemoteRename(cmd *cobra.Command, args []string) error {
 	}
 
 	if err := git.RenameRemote(ctx, resolved.Path, oldName, newName); err != nil {
-		return fmt.Errorf("rename remote: %w", err)
+		return camperrors.Wrap(err, "rename remote")
 	}
 
 	fmt.Printf("%s Renamed remote %s → %s in project %s\n",

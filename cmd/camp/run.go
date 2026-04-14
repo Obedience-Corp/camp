@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +9,7 @@ import (
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/nav"
 	"github.com/Obedience-Corp/camp/internal/nav/index"
 	projectsvc "github.com/Obedience-Corp/camp/internal/project"
@@ -84,12 +83,12 @@ func runRun(cmd *cobra.Command, args []string) error {
 		// Look up shortcut
 		sc, ok := cfg.Shortcuts()[shortcutName]
 		if !ok {
-			return fmt.Errorf("unknown shortcut %q (run 'camp shortcuts' to see available shortcuts)", shortcutName)
+			return camperrors.Wrapf(camperrors.ErrNotFound, "unknown shortcut %q (run 'camp shortcuts' to see available shortcuts)", shortcutName)
 		}
 
 		// Only navigation shortcuts can be used for directory context
 		if !sc.IsNavigation() {
-			return fmt.Errorf("shortcut %q is not a navigation shortcut (only shortcuts with paths can be used)", shortcutName)
+			return camperrors.Wrapf(camperrors.ErrInvalidInput, "shortcut %q is not a navigation shortcut (only shortcuts with paths can be used)", shortcutName)
 		}
 
 		// Check if this is a standard path that supports project sub-shortcuts
@@ -149,13 +148,13 @@ func runRun(cmd *cobra.Command, args []string) error {
 
 					// Determine how many args were consumed
 					if consumed >= len(args) {
-						return fmt.Errorf("no command specified")
+						return camperrors.Wrap(camperrors.ErrInvalidInput, "no command specified")
 					}
 					commandArgs = args[consumed:]
 
 					// Verify directory exists
 					if stat, err := os.Stat(workDir); err != nil || !stat.IsDir() {
-						return fmt.Errorf("directory does not exist: %s", workDir)
+						return camperrors.Wrapf(camperrors.ErrNotFound, "directory does not exist: %s", workDir)
 					}
 
 					// Build and execute command
@@ -170,7 +169,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 
 		// Verify directory exists
 		if stat, err := os.Stat(workDir); err != nil || !stat.IsDir() {
-			return fmt.Errorf("shortcut directory does not exist: %s", workDir)
+			return camperrors.Wrapf(camperrors.ErrNotFound, "shortcut directory does not exist: %s", workDir)
 		}
 
 		// Remaining args are the command
@@ -186,7 +185,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(commandArgs) == 0 {
-		return fmt.Errorf("no command specified")
+		return camperrors.Wrap(camperrors.ErrInvalidInput, "no command specified")
 	}
 
 	// Build the full command string

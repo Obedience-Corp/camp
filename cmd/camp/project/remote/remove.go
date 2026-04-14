@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/ui"
@@ -51,7 +52,7 @@ func runProjectRemoteRemove(cmd *cobra.Command, args []string) error {
 		fmt.Println(ui.Dim("  origin is the canonical remote for submodule tracking."))
 		fmt.Println(ui.Dim("  To change its URL, use: camp project remote set-url <url>"))
 		fmt.Println(ui.Dim("  To remove it anyway:    camp project remote remove origin --force"))
-		return fmt.Errorf("use --force to remove origin")
+		return camperrors.Wrap(camperrors.ErrInvalidInput, "use --force to remove origin")
 	}
 
 	campRoot, err := campaign.DetectCached(ctx)
@@ -68,7 +69,7 @@ func runProjectRemoteRemove(cmd *cobra.Command, args []string) error {
 	}
 
 	if err := git.RemoveRemote(ctx, resolved.Path, remoteName); err != nil {
-		return fmt.Errorf("remove remote: %w", err)
+		return camperrors.Wrap(err, "remove remote")
 	}
 
 	fmt.Printf("%s Removed remote %s from project %s\n",
