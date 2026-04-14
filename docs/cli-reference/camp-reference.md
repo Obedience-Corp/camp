@@ -1336,6 +1336,16 @@ Fast capture is optimized for speed - ideas are saved immediately.
 Use --full when you want to add a body description in the form.
 Use --edit when you need the complete template in your editor.
 
+PROGRAMMATIC (agent) FLAGS:
+  --body              Set intent body from a literal string
+  --body-file         Read intent body from a file (- for stdin)
+  --concept           Set the concept field (e.g., "projects/camp")
+  --author            Override the default author attribution
+
+  --body and --body-file are mutually exclusive.
+  --full + body flags is a usage error.
+  --edit + body flags pre-fills the editor template.
+
 Examples:
   camp intent add "Add dark mode"        Ultra-fast capture
   camp intent add -c obey-campaign "Add dark mode"
@@ -1344,6 +1354,9 @@ Examples:
   camp intent add --full                 Full TUI (includes body)
   camp intent add -e "Complex feature"   Deep capture with editor
   camp intent add -t feature "New API"   Set type explicitly
+  camp intent add "Fix login" --body "The login page returns 500"
+  camp intent add "Migrate DB" --body-file spec.md --concept projects/camp
+  echo "body" | camp intent add "Idea" --body-file -
 
 ```
 camp intent add [title] [flags]
@@ -1352,12 +1365,16 @@ camp intent add [title] [flags]
 ### Options
 
 ```
-  -c, --campaign string   Target campaign by name or ID; omit value to pick interactively
-  -e, --edit              Open in $EDITOR for deep capture
-  -f, --full              Full TUI mode with body textarea
-  -h, --help              help for add
-      --no-commit         Don't create a git commit
-  -t, --type string       Intent type (idea, feature, bug, research, chore) (default "idea")
+      --author string      Override the default author attribution
+      --body string        Set intent body as a literal string
+      --body-file string   Read intent body from file (- for stdin, 10 MiB cap)
+  -c, --campaign string    Target campaign by name or ID; omit value to pick interactively
+      --concept string     Set the concept field (e.g., projects/camp)
+  -e, --edit               Open in $EDITOR for deep capture
+  -f, --full               Full TUI mode with body textarea
+  -h, --help               help for add
+      --no-commit          Don't create a git commit
+  -t, --type string        Intent type (idea, feature, bug, research, chore) (default "idea")
 ```
 
 ### Options inherited from parent commands
@@ -1450,21 +1467,48 @@ Edit an existing intent
 
 ### Synopsis
 
-Edit an intent in your preferred editor.
+Edit an intent in your preferred editor or programmatically via flags.
 
-If ID is provided, opens the intent directly (supports partial matching).
-If no ID is provided, shows a fuzzy picker to select an intent.
+If no programmatic flags are given, opens the intent in $EDITOR.
+If any programmatic flag is present, applies the update directly and
+emits an audit event — no editor is launched.
 
-PARTIAL ID MATCHING:
-  Full ID:       20260119-153412-add-retry-logic
-  Time suffix:   153412-add-retry
-  Slug portion:  add-retry
+PICKER / EDITOR PATH:
+  If ID is provided, opens the intent directly (supports partial matching).
+  If no ID is provided, shows a fuzzy picker to select an intent.
+
+PROGRAMMATIC FLAGS (skip $EDITOR):
+  --title            Set a new title
+  --body             Replace the body with a literal string
+  --body-file        Replace the body from a file (- for stdin)
+  --append-body      Append text to the existing body
+  --append-body-file Append text from a file (- for stdin)
+  --set-type         Change the intent type
+  --set-status       Change the intent status
+  --set-concept      Change the concept field
+  --priority         Change priority (low, medium, high)
+  --horizon          Change horizon (now, next, later, someday)
+  --author           Override the author attribution
+
+MUTUAL EXCLUSIVITY:
+  --body vs --body-file
+  --append-body vs --append-body-file
+  --body/--body-file vs --append-body/--append-body-file (replace vs append)
+
+FILTER FLAGS (for picker only, not update targets):
+  -s/--status        Filter picker by status
+  -t/--type          Filter picker by type
+  -p/--project       Filter picker by project/concept
 
 Examples:
-  camp intent edit                       Interactive picker
-  camp intent edit 20260119-153412...    Direct edit by full ID
-  camp intent edit retry-logic           Partial match edit
-  camp intent edit --status active       Picker filtered by status
+  camp intent edit                                Interactive picker + $EDITOR
+  camp intent edit retry-logic                    Direct edit by partial ID
+  camp intent edit --status active                Picker filtered by status
+  camp intent edit retry --title "Retry with backoff"
+  camp intent edit retry --body "New description"
+  camp intent edit retry --append-body "Additional note"
+  camp intent edit retry --set-type feature --priority high
+  echo "details" | camp intent edit retry --body-file -
 
 ```
 camp intent edit [id] [flags]
@@ -1473,10 +1517,22 @@ camp intent edit [id] [flags]
 ### Options
 
 ```
-  -h, --help             help for edit
-  -p, --project string   Filter picker by project
-  -s, --status string    Filter picker by status
-  -t, --type string      Filter picker by type
+      --append-body string        Append text to the existing body
+      --append-body-file string   Append text from file (- for stdin, 10 MiB cap)
+      --author string             Override the author attribution
+      --body string               Replace the intent body
+      --body-file string          Replace body from file (- for stdin, 10 MiB cap)
+  -h, --help                      help for edit
+      --horizon string            Change horizon (now, next, later, someday)
+      --no-commit                 Don't create a git commit
+      --priority string           Change priority (low, medium, high)
+  -p, --project string            Filter picker by project
+      --set-concept string        Change the concept field
+      --set-status string         Change the intent status
+      --set-type string           Change the intent type (idea, feature, bug, research, chore)
+  -s, --status string             Filter picker by status
+      --title string              Set a new title
+  -t, --type string               Filter picker by type
 ```
 
 ### Options inherited from parent commands
@@ -2356,12 +2412,17 @@ Manage campaign projects
 
 Manage git submodules and project repositories in the campaign.
 
-A project is a git repository tracked as a submodule under the projects/ directory.
-Projects can be added from remote URLs or existing local repositories.
+A project can be:
+  - a git repository tracked as a submodule under projects/
+  - a machine-local linked workspace attached via symlink under projects/
+
+Use 'camp project add' for submodules and 'camp project link' / 'camp project unlink'
+for linked workspaces.
 
 Examples:
   camp project list                    List all projects
   camp project add git@github.com:org/repo.git  Add a new project
+  camp project link ~/code/my-project  Link an existing local workspace
   camp project remove api-service      Remove a project
 
 ```
@@ -2394,6 +2455,10 @@ Add a git repository as a project in the campaign.
 The project is cloned as a git submodule into the projects/ directory.
 A worktree directory is also created for future parallel development.
 
+If you're already inside a campaign, that campaign is used by default.
+Outside a campaign, use --campaign <name-or-id> or a bare --campaign to
+select a registered target campaign.
+
 Source can be:
   - SSH URL:   git@github.com:org/repo.git
   - HTTPS URL: https://github.com/org/repo.git
@@ -2403,20 +2468,22 @@ Examples:
   camp project add git@github.com:org/api.git           # Add remote repo
   camp project add https://github.com/org/web.git       # Add via HTTPS
   camp project add --local ./my-repo --name my-project  # Add existing local repo
+  camp project add --campaign platform --local ./my-repo # Add outside current campaign
   camp project add git@github.com:org/api.git --name backend  # Custom name
 
 ```
-camp project add <source> [flags]
+camp project add [source] [flags]
 ```
 
 ### Options
 
 ```
-  -h, --help           help for add
-  -l, --local string   Add existing local repository instead of cloning
-  -n, --name string    Override project name (defaults to repo name)
-      --no-commit      Skip automatic git commit
-  -p, --path string    Override destination path (defaults to projects/<name>)
+  -c, --campaign string   Target campaign by name or ID; omit value to pick interactively
+  -h, --help              help for add
+  -l, --local string      Add existing local repository instead of cloning
+  -n, --name string       Override project name (defaults to repo name)
+      --no-commit         Skip automatic git commit
+  -p, --path string       Override destination path (defaults to projects/<name>)
 ```
 
 ### Options inherited from parent commands
@@ -2471,6 +2538,53 @@ camp project commit [flags]
 ```
 ---
 
+## camp project link
+
+Link an existing local project into a campaign
+
+### Synopsis
+
+Link an existing local directory into a campaign.
+
+If path is omitted, camp links the current working directory.
+
+If you're already inside a campaign, camp uses that campaign automatically.
+If you're outside a campaign in an interactive terminal, camp opens a picker
+so you can choose a registered campaign. Use --campaign <name-or-id> to skip
+the picker or for non-interactive scripts.
+
+This creates a symlink at projects/<name> and writes .camp with the selected
+campaign ID.
+
+Examples:
+  camp project link                          # Link current directory
+  camp project link ~/code/my-project        # Link another directory
+  camp project link --campaign platform      # Link current directory to a specific campaign
+  camp project link ~/code/my-project --campaign platform
+  camp project link ~/code/my-project --name backend
+
+```
+camp project link [path] [flags]
+```
+
+### Options
+
+```
+  -c, --campaign string   Target campaign by name or ID; defaults to current campaign or interactive picker
+  -h, --help              help for link
+  -n, --name string       Override project name (defaults to directory name)
+      --no-commit         Skip automatic git commit
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.json)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
 ## camp project list
 
 List projects in campaign
@@ -2479,9 +2593,8 @@ List projects in campaign
 
 List all projects in the current campaign.
 
-Projects are git repositories located in the projects/ directory.
-The command detects project types by looking for marker files like
-go.mod (Go), Cargo.toml (Rust), or package.json (TypeScript).
+Projects are discovered from the projects/ directory. They may be regular
+git-backed entries or linked external directories.
 
 Output formats:
   table   - Aligned columns with headers (default)
@@ -2907,6 +3020,9 @@ Remove a project from the campaign.
 By default, this only removes the project from git submodule tracking.
 The project files remain in place for you to handle manually.
 
+For linked projects, prefer 'camp project unlink'. Linked projects are
+machine-local symlinks and are never deleted through this command.
+
 Use --delete to also remove all project files. This is destructive
 and requires confirmation unless --force is also specified.
 
@@ -2976,6 +3092,56 @@ camp project run [--project <name>] [--] <command> [args...] [flags]
 
 ```
   -h, --help   help for run
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.json)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
+## camp project unlink
+
+Unlink a linked project from a campaign
+
+### Synopsis
+
+Remove a linked project symlink from a campaign without touching the
+external workspace contents.
+
+If name is omitted, the current linked project is inferred from the working
+directory.
+
+Use this for linked workspaces added with 'camp project link'. This command
+removes the symlink entry from projects/ and cleans up the linked repo's local
+.camp marker when it belongs to the selected campaign.
+
+If you're already inside a campaign, that campaign is used by default.
+Outside a campaign, use --campaign <name-or-id> or a bare --campaign to
+pick a registered target campaign interactively.
+
+Examples:
+  camp project unlink
+  camp project unlink my-project
+  camp project unlink my-project --campaign platform
+  camp project unlink --campaign platform
+  camp project unlink my-project --campaign
+  camp project unlink my-project --dry-run
+
+```
+camp project unlink [name] [flags]
+```
+
+### Options
+
+```
+  -c, --campaign string   Target campaign by name or ID; omit value to pick interactively
+      --dry-run           Show what would be done without making changes
+  -h, --help              help for unlink
+      --no-commit         Skip automatic git commit
 ```
 
 ### Options inherited from parent commands

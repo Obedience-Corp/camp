@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	projectlinked "github.com/Obedience-Corp/camp/cmd/camp/project/linked"
 	"github.com/Obedience-Corp/camp/internal/config"
 )
 
@@ -44,7 +45,7 @@ func TestProjectAddCampaignResolver_CurrentCampaignFromCwd(t *testing.T) {
 	wantCfg := &config.CampaignConfig{ID: "current-1111", Name: "current"}
 	reg := testProjectAddRegistry(t)
 
-	r := projectAddCampaignResolver{
+	r := projectCampaignResolver{
 		loadCurrent: func(context.Context) (*config.CampaignConfig, string, error) {
 			return wantCfg, "/campaigns/current", nil
 		},
@@ -53,7 +54,7 @@ func TestProjectAddCampaignResolver_CurrentCampaignFromCwd(t *testing.T) {
 		},
 	}
 
-	cfg, root, err := r.resolve(context.Background(), "", false)
+	cfg, root, err := r.Resolve(context.Background(), "", false)
 	if err != nil {
 		t.Fatalf("resolve() error = %v", err)
 	}
@@ -66,13 +67,13 @@ func TestProjectAddCampaignResolver_CurrentCampaignFromCwd(t *testing.T) {
 }
 
 func TestProjectAddCampaignResolver_CurrentCampaignAllowsUnregisteredRoot(t *testing.T) {
-	r := projectAddCampaignResolver{
+	r := projectCampaignResolver{
 		loadCurrent: func(context.Context) (*config.CampaignConfig, string, error) {
 			return &config.CampaignConfig{ID: "current-1111", Name: "current"}, "/campaigns/current", nil
 		},
 	}
 
-	cfg, root, err := r.resolve(context.Background(), "", false)
+	cfg, root, err := r.Resolve(context.Background(), "", false)
 	if err != nil {
 		t.Fatalf("resolve() error = %v", err)
 	}
@@ -88,7 +89,7 @@ func TestProjectAddCampaignResolver_NoCurrentCampaignUsesPicker(t *testing.T) {
 	reg := testProjectAddRegistry(t)
 	pickCalls := 0
 
-	r := projectAddCampaignResolver{
+	r := projectCampaignResolver{
 		isInteractive: func() bool { return true },
 		loadCurrent: func(context.Context) (*config.CampaignConfig, string, error) {
 			return nil, "", errors.New("not inside a campaign")
@@ -107,7 +108,7 @@ func TestProjectAddCampaignResolver_NoCurrentCampaignUsesPicker(t *testing.T) {
 		},
 	}
 
-	cfg, root, err := r.resolve(context.Background(), "", false)
+	cfg, root, err := r.Resolve(context.Background(), "", false)
 	if err != nil {
 		t.Fatalf("resolve() error = %v", err)
 	}
@@ -125,7 +126,7 @@ func TestProjectAddCampaignResolver_NoCurrentCampaignUsesPicker(t *testing.T) {
 func TestProjectAddCampaignResolver_NoCurrentCampaignNonInteractiveFails(t *testing.T) {
 	reg := testProjectAddRegistry(t)
 
-	r := projectAddCampaignResolver{
+	r := projectCampaignResolver{
 		isInteractive: func() bool { return false },
 		loadCurrent: func(context.Context) (*config.CampaignConfig, string, error) {
 			return nil, "", errors.New("not inside a campaign")
@@ -135,7 +136,7 @@ func TestProjectAddCampaignResolver_NoCurrentCampaignNonInteractiveFails(t *test
 		},
 	}
 
-	_, _, err := r.resolve(context.Background(), "", false)
+	_, _, err := r.Resolve(context.Background(), "", false)
 	if err == nil {
 		t.Fatal("resolve() expected error outside a campaign in non-interactive mode")
 	}
@@ -149,7 +150,7 @@ func TestProjectAddCampaignResolver_ExplicitCampaignLookup(t *testing.T) {
 	var matched bytes.Buffer
 	saveCalls := 0
 
-	r := projectAddCampaignResolver{
+	r := projectCampaignResolver{
 		stderr:        &matched,
 		isInteractive: func() bool { return true },
 		loadRegistry: func(context.Context) (*config.Registry, error) {
@@ -164,7 +165,7 @@ func TestProjectAddCampaignResolver_ExplicitCampaignLookup(t *testing.T) {
 		},
 	}
 
-	cfg, root, err := r.resolve(context.Background(), "beta", true)
+	cfg, root, err := r.Resolve(context.Background(), "beta", true)
 	if err != nil {
 		t.Fatalf("resolve() error = %v", err)
 	}
@@ -186,7 +187,7 @@ func TestProjectAddCampaignResolver_BareCampaignUsesPicker(t *testing.T) {
 	reg := testProjectAddRegistry(t)
 	pickCalls := 0
 
-	r := projectAddCampaignResolver{
+	r := projectCampaignResolver{
 		isInteractive: func() bool { return true },
 		loadRegistry: func(context.Context) (*config.Registry, error) {
 			return reg, nil
@@ -202,7 +203,7 @@ func TestProjectAddCampaignResolver_BareCampaignUsesPicker(t *testing.T) {
 		},
 	}
 
-	cfg, root, err := r.resolve(context.Background(), "", true)
+	cfg, root, err := r.Resolve(context.Background(), "", true)
 	if err != nil {
 		t.Fatalf("resolve() error = %v", err)
 	}
@@ -220,8 +221,7 @@ func TestProjectAddCampaignResolver_BareCampaignUsesPicker(t *testing.T) {
 func TestNormalizeProjectAddCampaignArgs_ExplicitCampaignAndRemoteSource(t *testing.T) {
 	targetCampaign, args := normalizeProjectAddCampaignArgs(
 		[]string{"beta", "git@github.com:org/repo.git"},
-		noOptProjectAddCampaign,
-		"",
+		projectlinked.NoOptCampaign,
 		"",
 	)
 
@@ -236,8 +236,7 @@ func TestNormalizeProjectAddCampaignArgs_ExplicitCampaignAndRemoteSource(t *test
 func TestNormalizeProjectAddCampaignArgs_BareCampaignKeepsSourceLikeArg(t *testing.T) {
 	targetCampaign, args := normalizeProjectAddCampaignArgs(
 		[]string{"git@github.com:org/repo.git"},
-		noOptProjectAddCampaign,
-		"",
+		projectlinked.NoOptCampaign,
 		"",
 	)
 

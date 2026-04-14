@@ -49,6 +49,33 @@ func (e *ErrProjectExists) Unwrap() error {
 	return camperrors.ErrAlreadyExists
 }
 
+// ErrProjectAlreadyLinked is returned when a user tries to link an external
+// directory into a campaign that already has a symlink pointing to the same
+// target under a different alias. Linking the same target twice produces two
+// valid symlinks on disk but only one survives List()'s URL-based dedup, so
+// we reject the duplicate up front rather than let the alias silently
+// disappear from `camp project list`, `camp project run`, and `camp leverage`.
+type ErrProjectAlreadyLinked struct {
+	// ExistingName is the alias already linked to the target.
+	ExistingName string
+	// Target is the absolute path of the linked directory (symlink target).
+	Target string
+	// AttemptedName is the alias the caller just tried to use.
+	AttemptedName string
+}
+
+func (e *ErrProjectAlreadyLinked) Error() string {
+	return fmt.Sprintf(
+		"project %q is already linked as %q → %s; unlink first with 'camp project unlink %s' to re-link under a different name",
+		e.AttemptedName, e.ExistingName, e.Target, e.ExistingName,
+	)
+}
+
+// Unwrap returns ErrAlreadyExists so errors.Is(err, camperrors.ErrAlreadyExists) works.
+func (e *ErrProjectAlreadyLinked) Unwrap() error {
+	return camperrors.ErrAlreadyExists
+}
+
 // Add adds a git repository as a submodule to the campaign.
 func Add(ctx context.Context, campaignRoot, source string, opts AddOptions) (*AddResult, error) {
 	if ctx.Err() != nil {

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
+	projectlinked "github.com/Obedience-Corp/camp/cmd/camp/project/linked"
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
@@ -17,10 +18,6 @@ import (
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
-
-// noOptProjectAddCampaign is the NoOptDefVal for the --campaign flag.
-// A bare --campaign opens the shared picker in interactive terminals.
-const noOptProjectAddCampaign = "\x00pick"
 
 var projectAddCmd = &cobra.Command{
 	Use:   "add [source]",
@@ -38,15 +35,12 @@ Source can be:
   - SSH URL:   git@github.com:org/repo.git
   - HTTPS URL: https://github.com/org/repo.git
   - Local path (with --local): ./existing-repo
-  - Local path (with --link):  ~/code/my-project
 
 Examples:
   camp project add git@github.com:org/api.git           # Add remote repo
   camp project add https://github.com/org/web.git       # Add via HTTPS
   camp project add --local ./my-repo --name my-project  # Add existing local repo
-  camp project add --link ~/code/my-project             # Link an existing project
   camp project add --campaign platform --local ./my-repo # Add outside current campaign
-  camp project add --campaign --link ~/code/my-project   # Pick a target campaign
   camp project add git@github.com:org/api.git --name backend  # Custom name`,
 	Args: validateProjectAddArgs,
 	RunE: runProjectAdd,
@@ -59,10 +53,9 @@ func init() {
 	flags.StringP("name", "n", "", "Override project name (defaults to repo name)")
 	flags.StringP("path", "p", "", "Override destination path (defaults to projects/<name>)")
 	flags.StringP("local", "l", "", "Add existing local repository instead of cloning")
-	flags.String("link", "", "Link an existing local directory without cloning")
 	flags.StringP("campaign", "c", "", "Target campaign by name or ID; omit value to pick interactively")
 	flags.Bool("no-commit", false, "Skip automatic git commit")
-	flags.Lookup("campaign").NoOptDefVal = noOptProjectAddCampaign
+	flags.Lookup("campaign").NoOptDefVal = projectlinked.NoOptCampaign
 }
 
 func runProjectAdd(cmd *cobra.Command, args []string) error {
@@ -71,19 +64,12 @@ func runProjectAdd(cmd *cobra.Command, args []string) error {
 	name, _ := cmd.Flags().GetString("name")
 	path, _ := cmd.Flags().GetString("path")
 	local, _ := cmd.Flags().GetString("local")
-	link, _ := cmd.Flags().GetString("link")
 	targetCampaign, _ := cmd.Flags().GetString("campaign")
 	noCommit, _ := cmd.Flags().GetBool("no-commit")
-	targetCampaign, args = normalizeProjectAddCampaignArgs(args, targetCampaign, local, link)
-
-	if local != "" && link != "" {
-		return fmt.Errorf("use either --local or --link, not both")
-	}
+	targetCampaign, args = normalizeProjectAddCampaignArgs(args, targetCampaign, local)
 
 	source := ""
 	switch {
-	case link != "":
-		// Linked adds take their source from --link.
 	case local != "":
 		source = local
 	case len(args) == 0:
@@ -92,55 +78,10 @@ func runProjectAdd(cmd *cobra.Command, args []string) error {
 		source = args[0]
 	}
 
-	campaignResolver := newProjectAddCampaignResolver(cmd.ErrOrStderr())
-	cfg, root, err := campaignResolver.resolve(ctx, targetCampaign, cmd.Flags().Changed("campaign"))
+	campaignResolver := newProjectCampaignResolver(cmd.ErrOrStderr(), "camp project add --campaign <name> [source]")
+	cfg, root, err := campaignResolver.Resolve(ctx, targetCampaign, cmd.Flags().Changed("campaign"))
 	if err != nil {
 		return err
-	}
-
-	if link != "" {
-		result, err := projectsvc.AddLinked(ctx, root, link, projectsvc.LinkOptions{
-			Name: name,
-			Path: path,
-		})
-		if err != nil {
-			return err
-		}
-
-		fmt.Printf("%s %s\n", ui.SuccessIcon(), ui.Success("Linked project: "+result.Name))
-		fmt.Println()
-		fmt.Println(ui.KeyValue("  Path:", result.Path))
-		fmt.Println(ui.KeyValue("  Source:", result.Source))
-		if result.Type != "" {
-			fmt.Println(ui.KeyValue("  Type:", result.Type))
-		}
-		if result.IsGit {
-			fmt.Println(ui.KeyValue("  Git:", "yes"))
-		} else {
-			fmt.Println(ui.KeyValue("  Git:", "no"))
-		}
-		fmt.Println()
-		fmt.Println(ui.Dim("  Linked projects are tracked in campaign git history. Linked git repos can still be committed with camp project commit."))
-		if !noCommit {
-			campaignID := ""
-			if cfg != nil {
-				campaignID = cfg.ID
-			}
-			commitResult := commit.Project(ctx, commit.ProjectOptions{
-				Options: commit.Options{
-					CampaignRoot:  root,
-					CampaignID:    campaignID,
-					Files:         commit.NormalizeFiles(root, result.Path),
-					SelectiveOnly: true,
-				},
-				Action:      commit.ProjectLink,
-				ProjectName: result.Name,
-			})
-			if commitResult.Message != "" {
-				fmt.Printf("  %s\n", commitResult.Message)
-			}
-		}
-		return nil
 	}
 
 	opts := projectsvc.AddOptions{
@@ -198,23 +139,22 @@ func validateProjectAddArgs(cmd *cobra.Command, args []string) error {
 
 	targetCampaign, _ := cmd.Flags().GetString("campaign")
 	local, _ := cmd.Flags().GetString("local")
-	link, _ := cmd.Flags().GetString("link")
-	if targetCampaign == noOptProjectAddCampaign && local == "" && link == "" {
+	if targetCampaign == projectlinked.NoOptCampaign && local == "" {
 		maxArgs = 2
 	}
 
 	return cobra.MaximumNArgs(maxArgs)(cmd, args)
 }
 
-func normalizeProjectAddCampaignArgs(args []string, targetCampaign, local, link string) (string, []string) {
-	if targetCampaign != noOptProjectAddCampaign {
+func normalizeProjectAddCampaignArgs(args []string, targetCampaign, local string) (string, []string) {
+	if targetCampaign != projectlinked.NoOptCampaign {
 		return targetCampaign, args
 	}
 
 	switch {
 	case len(args) == 0:
 		return "", args
-	case local != "" || link != "":
+	case local != "":
 		return args[0], args[1:]
 	case len(args) > 1:
 		return args[0], args[1:]
@@ -234,8 +174,9 @@ func looksLikeProjectAddSource(arg string) bool {
 		strings.HasPrefix(arg, "~")
 }
 
-type projectAddCampaignResolver struct {
+type projectCampaignResolver struct {
 	stderr        io.Writer
+	usageLine     string
 	isInteractive func() bool
 	loadCurrent   func(context.Context) (*config.CampaignConfig, string, error)
 	loadRegistry  func(context.Context) (*config.Registry, error)
@@ -244,9 +185,10 @@ type projectAddCampaignResolver struct {
 	pickCampaign  func(context.Context, *config.Registry) (config.RegisteredCampaign, error)
 }
 
-func newProjectAddCampaignResolver(stderr io.Writer) projectAddCampaignResolver {
-	return projectAddCampaignResolver{
+func newProjectCampaignResolver(stderr io.Writer, usageLine string) projectCampaignResolver {
+	return projectCampaignResolver{
 		stderr:        stderr,
+		usageLine:     usageLine,
 		isInteractive: navtui.IsTerminal,
 		loadCurrent:   config.LoadCampaignConfigFromCwd,
 		loadRegistry:  config.LoadRegistry,
@@ -256,8 +198,8 @@ func newProjectAddCampaignResolver(stderr io.Writer) projectAddCampaignResolver 
 	}
 }
 
-func (r projectAddCampaignResolver) resolve(ctx context.Context, targetCampaign string, targetChanged bool) (*config.CampaignConfig, string, error) {
-	if targetCampaign == noOptProjectAddCampaign {
+func (r projectCampaignResolver) Resolve(ctx context.Context, targetCampaign string, targetChanged bool) (*config.CampaignConfig, string, error) {
+	if targetCampaign == projectlinked.NoOptCampaign {
 		targetCampaign = ""
 	}
 
@@ -280,7 +222,7 @@ func (r projectAddCampaignResolver) resolve(ctx context.Context, targetCampaign 
 	switch {
 	case targetCampaign == "":
 		if !r.isInteractive() {
-			return nil, "", fmt.Errorf("campaign name required in non-interactive mode\n       Usage: camp project add --campaign <name> [source]")
+			return nil, "", fmt.Errorf("campaign name required in non-interactive mode\n       Usage: %s", r.usage())
 		}
 		selected, err = r.pickCampaign(ctx, reg)
 		if err != nil {
@@ -297,7 +239,7 @@ func (r projectAddCampaignResolver) resolve(ctx context.Context, targetCampaign 
 	if err != nil {
 		return nil, "", camperrors.Wrapf(err, "load target campaign %s", selected.Path)
 	}
-	if err := ensureProjectAddCampaignRegistered(reg, cfg, selected.Path); err != nil {
+	if err := ensureProjectCampaignRegistered(reg, cfg, selected.Path); err != nil {
 		return nil, "", err
 	}
 
@@ -309,12 +251,19 @@ func (r projectAddCampaignResolver) resolve(ctx context.Context, targetCampaign 
 	return cfg, selected.Path, nil
 }
 
-func ensureProjectAddCampaignRegistered(reg *config.Registry, cfg *config.CampaignConfig, campaignRoot string) error {
+func (r projectCampaignResolver) usage() string {
+	if strings.TrimSpace(r.usageLine) == "" {
+		return "camp project add --campaign <name> [source]"
+	}
+	return r.usageLine
+}
+
+func ensureProjectCampaignRegistered(reg *config.Registry, cfg *config.CampaignConfig, campaignRoot string) error {
 	if cfg == nil {
 		return fmt.Errorf("target campaign config could not be loaded")
 	}
 
-	normalizedRoot, err := normalizeProjectAddCampaignRoot(campaignRoot)
+	normalizedRoot, err := normalizeProjectCampaignRoot(campaignRoot)
 	if err != nil {
 		return camperrors.Wrap(err, "resolve target campaign root")
 	}
@@ -324,7 +273,7 @@ func ensureProjectAddCampaignRegistered(reg *config.Registry, cfg *config.Campai
 			continue
 		}
 
-		normalizedEntryPath, err := normalizeProjectAddCampaignRoot(entry.Path)
+		normalizedEntryPath, err := normalizeProjectCampaignRoot(entry.Path)
 		if err != nil {
 			continue
 		}
@@ -340,7 +289,7 @@ func ensureProjectAddCampaignRegistered(reg *config.Registry, cfg *config.Campai
 	return fmt.Errorf("target campaign %q is not registered\n       Run 'camp register %s' before adding projects", name, normalizedRoot)
 }
 
-func normalizeProjectAddCampaignRoot(root string) (string, error) {
+func normalizeProjectCampaignRoot(root string) (string, error) {
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
 		return "", err
