@@ -7,6 +7,7 @@ type IntentAction string
 
 const (
 	IntentCreate  IntentAction = "Create"
+	IntentEdit    IntentAction = "Edit"
 	IntentMove    IntentAction = "Move"
 	IntentArchive IntentAction = "Archive"
 	IntentDelete  IntentAction = "Delete"

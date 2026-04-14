@@ -1,10 +1,10 @@
 ## camp unpin
 
-Remove a directory bookmark
+Remove a saved pin
 
 ### Synopsis
 
-Remove a pinned directory bookmark by name.
+Remove a saved pin by name.
 
 Without arguments, detects and unpins the current directory.
 
