@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
+	projectlinked "github.com/Obedience-Corp/camp/cmd/camp/project/linked"
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
@@ -17,10 +18,6 @@ import (
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
-
-// noOptProjectCampaign is the NoOptDefVal for the --campaign flag.
-// A bare --campaign opens the shared picker in interactive terminals.
-const noOptProjectCampaign = "\x00pick"
 
 var projectAddCmd = &cobra.Command{
 	Use:   "add [source]",
@@ -63,7 +60,7 @@ func init() {
 	flags.String("link", "", "Link an existing local directory without cloning (prefer 'camp project link')")
 	flags.StringP("campaign", "c", "", "Target campaign by name or ID; omit value to pick interactively")
 	flags.Bool("no-commit", false, "Skip automatic git commit")
-	flags.Lookup("campaign").NoOptDefVal = noOptProjectCampaign
+	flags.Lookup("campaign").NoOptDefVal = projectlinked.NoOptCampaign
 }
 
 func runProjectAdd(cmd *cobra.Command, args []string) error {
@@ -94,17 +91,17 @@ func runProjectAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	campaignResolver := newProjectCampaignResolver(cmd.ErrOrStderr(), "camp project add --campaign <name> [source]")
-	cfg, root, err := campaignResolver.resolve(ctx, targetCampaign, cmd.Flags().Changed("campaign"))
+	cfg, root, err := campaignResolver.Resolve(ctx, targetCampaign, cmd.Flags().Changed("campaign"))
 	if err != nil {
 		return err
 	}
 
 	if link != "" {
-		result, err := linkProject(ctx, root, link, name, path)
+		result, err := projectlinked.Add(ctx, root, link, name, path)
 		if err != nil {
 			return err
 		}
-		printLinkedProjectResult(result)
+		projectlinked.PrintResult(result)
 		return nil
 	}
 
@@ -164,7 +161,7 @@ func validateProjectAddArgs(cmd *cobra.Command, args []string) error {
 	targetCampaign, _ := cmd.Flags().GetString("campaign")
 	local, _ := cmd.Flags().GetString("local")
 	link, _ := cmd.Flags().GetString("link")
-	if targetCampaign == noOptProjectCampaign && local == "" && link == "" {
+	if targetCampaign == projectlinked.NoOptCampaign && local == "" && link == "" {
 		maxArgs = 2
 	}
 
@@ -172,7 +169,7 @@ func validateProjectAddArgs(cmd *cobra.Command, args []string) error {
 }
 
 func normalizeProjectAddCampaignArgs(args []string, targetCampaign, local, link string) (string, []string) {
-	if targetCampaign != noOptProjectCampaign {
+	if targetCampaign != projectlinked.NoOptCampaign {
 		return targetCampaign, args
 	}
 
@@ -223,8 +220,8 @@ func newProjectCampaignResolver(stderr io.Writer, usageLine string) projectCampa
 	}
 }
 
-func (r projectCampaignResolver) resolve(ctx context.Context, targetCampaign string, targetChanged bool) (*config.CampaignConfig, string, error) {
-	if targetCampaign == noOptProjectCampaign {
+func (r projectCampaignResolver) Resolve(ctx context.Context, targetCampaign string, targetChanged bool) (*config.CampaignConfig, string, error) {
+	if targetCampaign == projectlinked.NoOptCampaign {
 		targetCampaign = ""
 	}
 

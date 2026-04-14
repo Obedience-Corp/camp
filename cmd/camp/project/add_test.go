@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	projectlinked "github.com/Obedience-Corp/camp/cmd/camp/project/linked"
 	"github.com/Obedience-Corp/camp/internal/config"
 )
 
@@ -53,7 +54,7 @@ func TestProjectAddCampaignResolver_CurrentCampaignFromCwd(t *testing.T) {
 		},
 	}
 
-	cfg, root, err := r.resolve(context.Background(), "", false)
+	cfg, root, err := r.Resolve(context.Background(), "", false)
 	if err != nil {
 		t.Fatalf("resolve() error = %v", err)
 	}
@@ -75,7 +76,7 @@ func TestProjectAddCampaignResolver_CurrentCampaignMustBeRegistered(t *testing.T
 		},
 	}
 
-	_, _, err := r.resolve(context.Background(), "", false)
+	_, _, err := r.Resolve(context.Background(), "", false)
 	if err == nil {
 		t.Fatal("resolve() expected error for unregistered current campaign")
 	}
@@ -107,7 +108,7 @@ func TestProjectAddCampaignResolver_NoCurrentCampaignUsesPicker(t *testing.T) {
 		},
 	}
 
-	cfg, root, err := r.resolve(context.Background(), "", false)
+	cfg, root, err := r.Resolve(context.Background(), "", false)
 	if err != nil {
 		t.Fatalf("resolve() error = %v", err)
 	}
@@ -135,7 +136,7 @@ func TestProjectAddCampaignResolver_NoCurrentCampaignNonInteractiveFails(t *test
 		},
 	}
 
-	_, _, err := r.resolve(context.Background(), "", false)
+	_, _, err := r.Resolve(context.Background(), "", false)
 	if err == nil {
 		t.Fatal("resolve() expected error outside a campaign in non-interactive mode")
 	}
@@ -164,7 +165,7 @@ func TestProjectAddCampaignResolver_ExplicitCampaignLookup(t *testing.T) {
 		},
 	}
 
-	cfg, root, err := r.resolve(context.Background(), "beta", true)
+	cfg, root, err := r.Resolve(context.Background(), "beta", true)
 	if err != nil {
 		t.Fatalf("resolve() error = %v", err)
 	}
@@ -202,7 +203,7 @@ func TestProjectAddCampaignResolver_BareCampaignUsesPicker(t *testing.T) {
 		},
 	}
 
-	cfg, root, err := r.resolve(context.Background(), "", true)
+	cfg, root, err := r.Resolve(context.Background(), "", true)
 	if err != nil {
 		t.Fatalf("resolve() error = %v", err)
 	}
@@ -220,7 +221,7 @@ func TestProjectAddCampaignResolver_BareCampaignUsesPicker(t *testing.T) {
 func TestNormalizeProjectAddCampaignArgs_ExplicitCampaignAndRemoteSource(t *testing.T) {
 	targetCampaign, args := normalizeProjectAddCampaignArgs(
 		[]string{"beta", "git@github.com:org/repo.git"},
-		noOptProjectCampaign,
+		projectlinked.NoOptCampaign,
 		"",
 		"",
 	)
@@ -236,7 +237,7 @@ func TestNormalizeProjectAddCampaignArgs_ExplicitCampaignAndRemoteSource(t *test
 func TestNormalizeProjectAddCampaignArgs_BareCampaignKeepsSourceLikeArg(t *testing.T) {
 	targetCampaign, args := normalizeProjectAddCampaignArgs(
 		[]string{"git@github.com:org/repo.git"},
-		noOptProjectCampaign,
+		projectlinked.NoOptCampaign,
 		"",
 		"",
 	)

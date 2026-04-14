@@ -1,6 +1,9 @@
 package project
 
 import (
+	"io"
+
+	projectlinked "github.com/Obedience-Corp/camp/cmd/camp/project/linked"
 	projectremote "github.com/Obedience-Corp/camp/cmd/camp/project/remote"
 	projectworktree "github.com/Obedience-Corp/camp/cmd/camp/project/worktree"
 	"github.com/spf13/cobra"
@@ -31,6 +34,11 @@ Examples:
 }
 
 func init() {
+	linkResolverFactory := func(stderr io.Writer, usageLine string) projectlinked.CampaignResolver {
+		return newProjectCampaignResolver(stderr, usageLine)
+	}
+	Cmd.AddCommand(projectlinked.NewLinkCommand(linkResolverFactory))
+	Cmd.AddCommand(projectlinked.NewUnlinkCommand(linkResolverFactory))
 	Cmd.AddCommand(projectremote.Cmd)
 	Cmd.AddCommand(projectworktree.Cmd)
 }

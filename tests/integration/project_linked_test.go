@@ -102,6 +102,32 @@ func TestProject_Link_NonGitDir(t *testing.T) {
 	assert.Contains(t, err.Error(), "linked non-git")
 }
 
+func TestProject_Commit_LinkedGitRepo(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campaignPath := "/campaigns/proj-link-commit"
+	linkedPath := "/test/linked-commit-app"
+
+	_, err := tc.InitCampaign(campaignPath, "proj-link-commit", "product")
+	require.NoError(t, err)
+	require.NoError(t, tc.CreateGitRepo(linkedPath))
+
+	output, err := tc.RunCampInDir(campaignPath, "project", "link", linkedPath)
+	require.NoError(t, err)
+	assert.Contains(t, output, "camp project commit")
+
+	require.NoError(t, tc.WriteFile(linkedPath+"/README.md", "linked change\n"))
+
+	commitOutput, err := tc.RunCampInDir(linkedPath, "project", "commit", "-m", "linked change")
+	require.NoError(t, err, "linked git repo should support camp project commit")
+	assert.Contains(t, commitOutput, "Project changes committed")
+
+	logOutput, exitCode, err := tc.ExecCommand("sh", "-c", "cd "+linkedPath+" && git log -1 --pretty=%s")
+	require.NoError(t, err)
+	assert.Equal(t, 0, exitCode)
+	assert.Contains(t, strings.TrimSpace(logOutput), "[OBEY-CAMPAIGN-")
+	assert.Contains(t, strings.TrimSpace(logOutput), "linked change")
+}
+
 func TestProject_Link_RejectsRepoAlreadyLinkedToAnotherCampaign(t *testing.T) {
 	tc := GetSharedContainer(t)
 	campaignA := "/campaigns/proj-link-a"
