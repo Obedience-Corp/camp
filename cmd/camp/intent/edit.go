@@ -15,6 +15,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/intent/audit"
+	navtui "github.com/Obedience-Corp/camp/internal/nav/tui"
 	"github.com/Obedience-Corp/camp/internal/paths"
 )
 
@@ -132,6 +133,10 @@ func runIntentEdit(cmd *cobra.Command, args []string) error {
 			return err
 		}
 	} else {
+		// No ID + programmatic flags + no TTY = deterministic error
+		if programmatic && !navtui.IsTerminal() {
+			return fmt.Errorf("intent ID required in non-interactive mode\n       Usage: camp intent edit <id> [flags]")
+		}
 		// No ID - show fuzzy picker
 		selectedIntent, err = pickIntent(ctx, svc, statusFilter, typeFilter, projectFilter)
 		if err != nil {
@@ -219,7 +224,12 @@ func runProgrammaticEdit(
 
 	// Auto-commit (unless --no-commit)
 	if !noCommit {
-		files := commit.NormalizeFiles(campaignRoot, updated.Path, audit.FilePath(intentsDir))
+		filesToCommit := []string{updated.Path, audit.FilePath(intentsDir)}
+		// Status changes move the file — stage the old path deletion too
+		if target.Path != updated.Path {
+			filesToCommit = append(filesToCommit, target.Path)
+		}
+		files := commit.NormalizeFiles(campaignRoot, filesToCommit...)
 		commitResult := commit.Intent(ctx, commit.IntentOptions{
 			Options: commit.Options{
 				CampaignRoot:  campaignRoot,

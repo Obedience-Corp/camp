@@ -128,9 +128,6 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "ensuring intent directories")
 	}
 
-	// Determine if any programmatic flags were used (signals agent/CLI path)
-	hasProgrammaticFlags := bodySet || cmd.Flags().Changed("concept") || cmd.Flags().Changed("author")
-
 	// Ultra-fast path: title provided as argument
 	if len(args) > 0 {
 		// Default author for CLI-with-title is "agent", but --author overrides
@@ -155,8 +152,10 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 		return runFastCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, opts)
 	}
 
-	// No title argument: non-TTY requires a title (can't launch TUI)
-	if !navtui.IsTerminal() && !hasProgrammaticFlags {
+	// No title argument: non-TTY always requires a title (can't launch TUI)
+	// Programmatic flags like --body/--concept/--author supplement a title,
+	// they don't replace it.
+	if !navtui.IsTerminal() {
 		return fmt.Errorf("title argument required in non-interactive mode\n       Usage: camp intent add <title> [flags]")
 	}
 
