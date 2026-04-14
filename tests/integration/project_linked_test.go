@@ -51,7 +51,7 @@ func TestProject_Link_GitRepo(t *testing.T) {
 	linkLog, exitCode, err := tc.ExecCommand("sh", "-c", "cd "+campaignPath+" && git log -1 --pretty=%s")
 	require.NoError(t, err)
 	assert.Equal(t, 0, exitCode)
-	assert.Contains(t, strings.TrimSpace(linkLog), "Add: linked-app")
+	assert.Contains(t, strings.TrimSpace(linkLog), "Link: linked-app")
 
 	campaignStatus, _, err := tc.ExecCommand("sh", "-c", "cd "+campaignPath+" && git status --porcelain")
 	require.NoError(t, err)
@@ -76,13 +76,19 @@ func TestProject_Link_TargetCampaignOutsideCurrentContext(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, tc.CreateGitRepo(linkedPath))
 
-	output, err := tc.RunCampInDir("/test", "project", "link", linkedPath, "--campaign", "proj-link-target")
-	require.NoError(t, err, "project link should succeed outside a campaign when --campaign is provided")
+	output, err := tc.RunCampInDir(linkedPath, "project", "link", "--campaign", "proj-link-target")
+	require.NoError(t, err, "project link should succeed from the current directory when --campaign is provided")
 	assert.Contains(t, output, "Linked project: outside-linked-app")
+	assert.Contains(t, output, "Committed changes to git")
 
 	_, exitCode, err := tc.ExecCommand("test", "-L", campaignPath+"/projects/outside-linked-app")
 	require.NoError(t, err)
 	assert.Equal(t, 0, exitCode, "linked project entry should be created in the selected campaign")
+
+	linkLog, exitCode, err := tc.ExecCommand("sh", "-c", "cd "+campaignPath+" && git log -1 --pretty=%s")
+	require.NoError(t, err)
+	assert.Equal(t, 0, exitCode)
+	assert.Contains(t, strings.TrimSpace(linkLog), "Link: outside-linked-app")
 }
 
 func TestProject_Link_NonGitDir(t *testing.T) {
@@ -168,28 +174,6 @@ func TestProject_Link_RejectsRepoAlreadyLinkedToAnotherCampaign(t *testing.T) {
 	assert.NotEqual(t, 0, exitCode, "second campaign should not create a symlink")
 }
 
-func TestProject_Link_RejectsDuplicateTargetWithinCampaign(t *testing.T) {
-	tc := GetSharedContainer(t)
-	campaignPath := "/campaigns/proj-link-dup-target"
-	linkedPath := "/test/dup-target-linked-app"
-
-	_, err := tc.InitCampaign(campaignPath, "proj-link-dup-target", "product")
-	require.NoError(t, err)
-	require.NoError(t, tc.CreateGitRepo(linkedPath))
-
-	_, err = tc.RunCampInDir(campaignPath, "project", "link", linkedPath)
-	require.NoError(t, err)
-
-	output, err := tc.RunCampInDir(campaignPath, "project", "link", linkedPath, "--name", "dup-target-alias")
-	require.Error(t, err, "adding the same linked target under a second alias should fail")
-	assert.Contains(t, output, "already linked as")
-	assert.Contains(t, output, "dup-target-linked-app")
-
-	_, exitCode, err := tc.ExecCommand("test", "-L", campaignPath+"/projects/dup-target-alias")
-	require.NoError(t, err)
-	assert.NotEqual(t, 0, exitCode, "duplicate alias should not create a second symlink")
-}
-
 func TestProject_Unlink_LinkedProject(t *testing.T) {
 	tc := GetSharedContainer(t)
 	campaignPath := "/campaigns/proj-unlink"
@@ -222,11 +206,36 @@ func TestProject_Unlink_LinkedProject(t *testing.T) {
 	unlinkLog, exitCode, err := tc.ExecCommand("sh", "-c", "cd "+campaignPath+" && git log -1 --pretty=%s")
 	require.NoError(t, err)
 	assert.Equal(t, 0, exitCode)
-	assert.Contains(t, strings.TrimSpace(unlinkLog), "Remove: remove-linked")
+	assert.Contains(t, strings.TrimSpace(unlinkLog), "Unlink: remove-linked")
 
 	campaignStatus, _, err := tc.ExecCommand("sh", "-c", "cd "+campaignPath+" && git status --porcelain")
 	require.NoError(t, err)
 	assert.Equal(t, "", strings.TrimSpace(campaignStatus), "campaign repo should stay clean after auto-committing the unlink")
+}
+
+func TestProject_Unlink_CurrentLinkedProjectCwd(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campaignPath := "/campaigns/proj-unlink-cwd"
+	linkedPath := "/test/unlink-cwd-linked"
+
+	_, err := tc.InitCampaign(campaignPath, "proj-unlink-cwd", "product")
+	require.NoError(t, err)
+	require.NoError(t, tc.CreateGitRepo(linkedPath))
+
+	_, err = tc.RunCampInDir(campaignPath, "project", "link", linkedPath)
+	require.NoError(t, err)
+
+	_, _, err = tc.ExecCommand("mkdir", "-p", linkedPath+"/src/pkg")
+	require.NoError(t, err)
+
+	output, err := tc.RunCampInDir(linkedPath+"/src/pkg", "project", "unlink")
+	require.NoError(t, err, "project unlink should infer the current linked project from cwd")
+	assert.Contains(t, output, "Unlinked project: unlink-cwd-linked")
+	assert.Contains(t, output, "Committed changes to git")
+
+	_, exitCode, err := tc.ExecCommand("test", "-L", campaignPath+"/projects/unlink-cwd-linked")
+	require.NoError(t, err)
+	assert.NotEqual(t, 0, exitCode, "linked project symlink should be removed")
 }
 
 func TestProjectRun_AutoDetectFromLinkedCwd(t *testing.T) {

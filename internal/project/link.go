@@ -18,7 +18,6 @@ import (
 // LinkOptions configures linking an existing local directory into a campaign.
 type LinkOptions struct {
 	Name string
-	Path string
 }
 
 // LinkResult contains information about the linked project.
@@ -105,10 +104,7 @@ func AddLinked(ctx context.Context, campaignRoot, localPath string, opts LinkOpt
 		return nil, err
 	}
 
-	destPath := opts.Path
-	if destPath == "" {
-		destPath = filepath.Join("projects", name)
-	}
+	destPath := filepath.Join("projects", name)
 	fullPath := filepath.Join(campaignRoot, destPath)
 	if err := pathutil.ValidateBoundary(campaignRoot, fullPath); err != nil {
 		return nil, camperrors.Wrap(err, "project path boundary violation")

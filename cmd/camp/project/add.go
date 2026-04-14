@@ -35,16 +35,12 @@ Source can be:
   - SSH URL:   git@github.com:org/repo.git
   - HTTPS URL: https://github.com/org/repo.git
   - Local path (with --local): ./existing-repo
-  - Local path (with --link):  ~/code/my-project (prefer 'camp project link')
 
 Examples:
   camp project add git@github.com:org/api.git           # Add remote repo
   camp project add https://github.com/org/web.git       # Add via HTTPS
   camp project add --local ./my-repo --name my-project  # Add existing local repo
-  camp project add --link ~/code/my-project             # Link an existing project
-  camp project link ~/code/my-project                   # Preferred linked-project command
   camp project add --campaign platform --local ./my-repo # Add outside current campaign
-  camp project add --campaign --link ~/code/my-project   # Pick a target campaign
   camp project add git@github.com:org/api.git --name backend  # Custom name`,
 	Args: validateProjectAddArgs,
 	RunE: runProjectAdd,
@@ -57,7 +53,6 @@ func init() {
 	flags.StringP("name", "n", "", "Override project name (defaults to repo name)")
 	flags.StringP("path", "p", "", "Override destination path (defaults to projects/<name>)")
 	flags.StringP("local", "l", "", "Add existing local repository instead of cloning")
-	flags.String("link", "", "Link an existing local directory without cloning (prefer 'camp project link')")
 	flags.StringP("campaign", "c", "", "Target campaign by name or ID; omit value to pick interactively")
 	flags.Bool("no-commit", false, "Skip automatic git commit")
 	flags.Lookup("campaign").NoOptDefVal = projectlinked.NoOptCampaign
@@ -69,19 +64,12 @@ func runProjectAdd(cmd *cobra.Command, args []string) error {
 	name, _ := cmd.Flags().GetString("name")
 	path, _ := cmd.Flags().GetString("path")
 	local, _ := cmd.Flags().GetString("local")
-	link, _ := cmd.Flags().GetString("link")
 	targetCampaign, _ := cmd.Flags().GetString("campaign")
 	noCommit, _ := cmd.Flags().GetBool("no-commit")
-	targetCampaign, args = normalizeProjectAddCampaignArgs(args, targetCampaign, local, link)
-
-	if local != "" && link != "" {
-		return fmt.Errorf("use either --local or --link, not both")
-	}
+	targetCampaign, args = normalizeProjectAddCampaignArgs(args, targetCampaign, local)
 
 	source := ""
 	switch {
-	case link != "":
-		// Linked adds take their source from --link.
 	case local != "":
 		source = local
 	case len(args) == 0:
@@ -94,21 +82,6 @@ func runProjectAdd(cmd *cobra.Command, args []string) error {
 	cfg, root, err := campaignResolver.Resolve(ctx, targetCampaign, cmd.Flags().Changed("campaign"))
 	if err != nil {
 		return err
-	}
-
-	if link != "" {
-		result, err := projectlinked.Add(ctx, root, link, name, path)
-		if err != nil {
-			return err
-		}
-		projectlinked.PrintResult(result)
-		if !noCommit {
-			commitResult := projectlinked.CommitAdd(ctx, cfg, root, result.Path, result.Name)
-			if commitResult.Message != "" {
-				fmt.Printf("  %s\n", commitResult.Message)
-			}
-		}
-		return nil
 	}
 
 	opts := projectsvc.AddOptions{
@@ -166,15 +139,14 @@ func validateProjectAddArgs(cmd *cobra.Command, args []string) error {
 
 	targetCampaign, _ := cmd.Flags().GetString("campaign")
 	local, _ := cmd.Flags().GetString("local")
-	link, _ := cmd.Flags().GetString("link")
-	if targetCampaign == projectlinked.NoOptCampaign && local == "" && link == "" {
+	if targetCampaign == projectlinked.NoOptCampaign && local == "" {
 		maxArgs = 2
 	}
 
 	return cobra.MaximumNArgs(maxArgs)(cmd, args)
 }
 
-func normalizeProjectAddCampaignArgs(args []string, targetCampaign, local, link string) (string, []string) {
+func normalizeProjectAddCampaignArgs(args []string, targetCampaign, local string) (string, []string) {
 	if targetCampaign != projectlinked.NoOptCampaign {
 		return targetCampaign, args
 	}
@@ -182,7 +154,7 @@ func normalizeProjectAddCampaignArgs(args []string, targetCampaign, local, link 
 	switch {
 	case len(args) == 0:
 		return "", args
-	case local != "" || link != "":
+	case local != "":
 		return args[0], args[1:]
 	case len(args) > 1:
 		return args[0], args[1:]
@@ -234,13 +206,6 @@ func (r projectCampaignResolver) Resolve(ctx context.Context, targetCampaign str
 	if !targetChanged {
 		cfg, campaignRoot, err := r.loadCurrent(ctx)
 		if err == nil {
-			reg, regErr := r.loadRegistry(ctx)
-			if regErr != nil {
-				return nil, "", camperrors.Wrap(regErr, "load registry")
-			}
-			if err := ensureProjectCampaignRegistered(reg, cfg, campaignRoot); err != nil {
-				return nil, "", err
-			}
 			return cfg, campaignRoot, nil
 		}
 	}

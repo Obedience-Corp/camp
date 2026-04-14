@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// Pin represents a bookmarked directory.
+// Pin represents a saved pinned directory.
 type Pin struct {
 	Name      string    `json:"name"`
 	Path      string    `json:"path"`

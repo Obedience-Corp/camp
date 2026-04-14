@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -117,5 +118,41 @@ func TestRunGendocs_RemovesStaleFilesAndSkipsHiddenCommands(t *testing.T) {
 	}
 	if len(generated) == 0 {
 		t.Fatal("expected at least one generated camp*.md file")
+	}
+}
+
+func TestRunGendocs_StripsNoOptDefValSentinelsFromDocs(t *testing.T) {
+	dir := t.TempDir()
+
+	gendocsOutput = dir
+	gendocsFormat = "markdown"
+	gendocsSingle = false
+
+	cmd, _, err := rootCmd.Find([]string{"intent", "add"})
+	if err != nil {
+		t.Fatalf("find intent add: %v", err)
+	}
+	origNoOpt := cmd.Flags().Lookup("campaign").NoOptDefVal
+
+	if err := runGendocs(rootCmd, nil); err != nil {
+		t.Fatalf("runGendocs: %v", err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(dir, "camp_intent_add.md"))
+	if err != nil {
+		t.Fatalf("read generated doc: %v", err)
+	}
+
+	if bytes.Contains(content, []byte{0}) {
+		t.Fatal("generated docs should not contain NUL bytes from NoOptDefVal sentinels")
+	}
+	if strings.Contains(string(content), "string[=") {
+		t.Fatal("generated docs should not render optional-value sentinels in flag usage")
+	}
+	if !strings.Contains(string(content), "--campaign string") {
+		t.Fatal("generated docs should retain a normal --campaign flag usage line")
+	}
+	if got := cmd.Flags().Lookup("campaign").NoOptDefVal; got != origNoOpt {
+		t.Fatalf("campaign NoOptDefVal changed after docs generation: got %q want %q", got, origNoOpt)
 	}
 }

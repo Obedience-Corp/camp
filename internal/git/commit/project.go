@@ -7,8 +7,10 @@ type ProjectAction string
 
 const (
 	ProjectAdd    ProjectAction = "Add"
+	ProjectLink   ProjectAction = "Link"
 	ProjectNew    ProjectAction = "New"
 	ProjectRemove ProjectAction = "Remove"
+	ProjectUnlink ProjectAction = "Unlink"
 )
 
 // ProjectOptions configures a project commit.

@@ -11,6 +11,7 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
+	"github.com/spf13/pflag"
 )
 
 var (
@@ -54,6 +55,8 @@ func runGendocs(cmd *cobra.Command, args []string) error {
 
 	stripANSIFromTree(rootForDocs)
 	disableAutoGenTag(rootForDocs)
+	restoreNoOptDefaults := stripDocOnlyNoOptDefaults(rootForDocs)
+	defer restoreNoOptDefaults()
 
 	if gendocsStable {
 		hideDevOnlyCommands(rootForDocs)
@@ -107,6 +110,43 @@ func disableAutoGenTag(cmd *cobra.Command) {
 	cmd.DisableAutoGenTag = true
 	for _, child := range cmd.Commands() {
 		disableAutoGenTag(child)
+	}
+}
+
+// stripDocOnlyNoOptDefaults removes internal NoOptDefVal sentinels from the
+// command tree while generating docs. Some commands use control-character
+// sentinels to support bare optional-value flags at runtime; Cobra's doc
+// renderer prints those values verbatim, which pollutes generated markdown.
+// The original values are restored after doc generation so runtime parsing is
+// unaffected.
+func stripDocOnlyNoOptDefaults(cmd *cobra.Command) func() {
+	type restoreEntry struct {
+		flag  *pflag.Flag
+		value string
+	}
+
+	var restores []restoreEntry
+
+	var walk func(*cobra.Command)
+	walk = func(node *cobra.Command) {
+		node.Flags().VisitAll(func(f *pflag.Flag) {
+			if !strings.ContainsRune(f.NoOptDefVal, '\x00') {
+				return
+			}
+			restores = append(restores, restoreEntry{flag: f, value: f.NoOptDefVal})
+			f.NoOptDefVal = ""
+		})
+		for _, child := range node.Commands() {
+			walk(child)
+		}
+	}
+
+	walk(cmd)
+
+	return func() {
+		for _, entry := range restores {
+			entry.flag.NoOptDefVal = entry.value
+		}
 	}
 }
 

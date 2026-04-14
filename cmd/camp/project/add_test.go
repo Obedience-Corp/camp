@@ -66,22 +66,22 @@ func TestProjectAddCampaignResolver_CurrentCampaignFromCwd(t *testing.T) {
 	}
 }
 
-func TestProjectAddCampaignResolver_CurrentCampaignMustBeRegistered(t *testing.T) {
+func TestProjectAddCampaignResolver_CurrentCampaignAllowsUnregisteredRoot(t *testing.T) {
 	r := projectCampaignResolver{
 		loadCurrent: func(context.Context) (*config.CampaignConfig, string, error) {
 			return &config.CampaignConfig{ID: "current-1111", Name: "current"}, "/campaigns/current", nil
 		},
-		loadRegistry: func(context.Context) (*config.Registry, error) {
-			return config.NewRegistry(), nil
-		},
 	}
 
-	_, _, err := r.Resolve(context.Background(), "", false)
-	if err == nil {
-		t.Fatal("resolve() expected error for unregistered current campaign")
+	cfg, root, err := r.Resolve(context.Background(), "", false)
+	if err != nil {
+		t.Fatalf("resolve() error = %v", err)
 	}
-	if !strings.Contains(err.Error(), "camp register /campaigns/current") {
-		t.Fatalf("unexpected error: %v", err)
+	if root != "/campaigns/current" {
+		t.Fatalf("root = %q, want %q", root, "/campaigns/current")
+	}
+	if cfg == nil || cfg.ID != "current-1111" {
+		t.Fatalf("cfg = %#v, want current campaign config", cfg)
 	}
 }
 
@@ -223,7 +223,6 @@ func TestNormalizeProjectAddCampaignArgs_ExplicitCampaignAndRemoteSource(t *test
 		[]string{"beta", "git@github.com:org/repo.git"},
 		projectlinked.NoOptCampaign,
 		"",
-		"",
 	)
 
 	if targetCampaign != "beta" {
@@ -238,7 +237,6 @@ func TestNormalizeProjectAddCampaignArgs_BareCampaignKeepsSourceLikeArg(t *testi
 	targetCampaign, args := normalizeProjectAddCampaignArgs(
 		[]string{"git@github.com:org/repo.git"},
 		projectlinked.NoOptCampaign,
-		"",
 		"",
 	)
 

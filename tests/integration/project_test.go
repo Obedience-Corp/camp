@@ -4,7 +4,6 @@
 package integration
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 
@@ -236,7 +235,7 @@ func TestProject_NotAGitRepo(t *testing.T) {
 	assert.Contains(t, strings.ToLower(output), "not a git repository", "error should mention not a git repo")
 }
 
-func TestProject_Add_RejectsUnregisteredCurrentCampaign(t *testing.T) {
+func TestProject_Add_UsesCurrentCampaignEvenIfUnregistered(t *testing.T) {
 	tc := GetSharedContainer(t)
 
 	_, err := tc.InitCampaign("/campaigns/proj-unregistered", "proj-unregistered", "product")
@@ -246,6 +245,10 @@ func TestProject_Add_RejectsUnregisteredCurrentCampaign(t *testing.T) {
 	require.NoError(t, tc.CreateGitRepo("/test/unregistered-local"))
 
 	output, err := tc.RunCampInDir("/campaigns/proj-unregistered", "project", "add", "--local", "/test/unregistered-local")
-	require.Error(t, err, "project add should fail when the target campaign is not registered")
-	assert.Contains(t, output, fmt.Sprintf("camp register %s", "/campaigns/proj-unregistered"))
+	require.NoError(t, err, "project add should still use the current campaign even if it is unregistered")
+	assert.Contains(t, output, "Added project: unregistered-local")
+
+	_, exitCode, err := tc.ExecCommand("test", "-d", "/campaigns/proj-unregistered/projects/unregistered-local")
+	require.NoError(t, err)
+	assert.Equal(t, 0, exitCode, "project should be added under the current campaign root")
 }
