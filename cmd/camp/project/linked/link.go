@@ -1,6 +1,10 @@
 package linked
 
-import "github.com/spf13/cobra"
+import (
+	"fmt"
+
+	"github.com/spf13/cobra"
+)
 
 // NewLinkCommand builds the canonical linked-project add command.
 func NewLinkCommand(newResolver CampaignResolverFactory) *cobra.Command {
@@ -30,9 +34,10 @@ Examples:
 			name, _ := cmd.Flags().GetString("name")
 			path, _ := cmd.Flags().GetString("path")
 			targetCampaign, _ := cmd.Flags().GetString("campaign")
+			noCommit, _ := cmd.Flags().GetBool("no-commit")
 
 			campaignResolver := newResolver(cmd.ErrOrStderr(), "camp project link <path> --campaign <name>")
-			_, root, err := campaignResolver.Resolve(ctx, targetCampaign, cmd.Flags().Changed("campaign"))
+			cfg, root, err := campaignResolver.Resolve(ctx, targetCampaign, cmd.Flags().Changed("campaign"))
 			if err != nil {
 				return err
 			}
@@ -43,6 +48,12 @@ Examples:
 			}
 
 			PrintResult(result)
+			if !noCommit {
+				commitResult := CommitAdd(ctx, cfg, root, result.Path, result.Name)
+				if commitResult.Message != "" {
+					fmt.Printf("  %s\n", commitResult.Message)
+				}
+			}
 			return nil
 		},
 	}
@@ -51,6 +62,7 @@ Examples:
 	flags.StringP("name", "n", "", "Override project name (defaults to directory name)")
 	flags.StringP("path", "p", "", "Override destination path (defaults to projects/<name>)")
 	flags.StringP("campaign", "c", "", "Target campaign by name or ID; omit value to pick interactively")
+	flags.Bool("no-commit", false, "Skip automatic git commit")
 	flags.Lookup("campaign").NoOptDefVal = NoOptCampaign
 
 	return cmd

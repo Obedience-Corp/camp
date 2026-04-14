@@ -24,6 +24,7 @@ func TestProject_Link_GitRepo(t *testing.T) {
 	output, err := tc.RunCampInDir(campaignPath, "project", "link", linkedPath)
 	require.NoError(t, err, "project link should succeed")
 	assert.Contains(t, output, "Linked project: linked-app")
+	assert.Contains(t, output, "Committed changes to git")
 
 	_, exitCode, err := tc.ExecCommand("test", "-L", campaignPath+"/projects/linked-app")
 	require.NoError(t, err)
@@ -43,9 +44,18 @@ func TestProject_Link_GitRepo(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, gitmodulesExists, "linked projects should not modify .gitmodules")
 
+	_, exitCode, err = tc.ExecCommand("sh", "-c", "cd "+campaignPath+" && git ls-files --error-unmatch projects/linked-app")
+	require.NoError(t, err)
+	assert.Equal(t, 0, exitCode, "linked project symlink should be tracked in the campaign repo")
+
+	linkLog, exitCode, err := tc.ExecCommand("sh", "-c", "cd "+campaignPath+" && git log -1 --pretty=%s")
+	require.NoError(t, err)
+	assert.Equal(t, 0, exitCode)
+	assert.Contains(t, strings.TrimSpace(linkLog), "Add: linked-app")
+
 	campaignStatus, _, err := tc.ExecCommand("sh", "-c", "cd "+campaignPath+" && git status --porcelain")
 	require.NoError(t, err)
-	assert.Equal(t, "", strings.TrimSpace(campaignStatus), "campaign repo should stay clean after linking")
+	assert.Equal(t, "", strings.TrimSpace(campaignStatus), "campaign repo should stay clean after auto-committing the link")
 
 	linkedStatus, _, err := tc.ExecCommand("sh", "-c", "cd "+linkedPath+" && git status --porcelain")
 	require.NoError(t, err)
@@ -195,6 +205,7 @@ func TestProject_Unlink_LinkedProject(t *testing.T) {
 	output, err := tc.RunCampInDir(campaignPath, "project", "unlink", "remove-linked")
 	require.NoError(t, err, "project unlink should succeed")
 	assert.Contains(t, output, "Unlinked project: remove-linked")
+	assert.Contains(t, output, "Committed changes to git")
 
 	_, exitCode, err := tc.ExecCommand("test", "-L", campaignPath+"/projects/remove-linked")
 	require.NoError(t, err)
@@ -204,9 +215,18 @@ func TestProject_Unlink_LinkedProject(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, exists, ".camp marker should be removed on unlink")
 
+	_, exitCode, err = tc.ExecCommand("sh", "-c", "cd "+campaignPath+" && git ls-files --error-unmatch projects/remove-linked")
+	require.NoError(t, err)
+	assert.NotEqual(t, 0, exitCode, "linked project symlink should be removed from the campaign index")
+
+	unlinkLog, exitCode, err := tc.ExecCommand("sh", "-c", "cd "+campaignPath+" && git log -1 --pretty=%s")
+	require.NoError(t, err)
+	assert.Equal(t, 0, exitCode)
+	assert.Contains(t, strings.TrimSpace(unlinkLog), "Remove: remove-linked")
+
 	campaignStatus, _, err := tc.ExecCommand("sh", "-c", "cd "+campaignPath+" && git status --porcelain")
 	require.NoError(t, err)
-	assert.Equal(t, "", strings.TrimSpace(campaignStatus), "campaign repo should stay clean after unlinking")
+	assert.Equal(t, "", strings.TrimSpace(campaignStatus), "campaign repo should stay clean after auto-committing the unlink")
 }
 
 func TestProjectRun_AutoDetectFromLinkedCwd(t *testing.T) {

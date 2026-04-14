@@ -38,9 +38,10 @@ Examples:
 
 			targetCampaign, _ := cmd.Flags().GetString("campaign")
 			dryRun, _ := cmd.Flags().GetBool("dry-run")
+			noCommit, _ := cmd.Flags().GetBool("no-commit")
 
 			campaignResolver := newResolver(cmd.ErrOrStderr(), "camp project unlink <name> --campaign <name>")
-			_, root, err := campaignResolver.Resolve(ctx, targetCampaign, cmd.Flags().Changed("campaign"))
+			cfg, root, err := campaignResolver.Resolve(ctx, targetCampaign, cmd.Flags().Changed("campaign"))
 			if err != nil {
 				return err
 			}
@@ -67,6 +68,12 @@ Examples:
 			if result.Target != "" {
 				fmt.Println(ui.KeyValue("  Target:", result.Target))
 			}
+			if !noCommit {
+				commitResult := CommitRemove(ctx, cfg, root, result.Path, result.Name)
+				if commitResult.Message != "" {
+					fmt.Printf("  %s\n", commitResult.Message)
+				}
+			}
 			return nil
 		},
 	}
@@ -74,6 +81,7 @@ Examples:
 	flags := cmd.Flags()
 	flags.StringP("campaign", "c", "", "Target campaign by name or ID; omit value to pick interactively")
 	flags.Bool("dry-run", false, "Show what would be done without making changes")
+	flags.Bool("no-commit", false, "Skip automatic git commit")
 	flags.Lookup("campaign").NoOptDefVal = NoOptCampaign
 
 	return cmd

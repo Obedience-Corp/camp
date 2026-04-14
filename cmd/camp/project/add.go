@@ -102,6 +102,12 @@ func runProjectAdd(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		projectlinked.PrintResult(result)
+		if !noCommit {
+			commitResult := projectlinked.CommitAdd(ctx, cfg, root, result.Path, result.Name)
+			if commitResult.Message != "" {
+				fmt.Printf("  %s\n", commitResult.Message)
+			}
+		}
 		return nil
 	}
 

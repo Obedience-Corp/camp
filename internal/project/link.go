@@ -138,9 +138,6 @@ func AddLinked(ctx context.Context, campaignRoot, localPath string, opts LinkOpt
 		return nil, camperrors.Wrap(err, "write .camp marker")
 	}
 
-	if err := ensureInfoExclude(ctx, campaignRoot, filepath.ToSlash(destPath)); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not update campaign exclude file: %v\n", err)
-	}
 	if isGit {
 		if err := ensureGitInfoExclude(ctx, absLocal, campaign.LinkMarkerFile); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: could not ignore .camp in linked repo: %v\n", err)
@@ -227,7 +224,7 @@ func UnlinkProject(ctx context.Context, campaignRoot, name, targetPath string) e
 		}
 	}
 
-	return removeInfoExclude(ctx, campaignRoot, filepath.ToSlash(filepath.Join("projects", name)))
+	return nil
 }
 
 // findExistingLinkToTarget scans campaignRoot/projects for a symlink that

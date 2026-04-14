@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/git/commit"
 	projectsvc "github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
@@ -46,5 +47,40 @@ func PrintResult(result *projectsvc.LinkResult) {
 		fmt.Println(ui.KeyValue("  Git:", "no"))
 	}
 	fmt.Println()
-	fmt.Println(ui.Dim("  Linked projects are machine-local. Linked git repos can still be committed with camp project commit."))
+	fmt.Println(ui.Dim("  Linked projects are tracked in campaign git history. Linked git repos can still be committed with camp project commit."))
+}
+
+// CommitAdd records a linked-project add in the campaign repo.
+func CommitAdd(ctx context.Context, cfg *config.CampaignConfig, campaignRoot, projectPath, projectName string) commit.Result {
+	return commitLinkedChange(ctx, cfg, campaignRoot, commit.ProjectAdd, projectPath, projectName)
+}
+
+// CommitRemove records a linked-project unlink in the campaign repo.
+func CommitRemove(ctx context.Context, cfg *config.CampaignConfig, campaignRoot, projectPath, projectName string) commit.Result {
+	return commitLinkedChange(ctx, cfg, campaignRoot, commit.ProjectRemove, projectPath, projectName)
+}
+
+func commitLinkedChange(
+	ctx context.Context,
+	cfg *config.CampaignConfig,
+	campaignRoot string,
+	action commit.ProjectAction,
+	projectPath string,
+	projectName string,
+) commit.Result {
+	campaignID := ""
+	if cfg != nil {
+		campaignID = cfg.ID
+	}
+
+	return commit.Project(ctx, commit.ProjectOptions{
+		Options: commit.Options{
+			CampaignRoot:  campaignRoot,
+			CampaignID:    campaignID,
+			Files:         commit.NormalizeFiles(campaignRoot, projectPath),
+			SelectiveOnly: true,
+		},
+		Action:      action,
+		ProjectName: projectName,
+	})
 }
