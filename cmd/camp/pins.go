@@ -26,11 +26,13 @@ var pinsCmd = &cobra.Command{
 var pinCmd = &cobra.Command{
 	Use:   "pin <name> [path]",
 	Short: "Bookmark a directory",
-	Long: `Bookmark a directory for quick navigation with 'camp jump'.
+	Long: `Bookmark a directory for quick navigation with 'camp go <name>' or 'cgo <name>'.
 
 If path is omitted, the current working directory is used.`,
-	Example: `  camp pin myspot           # Pin current directory as "myspot"
-  camp pin docs /path/to/docs  # Pin a specific path`,
+	Example: `  camp pin code                        # Pin current directory as "code"
+  camp pin design workflow/design/my-project
+  camp go code                         # Jump to a pin by name
+  cgo design                           # Shell jump to a pin`,
 	Args: cobra.RangeArgs(1, 2),
 	RunE: runPin,
 }

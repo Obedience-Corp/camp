@@ -1095,6 +1095,7 @@ Usage patterns:
   camp go t         Jump to last visited location (cd - equivalent)
   camp go p         Jump to projects/
   camp go f         Jump to festivals/
+  camp go design    Jump to an exact pin name
   camp go p api     Fuzzy search projects/ for "api"
 
 Toggle behavior (no args):
@@ -1104,6 +1105,12 @@ Toggle behavior (no args):
 Toggle keyword (t / toggle):
   - Jump to the last visited location regardless of where you are
   - Repeated calls alternate between two locations (like cd -)
+
+Pins:
+  - Create a named bookmark with 'camp pin <name> [path]'
+  - Jump to an exact pin with 'camp go <name>' or 'cgo <name>'
+  - Pin jumps save your current location first, so 'camp go t' or 'cgo t'
+    can bounce back to where you came from
 
 The --print flag outputs just the path for shell integration:
   cd "$(camp go p --print)"
@@ -1128,8 +1135,11 @@ camp go [shortcut] [query...] [flags]
   camp go --root        # Force jump to campaign root
   camp go t             # Jump to last visited location (cd -)
   camp go p             # Jump to projects/
+  camp go design        # Jump to exact pin "design"
   camp go p api         # Fuzzy find "api" in projects/
   camp go p --print     # Print path (for shell scripts)
+  cgo design            # Shell jump to exact pin "design"
+  cgo t                 # Jump back after a pin jump
   camp go f -c ls       # List festivals/ without cd
 ```
 
@@ -2256,7 +2266,7 @@ Bookmark a directory
 
 ### Synopsis
 
-Bookmark a directory for quick navigation with 'camp jump'.
+Bookmark a directory for quick navigation with 'camp go <name>' or 'cgo <name>'.
 
 If path is omitted, the current working directory is used.
 
@@ -2267,8 +2277,10 @@ camp pin <name> [path] [flags]
 ### Examples
 
 ```
-  camp pin myspot           # Pin current directory as "myspot"
-  camp pin docs /path/to/docs  # Pin a specific path
+  camp pin code                        # Pin current directory as "code"
+  camp pin design workflow/design/my-project
+  camp go code                         # Jump to a pin by name
+  cgo design                           # Shell jump to a pin
 ```
 
 ### Options

@@ -120,12 +120,16 @@ cgo -c p ls           # List contents of projects/
 cgo -c f fest status  # Run fest status from festivals/
 ```
 
-**Bookmarks**: Pin frequently visited directories for quick access:
+**Pins**: Pin frequently visited directories, jump to them with `camp go` or `cgo`, then use toggle to bounce back:
 
 ```bash
-camp pin             # Bookmark current directory
-camp pins            # List all bookmarks
-camp unpin           # Remove bookmark
+camp pin code                               # Pin current directory
+camp pin design workflow/design/my-project  # Pin a matching design directory
+camp go code                                # Resolve a pin through camp go
+cgo design                                  # Shell jump to a pin
+cgo t                                       # Jump back to the previous location
+camp pins                                   # List all pins
+camp unpin design                           # Remove a pin
 ```
 
 **Shortcuts**: View all category shortcuts and custom shortcuts:
