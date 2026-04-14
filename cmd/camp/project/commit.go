@@ -77,8 +77,8 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 
 	resolvedPath := result.Path
 
-	if result.Source == projectsvc.SourceLinkedNonGit {
-		return fmt.Errorf("project %q is a linked non-git directory and cannot be committed with camp", result.Name)
+	if err := result.RequireGit("git commits"); err != nil {
+		return err
 	}
 
 	// Display which project
@@ -103,7 +103,7 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 			return camperrors.Wrap(promptErr, "prompt failed")
 		}
 		if message == "" {
-			return fmt.Errorf("commit cancelled")
+			return git.ErrCommitCancelled
 		}
 	}
 

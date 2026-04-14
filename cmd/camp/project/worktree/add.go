@@ -90,8 +90,8 @@ func runProjectWorktreeAdd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	projectName := resolved.Name
-	if resolved.Source == project.SourceLinkedNonGit {
-		return fmt.Errorf("project %q is a linked non-git directory and does not support git worktrees", projectName)
+	if err := resolved.RequireGit("git worktrees"); err != nil {
+		return err
 	}
 
 	resolver := paths.NewResolver(campRoot, cfg.Paths())

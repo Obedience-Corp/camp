@@ -63,8 +63,8 @@ func runProjectRemoteRemove(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if resolved.Source == project.SourceLinkedNonGit {
-		return fmt.Errorf("project %q is a linked non-git directory and does not support git remotes", resolved.Name)
+	if err := resolved.RequireGit("git remotes"); err != nil {
+		return err
 	}
 
 	if err := git.RemoveRemote(ctx, resolved.Path, remoteName); err != nil {

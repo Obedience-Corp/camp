@@ -86,8 +86,8 @@ func runWorktreesCreate(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if resolved.Source == project.SourceLinkedNonGit {
-		return fmt.Errorf("project %q is a linked non-git directory and does not support git worktrees", projectName)
+	if err := resolved.RequireGit("git worktrees"); err != nil {
+		return err
 	}
 
 	// Build options based on new semantics:
