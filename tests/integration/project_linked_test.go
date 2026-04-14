@@ -174,6 +174,30 @@ func TestProject_Link_RejectsRepoAlreadyLinkedToAnotherCampaign(t *testing.T) {
 	assert.NotEqual(t, 0, exitCode, "second campaign should not create a symlink")
 }
 
+func TestProject_Link_RejectsLegacyMarkerFromAnotherCampaign(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campaignA := "/campaigns/proj-link-legacy-a"
+	campaignB := "/campaigns/proj-link-legacy-b"
+	linkedPath := "/test/legacy-linked-app"
+
+	_, err := tc.InitCampaign(campaignA, "proj-link-legacy-a", "product")
+	require.NoError(t, err)
+	_, err = tc.InitCampaign(campaignB, "proj-link-legacy-b", "product")
+	require.NoError(t, err)
+	require.NoError(t, tc.CreateGitRepo(linkedPath))
+
+	legacyMarker := "{\n  \"version\": 1,\n  \"campaign_root\": \"" + campaignA + "\"\n}\n"
+	require.NoError(t, tc.WriteFile(linkedPath+"/.camp", legacyMarker))
+
+	output, err := tc.RunCampInDir(campaignB, "project", "link", linkedPath)
+	require.Error(t, err, "link should reject a mismatched legacy marker")
+	assert.Contains(t, output, "legacy .camp marker")
+
+	_, exitCode, err := tc.ExecCommand("test", "-L", campaignB+"/projects/legacy-linked-app")
+	require.NoError(t, err)
+	assert.NotEqual(t, 0, exitCode, "rejected link should not create a symlink")
+}
+
 func TestProject_Unlink_LinkedProject(t *testing.T) {
 	tc := GetSharedContainer(t)
 	campaignPath := "/campaigns/proj-unlink"
@@ -211,6 +235,24 @@ func TestProject_Unlink_LinkedProject(t *testing.T) {
 	campaignStatus, _, err := tc.ExecCommand("sh", "-c", "cd "+campaignPath+" && git status --porcelain")
 	require.NoError(t, err)
 	assert.Equal(t, "", strings.TrimSpace(campaignStatus), "campaign repo should stay clean after auto-committing the unlink")
+}
+
+func TestProject_Unlink_RejectsNonLinkedProject(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campaignPath := "/campaigns/proj-unlink-nonlinked"
+	localRepo := "/test/unlink-nonlinked"
+
+	_, err := tc.InitCampaign(campaignPath, "proj-unlink-nonlinked", "product")
+	require.NoError(t, err)
+	require.NoError(t, tc.CreateGitRepo(localRepo))
+
+	_, err = tc.RunCampInDir(campaignPath, "project", "add", "--local", localRepo)
+	require.NoError(t, err)
+
+	output, err := tc.RunCampInDir(campaignPath, "project", "unlink", "unlink-nonlinked")
+	require.Error(t, err, "unlink should reject normal submodule projects")
+	assert.Contains(t, output, "not a linked project")
+	assert.Contains(t, output, "camp project remove unlink-nonlinked")
 }
 
 func TestProject_Unlink_CurrentLinkedProjectCwd(t *testing.T) {
