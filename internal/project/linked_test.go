@@ -2,7 +2,6 @@ package project
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,7 +9,6 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 func setupLinkedProjectFixture(t *testing.T, name string, gitRepo bool) (string, string) {
@@ -386,117 +384,5 @@ func writeCampaignConfig(t *testing.T, campaignRoot, campaignID string) {
 	}
 	if err := config.SaveCampaignConfig(context.Background(), campaignRoot, cfg); err != nil {
 		t.Fatalf("SaveCampaignConfig() error = %v", err)
-	}
-}
-
-// TestAddLinked_RejectsDuplicateTarget verifies that linking the same external
-// directory into a campaign twice under different aliases is rejected before
-// the second symlink is created. Two aliases to the same target would both
-// succeed at the filesystem level but the second would silently disappear
-// from List() (URL-based dedup in list.go keeps one per repo). Failing fast
-// with a clear ErrProjectAlreadyLinked beats a silent trap.
-func TestAddLinked_RejectsDuplicateTarget(t *testing.T) {
-	tmpDir := t.TempDir()
-	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
-
-	campaignRoot := filepath.Join(tmpDir, "campaign")
-	linkedPath := filepath.Join(tmpDir, "external", "shared-target")
-
-	if err := os.MkdirAll(filepath.Join(campaignRoot, campaign.CampaignDir), 0o755); err != nil {
-		t.Fatalf("create campaign marker dir: %v", err)
-	}
-	if err := os.MkdirAll(linkedPath, 0o755); err != nil {
-		t.Fatalf("create linked path: %v", err)
-	}
-	writeCampaignConfig(t, campaignRoot, "campaign-id")
-
-	mustRunCmd(t, campaignRoot, "git", "init", "-b", "main")
-	mustRunCmd(t, campaignRoot, "git", "-C", campaignRoot, "config", "user.email", "test@test.com")
-	mustRunCmd(t, campaignRoot, "git", "-C", campaignRoot, "config", "user.name", "Test")
-	initGitRepo(t, linkedPath)
-
-	// First link succeeds under alias "alpha".
-	if _, err := AddLinked(context.Background(), campaignRoot, linkedPath, LinkOptions{Name: "alpha"}); err != nil {
-		t.Fatalf("first AddLinked() error = %v", err)
-	}
-
-	// Second link under a different alias must be rejected — same target.
-	_, linkErr := AddLinked(context.Background(), campaignRoot, linkedPath, LinkOptions{Name: "beta"})
-	if linkErr == nil {
-		t.Fatal("expected second AddLinked() to fail with ErrProjectAlreadyLinked")
-	}
-
-	var linked *ErrProjectAlreadyLinked
-	if !errors.As(linkErr, &linked) {
-		t.Fatalf("expected ErrProjectAlreadyLinked, got %T: %v", linkErr, linkErr)
-	}
-	if linked.ExistingName != "alpha" {
-		t.Errorf("ExistingName = %q, want %q", linked.ExistingName, "alpha")
-	}
-	if linked.AttemptedName != "beta" {
-		t.Errorf("AttemptedName = %q, want %q", linked.AttemptedName, "beta")
-	}
-
-	// The error must unwrap to ErrAlreadyExists so callers that check that
-	// sentinel (via errors.Is) can still route the error generically.
-	if !errors.Is(linkErr, camperrors.ErrAlreadyExists) {
-		t.Error("ErrProjectAlreadyLinked should unwrap to camperrors.ErrAlreadyExists")
-	}
-
-	// The second symlink must not have been created.
-	if _, statErr := os.Lstat(filepath.Join(campaignRoot, "projects", "beta")); !os.IsNotExist(statErr) {
-		t.Fatalf("second symlink should not exist, got err = %v", statErr)
-	}
-
-	// The existing alpha symlink must still resolve to the target.
-	resolved, resolveErr := filepath.EvalSymlinks(filepath.Join(campaignRoot, "projects", "alpha"))
-	if resolveErr != nil {
-		t.Fatalf("alpha symlink should still resolve, got err = %v", resolveErr)
-	}
-	if resolved != linkedPath {
-		t.Errorf("alpha symlink target = %q, want %q", resolved, linkedPath)
-	}
-}
-
-// TestAddLinked_AllowsRelinkAfterUnlink verifies that after unlinking an alias,
-// the same target can be linked again under any name. This keeps the rejection
-// check narrow: it only guards the duplicate-active-alias case, not a
-// permanent ban on re-linking.
-func TestAddLinked_AllowsRelinkAfterUnlink(t *testing.T) {
-	tmpDir := t.TempDir()
-	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
-
-	campaignRoot := filepath.Join(tmpDir, "campaign")
-	linkedPath := filepath.Join(tmpDir, "external", "shared-target")
-
-	if err := os.MkdirAll(filepath.Join(campaignRoot, campaign.CampaignDir), 0o755); err != nil {
-		t.Fatalf("create campaign marker dir: %v", err)
-	}
-	if err := os.MkdirAll(linkedPath, 0o755); err != nil {
-		t.Fatalf("create linked path: %v", err)
-	}
-	writeCampaignConfig(t, campaignRoot, "campaign-id")
-
-	mustRunCmd(t, campaignRoot, "git", "init", "-b", "main")
-	mustRunCmd(t, campaignRoot, "git", "-C", campaignRoot, "config", "user.email", "test@test.com")
-	mustRunCmd(t, campaignRoot, "git", "-C", campaignRoot, "config", "user.name", "Test")
-	initGitRepo(t, linkedPath)
-
-	if _, err := AddLinked(context.Background(), campaignRoot, linkedPath, LinkOptions{Name: "alpha"}); err != nil {
-		t.Fatalf("first AddLinked() error = %v", err)
-	}
-	if err := UnlinkProject(context.Background(), campaignRoot, "alpha", linkedPath); err != nil {
-		t.Fatalf("UnlinkProject() error = %v", err)
-	}
-	if _, err := AddLinked(context.Background(), campaignRoot, linkedPath, LinkOptions{Name: "beta"}); err != nil {
-		t.Fatalf("AddLinked() after unlink error = %v", err)
-	}
-
-	resolved, err := filepath.EvalSymlinks(filepath.Join(campaignRoot, "projects", "beta"))
-	if err != nil {
-		t.Fatalf("beta symlink should resolve, got err = %v", err)
-	}
-	if resolved != linkedPath {
-		t.Errorf("beta symlink target = %q, want %q", resolved, linkedPath)
 	}
 }

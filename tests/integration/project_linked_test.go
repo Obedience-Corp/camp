@@ -236,6 +236,83 @@ func TestRun_ProjectDispatch_LinkedProject(t *testing.T) {
 	assert.Contains(t, output, "just-workdir: "+linkedPath)
 }
 
+// TestProject_AddLink_RejectsDuplicateTargetInSameCampaign verifies that
+// linking the same external directory twice into one campaign under different
+// aliases is rejected up front. Without the guard, both symlinks would be
+// created but the URL-based dedup in List() would silently drop one,
+// hiding it from `project list`, `project run`, and `leverage`.
+func TestProject_AddLink_RejectsDuplicateTargetInSameCampaign(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campaignPath := "/campaigns/proj-link-dup"
+	linkedPath := "/test/dup-target-app"
+
+	_, err := tc.InitCampaign(campaignPath, "proj-link-dup", "product")
+	require.NoError(t, err)
+	require.NoError(t, tc.CreateGitRepo(linkedPath))
+
+	// First link under default alias (derived from path basename).
+	firstOutput, err := tc.RunCampInDir(campaignPath, "project", "add", "--link", linkedPath)
+	require.NoError(t, err, "first project add --link should succeed")
+	assert.Contains(t, firstOutput, "Linked project: dup-target-app")
+
+	// Second link under a different --name must be rejected.
+	secondOutput, err := tc.RunCampInDir(campaignPath, "project", "add", "--link", linkedPath, "--name", "other-alias")
+	require.Error(t, err, "second project add --link with different --name should fail")
+	assert.Contains(t, secondOutput, "already linked",
+		"error message should explain that the target is already linked")
+	assert.Contains(t, secondOutput, "dup-target-app",
+		"error message should name the existing alias")
+
+	// The second symlink must not have been created.
+	_, exitCode, err := tc.ExecCommand("test", "-L", campaignPath+"/projects/other-alias")
+	require.NoError(t, err)
+	assert.NotEqual(t, 0, exitCode, "second alias symlink should not exist")
+
+	// The first symlink must still exist and point at the target.
+	_, exitCode, err = tc.ExecCommand("test", "-L", campaignPath+"/projects/dup-target-app")
+	require.NoError(t, err)
+	assert.Equal(t, 0, exitCode, "first alias symlink should still exist")
+
+	// And `project list` must still show the surviving alias.
+	listOutput, err := tc.RunCampInDir(campaignPath, "project", "list")
+	require.NoError(t, err)
+	assert.Contains(t, listOutput, "dup-target-app")
+	assert.NotContains(t, listOutput, "other-alias",
+		"rejected alias should not appear in project list")
+}
+
+// TestProject_AddLink_AllowsRelinkAfterUnlink verifies that the duplicate
+// rejection is scoped to active duplicates only. After unlinking an alias,
+// the same target can be re-linked under any name.
+func TestProject_AddLink_AllowsRelinkAfterUnlink(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campaignPath := "/campaigns/proj-link-relink"
+	linkedPath := "/test/relink-target-app"
+
+	_, err := tc.InitCampaign(campaignPath, "proj-link-relink", "product")
+	require.NoError(t, err)
+	require.NoError(t, tc.CreateGitRepo(linkedPath))
+
+	// Link under alias "alpha".
+	_, err = tc.RunCampInDir(campaignPath, "project", "add", "--link", linkedPath, "--name", "alpha")
+	require.NoError(t, err, "initial link under alpha should succeed")
+
+	// Unlink alpha. For a linked project `project remove` only unlinks the
+	// symlink and cleans up the marker — no --delete, no confirmation.
+	_, err = tc.RunCampInDir(campaignPath, "project", "remove", "alpha")
+	require.NoError(t, err, "unlinking alpha should succeed")
+
+	// Re-link under a different alias "beta" — rejection must not fire
+	// because there is no active alias pointing at the target any more.
+	output, err := tc.RunCampInDir(campaignPath, "project", "add", "--link", linkedPath, "--name", "beta")
+	require.NoError(t, err, "re-linking under beta after unlink should succeed")
+	assert.Contains(t, output, "Linked project: beta")
+
+	_, exitCode, err := tc.ExecCommand("test", "-L", campaignPath+"/projects/beta")
+	require.NoError(t, err)
+	assert.Equal(t, 0, exitCode, "beta symlink should be created")
+}
+
 func readCampaignID(t *testing.T, tc *TestContainer, campaignPath string) string {
 	t.Helper()
 
