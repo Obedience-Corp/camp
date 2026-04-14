@@ -113,19 +113,11 @@ func TestAgentPipeline_CreateThenEdit(t *testing.T) {
 	}
 
 	// Emit audit event (as the command handler would)
-	auditChanges := make([]audit.FieldChange, len(changes))
-	for i, c := range changes {
-		auditChanges[i] = audit.FieldChange{
-			Field: c.Field,
-			Old:   c.Old,
-			New:   c.New,
-		}
-	}
 	if err := appendIntentAuditEvent(ctx, intentsDir, audit.Event{
 		Type:    audit.EventEdit,
 		ID:      updated.ID,
 		Title:   updated.Title,
-		Changes: auditChanges,
+		Changes: changes,
 	}); err != nil {
 		t.Fatalf("appendIntentAuditEvent: %v", err)
 	}

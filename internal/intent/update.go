@@ -5,8 +5,10 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+	"unicode/utf8"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/intent/audit"
 )
 
 // UpdateOptions contains pointer fields so callers can distinguish "not set"
@@ -25,13 +27,6 @@ type UpdateOptions struct {
 	Horizon  *Horizon
 }
 
-// FieldChange records a single field's old and new value for audit purposes.
-type FieldChange struct {
-	Field string `json:"field"`
-	Old   string `json:"old"`
-	New   string `json:"new"`
-}
-
 // hasChanges returns true if any field in the options is set.
 func (o *UpdateOptions) hasChanges() bool {
 	return o.Title != nil || o.Body != nil || o.Append != nil ||
@@ -42,7 +37,7 @@ func (o *UpdateOptions) hasChanges() bool {
 // UpdateDirect applies programmatic field updates to an existing intent
 // without opening an editor. Returns the updated intent and a slice of
 // field changes for audit logging.
-func (s *IntentService) UpdateDirect(ctx context.Context, id string, opts UpdateOptions) (*Intent, []FieldChange, error) {
+func (s *IntentService) UpdateDirect(ctx context.Context, id string, opts UpdateOptions) (*Intent, []audit.FieldChange, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, nil, camperrors.Wrap(err, "context cancelled")
 	}
@@ -56,13 +51,13 @@ func (s *IntentService) UpdateDirect(ctx context.Context, id string, opts Update
 		return nil, nil, err
 	}
 
-	var changes []FieldChange
+	var changes []audit.FieldChange
 	originalPath := intent.Path
 	originalStatus := intent.Status
 
 	// Apply each field, recording changes
 	if opts.Title != nil && *opts.Title != intent.Title {
-		changes = append(changes, FieldChange{Field: "title", Old: intent.Title, New: *opts.Title})
+		changes = append(changes, audit.FieldChange{Field: "title", Old: intent.Title, New: *opts.Title})
 		intent.Title = *opts.Title
 	}
 
@@ -70,7 +65,7 @@ func (s *IntentService) UpdateDirect(ctx context.Context, id string, opts Update
 		old := intent.Content
 		intent.Content = *opts.Body
 		if old != *opts.Body {
-			changes = append(changes, FieldChange{Field: "body", Old: truncateForAudit(old), New: truncateForAudit(*opts.Body)})
+			changes = append(changes, audit.FieldChange{Field: "body", Old: truncateForAudit(old), New: truncateForAudit(*opts.Body)})
 		}
 	}
 
@@ -80,36 +75,36 @@ func (s *IntentService) UpdateDirect(ctx context.Context, id string, opts Update
 			intent.Content += "\n"
 		}
 		intent.Content += *opts.Append
-		changes = append(changes, FieldChange{Field: "body", Old: truncateForAudit(old), New: truncateForAudit(intent.Content)})
+		changes = append(changes, audit.FieldChange{Field: "body", Old: truncateForAudit(old), New: truncateForAudit(intent.Content)})
 	}
 
 	if opts.Type != nil && *opts.Type != intent.Type {
-		changes = append(changes, FieldChange{Field: "type", Old: string(intent.Type), New: string(*opts.Type)})
+		changes = append(changes, audit.FieldChange{Field: "type", Old: string(intent.Type), New: string(*opts.Type)})
 		intent.Type = *opts.Type
 	}
 
 	if opts.Status != nil && *opts.Status != intent.Status {
-		changes = append(changes, FieldChange{Field: "status", Old: string(intent.Status), New: string(*opts.Status)})
+		changes = append(changes, audit.FieldChange{Field: "status", Old: string(intent.Status), New: string(*opts.Status)})
 		intent.Status = *opts.Status
 	}
 
 	if opts.Concept != nil && *opts.Concept != intent.Concept {
-		changes = append(changes, FieldChange{Field: "concept", Old: intent.Concept, New: *opts.Concept})
+		changes = append(changes, audit.FieldChange{Field: "concept", Old: intent.Concept, New: *opts.Concept})
 		intent.Concept = *opts.Concept
 	}
 
 	if opts.Author != nil && *opts.Author != intent.Author {
-		changes = append(changes, FieldChange{Field: "author", Old: intent.Author, New: *opts.Author})
+		changes = append(changes, audit.FieldChange{Field: "author", Old: intent.Author, New: *opts.Author})
 		intent.Author = *opts.Author
 	}
 
 	if opts.Priority != nil && *opts.Priority != intent.Priority {
-		changes = append(changes, FieldChange{Field: "priority", Old: string(intent.Priority), New: string(*opts.Priority)})
+		changes = append(changes, audit.FieldChange{Field: "priority", Old: string(intent.Priority), New: string(*opts.Priority)})
 		intent.Priority = *opts.Priority
 	}
 
 	if opts.Horizon != nil && *opts.Horizon != intent.Horizon {
-		changes = append(changes, FieldChange{Field: "horizon", Old: string(intent.Horizon), New: string(*opts.Horizon)})
+		changes = append(changes, audit.FieldChange{Field: "horizon", Old: string(intent.Horizon), New: string(*opts.Horizon)})
 		intent.Horizon = *opts.Horizon
 	}
 
@@ -148,11 +143,15 @@ func (s *IntentService) UpdateDirect(ctx context.Context, id string, opts Update
 	return intent, changes, nil
 }
 
+// maxAuditFieldLen is the maximum rune length for audit log field values.
+const maxAuditFieldLen = 200
+
 // truncateForAudit truncates long strings for audit log readability.
+// Truncates on rune boundaries to avoid splitting multi-byte UTF-8 characters.
 func truncateForAudit(s string) string {
-	const maxLen = 200
-	if len(s) <= maxLen {
+	if utf8.RuneCountInString(s) <= maxAuditFieldLen {
 		return s
 	}
-	return s[:maxLen] + "..."
+	runes := []rune(s)
+	return string(runes[:maxAuditFieldLen]) + "..."
 }
