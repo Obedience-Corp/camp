@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 )
 
@@ -26,6 +25,13 @@ func Detect(ctx context.Context, startDir string) (string, error) {
 	// Check context cancellation
 	if ctx.Err() != nil {
 		return "", ctx.Err()
+	}
+
+	// Preserve CAMP_ROOT's historical role as a hard override for out-of-tree
+	// tooling and scripts. Linked-project detection adds more discovery paths,
+	// but it should not weaken this existing contract.
+	if envRoot, ok := detectCampaignRootOverride(); ok {
+		return envRoot, nil
 	}
 
 	// Start from given directory or cwd
@@ -59,17 +65,26 @@ func Detect(ctx context.Context, startDir string) (string, error) {
 		}
 	}
 
-	// Validate CAMP_ROOT as a compatibility fallback instead of a blind override.
-	if envRoot := os.Getenv(EnvCampaignRoot); envRoot != "" {
-		envRoot, err = filepath.Abs(envRoot)
-		if err == nil && IsCampaignRoot(envRoot) {
-			if isPathWithin(dir, envRoot) || (realDir != "" && isPathWithin(realDir, envRoot)) {
-				return envRoot, nil
-			}
-		}
+	return "", ErrNotInCampaign
+}
+
+func detectCampaignRootOverride() (string, bool) {
+	envRoot := os.Getenv(EnvCampaignRoot)
+	if envRoot == "" {
+		return "", false
 	}
 
-	return "", ErrNotInCampaign
+	if absRoot, err := filepath.Abs(envRoot); err == nil {
+		envRoot = absRoot
+	}
+	if resolvedRoot, err := filepath.EvalSymlinks(envRoot); err == nil {
+		envRoot = resolvedRoot
+	}
+	if !IsCampaignRoot(envRoot) {
+		return "", false
+	}
+
+	return envRoot, true
 }
 
 func detectCampaignByWalking(ctx context.Context, startDir string) (string, error) {
@@ -114,20 +129,6 @@ func detectCampaignByWalking(ctx context.Context, startDir string) (string, erro
 		}
 		dir = parent
 	}
-}
-
-func isPathWithin(child, parent string) bool {
-	if child == "" || parent == "" {
-		return false
-	}
-	if child == parent {
-		return true
-	}
-	rel, err := filepath.Rel(parent, child)
-	if err != nil {
-		return false
-	}
-	return rel != ".." && rel != "." && rel != "" && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func resolveMarkerCampaignRoot(marker *LinkMarker) (string, bool, error) {
