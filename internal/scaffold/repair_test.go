@@ -302,9 +302,10 @@ func TestComputeRepairPlan_FullCampaign(t *testing.T) {
 	dir := t.TempDir()
 	// First create a full campaign
 	opts := InitOptions{
-		Name:   "test-campaign",
-		Type:   config.CampaignTypeProduct,
-		Repair: false,
+		Name:       "test-campaign",
+		Type:       config.CampaignTypeProduct,
+		Repair:     false,
+		NoRegister: true,
 	}
 	if _, err := Init(ctx, dir, opts); err != nil {
 		t.Fatalf("Init() error: %v", err)
@@ -399,7 +400,7 @@ func TestComputeRepairPlan_MissingFiles(t *testing.T) {
 
 	// Create a campaign, then delete some files to simulate missing items.
 	dir := t.TempDir()
-	if _, err := Init(ctx, dir, InitOptions{Name: "test", Type: config.CampaignTypeProduct}); err != nil {
+	if _, err := Init(ctx, dir, InitOptions{Name: "test", Type: config.CampaignTypeProduct, NoRegister: true}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -435,7 +436,7 @@ func TestComputeRepairPlan_MissingStandardDungeonOBEY(t *testing.T) {
 	ctx := context.Background()
 
 	dir := t.TempDir()
-	if _, err := Init(ctx, dir, InitOptions{Name: "test", Type: config.CampaignTypeProduct}); err != nil {
+	if _, err := Init(ctx, dir, InitOptions{Name: "test", Type: config.CampaignTypeProduct, NoRegister: true}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -466,7 +467,7 @@ func TestComputeRepairPlan_MissingQuestScaffold(t *testing.T) {
 	ctx := context.Background()
 
 	dir := t.TempDir()
-	if _, err := Init(ctx, dir, InitOptions{Name: "test", Type: config.CampaignTypeProduct}); err != nil {
+	if _, err := Init(ctx, dir, InitOptions{Name: "test", Type: config.CampaignTypeProduct, NoRegister: true}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -514,7 +515,7 @@ func TestRepairInit_RestoresMissingSkillFiles(t *testing.T) {
 
 	// Create a campaign, then delete skill files to simulate drift.
 	dir := t.TempDir()
-	if _, err := Init(ctx, dir, InitOptions{Name: "test", Type: config.CampaignTypeProduct}); err != nil {
+	if _, err := Init(ctx, dir, InitOptions{Name: "test", Type: config.CampaignTypeProduct, NoRegister: true}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -551,6 +552,7 @@ func TestRepairInit_RestoresMissingSkillFiles(t *testing.T) {
 		Type:       config.CampaignTypeProduct,
 		Repair:     true,
 		RepairPlan: plan,
+		NoRegister: true,
 	}); err != nil {
 		t.Fatalf("Init() repair error: %v", err)
 	}
@@ -567,7 +569,7 @@ func TestRepairInit_PreservesUserShortcuts(t *testing.T) {
 
 	// Create a full campaign.
 	dir := t.TempDir()
-	if _, err := Init(ctx, dir, InitOptions{Name: "test", Type: config.CampaignTypeProduct}); err != nil {
+	if _, err := Init(ctx, dir, InitOptions{Name: "test", Type: config.CampaignTypeProduct, NoRegister: true}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -607,6 +609,7 @@ func TestRepairInit_PreservesUserShortcuts(t *testing.T) {
 		Type:       config.CampaignTypeProduct,
 		Repair:     true,
 		RepairPlan: plan,
+		NoRegister: true,
 	})
 	if err != nil {
 		t.Fatal(err)
