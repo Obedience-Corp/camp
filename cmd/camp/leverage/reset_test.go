@@ -59,12 +59,7 @@ func TestLeverageReset_ClearsAllSnapshots(t *testing.T) {
 		"camp": {"2025-06-01", "2025-06-08"},
 		"fest": {"2025-06-01"},
 	})
-	origDir, _ := os.Getwd()
-	if err := os.Chdir(root); err != nil {
-		t.Fatalf("chdir: %v", err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(origDir) })
-	t.Setenv("CAMP_ROOT", "")
+	t.Setenv("CAMP_ROOT", root)
 
 	output, err := executeReset(t)
 	if err != nil {
@@ -88,12 +83,7 @@ func TestLeverageReset_ClearsProjectOnly(t *testing.T) {
 		"camp": {"2025-06-01", "2025-06-08"},
 		"fest": {"2025-06-01", "2025-06-15"},
 	})
-	origDir, _ := os.Getwd()
-	if err := os.Chdir(root); err != nil {
-		t.Fatalf("chdir: %v", err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(origDir) })
-	t.Setenv("CAMP_ROOT", "")
+	t.Setenv("CAMP_ROOT", root)
 
 	output, err := executeReset(t, "--project", "camp")
 	if err != nil {
@@ -123,12 +113,7 @@ func TestLeverageReset_NoSnapshots(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(tmpDir, ".campaign"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	origDir, _ := os.Getwd()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("chdir: %v", err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(origDir) })
-	t.Setenv("CAMP_ROOT", "")
+	t.Setenv("CAMP_ROOT", tmpDir)
 
 	output, err := executeReset(t)
 	if err != nil {
@@ -144,12 +129,7 @@ func TestLeverageReset_ProjectFlagValidation(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(tmpDir, ".campaign"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	origDir, _ := os.Getwd()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("chdir: %v", err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(origDir) })
-	t.Setenv("CAMP_ROOT", "")
+	t.Setenv("CAMP_ROOT", tmpDir)
 
 	tests := []struct {
 		name          string

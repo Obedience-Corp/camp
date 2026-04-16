@@ -311,6 +311,27 @@ func TestProject_Unlink_CurrentLinkedProjectCwd(t *testing.T) {
 	assert.NotEqual(t, 0, exitCode, "linked project symlink should be removed")
 }
 
+func TestProject_Remove_LinkedProjectDeleteBlocked(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campaignPath := "/campaigns/proj-remove-linked-delete"
+	linkedPath := "/test/remove-linked-delete"
+
+	_, err := tc.InitCampaign(campaignPath, "proj-remove-linked-delete", "product")
+	require.NoError(t, err)
+	require.NoError(t, tc.CreateGitRepo(linkedPath))
+
+	_, err = tc.RunCampInDir(campaignPath, "project", "link", linkedPath)
+	require.NoError(t, err)
+
+	output, err := tc.RunCampInDir(campaignPath, "project", "remove", "remove-linked-delete", "--delete", "--force")
+	require.Error(t, err, "linked projects should not support remove --delete")
+	assert.Contains(t, output, "linked projects can only be unlinked")
+
+	_, exitCode, err := tc.ExecCommand("test", "-L", campaignPath+"/projects/remove-linked-delete")
+	require.NoError(t, err)
+	assert.Equal(t, 0, exitCode, "blocked remove --delete must not remove the symlink")
+}
+
 func TestProjectRun_AutoDetectFromLinkedCwd(t *testing.T) {
 	tc := GetSharedContainer(t)
 	campaignPath := "/campaigns/pr-linked-autodetect"

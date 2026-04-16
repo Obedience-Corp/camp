@@ -68,6 +68,7 @@ func NewSharedContainer() (*TestContainer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to build camp binary: %w", err)
 	}
+	defer os.RemoveAll(filepath.Dir(campBinary))
 
 	// Start container without bind-mounting the binary. Bind mounts go through
 	// the host's overlayfs (Colima virtualisation layer on macOS) which can
@@ -101,6 +102,7 @@ func NewSharedContainer() (*TestContainer, error) {
 		fmt.Fprintf(os.Stderr, "WARN: fest binary not available: %v\n", err)
 		festAvailable = false
 	} else {
+		defer os.RemoveAll(filepath.Dir(festBinary))
 		if err := container.CopyFileToContainer(ctx, festBinary, "/usr/local/bin/fest", 0o755); err != nil {
 			fmt.Fprintf(os.Stderr, "WARN: failed to copy fest binary into container: %v\n", err)
 			festAvailable = false
@@ -174,10 +176,9 @@ func buildCampBinaryShared() (string, error) {
 		return "", fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
-	// Build to bin/linux directory in project root (accessible to Docker)
-	binDir := filepath.Join(projectRoot, "bin", "linux")
-	if err := os.MkdirAll(binDir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create bin/linux directory: %w", err)
+	binDir, err := os.MkdirTemp("", "camp-integration-bin-*")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temporary camp binary directory: %w", err)
 	}
 
 	binaryPath := filepath.Join(binDir, "camp")
@@ -222,9 +223,9 @@ func buildFestBinaryShared() (string, error) {
 		return "", fmt.Errorf("fest source not found at %s: %w", festRoot, err)
 	}
 
-	binDir := filepath.Join(projectRoot, "bin", "linux")
-	if err := os.MkdirAll(binDir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create bin/linux directory: %w", err)
+	binDir, err := os.MkdirTemp("", "fest-integration-bin-*")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temporary fest binary directory: %w", err)
 	}
 
 	binaryPath := filepath.Join(binDir, "fest")

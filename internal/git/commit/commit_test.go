@@ -1057,10 +1057,8 @@ func TestProjectAction_Values(t *testing.T) {
 		expected string
 	}{
 		{ProjectAdd, "Add"},
-		{ProjectLink, "Link"},
 		{ProjectNew, "New"},
 		{ProjectRemove, "Remove"},
-		{ProjectUnlink, "Unlink"},
 	}
 
 	for _, tt := range tests {

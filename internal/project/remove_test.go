@@ -149,35 +149,6 @@ func TestRemove_ModulesCleanedWithoutDelete(t *testing.T) {
 	}
 }
 
-func TestRemove_LinkedDeleteBlocked(t *testing.T) {
-	tmp := t.TempDir()
-	tmp, _ = filepath.EvalSymlinks(tmp)
-
-	campaignRoot := filepath.Join(tmp, "campaign")
-	if err := os.MkdirAll(filepath.Join(campaignRoot, "projects"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	outside := filepath.Join(tmp, "outside")
-	if err := os.MkdirAll(outside, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	escapeLink := filepath.Join(campaignRoot, "projects", "escape")
-	if err := os.Symlink(outside, escapeLink); err != nil {
-		t.Skipf("symlink creation not supported: %v", err)
-	}
-
-	ctx := context.Background()
-	_, err := Remove(ctx, campaignRoot, "escape", RemoveOptions{Delete: true})
-	if err == nil {
-		t.Fatal("expected delete to be blocked for linked project")
-	}
-	if !strings.Contains(err.Error(), "linked projects can only be unlinked") {
-		t.Fatalf("expected linked delete error, got: %v", err)
-	}
-}
-
 func TestRemove_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
