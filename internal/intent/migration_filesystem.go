@@ -146,8 +146,14 @@ func collectIntentTreeMoves(srcDir, dstDir string, moves *[]PlannedPathMove) err
 		}
 
 		if _, err := os.Stat(dstPath); err == nil {
-			if entry.Name() == ".gitkeep" {
-				continue
+			if isIntentScaffoldBasename(entry.Name()) {
+				matches, matchErr := scaffoldFilesMatch(srcPath, dstPath)
+				if matchErr != nil {
+					return matchErr
+				}
+				if matches {
+					continue
+				}
 			}
 			return camperrors.Wrapf(ErrIntentMigrationConflict, "destination already exists for %s", dstPath)
 		} else if !os.IsNotExist(err) {
@@ -263,11 +269,17 @@ func moveIntentTree(srcDir, dstDir string) error {
 		}
 
 		if _, err := os.Stat(dstPath); err == nil {
-			if entry.Name() == ".gitkeep" {
-				if err := os.Remove(srcPath); err != nil {
-					return camperrors.Wrapf(err, "removing %s", srcPath)
+			if isIntentScaffoldBasename(entry.Name()) {
+				matches, matchErr := scaffoldFilesMatch(srcPath, dstPath)
+				if matchErr != nil {
+					return matchErr
 				}
-				continue
+				if matches {
+					if err := os.Remove(srcPath); err != nil {
+						return camperrors.Wrapf(err, "removing %s", srcPath)
+					}
+					continue
+				}
 			}
 			return camperrors.Wrapf(ErrIntentMigrationConflict, "destination already exists for %s", dstPath)
 		} else if !os.IsNotExist(err) {
@@ -284,4 +296,18 @@ func moveIntentTree(srcDir, dstDir string) error {
 	}
 
 	return nil
+}
+
+func scaffoldFilesMatch(srcPath, dstPath string) (bool, error) {
+	srcData, err := os.ReadFile(srcPath)
+	if err != nil {
+		return false, camperrors.Wrapf(err, "reading %s", srcPath)
+	}
+
+	dstData, err := os.ReadFile(dstPath)
+	if err != nil {
+		return false, camperrors.Wrapf(err, "reading %s", dstPath)
+	}
+
+	return bytes.Equal(srcData, dstData), nil
 }

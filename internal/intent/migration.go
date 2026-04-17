@@ -18,6 +18,27 @@ var legacyIntentScaffoldFiles = []string{
 	filepath.Join("dungeon", ".crawl.yaml"),
 }
 
+// intentScaffoldBasenames is the set of filenames that the intent scaffold
+// generates verbatim in multiple places. When migrating a legacy intent tree
+// into the canonical root, identically-named scaffold files at the destination
+// are safe to skip — the canonical copy is equivalent and the legacy one will
+// be cleaned up by cleanupLegacyIntentScaffold afterwards.
+var intentScaffoldBasenames = func() map[string]struct{} {
+	set := make(map[string]struct{}, len(legacyIntentScaffoldFiles))
+	for _, rel := range legacyIntentScaffoldFiles {
+		set[filepath.Base(rel)] = struct{}{}
+	}
+	return set
+}()
+
+// isIntentScaffoldBasename reports whether name is a scaffold-generated file
+// (e.g. .gitkeep, .crawl.yaml) that can be safely skipped during migration
+// when the same basename already exists at the destination.
+func isIntentScaffoldBasename(name string) bool {
+	_, ok := intentScaffoldBasenames[name]
+	return ok
+}
+
 // PlannedPathMove describes a filesystem move that migration would perform.
 type PlannedPathMove struct {
 	Source string
