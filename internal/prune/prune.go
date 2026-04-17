@@ -3,6 +3,7 @@ package prune
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/git"
@@ -82,6 +83,7 @@ func Execute(ctx context.Context, name, path string, opts Options) ProjectResult
 	}
 
 	deleteLocalBranches(ctx, path, merged, opts, &pr)
+	deleteDetachedWorktrees(ctx, path, baseRef, opts, &pr)
 
 	// Remote branch deletion uses the original merged list intentionally —
 	// remote branches should be cleaned up regardless of local deletion outcome.
@@ -90,6 +92,71 @@ func Execute(ctx context.Context, name, path string, opts Options) ProjectResult
 	pruneTrackingRefs(ctx, path, opts, &pr)
 
 	return pr
+}
+
+func deleteDetachedWorktrees(ctx context.Context, path, baseRef string, opts Options, pr *ProjectResult) {
+	entries, err := worktree.NewGitWorktree(path).List(ctx)
+	if err != nil {
+		return
+	}
+
+	skipPaths := map[string]struct{}{
+		filepath.Clean(path): {},
+	}
+	if gitDir, err := git.Output(ctx, path, "rev-parse", "--absolute-git-dir"); err == nil {
+		skipPaths[filepath.Clean(gitDir)] = struct{}{}
+	}
+
+	wt := worktree.NewGitWorktree(path)
+	removedAny := false
+	for _, entry := range entries {
+		if entry.Branch != "HEAD (detached)" || entry.Commit == "" || entry.IsBare || entry.IsLocked {
+			continue
+		}
+
+		if _, skip := skipPaths[filepath.Clean(entry.Path)]; skip {
+			continue
+		}
+
+		merged, err := git.IsAncestor(ctx, path, entry.Commit, baseRef)
+		if err != nil || !merged {
+			continue
+		}
+
+		result := Result{
+			Branch: formatDetachedWorktreeLabel(entry.Commit),
+			Detail: entry.Path,
+		}
+
+		if opts.DryRun {
+			result.Status = StatusWorktreeWouldRemove
+			pr.Results = append(pr.Results, result)
+			continue
+		}
+
+		if err := wt.Remove(ctx, entry.Path, true); err != nil {
+			result.Status = StatusError
+			result.Detail = fmt.Sprintf("%s: %s", entry.Path, err)
+			pr.Results = append(pr.Results, result)
+			continue
+		}
+
+		result.Status = StatusWorktreeRemoved
+		pr.Results = append(pr.Results, result)
+		removedAny = true
+	}
+
+	if !opts.DryRun && removedAny {
+		wt.Prune(ctx, false)
+	}
+}
+
+func formatDetachedWorktreeLabel(commit string) string {
+	const shortSHA = 7
+	if len(commit) > shortSHA {
+		commit = commit[:shortSHA]
+	}
+	return "detached@" + commit
 }
 
 // detectWorktreesForBranches lists worktrees and returns a map of branch name → worktree entry

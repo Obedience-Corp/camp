@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -251,4 +252,31 @@ func DeleteRemoteBranch(ctx context.Context, repoPath, branch string) error {
 		return camperrors.Wrapf(err, "delete remote branch %s: %s", branch, strings.TrimSpace(string(output)))
 	}
 	return nil
+}
+
+// IsAncestor reports whether ancestor is reachable from descendant.
+func IsAncestor(ctx context.Context, repoPath, ancestor, descendant string) (bool, error) {
+	if ctx.Err() != nil {
+		return false, ctx.Err()
+	}
+	if strings.TrimSpace(ancestor) == "" {
+		return false, fmt.Errorf("ancestor is required")
+	}
+	if strings.TrimSpace(descendant) == "" {
+		return false, fmt.Errorf("descendant is required")
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "-C", repoPath,
+		"merge-base", "--is-ancestor", ancestor, descendant)
+	err := cmd.Run()
+	if err == nil {
+		return true, nil
+	}
+
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		return false, nil
+	}
+
+	return false, camperrors.Wrapf(err, "check %s reachable from %s", ancestor, descendant)
 }

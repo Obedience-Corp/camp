@@ -258,6 +258,62 @@ func TestIntegration_ExecuteFresh_HandlesDefaultBranchInAnotherWorktree(t *testi
 	}
 }
 
+func TestIntegration_ExecuteFresh_RemovesMergedDetachedWorktreesOnly(t *testing.T) {
+	campDir, _ := setupCampaignWithSubmodule(t)
+	subDir := filepath.Join(campDir, "projects", "test-project")
+
+	run(t, "git", "-C", subDir, "checkout", "-b", "feature-merged")
+	if err := os.WriteFile(filepath.Join(subDir, "feature.txt"), []byte("feature"), 0o644); err != nil {
+		t.Fatalf("failed to write feature.txt: %v", err)
+	}
+	run(t, "git", "-C", subDir, "add", ".")
+	run(t, "git", "-C", subDir, "commit", "-m", "Feature work")
+
+	mainWorktree := t.TempDir()
+	run(t, "git", "-C", subDir, "worktree", "add", mainWorktree, "main")
+
+	mergedReviewWorktree := t.TempDir()
+	run(t, "git", "-C", subDir, "worktree", "add", "--detach", mergedReviewWorktree, "feature-merged")
+
+	unmergedReviewWorktree := t.TempDir()
+	run(t, "git", "-C", subDir, "worktree", "add", "--detach", unmergedReviewWorktree, "feature-merged")
+	run(t, "git", "-C", unmergedReviewWorktree, "config", "user.email", "test@test.com")
+	run(t, "git", "-C", unmergedReviewWorktree, "config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(unmergedReviewWorktree, "draft.txt"), []byte("draft"), 0o644); err != nil {
+		t.Fatalf("failed to write draft.txt: %v", err)
+	}
+	run(t, "git", "-C", unmergedReviewWorktree, "add", ".")
+	run(t, "git", "-C", unmergedReviewWorktree, "commit", "-m", "Detached draft work")
+
+	run(t, "git", "-C", mainWorktree, "merge", "feature-merged")
+	run(t, "git", "-C", mainWorktree, "push", "origin", "main")
+
+	err := executeFresh(context.Background(), "test-project", subDir, freshOptions{
+		branch: "develop",
+		prune:  true,
+		push:   false,
+	})
+	if err != nil {
+		t.Fatalf("executeFresh() error = %v", err)
+	}
+
+	current := strings.TrimSpace(run(t, "git", "-C", subDir, "rev-parse", "--abbrev-ref", "HEAD"))
+	if current != "develop" {
+		t.Fatalf("current branch = %q, want %q", current, "develop")
+	}
+
+	worktrees := run(t, "git", "-C", subDir, "worktree", "list", "--porcelain")
+	if strings.Contains(worktrees, mergedReviewWorktree) {
+		t.Fatalf("expected merged detached worktree to be removed, got:\n%s", worktrees)
+	}
+	if !strings.Contains(worktrees, unmergedReviewWorktree) {
+		t.Fatalf("expected unmerged detached worktree to remain, got:\n%s", worktrees)
+	}
+	if _, err := os.Stat(unmergedReviewWorktree); err != nil {
+		t.Fatalf("expected unmerged detached worktree directory to remain: %v", err)
+	}
+}
+
 func TestIntegration_ExecuteFresh_IgnoresNestedSubmoduleRefDrift(t *testing.T) {
 	campDir := setupCampaignWithNestedSubmoduleProject(t)
 	projectDir := filepath.Join(campDir, "projects", "test-project")
