@@ -31,12 +31,13 @@ func (g *GitWorktree) WithTimeout(d time.Duration) *GitWorktree {
 
 // GitWorktreeEntry represents a worktree from git worktree list.
 type GitWorktreeEntry struct {
-	Path     string
-	Commit   string
-	Branch   string
-	IsBare   bool
-	IsLocked bool
-	Prunable string // Reason if prunable, empty otherwise
+	Path       string
+	Commit     string
+	Branch     string
+	IsDetached bool
+	IsBare     bool
+	IsLocked   bool
+	Prunable   string // Reason if prunable, empty otherwise
 }
 
 // CurrentBranch returns the current branch name.
@@ -255,6 +256,7 @@ func parseWorktreeList(output string) []GitWorktreeEntry {
 			case strings.HasPrefix(line, "prunable "):
 				current.Prunable = strings.TrimPrefix(line, "prunable ")
 			case line == "detached":
+				current.IsDetached = true
 				current.Branch = "HEAD (detached)"
 			}
 		}

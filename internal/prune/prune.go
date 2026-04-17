@@ -116,7 +116,7 @@ func deleteDetachedWorktrees(ctx context.Context, path, baseRef string, opts Opt
 
 	removedAny := false
 	for _, entry := range entries {
-		if entry.Branch != "HEAD (detached)" || entry.Commit == "" || entry.IsBare || entry.IsLocked {
+		if !entry.IsDetached || entry.Commit == "" || entry.IsBare || entry.IsLocked {
 			continue
 		}
 
