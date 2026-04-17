@@ -27,6 +27,7 @@ const (
 	StatusWorktreeWouldRemove Status = "wt would remove"
 
 	SkipReasonActiveWorktree SkipReason = "active_worktree"
+	SkipReasonDirtyWorktree  SkipReason = "dirty_worktree"
 )
 
 // Options holds configuration for a prune operation.
@@ -64,26 +65,26 @@ func Execute(ctx context.Context, name, path string, opts Options) ProjectResult
 	pr := ProjectResult{Name: name, Path: path}
 
 	baseRef := strings.TrimSpace(opts.BaseRef)
-	var (
-		merged []string
-		err    error
-	)
 	if baseRef == "" {
-		merged, err = git.MergedBranches(ctx, path)
-	} else {
-		merged, err = git.MergedBranchesFromRef(ctx, path, baseRef)
+		baseRef = git.DefaultBranch(ctx, path)
+		if baseRef == "" {
+			pr.Error = "could not determine default branch"
+			return pr
+		}
 	}
+
+	merged, err := git.MergedBranchesFromRef(ctx, path, baseRef)
 	if err != nil {
 		pr.Error = err.Error()
 		return pr
 	}
 
+	deleteDetachedWorktrees(ctx, path, baseRef, opts, &pr)
 	if len(merged) == 0 && !opts.Remote {
 		return pr
 	}
 
 	deleteLocalBranches(ctx, path, merged, opts, &pr)
-	deleteDetachedWorktrees(ctx, path, baseRef, opts, &pr)
 
 	// Remote branch deletion uses the original merged list intentionally —
 	// remote branches should be cleaned up regardless of local deletion outcome.
@@ -119,7 +120,38 @@ func deleteDetachedWorktrees(ctx context.Context, path, baseRef string, opts Opt
 		}
 
 		merged, err := git.IsAncestor(ctx, path, entry.Commit, baseRef)
-		if err != nil || !merged {
+		if err != nil {
+			pr.Results = append(pr.Results, Result{
+				Branch: formatDetachedWorktreeLabel(entry.Commit),
+				Status: StatusError,
+				Detail: fmt.Sprintf("merge-base check for %s: %s", entry.Path, err),
+			})
+			continue
+		}
+		if !merged {
+			continue
+		}
+
+		clean, err := detachedWorktreeClean(ctx, entry.Path)
+		if err != nil {
+			pr.Results = append(pr.Results, Result{
+				Branch: formatDetachedWorktreeLabel(entry.Commit),
+				Status: StatusError,
+				Detail: fmt.Sprintf("dirty check for %s: %s", entry.Path, err),
+			})
+			continue
+		}
+		if !clean {
+			detail := fmt.Sprintf("dirty detached worktree: %s", entry.Path)
+			if opts.DryRun {
+				detail = fmt.Sprintf("would keep dirty detached worktree: %s", entry.Path)
+			}
+			pr.Results = append(pr.Results, Result{
+				Branch:     formatDetachedWorktreeLabel(entry.Commit),
+				Status:     StatusSkipped,
+				Detail:     detail,
+				SkipReason: SkipReasonDirtyWorktree,
+			})
 			continue
 		}
 
@@ -157,6 +189,14 @@ func formatDetachedWorktreeLabel(commit string) string {
 		commit = commit[:shortSHA]
 	}
 	return "detached@" + commit
+}
+
+func detachedWorktreeClean(ctx context.Context, path string) (bool, error) {
+	hasChanges, err := git.HasChanges(ctx, path)
+	if err != nil {
+		return false, err
+	}
+	return !hasChanges, nil
 }
 
 // detectWorktreesForBranches lists worktrees and returns a map of branch name → worktree entry

@@ -314,6 +314,83 @@ func TestIntegration_ExecuteFresh_RemovesMergedDetachedWorktreesOnly(t *testing.
 	}
 }
 
+func TestIntegration_ExecuteFresh_RemovesMergedDetachedWorktreesAfterBranchDeleted(t *testing.T) {
+	campDir, _ := setupCampaignWithSubmodule(t)
+	subDir := filepath.Join(campDir, "projects", "test-project")
+
+	run(t, "git", "-C", subDir, "checkout", "-b", "feature-merged")
+	if err := os.WriteFile(filepath.Join(subDir, "feature.txt"), []byte("feature"), 0o644); err != nil {
+		t.Fatalf("failed to write feature.txt: %v", err)
+	}
+	run(t, "git", "-C", subDir, "add", ".")
+	run(t, "git", "-C", subDir, "commit", "-m", "Feature work")
+
+	mainWorktree := t.TempDir()
+	run(t, "git", "-C", subDir, "worktree", "add", mainWorktree, "main")
+
+	mergedReviewWorktree := t.TempDir()
+	run(t, "git", "-C", subDir, "worktree", "add", "--detach", mergedReviewWorktree, "feature-merged")
+
+	run(t, "git", "-C", subDir, "checkout", "-b", "scratch-work")
+	run(t, "git", "-C", mainWorktree, "merge", "feature-merged")
+	run(t, "git", "-C", mainWorktree, "push", "origin", "main")
+	run(t, "git", "-C", subDir, "branch", "-d", "feature-merged")
+
+	err := executeFresh(context.Background(), "test-project", subDir, freshOptions{
+		prune: true,
+		push:  false,
+	})
+	if err != nil {
+		t.Fatalf("executeFresh() error = %v", err)
+	}
+
+	worktrees := run(t, "git", "-C", subDir, "worktree", "list", "--porcelain")
+	if strings.Contains(worktrees, mergedReviewWorktree) {
+		t.Fatalf("expected merged detached worktree to be removed after source branch deletion, got:\n%s", worktrees)
+	}
+}
+
+func TestIntegration_ExecuteFresh_KeepsDirtyMergedDetachedWorktrees(t *testing.T) {
+	campDir, _ := setupCampaignWithSubmodule(t)
+	subDir := filepath.Join(campDir, "projects", "test-project")
+
+	run(t, "git", "-C", subDir, "checkout", "-b", "feature-merged")
+	if err := os.WriteFile(filepath.Join(subDir, "feature.txt"), []byte("feature"), 0o644); err != nil {
+		t.Fatalf("failed to write feature.txt: %v", err)
+	}
+	run(t, "git", "-C", subDir, "add", ".")
+	run(t, "git", "-C", subDir, "commit", "-m", "Feature work")
+
+	mainWorktree := t.TempDir()
+	run(t, "git", "-C", subDir, "worktree", "add", mainWorktree, "main")
+
+	dirtyReviewWorktree := t.TempDir()
+	run(t, "git", "-C", subDir, "worktree", "add", "--detach", dirtyReviewWorktree, "feature-merged")
+	if err := os.WriteFile(filepath.Join(dirtyReviewWorktree, "wip.txt"), []byte("wip"), 0o644); err != nil {
+		t.Fatalf("failed to write wip.txt: %v", err)
+	}
+
+	run(t, "git", "-C", mainWorktree, "merge", "feature-merged")
+	run(t, "git", "-C", mainWorktree, "push", "origin", "main")
+
+	err := executeFresh(context.Background(), "test-project", subDir, freshOptions{
+		branch: "develop",
+		prune:  true,
+		push:   false,
+	})
+	if err != nil {
+		t.Fatalf("executeFresh() error = %v", err)
+	}
+
+	worktrees := run(t, "git", "-C", subDir, "worktree", "list", "--porcelain")
+	if !strings.Contains(worktrees, dirtyReviewWorktree) {
+		t.Fatalf("expected dirty merged detached worktree to remain, got:\n%s", worktrees)
+	}
+	if _, err := os.Stat(dirtyReviewWorktree); err != nil {
+		t.Fatalf("expected dirty detached worktree directory to remain: %v", err)
+	}
+}
+
 func TestIntegration_ExecuteFresh_IgnoresNestedSubmoduleRefDrift(t *testing.T) {
 	campDir := setupCampaignWithNestedSubmoduleProject(t)
 	projectDir := filepath.Join(campDir, "projects", "test-project")
