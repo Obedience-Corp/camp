@@ -1522,6 +1522,69 @@ func TestIntentService_PlanLegacyIntentRootMigration_SkipsDuplicateCrawlConfig(t
 	}
 }
 
+// Divergent scaffold content is treated as a real conflict rather than being
+// silently discarded. This preserves any user edits to legacy .crawl.yaml.
+func TestIntentService_EnsureDirectories_DivergentCrawlConfigConflicts(t *testing.T) {
+	campaignRoot := t.TempDir()
+	legacyRoot := filepath.Join(campaignRoot, "workflow", "intents")
+	svc := NewIntentService(campaignRoot, filepath.Join(campaignRoot, ".campaign", "intents"))
+	ctx := context.Background()
+
+	legacyCrawl := filepath.Join(legacyRoot, "dungeon", ".crawl.yaml")
+	if err := os.MkdirAll(filepath.Dir(legacyCrawl), 0755); err != nil {
+		t.Fatalf("failed to create legacy dungeon dir: %v", err)
+	}
+	if err := os.WriteFile(legacyCrawl, []byte("excludes:\n  - inbox\n  - custom\n"), 0644); err != nil {
+		t.Fatalf("failed to write legacy .crawl.yaml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyRoot, "OBEY.md"), []byte("# legacy\n"), 0644); err != nil {
+		t.Fatalf("failed to write legacy OBEY.md: %v", err)
+	}
+
+	canonicalCrawl := filepath.Join(svc.intentsDir, "dungeon", ".crawl.yaml")
+	if err := os.MkdirAll(filepath.Dir(canonicalCrawl), 0755); err != nil {
+		t.Fatalf("failed to create canonical dungeon dir: %v", err)
+	}
+	if err := os.WriteFile(canonicalCrawl, []byte("excludes:\n  - inbox\n"), 0644); err != nil {
+		t.Fatalf("failed to write canonical .crawl.yaml: %v", err)
+	}
+
+	err := svc.EnsureDirectories(ctx)
+	if !errors.Is(err, ErrIntentMigrationConflict) {
+		t.Fatalf("EnsureDirectories() error = %v, want ErrIntentMigrationConflict", err)
+	}
+}
+
+func TestIntentService_PlanLegacyIntentRootMigration_DivergentCrawlConfigConflicts(t *testing.T) {
+	campaignRoot := t.TempDir()
+	legacyRoot := filepath.Join(campaignRoot, "workflow", "intents")
+	svc := NewIntentService(campaignRoot, filepath.Join(campaignRoot, ".campaign", "intents"))
+
+	legacyCrawl := filepath.Join(legacyRoot, "dungeon", ".crawl.yaml")
+	if err := os.MkdirAll(filepath.Dir(legacyCrawl), 0755); err != nil {
+		t.Fatalf("failed to create legacy dungeon dir: %v", err)
+	}
+	if err := os.WriteFile(legacyCrawl, []byte("excludes:\n  - inbox\n  - custom\n"), 0644); err != nil {
+		t.Fatalf("failed to write legacy .crawl.yaml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyRoot, "OBEY.md"), []byte("# legacy\n"), 0644); err != nil {
+		t.Fatalf("failed to write legacy OBEY.md: %v", err)
+	}
+
+	canonicalCrawl := filepath.Join(svc.intentsDir, "dungeon", ".crawl.yaml")
+	if err := os.MkdirAll(filepath.Dir(canonicalCrawl), 0755); err != nil {
+		t.Fatalf("failed to create canonical dungeon dir: %v", err)
+	}
+	if err := os.WriteFile(canonicalCrawl, []byte("excludes:\n  - inbox\n"), 0644); err != nil {
+		t.Fatalf("failed to write canonical .crawl.yaml: %v", err)
+	}
+
+	_, err := svc.PlanLegacyIntentRootMigration()
+	if !errors.Is(err, ErrIntentMigrationConflict) {
+		t.Fatalf("PlanLegacyIntentRootMigration() error = %v, want ErrIntentMigrationConflict", err)
+	}
+}
+
 func TestIsIntentScaffoldBasename(t *testing.T) {
 	tests := []struct {
 		name string
