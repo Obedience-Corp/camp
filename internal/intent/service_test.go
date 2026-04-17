@@ -1431,6 +1431,117 @@ func TestIntentService_PlanLegacyIntentRootCleanup(t *testing.T) {
 	}
 }
 
+// TestIntentService_EnsureDirectories_DuplicateCrawlConfigTolerated guards the
+// regression where `camp init --repair` would fail on campaigns scaffolded
+// before the canonical-intent-root migration: Phase 2 of repair writes a
+// fresh .crawl.yaml at the canonical path, then Phase 8 migration refused to
+// reconcile the identical legacy copy. Scaffold files listed in
+// legacyIntentScaffoldFiles (currently .gitkeep and .crawl.yaml) must be
+// treated as safe-to-skip when the destination already exists, not just
+// .gitkeep.
+func TestIntentService_EnsureDirectories_DuplicateCrawlConfigTolerated(t *testing.T) {
+	campaignRoot := t.TempDir()
+	legacyRoot := filepath.Join(campaignRoot, "workflow", "intents")
+	svc := NewIntentService(campaignRoot, filepath.Join(campaignRoot, ".campaign", "intents"))
+	ctx := context.Background()
+
+	// Simulate the pre-Mar-16 layout: legacy dungeon with .crawl.yaml scaffold.
+	legacyCrawl := filepath.Join(legacyRoot, "dungeon", ".crawl.yaml")
+	if err := os.MkdirAll(filepath.Dir(legacyCrawl), 0755); err != nil {
+		t.Fatalf("failed to create legacy dungeon dir: %v", err)
+	}
+	if err := os.WriteFile(legacyCrawl, []byte("excludes:\n  - inbox\n"), 0644); err != nil {
+		t.Fatalf("failed to write legacy .crawl.yaml: %v", err)
+	}
+	// Also include a legacy marker so migration actually runs.
+	if err := os.WriteFile(filepath.Join(legacyRoot, "OBEY.md"), []byte("# legacy\n"), 0644); err != nil {
+		t.Fatalf("failed to write legacy OBEY.md: %v", err)
+	}
+
+	// Simulate the in-repair state: canonical dungeon also has .crawl.yaml,
+	// written by the scaffold phase that ran before migration.
+	canonicalCrawl := filepath.Join(svc.intentsDir, "dungeon", ".crawl.yaml")
+	if err := os.MkdirAll(filepath.Dir(canonicalCrawl), 0755); err != nil {
+		t.Fatalf("failed to create canonical dungeon dir: %v", err)
+	}
+	if err := os.WriteFile(canonicalCrawl, []byte("excludes:\n  - inbox\n"), 0644); err != nil {
+		t.Fatalf("failed to write canonical .crawl.yaml: %v", err)
+	}
+
+	if err := svc.EnsureDirectories(ctx); err != nil {
+		t.Fatalf("EnsureDirectories() error = %v (regression: migration should tolerate duplicate scaffold files)", err)
+	}
+
+	// Canonical .crawl.yaml should remain.
+	if _, err := os.Stat(canonicalCrawl); err != nil {
+		t.Fatalf("canonical .crawl.yaml should still exist: %v", err)
+	}
+	// Legacy .crawl.yaml should have been removed (skipped during move, then cleaned up).
+	if _, err := os.Stat(legacyCrawl); !os.IsNotExist(err) {
+		t.Fatalf("legacy .crawl.yaml should be removed after migration, err = %v", err)
+	}
+}
+
+// TestIntentService_PlanLegacyIntentRootMigration_SkipsDuplicateCrawlConfig is
+// the planning-side counterpart to the above: PlanLegacyIntentRootMigration
+// must not return an error or a planned move for .crawl.yaml when it exists
+// at both roots.
+func TestIntentService_PlanLegacyIntentRootMigration_SkipsDuplicateCrawlConfig(t *testing.T) {
+	campaignRoot := t.TempDir()
+	legacyRoot := filepath.Join(campaignRoot, "workflow", "intents")
+	svc := NewIntentService(campaignRoot, filepath.Join(campaignRoot, ".campaign", "intents"))
+
+	legacyCrawl := filepath.Join(legacyRoot, "dungeon", ".crawl.yaml")
+	if err := os.MkdirAll(filepath.Dir(legacyCrawl), 0755); err != nil {
+		t.Fatalf("failed to create legacy dungeon dir: %v", err)
+	}
+	if err := os.WriteFile(legacyCrawl, []byte("excludes:\n  - inbox\n"), 0644); err != nil {
+		t.Fatalf("failed to write legacy .crawl.yaml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyRoot, "OBEY.md"), []byte("# legacy\n"), 0644); err != nil {
+		t.Fatalf("failed to write legacy OBEY.md: %v", err)
+	}
+
+	canonicalCrawl := filepath.Join(svc.intentsDir, "dungeon", ".crawl.yaml")
+	if err := os.MkdirAll(filepath.Dir(canonicalCrawl), 0755); err != nil {
+		t.Fatalf("failed to create canonical dungeon dir: %v", err)
+	}
+	if err := os.WriteFile(canonicalCrawl, []byte("excludes:\n  - inbox\n"), 0644); err != nil {
+		t.Fatalf("failed to write canonical .crawl.yaml: %v", err)
+	}
+
+	moves, err := svc.PlanLegacyIntentRootMigration()
+	if err != nil {
+		t.Fatalf("PlanLegacyIntentRootMigration() error = %v (should skip duplicate scaffold)", err)
+	}
+
+	for _, move := range moves {
+		if filepath.Base(move.Source) == ".crawl.yaml" {
+			t.Fatalf("duplicate .crawl.yaml should be skipped, not planned: %s -> %s", move.Source, move.Dest)
+		}
+	}
+}
+
+func TestIsIntentScaffoldBasename(t *testing.T) {
+	tests := []struct {
+		name string
+		want bool
+	}{
+		{name: ".gitkeep", want: true},
+		{name: ".crawl.yaml", want: true},
+		{name: "OBEY.md", want: false},
+		{name: "intent-1.md", want: false},
+		{name: "", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isIntentScaffoldBasename(tt.name); got != tt.want {
+				t.Errorf("isIntentScaffoldBasename(%q) = %v, want %v", tt.name, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestIntentService_List_EmptyDirectories(t *testing.T) {
 	tmpDir := t.TempDir()
 	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))

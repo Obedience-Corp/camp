@@ -146,7 +146,7 @@ func collectIntentTreeMoves(srcDir, dstDir string, moves *[]PlannedPathMove) err
 		}
 
 		if _, err := os.Stat(dstPath); err == nil {
-			if entry.Name() == ".gitkeep" {
+			if isIntentScaffoldBasename(entry.Name()) {
 				continue
 			}
 			return camperrors.Wrapf(ErrIntentMigrationConflict, "destination already exists for %s", dstPath)
@@ -263,7 +263,7 @@ func moveIntentTree(srcDir, dstDir string) error {
 		}
 
 		if _, err := os.Stat(dstPath); err == nil {
-			if entry.Name() == ".gitkeep" {
+			if isIntentScaffoldBasename(entry.Name()) {
 				if err := os.Remove(srcPath); err != nil {
 					return camperrors.Wrapf(err, "removing %s", srcPath)
 				}
