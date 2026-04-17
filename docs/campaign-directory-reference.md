@@ -40,6 +40,8 @@ After `camp init`, the directory usually looks like this:
 ├── cache/                # created later
 │   ├── nav-index.json
 │   └── state.jsonl
+├── activity/             # created later by plugins such as camp-activity
+│   └── ...
 └── leverage/             # created later
     ├── config.json
     └── snapshots/
@@ -49,8 +51,8 @@ Notes:
 
 - `settings/pins.json` is created later on first pin, so it is not shown in the
   initial scaffold.
-- `cache/` and `leverage/` are feature-created directories, not initial
-  scaffold directories.
+- `cache/`, `activity/`, and `leverage/` are feature-created directories, not
+  initial scaffold directories.
 - `watchers.yaml` is written by contract-aware tools such as camp and fest.
 
 ## What You Can Edit
@@ -67,6 +69,7 @@ Usually tool-managed; avoid hand-editing unless you are debugging:
 - `.campaign/watchers.yaml`
 - `.campaign/settings/pins.json`
 - `.campaign/cache/`
+- `.campaign/activity/`
 - `.campaign/leverage/snapshots/`
 - most files under `.campaign/intents/` and `.campaign/quests/`
 
@@ -75,7 +78,8 @@ Usually tool-managed; avoid hand-editing unless you are debugging:
 ### `.campaign/.gitignore`
 
 Camp scaffolds a local `.gitignore` here to keep machine-local runtime state
-out of git. It excludes items such as `state.yaml` and `cache/`.
+out of git. It excludes items such as `state.yaml`, `cache/`, and
+`activity/`.
 
 ### `.campaign/campaign.yaml`
 
@@ -164,6 +168,12 @@ Known files:
 - `snapshots/` for historical leverage snapshots
 
 See [leverage-score.md](leverage-score.md) for leverage-specific details.
+
+### `.campaign/activity/`
+
+Plugin-managed activity cache and local report state. This directory is
+reserved for tools such as `camp-activity` and should be treated as
+machine-local runtime data, not shared configuration.
 
 ## Regeneration Safety
 

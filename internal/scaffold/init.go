@@ -314,6 +314,9 @@ state.yaml
 # Generated cache (navigation index, rebuilt automatically)
 cache/
 
+# Plugin-managed activity cache and local report state
+activity/
+
 # Tool-managed state (workitem priorities, regenerated automatically)
 settings/workitems.json
 `

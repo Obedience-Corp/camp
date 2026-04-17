@@ -215,6 +215,15 @@ func TestInit(t *testing.T) {
 	if _, err := os.Lstat(claudePath); os.IsNotExist(err) {
 		t.Error("CLAUDE.md symlink was not created")
 	}
+
+	gitignorePath := filepath.Join(campaignDir, ".campaign", ".gitignore")
+	gitignoreContent, err := os.ReadFile(gitignorePath)
+	if err != nil {
+		t.Fatalf("failed to read .campaign/.gitignore: %v", err)
+	}
+	if !strings.Contains(string(gitignoreContent), "activity/") {
+		t.Error(".campaign/.gitignore should exclude plugin-managed activity state")
+	}
 }
 
 func TestInit_AlreadyInCampaign(t *testing.T) {
