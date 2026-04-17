@@ -2,11 +2,15 @@ package git
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // initBranchTestRepo creates a temp git repo with an initial commit on the given branch.
@@ -263,6 +267,64 @@ func TestMergedBranches_NoMerged(t *testing.T) {
 	if len(branches) != 0 {
 		t.Fatalf("expected 0 merged branches, got %d: %v", len(branches), branches)
 	}
+}
+
+func TestIsAncestor(t *testing.T) {
+	dir := initBranchTestRepo(t, "main")
+	run := gitRunner(t, dir)
+
+	baseCommit := strings.TrimSpace(runOutput(t, dir, "rev-parse", "HEAD"))
+
+	run("checkout", "-b", "feature")
+	if err := os.WriteFile(filepath.Join(dir, "feature.txt"), []byte("feature\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", ".")
+	run("commit", "-m", "feature")
+	featureCommit := strings.TrimSpace(runOutput(t, dir, "rev-parse", "HEAD"))
+
+	ctx := context.Background()
+
+	merged, err := IsAncestor(ctx, dir, baseCommit, featureCommit)
+	if err != nil {
+		t.Fatalf("IsAncestor() error = %v", err)
+	}
+	if !merged {
+		t.Fatal("expected base commit to be reachable from feature commit")
+	}
+
+	merged, err = IsAncestor(ctx, dir, featureCommit, "main")
+	if err != nil {
+		t.Fatalf("IsAncestor() error = %v", err)
+	}
+	if merged {
+		t.Fatal("expected feature commit to not be reachable from main")
+	}
+}
+
+func TestIsAncestor_RequiresRefs(t *testing.T) {
+	dir := initBranchTestRepo(t, "main")
+	ctx := context.Background()
+
+	_, err := IsAncestor(ctx, dir, "", "main")
+	if !errors.Is(err, camperrors.ErrInvalidInput) {
+		t.Fatalf("expected invalid input for empty ancestor, got %v", err)
+	}
+
+	_, err = IsAncestor(ctx, dir, "HEAD", " ")
+	if !errors.Is(err, camperrors.ErrInvalidInput) {
+		t.Fatalf("expected invalid input for empty descendant, got %v", err)
+	}
+}
+
+func runOutput(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, output)
+	}
+	return string(output)
 }
 
 func TestMergedBranches_ReturnsMerged(t *testing.T) {

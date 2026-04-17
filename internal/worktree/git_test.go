@@ -57,6 +57,9 @@ prunable gitdir file points to non-existent location
 	if entries[2].Prunable == "" {
 		t.Error("entries[2] should be prunable")
 	}
+	if !entries[2].IsDetached {
+		t.Error("entries[2] should be detached")
+	}
 	if entries[2].Branch != "HEAD (detached)" {
 		t.Errorf("entries[2].Branch = %q, want HEAD (detached)", entries[2].Branch)
 	}

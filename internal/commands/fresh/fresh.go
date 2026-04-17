@@ -223,16 +223,28 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 		}
 
 		deletedNames := pruneResultNames(pr.Results, prune.StatusDeleted, prune.StatusWouldDelete)
+		removedWorktrees := pruneResultCount(pr.Results, prune.StatusWorktreeRemoved, prune.StatusWorktreeWouldRemove)
 
 		switch {
-		case len(deletedNames) > 0:
+		case len(deletedNames) > 0 || removedWorktrees > 0:
 			action := "deleted"
+			worktreeAction := "removed"
 			style := freshStepGreen
 			if opts.dryRun {
 				action = "would delete"
+				worktreeAction = "would remove"
 				style = freshStepDim
 			}
 			detail := fmt.Sprintf("%s: %s", action, strings.Join(deletedNames, ", "))
+			if len(deletedNames) == 0 {
+				detail = "removed merged detached worktrees"
+				if opts.dryRun {
+					detail = "would remove merged detached worktrees"
+				}
+			}
+			if removedWorktrees > 0 {
+				detail = fmt.Sprintf("%s; %s %d worktree(s)", detail, worktreeAction, removedWorktrees)
+			}
 			fmt.Printf("%s── Prune merged branches           %s\n", prefix, style.Render(detail))
 		default:
 			fmt.Printf("%s── Prune merged branches           %s\n", prefix, freshStepDim.Render("nothing to prune"))
@@ -359,6 +371,10 @@ func pruneResultNames(results []prune.Result, statuses ...prune.Status) []string
 		}
 	}
 	return names
+}
+
+func pruneResultCount(results []prune.Result, statuses ...prune.Status) int {
+	return len(pruneResultNames(results, statuses...))
 }
 
 // freshSafetyChecks verifies the repo is in a safe state for fresh.
