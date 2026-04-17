@@ -90,11 +90,15 @@ func runProjectWorktreeAdd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	projectName := resolved.Name
+	if err := resolved.RequireGit("git worktrees"); err != nil {
+		return err
+	}
 
 	resolver := paths.NewResolver(campRoot, cfg.Paths())
 	creator := intworktree.NewCreator(resolver, cfg)
 	opts := &intworktree.CreateOptions{
 		Project:     projectName,
+		ProjectPath: resolved.Path,
 		Name:        worktreeName,
 		TrackRemote: wtAddTrack,
 	}
@@ -111,8 +115,7 @@ func runProjectWorktreeAdd(cmd *cobra.Command, args []string) error {
 		if wtAddStartPoint != "" {
 			opts.StartPoint = wtAddStartPoint
 		} else {
-			projectPath := resolver.Project(projectName)
-			git := intworktree.NewGitWorktree(projectPath)
+			git := intworktree.NewGitWorktree(resolved.Path)
 			currentBranch, err := git.CurrentBranch(ctx)
 			if err != nil {
 				return camperrors.Wrap(err, "failed to detect current branch")

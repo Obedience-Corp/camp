@@ -6,12 +6,17 @@ Manage campaign projects
 
 Manage git submodules and project repositories in the campaign.
 
-A project is a git repository tracked as a submodule under the projects/ directory.
-Projects can be added from remote URLs or existing local repositories.
+A project can be:
+  - a git repository tracked as a submodule under projects/
+  - a machine-local linked workspace attached via symlink under projects/
+
+Use 'camp project add' for submodules and 'camp project link' / 'camp project unlink'
+for linked workspaces.
 
 Examples:
   camp project list                    List all projects
   camp project add git@github.com:org/repo.git  Add a new project
+  camp project link ~/code/my-project  Link an existing local workspace
   camp project remove api-service      Remove a project
 
 ```
@@ -37,11 +42,13 @@ camp project [flags]
 * [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
 * [camp project add](camp_project_add.md)	 - Add a project to campaign
 * [camp project commit](camp_project_commit.md)	 - Commit changes in a project submodule
+* [camp project link](camp_project_link.md)	 - Link an existing local project into a campaign
 * [camp project list](camp_project_list.md)	 - List projects in campaign
 * [camp project new](camp_project_new.md)	 - Create a new project in campaign
 * [camp project prune](camp_project_prune.md)	 - Delete merged branches in a project
 * [camp project remote](camp_project_remote.md)	 - Manage remotes for a project
 * [camp project remove](camp_project_remove.md)	 - Remove a project from campaign
 * [camp project run](camp_project_run.md)	 - Run a command inside a project directory
+* [camp project unlink](camp_project_unlink.md)	 - Unlink a linked project from a campaign
 * [camp project worktree](camp_project_worktree.md)	 - Manage worktrees for a project
 

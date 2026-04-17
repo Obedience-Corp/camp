@@ -75,16 +75,18 @@ func runProjectWorktreeRemove(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	projectName := resolved.Name
+	if err := resolved.RequireGit("git worktrees"); err != nil {
+		return err
+	}
 
 	resolver := paths.NewResolver(campRoot, cfg.Paths())
 	pathManager := intworktree.NewPathManager(resolver)
 	if !pathManager.WorktreeExists(projectName, worktreeName) {
-		return fmt.Errorf("worktree '%s' does not exist for project '%s'", worktreeName, projectName)
+		return camperrors.Wrapf(camperrors.ErrNotFound, "worktree '%s' does not exist for project '%s'", worktreeName, projectName)
 	}
 
 	wtPath := pathManager.WorktreePath(projectName, worktreeName)
-	projectPath := resolver.Project(projectName)
-	git := intworktree.NewGitWorktree(projectPath)
+	git := intworktree.NewGitWorktree(resolved.Path)
 	if err := git.Remove(ctx, wtPath, wtRemoveForce); err != nil {
 		return camperrors.Wrap(err, "failed to remove worktree")
 	}

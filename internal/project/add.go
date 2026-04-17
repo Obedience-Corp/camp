@@ -49,6 +49,33 @@ func (e *ErrProjectExists) Unwrap() error {
 	return camperrors.ErrAlreadyExists
 }
 
+// ErrProjectAlreadyLinked is returned when a user tries to link an external
+// directory into a campaign that already has a symlink pointing to the same
+// target under a different alias. Linking the same target twice produces two
+// valid symlinks on disk but only one survives List()'s URL-based dedup, so
+// we reject the duplicate up front rather than let the alias silently
+// disappear from `camp project list`, `camp project run`, and `camp leverage`.
+type ErrProjectAlreadyLinked struct {
+	// ExistingName is the alias already linked to the target.
+	ExistingName string
+	// Target is the absolute path of the linked directory (symlink target).
+	Target string
+	// AttemptedName is the alias the caller just tried to use.
+	AttemptedName string
+}
+
+func (e *ErrProjectAlreadyLinked) Error() string {
+	return fmt.Sprintf(
+		"project %q is already linked as %q → %s; unlink first with 'camp project unlink %s' to re-link under a different name",
+		e.AttemptedName, e.ExistingName, e.Target, e.ExistingName,
+	)
+}
+
+// Unwrap returns ErrAlreadyExists so errors.Is(err, camperrors.ErrAlreadyExists) works.
+func (e *ErrProjectAlreadyLinked) Unwrap() error {
+	return camperrors.ErrAlreadyExists
+}
+
 // Add adds a git repository as a submodule to the campaign.
 func Add(ctx context.Context, campaignRoot, source string, opts AddOptions) (*AddResult, error) {
 	if ctx.Err() != nil {
@@ -68,7 +95,7 @@ func Add(ctx context.Context, campaignRoot, source string, opts AddOptions) (*Ad
 	// Validate source
 	source = strings.TrimSpace(source)
 	if source == "" && opts.Local == "" {
-		return nil, fmt.Errorf("source URL is required\n" +
+		return nil, camperrors.Wrap(camperrors.ErrInvalidInput, "source URL is required\n"+
 			"Hint: Provide a git URL like 'git@github.com:org/repo.git' or use --local for existing repos")
 	}
 
@@ -254,7 +281,7 @@ func addLocalAsSubmodule(ctx context.Context, campaignRoot, localPath, destPath,
 	// Verify it's a git repo
 	gitPath := filepath.Join(absLocal, ".git")
 	if _, err := os.Stat(gitPath); os.IsNotExist(err) {
-		return fmt.Errorf("local path is not a git repository: %s\n"+
+		return camperrors.Wrapf(camperrors.ErrInvalidInput, "local path is not a git repository: %s\n"+
 			"Hint: Run 'git init' in the directory first, or provide a git repository URL instead", localPath)
 	}
 
@@ -291,7 +318,7 @@ func executeLocalSubmoduleAdd(ctx context.Context, campaignRoot, absLocal, destP
 func checkGitInstalled(ctx context.Context) error {
 	cmd := exec.CommandContext(ctx, "git", "--version")
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("git is not installed or not in PATH\n" +
+		return camperrors.Wrap(camperrors.ErrNotInitialized, "git is not installed or not in PATH\n"+
 			"Please install git: https://git-scm.com/downloads")
 	}
 	return nil
@@ -301,7 +328,7 @@ func checkGitInstalled(ctx context.Context) error {
 func checkIsGitRepo(ctx context.Context, campaignRoot string) error {
 	cmd := exec.CommandContext(ctx, "git", "-C", campaignRoot, "rev-parse", "--git-dir")
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("campaign directory is not a git repository\n" +
+		return camperrors.Wrap(camperrors.ErrNotInitialized, "campaign directory is not a git repository\n"+
 			"Hint: Run 'git init' in the campaign root, or use 'camp init' to create a new campaign")
 	}
 	return nil
@@ -321,7 +348,7 @@ func checkRepoNotEmpty(ctx context.Context, url string) error {
 		return nil
 	}
 	if len(strings.TrimSpace(string(output))) == 0 {
-		return fmt.Errorf("cannot add empty repository %q — push at least one commit first\n"+
+		return camperrors.Wrapf(camperrors.ErrInvalidInput, "cannot add empty repository %q — push at least one commit first\n"+
 			"Hint: Initialize the repo locally, make a commit, and push before adding it to a campaign", url)
 	}
 	return nil

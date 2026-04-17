@@ -22,6 +22,9 @@ var projectRemoveCmd = &cobra.Command{
 By default, this only removes the project from git submodule tracking.
 The project files remain in place for you to handle manually.
 
+For linked projects, prefer 'camp project unlink'. Linked projects are
+machine-local symlinks and are never deleted through this command.
+
 Use --delete to also remove all project files. This is destructive
 and requires confirmation unless --force is also specified.
 
@@ -88,6 +91,9 @@ func runProjectRemove(cmd *cobra.Command, args []string) error {
 		fmt.Println(ui.Warning("Dry run - would remove:"))
 		fmt.Println()
 		fmt.Println(ui.KeyValue("  Project:", result.Name))
+		if result.LinkRemoved {
+			fmt.Printf("    %s Unlink linked project\n", ui.BulletIcon())
+		}
 		if result.SubmoduleRemoved {
 			fmt.Printf("    %s Remove from git submodule tracking\n", ui.BulletIcon())
 		}
@@ -101,6 +107,9 @@ func runProjectRemove(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("%s %s\n", ui.SuccessIcon(), ui.Success("Removed project: "+result.Name))
+	if result.LinkRemoved {
+		fmt.Printf("  %s Linked project unlinked\n", ui.SuccessIcon())
+	}
 	if result.SubmoduleRemoved {
 		fmt.Printf("  %s Submodule unregistered\n", ui.SuccessIcon())
 	}
@@ -111,14 +120,19 @@ func runProjectRemove(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  %s Worktrees deleted\n", ui.SuccessIcon())
 	}
 
-	// Auto-commit if not disabled and not a dry run
-	if !noCommit && !dryRun {
+	// Auto-commit structural campaign changes unless disabled.
+	if !noCommit && !dryRun && (result.SubmoduleRemoved || result.LinkRemoved) {
 		cfg, _ := config.LoadCampaignConfig(ctx, root)
 		campaignID := ""
 		if cfg != nil {
 			campaignID = cfg.ID
 		}
-		files := commit.NormalizeFiles(root, ".gitmodules", result.Path)
+		files := commit.NormalizeFiles(root, result.Path)
+		action := commit.ProjectUnlink
+		if result.SubmoduleRemoved {
+			files = commit.NormalizeFiles(root, ".gitmodules", result.Path)
+			action = commit.ProjectRemove
+		}
 		commitResult := commit.Project(ctx, commit.ProjectOptions{
 			Options: commit.Options{
 				CampaignRoot:  root,
@@ -126,7 +140,7 @@ func runProjectRemove(cmd *cobra.Command, args []string) error {
 				Files:         files,
 				SelectiveOnly: true,
 			},
-			Action:      commit.ProjectRemove,
+			Action:      action,
 			ProjectName: result.Name,
 		})
 		if commitResult.Message != "" {

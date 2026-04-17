@@ -13,9 +13,8 @@ var projectListCmd = &cobra.Command{
 	Short: "List projects in campaign",
 	Long: `List all projects in the current campaign.
 
-Projects are git repositories located in the projects/ directory.
-The command detects project types by looking for marker files like
-go.mod (Go), Cargo.toml (Rust), or package.json (TypeScript).
+Projects are discovered from the projects/ directory. They may be regular
+git-backed entries or linked external directories.
 
 Output formats:
   table   - Aligned columns with headers (default)

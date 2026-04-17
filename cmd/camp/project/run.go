@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"path/filepath"
 	"strings"
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
@@ -73,11 +72,11 @@ func runProjectRun(cmd *cobra.Command, args []string) error {
 
 	// Resolve project directory.
 	var projectDir string
+	displayPath := ""
 
 	switch {
 	case projectName != "":
-		// Explicit project flag.
-		absPath, err := projectsvc.ResolveByName(ctx, campRoot, projectName)
+		resolved, err := projectsvc.Resolve(ctx, campRoot, projectName)
 		if err != nil {
 			var notFound *projectsvc.ProjectNotFoundError
 			if errors.As(err, &notFound) {
@@ -85,30 +84,35 @@ func runProjectRun(cmd *cobra.Command, args []string) error {
 			}
 			return err
 		}
-		projectDir = absPath
+		projectDir = resolved.Path
+		displayPath = resolved.LogicalPath
 
 	default:
 		// Try auto-detect from cwd first.
 		result, cwdErr := projectsvc.ResolveFromCwd(ctx, campRoot)
 		if cwdErr == nil {
 			projectDir = result.Path
+			displayPath = result.LogicalPath
 		} else {
 			// Fall back to interactive picker.
 			picked, pickErr := pickProject(cmd, campRoot)
 			if pickErr != nil {
 				return pickErr
 			}
-			projectDir = filepath.Join(campRoot, picked.Path)
+			projectDir = projectsvc.ResolveProjectPath(campRoot, *picked)
+			displayPath = picked.Path
 		}
 	}
 
 	if len(commandArgs) == 0 {
-		return fmt.Errorf("no command specified")
+		return camperrors.Wrap(camperrors.ErrInvalidInput, "no command specified")
 	}
 
 	// Show which project we're running in.
-	relPath, _ := filepath.Rel(campRoot, projectDir)
-	fmt.Fprintf(cmd.ErrOrStderr(), "%s %s\n", ui.Dim("project:"), ui.Value(relPath))
+	if displayPath == "" {
+		displayPath = projectDir
+	}
+	fmt.Fprintf(cmd.ErrOrStderr(), "%s %s\n", ui.Dim("project:"), ui.Value(displayPath))
 
 	// Execute command in the project directory.
 	fullCmd := strings.Join(commandArgs, " ")
@@ -159,7 +163,7 @@ func pickProject(cmd *cobra.Command, campRoot string) (*projectsvc.Project, erro
 		return nil, camperrors.Wrap(err, "failed to list projects")
 	}
 	if len(projects) == 0 {
-		return nil, fmt.Errorf("no projects found in campaign")
+		return nil, camperrors.Wrap(camperrors.ErrNotFound, "no projects found in campaign")
 	}
 
 	idx, err := fuzzyfinder.Find(
@@ -183,7 +187,7 @@ func pickProject(cmd *cobra.Command, campRoot string) (*projectsvc.Project, erro
 	)
 	if err != nil {
 		if errors.Is(err, fuzzyfinder.ErrAbort) {
-			return nil, fmt.Errorf("cancelled")
+			return nil, camperrors.Wrap(camperrors.ErrCancelled, "cancelled")
 		}
 		return nil, camperrors.Wrap(err, "picker")
 	}
@@ -203,6 +207,16 @@ func formatProjectPreview(p projectsvc.Project) string {
 	}
 
 	b.WriteString(fmt.Sprintf("%sPath: %s\n", pad, p.Path))
+
+	source := p.Source
+	if source == "" {
+		source = projectsvc.SourceSubmodule
+	}
+	b.WriteString(fmt.Sprintf("%sSource: %s\n", pad, source))
+
+	if p.LinkedPath != "" {
+		b.WriteString(fmt.Sprintf("%sTarget: %s\n", pad, p.LinkedPath))
+	}
 
 	if p.URL != "" {
 		b.WriteString(fmt.Sprintf("%sRemote: %s\n", pad, p.URL))

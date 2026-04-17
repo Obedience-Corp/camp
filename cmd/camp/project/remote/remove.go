@@ -2,9 +2,9 @@ package remote
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/ui"
@@ -52,7 +52,7 @@ func runProjectRemoteRemove(cmd *cobra.Command, args []string) error {
 		fmt.Println(ui.Dim("  origin is the canonical remote for submodule tracking."))
 		fmt.Println(ui.Dim("  To change its URL, use: camp project remote set-url <url>"))
 		fmt.Println(ui.Dim("  To remove it anyway:    camp project remote remove origin --force"))
-		return fmt.Errorf("use --force to remove origin")
+		return camperrors.Wrap(camperrors.ErrInvalidInput, "use --force to remove origin")
 	}
 
 	campRoot, err := campaign.DetectCached(ctx)
@@ -64,9 +64,12 @@ func runProjectRemoteRemove(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := resolved.RequireGit("git remotes"); err != nil {
+		return err
+	}
 
 	if err := git.RemoveRemote(ctx, resolved.Path, remoteName); err != nil {
-		return fmt.Errorf("remove remote: %w", err)
+		return camperrors.Wrap(err, "remove remote")
 	}
 
 	fmt.Printf("%s Removed remote %s from project %s\n",
@@ -74,9 +77,9 @@ func runProjectRemoteRemove(cmd *cobra.Command, args []string) error {
 
 	// Campaign-sync: if we just removed origin from a submodule, clean up .gitmodules
 	if remoteName == "origin" {
-		isSubmodule, _ := git.IsSubmodule(resolved.Path)
+		isSubmodule := resolved.Source == project.SourceSubmodule
 		if isSubmodule {
-			submodulePath := strings.TrimPrefix(resolved.Path, campRoot+"/")
+			submodulePath := resolved.LogicalPath
 			if err := git.RemoveDeclaredSubmodule(ctx, campRoot, submodulePath); err != nil {
 				fmt.Printf("%s Could not clean .gitmodules entry: %s\n",
 					ui.WarningIcon(), ui.Dim(err.Error()))

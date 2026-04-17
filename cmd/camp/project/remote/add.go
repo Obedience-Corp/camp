@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/ui"
@@ -47,9 +48,12 @@ func runProjectRemoteAdd(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := resolved.RequireGit("git remotes"); err != nil {
+		return err
+	}
 
 	if err := git.AddRemote(ctx, resolved.Path, remoteName, remoteURL); err != nil {
-		return fmt.Errorf("add remote: %w", err)
+		return camperrors.Wrap(err, "add remote")
 	}
 
 	fmt.Printf("%s Added remote %s → %s\n",

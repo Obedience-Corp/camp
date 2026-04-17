@@ -54,6 +54,44 @@ func TestProject_AddLocal_CustomName(t *testing.T) {
 	assert.True(t, exists, "project should exist with custom name")
 }
 
+func TestProject_AddLocal_TargetCampaignOutsideCurrentContext(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	_, err := tc.InitCampaign("/campaigns/proj-target", "proj-target", "product")
+	require.NoError(t, err)
+	require.NoError(t, tc.CreateGitRepo("/test/targeted-local"))
+
+	output, err := tc.RunCampInDir("/test", "project", "add", "--campaign", "proj-target", "--local", "/test/targeted-local")
+	require.NoError(t, err, "project add should succeed outside a campaign when --campaign is provided")
+	assert.Contains(t, output, "targeted-local")
+
+	exists, err := tc.CheckDirExists("/campaigns/proj-target/projects/targeted-local")
+	require.NoError(t, err)
+	assert.True(t, exists, "project should be added to the selected campaign")
+}
+
+func TestProject_AddLocal_ExplicitCampaignOverridesCurrentContext(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	_, err := tc.InitCampaign("/campaigns/proj-current", "proj-current", "product")
+	require.NoError(t, err)
+	_, err = tc.InitCampaign("/campaigns/proj-dest", "proj-dest", "product")
+	require.NoError(t, err)
+	require.NoError(t, tc.CreateGitRepo("/test/override-local"))
+
+	output, err := tc.RunCampInDir("/campaigns/proj-current", "project", "add", "--campaign", "proj-dest", "--local", "/test/override-local")
+	require.NoError(t, err)
+	assert.Contains(t, output, "override-local")
+
+	destExists, err := tc.CheckDirExists("/campaigns/proj-dest/projects/override-local")
+	require.NoError(t, err)
+	assert.True(t, destExists, "project should be added to the explicitly selected campaign")
+
+	currentExists, err := tc.CheckDirExists("/campaigns/proj-current/projects/override-local")
+	require.NoError(t, err)
+	assert.False(t, currentExists, "current campaign should remain unchanged when --campaign overrides the target")
+}
+
 func TestProject_List(t *testing.T) {
 	tc := GetSharedContainer(t)
 
@@ -161,8 +199,10 @@ func TestProject_Help(t *testing.T) {
 	output, err := tc.RunCamp("project", "--help")
 	require.NoError(t, err, "project --help should succeed")
 	assert.Contains(t, output, "add", "help should list add subcommand")
+	assert.Contains(t, output, "link", "help should list link subcommand")
 	assert.Contains(t, output, "list", "help should list list subcommand")
 	assert.Contains(t, output, "remove", "help should list remove subcommand")
+	assert.Contains(t, output, "unlink", "help should list unlink subcommand")
 }
 
 func TestProject_NotInCampaign(t *testing.T) {
@@ -172,10 +212,10 @@ func TestProject_NotInCampaign(t *testing.T) {
 	err := tc.CreateGitRepo("/test/orphan")
 	require.NoError(t, err)
 
-	// Try to add project when not in a campaign
-	output, err := tc.RunCampInDir("/test", "project", "add", "/test/orphan", "--local", "/test/orphan")
+	// Try to add project when not in a campaign and no target campaign is specified.
+	output, err := tc.RunCampInDir("/test", "project", "add", "--local", "/test/orphan")
 	require.Error(t, err, "project add should fail outside campaign")
-	assert.Contains(t, strings.ToLower(output), "not inside a campaign", "error should mention not in campaign")
+	assert.Contains(t, strings.ToLower(output), "campaign name required in non-interactive mode", "error should require an explicit target campaign")
 }
 
 func TestProject_NotAGitRepo(t *testing.T) {
@@ -193,4 +233,22 @@ func TestProject_NotAGitRepo(t *testing.T) {
 	output, err := tc.RunCampInDir("/campaigns/proj-notgit", "project", "add", "/test/notgitrepo", "--local", "/test/notgitrepo")
 	require.Error(t, err, "adding non-git directory should fail")
 	assert.Contains(t, strings.ToLower(output), "not a git repository", "error should mention not a git repo")
+}
+
+func TestProject_Add_UsesCurrentCampaignEvenIfUnregistered(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	_, err := tc.InitCampaign("/campaigns/proj-unregistered", "proj-unregistered", "product")
+	require.NoError(t, err)
+	_, err = tc.RunCamp("unregister", "proj-unregistered", "--force")
+	require.NoError(t, err)
+	require.NoError(t, tc.CreateGitRepo("/test/unregistered-local"))
+
+	output, err := tc.RunCampInDir("/campaigns/proj-unregistered", "project", "add", "--local", "/test/unregistered-local")
+	require.NoError(t, err, "project add should still use the current campaign even if it is unregistered")
+	assert.Contains(t, output, "Added project: unregistered-local")
+
+	_, exitCode, err := tc.ExecCommand("test", "-d", "/campaigns/proj-unregistered/projects/unregistered-local")
+	require.NoError(t, err)
+	assert.Equal(t, 0, exitCode, "project should be added under the current campaign root")
 }

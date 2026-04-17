@@ -65,7 +65,7 @@ Examples:
   camp intent add "Fix login" --body "The login page returns 500"
   camp intent add "Migrate DB" --body-file spec.md --concept projects/camp
   echo "body" | camp intent add "Idea" --body-file -`,
-	Args: cobra.MaximumNArgs(1),
+	Args: validateIntentAddArgs,
 	RunE: runIntentAdd,
 }
 
@@ -96,6 +96,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	fullMode, _ := cmd.Flags().GetBool("full")
 	targetCampaign, _ := cmd.Flags().GetString("campaign")
 	noCommit, _ := cmd.Flags().GetBool("no-commit")
+	targetCampaign, args = normalizeIntentAddCampaignArgs(args, targetCampaign)
 	conceptFlag, _ := cmd.Flags().GetString("concept")
 	authorFlag, _ := cmd.Flags().GetString("author")
 
@@ -107,7 +108,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 
 	// --full + body flags = usage error (body in TUI conflicts with programmatic body)
 	if fullMode && bodySet {
-		return fmt.Errorf("--full and --body/--body-file are mutually exclusive")
+		return camperrors.Wrap(camperrors.ErrInvalidInput, "--full and --body/--body-file are mutually exclusive")
 	}
 
 	campaignResolver := newIntentAddCampaignResolver(cmd.ErrOrStderr())
@@ -156,7 +157,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	// Programmatic flags like --body/--concept/--author supplement a title,
 	// they don't replace it.
 	if !navtui.IsTerminal() {
-		return fmt.Errorf("title argument required in non-interactive mode\n       Usage: camp intent add <title> [flags]")
+		return camperrors.Wrap(camperrors.ErrInvalidInput, "title argument required in non-interactive mode\n       Usage: camp intent add <title> [flags]")
 	}
 
 	// TUI path: use git config author (human), unless --author overrides
@@ -206,7 +207,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 			// User saved some intents via Ctrl-n, then cancelled the last one
 			return nil
 		}
-		return fmt.Errorf("intent creation cancelled")
+		return intent.ErrCancelled
 	}
 
 	// Build create options from TUI result
@@ -224,6 +225,27 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	return runFastCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, opts)
+}
+
+func validateIntentAddArgs(cmd *cobra.Command, args []string) error {
+	maxArgs := 1
+
+	targetCampaign, _ := cmd.Flags().GetString("campaign")
+	if targetCampaign == noOptCampaign {
+		maxArgs = 2
+	}
+
+	return cobra.MaximumNArgs(maxArgs)(cmd, args)
+}
+
+func normalizeIntentAddCampaignArgs(args []string, targetCampaign string) (string, []string) {
+	if targetCampaign != noOptCampaign {
+		return targetCampaign, args
+	}
+	if len(args) > 1 {
+		return args[0], args[1:]
+	}
+	return "", args
 }
 
 type intentAddCampaignResolver struct {
@@ -267,13 +289,13 @@ func (r intentAddCampaignResolver) resolve(ctx context.Context, targetCampaign s
 		return nil, "", camperrors.Wrap(err, "load registry")
 	}
 	if reg.Len() == 0 {
-		return nil, "", fmt.Errorf("no campaigns registered (use 'camp init' to create one)")
+		return nil, "", camperrors.Wrap(camperrors.ErrNotInitialized, "no campaigns registered (use 'camp init' to create one)")
 	}
 
 	var selected config.RegisteredCampaign
 	if targetCampaign == "" {
 		if !r.isInteractive() {
-			return nil, "", fmt.Errorf("campaign name required in non-interactive mode\n       Usage: camp intent add --campaign <name> [title]")
+			return nil, "", camperrors.Wrap(camperrors.ErrInvalidInput, "campaign name required in non-interactive mode\n       Usage: camp intent add --campaign <name> [title]")
 		}
 		selected, err = r.pickCampaign(ctx, reg)
 		if err != nil {
@@ -312,7 +334,7 @@ func runIntentAddTUI(ctx context.Context, conceptSvc concept.Service, opts tui.A
 
 	m, ok := finalModel.(tui.IntentAddModel)
 	if !ok {
-		return nil, fmt.Errorf("unexpected model type: %T", finalModel)
+		return nil, camperrors.Wrapf(camperrors.ErrInvalidInput, "unexpected model type: %T", finalModel)
 	}
 
 	return &m, nil
@@ -338,7 +360,7 @@ func runDeepCapture(ctx context.Context, svc *intent.IntentService, intentsDir s
 	result, err := svc.CreateWithEditor(ctx, opts, editorFn)
 	if err != nil {
 		if errors.Is(err, camperrors.ErrCancelled) {
-			return fmt.Errorf("intent creation cancelled")
+			return intent.ErrCancelled
 		}
 		return camperrors.Wrap(err, "failed to create intent")
 	}

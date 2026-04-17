@@ -77,8 +77,15 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 
 	resolvedPath := result.Path
 
+	if err := result.RequireGit("git commits"); err != nil {
+		return err
+	}
+
 	// Display which project
-	relPath, _ := filepath.Rel(campRoot, resolvedPath)
+	relPath := result.LogicalPath
+	if relPath == "" {
+		relPath, _ = filepath.Rel(campRoot, resolvedPath)
+	}
 	fmt.Printf("Project: %s\n", ui.Value(relPath))
 
 	// Create executor for the submodule
@@ -96,7 +103,7 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 			return camperrors.Wrap(promptErr, "prompt failed")
 		}
 		if message == "" {
-			return fmt.Errorf("commit cancelled")
+			return git.ErrCommitCancelled
 		}
 	}
 

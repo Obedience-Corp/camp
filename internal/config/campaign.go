@@ -2,14 +2,13 @@ package config
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
 
+	"github.com/Obedience-Corp/camp/internal/campaign"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
@@ -31,7 +30,7 @@ func LoadCampaignConfig(ctx context.Context, campaignRoot string) (*CampaignConf
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("campaign config not found: %s", configPath)
+			return nil, camperrors.NewNotFound("campaign config", configPath, nil)
 		}
 		return nil, camperrors.Wrapf(err, "failed to read campaign config %s", configPath)
 	}
@@ -97,13 +96,7 @@ func LoadCampaignConfigFromCwd(ctx context.Context) (*CampaignConfig, string, er
 		return nil, "", ctx.Err()
 	}
 
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, "", camperrors.Wrap(err, "failed to get working directory")
-	}
-
-	// Find campaign root by walking up
-	root, err := findCampaignRoot(ctx, cwd)
+	root, err := campaign.DetectFromCwd(ctx)
 	if err != nil {
 		return nil, "", err
 	}
@@ -116,39 +109,9 @@ func LoadCampaignConfigFromCwd(ctx context.Context) (*CampaignConfig, string, er
 	return cfg, root, nil
 }
 
-// findCampaignRoot walks up from startDir looking for .campaign/ directory.
+// findCampaignRoot is kept as a thin wrapper for tests and older callers.
 func findCampaignRoot(ctx context.Context, startDir string) (string, error) {
-	dir := startDir
-
-	// Resolve symlinks
-	dir, err := filepath.EvalSymlinks(dir)
-	if err != nil {
-		return "", camperrors.Wrap(err, "failed to resolve path")
-	}
-
-	dir, err = filepath.Abs(dir)
-	if err != nil {
-		return "", camperrors.Wrap(err, "failed to get absolute path")
-	}
-
-	for {
-		if ctx.Err() != nil {
-			return "", ctx.Err()
-		}
-
-		campaignPath := filepath.Join(dir, CampaignDir)
-		info, err := os.Stat(campaignPath)
-		if err == nil && info.IsDir() {
-			return dir, nil
-		}
-
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", errors.New("not inside a campaign directory\n" +
-				"Hint: Run 'camp init' to create a campaign, or navigate to an existing one")
-		}
-		dir = parent
-	}
+	return campaign.Detect(ctx, startDir)
 }
 
 // CampaignConfigPath returns the path to campaign.yaml for a given root.

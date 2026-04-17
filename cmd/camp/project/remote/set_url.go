@@ -3,9 +3,9 @@ package remote
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/ui"
@@ -124,9 +124,12 @@ func runProjectRemoteSetURL(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := resolved.RequireGit("git remotes"); err != nil {
+		return err
+	}
 
-	isSubmodule, _ := git.IsSubmodule(resolved.Path)
-	submodulePath := strings.TrimPrefix(resolved.Path, campRoot+"/")
+	isSubmodule := resolved.Source == project.SourceSubmodule
+	submodulePath := resolved.LogicalPath
 
 	state := &setURLState{
 		campRoot:      campRoot,
@@ -162,7 +165,7 @@ func runProjectRemoteSetURL(cmd *cobra.Command, args []string) error {
 			return git.SetDeclaredURL(ctx, campRoot, submodulePath, newURL)
 		})
 		if setURLErr != nil {
-			return fmt.Errorf("update .gitmodules: %w", setURLErr)
+			return camperrors.Wrap(setURLErr, "update .gitmodules")
 		}
 		state.gitmodulesUpdated = true
 		state.addStep("updated .gitmodules")
@@ -181,7 +184,7 @@ func runProjectRemoteSetURL(cmd *cobra.Command, args []string) error {
 			} else {
 				fmt.Printf("  %s Rollback succeeded — no changes were applied\n", ui.SuccessIcon())
 			}
-			return fmt.Errorf("sync submodule config: %w", syncErr)
+			return camperrors.Wrap(syncErr, "sync submodule config")
 		}
 		state.syncCompleted = true
 		state.addStep("synced local submodule config")
@@ -198,7 +201,7 @@ func runProjectRemoteSetURL(cmd *cobra.Command, args []string) error {
 				fmt.Printf("  %s Rollback succeeded — no changes were applied\n", ui.SuccessIcon())
 			}
 		}
-		return fmt.Errorf("set remote URL in project: %w", err)
+		return camperrors.Wrap(err, "set remote URL in project")
 	}
 	state.remoteURLUpdated = true
 	state.addStep(fmt.Sprintf("set remote %s URL", remoteName))

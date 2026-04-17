@@ -72,3 +72,18 @@ func TestRoot_NotInCampaign(t *testing.T) {
 	require.Error(t, err, "camp root should fail outside a campaign")
 	assert.Contains(t, strings.ToLower(output), "campaign", "error should mention campaign detection")
 }
+
+func TestRoot_RespectsCampRootOverrideOutsideCampaign(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	_, err := tc.InitCampaign("/campaigns/root-env", "root-env", "product")
+	require.NoError(t, err)
+
+	output, exitCode, err := tc.ExecCommand(
+		"sh", "-c",
+		"cd /test && CAMP_ROOT=/campaigns/root-env /camp root 2>&1",
+	)
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode, "camp root should honor CAMP_ROOT from outside the campaign: %s", output)
+	assert.Equal(t, "../campaigns/root-env", strings.TrimSpace(output))
+}

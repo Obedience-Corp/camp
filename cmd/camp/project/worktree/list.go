@@ -66,12 +66,14 @@ func runProjectWorktreeList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	projectName := resolved.Name
+	if err := resolved.RequireGit("git worktrees"); err != nil {
+		return err
+	}
 
 	resolver := paths.NewResolver(campRoot, cfg.Paths())
 	pathManager := intworktree.NewPathManager(resolver)
 
-	projectPath := resolver.Project(projectName)
-	git := intworktree.NewGitWorktree(projectPath)
+	git := intworktree.NewGitWorktree(resolved.Path)
 	entries, err := git.List(ctx)
 	if err != nil {
 		return camperrors.Wrap(err, "failed to list worktrees")

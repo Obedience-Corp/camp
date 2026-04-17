@@ -1,8 +1,7 @@
 package main
 
 import (
-	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,8 +9,10 @@ import (
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/nav"
 	"github.com/Obedience-Corp/camp/internal/nav/index"
+	projectsvc "github.com/Obedience-Corp/camp/internal/project"
 	"github.com/spf13/cobra"
 )
 
@@ -82,12 +83,12 @@ func runRun(cmd *cobra.Command, args []string) error {
 		// Look up shortcut
 		sc, ok := cfg.Shortcuts()[shortcutName]
 		if !ok {
-			return fmt.Errorf("unknown shortcut %q (run 'camp shortcuts' to see available shortcuts)", shortcutName)
+			return camperrors.Wrapf(camperrors.ErrNotFound, "unknown shortcut %q (run 'camp shortcuts' to see available shortcuts)", shortcutName)
 		}
 
 		// Only navigation shortcuts can be used for directory context
 		if !sc.IsNavigation() {
-			return fmt.Errorf("shortcut %q is not a navigation shortcut (only shortcuts with paths can be used)", shortcutName)
+			return camperrors.Wrapf(camperrors.ErrInvalidInput, "shortcut %q is not a navigation shortcut (only shortcuts with paths can be used)", shortcutName)
 		}
 
 		// Check if this is a standard path that supports project sub-shortcuts
@@ -147,13 +148,13 @@ func runRun(cmd *cobra.Command, args []string) error {
 
 					// Determine how many args were consumed
 					if consumed >= len(args) {
-						return fmt.Errorf("no command specified")
+						return camperrors.Wrap(camperrors.ErrInvalidInput, "no command specified")
 					}
 					commandArgs = args[consumed:]
 
 					// Verify directory exists
 					if stat, err := os.Stat(workDir); err != nil || !stat.IsDir() {
-						return fmt.Errorf("directory does not exist: %s", workDir)
+						return camperrors.Wrapf(camperrors.ErrNotFound, "directory does not exist: %s", workDir)
 					}
 
 					// Build and execute command
@@ -168,7 +169,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 
 		// Verify directory exists
 		if stat, err := os.Stat(workDir); err != nil || !stat.IsDir() {
-			return fmt.Errorf("shortcut directory does not exist: %s", workDir)
+			return camperrors.Wrapf(camperrors.ErrNotFound, "shortcut directory does not exist: %s", workDir)
 		}
 
 		// Remaining args are the command
@@ -176,15 +177,15 @@ func runRun(cmd *cobra.Command, args []string) error {
 	}
 
 	// Project just dispatch: if first arg matches a project, run just in it.
-	// Exact match only — projects/<name> must exist and be a git repo.
+	// Exact match only.
 	if len(commandArgs) > 0 {
-		if projectDir, ok := isProject(root, commandArgs[0]); ok {
+		if projectDir, ok := isProjectCtx(ctx, root, commandArgs[0]); ok {
 			return cmdutil.ExecuteCommand(ctx, "just", projectDir, commandArgs[1:])
 		}
 	}
 
 	if len(commandArgs) == 0 {
-		return fmt.Errorf("no command specified")
+		return camperrors.Wrap(camperrors.ErrInvalidInput, "no command specified")
 	}
 
 	// Build the full command string
@@ -194,15 +195,13 @@ func runRun(cmd *cobra.Command, args []string) error {
 	return cmdutil.ExecuteCommand(ctx, fullCmd, workDir, nil)
 }
 
-// isProject checks if name matches a project directory in projects/<name>
-// by verifying the directory exists and contains a .git entry.
 func isProject(campaignRoot, name string) (string, bool) {
-	projectDir := filepath.Join(campaignRoot, "projects", name)
-	info, err := os.Stat(projectDir)
-	if err != nil || !info.IsDir() {
-		return "", false
-	}
-	if _, err := os.Stat(filepath.Join(projectDir, ".git")); err != nil {
+	return isProjectCtx(context.Background(), campaignRoot, name)
+}
+
+func isProjectCtx(ctx context.Context, campaignRoot, name string) (string, bool) {
+	projectDir, err := projectsvc.ResolveByName(ctx, campaignRoot, name)
+	if err != nil {
 		return "", false
 	}
 	return projectDir, true
