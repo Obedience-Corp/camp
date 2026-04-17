@@ -2,9 +2,9 @@
 
 # camp
 
-> **Part of [Festival](https://github.com/Obedience-Corp/festival)** - mission-based AI workspace management. Camp handles workspace management; [fest](https://github.com/Obedience-Corp/fest) handles hierarchical planning. Together they give structure to how you work across multiple projects, contexts, and AI agents.
+> **One place for all your context and all your work.** Part of [Festival](https://github.com/Obedience-Corp/festival). Camp handles the workspace — your projects, tools, intents, and context. [fest](https://github.com/Obedience-Corp/fest) handles the planning and execution inside it.
 
-Campaign workspace manager for multi-project AI development.
+Campaign workspace manager — group every project, tool, and piece of context you care about into a single campaign, and navigate between them instantly.
 
 ## Features
 
@@ -446,11 +446,11 @@ just run <args>           # Run with arguments
 
 ## Part of Festival
 
-Camp is one half of the Festival product. The other half is [fest](https://github.com/Obedience-Corp/fest), which manages hierarchical planning - festivals, phases, sequences, and tasks that AI agents can execute autonomously. Together, camp + fest = Festival.
+Camp is one half of [Festival](https://github.com/Obedience-Corp/festival), the current product from [Obedience Corp](https://github.com/Obedience-Corp).
 
-- [Festival documentation](https://fest.build) - Full docs, methodology, tutorials
-- [fest CLI](https://github.com/Obedience-Corp/fest) - Festival planning and execution
-- [Festival repo](https://github.com/Obedience-Corp/festival) - Distribution hub and releases
+- **camp** — workspace and context. One place for all your projects, tools, intents, agents, and work.
+- **[fest](https://github.com/Obedience-Corp/fest)** — planning and execution. Hierarchical: festival → phase → sequence → task.
+- **[Festival](https://github.com/Obedience-Corp/festival)** — combined distribution of camp + fest. Full docs at [fest.build](https://fest.build).
 
 ## License
 
