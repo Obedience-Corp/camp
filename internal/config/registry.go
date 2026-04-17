@@ -46,23 +46,11 @@ func LoadRegistry(ctx context.Context) (*Registry, error) {
 		}
 	}
 
-	// Initialize map if nil
-	if reg.Campaigns == nil {
-		reg.Campaigns = make(map[string]RegisteredCampaign)
-	}
-
-	// Set version if not present
+	// Default to current version when loading legacy/empty files.
 	if reg.Version == 0 {
 		reg.Version = RegistryVersion
 	}
 
-	// Populate IDs from map keys (ID field is not serialized in JSON)
-	for id, c := range reg.Campaigns {
-		c.ID = id
-		reg.Campaigns[id] = c
-	}
-
-	// Build path index
 	reg.rebuildPathIndex()
 
 	return reg, nil
