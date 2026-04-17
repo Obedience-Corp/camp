@@ -2,11 +2,11 @@ package priority
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"github.com/Obedience-Corp/camp/internal/workitem"
 )
@@ -24,11 +24,11 @@ func Load(path string) (*Store, error) {
 		return NewStore(), nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("reading priority store %s: %w", path, err)
+		return nil, camperrors.Wrapf(err, "reading priority store %s", path)
 	}
 	var s Store
 	if err := json.Unmarshal(data, &s); err != nil {
-		return nil, fmt.Errorf("parsing priority store %s: %w", path, err)
+		return nil, camperrors.Wrapf(err, "parsing priority store %s", path)
 	}
 	if s.ManualPriorities == nil {
 		s.ManualPriorities = make(map[string]PriorityEntry)
@@ -41,17 +41,17 @@ func Load(path string) (*Store, error) {
 func Save(path string, store *Store) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("creating priority store directory %s: %w", dir, err)
+		return camperrors.Wrapf(err, "creating priority store directory %s", dir)
 	}
 
 	data, err := json.MarshalIndent(store, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshaling priority store: %w", err)
+		return camperrors.Wrap(err, "marshaling priority store")
 	}
 	data = append(data, '\n')
 
 	if err := fsutil.WriteFileAtomically(path, data, 0o644); err != nil {
-		return fmt.Errorf("writing priority store: %w", err)
+		return camperrors.Wrap(err, "writing priority store")
 	}
 	return nil
 }
@@ -103,7 +103,7 @@ func SaveOrDelete(path string, store *Store) error {
 	if IsEmpty(store) {
 		err := os.Remove(path)
 		if err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("removing empty priority store %s: %w", path, err)
+			return camperrors.Wrapf(err, "removing empty priority store %s", path)
 		}
 		return nil
 	}
