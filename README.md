@@ -2,9 +2,9 @@
 
 # camp
 
-> **Part of [Festival](https://github.com/Obedience-Corp/festival)** - mission-based AI workspace management. Camp handles workspace management; [fest](https://github.com/Obedience-Corp/fest) handles hierarchical planning. Together they give structure to how you work across multiple projects, contexts, and AI agents.
+> The workspace layer of **[Obey](https://github.com/Obedience-Corp)** — user-controlled attention infrastructure. Camp bounds what's in scope for your current attention: the projects, tools, and context you're engaging with. [fest](https://github.com/Obedience-Corp/fest) handles what you do inside that scope. Together they form [Festival](https://github.com/Obedience-Corp/festival).
 
-Campaign workspace manager for multi-project AI development.
+Campaign workspace manager — group related projects into a campaign, navigate instantly between them, and only engage with what's in scope.
 
 ## Features
 
@@ -444,13 +444,15 @@ just docs                 # Regenerate CLI reference docs
 just run <args>           # Run with arguments
 ```
 
-## Part of Festival
+## Part of Obey
 
-Camp is one half of the Festival product. The other half is [fest](https://github.com/Obedience-Corp/fest), which manages hierarchical planning - festivals, phases, sequences, and tasks that AI agents can execute autonomously. Together, camp + fest = Festival.
+Camp is the workspace layer of [Obey](https://github.com/Obedience-Corp) — user-controlled attention infrastructure.
 
-- [Festival documentation](https://fest.build) - Full docs, methodology, tutorials
-- [fest CLI](https://github.com/Obedience-Corp/fest) - Festival planning and execution
-- [Festival repo](https://github.com/Obedience-Corp/festival) - Distribution hub and releases
+- **camp** — the outermost attention boundary. Decides what projects, tools, and context are in scope for the work you're doing right now.
+- **[fest](https://github.com/Obedience-Corp/fest)** — plans and executes work within that boundary (hierarchical planning: festival → phase → sequence → task).
+- **[Festival](https://github.com/Obedience-Corp/festival)** — combined distribution of camp + fest. Full docs at [fest.build](https://fest.build).
+
+Hierarchy is the filter. Each level decides what gets surfaced upward. Camp sets the outermost scope; fest refines it into executable steps; the system surfaces only what's worth your attention.
 
 ## License
 
