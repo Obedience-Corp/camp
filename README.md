@@ -1,4 +1,6 @@
-![camp banner](docs/images/banner.jpg)
+<p align="center">
+  <img src="docs/images/banner.jpg" alt="camp banner" width="400">
+</p>
 
 # camp
 
