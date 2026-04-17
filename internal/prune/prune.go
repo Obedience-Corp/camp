@@ -96,8 +96,14 @@ func Execute(ctx context.Context, name, path string, opts Options) ProjectResult
 }
 
 func deleteDetachedWorktrees(ctx context.Context, path, baseRef string, opts Options, pr *ProjectResult) {
-	entries, err := worktree.NewGitWorktree(path).List(ctx)
+	wt := worktree.NewGitWorktree(path)
+	entries, err := wt.List(ctx)
 	if err != nil {
+		pr.Results = append(pr.Results, Result{
+			Branch: "(detached worktrees)",
+			Status: StatusError,
+			Detail: fmt.Sprintf("worktree list: %s", err),
+		})
 		return
 	}
 
@@ -108,7 +114,6 @@ func deleteDetachedWorktrees(ctx context.Context, path, baseRef string, opts Opt
 		skipPaths[filepath.Clean(gitDir)] = struct{}{}
 	}
 
-	wt := worktree.NewGitWorktree(path)
 	removedAny := false
 	for _, entry := range entries {
 		if entry.Branch != "HEAD (detached)" || entry.Commit == "" || entry.IsBare || entry.IsLocked {
@@ -179,7 +184,7 @@ func deleteDetachedWorktrees(ctx context.Context, path, baseRef string, opts Opt
 	}
 
 	if !opts.DryRun && removedAny {
-		wt.Prune(ctx, false)
+		appendWorktreePruneError(ctx, wt, pr)
 	}
 }
 
@@ -197,6 +202,16 @@ func detachedWorktreeClean(ctx context.Context, path string) (bool, error) {
 		return false, err
 	}
 	return !hasChanges, nil
+}
+
+func appendWorktreePruneError(ctx context.Context, wt *worktree.GitWorktree, pr *ProjectResult) {
+	if _, err := wt.Prune(ctx, false); err != nil {
+		pr.Results = append(pr.Results, Result{
+			Branch: "(worktree admin)",
+			Status: StatusError,
+			Detail: fmt.Sprintf("worktree prune: %s", err),
+		})
+	}
 }
 
 // detectWorktreesForBranches lists worktrees and returns a map of branch name → worktree entry
@@ -312,7 +327,7 @@ func deleteLocalBranches(ctx context.Context, path string, merged []string, opts
 
 	// Clean stale worktree refs after removals.
 	if !opts.DryRun && len(worktreesToRemove) > 0 {
-		wt.Prune(ctx, false)
+		appendWorktreePruneError(ctx, wt, pr)
 	}
 
 	for _, branch := range branchesToDelete {

@@ -2,12 +2,15 @@ package git
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // initBranchTestRepo creates a temp git repo with an initial commit on the given branch.
@@ -296,6 +299,21 @@ func TestIsAncestor(t *testing.T) {
 	}
 	if merged {
 		t.Fatal("expected feature commit to not be reachable from main")
+	}
+}
+
+func TestIsAncestor_RequiresRefs(t *testing.T) {
+	dir := initBranchTestRepo(t, "main")
+	ctx := context.Background()
+
+	_, err := IsAncestor(ctx, dir, "", "main")
+	if !errors.Is(err, camperrors.ErrInvalidInput) {
+		t.Fatalf("expected invalid input for empty ancestor, got %v", err)
+	}
+
+	_, err = IsAncestor(ctx, dir, "HEAD", " ")
+	if !errors.Is(err, camperrors.ErrInvalidInput) {
+		t.Fatalf("expected invalid input for empty descendant, got %v", err)
 	}
 }
 

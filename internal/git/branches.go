@@ -260,10 +260,10 @@ func IsAncestor(ctx context.Context, repoPath, ancestor, descendant string) (boo
 		return false, ctx.Err()
 	}
 	if strings.TrimSpace(ancestor) == "" {
-		return false, fmt.Errorf("ancestor is required")
+		return false, camperrors.Wrap(camperrors.ErrInvalidInput, "ancestor is required")
 	}
 	if strings.TrimSpace(descendant) == "" {
-		return false, fmt.Errorf("descendant is required")
+		return false, camperrors.Wrap(camperrors.ErrInvalidInput, "descendant is required")
 	}
 
 	cmd := exec.CommandContext(ctx, "git", "-C", repoPath,
