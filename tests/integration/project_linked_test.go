@@ -4,6 +4,7 @@
 package integration
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -493,11 +494,12 @@ func TestProject_DetectFromLinkedMarkerUsesRegistry(t *testing.T) {
 	// Run camp root from inside the linked project. The linked project has no
 	// .campaign ancestor in its filesystem path — detection must resolve the
 	// campaign root through the registry using the marker's active_campaign_id.
-	output, err := tc.RunCampInDir(linkedPath, "root")
+	output, err := tc.RunCampInDir(linkedPath, "root", "--json")
 	require.NoError(t, err, "camp root should succeed from a linked project")
 
-	got := strings.TrimSpace(output)
-	assert.Equal(t, campaignPath, got, "camp root should resolve to the registered campaign root, not a parent walk")
+	var got campaignRootJSON
+	require.NoError(t, json.Unmarshal([]byte(output), &got), "camp root --json output should parse")
+	assert.Equal(t, campaignPath, got.AbsoluteRoot, "camp root should resolve to the registered campaign root through the registry")
 }
 
 func readCampaignID(t *testing.T, tc *TestContainer, campaignPath string) string {
