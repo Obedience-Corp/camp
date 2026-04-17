@@ -552,12 +552,9 @@ func runShortcutsAddJump(cmd *cobra.Command, args []string) error {
 		fmt.Printf("%s Adding shortcut '%s'\n", ui.SuccessIcon(), shortcutName)
 	}
 
-	// Create shortcut config
-	sc := config.ShortcutConfig{
-		Path:        shortcutPath,
-		Description: description,
-		Concept:     concept,
-	}
+	// Create shortcut config. Shortcuts added via the CLI are always
+	// user-sourced so the repair system preserves them on reset/diff.
+	sc := newUserShortcut(shortcutPath, description, concept)
 
 	// Add/update the shortcut
 	jumps.Shortcuts[shortcutName] = sc
@@ -577,6 +574,18 @@ func runShortcutsAddJump(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// newUserShortcut builds a ShortcutConfig for a shortcut added via the CLI.
+// Source is always ShortcutSourceUser so the repair system preserves it on
+// reset and diff operations (see internal/scaffold/repair.go).
+func newUserShortcut(path, description, concept string) config.ShortcutConfig {
+	return config.ShortcutConfig{
+		Path:        path,
+		Description: description,
+		Concept:     concept,
+		Source:      config.ShortcutSourceUser,
+	}
 }
 
 // isAutoShortcut returns true if the shortcut was auto-generated (not user-defined).

@@ -281,3 +281,70 @@ func TestResetHasFlags(t *testing.T) {
 		}
 	}
 }
+
+// TestNewUserShortcut_SetsSourceUser guards against regression of issue #224.
+// Shortcuts added via the CLI must be tagged ShortcutSourceUser so the repair
+// system preserves them instead of treating them as legacy entries subject to
+// the default-match heuristic.
+func TestNewUserShortcut_SetsSourceUser(t *testing.T) {
+	tests := []struct {
+		name        string
+		path        string
+		description string
+		concept     string
+	}{
+		{
+			name:        "path only",
+			path:        "projects/api/",
+			description: "",
+			concept:     "",
+		},
+		{
+			name:        "concept only",
+			path:        "",
+			description: "",
+			concept:     "build",
+		},
+		{
+			name:        "path with description and concept",
+			path:        "projects/api/",
+			description: "API service",
+			concept:     "service",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sc := newUserShortcut(tt.path, tt.description, tt.concept)
+
+			if sc.Source != config.ShortcutSourceUser {
+				t.Errorf("Source = %q, want %q", sc.Source, config.ShortcutSourceUser)
+			}
+			if sc.Path != tt.path {
+				t.Errorf("Path = %q, want %q", sc.Path, tt.path)
+			}
+			if sc.Description != tt.description {
+				t.Errorf("Description = %q, want %q", sc.Description, tt.description)
+			}
+			if sc.Concept != tt.concept {
+				t.Errorf("Concept = %q, want %q", sc.Concept, tt.concept)
+			}
+		})
+	}
+}
+
+// TestNewUserShortcut_NotTreatedAsAuto verifies that shortcuts created via the
+// CLI helper are recognized by isAutoShortcut() as user-defined (not auto),
+// which is the semantic property the repair system relies on.
+func TestNewUserShortcut_NotTreatedAsAuto(t *testing.T) {
+	defaults := config.DefaultNavigationShortcuts()
+	sc := newUserShortcut("projects/api/", "API", "service")
+
+	// Even if the key happens to collide with a default key, a user-sourced
+	// shortcut must not be classified as auto.
+	for _, key := range []string{"api", "p", "unknown-key"} {
+		if isAutoShortcut(sc, key, defaults) {
+			t.Errorf("isAutoShortcut(key=%q) = true, want false for user-sourced shortcut", key)
+		}
+	}
+}
