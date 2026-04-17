@@ -1,9 +1,12 @@
 package pins
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 func TestNewStore(t *testing.T) {
@@ -128,6 +131,8 @@ func TestAddDuplicate(t *testing.T) {
 	}
 	if err := s.Add("dup", "/b"); err == nil {
 		t.Fatal("second Add() with same name should return error")
+	} else if !errors.Is(err, camperrors.ErrAlreadyExists) {
+		t.Fatalf("expected ErrAlreadyExists, got: %v", err)
 	}
 }
 
@@ -159,6 +164,8 @@ func TestRemoveNotFound(t *testing.T) {
 	s := NewStore("")
 	if err := s.Remove("nonexistent"); err == nil {
 		t.Fatal("Remove() on missing pin should return error")
+	} else if !errors.Is(err, camperrors.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got: %v", err)
 	}
 }
 
@@ -307,9 +314,9 @@ func TestMigrateAbsoluteToRelative(t *testing.T) {
 	root := "/home/user/campaign"
 
 	tests := []struct {
-		name     string
-		pins     []Pin
-		wantPins []Pin
+		name        string
+		pins        []Pin
+		wantPins    []Pin
 		wantChanged bool
 	}{
 		{

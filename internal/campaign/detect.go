@@ -108,7 +108,7 @@ func detectCampaignByWalking(ctx context.Context, startDir string) (string, erro
 		markerPath := filepath.Join(dir, LinkMarkerFile)
 		marker, markerErr := ReadMarkerFile(markerPath)
 		if markerErr == nil {
-			if root, ok, resolveErr := resolveMarkerCampaignRoot(marker); resolveErr != nil {
+			if root, ok, resolveErr := resolveMarkerCampaignRoot(ctx, marker); resolveErr != nil {
 				return "", resolveErr
 			} else if ok {
 				return root, nil
@@ -131,13 +131,13 @@ func detectCampaignByWalking(ctx context.Context, startDir string) (string, erro
 	}
 }
 
-func resolveMarkerCampaignRoot(marker *LinkMarker) (string, bool, error) {
+func resolveMarkerCampaignRoot(ctx context.Context, marker *LinkMarker) (string, bool, error) {
 	if marker == nil {
 		return "", false, nil
 	}
 
 	if activeID := marker.EffectiveCampaignID(); activeID != "" {
-		root, found, err := lookupRegisteredCampaignRoot(activeID)
+		root, found, err := lookupRegisteredCampaignRoot(ctx, activeID)
 		if err != nil {
 			return "", false, err
 		}

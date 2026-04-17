@@ -116,7 +116,7 @@ func runProjectRun(cmd *cobra.Command, args []string) error {
 
 	// Execute command in the project directory.
 	fullCmd := strings.Join(commandArgs, " ")
-	return cmdutil.ExecuteCommand(ctx, fullCmd, projectDir, nil)
+	return cmdutil.ExecuteCommand(ctx, fullCmd, projectDir, campRoot, nil)
 }
 
 // parseProjectRunArgs extracts --project/-p from args and returns the project

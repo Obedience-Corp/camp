@@ -37,6 +37,50 @@ func TestRegister_WithCustomName(t *testing.T) {
 	assert.Contains(t, output, "custom-name", "output should mention custom name")
 }
 
+func TestRegister_RegistryAtomicWriteSemantics(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	const (
+		campaignPath = "/campaigns/reg-atomic"
+		registryDir  = "/root/.obey/campaign"
+		registryPath = registryDir + "/registry.json"
+	)
+
+	_, err := tc.InitCampaign(campaignPath, "reg-atomic", "product")
+	require.NoError(t, err)
+
+	exists, err := tc.CheckFileExists(registryPath)
+	require.NoError(t, err)
+	require.True(t, exists, "camp init should create the registry file")
+
+	modeOutput, exitCode, err := tc.ExecCommand("sh", "-c", "stat -c '%a' "+registryPath)
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode)
+	assert.Equal(t, "644", strings.TrimSpace(modeOutput), "new registry file should use the default atomic-write mode")
+
+	_, exitCode, err = tc.ExecCommand("chmod", "600", registryPath)
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode)
+
+	output, err := tc.RunCamp("register", campaignPath, "--name", "reg-atomic-updated")
+	require.NoError(t, err)
+	assert.Contains(t, output, "reg-atomic-updated")
+
+	modeOutput, exitCode, err = tc.ExecCommand("sh", "-c", "stat -c '%a' "+registryPath)
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode)
+	assert.Equal(t, "600", strings.TrimSpace(modeOutput), "registry rewrite should preserve the existing file mode")
+
+	content, err := tc.ReadFile(registryPath)
+	require.NoError(t, err)
+	assert.Contains(t, content, "reg-atomic-updated", "registry file should reflect the rewritten campaign entry")
+
+	tempFiles, exitCode, err := tc.ExecCommand("sh", "-c", "find "+registryDir+" -maxdepth 1 -name 'registry.json.tmp-*' -print")
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode)
+	assert.Equal(t, "", strings.TrimSpace(tempFiles), "atomic registry writes should not leave temp files behind")
+}
+
 func TestList_RegisteredCampaigns(t *testing.T) {
 	tc := GetSharedContainer(t)
 

@@ -2,11 +2,13 @@ package pins
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/fsutil"
 )
 
 // Pin represents a saved pinned directory.
@@ -35,14 +37,14 @@ func (s *Store) Load() error {
 			s.pins = nil
 			return nil
 		}
-		return fmt.Errorf("read pins: %w", err)
+		return camperrors.Wrap(err, "read pins")
 	}
 	if len(data) == 0 {
 		s.pins = nil
 		return nil
 	}
 	if err := json.Unmarshal(data, &s.pins); err != nil {
-		return fmt.Errorf("parse pins file %s: %w", s.path, err)
+		return camperrors.Wrapf(err, "parse pins file %s", s.path)
 	}
 	return nil
 }
@@ -51,21 +53,16 @@ func (s *Store) Load() error {
 func (s *Store) Save() error {
 	data, err := json.MarshalIndent(s.pins, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshal pins: %w", err)
+		return camperrors.Wrap(err, "marshal pins")
 	}
 
 	dir := filepath.Dir(s.path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("create pins directory: %w", err)
+		return camperrors.Wrap(err, "create pins directory")
 	}
 
-	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0644); err != nil {
-		return fmt.Errorf("write pins tmp: %w", err)
-	}
-	if err := os.Rename(tmp, s.path); err != nil {
-		os.Remove(tmp)
-		return fmt.Errorf("rename pins file: %w", err)
+	if err := fsutil.WriteFileAtomically(s.path, data, 0o644); err != nil {
+		return camperrors.Wrap(err, "write pins file")
 	}
 	return nil
 }
@@ -88,7 +85,8 @@ func (s *Store) Get(name string) (Pin, bool) {
 // Add creates a new pin. Returns error if name already exists.
 func (s *Store) Add(name, path string) error {
 	if _, exists := s.Get(name); exists {
-		return fmt.Errorf("pin %q already exists (use 'camp unpin %s' first)", name, name)
+		return camperrors.Wrapf(camperrors.ErrAlreadyExists,
+			"pin %q already exists (use 'camp unpin %s' first)", name, name)
 	}
 	s.pins = append(s.pins, Pin{
 		Name:      name,
@@ -106,7 +104,7 @@ func (s *Store) Remove(name string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("pin %q not found", name)
+	return camperrors.Wrapf(camperrors.ErrNotFound, "pin %q not found", name)
 }
 
 // FindByPath returns the pin whose path matches, or false if not found.

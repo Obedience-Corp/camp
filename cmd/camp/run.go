@@ -159,7 +159,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 
 					// Build and execute command
 					fullCmd := strings.Join(commandArgs, " ")
-					return cmdutil.ExecuteCommand(ctx, fullCmd, workDir, nil)
+					return cmdutil.ExecuteCommand(ctx, fullCmd, workDir, root, nil)
 				}
 			}
 		}
@@ -180,7 +180,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 	// Exact match only.
 	if len(commandArgs) > 0 {
 		if projectDir, ok := isProjectCtx(ctx, root, commandArgs[0]); ok {
-			return cmdutil.ExecuteCommand(ctx, "just", projectDir, commandArgs[1:])
+			return cmdutil.ExecuteCommand(ctx, "just", projectDir, root, commandArgs[1:])
 		}
 	}
 
@@ -192,7 +192,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 	fullCmd := strings.Join(commandArgs, " ")
 
 	// Execute from working directory
-	return cmdutil.ExecuteCommand(ctx, fullCmd, workDir, nil)
+	return cmdutil.ExecuteCommand(ctx, fullCmd, workDir, root, nil)
 }
 
 func isProject(campaignRoot, name string) (string, bool) {

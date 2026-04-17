@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"github.com/Obedience-Corp/camp/internal/git"
 	tuistatus "github.com/Obedience-Corp/camp/internal/tui/status"
 	"github.com/Obedience-Corp/camp/internal/ui"
@@ -403,11 +404,8 @@ func writeStatusCache(campRoot string, statuses []repoStatus) {
 		return
 	}
 
-	// Atomic write
-	tmpFile := filepath.Join(cacheDir, "status.json.tmp")
 	finalFile := filepath.Join(cacheDir, "status.json")
-	if err := os.WriteFile(tmpFile, data, 0o644); err != nil {
+	if err := fsutil.WriteFileAtomically(finalFile, data, 0o644); err != nil {
 		return
 	}
-	os.Rename(tmpFile, finalFile)
 }

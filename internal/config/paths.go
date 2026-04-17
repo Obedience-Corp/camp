@@ -3,6 +3,8 @@ package config
 import (
 	"os"
 	"path/filepath"
+
+	"github.com/Obedience-Corp/camp/internal/config/registryfile"
 )
 
 // OrgName is the organization directory name under .config.
@@ -29,10 +31,7 @@ func GlobalConfigPath() string {
 // RegistryPath returns the path to the campaign registry file.
 // Checks CAMP_REGISTRY_PATH environment variable first for test isolation.
 func RegistryPath() string {
-	if override := os.Getenv("CAMP_REGISTRY_PATH"); override != "" {
-		return override
-	}
-	return filepath.Join(ConfigDir(), "registry.json")
+	return registryfile.Path()
 }
 
 // EnsureConfigDir creates the config directory if it doesn't exist.

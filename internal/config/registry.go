@@ -10,7 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Obedience-Corp/camp/internal/config/registryfile"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/fsutil"
 )
 
 // ErrMultipleMatches is returned when an ID prefix matches multiple campaigns.
@@ -27,39 +29,31 @@ func LoadRegistry(ctx context.Context) (*Registry, error) {
 	}
 
 	path := RegistryPath()
-	data, err := os.ReadFile(path)
+	file, err := registryfile.Load()
 	if err != nil {
-		if os.IsNotExist(err) {
-			return NewRegistry(), nil
-		}
 		return nil, camperrors.Wrapf(err, "failed to read registry %s", path)
 	}
 
-	var reg Registry
-	if err := json.Unmarshal(data, &reg); err != nil {
-		return nil, camperrors.Wrapf(err, "failed to parse registry %s", path)
+	reg := NewRegistry()
+	reg.Version = file.Version
+	for id, entry := range file.Campaigns {
+		reg.Campaigns[id] = RegisteredCampaign{
+			ID:         id,
+			Name:       entry.Name,
+			Path:       entry.Path,
+			Type:       CampaignType(entry.Type),
+			LastAccess: entry.LastAccess,
+		}
 	}
 
-	// Initialize map if nil
-	if reg.Campaigns == nil {
-		reg.Campaigns = make(map[string]RegisteredCampaign)
-	}
-
-	// Set version if not present
+	// Default to current version when loading legacy/empty files.
 	if reg.Version == 0 {
 		reg.Version = RegistryVersion
 	}
 
-	// Populate IDs from map keys (ID field is not serialized in JSON)
-	for id, c := range reg.Campaigns {
-		c.ID = id
-		reg.Campaigns[id] = c
-	}
-
-	// Build path index
 	reg.rebuildPathIndex()
 
-	return &reg, nil
+	return reg, nil
 }
 
 // SaveRegistry saves the campaign registry to ~/.obey/campaign/registry.json.
@@ -84,15 +78,8 @@ func SaveRegistry(ctx context.Context, reg *Registry) error {
 
 	path := RegistryPath()
 
-	// Atomic write via temp file
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0644); err != nil {
+	if err := fsutil.WriteFileAtomically(path, data, 0o644); err != nil {
 		return camperrors.Wrap(err, "failed to write registry")
-	}
-
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp) // Clean up temp file on rename failure
-		return camperrors.Wrap(err, "failed to save registry")
 	}
 
 	return nil

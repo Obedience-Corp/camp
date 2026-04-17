@@ -12,7 +12,9 @@ import (
 )
 
 // ExecuteCommand executes a shell command from the specified directory.
-func ExecuteCommand(ctx context.Context, cmdStr, workDir string, extraArgs []string) error {
+// campaignRoot is threaded by callers that already resolved campaign context,
+// avoiding a second detect pass in execution hot paths.
+func ExecuteCommand(ctx context.Context, cmdStr, workDir, campaignRoot string, extraArgs []string) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -28,8 +30,8 @@ func ExecuteCommand(ctx context.Context, cmdStr, workDir string, extraArgs []str
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
 	cmd.Env = os.Environ()
-	if campRoot, err := campaign.Detect(ctx, workDir); err == nil && campRoot != "" {
-		cmd.Env = append(cmd.Env, campaign.EnvCampaignRoot+"="+campRoot)
+	if campaignRoot != "" {
+		cmd.Env = append(cmd.Env, campaign.EnvCampaignRoot+"="+campaignRoot)
 	}
 
 	if err := cmd.Run(); err != nil {

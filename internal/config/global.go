@@ -6,6 +6,7 @@ import (
 	"os"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/fsutil"
 )
 
 // LoadGlobalConfig loads the global configuration from ~/.obey/campaign/config.json.
@@ -61,15 +62,8 @@ func SaveGlobalConfig(ctx context.Context, cfg *GlobalConfig) error {
 
 	path := GlobalConfigPath()
 
-	// Atomic write via temp file
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0644); err != nil {
+	if err := fsutil.WriteFileAtomically(path, data, 0o644); err != nil {
 		return camperrors.Wrap(err, "failed to write global config")
-	}
-
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp) // Clean up temp file on rename failure
-		return camperrors.Wrap(err, "failed to save global config")
 	}
 
 	return nil

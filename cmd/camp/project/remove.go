@@ -119,6 +119,9 @@ func runProjectRemove(cmd *cobra.Command, args []string) error {
 	if result.WorktreeDeleted {
 		fmt.Printf("  %s Worktrees deleted\n", ui.SuccessIcon())
 	}
+	for _, warning := range result.Warnings {
+		fmt.Printf("  %s %s\n", ui.WarningIcon(), ui.Warning(warning))
+	}
 
 	// Auto-commit structural campaign changes unless disabled.
 	if !noCommit && !dryRun && (result.SubmoduleRemoved || result.LinkRemoved) {

@@ -4,6 +4,7 @@
 package integration
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -460,6 +461,45 @@ func TestProject_Link_AllowsRelinkAfterUnlink(t *testing.T) {
 	_, exitCode, err := tc.ExecCommand("test", "-L", campaignPath+"/projects/beta")
 	require.NoError(t, err)
 	assert.Equal(t, 0, exitCode, "beta symlink should be created")
+}
+
+// TestProject_DetectFromLinkedMarkerUsesRegistry verifies that campaign
+// detection from a linked project's .camp marker resolves the campaign root
+// through the registry (not by walking the filesystem). The linked project is
+// placed in a directory tree that contains no campaign ancestor — the only way
+// detect can succeed is via the registry lookup.
+//
+// Equivalent to the deleted unit test
+// internal/campaign/detect_test.go::TestDetect_FromLinkedProjectMarkerUsesRegistry,
+// but exercised end-to-end via camp commands inside the container so the on-disk
+// registry, marker file format, and detection path all run as they do in
+// production.
+func TestProject_DetectFromLinkedMarkerUsesRegistry(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	campaignPath := "/campaigns/detect-from-marker"
+	linkedPath := "/test/detect-marker-linked"
+
+	_, err := tc.InitCampaign(campaignPath, "detect-from-marker", "product")
+	require.NoError(t, err)
+	require.NoError(t, tc.CreateGitRepo(linkedPath))
+
+	_, err = tc.RunCampInDir(campaignPath, "project", "link", linkedPath)
+	require.NoError(t, err, "project link should succeed")
+
+	exists, err := tc.CheckFileExists(linkedPath + "/.camp")
+	require.NoError(t, err)
+	require.True(t, exists, "linked repo should have a .camp marker")
+
+	// Run camp root from inside the linked project. The linked project has no
+	// .campaign ancestor in its filesystem path — detection must resolve the
+	// campaign root through the registry using the marker's active_campaign_id.
+	output, err := tc.RunCampInDir(linkedPath, "root", "--json")
+	require.NoError(t, err, "camp root should succeed from a linked project")
+
+	var got campaignRootJSON
+	require.NoError(t, json.Unmarshal([]byte(output), &got), "camp root --json output should parse")
+	assert.Equal(t, campaignPath, got.AbsoluteRoot, "camp root should resolve to the registered campaign root through the registry")
 }
 
 func readCampaignID(t *testing.T, tc *TestContainer, campaignPath string) string {

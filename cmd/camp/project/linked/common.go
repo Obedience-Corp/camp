@@ -50,8 +50,19 @@ func PrintResult(result *projectsvc.LinkResult) {
 	} else {
 		fmt.Println(ui.KeyValue("  Git:", "no"))
 	}
+	printWarnings(result.Warnings)
 	fmt.Println()
 	fmt.Println(ui.Dim("  Linked projects are tracked in campaign git history. Linked git repos can still be committed with camp project commit."))
+}
+
+func printWarnings(warnings []string) {
+	if len(warnings) == 0 {
+		return
+	}
+	fmt.Println()
+	for _, warning := range warnings {
+		fmt.Printf("%s %s\n", ui.WarningIcon(), ui.Warning(warning))
+	}
 }
 
 // CommitLink records a linked-project add in the campaign repo.

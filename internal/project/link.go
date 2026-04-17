@@ -27,6 +27,8 @@ type LinkResult struct {
 	Source string
 	Type   string
 	IsGit  bool
+	// Warnings contains non-fatal follow-up notes surfaced to callers.
+	Warnings []string
 }
 
 // UnlinkOptions configures linked-project unlink behavior.
@@ -39,6 +41,8 @@ type UnlinkResult struct {
 	Name   string
 	Path   string
 	Target string
+	// Warnings contains non-fatal follow-up notes surfaced to callers.
+	Warnings []string
 }
 
 // ErrProjectNotLinked is returned when a command expects a linked project but
@@ -125,6 +129,7 @@ func AddLinked(ctx context.Context, campaignRoot, localPath string, opts LinkOpt
 	}
 
 	isGit := isGitRepo(absLocal)
+	warnings := make([]string, 0, 1)
 	marker := campaign.LinkMarker{
 		Version:          campaign.LinkMarkerVersion,
 		ActiveCampaignID: cfg.ID,
@@ -136,16 +141,17 @@ func AddLinked(ctx context.Context, campaignRoot, localPath string, opts LinkOpt
 
 	if isGit {
 		if err := ensureGitInfoExclude(ctx, absLocal, campaign.LinkMarkerFile); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not ignore .camp in linked repo: %v\n", err)
+			warnings = append(warnings, formatLinkedRepoWarning("could not update linked repo .git/info/exclude for .camp", err))
 		}
 	}
 
 	return &LinkResult{
-		Name:   name,
-		Path:   destPath,
-		Source: absLocal,
-		Type:   detectProjectType(absLocal),
-		IsGit:  isGit,
+		Name:     name,
+		Path:     destPath,
+		Source:   absLocal,
+		Type:     detectProjectType(absLocal),
+		IsGit:    isGit,
+		Warnings: warnings,
 	}, nil
 }
 
@@ -185,42 +191,45 @@ func Unlink(ctx context.Context, campaignRoot, name string, opts UnlinkOptions) 
 		return result, nil
 	}
 
-	if err := UnlinkProject(ctx, campaignRoot, name, target); err != nil {
+	warnings, err := UnlinkProject(ctx, campaignRoot, name, target)
+	if err != nil {
 		return nil, camperrors.Wrap(err, "failed to unlink project")
 	}
+	result.Warnings = warnings
 
 	return result, nil
 }
 
 // UnlinkProject removes a linked project symlink and local marker state.
-func UnlinkProject(ctx context.Context, campaignRoot, name, targetPath string) error {
+func UnlinkProject(ctx context.Context, campaignRoot, name, targetPath string) ([]string, error) {
 	projectPath := filepath.Join(campaignRoot, "projects", name)
 	if err := os.Remove(projectPath); err != nil && !os.IsNotExist(err) {
-		return err
+		return nil, err
 	}
 
+	warnings := make([]string, 0, 1)
 	if targetPath != "" {
 		normalizedCampaignRoot, rootErr := normalizeCampaignRoot(campaignRoot)
 		if rootErr != nil {
-			return camperrors.Wrap(rootErr, "resolve campaign root")
+			return nil, camperrors.Wrap(rootErr, "resolve campaign root")
 		}
 		currentCampaignID, idErr := loadCampaignID(ctx, normalizedCampaignRoot)
 		if idErr != nil {
-			return idErr
+			return nil, idErr
 		}
 		if marker, err := campaign.ReadMarker(targetPath); err == nil && markerMatchesCampaign(marker, currentCampaignID, normalizedCampaignRoot) {
 			if err := campaign.RemoveMarker(targetPath); err != nil {
-				return err
+				return nil, err
 			}
 			if isGitRepo(targetPath) {
 				if err := removeGitInfoExclude(ctx, targetPath, campaign.LinkMarkerFile); err != nil {
-					fmt.Fprintf(os.Stderr, "Warning: could not remove .camp ignore entry: %v\n", err)
+					warnings = append(warnings, formatLinkedRepoWarning("could not clean up linked repo .git/info/exclude for .camp", err))
 				}
 			}
 		}
 	}
 
-	return nil
+	return warnings, nil
 }
 
 // findExistingLinkToTarget scans campaignRoot/projects for a symlink that
@@ -453,4 +462,8 @@ func removePatternFromFile(path, pattern string) error {
 		content += "\n"
 	}
 	return fsutil.WriteFileAtomically(path, []byte(content), 0644)
+}
+
+func formatLinkedRepoWarning(action string, err error) string {
+	return fmt.Sprintf("%s: %v", action, err)
 }

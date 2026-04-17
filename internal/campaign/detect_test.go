@@ -116,6 +116,11 @@ func TestDetect_ContextTimeout(t *testing.T) {
 	}
 }
 
+// Detection-from-linked-project-marker behavior is exercised end-to-end by
+// TestProject_DetectFromLinkedMarkerUsesRegistry in tests/integration. That
+// test runs against a real container with a real registry instead of the
+// t.TempDir() + t.Setenv pattern.
+
 func TestDetectFromCwd(t *testing.T) {
 	// Create temp campaign
 	tmpDir := t.TempDir()
