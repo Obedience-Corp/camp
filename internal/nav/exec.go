@@ -29,19 +29,37 @@ func ExecInCategory(ctx context.Context, cat Category, command []string) (*ExecR
 		return nil, ErrNoCommand
 	}
 
-	// Resolve the category directory
-	jumpResult, err := DirectJump(ctx, cat)
+	campaignRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	return ExecInDir(ctx, jumpResult.Path, command)
+	// Resolve the category directory
+	jumpResult, err := DirectJumpFromRoot(ctx, campaignRoot, cat)
+	if err != nil {
+		return nil, err
+	}
+
+	return ExecInDirFromRoot(ctx, jumpResult.Path, campaignRoot, command)
 }
 
 // ExecInDir runs a command from the specified directory.
 // The command's stdin, stdout, and stderr are connected to the current process.
 // Returns the exit result or an error if the command cannot be started.
 func ExecInDir(ctx context.Context, dir string, command []string) (*ExecResult, error) {
+	campaignRoot, err := campaign.Detect(ctx, dir)
+	if err != nil {
+		campaignRoot = ""
+	}
+	return execInDir(ctx, dir, campaignRoot, command)
+}
+
+// ExecInDirFromRoot runs a command with a caller-supplied campaign root.
+func ExecInDirFromRoot(ctx context.Context, dir, campaignRoot string, command []string) (*ExecResult, error) {
+	return execInDir(ctx, dir, campaignRoot, command)
+}
+
+func execInDir(ctx context.Context, dir, campaignRoot string, command []string) (*ExecResult, error) {
 	if len(command) == 0 {
 		return nil, ErrNoCommand
 	}
@@ -58,8 +76,8 @@ func ExecInDir(ctx context.Context, dir string, command []string) (*ExecResult, 
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Env = os.Environ()
-	if campRoot, err := campaign.Detect(ctx, dir); err == nil && campRoot != "" {
-		cmd.Env = append(cmd.Env, campaign.EnvCampaignRoot+"="+campRoot)
+	if campaignRoot != "" {
+		cmd.Env = append(cmd.Env, campaign.EnvCampaignRoot+"="+campaignRoot)
 	}
 
 	// Run and capture exit code

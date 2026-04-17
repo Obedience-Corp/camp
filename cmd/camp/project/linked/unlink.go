@@ -76,6 +76,7 @@ Examples:
 			if result.Target != "" {
 				fmt.Println(ui.KeyValue("  Target:", result.Target))
 			}
+			printWarnings(result.Warnings)
 			if !noCommit {
 				commitResult := CommitUnlink(ctx, cfg, root, result.Path, result.Name)
 				if commitResult.Message != "" {

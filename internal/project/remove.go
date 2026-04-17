@@ -46,6 +46,8 @@ type RemoveResult struct {
 	Steps []string
 	// RecoveryInstructions describes manual steps needed if removal was partial.
 	RecoveryInstructions []string
+	// Warnings records non-fatal follow-up notes from linked-project cleanup.
+	Warnings []string
 }
 
 func addStep(result *RemoveResult, msg string) {
@@ -107,11 +109,13 @@ func Remove(ctx context.Context, campaignRoot, name string, opts RemoveOptions) 
 			result.LinkRemoved = true
 			return result, nil
 		}
-		if err := UnlinkProject(ctx, campaignRoot, name, target); err != nil {
+		warnings, err := UnlinkProject(ctx, campaignRoot, name, target)
+		if err != nil {
 			return nil, camperrors.Wrap(err, "failed to unlink project")
 		}
 		addStep(result, "linked project unlinked")
 		result.LinkRemoved = true
+		result.Warnings = warnings
 		return result, nil
 	}
 

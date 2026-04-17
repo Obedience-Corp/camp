@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/fsutil"
 )
 
 const (
@@ -46,15 +47,8 @@ func Save(idx *Index, campaignRoot string) error {
 		return fmt.Errorf("failed to marshal index: %w", err)
 	}
 
-	// Write atomically (write to temp, rename)
-	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+	if err := fsutil.WriteFileAtomically(path, data, 0o644); err != nil {
 		return fmt.Errorf("failed to write cache file: %w", err)
-	}
-
-	if err := os.Rename(tmpPath, path); err != nil {
-		os.Remove(tmpPath) // Clean up temp file
-		return fmt.Errorf("failed to rename cache file: %w", err)
 	}
 
 	return nil

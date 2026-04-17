@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/Obedience-Corp/camp/internal/fsutil"
 )
 
 // Pin represents a saved pinned directory.
@@ -59,13 +61,8 @@ func (s *Store) Save() error {
 		return fmt.Errorf("create pins directory: %w", err)
 	}
 
-	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0644); err != nil {
+	if err := fsutil.WriteFileAtomically(s.path, data, 0o644); err != nil {
 		return fmt.Errorf("write pins tmp: %w", err)
-	}
-	if err := os.Rename(tmp, s.path); err != nil {
-		os.Remove(tmp)
-		return fmt.Errorf("rename pins file: %w", err)
 	}
 	return nil
 }

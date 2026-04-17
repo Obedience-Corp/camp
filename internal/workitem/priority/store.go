@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"github.com/Obedience-Corp/camp/internal/workitem"
 )
 
@@ -49,22 +50,8 @@ func Save(path string, store *Store) error {
 	}
 	data = append(data, '\n')
 
-	tmp, err := os.CreateTemp(dir, "workitems-*.json.tmp")
-	if err != nil {
-		return fmt.Errorf("creating temp file for priority store: %w", err)
-	}
-	defer os.Remove(tmp.Name())
-
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return fmt.Errorf("writing priority store temp file: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("closing priority store temp file: %w", err)
-	}
-
-	if err := os.Rename(tmp.Name(), path); err != nil {
-		return fmt.Errorf("renaming priority store temp file: %w", err)
+	if err := fsutil.WriteFileAtomically(path, data, 0o644); err != nil {
+		return fmt.Errorf("writing priority store: %w", err)
 	}
 	return nil
 }

@@ -1,49 +1,27 @@
 package campaign
 
 import (
-	"encoding/json"
-	"os"
+	"context"
 	"path/filepath"
+
+	"github.com/Obedience-Corp/camp/internal/config/registryfile"
 )
 
-func registryPath() string {
-	if override := os.Getenv("CAMP_REGISTRY_PATH"); override != "" {
-		return override
-	}
-	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		return filepath.Join(xdg, "obey", "campaign", "registry.json")
-	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".obey", "campaign", "registry.json")
-}
-
-type registrySnapshot struct {
-	Campaigns map[string]registeredCampaign `json:"campaigns"`
-}
-
-type registeredCampaign struct {
-	Path string `json:"path"`
-}
-
-func lookupRegisteredCampaignRoot(campaignID string) (string, bool, error) {
+func lookupRegisteredCampaignRoot(ctx context.Context, campaignID string) (string, bool, error) {
 	if campaignID == "" {
 		return "", false, nil
 	}
 
-	data, err := os.ReadFile(registryPath())
+	if ctx.Err() != nil {
+		return "", false, ctx.Err()
+	}
+
+	reg, err := registryfile.Load()
 	if err != nil {
-		if os.IsNotExist(err) {
-			return "", false, nil
-		}
 		return "", false, err
 	}
 
-	var snapshot registrySnapshot
-	if err := json.Unmarshal(data, &snapshot); err != nil {
-		return "", false, err
-	}
-
-	entry, ok := snapshot.Campaigns[campaignID]
+	entry, ok := reg.Campaigns[campaignID]
 	if !ok || entry.Path == "" {
 		return "", false, nil
 	}
@@ -55,5 +33,6 @@ func lookupRegisteredCampaignRoot(campaignID string) (string, bool, error) {
 	if resolved, err := filepath.EvalSymlinks(root); err == nil {
 		root = resolved
 	}
+
 	return root, true, nil
 }
