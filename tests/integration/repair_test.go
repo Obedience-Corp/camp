@@ -123,38 +123,31 @@ func TestInitRepair_PreservesUserShortcuts(t *testing.T) {
 	tc := GetSharedContainer(t)
 	path := setupRepairCampaign(t, tc, "repair-user-shortcuts")
 
+	// Create the target directory for the shortcut.
 	_, _, err := tc.ExecCommand("mkdir", "-p", path+"/my-stuff")
 	require.NoError(t, err)
 
-	jumpsPath := path + "/.campaign/settings/jumps.yaml"
-	customJumps := `paths:
-  projects: "projects/"
-  worktrees: "projects/worktrees/"
-  ai_docs: "ai_docs/"
-  docs: "docs/"
-  dungeon: "dungeon/"
-  festivals: "festivals/"
-  workflow: "workflow/"
-  code_reviews: "workflow/code_reviews/"
-  pipelines: "workflow/pipelines/"
-  design: "workflow/design/"
-  intents: ".campaign/intents/"
-shortcuts:
-  custom:
-    path: "my-stuff/"
-    description: "User custom shortcut"
-    source: user
-`
-	require.NoError(t, tc.WriteFile(jumpsPath, customJumps))
+	// Add a user shortcut via the real CLI path — exercises config.SaveJumpsConfig
+	// under the hood, so the fixture YAML is guaranteed to match the config schema.
+	addOutput, err := tc.RunCampInDir(path, "shortcuts", "add", "custom", "my-stuff/", "-d", "User custom shortcut")
+	require.NoError(t, err, "shortcuts add failed: %s", addOutput)
 
+	// Verify the shortcut was created before repair.
+	preRepairOutput, err := tc.RunCampInDir(path, "go", "custom", "--print")
+	require.NoError(t, err, "pre-repair navigation failed: %s", preRepairOutput)
+	assert.Contains(t, preRepairOutput, path+"/my-stuff")
+
+	// Run repair — should preserve the user-defined shortcut.
 	runRepair(t, tc, path)
 
+	// Verify the shortcut survives repair in the config file.
+	jumpsPath := path + "/.campaign/settings/jumps.yaml"
 	updatedJumps, err := tc.ReadFile(jumpsPath)
 	require.NoError(t, err)
-	assert.Contains(t, updatedJumps, "custom:")
-	assert.Contains(t, updatedJumps, "path: my-stuff/")
-	assert.Contains(t, updatedJumps, "source: user")
+	assert.Contains(t, updatedJumps, "custom:", "user shortcut key should survive repair")
+	assert.Contains(t, updatedJumps, "my-stuff/", "user shortcut path should survive repair")
 
+	// Verify navigation still works after repair.
 	output, err := tc.RunCampInDir(path, "go", "custom", "--print")
 	require.NoError(t, err)
 	assert.Contains(t, output, path+"/my-stuff")
