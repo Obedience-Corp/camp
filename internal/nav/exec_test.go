@@ -18,7 +18,7 @@ func TestExecInDir_Success(t *testing.T) {
 	ctx := context.Background()
 
 	// Run 'echo hello' command
-	result, err := ExecInDir(ctx, dir, []string{"echo", "hello"})
+	result, err := ExecInDir(ctx, dir, "", []string{"echo", "hello"})
 	if err != nil {
 		t.Fatalf("ExecInDir failed: %v", err)
 	}
@@ -38,7 +38,7 @@ func TestExecInDir_NonZeroExit(t *testing.T) {
 	ctx := context.Background()
 
 	// Run 'false' command which exits with 1
-	result, err := ExecInDir(ctx, dir, []string{"false"})
+	result, err := ExecInDir(ctx, dir, "", []string{"false"})
 	if err != nil {
 		t.Fatalf("ExecInDir failed: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestExecInDir_CommandNotFound(t *testing.T) {
 	ctx := context.Background()
 
 	// Run non-existent command
-	_, err := ExecInDir(ctx, dir, []string{"nonexistent-command-12345"})
+	_, err := ExecInDir(ctx, dir, "", []string{"nonexistent-command-12345"})
 	if err == nil {
 		t.Fatal("Expected error for non-existent command")
 	}
@@ -75,7 +75,7 @@ func TestExecInDir_NoCommand(t *testing.T) {
 
 	ctx := context.Background()
 
-	_, err := ExecInDir(ctx, dir, nil)
+	_, err := ExecInDir(ctx, dir, "", nil)
 	if err == nil {
 		t.Fatal("Expected error for no command")
 	}
@@ -85,7 +85,7 @@ func TestExecInDir_NoCommand(t *testing.T) {
 	}
 
 	// Also test empty slice
-	_, err = ExecInDir(ctx, dir, []string{})
+	_, err = ExecInDir(ctx, dir, "", []string{})
 	if !errors.Is(err, ErrNoCommand) {
 		t.Errorf("Expected ErrNoCommand for empty slice, got %v", err)
 	}
@@ -98,7 +98,7 @@ func TestExecInDir_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := ExecInDir(ctx, dir, []string{"echo", "hello"})
+	_, err := ExecInDir(ctx, dir, "", []string{"echo", "hello"})
 	if err == nil {
 		t.Fatal("Expected error for cancelled context")
 	}
@@ -122,7 +122,7 @@ func TestExecInDir_WorksFromDir(t *testing.T) {
 
 	// Use ls to verify we're in the right directory
 	// (the file should exist)
-	result, err := ExecInDir(ctx, dir, []string{"ls", "testfile.txt"})
+	result, err := ExecInDir(ctx, dir, "", []string{"ls", "testfile.txt"})
 	if err != nil {
 		t.Fatalf("ExecInDir failed: %v", err)
 	}
@@ -237,6 +237,6 @@ func BenchmarkExecInDir(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = ExecInDir(ctx, dir, []string{"true"})
+		_, _ = ExecInDir(ctx, dir, "", []string{"true"})
 	}
 }

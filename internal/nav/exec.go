@@ -40,26 +40,14 @@ func ExecInCategory(ctx context.Context, cat Category, command []string) (*ExecR
 		return nil, err
 	}
 
-	return ExecInDirFromRoot(ctx, jumpResult.Path, campaignRoot, command)
+	return ExecInDir(ctx, jumpResult.Path, campaignRoot, command)
 }
 
-// ExecInDir runs a command from the specified directory.
-// The command's stdin, stdout, and stderr are connected to the current process.
-// Returns the exit result or an error if the command cannot be started.
-func ExecInDir(ctx context.Context, dir string, command []string) (*ExecResult, error) {
-	campaignRoot, err := campaign.Detect(ctx, dir)
-	if err != nil {
-		campaignRoot = ""
-	}
-	return execInDir(ctx, dir, campaignRoot, command)
-}
-
-// ExecInDirFromRoot runs a command with a caller-supplied campaign root.
-func ExecInDirFromRoot(ctx context.Context, dir, campaignRoot string, command []string) (*ExecResult, error) {
-	return execInDir(ctx, dir, campaignRoot, command)
-}
-
-func execInDir(ctx context.Context, dir, campaignRoot string, command []string) (*ExecResult, error) {
+// ExecInDir runs a command from the specified directory with a caller-supplied
+// campaign root. The command's stdin, stdout, and stderr are connected to the
+// current process. Pass an empty campaignRoot if no CAMP_ROOT env var should be
+// set. Returns the exit result or an error if the command cannot be started.
+func ExecInDir(ctx context.Context, dir, campaignRoot string, command []string) (*ExecResult, error) {
 	if len(command) == 0 {
 		return nil, ErrNoCommand
 	}
