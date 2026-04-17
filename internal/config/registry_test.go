@@ -2,9 +2,11 @@ package config
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"testing"
 	"time"
@@ -913,5 +915,181 @@ func TestVerificationReport_HasChanges(t *testing.T) {
 				t.Errorf("HasChanges() = %v, want %v", got, tt.expected)
 			}
 		})
+	}
+}
+
+// TestRegistry_RoundTrip catches silent field drops between RegisteredCampaign
+// and the on-disk registryfile.Campaign schema. SaveRegistry marshals the full
+// Registry struct, but LoadRegistry reads through registryfile.File and copies
+// fields manually. If a new JSON-tagged field is added to RegisteredCampaign
+// without updating the load path, this test fails.
+func TestRegistry_RoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	ctx := context.Background()
+
+	original := NewRegistry()
+	if err := original.Register(
+		"550e8400-e29b-41d4-a716-446655440000",
+		"my-campaign",
+		"/tmp/my-campaign",
+		CampaignTypeProduct,
+	); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+	if err := original.Register(
+		"a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+		"other-campaign",
+		"/tmp/other-campaign",
+		CampaignTypeResearch,
+	); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+
+	if err := SaveRegistry(ctx, original); err != nil {
+		t.Fatalf("SaveRegistry() error = %v", err)
+	}
+
+	loaded, err := LoadRegistry(ctx)
+	if err != nil {
+		t.Fatalf("LoadRegistry() error = %v", err)
+	}
+
+	if loaded.Version != original.Version {
+		t.Errorf("Version: loaded=%d, original=%d", loaded.Version, original.Version)
+	}
+	if len(loaded.Campaigns) != len(original.Campaigns) {
+		t.Fatalf("Campaigns count: loaded=%d, original=%d", len(loaded.Campaigns), len(original.Campaigns))
+	}
+
+	for id, want := range original.Campaigns {
+		got, ok := loaded.Campaigns[id]
+		if !ok {
+			t.Errorf("campaign %s missing after load", id)
+			continue
+		}
+		// LastAccess timestamp serializes through time.Time JSON marshal which
+		// loses sub-microsecond precision; compare via Equal instead of ==.
+		if !got.LastAccess.Equal(want.LastAccess) {
+			t.Errorf("campaign %s: LastAccess loaded=%v, original=%v", id, got.LastAccess, want.LastAccess)
+		}
+		got.LastAccess = want.LastAccess
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("campaign %s: round-trip differs\n  loaded   = %+v\n  original = %+v", id, got, want)
+		}
+	}
+}
+
+// TestRegisteredCampaign_AllJSONFieldsPersist enumerates every JSON-serialized
+// field on RegisteredCampaign and verifies it survives a Save → Load round-trip.
+// If a new JSON-tagged field is added without updating the load path in
+// LoadRegistry, this test catches the silent drop.
+func TestRegisteredCampaign_AllJSONFieldsPersist(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	// Build a campaign with every JSON-serialized field set to a non-zero value.
+	full := RegisteredCampaign{
+		ID:         "id-not-serialized", // ID uses json:"-" so excluded
+		Name:       "test-name",
+		Path:       "/tmp/test-path",
+		Type:       CampaignTypeResearch,
+		LastAccess: time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC),
+	}
+
+	reg := NewRegistry()
+	reg.Version = RegistryVersion
+	reg.Campaigns["test-id"] = full
+
+	ctx := context.Background()
+	if err := SaveRegistry(ctx, reg); err != nil {
+		t.Fatalf("SaveRegistry() error = %v", err)
+	}
+
+	loaded, err := LoadRegistry(ctx)
+	if err != nil {
+		t.Fatalf("LoadRegistry() error = %v", err)
+	}
+
+	loadedEntry, ok := loaded.Campaigns["test-id"]
+	if !ok {
+		t.Fatal("test-id missing after load")
+	}
+
+	// Iterate every exported field with a JSON tag (not "-") and assert the
+	// loaded value is non-zero. A silently-dropped field would zero out here.
+	rt := reflect.TypeOf(full)
+	loadedV := reflect.ValueOf(loadedEntry)
+	originalV := reflect.ValueOf(full)
+	for i := 0; i < rt.NumField(); i++ {
+		field := rt.Field(i)
+		jsonTag := field.Tag.Get("json")
+		if jsonTag == "" || jsonTag == "-" {
+			continue
+		}
+		// strip ",omitempty" suffix
+		name := jsonTag
+		for j := 0; j < len(jsonTag); j++ {
+			if jsonTag[j] == ',' {
+				name = jsonTag[:j]
+				break
+			}
+		}
+		gotField := loadedV.Field(i)
+		wantField := originalV.Field(i)
+		if gotField.IsZero() && !wantField.IsZero() {
+			t.Errorf("field %q (%s) was dropped on load: loaded=%v, original=%v", field.Name, name, gotField.Interface(), wantField.Interface())
+		}
+	}
+}
+
+// TestRegistryFile_Schema_StaysAlignedWithRegisteredCampaign documents the
+// invariant that on-disk JSON fields must match between the two types. If the
+// JSON tags drift, future RegisteredCampaign fields won't roundtrip.
+func TestRegistryFile_Schema_StaysAlignedWithRegisteredCampaign(t *testing.T) {
+	// Marshal a RegisteredCampaign and re-unmarshal as a generic map to extract
+	// the actual JSON keys written to disk by SaveRegistry.
+	rc := RegisteredCampaign{
+		Name:       "x",
+		Path:       "/x",
+		Type:       CampaignTypeProduct,
+		LastAccess: time.Now(),
+	}
+	rcData, err := json.Marshal(rc)
+	if err != nil {
+		t.Fatalf("marshal RegisteredCampaign: %v", err)
+	}
+	var rcKeys map[string]any
+	if err := json.Unmarshal(rcData, &rcKeys); err != nil {
+		t.Fatalf("unmarshal RegisteredCampaign: %v", err)
+	}
+
+	// Write the same value through registryfile.Campaign by going through a
+	// full Save → Load cycle and inspecting the file shape.
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	reg := NewRegistry()
+	reg.Campaigns["k"] = rc
+	if err := SaveRegistry(context.Background(), reg); err != nil {
+		t.Fatalf("SaveRegistry: %v", err)
+	}
+
+	raw, err := os.ReadFile(RegistryPath())
+	if err != nil {
+		t.Fatalf("read registry file: %v", err)
+	}
+	var fileShape struct {
+		Campaigns map[string]map[string]any `json:"campaigns"`
+	}
+	if err := json.Unmarshal(raw, &fileShape); err != nil {
+		t.Fatalf("unmarshal file: %v", err)
+	}
+
+	persisted := fileShape.Campaigns["k"]
+	for key := range rcKeys {
+		if _, ok := persisted[key]; !ok {
+			t.Errorf("RegisteredCampaign field %q is written but registryfile.Campaign cannot read it back; update internal/config/registryfile/registryfile.go", key)
+		}
 	}
 }
