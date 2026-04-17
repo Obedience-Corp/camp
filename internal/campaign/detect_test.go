@@ -2,13 +2,10 @@ package campaign
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
-
-	"github.com/Obedience-Corp/camp/internal/config/registryfile"
 )
 
 func TestDetect(t *testing.T) {
@@ -119,60 +116,10 @@ func TestDetect_ContextTimeout(t *testing.T) {
 	}
 }
 
-func TestDetect_FromLinkedProjectMarkerUsesRegistry(t *testing.T) {
-	tmpDir := t.TempDir()
-	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
-
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmpDir, "xdg"))
-
-	campaignRoot := filepath.Join(tmpDir, "campaign")
-	linkedProject := filepath.Join(tmpDir, "linked-project")
-	campaignID := "camp-123"
-
-	if err := os.MkdirAll(filepath.Join(campaignRoot, CampaignDir), 0o755); err != nil {
-		t.Fatalf("failed to create campaign dir: %v", err)
-	}
-	if err := os.MkdirAll(linkedProject, 0o755); err != nil {
-		t.Fatalf("failed to create linked project dir: %v", err)
-	}
-
-	registryDir := filepath.Dir(registryfile.Path())
-	if err := os.MkdirAll(registryDir, 0o755); err != nil {
-		t.Fatalf("failed to create registry dir: %v", err)
-	}
-
-	registryData, err := json.MarshalIndent(registryfile.File{
-		Version: 2,
-		Campaigns: map[string]registryfile.Campaign{
-			campaignID: {
-				Name: "linked-detect",
-				Path: campaignRoot,
-				Type: "product",
-			},
-		},
-	}, "", "  ")
-	if err != nil {
-		t.Fatalf("json.MarshalIndent() error = %v", err)
-	}
-	if err := os.WriteFile(registryfile.Path(), registryData, 0o644); err != nil {
-		t.Fatalf("os.WriteFile() error = %v", err)
-	}
-
-	if err := WriteMarker(linkedProject, LinkMarker{
-		Version:          LinkMarkerVersion,
-		ActiveCampaignID: campaignID,
-	}); err != nil {
-		t.Fatalf("WriteMarker() error = %v", err)
-	}
-
-	got, err := Detect(context.Background(), linkedProject)
-	if err != nil {
-		t.Fatalf("Detect() error = %v", err)
-	}
-	if got != campaignRoot {
-		t.Fatalf("Detect() = %q, want %q", got, campaignRoot)
-	}
-}
+// Detection-from-linked-project-marker behavior is exercised end-to-end by
+// TestProject_DetectFromLinkedMarkerUsesRegistry in tests/integration. That
+// test runs against a real container with a real registry instead of the
+// t.TempDir() + t.Setenv pattern.
 
 func TestDetectFromCwd(t *testing.T) {
 	// Create temp campaign
