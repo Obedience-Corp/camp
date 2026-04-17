@@ -114,7 +114,7 @@ func TestValidateEditBodyFlags_ReplaceAndAppend(t *testing.T) {
 			if err == nil {
 				t.Fatal("expected error for replace + append combination")
 			}
-			if !strings.Contains(err.Error(), "replace vs append") {
+			if !strings.Contains(err.Error(), "mutually exclusive") {
 				t.Fatalf("unexpected error: %v", err)
 			}
 		})

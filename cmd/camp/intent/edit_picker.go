@@ -2,7 +2,6 @@ package intent
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -21,8 +20,8 @@ func resolveIntentByPartialID(ctx context.Context, svc *intent.IntentService, pa
 	}
 
 	// If Find failed with not found, provide helpful error
-	if errors.Is(err, camperrors.ErrNotFound) {
-		return nil, fmt.Errorf("intent not found: %s", partialID)
+	if camperrors.Is(err, camperrors.ErrNotFound) {
+		return nil, camperrors.NewNotFound("intent", partialID, nil)
 	}
 
 	return nil, camperrors.Wrap(err, "failed to find intent")
@@ -53,7 +52,7 @@ func pickIntent(ctx context.Context, svc *intent.IntentService, status, typ, pro
 	}
 
 	if len(intents) == 0 {
-		return nil, fmt.Errorf("no intents found")
+		return nil, camperrors.Wrap(camperrors.ErrNotFound, "no intents found")
 	}
 
 	// Show fuzzy picker
