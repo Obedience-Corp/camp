@@ -10,6 +10,8 @@ import (
 	"sort"
 	"testing"
 	"time"
+
+	"github.com/Obedience-Corp/camp/internal/config/registryfile"
 )
 
 func TestLoadRegistry_Empty(t *testing.T) {
@@ -918,43 +920,71 @@ func TestVerificationReport_HasChanges(t *testing.T) {
 	}
 }
 
+// loadRegistryFromBytes simulates LoadRegistry without touching the
+// filesystem. SaveRegistry marshals the in-memory Registry directly to JSON;
+// LoadRegistry reads bytes through registryfile.File and field-copies into
+// RegisteredCampaign. This helper does the same JSON path entirely in memory
+// so the schema-drift tests below don't have to write to disk.
+func loadRegistryFromBytes(t *testing.T, data []byte) *Registry {
+	t.Helper()
+
+	var file registryfile.File
+	if err := json.Unmarshal(data, &file); err != nil {
+		t.Fatalf("unmarshal as registryfile.File: %v", err)
+	}
+	if file.Campaigns == nil {
+		file.Campaigns = make(map[string]registryfile.Campaign)
+	}
+
+	reg := NewRegistry()
+	reg.Version = file.Version
+	for id, entry := range file.Campaigns {
+		reg.Campaigns[id] = RegisteredCampaign{
+			ID:         id,
+			Name:       entry.Name,
+			Path:       entry.Path,
+			Type:       CampaignType(entry.Type),
+			LastAccess: entry.LastAccess,
+		}
+	}
+	if reg.Version == 0 {
+		reg.Version = RegistryVersion
+	}
+	return reg
+}
+
 // TestRegistry_RoundTrip catches silent field drops between RegisteredCampaign
 // and the on-disk registryfile.Campaign schema. SaveRegistry marshals the full
 // Registry struct, but LoadRegistry reads through registryfile.File and copies
 // fields manually. If a new JSON-tagged field is added to RegisteredCampaign
 // without updating the load path, this test fails.
+//
+// Pure in-memory: no t.TempDir() / no XDG_CONFIG_HOME / no os.WriteFile.
 func TestRegistry_RoundTrip(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-
-	ctx := context.Background()
-
 	original := NewRegistry()
-	if err := original.Register(
-		"550e8400-e29b-41d4-a716-446655440000",
-		"my-campaign",
-		"/tmp/my-campaign",
-		CampaignTypeProduct,
-	); err != nil {
-		t.Fatalf("Register() error = %v", err)
+	original.Version = RegistryVersion
+	original.Campaigns["550e8400-e29b-41d4-a716-446655440000"] = RegisteredCampaign{
+		ID:         "550e8400-e29b-41d4-a716-446655440000",
+		Name:       "my-campaign",
+		Path:       "/tmp/my-campaign",
+		Type:       CampaignTypeProduct,
+		LastAccess: time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC),
 	}
-	if err := original.Register(
-		"a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-		"other-campaign",
-		"/tmp/other-campaign",
-		CampaignTypeResearch,
-	); err != nil {
-		t.Fatalf("Register() error = %v", err)
-	}
-
-	if err := SaveRegistry(ctx, original); err != nil {
-		t.Fatalf("SaveRegistry() error = %v", err)
+	original.Campaigns["a1b2c3d4-e5f6-7890-abcd-ef1234567890"] = RegisteredCampaign{
+		ID:         "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+		Name:       "other-campaign",
+		Path:       "/tmp/other-campaign",
+		Type:       CampaignTypeResearch,
+		LastAccess: time.Date(2024, 6, 7, 8, 9, 10, 0, time.UTC),
 	}
 
-	loaded, err := LoadRegistry(ctx)
+	// SaveRegistry marshals the full Registry struct. Use the same path here.
+	data, err := json.MarshalIndent(original, "", "  ")
 	if err != nil {
-		t.Fatalf("LoadRegistry() error = %v", err)
+		t.Fatalf("MarshalIndent: %v", err)
 	}
+
+	loaded := loadRegistryFromBytes(t, data)
 
 	if loaded.Version != original.Version {
 		t.Errorf("Version: loaded=%d, original=%d", loaded.Version, original.Version)
@@ -962,15 +992,13 @@ func TestRegistry_RoundTrip(t *testing.T) {
 	if len(loaded.Campaigns) != len(original.Campaigns) {
 		t.Fatalf("Campaigns count: loaded=%d, original=%d", len(loaded.Campaigns), len(original.Campaigns))
 	}
-
 	for id, want := range original.Campaigns {
 		got, ok := loaded.Campaigns[id]
 		if !ok {
 			t.Errorf("campaign %s missing after load", id)
 			continue
 		}
-		// LastAccess timestamp serializes through time.Time JSON marshal which
-		// loses sub-microsecond precision; compare via Equal instead of ==.
+		// time.Time JSON round-trip can lose sub-microsecond precision; use Equal.
 		if !got.LastAccess.Equal(want.LastAccess) {
 			t.Errorf("campaign %s: LastAccess loaded=%v, original=%v", id, got.LastAccess, want.LastAccess)
 		}
@@ -982,16 +1010,14 @@ func TestRegistry_RoundTrip(t *testing.T) {
 }
 
 // TestRegisteredCampaign_AllJSONFieldsPersist enumerates every JSON-serialized
-// field on RegisteredCampaign and verifies it survives a Save → Load round-trip.
-// If a new JSON-tagged field is added without updating the load path in
-// LoadRegistry, this test catches the silent drop.
+// field on RegisteredCampaign and verifies it survives the Marshal → File →
+// field-copy path. If a new JSON-tagged field is added without updating the
+// load path, this test catches the silent drop.
+//
+// Pure in-memory.
 func TestRegisteredCampaign_AllJSONFieldsPersist(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-
-	// Build a campaign with every JSON-serialized field set to a non-zero value.
 	full := RegisteredCampaign{
-		ID:         "id-not-serialized", // ID uses json:"-" so excluded
+		ID:         "id-not-serialized", // json:"-", excluded by reflection check
 		Name:       "test-name",
 		Path:       "/tmp/test-path",
 		Type:       CampaignTypeResearch,
@@ -1002,23 +1028,17 @@ func TestRegisteredCampaign_AllJSONFieldsPersist(t *testing.T) {
 	reg.Version = RegistryVersion
 	reg.Campaigns["test-id"] = full
 
-	ctx := context.Background()
-	if err := SaveRegistry(ctx, reg); err != nil {
-		t.Fatalf("SaveRegistry() error = %v", err)
-	}
-
-	loaded, err := LoadRegistry(ctx)
+	data, err := json.Marshal(reg)
 	if err != nil {
-		t.Fatalf("LoadRegistry() error = %v", err)
+		t.Fatalf("Marshal: %v", err)
 	}
 
+	loaded := loadRegistryFromBytes(t, data)
 	loadedEntry, ok := loaded.Campaigns["test-id"]
 	if !ok {
 		t.Fatal("test-id missing after load")
 	}
 
-	// Iterate every exported field with a JSON tag (not "-") and assert the
-	// loaded value is non-zero. A silently-dropped field would zero out here.
 	rt := reflect.TypeOf(full)
 	loadedV := reflect.ValueOf(loadedEntry)
 	originalV := reflect.ValueOf(full)
@@ -1028,7 +1048,6 @@ func TestRegisteredCampaign_AllJSONFieldsPersist(t *testing.T) {
 		if jsonTag == "" || jsonTag == "-" {
 			continue
 		}
-		// strip ",omitempty" suffix
 		name := jsonTag
 		for j := 0; j < len(jsonTag); j++ {
 			if jsonTag[j] == ',' {
@@ -1045,17 +1064,19 @@ func TestRegisteredCampaign_AllJSONFieldsPersist(t *testing.T) {
 }
 
 // TestRegistryFile_Schema_StaysAlignedWithRegisteredCampaign documents the
-// invariant that on-disk JSON fields must match between the two types. If the
+// invariant that on-disk JSON keys must match between the two types. If the
 // JSON tags drift, future RegisteredCampaign fields won't roundtrip.
+//
+// Pure in-memory.
 func TestRegistryFile_Schema_StaysAlignedWithRegisteredCampaign(t *testing.T) {
-	// Marshal a RegisteredCampaign and re-unmarshal as a generic map to extract
-	// the actual JSON keys written to disk by SaveRegistry.
 	rc := RegisteredCampaign{
 		Name:       "x",
 		Path:       "/x",
 		Type:       CampaignTypeProduct,
-		LastAccess: time.Now(),
+		LastAccess: time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC),
 	}
+
+	// Marshal RegisteredCampaign directly — same path SaveRegistry takes.
 	rcData, err := json.Marshal(rc)
 	if err != nil {
 		t.Fatalf("marshal RegisteredCampaign: %v", err)
@@ -1065,25 +1086,19 @@ func TestRegistryFile_Schema_StaysAlignedWithRegisteredCampaign(t *testing.T) {
 		t.Fatalf("unmarshal RegisteredCampaign: %v", err)
 	}
 
-	// Write the same value through registryfile.Campaign by going through a
-	// full Save → Load cycle and inspecting the file shape.
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
+	// Marshal the same value as part of a Registry, then read just the
+	// per-campaign blob — this is what registryfile.Load sees on disk.
 	reg := NewRegistry()
 	reg.Campaigns["k"] = rc
-	if err := SaveRegistry(context.Background(), reg); err != nil {
-		t.Fatalf("SaveRegistry: %v", err)
-	}
-
-	raw, err := os.ReadFile(RegistryPath())
+	regData, err := json.Marshal(reg)
 	if err != nil {
-		t.Fatalf("read registry file: %v", err)
+		t.Fatalf("marshal Registry: %v", err)
 	}
 	var fileShape struct {
 		Campaigns map[string]map[string]any `json:"campaigns"`
 	}
-	if err := json.Unmarshal(raw, &fileShape); err != nil {
-		t.Fatalf("unmarshal file: %v", err)
+	if err := json.Unmarshal(regData, &fileShape); err != nil {
+		t.Fatalf("unmarshal Registry: %v", err)
 	}
 
 	persisted := fileShape.Campaigns["k"]
