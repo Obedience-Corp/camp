@@ -114,7 +114,7 @@ func runGo(cmd *cobra.Command, args []string) error {
 	if !result.IsShortcut && result.Query != "" {
 		if pinPath, ok := resolvePin(campaignRoot, result.Query); ok {
 			if len(command) > 0 {
-				execResult, err := nav.ExecInDirFromRoot(ctx, pinPath, campaignRoot, command)
+				execResult, err := nav.ExecInDir(ctx, pinPath, campaignRoot, command)
 				if err != nil {
 					return err
 				}
@@ -356,7 +356,7 @@ func handleCustomNavShortcut(ctx context.Context, sc config.ShortcutConfig, camp
 
 	// Command execution mode
 	if len(command) > 0 {
-		execResult, err := nav.ExecInDirFromRoot(ctx, jumpResult.Path, campaignRoot, command)
+		execResult, err := nav.ExecInDir(ctx, jumpResult.Path, campaignRoot, command)
 		if err != nil {
 			return err
 		}
@@ -387,7 +387,7 @@ func handleRelativePathNavigation(ctx context.Context, campaignRoot, relativePat
 	}
 
 	if len(command) > 0 {
-		execResult, err := nav.ExecInDirFromRoot(ctx, targetPath, campaignRoot, command)
+		execResult, err := nav.ExecInDir(ctx, targetPath, campaignRoot, command)
 		if err != nil {
 			return err
 		}
