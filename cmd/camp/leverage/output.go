@@ -16,6 +16,7 @@ import (
 type recentLeverage struct {
 	week7, month30 float64
 	has7, has30    bool
+	needsBackfill  bool
 }
 
 type leverageOutputOpts struct {
@@ -120,6 +121,9 @@ func leverageOutputTable(cmd *cobra.Command, agg *intleverage.LeverageScore, sco
 				ui.Value(fmtRecentLeverage(recent.month30)+"x", ui.SuccessColor))
 		}
 		fmt.Fprintf(out, "  %s\n", ui.Dim("(new estimated effort added in period vs actual effort spent)"))
+		fmt.Fprintln(out)
+	} else if recent.needsBackfill {
+		fmt.Fprintf(out, "  %s\n", ui.Dim("Recent leverage history unavailable yet. This run saved current snapshots; run `camp leverage backfill` once to seed Last 7/30 days."))
 		fmt.Fprintln(out)
 	}
 
