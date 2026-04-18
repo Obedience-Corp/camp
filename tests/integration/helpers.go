@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
@@ -75,8 +76,16 @@ func NewSharedContainer() (*TestContainer, error) {
 	// serve stale or corrupted pages after heavy rm -rf / sync cycles, causing
 	// non-deterministic SIGSEGV when the kernel page-faults the binary. Copying
 	// the binary into the container's own writable layer avoids this entirely.
+	// Pin to a specific digest rather than a floating tag. alpine:latest
+	// resolves to a different layer on every cache miss, which means the git
+	// version inside the container can silently change between CI runs. That
+	// matters for worktree and submodule tests where git semantics differ
+	// across minor versions. When bumping, update the digest in one place here
+	// and verify the integration suite still passes.
+	const alpineImage = "alpine:3.21@sha256:f27cad9117495d32d067133afff942cb2dc745dfe9163e949f6bfe8a6a245339"
+
 	req := testcontainers.ContainerRequest{
-		Image:      "alpine:latest",
+		Image:      alpineImage,
 		Cmd:        []string{"sleep", "3600"}, // Keep container running
 		WaitingFor: wait.ForExec([]string{"true"}).WithStartupTimeout(30 * time.Second),
 		AutoRemove: true,
@@ -494,4 +503,31 @@ func (tc *TestContainer) ExecCommand(args ...string) (string, int, error) {
 
 	output := demuxDockerOutput(rawOutput)
 	return string(output), exitCode, nil
+}
+
+// Shell runs a shell script inside the container via `sh -lc` and fails the
+// test if the command errors or exits non-zero. Returns combined stdout+stderr.
+// Intended for setup-heavy test fixtures where the natural authoring form is a
+// multi-line shell block.
+func (tc *TestContainer) Shell(t *testing.T, script string) string {
+	t.Helper()
+
+	output, exitCode, err := tc.ExecCommand("sh", "-lc", script)
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode, "shell command failed:\n%s", output)
+	return output
+}
+
+// GitOutput runs `git -C <dir> <args...>` inside the container and returns
+// trimmed stdout+stderr. Fails the test if the command errors or exits
+// non-zero. Use this for assertions about git state (branch names, worktree
+// listings, rev-parse output) where the caller wants the exact string.
+func (tc *TestContainer) GitOutput(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+
+	cmd := append([]string{"git", "-C", dir}, args...)
+	output, exitCode, err := tc.ExecCommand(cmd...)
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode, "git %v failed:\n%s", args, output)
+	return strings.TrimSpace(output)
 }
