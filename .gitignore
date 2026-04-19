@@ -37,3 +37,4 @@ __debug_bin*
 .envrc
 CLAUDE.md
 .claude/
+dist/
