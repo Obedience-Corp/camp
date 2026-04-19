@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -244,6 +245,14 @@ type scoreParams struct {
 	FallbackElapsed float64
 }
 
+type currentSnapshotInput struct {
+	project intleverage.ResolvedProject
+	result  *intleverage.SCCResult
+	score   *intleverage.LeverageScore
+}
+
+type headCommitResolver func(context.Context, string) (string, time.Time, error)
+
 func computeProjectScore(ctx context.Context, proj intleverage.ResolvedProject, result *intleverage.SCCResult, params scoreParams) *intleverage.LeverageScore {
 	var projActualPM float64
 	var projPeople int
@@ -308,6 +317,45 @@ func computeProjectScore(ctx context.Context, proj intleverage.ResolvedProject, 
 	}
 
 	return score
+}
+
+func persistCurrentSnapshots(ctx context.Context, store intleverage.SnapshotStorer, inputs []currentSnapshotInput, sampledAt time.Time, resolveHead headCommitResolver) error {
+	if resolveHead == nil {
+		resolveHead = getHeadCommit
+	}
+
+	// TODO: Add snapshot retention trimming. Daily automatic snapshots solve
+	// recent-history freshness but will grow unbounded without an age-based cap.
+	type commitMeta struct {
+		hash string
+		date time.Time
+	}
+
+	byGitDir := make(map[string]commitMeta)
+
+	for _, input := range inputs {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		meta, ok := byGitDir[input.project.GitDir]
+		if !ok {
+			hash, date, err := resolveHead(ctx, input.project.GitDir)
+			if err != nil {
+				return camperrors.Wrapf(err, "reading HEAD commit for %s", input.project.Name)
+			}
+			meta = commitMeta{hash: hash, date: date}
+			byGitDir[input.project.GitDir] = meta
+		}
+
+		scc := intleverage.SCCResultToSnapshotSCC(input.result)
+		snapshot := intleverage.NewSnapshot(input.project.Name, meta.hash, meta.date, sampledAt, scc, input.score, input.project.Authors)
+		if err := store.Save(ctx, snapshot); err != nil {
+			return camperrors.Wrapf(err, "saving current snapshot for %s", input.project.Name)
+		}
+	}
+
+	return nil
 }
 
 func buildScoreRows(scores []*intleverage.LeverageScore) [][]string {

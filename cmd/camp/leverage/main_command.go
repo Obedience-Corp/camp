@@ -81,6 +81,7 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 	elapsed := intleverage.ElapsedMonths(cfg.ProjectStart, now)
 
 	var scores []*intleverage.LeverageScore
+	var snapshotInputs []currentSnapshotInput
 	for _, proj := range resolved {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -102,6 +103,11 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 			FallbackElapsed: elapsed,
 		})
 		scores = append(scores, score)
+		snapshotInputs = append(snapshotInputs, currentSnapshotInput{
+			project: proj,
+			result:  result,
+			score:   score,
+		})
 	}
 
 	if projectFilter != "" && len(scores) == 0 {
@@ -132,6 +138,11 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 	}
 
 	store := intleverage.NewFileSnapshotStore(intleverage.DefaultSnapshotDir(setup.Root))
+	if authorFilter == "" && peopleOverride == 0 {
+		if err := persistCurrentSnapshots(ctx, store, snapshotInputs, now, nil); err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to save leverage snapshots: %v\n", err)
+		}
+	}
 	week7, has7 := intleverage.RecentLeverage(ctx, store, scores, effectivePeople, now.AddDate(0, 0, -7))
 	month30, has30 := intleverage.RecentLeverage(ctx, store, scores, effectivePeople, now.AddDate(0, 0, -30))
 
@@ -139,7 +150,13 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 		return leverageOutputJSON(cmd, agg, scores)
 	}
 
-	recent := recentLeverage{week7: week7, has7: has7, month30: month30, has30: has30}
+	recent := recentLeverage{
+		week7:         week7,
+		has7:          has7,
+		month30:       month30,
+		has30:         has30,
+		needsBackfill: authorFilter == "" && peopleOverride == 0 && len(scores) > 0 && !has7 && !has30,
+	}
 	opts := leverageOutputOpts{
 		authorFilter:   authorFilter,
 		authorExcluded: authorExcluded,

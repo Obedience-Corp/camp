@@ -104,6 +104,14 @@ func TestFileSnapshotStore_SaveAndLoad(t *testing.T) {
 	if loaded.Leverage.FullLeverage != snap.Leverage.FullLeverage {
 		t.Errorf("Leverage.FullLeverage = %f, want %f", loaded.Leverage.FullLeverage, snap.Leverage.FullLeverage)
 	}
+
+	matches, err := filepath.Glob(filepath.Join(baseDir, "camp", "*.tmp-*"))
+	if err != nil {
+		t.Fatalf("Glob: %v", err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("unexpected temp files left behind: %v", matches)
+	}
 }
 
 func TestFileSnapshotStore_SaveOverwrite(t *testing.T) {
