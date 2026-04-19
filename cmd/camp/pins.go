@@ -16,10 +16,10 @@ import (
 )
 
 var pinsCmd = &cobra.Command{
-	Use:     "pins",
-	Short:   "List all pinned directories",
-	Long:    `List all saved pins. Use 'camp pin' to add and 'camp unpin' to remove.`,
-	RunE:    runPinsList,
+	Use:   "pins",
+	Short: "List all pinned directories",
+	Long:  `List all saved pins. Use 'camp pin' to add and 'camp unpin' to remove.`,
+	RunE:  runPinsList,
 }
 
 var pinCmd = &cobra.Command{

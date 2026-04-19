@@ -77,7 +77,7 @@ type CrawlSummary struct {
 	Kept         int
 	Skipped      int
 	StatusCounts map[string]int
-	MovedItems map[string][]string // status → campaign-relative destination paths
+	MovedItems   map[string][]string // status → campaign-relative destination paths
 }
 
 // RecordMove records an item being moved to a status directory.

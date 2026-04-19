@@ -16,12 +16,12 @@ import (
 // programmatic edits where only some fields should change.
 type UpdateOptions struct {
 	Title   *string
-	Body    *string   // Replaces the entire body/content section
-	Append  *string   // Appended to existing body (mutually exclusive with Body)
-	Type    *Type     // Set the intent type
-	Status  *Status   // Set the intent status
-	Concept *string   // Set the concept field
-	Author  *string   // Set the author attribution
+	Body    *string // Replaces the entire body/content section
+	Append  *string // Appended to existing body (mutually exclusive with Body)
+	Type    *Type   // Set the intent type
+	Status  *Status // Set the intent status
+	Concept *string // Set the concept field
+	Author  *string // Set the author attribution
 
 	Priority *Priority
 	Horizon  *Horizon

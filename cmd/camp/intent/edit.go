@@ -351,4 +351,3 @@ func validateEditBodyFlags(cmd *cobra.Command) error {
 	}
 	return nil
 }
-
