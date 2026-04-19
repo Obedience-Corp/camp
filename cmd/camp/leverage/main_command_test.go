@@ -357,7 +357,10 @@ func TestPersistCurrentSnapshots_SavesEachProjectAndReusesHeadLookup(t *testing.
 		t.Fatalf("saved %d snapshots, want 2", len(store.saved))
 	}
 
-	snap := store.saved["obey-platform-monorepo:"+commitDate.Format("2006-01-02")]
+	snap, err := store.Load(context.Background(), "obey-platform-monorepo", commitDate.Format("2006-01-02"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
 	if snap == nil {
 		t.Fatal("expected root project snapshot to be saved")
 	}

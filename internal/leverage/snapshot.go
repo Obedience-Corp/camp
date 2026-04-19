@@ -11,6 +11,7 @@ import (
 	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/fsutil"
 )
 
 // AuthorContribution represents a single author's LOC ownership in a project,
@@ -150,7 +151,7 @@ func (s *FileSnapshotStore) Save(ctx context.Context, snapshot *Snapshot) error 
 	}
 
 	path := filepath.Join(dir, snapshot.Date+".json")
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := fsutil.WriteFileAtomically(path, data, 0o644); err != nil {
 		return camperrors.Wrap(err, "writing snapshot")
 	}
 

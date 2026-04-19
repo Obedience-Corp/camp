@@ -324,6 +324,8 @@ func persistCurrentSnapshots(ctx context.Context, store intleverage.SnapshotStor
 		resolveHead = getHeadCommit
 	}
 
+	// TODO: Add snapshot retention trimming. Daily automatic snapshots solve
+	// recent-history freshness but will grow unbounded without an age-based cap.
 	type commitMeta struct {
 		hash string
 		date time.Time

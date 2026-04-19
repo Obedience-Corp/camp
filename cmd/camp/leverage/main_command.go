@@ -138,8 +138,6 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 	}
 
 	store := intleverage.NewFileSnapshotStore(intleverage.DefaultSnapshotDir(setup.Root))
-	existingSnapshots, listErr := store.ListProjects(ctx)
-	hadSnapshots := listErr == nil && len(existingSnapshots) > 0
 	if authorFilter == "" && peopleOverride == 0 {
 		if err := persistCurrentSnapshots(ctx, store, snapshotInputs, now, nil); err != nil {
 			fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to save leverage snapshots: %v\n", err)
@@ -157,7 +155,7 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 		has7:          has7,
 		month30:       month30,
 		has30:         has30,
-		needsBackfill: authorFilter == "" && peopleOverride == 0 && len(scores) > 0 && !hadSnapshots && !has7 && !has30,
+		needsBackfill: authorFilter == "" && peopleOverride == 0 && len(scores) > 0 && !has7 && !has30,
 	}
 	opts := leverageOutputOpts{
 		authorFilter:   authorFilter,
