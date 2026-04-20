@@ -11,7 +11,7 @@ Campaign workspace manager — group every project, tool, and piece of context y
 ## Features
 
 - **Navigation** - Category shortcuts, fuzzy finding, and pins (`go`, `pin`, `shortcuts`)
-- **Project Management** - Git submodules, worktrees, and project scaffolding (`project add/list/remove/new/worktree`)
+- **Project Management** - Git submodules, linked local workspaces, worktrees, and scaffolding (`project add/link/list/new/remote/remove/run/unlink/worktree`)
 - **Planning** - Intents, status flows, dungeon for deprioritized work (`intent`, `flow`, `dungeon`, `gather`)
 - **Productivity** - Leverage scoring to identify high-impact work (`leverage`)
 - **Git Integration** - Campaign-level git operations (`commit`, `log`, `push`, `status`)
@@ -150,24 +150,72 @@ camp clone <url>           # Clone a campaign with full submodule setup
 
 ### Project Management
 
+A **project** in camp is either:
+
+- a **git submodule** tracked under `projects/`, shared through the campaign repository, or
+- a **linked local workspace** — a symlink under `projects/` pointing to an
+  external directory on the same machine. Linked projects are machine-local
+  (the symlink and its `.camp` marker are not versioned by the campaign).
+
+Both kinds behave the same for navigation, tab completion, and most project
+subcommands. Use submodules when the project should travel with the campaign;
+use links to pull an existing local repo into your campaign without moving or
+copying it.
+
+#### Git Submodule Projects
+
 ```bash
-camp project add <url>     # Add git submodule
-camp project list          # List all projects
-camp project remove <name> # Remove a project
-camp project new <name>    # Create a new project
-camp project worktree      # Manage git worktrees
-camp project commit        # Commit within a project
+camp project add <url>                  # Clone a remote repo as a submodule
+camp project add --local <path>         # Add an existing local repo as a submodule
+camp project new <name>                 # Scaffold a new project submodule
+camp project list                       # List all projects (submodules + links)
+camp project remove <name>              # Remove a project (submodule or link)
 ```
 
-All project commands support `--project / -p` with tab completion to target a project by name:
+`camp project add` also accepts `--campaign <name-or-id>` to target a
+registered campaign other than the current one, and `--name` to override the
+default project name.
+
+#### Linked Local Workspaces
+
+`camp project link` adds an existing directory on your machine to the campaign
+as a symlink under `projects/<name>`, with a `.camp` marker written into the
+linked directory recording the campaign ID.
 
 ```bash
-camp project commit --project camp -m "Fix bug"   # Explicit project
-camp project commit -m "Fix bug"                   # Auto-detect from cwd
-camp project worktree add feature -p camp          # Worktree for specific project
+camp project link                       # Link the current directory
+camp project link ~/code/my-project     # Link another directory
+camp project link ~/code/my-project --name backend   # Override the project name
+
+# Outside a campaign, pick a registered target campaign:
+camp project link --campaign platform
+camp project link ~/code/my-project --campaign        # Interactive picker
+
+camp project unlink                     # Remove the current linked project
+camp project unlink my-project          # Remove by name
+camp project unlink my-project --dry-run  # Preview without changing anything
 ```
 
-Monorepo subprojects are addressable with `@` syntax (e.g., `obey-platform-monorepo@obey`).
+`unlink` removes the symlink and cleans up the `.camp` marker; it never
+touches the contents of the external directory.
+
+#### Working Inside Projects
+
+```bash
+camp project commit -m "Fix bug"        # Commit inside the current project
+camp project commit --project camp -m "Fix bug"   # Explicit project target
+camp project run -p camp just test      # Run a command inside a project
+camp project prune --project camp       # Prune merged local branches
+camp project remote                     # Manage per-project remotes
+camp project worktree add feature -p camp         # Create a worktree
+```
+
+All project commands accept `--project / -p <name>` with tab completion to
+target a project by name; when omitted, camp auto-detects from your current
+working directory.
+
+Monorepo subprojects are addressable with `@` syntax (e.g.,
+`obey-platform-monorepo@obey`).
 
 ### Planning
 
@@ -184,6 +232,10 @@ camp flow                  # Manage status workflows for organizing work
 
 # Dungeon - archive deprioritized work
 camp dungeon               # Move items to/from the dungeon
+
+# Work items - a unified dashboard across intents, designs, explore, and festivals
+camp workitem              # Interactive TUI dashboard of active work
+camp workitem --json       # Machine-readable output
 ```
 
 ### Productivity
@@ -209,6 +261,8 @@ camp pull all              # Pull all submodules
 camp status                # Show git status of the campaign
 camp status all            # Dashboard of all submodules (branch, dirty/clean, push status, unmerged branches)
 camp status all --view     # Interactive TUI viewer with per-repo detail
+camp fresh                 # Post-merge branch cycling: checkout default, pull, prune, optional new branch
+camp fresh all             # Same cycle across every project in the campaign
 ```
 
 ### Campaign Operations
@@ -216,9 +270,13 @@ camp status all --view     # Interactive TUI viewer with per-repo detail
 ```bash
 camp doctor                # Diagnose and fix campaign health issues
 camp sync                  # Safely synchronize submodules
+camp refs-sync             # Update campaign's recorded submodule pointers to each submodule's HEAD
 camp copy                  # Copy a file or directory within the campaign
 camp move                  # Move a file or directory within the campaign
 camp run                   # Execute command from campaign root, or just recipe in a project
+camp root                  # Print the current campaign root
+camp id                    # Print the current campaign ID
+camp concepts              # List configured concepts (picker/completion concepts)
 ```
 
 ### Global Commands
@@ -229,12 +287,24 @@ camp switch                # Switch to a different campaign
 camp transfer              # Copy files between campaigns
 camp register              # Register campaign in global registry
 camp unregister            # Remove campaign from registry
+camp registry              # Maintain ~/.obey/campaign/registry.json (prune, sync, check)
+```
+
+### Skills
+
+Camp centralizes skill bundles in `.campaign/skills/` and projects them into
+tool ecosystems (Claude, agents, etc.) as per-bundle symlinks so a single
+source of truth stays in the campaign while provider-native skills
+directories keep working.
+
+```bash
+camp skills                # Manage campaign skill bundle projection (link/unlink/status)
 ```
 
 ### System
 
 ```bash
-camp settings              # Manage camp configuration
+camp settings              # Manage camp configuration (interactive)
 camp date                  # Append date suffix to file or directory name
 camp version               # Show version information
 ```
@@ -282,7 +352,7 @@ cgo p <TAB>              # Completes project names
 
 # 3. Tab completion for camp commands
 camp <TAB>               # Completes: init go project list register...
-camp project <TAB>       # Completes: add list remove
+camp project <TAB>       # Completes: add commit link list new prune remote remove run unlink worktree
 ```
 
 #### Troubleshooting
@@ -311,12 +381,18 @@ my-campaign/
 │   ├── campaign.yaml
 │   ├── watchers.yaml
 │   ├── intents/         # System-managed intents (camp intent, cgo i)
-│   ├── quests/          # Quest execution contexts
+│   │   ├── inbox/
+│   │   ├── active/
+│   │   ├── ready/
+│   │   └── dungeon/
 │   ├── settings/        # Campaign-local settings and defaults
-│   └── skills/          # Campaign skill bundles
-├── projects/            # Git submodules
-│   ├── api-service/
-│   ├── web-app/
+│   ├── skills/          # Campaign skill bundles (camp skills)
+│   ├── leverage/        # Leverage snapshots and cache (camp leverage)
+│   └── cache/           # Navigation index cache
+├── projects/            # Git submodules and linked workspaces
+│   ├── api-service/     # Git submodule
+│   ├── web-app/         # Git submodule
+│   ├── my-local-repo -> /Users/you/code/my-local-repo   # Linked workspace (symlink)
 │   └── worktrees/       # Git worktrees (cgo wt)
 │       └── api-service/
 │           ├── feature-x/
