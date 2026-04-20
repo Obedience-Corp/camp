@@ -503,3 +503,167 @@ func TestMergedBranches_CancelledContext(t *testing.T) {
 		t.Fatalf("expected nil branches for cancelled context, got %v", branches)
 	}
 }
+
+// initBranchTestRepoWithRemote sets up a working repo tracking a bare remote,
+// so we can simulate the gone-upstream scenario that occurs when a PR is
+// squash-merged and the remote source branch is deleted.
+func initBranchTestRepoWithRemote(t *testing.T, defaultBranch string) (workDir, remoteDir string) {
+	t.Helper()
+
+	remoteDir = t.TempDir()
+	env := append(os.Environ(),
+		"GIT_AUTHOR_NAME=test",
+		"GIT_AUTHOR_EMAIL=test@test.com",
+		"GIT_COMMITTER_NAME=test",
+		"GIT_COMMITTER_EMAIL=test@test.com",
+	)
+	mustRun := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		cmd.Env = env
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v in %s: %v\n%s", args, dir, err, out)
+		}
+	}
+	mustRun(remoteDir, "init", "--bare", "-b", defaultBranch)
+
+	workDir = initBranchTestRepo(t, defaultBranch)
+	mustRun(workDir, "remote", "add", "origin", remoteDir)
+	mustRun(workDir, "push", "-u", "origin", defaultBranch)
+	return workDir, remoteDir
+}
+
+func TestGoneBranches_DetectsDeletedUpstream(t *testing.T) {
+	workDir, remoteDir := initBranchTestRepoWithRemote(t, "main")
+	run := gitRunner(t, workDir)
+
+	// Branch with an upstream that will go away.
+	run("checkout", "-b", "squash-merged-feature")
+	run("commit", "--allow-empty", "-m", "feature work")
+	run("push", "-u", "origin", "squash-merged-feature")
+
+	// Another branch that keeps its upstream — must NOT be reported as gone.
+	run("checkout", "-b", "still-open-feature")
+	run("commit", "--allow-empty", "-m", "open work")
+	run("push", "-u", "origin", "still-open-feature")
+
+	// Simulate a squash-merge remote cleanup: delete the first branch
+	// directly on the bare remote, then prune-fetch to refresh tracking.
+	remoteCmd := exec.Command("git", "-C", remoteDir, "branch", "-D", "squash-merged-feature")
+	if out, err := remoteCmd.CombinedOutput(); err != nil {
+		t.Fatalf("delete remote branch: %v\n%s", err, out)
+	}
+	run("checkout", "main")
+	run("fetch", "--prune", "origin")
+
+	ctx := context.Background()
+	branches, err := GoneBranches(ctx, workDir)
+	if err != nil {
+		t.Fatalf("GoneBranches: %v", err)
+	}
+
+	sort.Strings(branches)
+	want := []string{"squash-merged-feature"}
+	if len(branches) != len(want) || branches[0] != want[0] {
+		t.Fatalf("GoneBranches() = %v, want %v", branches, want)
+	}
+}
+
+func TestGoneBranches_NoGoneUpstreams(t *testing.T) {
+	workDir, _ := initBranchTestRepoWithRemote(t, "main")
+	run := gitRunner(t, workDir)
+
+	run("checkout", "-b", "feature")
+	run("commit", "--allow-empty", "-m", "feature")
+	run("push", "-u", "origin", "feature")
+	run("checkout", "main")
+
+	ctx := context.Background()
+	branches, err := GoneBranches(ctx, workDir)
+	if err != nil {
+		t.Fatalf("GoneBranches: %v", err)
+	}
+	if len(branches) != 0 {
+		t.Fatalf("expected no gone branches, got %v", branches)
+	}
+}
+
+func TestGoneBranches_ExcludesCurrentBranch(t *testing.T) {
+	workDir, remoteDir := initBranchTestRepoWithRemote(t, "main")
+	run := gitRunner(t, workDir)
+
+	// Check out a tracking branch and make its upstream go away.
+	run("checkout", "-b", "orphan")
+	run("commit", "--allow-empty", "-m", "orphan")
+	run("push", "-u", "origin", "orphan")
+
+	remoteCmd := exec.Command("git", "-C", remoteDir, "branch", "-D", "orphan")
+	if out, err := remoteCmd.CombinedOutput(); err != nil {
+		t.Fatalf("delete remote branch: %v\n%s", err, out)
+	}
+	run("fetch", "--prune", "origin")
+	// Stay on 'orphan' — it should be excluded from the result.
+
+	ctx := context.Background()
+	branches, err := GoneBranches(ctx, workDir)
+	if err != nil {
+		t.Fatalf("GoneBranches: %v", err)
+	}
+	for _, b := range branches {
+		if b == "orphan" {
+			t.Fatalf("GoneBranches returned the currently checked-out branch %q", b)
+		}
+	}
+}
+
+func TestGoneBranches_CancelledContext(t *testing.T) {
+	dir := initBranchTestRepo(t, "main")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	branches, err := GoneBranches(ctx, dir)
+	if err == nil {
+		t.Fatal("expected error for cancelled context, got nil")
+	}
+	if branches != nil {
+		t.Fatalf("expected nil branches for cancelled context, got %v", branches)
+	}
+}
+
+func TestDeleteBranchForce_RemovesSquashMergedBranch(t *testing.T) {
+	dir := initBranchTestRepo(t, "main")
+	run := gitRunner(t, dir)
+
+	// Create a branch with a unique commit then squash-merge it —
+	// i.e. apply its diff via a fresh commit on main without a merge
+	// commit. The branch commit is NOT an ancestor of main, so -d would refuse.
+	run("checkout", "-b", "feat-squash")
+	if err := os.WriteFile(filepath.Join(dir, "feat.txt"), []byte("feat\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", ".")
+	run("commit", "-m", "feat work")
+	run("checkout", "main")
+	// Apply the same content as a brand-new commit — simulates squash.
+	if err := os.WriteFile(filepath.Join(dir, "feat.txt"), []byte("feat\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", ".")
+	run("commit", "-m", "squash of feat work")
+
+	ctx := context.Background()
+	// -d would refuse here; -D must succeed.
+	if err := DeleteBranchForce(ctx, dir, "feat-squash"); err != nil {
+		t.Fatalf("DeleteBranchForce: %v", err)
+	}
+
+	remaining, err := exec.Command("git", "-C", dir, "branch", "--list", "feat-squash").Output()
+	if err != nil {
+		t.Fatalf("list branches: %v", err)
+	}
+	if strings.TrimSpace(string(remaining)) != "" {
+		t.Fatalf("feat-squash branch still present: %q", string(remaining))
+	}
+}

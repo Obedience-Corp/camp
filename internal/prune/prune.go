@@ -79,20 +79,64 @@ func Execute(ctx context.Context, name, path string, opts Options) ProjectResult
 		return pr
 	}
 
+	// Gone-upstream branches catch squash-merged PRs: git's ancestry-based
+	// --merged check misses them because squash creates a brand-new commit
+	// on base that shares no history with the branch. When the remote
+	// source branch is deleted (GitHub's "Automatically delete head
+	// branches" default), fetch --prune marks the upstream as gone, which
+	// is the same "done" signal across any forge that deletes merged
+	// branches.
+	gone, err := git.GoneBranches(ctx, path)
+	if err != nil {
+		pr.Results = append(pr.Results, Result{
+			Branch: "(gone upstream)",
+			Status: StatusError,
+			Detail: fmt.Sprintf("list gone branches: %s", err),
+		})
+		gone = nil
+	}
+
+	candidates, forced := unionBranches(merged, gone)
+
 	deleteDetachedWorktrees(ctx, path, baseRef, opts, &pr)
-	if len(merged) == 0 && !opts.Remote {
+	if len(candidates) == 0 && !opts.Remote {
 		return pr
 	}
 
-	deleteLocalBranches(ctx, path, merged, opts, &pr)
+	deleteLocalBranches(ctx, path, candidates, forced, opts, &pr)
 
-	// Remote branch deletion uses the original merged list intentionally —
-	// remote branches should be cleaned up regardless of local deletion outcome.
+	// Remote branch deletion uses only the ancestry-merged list — a
+	// gone-upstream branch has already been deleted upstream, so there is
+	// nothing to delete on origin.
 	deleteRemoteBranches(ctx, path, merged, opts, &pr)
 
 	pruneTrackingRefs(ctx, path, opts, &pr)
 
 	return pr
+}
+
+// unionBranches merges a branches list from ancestry (git --merged) with one
+// from gone-upstream tracking, dedup'd, returning the combined list plus a
+// set of branch names that must be force-deleted (i.e. came only from the
+// gone path, where git's -d safe-delete would refuse because the branch is
+// squash-merged rather than ancestry-merged).
+func unionBranches(merged, gone []string) ([]string, map[string]struct{}) {
+	mergedSet := make(map[string]struct{}, len(merged))
+	for _, b := range merged {
+		mergedSet[b] = struct{}{}
+	}
+	forced := make(map[string]struct{})
+
+	out := make([]string, 0, len(merged)+len(gone))
+	out = append(out, merged...)
+	for _, b := range gone {
+		if _, already := mergedSet[b]; already {
+			continue
+		}
+		out = append(out, b)
+		forced[b] = struct{}{}
+	}
+	return out, forced
 }
 
 func deleteDetachedWorktrees(ctx context.Context, path, baseRef string, opts Options, pr *ProjectResult) {
@@ -237,9 +281,12 @@ func detectWorktreesForBranches(ctx context.Context, path string, merged []strin
 	return result
 }
 
-// deleteLocalBranches handles confirmation and deletion of locally merged branches.
-// If a branch has an active worktree, the worktree is removed first.
-func deleteLocalBranches(ctx context.Context, path string, merged []string, opts Options, pr *ProjectResult) {
+// deleteLocalBranches handles confirmation and deletion of locally merged
+// branches. If a branch has an active worktree, the worktree is removed
+// first. Entries listed in forced (branches whose upstream is gone but
+// which git's ancestry check does not see as merged) are deleted with -D
+// instead of -d.
+func deleteLocalBranches(ctx context.Context, path string, merged []string, forced map[string]struct{}, opts Options, pr *ProjectResult) {
 	if len(merged) == 0 {
 		return
 	}
@@ -275,13 +322,17 @@ func deleteLocalBranches(ctx context.Context, path string, merged []string, opts
 	}
 
 	if !opts.DryRun && !opts.Force {
-		fmt.Printf("\n%s Will delete %d merged branch(es) in %s:\n",
+		fmt.Printf("\n%s Will delete %d merged or gone-upstream branch(es) in %s:\n",
 			ui.WarningIcon(), len(branchesToDelete), ui.Value(pr.Name))
 		for _, b := range branchesToDelete {
+			suffix := ""
+			if _, isForced := forced[b]; isForced {
+				suffix = " (gone upstream — force delete)"
+			}
 			if _, hasWT := worktreesToRemove[b]; hasWT {
-				fmt.Printf("  %s %s (has worktree — will be removed)\n", ui.Dim("-"), b)
+				fmt.Printf("  %s %s%s (has worktree — will be removed)\n", ui.Dim("-"), b, suffix)
 			} else {
-				fmt.Printf("  %s %s\n", ui.Dim("-"), b)
+				fmt.Printf("  %s %s%s\n", ui.Dim("-"), b, suffix)
 			}
 		}
 		fmt.Print("\nProceed? [y/N] ")
@@ -331,24 +382,38 @@ func deleteLocalBranches(ctx context.Context, path string, merged []string, opts
 	}
 
 	for _, branch := range branchesToDelete {
+		detail := ""
+		if _, isForced := forced[branch]; isForced {
+			detail = "gone upstream"
+		}
+
 		if opts.DryRun {
 			pr.Results = append(pr.Results, Result{
 				Branch: branch,
 				Status: StatusWouldDelete,
+				Detail: detail,
 			})
 			continue
 		}
 
-		if err := git.DeleteBranch(ctx, path, branch); err != nil {
+		var deleteErr error
+		if _, isForced := forced[branch]; isForced {
+			deleteErr = git.DeleteBranchForce(ctx, path, branch)
+		} else {
+			deleteErr = git.DeleteBranch(ctx, path, branch)
+		}
+
+		if deleteErr != nil {
 			pr.Results = append(pr.Results, Result{
 				Branch: branch,
 				Status: StatusError,
-				Detail: err.Error(),
+				Detail: deleteErr.Error(),
 			})
 		} else {
 			pr.Results = append(pr.Results, Result{
 				Branch: branch,
 				Status: StatusDeleted,
+				Detail: detail,
 			})
 		}
 	}

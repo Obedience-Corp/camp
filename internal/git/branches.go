@@ -214,6 +214,74 @@ func DeleteBranch(ctx context.Context, repoPath, branch string) error {
 	return nil
 }
 
+// DeleteBranchForce deletes a local branch using git branch -D (force delete).
+// Required for squash-merged branches, which git's ancestry check does not
+// recognize as merged. Callers must have independent evidence the branch is
+// safe to remove (e.g. its upstream is gone after a squash-merge).
+func DeleteBranchForce(ctx context.Context, repoPath, branch string) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "-C", repoPath,
+		"branch", "-D", branch)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return camperrors.Wrapf(err, "force-delete branch %s: %s", branch, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
+// GoneBranches returns local branches whose upstream tracking ref is gone
+// (i.e. the remote branch was deleted since the last fetch --prune).
+//
+// This is the signal that a squash-merged PR's source branch has been
+// removed on the remote. Unlike MergedBranchesFromRef, which uses git
+// ancestry and so misses squash-merges, this check depends only on tracking
+// metadata — callers typically want to run git fetch --prune first so the
+// metadata is current.
+//
+// The current branch is excluded from the result; deleting the checked-out
+// branch is unsafe without an explicit checkout elsewhere.
+func GoneBranches(ctx context.Context, repoPath string) ([]string, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	current := CurrentBranch(ctx, repoPath)
+
+	cmd := exec.CommandContext(ctx, "git", "-C", repoPath,
+		"for-each-ref", "--format=%(refname:short) %(upstream:track)", "refs/heads/")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, camperrors.Wrapf(err, "list branches with tracking info")
+	}
+
+	trimmed := strings.TrimSpace(string(output))
+	if trimmed == "" {
+		return nil, nil
+	}
+
+	var branches []string
+	for _, line := range strings.Split(trimmed, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		branch := fields[0]
+		track := strings.Join(fields[1:], " ")
+		if !strings.Contains(track, "gone") {
+			continue
+		}
+		if branch == current {
+			continue
+		}
+		branches = append(branches, branch)
+	}
+
+	return branches, nil
+}
+
 // PruneRemote removes stale remote tracking references for origin.
 // Returns the number of pruned refs.
 func PruneRemote(ctx context.Context, repoPath string) (int, error) {
