@@ -150,25 +150,17 @@ camp clone <url>           # Clone a campaign with full submodule setup
 
 ### Project Management
 
-Two commands cover how a project joins a campaign:
+Projects can be added inside the campaign as a git submodule, or linked to
+the campaign if they're already on your machine.
 
 ```bash
-camp project add <url>      # Add a git repository as a submodule under projects/
-camp project link <path>    # Link an existing local directory under projects/
+camp project add <url>      # Add as a git submodule
+camp project link <path>    # Link an existing local directory
 ```
 
-**Use `add`** when the project should travel with the campaign. It's a real
-git submodule, so cloning the campaign elsewhere clones the project with it.
-
-**Use `link`** when the project lives locally but shouldn't (or doesn't yet)
-ship with the campaign. `link` creates a symlink under `projects/<name>` and
-writes a `.camp` marker into the target directory. The symlink is
-machine-local — not versioned by the campaign — which makes it the right
-choice for active local repos you want in your workspace without committing
-them.
-
-Both commands accept `--campaign <name-or-id>` to target a different
-registered campaign, and `--name` to override the default project name.
+Use submodules via `camp project add` (or `camp p add`) if you plan to use
+your campaign on multiple devices — linked projects must exist in the same
+location on each device in order to work.
 
 For the rest of the project surface (`list`, `remove`, `unlink`, `commit`,
 `run`, `worktree`, `prune`, `remote`, `new`), see
