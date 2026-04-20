@@ -24,13 +24,16 @@ camp project add --local <path> [--name <n>] [--campaign <name-or-id>]
 camp project link <path> [--name <n>] [--campaign <name-or-id>]
 camp project link                                        # link current directory
 
-# Remove
-camp project unlink [<name>]   # remove a link; external directory untouched
-camp project remove <name>     # remove a submodule (modifies campaign history)
+# Remove (works for both kinds)
+camp project remove <name>            # unlinks a link; deinits a submodule without touching disk
+camp project remove <name> --delete   # destructive — errors on links; deletes disk files for submodules
+camp project unlink [<name>]          # explicit unlink alias (links only)
 ```
 
-Linked projects are not versioned with the campaign and must exist at the
-same filesystem path on every device that opens the campaign.
+Linking records the `projects/<name>` symlink entry in campaign git
+history — another machine that clones the campaign will see that a link
+exists. What's machine-local is the symlink's **target**: the link only
+resolves on a device where the same filesystem path exists.
 
 ## Submodule Commits
 
