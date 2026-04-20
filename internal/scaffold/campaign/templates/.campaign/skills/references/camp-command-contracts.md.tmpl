@@ -35,6 +35,26 @@ history — another machine that clones the campaign will see that a link
 exists. What's machine-local is the symlink's **target**: the link only
 resolves on a device where the same filesystem path exists.
 
+## Other Project Operations
+
+```bash
+camp project list [--format table|simple|json]
+camp project new <name> [--no-commit]                   # scaffold new submodule project
+camp project run -p <name> -- <command>                 # run command inside a project
+camp project prune [<name>] [--dry-run] [--remote] [--remote-delete]
+camp project remote {list|add|set-url|remove|rename} [args] [-p <name>]
+```
+
+`camp fresh` is project-scoped (not a campaign-root command) — it resets
+a project's working state after a merge:
+
+```bash
+camp fresh [<name>]                         # checkout default, pull, prune
+camp fresh [<name>] --branch <branch>       # plus create a working branch
+camp fresh [<name>] --no-prune | --dry-run
+camp fresh all                              # run across every submodule
+```
+
 ## Submodule Commits
 
 ```bash
