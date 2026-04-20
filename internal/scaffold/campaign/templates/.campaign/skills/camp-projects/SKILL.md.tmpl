@@ -8,16 +8,18 @@ description: Manage campaign projects with `camp project`. Use when the user wan
 Read shared contracts first: `../references/camp-command-contracts.md`.
 
 A project in a campaign is either a git submodule under `projects/` or a
-symlink (a "linked project") to a directory on the same machine. Most
-users prefer linking. Default toward link unless the user has stated a
-reason for a submodule.
+linked project — a symlink placed at `projects/<name>` that points to a
+directory elsewhere on the same machine. Most users prefer linking.
+Default toward link unless the user has stated a reason for a submodule.
 
 ## Decide: `add` or `link` — ASK the User
 
 - **URL given, not cloned locally** → `camp project add <url>`. Only
   reasonable choice.
 - **Already cloned on the user's machine** → ask: "Link it, or add as a
-  submodule?" Default recommendation is `camp project link <path>`. Use
+  submodule?" Default recommendation is `camp project link <path>`, which
+  creates a symlink at `projects/<name>` pointing back to the user's
+  existing directory (the directory stays where it is on disk). Use
   `camp project add --local <path>` only when the user has explicitly
   asked for multi-device use.
 - **User wants multi-device campaign** → submodules are required. Linked
