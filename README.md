@@ -150,72 +150,29 @@ camp clone <url>           # Clone a campaign with full submodule setup
 
 ### Project Management
 
-A **project** in camp is either:
-
-- a **git submodule** tracked under `projects/`, shared through the campaign repository, or
-- a **linked local workspace** — a symlink under `projects/` pointing to an
-  external directory on the same machine. Linked projects are machine-local
-  (the symlink and its `.camp` marker are not versioned by the campaign).
-
-Both kinds behave the same for navigation, tab completion, and most project
-subcommands. Use submodules when the project should travel with the campaign;
-use links to pull an existing local repo into your campaign without moving or
-copying it.
-
-#### Git Submodule Projects
+Two commands cover how a project joins a campaign:
 
 ```bash
-camp project add <url>                  # Clone a remote repo as a submodule
-camp project add --local <path>         # Add an existing local repo as a submodule
-camp project new <name>                 # Scaffold a new project submodule
-camp project list                       # List all projects (submodules + links)
-camp project remove <name>              # Remove a project (submodule or link)
+camp project add <url>      # Add a git repository as a submodule under projects/
+camp project link <path>    # Link an existing local directory under projects/
 ```
 
-`camp project add` also accepts `--campaign <name-or-id>` to target a
-registered campaign other than the current one, and `--name` to override the
-default project name.
+**Use `add`** when the project should travel with the campaign. It's a real
+git submodule, so cloning the campaign elsewhere clones the project with it.
 
-#### Linked Local Workspaces
+**Use `link`** when the project lives locally but shouldn't (or doesn't yet)
+ship with the campaign. `link` creates a symlink under `projects/<name>` and
+writes a `.camp` marker into the target directory. The symlink is
+machine-local — not versioned by the campaign — which makes it the right
+choice for active local repos you want in your workspace without committing
+them.
 
-`camp project link` adds an existing directory on your machine to the campaign
-as a symlink under `projects/<name>`, with a `.camp` marker written into the
-linked directory recording the campaign ID.
+Both commands accept `--campaign <name-or-id>` to target a different
+registered campaign, and `--name` to override the default project name.
 
-```bash
-camp project link                       # Link the current directory
-camp project link ~/code/my-project     # Link another directory
-camp project link ~/code/my-project --name backend   # Override the project name
-
-# Outside a campaign, pick a registered target campaign:
-camp project link --campaign platform
-camp project link ~/code/my-project --campaign        # Interactive picker
-
-camp project unlink                     # Remove the current linked project
-camp project unlink my-project          # Remove by name
-camp project unlink my-project --dry-run  # Preview without changing anything
-```
-
-`unlink` removes the symlink and cleans up the `.camp` marker; it never
-touches the contents of the external directory.
-
-#### Working Inside Projects
-
-```bash
-camp project commit -m "Fix bug"        # Commit inside the current project
-camp project commit --project camp -m "Fix bug"   # Explicit project target
-camp project run -p camp just test      # Run a command inside a project
-camp project prune --project camp       # Prune merged local branches
-camp project remote                     # Manage per-project remotes
-camp project worktree add feature -p camp         # Create a worktree
-```
-
-All project commands accept `--project / -p <name>` with tab completion to
-target a project by name; when omitted, camp auto-detects from your current
-working directory.
-
-Monorepo subprojects are addressable with `@` syntax (e.g.,
-`obey-platform-monorepo@obey`).
+For the rest of the project surface (`list`, `remove`, `unlink`, `commit`,
+`run`, `worktree`, `prune`, `remote`, `new`), see
+[`docs/cli-reference/`](docs/cli-reference/).
 
 ### Planning
 
