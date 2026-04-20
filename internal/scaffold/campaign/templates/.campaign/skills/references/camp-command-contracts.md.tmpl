@@ -11,6 +11,50 @@ camp go <shortcut> --print
 
 `cgo` changes shell directory. `camp go` resolves/prints paths.
 
+## Adding and Linking Projects
+
+```bash
+# Clone a remote repo as a git submodule under projects/
+camp project add <url> [--name <n>] [--campaign <name-or-id>]
+
+# Add an existing local directory as a git submodule (modifies campaign history)
+camp project add --local <path> [--name <n>] [--campaign <name-or-id>]
+
+# Link an existing local directory as a machine-local symlink under projects/
+camp project link <path> [--name <n>] [--campaign <name-or-id>]
+camp project link                                        # link current directory
+
+# Remove (works for both kinds)
+camp project remove <name>            # unlinks a link; deinits a submodule without touching disk
+camp project remove <name> --delete   # destructive — errors on links; deletes disk files for submodules
+camp project unlink [<name>]          # explicit unlink alias (links only)
+```
+
+Linking records the `projects/<name>` symlink entry in campaign git
+history — another machine that clones the campaign will see that a link
+exists. What's machine-local is the symlink's **target**: the link only
+resolves on a device where the same filesystem path exists.
+
+## Other Project Operations
+
+```bash
+camp project list [--format table|simple|json]
+camp project new <name> [--no-commit]                   # scaffold new submodule project
+camp project run -p <name> -- <command>                 # run command inside a project
+camp project prune [<name>] [--dry-run] [--remote] [--remote-delete]
+camp project remote {list|add|set-url|remove|rename} [args] [-p <name>]
+```
+
+`camp fresh` is project-scoped (not a campaign-root command) — it resets
+a project's working state after a merge:
+
+```bash
+camp fresh [<name>]                         # checkout default, pull, prune
+camp fresh [<name>] --branch <branch>       # plus create a working branch
+camp fresh [<name>] --no-prune | --dry-run
+camp fresh all                              # run across every submodule
+```
+
 ## Submodule Commits
 
 ```bash
@@ -27,21 +71,27 @@ camp refs-sync projects/camp
 ## Status Scope
 
 ```bash
-camp status           # campaign root
-camp status --sub     # current submodule
-camp status all       # cross-project status
+camp status           # campaign root git repo
+camp status --sub     # current submodule (errors on linked projects)
+camp status all       # dashboard across every submodule
 ```
 
 ## Pull/Push Scope
 
+`camp pull` and `camp push` without flags operate on the **campaign root
+repo**, not on projects. `--sub` acts on the current submodule, and `all`
+iterates every submodule. **These scope flags don't currently cover
+linked projects** — to work inside a link, cd in and use `git` directly,
+or use `camp project run -p <name> <cmd>`.
+
 ```bash
 camp pull             # campaign root
 camp pull --sub       # current submodule
-camp pull all         # all repos
+camp pull all         # every submodule
 
 camp push             # campaign root
 camp push --sub       # current submodule
-camp push all         # all repos with pending pushes
+camp push all         # every submodule with pending pushes
 ```
 
 ## Worktrees
