@@ -49,25 +49,26 @@ camp refs-sync projects/camp
 
 ```bash
 camp status           # campaign root git repo
-camp status --sub     # current project (submodule or linked)
-camp status all       # cross-project dashboard
+camp status --sub     # current submodule (errors on linked projects)
+camp status all       # dashboard across every submodule
 ```
 
 ## Pull/Push Scope
 
 `camp pull` and `camp push` without flags operate on the **campaign root
-repo**, not on projects. The `all` subcommand works across every project
-regardless of whether it's a submodule or a linked local directory — as
-long as the target is a git repo.
+repo**, not on projects. `--sub` acts on the current submodule, and `all`
+iterates every submodule. **These scope flags don't currently cover
+linked projects** — to work inside a link, cd in and use `git` directly,
+or use `camp project run -p <name> <cmd>`.
 
 ```bash
 camp pull             # campaign root
-camp pull --sub       # current project
-camp pull all         # every project in the campaign
+camp pull --sub       # current submodule
+camp pull all         # every submodule
 
 camp push             # campaign root
-camp push --sub       # current project
-camp push all         # every project with pending pushes
+camp push --sub       # current submodule
+camp push all         # every submodule with pending pushes
 ```
 
 ## Worktrees

@@ -1,73 +1,54 @@
 ---
 name: camp-projects
-description: Manage campaign projects with `camp project`. Use when the user wants to add, link, or remove a project; when committing inside `projects/*`; when deciding status/pull/push scope (root vs submodule vs all); or when managing project worktrees.
+description: Manage campaign projects with `camp project`. Use when the user wants to add, link, or remove a project; when deciding between `camp project add` and `camp project link`; or when committing inside `projects/*`.
 ---
 
 # Campaign Projects
 
 Read shared contracts first: `../references/camp-command-contracts.md`.
 
-A project in a campaign is either a **git submodule** under `projects/` or a
-**linked local directory** (a symlink under `projects/` pointing to a
-directory on the same machine). Most users prefer linking — submodules add
-complexity they don't always want — so default toward linking unless the
-user has stated a reason for a submodule.
+A project in a campaign is either a git submodule under `projects/` or a
+symlink (a "linked project") to a directory on the same machine. Most
+users prefer linking. Default toward link unless the user has stated a
+reason for a submodule.
 
-## Decide: `add` or `link` — and ASK the User First
+## Decide: `add` or `link` — ASK the User
 
-When the user wants to bring a project into the campaign, identify the case
-and ask before choosing. **Do not assume.**
+- **URL given, not cloned locally** → `camp project add <url>`. Only
+  reasonable choice.
+- **Already cloned on the user's machine** → ask: "Link it, or add as a
+  submodule?" Default recommendation is `camp project link <path>`. Use
+  `camp project add --local <path>` only when the user has explicitly
+  asked for multi-device use.
+- **User wants multi-device campaign** → submodules are required. Linked
+  projects only work on a device where the linked path exists at the same
+  filesystem location.
 
-### Case 1 — user gave a URL (not cloned locally)
-
-```bash
-camp project add <url>
-```
-
-This is the only reasonable choice: there's nothing on disk to link. The
-project is cloned as a git submodule under `projects/`.
-
-### Case 2 — the project is already cloned somewhere on the user's machine
-
-**Ask the user:** "Do you want to add this as a git submodule, or link the
-existing directory?"
-
-- **Link it (default recommendation)** — `camp project link <path>`
-  - Creates a symlink under `projects/<name>` and writes a `.camp` marker
-    into the target directory.
-  - Machine-local: the symlink is not versioned with the campaign.
-  - The project stays where it is on disk.
-  - Good fit when the user wants the repo visible in the campaign workflow
-    without turning it into a submodule.
-
-- **Submodule it** — `camp project add --local <path>`
-  - Converts the directory into a git submodule of the campaign.
-  - Only choose this when the user has explicitly said they want the
-    campaign to travel across devices and include this project at the same
-    commit on every device.
-
-### Case 3 — user wants to use the campaign on multiple devices
-
-Submodules are required. Linked projects only work on a device where the
-linked path exists at the exact same filesystem location. Tell the user
-this tradeoff if they're choosing between the two.
-
-### When in doubt
-
-Ask. Never convert an already-local directory into a submodule without
-explicit user confirmation — that modifies the campaign's git history and
-can surprise users who expected a lightweight link.
+Never convert an already-local directory into a submodule without
+explicit user confirmation — that modifies the campaign's git history.
 
 ## Remove
 
-- `camp project unlink <name>` — remove a linked project. Safe: deletes the
-  symlink and cleans up the `.camp` marker, but never touches the external
-  directory's contents.
-- `camp project remove <name>` — remove a submodule. Modifies the
-  campaign's git history.
-- If the user says "remove this project" without specifying, check
-  `camp project list` (or the `projects/` directory) to see whether the
-  entry is a symlink or a submodule, and pick accordingly.
+`camp project remove <name>` works for both kinds without `--delete`:
+
+- Linked project → safely unlinks (identical to `camp project unlink`).
+- Submodule → deinits from git without deleting files on disk.
+
+`--delete` is the destructive path. It errors on linked projects (camp
+won't delete an external target) and deletes the submodule's directory
+on disk for submodules.
+
+Prefer `camp project unlink <name>` when the intent is specifically to
+remove a link.
+
+## Scope Limits for Links (Current Behavior)
+
+`camp status --sub`, `camp pull --sub`, `camp push --sub`, and the
+`status all` / `pull all` / `push all` paths enumerate **submodules
+only** today. They error or skip when the current project is linked.
+
+To operate on a linked project, cd into the linked directory and use
+`git` directly, or use `camp project run -p <name> <cmd>`.
 
 ## Commit in Submodules
 
@@ -75,58 +56,24 @@ can surprise users who expected a lightweight link.
 camp p commit -m "fix: message"
 ```
 
-Pointer sync is intentional and root-level:
+Pointer sync is a separate intentional action:
 
 ```bash
 camp refs-sync
 camp refs-sync projects/camp
 ```
 
-Linked projects commit to their own repositories; the campaign-root git does
-not track their commits and does not need `camp refs-sync` for them.
-
-## Scope-Safe Status / Sync
-
-`camp status`, `camp pull`, and `camp push` without arguments act on the
-**campaign root repo itself**, not on projects. To touch the current project
-from inside it, use `--sub`. To act across every project in the campaign,
-use `all`.
-
-```bash
-camp status              # campaign root
-camp status --sub        # current project (submodule or link)
-camp status all          # dashboard across every project
-
-camp pull all            # pull every project (works on submodules and links alike,
-                         # as long as the target directory is a git repo)
-camp push all            # push every project with pending pushes
-camp pull --sub          # pull the current project
-camp push --sub          # push the current project
-```
-
-Use `all` commands only when broad workspace churn is intended.
-
 ## Worktrees
 
-```bash
-camp project worktree add <name>
-camp project worktree list
-camp project worktree remove <name>
-```
+See shared reference.
 
 ## Common Mistakes
 
-- Silently running `camp project add` (or `add --local`) when the user
-  already had the repo cloned locally. Ask first — most users prefer
-  linking.
-- Assuming submodule commits should auto-update campaign-root pointers
-  (they don't — use `camp refs-sync` intentionally).
-- Running `camp pull` / `camp push` at campaign root and expecting it to
-  touch projects. It doesn't — that's the campaign's own git repo. Use
-  `--sub` for the current project or `all` to cross every project.
-- Passing a worktree path to `worktree remove`; the command expects the
-  worktree name.
-- Using `camp project remove` on a linked project when the safe command is
-  `camp project unlink`.
-- Telling a user they need a submodule to "use the project in the campaign"
-  — a link works for everything the user does on that machine.
+- Running `camp project add --local` on an already-cloned project without
+  asking. Most users prefer `camp project link`.
+- Assuming submodule commits auto-update campaign-root pointers — they
+  don't. Use `camp refs-sync` intentionally.
+- Expecting `--sub` or `all` to cover linked projects. They don't today.
+- Using `remove --delete` when `remove` alone would do the right thing.
+- Using `camp project remove` on a link when the intent is specifically
+  "unlink" — `camp project unlink` reads clearer at the call site.
