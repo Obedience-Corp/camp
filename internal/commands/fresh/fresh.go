@@ -210,19 +210,16 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 	}
 
 	// Step 3: Prune merged and gone-upstream branches.
-	// Refresh remote tracking before checking gone markers so squash-merged
-	// PRs (whose source branch was deleted upstream) show up as prunable.
+	// Prune flow itself refreshes remote tracking (RefreshRemote below),
+	// so squash-merged PRs show up here without requiring the user to run
+	// 'git fetch --prune' first.
 	if opts.prune {
-		if !opts.dryRun {
-			if err := git.FetchRemotePrune(ctx, path, "origin"); err != nil {
-				return camperrors.Wrap(err, "fetch --prune origin")
-			}
-		}
 		pruneOpts := prune.Options{
-			DryRun:  opts.dryRun,
-			Force:   true, // Skip confirmation — fresh is deliberate
-			Remote:  opts.pruneRemote,
-			BaseRef: syncState.baseRef,
+			DryRun:        opts.dryRun,
+			Force:         true, // Skip confirmation — fresh is deliberate
+			Remote:        opts.pruneRemote,
+			BaseRef:       syncState.baseRef,
+			RefreshRemote: !opts.dryRun,
 		}
 		pr := prune.Execute(ctx, name, path, pruneOpts)
 		if pr.Error != "" {

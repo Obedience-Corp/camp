@@ -41,6 +41,16 @@ type Options struct {
 	// SkipWorktreeBranches preserves merged branches that still have active
 	// worktrees instead of removing the worktree and deleting the branch.
 	SkipWorktreeBranches bool
+
+	// RefreshRemote causes Execute to run 'git fetch --prune <remote>'
+	// before checking upstream:track state. Required for gone-upstream
+	// detection to reflect the current remote. Set true for interactive
+	// entrypoints (camp fresh, camp project prune) and false for library
+	// callers that manage their own fetching.
+	RefreshRemote bool
+
+	// Remote name used when RefreshRemote is true. Empty means "origin".
+	RemoteName string
 }
 
 // Result holds the outcome for a single branch.
@@ -73,19 +83,36 @@ func Execute(ctx context.Context, name, path string, opts Options) ProjectResult
 		}
 	}
 
+	// Refresh remote tracking first when the caller asked for it, so
+	// upstream:track state reflects the current remote. Without this,
+	// gone-upstream detection would be stale for anyone who hadn't
+	// manually run 'git fetch --prune'.
+	if opts.RefreshRemote {
+		remote := opts.RemoteName
+		if remote == "" {
+			remote = "origin"
+		}
+		if err := git.FetchRemotePrune(ctx, path, remote); err != nil {
+			pr.Results = append(pr.Results, Result{
+				Branch: "(fetch --prune)",
+				Status: StatusError,
+				Detail: fmt.Sprintf("refresh %s: %s", remote, err),
+			})
+			// Continue — ancestry-merged detection still works.
+		}
+	}
+
 	merged, err := git.MergedBranchesFromRef(ctx, path, baseRef)
 	if err != nil {
 		pr.Error = err.Error()
 		return pr
 	}
 
-	// Gone-upstream branches catch squash-merged PRs: git's ancestry-based
-	// --merged check misses them because squash creates a brand-new commit
-	// on base that shares no history with the branch. When the remote
-	// source branch is deleted (GitHub's "Automatically delete head
-	// branches" default), fetch --prune marks the upstream as gone, which
-	// is the same "done" signal across any forge that deletes merged
-	// branches.
+	// Gone-upstream branches catch squash-merged PRs that git's ancestry
+	// check misses. But gone-upstream alone is ambiguous: someone who
+	// deleted the remote branch without merging produces the same signal.
+	// Filter through a merge-equivalence check (cumulative patch-id of the
+	// branch matches a commit's self-diff on baseRef) before force-deleting.
 	gone, err := git.GoneBranches(ctx, path)
 	if err != nil {
 		pr.Results = append(pr.Results, Result{
@@ -95,8 +122,23 @@ func Execute(ctx context.Context, name, path string, opts Options) ProjectResult
 		})
 		gone = nil
 	}
+	equivalentGone, unsafeGone := partitionGoneByMergeEquivalence(ctx, path, baseRef, gone, &pr)
 
-	candidates, forced := unionBranches(merged, gone)
+	// Record gone-but-not-merge-equivalent branches as skipped so the user
+	// sees why they were not auto-deleted.
+	for _, b := range unsafeGone {
+		detail := "gone upstream but local commits are not merge-equivalent to " + baseRef
+		if opts.DryRun {
+			detail = "would keep: " + detail
+		}
+		pr.Results = append(pr.Results, Result{
+			Branch: b,
+			Status: StatusSkipped,
+			Detail: detail,
+		})
+	}
+
+	candidates, forced := unionBranches(merged, equivalentGone)
 
 	deleteDetachedWorktrees(ctx, path, baseRef, opts, &pr)
 	if len(candidates) == 0 && !opts.Remote {
@@ -113,6 +155,82 @@ func Execute(ctx context.Context, name, path string, opts Options) ProjectResult
 	pruneTrackingRefs(ctx, path, opts, &pr)
 
 	return pr
+}
+
+// partitionGoneByMergeEquivalence splits gone-upstream branches into two
+// sets: those whose cumulative diff matches a commit on baseRef (safe to
+// force-delete — a squash-merge signature) and those that do not (unsafe,
+// likely a remote-deleted unmerged branch with local-only work).
+//
+// Per-branch patch-ids on baseRef are computed once across the superset of
+// all branches' merge-bases, then each branch's cumulative patch-id is
+// checked against that set. One log+patch-id pair per call.
+func partitionGoneByMergeEquivalence(ctx context.Context, path, baseRef string, gone []string, pr *ProjectResult) (equivalent, unsafe []string) {
+	if len(gone) == 0 {
+		return nil, nil
+	}
+
+	// Find the oldest merge-base across all gone branches so we scan the
+	// smallest sufficient range on baseRef.
+	var oldestBase string
+	branchBases := make(map[string]string, len(gone))
+	for _, b := range gone {
+		mb, err := git.MergeBase(ctx, path, baseRef, b)
+		if err != nil || mb == "" {
+			// Can't check — treat as unsafe.
+			unsafe = append(unsafe, b)
+			continue
+		}
+		branchBases[b] = mb
+		if oldestBase == "" {
+			oldestBase = mb
+			continue
+		}
+		// Pick whichever of oldestBase/mb is ancestor of the other and
+		// keep the older one. If neither is ancestor (divergent history
+		// within gone branches), fall back to oldestBase — the base-side
+		// set will still cover the usual case.
+		if isAnc, _ := git.IsAncestor(ctx, path, mb, oldestBase); isAnc {
+			oldestBase = mb
+		}
+	}
+
+	if oldestBase == "" {
+		return nil, unsafe
+	}
+
+	basePatchIDs, err := git.BasePatchIDSet(ctx, path, oldestBase, baseRef)
+	if err != nil {
+		// Can't build the equivalence set — fall back to treating all
+		// gone branches as unsafe rather than risk losing local work.
+		pr.Results = append(pr.Results, Result{
+			Branch: "(merge-equivalence)",
+			Status: StatusError,
+			Detail: fmt.Sprintf("compute base patch-ids for %s: %s", baseRef, err),
+		})
+		for b := range branchBases {
+			unsafe = append(unsafe, b)
+		}
+		return nil, unsafe
+	}
+
+	for _, b := range gone {
+		mb, ok := branchBases[b]
+		if !ok {
+			continue // already in unsafe
+		}
+		id, err := git.CumulativePatchID(ctx, path, mb, b)
+		if err != nil || id == "" {
+			unsafe = append(unsafe, b)
+			continue
+		}
+		if _, hit := basePatchIDs[id]; hit {
+			equivalent = append(equivalent, b)
+		} else {
+			unsafe = append(unsafe, b)
+		}
+	}
+	return equivalent, unsafe
 }
 
 // unionBranches merges a branches list from ancestry (git --merged) with one

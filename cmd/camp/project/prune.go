@@ -63,10 +63,11 @@ func init() {
 // pruneOptionsFromFlags constructs prune.Options from the package-level flag vars.
 func pruneOptionsFromFlags() prune.Options {
 	return prune.Options{
-		DryRun:       pruneDryRun,
-		Force:        pruneForce,
-		Remote:       pruneRemote,
-		RemoteDelete: pruneRemoteDelete,
+		DryRun:        pruneDryRun,
+		Force:         pruneForce,
+		Remote:        pruneRemote,
+		RemoteDelete:  pruneRemoteDelete,
+		RefreshRemote: !pruneDryRun,
 	}
 }
 

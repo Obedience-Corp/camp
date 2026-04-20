@@ -667,3 +667,89 @@ func TestDeleteBranchForce_RemovesSquashMergedBranch(t *testing.T) {
 		t.Fatalf("feat-squash branch still present: %q", string(remaining))
 	}
 }
+
+func TestCumulativePatchID_MatchesSquashCommit(t *testing.T) {
+	dir := initBranchTestRepo(t, "main")
+	run := gitRunner(t, dir)
+
+	// Branch with multiple commits that together introduce feat.txt
+	run("checkout", "-b", "feat")
+	if err := os.WriteFile(filepath.Join(dir, "feat.txt"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", ".")
+	run("commit", "-m", "feat: add file")
+	if err := os.WriteFile(filepath.Join(dir, "feat.txt"), []byte("hello\nworld\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", ".")
+	run("commit", "-m", "feat: extend file")
+
+	// Squash-equivalent commit on main: same net change via a single commit
+	run("checkout", "main")
+	if err := os.WriteFile(filepath.Join(dir, "feat.txt"), []byte("hello\nworld\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", ".")
+	run("commit", "-m", "squash of feat")
+
+	ctx := context.Background()
+	base, err := MergeBase(ctx, dir, "main", "feat")
+	if err != nil {
+		t.Fatalf("MergeBase: %v", err)
+	}
+	branchID, err := CumulativePatchID(ctx, dir, base, "feat")
+	if err != nil {
+		t.Fatalf("CumulativePatchID branch: %v", err)
+	}
+	if branchID == "" {
+		t.Fatal("branch patch-id is empty")
+	}
+
+	baseIDs, err := BasePatchIDSet(ctx, dir, base, "main")
+	if err != nil {
+		t.Fatalf("BasePatchIDSet: %v", err)
+	}
+	if _, ok := baseIDs[branchID]; !ok {
+		t.Fatalf("expected branch patch-id %q to be present in base patch-id set %v",
+			branchID, baseIDs)
+	}
+}
+
+func TestCumulativePatchID_UnmergedBranchDoesNotMatch(t *testing.T) {
+	dir := initBranchTestRepo(t, "main")
+	run := gitRunner(t, dir)
+
+	// Branch with unique content never landed on main
+	run("checkout", "-b", "never-merged")
+	if err := os.WriteFile(filepath.Join(dir, "only-here.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", ".")
+	run("commit", "-m", "branch-only work")
+
+	// Advance main independently so it has its own unrelated commit
+	run("checkout", "main")
+	if err := os.WriteFile(filepath.Join(dir, "main-only.txt"), []byte("m\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", ".")
+	run("commit", "-m", "main-only work")
+
+	ctx := context.Background()
+	base, err := MergeBase(ctx, dir, "main", "never-merged")
+	if err != nil {
+		t.Fatalf("MergeBase: %v", err)
+	}
+	branchID, err := CumulativePatchID(ctx, dir, base, "never-merged")
+	if err != nil {
+		t.Fatalf("CumulativePatchID: %v", err)
+	}
+	baseIDs, err := BasePatchIDSet(ctx, dir, base, "main")
+	if err != nil {
+		t.Fatalf("BasePatchIDSet: %v", err)
+	}
+	if _, ok := baseIDs[branchID]; ok {
+		t.Fatalf("unmerged branch patch-id %q unexpectedly matched the base set", branchID)
+	}
+}

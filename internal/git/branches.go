@@ -232,6 +232,112 @@ func DeleteBranchForce(ctx context.Context, repoPath, branch string) error {
 	return nil
 }
 
+// MergeBase returns the best common ancestor of ref1 and ref2.
+func MergeBase(ctx context.Context, repoPath, ref1, ref2 string) (string, error) {
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "merge-base", ref1, ref2)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", camperrors.Wrapf(err, "merge-base %s %s", ref1, ref2)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// CumulativePatchID returns the patch-id of the cumulative diff from base to
+// tip. Two branches with the same cumulative patch-id introduce the same net
+// change, which is how we detect squash-merges: the squash commit on the base
+// branch has a self-diff equal to the branch's cumulative diff.
+//
+// Returns an empty string (no error) when the diff is empty (e.g. base == tip).
+func CumulativePatchID(ctx context.Context, repoPath, base, tip string) (string, error) {
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+	return pipeDiffThroughPatchID(ctx, repoPath, "diff", base+".."+tip)
+}
+
+// BasePatchIDSet returns a set of patch-ids covering every commit reachable
+// from tip but not from base. Built in a single invocation (git log -p |
+// git patch-id), so cost is one subprocess pair per call regardless of how
+// many commits are in the range.
+func BasePatchIDSet(ctx context.Context, repoPath, base, tip string) (map[string]struct{}, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	log := exec.CommandContext(ctx, "git", "-C", repoPath,
+		"log", "-p", "--no-color", base+".."+tip)
+	patchID := exec.CommandContext(ctx, "git", "-C", repoPath, "patch-id", "--stable")
+
+	pipe, err := log.StdoutPipe()
+	if err != nil {
+		return nil, camperrors.Wrapf(err, "pipe log")
+	}
+	patchID.Stdin = pipe
+
+	if err := log.Start(); err != nil {
+		return nil, camperrors.Wrapf(err, "start log")
+	}
+
+	out, err := patchID.Output()
+	// Drain the log process regardless of patch-id outcome so we don't leak.
+	_ = log.Wait()
+	if err != nil {
+		return nil, camperrors.Wrapf(err, "patch-id over %s..%s", base, tip)
+	}
+
+	ids := make(map[string]struct{})
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// Format: "<patch-id> <commit-id>"
+		fields := strings.Fields(line)
+		if len(fields) < 1 {
+			continue
+		}
+		ids[fields[0]] = struct{}{}
+	}
+	return ids, nil
+}
+
+// pipeDiffThroughPatchID runs `git <diffArgs...> | git patch-id --stable`
+// and returns the bare patch-id (first whitespace-separated token) on stdout.
+// Returns "" (no error) when git emits no diff.
+func pipeDiffThroughPatchID(ctx context.Context, repoPath string, diffArgs ...string) (string, error) {
+	args := append([]string{"-C", repoPath}, diffArgs...)
+	diff := exec.CommandContext(ctx, "git", args...)
+	patchID := exec.CommandContext(ctx, "git", "-C", repoPath, "patch-id", "--stable")
+
+	pipe, err := diff.StdoutPipe()
+	if err != nil {
+		return "", camperrors.Wrapf(err, "pipe diff")
+	}
+	patchID.Stdin = pipe
+
+	if err := diff.Start(); err != nil {
+		return "", camperrors.Wrapf(err, "start diff")
+	}
+	out, err := patchID.Output()
+	_ = diff.Wait()
+	if err != nil {
+		return "", camperrors.Wrapf(err, "patch-id over diff %v", diffArgs)
+	}
+
+	trimmed := strings.TrimSpace(string(out))
+	if trimmed == "" {
+		return "", nil
+	}
+	fields := strings.Fields(trimmed)
+	if len(fields) == 0 {
+		return "", nil
+	}
+	return fields[0], nil
+}
+
 // GoneBranches returns local branches whose upstream tracking ref is gone
 // (i.e. the remote branch was deleted since the last fetch --prune).
 //
