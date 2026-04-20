@@ -142,8 +142,8 @@ func TestInit(t *testing.T) {
 	expectedSkillFiles := []string{
 		".campaign/skills/camp-navigation/SKILL.md",
 		".campaign/skills/campaign-commit/SKILL.md",
-		".campaign/skills/references/camp-command-contracts.md",
-		".campaign/skills/references/fest-command-contracts.md",
+		".campaign/skills/camp-projects/SKILL.md",
+		".campaign/skills/fest-execution/SKILL.md",
 	}
 	for _, relPath := range expectedSkillFiles {
 		path := filepath.Join(campaignDir, relPath)

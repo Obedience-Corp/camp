@@ -5,8 +5,6 @@ description: Manage campaign projects with `camp project`. Use when the user wan
 
 # Campaign Projects
 
-Read shared contracts first: `../references/camp-command-contracts.md`.
-
 A project in a campaign is either a git submodule under `projects/` or a
 linked project — a symlink placed at `projects/<name>` that points to a
 directory elsewhere on the same machine. Most users prefer linking.
@@ -64,9 +62,23 @@ camp refs-sync projects/camp
 
 ## Other Project Operations
 
-Other project subcommands — `list`, `new`, `run`, `prune`, `remote`,
-`worktree` — plus the project-scoped `camp fresh` (post-merge reset) are
-all documented in the shared reference.
+```bash
+camp project list [--format table|simple|json]
+camp project new <name> [--no-commit]          # scaffold new submodule
+camp project run -p <name> -- <command>        # run command inside a project
+camp project prune [<name>] [--dry-run] [--remote] [--remote-delete]
+camp project remote {list|add|set-url|remove|rename} [args] [-p <name>]
+camp project worktree {add|list|remove} <name> [-p <name>]
+```
+
+`camp fresh` is project-scoped (not a campaign-root command) — it
+resets a project's working state after a merge:
+
+```bash
+camp fresh [<name>]                         # checkout default, pull, prune
+camp fresh [<name>] --branch <branch>       # plus create a working branch
+camp fresh all                              # run across every submodule
+```
 
 ## Common Mistakes
 
