@@ -11,6 +11,27 @@ camp go <shortcut> --print
 
 `cgo` changes shell directory. `camp go` resolves/prints paths.
 
+## Adding and Linking Projects
+
+```bash
+# Clone a remote repo as a git submodule under projects/
+camp project add <url> [--name <n>] [--campaign <name-or-id>]
+
+# Add an existing local directory as a git submodule (modifies campaign history)
+camp project add --local <path> [--name <n>] [--campaign <name-or-id>]
+
+# Link an existing local directory as a machine-local symlink under projects/
+camp project link <path> [--name <n>] [--campaign <name-or-id>]
+camp project link                                        # link current directory
+
+# Remove
+camp project unlink [<name>]   # remove a link; external directory untouched
+camp project remove <name>     # remove a submodule (modifies campaign history)
+```
+
+Linked projects are not versioned with the campaign and must exist at the
+same filesystem path on every device that opens the campaign.
+
 ## Submodule Commits
 
 ```bash
@@ -27,21 +48,26 @@ camp refs-sync projects/camp
 ## Status Scope
 
 ```bash
-camp status           # campaign root
-camp status --sub     # current submodule
-camp status all       # cross-project status
+camp status           # campaign root git repo
+camp status --sub     # current project (submodule or linked)
+camp status all       # cross-project dashboard
 ```
 
 ## Pull/Push Scope
 
+`camp pull` and `camp push` without flags operate on the **campaign root
+repo**, not on projects. The `all` subcommand works across every project
+regardless of whether it's a submodule or a linked local directory — as
+long as the target is a git repo.
+
 ```bash
 camp pull             # campaign root
-camp pull --sub       # current submodule
-camp pull all         # all repos
+camp pull --sub       # current project
+camp pull all         # every project in the campaign
 
 camp push             # campaign root
-camp push --sub       # current submodule
-camp push all         # all repos with pending pushes
+camp push --sub       # current project
+camp push all         # every project with pending pushes
 ```
 
 ## Worktrees
