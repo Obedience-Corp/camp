@@ -14,20 +14,17 @@ Default toward link unless the user has stated a reason for a submodule.
 
 ## Decide: `add` or `link` — ASK the User
 
-- **URL given, not cloned locally** → `camp project add <url>`. Only
-  reasonable choice.
-- **Already cloned on the user's machine** → ask: "Link it, or add as a
-  submodule?" Default recommendation is `camp project link <path>`, which
-  creates a symlink at `projects/<name>` pointing back to the user's
-  existing directory (the directory stays where it is on disk). Use
-  `camp project add --local <path>` only when the user has explicitly
-  asked for multi-device use.
+- **URL given, not cloned locally** → `camp project add <url>`. Clones
+  the repo as a git submodule under `projects/<name>`.
+- **Already cloned on the user's machine** → `camp project link <path>`.
+  Creates a symlink at `projects/<name>` pointing back to the user's
+  existing directory; the directory stays where it is on disk.
 - **User wants multi-device campaign** → submodules are required. Linked
-  projects only work on a device where the linked path exists at the same
-  filesystem location.
+  projects only resolve on a device where the linked path exists at the
+  same filesystem location. If the user has an already-local repo and
+  wants it to travel with the campaign, tell them so and let them decide.
 
-Never convert an already-local directory into a submodule without
-explicit user confirmation — that modifies the campaign's git history.
+See `docs/cli-reference/` for niche flags like `add --local`.
 
 ## Remove
 
@@ -71,8 +68,8 @@ See shared reference.
 
 ## Common Mistakes
 
-- Running `camp project add --local` on an already-cloned project without
-  asking. Most users prefer `camp project link`.
+- Using `camp project add` paths on a repo that already lives on the
+  user's machine. Default to `camp project link` instead.
 - Assuming submodule commits auto-update campaign-root pointers — they
   don't. Use `camp refs-sync` intentionally.
 - Expecting `--sub` or `all` to cover linked projects. They don't today.
