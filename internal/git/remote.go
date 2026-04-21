@@ -184,6 +184,14 @@ func FetchRemote(ctx context.Context, repoPath, remoteName string) error {
 	return err
 }
 
+// FetchRemotePrune fetches from the named remote and prunes stale
+// remote-tracking branches. Running this before checking upstream:track
+// state ensures gone-upstream markers reflect the current remote.
+func FetchRemotePrune(ctx context.Context, repoPath, remoteName string) error {
+	_, err := RunGitCmd(ctx, repoPath, "fetch", "--prune", remoteName)
+	return err
+}
+
 // CountRemoteBranches returns the number of remote-tracking branches for the
 // given remote name in the repository at repoPath.
 func CountRemoteBranches(ctx context.Context, repoPath, remoteName string) (int, error) {

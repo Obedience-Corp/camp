@@ -61,12 +61,17 @@ func init() {
 }
 
 // pruneOptionsFromFlags constructs prune.Options from the package-level flag vars.
+//
+// RefreshRemote is on for both dry-run and non-dry-run: 'git fetch --prune'
+// only updates remote-tracking refs, not the worktree, so dry-run needs it
+// to preview the current prune state accurately.
 func pruneOptionsFromFlags() prune.Options {
 	return prune.Options{
-		DryRun:       pruneDryRun,
-		Force:        pruneForce,
-		Remote:       pruneRemote,
-		RemoteDelete: pruneRemoteDelete,
+		DryRun:        pruneDryRun,
+		Force:         pruneForce,
+		Remote:        pruneRemote,
+		RemoteDelete:  pruneRemoteDelete,
+		RefreshRemote: true,
 	}
 }
 

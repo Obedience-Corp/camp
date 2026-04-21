@@ -41,6 +41,16 @@ type Options struct {
 	// SkipWorktreeBranches preserves merged branches that still have active
 	// worktrees instead of removing the worktree and deleting the branch.
 	SkipWorktreeBranches bool
+
+	// RefreshRemote causes Execute to run 'git fetch --prune <remote>'
+	// before checking upstream:track state. Required for gone-upstream
+	// detection to reflect the current remote. Set true for interactive
+	// entrypoints (camp fresh, camp project prune) and false for library
+	// callers that manage their own fetching.
+	RefreshRemote bool
+
+	// Remote name used when RefreshRemote is true. Empty means "origin".
+	RemoteName string
 }
 
 // Result holds the outcome for a single branch.
@@ -73,26 +83,178 @@ func Execute(ctx context.Context, name, path string, opts Options) ProjectResult
 		}
 	}
 
+	// Refresh remote tracking first when the caller asked for it, so
+	// upstream:track state reflects the current remote. Without this,
+	// gone-upstream detection would be stale for anyone who hadn't
+	// manually run 'git fetch --prune'.
+	if opts.RefreshRemote {
+		remote := opts.RemoteName
+		if remote == "" {
+			remote = "origin"
+		}
+		if err := git.FetchRemotePrune(ctx, path, remote); err != nil {
+			pr.Results = append(pr.Results, Result{
+				Branch: "(fetch --prune)",
+				Status: StatusError,
+				Detail: fmt.Sprintf("refresh %s: %s", remote, err),
+			})
+			// Continue — ancestry-merged detection still works.
+		}
+	}
+
 	merged, err := git.MergedBranchesFromRef(ctx, path, baseRef)
 	if err != nil {
 		pr.Error = err.Error()
 		return pr
 	}
 
+	// Gone-upstream branches catch squash-merged PRs that git's ancestry
+	// check misses. But gone-upstream alone is ambiguous: someone who
+	// deleted the remote branch without merging produces the same signal.
+	// Filter through a merge-equivalence check (cumulative patch-id of the
+	// branch matches a commit's self-diff on baseRef) before force-deleting.
+	gone, err := git.GoneBranches(ctx, path)
+	if err != nil {
+		pr.Results = append(pr.Results, Result{
+			Branch: "(gone upstream)",
+			Status: StatusError,
+			Detail: fmt.Sprintf("list gone branches: %s", err),
+		})
+		gone = nil
+	}
+	equivalentGone, unsafeGone := partitionGoneByMergeEquivalence(ctx, path, baseRef, gone, &pr)
+
+	// Record gone-but-not-merge-equivalent branches as skipped so the user
+	// sees why they were not auto-deleted.
+	for _, b := range unsafeGone {
+		detail := "gone upstream but local commits are not merge-equivalent to " + baseRef
+		if opts.DryRun {
+			detail = "would keep: " + detail
+		}
+		pr.Results = append(pr.Results, Result{
+			Branch: b,
+			Status: StatusSkipped,
+			Detail: detail,
+		})
+	}
+
+	candidates, forced := unionBranches(merged, equivalentGone)
+
 	deleteDetachedWorktrees(ctx, path, baseRef, opts, &pr)
-	if len(merged) == 0 && !opts.Remote {
+	if len(candidates) == 0 && !opts.Remote {
 		return pr
 	}
 
-	deleteLocalBranches(ctx, path, merged, opts, &pr)
+	deleteLocalBranches(ctx, path, candidates, forced, opts, &pr)
 
-	// Remote branch deletion uses the original merged list intentionally —
-	// remote branches should be cleaned up regardless of local deletion outcome.
+	// Remote branch deletion uses only the ancestry-merged list — a
+	// gone-upstream branch has already been deleted upstream, so there is
+	// nothing to delete on origin.
 	deleteRemoteBranches(ctx, path, merged, opts, &pr)
 
 	pruneTrackingRefs(ctx, path, opts, &pr)
 
 	return pr
+}
+
+// partitionGoneByMergeEquivalence splits gone-upstream branches into two
+// sets: those whose cumulative diff matches a commit on baseRef (safe to
+// force-delete — a squash-merge signature) and those that do not (unsafe,
+// likely a remote-deleted unmerged branch with local-only work).
+//
+// Per-branch patch-ids on baseRef are computed once across the superset of
+// all branches' merge-bases, then each branch's cumulative patch-id is
+// checked against that set. One log+patch-id pair per call.
+func partitionGoneByMergeEquivalence(ctx context.Context, path, baseRef string, gone []string, pr *ProjectResult) (equivalent, unsafe []string) {
+	if len(gone) == 0 {
+		return nil, nil
+	}
+
+	// Find the oldest merge-base across all gone branches so we scan the
+	// smallest sufficient range on baseRef.
+	var oldestBase string
+	branchBases := make(map[string]string, len(gone))
+	for _, b := range gone {
+		mb, err := git.MergeBase(ctx, path, baseRef, b)
+		if err != nil || mb == "" {
+			// Can't check — treat as unsafe.
+			unsafe = append(unsafe, b)
+			continue
+		}
+		branchBases[b] = mb
+		if oldestBase == "" {
+			oldestBase = mb
+			continue
+		}
+		// Pick whichever of oldestBase/mb is ancestor of the other and
+		// keep the older one. If neither is ancestor (divergent history
+		// within gone branches), fall back to oldestBase — the base-side
+		// set will still cover the usual case.
+		if isAnc, _ := git.IsAncestor(ctx, path, mb, oldestBase); isAnc {
+			oldestBase = mb
+		}
+	}
+
+	if oldestBase == "" {
+		return nil, unsafe
+	}
+
+	basePatchIDs, err := git.BasePatchIDSet(ctx, path, oldestBase, baseRef)
+	if err != nil {
+		// Can't build the equivalence set — fall back to treating all
+		// gone branches as unsafe rather than risk losing local work.
+		pr.Results = append(pr.Results, Result{
+			Branch: "(merge-equivalence)",
+			Status: StatusError,
+			Detail: fmt.Sprintf("compute base patch-ids for %s: %s", baseRef, err),
+		})
+		for b := range branchBases {
+			unsafe = append(unsafe, b)
+		}
+		return nil, unsafe
+	}
+
+	for _, b := range gone {
+		mb, ok := branchBases[b]
+		if !ok {
+			continue // already in unsafe
+		}
+		id, err := git.CumulativePatchID(ctx, path, mb, b)
+		if err != nil || id == "" {
+			unsafe = append(unsafe, b)
+			continue
+		}
+		if _, hit := basePatchIDs[id]; hit {
+			equivalent = append(equivalent, b)
+		} else {
+			unsafe = append(unsafe, b)
+		}
+	}
+	return equivalent, unsafe
+}
+
+// unionBranches merges a branches list from ancestry (git --merged) with one
+// from gone-upstream tracking, dedup'd, returning the combined list plus a
+// set of branch names that must be force-deleted (i.e. came only from the
+// gone path, where git's -d safe-delete would refuse because the branch is
+// squash-merged rather than ancestry-merged).
+func unionBranches(merged, gone []string) ([]string, map[string]struct{}) {
+	mergedSet := make(map[string]struct{}, len(merged))
+	for _, b := range merged {
+		mergedSet[b] = struct{}{}
+	}
+	forced := make(map[string]struct{})
+
+	out := make([]string, 0, len(merged)+len(gone))
+	out = append(out, merged...)
+	for _, b := range gone {
+		if _, already := mergedSet[b]; already {
+			continue
+		}
+		out = append(out, b)
+		forced[b] = struct{}{}
+	}
+	return out, forced
 }
 
 func deleteDetachedWorktrees(ctx context.Context, path, baseRef string, opts Options, pr *ProjectResult) {
@@ -237,9 +399,12 @@ func detectWorktreesForBranches(ctx context.Context, path string, merged []strin
 	return result
 }
 
-// deleteLocalBranches handles confirmation and deletion of locally merged branches.
-// If a branch has an active worktree, the worktree is removed first.
-func deleteLocalBranches(ctx context.Context, path string, merged []string, opts Options, pr *ProjectResult) {
+// deleteLocalBranches handles confirmation and deletion of locally merged
+// branches. If a branch has an active worktree, the worktree is removed
+// first. Entries listed in forced (branches whose upstream is gone but
+// which git's ancestry check does not see as merged) are deleted with -D
+// instead of -d.
+func deleteLocalBranches(ctx context.Context, path string, merged []string, forced map[string]struct{}, opts Options, pr *ProjectResult) {
 	if len(merged) == 0 {
 		return
 	}
@@ -275,13 +440,17 @@ func deleteLocalBranches(ctx context.Context, path string, merged []string, opts
 	}
 
 	if !opts.DryRun && !opts.Force {
-		fmt.Printf("\n%s Will delete %d merged branch(es) in %s:\n",
+		fmt.Printf("\n%s Will delete %d merged or gone-upstream branch(es) in %s:\n",
 			ui.WarningIcon(), len(branchesToDelete), ui.Value(pr.Name))
 		for _, b := range branchesToDelete {
+			suffix := ""
+			if _, isForced := forced[b]; isForced {
+				suffix = " (gone upstream — force delete)"
+			}
 			if _, hasWT := worktreesToRemove[b]; hasWT {
-				fmt.Printf("  %s %s (has worktree — will be removed)\n", ui.Dim("-"), b)
+				fmt.Printf("  %s %s%s (has worktree — will be removed)\n", ui.Dim("-"), b, suffix)
 			} else {
-				fmt.Printf("  %s %s\n", ui.Dim("-"), b)
+				fmt.Printf("  %s %s%s\n", ui.Dim("-"), b, suffix)
 			}
 		}
 		fmt.Print("\nProceed? [y/N] ")
@@ -331,24 +500,38 @@ func deleteLocalBranches(ctx context.Context, path string, merged []string, opts
 	}
 
 	for _, branch := range branchesToDelete {
+		detail := ""
+		if _, isForced := forced[branch]; isForced {
+			detail = "gone upstream"
+		}
+
 		if opts.DryRun {
 			pr.Results = append(pr.Results, Result{
 				Branch: branch,
 				Status: StatusWouldDelete,
+				Detail: detail,
 			})
 			continue
 		}
 
-		if err := git.DeleteBranch(ctx, path, branch); err != nil {
+		var deleteErr error
+		if _, isForced := forced[branch]; isForced {
+			deleteErr = git.DeleteBranchForce(ctx, path, branch)
+		} else {
+			deleteErr = git.DeleteBranch(ctx, path, branch)
+		}
+
+		if deleteErr != nil {
 			pr.Results = append(pr.Results, Result{
 				Branch: branch,
 				Status: StatusError,
-				Detail: err.Error(),
+				Detail: deleteErr.Error(),
 			})
 		} else {
 			pr.Results = append(pr.Results, Result{
 				Branch: branch,
 				Status: StatusDeleted,
+				Detail: detail,
 			})
 		}
 	}

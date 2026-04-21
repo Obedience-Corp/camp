@@ -209,13 +209,21 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 		}
 	}
 
-	// Step 3: Prune merged branches
+	// Step 3: Prune merged and gone-upstream branches.
+	// Prune flow itself refreshes remote tracking (RefreshRemote below),
+	// so squash-merged PRs show up here without requiring the user to run
+	// 'git fetch --prune' first.
 	if opts.prune {
 		pruneOpts := prune.Options{
-			DryRun:  opts.dryRun,
-			Force:   true, // Skip confirmation — fresh is deliberate
-			Remote:  opts.pruneRemote,
-			BaseRef: syncState.baseRef,
+			DryRun: opts.dryRun,
+			Force:  true, // Skip confirmation — fresh is deliberate
+			Remote: opts.pruneRemote,
+			// Refresh even on dry-run: 'git fetch --prune' only updates
+			// remote-tracking refs, not the worktree, so the dry-run
+			// preview must include it or squash-merged branches stay
+			// invisible until the user fetches manually.
+			BaseRef:       syncState.baseRef,
+			RefreshRemote: true,
 		}
 		pr := prune.Execute(ctx, name, path, pruneOpts)
 		if pr.Error != "" {
