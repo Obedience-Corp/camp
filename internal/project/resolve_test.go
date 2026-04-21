@@ -141,6 +141,62 @@ func TestResolveFromCwd(t *testing.T) {
 	}
 }
 
+// TestResolveFromCwd_NestedSubmoduleWins exercises the bug that caused
+// `camp fresh` to silently target the outer monorepo when run from inside a
+// nested submodule. The resolver must pick the project with the deepest (longest)
+// matching path, not the first one iterated.
+func TestResolveFromCwd_NestedSubmoduleWins(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+
+	projectsDir := filepath.Join(tmpDir, "projects")
+	if err := os.MkdirAll(projectsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Monorepo with one submodule named "obey"
+	mono := filepath.Join(projectsDir, "mono")
+	if err := os.MkdirAll(mono, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepoWithRemoteAndCommit(t, mono, "git@github.com:test/mono.git", "mono init")
+	writeGitmodules(t, mono, map[string]string{"obey": "obey"})
+
+	// Nested submodule checkout with its own .git
+	sub := filepath.Join(mono, "obey")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepoWithRemoteAndCommit(t, sub, "git@github.com:test/obey.git", "obey init")
+	os.WriteFile(filepath.Join(sub, "go.mod"), []byte("module obey"), 0o644)
+
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(origDir) })
+
+	if err := os.Chdir(sub); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	result, err := ResolveFromCwd(ctx, tmpDir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.Name != "mono@obey" {
+		t.Fatalf("resolved name = %q, want %q (deepest-match should pick nested submodule over parent)", result.Name, "mono@obey")
+	}
+
+	wantPath, _ := filepath.EvalSymlinks(sub)
+	gotPath, _ := filepath.EvalSymlinks(result.Path)
+	if gotPath != wantPath {
+		t.Fatalf("resolved path = %q, want %q", gotPath, wantPath)
+	}
+}
+
 func TestResolve_WithFlag(t *testing.T) {
 	campRoot := setupTestCampaign(t, "api", "web")
 

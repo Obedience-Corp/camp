@@ -398,9 +398,12 @@ func TestList_StandaloneNotExpanded(t *testing.T) {
 	}
 }
 
-func TestList_GitmodulesSubmoduleDedupAgainstStandalone(t *testing.T) {
-	// When a .gitmodules repo has a submodule named "foo" and there's also
-	// a standalone project named "foo", the submodule entry should be deduped.
+func TestList_GitmodulesSubmoduleKeptAlongsideStandalone(t *testing.T) {
+	// When a .gitmodules repo has a submodule named "foo" and there's also a
+	// standalone project named "foo", both entries must appear: nested
+	// submodules are independent checkouts that can be on different branches
+	// or commits, and `camp fresh` / `camp <cmd> --project` need to target
+	// them explicitly via the `mono@foo` qualified name.
 	tmpDir := t.TempDir()
 	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
 
@@ -442,22 +445,15 @@ func TestList_GitmodulesSubmoduleDedupAgainstStandalone(t *testing.T) {
 		projectMap[p.Name] = p
 	}
 
-	// "foo" standalone should exist
 	if _, ok := projectMap["foo"]; !ok {
 		t.Error("missing standalone 'foo' project")
 	}
-
-	// "mono@foo" should be deduped (standalone "foo" takes precedence)
-	if _, ok := projectMap["mono@foo"]; ok {
-		t.Error("mono@foo should be deduped against standalone 'foo'")
+	if _, ok := projectMap["mono@foo"]; !ok {
+		t.Error("mono@foo must be kept — nested submodule is a separate checkout")
 	}
-
-	// "mono@bar" should exist (no standalone "bar")
 	if _, ok := projectMap["mono@bar"]; !ok {
 		t.Error("missing mono@bar subproject")
 	}
-
-	// "mono" root entry should exist
 	if _, ok := projectMap["mono"]; !ok {
 		t.Error("missing mono root entry")
 	}

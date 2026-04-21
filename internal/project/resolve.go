@@ -98,17 +98,43 @@ func ResolveFromCwd(ctx context.Context, campRoot string) (*ResolveResult, error
 		return nil, camperrors.Wrap(listErr, "failed to list projects")
 	}
 
-	for _, proj := range projects {
-		projectPath := ResolveProjectPath(campRoot, proj)
-		if isPathWithin(resolvedCwd, projectPath) || isPathWithin(cwd, filepath.Join(campRoot, proj.Path)) {
-			return &ResolveResult{
-				Name:        proj.Name,
-				Path:        projectPath,
-				LogicalPath: proj.Path,
-				Source:      proj.Source,
-				LinkedPath:  proj.LinkedPath,
-			}, nil
+	// Find the project with the longest (deepest) matching path. This ensures
+	// nested submodules win over their parent monorepo — e.g. from cwd inside
+	// `projects/mono/sub`, the resolver returns `mono@sub`, not `mono`.
+	var (
+		bestProject *Project
+		bestPath    string
+		bestLen     int
+	)
+	for i := range projects {
+		proj := &projects[i]
+		projectPath := ResolveProjectPath(campRoot, *proj)
+		logicalPath := filepath.Join(campRoot, proj.Path)
+
+		var match string
+		switch {
+		case isPathWithin(resolvedCwd, projectPath):
+			match = projectPath
+		case isPathWithin(cwd, logicalPath):
+			match = logicalPath
 		}
+		if match == "" {
+			continue
+		}
+		if len(match) > bestLen {
+			bestProject = proj
+			bestPath = projectPath
+			bestLen = len(match)
+		}
+	}
+	if bestProject != nil {
+		return &ResolveResult{
+			Name:        bestProject.Name,
+			Path:        bestPath,
+			LogicalPath: bestProject.Path,
+			Source:      bestProject.Source,
+			LinkedPath:  bestProject.LinkedPath,
+		}, nil
 	}
 
 	projectRoot, isSubmodule, err := git.FindProjectRootWithType(cwd)
