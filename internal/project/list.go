@@ -223,10 +223,11 @@ func latestCommitDate(ctx context.Context, absPath string) string {
 	return strings.TrimSpace(string(output))
 }
 
-// deduplicateByRemoteURL groups projects by git remote URL and keeps only the
-// copy with the most recent commit. Projects with empty URL are always kept.
-// Monorepo subprojects skip URL-based dedup (they share the parent's URL) but
-// are dropped if a standalone project with the same base name exists.
+// deduplicateByRemoteURL groups standalone projects by git remote URL and keeps
+// only the copy with the most recent commit. Projects with empty URL are always
+// kept. Monorepo subprojects are always kept — they are separate checkouts that
+// can sit on different branches/commits than any standalone project with the
+// same base name, and callers (e.g. `camp fresh`) need to target them directly.
 func deduplicateByRemoteURL(ctx context.Context, campaignRoot string, projects []Project) []Project {
 	if ctx.Err() != nil {
 		return projects
@@ -236,17 +237,9 @@ func deduplicateByRemoteURL(ctx context.Context, campaignRoot string, projects [
 	bestIdx := make(map[string]int)
 	bestDate := make(map[string]string)
 
-	// Collect standalone project names for monorepo dedup.
-	standaloneNames := make(map[string]bool)
-	for _, p := range projects {
-		if p.MonorepoRoot == "" {
-			standaloneNames[p.Name] = true
-		}
-	}
-
 	for i, p := range projects {
-		// Skip monorepo subprojects — they share the parent's URL and are
-		// deduped by name against standalone repos instead.
+		// Monorepo subprojects share the parent's URL. They are not subject to
+		// URL-based dedup — each nested submodule is an independent checkout.
 		if p.URL == "" || p.MonorepoRoot != "" {
 			continue
 		}
@@ -278,11 +271,7 @@ func deduplicateByRemoteURL(ctx context.Context, campaignRoot string, projects [
 		case p.URL == "":
 			result = append(result, p)
 		case p.MonorepoRoot != "":
-			// Keep monorepo subproject only if no standalone repo has the same base name.
-			baseName := filepath.Base(p.Path)
-			if !standaloneNames[baseName] {
-				result = append(result, p)
-			}
+			result = append(result, p)
 		case keep[i]:
 			result = append(result, p)
 		}
