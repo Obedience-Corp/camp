@@ -75,6 +75,7 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 
 	expectedCommands := map[string]bool{
 		"init":          false,
+		"create":        false,
 		"clone":         false,
 		"switch":        false,
 		"register":      false,
@@ -126,9 +127,9 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		}
 	}
 
-	wantCount := 15
+	wantCount := 16
 	if flowCommandsRegistered() {
-		wantCount = 18
+		wantCount = 19
 	}
 	if questCommandsRegistered() {
 		wantCount += 13
@@ -157,6 +158,7 @@ func TestManifestCommand_AllCommandsHaveAnnotations(t *testing.T) {
 
 	// Commands that are explicitly agent-allowed (have non-interactive input modes)
 	agentAllowed := map[string]bool{
+		"create":        true,
 		"dungeon list":  true,
 		"dungeon move":  true,
 		"switch":        true,
@@ -214,6 +216,7 @@ func TestManifestCommand_InteractiveFlags(t *testing.T) {
 
 	interactiveCommands := map[string]bool{
 		"init":          true,
+		"create":        true,
 		"switch":        true,
 		"settings":      true,
 		"move":          true,
