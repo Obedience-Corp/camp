@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"path/filepath"
@@ -77,6 +78,33 @@ func init() {
 	initCmd.Flags().Bool("repair", false, "Add missing files to existing campaign")
 	initCmd.Flags().Bool("yes", false, "Skip repair confirmation prompt (for scripting)")
 	initCmd.Flags().Bool("skip-fest", false, "Skip automatic Festival Methodology initialization")
+}
+
+// initParams is the full set of inputs the init flow needs, already
+// parsed from flags or constructed by another command (e.g., create).
+type initParams struct {
+	dir           string
+	name          string
+	typeStr       string
+	description   string
+	mission       string
+	force         bool
+	noRegister    bool
+	noGit         bool
+	dryRun        bool
+	repair        bool
+	yes           bool
+	skipFest      bool
+	verboseOutput bool
+	printPath     bool
+}
+
+// initWriters routes output between human-facing text and machine-
+// readable lines. In default mode humanOut == machineOut == os.Stdout.
+// In print-path mode humanOut == os.Stderr and machineOut == os.Stdout.
+type initWriters struct {
+	humanOut   io.Writer
+	machineOut io.Writer
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
