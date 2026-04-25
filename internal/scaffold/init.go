@@ -44,6 +44,11 @@ type InitOptions struct {
 	// RepairPlan is the pre-computed repair plan (set by the caller after preview).
 	// When set, Init uses the merged jumps config from the plan instead of defaults.
 	RepairPlan *RepairPlan
+	// SkipFest, when true, signals the cmd-layer caller to skip
+	// festival initialization. scaffold.Init does not act on this
+	// field directly; festival init is owned by the cmd layer
+	// (see cmd/camp/init.go:initializeFestivals).
+	SkipFest bool
 }
 
 // InitResult contains information about what was created.
