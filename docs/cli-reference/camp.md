@@ -49,6 +49,7 @@ camp [flags]
 * [camp completion](camp_completion.md)	 - Generate the autocompletion script for the specified shell
 * [camp concepts](camp_concepts.md)	 - List configured concepts
 * [camp copy](camp_copy.md)	 - Copy a file or directory within the campaign
+* [camp create](camp_create.md)	 - Create a new campaign at the default campaigns directory
 * [camp date](camp_date.md)	 - Append date suffix to file or directory name
 * [camp doctor](camp_doctor.md)	 - Diagnose and fix campaign health issues
 * [camp dungeon](camp_dungeon.md)	 - Manage the campaign dungeon

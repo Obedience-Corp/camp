@@ -36,11 +36,12 @@ camp init [path] [flags]
 ### Examples
 
 ```
-  camp init                      Initialize current directory
-  camp init my-campaign          Create and initialize new directory
-  camp init --name "My Project"  Set custom campaign name
-  camp init --no-git             Skip git initialization
-  camp init --dry-run            Preview without creating anything
+  camp init                                        Initialize current directory
+  camp init my-campaign                            Create and initialize new directory
+  camp init --name "My Project"                    Set custom campaign name
+  camp init --no-git                               Skip git initialization
+  camp init --dry-run                              Preview without creating anything
+  camp init --print-path -d "desc" -m "mission"   Machine mode: root on stdout, summary on stderr
 ```
 
 ### Options
@@ -54,6 +55,7 @@ camp init [path] [flags]
   -n, --name string          Campaign name (defaults to directory name)
       --no-git               Skip git repository initialization
       --no-register          Don't add to global registry
+      --print-path           Print the new campaign root path to stdout (machine mode)
       --repair               Add missing files to existing campaign
       --skip-fest            Skip automatic Festival Methodology initialization
   -t, --type string          Campaign type (product, research, tools, personal) (default "product")

@@ -1,0 +1,49 @@
+## camp create
+
+Create a new campaign at the default campaigns directory
+
+### Synopsis
+
+Create a new campaign at <campaigns_dir>/<name>/, using the same scaffolding as 'camp init'. The default campaigns directory is ~/campaigns/ and can be configured via 'camp settings' or by editing the campaigns_dir field in ~/.obey/campaign/config.json.
+
+```
+camp create <name> [flags]
+```
+
+### Examples
+
+```
+  camp create my-project
+  camp create my-project -d "Description" -m "Mission"
+  camp create my-project --parent-dir ~/Dev/sandbox
+  camp create my-project --print-path
+  camp create my-project --dry-run
+```
+
+### Options
+
+```
+  -d, --description string   Campaign description
+      --dry-run              Show what would be done without creating anything
+  -h, --help                 help for create
+  -m, --mission string       Campaign mission statement
+  -n, --name string          Campaign display name (defaults to <name> positional)
+      --no-git               Skip git repository initialization
+      --parent-dir string    Override the base directory (campaign created at <parent-dir>/<name>/)
+      --print-path           Print the new campaign root path to stdout (machine mode)
+      --skip-fest            Skip Festival Methodology initialization
+  -t, --type string          Campaign type (product, research, tools, personal) (default "product")
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.json)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+
+### SEE ALSO
+
+* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
+
