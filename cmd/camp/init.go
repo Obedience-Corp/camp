@@ -49,11 +49,12 @@ Also creates:
 Initializes a git repository if not already inside one.
 
 Use --no-git to skip git initialization.`,
-	Example: `  camp init                      Initialize current directory
-  camp init my-campaign          Create and initialize new directory
-  camp init --name "My Project"  Set custom campaign name
-  camp init --no-git             Skip git initialization
-  camp init --dry-run            Preview without creating anything`,
+	Example: `  camp init                                        Initialize current directory
+  camp init my-campaign                            Create and initialize new directory
+  camp init --name "My Project"                    Set custom campaign name
+  camp init --no-git                               Skip git initialization
+  camp init --dry-run                              Preview without creating anything
+  camp init --print-path -d "desc" -m "mission"   Machine mode: root on stdout, summary on stderr`,
 	Args: cobra.MaximumNArgs(1),
 	Annotations: map[string]string{
 		"agent_allowed": "false",
@@ -78,6 +79,7 @@ func init() {
 	initCmd.Flags().Bool("repair", false, "Add missing files to existing campaign")
 	initCmd.Flags().Bool("yes", false, "Skip repair confirmation prompt (for scripting)")
 	initCmd.Flags().Bool("skip-fest", false, "Skip automatic Festival Methodology initialization")
+	initCmd.Flags().Bool("print-path", false, "Print the new campaign root path to stdout (machine mode)")
 }
 
 // initParams is the full set of inputs the init flow needs, already
@@ -107,6 +109,17 @@ type initWriters struct {
 	machineOut io.Writer
 }
 
+// chooseInitWriters returns the correct writer pair for the given mode.
+// In default mode both writers point to stdout so behavior is unchanged.
+// In print-path mode human-readable output goes to stderr (the conventional
+// channel for interactive/status messages) and machine output goes to stdout.
+func chooseInitWriters(printPath bool) initWriters {
+	if printPath {
+		return initWriters{humanOut: os.Stderr, machineOut: os.Stdout}
+	}
+	return initWriters{humanOut: os.Stdout, machineOut: os.Stdout}
+}
+
 func runInit(cmd *cobra.Command, args []string) error {
 	dir := "."
 	if len(args) > 0 {
@@ -117,6 +130,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "failed to resolve directory path")
 	}
 	verboseOutput, _ := cmd.Flags().GetBool("verbose")
+	printPath, _ := cmd.Flags().GetBool("print-path")
 	p := initParams{
 		dir:           absDir,
 		name:          func() string { v, _ := cmd.Flags().GetString("name"); return v }(),
@@ -131,8 +145,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 		yes:           func() bool { v, _ := cmd.Flags().GetBool("yes"); return v }(),
 		skipFest:      func() bool { v, _ := cmd.Flags().GetBool("skip-fest"); return v }(),
 		verboseOutput: verboseOutput,
+		printPath:     printPath,
 	}
-	w := initWriters{humanOut: os.Stdout, machineOut: os.Stdout}
+	w := chooseInitWriters(p.printPath)
 	return runInitFlow(cmd.Context(), p, w, tui.IsTerminal())
 }
 
@@ -305,6 +320,12 @@ func runInitFlow(ctx context.Context, p initParams, w initWriters, isInteractive
 		if festInitialized {
 			fmt.Fprintln(w.humanOut, ui.KeyValueColored("Festivals:", "initialized", ui.SuccessColor))
 		}
+	}
+
+	// Machine output: emit the absolute campaign root to machineOut when
+	// --print-path is set. Dry-run is excluded because no campaign root exists.
+	if p.printPath && !p.dryRun {
+		fmt.Fprintln(w.machineOut, result.CampaignRoot)
 	}
 
 	return nil
