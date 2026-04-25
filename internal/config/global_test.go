@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -239,5 +240,86 @@ func TestLoadGlobalConfig_Timeout(t *testing.T) {
 	_, err := LoadGlobalConfig(ctx)
 	if err != context.DeadlineExceeded {
 		t.Errorf("LoadGlobalConfig() error = %v, want %v", err, context.DeadlineExceeded)
+	}
+}
+
+// TestGlobalConfig_ResolvedCampaignsDir_DefaultEmpty verifies that an empty
+// CampaignsDir expands to $HOME/campaigns.
+func TestGlobalConfig_ResolvedCampaignsDir_DefaultEmpty(t *testing.T) {
+	fakeHome := "/fake/home"
+	t.Setenv("HOME", fakeHome)
+
+	cfg := &GlobalConfig{}
+	got, err := cfg.ResolvedCampaignsDir()
+	if err != nil {
+		t.Fatalf("ResolvedCampaignsDir() unexpected error: %v", err)
+	}
+	want := filepath.Join(fakeHome, "campaigns")
+	if got != want {
+		t.Errorf("ResolvedCampaignsDir() = %q, want %q", got, want)
+	}
+}
+
+// TestGlobalConfig_ResolvedCampaignsDir_TildePrefix verifies that a
+// tilde-prefixed path is expanded against $HOME.
+func TestGlobalConfig_ResolvedCampaignsDir_TildePrefix(t *testing.T) {
+	fakeHome := "/fake/home"
+	t.Setenv("HOME", fakeHome)
+
+	cfg := &GlobalConfig{CampaignsDir: "~/foo"}
+	got, err := cfg.ResolvedCampaignsDir()
+	if err != nil {
+		t.Fatalf("ResolvedCampaignsDir() unexpected error: %v", err)
+	}
+	want := filepath.Join(fakeHome, "foo")
+	if got != want {
+		t.Errorf("ResolvedCampaignsDir() = %q, want %q", got, want)
+	}
+}
+
+// TestGlobalConfig_ResolvedCampaignsDir_AbsolutePath verifies that an
+// absolute path passes through unchanged (after Clean).
+func TestGlobalConfig_ResolvedCampaignsDir_AbsolutePath(t *testing.T) {
+	cfg := &GlobalConfig{CampaignsDir: "/tmp/x"}
+	got, err := cfg.ResolvedCampaignsDir()
+	if err != nil {
+		t.Fatalf("ResolvedCampaignsDir() unexpected error: %v", err)
+	}
+	want := "/tmp/x"
+	if got != want {
+		t.Errorf("ResolvedCampaignsDir() = %q, want %q", got, want)
+	}
+}
+
+// TestGlobalConfig_ResolvedCampaignsDir_RelativeResolvesAgainstHome verifies
+// that a bare relative path is joined with $HOME.
+func TestGlobalConfig_ResolvedCampaignsDir_RelativeResolvesAgainstHome(t *testing.T) {
+	fakeHome := "/fake/home"
+	t.Setenv("HOME", fakeHome)
+
+	cfg := &GlobalConfig{CampaignsDir: "my-campaigns"}
+	got, err := cfg.ResolvedCampaignsDir()
+	if err != nil {
+		t.Fatalf("ResolvedCampaignsDir() unexpected error: %v", err)
+	}
+	want := filepath.Join(fakeHome, "my-campaigns")
+	if got != want {
+		t.Errorf("ResolvedCampaignsDir() = %q, want %q", got, want)
+	}
+}
+
+// TestGlobalConfig_ResolvedCampaignsDir_InvalidHome verifies that clearing
+// HOME causes ResolvedCampaignsDir to return a wrapped error.
+func TestGlobalConfig_ResolvedCampaignsDir_InvalidHome(t *testing.T) {
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "") // Windows fallback
+
+	cfg := &GlobalConfig{}
+	_, err := cfg.ResolvedCampaignsDir()
+	if err == nil {
+		t.Fatal("ResolvedCampaignsDir() expected error when HOME is unset, got nil")
+	}
+	if !strings.Contains(err.Error(), "campaigns_dir") {
+		t.Errorf("ResolvedCampaignsDir() error = %q, want it to mention campaigns_dir", err.Error())
 	}
 }

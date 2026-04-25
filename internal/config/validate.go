@@ -58,7 +58,12 @@ func ValidateProjectConfig(p *ProjectConfig) error {
 
 // ValidateGlobalConfig validates a global configuration.
 func ValidateGlobalConfig(cfg *GlobalConfig) error {
-	// GlobalConfig only contains user preferences, no validation needed
+	if strings.ContainsRune(cfg.CampaignsDir, '\x00') {
+		return camperrors.Wrap(errors.New("campaigns_dir contains a null byte"), "invalid campaigns_dir")
+	}
+	if cfg.CampaignsDir != "" && strings.TrimSpace(cfg.CampaignsDir) == "" {
+		return camperrors.Wrap(errors.New("campaigns_dir is all whitespace"), "invalid campaigns_dir")
+	}
 	return nil
 }
 
