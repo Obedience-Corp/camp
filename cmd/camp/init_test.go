@@ -262,10 +262,12 @@ func TestRunInitFlow_PrintPathRoutesOutput(t *testing.T) {
 	}
 }
 
-// TestCampInit_PrintPathCLI verifies the full stdout/stderr contract of
-// runInitFlow when printPath is true, using separate writer buffers that mirror
-// what chooseInitWriters wires in production.
-func TestCampInit_PrintPathCLI(t *testing.T) {
+// TestCampInit_PrintPathRouting verifies the stdout/stderr writer-routing
+// contract of runInitFlow when printPath is true, using separate writer buffers
+// that mirror what chooseInitWriters wires in production. This is a runner-level
+// test, not a true CLI subprocess test (a deferred follow-up tracks adding
+// subprocess coverage).
+func TestCampInit_PrintPathRouting(t *testing.T) {
 	tmpDir := t.TempDir()
 	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
 	t.Setenv("XDG_CONFIG_HOME", tmpDir)
@@ -311,11 +313,11 @@ func TestCampInit_PrintPathCLI(t *testing.T) {
 	}
 }
 
-// TestCampInit_DefaultModeUnchanged is a regression guard: when --print-path is
-// not set, all output must go to humanOut (stdout in production) and machineOut
-// must receive nothing extra. Default-mode users must see identical output to
-// before the refactor.
-func TestCampInit_DefaultModeUnchanged(t *testing.T) {
+// TestCampInit_DefaultModeWritersUnchanged is a runner-level regression guard:
+// when printPath is false, runInitFlow must write all output through humanOut
+// and produce nothing extra on machineOut. Default-mode users must see output
+// identical to before the writer refactor.
+func TestCampInit_DefaultModeWritersUnchanged(t *testing.T) {
 	tmpDir := t.TempDir()
 	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
 	t.Setenv("XDG_CONFIG_HOME", tmpDir)
