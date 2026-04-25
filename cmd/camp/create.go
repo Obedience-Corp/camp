@@ -17,7 +17,7 @@ import (
 var createCmd = &cobra.Command{
 	Use:   "create <name>",
 	Short: "Create a new campaign at the default campaigns directory",
-	Long: `Create a new campaign at <campaigns_dir>/<name>/, using the same scaffolding as 'camp init'. The default campaigns directory is ~/campaigns/ and can be configured via 'camp settings' or by editing the campaigns_dir field in ~/.obey/campaign/config.json.`,
+	Long:  `Create a new campaign at <campaigns_dir>/<name>/, using the same scaffolding as 'camp init'. The default campaigns directory is ~/campaigns/ and can be configured via 'camp settings' or by editing the campaigns_dir field in ~/.obey/campaign/config.json.`,
 	Example: `  camp create my-project
   camp create my-project -d "Description" -m "Mission"
   camp create my-project --parent-dir ~/Dev/sandbox
@@ -64,7 +64,7 @@ func runCreate(cmd *cobra.Command, args []string) error {
 
 	if _, statErr := os.Stat(base); os.IsNotExist(statErr) {
 		if dryRun {
-			fmt.Fprintf(w.humanOut, "would create base directory: %s\n", base)
+			writef(w.humanOut, "would create base directory: %s\n", base)
 		} else {
 			if err := os.MkdirAll(base, 0o755); err != nil {
 				return camperrors.Wrapf(err, "failed to ensure campaigns directory %s", base)

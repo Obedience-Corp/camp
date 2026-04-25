@@ -12,6 +12,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const globalRegistryPath = "/root/.obey/campaign/registry.json"
+
+func readGlobalRegistry(t *testing.T, tc *TestContainer) string {
+	t.Helper()
+	return tc.Shell(t, "cat "+globalRegistryPath+" 2>/dev/null || true")
+}
+
 // TestCampCreate_HappyPath creates a campaign via 'camp create' with --parent-dir
 // and asserts the campaign directory, .campaign/ contents, and exit code.
 func TestCampCreate_HappyPath(t *testing.T) {
@@ -24,6 +31,7 @@ func TestCampCreate_HappyPath(t *testing.T) {
 		"-d", "test description",
 		"-m", "test mission",
 		"--no-git",
+		"--skip-fest",
 		"--parent-dir", base,
 	)
 	require.NoError(t, err, "camp create should succeed; output: %s", output)
@@ -43,6 +51,24 @@ func TestCampCreate_HappyPath(t *testing.T) {
 	exists, err = tc.CheckFileExists(base + "/my-campaign/.campaign/campaign.yaml")
 	require.NoError(t, err)
 	assert.True(t, exists, ".campaign/campaign.yaml should exist")
+
+	registry := readGlobalRegistry(t, tc)
+	assert.Contains(t, registry, base+"/my-campaign", "registry should contain the created campaign path")
+	assert.Contains(t, registry, "my-campaign", "registry should contain the created campaign name")
+
+	initPath := base + "/init-equivalent"
+	initOutput, initErr := tc.RunCamp("init", initPath,
+		"--name", "my-campaign",
+		"-d", "test description",
+		"-m", "test mission",
+		"--no-git",
+		"--skip-fest",
+	)
+	require.NoError(t, initErr, "equivalent camp init should succeed; output: %s", initOutput)
+
+	createFiles := tc.Shell(t, fmt.Sprintf("cd %s/my-campaign/.campaign && find . -type f | sort", base))
+	initFiles := tc.Shell(t, fmt.Sprintf("cd %s/.campaign && find . -type f | sort", initPath))
+	assert.Equal(t, initFiles, createFiles, "camp create should scaffold the same .campaign file set as equivalent camp init")
 }
 
 // TestCampCreate_PrintPath asserts that with --print-path the campaign root path
@@ -106,6 +132,7 @@ func TestCampCreate_DryRunNoMutation(t *testing.T) {
 
 	// Use a base directory that does NOT exist.
 	base := "/tmp/create-dryrun-base-nonexistent"
+	registryBefore := readGlobalRegistry(t, tc)
 
 	output, err := tc.RunCamp("create", "dry-campaign",
 		"-d", "desc",
@@ -129,6 +156,9 @@ func TestCampCreate_DryRunNoMutation(t *testing.T) {
 	// Output should contain the "would create base directory" hint.
 	assert.Contains(t, output, "would create base directory",
 		"dry-run output should mention would-create for base dir")
+
+	registryAfter := readGlobalRegistry(t, tc)
+	assert.Equal(t, registryBefore, registryAfter, "dry-run must not mutate the global registry")
 }
 
 // TestCampCreate_DryRunWithPrintPath locks R-P2-1: under --dry-run --print-path
@@ -282,6 +312,35 @@ func TestCampCreate_ParentDirFlagOverride(t *testing.T) {
 	exists, checkErr = tc.CheckDirExists(configBase + "/override-campaign")
 	require.NoError(t, checkErr)
 	assert.False(t, exists, "campaign must NOT land under CampaignsDir when --parent-dir is set")
+}
+
+// TestCampCreate_UsesCampaignsDirConfig verifies that camp create uses
+// GlobalConfig.CampaignsDir when --parent-dir is absent.
+func TestCampCreate_UsesCampaignsDirConfig(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	configBase := "/tmp/create-config-selected-base"
+	tc.Shell(t, fmt.Sprintf("mkdir -p %s", configBase))
+
+	configJSON := fmt.Sprintf(`{"campaigns_dir": %q}`, configBase)
+	if err := tc.WriteGlobalConfig(configJSON); err != nil {
+		t.Fatalf("WriteGlobalConfig: %v", err)
+	}
+
+	output, err := tc.RunCamp("create", "config-selected-campaign",
+		"-d", "desc",
+		"-m", "mission",
+		"--no-git",
+		"--skip-fest",
+	)
+	require.NoError(t, err, "camp create should use configured CampaignsDir; output: %s", output)
+
+	exists, checkErr := tc.CheckDirExists(configBase + "/config-selected-campaign")
+	require.NoError(t, checkErr)
+	assert.True(t, exists, "campaign should land under configured CampaignsDir when --parent-dir is absent")
+
+	registry := readGlobalRegistry(t, tc)
+	assert.Contains(t, registry, configBase+"/config-selected-campaign", "registry should contain the configured-base campaign path")
 }
 
 // TestCampCreate_FestivalOwnership verifies festival initialization ownership:
