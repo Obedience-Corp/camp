@@ -108,35 +108,44 @@ type initWriters struct {
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
-	// Determine target directory
 	dir := "."
 	if len(args) > 0 {
 		dir = args[0]
 	}
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return camperrors.Wrap(err, "failed to resolve directory path")
+	}
+	verboseOutput, _ := cmd.Flags().GetBool("verbose")
+	p := initParams{
+		dir:           absDir,
+		name:          func() string { v, _ := cmd.Flags().GetString("name"); return v }(),
+		typeStr:       func() string { v, _ := cmd.Flags().GetString("type"); return v }(),
+		description:   func() string { v, _ := cmd.Flags().GetString("description"); return v }(),
+		mission:       func() string { v, _ := cmd.Flags().GetString("mission"); return v }(),
+		force:         func() bool { v, _ := cmd.Flags().GetBool("force"); return v }(),
+		noRegister:    func() bool { v, _ := cmd.Flags().GetBool("no-register"); return v }(),
+		noGit:         func() bool { v, _ := cmd.Flags().GetBool("no-git"); return v }(),
+		dryRun:        func() bool { v, _ := cmd.Flags().GetBool("dry-run"); return v }(),
+		repair:        func() bool { v, _ := cmd.Flags().GetBool("repair"); return v }(),
+		yes:           func() bool { v, _ := cmd.Flags().GetBool("yes"); return v }(),
+		skipFest:      func() bool { v, _ := cmd.Flags().GetBool("skip-fest"); return v }(),
+		verboseOutput: verboseOutput,
+	}
+	w := initWriters{humanOut: os.Stdout, machineOut: os.Stdout}
+	return runInitFlow(cmd.Context(), p, w, tui.IsTerminal())
+}
 
-	// Parse flags
-	name, _ := cmd.Flags().GetString("name")
-	typeStr, _ := cmd.Flags().GetString("type")
-	description, _ := cmd.Flags().GetString("description")
-	mission, _ := cmd.Flags().GetString("mission")
-	force, _ := cmd.Flags().GetBool("force")
-	noRegister, _ := cmd.Flags().GetBool("no-register")
-	noGit, _ := cmd.Flags().GetBool("no-git")
-	dryRun, _ := cmd.Flags().GetBool("dry-run")
-	repair, _ := cmd.Flags().GetBool("repair")
-	yes, _ := cmd.Flags().GetBool("yes")
-	skipFest, _ := cmd.Flags().GetBool("skip-fest")
-
-	ctx := cmd.Context()
-	isInteractive := tui.IsTerminal()
+func runInitFlow(ctx context.Context, p initParams, w initWriters, isInteractive bool) error {
+	dir := p.dir
 
 	// Early detection: error if already inside a campaign
 	existingRoot, _ := campaign.Detect(ctx, dir)
 	if existingRoot != "" {
-		if repair {
+		if p.repair {
 			// Repair mode: use the detected campaign root regardless of where we are
 			dir = existingRoot
-		} else if !dryRun {
+		} else if !p.dryRun {
 			cfg, _ := config.LoadCampaignConfig(ctx, existingRoot)
 			name := filepath.Base(existingRoot)
 			if cfg != nil && cfg.Name != "" {
@@ -147,14 +156,17 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Safety check for non-empty directory (skip for repair and dry-run)
-	if !repair && !dryRun {
-		if err := checkDirectoryEmpty(dir, force, isInteractive); err != nil {
+	if !p.repair && !p.dryRun {
+		if err := checkDirectoryEmpty(dir, p.force, isInteractive); err != nil {
 			return err
 		}
 	}
 
+	description := p.description
+	mission := p.mission
+
 	// Handle interactive mode for description and mission
-	if !dryRun && !repair {
+	if !p.dryRun && !p.repair {
 		var err error
 		description, mission, err = collectCampaignInfo(ctx, description, mission, isInteractive)
 		if err != nil {
@@ -163,7 +175,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Handle repair mode - check for missing mission
-	if repair && !dryRun {
+	if p.repair && !p.dryRun {
 		var err error
 		mission, err = handleRepairMission(ctx, dir, mission, isInteractive)
 		if err != nil {
@@ -172,14 +184,14 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	opts := scaffold.InitOptions{
-		Name:        name,
-		Type:        config.CampaignType(typeStr),
+		Name:        p.name,
+		Type:        config.CampaignType(p.typeStr),
 		Description: description,
 		Mission:     mission,
-		NoRegister:  noRegister,
-		SkipGitInit: noGit,
-		DryRun:      dryRun,
-		Repair:      repair,
+		NoRegister:  p.noRegister,
+		SkipGitInit: p.noGit,
+		DryRun:      p.dryRun,
+		Repair:      p.repair,
 	}
 
 	// Validate options
@@ -188,7 +200,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Repair mode: compute and preview changes before applying.
-	if repair && !dryRun {
+	if p.repair && !p.dryRun {
 		plan, err := scaffold.ComputeRepairPlan(ctx, dir, opts)
 		if err != nil {
 			return camperrors.Wrap(err, "failed to compute repair plan")
@@ -201,7 +213,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 		printRepairDiff(plan)
 
-		if !yes {
+		if !p.yes {
 			if !isInteractive {
 				return fmt.Errorf("repair requires confirmation\n       Use --yes to skip the prompt in non-interactive mode")
 			}
@@ -226,7 +238,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Execute migrations if repair detected misplaced directories.
 	var migrationCount int
-	if repair && opts.RepairPlan != nil && len(opts.RepairPlan.Migrations) > 0 {
+	if p.repair && opts.RepairPlan != nil && len(opts.RepairPlan.Migrations) > 0 {
 		moved, err := scaffold.ExecuteMigrations(opts.RepairPlan.Migrations)
 		if err != nil {
 			fmt.Printf("  %s Migration error: %v\n", ui.WarningIcon(), err)
@@ -235,22 +247,22 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Auto-commit after repair (scaffold creates + migrations).
-	if repair && !dryRun {
+	if p.repair && !p.dryRun {
 		commitRepairChanges(ctx, result, opts.RepairPlan, migrationCount)
 	}
 
 	// Initialize Festival Methodology (unless skipped or dry-run)
 	var festInitialized bool
-	if !dryRun && !skipFest {
+	if !p.dryRun && !p.skipFest {
 		festInitialized, _ = initializeFestivals(ctx, result.CampaignRoot)
-	} else if skipFest && !dryRun {
+	} else if p.skipFest && !p.dryRun {
 		fmt.Println(ui.Info("Skipping Festival Methodology (--skip-fest)"))
 	}
 
 	// Print results
-	if dryRun {
+	if p.dryRun {
 		fmt.Println(ui.Warning("Dry run - would create:"))
-	} else if repair {
+	} else if p.repair {
 		fmt.Println(ui.Success("✓ Campaign Repaired"))
 	} else {
 		fmt.Println(ui.Success("✓ Campaign Initialized"))
@@ -272,8 +284,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	verboseOutput, _ := cmd.Flags().GetBool("verbose")
-	if len(result.Skipped) > 0 && verboseOutput {
+	if len(result.Skipped) > 0 && p.verboseOutput {
 		fmt.Println()
 		fmt.Println(ui.Subheader("Skipped (already exist):"))
 		for _, s := range result.Skipped {
@@ -281,7 +292,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if !dryRun {
+	if !p.dryRun {
 		fmt.Println()
 		typeColor := ui.GetCampaignTypeColor(string(opts.Type))
 		fmt.Println(ui.KeyValue("Campaign:", result.Name))
