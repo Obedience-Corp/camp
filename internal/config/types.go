@@ -269,6 +269,10 @@ type GlobalConfig struct {
 	Verbose bool `json:"verbose,omitempty" yaml:"verbose,omitempty"`
 	// TUI holds terminal UI configuration.
 	TUI TUIConfig `json:"tui,omitempty" yaml:"tui,omitempty"`
+	// CampaignsDir is the directory where camp create places new campaigns.
+	// Empty means use the built-in default (~/campaigns/). Tilde-prefixed and
+	// relative paths are expanded at read time via ResolvedCampaignsDir().
+	CampaignsDir string `json:"campaigns_dir,omitempty" yaml:"campaigns_dir,omitempty"`
 }
 
 // RegistryVersion is the current registry format version.
