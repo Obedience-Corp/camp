@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -204,5 +205,153 @@ func TestCampInit_NoFestOnPath(t *testing.T) {
 	}
 	if err != fest.ErrFestNotFound {
 		t.Errorf("initializeFestivals() error = %v, want fest.ErrFestNotFound", err)
+	}
+}
+
+// TestRunInitFlow_PrintPathRoutesOutput verifies that runInitFlow writes the
+// absolute campaign root to machineOut and human-readable text to humanOut when
+// printPath is true.
+func TestRunInitFlow_PrintPathRoutesOutput(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	campaignDir := filepath.Join(tmpDir, "print-path-campaign")
+
+	var humanBuf, machineBuf bytes.Buffer
+	w := initWriters{humanOut: &humanBuf, machineOut: &machineBuf}
+	p := initParams{
+		dir:         campaignDir,
+		description: "test desc",
+		mission:     "test mission",
+		typeStr:     "product",
+		noGit:       true,
+		noRegister:  true,
+		skipFest:    true,
+		printPath:   true,
+	}
+
+	ctx := context.Background()
+	if err := runInitFlow(ctx, p, w, false); err != nil {
+		t.Fatalf("runInitFlow() error = %v", err)
+	}
+
+	// machineOut must contain exactly the absolute campaign root followed by newline.
+	machineOut := machineBuf.String()
+	wantPath := campaignDir + "\n"
+	if machineOut != wantPath {
+		t.Errorf("machineOut = %q, want %q", machineOut, wantPath)
+	}
+
+	// humanOut must contain the success banner and summary lines.
+	humanOut := humanBuf.String()
+	for _, want := range []string{"Campaign Initialized", "Campaign:", "Type:", "ID:", "Root:"} {
+		if !strings.Contains(humanOut, want) {
+			t.Errorf("humanOut missing %q; full output:\n%s", want, humanOut)
+		}
+	}
+
+	// humanOut must NOT contain the campaign root as a standalone line (it should
+	// appear only as part of "Root: <path>", not as a bare path on its own line).
+	// This guards against double-printing the path.
+	lines := strings.Split(strings.TrimSpace(humanOut), "\n")
+	for _, line := range lines {
+		if strings.TrimSpace(line) == campaignDir {
+			t.Errorf("humanOut should not contain bare campaign root as a standalone line; got: %q", line)
+		}
+	}
+}
+
+// TestCampInit_PrintPathCLI verifies the full stdout/stderr contract of
+// runInitFlow when printPath is true, using separate writer buffers that mirror
+// what chooseInitWriters wires in production.
+func TestCampInit_PrintPathCLI(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	campaignDir := filepath.Join(tmpDir, "pp-cli-campaign")
+
+	// Mirrors what runInit builds when --print-path is passed.
+	var stdoutBuf, stderrBuf bytes.Buffer
+	w := initWriters{humanOut: &stderrBuf, machineOut: &stdoutBuf}
+	p := initParams{
+		dir:         campaignDir,
+		description: "cli test desc",
+		mission:     "cli test mission",
+		typeStr:     "product",
+		noGit:       true,
+		noRegister:  true,
+		skipFest:    true,
+		printPath:   true,
+	}
+
+	ctx := context.Background()
+	if err := runInitFlow(ctx, p, w, false); err != nil {
+		t.Fatalf("runInitFlow() error = %v", err)
+	}
+
+	// stdout (machineOut) must contain exactly one non-empty line: the path.
+	stdoutStr := stdoutBuf.String()
+	stdoutLines := strings.Split(strings.TrimSpace(stdoutStr), "\n")
+	if len(stdoutLines) != 1 {
+		t.Errorf("stdout should have exactly 1 line, got %d: %q", len(stdoutLines), stdoutStr)
+	}
+	if stdoutLines[0] != campaignDir {
+		t.Errorf("stdout line = %q, want %q", stdoutLines[0], campaignDir)
+	}
+
+	// stderr (humanOut) must contain the scaffold summary, not the bare path.
+	stderrStr := stderrBuf.String()
+	if !strings.Contains(stderrStr, "Campaign Initialized") {
+		t.Errorf("stderr missing campaign initialized banner; got:\n%s", stderrStr)
+	}
+	if !strings.Contains(stderrStr, "Root:") {
+		t.Errorf("stderr missing Root: line; got:\n%s", stderrStr)
+	}
+}
+
+// TestCampInit_DefaultModeUnchanged is a regression guard: when --print-path is
+// not set, all output must go to humanOut (stdout in production) and machineOut
+// must receive nothing extra. Default-mode users must see identical output to
+// before the refactor.
+func TestCampInit_DefaultModeUnchanged(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	campaignDir := filepath.Join(tmpDir, "default-mode-campaign")
+
+	// Default mode: both writers point at the same buffer (mimicking both = os.Stdout).
+	var sharedBuf, machineBuf bytes.Buffer
+	w := initWriters{humanOut: &sharedBuf, machineOut: &machineBuf}
+	p := initParams{
+		dir:         campaignDir,
+		description: "default desc",
+		mission:     "default mission",
+		typeStr:     "product",
+		noGit:       true,
+		noRegister:  true,
+		skipFest:    true,
+		printPath:   false, // default mode
+	}
+
+	ctx := context.Background()
+	if err := runInitFlow(ctx, p, w, false); err != nil {
+		t.Fatalf("runInitFlow() error = %v", err)
+	}
+
+	// All human-readable content must appear in humanOut (sharedBuf).
+	humanOut := sharedBuf.String()
+	for _, want := range []string{"Campaign Initialized", "Campaign:", "Type:", "ID:", "Root:"} {
+		if !strings.Contains(humanOut, want) {
+			t.Errorf("humanOut (stdout) missing %q in default mode; full output:\n%s", want, humanOut)
+		}
+	}
+
+	// machineOut must be empty in default mode (no bare path emitted).
+	machineOut := machineBuf.String()
+	if machineOut != "" {
+		t.Errorf("machineOut should be empty in default mode, got: %q", machineOut)
 	}
 }
