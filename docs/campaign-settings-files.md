@@ -90,7 +90,8 @@ Current fields:
   "tui": {
     "theme": "adaptive",
     "vim_mode": false
-  }
+  },
+  "campaigns_dir": "~/campaigns/"
 }
 ```
 
@@ -99,6 +100,16 @@ Notes:
 - If the file does not exist, camp loads defaults and tries to create it.
 - `editor` is only used if `$EDITOR` and `$VISUAL` are not set.
 - `camp settings` currently supports the global settings in this file.
+
+#### `campaigns_dir`
+
+The directory where `camp create` places new campaigns.
+
+- **Default**: `~/campaigns/` (used when the field is absent or empty).
+- **Accepted formats**: absolute path (e.g. `/home/you/work/campaigns`), tilde-prefixed path (e.g. `~/work/campaigns`), or a path relative to `$HOME` (discouraged but allowed).
+- **Resolution**: tilde and relative paths are expanded to an absolute path at runtime. The config file always stores the portable, unexpanded form.
+- The directory does not need to exist in advance. `camp create` creates it on the first run.
+- To discover or change this setting interactively, run `camp settings` and choose Global Settings. The "Campaigns Dir" row edits this field. Leaving it blank resets to the default `~/campaigns/`.
 
 ### `~/.obey/campaign/registry.json`
 
