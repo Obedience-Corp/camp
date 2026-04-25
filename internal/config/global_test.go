@@ -89,6 +89,26 @@ func TestLoadGlobalConfig_FromFile(t *testing.T) {
 	}
 }
 
+func TestGlobalConfig_CampaignsDirOmittedWhenEmpty(t *testing.T) {
+	legacyConfig := []byte(`{"editor":"nvim","no_color":true}`)
+
+	var cfg GlobalConfig
+	if err := json.Unmarshal(legacyConfig, &cfg); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if cfg.CampaignsDir != "" {
+		t.Fatalf("CampaignsDir = %q, want empty for legacy config", cfg.CampaignsDir)
+	}
+
+	data, err := json.Marshal(&cfg)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	if strings.Contains(string(data), "campaigns_dir") {
+		t.Fatalf("empty CampaignsDir should be omitted when saved, got JSON: %s", data)
+	}
+}
+
 func TestLoadGlobalConfig_InvalidJSON(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
