@@ -129,7 +129,7 @@ func TestCampInit_FestivalInitOwnership(t *testing.T) {
 		}
 
 		// Simulate cmd-layer: call initializeFestivals since SkipFest is false.
-		initialized, _ := initializeFestivals(ctx, campaignDir)
+		initialized, _ := initializeFestivals(ctx, campaignDir, initWriters{humanOut: os.Stdout, machineOut: os.Stdout})
 		if !initialized {
 			t.Error("initializeFestivals() should succeed when fest is available")
 		}
@@ -198,7 +198,7 @@ func TestCampInit_NoFestOnPath(t *testing.T) {
 	}
 
 	// With fest unavailable, initializeFestivals should return false + ErrFestNotFound.
-	initialized, err := initializeFestivals(ctx, campaignDir)
+	initialized, err := initializeFestivals(ctx, campaignDir, initWriters{humanOut: os.Stdout, machineOut: os.Stdout})
 	if initialized {
 		t.Error("initializeFestivals() should return false when fest is not available")
 	}

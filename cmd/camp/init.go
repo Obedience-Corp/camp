@@ -157,7 +157,7 @@ func runInitFlow(ctx context.Context, p initParams, w initWriters, isInteractive
 
 	// Safety check for non-empty directory (skip for repair and dry-run)
 	if !p.repair && !p.dryRun {
-		if err := checkDirectoryEmpty(dir, p.force, isInteractive); err != nil {
+		if err := checkDirectoryEmpty(dir, p.force, isInteractive, w); err != nil {
 			return err
 		}
 	}
@@ -177,7 +177,7 @@ func runInitFlow(ctx context.Context, p initParams, w initWriters, isInteractive
 	// Handle repair mode - check for missing mission
 	if p.repair && !p.dryRun {
 		var err error
-		mission, err = handleRepairMission(ctx, dir, mission, isInteractive)
+		mission, err = handleRepairMission(ctx, dir, mission, isInteractive, w)
 		if err != nil {
 			return err
 		}
@@ -207,25 +207,25 @@ func runInitFlow(ctx context.Context, p initParams, w initWriters, isInteractive
 		}
 
 		if !plan.HasChanges() {
-			fmt.Println(ui.Success("Campaign is up to date — nothing to repair."))
+			fmt.Fprintln(w.humanOut, ui.Success("Campaign is up to date — nothing to repair."))
 			return nil
 		}
 
-		printRepairDiff(plan)
+		printRepairDiff(plan, w)
 
 		if !p.yes {
 			if !isInteractive {
 				return fmt.Errorf("repair requires confirmation\n       Use --yes to skip the prompt in non-interactive mode")
 			}
-			fmt.Print("\nApply changes? [y/N] ")
+			fmt.Fprint(w.humanOut, "\nApply changes? [y/N] ")
 			reader := bufio.NewReader(os.Stdin)
 			answer, _ := reader.ReadString('\n')
 			answer = strings.TrimSpace(strings.ToLower(answer))
 			if answer != "y" && answer != "yes" {
-				fmt.Println("Repair cancelled.")
+				fmt.Fprintln(w.humanOut, "Repair cancelled.")
 				return nil
 			}
-			fmt.Println()
+			fmt.Fprintln(w.humanOut)
 		}
 
 		opts.RepairPlan = plan
@@ -241,69 +241,69 @@ func runInitFlow(ctx context.Context, p initParams, w initWriters, isInteractive
 	if p.repair && opts.RepairPlan != nil && len(opts.RepairPlan.Migrations) > 0 {
 		moved, err := scaffold.ExecuteMigrations(opts.RepairPlan.Migrations)
 		if err != nil {
-			fmt.Printf("  %s Migration error: %v\n", ui.WarningIcon(), err)
+			fmt.Fprintf(w.humanOut, "  %s Migration error: %v\n", ui.WarningIcon(), err)
 		}
 		migrationCount = moved
 	}
 
 	// Auto-commit after repair (scaffold creates + migrations).
 	if p.repair && !p.dryRun {
-		commitRepairChanges(ctx, result, opts.RepairPlan, migrationCount)
+		commitRepairChanges(ctx, result, opts.RepairPlan, migrationCount, w)
 	}
 
 	// Initialize Festival Methodology (unless skipped or dry-run)
 	var festInitialized bool
 	if !p.dryRun && !p.skipFest {
-		festInitialized, _ = initializeFestivals(ctx, result.CampaignRoot)
+		festInitialized, _ = initializeFestivals(ctx, result.CampaignRoot, w)
 	} else if p.skipFest && !p.dryRun {
-		fmt.Println(ui.Info("Skipping Festival Methodology (--skip-fest)"))
+		fmt.Fprintln(w.humanOut, ui.Info("Skipping Festival Methodology (--skip-fest)"))
 	}
 
 	// Print results
 	if p.dryRun {
-		fmt.Println(ui.Warning("Dry run - would create:"))
+		fmt.Fprintln(w.humanOut, ui.Warning("Dry run - would create:"))
 	} else if p.repair {
-		fmt.Println(ui.Success("✓ Campaign Repaired"))
+		fmt.Fprintln(w.humanOut, ui.Success("✓ Campaign Repaired"))
 	} else {
-		fmt.Println(ui.Success("✓ Campaign Initialized"))
+		fmt.Fprintln(w.humanOut, ui.Success("✓ Campaign Initialized"))
 	}
 
 	if len(result.DirsCreated) > 0 {
-		fmt.Println()
-		fmt.Println(ui.Subheader("Directories created:"))
+		fmt.Fprintln(w.humanOut)
+		fmt.Fprintln(w.humanOut, ui.Subheader("Directories created:"))
 		for _, d := range result.DirsCreated {
-			fmt.Printf("  %s %s\n", ui.SuccessIcon(), ui.Value(d))
+			fmt.Fprintf(w.humanOut, "  %s %s\n", ui.SuccessIcon(), ui.Value(d))
 		}
 	}
 
 	if len(result.FilesCreated) > 0 {
-		fmt.Println()
-		fmt.Println(ui.Subheader("Files created:"))
+		fmt.Fprintln(w.humanOut)
+		fmt.Fprintln(w.humanOut, ui.Subheader("Files created:"))
 		for _, f := range result.FilesCreated {
-			fmt.Printf("  %s %s\n", ui.SuccessIcon(), ui.Value(f))
+			fmt.Fprintf(w.humanOut, "  %s %s\n", ui.SuccessIcon(), ui.Value(f))
 		}
 	}
 
 	if len(result.Skipped) > 0 && p.verboseOutput {
-		fmt.Println()
-		fmt.Println(ui.Subheader("Skipped (already exist):"))
+		fmt.Fprintln(w.humanOut)
+		fmt.Fprintln(w.humanOut, ui.Subheader("Skipped (already exist):"))
 		for _, s := range result.Skipped {
-			fmt.Printf("  %s %s\n", ui.WarningIcon(), ui.Dim(s))
+			fmt.Fprintf(w.humanOut, "  %s %s\n", ui.WarningIcon(), ui.Dim(s))
 		}
 	}
 
 	if !p.dryRun {
-		fmt.Println()
+		fmt.Fprintln(w.humanOut)
 		typeColor := ui.GetCampaignTypeColor(string(opts.Type))
-		fmt.Println(ui.KeyValue("Campaign:", result.Name))
-		fmt.Println(ui.KeyValueColored("Type:", string(opts.Type), typeColor))
-		fmt.Println(ui.KeyValue("ID:", result.ID))
-		fmt.Println(ui.KeyValue("Root:", result.CampaignRoot))
+		fmt.Fprintln(w.humanOut, ui.KeyValue("Campaign:", result.Name))
+		fmt.Fprintln(w.humanOut, ui.KeyValueColored("Type:", string(opts.Type), typeColor))
+		fmt.Fprintln(w.humanOut, ui.KeyValue("ID:", result.ID))
+		fmt.Fprintln(w.humanOut, ui.KeyValue("Root:", result.CampaignRoot))
 		if result.GitInitialized {
-			fmt.Println(ui.KeyValueColored("Git:", "initialized", ui.SuccessColor))
+			fmt.Fprintln(w.humanOut, ui.KeyValueColored("Git:", "initialized", ui.SuccessColor))
 		}
 		if festInitialized {
-			fmt.Println(ui.KeyValueColored("Festivals:", "initialized", ui.SuccessColor))
+			fmt.Fprintln(w.humanOut, ui.KeyValueColored("Festivals:", "initialized", ui.SuccessColor))
 		}
 	}
 
@@ -312,35 +312,35 @@ func runInitFlow(ctx context.Context, p initParams, w initWriters, isInteractive
 
 // initializeFestivals runs fest init in the campaign directory.
 // Returns true if successful, false with guidance if fest is unavailable.
-func initializeFestivals(ctx context.Context, campaignRoot string) (bool, error) {
+func initializeFestivals(ctx context.Context, campaignRoot string, w initWriters) (bool, error) {
 	// Check if already initialized
 	if fest.IsInitialized(campaignRoot) {
-		fmt.Println(ui.Success("Festival Methodology already initialized"))
+		fmt.Fprintln(w.humanOut, ui.Success("Festival Methodology already initialized"))
 		return true, nil
 	}
 
 	// Check if fest CLI is available
 	if !fest.IsFestAvailable() {
-		showFestInstallGuidance()
+		showFestInstallGuidance(w)
 		return false, fest.ErrFestNotFound
 	}
 
 	// Check if festivals directory has content but isn't initialized
 	if hasNonFestContent(campaignRoot) {
-		showFestManualInitGuidance()
+		showFestManualInitGuidance(w)
 		return false, nil
 	}
 
-	fmt.Println(ui.Info("Initializing Festival Methodology..."))
+	fmt.Fprintln(w.humanOut, ui.Info("Initializing Festival Methodology..."))
 	err := fest.RunInit(ctx, &fest.InitOptions{
 		CampaignRoot: campaignRoot,
 	})
 	if err != nil {
-		showFestInitFailure(err)
+		showFestInitFailure(err, w)
 		return false, err
 	}
 
-	fmt.Println(ui.Success("Festival Methodology initialized"))
+	fmt.Fprintln(w.humanOut, ui.Success("Festival Methodology initialized"))
 	return true, nil
 }
 
@@ -356,35 +356,35 @@ func hasNonFestContent(campaignRoot string) bool {
 }
 
 // showFestInstallGuidance displays guidance for installing fest CLI.
-func showFestInstallGuidance() {
-	fmt.Println()
-	fmt.Println(ui.Dim("Festival Methodology provides structured project planning."))
-	fmt.Println(ui.Dim("Install the fest CLI to enable it:"))
-	fmt.Println()
-	fmt.Println(ui.Dim("  go install github.com/Obedience-Corp/fest/cmd/fest@latest"))
-	fmt.Println()
-	fmt.Println(ui.Dim("Then run: camp init --repair"))
-	fmt.Println(ui.Dim("Continuing without Festival Methodology..."))
+func showFestInstallGuidance(w initWriters) {
+	fmt.Fprintln(w.humanOut)
+	fmt.Fprintln(w.humanOut, ui.Dim("Festival Methodology provides structured project planning."))
+	fmt.Fprintln(w.humanOut, ui.Dim("Install the fest CLI to enable it:"))
+	fmt.Fprintln(w.humanOut)
+	fmt.Fprintln(w.humanOut, ui.Dim("  go install github.com/Obedience-Corp/fest/cmd/fest@latest"))
+	fmt.Fprintln(w.humanOut)
+	fmt.Fprintln(w.humanOut, ui.Dim("Then run: camp init --repair"))
+	fmt.Fprintln(w.humanOut, ui.Dim("Continuing without Festival Methodology..."))
 }
 
 // showFestManualInitGuidance displays guidance when festivals/ has non-fest content.
-func showFestManualInitGuidance() {
-	fmt.Println()
-	fmt.Println(ui.Warning("festivals/ has content but is not fest-initialized"))
-	fmt.Println(ui.Dim("Run 'fest init' manually to initialize, or clear the directory."))
+func showFestManualInitGuidance(w initWriters) {
+	fmt.Fprintln(w.humanOut)
+	fmt.Fprintln(w.humanOut, ui.Warning("festivals/ has content but is not fest-initialized"))
+	fmt.Fprintln(w.humanOut, ui.Dim("Run 'fest init' manually to initialize, or clear the directory."))
 }
 
 // showFestInitFailure displays guidance when fest init fails.
-func showFestInitFailure(err error) {
-	fmt.Println(ui.Warning(fmt.Sprintf("Failed to initialize Festival Methodology: %v", err)))
-	fmt.Println()
-	fmt.Println(ui.Dim("You may need to run 'fest init' manually."))
-	fmt.Println(ui.Dim("Use 'fest init --help' for options."))
-	fmt.Println(ui.Dim("Continuing with campaign creation..."))
+func showFestInitFailure(err error, w initWriters) {
+	fmt.Fprintln(w.humanOut, ui.Warning(fmt.Sprintf("Failed to initialize Festival Methodology: %v", err)))
+	fmt.Fprintln(w.humanOut)
+	fmt.Fprintln(w.humanOut, ui.Dim("You may need to run 'fest init' manually."))
+	fmt.Fprintln(w.humanOut, ui.Dim("Use 'fest init --help' for options."))
+	fmt.Fprintln(w.humanOut, ui.Dim("Continuing with campaign creation..."))
 }
 
 // checkDirectoryEmpty verifies the target directory is empty or gets user approval.
-func checkDirectoryEmpty(dir string, force, isInteractive bool) error {
+func checkDirectoryEmpty(dir string, force, isInteractive bool, w initWriters) error {
 	// Resolve to absolute path
 	absDir, err := filepath.Abs(dir)
 	if err != nil {
@@ -422,9 +422,10 @@ func checkDirectoryEmpty(dir string, force, isInteractive bool) error {
 	}
 
 	if isInteractive {
-		// Prompt for confirmation
-		fmt.Println(ui.Warning(fmt.Sprintf("Directory '%s' is not empty.", filepath.Base(absDir))))
-		fmt.Print("Continue and initialize campaign here? [y/N]: ")
+		// Prompt for confirmation. The prompt text goes to humanOut (stderr in
+		// print-path mode), which is the conventional channel for interactive prompts.
+		fmt.Fprintln(w.humanOut, ui.Warning(fmt.Sprintf("Directory '%s' is not empty.", filepath.Base(absDir))))
+		fmt.Fprint(w.humanOut, "Continue and initialize campaign here? [y/N]: ")
 
 		reader := bufio.NewReader(os.Stdin)
 		response, err := reader.ReadString('\n')
@@ -436,7 +437,7 @@ func checkDirectoryEmpty(dir string, force, isInteractive bool) error {
 		if response != "y" && response != "yes" {
 			return fmt.Errorf("initialization cancelled")
 		}
-		fmt.Println()
+		fmt.Fprintln(w.humanOut)
 		return nil
 	}
 
@@ -501,7 +502,7 @@ func collectCampaignInfo(ctx context.Context, description, mission string, isInt
 }
 
 // handleRepairMission checks for missing mission in existing campaign and prompts if needed.
-func handleRepairMission(ctx context.Context, dir string, mission string, isInteractive bool) (string, error) {
+func handleRepairMission(ctx context.Context, dir string, mission string, isInteractive bool, w initWriters) (string, error) {
 	// If mission is provided via flag, use it
 	if mission != "" {
 		return mission, nil
@@ -525,8 +526,8 @@ func handleRepairMission(ctx context.Context, dir string, mission string, isInte
 
 	// Campaign is missing mission
 	if isInteractive {
-		fmt.Println(ui.Warning(fmt.Sprintf("Campaign '%s' is missing a mission statement.", cfg.Name)))
-		fmt.Println()
+		fmt.Fprintln(w.humanOut, ui.Warning(fmt.Sprintf("Campaign '%s' is missing a mission statement.", cfg.Name)))
+		fmt.Fprintln(w.humanOut)
 
 		form := huh.NewForm(
 			huh.NewGroup(
@@ -542,7 +543,7 @@ func handleRepairMission(ctx context.Context, dir string, mission string, isInte
 		if err := theme.RunForm(ctx, form); err != nil {
 			if theme.IsCancelled(err) {
 				// User cancelled, proceed without mission
-				fmt.Println(ui.Dim("Skipping mission statement"))
+				fmt.Fprintln(w.humanOut, ui.Dim("Skipping mission statement"))
 				return "", nil
 			}
 			return "", camperrors.Wrap(err, "failed to collect mission")
@@ -552,14 +553,14 @@ func handleRepairMission(ctx context.Context, dir string, mission string, isInte
 	}
 
 	// Non-interactive mode - just warn
-	fmt.Println(ui.Warning(fmt.Sprintf("Campaign '%s' is missing a mission statement", cfg.Name)))
-	fmt.Println(ui.Dim("         Run 'camp init --repair' in an interactive terminal to add one"))
-	fmt.Println()
+	fmt.Fprintln(w.humanOut, ui.Warning(fmt.Sprintf("Campaign '%s' is missing a mission statement", cfg.Name)))
+	fmt.Fprintln(w.humanOut, ui.Dim("         Run 'camp init --repair' in an interactive terminal to add one"))
+	fmt.Fprintln(w.humanOut)
 	return "", nil
 }
 
 // commitRepairChanges creates a git commit after a successful repair.
-func commitRepairChanges(ctx context.Context, initResult *scaffold.InitResult, plan *scaffold.RepairPlan, migrationCount int) {
+func commitRepairChanges(ctx context.Context, initResult *scaffold.InitResult, plan *scaffold.RepairPlan, migrationCount int, w initWriters) {
 	hasChanges := len(initResult.DirsCreated) > 0 || len(initResult.FilesCreated) > 0 || migrationCount > 0
 	if plan != nil && len(plan.IntentMigrations) > 0 {
 		hasChanges = true
@@ -587,9 +588,9 @@ func commitRepairChanges(ctx context.Context, initResult *scaffold.InitResult, p
 	})
 
 	if result.Committed {
-		fmt.Printf("\n%s %s\n", ui.SuccessIcon(), result.Message)
+		fmt.Fprintf(w.humanOut, "\n%s %s\n", ui.SuccessIcon(), result.Message)
 	} else if result.Message != "" {
-		fmt.Printf("\n%s %s\n", ui.InfoIcon(), result.Message)
+		fmt.Fprintf(w.humanOut, "\n%s %s\n", ui.InfoIcon(), result.Message)
 	}
 }
 
@@ -673,32 +674,32 @@ func countMigrationItems(migrations []scaffold.MigrationAction) int {
 }
 
 // printRepairDiff displays the proposed repair changes as a colored diff.
-func printRepairDiff(plan *scaffold.RepairPlan) {
-	fmt.Println(ui.Subheader("Repair Preview"))
-	fmt.Println()
+func printRepairDiff(plan *scaffold.RepairPlan, w initWriters) {
+	fmt.Fprintln(w.humanOut, ui.Subheader("Repair Preview"))
+	fmt.Fprintln(w.humanOut)
 
 	for _, c := range plan.Changes {
 		switch c.Type {
 		case scaffold.RepairAdd:
-			fmt.Printf("  %s  %s  %s\n",
+			fmt.Fprintf(w.humanOut, "  %s  %s  %s\n",
 				ui.Success("+"),
 				ui.Success(c.Key),
 				ui.Dim("("+c.Description+")"),
 			)
 		case scaffold.RepairModify:
-			fmt.Printf("  %s  %s  %s\n",
+			fmt.Fprintf(w.humanOut, "  %s  %s  %s\n",
 				ui.Warning("~"),
 				ui.Warning(c.Key),
 				ui.Dim("("+c.Description+")"),
 			)
 		case scaffold.RepairPreserve:
-			fmt.Printf("  %s  %s  %s\n",
+			fmt.Fprintf(w.humanOut, "  %s  %s  %s\n",
 				ui.Dim("✓"),
 				ui.Value(c.Key),
 				ui.Dim("(user-defined, preserved)"),
 			)
 		case scaffold.RepairMigrate:
-			fmt.Printf("  %s  %s  %s\n",
+			fmt.Fprintf(w.humanOut, "  %s  %s  %s\n",
 				ui.Warning("→"),
 				ui.Value(c.Key),
 				ui.Dim(c.Description),
