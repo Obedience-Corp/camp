@@ -505,6 +505,47 @@ func (tc *TestContainer) ExecCommand(args ...string) (string, int, error) {
 	return string(output), exitCode, nil
 }
 
+// RunCampSplit runs a camp command inside the container and returns stdout and
+// stderr as separate strings along with the exit code. Stdout and stderr are
+// captured to temporary files inside the container and read back individually.
+// This is used by tests that need to distinguish machine output (stdout) from
+// human-readable output (stderr) when --print-path is in effect.
+func (tc *TestContainer) RunCampSplit(args ...string) (stdout, stderr string, exitCode int, err error) {
+	// Quote args for safe shell embedding.
+	quotedArgs := make([]string, len(args))
+	for i, arg := range args {
+		escaped := strings.ReplaceAll(arg, "'", "'\"'\"'")
+		quotedArgs[i] = "'" + escaped + "'"
+	}
+	cmdStr := fmt.Sprintf(
+		"/camp %s >/tmp/_camp_stdout 2>/tmp/_camp_stderr; echo $? >/tmp/_camp_exitcode",
+		strings.Join(quotedArgs, " "),
+	)
+	if _, _, err = tc.ExecCommand("sh", "-c", cmdStr); err != nil {
+		return "", "", -1, fmt.Errorf("RunCampSplit exec failed: %w", err)
+	}
+	stdoutRaw, _, _ := tc.ExecCommand("cat", "/tmp/_camp_stdout")
+	stderrRaw, _, _ := tc.ExecCommand("cat", "/tmp/_camp_stderr")
+	exitStr, _, _ := tc.ExecCommand("cat", "/tmp/_camp_exitcode")
+	exitCode = 0
+	if s := strings.TrimSpace(exitStr); s != "" && s != "0" {
+		exitCode = 1
+	}
+	// Clean up temp files (best-effort).
+	_, _, _ = tc.ExecCommand("rm", "-f", "/tmp/_camp_stdout", "/tmp/_camp_stderr", "/tmp/_camp_exitcode")
+	return stdoutRaw, stderrRaw, exitCode, nil
+}
+
+// WriteGlobalConfig writes a JSON snippet to the global config path inside the
+// container. This lets tests set campaigns_dir without running 'camp settings'.
+func (tc *TestContainer) WriteGlobalConfig(content string) error {
+	// Ensure the config directory exists.
+	if err := tc.WriteFile("/root/.obey/campaign/config.json", content); err != nil {
+		return fmt.Errorf("WriteGlobalConfig: %w", err)
+	}
+	return nil
+}
+
 // Shell runs a shell script inside the container via `sh -lc` and fails the
 // test if the command errors or exits non-zero. Returns combined stdout+stderr.
 // Intended for setup-heavy test fixtures where the natural authoring form is a
