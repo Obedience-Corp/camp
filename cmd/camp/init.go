@@ -5,13 +5,13 @@ import (
 	"context"
 	"fmt"
 	"io"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/fest"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/nav/tui"
@@ -205,6 +205,7 @@ func runInitFlow(ctx context.Context, p initParams, w initWriters, isInteractive
 		Mission:     mission,
 		NoRegister:  p.noRegister,
 		SkipGitInit: p.noGit,
+		SkipFest:    p.skipFest,
 		DryRun:      p.dryRun,
 		Repair:      p.repair,
 	}

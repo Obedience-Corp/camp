@@ -118,6 +118,63 @@ func TestInit_DirectoryStructure(t *testing.T) {
 	assert.True(t, exists, "campaign.yaml should exist")
 }
 
+// TestInit_FestivalOwnership verifies festival initialization ownership:
+// with --skip-fest the festivals/ directory is absent; without it (when fest is
+// available) festivals/ is initialized by the cmd layer.
+func TestInit_FestivalOwnership(t *testing.T) {
+	t.Run("with --skip-fest festivals/ is absent", func(t *testing.T) {
+		tc := GetSharedContainer(t)
+		path := "/campaigns/init-no-fest"
+
+		output, err := tc.RunCamp("init", path,
+			"--name", "init-no-fest",
+			"-d", "desc",
+			"-m", "mission",
+			"--no-git",
+			"--skip-fest",
+		)
+		require.NoError(t, err, "camp init --skip-fest should succeed; output: %s", output)
+
+		exists, checkErr := tc.CheckDirExists(path + "/festivals")
+		require.NoError(t, checkErr)
+		assert.False(t, exists, "festivals/ should be absent with --skip-fest")
+	})
+
+	t.Run("without --skip-fest festivals/ exists when fest available", func(t *testing.T) {
+		if !festAvailable {
+			t.Skip("fest binary not available in container; skipping festival-present sub-test")
+		}
+
+		tc := GetSharedContainer(t)
+		path := "/campaigns/init-with-fest"
+
+		output, err := tc.RunCamp("init", path,
+			"--name", "init-with-fest",
+			"-d", "desc",
+			"-m", "mission",
+			"--no-git",
+		)
+		require.NoError(t, err, "camp init should succeed; output: %s", output)
+
+		exists, checkErr := tc.CheckDirExists(path + "/festivals")
+		require.NoError(t, checkErr)
+		assert.True(t, exists, "festivals/ should exist when fest is available")
+
+		markers := []string{".festival", "fest.yaml", ".fest"}
+		count := 0
+		for _, marker := range markers {
+			if exists, _ := tc.CheckDirExists(path + "/festivals/" + marker); exists {
+				count++
+			}
+			if exists, _ := tc.CheckFileExists(path + "/festivals/" + marker); exists {
+				count++
+			}
+		}
+		assert.GreaterOrEqual(t, count, 1,
+			"festivals/ should contain at least one fest initialization marker")
+	})
+}
+
 func TestInit_WorkflowExploreScaffoldAndShortcut(t *testing.T) {
 	tc := GetSharedContainer(t)
 
