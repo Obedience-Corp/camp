@@ -109,6 +109,18 @@ type initWriters struct {
 	machineOut io.Writer
 }
 
+func write(w io.Writer, args ...any) {
+	_, _ = fmt.Fprint(w, args...)
+}
+
+func writeLine(w io.Writer, args ...any) {
+	_, _ = fmt.Fprintln(w, args...)
+}
+
+func writef(w io.Writer, format string, args ...any) {
+	_, _ = fmt.Fprintf(w, format, args...)
+}
+
 // chooseInitWriters returns the correct writer pair for the given mode.
 // In default mode both writers point to stdout so behavior is unchanged.
 // In print-path mode human-readable output goes to stderr (the conventional
@@ -223,7 +235,7 @@ func runInitFlow(ctx context.Context, p initParams, w initWriters, isInteractive
 		}
 
 		if !plan.HasChanges() {
-			fmt.Fprintln(w.humanOut, ui.Success("Campaign is up to date — nothing to repair."))
+			writeLine(w.humanOut, ui.Success("Campaign is up to date — nothing to repair."))
 			return nil
 		}
 
@@ -233,15 +245,15 @@ func runInitFlow(ctx context.Context, p initParams, w initWriters, isInteractive
 			if !isInteractive {
 				return fmt.Errorf("repair requires confirmation\n       Use --yes to skip the prompt in non-interactive mode")
 			}
-			fmt.Fprint(w.humanOut, "\nApply changes? [y/N] ")
+			write(w.humanOut, "\nApply changes? [y/N] ")
 			reader := bufio.NewReader(os.Stdin)
 			answer, _ := reader.ReadString('\n')
 			answer = strings.TrimSpace(strings.ToLower(answer))
 			if answer != "y" && answer != "yes" {
-				fmt.Fprintln(w.humanOut, "Repair cancelled.")
+				writeLine(w.humanOut, "Repair cancelled.")
 				return nil
 			}
-			fmt.Fprintln(w.humanOut)
+			writeLine(w.humanOut)
 		}
 
 		opts.RepairPlan = plan
@@ -257,7 +269,7 @@ func runInitFlow(ctx context.Context, p initParams, w initWriters, isInteractive
 	if p.repair && opts.RepairPlan != nil && len(opts.RepairPlan.Migrations) > 0 {
 		moved, err := scaffold.ExecuteMigrations(opts.RepairPlan.Migrations)
 		if err != nil {
-			fmt.Fprintf(w.humanOut, "  %s Migration error: %v\n", ui.WarningIcon(), err)
+			writef(w.humanOut, "  %s Migration error: %v\n", ui.WarningIcon(), err)
 		}
 		migrationCount = moved
 	}
@@ -272,61 +284,61 @@ func runInitFlow(ctx context.Context, p initParams, w initWriters, isInteractive
 	if !p.dryRun && !p.skipFest {
 		festInitialized, _ = initializeFestivals(ctx, result.CampaignRoot, w)
 	} else if p.skipFest && !p.dryRun {
-		fmt.Fprintln(w.humanOut, ui.Info("Skipping Festival Methodology (--skip-fest)"))
+		writeLine(w.humanOut, ui.Info("Skipping Festival Methodology (--skip-fest)"))
 	}
 
 	// Print results
 	if p.dryRun {
-		fmt.Fprintln(w.humanOut, ui.Warning("Dry run - would create:"))
+		writeLine(w.humanOut, ui.Warning("Dry run - would create:"))
 	} else if p.repair {
-		fmt.Fprintln(w.humanOut, ui.Success("✓ Campaign Repaired"))
+		writeLine(w.humanOut, ui.Success("✓ Campaign Repaired"))
 	} else {
-		fmt.Fprintln(w.humanOut, ui.Success("✓ Campaign Initialized"))
+		writeLine(w.humanOut, ui.Success("✓ Campaign Initialized"))
 	}
 
 	if len(result.DirsCreated) > 0 {
-		fmt.Fprintln(w.humanOut)
-		fmt.Fprintln(w.humanOut, ui.Subheader("Directories created:"))
+		writeLine(w.humanOut)
+		writeLine(w.humanOut, ui.Subheader("Directories created:"))
 		for _, d := range result.DirsCreated {
-			fmt.Fprintf(w.humanOut, "  %s %s\n", ui.SuccessIcon(), ui.Value(d))
+			writef(w.humanOut, "  %s %s\n", ui.SuccessIcon(), ui.Value(d))
 		}
 	}
 
 	if len(result.FilesCreated) > 0 {
-		fmt.Fprintln(w.humanOut)
-		fmt.Fprintln(w.humanOut, ui.Subheader("Files created:"))
+		writeLine(w.humanOut)
+		writeLine(w.humanOut, ui.Subheader("Files created:"))
 		for _, f := range result.FilesCreated {
-			fmt.Fprintf(w.humanOut, "  %s %s\n", ui.SuccessIcon(), ui.Value(f))
+			writef(w.humanOut, "  %s %s\n", ui.SuccessIcon(), ui.Value(f))
 		}
 	}
 
 	if len(result.Skipped) > 0 && p.verboseOutput {
-		fmt.Fprintln(w.humanOut)
-		fmt.Fprintln(w.humanOut, ui.Subheader("Skipped (already exist):"))
+		writeLine(w.humanOut)
+		writeLine(w.humanOut, ui.Subheader("Skipped (already exist):"))
 		for _, s := range result.Skipped {
-			fmt.Fprintf(w.humanOut, "  %s %s\n", ui.WarningIcon(), ui.Dim(s))
+			writef(w.humanOut, "  %s %s\n", ui.WarningIcon(), ui.Dim(s))
 		}
 	}
 
 	if !p.dryRun {
-		fmt.Fprintln(w.humanOut)
+		writeLine(w.humanOut)
 		typeColor := ui.GetCampaignTypeColor(string(opts.Type))
-		fmt.Fprintln(w.humanOut, ui.KeyValue("Campaign:", result.Name))
-		fmt.Fprintln(w.humanOut, ui.KeyValueColored("Type:", string(opts.Type), typeColor))
-		fmt.Fprintln(w.humanOut, ui.KeyValue("ID:", result.ID))
-		fmt.Fprintln(w.humanOut, ui.KeyValue("Root:", result.CampaignRoot))
+		writeLine(w.humanOut, ui.KeyValue("Campaign:", result.Name))
+		writeLine(w.humanOut, ui.KeyValueColored("Type:", string(opts.Type), typeColor))
+		writeLine(w.humanOut, ui.KeyValue("ID:", result.ID))
+		writeLine(w.humanOut, ui.KeyValue("Root:", result.CampaignRoot))
 		if result.GitInitialized {
-			fmt.Fprintln(w.humanOut, ui.KeyValueColored("Git:", "initialized", ui.SuccessColor))
+			writeLine(w.humanOut, ui.KeyValueColored("Git:", "initialized", ui.SuccessColor))
 		}
 		if festInitialized {
-			fmt.Fprintln(w.humanOut, ui.KeyValueColored("Festivals:", "initialized", ui.SuccessColor))
+			writeLine(w.humanOut, ui.KeyValueColored("Festivals:", "initialized", ui.SuccessColor))
 		}
 	}
 
 	// Machine output: emit the absolute campaign root to machineOut when
 	// --print-path is set. Dry-run is excluded because no campaign root exists.
 	if p.printPath && !p.dryRun {
-		fmt.Fprintln(w.machineOut, result.CampaignRoot)
+		writeLine(w.machineOut, result.CampaignRoot)
 	}
 
 	return nil
@@ -337,7 +349,7 @@ func runInitFlow(ctx context.Context, p initParams, w initWriters, isInteractive
 func initializeFestivals(ctx context.Context, campaignRoot string, w initWriters) (bool, error) {
 	// Check if already initialized
 	if fest.IsInitialized(campaignRoot) {
-		fmt.Fprintln(w.humanOut, ui.Success("Festival Methodology already initialized"))
+		writeLine(w.humanOut, ui.Success("Festival Methodology already initialized"))
 		return true, nil
 	}
 
@@ -353,7 +365,7 @@ func initializeFestivals(ctx context.Context, campaignRoot string, w initWriters
 		return false, nil
 	}
 
-	fmt.Fprintln(w.humanOut, ui.Info("Initializing Festival Methodology..."))
+	writeLine(w.humanOut, ui.Info("Initializing Festival Methodology..."))
 	err := fest.RunInit(ctx, &fest.InitOptions{
 		CampaignRoot: campaignRoot,
 	})
@@ -362,7 +374,7 @@ func initializeFestivals(ctx context.Context, campaignRoot string, w initWriters
 		return false, err
 	}
 
-	fmt.Fprintln(w.humanOut, ui.Success("Festival Methodology initialized"))
+	writeLine(w.humanOut, ui.Success("Festival Methodology initialized"))
 	return true, nil
 }
 
@@ -379,30 +391,30 @@ func hasNonFestContent(campaignRoot string) bool {
 
 // showFestInstallGuidance displays guidance for installing fest CLI.
 func showFestInstallGuidance(w initWriters) {
-	fmt.Fprintln(w.humanOut)
-	fmt.Fprintln(w.humanOut, ui.Dim("Festival Methodology provides structured project planning."))
-	fmt.Fprintln(w.humanOut, ui.Dim("Install the fest CLI to enable it:"))
-	fmt.Fprintln(w.humanOut)
-	fmt.Fprintln(w.humanOut, ui.Dim("  go install github.com/Obedience-Corp/fest/cmd/fest@latest"))
-	fmt.Fprintln(w.humanOut)
-	fmt.Fprintln(w.humanOut, ui.Dim("Then run: camp init --repair"))
-	fmt.Fprintln(w.humanOut, ui.Dim("Continuing without Festival Methodology..."))
+	writeLine(w.humanOut)
+	writeLine(w.humanOut, ui.Dim("Festival Methodology provides structured project planning."))
+	writeLine(w.humanOut, ui.Dim("Install the fest CLI to enable it:"))
+	writeLine(w.humanOut)
+	writeLine(w.humanOut, ui.Dim("  go install github.com/Obedience-Corp/fest/cmd/fest@latest"))
+	writeLine(w.humanOut)
+	writeLine(w.humanOut, ui.Dim("Then run: camp init --repair"))
+	writeLine(w.humanOut, ui.Dim("Continuing without Festival Methodology..."))
 }
 
 // showFestManualInitGuidance displays guidance when festivals/ has non-fest content.
 func showFestManualInitGuidance(w initWriters) {
-	fmt.Fprintln(w.humanOut)
-	fmt.Fprintln(w.humanOut, ui.Warning("festivals/ has content but is not fest-initialized"))
-	fmt.Fprintln(w.humanOut, ui.Dim("Run 'fest init' manually to initialize, or clear the directory."))
+	writeLine(w.humanOut)
+	writeLine(w.humanOut, ui.Warning("festivals/ has content but is not fest-initialized"))
+	writeLine(w.humanOut, ui.Dim("Run 'fest init' manually to initialize, or clear the directory."))
 }
 
 // showFestInitFailure displays guidance when fest init fails.
 func showFestInitFailure(err error, w initWriters) {
-	fmt.Fprintln(w.humanOut, ui.Warning(fmt.Sprintf("Failed to initialize Festival Methodology: %v", err)))
-	fmt.Fprintln(w.humanOut)
-	fmt.Fprintln(w.humanOut, ui.Dim("You may need to run 'fest init' manually."))
-	fmt.Fprintln(w.humanOut, ui.Dim("Use 'fest init --help' for options."))
-	fmt.Fprintln(w.humanOut, ui.Dim("Continuing with campaign creation..."))
+	writeLine(w.humanOut, ui.Warning(fmt.Sprintf("Failed to initialize Festival Methodology: %v", err)))
+	writeLine(w.humanOut)
+	writeLine(w.humanOut, ui.Dim("You may need to run 'fest init' manually."))
+	writeLine(w.humanOut, ui.Dim("Use 'fest init --help' for options."))
+	writeLine(w.humanOut, ui.Dim("Continuing with campaign creation..."))
 }
 
 // checkDirectoryEmpty verifies the target directory is empty or gets user approval.
@@ -446,8 +458,8 @@ func checkDirectoryEmpty(dir string, force, isInteractive bool, w initWriters) e
 	if isInteractive {
 		// Prompt for confirmation. The prompt text goes to humanOut (stderr in
 		// print-path mode), which is the conventional channel for interactive prompts.
-		fmt.Fprintln(w.humanOut, ui.Warning(fmt.Sprintf("Directory '%s' is not empty.", filepath.Base(absDir))))
-		fmt.Fprint(w.humanOut, "Continue and initialize campaign here? [y/N]: ")
+		writeLine(w.humanOut, ui.Warning(fmt.Sprintf("Directory '%s' is not empty.", filepath.Base(absDir))))
+		write(w.humanOut, "Continue and initialize campaign here? [y/N]: ")
 
 		reader := bufio.NewReader(os.Stdin)
 		response, err := reader.ReadString('\n')
@@ -459,7 +471,7 @@ func checkDirectoryEmpty(dir string, force, isInteractive bool, w initWriters) e
 		if response != "y" && response != "yes" {
 			return fmt.Errorf("initialization cancelled")
 		}
-		fmt.Fprintln(w.humanOut)
+		writeLine(w.humanOut)
 		return nil
 	}
 
@@ -548,8 +560,8 @@ func handleRepairMission(ctx context.Context, dir string, mission string, isInte
 
 	// Campaign is missing mission
 	if isInteractive {
-		fmt.Fprintln(w.humanOut, ui.Warning(fmt.Sprintf("Campaign '%s' is missing a mission statement.", cfg.Name)))
-		fmt.Fprintln(w.humanOut)
+		writeLine(w.humanOut, ui.Warning(fmt.Sprintf("Campaign '%s' is missing a mission statement.", cfg.Name)))
+		writeLine(w.humanOut)
 
 		form := huh.NewForm(
 			huh.NewGroup(
@@ -565,7 +577,7 @@ func handleRepairMission(ctx context.Context, dir string, mission string, isInte
 		if err := theme.RunForm(ctx, form); err != nil {
 			if theme.IsCancelled(err) {
 				// User cancelled, proceed without mission
-				fmt.Fprintln(w.humanOut, ui.Dim("Skipping mission statement"))
+				writeLine(w.humanOut, ui.Dim("Skipping mission statement"))
 				return "", nil
 			}
 			return "", camperrors.Wrap(err, "failed to collect mission")
@@ -575,9 +587,9 @@ func handleRepairMission(ctx context.Context, dir string, mission string, isInte
 	}
 
 	// Non-interactive mode - just warn
-	fmt.Fprintln(w.humanOut, ui.Warning(fmt.Sprintf("Campaign '%s' is missing a mission statement", cfg.Name)))
-	fmt.Fprintln(w.humanOut, ui.Dim("         Run 'camp init --repair' in an interactive terminal to add one"))
-	fmt.Fprintln(w.humanOut)
+	writeLine(w.humanOut, ui.Warning(fmt.Sprintf("Campaign '%s' is missing a mission statement", cfg.Name)))
+	writeLine(w.humanOut, ui.Dim("         Run 'camp init --repair' in an interactive terminal to add one"))
+	writeLine(w.humanOut)
 	return "", nil
 }
 
@@ -610,9 +622,9 @@ func commitRepairChanges(ctx context.Context, initResult *scaffold.InitResult, p
 	})
 
 	if result.Committed {
-		fmt.Fprintf(w.humanOut, "\n%s %s\n", ui.SuccessIcon(), result.Message)
+		writef(w.humanOut, "\n%s %s\n", ui.SuccessIcon(), result.Message)
 	} else if result.Message != "" {
-		fmt.Fprintf(w.humanOut, "\n%s %s\n", ui.InfoIcon(), result.Message)
+		writef(w.humanOut, "\n%s %s\n", ui.InfoIcon(), result.Message)
 	}
 }
 
@@ -697,31 +709,31 @@ func countMigrationItems(migrations []scaffold.MigrationAction) int {
 
 // printRepairDiff displays the proposed repair changes as a colored diff.
 func printRepairDiff(plan *scaffold.RepairPlan, w initWriters) {
-	fmt.Fprintln(w.humanOut, ui.Subheader("Repair Preview"))
-	fmt.Fprintln(w.humanOut)
+	writeLine(w.humanOut, ui.Subheader("Repair Preview"))
+	writeLine(w.humanOut)
 
 	for _, c := range plan.Changes {
 		switch c.Type {
 		case scaffold.RepairAdd:
-			fmt.Fprintf(w.humanOut, "  %s  %s  %s\n",
+			writef(w.humanOut, "  %s  %s  %s\n",
 				ui.Success("+"),
 				ui.Success(c.Key),
 				ui.Dim("("+c.Description+")"),
 			)
 		case scaffold.RepairModify:
-			fmt.Fprintf(w.humanOut, "  %s  %s  %s\n",
+			writef(w.humanOut, "  %s  %s  %s\n",
 				ui.Warning("~"),
 				ui.Warning(c.Key),
 				ui.Dim("("+c.Description+")"),
 			)
 		case scaffold.RepairPreserve:
-			fmt.Fprintf(w.humanOut, "  %s  %s  %s\n",
+			writef(w.humanOut, "  %s  %s  %s\n",
 				ui.Dim("✓"),
 				ui.Value(c.Key),
 				ui.Dim("(user-defined, preserved)"),
 			)
 		case scaffold.RepairMigrate:
-			fmt.Fprintf(w.humanOut, "  %s  %s  %s\n",
+			writef(w.humanOut, "  %s  %s  %s\n",
 				ui.Warning("→"),
 				ui.Value(c.Key),
 				ui.Dim(c.Description),
