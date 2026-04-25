@@ -103,7 +103,9 @@ func TestInitRepair_RestoresMissingSkillFiles(t *testing.T) {
 
 	removed := []string{
 		path + "/.campaign/skills/camp-navigation/SKILL.md",
-		path + "/.campaign/skills/references/camp-command-contracts.md",
+		path + "/.campaign/skills/campaign-commit/SKILL.md",
+		path + "/.campaign/skills/camp-projects/SKILL.md",
+		path + "/.campaign/skills/fest-execution/SKILL.md",
 	}
 	for _, item := range removed {
 		_, _, err := tc.ExecCommand("rm", "-f", item)

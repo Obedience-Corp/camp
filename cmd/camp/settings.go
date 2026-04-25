@@ -254,8 +254,7 @@ func editCampaignsDir(ctx context.Context, cfg *config.GlobalConfig) error {
 		}
 		return camperrors.Wrap(err, "editing campaigns_dir")
 	}
-	cfg.CampaignsDir = strings.TrimSpace(value) // empty input clears back to default
-	if err := config.ValidateGlobalConfig(cfg); err != nil {
+	if err := applyCampaignsDirCandidate(cfg, value); err != nil {
 		// Surface the error and return without saving; user can re-edit on the next loop iteration.
 		fmt.Println(ui.Warning(fmt.Sprintf("Invalid value: %v", err)))
 		return nil
@@ -263,6 +262,16 @@ func editCampaignsDir(ctx context.Context, cfg *config.GlobalConfig) error {
 	if err := config.SaveGlobalConfig(ctx, cfg); err != nil {
 		return camperrors.Wrap(err, "saving config")
 	}
+	return nil
+}
+
+func applyCampaignsDirCandidate(cfg *config.GlobalConfig, value string) error {
+	next := *cfg
+	next.CampaignsDir = strings.TrimSpace(value) // empty input clears back to default
+	if err := config.ValidateGlobalConfig(&next); err != nil {
+		return err
+	}
+	cfg.CampaignsDir = next.CampaignsDir
 	return nil
 }
 
