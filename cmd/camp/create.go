@@ -60,7 +60,7 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	w := chooseCreateWriters(printPath)
+	w := chooseInitWriters(printPath)
 
 	if _, statErr := os.Stat(base); os.IsNotExist(statErr) {
 		if dryRun {
@@ -105,13 +105,13 @@ func validateCampaignName(name string) error {
 		return camperrors.New("campaign name is empty")
 	}
 	if trimmed == "." || trimmed == ".." {
-		return fmt.Errorf("invalid campaign name: %q", trimmed)
+		return camperrors.New(fmt.Sprintf("invalid campaign name: %q", trimmed))
 	}
 	if strings.HasPrefix(trimmed, ".") {
-		return fmt.Errorf("campaign name cannot start with '.': %q", trimmed)
+		return camperrors.New(fmt.Sprintf("campaign name cannot start with '.': %q", trimmed))
 	}
 	if strings.ContainsAny(trimmed, "/\\") {
-		return fmt.Errorf("campaign name cannot contain path separators: %q", trimmed)
+		return camperrors.New(fmt.Sprintf("campaign name cannot contain path separators: %q", trimmed))
 	}
 	return nil
 }
@@ -132,7 +132,7 @@ func resolveCreateBase(ctx context.Context, cmd *cobra.Command) (string, error) 
 	if err != nil {
 		return "", camperrors.Wrap(err, "loading global config")
 	}
-	return cfg.ResolvedCampaignsDir()
+	return cfg.ResolvedCampaignsDir(ctx)
 }
 
 // checkCreateTarget verifies the target directory is safe to use for a new campaign.
@@ -162,25 +162,4 @@ func checkCreateTarget(target string) error {
 		return fmt.Errorf("target %s already contains a campaign; use 'camp init --repair %s' to repair it", target, target)
 	}
 	return fmt.Errorf("target %s exists and is not empty; choose a different name or remove the directory", target)
-}
-
-// chooseCreateWriters delegates to chooseInitWriters. In default mode both
-// writers point to stdout; in print-path mode humanOut is stderr and
-// machineOut is stdout.
-func chooseCreateWriters(printPath bool) initWriters {
-	return chooseInitWriters(printPath)
-}
-
-// getFlagString retrieves a string flag value from the command.
-// Returns empty string if the flag is not registered or not set.
-func getFlagString(cmd *cobra.Command, name string) string {
-	v, _ := cmd.Flags().GetString(name)
-	return v
-}
-
-// getFlagBool retrieves a bool flag value from the command.
-// Returns false if the flag is not registered or not set.
-func getFlagBool(cmd *cobra.Command, name string) bool {
-	v, _ := cmd.Flags().GetBool(name)
-	return v
 }

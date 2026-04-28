@@ -141,21 +141,21 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return camperrors.Wrap(err, "failed to resolve directory path")
 	}
-	verboseOutput, _ := cmd.Flags().GetBool("verbose")
-	printPath, _ := cmd.Flags().GetBool("print-path")
+	verboseOutput := getFlagBool(cmd, "verbose")
+	printPath := getFlagBool(cmd, "print-path")
 	p := initParams{
 		dir:           absDir,
-		name:          func() string { v, _ := cmd.Flags().GetString("name"); return v }(),
-		typeStr:       func() string { v, _ := cmd.Flags().GetString("type"); return v }(),
-		description:   func() string { v, _ := cmd.Flags().GetString("description"); return v }(),
-		mission:       func() string { v, _ := cmd.Flags().GetString("mission"); return v }(),
-		force:         func() bool { v, _ := cmd.Flags().GetBool("force"); return v }(),
-		noRegister:    func() bool { v, _ := cmd.Flags().GetBool("no-register"); return v }(),
-		noGit:         func() bool { v, _ := cmd.Flags().GetBool("no-git"); return v }(),
-		dryRun:        func() bool { v, _ := cmd.Flags().GetBool("dry-run"); return v }(),
-		repair:        func() bool { v, _ := cmd.Flags().GetBool("repair"); return v }(),
-		yes:           func() bool { v, _ := cmd.Flags().GetBool("yes"); return v }(),
-		skipFest:      func() bool { v, _ := cmd.Flags().GetBool("skip-fest"); return v }(),
+		name:          getFlagString(cmd, "name"),
+		typeStr:       getFlagString(cmd, "type"),
+		description:   getFlagString(cmd, "description"),
+		mission:       getFlagString(cmd, "mission"),
+		force:         getFlagBool(cmd, "force"),
+		noRegister:    getFlagBool(cmd, "no-register"),
+		noGit:         getFlagBool(cmd, "no-git"),
+		dryRun:        getFlagBool(cmd, "dry-run"),
+		repair:        getFlagBool(cmd, "repair"),
+		yes:           getFlagBool(cmd, "yes"),
+		skipFest:      getFlagBool(cmd, "skip-fest"),
 		verboseOutput: verboseOutput,
 		printPath:     printPath,
 	}

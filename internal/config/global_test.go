@@ -270,7 +270,7 @@ func TestGlobalConfig_ResolvedCampaignsDir_DefaultEmpty(t *testing.T) {
 	t.Setenv("HOME", fakeHome)
 
 	cfg := &GlobalConfig{}
-	got, err := cfg.ResolvedCampaignsDir()
+	got, err := cfg.ResolvedCampaignsDir(context.Background())
 	if err != nil {
 		t.Fatalf("ResolvedCampaignsDir() unexpected error: %v", err)
 	}
@@ -287,7 +287,7 @@ func TestGlobalConfig_ResolvedCampaignsDir_TildePrefix(t *testing.T) {
 	t.Setenv("HOME", fakeHome)
 
 	cfg := &GlobalConfig{CampaignsDir: "~/foo"}
-	got, err := cfg.ResolvedCampaignsDir()
+	got, err := cfg.ResolvedCampaignsDir(context.Background())
 	if err != nil {
 		t.Fatalf("ResolvedCampaignsDir() unexpected error: %v", err)
 	}
@@ -301,7 +301,7 @@ func TestGlobalConfig_ResolvedCampaignsDir_TildePrefix(t *testing.T) {
 // absolute path passes through unchanged (after Clean).
 func TestGlobalConfig_ResolvedCampaignsDir_AbsolutePath(t *testing.T) {
 	cfg := &GlobalConfig{CampaignsDir: "/tmp/x"}
-	got, err := cfg.ResolvedCampaignsDir()
+	got, err := cfg.ResolvedCampaignsDir(context.Background())
 	if err != nil {
 		t.Fatalf("ResolvedCampaignsDir() unexpected error: %v", err)
 	}
@@ -318,7 +318,7 @@ func TestGlobalConfig_ResolvedCampaignsDir_RelativeResolvesAgainstHome(t *testin
 	t.Setenv("HOME", fakeHome)
 
 	cfg := &GlobalConfig{CampaignsDir: "my-campaigns"}
-	got, err := cfg.ResolvedCampaignsDir()
+	got, err := cfg.ResolvedCampaignsDir(context.Background())
 	if err != nil {
 		t.Fatalf("ResolvedCampaignsDir() unexpected error: %v", err)
 	}
@@ -335,7 +335,7 @@ func TestGlobalConfig_ResolvedCampaignsDir_InvalidHome(t *testing.T) {
 	t.Setenv("USERPROFILE", "") // Windows fallback
 
 	cfg := &GlobalConfig{}
-	_, err := cfg.ResolvedCampaignsDir()
+	_, err := cfg.ResolvedCampaignsDir(context.Background())
 	if err == nil {
 		t.Fatal("ResolvedCampaignsDir() expected error when HOME is unset, got nil")
 	}

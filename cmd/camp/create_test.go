@@ -111,10 +111,10 @@ func TestResolveCreateBase_ParentDirFlagOverride(t *testing.T) {
 	}
 }
 
-// TestChooseCreateWriters asserts the correct writer routing in both modes.
-func TestChooseCreateWriters(t *testing.T) {
+// TestChooseInitWriters asserts the correct writer routing in both modes.
+func TestChooseInitWriters(t *testing.T) {
 	t.Run("default mode both writers are stdout", func(t *testing.T) {
-		w := chooseCreateWriters(false)
+		w := chooseInitWriters(false)
 		if w.humanOut != os.Stdout {
 			t.Errorf("default mode humanOut = %v, want os.Stdout", w.humanOut)
 		}
@@ -124,7 +124,7 @@ func TestChooseCreateWriters(t *testing.T) {
 	})
 
 	t.Run("print-path mode humanOut is stderr, machineOut is stdout", func(t *testing.T) {
-		w := chooseCreateWriters(true)
+		w := chooseInitWriters(true)
 		if w.humanOut != os.Stderr {
 			t.Errorf("print-path humanOut = %v, want os.Stderr", w.humanOut)
 		}
