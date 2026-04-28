@@ -31,7 +31,6 @@ camp create <name> [flags]
       --no-git               Skip git repository initialization
       --parent-dir string    Override the base directory (campaign created at <parent-dir>/<name>/)
       --print-path           Print the new campaign root path to stdout (machine mode)
-      --skip-fest            Skip Festival Methodology initialization
   -t, --type string          Campaign type (product, research, tools, personal) (default "product")
 ```
 

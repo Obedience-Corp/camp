@@ -127,7 +127,6 @@ func TestCampInit_PrintPathCLI(t *testing.T) {
 		"-d", "desc",
 		"-m", "mission",
 		"--no-git",
-		"--skip-fest",
 		"--print-path",
 	)
 	require.NoError(t, err, "RunCampSplit error")
@@ -151,7 +150,6 @@ func TestCampInit_DefaultModeUnchanged(t *testing.T) {
 		"-d", "desc",
 		"-m", "mission",
 		"--no-git",
-		"--skip-fest",
 	)
 	require.NoError(t, err, "RunCampSplit error")
 	assert.Equal(t, 0, exitCode, "exit code should be 0; stderr: %s", stderr)
@@ -161,29 +159,10 @@ func TestCampInit_DefaultModeUnchanged(t *testing.T) {
 	assert.NotEqual(t, path+"\n", stdout, "default mode should not reduce stdout to machine path only")
 }
 
-// TestInit_FestivalOwnership verifies festival initialization ownership:
-// with --skip-fest the festivals/ directory is absent; without it (when fest is
-// available) festivals/ is initialized by the cmd layer.
+// TestInit_FestivalOwnership verifies that default init creates festivals/
+// when the fest binary is available.
 func TestInit_FestivalOwnership(t *testing.T) {
-	t.Run("with --skip-fest festivals/ is absent", func(t *testing.T) {
-		tc := GetSharedContainer(t)
-		path := "/campaigns/init-no-fest"
-
-		output, err := tc.RunCamp("init", path,
-			"--name", "init-no-fest",
-			"-d", "desc",
-			"-m", "mission",
-			"--no-git",
-			"--skip-fest",
-		)
-		require.NoError(t, err, "camp init --skip-fest should succeed; output: %s", output)
-
-		exists, checkErr := tc.CheckDirExists(path + "/festivals")
-		require.NoError(t, checkErr)
-		assert.False(t, exists, "festivals/ should be absent with --skip-fest")
-	})
-
-	t.Run("without --skip-fest festivals/ exists when fest available", func(t *testing.T) {
+	t.Run("festivals exists when fest available", func(t *testing.T) {
 		if !festAvailable {
 			t.Skip("fest binary not available in container; skipping festival-present sub-test")
 		}

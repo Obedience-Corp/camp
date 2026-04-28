@@ -1,4 +1,4 @@
-package main
+package initcmd
 
 import (
 	"context"
@@ -55,6 +55,29 @@ func TestBuildRepairCommitMessage_IncludesIntentMigrations(t *testing.T) {
 	}
 }
 
+// TestChooseWriters asserts the correct writer routing in both modes.
+func TestChooseWriters(t *testing.T) {
+	t.Run("default mode both writers are stdout", func(t *testing.T) {
+		w := ChooseWriters(false)
+		if w.HumanOut != os.Stdout {
+			t.Errorf("default mode HumanOut = %v, want os.Stdout", w.HumanOut)
+		}
+		if w.MachineOut != os.Stdout {
+			t.Errorf("default mode MachineOut = %v, want os.Stdout", w.MachineOut)
+		}
+	})
+
+	t.Run("print-path mode humanOut is stderr, machineOut is stdout", func(t *testing.T) {
+		w := ChooseWriters(true)
+		if w.HumanOut != os.Stderr {
+			t.Errorf("print-path HumanOut = %v, want os.Stderr", w.HumanOut)
+		}
+		if w.MachineOut != os.Stdout {
+			t.Errorf("print-path MachineOut = %v, want os.Stdout", w.MachineOut)
+		}
+	})
+}
+
 // TestCampInit_NoFestOnPath verifies that camp init completes successfully
 // when fest is not available, and that initializeFestivals returns the
 // ErrFestNotFound sentinel so the caller can show install guidance.
@@ -96,7 +119,7 @@ func TestCampInit_NoFestOnPath(t *testing.T) {
 	}
 
 	// With fest unavailable, initializeFestivals should return false + ErrFestNotFound.
-	initialized, err := initializeFestivals(ctx, campaignDir, initWriters{humanOut: os.Stdout, machineOut: os.Stdout})
+	initialized, err := initializeFestivals(ctx, campaignDir, Writers{HumanOut: os.Stdout, MachineOut: os.Stdout})
 	if initialized {
 		t.Error("initializeFestivals() should return false when fest is not available")
 	}

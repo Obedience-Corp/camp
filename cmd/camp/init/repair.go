@@ -1,4 +1,4 @@
-package main
+package initcmd
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 )
 
 // commitRepairChanges creates a git commit after a successful repair.
-func commitRepairChanges(ctx context.Context, initResult *scaffold.InitResult, plan *scaffold.RepairPlan, migrationCount int, w initWriters) {
+func commitRepairChanges(ctx context.Context, initResult *scaffold.InitResult, plan *scaffold.RepairPlan, migrationCount int, w Writers) {
 	hasChanges := len(initResult.DirsCreated) > 0 || len(initResult.FilesCreated) > 0 || migrationCount > 0
 	if plan != nil && len(plan.IntentMigrations) > 0 {
 		hasChanges = true
@@ -41,9 +41,9 @@ func commitRepairChanges(ctx context.Context, initResult *scaffold.InitResult, p
 	})
 
 	if result.Committed {
-		writef(w.humanOut, "\n%s %s\n", ui.SuccessIcon(), result.Message)
+		writef(w.HumanOut, "\n%s %s\n", ui.SuccessIcon(), result.Message)
 	} else if result.Message != "" {
-		writef(w.humanOut, "\n%s %s\n", ui.InfoIcon(), result.Message)
+		writef(w.HumanOut, "\n%s %s\n", ui.InfoIcon(), result.Message)
 	}
 }
 
@@ -127,32 +127,32 @@ func countMigrationItems(migrations []scaffold.MigrationAction) int {
 }
 
 // printRepairDiff displays the proposed repair changes as a colored diff.
-func printRepairDiff(plan *scaffold.RepairPlan, w initWriters) {
-	writeLine(w.humanOut, ui.Subheader("Repair Preview"))
-	writeLine(w.humanOut)
+func printRepairDiff(plan *scaffold.RepairPlan, w Writers) {
+	writeLine(w.HumanOut, ui.Subheader("Repair Preview"))
+	writeLine(w.HumanOut)
 
 	for _, c := range plan.Changes {
 		switch c.Type {
 		case scaffold.RepairAdd:
-			writef(w.humanOut, "  %s  %s  %s\n",
+			writef(w.HumanOut, "  %s  %s  %s\n",
 				ui.Success("+"),
 				ui.Success(c.Key),
 				ui.Dim("("+c.Description+")"),
 			)
 		case scaffold.RepairModify:
-			writef(w.humanOut, "  %s  %s  %s\n",
+			writef(w.HumanOut, "  %s  %s  %s\n",
 				ui.Warning("~"),
 				ui.Warning(c.Key),
 				ui.Dim("("+c.Description+")"),
 			)
 		case scaffold.RepairPreserve:
-			writef(w.humanOut, "  %s  %s  %s\n",
+			writef(w.HumanOut, "  %s  %s  %s\n",
 				ui.Dim("✓"),
 				ui.Value(c.Key),
 				ui.Dim("(user-defined, preserved)"),
 			)
 		case scaffold.RepairMigrate:
-			writef(w.humanOut, "  %s  %s  %s\n",
+			writef(w.HumanOut, "  %s  %s  %s\n",
 				ui.Warning("→"),
 				ui.Value(c.Key),
 				ui.Dim(c.Description),

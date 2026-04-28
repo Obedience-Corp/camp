@@ -44,11 +44,6 @@ type InitOptions struct {
 	// RepairPlan is the pre-computed repair plan (set by the caller after preview).
 	// When set, Init uses the merged jumps config from the plan instead of defaults.
 	RepairPlan *RepairPlan
-	// SkipFest, when true, signals the cmd-layer caller to skip
-	// festival initialization. scaffold.Init does not act on this
-	// field directly; festival init is owned by the cmd layer
-	// (see cmd/camp/init.go:initializeFestivals).
-	SkipFest bool
 }
 
 // InitResult contains information about what was created.
@@ -344,6 +339,20 @@ settings/workitems.json
 		}
 	}
 
+	// Initialize festivals directory via fest CLI if it doesn't exist
+	if !opts.DryRun {
+		if err := initFestivalsIfNeeded(ctx, absDir); err != nil {
+			// Log the error but don't fail - user can run fest init manually
+			result.Skipped = append(result.Skipped, "festivals/ (fest init failed - run manually)")
+		} else {
+			// Check if festivals was created
+			festivalsPath := filepath.Join(absDir, "festivals")
+			if _, err := os.Stat(festivalsPath); err == nil {
+				result.DirsCreated = append(result.DirsCreated, festivalsPath)
+			}
+		}
+	}
+
 	// Initialize git repository if not already in one and not skipped
 	if !opts.SkipGitInit && !opts.DryRun {
 		if !isInGitRepo(ctx, absDir) {
@@ -388,5 +397,36 @@ func (o *InitOptions) Validate() error {
 	if o.Type != "" && !o.Type.Valid() {
 		return fmt.Errorf("invalid campaign type: %s", o.Type)
 	}
+	return nil
+}
+
+// initFestivalsIfNeeded runs `fest init` if the festivals directory doesn't exist.
+// This delegates festival scaffolding to the fest CLI for proper structure.
+func initFestivalsIfNeeded(ctx context.Context, dir string) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	festivalsPath := filepath.Join(dir, "festivals")
+	if _, err := os.Stat(festivalsPath); err == nil {
+		// festivals/ already exists, skip
+		return nil
+	}
+
+	// Check if fest is available
+	festPath, err := exec.LookPath("fest")
+	if err != nil {
+		// fest not installed, skip silently - user can run fest init manually
+		return nil
+	}
+
+	cmd := exec.CommandContext(ctx, festPath, "init", "--path", dir)
+	cmd.Dir = dir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		// Don't fail the whole init if fest init fails - user can run it manually
+		return fmt.Errorf("fest init failed (run manually with 'fest init'): %w (output: %s)", err, string(output))
+	}
+
 	return nil
 }

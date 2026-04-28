@@ -31,7 +31,6 @@ func TestCampCreate_HappyPath(t *testing.T) {
 		"-d", "test description",
 		"-m", "test mission",
 		"--no-git",
-		"--skip-fest",
 		"--parent-dir", base,
 	)
 	require.NoError(t, err, "camp create should succeed; output: %s", output)
@@ -62,7 +61,6 @@ func TestCampCreate_HappyPath(t *testing.T) {
 		"-d", "test description",
 		"-m", "test mission",
 		"--no-git",
-		"--skip-fest",
 	)
 	require.NoError(t, initErr, "equivalent camp init should succeed; output: %s", initOutput)
 
@@ -331,7 +329,6 @@ func TestCampCreate_UsesCampaignsDirConfig(t *testing.T) {
 		"-d", "desc",
 		"-m", "mission",
 		"--no-git",
-		"--skip-fest",
 	)
 	require.NoError(t, err, "camp create should use configured CampaignsDir; output: %s", output)
 
@@ -344,34 +341,19 @@ func TestCampCreate_UsesCampaignsDirConfig(t *testing.T) {
 }
 
 // TestCampCreate_FestivalOwnership verifies festival initialization ownership:
-// with --skip-fest the festivals/ directory is absent; without it (when fest is
-// available) festivals/ exists exactly once.
+// when fest is available, camp create initializes festivals/ through the shared
+// init flow.
 func TestCampCreate_FestivalOwnership(t *testing.T) {
+	if !festAvailable {
+		t.Skip("fest binary not available in container; skipping festival-present test")
+	}
+
 	tc := GetSharedContainer(t)
 
 	base := "/tmp/create-fest-ownership"
 	tc.Shell(t, fmt.Sprintf("mkdir -p %s", base))
 
-	t.Run("with --skip-fest festivals/ is absent", func(t *testing.T) {
-		output, err := tc.RunCamp("create", "no-fest",
-			"-d", "desc",
-			"-m", "mission",
-			"--no-git",
-			"--skip-fest",
-			"--parent-dir", base,
-		)
-		require.NoError(t, err, "camp create --skip-fest should succeed; output: %s", output)
-
-		exists, checkErr := tc.CheckDirExists(base + "/no-fest/festivals")
-		require.NoError(t, checkErr)
-		assert.False(t, exists, "festivals/ should be absent with --skip-fest")
-	})
-
-	t.Run("without --skip-fest festivals/ exists once when fest available", func(t *testing.T) {
-		if !festAvailable {
-			t.Skip("fest binary not available in container; skipping festival-present sub-test")
-		}
-
+	t.Run("festivals exists when fest available", func(t *testing.T) {
 		output, err := tc.RunCamp("create", "with-fest",
 			"-d", "desc",
 			"-m", "mission",

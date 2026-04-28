@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
+	initcmd "github.com/Obedience-Corp/camp/cmd/camp/init"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/Obedience-Corp/camp/internal/config"
@@ -40,7 +42,6 @@ func init() {
 	createCmd.Flags().StringP("description", "d", "", "Campaign description")
 	createCmd.Flags().StringP("mission", "m", "", "Campaign mission statement")
 	createCmd.Flags().Bool("no-git", false, "Skip git repository initialization")
-	createCmd.Flags().Bool("skip-fest", false, "Skip Festival Methodology initialization")
 	createCmd.Flags().Bool("dry-run", false, "Show what would be done without creating anything")
 	createCmd.Flags().String("parent-dir", "", "Override the base directory (campaign created at <parent-dir>/<name>/)")
 	createCmd.Flags().Bool("print-path", false, "Print the new campaign root path to stdout (machine mode)")
@@ -52,19 +53,19 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	ctx := cmd.Context()
-	dryRun := getFlagBool(cmd, "dry-run")
-	printPath := getFlagBool(cmd, "print-path")
+	dryRun := cmdutil.GetFlagBool(cmd, "dry-run")
+	printPath := cmdutil.GetFlagBool(cmd, "print-path")
 
 	base, err := resolveCreateBase(ctx, cmd)
 	if err != nil {
 		return err
 	}
 
-	w := chooseInitWriters(printPath)
+	w := initcmd.ChooseWriters(printPath)
 
 	if _, statErr := os.Stat(base); os.IsNotExist(statErr) {
 		if dryRun {
-			writef(w.humanOut, "would create base directory: %s\n", base)
+			_, _ = fmt.Fprintf(w.HumanOut, "would create base directory: %s\n", base)
 		} else {
 			if err := os.MkdirAll(base, 0o755); err != nil {
 				return camperrors.Wrapf(err, "failed to ensure campaigns directory %s", base)
@@ -77,24 +78,23 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	displayName := getFlagString(cmd, "name")
+	displayName := cmdutil.GetFlagString(cmd, "name")
 	if displayName == "" {
 		displayName = name
 	}
 
-	p := initParams{
-		dir:         target,
-		name:        displayName,
-		typeStr:     getFlagString(cmd, "type"),
-		description: getFlagString(cmd, "description"),
-		mission:     getFlagString(cmd, "mission"),
-		noGit:       getFlagBool(cmd, "no-git"),
-		dryRun:      dryRun,
-		skipFest:    getFlagBool(cmd, "skip-fest"),
-		printPath:   printPath,
+	p := initcmd.Params{
+		Dir:         target,
+		Name:        displayName,
+		TypeStr:     cmdutil.GetFlagString(cmd, "type"),
+		Description: cmdutil.GetFlagString(cmd, "description"),
+		Mission:     cmdutil.GetFlagString(cmd, "mission"),
+		NoGit:       cmdutil.GetFlagBool(cmd, "no-git"),
+		DryRun:      dryRun,
+		PrintPath:   printPath,
 		// force, noRegister, repair, yes stay zero — create deliberately does not support them.
 	}
-	return runInitFlow(ctx, p, w, tui.IsTerminal())
+	return initcmd.RunFlow(ctx, p, w, tui.IsTerminal())
 }
 
 // validateCampaignName returns an error if name is not a valid single-segment
@@ -121,7 +121,7 @@ func validateCampaignName(name string) error {
 // Otherwise the directory comes from GlobalConfig.CampaignsDir (via
 // ResolvedCampaignsDir), which defaults to ~/campaigns/ when unset.
 func resolveCreateBase(ctx context.Context, cmd *cobra.Command) (string, error) {
-	if parent := getFlagString(cmd, "parent-dir"); parent != "" {
+	if parent := cmdutil.GetFlagString(cmd, "parent-dir"); parent != "" {
 		abs, err := filepath.Abs(parent)
 		if err != nil {
 			return "", camperrors.Wrapf(err, "resolving --parent-dir %q", parent)

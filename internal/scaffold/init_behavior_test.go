@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/Obedience-Corp/camp/internal/config"
@@ -240,44 +239,5 @@ func TestInit_CreatesCanonicalIntentDirectories(t *testing.T) {
 		} else if !info.IsDir() {
 			t.Fatalf("expected %s to be a directory", relDir)
 		}
-	}
-}
-
-func TestScaffoldInit_SkipFestPassThrough(t *testing.T) {
-	tmpDir := t.TempDir()
-	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
-	t.Setenv("XDG_CONFIG_HOME", tmpDir)
-
-	campaignDir := filepath.Join(tmpDir, "skip-fest-passthrough")
-	if err := os.MkdirAll(campaignDir, 0755); err != nil {
-		t.Fatalf("failed to create campaign dir: %v", err)
-	}
-
-	ctx := context.Background()
-	opts := InitOptions{
-		Name:        "skip-fest-passthrough",
-		NoRegister:  true,
-		SkipGitInit: true,
-		SkipFest:    true,
-	}
-
-	result, err := Init(ctx, campaignDir, opts)
-	if err != nil {
-		t.Fatalf("Init() error = %v", err)
-	}
-
-	// scaffold.Init does not produce festivals/ on its own (festival init is cmd-layer owned).
-	for _, d := range result.DirsCreated {
-		if strings.HasSuffix(d, "festivals") || strings.Contains(d, "festivals/") {
-			t.Errorf("scaffold.Init should not create festivals/ directory; got DirsCreated entry: %s", d)
-		}
-	}
-	// Result should have no error.
-	if result.CampaignRoot != campaignDir {
-		t.Errorf("CampaignRoot = %q, want %q", result.CampaignRoot, campaignDir)
-	}
-	// SkipFest field is preserved on opts (sanity check that it was not mutated).
-	if !opts.SkipFest {
-		t.Error("opts.SkipFest should remain true after Init()")
 	}
 }

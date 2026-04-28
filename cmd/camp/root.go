@@ -8,6 +8,7 @@ import (
 
 	cachepkg "github.com/Obedience-Corp/camp/cmd/camp/cache"
 	dungeonpkg "github.com/Obedience-Corp/camp/cmd/camp/dungeon"
+	initcmd "github.com/Obedience-Corp/camp/cmd/camp/init"
 	intentpkg "github.com/Obedience-Corp/camp/cmd/camp/intent"
 	leveragepkg "github.com/Obedience-Corp/camp/cmd/camp/leverage"
 	navigationpkg "github.com/Obedience-Corp/camp/cmd/camp/navigation"
@@ -187,6 +188,7 @@ func init() {
 	rootCmd.AddCommand(skillspkg.Cmd)
 	rootCmd.AddCommand(cachepkg.Cmd)
 	rootCmd.AddCommand(navigationpkg.Cmd)
+	rootCmd.AddCommand(initcmd.New())
 	rootCmd.AddCommand(navigationpkg.ShortcutsCmd)
 	rootCmd.AddCommand(registrypkg.Cmd)
 	rootCmd.AddCommand(projectpkg.Cmd)

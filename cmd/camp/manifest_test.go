@@ -329,7 +329,7 @@ func TestCampCreate_ManifestAnnotations(t *testing.T) {
 	// Supported flags
 	supportedFlags := []string{
 		"name", "type", "description", "mission",
-		"no-git", "skip-fest", "dry-run", "parent-dir", "print-path",
+		"no-git", "dry-run", "parent-dir", "print-path",
 	}
 	for _, flag := range supportedFlags {
 		if cmd.Flags().Lookup(flag) == nil {
@@ -337,8 +337,8 @@ func TestCampCreate_ManifestAnnotations(t *testing.T) {
 		}
 	}
 
-	// Absent flags: create must NOT support force, repair, no-register, yes.
-	absentFlags := []string{"force", "repair", "no-register", "yes"}
+	// Absent flags: create must NOT support init-only controls.
+	absentFlags := []string{"force", "repair", "no-register", "yes", "skip-fest"}
 	for _, flag := range absentFlags {
 		if cmd.Flags().Lookup(flag) != nil {
 			t.Errorf("camp create should NOT have flag --%s", flag)

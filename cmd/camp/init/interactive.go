@@ -1,4 +1,4 @@
-package main
+package initcmd
 
 import (
 	"bufio"
@@ -16,7 +16,7 @@ import (
 )
 
 // checkDirectoryEmpty verifies the target directory is empty or gets user approval.
-func checkDirectoryEmpty(dir string, force, isInteractive bool, w initWriters) error {
+func checkDirectoryEmpty(dir string, force, isInteractive bool, w Writers) error {
 	// Resolve to absolute path
 	absDir, err := filepath.Abs(dir)
 	if err != nil {
@@ -54,10 +54,10 @@ func checkDirectoryEmpty(dir string, force, isInteractive bool, w initWriters) e
 	}
 
 	if isInteractive {
-		// Prompt for confirmation. The prompt text goes to humanOut (stderr in
+		// Prompt for confirmation. The prompt text goes to HumanOut (stderr in
 		// print-path mode), which is the conventional channel for interactive prompts.
-		writeLine(w.humanOut, ui.Warning(fmt.Sprintf("Directory '%s' is not empty.", filepath.Base(absDir))))
-		write(w.humanOut, "Continue and initialize campaign here? [y/N]: ")
+		writeLine(w.HumanOut, ui.Warning(fmt.Sprintf("Directory '%s' is not empty.", filepath.Base(absDir))))
+		write(w.HumanOut, "Continue and initialize campaign here? [y/N]: ")
 
 		reader := bufio.NewReader(os.Stdin)
 		response, err := reader.ReadString('\n')
@@ -69,7 +69,7 @@ func checkDirectoryEmpty(dir string, force, isInteractive bool, w initWriters) e
 		if response != "y" && response != "yes" {
 			return fmt.Errorf("initialization cancelled")
 		}
-		writeLine(w.humanOut)
+		writeLine(w.HumanOut)
 		return nil
 	}
 
@@ -134,7 +134,7 @@ func collectCampaignInfo(ctx context.Context, description, mission string, isInt
 }
 
 // handleRepairMission checks for missing mission in existing campaign and prompts if needed.
-func handleRepairMission(ctx context.Context, dir string, mission string, isInteractive bool, w initWriters) (string, error) {
+func handleRepairMission(ctx context.Context, dir string, mission string, isInteractive bool, w Writers) (string, error) {
 	// If mission is provided via flag, use it
 	if mission != "" {
 		return mission, nil
@@ -158,8 +158,8 @@ func handleRepairMission(ctx context.Context, dir string, mission string, isInte
 
 	// Campaign is missing mission
 	if isInteractive {
-		writeLine(w.humanOut, ui.Warning(fmt.Sprintf("Campaign '%s' is missing a mission statement.", cfg.Name)))
-		writeLine(w.humanOut)
+		writeLine(w.HumanOut, ui.Warning(fmt.Sprintf("Campaign '%s' is missing a mission statement.", cfg.Name)))
+		writeLine(w.HumanOut)
 
 		form := huh.NewForm(
 			huh.NewGroup(
@@ -175,7 +175,7 @@ func handleRepairMission(ctx context.Context, dir string, mission string, isInte
 		if err := theme.RunForm(ctx, form); err != nil {
 			if theme.IsCancelled(err) {
 				// User cancelled, proceed without mission
-				writeLine(w.humanOut, ui.Dim("Skipping mission statement"))
+				writeLine(w.HumanOut, ui.Dim("Skipping mission statement"))
 				return "", nil
 			}
 			return "", camperrors.Wrap(err, "failed to collect mission")
@@ -185,8 +185,8 @@ func handleRepairMission(ctx context.Context, dir string, mission string, isInte
 	}
 
 	// Non-interactive mode - just warn
-	writeLine(w.humanOut, ui.Warning(fmt.Sprintf("Campaign '%s' is missing a mission statement", cfg.Name)))
-	writeLine(w.humanOut, ui.Dim("         Run 'camp init --repair' in an interactive terminal to add one"))
-	writeLine(w.humanOut)
+	writeLine(w.HumanOut, ui.Warning(fmt.Sprintf("Campaign '%s' is missing a mission statement", cfg.Name)))
+	writeLine(w.HumanOut, ui.Dim("         Run 'camp init --repair' in an interactive terminal to add one"))
+	writeLine(w.HumanOut)
 	return "", nil
 }
