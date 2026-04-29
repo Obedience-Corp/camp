@@ -78,8 +78,8 @@ func TestDestinationOptions_PromotedToBlocksLiveBackEntry(t *testing.T) {
 func TestDestinationOptions_IncludesCounts(t *testing.T) {
 	in := &intent.Intent{Status: intent.StatusInbox}
 	counts := map[intent.Status]int{
-		intent.StatusReady:     5,
-		intent.StatusArchived:  2,
+		intent.StatusReady:    5,
+		intent.StatusArchived: 2,
 	}
 	opts := destinationOptions(in, counts)
 	for _, o := range opts {

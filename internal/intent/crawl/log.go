@@ -25,13 +25,13 @@ func CrawlLogPath(intentsDir string) string {
 // LogEntry is one JSONL row in the intent crawl log. Reason is
 // only set for moves; To is only set for moves.
 type LogEntry struct {
-	Timestamp time.Time      `json:"timestamp"`
-	ID        string         `json:"id"`
-	Title     string         `json:"title"`
-	From      intent.Status  `json:"from"`
-	Decision  string         `json:"decision"` // keep | skip | move
-	To        intent.Status  `json:"to,omitempty"`
-	Reason    string         `json:"reason,omitempty"`
+	Timestamp time.Time     `json:"timestamp"`
+	ID        string        `json:"id"`
+	Title     string        `json:"title"`
+	From      intent.Status `json:"from"`
+	Decision  string        `json:"decision"` // keep | skip | move
+	To        intent.Status `json:"to,omitempty"`
+	Reason    string        `json:"reason,omitempty"`
 }
 
 // LogAppender appends one LogEntry to the crawl log. It is a

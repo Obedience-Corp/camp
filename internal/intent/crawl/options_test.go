@@ -75,10 +75,10 @@ func TestOptions_AcceptsExplicitLiveStatuses(t *testing.T) {
 
 func TestParseStatusFlag_LiveAccepted(t *testing.T) {
 	cases := map[string]intent.Status{
-		"inbox":  intent.StatusInbox,
-		"INBOX":  intent.StatusInbox,
-		"ready":  intent.StatusReady,
-		"active": intent.StatusActive,
+		"inbox":   intent.StatusInbox,
+		"INBOX":   intent.StatusInbox,
+		"ready":   intent.StatusReady,
+		"active":  intent.StatusActive,
 		" ready ": intent.StatusReady,
 	}
 	for raw, want := range cases {
