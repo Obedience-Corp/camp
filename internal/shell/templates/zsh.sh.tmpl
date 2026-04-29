@@ -41,6 +41,42 @@ camp() {
         fi
       fi
       ;;
+    workitem|wi|workitems)
+      shift
+      local arg passthrough=0
+      for arg in "$@"; do
+        case "$arg" in
+          --help|-h|--json|--print)
+            passthrough=1
+            break
+            ;;
+        esac
+      done
+      if [[ "$passthrough" -eq 1 ]]; then
+        command camp workitem "$@"
+        return
+      fi
+
+      local tmp dest root cmd_status
+      tmp=$(mktemp "${TMPDIR:-/tmp}/camp-workitem.XXXXXX") || return 1
+      command camp workitem "$@" --path-output "$tmp"
+      cmd_status=$?
+      if [[ "$cmd_status" -ne 0 ]]; then
+        rm -f "$tmp"
+        return $cmd_status
+      fi
+
+      if [[ -s "$tmp" ]]; then
+        dest=$(cat "$tmp")
+        root=$(command camp root 2>/dev/null)
+        rm -f "$tmp"
+        if [[ -n "$root" && -n "$dest" ]]; then
+          cd "$root/$dest"
+        fi
+      else
+        rm -f "$tmp"
+      fi
+      ;;
     *)
       command camp "$@"
       ;;

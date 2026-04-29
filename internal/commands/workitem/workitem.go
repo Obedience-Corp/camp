@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
@@ -20,12 +21,13 @@ import (
 // NewWorkitemCommand creates the camp workitem command.
 func NewWorkitemCommand() *cobra.Command {
 	var (
-		flagJSON   bool
-		flagPrint  bool
-		flagTypes  []string
-		flagStages []string
-		flagLimit  int
-		flagQuery  string
+		flagJSON       bool
+		flagPrint      bool
+		flagPathOutput string
+		flagTypes      []string
+		flagStages     []string
+		flagLimit      int
+		flagQuery      string
 	)
 
 	cmd := &cobra.Command{
@@ -50,12 +52,12 @@ Examples:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
-			if err := validateFlags(flagJSON, flagPrint, flagTypes, flagStages); err != nil {
+			if err := validateFlags(flagJSON, flagPrint, flagPathOutput, flagTypes, flagStages); err != nil {
 				return err
 			}
 
 			interactive := isInteractive()
-			if !interactive && !flagJSON && !flagPrint {
+			if !interactive && !flagJSON && !flagPrint && flagPathOutput == "" {
 				return fmt.Errorf("non-interactive use requires --json or --print flag")
 			}
 
@@ -98,29 +100,52 @@ Examples:
 			switch {
 			case flagJSON:
 				return outputJSON(campaignRoot, items)
-			case flagPrint && !interactive:
+			case !interactive:
 				// Non-interactive --print: output first item path directly
 				if len(items) == 0 {
 					return fmt.Errorf("no work items found")
 				}
-				fmt.Println(items[0].AbsPath(campaignRoot))
-				return nil
+				return outputSelectedPath(items[0], flagPrint, flagPathOutput)
+			case flagPathOutput != "":
+				return runTUI(ctx, items, false, flagPathOutput, campaignRoot, resolver, store, storePath)
 			case flagPrint:
-				return runTUI(ctx, items, true, campaignRoot, resolver, store, storePath)
+				return runTUI(ctx, items, true, "", campaignRoot, resolver, store, storePath)
 			default:
-				return runTUI(ctx, items, false, campaignRoot, resolver, store, storePath)
+				return runTUI(ctx, items, false, "", campaignRoot, resolver, store, storePath)
 			}
 		},
 	}
 
 	cmd.Flags().BoolVar(&flagJSON, "json", false, "Output as JSON")
 	cmd.Flags().BoolVar(&flagPrint, "print", false, "Print path only (for shell integration)")
+	cmd.Flags().StringVar(&flagPathOutput, "path-output", "", "Write selected relative path to file (shell integration)")
+	_ = cmd.Flags().MarkHidden("path-output")
 	cmd.Flags().StringArrayVar(&flagTypes, "type", nil, "Filter by workflow type (intent, design, explore, festival)")
 	cmd.Flags().StringArrayVar(&flagStages, "stage", nil, "Filter by lifecycle stage (inbox, active, ready, planning)")
 	cmd.Flags().IntVar(&flagLimit, "limit", 0, "Maximum number of items to return")
 	cmd.Flags().StringVar(&flagQuery, "query", "", "Search query to filter items")
 
 	return cmd
+}
+
+func outputSelectedPath(item wkitem.WorkItem, printOnly bool, pathOutput string) error {
+	path := selectedJumpPath(item)
+	if pathOutput != "" {
+		return os.WriteFile(pathOutput, []byte(path), 0o600)
+	}
+	if printOnly {
+		fmt.Println(path)
+		return nil
+	}
+	fmt.Printf("cd %s\n", path)
+	return nil
+}
+
+func selectedJumpPath(item wkitem.WorkItem) string {
+	if item.ItemKind == wkitem.ItemKindFile {
+		return filepath.Dir(item.RelativePath)
+	}
+	return item.RelativePath
 }
 
 func isInteractive() bool {
@@ -131,7 +156,7 @@ func isInteractive() bool {
 	return fi.Mode()&os.ModeCharDevice != 0
 }
 
-func validateFlags(jsonMode, printMode bool, types, stages []string) error {
+func validateFlags(jsonMode, printMode bool, pathOutput string, types, stages []string) error {
 	validTypes := map[string]bool{"intent": true, "design": true, "explore": true, "festival": true}
 	for _, t := range types {
 		if !validTypes[t] {
@@ -147,6 +172,12 @@ func validateFlags(jsonMode, printMode bool, types, stages []string) error {
 	if jsonMode && printMode {
 		return fmt.Errorf("--json and --print are mutually exclusive")
 	}
+	if jsonMode && pathOutput != "" {
+		return fmt.Errorf("--json and --path-output are mutually exclusive")
+	}
+	if printMode && pathOutput != "" {
+		return fmt.Errorf("--print and --path-output are mutually exclusive")
+	}
 	return nil
 }
 
@@ -157,7 +188,7 @@ func outputJSON(campaignRoot string, items []wkitem.WorkItem) error {
 	return enc.Encode(payload)
 }
 
-func runTUI(ctx context.Context, items []wkitem.WorkItem, printOnly bool, campaignRoot string, resolver *paths.Resolver, store *priority.Store, storePath string) error {
+func runTUI(ctx context.Context, items []wkitem.WorkItem, printOnly bool, pathOutput string, campaignRoot string, resolver *paths.Resolver, store *priority.Store, storePath string) error {
 	if len(items) == 0 {
 		return fmt.Errorf("no work items found")
 	}
@@ -172,10 +203,5 @@ func runTUI(ctx context.Context, items []wkitem.WorkItem, printOnly bool, campai
 	if !ok || m.Selected == nil {
 		return nil
 	}
-	if printOnly {
-		fmt.Println(m.Selected.AbsPath(campaignRoot))
-	} else {
-		fmt.Printf("cd %s\n", m.Selected.AbsPath(campaignRoot))
-	}
-	return nil
+	return outputSelectedPath(*m.Selected, printOnly, pathOutput)
 }
