@@ -141,6 +141,8 @@ func runDungeonMove(cmd *cobra.Command, args []string) error {
 	files := commit.NormalizeFiles(cmdCtx.CampaignRoot, destinationPaths...)
 	preStaged, err := stageTrackedMoveSourceDeletions(ctx, cmdCtx.CampaignRoot, sourcePaths)
 	if err != nil {
+		fmt.Printf("%s Move was applied on disk, but staging the source deletion failed.\n", ui.WarningIcon())
+		fmt.Printf("%s %v\n", ui.WarningIcon(), err)
 		return camperrors.Wrap(err, "staging move source deletions")
 	}
 	result := commit.Crawl(ctx, commit.CrawlOptions{
