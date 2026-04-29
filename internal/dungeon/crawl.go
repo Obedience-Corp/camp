@@ -7,21 +7,57 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/charmbracelet/huh"
-
+	"github.com/Obedience-Corp/camp/internal/crawl"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"github.com/Obedience-Corp/camp/internal/ui/theme"
 )
 
-// promptStatusSelection presents a second-step selector showing available status
-// directories with item counts. Returns the chosen status name, or empty string
-// if the user goes back to the previous crawl menu.
-func promptStatusSelection(ctx context.Context, itemName string, dirs []StatusDir) (string, error) {
-	return runStatusPicker(ctx, itemName, dirs)
+// statusDirsToOptions converts dungeon StatusDir entries into the
+// generic crawl.Option shape consumed by the shared destination
+// picker. The Action is always ActionMove; Target is the directory
+// name; Count is the directory's item count.
+func statusDirsToOptions(dirs []StatusDir) []crawl.Option {
+	opts := make([]crawl.Option, 0, len(dirs))
+	for _, dir := range dirs {
+		opts = append(opts, crawl.Option{
+			Label:  dir.Name + "/",
+			Action: crawl.ActionMove,
+			Target: dir.Name,
+			Count:  dir.ItemCount,
+		})
+	}
+	return opts
+}
+
+// promptStatusSelection presents the second-step status picker
+// using the shared crawl prompt. Returns the chosen status name,
+// or empty string if the user backed out (esc).
+func promptStatusSelection(ctx context.Context, prompt crawl.Prompt, itemName string, dirs []StatusDir) (string, error) {
+	if len(dirs) == 0 {
+		return "", fmt.Errorf("no status directories found. Run 'camp dungeon init' to create defaults")
+	}
+	chosen, err := prompt.SelectDestination(ctx, crawl.Item{ID: itemName, Title: itemName}, statusDirsToOptions(dirs))
+	if err != nil {
+		return "", err
+	}
+	return chosen.Target, nil
+}
+
+// crawlActionOptions returns the inner-mode first-step options.
+func crawlActionOptions() []crawl.Option {
+	return []crawl.Option{
+		{Label: "Keep - Leave in dungeon for later", Action: crawl.ActionKeep},
+		{Label: "Move - Move to a status directory", Action: crawl.ActionMove},
+		{Label: "Skip - Come back to it another time", Action: crawl.ActionSkip},
+		{Label: "Quit - Stop crawling", Action: crawl.ActionQuit},
+	}
 }
 
 // RunCrawl executes the interactive crawl TUI for items inside the dungeon.
 func RunCrawl(ctx context.Context, svc *Service) (*CrawlSummary, error) {
+	return runCrawlWithPrompt(ctx, svc, crawl.NewDefaultPrompt())
+}
+
+func runCrawlWithPrompt(ctx context.Context, svc *Service, prompt crawl.Prompt) (*CrawlSummary, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, camperrors.Wrap(err, "context cancelled")
 	}
@@ -35,7 +71,6 @@ func RunCrawl(ctx context.Context, svc *Service) (*CrawlSummary, error) {
 		return &CrawlSummary{StatusCounts: map[string]int{}, MovedItems: map[string][]string{}}, nil
 	}
 
-	// Fetch status dirs once before the loop
 	statusDirs, err := svc.ListStatusDirs(ctx)
 	if err != nil {
 		return nil, camperrors.Wrap(err, "listing status directories")
@@ -51,51 +86,37 @@ func RunCrawl(ctx context.Context, svc *Service) (*CrawlSummary, error) {
 
 		stats := gatherer.Gather(ctx, item.Path)
 		infoStr := buildInfoString(item, stats)
+		title := fmt.Sprintf("Item %d/%d: %s", i+1, len(items), item.Name)
 
 	itemLoop:
 		for {
-			// Step 1: high-level decision
-			var decision string
-			title := fmt.Sprintf("Item %d/%d: %s", i+1, len(items), item.Name)
-
-			form := huh.NewForm(
-				huh.NewGroup(
-					huh.NewSelect[string]().
-						Title(title).
-						Description(infoStr).
-						Options(
-							huh.NewOption("Keep - Leave in dungeon for later", "keep"),
-							huh.NewOption("Move - Move to a status directory", "move"),
-							huh.NewOption("Skip - Come back to it another time", "skip"),
-							huh.NewOption("Quit - Stop crawling", "quit"),
-						).
-						Value(&decision),
-				),
-			)
-
-			if err := theme.RunForm(ctx, form); err != nil {
-				if theme.IsCancelled(err) {
+			action, err := prompt.SelectAction(ctx, crawl.Item{
+				ID:          item.Name,
+				Title:       title,
+				Description: infoStr,
+			}, crawlActionOptions())
+			if err != nil {
+				if crawl.IsAborted(err) {
 					return summary, ErrCrawlAborted
 				}
-				return summary, camperrors.Wrap(err, "form error")
+				return summary, camperrors.Wrap(err, "first-step prompt")
 			}
 
-			switch decision {
-			case "quit":
+			switch action {
+			case crawl.ActionQuit:
 				return summary, nil
 
-			case "move":
-				status, err := promptStatusSelection(ctx, item.Name, statusDirs)
+			case crawl.ActionMove:
+				status, err := promptStatusSelection(ctx, prompt, item.Name, statusDirs)
 				if err != nil {
-					if errors.Is(err, ErrCrawlAborted) {
-						return summary, err
+					if crawl.IsAborted(err) || errors.Is(err, ErrCrawlAborted) {
+						return summary, ErrCrawlAborted
 					}
 					fmt.Printf("Error: %v\n", err)
 					summary.Skipped++
 					break itemLoop
 				}
 				if status == "" {
-					// Cancelled step 2 = go back to Step 1 for same item
 					continue itemLoop
 				}
 
@@ -106,11 +127,10 @@ func RunCrawl(ctx context.Context, svc *Service) (*CrawlSummary, error) {
 					}
 					summary.Skipped++
 				} else {
-					// Safe: dstPath is always under campaignRoot (constructed from dungeonPath).
 					relDst, relErr := filepath.Rel(svc.campaignRoot, dstPath)
 					if relErr != nil {
 						fmt.Printf("Warning: could not resolve relative path for %s: %v\n", dstPath, relErr)
-						relDst = item.Name // fallback to item name for commit
+						relDst = item.Name
 					}
 					summary.RecordMove(status, relDst)
 					if err := logDecision(ctx, svc, item, MoveDecision(status), stats); err != nil {
@@ -119,14 +139,14 @@ func RunCrawl(ctx context.Context, svc *Service) (*CrawlSummary, error) {
 				}
 				break itemLoop
 
-			case "keep":
+			case crawl.ActionKeep:
 				summary.Kept++
 				if err := logDecision(ctx, svc, item, DecisionKeep, stats); err != nil {
 					fmt.Printf("Warning: failed to log decision: %v\n", err)
 				}
 				break itemLoop
 
-			case "skip":
+			case crawl.ActionSkip:
 				summary.Skipped++
 				if err := logDecision(ctx, svc, item, DecisionSkip, stats); err != nil {
 					fmt.Printf("Warning: failed to log decision: %v\n", err)

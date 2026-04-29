@@ -9,11 +9,24 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/charmbracelet/huh"
-
+	"github.com/Obedience-Corp/camp/internal/crawl"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"github.com/Obedience-Corp/camp/internal/ui/theme"
 )
+
+// actionDocs is the dungeon-specific extension action for routing
+// items to a campaign-root docs subdirectory. It is not a generic
+// crawl action; it is recognized only by the triage flow.
+const actionDocs crawl.Action = "docs"
+
+func triageActionOptions() []crawl.Option {
+	return []crawl.Option{
+		{Label: "Keep here - Leave in parent directory", Action: crawl.ActionKeep},
+		{Label: "Move - Move to a dungeon status directory", Action: crawl.ActionMove},
+		{Label: "Route to docs - Move to campaign docs subdirectory", Action: actionDocs},
+		{Label: "Skip - Come back to it another time", Action: crawl.ActionSkip},
+		{Label: "Quit - Stop crawling", Action: crawl.ActionQuit},
+	}
+}
 
 // RunTriageCrawl performs a triage crawl of the parent directory,
 // presenting each item for review with a two-step flow:
@@ -21,6 +34,10 @@ import (
 // Step 2 (on Move): dynamic status directory picker
 // Step 2 (on Route to docs): hierarchical docs subdirectory browser
 func RunTriageCrawl(ctx context.Context, svc *Service, parentPath string) (*CrawlSummary, error) {
+	return runTriageCrawlWithPrompt(ctx, svc, parentPath, crawl.NewDefaultPrompt())
+}
+
+func runTriageCrawlWithPrompt(ctx context.Context, svc *Service, parentPath string, prompt crawl.Prompt) (*CrawlSummary, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, camperrors.Wrap(err, "context cancelled")
 	}
@@ -34,7 +51,6 @@ func RunTriageCrawl(ctx context.Context, svc *Service, parentPath string) (*Craw
 		return &CrawlSummary{StatusCounts: map[string]int{}, MovedItems: map[string][]string{}}, nil
 	}
 
-	// Fetch status dirs once before the loop
 	statusDirs, err := svc.ListStatusDirs(ctx)
 	if err != nil {
 		return nil, camperrors.Wrap(err, "listing status directories")
@@ -50,52 +66,37 @@ func RunTriageCrawl(ctx context.Context, svc *Service, parentPath string) (*Craw
 
 		stats := gatherer.Gather(ctx, item.Path)
 		infoStr := buildInfoString(item, stats)
+		title := fmt.Sprintf("Triage %d/%d: %s", i+1, len(items), item.Name)
 
 	itemLoop:
 		for {
-			// Step 1: high-level decision
-			var decision string
-			title := fmt.Sprintf("Triage %d/%d: %s", i+1, len(items), item.Name)
-
-			form := huh.NewForm(
-				huh.NewGroup(
-					huh.NewSelect[string]().
-						Title(title).
-						Description(infoStr).
-						Options(
-							huh.NewOption("Keep here - Leave in parent directory", "keep"),
-							huh.NewOption("Move - Move to a dungeon status directory", "move"),
-							huh.NewOption("Route to docs - Move to campaign docs subdirectory", "docs"),
-							huh.NewOption("Skip - Come back to it another time", "skip"),
-							huh.NewOption("Quit - Stop crawling", "quit"),
-						).
-						Value(&decision),
-				),
-			)
-
-			if err := theme.RunForm(ctx, form); err != nil {
-				if theme.IsCancelled(err) {
+			action, err := prompt.SelectAction(ctx, crawl.Item{
+				ID:          item.Name,
+				Title:       title,
+				Description: infoStr,
+			}, triageActionOptions())
+			if err != nil {
+				if crawl.IsAborted(err) {
 					return summary, ErrCrawlAborted
 				}
-				return summary, camperrors.Wrap(err, "form error")
+				return summary, camperrors.Wrap(err, "first-step prompt")
 			}
 
-			switch decision {
-			case "quit":
+			switch action {
+			case crawl.ActionQuit:
 				return summary, nil
 
-			case "move":
-				status, err := promptStatusSelection(ctx, item.Name, statusDirs)
+			case crawl.ActionMove:
+				status, err := promptStatusSelection(ctx, prompt, item.Name, statusDirs)
 				if err != nil {
-					if errors.Is(err, ErrCrawlAborted) {
-						return summary, err
+					if crawl.IsAborted(err) || errors.Is(err, ErrCrawlAborted) {
+						return summary, ErrCrawlAborted
 					}
 					fmt.Printf("Error: %v\n", err)
 					summary.Skipped++
 					break itemLoop
 				}
 				if status == "" {
-					// Cancelled step 2 = go back to Step 1 for same item
 					continue itemLoop
 				}
 
@@ -106,7 +107,6 @@ func RunTriageCrawl(ctx context.Context, svc *Service, parentPath string) (*Craw
 					}
 					summary.Skipped++
 				} else {
-					// Safe: dstPath is always under campaignRoot (constructed from dungeonPath).
 					relDst, relErr := filepath.Rel(svc.campaignRoot, dstPath)
 					if relErr != nil {
 						fmt.Printf("Warning: could not resolve relative path for %s: %v\n", dstPath, relErr)
@@ -119,7 +119,7 @@ func RunTriageCrawl(ctx context.Context, svc *Service, parentPath string) (*Craw
 				}
 				break itemLoop
 
-			case "docs":
+			case actionDocs:
 				destination, err := promptDocsDestination(ctx, item.Name, svc.campaignRoot)
 				if err != nil {
 					if errors.Is(err, ErrCrawlAborted) {
@@ -130,7 +130,6 @@ func RunTriageCrawl(ctx context.Context, svc *Service, parentPath string) (*Craw
 					break itemLoop
 				}
 				if destination == "" {
-					// Cancelled docs browser = go back to Step 1 for same item
 					continue itemLoop
 				}
 
@@ -143,7 +142,6 @@ func RunTriageCrawl(ctx context.Context, svc *Service, parentPath string) (*Craw
 					summary.Skipped++
 				} else {
 					destinationKey := docsMoveSummaryKey(svc.campaignRoot, targetPath)
-					// Safe: targetPath is always under campaignRoot (docs routing validates boundary).
 					relDst, relErr := filepath.Rel(svc.campaignRoot, targetPath)
 					if relErr != nil {
 						fmt.Printf("Warning: could not resolve relative path for %s: %v\n", targetPath, relErr)
@@ -156,14 +154,14 @@ func RunTriageCrawl(ctx context.Context, svc *Service, parentPath string) (*Craw
 				}
 				break itemLoop
 
-			case "keep":
+			case crawl.ActionKeep:
 				summary.Kept++
 				if err := logDecision(ctx, svc, item, DecisionKeep, stats); err != nil {
 					fmt.Printf("Warning: failed to log decision: %v\n", err)
 				}
 				break itemLoop
 
-			case "skip":
+			case crawl.ActionSkip:
 				summary.Skipped++
 				if err := logDecision(ctx, svc, item, DecisionSkip, stats); err != nil {
 					fmt.Printf("Warning: failed to log decision: %v\n", err)
