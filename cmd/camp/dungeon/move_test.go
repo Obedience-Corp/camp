@@ -30,6 +30,12 @@ func TestWrapDungeonMoveError_InvalidItemPath(t *testing.T) {
 	}
 }
 
+func TestDungeonMove_NoCommitFlagRemoved(t *testing.T) {
+	if dungeonMoveCmd.Flags().Lookup("no-commit") != nil {
+		t.Fatal("dungeon move should always auto-commit; --no-commit must not be registered")
+	}
+}
+
 func TestWrapDungeonDocsRouteError_InvalidItemPath(t *testing.T) {
 	err := wrapDungeonDocsRouteError(intdungeon.ErrInvalidItemPath, "../secret.md", "architecture")
 	if err == nil {

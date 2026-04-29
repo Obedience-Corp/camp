@@ -214,7 +214,7 @@ func TestDungeonMove_ToStatus(t *testing.T) {
 	require.NoError(t, err)
 
 	// Move to archived
-	output, err := tc.RunCampInDir(path, "dungeon", "move", "old-feature.md", "archived", "--no-commit")
+	output, err := tc.RunCampInDir(path, "dungeon", "move", "old-feature.md", "archived")
 	require.NoError(t, err)
 	assert.Contains(t, output, "Moved old-feature.md", "should confirm move")
 	assert.Contains(t, output, "archived", "should mention target status")
@@ -237,7 +237,7 @@ func TestDungeonMove_ToCompleted(t *testing.T) {
 	err := tc.WriteFile(path+"/dungeon/done-work.md", "# Done Work\n")
 	require.NoError(t, err)
 
-	output, err := tc.RunCampInDir(path, "dungeon", "move", "done-work.md", "completed", "--no-commit")
+	output, err := tc.RunCampInDir(path, "dungeon", "move", "done-work.md", "completed")
 	require.NoError(t, err)
 	assert.Contains(t, output, "completed")
 
@@ -253,7 +253,7 @@ func TestDungeonMove_ToSomeday(t *testing.T) {
 	err := tc.WriteFile(path+"/dungeon/maybe-later.md", "# Maybe Later\n")
 	require.NoError(t, err)
 
-	output, err := tc.RunCampInDir(path, "dungeon", "move", "maybe-later.md", "someday", "--no-commit")
+	output, err := tc.RunCampInDir(path, "dungeon", "move", "maybe-later.md", "someday")
 	require.NoError(t, err)
 	assert.Contains(t, output, "someday")
 
@@ -279,7 +279,7 @@ func TestDungeonMove_NotFoundError(t *testing.T) {
 	tc := GetSharedContainer(t)
 	path := setupDungeonCampaign(t, tc, "dmove-notfound")
 
-	output, err := tc.RunCampInDir(path, "dungeon", "move", "nonexistent.md", "archived", "--no-commit")
+	output, err := tc.RunCampInDir(path, "dungeon", "move", "nonexistent.md", "archived")
 	assert.Error(t, err, "should fail for nonexistent item")
 	assert.Contains(t, output, "not found", "error should mention item not found")
 }
@@ -294,7 +294,7 @@ func TestDungeonMove_TriageToDungeonRoot(t *testing.T) {
 	err := tc.WriteFile(path+"/old-project.md", "# Old Project\n")
 	require.NoError(t, err)
 
-	output, err := tc.RunCampInDir(path, "dungeon", "move", "old-project.md", "--triage", "--no-commit")
+	output, err := tc.RunCampInDir(path, "dungeon", "move", "old-project.md", "--triage")
 	require.NoError(t, err)
 	assert.Contains(t, output, "Moved old-project.md", "should confirm triage")
 
@@ -317,7 +317,7 @@ func TestDungeonMove_TriageDirectToStatus(t *testing.T) {
 	err := tc.WriteFile(path+"/legacy-code.md", "# Legacy Code\n")
 	require.NoError(t, err)
 
-	output, err := tc.RunCampInDir(path, "dungeon", "move", "legacy-code.md", "archived", "--triage", "--no-commit")
+	output, err := tc.RunCampInDir(path, "dungeon", "move", "legacy-code.md", "archived", "--triage")
 	require.NoError(t, err)
 	assert.Contains(t, output, "archived", "should mention target status")
 
@@ -416,7 +416,6 @@ func TestDungeonMove_TriageToDocsDestination(t *testing.T) {
 		"dungeon", "move", "legacy-notes.md",
 		"--triage",
 		"--to-docs", "architecture/api",
-		"--no-commit",
 	)
 	require.NoError(t, err)
 	assert.Contains(t, output, "Moved legacy-notes.md", "should confirm docs routing move")
@@ -443,7 +442,6 @@ func TestDungeonMove_TriageToDocsRequiresExistingSubdirectory(t *testing.T) {
 		"dungeon", "move", "legacy-notes.md",
 		"--triage",
 		"--to-docs", "architecture/api",
-		"--no-commit",
 	)
 	assert.Error(t, err)
 	assert.Contains(t, output, "invalid docs destination", "error should explain destination rules")
@@ -462,7 +460,6 @@ func TestDungeonMove_ToDocsRequiresTriage(t *testing.T) {
 		path,
 		"dungeon", "move", "anything.md",
 		"--to-docs", "architecture/api",
-		"--no-commit",
 	)
 	assert.Error(t, err)
 	assert.Contains(t, output, "--to-docs requires --triage")
@@ -480,7 +477,6 @@ func TestDungeonMove_TriageToDocsRejectsTraversal(t *testing.T) {
 		"dungeon", "move", "legacy-notes.md",
 		"--triage",
 		"--to-docs", "../escape",
-		"--no-commit",
 	)
 	assert.Error(t, err)
 	assert.Contains(t, output, "invalid docs destination", "error should explain destination rules")
@@ -512,7 +508,6 @@ func TestDungeonMove_TriageToDocsRejectsTraversalItemName(t *testing.T) {
 		"dungeon", "move", "../secret.md",
 		"--triage",
 		"--to-docs", "architecture",
-		"--no-commit",
 	)
 	assert.Error(t, err)
 	assert.Contains(t, output, "invalid item path")
@@ -543,7 +538,6 @@ func TestDungeonMove_TriageRejectsNestedItemPath(t *testing.T) {
 		path,
 		"dungeon", "move", "nested/legacy.md",
 		"--triage",
-		"--no-commit",
 	)
 	assert.Error(t, err)
 	assert.Contains(t, output, "invalid item path")
@@ -580,7 +574,6 @@ func TestDungeonMove_TriageToDocsFromNestedDirAnchorsToCampaignRootDocs(t *testi
 		"dungeon", "move", "legacy-spec.md",
 		"--triage",
 		"--to-docs", "architecture/reference",
-		"--no-commit",
 	)
 	require.NoError(t, err)
 	assert.Contains(t, output, "docs/architecture/reference/legacy-spec.md")
@@ -627,7 +620,7 @@ func TestDungeonMove_TriageFromNestedDirUsesNearestContext(t *testing.T) {
 	err = tc.WriteFile(path+"/workflow/design/nested-old.md", "# Nested Old\n")
 	require.NoError(t, err)
 
-	output, err := tc.RunCampInDir(path+"/workflow/design/subdir", "dungeon", "move", "nested-old.md", "--triage", "--no-commit")
+	output, err := tc.RunCampInDir(path+"/workflow/design/subdir", "dungeon", "move", "nested-old.md", "--triage")
 	require.NoError(t, err)
 	assert.Contains(t, output, "Moved nested-old.md", "should confirm move from nested context")
 
@@ -651,7 +644,7 @@ func TestDungeonCommands_NoDungeonContextError(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, output, "no dungeon context found", "list should instruct user to create context")
 
-	output, err = tc.RunCampInDir(path, "dungeon", "move", "orphan.md", "--triage", "--no-commit")
+	output, err = tc.RunCampInDir(path, "dungeon", "move", "orphan.md", "--triage")
 	assert.Error(t, err)
 	assert.Contains(t, output, "no dungeon context found", "move should instruct user to create context")
 

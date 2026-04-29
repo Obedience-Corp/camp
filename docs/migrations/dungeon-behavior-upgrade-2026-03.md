@@ -60,12 +60,15 @@ Use this checklist when upgrading active campaign workspaces.
 1. Validate nearest-context command behavior.
    - From nested directory with local dungeon, run:
      - `camp dungeon list`
-     - `camp dungeon move <item> --triage --no-commit`
+     - `camp dungeon move <item> --triage`
    - Confirm operations target nearest dungeon context.
+   - Confirm successful moves auto-commit; dungeon triage history depends on
+     those commits.
 2. Validate docs routing behavior.
-   - Run `camp dungeon move <item> --triage --to-docs <subdir> --no-commit`.
+   - Run `camp dungeon move <item> --triage --to-docs <subdir>`.
    - Confirm destination path is under campaign-root `docs/`.
    - Confirm traversal attempts fail with clear errors.
+   - Confirm successful docs routing auto-commits.
 3. Validate scaffold defaults on a scratch campaign.
    - Initialize new campaign.
    - Confirm `workflow/explore/` and `workflow/explore/OBEY.md` exist.
