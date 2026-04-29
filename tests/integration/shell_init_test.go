@@ -143,6 +143,64 @@ echo "PWD=$PWD"
 	}
 }
 
+func TestShellInit_BashWorkitemNonInteractiveDelegates(t *testing.T) {
+	tc := GetSharedContainer(t)
+	installShells(t, tc)
+
+	initScript := shellInitScript(t, tc, "bash")
+	stub := stubCampScriptRecordArgsPosix()
+
+	stdout, exitCode := runBashScript(t, tc, initScript, stub, `
+mkdir -p /test/original
+cd /test/original
+camp workitem >/test/workitem.out
+echo "PWD=$PWD"
+cat /test/workitem.out
+cat /test/camp-args.log
+`)
+	if exitCode != 0 {
+		t.Fatalf("exit code %d, output: %s", exitCode, stdout)
+	}
+	if !strings.Contains(stdout, "PWD=/test/original") {
+		t.Fatalf("non-interactive workitem should not cd, output:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "STUB_PASSTHROUGH") {
+		t.Fatalf("non-interactive workitem should delegate to camp binary, output:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "\nworkitem\n") {
+		t.Fatalf("delegated args should be exactly workitem, output:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "--path-output") {
+		t.Fatalf("non-interactive workitem should not append --path-output, output:\n%s", stdout)
+	}
+}
+
+func TestShellInit_BashWorkitemBooleanFlagsPassThrough(t *testing.T) {
+	tc := GetSharedContainer(t)
+	installShells(t, tc)
+
+	initScript := shellInitScript(t, tc, "bash")
+	stub := stubCampScriptRecordArgsPosix()
+
+	stdout, exitCode := runBashScript(t, tc, initScript, stub, `
+camp workitem --json=true
+camp workitem --print=true
+cat /test/camp-args.log
+`)
+	if exitCode != 0 {
+		t.Fatalf("exit code %d, output: %s", exitCode, stdout)
+	}
+	if !strings.Contains(stdout, "workitem --json=true") {
+		t.Fatalf("missing --json=true passthrough, output:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "workitem --print=true") {
+		t.Fatalf("missing --print=true passthrough, output:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "--path-output") {
+		t.Fatalf("boolean pass-through should not append --path-output, output:\n%s", stdout)
+	}
+}
+
 func TestShellInit_BashAliasWrappers(t *testing.T) {
 	tc := GetSharedContainer(t)
 	installShells(t, tc)
@@ -374,6 +432,64 @@ cie
 	})
 }
 
+func TestShellInit_ZshWorkitemNonInteractiveDelegates(t *testing.T) {
+	tc := GetSharedContainer(t)
+	installShells(t, tc)
+
+	initScript := shellInitScript(t, tc, "zsh")
+	stub := stubCampScriptRecordArgsPosix()
+
+	stdout, exitCode := runZshScript(t, tc, initScript, stub, `
+mkdir -p /test/zsh-original
+cd /test/zsh-original
+camp workitem >/test/workitem.out
+echo "PWD=$PWD"
+cat /test/workitem.out
+cat /test/camp-args.log
+`)
+	if exitCode != 0 {
+		t.Fatalf("exit code %d, output: %s", exitCode, stdout)
+	}
+	if !strings.Contains(stdout, "PWD=/test/zsh-original") {
+		t.Fatalf("non-interactive workitem should not cd, output:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "STUB_PASSTHROUGH") {
+		t.Fatalf("non-interactive workitem should delegate to camp binary, output:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "\nworkitem\n") {
+		t.Fatalf("delegated args should be exactly workitem, output:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "--path-output") {
+		t.Fatalf("non-interactive workitem should not append --path-output, output:\n%s", stdout)
+	}
+}
+
+func TestShellInit_ZshWorkitemBooleanFlagsPassThrough(t *testing.T) {
+	tc := GetSharedContainer(t)
+	installShells(t, tc)
+
+	initScript := shellInitScript(t, tc, "zsh")
+	stub := stubCampScriptRecordArgsPosix()
+
+	stdout, exitCode := runZshScript(t, tc, initScript, stub, `
+camp workitem --json=true
+camp workitem --print=true
+cat /test/camp-args.log
+`)
+	if exitCode != 0 {
+		t.Fatalf("exit code %d, output: %s", exitCode, stdout)
+	}
+	if !strings.Contains(stdout, "workitem --json=true") {
+		t.Fatalf("missing --json=true passthrough, output:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "workitem --print=true") {
+		t.Fatalf("missing --print=true passthrough, output:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "--path-output") {
+		t.Fatalf("boolean pass-through should not append --path-output, output:\n%s", stdout)
+	}
+}
+
 func TestShellInit_ZshCompdefRegistered(t *testing.T) {
 	tc := GetSharedContainer(t)
 	installShells(t, tc)
@@ -495,4 +611,62 @@ cint "my idea"
 			t.Errorf("expected passthrough for cint, got:\n%s", stdout)
 		}
 	})
+}
+
+func TestShellInit_FishWorkitemNonInteractiveDelegates(t *testing.T) {
+	tc := GetSharedContainer(t)
+	installShells(t, tc)
+
+	initScript := shellInitScript(t, tc, "fish")
+	stub := stubCampScriptRecordArgsFish()
+
+	stdout, exitCode := runFishScript(t, tc, initScript, stub, `
+mkdir -p /test/fish-original
+cd /test/fish-original
+camp workitem >/test/workitem.out
+echo "PWD=$PWD"
+cat /test/workitem.out
+cat /test/camp-args.log
+`)
+	if exitCode != 0 {
+		t.Fatalf("exit code %d, output: %s", exitCode, stdout)
+	}
+	if !strings.Contains(stdout, "PWD=/test/fish-original") {
+		t.Fatalf("non-interactive workitem should not cd, output:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "STUB_PASSTHROUGH") {
+		t.Fatalf("non-interactive workitem should delegate to camp binary, output:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "\nworkitem\n") {
+		t.Fatalf("delegated args should be exactly workitem, output:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "--path-output") {
+		t.Fatalf("non-interactive workitem should not append --path-output, output:\n%s", stdout)
+	}
+}
+
+func TestShellInit_FishWorkitemBooleanFlagsPassThrough(t *testing.T) {
+	tc := GetSharedContainer(t)
+	installShells(t, tc)
+
+	initScript := shellInitScript(t, tc, "fish")
+	stub := stubCampScriptRecordArgsFish()
+
+	stdout, exitCode := runFishScript(t, tc, initScript, stub, `
+camp workitem --json=true
+camp workitem --print=true
+cat /test/camp-args.log
+`)
+	if exitCode != 0 {
+		t.Fatalf("exit code %d, output: %s", exitCode, stdout)
+	}
+	if !strings.Contains(stdout, "workitem --json=true") {
+		t.Fatalf("missing --json=true passthrough, output:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "workitem --print=true") {
+		t.Fatalf("missing --print=true passthrough, output:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "--path-output") {
+		t.Fatalf("boolean pass-through should not append --path-output, output:\n%s", stdout)
+	}
 }

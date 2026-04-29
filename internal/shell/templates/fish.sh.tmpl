@@ -56,6 +56,51 @@ function camp --description "Camp CLI wrapper with directory-changing support"
                     return 1
                 end
             end
+        case workitem wi workitems
+            set -l rest $argv[2..-1]
+            set -l passthrough 0
+            for arg in $rest
+                switch "$arg"
+                    case --help -h --json '--json=*' --print '--print=*'
+                        set passthrough 1
+                        break
+                end
+            end
+            if test "$passthrough" -eq 1
+                command camp workitem $rest
+                return $status
+            end
+            if not isatty stdin; or not isatty stdout
+                command camp workitem $rest
+                return $status
+            end
+
+            set -l tmpdir /tmp
+            if set -q TMPDIR
+                set tmpdir $TMPDIR
+            end
+            set -l tmp (mktemp "$tmpdir/camp-workitem.XXXXXX" 2>/dev/null)
+            if test -z "$tmp"
+                return 1
+            end
+
+            command camp workitem $rest --path-output "$tmp"
+            set -l cmd_status $status
+            if test "$cmd_status" -ne 0
+                rm -f "$tmp"
+                return $cmd_status
+            end
+
+            if test -s "$tmp"
+                set -l dest (cat "$tmp")
+                set -l root (command camp root 2>/dev/null)
+                rm -f "$tmp"
+                if test -n "$root" -a -n "$dest"
+                    cd "$root/$dest"
+                end
+            else
+                rm -f "$tmp"
+            end
         case '*'
             command camp $argv
     end

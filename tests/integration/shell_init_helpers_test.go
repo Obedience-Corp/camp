@@ -67,6 +67,34 @@ set -gx PATH $_stub_dir $PATH
 `, targetDir)
 }
 
+// stubCampScriptRecordArgsPosix creates a fake camp binary that records every
+// invocation to /test/camp-args.log and prints a stable passthrough marker.
+func stubCampScriptRecordArgsPosix() string {
+	return `
+rm -f /test/camp-args.log
+_stub_dir=$(mktemp -d)
+cat > "$_stub_dir/camp" << 'STUBEOF'
+#!/bin/sh
+printf '%s\n' "$*" >> /test/camp-args.log
+echo "STUB_PASSTHROUGH"
+STUBEOF
+chmod +x "$_stub_dir/camp"
+export PATH="$_stub_dir:$PATH"
+`
+}
+
+// stubCampScriptRecordArgsFish is the fish equivalent of
+// stubCampScriptRecordArgsPosix.
+func stubCampScriptRecordArgsFish() string {
+	return `
+rm -f /test/camp-args.log
+set -l _stub_dir (mktemp -d)
+printf "#!/bin/sh\nprintf '%%s\n' \"\$*\" >> /test/camp-args.log\necho \"STUB_PASSTHROUGH\"\n" > $_stub_dir/camp
+chmod +x $_stub_dir/camp
+set -gx PATH $_stub_dir $PATH
+`
+}
+
 // runBashScript assembles and runs a bash script inside the container.
 // Order: stubSetup (puts camp in PATH) -> source init -> testCommands.
 // The init script has a `command -v camp` guard that exits early if camp

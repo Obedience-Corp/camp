@@ -4,13 +4,88 @@
 package integration
 
 import (
+	"context"
 	"fmt"
+	"os/exec"
 	"strings"
 	"testing"
+	"time"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/creack/pty"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestIntegration_WorkitemPrintUsesRelativeJumpPath(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	const campaignDir = "/test/workitem-print"
+	_, err := tc.RunCamp(
+		"init", campaignDir,
+		"--name", "Workitem Print Test",
+		"--type", "product",
+		"-d", "Workitem print test campaign",
+		"-m", "Verify relative workitem path output",
+		"--force",
+		"--no-register",
+		"--no-git",
+	)
+	require.NoError(t, err, "camp init should succeed")
+
+	_, err = tc.RunCampInDir(campaignDir,
+		"intent", "add", "Relative print intent", "--no-commit",
+	)
+	require.NoError(t, err, "camp intent add should succeed")
+
+	output, err := tc.RunCampInDir(campaignDir, "--no-color", "workitem", "--print")
+	require.NoError(t, err, "camp workitem --print should succeed")
+
+	got := strings.TrimSpace(output)
+	assert.Equal(t, ".campaign/intents/inbox", got)
+	assert.NotContains(t, got, campaignDir)
+	assert.False(t, strings.HasPrefix(got, "/"), "workitem --print should not emit absolute paths")
+}
+
+func TestIntegration_WorkitemShellWrapperChangesDirectory(t *testing.T) {
+	tc := GetSharedContainer(t)
+	installShells(t, tc)
+	ensureCampInPath(t, tc)
+
+	const campaignDir = "/test/workitem-shell-jump"
+	_, err := tc.RunCamp(
+		"init", campaignDir,
+		"--name", "Workitem Shell Jump Test",
+		"--type", "product",
+		"-d", "Workitem shell jump test campaign",
+		"-m", "Verify workitem shell wrapper jumps",
+		"--force",
+		"--no-register",
+		"--no-git",
+	)
+	require.NoError(t, err, "camp init should succeed")
+
+	_, err = tc.RunCampInDir(campaignDir,
+		"intent", "add", "Shell jump intent", "--no-commit",
+	)
+	require.NoError(t, err, "camp intent add should succeed")
+
+	script := fmt.Sprintf(`
+set -e
+export PATH="/camp-bin:$PATH"
+cd %s
+eval "$(camp shell-init bash)"
+camp workitem
+printf '\nPWD_AFTER=%%s\n' "$PWD"
+`, shellQuote(campaignDir))
+
+	output, err := runInteractiveShellSteps(t, tc, script, []InteractiveStep{
+		{WaitFor: "Shell jump intent", Input: "\r"},
+		{WaitFor: "PWD_AFTER="},
+	})
+	require.NoError(t, err, "shell-integrated camp workitem should succeed; output:\n%s", output)
+	assert.Contains(t, output, "PWD_AFTER="+campaignDir+"/.campaign/intents/inbox")
+}
 
 // TestIntegration_WorkitemEditorHandsOffTTY verifies that `camp workitem`
 // hands the controlling TTY to $EDITOR cleanly: the editor receives the
@@ -125,4 +200,83 @@ func logFieldValue(t *testing.T, logData, key string) string {
 	}
 	t.Fatalf("missing %s in editor log:\n%s", key, logData)
 	return ""
+}
+
+func runInteractiveShellSteps(t *testing.T, tc *TestContainer, script string, steps []InteractiveStep) (string, error) {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(tc.ctx, 15*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "docker", "exec", "-i", "-t", tc.container.GetContainerID(), "bash", "-lc", script)
+	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 40, Cols: 120})
+	if err != nil {
+		return "", camperrors.Wrap(err, "failed to start interactive shell")
+	}
+	defer func() { _ = ptmx.Close() }()
+
+	var output lockedBuffer
+	readerDone := make(chan struct{})
+	go func() {
+		_, _ = copyTerminalOutput(ptmx, &output)
+		close(readerDone)
+	}()
+
+	waitCh := make(chan error, 1)
+	go func() {
+		waitCh <- cmd.Wait()
+	}()
+
+	waitStart := 0
+	for _, step := range steps {
+		if step.WaitFor != "" {
+			if err := waitForBufferContainsAfter(&output, step.WaitFor, waitStart, 5*time.Second); err != nil {
+				if cmd.Process != nil {
+					_ = cmd.Process.Kill()
+				}
+				select {
+				case <-readerDone:
+				case <-time.After(time.Second):
+				}
+				return output.String(), camperrors.Wrapf(err, "interactive shell did not reach %q\nterminal tail:\n%s", step.WaitFor, output.Tail(4000))
+			}
+		} else {
+			time.Sleep(250 * time.Millisecond)
+		}
+
+		if step.Input != "" {
+			waitStart = output.Len()
+			if err := writeInteractiveInput(ptmx, step.Input); err != nil {
+				if cmd.Process != nil {
+					_ = cmd.Process.Kill()
+				}
+				select {
+				case <-readerDone:
+				case <-time.After(time.Second):
+				}
+				return output.String(), camperrors.Wrapf(err, "failed to send interactive input\nterminal tail:\n%s", output.Tail(4000))
+			}
+		}
+	}
+
+	var waitErr error
+	select {
+	case waitErr = <-waitCh:
+	case <-ctx.Done():
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		waitErr = ctx.Err()
+	}
+
+	select {
+	case <-readerDone:
+	case <-time.After(time.Second):
+	}
+
+	if waitErr != nil {
+		return output.String(), camperrors.Wrapf(waitErr, "interactive shell failed\nterminal tail:\n%s", output.Tail(4000))
+	}
+
+	return output.String(), nil
 }
