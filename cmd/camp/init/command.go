@@ -73,7 +73,6 @@ Use --no-git to skip git initialization.`,
 	cmd.Flags().Bool("dry-run", false, "Show what would be done without creating anything")
 	cmd.Flags().Bool("repair", false, "Add missing files to existing campaign")
 	cmd.Flags().Bool("yes", false, "Skip repair confirmation prompt (for scripting)")
-	cmd.Flags().Bool("skip-fest", false, "Skip automatic Festival Methodology initialization")
 
 	return cmd
 }
@@ -92,7 +91,6 @@ type Params struct {
 	DryRun        bool
 	Repair        bool
 	Yes           bool
-	SkipFest      bool
 	VerboseOutput bool
 }
 
@@ -140,7 +138,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 		DryRun:        cmdutil.GetFlagBool(cmd, "dry-run"),
 		Repair:        cmdutil.GetFlagBool(cmd, "repair"),
 		Yes:           cmdutil.GetFlagBool(cmd, "yes"),
-		SkipFest:      cmdutil.GetFlagBool(cmd, "skip-fest"),
 		VerboseOutput: verboseOutput,
 	}
 	w := ChooseWriters()
@@ -262,12 +259,10 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 		commitRepairChanges(ctx, result, opts.RepairPlan, migrationCount, w)
 	}
 
-	// Initialize Festival Methodology (unless skipped or dry-run).
+	// Initialize Festival Methodology (unless dry-run).
 	var festInitialized bool
-	if !p.DryRun && !p.SkipFest {
+	if !p.DryRun {
 		festInitialized, _ = initializeFestivals(ctx, result.CampaignRoot, w)
-	} else if p.SkipFest && !p.DryRun {
-		writeLine(w.HumanOut, ui.Info("Skipping Festival Methodology (--skip-fest)"))
 	}
 
 	// Print results

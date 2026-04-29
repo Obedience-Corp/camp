@@ -338,7 +338,7 @@ func TestCampCreate_ManifestAnnotations(t *testing.T) {
 	}
 
 	// Absent flags: create must NOT support init-only controls.
-	absentFlags := []string{"force", "repair", "no-register", "yes", "skip-fest"}
+	absentFlags := []string{"force", "repair", "no-register", "yes"}
 	for _, flag := range absentFlags {
 		if cmd.Flags().Lookup(flag) != nil {
 			t.Errorf("camp create should NOT have flag --%s", flag)

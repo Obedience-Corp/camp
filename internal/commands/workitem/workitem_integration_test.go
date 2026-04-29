@@ -24,16 +24,21 @@ import (
 func TestIntegration_WorkitemEditorHandsOffTTY(t *testing.T) {
 	projectRoot := testProjectRoot(t)
 	campBinary := buildCampBinary(t, projectRoot)
+	festBinDir := installFestBinaryDir(t)
 
 	tempRoot := t.TempDir()
 	homeDir := filepath.Join(tempRoot, "home")
 	require.NoError(t, os.MkdirAll(filepath.Join(homeDir, ".config"), 0o755))
 
+	// Prepend the freshly-installed fest binary to PATH so `camp init` runs
+	// the real Festival Methodology setup against the publicly-released
+	// fest CLI, exactly as an end user would.
 	baseEnv := append(os.Environ(),
 		"HOME="+homeDir,
 		"XDG_CONFIG_HOME="+filepath.Join(homeDir, ".config"),
 		"TERM=dumb",
 		"NO_COLOR=1",
+		"PATH="+festBinDir+string(os.PathListSeparator)+os.Getenv("PATH"),
 	)
 
 	campaignRoot := filepath.Join(tempRoot, "campaign")
@@ -46,7 +51,6 @@ func TestIntegration_WorkitemEditorHandsOffTTY(t *testing.T) {
 		"--force",
 		"--no-register",
 		"--no-git",
-		"--skip-fest",
 	)
 	runCommand(t, campaignRoot, baseEnv, campBinary,
 		"intent", "add", "TTY editor integration intent", "--no-commit",
@@ -240,6 +244,23 @@ func buildCampBinary(t *testing.T, projectRoot string) string {
 	output, err := cmd.CombinedOutput()
 	require.NoErrorf(t, err, "go build failed:\n%s", output)
 	return binaryPath
+}
+
+// installFestBinaryDir installs the fest CLI the same way a user would —
+// `go install github.com/Obedience-Corp/fest/cmd/fest@latest` — and returns
+// the GOBIN directory to prepend to PATH. Using the public install path
+// means this test catches release-coupling issues (e.g. camp depending on
+// an unreleased fest feature) rather than silently passing against a
+// local development build.
+func installFestBinaryDir(t *testing.T) string {
+	t.Helper()
+
+	binDir := t.TempDir()
+	cmd := exec.Command("go", "install", "github.com/Obedience-Corp/fest/cmd/fest@latest")
+	cmd.Env = append(os.Environ(), "GOBIN="+binDir)
+	output, err := cmd.CombinedOutput()
+	require.NoErrorf(t, err, "go install fest@latest failed:\n%s", output)
+	return binDir
 }
 
 func testProjectRoot(t *testing.T) string {
