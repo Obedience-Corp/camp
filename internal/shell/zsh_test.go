@@ -32,6 +32,8 @@ func TestGenerateZsh(t *testing.T) {
 		{"workitem path output", "--path-output"},
 		{"workitem root resolution", "command camp root"},
 		{"workitem temp file", "mktemp"},
+		{"workitem boolean passthrough", "--json|--json=*|--print|--print=*"},
+		{"workitem tty guard", "[[ ! -t 0 || ! -t 1 ]]"},
 		{"compdef cgo", "compdef _cgo cgo"},
 		{"compdef camp", "compdef _camp camp"},
 		{"has shortcut entries", "'p:"},

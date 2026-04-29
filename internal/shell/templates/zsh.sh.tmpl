@@ -46,13 +46,17 @@ camp() {
       local arg passthrough=0
       for arg in "$@"; do
         case "$arg" in
-          --help|-h|--json|--print)
+          --help|-h|--json|--json=*|--print|--print=*)
             passthrough=1
             break
             ;;
         esac
       done
       if [[ "$passthrough" -eq 1 ]]; then
+        command camp workitem "$@"
+        return
+      fi
+      if [[ ! -t 0 || ! -t 1 ]]; then
         command camp workitem "$@"
         return
       fi

@@ -61,12 +61,16 @@ function camp --description "Camp CLI wrapper with directory-changing support"
             set -l passthrough 0
             for arg in $rest
                 switch "$arg"
-                    case --help -h --json --print
+                    case --help -h --json '--json=*' --print '--print=*'
                         set passthrough 1
                         break
                 end
             end
             if test "$passthrough" -eq 1
+                command camp workitem $rest
+                return $status
+            end
+            if not isatty stdin; or not isatty stdout
                 command camp workitem $rest
                 return $status
             end

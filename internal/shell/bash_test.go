@@ -34,6 +34,8 @@ func TestGenerateBash(t *testing.T) {
 		{"workitem path output", "--path-output"},
 		{"workitem root resolution", "command camp root"},
 		{"workitem temp file", "mktemp"},
+		{"workitem boolean passthrough", "--json|--json=*|--print|--print=*"},
+		{"workitem tty guard", "[ -t 0 ]"},
 		{"complete builtin", "complete -F"},
 		{"cgo completion", "_cgo_complete"},
 		{"camp completion", "_camp_complete"},

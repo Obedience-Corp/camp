@@ -30,6 +30,8 @@ func TestGenerateFish(t *testing.T) {
 		{"workitem path output", "--path-output"},
 		{"workitem root resolution", "command camp root"},
 		{"workitem temp file", "mktemp"},
+		{"workitem boolean passthrough", "case --help -h --json '--json=*' --print '--print=*'"},
+		{"workitem tty guard", "isatty stdin"},
 		{"complete command", "complete -c cgo"},
 		{"camp completion", "complete -c camp"},
 		{"command execution", "-c"},
