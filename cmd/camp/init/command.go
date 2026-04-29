@@ -162,7 +162,7 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 			if cfg != nil && cfg.Name != "" {
 				name = cfg.Name
 			}
-			return fmt.Errorf("already inside campaign '%s' at %s\n       Use 'camp init --repair' to add missing files", name, existingRoot)
+			return camperrors.New(fmt.Sprintf("already inside campaign '%s' at %s\n       Use 'camp init --repair' to add missing files", name, existingRoot))
 		}
 	}
 
@@ -226,7 +226,7 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 
 		if !p.Yes {
 			if !isInteractive {
-				return fmt.Errorf("repair requires confirmation\n       Use --yes to skip the prompt in non-interactive mode")
+				return camperrors.New("repair requires confirmation\n       Use --yes to skip the prompt in non-interactive mode")
 			}
 			write(w.HumanOut, "\nApply changes? [y/N] ")
 			reader := bufio.NewReader(os.Stdin)

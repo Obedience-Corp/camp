@@ -79,14 +79,14 @@ func initGitRepo(ctx context.Context, dir string) error {
 
 	// Check if git is available
 	if _, err := exec.LookPath("git"); err != nil {
-		return fmt.Errorf("git is not installed - use --no-git flag to skip initialization")
+		return camperrors.New("git is not installed - use --no-git flag to skip initialization")
 	}
 
 	cmd := exec.CommandContext(ctx, "git", "init")
 	cmd.Dir = dir
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("git init failed: %w (output: %s)", err, string(output))
+		return camperrors.Wrapf(err, "git init failed (output: %s)", string(output))
 	}
 
 	return nil
@@ -107,7 +107,7 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 	// Check if already inside a campaign
 	if _, err := campaign.Detect(ctx, absDir); err == nil {
 		if !opts.Repair {
-			return nil, fmt.Errorf("already inside a campaign at %s\nUse --repair to add missing files", absDir)
+			return nil, camperrors.New(fmt.Sprintf("already inside a campaign at %s\nUse --repair to add missing files", absDir))
 		}
 		// Repair mode: continue but only create missing files
 	}
@@ -116,7 +116,7 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 	campaignDir := filepath.Join(absDir, config.CampaignDir)
 	if _, err := os.Stat(campaignDir); err == nil {
 		if !opts.Repair {
-			return nil, fmt.Errorf("campaign already exists at %s", campaignDir)
+			return nil, camperrors.New(fmt.Sprintf("campaign already exists at %s", campaignDir))
 		}
 		// Repair mode: continue, we'll only create missing files
 	}
@@ -395,7 +395,7 @@ func appendUniquePaths(existing []string, paths ...string) []string {
 // Validate checks if the given options are valid.
 func (o *InitOptions) Validate() error {
 	if o.Type != "" && !o.Type.Valid() {
-		return fmt.Errorf("invalid campaign type: %s", o.Type)
+		return camperrors.New(fmt.Sprintf("invalid campaign type: %s", o.Type))
 	}
 	return nil
 }
@@ -425,7 +425,7 @@ func initFestivalsIfNeeded(ctx context.Context, dir string) error {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// Don't fail the whole init if fest init fails - user can run it manually
-		return fmt.Errorf("fest init failed (run manually with 'fest init'): %w (output: %s)", err, string(output))
+		return camperrors.Wrapf(err, "fest init failed (run manually with 'fest init') (output: %s)", string(output))
 	}
 
 	return nil

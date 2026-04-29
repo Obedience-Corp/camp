@@ -33,7 +33,7 @@ func checkDirectoryEmpty(dir string, force, isInteractive bool, w Writers) error
 		return camperrors.Wrap(err, "failed to check directory")
 	}
 	if !info.IsDir() {
-		return fmt.Errorf("path exists but is not a directory: %s", absDir)
+		return camperrors.New(fmt.Sprintf("path exists but is not a directory: %s", absDir))
 	}
 
 	// Check if directory has contents
@@ -66,14 +66,14 @@ func checkDirectoryEmpty(dir string, force, isInteractive bool, w Writers) error
 
 		response = strings.TrimSpace(strings.ToLower(response))
 		if response != "y" && response != "yes" {
-			return fmt.Errorf("initialization cancelled")
+			return camperrors.New("initialization cancelled")
 		}
 		writeLine(w.HumanOut)
 		return nil
 	}
 
 	// Non-interactive mode without --force
-	return fmt.Errorf("directory '%s' is not empty\n       Use --force to initialize anyway, or run in an interactive terminal to confirm", filepath.Base(absDir))
+	return camperrors.New(fmt.Sprintf("directory '%s' is not empty\n       Use --force to initialize anyway, or run in an interactive terminal to confirm", filepath.Base(absDir)))
 }
 
 // collectCampaignInfo gathers description and mission from user input.
@@ -87,13 +87,13 @@ func collectCampaignInfo(ctx context.Context, description, mission string, isInt
 	// Non-interactive mode without required fields
 	if !isInteractive {
 		if description == "" && mission == "" {
-			return "", "", fmt.Errorf("--description and --mission are required in non-interactive mode\n       Use -d/--description and -m/--mission flags, or run in an interactive terminal")
+			return "", "", camperrors.New("--description and --mission are required in non-interactive mode\n       Use -d/--description and -m/--mission flags, or run in an interactive terminal")
 		}
 		if description == "" {
-			return "", "", fmt.Errorf("--description is required in non-interactive mode\n       Use -d/--description flag, or run in an interactive terminal")
+			return "", "", camperrors.New("--description is required in non-interactive mode\n       Use -d/--description flag, or run in an interactive terminal")
 		}
 		if mission == "" {
-			return "", "", fmt.Errorf("--mission is required in non-interactive mode\n       Use -m/--mission flag, or run in an interactive terminal")
+			return "", "", camperrors.New("--mission is required in non-interactive mode\n       Use -m/--mission flag, or run in an interactive terminal")
 		}
 	}
 
@@ -116,17 +116,17 @@ func collectCampaignInfo(ctx context.Context, description, mission string, isInt
 
 	if err := theme.RunForm(ctx, form); err != nil {
 		if theme.IsCancelled(err) {
-			return "", "", fmt.Errorf("initialization cancelled")
+			return "", "", camperrors.New("initialization cancelled")
 		}
 		return "", "", camperrors.Wrap(err, "failed to collect campaign info")
 	}
 
 	// Validate that user provided values
 	if description == "" {
-		return "", "", fmt.Errorf("description is required")
+		return "", "", camperrors.New("description is required")
 	}
 	if mission == "" {
-		return "", "", fmt.Errorf("mission is required")
+		return "", "", camperrors.New("mission is required")
 	}
 
 	return description, mission, nil
