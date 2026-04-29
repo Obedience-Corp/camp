@@ -24,19 +24,21 @@ import (
 func TestIntegration_WorkitemEditorHandsOffTTY(t *testing.T) {
 	projectRoot := testProjectRoot(t)
 	campBinary := buildCampBinary(t, projectRoot)
+	festBinDir := buildFestBinaryDir(t, projectRoot)
 
 	tempRoot := t.TempDir()
 	homeDir := filepath.Join(tempRoot, "home")
 	require.NoError(t, os.MkdirAll(filepath.Join(homeDir, ".config"), 0o755))
 
+	// Prepend the freshly-built fest binary to PATH so `camp init` runs the
+	// real Festival Methodology setup, mirroring how a user installs fest
+	// (build from source, place on PATH) and what the container suite does.
 	baseEnv := append(os.Environ(),
 		"HOME="+homeDir,
 		"XDG_CONFIG_HOME="+filepath.Join(homeDir, ".config"),
 		"TERM=dumb",
 		"NO_COLOR=1",
-		// Test-only escape hatch — bypass Festival Methodology init so
-		// this test does not depend on the fest CLI being installed.
-		"CAMP_INIT_SKIP_FEST=1",
+		"PATH="+festBinDir+string(os.PathListSeparator)+os.Getenv("PATH"),
 	)
 
 	campaignRoot := filepath.Join(tempRoot, "campaign")
@@ -242,6 +244,32 @@ func buildCampBinary(t *testing.T, projectRoot string) string {
 	output, err := cmd.CombinedOutput()
 	require.NoErrorf(t, err, "go build failed:\n%s", output)
 	return binaryPath
+}
+
+// buildFestBinaryDir builds the fest CLI from the sibling projects/fest
+// submodule and returns the directory containing the binary, suitable for
+// prepending to PATH. Fails the test if fest source is missing — the
+// workitem TTY integration test exercises the real `camp init` ->
+// `fest init` handoff and must run with fest available.
+func buildFestBinaryDir(t *testing.T, projectRoot string) string {
+	t.Helper()
+
+	festRoot, err := filepath.Abs(filepath.Join(projectRoot, "..", "fest"))
+	require.NoError(t, err, "resolve fest source root")
+	if _, err := os.Stat(filepath.Join(festRoot, "cmd", "fest")); err != nil {
+		t.Fatalf("fest source not found at %s: %v\n"+
+			"This integration test requires the sibling projects/fest "+
+			"submodule to be checked out so it can build fest the way a "+
+			"user would install it.", festRoot, err)
+	}
+
+	binDir := t.TempDir()
+	binaryPath := filepath.Join(binDir, "fest")
+	cmd := exec.Command("go", "build", "-o", binaryPath, "./cmd/fest")
+	cmd.Dir = festRoot
+	output, err := cmd.CombinedOutput()
+	require.NoErrorf(t, err, "fest build failed:\n%s", output)
+	return binDir
 }
 
 func testProjectRoot(t *testing.T) string {

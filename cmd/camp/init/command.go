@@ -77,12 +77,6 @@ Use --no-git to skip git initialization.`,
 	return cmd
 }
 
-// envSkipFest is an unsupported, test-only escape hatch that bypasses
-// Festival Methodology initialization. It is intentionally not exposed
-// as a CLI flag — production users should always receive Festival
-// scaffolding so that the documented `fest next` first-run path works.
-const envSkipFest = "CAMP_INIT_SKIP_FEST"
-
 // Params is the full set of inputs the init flow needs, already
 // parsed from flags or constructed by another command (e.g., create).
 type Params struct {
@@ -265,10 +259,9 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 		commitRepairChanges(ctx, result, opts.RepairPlan, migrationCount, w)
 	}
 
-	// Initialize Festival Methodology (unless dry-run or test-only env override).
-	skipFest := os.Getenv(envSkipFest) != ""
+	// Initialize Festival Methodology (unless dry-run).
 	var festInitialized bool
-	if !p.DryRun && !skipFest {
+	if !p.DryRun {
 		festInitialized, _ = initializeFestivals(ctx, result.CampaignRoot, w)
 	}
 
