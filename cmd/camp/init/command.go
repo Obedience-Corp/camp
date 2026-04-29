@@ -215,6 +215,7 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 		Mission:     mission,
 		NoRegister:  p.NoRegister,
 		SkipGitInit: p.NoGit,
+		SkipFest:    p.SkipFest,
 		DryRun:      p.DryRun,
 		Repair:      p.Repair,
 	}
@@ -276,11 +277,9 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 		commitRepairChanges(ctx, result, opts.RepairPlan, migrationCount, w)
 	}
 
-	// Initialize Festival Methodology (unless skipped or dry-run)
-	var festInitialized bool
-	if !p.DryRun && !p.SkipFest {
-		festInitialized, _ = initializeFestivals(ctx, result.CampaignRoot, w)
-	} else if p.SkipFest && !p.DryRun {
+	// Festival init is owned by the scaffold layer (fest CLI shell-out).
+	// Surface a notice when the user explicitly opted out.
+	if p.SkipFest && !p.DryRun {
 		writeLine(w.HumanOut, ui.Info("Skipping Festival Methodology (--skip-fest)"))
 	}
 
@@ -326,9 +325,6 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 		writeLine(w.HumanOut, ui.KeyValue("Root:", result.CampaignRoot))
 		if result.GitInitialized {
 			writeLine(w.HumanOut, ui.KeyValueColored("Git:", "initialized", ui.SuccessColor))
-		}
-		if festInitialized {
-			writeLine(w.HumanOut, ui.KeyValueColored("Festivals:", "initialized", ui.SuccessColor))
 		}
 	}
 

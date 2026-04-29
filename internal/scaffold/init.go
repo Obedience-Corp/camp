@@ -44,6 +44,10 @@ type InitOptions struct {
 	// RepairPlan is the pre-computed repair plan (set by the caller after preview).
 	// When set, Init uses the merged jumps config from the plan instead of defaults.
 	RepairPlan *RepairPlan
+	// SkipFest skips the fest init shell-out. fest owns festivals/, camp owns
+	// everything else; this flag lets a campaign be scaffolded without a
+	// festivals/ directory while preserving the camp/fest ownership boundary.
+	SkipFest bool
 }
 
 // InitResult contains information about what was created.
@@ -339,8 +343,9 @@ settings/workitems.json
 		}
 	}
 
-	// Initialize festivals directory via fest CLI if it doesn't exist
-	if !opts.DryRun {
+	// Initialize festivals directory via fest CLI if it doesn't exist.
+	// fest owns festivals/; the shell-out is the ownership boundary.
+	if !opts.DryRun && !opts.SkipFest {
 		if err := initFestivalsIfNeeded(ctx, absDir); err != nil {
 			// Log the error but don't fail - user can run fest init manually
 			result.Skipped = append(result.Skipped, "festivals/ (fest init failed - run manually)")
