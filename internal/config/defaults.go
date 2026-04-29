@@ -2,6 +2,10 @@ package config
 
 import "time"
 
+// defaultCampaignsDirTilde is the built-in default returned by
+// ResolvedCampaignsDir() when GlobalConfig.CampaignsDir is empty.
+const defaultCampaignsDirTilde = "~/campaigns/"
+
 // DefaultConcepts returns the default concept configuration for campaigns.
 // Each concept has a name, path, description, and optional depth/ignore settings.
 func DefaultConcepts() []ConceptEntry {

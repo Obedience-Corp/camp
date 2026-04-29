@@ -4,7 +4,18 @@ import (
 	"bytes"
 	"encoding/json"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
+
+// findCmd finds a command in the root tree by path (e.g. "create", "dungeon list").
+func findCmd(path ...string) *cobra.Command {
+	cmd, _, err := rootCmd.Find(path)
+	if err != nil || cmd == nil || cmd.Name() != path[len(path)-1] {
+		return nil
+	}
+	return cmd
+}
 
 func flowCommandsRegistered() bool {
 	cmd, _, err := rootCmd.Find([]string{"flow"})
@@ -75,6 +86,7 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 
 	expectedCommands := map[string]bool{
 		"init":          false,
+		"create":        false,
 		"clone":         false,
 		"switch":        false,
 		"register":      false,
@@ -126,9 +138,9 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		}
 	}
 
-	wantCount := 15
+	wantCount := 16
 	if flowCommandsRegistered() {
-		wantCount = 18
+		wantCount = 19
 	}
 	if questCommandsRegistered() {
 		wantCount += 13
@@ -157,6 +169,7 @@ func TestManifestCommand_AllCommandsHaveAnnotations(t *testing.T) {
 
 	// Commands that are explicitly agent-allowed (have non-interactive input modes)
 	agentAllowed := map[string]bool{
+		"create":        true,
 		"dungeon list":  true,
 		"dungeon move":  true,
 		"switch":        true,
@@ -214,6 +227,7 @@ func TestManifestCommand_InteractiveFlags(t *testing.T) {
 
 	interactiveCommands := map[string]bool{
 		"init":          true,
+		"create":        true,
 		"switch":        true,
 		"settings":      true,
 		"move":          true,
@@ -280,6 +294,54 @@ func TestManifestCommand_InteractiveFlags(t *testing.T) {
 		}
 		if cmd.Interactive {
 			t.Errorf("command %q should NOT be marked interactive but is", path)
+		}
+	}
+}
+
+// TestCampCreate_ManifestAnnotations asserts the registration, group, annotations,
+// supported flags, and absent flags for the 'camp create' command.
+func TestCampCreate_ManifestAnnotations(t *testing.T) {
+	cmd := findCmd("create")
+	if cmd == nil {
+		t.Fatal("camp create command not registered")
+	}
+
+	// Group
+	if cmd.GroupID != "setup" {
+		t.Errorf("createCmd GroupID = %q, want %q", cmd.GroupID, "setup")
+	}
+
+	// Annotations
+	if v := cmd.Annotations["agent_allowed"]; v != "true" {
+		t.Errorf("annotation agent_allowed = %q, want %q", v, "true")
+	}
+	if v := cmd.Annotations["agent_reason"]; v == "" {
+		t.Error("annotation agent_reason is empty")
+	}
+	if v := cmd.Annotations["interactive"]; v != "true" {
+		t.Errorf("annotation interactive = %q, want %q", v, "true")
+	}
+	wantReason := "Non-interactive with -d and -m; interactive fallback otherwise"
+	if v := cmd.Annotations["agent_reason"]; v != wantReason {
+		t.Errorf("annotation agent_reason = %q, want %q", v, wantReason)
+	}
+
+	// Supported flags
+	supportedFlags := []string{
+		"name", "type", "description", "mission",
+		"no-git", "dry-run", "path",
+	}
+	for _, flag := range supportedFlags {
+		if cmd.Flags().Lookup(flag) == nil {
+			t.Errorf("camp create missing expected flag --%s", flag)
+		}
+	}
+
+	// Absent flags: create must NOT support init-only controls.
+	absentFlags := []string{"force", "repair", "no-register", "yes", "skip-fest"}
+	for _, flag := range absentFlags {
+		if cmd.Flags().Lookup(flag) != nil {
+			t.Errorf("camp create should NOT have flag --%s", flag)
 		}
 	}
 }

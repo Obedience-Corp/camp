@@ -103,7 +103,7 @@ func TestInitRepair_RemovesLegacyIntentScaffoldResidue(t *testing.T) {
 		require.NoError(t, tc.WriteFile(path+"/workflow/intents/"+relPath, "legacy scaffold\n"))
 	}
 
-	output, err := tc.RunCampInDir(path, "init", "--repair", "--yes", "--skip-fest")
+	output, err := tc.RunCampInDir(path, "init", "--repair", "--yes")
 	require.NoError(t, err, "camp init --repair should clean duplicate legacy scaffold:\n%s", output)
 	assert.Contains(t, output, "Campaign Repaired")
 

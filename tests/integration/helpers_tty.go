@@ -20,6 +20,18 @@ import (
 // RunCampInteractiveInDir runs camp inside the shared test container through a
 // real TTY so integration tests can exercise fuzzyfinder-driven picker flows.
 func (tc *TestContainer) RunCampInteractiveInDir(dir, waitFor, input string, args ...string) (string, error) {
+	return tc.RunCampInteractiveStepsInDir(dir, []InteractiveStep{{WaitFor: waitFor, Input: input}}, args...)
+}
+
+// InteractiveStep describes one wait/send step in an interactive terminal flow.
+type InteractiveStep struct {
+	WaitFor string
+	Input   string
+}
+
+// RunCampInteractiveStepsInDir runs camp inside the shared test container
+// through a real TTY and sends input only after each requested screen appears.
+func (tc *TestContainer) RunCampInteractiveStepsInDir(dir string, steps []InteractiveStep, args ...string) (string, error) {
 	if tc.t != nil {
 		tc.t.Helper()
 	}
@@ -52,33 +64,36 @@ func (tc *TestContainer) RunCampInteractiveInDir(dir, waitFor, input string, arg
 		waitCh <- cmd.Wait()
 	}()
 
-	if waitFor != "" {
-		if err := waitForBufferContains(&output, waitFor, 5*time.Second); err != nil {
-			if cmd.Process != nil {
-				_ = cmd.Process.Kill()
+	waitStart := 0
+	for _, step := range steps {
+		if step.WaitFor != "" {
+			if err := waitForBufferContainsAfter(&output, step.WaitFor, waitStart, 5*time.Second); err != nil {
+				if cmd.Process != nil {
+					_ = cmd.Process.Kill()
+				}
+				select {
+				case <-readerDone:
+				case <-time.After(time.Second):
+				}
+				return output.String(), camperrors.Wrapf(err, "interactive camp session did not reach %q\nterminal tail:\n%s", step.WaitFor, output.Tail(4000))
 			}
-			select {
-			case <-readerDone:
-			case <-time.After(time.Second):
-			}
-			return output.String(), camperrors.Wrapf(err, "interactive camp session did not reach %q\nterminal tail:\n%s", waitFor, output.Tail(4000))
+		} else {
+			time.Sleep(250 * time.Millisecond)
 		}
-	} else {
-		time.Sleep(250 * time.Millisecond)
-	}
 
-	for i := 0; i < len(input); i++ {
-		if _, err := ptmx.Write([]byte{input[i]}); err != nil {
-			if cmd.Process != nil {
-				_ = cmd.Process.Kill()
+		if step.Input != "" {
+			waitStart = output.Len()
+			if err := writeInteractiveInput(ptmx, step.Input); err != nil {
+				if cmd.Process != nil {
+					_ = cmd.Process.Kill()
+				}
+				select {
+				case <-readerDone:
+				case <-time.After(time.Second):
+				}
+				return output.String(), camperrors.Wrapf(err, "failed to send interactive input\nterminal tail:\n%s", output.Tail(4000))
 			}
-			select {
-			case <-readerDone:
-			case <-time.After(time.Second):
-			}
-			return output.String(), camperrors.Wrapf(err, "failed to send interactive input\nterminal tail:\n%s", output.Tail(4000))
 		}
-		time.Sleep(25 * time.Millisecond)
 	}
 
 	var waitErr error
@@ -103,6 +118,24 @@ func (tc *TestContainer) RunCampInteractiveInDir(dir, waitFor, input string, arg
 	return output.String(), nil
 }
 
+func writeInteractiveInput(ptmx *os.File, input string) error {
+	for i := 0; i < len(input); {
+		chunk := []byte{input[i]}
+		if input[i] == '\x1b' && i+2 < len(input) && input[i+1] == '[' {
+			chunk = []byte(input[i : i+3])
+			i += 3
+		} else {
+			i++
+		}
+
+		if _, err := ptmx.Write(chunk); err != nil {
+			return err
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	return nil
+}
+
 type lockedBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
@@ -120,6 +153,23 @@ func (b *lockedBuffer) String() string {
 	return b.buf.String()
 }
 
+func (b *lockedBuffer) Len() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Len()
+}
+
+func (b *lockedBuffer) StringFrom(offset int) string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	s := b.buf.String()
+	if offset > len(s) {
+		offset = len(s)
+	}
+	return s[offset:]
+}
+
 func (b *lockedBuffer) Tail(max int) string {
 	s := b.String()
 	if len(s) <= max {
@@ -129,9 +179,13 @@ func (b *lockedBuffer) Tail(max int) string {
 }
 
 func waitForBufferContains(output *lockedBuffer, want string, timeout time.Duration) error {
+	return waitForBufferContainsAfter(output, want, 0, timeout)
+}
+
+func waitForBufferContainsAfter(output *lockedBuffer, want string, offset int, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		if strings.Contains(output.String(), want) {
+		if strings.Contains(output.StringFrom(offset), want) {
 			return nil
 		}
 		time.Sleep(25 * time.Millisecond)

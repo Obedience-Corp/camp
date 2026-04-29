@@ -143,6 +143,8 @@ camp shortcuts       # List all available shortcuts
 ### Setup
 
 ```bash
+camp create <name>         # Create a new campaign at the default campaigns directory
+camp create <name> --path ~/Dev/sandbox  # Create under a specific campaigns directory
 camp init                  # Initialize current directory
 camp init my-campaign      # Create and initialize new directory
 camp clone <url>           # Clone a campaign with full submodule setup
@@ -231,6 +233,7 @@ camp concepts              # List configured concepts (picker/completion concept
 ### Global Commands
 
 ```bash
+camp create <name>         # Create a new campaign at the default campaigns directory
 camp list                  # List all registered campaigns
 camp switch                # Switch to a different campaign
 camp transfer              # Copy files between campaigns

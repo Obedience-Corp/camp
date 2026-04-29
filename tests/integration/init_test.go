@@ -118,6 +118,44 @@ func TestInit_DirectoryStructure(t *testing.T) {
 	assert.True(t, exists, "campaign.yaml should exist")
 }
 
+// TestInit_FestivalOwnership verifies that default init creates festivals/
+// when the fest binary is available.
+func TestInit_FestivalOwnership(t *testing.T) {
+	t.Run("festivals exists when fest available", func(t *testing.T) {
+		if !festAvailable {
+			t.Skip("fest binary not available in container; skipping festival-present sub-test")
+		}
+
+		tc := GetSharedContainer(t)
+		path := "/campaigns/init-with-fest"
+
+		output, err := tc.RunCamp("init", path,
+			"--name", "init-with-fest",
+			"-d", "desc",
+			"-m", "mission",
+			"--no-git",
+		)
+		require.NoError(t, err, "camp init should succeed; output: %s", output)
+
+		exists, checkErr := tc.CheckDirExists(path + "/festivals")
+		require.NoError(t, checkErr)
+		assert.True(t, exists, "festivals/ should exist when fest is available")
+
+		markers := []string{".festival", "fest.yaml", ".fest"}
+		count := 0
+		for _, marker := range markers {
+			if exists, _ := tc.CheckDirExists(path + "/festivals/" + marker); exists {
+				count++
+			}
+			if exists, _ := tc.CheckFileExists(path + "/festivals/" + marker); exists {
+				count++
+			}
+		}
+		assert.GreaterOrEqual(t, count, 1,
+			"festivals/ should contain at least one fest initialization marker")
+	})
+}
+
 func TestInit_WorkflowExploreScaffoldAndShortcut(t *testing.T) {
 	tc := GetSharedContainer(t)
 

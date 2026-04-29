@@ -1,6 +1,7 @@
-package main
+package initcmd
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -47,5 +48,13 @@ func TestBuildRepairCommitMessage_IncludesIntentMigrations(t *testing.T) {
 	}
 	if !strings.Contains(msg, "/campaign/workflow/intents/inbox/legacy.md → /campaign/.campaign/intents/inbox") {
 		t.Fatalf("commit message missing intent migration detail: %q", msg)
+	}
+}
+
+// TestChooseWriters asserts the default writer routing.
+func TestChooseWriters(t *testing.T) {
+	w := ChooseWriters()
+	if w.HumanOut != os.Stdout {
+		t.Errorf("default mode HumanOut = %v, want os.Stdout", w.HumanOut)
 	}
 }

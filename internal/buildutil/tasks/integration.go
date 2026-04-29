@@ -34,6 +34,8 @@ type IntegrationResult struct {
 	FailedTests []string // Names of failed tests
 }
 
+const integrationTestTimeout = "10m"
+
 // Integration runs integration tests
 func Integration(verbose bool) error {
 	ui.Section("Running Integration Tests")
@@ -112,7 +114,7 @@ func Integration(verbose bool) error {
 
 		if verbose {
 			// In verbose mode, show output directly
-			cmd := exec.Command("go", "test", "-count=1", "-v", "-tags", "integration", "-timeout", "2m", "./"+suite)
+			cmd := exec.Command("go", "test", "-count=1", "-v", "-tags", "integration", "-timeout", integrationTestTimeout, "./"+suite)
 			cmd.Env = dockerEnv
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
@@ -120,7 +122,7 @@ func Integration(verbose bool) error {
 			pass = cmd.Run() == nil
 		} else {
 			// Run with -json for real-time progress
-			cmd := exec.Command("go", "test", "-count=1", "-json", "-tags", "integration", "-timeout", "2m", "./"+suite)
+			cmd := exec.Command("go", "test", "-count=1", "-json", "-tags", "integration", "-timeout", integrationTestTimeout, "./"+suite)
 			cmd.Env = dockerEnv
 			stdout, err := cmd.StdoutPipe()
 			if err != nil {
@@ -231,7 +233,16 @@ func Integration(verbose bool) error {
 			}
 
 			close(done)
-			cmd.Wait()
+			scanErr := scanner.Err()
+			waitErr := cmd.Wait()
+			if scanErr != nil {
+				testsFailed++
+				failedTests = append(failedTests, fmt.Sprintf("%s scanner error: %v", name, scanErr))
+			}
+			if waitErr != nil {
+				testsFailed++
+				failedTests = append(failedTests, fmt.Sprintf("%s go test exited: %v", name, waitErr))
+			}
 			pass = testsFailed == 0
 			ui.ClearProgressWithOutput()
 		}

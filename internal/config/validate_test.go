@@ -174,6 +174,31 @@ func TestValidateGlobalConfig(t *testing.T) {
 	}
 }
 
+func TestValidateGlobalConfig_CampaignsDir(t *testing.T) {
+	tests := []struct {
+		name         string
+		campaignsDir string
+		wantErr      bool
+	}{
+		{name: "empty is valid", campaignsDir: "", wantErr: false},
+		{name: "absolute path is valid", campaignsDir: "/tmp/campaigns", wantErr: false},
+		{name: "tilde prefix is valid", campaignsDir: "~/campaigns", wantErr: false},
+		{name: "relative path is valid", campaignsDir: "my-campaigns", wantErr: false},
+		{name: "null byte rejected", campaignsDir: "/tmp/bad\x00dir", wantErr: true},
+		{name: "all whitespace rejected", campaignsDir: "   ", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &GlobalConfig{CampaignsDir: tt.campaignsDir}
+			err := ValidateGlobalConfig(cfg)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateGlobalConfig() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestValidateRegisteredCampaign(t *testing.T) {
 	tests := []struct {
 		name    string

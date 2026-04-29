@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"strings"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/Obedience-Corp/camp/internal/ui/theme"
 )
 
@@ -96,6 +98,7 @@ func runGlobalSettings(ctx context.Context) error {
 		options := []huh.Option[string]{
 			huh.NewOption(fmt.Sprintf("Theme          %s", displayStr(cfg.TUI.Theme, "adaptive")), "theme"),
 			huh.NewOption(fmt.Sprintf("Editor         %s", displayStr(cfg.Editor, "$EDITOR")), "editor"),
+			huh.NewOption(fmt.Sprintf("Campaigns Dir  %s", displayStr(cfg.CampaignsDir, "~/campaigns")), "campaigns_dir"),
 			huh.NewOption(fmt.Sprintf("Verbose        %s", boolStr(cfg.Verbose)), "verbose"),
 			huh.NewOption(fmt.Sprintf("No Color       %s", boolStr(cfg.NoColor)), "no_color"),
 			huh.NewOption("─────────────────", "_separator"),
@@ -130,6 +133,10 @@ func runGlobalSettings(ctx context.Context) error {
 			}
 		case "editor":
 			if err := editEditor(ctx, cfg); err != nil {
+				return err
+			}
+		case "campaigns_dir":
+			if err := editCampaignsDir(ctx, cfg); err != nil {
 				return err
 			}
 		case "verbose":
@@ -229,6 +236,43 @@ func editEditor(ctx context.Context, cfg *config.GlobalConfig) error {
 	}
 
 	return config.SaveGlobalConfig(ctx, cfg)
+}
+
+func editCampaignsDir(ctx context.Context, cfg *config.GlobalConfig) error {
+	value := cfg.CampaignsDir
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Campaigns Dir").
+				Description("Where 'camp create' places new campaigns. Leave empty for default (~/campaigns).").
+				Value(&value),
+		),
+	)
+	if err := theme.RunForm(ctx, form); err != nil {
+		if theme.IsCancelled(err) {
+			return nil
+		}
+		return camperrors.Wrap(err, "editing campaigns_dir")
+	}
+	if err := applyCampaignsDirCandidate(cfg, value); err != nil {
+		// Surface the error and return without saving; user can re-edit on the next loop iteration.
+		fmt.Println(ui.Warning(fmt.Sprintf("Invalid value: %v", err)))
+		return nil
+	}
+	if err := config.SaveGlobalConfig(ctx, cfg); err != nil {
+		return camperrors.Wrap(err, "saving config")
+	}
+	return nil
+}
+
+func applyCampaignsDirCandidate(cfg *config.GlobalConfig, value string) error {
+	next := *cfg
+	next.CampaignsDir = strings.TrimSpace(value) // empty input clears back to default
+	if err := config.ValidateGlobalConfig(&next); err != nil {
+		return err
+	}
+	cfg.CampaignsDir = next.CampaignsDir
+	return nil
 }
 
 // Helper functions
