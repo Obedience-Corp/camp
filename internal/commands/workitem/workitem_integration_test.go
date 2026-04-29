@@ -34,6 +34,9 @@ func TestIntegration_WorkitemEditorHandsOffTTY(t *testing.T) {
 		"XDG_CONFIG_HOME="+filepath.Join(homeDir, ".config"),
 		"TERM=dumb",
 		"NO_COLOR=1",
+		// Test-only escape hatch — bypass Festival Methodology init so
+		// this test does not depend on the fest CLI being installed.
+		"CAMP_INIT_SKIP_FEST=1",
 	)
 
 	campaignRoot := filepath.Join(tempRoot, "campaign")
@@ -46,7 +49,6 @@ func TestIntegration_WorkitemEditorHandsOffTTY(t *testing.T) {
 		"--force",
 		"--no-register",
 		"--no-git",
-		"--skip-fest",
 	)
 	runCommand(t, campaignRoot, baseEnv, campBinary,
 		"intent", "add", "TTY editor integration intent", "--no-commit",
