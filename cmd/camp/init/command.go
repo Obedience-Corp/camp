@@ -49,12 +49,11 @@ Also creates:
 Initializes a git repository if not already inside one.
 
 Use --no-git to skip git initialization.`,
-		Example: `  camp init                                        Initialize current directory
-  camp init my-campaign                            Create and initialize new directory
-  camp init --name "My Project"                    Set custom campaign name
-  camp init --no-git                               Skip git initialization
-  camp init --dry-run                              Preview without creating anything
-  camp init --print-path -d "desc" -m "mission"   Machine mode: root on stdout, summary on stderr`,
+		Example: `  camp init                      Initialize current directory
+  camp init my-campaign          Create and initialize new directory
+  camp init --name "My Project"  Set custom campaign name
+  camp init --no-git             Skip git initialization
+  camp init --dry-run            Preview without creating anything`,
 		Args: cobra.MaximumNArgs(1),
 		Annotations: map[string]string{
 			"agent_allowed": "false",
@@ -75,7 +74,6 @@ Use --no-git to skip git initialization.`,
 	cmd.Flags().Bool("repair", false, "Add missing files to existing campaign")
 	cmd.Flags().Bool("yes", false, "Skip repair confirmation prompt (for scripting)")
 	cmd.Flags().Bool("skip-fest", false, "Skip automatic Festival Methodology initialization")
-	cmd.Flags().Bool("print-path", false, "Print the new campaign root path to stdout (machine mode)")
 
 	return cmd
 }
@@ -96,15 +94,11 @@ type Params struct {
 	Yes           bool
 	SkipFest      bool
 	VerboseOutput bool
-	PrintPath     bool
 }
 
-// Writers routes output between human-facing text and machine-
-// readable lines. In default mode HumanOut == MachineOut == os.Stdout.
-// In print-path mode HumanOut == os.Stderr and MachineOut == os.Stdout.
+// Writers routes init flow output for command callers.
 type Writers struct {
-	HumanOut   io.Writer
-	MachineOut io.Writer
+	HumanOut io.Writer
 }
 
 func write(w io.Writer, args ...any) {
@@ -119,15 +113,9 @@ func writef(w io.Writer, format string, args ...any) {
 	_, _ = fmt.Fprintf(w, format, args...)
 }
 
-// ChooseWriters returns the correct writer pair for the given mode.
-// In default mode both writers point to stdout so behavior is unchanged.
-// In print-path mode human-readable output goes to stderr (the conventional
-// channel for interactive/status messages) and machine output goes to stdout.
-func ChooseWriters(printPath bool) Writers {
-	if printPath {
-		return Writers{HumanOut: os.Stderr, MachineOut: os.Stdout}
-	}
-	return Writers{HumanOut: os.Stdout, MachineOut: os.Stdout}
+// ChooseWriters returns the default writer set for command output.
+func ChooseWriters() Writers {
+	return Writers{HumanOut: os.Stdout}
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
@@ -140,7 +128,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "failed to resolve directory path")
 	}
 	verboseOutput := cmdutil.GetFlagBool(cmd, "verbose")
-	printPath := cmdutil.GetFlagBool(cmd, "print-path")
 	p := Params{
 		Dir:           absDir,
 		Name:          cmdutil.GetFlagString(cmd, "name"),
@@ -155,9 +142,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 		Yes:           cmdutil.GetFlagBool(cmd, "yes"),
 		SkipFest:      cmdutil.GetFlagBool(cmd, "skip-fest"),
 		VerboseOutput: verboseOutput,
-		PrintPath:     printPath,
 	}
-	w := ChooseWriters(p.PrintPath)
+	w := ChooseWriters()
 	return RunFlow(cmd.Context(), p, w, tui.IsTerminal())
 }
 
@@ -215,7 +201,6 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 		Mission:     mission,
 		NoRegister:  p.NoRegister,
 		SkipGitInit: p.NoGit,
-		SkipFest:    p.SkipFest,
 		DryRun:      p.DryRun,
 		Repair:      p.Repair,
 	}
@@ -277,9 +262,11 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 		commitRepairChanges(ctx, result, opts.RepairPlan, migrationCount, w)
 	}
 
-	// Festival init is owned by the scaffold layer (fest CLI shell-out).
-	// Surface a notice when the user explicitly opted out.
-	if p.SkipFest && !p.DryRun {
+	// Initialize Festival Methodology (unless skipped or dry-run).
+	var festInitialized bool
+	if !p.DryRun && !p.SkipFest {
+		festInitialized, _ = initializeFestivals(ctx, result.CampaignRoot, w)
+	} else if p.SkipFest && !p.DryRun {
 		writeLine(w.HumanOut, ui.Info("Skipping Festival Methodology (--skip-fest)"))
 	}
 
@@ -326,12 +313,9 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 		if result.GitInitialized {
 			writeLine(w.HumanOut, ui.KeyValueColored("Git:", "initialized", ui.SuccessColor))
 		}
-	}
-
-	// Machine output: emit the absolute campaign root to MachineOut when
-	// --print-path is set. Dry-run is excluded because no campaign root exists.
-	if p.PrintPath && !p.DryRun {
-		writeLine(w.MachineOut, result.CampaignRoot)
+		if festInitialized {
+			writeLine(w.HumanOut, ui.KeyValueColored("Festivals:", "initialized", ui.SuccessColor))
+		}
 	}
 
 	return nil

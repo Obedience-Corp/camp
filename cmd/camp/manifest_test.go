@@ -329,7 +329,7 @@ func TestCampCreate_ManifestAnnotations(t *testing.T) {
 	// Supported flags
 	supportedFlags := []string{
 		"name", "type", "description", "mission",
-		"no-git", "dry-run", "parent-dir", "print-path",
+		"no-git", "dry-run", "path",
 	}
 	for _, flag := range supportedFlags {
 		if cmd.Flags().Lookup(flag) == nil {
@@ -343,17 +343,5 @@ func TestCampCreate_ManifestAnnotations(t *testing.T) {
 		if cmd.Flags().Lookup(flag) != nil {
 			t.Errorf("camp create should NOT have flag --%s", flag)
 		}
-	}
-}
-
-// TestCampInit_ManifestHasPrintPath asserts that 'camp init' carries the
-// --print-path flag added in Sequence 02.
-func TestCampInit_ManifestHasPrintPath(t *testing.T) {
-	cmd := findCmd("init")
-	if cmd == nil {
-		t.Fatal("camp init command not registered")
-	}
-	if cmd.Flags().Lookup("print-path") == nil {
-		t.Error("camp init is missing the --print-path flag")
 	}
 }

@@ -89,16 +89,16 @@ func TestValidateCampaignName(t *testing.T) {
 	}
 }
 
-// TestResolveCreateBase_ParentDirFlagOverride verifies that --parent-dir
+// TestResolveCreateBase_PathFlagOverride verifies that --path
 // takes precedence over GlobalConfig.CampaignsDir.
-func TestResolveCreateBase_ParentDirFlagOverride(t *testing.T) {
+func TestResolveCreateBase_PathFlagOverride(t *testing.T) {
 	ctx := context.Background()
 	want := "/tmp/override"
 
 	cmd := &cobra.Command{}
-	cmd.Flags().String("parent-dir", "", "")
-	if err := cmd.Flags().Set("parent-dir", want); err != nil {
-		t.Fatalf("failed to set --parent-dir flag: %v", err)
+	cmd.Flags().String("path", "", "")
+	if err := cmd.Flags().Set("path", want); err != nil {
+		t.Fatalf("failed to set --path flag: %v", err)
 	}
 
 	got, err := resolveCreateBase(ctx, cmd)

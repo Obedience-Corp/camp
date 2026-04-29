@@ -22,8 +22,7 @@ var createCmd = &cobra.Command{
 	Long:  `Create a new campaign at <campaigns_dir>/<name>/, using the same scaffolding as 'camp init'. The default campaigns directory is ~/campaigns/ and can be configured via 'camp settings' or by editing the campaigns_dir field in ~/.obey/campaign/config.json.`,
 	Example: `  camp create my-project
   camp create my-project -d "Description" -m "Mission"
-  camp create my-project --parent-dir ~/Dev/sandbox
-  camp create my-project --print-path
+  camp create my-project --path ~/Dev/sandbox
   camp create my-project --dry-run`,
 	Args: cobra.ExactArgs(1),
 	Annotations: map[string]string{
@@ -43,8 +42,7 @@ func init() {
 	createCmd.Flags().StringP("mission", "m", "", "Campaign mission statement")
 	createCmd.Flags().Bool("no-git", false, "Skip git repository initialization")
 	createCmd.Flags().Bool("dry-run", false, "Show what would be done without creating anything")
-	createCmd.Flags().String("parent-dir", "", "Override the base directory (campaign created at <parent-dir>/<name>/)")
-	createCmd.Flags().Bool("print-path", false, "Print the new campaign root path to stdout (machine mode)")
+	createCmd.Flags().String("path", "", "Override the base campaigns directory (campaign created at <path>/<name>/)")
 }
 
 func runCreate(cmd *cobra.Command, args []string) error {
@@ -54,14 +52,13 @@ func runCreate(cmd *cobra.Command, args []string) error {
 	}
 	ctx := cmd.Context()
 	dryRun := cmdutil.GetFlagBool(cmd, "dry-run")
-	printPath := cmdutil.GetFlagBool(cmd, "print-path")
 
 	base, err := resolveCreateBase(ctx, cmd)
 	if err != nil {
 		return err
 	}
 
-	w := initcmd.ChooseWriters(printPath)
+	w := initcmd.ChooseWriters()
 
 	if _, statErr := os.Stat(base); os.IsNotExist(statErr) {
 		if dryRun {
@@ -91,7 +88,6 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		Mission:     cmdutil.GetFlagString(cmd, "mission"),
 		NoGit:       cmdutil.GetFlagBool(cmd, "no-git"),
 		DryRun:      dryRun,
-		PrintPath:   printPath,
 		// force, noRegister, repair, yes stay zero — create deliberately does not support them.
 	}
 	return initcmd.RunFlow(ctx, p, w, tui.IsTerminal())
@@ -117,14 +113,14 @@ func validateCampaignName(name string) error {
 }
 
 // resolveCreateBase returns the absolute base directory in which the new campaign
-// directory will be created. When --parent-dir is set, that value takes precedence.
+// directory will be created. When --path is set, that value takes precedence.
 // Otherwise the directory comes from GlobalConfig.CampaignsDir (via
 // ResolvedCampaignsDir), which defaults to ~/campaigns/ when unset.
 func resolveCreateBase(ctx context.Context, cmd *cobra.Command) (string, error) {
-	if parent := cmdutil.GetFlagString(cmd, "parent-dir"); parent != "" {
-		abs, err := filepath.Abs(parent)
+	if path := cmdutil.GetFlagString(cmd, "path"); path != "" {
+		abs, err := filepath.Abs(path)
 		if err != nil {
-			return "", camperrors.Wrapf(err, "resolving --parent-dir %q", parent)
+			return "", camperrors.Wrapf(err, "resolving --path %q", path)
 		}
 		return abs, nil
 	}
@@ -148,7 +144,7 @@ func checkCreateTarget(target string) error {
 		return camperrors.Wrapf(err, "stating target %q", target)
 	}
 	if !info.IsDir() {
-		return fmt.Errorf("target exists and is not a directory: %s", target)
+		return camperrors.New(fmt.Sprintf("target exists and is not a directory: %s", target))
 	}
 	entries, err := os.ReadDir(target)
 	if err != nil {
@@ -159,7 +155,7 @@ func checkCreateTarget(target string) error {
 	}
 	campaignMarker := filepath.Join(target, ".campaign")
 	if _, err := os.Stat(campaignMarker); err == nil {
-		return fmt.Errorf("target %s already contains a campaign; use 'camp init --repair %s' to repair it", target, target)
+		return camperrors.New(fmt.Sprintf("target %s already contains a campaign; use 'camp init --repair %s' to repair it", target, target))
 	}
-	return fmt.Errorf("target %s exists and is not empty; choose a different name or remove the directory", target)
+	return camperrors.New(fmt.Sprintf("target %s exists and is not empty; choose a different name or remove the directory", target))
 }

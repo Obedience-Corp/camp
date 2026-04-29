@@ -51,26 +51,10 @@ func TestBuildRepairCommitMessage_IncludesIntentMigrations(t *testing.T) {
 	}
 }
 
-// TestChooseWriters asserts the correct writer routing in both modes.
+// TestChooseWriters asserts the default writer routing.
 func TestChooseWriters(t *testing.T) {
-	t.Run("default mode both writers are stdout", func(t *testing.T) {
-		w := ChooseWriters(false)
-		if w.HumanOut != os.Stdout {
-			t.Errorf("default mode HumanOut = %v, want os.Stdout", w.HumanOut)
-		}
-		if w.MachineOut != os.Stdout {
-			t.Errorf("default mode MachineOut = %v, want os.Stdout", w.MachineOut)
-		}
-	})
-
-	t.Run("print-path mode humanOut is stderr, machineOut is stdout", func(t *testing.T) {
-		w := ChooseWriters(true)
-		if w.HumanOut != os.Stderr {
-			t.Errorf("print-path HumanOut = %v, want os.Stderr", w.HumanOut)
-		}
-		if w.MachineOut != os.Stdout {
-			t.Errorf("print-path MachineOut = %v, want os.Stdout", w.MachineOut)
-		}
-	})
+	w := ChooseWriters()
+	if w.HumanOut != os.Stdout {
+		t.Errorf("default mode HumanOut = %v, want os.Stdout", w.HumanOut)
+	}
 }
-

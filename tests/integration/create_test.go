@@ -19,7 +19,7 @@ func readGlobalRegistry(t *testing.T, tc *TestContainer) string {
 	return tc.Shell(t, "cat "+globalRegistryPath+" 2>/dev/null || true")
 }
 
-// TestCampCreate_HappyPath creates a campaign via 'camp create' with --parent-dir
+// TestCampCreate_HappyPath creates a campaign via 'camp create' with --path
 // and asserts the campaign directory, .campaign/ contents, and exit code.
 func TestCampCreate_HappyPath(t *testing.T) {
 	tc := GetSharedContainer(t)
@@ -31,7 +31,7 @@ func TestCampCreate_HappyPath(t *testing.T) {
 		"-d", "test description",
 		"-m", "test mission",
 		"--no-git",
-		"--parent-dir", base,
+		"--path", base,
 	)
 	require.NoError(t, err, "camp create should succeed; output: %s", output)
 	assert.Contains(t, output, "Campaign Initialized", "output should confirm initialization")
@@ -69,36 +69,6 @@ func TestCampCreate_HappyPath(t *testing.T) {
 	assert.Equal(t, initFiles, createFiles, "camp create should scaffold the same .campaign file set as equivalent camp init")
 }
 
-// TestCampCreate_PrintPath asserts that with --print-path the campaign root path
-// lands on stdout and the scaffold summary lands on stderr.
-func TestCampCreate_PrintPath(t *testing.T) {
-	tc := GetSharedContainer(t)
-
-	base := "/tmp/create-printpath"
-	tc.Shell(t, fmt.Sprintf("mkdir -p %s", base))
-
-	expectedPath := base + "/print-campaign"
-
-	stdout, stderr, exitCode, err := tc.RunCampSplit(
-		"create", "print-campaign",
-		"-d", "desc",
-		"-m", "mission",
-		"--no-git",
-		"--parent-dir", base,
-		"--print-path",
-	)
-	require.NoError(t, err, "RunCampSplit error")
-	assert.Equal(t, 0, exitCode, "exit code should be 0; stderr: %s", stderr)
-
-	// stdout must be exactly the absolute path (with newline).
-	assert.Equal(t, expectedPath+"\n", stdout,
-		"stdout should be exactly the campaign root path followed by newline")
-
-	// stderr should contain the scaffold summary.
-	assert.Contains(t, stderr, "Campaign Initialized",
-		"stderr should contain the scaffold summary")
-}
-
 // TestCampCreate_NonTTYMissingFlags asserts that omitting -d and -m in non-TTY
 // mode returns the same error as 'camp init' does.
 func TestCampCreate_NonTTYMissingFlags(t *testing.T) {
@@ -110,7 +80,7 @@ func TestCampCreate_NonTTYMissingFlags(t *testing.T) {
 	// RunCamp is non-interactive (no TTY), so omitting -d and -m should error.
 	output, err := tc.RunCamp("create", "bad-campaign",
 		"--no-git",
-		"--parent-dir", base,
+		"--path", base,
 	)
 	require.Error(t, err, "camp create without -d/-m in non-TTY should fail")
 	assert.Contains(t, strings.ToLower(output), "required",
@@ -137,7 +107,7 @@ func TestCampCreate_DryRunNoMutation(t *testing.T) {
 		"-m", "mission",
 		"--no-git",
 		"--dry-run",
-		"--parent-dir", base,
+		"--path", base,
 	)
 	require.NoError(t, err, "dry-run should succeed without error; output: %s", output)
 
@@ -159,30 +129,6 @@ func TestCampCreate_DryRunNoMutation(t *testing.T) {
 	assert.Equal(t, registryBefore, registryAfter, "dry-run must not mutate the global registry")
 }
 
-// TestCampCreate_DryRunWithPrintPath locks R-P2-1: under --dry-run --print-path
-// the campaign root does not exist, so stdout must be empty.
-func TestCampCreate_DryRunWithPrintPath(t *testing.T) {
-	tc := GetSharedContainer(t)
-
-	base := "/tmp/create-dryrun-pp"
-
-	stdout, _, exitCode, err := tc.RunCampSplit(
-		"create", "phantom-campaign",
-		"-d", "desc",
-		"-m", "mission",
-		"--no-git",
-		"--dry-run",
-		"--print-path",
-		"--parent-dir", base,
-	)
-	require.NoError(t, err, "RunCampSplit error")
-	assert.Equal(t, 0, exitCode, "exit code should be 0")
-
-	// R-P2-1: stdout must be empty under dry-run + print-path.
-	assert.Equal(t, "", stdout,
-		"stdout must be empty under --dry-run --print-path (campaign root does not exist)")
-}
-
 // TestCampCreate_CollisionEmpty pre-creates an empty target directory and asserts
 // that camp create proceeds normally (empty dir is acceptable).
 func TestCampCreate_CollisionEmpty(t *testing.T) {
@@ -196,7 +142,7 @@ func TestCampCreate_CollisionEmpty(t *testing.T) {
 		"-d", "desc",
 		"-m", "mission",
 		"--no-git",
-		"--parent-dir", base,
+		"--path", base,
 	)
 	require.NoError(t, err, "camp create into empty dir should succeed; output: %s", output)
 	assert.Contains(t, output, "Campaign Initialized")
@@ -215,7 +161,7 @@ func TestCampCreate_CollisionNonEmpty(t *testing.T) {
 		"-d", "desc",
 		"-m", "mission",
 		"--no-git",
-		"--parent-dir", base,
+		"--path", base,
 	)
 	require.Error(t, err, "camp create into non-empty dir should fail")
 	assert.Contains(t, output, "exists and is not empty",
@@ -240,14 +186,14 @@ func TestCampCreate_CollisionExistingCampaign(t *testing.T) {
 		"-d", "desc",
 		"-m", "mission",
 		"--no-git",
-		"--parent-dir", base,
+		"--path", base,
 	)
 	require.Error(t, err, "camp create into existing campaign dir should fail")
 	assert.Contains(t, output, "camp init --repair",
 		"error should hint at 'camp init --repair'")
 }
 
-// TestCampCreate_CreatesParentDir asserts that when --parent-dir points to a
+// TestCampCreate_CreatesParentDir asserts that when --path points to a
 // path that does not yet exist, camp create creates it at 0o755.
 func TestCampCreate_CreatesParentDir(t *testing.T) {
 	tc := GetSharedContainer(t)
@@ -261,7 +207,7 @@ func TestCampCreate_CreatesParentDir(t *testing.T) {
 		"-d", "desc",
 		"-m", "mission",
 		"--no-git",
-		"--parent-dir", base,
+		"--path", base,
 	)
 	require.NoError(t, err, "camp create should create parent dir; output: %s", output)
 
@@ -276,10 +222,10 @@ func TestCampCreate_CreatesParentDir(t *testing.T) {
 	assert.True(t, exists, "campaign directory should exist under created base")
 }
 
-// TestCampCreate_ParentDirFlagOverride configures CampaignsDir in the global
-// config to one path and passes --parent-dir for a different path. The campaign
-// must land under --parent-dir, not under CampaignsDir.
-func TestCampCreate_ParentDirFlagOverride(t *testing.T) {
+// TestCampCreate_PathFlagOverride configures CampaignsDir in the global config
+// to one path and passes --path for a different path. The campaign must land
+// under --path, not under CampaignsDir.
+func TestCampCreate_PathFlagOverride(t *testing.T) {
 	tc := GetSharedContainer(t)
 
 	configBase := "/tmp/create-config-base"
@@ -297,23 +243,23 @@ func TestCampCreate_ParentDirFlagOverride(t *testing.T) {
 		"-d", "desc",
 		"-m", "mission",
 		"--no-git",
-		"--parent-dir", overrideBase,
+		"--path", overrideBase,
 	)
-	require.NoError(t, err, "camp create with --parent-dir override should succeed; output: %s", output)
+	require.NoError(t, err, "camp create with --path override should succeed; output: %s", output)
 
 	// Campaign should be under overrideBase.
 	exists, checkErr := tc.CheckDirExists(overrideBase + "/override-campaign")
 	require.NoError(t, checkErr)
-	assert.True(t, exists, "campaign should land under --parent-dir, not CampaignsDir")
+	assert.True(t, exists, "campaign should land under --path, not CampaignsDir")
 
 	// Campaign must NOT be under configBase.
 	exists, checkErr = tc.CheckDirExists(configBase + "/override-campaign")
 	require.NoError(t, checkErr)
-	assert.False(t, exists, "campaign must NOT land under CampaignsDir when --parent-dir is set")
+	assert.False(t, exists, "campaign must NOT land under CampaignsDir when --path is set")
 }
 
 // TestCampCreate_UsesCampaignsDirConfig verifies that camp create uses
-// GlobalConfig.CampaignsDir when --parent-dir is absent.
+// GlobalConfig.CampaignsDir when --path is absent.
 func TestCampCreate_UsesCampaignsDirConfig(t *testing.T) {
 	tc := GetSharedContainer(t)
 
@@ -334,7 +280,7 @@ func TestCampCreate_UsesCampaignsDirConfig(t *testing.T) {
 
 	exists, checkErr := tc.CheckDirExists(configBase + "/config-selected-campaign")
 	require.NoError(t, checkErr)
-	assert.True(t, exists, "campaign should land under configured CampaignsDir when --parent-dir is absent")
+	assert.True(t, exists, "campaign should land under configured CampaignsDir when --path is absent")
 
 	registry := readGlobalRegistry(t, tc)
 	assert.Contains(t, registry, configBase+"/config-selected-campaign", "registry should contain the configured-base campaign path")
@@ -358,7 +304,7 @@ func TestCampCreate_FestivalOwnership(t *testing.T) {
 			"-d", "desc",
 			"-m", "mission",
 			"--no-git",
-			"--parent-dir", base,
+			"--path", base,
 		)
 		require.NoError(t, err, "camp create should succeed; output: %s", output)
 

@@ -15,8 +15,7 @@ camp create <name> [flags]
 ```
   camp create my-project
   camp create my-project -d "Description" -m "Mission"
-  camp create my-project --parent-dir ~/Dev/sandbox
-  camp create my-project --print-path
+  camp create my-project --path ~/Dev/sandbox
   camp create my-project --dry-run
 ```
 
@@ -29,8 +28,7 @@ camp create <name> [flags]
   -m, --mission string       Campaign mission statement
   -n, --name string          Campaign display name (defaults to <name> positional)
       --no-git               Skip git repository initialization
-      --parent-dir string    Override the base directory (campaign created at <parent-dir>/<name>/)
-      --print-path           Print the new campaign root path to stdout (machine mode)
+      --path string          Override the base campaigns directory (campaign created at <path>/<name>/)
   -t, --type string          Campaign type (product, research, tools, personal) (default "product")
 ```
 
@@ -45,4 +43,3 @@ camp create <name> [flags]
 ### SEE ALSO
 
 * [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-

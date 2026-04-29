@@ -262,8 +262,6 @@ func (tc *TestContainer) ExecCommand(args ...string) (string, int, error) {
 // RunCampSplit runs a camp command inside the container and returns stdout and
 // stderr as separate strings along with the exit code. Stdout and stderr are
 // captured to temporary files inside the container and read back individually.
-// This is used by tests that need to distinguish machine output (stdout) from
-// human-readable output (stderr) when --print-path is in effect.
 func (tc *TestContainer) RunCampSplit(args ...string) (stdout, stderr string, exitCode int, err error) {
 	// Quote args for safe shell embedding.
 	quotedArgs := make([]string, len(args))

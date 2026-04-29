@@ -54,8 +54,7 @@ func checkDirectoryEmpty(dir string, force, isInteractive bool, w Writers) error
 	}
 
 	if isInteractive {
-		// Prompt for confirmation. The prompt text goes to HumanOut (stderr in
-		// print-path mode), which is the conventional channel for interactive prompts.
+		// Prompt for confirmation through the caller's human-facing output stream.
 		writeLine(w.HumanOut, ui.Warning(fmt.Sprintf("Directory '%s' is not empty.", filepath.Base(absDir))))
 		write(w.HumanOut, "Continue and initialize campaign here? [y/N]: ")
 

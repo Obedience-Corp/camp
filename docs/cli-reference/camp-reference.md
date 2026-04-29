@@ -583,8 +583,7 @@ camp create <name> [flags]
 ```
   camp create my-project
   camp create my-project -d "Description" -m "Mission"
-  camp create my-project --parent-dir ~/Dev/sandbox
-  camp create my-project --print-path
+  camp create my-project --path ~/Dev/sandbox
   camp create my-project --dry-run
 ```
 
@@ -597,8 +596,7 @@ camp create <name> [flags]
   -m, --mission string       Campaign mission statement
   -n, --name string          Campaign display name (defaults to <name> positional)
       --no-git               Skip git repository initialization
-      --parent-dir string    Override the base directory (campaign created at <parent-dir>/<name>/)
-      --print-path           Print the new campaign root path to stdout (machine mode)
+      --path string          Override the base campaigns directory (campaign created at <path>/<name>/)
   -t, --type string          Campaign type (product, research, tools, personal) (default "product")
 ```
 
@@ -1278,12 +1276,11 @@ camp init [path] [flags]
 ### Examples
 
 ```
-  camp init                                        Initialize current directory
-  camp init my-campaign                            Create and initialize new directory
-  camp init --name "My Project"                    Set custom campaign name
-  camp init --no-git                               Skip git initialization
-  camp init --dry-run                              Preview without creating anything
-  camp init --print-path -d "desc" -m "mission"   Machine mode: root on stdout, summary on stderr
+  camp init                      Initialize current directory
+  camp init my-campaign          Create and initialize new directory
+  camp init --name "My Project"  Set custom campaign name
+  camp init --no-git             Skip git initialization
+  camp init --dry-run            Preview without creating anything
 ```
 
 ### Options
@@ -1297,7 +1294,6 @@ camp init [path] [flags]
   -n, --name string          Campaign name (defaults to directory name)
       --no-git               Skip git repository initialization
       --no-register          Don't add to global registry
-      --print-path           Print the new campaign root path to stdout (machine mode)
       --repair               Add missing files to existing campaign
       --skip-fest            Skip automatic Festival Methodology initialization
   -t, --type string          Campaign type (product, research, tools, personal) (default "product")

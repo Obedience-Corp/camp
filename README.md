@@ -144,9 +144,9 @@ camp shortcuts       # List all available shortcuts
 
 ```bash
 camp create <name>         # Create a new campaign at the default campaigns directory
+camp create <name> --path ~/Dev/sandbox  # Create under a specific campaigns directory
 camp init                  # Initialize current directory
 camp init my-campaign      # Create and initialize new directory
-camp init --print-path     # Print the new campaign root to stdout (machine mode)
 camp clone <url>           # Clone a campaign with full submodule setup
 ```
 

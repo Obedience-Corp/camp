@@ -118,47 +118,6 @@ func TestInit_DirectoryStructure(t *testing.T) {
 	assert.True(t, exists, "campaign.yaml should exist")
 }
 
-func TestCampInit_PrintPathCLI(t *testing.T) {
-	tc := GetSharedContainer(t)
-
-	path := "/campaigns/init-print-path-cli"
-	stdout, stderr, exitCode, err := tc.RunCampSplit("init", path,
-		"--name", "init-print-path-cli",
-		"-d", "desc",
-		"-m", "mission",
-		"--no-git",
-		"--print-path",
-	)
-	require.NoError(t, err, "RunCampSplit error")
-	assert.Equal(t, 0, exitCode, "exit code should be 0; stderr: %s", stderr)
-	assert.Equal(t, path+"\n", stdout, "stdout should be exactly the campaign root path")
-	assert.Contains(t, stderr, "Campaign Initialized", "stderr should contain the scaffold summary")
-	assert.Contains(t, stderr, "Root:", "stderr should contain the human root summary")
-	assert.NotContains(t, stdout, "Campaign Initialized", "stdout should contain machine output only")
-
-	exists, checkErr := tc.CheckDirExists(path + "/.campaign")
-	require.NoError(t, checkErr)
-	assert.True(t, exists, ".campaign/ should exist after init")
-}
-
-func TestCampInit_DefaultModeUnchanged(t *testing.T) {
-	tc := GetSharedContainer(t)
-
-	path := "/campaigns/init-default-mode"
-	stdout, stderr, exitCode, err := tc.RunCampSplit("init", path,
-		"--name", "init-default-mode",
-		"-d", "desc",
-		"-m", "mission",
-		"--no-git",
-	)
-	require.NoError(t, err, "RunCampSplit error")
-	assert.Equal(t, 0, exitCode, "exit code should be 0; stderr: %s", stderr)
-	assert.Empty(t, stderr, "default mode should not route successful output to stderr")
-	assert.Contains(t, stdout, "Campaign Initialized", "stdout should contain the scaffold summary")
-	assert.Contains(t, stdout, "Root:", "stdout should contain the human root summary")
-	assert.NotEqual(t, path+"\n", stdout, "default mode should not reduce stdout to machine path only")
-}
-
 // TestInit_FestivalOwnership verifies that default init creates festivals/
 // when the fest binary is available.
 func TestInit_FestivalOwnership(t *testing.T) {
