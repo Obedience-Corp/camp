@@ -24,15 +24,15 @@ import (
 func TestIntegration_WorkitemEditorHandsOffTTY(t *testing.T) {
 	projectRoot := testProjectRoot(t)
 	campBinary := buildCampBinary(t, projectRoot)
-	festBinDir := buildFestBinaryDir(t, projectRoot)
+	festBinDir := installFestBinaryDir(t)
 
 	tempRoot := t.TempDir()
 	homeDir := filepath.Join(tempRoot, "home")
 	require.NoError(t, os.MkdirAll(filepath.Join(homeDir, ".config"), 0o755))
 
-	// Prepend the freshly-built fest binary to PATH so `camp init` runs the
-	// real Festival Methodology setup, mirroring how a user installs fest
-	// (build from source, place on PATH) and what the container suite does.
+	// Prepend the freshly-installed fest binary to PATH so `camp init` runs
+	// the real Festival Methodology setup against the publicly-released
+	// fest CLI, exactly as an end user would.
 	baseEnv := append(os.Environ(),
 		"HOME="+homeDir,
 		"XDG_CONFIG_HOME="+filepath.Join(homeDir, ".config"),
@@ -246,29 +246,20 @@ func buildCampBinary(t *testing.T, projectRoot string) string {
 	return binaryPath
 }
 
-// buildFestBinaryDir builds the fest CLI from the sibling projects/fest
-// submodule and returns the directory containing the binary, suitable for
-// prepending to PATH. Fails the test if fest source is missing — the
-// workitem TTY integration test exercises the real `camp init` ->
-// `fest init` handoff and must run with fest available.
-func buildFestBinaryDir(t *testing.T, projectRoot string) string {
+// installFestBinaryDir installs the fest CLI the same way a user would —
+// `go install github.com/Obedience-Corp/fest/cmd/fest@latest` — and returns
+// the GOBIN directory to prepend to PATH. Using the public install path
+// means this test catches release-coupling issues (e.g. camp depending on
+// an unreleased fest feature) rather than silently passing against a
+// local development build.
+func installFestBinaryDir(t *testing.T) string {
 	t.Helper()
 
-	festRoot, err := filepath.Abs(filepath.Join(projectRoot, "..", "fest"))
-	require.NoError(t, err, "resolve fest source root")
-	if _, err := os.Stat(filepath.Join(festRoot, "cmd", "fest")); err != nil {
-		t.Fatalf("fest source not found at %s: %v\n"+
-			"This integration test requires the sibling projects/fest "+
-			"submodule to be checked out so it can build fest the way a "+
-			"user would install it.", festRoot, err)
-	}
-
 	binDir := t.TempDir()
-	binaryPath := filepath.Join(binDir, "fest")
-	cmd := exec.Command("go", "build", "-o", binaryPath, "./cmd/fest")
-	cmd.Dir = festRoot
+	cmd := exec.Command("go", "install", "github.com/Obedience-Corp/fest/cmd/fest@latest")
+	cmd.Env = append(os.Environ(), "GOBIN="+binDir)
 	output, err := cmd.CombinedOutput()
-	require.NoErrorf(t, err, "fest build failed:\n%s", output)
+	require.NoErrorf(t, err, "go install fest@latest failed:\n%s", output)
 	return binDir
 }
 
