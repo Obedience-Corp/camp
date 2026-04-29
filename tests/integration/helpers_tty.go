@@ -32,6 +32,13 @@ type InteractiveStep struct {
 // RunCampInteractiveStepsInDir runs camp inside the shared test container
 // through a real TTY and sends input only after each requested screen appears.
 func (tc *TestContainer) RunCampInteractiveStepsInDir(dir string, steps []InteractiveStep, args ...string) (string, error) {
+	return tc.RunCampInteractiveStepsInDirWithEnv(dir, nil, steps, args...)
+}
+
+// RunCampInteractiveStepsInDirWithEnv is like RunCampInteractiveStepsInDir
+// but also exports the given environment variables for the camp process.
+// Useful for tests that exercise EDITOR handoff or other env-driven behavior.
+func (tc *TestContainer) RunCampInteractiveStepsInDirWithEnv(dir string, env map[string]string, steps []InteractiveStep, args ...string) (string, error) {
 	if tc.t != nil {
 		tc.t.Helper()
 	}
@@ -41,7 +48,12 @@ func (tc *TestContainer) RunCampInteractiveStepsInDir(dir string, steps []Intera
 		quotedArgs[i] = shellQuote(arg)
 	}
 
-	cmdStr := fmt.Sprintf("cd %s && TERM=xterm /camp %s 2>&1", shellQuote(dir), strings.Join(quotedArgs, " "))
+	envPrefix := ""
+	for k, v := range env {
+		envPrefix += fmt.Sprintf("%s=%s ", k, shellQuote(v))
+	}
+
+	cmdStr := fmt.Sprintf("cd %s && %sTERM=xterm /camp %s 2>&1", shellQuote(dir), envPrefix, strings.Join(quotedArgs, " "))
 	ctx, cancel := context.WithTimeout(tc.ctx, 15*time.Second)
 	defer cancel()
 

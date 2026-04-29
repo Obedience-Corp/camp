@@ -194,7 +194,11 @@ func buildCampBinaryShared() (string, error) {
 	// Using runtime.GOARCH ensures native execution inside Colima's VM
 	// (which matches the host arch). Hardcoding amd64 on an arm64 host
 	// forces QEMU x86 emulation, causing non-deterministic SIGSEGV.
-	cmd := fmt.Sprintf("cd %s && GOOS=linux GOARCH=%s go build -o %s ./cmd/camp", projectRoot, runtime.GOARCH, binaryPath)
+	//
+	// Build with -tags=dev so dev-only commands (workitem, flow, quest)
+	// are available for integration tests that exercise them. Stable-
+	// profile gating is verified separately by unit tests.
+	cmd := fmt.Sprintf("cd %s && GOOS=linux GOARCH=%s go build -tags=dev -o %s ./cmd/camp", projectRoot, runtime.GOARCH, binaryPath)
 	if err := runCommand(cmd); err != nil {
 		return "", fmt.Errorf("failed to build binary: %w", err)
 	}
