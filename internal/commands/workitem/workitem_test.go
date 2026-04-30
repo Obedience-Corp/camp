@@ -36,6 +36,42 @@ func TestSelectedJumpPathUsesFileParent(t *testing.T) {
 	}
 }
 
+func TestSelectedDefaultActionOpensFileItems(t *testing.T) {
+	item := wkitem.WorkItem{
+		RelativePath: ".campaign/intents/inbox/example.md",
+		ItemKind:     wkitem.ItemKindFile,
+	}
+
+	if got := selectedDefaultAction(item); got != selectedActionOpenEditor {
+		t.Fatalf("selectedDefaultAction() = %q, want %q", got, selectedActionOpenEditor)
+	}
+}
+
+func TestSelectedDefaultActionJumpsDirectoryItems(t *testing.T) {
+	item := wkitem.WorkItem{
+		RelativePath: "workflow/design/example",
+		ItemKind:     wkitem.ItemKindDirectory,
+	}
+
+	if got := selectedDefaultAction(item); got != selectedActionJumpDirectory {
+		t.Fatalf("selectedDefaultAction() = %q, want %q", got, selectedActionJumpDirectory)
+	}
+}
+
+func TestSelectedOpenPathUsesPrimaryDoc(t *testing.T) {
+	item := wkitem.WorkItem{
+		RelativePath: ".campaign/intents/inbox/example.md",
+		PrimaryDoc:   ".campaign/intents/inbox/example.md",
+		ItemKind:     wkitem.ItemKindFile,
+	}
+
+	got := selectedOpenPath(item, "/campaign")
+	want := filepath.Join("/campaign", ".campaign/intents/inbox/example.md")
+	if got != want {
+		t.Fatalf("selectedOpenPath() = %q, want %q", got, want)
+	}
+}
+
 func TestOutputSelectedPathWritesRelativePath(t *testing.T) {
 	item := wkitem.WorkItem{
 		RelativePath: "workflow/design/example",
