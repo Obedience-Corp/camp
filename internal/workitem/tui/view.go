@@ -287,7 +287,7 @@ func renderPreview(item workitem.WorkItem, width, height int) string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(previewHelpStyle.Render("Enter select  e edit  o open  y copy"))
+	b.WriteString(previewHelpStyle.Render("Enter open/jump  e edit  o open  y copy"))
 
 	// Pad remaining height
 	lines := strings.Count(b.String(), "\n") + 1
@@ -325,7 +325,7 @@ func (m Model) renderHelp() string {
 			{"4", "Filter: festival"},
 		}},
 		{"Actions", [][2]string{
-			{"Enter", "Select item and exit"},
+			{"Enter", "Open intents or jump to directories"},
 			{"e", "Open primary doc in $EDITOR"},
 			{"o", "Open with system handler"},
 			{"y", "Copy absolute path"},

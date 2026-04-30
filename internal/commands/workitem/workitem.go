@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/editor"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/paths"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
@@ -101,7 +102,7 @@ Examples:
 			case flagJSON:
 				return outputJSON(campaignRoot, items)
 			case !interactive:
-				// Non-interactive --print: output first item path directly
+				// Non-interactive --print/--path-output: output first item path directly.
 				if len(items) == 0 {
 					return fmt.Errorf("no work items found")
 				}
@@ -141,11 +142,61 @@ func outputSelectedPath(item wkitem.WorkItem, printOnly bool, pathOutput string)
 	return nil
 }
 
+type selectedAction string
+
+const (
+	selectedActionJumpDirectory selectedAction = "jump_directory"
+	selectedActionOpenEditor    selectedAction = "open_editor"
+)
+
+func selectedDefaultAction(item wkitem.WorkItem) selectedAction {
+	if item.ItemKind == wkitem.ItemKindFile {
+		return selectedActionOpenEditor
+	}
+	return selectedActionJumpDirectory
+}
+
 func selectedJumpPath(item wkitem.WorkItem) string {
 	if item.ItemKind == wkitem.ItemKindFile {
 		return filepath.Dir(item.RelativePath)
 	}
 	return item.RelativePath
+}
+
+func selectedOpenPath(item wkitem.WorkItem, campaignRoot string) string {
+	if item.PrimaryDoc != "" {
+		return item.AbsPrimaryDoc(campaignRoot)
+	}
+	if item.RelativePath != "" {
+		return item.AbsPath(campaignRoot)
+	}
+	return ""
+}
+
+func runSelectedAction(ctx context.Context, item wkitem.WorkItem, printOnly bool, pathOutput string, campaignRoot string) error {
+	if printOnly {
+		return outputSelectedPath(item, true, "")
+	}
+	if selectedDefaultAction(item) == selectedActionOpenEditor {
+		return openSelectedItem(ctx, item, campaignRoot)
+	}
+	return outputSelectedPath(item, false, pathOutput)
+}
+
+func openSelectedItem(ctx context.Context, item wkitem.WorkItem, campaignRoot string) error {
+	path := selectedOpenPath(item, campaignRoot)
+	if path == "" {
+		return fmt.Errorf("selected work item has no path to open")
+	}
+	editorName := editor.GetEditor(ctx)
+	cmd := editor.BuildEditorCommand(ctx, editorName, path)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return camperrors.Wrap(err, "opening selected work item")
+	}
+	return nil
 }
 
 func isInteractive() bool {
@@ -203,5 +254,5 @@ func runTUI(ctx context.Context, items []wkitem.WorkItem, printOnly bool, pathOu
 	if !ok || m.Selected == nil {
 		return nil
 	}
-	return outputSelectedPath(*m.Selected, printOnly, pathOutput)
+	return runSelectedAction(ctx, *m.Selected, printOnly, pathOutput, campaignRoot)
 }
