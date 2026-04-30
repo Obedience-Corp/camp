@@ -16,6 +16,11 @@ var sharedContainer *TestContainer
 // copied into the shared container. Tests that require fest should skip if false.
 var festAvailable bool
 
+// sccAvailable indicates whether the scc binary was successfully built and
+// copied into the shared container. Leverage tests that require scc should
+// skip if false.
+var sccAvailable bool
+
 // TestMain sets up a shared container for all integration tests.
 // This avoids the overhead of spinning up a new container for each test.
 func TestMain(m *testing.M) {

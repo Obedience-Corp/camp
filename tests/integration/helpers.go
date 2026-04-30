@@ -118,6 +118,23 @@ func NewSharedContainer() (*TestContainer, error) {
 		}
 	}
 
+	// Build and copy scc binary (best-effort — scc is required by leverage tests
+	// only). scc is a third-party Go binary at github.com/boyter/scc/v3 that the
+	// `camp leverage` command shells out to via PATH lookup.
+	sccBinary, err := buildSCCBinaryShared()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "WARN: scc binary not available: %v\n", err)
+		sccAvailable = false
+	} else {
+		defer os.RemoveAll(filepath.Dir(sccBinary))
+		if err := container.CopyFileToContainer(ctx, sccBinary, "/usr/local/bin/scc", 0o755); err != nil {
+			fmt.Fprintf(os.Stderr, "WARN: failed to copy scc binary into container: %v\n", err)
+			sccAvailable = false
+		} else {
+			sccAvailable = true
+		}
+	}
+
 	// Install git (required for project operations)
 	exitCode, output, err := container.Exec(ctx, []string{"apk", "add", "--no-cache", "git"})
 	if err != nil {
@@ -244,6 +261,42 @@ func buildFestBinaryShared() (string, error) {
 	cmd := fmt.Sprintf("cd %s && GOOS=linux GOARCH=%s go build -o %s ./cmd/fest", festRoot, runtime.GOARCH, binaryPath)
 	if err := runCommand(cmd); err != nil {
 		return "", fmt.Errorf("failed to build fest binary: %w", err)
+	}
+
+	return binaryPath, nil
+}
+
+// buildSCCBinaryShared builds the third-party scc binary into a temp directory
+// and returns its path. scc is required by the `camp leverage` command (it
+// shells out to it for source-code counting). We build it on the host with
+// GOOS=linux so the resulting binary runs in the alpine container, matching
+// the camp/fest binary build pattern above.
+//
+// Returns ("", error) if the build fails — callers should treat this as
+// non-fatal since scc is only required by leverage tests.
+func buildSCCBinaryShared() (string, error) {
+	binDir, err := os.MkdirTemp("", "scc-integration-bin-*")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temporary scc binary directory: %w", err)
+	}
+
+	// Build scc from a throwaway Go module so we don't pollute the camp module.
+	// `go install` with GOOS != host OS ignores GOBIN, so we use a tmp module
+	// + `go build` pointing at the package import path.
+	modDir := filepath.Join(binDir, "buildmod")
+	if err := os.MkdirAll(modDir, 0o755); err != nil {
+		return "", fmt.Errorf("failed to create scc build module dir: %w", err)
+	}
+
+	binaryPath := filepath.Join(binDir, "scc")
+	cmd := fmt.Sprintf(
+		"cd %s && go mod init sccbuild >/dev/null 2>&1 && "+
+			"go get github.com/boyter/scc/v3@latest && "+
+			"GOOS=linux GOARCH=%s go build -o %s github.com/boyter/scc/v3",
+		modDir, runtime.GOARCH, binaryPath,
+	)
+	if err := runCommand(cmd); err != nil {
+		return "", fmt.Errorf("failed to build scc binary: %w", err)
 	}
 
 	return binaryPath, nil

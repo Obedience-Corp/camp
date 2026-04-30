@@ -3,8 +3,6 @@ package leverage
 import (
 	"bytes"
 	"context"
-	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -95,148 +93,16 @@ func stubPopulateMetrics() func(ctx context.Context, campaignRoot string, resolv
 	}
 }
 
-func TestLeverageCommand_TableOutput(t *testing.T) {
-	origRunner := sccRunner
-	origPopulate := populateMetrics
-	t.Cleanup(func() { sccRunner = origRunner; populateMetrics = origPopulate })
-	populateMetrics = stubPopulateMetrics()
-
-	sccRunner = &mockRunner{
-		results: map[string]*intleverage.SCCResult{
-			"camp": sampleResult(10.68, 18.72, 2251607, 65641),
-			"fest": sampleResult(8.20, 15.50, 1500000, 45000),
-		},
-	}
-
-	output, err := executeLeverage(t)
-	if err != nil {
-		t.Fatalf("command failed: %v", err)
-	}
-
-	wantStrings := []string{
-		"Campaign Leverage:",
-		"COCOMO Estimate:",
-		"person-months",
-		"Actual Effort:",
-		"Team Equivalent:",
-		"PROJECT",
-		"FILES",
-		"CODE",
-		"AUTHORS",
-		"EST COST",
-		"EST PM",
-		"ACTUAL PM",
-		"LEVERAGE",
-	}
-
-	for _, want := range wantStrings {
-		if !strings.Contains(output, want) {
-			t.Errorf("output missing %q\nGot:\n%s", want, output)
-		}
-	}
-}
-
-func TestLeverageCommand_JSONOutput(t *testing.T) {
-	origRunner := sccRunner
-	origPopulate := populateMetrics
-	t.Cleanup(func() { sccRunner = origRunner; populateMetrics = origPopulate })
-	populateMetrics = stubPopulateMetrics()
-
-	sccRunner = &mockRunner{
-		results: map[string]*intleverage.SCCResult{
-			"camp": sampleResult(10.68, 18.72, 2251607, 65641),
-		},
-	}
-
-	output, err := executeLeverage(t, "--json")
-	if err != nil {
-		t.Fatalf("command failed: %v", err)
-	}
-
-	var result struct {
-		Campaign *intleverage.LeverageScore   `json:"campaign"`
-		Projects []*intleverage.LeverageScore `json:"projects"`
-	}
-
-	if err := json.Unmarshal([]byte(output), &result); err != nil {
-		t.Fatalf("failed to parse JSON: %v\nGot:\n%s", err, output)
-	}
-	if result.Campaign == nil {
-		t.Fatal("campaign score is nil in JSON output")
-	}
-	if result.Campaign.TotalCode == 0 {
-		t.Error("campaign total_code is zero")
-	}
-	if len(result.Projects) == 0 {
-		t.Error("no projects in JSON output")
-	}
-}
-
-func TestLeverageCommand_ProjectFilter(t *testing.T) {
-	origRunner := sccRunner
-	origPopulate := populateMetrics
-	t.Cleanup(func() { sccRunner = origRunner; populateMetrics = origPopulate })
-	populateMetrics = stubPopulateMetrics()
-
-	sccRunner = &mockRunner{
-		results: map[string]*intleverage.SCCResult{
-			"camp": sampleResult(10.68, 18.72, 2251607, 65641),
-			"fest": sampleResult(8.20, 15.50, 1500000, 45000),
-		},
-	}
-
-	t.Run("valid project filter", func(t *testing.T) {
-		output, err := executeLeverage(t, "--project", "camp")
-		if err != nil {
-			t.Fatalf("command failed: %v", err)
-		}
-		if !strings.Contains(output, "camp") {
-			t.Errorf("output should contain filtered project 'camp'\nGot:\n%s", output)
-		}
-	})
-
-	t.Run("invalid project filter returns error", func(t *testing.T) {
-		_, err := executeLeverage(t, "--project", "nonexistent")
-		if err == nil {
-			t.Fatal("expected error for invalid project, got nil")
-		}
-		if !strings.Contains(err.Error(), "project not found") {
-			t.Errorf("error = %q, want substring 'project not found'", err.Error())
-		}
-	})
-}
-
-func TestLeverageCommand_RunnerError(t *testing.T) {
-	origRunner := sccRunner
-	origPopulate := populateMetrics
-	t.Cleanup(func() { sccRunner = origRunner; populateMetrics = origPopulate })
-	populateMetrics = stubPopulateMetrics()
-
-	sccRunner = &mockRunner{
-		err: fmt.Errorf("scc not found: install with 'brew install scc'"),
-	}
-
-	output, err := executeLeverage(t)
-	if err != nil {
-		t.Fatalf("command should not error, got: %v", err)
-	}
-	if !strings.Contains(output, "Warning") {
-		t.Errorf("output should contain warnings for skipped projects\nGot:\n%s", output)
-	}
-}
-
-func TestLeverageConfigCommand_Display(t *testing.T) {
-	output, err := executeLeverage(t, "config")
-	if err != nil {
-		t.Skipf("skipping: not in a campaign directory: %v", err)
-	}
-
-	for _, want := range []string{"Team Size:", "COCOMO Type:", "Config path:"} {
-		if !strings.Contains(output, want) {
-			t.Errorf("output missing %q\nGot:\n%s", want, output)
-		}
-	}
-}
+// NOTE: TestLeverageCommand_TableOutput, _JSONOutput, _ProjectFilter,
+// _RunnerError, and TestLeverageConfigCommand_Display previously lived here
+// as unit tests. They invoked the live cobra RunE, which calls
+// campaign.DetectCached and walks up the filesystem to the real campaign
+// root, then writes to .campaign/leverage/ — meaning every `just test unit`
+// run silently dirtied the host campaign's snapshot files.
+//
+// Those scenarios were moved to tests/integration/leverage_test.go where the
+// command runs against an ephemeral campaign inside the shared container and
+// host filesystem mutation is impossible.
 
 func TestLeverageConfigCommand_ValidationPeople(t *testing.T) {
 	_, err := executeLeverage(t, "config", "--people", "-1")
