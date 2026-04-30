@@ -62,7 +62,11 @@ EOF
 // `just test unit` constantly dirty the campaign repo.
 func TestLeverage_TableOutput(t *testing.T) {
 	if !sccAvailable {
-		t.Skip("scc binary not available in container; skipping")
+		t.Fatal("scc binary failed to build at container init time. " +
+			"These tests gate the leverage integration coverage and must not " +
+			"silently skip on upstream scc breakage; investigate the build " +
+			"error logged by NewSharedContainer and either fix or roll back to " +
+			"a known-good scc release.")
 	}
 
 	tc := GetSharedContainer(t)
@@ -95,7 +99,11 @@ func TestLeverage_TableOutput(t *testing.T) {
 // Migrated from cmd/camp/leverage/main_command_test.go::TestLeverageCommand_JSONOutput.
 func TestLeverage_JSONOutput(t *testing.T) {
 	if !sccAvailable {
-		t.Skip("scc binary not available in container; skipping")
+		t.Fatal("scc binary failed to build at container init time. " +
+			"These tests gate the leverage integration coverage and must not " +
+			"silently skip on upstream scc breakage; investigate the build " +
+			"error logged by NewSharedContainer and either fix or roll back to " +
+			"a known-good scc release.")
 	}
 
 	tc := GetSharedContainer(t)
@@ -123,7 +131,11 @@ func TestLeverage_JSONOutput(t *testing.T) {
 // Migrated from cmd/camp/leverage/main_command_test.go::TestLeverageCommand_ProjectFilter.
 func TestLeverage_ProjectFilter(t *testing.T) {
 	if !sccAvailable {
-		t.Skip("scc binary not available in container; skipping")
+		t.Fatal("scc binary failed to build at container init time. " +
+			"These tests gate the leverage integration coverage and must not " +
+			"silently skip on upstream scc breakage; investigate the build " +
+			"error logged by NewSharedContainer and either fix or roll back to " +
+			"a known-good scc release.")
 	}
 
 	tc := GetSharedContainer(t)
@@ -154,7 +166,11 @@ func TestLeverage_ProjectFilter(t *testing.T) {
 // loop branch.
 func TestLeverage_RunnerError(t *testing.T) {
 	if !sccAvailable {
-		t.Skip("scc binary not available in container; skipping")
+		t.Fatal("scc binary failed to build at container init time. " +
+			"These tests gate the leverage integration coverage and must not " +
+			"silently skip on upstream scc breakage; investigate the build " +
+			"error logged by NewSharedContainer and either fix or roll back to " +
+			"a known-good scc release.")
 	}
 
 	tc := GetSharedContainer(t)
