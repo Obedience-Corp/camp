@@ -8,9 +8,14 @@ import (
 	"github.com/Obedience-Corp/camp/internal/intent/audit"
 )
 
-// commitPathSet collects unique, safe relative paths for a batch
-// commit. It drops absolute, parent-traversing, and empty paths so
-// the commit helper never sees an unsafe target.
+// commitPathSet collects unique, non-empty paths for a batch commit.
+//
+// Paths are stored verbatim (after a Clean pass). Path *form*
+// (absolute vs repo-relative) is intentionally not enforced here:
+// in production the IntentService returns absolute paths, while
+// unit tests commonly use relative paths. The cobra command
+// normalises to repo-relative via commit.NormalizeFiles before
+// handing the list to the commit helper.
 type commitPathSet struct {
 	seen  map[string]struct{}
 	paths []string
@@ -21,7 +26,7 @@ func newCommitPathSet() *commitPathSet {
 }
 
 func (s *commitPathSet) add(path string) {
-	clean, ok := cleanRelPath(path)
+	clean, ok := cleanPath(path)
 	if !ok {
 		return
 	}
@@ -37,15 +42,21 @@ func (s *commitPathSet) sorted() []string {
 	return s.paths
 }
 
-func cleanRelPath(p string) (string, bool) {
+// cleanPath drops only definitively invalid paths: empty, ".", "..",
+// or relative escape attempts. Both absolute and repo-relative
+// inputs are accepted; downstream NormalizeFiles makes them
+// repo-relative for the git scope.
+func cleanPath(p string) (string, bool) {
 	if p == "" {
 		return "", false
 	}
 	c := filepath.Clean(p)
-	if c == "." || c == ".." || filepath.IsAbs(c) {
+	if c == "." || c == ".." {
 		return "", false
 	}
-	if strings.HasPrefix(c, ".."+string(filepath.Separator)) {
+	// Reject only relative parent-escapes; absolute paths are valid
+	// production inputs from IntentService.
+	if !filepath.IsAbs(c) && strings.HasPrefix(c, ".."+string(filepath.Separator)) {
 		return "", false
 	}
 	return c, true

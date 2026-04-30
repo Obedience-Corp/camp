@@ -11,6 +11,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	sharedcrawl "github.com/Obedience-Corp/camp/internal/crawl"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/intent"
 	intentcrawl "github.com/Obedience-Corp/camp/internal/intent/crawl"
@@ -107,7 +108,11 @@ func runIntentCrawl(cmd *cobra.Command, _ []string) error {
 
 	printIntentCrawlSummary(result, aborted)
 
-	if aborted || noCommit || !result.Summary.HasMoves() {
+	// Auto-commit unless the user opted out, the session aborted,
+	// or no decisions were recorded. Keep/skip-only sessions still
+	// commit because they append entries to crawl.jsonl, which is
+	// owned by this command and must not be left dirty.
+	if aborted || noCommit || result.Summary.Total() == 0 {
 		return nil
 	}
 
@@ -159,12 +164,37 @@ func printIntentCrawlSummary(result *intentcrawl.Result, aborted bool) {
 }
 
 func commitIntentCrawl(ctx context.Context, campaignRoot, campaignID string, result *intentcrawl.Result) error {
+	// IntentService returns absolute paths; commit.Intent expects
+	// repo-relative scope. NormalizeFiles handles the conversion
+	// (and dedups) for both the file list and the pre-staged set.
+	files := commit.NormalizeFiles(campaignRoot, result.CommitPaths.Files...)
+	preStaged := commit.NormalizeFiles(campaignRoot, result.CommitPaths.PreStaged...)
+
+	// Stage source deletions for tracked files so the commit scope
+	// includes the removal of the original intent file alongside
+	// the new destination. Mirrors stageTrackedCrawlSourceDeletions
+	// in cmd/camp/dungeon/crawl.go.
+	if len(preStaged) > 0 {
+		tracked, err := git.FilterTracked(ctx, campaignRoot, preStaged)
+		if err != nil {
+			return camperrors.Wrap(err, "filtering tracked source deletions")
+		}
+		if len(tracked) > 0 {
+			if err := git.StageTrackedChanges(ctx, campaignRoot, tracked...); err != nil {
+				return camperrors.Wrap(err, "staging tracked source deletions")
+			}
+			preStaged = tracked
+		} else {
+			preStaged = nil
+		}
+	}
+
 	res := commit.Intent(ctx, commit.IntentOptions{
 		Options: commit.Options{
 			CampaignRoot:  campaignRoot,
 			CampaignID:    campaignID,
-			Files:         result.CommitPaths.Files,
-			PreStaged:     result.CommitPaths.PreStaged,
+			Files:         files,
+			PreStaged:     preStaged,
 			SelectiveOnly: true,
 		},
 		Action:      commit.IntentCrawl,

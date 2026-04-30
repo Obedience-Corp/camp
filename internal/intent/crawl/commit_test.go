@@ -30,26 +30,33 @@ func TestBuildCommitPaths_IncludesAuditAndCrawlLog(t *testing.T) {
 	}
 }
 
-func TestBuildCommitPaths_DropsUnsafePaths(t *testing.T) {
+func TestBuildCommitPaths_DropsInvalidPathsButKeepsAbsolute(t *testing.T) {
+	// Absolute paths are valid production input from IntentService;
+	// the cobra command normalises them via commit.NormalizeFiles
+	// before the commit. Only definitively invalid paths (empty,
+	// ".", "..", relative escapes) are dropped here.
 	cp := BuildCommitPaths(
 		[]string{
 			"",
 			".",
 			"..",
-			"/absolute/path",
+			"/abs/intents/ready/abs.md",
 			"../escape.md",
 			".campaign/intents/ready/safe.md",
 		},
 		nil,
 		".campaign/intents",
 	)
-	for _, p := range cp.Files {
-		if strings.HasPrefix(p, "/") || strings.HasPrefix(p, "..") {
-			t.Errorf("unsafe path leaked: %q", p)
-		}
-	}
 	if !containsString(cp.Files, ".campaign/intents/ready/safe.md") {
-		t.Errorf("expected safe path retained: %v", cp.Files)
+		t.Errorf("expected relative path retained: %v", cp.Files)
+	}
+	if !containsString(cp.Files, "/abs/intents/ready/abs.md") {
+		t.Errorf("expected absolute path retained for downstream normalisation: %v", cp.Files)
+	}
+	for _, p := range cp.Files {
+		if strings.HasPrefix(p, "..") {
+			t.Errorf("relative escape leaked: %q", p)
+		}
 	}
 }
 

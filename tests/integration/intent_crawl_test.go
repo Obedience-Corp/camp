@@ -83,6 +83,123 @@ func TestIntentCrawl_RejectsDungeonStatusFilter(t *testing.T) {
 	}
 }
 
+// TestIntentCrawl_AutoCommitMoveCommitsScopedFiles drives a crawl
+// session WITHOUT --no-commit and verifies the auto-commit:
+//   - is created
+//   - includes the destination file (status=A)
+//   - includes the source deletion (status=D)
+//   - includes .intents.jsonl and crawl.jsonl
+//   - does NOT include unrelated dirty files
+//
+// This is the regression test for the path-normalization bug where
+// production absolute paths from IntentService were dropped by
+// BuildCommitPaths' relative-only filter, leaving auto-commit with
+// an empty selective scope.
+func TestIntentCrawl_AutoCommitMoveCommitsScopedFiles(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	const campaignPath = "/campaigns/intent-crawl-autocommit"
+	_, err := tc.InitCampaign(campaignPath, "intent-crawl-autocommit", "product")
+	require.NoError(t, err)
+
+	// Seed and commit one inbox intent so the source file is
+	// tracked. `camp intent add` auto-commits by default.
+	_, err = tc.RunCampInDir(campaignPath, "intent", "add", "Auto Commit Me")
+	require.NoError(t, err)
+
+	inboxLS, err := execLS(tc, campaignPath+"/.campaign/intents/inbox")
+	require.NoError(t, err)
+	files := strings.Fields(strings.TrimSpace(inboxLS))
+	require.Len(t, files, 1, "expected exactly one seeded intent in inbox")
+	intentFile := files[0]
+
+	// Drop an unrelated dirty file so the test can prove auto-commit
+	// scopes only intent crawl owned changes.
+	require.NoError(t, tc.WriteFile(campaignPath+"/unrelated-dirty.txt", "should not be committed\n"))
+
+	preCrawlHead := tc.GitOutput(t, campaignPath, "rev-parse", "HEAD")
+
+	moveStep := "\x1b[B\r" // arrow down + enter (Move)
+	pickReady := "\r"      // first option in destination picker is "ready"
+
+	output, err := tc.RunCampInteractiveStepsInDir(
+		campaignPath,
+		[]InteractiveStep{
+			{WaitFor: "Intent 1/1", Input: moveStep},
+			{WaitFor: "Destinations", Input: pickReady},
+			{WaitFor: "Committed changes to git", Input: ""},
+		},
+		"intent", "crawl", "--status", "inbox", "--limit", "1",
+	)
+	require.NoError(t, err, "intent crawl auto-commit session failed; output:\n%s", output)
+	assert.Contains(t, output, "Moved to ready: 1")
+	assert.Contains(t, output, "Committed changes to git",
+		"summary should report a successful auto-commit")
+
+	postCrawlHead := tc.GitOutput(t, campaignPath, "rev-parse", "HEAD")
+	require.NotEqual(t, preCrawlHead, postCrawlHead, "auto-commit should advance HEAD")
+
+	subject := tc.GitOutput(t, campaignPath, "log", "-1", "--pretty=%s")
+	assert.Contains(t, subject, "Crawl: intent crawl completed",
+		"auto-commit subject should describe intent crawl")
+
+	diff := tc.GitOutput(t, campaignPath, "diff-tree", "--no-commit-id",
+		"--name-status", "--no-renames", "-r", "HEAD")
+	assert.Contains(t, diff, "A\t.campaign/intents/ready/"+intentFile,
+		"destination file should be added")
+	assert.Contains(t, diff, "D\t.campaign/intents/inbox/"+intentFile,
+		"source file should be deleted")
+	assert.Contains(t, diff, ".campaign/intents/crawl.jsonl",
+		"crawl log should be in the commit")
+	assert.Contains(t, diff, ".campaign/intents/.intents.jsonl",
+		"audit log should be in the commit")
+	assert.NotContains(t, diff, "unrelated-dirty.txt",
+		"unrelated dirty file must not be in the commit")
+
+	// Sanity: unrelated dirty file is still dirty in the working tree.
+	statusOut := tc.GitOutput(t, campaignPath, "status", "--porcelain", "unrelated-dirty.txt")
+	assert.Contains(t, statusOut, "unrelated-dirty.txt",
+		"unrelated dirty file should remain uncommitted")
+}
+
+// TestIntentCrawl_KeepOnlyAutoCommitsCrawlLog verifies that a
+// session with only keep/skip decisions still auto-commits the
+// crawl.jsonl entries it appended. Previously the auto-commit was
+// gated on HasMoves(), which left the crawl log dirty.
+func TestIntentCrawl_KeepOnlyAutoCommitsCrawlLog(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	const campaignPath = "/campaigns/intent-crawl-keeponly"
+	_, err := tc.InitCampaign(campaignPath, "intent-crawl-keeponly", "product")
+	require.NoError(t, err)
+
+	_, err = tc.RunCampInDir(campaignPath, "intent", "add", "Keep Me")
+	require.NoError(t, err)
+
+	preHead := tc.GitOutput(t, campaignPath, "rev-parse", "HEAD")
+
+	keepStep := "\r" // first option is Keep
+
+	output, err := tc.RunCampInteractiveStepsInDir(
+		campaignPath,
+		[]InteractiveStep{
+			{WaitFor: "Intent 1/1", Input: keepStep},
+			{WaitFor: "Committed changes to git", Input: ""},
+		},
+		"intent", "crawl", "--status", "inbox", "--limit", "1",
+	)
+	require.NoError(t, err, "keep-only crawl session failed; output:\n%s", output)
+	assert.Contains(t, output, "Kept:    1")
+
+	postHead := tc.GitOutput(t, campaignPath, "rev-parse", "HEAD")
+	require.NotEqual(t, preHead, postHead, "keep-only session should still create a commit for crawl.jsonl")
+
+	diff := tc.GitOutput(t, campaignPath, "diff-tree", "--no-commit-id",
+		"--name-status", "--no-renames", "-r", "HEAD")
+	assert.Contains(t, diff, ".campaign/intents/crawl.jsonl",
+		"crawl log entry from keep should be committed")
+}
+
 // TestManifest_IntentCrawlAgentRestricted verifies that the new
 // command appears in the manifest with agent_allowed=false and
 // interactive=true.
