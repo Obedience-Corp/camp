@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/Obedience-Corp/camp/internal/project"
 )
 
 func TestResolveProjects_ConfigDriven(t *testing.T) {
@@ -324,5 +326,187 @@ func TestFilterByName(t *testing.T) {
 				t.Errorf("got %d projects, want %d", len(got), tt.wantCount)
 			}
 		})
+	}
+}
+
+// TestDropSubmodulesShadowedByStandalone covers the leverage-only
+// dedup that removes submodule entries whose URL matches a
+// standalone clone of the same repo.
+//
+// This is the regression fix for the case where the campaign
+// contains both `projects/foo` and `projects/<monorepo>/foo` (via
+// .gitmodules) — leverage must score that work once, not twice.
+func TestDropSubmodulesShadowedByStandalone(t *testing.T) {
+	const sharedURL = "git@github.com:test/foo.git"
+
+	cases := []struct {
+		name      string
+		input     []project.Project
+		wantNames []string
+	}{
+		{
+			name: "shadows submodule when standalone with same URL exists",
+			input: []project.Project{
+				{Name: "foo", URL: sharedURL},
+				{Name: "mono", URL: "git@github.com:test/mono.git"},
+				{Name: "mono@foo", URL: sharedURL, MonorepoRoot: "projects/mono"},
+				{Name: "mono@bar", URL: "git@github.com:test/bar.git", MonorepoRoot: "projects/mono"},
+			},
+			wantNames: []string{"foo", "mono", "mono@bar"},
+		},
+		{
+			name: "keeps submodule when no standalone shadows it",
+			input: []project.Project{
+				{Name: "mono", URL: "git@github.com:test/mono.git"},
+				{Name: "mono@bar", URL: "git@github.com:test/bar.git", MonorepoRoot: "projects/mono"},
+			},
+			wantNames: []string{"mono", "mono@bar"},
+		},
+		{
+			name: "keeps submodule with empty URL even if a standalone shares the URL",
+			input: []project.Project{
+				{Name: "foo", URL: sharedURL},
+				// Submodule with no URL (uninitialised, no remote).
+				// Drop is keyed on URL match, so an empty-URL
+				// submodule cannot be shadowed.
+				{Name: "mono@orphan", URL: "", MonorepoRoot: "projects/mono"},
+			},
+			wantNames: []string{"foo", "mono@orphan"},
+		},
+		{
+			name: "no-op when no submodule entries present",
+			input: []project.Project{
+				{Name: "foo", URL: sharedURL},
+				{Name: "bar", URL: "git@github.com:test/bar.git"},
+			},
+			wantNames: []string{"foo", "bar"},
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			got := dropSubmodulesShadowedByStandalone(tt.input)
+
+			gotNames := make([]string, len(got))
+			for i, p := range got {
+				gotNames[i] = p.Name
+			}
+
+			if len(gotNames) != len(tt.wantNames) {
+				t.Fatalf("got %v, want %v", gotNames, tt.wantNames)
+			}
+			for i, want := range tt.wantNames {
+				if gotNames[i] != want {
+					t.Errorf("idx %d: got %q, want %q (full: %v)", i, gotNames[i], want, gotNames)
+				}
+			}
+		})
+	}
+}
+
+// TestResolveProjects_FallbackDropsSubmoduleShadowedByStandalone is
+// the end-to-end regression test for the "double-counting" bug
+// reported in issue #263. A campaign with both `projects/child` and
+// `projects/mono` (where mono lists child as a .gitmodules entry
+// pointing at the same remote URL) must surface only the standalone
+// child to leverage scoring.
+func TestResolveProjects_FallbackDropsSubmoduleShadowedByStandalone(t *testing.T) {
+	root := t.TempDir()
+	root, _ = filepath.EvalSymlinks(root)
+
+	const childURL = "git@github.com:test/child.git"
+
+	projectsDir := filepath.Join(root, "projects")
+	if err := os.MkdirAll(projectsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Standalone child clone.
+	standaloneChild := filepath.Join(projectsDir, "child")
+	if err := os.MkdirAll(standaloneChild, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initLeverageRepo(t, standaloneChild, childURL)
+
+	// Monorepo containing a "child" submodule whose remote matches.
+	mono := filepath.Join(projectsDir, "mono")
+	if err := os.MkdirAll(mono, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initLeverageRepo(t, mono, "git@github.com:test/mono.git")
+
+	subChild := filepath.Join(mono, "child")
+	if err := os.MkdirAll(subChild, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initLeverageRepo(t, subChild, childURL)
+
+	// .gitmodules entry so project.List sees `mono@child` as a
+	// monorepo subproject.
+	gitmodules := fmt.Sprintf("[submodule %q]\n\tpath = child\n\turl = %s\n", "child", childURL)
+	if err := os.WriteFile(filepath.Join(mono, ".gitmodules"), []byte(gitmodules), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &LeverageConfig{}
+	got, err := ResolveProjects(context.Background(), root, cfg)
+	if err != nil {
+		t.Fatalf("ResolveProjects error = %v", err)
+	}
+
+	names := make([]string, len(got))
+	for i, p := range got {
+		names[i] = p.Name
+	}
+
+	for _, n := range names {
+		if n == "mono@child" {
+			t.Fatalf("mono@child should be dropped (shadowed by standalone child); got %v", names)
+		}
+	}
+	hasStandalone := false
+	hasMono := false
+	for _, n := range names {
+		switch n {
+		case "child":
+			hasStandalone = true
+		case "mono":
+			hasMono = true
+		}
+	}
+	if !hasStandalone {
+		t.Errorf("standalone 'child' missing from result: %v", names)
+	}
+	if !hasMono {
+		t.Errorf("monorepo root 'mono' missing from result: %v", names)
+	}
+}
+
+// initLeverageRepo initialises a git repo at path with the given
+// remote URL and creates one commit so commands like
+// `git remote get-url origin` and `git log` work.
+func initLeverageRepo(t *testing.T, path, remoteURL string) {
+	t.Helper()
+	cmds := [][]string{
+		{"git", "init", path},
+		{"git", "-C", path, "remote", "add", "origin", remoteURL},
+		{"git", "-C", path, "config", "user.email", "test@test.com"},
+		{"git", "-C", path, "config", "user.name", "Test"},
+	}
+	for _, args := range cmds {
+		if out, err := exec.Command(args[0], args[1:]...).CombinedOutput(); err != nil {
+			t.Fatalf("command %v failed: %v\n%s", args, err, out)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(path, "README.md"), []byte("seed"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"git", "-C", path, "add", "."},
+		{"git", "-C", path, "commit", "-m", "seed"},
+	} {
+		if out, err := exec.Command(args[0], args[1:]...).CombinedOutput(); err != nil {
+			t.Fatalf("command %v failed: %v\n%s", args, err, out)
+		}
 	}
 }

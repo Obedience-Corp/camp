@@ -543,6 +543,61 @@ func writeGitmodules(t *testing.T, repoPath string, submodules map[string]string
 	}
 }
 
+// TestList_GitmodulesSubmoduleCarriesOwnURL verifies that each
+// submodule entry records its own remote URL, not the parent
+// monorepo's. Downstream consumers (notably leverage scoring)
+// rely on the URL field identifying the submodule's own repo so
+// they can dedup it against a standalone clone of the same repo.
+func TestList_GitmodulesSubmoduleCarriesOwnURL(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+
+	projectsDir := filepath.Join(tmpDir, "projects")
+	if err := os.MkdirAll(projectsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Monorepo with a submodule pointing at its own remote.
+	mono := filepath.Join(projectsDir, "mono")
+	if err := os.MkdirAll(mono, 0755); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepoWithRemoteAndCommit(t, mono, "git@github.com:test/mono.git", "mono init")
+
+	// Submodule directory with its own initialised git repo and remote.
+	subPath := filepath.Join(mono, "child")
+	if err := os.MkdirAll(subPath, 0755); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepoWithRemoteAndCommit(t, subPath, "git@github.com:test/child.git", "child init")
+
+	writeGitmodules(t, mono, map[string]string{
+		"child": "child",
+	})
+
+	ctx := context.Background()
+	projects, err := List(ctx, tmpDir)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+
+	var sub *Project
+	for i, p := range projects {
+		if p.Name == "mono@child" {
+			sub = &projects[i]
+			break
+		}
+	}
+	if sub == nil {
+		t.Fatal("expected mono@child entry in result")
+	}
+
+	want := "git@github.com:test/child.git"
+	if sub.URL != want {
+		t.Errorf("submodule URL = %q, want %q (own URL, not parent's)", sub.URL, want)
+	}
+}
+
 // initGitRepoWithRemoteAndCommit initializes a git repo, sets a remote URL,
 // and creates an initial commit so that git log returns a date.
 func initGitRepoWithRemoteAndCommit(t *testing.T, path, remoteURL, message string) {
