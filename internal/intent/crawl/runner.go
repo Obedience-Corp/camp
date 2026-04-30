@@ -195,7 +195,7 @@ func processOne(
 				ID:       in.ID,
 				Title:    in.Title,
 				From:     in.Status,
-				Decision: "keep",
+				Decision: DecisionKeep,
 			}); err != nil {
 				return appliedNone, "", moveDest{}, camperrors.Wrap(err, "appending crawl log (keep)")
 			}
@@ -207,7 +207,7 @@ func processOne(
 				ID:       in.ID,
 				Title:    in.Title,
 				From:     in.Status,
-				Decision: "skip",
+				Decision: DecisionSkip,
 			}); err != nil {
 				return appliedNone, "", moveDest{}, camperrors.Wrap(err, "appending crawl log (skip)")
 			}
@@ -231,7 +231,7 @@ func processOne(
 					ID:       in.ID,
 					Title:    in.Title,
 					From:     in.Status,
-					Decision: "keep",
+					Decision: DecisionKeep,
 				}); err != nil {
 					return appliedNone, "", moveDest{}, camperrors.Wrap(err, "appending crawl log (keep on no-op move)")
 				}
@@ -260,7 +260,7 @@ func processOne(
 				ID:       in.ID,
 				Title:    in.Title,
 				From:     in.Status,
-				Decision: "move",
+				Decision: DecisionMove,
 				To:       target,
 				Reason:   reason,
 			}); err != nil {

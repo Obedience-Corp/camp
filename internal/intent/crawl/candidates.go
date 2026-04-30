@@ -57,7 +57,7 @@ func SelectCandidates(ctx context.Context, store IntentStore, opts Options) ([]*
 	return out, nil
 }
 
-func sortCandidates(in []*intent.Intent, mode string) {
+func sortCandidates(in []*intent.Intent, mode SortMode) {
 	switch mode {
 	case SortStale:
 		sort.SliceStable(in, func(i, j int) bool {

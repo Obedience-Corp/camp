@@ -14,7 +14,7 @@ func TestOptions_DefaultStatusesAndSort(t *testing.T) {
 		t.Fatalf("Validate() error = %v", err)
 	}
 	if got := o.Sort; got != SortStale {
-		t.Errorf("Sort = %q, want %q", got, SortStale)
+		t.Errorf("Sort = %q, want %q", got, string(SortStale))
 	}
 	if len(o.Statuses) != 3 {
 		t.Fatalf("Statuses len = %d, want 3", len(o.Statuses))
@@ -44,7 +44,7 @@ func TestOptions_RejectsUnknownSort(t *testing.T) {
 }
 
 func TestOptions_AcceptsAllSortModes(t *testing.T) {
-	for _, s := range []string{SortStale, SortUpdated, SortCreated, SortPriority, SortTitle} {
+	for _, s := range []SortMode{SortStale, SortUpdated, SortCreated, SortPriority, SortTitle} {
 		o := Options{Sort: s}
 		if err := o.Validate(); err != nil {
 			t.Errorf("sort %q rejected: %v", s, err)

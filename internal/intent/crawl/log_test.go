@@ -18,10 +18,10 @@ func TestDefaultLogAppender_AppendsJSONL(t *testing.T) {
 	ctx := context.Background()
 
 	entries := []LogEntry{
-		{ID: "a", Title: "A", From: intent.StatusInbox, Decision: "keep"},
-		{ID: "b", Title: "B", From: intent.StatusInbox, Decision: "move",
+		{ID: "a", Title: "A", From: intent.StatusInbox, Decision: DecisionKeep},
+		{ID: "b", Title: "B", From: intent.StatusInbox, Decision: DecisionMove,
 			To: intent.StatusReady},
-		{ID: "c", Title: "C", From: intent.StatusReady, Decision: "move",
+		{ID: "c", Title: "C", From: intent.StatusReady, Decision: DecisionMove,
 			To: intent.StatusArchived, Reason: "stale"},
 	}
 
@@ -70,7 +70,7 @@ func TestDefaultLogAppender_PreservesProvidedTimestamp(t *testing.T) {
 	when := time.Date(2026, 4, 29, 12, 0, 0, 0, time.UTC)
 
 	if err := DefaultLogAppender(ctx, dir, LogEntry{
-		ID: "x", Title: "X", Decision: "keep", Timestamp: when,
+		ID: "x", Title: "X", Decision: DecisionKeep, Timestamp: when,
 	}); err != nil {
 		t.Fatalf("appender err = %v", err)
 	}

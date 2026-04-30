@@ -22,6 +22,23 @@ func CrawlLogPath(intentsDir string) string {
 	return filepath.Join(intentsDir, CrawlLogFile)
 }
 
+// LogDecision names the kind of crawl decision recorded in the
+// log. Keeping this typed prevents typo regressions in writers and
+// makes downstream consumers (analytics, replays) safer to write.
+type LogDecision string
+
+const (
+	// DecisionKeep means the user kept the intent in its current
+	// status. No mutation occurred.
+	DecisionKeep LogDecision = "keep"
+	// DecisionSkip means the user skipped the intent without
+	// touching it.
+	DecisionSkip LogDecision = "skip"
+	// DecisionMove means the user moved the intent to a different
+	// status. To and Reason carry the move details.
+	DecisionMove LogDecision = "move"
+)
+
 // LogEntry is one JSONL row in the intent crawl log. Reason is
 // only set for moves; To is only set for moves.
 type LogEntry struct {
@@ -29,7 +46,7 @@ type LogEntry struct {
 	ID        string        `json:"id"`
 	Title     string        `json:"title"`
 	From      intent.Status `json:"from"`
-	Decision  string        `json:"decision"` // keep | skip | move
+	Decision  LogDecision   `json:"decision"`
 	To        intent.Status `json:"to,omitempty"`
 	Reason    string        `json:"reason,omitempty"`
 }

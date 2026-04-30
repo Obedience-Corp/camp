@@ -75,7 +75,7 @@ func TestRun_KeepRecordsKeepLog(t *testing.T) {
 	if len(audits) != 0 {
 		t.Errorf("audit events for keep should be empty, got %d", len(audits))
 	}
-	if len(logs) != 1 || logs[0].Decision != "keep" || logs[0].ID != "a" {
+	if len(logs) != 1 || logs[0].Decision != DecisionKeep || logs[0].ID != "a" {
 		t.Fatalf("log entries = %+v", logs)
 	}
 	if len(store.moveCalls) != 0 {
@@ -96,7 +96,7 @@ func TestRun_SkipRecordsSkipLog(t *testing.T) {
 	if _, err := Run(context.Background(), newRunnerConfig(store, prompt, &audits, &logs), Options{}); err != nil {
 		t.Fatalf("Run error = %v", err)
 	}
-	if len(logs) != 1 || logs[0].Decision != "skip" {
+	if len(logs) != 1 || logs[0].Decision != DecisionSkip {
 		t.Fatalf("log entries = %+v", logs)
 	}
 }
@@ -149,7 +149,7 @@ func TestRun_MoveToLiveStatusNoReason(t *testing.T) {
 	if len(audits) != 1 || audits[0].Type != audit.EventMove || audits[0].To != "ready" {
 		t.Errorf("audit events = %+v", audits)
 	}
-	if len(logs) != 1 || logs[0].Decision != "move" || logs[0].To != intent.StatusReady {
+	if len(logs) != 1 || logs[0].Decision != DecisionMove || logs[0].To != intent.StatusReady {
 		t.Errorf("log entries = %+v", logs)
 	}
 	if logs[0].Reason != "" {

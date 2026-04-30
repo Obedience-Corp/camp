@@ -49,7 +49,7 @@ func init() {
 
 	intentCrawlCmd.Flags().StringSlice("status", nil, "Restrict to live statuses (repeatable: inbox, ready, active)")
 	intentCrawlCmd.Flags().Int("limit", 0, "Stop after N candidates (0 = no limit)")
-	intentCrawlCmd.Flags().String("sort", intentcrawl.SortStale, "Sort mode: stale, updated, created, priority, title")
+	intentCrawlCmd.Flags().String("sort", string(intentcrawl.SortStale), "Sort mode: stale, updated, created, priority, title")
 	intentCrawlCmd.Flags().Bool("no-commit", false, "Apply moves and logs but do not auto-commit")
 }
 
@@ -81,7 +81,7 @@ func runIntentCrawl(cmd *cobra.Command, _ []string) error {
 	opts := intentcrawl.Options{
 		Statuses: statuses,
 		Limit:    limit,
-		Sort:     sortMode,
+		Sort:     intentcrawl.SortMode(sortMode),
 	}
 	runCfg := intentcrawl.Config{
 		Store:      svc,

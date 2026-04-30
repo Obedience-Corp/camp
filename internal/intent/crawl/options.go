@@ -16,21 +16,31 @@ import (
 	"github.com/Obedience-Corp/camp/internal/intent"
 )
 
+// SortMode names the candidate ordering used by the crawl runner.
+// It is a typed alias of string so the cobra flag boundary can
+// convert raw user input exactly once and the rest of the package
+// gets compile-time protection against typos.
+type SortMode string
+
 // Sort modes recognised by the crawl runner.
 const (
 	// SortStale orders intents by oldest effective update first.
 	// Effective update is UpdatedAt when set, CreatedAt otherwise.
 	// Title and ID are deterministic tie-breakers.
-	SortStale = "stale"
+	SortStale SortMode = "stale"
 	// SortUpdated orders by most-recently-updated first.
-	SortUpdated = "updated"
+	SortUpdated SortMode = "updated"
 	// SortCreated orders by most-recently-created first.
-	SortCreated = "created"
+	SortCreated SortMode = "created"
 	// SortPriority orders by highest priority first.
-	SortPriority = "priority"
+	SortPriority SortMode = "priority"
 	// SortTitle orders by title ascending.
-	SortTitle = "title"
+	SortTitle SortMode = "title"
 )
+
+// String returns the underlying string for use in error messages
+// and serialization.
+func (m SortMode) String() string { return string(m) }
 
 // Options configures a single crawl session.
 //
@@ -45,9 +55,9 @@ type Options struct {
 	// Limit caps the number of candidates after sorting. Zero means
 	// no limit. Negative is invalid.
 	Limit int
-	// Sort selects the candidate ordering. Empty string defaults to
+	// Sort selects the candidate ordering. Empty value defaults to
 	// SortStale.
-	Sort string
+	Sort SortMode
 }
 
 // Validate normalises and checks the options. It returns a wrapped
@@ -113,7 +123,7 @@ func ParseStatusFlag(raw string) (intent.Status, error) {
 	)
 }
 
-func validSort(s string) bool {
+func validSort(s SortMode) bool {
 	switch s {
 	case SortStale, SortUpdated, SortCreated, SortPriority, SortTitle:
 		return true
