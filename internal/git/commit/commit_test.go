@@ -301,6 +301,7 @@ func TestIntentAction_Values(t *testing.T) {
 		{IntentDelete, "Delete"},
 		{IntentGather, "Gather"},
 		{IntentPromote, "Promote"},
+		{IntentCrawl, "Crawl"},
 	}
 
 	for _, tt := range tests {
