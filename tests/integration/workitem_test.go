@@ -65,10 +65,13 @@ func TestIntegration_WorkitemShellWrapperChangesDirectory(t *testing.T) {
 	)
 	require.NoError(t, err, "camp init should succeed")
 
-	_, err = tc.RunCampInDir(campaignDir,
-		"intent", "add", "Shell jump intent", "--no-commit",
-	)
-	require.NoError(t, err, "camp intent add should succeed")
+	output, exitCode, err := tc.ExecCommand("sh", "-lc", fmt.Sprintf(
+		"mkdir -p %s/workflow/design/shell-jump-design && printf '# Shell Jump Design\n' > %s/workflow/design/shell-jump-design/README.md",
+		shellQuote(campaignDir),
+		shellQuote(campaignDir),
+	))
+	require.NoError(t, err, "create design work item")
+	require.Equal(t, 0, exitCode, "create design work item failed:\n%s", output)
 
 	script := fmt.Sprintf(`
 set -e
@@ -79,12 +82,83 @@ camp workitem
 printf '\nPWD_AFTER=%%s\n' "$PWD"
 `, shellQuote(campaignDir))
 
-	output, err := runInteractiveShellSteps(t, tc, script, []InteractiveStep{
-		{WaitFor: "Shell jump intent", Input: "\r"},
+	output, err = runInteractiveShellSteps(t, tc, script, []InteractiveStep{
+		{WaitFor: "Shell Jump Design", Input: "\r"},
 		{WaitFor: "PWD_AFTER="},
 	})
 	require.NoError(t, err, "shell-integrated camp workitem should succeed; output:\n%s", output)
-	assert.Contains(t, output, "PWD_AFTER="+campaignDir+"/.campaign/intents/inbox")
+	assert.Contains(t, output, "PWD_AFTER="+campaignDir+"/workflow/design/shell-jump-design")
+}
+
+func TestIntegration_WorkitemShellWrapperEnterOpensIntentEditor(t *testing.T) {
+	tc := GetSharedContainer(t)
+	installShells(t, tc)
+	ensureCampInPath(t, tc)
+
+	const (
+		campaignDir = "/test/workitem-shell-open-intent"
+		editorPath  = "/test/enter-intent-editor.sh"
+		editorLog   = "/test/enter-intent-editor.log"
+	)
+	_, err := tc.RunCamp(
+		"init", campaignDir,
+		"--name", "Workitem Shell Open Intent Test",
+		"--type", "product",
+		"-d", "Workitem shell open intent test campaign",
+		"-m", "Verify workitem shell wrapper opens intents",
+		"--force",
+		"--no-register",
+		"--no-git",
+	)
+	require.NoError(t, err, "camp init should succeed")
+
+	_, err = tc.RunCampInDir(campaignDir,
+		"intent", "add", "Enter opens intent", "--no-commit",
+	)
+	require.NoError(t, err, "camp intent add should succeed")
+
+	intentDoc := findContainerIntentDoc(t, tc, campaignDir)
+
+	editorScript := fmt.Sprintf(`#!/bin/sh
+set -eu
+
+log_file=%s
+
+printf 'PATH=%%s\n' "$1" > "$log_file"
+printf 'EDITOR_START\n'
+printf '\nenter-editor-opened\n' >> "$1"
+printf 'EDITOR_DONE\n'
+`, shellQuote(editorLog))
+
+	require.NoError(t, tc.WriteFile(editorPath, editorScript))
+	tc.Shell(t, fmt.Sprintf("chmod +x %s", editorPath))
+
+	script := fmt.Sprintf(`
+set -e
+export PATH="/camp-bin:$PATH"
+export EDITOR=%s
+cd %s
+eval "$(camp shell-init bash)"
+camp workitem
+printf '\nPWD_AFTER=%%s\n' "$PWD"
+`, shellQuote(editorPath), shellQuote(campaignDir))
+
+	output, err := runInteractiveShellSteps(t, tc, script, []InteractiveStep{
+		{WaitFor: "Enter opens intent", Input: "\r"},
+		{WaitFor: "EDITOR_DONE"},
+		{WaitFor: "PWD_AFTER="},
+	})
+	require.NoError(t, err, "shell-integrated camp workitem should open intent; output:\n%s", output)
+	assert.Contains(t, output, "PWD_AFTER="+campaignDir)
+	assert.NotContains(t, output, "PWD_AFTER="+campaignDir+"/.campaign/intents/inbox")
+
+	logData, err := tc.ReadFile(editorLog)
+	require.NoError(t, err, "editor log should exist after editor exits")
+	assert.Equal(t, intentDoc, logFieldValue(t, logData, "PATH"))
+
+	intentBody, err := tc.ReadFile(intentDoc)
+	require.NoError(t, err)
+	assert.Contains(t, intentBody, "enter-editor-opened")
 }
 
 // TestIntegration_WorkitemEditorHandsOffTTY verifies that `camp workitem`
