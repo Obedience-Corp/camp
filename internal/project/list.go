@@ -250,8 +250,10 @@ func deduplicateByRemoteURL(ctx context.Context, campaignRoot string, projects [
 	bestDate := make(map[string]string)
 
 	for i, p := range projects {
-		// Monorepo subprojects share the parent's URL. They are not subject to
-		// URL-based dedup — each nested submodule is an independent checkout.
+		// Monorepo subprojects carry their own URL, but project.List keeps
+		// them out of URL-based dedup so callers can still target nested
+		// checkouts by their qualified names. Scoring callers that need a
+		// single canonical repo entry should dedup at their own boundary.
 		if p.URL == "" || p.MonorepoRoot != "" {
 			continue
 		}
