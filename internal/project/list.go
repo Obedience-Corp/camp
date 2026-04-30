@@ -100,11 +100,17 @@ func resolveLinkedProject(ctx context.Context, name, logicalPath, resolvedPath s
 		})
 		for _, subPath := range submodulePaths {
 			subFullPath := filepath.Join(resolvedPath, subPath)
+			// Each submodule has its own remote. Recording the
+			// submodule's own URL (rather than the parent's) lets
+			// downstream consumers like leverage scoring dedup a
+			// submodule entry against a standalone clone of the
+			// same repo. Empty URL is fine — uninitialised submodules
+			// are kept as-is.
 			expanded = append(expanded, Project{
 				Name:         name + "@" + subPath,
 				Path:         filepath.Join(relPath, subPath),
 				Type:         detectProjectType(subFullPath),
-				URL:          url,
+				URL:          getGitRemoteURL(ctx, subFullPath),
 				Source:       source,
 				LinkedPath:   resolvedPath,
 				MonorepoRoot: relPath,
@@ -155,11 +161,17 @@ func resolveProject(ctx context.Context, name, projectPath string) []Project {
 
 	for _, subPath := range submodulePaths {
 		subFullPath := filepath.Join(projectPath, subPath)
+		// Use the submodule's own remote URL rather than the
+		// parent monorepo's URL. This makes the URL field honest
+		// (each entry's URL identifies its own repo) and lets
+		// leverage-level dedup recognise when a submodule and a
+		// standalone clone refer to the same repo. Empty URL is
+		// fine — uninitialised submodules are kept as-is.
 		expanded = append(expanded, Project{
 			Name:         name + "@" + subPath,
 			Path:         filepath.Join(relPath, subPath),
 			Type:         detectProjectType(subFullPath),
-			URL:          url,
+			URL:          getGitRemoteURL(ctx, subFullPath),
 			MonorepoRoot: relPath,
 		})
 	}

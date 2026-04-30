@@ -61,11 +61,16 @@ func ResolveProjects(ctx context.Context, campaignRoot string, cfg *LeverageConf
 // resolveFromProjectList falls back to project.List() discovery.
 // Monorepo subprojects get SCCDir pointing to the subproject and GitDir
 // pointing to the monorepo root (where .git lives).
+//
+// Leverage scoring further dedups submodule entries against standalone
+// clones of the same git remote URL — see dropSubmodulesShadowedByStandalone.
 func resolveFromProjectList(ctx context.Context, campaignRoot string) ([]ResolvedProject, error) {
 	projects, err := project.List(ctx, campaignRoot)
 	if err != nil {
 		return nil, camperrors.Wrap(err, "list projects")
 	}
+
+	projects = dropSubmodulesShadowedByStandalone(projects)
 
 	resolved := make([]ResolvedProject, 0, len(projects))
 	for _, p := range projects {
@@ -94,6 +99,43 @@ func resolveFromProjectList(ctx context.Context, campaignRoot string) ([]Resolve
 	})
 
 	return resolved, nil
+}
+
+// dropSubmodulesShadowedByStandalone removes monorepo subproject
+// entries whose git remote URL matches a standalone (non-submodule)
+// project in the same list. This prevents leverage scoring from
+// double-counting a repo that appears both as `projects/foo` and as
+// `projects/<monorepo>/foo` via .gitmodules.
+//
+// `project.List` deliberately keeps both entries so that callers
+// like `camp fresh` can target each checkout by name. Leverage
+// scoring needs the opposite: a single canonical entry per repo.
+//
+// The standalone entry wins because it is a direct clone with full
+// history; submodule references may be pinned to older SHAs.
+//
+// Submodule entries with no URL (uninitialised submodule, no
+// remote configured) are kept unchanged — there is no standalone
+// to shadow them.
+func dropSubmodulesShadowedByStandalone(projects []project.Project) []project.Project {
+	standaloneURLs := make(map[string]struct{})
+	for _, p := range projects {
+		if p.MonorepoRoot != "" || p.URL == "" {
+			continue
+		}
+		standaloneURLs[p.URL] = struct{}{}
+	}
+
+	out := make([]project.Project, 0, len(projects))
+	for _, p := range projects {
+		if p.MonorepoRoot != "" && p.URL != "" {
+			if _, shadowed := standaloneURLs[p.URL]; shadowed {
+				continue
+			}
+		}
+		out = append(out, p)
+	}
+	return out
 }
 
 // resolveFromConfig resolves explicitly configured project entries.
