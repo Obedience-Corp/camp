@@ -118,7 +118,7 @@ func NewSharedContainer() (*TestContainer, error) {
 		}
 	}
 
-	// Build and copy scc binary (best-effort — scc is required by leverage tests
+	// Build and copy scc binary (best-effort; scc is required by leverage tests
 	// only). scc is a third-party Go binary at github.com/boyter/scc/v3 that the
 	// `camp leverage` command shells out to via PATH lookup.
 	sccBinary, err := buildSCCBinaryShared()
@@ -272,7 +272,14 @@ func buildFestBinaryShared() (string, error) {
 // GOOS=linux so the resulting binary runs in the alpine container, matching
 // the camp/fest binary build pattern above.
 //
-// Returns ("", error) if the build fails — callers should treat this as
+// We deliberately use @latest rather than pinning a version. Real users
+// install scc via `brew install scc` or `go install ...@latest`, so the
+// integration tests should validate against whatever the leverage command
+// will actually encounter in the wild. If a future scc release breaks the
+// CLI contract leverage depends on, we'd rather find out here than in
+// production.
+//
+// Returns ("", error) if the build fails. Callers should treat this as
 // non-fatal since scc is only required by leverage tests.
 func buildSCCBinaryShared() (string, error) {
 	binDir, err := os.MkdirTemp("", "scc-integration-bin-*")
