@@ -75,6 +75,7 @@ func AutoDetectConfig(ctx context.Context, campaignRoot string) (*LeverageConfig
 	if err != nil {
 		return nil, camperrors.Wrap(err, "listing projects")
 	}
+	projects = deduplicateProjectsForLeverage(projects)
 
 	cfg := defaultConfig()
 
@@ -117,6 +118,13 @@ func PopulateProjects(ctx context.Context, campaignRoot string, cfg *LeverageCon
 		return camperrors.Wrap(err, "listing projects")
 	}
 
+	populateProjectsFromDiscovered(cfg, projects)
+	return nil
+}
+
+func populateProjectsFromDiscovered(cfg *LeverageConfig, projects []project.Project) {
+	projects = deduplicateProjectsForLeverage(projects)
+
 	if cfg.Projects == nil {
 		cfg.Projects = make(map[string]ProjectEntry, len(projects))
 	}
@@ -148,8 +156,6 @@ func PopulateProjects(ctx context.Context, campaignRoot string, cfg *LeverageCon
 			delete(cfg.Projects, name)
 		}
 	}
-
-	return nil
 }
 
 // defaultConfig returns a LeverageConfig with sensible defaults.

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/Obedience-Corp/camp/internal/project"
 )
 
 func TestDefaultConfigPath(t *testing.T) {
@@ -184,6 +186,54 @@ func TestAutoDetectConfig_ContextCancelled(t *testing.T) {
 	_, err := AutoDetectConfig(ctx, "/Users/lancerogers/Dev/AI/obey-campaign")
 	if err == nil {
 		t.Fatal("expected error from cancelled context")
+	}
+}
+
+func TestPopulateProjectsFromDiscoveredPrunesDuplicateRepoURLs(t *testing.T) {
+	const sharedURL = "git@github.com:test/shared.git"
+
+	cfg := &LeverageConfig{
+		Projects: map[string]ProjectEntry{
+			"mono-a@shared": {
+				Path:         "projects/mono-a/shared",
+				Include:      false,
+				InMonorepo:   true,
+				MonorepoPath: "projects/mono-a",
+			},
+			"mono-b@shared": {
+				Path:         "projects/mono-b/shared",
+				Include:      true,
+				InMonorepo:   true,
+				MonorepoPath: "projects/mono-b",
+			},
+			"gone": {
+				Path:    "projects/gone",
+				Include: true,
+			},
+		},
+	}
+	projects := []project.Project{
+		{Name: "mono-a", Path: "projects/mono-a", URL: "git@github.com:test/mono-a.git"},
+		{Name: "mono-a@shared", Path: "projects/mono-a/shared", URL: sharedURL, MonorepoRoot: "projects/mono-a"},
+		{Name: "mono-b", Path: "projects/mono-b", URL: "git@github.com:test/mono-b.git"},
+		{Name: "mono-b@shared", Path: "projects/mono-b/shared", URL: sharedURL, MonorepoRoot: "projects/mono-b"},
+	}
+
+	populateProjectsFromDiscovered(cfg, projects)
+
+	if _, ok := cfg.Projects["mono-b@shared"]; ok {
+		t.Fatalf("duplicate submodule entry mono-b@shared should be pruned from leverage config")
+	}
+	if _, ok := cfg.Projects["gone"]; ok {
+		t.Fatalf("stale project entry should be pruned from leverage config")
+	}
+	if got := cfg.Projects["mono-a@shared"]; got.Include {
+		t.Fatalf("existing Include=false should be preserved for canonical duplicate entry")
+	}
+	for _, want := range []string{"mono-a", "mono-a@shared", "mono-b"} {
+		if _, ok := cfg.Projects[want]; !ok {
+			t.Fatalf("expected project %q to be present after population", want)
+		}
 	}
 }
 
