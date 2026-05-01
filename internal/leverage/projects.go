@@ -62,15 +62,15 @@ func ResolveProjects(ctx context.Context, campaignRoot string, cfg *LeverageConf
 // Monorepo subprojects get SCCDir pointing to the subproject and GitDir
 // pointing to the monorepo root (where .git lives).
 //
-// Leverage scoring further dedups submodule entries against standalone
-// clones of the same git remote URL — see dropSubmodulesShadowedByStandalone.
+// Leverage scoring further dedups entries by git remote URL so a repository
+// present through multiple checkout paths is scored once.
 func resolveFromProjectList(ctx context.Context, campaignRoot string) ([]ResolvedProject, error) {
 	projects, err := project.List(ctx, campaignRoot)
 	if err != nil {
 		return nil, camperrors.Wrap(err, "list projects")
 	}
 
-	projects = dropSubmodulesShadowedByStandalone(projects)
+	projects = deduplicateProjectsForLeverage(projects)
 
 	resolved := make([]ResolvedProject, 0, len(projects))
 	for _, p := range projects {
@@ -101,41 +101,48 @@ func resolveFromProjectList(ctx context.Context, campaignRoot string) ([]Resolve
 	return resolved, nil
 }
 
-// dropSubmodulesShadowedByStandalone removes monorepo subproject
-// entries whose git remote URL matches a standalone (non-submodule)
-// project in the same list. This prevents leverage scoring from
-// double-counting a repo that appears both as `projects/foo` and as
-// `projects/<monorepo>/foo` via .gitmodules.
+// deduplicateProjectsForLeverage keeps one canonical project per non-empty git
+// remote URL. This prevents leverage scoring from double-counting a repo that
+// appears through multiple checkout paths, including `projects/foo`,
+// `projects/<monorepo>/foo`, and the same submodule in more than one monorepo.
 //
 // `project.List` deliberately keeps both entries so that callers
 // like `camp fresh` can target each checkout by name. Leverage
 // scoring needs the opposite: a single canonical entry per repo.
 //
-// The standalone entry wins because it is a direct clone with full
-// history; submodule references may be pinned to older SHAs.
+// A standalone entry wins over submodule entries because it is a direct clone
+// with full history; submodule references may be pinned to older SHAs. When the
+// same URL appears only as submodules, the first discovered entry is kept as the
+// deterministic canonical checkout.
 //
-// Submodule entries with no URL (uninitialised submodule, no
-// remote configured) are kept unchanged — there is no standalone
-// to shadow them.
-func dropSubmodulesShadowedByStandalone(projects []project.Project) []project.Project {
-	standaloneURLs := make(map[string]struct{})
+// Entries with no URL (uninitialised submodule, no remote configured) are kept
+// unchanged because there is no stable repository identity to dedup on.
+func deduplicateProjectsForLeverage(projects []project.Project) []project.Project {
+	keptByURL := make(map[string]int)
+	out := make([]project.Project, 0, len(projects))
+
 	for _, p := range projects {
-		if p.MonorepoRoot != "" || p.URL == "" {
+		if p.URL == "" {
+			out = append(out, p)
 			continue
 		}
-		standaloneURLs[p.URL] = struct{}{}
-	}
 
-	out := make([]project.Project, 0, len(projects))
-	for _, p := range projects {
-		if p.MonorepoRoot != "" && p.URL != "" {
-			if _, shadowed := standaloneURLs[p.URL]; shadowed {
-				continue
-			}
+		keptIdx, exists := keptByURL[p.URL]
+		if !exists {
+			keptByURL[p.URL] = len(out)
+			out = append(out, p)
+			continue
 		}
-		out = append(out, p)
+
+		if shouldPreferLeverageProject(out[keptIdx], p) {
+			out[keptIdx] = p
+		}
 	}
 	return out
+}
+
+func shouldPreferLeverageProject(current, candidate project.Project) bool {
+	return current.MonorepoRoot != "" && candidate.MonorepoRoot == ""
 }
 
 // resolveFromConfig resolves explicitly configured project entries.

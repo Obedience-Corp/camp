@@ -329,14 +329,14 @@ func TestFilterByName(t *testing.T) {
 	}
 }
 
-// TestDropSubmodulesShadowedByStandalone covers the leverage-only
-// dedup that removes submodule entries whose URL matches a
-// standalone clone of the same repo.
+// TestDeduplicateProjectsForLeverage covers the leverage-only dedup that keeps
+// one scoring entry per repository URL.
 //
-// This is the regression fix for the case where the campaign
-// contains both `projects/foo` and `projects/<monorepo>/foo` (via
-// .gitmodules) — leverage must score that work once, not twice.
-func TestDropSubmodulesShadowedByStandalone(t *testing.T) {
+// This is the regression fix for cases where the campaign contains both
+// `projects/foo` and `projects/<monorepo>/foo` (via .gitmodules), or contains
+// the same submodule repository in multiple monorepos. Leverage must score that
+// work once, not once per checkout path.
+func TestDeduplicateProjectsForLeverage(t *testing.T) {
 	const sharedURL = "git@github.com:test/foo.git"
 
 	cases := []struct {
@@ -355,12 +355,22 @@ func TestDropSubmodulesShadowedByStandalone(t *testing.T) {
 			wantNames: []string{"foo", "mono", "mono@bar"},
 		},
 		{
-			name: "keeps submodule when no standalone shadows it",
+			name: "keeps one submodule when same URL appears in multiple monorepos",
 			input: []project.Project{
-				{Name: "mono", URL: "git@github.com:test/mono.git"},
-				{Name: "mono@bar", URL: "git@github.com:test/bar.git", MonorepoRoot: "projects/mono"},
+				{Name: "mono-a", URL: "git@github.com:test/mono-a.git"},
+				{Name: "mono-a@foo", URL: sharedURL, MonorepoRoot: "projects/mono-a"},
+				{Name: "mono-b", URL: "git@github.com:test/mono-b.git"},
+				{Name: "mono-b@foo", URL: sharedURL, MonorepoRoot: "projects/mono-b"},
 			},
-			wantNames: []string{"mono", "mono@bar"},
+			wantNames: []string{"mono-a", "mono-a@foo", "mono-b"},
+		},
+		{
+			name: "standalone wins even when discovered after submodule",
+			input: []project.Project{
+				{Name: "mono@foo", URL: sharedURL, MonorepoRoot: "projects/mono"},
+				{Name: "foo", URL: sharedURL},
+			},
+			wantNames: []string{"foo"},
 		},
 		{
 			name: "keeps submodule with empty URL even if a standalone shares the URL",
@@ -385,7 +395,7 @@ func TestDropSubmodulesShadowedByStandalone(t *testing.T) {
 
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			got := dropSubmodulesShadowedByStandalone(tt.input)
+			got := deduplicateProjectsForLeverage(tt.input)
 
 			gotNames := make([]string, len(got))
 			for i, p := range got {
