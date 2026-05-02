@@ -12,9 +12,17 @@ import (
 )
 
 // Pin represents a saved pinned directory.
+//
+// Path is set for in-tree pins and stored relative to the campaign root so
+// the pins file is portable when the campaign moves.
+//
+// AbsPath is set for attachment pins — pins targeting a directory outside
+// the campaign tree that is bound to this campaign via a Kind="attachment"
+// marker. Exactly one of Path or AbsPath should be set on a given pin.
 type Pin struct {
 	Name      string    `json:"name"`
-	Path      string    `json:"path"`
+	Path      string    `json:"path,omitempty"`
+	AbsPath   string    `json:"abs_path,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
 

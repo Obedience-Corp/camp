@@ -132,6 +132,7 @@ func AddLinked(ctx context.Context, campaignRoot, localPath string, opts LinkOpt
 	warnings := make([]string, 0, 1)
 	marker := campaign.LinkMarker{
 		Version:          campaign.LinkMarkerVersion,
+		Kind:             campaign.KindProject,
 		ActiveCampaignID: cfg.ID,
 	}
 	if err := campaign.WriteMarker(absLocal, marker); err != nil {

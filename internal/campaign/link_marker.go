@@ -13,17 +13,32 @@ import (
 const LinkMarkerFile = ".camp"
 
 // LinkMarkerVersion is the current .camp schema version.
-const LinkMarkerVersion = 2
+const LinkMarkerVersion = 3
 
-// LinkMarker records the active campaign context for a linked project.
+// Marker kinds. KindProject is the original linked-project shape;
+// KindAttachment is a non-project directory attached to a campaign so context
+// detection works from inside it without registering a project.
+const (
+	KindProject    = "project"
+	KindAttachment = "attachment"
+)
+
+// LinkMarker records the active campaign context for a linked directory.
+// A Kind="project" marker is the original linked-project shape and is paired
+// with a projects/<name> symlink and a registry entry. A Kind="attachment"
+// marker is a lighter binding for arbitrary directories the user has already
+// symlinked into the campaign.
 type LinkMarker struct {
 	Version          int    `json:"version"`
+	Kind             string `json:"kind,omitempty"`
 	ActiveCampaignID string `json:"active_campaign_id,omitempty"`
+
+	// Project-only; ignored when Kind="attachment".
+	ProjectName string `json:"project_name,omitempty"`
 
 	// Legacy fields kept for backward-compatible reads only.
 	CampaignID   string `json:"campaign_id,omitempty"`
 	CampaignRoot string `json:"campaign_root,omitempty"`
-	ProjectName  string `json:"project_name,omitempty"`
 }
 
 // MarkerPath returns the marker file path for a linked project directory.
@@ -53,6 +68,11 @@ func ReadMarkerFile(path string) (*LinkMarker, error) {
 	}
 	if marker.ActiveCampaignID == "" && marker.CampaignID != "" {
 		marker.ActiveCampaignID = marker.CampaignID
+	}
+	// Pre-V3 markers had no Kind field. Default to KindProject so existing
+	// linked-project markers continue to behave exactly as before.
+	if marker.Kind == "" {
+		marker.Kind = KindProject
 	}
 
 	return &marker, nil
