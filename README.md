@@ -10,14 +10,16 @@ Campaign workspace manager — group every project, tool, and piece of context y
 
 ## Features
 
-- **Navigation** - Category shortcuts, fuzzy finding, and pins (`go`, `pin`, `shortcuts`)
-- **Project Management** - Git submodules, linked local workspaces, worktrees, and scaffolding (`project add/link/list/new/remote/remove/run/unlink/worktree`)
-- **Planning** - Intents, status flows, dungeon for deprioritized work (`intent`, `flow`, `dungeon`, `gather`)
-- **Productivity** - Leverage scoring to identify high-impact work (`leverage`)
-- **Git Integration** - Campaign-level git operations (`commit`, `log`, `push`, `status`)
-- **Campaign Ops** - Health checks, file operations, cross-campaign tools (`doctor`, `copy`, `move`, `sync`)
-- **Shell Integration** - Native cd behavior with zsh, bash, and fish (`shell-init`)
-- **Tab Completion** - Smart completion for categories, projects, and paths
+- **Navigation** — Category shortcuts, fuzzy finding, pins, and a cached index for instant project lookups (`go`, `pin`, `shortcuts`, `cache`)
+- **Project Management** — Git submodules, linked local workspaces, worktrees, and scaffolding (`project add/link/list/new/remote/remove/run/unlink/worktree/prune`)
+- **Quests** — Long-lived working contexts that span projects, agent sessions, and festivals (`quest create/list/pause/complete`)
+- **Planning** — Intents, status flows, dungeon for deprioritized work, and a unified work-item dashboard (`intent`, `flow`, `dungeon`, `gather`, `workitem`)
+- **Productivity** — Leverage scoring to identify high-impact work (`leverage`)
+- **Git Integration** — Campaign-level git operations with submodule fan-out (`commit`, `log`, `push [all]`, `pull [all]`, `status [all]`, `fresh [all]`, `refs-sync`)
+- **Campaign Ops** — Health checks, file operations, cross-campaign tools (`doctor`, `copy`, `move`, `sync`, `transfer`)
+- **Shell Integration** — Native `cd` behavior with zsh, bash, and fish (`shell-init`)
+- **Tab Completion** — Smart completion for categories, projects, and paths
+- **Plugins** — Discover camp plugins on `PATH` (`plugins`)
 
 ## Installation
 
@@ -189,6 +191,25 @@ camp workitem              # Interactive TUI dashboard of active work
 camp workitem --json       # Machine-readable output
 ```
 
+The dungeon triage crawl honors a `.crawlignore` file alongside the dungeon
+directory — see [docs/crawlignore.md](docs/crawlignore.md) for syntax and
+placement.
+
+### Quests
+
+A quest is a long-lived working context — a sub-initiative that may span
+multiple projects, agent sessions, documents, and festivals over days or
+weeks. Quests live under `.campaign/quests/` and are orthogonal to planning
+(which lives in festivals). A quest groups related activity; a festival
+plans and executes specific deliverables within that activity.
+
+```bash
+camp quest create "q2-reliability" --purpose "harden platform for Q2 launch"
+camp quest list
+camp quest pause q2-reliability
+camp quest complete data-pipeline-rethink
+```
+
 ### Productivity
 
 ```bash
@@ -228,12 +249,14 @@ camp run                   # Execute command from campaign root, or just recipe 
 camp root                  # Print the current campaign root
 camp id                    # Print the current campaign ID
 camp concepts              # List configured concepts (picker/completion concepts)
+camp cache info            # Show navigation cache status and metadata
+camp cache rebuild         # Force rebuild the navigation cache
+camp cache clear           # Delete the navigation cache
 ```
 
-### Global Commands
+### Cross-Campaign
 
 ```bash
-camp create <name>         # Create a new campaign at the default campaigns directory
 camp list                  # List all registered campaigns
 camp switch                # Switch to a different campaign
 camp transfer              # Copy files between campaigns
@@ -257,6 +280,7 @@ camp skills                # Manage campaign skill bundle projection (link/unlin
 
 ```bash
 camp settings              # Manage camp configuration (interactive)
+camp plugins               # List discovered camp plugins on PATH
 camp date                  # Append date suffix to file or directory name
 camp version               # Show version information
 ```
@@ -451,12 +475,15 @@ full file-by-file reference, including which files are scaffolded by
 
 ## Documentation
 
-- [CLI Reference](docs/cli-reference/camp-reference.md) - Complete reference for every command and flag
-- [`.campaign/` Directory Reference](docs/campaign-directory-reference.md) - Hidden campaign metadata layout and ownership
-- [Campaign Settings Files](docs/campaign-settings-files.md) - Global and local config/state files explained
-- [Leverage Scoring](docs/leverage-score.md) - How leverage scores are computed
-- [Shortcuts](docs/SHORTCUTS.md) - Category shortcuts reference
-- [Shell Integration](docs/shell-integration.md) - Detailed shell setup guide
+- [CLI Reference](docs/cli-reference/camp-reference.md) — Complete reference for every command and flag
+- [`.campaign/` Directory Reference](docs/campaign-directory-reference.md) — Hidden campaign metadata layout and ownership
+- [Campaign Settings Files](docs/campaign-settings-files.md) — Global and local config/state files explained
+- [Leverage Scoring](docs/leverage-score.md) — How leverage scores are computed
+- [Shortcuts](docs/SHORTCUTS.md) — Category shortcuts reference
+- [Shell Integration](docs/shell-integration.md) — Detailed shell setup guide
+- [`.crawlignore` Syntax](docs/crawlignore.md) — Excluding paths from dungeon triage
+
+Migration guides for behavior changes live under [docs/migrations/](docs/migrations/).
 
 Individual command docs are in [`docs/cli-reference/`](docs/cli-reference/) (auto-generated via `just docs`).
 
