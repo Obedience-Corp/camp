@@ -12,7 +12,6 @@ Campaign workspace manager — group every project, tool, and piece of context y
 
 - **Navigation** — Category shortcuts, fuzzy finding, pins, and a cached index for instant project lookups (`go`, `pin`, `shortcuts`, `cache`)
 - **Project Management** — Git submodules, linked local workspaces, worktrees, and scaffolding (`project add/link/list/new/remote/remove/run/unlink/worktree/prune`)
-- **Quests** — Long-lived working contexts that span projects, agent sessions, and festivals (`quest create/list/pause/complete`)
 - **Planning** — Intents, status flows, dungeon for deprioritized work, and a unified work-item dashboard (`intent`, `flow`, `dungeon`, `gather`, `workitem`)
 - **Productivity** — Leverage scoring to identify high-impact work (`leverage`)
 - **Git Integration** — Campaign-level git operations with submodule fan-out (`commit`, `log`, `push [all]`, `pull [all]`, `status [all]`, `fresh [all]`, `refs-sync`)
@@ -194,21 +193,6 @@ camp workitem --json       # Machine-readable output
 The dungeon triage crawl honors a `.crawlignore` file alongside the dungeon
 directory — see [docs/crawlignore.md](docs/crawlignore.md) for syntax and
 placement.
-
-### Quests
-
-A quest is a long-lived working context — a sub-initiative that may span
-multiple projects, agent sessions, documents, and festivals over days or
-weeks. Quests live under `.campaign/quests/` and are orthogonal to planning
-(which lives in festivals). A quest groups related activity; a festival
-plans and executes specific deliverables within that activity.
-
-```bash
-camp quest create "q2-reliability" --purpose "harden platform for Q2 launch"
-camp quest list
-camp quest pause q2-reliability
-camp quest complete data-pipeline-rethink
-```
 
 ### Productivity
 
