@@ -54,4 +54,3 @@ camp project worktree [flags]
 * [camp project worktree add](camp_project_worktree_add.md)	 - Create a new worktree for the project
 * [camp project worktree list](camp_project_worktree_list.md)	 - List worktrees for the project
 * [camp project worktree remove](camp_project_worktree_remove.md)	 - Remove a worktree
-

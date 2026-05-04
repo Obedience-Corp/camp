@@ -61,4 +61,3 @@ camp gather feedback [flags]
 ### SEE ALSO
 
 * [camp gather](camp_gather.md)	 - Import external data into the intent system
-

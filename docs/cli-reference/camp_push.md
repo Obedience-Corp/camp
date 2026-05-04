@@ -45,4 +45,3 @@ camp push [flags] [remote] [branch]
 
 * [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
 * [camp push all](camp_push_all.md)	 - Push all repos with unpushed commits
-

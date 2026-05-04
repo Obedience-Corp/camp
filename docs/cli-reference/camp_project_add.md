@@ -51,4 +51,3 @@ camp project add [source] [flags]
 ### SEE ALSO
 
 * [camp project](camp_project.md)	 - Manage campaign projects
-

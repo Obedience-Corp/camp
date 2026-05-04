@@ -50,4 +50,3 @@ camp shortcuts add [name] [path] or [project] [name] [path] [flags]
 ### SEE ALSO
 
 * [camp shortcuts](camp_shortcuts.md)	 - List all available shortcuts
-

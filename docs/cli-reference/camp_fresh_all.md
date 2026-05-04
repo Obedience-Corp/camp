@@ -39,4 +39,3 @@ camp fresh all [flags]
 ### SEE ALSO
 
 * [camp fresh](camp_fresh.md)	 - Post-merge branch cycling: sync to default branch and optionally create a new working branch
-

@@ -15,6 +15,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/git"
 )
 
 // Options controls Attach behavior.
@@ -23,7 +24,7 @@ type Options struct {
 	Force bool
 }
 
-// Result describes the outcome of a successful attach.
+// Result describes the outcome of a successful attach or detach.
 type Result struct {
 	// Input is the path the user passed (for display purposes).
 	Input string
@@ -33,6 +34,12 @@ type Result struct {
 	CampaignID string
 	// FollowedSymlink is true when Input != Target.
 	FollowedSymlink bool
+	// GitExcludeUpdated is true when the operation also updated the
+	// target repo's .git/info/exclude file.
+	GitExcludeUpdated bool
+	// GitExcludeWarning is non-empty when a best-effort exclude update
+	// failed; the marker write/remove still succeeded.
+	GitExcludeWarning string
 }
 
 // Attach writes a Kind="attachment" marker at the resolved target of input,
@@ -40,8 +47,14 @@ type Result struct {
 //
 // Refuses if:
 //   - input does not resolve.
-//   - target is already inside a campaign root.
+//   - target is already inside any campaign tree (the selected one or
+//     another). A nested marker would shadow the parent .campaign/ during
+//     detection.
 //   - target already has a marker (unless opts.Force).
+//
+// When the target is a Git working tree, .camp is added to that repo's
+// .git/info/exclude on a best-effort basis so campaign-local state is not
+// accidentally committed to the attached repo.
 func Attach(ctx context.Context, campaignRoot, campaignID, input string, opts Options) (*Result, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -66,13 +79,13 @@ func Attach(ctx context.Context, campaignRoot, campaignID, input string, opts Op
 		return nil, camperrors.Wrapf(camperrors.ErrInvalidInput, "attach target %q is not a directory", target)
 	}
 
-	if isUnderCampaignRoot(target, campaignRoot) {
-		return nil, camperrors.Wrapf(camperrors.ErrInvalidInput,
-			"target %q is already inside a campaign tree; attach is for external directories", target)
-	}
-
+	// Check for an existing marker at target first. A self-attached
+	// directory will detect its own marker via campaign.Detect, so we
+	// must distinguish that case before the any-campaign check.
 	markerPath := campaign.MarkerPath(target)
+	hasExistingMarker := false
 	if existing, readErr := campaign.ReadMarker(target); readErr == nil {
+		hasExistingMarker = true
 		if !opts.Force {
 			return nil, camperrors.Wrapf(camperrors.ErrAlreadyExists,
 				"marker already exists at %q (kind=%q); use --force to overwrite", markerPath, existing.Kind)
@@ -86,6 +99,21 @@ func Attach(ctx context.Context, campaignRoot, campaignID, input string, opts Op
 		return nil, camperrors.Wrapf(readErr, "read existing marker at %q", markerPath)
 	}
 
+	// Walk from the parent so an attachment marker AT target itself does
+	// not falsely report "already inside a campaign".
+	if existingRoot, ok := detectExistingCampaign(ctx, filepath.Dir(target)); ok && !hasExistingMarker {
+		switch {
+		case sameCampaignRoot(existingRoot, campaignRoot):
+			return nil, camperrors.Wrapf(camperrors.ErrInvalidInput,
+				"target %q is already inside campaign root %q; attach is for external directories",
+				target, existingRoot)
+		default:
+			return nil, camperrors.Wrapf(camperrors.ErrInvalidInput,
+				"target %q is already inside a different campaign at %q; refusing to write a shadowing .camp marker",
+				target, existingRoot)
+		}
+	}
+
 	marker := campaign.LinkMarker{
 		Version:          campaign.LinkMarkerVersion,
 		Kind:             campaign.KindAttachment,
@@ -95,16 +123,27 @@ func Attach(ctx context.Context, campaignRoot, campaignID, input string, opts Op
 		return nil, camperrors.Wrapf(err, "write marker at %q", markerPath)
 	}
 
-	return &Result{
+	res := &Result{
 		Input:           input,
 		Target:          target,
 		CampaignID:      campaignID,
 		FollowedSymlink: target != abs,
-	}, nil
+	}
+	if git.IsRepo(target) {
+		if err := git.EnsureInfoExclude(ctx, target, campaign.LinkMarkerFile); err != nil {
+			res.GitExcludeWarning = err.Error()
+		} else {
+			res.GitExcludeUpdated = true
+		}
+	}
+	return res, nil
 }
 
 // Detach removes the attachment marker at the resolved target of input.
 // Refuses if the marker is missing or has Kind="project".
+//
+// When the target is a Git working tree, .camp is removed from that repo's
+// .git/info/exclude on a best-effort basis to mirror Attach.
 func Detach(ctx context.Context, input string) (*Result, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -136,35 +175,42 @@ func Detach(ctx context.Context, input string) (*Result, error) {
 		return nil, camperrors.Wrapf(err, "remove marker at %q", markerPath)
 	}
 
-	return &Result{
+	res := &Result{
 		Input:           input,
 		Target:          target,
 		CampaignID:      marker.EffectiveCampaignID(),
 		FollowedSymlink: target != abs,
-	}, nil
-}
-
-func isUnderCampaignRoot(target, campaignRoot string) bool {
-	if campaignRoot == "" {
-		return false
 	}
-	resolvedRoot, err := filepath.EvalSymlinks(campaignRoot)
-	if err != nil {
-		resolvedRoot = campaignRoot
-	}
-	rel, err := filepath.Rel(resolvedRoot, target)
-	if err != nil {
-		return false
-	}
-	return rel == "." || (rel != ".." && !startsWithDotDot(rel))
-}
-
-func startsWithDotDot(p string) bool {
-	if len(p) >= 2 && p[0] == '.' && p[1] == '.' {
-		if len(p) == 2 {
-			return true
+	if git.IsRepo(target) {
+		if err := git.RemoveInfoExclude(ctx, target, campaign.LinkMarkerFile); err != nil {
+			res.GitExcludeWarning = err.Error()
+		} else {
+			res.GitExcludeUpdated = true
 		}
-		return p[2] == '/' || p[2] == filepath.Separator
 	}
-	return false
+	return res, nil
+}
+
+// detectExistingCampaign returns the existing campaign root for target, if
+// any. It uses the same Detect path as the rest of the CLI so attachments
+// cannot shadow another campaign by writing a .camp marker inside it.
+func detectExistingCampaign(ctx context.Context, target string) (string, bool) {
+	root, err := campaign.Detect(ctx, target)
+	if err != nil {
+		return "", false
+	}
+	return root, true
+}
+
+func sameCampaignRoot(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	resolveOrSelf := func(p string) string {
+		if r, err := filepath.EvalSymlinks(p); err == nil {
+			return r
+		}
+		return p
+	}
+	return resolveOrSelf(a) == resolveOrSelf(b)
 }

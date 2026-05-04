@@ -120,6 +120,12 @@ func printAttachResult(r *attach.Result, campaignName string) {
 		fmt.Println(ui.KeyValue("  Input:", r.Input+" (followed symlink)"))
 	}
 	fmt.Println(ui.KeyValue("  Campaign ID:", r.CampaignID))
+	if r.GitExcludeUpdated {
+		fmt.Println(ui.KeyValue("  Git exclude:", "added .camp to .git/info/exclude"))
+	}
+	if r.GitExcludeWarning != "" {
+		fmt.Printf("%s %s\n", ui.WarningIcon(), ui.Warning("could not update .git/info/exclude: "+r.GitExcludeWarning))
+	}
 	fmt.Println()
 	fmt.Println(ui.Dim("  Commands run from inside the target now resolve to this campaign."))
 }
@@ -130,5 +136,11 @@ func printDetachResult(r *attach.Result) {
 	fmt.Println(ui.KeyValue("  Target:", r.Target))
 	if r.FollowedSymlink {
 		fmt.Println(ui.KeyValue("  Input:", r.Input+" (followed symlink)"))
+	}
+	if r.GitExcludeUpdated {
+		fmt.Println(ui.KeyValue("  Git exclude:", "removed .camp from .git/info/exclude"))
+	}
+	if r.GitExcludeWarning != "" {
+		fmt.Printf("%s %s\n", ui.WarningIcon(), ui.Warning("could not update .git/info/exclude: "+r.GitExcludeWarning))
 	}
 }

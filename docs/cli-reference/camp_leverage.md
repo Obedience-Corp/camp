@@ -56,4 +56,3 @@ camp leverage [directory] [flags]
 * [camp leverage history](camp_leverage_history.md)	 - Show leverage score history over time
 * [camp leverage reset](camp_leverage_reset.md)	 - Clear all cached leverage data to allow full recomputation
 * [camp leverage snapshot](camp_leverage_snapshot.md)	 - Capture current leverage state as a snapshot
-

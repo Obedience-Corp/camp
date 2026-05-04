@@ -55,4 +55,3 @@ camp project remote [flags]
 * [camp project remote remove](camp_project_remote_remove.md)	 - Remove a remote from the project
 * [camp project remote rename](camp_project_remote_rename.md)	 - Rename a remote in the project
 * [camp project remote set-url](camp_project_remote_set-url.md)	 - Update a remote URL for the project
-

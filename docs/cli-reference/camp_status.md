@@ -41,4 +41,3 @@ camp status [flags]
 
 * [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
 * [camp status all](camp_status_all.md)	 - Show git status of all submodules
-

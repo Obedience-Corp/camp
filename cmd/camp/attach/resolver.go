@@ -6,8 +6,8 @@ import (
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/Obedience-Corp/camp/internal/config"
-	navtui "github.com/Obedience-Corp/camp/internal/nav/tui"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	navtui "github.com/Obedience-Corp/camp/internal/nav/tui"
 )
 
 // attachResolver picks a target campaign for camp attach. It mirrors the

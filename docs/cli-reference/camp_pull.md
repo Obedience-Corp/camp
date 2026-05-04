@@ -46,4 +46,3 @@ camp pull [flags] [remote] [branch]
 
 * [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
 * [camp pull all](camp_pull_all.md)	 - Pull latest changes for all repos
-

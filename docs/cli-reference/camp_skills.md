@@ -45,4 +45,3 @@ camp skills [flags]
 * [camp skills link](camp_skills_link.md)	 - Project campaign skill bundles into tool-specific skills directories
 * [camp skills status](camp_skills_status.md)	 - Show the current state of projected skill bundle symlinks
 * [camp skills unlink](camp_skills_unlink.md)	 - Remove projected skill bundle symlinks
-

@@ -4,14 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"github.com/Obedience-Corp/camp/internal/fsutil"
+	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
 
@@ -379,90 +378,12 @@ func normalizeCampaignRoot(root string) (string, error) {
 	return absRoot, nil
 }
 
-func ensureInfoExclude(ctx context.Context, repoRoot, pattern string) error {
-	path, err := gitInfoExcludePath(ctx, repoRoot)
-	if err != nil {
-		return err
-	}
-	return ensurePatternInFile(path, pattern)
-}
-
-func removeInfoExclude(ctx context.Context, repoRoot, pattern string) error {
-	path, err := gitInfoExcludePath(ctx, repoRoot)
-	if err != nil {
-		return err
-	}
-	return removePatternFromFile(path, pattern)
-}
-
 func ensureGitInfoExclude(ctx context.Context, repoRoot, pattern string) error {
-	return ensureInfoExclude(ctx, repoRoot, pattern)
+	return git.EnsureInfoExclude(ctx, repoRoot, pattern)
 }
 
 func removeGitInfoExclude(ctx context.Context, repoRoot, pattern string) error {
-	return removeInfoExclude(ctx, repoRoot, pattern)
-}
-
-func gitInfoExcludePath(ctx context.Context, repoRoot string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", "-C", repoRoot, "rev-parse", "--git-path", "info/exclude")
-	output, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	path := strings.TrimSpace(string(output))
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(repoRoot, path)
-	}
-	return path, nil
-}
-
-func ensurePatternInFile(path, pattern string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return err
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
-	for _, line := range lines {
-		if strings.TrimSpace(line) == pattern {
-			return nil
-		}
-	}
-
-	content := strings.TrimRight(string(data), "\n")
-	if content != "" {
-		content += "\n"
-	}
-	content += pattern + "\n"
-	return fsutil.WriteFileAtomically(path, []byte(content), 0644)
-}
-
-func removePatternFromFile(path, pattern string) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-
-	lines := strings.Split(string(data), "\n")
-	filtered := make([]string, 0, len(lines))
-	for _, line := range lines {
-		if strings.TrimSpace(line) == pattern {
-			continue
-		}
-		filtered = append(filtered, line)
-	}
-
-	content := strings.TrimRight(strings.Join(filtered, "\n"), "\n")
-	if content != "" {
-		content += "\n"
-	}
-	return fsutil.WriteFileAtomically(path, []byte(content), 0644)
+	return git.RemoveInfoExclude(ctx, repoRoot, pattern)
 }
 
 func formatLinkedRepoWarning(action string, err error) string {

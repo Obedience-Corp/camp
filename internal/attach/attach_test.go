@@ -4,13 +4,24 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
+
+func mustRunGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %s in %s: %v\n%s", strings.Join(args, " "), dir, err, out)
+	}
+}
 
 func setupCampaign(t *testing.T) (campaignRoot, registryPath string) {
 	t.Helper()
@@ -254,6 +265,117 @@ func TestDetach_RefusesProjectMarker(t *testing.T) {
 	}
 	if !errors.Is(err, camperrors.ErrInvalidInput) {
 		t.Errorf("error = %v, want ErrInvalidInput", err)
+	}
+}
+
+// TestAttach_RefusesPathInsideOtherCampaign covers the security gap obey-agent
+// flagged in PR #270 review: previously, the in-tree check only rejected the
+// selected campaign root, so attaching inside ANOTHER campaign would write a
+// shadowing .camp marker. Detection must now reject any campaign context.
+func TestAttach_RefusesPathInsideOtherCampaign(t *testing.T) {
+	tmp := t.TempDir()
+	tmp, _ = filepath.EvalSymlinks(tmp)
+
+	// Selected campaign (target of the attach call).
+	selected := filepath.Join(tmp, "selected")
+	if err := os.MkdirAll(filepath.Join(selected, campaign.CampaignDir), 0755); err != nil {
+		t.Fatalf("mkdir selected: %v", err)
+	}
+	// Other campaign — totally unrelated, target lives inside it.
+	other := filepath.Join(tmp, "other")
+	if err := os.MkdirAll(filepath.Join(other, campaign.CampaignDir), 0755); err != nil {
+		t.Fatalf("mkdir other: %v", err)
+	}
+	insideOther := filepath.Join(other, "subdir")
+	if err := os.MkdirAll(insideOther, 0755); err != nil {
+		t.Fatalf("mkdir insideOther: %v", err)
+	}
+
+	registryPath := filepath.Join(tmp, "registry.json")
+	registryData := []byte(`{
+  "version": 1,
+  "campaigns": {
+    "selected-id": {"name": "selected", "path": "` + selected + `"},
+    "other-id":    {"name": "other",    "path": "` + other + `"}
+  }
+}`)
+	if err := os.WriteFile(registryPath, registryData, 0644); err != nil {
+		t.Fatalf("write registry: %v", err)
+	}
+	t.Setenv("CAMP_REGISTRY_PATH", registryPath)
+
+	_, err := Attach(context.Background(), selected, "selected-id", insideOther, Options{})
+	if err == nil {
+		t.Fatal("expected error for path inside another campaign")
+	}
+	if !errors.Is(err, camperrors.ErrInvalidInput) {
+		t.Errorf("error = %v, want ErrInvalidInput", err)
+	}
+	// No .camp marker should have been written into the other campaign.
+	if _, statErr := os.Stat(filepath.Join(insideOther, campaign.LinkMarkerFile)); !os.IsNotExist(statErr) {
+		t.Errorf("marker leaked into other campaign: %v", statErr)
+	}
+}
+
+// TestAttach_AddsGitInfoExclude covers the second gap obey-agent flagged: when
+// the target is a Git repo, .camp must be added to .git/info/exclude so
+// campaign-local state is not accidentally committed.
+func TestAttach_AddsGitInfoExclude(t *testing.T) {
+	campaignRoot, _ := setupCampaign(t)
+
+	external := filepath.Join(t.TempDir(), "external")
+	external, _ = filepath.EvalSymlinks(filepath.Dir(external))
+	external = filepath.Join(external, "external")
+	if err := os.MkdirAll(external, 0755); err != nil {
+		t.Fatalf("mkdir external: %v", err)
+	}
+	// Initialize the directory as a real git repo via plumbing.
+	mustRunGit(t, external, "init", "-q")
+
+	res, err := Attach(context.Background(), campaignRoot, "campaign-xyz", external, Options{})
+	if err != nil {
+		t.Fatalf("Attach: %v", err)
+	}
+	if res.GitExcludeWarning != "" {
+		t.Fatalf("unexpected GitExcludeWarning: %s", res.GitExcludeWarning)
+	}
+	if !res.GitExcludeUpdated {
+		t.Fatal("GitExcludeUpdated = false, want true for git target")
+	}
+
+	excludePath := filepath.Join(external, ".git", "info", "exclude")
+	data, err := os.ReadFile(excludePath)
+	if err != nil {
+		t.Fatalf("read exclude: %v", err)
+	}
+	if !strings.Contains(string(data), campaign.LinkMarkerFile) {
+		t.Errorf(".git/info/exclude does not contain %q; got:\n%s", campaign.LinkMarkerFile, string(data))
+	}
+}
+
+// TestDetach_RemovesGitInfoExclude verifies the symmetric cleanup on detach.
+func TestDetach_RemovesGitInfoExclude(t *testing.T) {
+	campaignRoot, _ := setupCampaign(t)
+
+	external := filepath.Join(t.TempDir(), "external")
+	external, _ = filepath.EvalSymlinks(filepath.Dir(external))
+	external = filepath.Join(external, "external")
+	if err := os.MkdirAll(external, 0755); err != nil {
+		t.Fatalf("mkdir external: %v", err)
+	}
+	mustRunGit(t, external, "init", "-q")
+
+	if _, err := Attach(context.Background(), campaignRoot, "campaign-xyz", external, Options{}); err != nil {
+		t.Fatalf("Attach: %v", err)
+	}
+	if _, err := Detach(context.Background(), external); err != nil {
+		t.Fatalf("Detach: %v", err)
+	}
+
+	excludePath := filepath.Join(external, ".git", "info", "exclude")
+	data, _ := os.ReadFile(excludePath)
+	if strings.Contains(string(data), campaign.LinkMarkerFile) {
+		t.Errorf(".git/info/exclude still contains %q after detach; got:\n%s", campaign.LinkMarkerFile, string(data))
 	}
 }
 

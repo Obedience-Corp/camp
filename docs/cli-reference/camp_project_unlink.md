@@ -50,4 +50,3 @@ camp project unlink [name] [flags]
 ### SEE ALSO
 
 * [camp project](camp_project.md)	 - Manage campaign projects
-

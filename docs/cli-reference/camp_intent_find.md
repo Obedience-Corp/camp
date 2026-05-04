@@ -43,4 +43,3 @@ camp intent find [query] [flags]
 ### SEE ALSO
 
 * [camp intent](camp_intent.md)	 - Manage campaign intents
-

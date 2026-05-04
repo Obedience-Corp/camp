@@ -40,4 +40,3 @@ camp shortcuts remove <name> or <project> <name> [flags]
 ### SEE ALSO
 
 * [camp shortcuts](camp_shortcuts.md)	 - List all available shortcuts
-

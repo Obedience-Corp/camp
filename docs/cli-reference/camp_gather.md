@@ -34,4 +34,3 @@ camp gather [flags]
 
 * [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
 * [camp gather feedback](camp_gather_feedback.md)	 - Gather feedback observations from festivals into intents
-

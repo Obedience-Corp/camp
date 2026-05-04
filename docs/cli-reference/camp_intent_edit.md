@@ -83,4 +83,3 @@ camp intent edit [id] [flags]
 ### SEE ALSO
 
 * [camp intent](camp_intent.md)	 - Manage campaign intents
-

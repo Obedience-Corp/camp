@@ -58,4 +58,3 @@ camp run [project | @shortcut] [command | recipe] [args...] [flags]
 ### SEE ALSO
 
 * [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-

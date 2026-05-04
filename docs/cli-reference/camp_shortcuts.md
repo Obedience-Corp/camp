@@ -51,4 +51,3 @@ camp shortcuts [flags]
 * [camp shortcuts list](camp_shortcuts_list.md)	 - List shortcuts for a specific project
 * [camp shortcuts remove](camp_shortcuts_remove.md)	 - Remove a shortcut (campaign-level or project sub-shortcut)
 * [camp shortcuts reset](camp_shortcuts_reset.md)	 - Reset auto-generated shortcuts to current defaults
-

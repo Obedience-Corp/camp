@@ -55,4 +55,3 @@ camp project worktree add <name> [flags]
 ### SEE ALSO
 
 * [camp project worktree](camp_project_worktree.md)	 - Manage worktrees for a project
-

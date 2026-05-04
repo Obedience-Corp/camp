@@ -50,4 +50,3 @@ camp intent move <id> <status> [flags]
 ### SEE ALSO
 
 * [camp intent](camp_intent.md)	 - Manage campaign intents
-

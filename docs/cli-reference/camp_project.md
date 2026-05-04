@@ -51,4 +51,3 @@ camp project [flags]
 * [camp project run](camp_project_run.md)	 - Run a command inside a project directory
 * [camp project unlink](camp_project_unlink.md)	 - Unlink a linked project from a campaign
 * [camp project worktree](camp_project_worktree.md)	 - Manage worktrees for a project
-

@@ -46,4 +46,3 @@ camp project remove <name> [flags]
 ### SEE ALSO
 
 * [camp project](camp_project.md)	 - Manage campaign projects
-

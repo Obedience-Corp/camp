@@ -36,4 +36,3 @@ camp completion powershell [flags]
 ### SEE ALSO
 
 * [camp completion](camp_completion.md)	 - Generate the autocompletion script for the specified shell
-

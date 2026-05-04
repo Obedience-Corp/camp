@@ -44,4 +44,3 @@ camp transfer <src> <dest> [flags]
 ### SEE ALSO
 
 * [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-
