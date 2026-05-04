@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 
+	attachpkg "github.com/Obedience-Corp/camp/cmd/camp/attach"
 	cachepkg "github.com/Obedience-Corp/camp/cmd/camp/cache"
 	dungeonpkg "github.com/Obedience-Corp/camp/cmd/camp/dungeon"
 	initcmd "github.com/Obedience-Corp/camp/cmd/camp/init"
@@ -198,6 +200,12 @@ func init() {
 	rootCmd.AddCommand(worktreespkg.Cmd)
 	rootCmd.AddCommand(refspkg.Cmd)
 	rootCmd.AddCommand(pluginsCmd)
+
+	attachResolverFactory := func(stderr io.Writer, usageLine string) attachpkg.CampaignResolver {
+		return attachpkg.NewResolver(stderr, usageLine)
+	}
+	rootCmd.AddCommand(attachpkg.NewAttachCommand(attachResolverFactory))
+	rootCmd.AddCommand(attachpkg.NewDetachCommand())
 
 	release.Register(rootCmd)
 }

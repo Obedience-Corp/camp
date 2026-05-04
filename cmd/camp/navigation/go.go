@@ -572,7 +572,11 @@ func resolvePin(campaignRoot, query string) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	// After migration all paths should be relative; reject any remaining absolute paths
+	// Attachment pins use AbsPath directly; in-tree pins resolve through
+	// campaignRoot. Reject any remaining absolute paths that aren't AbsPath.
+	if pin.IsAttachment() {
+		return pin.AbsPath, true
+	}
 	if filepath.IsAbs(pin.Path) {
 		return "", false
 	}

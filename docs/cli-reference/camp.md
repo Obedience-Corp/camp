@@ -43,6 +43,7 @@ camp [flags]
 
 ### SEE ALSO
 
+* [camp attach](camp_attach.md)	 - Attach an external directory to a campaign
 * [camp cache](camp_cache.md)	 - Manage the navigation index cache
 * [camp clone](camp_clone.md)	 - Clone a campaign with full submodule setup
 * [camp commit](camp_commit.md)	 - Commit changes in the campaign root
@@ -51,6 +52,7 @@ camp [flags]
 * [camp copy](camp_copy.md)	 - Copy a file or directory within the campaign
 * [camp create](camp_create.md)	 - Create a new campaign at the default campaigns directory
 * [camp date](camp_date.md)	 - Append date suffix to file or directory name
+* [camp detach](camp_detach.md)	 - Remove the attachment marker from a directory
 * [camp doctor](camp_doctor.md)	 - Diagnose and fix campaign health issues
 * [camp dungeon](camp_dungeon.md)	 - Manage the campaign dungeon
 * [camp fresh](camp_fresh.md)	 - Post-merge branch cycling: sync to default branch and optionally create a new working branch

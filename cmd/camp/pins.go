@@ -1,8 +1,8 @@
 package main
 
 import (
+	"context"
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +11,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/pins"
 	"github.com/spf13/cobra"
 )
@@ -100,9 +101,19 @@ func runPinsList(cmd *cobra.Command, args []string) error {
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintf(w, "NAME\tPATH\tCREATED\n")
+	if _, err := fmt.Fprintln(w, "NAME\tKIND\tPATH\tCREATED"); err != nil {
+		return err
+	}
 	for _, p := range pinList {
-		fmt.Fprintf(w, "%s\t%s\t%s\n", p.Name, p.Path, p.CreatedAt.Format(time.RFC3339))
+		kind := "in-tree"
+		path := p.Path
+		if p.IsAttachment() {
+			kind = "attachment"
+			path = p.AbsPath
+		}
+		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", p.Name, kind, path, p.CreatedAt.Format(time.RFC3339)); err != nil {
+			return err
+		}
 	}
 	return w.Flush()
 }
@@ -146,29 +157,68 @@ func runPin(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Store path relative to campaign root for portability
-	relPath, err := filepath.Rel(campaignRoot, absPath)
+	pin, display, err := buildPinForPath(absPath, campaignRoot)
 	if err != nil {
-		return camperrors.Wrapf(err, "compute relative path for %q", absPath)
+		return err
 	}
-	if relPath == ".." || strings.HasPrefix(relPath, "../") {
-		return camperrors.Wrapf(fmt.Errorf("outside campaign root"), "pin path %q", absPath)
-	}
+	pin.Name = name
 
-	result := store.Toggle(name, relPath)
+	result := store.TogglePin(pin)
 	if err := store.Save(); err != nil {
 		return err
 	}
 
 	switch result {
 	case pins.Pinned:
-		fmt.Printf("Pinned %q → %s\n", name, relPath)
+		fmt.Printf("Pinned %q → %s\n", name, display)
 	case pins.Unpinned:
 		fmt.Printf("Unpinned %q (was already pinned to same path)\n", name)
 	case pins.Updated:
-		fmt.Printf("Updated pin %q → %s\n", name, relPath)
+		fmt.Printf("Updated pin %q → %s\n", name, display)
 	}
 	return nil
+}
+
+// buildPinForPath returns a Pin record (without Name) and a display string for
+// the given absolute path. In-tree paths get a campaign-relative Path. Paths
+// outside the campaign tree are accepted only when they resolve through a
+// .camp attachment marker that points at the active campaign; those become
+// AbsPath pins.
+func buildPinForPath(absPath, campaignRoot string) (pins.Pin, string, error) {
+	relPath, err := filepath.Rel(campaignRoot, absPath)
+	if err != nil {
+		return pins.Pin{}, "", camperrors.Wrapf(err, "compute relative path for %q", absPath)
+	}
+	if relPath != ".." && !strings.HasPrefix(relPath, "../") {
+		return pins.Pin{Path: relPath}, relPath, nil
+	}
+
+	// Outside the campaign tree: only allow if a marker resolves to this
+	// campaign root.
+	if !markerResolvesToCampaign(absPath, campaignRoot) {
+		return pins.Pin{}, "", camperrors.Wrapf(fmt.Errorf("outside campaign root"),
+			"pin path %q (run 'camp attach %s' first to bind this directory to the campaign)",
+			absPath, absPath)
+	}
+	return pins.Pin{AbsPath: absPath}, absPath + " (attachment)", nil
+}
+
+// markerResolvesToCampaign returns true when walking up from path reaches a
+// campaign root that matches campaignRoot. This succeeds for paths under an
+// attachment marker pointing at the active campaign.
+func markerResolvesToCampaign(path, campaignRoot string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), campaign.DefaultDetectTimeout)
+	defer cancel()
+
+	root, err := campaign.Detect(ctx, path)
+	if err != nil {
+		return false
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(campaignRoot)
+	if err != nil {
+		resolvedRoot = campaignRoot
+	}
+	return root == resolvedRoot
 }
 
 func runUnpin(cmd *cobra.Command, args []string) error {
@@ -190,13 +240,9 @@ func runUnpin(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return camperrors.Wrap(err, "resolve symlinks for working directory")
 		}
-		relCwd, err := filepath.Rel(campaignRoot, cwd)
-		if err != nil {
-			return camperrors.Wrap(err, "compute relative path")
-		}
-		pin, ok := store.FindByPath(relCwd)
+		pin, ok := findPinForCwd(store, cwd, campaignRoot)
 		if !ok {
-			return fmt.Errorf("directory not pinned: %s", relCwd)
+			return fmt.Errorf("directory not pinned: %s", cwd)
 		}
 		name = pin.Name
 	}
@@ -210,6 +256,25 @@ func runUnpin(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Unpinned %q\n", name)
 	return nil
+}
+
+// findPinForCwd returns the pin matching cwd, looking up either by
+// campaign-relative Path (in-tree) or by AbsPath (attachment).
+func findPinForCwd(store *pins.Store, cwd, campaignRoot string) (pins.Pin, bool) {
+	if pin, ok := store.FindByPath(cwd); ok {
+		return pin, true
+	}
+	for _, p := range store.List() {
+		if p.AbsPath != "" && p.AbsPath == cwd {
+			return p, true
+		}
+	}
+	if relCwd, err := filepath.Rel(campaignRoot, cwd); err == nil {
+		if pin, ok := store.FindByPath(relCwd); ok {
+			return pin, true
+		}
+	}
+	return pins.Pin{}, false
 }
 
 // pinNotFoundError returns an error with suggestions for similar pin names.

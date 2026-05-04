@@ -158,7 +158,7 @@ the campaign if they're already on your machine.
 
 ```bash
 camp project add <url>      # Add as a git submodule
-camp project link <path>    # Link an existing local directory
+camp project link <path>    # Link an existing local directory as a project
 ```
 
 Use submodules via `camp project add` (or `camp p add`) if you plan to use
@@ -168,6 +168,26 @@ location on each device in order to work.
 For the rest of the project surface (`list`, `remove`, `unlink`, `commit`,
 `run`, `worktree`, `prune`, `remote`, `new`), see
 [`docs/cli-reference/`](docs/cli-reference/).
+
+### Attaching Non-Project Directories
+
+Some directories belong to a campaign for context but aren't full projects
+(notes, reference repos, scratch dirs). After creating a symlink to one
+inside the campaign tree, run `camp attach` on the symlink to bind its
+target so detection works from inside it:
+
+```bash
+ln -s ~/Dev/external-repo ai_docs/examples/external-repo
+camp attach ai_docs/examples/external-repo
+
+# now you can pin and navigate to it:
+cd ai_docs/examples/external-repo
+camp pin external-repo
+cgo external-repo
+```
+
+`camp detach <path>` removes the marker. Linked projects keep using
+`camp project link` / `camp project unlink`.
 
 ### Planning
 

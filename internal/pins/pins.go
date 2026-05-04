@@ -142,22 +142,50 @@ const (
 // If name exists with the same path: removes it (returns Unpinned).
 // If name exists with a different path: updates the path (returns Updated).
 func (s *Store) Toggle(name, path string) ToggleResult {
+	return s.TogglePin(Pin{Name: name, Path: path})
+}
+
+// TogglePin is the lower-level toggle that accepts a full Pin record so
+// callers can specify either Path (in-tree) or AbsPath (attachment) targets.
+// CreatedAt on the input is ignored; new pins are stamped with time.Now().
+func (s *Store) TogglePin(in Pin) ToggleResult {
 	for i, p := range s.pins {
-		if p.Name == name {
-			if p.Path == path {
+		if p.Name == in.Name {
+			if p.Path == in.Path && p.AbsPath == in.AbsPath {
 				s.pins = append(s.pins[:i], s.pins[i+1:]...)
 				return Unpinned
 			}
-			s.pins[i].Path = path
+			s.pins[i].Path = in.Path
+			s.pins[i].AbsPath = in.AbsPath
 			return Updated
 		}
 	}
 	s.pins = append(s.pins, Pin{
-		Name:      name,
-		Path:      path,
+		Name:      in.Name,
+		Path:      in.Path,
+		AbsPath:   in.AbsPath,
 		CreatedAt: time.Now(),
 	})
 	return Pinned
+}
+
+// Resolve returns the absolute on-disk path for a pin, given the campaign
+// root. In-tree pins are resolved relative to root; attachment pins return
+// AbsPath as-is.
+func (p Pin) Resolve(campaignRoot string) string {
+	if p.AbsPath != "" {
+		return p.AbsPath
+	}
+	if filepath.IsAbs(p.Path) {
+		return p.Path
+	}
+	return filepath.Join(campaignRoot, p.Path)
+}
+
+// IsAttachment reports whether the pin targets an attachment-marker dir
+// outside the campaign tree.
+func (p Pin) IsAttachment() bool {
+	return p.AbsPath != ""
 }
 
 // MigrateAbsoluteToRelative converts absolute paths to campaign-root-relative
