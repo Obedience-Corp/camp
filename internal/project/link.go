@@ -140,7 +140,7 @@ func AddLinked(ctx context.Context, campaignRoot, localPath string, opts LinkOpt
 	}
 
 	if isGit {
-		if err := ensureGitInfoExclude(ctx, absLocal, campaign.LinkMarkerFile); err != nil {
+		if _, err := git.EnsureInfoExclude(ctx, absLocal, campaign.LinkMarkerFile); err != nil {
 			warnings = append(warnings, formatLinkedRepoWarning("could not update linked repo .git/info/exclude for .camp", err))
 		}
 	}
@@ -222,7 +222,7 @@ func UnlinkProject(ctx context.Context, campaignRoot, name, targetPath string) (
 				return nil, err
 			}
 			if isGitRepo(targetPath) {
-				if err := removeGitInfoExclude(ctx, targetPath, campaign.LinkMarkerFile); err != nil {
+				if _, err := git.RemoveInfoExclude(ctx, targetPath, campaign.LinkMarkerFile); err != nil {
 					warnings = append(warnings, formatLinkedRepoWarning("could not clean up linked repo .git/info/exclude for .camp", err))
 				}
 			}
@@ -376,16 +376,6 @@ func normalizeCampaignRoot(root string) (string, error) {
 		return resolvedRoot, nil
 	}
 	return absRoot, nil
-}
-
-func ensureGitInfoExclude(ctx context.Context, repoRoot, pattern string) error {
-	_, err := git.EnsureInfoExclude(ctx, repoRoot, pattern)
-	return err
-}
-
-func removeGitInfoExclude(ctx context.Context, repoRoot, pattern string) error {
-	_, err := git.RemoveInfoExclude(ctx, repoRoot, pattern)
-	return err
 }
 
 func formatLinkedRepoWarning(action string, err error) string {
