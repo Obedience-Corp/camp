@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -67,13 +70,7 @@ func runPull(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(os.Stderr, ui.Info(fmt.Sprintf("Submodule: %s", target.Name)))
 	}
 
-	fullArgs := append([]string{"-C", target.Path, "pull"}, gitArgs...)
-	gitCmd := exec.CommandContext(ctx, "git", fullArgs...)
-	gitCmd.Stdout = os.Stdout
-	gitCmd.Stderr = os.Stderr
-	gitCmd.Stdin = os.Stdin
-
-	if err := gitCmd.Run(); err != nil {
+	if _, err := runGitPullWithLockRetry(ctx, target.Path, gitArgs, true); err != nil {
 		// Suppress cobra's usage output — this isn't a usage error.
 		cmd.SilenceUsage = true
 
@@ -89,6 +86,51 @@ func runPull(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+func runGitPullWithLockRetry(ctx context.Context, repoPath string, gitArgs []string, stream bool) ([]byte, error) {
+	cfg := git.DefaultRetryConfig()
+	cfg.OperationName = "pull"
+
+	var output []byte
+	err := git.WithLockRetry(ctx, repoPath, cfg, func() error {
+		pullArgs := append([]string{"-C", repoPath, "pull"}, gitArgs...)
+		gitCmd := exec.CommandContext(ctx, "git", pullArgs...)
+		gitCmd.Stdin = os.Stdin
+
+		var err error
+		if stream {
+			var stderr bytes.Buffer
+			gitCmd.Stdout = os.Stdout
+			gitCmd.Stderr = io.MultiWriter(os.Stderr, &stderr)
+			err = gitCmd.Run()
+			output = stderr.Bytes()
+		} else {
+			output, err = gitCmd.CombinedOutput()
+		}
+		if err != nil {
+			return classifyPullCommandError(repoPath, output, err)
+		}
+		return nil
+	})
+	return output, err
+}
+
+func classifyPullCommandError(repoPath string, output []byte, err error) error {
+	exitCode := 0
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		exitCode = exitErr.ExitCode()
+	}
+
+	if git.ClassifyGitError(string(output), exitCode) == git.GitErrorLock {
+		lockPath := "index.lock"
+		if gitDir, resolveErr := git.ResolveGitDir(repoPath); resolveErr == nil {
+			lockPath = filepath.Join(gitDir, "index.lock")
+		}
+		return &git.LockError{Path: lockPath, Err: err}
+	}
+	return err
 }
 
 // PullAllOptions holds configuration for pull-all operations.
@@ -241,13 +283,12 @@ func pullSingleTarget(
 	}
 
 	// Execute pull
-	pullArgs := []string{"-C", t.path, "pull"}
+	pullArgs := make([]string, 0, len(gitArgs)+1)
 	if t.isRoot {
 		pullArgs = append(pullArgs, "--no-recurse-submodules")
 	}
 	pullArgs = append(pullArgs, gitArgs...)
-	gitCmd := exec.CommandContext(ctx, "git", pullArgs...)
-	output, err := gitCmd.CombinedOutput()
+	output, err := runGitPullWithLockRetry(ctx, t.path, pullArgs, false)
 	if err != nil {
 		return handlePullError(ctx, t, output, err, red)
 	}
