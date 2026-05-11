@@ -79,13 +79,9 @@ func Attach(ctx context.Context, campaignRoot, campaignID, input string, opts Op
 		return nil, camperrors.Wrapf(camperrors.ErrInvalidInput, "attach target %q is not a directory", target)
 	}
 
-	// Check for an existing marker at target first. A self-attached
-	// directory will detect its own marker via campaign.Detect, so we
-	// must distinguish that case before the any-campaign check.
+	// Check for an existing marker at target first.
 	markerPath := campaign.MarkerPath(target)
-	hasExistingMarker := false
 	if existing, readErr := campaign.ReadMarker(target); readErr == nil {
-		hasExistingMarker = true
 		if !opts.Force {
 			return nil, camperrors.Wrapf(camperrors.ErrAlreadyExists,
 				"marker already exists at %q (kind=%q); use --force to overwrite", markerPath, existing.Kind)
@@ -99,9 +95,11 @@ func Attach(ctx context.Context, campaignRoot, campaignID, input string, opts Op
 		return nil, camperrors.Wrapf(readErr, "read existing marker at %q", markerPath)
 	}
 
-	// Walk from the parent so an attachment marker AT target itself does
-	// not falsely report "already inside a campaign".
-	if existingRoot, ok := detectExistingCampaign(ctx, filepath.Dir(target)); ok && !hasExistingMarker {
+	// Walk from the parent so an attachment marker AT target itself is
+	// invisible to Detect. This lets the any-campaign check run on the
+	// --force re-attach path too: a target now inside another campaign
+	// (e.g. moved under a new campaign root) would otherwise shadow it.
+	if existingRoot, ok := detectExistingCampaign(ctx, filepath.Dir(target)); ok {
 		switch {
 		case sameCampaignRoot(existingRoot, campaignRoot):
 			return nil, camperrors.Wrapf(camperrors.ErrInvalidInput,
@@ -130,9 +128,11 @@ func Attach(ctx context.Context, campaignRoot, campaignID, input string, opts Op
 		FollowedSymlink: target != abs,
 	}
 	if git.IsRepo(target) {
-		if err := git.EnsureInfoExclude(ctx, target, campaign.LinkMarkerFile); err != nil {
+		updated, err := git.EnsureInfoExclude(ctx, target, campaign.LinkMarkerFile)
+		switch {
+		case err != nil:
 			res.GitExcludeWarning = err.Error()
-		} else {
+		case updated:
 			res.GitExcludeUpdated = true
 		}
 	}
@@ -182,9 +182,11 @@ func Detach(ctx context.Context, input string) (*Result, error) {
 		FollowedSymlink: target != abs,
 	}
 	if git.IsRepo(target) {
-		if err := git.RemoveInfoExclude(ctx, target, campaign.LinkMarkerFile); err != nil {
+		updated, err := git.RemoveInfoExclude(ctx, target, campaign.LinkMarkerFile)
+		switch {
+		case err != nil:
 			res.GitExcludeWarning = err.Error()
-		} else {
+		case updated:
 			res.GitExcludeUpdated = true
 		}
 	}
