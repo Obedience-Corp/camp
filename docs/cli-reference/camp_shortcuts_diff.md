@@ -42,4 +42,3 @@ camp shortcuts diff [flags]
 ### SEE ALSO
 
 * [camp shortcuts](camp_shortcuts.md)	 - List all available shortcuts
-

@@ -47,4 +47,3 @@ camp project link [path] [flags]
 ### SEE ALSO
 
 * [camp project](camp_project.md)	 - Manage campaign projects
-

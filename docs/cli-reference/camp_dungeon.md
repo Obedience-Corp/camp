@@ -47,4 +47,3 @@ camp dungeon [flags]
 * [camp dungeon crawl](camp_dungeon_crawl.md)	 - Interactive dungeon review
 * [camp dungeon list](camp_dungeon_list.md)	 - List dungeon items
 * [camp dungeon move](camp_dungeon_move.md)	 - Move dungeon items between statuses
-

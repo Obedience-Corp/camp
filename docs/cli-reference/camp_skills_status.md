@@ -36,4 +36,3 @@ camp skills status [flags]
 ### SEE ALSO
 
 * [camp skills](camp_skills.md)	 - Manage campaign skill directory links
-

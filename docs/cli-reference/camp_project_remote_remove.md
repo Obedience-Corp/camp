@@ -42,4 +42,3 @@ camp project remote remove <name> [flags]
 ### SEE ALSO
 
 * [camp project remote](camp_project_remote.md)	 - Manage remotes for a project
-

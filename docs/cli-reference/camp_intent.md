@@ -64,4 +64,3 @@ camp intent [flags]
 * [camp intent move](camp_intent_move.md)	 - Move intent to a different status
 * [camp intent promote](camp_intent_promote.md)	 - Promote an intent through the pipeline
 * [camp intent show](camp_intent_show.md)	 - Show detailed intent information
-

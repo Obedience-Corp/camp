@@ -50,4 +50,3 @@ camp shortcuts reset [flags]
 ### SEE ALSO
 
 * [camp shortcuts](camp_shortcuts.md)	 - List all available shortcuts
-

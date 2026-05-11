@@ -36,4 +36,3 @@ camp project prune all [flags]
 ### SEE ALSO
 
 * [camp project prune](camp_project_prune.md)	 - Delete merged branches in a project
-

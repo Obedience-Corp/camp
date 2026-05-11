@@ -29,4 +29,3 @@ See each sub-command's help for details on how to use the generated script.
 * [camp completion fish](camp_completion_fish.md)	 - Generate the autocompletion script for fish
 * [camp completion powershell](camp_completion_powershell.md)	 - Generate the autocompletion script for powershell
 * [camp completion zsh](camp_completion_zsh.md)	 - Generate the autocompletion script for zsh
-

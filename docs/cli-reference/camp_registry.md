@@ -44,4 +44,3 @@ camp registry [flags]
 * [camp registry check](camp_registry_check.md)	 - Check registry integrity
 * [camp registry prune](camp_registry_prune.md)	 - Remove stale registry entries
 * [camp registry sync](camp_registry_sync.md)	 - Sync current campaign with registry
-

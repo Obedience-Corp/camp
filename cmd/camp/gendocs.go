@@ -67,6 +67,9 @@ func runGendocs(cmd *cobra.Command, args []string) error {
 		if err := doc.GenMarkdownTree(rootForDocs, gendocsOutput); err != nil {
 			return camperrors.Wrap(err, "generate markdown")
 		}
+		if err := trimTrailingBlankLines(gendocsOutput); err != nil {
+			return camperrors.Wrap(err, "trim trailing blank lines")
+		}
 		fmt.Fprintf(os.Stderr, "Markdown docs written to %s\n", gendocsOutput)
 	case "yaml":
 		if err := doc.GenYamlTree(rootForDocs, gendocsOutput); err != nil {
@@ -161,6 +164,34 @@ func hideDevOnlyCommands(parent *cobra.Command) {
 			hideDevOnlyCommands(child)
 		}
 	}
+}
+
+// trimTrailingBlankLines collapses trailing blank lines on every .md file in
+// dir to a single newline. cobra/doc emits "...content\n\n" which trips
+// `git diff --check` with "new blank line at EOF".
+func trimTrailingBlankLines(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
+			continue
+		}
+		path := filepath.Join(dir, entry.Name())
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		trimmed := strings.TrimRight(string(data), "\n") + "\n"
+		if trimmed == string(data) {
+			continue
+		}
+		if err := os.WriteFile(path, []byte(trimmed), 0644); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func removeGeneratedDocs(dir, name string) error {

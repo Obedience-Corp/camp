@@ -42,4 +42,3 @@ camp registry prune [flags]
 ### SEE ALSO
 
 * [camp registry](camp_registry.md)	 - Manage the campaign registry
-

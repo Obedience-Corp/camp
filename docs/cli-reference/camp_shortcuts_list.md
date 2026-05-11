@@ -36,4 +36,3 @@ camp shortcuts list [project] [flags]
 ### SEE ALSO
 
 * [camp shortcuts](camp_shortcuts.md)	 - List all available shortcuts
-

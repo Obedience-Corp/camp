@@ -41,4 +41,3 @@ camp status all [flags]
 ### SEE ALSO
 
 * [camp status](camp_status.md)	 - Show git status of the campaign
-

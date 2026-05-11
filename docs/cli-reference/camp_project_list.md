@@ -41,4 +41,3 @@ camp project list [flags]
 ### SEE ALSO
 
 * [camp project](camp_project.md)	 - Manage campaign projects
-
