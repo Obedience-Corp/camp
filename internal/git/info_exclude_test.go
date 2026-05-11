@@ -16,7 +16,7 @@ func initRepo(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("eval symlinks: %v", err)
 	}
-	cmd := exec.Command("git", "init", "-q", dir)
+	cmd := exec.CommandContext(t.Context(), "git", "init", "-q", dir)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v\n%s", err, out)
 	}
@@ -187,6 +187,16 @@ func TestEnsureInfoExclude_ContextCancelled(t *testing.T) {
 	cancel()
 
 	if _, err := EnsureInfoExclude(ctx, repo, ".camp"); err == nil {
+		t.Error("expected error on cancelled context, got nil")
+	}
+}
+
+func TestRemoveInfoExclude_ContextCancelled(t *testing.T) {
+	repo := initRepo(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if _, err := RemoveInfoExclude(ctx, repo, ".camp"); err == nil {
 		t.Error("expected error on cancelled context, got nil")
 	}
 }
