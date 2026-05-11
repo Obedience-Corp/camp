@@ -379,11 +379,13 @@ func normalizeCampaignRoot(root string) (string, error) {
 }
 
 func ensureGitInfoExclude(ctx context.Context, repoRoot, pattern string) error {
-	return git.EnsureInfoExclude(ctx, repoRoot, pattern)
+	_, err := git.EnsureInfoExclude(ctx, repoRoot, pattern)
+	return err
 }
 
 func removeGitInfoExclude(ctx context.Context, repoRoot, pattern string) error {
-	return git.RemoveInfoExclude(ctx, repoRoot, pattern)
+	_, err := git.RemoveInfoExclude(ctx, repoRoot, pattern)
+	return err
 }
 
 func formatLinkedRepoWarning(action string, err error) string {

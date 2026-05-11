@@ -13,20 +13,26 @@ import (
 // EnsureInfoExclude adds pattern to the repo's .git/info/exclude if not
 // already present. repoRoot is a working tree directory; its actual git dir
 // may live elsewhere (worktrees, submodules) and is resolved via git.
-func EnsureInfoExclude(ctx context.Context, repoRoot, pattern string) error {
+//
+// The returned bool reports whether the file was actually modified: false
+// means the pattern was already present and no write occurred.
+func EnsureInfoExclude(ctx context.Context, repoRoot, pattern string) (bool, error) {
 	path, err := infoExcludePath(ctx, repoRoot)
 	if err != nil {
-		return err
+		return false, err
 	}
 	return ensurePatternInFile(path, pattern)
 }
 
 // RemoveInfoExclude removes pattern from the repo's .git/info/exclude if
 // present. Missing files are treated as success.
-func RemoveInfoExclude(ctx context.Context, repoRoot, pattern string) error {
+//
+// The returned bool reports whether the pattern was actually removed: false
+// means the file did not exist or did not contain the pattern.
+func RemoveInfoExclude(ctx context.Context, repoRoot, pattern string) (bool, error) {
 	path, err := infoExcludePath(ctx, repoRoot)
 	if err != nil {
-		return err
+		return false, err
 	}
 	return removePatternFromFile(path, pattern)
 }
@@ -51,19 +57,19 @@ func infoExcludePath(ctx context.Context, repoRoot string) (string, error) {
 	return path, nil
 }
 
-func ensurePatternInFile(path, pattern string) error {
+func ensurePatternInFile(path, pattern string) (bool, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return err
+		return false, err
 	}
 
 	data, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
-		return err
+		return false, err
 	}
 	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
 	for _, line := range lines {
 		if strings.TrimSpace(line) == pattern {
-			return nil
+			return false, nil
 		}
 	}
 
@@ -72,30 +78,41 @@ func ensurePatternInFile(path, pattern string) error {
 		content += "\n"
 	}
 	content += pattern + "\n"
-	return fsutil.WriteFileAtomically(path, []byte(content), 0644)
+	if err := fsutil.WriteFileAtomically(path, []byte(content), 0644); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
-func removePatternFromFile(path, pattern string) error {
+func removePatternFromFile(path, pattern string) (bool, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil
+			return false, nil
 		}
-		return err
+		return false, err
 	}
 
 	lines := strings.Split(string(data), "\n")
 	filtered := make([]string, 0, len(lines))
+	removed := false
 	for _, line := range lines {
 		if strings.TrimSpace(line) == pattern {
+			removed = true
 			continue
 		}
 		filtered = append(filtered, line)
+	}
+	if !removed {
+		return false, nil
 	}
 
 	content := strings.TrimRight(strings.Join(filtered, "\n"), "\n")
 	if content != "" {
 		content += "\n"
 	}
-	return fsutil.WriteFileAtomically(path, []byte(content), 0644)
+	if err := fsutil.WriteFileAtomically(path, []byte(content), 0644); err != nil {
+		return false, err
+	}
+	return true, nil
 }
