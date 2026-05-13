@@ -180,6 +180,9 @@ target so detection works from inside it:
 ln -s ~/Dev/external-repo ai_docs/examples/external-repo
 camp attach ai_docs/examples/external-repo
 
+# Force the campaign picker instead of using the current campaign:
+camp attach ai_docs/examples/external-repo --campaign
+
 # now you can pin and navigate to it:
 cd ai_docs/examples/external-repo
 camp pin external-repo

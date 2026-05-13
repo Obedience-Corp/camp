@@ -42,9 +42,16 @@ campaign owns it.
 If the target is reached through a symlink, camp follows it once and writes
 the marker at the final directory.
 
+Campaign selection:
+  - inside a campaign, omit --campaign to attach to the current campaign
+  - outside a campaign in an interactive terminal, omit --campaign to pick
+  - use a bare --campaign to force the picker even inside a campaign
+  - use --campaign <name-or-id> for scripts or to skip the picker
+
 Examples:
   camp attach ai_docs/examples/external-repo
   camp attach ~/scratch/notes-link
+  camp attach ~/scratch/notes-link --campaign
   camp attach /abs/path/to/dir --campaign platform`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -74,7 +81,7 @@ Examples:
 	}
 
 	flags := cmd.Flags()
-	flags.StringP("campaign", "c", "", "Target campaign by name or ID; defaults to current campaign or interactive picker")
+	flags.StringP("campaign", "c", "", "Target campaign by name or ID; omit value to pick interactively")
 	flags.Bool("force", false, "Overwrite an existing attachment marker")
 	flags.Lookup("campaign").NoOptDefVal = NoOptCampaign
 

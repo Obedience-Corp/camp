@@ -161,6 +161,7 @@ func init() {
 	cobra.AddTemplateFunc("styleBold", ui.BoldText)
 	cobra.AddTemplateFunc("styleHeader", ui.Header)
 	cobra.AddTemplateFunc("styleHelp", ui.StyleHelpText)
+	cobra.AddTemplateFunc("cleanFlagUsages", cleanFlagUsages)
 
 	// Set styled Long description for root command
 	rootCmd.Long = styledLongDescription()
@@ -266,10 +267,10 @@ func styledUsageTemplate() string {
   {{styleAccent (rpad .Name .NamePadding)}} {{.Short}}{{end}}{{end}}{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
 
 {{styleCategory "Flags:"}}
-{{.LocalFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableInheritedFlags}}
+{{cleanFlagUsages .LocalFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableInheritedFlags}}
 
 {{styleCategory "Global Flags:"}}
-{{.InheritedFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasHelpSubCommands}}
+{{cleanFlagUsages .InheritedFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasHelpSubCommands}}
 
 {{styleCategory "Additional help topics:"}}{{range .Commands}}{{if .IsAdditionalHelpTopicCommand}}
   {{rpad .CommandPath .CommandPathPadding}} {{.Short}}{{end}}{{end}}{{end}}{{if .HasAvailableSubCommands}}
