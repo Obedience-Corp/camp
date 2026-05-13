@@ -92,3 +92,61 @@ func TestWorkItem_ManualPriorityOmitEmpty(t *testing.T) {
 		t.Errorf("manual_priority should be present, got: %s", data)
 	}
 }
+
+func TestWorkItem_MetadataFieldsOmittedWhenEmpty(t *testing.T) {
+	item := WorkItem{Key: "design:legacy"}
+	data, err := json.Marshal(item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := string(data)
+	for _, key := range []string{"stable_id", "description", "execution", "priority_info", "project", "lineage"} {
+		if strings.Contains(out, `"`+key+`":`) {
+			t.Errorf("expected %q to be omitted when empty, got: %s", key, out)
+		}
+	}
+}
+
+func TestWorkItem_MetadataFieldsPresentWhenPopulated(t *testing.T) {
+	item := WorkItem{
+		Key:         "design:with-md",
+		StableID:    "x-001",
+		Description: "Desc",
+		Execution: &WorkItemExecution{
+			Mode:     "design",
+			Autonomy: "constrained",
+			Risk:     "medium",
+		},
+		PriorityInfo: &WorkItemPriority{Level: "high", Reason: "launch"},
+		Project:      &WorkItemProject{Name: "festival", Path: "projects/festival", Role: "affected"},
+		WorkflowMeta: &WorkItemWorkflow{DocPath: "WORKFLOW.md", RuntimeDir: ".workflow", WorkflowID: "wf-x"},
+		Lineage:      &WorkItemLineage{Supersedes: []string{"workflow/design/old"}},
+	}
+	data, err := json.Marshal(item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := string(data)
+	for _, sub := range []string{
+		`"stable_id":"x-001"`,
+		`"description":"Desc"`,
+		`"execution":{`,
+		`"mode":"design"`,
+		`"priority_info":{`,
+		`"level":"high"`,
+		`"project":{`,
+		`"workflow":{`,
+		`"lineage":{`,
+		`"supersedes":["workflow/design/old"]`,
+	} {
+		if !strings.Contains(out, sub) {
+			t.Errorf("output missing %q: %s", sub, out)
+		}
+	}
+}
+
+func TestSchemaVersion_IsV1Alpha4(t *testing.T) {
+	if SchemaVersion != "workitems/v1alpha4" {
+		t.Errorf("SchemaVersion = %q, want workitems/v1alpha4", SchemaVersion)
+	}
+}
