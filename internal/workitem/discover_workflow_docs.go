@@ -74,6 +74,13 @@ func discoverWorkflowDocs(ctx context.Context, campaignRoot, rootDir string, wfT
 		if primaryDocAbs != "" {
 			item.Summary = extractSummaryFromFile(primaryDocAbs, 200)
 		}
+
+		md, err := LoadMetadata(ctx, dirPath)
+		if err != nil {
+			return nil, camperrors.Wrapf(err, "loading metadata for %s", relPath)
+		}
+		item = ApplyMetadata(item, md)
+
 		items = append(items, item)
 	}
 	return items, nil

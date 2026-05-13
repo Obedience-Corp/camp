@@ -297,6 +297,103 @@ func TestFindFestivalPrimaryDoc_Priority(t *testing.T) {
 	}
 }
 
+func TestDiscoverDesign_WithMetadata(t *testing.T) {
+	root, resolver := setupTestCampaign(t)
+	ctx := context.Background()
+
+	designDir := filepath.Join(root, "workflow/design/with-metadata")
+	os.MkdirAll(designDir, 0755)
+	writeFile(t, filepath.Join(designDir, "README.md"), "# Derived Title\n\nDesc.")
+	writeFile(t, filepath.Join(designDir, ".workitem"), `version: 1
+kind: workitem
+id: design-with-metadata-001
+type: design
+title: Metadata Title
+description: From .workitem.
+priority:
+  level: high
+  reason: launch
+execution:
+  mode: design
+  autonomy: constrained
+  risk: medium
+`)
+
+	items, err := discoverDesign(ctx, root, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	it := items[0]
+	if it.StableID != "design-with-metadata-001" {
+		t.Errorf("StableID = %q", it.StableID)
+	}
+	if it.Title != "Metadata Title" {
+		t.Errorf("Title = %q, want metadata override", it.Title)
+	}
+	if it.Description != "From .workitem." {
+		t.Errorf("Description = %q", it.Description)
+	}
+	if it.PriorityInfo == nil || it.PriorityInfo.Level != "high" {
+		t.Errorf("PriorityInfo = %+v", it.PriorityInfo)
+	}
+	if it.Execution == nil || it.Execution.Mode != "design" || it.Execution.Autonomy != "constrained" || it.Execution.Risk != "medium" {
+		t.Errorf("Execution = %+v", it.Execution)
+	}
+	if it.RelativePath != "workflow/design/with-metadata" {
+		t.Errorf("RelativePath = %q (filesystem placement should win)", it.RelativePath)
+	}
+}
+
+func TestDiscoverDesign_NoMetadataUnchanged(t *testing.T) {
+	root, resolver := setupTestCampaign(t)
+	ctx := context.Background()
+
+	designDir := filepath.Join(root, "workflow/design/legacy")
+	os.MkdirAll(designDir, 0755)
+	writeFile(t, filepath.Join(designDir, "README.md"), "# Legacy\n\nNo metadata.")
+
+	items, err := discoverDesign(ctx, root, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	it := items[0]
+	if it.StableID != "" {
+		t.Errorf("StableID should be empty for no-metadata item, got %q", it.StableID)
+	}
+	if it.Execution != nil || it.PriorityInfo != nil || it.Project != nil || it.WorkflowMeta != nil || it.Lineage != nil {
+		t.Errorf("metadata blocks should be nil for no-metadata item, got %+v", it)
+	}
+	if it.Title != "Legacy" {
+		t.Errorf("Title = %q (derived from README heading expected)", it.Title)
+	}
+}
+
+func TestDiscoverDesign_MalformedMetadataErrors(t *testing.T) {
+	root, resolver := setupTestCampaign(t)
+	ctx := context.Background()
+
+	designDir := filepath.Join(root, "workflow/design/broken")
+	os.MkdirAll(designDir, 0755)
+	writeFile(t, filepath.Join(designDir, "README.md"), "# Broken")
+	writeFile(t, filepath.Join(designDir, ".workitem"), `version: 2
+kind: workitem
+id: x
+type: design
+title: T
+`)
+
+	_, err := discoverDesign(ctx, root, resolver)
+	if err == nil {
+		t.Fatal("expected error from malformed .workitem")
+	}
+}
+
 func TestTimestampDerivation(t *testing.T) {
 	now := time.Now()
 	earlier := now.Add(-1 * time.Hour)
