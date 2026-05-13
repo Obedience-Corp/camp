@@ -81,24 +81,6 @@ func executeLeverage(t *testing.T, args ...string) (string, error) {
 	return buf.String(), err
 }
 
-// setupEphemeralCampaign creates a temporary campaign root and chdirs the
-// test process into it. Returns the campaign root path. Used by tests that
-// invoke the leverage command's RunE — which walks up from cwd looking for a
-// .campaign directory and refuses to run if none is found. Without this
-// scaffolding the tests would pass on a developer's machine (the test
-// process inherits an ambient campaign root from the user's workspace) but
-// fail in a fresh clone where camp lives outside any campaign tree (CI,
-// review sandboxes like obey-agent, contributor first-runs).
-func setupEphemeralCampaign(t *testing.T) string {
-	t.Helper()
-	tmpDir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(tmpDir, ".campaign"), 0o755); err != nil {
-		t.Fatalf("create .campaign: %v", err)
-	}
-	t.Chdir(tmpDir)
-	return tmpDir
-}
-
 func stubPopulateMetrics() func(ctx context.Context, campaignRoot string, resolved []intleverage.ResolvedProject, resolver *intleverage.AuthorResolver) {
 	return func(ctx context.Context, _ string, resolved []intleverage.ResolvedProject, _ *intleverage.AuthorResolver) {
 		for i := range resolved {
@@ -122,27 +104,24 @@ func stubPopulateMetrics() func(ctx context.Context, campaignRoot string, resolv
 // command runs against an ephemeral campaign inside the shared container and
 // host filesystem mutation is impossible.
 
-func TestLeverageConfigCommand_ValidationPeople(t *testing.T) {
-	setupEphemeralCampaign(t)
-	_, err := executeLeverage(t, "config", "--people", "-1")
-	if err == nil {
-		t.Fatal("expected error for negative people, got nil")
-	}
-	if !strings.Contains(err.Error(), "people must be") {
-		t.Errorf("error = %q, want substring 'people must be'", err.Error())
-	}
-}
-
-func TestLeverageConfigCommand_ValidationDate(t *testing.T) {
-	setupEphemeralCampaign(t)
-	_, err := executeLeverage(t, "config", "--start", "2025-13-45")
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), "invalid date format") {
-		t.Errorf("error = %q, want substring 'invalid date format'", err.Error())
-	}
-}
+// NOTE: TestLeverageConfigCommand_ValidationPeople, _ValidationDate, and
+// _ValidationCOCOMO were unit tests that invoked the live cobra RunE,
+// which calls campaign.DetectCached and walks up the filesystem looking
+// for a .campaign directory. They passed on a developer's machine because
+// the test process inherits an ambient campaign root from the surrounding
+// workspace (camp lives under a campaign as a submodule), but failed in
+// any environment where camp lives outside a campaign tree — fresh clones,
+// CI, and review sandboxes such as obey-agent's review environment.
+//
+// Attempted local fix (t.TempDir + .campaign/ + t.Chdir) was rejected per
+// CLAUDE.md: "Tests that mutate the filesystem must run in containerized
+// isolation, not directly on the host via ad hoc temp directories." Even
+// a chdir-based scaffold is a host-fs mutation that can interact badly
+// with concurrent test runs and developer workspaces.
+//
+// Those scenarios now live in tests/integration/leverage_test.go where the
+// command runs against an ephemeral campaign inside the shared container
+// and host filesystem mutation is impossible.
 
 type snapshotStoreMock struct {
 	saved map[string]*intleverage.Snapshot
@@ -298,17 +277,6 @@ func TestLeverageOutputTable_ShowsBackfillHintWhenRecentHistoryMissing(t *testin
 	}
 	if !strings.Contains(output, "camp leverage backfill") {
 		t.Fatalf("output missing backfill command hint\nGot:\n%s", output)
-	}
-}
-
-func TestLeverageConfigCommand_ValidationCOCOMO(t *testing.T) {
-	setupEphemeralCampaign(t)
-	_, err := executeLeverage(t, "config", "--cocomo-type", "invalid")
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), "invalid COCOMO type") {
-		t.Errorf("error = %q, want substring 'invalid COCOMO type'", err.Error())
 	}
 }
 
