@@ -86,6 +86,31 @@ func discoverWorkflowDocs(ctx context.Context, campaignRoot, rootDir string, wfT
 			item = ApplyMetadata(item, md)
 		}
 
+		// Local .workflow/ runtime progress (introduced in WW0001/005.01).
+		// Same safety rule: malformed runtime files log and continue, do not
+		// crash discovery.
+		run, runErr := LoadLocalRun(ctx, dirPath)
+		if runErr != nil {
+			slog.Default().Warn("workitem local runtime invalid; skipping progress",
+				"path", relPath, "error", runErr.Error())
+		} else if run != nil {
+			if item.WorkflowMeta == nil {
+				item.WorkflowMeta = &WorkItemWorkflow{}
+			}
+			if item.WorkflowMeta.WorkflowID == "" {
+				item.WorkflowMeta.WorkflowID = run.WorkflowID
+			}
+			if item.WorkflowMeta.ActiveRunID == "" {
+				item.WorkflowMeta.ActiveRunID = run.ActiveRunID
+			}
+			item.WorkflowMeta.CurrentStep = run.CurrentStep
+			item.WorkflowMeta.TotalSteps = run.TotalSteps
+			item.WorkflowMeta.CompletedSteps = run.CompletedSteps
+			item.WorkflowMeta.RunStatus = run.RunStatus
+			item.WorkflowMeta.Blocked = run.Blocked
+			item.WorkflowMeta.DocHashChanged = run.DocHashChanged
+		}
+
 		items = append(items, item)
 	}
 	return items, nil

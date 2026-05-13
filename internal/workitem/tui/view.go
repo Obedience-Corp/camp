@@ -381,7 +381,7 @@ func renderPreview(item workitem.WorkItem, width, height int) string {
 			b.WriteString(fmt.Sprintf("  role      %s\n", previewValueStyle.Render(item.Project.Role)))
 		}
 	}
-	if item.WorkflowMeta != nil && (item.WorkflowMeta.DocPath != "" || item.WorkflowMeta.WorkflowID != "") {
+	if item.WorkflowMeta != nil && (item.WorkflowMeta.DocPath != "" || item.WorkflowMeta.WorkflowID != "" || item.WorkflowMeta.TotalSteps > 0 || item.WorkflowMeta.RunStatus != "") {
 		b.WriteString("\n")
 		b.WriteString(previewLabelStyle.Render("WORKFLOW"))
 		b.WriteString("\n")
@@ -393,6 +393,19 @@ func renderPreview(item workitem.WorkItem, width, height int) string {
 		}
 		if item.WorkflowMeta.ActiveRunID != "" {
 			b.WriteString(fmt.Sprintf("  active    %s\n", previewValueStyle.Render(item.WorkflowMeta.ActiveRunID)))
+		}
+		if item.WorkflowMeta.TotalSteps > 0 {
+			progress := fmt.Sprintf("Step %d of %d", item.WorkflowMeta.CurrentStep, item.WorkflowMeta.TotalSteps)
+			if item.WorkflowMeta.Blocked {
+				progress += " (blocked)"
+			}
+			b.WriteString(fmt.Sprintf("  progress  %s\n", previewValueStyle.Render(progress)))
+		}
+		if item.WorkflowMeta.RunStatus != "" {
+			b.WriteString(fmt.Sprintf("  status    %s\n", previewValueStyle.Render(item.WorkflowMeta.RunStatus)))
+		}
+		if item.WorkflowMeta.DocHashChanged {
+			b.WriteString(fmt.Sprintf("  %s\n", executionBlockedStyle.Render("⚠ workflow doc changed since run started")))
 		}
 	}
 	if item.Lineage != nil && (len(item.Lineage.PromotedFrom) > 0 || len(item.Lineage.PromotedTo) > 0 || len(item.Lineage.Supersedes) > 0) {

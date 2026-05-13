@@ -79,14 +79,21 @@ type WorkItemProject struct {
 	Role string `json:"role,omitempty"`
 }
 
-// WorkItemWorkflow mirrors the .workitem workflow block. Progress fields
-// (CurrentStep, TotalSteps, etc.) are added in sequence 005.01 once the
-// fest local runtime contract lands.
+// WorkItemWorkflow mirrors the .workitem workflow block, plus local
+// runtime progress when .workflow/ is present (added in WW0001/005.01).
 type WorkItemWorkflow struct {
 	DocPath     string `json:"doc_path,omitempty"`
 	RuntimeDir  string `json:"runtime_dir,omitempty"`
 	WorkflowID  string `json:"workflow_id,omitempty"`
 	ActiveRunID string `json:"active_run_id,omitempty"`
+
+	// Local runtime progress (populated when .workflow/workflow.yaml exists).
+	CurrentStep    int    `json:"current_step,omitempty"`
+	TotalSteps     int    `json:"total_steps,omitempty"`
+	CompletedSteps int    `json:"completed_steps,omitempty"`
+	RunStatus      string `json:"run_status,omitempty"`
+	Blocked        bool   `json:"blocked,omitempty"`
+	DocHashChanged bool   `json:"doc_hash_changed,omitempty"`
 }
 
 // WorkItemLineage mirrors the .workitem lineage block.
