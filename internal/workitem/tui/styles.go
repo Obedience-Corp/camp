@@ -65,6 +65,14 @@ var (
 	priorityLowStyle    = lipgloss.NewStyle().Foreground(pal.TextDim)
 )
 
+// Execution metadata badge styles (added in WW0001/005.01).
+var (
+	executionBlockedStyle      = lipgloss.NewStyle().Bold(true).Foreground(pal.Error)
+	executionRiskCriticalStyle = lipgloss.NewStyle().Bold(true).Foreground(pal.Error)
+	executionRiskHighStyle     = lipgloss.NewStyle().Foreground(pal.Warning)
+	executionAutonomyStyle     = lipgloss.NewStyle().Foreground(pal.TextDim)
+)
+
 // Empty state
 var (
 	emptyMsgStyle = lipgloss.NewStyle().Foreground(pal.Warning)

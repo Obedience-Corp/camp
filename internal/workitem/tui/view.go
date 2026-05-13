@@ -168,18 +168,69 @@ func priorityBadge(p string) (string, lipgloss.Style) {
 	}
 }
 
+// executionBadge returns a compact 3-char badge for execution metadata.
+// Precedence: blocked > high risk > critical risk > autonomy hint.
+// Returns empty string when no execution metadata or no signal worth surfacing.
+func executionBadge(item workitem.WorkItem) (string, lipgloss.Style) {
+	if item.Execution == nil {
+		return "", lipgloss.NewStyle()
+	}
+	if item.Execution.BlockedReason != "" {
+		return "BLK", executionBlockedStyle
+	}
+	switch item.Execution.Risk {
+	case "critical":
+		return "CRT", executionRiskCriticalStyle
+	case "high":
+		return "HI ", executionRiskHighStyle
+	}
+	switch item.Execution.Autonomy {
+	case "autonomous":
+		return "AUT", executionAutonomyStyle
+	case "constrained":
+		return "CNS", executionAutonomyStyle
+	}
+	return "", lipgloss.NewStyle()
+}
+
+// metadataPriorityBadge prefers .workitem.priority.level (richer field)
+// over the legacy ManualPriority when both are present.
+func metadataPriorityBadge(item workitem.WorkItem) (string, lipgloss.Style) {
+	if item.PriorityInfo != nil && item.PriorityInfo.Level != "" {
+		return priorityBadge(item.PriorityInfo.Level)
+	}
+	return priorityBadge(item.ManualPriority)
+}
+
 func renderRow(item workitem.WorkItem, width int, selected bool) string {
 	// Pad plain strings first, then apply color to avoid ANSI width issues
 	wfType := padRight(string(item.WorkflowType), 9)
 	stage := padRight(item.LifecycleStage, 9)
 	rec := formatRecency(item.SortTimestamp)
 
-	badgeText, badgeStyle := priorityBadge(item.ManualPriority)
+	badgeText, badgeStyle := metadataPriorityBadge(item)
 	badgeWidth := len(badgeText)
+	execText, execStyle := executionBadge(item)
+	execWidth := len(execText)
+	if execWidth > 0 {
+		// add a space between priority and exec badges
+		execWidth += 1
+	}
 
-	titleWidth := width - 9 - 9 - len(rec) - 4 - badgeWidth
+	titleWidth := width - 9 - 9 - len(rec) - 4 - badgeWidth - execWidth
 	if titleWidth < 10 {
-		titleWidth = 10
+		// Very narrow terminal: drop execution badge first, then priority.
+		titleWidth += execWidth
+		execText = ""
+		execWidth = 0
+		if titleWidth < 10 {
+			titleWidth += badgeWidth
+			badgeText = ""
+			badgeWidth = 0
+		}
+		if titleWidth < 10 {
+			titleWidth = 10
+		}
 	}
 	title := truncate(item.Title, titleWidth)
 	title = padRight(title, titleWidth)
@@ -191,10 +242,14 @@ func renderRow(item workitem.WorkItem, width int, selected bool) string {
 	if badgeText != "" {
 		styledBadge = badgeStyle.Render(badgeText)
 	}
+	styledExec := ""
+	if execText != "" {
+		styledExec = execStyle.Render(execText) + " "
+	}
 	styledTitle := rowTitleStyle.Render(title)
 	styledRecency := recencyStyle(item.SortTimestamp).Render(rec)
 
-	row := fmt.Sprintf(" %s %s %s%s %s", styledType, styledStage, styledBadge, styledTitle, styledRecency)
+	row := fmt.Sprintf(" %s %s %s%s%s %s", styledType, styledStage, styledBadge, styledExec, styledTitle, styledRecency)
 	if selected {
 		return rowSelectedStyle.Width(width).Render(row)
 	}
@@ -275,6 +330,84 @@ func renderPreview(item workitem.WorkItem, width, height int) string {
 		b.WriteString(fmt.Sprintf("%s %s\n",
 			previewLabelStyle.Render("primary:"),
 			previewValueStyle.Render(truncate(filepath.Base(item.PrimaryDoc), maxValueWidth))))
+	}
+
+	// Metadata sections (populated when .workitem present; introduced WW0001/005.01).
+	if item.StableID != "" {
+		b.WriteString(fmt.Sprintf("%s %s\n",
+			previewLabelStyle.Render("stable id:"),
+			previewValueStyle.Render(truncate(item.StableID, maxValueWidth))))
+	}
+	if item.Execution != nil {
+		b.WriteString("\n")
+		b.WriteString(previewLabelStyle.Render("EXECUTION"))
+		b.WriteString("\n")
+		if item.Execution.Mode != "" {
+			b.WriteString(fmt.Sprintf("  mode      %s\n", previewValueStyle.Render(item.Execution.Mode)))
+		}
+		if item.Execution.Autonomy != "" {
+			b.WriteString(fmt.Sprintf("  autonomy  %s\n", previewValueStyle.Render(item.Execution.Autonomy)))
+		}
+		if item.Execution.Risk != "" {
+			b.WriteString(fmt.Sprintf("  risk      %s\n", previewValueStyle.Render(item.Execution.Risk)))
+		}
+		if item.Execution.BlockedReason != "" {
+			b.WriteString(fmt.Sprintf("  blocked   %s\n", executionBlockedStyle.Render(item.Execution.BlockedReason)))
+		}
+	}
+	if item.PriorityInfo != nil && (item.PriorityInfo.Level != "" || item.PriorityInfo.Reason != "") {
+		b.WriteString("\n")
+		b.WriteString(previewLabelStyle.Render("PRIORITY"))
+		b.WriteString("\n")
+		if item.PriorityInfo.Level != "" {
+			_, style := priorityBadge(item.PriorityInfo.Level)
+			b.WriteString(fmt.Sprintf("  level     %s\n", style.Render(item.PriorityInfo.Level)))
+		}
+		if item.PriorityInfo.Reason != "" {
+			b.WriteString(fmt.Sprintf("  reason    %s\n", previewValueStyle.Render(item.PriorityInfo.Reason)))
+		}
+	}
+	if item.Project != nil && (item.Project.Name != "" || item.Project.Path != "") {
+		b.WriteString("\n")
+		b.WriteString(previewLabelStyle.Render("PROJECT"))
+		b.WriteString("\n")
+		if item.Project.Name != "" {
+			b.WriteString(fmt.Sprintf("  name      %s\n", previewValueStyle.Render(item.Project.Name)))
+		}
+		if item.Project.Path != "" {
+			b.WriteString(fmt.Sprintf("  path      %s\n", previewValueStyle.Render(item.Project.Path)))
+		}
+		if item.Project.Role != "" {
+			b.WriteString(fmt.Sprintf("  role      %s\n", previewValueStyle.Render(item.Project.Role)))
+		}
+	}
+	if item.WorkflowMeta != nil && (item.WorkflowMeta.DocPath != "" || item.WorkflowMeta.WorkflowID != "") {
+		b.WriteString("\n")
+		b.WriteString(previewLabelStyle.Render("WORKFLOW"))
+		b.WriteString("\n")
+		if item.WorkflowMeta.DocPath != "" {
+			b.WriteString(fmt.Sprintf("  doc       %s\n", previewValueStyle.Render(item.WorkflowMeta.DocPath)))
+		}
+		if item.WorkflowMeta.WorkflowID != "" {
+			b.WriteString(fmt.Sprintf("  id        %s\n", previewValueStyle.Render(item.WorkflowMeta.WorkflowID)))
+		}
+		if item.WorkflowMeta.ActiveRunID != "" {
+			b.WriteString(fmt.Sprintf("  active    %s\n", previewValueStyle.Render(item.WorkflowMeta.ActiveRunID)))
+		}
+	}
+	if item.Lineage != nil && (len(item.Lineage.PromotedFrom) > 0 || len(item.Lineage.PromotedTo) > 0 || len(item.Lineage.Supersedes) > 0) {
+		b.WriteString("\n")
+		b.WriteString(previewLabelStyle.Render("LINEAGE"))
+		b.WriteString("\n")
+		if len(item.Lineage.PromotedFrom) > 0 {
+			b.WriteString(fmt.Sprintf("  from      %s\n", previewValueStyle.Render(strings.Join(item.Lineage.PromotedFrom, ", "))))
+		}
+		if len(item.Lineage.PromotedTo) > 0 {
+			b.WriteString(fmt.Sprintf("  to        %s\n", previewValueStyle.Render(strings.Join(item.Lineage.PromotedTo, ", "))))
+		}
+		if len(item.Lineage.Supersedes) > 0 {
+			b.WriteString(fmt.Sprintf("  supers    %s\n", previewValueStyle.Render(strings.Join(item.Lineage.Supersedes, ", "))))
+		}
 	}
 
 	if item.Summary != "" {
