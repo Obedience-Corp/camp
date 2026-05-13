@@ -104,24 +104,7 @@ func stubPopulateMetrics() func(ctx context.Context, campaignRoot string, resolv
 // command runs against an ephemeral campaign inside the shared container and
 // host filesystem mutation is impossible.
 
-// NOTE: TestLeverageConfigCommand_ValidationPeople, _ValidationDate, and
-// _ValidationCOCOMO were unit tests that invoked the live cobra RunE,
-// which calls campaign.DetectCached and walks up the filesystem looking
-// for a .campaign directory. They passed on a developer's machine because
-// the test process inherits an ambient campaign root from the surrounding
-// workspace (camp lives under a campaign as a submodule), but failed in
-// any environment where camp lives outside a campaign tree — fresh clones,
-// CI, and review sandboxes such as obey-agent's review environment.
-//
-// Attempted local fix (t.TempDir + .campaign/ + t.Chdir) was rejected per
-// CLAUDE.md: "Tests that mutate the filesystem must run in containerized
-// isolation, not directly on the host via ad hoc temp directories." Even
-// a chdir-based scaffold is a host-fs mutation that can interact badly
-// with concurrent test runs and developer workspaces.
-//
-// Those scenarios now live in tests/integration/leverage_test.go where the
-// command runs against an ephemeral campaign inside the shared container
-// and host filesystem mutation is impossible.
+// TestLeverageConfigCommand_Validation* moved to tests/integration/leverage_test.go.
 
 type snapshotStoreMock struct {
 	saved map[string]*intleverage.Snapshot

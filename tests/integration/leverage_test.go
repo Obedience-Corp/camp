@@ -215,12 +215,9 @@ func TestLeverage_ConfigDisplay(t *testing.T) {
 	}
 }
 
-// setupMinimalLeverageCampaign initializes a campaign suitable for tests
-// that only need the cobra command's campaign-detection walk to succeed.
-// It does NOT create any project subdirs or git history — config-flag
-// validation tests reject the bad value before reaching the leverage
-// pipeline, so the heavier setupLeverageCampaign scaffold is unnecessary
-// and would add seconds to the suite for no coverage gain.
+// setupMinimalLeverageCampaign skips the project + git scaffold that
+// setupLeverageCampaign builds; config-flag validation bails before the
+// leverage pipeline runs.
 func setupMinimalLeverageCampaign(t *testing.T, tc *TestContainer, name string) string {
 	t.Helper()
 	root := "/campaigns/" + name
@@ -229,57 +226,29 @@ func setupMinimalLeverageCampaign(t *testing.T, tc *TestContainer, name string) 
 	return root
 }
 
-// TestLeverage_ConfigValidationPeople asserts that `camp leverage config
-// --people <negative>` rejects with a validation error rather than
-// silently accepting or proceeding.
-//
-// Migrated from cmd/camp/leverage/main_command_test.go::TestLeverageConfigCommand_ValidationPeople.
-// Original unit test required the test process to be running inside a
-// campaign-rooted workspace; lived inside obey-campaign as a submodule and
-// passed only because of the ambient parent campaign. In any fresh-clone
-// environment (CI, obey-agent review sandbox), the cobra command bailed
-// with "not in a campaign" before reaching validation, and the test failed
-// with the wrong error.
-//
-// The integration form scaffolds a real ephemeral campaign inside the
-// shared container so the campaign-detection walk succeeds. Validation
-// then runs and rejects the bad flag value as the test expects.
 func TestLeverage_ConfigValidationPeople(t *testing.T) {
 	tc := GetSharedContainer(t)
 	root := setupMinimalLeverageCampaign(t, tc, "leverage-validation-people")
 
 	output, err := tc.RunCampInDir(root, "leverage", "config", "--people", "-1")
-	require.Error(t, err, "negative people count should be rejected; got success with output: %s", output)
-	assert.Contains(t, output, "people must be",
-		"expected the validation error 'people must be ...'; got: %s", output)
+	require.Error(t, err, "expected rejection: %s", output)
+	assert.Contains(t, output, "people must be", output)
 }
 
-// TestLeverage_ConfigValidationDate asserts that `camp leverage config
-// --start <bad-date>` rejects with an invalid-date-format error.
-//
-// Migrated from cmd/camp/leverage/main_command_test.go::TestLeverageConfigCommand_ValidationDate
-// for the same reasons documented on TestLeverage_ConfigValidationPeople.
 func TestLeverage_ConfigValidationDate(t *testing.T) {
 	tc := GetSharedContainer(t)
 	root := setupMinimalLeverageCampaign(t, tc, "leverage-validation-date")
 
 	output, err := tc.RunCampInDir(root, "leverage", "config", "--start", "2025-13-45")
-	require.Error(t, err, "malformed date should be rejected; got success with output: %s", output)
-	assert.Contains(t, output, "invalid date format",
-		"expected validation error 'invalid date format ...'; got: %s", output)
+	require.Error(t, err, "expected rejection: %s", output)
+	assert.Contains(t, output, "invalid date format", output)
 }
 
-// TestLeverage_ConfigValidationCOCOMO asserts that `camp leverage config
-// --cocomo-type <unknown>` rejects with an invalid-COCOMO-type error.
-//
-// Migrated from cmd/camp/leverage/main_command_test.go::TestLeverageConfigCommand_ValidationCOCOMO
-// for the same reasons documented on TestLeverage_ConfigValidationPeople.
 func TestLeverage_ConfigValidationCOCOMO(t *testing.T) {
 	tc := GetSharedContainer(t)
 	root := setupMinimalLeverageCampaign(t, tc, "leverage-validation-cocomo")
 
 	output, err := tc.RunCampInDir(root, "leverage", "config", "--cocomo-type", "invalid")
-	require.Error(t, err, "unknown COCOMO type should be rejected; got success with output: %s", output)
-	assert.Contains(t, output, "invalid COCOMO type",
-		"expected validation error 'invalid COCOMO type ...'; got: %s", output)
+	require.Error(t, err, "expected rejection: %s", output)
+	assert.Contains(t, output, "invalid COCOMO type", output)
 }
