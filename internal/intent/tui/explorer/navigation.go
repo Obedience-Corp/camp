@@ -4,6 +4,36 @@ import (
 	"github.com/Obedience-Corp/camp/internal/intent/tui"
 )
 
+// placeCursorAtFirstItem positions the cursor on the first item of the first
+// group that has at least one intent, expanding the group if needed. It
+// returns true when an item was reachable and the cursor was placed there,
+// false when the visible groups are all empty (e.g. no search matches).
+//
+// Used after the user exits search mode so the filtered list has a visible
+// selection rather than landing on a group header (cursorItem=-1). Without
+// this, j/k looked like a no-op and users could not tell the list was
+// navigable (regression #279).
+func (m *Model) placeCursorAtFirstItem() bool {
+	for gi := range m.groups {
+		if len(m.groups[gi].Intents) == 0 {
+			continue
+		}
+		// Expand the group so the chosen item is actually visible. Without
+		// this a collapsed first-non-empty group would still hide the cursor.
+		m.groups[gi].Expanded = true
+		m.cursorGroup = gi
+		m.cursorItem = 0
+		m.scrollOffset = 0
+		m.ensureCursorVisible()
+		return true
+	}
+	// No matches reachable — leave cursor at the safe header position.
+	m.cursorGroup = 0
+	m.cursorItem = -1
+	m.scrollOffset = 0
+	return false
+}
+
 // moveCursorDown moves the cursor down one position and adjusts scroll.
 func (m *Model) moveCursorDown() {
 	m.moveCursorDownOne()
