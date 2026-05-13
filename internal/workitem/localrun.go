@@ -111,13 +111,14 @@ func replayLocalRun(ctx context.Context, eventsPath string, cache localRunManife
 	}
 	defer f.Close()
 
+	// Events are authoritative. Discard the cached status and replay from
+	// scratch so a stale "completed" or "abandoned" in run.yaml does not
+	// override the actual current state.
 	state := cache
 	state.Summary.CurrentStep = 0
 	state.Summary.CompletedSteps = 0
 	state.Summary.Blocked = false
-	if state.Status == "" {
-		state.Status = "active"
-	}
+	state.Status = "active"
 
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -132,10 +133,15 @@ func replayLocalRun(ctx context.Context, eventsPath string, cache localRunManife
 			continue
 		}
 		switch evt.EventType {
+		case "workflow_run_created", "workflow_run_started":
+			// Run is starting; events follow. No state change here.
 		case "wf_step_start":
 			state.Summary.CurrentStep++
 		case "wf_step_done":
 			state.Summary.CompletedSteps++
+			state.Summary.Blocked = false
+		case "wf_step_skip":
+			// Skipped steps count as forward progress without completion.
 			state.Summary.Blocked = false
 		case "wf_step_block", "wf_checkpoint_rejected":
 			state.Summary.Blocked = true
@@ -145,9 +151,12 @@ func replayLocalRun(ctx context.Context, eventsPath string, cache localRunManife
 			state.Status = "completed"
 		case "workflow_run_abandoned":
 			state.Status = "abandoned"
+		case "workflow_doc_changed":
+			// Informational; doc-hash drift is also computed independently
+			// in LoadLocalRun via SHA-256 compare.
 		}
 	}
-	if state.Summary.Blocked && (state.Status == "" || state.Status == "active") {
+	if state.Summary.Blocked && state.Status == "active" {
 		state.Status = "blocked"
 	}
 	return state

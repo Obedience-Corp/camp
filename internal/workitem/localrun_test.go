@@ -167,6 +167,97 @@ summary:
 	}
 }
 
+func TestLoadLocalRun_StaleCachedStatusDoesNotOverrideReplay(t *testing.T) {
+	dir := t.TempDir()
+	writeFileT(t, filepath.Join(dir, ".workflow", "workflow.yaml"), `version: 1
+kind: workflow-runtime
+workflow_id: wf-test
+workitem_id: test-001
+active_run_id: run-001
+`)
+	// Cached status says completed, but events show the run is still active
+	// with an open block. Replay must win.
+	writeFileT(t, filepath.Join(dir, ".workflow", "runs", "run-001", "run.yaml"), `version: 1
+kind: workflow-run
+run_id: run-001
+status: completed
+summary:
+  total_steps: 3
+`)
+	writeFileT(t, filepath.Join(dir, ".workflow", "runs", "run-001", "progress_events.jsonl"), `{"event_type":"wf_step_start"}
+{"event_type":"wf_step_block"}
+`)
+	got, err := LoadLocalRun(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RunStatus != "blocked" {
+		t.Errorf("RunStatus = %q, want blocked (events override stale 'completed')", got.RunStatus)
+	}
+	if !got.Blocked {
+		t.Errorf("Blocked should be true from wf_step_block event")
+	}
+}
+
+func TestLoadLocalRun_SkipEventClearsBlocked(t *testing.T) {
+	dir := t.TempDir()
+	writeFileT(t, filepath.Join(dir, ".workflow", "workflow.yaml"), `version: 1
+kind: workflow-runtime
+workflow_id: wf-test
+workitem_id: test-001
+active_run_id: run-001
+`)
+	writeFileT(t, filepath.Join(dir, ".workflow", "runs", "run-001", "run.yaml"), `version: 1
+kind: workflow-run
+run_id: run-001
+status: active
+summary:
+  total_steps: 3
+`)
+	writeFileT(t, filepath.Join(dir, ".workflow", "runs", "run-001", "progress_events.jsonl"), `{"event_type":"wf_step_start"}
+{"event_type":"wf_step_block"}
+{"event_type":"wf_step_skip"}
+`)
+	got, err := LoadLocalRun(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Blocked {
+		t.Errorf("Blocked should be cleared by wf_step_skip")
+	}
+	if got.RunStatus != "active" {
+		t.Errorf("RunStatus = %q, want active after skip clears block", got.RunStatus)
+	}
+}
+
+func TestLoadLocalRun_CreatedEventIsNoop(t *testing.T) {
+	dir := t.TempDir()
+	writeFileT(t, filepath.Join(dir, ".workflow", "workflow.yaml"), `version: 1
+kind: workflow-runtime
+workflow_id: wf-test
+workitem_id: test-001
+active_run_id: run-001
+`)
+	writeFileT(t, filepath.Join(dir, ".workflow", "runs", "run-001", "run.yaml"), `version: 1
+kind: workflow-run
+run_id: run-001
+status: active
+summary:
+  total_steps: 2
+`)
+	writeFileT(t, filepath.Join(dir, ".workflow", "runs", "run-001", "progress_events.jsonl"), `{"event_type":"workflow_run_created"}
+{"event_type":"workflow_run_started"}
+{"event_type":"wf_step_start"}
+`)
+	got, err := LoadLocalRun(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.CurrentStep != 1 {
+		t.Errorf("workflow_run_created should be a noop; CurrentStep = %d, want 1", got.CurrentStep)
+	}
+}
+
 func TestLoadLocalRun_MalformedManifestErrors(t *testing.T) {
 	dir := t.TempDir()
 	writeFileT(t, filepath.Join(dir, ".workflow", "workflow.yaml"), "not: valid: yaml: ::\n")
