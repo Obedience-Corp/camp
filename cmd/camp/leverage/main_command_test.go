@@ -81,6 +81,24 @@ func executeLeverage(t *testing.T, args ...string) (string, error) {
 	return buf.String(), err
 }
 
+// setupEphemeralCampaign creates a temporary campaign root and chdirs the
+// test process into it. Returns the campaign root path. Used by tests that
+// invoke the leverage command's RunE — which walks up from cwd looking for a
+// .campaign directory and refuses to run if none is found. Without this
+// scaffolding the tests would pass on a developer's machine (the test
+// process inherits an ambient campaign root from the user's workspace) but
+// fail in a fresh clone where camp lives outside any campaign tree (CI,
+// review sandboxes like obey-agent, contributor first-runs).
+func setupEphemeralCampaign(t *testing.T) string {
+	t.Helper()
+	tmpDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tmpDir, ".campaign"), 0o755); err != nil {
+		t.Fatalf("create .campaign: %v", err)
+	}
+	t.Chdir(tmpDir)
+	return tmpDir
+}
+
 func stubPopulateMetrics() func(ctx context.Context, campaignRoot string, resolved []intleverage.ResolvedProject, resolver *intleverage.AuthorResolver) {
 	return func(ctx context.Context, _ string, resolved []intleverage.ResolvedProject, _ *intleverage.AuthorResolver) {
 		for i := range resolved {
@@ -105,6 +123,7 @@ func stubPopulateMetrics() func(ctx context.Context, campaignRoot string, resolv
 // host filesystem mutation is impossible.
 
 func TestLeverageConfigCommand_ValidationPeople(t *testing.T) {
+	setupEphemeralCampaign(t)
 	_, err := executeLeverage(t, "config", "--people", "-1")
 	if err == nil {
 		t.Fatal("expected error for negative people, got nil")
@@ -115,6 +134,7 @@ func TestLeverageConfigCommand_ValidationPeople(t *testing.T) {
 }
 
 func TestLeverageConfigCommand_ValidationDate(t *testing.T) {
+	setupEphemeralCampaign(t)
 	_, err := executeLeverage(t, "config", "--start", "2025-13-45")
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -282,6 +302,7 @@ func TestLeverageOutputTable_ShowsBackfillHintWhenRecentHistoryMissing(t *testin
 }
 
 func TestLeverageConfigCommand_ValidationCOCOMO(t *testing.T) {
+	setupEphemeralCampaign(t)
 	_, err := executeLeverage(t, "config", "--cocomo-type", "invalid")
 	if err == nil {
 		t.Fatal("expected error, got nil")
