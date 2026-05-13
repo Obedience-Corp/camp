@@ -3,9 +3,9 @@ package workitem
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"gopkg.in/yaml.v3"
@@ -122,19 +122,21 @@ func LoadMetadata(ctx context.Context, dir string) (*Metadata, error) {
 
 func validateMetadata(m *Metadata) error {
 	if m.Version != MetadataVersion {
-		return fmt.Errorf("unsupported workitem schema version %d (want %d)", m.Version, MetadataVersion)
+		return camperrors.NewValidation("version",
+			"unsupported workitem schema version (want "+strconv.Itoa(MetadataVersion)+")", nil)
 	}
 	if m.Kind != MetadataKind {
-		return fmt.Errorf("unsupported kind %q (want %q)", m.Kind, MetadataKind)
+		return camperrors.NewValidation("kind",
+			"unsupported kind (want "+MetadataKind+")", nil)
 	}
 	if m.ID == "" {
-		return fmt.Errorf("required field id is empty")
+		return camperrors.NewValidation("id", "required field id is empty", nil)
 	}
 	if m.Type == "" {
-		return fmt.Errorf("required field type is empty")
+		return camperrors.NewValidation("type", "required field type is empty", nil)
 	}
 	if m.Title == "" {
-		return fmt.Errorf("required field title is empty")
+		return camperrors.NewValidation("title", "required field title is empty", nil)
 	}
 	return nil
 }
