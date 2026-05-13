@@ -119,7 +119,7 @@ func WithLockRetry(ctx context.Context, repoPath string, cfg RetryConfig, operat
 				cfg.OperationName, cycle)
 		}
 
-		cfg.Logger.Info("cycle completed, cleaning locks",
+		cfg.Logger.Debug("cycle completed, cleaning locks",
 			"operation", cfg.OperationName,
 			"cycle", cycle,
 			"removed", len(result.Removed),
@@ -152,7 +152,7 @@ func WithLockRetry(ctx context.Context, repoPath string, cfg RetryConfig, operat
 
 		// Apply backoff between cycles
 		if cycle < cfg.MaxCycles {
-			cfg.Logger.Info("waiting before next cycle",
+			cfg.Logger.Debug("waiting before next cycle",
 				"operation", cfg.OperationName,
 				"cycle", cycle,
 				"backoff", backoff)
