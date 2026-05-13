@@ -1,6 +1,11 @@
 package intent
 
 import (
+	"io"
+	"log/slog"
+	"os"
+	"path/filepath"
+
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -99,6 +104,18 @@ func runIntentExplore(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Route slog output away from stderr for the duration of the TUI session.
+	// Without this, INFO-level slog calls from anywhere in the call chain (notably
+	// the git auto-commit retry / lock subsystem) write to the same TTY that
+	// bubbletea is painting, corrupting the rendered frame and making the TUI
+	// appear frozen. Restore the previous default on exit so non-TUI commands in
+	// the same process keep their normal behavior.
+	restoreLogger, err := quietSlogDuringTUI(campaignRoot)
+	if err != nil {
+		return camperrors.Wrap(err, "configuring TUI logger")
+	}
+	defer restoreLogger()
+
 	// Create and run the TUI
 	model := explorer.NewModel(ctx, svc, conceptSvc, intentsDir, campaignRoot, cfg.ID, author, shortcuts)
 	p := tea.NewProgram(model, tea.WithAltScreen())
@@ -108,4 +125,45 @@ func runIntentExplore(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// quietSlogDuringTUI swaps slog.Default with a handler that writes to a log
+// file under <campaignRoot>/.campaign/logs/ instead of stderr. It returns a
+// restore function that reinstalls the previous default and closes the log
+// file. If the log directory cannot be created or the file cannot be opened,
+// it falls back to discarding slog output entirely so the TUI is still safe.
+func quietSlogDuringTUI(campaignRoot string) (restore func(), err error) {
+	previous := slog.Default()
+	restore = func() { slog.SetDefault(previous) }
+
+	logDir := filepath.Join(campaignRoot, ".campaign", "logs")
+	if mkErr := os.MkdirAll(logDir, 0o755); mkErr != nil {
+		// Fallback: discard slog output entirely. The TUI is still protected.
+		slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
+		return restore, nil
+	}
+
+	f, openErr := os.OpenFile(
+		filepath.Join(logDir, "intent-explore.log"),
+		os.O_APPEND|os.O_CREATE|os.O_WRONLY,
+		0o644,
+	)
+	if openErr != nil {
+		// Fallback: discard slog output entirely.
+		slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
+		return restore, nil
+	}
+
+	previousRestore := restore
+	restore = func() {
+		previousRestore()
+		_ = f.Close()
+	}
+
+	// Debug level captures everything (including the auto-commit retry logs
+	// that were demoted from Info to Debug in this same change set) so a
+	// post-mortem can always recover what happened.
+	handler := slog.NewTextHandler(f, &slog.HandlerOptions{Level: slog.LevelDebug})
+	slog.SetDefault(slog.New(handler))
+	return restore, nil
 }

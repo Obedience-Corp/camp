@@ -19,9 +19,16 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.applyFilters()
 		return m, nil
 	case "enter":
-		// Exit search mode but keep filter active
+		// Exit search mode but keep filter active. Place the cursor on the
+		// first item of the first non-empty group so the user has a visible
+		// selection to navigate from. Without this, the cursor stays at
+		// cursorItem=-1 (group header) and pressing j/k looks like a no-op
+		// (regression for #279: filtered list appeared unselectable).
 		m.focus = focusList
 		m.searchInput.Blur()
+		if !m.placeCursorAtFirstItem() {
+			m.statusMessage = "No matches — press / to refine or Esc to clear"
+		}
 		return m, nil
 	}
 	// Pass all other keys to the text input
