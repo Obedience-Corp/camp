@@ -3,6 +3,7 @@ package workitem
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -77,9 +78,13 @@ func discoverWorkflowDocs(ctx context.Context, campaignRoot, rootDir string, wfT
 
 		md, err := LoadMetadata(ctx, dirPath)
 		if err != nil {
-			return nil, camperrors.Wrapf(err, "loading metadata for %s", relPath)
+			// Malformed optional metadata must not crash full discovery.
+			// Log and include the item with derived fields only.
+			slog.Default().Warn("workitem metadata invalid; skipping metadata merge",
+				"path", relPath, "error", err.Error())
+		} else {
+			item = ApplyMetadata(item, md)
 		}
-		item = ApplyMetadata(item, md)
 
 		items = append(items, item)
 	}

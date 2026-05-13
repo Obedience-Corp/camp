@@ -374,23 +374,62 @@ func TestDiscoverDesign_NoMetadataUnchanged(t *testing.T) {
 	}
 }
 
-func TestDiscoverDesign_MalformedMetadataErrors(t *testing.T) {
+func TestDiscoverDesign_MalformedMetadataDoesNotCrashDiscovery(t *testing.T) {
 	root, resolver := setupTestCampaign(t)
 	ctx := context.Background()
 
-	designDir := filepath.Join(root, "workflow/design/broken")
-	os.MkdirAll(designDir, 0755)
-	writeFile(t, filepath.Join(designDir, "README.md"), "# Broken")
-	writeFile(t, filepath.Join(designDir, ".workitem"), `version: 2
+	// Item with malformed .workitem (wrong schema version)
+	brokenDir := filepath.Join(root, "workflow/design/broken")
+	os.MkdirAll(brokenDir, 0755)
+	writeFile(t, filepath.Join(brokenDir, "README.md"), "# Broken")
+	writeFile(t, filepath.Join(brokenDir, ".workitem"), `version: 2
 kind: workitem
 id: x
 type: design
 title: T
 `)
 
-	_, err := discoverDesign(ctx, root, resolver)
-	if err == nil {
-		t.Fatal("expected error from malformed .workitem")
+	// Sibling item with valid metadata — must still be discovered with metadata applied
+	goodDir := filepath.Join(root, "workflow/design/good")
+	os.MkdirAll(goodDir, 0755)
+	writeFile(t, filepath.Join(goodDir, "README.md"), "# Good")
+	writeFile(t, filepath.Join(goodDir, ".workitem"), `version: 1
+kind: workitem
+id: good-001
+type: design
+title: Good
+`)
+
+	items, err := discoverDesign(ctx, root, resolver)
+	if err != nil {
+		t.Fatalf("malformed optional metadata must not abort discovery: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("expected 2 items (broken kept with derived fields, good with metadata), got %d", len(items))
+	}
+
+	var broken, good *WorkItem
+	for i := range items {
+		switch filepath.Base(items[i].RelativePath) {
+		case "broken":
+			broken = &items[i]
+		case "good":
+			good = &items[i]
+		}
+	}
+	if broken == nil || good == nil {
+		t.Fatalf("missing expected items: %+v", items)
+	}
+	// Broken item: derived fields kept, metadata fields not applied
+	if broken.StableID != "" || broken.Execution != nil || broken.PriorityInfo != nil {
+		t.Errorf("broken item should have no metadata applied, got %+v", broken)
+	}
+	if broken.Title != "Broken" {
+		t.Errorf("broken item title = %q, want derived heading 'Broken'", broken.Title)
+	}
+	// Good item: metadata applied normally
+	if good.StableID != "good-001" {
+		t.Errorf("good item StableID = %q", good.StableID)
 	}
 }
 
