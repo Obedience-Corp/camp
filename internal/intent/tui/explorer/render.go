@@ -253,7 +253,7 @@ func (m *Model) buildMainView() string {
 		header.WriteString(m.searchInput.View())
 		if m.focus == focusSearch {
 			header.WriteString("  ")
-			header.WriteString(tui.HelpStyle.Render("(enter to search, esc to cancel)"))
+			header.WriteString(tui.HelpStyle.Render("(enter to navigate filtered list, esc to clear)"))
 		}
 	}
 

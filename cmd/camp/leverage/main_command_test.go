@@ -104,25 +104,7 @@ func stubPopulateMetrics() func(ctx context.Context, campaignRoot string, resolv
 // command runs against an ephemeral campaign inside the shared container and
 // host filesystem mutation is impossible.
 
-func TestLeverageConfigCommand_ValidationPeople(t *testing.T) {
-	_, err := executeLeverage(t, "config", "--people", "-1")
-	if err == nil {
-		t.Fatal("expected error for negative people, got nil")
-	}
-	if !strings.Contains(err.Error(), "people must be") {
-		t.Errorf("error = %q, want substring 'people must be'", err.Error())
-	}
-}
-
-func TestLeverageConfigCommand_ValidationDate(t *testing.T) {
-	_, err := executeLeverage(t, "config", "--start", "2025-13-45")
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), "invalid date format") {
-		t.Errorf("error = %q, want substring 'invalid date format'", err.Error())
-	}
-}
+// TestLeverageConfigCommand_Validation* moved to tests/integration/leverage_test.go.
 
 type snapshotStoreMock struct {
 	saved map[string]*intleverage.Snapshot
@@ -278,16 +260,6 @@ func TestLeverageOutputTable_ShowsBackfillHintWhenRecentHistoryMissing(t *testin
 	}
 	if !strings.Contains(output, "camp leverage backfill") {
 		t.Fatalf("output missing backfill command hint\nGot:\n%s", output)
-	}
-}
-
-func TestLeverageConfigCommand_ValidationCOCOMO(t *testing.T) {
-	_, err := executeLeverage(t, "config", "--cocomo-type", "invalid")
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), "invalid COCOMO type") {
-		t.Errorf("error = %q, want substring 'invalid COCOMO type'", err.Error())
 	}
 }
 

@@ -454,10 +454,18 @@ func (m *Model) updateDungeonReason(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.dungeonReasonAction = ""
 		m.focus = focusList
 
-		// Append decision record and move
+		// Surface in-progress feedback immediately. The actual move runs
+		// asynchronously inside a tea.Cmd and may stall briefly while the
+		// auto-commit subsystem cleans up stale git locks. Without this,
+		// users see a blank-looking list and assume the TUI froze
+		// (regression for #278). The terminal status update is replaced by
+		// the success or failure message when moveFinishedMsg / archiveFinishedMsg
+		// arrives.
 		if action == "archive" {
+			m.statusMessage = "Archiving..."
 			return m, m.archiveIntentWithReason(i, reason)
 		}
+		m.statusMessage = fmt.Sprintf("Moving to %s...", newStatus)
 		return m, m.moveIntentWithReason(i, newStatus, reason)
 	default:
 		var cmd tea.Cmd
