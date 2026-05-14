@@ -7,12 +7,31 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+)
+
+// Wire-schema event-type constants for .workflow/runs/<id>/progress_events.jsonl.
+// Cross-repo contract with fest's localstore: changing a value here without
+// matching change in fest will silently break replay. See D030 #9 / EVENT_SCHEMA.
+// Future improvement: extract to projects/obey-shared/workflow/events.
+const (
+	wfEventStepStart          = "wf_step_start"
+	wfEventStepDone           = "wf_step_done"
+	wfEventStepSkip           = "wf_step_skip"
+	wfEventStepBlock          = "wf_step_block"
+	wfEventCheckpointApproved = "wf_checkpoint_approved"
+	wfEventCheckpointRejected = "wf_checkpoint_rejected"
+	wfEventRunCreated         = "workflow_run_created"
+	wfEventRunStarted         = "workflow_run_started"
+	wfEventRunCompleted       = "workflow_run_completed"
+	wfEventRunAbandoned       = "workflow_run_abandoned"
 )
 
 // LocalRunProgress is camp's read-only view of a fest .workflow/ runtime.
@@ -48,16 +67,25 @@ type localRunManifest struct {
 
 // LoadLocalRun reads .workflow/ progress for the workitem directory at dir.
 // Returns (nil, nil) when no .workflow/workflow.yaml exists.
-// Returns a wrapped error for parse failures; the discovery caller should
-// log and continue rather than crashing the scan.
 func LoadLocalRun(ctx context.Context, dir string) (*LocalRunProgress, error) {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, camperrors.Wrapf(err, "resolving %s", dir)
+	}
+	return LoadLocalRunFS(ctx, os.DirFS("/"), strings.TrimPrefix(abs, "/"))
+}
+
+// LoadLocalRunFS reads .workflow/ progress from fsys rooted at base.
+// Used by tests so parsing/replay is exercised via fstest.MapFS without
+// touching the host filesystem (D029).
+func LoadLocalRunFS(ctx context.Context, fsys fs.FS, base string) (*LocalRunProgress, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
-	manifestPath := filepath.Join(dir, ".workflow", "workflow.yaml")
-	raw, err := os.ReadFile(manifestPath)
-	if errors.Is(err, os.ErrNotExist) {
+	manifestPath := filepath.Join(base, ".workflow", "workflow.yaml")
+	raw, err := fs.ReadFile(fsys, manifestPath)
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
 	if err != nil {
@@ -75,28 +103,30 @@ func LoadLocalRun(ctx context.Context, dir string) (*LocalRunProgress, error) {
 	}
 
 	if mf.ActiveRunID != "" {
-		runDir := filepath.Join(dir, ".workflow", "runs", mf.ActiveRunID)
-		runYAML, runErr := os.ReadFile(filepath.Join(runDir, "run.yaml"))
+		runDir := filepath.Join(base, ".workflow", "runs", mf.ActiveRunID)
+		runYAML, runErr := fs.ReadFile(fsys, filepath.Join(runDir, "run.yaml"))
 		if runErr == nil {
 			var rm localRunManifest
 			if uErr := yaml.Unmarshal(runYAML, &rm); uErr != nil {
 				return nil, camperrors.Wrapf(uErr, "parsing %s/run.yaml", runDir)
 			}
-			replayed := replayLocalRun(ctx, filepath.Join(runDir, "progress_events.jsonl"), rm)
+			replayed, repErr := replayLocalRunFSE(ctx, fsys, filepath.Join(runDir, "progress_events.jsonl"), rm)
+			if repErr != nil {
+				return nil, repErr
+			}
 			out.RunStatus = replayed.Status
 			out.CurrentStep = replayed.Summary.CurrentStep
 			out.CompletedSteps = replayed.Summary.CompletedSteps
 			out.Blocked = replayed.Summary.Blocked
 			out.TotalSteps = rm.Summary.TotalSteps
-		} else if !errors.Is(runErr, os.ErrNotExist) {
+		} else if !errors.Is(runErr, fs.ErrNotExist) {
 			return nil, camperrors.Wrapf(runErr, "reading run manifest")
 		}
 	}
 
-	// Detect doc-hash drift.
 	if mf.DocHash != "" && mf.DocPath != "" {
-		docFull := filepath.Join(dir, mf.DocPath)
-		if cur, hErr := hashFile(docFull); hErr == nil && cur != mf.DocHash {
+		docFull := filepath.Join(base, mf.DocPath)
+		if cur, hErr := hashFileFS(fsys, docFull); hErr == nil && cur != mf.DocHash {
 			out.DocHashChanged = true
 		}
 	}
@@ -105,11 +135,27 @@ func LoadLocalRun(ctx context.Context, dir string) (*LocalRunProgress, error) {
 }
 
 func replayLocalRun(ctx context.Context, eventsPath string, cache localRunManifest) localRunManifest {
-	f, err := os.Open(eventsPath)
+	abs, err := filepath.Abs(eventsPath)
 	if err != nil {
 		return cache
 	}
-	defer f.Close()
+	return replayLocalRunFS(ctx, os.DirFS("/"), strings.TrimPrefix(abs, "/"), cache)
+}
+
+func replayLocalRunFS(ctx context.Context, fsys fs.FS, eventsPath string, cache localRunManifest) localRunManifest {
+	state, _ := replayLocalRunFSE(ctx, fsys, eventsPath, cache)
+	return state
+}
+
+func replayLocalRunFSE(ctx context.Context, fsys fs.FS, eventsPath string, cache localRunManifest) (localRunManifest, error) {
+	f, err := fsys.Open(eventsPath)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return cache, nil
+		}
+		return cache, camperrors.Wrapf(err, "open %s", eventsPath)
+	}
+	defer func() { _ = f.Close() }()
 
 	// Events are authoritative. Discard the cached status and replay from
 	// scratch so a stale "completed" or "abandoned" in run.yaml does not
@@ -124,7 +170,7 @@ func replayLocalRun(ctx context.Context, eventsPath string, cache localRunManife
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		if err := ctx.Err(); err != nil {
-			return state
+			return state, err
 		}
 		var evt struct {
 			EventType string `json:"event_type"`
@@ -133,37 +179,44 @@ func replayLocalRun(ctx context.Context, eventsPath string, cache localRunManife
 			continue
 		}
 		switch evt.EventType {
-		case "workflow_run_created", "workflow_run_started":
-			// Run is starting; events follow. No state change here.
-		case "wf_step_start":
+		case wfEventRunCreated, wfEventRunStarted:
+		case wfEventStepStart:
 			state.Summary.CurrentStep++
-		case "wf_step_done":
+		case wfEventStepDone:
 			state.Summary.CompletedSteps++
 			state.Summary.Blocked = false
-		case "wf_step_skip":
-			// Skipped steps count as forward progress without completion.
+		case wfEventStepSkip:
+			state.Summary.CompletedSteps++
 			state.Summary.Blocked = false
-		case "wf_step_block", "wf_checkpoint_rejected":
+		case wfEventStepBlock, wfEventCheckpointRejected:
 			state.Summary.Blocked = true
-		case "wf_checkpoint_approved":
+		case wfEventCheckpointApproved:
 			state.Summary.Blocked = false
-		case "workflow_run_completed":
+		case wfEventRunCompleted:
 			state.Status = "completed"
-		case "workflow_run_abandoned":
+		case wfEventRunAbandoned:
 			state.Status = "abandoned"
-		case "workflow_doc_changed":
-			// Informational; doc-hash drift is also computed independently
-			// in LoadLocalRun via SHA-256 compare.
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		return state, camperrors.Wrapf(err, "scanning %s", eventsPath)
 	}
 	if state.Summary.Blocked && state.Status == "active" {
 		state.Status = "blocked"
 	}
-	return state
+	return state, nil
 }
 
 func hashFile(path string) (string, error) {
-	raw, err := os.ReadFile(path)
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	return hashFileFS(os.DirFS("/"), strings.TrimPrefix(abs, "/"))
+}
+
+func hashFileFS(fsys fs.FS, path string) (string, error) {
+	raw, err := fs.ReadFile(fsys, path)
 	if err != nil {
 		return "", err
 	}
