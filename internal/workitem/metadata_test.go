@@ -7,18 +7,19 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 )
 
-func writeWorkitem(t *testing.T, dir, body string) {
-	t.Helper()
-	if err := os.WriteFile(filepath.Join(dir, MetadataFilename), []byte(body), 0o644); err != nil {
-		t.Fatalf("write fixture: %v", err)
+func mapFSWith(body string) fstest.MapFS {
+	return fstest.MapFS{
+		"workflow/feature/foo/.workitem": {Data: []byte(body)},
 	}
 }
 
+const fixturePath = "workflow/feature/foo/.workitem"
+
 func TestLoadMetadata_MissingFile(t *testing.T) {
-	dir := t.TempDir()
-	md, err := LoadMetadata(context.Background(), dir)
+	md, err := LoadMetadataFS(context.Background(), fstest.MapFS{}, fixturePath)
 	if err != nil {
 		t.Fatalf("missing file should not error, got %v", err)
 	}
@@ -28,21 +29,17 @@ func TestLoadMetadata_MissingFile(t *testing.T) {
 }
 
 func TestLoadMetadata_FullFixture(t *testing.T) {
-	dir := t.TempDir()
 	raw, err := os.ReadFile(filepath.Join("testdata", "workitem_full.yaml"))
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
-	writeWorkitem(t, dir, string(raw))
-
-	md, err := LoadMetadata(context.Background(), dir)
+	md, err := LoadMetadataFS(context.Background(), mapFSWith(string(raw)), fixturePath)
 	if err != nil {
-		t.Fatalf("LoadMetadata: %v", err)
+		t.Fatalf("LoadMetadataFS: %v", err)
 	}
 	if md == nil {
 		t.Fatal("expected non-nil metadata")
 	}
-
 	if md.Version != WorkitemSchemaVersion {
 		t.Errorf("Version = %q, want %q", md.Version, WorkitemSchemaVersion)
 	}
@@ -61,16 +58,15 @@ func TestLoadMetadata_FullFixture(t *testing.T) {
 }
 
 func TestLoadMetadata_MinimalRequiredFields(t *testing.T) {
-	dir := t.TempDir()
-	writeWorkitem(t, dir, `version: v1alpha4
+	body := `version: v1alpha4
 kind: workitem
 id: minimal-001
 type: design
 title: Minimal
-`)
-	md, err := LoadMetadata(context.Background(), dir)
+`
+	md, err := LoadMetadataFS(context.Background(), mapFSWith(body), fixturePath)
 	if err != nil {
-		t.Fatalf("LoadMetadata: %v", err)
+		t.Fatalf("LoadMetadataFS: %v", err)
 	}
 	if md == nil {
 		t.Fatal("expected metadata")
@@ -139,9 +135,7 @@ title: T
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			dir := t.TempDir()
-			writeWorkitem(t, dir, tc.body)
-			md, err := LoadMetadata(context.Background(), dir)
+			md, err := LoadMetadataFS(context.Background(), mapFSWith(tc.body), fixturePath)
 			if err == nil {
 				t.Fatalf("expected error, got md=%+v", md)
 			}
@@ -153,17 +147,19 @@ title: T
 }
 
 func TestLoadMetadata_ContextCancelled(t *testing.T) {
-	dir := t.TempDir()
-	writeWorkitem(t, dir, `version: v1alpha4
+	body := `version: v1alpha4
 kind: workitem
 id: x
 type: design
 title: T
-`)
+`
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := LoadMetadata(ctx, dir)
+	_, err := LoadMetadataFS(ctx, mapFSWith(body), fixturePath)
+	if err == nil {
+		t.Fatal("expected context cancellation error")
+	}
 	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("expected context.Canceled, got %v", err)
+		t.Errorf("error %v should wrap context.Canceled", err)
 	}
 }
