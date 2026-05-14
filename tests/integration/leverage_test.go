@@ -214,3 +214,41 @@ func TestLeverage_ConfigDisplay(t *testing.T) {
 		assert.Contains(t, output, want, "config output missing %q", want)
 	}
 }
+
+// setupMinimalLeverageCampaign skips the project + git scaffold that
+// setupLeverageCampaign builds; config-flag validation bails before the
+// leverage pipeline runs.
+func setupMinimalLeverageCampaign(t *testing.T, tc *TestContainer, name string) string {
+	t.Helper()
+	root := "/campaigns/" + name
+	_, err := tc.InitCampaign(root, name, "")
+	require.NoError(t, err, "camp init should succeed")
+	return root
+}
+
+func TestLeverage_ConfigValidationPeople(t *testing.T) {
+	tc := GetSharedContainer(t)
+	root := setupMinimalLeverageCampaign(t, tc, "leverage-validation-people")
+
+	output, err := tc.RunCampInDir(root, "leverage", "config", "--people", "-1")
+	require.Error(t, err, "expected rejection: %s", output)
+	assert.Contains(t, output, "people must be", output)
+}
+
+func TestLeverage_ConfigValidationDate(t *testing.T) {
+	tc := GetSharedContainer(t)
+	root := setupMinimalLeverageCampaign(t, tc, "leverage-validation-date")
+
+	output, err := tc.RunCampInDir(root, "leverage", "config", "--start", "2025-13-45")
+	require.Error(t, err, "expected rejection: %s", output)
+	assert.Contains(t, output, "invalid date format", output)
+}
+
+func TestLeverage_ConfigValidationCOCOMO(t *testing.T) {
+	tc := GetSharedContainer(t)
+	root := setupMinimalLeverageCampaign(t, tc, "leverage-validation-cocomo")
+
+	output, err := tc.RunCampInDir(root, "leverage", "config", "--cocomo-type", "invalid")
+	require.Error(t, err, "expected rejection: %s", output)
+	assert.Contains(t, output, "invalid COCOMO type", output)
+}
