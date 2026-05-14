@@ -1,4 +1,4 @@
-version: 1
+version: v1alpha4
 kind: workitem
 
 id: design-thin-start-workflow-ladder-2026-04-25

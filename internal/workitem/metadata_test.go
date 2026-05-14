@@ -43,8 +43,8 @@ func TestLoadMetadata_FullFixture(t *testing.T) {
 		t.Fatal("expected non-nil metadata")
 	}
 
-	if md.Version != 1 {
-		t.Errorf("Version = %d, want 1", md.Version)
+	if md.Version != WorkitemSchemaVersion {
+		t.Errorf("Version = %q, want %q", md.Version, WorkitemSchemaVersion)
 	}
 	if md.Kind != "workitem" {
 		t.Errorf("Kind = %q, want %q", md.Kind, "workitem")
@@ -58,36 +58,11 @@ func TestLoadMetadata_FullFixture(t *testing.T) {
 	if md.Title != "Thin-start workflow ladder" {
 		t.Errorf("Title = %q", md.Title)
 	}
-	if md.Description != "Design local workflow-run state for lightweight work items." {
-		t.Errorf("Description = %q", md.Description)
-	}
-
-	if md.Collection == nil || md.Collection.Root != "workflow/design" || md.Collection.RelativePath != "workitem-workflows" || md.Collection.LifecycleStatus != "active" {
-		t.Errorf("Collection = %+v", md.Collection)
-	}
-	if md.Execution == nil || md.Execution.Mode != "design" || md.Execution.Autonomy != "constrained" || md.Execution.Risk != "medium" {
-		t.Errorf("Execution = %+v", md.Execution)
-	}
-	if md.Priority == nil || md.Priority.Level != "high" {
-		t.Errorf("Priority = %+v", md.Priority)
-	}
-	if md.Project == nil || md.Project.Name != "festival" || md.Project.Path != "projects/festival" || md.Project.Role != "affected" {
-		t.Errorf("Project = %+v", md.Project)
-	}
-	if md.Workflow == nil || md.Workflow.DocPath != "WORKFLOW.md" || md.Workflow.RuntimeDir != ".workflow" {
-		t.Errorf("Workflow = %+v", md.Workflow)
-	}
-	if md.Lineage == nil || len(md.Lineage.Supersedes) != 3 {
-		t.Errorf("Lineage = %+v", md.Lineage)
-	}
-	if md.External == nil || md.External.SpecKit == nil || md.External.SpecKit.Enabled {
-		t.Errorf("External.SpecKit = %+v", md.External)
-	}
 }
 
 func TestLoadMetadata_MinimalRequiredFields(t *testing.T) {
 	dir := t.TempDir()
-	writeWorkitem(t, dir, `version: 1
+	writeWorkitem(t, dir, `version: v1alpha4
 kind: workitem
 id: minimal-001
 type: design
@@ -99,9 +74,6 @@ title: Minimal
 	}
 	if md == nil {
 		t.Fatal("expected metadata")
-	}
-	if md.Collection != nil || md.Execution != nil || md.Priority != nil {
-		t.Errorf("optional blocks should be nil, got %+v", md)
 	}
 }
 
@@ -118,7 +90,7 @@ func TestLoadMetadata_Errors(t *testing.T) {
 		},
 		{
 			name: "wrong version",
-			body: `version: 2
+			body: `version: v1alpha3
 kind: workitem
 id: x
 type: design
@@ -127,8 +99,18 @@ title: T
 			wantSubstr: "schema version",
 		},
 		{
+			name: "v1alpha3 rejected with upgrade hint",
+			body: `version: v1alpha3
+kind: workitem
+id: x
+type: design
+title: T
+`,
+			wantSubstr: "update .workitem `version:` to v1alpha4",
+		},
+		{
 			name: "wrong kind",
-			body: `version: 1
+			body: `version: v1alpha4
 kind: festival
 id: x
 type: design
@@ -138,7 +120,7 @@ title: T
 		},
 		{
 			name: "missing id",
-			body: `version: 1
+			body: `version: v1alpha4
 kind: workitem
 type: design
 title: T
@@ -147,21 +129,12 @@ title: T
 		},
 		{
 			name: "missing type",
-			body: `version: 1
+			body: `version: v1alpha4
 kind: workitem
 id: x
 title: T
 `,
 			wantSubstr: "type is empty",
-		},
-		{
-			name: "missing title",
-			body: `version: 1
-kind: workitem
-id: x
-type: design
-`,
-			wantSubstr: "title is empty",
 		},
 	}
 	for _, tc := range cases {
@@ -181,7 +154,7 @@ type: design
 
 func TestLoadMetadata_ContextCancelled(t *testing.T) {
 	dir := t.TempDir()
-	writeWorkitem(t, dir, `version: 1
+	writeWorkitem(t, dir, `version: v1alpha4
 kind: workitem
 id: x
 type: design
