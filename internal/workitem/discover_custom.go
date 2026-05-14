@@ -3,9 +3,7 @@ package workitem
 import (
 	"errors"
 	"io/fs"
-	"os"
 	"path/filepath"
-	"strings"
 )
 
 var builtinTypes = map[WorkflowType]bool{
@@ -13,14 +11,6 @@ var builtinTypes = map[WorkflowType]bool{
 	WorkflowTypeDesign:   true,
 	WorkflowTypeExplore:  true,
 	WorkflowTypeFestival: true,
-}
-
-func emitCandidate(typeDir, dir string) (bool, string) {
-	abs, err := filepath.Abs(dir)
-	if err != nil {
-		return false, "stat-error"
-	}
-	return emitCandidateFS(os.DirFS("/"), typeDir, strings.TrimPrefix(abs, "/"))
 }
 
 func emitCandidateFS(fsys fs.FS, typeDir, dir string) (bool, string) {

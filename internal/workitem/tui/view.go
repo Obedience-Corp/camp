@@ -180,7 +180,6 @@ func renderRow(item workitem.WorkItem, width int, selected bool) string {
 	if titleWidth < 10 {
 		titleWidth += badgeWidth
 		badgeText = ""
-		badgeWidth = 0
 		if titleWidth < 10 {
 			titleWidth = 10
 		}

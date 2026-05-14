@@ -134,19 +134,6 @@ func LoadLocalRunFS(ctx context.Context, fsys fs.FS, base string) (*LocalRunProg
 	return out, nil
 }
 
-func replayLocalRun(ctx context.Context, eventsPath string, cache localRunManifest) localRunManifest {
-	abs, err := filepath.Abs(eventsPath)
-	if err != nil {
-		return cache
-	}
-	return replayLocalRunFS(ctx, os.DirFS("/"), strings.TrimPrefix(abs, "/"), cache)
-}
-
-func replayLocalRunFS(ctx context.Context, fsys fs.FS, eventsPath string, cache localRunManifest) localRunManifest {
-	state, _ := replayLocalRunFSE(ctx, fsys, eventsPath, cache)
-	return state
-}
-
 func replayLocalRunFSE(ctx context.Context, fsys fs.FS, eventsPath string, cache localRunManifest) (localRunManifest, error) {
 	f, err := fsys.Open(eventsPath)
 	if err != nil {
@@ -205,14 +192,6 @@ func replayLocalRunFSE(ctx context.Context, fsys fs.FS, eventsPath string, cache
 		state.Status = "blocked"
 	}
 	return state, nil
-}
-
-func hashFile(path string) (string, error) {
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return "", err
-	}
-	return hashFileFS(os.DirFS("/"), strings.TrimPrefix(abs, "/"))
 }
 
 func hashFileFS(fsys fs.FS, path string) (string, error) {
