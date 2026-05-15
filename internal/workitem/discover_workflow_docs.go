@@ -3,6 +3,7 @@ package workitem
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -74,6 +75,28 @@ func discoverWorkflowDocs(ctx context.Context, campaignRoot, rootDir string, wfT
 		if primaryDocAbs != "" {
 			item.Summary = extractSummaryFromFile(primaryDocAbs, 200)
 		}
+
+		absDir, _ := filepath.Abs(dirPath)
+		md, err := LoadMetadata(ctx, dirPath)
+		if err != nil {
+			slog.Default().Debug("workitem discovery skip",
+				"path", absDir,
+				"reason", "parse-error",
+				"type", string(wfType),
+				"error", err.Error())
+		} else if md != nil {
+			merged, applyErr := ApplyMetadata(item, md)
+			if applyErr != nil {
+				slog.Default().Debug("workitem discovery skip",
+					"path", absDir,
+					"reason", "parse-error",
+					"type", string(wfType),
+					"error", applyErr.Error())
+			} else {
+				item = merged
+			}
+		}
+
 		items = append(items, item)
 	}
 	return items, nil

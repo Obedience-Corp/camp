@@ -46,6 +46,8 @@ type WorkItem struct {
 	Summary        string         `json:"summary"`
 	SourceID       string         `json:"source_id"`
 	SourceMetadata map[string]any `json:"source_metadata"`
+
+	StableID string `json:"stable_id,omitempty"`
 }
 
 // AbsPath resolves the item's absolute path from the campaign root.

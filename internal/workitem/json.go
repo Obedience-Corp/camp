@@ -3,7 +3,13 @@ package workitem
 import "time"
 
 // SchemaVersion is the JSON contract version for workitem output.
-const SchemaVersion = "workitems/v1alpha3"
+//
+// Changelog:
+//   - v1alpha4: add optional .workitem metadata fields on each item
+//     (stable_id, description, execution, priority_info, project, workflow,
+//     lineage). All omitempty so legacy items without .workitem serialize
+//     byte-identically except for this constant.
+const SchemaVersion = "workitems/v1alpha4"
 
 // Payload is the top-level JSON output for camp workitem --json.
 type Payload struct {
