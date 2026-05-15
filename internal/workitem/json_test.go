@@ -115,8 +115,8 @@ func TestWorkItem_StableIDPresentWhenPopulated(t *testing.T) {
 	}
 }
 
-func TestSchemaVersion_IsV1Alpha4(t *testing.T) {
-	if SchemaVersion != "workitems/v1alpha4" {
-		t.Errorf("SchemaVersion = %q, want workitems/v1alpha4", SchemaVersion)
+func TestSchemaVersion_IsV1Alpha5(t *testing.T) {
+	if SchemaVersion != "workitems/v1alpha5" {
+		t.Errorf("SchemaVersion = %q, want workitems/v1alpha5", SchemaVersion)
 	}
 }

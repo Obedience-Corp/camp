@@ -47,7 +47,21 @@ type WorkItem struct {
 	SourceID       string         `json:"source_id"`
 	SourceMetadata map[string]any `json:"source_metadata"`
 
-	StableID string `json:"stable_id,omitempty"`
+	StableID     string            `json:"stable_id,omitempty"`
+	WorkflowMeta *WorkItemWorkflow `json:"workflow,omitempty"`
+}
+
+// WorkItemWorkflow carries local runtime progress when .workflow/ is present
+// (sourced from the fest local runtime, populated by camp's localrun loader).
+type WorkItemWorkflow struct {
+	WorkflowID     string `json:"workflow_id,omitempty"`
+	ActiveRunID    string `json:"active_run_id,omitempty"`
+	CurrentStep    int    `json:"current_step,omitempty"`
+	TotalSteps     int    `json:"total_steps,omitempty"`
+	CompletedSteps int    `json:"completed_steps,omitempty"`
+	RunStatus      string `json:"run_status,omitempty"`
+	Blocked        bool   `json:"blocked,omitempty"`
+	DocHashChanged bool   `json:"doc_hash_changed,omitempty"`
 }
 
 // AbsPath resolves the item's absolute path from the campaign root.

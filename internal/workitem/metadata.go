@@ -14,12 +14,13 @@ import (
 
 const MetadataFilename = ".workitem"
 
-const WorkitemSchemaVersion = "v1alpha4"
+const WorkitemSchemaVersion = "v1alpha5"
 
 const MetadataKind = "workitem"
 
 var acceptedWorkitemVersions = map[string]bool{
-	WorkitemSchemaVersion: true,
+	"v1alpha4": true,
+	"v1alpha5": true,
 }
 
 type Metadata struct {
@@ -77,7 +78,7 @@ func LoadMetadataFS(ctx context.Context, fsys fs.FS, path string) (*Metadata, er
 func validateMetadata(m *Metadata) error {
 	if !acceptedWorkitemVersions[m.Version] {
 		return camperrors.NewValidation("version",
-			"unsupported .workitem schema version (got "+m.Version+", supported: "+WorkitemSchemaVersion+"); update .workitem `version:` to "+WorkitemSchemaVersion, nil)
+			"unsupported .workitem schema version (got "+m.Version+", supported: v1alpha4, v1alpha5); update .workitem `version:` to "+WorkitemSchemaVersion, nil)
 	}
 	if m.Kind != MetadataKind {
 		return camperrors.NewValidation("kind",

@@ -169,7 +169,6 @@ func priorityBadge(p string) (string, lipgloss.Style) {
 }
 
 func renderRow(item workitem.WorkItem, width int, selected bool) string {
-	// Pad plain strings first, then apply color to avoid ANSI width issues
 	wfType := padRight(string(item.WorkflowType), 9)
 	stage := padRight(item.LifecycleStage, 9)
 	rec := formatRecency(item.SortTimestamp)
@@ -179,12 +178,15 @@ func renderRow(item workitem.WorkItem, width int, selected bool) string {
 
 	titleWidth := width - 9 - 9 - len(rec) - 4 - badgeWidth
 	if titleWidth < 10 {
-		titleWidth = 10
+		titleWidth += badgeWidth
+		badgeText = ""
+		if titleWidth < 10 {
+			titleWidth = 10
+		}
 	}
 	title := truncate(item.Title, titleWidth)
 	title = padRight(title, titleWidth)
 
-	// Apply styles to already-padded segments
 	styledType := workflowStyle(item.WorkflowType).Render(wfType)
 	styledStage := stageStyle(item.LifecycleStage).Render(stage)
 	styledBadge := ""
@@ -275,6 +277,36 @@ func renderPreview(item workitem.WorkItem, width, height int) string {
 		b.WriteString(fmt.Sprintf("%s %s\n",
 			previewLabelStyle.Render("primary:"),
 			previewValueStyle.Render(truncate(filepath.Base(item.PrimaryDoc), maxValueWidth))))
+	}
+
+	if item.StableID != "" {
+		b.WriteString(fmt.Sprintf("%s %s\n",
+			previewLabelStyle.Render("stable id:"),
+			previewValueStyle.Render(truncate(item.StableID, maxValueWidth))))
+	}
+	if item.WorkflowMeta != nil && (item.WorkflowMeta.WorkflowID != "" || item.WorkflowMeta.TotalSteps > 0 || item.WorkflowMeta.RunStatus != "") {
+		b.WriteString("\n")
+		b.WriteString(previewLabelStyle.Render("WORKFLOW"))
+		b.WriteString("\n")
+		if item.WorkflowMeta.WorkflowID != "" {
+			b.WriteString(fmt.Sprintf("  id        %s\n", previewValueStyle.Render(item.WorkflowMeta.WorkflowID)))
+		}
+		if item.WorkflowMeta.ActiveRunID != "" {
+			b.WriteString(fmt.Sprintf("  active    %s\n", previewValueStyle.Render(item.WorkflowMeta.ActiveRunID)))
+		}
+		if item.WorkflowMeta.TotalSteps > 0 {
+			progress := fmt.Sprintf("Step %d of %d", item.WorkflowMeta.CurrentStep, item.WorkflowMeta.TotalSteps)
+			if item.WorkflowMeta.Blocked {
+				progress += " (blocked)"
+			}
+			b.WriteString(fmt.Sprintf("  progress  %s\n", previewValueStyle.Render(progress)))
+		}
+		if item.WorkflowMeta.RunStatus != "" {
+			b.WriteString(fmt.Sprintf("  status    %s\n", previewValueStyle.Render(item.WorkflowMeta.RunStatus)))
+		}
+		if item.WorkflowMeta.DocHashChanged {
+			b.WriteString(fmt.Sprintf("  %s\n", previewLabelStyle.Render("⚠ workflow doc changed since run started")))
+		}
 	}
 
 	if item.Summary != "" {

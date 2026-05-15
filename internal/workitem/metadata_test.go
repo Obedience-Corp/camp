@@ -102,7 +102,7 @@ id: x
 type: design
 title: T
 `,
-			wantSubstr: "update .workitem `version:` to v1alpha4",
+			wantSubstr: "update .workitem `version:` to " + WorkitemSchemaVersion,
 		},
 		{
 			name: "wrong kind",
@@ -143,6 +143,22 @@ title: T
 				t.Errorf("error %q missing %q", err.Error(), tc.wantSubstr)
 			}
 		})
+	}
+}
+
+func TestLoadMetadata_V1Alpha4BackwardCompat(t *testing.T) {
+	body := `version: v1alpha4
+kind: workitem
+id: x
+type: design
+title: T
+`
+	md, err := LoadMetadataFS(context.Background(), mapFSWith(body), fixturePath)
+	if err != nil {
+		t.Fatalf("v1alpha4 should still parse: %v", err)
+	}
+	if md == nil || md.Version != "v1alpha4" {
+		t.Errorf("expected v1alpha4 metadata, got %+v", md)
 	}
 }
 

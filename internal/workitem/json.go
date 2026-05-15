@@ -9,7 +9,11 @@ import "time"
 //     (stable_id, description, execution, priority_info, project, workflow,
 //     lineage). All omitempty so legacy items without .workitem serialize
 //     byte-identically except for this constant.
-const SchemaVersion = "workitems/v1alpha4"
+//   - v1alpha5: surface local .workflow/ runtime progress under workflow
+//     (current_step, total_steps, completed_steps, run_status, blocked,
+//     doc_hash_changed). All omitempty; populated only when
+//     .workflow/workflow.yaml exists for the workitem directory.
+const SchemaVersion = "workitems/v1alpha5"
 
 // Payload is the top-level JSON output for camp workitem --json.
 type Payload struct {
