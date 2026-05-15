@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -124,10 +125,22 @@ func generateID(ctx context.Context, typeStr, slug, override, campaignRoot strin
 			return "", camperrors.NewValidation("id",
 				"invalid id override "+override+": ids must be slug-safe (lowercase a-z0-9_-)", nil)
 		}
+		collides, err := idCollides(ctx, campaignRoot, override)
+		if err != nil {
+			return "", camperrors.Wrap(err, "scan for id collision")
+		}
+		if collides {
+			return "", camperrors.NewValidation("id",
+				"id override "+override+" collides with an existing .workitem; choose a different id", nil)
+		}
 		return override, nil
 	}
 	base := typeStr + "-" + slug + "-" + time.Now().UTC().Format("2006-01-02")
-	if !idCollides(ctx, campaignRoot, base) {
+	collides, err := idCollides(ctx, campaignRoot, base)
+	if err != nil {
+		return "", camperrors.Wrap(err, "scan for id collision")
+	}
+	if !collides {
 		return base, nil
 	}
 	for i := 0; i < 32; i++ {
@@ -136,32 +149,39 @@ func generateID(ctx context.Context, typeStr, slug, override, campaignRoot strin
 			return "", camperrors.Wrap(err, "generate id suffix")
 		}
 		candidate := base + "-" + hex.EncodeToString(b[:])
-		if !idCollides(ctx, campaignRoot, candidate) {
+		collides, err := idCollides(ctx, campaignRoot, candidate)
+		if err != nil {
+			return "", camperrors.Wrap(err, "scan for id collision")
+		}
+		if !collides {
 			return candidate, nil
 		}
 	}
 	return "", camperrors.NewValidation("id", "could not generate a unique id after 32 attempts", nil)
 }
 
-func idCollides(ctx context.Context, campaignRoot, id string) bool {
+func idCollides(ctx context.Context, campaignRoot, id string) (bool, error) {
 	if campaignRoot == "" {
-		return false
+		return false, nil
 	}
 	root := filepath.Join(campaignRoot, "workflow")
 	collision := false
-	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+	walkErr := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
-			return nil
+			if errors.Is(err, os.ErrNotExist) && path == root {
+				return filepath.SkipAll
+			}
+			return err
 		}
-		if ctx.Err() != nil {
-			return ctx.Err()
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
 		}
 		if d.IsDir() || filepath.Base(path) != ".workitem" {
 			return nil
 		}
 		raw, rErr := os.ReadFile(path)
 		if rErr != nil {
-			return nil
+			return rErr
 		}
 		var m wkitem.Metadata
 		if uErr := yaml.Unmarshal(raw, &m); uErr != nil {
@@ -173,7 +193,10 @@ func idCollides(ctx context.Context, campaignRoot, id string) bool {
 		}
 		return nil
 	})
-	return collision
+	if walkErr != nil {
+		return false, walkErr
+	}
+	return collision, nil
 }
 
 func atomicWriteFile(path string, data []byte, mode os.FileMode) error {

@@ -74,4 +74,35 @@ func TestIntegration_WorkitemCreateAndAdopt(t *testing.T) {
 		require.Error(t, err, "expected error for already-adopted dir")
 		assert.Contains(t, out, "already")
 	})
+
+	t.Run("CreatedAndAdoptedAppearInDashboard", func(t *testing.T) {
+		out, err := tc.RunCampInDir(campaignDir, "workitem", "--json=true")
+		require.NoError(t, err, "camp workitem --json: %s", out)
+		assert.Contains(t, out, "workflow/feature/demo-feature",
+			"created workitem must appear in camp workitem dashboard:\n%s", out)
+		assert.Contains(t, out, "workflow/incident/p99-spike",
+			"adopted workitem must appear in camp workitem dashboard:\n%s", out)
+		assert.Contains(t, out, `"workflow_type": "feature"`,
+			"created workitem should carry its custom workflow_type:\n%s", out)
+		assert.Contains(t, out, `"workflow_type": "incident"`,
+			"adopted workitem should carry its custom workflow_type:\n%s", out)
+	})
+
+	t.Run("CreateRejectsDuplicateExplicitID", func(t *testing.T) {
+		out, err := tc.RunCampInDir(campaignDir,
+			"workitem", "create", "dup-id-target",
+			"--type", "feature",
+			"--id", "feature-demo-feature-fixed-1",
+		)
+		require.NoError(t, err, "first explicit-id create: %s", out)
+
+		out, err = tc.RunCampInDir(campaignDir,
+			"workitem", "create", "dup-id-collider",
+			"--type", "feature",
+			"--id", "feature-demo-feature-fixed-1",
+		)
+		require.Error(t, err, "expected error for duplicate explicit id")
+		assert.Contains(t, out, "collides",
+			"duplicate explicit-id should be rejected with collision error, got: %s", out)
+	})
 }
