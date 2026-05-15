@@ -126,6 +126,9 @@ Examples:
 	cmd.Flags().IntVar(&flagLimit, "limit", 0, "Maximum number of items to return")
 	cmd.Flags().StringVar(&flagQuery, "query", "", "Search query to filter items")
 
+	cmd.AddCommand(newCreateCommand())
+	cmd.AddCommand(newAdoptCommand())
+
 	return cmd
 }
 
