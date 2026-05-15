@@ -87,18 +87,17 @@ func runProjectStage(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "failed to stage")
 	}
 
-	cmdutil.ShowStagedSummary(ctx, resolvedPath)
-
-	hasChanges, err := executor.HasChanges(ctx)
+	staged, err := git.HasStagedChanges(ctx, resolvedPath)
 	if err != nil {
 		return err
 	}
-	if !hasChanges {
+	if !staged {
 		fmt.Println(ui.Success("Nothing to stage in project"))
 		return nil
 	}
 
+	cmdutil.ShowStagedSummary(ctx, resolvedPath)
 	fmt.Println(ui.Success("✓ Project changes staged"))
-	fmt.Println(ui.Dim("Run 'git commit' inside the project or 'camp p commit --amend' to record them."))
+	fmt.Println(ui.Dim("Run 'camp p commit' to record them."))
 	return nil
 }

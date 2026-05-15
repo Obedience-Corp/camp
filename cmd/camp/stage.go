@@ -83,11 +83,8 @@ func runStage(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println(ui.Info("Staging changes..."))
-	if target.IsSubmodule || stageIncludeRefs {
-		if err := executor.StageAll(ctx); err != nil {
-			return err
-		}
-	} else {
+	refsExcluded := !target.IsSubmodule && !stageIncludeRefs
+	if refsExcluded {
 		paths, pathErr := git.ListSubmodulePaths(ctx, target.Path)
 		if pathErr != nil {
 			return pathErr
@@ -95,20 +92,33 @@ func runStage(cmd *cobra.Command, args []string) error {
 		if err := git.StageAllExcluding(ctx, target.Path, paths); err != nil {
 			return err
 		}
+	} else {
+		if err := executor.StageAll(ctx); err != nil {
+			return err
+		}
 	}
 
-	cmdutil.ShowStagedSummary(ctx, target.Path)
-
-	hasChanges, err := executor.HasChanges(ctx)
+	staged, err := git.HasStagedChanges(ctx, target.Path)
 	if err != nil {
 		return err
 	}
-	if !hasChanges {
+	if !staged {
+		if refsExcluded {
+			hasAny, hErr := executor.HasChanges(ctx)
+			if hErr != nil {
+				return hErr
+			}
+			if hasAny {
+				fmt.Println(ui.Success("Nothing staged. Submodule ref changes were excluded; rerun with --include-refs to stage them."))
+				return nil
+			}
+		}
 		fmt.Println(ui.Success("Nothing to stage, working tree clean"))
 		return nil
 	}
 
+	cmdutil.ShowStagedSummary(ctx, target.Path)
 	fmt.Println(ui.Success("Changes staged"))
-	fmt.Println(ui.Dim("Run 'git commit' or 'camp commit --amend' to record them."))
+	fmt.Println(ui.Dim("Run 'camp commit' to record them."))
 	return nil
 }

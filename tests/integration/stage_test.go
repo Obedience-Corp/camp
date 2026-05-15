@@ -81,6 +81,39 @@ func TestStage_Root_ExcludesSubmoduleRefs(t *testing.T) {
 		"submodule ref should NOT be staged at campaign root by default")
 }
 
+func TestStage_Root_OnlyExcludedRefs_ReportsNothingStaged(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campaignPath := "/campaigns/stage-only-refs"
+	subPath := "/test/stage-only-refs-sub"
+
+	_, err := tc.InitCampaign(campaignPath, "stage-only-refs", "product")
+	require.NoError(t, err)
+	require.NoError(t, tc.CreateGitRepo(subPath))
+
+	tc.Shell(t, fmt.Sprintf(
+		"cd %s && git -c protocol.file.allow=always submodule add %s projects/sub && "+
+			"git commit -m 'add submodule'",
+		campaignPath, subPath,
+	))
+
+	tc.Shell(t, fmt.Sprintf(
+		"cd %s/projects/sub && echo local > local.txt && git add local.txt && "+
+			"git commit -m 'sub local change'",
+		campaignPath,
+	))
+
+	output, err := tc.RunCampInDir(campaignPath, "stage")
+	require.NoError(t, err)
+	assert.NotContains(t, output, "Changes staged",
+		"with only excluded submodule refs dirty, output must NOT claim changes were staged")
+	assert.Contains(t, output, "--include-refs",
+		"output should point users at --include-refs when refs are the only pending change")
+
+	staged := tc.GitOutput(t, campaignPath, "diff", "--cached", "--name-only")
+	assert.Empty(t, strings.TrimSpace(staged),
+		"index should remain empty when only excluded submodule refs are dirty")
+}
+
 func TestStage_Root_IncludeRefs(t *testing.T) {
 	tc := GetSharedContainer(t)
 	campaignPath := "/campaigns/stage-include-refs"
