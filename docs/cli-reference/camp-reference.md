@@ -3271,6 +3271,49 @@ camp project run [--project <name>] [--] <command> [args...] [flags]
 ```
 ---
 
+## camp project stage
+
+Stage changes in a project submodule
+
+### Synopsis
+
+Stage changes within a project submodule without committing.
+
+Runs the same auto-staging logic as 'camp project commit' (including
+stale lock file cleanup) but stops before creating a commit, so you can
+use a different commit strategy.
+
+Auto-detects the current project from your working directory,
+or use --project to specify a project by name.
+
+Examples:
+  # From within a project directory
+  cd projects/my-api
+  camp project stage
+
+  # Specify project by name
+  camp project stage --project my-api
+
+```
+camp project stage [flags]
+```
+
+### Options
+
+```
+  -h, --help             help for stage
+  -p, --project string   Project name (auto-detected from cwd if not specified)
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.json)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
 ## camp project unlink
 
 Unlink a linked project from a campaign
@@ -4520,6 +4563,54 @@ camp skills unlink [flags]
   -h, --help          help for unlink
   -p, --path string   Custom destination directory to unlink
   -t, --tool string   Tool to unlink: claude, agents
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.json)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
+## camp stage
+
+Stage changes in the campaign root
+
+### Synopsis
+
+Stage changes in the campaign root directory without committing.
+
+Runs the same auto-staging logic as 'camp commit' (including stale lock
+file cleanup) but stops before creating a commit, so you can use a
+different commit strategy (interactive 'git commit --patch', a GUI
+client, signing flow, etc.).
+
+At the campaign root, submodule ref changes (projects/*) are excluded
+from staging by default to prevent accidental ref conflicts across
+machines. Use --include-refs to stage them explicitly.
+
+Use --sub to stage in the submodule detected from your current directory.
+Use -p/--project to stage in a specific project (e.g., -p projects/camp).
+
+Examples:
+  camp stage
+  camp stage --include-refs
+  camp stage --sub
+  camp stage -p projects/camp
+
+```
+camp stage [flags]
+```
+
+### Options
+
+```
+  -h, --help             help for stage
+      --include-refs     Include submodule ref changes when staging at campaign root
+  -p, --project string   Operate on a specific project/submodule path
+      --sub              Operate on the submodule detected from current directory
 ```
 
 ### Options inherited from parent commands

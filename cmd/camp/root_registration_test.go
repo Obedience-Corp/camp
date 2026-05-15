@@ -125,6 +125,24 @@ func TestRefsSyncRootUsesMainHandler(t *testing.T) {
 	}
 }
 
+func TestStageCommandsRegistered(t *testing.T) {
+	if findChildByName(rootCmd, "stage") == nil {
+		t.Fatal("root command does not register 'stage' subcommand")
+	}
+	if findChildByName(projectpkg.Cmd, "stage") == nil {
+		t.Fatal("project command does not register 'stage' subcommand")
+	}
+}
+
+func findChildByName(parent *cobra.Command, name string) *cobra.Command {
+	for _, child := range parent.Commands() {
+		if child.Name() == name {
+			return child
+		}
+	}
+	return nil
+}
+
 func hasCommandPointer(parent *cobra.Command, want *cobra.Command) bool {
 	for _, child := range parent.Commands() {
 		if child == want {
