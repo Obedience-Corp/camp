@@ -121,7 +121,7 @@ Examples:
 	cmd.Flags().BoolVar(&flagPrint, "print", false, "Print path only (for shell integration)")
 	cmd.Flags().StringVar(&flagPathOutput, "path-output", "", "Write selected relative path to file (shell integration)")
 	_ = cmd.Flags().MarkHidden("path-output")
-	cmd.Flags().StringArrayVar(&flagTypes, "type", nil, "Filter by workflow type (intent, design, explore, festival)")
+	cmd.Flags().StringArrayVar(&flagTypes, "type", nil, "Filter by workflow type (builtin: intent, design, explore, festival; or any slug-safe custom type produced by 'camp workitem create --type <name>')")
 	cmd.Flags().StringArrayVar(&flagStages, "stage", nil, "Filter by lifecycle stage (inbox, active, ready, planning)")
 	cmd.Flags().IntVar(&flagLimit, "limit", 0, "Maximum number of items to return")
 	cmd.Flags().StringVar(&flagQuery, "query", "", "Search query to filter items")
@@ -211,10 +211,9 @@ func isInteractive() bool {
 }
 
 func validateFlags(jsonMode, printMode bool, pathOutput string, types, stages []string) error {
-	validTypes := map[string]bool{"intent": true, "design": true, "explore": true, "festival": true}
 	for _, t := range types {
-		if !validTypes[t] {
-			return fmt.Errorf("unknown --type value: %q (valid: intent, design, explore, festival)", t)
+		if err := validateSlug(t); err != nil {
+			return fmt.Errorf("invalid --type value %q: must be a slug-safe workflow type (lowercase a-z0-9, '-', '_'; max 80 chars)", t)
 		}
 	}
 	validStages := map[string]bool{"inbox": true, "active": true, "ready": true, "planning": true}

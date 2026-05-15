@@ -88,6 +88,15 @@ func TestIntegration_WorkitemCreateAndAdopt(t *testing.T) {
 			"adopted workitem should carry its custom workflow_type:\n%s", out)
 	})
 
+	t.Run("DashboardFilterAcceptsCustomType", func(t *testing.T) {
+		out, err := tc.RunCampInDir(campaignDir, "workitem", "--json=true", "--type", "feature")
+		require.NoError(t, err, "filter --type=feature must be accepted: %s", out)
+		assert.Contains(t, out, "workflow/feature/demo-feature",
+			"--type=feature should surface created feature workitem:\n%s", out)
+		assert.NotContains(t, out, "workflow/incident/p99-spike",
+			"--type=feature should exclude incident workitems:\n%s", out)
+	})
+
 	t.Run("CreateRejectsDuplicateExplicitID", func(t *testing.T) {
 		out, err := tc.RunCampInDir(campaignDir,
 			"workitem", "create", "dup-id-target",

@@ -92,6 +92,28 @@ func TestOutputSelectedPathWritesRelativePath(t *testing.T) {
 	}
 }
 
+func TestValidateFlagsAcceptsBuiltinAndCustomTypes(t *testing.T) {
+	cases := []string{"intent", "design", "explore", "festival", "feature", "bug", "incident", "rfc-001", "deep_dive"}
+	for _, tname := range cases {
+		t.Run(tname, func(t *testing.T) {
+			if err := validateFlags(false, false, "", []string{tname}, nil); err != nil {
+				t.Fatalf("validateFlags(--type=%q) = %v, want nil", tname, err)
+			}
+		})
+	}
+}
+
+func TestValidateFlagsRejectsInvalidTypeSlugs(t *testing.T) {
+	cases := []string{"Bad", "with space", "has/slash", "-leading", ""}
+	for _, tname := range cases {
+		t.Run(tname, func(t *testing.T) {
+			if err := validateFlags(false, false, "", []string{tname}, nil); err == nil {
+				t.Fatalf("validateFlags(--type=%q) = nil, want validation error", tname)
+			}
+		})
+	}
+}
+
 func TestValidateFlagsRejectsPathOutputConflicts(t *testing.T) {
 	tests := []struct {
 		name      string
