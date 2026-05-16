@@ -26,7 +26,8 @@ import (
 // would be unsafe as filesystem path segments or confuse shell tooling:
 //
 //   - empty
-//   - contains '/' (would split into multiple path segments)
+//   - contains '/' or '\' (would split into multiple path segments;
+//     '\' is the path separator on Windows)
 //   - starts with '.' (reserved for hidden / "." / ".." traversal)
 //   - starts with '-' (would parse as a CLI flag in downstream tools)
 //   - contains whitespace, NUL, or ASCII control characters
@@ -34,7 +35,7 @@ import (
 //
 // Anything else — including uppercase, dots, unicode letters — is accepted
 // because the project does not own its users' naming conventions.
-var slugPattern = regexp.MustCompile(`^[^\s/.\-\x00-\x1f][^\s/\x00-\x1f]{0,79}$`)
+var slugPattern = regexp.MustCompile(`^[^\s/\\.\-\x00-\x1f][^\s/\\\x00-\x1f]{0,79}$`)
 
 func newCreateCommand() *cobra.Command {
 	var typeFlag, title, idOverride, dirOverride string
@@ -117,7 +118,7 @@ func validateSlug(slug string) error {
 	}
 	if !slugPattern.MatchString(slug) {
 		return camperrors.NewValidation("slug",
-			"invalid slug "+slug+": must not be empty, must not contain '/', whitespace, or control characters, must not start with '.' or '-', max 80 chars", nil)
+			"invalid slug "+slug+": must not be empty, must not contain '/', '\\', whitespace, or control characters, must not start with '.' or '-', max 80 chars", nil)
 	}
 	return nil
 }
@@ -137,7 +138,7 @@ func generateID(ctx context.Context, typeStr, slug, override, campaignRoot strin
 	if override != "" {
 		if err := validateSlug(override); err != nil {
 			return "", camperrors.NewValidation("id",
-				"invalid id override "+override+": ids must be slug-safe (lowercase a-z0-9_-)", nil)
+				"invalid id override "+override+": ids follow the same path-safe slug contract as workitem names (no '/', '\\', whitespace, or control chars; no leading '.' or '-'; max 80 chars)", nil)
 		}
 		collides, err := idCollides(ctx, campaignRoot, override)
 		if err != nil {

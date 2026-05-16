@@ -213,7 +213,7 @@ func isInteractive() bool {
 func validateFlags(jsonMode, printMode bool, pathOutput string, types, stages []string) error {
 	for _, t := range types {
 		if err := validateSlug(t); err != nil {
-			return fmt.Errorf("invalid --type value %q: must be a slug-safe workflow type (lowercase a-z0-9, '-', '_'; max 80 chars)", t)
+			return fmt.Errorf("invalid --type value %q: must be a path-safe workflow type (no '/', '\\', whitespace, or control chars; no leading '.' or '-'; max 80 chars)", t)
 		}
 	}
 	validStages := map[string]bool{"inbox": true, "active": true, "ready": true, "planning": true}

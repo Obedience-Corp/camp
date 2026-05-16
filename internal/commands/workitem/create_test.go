@@ -31,6 +31,8 @@ func TestValidateSlug(t *testing.T) {
 		{"foo bar", false},
 		{"foo\tbar", false},
 		{"foo/bar", false},
+		{`foo\bar`, false},
+		{`\backslash`, false},
 		{".hidden", false},
 		{".", false},
 		{"..", false},
