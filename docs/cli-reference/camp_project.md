@@ -49,5 +49,6 @@ camp project [flags]
 * [camp project remote](camp_project_remote.md)	 - Manage remotes for a project
 * [camp project remove](camp_project_remove.md)	 - Remove a project from campaign
 * [camp project run](camp_project_run.md)	 - Run a command inside a project directory
+* [camp project stage](camp_project_stage.md)	 - Stage changes in a project submodule
 * [camp project unlink](camp_project_unlink.md)	 - Unlink a linked project from a campaign
 * [camp project worktree](camp_project_worktree.md)	 - Manage worktrees for a project
