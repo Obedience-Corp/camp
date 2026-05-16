@@ -92,3 +92,31 @@ func TestWorkItem_ManualPriorityOmitEmpty(t *testing.T) {
 		t.Errorf("manual_priority should be present, got: %s", data)
 	}
 }
+
+func TestWorkItem_StableIDOmittedWhenEmpty(t *testing.T) {
+	item := WorkItem{Key: "design:legacy"}
+	data, err := json.Marshal(item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), `"stable_id":`) {
+		t.Errorf("expected stable_id to be omitted when empty, got: %s", data)
+	}
+}
+
+func TestWorkItem_StableIDPresentWhenPopulated(t *testing.T) {
+	item := WorkItem{Key: "design:with-md", StableID: "x-001"}
+	data, err := json.Marshal(item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"stable_id":"x-001"`) {
+		t.Errorf("output missing stable_id: %s", data)
+	}
+}
+
+func TestSchemaVersion_IsV1Alpha5(t *testing.T) {
+	if SchemaVersion != "workitems/v1alpha5" {
+		t.Errorf("SchemaVersion = %q, want workitems/v1alpha5", SchemaVersion)
+	}
+}

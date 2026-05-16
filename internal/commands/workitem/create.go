@@ -1,0 +1,227 @@
+package workitem
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
+
+	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
+)
+
+// slugPattern is a path-safety check, not a style enforcer. It permits any
+// naming convention users already use (kebab-case, snake_case, camelCase,
+// PascalCase, dotted versions like v1.2, etc.) and only rejects values that
+// would be unsafe as filesystem path segments or confuse shell tooling:
+//
+//   - empty
+//   - contains '/' or '\' (would split into multiple path segments;
+//     '\' is the path separator on Windows)
+//   - starts with '.' (reserved for hidden / "." / ".." traversal)
+//   - starts with '-' (would parse as a CLI flag in downstream tools)
+//   - contains whitespace, NUL, or ASCII control characters
+//   - longer than 80 chars (cross-fs name-length headroom)
+//
+// Anything else — including uppercase, dots, unicode letters — is accepted
+// because the project does not own its users' naming conventions.
+var slugPattern = regexp.MustCompile(`^[^\s/\\.\-\x00-\x1f][^\s/\\\x00-\x1f]{0,79}$`)
+
+func newCreateCommand() *cobra.Command {
+	var typeFlag, title, idOverride, dirOverride string
+	cmd := &cobra.Command{
+		Use:   "create <slug>",
+		Short: "Create a new workitem with v1 minimum metadata",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			return runCreate(ctx, cmd, args[0], typeFlag, title, idOverride, dirOverride)
+		},
+	}
+	cmd.Flags().StringVar(&typeFlag, "type", "feature", "workitem type (feature, bug, chore, or custom)")
+	cmd.Flags().StringVar(&title, "title", "", "human-readable title")
+	cmd.Flags().StringVar(&idOverride, "id", "", "override the generated id")
+	cmd.Flags().StringVar(&dirOverride, "dir", "", "parent dir override (default: workflow/<type>)")
+	return cmd
+}
+
+func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, idOverride, dirOverride string) error {
+	if err := validateSlug(slug); err != nil {
+		return err
+	}
+	if err := validateSlug(typeFlag); err != nil {
+		return camperrors.NewValidation("type", "invalid type slug: "+err.Error(), nil)
+	}
+
+	_, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
+	if err != nil {
+		return camperrors.Wrap(err, "not in a campaign directory")
+	}
+
+	id, err := generateID(ctx, typeFlag, slug, idOverride, campaignRoot)
+	if err != nil {
+		return err
+	}
+
+	parent := dirOverride
+	if parent == "" {
+		parent = filepath.Join("workflow", typeFlag)
+	}
+	if err := validateParentPath(parent); err != nil {
+		return err
+	}
+
+	target := filepath.Join(campaignRoot, parent, slug)
+	if _, err := os.Stat(target); err == nil {
+		return camperrors.NewValidation("path",
+			"target directory already exists: "+target+" — use `camp workitem adopt` to attach metadata to an existing dir", nil)
+	}
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		return camperrors.Wrap(err, "create directory")
+	}
+
+	meta := wkitem.Metadata{
+		Version: wkitem.WorkitemSchemaVersion,
+		Kind:    "workitem",
+		ID:      id,
+		Type:    typeFlag,
+		Title:   title,
+	}
+	buf, err := yaml.Marshal(&meta)
+	if err != nil {
+		return camperrors.Wrap(err, "marshal metadata")
+	}
+	if err := atomicWriteFile(filepath.Join(target, ".workitem"), buf, 0o644); err != nil {
+		return err
+	}
+
+	rel := filepath.Join(parent, slug)
+	fmt.Fprintf(cmd.OutOrStdout(),
+		"created %s\n  id: %s\n  type: %s\nnext: cd %s && fest create workflow %s\n",
+		rel, id, typeFlag, rel, slug)
+	return nil
+}
+
+func validateSlug(slug string) error {
+	if slug == "" {
+		return camperrors.NewValidation("slug", "slug must not be empty", nil)
+	}
+	if !slugPattern.MatchString(slug) {
+		return camperrors.NewValidation("slug",
+			"invalid slug "+slug+": must not be empty, must not contain '/', '\\', whitespace, or control characters, must not start with '.' or '-', max 80 chars", nil)
+	}
+	return nil
+}
+
+func validateParentPath(parent string) error {
+	clean := filepath.Clean(parent)
+	if filepath.IsAbs(clean) {
+		return camperrors.NewValidation("dir", "parent dir must be relative to campaign root", nil)
+	}
+	if strings.HasPrefix(clean, "..") {
+		return camperrors.NewValidation("dir", "parent dir must not escape campaign root", nil)
+	}
+	return nil
+}
+
+func generateID(ctx context.Context, typeStr, slug, override, campaignRoot string) (string, error) {
+	if override != "" {
+		if err := validateSlug(override); err != nil {
+			return "", camperrors.NewValidation("id",
+				"invalid id override "+override+": ids follow the same path-safe slug contract as workitem names (no '/', '\\', whitespace, or control chars; no leading '.' or '-'; max 80 chars)", nil)
+		}
+		collides, err := idCollides(ctx, campaignRoot, override)
+		if err != nil {
+			return "", camperrors.Wrap(err, "scan for id collision")
+		}
+		if collides {
+			return "", camperrors.NewValidation("id",
+				"id override "+override+" collides with an existing .workitem; choose a different id", nil)
+		}
+		return override, nil
+	}
+	base := typeStr + "-" + slug + "-" + time.Now().UTC().Format("2006-01-02")
+	collides, err := idCollides(ctx, campaignRoot, base)
+	if err != nil {
+		return "", camperrors.Wrap(err, "scan for id collision")
+	}
+	if !collides {
+		return base, nil
+	}
+	for i := 0; i < 32; i++ {
+		var b [3]byte
+		if _, err := rand.Read(b[:]); err != nil {
+			return "", camperrors.Wrap(err, "generate id suffix")
+		}
+		candidate := base + "-" + hex.EncodeToString(b[:])
+		collides, err := idCollides(ctx, campaignRoot, candidate)
+		if err != nil {
+			return "", camperrors.Wrap(err, "scan for id collision")
+		}
+		if !collides {
+			return candidate, nil
+		}
+	}
+	return "", camperrors.NewValidation("id", "could not generate a unique id after 32 attempts", nil)
+}
+
+func idCollides(ctx context.Context, campaignRoot, id string) (bool, error) {
+	if campaignRoot == "" {
+		return false, nil
+	}
+	root := filepath.Join(campaignRoot, "workflow")
+	collision := false
+	walkErr := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) && path == root {
+				return filepath.SkipAll
+			}
+			return err
+		}
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		if d.IsDir() || filepath.Base(path) != ".workitem" {
+			return nil
+		}
+		raw, rErr := os.ReadFile(path)
+		if rErr != nil {
+			return rErr
+		}
+		var m wkitem.Metadata
+		if uErr := yaml.Unmarshal(raw, &m); uErr != nil {
+			return nil
+		}
+		if m.ID == id {
+			collision = true
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return false, walkErr
+	}
+	return collision, nil
+}
+
+func atomicWriteFile(path string, data []byte, mode os.FileMode) error {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, mode); err != nil {
+		return camperrors.Wrap(err, "write tmp file")
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return camperrors.Wrap(err, "rename tmp file")
+	}
+	return nil
+}

@@ -56,10 +56,10 @@ var rootCmd = &cobra.Command{
 
 // Execute runs the root command
 func Execute() error {
-	os.Args = normalizeAutoWriteAlias(os.Args)
-
 	// Expand shortcuts before command execution
 	expandShortcuts()
+
+	os.Args = normalizeAutoWriteAlias(os.Args)
 
 	// Rewrite `--flag value` → `--flag=value` for optional-value flags (those
 	// with NoOptDefVal set on their pflag definition). Without this, cobra's

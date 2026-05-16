@@ -1,0 +1,46 @@
+version: v1alpha5
+kind: workitem
+
+id: design-thin-start-workflow-ladder-2026-04-25
+type: design
+title: Thin-start workflow ladder
+description: Design local workflow-run state for lightweight work items.
+
+collection:
+  root: workflow/design
+  relative_path: workitem-workflows
+  lifecycle_status: active
+
+execution:
+  mode: design
+  autonomy: constrained
+  risk: medium
+  blocked_reason: ""
+
+priority:
+  level: high
+  reason: Launch onboarding dependency
+
+project:
+  name: festival
+  path: projects/festival
+  role: affected
+
+workflow:
+  doc_path: WORKFLOW.md
+  runtime_dir: .workflow
+  workflow_id: wf-thin-start-workflow-ladder
+  active_run_id: ""
+
+lineage:
+  promoted_from: []
+  promoted_to: []
+  supersedes:
+    - workflow/design/workitem-workflow-runs
+    - workflow/design/generic-workflow-md
+    - workflow/design/workitem_metadata
+
+external:
+  spec_kit:
+    enabled: false
+    specify_dir: ""
