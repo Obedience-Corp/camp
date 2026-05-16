@@ -19,6 +19,9 @@ projects:
   - name: project-a
     path: projects/project-a
     url: https://github.com/example/project-a
+hooks:
+  commit_message:
+    command: ob commit
 `
 	var cfg CampaignConfig
 	err := yaml.Unmarshal([]byte(yamlData), &cfg)
@@ -47,6 +50,9 @@ projects:
 	}
 	if cfg.Projects[0].Name != "project-a" {
 		t.Errorf("Projects[0].Name = %q, want %q", cfg.Projects[0].Name, "project-a")
+	}
+	if cfg.Hooks.CommitMessage.Command != "ob commit" {
+		t.Errorf("Hooks.CommitMessage.Command = %q, want %q", cfg.Hooks.CommitMessage.Command, "ob commit")
 	}
 }
 

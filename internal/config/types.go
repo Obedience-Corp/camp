@@ -36,10 +36,24 @@ type CampaignConfig struct {
 	// ConceptList defines concepts for the picker (order is preserved).
 	// If empty, concepts are derived from Paths.
 	ConceptList []ConceptEntry `yaml:"concepts,omitempty"`
+	// Hooks contains optional campaign-local command hooks.
+	Hooks HooksConfig `yaml:"hooks,omitempty"`
 
 	// Jumps holds the loaded jumps configuration (from .campaign/settings/jumps.yaml).
 	// This field is not serialized to campaign.yaml - it's loaded separately.
 	Jumps *JumpsConfig `yaml:"-"`
+}
+
+// HooksConfig contains optional campaign-local command hooks.
+type HooksConfig struct {
+	// CommitMessage configures the command used by commit --auto-write.
+	CommitMessage CommitMessageHookConfig `yaml:"commit_message,omitempty"`
+}
+
+// CommitMessageHookConfig configures an external commit message writer.
+type CommitMessageHookConfig struct {
+	// Command is executed as-written from the target repository.
+	Command string `yaml:"command,omitempty"`
 }
 
 // ConceptEntry defines a concept for the picker with ordering and depth control.

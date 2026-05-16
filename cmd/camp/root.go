@@ -56,6 +56,8 @@ var rootCmd = &cobra.Command{
 
 // Execute runs the root command
 func Execute() error {
+	os.Args = normalizeAutoWriteAlias(os.Args)
+
 	// Expand shortcuts before command execution
 	expandShortcuts()
 
