@@ -25,9 +25,61 @@ func TestStage_Root_BasicFile(t *testing.T) {
 	require.NoError(t, err, "camp stage should succeed")
 	assert.Contains(t, output, "Staging changes")
 	assert.Contains(t, output, "Changes staged")
+	assert.Contains(t, output, "Run 'camp commit'",
+		"root stage with no --sub/-p should suggest plain 'camp commit'")
+	assert.NotContains(t, output, "camp commit --sub")
+	assert.NotContains(t, output, "camp commit -p")
 
 	staged := tc.GitOutput(t, campaignPath, "diff", "--cached", "--name-only")
 	assert.Contains(t, staged, "notes.md", "notes.md should be staged")
+}
+
+func TestStage_Root_WithProjectFlag_HintMatches(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campaignPath := "/campaigns/stage-root-p-flag"
+	subPath := "/test/stage-root-p-flag-sub"
+
+	_, err := tc.InitCampaign(campaignPath, "stage-root-p-flag", "product")
+	require.NoError(t, err)
+	require.NoError(t, tc.CreateGitRepo(subPath))
+
+	tc.Shell(t, fmt.Sprintf(
+		"cd %s && git -c protocol.file.allow=always submodule add %s projects/sub && "+
+			"git commit -m 'add submodule'",
+		campaignPath, subPath,
+	))
+
+	require.NoError(t, tc.WriteFile(campaignPath+"/projects/sub/note.md", "via -p"))
+
+	output, err := tc.RunCampInDir(campaignPath, "stage", "-p", "projects/sub")
+	require.NoError(t, err)
+	assert.Contains(t, output, "Changes staged")
+	assert.Contains(t, output, "camp commit -p projects/sub",
+		"hint must include -p flag so the suggested commit targets the same project")
+}
+
+func TestStage_Sub_HintMatches(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campaignPath := "/campaigns/stage-sub-hint"
+	subPath := "/test/stage-sub-hint-sub"
+
+	_, err := tc.InitCampaign(campaignPath, "stage-sub-hint", "product")
+	require.NoError(t, err)
+	require.NoError(t, tc.CreateGitRepo(subPath))
+
+	tc.Shell(t, fmt.Sprintf(
+		"cd %s && git -c protocol.file.allow=always submodule add %s projects/sub && "+
+			"git commit -m 'add submodule'",
+		campaignPath, subPath,
+	))
+
+	require.NoError(t, tc.WriteFile(campaignPath+"/projects/sub/note.md", "via --sub"))
+
+	output, err := tc.RunCampInDir(campaignPath+"/projects/sub", "stage", "--sub")
+	require.NoError(t, err)
+	assert.Contains(t, output, "Changes staged")
+	assert.Contains(t, output, "camp commit --sub",
+		"hint must include --sub so suggested commit targets the same submodule")
 }
 
 func TestStage_Root_NothingToStage(t *testing.T) {
@@ -164,6 +216,9 @@ func TestStage_Project_FromInsideProject(t *testing.T) {
 	output, err := tc.RunCampInDir(campaignPath+"/projects/sub", "project", "stage")
 	require.NoError(t, err, "camp project stage from inside project should succeed")
 	assert.Contains(t, output, "Project changes staged")
+	assert.Contains(t, output, "Run 'camp p commit'",
+		"auto-detected project stage should suggest plain 'camp p commit'")
+	assert.NotContains(t, output, "camp p commit --project")
 
 	staged := tc.GitOutput(t, campaignPath+"/projects/sub", "diff", "--cached", "--name-only")
 	assert.Contains(t, staged, "feature.md")
@@ -193,6 +248,8 @@ func TestStage_Project_WithProjectFlag(t *testing.T) {
 	output, err := tc.RunCampInDir(campaignPath, "project", "stage", "--project", "sub")
 	require.NoError(t, err)
 	assert.Contains(t, output, "Project changes staged")
+	assert.Contains(t, output, "camp p commit --project sub",
+		"when --project was used, hint must include --project so suggested commit hits the same project")
 
 	staged := tc.GitOutput(t, campaignPath+"/projects/sub", "diff", "--cached", "--name-only")
 	assert.Contains(t, staged, "feature.md")

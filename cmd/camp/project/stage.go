@@ -98,6 +98,10 @@ func runProjectStage(cmd *cobra.Command, args []string) error {
 
 	cmdutil.ShowStagedSummary(ctx, resolvedPath)
 	fmt.Println(ui.Success("✓ Project changes staged"))
-	fmt.Println(ui.Dim("Run 'camp p commit' to record them."))
+	hint := "camp p commit"
+	if projectStageProject != "" {
+		hint = "camp p commit --project " + projectStageProject
+	}
+	fmt.Println(ui.Dim(fmt.Sprintf("Run '%s' to record them.", hint)))
 	return nil
 }

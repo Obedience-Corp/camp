@@ -119,6 +119,17 @@ func runStage(cmd *cobra.Command, args []string) error {
 
 	cmdutil.ShowStagedSummary(ctx, target.Path)
 	fmt.Println(ui.Success("Changes staged"))
-	fmt.Println(ui.Dim("Run 'camp commit' to record them."))
+	fmt.Println(ui.Dim(fmt.Sprintf("Run '%s' to record them.", commitHintForStage())))
 	return nil
+}
+
+func commitHintForStage() string {
+	switch {
+	case stageProject != "":
+		return "camp commit -p " + stageProject
+	case stageSub:
+		return "camp commit --sub"
+	default:
+		return "camp commit"
+	}
 }
