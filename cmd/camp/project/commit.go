@@ -13,6 +13,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/git"
 	projectsvc "github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/ui"
+	"github.com/Obedience-Corp/camp/pkg/commitkit"
 	"github.com/spf13/cobra"
 )
 
@@ -35,19 +36,21 @@ Examples:
 }
 
 var (
-	projectCommitProject string
-	projectCommitMessage string
-	projectCommitAll     bool
-	projectCommitAmend   bool
-	projectCommitSync    bool
+	projectCommitProject   string
+	projectCommitMessage   string
+	projectCommitAll       bool
+	projectCommitAmend     bool
+	projectCommitSync      bool
+	projectCommitAutoWrite bool
 )
 
 func init() {
 	projectCommitCmd.Flags().StringVarP(&projectCommitProject, "project", "p", "", "Project name (auto-detected from cwd if not specified)")
-	projectCommitCmd.Flags().StringVarP(&projectCommitMessage, "message", "m", "", "Commit message (required)")
+	projectCommitCmd.Flags().StringVarP(&projectCommitMessage, "message", "m", "", "Commit message (required unless --auto-write)")
 	projectCommitCmd.Flags().BoolVarP(&projectCommitAll, "all", "a", true, "Stage all changes")
 	projectCommitCmd.Flags().BoolVar(&projectCommitAmend, "amend", false, "Amend the previous commit")
 	projectCommitCmd.Flags().BoolVar(&projectCommitSync, "sync", false, "Sync submodule ref at campaign root after commit (opt-in)")
+	projectCommitCmd.Flags().BoolVar(&projectCommitAutoWrite, "auto-write", false, "Run configured commit message writer")
 
 	if err := projectCommitCmd.RegisterFlagCompletionFunc("project", cmdutil.CompleteProjectName); err != nil {
 		panic(err)
@@ -94,9 +97,13 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "failed to initialize git")
 	}
 
+	if projectCommitAutoWrite && projectCommitMessage != "" {
+		return fmt.Errorf("--auto-write cannot be used with --message")
+	}
+
 	// Get commit message - prompt if not provided
 	message := projectCommitMessage
-	if message == "" && !projectCommitAmend {
+	if !projectCommitAutoWrite && message == "" && !projectCommitAmend {
 		var promptErr error
 		message, promptErr = ui.PromptCommitMessageSimple(ctx, executor, false)
 		if promptErr != nil {
@@ -130,6 +137,15 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 
 	// Load campaign config (used for tag and parent sync)
 	cfg, _ := config.LoadCampaignConfig(ctx, campRoot)
+
+	if projectCommitAutoWrite {
+		fmt.Println(ui.Info("Writing commit message..."))
+		var hookErr error
+		message, hookErr = commitkit.AutoWriteCommitMessage(ctx, campRoot, resolvedPath)
+		if hookErr != nil {
+			return hookErr
+		}
+	}
 
 	// Prepend campaign tag (graceful degradation if config unavailable)
 	if cfg != nil {

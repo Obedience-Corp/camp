@@ -11,6 +11,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/ui"
+	"github.com/Obedience-Corp/camp/pkg/commitkit"
 	"github.com/spf13/cobra"
 )
 
@@ -46,15 +47,17 @@ var (
 	commitSub         bool
 	commitProject     string
 	commitIncludeRefs bool
+	commitAutoWrite   bool
 )
 
 func init() {
-	commitCmd.Flags().StringVarP(&commitMessage, "message", "m", "", "Commit message (required)")
+	commitCmd.Flags().StringVarP(&commitMessage, "message", "m", "", "Commit message (required unless --auto-write)")
 	commitCmd.Flags().BoolVarP(&commitAll, "all", "a", true, "Stage all changes before committing")
 	commitCmd.Flags().BoolVar(&commitAmend, "amend", false, "Amend the previous commit")
 	commitCmd.Flags().BoolVar(&commitSub, "sub", false, "Operate on the submodule detected from current directory")
 	commitCmd.Flags().StringVarP(&commitProject, "project", "p", "", "Operate on a specific project/submodule path")
 	commitCmd.Flags().BoolVar(&commitIncludeRefs, "include-refs", false, "Include submodule ref changes when staging at campaign root")
+	commitCmd.Flags().BoolVar(&commitAutoWrite, "auto-write", false, "Run configured commit message writer")
 
 	rootCmd.AddCommand(commitCmd)
 	commitCmd.GroupID = "git"
@@ -105,6 +108,10 @@ func runCommit(cmd *cobra.Command, args []string) error {
 		fmt.Println(ui.Info(fmt.Sprintf("Operating on submodule: %s", target.Name)))
 	}
 
+	if commitAutoWrite && commitMessage != "" {
+		return fmt.Errorf("--auto-write cannot be used with --message")
+	}
+
 	// Create executor
 	executor, err := git.NewExecutor(target.Path)
 	if err != nil {
@@ -113,7 +120,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 
 	// Get commit message - prompt if not provided
 	message := commitMessage
-	if message == "" && !commitAmend {
+	if !commitAutoWrite && message == "" && !commitAmend {
 		var promptErr error
 		message, promptErr = ui.PromptCommitMessageSimple(ctx, executor, !target.IsSubmodule && !commitIncludeRefs)
 		if promptErr != nil {
@@ -155,6 +162,15 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	if !hasChanges && !commitAmend {
 		fmt.Println(ui.Success("Nothing to commit, working tree clean"))
 		return nil
+	}
+
+	if commitAutoWrite {
+		fmt.Println(ui.Info("Writing commit message..."))
+		var hookErr error
+		message, hookErr = commitkit.AutoWriteCommitMessage(ctx, campRoot, target.Path)
+		if hookErr != nil {
+			return hookErr
+		}
 	}
 
 	// Prepend campaign tag (graceful degradation if config unavailable)

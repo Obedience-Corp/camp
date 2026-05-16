@@ -13,13 +13,15 @@ import (
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/Obedience-Corp/camp/internal/worktree"
+	"github.com/Obedience-Corp/camp/pkg/commitkit"
 	"github.com/spf13/cobra"
 )
 
 var (
-	wtCommitMessage string
-	wtCommitAll     bool
-	wtCommitAmend   bool
+	wtCommitMessage   string
+	wtCommitAll       bool
+	wtCommitAmend     bool
+	wtCommitAutoWrite bool
 )
 
 var worktreesCommitCmd = &cobra.Command{
@@ -46,11 +48,13 @@ func init() {
 	Cmd.AddCommand(worktreesCommitCmd)
 
 	worktreesCommitCmd.Flags().StringVarP(&wtCommitMessage, "message", "m", "",
-		"Commit message")
+		"Commit message (required unless --auto-write)")
 	worktreesCommitCmd.Flags().BoolVarP(&wtCommitAll, "all", "a", true,
 		"Stage all changes before committing")
 	worktreesCommitCmd.Flags().BoolVar(&wtCommitAmend, "amend", false,
 		"Amend the previous commit")
+	worktreesCommitCmd.Flags().BoolVar(&wtCommitAutoWrite, "auto-write", false,
+		"Run configured commit message writer")
 }
 
 func runWorktreesCommit(cmd *cobra.Command, args []string) error {
@@ -89,9 +93,13 @@ func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "failed to initialize git")
 	}
 
+	if wtCommitAutoWrite && wtCommitMessage != "" {
+		return fmt.Errorf("--auto-write cannot be used with --message")
+	}
+
 	// Get commit message - prompt if not provided
 	message := wtCommitMessage
-	if message == "" && !wtCommitAmend {
+	if !wtCommitAutoWrite && message == "" && !wtCommitAmend {
 		message, err = ui.PromptCommitMessageSimple(ctx, executor, false)
 		if err != nil {
 			return camperrors.Wrap(err, "prompt failed")
@@ -121,6 +129,14 @@ func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 
 	// Show what's staged
 	cmdutil.ShowStagedSummary(ctx, wtCtx.WorktreePath)
+
+	if wtCommitAutoWrite {
+		fmt.Println(ui.Info("Writing commit message..."))
+		message, err = commitkit.AutoWriteCommitMessage(ctx, campRoot, wtCtx.WorktreePath)
+		if err != nil {
+			return err
+		}
+	}
 
 	// Prepend campaign tag
 	message = git.PrependCampaignTag(cfg.ID, message)

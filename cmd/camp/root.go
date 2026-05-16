@@ -59,6 +59,8 @@ func Execute() error {
 	// Expand shortcuts before command execution
 	expandShortcuts()
 
+	os.Args = normalizeAutoWriteAlias(os.Args)
+
 	// Rewrite `--flag value` → `--flag=value` for optional-value flags (those
 	// with NoOptDefVal set on their pflag definition). Without this, cobra's
 	// pflag library never consumes the space-separated next token, which

@@ -99,6 +99,67 @@ func TestPrependCampaignTag(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Auto-write commit message hook
+// ---------------------------------------------------------------------------
+
+func TestRunCommitMessageCommand(t *testing.T) {
+	t.Run("returns trimmed stdout", func(t *testing.T) {
+		wd, err := os.Getwd()
+		require.NoError(t, err)
+
+		got, err := commitkit.RunCommitMessageCommand(context.Background(), wd, "printf 'feat: generated message\\n'")
+		require.NoError(t, err)
+		assert.Equal(t, "feat: generated message", got)
+	})
+
+	t.Run("preserves internal newlines", func(t *testing.T) {
+		wd, err := os.Getwd()
+		require.NoError(t, err)
+
+		got, err := commitkit.RunCommitMessageCommand(context.Background(), wd, "printf 'feat: subject\\n\\nbody line\\n'")
+		require.NoError(t, err)
+		assert.Equal(t, "feat: subject\n\nbody line", got)
+	})
+
+	t.Run("runs from target repository directory", func(t *testing.T) {
+		wd, err := os.Getwd()
+		require.NoError(t, err)
+
+		got, err := commitkit.RunCommitMessageCommand(context.Background(), wd, "pwd")
+		require.NoError(t, err)
+		assert.Equal(t, wd, got)
+	})
+
+	t.Run("fails on empty stdout", func(t *testing.T) {
+		wd, err := os.Getwd()
+		require.NoError(t, err)
+
+		_, err = commitkit.RunCommitMessageCommand(context.Background(), wd, "printf ''")
+		assert.ErrorIs(t, err, commitkit.ErrCommitMessageHookEmptyOutput)
+	})
+
+	t.Run("fails on non-zero exit", func(t *testing.T) {
+		wd, err := os.Getwd()
+		require.NoError(t, err)
+
+		_, err = commitkit.RunCommitMessageCommand(context.Background(), wd, "echo bad >&2; exit 2")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "bad")
+	})
+
+	t.Run("honors canceled context", func(t *testing.T) {
+		wd, err := os.Getwd()
+		require.NoError(t, err)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		_, err = commitkit.RunCommitMessageCommand(ctx, wd, "printf 'unused\\n'")
+		assert.ErrorIs(t, err, context.Canceled)
+	})
+}
+
+// ---------------------------------------------------------------------------
 // Helpers for creating a real campaign on disk
 // ---------------------------------------------------------------------------
 
