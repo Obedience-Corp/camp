@@ -80,6 +80,7 @@ camp [flags]
 * [camp shell-init](camp_shell-init.md)	 - Output shell initialization code
 * [camp shortcuts](camp_shortcuts.md)	 - List all available shortcuts
 * [camp skills](camp_skills.md)	 - Manage campaign skill directory links
+* [camp stage](camp_stage.md)	 - Stage changes in the campaign root
 * [camp status](camp_status.md)	 - Show git status of the campaign
 * [camp switch](camp_switch.md)	 - Switch to a different campaign
 * [camp sync](camp_sync.md)	 - Safely synchronize submodules

@@ -14,7 +14,7 @@ Campaign workspace manager — group every project, tool, and piece of context y
 - **Project Management** — Git submodules, linked local workspaces, worktrees, and scaffolding (`project add/link/list/new/remote/remove/run/unlink/worktree/prune`)
 - **Planning** — Intents, status flows, dungeon for deprioritized work, and a unified work-item dashboard (`intent`, `flow`, `dungeon`, `gather`, `workitem`)
 - **Productivity** — Leverage scoring to identify high-impact work (`leverage`)
-- **Git Integration** — Campaign-level git operations with submodule fan-out (`commit`, `log`, `push [all]`, `pull [all]`, `status [all]`, `fresh [all]`, `refs-sync`)
+- **Git Integration** — Campaign-level git operations with submodule fan-out (`stage`, `commit`, `log`, `push [all]`, `pull [all]`, `status [all]`, `fresh [all]`, `refs-sync`)
 - **Campaign Ops** — Health checks, file operations, cross-campaign tools (`doctor`, `copy`, `move`, `sync`, `transfer`)
 - **Shell Integration** — Native `cd` behavior with zsh, bash, and fish (`shell-init`)
 - **Tab Completion** — Smart completion for categories, projects, and paths
@@ -165,8 +165,8 @@ Use submodules via `camp project add` (or `camp p add`) if you plan to use
 your campaign on multiple devices — linked projects must exist in the same
 location on each device in order to work.
 
-For the rest of the project surface (`list`, `remove`, `unlink`, `commit`,
-`run`, `worktree`, `prune`, `remote`, `new`), see
+For the rest of the project surface (`list`, `remove`, `unlink`, `stage`,
+`commit`, `run`, `worktree`, `prune`, `remote`, `new`), see
 [`docs/cli-reference/`](docs/cli-reference/).
 
 ### Attaching Non-Project Directories
@@ -231,6 +231,8 @@ See [docs/leverage-score.md](docs/leverage-score.md) for details on the scoring 
 Campaign-level git operations:
 
 ```bash
+camp stage                 # Stage changes (same scope as commit) without committing
+camp stage --include-refs  # Also stage submodule ref updates at campaign root
 camp commit                # Commit changes in the campaign root
 camp log                   # Show git log of the campaign
 camp push                  # Push campaign changes to remote
