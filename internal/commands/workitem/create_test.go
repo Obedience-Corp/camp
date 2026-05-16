@@ -12,16 +12,31 @@ func TestValidateSlug(t *testing.T) {
 		slug string
 		ok   bool
 	}{
+		// path-safe, project doesn't enforce style
 		{"foo", true},
 		{"foo-bar", true},
 		{"foo_bar", true},
 		{"foo123", true},
 		{"a", true},
+		{"Foo", true},
+		{"PascalCase", true},
+		{"camelCase", true},
+		{"v1.2", true},
+		{"payment.processor.v2", true},
+		{"2026-Q1-roadmap", true},
+		{"foo!", true},
+		{"foo@bar", true},
+		// path-unsafe — rejected
 		{"", false},
-		{"Foo", false},
 		{"foo bar", false},
+		{"foo\tbar", false},
+		{"foo/bar", false},
+		{".hidden", false},
+		{".", false},
+		{"..", false},
 		{"-foo", false},
-		{"foo!", false},
+		{"foo\x00bar", false},
+		{"foo\x1fbar", false},
 		{strings.Repeat("a", 81), false},
 	}
 	for _, c := range cases {

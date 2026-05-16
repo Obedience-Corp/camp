@@ -88,6 +88,28 @@ func TestIntegration_WorkitemCreateAndAdopt(t *testing.T) {
 			"adopted workitem should carry its custom workflow_type:\n%s", out)
 	})
 
+	t.Run("UnmarkedCustomDirIsNotDiscovered", func(t *testing.T) {
+		_, _, err := tc.ExecCommand("mkdir", "-p", campaignDir+"/workflow/feature/legacy-no-marker")
+		require.NoError(t, err)
+		out, err := tc.RunCampInDir(campaignDir, "workitem", "--json=true")
+		require.NoError(t, err, "camp workitem --json: %s", out)
+		assert.NotContains(t, out, "workflow/feature/legacy-no-marker",
+			"directory without .workitem marker must not appear in dashboard:\n%s", out)
+	})
+
+	t.Run("DungeonedCustomDirIsNotDiscovered", func(t *testing.T) {
+		_, _, err := tc.ExecCommand("mkdir", "-p", campaignDir+"/workflow/feature/dungeon")
+		require.NoError(t, err)
+		_, _, err = tc.ExecCommand("sh", "-c",
+			"echo 'version: v1alpha5\nkind: workitem\nid: x\ntype: feature\ntitle: X' > "+
+				campaignDir+"/workflow/feature/dungeon/.workitem")
+		require.NoError(t, err)
+		out, err := tc.RunCampInDir(campaignDir, "workitem", "--json=true")
+		require.NoError(t, err, "camp workitem --json: %s", out)
+		assert.NotContains(t, out, "workflow/feature/dungeon",
+			"dungeoned dir must be skipped even with a marker:\n%s", out)
+	})
+
 	t.Run("DashboardFilterAcceptsCustomType", func(t *testing.T) {
 		out, err := tc.RunCampInDir(campaignDir, "workitem", "--json=true", "--type", "feature")
 		require.NoError(t, err, "filter --type=feature must be accepted: %s", out)

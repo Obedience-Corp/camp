@@ -20,7 +20,21 @@ import (
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 )
 
-var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,79}$`)
+// slugPattern is a path-safety check, not a style enforcer. It permits any
+// naming convention users already use (kebab-case, snake_case, camelCase,
+// PascalCase, dotted versions like v1.2, etc.) and only rejects values that
+// would be unsafe as filesystem path segments or confuse shell tooling:
+//
+//   - empty
+//   - contains '/' (would split into multiple path segments)
+//   - starts with '.' (reserved for hidden / "." / ".." traversal)
+//   - starts with '-' (would parse as a CLI flag in downstream tools)
+//   - contains whitespace, NUL, or ASCII control characters
+//   - longer than 80 chars (cross-fs name-length headroom)
+//
+// Anything else — including uppercase, dots, unicode letters — is accepted
+// because the project does not own its users' naming conventions.
+var slugPattern = regexp.MustCompile(`^[^\s/.\-\x00-\x1f][^\s/\x00-\x1f]{0,79}$`)
 
 func newCreateCommand() *cobra.Command {
 	var typeFlag, title, idOverride, dirOverride string
@@ -103,7 +117,7 @@ func validateSlug(slug string) error {
 	}
 	if !slugPattern.MatchString(slug) {
 		return camperrors.NewValidation("slug",
-			"invalid slug "+slug+": use lowercase letters, digits, '-', '_'; start with [a-z0-9]; max 80 chars", nil)
+			"invalid slug "+slug+": must not be empty, must not contain '/', whitespace, or control characters, must not start with '.' or '-', max 80 chars", nil)
 	}
 	return nil
 }
