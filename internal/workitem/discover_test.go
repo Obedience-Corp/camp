@@ -279,7 +279,7 @@ func TestFindFestivalPrimaryDoc_Priority(t *testing.T) {
 	}
 
 	// Only fest.yaml
-	writeFile(t, filepath.Join(dir, "fest.yaml"), "version: 1")
+	writeFile(t, filepath.Join(dir, "fest.yaml"), "version: v1alpha4")
 	if got := findFestivalPrimaryDoc(dir); filepath.Base(got) != "fest.yaml" {
 		t.Errorf("expected fest.yaml, got %q", got)
 	}
@@ -294,6 +294,130 @@ func TestFindFestivalPrimaryDoc_Priority(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "FESTIVAL_GOAL.md"), "# Goal")
 	if got := findFestivalPrimaryDoc(dir); filepath.Base(got) != "FESTIVAL_GOAL.md" {
 		t.Errorf("expected FESTIVAL_GOAL.md, got %q", got)
+	}
+}
+
+func TestDiscoverDesign_WithMetadata(t *testing.T) {
+	root, resolver := setupTestCampaign(t)
+	ctx := context.Background()
+
+	designDir := filepath.Join(root, "workflow/design/with-metadata")
+	os.MkdirAll(designDir, 0755)
+	writeFile(t, filepath.Join(designDir, "README.md"), "# Derived Title\n\nDesc.")
+	writeFile(t, filepath.Join(designDir, ".workitem"), `version: v1alpha4
+kind: workitem
+id: design-with-metadata-001
+type: design
+title: Metadata Title
+description: From .workitem.
+priority:
+  level: high
+  reason: launch
+execution:
+  mode: design
+  autonomy: constrained
+  risk: medium
+`)
+
+	items, err := discoverDesign(ctx, root, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	it := items[0]
+	if it.StableID != "design-with-metadata-001" {
+		t.Errorf("StableID = %q", it.StableID)
+	}
+	if it.Title != "Metadata Title" {
+		t.Errorf("Title = %q, want metadata override", it.Title)
+	}
+	if it.RelativePath != "workflow/design/with-metadata" {
+		t.Errorf("RelativePath = %q (filesystem placement should win)", it.RelativePath)
+	}
+}
+
+func TestDiscoverDesign_NoMetadataUnchanged(t *testing.T) {
+	root, resolver := setupTestCampaign(t)
+	ctx := context.Background()
+
+	designDir := filepath.Join(root, "workflow/design/legacy")
+	os.MkdirAll(designDir, 0755)
+	writeFile(t, filepath.Join(designDir, "README.md"), "# Legacy\n\nNo metadata.")
+
+	items, err := discoverDesign(ctx, root, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	it := items[0]
+	if it.StableID != "" {
+		t.Errorf("StableID should be empty for no-metadata item, got %q", it.StableID)
+	}
+	if it.Title != "Legacy" {
+		t.Errorf("Title = %q (derived from README heading expected)", it.Title)
+	}
+}
+
+func TestDiscoverDesign_MalformedMetadataDoesNotCrashDiscovery(t *testing.T) {
+	root, resolver := setupTestCampaign(t)
+	ctx := context.Background()
+
+	// Item with malformed .workitem (wrong schema version)
+	brokenDir := filepath.Join(root, "workflow/design/broken")
+	os.MkdirAll(brokenDir, 0755)
+	writeFile(t, filepath.Join(brokenDir, "README.md"), "# Broken")
+	writeFile(t, filepath.Join(brokenDir, ".workitem"), `version: 2
+kind: workitem
+id: x
+type: design
+title: T
+`)
+
+	// Sibling item with valid metadata — must still be discovered with metadata applied
+	goodDir := filepath.Join(root, "workflow/design/good")
+	os.MkdirAll(goodDir, 0755)
+	writeFile(t, filepath.Join(goodDir, "README.md"), "# Good")
+	writeFile(t, filepath.Join(goodDir, ".workitem"), `version: v1alpha4
+kind: workitem
+id: good-001
+type: design
+title: Good
+`)
+
+	items, err := discoverDesign(ctx, root, resolver)
+	if err != nil {
+		t.Fatalf("malformed optional metadata must not abort discovery: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("expected 2 items (broken kept with derived fields, good with metadata), got %d", len(items))
+	}
+
+	var broken, good *WorkItem
+	for i := range items {
+		switch filepath.Base(items[i].RelativePath) {
+		case "broken":
+			broken = &items[i]
+		case "good":
+			good = &items[i]
+		}
+	}
+	if broken == nil || good == nil {
+		t.Fatalf("missing expected items: %+v", items)
+	}
+	// Broken item: derived fields kept, metadata fields not applied
+	if broken.StableID != "" {
+		t.Errorf("broken item should have no metadata applied, got %+v", broken)
+	}
+	if broken.Title != "Broken" {
+		t.Errorf("broken item title = %q, want derived heading 'Broken'", broken.Title)
+	}
+	// Good item: metadata applied normally
+	if good.StableID != "good-001" {
+		t.Errorf("good item StableID = %q", good.StableID)
 	}
 }
 
