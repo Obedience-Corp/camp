@@ -10,6 +10,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/fsutil"
+	"github.com/Obedience-Corp/camp/internal/nav"
 )
 
 const (
@@ -125,7 +126,7 @@ func IsStale(idx *Index, campaignRoot string) bool {
 		return true
 	}
 
-	if anyNavigationTopologyChanged(campaignRoot, idx.BuildTime) {
+	if workitemTopologyChanged(campaignRoot, idx.BuildTime) {
 		return true
 	}
 
@@ -166,19 +167,21 @@ func IsStale(idx *Index, campaignRoot string) bool {
 	return false
 }
 
-func anyNavigationTopologyChanged(campaignRoot string, buildTime time.Time) bool {
-	for _, rel := range []string{
-		"workflow",
-		".campaign/intents",
-		"festivals",
+func workitemTopologyChanged(campaignRoot string, buildTime time.Time) bool {
+	for _, cat := range []nav.Category{
+		nav.CategoryWorkflow,
+		nav.CategoryIntents,
+		nav.CategoryFestivals,
 	} {
-		if dirOrImmediateChildChangedAfter(campaignRoot, rel, buildTime) {
+		if dirOrImmediateChildChangedAfter(campaignRoot, cat.Dir(), buildTime) {
 			return true
 		}
 	}
 	return false
 }
 
+// This is intentionally depth-bounded: root and immediate child mtimes catch
+// workitem/festival/intent additions without invalidating on ordinary file edits.
 func dirOrImmediateChildChangedAfter(root, rel string, buildTime time.Time) bool {
 	dir := filepath.Join(root, rel)
 	info, err := os.Stat(dir)
