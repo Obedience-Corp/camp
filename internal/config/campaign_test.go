@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -378,6 +379,70 @@ func TestSaveCampaignConfig(t *testing.T) {
 	}
 	if loaded.Type != cfg.Type {
 		t.Errorf("loaded Type = %q, want %q", loaded.Type, cfg.Type)
+	}
+}
+
+func TestSaveCampaignConfig_AppendsHooksPlaceholderWhenEmpty(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+
+	cfg := &CampaignConfig{
+		Name: "no-hooks",
+		Type: CampaignTypeProduct,
+	}
+
+	ctx := context.Background()
+	if err := SaveCampaignConfig(ctx, tmpDir, cfg); err != nil {
+		t.Fatalf("SaveCampaignConfig() error = %v", err)
+	}
+
+	data, err := os.ReadFile(CampaignConfigPath(tmpDir))
+	if err != nil {
+		t.Fatalf("read campaign config: %v", err)
+	}
+
+	want := "# hooks:"
+	if !bytes.Contains(data, []byte(want)) {
+		t.Errorf("campaign.yaml missing commented hooks placeholder; got:\n%s", string(data))
+	}
+
+	// Round-trip must still load with empty Hooks (comments are ignored by yaml).
+	loaded, err := LoadCampaignConfig(ctx, tmpDir)
+	if err != nil {
+		t.Fatalf("LoadCampaignConfig() error = %v", err)
+	}
+	if (loaded.Hooks != HooksConfig{}) {
+		t.Errorf("loaded Hooks = %+v, want zero value (commented block should not parse)", loaded.Hooks)
+	}
+}
+
+func TestSaveCampaignConfig_SkipsPlaceholderWhenHooksSet(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+
+	cfg := &CampaignConfig{
+		Name: "has-hooks",
+		Type: CampaignTypeProduct,
+		Hooks: HooksConfig{
+			CommitMessage: CommitMessageHookConfig{Command: "my-tool"},
+		},
+	}
+
+	ctx := context.Background()
+	if err := SaveCampaignConfig(ctx, tmpDir, cfg); err != nil {
+		t.Fatalf("SaveCampaignConfig() error = %v", err)
+	}
+
+	data, err := os.ReadFile(CampaignConfigPath(tmpDir))
+	if err != nil {
+		t.Fatalf("read campaign config: %v", err)
+	}
+
+	if bytes.Contains(data, []byte("# hooks:")) {
+		t.Errorf("campaign.yaml unexpectedly contains commented hooks placeholder when hooks already set; got:\n%s", string(data))
+	}
+	if !bytes.Contains(data, []byte("command: my-tool")) {
+		t.Errorf("campaign.yaml missing configured command; got:\n%s", string(data))
 	}
 }
 

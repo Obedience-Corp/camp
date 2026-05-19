@@ -244,6 +244,7 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 		cfg.CreatedAt = existingCfg.CreatedAt
 		cfg.Description = existingCfg.Description
 		cfg.Projects = existingCfg.Projects
+		cfg.Hooks = existingCfg.Hooks
 		// Preserve existing mission unless a new one was provided
 		if opts.Mission != "" {
 			cfg.Mission = opts.Mission
