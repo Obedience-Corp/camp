@@ -118,6 +118,24 @@ func TestInit_DirectoryStructure(t *testing.T) {
 	assert.True(t, exists, "campaign.yaml should exist")
 }
 
+func TestInit_ScaffoldsCampWorkitemsSkill(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	path := "/campaigns/test-workitems-skill"
+	_, err := tc.InitCampaign(path, "test-workitems-skill", "product")
+	require.NoError(t, err)
+
+	skillPath := path + "/.campaign/skills/camp-workitems/SKILL.md"
+	exists, err := tc.CheckFileExists(skillPath)
+	require.NoError(t, err)
+	assert.True(t, exists, "camp-workitems skill should be scaffolded")
+
+	content, err := tc.ReadFile(skillPath)
+	require.NoError(t, err)
+	assert.Contains(t, content, "camp workitem --json", "skill should document agent-safe JSON discovery")
+	assert.Contains(t, content, "camp workitems", "skill should mention the plural alias")
+}
+
 // TestInit_FestivalOwnership verifies that default init creates festivals/
 // when the fest binary is available.
 func TestInit_FestivalOwnership(t *testing.T) {

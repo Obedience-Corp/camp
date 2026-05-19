@@ -105,6 +105,7 @@ func TestInitRepair_RestoresMissingSkillFiles(t *testing.T) {
 		path + "/.campaign/skills/camp-navigation/SKILL.md",
 		path + "/.campaign/skills/campaign-commit/SKILL.md",
 		path + "/.campaign/skills/camp-projects/SKILL.md",
+		path + "/.campaign/skills/camp-workitems/SKILL.md",
 		path + "/.campaign/skills/fest-execution/SKILL.md",
 	}
 	for _, item := range removed {
