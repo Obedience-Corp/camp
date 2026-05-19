@@ -27,6 +27,26 @@ func TestIntegration_WorkitemCreateAndAdopt(t *testing.T) {
 	)
 	require.NoError(t, err, "camp init should succeed")
 
+	t.Run("CreateRefreshesNavigationCache", func(t *testing.T) {
+		_, err := tc.RunCampInDir(campaignDir, "complete", "de")
+		require.NoError(t, err, "initial design completion should build nav cache")
+		_, _, err = tc.ExecCommand("test", "-f", campaignDir+"/.campaign/cache/nav-index.json")
+		require.NoError(t, err, "expected initial completion to create nav cache")
+
+		out, err := tc.RunCampInDir(campaignDir, "workitem", "create", "nav-design", "--type", "design", "--title", "Navigation Design")
+		require.NoError(t, err, "camp workitem create design: %s", out)
+		assert.Contains(t, out, "created workflow/design/nav-design")
+
+		out, err = tc.RunCampInDir(campaignDir, "complete", "de")
+		require.NoError(t, err, "completion after workitem create: %s", out)
+		assert.Contains(t, out, "nav-design",
+			"newly created design workitem must be visible without manual cache rebuild:\n%s", out)
+
+		out, err = tc.RunCampInDir(campaignDir, "go", "de", "nav-design", "--print")
+		require.NoError(t, err, "navigation after workitem create: %s", out)
+		assert.Contains(t, out, "workflow/design/nav-design")
+	})
+
 	t.Run("CreateBuildsDirectoryAndWorkitem", func(t *testing.T) {
 		out, err := tc.RunCampInDir(campaignDir, "workitem", "create", "demo-feature", "--type", "feature", "--title", "Demo")
 		require.NoError(t, err, "camp workitem create: %s", out)

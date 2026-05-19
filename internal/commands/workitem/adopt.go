@@ -11,6 +11,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	navindex "github.com/Obedience-Corp/camp/internal/nav/index"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 )
 
@@ -88,6 +89,7 @@ func runAdopt(ctx context.Context, cmd *cobra.Command, dir, typeFlag, title, idO
 	if err := atomicWriteFile(markerPath, buf, 0o644); err != nil {
 		return err
 	}
+	_ = navindex.Delete(campaignRoot)
 
 	fmt.Fprintf(cmd.OutOrStdout(),
 		"adopted %s\n  id: %s\n  type: %s\n",
