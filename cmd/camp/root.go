@@ -21,6 +21,7 @@ import (
 	worktreespkg "github.com/Obedience-Corp/camp/cmd/camp/worktrees"
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/commands/release"
+	workitemcmd "github.com/Obedience-Corp/camp/internal/commands/workitem"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/Obedience-Corp/camp/internal/version"
@@ -203,6 +204,10 @@ func init() {
 	rootCmd.AddCommand(worktreespkg.Cmd)
 	rootCmd.AddCommand(refspkg.Cmd)
 	rootCmd.AddCommand(pluginsCmd)
+
+	workitemCmd := workitemcmd.NewWorkitemCommand()
+	workitemCmd.GroupID = "planning"
+	rootCmd.AddCommand(workitemCmd)
 
 	attachResolverFactory := func(stderr io.Writer, usageLine string) attachpkg.CampaignResolver {
 		return attachpkg.NewResolver(stderr, usageLine)
