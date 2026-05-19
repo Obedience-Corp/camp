@@ -63,6 +63,49 @@ func TestInit_RepairPreservesMission(t *testing.T) {
 	}
 }
 
+func TestInit_RepairPreservesHooks(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	campaignDir := filepath.Join(tmpDir, "repair-hooks")
+	mustMkdirAll(t, filepath.Join(campaignDir, config.CampaignDir))
+
+	ctx := context.Background()
+
+	initialCfg := &config.CampaignConfig{
+		ID:          "test-id",
+		Name:        "repair-hooks",
+		Type:        config.CampaignTypeProduct,
+		Description: "Has a commit_message hook",
+		Mission:     "Preserve hooks across repair",
+		CreatedAt:   time.Now(),
+		Hooks: config.HooksConfig{
+			CommitMessage: config.CommitMessageHookConfig{Command: "ob commit"},
+		},
+	}
+	if err := config.SaveCampaignConfig(ctx, campaignDir, initialCfg); err != nil {
+		t.Fatalf("SaveCampaignConfig() error = %v", err)
+	}
+
+	if _, err := Init(ctx, campaignDir, InitOptions{
+		Name:       "repair-hooks",
+		Repair:     true,
+		NoRegister: true,
+	}); err != nil {
+		t.Fatalf("Init() with repair error = %v", err)
+	}
+
+	cfg, err := config.LoadCampaignConfig(ctx, campaignDir)
+	if err != nil {
+		t.Fatalf("LoadCampaignConfig() error = %v", err)
+	}
+
+	if cfg.Hooks.CommitMessage.Command != "ob commit" {
+		t.Errorf("Hooks.CommitMessage.Command = %q, want %q (should preserve existing)", cfg.Hooks.CommitMessage.Command, "ob commit")
+	}
+}
+
 func TestInit_RepairMigratesLegacyIntentState(t *testing.T) {
 	tmpDir := t.TempDir()
 	tmpDir, _ = filepath.EvalSymlinks(tmpDir)

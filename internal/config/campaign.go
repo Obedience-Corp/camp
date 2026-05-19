@@ -138,9 +138,29 @@ func SaveCampaignConfig(ctx context.Context, campaignRoot string, cfg *CampaignC
 		return camperrors.Wrap(err, "failed to marshal campaign config")
 	}
 
+	if (cfg.Hooks == HooksConfig{}) {
+		data = append(data, commentedHooksPlaceholder()...)
+	}
+
 	if err := os.WriteFile(configPath, data, 0644); err != nil {
 		return camperrors.Wrap(err, "failed to write campaign config")
 	}
 
 	return nil
+}
+
+// commentedHooksPlaceholder returns a commented-out hooks block to append to
+// campaign.yaml when no hooks are configured. Surfacing the option as a
+// discoverable comment lets users opt into commit --auto-write without having
+// to read the docs first. The example is intentionally generic: the command
+// can be any tool that prints the desired commit message to stdout.
+func commentedHooksPlaceholder() []byte {
+	return []byte(`
+# hooks:
+#   commit_message:
+#     # Command run from the target repo working tree by 'camp commit --auto-write'
+#     # (-aw). Its stdout is used verbatim as the commit message. Any tool works;
+#     # 'ob commit' is one example.
+#     command: ob commit
+`)
 }
