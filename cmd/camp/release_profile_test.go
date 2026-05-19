@@ -12,7 +12,7 @@ import (
 
 // devOnlyCommands is the single source of truth for commands gated behind
 // //go:build dev. Update this list when promoting a command to stable.
-var devOnlyCommands = []string{"flow", "quest", "workitem"}
+var devOnlyCommands = []string{"flow", "quest"}
 
 func assertDevCommandsRegistered(t *testing.T) {
 	t.Helper()
@@ -31,6 +31,14 @@ func assertDevCommandsAbsent(t *testing.T) {
 		if err == nil && cmd != nil && cmd.Name() == name {
 			t.Errorf("dev command %q should not be registered in stable build", name)
 		}
+	}
+}
+
+func assertStableCommandsRegistered(t *testing.T) {
+	t.Helper()
+	cmd, _, err := rootCmd.Find([]string{"workitem"})
+	if err != nil || cmd == nil || cmd.Name() != "workitem" {
+		t.Fatal("workitem command should be registered in stable and dev builds")
 	}
 }
 

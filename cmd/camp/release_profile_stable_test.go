@@ -12,6 +12,10 @@ func TestReleaseProfileStable_DevCommandsAbsent(t *testing.T) {
 	assertDevCommandsAbsent(t)
 }
 
+func TestReleaseProfileStable_StableCommandsRegistered(t *testing.T) {
+	assertStableCommandsRegistered(t)
+}
+
 func TestReleaseProfileStable_BuildProfileRegistered(t *testing.T) {
 	assertBuildProfileCommand(t)
 }
