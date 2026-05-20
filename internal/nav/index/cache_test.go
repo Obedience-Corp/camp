@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Obedience-Corp/camp/internal/nav"
 )
 
 func TestCachePath(t *testing.T) {
@@ -323,6 +325,116 @@ func TestIsStale_CampaignYamlChanged(t *testing.T) {
 
 	if !IsStale(idx, root) {
 		t.Error("Index should be stale when campaign.yaml is newer")
+	}
+}
+
+func TestIsStale_WorkflowTopologyChanged(t *testing.T) {
+	root := t.TempDir()
+	root, _ = filepath.EvalSymlinks(root)
+
+	buildTime := time.Now()
+	workflowDir := filepath.Join(root, nav.CategoryWorkflow.Dir())
+	designDir := filepath.Join(workflowDir, "design")
+	if err := os.MkdirAll(designDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	older := buildTime.Add(-1 * time.Minute)
+	if err := os.Chtimes(workflowDir, older, older); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(designDir, buildTime.Add(1*time.Minute), buildTime.Add(1*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+
+	idx := &Index{BuildTime: buildTime, Version: IndexVersion}
+	if !IsStale(idx, root) {
+		t.Error("Index should be stale when workflow immediate-child topology is newer")
+	}
+}
+
+func TestIsStale_IntentsTopologyChanged(t *testing.T) {
+	root := t.TempDir()
+	root, _ = filepath.EvalSymlinks(root)
+
+	buildTime := time.Now()
+	intentsDir := filepath.Join(root, nav.CategoryIntents.Dir())
+	inboxDir := filepath.Join(intentsDir, "inbox")
+	if err := os.MkdirAll(inboxDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(inboxDir, "new-intent.md"), []byte("# New intent\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	older := buildTime.Add(-1 * time.Minute)
+	if err := os.Chtimes(intentsDir, older, older); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(inboxDir, buildTime.Add(1*time.Minute), buildTime.Add(1*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+
+	idx := &Index{BuildTime: buildTime, Version: IndexVersion}
+	if !IsStale(idx, root) {
+		t.Error("Index should be stale when intent immediate-child topology is newer")
+	}
+}
+
+func TestIsStale_FestivalsTopologyChanged(t *testing.T) {
+	root := t.TempDir()
+	root, _ = filepath.EvalSymlinks(root)
+
+	buildTime := time.Now()
+	festivalsDir := filepath.Join(root, nav.CategoryFestivals.Dir())
+	activeDir := filepath.Join(festivalsDir, "active")
+	if err := os.MkdirAll(activeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	older := buildTime.Add(-1 * time.Minute)
+	if err := os.Chtimes(festivalsDir, older, older); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(activeDir, buildTime.Add(1*time.Minute), buildTime.Add(1*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+
+	idx := &Index{BuildTime: buildTime, Version: IndexVersion}
+	if !IsStale(idx, root) {
+		t.Error("Index should be stale when festivals immediate-child topology is newer")
+	}
+}
+
+func TestIsStale_DeepFileEditDoesNotInvalidate(t *testing.T) {
+	root := t.TempDir()
+	root, _ = filepath.EvalSymlinks(root)
+
+	buildTime := time.Now()
+	workflowDir := filepath.Join(root, nav.CategoryWorkflow.Dir())
+	designDir := filepath.Join(workflowDir, "design")
+	workitemDir := filepath.Join(designDir, "existing-workitem")
+	if err := os.MkdirAll(workitemDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	notePath := filepath.Join(workitemDir, "notes.md")
+	if err := os.WriteFile(notePath, []byte("# Notes\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	older := buildTime.Add(-1 * time.Minute)
+	for _, dir := range []string{workflowDir, designDir, workitemDir} {
+		if err := os.Chtimes(dir, older, older); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Chtimes(notePath, buildTime.Add(1*time.Minute), buildTime.Add(1*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+
+	idx := &Index{BuildTime: buildTime, Version: IndexVersion}
+	if IsStale(idx, root) {
+		t.Error("Index should not be stale for a deep file edit inside a workitem")
 	}
 }
 

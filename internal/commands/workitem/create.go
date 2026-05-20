@@ -104,6 +104,7 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 	if err := atomicWriteFile(filepath.Join(target, ".workitem"), buf, 0o644); err != nil {
 		return err
 	}
+	invalidateNavigationCache(cmd, campaignRoot)
 
 	rel := filepath.Join(parent, slug)
 	fmt.Fprintf(cmd.OutOrStdout(),

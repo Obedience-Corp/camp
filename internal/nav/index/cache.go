@@ -10,6 +10,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/fsutil"
+	"github.com/Obedience-Corp/camp/internal/nav"
 )
 
 const (
@@ -91,7 +92,7 @@ func IsFresh(idx *Index) bool {
 
 // IsStale checks if the cache should be rebuilt.
 // Returns true if the cache is nil, too old, if the index version changed,
-// if the camp binary was rebuilt, or if project configuration changed.
+// if the camp binary was rebuilt, or if navigation topology changed.
 func IsStale(idx *Index, campaignRoot string) bool {
 	if !IsFresh(idx) {
 		return true
@@ -122,6 +123,10 @@ func IsStale(idx *Index, campaignRoot string) bool {
 	campaignYaml := filepath.Join(campaignRoot, ".campaign", "campaign.yaml")
 	info, err = os.Stat(campaignYaml)
 	if err == nil && info.ModTime().After(idx.BuildTime) {
+		return true
+	}
+
+	if workitemTopologyChanged(campaignRoot, idx.BuildTime) {
 		return true
 	}
 
@@ -159,6 +164,50 @@ func IsStale(idx *Index, campaignRoot string) bool {
 		}
 	}
 
+	return false
+}
+
+func workitemTopologyChanged(campaignRoot string, buildTime time.Time) bool {
+	for _, cat := range []nav.Category{
+		nav.CategoryWorkflow,
+		nav.CategoryIntents,
+		nav.CategoryFestivals,
+	} {
+		if dirOrImmediateChildChangedAfter(campaignRoot, cat.Dir(), buildTime) {
+			return true
+		}
+	}
+	return false
+}
+
+// This is intentionally depth-bounded: root and immediate child mtimes catch
+// workitem/festival/intent additions without invalidating on ordinary file edits.
+func dirOrImmediateChildChangedAfter(root, rel string, buildTime time.Time) bool {
+	dir := filepath.Join(root, rel)
+	info, err := os.Stat(dir)
+	if err != nil {
+		return false
+	}
+	if info.ModTime().After(buildTime) {
+		return true
+	}
+	if !info.IsDir() {
+		return false
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		childInfo, err := os.Stat(filepath.Join(dir, entry.Name()))
+		if err == nil && childInfo.ModTime().After(buildTime) {
+			return true
+		}
+	}
 	return false
 }
 

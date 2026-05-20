@@ -88,6 +88,9 @@ func runAdopt(ctx context.Context, cmd *cobra.Command, dir, typeFlag, title, idO
 	if err := atomicWriteFile(markerPath, buf, 0o644); err != nil {
 		return err
 	}
+	// Adoption writes inside an existing directory, which may not update the
+	// workflow/type parent mtime watched by passive cache staleness checks.
+	invalidateNavigationCache(cmd, campaignRoot)
 
 	fmt.Fprintf(cmd.OutOrStdout(),
 		"adopted %s\n  id: %s\n  type: %s\n",
