@@ -152,7 +152,7 @@ func TestInit_ScaffoldsFestStandaloneWorkflowsSkill(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, content, "fest create workflow", "skill should document standalone workflow creation")
 	assert.Contains(t, content, "--no-init", "skill should document the smooth first fest next path")
-	assert.Contains(t, content, "No `fest init` is required", "skill should explain that full festival init is unnecessary")
+	assert.Contains(t, content, "ordinary directory", "skill should frame standalone workflows by placement")
 }
 
 // TestInit_FestivalOwnership verifies that default init creates festivals/
