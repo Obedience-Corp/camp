@@ -16,7 +16,7 @@ WORKFLOW.md -> fest next -> do step -> fest workflow advance -> repeat
 
 No `fest init` is required.
 
-## Preferred Creation Path
+## Create
 
 Run from the directory that should own the workflow:
 
@@ -46,9 +46,8 @@ fest create workflow my-workflow --no-init --steps '{
 fest next
 ```
 
-`--no-init` keeps the first run lightweight: `fest next` can render step 1
-before `.workflow/` runtime state exists. The first `fest workflow advance`
-bootstraps local `.workflow/` state when progress is actually recorded.
+For the current standalone first-run flow, include `--no-init` before running
+`fest next`.
 
 For human interactive creation, run the command without `--steps` from a TTY:
 
@@ -93,34 +92,6 @@ fest workflow advance
 fest next
 ```
 
-In anonymous mode, `fest next` is read-only and shows step 1. The first
-`fest workflow advance` creates:
-
-```text
-.workflow/workflow.yaml
-.workflow/runs/<run-id>/run.yaml
-.workflow/runs/<run-id>/progress_events.jsonl
-```
-
-## Current Default Behavior
-
-Without `--no-init`, standalone creation initializes `.workflow/workflow.yaml`
-immediately:
-
-```bash
-fest create workflow my-workflow --steps '...'
-```
-
-That path is functional, but `fest next` then requires an active run:
-
-```bash
-fest workflow start
-fest next
-```
-
-Use `--no-init` when the user wants the smoothest "create workflow, then
-`fest next`" first-run experience.
-
 ## Common Mistakes
 
 - Passing `--path` for standalone workflow creation. In standalone mode, run
@@ -128,5 +99,5 @@ Use `--no-init` when the user wants the smoothest "create workflow, then
 - Using `title` inside each step. Step objects require `name` and `goal`.
 - Running `fest init` for a lightweight workflow. Standalone `WORKFLOW.md` does
   not need a full festival.
-- Treating `.workflow/runs/` as durable docs. It is local runtime progress
-  state; promote durable findings into docs/design/festivals when needed.
+- Omitting `--no-init` in the current standalone first-run flow and expecting
+  immediate `fest next` behavior.
