@@ -1,0 +1,99 @@
+---
+name: fest-standalone-workflows
+description: Create and run lightweight standalone `WORKFLOW.md` loops with `fest create workflow`, `fest next`, and `fest workflow advance`. Use when a user wants step-by-step workflow guidance inside any ordinary directory, explore/design work item, project folder, or thin-start workflow.
+---
+
+# Fest Standalone Workflows
+
+Use standalone `WORKFLOW.md` when work needs a guided step loop in an ordinary
+directory.
+
+This is the thin-start path:
+
+```text
+WORKFLOW.md -> fest next -> do step -> fest workflow advance -> repeat
+```
+
+## Create
+
+Run from the directory that should own the workflow:
+
+```bash
+mkdir -p workflow/explore/my-workflow
+cd workflow/explore/my-workflow
+
+fest create workflow my-workflow --no-init --steps '{
+  "title": "My Workflow",
+  "description": "A lightweight guided loop.",
+  "steps": [
+    {
+      "name": "PLAN",
+      "goal": "Decide what needs to happen.",
+      "actions": ["Write the goal.", "List the unknowns."],
+      "checkpoint": "none"
+    },
+    {
+      "name": "DO",
+      "goal": "Do the work.",
+      "actions": ["Make the change.", "Validate it."],
+      "checkpoint": "verification"
+    }
+  ]
+}'
+
+fest next
+```
+
+For the current standalone first-run flow, include `--no-init` before running
+`fest next`.
+
+For human interactive creation, run the command without `--steps` from a TTY:
+
+```bash
+fest create workflow my-workflow --no-init
+```
+
+It prompts for title, intent, and step lines in `Name|Goal` form.
+
+## Step JSON Contract
+
+Workflow-level fields:
+
+- `title` (required)
+- `description` (optional)
+- `steps` (required, non-empty)
+
+Each step needs:
+
+- `name`
+- `goal`
+
+Useful optional step fields:
+
+- `actions`
+- `output`
+- `checkpoint`
+
+Valid checkpoint values:
+
+- `none`
+- `verification`
+- `documentation`
+- `approval_required`
+
+## Execution Loop
+
+```bash
+fest next
+# do the visible step
+fest workflow advance
+fest next
+```
+
+## Common Mistakes
+
+- Passing `--path` for standalone workflow creation. In standalone mode, run
+  the command from the target directory; `--path` is for festival phase targets.
+- Using `title` inside each step. Step objects require `name` and `goal`.
+- Omitting `--no-init` in the current standalone first-run flow and expecting
+  immediate `fest next` behavior.
