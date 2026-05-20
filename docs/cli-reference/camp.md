@@ -88,3 +88,4 @@ camp [flags]
 * [camp unpin](camp_unpin.md)	 - Remove a saved pin
 * [camp unregister](camp_unregister.md)	 - Remove campaign from registry
 * [camp version](camp_version.md)	 - Show version information
+* [camp workitem](camp_workitem.md)	 - View active campaign work items

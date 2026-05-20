@@ -139,8 +139,8 @@ The campaign-local source of truth for skill bundles. `camp skills` projects
 these bundles into provider/tool-specific locations such as `.claude/skills/`
 or `.agents/skills/`.
 
-This directory is scaffolded so campaigns start with baseline navigation and
-workflow skills.
+This directory is scaffolded so campaigns start with baseline navigation,
+workflow, and work-item discovery skills.
 
 ### `.campaign/cache/`
 
