@@ -136,6 +136,25 @@ func TestInit_ScaffoldsCampWorkitemsSkill(t *testing.T) {
 	assert.Contains(t, content, "camp workitems", "skill should mention the plural alias")
 }
 
+func TestInit_ScaffoldsFestStandaloneWorkflowsSkill(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	path := "/campaigns/test-standalone-workflow-skill"
+	_, err := tc.InitCampaign(path, "test-standalone-workflow-skill", "product")
+	require.NoError(t, err)
+
+	skillPath := path + "/.campaign/skills/fest-standalone-workflows/SKILL.md"
+	exists, err := tc.CheckFileExists(skillPath)
+	require.NoError(t, err)
+	assert.True(t, exists, "fest-standalone-workflows skill should be scaffolded")
+
+	content, err := tc.ReadFile(skillPath)
+	require.NoError(t, err)
+	assert.Contains(t, content, "fest create workflow", "skill should document standalone workflow creation")
+	assert.Contains(t, content, "--no-init", "skill should document the smooth first fest next path")
+	assert.Contains(t, content, "No `fest init` is required", "skill should explain that full festival init is unnecessary")
+}
+
 // TestInit_FestivalOwnership verifies that default init creates festivals/
 // when the fest binary is available.
 func TestInit_FestivalOwnership(t *testing.T) {

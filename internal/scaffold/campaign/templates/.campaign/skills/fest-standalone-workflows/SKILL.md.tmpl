@@ -1,0 +1,124 @@
+---
+name: fest-standalone-workflows
+description: Create and run lightweight standalone `WORKFLOW.md` loops with `fest create workflow`, `fest next`, and `fest workflow advance` without requiring `fest init` or a full festival. Use when a user wants step-by-step workflow guidance inside any ordinary directory, explore/design work item, project folder, or thin-start workflow.
+---
+
+# Fest Standalone Workflows
+
+Use standalone `WORKFLOW.md` when work needs a guided step loop but not a full
+festival yet.
+
+This is the thin-start path:
+
+```text
+WORKFLOW.md -> fest next -> do step -> fest workflow advance -> repeat
+```
+
+No `fest init` is required.
+
+## Preferred Creation Path
+
+Run from the directory that should own the workflow:
+
+```bash
+mkdir -p workflow/explore/my-workflow
+cd workflow/explore/my-workflow
+
+fest create workflow my-workflow --no-init --steps '{
+  "title": "My Workflow",
+  "description": "A lightweight guided loop.",
+  "steps": [
+    {
+      "name": "PLAN",
+      "goal": "Decide what needs to happen.",
+      "actions": ["Write the goal.", "List the unknowns."],
+      "checkpoint": "none"
+    },
+    {
+      "name": "DO",
+      "goal": "Do the work.",
+      "actions": ["Make the change.", "Validate it."],
+      "checkpoint": "verification"
+    }
+  ]
+}'
+
+fest next
+```
+
+`--no-init` keeps the first run lightweight: `fest next` can render step 1
+before `.workflow/` runtime state exists. The first `fest workflow advance`
+bootstraps local `.workflow/` state when progress is actually recorded.
+
+## Step JSON Contract
+
+Workflow-level fields:
+
+- `title` (required)
+- `description` (optional)
+- `steps` (required, non-empty)
+
+Each step needs:
+
+- `name`
+- `goal`
+
+Useful optional step fields:
+
+- `actions`
+- `output`
+- `checkpoint`
+
+Valid checkpoint values:
+
+- `none`
+- `verification`
+- `documentation`
+- `approval_required`
+
+## Execution Loop
+
+```bash
+fest next
+# do the visible step
+fest workflow advance
+fest next
+```
+
+In anonymous mode, `fest next` is read-only and shows step 1. The first
+`fest workflow advance` creates:
+
+```text
+.workflow/workflow.yaml
+.workflow/runs/<run-id>/run.yaml
+.workflow/runs/<run-id>/progress_events.jsonl
+```
+
+## Current Default Behavior
+
+Without `--no-init`, standalone creation initializes `.workflow/workflow.yaml`
+immediately:
+
+```bash
+fest create workflow my-workflow --steps '...'
+```
+
+That path is functional, but `fest next` then requires an active run:
+
+```bash
+fest workflow start
+fest next
+```
+
+Use `--no-init` when the user wants the smoothest "create workflow, then
+`fest next`" first-run experience.
+
+## Common Mistakes
+
+- Passing `--path` for standalone workflow creation. In standalone mode, run
+  the command from the target directory; `--path` is for festival phase targets.
+- Using `title` inside each step. Step objects require `name` and `goal`.
+- Running `fest init` for a lightweight workflow. Standalone `WORKFLOW.md` does
+  not need a full festival.
+- Treating `.workflow/runs/` as durable docs. It is local runtime progress
+  state; promote durable findings into docs/design/festivals when needed.
