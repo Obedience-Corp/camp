@@ -50,6 +50,14 @@ fest next
 before `.workflow/` runtime state exists. The first `fest workflow advance`
 bootstraps local `.workflow/` state when progress is actually recorded.
 
+For human interactive creation, run the command without `--steps` from a TTY:
+
+```bash
+fest create workflow my-workflow --no-init
+```
+
+It prompts for title, intent, and step lines in `Name|Goal` form.
+
 ## Step JSON Contract
 
 Workflow-level fields:
