@@ -348,6 +348,7 @@ func listPathCandidates(ctx context.Context, absPath, prefix string) ([]string, 
 	if err != nil {
 		return nil, err
 	}
+	entries = orderPathCandidates(absPath, entries)
 
 	var candidates []string
 	prefixLower := strings.ToLower(prefix)
@@ -375,6 +376,7 @@ func listPathCandidatesRich(ctx context.Context, absPath, relativePath, prefix s
 	if err != nil {
 		return nil, err
 	}
+	entries = orderPathCandidates(absPath, entries)
 
 	var candidates []index.CompletionCandidate
 	prefixLower := strings.ToLower(prefix)
@@ -416,6 +418,52 @@ func readDirForCompletion(absPath string) ([]os.DirEntry, error) {
 		return nil, err
 	}
 	return entries, nil
+}
+
+func orderPathCandidates(absPath string, entries []os.DirEntry) []os.DirEntry {
+	type rankedEntry struct {
+		entry      os.DirEntry
+		isWorkitem bool
+		modTime    time.Time
+	}
+
+	ranked := make([]rankedEntry, len(entries))
+	hasWorkitems := false
+	for i, entry := range entries {
+		ranked[i] = rankedEntry{entry: entry}
+		if !entry.IsDir() {
+			continue
+		}
+		markerPath := filepath.Join(absPath, entry.Name(), ".workitem")
+		info, err := os.Stat(markerPath)
+		if err != nil {
+			continue
+		}
+		ranked[i].isWorkitem = true
+		ranked[i].modTime = info.ModTime()
+		hasWorkitems = true
+	}
+
+	if !hasWorkitems {
+		return entries
+	}
+
+	sort.SliceStable(ranked, func(i, j int) bool {
+		a, b := ranked[i], ranked[j]
+		if a.isWorkitem != b.isWorkitem {
+			return a.isWorkitem
+		}
+		if a.isWorkitem && !a.modTime.Equal(b.modTime) {
+			return a.modTime.After(b.modTime)
+		}
+		return strings.ToLower(a.entry.Name()) < strings.ToLower(b.entry.Name())
+	})
+
+	ordered := make([]os.DirEntry, len(ranked))
+	for i, item := range ranked {
+		ordered[i] = item.entry
+	}
+	return ordered
 }
 
 func completeSubdirectoryInPath(ctx context.Context, basePath, query string) ([]string, error) {
