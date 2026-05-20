@@ -172,7 +172,14 @@ func findNavigationShortcut(shortcuts map[string]config.ShortcutConfig, name str
 	if shortcut, ok := shortcuts[normalized]; ok {
 		return shortcut, true
 	}
-	for key, shortcut := range shortcuts {
+
+	keys := make([]string, 0, len(shortcuts))
+	for key := range shortcuts {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		shortcut := shortcuts[key]
 		if NormalizeNavigationName(key) == normalized {
 			return shortcut, true
 		}

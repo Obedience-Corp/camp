@@ -6,17 +6,17 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/nav"
 	navindex "github.com/Obedience-Corp/camp/internal/nav/index"
+	"github.com/Obedience-Corp/camp/internal/pathsafe"
 )
-
-var pathSegmentPattern = regexp.MustCompile(`^[^\s/\\.\-\x00-\x1f][^\s/\\\x00-\x1f]{0,79}$`)
 
 func newCreateCommand() *cobra.Command {
 	var shortcut, title string
@@ -58,6 +58,7 @@ func runCreate(ctx context.Context, cmd *cobra.Command, opts createOptions) erro
 	if err := validatePathSegment("shortcut", opts.Shortcut); err != nil {
 		return err
 	}
+	shortcutKey := nav.NormalizeNavigationName(opts.Shortcut)
 
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
@@ -79,7 +80,7 @@ func runCreate(ctx context.Context, cmd *cobra.Command, opts createOptions) erro
 		return err
 	}
 
-	if err := upsertShortcut(ctx, campaignRoot, cfg, opts.Shortcut, relPath, workflowTitle, opts.Replace); err != nil {
+	if err := upsertShortcut(ctx, campaignRoot, cfg, shortcutKey, relPath, workflowTitle, opts.Replace); err != nil {
 		return err
 	}
 	if err := upsertConcept(ctx, campaignRoot, cfg, opts.Type, relPath, workflowTitle, opts.Replace); err != nil {
@@ -89,19 +90,12 @@ func runCreate(ctx context.Context, cmd *cobra.Command, opts createOptions) erro
 
 	fmt.Fprintf(cmd.OutOrStdout(),
 		"created %s\n  shortcut: %s -> %s\n  workitem type: %s\nnext: camp workitem create <slug> --type %s\n",
-		strings.TrimRight(relPath, "/"), opts.Shortcut, relPath, opts.Type, opts.Type)
+		strings.TrimRight(relPath, "/"), shortcutKey, relPath, opts.Type, opts.Type)
 	return nil
 }
 
 func validatePathSegment(field, value string) error {
-	if value == "" {
-		return camperrors.NewValidation(field, field+" must not be empty", nil)
-	}
-	if !pathSegmentPattern.MatchString(value) {
-		return camperrors.NewValidation(field,
-			"invalid "+field+" "+value+": must not be empty, must not contain '/', '\\', whitespace, or control characters, must not start with '.' or '-', max 80 chars", nil)
-	}
-	return nil
+	return pathsafe.ValidateSegment(field, value)
 }
 
 func writeOBEYIfMissing(absPath, workflowType, title string) error {
@@ -139,15 +133,22 @@ func upsertShortcut(ctx context.Context, campaignRoot string, cfg *config.Campai
 		jumps.Shortcuts = make(map[string]config.ShortcutConfig)
 	}
 
-	if existing, ok := jumps.Shortcuts[shortcut]; ok && !replace {
-		if existing.Path == relPath {
-			return nil
+	shortcutKey := nav.NormalizeNavigationName(shortcut)
+	matches := matchingShortcutKeys(jumps.Shortcuts, shortcutKey)
+	for _, match := range matches {
+		existing := jumps.Shortcuts[match]
+		if existing.Path != relPath && !replace {
+			return camperrors.NewValidation("shortcut",
+				"shortcut "+shortcutKey+" already points to "+existing.Path+"; use --replace to update it", nil)
 		}
-		return camperrors.NewValidation("shortcut",
-			"shortcut "+shortcut+" already points to "+existing.Path+"; use --replace to update it", nil)
+	}
+	for _, match := range matches {
+		if match != shortcutKey {
+			delete(jumps.Shortcuts, match)
+		}
 	}
 
-	jumps.Shortcuts[shortcut] = config.ShortcutConfig{
+	jumps.Shortcuts[shortcutKey] = config.ShortcutConfig{
 		Path:        relPath,
 		Description: title + " workflow",
 		Source:      config.ShortcutSourceUser,
@@ -158,6 +159,18 @@ func upsertShortcut(ctx context.Context, campaignRoot string, cfg *config.Campai
 		return err
 	}
 	return nil
+}
+
+func matchingShortcutKeys(shortcuts map[string]config.ShortcutConfig, shortcut string) []string {
+	normalized := nav.NormalizeNavigationName(shortcut)
+	var matches []string
+	for key := range shortcuts {
+		if nav.NormalizeNavigationName(key) == normalized {
+			matches = append(matches, key)
+		}
+	}
+	sort.Strings(matches)
+	return matches
 }
 
 func upsertConcept(ctx context.Context, campaignRoot string, cfg *config.CampaignConfig, name, relPath, title string, replace bool) error {
