@@ -139,6 +139,7 @@ func TestAttachmentPin_RejectsAttachInsideOtherCampaign(t *testing.T) {
 	require.NoError(t, err)
 
 	insideB := campaignB + "/festivals"
+	tc.Shell(t, "mkdir -p "+insideB)
 
 	output, exitCode, err := tc.ExecCommand("sh", "-c",
 		"cd "+campaignA+" && /camp attach "+insideB+" 2>&1")
