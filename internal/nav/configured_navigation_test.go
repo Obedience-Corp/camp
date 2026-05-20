@@ -24,6 +24,69 @@ func TestResolveConfiguredTarget_UsesShortcutKey(t *testing.T) {
 	}
 }
 
+func TestResolveConfiguredTarget_UsesCustomShortcutPath(t *testing.T) {
+	cfg := &config.CampaignConfig{
+		Jumps: &config.JumpsConfig{
+			Shortcuts: map[string]config.ShortcutConfig{
+				"re": {Path: "workflow/research/"},
+			},
+		},
+	}
+
+	got := ResolveConfiguredTarget(cfg, []string{"re", "compare-llms"})
+	if !got.Matched {
+		t.Fatal("ResolveConfiguredTarget() did not match custom shortcut key")
+	}
+	if got.RelativePath != "workflow/research/" {
+		t.Fatalf("RelativePath = %q, want %q", got.RelativePath, "workflow/research/")
+	}
+	if got.Query != "compare-llms" {
+		t.Fatalf("Query = %q, want %q", got.Query, "compare-llms")
+	}
+}
+
+func TestResolveConfiguredTarget_UsesCustomShortcutPathCaseInsensitive(t *testing.T) {
+	cfg := &config.CampaignConfig{
+		Jumps: &config.JumpsConfig{
+			Shortcuts: map[string]config.ShortcutConfig{
+				"RE": {Path: "workflow/research/"},
+			},
+		},
+	}
+
+	got := ResolveConfiguredTarget(cfg, []string{"re", "compare-llms"})
+	if !got.Matched {
+		t.Fatal("ResolveConfiguredTarget() did not match custom shortcut key")
+	}
+	if got.RelativePath != "workflow/research/" {
+		t.Fatalf("RelativePath = %q, want %q", got.RelativePath, "workflow/research/")
+	}
+}
+
+func TestResolveConfiguredTarget_SupportsCustomShortcutAtDrill(t *testing.T) {
+	cfg := &config.CampaignConfig{
+		Jumps: &config.JumpsConfig{
+			Shortcuts: map[string]config.ShortcutConfig{
+				"re": {Path: "workflow/research/"},
+			},
+		},
+	}
+
+	got := ResolveConfiguredTarget(cfg, []string{"re@compare-llms/docs"})
+	if !got.Matched {
+		t.Fatal("ResolveConfiguredTarget() did not match custom shortcut drill")
+	}
+	if got.RelativePath != "workflow/research/" {
+		t.Fatalf("RelativePath = %q, want %q", got.RelativePath, "workflow/research/")
+	}
+	if got.Query != "compare-llms/docs" {
+		t.Fatalf("Query = %q, want %q", got.Query, "compare-llms/docs")
+	}
+	if !got.Drill {
+		t.Fatal("Drill = false, want true")
+	}
+}
+
 func TestResolveConfiguredTarget_UsesConfiguredConceptName(t *testing.T) {
 	cfg := &config.CampaignConfig{
 		ConceptList: []config.ConceptEntry{

@@ -212,6 +212,59 @@ func TestGenerate_CategoryWithQuery(t *testing.T) {
 	}
 }
 
+func TestGenerate_CustomWorkflowShortcutRecentFirst(t *testing.T) {
+	root := createTestCampaign(t)
+	settingsDir := filepath.Join(root, ".campaign", "settings")
+	if err := os.MkdirAll(settingsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	jumps := `paths:
+  workflow: "workflow/"
+shortcuts:
+  re:
+    path: "workflow/research/"
+    description: "Research workflow"
+`
+	if err := os.WriteFile(filepath.Join(settingsDir, "jumps.yaml"), []byte(jumps), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	olderDir := filepath.Join(root, "workflow", "research", "older-work")
+	newerDir := filepath.Join(root, "workflow", "research", "newer-work")
+	for _, dir := range []string{olderDir, newerDir} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, ".workitem"), []byte("kind: workitem\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	now := time.Now()
+	if err := os.Chtimes(filepath.Join(olderDir, ".workitem"), now.Add(-1*time.Hour), now.Add(-1*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(filepath.Join(newerDir, ".workitem"), now, now); err != nil {
+		t.Fatal(err)
+	}
+
+	oldWd, _ := os.Getwd()
+	defer os.Chdir(oldWd)
+	if err := os.Chdir(root); err != nil {
+		t.Fatal(err)
+	}
+
+	candidates, err := Generate(context.Background(), []string{"re"})
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+	if len(candidates) < 2 {
+		t.Fatalf("Got %d candidates, want at least 2: %v", len(candidates), candidates)
+	}
+	if candidates[0] != "newer-work/" || candidates[1] != "older-work/" {
+		t.Fatalf("candidates = %v, want newer workitem before older workitem", candidates)
+	}
+}
+
 func TestGenerate_PartialShortcut(t *testing.T) {
 	// Create test campaign with shortcuts
 	root := createTestCampaign(t)

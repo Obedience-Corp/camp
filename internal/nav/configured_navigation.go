@@ -111,29 +111,19 @@ func ResolveConfiguredTarget(cfg *config.CampaignConfig, args []string) Configur
 	// Compute shortcut and alias maps once — both branches below may consult
 	// them, and this is on the shell-completion hot path.
 	shortcuts := cfg.Shortcuts()
-	shortcutMappings := BuildCategoryMappings(shortcuts)
 	aliases := BuildPathAliasMappings(shortcuts)
 
 	// (1) Shortcut-drill form: "de@foo"
 	if parsedArgs, ok := splitShortcutDrillArgs(args); ok {
-		parsed := ParseShortcut(parsedArgs, shortcutMappings)
-		if parsed.IsShortcut {
-			return ConfiguredTarget{
-				Category: parsed.Category,
-				Query:    parsed.Query,
-				Drill:    true,
-				Matched:  true,
-			}
+		if target, ok := resolveNavigationShortcut(shortcuts, parsedArgs); ok {
+			target.Drill = true
+			return target
 		}
 	}
 
 	// (2) Plain shortcut key: "de"
-	if parsed := ParseShortcut(args, shortcutMappings); parsed.IsShortcut {
-		return ConfiguredTarget{
-			Category: parsed.Category,
-			Query:    parsed.Query,
-			Matched:  true,
-		}
+	if target, ok := resolveNavigationShortcut(shortcuts, args); ok {
+		return target
 	}
 
 	// (3) Slash-drill form: "design/foo" — resolve token via concept/alias.
@@ -145,6 +135,56 @@ func ResolveConfiguredTarget(cfg *config.CampaignConfig, args []string) Configur
 
 	// (4)/(5) Plain concept or path alias: "design" or "ai_docs"
 	return resolveDrillTarget(cfg, aliases, args)
+}
+
+func resolveNavigationShortcut(shortcuts map[string]config.ShortcutConfig, args []string) (ConfiguredTarget, bool) {
+	if len(args) == 0 {
+		return ConfiguredTarget{}, false
+	}
+
+	shortcut, ok := findNavigationShortcut(shortcuts, args[0])
+	if !ok || !shortcut.IsNavigation() {
+		return ConfiguredTarget{}, false
+	}
+
+	query := ""
+	if len(args) > 1 {
+		query = strings.Join(args[1:], " ")
+	}
+
+	if cat, ok := CategoryForStandardPath(shortcut.Path); ok {
+		return ConfiguredTarget{
+			Category: cat,
+			Query:    query,
+			Matched:  true,
+		}, true
+	}
+
+	return ConfiguredTarget{
+		RelativePath: shortcut.Path,
+		Query:        query,
+		Matched:      true,
+	}, true
+}
+
+func findNavigationShortcut(shortcuts map[string]config.ShortcutConfig, name string) (config.ShortcutConfig, bool) {
+	normalized := NormalizeNavigationName(name)
+	if shortcut, ok := shortcuts[normalized]; ok {
+		return shortcut, true
+	}
+
+	keys := make([]string, 0, len(shortcuts))
+	for key := range shortcuts {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		shortcut := shortcuts[key]
+		if NormalizeNavigationName(key) == normalized {
+			return shortcut, true
+		}
+	}
+	return config.ShortcutConfig{}, false
 }
 
 func resolveDrillTarget(cfg *config.CampaignConfig, aliases map[string]PathAliasTarget, args []string) ConfiguredTarget {
