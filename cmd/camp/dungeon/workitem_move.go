@@ -56,10 +56,6 @@ func moveWorkitemToDungeon(ctx context.Context, cmd *cobra.Command, target, stat
 		return nil, err
 	}
 
-	if err := validateWorkitemDungeonStatus(status); err != nil {
-		return nil, wrapDungeonMoveError(err, resolved.ItemName, status)
-	}
-
 	svc := intdungeon.NewService(campaignRoot, resolved.DungeonPath)
 	initResult, err := svc.Init(ctx, intdungeon.InitOptions{})
 	if err != nil {
@@ -97,16 +93,6 @@ func moveWorkitemToDungeon(ctx context.Context, cmd *cobra.Command, target, stat
 	}, nil
 }
 
-func validateWorkitemDungeonStatus(status string) error {
-	if status == "" {
-		return nil
-	}
-	if status == "." || status == ".." || strings.Contains(status, "/") || strings.Contains(status, "\\") {
-		return camperrors.Wrap(intdungeon.ErrInvalidStatus, status)
-	}
-	return nil
-}
-
 func selectWorkitemDungeonTarget(campaignRoot string, items []wkitem.WorkItem, target string) (wkitem.WorkItem, error) {
 	raw := strings.TrimSpace(target)
 	if raw == "" {
@@ -120,7 +106,7 @@ func selectWorkitemDungeonTarget(campaignRoot string, items []wkitem.WorkItem, t
 		{
 			name: "stable id",
 			match: func(item wkitem.WorkItem) bool {
-				return item.StableID != "" && item.StableID == raw
+				return item.StableID == raw
 			},
 		},
 		{
@@ -228,6 +214,6 @@ func formatWorkitemMatches(matches []wkitem.WorkItem) string {
 
 func invalidateDungeonWorkitemNavigationCache(cmd *cobra.Command, campaignRoot string) {
 	if err := navindex.Delete(campaignRoot); err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "warning: failed to invalidate navigation cache: %v\n", err)
+		fmt.Fprintf(cmd.OutOrStdout(), "%s failed to invalidate navigation cache: %v\n", ui.WarningIcon(), err)
 	}
 }
