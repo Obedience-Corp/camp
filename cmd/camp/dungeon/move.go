@@ -23,6 +23,8 @@ var dungeonMoveCmd = &cobra.Command{
 Without --triage, moves an item already in the dungeon root to a status directory.
 With --triage, moves an item from the parent directory into the dungeon.
 With --triage and --to-docs, routes an item to an existing campaign-root docs/<subdirectory>.
+With --workitem, resolves a campaign workitem from anywhere and moves its directory
+into the workitem type's local dungeon.
 Moves are always auto-committed so dungeon history remains auditable.
 
 Statuses: completed, archived, someday
@@ -32,7 +34,8 @@ Examples:
   camp dungeon move stale-doc completed          Move dungeon item to completed
   camp dungeon move old-project --triage         Move parent item into dungeon root
   camp dungeon move old-project archived --triage Move parent item directly to archived
-  camp dungeon move stale-note.md --triage --to-docs architecture/api Route to docs subdirectory`,
+  camp dungeon move stale-note.md --triage --to-docs architecture/api Route to docs subdirectory
+  camp dungeon move feature-slug archived --workitem Move workitem directory to its local archive`,
 	Args: cobra.RangeArgs(1, 2),
 	Annotations: map[string]string{
 		"agent_allowed": "true",
@@ -47,6 +50,7 @@ func init() {
 	flags := dungeonMoveCmd.Flags()
 	flags.Bool("triage", false, "Move from parent directory (not from dungeon root)")
 	flags.String("to-docs", "", "Route triage item into an existing campaign-root docs/<subdir> (requires --triage)")
+	flags.Bool("workitem", false, "Resolve item as a campaign workitem and move its directory to the local dungeon")
 }
 
 func runDungeonMove(cmd *cobra.Command, args []string) error {
@@ -54,6 +58,7 @@ func runDungeonMove(cmd *cobra.Command, args []string) error {
 
 	triageMode, _ := cmd.Flags().GetBool("triage")
 	toDocs, _ := cmd.Flags().GetString("to-docs")
+	workitemMode, _ := cmd.Flags().GetBool("workitem")
 
 	itemName := args[0]
 	status := ""
@@ -68,6 +73,20 @@ func runDungeonMove(cmd *cobra.Command, args []string) error {
 		if status != "" {
 			return fmt.Errorf("status argument cannot be combined with --to-docs; use either a dungeon status or --to-docs <subdir>")
 		}
+	}
+
+	if workitemMode {
+		if triageMode {
+			return fmt.Errorf("--workitem cannot be combined with --triage because workitem mode resolves the source directory itself")
+		}
+		if toDocs != "" {
+			return fmt.Errorf("--workitem cannot be combined with --to-docs")
+		}
+		move, err := moveWorkitemToDungeon(ctx, cmd, itemName, status)
+		if err != nil {
+			return err
+		}
+		return commitDungeonMove(ctx, move)
 	}
 
 	cmdCtx, err := resolveDungeonCommandContext(ctx)
@@ -138,8 +157,18 @@ func runDungeonMove(cmd *cobra.Command, args []string) error {
 		destinationPaths = []string{targetPath}
 	}
 
-	files := commit.NormalizeFiles(cmdCtx.CampaignRoot, destinationPaths...)
-	preStaged, err := stageTrackedMoveSourceDeletions(ctx, cmdCtx.CampaignRoot, sourcePaths)
+	return commitDungeonMove(ctx, &dungeonMoveCommit{
+		Config:           cmdCtx.Config,
+		CampaignRoot:     cmdCtx.CampaignRoot,
+		Description:      description,
+		SourcePaths:      sourcePaths,
+		DestinationPaths: destinationPaths,
+	})
+}
+
+func commitDungeonMove(ctx context.Context, move *dungeonMoveCommit) error {
+	files := commit.NormalizeFiles(move.CampaignRoot, move.DestinationPaths...)
+	preStaged, err := stageTrackedMoveSourceDeletions(ctx, move.CampaignRoot, move.SourcePaths)
 	if err != nil {
 		fmt.Printf("%s Move was applied on disk, but staging the source deletion failed.\n", ui.WarningIcon())
 		fmt.Printf("%s %v\n", ui.WarningIcon(), err)
@@ -147,11 +176,11 @@ func runDungeonMove(cmd *cobra.Command, args []string) error {
 	}
 	result := commit.Crawl(ctx, commit.CrawlOptions{
 		Options: commit.Options{
-			CampaignRoot: cmdCtx.CampaignRoot,
-			CampaignID:   cmdCtx.Config.ID,
+			CampaignRoot: move.CampaignRoot,
+			CampaignID:   move.Config.ID,
 			PreStaged:    preStaged,
 		},
-		Description: strings.TrimSpace(description),
+		Description: strings.TrimSpace(move.Description),
 		Files:       files,
 	})
 	if result.Committed {
