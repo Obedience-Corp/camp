@@ -16,7 +16,7 @@ import (
 func NewFlowCommand() *cobra.Command {
 	flowCmd := &cobra.Command{
 		Use:     "flow",
-		Aliases: []string{"workflow", "wf"},
+		Aliases: []string{"wf"},
 		Short:   "Manage status workflows for organizing work",
 		Long: `Manage status workflows for organizing work.
 

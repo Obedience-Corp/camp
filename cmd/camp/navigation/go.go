@@ -65,21 +65,9 @@ func runGo(cmd *cobra.Command, args []string) error {
 		return handleToggle(ctx, campaignRoot, printOnly)
 	}
 
-	// Check if the first arg is a custom navigation shortcut with non-standard path
-	if len(args) > 0 {
-		shortcutName := args[0]
-		if sc, ok := cfg.Shortcuts()[shortcutName]; ok && sc.IsNavigation() {
-			// If this is a custom path (not a standard directory), use direct navigation
-			// Standard paths are handled below via ParseShortcut for fuzzy search support
-			if !nav.IsStandardPath(sc.Path) {
-				return handleCustomNavShortcut(ctx, sc, campaignRoot, printOnly, command)
-			}
-		}
-	}
-
 	// Resolve configured navigation from shortcuts, long-form directory aliases,
-	// and configured concepts. Deferred until after the short-circuits above so
-	// toggle and custom-path shortcuts don't pay the resolution cost.
+	// and configured concepts. Deferred until after the toggle short-circuit
+	// above so the no-arg toggle path stays minimal.
 	resolved := nav.ResolveConfiguredTarget(cfg, args)
 
 	result := nav.ParseResult{
@@ -343,38 +331,6 @@ func listProjectShortcuts(result *index.ResolveResult) error {
 		fmt.Printf("  %-12s %s\n", ui.Accent(name), ui.Dim(path))
 	}
 
-	return nil
-}
-
-// handleCustomNavShortcut handles navigation to a custom path shortcut.
-func handleCustomNavShortcut(ctx context.Context, sc config.ShortcutConfig, campaignRoot string, printOnly bool, command []string) error {
-	// Jump to the custom path
-	jumpResult, err := nav.JumpToPathFromRoot(ctx, campaignRoot, sc.Path)
-	if err != nil {
-		return err
-	}
-
-	// Command execution mode
-	if len(command) > 0 {
-		execResult, err := nav.ExecInDir(ctx, jumpResult.Path, campaignRoot, command)
-		if err != nil {
-			return err
-		}
-		if execResult.ExitCode != 0 {
-			return camperrors.NewCommand("", execResult.ExitCode, "", nil)
-		}
-		return nil
-	}
-
-	// Save current location (source) so toggle can return here
-	cwd, _ := os.Getwd()
-	_ = state.SetLastLocation(ctx, campaignRoot, cwd)
-
-	if printOnly {
-		fmt.Println(jumpResult.Path)
-	} else {
-		fmt.Printf("cd %s\n", jumpResult.Path)
-	}
 	return nil
 }
 
