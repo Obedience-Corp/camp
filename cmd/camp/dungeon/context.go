@@ -50,7 +50,7 @@ func resolveDungeonCommandContext(ctx context.Context) (*dungeonCommandContext, 
 	}, nil
 }
 
-func relFromRoot(root, target string) string {
+func RelFromRoot(root, target string) string {
 	rel, err := filepath.Rel(root, target)
 	if err != nil || rel == "" {
 		return target

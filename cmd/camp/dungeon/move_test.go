@@ -9,9 +9,9 @@ import (
 )
 
 func TestWrapDungeonMoveError_InvalidItemPath(t *testing.T) {
-	err := wrapDungeonMoveError(intdungeon.ErrInvalidItemPath, "../secret.md", "archived")
+	err := WrapDungeonMoveError(intdungeon.ErrInvalidItemPath, "../secret.md", "archived")
 	if err == nil {
-		t.Fatal("wrapDungeonMoveError should return an error")
+		t.Fatal("WrapDungeonMoveError should return an error")
 	}
 	if !errors.Is(err, intdungeon.ErrInvalidItemPath) {
 		t.Fatalf("expected wrapped ErrInvalidItemPath, got: %v", err)
