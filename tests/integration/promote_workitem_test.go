@@ -4,6 +4,7 @@
 package integration
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -143,6 +144,68 @@ func TestPromote_AlreadyAtStatus(t *testing.T) {
 	output, err := tc.RunCampInDir(currentDir, "promote", "completed")
 	require.Error(t, err, "re-promote to same status should fail")
 	assert.Contains(t, output+err.Error(), "already at status")
+}
+
+func TestPromote_ActiveRejected(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupPromoteWorkitem(t, tc, "promote-active-rejected", "design", "feature-a")
+
+	output, err := tc.RunCampInDir(path+"/workflow/design/feature-a", "promote", "active")
+	require.Error(t, err, "promote active should fail")
+	assert.Contains(t, output+err.Error(), "not a dungeon status")
+
+	exists, err := tc.CheckDirExists(path + "/workflow/design/feature-a")
+	require.NoError(t, err)
+	assert.True(t, exists, "workitem should remain in active location")
+
+	exists, err = tc.CheckDirExists(path + "/workflow/design/dungeon/active")
+	require.NoError(t, err)
+	assert.False(t, exists, "no dungeon/active directory should be created")
+}
+
+func TestPromote_JsonOutput(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupPromoteWorkitem(t, tc, "promote-json", "design", "feature-j")
+
+	output, err := tc.RunCampInDir(path+"/workflow/design/feature-j", "promote", "completed", "--json")
+	require.NoError(t, err, "promote --json should succeed: %s", output)
+
+	trimmed := strings.TrimSpace(output)
+	require.NotEmpty(t, trimmed, "JSON output should not be empty")
+
+	var result struct {
+		Slug          string   `json:"slug"`
+		Type          string   `json:"type"`
+		Status        string   `json:"status"`
+		From          string   `json:"from"`
+		To            string   `json:"to"`
+		Committed     bool     `json:"committed"`
+		CommitMessage string   `json:"commit_message"`
+		Warnings      []string `json:"warnings"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(trimmed), &result), "JSON output must be a single parseable object: %s", output)
+
+	assert.Equal(t, "feature-j", result.Slug)
+	assert.Equal(t, "design", result.Type)
+	assert.Equal(t, "completed", result.Status)
+	assert.Equal(t, "workflow/design/feature-j", result.From)
+	assert.Contains(t, result.To, "workflow/design/dungeon/completed/")
+	assert.True(t, result.Committed, "commit should have succeeded")
+	assert.NotEmpty(t, result.CommitMessage, "commit message should be set")
+}
+
+func TestPromote_JsonOutputNoCommit(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupPromoteWorkitem(t, tc, "promote-json-no-commit", "design", "feature-k")
+
+	output, err := tc.RunCampInDir(path+"/workflow/design/feature-k", "promote", "someday", "--json", "--no-commit")
+	require.NoError(t, err, "promote --json --no-commit should succeed: %s", output)
+
+	var result struct {
+		Committed bool `json:"committed"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(strings.TrimSpace(output)), &result), "JSON output must parse: %s", output)
+	assert.False(t, result.Committed, "committed should be false with --no-commit")
 }
 
 func TestPromote_NoCommit(t *testing.T) {

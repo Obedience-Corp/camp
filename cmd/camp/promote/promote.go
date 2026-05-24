@@ -3,6 +3,7 @@ package promote
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -49,11 +50,14 @@ func init() {
 }
 
 type promoteResult struct {
-	Slug   string `json:"slug"`
-	Type   string `json:"type"`
-	Status string `json:"status"`
-	From   string `json:"from"`
-	To     string `json:"to"`
+	Slug          string   `json:"slug"`
+	Type          string   `json:"type"`
+	Status        string   `json:"status"`
+	From          string   `json:"from"`
+	To            string   `json:"to"`
+	Committed     bool     `json:"committed"`
+	CommitMessage string   `json:"commit_message,omitempty"`
+	Warnings      []string `json:"warnings,omitempty"`
 }
 
 func runPromote(cmd *cobra.Command, args []string) error {
@@ -62,6 +66,10 @@ func runPromote(cmd *cobra.Command, args []string) error {
 
 	noCommit, _ := cmd.Flags().GetBool("no-commit")
 	jsonOut, _ := cmd.Flags().GetBool("json")
+
+	if status == "active" {
+		return fmt.Errorf("promote cannot target %q: %q is not a dungeon status (outside the dungeon a workitem is already active); restoring workitems out of dungeon is not supported by promote", status, status)
+	}
 
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
@@ -101,45 +109,57 @@ func runPromote(cmd *cobra.Command, args []string) error {
 		return dungeoncmd.WrapDungeonMoveError(err, loc.Slug, status)
 	}
 
-	src := dungeoncmd.RelFromRoot(campaignRoot, loc.SourcePath)
-	dst := dungeoncmd.RelFromRoot(campaignRoot, targetPath)
+	result := promoteResult{
+		Slug:   loc.Slug,
+		Type:   loc.Type,
+		Status: status,
+		From:   filepath.ToSlash(dungeoncmd.RelFromRoot(campaignRoot, loc.SourcePath)),
+		To:     filepath.ToSlash(dungeoncmd.RelFromRoot(campaignRoot, targetPath)),
+	}
+
+	stdout := cmd.OutOrStdout()
+	textOut := stdout
+	if jsonOut {
+		textOut = io.Discard
+	}
+
+	if !jsonOut {
+		fmt.Fprintf(stdout, "%s Promoted %s (%s → %s)\n", ui.SuccessIcon(), loc.Slug, result.From, result.To)
+	}
+
+	if navErr := navindex.Delete(campaignRoot); navErr != nil {
+		msg := fmt.Sprintf("failed to invalidate navigation cache: %v", navErr)
+		if jsonOut {
+			result.Warnings = append(result.Warnings, msg)
+		} else {
+			fmt.Fprintf(stdout, "%s %s\n", ui.WarningIcon(), msg)
+		}
+	}
+
+	var commitErr error
+	if !noCommit {
+		destinationPaths := append([]string{}, initResult.CreatedFiles...)
+		destinationPaths = append(destinationPaths, targetPath)
+		description := fmt.Sprintf("Promote workitem %s → %s", loc.Slug, result.To)
+
+		outcome := dungeoncmd.StageAndCommitDungeonMove(ctx, &dungeoncmd.DungeonMoveCommit{
+			Config:           cfg,
+			CampaignRoot:     campaignRoot,
+			Description:      description,
+			SourcePaths:      []string{loc.SourcePath},
+			DestinationPaths: destinationPaths,
+		})
+		dungeoncmd.PrintDungeonMoveOutcome(textOut, outcome)
+		result.Committed = outcome.Committed
+		result.CommitMessage = outcome.Message
+		commitErr = outcome.Err()
+	}
 
 	if jsonOut {
-		out := promoteResult{
-			Slug:   loc.Slug,
-			Type:   loc.Type,
-			Status: status,
-			From:   filepath.ToSlash(src),
-			To:     filepath.ToSlash(dst),
-		}
-		if err := json.NewEncoder(cmd.OutOrStdout()).Encode(out); err != nil {
+		if err := json.NewEncoder(stdout).Encode(result); err != nil {
 			return camperrors.Wrap(err, "encoding JSON output")
 		}
-	} else {
-		fmt.Fprintf(cmd.OutOrStdout(), "%s Promoted %s (%s → %s)\n", ui.SuccessIcon(), loc.Slug, src, dst)
 	}
 
-	invalidatePromoteNavCache(cmd, campaignRoot)
-
-	if noCommit {
-		return nil
-	}
-
-	destinationPaths := append([]string{}, initResult.CreatedFiles...)
-	destinationPaths = append(destinationPaths, targetPath)
-	description := fmt.Sprintf("Promote workitem %s → %s", loc.Slug, dst)
-
-	return dungeoncmd.CommitDungeonMove(ctx, &dungeoncmd.DungeonMoveCommit{
-		Config:           cfg,
-		CampaignRoot:     campaignRoot,
-		Description:      description,
-		SourcePaths:      []string{loc.SourcePath},
-		DestinationPaths: destinationPaths,
-	})
-}
-
-func invalidatePromoteNavCache(cmd *cobra.Command, campaignRoot string) {
-	if err := navindex.Delete(campaignRoot); err != nil {
-		fmt.Fprintf(cmd.OutOrStdout(), "%s failed to invalidate navigation cache: %v\n", ui.WarningIcon(), err)
-	}
+	return commitErr
 }

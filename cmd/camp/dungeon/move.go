@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -166,13 +168,21 @@ func runDungeonMove(cmd *cobra.Command, args []string) error {
 	})
 }
 
-func CommitDungeonMove(ctx context.Context, move *DungeonMoveCommit) error {
+type DungeonMoveCommitOutcome struct {
+	StagingErr error
+	Committed  bool
+	NoChanges  bool
+	Message    string
+	CommitErr  error
+}
+
+func StageAndCommitDungeonMove(ctx context.Context, move *DungeonMoveCommit) *DungeonMoveCommitOutcome {
+	outcome := &DungeonMoveCommitOutcome{}
 	files := commit.NormalizeFiles(move.CampaignRoot, move.DestinationPaths...)
 	preStaged, err := stageTrackedMoveSourceDeletions(ctx, move.CampaignRoot, move.SourcePaths)
 	if err != nil {
-		fmt.Printf("%s Move was applied on disk, but staging the source deletion failed.\n", ui.WarningIcon())
-		fmt.Printf("%s %v\n", ui.WarningIcon(), err)
-		return camperrors.Wrap(err, "staging move source deletions")
+		outcome.StagingErr = err
+		return outcome
 	}
 	result := commit.Crawl(ctx, commit.CrawlOptions{
 		Options: commit.Options{
@@ -183,19 +193,44 @@ func CommitDungeonMove(ctx context.Context, move *DungeonMoveCommit) error {
 		Description: strings.TrimSpace(move.Description),
 		Files:       files,
 	})
-	if result.Committed {
-		fmt.Printf("%s %s\n", ui.SuccessIcon(), result.Message)
-	} else if result.NoChanges {
-		fmt.Printf("%s %s\n", ui.InfoIcon(), result.Message)
-	} else if result.Err != nil {
-		fmt.Printf("%s Move was applied on disk, but auto-commit failed.\n", ui.WarningIcon())
-		fmt.Printf("%s %v\n", ui.WarningIcon(), result.Err)
-		return camperrors.Wrap(result.Err, "auto-committing dungeon move")
-	} else if result.Message != "" {
-		fmt.Printf("%s %s\n", ui.InfoIcon(), result.Message)
-	}
+	outcome.Committed = result.Committed
+	outcome.NoChanges = result.NoChanges
+	outcome.Message = result.Message
+	outcome.CommitErr = result.Err
+	return outcome
+}
 
+func PrintDungeonMoveOutcome(w io.Writer, outcome *DungeonMoveCommitOutcome) {
+	switch {
+	case outcome.StagingErr != nil:
+		fmt.Fprintf(w, "%s Move was applied on disk, but staging the source deletion failed.\n", ui.WarningIcon())
+		fmt.Fprintf(w, "%s %v\n", ui.WarningIcon(), outcome.StagingErr)
+	case outcome.Committed:
+		fmt.Fprintf(w, "%s %s\n", ui.SuccessIcon(), outcome.Message)
+	case outcome.CommitErr != nil:
+		fmt.Fprintf(w, "%s Move was applied on disk, but auto-commit failed.\n", ui.WarningIcon())
+		fmt.Fprintf(w, "%s %v\n", ui.WarningIcon(), outcome.CommitErr)
+	case outcome.NoChanges:
+		fmt.Fprintf(w, "%s %s\n", ui.InfoIcon(), outcome.Message)
+	case outcome.Message != "":
+		fmt.Fprintf(w, "%s %s\n", ui.InfoIcon(), outcome.Message)
+	}
+}
+
+func (o *DungeonMoveCommitOutcome) Err() error {
+	if o.StagingErr != nil {
+		return camperrors.Wrap(o.StagingErr, "staging move source deletions")
+	}
+	if o.CommitErr != nil {
+		return camperrors.Wrap(o.CommitErr, "auto-committing dungeon move")
+	}
 	return nil
+}
+
+func CommitDungeonMove(ctx context.Context, move *DungeonMoveCommit) error {
+	outcome := StageAndCommitDungeonMove(ctx, move)
+	PrintDungeonMoveOutcome(os.Stdout, outcome)
+	return outcome.Err()
 }
 
 func stageTrackedMoveSourceDeletions(ctx context.Context, campaignRoot string, sourcePaths []string) ([]string, error) {
