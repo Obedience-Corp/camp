@@ -1,0 +1,219 @@
+package workitem
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os/exec"
+	"strings"
+
+	"github.com/spf13/cobra"
+
+	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/git/commit"
+)
+
+// noContextHint is the multi-line refusal message printed when the resolver
+// returns no workitem. Mirrors COMMIT_DESIGN.md §7.
+const noContextHint = `no workitem context resolved from cwd
+
+Try one of:
+  --workitem <selector>            explicit workitem to scope this commit
+  cd workflow/<type>/<slug> && ...  run from inside a workitem directory
+  camp workitem current <selector>  set a session-wide default`
+
+func newCommitCommand() *cobra.Command {
+	var (
+		flagMessage                 string
+		flagWorkitem                string
+		flagProject                 string
+		flagIncludes                []string
+		flagExcludes                []string
+		flagStaged                  bool
+		flagIncludeSubmodulePointer bool
+		flagDryRun                  bool
+		flagJSON                    bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "commit [selector]",
+		Short: "Commit changes scoped to the resolved workitem",
+		Long: `Stage and commit changes belonging to a resolved workitem.
+
+The staging plan is computed from the resolver context (cwd-aware, with
+explicit positional <selector> or --project overrides) and printed to stderr
+before the commit runs. The plan never silently widens to "git add ." at the
+campaign root.
+
+See internal/commands/workitem/COMMIT_DESIGN.md for the full staging matrix
+and flag precedence.`,
+		Args: cobra.MaximumNArgs(1),
+		Annotations: map[string]string{
+			"agent_allowed": "true",
+			"agent_reason":  "Scoped commit command; honors --json and --dry-run for automation",
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			selector := flagWorkitem
+			if selector == "" && len(args) == 1 {
+				selector = args[0]
+			}
+			return runCommit(ctx, cmd, commitFlags{
+				Message:                 flagMessage,
+				Workitem:                selector,
+				Project:                 flagProject,
+				Includes:                flagIncludes,
+				Excludes:                flagExcludes,
+				Staged:                  flagStaged,
+				IncludeSubmodulePointer: flagIncludeSubmodulePointer,
+				DryRun:                  flagDryRun,
+				JSON:                    flagJSON,
+			})
+		},
+	}
+	cmd.Flags().StringVarP(&flagMessage, "message", "m", "", "commit message (required unless --dry-run)")
+	cmd.Flags().StringVar(&flagWorkitem, "workitem", "", "explicit workitem selector (overrides cwd-based resolution)")
+	cmd.Flags().StringVar(&flagProject, "project", "", "force project-repo context by name (skips resolver)")
+	cmd.Flags().StringArrayVar(&flagIncludes, "include", nil, "additional path to stage (repeatable; relative to repo root)")
+	cmd.Flags().StringArrayVar(&flagExcludes, "exclude", nil, "path to remove from the staging plan (repeatable)")
+	cmd.Flags().BoolVar(&flagStaged, "staged", false, "commit whatever is already in the git index")
+	cmd.Flags().BoolVar(&flagIncludeSubmodulePointer, "include-submodule-pointer", false, "include dirty project submodule pointers in the plan")
+	cmd.Flags().BoolVar(&flagDryRun, "dry-run", false, "print the staging plan and exit without committing")
+	cmd.Flags().BoolVar(&flagJSON, "json", false, "emit the staging plan and commit result as JSON on stdout")
+	return cmd
+}
+
+type commitFlags struct {
+	Message                 string
+	Workitem                string
+	Project                 string
+	Includes                []string
+	Excludes                []string
+	Staged                  bool
+	IncludeSubmodulePointer bool
+	DryRun                  bool
+	JSON                    bool
+}
+
+func runCommit(ctx context.Context, cmd *cobra.Command, flags commitFlags) error {
+	if flags.Message == "" && !flags.DryRun {
+		return camperrors.NewValidation("message", "commit message required (use -m \"<msg>\")", nil)
+	}
+
+	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
+	if err != nil {
+		return camperrors.Wrap(err, "not in a campaign directory")
+	}
+
+	plan, err := ComputePlan(ctx, campaignRoot, PlanOptions{
+		Explicit:                flags.Workitem,
+		Project:                 flags.Project,
+		Includes:                flags.Includes,
+		Excludes:                flags.Excludes,
+		StagedOnly:              flags.Staged,
+		IncludeSubmodulePointer: flags.IncludeSubmodulePointer,
+		CampaignID:              cfg.ID,
+	})
+	if err != nil {
+		if errors.Is(err, ErrNoWorkitemContext) {
+			fmt.Fprintln(cmd.ErrOrStderr(), noContextHint)
+			return camperrors.NewCommand("camp workitem commit", 2, "", err)
+		}
+		return err
+	}
+
+	if !flags.JSON {
+		if perr := PrintPlan(cmd.ErrOrStderr(), plan); perr != nil {
+			return perr
+		}
+	}
+
+	if len(plan.Stage) == 0 && len(plan.PreStaged) == 0 {
+		return camperrors.NewValidation("plan",
+			"empty staging plan; pass --include <path> or run from inside a changed workitem", nil)
+	}
+
+	if flags.DryRun {
+		if flags.JSON {
+			return emitJSON(cmd.OutOrStdout(), plan, "")
+		}
+		return nil
+	}
+
+	res := commit.Workitem(ctx, commit.WorkitemOptions{
+		Options: commit.Options{
+			CampaignRoot:  plan.RepoRoot,
+			CampaignID:    cfg.ID,
+			Files:         plan.Stage,
+			PreStaged:     plan.PreStaged,
+			SelectiveOnly: true,
+		},
+		Action:      commit.WorkitemScope,
+		WorkitemID:  plan.Workitem.StableID,
+		WorkitemRef: plan.WorkitemRef,
+		QuestID:     plan.QuestID,
+		Title:       flags.Message,
+	})
+	if res.Err != nil {
+		return res.Err
+	}
+	if res.NoChanges {
+		if flags.JSON {
+			return emitJSON(cmd.OutOrStdout(), plan, "")
+		}
+		fmt.Fprintln(cmd.OutOrStdout(), res.Message)
+		return nil
+	}
+
+	sha, _ := lastCommitSHA(ctx, plan.RepoRoot)
+	if flags.JSON {
+		return emitJSON(cmd.OutOrStdout(), plan, sha)
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "committed %s\n", sha)
+	return nil
+}
+
+func emitJSON(w writeFlusher, plan *StagingPlan, sha string) error {
+	payload := struct {
+		Workitem    string         `json:"workitem"`
+		Ref         string         `json:"workitem_ref,omitempty"`
+		QuestID     string         `json:"quest_id,omitempty"`
+		Tag         string         `json:"tag"`
+		Context     PlanContext    `json:"context"`
+		ContextNote string         `json:"context_note,omitempty"`
+		RepoRoot    string         `json:"repo_root"`
+		Stage       []string       `json:"stage"`
+		PreStaged   []string       `json:"pre_staged,omitempty"`
+		Skip        []SkippedEntry `json:"skip,omitempty"`
+		SHA         string         `json:"sha,omitempty"`
+	}{
+		Workitem:    plan.Workitem.StableID,
+		Ref:         plan.WorkitemRef,
+		QuestID:     plan.QuestID,
+		Tag:         plan.Tag,
+		Context:     plan.Context,
+		ContextNote: plan.ContextNote,
+		RepoRoot:    plan.RepoRoot,
+		Stage:       plan.Stage,
+		PreStaged:   plan.PreStaged,
+		Skip:        plan.Skip,
+		SHA:         sha,
+	}
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(payload)
+}
+
+type writeFlusher interface {
+	Write([]byte) (int, error)
+}
+
+func lastCommitSHA(ctx context.Context, repoRoot string) (string, error) {
+	out, err := exec.CommandContext(ctx, "git", "-C", repoRoot, "rev-parse", "HEAD").Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}

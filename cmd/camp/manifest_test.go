@@ -126,6 +126,8 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 	}
 	if workitemCommandRegistered() {
 		expectedCommands["workitem"] = false
+		expectedCommands["workitem commit"] = false
+		expectedCommands["workitem commits"] = false
 	}
 
 	for _, cmd := range manifest.Commands {
@@ -148,7 +150,7 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		wantCount += 13
 	}
 	if workitemCommandRegistered() {
-		wantCount += 1
+		wantCount += 3
 	}
 	if len(manifest.Commands) != wantCount {
 		t.Errorf("expected exactly %d restricted commands, got %d", wantCount, len(manifest.Commands))
@@ -199,6 +201,8 @@ func TestManifestCommand_AllCommandsHaveAnnotations(t *testing.T) {
 	}
 	if workitemCommandRegistered() {
 		agentAllowed["workitem"] = true
+		agentAllowed["workitem commit"] = true
+		agentAllowed["workitem commits"] = true
 	}
 
 	for _, cmd := range manifest.Commands {
@@ -273,6 +277,8 @@ func TestManifestCommand_InteractiveFlags(t *testing.T) {
 	}
 	if workitemCommandRegistered() {
 		nonInteractiveCommands["workitem"] = true
+		nonInteractiveCommands["workitem commit"] = true
+		nonInteractiveCommands["workitem commits"] = true
 	}
 
 	cmdMap := make(map[string]CommandEntry)

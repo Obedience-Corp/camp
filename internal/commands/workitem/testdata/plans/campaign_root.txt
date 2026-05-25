@@ -1,0 +1,8 @@
+workitem: design-timeline-2026-05-24 (ref: WI-abc123)
+context:  campaign root, workitem resolved via `current`
+staging:
+  M  workflow/design/timeline/DESIGN.md
+skipped:
+  README.md (out of scope)
+  projects/camp-timeline (submodule pointer; use --include-submodule-pointer)
+tag:    [OBEY-CAMPAIGN-8deed8b4-WI-WI-abc123]

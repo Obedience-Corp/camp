@@ -1,0 +1,195 @@
+package workitem
+
+import (
+	"context"
+	"fmt"
+	"io"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
+	"github.com/Obedience-Corp/camp/internal/workitem/resolver"
+	"github.com/Obedience-Corp/camp/pkg/commitkit"
+)
+
+const (
+	linkRegistryRelPath = ".campaign/workitems/links.yaml"
+
+	skipReasonOutOfScope          = "(out of scope)"
+	skipReasonExcludeFlag         = "(--exclude)"
+	skipReasonPointerOffByDefault = "(submodule pointer; use --include-submodule-pointer)"
+
+	stageAnnotationLinkRegistry = "link registry auto-included"
+)
+
+// PlanContext labels which staging-matrix row a plan came from. Stable
+// strings: used by both the human plan output and the integration tests.
+type PlanContext string
+
+const (
+	PlanContextWorkitemDir   PlanContext = "workitem directory"
+	PlanContextCampaignRoot  PlanContext = "campaign root"
+	PlanContextLinkedProject PlanContext = "linked project"
+	PlanContextFestival      PlanContext = "festival"
+	PlanContextStagedOnly    PlanContext = "staged-only"
+)
+
+// PlanOptions inputs to ComputePlan. Mirrors the camp workitem commit flag
+// surface so the planner can be exercised from tests without spinning up cobra.
+type PlanOptions struct {
+	Cwd                     string
+	Explicit                string   // --workitem <selector>
+	Project                 string   // --project <name> override
+	Includes                []string // --include <path> (repeatable)
+	Excludes                []string // --exclude <path> (repeatable)
+	StagedOnly              bool     // --staged
+	IncludeSubmodulePointer bool     // --include-submodule-pointer
+	CampaignID              string
+}
+
+// SkippedEntry pairs a path with a stable reason string.
+type SkippedEntry struct {
+	Path   string
+	Reason string
+}
+
+// StagingPlan is the contract between ComputePlan and the commit runner. Stage
+// is what the planner intends to `git add`. PreStaged is what is already in
+// the index (used by --staged so we do not re-stage). Skip explains paths
+// intentionally left out.
+type StagingPlan struct {
+	Workitem         *wkitem.WorkItem
+	WorkitemRef      string
+	QuestID          string
+	Context          PlanContext
+	ContextNote      string
+	RepoRoot         string
+	Stage            []string
+	StageAnnotations map[string]string
+	PreStaged        []string
+	Skip             []SkippedEntry
+	Tag              string
+}
+
+func (p *StagingPlan) addStageNote(path, note string) {
+	if p.StageAnnotations == nil {
+		p.StageAnnotations = make(map[string]string)
+	}
+	p.StageAnnotations[path] = note
+}
+
+// ComputePlan resolves a workitem from the current context, branches on the
+// matrix row that applies, and returns a StagingPlan that the commit runner
+// can hand to commit.Workitem. Refusal modes (no workitem, empty plan with no
+// override) surface as typed errors so the CLI can map them to exit codes.
+func ComputePlan(ctx context.Context, campaignRoot string, opts PlanOptions) (*StagingPlan, error) {
+	if campaignRoot == "" {
+		return nil, camperrors.NewValidation("root", "campaign root required", nil)
+	}
+
+	res, err := resolver.Resolve(ctx, campaignRoot, resolver.Options{
+		Explicit: opts.Explicit,
+		Cwd:      opts.Cwd,
+	})
+	if err != nil {
+		return nil, camperrors.Wrap(err, "resolve workitem")
+	}
+	if res == nil || res.Workitem == nil {
+		return nil, ErrNoWorkitemContext
+	}
+
+	wi := res.Workitem
+	ref := refOf(wi)
+	plan := &StagingPlan{
+		Workitem:    wi,
+		WorkitemRef: ref,
+		QuestID:     res.QuestID,
+		Tag:         commitkit.FormatContextTagsFull(opts.CampaignID, res.QuestID, "", ref),
+	}
+
+	if opts.StagedOnly {
+		plan.Context = PlanContextStagedOnly
+		plan.ContextNote = "using current git index"
+		plan.RepoRoot = campaignRoot
+		staged, err := listStagedFiles(ctx, campaignRoot)
+		if err != nil {
+			return nil, camperrors.Wrap(err, "list staged files")
+		}
+		plan.PreStaged = staged
+		// Includes still apply on top of --staged so the user can add a tag-only
+		// commit of additional explicit paths.
+		stage, skip, err := applyIncludes(campaignRoot, nil, opts.Includes)
+		if err != nil {
+			return nil, err
+		}
+		plan.Stage = applyExcludes(stage, opts.Excludes, &plan.Skip)
+		plan.Skip = append(plan.Skip, skip...)
+		return plan, nil
+	}
+
+	if opts.Project != "" {
+		return computeProjectPlan(ctx, campaignRoot, opts, plan)
+	}
+
+	// cwd-first routing: when the working directory is inside a sub-git-repo
+	// (typically projects/<name>/...), stage from that sub-repo regardless of
+	// which resolver tier matched. This keeps "I'm in the project, commit my
+	// workitem changes here" the natural one-liner.
+	if subRepo, ok := cwdSubGitRepo(opts.Cwd, campaignRoot); ok {
+		return computeDetectedProjectPlan(ctx, opts, plan, subRepo)
+	}
+
+	switch res.Source {
+	case resolver.SourceLink:
+		return computeLinkPlan(ctx, campaignRoot, opts, plan)
+	case resolver.SourceFestival:
+		return computeFestivalPlan(ctx, campaignRoot, opts, plan)
+	default:
+		// SourceExplicit, SourceAncestor, SourceCurrent — all stage from the
+		// campaign root scoped to the workitem directory.
+		return computeWorkitemDirPlan(ctx, campaignRoot, opts, plan, res.Source)
+	}
+}
+
+// PrintPlan writes the human-readable plan summary to w. It keeps the stable
+// COMMIT_DESIGN.md lines that integration tests grep while allowing per-path
+// annotations for planner-included files.
+func PrintPlan(w io.Writer, plan *StagingPlan) error {
+	if plan == nil || plan.Workitem == nil {
+		return camperrors.NewValidation("plan", "nil plan", nil)
+	}
+	fmt.Fprintf(w, "workitem: %s (ref: %s)\n", plan.Workitem.StableID, plan.WorkitemRef)
+	fmt.Fprintf(w, "context:  %s", plan.Context)
+	if plan.ContextNote != "" {
+		fmt.Fprintf(w, " (%s)", plan.ContextNote)
+	}
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "staging:")
+	if len(plan.PreStaged) > 0 {
+		for _, p := range plan.PreStaged {
+			fmt.Fprintf(w, "  S  %s\n", p)
+		}
+	}
+	for _, p := range plan.Stage {
+		if note := plan.StageAnnotations[p]; note != "" {
+			fmt.Fprintf(w, "  A  %s (%s)\n", p, note)
+			continue
+		}
+		fmt.Fprintf(w, "  A  %s\n", p)
+	}
+	if len(plan.Skip) > 0 {
+		fmt.Fprintln(w, "skipped:")
+		for _, s := range plan.Skip {
+			fmt.Fprintf(w, "  %s %s\n", s.Path, s.Reason)
+		}
+	}
+	fmt.Fprintf(w, "tag:    %s\n", plan.Tag)
+	return nil
+}
+
+// ErrNoWorkitemContext is returned when ComputePlan cannot resolve any
+// workitem context. The CLI maps this to exit code 2 with a help hint.
+var ErrNoWorkitemContext = camperrors.NewValidation(
+	"workitem",
+	"no workitem context resolved",
+	nil,
+)
