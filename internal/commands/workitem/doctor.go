@@ -33,6 +33,7 @@ const (
 	codeDuplicatePrimary   = "workitem.link.duplicate-primary"
 	codeSchemaViolation    = "workitem.schema.violation"
 	codeCurrentMissing     = "workitem.current.missing"
+	codeMissingRefField    = "workitem.ref.missing"
 )
 
 const (
@@ -185,6 +186,23 @@ func collectWorkitemFindings(ctx context.Context, root string, registry *links.L
 		}
 	}
 
+	// Workitems missing the ref field added in v1alpha6. Sorted by path so
+	// the order in which DeriveUnique fills collisions during --fix is
+	// deterministic.
+	missingRefPaths, err := workitemPathsMissingRef(ctx, root)
+	if err == nil {
+		for _, rel := range missingRefPaths {
+			findings = append(findings, docFinding{
+				Code:        codeMissingRefField,
+				Severity:    docSeverityWarning,
+				Target:      "workitem:" + rel,
+				Message:     "workitem at " + rel + " is missing the ref field added in v1alpha6",
+				FixHint:     "run camp workitem doctor --fix to backfill",
+				AutoFixable: true,
+			})
+		}
+	}
+
 	cur, err := links.LoadCurrent(ctx, root)
 	if err == nil && cur != nil {
 		if _, known := knownIDs[cur.WorkitemID]; !known {
@@ -222,6 +240,11 @@ func autoFixWorkitemFindings(ctx context.Context, root string, registry *links.L
 			}
 		case codeCurrentMissing:
 			if err := links.SaveCurrent(ctx, root, nil); err == nil {
+				applied++
+			}
+		case codeMissingRefField:
+			rel := strings.TrimPrefix(f.Target, "workitem:")
+			if backfillRef(ctx, root, rel) == nil {
 				applied++
 			}
 		}

@@ -20,5 +20,16 @@ func ApplyMetadata(item WorkItem, md *Metadata) (WorkItem, error) {
 	if md.Title != "" {
 		item.Title = md.Title
 	}
+	if md.Ref != "" || md.QuestID != "" {
+		if item.SourceMetadata == nil {
+			item.SourceMetadata = make(map[string]any)
+		}
+		if md.Ref != "" {
+			item.SourceMetadata["ref"] = md.Ref
+		}
+		if md.QuestID != "" {
+			item.SourceMetadata["quest_id"] = md.QuestID
+		}
+	}
 	return item, nil
 }
