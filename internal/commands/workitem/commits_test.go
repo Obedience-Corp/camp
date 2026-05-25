@@ -93,6 +93,19 @@ func TestEnumerateQueryRepos_DedupesDuplicateLinks(t *testing.T) {
 	}
 }
 
+func TestEnumerateQueryRepos_InvalidLinkRegistrySurfacesError(t *testing.T) {
+	root := commitsTestCampaign(t)
+	if err := os.WriteFile(filepath.Join(root, ".campaign", "workitems", "links.yaml"),
+		[]byte("version: workitem-links/v9beta\nlinks: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := enumerateQueryRepos(context.Background(), root)
+	if err == nil {
+		t.Fatal("expected invalid links.yaml to fail query enumeration")
+	}
+}
+
 func TestQueryRepo_FiltersFalsePositives(t *testing.T) {
 	root := commitsTestCampaign(t)
 	// Add a commit whose subject mentions WI-abc123 in body-like text but
@@ -106,7 +119,7 @@ func TestQueryRepo_FiltersFalsePositives(t *testing.T) {
 	runGit(t, root, "commit", "-q", "-m",
 		"[OBEY-CAMPAIGN-test-WI-WI-zzzzzz] WorkitemScope: notes about WI-abc123 (different ref tag)")
 
-	records, err := queryRepo(context.Background(), root, "WI-abc123")
+	records, err := queryRepo(context.Background(), root, root, "WI-abc123")
 	if err != nil {
 		t.Fatalf("queryRepo: %v", err)
 	}
@@ -124,7 +137,7 @@ func TestQueryRepo_FiltersFalsePositives(t *testing.T) {
 
 func TestQueryRepo_NonGitDirReturnsNil(t *testing.T) {
 	dir := t.TempDir()
-	records, err := queryRepo(context.Background(), dir, "WI-abc123")
+	records, err := queryRepo(context.Background(), dir, dir, "WI-abc123")
 	if err != nil {
 		t.Fatalf("queryRepo: %v", err)
 	}
@@ -138,7 +151,7 @@ func TestQueryRepo_ContextCanceledSurfacesError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := queryRepo(ctx, root, "WI-abc123")
+	_, err := queryRepo(ctx, root, root, "WI-abc123")
 	if err == nil {
 		t.Fatal("queryRepo with canceled context returned nil error")
 	}
@@ -186,22 +199,22 @@ func TestSearchRepos_AggregatesAndSorts(t *testing.T) {
 	runGit(t, demoDir, "commit", "-q", "-m",
 		"[OBEY-CAMPAIGN-test-WI-WI-abc123] WorkitemScope: project change")
 
-	records, errs := searchRepos(context.Background(), []string{root, demoDir}, "WI-abc123")
+	records, errs := searchRepos(context.Background(), root, []string{root, demoDir}, "WI-abc123")
 	if len(errs) > 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
 	if len(records) < 2 {
 		t.Fatalf("expected at least 2 records across both repos, got %d", len(records))
 	}
-	// Verify both repo bases are represented.
+	// Verify both campaign-relative repo paths are represented.
 	repos := map[string]bool{}
 	for _, r := range records {
 		repos[r.Repo] = true
 	}
-	if !repos["demo"] {
+	if !repos["projects/demo"] {
 		t.Errorf("missing demo repo in records: %v", repos)
 	}
-	if !repos[filepath.Base(root)] {
+	if !repos["."] {
 		t.Errorf("missing campaign root repo in records: %v", repos)
 	}
 	// Confirm sort works.
@@ -210,6 +223,40 @@ func TestSearchRepos_AggregatesAndSorts(t *testing.T) {
 	for i := range sorted {
 		if !sorted[i].Date.Equal(sorted[i].Date) {
 			t.Fatalf("dates not parsed")
+		}
+	}
+}
+
+func TestSearchRepos_UsesCampaignRelativeRepoPaths(t *testing.T) {
+	root := commitsTestCampaign(t)
+	repoA := filepath.Join(root, "projects", "demo")
+	repoB := filepath.Join(root, "projects", "worktrees", "demo")
+	if err := os.MkdirAll(repoB, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, repo := range []string{repoA, repoB} {
+		runGit(t, repo, "init", "-q")
+		runGit(t, repo, "config", "user.email", "test@example.com")
+		runGit(t, repo, "config", "user.name", "Test")
+		if err := os.WriteFile(filepath.Join(repo, "x.go"), []byte("package x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		runGit(t, repo, "add", "-A")
+		runGit(t, repo, "commit", "-q", "-m",
+			"[OBEY-CAMPAIGN-test-WI-WI-abc123] WorkitemScope: project change")
+	}
+
+	records, errs := searchRepos(context.Background(), root, []string{root, repoA, repoB}, "WI-abc123")
+	if len(errs) > 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	repos := map[string]bool{}
+	for _, r := range records {
+		repos[r.Repo] = true
+	}
+	for _, want := range []string{".", "projects/demo", "projects/worktrees/demo"} {
+		if !repos[want] {
+			t.Fatalf("missing repo %q in records: %v", want, repos)
 		}
 	}
 }

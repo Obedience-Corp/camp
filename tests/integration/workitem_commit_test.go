@@ -117,16 +117,23 @@ func TestIntegration_WorkitemCommit_RefusesSilentWiden(t *testing.T) {
 	require.Equal(t, 0, code)
 	require.NoError(t, tc.WriteFile(dir+"/README.md", "readme\n"))
 	require.NoError(t, tc.WriteFile(dir+"/docs/extra.md", "extra\n"))
+	require.NoError(t, tc.WriteFile(dir+"/.campaign/workitems/links.yaml", "version: workitem-links/v1alpha1\nlinks: []\n"))
 
 	out, err := tc.RunCampInDir(dir, "workitem", "commit", "timeline", "-m", "test widen")
 	require.NoError(t, err, "camp workitem commit: %s", out)
+	assert.Contains(t, out, ".campaign/workitems/links.yaml (link registry auto-included)",
+		"plan output should explain why the registry is included:\n%s", out)
 
 	changed := headChangedPaths(t, tc, dir)
 	for _, p := range changed {
+		if p == ".campaign/workitems/links.yaml" {
+			continue
+		}
 		assert.True(t, strings.HasPrefix(p, "workflow/design/timeline/"),
 			"unexpected path %q leaked past the workitem boundary; full set: %v", p, changed)
 	}
 	assert.Contains(t, changed, "workflow/design/timeline/test slug with spaces.md")
+	assert.Contains(t, changed, ".campaign/workitems/links.yaml")
 	status := statusPorcelain(t, tc, dir)
 	assert.Contains(t, status, "README.md", "README.md should remain dirty: %q", status)
 	assert.Contains(t, status, "docs/extra.md", "docs/extra.md should remain dirty: %q", status)
@@ -204,7 +211,7 @@ func TestIntegration_WorkitemCommits_CrossRepo(t *testing.T) {
 	jsonOut, err := tc.RunCampInDir(dir, "workitem", "commits", "timeline", "--json")
 	require.NoError(t, err, "workitem commits --json: %s", jsonOut)
 	for _, repoName := range []string{"camp-A", "camp-B"} {
-		assert.Contains(t, jsonOut, "\"repo\": \""+repoName+"\"",
+		assert.Contains(t, jsonOut, "\"repo\": \"projects/"+repoName+"\"",
 			"JSON missing repo field for %s:\n%s", repoName, jsonOut)
 	}
 }

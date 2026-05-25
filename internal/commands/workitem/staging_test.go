@@ -1,11 +1,13 @@
 package workitem
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -117,6 +119,40 @@ func TestComputePlan_WorkitemDir_Ancestor(t *testing.T) {
 	}
 }
 
+func TestComputePlan_AutoIncludedLinkRegistryIsAnnotated(t *testing.T) {
+	root := stagingTestCampaign(t)
+	defer chdir(t, filepath.Join(root, "workflow", "design", "example"))()
+
+	if err := os.WriteFile(filepath.Join(root, "workflow", "design", "example", "notes.md"),
+		[]byte("notes\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, linkRegistryRelPath),
+		[]byte("version: workitem-links/v1alpha1\nlinks: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := ComputePlan(context.Background(), root, PlanOptions{CampaignID: "test-campaign"})
+	if err != nil {
+		t.Fatalf("ComputePlan: %v", err)
+	}
+	if !contains(plan.Stage, linkRegistryRelPath) {
+		t.Fatalf("stage missing auto-included link registry: %v", plan.Stage)
+	}
+	if got := plan.StageAnnotations[linkRegistryRelPath]; got != stageAnnotationLinkRegistry {
+		t.Fatalf("link registry annotation = %q, want %q", got, stageAnnotationLinkRegistry)
+	}
+
+	var out bytes.Buffer
+	if err := PrintPlan(&out, plan); err != nil {
+		t.Fatalf("PrintPlan: %v", err)
+	}
+	want := linkRegistryRelPath + " (" + stageAnnotationLinkRegistry + ")"
+	if !strings.Contains(out.String(), want) {
+		t.Fatalf("plan output missing annotation %q:\n%s", want, out.String())
+	}
+}
+
 func TestComputePlan_NoContext_Errors(t *testing.T) {
 	root := stagingTestCampaign(t)
 	defer chdir(t, root)()
@@ -179,6 +215,23 @@ func TestComputePlan_ExcludeRemovesPath(t *testing.T) {
 	}
 	if !skipContains(plan.Skip, "workflow/design/example/b.md", skipReasonExcludeFlag) {
 		t.Fatalf("excluded path not in skip list: %#v", plan.Skip)
+	}
+}
+
+func TestApplyExcludesDoesNotMutateInput(t *testing.T) {
+	stage := []string{"a.md", "b.md", "c.md"}
+	original := append([]string{}, stage...)
+	var skip []SkippedEntry
+
+	got := applyExcludes(stage, []string{"b.md"}, &skip)
+	if !reflect.DeepEqual(stage, original) {
+		t.Fatalf("applyExcludes mutated input: got %v, want %v", stage, original)
+	}
+	if contains(got, "b.md") {
+		t.Fatalf("excluded path still present: %v", got)
+	}
+	if !skipContains(skip, "b.md", skipReasonExcludeFlag) {
+		t.Fatalf("excluded path missing from skip list: %#v", skip)
 	}
 }
 

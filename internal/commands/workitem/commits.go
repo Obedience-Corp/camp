@@ -138,7 +138,7 @@ func runCommitsQuery(ctx context.Context, cmd *cobra.Command, flags commitsFlags
 		return camperrors.Wrap(err, "enumerate query repos")
 	}
 
-	records, queryErrs := searchRepos(ctx, repos, ref)
+	records, queryErrs := searchRepos(ctx, campaignRoot, repos, ref)
 	sort.Slice(records, func(i, j int) bool { return records[i].Date.After(records[j].Date) })
 
 	if flags.Offset > 0 && flags.Offset < len(records) {
@@ -169,7 +169,7 @@ func enumerateQueryRepos(ctx context.Context, campaignRoot string) ([]string, er
 
 	registry, err := links.Load(ctx, campaignRoot)
 	if err != nil {
-		return out, nil // links.yaml may not exist yet; campaign root is enough
+		return nil, camperrors.Wrap(err, "load link registry")
 	}
 	for i := range registry.Links {
 		link := &registry.Links[i]
@@ -192,7 +192,7 @@ func enumerateQueryRepos(ctx context.Context, campaignRoot string) ([]string, er
 
 // searchRepos fans out across repos with a bounded worker pool and gathers
 // the matched commits + per-repo errors.
-func searchRepos(ctx context.Context, repos []string, ref string) ([]CommitRecord, []commitsQueryError) {
+func searchRepos(ctx context.Context, campaignRoot string, repos []string, ref string) ([]CommitRecord, []commitsQueryError) {
 	workers := commitsWorkerCount(len(repos))
 
 	type job struct{ repo string }
@@ -209,9 +209,9 @@ func searchRepos(ctx context.Context, repos []string, ref string) ([]CommitRecor
 		go func() {
 			defer wg.Done()
 			for j := range jobs {
-				records, err := queryRepo(ctx, j.repo, ref)
+				records, err := queryRepo(ctx, campaignRoot, j.repo, ref)
 				if err != nil {
-					results <- out{err: &commitsQueryError{Repo: j.repo, Err: err.Error()}}
+					results <- out{err: &commitsQueryError{Repo: repoDisplayPath(campaignRoot, j.repo), Err: err.Error()}}
 					continue
 				}
 				results <- out{records: records}
@@ -258,7 +258,7 @@ func commitsWorkerCount(repoCount int) int {
 // filters out commits whose parsed tag does not match ref exactly. Returns
 // nil records (not an error) when the directory is not a git repo so the
 // caller can skip silently.
-func queryRepo(ctx context.Context, repo, ref string) ([]CommitRecord, error) {
+func queryRepo(ctx context.Context, campaignRoot, repo, ref string) ([]CommitRecord, error) {
 	cctx, cancel := context.WithTimeout(ctx, commitsPerRepoTimeout)
 	defer cancel()
 
@@ -283,7 +283,7 @@ func queryRepo(ctx context.Context, repo, ref string) ([]CommitRecord, error) {
 	if err != nil {
 		return nil, err
 	}
-	rel := filepath.Base(repo)
+	rel := repoDisplayPath(campaignRoot, repo)
 	var records []CommitRecord
 	for _, line := range strings.Split(strings.TrimRight(string(output), "\n"), "\n") {
 		if line == "" {
@@ -309,6 +309,20 @@ func queryRepo(ctx context.Context, repo, ref string) ([]CommitRecord, error) {
 		})
 	}
 	return records, nil
+}
+
+func repoDisplayPath(campaignRoot, repo string) string {
+	rel, err := filepath.Rel(campaignRoot, repo)
+	if err == nil {
+		slashRel := filepath.ToSlash(rel)
+		if slashRel == "." {
+			return "."
+		}
+		if slashRel != ".." && !strings.HasPrefix(slashRel, "../") && !filepath.IsAbs(rel) {
+			return slashRel
+		}
+	}
+	return filepath.Base(repo)
 }
 
 func isGitRepo(ctx context.Context, path string) (bool, error) {

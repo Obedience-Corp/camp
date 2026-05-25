@@ -1,26 +1,14 @@
 package workitem
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"sort"
-	"strings"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
-	"github.com/Obedience-Corp/camp/internal/workitem/links"
 	"github.com/Obedience-Corp/camp/internal/workitem/resolver"
 	"github.com/Obedience-Corp/camp/pkg/commitkit"
-)
-
-var (
-	osGetwd = os.Getwd
-	osStat  = os.Stat
 )
 
 const (
@@ -29,6 +17,8 @@ const (
 	skipReasonOutOfScope          = "(out of scope)"
 	skipReasonExcludeFlag         = "(--exclude)"
 	skipReasonPointerOffByDefault = "(submodule pointer; use --include-submodule-pointer)"
+
+	stageAnnotationLinkRegistry = "link registry auto-included"
 )
 
 // PlanContext labels which staging-matrix row a plan came from. Stable
@@ -67,16 +57,24 @@ type SkippedEntry struct {
 // the index (used by --staged so we do not re-stage). Skip explains paths
 // intentionally left out.
 type StagingPlan struct {
-	Workitem    *wkitem.WorkItem
-	WorkitemRef string
-	QuestID     string
-	Context     PlanContext
-	ContextNote string
-	RepoRoot    string
-	Stage       []string
-	PreStaged   []string
-	Skip        []SkippedEntry
-	Tag         string
+	Workitem         *wkitem.WorkItem
+	WorkitemRef      string
+	QuestID          string
+	Context          PlanContext
+	ContextNote      string
+	RepoRoot         string
+	Stage            []string
+	StageAnnotations map[string]string
+	PreStaged        []string
+	Skip             []SkippedEntry
+	Tag              string
+}
+
+func (p *StagingPlan) addStageNote(path, note string) {
+	if p.StageAnnotations == nil {
+		p.StageAnnotations = make(map[string]string)
+	}
+	p.StageAnnotations[path] = note
 }
 
 // ComputePlan resolves a workitem from the current context, branches on the
@@ -137,10 +135,7 @@ func ComputePlan(ctx context.Context, campaignRoot string, opts PlanOptions) (*S
 	// which resolver tier matched. This keeps "I'm in the project, commit my
 	// workitem changes here" the natural one-liner.
 	if subRepo, ok := cwdSubGitRepo(opts.Cwd, campaignRoot); ok {
-		plan.RepoRoot = subRepo
-		plan.Context = PlanContextLinkedProject
-		plan.ContextNote = "project " + filepath.Base(subRepo)
-		return finishProjectPlan(ctx, opts, plan)
+		return computeDetectedProjectPlan(ctx, opts, plan, subRepo)
 	}
 
 	switch res.Source {
@@ -155,160 +150,9 @@ func ComputePlan(ctx context.Context, campaignRoot string, opts PlanOptions) (*S
 	}
 }
 
-// cwdSubGitRepo returns the absolute path of a sub-git-repo containing cwd
-// when cwd is strictly inside the campaign tree but not the campaign root
-// itself. Empty cwd resolves via os.Getwd.
-func cwdSubGitRepo(cwd, campaignRoot string) (string, bool) {
-	if cwd == "" {
-		c, err := osGetwd()
-		if err != nil {
-			return "", false
-		}
-		cwd = c
-	}
-	abs, err := filepath.Abs(cwd)
-	if err != nil {
-		return "", false
-	}
-	rel, err := filepath.Rel(campaignRoot, abs)
-	if err != nil || strings.HasPrefix(rel, "..") || rel == "." {
-		return "", false
-	}
-	dir := abs
-	for dir != campaignRoot && len(dir) > len(campaignRoot) {
-		gitMarker := filepath.Join(dir, ".git")
-		if info, err := osStat(gitMarker); err == nil && (info.IsDir() || info.Mode().IsRegular()) {
-			return dir, true
-		}
-		dir = filepath.Dir(dir)
-	}
-	return "", false
-}
-
-func finishProjectPlan(ctx context.Context, opts PlanOptions, plan *StagingPlan) (*StagingPlan, error) {
-	stage, err := listChangedFilesUnder(ctx, plan.RepoRoot, "")
-	if err != nil {
-		return nil, camperrors.Wrap(err, "list project changes")
-	}
-	added, addSkip, err := applyIncludes(plan.RepoRoot, stage, opts.Includes)
-	if err != nil {
-		return nil, err
-	}
-	plan.Skip = append(plan.Skip, addSkip...)
-	plan.Stage = applyExcludes(added, opts.Excludes, &plan.Skip)
-	plan.Stage = dedupeSorted(plan.Stage)
-	return plan, nil
-}
-
-func computeWorkitemDirPlan(ctx context.Context, root string, opts PlanOptions, plan *StagingPlan, src resolver.Source) (*StagingPlan, error) {
-	plan.RepoRoot = root
-	plan.Context = PlanContextWorkitemDir
-	if src != resolver.SourceAncestor {
-		plan.Context = PlanContextCampaignRoot
-	}
-	plan.ContextNote = workitemDirNote(plan.Workitem, src)
-
-	stage, err := listChangedFilesUnder(ctx, root, plan.Workitem.RelativePath)
-	if err != nil {
-		return nil, camperrors.Wrap(err, "list workitem changes")
-	}
-
-	if dirty, err := pathIsDirty(ctx, root, linkRegistryRelPath); err == nil && dirty {
-		stage = append(stage, linkRegistryRelPath)
-	}
-
-	if opts.IncludeSubmodulePointer {
-		if pointers, perr := listDirtySubmodulePointers(ctx, root); perr == nil {
-			stage = append(stage, pointers...)
-		}
-	}
-
-	added, addSkip, err := applyIncludes(root, stage, opts.Includes)
-	if err != nil {
-		return nil, err
-	}
-	plan.Skip = append(plan.Skip, addSkip...)
-	plan.Stage = applyExcludes(added, opts.Excludes, &plan.Skip)
-
-	plan.Skip = append(plan.Skip, listSubmodulePointerSkips(ctx, root, opts.IncludeSubmodulePointer)...)
-
-	plan.Stage = dedupeSorted(plan.Stage)
-	return plan, nil
-}
-
-func computeLinkPlan(ctx context.Context, root string, opts PlanOptions, plan *StagingPlan) (*StagingPlan, error) {
-	scopePath, err := pickPrimaryProjectScopePath(ctx, root, plan.Workitem)
-	if err != nil {
-		return nil, err
-	}
-	repoRoot := filepath.Join(root, filepath.FromSlash(scopePath))
-	plan.RepoRoot = repoRoot
-	plan.Context = PlanContextLinkedProject
-	plan.ContextNote = "linked project " + filepath.Base(scopePath)
-
-	stage, err := listChangedFilesUnder(ctx, repoRoot, "")
-	if err != nil {
-		return nil, camperrors.Wrap(err, "list project changes")
-	}
-
-	added, addSkip, err := applyIncludes(repoRoot, stage, opts.Includes)
-	if err != nil {
-		return nil, err
-	}
-	plan.Skip = append(plan.Skip, addSkip...)
-	plan.Stage = applyExcludes(added, opts.Excludes, &plan.Skip)
-	plan.Stage = dedupeSorted(plan.Stage)
-	return plan, nil
-}
-
-func computeFestivalPlan(ctx context.Context, root string, opts PlanOptions, plan *StagingPlan) (*StagingPlan, error) {
-	plan.RepoRoot = root
-	plan.Context = PlanContextFestival
-	scope := primaryFestivalScopePath(ctx, root, plan.Workitem)
-	if scope == "" {
-		scope = plan.Workitem.RelativePath
-	}
-	plan.ContextNote = "festival " + filepath.Base(scope)
-
-	stage, err := listChangedFilesUnder(ctx, root, scope)
-	if err != nil {
-		return nil, camperrors.Wrap(err, "list festival changes")
-	}
-	if dirty, err := pathIsDirty(ctx, root, linkRegistryRelPath); err == nil && dirty {
-		stage = append(stage, linkRegistryRelPath)
-	}
-	added, addSkip, err := applyIncludes(root, stage, opts.Includes)
-	if err != nil {
-		return nil, err
-	}
-	plan.Skip = append(plan.Skip, addSkip...)
-	plan.Stage = applyExcludes(added, opts.Excludes, &plan.Skip)
-	plan.Stage = dedupeSorted(plan.Stage)
-	return plan, nil
-}
-
-func computeProjectPlan(ctx context.Context, root string, opts PlanOptions, plan *StagingPlan) (*StagingPlan, error) {
-	repoRoot := filepath.Join(root, "projects", opts.Project)
-	plan.RepoRoot = repoRoot
-	plan.Context = PlanContextLinkedProject
-	plan.ContextNote = "project " + opts.Project + " (--project override)"
-
-	stage, err := listChangedFilesUnder(ctx, repoRoot, "")
-	if err != nil {
-		return nil, camperrors.Wrap(err, "list project changes")
-	}
-	added, addSkip, err := applyIncludes(repoRoot, stage, opts.Includes)
-	if err != nil {
-		return nil, err
-	}
-	plan.Skip = append(plan.Skip, addSkip...)
-	plan.Stage = applyExcludes(added, opts.Excludes, &plan.Skip)
-	plan.Stage = dedupeSorted(plan.Stage)
-	return plan, nil
-}
-
-// PrintPlan writes the human-readable plan summary to w. Mirrors
-// COMMIT_DESIGN.md §6 exactly so the integration tests can grep stable lines.
+// PrintPlan writes the human-readable plan summary to w. It keeps the stable
+// COMMIT_DESIGN.md lines that integration tests grep while allowing per-path
+// annotations for planner-included files.
 func PrintPlan(w io.Writer, plan *StagingPlan) error {
 	if plan == nil || plan.Workitem == nil {
 		return camperrors.NewValidation("plan", "nil plan", nil)
@@ -326,6 +170,10 @@ func PrintPlan(w io.Writer, plan *StagingPlan) error {
 		}
 	}
 	for _, p := range plan.Stage {
+		if note := plan.StageAnnotations[p]; note != "" {
+			fmt.Fprintf(w, "  A  %s (%s)\n", p, note)
+			continue
+		}
 		fmt.Fprintf(w, "  A  %s\n", p)
 	}
 	if len(plan.Skip) > 0 {
@@ -336,259 +184,6 @@ func PrintPlan(w io.Writer, plan *StagingPlan) error {
 	}
 	fmt.Fprintf(w, "tag:    %s\n", plan.Tag)
 	return nil
-}
-
-// refOf reads the workitem ref off SourceMetadata (populated by
-// workitem.ApplyMetadata in sequence 03 task 02).
-func refOf(wi *wkitem.WorkItem) string {
-	if wi == nil || wi.SourceMetadata == nil {
-		return ""
-	}
-	if v, ok := wi.SourceMetadata["ref"].(string); ok {
-		return v
-	}
-	return ""
-}
-
-func workitemDirNote(wi *wkitem.WorkItem, src resolver.Source) string {
-	switch src {
-	case resolver.SourceAncestor:
-		return wi.RelativePath
-	case resolver.SourceExplicit:
-		return "explicit --workitem"
-	case resolver.SourceCurrent:
-		return "via current.yaml"
-	default:
-		return string(src)
-	}
-}
-
-// pickPrimaryProjectScopePath finds the primary path link scope (project,
-// repo, or worktree) that points at the workitem. Returns the campaign-
-// relative path so callers can join with the campaign root to get the
-// staging repo root.
-func pickPrimaryProjectScopePath(ctx context.Context, root string, wi *wkitem.WorkItem) (string, error) {
-	registry, err := links.Load(ctx, root)
-	if err != nil {
-		return "", camperrors.Wrap(err, "load links")
-	}
-	for i := range registry.Links {
-		link := &registry.Links[i]
-		if link.Role != links.RolePrimary {
-			continue
-		}
-		if link.WorkitemID != wi.StableID && link.WorkitemID != wi.Key {
-			continue
-		}
-		switch link.Scope.Kind {
-		case links.ScopeProject, links.ScopeRepo, links.ScopeWorktree:
-			return link.Scope.Path, nil
-		}
-	}
-	return "", camperrors.NewValidation("link",
-		"no primary project link points at workitem "+wi.StableID, nil)
-}
-
-func primaryFestivalScopePath(ctx context.Context, root string, wi *wkitem.WorkItem) string {
-	registry, err := links.Load(ctx, root)
-	if err != nil || registry == nil {
-		return ""
-	}
-	for i := range registry.Links {
-		link := &registry.Links[i]
-		if link.Role != links.RolePrimary || link.Scope.Kind != links.ScopeFestival {
-			continue
-		}
-		if link.WorkitemID != wi.StableID && link.WorkitemID != wi.Key {
-			continue
-		}
-		return link.Scope.Path
-	}
-	return ""
-}
-
-// listChangedFilesUnder returns repo-relative paths for changes inside prefix
-// (or the entire repo when prefix is empty). Wraps `git status --porcelain`
-// with `--untracked-files=all` so untracked directories are expanded to
-// individual files (otherwise --exclude cannot target leaf paths).
-func listChangedFilesUnder(ctx context.Context, repoRoot, prefix string) ([]string, error) {
-	args := []string{"-C", repoRoot, "status", "--porcelain", "-z", "--untracked-files=all"}
-	if prefix != "" {
-		args = append(args, "--", prefix)
-	}
-	entries, err := gitStatusPorcelainZ(ctx, args...)
-	if err != nil {
-		return nil, err
-	}
-	var files []string
-	for _, entry := range entries {
-		files = append(files, entry.Path)
-	}
-	return files, nil
-}
-
-func listStagedFiles(ctx context.Context, repoRoot string) ([]string, error) {
-	out, err := exec.CommandContext(ctx, "git", "-C", repoRoot, "diff", "--cached", "--name-only", "-z").Output()
-	if err != nil {
-		return nil, err
-	}
-	return parseNULPathList(out), nil
-}
-
-func pathIsDirty(ctx context.Context, repoRoot, relPath string) (bool, error) {
-	entries, err := gitStatusPorcelainZ(ctx, "-C", repoRoot, "status", "--porcelain", "-z", "--", relPath)
-	if err != nil {
-		return false, err
-	}
-	return len(entries) != 0, nil
-}
-
-func listDirtySubmodulePointers(ctx context.Context, repoRoot string) ([]string, error) {
-	entries, err := gitStatusPorcelainZ(ctx, "-C", repoRoot, "status", "--porcelain", "-z", "--", "projects")
-	if err != nil {
-		return nil, err
-	}
-	var pointers []string
-	for _, entry := range entries {
-		if strings.HasPrefix(entry.Path, "projects/") {
-			pointers = append(pointers, entry.Path)
-		}
-	}
-	return pointers, nil
-}
-
-type gitStatusEntry struct {
-	Code string
-	Path string
-}
-
-func gitStatusPorcelainZ(ctx context.Context, args ...string) ([]gitStatusEntry, error) {
-	out, err := exec.CommandContext(ctx, "git", args...).Output()
-	if err != nil {
-		return nil, err
-	}
-	return parseGitStatusPorcelainZ(out), nil
-}
-
-func parseGitStatusPorcelainZ(out []byte) []gitStatusEntry {
-	fields := splitNULFields(out)
-	entries := make([]gitStatusEntry, 0, len(fields))
-	for i := 0; i < len(fields); i++ {
-		field := fields[i]
-		if len(field) == 0 {
-			continue
-		}
-		if len(field) < 4 {
-			continue
-		}
-		code := string(field[:2])
-		path := string(field[3:])
-		entries = append(entries, gitStatusEntry{Code: code, Path: path})
-		if code[0] == 'R' || code[0] == 'C' {
-			i++ // -z emits the old path as a second NUL-delimited field.
-		}
-	}
-	return entries
-}
-
-func parseNULPathList(out []byte) []string {
-	fields := splitNULFields(out)
-	paths := make([]string, 0, len(fields))
-	for _, field := range fields {
-		if len(field) == 0 {
-			continue
-		}
-		paths = append(paths, string(field))
-	}
-	return paths
-}
-
-func splitNULFields(out []byte) [][]byte {
-	return bytes.Split(bytes.TrimRight(out, "\x00"), []byte{0})
-}
-
-func listSubmodulePointerSkips(ctx context.Context, root string, allowed bool) []SkippedEntry {
-	if allowed {
-		return nil
-	}
-	pointers, err := listDirtySubmodulePointers(ctx, root)
-	if err != nil {
-		return nil
-	}
-	out := make([]SkippedEntry, 0, len(pointers))
-	for _, p := range pointers {
-		out = append(out, SkippedEntry{Path: p, Reason: skipReasonPointerOffByDefault})
-	}
-	return out
-}
-
-func applyIncludes(repoRoot string, stage, includes []string) ([]string, []SkippedEntry, error) {
-	if len(includes) == 0 {
-		return stage, nil, nil
-	}
-	out := append([]string{}, stage...)
-	var skip []SkippedEntry
-	for _, inc := range includes {
-		rel, err := relativeToRepo(repoRoot, inc)
-		if err != nil {
-			skip = append(skip, SkippedEntry{Path: inc, Reason: skipReasonOutOfScope})
-			continue
-		}
-		out = append(out, rel)
-	}
-	return out, skip, nil
-}
-
-func applyExcludes(stage []string, excludes []string, skip *[]SkippedEntry) []string {
-	if len(excludes) == 0 {
-		return stage
-	}
-	ex := make(map[string]bool, len(excludes))
-	for _, e := range excludes {
-		ex[filepath.ToSlash(e)] = true
-	}
-	kept := stage[:0]
-	for _, p := range stage {
-		if ex[filepath.ToSlash(p)] {
-			*skip = append(*skip, SkippedEntry{Path: p, Reason: skipReasonExcludeFlag})
-			continue
-		}
-		kept = append(kept, p)
-	}
-	return kept
-}
-
-func relativeToRepo(repoRoot, p string) (string, error) {
-	if !filepath.IsAbs(p) {
-		// Treat as already-repo-relative; reject escape attempts.
-		clean := filepath.Clean(p)
-		if strings.HasPrefix(clean, "..") {
-			return "", camperrors.NewValidation("include", "path escapes repo root: "+p, nil)
-		}
-		return filepath.ToSlash(clean), nil
-	}
-	rel, err := filepath.Rel(repoRoot, p)
-	if err != nil || strings.HasPrefix(rel, "..") {
-		return "", camperrors.NewValidation("include", "path outside repo: "+p, nil)
-	}
-	return filepath.ToSlash(rel), nil
-}
-
-func dedupeSorted(in []string) []string {
-	if len(in) == 0 {
-		return in
-	}
-	seen := make(map[string]bool, len(in))
-	out := make([]string, 0, len(in))
-	for _, p := range in {
-		if seen[p] {
-			continue
-		}
-		seen[p] = true
-		out = append(out, p)
-	}
-	sort.Strings(out)
-	return out
 }
 
 // ErrNoWorkitemContext is returned when ComputePlan cannot resolve any
