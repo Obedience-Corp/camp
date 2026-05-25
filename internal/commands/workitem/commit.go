@@ -39,26 +39,31 @@ func newCommitCommand() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "commit",
+		Use:   "commit [selector]",
 		Short: "Commit changes scoped to the resolved workitem",
 		Long: `Stage and commit changes belonging to a resolved workitem.
 
 The staging plan is computed from the resolver context (cwd-aware, with
-explicit --workitem or --project overrides) and printed to stderr before
-the commit runs. The plan never silently widens to "git add ." at the
+explicit positional <selector> or --project overrides) and printed to stderr
+before the commit runs. The plan never silently widens to "git add ." at the
 campaign root.
 
 See internal/commands/workitem/COMMIT_DESIGN.md for the full staging matrix
 and flag precedence.`,
+		Args: cobra.MaximumNArgs(1),
 		Annotations: map[string]string{
 			"agent_allowed": "true",
 			"agent_reason":  "Scoped commit command; honors --json and --dry-run for automation",
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
+			selector := flagWorkitem
+			if selector == "" && len(args) == 1 {
+				selector = args[0]
+			}
 			return runCommit(ctx, cmd, commitFlags{
 				Message:                 flagMessage,
-				Workitem:                flagWorkitem,
+				Workitem:                selector,
 				Project:                 flagProject,
 				Includes:                flagIncludes,
 				Excludes:                flagExcludes,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -14,6 +15,11 @@ import (
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
 	"github.com/Obedience-Corp/camp/internal/workitem/resolver"
 	"github.com/Obedience-Corp/camp/pkg/commitkit"
+)
+
+var (
+	osGetwd = os.Getwd
+	osStat  = os.Stat
 )
 
 const (
@@ -125,6 +131,17 @@ func ComputePlan(ctx context.Context, campaignRoot string, opts PlanOptions) (*S
 		return computeProjectPlan(ctx, campaignRoot, opts, plan)
 	}
 
+	// cwd-first routing: when the working directory is inside a sub-git-repo
+	// (typically projects/<name>/...), stage from that sub-repo regardless of
+	// which resolver tier matched. This keeps "I'm in the project, commit my
+	// workitem changes here" the natural one-liner.
+	if subRepo, ok := cwdSubGitRepo(opts.Cwd, campaignRoot); ok {
+		plan.RepoRoot = subRepo
+		plan.Context = PlanContextLinkedProject
+		plan.ContextNote = "project " + filepath.Base(subRepo)
+		return finishProjectPlan(ctx, opts, plan)
+	}
+
 	switch res.Source {
 	case resolver.SourceLink:
 		return computeLinkPlan(ctx, campaignRoot, opts, plan)
@@ -135,6 +152,51 @@ func ComputePlan(ctx context.Context, campaignRoot string, opts PlanOptions) (*S
 		// campaign root scoped to the workitem directory.
 		return computeWorkitemDirPlan(ctx, campaignRoot, opts, plan, res.Source)
 	}
+}
+
+// cwdSubGitRepo returns the absolute path of a sub-git-repo containing cwd
+// when cwd is strictly inside the campaign tree but not the campaign root
+// itself. Empty cwd resolves via os.Getwd.
+func cwdSubGitRepo(cwd, campaignRoot string) (string, bool) {
+	if cwd == "" {
+		c, err := osGetwd()
+		if err != nil {
+			return "", false
+		}
+		cwd = c
+	}
+	abs, err := filepath.Abs(cwd)
+	if err != nil {
+		return "", false
+	}
+	rel, err := filepath.Rel(campaignRoot, abs)
+	if err != nil || strings.HasPrefix(rel, "..") || rel == "." {
+		return "", false
+	}
+	dir := abs
+	for dir != campaignRoot && len(dir) > len(campaignRoot) {
+		gitMarker := filepath.Join(dir, ".git")
+		if info, err := osStat(gitMarker); err == nil && (info.IsDir() || info.Mode().IsRegular()) {
+			return dir, true
+		}
+		dir = filepath.Dir(dir)
+	}
+	return "", false
+}
+
+func finishProjectPlan(ctx context.Context, opts PlanOptions, plan *StagingPlan) (*StagingPlan, error) {
+	stage, err := listChangedFilesUnder(ctx, plan.RepoRoot, "")
+	if err != nil {
+		return nil, camperrors.Wrap(err, "list project changes")
+	}
+	added, addSkip, err := applyIncludes(plan.RepoRoot, stage, opts.Includes)
+	if err != nil {
+		return nil, err
+	}
+	plan.Skip = append(plan.Skip, addSkip...)
+	plan.Stage = applyExcludes(added, opts.Excludes, &plan.Skip)
+	plan.Stage = dedupeSorted(plan.Stage)
+	return plan, nil
 }
 
 func computeWorkitemDirPlan(ctx context.Context, root string, opts PlanOptions, plan *StagingPlan, src resolver.Source) (*StagingPlan, error) {
@@ -345,9 +407,11 @@ func primaryFestivalScopePath(ctx context.Context, root string, wi *wkitem.WorkI
 }
 
 // listChangedFilesUnder returns repo-relative paths for changes inside prefix
-// (or the entire repo when prefix is empty). Wraps `git status --porcelain`.
+// (or the entire repo when prefix is empty). Wraps `git status --porcelain`
+// with `--untracked-files=all` so untracked directories are expanded to
+// individual files (otherwise --exclude cannot target leaf paths).
 func listChangedFilesUnder(ctx context.Context, repoRoot, prefix string) ([]string, error) {
-	args := []string{"-C", repoRoot, "status", "--porcelain"}
+	args := []string{"-C", repoRoot, "status", "--porcelain", "--untracked-files=all"}
 	if prefix != "" {
 		args = append(args, "--", prefix)
 	}
