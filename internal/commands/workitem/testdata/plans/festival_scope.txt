@@ -1,0 +1,8 @@
+workitem: design-cw0003-linking-2026-05-24 (ref: WI-def456)
+context:  festival camp-workitem-linking-and-commits-CW0003 (festivals/active/...)
+staging:
+  M  festivals/active/camp-workitem-linking-and-commits-CW0003/001_IMPLEMENT/04_camp_workitem_commit/01_design_staging_plan.md
+  M  .campaign/workitems/links.yaml
+skipped:
+  festivals/active/camp-workitem-linking-and-commits-CW0003/.fest/state.json (out of scope)
+tag:    [OBEY-CAMPAIGN-8deed8b4-qst_active-FE-CW0003-WI-WI-def456]

@@ -1,0 +1,6 @@
+Error: no workitem context resolved from cwd
+
+Try one of:
+  --workitem <selector>            explicit workitem to scope this commit
+  cd workflow/<type>/<slug> && ...  run from inside a workitem directory
+  camp workitem current <selector>  set a session-wide default

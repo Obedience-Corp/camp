@@ -1,0 +1,8 @@
+workitem: design-timeline-2026-05-24 (ref: WI-abc123)
+context:  linked project camp-timeline (cwd: projects/camp-timeline)
+staging:
+  M  internal/timeline/render.go
+  A  internal/timeline/render_test.go
+skipped:
+  scratch.txt (gitignored)
+tag:    [OBEY-CAMPAIGN-8deed8b4-WI-WI-abc123]
