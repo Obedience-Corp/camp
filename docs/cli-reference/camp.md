@@ -69,6 +69,7 @@ camp [flags]
 * [camp pins](camp_pins.md)	 - List all pinned directories
 * [camp plugins](camp_plugins.md)	 - List discovered camp plugins on PATH
 * [camp project](camp_project.md)	 - Manage campaign projects
+* [camp promote](camp_promote.md)	 - Promote the workitem at cwd to a dungeon status
 * [camp pull](camp_pull.md)	 - Pull latest changes from remote
 * [camp push](camp_push.md)	 - Push campaign changes to remote
 * [camp refs-sync](camp_refs-sync.md)	 - Sync submodule ref pointers in campaign root
@@ -88,4 +89,5 @@ camp [flags]
 * [camp unpin](camp_unpin.md)	 - Remove a saved pin
 * [camp unregister](camp_unregister.md)	 - Remove campaign from registry
 * [camp version](camp_version.md)	 - Show version information
+* [camp workflow](camp_workflow.md)	 - Manage workflow collections
 * [camp workitem](camp_workitem.md)	 - View active campaign work items
