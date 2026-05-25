@@ -135,6 +135,7 @@ Examples:
 	cmd.AddCommand(newResolveCommand())
 	cmd.AddCommand(newDoctorCommand())
 	cmd.AddCommand(newCommitCommand())
+	cmd.AddCommand(newCommitsCommand())
 
 	return cmd
 }
