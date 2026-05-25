@@ -106,11 +106,10 @@ type commitsFlags struct {
 }
 
 func runCommitsQuery(ctx context.Context, cmd *cobra.Command, flags commitsFlags) error {
-	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
+	_, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
 		return camperrors.Wrap(err, "not in a campaign directory")
 	}
-	_ = cfg
 
 	ref := flags.Ref
 	if ref == "" {
