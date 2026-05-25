@@ -219,18 +219,24 @@ func completeInCategory(ctx context.Context, cat nav.Category, query string) ([]
 	// Use index query for completion
 	q := index.NewQuery(idx)
 
+	var candidates []string
 	if query == "" {
-		// No query - return all targets in category
 		targets := q.ByCategory(cat)
-		candidates := make([]string, len(targets))
+		candidates = make([]string, len(targets))
 		for i, t := range targets {
 			candidates[i] = t.Name
 		}
-		return candidates, nil
+	} else {
+		candidates = q.Complete(query, cat)
 	}
 
-	// Has query - filter by prefix
-	candidates := q.Complete(query, cat)
+	// Recent-first ordering: when the category resolves to a known directory
+	// under the campaign root, boost entries backed by a .workitem marker so
+	// builtin shortcuts (de, ex, ...) behave the same as custom workflow
+	// shortcuts whose path goes through completeInRelativePath.
+	if relPath := string(cat); relPath != "" {
+		candidates = applyRecentFirstOrder(filepath.Join(jumpResult.Path, relPath), candidates)
+	}
 	return candidates, nil
 }
 
@@ -421,49 +427,21 @@ func readDirForCompletion(absPath string) ([]os.DirEntry, error) {
 }
 
 func orderPathCandidates(absPath string, entries []os.DirEntry) []os.DirEntry {
-	type rankedEntry struct {
-		entry      os.DirEntry
-		isWorkitem bool
-		modTime    time.Time
-	}
-
-	ranked := make([]rankedEntry, len(entries))
-	hasWorkitems := false
-	for i, entry := range entries {
-		ranked[i] = rankedEntry{entry: entry}
-		if !entry.IsDir() {
-			continue
-		}
-		markerPath := filepath.Join(absPath, entry.Name(), ".workitem")
-		info, err := os.Stat(markerPath)
-		if err != nil {
-			continue
-		}
-		ranked[i].isWorkitem = true
-		ranked[i].modTime = info.ModTime()
-		hasWorkitems = true
-	}
-
-	if !hasWorkitems {
+	if len(entries) == 0 {
 		return entries
 	}
-
-	sort.SliceStable(ranked, func(i, j int) bool {
-		a, b := ranked[i], ranked[j]
-		if a.isWorkitem != b.isWorkitem {
-			return a.isWorkitem
-		}
-		if a.isWorkitem && !a.modTime.Equal(b.modTime) {
-			return a.modTime.After(b.modTime)
-		}
-		return strings.ToLower(a.entry.Name()) < strings.ToLower(b.entry.Name())
-	})
-
-	ordered := make([]os.DirEntry, len(ranked))
-	for i, item := range ranked {
-		ordered[i] = item.entry
+	names := make([]string, len(entries))
+	indexByName := make(map[string]int, len(entries))
+	for i, entry := range entries {
+		names[i] = entry.Name()
+		indexByName[entry.Name()] = i
 	}
-	return ordered
+	ordered := applyRecentFirstOrder(absPath, names)
+	out := make([]os.DirEntry, len(entries))
+	for i, n := range ordered {
+		out[i] = entries[indexByName[n]]
+	}
+	return out
 }
 
 func completeSubdirectoryInPath(ctx context.Context, basePath, query string) ([]string, error) {
