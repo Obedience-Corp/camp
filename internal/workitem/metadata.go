@@ -14,13 +14,17 @@ import (
 
 const MetadataFilename = ".workitem"
 
-const WorkitemSchemaVersion = "v1alpha5"
+const WorkitemSchemaVersion = "v1alpha6"
 
 const MetadataKind = "workitem"
 
+// acceptedWorkitemVersions are loadable .workitem schema versions. v1alpha4
+// and v1alpha5 are accepted for backward compatibility; v1alpha6 is the
+// current shape and gains the Ref and QuestID fields.
 var acceptedWorkitemVersions = map[string]bool{
 	"v1alpha4": true,
 	"v1alpha5": true,
+	"v1alpha6": true,
 }
 
 type Metadata struct {
@@ -30,6 +34,14 @@ type Metadata struct {
 	Type      string `yaml:"type"`
 	Title     string `yaml:"title,omitempty"`
 	CreatedBy string `yaml:"created_by,omitempty"`
+	// Ref is a deterministic short reference for commit-message embedding.
+	// Format: WI-<6 lowercase hex>. Added in v1alpha6; absent on legacy
+	// workitems and backfilled by `camp workitem doctor --fix`.
+	Ref string `yaml:"ref,omitempty"`
+	// QuestID is the id of the quest active when this workitem was created
+	// or adopted. Empty when no quest resolved (no --quest flag and no
+	// CAMP_QUEST env var). Added in v1alpha6.
+	QuestID string `yaml:"quest_id,omitempty"`
 }
 
 // LoadMetadata reads .workitem from dir on the host filesystem.
