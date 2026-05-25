@@ -21,24 +21,25 @@ import (
 )
 
 func newCreateCommand() *cobra.Command {
-	var typeFlag, title, idOverride, dirOverride string
+	var typeFlag, title, idOverride, dirOverride, questSelector string
 	cmd := &cobra.Command{
 		Use:   "create <slug>",
 		Short: "Create a new workitem with v1 minimum metadata",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			return runCreate(ctx, cmd, args[0], typeFlag, title, idOverride, dirOverride)
+			return runCreate(ctx, cmd, args[0], typeFlag, title, idOverride, dirOverride, questSelector)
 		},
 	}
 	cmd.Flags().StringVar(&typeFlag, "type", "feature", "workitem type (feature, bug, chore, or custom)")
 	cmd.Flags().StringVar(&title, "title", "", "human-readable title")
 	cmd.Flags().StringVar(&idOverride, "id", "", "override the generated id")
 	cmd.Flags().StringVar(&dirOverride, "dir", "", "parent dir override (default: workflow/<type>)")
+	cmd.Flags().StringVar(&questSelector, "quest", "", "capture quest_id from this quest (defaults to CAMP_QUEST env var if set)")
 	return cmd
 }
 
-func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, idOverride, dirOverride string) error {
+func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, idOverride, dirOverride, questSelector string) error {
 	if err := validateSlug(slug); err != nil {
 		return err
 	}
@@ -46,7 +47,7 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 		return camperrors.NewValidation("type", "invalid type slug: "+err.Error(), nil)
 	}
 
-	_, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
+	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
 		return camperrors.Wrap(err, "not in a campaign directory")
 	}
@@ -73,12 +74,20 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 		return camperrors.Wrap(err, "create directory")
 	}
 
+	ref, err := deriveUniqueRef(ctx, campaignRoot, cfg, id)
+	if err != nil {
+		return err
+	}
+	questID := resolveQuestIDForCreate(ctx, cmd, campaignRoot, questSelector)
+
 	meta := wkitem.Metadata{
 		Version: wkitem.WorkitemSchemaVersion,
 		Kind:    "workitem",
 		ID:      id,
 		Type:    typeFlag,
 		Title:   title,
+		Ref:     ref,
+		QuestID: questID,
 	}
 	buf, err := yaml.Marshal(&meta)
 	if err != nil {
@@ -90,9 +99,13 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 	invalidateNavigationCache(cmd, campaignRoot)
 
 	rel := filepath.Join(parent, slug)
+	questLine := ""
+	if questID != "" {
+		questLine = fmt.Sprintf("  quest: %s\n", questID)
+	}
 	fmt.Fprintf(cmd.OutOrStdout(),
-		"created %s\n  id: %s\n  type: %s\nnext: cd %s && fest create workflow %s\n",
-		rel, id, typeFlag, rel, slug)
+		"created %s\n  id: %s\n  ref: %s\n  type: %s\n%snext: cd %s && fest create workflow %s\n",
+		rel, id, ref, typeFlag, questLine, rel, slug)
 	return nil
 }
 

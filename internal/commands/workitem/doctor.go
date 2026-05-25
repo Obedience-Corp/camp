@@ -33,6 +33,8 @@ const (
 	codeDuplicatePrimary   = "workitem.link.duplicate-primary"
 	codeSchemaViolation    = "workitem.schema.violation"
 	codeCurrentMissing     = "workitem.current.missing"
+	codeMissingRefField    = "workitem.ref.missing"
+	codeWorkitemScanFailed = "workitem.scan.failed"
 )
 
 const (
@@ -88,7 +90,7 @@ func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut, fix bool) error
 
 	findings := collectWorkitemFindings(ctx, root, registry, knownIDs)
 	if fix {
-		applied := autoFixWorkitemFindings(ctx, root, registry, findings)
+		applied := autoFixWorkitemFindings(ctx, root, registry, findings, cmd.ErrOrStderr())
 		if applied > 0 {
 			if err := links.Save(ctx, root, registry); err != nil {
 				return err
@@ -185,6 +187,30 @@ func collectWorkitemFindings(ctx context.Context, root string, registry *links.L
 		}
 	}
 
+	// Workitems missing the ref field added in v1alpha6. Sorted by path so
+	// the order in which DeriveUnique fills collisions during --fix is
+	// deterministic.
+	missingRefPaths, err := workitemPathsMissingRef(ctx, root)
+	if err != nil {
+		findings = append(findings, docFinding{
+			Code:     codeWorkitemScanFailed,
+			Severity: docSeverityError,
+			Target:   "workitem-tree",
+			Message:  "could not scan workitems for ref backfill: " + err.Error(),
+		})
+	} else {
+		for _, rel := range missingRefPaths {
+			findings = append(findings, docFinding{
+				Code:        codeMissingRefField,
+				Severity:    docSeverityWarning,
+				Target:      "workitem:" + rel,
+				Message:     "workitem at " + rel + " is missing the ref field added in v1alpha6",
+				FixHint:     "run camp workitem doctor --fix to backfill",
+				AutoFixable: true,
+			})
+		}
+	}
+
 	cur, err := links.LoadCurrent(ctx, root)
 	if err == nil && cur != nil {
 		if _, known := knownIDs[cur.WorkitemID]; !known {
@@ -208,8 +234,9 @@ func collectWorkitemFindings(ctx context.Context, root string, registry *links.L
 	return findings
 }
 
-func autoFixWorkitemFindings(ctx context.Context, root string, registry *links.Links, findings []docFinding) int {
+func autoFixWorkitemFindings(ctx context.Context, root string, registry *links.Links, findings []docFinding, errw io.Writer) int {
 	applied := 0
+	needsRefBackfill := false
 	for _, f := range findings {
 		if !f.AutoFixable {
 			continue
@@ -224,6 +251,16 @@ func autoFixWorkitemFindings(ctx context.Context, root string, registry *links.L
 			if err := links.SaveCurrent(ctx, root, nil); err == nil {
 				applied++
 			}
+		case codeMissingRefField:
+			needsRefBackfill = true
+		}
+	}
+	if needsRefBackfill {
+		n, err := backfillMissingRefs(ctx, root)
+		applied += n
+		if err != nil {
+			fmt.Fprintf(errw, "warning: backfill refs: %v\n", err)
+			return applied
 		}
 	}
 	return applied

@@ -105,6 +105,16 @@ title: T
 			wantSubstr: "update .workitem `version:` to " + WorkitemSchemaVersion,
 		},
 		{
+			name: "wrong version lists current supported version",
+			body: `version: v1alpha3
+kind: workitem
+id: x
+type: design
+title: T
+`,
+			wantSubstr: "v1alpha6",
+		},
+		{
 			name: "wrong kind",
 			body: `version: v1alpha4
 kind: festival
