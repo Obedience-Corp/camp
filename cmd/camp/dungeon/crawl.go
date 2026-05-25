@@ -62,8 +62,8 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	svc := intdungeon.NewService(cmdCtx.CampaignRoot, cmdCtx.Dungeon.DungeonPath)
-	relParent := relFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.ParentPath)
-	relDungeon := relFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.DungeonPath)
+	relParent := RelFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.ParentPath)
+	relDungeon := RelFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.DungeonPath)
 
 	// Determine modes
 	runTriage, runInner := triageFlag, innerFlag

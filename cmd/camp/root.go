@@ -15,6 +15,7 @@ import (
 	leveragepkg "github.com/Obedience-Corp/camp/cmd/camp/leverage"
 	navigationpkg "github.com/Obedience-Corp/camp/cmd/camp/navigation"
 	projectpkg "github.com/Obedience-Corp/camp/cmd/camp/project"
+	promotepkg "github.com/Obedience-Corp/camp/cmd/camp/promote"
 	refspkg "github.com/Obedience-Corp/camp/cmd/camp/refs"
 	registrypkg "github.com/Obedience-Corp/camp/cmd/camp/registry"
 	skillspkg "github.com/Obedience-Corp/camp/cmd/camp/skills"
@@ -201,6 +202,7 @@ func init() {
 	rootCmd.AddCommand(projectpkg.Cmd)
 	rootCmd.AddCommand(dungeonpkg.Cmd)
 	rootCmd.AddCommand(intentpkg.Cmd)
+	rootCmd.AddCommand(promotepkg.Cmd)
 	rootCmd.AddCommand(leveragepkg.Cmd)
 	rootCmd.AddCommand(worktreespkg.Cmd)
 	rootCmd.AddCommand(refspkg.Cmd)

@@ -18,7 +18,7 @@ import (
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 )
 
-type dungeonMoveCommit struct {
+type DungeonMoveCommit struct {
 	Config           *config.CampaignConfig
 	CampaignRoot     string
 	Description      string
@@ -34,7 +34,7 @@ type resolvedWorkitemDungeonTarget struct {
 	SourcePath  string
 }
 
-func moveWorkitemToDungeon(ctx context.Context, cmd *cobra.Command, target, status string) (*dungeonMoveCommit, error) {
+func moveWorkitemToDungeon(ctx context.Context, cmd *cobra.Command, target, status string) (*DungeonMoveCommit, error) {
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
 		return nil, camperrors.Wrap(err, "not in a campaign directory")
@@ -66,25 +66,25 @@ func moveWorkitemToDungeon(ctx context.Context, cmd *cobra.Command, target, stat
 	var targetPath string
 	if status == "" {
 		if err := svc.MoveToDungeon(ctx, resolved.ItemName, resolved.ParentPath); err != nil {
-			return nil, wrapDungeonMoveError(err, resolved.ItemName, "dungeon")
+			return nil, WrapDungeonMoveError(err, resolved.ItemName, "dungeon")
 		}
 		targetPath = filepath.Join(resolved.DungeonPath, resolved.ItemName)
 	} else {
 		var moveErr error
 		targetPath, moveErr = svc.MoveToDungeonStatus(ctx, resolved.ItemName, resolved.ParentPath, status)
 		if moveErr != nil {
-			return nil, wrapDungeonMoveError(moveErr, resolved.ItemName, status)
+			return nil, WrapDungeonMoveError(moveErr, resolved.ItemName, status)
 		}
 	}
 	destinationPaths = append(destinationPaths, targetPath)
 
-	src := relFromRoot(campaignRoot, resolved.SourcePath)
-	dst := relFromRoot(campaignRoot, targetPath)
+	src := RelFromRoot(campaignRoot, resolved.SourcePath)
+	dst := RelFromRoot(campaignRoot, targetPath)
 	fmt.Printf("%s Moved %s (%s → %s)\n", ui.SuccessIcon(), resolved.ItemName, src, dst)
 	invalidateDungeonWorkitemNavigationCache(cmd, campaignRoot)
 
 	description := fmt.Sprintf("Triage workitem %s → %s", resolved.ItemName, dst)
-	return &dungeonMoveCommit{
+	return &DungeonMoveCommit{
 		Config:           cfg,
 		CampaignRoot:     campaignRoot,
 		Description:      description,

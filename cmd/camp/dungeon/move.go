@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -86,7 +88,7 @@ func runDungeonMove(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		return commitDungeonMove(ctx, move)
+		return CommitDungeonMove(ctx, move)
 	}
 
 	cmdCtx, err := resolveDungeonCommandContext(ctx)
@@ -105,8 +107,8 @@ func runDungeonMove(cmd *cobra.Command, args []string) error {
 			if err != nil {
 				return wrapDungeonDocsRouteError(err, itemName, toDocs)
 			}
-			src := filepath.Join(relFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.ParentPath), itemName)
-			dst := relFromRoot(cmdCtx.CampaignRoot, targetPath)
+			src := filepath.Join(RelFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.ParentPath), itemName)
+			dst := RelFromRoot(cmdCtx.CampaignRoot, targetPath)
 			fmt.Printf("%s Moved %s (%s → %s)\n", ui.SuccessIcon(), itemName, src, dst)
 			description = fmt.Sprintf("Route %s → %s", itemName, dst)
 			sourcePaths = []string{filepath.Join(cmdCtx.Dungeon.ParentPath, itemName)}
@@ -115,10 +117,10 @@ func runDungeonMove(cmd *cobra.Command, args []string) error {
 			// Triage directly to a status directory
 			targetPath, err := svc.MoveToDungeonStatus(ctx, itemName, cmdCtx.Dungeon.ParentPath, status)
 			if err != nil {
-				return wrapDungeonMoveError(err, itemName, status)
+				return WrapDungeonMoveError(err, itemName, status)
 			}
-			src := filepath.Join(relFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.ParentPath), itemName)
-			dst := relFromRoot(cmdCtx.CampaignRoot, targetPath)
+			src := filepath.Join(RelFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.ParentPath), itemName)
+			dst := RelFromRoot(cmdCtx.CampaignRoot, targetPath)
 			fmt.Printf("%s Moved %s (%s → %s)\n", ui.SuccessIcon(), itemName, src, dst)
 			description = fmt.Sprintf("Triage %s → dungeon/%s", itemName, status)
 			sourcePaths = []string{filepath.Join(cmdCtx.Dungeon.ParentPath, itemName)}
@@ -126,10 +128,10 @@ func runDungeonMove(cmd *cobra.Command, args []string) error {
 		} else {
 			// Triage to dungeon root
 			if err := svc.MoveToDungeon(ctx, itemName, cmdCtx.Dungeon.ParentPath); err != nil {
-				return wrapDungeonMoveError(err, itemName, "dungeon")
+				return WrapDungeonMoveError(err, itemName, "dungeon")
 			}
-			src := filepath.Join(relFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.ParentPath), itemName)
-			dst := filepath.Join(relFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.DungeonPath), itemName)
+			src := filepath.Join(RelFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.ParentPath), itemName)
+			dst := filepath.Join(RelFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.DungeonPath), itemName)
 			fmt.Printf("%s Moved %s (%s → %s)\n", ui.SuccessIcon(), itemName, src, dst)
 			description = fmt.Sprintf("Triage %s → dungeon", itemName)
 			sourcePaths = []string{filepath.Join(cmdCtx.Dungeon.ParentPath, itemName)}
@@ -142,10 +144,10 @@ func runDungeonMove(cmd *cobra.Command, args []string) error {
 		}
 		targetPath, err := svc.MoveToStatus(ctx, itemName, status)
 		if err != nil {
-			return wrapDungeonMoveError(err, itemName, status)
+			return WrapDungeonMoveError(err, itemName, status)
 		}
-		src := filepath.Join(relFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.DungeonPath), itemName)
-		dst := relFromRoot(cmdCtx.CampaignRoot, targetPath)
+		src := filepath.Join(RelFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.DungeonPath), itemName)
+		dst := RelFromRoot(cmdCtx.CampaignRoot, targetPath)
 		fmt.Printf("%s Moved %s (%s → %s)\n", ui.SuccessIcon(), itemName, src, dst)
 
 		relDir, relErr := filepath.Rel(cmdCtx.CampaignRoot, cmdCtx.Dungeon.ParentPath)
@@ -157,7 +159,7 @@ func runDungeonMove(cmd *cobra.Command, args []string) error {
 		destinationPaths = []string{targetPath}
 	}
 
-	return commitDungeonMove(ctx, &dungeonMoveCommit{
+	return CommitDungeonMove(ctx, &DungeonMoveCommit{
 		Config:           cmdCtx.Config,
 		CampaignRoot:     cmdCtx.CampaignRoot,
 		Description:      description,
@@ -166,13 +168,21 @@ func runDungeonMove(cmd *cobra.Command, args []string) error {
 	})
 }
 
-func commitDungeonMove(ctx context.Context, move *dungeonMoveCommit) error {
+type DungeonMoveCommitOutcome struct {
+	StagingErr error
+	Committed  bool
+	NoChanges  bool
+	Message    string
+	CommitErr  error
+}
+
+func StageAndCommitDungeonMove(ctx context.Context, move *DungeonMoveCommit) *DungeonMoveCommitOutcome {
+	outcome := &DungeonMoveCommitOutcome{}
 	files := commit.NormalizeFiles(move.CampaignRoot, move.DestinationPaths...)
 	preStaged, err := stageTrackedMoveSourceDeletions(ctx, move.CampaignRoot, move.SourcePaths)
 	if err != nil {
-		fmt.Printf("%s Move was applied on disk, but staging the source deletion failed.\n", ui.WarningIcon())
-		fmt.Printf("%s %v\n", ui.WarningIcon(), err)
-		return camperrors.Wrap(err, "staging move source deletions")
+		outcome.StagingErr = err
+		return outcome
 	}
 	result := commit.Crawl(ctx, commit.CrawlOptions{
 		Options: commit.Options{
@@ -183,19 +193,44 @@ func commitDungeonMove(ctx context.Context, move *dungeonMoveCommit) error {
 		Description: strings.TrimSpace(move.Description),
 		Files:       files,
 	})
-	if result.Committed {
-		fmt.Printf("%s %s\n", ui.SuccessIcon(), result.Message)
-	} else if result.NoChanges {
-		fmt.Printf("%s %s\n", ui.InfoIcon(), result.Message)
-	} else if result.Err != nil {
-		fmt.Printf("%s Move was applied on disk, but auto-commit failed.\n", ui.WarningIcon())
-		fmt.Printf("%s %v\n", ui.WarningIcon(), result.Err)
-		return camperrors.Wrap(result.Err, "auto-committing dungeon move")
-	} else if result.Message != "" {
-		fmt.Printf("%s %s\n", ui.InfoIcon(), result.Message)
-	}
+	outcome.Committed = result.Committed
+	outcome.NoChanges = result.NoChanges
+	outcome.Message = result.Message
+	outcome.CommitErr = result.Err
+	return outcome
+}
 
+func PrintDungeonMoveOutcome(w io.Writer, outcome *DungeonMoveCommitOutcome) {
+	switch {
+	case outcome.StagingErr != nil:
+		fmt.Fprintf(w, "%s Move was applied on disk, but staging the source deletion failed.\n", ui.WarningIcon())
+		fmt.Fprintf(w, "%s %v\n", ui.WarningIcon(), outcome.StagingErr)
+	case outcome.Committed:
+		fmt.Fprintf(w, "%s %s\n", ui.SuccessIcon(), outcome.Message)
+	case outcome.CommitErr != nil:
+		fmt.Fprintf(w, "%s Move was applied on disk, but auto-commit failed.\n", ui.WarningIcon())
+		fmt.Fprintf(w, "%s %v\n", ui.WarningIcon(), outcome.CommitErr)
+	case outcome.NoChanges:
+		fmt.Fprintf(w, "%s %s\n", ui.InfoIcon(), outcome.Message)
+	case outcome.Message != "":
+		fmt.Fprintf(w, "%s %s\n", ui.InfoIcon(), outcome.Message)
+	}
+}
+
+func (o *DungeonMoveCommitOutcome) Err() error {
+	if o.StagingErr != nil {
+		return camperrors.Wrap(o.StagingErr, "staging move source deletions")
+	}
+	if o.CommitErr != nil {
+		return camperrors.Wrap(o.CommitErr, "auto-committing dungeon move")
+	}
 	return nil
+}
+
+func CommitDungeonMove(ctx context.Context, move *DungeonMoveCommit) error {
+	outcome := StageAndCommitDungeonMove(ctx, move)
+	PrintDungeonMoveOutcome(os.Stdout, outcome)
+	return outcome.Err()
 }
 
 func stageTrackedMoveSourceDeletions(ctx context.Context, campaignRoot string, sourcePaths []string) ([]string, error) {
@@ -216,7 +251,7 @@ func stageTrackedMoveSourceDeletions(ctx context.Context, campaignRoot string, s
 	return tracked, nil
 }
 
-func wrapDungeonMoveError(err error, itemName, status string) error {
+func WrapDungeonMoveError(err error, itemName, status string) error {
 	switch {
 	case errors.Is(err, intdungeon.ErrAlreadyExists):
 		return fmt.Errorf(

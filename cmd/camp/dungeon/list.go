@@ -68,8 +68,8 @@ func runDungeonList(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	svc := intdungeon.NewService(cmdCtx.CampaignRoot, cmdCtx.Dungeon.DungeonPath)
-	dungeonRel := relFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.DungeonPath)
-	parentRel := relFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.ParentPath)
+	dungeonRel := RelFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.DungeonPath)
+	parentRel := RelFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.ParentPath)
 
 	if triageMode {
 		items, err := svc.ListParentItems(ctx, cmdCtx.Dungeon.ParentPath)

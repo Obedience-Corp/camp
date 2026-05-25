@@ -99,6 +99,7 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		"dungeon list":  false,
 		"dungeon move":  false,
 		"intent crawl":  false,
+		"promote":       false,
 		"skills link":   false,
 		"skills status": false,
 		"skills unlink": false,
@@ -139,9 +140,9 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		}
 	}
 
-	wantCount := 17
+	wantCount := 18
 	if flowCommandsRegistered() {
-		wantCount = 20
+		wantCount = 21
 	}
 	if questCommandsRegistered() {
 		wantCount += 13
@@ -173,6 +174,7 @@ func TestManifestCommand_AllCommandsHaveAnnotations(t *testing.T) {
 		"create":        true,
 		"dungeon list":  true,
 		"dungeon move":  true,
+		"promote":       true,
 		"switch":        true,
 		"skills link":   true,
 		"skills status": true,
