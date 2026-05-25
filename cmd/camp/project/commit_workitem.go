@@ -5,6 +5,7 @@ import (
 
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/resolver"
+	"github.com/Obedience-Corp/camp/pkg/commitkit"
 )
 
 // resolveProjectCommitContext runs the workitem resolver against the
@@ -32,4 +33,17 @@ func workitemRefFor(wi *wkitem.WorkItem) string {
 		return v
 	}
 	return ""
+}
+
+// workitemEnvForProjectCommit resolves the active workitem and returns the
+// CAMP_WORKITEM_* env vars for the auto-write hook. Returns nil when no
+// workitem context resolves.
+func workitemEnvForProjectCommit(ctx context.Context, campaignRoot, explicit string) []string {
+	res, err := resolver.Resolve(ctx, campaignRoot, resolver.Options{
+		Explicit: explicit,
+	})
+	if err != nil || res == nil || res.Workitem == nil {
+		return nil
+	}
+	return commitkit.WorkitemEnv(res.Workitem, campaignRoot)
 }

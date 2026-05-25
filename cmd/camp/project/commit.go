@@ -143,7 +143,8 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 	if projectCommitAutoWrite {
 		fmt.Println(ui.Info("Writing commit message..."))
 		var hookErr error
-		message, hookErr = commitkit.AutoWriteCommitMessage(ctx, campRoot, resolvedPath)
+		extraEnv := workitemEnvForProjectCommit(ctx, campRoot, projectCommitWorkitem)
+		message, hookErr = commitkit.AutoWriteCommitMessageWithEnv(ctx, campRoot, resolvedPath, extraEnv)
 		if hookErr != nil {
 			return hookErr
 		}

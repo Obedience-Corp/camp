@@ -61,6 +61,16 @@ func LoadCommitMessageHook(ctx context.Context, campaignRoot string) (*CommitMes
 
 // AutoWriteCommitMessage runs the configured commit message hook from repoPath.
 func AutoWriteCommitMessage(ctx context.Context, campaignRoot, repoPath string) (string, error) {
+	return AutoWriteCommitMessageWithEnv(ctx, campaignRoot, repoPath, nil)
+}
+
+// AutoWriteCommitMessageWithEnv is AutoWriteCommitMessage with extra
+// environment variables passed to the hook subprocess. extraEnv entries are
+// appended to os.Environ() — they take precedence on duplicate keys.
+//
+// Use commitkit.WorkitemEnv (and any future *Env helpers) to build the
+// extraEnv slice so the variable contract stays in one place.
+func AutoWriteCommitMessageWithEnv(ctx context.Context, campaignRoot, repoPath string, extraEnv []string) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -70,12 +80,18 @@ func AutoWriteCommitMessage(ctx context.Context, campaignRoot, repoPath string) 
 		return "", err
 	}
 
-	return RunCommitMessageCommand(ctx, repoPath, hook.Command)
+	return RunCommitMessageCommandWithEnv(ctx, repoPath, hook.Command, extraEnv)
 }
 
 // RunCommitMessageCommand executes command exactly as configured from repoPath
 // and returns trimmed stdout as the raw commit message.
 func RunCommitMessageCommand(ctx context.Context, repoPath, command string) (string, error) {
+	return RunCommitMessageCommandWithEnv(ctx, repoPath, command, nil)
+}
+
+// RunCommitMessageCommandWithEnv is RunCommitMessageCommand with extra
+// environment variables passed to the subprocess (appended to os.Environ()).
+func RunCommitMessageCommandWithEnv(ctx context.Context, repoPath, command string, extraEnv []string) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -88,6 +104,9 @@ func RunCommitMessageCommand(ctx context.Context, repoPath, command string) (str
 	name, args := shellCommand(command)
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = repoPath
+	if len(extraEnv) > 0 {
+		cmd.Env = append(os.Environ(), extraEnv...)
+	}
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
