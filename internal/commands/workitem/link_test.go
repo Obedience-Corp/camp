@@ -11,7 +11,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
 )
 
@@ -397,6 +396,3 @@ func TestLink_CwdInfersScope(t *testing.T) {
 		t.Fatalf("scope.path = %q", registry.Links[0].Scope.Path)
 	}
 }
-
-// Sanity: link save loads the same campaign config the resolver uses.
-var _ = config.LoadCampaignConfig

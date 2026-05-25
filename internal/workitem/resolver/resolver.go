@@ -7,8 +7,6 @@ package resolver
 
 import (
 	"context"
-	"errors"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -304,10 +302,3 @@ func questIDOf(wi *workitem.WorkItem) string {
 	return ""
 }
 
-// fsExists is a tiny helper used by tests.
-func fsExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil || !errors.Is(err, fs.ErrNotExist)
-}
-
-var _ = fsExists
