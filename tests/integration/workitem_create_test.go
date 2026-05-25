@@ -56,10 +56,11 @@ func TestIntegration_WorkitemCreateAndAdopt(t *testing.T) {
 
 		manifest, err := tc.ReadFile(campaignDir + "/workflow/feature/demo-feature/.workitem")
 		require.NoError(t, err)
-		assert.Contains(t, manifest, "version: v1alpha5")
+		assert.Contains(t, manifest, "version: v1alpha6")
 		assert.Contains(t, manifest, "kind: workitem")
 		assert.Contains(t, manifest, "type: feature")
 		assert.Contains(t, manifest, "title: Demo")
+		assert.Regexp(t, `ref: WI-[0-9a-f]{6}`, manifest)
 	})
 
 	t.Run("CreateRefusesExistingDirectory", func(t *testing.T) {
