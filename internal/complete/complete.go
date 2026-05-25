@@ -3,7 +3,6 @@ package complete
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -219,18 +218,24 @@ func completeInCategory(ctx context.Context, cat nav.Category, query string) ([]
 	// Use index query for completion
 	q := index.NewQuery(idx)
 
+	var candidates []string
 	if query == "" {
-		// No query - return all targets in category
 		targets := q.ByCategory(cat)
-		candidates := make([]string, len(targets))
+		candidates = make([]string, len(targets))
 		for i, t := range targets {
 			candidates[i] = t.Name
 		}
-		return candidates, nil
+	} else {
+		candidates = q.Complete(query, cat)
 	}
 
-	// Has query - filter by prefix
-	candidates := q.Complete(query, cat)
+	// Recent-first ordering: when the category resolves to a known directory
+	// under the campaign root, boost entries backed by a .workitem marker so
+	// builtin shortcuts (de, ex, ...) behave the same as custom workflow
+	// shortcuts whose path goes through completeInRelativePath.
+	if relPath := cat.Dir(); relPath != "" {
+		candidates = applyRecentFirstOrder(filepath.Join(jumpResult.Path, relPath), candidates)
+	}
 	return candidates, nil
 }
 
@@ -277,261 +282,5 @@ func completeAll(ctx context.Context, query string, topLevelNames []string) ([]s
 	targetCandidates := q.CompleteAny(query, nav.CategoryAll)
 	candidates = append(candidates, targetCandidates...)
 
-	return candidates, nil
-}
-
-func completeInRelativePath(ctx context.Context, campaignRoot, relativePath, query string) ([]string, error) {
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-
-	basePath := filepath.Join(campaignRoot, relativePath)
-	if query == "" {
-		return listPathCandidates(ctx, basePath, "")
-	}
-
-	if strings.Contains(query, "/") {
-		return completeSubdirectoryInPath(ctx, basePath, query)
-	}
-
-	return listPathCandidates(ctx, basePath, query)
-}
-
-func completeInRelativePathRich(ctx context.Context, campaignRoot, relativePath, query string) ([]index.CompletionCandidate, error) {
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-
-	basePath := filepath.Join(campaignRoot, relativePath)
-	if query == "" {
-		return listPathCandidatesRich(ctx, basePath, relativePath, "")
-	}
-
-	if strings.Contains(query, "/") {
-		return completeSubdirectoryInPathRich(ctx, basePath, relativePath, query)
-	}
-
-	return listPathCandidatesRich(ctx, basePath, relativePath, query)
-}
-
-func completeDrillInCategory(ctx context.Context, campaignRoot string, cat nav.Category, query string) ([]string, error) {
-	basePath := categoryAbsDir(campaignRoot, cat)
-	if basePath == "" {
-		return nil, nil
-	}
-	if query == "" {
-		return listPathCandidates(ctx, basePath, "")
-	}
-	if strings.Contains(query, "/") {
-		return CompleteSubdirectory(ctx, campaignRoot, cat, query)
-	}
-	return listPathCandidates(ctx, basePath, query)
-}
-
-func completeDrillInCategoryRich(ctx context.Context, campaignRoot string, cat nav.Category, query string) ([]index.CompletionCandidate, error) {
-	basePath := categoryAbsDir(campaignRoot, cat)
-	if basePath == "" {
-		return nil, nil
-	}
-	relativePath := string(cat)
-	if query == "" {
-		return listPathCandidatesRich(ctx, basePath, relativePath, "")
-	}
-	if strings.Contains(query, "/") {
-		return CompleteSubdirectoryRich(ctx, campaignRoot, cat, query)
-	}
-	return listPathCandidatesRich(ctx, basePath, relativePath, query)
-}
-
-func listPathCandidates(ctx context.Context, absPath, prefix string) ([]string, error) {
-	entries, err := readDirForCompletion(absPath)
-	if err != nil {
-		return nil, err
-	}
-	entries = orderPathCandidates(absPath, entries)
-
-	var candidates []string
-	prefixLower := strings.ToLower(prefix)
-	for _, entry := range entries {
-		if ctx.Err() != nil {
-			return candidates, ctx.Err()
-		}
-		if strings.HasPrefix(entry.Name(), ".") {
-			continue
-		}
-		if prefixLower != "" && !strings.HasPrefix(strings.ToLower(entry.Name()), prefixLower) {
-			continue
-		}
-		name := entry.Name()
-		if entry.IsDir() {
-			name += "/"
-		}
-		candidates = append(candidates, name)
-	}
-	return candidates, nil
-}
-
-func listPathCandidatesRich(ctx context.Context, absPath, relativePath, prefix string) ([]index.CompletionCandidate, error) {
-	entries, err := readDirForCompletion(absPath)
-	if err != nil {
-		return nil, err
-	}
-	entries = orderPathCandidates(absPath, entries)
-
-	var candidates []index.CompletionCandidate
-	prefixLower := strings.ToLower(prefix)
-	for _, entry := range entries {
-		if ctx.Err() != nil {
-			return candidates, ctx.Err()
-		}
-		if strings.HasPrefix(entry.Name(), ".") {
-			continue
-		}
-		if prefixLower != "" && !strings.HasPrefix(strings.ToLower(entry.Name()), prefixLower) {
-			continue
-		}
-
-		name := entry.Name()
-		if entry.IsDir() {
-			name += "/"
-		}
-
-		candidates = append(candidates, index.CompletionCandidate{
-			Name:     name,
-			Path:     filepath.Join(relativePath, entry.Name()),
-			Category: strings.TrimRight(relativePath, "/"),
-		})
-	}
-	return candidates, nil
-}
-
-// readDirForCompletion reads a directory for completion purposes.
-// A missing directory is not an error (returns nil entries), but real I/O
-// failures — permission denied, bad symlinks, etc. — are surfaced so callers
-// can decide how to handle them instead of silently degrading to "no matches".
-func readDirForCompletion(absPath string) ([]os.DirEntry, error) {
-	entries, err := os.ReadDir(absPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return entries, nil
-}
-
-func orderPathCandidates(absPath string, entries []os.DirEntry) []os.DirEntry {
-	type rankedEntry struct {
-		entry      os.DirEntry
-		isWorkitem bool
-		modTime    time.Time
-	}
-
-	ranked := make([]rankedEntry, len(entries))
-	hasWorkitems := false
-	for i, entry := range entries {
-		ranked[i] = rankedEntry{entry: entry}
-		if !entry.IsDir() {
-			continue
-		}
-		markerPath := filepath.Join(absPath, entry.Name(), ".workitem")
-		info, err := os.Stat(markerPath)
-		if err != nil {
-			continue
-		}
-		ranked[i].isWorkitem = true
-		ranked[i].modTime = info.ModTime()
-		hasWorkitems = true
-	}
-
-	if !hasWorkitems {
-		return entries
-	}
-
-	sort.SliceStable(ranked, func(i, j int) bool {
-		a, b := ranked[i], ranked[j]
-		if a.isWorkitem != b.isWorkitem {
-			return a.isWorkitem
-		}
-		if a.isWorkitem && !a.modTime.Equal(b.modTime) {
-			return a.modTime.After(b.modTime)
-		}
-		return strings.ToLower(a.entry.Name()) < strings.ToLower(b.entry.Name())
-	})
-
-	ordered := make([]os.DirEntry, len(ranked))
-	for i, item := range ranked {
-		ordered[i] = item.entry
-	}
-	return ordered
-}
-
-func completeSubdirectoryInPath(ctx context.Context, basePath, query string) ([]string, error) {
-	lastSlash := strings.LastIndex(query, "/")
-	dirPath := query[:lastSlash]
-	filter := query[lastSlash+1:]
-
-	absDir := filepath.Join(basePath, dirPath)
-	entries, err := readDirForCompletion(absDir)
-	if err != nil {
-		return nil, err
-	}
-
-	var candidates []string
-	filterLower := strings.ToLower(filter)
-	for _, entry := range entries {
-		if ctx.Err() != nil {
-			return candidates, ctx.Err()
-		}
-		if strings.HasPrefix(entry.Name(), ".") {
-			continue
-		}
-		if filterLower != "" && !strings.HasPrefix(strings.ToLower(entry.Name()), filterLower) {
-			continue
-		}
-		name := dirPath + "/" + entry.Name()
-		if entry.IsDir() {
-			name += "/"
-		}
-		candidates = append(candidates, name)
-	}
-	return candidates, nil
-}
-
-func completeSubdirectoryInPathRich(ctx context.Context, basePath, relativePath, query string) ([]index.CompletionCandidate, error) {
-	lastSlash := strings.LastIndex(query, "/")
-	dirPath := query[:lastSlash]
-	filter := query[lastSlash+1:]
-
-	absDir := filepath.Join(basePath, dirPath)
-	entries, err := readDirForCompletion(absDir)
-	if err != nil {
-		return nil, err
-	}
-
-	var candidates []index.CompletionCandidate
-	filterLower := strings.ToLower(filter)
-	for _, entry := range entries {
-		if ctx.Err() != nil {
-			return candidates, ctx.Err()
-		}
-		if strings.HasPrefix(entry.Name(), ".") {
-			continue
-		}
-		if filterLower != "" && !strings.HasPrefix(strings.ToLower(entry.Name()), filterLower) {
-			continue
-		}
-
-		name := dirPath + "/" + entry.Name()
-		if entry.IsDir() {
-			name += "/"
-		}
-
-		candidates = append(candidates, index.CompletionCandidate{
-			Name:     name,
-			Path:     filepath.Join(relativePath, dirPath, entry.Name()),
-			Category: strings.TrimRight(relativePath, "/"),
-		})
-	}
 	return candidates, nil
 }

@@ -2,6 +2,7 @@ package complete
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -265,6 +266,56 @@ shortcuts:
 	}
 }
 
+func TestGenerate_BuiltinShortcutRecentFirst(t *testing.T) {
+	root := createTestCampaign(t)
+
+	olderDir := filepath.Join(root, "workflow", "design", "older-design")
+	newerDir := filepath.Join(root, "workflow", "design", "newer-design")
+	for _, dir := range []string{olderDir, newerDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, ".workitem"), []byte("kind: workitem\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	now := time.Now()
+	if err := os.Chtimes(filepath.Join(olderDir, ".workitem"), now.Add(-2*time.Hour), now.Add(-2*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(filepath.Join(newerDir, ".workitem"), now, now); err != nil {
+		t.Fatal(err)
+	}
+
+	oldWd, _ := os.Getwd()
+	defer os.Chdir(oldWd)
+	if err := os.Chdir(root); err != nil {
+		t.Fatal(err)
+	}
+
+	candidates, err := Generate(context.Background(), []string{"de"})
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	var newerIdx, olderIdx = -1, -1
+	for i, c := range candidates {
+		switch c {
+		case "newer-design", "newer-design/":
+			newerIdx = i
+		case "older-design", "older-design/":
+			olderIdx = i
+		}
+	}
+	if newerIdx == -1 || olderIdx == -1 {
+		t.Fatalf("expected both design candidates present; got %v", candidates)
+	}
+	if newerIdx >= olderIdx {
+		t.Fatalf("newer-design (index %d) should sort before older-design (index %d) for builtin shortcut `de`; candidates=%v",
+			newerIdx, olderIdx, candidates)
+	}
+}
+
 func TestGenerate_PartialShortcut(t *testing.T) {
 	// Create test campaign with shortcuts
 	root := createTestCampaign(t)
@@ -489,6 +540,46 @@ func BenchmarkGenerate_CategoryShortcut(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		_, _ = Generate(ctx, []string{"p"})
+	}
+}
+
+// BenchmarkGenerate_RecentFirst_Scale measures the cost of applyRecentFirstOrder
+// across 100/1000/5000 workitem markers. The Generate path adds one os.Stat per
+// candidate; this guards against regression beyond the 200ms shell-completion
+// budget defined by complete.Timeout.
+func BenchmarkGenerate_RecentFirst_Scale(b *testing.B) {
+	for _, scale := range []int{100, 1000, 5000} {
+		b.Run(fmt.Sprintf("workitems_%d", scale), func(b *testing.B) {
+			root := b.TempDir()
+			campDir := filepath.Join(root, ".campaign")
+			if err := os.MkdirAll(campDir, 0o755); err != nil {
+				b.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(campDir, "campaign.yaml"), []byte(campaignYAML), 0o644); err != nil {
+				b.Fatal(err)
+			}
+			for i := 0; i < scale; i++ {
+				dir := filepath.Join(root, "workflow", "design", fmt.Sprintf("item-%05d", i))
+				if err := os.MkdirAll(dir, 0o755); err != nil {
+					b.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, ".workitem"), []byte("kind: workitem\n"), 0o644); err != nil {
+					b.Fatal(err)
+				}
+			}
+
+			oldWd, _ := os.Getwd()
+			defer os.Chdir(oldWd)
+			if err := os.Chdir(root); err != nil {
+				b.Fatal(err)
+			}
+
+			ctx := context.Background()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_, _ = Generate(ctx, []string{"de"})
+			}
+		})
 	}
 }
 
