@@ -48,6 +48,7 @@ var (
 	commitProject     string
 	commitIncludeRefs bool
 	commitAutoWrite   bool
+	commitWorkitem    string
 )
 
 func init() {
@@ -58,6 +59,7 @@ func init() {
 	commitCmd.Flags().StringVarP(&commitProject, "project", "p", "", "Operate on a specific project/submodule path")
 	commitCmd.Flags().BoolVar(&commitIncludeRefs, "include-refs", false, "Include submodule ref changes when staging at campaign root")
 	commitCmd.Flags().BoolVar(&commitAutoWrite, "auto-write", false, "Run configured commit message writer")
+	commitCmd.Flags().StringVar(&commitWorkitem, "workitem", "", "explicit workitem selector for the commit tag (overrides cwd-based resolution)")
 
 	rootCmd.AddCommand(commitCmd)
 	commitCmd.GroupID = "git"
@@ -173,9 +175,12 @@ func runCommit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Prepend campaign tag (graceful degradation if config unavailable)
+	// Prepend campaign tag (graceful degradation if config unavailable).
+	// Resolves the active workitem (and any captured quest) so the tag
+	// includes WI-<ref> when one is in context.
 	if cfg, cfgErr := config.LoadCampaignConfig(ctx, campRoot); cfgErr == nil {
-		message = git.PrependCampaignTag(cfg.ID, message)
+		questID, workitemRef := resolveCommitContext(ctx, campRoot, commitWorkitem)
+		message = commitkit.PrependContextTagsFull(cfg.ID, questID, "", workitemRef, message)
 	}
 
 	// Perform commit
