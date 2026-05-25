@@ -61,6 +61,11 @@ func TestFormatContextTagsFull_AllCombinations(t *testing.T) {
 			campaign: "8deed8b4abcdef", workitem: "WI-abcdef",
 			want: "[OBEY-CAMPAIGN-8deed8b4-WI-WI-abcdef]",
 		},
+		{
+			name:     "workitem ref normalized",
+			campaign: "8deed8b4", workitem: "abcdef",
+			want: "[OBEY-CAMPAIGN-8deed8b4-WI-WI-abcdef]",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -94,8 +99,8 @@ func TestFormatCampaignTag_BackwardCompat(t *testing.T) {
 
 func TestParseTag_KnownCombinations(t *testing.T) {
 	cases := []struct {
-		subject                                              string
-		wantCampaign, wantQuest, wantFest, wantWorkitem      string
+		subject                                         string
+		wantCampaign, wantQuest, wantFest, wantWorkitem string
 	}{
 		{
 			subject:      "[OBEY-CAMPAIGN-8deed8b4] feat: thing",

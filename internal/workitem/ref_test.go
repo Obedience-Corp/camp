@@ -1,6 +1,8 @@
 package workitem
 
 import (
+	"context"
+	"errors"
 	"regexp"
 	"strings"
 	"testing"
@@ -34,7 +36,10 @@ func TestDerive_DifferentIDsDifferentRefs(t *testing.T) {
 func TestDeriveUnique_NoCollisionReturnsBase(t *testing.T) {
 	id := "design-foo-2026-05-24"
 	base := Derive(id)
-	got := DeriveUnique(id, map[string]bool{})
+	got, err := DeriveUnique(context.Background(), id, map[string]bool{})
+	if err != nil {
+		t.Fatalf("DeriveUnique: %v", err)
+	}
 	if got != base {
 		t.Fatalf("DeriveUnique with empty existing should equal Derive: got %q, base %q", got, base)
 	}
@@ -44,7 +49,10 @@ func TestDeriveUnique_AvoidsCollision(t *testing.T) {
 	id := "design-foo-2026-05-24"
 	base := Derive(id)
 	existing := map[string]bool{base: true}
-	got := DeriveUnique(id, existing)
+	got, err := DeriveUnique(context.Background(), id, existing)
+	if err != nil {
+		t.Fatalf("DeriveUnique: %v", err)
+	}
 	if got == base {
 		t.Fatalf("DeriveUnique returned the colliding base ref: %q", got)
 	}
@@ -63,9 +71,21 @@ func TestDeriveUnique_HandlesMultipleCollisions(t *testing.T) {
 		Derive(id + "#1"): true,
 		Derive(id + "#2"): true,
 	}
-	got := DeriveUnique(id, existing)
+	got, err := DeriveUnique(context.Background(), id, existing)
+	if err != nil {
+		t.Fatalf("DeriveUnique: %v", err)
+	}
 	if existing[got] {
 		t.Fatalf("DeriveUnique returned a colliding ref: %q", got)
+	}
+}
+
+func TestDeriveUnique_ContextCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := DeriveUnique(ctx, "design-foo-2026-05-24", map[string]bool{})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("DeriveUnique error = %v, want context.Canceled", err)
 	}
 }
 

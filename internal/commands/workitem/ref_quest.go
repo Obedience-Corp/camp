@@ -22,7 +22,7 @@ func deriveUniqueRef(ctx context.Context, campaignRoot string, cfg *config.Campa
 		return "", camperrors.Wrap(err, "scan existing refs")
 	}
 	existing := wkitem.RefsFromWorkitems(items)
-	return wkitem.DeriveUnique(id, existing), nil
+	return wkitem.DeriveUnique(ctx, id, existing)
 }
 
 // resolveQuestIDForCreate calls quest.ResolveContext to capture the active

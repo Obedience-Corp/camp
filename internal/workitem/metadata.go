@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -90,7 +91,8 @@ func LoadMetadataFS(ctx context.Context, fsys fs.FS, path string) (*Metadata, er
 func validateMetadata(m *Metadata) error {
 	if !acceptedWorkitemVersions[m.Version] {
 		return camperrors.NewValidation("version",
-			"unsupported .workitem schema version (got "+m.Version+", supported: v1alpha4, v1alpha5); update .workitem `version:` to "+WorkitemSchemaVersion, nil)
+			"unsupported .workitem schema version (got "+m.Version+", supported: "+
+				strings.Join(supportedWorkitemVersions(), ", ")+"); update .workitem `version:` to "+WorkitemSchemaVersion, nil)
 	}
 	if m.Kind != MetadataKind {
 		return camperrors.NewValidation("kind",
@@ -103,4 +105,13 @@ func validateMetadata(m *Metadata) error {
 		return camperrors.NewValidation("type", "required field type is empty", nil)
 	}
 	return nil
+}
+
+func supportedWorkitemVersions() []string {
+	versions := make([]string, 0, len(acceptedWorkitemVersions))
+	for version := range acceptedWorkitemVersions {
+		versions = append(versions, version)
+	}
+	sort.Strings(versions)
+	return versions
 }

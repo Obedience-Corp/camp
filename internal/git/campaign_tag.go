@@ -30,6 +30,9 @@ func FormatContextTagsFull(campaignID, questID, festRef, workitemRef string) str
 		parts = append(parts, "FE-"+festRef)
 	}
 	if workitemRef != "" {
+		if !strings.HasPrefix(workitemRef, "WI-") {
+			workitemRef = "WI-" + workitemRef
+		}
 		// Workitem refs already carry the WI- prefix per
 		// internal/workitem/ref.go::Derive. Embed verbatim so the bracket
 		// reads `WI-WI-abcdef`, matching the documented tag grammar.
@@ -88,6 +91,10 @@ var tagShellRegex = regexp.MustCompile(`\[OBEY-CAMPAIGN-([^\]]+)\]`)
 
 // ParseTag extracts the components of a campaign tag from a commit subject.
 // Returns a zero-valued TagComponents when no tag is present.
+//
+// ParseTag assumes quest IDs match `qst_[0-9]+_[a-z0-9]+` per
+// internal/quest/slug.go. If that alphabet is extended to include "-",
+// update indexOfNextPrefix and add adversarial quest-id cases.
 //
 // Two-stage parse: regex strips the bracket and the OBEY-CAMPAIGN prefix,
 // then the inner string is walked once to peel off quest, festival, and

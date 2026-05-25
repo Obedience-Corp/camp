@@ -83,10 +83,13 @@ func TestDoctor_FixBackfillsRefAndPreservesFields(t *testing.T) {
 		t.Fatalf("ref %q != Derive(id) %q", meta.Ref, expected)
 	}
 
-	// Title text from the legacy fixture should survive byte-identical to the
-	// original (other than the inserted ref line) — verify by string contains.
-	if !strings.Contains(string(after), "title: Legacy legacy") {
-		t.Fatalf("title field clobbered:\n%s", after)
+	expectedBytes := strings.Replace(string(before),
+		"id: design-legacy-2026-05-24\n",
+		"id: design-legacy-2026-05-24\nref: "+meta.Ref+"\n",
+		1,
+	)
+	if string(after) != expectedBytes {
+		t.Fatalf("backfill diff was not minimal\nwant:\n%s\ngot:\n%s", expectedBytes, after)
 	}
 
 	// Re-run doctor: no missing-ref findings remain.
@@ -97,6 +100,44 @@ func TestDoctor_FixBackfillsRefAndPreservesFields(t *testing.T) {
 	}
 	if strings.Contains(stdout.String(), codeMissingRefField) {
 		t.Fatalf("missing-ref finding still present after --fix:\n%s", stdout.String())
+	}
+}
+
+func TestDoctor_FixUpdatesEmptyRefWithoutDuplicateKey(t *testing.T) {
+	root := linkTestCampaign(t)
+	restore := chdir(t, root)
+	defer restore()
+
+	dir := filepath.Join(root, "workflow", "design", "empty-ref")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "version: v1alpha5\nkind: workitem\nid: design-empty-ref-2026-05-24\n" +
+		"ref: \"\"\ntype: design\ntitle: Empty Ref\n"
+	if err := os.WriteFile(filepath.Join(dir, ".workitem"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := &cobra.Command{}
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	if err := runDoctor(context.Background(), cmd, false, true); err != nil {
+		t.Fatalf("doctor --fix: %v", err)
+	}
+
+	after, err := os.ReadFile(filepath.Join(dir, ".workitem"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count := strings.Count(string(after), "\nref:"); count != 1 {
+		t.Fatalf("ref key count = %d, want 1\n%s", count, after)
+	}
+	meta, err := wkitem.LoadMetadata(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta.Ref == "" {
+		t.Fatalf("empty ref was not backfilled:\n%s", after)
 	}
 }
 

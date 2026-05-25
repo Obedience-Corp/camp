@@ -1,13 +1,18 @@
 package workitem
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // RefPrefix is the literal prefix every workitem `ref` carries.
 const RefPrefix = "WI-"
+
+const maxRefCollisionRetries = 1 << 24
 
 // Derive returns the canonical ref for a workitem id. The shape is stable:
 // "WI-" plus the first 6 lowercase hex chars of sha256(id). Same id always
@@ -26,17 +31,24 @@ func Derive(id string) string {
 // The existing map is read-only; DeriveUnique does not insert into it.
 // Callers should add the returned ref to their existing set before deriving
 // another to keep the no-collision invariant.
-func DeriveUnique(id string, existing map[string]bool) string {
+func DeriveUnique(ctx context.Context, id string, existing map[string]bool) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	candidate := Derive(id)
 	if !existing[candidate] {
-		return candidate
+		return candidate, nil
 	}
-	for n := 1; ; n++ {
+	for n := 1; n <= maxRefCollisionRetries; n++ {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
 		candidate = Derive(fmt.Sprintf("%s#%d", id, n))
 		if !existing[candidate] {
-			return candidate
+			return candidate, nil
 		}
 	}
+	return "", camperrors.NewValidation("ref", "ref space exhausted for id "+id, nil)
 }
 
 // RefsFromWorkitems returns the set of refs already in use across the
