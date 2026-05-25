@@ -18,8 +18,9 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
-// errWorkflowNotFound triggers exit code 2 from cobra via RunE.
-var errWorkflowNotFound = camperrors.NewValidation("type", "workflow not found", nil)
+// errWorkflowNotFound tells main to exit 2 after the command writes its
+// user-facing not-found message.
+var errWorkflowNotFound = camperrors.NewCommand("camp workflow", 2, "workflow not found", nil)
 
 func newShowCommand() *cobra.Command {
 	var jsonOut bool

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"sort"
 	"strings"
 	"time"
 
@@ -13,15 +12,16 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"github.com/Obedience-Corp/camp/internal/nav"
 	navindex "github.com/Obedience-Corp/camp/internal/nav/index"
 )
 
 // syncAction is one planned mutation derived from an auto-fixable finding.
 type syncAction struct {
-	Finding finding `json:"finding"`
-	Kind    string  `json:"kind"`
-	Target  string  `json:"target"`
+	Finding finding  `json:"finding"`
+	Kind    string   `json:"kind"`
+	Target  string   `json:"target"`
+	Kept    string   `json:"kept,omitempty"`
+	Removed []string `json:"removed,omitempty"`
 }
 
 const (
@@ -97,6 +97,23 @@ func planSyncActions(findings []finding) []syncAction {
 }
 
 func applySyncActions(ctx context.Context, cmd *cobra.Command, campaignRoot string, cfg *config.CampaignConfig, actions []syncAction) ([]syncAction, error) {
+	state := newSyncState(ctx, cmd, campaignRoot, cfg, len(actions))
+	return state.apply(actions)
+}
+
+type syncState struct {
+	ctx          context.Context
+	cmd          *cobra.Command
+	campaignRoot string
+	cfg          *config.CampaignConfig
+	jumps        *config.JumpsConfig
+
+	jumpsDirty    bool
+	conceptsDirty bool
+	applied       []syncAction
+}
+
+func newSyncState(ctx context.Context, cmd *cobra.Command, campaignRoot string, cfg *config.CampaignConfig, capacity int) *syncState {
 	jumps := cfg.Jumps
 	if jumps == nil {
 		defaults := config.DefaultJumpsConfig()
@@ -107,123 +124,164 @@ func applySyncActions(ctx context.Context, cmd *cobra.Command, campaignRoot stri
 	}
 	cfg.Jumps = jumps
 
-	jumpsDirty := false
-	conceptsDirty := false
-	applied := make([]syncAction, 0, len(actions))
+	return &syncState{
+		ctx:          ctx,
+		cmd:          cmd,
+		campaignRoot: campaignRoot,
+		cfg:          cfg,
+		jumps:        jumps,
+		applied:      make([]syncAction, 0, capacity),
+	}
+}
 
+func (s *syncState) apply(actions []syncAction) ([]syncAction, error) {
 	for _, action := range actions {
-		switch action.Kind {
-		case syncRemoveShortcut:
-			key := action.Target
-			if _, ok := jumps.Shortcuts[key]; ok {
-				delete(jumps.Shortcuts, key)
-				jumpsDirty = true
-				applied = append(applied, action)
-			}
+		applied, ok, err := s.applyAction(action)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			s.applied = append(s.applied, applied)
+		}
+	}
 
-		case syncRemoveConcept:
-			name := action.Target
-			concepts := cfg.ConceptList
-			if len(concepts) == 0 {
-				concepts = cfg.Concepts()
-			}
-			next := concepts[:0]
-			removed := false
-			for _, c := range concepts {
-				if strings.EqualFold(c.Name, name) {
-					removed = true
-					continue
-				}
-				next = append(next, c)
-			}
-			if removed {
-				cfg.ConceptList = next
-				conceptsDirty = true
-				applied = append(applied, action)
-			}
+	if err := s.save(); err != nil {
+		return nil, err
+	}
+	s.invalidateCacheIfNeeded()
 
-		case syncAddConcept:
-			rel := strings.TrimRight(action.Target, "/") + "/"
-			typeName := workflowTypeFromPath(rel)
-			if typeName == "" {
-				continue
-			}
-			concepts := cfg.ConceptList
-			if len(concepts) == 0 {
-				concepts = cfg.Concepts()
-			}
-			already := false
-			for _, c := range concepts {
-				if strings.EqualFold(c.Name, typeName) {
-					already = true
-					break
-				}
-			}
-			if !already {
-				cfg.ConceptList = append(concepts, config.ConceptEntry{
-					Name:        typeName,
-					Path:        rel,
-					Description: typeName + " workflow",
-				})
-				conceptsDirty = true
-				applied = append(applied, action)
-			}
+	return s.applied, nil
+}
 
+func (s *syncState) applyAction(action syncAction) (syncAction, bool, error) {
+	switch action.Kind {
+	case syncRemoveShortcut:
+		return action, s.removeShortcut(action.Target), nil
+	case syncRemoveConcept:
+		return action, s.removeConcept(action.Target), nil
+	case syncAddConcept:
+		return action, s.addConcept(action.Target), nil
+	case syncDeleteNavCache:
+		if err := navindex.Delete(s.campaignRoot); err != nil {
+			return action, false, camperrors.Wrap(err, "delete nav cache")
+		}
+		return action, true, nil
+	case syncDeduplicateShortcut:
+		return s.deduplicateShortcut(action)
+	default:
+		return action, false, nil
+	}
+}
+
+func (s *syncState) removeShortcut(key string) bool {
+	if _, ok := s.jumps.Shortcuts[key]; !ok {
+		return false
+	}
+	delete(s.jumps.Shortcuts, key)
+	s.jumpsDirty = true
+	return true
+}
+
+func (s *syncState) removeConcept(name string) bool {
+	concepts := s.currentConcepts()
+	next := make([]config.ConceptEntry, 0, len(concepts))
+	removed := false
+	for _, c := range concepts {
+		if strings.EqualFold(c.Name, name) {
+			removed = true
+			continue
+		}
+		next = append(next, c)
+	}
+	if !removed {
+		return false
+	}
+	s.cfg.ConceptList = next
+	s.conceptsDirty = true
+	return true
+}
+
+func (s *syncState) addConcept(target string) bool {
+	rel := strings.TrimRight(target, "/") + "/"
+	typeName := workflowTypeFromPath(rel)
+	if typeName == "" {
+		return false
+	}
+	concepts := s.currentConcepts()
+	for _, c := range concepts {
+		if strings.EqualFold(c.Name, typeName) {
+			return false
+		}
+	}
+	s.cfg.ConceptList = append(concepts, config.ConceptEntry{
+		Name:        typeName,
+		Path:        rel,
+		Description: typeName + " workflow",
+	})
+	s.conceptsDirty = true
+	return true
+}
+
+func (s *syncState) deduplicateShortcut(action syncAction) (syncAction, bool, error) {
+	normalized := action.Target
+	keys := matchingShortcutKeys(s.jumps.Shortcuts, normalized)
+	if len(keys) <= 1 {
+		return action, false, nil
+	}
+
+	keptEntry, hasNormalized := s.jumps.Shortcuts[normalized]
+	if !hasNormalized {
+		keptEntry = s.jumps.Shortcuts[keys[0]]
+	}
+
+	removed := make([]string, 0, len(keys))
+	for _, key := range keys {
+		if key != normalized {
+			removed = append(removed, key)
+		}
+		delete(s.jumps.Shortcuts, key)
+	}
+	s.jumps.Shortcuts[normalized] = keptEntry
+
+	action.Kept = normalized
+	action.Removed = removed
+	s.jumpsDirty = true
+	return action, true, nil
+}
+
+func (s *syncState) currentConcepts() []config.ConceptEntry {
+	concepts := s.cfg.ConceptList
+	if len(concepts) == 0 {
+		concepts = s.cfg.Concepts()
+	}
+	return concepts
+}
+
+func (s *syncState) save() error {
+	if s.jumpsDirty {
+		if err := config.SaveJumpsConfig(s.ctx, s.campaignRoot, s.jumps); err != nil {
+			return err
+		}
+	}
+	if s.conceptsDirty {
+		if err := config.SaveCampaignConfig(s.ctx, s.campaignRoot, s.cfg); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *syncState) invalidateCacheIfNeeded() {
+	if !(s.jumpsDirty || s.conceptsDirty) {
+		return
+	}
+	for _, a := range s.applied {
+		switch a.Kind {
 		case syncDeleteNavCache:
-			if err := navindex.Delete(campaignRoot); err != nil {
-				return nil, camperrors.Wrap(err, "delete nav cache")
-			}
-			applied = append(applied, action)
-
-		case syncDeduplicateShortcut:
-			normalized := action.Target
-			keys := make([]string, 0)
-			for k := range jumps.Shortcuts {
-				if nav.NormalizeNavigationName(k) == normalized {
-					keys = append(keys, k)
-				}
-			}
-			sort.Strings(keys)
-			if len(keys) <= 1 {
-				continue
-			}
-			kept := keys[0]
-			for _, k := range keys[1:] {
-				delete(jumps.Shortcuts, k)
-			}
-			if normalized != kept {
-				entry := jumps.Shortcuts[kept]
-				delete(jumps.Shortcuts, kept)
-				jumps.Shortcuts[normalized] = entry
-			}
-			jumpsDirty = true
-			applied = append(applied, action)
+			return
 		}
 	}
-
-	if jumpsDirty {
-		if err := config.SaveJumpsConfig(ctx, campaignRoot, jumps); err != nil {
-			return nil, err
-		}
-	}
-	if conceptsDirty {
-		if err := config.SaveCampaignConfig(ctx, campaignRoot, cfg); err != nil {
-			return nil, err
-		}
-	}
-
-	hasCacheDelete := false
-	for _, a := range applied {
-		if a.Kind == syncDeleteNavCache {
-			hasCacheDelete = true
-			break
-		}
-	}
-	if !hasCacheDelete && (jumpsDirty || conceptsDirty) {
-		invalidateNavigationCache(cmd, campaignRoot)
-	}
-
-	return applied, nil
+	invalidateNavigationCache(s.cmd, s.campaignRoot)
 }
 
 func emitSyncHuman(w io.Writer, actions, applied []syncAction, apply bool) {
@@ -234,7 +292,7 @@ func emitSyncHuman(w io.Writer, actions, applied []syncAction, apply bool) {
 	if apply {
 		fmt.Fprintf(w, "sync: applied %d / %d auto-fixable findings\n", len(applied), len(actions))
 		for _, a := range applied {
-			fmt.Fprintf(w, "  fixed %s (%s)\n", a.Finding.Code, a.Target)
+			fmt.Fprintf(w, "  fixed %s (%s)\n", a.Finding.Code, syncActionDetail(a))
 		}
 		return
 	}
@@ -242,6 +300,17 @@ func emitSyncHuman(w io.Writer, actions, applied []syncAction, apply bool) {
 	for _, a := range actions {
 		fmt.Fprintf(w, "  plan  %s (%s)\n", a.Finding.Code, a.Target)
 	}
+}
+
+func syncActionDetail(a syncAction) string {
+	if a.Kind != syncDeduplicateShortcut || a.Kept == "" {
+		return a.Target
+	}
+	detail := a.Target + "; kept " + a.Kept
+	if len(a.Removed) > 0 {
+		detail += "; removed " + strings.Join(a.Removed, ", ")
+	}
+	return detail
 }
 
 func emitSyncJSON(w io.Writer, findings []finding, planned, applied []syncAction, apply bool) error {
@@ -273,4 +342,3 @@ func emitSyncJSON(w io.Writer, findings []finding, planned, applied []syncAction
 	enc.SetIndent("", "  ")
 	return enc.Encode(out)
 }
-

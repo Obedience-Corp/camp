@@ -116,7 +116,7 @@ func emitShortcutAddJSON(w io.Writer, typeName, key, path string, noChange bool)
 		Shortcut:      key,
 		Path:          path,
 		NoChanges:     noChange,
-		Applied:       true,
+		Applied:       !noChange,
 	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")

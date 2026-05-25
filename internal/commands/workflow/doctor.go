@@ -50,9 +50,14 @@ type finding struct {
 }
 
 // errDoctorIssuesFound is returned by runDoctor when any finding has severity
-// error. cobra surfaces this as a non-zero exit code without re-printing the
-// findings (we already emitted them).
-var errDoctorIssuesFound = camperrors.NewValidation("doctor", "doctor reported error-severity findings", nil)
+// error. main propagates the exit code without re-printing the findings because
+// runDoctor already emitted them.
+var errDoctorIssuesFound = camperrors.NewCommand(
+	"camp workflow doctor",
+	2,
+	"doctor reported error-severity findings",
+	nil,
+)
 
 func newDoctorCommand() *cobra.Command {
 	var jsonOut bool

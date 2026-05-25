@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 func createResearch(t *testing.T, _ string) {
@@ -43,6 +44,17 @@ func runJSON(t *testing.T, args []string, fn func(*cobra.Command) error) map[str
 		t.Fatalf("unmarshal %v: %v\nraw=%s", args, err, stdout.String())
 	}
 	return payload
+}
+
+func assertCommandExitCode(t *testing.T, err error, want int) {
+	t.Helper()
+	var cmdErr *camperrors.CommandError
+	if !errors.As(err, &cmdErr) {
+		t.Fatalf("err = %T %v, want *CommandError", err, err)
+	}
+	if cmdErr.ExitCode != want {
+		t.Fatalf("exit code = %d, want %d", cmdErr.ExitCode, want)
+	}
 }
 
 func TestList_EmptyAndPopulated(t *testing.T) {
@@ -105,6 +117,7 @@ func TestShow_NotFoundReturnsError(t *testing.T) {
 	if !errors.Is(err, errWorkflowNotFound) {
 		t.Fatalf("err = %v, want errWorkflowNotFound", err)
 	}
+	assertCommandExitCode(t, err, 2)
 }
 
 func TestShow_FoundIncludesScaffoldInfo(t *testing.T) {
@@ -152,6 +165,13 @@ func TestShortcutAdd_NoChangeOnExistingMatch(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "no changes for shortcut re") {
 		t.Fatalf("expected no-change message, got %q", stdout.String())
+	}
+
+	payload := runJSON(t, []string{"shortcut", "add", "research", "re", "--json"}, func(c *cobra.Command) error {
+		return runShortcutAdd(context.Background(), c, "research", "re", false, true)
+	})
+	if payload["no_changes"] != true || payload["applied"] != false {
+		t.Fatalf("shortcut no-change json = %v, want no_changes=true applied=false", payload)
 	}
 }
 
@@ -214,6 +234,7 @@ func TestShortcutAdd_UnknownTypeReturnsError(t *testing.T) {
 	if !errors.Is(err, errWorkflowNotFound) {
 		t.Fatalf("err = %v, want errWorkflowNotFound", err)
 	}
+	assertCommandExitCode(t, err, 2)
 }
 
 func TestDoctor_CleanRepoNoFindings(t *testing.T) {
@@ -248,6 +269,7 @@ func TestDoctor_ShortcutMissingTargetIsError(t *testing.T) {
 	if !errors.Is(err, errDoctorIssuesFound) {
 		t.Fatalf("doctor err = %v, want errDoctorIssuesFound", err)
 	}
+	assertCommandExitCode(t, err, 2)
 }
 
 func TestDoctor_DirMissingShortcutIsInfoOnly(t *testing.T) {
@@ -375,6 +397,54 @@ func TestSync_ApplyRepairsShortcutAndConcept(t *testing.T) {
 
 	if err := runDoctor(context.Background(), cmd, false); err != nil {
 		t.Fatalf("doctor still reports errors after sync --apply: %v", err)
+	}
+}
+
+func TestSync_DeduplicateShortcutKeepsNormalizedKey(t *testing.T) {
+	root := newWorkflowTestCampaign(t)
+	restore := chdir(t, root)
+	defer restore()
+
+	createResearch(t, root)
+
+	cfg, err := config.LoadCampaignConfig(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jumps := cfg.Jumps
+	if jumps == nil {
+		t.Fatal("expected jumps config")
+	}
+	normalized := jumps.Shortcuts["re"]
+	jumps.Shortcuts["RE"] = config.ShortcutConfig{
+		Path:        "workflow/research/",
+		Description: "uppercase variant",
+		Source:      config.ShortcutSourceUser,
+	}
+	if err := config.SaveJumpsConfig(context.Background(), root, jumps); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := &cobra.Command{}
+	var stdout bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&bytes.Buffer{})
+	if err := runSync(context.Background(), cmd, true, false); err != nil {
+		t.Fatalf("sync apply: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "kept re; removed RE") {
+		t.Fatalf("sync output missing dedupe detail:\n%s", stdout.String())
+	}
+
+	jumps, err = config.LoadJumpsConfig(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := jumps.Shortcuts["RE"]; ok {
+		t.Fatalf("uppercase duplicate remained: %#v", jumps.Shortcuts)
+	}
+	if got := jumps.Shortcuts["re"]; got != normalized {
+		t.Fatalf("normalized shortcut was not preserved: got %#v want %#v", got, normalized)
 	}
 }
 

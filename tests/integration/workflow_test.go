@@ -207,6 +207,11 @@ func TestIntegration_WorkflowShow(t *testing.T) {
 	assert.Equal(t, "re", payload.Shortcut)
 	assert.Equal(t, 2, payload.WorkitemCount)
 	assert.Len(t, payload.Recent, 2)
+
+	out, exitCode, err := tc.ExecCommand("sh", "-c", "cd "+dir+" && /camp workflow show missing 2>&1")
+	require.NoError(t, err)
+	assert.Equal(t, 2, exitCode, "workflow show missing output:\n%s", out)
+	assert.Contains(t, out, "unknown workflow type: missing")
 }
 
 func TestIntegration_WorkflowShortcutAdd(t *testing.T) {
@@ -246,8 +251,9 @@ func TestIntegration_WorkflowDoctorAndSync(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, exitCode)
 
-	out, err = tc.RunCampInDir(dir, "workflow", "doctor")
-	require.Error(t, err, "doctor must report errors after orphaning: %s", out)
+	out, exitCode, err = tc.ExecCommand("sh", "-c", "cd "+dir+" && /camp workflow doctor 2>&1")
+	require.NoError(t, err)
+	assert.Equal(t, 2, exitCode, "doctor output:\n%s", out)
 	assert.Contains(t, out, "workflow.shortcut.missing-target")
 
 	out, err = tc.RunCampInDir(dir, "workflow", "sync")
