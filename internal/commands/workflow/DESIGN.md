@@ -422,29 +422,31 @@ Reports inconsistencies in the workflow surface. Read-only by default.
 errors with `--fix is not yet implemented` (so the flag exists in the
 contract without a partial implementation).
 
-- **Finding codes** (stable strings, included in human and JSON output):
+- **Finding codes** (stable dotted-domain strings, included in human and JSON
+  output):
 
-  | Code | Meaning |
-  |---|---|
-  | `MISSING_SHORTCUT` | A workflow type has a directory under `workflow/` but no shortcut points to it. |
-  | `ORPHAN_WORKFLOW` | A shortcut in `jumps.yaml` points to `workflow/<type>/` but the directory does not exist. |
-  | `MISSING_CONCEPT` | A workflow directory exists but no concept entry references it. |
-  | `ORPHAN_CONCEPT` | A concept entry points to `workflow/<type>/` but the directory does not exist. |
-  | `CUSTOM_TYPE_WITHOUT_WORKFLOW` | A `.workitem` marker uses a custom `type` that has no `workflow/<type>/` collection. |
-  | `STALE_NAV_CACHE` | `navindex.Stat(campaignRoot)` reports a cache file with an mtime older than the newest modification under `workflow/` or `.campaign/settings/jumps.yaml`. |
-  | `DUPLICATE_SHORTCUT` | After case-normalization, two shortcut keys collapse to the same value (defensive check; `upsertShortcut` should prevent this, but past hand-edits may have introduced it). |
-  | `INCOMPLETE_SCAFFOLD` | A workflow type's directory exists but is missing one or more status dirs from §3.1. |
+  | Code | Severity | Trigger |
+  |---|---|---|
+  | `workflow.shortcut.missing-target` | error | Shortcut points to a non-existent `workflow/<type>/` directory. |
+  | `workflow.concept.missing-dir` | error | Concept entry references a missing `workflow/<type>/` directory. |
+  | `workflow.shortcut.duplicate` | error | Two shortcut keys normalize to the same value. |
+  | `workflow.dir.missing-concept` | warning | Workflow directory exists but no concept entry references it. |
+  | `workflow.cache.stale` | warning | Nav index `BuildTime` predates the workflow root's modification time. |
+  | `workflow.dir.missing-shortcut` | info | Workflow directory has a concept but no shortcut. |
 
-- Severity: every finding is `warning` for this release. `error` is reserved
-  for future use.
-- Human output: one line per finding, prefixed with the code and the
-  affected path:
+- Each finding carries `{code, severity, target, message, fix_hint,
+  auto_fixable}`. `auto_fixable` is consumed by `sync` to decide which
+  findings to repair.
+- Exit codes: 0 if every severity is `info`/`warning`; 2 if any finding is
+  `error`.
+- Human output: one line per finding plus optional `hint:` follow-up:
 
   ```
-  doctor: 3 findings
-    MISSING_SHORTCUT       workflow/research/
-    ORPHAN_CONCEPT         workflow/old-stuff/ (concept "old-stuff")
-    INCOMPLETE_SCAFFOLD    workflow/feature/ (missing: active/, dungeon/completed/)
+  doctor: 2 finding(s)
+    [error] workflow.shortcut.missing-target shortcut:re — shortcut "re" points to missing workflow/research/
+      hint: remove the shortcut from .campaign/settings/jumps.yaml or restore the directory; auto-fix removes the shortcut
+    [warning] workflow.dir.missing-concept dir:workflow/feature/ — workflow workflow/feature/ has no concept entry
+      hint: auto-fix adds a concept entry derived from the directory name
   ```
 
 - JSON schema:
@@ -455,51 +457,66 @@ contract without a partial implementation).
     "generated_at": "...",
     "findings": [
       {
-        "code": "MISSING_SHORTCUT",
-        "severity": "warning",
-        "type": "research",
-        "path": "workflow/research/",
-        "detail": "no shortcut points to workflow/research/"
+        "code": "workflow.shortcut.missing-target",
+        "severity": "error",
+        "target": "shortcut:re",
+        "message": "shortcut \"re\" points to missing workflow/research/",
+        "fix_hint": "remove the shortcut from .campaign/settings/jumps.yaml or restore the directory; auto-fix removes the shortcut",
+        "auto_fixable": true
       }
-    ]
+    ],
+    "error_count": 1,
+    "warning_count": 0,
+    "info_count": 0
   }
   ```
-
-- Exit codes: 0 if no findings, 1 if any finding present (consistent with
-  `git fsck`, `eslint`, etc.; gives CI an easy signal).
 
 ### 6.5 `camp workflow sync`
 
 ```
-camp workflow sync [--json] [--dry-run]
+camp workflow sync [--apply] [--json]
 ```
 
-Reconciles `jumps.yaml`, `campaign.yaml`, and `workflow/<type>/` directories
-to the post-#298 contract — same `plan → apply` pattern as `create`. The
-contract:
+Repairs the auto-fixable subset of doctor findings. Inverted default vs
+`create`: this command is **dry-run by default**; `--apply` performs writes.
 
-- For every directory under `workflow/` that has a custom (non-builtin) type
-  and has at least one `.workitem` marker walked from its tree, ensure a
-  shortcut and concept exist. Shortcut key defaults to the first two letters
-  of the type name; collisions fall back to three letters; on further
-  collision, leave it unset and emit a `MISSING_SHORTCUT` doctor finding.
-- For every concept whose path points to `workflow/<type>/`, ensure the
-  directory exists (create only the type root, **not** the status scaffold —
-  scaffolding is `create`'s job, not `sync`'s, to keep blast radius small).
-- Invalidate the nav cache once at the end.
-- The default invocation does **not** add the §3.1 scaffold to existing type
-  directories — that is opt-in via `--with-scaffold` (added by this command
-  too):
+- Default invocation runs `collectFindings` and prints what `--apply` would
+  do, leaving the filesystem and config untouched.
+- `--apply` walks the same planned actions and writes them via the existing
+  `config.SaveJumpsConfig` / `config.SaveCampaignConfig` helpers, then
+  invalidates the nav cache.
+- Action kinds emitted per finding:
 
+  | Finding code | Action kind |
+  |---|---|
+  | `workflow.shortcut.missing-target` | `remove_shortcut` |
+  | `workflow.concept.missing-dir` | `remove_concept` |
+  | `workflow.dir.missing-concept` | `add_concept` |
+  | `workflow.shortcut.duplicate` | `deduplicate_shortcut` |
+  | `workflow.cache.stale` | `delete_nav_cache` |
+
+- Findings without `auto_fixable: true` are reported by doctor but ignored
+  by sync (e.g. `workflow.dir.missing-shortcut`, which requires the user to
+  pick a shortcut key).
+- `--json` emits the planned actions plus, when `--apply` was set, the
+  subset that actually mutated state. Schema:
+
+  ```json
+  {
+    "schema_version": "workflow/v1",
+    "generated_at": "...",
+    "findings": [...],
+    "planned": [{"finding": {...}, "kind": "remove_shortcut", "target": "re"}],
+    "applied": [{"finding": {...}, "kind": "remove_shortcut", "target": "re"}],
+    "apply": true
+  }
   ```
-  camp workflow sync --with-scaffold
-  ```
 
-  `--with-scaffold` runs the §3.3 scaffold plan against every existing
-  workflow type that is missing one or more status dirs.
-
-- `--dry-run` and `--json` follow the same conventions as `create` (§4).
-- Exit codes: 0 success or no-op, 1 IO/config failure.
+- Exit codes: 0 on success or no-op; non-zero on IO/config failure. (Unlike
+  `doctor`, `sync` does not exit non-zero just because findings exist —
+  the whole point is to report-or-fix them.)
+- Out of scope: `sync` does **not** add the §3.1 status scaffold to existing
+  workflow directories. That is `create`'s job.
 
 ---
 

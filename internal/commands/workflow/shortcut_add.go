@@ -1,0 +1,124 @@
+package workflow
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"strings"
+	"time"
+
+	"github.com/spf13/cobra"
+
+	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/nav"
+)
+
+func newShortcutCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "shortcut",
+		Short: "Manage navigation shortcuts for workflow collections",
+	}
+	cmd.AddCommand(newShortcutAddCommand())
+	return cmd
+}
+
+func newShortcutAddCommand() *cobra.Command {
+	var replace, jsonOut bool
+	cmd := &cobra.Command{
+		Use:   "add <type> <key>",
+		Short: "Attach a navigation shortcut to an existing workflow",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runShortcutAdd(cmd.Context(), cmd, args[0], args[1], replace, jsonOut)
+		},
+	}
+	cmd.Flags().BoolVar(&replace, "replace", false, "replace an existing shortcut with the same name")
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit a structured JSON result")
+	return cmd
+}
+
+func runShortcutAdd(ctx context.Context, cmd *cobra.Command, typeName, key string, replace, jsonOut bool) error {
+	if err := validatePathSegment("type", typeName); err != nil {
+		return err
+	}
+	if err := validatePathSegment("shortcut", key); err != nil {
+		return err
+	}
+
+	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
+	if err != nil {
+		return camperrors.Wrap(err, "not in a campaign directory")
+	}
+
+	entries, err := enumerateWorkflowEntries(campaignRoot, cfg)
+	if err != nil {
+		return err
+	}
+	var entry *workflowEntry
+	for i := range entries {
+		if strings.EqualFold(entries[i].Type, typeName) {
+			entry = &entries[i]
+			break
+		}
+	}
+	if entry == nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "unknown workflow type: %s\n", typeName)
+		return errWorkflowNotFound
+	}
+
+	shortcutKey := nav.NormalizeNavigationName(key)
+	noChange := entry.HasShortcut && nav.NormalizeNavigationName(entry.ShortcutKey) == shortcutKey && entry.ShortcutPath == entry.Path
+
+	if !noChange {
+		if err := upsertShortcut(ctx, campaignRoot, cfg, shortcutKey, entry.Path, titleOrType(*entry), replace); err != nil {
+			return err
+		}
+		invalidateNavigationCache(cmd, campaignRoot)
+	}
+
+	if jsonOut {
+		return emitShortcutAddJSON(cmd.OutOrStdout(), entry.Type, shortcutKey, entry.Path, noChange)
+	}
+	return emitShortcutAddHuman(cmd.OutOrStdout(), entry.Type, shortcutKey, entry.Path, noChange)
+}
+
+func titleOrType(e workflowEntry) string {
+	if e.Title != "" {
+		return e.Title
+	}
+	return e.Type
+}
+
+func emitShortcutAddHuman(w io.Writer, typeName, key, path string, noChange bool) error {
+	if noChange {
+		fmt.Fprintf(w, "no changes for shortcut %s -> %s\n", key, path)
+		return nil
+	}
+	fmt.Fprintf(w, "shortcut added: %s -> %s (workflow %s)\n", key, path, typeName)
+	return nil
+}
+
+func emitShortcutAddJSON(w io.Writer, typeName, key, path string, noChange bool) error {
+	out := struct {
+		SchemaVersion string    `json:"schema_version"`
+		GeneratedAt   time.Time `json:"generated_at"`
+		Type          string    `json:"type"`
+		Shortcut      string    `json:"shortcut"`
+		Path          string    `json:"path"`
+		NoChanges     bool      `json:"no_changes"`
+		Applied       bool      `json:"applied"`
+	}{
+		SchemaVersion: JSONSchemaVersion,
+		GeneratedAt:   time.Now().UTC(),
+		Type:          typeName,
+		Shortcut:      key,
+		Path:          path,
+		NoChanges:     noChange,
+		Applied:       true,
+	}
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(out)
+}
