@@ -5,7 +5,6 @@ package integration
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -303,6 +302,3 @@ func TestIntegration_WorkflowCreateDryRun(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, dirExists, "scaffold must exist after real create")
 }
-
-// Discard unused imports check by referencing strings package indirectly.
-var _ = strings.Contains

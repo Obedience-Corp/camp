@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -198,6 +197,3 @@ func emitShowJSON(w io.Writer, entry workflowEntry, recent []recentItem) error {
 	enc.SetIndent("", "  ")
 	return enc.Encode(out)
 }
-
-// Avoid unused-import warning when no .workitem markers exist.
-var _ = os.ReadDir

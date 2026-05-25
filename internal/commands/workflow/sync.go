@@ -82,15 +82,15 @@ func planSyncActions(findings []finding) []syncAction {
 		}
 		switch f.Code {
 		case codeShortcutMissingTarget:
-			actions = append(actions, syncAction{Finding: f, Kind: syncRemoveShortcut, Target: trimPrefix(f.Target, "shortcut:")})
+			actions = append(actions, syncAction{Finding: f, Kind: syncRemoveShortcut, Target: strings.TrimPrefix(f.Target, "shortcut:")})
 		case codeConceptMissingDir:
-			actions = append(actions, syncAction{Finding: f, Kind: syncRemoveConcept, Target: trimPrefix(f.Target, "concept:")})
+			actions = append(actions, syncAction{Finding: f, Kind: syncRemoveConcept, Target: strings.TrimPrefix(f.Target, "concept:")})
 		case codeDirMissingConcept:
-			actions = append(actions, syncAction{Finding: f, Kind: syncAddConcept, Target: trimPrefix(f.Target, "dir:")})
+			actions = append(actions, syncAction{Finding: f, Kind: syncAddConcept, Target: strings.TrimPrefix(f.Target, "dir:")})
 		case codeCacheStale:
 			actions = append(actions, syncAction{Finding: f, Kind: syncDeleteNavCache, Target: "cache:nav"})
 		case codeShortcutDuplicate:
-			actions = append(actions, syncAction{Finding: f, Kind: syncDeduplicateShortcut, Target: trimPrefix(f.Target, "shortcut:")})
+			actions = append(actions, syncAction{Finding: f, Kind: syncDeduplicateShortcut, Target: strings.TrimPrefix(f.Target, "shortcut:")})
 		}
 	}
 	return actions
@@ -274,6 +274,3 @@ func emitSyncJSON(w io.Writer, findings []finding, planned, applied []syncAction
 	return enc.Encode(out)
 }
 
-func trimPrefix(s, prefix string) string {
-	return strings.TrimPrefix(s, prefix)
-}
