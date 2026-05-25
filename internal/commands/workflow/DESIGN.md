@@ -234,44 +234,45 @@ camp workflow create <type> --shortcut <key> ... --json [--dry-run]
 - Default invocation (no `--json`, no `--dry-run`) output is **byte-identical
   to PR #298**. This is asserted by a snapshot test in the implementation task
   (`golden_create_output_test.go`).
-- Schema (`workflow/v1`):
+- Schema (v1, flat shape per task contract):
 
   ```json
   {
     "schema_version": "workflow/v1",
     "generated_at": "2026-05-25T03:30:00Z",
-    "applied": true,
     "type": "research",
-    "shortcut": "re",
     "title": "Research",
-    "relative_path": "workflow/research/",
-    "actions": [
-      {"kind": "create",      "target": "workflow/research/",                                "object": "directory"},
-      {"kind": "create",      "target": "workflow/research/OBEY.md",                         "object": "file"},
-      {"kind": "create",      "target": "workflow/research/inbox/",                          "object": "directory"},
-      {"kind": "create",      "target": "workflow/research/inbox/.gitkeep",                  "object": "file"},
-      {"kind": "create",      "target": "workflow/research/active/",                         "object": "directory"},
-      {"kind": "create",      "target": "workflow/research/active/.gitkeep",                 "object": "file"},
-      {"kind": "create",      "target": "workflow/research/ready/",                          "object": "directory"},
-      {"kind": "create",      "target": "workflow/research/ready/.gitkeep",                  "object": "file"},
-      {"kind": "create",      "target": "workflow/research/dungeon/",                        "object": "directory"},
-      {"kind": "create",      "target": "workflow/research/dungeon/completed/",              "object": "directory"},
-      {"kind": "create",      "target": "workflow/research/dungeon/completed/.gitkeep",      "object": "file"},
-      {"kind": "create",      "target": "workflow/research/dungeon/archived/",               "object": "directory"},
-      {"kind": "create",      "target": "workflow/research/dungeon/archived/.gitkeep",       "object": "file"},
-      {"kind": "create",      "target": "workflow/research/dungeon/someday/",                "object": "directory"},
-      {"kind": "create",      "target": "workflow/research/dungeon/someday/.gitkeep",        "object": "file"},
-      {"kind": "update",      "target": ".campaign/settings/jumps.yaml",                    "object": "shortcut", "name": "re"},
-      {"kind": "update",      "target": ".campaign/campaign.yaml",                          "object": "concept",  "name": "research"}
-    ]
+    "workflow_dir": "workflow/research/",
+    "status_dirs": [
+      "inbox/",
+      "active/",
+      "ready/",
+      "dungeon/completed/",
+      "dungeon/archived/",
+      "dungeon/someday/"
+    ],
+    "obey_written": true,
+    "shortcut": {"key": "re", "path": "workflow/research/", "replaced": false},
+    "concept": {"name": "research", "path": "workflow/research/", "replaced": false},
+    "replaced": [],
+    "no_changes": false,
+    "dry_run": false,
+    "applied": true
   }
   ```
 
-- `actions[].kind ∈ {create, skip-exists, update, no-op}`.
-- `applied` is `false` for `--dry-run`, `true` otherwise.
-- Items omitted in the dry-run/idempotent case are still listed with
-  `kind: skip-exists` or `kind: no-op` so consumers always see the full
-  scaffold contract.
+  - `obey_written` is `true` only when `OBEY.md` was actually written (false
+    when pre-existing).
+  - `shortcut.replaced` / `concept.replaced` are `true` when `--replace`
+    overrode an existing target.
+  - `replaced[]` lists shortcut keys removed under `--replace` (case-variant
+    cleanup from `upsertShortcut`).
+  - `no_changes` is `true` iff every action would be a no-op (re-run with
+    identical args on an already-scaffolded tree).
+  - `dry_run` mirrors the flag; `applied` is `!dry_run`.
+- A richer `actions[]` schema (one element per planned write with `kind`,
+  `target`, `object`) is deferred. The flat shape above is the v1 contract
+  consumed by the rest of this sequence.
 
 ### 4.3 Mutual exclusion
 
