@@ -1,0 +1,81 @@
+version: workitem-links/v1alpha1
+links:
+  - id: lnk_20260524_ab12cd
+    workitem_id: design-camp-timeline-2026-05-19
+    workitem_key: design:workflow/design/camp-timeline
+    scope:
+      kind: project
+      path: projects/camp-timeline
+    role: primary
+    created_at: 2026-05-24T19:00:00Z
+    created_by: camp_workitem_link
+
+  - id: lnk_20260524_ef34gh
+    workitem_id: design-camp-timeline-2026-05-19
+    workitem_key: design:workflow/design/camp-timeline
+    scope:
+      kind: campaign_path
+      path: workflow/design/camp-timeline
+    role: primary
+    created_at: 2026-05-24T19:00:05Z
+    created_by: camp_workitem_link
+
+  - id: lnk_20260524_aa11bb
+    workitem_id: feature-festival-app-bootstrap-2026-05-24
+    workitem_key: feature:workflow/feature/festival-app-bootstrap
+    scope:
+      kind: repo
+      path: vendor/festival-app
+    role: primary
+    created_at: 2026-05-24T20:14:00Z
+    created_by: camp_workitem_link
+
+  - id: lnk_20260524_22ccdd
+    workitem_id: design-camp-timeline-2026-05-19
+    workitem_key: design:workflow/design/camp-timeline
+    scope:
+      kind: festival
+      path: festivals/active/camp-timeline-CT0001
+    role: primary
+    created_at: 2026-05-24T20:30:00Z
+    created_by: camp_workitem_link
+
+  - id: lnk_20260524_55eeff
+    workitem_id: chore-cleanup-2026-05-20
+    workitem_key: chore:workflow/chore/cleanup
+    scope:
+      kind: worktree
+      path: projects/worktrees/camp@feat-link-registry
+    role: primary
+    created_at: 2026-05-24T21:00:00Z
+    created_by: camp_workitem_link
+
+  - id: lnk_20260524_66aaff
+    workitem_id: design-camp-timeline-2026-05-19
+    workitem_key: design:workflow/design/camp-timeline
+    scope:
+      kind: project
+      path: projects/festival-app
+    role: related
+    created_at: 2026-05-24T21:05:00Z
+    created_by: camp_workitem_link
+
+  - id: lnk_20260524_77bb00
+    workitem_id: design-camp-timeline-2026-05-19
+    workitem_key: design:workflow/design/camp-timeline
+    scope:
+      kind: campaign_path
+      path: workflow/design/older-timeline-spike
+    role: blocked_by
+    created_at: 2026-05-24T21:10:00Z
+    created_by: camp_workitem_link
+
+  - id: lnk_20260524_88cc11
+    workitem_id: design-camp-timeline-2026-05-19
+    workitem_key: design:workflow/design/camp-timeline
+    scope:
+      kind: campaign_path
+      path: workflow/design/legacy-timeline-2025
+    role: supersedes
+    created_at: 2026-05-24T21:15:00Z
+    created_by: camp_workitem_link
