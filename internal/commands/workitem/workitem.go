@@ -132,6 +132,8 @@ Examples:
 	cmd.AddCommand(newUnlinkCommand())
 	cmd.AddCommand(newLinksCommand())
 	cmd.AddCommand(newCurrentCommand())
+	cmd.AddCommand(newResolveCommand())
+	cmd.AddCommand(newDoctorCommand())
 
 	return cmd
 }
