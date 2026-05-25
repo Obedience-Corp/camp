@@ -44,6 +44,7 @@ func runLinks(ctx context.Context, cmd *cobra.Command, selectorArg string, jsonO
 		return err
 	}
 
+	registry.Sort()
 	filtered := registry.Links
 	if selectorArg != "" {
 		wi, err := resolveSelector(ctx, root, selectorArg, false)
@@ -59,7 +60,6 @@ func runLinks(ctx context.Context, cmd *cobra.Command, selectorArg string, jsonO
 		filtered = matched
 	}
 
-	registry.Sort()
 	if jsonOut {
 		return emitLinksJSON(cmd.OutOrStdout(), filtered)
 	}

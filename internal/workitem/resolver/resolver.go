@@ -7,6 +7,7 @@ package resolver
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -61,6 +62,12 @@ func Resolve(ctx context.Context, root string, opts Options) (*Resolution, error
 		return nil, err
 	}
 
+	var err error
+	root, err = canonicalPath(root)
+	if err != nil {
+		return nil, camperrors.Wrap(err, "resolve campaign root")
+	}
+
 	cwd := opts.Cwd
 	if cwd == "" {
 		c, err := os.Getwd()
@@ -69,85 +76,89 @@ func Resolve(ctx context.Context, root string, opts Options) (*Resolution, error
 		}
 		cwd = c
 	}
-	if abs, err := filepath.Abs(cwd); err == nil {
-		cwd = abs
+	cwd, err = canonicalPath(cwd)
+	if err != nil {
+		return nil, camperrors.Wrap(err, "resolve cwd")
 	}
 
 	result := &Resolution{Source: SourceNone, Reason: "no tier matched"}
-
-	if wi, step := resolveExplicit(ctx, root, opts); wi != nil {
-		result.Workitem = wi
-		result.Source = SourceExplicit
-		result.Reason = "explicit --workitem flag"
-		result.QuestID = questIDOf(wi)
-		result.Trace = append(result.Trace, step)
-		return result, nil
-	} else {
-		result.Trace = append(result.Trace, step)
+	tiers := []resolveTier{
+		{SourceExplicit, func() (*workitem.WorkItem, TraceStep, error) {
+			return resolveExplicit(ctx, root, opts)
+		}, "explicit --workitem flag"},
+		{SourceAncestor, func() (*workitem.WorkItem, TraceStep, error) {
+			return resolveAncestor(ctx, root, cwd)
+		}, "nearest ancestor .workitem"},
+		{SourceLink, func() (*workitem.WorkItem, TraceStep, error) {
+			return resolveLink(ctx, root, cwd)
+		}, ""},
+		{SourceFestival, func() (*workitem.WorkItem, TraceStep, error) {
+			return resolveFestival(ctx, root, opts.FestivalID)
+		}, ""},
+		{SourceCurrent, func() (*workitem.WorkItem, TraceStep, error) {
+			return resolveCurrent(ctx, root)
+		}, ""},
 	}
-
-	if wi, step := resolveAncestor(ctx, root, cwd); wi != nil {
-		result.Workitem = wi
-		result.Source = SourceAncestor
-		result.Reason = "nearest ancestor .workitem"
-		result.QuestID = questIDOf(wi)
+	for _, tier := range tiers {
+		wi, step, err := tier.fn()
 		result.Trace = append(result.Trace, step)
-		return result, nil
-	} else {
-		result.Trace = append(result.Trace, step)
-	}
-
-	if wi, step := resolveLink(ctx, root, cwd); wi != nil {
-		result.Workitem = wi
-		result.Source = SourceLink
-		result.Reason = step.Detail
-		result.QuestID = questIDOf(wi)
-		result.Trace = append(result.Trace, step)
-		return result, nil
-	} else {
-		result.Trace = append(result.Trace, step)
-	}
-
-	if wi, step := resolveFestival(ctx, root, opts.FestivalID); wi != nil {
-		result.Workitem = wi
-		result.Source = SourceFestival
-		result.Reason = step.Detail
-		result.QuestID = questIDOf(wi)
-		result.Trace = append(result.Trace, step)
-		return result, nil
-	} else {
-		result.Trace = append(result.Trace, step)
-	}
-
-	if wi, step := resolveCurrent(ctx, root); wi != nil {
-		result.Workitem = wi
-		result.Source = SourceCurrent
-		result.Reason = step.Detail
-		result.QuestID = questIDOf(wi)
-		result.Trace = append(result.Trace, step)
-		return result, nil
-	} else {
-		result.Trace = append(result.Trace, step)
+		if err != nil {
+			return nil, err
+		}
+		if wi != nil {
+			result.Workitem = wi
+			result.Source = tier.source
+			result.Reason = firstNonEmpty(tier.reason, step.Detail)
+			result.QuestID = questIDOf(wi)
+			return result, nil
+		}
 	}
 
 	result.Trace = append(result.Trace, TraceStep{Tier: SourceNone, Result: "match", Detail: "no workitem context"})
 	return result, nil
 }
 
-func resolveExplicit(ctx context.Context, root string, opts Options) (*workitem.WorkItem, TraceStep) {
+type resolveTier struct {
+	source Source
+	fn     func() (*workitem.WorkItem, TraceStep, error)
+	reason string
+}
+
+func canonicalPath(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err == nil {
+		return resolved, nil
+	}
+	return abs, nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func resolveExplicit(ctx context.Context, root string, opts Options) (*workitem.WorkItem, TraceStep, error) {
 	if opts.Explicit == "" {
-		return nil, TraceStep{Tier: SourceExplicit, Result: "skip", Detail: "no --workitem flag"}
+		return nil, TraceStep{Tier: SourceExplicit, Result: "skip", Detail: "no --workitem flag"}, nil
 	}
 	wi, err := selector.Resolve(ctx, root, opts.Explicit, selector.ResolveOptions{AllowFuzzy: opts.AllowFuzzy})
 	if err != nil {
-		return nil, TraceStep{Tier: SourceExplicit, Result: "error", Detail: err.Error()}
+		return nil, TraceStep{Tier: SourceExplicit, Result: "error", Detail: err.Error()}, nil
 	}
-	return wi, TraceStep{Tier: SourceExplicit, Result: "match", Detail: wi.Key}
+	return wi, TraceStep{Tier: SourceExplicit, Result: "match", Detail: wi.Key}, nil
 }
 
-func resolveAncestor(ctx context.Context, root, cwd string) (*workitem.WorkItem, TraceStep) {
+func resolveAncestor(ctx context.Context, root, cwd string) (*workitem.WorkItem, TraceStep, error) {
 	if cwd == "" || root == "" {
-		return nil, TraceStep{Tier: SourceAncestor, Result: "skip", Detail: "no cwd"}
+		return nil, TraceStep{Tier: SourceAncestor, Result: "skip", Detail: "no cwd"}, nil
 	}
 	dir := cwd
 	for {
@@ -156,29 +167,28 @@ func resolveAncestor(ctx context.Context, root, cwd string) (*workitem.WorkItem,
 			rel, _ := filepath.Rel(root, dir)
 			wi, err := selector.Resolve(ctx, root, filepath.ToSlash(rel), selector.ResolveOptions{})
 			if err == nil {
-				return wi, TraceStep{Tier: SourceAncestor, Result: "match", Detail: filepath.ToSlash(rel)}
+				return wi, TraceStep{Tier: SourceAncestor, Result: "match", Detail: filepath.ToSlash(rel)}, nil
 			}
 		}
 		if dir == root || dir == filepath.Dir(dir) {
 			break
 		}
 		dir = filepath.Dir(dir)
-		// Guard: don't walk above the campaign root.
-		if !strings.HasPrefix(dir, root) {
+		if pathOutside(root, dir) {
 			break
 		}
 	}
-	return nil, TraceStep{Tier: SourceAncestor, Result: "miss", Detail: "no .workitem found between cwd and campaign root"}
+	return nil, TraceStep{Tier: SourceAncestor, Result: "miss", Detail: "no .workitem found between cwd and campaign root"}, nil
 }
 
-func resolveLink(ctx context.Context, root, cwd string) (*workitem.WorkItem, TraceStep) {
+func resolveLink(ctx context.Context, root, cwd string) (*workitem.WorkItem, TraceStep, error) {
 	registry, err := links.Load(ctx, root)
 	if err != nil {
-		return nil, TraceStep{Tier: SourceLink, Result: "error", Detail: err.Error()}
+		return nil, TraceStep{Tier: SourceLink, Result: "error", Detail: err.Error()}, nil
 	}
 	rel, err := filepath.Rel(root, cwd)
-	if err != nil || strings.HasPrefix(rel, "..") {
-		return nil, TraceStep{Tier: SourceLink, Result: "skip", Detail: "cwd outside campaign root"}
+	if err != nil || relOutsideRoot(rel) {
+		return nil, TraceStep{Tier: SourceLink, Result: "skip", Detail: "cwd outside campaign root"}, nil
 	}
 	relSlash := filepath.ToSlash(rel)
 
@@ -204,32 +214,35 @@ func resolveLink(ctx context.Context, root, cwd string) (*workitem.WorkItem, Tra
 		}
 	}
 	if best == nil {
-		return nil, TraceStep{Tier: SourceLink, Result: "miss", Detail: "no primary path link covers cwd"}
+		return nil, TraceStep{Tier: SourceLink, Result: "miss", Detail: "no primary path link covers cwd"}, nil
 	}
 	wi, err := selector.Resolve(ctx, root, best.WorkitemID, selector.ResolveOptions{})
 	if err != nil {
-		// Workitem on disk vanished; surface as a tier miss with a note —
-		// doctor will report the same condition as broken-link.
-		return nil, TraceStep{
+		detail := "primary link " + best.ID + " points to missing workitem " + best.WorkitemID
+		if !errors.Is(err, selector.ErrSelectorNotFound) {
+			detail = "primary link " + best.ID + " could not resolve workitem " + best.WorkitemID + ": " + err.Error()
+		}
+		step := TraceStep{
 			Tier:   SourceLink,
 			Result: "error",
-			Detail: "primary link " + best.ID + " points to missing workitem " + best.WorkitemID,
+			Detail: detail,
 		}
+		return nil, step, camperrors.NewValidation("workitem_link", detail, err)
 	}
 	return wi, TraceStep{
 		Tier:   SourceLink,
 		Result: "match",
 		Detail: "via link " + best.ID + " on " + string(best.Scope.Kind) + ":" + best.Scope.Path,
-	}
+	}, nil
 }
 
-func resolveFestival(ctx context.Context, root, festivalID string) (*workitem.WorkItem, TraceStep) {
+func resolveFestival(ctx context.Context, root, festivalID string) (*workitem.WorkItem, TraceStep, error) {
 	if festivalID == "" {
-		return nil, TraceStep{Tier: SourceFestival, Result: "skip", Detail: "no festival id"}
+		return nil, TraceStep{Tier: SourceFestival, Result: "skip", Detail: "no festival id"}, nil
 	}
 	registry, err := links.Load(ctx, root)
 	if err != nil {
-		return nil, TraceStep{Tier: SourceFestival, Result: "error", Detail: err.Error()}
+		return nil, TraceStep{Tier: SourceFestival, Result: "error", Detail: err.Error()}, nil
 	}
 	for i := range registry.Links {
 		link := &registry.Links[i]
@@ -245,25 +258,25 @@ func resolveFestival(ctx context.Context, root, festivalID string) (*workitem.Wo
 				Tier:   SourceFestival,
 				Result: "match",
 				Detail: "via link " + link.ID + " on festival " + link.Scope.Path,
-			}
+			}, nil
 		}
 	}
-	return nil, TraceStep{Tier: SourceFestival, Result: "miss", Detail: "no festival link matches " + festivalID}
+	return nil, TraceStep{Tier: SourceFestival, Result: "miss", Detail: "no festival link matches " + festivalID}, nil
 }
 
-func resolveCurrent(ctx context.Context, root string) (*workitem.WorkItem, TraceStep) {
+func resolveCurrent(ctx context.Context, root string) (*workitem.WorkItem, TraceStep, error) {
 	cur, err := links.LoadCurrent(ctx, root)
 	if err != nil {
-		return nil, TraceStep{Tier: SourceCurrent, Result: "error", Detail: err.Error()}
+		return nil, TraceStep{Tier: SourceCurrent, Result: "error", Detail: err.Error()}, nil
 	}
 	if cur == nil {
-		return nil, TraceStep{Tier: SourceCurrent, Result: "skip", Detail: "no current.yaml"}
+		return nil, TraceStep{Tier: SourceCurrent, Result: "skip", Detail: "no current.yaml"}, nil
 	}
 	wi, err := selector.Resolve(ctx, root, cur.WorkitemID, selector.ResolveOptions{})
 	if err != nil {
-		return nil, TraceStep{Tier: SourceCurrent, Result: "error", Detail: err.Error()}
+		return nil, TraceStep{Tier: SourceCurrent, Result: "error", Detail: err.Error()}, nil
 	}
-	return wi, TraceStep{Tier: SourceCurrent, Result: "match", Detail: "via current.yaml"}
+	return wi, TraceStep{Tier: SourceCurrent, Result: "match", Detail: "via current.yaml"}, nil
 }
 
 func pathMatchesPrefix(cwdRel, scopePath string) bool {
@@ -271,6 +284,15 @@ func pathMatchesPrefix(cwdRel, scopePath string) bool {
 		return true
 	}
 	return strings.HasPrefix(cwdRel, scopePath+"/")
+}
+
+func pathOutside(root, dir string) bool {
+	rel, err := filepath.Rel(root, dir)
+	return err != nil || relOutsideRoot(rel)
+}
+
+func relOutsideRoot(rel string) bool {
+	return rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel)
 }
 
 func festivalScopeMatches(scopePath, festivalID string) bool {
@@ -301,4 +323,3 @@ func questIDOf(wi *workitem.WorkItem) string {
 	}
 	return ""
 }
-

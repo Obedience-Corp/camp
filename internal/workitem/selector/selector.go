@@ -23,11 +23,16 @@ type ResolveOptions struct {
 	AllowFuzzy bool
 }
 
+var (
+	ErrSelectorAmbiguous = camperrors.NewValidation("selector", "ambiguous", nil)
+	ErrSelectorNotFound  = camperrors.NewValidation("selector", "not found", nil)
+)
+
 // Resolve looks up a workitem by query. It returns:
 //   - the matched workitem when exactly one workitem matches the highest
 //     priority that produced any match;
-//   - a wrapped ErrAmbiguous when multiple workitems tie at that priority;
-//   - a wrapped ErrNotFound when nothing matches.
+//   - a wrapped ErrSelectorAmbiguous when multiple workitems tie at that priority;
+//   - a wrapped ErrSelectorNotFound when nothing matches.
 //
 // Resolution order:
 //  1. exact stable .workitem id
@@ -109,8 +114,8 @@ func ambiguous(query, stage string, matches []workitem.WorkItem) error {
 		keys = append(keys, m.Key)
 	}
 	sort.Strings(keys)
-	return camperrors.NewValidation("selector",
-		"selector "+query+" matched "+stage+" against multiple workitems: "+strings.Join(keys, ", "), nil)
+	return camperrors.Wrap(ErrSelectorAmbiguous,
+		"selector "+query+" matched "+stage+" against multiple workitems: "+strings.Join(keys, ", "))
 }
 
 func notFound(query string, items []workitem.WorkItem) error {
@@ -119,7 +124,7 @@ func notFound(query string, items []workitem.WorkItem) error {
 	if len(suggestions) > 0 {
 		msg += "; did you mean: " + strings.Join(suggestions, ", ")
 	}
-	return camperrors.NewValidation("selector", msg, nil)
+	return camperrors.Wrap(ErrSelectorNotFound, msg)
 }
 
 func nearMatches(query string, items []workitem.WorkItem, limit int) []string {

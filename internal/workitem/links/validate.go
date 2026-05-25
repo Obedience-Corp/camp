@@ -50,7 +50,6 @@ type ValidateOptions struct {
 var linkIDRegex = regexp.MustCompile(LinkIDPattern)
 
 const (
-	maxClockSkewWarn   = 5 * time.Minute
 	maxClockSkewReject = 24 * time.Hour
 	maxCreatedByLen    = 64
 	maxWorkitemIDLen   = 200

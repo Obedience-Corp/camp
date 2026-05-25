@@ -57,6 +57,23 @@ func TestResolve_AncestorTier(t *testing.T) {
 	}
 }
 
+func TestResolve_AncestorTierWithSymlinkedCwd(t *testing.T) {
+	root := linkTestCampaign(t)
+	linkRoot := filepath.Join(t.TempDir(), "campaign-link")
+	if err := os.Symlink(root, linkRoot); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	cwd := filepath.Join(linkRoot, "workflow", "design", "example")
+
+	res, err := resolver.Resolve(context.Background(), root, resolver.Options{Cwd: cwd})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if res.Source != resolver.SourceAncestor {
+		t.Fatalf("source = %s, want ancestor; trace=%v", res.Source, res.Trace)
+	}
+}
+
 func TestResolve_LinkTier(t *testing.T) {
 	root := linkTestCampaign(t)
 	restore := chdir(t, root)
@@ -78,6 +95,37 @@ func TestResolve_LinkTier(t *testing.T) {
 	}
 	if res.Source != resolver.SourceLink {
 		t.Fatalf("source = %s, want link; trace=%v", res.Source, res.Trace)
+	}
+}
+
+func TestResolve_BrokenPrimaryLinkDoesNotFallThrough(t *testing.T) {
+	root := linkTestCampaign(t)
+	restore := chdir(t, root)
+	defer restore()
+
+	if err := runLink(context.Background(), newCmd(), linkOptions{
+		Selector: "design-example-2026-05-24",
+		Project:  "demo",
+	}); err != nil {
+		t.Fatalf("seed link: %v", err)
+	}
+	if err := links.SaveCurrent(context.Background(), root, &links.Current{
+		Version:    links.CurrentSchemaVersion,
+		WorkitemID: "design-example-2026-05-24",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(root, "workflow", "design", "example")); err != nil {
+		t.Fatal(err)
+	}
+
+	cwd := filepath.Join(root, "projects", "demo")
+	_, err := resolver.Resolve(context.Background(), root, resolver.Options{Cwd: cwd})
+	if err == nil {
+		t.Fatal("expected broken primary link to fail instead of falling through")
+	}
+	if !strings.Contains(err.Error(), "primary link") {
+		t.Fatalf("err = %v, want primary link context", err)
 	}
 }
 

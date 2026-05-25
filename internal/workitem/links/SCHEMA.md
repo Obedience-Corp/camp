@@ -282,7 +282,7 @@ Single table the implementation tests against. Each row is one assertion in
 | `links[].scope.kind` | Required, one of the §5 enum values. |
 | `links[].scope.path` | Required, 1–4096 chars, no leading `/`, no `..`, passes `quest.ValidateLinkPath`, satisfies kind-prefix table in §5. |
 | `links[].role` | Required, one of `primary`, `related`, `blocked_by`, `supersedes`. |
-| `links[].created_at` | Required, RFC 3339 UTC, not in the future (>5min skew → warn, not reject; >24h skew → reject). |
+| `links[].created_at` | Required, RFC 3339 UTC, not more than 24h from the local clock. |
 | `links[].created_by` | Required, matches `^[A-Za-z0-9_-]{1,64}$`. |
 | `current.version` | Must equal `workitem-current/v1alpha1`. |
 | `current.workitem_id` | Required, same rules as `links[].workitem_id`. |

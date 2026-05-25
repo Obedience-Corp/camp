@@ -26,12 +26,13 @@ import (
 // Doctor finding codes (dotted-domain form). Stable strings; consumers
 // dispatch on them.
 const (
-	codeBrokenLink       = "workitem.link.broken"
-	codeBrokenScope      = "workitem.scope.broken"
-	codeOutOfBounds      = "workitem.scope.out-of-bounds"
-	codeDuplicatePrimary = "workitem.link.duplicate-primary"
-	codeSchemaViolation  = "workitem.schema.violation"
-	codeCurrentMissing   = "workitem.current.missing"
+	codeBrokenLink         = "workitem.link.broken"
+	codeBrokenScope        = "workitem.scope.broken"
+	codeOutOfBounds        = "workitem.scope.out-of-bounds"
+	codeScopeUnvalidatable = "workitem.scope.unvalidatable"
+	codeDuplicatePrimary   = "workitem.link.duplicate-primary"
+	codeSchemaViolation    = "workitem.schema.violation"
+	codeCurrentMissing     = "workitem.current.missing"
 )
 
 const (
@@ -140,7 +141,8 @@ func collectWorkitemFindings(ctx context.Context, root string, registry *links.L
 				AutoFixable: true,
 			})
 		}
-		if !scopeTargetExists(root, link.Scope.Path) {
+		scopeMissing := !scopeTargetExists(root, link.Scope.Path)
+		if scopeMissing {
 			findings = append(findings, docFinding{
 				Code:        codeBrokenScope,
 				Severity:    docSeverityError,
@@ -150,13 +152,23 @@ func collectWorkitemFindings(ctx context.Context, root string, registry *links.L
 				AutoFixable: true,
 			})
 		}
-		if err := quest.ValidateLinkPath(root, link.Scope.Path); err != nil && errors.Is(err, camperrors.ErrInvalidInput) {
-			findings = append(findings, docFinding{
-				Code:     codeOutOfBounds,
-				Severity: docSeverityError,
-				Target:   "link:" + link.ID,
-				Message:  "scope path " + link.Scope.Path + " escapes the campaign root",
-			})
+		if err := quest.ValidateLinkPath(root, link.Scope.Path); err != nil {
+			switch {
+			case errors.Is(err, camperrors.ErrInvalidInput):
+				findings = append(findings, docFinding{
+					Code:     codeOutOfBounds,
+					Severity: docSeverityError,
+					Target:   "link:" + link.ID,
+					Message:  "scope path " + link.Scope.Path + " escapes the campaign root",
+				})
+			case !scopeMissing:
+				findings = append(findings, docFinding{
+					Code:     codeScopeUnvalidatable,
+					Severity: docSeverityError,
+					Target:   "link:" + link.ID,
+					Message:  "scope path " + link.Scope.Path + " could not be validated: " + err.Error(),
+				})
+			}
 		}
 		if link.Role == links.RolePrimary {
 			key := string(link.Scope.Kind) + "::" + link.Scope.Path

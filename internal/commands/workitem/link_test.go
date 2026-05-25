@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
+	"github.com/Obedience-Corp/camp/internal/workitem/selector"
 )
 
 // linkTestCampaign builds a minimal campaign with one design workitem at
@@ -98,6 +100,19 @@ func TestLink_HappyPath(t *testing.T) {
 	if link.Role != links.RolePrimary {
 		t.Fatalf("role = %s", link.Role)
 	}
+	if link.CreatedBy == "" {
+		t.Fatalf("created_by must not be empty")
+	}
+}
+
+func TestSanitizeCreatedBy(t *testing.T) {
+	if got := sanitizeCreatedBy("DOMAIN\\Lance Rogers!"); got != "DOMAIN-Lance-Rogers" {
+		t.Fatalf("sanitizeCreatedBy = %q", got)
+	}
+	long := strings.Repeat("a", 70)
+	if got := sanitizeCreatedBy(long); len(got) != 64 {
+		t.Fatalf("sanitizeCreatedBy length = %d, want 64", len(got))
+	}
 }
 
 func TestLink_MissingSelectorErrors(t *testing.T) {
@@ -115,6 +130,9 @@ func TestLink_MissingSelectorErrors(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "no workitem matched") {
 		t.Fatalf("err = %v, expected 'no workitem matched'", err)
+	}
+	if !errors.Is(err, selector.ErrSelectorNotFound) {
+		t.Fatalf("err = %v, want ErrSelectorNotFound", err)
 	}
 }
 
@@ -167,6 +185,9 @@ title: Duplicate
 	}
 	if !strings.Contains(err.Error(), "multiple workitems") {
 		t.Fatalf("err = %v, want multiple-match message", err)
+	}
+	if !errors.Is(err, selector.ErrSelectorAmbiguous) {
+		t.Fatalf("err = %v, want ErrSelectorAmbiguous", err)
 	}
 }
 
@@ -315,6 +336,64 @@ func TestLinks_ListEmptyAndFiltered(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "design-example-2026-05-24") {
 		t.Fatalf("filtered output missing workitem id: %q", stdout.String())
+	}
+}
+
+func TestLinks_FilteredOutputIsSorted(t *testing.T) {
+	root := linkTestCampaign(t)
+	restore := chdir(t, root)
+	defer restore()
+
+	for _, dir := range []string{"projects/a", "projects/z"} {
+		if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(dir)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".campaign", "workitems"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	raw := `version: workitem-links/v1alpha1
+links:
+  - id: lnk_20260524_ffffff
+    workitem_id: design-example-2026-05-24
+    workitem_key: design:workflow/design/example
+    scope:
+      kind: project
+      path: projects/z
+    role: related
+    created_at: 2026-05-24T19:00:00Z
+    created_by: test
+  - id: lnk_20260524_aaaaaa
+    workitem_id: design-example-2026-05-24
+    workitem_key: design:workflow/design/example
+    scope:
+      kind: project
+      path: projects/a
+    role: related
+    created_at: 2026-05-24T19:00:00Z
+    created_by: test
+`
+	if err := os.WriteFile(filepath.Join(root, ".campaign", "workitems", "links.yaml"), []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := newCmd()
+	var stdout bytes.Buffer
+	cmd.SetOut(&stdout)
+	if err := runLinks(context.Background(), cmd, "design-example-2026-05-24", true); err != nil {
+		t.Fatalf("runLinks filtered json: %v", err)
+	}
+	var payload struct {
+		Links []links.Link `json:"links"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal: %v\nraw=%s", err, stdout.String())
+	}
+	if len(payload.Links) != 2 {
+		t.Fatalf("links len = %d, want 2", len(payload.Links))
+	}
+	if payload.Links[0].Scope.Path != "projects/a" || payload.Links[1].Scope.Path != "projects/z" {
+		t.Fatalf("filtered links not sorted: %#v", payload.Links)
 	}
 }
 

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io/fs"
 	"os"
-	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -45,7 +44,7 @@ func Save(ctx context.Context, root string, links *Links) error {
 		return camperrors.Wrap(err, "create links dir")
 	}
 
-	release, err := acquireFileLock(ctx, path+".lock")
+	release, err := fsutil.AcquireFileLock(ctx, path+".lock")
 	if err != nil {
 		return err
 	}
@@ -85,7 +84,7 @@ func SaveCurrent(ctx context.Context, root string, c *Current) error {
 		return camperrors.Wrap(err, "create links dir")
 	}
 
-	release, err := acquireFileLock(ctx, path+".lock")
+	release, err := fsutil.AcquireFileLock(ctx, path+".lock")
 	if err != nil {
 		return err
 	}
@@ -111,40 +110,4 @@ func marshalYAML(value any) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
-}
-
-// acquireFileLock takes an exclusive lock on lockPath via O_CREATE|O_EXCL.
-// The returned release closure removes the lock file. Cross-platform; does
-// not depend on flock(2). Times out after 5s with a wrapped error.
-func acquireFileLock(ctx context.Context, lockPath string) (func(), error) {
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
-		if err == nil {
-			_ = f.Close()
-			released := false
-			return func() {
-				if released {
-					return
-				}
-				released = true
-				_ = os.Remove(lockPath)
-			}, nil
-		}
-		if !errors.Is(err, fs.ErrExist) {
-			return nil, camperrors.Wrap(err, "acquire lock")
-		}
-		if time.Now().After(deadline) {
-			return nil, camperrors.Wrap(camperrors.ErrInvalidInput,
-				"timeout acquiring lock at "+lockPath+" (another camp invocation holds it?)")
-		}
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(20 * time.Millisecond):
-		}
-	}
 }

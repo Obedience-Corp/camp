@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/user"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -117,7 +119,7 @@ func runLink(ctx context.Context, cmd *cobra.Command, opts linkOptions) error {
 		Scope:       *scope,
 		Role:        role,
 		CreatedAt:   time.Now().UTC().Truncate(time.Second),
-		CreatedBy:   "camp_workitem_link",
+		CreatedBy:   defaultCreatedBy(),
 	}
 	if err := registry.AddLink(link, opts.Replace); err != nil {
 		return err
@@ -141,6 +143,26 @@ func runLink(ctx context.Context, cmd *cobra.Command, opts linkOptions) error {
 		return emitLinkJSON(cmd.OutOrStdout(), link)
 	}
 	return emitLinkHuman(cmd.OutOrStdout(), link)
+}
+
+var createdBySanitizer = regexp.MustCompile(`[^A-Za-z0-9_-]+`)
+
+func defaultCreatedBy() string {
+	if u, err := user.Current(); err == nil && u.Username != "" {
+		if sanitized := sanitizeCreatedBy(u.Username); sanitized != "" {
+			return sanitized
+		}
+	}
+	return "camp_workitem_link"
+}
+
+func sanitizeCreatedBy(value string) string {
+	sanitized := createdBySanitizer.ReplaceAllString(value, "-")
+	sanitized = strings.Trim(sanitized, "-")
+	if len(sanitized) > 64 {
+		sanitized = sanitized[:64]
+	}
+	return sanitized
 }
 
 func resolveSelector(ctx context.Context, root, query string, allowMissing bool) (*wkitem.WorkItem, error) {
