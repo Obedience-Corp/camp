@@ -166,7 +166,7 @@ func sanitizeCreatedBy(value string) string {
 }
 
 func resolveSelector(ctx context.Context, root, query string, allowMissing bool) (*wkitem.WorkItem, error) {
-	if allowMissing && (strings.HasPrefix(query, "lnk_") == false) {
+	if allowMissing && !strings.HasPrefix(query, "lnk_") {
 		// Even with --allow-missing, try the resolver first; if it fails,
 		// synthesize a minimal WorkItem so the link can still be saved.
 		if wi, err := selector.Resolve(ctx, root, query, selector.ResolveOptions{}); err == nil {

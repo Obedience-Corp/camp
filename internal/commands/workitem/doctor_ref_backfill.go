@@ -41,25 +41,6 @@ func workitemPathsMissingRef(ctx context.Context, root string) ([]string, error)
 	return missing, nil
 }
 
-// backfillRef rewrites the .workitem at relPath to include a derived ref
-// field. All other fields and YAML key order are preserved by mutating only
-// the parsed mapping in place.
-func backfillRef(ctx context.Context, root, relPath string) error {
-	existingRefs, err := refsExcludingPath(ctx, root, relPath)
-	if err != nil {
-		return err
-	}
-	id, err := workitemIDAtPath(root, relPath)
-	if err != nil {
-		return err
-	}
-	ref, err := wkitem.DeriveUnique(ctx, id, existingRefs)
-	if err != nil {
-		return err
-	}
-	return backfillRefWithRef(ctx, root, relPath, ref)
-}
-
 func backfillMissingRefs(ctx context.Context, root string) (int, error) {
 	cfg, err := config.LoadCampaignConfig(ctx, root)
 	if err != nil {
@@ -139,46 +120,6 @@ func backfillRefWithRef(ctx context.Context, root, relPath, ref string) error {
 		return camperrors.Wrap(err, "marshal updated workitem")
 	}
 	return fsutil.WriteFileAtomically(abs, out, 0o644)
-}
-
-func workitemIDAtPath(root, relPath string) (string, error) {
-	abs := filepath.Join(root, filepath.FromSlash(relPath), wkitem.MetadataFilename)
-	raw, err := os.ReadFile(abs)
-	if err != nil {
-		return "", camperrors.Wrapf(err, "read %s", abs)
-	}
-	var doc yaml.Node
-	if err := yaml.Unmarshal(raw, &doc); err != nil {
-		return "", camperrors.Wrapf(err, "parse %s", abs)
-	}
-	id, ok := lookupScalar(&doc, "id")
-	if !ok {
-		return "", camperrors.NewValidation("id", "missing id in "+abs, nil)
-	}
-	return id, nil
-}
-
-func refsExcludingPath(ctx context.Context, root, skipRel string) (map[string]bool, error) {
-	cfg, err := config.LoadCampaignConfig(ctx, root)
-	if err != nil {
-		return nil, camperrors.Wrap(err, "load campaign config")
-	}
-	resolver := paths.NewResolverFromConfig(root, cfg)
-	items, err := wkitem.Discover(ctx, root, resolver)
-	if err != nil {
-		return nil, err
-	}
-	out := make(map[string]bool, len(items))
-	for _, item := range items {
-		if item.RelativePath == skipRel {
-			continue
-		}
-		ref, _ := item.SourceMetadata["ref"].(string)
-		if ref != "" {
-			out[ref] = true
-		}
-	}
-	return out, nil
 }
 
 // lookupScalar finds the scalar value of `key` in a top-level mapping
