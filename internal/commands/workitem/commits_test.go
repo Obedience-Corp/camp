@@ -1,6 +1,7 @@
 package workitem
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -129,6 +130,46 @@ func TestQueryRepo_NonGitDirReturnsNil(t *testing.T) {
 	}
 	if records != nil {
 		t.Fatalf("expected nil for non-git dir, got %v", records)
+	}
+}
+
+func TestQueryRepo_ContextCanceledSurfacesError(t *testing.T) {
+	root := commitsTestCampaign(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := queryRepo(ctx, root, "WI-abc123")
+	if err == nil {
+		t.Fatal("queryRepo with canceled context returned nil error")
+	}
+}
+
+func TestCommitsWorkerCountCapsFanout(t *testing.T) {
+	for _, repoCount := range []int{0, 1, 2, 100} {
+		got := commitsWorkerCount(repoCount)
+		if got < 1 {
+			t.Fatalf("commitsWorkerCount(%d) = %d, want >= 1", repoCount, got)
+		}
+		if got > commitsMaxWorkers {
+			t.Fatalf("commitsWorkerCount(%d) = %d, want <= %d", repoCount, got, commitsMaxWorkers)
+		}
+		if repoCount > 0 && got > repoCount {
+			t.Fatalf("commitsWorkerCount(%d) = %d, want <= repo count", repoCount, got)
+		}
+	}
+}
+
+func TestEmitCommitsQueryWarnings(t *testing.T) {
+	var stderr bytes.Buffer
+	emitCommitsQueryWarnings(&stderr, []commitsQueryError{{Repo: "demo", Err: "boom"}})
+	if got := stderr.String(); got != "warning: 1 repo(s) failed; re-run with --json for details\n" {
+		t.Fatalf("warning = %q", got)
+	}
+
+	stderr.Reset()
+	emitCommitsQueryWarnings(&stderr, nil)
+	if stderr.Len() != 0 {
+		t.Fatalf("empty errors emitted warning: %q", stderr.String())
 	}
 }
 

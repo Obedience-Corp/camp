@@ -111,6 +111,10 @@ func TestIntegration_WorkitemCommit_RefusesSilentWiden(t *testing.T) {
 	_ = seedDesignWorkitemWithRef(t, tc, dir, "timeline")
 
 	require.NoError(t, tc.WriteFile(dir+"/workflow/design/timeline/spec.md", "spec\n"))
+	spacePath := dir + "/workflow/design/timeline/test slug with spaces.md"
+	_, code, err := tc.ExecCommand("sh", "-c", fmt.Sprintf("printf 'space\\n' > '%s'", spacePath))
+	require.NoError(t, err)
+	require.Equal(t, 0, code)
 	require.NoError(t, tc.WriteFile(dir+"/README.md", "readme\n"))
 	require.NoError(t, tc.WriteFile(dir+"/docs/extra.md", "extra\n"))
 
@@ -122,6 +126,7 @@ func TestIntegration_WorkitemCommit_RefusesSilentWiden(t *testing.T) {
 		assert.True(t, strings.HasPrefix(p, "workflow/design/timeline/"),
 			"unexpected path %q leaked past the workitem boundary; full set: %v", p, changed)
 	}
+	assert.Contains(t, changed, "workflow/design/timeline/test slug with spaces.md")
 	status := statusPorcelain(t, tc, dir)
 	assert.Contains(t, status, "README.md", "README.md should remain dirty: %q", status)
 	assert.Contains(t, status, "docs/extra.md", "docs/extra.md should remain dirty: %q", status)
@@ -209,11 +214,11 @@ func TestIntegration_WorkitemCommit_FailureModes(t *testing.T) {
 	dir := "/test/wi-commit-failure"
 	initWorkitemCommitCampaign(t, tc, dir)
 
-	// No workitem, no override; commit from campaign root must refuse and
-	// emit the hint that names the recovery paths. We rely on
-	// RunCampInDir to surface the non-zero exit as a Go error.
-	out, err := tc.RunCampInDir(dir, "workitem", "commit", "-m", "no context")
-	require.Error(t, err, "expected non-zero exit, output: %s", out)
+	// No workitem, no override; commit from campaign root must refuse with
+	// exit 2 and emit the hint that names the recovery paths.
+	out, code, err := tc.ExecCommand("sh", "-c", "cd "+dir+" && /camp workitem commit -m 'no context' 2>&1")
+	require.NoError(t, err)
+	require.Equal(t, 2, code, "expected exit 2, output: %s", out)
 	assert.Contains(t, out, "no workitem context",
 		"output should explain no workitem context:\n%s", out)
 }

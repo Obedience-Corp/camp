@@ -63,6 +63,36 @@ func runGit(t *testing.T, dir string, args ...string) {
 	}
 }
 
+func TestParseGitStatusPorcelainZ_RenameKeepsNewPath(t *testing.T) {
+	out := []byte("R  new name\x00old name\x00?? path with \"quote\".md\x00")
+	entries := parseGitStatusPorcelainZ(out)
+	if len(entries) != 2 {
+		t.Fatalf("entries = %#v, want 2", entries)
+	}
+	if entries[0].Path != "new name" {
+		t.Fatalf("rename path = %q, want new name", entries[0].Path)
+	}
+	if entries[1].Path != "path with \"quote\".md" {
+		t.Fatalf("quoted path = %q", entries[1].Path)
+	}
+}
+
+func TestListChangedFilesUnder_PreservesPorcelainZPaths(t *testing.T) {
+	root := stagingTestCampaign(t)
+	path := filepath.Join(root, "workflow", "design", "example", "path with \"quote\".md")
+	if err := os.WriteFile(path, []byte("quoted\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	files, err := listChangedFilesUnder(context.Background(), root, "workflow/design/example")
+	if err != nil {
+		t.Fatalf("listChangedFilesUnder: %v", err)
+	}
+	if !contains(files, "workflow/design/example/path with \"quote\".md") {
+		t.Fatalf("changed files missing quoted path: %#v", files)
+	}
+}
+
 func TestComputePlan_WorkitemDir_Ancestor(t *testing.T) {
 	root := stagingTestCampaign(t)
 	defer chdir(t, filepath.Join(root, "workflow", "design", "example"))()

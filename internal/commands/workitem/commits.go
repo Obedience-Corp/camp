@@ -3,8 +3,10 @@ package workitem
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -26,7 +28,10 @@ import (
 const (
 	commitsDefaultLimit = 100
 	commitsLogFormat    = "%H%x09%an%x09%aI%x09%s"
+	commitsMaxWorkers   = 8
 )
+
+var commitsPerRepoTimeout = 30 * time.Second
 
 // CommitRecord is the per-row payload emitted by `camp workitem commits`.
 // Repo is the campaign-relative path of the git repo the commit was found
@@ -41,8 +46,7 @@ type CommitRecord struct {
 }
 
 // commitsQueryError records a per-repo failure surfaced under the --json
-// `errors` key. Default table output drops these silently to keep the
-// happy-path output readable.
+// `errors` key. Table output emits a stderr warning when this list is non-empty.
 type commitsQueryError struct {
 	Repo string `json:"repo"`
 	Err  string `json:"error"`
@@ -65,7 +69,8 @@ repo for commits whose campaign tag references this workitem's ref.
 
 Default sort: most recent first across all repos. Use --json for structured
 output. Repos that are not git checkouts or that fail their git log invocation
-are skipped silently in table mode and reported under "errors" in JSON mode.`,
+are reported under "errors" in JSON mode; table mode warns on stderr when
+repo queries fail.`,
 		Args: cobra.MaximumNArgs(1),
 		Annotations: map[string]string{
 			"agent_allowed": "true",
@@ -148,7 +153,11 @@ func runCommitsQuery(ctx context.Context, cmd *cobra.Command, flags commitsFlags
 	if flags.JSON {
 		return emitCommitsJSON(cmd.OutOrStdout(), records, queryErrs)
 	}
-	return emitCommitsTable(cmd.OutOrStdout(), records)
+	if err := emitCommitsTable(cmd.OutOrStdout(), records); err != nil {
+		return err
+	}
+	emitCommitsQueryWarnings(cmd.ErrOrStderr(), queryErrs)
+	return nil
 }
 
 // enumerateQueryRepos returns absolute paths of every git repo to search,
@@ -184,13 +193,7 @@ func enumerateQueryRepos(ctx context.Context, campaignRoot string) ([]string, er
 // searchRepos fans out across repos with a bounded worker pool and gathers
 // the matched commits + per-repo errors.
 func searchRepos(ctx context.Context, repos []string, ref string) ([]CommitRecord, []commitsQueryError) {
-	workers := runtime.NumCPU()
-	if workers > len(repos) {
-		workers = len(repos)
-	}
-	if workers < 1 {
-		workers = 1
-	}
+	workers := commitsWorkerCount(len(repos))
 
 	type job struct{ repo string }
 	jobs := make(chan job, len(repos))
@@ -230,7 +233,25 @@ func searchRepos(ctx context.Context, repos []string, ref string) ([]CommitRecor
 			errs = append(errs, *r.err)
 		}
 	}
+	sort.Slice(errs, func(i, j int) bool { return errs[i].Repo < errs[j].Repo })
 	return all, errs
+}
+
+func commitsWorkerCount(repoCount int) int {
+	if repoCount < 1 {
+		return 1
+	}
+	workers := runtime.NumCPU()
+	if workers > commitsMaxWorkers {
+		workers = commitsMaxWorkers
+	}
+	if workers > repoCount {
+		workers = repoCount
+	}
+	if workers < 1 {
+		workers = 1
+	}
+	return workers
 }
 
 // queryRepo runs `git log` in repo, parses the tab-separated output, and
@@ -238,17 +259,27 @@ func searchRepos(ctx context.Context, repos []string, ref string) ([]CommitRecor
 // nil records (not an error) when the directory is not a git repo so the
 // caller can skip silently.
 func queryRepo(ctx context.Context, repo, ref string) ([]CommitRecord, error) {
-	if !isGitRepo(repo) {
+	cctx, cancel := context.WithTimeout(ctx, commitsPerRepoTimeout)
+	defer cancel()
+
+	ok, err := isGitRepo(cctx, repo)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
 		return nil, nil
 	}
 	grep := "-WI-" + ref
-	cmd := exec.CommandContext(ctx, "git",
+	cmd := exec.CommandContext(cctx, "git",
 		"-C", repo,
 		"log", "--all",
 		"--pretty=format:"+commitsLogFormat,
 		"--grep="+grep,
 	)
 	output, err := cmd.Output()
+	if errors.Is(cctx.Err(), context.DeadlineExceeded) {
+		return nil, fmt.Errorf("git log timeout after %s", commitsPerRepoTimeout)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -280,9 +311,34 @@ func queryRepo(ctx context.Context, repo, ref string) ([]CommitRecord, error) {
 	return records, nil
 }
 
-func isGitRepo(path string) bool {
-	cmd := exec.Command("git", "-C", path, "rev-parse", "--git-dir")
-	return cmd.Run() == nil
+func isGitRepo(ctx context.Context, path string) (bool, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
+	}
+	if !info.IsDir() {
+		return false, nil
+	}
+	cmd := exec.CommandContext(ctx, "git", "-C", path, "rev-parse", "--git-dir")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		if ctx.Err() != nil {
+			return false, ctx.Err()
+		}
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			msg := strings.ToLower(string(output))
+			if strings.Contains(msg, "not a git repository") {
+				return false, nil
+			}
+			return false, fmt.Errorf("git rev-parse failed: %s", strings.TrimSpace(string(output)))
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 func emitCommitsTable(w io.Writer, records []CommitRecord) error {
@@ -301,6 +357,13 @@ func emitCommitsTable(w io.Writer, records []CommitRecord) error {
 			r.Repo, sha, r.Date.UTC().Format("2006-01-02"), r.Subject)
 	}
 	return tw.Flush()
+}
+
+func emitCommitsQueryWarnings(w io.Writer, errs []commitsQueryError) {
+	if len(errs) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "warning: %d repo(s) failed; re-run with --json for details\n", len(errs))
 }
 
 func emitCommitsJSON(w io.Writer, records []CommitRecord, errs []commitsQueryError) error {

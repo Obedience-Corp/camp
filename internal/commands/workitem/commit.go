@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 
@@ -120,7 +119,7 @@ func runCommit(ctx context.Context, cmd *cobra.Command, flags commitFlags) error
 	if err != nil {
 		if errors.Is(err, ErrNoWorkitemContext) {
 			fmt.Fprintln(cmd.ErrOrStderr(), noContextHint)
-			os.Exit(2)
+			return camperrors.NewCommand("camp workitem commit", 2, "", err)
 		}
 		return err
 	}
