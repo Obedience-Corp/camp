@@ -128,6 +128,10 @@ Examples:
 
 	cmd.AddCommand(newCreateCommand())
 	cmd.AddCommand(newAdoptCommand())
+	cmd.AddCommand(newLinkCommand())
+	cmd.AddCommand(newUnlinkCommand())
+	cmd.AddCommand(newLinksCommand())
+	cmd.AddCommand(newCurrentCommand())
 
 	return cmd
 }
