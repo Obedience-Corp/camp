@@ -107,39 +107,38 @@ func runLink(ctx context.Context, cmd *cobra.Command, opts linkOptions) error {
 		}
 	}
 
-	registry, err := links.Load(ctx, root)
+	var link links.Link
+	err = links.WithLock(ctx, root, func(registry *links.Links) error {
+		// Generate the ID inside the lock so the collision retry sees
+		// the current registry state, not a stale snapshot.
+		id, idErr := generateLinkID(registry)
+		if idErr != nil {
+			return idErr
+		}
+		link = links.Link{
+			ID:          id,
+			WorkitemID:  workitemIDForLink(wi, opts),
+			WorkitemKey: workitemKeyForLink(wi),
+			Scope:       *scope,
+			Role:        role,
+			CreatedAt:   time.Now().UTC().Truncate(time.Second),
+			CreatedBy:   defaultCreatedBy(),
+		}
+		if err := registry.AddLink(link, opts.Replace); err != nil {
+			return err
+		}
+		knownIDs := workitemIDSetFromMaybeNil(wi, opts.AllowMissing)
+		if errs := links.Validate(ctx, registry, links.ValidateOptions{
+			CampaignRoot: root,
+			WorkitemIDs:  knownIDs,
+			AllowMissing: opts.AllowMissing,
+			Now:          link.CreatedAt,
+		}); len(errs) > 0 {
+			return camperrors.NewValidation(errs[0].Field, errs[0].Message, nil)
+		}
+		return nil
+	})
 	if err != nil {
-		return err
-	}
-
-	id, err := generateLinkID(registry)
-	if err != nil {
-		return err
-	}
-	link := links.Link{
-		ID:          id,
-		WorkitemID:  workitemIDForLink(wi, opts),
-		WorkitemKey: workitemKeyForLink(wi),
-		Scope:       *scope,
-		Role:        role,
-		CreatedAt:   time.Now().UTC().Truncate(time.Second),
-		CreatedBy:   defaultCreatedBy(),
-	}
-	if err := registry.AddLink(link, opts.Replace); err != nil {
-		return err
-	}
-
-	knownIDs := workitemIDSetFromMaybeNil(wi, opts.AllowMissing)
-	if errs := links.Validate(ctx, registry, links.ValidateOptions{
-		CampaignRoot: root,
-		WorkitemIDs:  knownIDs,
-		AllowMissing: opts.AllowMissing,
-		Now:          link.CreatedAt,
-	}); len(errs) > 0 {
-		return camperrors.NewValidation(errs[0].Field, errs[0].Message, nil)
-	}
-
-	if err := links.Save(ctx, root, registry); err != nil {
 		return err
 	}
 

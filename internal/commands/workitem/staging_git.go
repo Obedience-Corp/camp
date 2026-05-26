@@ -3,9 +3,34 @@ package workitem
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os/exec"
 	"strings"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
+
+// assertCleanIndex refuses to proceed when repoRoot has pre-existing staged
+// changes. Protects against the kill-mid-commit dirty-index trap where the
+// user's reflex `git reset --hard` would destroy the staged work. The hint
+// explicitly recommends `git reset HEAD` (which preserves the worktree) over
+// `--hard`, and points the user at `--staged` for the deliberate variant.
+func assertCleanIndex(ctx context.Context, repoRoot string) error {
+	staged, err := listStagedFiles(ctx, repoRoot)
+	if err != nil {
+		return camperrors.Wrap(err, "check staged index")
+	}
+	if len(staged) == 0 {
+		return nil
+	}
+	preview := staged
+	if len(preview) > 5 {
+		preview = preview[:5]
+	}
+	msg := fmt.Sprintf("repo %s has %d pre-existing staged file(s); run `git reset HEAD` to unstage them (preserves the worktree; NOT --hard which discards uncommitted work), or re-run with --staged to commit the existing index. Sample: %s",
+		repoRoot, len(staged), strings.Join(preview, ", "))
+	return camperrors.NewValidation("staged_index", msg, nil)
+}
 
 // listChangedFilesUnder returns repo-relative paths for changes inside prefix
 // (or the entire repo when prefix is empty). Wraps `git status --porcelain`

@@ -15,10 +15,23 @@ import (
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 )
 
+// hasWorkitemMarker reports whether the campaign-relative path holds a
+// `.workitem` marker on disk. Backfill targets only paths with markers;
+// intent .md files and festival directories have their own metadata and
+// must not be flagged as "missing ref".
+func hasWorkitemMarker(root, relPath string) bool {
+	markerPath := filepath.Join(root, filepath.FromSlash(relPath), wkitem.MetadataFilename)
+	info, err := os.Stat(markerPath)
+	if err != nil {
+		return false
+	}
+	return !info.IsDir()
+}
+
 // workitemPathsMissingRef discovers every workitem on disk and returns the
-// campaign-relative paths to those whose .workitem marker has no ref field.
-// Paths are sorted lexicographically so DeriveUnique's collision retry has
-// deterministic input ordering during a doctor --fix pass.
+// campaign-relative paths to those whose .workitem marker exists and has no
+// ref field. Paths are sorted lexicographically so DeriveUnique's collision
+// retry has deterministic input ordering during a doctor --fix pass.
 func workitemPathsMissingRef(ctx context.Context, root string) ([]string, error) {
 	cfg, err := config.LoadCampaignConfig(ctx, root)
 	if err != nil {
@@ -31,6 +44,9 @@ func workitemPathsMissingRef(ctx context.Context, root string) ([]string, error)
 	}
 	var missing []string
 	for _, item := range items {
+		if !hasWorkitemMarker(root, item.RelativePath) {
+			continue
+		}
 		ref, _ := item.SourceMetadata["ref"].(string)
 		if ref != "" {
 			continue
@@ -41,20 +57,28 @@ func workitemPathsMissingRef(ctx context.Context, root string) ([]string, error)
 	return missing, nil
 }
 
-func backfillMissingRefs(ctx context.Context, root string) (int, error) {
+type backfillFailure struct {
+	RelativePath string
+	Err          error
+}
+
+func backfillMissingRefs(ctx context.Context, root string) (int, []backfillFailure, error) {
 	cfg, err := config.LoadCampaignConfig(ctx, root)
 	if err != nil {
-		return 0, camperrors.Wrap(err, "load campaign config")
+		return 0, nil, camperrors.Wrap(err, "load campaign config")
 	}
 	resolver := paths.NewResolverFromConfig(root, cfg)
 	items, err := wkitem.Discover(ctx, root, resolver)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 
 	existingRefs := make(map[string]bool, len(items))
 	var pending []wkitem.WorkItem
 	for _, item := range items {
+		if !hasWorkitemMarker(root, item.RelativePath) {
+			continue
+		}
 		ref, _ := item.SourceMetadata["ref"].(string)
 		if ref != "" {
 			existingRefs[ref] = true
@@ -67,21 +91,24 @@ func backfillMissingRefs(ctx context.Context, root string) (int, error) {
 	})
 
 	applied := 0
+	var failures []backfillFailure
 	for _, item := range pending {
 		if err := ctx.Err(); err != nil {
-			return applied, err
+			return applied, failures, err
 		}
 		ref, err := wkitem.DeriveUnique(ctx, item.StableID, existingRefs)
 		if err != nil {
-			return applied, err
+			failures = append(failures, backfillFailure{RelativePath: item.RelativePath, Err: err})
+			continue
+		}
+		if err := backfillRefWithRef(ctx, root, item.RelativePath, ref); err != nil {
+			failures = append(failures, backfillFailure{RelativePath: item.RelativePath, Err: err})
+			continue
 		}
 		existingRefs[ref] = true
-		if err := backfillRefWithRef(ctx, root, item.RelativePath, ref); err != nil {
-			return applied, err
-		}
 		applied++
 	}
-	return applied, nil
+	return applied, failures, nil
 }
 
 func backfillRefWithRef(ctx context.Context, root, relPath, ref string) error {

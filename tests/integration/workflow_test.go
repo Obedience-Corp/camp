@@ -308,3 +308,73 @@ func TestIntegration_WorkflowCreateDryRun(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, dirExists, "scaffold must exist after real create")
 }
+
+func TestIntegration_WorkflowDoctor_DedupeHintMatchesApply(t *testing.T) {
+	tc := GetSharedContainer(t)
+	dir := "/test/workflow-dedupe-hint"
+	initWorkflowCampaign(t, tc, dir)
+
+	_, err := tc.RunCampInDir(dir, "workflow", "create", "research", "--shortcut", "re")
+	require.NoError(t, err)
+
+	jumpsPath := dir + "/.campaign/settings/jumps.yaml"
+	orig, err := tc.ReadFile(jumpsPath)
+	require.NoError(t, err)
+
+	withDup := orig + "    RE:\n        path: workflow/research/\n        source: user\n"
+	require.NoError(t, tc.WriteFile(jumpsPath, withDup))
+
+	out, _ := tc.RunCampInDir(dir, "workflow", "doctor", "--json")
+	var report struct {
+		Findings []struct {
+			Code    string `json:"code"`
+			FixHint string `json:"fix_hint"`
+		} `json:"findings"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &report), "doctor --json: %s", out)
+
+	var hint string
+	for _, f := range report.Findings {
+		if f.Code == "workflow.shortcut.duplicate" {
+			hint = f.FixHint
+			break
+		}
+	}
+	require.NotEmpty(t, hint, "expected workflow.shortcut.duplicate finding in: %s", out)
+	assert.Contains(t, hint, "normalized (lowercase)",
+		"hint must describe normalized-lowercase policy, got: %s", hint)
+
+	syncOut, err := tc.RunCampInDir(dir, "workflow", "sync", "--apply")
+	require.NoError(t, err, "sync --apply: %s", syncOut)
+
+	jumpsAfter, err := tc.ReadFile(jumpsPath)
+	require.NoError(t, err)
+	assert.Contains(t, jumpsAfter, "re:",
+		"hint claims auto-fix keeps lowercase 're', but it was removed:\n%s", jumpsAfter)
+	assert.NotContains(t, jumpsAfter, "RE:",
+		"hint claims auto-fix removes uppercase 'RE', but it survived:\n%s", jumpsAfter)
+}
+
+func TestIntegration_WorkflowCreate_DryRunPerActionLines(t *testing.T) {
+	tc := GetSharedContainer(t)
+	dir := "/test/workflow-dryrun-lines"
+	initWorkflowCampaign(t, tc, dir)
+
+	out, err := tc.RunCampInDir(dir, "workflow", "create", "research",
+		"--shortcut", "re", "--dry-run")
+	require.NoError(t, err, "dry-run: %s", out)
+
+	assert.Contains(t, out, "create dir workflow/research/",
+		"per-action line for workflow dir missing: %s", out)
+	for _, sub := range []string{"inbox", "active", "ready",
+		"dungeon/completed", "dungeon/archived", "dungeon/someday"} {
+		assert.Contains(t, out, "create dir workflow/research/"+sub+"/",
+			"per-action line for status dir %s missing: %s", sub, out)
+		assert.Contains(t, out, "create file workflow/research/"+sub+"/.gitkeep",
+			"per-action line for gitkeep in %s missing: %s", sub, out)
+	}
+	assert.Contains(t, out, "create file workflow/research/OBEY.md",
+		"per-action line for OBEY.md missing: %s", out)
+	assert.Contains(t, out, "create shortcut re -> workflow/research/",
+		"per-action line for shortcut missing: %s", out)
+}
