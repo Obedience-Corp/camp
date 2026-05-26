@@ -36,12 +36,20 @@ func cwdSubGitRepo(cwd, campaignRoot string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	rel, err := filepath.Rel(campaignRoot, abs)
+	cwdCanonical, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		cwdCanonical = abs
+	}
+	rootCanonical, err := filepath.EvalSymlinks(campaignRoot)
+	if err != nil {
+		rootCanonical = campaignRoot
+	}
+	rel, err := filepath.Rel(rootCanonical, cwdCanonical)
 	if err != nil || strings.HasPrefix(rel, "..") || rel == "." {
 		return "", false
 	}
-	dir := abs
-	for dir != campaignRoot && len(dir) > len(campaignRoot) {
+	dir := cwdCanonical
+	for dir != rootCanonical && len(dir) > len(rootCanonical) {
 		gitMarker := filepath.Join(dir, ".git")
 		if info, err := osStat(gitMarker); err == nil && (info.IsDir() || info.Mode().IsRegular()) {
 			return dir, true
