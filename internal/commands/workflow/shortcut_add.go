@@ -12,6 +12,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/nav"
 )
 
@@ -29,11 +30,12 @@ func newShortcutAddCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add <type> <key>",
 		Short: "Attach a navigation shortcut to an existing workflow",
-		Args:  cobra.ExactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		Args:  jsoncontract.Args(JSONSchemaVersion, func() bool { return jsonOut }, cobra.ExactArgs(2)),
+		RunE: jsoncontract.RunE(JSONSchemaVersion, func() bool { return jsonOut }, func(cmd *cobra.Command, args []string) error {
 			return runShortcutAdd(cmd.Context(), cmd, args[0], args[1], replace, jsonOut)
-		},
+		}),
 	}
+	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(JSONSchemaVersion, func() bool { return jsonOut }))
 	cmd.Flags().BoolVar(&replace, "replace", false, "replace an existing shortcut with the same name")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit a structured JSON result")
 	return cmd
@@ -64,6 +66,9 @@ func runShortcutAdd(ctx context.Context, cmd *cobra.Command, typeName, key strin
 		}
 	}
 	if entry == nil {
+		if jsonOut {
+			return camperrors.NewNotFound("workflow", typeName, nil)
+		}
 		fmt.Fprintf(cmd.ErrOrStderr(), "unknown workflow type: %s\n", typeName)
 		return errWorkflowNotFound
 	}

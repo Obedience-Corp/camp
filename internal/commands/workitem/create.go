@@ -17,12 +17,10 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/pathsafe"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 )
-
-// WorkitemCreateJSONVersion is the schema version of camp workitem create --json.
-const WorkitemCreateJSONVersion = "workitem-create/v1"
 
 func newCreateCommand() *cobra.Command {
 	var typeFlag, title, idOverride, dirOverride, questSelector string
@@ -30,12 +28,17 @@ func newCreateCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create <slug>",
 		Short: "Create a new workitem with v1 minimum metadata",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		Args:  jsoncontract.Args(WorkitemCreateJSONVersion, func() bool { return jsonOut }, cobra.ExactArgs(1)),
+		Annotations: map[string]string{
+			"agent_allowed": "true",
+			"agent_reason":  "Creates workitems with --json output for automation",
+		},
+		RunE: jsoncontract.RunE(WorkitemCreateJSONVersion, func() bool { return jsonOut }, func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			return runCreate(ctx, cmd, args[0], typeFlag, title, idOverride, dirOverride, questSelector, jsonOut)
-		},
+		}),
 	}
+	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(WorkitemCreateJSONVersion, func() bool { return jsonOut }))
 	cmd.Flags().StringVar(&typeFlag, "type", "feature", "workitem type (feature, bug, chore, or custom)")
 	cmd.Flags().StringVar(&title, "title", "", "human-readable title")
 	cmd.Flags().StringVar(&idOverride, "id", "", "override the generated id")
@@ -107,7 +110,8 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 	rel := filepath.Join(parent, slug)
 	if jsonOut {
 		payload := struct {
-			SchemaVersion string `json:"schema_version"`
+			SchemaVersion string    `json:"schema_version"`
+			GeneratedAt   time.Time `json:"generated_at"`
 			Workitem      struct {
 				ID            string `json:"id"`
 				Ref           string `json:"ref"`
@@ -117,7 +121,12 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 				RelativePath  string `json:"relative_path"`
 				MarkerVersion string `json:"marker_version"`
 			} `json:"workitem"`
-		}{SchemaVersion: WorkitemCreateJSONVersion}
+			Next struct {
+				Command string `json:"command"`
+				Cwd     string `json:"cwd"`
+				Hint    string `json:"hint"`
+			} `json:"next"`
+		}{SchemaVersion: WorkitemCreateJSONVersion, GeneratedAt: time.Now().UTC()}
 		payload.Workitem.ID = id
 		payload.Workitem.Ref = ref
 		payload.Workitem.Type = typeFlag
@@ -125,6 +134,9 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 		payload.Workitem.QuestID = questID
 		payload.Workitem.RelativePath = rel
 		payload.Workitem.MarkerVersion = wkitem.WorkitemSchemaVersion
+		payload.Next.Command = "fest create workflow " + slug
+		payload.Next.Cwd = rel
+		payload.Next.Hint = "cd " + rel + " && fest create workflow " + slug
 		enc := json.NewEncoder(cmd.OutOrStdout())
 		enc.SetIndent("", "  ")
 		return enc.Encode(payload)

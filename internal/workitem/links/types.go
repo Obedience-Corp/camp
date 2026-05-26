@@ -53,32 +53,32 @@ var ValidRoles = []Role{RolePrimary, RoleRelated, RoleBlockedBy, RoleSupersedes}
 
 // LinkScope is the target of a link.
 type LinkScope struct {
-	Kind ScopeKind `yaml:"kind"`
-	Path string    `yaml:"path"`
+	Kind ScopeKind `yaml:"kind" json:"kind"`
+	Path string    `yaml:"path" json:"path"`
 }
 
 // Link is one workitem-to-scope relationship.
 type Link struct {
-	ID          string    `yaml:"id"`
-	WorkitemID  string    `yaml:"workitem_id"`
-	WorkitemKey string    `yaml:"workitem_key,omitempty"`
-	Scope       LinkScope `yaml:"scope"`
-	Role        Role      `yaml:"role"`
-	CreatedAt   time.Time `yaml:"created_at"`
-	CreatedBy   string    `yaml:"created_by"`
+	ID          string    `yaml:"id" json:"id"`
+	WorkitemID  string    `yaml:"workitem_id" json:"workitem_id"`
+	WorkitemKey string    `yaml:"workitem_key,omitempty" json:"workitem_key,omitempty"`
+	Scope       LinkScope `yaml:"scope" json:"scope"`
+	Role        Role      `yaml:"role" json:"role"`
+	CreatedAt   time.Time `yaml:"created_at" json:"created_at"`
+	CreatedBy   string    `yaml:"created_by" json:"created_by"`
 }
 
 // Links is the top-level registry persisted to `links.yaml`.
 type Links struct {
-	Version string `yaml:"version"`
-	Links   []Link `yaml:"links"`
+	Version string `yaml:"version" json:"version"`
+	Links   []Link `yaml:"links" json:"links"`
 }
 
 // Current is the top-level shape persisted to `current.yaml`.
 type Current struct {
-	Version    string    `yaml:"version"`
-	WorkitemID string    `yaml:"workitem_id"`
-	SelectedAt time.Time `yaml:"selected_at"`
+	Version    string    `yaml:"version" json:"version"`
+	WorkitemID string    `yaml:"workitem_id" json:"workitem_id"`
+	SelectedAt time.Time `yaml:"selected_at" json:"selected_at"`
 }
 
 // FindByID returns the link with the matching id and true; otherwise nil, false.

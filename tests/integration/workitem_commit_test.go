@@ -4,6 +4,7 @@
 package integration
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -214,6 +215,82 @@ func TestIntegration_WorkitemCommits_CrossRepo(t *testing.T) {
 		assert.Contains(t, jsonOut, "\"repo\": \"projects/"+repoName+"\"",
 			"JSON missing repo field for %s:\n%s", repoName, jsonOut)
 	}
+	assert.NotContains(t, jsonOut, "CampaignID")
+	assert.NotContains(t, jsonOut, "WorkitemRef")
+
+	var payload struct {
+		SchemaVersion string `json:"schema_version"`
+		Commits       []struct {
+			Repo string `json:"repo"`
+			Tag  struct {
+				CampaignID  string `json:"campaign_id"`
+				QuestID     string `json:"quest_id"`
+				FestRef     string `json:"fest_ref"`
+				WorkitemRef string `json:"workitem_ref"`
+			} `json:"tag"`
+		} `json:"commits"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(jsonOut), &payload), "raw=%s", jsonOut)
+	assert.Equal(t, "workitem-commits/v1alpha1", payload.SchemaVersion)
+	require.NotEmpty(t, payload.Commits)
+	for _, commit := range payload.Commits {
+		assert.NotEmpty(t, commit.Tag.CampaignID)
+		assert.Equal(t, "", commit.Tag.QuestID)
+		assert.Equal(t, "", commit.Tag.FestRef)
+		assert.Equal(t, ref, commit.Tag.WorkitemRef)
+	}
+}
+
+func TestIntegration_WorkitemCommit_JSONContract(t *testing.T) {
+	tc := GetSharedContainer(t)
+	dir := "/test/wi-commit-json"
+	initWorkitemCommitCampaign(t, tc, dir)
+	_ = seedDesignWorkitemWithRef(t, tc, dir, "timeline")
+
+	require.NoError(t, tc.WriteFile(dir+"/workflow/design/timeline/spec.md", "spec\n"))
+	out, err := tc.RunCampInDir(dir,
+		"workitem", "commit", "timeline",
+		"--dry-run",
+		"--json",
+		"--include", "../outside",
+	)
+	require.NoError(t, err, "camp workitem commit --dry-run --json: %s", out)
+	assert.NotContains(t, out, "\"Path\"")
+	assert.NotContains(t, out, "\"Reason\"")
+
+	var payload struct {
+		SchemaVersion string   `json:"schema_version"`
+		Stage         []string `json:"stage"`
+		Skip          []struct {
+			Path   string `json:"path"`
+			Reason string `json:"reason"`
+		} `json:"skip"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &payload), "raw=%s", out)
+	assert.Equal(t, "workitem-commit/v1alpha1", payload.SchemaVersion)
+	assert.NotEmpty(t, payload.Stage)
+	require.Len(t, payload.Skip, 1)
+	assert.Equal(t, "../outside", payload.Skip[0].Path)
+	assert.Equal(t, "(out of scope)", payload.Skip[0].Reason)
+}
+
+func TestIntegration_WorkitemCommits_EmptyArray(t *testing.T) {
+	tc := GetSharedContainer(t)
+	dir := "/test/wi-commits-empty-json"
+	initWorkitemCommitCampaign(t, tc, dir)
+	_ = seedDesignWorkitemWithRef(t, tc, dir, "timeline")
+
+	out, err := tc.RunCampInDir(dir, "workitem", "commits", "timeline", "--json")
+	require.NoError(t, err, "workitem commits --json: %s", out)
+
+	var payload struct {
+		SchemaVersion string            `json:"schema_version"`
+		Commits       []json.RawMessage `json:"commits"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &payload), "raw=%s", out)
+	assert.Equal(t, "workitem-commits/v1alpha1", payload.SchemaVersion)
+	assert.NotNil(t, payload.Commits)
+	assert.Empty(t, payload.Commits)
 }
 
 func TestIntegration_WorkitemCommit_FailureModes(t *testing.T) {
@@ -228,4 +305,34 @@ func TestIntegration_WorkitemCommit_FailureModes(t *testing.T) {
 	require.Equal(t, 2, code, "expected exit 2, output: %s", out)
 	assert.Contains(t, out, "no workitem context",
 		"output should explain no workitem context:\n%s", out)
+
+	stdoutPath := "/tmp/workitem-commit-json-error-stdout"
+	stderrPath := "/tmp/workitem-commit-json-error-stderr"
+	_, code, err = tc.ExecCommand("sh", "-c",
+		"cd "+dir+" && /camp workitem commit --json -m 'no context' >"+stdoutPath+" 2>"+stderrPath)
+	require.NoError(t, err)
+	require.Equal(t, 2, code)
+
+	stdout, err := tc.ReadFile(stdoutPath)
+	require.NoError(t, err)
+	assert.Empty(t, stdout)
+	stderr, err := tc.ReadFile(stderrPath)
+	require.NoError(t, err)
+	assert.NotContains(t, stderr, "Usage:")
+
+	var envelope struct {
+		SchemaVersion string `json:"schema_version"`
+		Error         struct {
+			Code     string `json:"code"`
+			Message  string `json:"message"`
+			Hint     string `json:"hint"`
+			ExitCode int    `json:"exit_code"`
+		} `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stderr), &envelope), "stderr=%s", stderr)
+	assert.Equal(t, "workitem-commit/v1alpha1", envelope.SchemaVersion)
+	assert.Equal(t, "validation_error", envelope.Error.Code)
+	assert.Equal(t, "no workitem context resolved from cwd", envelope.Error.Message)
+	assert.Contains(t, envelope.Error.Hint, "camp workitem current <selector>")
+	assert.Equal(t, 2, envelope.Error.ExitCode)
 }

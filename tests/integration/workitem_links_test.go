@@ -71,6 +71,100 @@ func TestIntegration_LinkLifecycle(t *testing.T) {
 	assert.Contains(t, out, "no links")
 }
 
+func TestIntegration_LinkJSONContracts(t *testing.T) {
+	tc := GetSharedContainer(t)
+	dir := "/test/workitem-links-json"
+	initLinksCampaign(t, tc, dir)
+	seedProject(t, tc, dir, "camp-timeline")
+	seedDesignWorkitem(t, tc, dir, "timeline")
+
+	out, err := tc.RunCampInDir(dir,
+		"workitem", "link", "timeline", "--project", "camp-timeline", "--json")
+	require.NoError(t, err, "workitem link --json: %s", out)
+	assert.NotContains(t, out, "WorkitemID")
+	assert.NotContains(t, out, "CreatedAt")
+	assert.NotContains(t, out, "\"Kind\"")
+
+	var linkPayload struct {
+		SchemaVersion string `json:"schema_version"`
+		Link          struct {
+			WorkitemID string `json:"workitem_id"`
+			Scope      struct {
+				Kind string `json:"kind"`
+				Path string `json:"path"`
+			} `json:"scope"`
+		} `json:"link"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &linkPayload), "raw=%s", out)
+	assert.Equal(t, "workitem-links/v1alpha1", linkPayload.SchemaVersion)
+	assert.NotEmpty(t, linkPayload.Link.WorkitemID)
+	assert.Equal(t, "project", linkPayload.Link.Scope.Kind)
+	assert.Equal(t, "projects/camp-timeline", linkPayload.Link.Scope.Path)
+
+	out, err = tc.RunCampInDir(dir, "workitem", "links", "--json")
+	require.NoError(t, err, "workitem links --json: %s", out)
+	var linksPayload struct {
+		Links []struct {
+			WorkitemID string `json:"workitem_id"`
+			Scope      struct {
+				Kind string `json:"kind"`
+				Path string `json:"path"`
+			} `json:"scope"`
+		} `json:"links"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &linksPayload), "raw=%s", out)
+	require.Len(t, linksPayload.Links, 1)
+	assert.Equal(t, "project", linksPayload.Links[0].Scope.Kind)
+	assert.NotContains(t, out, "WorkitemID")
+
+	out, err = tc.RunCampInDir(dir, "workitem", "current", "timeline", "--json")
+	require.NoError(t, err, "workitem current --json: %s", out)
+	var currentPayload struct {
+		Current struct {
+			WorkitemID string `json:"workitem_id"`
+		} `json:"current"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &currentPayload), "raw=%s", out)
+	assert.Equal(t, linkPayload.Link.WorkitemID, currentPayload.Current.WorkitemID)
+	assert.NotContains(t, out, "WorkitemID")
+}
+
+func TestIntegration_LinkJSONErrorEnvelope(t *testing.T) {
+	tc := GetSharedContainer(t)
+	dir := "/test/workitem-link-json-error"
+	initLinksCampaign(t, tc, dir)
+	seedProject(t, tc, dir, "camp-timeline")
+
+	stdoutPath := "/tmp/workitem-link-json-error-stdout"
+	stderrPath := "/tmp/workitem-link-json-error-stderr"
+	_, code, err := tc.ExecCommand("sh", "-c",
+		"cd "+dir+" && /camp workitem link missing --project camp-timeline --json >"+stdoutPath+" 2>"+stderrPath)
+	require.NoError(t, err)
+	require.Equal(t, 2, code)
+
+	stdout, err := tc.ReadFile(stdoutPath)
+	require.NoError(t, err)
+	assert.Empty(t, stdout)
+	stderr, err := tc.ReadFile(stderrPath)
+	require.NoError(t, err)
+	assert.NotContains(t, stderr, "Usage:")
+
+	var envelope struct {
+		SchemaVersion string `json:"schema_version"`
+		Error         struct {
+			Code     string `json:"code"`
+			Message  string `json:"message"`
+			Hint     string `json:"hint"`
+			ExitCode int    `json:"exit_code"`
+		} `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stderr), &envelope), "stderr=%s", stderr)
+	assert.Equal(t, "workitem-links/v1alpha1", envelope.SchemaVersion)
+	assert.Equal(t, 2, envelope.Error.ExitCode)
+	assert.NotEmpty(t, envelope.Error.Code)
+	assert.NotEmpty(t, envelope.Error.Message)
+}
+
 func TestIntegration_ResolverTiers(t *testing.T) {
 	tc := GetSharedContainer(t)
 	dir := "/test/resolver-tiers"

@@ -77,10 +77,10 @@ func PrependContextTags(campaignID, questID, message string) string {
 // TagComponents are the parsed pieces of a `[OBEY-CAMPAIGN-...]` tag.
 // Empty fields indicate the component was absent.
 type TagComponents struct {
-	CampaignID  string // short form, max 8 chars
-	QuestID     string
-	FestRef     string
-	WorkitemRef string // includes the leading "WI-" prefix (e.g. "WI-abcdef")
+	CampaignID  string `json:"campaign_id"`  // short form, max 8 chars
+	QuestID     string `json:"quest_id"`     // quest id component, when present
+	FestRef     string `json:"fest_ref"`     // festival ref component, when present
+	WorkitemRef string `json:"workitem_ref"` // includes the leading "WI-" prefix (e.g. "WI-abcdef")
 }
 
 // tagShellRegex captures everything between `[OBEY-CAMPAIGN-` and `]`. The

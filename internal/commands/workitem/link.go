@@ -16,6 +16,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/quest"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
@@ -32,8 +33,12 @@ func newLinkCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "link <selector> [path]",
 		Short: "Attach a workitem to a project, festival, worktree, or campaign path",
-		Args:  cobra.RangeArgs(1, 2),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		Args:  jsoncontract.Args(links.LinksSchemaVersion, func() bool { return jsonOut }, cobra.RangeArgs(1, 2)),
+		Annotations: map[string]string{
+			"agent_allowed": "true",
+			"agent_reason":  "Links workitems to scopes with --json output for automation",
+		},
+		RunE: jsoncontract.RunE(links.LinksSchemaVersion, func() bool { return jsonOut }, func(cmd *cobra.Command, args []string) error {
 			explicitPath := ""
 			if len(args) == 2 {
 				explicitPath = args[1]
@@ -50,8 +55,9 @@ func newLinkCommand() *cobra.Command {
 				AllowMissing: allowMissing,
 				JSON:         jsonOut,
 			})
-		},
+		}),
 	}
+	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(links.LinksSchemaVersion, func() bool { return jsonOut }))
 	cmd.Flags().StringVar(&project, "project", "", "project name (matches projects/<name>)")
 	cmd.Flags().StringVar(&festival, "festival", "", "festival id or relative path under festivals/")
 	cmd.Flags().StringVar(&worktree, "worktree", "", "worktree relative path under projects/worktrees/")

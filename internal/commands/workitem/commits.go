@@ -20,6 +20,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
 	"github.com/Obedience-Corp/camp/internal/workitem/resolver"
 	"github.com/Obedience-Corp/camp/pkg/commitkit"
@@ -71,12 +72,12 @@ Default sort: most recent first across all repos. Use --json for structured
 output. Repos that are not git checkouts or that fail their git log invocation
 are reported under "errors" in JSON mode; table mode warns on stderr when
 repo queries fail.`,
-		Args: cobra.MaximumNArgs(1),
+		Args: jsoncontract.Args(WorkitemCommitsJSONVersion, func() bool { return flagJSON }, cobra.MaximumNArgs(1)),
 		Annotations: map[string]string{
 			"agent_allowed": "true",
 			"agent_reason":  "Read-only query with --json output for automation",
 		},
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: jsoncontract.RunE(WorkitemCommitsJSONVersion, func() bool { return flagJSON }, func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			selector := ""
 			if len(args) == 1 {
@@ -92,8 +93,9 @@ repo queries fail.`,
 				Limit:    flagLimit,
 				Offset:   flagOffset,
 			})
-		},
+		}),
 	}
+	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(WorkitemCommitsJSONVersion, func() bool { return flagJSON }))
 	cmd.Flags().StringVar(&flagRef, "ref", "", "query by workitem ref directly (e.g. WI-abc123) — skips resolver")
 	cmd.Flags().StringVar(&flagWorkitem, "workitem", "", "alias for the positional <selector>")
 	cmd.Flags().BoolVar(&flagJSON, "json", false, "emit JSON instead of the default table")
@@ -381,12 +383,17 @@ func emitCommitsQueryWarnings(w io.Writer, errs []commitsQueryError) {
 }
 
 func emitCommitsJSON(w io.Writer, records []CommitRecord, errs []commitsQueryError) error {
+	if records == nil {
+		records = []CommitRecord{}
+	}
 	payload := struct {
-		Commits []CommitRecord      `json:"commits"`
-		Errors  []commitsQueryError `json:"errors,omitempty"`
+		SchemaVersion string              `json:"schema_version"`
+		Commits       []CommitRecord      `json:"commits"`
+		Errors        []commitsQueryError `json:"errors,omitempty"`
 	}{
-		Commits: records,
-		Errors:  errs,
+		SchemaVersion: WorkitemCommitsJSONVersion,
+		Commits:       records,
+		Errors:        errs,
 	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")

@@ -18,6 +18,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	navindex "github.com/Obedience-Corp/camp/internal/nav/index"
 )
 
@@ -64,13 +65,14 @@ func newDoctorCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Report workflow surface inconsistencies",
-		Args:  cobra.NoArgs,
+		Args:  jsoncontract.Args(JSONSchemaVersion, func() bool { return jsonOut }, cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDoctor(cmd.Context(), cmd, jsonOut)
 		},
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
+	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(JSONSchemaVersion, func() bool { return jsonOut }))
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit a structured JSON result")
 	return cmd
 }
@@ -78,12 +80,12 @@ func newDoctorCommand() *cobra.Command {
 func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut bool) error {
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return renderWorkflowDoctorError(cmd, jsonOut, camperrors.Wrap(err, "not in a campaign directory"))
 	}
 
 	findings, err := collectFindings(campaignRoot, cfg)
 	if err != nil {
-		return err
+		return renderWorkflowDoctorError(cmd, jsonOut, err)
 	}
 
 	if jsonOut {
@@ -98,6 +100,13 @@ func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut bool) error {
 		return errDoctorIssuesFound
 	}
 	return nil
+}
+
+func renderWorkflowDoctorError(cmd *cobra.Command, jsonOut bool, err error) error {
+	if err == nil || !jsonOut {
+		return err
+	}
+	return jsoncontract.RenderError(cmd, JSONSchemaVersion, err)
 }
 
 func collectFindings(campaignRoot string, cfg *config.CampaignConfig) ([]finding, error) {
