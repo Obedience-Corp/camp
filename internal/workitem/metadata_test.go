@@ -142,6 +142,39 @@ title: T
 `,
 			wantSubstr: "type is empty",
 		},
+		{
+			name: "invalid ref shape",
+			body: `version: v1alpha6
+kind: workitem
+id: x
+type: design
+title: T
+ref: NOT-A-VALID-REF-12345
+`,
+			wantSubstr: "ref must match WI-<6 hex>",
+		},
+		{
+			name: "ref with wrong length",
+			body: `version: v1alpha6
+kind: workitem
+id: x
+type: design
+title: T
+ref: WI-abc
+`,
+			wantSubstr: "ref must match WI-<6 hex>",
+		},
+		{
+			name: "invalid quest_id shape",
+			body: `version: v1alpha6
+kind: workitem
+id: x
+type: design
+title: T
+quest_id: not_a_quest_id
+`,
+			wantSubstr: "quest_id must match qst_",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -126,6 +126,18 @@ func TestParseTag_KnownCombinations(t *testing.T) {
 			subject:      "no tag here at all",
 			wantCampaign: "",
 		},
+		{
+			subject:      `Revert "[OBEY-CAMPAIGN-8deed8b4-WI-WI-fake01] feat: x"`,
+			wantCampaign: "",
+		},
+		{
+			subject:      `chore: backport "[OBEY-CAMPAIGN-8deed8b4-FE-CW0003] feat: y" from main`,
+			wantCampaign: "",
+		},
+		{
+			subject:      "[OBEY-CAMPAIGN-8deed8b4-BOGUS-WI-WI-abcdef] x",
+			wantCampaign: "8deed8b4", wantWorkitem: "WI-abcdef",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.subject, func(t *testing.T) {

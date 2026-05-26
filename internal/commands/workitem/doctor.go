@@ -35,6 +35,7 @@ const (
 	codeCurrentMissing     = "workitem.current.missing"
 	codeMissingRefField    = "workitem.ref.missing"
 	codeWorkitemScanFailed = "workitem.scan.failed"
+	codeRegistryParseError = "workitem.registry.parse-error"
 )
 
 const (
@@ -80,7 +81,34 @@ func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut, fix bool) error
 	}
 	registry, err := links.Load(ctx, root)
 	if err != nil {
-		return err
+		if !fix {
+			parseFinding := docFinding{
+				Code:        codeRegistryParseError,
+				Severity:    docSeverityError,
+				Target:      "registry:links.yaml",
+				Message:     "links.yaml cannot be parsed: " + err.Error(),
+				FixHint:     "run `camp workitem doctor --fix` to quarantine the broken file and bootstrap an empty registry",
+				AutoFixable: true,
+			}
+			if jsonOut {
+				return emitDocJSON(cmd.OutOrStdout(), []docFinding{parseFinding})
+			}
+			emitDocHuman(cmd.OutOrStdout(), []docFinding{parseFinding})
+			return camperrors.Wrap(err, "load links registry")
+		}
+		quarantined, qerr := links.QuarantineBroken(ctx, root)
+		if qerr != nil {
+			return camperrors.Wrap(qerr, "quarantine broken registry")
+		}
+		if quarantined != "" {
+			fmt.Fprintf(cmd.ErrOrStderr(),
+				"quarantined broken links.yaml to %s; bootstrapped empty registry\n",
+				quarantined)
+		}
+		registry, err = links.Load(ctx, root)
+		if err != nil {
+			return camperrors.Wrap(err, "reload after quarantine")
+		}
 	}
 
 	knownIDs, err := workitemIDsOnDisk(ctx, root)
@@ -256,8 +284,11 @@ func autoFixWorkitemFindings(ctx context.Context, root string, registry *links.L
 		}
 	}
 	if needsRefBackfill {
-		n, err := backfillMissingRefs(ctx, root)
+		n, failures, err := backfillMissingRefs(ctx, root)
 		applied += n
+		for _, f := range failures {
+			fmt.Fprintf(errw, "warning: backfill ref for %s: %v\n", f.RelativePath, f.Err)
+		}
 		if err != nil {
 			fmt.Fprintf(errw, "warning: backfill refs: %v\n", err)
 			return applied

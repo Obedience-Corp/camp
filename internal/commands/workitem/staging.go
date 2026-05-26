@@ -68,6 +68,7 @@ type StagingPlan struct {
 	PreStaged        []string
 	Skip             []SkippedEntry
 	Tag              string
+	Warnings         []string
 }
 
 func (p *StagingPlan) addStageNote(path, note string) {
@@ -104,6 +105,10 @@ func ComputePlan(ctx context.Context, campaignRoot string, opts PlanOptions) (*S
 		WorkitemRef: ref,
 		QuestID:     res.QuestID,
 		Tag:         commitkit.FormatContextTagsFull(opts.CampaignID, res.QuestID, "", ref),
+	}
+	if ref == "" && wi != nil {
+		plan.Warnings = append(plan.Warnings,
+			"workitem "+wi.Key+" has no ref field (pre-v1alpha6); commit tag will omit the WI- segment. Run `camp workitem doctor --fix` to backfill.")
 	}
 
 	if opts.StagedOnly {

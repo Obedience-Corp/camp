@@ -6,11 +6,17 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"gopkg.in/yaml.v3"
+)
+
+var (
+	refShape     = regexp.MustCompile(`^WI-[0-9a-f]{6}$`)
+	questIDShape = regexp.MustCompile(`^qst_[A-Za-z0-9_-]{1,40}$`)
 )
 
 const MetadataFilename = ".workitem"
@@ -103,6 +109,14 @@ func validateMetadata(m *Metadata) error {
 	}
 	if m.Type == "" {
 		return camperrors.NewValidation("type", "required field type is empty", nil)
+	}
+	if m.Ref != "" && !refShape.MatchString(m.Ref) {
+		return camperrors.NewValidation("ref",
+			"ref must match WI-<6 hex>, got "+m.Ref, nil)
+	}
+	if m.QuestID != "" && !questIDShape.MatchString(m.QuestID) {
+		return camperrors.NewValidation("quest_id",
+			"quest_id must match qst_<id>, got "+m.QuestID, nil)
 	}
 	return nil
 }

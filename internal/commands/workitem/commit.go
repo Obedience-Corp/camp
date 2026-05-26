@@ -124,6 +124,10 @@ func runCommit(ctx context.Context, cmd *cobra.Command, flags commitFlags) error
 		return err
 	}
 
+	for _, w := range plan.Warnings {
+		fmt.Fprintln(cmd.ErrOrStderr(), "warning: "+w)
+	}
+
 	if !flags.JSON {
 		if perr := PrintPlan(cmd.ErrOrStderr(), plan); perr != nil {
 			return perr

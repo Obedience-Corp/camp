@@ -87,7 +87,14 @@ type TagComponents struct {
 // inner contents are split component-by-component in ParseTag so the parser
 // can disambiguate `FE-<ref>` and `WI-<ref>` without relying on regex
 // lookahead (which RE2 does not support).
-var tagShellRegex = regexp.MustCompile(`\[OBEY-CAMPAIGN-([^\]]+)\]`)
+//
+// The leading guard `(?:^|[^"])` rejects matches where the tag opens
+// immediately after a quote character. This blocks the Revert-subject
+// false-positive (git emits `Revert "<original subject>"` and if the
+// original subject was prepended with a tag, the quoted form would
+// otherwise match). Tags at start of line or preceded by whitespace
+// continue to match.
+var tagShellRegex = regexp.MustCompile(`(?m)(?:^|[^"])\[OBEY-CAMPAIGN-([^\]]+)\]`)
 
 // ParseTag extracts the components of a campaign tag from a commit subject.
 // Returns a zero-valued TagComponents when no tag is present.
@@ -139,8 +146,15 @@ func ParseTag(subject string) TagComponents {
 			out.WorkitemRef = payload
 			rest = ""
 		default:
-			// Unknown trailing content — return what we have rather than guess.
-			rest = ""
+			// Unknown segment — skip past it and keep parsing so a later
+			// well-formed segment (e.g. WI-WI-<ref>) is still recovered
+			// instead of being silently dropped.
+			next := indexOfNextPrefix(rest)
+			if next == 0 || next >= len(rest) {
+				rest = ""
+				continue
+			}
+			rest = trimLeadingSeparator(rest[next:])
 		}
 	}
 	return out
