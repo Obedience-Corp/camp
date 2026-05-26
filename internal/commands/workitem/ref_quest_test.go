@@ -51,7 +51,7 @@ func TestRunCreate_WritesRefAndOmitsQuestWhenNoneActive(t *testing.T) {
 	cmd.SetOut(os.Stdout)
 	cmd.SetErr(os.Stderr)
 
-	if err := runCreate(context.Background(), cmd, "alpha", "design", "Alpha", "", "", ""); err != nil {
+	if err := runCreate(context.Background(), cmd, "alpha", "design", "Alpha", "", "", "", false); err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
 	meta := loadMarker(t, filepath.Join(root, "workflow", "design", "alpha", ".workitem"))
@@ -86,7 +86,7 @@ func TestRunCreate_RefsAreUniqueAcrossWorkitems(t *testing.T) {
 	cmd.SetErr(os.Stderr)
 
 	for _, slug := range []string{"alpha", "beta", "gamma"} {
-		if err := runCreate(context.Background(), cmd, slug, "design", slug, "", "", ""); err != nil {
+		if err := runCreate(context.Background(), cmd, slug, "design", slug, "", "", "", false); err != nil {
 			t.Fatalf("runCreate %s: %v", slug, err)
 		}
 	}
