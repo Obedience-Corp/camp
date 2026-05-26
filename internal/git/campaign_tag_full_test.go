@@ -224,6 +224,80 @@ func TestParseTag_AnchoringAdversarial(t *testing.T) {
 	}
 }
 
+func TestParseTagDetailed_RejectsSilentMerge(t *testing.T) {
+	cases := []struct {
+		name             string
+		subject          string
+		wantCampaign     string
+		wantQuest        string
+		wantFest         string
+		wantWorkitem     string
+		wantWarningField []string
+	}{
+		{
+			name:             "duplicate FE second is warned not overwritten",
+			subject:          "[OBEY-CAMPAIGN-abc-FE-CW0003-FE-SE0001] x",
+			wantCampaign:     "abc",
+			wantFest:         "CW0003",
+			wantWarningField: []string{"fest_ref"},
+		},
+		{
+			name:             "duplicate quest both fail shape both warned",
+			subject:          "[OBEY-CAMPAIGN-abc-qst_xyz-qst_abc] x",
+			wantCampaign:     "abc",
+			wantQuest:        "qst_xyz",
+			wantWarningField: []string{"quest_id"},
+		},
+		{
+			name:             "workitem shape failure zeroes ref",
+			subject:          "[OBEY-CAMPAIGN-abc-WI-WI-ZZZZ-extra-junk] x",
+			wantCampaign:     "abc",
+			wantWarningField: []string{"workitem_ref"},
+		},
+		{
+			name:             "unknown segment then valid WI still recovers",
+			subject:          "[OBEY-CAMPAIGN-abc-unknown-WI-WI-aaa111] x",
+			wantCampaign:     "abc",
+			wantWorkitem:     "WI-aaa111",
+			wantWarningField: []string{"unknown"},
+		},
+		{
+			name:             "valid FE then unknown extra then valid WI",
+			subject:          "[OBEY-CAMPAIGN-abc-FE-CW0003-extra-WI-WI-aaa111] x",
+			wantCampaign:     "abc",
+			wantFest:         "CW0003",
+			wantWorkitem:     "WI-aaa111",
+			wantWarningField: []string{"unknown"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, warnings := ParseTagDetailed(tc.subject)
+			if got.CampaignID != tc.wantCampaign {
+				t.Errorf("CampaignID = %q, want %q", got.CampaignID, tc.wantCampaign)
+			}
+			if got.QuestID != tc.wantQuest {
+				t.Errorf("QuestID = %q, want %q", got.QuestID, tc.wantQuest)
+			}
+			if got.FestRef != tc.wantFest {
+				t.Errorf("FestRef = %q, want %q", got.FestRef, tc.wantFest)
+			}
+			if got.WorkitemRef != tc.wantWorkitem {
+				t.Errorf("WorkitemRef = %q, want %q", got.WorkitemRef, tc.wantWorkitem)
+			}
+			if len(warnings) != len(tc.wantWarningField) {
+				t.Fatalf("warnings count = %d, want %d: %+v",
+					len(warnings), len(tc.wantWarningField), warnings)
+			}
+			for i, want := range tc.wantWarningField {
+				if warnings[i].Field != want {
+					t.Errorf("warning[%d].Field = %q, want %q", i, warnings[i].Field, want)
+				}
+			}
+		})
+	}
+}
+
 func TestTagBodyScanRegex_FindsEmbedded(t *testing.T) {
 	subject := "body has [OBEY-CAMPAIGN-aaa] and [OBEY-CAMPAIGN-bbb]"
 	matches := tagBodyScanRegex.FindAllString(subject, -1)

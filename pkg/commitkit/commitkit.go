@@ -70,6 +70,17 @@ func ParseTag(subject string) TagComponents {
 	return git.ParseTag(subject)
 }
 
+// TagParseWarning records a degraded parse from ParseTagDetailed.
+// Re-exported from internal/git.
+type TagParseWarning = git.TagParseWarning
+
+// ParseTagDetailed is the warnings-aware peer of ParseTag. Callers that
+// need to surface "tag was malformed" diagnostics (commit query output,
+// doctor, etc.) should call this instead of ParseTag.
+func ParseTagDetailed(subject string) (TagComponents, []TagParseWarning) {
+	return git.ParseTagDetailed(subject)
+}
+
 // DetectCampaign finds the campaign root by walking up from the current
 // working directory. Returns the campaign ID string from the campaign's
 // config, or an error if the working directory is not inside a campaign.

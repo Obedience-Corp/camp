@@ -134,6 +134,38 @@ func TestIntegration_CommitTags_ExplicitOverride(t *testing.T) {
 	assert.Contains(t, subject, "WI-"+ref, "explicit override should win: %s", subject)
 }
 
+func TestIntegration_CommitTags_BackfillsV1Alpha5WorkitemOnCommit(t *testing.T) {
+	tc := GetSharedContainer(t)
+	dir := "/test/commit-tags-v1alpha5-backfill"
+	initCommitTagsCampaign(t, tc, dir)
+
+	wiDir := dir + "/workflow/design/legacy"
+	marker := `version: v1alpha5
+kind: workitem
+id: design-legacy-2026-05-25
+type: design
+title: legacy
+`
+	require.NoError(t, tc.WriteFile(wiDir+"/.workitem", marker))
+	require.NoError(t, tc.WriteFile(wiDir+"/notes.md", "x\n"))
+	_, _, err := tc.ExecCommand("git", "-C", dir, "add", "-A")
+	require.NoError(t, err)
+
+	out, err := tc.RunCampInDir(wiDir, "commit", "-m", "design: legacy update")
+	require.NoError(t, err, "camp commit: %s", out)
+	assert.Contains(t, out, "backfilled missing ref",
+		"stderr must warn user about the auto-backfill: %s", out)
+
+	subject := lastCommitSubject(t, tc, dir)
+	assert.Regexp(t, `WI-WI-[0-9a-f]{6}`, subject,
+		"backfilled ref must appear in commit subject: %s", subject)
+
+	body, err := tc.ReadFile(wiDir + "/.workitem")
+	require.NoError(t, err)
+	assert.Contains(t, body, "ref: WI-",
+		"v1alpha5 .workitem must be auto-backfilled on commit, got:\n%s", body)
+}
+
 func TestIntegration_CommitTags_RejectsInvalidRef(t *testing.T) {
 	tc := GetSharedContainer(t)
 	dir := "/test/commit-tags-bad-ref"

@@ -6,6 +6,7 @@ package integration
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -164,5 +165,86 @@ func TestIntegration_Doctor_FixBackfillsDirectoryWorkitems(t *testing.T) {
 		require.NoError(t, err)
 		assert.Contains(t, body, "ref: WI-",
 			"expected backfilled ref in %s, got:\n%s", rel, body)
+	}
+}
+
+func TestIntegration_Doctor_QuarantinesMalformedLinksYaml(t *testing.T) {
+	tc := GetSharedContainer(t)
+	dir := "/test/doctor-malformed-links"
+	initWorkflowCampaign(t, tc, dir)
+
+	linksPath := dir + "/.campaign/workitems/links.yaml"
+	malformed := "version: workitem-links/v1alpha1\nlinks: [unterminated\n"
+	require.NoError(t, tc.WriteFile(linksPath, malformed))
+
+	out, _ := tc.RunCampInDir(dir, "workitem", "doctor", "--json")
+	report := parseDoctorReport(t, out)
+	parseFindings := countByCode(report, "workitem.registry.parse-error")
+	assert.GreaterOrEqual(t, parseFindings, 1,
+		"expected workitem.registry.parse-error finding before --fix, got: %s", out)
+
+	after, err := tc.ReadFile(linksPath)
+	require.NoError(t, err)
+	assert.Equal(t, malformed, after,
+		"doctor without --fix must not modify the malformed registry")
+
+	fixOut, _ := tc.RunCampInDir(dir, "workitem", "doctor", "--fix")
+	assert.Contains(t, fixOut, "quarantined",
+		"--fix output must announce quarantine: %s", fixOut)
+
+	quarantined, _, qerr := tc.ExecCommand("sh", "-c",
+		"ls "+dir+"/.campaign/workitems/ | grep 'links.yaml.broken-' | head -1")
+	require.NoError(t, qerr)
+	assert.NotEmpty(t, strings.TrimSpace(quarantined),
+		"a links.yaml.broken-<ts> file must exist after --fix")
+
+	final, err := tc.RunCampInDir(dir, "workitem", "doctor", "--json")
+	require.NoError(t, err, "doctor after fix: %s", final)
+	finalReport := parseDoctorReport(t, final)
+	assert.Equal(t, 0, countByCode(finalReport, "workitem.registry.parse-error"),
+		"no parse-error finding should remain after --fix bootstrapped Empty(): %s", final)
+}
+
+func TestBackfillMissingRefs_QueueContinuesOnPoison(t *testing.T) {
+	tc := GetSharedContainer(t)
+	dir := "/test/doctor-backfill-poison"
+	initWorkflowCampaign(t, tc, dir)
+
+	good := []string{
+		"workflow/design/alpha",
+		"workflow/design/bravo",
+		"workflow/design/delta",
+		"workflow/design/echo",
+	}
+	for _, rel := range good {
+		marker := fmt.Sprintf(directoryWorkitemMarker,
+			"design-"+rel[len("workflow/design/"):]+"-2026-05-25",
+			"design",
+			rel)
+		require.NoError(t, tc.WriteFile(dir+"/"+rel+"/.workitem", marker))
+	}
+
+	poisonRel := "workflow/design/charlie"
+	poison := `version: v1alpha5
+[this is not yaml at all
+- {{{
+`
+	require.NoError(t, tc.WriteFile(dir+"/"+poisonRel+"/.workitem", poison))
+
+	out, _ := tc.RunCampInDir(dir, "workitem", "doctor", "--fix")
+	t.Logf("doctor --fix output:\n%s", out)
+
+	after, err := tc.RunCampInDir(dir, "workitem", "doctor", "--json")
+	require.NoError(t, err, "doctor --json after fix: %s", after)
+	report := parseDoctorReport(t, after)
+	missing := countByCode(report, "workitem.ref.missing")
+	assert.LessOrEqual(t, missing, 1,
+		"expected at most 1 ref.missing remaining (the poison item), got %d:\n%s", missing, after)
+
+	for _, rel := range good {
+		body, err := tc.ReadFile(dir + "/" + rel + "/.workitem")
+		require.NoError(t, err)
+		assert.Contains(t, body, "ref: WI-",
+			"expected backfilled ref on non-poison item %s, got:\n%s", rel, body)
 	}
 }
