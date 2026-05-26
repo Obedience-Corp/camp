@@ -29,7 +29,7 @@ func TestIntegration_LinkConcurrentNoLoss(t *testing.T) {
 		"--type", "design", "--title", "shared")
 	require.NoError(t, err, "create shared: %s", out)
 
-	const n = 10
+	const n = 20
 	for i := 0; i < n; i++ {
 		_, _, err = tc.ExecCommand("mkdir", "-p", fmt.Sprintf("%s/projects/proj-%02d", dir, i))
 		require.NoError(t, err)
