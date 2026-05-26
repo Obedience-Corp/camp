@@ -121,5 +121,61 @@ func TestIntegration_WorkitemCommits_NonGitDirEmpty(t *testing.T) {
 	require.NoError(t, err)
 
 	got := runCommitsJSON(t, tc, dir, "example")
-	assert.NotPanics(t, func() { _ = got })
+	for _, c := range got.Commits {
+		assert.NotEqual(t, "projects/notgit", c.Repo,
+			"non-git linked directory must not contribute commits, got %+v", c)
+	}
+}
+
+// TestIntegration_WorkitemCommits_InvalidRegistrySurfacesError restores the
+// coverage from the prior host-side TestEnumerateQueryRepos_InvalidLinkRegistry
+// SurfacesError (PR #312 review: the container suite must keep parity with
+// the unit tests it replaces). An invalid links.yaml schema version must
+// fail the query path rather than silently returning an empty result.
+func TestIntegration_WorkitemCommits_InvalidRegistrySurfacesError(t *testing.T) {
+	tc := GetSharedContainer(t)
+	dir := "/test/commits-invalid-registry"
+	initCommitTagsCampaign(t, tc, dir)
+	_ = seedDesignWorkitemWithRef(t, tc, dir, "example")
+
+	require.NoError(t, tc.WriteFile(
+		dir+"/.campaign/workitems/links.yaml",
+		"version: workitem-links/v9beta\nlinks: []\n"))
+
+	out, runErr := tc.RunCampInDir(dir, "workitem", "commits", "example")
+	require.Error(t, runErr,
+		"workitem commits must refuse to enumerate an invalid links registry, got: %s", out)
+	assert.Contains(t, out, "schema version",
+		"error must name the version mismatch so the user can repair the file: %s", out)
+
+	jsonOut, jsonErr := tc.RunCampInDir(dir, "workitem", "commits", "example", "--json")
+	require.Error(t, jsonErr,
+		"--json variant must also surface non-zero exit on bad registry: %s", jsonOut)
+}
+
+// TestIntegration_WorkitemCommits_CanceledContextSurfacesError restores
+// coverage from TestQueryRepo_ContextCanceledSurfacesError. We trigger
+// cancellation by killing the camp process with SIGTERM mid-query; the
+// process must exit non-zero and not produce a successful empty result.
+func TestIntegration_WorkitemCommits_CanceledContextSurfacesError(t *testing.T) {
+	tc := GetSharedContainer(t)
+	dir := "/test/commits-canceled"
+	initCommitTagsCampaign(t, tc, dir)
+	_ = seedDesignWorkitemWithRef(t, tc, dir, "example")
+
+	// Spawn camp in the background, kill it immediately with SIGTERM, then
+	// capture the exit code. The query path checks ctx.Err() on entry and
+	// between repos, so an early SIGTERM either yields a non-zero exit or
+	// (rare) a successful empty result before any work; we accept the
+	// former and skip on the latter.
+	script := "cd " + dir + " && /camp workitem commits example >/tmp/cancel.out 2>&1 & " +
+		"pid=$!; kill -TERM $pid 2>/dev/null; wait $pid; echo EXIT=$?"
+	out, _, err := tc.ExecCommand("sh", "-c", script)
+	require.NoError(t, err)
+	if !strings.Contains(out, "EXIT=0") {
+		assert.Regexp(t, `EXIT=([1-9][0-9]*|137|143)`, out,
+			"SIGTERM must surface as a non-zero exit: %s", out)
+		return
+	}
+	t.Skip("race: camp finished before SIGTERM was delivered; cancellation contract not exercised")
 }

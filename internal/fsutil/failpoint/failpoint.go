@@ -3,6 +3,15 @@
 // production paths pay zero overhead; tests set CAMP_TEST_FAILPOINT to
 // trigger a panic, kill, or error at the named site.
 //
+// Safety: destructive actions (panic / kill) are GATED BEHIND THE
+// `failpoint_enabled` BUILD TAG. The default production build compiles
+// `actions_safe.go`, which converts panic/kill into ActionError responses
+// so a leaked CAMP_TEST_FAILPOINT cannot terminate a real `camp`. Test
+// runs that need destructive injection must build with
+// `-tags failpoint_enabled`, which swaps in `actions_unsafe.go`. The
+// build-tag boundary makes it impossible for an env-var alone to take
+// down a production binary.
+//
 // This is the scaffold the CW0003 production-readiness audit asked for: the
 // 14 "needs failpoint harness" cells in PRODUCTION_READINESS.md (kill-mid-
 // rename, kill-mid-commit, ENOSPC etc.) all depend on this mechanism. The
@@ -40,6 +49,10 @@ const (
 // the configured Action. Returns a non-nil error only when Action=error.
 // In normal builds (no CAMP_TEST_FAILPOINT set) this is a single env-var
 // read and a string compare; the no-op path stays under ~50ns.
+//
+// In default production builds (without the `failpoint_enabled` build tag),
+// ActionPanic and ActionKill are downgraded to ActionError so a leaked
+// CAMP_TEST_FAILPOINT cannot terminate the process. See actions_safe.go.
 func Trigger(ctx context.Context, site string) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -52,9 +65,9 @@ func Trigger(ctx context.Context, site string) error {
 	case ActionNone:
 		return nil
 	case ActionPanic:
-		panic("failpoint: " + site)
+		return runPanic(site)
 	case ActionKill:
-		os.Exit(137)
+		return runKill(site)
 	case ActionError:
 		return failpointError{site: site}
 	}
