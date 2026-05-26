@@ -2,11 +2,15 @@ package workitem
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/paths"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
 	"github.com/Obedience-Corp/camp/internal/workitem/resolver"
@@ -32,12 +36,20 @@ func cwdSubGitRepo(cwd, campaignRoot string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	rel, err := filepath.Rel(campaignRoot, abs)
+	cwdCanonical, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		cwdCanonical = abs
+	}
+	rootCanonical, err := filepath.EvalSymlinks(campaignRoot)
+	if err != nil {
+		rootCanonical = campaignRoot
+	}
+	rel, err := filepath.Rel(rootCanonical, cwdCanonical)
 	if err != nil || strings.HasPrefix(rel, "..") || rel == "." {
 		return "", false
 	}
-	dir := abs
-	for dir != campaignRoot && len(dir) > len(campaignRoot) {
+	dir := cwdCanonical
+	for dir != rootCanonical && len(dir) > len(rootCanonical) {
 		gitMarker := filepath.Join(dir, ".git")
 		if info, err := osStat(gitMarker); err == nil && (info.IsDir() || info.Mode().IsRegular()) {
 			return dir, true
@@ -188,6 +200,57 @@ func refOf(wi *wkitem.WorkItem) string {
 		return v
 	}
 	return ""
+}
+
+// EnsureRefForCommit is the exported entry point for the commit path. See
+// ensureRefForCommit.
+func EnsureRefForCommit(ctx context.Context, root string, wi *wkitem.WorkItem, errw io.Writer) (string, error) {
+	return ensureRefForCommit(ctx, root, wi, errw)
+}
+
+// ensureRefForCommit returns the workitem's ref, auto-backfilling the
+// .workitem marker on disk if the field is empty and the workitem is a
+// directory-kind item with a stable id. Intents/festivals and unresolved
+// workitems return "" with no side effect. Failures during backfill fall
+// back to "" with a louder stderr warning so the commit can still proceed
+// without a WI- segment.
+func ensureRefForCommit(ctx context.Context, root string, wi *wkitem.WorkItem, errw io.Writer) (string, error) {
+	if wi == nil {
+		return "", nil
+	}
+	if wi.ItemKind != wkitem.ItemKindDirectory || wi.StableID == "" {
+		return "", nil
+	}
+	if v := refOf(wi); v != "" {
+		return v, nil
+	}
+	cfg, err := config.LoadCampaignConfig(ctx, root)
+	if err != nil {
+		return "", camperrors.Wrap(err, "load campaign config for ref backfill")
+	}
+	resolver := paths.NewResolverFromConfig(root, cfg)
+	items, err := wkitem.Discover(ctx, root, resolver)
+	if err != nil {
+		return "", camperrors.Wrap(err, "discover for ref collision set")
+	}
+	existing := wkitem.RefsFromWorkitems(items)
+	ref, err := wkitem.DeriveUnique(ctx, wi.StableID, existing)
+	if err != nil {
+		fmt.Fprintf(errw,
+			"warning: could not derive ref for %s: %v; committing without WI segment\n",
+			wi.RelativePath, err)
+		return "", nil
+	}
+	if err := backfillRefWithRef(ctx, root, wi.RelativePath, ref); err != nil {
+		fmt.Fprintf(errw,
+			"warning: could not backfill ref for %s: %v; committing without WI segment\n",
+			wi.RelativePath, err)
+		return "", nil
+	}
+	fmt.Fprintf(errw,
+		"warning: backfilled missing ref for %s -> %s; commit the .workitem update with your next change\n",
+		wi.RelativePath, ref)
+	return ref, nil
 }
 
 func workitemDirNote(wi *wkitem.WorkItem, src resolver.Source) string {

@@ -72,6 +72,27 @@ func TestIntegration_WorkitemLink_JSONErrorEnvelope_UnknownWorkitem(t *testing.T
 		"--json refusal must NOT emit cobra usage: %s", out)
 }
 
+// TestIntegration_WorkitemLink_JSONFalseDisablesEnvelope reproduces the
+// PR #313 review repro: `--json=false` must NOT render the JSON error
+// envelope. Before the Requested fix, the argv scan matched any
+// `--json=` token as opt-in and surfaced a JSON payload even when the
+// caller explicitly disabled it.
+func TestIntegration_WorkitemLink_JSONFalseDisablesEnvelope(t *testing.T) {
+	tc := GetSharedContainer(t)
+	dir := "/test/json-false-disables"
+	initLinksCampaign(t, tc, dir)
+
+	out, _, err := tc.ExecCommand("sh", "-c",
+		"cd "+dir+" && /camp workitem link ghost --project demo --role primary --json=false 2>&1; echo EXIT=$?")
+	require.NoError(t, err)
+	assert.NotContains(t, out, `"schema_version"`,
+		"--json=false must NOT render the JSON envelope, got: %s", out)
+	assert.NotContains(t, out, `"error"`,
+		"--json=false must NOT render the JSON error payload, got: %s", out)
+	assert.Contains(t, out, "ghost",
+		"human error output must still mention the missing workitem: %s", out)
+}
+
 func itoa(n int) string {
 	if n == 0 {
 		return "0"

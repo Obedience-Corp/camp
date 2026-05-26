@@ -10,6 +10,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/fsutil"
 )
 
 // CampaignConfigFile is the name of the campaign configuration file.
@@ -142,7 +143,7 @@ func SaveCampaignConfig(ctx context.Context, campaignRoot string, cfg *CampaignC
 		data = append(data, commentedHooksPlaceholder()...)
 	}
 
-	if err := os.WriteFile(configPath, data, 0644); err != nil {
+	if err := fsutil.WriteFileAtomically(configPath, data, 0o644); err != nil {
 		return camperrors.Wrap(err, "failed to write campaign config")
 	}
 

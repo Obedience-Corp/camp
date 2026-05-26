@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -79,12 +80,29 @@ func FlagErrorFunc(schemaVersion string, jsonRequested func() bool) func(*cobra.
 }
 
 // Requested reports whether the current invocation asked for JSON output.
+//
+// The argv fallback exists so flag-parse errors (which fire before cobra
+// has populated the bound bool flag) still render through the JSON
+// envelope. The fallback must respect explicit boolean values on the
+// flag: `--json=false`, `--json=0`, `--json=no`, `--json=off`, and the
+// uppercase variants all mean "do NOT render JSON", and must be
+// honored even though argv contains a `--json=` token.
 func Requested(jsonRequested func() bool) bool {
 	if jsonRequested != nil && jsonRequested() {
 		return true
 	}
 	for _, arg := range os.Args[1:] {
-		if arg == "--json" || strings.HasPrefix(arg, "--json=") {
+		if arg == "--json" {
+			return true
+		}
+		if rest, ok := strings.CutPrefix(arg, "--json="); ok {
+			// Parse the explicit value. Anything strconv.ParseBool
+			// accepts is honored; an unparseable value falls back to
+			// "treat as enabled" to preserve the prior behavior for
+			// values like `--json=pretty` that may be added later.
+			if v, err := strconv.ParseBool(rest); err == nil {
+				return v
+			}
 			return true
 		}
 	}

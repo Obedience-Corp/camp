@@ -132,6 +132,16 @@ func runCommit(ctx context.Context, cmd *cobra.Command, flags commitFlags) error
 		return err
 	}
 
+	for _, w := range plan.Warnings {
+		fmt.Fprintln(cmd.ErrOrStderr(), "warning: "+w)
+	}
+
+	if !flags.Staged && !flags.DryRun {
+		if err := assertCleanIndex(ctx, plan.RepoRoot); err != nil {
+			return err
+		}
+	}
+
 	if !flags.JSON {
 		if perr := PrintPlan(cmd.ErrOrStderr(), plan); perr != nil {
 			return perr
@@ -165,7 +175,7 @@ func runCommit(ctx context.Context, cmd *cobra.Command, flags commitFlags) error
 		Title:       flags.Message,
 	})
 	if res.Err != nil {
-		return res.Err
+		return camperrors.Wrap(res.Err, "commit workitem")
 	}
 	if res.NoChanges {
 		if flags.JSON {
@@ -175,13 +185,20 @@ func runCommit(ctx context.Context, cmd *cobra.Command, flags commitFlags) error
 		return nil
 	}
 
-	sha, _ := lastCommitSHA(ctx, plan.RepoRoot)
+	sha, shaErr := lastCommitSHA(ctx, plan.RepoRoot)
+	if shaErr != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not read last commit SHA: %v\n", shaErr)
+	}
 	if flags.JSON {
 		return emitJSON(cmd.OutOrStdout(), plan, sha)
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "committed %s\n", sha)
 	return nil
 }
+
+// WorkitemCommitJSONVersion is declared in json_contract.go alongside the
+// rest of the agent-facing JSON schema versions so the seq-06 contract is
+// authored in one place.
 
 func emitJSON(w writeFlusher, plan *StagingPlan, sha string) error {
 	stage := plan.Stage
@@ -201,6 +218,7 @@ func emitJSON(w writeFlusher, plan *StagingPlan, sha string) error {
 		PreStaged     []string       `json:"pre_staged,omitempty"`
 		Skip          []SkippedEntry `json:"skip,omitempty"`
 		SHA           string         `json:"sha,omitempty"`
+		Warnings      []string       `json:"warnings,omitempty"`
 	}{
 		SchemaVersion: WorkitemCommitJSONVersion,
 		Workitem:      plan.Workitem.StableID,
@@ -214,6 +232,7 @@ func emitJSON(w writeFlusher, plan *StagingPlan, sha string) error {
 		PreStaged:     plan.PreStaged,
 		Skip:          plan.Skip,
 		SHA:           sha,
+		Warnings:      plan.Warnings,
 	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")

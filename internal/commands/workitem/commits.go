@@ -280,7 +280,7 @@ func queryRepo(ctx context.Context, campaignRoot, repo, ref string) ([]CommitRec
 	)
 	output, err := cmd.Output()
 	if errors.Is(cctx.Err(), context.DeadlineExceeded) {
-		return nil, fmt.Errorf("git log timeout after %s", commitsPerRepoTimeout)
+		return nil, camperrors.New(fmt.Sprintf("git log timeout after %s", commitsPerRepoTimeout))
 	}
 	if err != nil {
 		return nil, err
@@ -350,7 +350,7 @@ func isGitRepo(ctx context.Context, path string) (bool, error) {
 			if strings.Contains(msg, "not a git repository") {
 				return false, nil
 			}
-			return false, fmt.Errorf("git rev-parse failed: %s", strings.TrimSpace(string(output)))
+			return false, camperrors.New(fmt.Sprintf("git rev-parse failed: %s", strings.TrimSpace(string(output))))
 		}
 		return false, err
 	}
@@ -381,6 +381,9 @@ func emitCommitsQueryWarnings(w io.Writer, errs []commitsQueryError) {
 	}
 	fmt.Fprintf(w, "warning: %d repo(s) failed; re-run with --json for details\n", len(errs))
 }
+
+// WorkitemCommitsJSONVersion is declared in json_contract.go alongside the
+// rest of the agent-facing JSON schema versions.
 
 func emitCommitsJSON(w io.Writer, records []CommitRecord, errs []commitsQueryError) error {
 	if records == nil {

@@ -55,7 +55,7 @@ func runSync(ctx context.Context, cmd *cobra.Command, apply, jsonOut bool) error
 		return camperrors.Wrap(err, "not in a campaign directory")
 	}
 
-	findings, err := collectFindings(campaignRoot, cfg)
+	findings, err := collectFindings(ctx, campaignRoot, cfg)
 	if err != nil {
 		return err
 	}
