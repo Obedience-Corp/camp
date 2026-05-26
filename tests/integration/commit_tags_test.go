@@ -134,6 +134,37 @@ func TestIntegration_CommitTags_ExplicitOverride(t *testing.T) {
 	assert.Contains(t, subject, "WI-"+ref, "explicit override should win: %s", subject)
 }
 
+func TestIntegration_CommitTags_RejectsInvalidRef(t *testing.T) {
+	tc := GetSharedContainer(t)
+	dir := "/test/commit-tags-bad-ref"
+	initCommitTagsCampaign(t, tc, dir)
+
+	wiDir := dir + "/workflow/design/badref"
+	marker := `version: v1alpha6
+kind: workitem
+id: design-badref-2026-05-25
+type: design
+title: badref
+ref: NOT-A-VALID-REF-12345
+`
+	require.NoError(t, tc.WriteFile(wiDir+"/.workitem", marker))
+	require.NoError(t, tc.WriteFile(wiDir+"/notes.md", "x\n"))
+	_, _, err := tc.ExecCommand("git", "-C", dir, "add", "-A")
+	require.NoError(t, err)
+
+	out, _ := tc.RunCampInDir(wiDir, "commit", "-m", "design: bad ref")
+	subject := lastCommitSubject(t, tc, dir)
+
+	assert.NotContains(t, subject, "NOT-A-VALID-REF-12345",
+		"commit subject must not echo hand-edited junk ref (CW0003-format-02): subject=%s out=%s",
+		subject, out)
+	assert.NotContains(t, subject, "WI-WI-",
+		"composer must not produce doubled WI-WI- segment: subject=%s out=%s",
+		subject, out)
+	assert.NotContains(t, out, "WI-NOT-A-VALID-REF-12345",
+		"output must not echo hand-edited junk ref: %s", out)
+}
+
 func TestIntegration_AutoWriteEnv(t *testing.T) {
 	tc := GetSharedContainer(t)
 	dir := "/test/commit-tags-autowrite"
