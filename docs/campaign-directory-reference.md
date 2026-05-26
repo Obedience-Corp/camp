@@ -33,6 +33,9 @@ After `camp init`, the directory usually looks like this:
 │   ├── allowlist.json
 │   ├── fresh.yaml
 │   └── jumps.yaml
+├── workitems/              # link registry + current selection
+│   ├── links.yaml
+│   └── current.yaml
 ├── skills/
 │   ├── camp-navigation/
 │   ├── camp-projects/
@@ -115,6 +118,28 @@ Important:
 
 - quests are long-lived working contexts, not the same thing as festivals
 - there is no required `.active` file; multiple quests can exist simultaneously
+
+### `.campaign/workitems/`
+
+Workitem link registry and per-machine current selection, written by
+`camp workitem link`, `camp workitem unlink`, and `camp workitem current`.
+
+Files:
+
+- `links.yaml` is the shared link registry. It stores `lnk_*` entries that
+  bind a workitem to its targets (festival, project, custom workflow item).
+  This file is intended to be committed.
+- `current.yaml` is the per-machine record of the currently selected
+  workitem. It is intended to be machine-local state.
+
+See [workitem-link-reference.md](workitem-link-reference.md) for the
+registry concept, resolver tiers, and recovery paths.
+
+Known issue, pending fix (CW0003-links-02): `current.yaml` is not yet
+covered by the `.campaign/.gitignore` scaffold and can be committed by
+mistake. Until the gitignore update lands, add `workitems/current.yaml` to
+the campaign-local ignore set after `camp init`, or avoid committing it
+with `git restore --staged .campaign/workitems/current.yaml` before commits.
 
 ### `.campaign/settings/`
 

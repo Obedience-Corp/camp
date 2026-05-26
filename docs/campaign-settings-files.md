@@ -136,6 +136,11 @@ It stores:
 Navigation paths and shortcuts do not live here anymore; those live in
 `.campaign/settings/jumps.yaml`.
 
+`camp workflow create <type>` adds a concept entry under `concepts:` for
+the workflow type. The entry name is the workflow type slug and the path
+points to `workflow/<type>/`. Use `--replace` to overwrite a concept entry
+that already exists under the same name.
+
 ### `.campaign/settings/jumps.yaml`
 
 Campaign-local navigation settings.
@@ -171,6 +176,12 @@ Notes:
   jumps in memory and try to save the file back to disk.
 - `camp init --repair` preserves user-defined shortcuts and adds missing
   built-in shortcuts.
+- `camp workflow create <type>` adds a shortcut entry under `shortcuts:` for
+  the workflow type. The default key is the workflow type slug and the path
+  points to `workflow/<type>/`. Use `--shortcut <key>` to override the key
+  and `--replace` to overwrite an existing shortcut at the same key.
+- `camp workflow shortcut add` and `camp workflow sync` write shortcut
+  entries the same way and target the same file.
 
 See [SHORTCUTS.md](SHORTCUTS.md) for shortcut-specific details.
 
