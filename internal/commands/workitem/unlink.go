@@ -70,46 +70,43 @@ func runUnlink(ctx context.Context, cmd *cobra.Command, opts unlinkOptions) erro
 	if err != nil {
 		return camperrors.Wrap(err, "not in a campaign directory")
 	}
-	registry, err := links.Load(ctx, root)
-	if err != nil {
-		return err
-	}
-
 	removed := []links.Link{}
-	switch {
-	case opts.ID != "":
-		link, ok := registry.FindByID(opts.ID)
-		if !ok {
-			return camperrors.NewValidation("id", "no link with id "+opts.ID, nil)
-		}
-		removed = append(removed, *link)
-		registry.RemoveLinkByID(opts.ID)
+	err = links.WithLock(ctx, root, func(registry *links.Links) error {
+		switch {
+		case opts.ID != "":
+			link, ok := registry.FindByID(opts.ID)
+			if !ok {
+				return camperrors.NewValidation("id", "no link with id "+opts.ID, nil)
+			}
+			removed = append(removed, *link)
+			registry.RemoveLinkByID(opts.ID)
 
-	case opts.Selector != "":
-		wi, err := resolveSelector(ctx, root, opts.Selector, false)
-		if err != nil {
-			return err
-		}
-		matches := matchUnlinkCandidates(registry, wi.StableID, opts)
-		if len(matches) == 0 {
+		case opts.Selector != "":
+			wi, err := resolveSelector(ctx, root, opts.Selector, false)
+			if err != nil {
+				return err
+			}
+			matches := matchUnlinkCandidates(registry, wi.StableID, opts)
+			if len(matches) == 0 {
+				return camperrors.NewValidation("selector",
+					"no links matched selector "+opts.Selector, nil)
+			}
+			if len(matches) > 1 && !opts.All {
+				return camperrors.NewValidation("selector",
+					fmt.Sprintf("selector matched %d links; pass --all to remove every match or --id to pick one", len(matches)), nil)
+			}
+			for _, link := range matches {
+				registry.RemoveLinkByID(link.ID)
+				removed = append(removed, link)
+			}
+
+		default:
 			return camperrors.NewValidation("selector",
-				"no links matched selector "+opts.Selector, nil)
+				"must provide --id or a selector to unlink", nil)
 		}
-		if len(matches) > 1 && !opts.All {
-			return camperrors.NewValidation("selector",
-				fmt.Sprintf("selector matched %d links; pass --all to remove every match or --id to pick one", len(matches)), nil)
-		}
-		for _, link := range matches {
-			registry.RemoveLinkByID(link.ID)
-			removed = append(removed, link)
-		}
-
-	default:
-		return camperrors.NewValidation("selector",
-			"must provide --id or a selector to unlink", nil)
-	}
-
-	if err := links.Save(ctx, root, registry); err != nil {
+		return nil
+	})
+	if err != nil {
 		return err
 	}
 

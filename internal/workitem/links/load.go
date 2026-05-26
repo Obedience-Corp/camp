@@ -31,6 +31,13 @@ func CurrentPath(root string) string {
 // documented zero state — Load returns Empty(), no error. Malformed YAML or
 // an unknown schema version returns a wrapped error.
 func Load(ctx context.Context, root string) (*Links, error) {
+	return loadLocked(ctx, root)
+}
+
+// loadLocked is the unexported peer of Load used by WithLock. It does not
+// acquire links.yaml.lock; callers that need locked Load-Mutate-Save use
+// WithLock instead.
+func loadLocked(ctx context.Context, root string) (*Links, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

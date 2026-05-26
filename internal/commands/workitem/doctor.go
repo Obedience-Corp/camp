@@ -78,27 +78,32 @@ func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut, fix bool) error
 	if err != nil {
 		return camperrors.Wrap(err, "not in a campaign directory")
 	}
-	registry, err := links.Load(ctx, root)
-	if err != nil {
-		return err
-	}
-
 	knownIDs, err := workitemIDsOnDisk(ctx, root)
 	if err != nil {
 		return err
 	}
 
-	findings := collectWorkitemFindings(ctx, root, registry, knownIDs)
+	var findings []docFinding
 	if fix {
-		applied := autoFixWorkitemFindings(ctx, root, registry, findings, cmd.ErrOrStderr())
-		if applied > 0 {
-			if err := links.Save(ctx, root, registry); err != nil {
-				return err
+		err = links.WithLock(ctx, root, func(registry *links.Links) error {
+			findings = collectWorkitemFindings(ctx, root, registry, knownIDs)
+			applied := autoFixWorkitemFindings(ctx, root, registry, findings, cmd.ErrOrStderr())
+			if applied == 0 {
+				return links.ErrSkipSave
 			}
-			// Re-run findings after fixes for an accurate post-fix report.
 			knownIDs, _ = workitemIDsOnDisk(ctx, root)
 			findings = collectWorkitemFindings(ctx, root, registry, knownIDs)
+			return nil
+		})
+		if err != nil {
+			return err
 		}
+	} else {
+		registry, err := links.Load(ctx, root)
+		if err != nil {
+			return err
+		}
+		findings = collectWorkitemFindings(ctx, root, registry, knownIDs)
 	}
 
 	if jsonOut {
