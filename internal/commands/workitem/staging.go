@@ -112,17 +112,19 @@ func ComputePlan(ctx context.Context, campaignRoot string, opts PlanOptions) (*S
 	}
 
 	if opts.StagedOnly {
+		repoRoot := campaignRoot
+		if sub, ok := cwdSubGitRepo(opts.Cwd, campaignRoot); ok {
+			repoRoot = sub
+		}
 		plan.Context = PlanContextStagedOnly
 		plan.ContextNote = "using current git index"
-		plan.RepoRoot = campaignRoot
-		staged, err := listStagedFiles(ctx, campaignRoot)
+		plan.RepoRoot = repoRoot
+		staged, err := listStagedFiles(ctx, repoRoot)
 		if err != nil {
 			return nil, camperrors.Wrap(err, "list staged files")
 		}
 		plan.PreStaged = staged
-		// Includes still apply on top of --staged so the user can add a tag-only
-		// commit of additional explicit paths.
-		stage, skip, err := applyIncludes(campaignRoot, nil, opts.Includes)
+		stage, skip, err := applyIncludes(repoRoot, nil, opts.Includes)
 		if err != nil {
 			return nil, err
 		}
