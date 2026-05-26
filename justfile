@@ -47,6 +47,43 @@ vet:
 # Run golangci-lint (includes vet, staticcheck, errcheck, and more)
 lint:
     golangci-lint run ./...
+    @just lint-no-host-fs-tests
+
+# Reject NEW host-side filesystem-mutating test patterns outside
+# tests/integration/. Standing rule (feedback_docker_integration_tests.md):
+# exec.Command("git", ...) and similar must run through the containerized
+# harness, not host t.TempDir.
+#
+# The allowlist captures the pre-existing violators tracked under
+# CW0003-tests-01 and follow-up migration scope. Adding a NEW file to the
+# violator set fails the build. Removing a file from the allowlist as you
+# migrate it tightens the rule. The end state is an empty allowlist.
+lint-no-host-fs-tests:
+    #!/usr/bin/env sh
+    set -eu
+    # Allowlist: existing host-FS test violators tracked under CW0003-tests-01
+    # and adjacent legacy patterns. Goal: drive this list to empty by migrating
+    # tests to tests/integration/ + the container harness. The rule blocks any
+    # NEW addition beyond this set.
+    allowlist="./internal/git/remote_test.go ./internal/git/commit_test.go ./internal/git/lock_integration_test.go ./internal/git/info_exclude_test.go ./pkg/commitkit/commitkit_test.go ./cmd/camp/commit_integration_test.go ./cmd/camp/project/remote/remote_test.go ./cmd/camp/refs/commands_integration_test.go ./tools/release-notes/main_test.go ./internal/doctor/checks/orphan_test.go ./internal/doctor/checks/head_test.go ./internal/doctor/checks/url_test.go ./internal/project/add_test.go ./internal/project/resolve_test.go ./internal/project/list_test.go ./internal/attach/attach_test.go ./internal/leverage/backfill_test.go ./internal/leverage/authors_test.go ./internal/leverage/projects_test.go ./internal/leverage/blame_cache_test.go ./internal/leverage/sampler_test.go ./internal/leverage/config_test.go ./internal/clone/git_test.go ./internal/quest/autocommit_integration_test.go ./internal/sync/sync_test.go ./internal/sync/preflight_test.go ./internal/scaffold/init_behavior_test.go ./internal/git/commit/commit_test.go ./internal/git/executor_test.go ./internal/git/submodule_test.go ./internal/git/submodule_list_test.go ./internal/git/branches_test.go ./internal/git/submodule_orphan_test.go ./internal/git/resolve_test.go"
+    hits=$(find . -name '*_test.go' -not -path './tests/integration/*' -not -path './vendor/*' -print0 2>/dev/null | \
+        xargs -0 grep -lE 'exec\.Command\("git"|exec\.CommandContext\(.*"git"' 2>/dev/null || true)
+    new_violators=""
+    for hit in $hits; do
+        case " $allowlist " in
+            *" $hit "*) ;;
+            *) new_violators="$new_violators $hit" ;;
+        esac
+    done
+    if [ -n "$new_violators" ]; then
+        echo "FAIL: NEW host-side git exec.Command in _test.go outside tests/integration/:"
+        for v in $new_violators; do echo "  $v"; done
+        echo ""
+        echo "Migrate to tests/integration/ via GetSharedContainer + RunCampInDir,"
+        echo "or (if intentional pure-logic test) add to the allowlist in justfile."
+        exit 1
+    fi
+    echo "lint-no-host-fs-tests: clean (no NEW violators; $(echo $hits | wc -w | tr -d ' ') legacy files on allowlist)"
 
 # Install required development tools
 install-tools:
