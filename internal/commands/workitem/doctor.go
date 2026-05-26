@@ -79,14 +79,45 @@ func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut, fix bool) error
 	if err != nil {
 		return camperrors.Wrap(err, "not in a campaign directory")
 	}
-	registry, err := links.Load(ctx, root)
+	knownIDs, err := workitemIDsOnDisk(ctx, root)
 	if err != nil {
-		if !fix {
+		return err
+	}
+
+	var findings []docFinding
+	if fix {
+		if _, loadErr := links.Load(ctx, root); loadErr != nil {
+			quarantined, qerr := links.QuarantineBroken(ctx, root)
+			if qerr != nil {
+				return camperrors.Wrap(qerr, "quarantine broken registry")
+			}
+			if quarantined != "" {
+				fmt.Fprintf(cmd.ErrOrStderr(),
+					"quarantined broken links.yaml to %s; bootstrapped empty registry\n",
+					quarantined)
+			}
+		}
+		err = links.WithLock(ctx, root, func(registry *links.Links) error {
+			findings = collectWorkitemFindings(ctx, root, registry, knownIDs)
+			applied := autoFixWorkitemFindings(ctx, root, registry, findings, cmd.ErrOrStderr())
+			if applied == 0 {
+				return links.ErrSkipSave
+			}
+			knownIDs, _ = workitemIDsOnDisk(ctx, root)
+			findings = collectWorkitemFindings(ctx, root, registry, knownIDs)
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+	} else {
+		registry, loadErr := links.Load(ctx, root)
+		if loadErr != nil {
 			parseFinding := docFinding{
 				Code:        codeRegistryParseError,
 				Severity:    docSeverityError,
 				Target:      "registry:links.yaml",
-				Message:     "links.yaml cannot be parsed: " + err.Error(),
+				Message:     "links.yaml cannot be parsed: " + loadErr.Error(),
 				FixHint:     "run `camp workitem doctor --fix` to quarantine the broken file and bootstrap an empty registry",
 				AutoFixable: true,
 			}
@@ -97,39 +128,9 @@ func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut, fix bool) error
 				return errDoctorIssues
 			}
 			emitDocHuman(cmd.OutOrStdout(), []docFinding{parseFinding})
-			return camperrors.Wrap(err, "load links registry")
+			return camperrors.Wrap(loadErr, "load links registry")
 		}
-		quarantined, qerr := links.QuarantineBroken(ctx, root)
-		if qerr != nil {
-			return camperrors.Wrap(qerr, "quarantine broken registry")
-		}
-		if quarantined != "" {
-			fmt.Fprintf(cmd.ErrOrStderr(),
-				"quarantined broken links.yaml to %s; bootstrapped empty registry\n",
-				quarantined)
-		}
-		registry, err = links.Load(ctx, root)
-		if err != nil {
-			return camperrors.Wrap(err, "reload after quarantine")
-		}
-	}
-
-	knownIDs, err := workitemIDsOnDisk(ctx, root)
-	if err != nil {
-		return err
-	}
-
-	findings := collectWorkitemFindings(ctx, root, registry, knownIDs)
-	if fix {
-		applied := autoFixWorkitemFindings(ctx, root, registry, findings, cmd.ErrOrStderr())
-		if applied > 0 {
-			if err := links.Save(ctx, root, registry); err != nil {
-				return err
-			}
-			// Re-run findings after fixes for an accurate post-fix report.
-			knownIDs, _ = workitemIDsOnDisk(ctx, root)
-			findings = collectWorkitemFindings(ctx, root, registry, knownIDs)
-		}
+		findings = collectWorkitemFindings(ctx, root, registry, knownIDs)
 	}
 
 	if jsonOut {
