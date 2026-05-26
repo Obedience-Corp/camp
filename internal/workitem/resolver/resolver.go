@@ -101,10 +101,17 @@ func Resolve(ctx context.Context, root string, opts Options) (*Resolution, error
 	}
 	for _, tier := range tiers {
 		wi, step, err := tier.fn()
-		result.Trace = append(result.Trace, step)
 		if err != nil {
-			return nil, err
+			step.Result = "error"
+			if step.Detail == "" {
+				step.Detail = err.Error()
+			} else {
+				step.Detail = step.Detail + ": " + err.Error()
+			}
+			result.Trace = append(result.Trace, step)
+			continue
 		}
+		result.Trace = append(result.Trace, step)
 		if wi != nil {
 			result.Workitem = wi
 			result.Source = tier.source

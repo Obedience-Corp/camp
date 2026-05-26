@@ -317,6 +317,9 @@ cache/
 
 # Tool-managed state (workitem priorities, regenerated automatically)
 settings/workitems.json
+
+# Per-machine current-workitem selection (do not share across machines)
+workitems/current.yaml
 `
 			if err := os.WriteFile(gitignorePath, []byte(gitignoreContent), 0644); err != nil {
 				return nil, camperrors.Wrap(err, "failed to create .gitignore")
