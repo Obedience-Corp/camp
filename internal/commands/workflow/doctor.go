@@ -218,7 +218,7 @@ func collectFindings(ctx context.Context, campaignRoot string, cfg *config.Campa
 			Severity:    severityError,
 			Target:      "shortcut:" + normalized,
 			Message:     fmt.Sprintf("duplicate shortcut keys normalize to %q: %s", normalized, strings.Join(dupes, ", ")),
-			FixHint:     "manually consolidate the entries in .campaign/settings/jumps.yaml; auto-fix keeps the lexicographically first variant",
+			FixHint:     "manually consolidate the entries in .campaign/settings/jumps.yaml; auto-fix keeps the normalized (lowercase) form when present, otherwise the lexicographically first variant",
 			AutoFixable: true,
 		})
 	}

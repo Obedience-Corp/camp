@@ -6,6 +6,8 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"strconv"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -98,6 +100,42 @@ func WithLock(ctx context.Context, root string, fn func(*Links) error) error {
 // after the transaction. Use it when an inspection-only fn determines no
 // mutation is needed.
 var ErrSkipSave = errors.New("links: skip save")
+
+// QuarantineBroken renames a malformed links.yaml to
+// `links.yaml.broken-<unix-nano>` and writes a fresh empty registry in its
+// place. The returned path is the quarantined file's new location (empty
+// string if the original did not exist). Doctor's `--fix` uses this to
+// unwedge a campaign whose registry cannot be loaded.
+func QuarantineBroken(ctx context.Context, root string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(linksDir(root), 0o755); err != nil {
+		return "", camperrors.Wrap(err, "create links dir")
+	}
+	path := LinksPath(root)
+	release, err := fsutil.AcquireFileLock(ctx, path+".lock")
+	if err != nil {
+		return "", err
+	}
+	defer release()
+
+	quarantined := ""
+	if _, err := os.Stat(path); err == nil {
+		quarantined = path + ".broken-" + strconv.FormatInt(time.Now().UnixNano(), 10)
+		if err := os.Rename(path, quarantined); err != nil {
+			return "", camperrors.Wrap(err, "quarantine links.yaml")
+		}
+	}
+	data, err := marshalYAML(Empty())
+	if err != nil {
+		return quarantined, camperrors.Wrap(err, "marshal empty registry")
+	}
+	if err := fsutil.WriteFileAtomically(path, data, 0o644); err != nil {
+		return quarantined, camperrors.Wrap(err, "write empty registry")
+	}
+	return quarantined, nil
+}
 
 // SaveCurrent writes `current.yaml` under a file lock. Passing nil clears
 // the file (removes it from disk); the directory is left in place.

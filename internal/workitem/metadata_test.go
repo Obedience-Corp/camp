@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 func mapFSWith(body string) fstest.MapFS {
@@ -142,6 +144,39 @@ title: T
 `,
 			wantSubstr: "type is empty",
 		},
+		{
+			name: "invalid ref shape",
+			body: `version: v1alpha6
+kind: workitem
+id: x
+type: design
+title: T
+ref: NOT-A-VALID-REF-12345
+`,
+			wantSubstr: "ref must match WI-<6 hex>",
+		},
+		{
+			name: "ref with wrong length",
+			body: `version: v1alpha6
+kind: workitem
+id: x
+type: design
+title: T
+ref: WI-abc
+`,
+			wantSubstr: "ref must match WI-<6 hex>",
+		},
+		{
+			name: "invalid quest_id shape",
+			body: `version: v1alpha6
+kind: workitem
+id: x
+type: design
+title: T
+quest_id: not_a_quest_id
+`,
+			wantSubstr: "quest_id must match qst_",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -151,6 +186,47 @@ title: T
 			}
 			if !strings.Contains(err.Error(), tc.wantSubstr) {
 				t.Errorf("error %q missing %q", err.Error(), tc.wantSubstr)
+			}
+		})
+	}
+}
+
+func TestValidateMetadata_RefShape(t *testing.T) {
+	base := Metadata{Version: "v1alpha6", Kind: MetadataKind, ID: "x", Type: "design"}
+	cases := []struct {
+		name      string
+		mutate    func(*Metadata)
+		wantErr   bool
+		wantField string
+	}{
+		{"empty ref ok", func(m *Metadata) {}, false, ""},
+		{"valid ref", func(m *Metadata) { m.Ref = "WI-abcdef" }, false, ""},
+		{"uppercase hex", func(m *Metadata) { m.Ref = "WI-ABCDEF" }, true, "ref"},
+		{"wrong length", func(m *Metadata) { m.Ref = "WI-abc" }, true, "ref"},
+		{"missing WI prefix", func(m *Metadata) { m.Ref = "abcdef" }, true, "ref"},
+		{"embedded dash junk", func(m *Metadata) { m.Ref = "WI-abc-def" }, true, "ref"},
+		{"review repro junk", func(m *Metadata) { m.Ref = "NOT-A-VALID-REF-12345" }, true, "ref"},
+		{"valid quest_id", func(m *Metadata) { m.QuestID = "qst_20260525_abc" }, false, ""},
+		{"empty quest_id ok", func(m *Metadata) {}, false, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := base
+			tc.mutate(&m)
+			err := validateMetadata(&m)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error for %s, got nil", tc.name)
+				}
+				var verr *camperrors.ValidationError
+				if !errors.As(err, &verr) {
+					t.Fatalf("expected ValidationError, got %T: %v", err, err)
+				}
+				if verr.Field != tc.wantField {
+					t.Errorf("Field = %q, want %q", verr.Field, tc.wantField)
+				}
+			} else if err != nil {
+				t.Fatalf("expected no error for %s, got %v", tc.name, err)
 			}
 		})
 	}

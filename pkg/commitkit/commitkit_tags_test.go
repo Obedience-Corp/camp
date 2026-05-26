@@ -45,3 +45,20 @@ func TestCommitkit_ParseTag_RoundTrip(t *testing.T) {
 		t.Fatalf("parse round-trip broke: %#v", got)
 	}
 }
+
+func TestCommitkit_ParseTagDetailed_ReExport(t *testing.T) {
+	subject := "[OBEY-CAMPAIGN-abc-WI-WI-ZZZZ-extra-junk] x"
+	got, warnings := commitkit.ParseTagDetailed(subject)
+	if got.CampaignID != "abc" {
+		t.Errorf("CampaignID = %q, want abc", got.CampaignID)
+	}
+	if got.WorkitemRef != "" {
+		t.Errorf("WorkitemRef should be zeroed on shape failure, got %q", got.WorkitemRef)
+	}
+	if len(warnings) == 0 {
+		t.Fatal("expected at least one warning from degraded parse")
+	}
+	if warnings[0].Field != "workitem_ref" {
+		t.Errorf("warning[0].Field = %q, want workitem_ref", warnings[0].Field)
+	}
+}

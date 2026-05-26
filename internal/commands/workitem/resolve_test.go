@@ -98,7 +98,7 @@ func TestResolve_LinkTier(t *testing.T) {
 	}
 }
 
-func TestResolve_BrokenPrimaryLinkDoesNotFallThrough(t *testing.T) {
+func TestResolve_BrokenPrimaryLinkFallsThroughToLowerTier(t *testing.T) {
 	root := linkTestCampaign(t)
 	restore := chdir(t, root)
 	defer restore()
@@ -120,12 +120,22 @@ func TestResolve_BrokenPrimaryLinkDoesNotFallThrough(t *testing.T) {
 	}
 
 	cwd := filepath.Join(root, "projects", "demo")
-	_, err := resolver.Resolve(context.Background(), root, resolver.Options{Cwd: cwd})
-	if err == nil {
-		t.Fatal("expected broken primary link to fail instead of falling through")
+	res, err := resolver.Resolve(context.Background(), root, resolver.Options{Cwd: cwd})
+	if err != nil {
+		t.Fatalf("resolver should not error on broken primary link, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "primary link") {
-		t.Fatalf("err = %v, want primary link context", err)
+	if res == nil {
+		t.Fatal("expected non-nil result")
+	}
+	sawError := false
+	for _, step := range res.Trace {
+		if step.Result == "error" {
+			sawError = true
+			break
+		}
+	}
+	if !sawError {
+		t.Fatalf("expected an error trace step from the broken link tier, got %#v", res.Trace)
 	}
 }
 
