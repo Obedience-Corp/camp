@@ -83,21 +83,24 @@ type TagComponents struct {
 	WorkitemRef string // includes the leading "WI-" prefix (e.g. "WI-abcdef")
 }
 
-// tagShellRegex captures everything between `[OBEY-CAMPAIGN-` and `]`. The
-// inner contents are split component-by-component in ParseTag so the parser
-// can disambiguate `FE-<ref>` and `WI-<ref>` without relying on regex
-// lookahead (which RE2 does not support).
-//
-// The leading guard `(?:^|[^"])` rejects matches where the tag opens
-// immediately after a quote character. This blocks the Revert-subject
-// false-positive (git emits `Revert "<original subject>"` and if the
-// original subject was prepended with a tag, the quoted form would
-// otherwise match). Tags at start of line or preceded by whitespace
-// continue to match.
-var tagShellRegex = regexp.MustCompile(`(?m)(?:^|[^"])\[OBEY-CAMPAIGN-([^\]]+)\]`)
+// leadingTagRegex anchors the tag match to the start of the subject. This is
+// the contract ParseTag enforces: a tag is only what FormatContextTagsFull
+// produces at position 0. Embedded mentions in revert subjects, code
+// samples, or appended notes are intentionally ignored.
+var leadingTagRegex = regexp.MustCompile(`^\[OBEY-CAMPAIGN-([^\]]+)\]`)
+
+// tagBodyScanRegex is the unanchored form, retained for callers that
+// intentionally scan commit bodies for tag mentions (e.g. body-grep paths
+// that surface "this commit references campaign X" attributions). Do NOT
+// use this in ParseTag; the contract there is "leading tag only".
+var tagBodyScanRegex = regexp.MustCompile(`\[OBEY-CAMPAIGN-([^\]]+)\]`)
 
 // ParseTag extracts the components of a campaign tag from a commit subject.
 // Returns a zero-valued TagComponents when no tag is present.
+//
+// ParseTag matches only the leading bracket; embedded mentions in revert
+// subjects or code samples are intentionally ignored. Callers that need
+// body-grep semantics must use tagBodyScanRegex directly.
 //
 // ParseTag assumes quest IDs match `qst_[0-9]+_[a-z0-9]+` per
 // internal/quest/slug.go. If that alphabet is extended to include "-",
@@ -110,7 +113,7 @@ var tagShellRegex = regexp.MustCompile(`(?m)(?:^|[^"])\[OBEY-CAMPAIGN-([^\]]+)\]
 // previous prefix and the next belongs to the previous segment. This
 // matches FormatContextTagsFull's grammar exactly.
 func ParseTag(subject string) TagComponents {
-	m := tagShellRegex.FindStringSubmatch(subject)
+	m := leadingTagRegex.FindStringSubmatch(subject)
 	if m == nil {
 		return TagComponents{}
 	}

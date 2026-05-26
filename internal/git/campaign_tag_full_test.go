@@ -192,6 +192,52 @@ func TestParseTag_RoundTripProperty(t *testing.T) {
 	}
 }
 
+func TestParseTag_AnchoringAdversarial(t *testing.T) {
+	cases := []struct {
+		name       string
+		subject    string
+		wantParsed bool
+		wantID     string
+		wantWIRef  string
+	}{
+		{name: "happy path leading tag", subject: "[OBEY-CAMPAIGN-abcd1234-WI-WI-deadbe] feat: X", wantParsed: true, wantID: "abcd1234", wantWIRef: "WI-deadbe"},
+		{name: "revert subject", subject: `Revert "[OBEY-CAMPAIGN-abcd1234] feat: X"`, wantParsed: false},
+		{name: "leading whitespace", subject: " [OBEY-CAMPAIGN-abcd1234] x", wantParsed: false},
+		{name: "embedded mid-subject", subject: "fix: tag was [OBEY-CAMPAIGN-abcd1234] in old log", wantParsed: false},
+		{name: "tag inside backticks", subject: "docs: example `[OBEY-CAMPAIGN-abcd1234]`", wantParsed: false},
+		{name: "two tags only the leading wins", subject: "[OBEY-CAMPAIGN-aaaaaaaa] body [OBEY-CAMPAIGN-bbbbbbbb]", wantParsed: true, wantID: "aaaaaaaa"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ParseTag(tc.subject)
+			if tc.wantParsed {
+				if got.CampaignID != tc.wantID {
+					t.Fatalf("CampaignID: want %q, got %q", tc.wantID, got.CampaignID)
+				}
+				if tc.wantWIRef != "" && got.WorkitemRef != tc.wantWIRef {
+					t.Fatalf("WorkitemRef: want %q, got %q", tc.wantWIRef, got.WorkitemRef)
+				}
+			} else if got != (TagComponents{}) {
+				t.Fatalf("expected zero-value TagComponents for non-leading tag, got %+v", got)
+			}
+		})
+	}
+}
+
+func TestTagBodyScanRegex_FindsEmbedded(t *testing.T) {
+	subject := "body has [OBEY-CAMPAIGN-aaa] and [OBEY-CAMPAIGN-bbb]"
+	matches := tagBodyScanRegex.FindAllString(subject, -1)
+	if len(matches) != 2 {
+		t.Fatalf("expected 2 matches from body-scan regex, got %d: %v", len(matches), matches)
+	}
+	want := []string{"[OBEY-CAMPAIGN-aaa]", "[OBEY-CAMPAIGN-bbb]"}
+	for i, m := range matches {
+		if m != want[i] {
+			t.Errorf("match[%d] = %q, want %q", i, m, want[i])
+		}
+	}
+}
+
 func randHex(t *testing.T, n int) string {
 	t.Helper()
 	b := make([]byte, n)
