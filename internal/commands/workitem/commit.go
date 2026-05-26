@@ -13,6 +13,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 )
 
 // noContextHint is the multi-line refusal message printed when the resolver
@@ -49,12 +50,12 @@ campaign root.
 
 See internal/commands/workitem/COMMIT_DESIGN.md for the full staging matrix
 and flag precedence.`,
-		Args: cobra.MaximumNArgs(1),
+		Args: jsoncontract.Args(WorkitemCommitJSONVersion, func() bool { return flagJSON }, cobra.MaximumNArgs(1)),
 		Annotations: map[string]string{
 			"agent_allowed": "true",
 			"agent_reason":  "Scoped commit command; honors --json and --dry-run for automation",
 		},
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: jsoncontract.RunE(WorkitemCommitJSONVersion, func() bool { return flagJSON }, func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			selector := flagWorkitem
 			if selector == "" && len(args) == 1 {
@@ -71,8 +72,9 @@ and flag precedence.`,
 				DryRun:                  flagDryRun,
 				JSON:                    flagJSON,
 			})
-		},
+		}),
 	}
+	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(WorkitemCommitJSONVersion, func() bool { return flagJSON }))
 	cmd.Flags().StringVarP(&flagMessage, "message", "m", "", "commit message (required unless --dry-run)")
 	cmd.Flags().StringVar(&flagWorkitem, "workitem", "", "explicit workitem selector (overrides cwd-based resolution)")
 	cmd.Flags().StringVar(&flagProject, "project", "", "force project-repo context by name (skips resolver)")
@@ -118,6 +120,12 @@ func runCommit(ctx context.Context, cmd *cobra.Command, flags commitFlags) error
 	})
 	if err != nil {
 		if errors.Is(err, ErrNoWorkitemContext) {
+			if flags.JSON {
+				return jsoncontract.WithHint(
+					camperrors.NewValidation("workitem", "no workitem context resolved from cwd", err),
+					noContextHint,
+				)
+			}
 			fmt.Fprintln(cmd.ErrOrStderr(), noContextHint)
 			return camperrors.NewCommand("camp workitem commit", 2, "", err)
 		}
@@ -188,10 +196,15 @@ func runCommit(ctx context.Context, cmd *cobra.Command, flags commitFlags) error
 	return nil
 }
 
-// WorkitemCommitJSONVersion is the schema version of camp workitem commit --json.
-const WorkitemCommitJSONVersion = "workitem-commit/v1"
+// WorkitemCommitJSONVersion is declared in json_contract.go alongside the
+// rest of the agent-facing JSON schema versions so the seq-06 contract is
+// authored in one place.
 
 func emitJSON(w writeFlusher, plan *StagingPlan, sha string) error {
+	stage := plan.Stage
+	if stage == nil {
+		stage = []string{}
+	}
 	payload := struct {
 		SchemaVersion string         `json:"schema_version"`
 		Workitem      string         `json:"workitem"`
@@ -215,7 +228,7 @@ func emitJSON(w writeFlusher, plan *StagingPlan, sha string) error {
 		Context:       plan.Context,
 		ContextNote:   plan.ContextNote,
 		RepoRoot:      plan.RepoRoot,
-		Stage:         plan.Stage,
+		Stage:         stage,
 		PreStaged:     plan.PreStaged,
 		Skip:          plan.Skip,
 		SHA:           sha,

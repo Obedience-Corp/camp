@@ -13,6 +13,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/editor"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/paths"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/priority"
@@ -50,7 +51,7 @@ Examples:
 			"agent_allowed": "true",
 			"agent_reason":  "Supports --json for non-interactive output",
 		},
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: jsoncontract.RunE(wkitem.SchemaVersion, func() bool { return flagJSON }, func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
 			if err := validateFlags(flagJSON, flagPrint, flagPathOutput, flagTypes, flagStages); err != nil {
@@ -114,8 +115,9 @@ Examples:
 			default:
 				return runTUI(ctx, items, false, "", campaignRoot, resolver, store, storePath)
 			}
-		},
+		}),
 	}
+	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(wkitem.SchemaVersion, func() bool { return flagJSON }))
 
 	cmd.Flags().BoolVar(&flagJSON, "json", false, "Output as JSON")
 	cmd.Flags().BoolVar(&flagPrint, "print", false, "Print path only (for shell integration)")

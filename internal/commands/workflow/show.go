@@ -16,6 +16,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 )
 
 // errWorkflowNotFound tells main to exit 2 after the command writes its
@@ -27,11 +28,12 @@ func newShowCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show <type>",
 		Short: "Show a workflow collection's config and recent workitems",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		Args:  jsoncontract.Args(JSONSchemaVersion, func() bool { return jsonOut }, cobra.ExactArgs(1)),
+		RunE: jsoncontract.RunE(JSONSchemaVersion, func() bool { return jsonOut }, func(cmd *cobra.Command, args []string) error {
 			return runShow(cmd.Context(), cmd, args[0], jsonOut)
-		},
+		}),
 	}
+	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(JSONSchemaVersion, func() bool { return jsonOut }))
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit a structured JSON result")
 	return cmd
 }
@@ -59,6 +61,9 @@ func runShow(ctx context.Context, cmd *cobra.Command, typeName string, jsonOut b
 		}
 	}
 	if entry == nil {
+		if jsonOut {
+			return camperrors.NewNotFound("workflow", typeName, nil)
+		}
 		fmt.Fprintf(cmd.ErrOrStderr(), "unknown workflow type: %s\n", typeName)
 		return errWorkflowNotFound
 	}

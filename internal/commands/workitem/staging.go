@@ -50,8 +50,8 @@ type PlanOptions struct {
 
 // SkippedEntry pairs a path with a stable reason string.
 type SkippedEntry struct {
-	Path   string
-	Reason string
+	Path   string `json:"path"`
+	Reason string `json:"reason"`
 }
 
 // StagingPlan is the contract between ComputePlan and the commit runner. Stage

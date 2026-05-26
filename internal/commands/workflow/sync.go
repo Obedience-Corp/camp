@@ -12,6 +12,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	navindex "github.com/Obedience-Corp/camp/internal/nav/index"
 )
 
@@ -37,11 +38,12 @@ func newSyncCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "sync",
 		Short: "Repair auto-fixable doctor findings",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		Args:  jsoncontract.Args(JSONSchemaVersion, func() bool { return jsonOut }, cobra.NoArgs),
+		RunE: jsoncontract.RunE(JSONSchemaVersion, func() bool { return jsonOut }, func(cmd *cobra.Command, args []string) error {
 			return runSync(cmd.Context(), cmd, apply, jsonOut)
-		},
+		}),
 	}
+	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(JSONSchemaVersion, func() bool { return jsonOut }))
 	cmd.Flags().BoolVar(&apply, "apply", false, "perform writes (default: report only)")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit a structured JSON result")
 	return cmd

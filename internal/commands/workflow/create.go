@@ -7,6 +7,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/pathsafe"
 )
 
@@ -32,8 +33,8 @@ func newCreateCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create <type>",
 		Short: "Create a custom workflow collection",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		Args:  jsoncontract.Args(JSONSchemaVersion, func() bool { return jsonOut }, cobra.ExactArgs(1)),
+		RunE: jsoncontract.RunE(JSONSchemaVersion, func() bool { return jsonOut }, func(cmd *cobra.Command, args []string) error {
 			return runCreate(cmd.Context(), cmd, createOptions{
 				Type:     args[0],
 				Shortcut: shortcut,
@@ -42,15 +43,15 @@ func newCreateCommand() *cobra.Command {
 				DryRun:   dryRun,
 				JSON:     jsonOut,
 			})
-		},
+		}),
 	}
+	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(JSONSchemaVersion, func() bool { return jsonOut }))
 
 	cmd.Flags().StringVar(&shortcut, "shortcut", "", "navigation shortcut for this workflow")
 	cmd.Flags().StringVar(&title, "title", "", "human-readable workflow title")
 	cmd.Flags().BoolVar(&replace, "replace", false, "replace an existing shortcut or concept with the same name")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report planned writes without modifying the filesystem")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit a structured JSON result")
-	_ = cmd.MarkFlagRequired("shortcut")
 
 	return cmd
 }
@@ -104,6 +105,9 @@ type createPlan struct {
 func runCreate(ctx context.Context, cmd *cobra.Command, opts createOptions) error {
 	if err := validatePathSegment("type", opts.Type); err != nil {
 		return err
+	}
+	if opts.Shortcut == "" {
+		return camperrors.NewValidation("shortcut", "shortcut is required (use --shortcut <key>)", nil)
 	}
 	if err := validatePathSegment("shortcut", opts.Shortcut); err != nil {
 		return err

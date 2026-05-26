@@ -12,6 +12,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/resolver"
 )
@@ -24,16 +25,21 @@ func newResolveCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "resolve",
 		Short: "Print the workitem the current context resolves to (read-only)",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		Args:  jsoncontract.Args(WorkitemResolveJSONVersion, func() bool { return jsonOut }, cobra.NoArgs),
+		Annotations: map[string]string{
+			"agent_allowed": "true",
+			"agent_reason":  "Read-only context resolution with --json output for automation",
+		},
+		RunE: jsoncontract.RunE(WorkitemResolveJSONVersion, func() bool { return jsonOut }, func(cmd *cobra.Command, args []string) error {
 			return runResolve(cmd.Context(), cmd, resolveOptions{
 				Explicit:   explicit,
 				FestivalID: festival,
 				JSON:       jsonOut,
 				Explain:    explain,
 			})
-		},
+		}),
 	}
+	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(WorkitemResolveJSONVersion, func() bool { return jsonOut }))
 	cmd.Flags().StringVar(&explicit, "workitem", "", "explicit workitem selector (overrides cwd-based detection)")
 	cmd.Flags().StringVar(&festival, "festival", "", "festival id for the festival tier")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit a structured JSON result")
@@ -103,7 +109,7 @@ func emitResolveJSON(w io.Writer, res *resolver.Resolution) error {
 		GeneratedAt   time.Time            `json:"generated_at"`
 		Resolution    *resolver.Resolution `json:"resolution"`
 	}{
-		SchemaVersion: "workitem-resolve/v1alpha1",
+		SchemaVersion: WorkitemResolveJSONVersion,
 		GeneratedAt:   time.Now().UTC(),
 		Resolution:    res,
 	})

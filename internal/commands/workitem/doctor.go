@@ -17,6 +17,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/quest"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
@@ -55,20 +56,26 @@ type docFinding struct {
 
 // errDoctorIssues triggers a non-zero exit from cobra after we have already
 // emitted findings.
-var errDoctorIssues = camperrors.NewValidation("doctor", "doctor reported error-severity findings", nil)
+var errDoctorIssues = camperrors.NewCommand(
+	"camp workitem doctor",
+	2,
+	"doctor reported error-severity findings",
+	nil,
+)
 
 func newDoctorCommand() *cobra.Command {
 	var jsonOut, fix bool
 	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Report workitem link-registry health issues",
-		Args:  cobra.NoArgs,
+		Args:  jsoncontract.Args(WorkitemDoctorJSONVersion, func() bool { return jsonOut }, cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDoctor(cmd.Context(), cmd, jsonOut, fix)
 		},
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
+	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(WorkitemDoctorJSONVersion, func() bool { return jsonOut }))
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit a structured JSON result")
 	cmd.Flags().BoolVar(&fix, "fix", false, "auto-repair findings tagged auto_fixable")
 	return cmd
@@ -77,11 +84,11 @@ func newDoctorCommand() *cobra.Command {
 func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut, fix bool) error {
 	_, root, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return renderWorkitemDoctorError(cmd, jsonOut, camperrors.Wrap(err, "not in a campaign directory"))
 	}
 	knownIDs, err := workitemIDsOnDisk(ctx, root)
 	if err != nil {
-		return err
+		return renderWorkitemDoctorError(cmd, jsonOut, err)
 	}
 
 	var findings []docFinding
@@ -89,7 +96,7 @@ func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut, fix bool) error
 		if _, loadErr := links.Load(ctx, root); loadErr != nil {
 			quarantined, qerr := links.QuarantineBroken(ctx, root)
 			if qerr != nil {
-				return camperrors.Wrap(qerr, "quarantine broken registry")
+				return renderWorkitemDoctorError(cmd, jsonOut, camperrors.Wrap(qerr, "quarantine broken registry"))
 			}
 			if quarantined != "" {
 				fmt.Fprintf(cmd.ErrOrStderr(),
@@ -108,7 +115,7 @@ func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut, fix bool) error
 			return nil
 		})
 		if err != nil {
-			return err
+			return renderWorkitemDoctorError(cmd, jsonOut, err)
 		}
 	} else {
 		registry, loadErr := links.Load(ctx, root)
@@ -145,6 +152,13 @@ func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut, fix bool) error
 		return errDoctorIssues
 	}
 	return nil
+}
+
+func renderWorkitemDoctorError(cmd *cobra.Command, jsonOut bool, err error) error {
+	if err == nil || !jsonOut {
+		return err
+	}
+	return jsoncontract.RenderError(cmd, WorkitemDoctorJSONVersion, err)
 }
 
 func collectWorkitemFindings(ctx context.Context, root string, registry *links.Links, knownIDs map[string]struct{}) []docFinding {
@@ -374,7 +388,7 @@ func emitDocJSON(w io.Writer, findings []docFinding) error {
 		WarningCount  int          `json:"warning_count"`
 		InfoCount     int          `json:"info_count"`
 	}{
-		SchemaVersion: "workitem-doctor/v1alpha1",
+		SchemaVersion: WorkitemDoctorJSONVersion,
 		GeneratedAt:   time.Now().UTC(),
 		Findings:      findings,
 	}

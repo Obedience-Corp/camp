@@ -12,6 +12,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 )
 
 func newListCommand() *cobra.Command {
@@ -19,11 +20,12 @@ func newListCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List user-created workflow collections",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		Args:  jsoncontract.Args(JSONSchemaVersion, func() bool { return jsonOut }, cobra.NoArgs),
+		RunE: jsoncontract.RunE(JSONSchemaVersion, func() bool { return jsonOut }, func(cmd *cobra.Command, args []string) error {
 			return runList(cmd.Context(), cmd, jsonOut)
-		},
+		}),
 	}
+	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(JSONSchemaVersion, func() bool { return jsonOut }))
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit a structured JSON result")
 	return cmd
 }

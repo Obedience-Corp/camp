@@ -12,6 +12,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
 )
 
@@ -23,8 +24,12 @@ func newUnlinkCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "unlink [selector] [path]",
 		Short: "Remove one or more workitem links",
-		Args:  cobra.RangeArgs(0, 2),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		Args:  jsoncontract.Args(links.LinksSchemaVersion, func() bool { return jsonOut }, cobra.RangeArgs(0, 2)),
+		Annotations: map[string]string{
+			"agent_allowed": "true",
+			"agent_reason":  "Removes workitem links with --json output for automation",
+		},
+		RunE: jsoncontract.RunE(links.LinksSchemaVersion, func() bool { return jsonOut }, func(cmd *cobra.Command, args []string) error {
 			selectorArg := ""
 			path := ""
 			if len(args) >= 1 {
@@ -43,8 +48,9 @@ func newUnlinkCommand() *cobra.Command {
 				All:          all,
 				JSON:         jsonOut,
 			})
-		},
+		}),
 	}
+	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(links.LinksSchemaVersion, func() bool { return jsonOut }))
 	cmd.Flags().StringVar(&id, "id", "", "remove the link with this lnk_ id")
 	cmd.Flags().StringVar(&project, "project", "", "project scope filter")
 	cmd.Flags().StringVar(&festival, "festival", "", "festival scope filter")

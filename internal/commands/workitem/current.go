@@ -11,6 +11,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
 )
 
@@ -19,15 +20,20 @@ func newCurrentCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "current [selector]",
 		Short: "Get, set, or clear the local current workitem",
-		Args:  cobra.RangeArgs(0, 1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		Args:  jsoncontract.Args(links.CurrentSchemaVersion, func() bool { return jsonOut }, cobra.RangeArgs(0, 1)),
+		Annotations: map[string]string{
+			"agent_allowed": "true",
+			"agent_reason":  "Gets or sets current workitem with --json output for automation",
+		},
+		RunE: jsoncontract.RunE(links.CurrentSchemaVersion, func() bool { return jsonOut }, func(cmd *cobra.Command, args []string) error {
 			selectorArg := ""
 			if len(args) == 1 {
 				selectorArg = args[0]
 			}
 			return runCurrent(cmd.Context(), cmd, selectorArg, clear, jsonOut)
-		},
+		}),
 	}
+	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(links.CurrentSchemaVersion, func() bool { return jsonOut }))
 	cmd.Flags().BoolVar(&clear, "clear", false, "remove the local current.yaml selection")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit a structured JSON result")
 	return cmd
