@@ -4,6 +4,7 @@
 package integration
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -214,6 +215,148 @@ func TestIntegration_WorkitemCommits_CrossRepo(t *testing.T) {
 		assert.Contains(t, jsonOut, "\"repo\": \"projects/"+repoName+"\"",
 			"JSON missing repo field for %s:\n%s", repoName, jsonOut)
 	}
+}
+
+func TestIntegration_WorkitemCommit_RefusesDirtyIndex(t *testing.T) {
+	tc := GetSharedContainer(t)
+	dir := "/test/wi-commit-dirty"
+	initWorkitemCommitCampaign(t, tc, dir)
+	_ = seedDesignWorkitemWithRef(t, tc, dir, "timeline")
+
+	require.NoError(t, tc.WriteFile(dir+"/junk.txt", "leftover from earlier\n"))
+	_, _, err := tc.ExecCommand("git", "-C", dir, "add", "junk.txt")
+	require.NoError(t, err)
+
+	indexBefore, _, ierr := tc.ExecCommand("git", "-C", dir, "diff", "--cached", "--name-only")
+	require.NoError(t, ierr)
+
+	out, _, err := tc.ExecCommand("sh", "-c",
+		"cd "+dir+" && /camp workitem commit timeline -m 'design: should refuse' 2>&1; echo EXIT=$?")
+	require.NoError(t, err)
+	assert.Contains(t, out, "git reset HEAD",
+		"refusal must point user at git reset HEAD (NOT --hard): %s", out)
+	assert.NotContains(t, out, "EXIT=0",
+		"commit must NOT succeed when index is dirty: %s", out)
+
+	indexAfter, _, ierr := tc.ExecCommand("git", "-C", dir, "diff", "--cached", "--name-only")
+	require.NoError(t, ierr)
+	assert.Equal(t, strings.TrimSpace(indexBefore), strings.TrimSpace(indexAfter),
+		"index must be unchanged after the refusal (no staging happened)")
+
+	stagedOut, err := tc.RunCampInDir(dir, "workitem", "commit", "timeline",
+		"-m", "design: explicit staged", "--staged")
+	require.NoError(t, err, "--staged escape hatch must succeed: %s", stagedOut)
+}
+
+func TestIntegration_WorkitemCommit_StagedLinkedProject(t *testing.T) {
+	tc := GetSharedContainer(t)
+	dir := "/test/wi-commit-staged-linked"
+	initWorkitemCommitCampaign(t, tc, dir)
+	ref := seedDesignWorkitemWithRef(t, tc, dir, "timeline")
+
+	projDir := dir + "/projects/camp-timeline"
+	require.NoError(t, tc.CreateGitRepo(projDir))
+	_, err := tc.RunCampInDir(dir, "workitem", "link", "timeline", "--project", "camp-timeline")
+	require.NoError(t, err)
+
+	rootHead, _, herr := tc.ExecCommand("git", "-C", dir, "rev-parse", "HEAD")
+	require.NoError(t, herr)
+	rootHead = strings.TrimSpace(rootHead)
+
+	require.NoError(t, tc.WriteFile(projDir+"/foo.go", "package x\n"))
+	_, _, err = tc.ExecCommand("git", "-C", projDir, "add", "foo.go")
+	require.NoError(t, err)
+
+	out, err := tc.RunCampInDir(projDir, "workitem", "commit",
+		"--workitem", "timeline", "--staged", "-m", "feat: staged")
+	require.NoError(t, err, "workitem commit --staged: %s", out)
+
+	projHead, _, herr := tc.ExecCommand("git", "-C", projDir, "log", "-1", "--pretty=%H %s")
+	require.NoError(t, herr)
+	assert.Contains(t, projHead, "WI-"+ref,
+		"submodule HEAD must include WI-<ref>: %s", projHead)
+
+	rootHeadAfter, _, herr := tc.ExecCommand("git", "-C", dir, "rev-parse", "HEAD")
+	require.NoError(t, herr)
+	assert.Equal(t, rootHead, strings.TrimSpace(rootHeadAfter),
+		"campaign root HEAD must not advance when --staged was routed through the submodule")
+}
+
+func TestIntegration_WorkitemCommit_JSONSchemaVersion(t *testing.T) {
+	tc := GetSharedContainer(t)
+	dir := "/test/wi-commit-json-schema"
+	initWorkitemCommitCampaign(t, tc, dir)
+	_ = seedDesignWorkitemWithRef(t, tc, dir, "timeline")
+
+	require.NoError(t, tc.WriteFile(dir+"/workflow/design/timeline/notes.md", "notes\n"))
+
+	out, err := tc.RunCampInDir(dir, "workitem", "commit", "timeline",
+		"-m", "design: timeline notes", "--json")
+	require.NoError(t, err, "workitem commit --json: %s", out)
+	jsonStart := strings.Index(out, "{")
+	require.GreaterOrEqual(t, jsonStart, 0, "no JSON object in output: %s", out)
+	payload := out[jsonStart:]
+
+	var got struct {
+		SchemaVersion string `json:"schema_version"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(payload), &got), "parse: %s", payload)
+	assert.Equal(t, "workitem-commit/v1", got.SchemaVersion,
+		"workitem commit --json must declare schema_version=workitem-commit/v1, got: %s", payload)
+}
+
+func TestIntegration_WorkitemCommits_JSONSchemaVersion(t *testing.T) {
+	tc := GetSharedContainer(t)
+	dir := "/test/wi-commits-json-schema"
+	initWorkitemCommitCampaign(t, tc, dir)
+	_ = seedDesignWorkitemWithRef(t, tc, dir, "timeline")
+
+	out, err := tc.RunCampInDir(dir, "workitem", "commits", "timeline", "--json")
+	require.NoError(t, err, "workitem commits --json: %s", out)
+	jsonStart := strings.Index(out, "{")
+	require.GreaterOrEqual(t, jsonStart, 0, "no JSON object in output: %s", out)
+	payload := out[jsonStart:]
+
+	var got struct {
+		SchemaVersion string `json:"schema_version"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(payload), &got), "parse: %s", payload)
+	assert.Equal(t, "workitem-commits/v1", got.SchemaVersion,
+		"workitem commits --json must declare schema_version=workitem-commits/v1, got: %s", payload)
+}
+
+func TestIntegration_WorkitemCommit_SymlinkedCampaignRoot(t *testing.T) {
+	tc := GetSharedContainer(t)
+	real := "/test/wi-commit-sym-real"
+	link := "/test/wi-commit-sym-link"
+	initWorkitemCommitCampaign(t, tc, real)
+	ref := seedDesignWorkitemWithRef(t, tc, real, "timeline")
+
+	require.NoError(t, tc.CreateGitRepo(real+"/projects/camp-timeline"))
+	_, err := tc.RunCampInDir(real, "workitem", "link", "timeline", "--project", "camp-timeline")
+	require.NoError(t, err)
+
+	_, code, err := tc.ExecCommand("ln", "-s", real, link)
+	require.NoError(t, err)
+	require.Equal(t, 0, code)
+
+	rootHead, _, herr := tc.ExecCommand("git", "-C", real, "rev-parse", "HEAD")
+	require.NoError(t, herr)
+	rootHead = strings.TrimSpace(rootHead)
+
+	require.NoError(t, tc.WriteFile(real+"/projects/camp-timeline/foo.go", "package x\n"))
+	out, err := tc.RunCampInDir(link+"/projects/camp-timeline",
+		"workitem", "commit", "--workitem", "timeline", "-m", "feat: stub via symlink")
+	require.NoError(t, err, "camp workitem commit via symlink: %s", out)
+
+	subject := lastCommitSubject(t, tc, real+"/projects/camp-timeline")
+	assert.Contains(t, subject, "WI-"+ref,
+		"project subject must include WI-<ref> after symlinked-cwd commit: %s", subject)
+
+	rootHeadAfter, _, herr := tc.ExecCommand("git", "-C", real, "rev-parse", "HEAD")
+	require.NoError(t, herr)
+	assert.Equal(t, rootHead, strings.TrimSpace(rootHeadAfter),
+		"campaign root HEAD must not advance when commit was routed via symlinked cwd")
 }
 
 func TestIntegration_WorkitemCommit_FailureModes(t *testing.T) {

@@ -103,7 +103,16 @@ func Resolve(ctx context.Context, root string, opts Options) (*Resolution, error
 		wi, step, err := tier.fn()
 		result.Trace = append(result.Trace, step)
 		if err != nil {
-			return nil, err
+			// Operational failures (cancellation, registry parse, unexpected
+			// I/O, malformed selector input) bubble up so callers don't get a
+			// silently-misattributed lower-priority workitem. The only
+			// recoverable case is the stale-link condition where a primary
+			// path link points to a workitem that no longer exists; tier
+			// helpers signal that by encoding the failure in step.Result
+			// without returning a non-nil err.
+			result.Source = tier.source
+			result.Reason = firstNonEmpty(step.Detail, err.Error())
+			return result, err
 		}
 		if wi != nil {
 			result.Workitem = wi
@@ -151,7 +160,11 @@ func resolveExplicit(ctx context.Context, root string, opts Options) (*workitem.
 	}
 	wi, err := selector.Resolve(ctx, root, opts.Explicit, selector.ResolveOptions{AllowFuzzy: opts.AllowFuzzy})
 	if err != nil {
-		return nil, TraceStep{Tier: SourceExplicit, Result: "error", Detail: err.Error()}, nil
+		// User asked for an explicit workitem; if we cannot resolve it,
+		// fail loudly rather than fall through to a lower-priority tier
+		// and silently tag against the wrong context.
+		return nil, TraceStep{Tier: SourceExplicit, Result: "error", Detail: err.Error()},
+			camperrors.Wrap(err, "resolve --workitem "+opts.Explicit)
 	}
 	return wi, TraceStep{Tier: SourceExplicit, Result: "match", Detail: wi.Key}, nil
 }
@@ -169,6 +182,14 @@ func resolveAncestor(ctx context.Context, root, cwd string) (*workitem.WorkItem,
 			if err == nil {
 				return wi, TraceStep{Tier: SourceAncestor, Result: "match", Detail: filepath.ToSlash(rel)}, nil
 			}
+			// We found a .workitem on disk but the selector cannot
+			// parse it. Fail loudly rather than skip; a malformed
+			// marker that gets silently bypassed is exactly the
+			// "wrong-context tag" case the reviewer flagged.
+			if !errors.Is(err, selector.ErrSelectorNotFound) {
+				return nil, TraceStep{Tier: SourceAncestor, Result: "error", Detail: err.Error()},
+					camperrors.Wrap(err, "resolve ancestor "+filepath.ToSlash(rel))
+			}
 		}
 		if dir == root || dir == filepath.Dir(dir) {
 			break
@@ -184,7 +205,8 @@ func resolveAncestor(ctx context.Context, root, cwd string) (*workitem.WorkItem,
 func resolveLink(ctx context.Context, root, cwd string) (*workitem.WorkItem, TraceStep, error) {
 	registry, err := links.Load(ctx, root)
 	if err != nil {
-		return nil, TraceStep{Tier: SourceLink, Result: "error", Detail: err.Error()}, nil
+		return nil, TraceStep{Tier: SourceLink, Result: "error", Detail: err.Error()},
+			camperrors.Wrap(err, "load links registry")
 	}
 	rel, err := filepath.Rel(root, cwd)
 	if err != nil || relOutsideRoot(rel) {
@@ -218,16 +240,20 @@ func resolveLink(ctx context.Context, root, cwd string) (*workitem.WorkItem, Tra
 	}
 	wi, err := selector.Resolve(ctx, root, best.WorkitemID, selector.ResolveOptions{})
 	if err != nil {
-		detail := "primary link " + best.ID + " points to missing workitem " + best.WorkitemID
-		if !errors.Is(err, selector.ErrSelectorNotFound) {
-			detail = "primary link " + best.ID + " could not resolve workitem " + best.WorkitemID + ": " + err.Error()
+		// Stale-link: the registry references a workitem that no longer
+		// exists on disk. Record the diagnostic and let the orchestrator
+		// fall through to the next tier. Any other selector failure is
+		// returned so the caller sees the operational problem.
+		if errors.Is(err, selector.ErrSelectorNotFound) {
+			return nil, TraceStep{
+				Tier:   SourceLink,
+				Result: "error",
+				Detail: "primary link " + best.ID + " points to missing workitem " + best.WorkitemID,
+			}, nil
 		}
-		step := TraceStep{
-			Tier:   SourceLink,
-			Result: "error",
-			Detail: detail,
-		}
-		return nil, step, camperrors.NewValidation("workitem_link", detail, err)
+		detail := "primary link " + best.ID + " could not resolve workitem " + best.WorkitemID + ": " + err.Error()
+		return nil, TraceStep{Tier: SourceLink, Result: "error", Detail: detail},
+			camperrors.NewValidation("workitem_link", detail, err)
 	}
 	return wi, TraceStep{
 		Tier:   SourceLink,
@@ -242,7 +268,8 @@ func resolveFestival(ctx context.Context, root, festivalID string) (*workitem.Wo
 	}
 	registry, err := links.Load(ctx, root)
 	if err != nil {
-		return nil, TraceStep{Tier: SourceFestival, Result: "error", Detail: err.Error()}, nil
+		return nil, TraceStep{Tier: SourceFestival, Result: "error", Detail: err.Error()},
+			camperrors.Wrap(err, "load links registry")
 	}
 	for i := range registry.Links {
 		link := &registry.Links[i]
@@ -260,6 +287,14 @@ func resolveFestival(ctx context.Context, root, festivalID string) (*workitem.Wo
 				Detail: "via link " + link.ID + " on festival " + link.Scope.Path,
 			}, nil
 		}
+		// Stale-link parallel of the path-link case: continue looking for
+		// other festival links if this one points to a missing workitem.
+		// Anything other than ErrSelectorNotFound is operational and bubbles up.
+		if !errors.Is(err, selector.ErrSelectorNotFound) {
+			detail := "festival link " + link.ID + " could not resolve workitem " + link.WorkitemID + ": " + err.Error()
+			return nil, TraceStep{Tier: SourceFestival, Result: "error", Detail: detail},
+				camperrors.NewValidation("festival_link", detail, err)
+		}
 	}
 	return nil, TraceStep{Tier: SourceFestival, Result: "miss", Detail: "no festival link matches " + festivalID}, nil
 }
@@ -267,14 +302,29 @@ func resolveFestival(ctx context.Context, root, festivalID string) (*workitem.Wo
 func resolveCurrent(ctx context.Context, root string) (*workitem.WorkItem, TraceStep, error) {
 	cur, err := links.LoadCurrent(ctx, root)
 	if err != nil {
-		return nil, TraceStep{Tier: SourceCurrent, Result: "error", Detail: err.Error()}, nil
+		return nil, TraceStep{Tier: SourceCurrent, Result: "error", Detail: err.Error()},
+			camperrors.Wrap(err, "load current.yaml")
 	}
 	if cur == nil {
 		return nil, TraceStep{Tier: SourceCurrent, Result: "skip", Detail: "no current.yaml"}, nil
 	}
 	wi, err := selector.Resolve(ctx, root, cur.WorkitemID, selector.ResolveOptions{})
 	if err != nil {
-		return nil, TraceStep{Tier: SourceCurrent, Result: "error", Detail: err.Error()}, nil
+		// Stale current selection: file points to a workitem that no
+		// longer exists. Record the diagnostic and let the orchestrator
+		// fall through; current is the lowest-priority tier so any
+		// match below it (none in practice today) would be acceptable.
+		// Any other failure is operational.
+		if errors.Is(err, selector.ErrSelectorNotFound) {
+			return nil, TraceStep{
+				Tier:   SourceCurrent,
+				Result: "error",
+				Detail: "current.yaml points to missing workitem " + cur.WorkitemID,
+			}, nil
+		}
+		detail := "current.yaml could not resolve workitem " + cur.WorkitemID + ": " + err.Error()
+		return nil, TraceStep{Tier: SourceCurrent, Result: "error", Detail: detail},
+			camperrors.NewValidation("current_workitem", detail, err)
 	}
 	return wi, TraceStep{Tier: SourceCurrent, Result: "match", Detail: "via current.yaml"}, nil
 }

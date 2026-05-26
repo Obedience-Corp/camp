@@ -97,6 +97,17 @@ func TestSaveLoadRoundTrip_ExampleLinksFixture(t *testing.T) {
 	in := loadFixture(t, "example_links.yaml")
 	seedScopeTargets(t, root, in)
 
+	fixtureNow, err := time.Parse(time.RFC3339, "2026-05-24T22:00:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if errs := Validate(context.Background(), in, ValidateOptions{
+		CampaignRoot: root,
+		Now:          fixtureNow,
+	}); len(errs) > 0 {
+		t.Fatalf("example_links.yaml fixture fails its own schema: %+v", errs)
+	}
+
 	if err := Save(context.Background(), root, in); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -368,7 +379,7 @@ func TestSave_ConcurrentInvocationsDoNotCorrupt(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	const workers = 2
+	const workers = 20
 	var wg sync.WaitGroup
 	errs := make(chan error, workers)
 	for i := 0; i < workers; i++ {
@@ -377,21 +388,18 @@ func TestSave_ConcurrentInvocationsDoNotCorrupt(t *testing.T) {
 			defer wg.Done()
 			link := makeValidLink(t, root)
 			link.ID = fmt.Sprintf("lnk_20260524_%06x", i+0xabcd00)
-			link.Role = RoleRelated // avoid primary collisions between workers
-			existing, err := Load(context.Background(), root)
-			if err != nil {
-				errs <- err
-				return
-			}
-			_ = existing.AddLink(link, false)
-			errs <- Save(context.Background(), root, existing)
+			link.Role = RoleRelated
+			err := WithLock(context.Background(), root, func(registry *Links) error {
+				return registry.AddLink(link, false)
+			})
+			errs <- err
 		}(i)
 	}
 	wg.Wait()
 	close(errs)
 	for e := range errs {
 		if e != nil {
-			t.Fatalf("concurrent Save: %v", e)
+			t.Fatalf("concurrent WithLock: %v", e)
 		}
 	}
 
@@ -399,10 +407,18 @@ func TestSave_ConcurrentInvocationsDoNotCorrupt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load after concurrent: %v", err)
 	}
-	// At least one link present (one of the writers won the last-writer-wins
-	// race); the file is valid YAML and parses cleanly.
-	if len(got.Links) == 0 {
-		t.Fatal("expected at least one link after concurrent saves")
+	if len(got.Links) != workers {
+		t.Fatalf("expected %d links after concurrent WithLock writers, got %d", workers, len(got.Links))
+	}
+	seen := make(map[string]bool, workers)
+	for _, l := range got.Links {
+		seen[l.ID] = true
+	}
+	for i := 0; i < workers; i++ {
+		id := fmt.Sprintf("lnk_20260524_%06x", i+0xabcd00)
+		if !seen[id] {
+			t.Errorf("missing link %s after concurrent writers", id)
+		}
 	}
 }
 

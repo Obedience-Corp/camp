@@ -10,7 +10,7 @@ links:
     created_at: 2026-05-24T19:00:00Z
     created_by: camp_workitem_link
 
-  - id: lnk_20260524_ef34gh
+  - id: lnk_20260524_ef34ab
     workitem_id: design-camp-timeline-2026-05-19
     workitem_key: design:workflow/design/camp-timeline
     scope:

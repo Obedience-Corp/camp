@@ -126,6 +126,18 @@ func TestParseTag_KnownCombinations(t *testing.T) {
 			subject:      "no tag here at all",
 			wantCampaign: "",
 		},
+		{
+			subject:      `Revert "[OBEY-CAMPAIGN-8deed8b4-WI-WI-fake01] feat: x"`,
+			wantCampaign: "",
+		},
+		{
+			subject:      `chore: backport "[OBEY-CAMPAIGN-8deed8b4-FE-CW0003] feat: y" from main`,
+			wantCampaign: "",
+		},
+		{
+			subject:      "[OBEY-CAMPAIGN-8deed8b4-BOGUS-WI-WI-abcdef] x",
+			wantCampaign: "8deed8b4", wantWorkitem: "WI-abcdef",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.subject, func(t *testing.T) {
@@ -176,6 +188,126 @@ func TestParseTag_RoundTripProperty(t *testing.T) {
 		}
 		if got.WorkitemRef != workitem {
 			t.Fatalf("iter %d: workitem round-trip broke: %q -> %q (tag %q)", i, workitem, got.WorkitemRef, tag)
+		}
+	}
+}
+
+func TestParseTag_AnchoringAdversarial(t *testing.T) {
+	cases := []struct {
+		name       string
+		subject    string
+		wantParsed bool
+		wantID     string
+		wantWIRef  string
+	}{
+		{name: "happy path leading tag", subject: "[OBEY-CAMPAIGN-abcd1234-WI-WI-deadbe] feat: X", wantParsed: true, wantID: "abcd1234", wantWIRef: "WI-deadbe"},
+		{name: "revert subject", subject: `Revert "[OBEY-CAMPAIGN-abcd1234] feat: X"`, wantParsed: false},
+		{name: "leading whitespace", subject: " [OBEY-CAMPAIGN-abcd1234] x", wantParsed: false},
+		{name: "embedded mid-subject", subject: "fix: tag was [OBEY-CAMPAIGN-abcd1234] in old log", wantParsed: false},
+		{name: "tag inside backticks", subject: "docs: example `[OBEY-CAMPAIGN-abcd1234]`", wantParsed: false},
+		{name: "two tags only the leading wins", subject: "[OBEY-CAMPAIGN-aaaaaaaa] body [OBEY-CAMPAIGN-bbbbbbbb]", wantParsed: true, wantID: "aaaaaaaa"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ParseTag(tc.subject)
+			if tc.wantParsed {
+				if got.CampaignID != tc.wantID {
+					t.Fatalf("CampaignID: want %q, got %q", tc.wantID, got.CampaignID)
+				}
+				if tc.wantWIRef != "" && got.WorkitemRef != tc.wantWIRef {
+					t.Fatalf("WorkitemRef: want %q, got %q", tc.wantWIRef, got.WorkitemRef)
+				}
+			} else if got != (TagComponents{}) {
+				t.Fatalf("expected zero-value TagComponents for non-leading tag, got %+v", got)
+			}
+		})
+	}
+}
+
+func TestParseTagDetailed_RejectsSilentMerge(t *testing.T) {
+	cases := []struct {
+		name             string
+		subject          string
+		wantCampaign     string
+		wantQuest        string
+		wantFest         string
+		wantWorkitem     string
+		wantWarningField []string
+	}{
+		{
+			name:             "duplicate FE second is warned not overwritten",
+			subject:          "[OBEY-CAMPAIGN-abc-FE-CW0003-FE-SE0001] x",
+			wantCampaign:     "abc",
+			wantFest:         "CW0003",
+			wantWarningField: []string{"fest_ref"},
+		},
+		{
+			name:             "duplicate quest both fail shape both warned",
+			subject:          "[OBEY-CAMPAIGN-abc-qst_xyz-qst_abc] x",
+			wantCampaign:     "abc",
+			wantQuest:        "qst_xyz",
+			wantWarningField: []string{"quest_id"},
+		},
+		{
+			name:             "workitem shape failure zeroes ref",
+			subject:          "[OBEY-CAMPAIGN-abc-WI-WI-ZZZZ-extra-junk] x",
+			wantCampaign:     "abc",
+			wantWarningField: []string{"workitem_ref"},
+		},
+		{
+			name:             "unknown segment then valid WI still recovers",
+			subject:          "[OBEY-CAMPAIGN-abc-unknown-WI-WI-aaa111] x",
+			wantCampaign:     "abc",
+			wantWorkitem:     "WI-aaa111",
+			wantWarningField: []string{"unknown"},
+		},
+		{
+			name:             "valid FE then unknown extra then valid WI",
+			subject:          "[OBEY-CAMPAIGN-abc-FE-CW0003-extra-WI-WI-aaa111] x",
+			wantCampaign:     "abc",
+			wantFest:         "CW0003",
+			wantWorkitem:     "WI-aaa111",
+			wantWarningField: []string{"unknown"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, warnings := ParseTagDetailed(tc.subject)
+			if got.CampaignID != tc.wantCampaign {
+				t.Errorf("CampaignID = %q, want %q", got.CampaignID, tc.wantCampaign)
+			}
+			if got.QuestID != tc.wantQuest {
+				t.Errorf("QuestID = %q, want %q", got.QuestID, tc.wantQuest)
+			}
+			if got.FestRef != tc.wantFest {
+				t.Errorf("FestRef = %q, want %q", got.FestRef, tc.wantFest)
+			}
+			if got.WorkitemRef != tc.wantWorkitem {
+				t.Errorf("WorkitemRef = %q, want %q", got.WorkitemRef, tc.wantWorkitem)
+			}
+			if len(warnings) != len(tc.wantWarningField) {
+				t.Fatalf("warnings count = %d, want %d: %+v",
+					len(warnings), len(tc.wantWarningField), warnings)
+			}
+			for i, want := range tc.wantWarningField {
+				if warnings[i].Field != want {
+					t.Errorf("warning[%d].Field = %q, want %q", i, warnings[i].Field, want)
+				}
+			}
+		})
+	}
+}
+
+func TestTagBodyScanRegex_FindsEmbedded(t *testing.T) {
+	subject := "body has [OBEY-CAMPAIGN-aaa] and [OBEY-CAMPAIGN-bbb]"
+	matches := tagBodyScanRegex.FindAllString(subject, -1)
+	if len(matches) != 2 {
+		t.Fatalf("expected 2 matches from body-scan regex, got %d: %v", len(matches), matches)
+	}
+	want := []string{"[OBEY-CAMPAIGN-aaa]", "[OBEY-CAMPAIGN-bbb]"}
+	for i, m := range matches {
+		if m != want[i] {
+			t.Errorf("match[%d] = %q, want %q", i, m, want[i])
 		}
 	}
 }

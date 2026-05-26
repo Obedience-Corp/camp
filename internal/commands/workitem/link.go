@@ -107,35 +107,38 @@ func runLink(ctx context.Context, cmd *cobra.Command, opts linkOptions) error {
 		}
 	}
 
-	registry, err := links.Load(ctx, root)
+	var link links.Link
+	err = links.WithLock(ctx, root, func(registry *links.Links) error {
+		// Generate the ID inside the lock so the collision retry sees
+		// the current registry state, not a stale snapshot.
+		id, idErr := generateLinkID(registry)
+		if idErr != nil {
+			return idErr
+		}
+		link = links.Link{
+			ID:          id,
+			WorkitemID:  workitemIDForLink(wi, opts),
+			WorkitemKey: workitemKeyForLink(wi),
+			Scope:       *scope,
+			Role:        role,
+			CreatedAt:   time.Now().UTC().Truncate(time.Second),
+			CreatedBy:   defaultCreatedBy(),
+		}
+		if err := registry.AddLink(link, opts.Replace); err != nil {
+			return err
+		}
+		knownIDs := workitemIDSetFromMaybeNil(wi, opts.AllowMissing)
+		if errs := links.Validate(ctx, registry, links.ValidateOptions{
+			CampaignRoot: root,
+			WorkitemIDs:  knownIDs,
+			AllowMissing: opts.AllowMissing,
+			Now:          link.CreatedAt,
+		}); len(errs) > 0 {
+			return camperrors.NewValidation(errs[0].Field, errs[0].Message, nil)
+		}
+		return nil
+	})
 	if err != nil {
-		return err
-	}
-
-	link := links.Link{
-		ID:          generateLinkID(),
-		WorkitemID:  workitemIDForLink(wi, opts),
-		WorkitemKey: workitemKeyForLink(wi),
-		Scope:       *scope,
-		Role:        role,
-		CreatedAt:   time.Now().UTC().Truncate(time.Second),
-		CreatedBy:   defaultCreatedBy(),
-	}
-	if err := registry.AddLink(link, opts.Replace); err != nil {
-		return err
-	}
-
-	knownIDs := workitemIDSetFromMaybeNil(wi, opts.AllowMissing)
-	if errs := links.Validate(ctx, registry, links.ValidateOptions{
-		CampaignRoot: root,
-		WorkitemIDs:  knownIDs,
-		AllowMissing: opts.AllowMissing,
-		Now:          link.CreatedAt,
-	}); len(errs) > 0 {
-		return camperrors.NewValidation(errs[0].Field, errs[0].Message, nil)
-	}
-
-	if err := links.Save(ctx, root, registry); err != nil {
 		return err
 	}
 
@@ -290,19 +293,29 @@ func emitLinkJSON(w io.Writer, link links.Link) error {
 	})
 }
 
-func generateLinkID() string {
-	// Local-only ID generator: yyyymmdd + 6 hex bytes of randomness.
-	// crypto/rand keeps the per-day collision domain wide.
-	var b [3]byte
-	if _, err := readRand(b[:]); err != nil {
-		// In the unlikely case of rand failure, fall back to a time-derived
-		// suffix so we still produce a valid ID rather than abort the link.
-		return fmt.Sprintf("lnk_%s_%06x",
-			time.Now().UTC().Format("20060102"),
-			time.Now().UnixNano()&0xffffff)
+// generateLinkID returns a fresh lnk_YYYYMMDD_<6 hex> ID that does not
+// collide with any existing entry in registry. Retries up to 32 times against
+// crypto/rand per SCHEMA.md §4; returns an error rather than falling back to
+// a wall-clock suffix because a non-unique ID corrupts the registry's primary
+// key invariant.
+func generateLinkID(registry *links.Links) (string, error) {
+	existing := make(map[string]struct{}, len(registry.Links))
+	for _, l := range registry.Links {
+		existing[l.ID] = struct{}{}
 	}
-	return fmt.Sprintf("lnk_%s_%02x%02x%02x",
-		time.Now().UTC().Format("20060102"), b[0], b[1], b[2])
+	const maxAttempts = 32
+	for i := 0; i < maxAttempts; i++ {
+		var b [3]byte
+		if _, err := readRand(b[:]); err != nil {
+			return "", camperrors.Wrap(err, "generate link id: read random bytes")
+		}
+		candidate := fmt.Sprintf("lnk_%s_%02x%02x%02x",
+			time.Now().UTC().Format("20060102"), b[0], b[1], b[2])
+		if _, clash := existing[candidate]; !clash {
+			return candidate, nil
+		}
+	}
+	return "", camperrors.New(fmt.Sprintf("generate link id: %d-attempt collision retry exhausted", maxAttempts))
 }
 
 func isValidRole(r links.Role) bool {

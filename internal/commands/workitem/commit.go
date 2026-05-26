@@ -124,6 +124,16 @@ func runCommit(ctx context.Context, cmd *cobra.Command, flags commitFlags) error
 		return err
 	}
 
+	for _, w := range plan.Warnings {
+		fmt.Fprintln(cmd.ErrOrStderr(), "warning: "+w)
+	}
+
+	if !flags.Staged && !flags.DryRun {
+		if err := assertCleanIndex(ctx, plan.RepoRoot); err != nil {
+			return err
+		}
+	}
+
 	if !flags.JSON {
 		if perr := PrintPlan(cmd.ErrOrStderr(), plan); perr != nil {
 			return perr
@@ -157,7 +167,7 @@ func runCommit(ctx context.Context, cmd *cobra.Command, flags commitFlags) error
 		Title:       flags.Message,
 	})
 	if res.Err != nil {
-		return res.Err
+		return camperrors.Wrap(res.Err, "commit workitem")
 	}
 	if res.NoChanges {
 		if flags.JSON {
@@ -167,7 +177,10 @@ func runCommit(ctx context.Context, cmd *cobra.Command, flags commitFlags) error
 		return nil
 	}
 
-	sha, _ := lastCommitSHA(ctx, plan.RepoRoot)
+	sha, shaErr := lastCommitSHA(ctx, plan.RepoRoot)
+	if shaErr != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not read last commit SHA: %v\n", shaErr)
+	}
 	if flags.JSON {
 		return emitJSON(cmd.OutOrStdout(), plan, sha)
 	}
@@ -175,31 +188,38 @@ func runCommit(ctx context.Context, cmd *cobra.Command, flags commitFlags) error
 	return nil
 }
 
+// WorkitemCommitJSONVersion is the schema version of camp workitem commit --json.
+const WorkitemCommitJSONVersion = "workitem-commit/v1"
+
 func emitJSON(w writeFlusher, plan *StagingPlan, sha string) error {
 	payload := struct {
-		Workitem    string         `json:"workitem"`
-		Ref         string         `json:"workitem_ref,omitempty"`
-		QuestID     string         `json:"quest_id,omitempty"`
-		Tag         string         `json:"tag"`
-		Context     PlanContext    `json:"context"`
-		ContextNote string         `json:"context_note,omitempty"`
-		RepoRoot    string         `json:"repo_root"`
-		Stage       []string       `json:"stage"`
-		PreStaged   []string       `json:"pre_staged,omitempty"`
-		Skip        []SkippedEntry `json:"skip,omitempty"`
-		SHA         string         `json:"sha,omitempty"`
+		SchemaVersion string         `json:"schema_version"`
+		Workitem      string         `json:"workitem"`
+		Ref           string         `json:"workitem_ref,omitempty"`
+		QuestID       string         `json:"quest_id,omitempty"`
+		Tag           string         `json:"tag"`
+		Context       PlanContext    `json:"context"`
+		ContextNote   string         `json:"context_note,omitempty"`
+		RepoRoot      string         `json:"repo_root"`
+		Stage         []string       `json:"stage"`
+		PreStaged     []string       `json:"pre_staged,omitempty"`
+		Skip          []SkippedEntry `json:"skip,omitempty"`
+		SHA           string         `json:"sha,omitempty"`
+		Warnings      []string       `json:"warnings,omitempty"`
 	}{
-		Workitem:    plan.Workitem.StableID,
-		Ref:         plan.WorkitemRef,
-		QuestID:     plan.QuestID,
-		Tag:         plan.Tag,
-		Context:     plan.Context,
-		ContextNote: plan.ContextNote,
-		RepoRoot:    plan.RepoRoot,
-		Stage:       plan.Stage,
-		PreStaged:   plan.PreStaged,
-		Skip:        plan.Skip,
-		SHA:         sha,
+		SchemaVersion: WorkitemCommitJSONVersion,
+		Workitem:      plan.Workitem.StableID,
+		Ref:           plan.WorkitemRef,
+		QuestID:       plan.QuestID,
+		Tag:           plan.Tag,
+		Context:       plan.Context,
+		ContextNote:   plan.ContextNote,
+		RepoRoot:      plan.RepoRoot,
+		Stage:         plan.Stage,
+		PreStaged:     plan.PreStaged,
+		Skip:          plan.Skip,
+		SHA:           sha,
+		Warnings:      plan.Warnings,
 	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
