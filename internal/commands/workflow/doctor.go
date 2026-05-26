@@ -81,7 +81,7 @@ func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut bool) error {
 		return camperrors.Wrap(err, "not in a campaign directory")
 	}
 
-	findings, err := collectFindings(campaignRoot, cfg)
+	findings, err := collectFindings(ctx, campaignRoot, cfg)
 	if err != nil {
 		return err
 	}
@@ -100,7 +100,7 @@ func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut bool) error {
 	return nil
 }
 
-func collectFindings(campaignRoot string, cfg *config.CampaignConfig) ([]finding, error) {
+func collectFindings(ctx context.Context, campaignRoot string, cfg *config.CampaignConfig) ([]finding, error) {
 	var findings []finding
 
 	shortcuts := cfg.Shortcuts()
@@ -218,14 +218,14 @@ func collectFindings(campaignRoot string, cfg *config.CampaignConfig) ([]finding
 			Severity:    severityError,
 			Target:      "shortcut:" + normalized,
 			Message:     fmt.Sprintf("duplicate shortcut keys normalize to %q: %s", normalized, strings.Join(dupes, ", ")),
-			FixHint:     "manually consolidate the entries in .campaign/settings/jumps.yaml; auto-fix keeps the normalized (canonical-case) variant when present, otherwise the lexicographically first variant",
+			FixHint:     "manually consolidate the entries in .campaign/settings/jumps.yaml; auto-fix keeps the normalized (lowercase) form when present, otherwise the lexicographically first variant",
 			AutoFixable: true,
 		})
 	}
 
 	// workflow.cache.stale: nav cache mtime older than newest workflow dir
 	// mtime.
-	if stale, err := isNavCacheStaleForWorkflow(campaignRoot); err != nil {
+	if stale, err := isNavCacheStaleForWorkflow(ctx, campaignRoot); err != nil {
 		return nil, err
 	} else if stale {
 		findings = append(findings, finding{
@@ -247,23 +247,48 @@ func collectFindings(campaignRoot string, cfg *config.CampaignConfig) ([]finding
 	return findings, nil
 }
 
-func isNavCacheStaleForWorkflow(campaignRoot string) (bool, error) {
+const maxWorkflowWalkEntries = 10_000
+
+func isNavCacheStaleForWorkflow(ctx context.Context, campaignRoot string) (bool, error) {
 	idx, err := navindex.Load(campaignRoot)
-	if err != nil {
-		return false, nil
-	}
-	if idx == nil {
+	if err != nil || idx == nil {
 		return false, nil
 	}
 	workflowRoot := filepath.Join(campaignRoot, "workflow")
-	info, err := os.Stat(workflowRoot)
-	if err != nil {
+	if _, err := os.Stat(workflowRoot); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return false, nil
 		}
 		return false, camperrors.Wrap(err, "stat workflow root")
 	}
-	return info.ModTime().After(idx.BuildTime), nil
+
+	stale := false
+	entries := 0
+	walkErr := filepath.WalkDir(workflowRoot, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		entries++
+		if entries > maxWorkflowWalkEntries {
+			return filepath.SkipAll
+		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		if info.ModTime().After(idx.BuildTime) {
+			stale = true
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	if walkErr != nil && !errors.Is(walkErr, filepath.SkipAll) {
+		return false, camperrors.Wrap(walkErr, "walk workflow tree")
+	}
+	return stale, nil
 }
 
 func hasErrorFindings(findings []finding) bool {

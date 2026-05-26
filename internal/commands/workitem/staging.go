@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
@@ -44,6 +45,7 @@ type PlanOptions struct {
 	StagedOnly              bool     // --staged
 	IncludeSubmodulePointer bool     // --include-submodule-pointer
 	CampaignID              string
+	Stderr                  io.Writer // for warning lines from ref backfill (default: os.Stderr)
 }
 
 // SkippedEntry pairs a path with a stable reason string.
@@ -99,14 +101,21 @@ func ComputePlan(ctx context.Context, campaignRoot string, opts PlanOptions) (*S
 	}
 
 	wi := res.Workitem
-	ref := refOf(wi)
+	errw := opts.Stderr
+	if errw == nil {
+		errw = os.Stderr
+	}
+	ref, err := ensureRefForCommit(ctx, campaignRoot, wi, errw)
+	if err != nil {
+		return nil, err
+	}
 	plan := &StagingPlan{
 		Workitem:    wi,
 		WorkitemRef: ref,
 		QuestID:     res.QuestID,
 		Tag:         commitkit.FormatContextTagsFull(opts.CampaignID, res.QuestID, "", ref),
 	}
-	if ref == "" && wi != nil {
+	if ref == "" && wi != nil && wi.ItemKind == wkitem.ItemKindDirectory && wi.StableID != "" {
 		plan.Warnings = append(plan.Warnings,
 			"workitem "+wi.Key+" has no ref field (pre-v1alpha6); commit tag will omit the WI- segment. Run `camp workitem doctor --fix` to backfill.")
 	}

@@ -107,11 +107,6 @@ func runLink(ctx context.Context, cmd *cobra.Command, opts linkOptions) error {
 		}
 	}
 
-	registry, err := links.Load(ctx, root)
-	if err != nil {
-		return err
-	}
-
 	link := links.Link{
 		ID:          generateLinkID(),
 		WorkitemID:  workitemIDForLink(wi, opts),
@@ -121,21 +116,23 @@ func runLink(ctx context.Context, cmd *cobra.Command, opts linkOptions) error {
 		CreatedAt:   time.Now().UTC().Truncate(time.Second),
 		CreatedBy:   defaultCreatedBy(),
 	}
-	if err := registry.AddLink(link, opts.Replace); err != nil {
-		return err
-	}
 
-	knownIDs := workitemIDSetFromMaybeNil(wi, opts.AllowMissing)
-	if errs := links.Validate(ctx, registry, links.ValidateOptions{
-		CampaignRoot: root,
-		WorkitemIDs:  knownIDs,
-		AllowMissing: opts.AllowMissing,
-		Now:          link.CreatedAt,
-	}); len(errs) > 0 {
-		return camperrors.NewValidation(errs[0].Field, errs[0].Message, nil)
-	}
-
-	if err := links.Save(ctx, root, registry); err != nil {
+	err = links.WithLock(ctx, root, func(registry *links.Links) error {
+		if err := registry.AddLink(link, opts.Replace); err != nil {
+			return err
+		}
+		knownIDs := workitemIDSetFromMaybeNil(wi, opts.AllowMissing)
+		if errs := links.Validate(ctx, registry, links.ValidateOptions{
+			CampaignRoot: root,
+			WorkitemIDs:  knownIDs,
+			AllowMissing: opts.AllowMissing,
+			Now:          link.CreatedAt,
+		}); len(errs) > 0 {
+			return camperrors.NewValidation(errs[0].Field, errs[0].Message, nil)
+		}
+		return nil
+	})
+	if err != nil {
 		return err
 	}
 
