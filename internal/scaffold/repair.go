@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/Obedience-Corp/camp/internal/config"
@@ -423,6 +424,16 @@ func computeMiscFileChanges(absDir string, plan *RepairPlan) {
 			Key:         ".campaign/.gitignore",
 			Description: "missing gitignore",
 		})
+	} else if err == nil {
+		raw, readErr := os.ReadFile(gitignorePath)
+		if readErr == nil && !strings.Contains(string(raw), "workitems/current.yaml") {
+			plan.Changes = append(plan.Changes, RepairChange{
+				Type:        RepairModify,
+				Category:    "file",
+				Key:         ".campaign/.gitignore",
+				Description: "missing workitems/current.yaml entry",
+			})
+		}
 	}
 
 	claudePath := filepath.Join(absDir, "CLAUDE.md")
@@ -434,6 +445,26 @@ func computeMiscFileChanges(absDir string, plan *RepairPlan) {
 			Description: "missing symlink",
 		})
 	}
+}
+
+// appendGitignoreEntryIfMissing appends a single line to the campaign
+// .gitignore when the entry is not already present. The operation is
+// append-only and never rewrites the file wholesale.
+func appendGitignoreEntryIfMissing(absDir, entry string) error {
+	gitignorePath := filepath.Join(absDir, config.CampaignDir, ".gitignore")
+	raw, err := os.ReadFile(gitignorePath)
+	if err != nil {
+		return err
+	}
+	if strings.Contains(string(raw), entry) {
+		return nil
+	}
+	suffix := "\n"
+	if len(raw) > 0 && raw[len(raw)-1] != '\n' {
+		suffix = "\n\n"
+	}
+	addition := suffix + "# Per-machine current-workitem selection (do not share across machines)\n" + entry + "\n"
+	return os.WriteFile(gitignorePath, append(raw, []byte(addition)...), 0o644)
 }
 
 // isUserDefined returns true if a shortcut was added by the user (not auto-generated).

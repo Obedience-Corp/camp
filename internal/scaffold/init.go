@@ -325,6 +325,10 @@ workitems/current.yaml
 				return nil, camperrors.Wrap(err, "failed to create .gitignore")
 			}
 			result.FilesCreated = append(result.FilesCreated, ".campaign/.gitignore")
+		} else if opts.Repair {
+			if err := appendGitignoreEntryIfMissing(absDir, "workitems/current.yaml"); err != nil {
+				return nil, camperrors.Wrap(err, "failed to append workitems/current.yaml to .gitignore")
+			}
 		}
 	}
 
