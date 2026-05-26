@@ -91,7 +91,10 @@ func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut, fix bool) error
 				AutoFixable: true,
 			}
 			if jsonOut {
-				return emitDocJSON(cmd.OutOrStdout(), []docFinding{parseFinding})
+				if jerr := emitDocJSON(cmd.OutOrStdout(), []docFinding{parseFinding}); jerr != nil {
+					return jerr
+				}
+				return errDoctorIssues
 			}
 			emitDocHuman(cmd.OutOrStdout(), []docFinding{parseFinding})
 			return camperrors.Wrap(err, "load links registry")

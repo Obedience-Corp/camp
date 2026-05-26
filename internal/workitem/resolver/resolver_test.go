@@ -23,7 +23,10 @@ type: product
 	}
 }
 
-func TestResolve_TierLoadErrorContinues(t *testing.T) {
+func TestResolve_MalformedRegistryReturnsHardError(t *testing.T) {
+	// Reviewer (CW0003 seq-02 re-review): a malformed links.yaml must surface
+	// as an operational failure, not get downgraded to a trace entry that
+	// allows a lower-priority tier to pick a wrong workitem.
 	root := t.TempDir()
 	writeMinimalCampaign(t, root)
 
@@ -37,16 +40,15 @@ func TestResolve_TierLoadErrorContinues(t *testing.T) {
 	}
 
 	got, err := Resolve(context.Background(), root, Options{Cwd: root})
-	if err != nil {
-		t.Fatalf("Resolve should not propagate per-tier load errors, got: %v", err)
+	if err == nil {
+		t.Fatalf("expected hard error for malformed registry, got nil; result=%+v", got)
 	}
 	if got == nil {
-		t.Fatal("Resolve returned nil result")
+		t.Fatal("Resolve should still return a partial result with trace on error")
 	}
-	if got.Source != SourceNone {
-		t.Errorf("Source = %q, want %q", got.Source, SourceNone)
+	if got.Source != SourceLink {
+		t.Errorf("Source should mark the failing tier as link, got %q", got.Source)
 	}
-
 	sawError := false
 	for _, step := range got.Trace {
 		if step.Tier == SourceLink && step.Result == "error" {
@@ -54,7 +56,55 @@ func TestResolve_TierLoadErrorContinues(t *testing.T) {
 		}
 	}
 	if !sawError {
-		t.Errorf("expected at least one trace step with Tier=link and Result=error, got: %+v", got.Trace)
+		t.Errorf("expected trace step with Tier=link Result=error, got: %+v", got.Trace)
+	}
+}
+
+func TestResolve_StaleLinkFallsThrough(t *testing.T) {
+	// Stale-link is the one and only recoverable tier failure: a primary
+	// link references a workitem id that no longer exists on disk. The
+	// resolver should record the diagnostic and continue to the next tier.
+	root := t.TempDir()
+	writeMinimalCampaign(t, root)
+
+	linksDir := filepath.Join(root, ".campaign", "workitems")
+	if err := os.MkdirAll(linksDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	projDir := filepath.Join(root, "projects", "demo")
+	if err := os.MkdirAll(projDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stale := `version: workitem-links/v1alpha1
+links:
+  - id: lnk_20260524_aaaaaa
+    workitem_id: design-ghost-2026-05-26
+    scope:
+      kind: project
+      path: projects/demo
+    role: primary
+    created_at: 2026-05-24T19:00:00Z
+    created_by: camp_workitem_link
+`
+	if err := os.WriteFile(filepath.Join(linksDir, "links.yaml"), []byte(stale), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := Resolve(context.Background(), root, Options{Cwd: projDir})
+	if err != nil {
+		t.Fatalf("stale link should fall through, got hard error: %v", err)
+	}
+	if got.Source != SourceNone {
+		t.Errorf("Source = %q, want %q (no lower tier should match)", got.Source, SourceNone)
+	}
+	sawLinkError := false
+	for _, step := range got.Trace {
+		if step.Tier == SourceLink && step.Result == "error" {
+			sawLinkError = true
+		}
+	}
+	if !sawLinkError {
+		t.Errorf("expected stale-link trace step Tier=link Result=error, got: %+v", got.Trace)
 	}
 }
 

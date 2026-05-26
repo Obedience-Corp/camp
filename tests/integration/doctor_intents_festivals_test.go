@@ -95,8 +95,12 @@ func seedDoctorDirectoryWorkitemFixture(t *testing.T, tc *TestContainer, dir str
 
 func parseDoctorReport(t *testing.T, raw string) doctorReport {
 	t.Helper()
+	// camp doctor --json may be followed by a cobra "Error: ..." line when
+	// the command exits non-zero. Decode just the first JSON object so the
+	// trailing text does not break parsing.
+	dec := json.NewDecoder(strings.NewReader(raw))
 	var r doctorReport
-	err := json.Unmarshal([]byte(raw), &r)
+	err := dec.Decode(&r)
 	require.NoError(t, err, "doctor --json must produce valid JSON, got: %s", raw)
 	return r
 }
@@ -177,7 +181,10 @@ func TestIntegration_Doctor_QuarantinesMalformedLinksYaml(t *testing.T) {
 	malformed := "version: workitem-links/v1alpha1\nlinks: [unterminated\n"
 	require.NoError(t, tc.WriteFile(linksPath, malformed))
 
-	out, _ := tc.RunCampInDir(dir, "workitem", "doctor", "--json")
+	out, runErr := tc.RunCampInDir(dir, "workitem", "doctor", "--json")
+	assert.Error(t, runErr,
+		"camp workitem doctor --json must exit non-zero when an error-severity "+
+			"workitem.registry.parse-error finding is present (CW0003 seq-02 re-review): %s", out)
 	report := parseDoctorReport(t, out)
 	parseFindings := countByCode(report, "workitem.registry.parse-error")
 	assert.GreaterOrEqual(t, parseFindings, 1,
