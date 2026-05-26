@@ -97,6 +97,17 @@ func TestSaveLoadRoundTrip_ExampleLinksFixture(t *testing.T) {
 	in := loadFixture(t, "example_links.yaml")
 	seedScopeTargets(t, root, in)
 
+	fixtureNow, err := time.Parse(time.RFC3339, "2026-05-24T22:00:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if errs := Validate(context.Background(), in, ValidateOptions{
+		CampaignRoot: root,
+		Now:          fixtureNow,
+	}); len(errs) > 0 {
+		t.Fatalf("example_links.yaml fixture fails its own schema: %+v", errs)
+	}
+
 	if err := Save(context.Background(), root, in); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
