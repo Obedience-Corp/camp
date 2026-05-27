@@ -93,57 +93,27 @@ The supported workflow for upgrading an existing campaign:
 After backfill, subsequent commits emit fully-qualified tags including the
 `WI-<ref>` segment.
 
-## Known Issues — Pending Fix
+## Migration Checks and Repairs
 
-The CW0003 review captured several open defects on the v1alpha6 surface.
-These are tracked in the festival findings under
-`festivals/active/camp-workitem-linking-and-commits-CW0003/`. Until they
-land, operators should be aware of the following.
+The v1alpha6 migration has CLI support for the review cases that used to
+require manual operator work:
 
-### Doctor reports false positives on intents and festivals
+- `camp workitem doctor` reports missing refs only for directory-backed
+  workitems with `.workitem` markers. Intent files and festival directories
+  are not treated as ref-backfill targets.
+- `camp workitem doctor --fix` continues through per-item ref-backfill
+  failures, reports warnings for failed items, and backfills every item it can
+  repair in the same run.
+- Metadata loading validates `ref` as `WI-<6 lowercase hex>` and validates
+  `quest_id` against the supported quest-id shape, so malformed hand-edited
+  markers fail fast instead of reaching commit tags.
+- `camp workitem commit` attempts to backfill a missing ref for
+  directory-backed legacy workitems before composing the commit tag. If that
+  backfill fails, the command warns and proceeds without the `WI-` segment.
 
-Finding `CW0003-format-01`: `camp workitem doctor` flags non-workitem
-artifacts (intents and festivals) as missing-ref. In real repos this can
-generate dozens of false positives (52 observed on the obey-campaign
-workspace).
-
-Workaround: when reading doctor output, treat entries outside the workitem
-status directories as advisory and ignore them. Apply `--fix` only when the
-queue is dominated by genuine workitem entries (see next item).
-
-### Doctor `--fix` aborts the queue on the first per-item error
-
-Finding `CW0003-format-06`: `camp workitem doctor --fix` stops processing on
-the first per-item failure rather than continuing and reporting a summary at
-the end. A single malformed `.workitem` can prevent backfill of every later
-workitem in the same run.
-
-Workaround: when `--fix` aborts, address the reported workitem in isolation
-(hand-edit or remove the offending file), then re-run `--fix`. Iterate until
-the queue completes.
-
-### Validator does not enforce the `WI-<6 hex>` shape on hand-edited markers
-
-Finding `CW0003-format-02`: `validateMetadata` accepts any non-empty string
-for `ref`. Hand-edited markers with malformed values (wrong prefix, wrong
-length, non-hex characters, embedded whitespace) load successfully and the
-junk reference propagates into commit-message tags and git history.
-
-Workaround: only set `ref` via `camp workitem doctor --fix` or by letting
-`camp workitem create` derive it. Treat hand-editing the `ref` field as
-unsupported until validator coverage lands.
-
-### Commit-path silently drops the `WI-` segment for legacy workitems
-
-Finding `CW0003-format-13`: when a workitem has no `ref`, the commit-path
-emits a tag without the workitem segment rather than refusing or warning.
-The behavior is intentional for read-side compatibility but is silent, so
-operators who expect every commit to carry a workitem reference will not
-notice the gap.
-
-Workaround: run `camp workitem doctor --fix` ahead of any campaign-wide
-commit history audit, and confirm via `camp workitem doctor` that the
-backfill is complete before relying on tag aggregation.
+For campaign-wide history audits, run `camp workitem doctor --fix` first and
+then run `camp workitem doctor` again. Treat any remaining missing-ref
+findings as items to repair before relying on tag aggregation.
 
 ## Compatibility Expectations
 

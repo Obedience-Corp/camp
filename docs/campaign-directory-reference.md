@@ -130,16 +130,12 @@ Files:
   bind a workitem to its targets (festival, project, custom workflow item).
   This file is intended to be committed.
 - `current.yaml` is the per-machine record of the currently selected
-  workitem. It is intended to be machine-local state.
+  workitem. It is intended to be machine-local state. `camp init` and
+  `camp init --repair` keep `workitems/current.yaml` in
+  `.campaign/.gitignore` so this file is not shared accidentally.
 
 See [workitem-link-reference.md](workitem-link-reference.md) for the
 registry concept, resolver tiers, and recovery paths.
-
-Known issue, pending fix (CW0003-links-02): `current.yaml` is not yet
-covered by the `.campaign/.gitignore` scaffold and can be committed by
-mistake. Until the gitignore update lands, add `workitems/current.yaml` to
-the campaign-local ignore set after `camp init`, or avoid committing it
-with `git restore --staged .campaign/workitems/current.yaml` before commits.
 
 ### `.campaign/settings/`
 

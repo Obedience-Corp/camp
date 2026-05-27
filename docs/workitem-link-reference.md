@@ -49,7 +49,10 @@ with a validation error. Field-level schema rules are enforced by the
 
 The file is created on first `camp workitem link` invocation. A missing file is the valid zero state: all commands treat it as "no links."
 
-Writes are atomic (write-temp-plus-rename). Two concurrent `camp workitem link` invocations use a file lock during the write phase, but the read-modify-write window is not locked. **Known issue `CW0003-links-06`:** a concurrent read before a locked write means last-writer-wins in multi-terminal or multi-agent scenarios. In the single-user CLI case this is unlikely to cause data loss, but the window exists.
+Writes are atomic (write-temp-plus-rename). Mutating commands hold
+`links.yaml.lock` around the full load/mutate/save transaction, so concurrent
+`camp workitem link` and `camp workitem unlink` invocations do not silently
+overwrite each other's registry updates.
 
 ### `current.yaml`
 
@@ -114,9 +117,11 @@ Tier 3 uses longest-prefix matching: a link on `projects/myrepo/internal/api` wi
 
 Resolution is read-only. It never mutates `current.yaml`.
 
-**Known issue `CW0003-links-03`:** when a primary link exists at tier 3 but its `workitem_id` no longer resolves on disk (workitem moved or deleted), the resolver returns an error and exits 1 instead of falling through to tier 4 or tier 5. The intended behavior is to record the tier as a miss and continue. Until this is fixed, an orphaned primary link will block commit wrappers operating from within that scope. Use `camp workitem doctor --fix` to remove the broken link, or `--workitem <id>` to override for a single operation.
-
-**Known issue `CW0003-links-13` (proposed):** resolver fall-through behavior for broken links at tiers 4 and 5 may have similar propagation gaps. Under investigation.
+If a primary path link, festival link, or `current.yaml` selection points to a
+workitem that no longer exists, the resolver records that tier as an error in
+the trace and continues to the next tier where one exists. Operational errors
+that prevent resolution for reasons other than a missing workitem still fail
+the command.
 
 ---
 
@@ -248,7 +253,9 @@ Doctor checks for:
 
 `--json` emits structured finding output.
 
-**Known issue `CW0003-links-12` (proposed):** when `links.yaml` is corrupt enough to prevent loading, doctor may itself fail rather than reporting the corruption as a finding. Until this is addressed, see [Recovery](#recovery) below.
+When `links.yaml` cannot be parsed or validated enough to load, `doctor`
+reports a registry-level finding. With `--fix`, it quarantines the broken file
+as `links.yaml.broken-<timestamp>` and bootstraps an empty registry.
 
 See [cli-reference/camp\_workitem\_doctor.md](cli-reference/camp_workitem_doctor.md).
 
@@ -286,14 +293,17 @@ camp workitem unlink --id lnk_20260524_ab12cd
 
 ### Corrupt `links.yaml`
 
-If `links.yaml` is corrupt (truncated, invalid YAML, wrong version field), all commands that load the registry will fail with a validation or parse error. This includes `doctor`.
+If `links.yaml` is corrupt (truncated, invalid YAML, wrong version field),
+commands that need the registry fail with a validation or parse error. `doctor`
+reports this as a registry-level finding, and `doctor --fix` quarantines the
+broken file before creating a fresh empty registry.
 
 Recovery options:
 
+- Prefer `camp workitem doctor --fix` when you want the CLI to quarantine the
+  bad file and unblock the registry.
 - If the file is in git: `git restore .campaign/workitems/links.yaml`
 - If not in git or the committed version is also bad: `rm .campaign/workitems/links.yaml`. The registry returns to zero state (no links). Re-create links manually.
-
-**Known issue `CW0003-links-12` (proposed):** doctor does not yet produce a structured finding for a registry that fails to load; it fails with an error instead. Manual recovery is required until that lands.
 
 ### Stale `current.yaml`
 
@@ -307,14 +317,10 @@ This returns tier 5 to "skip" state. No links are affected.
 
 ---
 
-## Known Issues
+## Operational Notes
 
-| ID | Severity | Summary |
-|---|---|---|
-| `CW0003-links-01` | major | ID generation retry loop is missing. A collision returns an error instead of re-rolling. |
-| `CW0003-links-02` | major | `current.yaml` is not added to `.campaign/.gitignore` by `camp init`. Workaround: add `workitems/current.yaml` to `.campaign/.gitignore` manually. |
-| `CW0003-links-03` | major | Resolver hard-errors on a broken primary link instead of falling through to lower tiers. |
-| `CW0003-links-04` | major | The canonical `testdata/example_links.yaml` fixture contains an invalid ID (`ef34gh` is not hex) and fails its own schema validation. |
-| `CW0003-links-06` | minor | Read-modify-write window in `link` and `unlink` is not locked. Concurrent invocations can silently overwrite each other. |
-| `CW0003-links-12` | proposed | Doctor wedges on an unloadable registry instead of reporting the corruption as a finding. |
-| `CW0003-links-13` | proposed | Resolver fall-through behavior for broken links at tiers 4 and 5 may propagate the same hard-error pattern as `CW0003-links-03`. |
+- Link IDs are retried up to 32 times on collision before the command fails.
+- `current.yaml` is local machine state and is ignored by `camp init` and
+  `camp init --repair` scaffolds.
+- The canonical example registry fixture validates against the same link
+  schema used by the loader and doctor checks.

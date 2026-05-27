@@ -29,7 +29,8 @@ When `camp workitem commit` runs, `ComputePlan` selects exactly one matrix row
 based on the resolved context. Flag evaluation runs in this order before the
 matrix:
 
-1. `--staged` — short-circuits; skips the matrix entirely (see Known issues).
+1. `--staged` — short-circuits; commits the current git index for the
+   campaign root or the sub-git-repo containing the current working directory.
 2. `--project <name>` — overrides the resolver; treats the command as if
    invoked from inside `projects/<name>/`.
 3. Matrix routing by resolved source (see table below).
@@ -42,7 +43,7 @@ matrix:
 | `campaign root` | cwd at campaign root; workitem resolved via `current.yaml` or explicit `--workitem` | Same as above — never `git add .` |
 | `linked project` | cwd is inside a sub-git-repo under the campaign tree (cwd-first detection), or resolver source is `SourceLink` | All changed files in that project's git repo |
 | `festival` | resolver source is `SourceFestival` | Changed files under the festival scope path plus `.campaign/workitems/links.yaml` when dirty |
-| `staged-only` | `--staged` flag is set | Whatever is already in the git index of the campaign root |
+| `staged-only` | `--staged` flag is set | Whatever is already in the git index of the campaign root, or the containing sub-git-repo when cwd is inside one |
 
 The link registry (`.campaign/workitems/links.yaml`) is auto-included in the
 `workitem directory` and `festival` rows when it is dirty. This keeps a link
@@ -99,7 +100,7 @@ the resolver falls back to cwd and `current.yaml`.
 
 `--include` and `--exclude` accept literal paths only. Glob patterns are not
 expanded; a pattern that does not match any real path either passes through
-silently to `git add` (include) or has no effect (exclude). See Known issues.
+silently to `git add` (include) or has no effect (exclude).
 
 ### Plan output
 
@@ -137,8 +138,11 @@ Try one of:
   camp workitem current <selector>  set a session-wide default
 ```
 
-The command never falls back to staging the whole repo. A `WI-` tag in the
-commit is mandatory; if one cannot be derived, the commit does not happen.
+The command never falls back to staging the whole repo. For directory-backed
+workitems that pre-date v1alpha6, the planner attempts to backfill a missing
+`ref` before composing the tag. If backfill fails, the commit can proceed with
+a warning and the tag omits the `WI-` segment; run `camp workitem doctor
+--fix` before history audits to make attribution complete.
 
 ---
 
@@ -173,8 +177,6 @@ cheaply. Every candidate commit subject is then parsed through
 `commitkit.ParseTag` to verify the `WorkitemRef` field matches exactly. This
 two-pass approach avoids committing to a full log scan for every repo while
 still rejecting subjects that contain the grep pattern in non-tag positions.
-
-See Known issues for the unanchored-regex limitation in `ParseTag`.
 
 ### Flags
 
@@ -247,7 +249,10 @@ fields of `TagComponents` are `CampaignID`, `QuestID`, `FestRef`, and
 `WorkitemRef` (the last includes its `WI-` prefix, e.g. `"WI-861089"`).
 
 The parse contract is designed for subjects produced by `FormatContextTagsFull`.
-For known parser bugs, see Known issues below.
+`ParseTag` only accepts a leading tag. Embedded examples in revert subjects,
+commit bodies, or later subject text are intentionally ignored. Callers that
+need warning details for malformed or degraded tags can use
+`ParseTagDetailed`.
 
 ---
 
@@ -259,6 +264,7 @@ Emitted on stdout. Pretty-printed with two-space indent.
 
 | Field | Type | Notes |
 |---|---|---|
+| `schema_version` | string | Always `workitem-commit/v1alpha1` |
 | `workitem` | string | Stable workitem ID |
 | `workitem_ref` | string | `WI-<6 hex>`, omitted when empty |
 | `quest_id` | string | omitted when empty |
@@ -269,10 +275,8 @@ Emitted on stdout. Pretty-printed with two-space indent.
 | `stage` | []string | Paths passed to `git add` |
 | `pre_staged` | []string | Paths already in the index (from `--staged`), omitted when empty |
 | `skip` | []object | Each entry has `path` and `reason` strings, omitted when empty |
-| `sha` | string | Commit SHA after a successful commit; empty on `--dry-run` or no-changes |
-
-Note: `schema_version` is absent from the current payload. See Known issues
-(`CW0003-commit-10`).
+| `sha` | string | Commit SHA after a successful commit; omitted on `--dry-run` or no-changes |
+| `warnings` | []string | Planner warnings such as legacy ref backfill notes, omitted when empty |
 
 ### `camp workitem commits --json`
 
@@ -280,6 +284,7 @@ Emitted on stdout. Pretty-printed with two-space indent.
 
 | Field | Type | Notes |
 |---|---|---|
+| `schema_version` | string | Always `workitem-commits/v1alpha1` |
 | `commits` | []CommitRecord | Sorted newest first, post-limit/offset |
 | `errors` | []object | Per-repo failures; each entry has `repo` and `error` strings; omitted when empty |
 
@@ -293,9 +298,6 @@ Each `CommitRecord`:
 | `subject` | string | Full commit subject line |
 | `repo` | string | Campaign-relative path of the repo (`"."` for campaign root) |
 | `tag` | object | Parsed `TagComponents` (fields: `CampaignID`, `QuestID`, `FestRef`, `WorkitemRef`) |
-
-Note: `schema_version` is absent from the current payload. See Known issues
-(`CW0003-commit-10`).
 
 ---
 
@@ -313,64 +315,13 @@ Note: `schema_version` is absent from the current payload. See Known issues
 
 ---
 
-## Known issues
+## Operational notes
 
-The following findings are open at the reviewed commit (`642504f`) and have
-not yet been merged as fixes. They are cited by ID for tracking.
-
-**`CW0003-commit-02`** — `runCommit` returns the raw error from
-`commit.Workitem` without wrapping it with the `"commit workitem"` operation
-context. Additionally, `lastCommitSHA` errors are silently swallowed
-(`sha, _ := ...`); when the SHA lookup fails after a successful commit, the
-JSON payload emits `"sha": ""` with no indication of why.
-
-**`CW0003-commit-03`** — `cwdSubGitRepo` does not call
-`filepath.EvalSymlinks` on either the current working directory or the
-campaign root before computing `filepath.Rel`. On macOS, campaign roots under
-symlinked paths (e.g. `/var/folders/...` resolving to `/private/var/...`)
-cause the prefix comparison to fail, so `cwdSubGitRepo` returns false and
-the plan routes to the campaign root instead of the project submodule the
-user is actually inside. The cwd-first routing promise from the staging
-matrix silently breaks for affected users.
-
-**`CW0003-commit-10`** — Both `--json` payloads (`commit` and `commits`) are
-missing a `schema_version` field. Both commands carry `"agent_allowed":
-"true"` in their Cobra annotations, meaning agent tooling is expected to
-depend on these payloads. Any future field rename is a silent break with no
-version signal for consumers.
-
-**`CW0003-commit-14`** — `--staged` always uses `campaignRoot` as the staging
-repo root and reads from the campaign repo's index. If `camp workitem commit
---staged` is run from inside `projects/foo/`, the submodule's index is
-ignored. The cwd-first detection (`cwdSubGitRepo`) is bypassed in the
-`--staged` branch.
-
-**`CW0003-format-02`** — `validateMetadata` does not validate the shape of
-the `ref` or `quest_id` fields on load. A hand-edited `.workitem` marker with
-a malformed `ref` value propagates through the staging plan and into the
-commit tag without rejection.
-
-**`CW0003-format-03`** — `tagShellRegex` is unanchored
-(`\[OBEY-CAMPAIGN-([^\]]+)\]` with no `^`). `ParseTag` matches a campaign
-tag appearing anywhere in the subject string, not only at position 0. A
-revert subject like `Revert "[OBEY-CAMPAIGN-abc] feat: X"` or a commit body
-that contains a sample tag will produce false-positive parse results. The
-`commits` command's candidate filter (`ParseTag(subject).WorkitemRef != ref`)
-inherits this behavior.
-
-**`CW0003-format-04`** — `ParseTag` silently merges junk segments into
-adjacent fields when a tag contains unknown segments, duplicate segments, or
-content between known prefixes. Examples: a second `FE-` segment overwrites
-the first; an unknown leading segment causes the parser to abandon the
-remainder of the inner string, silently dropping a valid `WI-` segment that
-follows. Downstream consumers receive plausible-looking but wrong
-`TagComponents` with no indication that parsing degraded.
-
-**`CW0003-format-13`** — (Design note, not yet a named finding in the review
-index.) The `FormatContextTagsFull` composer silently omits the `WI-` segment
-when `workitemRef` is empty. Commits produced by `camp commit` or `camp p
-commit` outside a workitem context carry no `WI-` segment. This is correct
-behavior, but callers that pass a workitem ref derived from v1alpha5 metadata
-(which has no `ref` field) will silently produce a tag with no workitem
-attribution. Run `camp workitem doctor --fix` to backfill refs before relying
-on tag-based history queries.
+- `runCommit` wraps commit execution failures with `commit workitem` context
+  and prints a warning if the post-commit SHA lookup fails.
+- Sub-git-repo detection canonicalizes symlinked cwd and campaign-root paths
+  before choosing the repo to stage from.
+- `ref` values must match `WI-<6 lowercase hex>` and `quest_id` values must
+  match the supported quest-id shape when `.workitem` metadata is loaded.
+- `ParseTagDetailed` returns warnings for duplicate, unknown, or malformed tag
+  segments. `ParseTag` returns the parsed components only.
