@@ -314,7 +314,7 @@ func TestRunCreateJSONIdempotent(t *testing.T) {
 	if payload["no_changes"] != true {
 		t.Fatalf("no_changes = %v, want true", payload["no_changes"])
 	}
-	if payload["applied"] != true {
-		t.Fatalf("applied = %v, want true (no-op apply still counts as applied)", payload["applied"])
+	if payload["applied"] != false {
+		t.Fatalf("applied = %v, want false for idempotent no-op rerun", payload["applied"])
 	}
 }

@@ -250,7 +250,8 @@ Warnings from cache-invalidation failures still go to stderr as plain text.
 
 `obey_written` is `true` only when `OBEY.md` was actually written; `false` when
 it was already present. `no_changes` is `true` when every action was a no-op.
-`applied` is `!dry_run`.
+`applied` is `true` only when the command actually mutated files or campaign
+configuration. Dry-runs and idempotent no-op reruns report `applied: false`.
 
 ### `list` schema (as-built)
 

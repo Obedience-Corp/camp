@@ -135,7 +135,7 @@ func emitCreateJSON(cmd *cobra.Command, plan *createPlan, opts createOptions) er
 		Replaced:      append([]string(nil), plan.Replaced...),
 		NoChanges:     plan.NoChanges,
 		DryRun:        opts.DryRun,
-		Applied:       !opts.DryRun,
+		Applied:       !opts.DryRun && !plan.NoChanges,
 	}
 	if payload.Replaced == nil {
 		payload.Replaced = []string{}
