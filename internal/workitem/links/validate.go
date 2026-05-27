@@ -42,8 +42,8 @@ type ValidateOptions struct {
 	// (used by tests that don't have a campaign on disk).
 	WorkitemIDs map[string]struct{}
 
-	// Now is the reference time for created_at skew checks. Defaults to
-	// time.Now() if zero.
+	// Now is the reference time for created_at future-skew checks. Defaults
+	// to time.Now() if zero.
 	Now time.Time
 }
 
@@ -157,14 +157,8 @@ func validateOneLink(link Link, opts ValidateOptions, now time.Time,
 
 	if link.CreatedAt.IsZero() {
 		addErr("created_at", "required")
-	} else {
-		skew := now.Sub(link.CreatedAt)
-		if skew < 0 {
-			skew = -skew
-		}
-		if skew > maxClockSkewReject {
-			addErr("created_at", "more than 24h from now (possible clock skew or wrong year)")
-		}
+	} else if link.CreatedAt.After(now.Add(maxClockSkewReject)) {
+		addErr("created_at", "must not be more than 24h in the future")
 	}
 
 	if link.CreatedBy == "" {

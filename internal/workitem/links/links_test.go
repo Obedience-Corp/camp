@@ -306,6 +306,71 @@ func TestValidate_HappyPath(t *testing.T) {
 	}
 }
 
+func TestValidate_CreatedAtAllowsHistoricalAndRejectsFutureSkew(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 5, 27, 12, 0, 0, 0, time.UTC)
+
+	cases := []struct {
+		name       string
+		createdAt  time.Time
+		wantErr    bool
+		wantSubstr string
+	}{
+		{
+			name:      "old historical timestamp",
+			createdAt: now.AddDate(-3, 0, 0),
+		},
+		{
+			name:      "future timestamp within tolerance",
+			createdAt: now.Add(maxClockSkewReject),
+		},
+		{
+			name:       "future timestamp beyond tolerance",
+			createdAt:  now.Add(maxClockSkewReject + time.Second),
+			wantErr:    true,
+			wantSubstr: "must not be more than 24h in the future",
+		},
+		{
+			name:       "zero timestamp",
+			createdAt:  time.Time{},
+			wantErr:    true,
+			wantSubstr: "required",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			link := makeValidLink(t, root)
+			link.CreatedAt = tc.createdAt
+			l := &Links{Version: LinksSchemaVersion, Links: []Link{link}}
+			errs := Validate(context.Background(), l, ValidateOptions{
+				CampaignRoot: root,
+				Now:          now,
+			})
+
+			var got *ValidationError
+			for i := range errs {
+				if errs[i].Field == "created_at" {
+					got = &errs[i]
+					break
+				}
+			}
+			if tc.wantErr {
+				if got == nil {
+					t.Fatalf("expected created_at error, got %v", errs)
+				}
+				if !strings.Contains(got.Message, tc.wantSubstr) {
+					t.Fatalf("created_at error = %q, want substring %q", got.Message, tc.wantSubstr)
+				}
+				return
+			}
+			if got != nil {
+				t.Fatalf("created_at error = %v, want none (all errors: %v)", *got, errs)
+			}
+		})
+	}
+}
+
 func TestValidate_WorkitemIDMustExistWhenSetProvided(t *testing.T) {
 	root := t.TempDir()
 	link := makeValidLink(t, root)
