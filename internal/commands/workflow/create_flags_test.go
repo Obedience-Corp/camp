@@ -46,7 +46,7 @@ func TestRunCreateDefaultOutputMatchesGolden(t *testing.T) {
 	}
 }
 
-func TestRunCreateScaffoldsStatusDirsWithGitkeep(t *testing.T) {
+func TestRunCreateScaffoldsTerminalDungeonDirsWithGitkeep(t *testing.T) {
 	root := newWorkflowTestCampaign(t)
 	restore := chdir(t, root)
 	defer restore()
@@ -64,7 +64,7 @@ func TestRunCreateScaffoldsStatusDirsWithGitkeep(t *testing.T) {
 		t.Fatalf("runCreate: %v", err)
 	}
 
-	for _, sub := range statusDirs {
+	for _, sub := range terminalDungeonDirs {
 		dir := filepath.Join(root, "workflow", "research", filepath.FromSlash(sub))
 		info, err := os.Stat(dir)
 		if err != nil {
@@ -76,6 +76,12 @@ func TestRunCreateScaffoldsStatusDirsWithGitkeep(t *testing.T) {
 		gitkeep := filepath.Join(dir, ".gitkeep")
 		if _, err := os.Stat(gitkeep); err != nil {
 			t.Fatalf("stat %s: %v", gitkeep, err)
+		}
+	}
+	for _, sub := range []string{"inbox", "active", "ready"} {
+		dir := filepath.Join(root, "workflow", "research", sub)
+		if _, err := os.Stat(dir); !os.IsNotExist(err) {
+			t.Fatalf("live bucket %s should not be scaffolded: err=%v", sub, err)
 		}
 	}
 }
@@ -206,12 +212,21 @@ func TestRunCreateJSONApplied(t *testing.T) {
 	}
 
 	dirs, _ := payload["status_dirs"].([]any)
-	if len(dirs) != len(statusDirs) {
-		t.Fatalf("status_dirs length = %d, want %d (%v)", len(dirs), len(statusDirs), dirs)
+	wantDirs := statusDirsForOutput()
+	if len(dirs) != len(wantDirs) {
+		t.Fatalf("status_dirs length = %d, want %d (%v)", len(dirs), len(wantDirs), dirs)
+	}
+	for i, want := range wantDirs {
+		if dirs[i] != want {
+			t.Fatalf("status_dirs[%d] = %v, want %s", i, dirs[i], want)
+		}
 	}
 
-	if _, err := os.Stat(filepath.Join(root, "workflow", "research", "inbox", ".gitkeep")); err != nil {
+	if _, err := os.Stat(filepath.Join(root, "workflow", "research", "dungeon", "completed", ".gitkeep")); err != nil {
 		t.Fatalf("scaffold missing after --json apply: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "workflow", "research", "inbox")); !os.IsNotExist(err) {
+		t.Fatalf("live bucket scaffolded after --json apply: err=%v", err)
 	}
 
 	jumps, err := config.LoadJumpsConfig(context.Background(), root)

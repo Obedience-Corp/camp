@@ -31,7 +31,6 @@ func initWorkflowCampaign(t *testing.T, tc *TestContainer, dir string) {
 func assertScaffoldDirs(t *testing.T, tc *TestContainer, workflowDir string) {
 	t.Helper()
 	for _, sub := range []string{
-		"inbox", "active", "ready",
 		"dungeon/completed", "dungeon/archived", "dungeon/someday",
 	} {
 		dirPath := workflowDir + "/" + sub
@@ -43,6 +42,12 @@ func assertScaffoldDirs(t *testing.T, tc *TestContainer, workflowDir string) {
 		fileExists, err := tc.CheckFileExists(gitkeep)
 		require.NoError(t, err)
 		assert.True(t, fileExists, "gitkeep missing: %s", gitkeep)
+	}
+	for _, sub := range []string{"inbox", "active", "ready"} {
+		dirPath := workflowDir + "/" + sub
+		dirExists, err := tc.CheckDirExists(dirPath)
+		require.NoError(t, err)
+		assert.False(t, dirExists, "live bucket should not be scaffolded: %s", dirPath)
 	}
 }
 
@@ -58,7 +63,7 @@ func TestIntegration_WorkflowFullFlow(t *testing.T) {
 	)
 	require.NoError(t, err, "workflow create: %s", out)
 	assert.Contains(t, out, "created workflow/research")
-	assert.Contains(t, out, "status dirs:")
+	assert.Contains(t, out, "dungeon dirs:")
 
 	assertScaffoldDirs(t, tc, dir+"/workflow/research")
 
@@ -96,7 +101,7 @@ func TestIntegration_WorkflowFullFlow(t *testing.T) {
 	assert.Contains(t, out, "workflow/research/compare-llms")
 }
 
-func TestIntegration_WorkflowCreateStatusDirs(t *testing.T) {
+func TestIntegration_WorkflowCreateTerminalDungeonDirs(t *testing.T) {
 	tc := GetSharedContainer(t)
 	dir := "/test/workflow-scaffold"
 	initWorkflowCampaign(t, tc, dir)
@@ -119,7 +124,7 @@ func TestIntegration_WorkflowCreateIdempotent(t *testing.T) {
 	before, _, err := tc.ExecCommand("sh", "-c",
 		"stat -c %Y "+dir+"/.campaign/settings/jumps.yaml "+
 			dir+"/.campaign/campaign.yaml "+
-			dir+"/workflow/research/inbox/.gitkeep")
+			dir+"/workflow/research/dungeon/completed/.gitkeep")
 	require.NoError(t, err)
 
 	out, err := tc.RunCampInDir(dir, "workflow", "create", "research", "--shortcut", "re")
@@ -129,7 +134,7 @@ func TestIntegration_WorkflowCreateIdempotent(t *testing.T) {
 	after, _, err := tc.ExecCommand("sh", "-c",
 		"stat -c %Y "+dir+"/.campaign/settings/jumps.yaml "+
 			dir+"/.campaign/campaign.yaml "+
-			dir+"/workflow/research/inbox/.gitkeep")
+			dir+"/workflow/research/dungeon/completed/.gitkeep")
 	require.NoError(t, err)
 	assert.Equal(t, before, after, "rerun changed file mtimes")
 }
@@ -306,7 +311,11 @@ func TestIntegration_WorkflowCreateDryRun(t *testing.T) {
 
 	dirExists, err = tc.CheckDirExists(dir + "/workflow/research/inbox")
 	require.NoError(t, err)
-	assert.True(t, dirExists, "scaffold must exist after real create")
+	assert.False(t, dirExists, "live bucket must not exist after real create")
+
+	dirExists, err = tc.CheckDirExists(dir + "/workflow/research/dungeon/completed")
+	require.NoError(t, err)
+	assert.True(t, dirExists, "terminal dungeon scaffold must exist after real create")
 }
 
 func TestIntegration_WorkflowDoctor_DedupeHintMatchesApply(t *testing.T) {
@@ -366,12 +375,15 @@ func TestIntegration_WorkflowCreate_DryRunPerActionLines(t *testing.T) {
 
 	assert.Contains(t, out, "create dir workflow/research/",
 		"per-action line for workflow dir missing: %s", out)
-	for _, sub := range []string{"inbox", "active", "ready",
-		"dungeon/completed", "dungeon/archived", "dungeon/someday"} {
+	for _, sub := range []string{"dungeon/completed", "dungeon/archived", "dungeon/someday"} {
 		assert.Contains(t, out, "create dir workflow/research/"+sub+"/",
-			"per-action line for status dir %s missing: %s", sub, out)
+			"per-action line for scaffold dir %s missing: %s", sub, out)
 		assert.Contains(t, out, "create file workflow/research/"+sub+"/.gitkeep",
 			"per-action line for gitkeep in %s missing: %s", sub, out)
+	}
+	for _, sub := range []string{"inbox", "active", "ready"} {
+		assert.NotContains(t, out, "workflow/research/"+sub+"/",
+			"dry-run should not mention live bucket %s: %s", sub, out)
 	}
 	assert.Contains(t, out, "create file workflow/research/OBEY.md",
 		"per-action line for OBEY.md missing: %s", out)

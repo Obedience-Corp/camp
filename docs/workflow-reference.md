@@ -43,7 +43,7 @@ Output on first run:
 created workflow/research
   shortcut: re -> workflow/research/
   workitem type: research
-  status dirs: inbox/, active/, ready/, dungeon/completed/, dungeon/archived/, dungeon/someday/
+  dungeon dirs: dungeon/completed/, dungeon/archived/, dungeon/someday/
 next: camp workitem create <slug> --type research
 ```
 
@@ -52,12 +52,6 @@ What `create` writes:
 ```
 workflow/research/
 ├── OBEY.md
-├── inbox/
-│   └── .gitkeep
-├── active/
-│   └── .gitkeep
-├── ready/
-│   └── .gitkeep
 └── dungeon/
     ├── completed/
     │   └── .gitkeep
@@ -113,8 +107,8 @@ workflow: research
   has_dir: true
   workitems: 4
 recent:
-  2026-05-20T14:32:00Z  workflow/research/active/rate-limiting
-  2026-05-18T11:00:00Z  workflow/research/active/auth-design
+  2026-05-20T14:32:00Z  workflow/research/rate-limiting
+  2026-05-18T11:00:00Z  workflow/research/auth-design
 ```
 
 See [camp workflow show](cli-reference/camp_workflow_show.md).
@@ -193,31 +187,16 @@ See [camp workflow sync](cli-reference/camp_workflow_sync.md).
 `camp workflow sync` uses the same model with its default inverted: dry-run is
 the default and `--apply` triggers writes.
 
-### Known issues
+## Dungeon scaffold
 
-**CW0003-workflow-01 (major).** The `--dry-run` human output does not emit
-per-action lines. The design contract (DESIGN.md §4.1) specifies one line per
-planned write with a `create / skip-exists / update / no-op` verb. The
-implementation prints a summary block that is identical whether the scaffold dirs
-already exist or not. The `createPlan` struct carries all the data needed for the
-per-line form; the renderer does not use it.
-
-Workaround: use `--json --dry-run` to get the plan fields programmatically
-(`workflow_dir`, `status_dirs`, `obey_written`, `shortcut.no_change`,
-`concept.no_change`, `no_changes`).
-
----
-
-## Status scaffold
-
-`camp workflow create` writes seven status directories under `workflow/<type>/`.
-These mirror the layout of `.campaign/intents/`.
+`camp workflow create` writes only terminal dungeon directories under
+`workflow/<type>/`. It does not create top-level `inbox`, `active`, or `ready`
+buckets. Top-level `workflow/<type>/<slug>/` entries are the normal working area
+for that collection, matching the existing `workflow/design` and
+`workflow/explore` model.
 
 | Directory | Purpose |
 |---|---|
-| `inbox/` | Newly captured workitems not yet triaged |
-| `active/` | In-progress workitems |
-| `ready/` | Workitems ready to start |
 | `dungeon/completed/` | Finished |
 | `dungeon/archived/` | Shelved, preserved |
 | `dungeon/someday/` | Deprioritized |
@@ -226,13 +205,11 @@ Each directory contains a `.gitkeep` file so git tracks empty directories and
 the paths are available after a clean checkout.
 
 `camp workitem create --type <T>` currently places new items at
-`workflow/<T>/<slug>/`, not inside `inbox/`. Placement in status directories
-requires manual `mv` until a follow-up sequence changes the default.
+`workflow/<T>/<slug>/`.
 
 `discover_custom_workflows.go` skips dot-prefixed names inside the type
 directory. The `.gitkeep` files are therefore invisible to workitem discovery.
-Directories named `inbox`, `active`, `ready`, and `dungeon` are visible to the
-walker but skipped because they have no `.workitem` marker.
+The `dungeon/` subtree is terminal storage and is not treated as active work.
 
 ### Known issues
 
@@ -260,7 +237,7 @@ Warnings from cache-invalidation failures still go to stderr as plain text.
   "type": "research",
   "title": "Research",
   "workflow_dir": "workflow/research/",
-  "status_dirs": ["inbox/", "active/", "ready/", "dungeon/completed/", "dungeon/archived/", "dungeon/someday/"],
+  "status_dirs": ["dungeon/completed/", "dungeon/archived/", "dungeon/someday/"],
   "obey_written": true,
   "shortcut": {"key": "re", "path": "workflow/research/", "replaced": false, "no_change": false},
   "concept": {"name": "research", "path": "workflow/research/", "replaced": false, "no_change": false},
@@ -312,7 +289,7 @@ it was already present. `no_changes` is `true` when every action was a no-op.
   "has_shortcut": true,
   "workitem_count": 4,
   "recent": [
-    {"slug": "rate-limiting", "path": "workflow/research/active/rate-limiting", "modified": "..."}
+    {"slug": "rate-limiting", "path": "workflow/research/rate-limiting", "modified": "..."}
   ]
 }
 ```
@@ -352,19 +329,8 @@ it was already present. `no_changes` is `true` when every action was a no-op.
 }
 ```
 
-### Known issues
-
-**CW0003-workflow-07 (minor).** The `list` JSON shape differs from DESIGN.md §6.1.
-The as-built v1 omits `title`, `has_scaffold`, and `workitem_count_capped`. It
-adds `has_concept`, `has_dir`, `has_shortcut`, and `last_modified`. There is no
-walk cap; a type directory with a large number of workitems blocks on enumeration.
-
-**CW0003-workflow-08 (minor).** The `show` JSON shape differs from DESIGN.md §6.2.
-The as-built v1 omits the `scaffold` object (per-directory present/missing booleans)
-and `obey_first_line`. These fields are defined by the design but not yet emitted.
-
 The fields above are the actual v1 contract. Consumers should not assume fields
-promised in DESIGN.md but not listed here are present.
+not listed here are present.
 
 ---
 
@@ -404,15 +370,6 @@ to choose a shortcut key.
 
 When deduplicating, sync keeps the normalized (lowercase) form of the key, not
 the lexicographically first variant.
-
-### Known issues
-
-**CW0003-workflow-10 (minor).** The `fix_hint` text for
-`workflow.shortcut.duplicate` reads "auto-fix keeps the lexicographically first
-variant." The actual behavior is to keep the normalized (lowercase) key and
-remove case variants. The hint is wrong; the behavior is correct.
-
----
 
 ## Idempotency
 
