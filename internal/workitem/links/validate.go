@@ -29,8 +29,8 @@ func (e ValidationError) Error() string {
 
 // ValidateOptions controls which checks Validate performs.
 type ValidateOptions struct {
-	// CampaignRoot enables filesystem-backed checks (path containment, target
-	// existence). Required for the safety bounds documented in SCHEMA.md §8.
+	// CampaignRoot enables filesystem-backed checks for path containment and
+	// target existence.
 	CampaignRoot string
 
 	// AllowMissing skips the "scope.path target must exist" check. Used by
@@ -59,8 +59,8 @@ const (
 var createdByRegex = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 // Validate returns the list of rule failures for a links registry. An empty
-// slice means the registry is valid. Errors are returned in the order
-// fields appear in SCHEMA.md §9.
+// slice means the registry is valid. Errors are returned in field order so
+// diagnostics are stable.
 func Validate(ctx context.Context, l *Links, opts ValidateOptions) []ValidationError {
 	if err := ctx.Err(); err != nil {
 		return []ValidationError{{Field: "context", Message: err.Error()}}
@@ -196,7 +196,7 @@ func isValidRole(r Role) bool {
 	return false
 }
 
-// checkKindPathPrefix enforces the kind-to-path table in SCHEMA.md §5.
+// checkKindPathPrefix enforces the kind-to-path prefix table.
 // Returns (errorMessage, ok). ok=true means the scope is acceptable.
 func checkKindPathPrefix(s LinkScope) (string, bool) {
 	switch s.Kind {

@@ -1,6 +1,6 @@
 // Package selector resolves user-supplied workitem selector strings to a
-// concrete WorkItem. The resolution order is documented in SCHEMA.md and
-// followed strictly so CLI ergonomics stay predictable.
+// concrete WorkItem. The resolution order is explicit and stable so CLI
+// ergonomics stay predictable.
 package selector
 
 import (

@@ -167,7 +167,7 @@ func ComputePlan(ctx context.Context, campaignRoot string, opts PlanOptions) (*S
 }
 
 // PrintPlan writes the human-readable plan summary to w. It keeps the stable
-// COMMIT_DESIGN.md lines that integration tests grep while allowing per-path
+// staging-plan lines that integration tests grep while allowing per-path
 // annotations for planner-included files.
 func PrintPlan(w io.Writer, plan *StagingPlan) error {
 	if plan == nil || plan.Workitem == nil {

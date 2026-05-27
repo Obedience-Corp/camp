@@ -17,7 +17,7 @@ import (
 )
 
 // noContextHint is the multi-line refusal message printed when the resolver
-// returns no workitem. Mirrors COMMIT_DESIGN.md §7.
+// returns no workitem.
 const noContextHint = `no workitem context resolved from cwd
 
 Try one of:
@@ -48,8 +48,8 @@ explicit positional <selector> or --project overrides) and printed to stderr
 before the commit runs. The plan never silently widens to "git add ." at the
 campaign root.
 
-See internal/commands/workitem/COMMIT_DESIGN.md for the full staging matrix
-and flag precedence.`,
+See docs/workitem-commit-reference.md for the staging matrix and flag
+precedence.`,
 		Args: jsoncontract.Args(WorkitemCommitJSONVersion, func() bool { return flagJSON }, cobra.MaximumNArgs(1)),
 		Annotations: map[string]string{
 			"agent_allowed": "true",

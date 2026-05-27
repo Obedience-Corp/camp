@@ -11,8 +11,8 @@ explicit positional <selector> or --project overrides) and printed to stderr
 before the commit runs. The plan never silently widens to "git add ." at the
 campaign root.
 
-See internal/commands/workitem/COMMIT_DESIGN.md for the full staging matrix
-and flag precedence.
+See docs/workitem-commit-reference.md for the staging matrix and flag
+precedence.
 
 ```
 camp workitem commit [selector] [flags]

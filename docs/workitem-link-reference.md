@@ -26,7 +26,8 @@ Example IDs: `lnk_20260524_ab12cd`, `lnk_20260524_ef3401`.
 
 The date component is the UTC date the link was created. The six-character suffix is sourced from `crypto/rand`. The full ID is always exactly 22 characters and matches `^lnk_[0-9]{8}_[0-9a-f]{6}$`.
 
-IDs are immutable once created. The registry spec (SCHEMA.md §4) defines a retry-on-collision loop of up to 32 attempts for the rare case where a newly generated ID collides with an existing one. **Known issue `CW0003-links-01`:** the retry loop is not yet implemented. A collision currently surfaces as a hard error rather than being transparently retried. At normal usage volumes (hundreds of links per campaign) a collision is extremely unlikely, but the contract is not yet met.
+IDs are immutable once created. Link creation retries ID generation up to 32
+times if the random suffix collides with an existing entry.
 
 ---
 
@@ -42,7 +43,9 @@ The durable link registry lives at:
 
 This file should be committed to the campaign repository. It records all workitem-to-scope relationships and is the shared source of truth for all users of the campaign.
 
-Schema version: `workitem-links/v1alpha1`. The loader rejects unknown versions with a validation error. Full field-level schema documentation is in [`internal/workitem/links/SCHEMA.md`](../internal/workitem/links/SCHEMA.md).
+Schema version: `workitem-links/v1alpha1`. The loader rejects unknown versions
+with a validation error. Field-level schema rules are enforced by the
+`internal/workitem/links` types and validators and summarized in this document.
 
 The file is created on first `camp workitem link` invocation. A missing file is the valid zero state: all commands treat it as "no links."
 
@@ -56,9 +59,8 @@ The locally selected active workitem lives at:
 <campaign-root>/.campaign/workitems/current.yaml
 ```
 
-This file is per-machine state. It should not be committed to git. The SCHEMA.md §1.1 specifies that `camp init` writes `.campaign/workitems/current.yaml` to the campaign `.gitignore`. **Known issue `CW0003-links-02`:** the gitignore entry is not yet written by `camp init`. Until this is resolved, `current.yaml` will appear as an untracked file in `git status` and can be accidentally staged.
-
-**Workaround until `CW0003-links-02` lands:** add the following line to `.campaign/.gitignore` manually:
+This file is per-machine state. It should not be committed to git. `camp init`
+and `camp init --repair` keep the campaign `.gitignore` configured with:
 
 ```
 workitems/current.yaml

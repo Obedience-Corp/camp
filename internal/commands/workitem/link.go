@@ -300,9 +300,9 @@ func emitLinkJSON(w io.Writer, link links.Link) error {
 }
 
 // generateLinkID returns a fresh lnk_YYYYMMDD_<6 hex> ID that does not
-// collide with any existing entry in registry. Retries up to 32 times against
-// crypto/rand per SCHEMA.md §4; returns an error rather than falling back to
-// a wall-clock suffix because a non-unique ID corrupts the registry's primary
+// collide with any existing entry in registry. It retries up to 32 times
+// against crypto/rand and returns an error rather than falling back to a
+// wall-clock suffix because a non-unique ID corrupts the registry's primary
 // key invariant.
 func generateLinkID(registry *links.Links) (string, error) {
 	existing := make(map[string]struct{}, len(registry.Links))

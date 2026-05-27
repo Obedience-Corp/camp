@@ -15,7 +15,7 @@ import (
 // raw path.
 //
 // CAMP_WORKITEM_QUEST_ID is emitted only when the workitem carries a
-// non-empty quest_id, matching the SCHEMA.md "absent when unset" contract.
+// non-empty quest_id. It is absent when unset.
 func WorkitemEnv(wi *wkitem.WorkItem, campaignRoot string) []string {
 	if wi == nil {
 		return nil

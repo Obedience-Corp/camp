@@ -1,8 +1,7 @@
 // Package resolver implements the deterministic workitem-context resolution
-// pipeline documented in `internal/workitem/links/SCHEMA.md` §7. It is the
-// single source of truth for "which workitem should this commit/operation
-// count toward?" and is imported by commit wrappers in sequence 03 and the
-// `camp workitem resolve` and `camp workitem doctor` commands.
+// pipeline for "which workitem should this commit/operation count toward?" It
+// is imported by commit wrappers and the `camp workitem resolve` and
+// `camp workitem doctor` commands.
 package resolver
 
 import (

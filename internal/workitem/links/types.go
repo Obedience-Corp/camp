@@ -1,9 +1,9 @@
 // Package links implements the workitem link registry at
 // `.campaign/workitems/links.yaml` plus the local `current.yaml` selection.
 //
-// Contract: see SCHEMA.md. Types in this file mirror that schema. Validation
-// rules live in validate.go. Persistence (with file locking and atomic
-// rename) lives in load.go / save.go. The package reuses
+// The types in this package mirror the persisted links.yaml and current.yaml
+// schema. Validation rules live in validate.go. Persistence (with file locking
+// and atomic rename) lives in load.go / save.go. The package reuses
 // `internal/quest/link.go::ValidateLinkPath` for campaign-root containment.
 package links
 
