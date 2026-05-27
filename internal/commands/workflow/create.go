@@ -14,13 +14,10 @@ import (
 // JSONSchemaVersion is the contract version for `camp workflow` JSON output.
 const JSONSchemaVersion = "workflow/v1"
 
-// statusDirs are the status sub-directories scaffolded inside every workflow
-// collection. They mirror the workitem-collection layout used by
-// `.campaign/intents/` and are documented in DESIGN.md §3.1.
-var statusDirs = []string{
-	"inbox",
-	"active",
-	"ready",
+// terminalDungeonDirs are the terminal archive directories scaffolded inside
+// each camp workflow collection. Active work remains ergonomic at
+// workflow/<type>/<item>; camp does not create intent-style live buckets.
+var terminalDungeonDirs = []string{
 	"dungeon/completed",
 	"dungeon/archived",
 	"dungeon/someday",
@@ -90,10 +87,10 @@ type createPlan struct {
 	WorkflowDir string // absolute
 	WorkflowRel string // relative to campaign root, with trailing slash
 
-	WorkflowDirCreate bool     // workflow/<type>/ does not yet exist
-	MissingStatusDirs []string // subset of statusDirs that do not yet exist
-	MissingGitKeeps   []string // status dirs (from statusDirs) whose .gitkeep is missing
-	OBEYWrite         bool     // OBEY.md does not yet exist
+	WorkflowDirCreate   bool     // workflow/<type>/ does not yet exist
+	MissingScaffoldDirs []string // subset of terminalDungeonDirs that do not yet exist
+	MissingGitKeeps     []string // scaffold dirs (from terminalDungeonDirs) whose .gitkeep is missing
+	OBEYWrite           bool     // OBEY.md does not yet exist
 
 	Shortcut shortcutPlan
 	Concept  conceptPlan

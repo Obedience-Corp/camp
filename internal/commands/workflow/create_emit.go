@@ -35,7 +35,7 @@ func emitCreateHuman(cmd *cobra.Command, plan *createPlan, opts createOptions) e
 	fmt.Fprintf(w, "created %s\n", strings.TrimRight(plan.WorkflowRel, "/"))
 	fmt.Fprintf(w, "  shortcut: %s -> %s\n", plan.Shortcut.Key, plan.WorkflowRel)
 	fmt.Fprintf(w, "  workitem type: %s\n", plan.Type)
-	fmt.Fprintf(w, "  status dirs: %s\n", strings.Join(statusDirsForOutput(), ", "))
+	fmt.Fprintf(w, "  dungeon dirs: %s\n", strings.Join(statusDirsForOutput(), ", "))
 	fmt.Fprintf(w, "next: camp workitem create <slug> --type %s\n", plan.Type)
 	return nil
 }
@@ -50,10 +50,10 @@ func planActionLines(plan *createPlan) []string {
 		lines = append(lines, "skip-exists dir "+rel+"/")
 	}
 
-	for _, sub := range statusDirs {
+	for _, sub := range terminalDungeonDirs {
 		dir := rel + "/" + sub + "/"
 		missing := false
-		for _, m := range plan.MissingStatusDirs {
+		for _, m := range plan.MissingScaffoldDirs {
 			if m == sub {
 				missing = true
 				break
@@ -147,8 +147,8 @@ func emitCreateJSON(cmd *cobra.Command, plan *createPlan, opts createOptions) er
 }
 
 func statusDirsForOutput() []string {
-	out := make([]string, len(statusDirs))
-	for i, sub := range statusDirs {
+	out := make([]string, len(terminalDungeonDirs))
+	for i, sub := range terminalDungeonDirs {
 		out[i] = sub + "/"
 	}
 	return out

@@ -25,7 +25,7 @@ func applyCreatePlan(ctx context.Context, cmd *cobra.Command, campaignRoot strin
 		return camperrors.Wrapf(err, "create workflow directory %s", plan.WorkflowRel)
 	}
 
-	if err := writeStatusScaffold(plan); err != nil {
+	if err := writeWorkflowScaffold(plan); err != nil {
 		return err
 	}
 
@@ -42,11 +42,11 @@ func applyCreatePlan(ctx context.Context, cmd *cobra.Command, campaignRoot strin
 	return nil
 }
 
-func writeStatusScaffold(plan *createPlan) error {
-	for _, sub := range statusDirs {
+func writeWorkflowScaffold(plan *createPlan) error {
+	for _, sub := range terminalDungeonDirs {
 		dir := filepath.Join(plan.WorkflowDir, filepath.FromSlash(sub))
 		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return camperrors.Wrapf(err, "create status dir %s", sub)
+			return camperrors.Wrapf(err, "create scaffold dir %s", sub)
 		}
 		gitkeep := filepath.Join(dir, ".gitkeep")
 		if _, err := os.Stat(gitkeep); err == nil {

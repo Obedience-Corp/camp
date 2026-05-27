@@ -35,13 +35,13 @@ func computeCreatePlan(campaignRoot string, cfg *config.CampaignConfig, opts cre
 		plan.WorkflowDirCreate = true
 	}
 
-	for _, sub := range statusDirs {
+	for _, sub := range terminalDungeonDirs {
 		dir := filepath.Join(absPath, filepath.FromSlash(sub))
 		if _, err := os.Stat(dir); err != nil {
 			if !os.IsNotExist(err) {
-				return nil, camperrors.Wrapf(err, "stat status dir %s", sub)
+				return nil, camperrors.Wrapf(err, "stat scaffold dir %s", sub)
 			}
-			plan.MissingStatusDirs = append(plan.MissingStatusDirs, sub)
+			plan.MissingScaffoldDirs = append(plan.MissingScaffoldDirs, sub)
 			plan.MissingGitKeeps = append(plan.MissingGitKeeps, sub)
 			continue
 		}
@@ -70,7 +70,7 @@ func computeCreatePlan(campaignRoot string, cfg *config.CampaignConfig, opts cre
 	}
 
 	plan.NoChanges = !plan.WorkflowDirCreate &&
-		len(plan.MissingStatusDirs) == 0 &&
+		len(plan.MissingScaffoldDirs) == 0 &&
 		len(plan.MissingGitKeeps) == 0 &&
 		!plan.OBEYWrite &&
 		plan.Shortcut.NoChange &&
