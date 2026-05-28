@@ -105,6 +105,47 @@ func TestIntegration_WorkitemCommit_LinkedProject(t *testing.T) {
 	assert.Equal(t, rootHead, strings.TrimSpace(rootHeadAfter), "campaign root HEAD must not move")
 }
 
+func TestIntegration_WorkitemCommit_FestivalContextFromCwd(t *testing.T) {
+	tc := GetSharedContainer(t)
+	dir := "/test/wi-commit-festival"
+	initWorkitemCommitCampaign(t, tc, dir)
+	ref := seedDesignWorkitemWithRef(t, tc, dir, "timeline")
+
+	festDir := dir + "/festivals/active/CT0001"
+	require.NoError(t, tc.WriteFile(festDir+"/FESTIVAL_GOAL.md", "# CT0001\n"))
+	_, err := tc.RunCampInDir(dir, "workitem", "link", "timeline", "--festival", "CT0001")
+	require.NoError(t, err)
+
+	dryRun, err := tc.RunCampInDir(festDir,
+		"workitem", "commit", "--dry-run", "--json", "-m", "festival plan")
+	require.NoError(t, err, "festival dry-run: %s", dryRun)
+	var plan struct {
+		Context     string   `json:"context"`
+		FestivalRef string   `json:"festival_ref"`
+		Tag         string   `json:"tag"`
+		Stage       []string `json:"stage"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(dryRun), &plan), "raw=%s", dryRun)
+	assert.Equal(t, "festival", plan.Context)
+	assert.Equal(t, "CT0001", plan.FestivalRef)
+	assert.Contains(t, plan.Tag, "FE-CT0001")
+	assert.Contains(t, plan.Tag, "WI-"+ref)
+	assert.Contains(t, plan.Stage, "festivals/active/CT0001/FESTIVAL_GOAL.md")
+
+	out, err := tc.RunCampInDir(festDir,
+		"workitem", "commit", "-m", "feat: festival update")
+	require.NoError(t, err, "festival commit: %s", out)
+
+	subject := lastCommitSubject(t, tc, dir)
+	assert.Contains(t, subject, "FE-CT0001", "subject = %s", subject)
+	assert.Contains(t, subject, "WI-"+ref, "subject = %s", subject)
+	changed := headChangedPaths(t, tc, dir)
+	assert.Contains(t, changed, "festivals/active/CT0001/FESTIVAL_GOAL.md")
+	assert.Contains(t, changed, ".campaign/workitems/links.yaml")
+	assert.NotContains(t, changed, "workflow/design/timeline/.workitem",
+		"festival commit should not widen to workitem metadata: %v", changed)
+}
+
 func TestIntegration_WorkitemCommit_RefusesSilentWiden(t *testing.T) {
 	tc := GetSharedContainer(t)
 	dir := "/test/wi-commit-widen"

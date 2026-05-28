@@ -349,7 +349,7 @@ func festivalScopeMatches(scopePath, festivalID string) bool {
 		return true
 	}
 	base := filepath.Base(scopePath)
-	return base == festivalID
+	return base == festivalID || strings.HasSuffix(base, "-"+festivalID)
 }
 
 // questIDOf returns the workitem's quest id, or "" if the field is not set.

@@ -47,6 +47,7 @@ type planJSON struct {
 	SchemaVersion string   `json:"schema_version"`
 	Workitem      string   `json:"workitem"`
 	Ref           string   `json:"workitem_ref"`
+	FestivalRef   string   `json:"festival_ref"`
 	Tag           string   `json:"tag"`
 	Context       string   `json:"context"`
 	ContextNote   string   `json:"context_note"`

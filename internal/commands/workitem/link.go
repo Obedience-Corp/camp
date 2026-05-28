@@ -113,6 +113,14 @@ func runLink(ctx context.Context, cmd *cobra.Command, opts linkOptions) error {
 		}
 	}
 
+	var knownIDs map[string]struct{}
+	if !opts.AllowMissing {
+		knownIDs, err = workitemIDsOnDisk(ctx, root)
+		if err != nil {
+			return err
+		}
+	}
+
 	var link links.Link
 	err = links.WithLock(ctx, root, func(registry *links.Links) error {
 		// Generate the ID inside the lock so the collision retry sees
@@ -133,7 +141,6 @@ func runLink(ctx context.Context, cmd *cobra.Command, opts linkOptions) error {
 		if err := registry.AddLink(link, opts.Replace); err != nil {
 			return err
 		}
-		knownIDs := workitemIDSetFromMaybeNil(wi, opts.AllowMissing)
 		if errs := links.Validate(ctx, registry, links.ValidateOptions{
 			CampaignRoot: root,
 			WorkitemIDs:  knownIDs,
@@ -266,16 +273,6 @@ func workitemIDForLink(wi *wkitem.WorkItem, opts linkOptions) string {
 
 func workitemKeyForLink(wi *wkitem.WorkItem) string {
 	return wi.Key
-}
-
-func workitemIDSetFromMaybeNil(wi *wkitem.WorkItem, allowMissing bool) map[string]struct{} {
-	if allowMissing {
-		return nil
-	}
-	if wi == nil || wi.StableID == "" {
-		return nil
-	}
-	return map[string]struct{}{wi.StableID: {}}
 }
 
 func emitLinkHuman(w io.Writer, link links.Link) error {

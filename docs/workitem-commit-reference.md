@@ -42,7 +42,7 @@ matrix:
 | `workitem directory` | cwd is inside `workflow/<type>/<slug>/` (ancestor match) | Changed files under `<workitem-dir>/` plus `.campaign/workitems/links.yaml` when dirty |
 | `campaign root` | cwd at campaign root; workitem resolved via `current.yaml` or explicit `--workitem` | Same as above — never `git add .` |
 | `linked project` | cwd is inside a sub-git-repo under the campaign tree (cwd-first detection), or resolver source is `SourceLink` | All changed files in that project's git repo |
-| `festival` | resolver source is `SourceFestival` | Changed files under the festival scope path plus `.campaign/workitems/links.yaml` when dirty |
+| `festival` | resolver source is `SourceFestival` via `--festival` or cwd under a festival directory | Changed files under the festival scope path plus `.campaign/workitems/links.yaml` when dirty |
 | `staged-only` | `--staged` flag is set | Whatever is already in the git index of the campaign root, or the containing sub-git-repo when cwd is inside one |
 
 The link registry (`.campaign/workitems/links.yaml`) is auto-included in the
@@ -91,6 +91,7 @@ the resolver falls back to cwd and `current.yaml`.
 | `-m, --message` | Commit message. Required unless `--dry-run`. |
 | `--workitem` | Explicit workitem selector (overrides cwd-based resolution). |
 | `--project` | Force project-repo context by name (skips resolver). |
+| `--festival` | Festival ID for the festival resolver tier. Usually inferred from cwd under `festivals/<stage>/<festival>/`. |
 | `--include` | Additional path to stage (repeatable; literal, relative to repo root). |
 | `--exclude` | Path to remove from the staging plan (repeatable; exact match). |
 | `--staged` | Commit whatever is already in the git index. |
@@ -117,7 +118,7 @@ skipped:
   <path> (out of scope)
   <path> (submodule pointer; use --include-submodule-pointer)
   <path> (--exclude)
-tag:    [OBEY-CAMPAIGN-<8hex>[-qst_<...>][-WI-WI-<6hex>]]
+tag:    [OBEY-CAMPAIGN-<8hex>[-qst_<...>][-FE-<festival-ref>][-WI-WI-<6hex>]]
 ```
 
 `S` marks files already in the index (from `--staged` mode). `A` marks files
@@ -268,6 +269,7 @@ Emitted on stdout. Pretty-printed with two-space indent.
 | `workitem` | string | Stable workitem ID |
 | `workitem_ref` | string | `WI-<6 hex>`, omitted when empty |
 | `quest_id` | string | omitted when empty |
+| `festival_ref` | string | Festival ref used in the `FE-` tag segment, omitted when empty |
 | `tag` | string | Full campaign tag as it appears in the commit subject |
 | `context` | string | Matrix row label (e.g. `"linked project"`) |
 | `context_note` | string | Detail within the row (e.g. `"project camp"`), omitted when empty |

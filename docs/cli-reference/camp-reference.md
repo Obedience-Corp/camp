@@ -5315,6 +5315,7 @@ camp workitem commit [selector] [flags]
 ```
       --dry-run                     print the staging plan and exit without committing
       --exclude stringArray         path to remove from the staging plan (repeatable)
+      --festival string             festival id for the festival resolver tier
   -h, --help                        help for commit
       --include stringArray         additional path to stage (repeatable; relative to repo root)
       --include-submodule-pointer   include dirty project submodule pointers in the plan

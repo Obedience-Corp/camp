@@ -20,6 +20,7 @@ type WorkitemOptions struct {
 	Action      WorkitemAction
 	WorkitemID  string
 	WorkitemRef string
+	FestivalRef string
 	QuestID     string
 	Title       string
 	Detail      string
@@ -30,5 +31,6 @@ type WorkitemOptions struct {
 func Workitem(ctx context.Context, opts WorkitemOptions) Result {
 	opts.Options.QuestID = opts.QuestID
 	opts.Options.WorkitemRef = opts.WorkitemRef
+	opts.Options.FestivalRef = opts.FestivalRef
 	return doCommit(ctx, opts.Options, string(opts.Action), opts.Title, opts.Detail)
 }

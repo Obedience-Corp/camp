@@ -30,6 +30,7 @@ func newCommitCommand() *cobra.Command {
 		flagMessage                 string
 		flagWorkitem                string
 		flagProject                 string
+		flagFestival                string
 		flagIncludes                []string
 		flagExcludes                []string
 		flagStaged                  bool
@@ -65,6 +66,7 @@ precedence.`,
 				Message:                 flagMessage,
 				Workitem:                selector,
 				Project:                 flagProject,
+				Festival:                flagFestival,
 				Includes:                flagIncludes,
 				Excludes:                flagExcludes,
 				Staged:                  flagStaged,
@@ -78,6 +80,7 @@ precedence.`,
 	cmd.Flags().StringVarP(&flagMessage, "message", "m", "", "commit message (required unless --dry-run)")
 	cmd.Flags().StringVar(&flagWorkitem, "workitem", "", "explicit workitem selector (overrides cwd-based resolution)")
 	cmd.Flags().StringVar(&flagProject, "project", "", "force project-repo context by name (skips resolver)")
+	cmd.Flags().StringVar(&flagFestival, "festival", "", "festival id for the festival resolver tier")
 	cmd.Flags().StringArrayVar(&flagIncludes, "include", nil, "additional path to stage (repeatable; relative to repo root)")
 	cmd.Flags().StringArrayVar(&flagExcludes, "exclude", nil, "path to remove from the staging plan (repeatable)")
 	cmd.Flags().BoolVar(&flagStaged, "staged", false, "commit whatever is already in the git index")
@@ -91,6 +94,7 @@ type commitFlags struct {
 	Message                 string
 	Workitem                string
 	Project                 string
+	Festival                string
 	Includes                []string
 	Excludes                []string
 	Staged                  bool
@@ -112,6 +116,7 @@ func runCommit(ctx context.Context, cmd *cobra.Command, flags commitFlags) error
 	plan, err := ComputePlan(ctx, campaignRoot, PlanOptions{
 		Explicit:                flags.Workitem,
 		Project:                 flags.Project,
+		FestivalID:              flags.Festival,
 		Includes:                flags.Includes,
 		Excludes:                flags.Excludes,
 		StagedOnly:              flags.Staged,
@@ -176,6 +181,7 @@ func runCommit(ctx context.Context, cmd *cobra.Command, flags commitFlags) error
 		WorkitemID:  plan.Workitem.StableID,
 		WorkitemRef: plan.WorkitemRef,
 		QuestID:     plan.QuestID,
+		FestivalRef: plan.FestivalRef,
 		Title:       flags.Message,
 	})
 	if res.Err != nil {
@@ -216,6 +222,7 @@ func emitJSON(w writeFlusher, plan *StagingPlan, sha string) error {
 		Workitem      string         `json:"workitem"`
 		Ref           string         `json:"workitem_ref,omitempty"`
 		QuestID       string         `json:"quest_id,omitempty"`
+		FestivalRef   string         `json:"festival_ref,omitempty"`
 		Tag           string         `json:"tag"`
 		Context       PlanContext    `json:"context"`
 		ContextNote   string         `json:"context_note,omitempty"`
@@ -230,6 +237,7 @@ func emitJSON(w writeFlusher, plan *StagingPlan, sha string) error {
 		Workitem:      plan.Workitem.StableID,
 		Ref:           plan.WorkitemRef,
 		QuestID:       plan.QuestID,
+		FestivalRef:   plan.FestivalRef,
 		Tag:           plan.Tag,
 		Context:       plan.Context,
 		ContextNote:   plan.ContextNote,

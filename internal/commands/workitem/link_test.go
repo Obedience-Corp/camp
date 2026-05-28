@@ -105,6 +105,51 @@ func TestLink_HappyPath(t *testing.T) {
 	}
 }
 
+func TestLink_AllowsRegistryWithMultipleWorkitems(t *testing.T) {
+	root := linkTestCampaign(t)
+	restore := chdir(t, root)
+	defer restore()
+
+	secondDir := filepath.Join(root, "workflow", "design", "second")
+	if err := os.MkdirAll(secondDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const secondMeta = `version: v1alpha5
+kind: workitem
+id: design-second-2026-05-24
+type: design
+title: Second
+`
+	if err := os.WriteFile(filepath.Join(secondDir, ".workitem"), []byte(secondMeta), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "projects", "second"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := newCmd()
+	if err := runLink(context.Background(), cmd, linkOptions{
+		Selector: "design-example-2026-05-24",
+		Project:  "demo",
+	}); err != nil {
+		t.Fatalf("first link: %v", err)
+	}
+	if err := runLink(context.Background(), cmd, linkOptions{
+		Selector: "design-second-2026-05-24",
+		Project:  "second",
+	}); err != nil {
+		t.Fatalf("second link should not invalidate first workitem: %v", err)
+	}
+
+	registry, err := links.Load(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(registry.Links) != 2 {
+		t.Fatalf("expected 2 links, got %d", len(registry.Links))
+	}
+}
+
 func TestSanitizeCreatedBy(t *testing.T) {
 	if got := sanitizeCreatedBy("DOMAIN\\Lance Rogers!"); got != "DOMAIN-Lance-Rogers" {
 		t.Fatalf("sanitizeCreatedBy = %q", got)

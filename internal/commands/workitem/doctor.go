@@ -267,7 +267,16 @@ func collectWorkitemFindings(ctx context.Context, root string, registry *links.L
 	}
 
 	cur, err := links.LoadCurrent(ctx, root)
-	if err == nil && cur != nil {
+	if err != nil {
+		findings = append(findings, docFinding{
+			Code:        codeSchemaViolation,
+			Severity:    docSeverityError,
+			Target:      "current:current.yaml",
+			Message:     "current.yaml cannot be loaded: " + err.Error(),
+			FixHint:     "auto-fix removes current.yaml",
+			AutoFixable: true,
+		})
+	} else if cur != nil {
 		if _, known := knownIDs[cur.WorkitemID]; !known {
 			findings = append(findings, docFinding{
 				Code:        codeCurrentMissing,
@@ -305,6 +314,12 @@ func autoFixWorkitemFindings(ctx context.Context, root string, registry *links.L
 		case codeCurrentMissing:
 			if err := links.SaveCurrent(ctx, root, nil); err == nil {
 				applied++
+			}
+		case codeSchemaViolation:
+			if f.Target == "current:current.yaml" {
+				if err := links.SaveCurrent(ctx, root, nil); err == nil {
+					applied++
+				}
 			}
 		case codeMissingRefField:
 			needsRefBackfill = true
@@ -361,6 +376,9 @@ func workitemIDsOnDisk(ctx context.Context, root string) (map[string]struct{}, e
 	for _, item := range items {
 		if item.StableID != "" {
 			set[item.StableID] = struct{}{}
+		}
+		if item.Key != "" {
+			set[item.Key] = struct{}{}
 		}
 	}
 	return set, nil

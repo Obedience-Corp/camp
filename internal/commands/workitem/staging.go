@@ -44,6 +44,7 @@ type PlanOptions struct {
 	Excludes                []string // --exclude <path> (repeatable)
 	StagedOnly              bool     // --staged
 	IncludeSubmodulePointer bool     // --include-submodule-pointer
+	FestivalID              string   // --festival <id>, or inferred from cwd
 	CampaignID              string
 	Stderr                  io.Writer // for warning lines from ref backfill (default: os.Stderr)
 }
@@ -62,6 +63,7 @@ type StagingPlan struct {
 	Workitem         *wkitem.WorkItem
 	WorkitemRef      string
 	QuestID          string
+	FestivalRef      string
 	Context          PlanContext
 	ContextNote      string
 	RepoRoot         string
@@ -89,9 +91,15 @@ func ComputePlan(ctx context.Context, campaignRoot string, opts PlanOptions) (*S
 		return nil, camperrors.NewValidation("root", "campaign root required", nil)
 	}
 
+	festivalID := opts.FestivalID
+	if festivalID == "" {
+		festivalID = inferFestivalIDFromCwd(campaignRoot, opts.Cwd)
+	}
+
 	res, err := resolver.Resolve(ctx, campaignRoot, resolver.Options{
-		Explicit: opts.Explicit,
-		Cwd:      opts.Cwd,
+		Explicit:   opts.Explicit,
+		Cwd:        opts.Cwd,
+		FestivalID: festivalID,
 	})
 	if err != nil {
 		return nil, camperrors.Wrap(err, "resolve workitem")
@@ -109,11 +117,16 @@ func ComputePlan(ctx context.Context, campaignRoot string, opts PlanOptions) (*S
 	if err != nil {
 		return nil, err
 	}
+	festivalRef := ""
+	if res.Source == resolver.SourceFestival {
+		festivalRef = festivalRefFromString(festivalID)
+	}
 	plan := &StagingPlan{
 		Workitem:    wi,
 		WorkitemRef: ref,
 		QuestID:     res.QuestID,
-		Tag:         commitkit.FormatContextTagsFull(opts.CampaignID, res.QuestID, "", ref),
+		FestivalRef: festivalRef,
+		Tag:         commitkit.FormatContextTagsFull(opts.CampaignID, res.QuestID, festivalRef, ref),
 	}
 	if ref == "" && wi != nil && wi.ItemKind == wkitem.ItemKindDirectory && wi.StableID != "" {
 		plan.Warnings = append(plan.Warnings,
