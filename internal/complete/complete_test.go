@@ -196,8 +196,11 @@ func TestGenerate_CategoryWithQuery(t *testing.T) {
 	}
 
 	// Change to campaign root
-	oldWd, _ := os.Getwd()
-	defer os.Chdir(oldWd)
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(oldWd) }()
 	os.Chdir(root)
 
 	ctx := context.Background()
@@ -248,8 +251,11 @@ shortcuts:
 		t.Fatal(err)
 	}
 
-	oldWd, _ := os.Getwd()
-	defer os.Chdir(oldWd)
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(oldWd) }()
 	if err := os.Chdir(root); err != nil {
 		t.Fatal(err)
 	}
@@ -287,8 +293,11 @@ func TestGenerate_BuiltinShortcutRecentFirst(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	oldWd, _ := os.Getwd()
-	defer os.Chdir(oldWd)
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(oldWd) }()
 	if err := os.Chdir(root); err != nil {
 		t.Fatal(err)
 	}
@@ -568,8 +577,11 @@ func BenchmarkGenerate_RecentFirst_Scale(b *testing.B) {
 				}
 			}
 
-			oldWd, _ := os.Getwd()
-			defer os.Chdir(oldWd)
+			oldWd, err := os.Getwd()
+			if err != nil {
+				b.Fatal(err)
+			}
+			defer func() { _ = os.Chdir(oldWd) }()
 			if err := os.Chdir(root); err != nil {
 				b.Fatal(err)
 			}

@@ -126,14 +126,18 @@ func runCommit(ctx context.Context, cmd *cobra.Command, flags commitFlags) error
 					noContextHint,
 				)
 			}
-			fmt.Fprintln(cmd.ErrOrStderr(), noContextHint)
+			if _, writeErr := fmt.Fprintln(cmd.ErrOrStderr(), noContextHint); writeErr != nil {
+				return writeErr
+			}
 			return camperrors.NewCommand("camp workitem commit", 2, "", err)
 		}
 		return err
 	}
 
 	for _, w := range plan.Warnings {
-		fmt.Fprintln(cmd.ErrOrStderr(), "warning: "+w)
+		if _, writeErr := fmt.Fprintln(cmd.ErrOrStderr(), "warning: "+w); writeErr != nil {
+			return writeErr
+		}
 	}
 
 	if !flags.Staged && !flags.DryRun {
@@ -181,19 +185,21 @@ func runCommit(ctx context.Context, cmd *cobra.Command, flags commitFlags) error
 		if flags.JSON {
 			return emitJSON(cmd.OutOrStdout(), plan, "")
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), res.Message)
-		return nil
+		_, err := fmt.Fprintln(cmd.OutOrStdout(), res.Message)
+		return err
 	}
 
 	sha, shaErr := lastCommitSHA(ctx, plan.RepoRoot)
 	if shaErr != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not read last commit SHA: %v\n", shaErr)
+		if _, writeErr := fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not read last commit SHA: %v\n", shaErr); writeErr != nil {
+			return writeErr
+		}
 	}
 	if flags.JSON {
 		return emitJSON(cmd.OutOrStdout(), plan, sha)
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "committed %s\n", sha)
-	return nil
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "committed %s\n", sha)
+	return err
 }
 
 // WorkitemCommitJSONVersion is declared in json_contract.go alongside the

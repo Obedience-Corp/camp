@@ -158,8 +158,7 @@ func runCommitsQuery(ctx context.Context, cmd *cobra.Command, flags commitsFlags
 	if err := emitCommitsTable(cmd.OutOrStdout(), records); err != nil {
 		return err
 	}
-	emitCommitsQueryWarnings(cmd.ErrOrStderr(), queryErrs)
-	return nil
+	return emitCommitsQueryWarnings(cmd.ErrOrStderr(), queryErrs)
 }
 
 // enumerateQueryRepos returns absolute paths of every git repo to search,
@@ -359,27 +358,32 @@ func isGitRepo(ctx context.Context, path string) (bool, error) {
 
 func emitCommitsTable(w io.Writer, records []CommitRecord) error {
 	if len(records) == 0 {
-		fmt.Fprintln(w, "no commits found")
-		return nil
+		_, err := fmt.Fprintln(w, "no commits found")
+		return err
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "REPO\tSHA\tDATE\tSUBJECT")
+	if _, err := fmt.Fprintln(tw, "REPO\tSHA\tDATE\tSUBJECT"); err != nil {
+		return err
+	}
 	for _, r := range records {
 		sha := r.SHA
 		if len(sha) > 8 {
 			sha = sha[:8]
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
-			r.Repo, sha, r.Date.UTC().Format("2006-01-02"), r.Subject)
+		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
+			r.Repo, sha, r.Date.UTC().Format("2006-01-02"), r.Subject); err != nil {
+			return err
+		}
 	}
 	return tw.Flush()
 }
 
-func emitCommitsQueryWarnings(w io.Writer, errs []commitsQueryError) {
+func emitCommitsQueryWarnings(w io.Writer, errs []commitsQueryError) error {
 	if len(errs) == 0 {
-		return
+		return nil
 	}
-	fmt.Fprintf(w, "warning: %d repo(s) failed; re-run with --json for details\n", len(errs))
+	_, err := fmt.Fprintf(w, "warning: %d repo(s) failed; re-run with --json for details\n", len(errs))
+	return err
 }
 
 // WorkitemCommitsJSONVersion is declared in json_contract.go alongside the

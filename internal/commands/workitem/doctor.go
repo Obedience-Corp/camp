@@ -99,14 +99,19 @@ func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut, fix bool) error
 				return renderWorkitemDoctorError(cmd, jsonOut, camperrors.Wrap(qerr, "quarantine broken registry"))
 			}
 			if quarantined != "" {
-				fmt.Fprintf(cmd.ErrOrStderr(),
+				if _, err := fmt.Fprintf(cmd.ErrOrStderr(),
 					"quarantined broken links.yaml to %s; bootstrapped empty registry\n",
-					quarantined)
+					quarantined); err != nil {
+					return err
+				}
 			}
 		}
 		err = links.WithLock(ctx, root, func(registry *links.Links) error {
 			findings = collectWorkitemFindings(ctx, root, registry, knownIDs)
-			applied := autoFixWorkitemFindings(ctx, root, registry, findings, cmd.ErrOrStderr())
+			applied, fixErr := autoFixWorkitemFindings(ctx, root, registry, findings, cmd.ErrOrStderr())
+			if fixErr != nil {
+				return fixErr
+			}
 			if applied == 0 {
 				return links.ErrSkipSave
 			}
@@ -134,7 +139,9 @@ func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut, fix bool) error
 				}
 				return errDoctorIssues
 			}
-			emitDocHuman(cmd.OutOrStdout(), []docFinding{parseFinding})
+			if err := emitDocHuman(cmd.OutOrStdout(), []docFinding{parseFinding}); err != nil {
+				return err
+			}
 			return camperrors.Wrap(loadErr, "load links registry")
 		}
 		findings = collectWorkitemFindings(ctx, root, registry, knownIDs)
@@ -145,7 +152,9 @@ func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut, fix bool) error
 			return err
 		}
 	} else {
-		emitDocHuman(cmd.OutOrStdout(), findings)
+		if err := emitDocHuman(cmd.OutOrStdout(), findings); err != nil {
+			return err
+		}
 	}
 
 	if hasErrorFinding(findings) {
@@ -280,7 +289,7 @@ func collectWorkitemFindings(ctx context.Context, root string, registry *links.L
 	return findings
 }
 
-func autoFixWorkitemFindings(ctx context.Context, root string, registry *links.Links, findings []docFinding, errw io.Writer) int {
+func autoFixWorkitemFindings(ctx context.Context, root string, registry *links.Links, findings []docFinding, errw io.Writer) (int, error) {
 	applied := 0
 	needsRefBackfill := false
 	for _, f := range findings {
@@ -305,14 +314,18 @@ func autoFixWorkitemFindings(ctx context.Context, root string, registry *links.L
 		n, failures, err := backfillMissingRefs(ctx, root)
 		applied += n
 		for _, f := range failures {
-			fmt.Fprintf(errw, "warning: backfill ref for %s: %v\n", f.RelativePath, f.Err)
+			if _, writeErr := fmt.Fprintf(errw, "warning: backfill ref for %s: %v\n", f.RelativePath, f.Err); writeErr != nil {
+				return applied, writeErr
+			}
 		}
 		if err != nil {
-			fmt.Fprintf(errw, "warning: backfill refs: %v\n", err)
-			return applied
+			if _, writeErr := fmt.Fprintf(errw, "warning: backfill refs: %v\n", err); writeErr != nil {
+				return applied, writeErr
+			}
+			return applied, nil
 		}
 	}
-	return applied
+	return applied, nil
 }
 
 func targetForLinkID(linkID string) string {
@@ -362,18 +375,25 @@ func hasErrorFinding(findings []docFinding) bool {
 	return false
 }
 
-func emitDocHuman(w io.Writer, findings []docFinding) {
+func emitDocHuman(w io.Writer, findings []docFinding) error {
 	if len(findings) == 0 {
-		fmt.Fprintln(w, "doctor: 0 findings")
-		return
+		_, err := fmt.Fprintln(w, "doctor: 0 findings")
+		return err
 	}
-	fmt.Fprintf(w, "doctor: %d finding(s)\n", len(findings))
+	if _, err := fmt.Fprintf(w, "doctor: %d finding(s)\n", len(findings)); err != nil {
+		return err
+	}
 	for _, f := range findings {
-		fmt.Fprintf(w, "  [%s] %s %s — %s\n", f.Severity, f.Code, f.Target, f.Message)
+		if _, err := fmt.Fprintf(w, "  [%s] %s %s — %s\n", f.Severity, f.Code, f.Target, f.Message); err != nil {
+			return err
+		}
 		if f.FixHint != "" {
-			fmt.Fprintln(w, "    hint: "+f.FixHint)
+			if _, err := fmt.Fprintln(w, "    hint: "+f.FixHint); err != nil {
+				return err
+			}
 		}
 	}
+	return nil
 }
 
 func emitDocJSON(w io.Writer, findings []docFinding) error {

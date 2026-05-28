@@ -161,6 +161,6 @@ func upsertConcept(ctx context.Context, campaignRoot string, cfg *config.Campaig
 
 func invalidateNavigationCache(cmd *cobra.Command, campaignRoot string) {
 	if err := navindex.Delete(campaignRoot); err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "warning: failed to invalidate navigation cache: %v\n", err)
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: failed to invalidate navigation cache: %v\n", err)
 	}
 }

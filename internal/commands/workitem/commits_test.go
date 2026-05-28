@@ -22,13 +22,17 @@ func TestCommitsWorkerCountCapsFanout(t *testing.T) {
 
 func TestEmitCommitsQueryWarnings(t *testing.T) {
 	var stderr bytes.Buffer
-	emitCommitsQueryWarnings(&stderr, []commitsQueryError{{Repo: "demo", Err: "boom"}})
+	if err := emitCommitsQueryWarnings(&stderr, []commitsQueryError{{Repo: "demo", Err: "boom"}}); err != nil {
+		t.Fatal(err)
+	}
 	if got := stderr.String(); got != "warning: 1 repo(s) failed; re-run with --json for details\n" {
 		t.Fatalf("warning = %q", got)
 	}
 
 	stderr.Reset()
-	emitCommitsQueryWarnings(&stderr, nil)
+	if err := emitCommitsQueryWarnings(&stderr, nil); err != nil {
+		t.Fatal(err)
+	}
 	if stderr.Len() != 0 {
 		t.Fatalf("empty errors emitted warning: %q", stderr.String())
 	}

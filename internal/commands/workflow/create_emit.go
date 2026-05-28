@@ -19,24 +19,40 @@ func emitCreateResult(cmd *cobra.Command, plan *createPlan, opts createOptions) 
 func emitCreateHuman(cmd *cobra.Command, plan *createPlan, opts createOptions) error {
 	w := cmd.OutOrStdout()
 	if plan.NoChanges {
-		fmt.Fprintf(w, "no changes for workflow %s\n", plan.Type)
-		return nil
+		_, err := fmt.Fprintf(w, "no changes for workflow %s\n", plan.Type)
+		return err
 	}
 
 	if opts.DryRun {
-		fmt.Fprintf(w, "plan: create %s\n", strings.TrimRight(plan.WorkflowRel, "/"))
-		for _, line := range planActionLines(plan) {
-			fmt.Fprintf(w, "  %s\n", line)
+		if _, err := fmt.Fprintf(w, "plan: create %s\n", strings.TrimRight(plan.WorkflowRel, "/")); err != nil {
+			return err
 		}
-		fmt.Fprintln(w, "dry run: nothing written. re-run without --dry-run to apply.")
+		for _, line := range planActionLines(plan) {
+			if _, err := fmt.Fprintf(w, "  %s\n", line); err != nil {
+				return err
+			}
+		}
+		if _, err := fmt.Fprintln(w, "dry run: nothing written. re-run without --dry-run to apply."); err != nil {
+			return err
+		}
 		return nil
 	}
 
-	fmt.Fprintf(w, "created %s\n", strings.TrimRight(plan.WorkflowRel, "/"))
-	fmt.Fprintf(w, "  shortcut: %s -> %s\n", plan.Shortcut.Key, plan.WorkflowRel)
-	fmt.Fprintf(w, "  workitem type: %s\n", plan.Type)
-	fmt.Fprintf(w, "  dungeon dirs: %s\n", strings.Join(statusDirsForOutput(), ", "))
-	fmt.Fprintf(w, "next: camp workitem create <slug> --type %s\n", plan.Type)
+	if _, err := fmt.Fprintf(w, "created %s\n", strings.TrimRight(plan.WorkflowRel, "/")); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "  shortcut: %s -> %s\n", plan.Shortcut.Key, plan.WorkflowRel); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "  workitem type: %s\n", plan.Type); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "  dungeon dirs: %s\n", strings.Join(statusDirsForOutput(), ", ")); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "next: camp workitem create <slug> --type %s\n", plan.Type); err != nil {
+		return err
+	}
 	return nil
 }
 

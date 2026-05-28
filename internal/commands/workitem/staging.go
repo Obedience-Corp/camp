@@ -173,33 +173,53 @@ func PrintPlan(w io.Writer, plan *StagingPlan) error {
 	if plan == nil || plan.Workitem == nil {
 		return camperrors.NewValidation("plan", "nil plan", nil)
 	}
-	fmt.Fprintf(w, "workitem: %s (ref: %s)\n", plan.Workitem.StableID, plan.WorkitemRef)
-	fmt.Fprintf(w, "context:  %s", plan.Context)
-	if plan.ContextNote != "" {
-		fmt.Fprintf(w, " (%s)", plan.ContextNote)
+	if _, err := fmt.Fprintf(w, "workitem: %s (ref: %s)\n", plan.Workitem.StableID, plan.WorkitemRef); err != nil {
+		return err
 	}
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, "staging:")
+	if _, err := fmt.Fprintf(w, "context:  %s", plan.Context); err != nil {
+		return err
+	}
+	if plan.ContextNote != "" {
+		if _, err := fmt.Fprintf(w, " (%s)", plan.ContextNote); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w, "staging:"); err != nil {
+		return err
+	}
 	if len(plan.PreStaged) > 0 {
 		for _, p := range plan.PreStaged {
-			fmt.Fprintf(w, "  S  %s\n", p)
+			if _, err := fmt.Fprintf(w, "  S  %s\n", p); err != nil {
+				return err
+			}
 		}
 	}
 	for _, p := range plan.Stage {
 		if note := plan.StageAnnotations[p]; note != "" {
-			fmt.Fprintf(w, "  A  %s (%s)\n", p, note)
+			if _, err := fmt.Fprintf(w, "  A  %s (%s)\n", p, note); err != nil {
+				return err
+			}
 			continue
 		}
-		fmt.Fprintf(w, "  A  %s\n", p)
-	}
-	if len(plan.Skip) > 0 {
-		fmt.Fprintln(w, "skipped:")
-		for _, s := range plan.Skip {
-			fmt.Fprintf(w, "  %s %s\n", s.Path, s.Reason)
+		if _, err := fmt.Fprintf(w, "  A  %s\n", p); err != nil {
+			return err
 		}
 	}
-	fmt.Fprintf(w, "tag:    %s\n", plan.Tag)
-	return nil
+	if len(plan.Skip) > 0 {
+		if _, err := fmt.Fprintln(w, "skipped:"); err != nil {
+			return err
+		}
+		for _, s := range plan.Skip {
+			if _, err := fmt.Fprintf(w, "  %s %s\n", s.Path, s.Reason); err != nil {
+				return err
+			}
+		}
+	}
+	_, err := fmt.Fprintf(w, "tag:    %s\n", plan.Tag)
+	return err
 }
 
 // ErrNoWorkitemContext is returned when ComputePlan cannot resolve any

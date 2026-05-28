@@ -72,8 +72,7 @@ func runSync(ctx context.Context, cmd *cobra.Command, apply, jsonOut bool) error
 	if jsonOut {
 		return emitSyncJSON(cmd.OutOrStdout(), findings, actions, applied, apply)
 	}
-	emitSyncHuman(cmd.OutOrStdout(), actions, applied, apply)
-	return nil
+	return emitSyncHuman(cmd.OutOrStdout(), actions, applied, apply)
 }
 
 func planSyncActions(findings []finding) []syncAction {
@@ -274,7 +273,7 @@ func (s *syncState) save() error {
 }
 
 func (s *syncState) invalidateCacheIfNeeded() {
-	if !(s.jumpsDirty || s.conceptsDirty) {
+	if !s.jumpsDirty && !s.conceptsDirty {
 		return
 	}
 	for _, a := range s.applied {
@@ -286,22 +285,31 @@ func (s *syncState) invalidateCacheIfNeeded() {
 	invalidateNavigationCache(s.cmd, s.campaignRoot)
 }
 
-func emitSyncHuman(w io.Writer, actions, applied []syncAction, apply bool) {
+func emitSyncHuman(w io.Writer, actions, applied []syncAction, apply bool) error {
 	if len(actions) == 0 {
-		fmt.Fprintln(w, "sync: nothing to fix")
-		return
+		_, err := fmt.Fprintln(w, "sync: nothing to fix")
+		return err
 	}
 	if apply {
-		fmt.Fprintf(w, "sync: applied %d / %d auto-fixable findings\n", len(applied), len(actions))
-		for _, a := range applied {
-			fmt.Fprintf(w, "  fixed %s (%s)\n", a.Finding.Code, syncActionDetail(a))
+		if _, err := fmt.Fprintf(w, "sync: applied %d / %d auto-fixable findings\n", len(applied), len(actions)); err != nil {
+			return err
 		}
-		return
+		for _, a := range applied {
+			if _, err := fmt.Fprintf(w, "  fixed %s (%s)\n", a.Finding.Code, syncActionDetail(a)); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
-	fmt.Fprintf(w, "sync: would fix %d auto-fixable findings (re-run with --apply)\n", len(actions))
+	if _, err := fmt.Fprintf(w, "sync: would fix %d auto-fixable findings (re-run with --apply)\n", len(actions)); err != nil {
+		return err
+	}
 	for _, a := range actions {
-		fmt.Fprintf(w, "  plan  %s (%s)\n", a.Finding.Code, a.Target)
+		if _, err := fmt.Fprintf(w, "  plan  %s (%s)\n", a.Finding.Code, a.Target); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 func syncActionDetail(a syncAction) string {

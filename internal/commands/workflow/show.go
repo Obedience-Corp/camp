@@ -64,7 +64,9 @@ func runShow(ctx context.Context, cmd *cobra.Command, typeName string, jsonOut b
 		if jsonOut {
 			return camperrors.NewNotFound("workflow", typeName, nil)
 		}
-		fmt.Fprintf(cmd.ErrOrStderr(), "unknown workflow type: %s\n", typeName)
+		if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "unknown workflow type: %s\n", typeName); err != nil {
+			return err
+		}
 		return errWorkflowNotFound
 	}
 
@@ -146,23 +148,43 @@ func recentWorkitems(campaignRoot, relPath string, limit int) ([]recentItem, int
 }
 
 func emitShowHuman(w io.Writer, entry workflowEntry, recent []recentItem) error {
-	fmt.Fprintf(w, "workflow: %s\n", entry.Type)
+	if _, err := fmt.Fprintf(w, "workflow: %s\n", entry.Type); err != nil {
+		return err
+	}
 	if entry.Title != "" {
-		fmt.Fprintf(w, "  title: %s\n", entry.Title)
+		if _, err := fmt.Fprintf(w, "  title: %s\n", entry.Title); err != nil {
+			return err
+		}
 	}
-	fmt.Fprintf(w, "  path: %s\n", entry.Path)
+	if _, err := fmt.Fprintf(w, "  path: %s\n", entry.Path); err != nil {
+		return err
+	}
 	if entry.HasShortcut {
-		fmt.Fprintf(w, "  shortcut: %s -> %s\n", entry.ShortcutKey, entry.ShortcutPath)
+		if _, err := fmt.Fprintf(w, "  shortcut: %s -> %s\n", entry.ShortcutKey, entry.ShortcutPath); err != nil {
+			return err
+		}
 	} else {
-		fmt.Fprintln(w, "  shortcut: (none — add with: camp workflow shortcut add <type> <key>)")
+		if _, err := fmt.Fprintln(w, "  shortcut: (none — add with: camp workflow shortcut add <type> <key>)"); err != nil {
+			return err
+		}
 	}
-	fmt.Fprintf(w, "  has_concept: %t\n", entry.HasConcept)
-	fmt.Fprintf(w, "  has_dir: %t\n", entry.HasDir)
-	fmt.Fprintf(w, "  workitems: %d\n", entry.WorkitemCount)
+	if _, err := fmt.Fprintf(w, "  has_concept: %t\n", entry.HasConcept); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "  has_dir: %t\n", entry.HasDir); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "  workitems: %d\n", entry.WorkitemCount); err != nil {
+		return err
+	}
 	if entry.WorkitemCount > 0 {
-		fmt.Fprintln(w, "recent:")
+		if _, err := fmt.Fprintln(w, "recent:"); err != nil {
+			return err
+		}
 		for _, r := range recent {
-			fmt.Fprintf(w, "  %s  %s\n", r.Modified.Format(time.RFC3339), r.Path)
+			if _, err := fmt.Fprintf(w, "  %s  %s\n", r.Modified.Format(time.RFC3339), r.Path); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

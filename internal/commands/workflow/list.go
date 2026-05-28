@@ -53,11 +53,13 @@ func runList(ctx context.Context, cmd *cobra.Command, jsonOut bool) error {
 
 func emitListHuman(w io.Writer, entries []workflowEntry) error {
 	if len(entries) == 0 {
-		fmt.Fprintln(w, "no user-created workflows. create one with: camp workflow create <type> --shortcut <key>")
-		return nil
+		_, err := fmt.Fprintln(w, "no user-created workflows. create one with: camp workflow create <type> --shortcut <key>")
+		return err
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "TYPE\tSHORTCUT\tITEMS\tUPDATED")
+	if _, err := fmt.Fprintln(tw, "TYPE\tSHORTCUT\tITEMS\tUPDATED"); err != nil {
+		return err
+	}
 	for _, e := range entries {
 		shortcut := e.ShortcutKey
 		if shortcut == "" {
@@ -67,7 +69,9 @@ func emitListHuman(w io.Writer, entries []workflowEntry) error {
 		if !e.LastModified.IsZero() {
 			updated = e.LastModified.Format(time.RFC3339)
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%d\t%s\n", e.Type, shortcut, e.WorkitemCount, updated)
+		if _, err := fmt.Fprintf(tw, "%s\t%s\t%d\t%s\n", e.Type, shortcut, e.WorkitemCount, updated); err != nil {
+			return err
+		}
 	}
 	return tw.Flush()
 }

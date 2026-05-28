@@ -33,7 +33,7 @@ func deriveUniqueRef(ctx context.Context, campaignRoot string, cfg *config.Campa
 func resolveQuestIDForCreate(ctx context.Context, cmd *cobra.Command, campaignRoot, explicit string) string {
 	q, err := quest.ResolveContext(ctx, campaignRoot, explicit)
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "warning: quest resolution failed: %v\n", err)
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: quest resolution failed: %v\n", err)
 		return ""
 	}
 	if q == nil {

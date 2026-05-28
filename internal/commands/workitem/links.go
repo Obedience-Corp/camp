@@ -78,11 +78,15 @@ func emitLinksHuman(w io.Writer, list []links.Link) error {
 		return err
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "LINK_ID\tWORKITEM\tSCOPE\tROLE\tCREATED")
+	if _, err := fmt.Fprintln(tw, "LINK_ID\tWORKITEM\tSCOPE\tROLE\tCREATED"); err != nil {
+		return err
+	}
 	for _, link := range list {
-		fmt.Fprintf(tw, "%s\t%s\t%s:%s\t%s\t%s\n",
+		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s:%s\t%s\t%s\n",
 			link.ID, link.WorkitemID, link.Scope.Kind, link.Scope.Path,
-			link.Role, link.CreatedAt.Format(time.RFC3339))
+			link.Role, link.CreatedAt.Format(time.RFC3339)); err != nil {
+			return err
+		}
 	}
 	return tw.Flush()
 }

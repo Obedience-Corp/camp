@@ -236,18 +236,18 @@ func ensureRefForCommit(ctx context.Context, root string, wi *wkitem.WorkItem, e
 	existing := wkitem.RefsFromWorkitems(items)
 	ref, err := wkitem.DeriveUnique(ctx, wi.StableID, existing)
 	if err != nil {
-		fmt.Fprintf(errw,
+		_, _ = fmt.Fprintf(errw,
 			"warning: could not derive ref for %s: %v; committing without WI segment\n",
 			wi.RelativePath, err)
 		return "", nil
 	}
 	if err := backfillRefWithRef(ctx, root, wi.RelativePath, ref); err != nil {
-		fmt.Fprintf(errw,
+		_, _ = fmt.Fprintf(errw,
 			"warning: could not backfill ref for %s: %v; committing without WI segment\n",
 			wi.RelativePath, err)
 		return "", nil
 	}
-	fmt.Fprintf(errw,
+	_, _ = fmt.Fprintf(errw,
 		"warning: backfilled missing ref for %s -> %s; commit the .workitem update with your next change\n",
 		wi.RelativePath, ref)
 	return ref, nil

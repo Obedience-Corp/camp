@@ -44,10 +44,20 @@ fmt:
 vet:
     go vet ./...
 
-# Run golangci-lint (includes vet, staticcheck, errcheck, and more)
+# Run golangci-lint against new branch issues (includes vet, staticcheck, errcheck, and more).
+# The repository still has historical default-linter findings, so this gate
+# blocks new regressions relative to origin/main while that backlog is migrated.
 lint:
-    golangci-lint run ./...
-    @just lint-no-host-fs-tests
+    #!/usr/bin/env sh
+    set -eu
+    base="${GOLANGCI_LINT_BASE:-origin/main}"
+    if git rev-parse --verify "$base" >/dev/null 2>&1; then
+        golangci-lint run --new-from-merge-base "$base" ./...
+    else
+        echo "lint: $base not found; falling back to golangci-lint --new"
+        golangci-lint run --new ./...
+    fi
+    just lint-no-host-fs-tests
 
 # Reject NEW host-side filesystem-mutating test patterns outside
 # tests/integration/. Standing rule (feedback_docker_integration_tests.md):

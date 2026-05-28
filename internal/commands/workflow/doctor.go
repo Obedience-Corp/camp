@@ -93,7 +93,9 @@ func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut bool) error {
 			return err
 		}
 	} else {
-		emitDoctorHuman(cmd.OutOrStdout(), findings)
+		if err := emitDoctorHuman(cmd.OutOrStdout(), findings); err != nil {
+			return err
+		}
 	}
 
 	if hasErrorFindings(findings) {
@@ -309,22 +311,29 @@ func hasErrorFindings(findings []finding) bool {
 	return false
 }
 
-func emitDoctorHuman(w io.Writer, findings []finding) {
+func emitDoctorHuman(w io.Writer, findings []finding) error {
 	if len(findings) == 0 {
-		fmt.Fprintln(w, "doctor: 0 findings")
-		return
+		_, err := fmt.Fprintln(w, "doctor: 0 findings")
+		return err
 	}
-	fmt.Fprintf(w, "doctor: %d finding(s)\n", len(findings))
+	if _, err := fmt.Fprintf(w, "doctor: %d finding(s)\n", len(findings)); err != nil {
+		return err
+	}
 	for _, f := range findings {
 		fixHint := ""
 		if f.FixHint != "" {
 			fixHint = "  hint: " + f.FixHint
 		}
-		fmt.Fprintf(w, "  [%s] %s %s — %s\n", f.Severity, f.Code, f.Target, f.Message)
+		if _, err := fmt.Fprintf(w, "  [%s] %s %s — %s\n", f.Severity, f.Code, f.Target, f.Message); err != nil {
+			return err
+		}
 		if fixHint != "" {
-			fmt.Fprintln(w, fixHint)
+			if _, err := fmt.Fprintln(w, fixHint); err != nil {
+				return err
+			}
 		}
 	}
+	return nil
 }
 
 func emitDoctorJSON(w io.Writer, findings []finding) error {

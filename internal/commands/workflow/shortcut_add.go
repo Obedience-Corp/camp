@@ -69,7 +69,9 @@ func runShortcutAdd(ctx context.Context, cmd *cobra.Command, typeName, key strin
 		if jsonOut {
 			return camperrors.NewNotFound("workflow", typeName, nil)
 		}
-		fmt.Fprintf(cmd.ErrOrStderr(), "unknown workflow type: %s\n", typeName)
+		if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "unknown workflow type: %s\n", typeName); err != nil {
+			return err
+		}
 		return errWorkflowNotFound
 	}
 
@@ -98,11 +100,11 @@ func titleOrType(e workflowEntry) string {
 
 func emitShortcutAddHuman(w io.Writer, typeName, key, path string, noChange bool) error {
 	if noChange {
-		fmt.Fprintf(w, "no changes for shortcut %s -> %s\n", key, path)
-		return nil
+		_, err := fmt.Fprintf(w, "no changes for shortcut %s -> %s\n", key, path)
+		return err
 	}
-	fmt.Fprintf(w, "shortcut added: %s -> %s (workflow %s)\n", key, path, typeName)
-	return nil
+	_, err := fmt.Fprintf(w, "shortcut added: %s -> %s (workflow %s)\n", key, path, typeName)
+	return err
 }
 
 func emitShortcutAddJSON(w io.Writer, typeName, key, path string, noChange bool) error {
