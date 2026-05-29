@@ -143,10 +143,10 @@ func computeLinkPlan(ctx context.Context, root string, opts PlanOptions, plan *S
 	return plan, nil
 }
 
-func computeFestivalPlan(ctx context.Context, root string, opts PlanOptions, plan *StagingPlan) (*StagingPlan, error) {
+func computeFestivalPlan(ctx context.Context, root string, opts PlanOptions, plan *StagingPlan, festivalID string) (*StagingPlan, error) {
 	plan.RepoRoot = root
 	plan.Context = PlanContextFestival
-	scope := primaryFestivalScopePath(ctx, root, plan.Workitem)
+	scope := primaryFestivalScopePath(ctx, root, plan.Workitem, festivalID)
 	if scope == "" {
 		scope = plan.Workitem.RelativePath
 	}
@@ -292,11 +292,22 @@ func pickPrimaryProjectScopePath(ctx context.Context, root string, wi *wkitem.Wo
 		"no primary project link points at workitem "+wi.StableID, nil)
 }
 
-func primaryFestivalScopePath(ctx context.Context, root string, wi *wkitem.WorkItem) string {
+func primaryFestivalScopePath(ctx context.Context, root string, wi *wkitem.WorkItem, festivalID string) string {
 	registry, err := links.Load(ctx, root)
 	if err != nil || registry == nil {
 		return ""
 	}
+	return selectPrimaryFestivalScope(registry, wi, festivalID)
+}
+
+// selectPrimaryFestivalScope returns the campaign-relative scope path of the
+// primary festival link to stage from. When festivalID is set it returns only
+// the link whose scope matches that id — the festival the resolver matched and
+// the one named in the FE- tag — so the staged paths and the commit tag cannot
+// point at different festivals when a workitem is linked to several. With no
+// festivalID it falls back to the first primary festival link.
+func selectPrimaryFestivalScope(registry *links.Links, wi *wkitem.WorkItem, festivalID string) string {
+	first := ""
 	for i := range registry.Links {
 		link := &registry.Links[i]
 		if link.Role != links.RolePrimary || link.Scope.Kind != links.ScopeFestival {
@@ -305,7 +316,15 @@ func primaryFestivalScopePath(ctx context.Context, root string, wi *wkitem.WorkI
 		if link.WorkitemID != wi.StableID && link.WorkitemID != wi.Key {
 			continue
 		}
-		return link.Scope.Path
+		if festivalID != "" {
+			if resolver.FestivalScopeMatches(link.Scope.Path, festivalID) {
+				return link.Scope.Path
+			}
+			continue
+		}
+		if first == "" {
+			first = link.Scope.Path
+		}
 	}
-	return ""
+	return first
 }

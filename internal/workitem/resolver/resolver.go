@@ -275,7 +275,7 @@ func resolveFestival(ctx context.Context, root, festivalID string) (*workitem.Wo
 		if link.Role != links.RolePrimary || link.Scope.Kind != links.ScopeFestival {
 			continue
 		}
-		if !festivalScopeMatches(link.Scope.Path, festivalID) {
+		if !FestivalScopeMatches(link.Scope.Path, festivalID) {
 			continue
 		}
 		wi, err := selector.Resolve(ctx, root, link.WorkitemID, selector.ResolveOptions{})
@@ -344,7 +344,11 @@ func relOutsideRoot(rel string) bool {
 	return rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel)
 }
 
-func festivalScopeMatches(scopePath, festivalID string) bool {
+// FestivalScopeMatches reports whether a festival link scope path corresponds
+// to the given festival id. It is the shared rule used both when resolving a
+// workitem from festival context and when selecting which festival's files to
+// stage, so the commit tag and the staged paths cannot disagree.
+func FestivalScopeMatches(scopePath, festivalID string) bool {
 	if scopePath == festivalID {
 		return true
 	}

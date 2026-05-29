@@ -146,6 +146,40 @@ func TestIntegration_WorkitemCommit_FestivalContextFromCwd(t *testing.T) {
 		"festival commit should not widen to workitem metadata: %v", changed)
 }
 
+func TestIntegration_WorkitemCommit_MultiFestivalStagesResolvedScope(t *testing.T) {
+	tc := GetSharedContainer(t)
+	dir := "/test/wi-commit-multi-festival"
+	initWorkitemCommitCampaign(t, tc, dir)
+	ref := seedDesignWorkitemWithRef(t, tc, dir, "timeline")
+
+	aaDir := dir + "/festivals/active/AA0001"
+	zzDir := dir + "/festivals/active/ZZ0002"
+	require.NoError(t, tc.WriteFile(aaDir+"/FESTIVAL_GOAL.md", "# AA0001\n"))
+	require.NoError(t, tc.WriteFile(zzDir+"/FESTIVAL_GOAL.md", "# ZZ0002\n"))
+	_, err := tc.RunCampInDir(dir, "workitem", "link", "timeline", "--festival", "AA0001")
+	require.NoError(t, err)
+	_, err = tc.RunCampInDir(dir, "workitem", "link", "timeline", "--festival", "ZZ0002")
+	require.NoError(t, err)
+
+	dryRun, err := tc.RunCampInDir(zzDir,
+		"workitem", "commit", "--dry-run", "--json", "-m", "festival plan")
+	require.NoError(t, err, "festival dry-run: %s", dryRun)
+	var plan struct {
+		FestivalRef string   `json:"festival_ref"`
+		Tag         string   `json:"tag"`
+		Stage       []string `json:"stage"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(dryRun), &plan), "raw=%s", dryRun)
+
+	assert.Equal(t, "ZZ0002", plan.FestivalRef)
+	assert.Contains(t, plan.Tag, "FE-ZZ0002")
+	assert.Contains(t, plan.Tag, "WI-"+ref)
+	assert.Contains(t, plan.Stage, "festivals/active/ZZ0002/FESTIVAL_GOAL.md",
+		"committing from ZZ0002 must stage ZZ0002 files: %v", plan.Stage)
+	assert.NotContains(t, plan.Stage, "festivals/active/AA0001/FESTIVAL_GOAL.md",
+		"committing from ZZ0002 must not stage the other festival's files: %v", plan.Stage)
+}
+
 func TestIntegration_WorkitemCommit_RefusesSilentWiden(t *testing.T) {
 	tc := GetSharedContainer(t)
 	dir := "/test/wi-commit-widen"
