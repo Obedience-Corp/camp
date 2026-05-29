@@ -126,6 +126,14 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 	}
 	if workitemCommandRegistered() {
 		expectedCommands["workitem"] = false
+		expectedCommands["workitem create"] = false
+		expectedCommands["workitem current"] = false
+		expectedCommands["workitem link"] = false
+		expectedCommands["workitem links"] = false
+		expectedCommands["workitem resolve"] = false
+		expectedCommands["workitem unlink"] = false
+		expectedCommands["workitem commit"] = false
+		expectedCommands["workitem commits"] = false
 	}
 
 	for _, cmd := range manifest.Commands {
@@ -148,7 +156,7 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		wantCount += 13
 	}
 	if workitemCommandRegistered() {
-		wantCount += 1
+		wantCount += 9
 	}
 	if len(manifest.Commands) != wantCount {
 		t.Errorf("expected exactly %d restricted commands, got %d", wantCount, len(manifest.Commands))
@@ -199,6 +207,14 @@ func TestManifestCommand_AllCommandsHaveAnnotations(t *testing.T) {
 	}
 	if workitemCommandRegistered() {
 		agentAllowed["workitem"] = true
+		agentAllowed["workitem create"] = true
+		agentAllowed["workitem current"] = true
+		agentAllowed["workitem link"] = true
+		agentAllowed["workitem links"] = true
+		agentAllowed["workitem resolve"] = true
+		agentAllowed["workitem unlink"] = true
+		agentAllowed["workitem commit"] = true
+		agentAllowed["workitem commits"] = true
 	}
 
 	for _, cmd := range manifest.Commands {
@@ -273,6 +289,14 @@ func TestManifestCommand_InteractiveFlags(t *testing.T) {
 	}
 	if workitemCommandRegistered() {
 		nonInteractiveCommands["workitem"] = true
+		nonInteractiveCommands["workitem create"] = true
+		nonInteractiveCommands["workitem current"] = true
+		nonInteractiveCommands["workitem link"] = true
+		nonInteractiveCommands["workitem links"] = true
+		nonInteractiveCommands["workitem resolve"] = true
+		nonInteractiveCommands["workitem unlink"] = true
+		nonInteractiveCommands["workitem commit"] = true
+		nonInteractiveCommands["workitem commits"] = true
 	}
 
 	cmdMap := make(map[string]CommandEntry)

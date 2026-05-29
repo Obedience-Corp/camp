@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -16,29 +17,38 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/pathsafe"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 )
 
 func newCreateCommand() *cobra.Command {
-	var typeFlag, title, idOverride, dirOverride string
+	var typeFlag, title, idOverride, dirOverride, questSelector string
+	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "create <slug>",
 		Short: "Create a new workitem with v1 minimum metadata",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := cmd.Context()
-			return runCreate(ctx, cmd, args[0], typeFlag, title, idOverride, dirOverride)
+		Args:  jsoncontract.Args(WorkitemCreateJSONVersion, func() bool { return jsonOut }, cobra.ExactArgs(1)),
+		Annotations: map[string]string{
+			"agent_allowed": "true",
+			"agent_reason":  "Creates workitems with --json output for automation",
 		},
+		RunE: jsoncontract.RunE(WorkitemCreateJSONVersion, func() bool { return jsonOut }, func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			return runCreate(ctx, cmd, args[0], typeFlag, title, idOverride, dirOverride, questSelector, jsonOut)
+		}),
 	}
+	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(WorkitemCreateJSONVersion, func() bool { return jsonOut }))
 	cmd.Flags().StringVar(&typeFlag, "type", "feature", "workitem type (feature, bug, chore, or custom)")
 	cmd.Flags().StringVar(&title, "title", "", "human-readable title")
 	cmd.Flags().StringVar(&idOverride, "id", "", "override the generated id")
 	cmd.Flags().StringVar(&dirOverride, "dir", "", "parent dir override (default: workflow/<type>)")
+	cmd.Flags().StringVar(&questSelector, "quest", "", "capture quest_id from this quest (defaults to CAMP_QUEST env var if set)")
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit a structured JSON result")
 	return cmd
 }
 
-func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, idOverride, dirOverride string) error {
+func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, idOverride, dirOverride, questSelector string, jsonOut bool) error {
 	if err := validateSlug(slug); err != nil {
 		return err
 	}
@@ -46,7 +56,7 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 		return camperrors.NewValidation("type", "invalid type slug: "+err.Error(), nil)
 	}
 
-	_, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
+	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
 		return camperrors.Wrap(err, "not in a campaign directory")
 	}
@@ -73,12 +83,20 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 		return camperrors.Wrap(err, "create directory")
 	}
 
+	ref, err := deriveUniqueRef(ctx, campaignRoot, cfg, id)
+	if err != nil {
+		return err
+	}
+	questID := resolveQuestIDForCreate(ctx, cmd, campaignRoot, questSelector)
+
 	meta := wkitem.Metadata{
 		Version: wkitem.WorkitemSchemaVersion,
 		Kind:    "workitem",
 		ID:      id,
 		Type:    typeFlag,
 		Title:   title,
+		Ref:     ref,
+		QuestID: questID,
 	}
 	buf, err := yaml.Marshal(&meta)
 	if err != nil {
@@ -90,9 +108,46 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 	invalidateNavigationCache(cmd, campaignRoot)
 
 	rel := filepath.Join(parent, slug)
+	if jsonOut {
+		payload := struct {
+			SchemaVersion string    `json:"schema_version"`
+			GeneratedAt   time.Time `json:"generated_at"`
+			Workitem      struct {
+				ID            string `json:"id"`
+				Ref           string `json:"ref"`
+				Type          string `json:"type"`
+				Title         string `json:"title,omitempty"`
+				QuestID       string `json:"quest_id,omitempty"`
+				RelativePath  string `json:"relative_path"`
+				MarkerVersion string `json:"marker_version"`
+			} `json:"workitem"`
+			Next struct {
+				Command string `json:"command"`
+				Cwd     string `json:"cwd"`
+				Hint    string `json:"hint"`
+			} `json:"next"`
+		}{SchemaVersion: WorkitemCreateJSONVersion, GeneratedAt: time.Now().UTC()}
+		payload.Workitem.ID = id
+		payload.Workitem.Ref = ref
+		payload.Workitem.Type = typeFlag
+		payload.Workitem.Title = title
+		payload.Workitem.QuestID = questID
+		payload.Workitem.RelativePath = rel
+		payload.Workitem.MarkerVersion = wkitem.WorkitemSchemaVersion
+		payload.Next.Command = "fest create workflow " + slug
+		payload.Next.Cwd = rel
+		payload.Next.Hint = "cd " + rel + " && fest create workflow " + slug
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		return enc.Encode(payload)
+	}
+	questLine := ""
+	if questID != "" {
+		questLine = fmt.Sprintf("  quest: %s\n", questID)
+	}
 	fmt.Fprintf(cmd.OutOrStdout(),
-		"created %s\n  id: %s\n  type: %s\nnext: cd %s && fest create workflow %s\n",
-		rel, id, typeFlag, rel, slug)
+		"created %s\n  id: %s\n  ref: %s\n  type: %s\n%snext: cd %s && fest create workflow %s\n",
+		rel, id, ref, typeFlag, questLine, rel, slug)
 	return nil
 }
 

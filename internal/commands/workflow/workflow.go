@@ -14,5 +14,10 @@ navigation config and workitem type support.`,
 	}
 
 	cmd.AddCommand(newCreateCommand())
+	cmd.AddCommand(newListCommand())
+	cmd.AddCommand(newShowCommand())
+	cmd.AddCommand(newShortcutCommand())
+	cmd.AddCommand(newDoctorCommand())
+	cmd.AddCommand(newSyncCommand())
 	return cmd
 }

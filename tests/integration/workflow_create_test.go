@@ -35,6 +35,23 @@ func TestIntegration_WorkflowCreateCustomWorkflow(t *testing.T) {
 	assert.Contains(t, out, "created workflow/research")
 	assert.Contains(t, out, "shortcut: re -> workflow/research/")
 	assert.Contains(t, out, "workitem type: research")
+	assert.Contains(t, out, "dungeon dirs:")
+
+	for _, sub := range []string{
+		"dungeon/completed",
+		"dungeon/archived",
+		"dungeon/someday",
+	} {
+		gitkeep := campaignDir + "/workflow/research/" + sub + "/.gitkeep"
+		exists, err := tc.CheckFileExists(gitkeep)
+		require.NoError(t, err, "stat %s", gitkeep)
+		assert.True(t, exists, "status scaffold missing: %s", gitkeep)
+	}
+	for _, sub := range []string{"inbox", "active", "ready"} {
+		exists, err := tc.CheckDirExists(campaignDir + "/workflow/research/" + sub)
+		require.NoError(t, err, "stat live bucket %s", sub)
+		assert.False(t, exists, "live bucket should not be scaffolded: %s", sub)
+	}
 
 	jumps, err := tc.ReadFile(campaignDir + "/.campaign/settings/jumps.yaml")
 	require.NoError(t, err)

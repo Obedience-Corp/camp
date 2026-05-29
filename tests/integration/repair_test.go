@@ -156,3 +156,83 @@ func TestInitRepair_PreservesUserShortcuts(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, output, path+"/my-stuff")
 }
+
+func TestIntegration_Init_GitignoreCurrentYaml(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupRepairCampaign(t, tc, "init-gitignore-current")
+
+	gi, err := tc.ReadFile(path + "/.campaign/.gitignore")
+	require.NoError(t, err)
+	assert.Contains(t, gi, "workitems/current.yaml",
+		"camp init must seed .campaign/.gitignore with workitems/current.yaml: %s", gi)
+}
+
+func TestIntegration_InitRepair_AppendsCurrentYamlIfMissing(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupRepairCampaign(t, tc, "repair-gitignore-current")
+
+	gi, err := tc.ReadFile(path + "/.campaign/.gitignore")
+	require.NoError(t, err)
+	stripped := strings.ReplaceAll(gi, "workitems/current.yaml\n", "")
+	require.NotEqual(t, gi, stripped, "fixture must have the line so we can remove it")
+	require.NoError(t, tc.WriteFile(path+"/.campaign/.gitignore", stripped))
+
+	runRepair(t, tc, path)
+
+	after, err := tc.ReadFile(path + "/.campaign/.gitignore")
+	require.NoError(t, err)
+	assert.Contains(t, after, "workitems/current.yaml",
+		"repair must append workitems/current.yaml when missing")
+}
+
+func TestIntegration_InitRepair_AppendsCurrentYamlWhenCommentedOut(t *testing.T) {
+	// Regression for PR #311 review: presence check must use gitignore-line
+	// semantics, not raw substring. A commented-out line like
+	// `# workitems/current.yaml` does NOT make git ignore the file, so
+	// repair must still append the active rule.
+	tc := GetSharedContainer(t)
+	path := setupRepairCampaign(t, tc, "repair-gitignore-commented")
+
+	gi, err := tc.ReadFile(path + "/.campaign/.gitignore")
+	require.NoError(t, err)
+	// Replace the active rule with a commented-out version. A substring-only
+	// check would see "workitems/current.yaml" in the file and skip the
+	// repair; the line-rule check sees it is commented out and appends.
+	commented := strings.Replace(gi,
+		"workitems/current.yaml",
+		"# workitems/current.yaml",
+		1)
+	require.NotEqual(t, gi, commented, "fixture must have the line so we can comment it")
+	require.NoError(t, tc.WriteFile(path+"/.campaign/.gitignore", commented))
+
+	runRepair(t, tc, path)
+
+	after, err := tc.ReadFile(path + "/.campaign/.gitignore")
+	require.NoError(t, err)
+	checkOut, _, err := tc.ExecCommand("sh", "-c",
+		"mkdir -p "+path+"/.campaign/workitems && touch "+path+"/.campaign/workitems/current.yaml && "+
+			"git -C "+path+" init -q 2>/dev/null; git -C "+path+" check-ignore -v "+
+			".campaign/workitems/current.yaml")
+	require.NoError(t, err)
+	assert.Contains(t, checkOut, "workitems/current.yaml",
+		"after repair, git must actually ignore current.yaml; .gitignore is:\n%s\ncheck-ignore: %s",
+		after, checkOut)
+}
+
+func TestIntegration_WorkitemCurrent_ProducesIgnoredFile(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupRepairCampaign(t, tc, "current-ignored")
+	require.NoError(t, tc.CreateGitRepo(path))
+
+	out, err := tc.RunCampInDir(path, "workitem", "create", "ignored-test", "--type", "design", "--title", "x")
+	require.NoError(t, err, "create: %s", out)
+
+	_, err = tc.RunCampInDir(path, "workitem", "current", "ignored-test")
+	require.NoError(t, err)
+
+	checkOut, _, err := tc.ExecCommand("git", "-C", path, "check-ignore", "-v",
+		".campaign/workitems/current.yaml")
+	require.NoError(t, err)
+	assert.Contains(t, checkOut, "workitems/current.yaml",
+		"current.yaml must match a .gitignore rule, got:\n%s", checkOut)
+}

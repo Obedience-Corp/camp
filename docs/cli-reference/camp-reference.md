@@ -329,14 +329,15 @@ camp commit [flags]
 ### Options
 
 ```
-  -a, --all              Stage all changes before committing (default true)
-      --amend            Amend the previous commit
-      --auto-write       Run configured commit message writer
-  -h, --help             help for commit
-      --include-refs     Include submodule ref changes when staging at campaign root
-  -m, --message string   Commit message (required unless --auto-write)
-  -p, --project string   Operate on a specific project/submodule path
-      --sub              Operate on the submodule detected from current directory
+  -a, --all               Stage all changes before committing (default true)
+      --amend             Amend the previous commit
+      --auto-write        Run configured commit message writer
+  -h, --help              help for commit
+      --include-refs      Include submodule ref changes when staging at campaign root
+  -m, --message string    Commit message (required unless --auto-write)
+  -p, --project string    Operate on a specific project/submodule path
+      --sub               Operate on the submodule detected from current directory
+      --workitem string   explicit workitem selector for the commit tag (overrides cwd-based resolution)
 ```
 
 ### Options inherited from parent commands
@@ -2694,13 +2695,14 @@ camp project commit [flags]
 ### Options
 
 ```
-  -a, --all              Stage all changes (default true)
-      --amend            Amend the previous commit
-      --auto-write       Run configured commit message writer
-  -h, --help             help for commit
-  -m, --message string   Commit message (required unless --auto-write)
-  -p, --project string   Project name (auto-detected from cwd if not specified)
-      --sync             Sync submodule ref at campaign root after commit (opt-in)
+  -a, --all               Stage all changes (default true)
+      --amend             Amend the previous commit
+      --auto-write        Run configured commit message writer
+  -h, --help              help for commit
+  -m, --message string    Commit message (required unless --auto-write)
+  -p, --project string    Project name (auto-detected from cwd if not specified)
+      --sync              Sync submodule ref at campaign root after commit (opt-in)
+      --workitem string   explicit workitem selector for the commit tag (overrides cwd-based resolution)
 ```
 
 ### Options inherited from parent commands
@@ -3547,6 +3549,48 @@ camp project worktree remove <name> [flags]
   -f, --force            Force removal even with uncommitted changes
   -h, --help             help for remove
   -p, --project string   Project name (auto-detected from cwd if not specified)
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.json)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
+## camp promote
+
+Promote the workitem at cwd to a dungeon status
+
+### Synopsis
+
+Promote the directory-style workitem containing the current working
+directory to a named status. Status directories live under the workitem
+type's local dungeon (workflow/<type>/dungeon/<status>/); outside the
+dungeon a workitem is treated as active.
+
+Run this from anywhere inside workflow/<type>/<slug>/. The workitem
+boundary is detected from cwd. The status argument is the destination
+directory name (e.g., completed, archived, someday) - no need to spell
+out "dungeon/".
+
+Examples:
+  camp promote completed   Shelve the workitem to its local dungeon/completed
+  camp promote archived    Move to dungeon/archived
+  camp promote someday     Move to dungeon/someday
+
+```
+camp promote <status> [flags]
+```
+
+### Options
+
+```
+  -h, --help        help for promote
+      --json        Output result as JSON
+      --no-commit   Skip auto-commit after promotion
 ```
 
 ### Options inherited from parent commands
@@ -4981,6 +5025,201 @@ camp version [flags]
 ```
 ---
 
+## camp workflow
+
+Manage workflow collections
+
+### Synopsis
+
+Manage workflow collections.
+
+A workflow collection is a campaign directory under workflow/<type>/ with
+navigation config and workitem type support.
+
+### Options
+
+```
+  -h, --help   help for workflow
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.json)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
+## camp workflow create
+
+Create a custom workflow collection
+
+```
+camp workflow create <type> [flags]
+```
+
+### Options
+
+```
+      --dry-run           report planned writes without modifying the filesystem
+  -h, --help              help for create
+      --json              emit a structured JSON result
+      --replace           replace an existing shortcut or concept with the same name
+      --shortcut string   navigation shortcut for this workflow
+      --title string      human-readable workflow title
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.json)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
+## camp workflow doctor
+
+Report workflow surface inconsistencies
+
+```
+camp workflow doctor [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for doctor
+      --json   emit a structured JSON result
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.json)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
+## camp workflow list
+
+List user-created workflow collections
+
+```
+camp workflow list [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for list
+      --json   emit a structured JSON result
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.json)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
+## camp workflow shortcut
+
+Manage navigation shortcuts for workflow collections
+
+### Options
+
+```
+  -h, --help   help for shortcut
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.json)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
+## camp workflow shortcut add
+
+Attach a navigation shortcut to an existing workflow
+
+```
+camp workflow shortcut add <type> <key> [flags]
+```
+
+### Options
+
+```
+  -h, --help      help for add
+      --json      emit a structured JSON result
+      --replace   replace an existing shortcut with the same name
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.json)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
+## camp workflow show
+
+Show a workflow collection's config and recent workitems
+
+```
+camp workflow show <type> [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for show
+      --json   emit a structured JSON result
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.json)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
+## camp workflow sync
+
+Repair auto-fixable doctor findings
+
+```
+camp workflow sync [flags]
+```
+
+### Options
+
+```
+      --apply   perform writes (default: report only)
+  -h, --help    help for sync
+      --json    emit a structured JSON result
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.json)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
 ## camp workitem
 
 View active campaign work items
@@ -5037,8 +5276,92 @@ camp workitem adopt <dir> [flags]
 ```
   -h, --help           help for adopt
       --id string      override the generated id
+      --quest string   capture quest_id from this quest (defaults to CAMP_QUEST env var if set)
       --title string   human-readable title
       --type string    workitem type (feature, bug, chore, or custom) (default "feature")
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.json)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
+## camp workitem commit
+
+Commit changes scoped to the resolved workitem
+
+### Synopsis
+
+Stage and commit changes belonging to a resolved workitem.
+
+The staging plan is computed from the resolver context (cwd-aware, with
+explicit positional <selector> or --project overrides) and printed to stderr
+before the commit runs. The plan never silently widens to "git add ." at the
+campaign root.
+
+See docs/workitem-commit-reference.md for the staging matrix and flag
+precedence.
+
+```
+camp workitem commit [selector] [flags]
+```
+
+### Options
+
+```
+      --dry-run                     print the staging plan and exit without committing
+      --exclude stringArray         path to remove from the staging plan (repeatable)
+      --festival string             festival id for the festival resolver tier
+  -h, --help                        help for commit
+      --include stringArray         additional path to stage (repeatable; relative to repo root)
+      --include-submodule-pointer   include dirty project submodule pointers in the plan
+      --json                        emit the staging plan and commit result as JSON on stdout
+  -m, --message string              commit message (required unless --dry-run)
+      --project string              force project-repo context by name (skips resolver)
+      --staged                      commit whatever is already in the git index
+      --workitem string             explicit workitem selector (overrides cwd-based resolution)
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.json)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
+## camp workitem commits
+
+List commits referencing a workitem across linked repos
+
+### Synopsis
+
+Search the campaign root and every linked project/repo/worktree/festival
+repo for commits whose campaign tag references this workitem's ref.
+
+Default sort: most recent first across all repos. Use --json for structured
+output. Repos that are not git checkouts or that fail their git log invocation
+are reported under "errors" in JSON mode; table mode warns on stderr when
+repo queries fail.
+
+```
+camp workitem commits [selector] [flags]
+```
+
+### Options
+
+```
+  -h, --help              help for commits
+      --json              emit JSON instead of the default table
+      --limit int         maximum commits to return (default 100)
+      --offset int        number of commits to skip (after sorting)
+      --ref string        query by workitem ref directly (e.g. WI-abc123) — skips resolver
+      --workitem string   alias for the positional <selector>
 ```
 
 ### Options inherited from parent commands
@@ -5064,8 +5387,171 @@ camp workitem create <slug> [flags]
       --dir string     parent dir override (default: workflow/<type>)
   -h, --help           help for create
       --id string      override the generated id
+      --json           emit a structured JSON result
+      --quest string   capture quest_id from this quest (defaults to CAMP_QUEST env var if set)
       --title string   human-readable title
       --type string    workitem type (feature, bug, chore, or custom) (default "feature")
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.json)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
+## camp workitem current
+
+Get, set, or clear the local current workitem
+
+```
+camp workitem current [selector] [flags]
+```
+
+### Options
+
+```
+      --clear   remove the local current.yaml selection
+  -h, --help    help for current
+      --json    emit a structured JSON result
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.json)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
+## camp workitem doctor
+
+Report workitem link-registry health issues
+
+```
+camp workitem doctor [flags]
+```
+
+### Options
+
+```
+      --fix    auto-repair findings tagged auto_fixable
+  -h, --help   help for doctor
+      --json   emit a structured JSON result
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.json)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
+## camp workitem link
+
+Attach a workitem to a project, festival, worktree, or campaign path
+
+```
+camp workitem link <selector> [path] [flags]
+```
+
+### Options
+
+```
+      --allow-missing     allow the workitem and scope target to not exist (migrations)
+      --cwd               use current working directory as the scope
+      --festival string   festival id or relative path under festivals/
+  -h, --help              help for link
+      --json              emit a structured JSON result
+      --project string    project name (matches projects/<name>)
+      --replace           replace an existing primary link on the same scope
+      --role string       primary | related | blocked_by | supersedes (default "primary")
+      --worktree string   worktree relative path under projects/worktrees/
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.json)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
+## camp workitem links
+
+List workitem links
+
+```
+camp workitem links [selector] [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for links
+      --json   emit a structured JSON result
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.json)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
+## camp workitem resolve
+
+Print the workitem the current context resolves to (read-only)
+
+```
+camp workitem resolve [flags]
+```
+
+### Options
+
+```
+      --explain           print the tier-by-tier resolution trace
+      --festival string   festival id for the festival tier
+  -h, --help              help for resolve
+      --json              emit a structured JSON result
+      --workitem string   explicit workitem selector (overrides cwd-based detection)
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.json)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
+## camp workitem unlink
+
+Remove one or more workitem links
+
+```
+camp workitem unlink [selector] [path] [flags]
+```
+
+### Options
+
+```
+      --all               remove every link matching the selector
+      --festival string   festival scope filter
+  -h, --help              help for unlink
+      --id string         remove the link with this lnk_ id
+      --json              emit a structured JSON result
+      --project string    project scope filter
+      --worktree string   worktree scope filter
 ```
 
 ### Options inherited from parent commands

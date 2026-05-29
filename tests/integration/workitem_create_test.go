@@ -4,8 +4,10 @@
 package integration
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -56,10 +58,11 @@ func TestIntegration_WorkitemCreateAndAdopt(t *testing.T) {
 
 		manifest, err := tc.ReadFile(campaignDir + "/workflow/feature/demo-feature/.workitem")
 		require.NoError(t, err)
-		assert.Contains(t, manifest, "version: v1alpha5")
+		assert.Contains(t, manifest, "version: v1alpha6")
 		assert.Contains(t, manifest, "kind: workitem")
 		assert.Contains(t, manifest, "type: feature")
 		assert.Contains(t, manifest, "title: Demo")
+		assert.Regexp(t, `ref: WI-[0-9a-f]{6}`, manifest)
 	})
 
 	t.Run("CreateRefusesExistingDirectory", func(t *testing.T) {
@@ -156,4 +159,69 @@ func TestIntegration_WorkitemCreateAndAdopt(t *testing.T) {
 		assert.Contains(t, out, "collides",
 			"duplicate explicit-id should be rejected with collision error, got: %s", out)
 	})
+}
+
+func TestIntegration_WorkitemCreateJSON(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	const campaignDir = "/test/workitem-create-json"
+	_, err := tc.RunCamp(
+		"init", campaignDir,
+		"--name", "Workitem Create JSON Test",
+		"--type", "product",
+		"-d", "Workitem create JSON integration",
+		"-m", "Verify create --json contract",
+		"--force",
+		"--no-register",
+		"--no-git",
+	)
+	require.NoError(t, err, "camp init should succeed")
+
+	out, err := tc.RunCampInDir(campaignDir,
+		"workitem", "create", "agent-json",
+		"--type", "feature",
+		"--title", "Agent JSON",
+		"--id", "agent-json-fixed",
+		"--json",
+	)
+	require.NoError(t, err, "camp workitem create --json: %s", out)
+	assert.NotContains(t, out, "created workflow/feature/agent-json")
+	assert.NotContains(t, out, "\nnext:")
+
+	var payload struct {
+		SchemaVersion string    `json:"schema_version"`
+		GeneratedAt   time.Time `json:"generated_at"`
+		Workitem      struct {
+			ID            string `json:"id"`
+			Ref           string `json:"ref"`
+			Type          string `json:"type"`
+			Title         string `json:"title"`
+			QuestID       string `json:"quest_id"`
+			RelativePath  string `json:"relative_path"`
+			MarkerVersion string `json:"marker_version"`
+		} `json:"workitem"`
+		Next struct {
+			Command string `json:"command"`
+			Cwd     string `json:"cwd"`
+			Hint    string `json:"hint"`
+		} `json:"next"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &payload), "raw=%s", out)
+	assert.Equal(t, "workitem-create/v1alpha1", payload.SchemaVersion)
+	assert.False(t, payload.GeneratedAt.IsZero())
+	assert.Equal(t, "agent-json-fixed", payload.Workitem.ID)
+	assert.Regexp(t, `^WI-[0-9a-f]{6}$`, payload.Workitem.Ref)
+	assert.Equal(t, "feature", payload.Workitem.Type)
+	assert.Equal(t, "Agent JSON", payload.Workitem.Title)
+	assert.Empty(t, payload.Workitem.QuestID)
+	assert.Equal(t, "workflow/feature/agent-json", payload.Workitem.RelativePath)
+	assert.Equal(t, "v1alpha6", payload.Workitem.MarkerVersion)
+	assert.Equal(t, "fest create workflow agent-json", payload.Next.Command)
+	assert.Equal(t, "workflow/feature/agent-json", payload.Next.Cwd)
+	assert.Contains(t, payload.Next.Hint, "cd workflow/feature/agent-json")
+
+	resolveOut, err := tc.RunCampInDir(campaignDir,
+		"workitem", "resolve", "--workitem", payload.Workitem.ID, "--json")
+	require.NoError(t, err, "resolve returned workitem: %s", resolveOut)
+	assert.Contains(t, resolveOut, payload.Workitem.ID)
 }

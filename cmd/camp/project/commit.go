@@ -42,6 +42,7 @@ var (
 	projectCommitAmend     bool
 	projectCommitSync      bool
 	projectCommitAutoWrite bool
+	projectCommitWorkitem  string
 )
 
 func init() {
@@ -51,6 +52,7 @@ func init() {
 	projectCommitCmd.Flags().BoolVar(&projectCommitAmend, "amend", false, "Amend the previous commit")
 	projectCommitCmd.Flags().BoolVar(&projectCommitSync, "sync", false, "Sync submodule ref at campaign root after commit (opt-in)")
 	projectCommitCmd.Flags().BoolVar(&projectCommitAutoWrite, "auto-write", false, "Run configured commit message writer")
+	projectCommitCmd.Flags().StringVar(&projectCommitWorkitem, "workitem", "", "explicit workitem selector for the commit tag (overrides cwd-based resolution)")
 
 	if err := projectCommitCmd.RegisterFlagCompletionFunc("project", cmdutil.CompleteProjectName); err != nil {
 		panic(err)
@@ -141,15 +143,19 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 	if projectCommitAutoWrite {
 		fmt.Println(ui.Info("Writing commit message..."))
 		var hookErr error
-		message, hookErr = commitkit.AutoWriteCommitMessage(ctx, campRoot, resolvedPath)
+		extraEnv := workitemEnvForProjectCommit(ctx, campRoot, projectCommitWorkitem)
+		message, hookErr = commitkit.AutoWriteCommitMessageWithEnv(ctx, campRoot, resolvedPath, extraEnv)
 		if hookErr != nil {
 			return hookErr
 		}
 	}
 
-	// Prepend campaign tag (graceful degradation if config unavailable)
+	// Prepend campaign tag (graceful degradation if config unavailable).
+	// Resolves the active workitem so the tag includes WI-<ref> when the
+	// project is linked.
 	if cfg != nil {
-		message = git.PrependCampaignTag(cfg.ID, message)
+		questID, workitemRef := resolveProjectCommitContext(ctx, campRoot, projectCommitWorkitem)
+		message = commitkit.PrependContextTagsFull(cfg.ID, questID, "", workitemRef, message)
 	}
 
 	// Commit

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/Obedience-Corp/camp/internal/config"
@@ -423,6 +424,16 @@ func computeMiscFileChanges(absDir string, plan *RepairPlan) {
 			Key:         ".campaign/.gitignore",
 			Description: "missing gitignore",
 		})
+	} else if err == nil {
+		raw, readErr := os.ReadFile(gitignorePath)
+		if readErr == nil && !gitignoreHasRule(string(raw), "workitems/current.yaml") {
+			plan.Changes = append(plan.Changes, RepairChange{
+				Type:        RepairModify,
+				Category:    "file",
+				Key:         ".campaign/.gitignore",
+				Description: "missing workitems/current.yaml entry",
+			})
+		}
 	}
 
 	claudePath := filepath.Join(absDir, "CLAUDE.md")
@@ -434,6 +445,50 @@ func computeMiscFileChanges(absDir string, plan *RepairPlan) {
 			Description: "missing symlink",
 		})
 	}
+}
+
+// appendGitignoreEntryIfMissing appends a single line to the campaign
+// .gitignore when the entry is not already present. Presence is detected
+// using gitignore-line semantics (non-comment, trimmed exact match) so a
+// commented-out or substring-match line does not fool the check. The
+// operation is append-only and never rewrites the file wholesale.
+func appendGitignoreEntryIfMissing(absDir, entry string) error {
+	gitignorePath := filepath.Join(absDir, config.CampaignDir, ".gitignore")
+	raw, err := os.ReadFile(gitignorePath)
+	if err != nil {
+		return err
+	}
+	if gitignoreHasRule(string(raw), entry) {
+		return nil
+	}
+	suffix := "\n"
+	if len(raw) > 0 && raw[len(raw)-1] != '\n' {
+		suffix = "\n\n"
+	}
+	addition := suffix + "# Per-machine current-workitem selection (do not share across machines)\n" + entry + "\n"
+	return os.WriteFile(gitignorePath, append(raw, []byte(addition)...), 0o644)
+}
+
+// gitignoreHasRule reports whether content contains an active gitignore
+// rule equal to entry. Lines are trimmed of whitespace; comment lines
+// (starting with `#`) and blank lines are ignored. Substring matches
+// like `not-<entry>` or commented-out `# <entry>` do NOT count as
+// present because git would still track the file.
+func gitignoreHasRule(content, entry string) bool {
+	target := strings.TrimSpace(entry)
+	if target == "" {
+		return false
+	}
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if trimmed == target {
+			return true
+		}
+	}
+	return false
 }
 
 // isUserDefined returns true if a shortcut was added by the user (not auto-generated).

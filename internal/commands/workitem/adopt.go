@@ -15,28 +15,29 @@ import (
 )
 
 func newAdoptCommand() *cobra.Command {
-	var typeFlag, title, idOverride string
+	var typeFlag, title, idOverride, questSelector string
 	cmd := &cobra.Command{
 		Use:   "adopt <dir>",
 		Short: "Attach .workitem metadata to an existing directory",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			return runAdopt(ctx, cmd, args[0], typeFlag, title, idOverride)
+			return runAdopt(ctx, cmd, args[0], typeFlag, title, idOverride, questSelector)
 		},
 	}
 	cmd.Flags().StringVar(&typeFlag, "type", "feature", "workitem type (feature, bug, chore, or custom)")
 	cmd.Flags().StringVar(&title, "title", "", "human-readable title")
 	cmd.Flags().StringVar(&idOverride, "id", "", "override the generated id")
+	cmd.Flags().StringVar(&questSelector, "quest", "", "capture quest_id from this quest (defaults to CAMP_QUEST env var if set)")
 	return cmd
 }
 
-func runAdopt(ctx context.Context, cmd *cobra.Command, dir, typeFlag, title, idOverride string) error {
+func runAdopt(ctx context.Context, cmd *cobra.Command, dir, typeFlag, title, idOverride, questSelector string) error {
 	if err := validateSlug(typeFlag); err != nil {
 		return camperrors.NewValidation("type", "invalid type slug: "+err.Error(), nil)
 	}
 
-	_, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
+	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
 		return camperrors.Wrap(err, "not in a campaign directory")
 	}
@@ -74,12 +75,20 @@ func runAdopt(ctx context.Context, cmd *cobra.Command, dir, typeFlag, title, idO
 		return err
 	}
 
+	ref, err := deriveUniqueRef(ctx, campaignRoot, cfg, id)
+	if err != nil {
+		return err
+	}
+	questID := resolveQuestIDForCreate(ctx, cmd, campaignRoot, questSelector)
+
 	meta := wkitem.Metadata{
 		Version: wkitem.WorkitemSchemaVersion,
 		Kind:    "workitem",
 		ID:      id,
 		Type:    typeFlag,
 		Title:   title,
+		Ref:     ref,
+		QuestID: questID,
 	}
 	buf, err := yaml.Marshal(&meta)
 	if err != nil {
@@ -92,8 +101,12 @@ func runAdopt(ctx context.Context, cmd *cobra.Command, dir, typeFlag, title, idO
 	// workflow/type parent mtime watched by passive cache staleness checks.
 	invalidateNavigationCache(cmd, campaignRoot)
 
+	questLine := ""
+	if questID != "" {
+		questLine = fmt.Sprintf("  quest: %s\n", questID)
+	}
 	fmt.Fprintf(cmd.OutOrStdout(),
-		"adopted %s\n  id: %s\n  type: %s\n",
-		rel, id, typeFlag)
+		"adopted %s\n  id: %s\n  ref: %s\n  type: %s\n%s",
+		rel, id, ref, typeFlag, questLine)
 	return nil
 }

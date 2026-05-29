@@ -8,6 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/fsutil"
 )
 
 const legacyIntentsPath = "workflow/intents/"
@@ -102,7 +103,7 @@ func SaveJumpsConfig(ctx context.Context, campaignRoot string, cfg *JumpsConfig)
 		return camperrors.Wrap(err, "failed to marshal jumps config")
 	}
 
-	if err := os.WriteFile(configPath, data, 0644); err != nil {
+	if err := fsutil.WriteFileAtomically(configPath, data, 0o644); err != nil {
 		return camperrors.Wrap(err, "failed to write jumps config")
 	}
 

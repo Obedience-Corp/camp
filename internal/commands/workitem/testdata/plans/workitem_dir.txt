@@ -1,0 +1,9 @@
+workitem: design-timeline-2026-05-24 (ref: WI-abc123)
+context:  workitem directory (workflow/design/timeline)
+staging:
+  M  workflow/design/timeline/plan.md
+  A  workflow/design/timeline/notes/01_intro.md
+  M  .campaign/workitems/links.yaml
+skipped:
+  workflow/design/timeline/scratch.tmp (gitignored)
+tag:    [OBEY-CAMPAIGN-8deed8b4-WI-WI-abc123]

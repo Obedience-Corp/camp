@@ -42,6 +42,45 @@ func PrependCampaignTag(campaignID, message string) string {
 	return git.PrependCampaignTag(campaignID, message)
 }
 
+// TagComponents is the parsed form of a campaign tag. Re-exported from
+// internal/git so callers do not need to import the internal package.
+type TagComponents = git.TagComponents
+
+// FormatContextTagsFull composes the consolidated campaign tag from any
+// subset of (campaign id, quest id, festival ref, workitem ref). Component
+// order is fixed: campaign → quest → festival → workitem.
+func FormatContextTagsFull(campaignID, questID, festRef, workitemRef string) string {
+	return git.FormatContextTagsFull(campaignID, questID, festRef, workitemRef)
+}
+
+// PrependContextTagsFull prepends the consolidated campaign tag to a commit
+// message. If campaignID is empty, returns the message unchanged (no tag
+// without a campaign).
+func PrependContextTagsFull(campaignID, questID, festRef, workitemRef, message string) string {
+	tag := FormatContextTagsFull(campaignID, questID, festRef, workitemRef)
+	if tag == "" {
+		return message
+	}
+	return tag + " " + message
+}
+
+// ParseTag extracts the components of a campaign tag from a commit subject.
+// Returns a zero-valued TagComponents when no tag is present.
+func ParseTag(subject string) TagComponents {
+	return git.ParseTag(subject)
+}
+
+// TagParseWarning records a degraded parse from ParseTagDetailed.
+// Re-exported from internal/git.
+type TagParseWarning = git.TagParseWarning
+
+// ParseTagDetailed is the warnings-aware peer of ParseTag. Callers that
+// need to surface "tag was malformed" diagnostics (commit query output,
+// doctor, etc.) should call this instead of ParseTag.
+func ParseTagDetailed(subject string) (TagComponents, []TagParseWarning) {
+	return git.ParseTagDetailed(subject)
+}
+
 // DetectCampaign finds the campaign root by walking up from the current
 // working directory. Returns the campaign ID string from the campaign's
 // config, or an error if the working directory is not inside a campaign.
