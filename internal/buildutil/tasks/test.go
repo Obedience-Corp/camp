@@ -6,7 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Obedience-Corp/camp/internal/buildutil/ui"
@@ -44,45 +47,69 @@ func Test(verbose bool) error {
 		fmt.Printf("Found %d packages with tests\n", len(packages))
 	}
 
-	results := make([]TestResult, 0, len(packages))
+	results := make([]TestResult, len(packages))
 	total := len(packages)
-	pkgFailures := 0
 
-	// Test each package
-	for i, pkg := range packages {
-		shortName := strings.TrimPrefix(pkg, "./")
-		if shortName == "." {
-			shortName = "root"
-		}
+	// Package test binaries are independent processes, so run them concurrently
+	// across a worker pool instead of one-at-a-time. Each worker writes its own
+	// results slot; only the shared progress counter and UI render are guarded.
+	workers := max(min(runtime.GOMAXPROCS(0), total), 1)
 
-		ui.Progress(i+1, total, fmt.Sprintf("Testing %s", shortName))
+	wallStart := time.Now()
+	jobs := make(chan int)
+	var wg sync.WaitGroup
+	var completed int64
+	var uiMu sync.Mutex
 
-		start := time.Now()
+	for range workers {
+		wg.Go(func() {
+			for i := range jobs {
+				pkg := packages[i]
+				shortName := strings.TrimPrefix(pkg, "./")
+				if shortName == "." {
+					shortName = "root"
+				}
 
-		// Run with -json to get detailed test counts
-		cmd := exec.Command("go", "test", "-count=1", "-json", "-short", "-timeout", "30s", pkg)
-		output, _ := cmd.Output()
-		duration := time.Since(start)
+				start := time.Now()
+				// Run with -json to get detailed test counts
+				cmd := exec.Command("go", "test", "-count=1", "-json", "-short", "-timeout", "30s", pkg)
+				output, _ := cmd.Output()
+				duration := time.Since(start)
 
-		// Parse JSON output to count tests
-		testsPassed, testsFailed := parseTestOutput(output, verbose)
-		pass := testsFailed == 0
+				testsPassed, testsFailed := parseTestOutput(output, verbose)
+				results[i] = TestResult{
+					Package:     shortName,
+					Pass:        testsFailed == 0,
+					Duration:    duration,
+					HasTests:    true,
+					TestsPassed: testsPassed,
+					TestsFailed: testsFailed,
+				}
 
-		results = append(results, TestResult{
-			Package:     shortName,
-			Pass:        pass,
-			Duration:    duration,
-			HasTests:    true,
-			TestsPassed: testsPassed,
-			TestsFailed: testsFailed,
+				done := atomic.AddInt64(&completed, 1)
+				uiMu.Lock()
+				ui.Progress(int(done), total, fmt.Sprintf("Testing %s", shortName))
+				uiMu.Unlock()
+			}
 		})
+	}
 
-		if !pass {
+	for i := range packages {
+		jobs <- i
+	}
+	close(jobs)
+	wg.Wait()
+
+	ui.ClearProgress()
+
+	wallTime := time.Since(wallStart)
+
+	pkgFailures := 0
+	for _, r := range results {
+		if !r.Pass {
 			pkgFailures++
 		}
 	}
-
-	ui.ClearProgress()
 
 	// Calculate totals
 	var totalTime time.Duration
@@ -138,7 +165,7 @@ func Test(verbose bool) error {
 	rows = append(rows, []string{
 		fmt.Sprintf("%d packages", len(results)),
 		totalStatus,
-		fmt.Sprintf("%.2fs", totalTime.Seconds()),
+		fmt.Sprintf("%.2fs (%.2fs cpu)", wallTime.Seconds(), totalTime.Seconds()),
 	})
 
 	success := pkgFailures == 0
@@ -154,7 +181,7 @@ func Test(verbose bool) error {
 	successMsg := fmt.Sprintf("✓ ALL %d TESTS PASSED", totalTestsPassed)
 	failMsg := fmt.Sprintf("✗ %d/%d TESTS FAILED", totalTestsFailed, totalTests)
 
-	ui.SummaryCardWithStatus(title, rows, fmt.Sprintf("%.2fs", totalTime.Seconds()), success, successMsg, failMsg)
+	ui.SummaryCardWithStatus(title, rows, fmt.Sprintf("%.2fs", wallTime.Seconds()), success, successMsg, failMsg)
 
 	if pkgFailures > 0 {
 		return fmt.Errorf("%d packages had test failures (%d tests failed)", pkgFailures, totalTestsFailed)
