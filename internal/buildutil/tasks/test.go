@@ -4,7 +4,9 @@ package tasks
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -23,6 +25,8 @@ type TestResult struct {
 	HasTests    bool
 	TestsPassed int
 	TestsFailed int
+	FailReason  string // set for process-level failures (build/timeout/setup), else ""
+	FailDetail  string // captured output for a process-level failure, else ""
 }
 
 // testEvent represents a single line of go test -json output
@@ -71,19 +75,35 @@ func Test(verbose bool) error {
 				}
 
 				start := time.Now()
-				// Run with -json to get detailed test counts
-				cmd := exec.Command("go", "test", "-count=1", "-json", "-short", "-timeout", "30s", pkg)
-				output, _ := cmd.Output()
+				// Run with -json to get detailed test counts. The timeout is a
+				// hang-detection safety net, not a perf gate: some packages have
+				// tests that legitimately run close to 30s (e.g. stale-lock wait
+				// paths), and CPU/IO contention under the parallel pool can push
+				// them over a tight limit. Keep generous headroom so the gate
+				// stays reliable while still catching true hangs.
+				cmd := exec.Command("go", "test", "-count=1", "-json", "-short", "-timeout", "120s", pkg)
+				output, runErr := cmd.Output()
 				duration := time.Since(start)
 
 				testsPassed, testsFailed := parseTestOutput(output, verbose)
+				// Fail closed on a non-zero `go test` exit. Build errors, timeouts,
+				// and setup failures emit only package-level json events (empty
+				// Test), which parseTestOutput ignores, so a package can exit
+				// non-zero with zero counted test failures. Gating on runErr keeps
+				// the dashboard from reporting those as green.
+				failReason, failDetail := "", ""
+				if runErr != nil && testsFailed == 0 {
+					failReason, failDetail = packageFailReason(runErr, output)
+				}
 				results[i] = TestResult{
 					Package:     shortName,
-					Pass:        testsFailed == 0,
+					Pass:        runErr == nil && testsFailed == 0,
 					Duration:    duration,
 					HasTests:    true,
 					TestsPassed: testsPassed,
 					TestsFailed: testsFailed,
+					FailReason:  failReason,
+					FailDetail:  failDetail,
 				}
 
 				done := atomic.AddInt64(&completed, 1)
@@ -109,6 +129,9 @@ func Test(verbose bool) error {
 		if !r.Pass {
 			pkgFailures++
 		}
+		if r.FailDetail != "" {
+			fmt.Fprintf(os.Stderr, "\n%s: %s\n%s\n", r.Package, r.FailReason, r.FailDetail)
+		}
 	}
 
 	// Calculate totals
@@ -133,7 +156,13 @@ func Test(verbose bool) error {
 	for _, r := range results {
 		// Only include packages that failed
 		if !r.Pass {
-			status := fmt.Sprintf("✗ %d failed", r.TestsFailed)
+			var status string
+			if r.TestsFailed > 0 {
+				status = fmt.Sprintf("✗ %d failed", r.TestsFailed)
+			} else {
+				// Package-level failure (build/timeout/setup) with no per-test fail.
+				status = "✗ " + r.FailReason
+			}
 			if ui.ColourEnabled() {
 				status = ui.Red + status + ui.Reset
 			}
@@ -180,6 +209,9 @@ func Test(verbose bool) error {
 	// Use custom status messages for test results
 	successMsg := fmt.Sprintf("✓ ALL %d TESTS PASSED", totalTestsPassed)
 	failMsg := fmt.Sprintf("✗ %d/%d TESTS FAILED", totalTestsFailed, totalTests)
+	if totalTestsFailed == 0 && pkgFailures > 0 {
+		failMsg = fmt.Sprintf("✗ %d PACKAGE(S) FAILED TO BUILD OR RUN", pkgFailures)
+	}
 
 	ui.SummaryCardWithStatus(title, rows, fmt.Sprintf("%.2fs", wallTime.Seconds()), success, successMsg, failMsg)
 
@@ -188,6 +220,38 @@ func Test(verbose bool) error {
 	}
 
 	return nil
+}
+
+// packageFailReason classifies a non-zero `go test` exit that produced no
+// per-test failure (build error, timeout, setup failure) and returns a short
+// label for the summary plus the captured detail for loud printing. stdout is
+// the `-json` stream; stderr (build errors, panics) is pulled from the
+// ExitError when present.
+func packageFailReason(runErr error, stdout []byte) (reason, detail string) {
+	detail = strings.TrimSpace(string(stdout))
+
+	var ee *exec.ExitError
+	if errors.As(runErr, &ee) && len(ee.Stderr) > 0 {
+		if detail != "" {
+			detail += "\n"
+		}
+		detail += strings.TrimSpace(string(ee.Stderr))
+	}
+	if detail == "" {
+		detail = runErr.Error()
+	}
+
+	lower := strings.ToLower(detail)
+	switch {
+	case strings.Contains(lower, "timed out") || strings.Contains(lower, "test killed"):
+		reason = "timeout"
+	case strings.Contains(lower, "build failed") || strings.Contains(lower, "[build failed]") ||
+		strings.Contains(lower, "setup failed") || strings.Contains(lower, "[setup failed]"):
+		reason = "build failed"
+	default:
+		reason = "exec error"
+	}
+	return reason, detail
 }
 
 // parseTestOutput parses go test -json output and returns pass/fail counts
