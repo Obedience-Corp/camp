@@ -56,19 +56,65 @@ type TestContainer struct {
 	t         *testing.T
 }
 
-// NewSharedContainer creates a container for reuse across multiple tests.
-// Unlike NewTestContainer, this doesn't take a testing.T since it's called
-// from TestMain before any individual tests run.
-func NewSharedContainer() (*TestContainer, error) {
-	ctx := context.Background()
+// sharedBinaries holds host paths to the test binaries built once in TestMain
+// and copied into every pooled container.
+type sharedBinaries struct {
+	camp string
+	fest string // "" when fest is unavailable
+	scc  string // "" when scc is unavailable
+}
 
-	// Build camp binary first
+// buildSharedBinaries builds the camp/fest/scc binaries on the host exactly once.
+// The returned cleanup removes their temp directories; call it only after every
+// pooled container has copied the binaries in. fest/scc are best-effort and set
+// festAvailable/sccAvailable; camp is required.
+func buildSharedBinaries() (sharedBinaries, func(), error) {
+	var dirs []string
+	cleanup := func() {
+		for _, d := range dirs {
+			_ = os.RemoveAll(d)
+		}
+	}
+
 	campBinary, err := buildCampBinaryShared()
 	if err != nil {
-		return nil, fmt.Errorf("failed to build camp binary: %w", err)
+		cleanup()
+		return sharedBinaries{}, func() {}, fmt.Errorf("failed to build camp binary: %w", err)
 	}
-	defer os.RemoveAll(filepath.Dir(campBinary))
+	dirs = append(dirs, filepath.Dir(campBinary))
+	bins := sharedBinaries{camp: campBinary}
 
+	// fest is optional for most tests.
+	if festBinary, err := buildFestBinaryShared(); err != nil {
+		fmt.Fprintf(os.Stderr, "WARN: fest binary not available: %v\n", err)
+		festAvailable = false
+	} else {
+		dirs = append(dirs, filepath.Dir(festBinary))
+		bins.fest = festBinary
+		festAvailable = true
+	}
+
+	// scc is required only by leverage tests. Third-party binary at
+	// github.com/boyter/scc/v3 that `camp leverage` shells out to via PATH.
+	if sccBinary, err := buildSCCBinaryShared(); err != nil {
+		fmt.Fprintf(os.Stderr, "WARN: scc binary not available: %v\n", err)
+		sccAvailable = false
+	} else {
+		dirs = append(dirs, filepath.Dir(sccBinary))
+		bins.scc = sccBinary
+		sccAvailable = true
+	}
+
+	return bins, cleanup, nil
+}
+
+// newPooledContainer starts one container and provisions it identically to every
+// other pool member: copy the prebuilt binaries in, install/configure git, and
+// create the working directories. Tests check these out from the pool, run with
+// t.Parallel(), and return them via Reset(); each test therefore has exclusive
+// use of an isolated container filesystem, so the hardcoded /test and /campaigns
+// paths never collide across parallel tests.
+func newPooledContainer(ctx context.Context, bins sharedBinaries) (*TestContainer, error) {
 	// Start container without bind-mounting the binary. Bind mounts go through
 	// the host's overlayfs (Colima virtualisation layer on macOS) which can
 	// serve stale or corrupted pages after heavy rm -rf / sync cycles, causing
@@ -98,40 +144,24 @@ func NewSharedContainer() (*TestContainer, error) {
 	}
 
 	// Copy camp binary into the container's own filesystem layer (not a bind mount).
-	if err := container.CopyFileToContainer(ctx, campBinary, "/camp", 0o755); err != nil {
+	if err := container.CopyFileToContainer(ctx, bins.camp, "/camp", 0o755); err != nil {
 		container.Terminate(ctx)
 		return nil, fmt.Errorf("failed to copy camp binary into container: %w", err)
 	}
 
-	// Build and copy fest binary (best-effort — fest is optional for most tests).
-	festBinary, err := buildFestBinaryShared()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "WARN: fest binary not available: %v\n", err)
-		festAvailable = false
-	} else {
-		defer os.RemoveAll(filepath.Dir(festBinary))
-		if err := container.CopyFileToContainer(ctx, festBinary, "/usr/local/bin/fest", 0o755); err != nil {
-			fmt.Fprintf(os.Stderr, "WARN: failed to copy fest binary into container: %v\n", err)
-			festAvailable = false
-		} else {
-			festAvailable = true
+	// Copy fest/scc when available. Build succeeded for the whole pool, so a copy
+	// failure here is a real container fault: fail this member rather than leave
+	// the pool with mixed availability.
+	if bins.fest != "" {
+		if err := container.CopyFileToContainer(ctx, bins.fest, "/usr/local/bin/fest", 0o755); err != nil {
+			container.Terminate(ctx)
+			return nil, fmt.Errorf("failed to copy fest binary into container: %w", err)
 		}
 	}
-
-	// Build and copy scc binary (best-effort; scc is required by leverage tests
-	// only). scc is a third-party Go binary at github.com/boyter/scc/v3 that the
-	// `camp leverage` command shells out to via PATH lookup.
-	sccBinary, err := buildSCCBinaryShared()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "WARN: scc binary not available: %v\n", err)
-		sccAvailable = false
-	} else {
-		defer os.RemoveAll(filepath.Dir(sccBinary))
-		if err := container.CopyFileToContainer(ctx, sccBinary, "/usr/local/bin/scc", 0o755); err != nil {
-			fmt.Fprintf(os.Stderr, "WARN: failed to copy scc binary into container: %v\n", err)
-			sccAvailable = false
-		} else {
-			sccAvailable = true
+	if bins.scc != "" {
+		if err := container.CopyFileToContainer(ctx, bins.scc, "/usr/local/bin/scc", 0o755); err != nil {
+			container.Terminate(ctx)
+			return nil, fmt.Errorf("failed to copy scc binary into container: %w", err)
 		}
 	}
 
