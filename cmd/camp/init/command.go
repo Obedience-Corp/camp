@@ -271,13 +271,16 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 	// before the repair auto-commit so healed links are committed in the same pass.
 	var skillsLinked []string
 	var skillsWarnings []string
+	var skillsProjectedPaths []string
 	if !p.NoSkills && !p.DryRun {
-		skillsLinked, skillsWarnings = projectCampaignSkills(result.CampaignRoot)
+		skillsLinked, skillsWarnings, skillsProjectedPaths = projectCampaignSkills(result.CampaignRoot)
 	}
 
-	// Auto-commit after repair (scaffold creates + migrations + skills).
+	// Auto-commit after repair (scaffold creates + migrations + skills). The
+	// repair commit stages a selective file list, so newly projected skill links
+	// must be passed in explicitly or they would be left untracked.
 	if p.Repair && !p.DryRun {
-		commitRepairChanges(ctx, result, opts.RepairPlan, migrationCount, w)
+		commitRepairChanges(ctx, result, opts.RepairPlan, migrationCount, skillsProjectedPaths, w)
 	}
 
 	// Initialize Festival Methodology (unless dry-run).
@@ -374,16 +377,18 @@ func skillsNeedProjection(root string) bool {
 // projectCampaignSkills links campaign skill bundles into every registered tool
 // directory under root. It is best-effort: failures are returned as human-readable
 // warnings rather than aborting the init flow. It returns the tools that were
-// fully linked and any warnings to surface.
-func projectCampaignSkills(root string) (linked []string, warnings []string) {
+// fully linked, any warnings to surface, and the campaign-root-relative paths of
+// the skill links that were created or replaced (so the caller can stage exactly
+// those paths in a selective repair commit).
+func projectCampaignSkills(root string) (linked []string, warnings []string, projectedPaths []string) {
 	skillsDir := filepath.Join(root, campaign.CampaignDir, intskills.SkillsSubdir)
 	if _, err := os.Stat(skillsDir); err != nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	results, err := intskills.LinkDefaultTools(root, skillsDir, false, false, os.Stderr)
 	if err != nil {
-		return nil, []string{fmt.Sprintf("skills not linked: %v", err)}
+		return nil, []string{fmt.Sprintf("skills not linked: %v", err)}, nil
 	}
 
 	for _, res := range results {
@@ -395,7 +400,16 @@ func projectCampaignSkills(root string) (linked []string, warnings []string) {
 			warnings = append(warnings, fmt.Sprintf("%s: %d conflicting path(s) left untouched (%s); run 'camp skills status'",
 				res.Tool, res.Summary.Conflicts, strings.Join(res.Summary.ConflictNames, ", ")))
 		}
+		relPath, err := intskills.ResolveToolPath(res.Tool)
+		if err == nil {
+			for _, slug := range res.Summary.CreatedNames {
+				projectedPaths = append(projectedPaths, filepath.Join(relPath, slug))
+			}
+			for _, slug := range res.Summary.ReplacedNames {
+				projectedPaths = append(projectedPaths, filepath.Join(relPath, slug))
+			}
+		}
 		linked = append(linked, res.Tool)
 	}
-	return linked, warnings
+	return linked, warnings, projectedPaths
 }

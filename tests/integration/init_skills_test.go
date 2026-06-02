@@ -82,6 +82,46 @@ func TestInit_RepairHealsBrokenSkillLink(t *testing.T) {
 	assert.Equal(t, 0, exitCode)
 }
 
+// TestInit_RepairCommitsProjectedSkillLinks reproduces an older campaign with no
+// projected tool skills and verifies that 'camp init --repair --yes' both
+// recreates the links AND commits them (the selective repair commit must stage
+// the newly projected paths, not leave them untracked).
+func TestInit_RepairCommitsProjectedSkillLinks(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	path := "/campaigns/test-init-repair-commit"
+	_, err := tc.InitCampaign(path, "test-init-repair-commit", "product")
+	require.NoError(t, err)
+
+	// Simulate an older campaign: remove all projected tool skills and commit
+	// that removal so the working tree starts clean with no .claude/.agents links.
+	_, exitCode, err := tc.ExecCommand("sh", "-c",
+		"cd "+path+" && rm -rf .claude/skills .agents/skills && git add -A && git commit -q -m 'remove projected skills' && sync")
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode)
+
+	_, err = tc.RunCampInDir(path, "init", "--repair", "--yes")
+	require.NoError(t, err)
+
+	for _, rel := range []string{".claude/skills/camp-workitems", ".agents/skills/camp-workitems"} {
+		_, exitCode, err = tc.ExecCommand("test", "-L", path+"/"+rel)
+		require.NoError(t, err)
+		assert.Equal(t, 0, exitCode, "repair should restore %s", rel)
+
+		// The link must be tracked in git (committed), not left untracked.
+		out, exitCode, err := tc.ExecCommand("sh", "-c",
+			"cd "+path+" && git ls-files --error-unmatch "+rel+" 2>&1")
+		require.NoError(t, err)
+		assert.Equal(t, 0, exitCode, "repair should commit %s (git output: %s)", rel, strings.TrimSpace(out))
+	}
+
+	// Working tree should be clean: repair committed everything it created.
+	out, exitCode, err := tc.ExecCommand("sh", "-c", "cd "+path+" && git status --porcelain")
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode)
+	assert.Empty(t, strings.TrimSpace(out), "repair should leave a clean working tree")
+}
+
 // TestSkills_LinkNoFlagsProjectsAllTools verifies that bare 'camp skills link'
 // projects into every registered tool.
 func TestSkills_LinkNoFlagsProjectsAllTools(t *testing.T) {
