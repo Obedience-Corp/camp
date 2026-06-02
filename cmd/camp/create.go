@@ -41,6 +41,7 @@ func init() {
 	createCmd.Flags().StringP("description", "d", "", "Campaign description")
 	createCmd.Flags().StringP("mission", "m", "", "Campaign mission statement")
 	createCmd.Flags().Bool("no-git", false, "Skip git repository initialization")
+	createCmd.Flags().Bool("no-skills", false, "Skip linking campaign skills into .claude/skills and .agents/skills")
 	createCmd.Flags().Bool("dry-run", false, "Show what would be done without creating anything")
 	createCmd.Flags().String("path", "", "Override the base campaigns directory (campaign created at <path>/<name>/)")
 }
@@ -87,6 +88,7 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		Description: cmdutil.GetFlagString(cmd, "description"),
 		Mission:     cmdutil.GetFlagString(cmd, "mission"),
 		NoGit:       cmdutil.GetFlagBool(cmd, "no-git"),
+		NoSkills:    cmdutil.GetFlagBool(cmd, "no-skills"),
 		DryRun:      dryRun,
 		// force, noRegister, repair, yes stay zero — create deliberately does not support them.
 	}

@@ -15,6 +15,7 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/nav/tui"
 	"github.com/Obedience-Corp/camp/internal/scaffold"
+	intskills "github.com/Obedience-Corp/camp/internal/skills"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -70,6 +71,7 @@ Use --no-git to skip git initialization.`,
 	cmd.Flags().BoolP("force", "f", false, "Initialize in non-empty directory without prompting")
 	cmd.Flags().Bool("no-register", false, "Don't add to global registry")
 	cmd.Flags().Bool("no-git", false, "Skip git repository initialization")
+	cmd.Flags().Bool("no-skills", false, "Skip linking campaign skills into .claude/skills and .agents/skills")
 	cmd.Flags().Bool("dry-run", false, "Show what would be done without creating anything")
 	cmd.Flags().Bool("repair", false, "Add missing files to existing campaign")
 	cmd.Flags().Bool("yes", false, "Skip repair confirmation prompt (for scripting)")
@@ -88,6 +90,7 @@ type Params struct {
 	Force         bool
 	NoRegister    bool
 	NoGit         bool
+	NoSkills      bool
 	DryRun        bool
 	Repair        bool
 	Yes           bool
@@ -135,6 +138,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		Force:         cmdutil.GetFlagBool(cmd, "force"),
 		NoRegister:    cmdutil.GetFlagBool(cmd, "no-register"),
 		NoGit:         cmdutil.GetFlagBool(cmd, "no-git"),
+		NoSkills:      cmdutil.GetFlagBool(cmd, "no-skills"),
 		DryRun:        cmdutil.GetFlagBool(cmd, "dry-run"),
 		Repair:        cmdutil.GetFlagBool(cmd, "repair"),
 		Yes:           cmdutil.GetFlagBool(cmd, "yes"),
@@ -200,6 +204,7 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 		SkipGitInit: p.NoGit,
 		DryRun:      p.DryRun,
 		Repair:      p.Repair,
+		SkipSkills:  p.NoSkills,
 	}
 
 	// Validate options
@@ -214,12 +219,20 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 			return camperrors.Wrap(err, "failed to compute repair plan")
 		}
 
-		if !plan.HasChanges() {
+		skillsPending := !p.NoSkills && skillsNeedProjection(dir)
+
+		if !plan.HasChanges() && !skillsPending {
 			writeLine(w.HumanOut, ui.Success("Campaign is up to date — nothing to repair."))
 			return nil
 		}
 
-		printRepairDiff(plan, w)
+		if plan.HasChanges() {
+			printRepairDiff(plan, w)
+		}
+		if skillsPending {
+			writeLine(w.HumanOut, ui.Subheader("Skills to (re)link:"))
+			writef(w.HumanOut, "  %s project skill bundles into %s\n", ui.SuccessIcon(), strings.Join(intskills.ToolNames(), ", "))
+		}
 
 		if !p.Yes {
 			if !isInteractive {
@@ -254,7 +267,15 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 		migrationCount = moved
 	}
 
-	// Auto-commit after repair (scaffold creates + migrations).
+	// Project campaign skills into tool directories (.claude/skills, .agents/skills)
+	// before the repair auto-commit so healed links are committed in the same pass.
+	var skillsLinked []string
+	var skillsWarnings []string
+	if !p.NoSkills && !p.DryRun {
+		skillsLinked, skillsWarnings = projectCampaignSkills(result.CampaignRoot)
+	}
+
+	// Auto-commit after repair (scaffold creates + migrations + skills).
 	if p.Repair && !p.DryRun {
 		commitRepairChanges(ctx, result, opts.RepairPlan, migrationCount, w)
 	}
@@ -311,7 +332,70 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 		if festInitialized {
 			writeLine(w.HumanOut, ui.KeyValueColored("Festivals:", "initialized", ui.SuccessColor))
 		}
+		if !p.NoSkills {
+			if len(skillsLinked) > 0 {
+				writeLine(w.HumanOut, ui.KeyValueColored("Skills:", "linked ("+strings.Join(skillsLinked, ", ")+")", ui.SuccessColor))
+			}
+			for _, warn := range skillsWarnings {
+				writef(w.HumanOut, "  %s %s\n", ui.WarningIcon(), ui.Warning(warn))
+			}
+		}
 	}
 
 	return nil
+}
+
+// skillsNeedProjection reports whether any registered tool is missing one or
+// more campaign skill projections (so repair has skills work to do). It is a
+// best-effort check: on any error it returns false rather than forcing repair.
+func skillsNeedProjection(root string) bool {
+	skillsDir := filepath.Join(root, campaign.CampaignDir, intskills.SkillsSubdir)
+	slugs, err := intskills.DiscoverSkillSlugs(skillsDir)
+	if err != nil || len(slugs) == 0 {
+		return false
+	}
+	for _, tool := range intskills.ToolNames() {
+		relPath, err := intskills.ResolveToolPath(tool)
+		if err != nil {
+			continue
+		}
+		dest := filepath.Join(root, relPath)
+		state, err := intskills.InspectSkillProjection(dest, skillsDir, slugs)
+		if err != nil {
+			continue
+		}
+		if state.Linked < state.TotalSkills {
+			return true
+		}
+	}
+	return false
+}
+
+// projectCampaignSkills links campaign skill bundles into every registered tool
+// directory under root. It is best-effort: failures are returned as human-readable
+// warnings rather than aborting the init flow. It returns the tools that were
+// fully linked and any warnings to surface.
+func projectCampaignSkills(root string) (linked []string, warnings []string) {
+	skillsDir := filepath.Join(root, campaign.CampaignDir, intskills.SkillsSubdir)
+	if _, err := os.Stat(skillsDir); err != nil {
+		return nil, nil
+	}
+
+	results, err := intskills.LinkDefaultTools(root, skillsDir, false, false, os.Stderr)
+	if err != nil {
+		return nil, []string{fmt.Sprintf("skills not linked: %v", err)}
+	}
+
+	for _, res := range results {
+		if res.Err != nil {
+			warnings = append(warnings, fmt.Sprintf("%s skills not linked: %v", res.Tool, res.Err))
+			continue
+		}
+		if res.Summary.Conflicts > 0 {
+			warnings = append(warnings, fmt.Sprintf("%s: %d conflicting path(s) left untouched (%s); run 'camp skills status'",
+				res.Tool, res.Summary.Conflicts, strings.Join(res.Summary.ConflictNames, ", ")))
+		}
+		linked = append(linked, res.Tool)
+	}
+	return linked, warnings
 }

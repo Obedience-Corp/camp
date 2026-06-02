@@ -41,6 +41,8 @@ type InitOptions struct {
 	DryRun bool
 	// Repair adds missing files to an existing campaign.
 	Repair bool
+	// SkipSkills disables projecting campaign skills into tool directories.
+	SkipSkills bool
 	// RepairPlan is the pre-computed repair plan (set by the caller after preview).
 	// When set, Init uses the merged jumps config from the plan instead of defaults.
 	RepairPlan *RepairPlan
