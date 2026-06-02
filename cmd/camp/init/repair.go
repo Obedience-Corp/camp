@@ -13,8 +13,11 @@ import (
 )
 
 // commitRepairChanges creates a git commit after a successful repair.
-func commitRepairChanges(ctx context.Context, initResult *scaffold.InitResult, plan *scaffold.RepairPlan, migrationCount int, w Writers) {
-	hasChanges := len(initResult.DirsCreated) > 0 || len(initResult.FilesCreated) > 0 || migrationCount > 0
+// skillPaths are campaign-root-relative skill projection links that were created
+// or replaced during repair; they must be staged explicitly because the repair
+// commit uses a selective file list.
+func commitRepairChanges(ctx context.Context, initResult *scaffold.InitResult, plan *scaffold.RepairPlan, migrationCount int, skillPaths []string, w Writers) {
+	hasChanges := len(initResult.DirsCreated) > 0 || len(initResult.FilesCreated) > 0 || migrationCount > 0 || len(skillPaths) > 0
 	if plan != nil && len(plan.IntentMigrations) > 0 {
 		hasChanges = true
 	}
@@ -27,8 +30,8 @@ func commitRepairChanges(ctx context.Context, initResult *scaffold.InitResult, p
 		return
 	}
 
-	description := buildRepairCommitMessage(initResult, plan, migrationCount)
-	files := buildRepairCommitFiles(initResult, plan)
+	description := buildRepairCommitMessage(initResult, plan, migrationCount, skillPaths)
+	files := buildRepairCommitFiles(initResult, plan, skillPaths)
 
 	result := commit.Repair(ctx, commit.RepairOptions{
 		Options: commit.Options{
@@ -47,10 +50,11 @@ func commitRepairChanges(ctx context.Context, initResult *scaffold.InitResult, p
 	}
 }
 
-func buildRepairCommitFiles(initResult *scaffold.InitResult, plan *scaffold.RepairPlan) []string {
-	files := make([]string, 0, len(initResult.FilesCreated)+len(initResult.DirsCreated))
+func buildRepairCommitFiles(initResult *scaffold.InitResult, plan *scaffold.RepairPlan, skillPaths []string) []string {
+	files := make([]string, 0, len(initResult.FilesCreated)+len(initResult.DirsCreated)+len(skillPaths))
 	files = append(files, initResult.FilesCreated...)
 	files = append(files, initResult.DirsCreated...)
+	files = append(files, skillPaths...)
 
 	if plan != nil {
 		for _, m := range plan.Migrations {
@@ -75,8 +79,16 @@ func buildRepairCommitFiles(initResult *scaffold.InitResult, plan *scaffold.Repa
 }
 
 // buildRepairCommitMessage constructs a descriptive commit body for repair operations.
-func buildRepairCommitMessage(initResult *scaffold.InitResult, plan *scaffold.RepairPlan, migrationCount int) string {
+func buildRepairCommitMessage(initResult *scaffold.InitResult, plan *scaffold.RepairPlan, migrationCount int, skillPaths []string) string {
 	var b strings.Builder
+
+	if len(skillPaths) > 0 {
+		fmt.Fprintf(&b, "Skill links projected:\n")
+		for _, p := range skillPaths {
+			fmt.Fprintf(&b, "  - %s\n", p)
+		}
+		b.WriteString("\n")
+	}
 
 	if len(initResult.DirsCreated) > 0 {
 		fmt.Fprintf(&b, "Directories created:\n")

@@ -21,8 +21,17 @@ func setupSkillsCampaign(t *testing.T, tc *TestContainer, name string) string {
 	_, err := tc.InitCampaign(path, name, "product")
 	require.NoError(t, err)
 
+	// init auto-links scaffolded skills into tool directories. These lifecycle
+	// tests exercise linking from a clean slate, so reset to the unlinked state.
+	// The trailing sync flushes the removal before the next exec (macOS/Colima
+	// overlayfs buffers otherwise leave the deleted links visible).
+	_, exitCode, err := tc.ExecCommand("sh", "-c",
+		"rm -rf "+path+"/.claude/skills "+path+"/.agents/skills; sync")
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode)
+
 	// Ensure .campaign/skills/<slug>/SKILL.md exists
-	_, exitCode, err := tc.ExecCommand("mkdir", "-p", path+"/.campaign/skills/"+testSkillSlug)
+	_, exitCode, err = tc.ExecCommand("mkdir", "-p", path+"/.campaign/skills/"+testSkillSlug)
 	require.NoError(t, err)
 	require.Equal(t, 0, exitCode)
 	err = tc.WriteFile(path+"/.campaign/skills/"+testSkillSlug+"/SKILL.md", `---

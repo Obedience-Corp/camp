@@ -17,6 +17,10 @@ type ProjectionSummary struct {
 	AlreadyLinked int
 	Conflicts     int
 	ConflictNames []string
+	// CreatedNames and ReplacedNames list the slugs that were newly linked or
+	// relinked, so callers can stage exactly those projection paths.
+	CreatedNames  []string
+	ReplacedNames []string
 }
 
 // ProjectionState describes the current projection state for a tool destination.
@@ -176,6 +180,7 @@ func ProjectSkillEntries(destDir, skillsDir string, slugs []string, dryRun, forc
 				return summary, camperrors.Wrapf(err, "link skill %q", slug)
 			}
 			summary.Created++
+			summary.CreatedNames = append(summary.CreatedNames, slug)
 
 		case StateNotALink:
 			addConflict(&summary, slug)
@@ -198,6 +203,7 @@ func ProjectSkillEntries(destDir, skillsDir string, slugs []string, dryRun, forc
 				return summary, camperrors.Wrapf(err, "relink skill %q", slug)
 			}
 			summary.Replaced++
+			summary.ReplacedNames = append(summary.ReplacedNames, slug)
 		}
 	}
 
