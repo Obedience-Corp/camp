@@ -135,6 +135,7 @@ Examples:
 	cmd.AddCommand(newLinksCommand())
 	cmd.AddCommand(newCurrentCommand())
 	cmd.AddCommand(newResolveCommand())
+	cmd.AddCommand(newPriorityCommand())
 	cmd.AddCommand(newDoctorCommand())
 	cmd.AddCommand(newCommitCommand())
 	cmd.AddCommand(newCommitsCommand())
