@@ -30,6 +30,7 @@ const (
 	focusAddTUI        // Full add TUI is active
 	focusPromoteTarget // Promote target picker
 	focusDungeonReason // Text input for dungeon move reason
+	focusConvertType   // Type picker for converting a note into an intent
 )
 
 // IntentGroup represents a collapsible group of intents by status.
@@ -152,6 +153,13 @@ type Model struct {
 	addModel  *tui.IntentAddModel
 	author    string
 	shortcuts map[string]string
+
+	// Notes view: when true the explorer lists notes instead of intents
+	notesMode bool
+
+	// Convert action state (note → intent)
+	noteToConvert  *intent.Intent
+	convertTypeIdx int
 }
 
 // NewModel creates a new Explorer model.
@@ -199,9 +207,15 @@ func (m Model) Init() tea.Cmd {
 	return m.loadIntents()
 }
 
-// loadIntents returns a command that loads intents from the service.
+// loadIntents returns a command that loads intents from the service. In notes
+// mode it loads the note store instead, so the default view stays intents-only.
 func (m Model) loadIntents() tea.Cmd {
+	notesMode := m.notesMode
 	return func() tea.Msg {
+		if notesMode {
+			notes, err := m.service.ListNotes(m.ctx, true)
+			return intentsLoadedMsg{intents: notes, err: err}
+		}
 		intents, err := m.service.List(m.ctx, nil)
 		return intentsLoadedMsg{intents: intents, err: err}
 	}
@@ -244,6 +258,11 @@ func (m Model) View() string {
 	// Show move status picker if active
 	if m.focus == focusMove {
 		return m.viewMove()
+	}
+
+	// Show convert type picker if active
+	if m.focus == focusConvertType {
+		return m.viewConvert()
 	}
 
 	// Show confirmation dialog if active

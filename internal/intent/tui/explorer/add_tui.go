@@ -12,10 +12,12 @@ import (
 // This replaces tea.QuitMsg so the explorer stays alive.
 type addTUIFinishedMsg struct{}
 
-// startAddTUI launches the full IntentAddModel within the explorer.
+// startAddTUI launches the full IntentAddModel within the explorer. In the
+// notes view it launches the note quick-add (text only, no type/concept).
 func (m *Model) startAddTUI() {
 	addModel := tui.NewIntentAddModel(m.ctx, m.conceptSvc, tui.AddOptions{
-		FullMode:     true,
+		FullMode:     !m.notesMode,
+		NoteMode:     m.notesMode,
 		Author:       m.author,
 		CampaignRoot: m.campaignRoot,
 		Shortcuts:    m.shortcuts,
@@ -65,7 +67,8 @@ func (m *Model) finishAddTUI() (tea.Model, tea.Cmd) {
 	return m, m.loadIntents()
 }
 
-// createIntentFromAddResult creates an intent and auto-commits it.
+// createIntentFromAddResult creates an intent (or a note, in notes mode) and
+// auto-commits it.
 func (m *Model) createIntentFromAddResult(result *tui.AddResult) {
 	opts := intent.CreateOptions{
 		Title:   result.Title,
@@ -75,17 +78,23 @@ func (m *Model) createIntentFromAddResult(result *tui.AddResult) {
 		Author:  result.Author,
 	}
 
-	createdIntent, err := m.service.CreateDirect(m.ctx, opts)
+	noun := "Intent"
+	create := m.service.CreateDirect
+	if m.notesMode {
+		noun = "Note"
+		create = m.service.CreateNote
+	}
+	created, err := create(m.ctx, opts)
 	if err != nil {
-		m.statusMessage = "Error creating intent: " + err.Error()
+		m.statusMessage = "Error creating " + noun + ": " + err.Error()
 		return
 	}
 
 	if err := m.appendAuditEvent(audit.Event{
 		Type:  audit.EventCreate,
-		ID:    createdIntent.ID,
-		Title: createdIntent.Title,
-		To:    string(createdIntent.Status),
+		ID:    created.ID,
+		Title: created.Title,
+		To:    string(created.Status),
 	}); err != nil {
 		m.statusMessage = "Error writing audit event: " + err.Error()
 		return
@@ -93,10 +102,10 @@ func (m *Model) createIntentFromAddResult(result *tui.AddResult) {
 
 	// Auto-commit
 	if m.campaignRoot != "" && m.campaignID != "" {
-		m.autoCommitIntent(commit.IntentCreate, result.Title, "", createdIntent.Path)
+		m.autoCommitIntent(commit.IntentCreate, result.Title, "", created.Path)
 	}
 
-	m.statusMessage = "Intent created: " + result.Title
+	m.statusMessage = noun + " created: " + result.Title
 }
 
 // filterQuitCmd wraps a tea.Cmd to intercept tea.QuitMsg and convert it

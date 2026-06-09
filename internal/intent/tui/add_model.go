@@ -29,6 +29,7 @@ const (
 type AddOptions struct {
 	DefaultType  string            // Default intent type (e.g., "idea")
 	FullMode     bool              // Include body textarea step
+	NoteMode     bool              // Note quick-add: collect text only, skip type/concept/body
 	Author       string            // Auto-populated author (e.g., from git config)
 	CampaignRoot string            // Campaign root for @ completion
 	Shortcuts    map[string]string // Navigation shortcuts (key → campaign-relative path, e.g., "de" → "workflow/design/")
@@ -65,6 +66,7 @@ type IntentAddModel struct {
 
 	// Configuration
 	fullMode     bool
+	noteMode     bool
 	defaultType  string
 	author       string
 	campaignRoot string
@@ -98,6 +100,9 @@ func NewIntentAddModel(ctx context.Context, conceptSvc concept.Service, opts Add
 	// Title input
 	ti := textinput.New()
 	ti.Placeholder = "What's the intent?"
+	if opts.NoteMode {
+		ti.Placeholder = "What's the note?"
+	}
 	ti.CharLimit = 100
 	ti.Width = 50
 	ti.Focus()
@@ -126,6 +131,7 @@ func NewIntentAddModel(ctx context.Context, conceptSvc concept.Service, opts Add
 		typeIdx:      typeIdx,
 		vimEditor:    vimEd,
 		fullMode:     opts.FullMode,
+		noteMode:     opts.NoteMode,
 		defaultType:  opts.DefaultType,
 		author:       opts.Author,
 		campaignRoot: opts.CampaignRoot,
@@ -228,6 +234,9 @@ func (m IntentAddModel) updateTitle(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		title := strings.TrimSpace(m.titleInput.Value())
 		if title == "" {
 			return m, nil
+		}
+		if m.noteMode {
+			return m.finishNoteStep()
 		}
 		m.step = addStepType
 		m.titleInput.Blur()
@@ -673,11 +682,26 @@ func (m IntentAddModel) finishBodyStep() (tea.Model, tea.Cmd) {
 	return m, tea.Quit
 }
 
+// finishNoteStep completes a note quick-add: the title text is the note, with
+// no type, concept, or body.
+func (m IntentAddModel) finishNoteStep() (tea.Model, tea.Cmd) {
+	m.result = &AddResult{
+		Title:  strings.TrimSpace(m.titleInput.Value()),
+		Author: m.author,
+	}
+	m.step = addStepDone
+	return m, tea.Quit
+}
+
 // collectCurrentResult builds an AddResult from the model's current state.
 func (m IntentAddModel) collectCurrentResult() *AddResult {
 	title := strings.TrimSpace(m.titleInput.Value())
 	if title == "" {
 		return nil
+	}
+
+	if m.noteMode {
+		return &AddResult{Title: title, Author: m.author}
 	}
 
 	conceptPath := ""
@@ -747,7 +771,11 @@ func (m IntentAddModel) View() string {
 
 	var b strings.Builder
 
-	b.WriteString(TitleStyle.Render("Create Intent"))
+	header := "Create Intent"
+	if m.noteMode {
+		header = "Create Note"
+	}
+	b.WriteString(TitleStyle.Render(header))
 	if m.savedCount > 0 {
 		b.WriteString(SuccessStyle.Render(fmt.Sprintf("  [%d saved]", m.savedCount)))
 	}
@@ -802,7 +830,11 @@ func (m IntentAddModel) viewProgress() string {
 func (m IntentAddModel) viewTitleStep() string {
 	var b strings.Builder
 
-	b.WriteString("Title:\n")
+	label := "Title:\n"
+	if m.noteMode {
+		label = "Note:\n"
+	}
+	b.WriteString(label)
 	b.WriteString(m.titleInput.View())
 	b.WriteString("\n")
 
@@ -813,7 +845,11 @@ func (m IntentAddModel) viewTitleStep() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(HelpStyle.Render("Enter: continue • Ctrl+N: save & new • Esc: cancel"))
+	help := "Enter: continue • Ctrl+N: save & new • Esc: cancel"
+	if m.noteMode {
+		help = "Enter: save note • Ctrl+N: save & new • Esc: cancel"
+	}
+	b.WriteString(HelpStyle.Render(help))
 
 	return b.String()
 }

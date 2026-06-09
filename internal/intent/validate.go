@@ -3,6 +3,7 @@ package intent
 import (
 	"errors"
 	"regexp"
+	"slices"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
@@ -76,13 +77,10 @@ func (i *Intent) Validate() []error {
 }
 
 // isValidStatus returns true if the status is a known valid value.
+// Note statuses are valid too: notes are a separate category stored outside
+// the intent lifecycle but managed by the same tooling.
 func isValidStatus(s Status) bool {
-	for _, valid := range AllStatuses() {
-		if s == valid {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(AllStatuses(), s) || slices.Contains(NoteStatuses(), s)
 }
 
 // isValidType returns true if the type is a known valid value.

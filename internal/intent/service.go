@@ -40,10 +40,30 @@ func NewIntentService(campaignRoot, intentsDir string) *IntentService {
 type CreateOptions struct {
 	Title     string
 	Type      Type
-	Concept   string // Full concept path (e.g., "projects/camp")
+	Concept   string   // Full concept path (e.g., "projects/camp")
+	Category  Category // Intent (default) or note; decides storage root
 	Author    string
 	Body      string    // Description/body content for the intent
 	Timestamp time.Time // Optional; defaults to time.Now()
+}
+
+// createStatus returns the directory a freshly created item lands in for the
+// given category: notes route to notes/, intents to inbox/.
+func createStatus(category Category) Status {
+	if category == CategoryNote {
+		return StatusNote
+	}
+	return StatusInbox
+}
+
+// renderForCreate renders the right template for the category and stamps the
+// frontmatter status to match the storage root.
+func renderForCreate(data TemplateData, category Category) (string, error) {
+	data.Status = string(createStatus(category))
+	if category == CategoryNote {
+		return RenderNote(data)
+	}
+	return RenderTemplate(data)
 }
 
 // CreateDirect creates a new intent directly without opening an editor.
@@ -61,8 +81,8 @@ func (s *IntentService) CreateDirect(ctx context.Context, opts CreateOptions) (*
 	// Generate ID and template data
 	data := NewTemplateDataFromInput(opts.Title, string(opts.Type), opts.Concept, opts.Author, opts.Body, ts)
 
-	// Render template
-	content, err := RenderTemplate(data)
+	// Render template (note vs intent) and stamp the matching status
+	content, err := renderForCreate(data, opts.Category)
 	if err != nil {
 		return nil, camperrors.Wrap(err, "rendering template")
 	}
@@ -73,8 +93,8 @@ func (s *IntentService) CreateDirect(ctx context.Context, opts CreateOptions) (*
 		return nil, camperrors.Wrap(err, "parsing rendered template")
 	}
 
-	// Determine final path (inbox by default)
-	finalPath := s.getIntentPath(StatusInbox, data.ID)
+	// Determine final path: notes route to notes/, intents to inbox/
+	finalPath := s.getIntentPath(createStatus(opts.Category), data.ID)
 
 	// Ensure directory exists
 	if err := os.MkdirAll(filepath.Dir(finalPath), 0755); err != nil {
@@ -111,8 +131,8 @@ func (s *IntentService) CreateWithEditor(ctx context.Context, opts CreateOptions
 	// Generate template data
 	data := NewTemplateDataFromInput(opts.Title, string(opts.Type), opts.Concept, opts.Author, opts.Body, ts)
 
-	// Render template
-	content, err := RenderTemplate(data)
+	// Render template (note vs intent) and stamp the matching status
+	content, err := renderForCreate(data, opts.Category)
 	if err != nil {
 		return nil, camperrors.Wrap(err, "rendering template")
 	}

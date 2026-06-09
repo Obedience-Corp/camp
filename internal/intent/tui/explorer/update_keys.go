@@ -82,10 +82,19 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.focusFilterChip(1)
 		return m, nil
 	case "c":
+		if m.notesMode {
+			// In the notes view, c converts the selected note into an intent
+			// (notes carry no concept, so concept-filtering does not apply).
+			m.startConvert()
+			return m, nil
+		}
 		// Enter concept filter mode
 		m.focus = focusConceptFilter
 		m.conceptFilterPicker = tui.NewConceptPickerModel(m.ctx, m.conceptSvc)
 		return m, nil
+	case "N":
+		// Toggle between the intent triage view and the notes view
+		return m, m.toggleNotesMode()
 	case "C":
 		// Clear concept filter
 		m.conceptFilterPath = ""

@@ -20,6 +20,7 @@ func TestRenderTemplate(t *testing.T) {
 				Title:     "Test Intent",
 				Type:      "feature",
 				Concept:   "camp",
+				Status:    "inbox",
 				Author:    "lance",
 				CreatedAt: "2026-01-19",
 			},

@@ -44,6 +44,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateDungeonReason(msg)
 		}
 
+		if m.focus == focusConvertType {
+			return m.updateConvert(msg)
+		}
+
 		if m.focus == focusMove {
 			return m.updateMove(msg)
 		}
@@ -95,7 +99,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.intents = msg.intents
 		m.filteredIntents = msg.intents
-		m.groups = groupIntentsByStatus(msg.intents, m.dungeonExpanded)
+		if m.notesMode {
+			m.groups = groupNotes(msg.intents)
+		} else {
+			m.groups = groupIntentsByStatus(msg.intents, m.dungeonExpanded)
+		}
 
 	case editorFinishedMsg:
 		if msg.err != nil {

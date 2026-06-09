@@ -14,8 +14,20 @@ var statusFilterItems = []string{"All", "Inbox", "Ready", "Active", "Done", "Kil
 
 // applyFilters filters intents using search query and type filter.
 func (m *Model) applyFilters() {
-	query := m.searchInput.Value()
 	m.statusMessage = ""
+
+	// Notes mode: the intent-oriented filters (type/status/concept) and the
+	// intent search index do not apply. Show the loaded notes as-is.
+	if m.notesMode {
+		m.filteredIntents = m.intents
+		m.groups = groupNotes(m.filteredIntents)
+		m.cursorGroup = 0
+		m.cursorItem = -1
+		m.scrollOffset = 0
+		return
+	}
+
+	query := m.searchInput.Value()
 
 	// Start with all intents
 	var filtered []*intent.Intent

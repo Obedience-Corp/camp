@@ -89,6 +89,38 @@ func TestIntentAddModel_TitleStep(t *testing.T) {
 	}
 }
 
+func TestIntentAddModel_NoteModeFinishesAtTitle(t *testing.T) {
+	ctx := context.Background()
+	svc := mockConceptService{}
+
+	m := NewIntentAddModel(ctx, svc, AddOptions{NoteMode: true})
+
+	for _, char := range "a quick note" {
+		model, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{char}})
+		m = model.(IntentAddModel)
+	}
+
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(IntentAddModel)
+
+	if m.step != addStepDone {
+		t.Fatalf("note mode should finish at title, step = %v", m.step)
+	}
+	result := m.Result()
+	if result == nil {
+		t.Fatal("note mode produced no result")
+	}
+	if result.Title != "a quick note" {
+		t.Errorf("Title = %q, want %q", result.Title, "a quick note")
+	}
+	if result.Type != "" {
+		t.Errorf("Type = %q, want empty for a note", result.Type)
+	}
+	if result.Concept != "" {
+		t.Errorf("Concept = %q, want empty for a note", result.Concept)
+	}
+}
+
 func TestIntentAddModel_EmptyTitleNoAdvance(t *testing.T) {
 	ctx := context.Background()
 	svc := mockConceptService{}
