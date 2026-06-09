@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -25,13 +27,16 @@ type UpdateOptions struct {
 
 	Priority *Priority
 	Horizon  *Horizon
+
+	Tags *[]string // Replaces the intent's tags
 }
 
 // hasChanges returns true if any field in the options is set.
 func (o *UpdateOptions) hasChanges() bool {
 	return o.Title != nil || o.Body != nil || o.Append != nil ||
 		o.Type != nil || o.Status != nil || o.Concept != nil ||
-		o.Author != nil || o.Priority != nil || o.Horizon != nil
+		o.Author != nil || o.Priority != nil || o.Horizon != nil ||
+		o.Tags != nil
 }
 
 // UpdateDirect applies programmatic field updates to an existing intent
@@ -106,6 +111,11 @@ func (s *IntentService) UpdateDirect(ctx context.Context, id string, opts Update
 	if opts.Horizon != nil && *opts.Horizon != intent.Horizon {
 		changes = append(changes, audit.FieldChange{Field: "horizon", Old: string(intent.Horizon), New: string(*opts.Horizon)})
 		intent.Horizon = *opts.Horizon
+	}
+
+	if opts.Tags != nil && !slices.Equal(intent.Tags, *opts.Tags) {
+		changes = append(changes, audit.FieldChange{Field: "tags", Old: strings.Join(intent.Tags, ","), New: strings.Join(*opts.Tags, ",")})
+		intent.Tags = *opts.Tags
 	}
 
 	if len(changes) == 0 {

@@ -27,12 +27,13 @@ const (
 
 // AddOptions configures the IntentAddModel behavior.
 type AddOptions struct {
-	DefaultType  string            // Default intent type (e.g., "idea")
-	FullMode     bool              // Include body textarea step
-	NoteMode     bool              // Note quick-add: collect text only, skip type/concept/body
-	Author       string            // Auto-populated author (e.g., from git config)
-	CampaignRoot string            // Campaign root for @ completion
-	Shortcuts    map[string]string // Navigation shortcuts (key → campaign-relative path, e.g., "de" → "workflow/design/")
+	DefaultType   string            // Default intent type (e.g., "idea")
+	FullMode      bool              // Include body textarea step
+	NoteMode      bool              // Note quick-add: collect text only, skip type/concept/body
+	Author        string            // Auto-populated author (e.g., from git config)
+	CampaignRoot  string            // Campaign root for @ completion
+	Shortcuts     map[string]string // Navigation shortcuts (key → campaign-relative path, e.g., "de" → "workflow/design/")
+	AvailableTags []string          // Configured tags offered by the tag overlay (ctrl+t)
 }
 
 // AddResult contains the collected intent data.
@@ -42,6 +43,7 @@ type AddResult struct {
 	Concept string
 	Body    string
 	Author  string
+	Tags    []string
 }
 
 // IntentAddModel is a BubbleTea model for creating new intents.
@@ -71,6 +73,12 @@ type IntentAddModel struct {
 	author       string
 	campaignRoot string
 	shortcuts    map[string]string // key → campaign-relative path
+
+	// Tag overlay (opened with ctrl+t in any step)
+	availableTags []string
+	tags          []string
+	tagOverlay    TagOverlay
+	tagging       bool
 
 	// Completion state
 	completion completionState
@@ -124,18 +132,19 @@ func NewIntentAddModel(ctx context.Context, conceptSvc concept.Service, opts Add
 	}
 
 	return IntentAddModel{
-		ctx:          ctx,
-		conceptSvc:   conceptSvc,
-		step:         addStepTitle,
-		titleInput:   ti,
-		typeIdx:      typeIdx,
-		vimEditor:    vimEd,
-		fullMode:     opts.FullMode,
-		noteMode:     opts.NoteMode,
-		defaultType:  opts.DefaultType,
-		author:       opts.Author,
-		campaignRoot: opts.CampaignRoot,
-		shortcuts:    opts.Shortcuts,
+		ctx:           ctx,
+		conceptSvc:    conceptSvc,
+		step:          addStepTitle,
+		titleInput:    ti,
+		typeIdx:       typeIdx,
+		vimEditor:     vimEd,
+		fullMode:      opts.FullMode,
+		noteMode:      opts.NoteMode,
+		defaultType:   opts.DefaultType,
+		author:        opts.Author,
+		campaignRoot:  opts.CampaignRoot,
+		shortcuts:     opts.Shortcuts,
+		availableTags: opts.AvailableTags,
 	}
 }
 
@@ -174,6 +183,15 @@ func (m IntentAddModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// Tag overlay (ctrl+t) is modal and reachable from any input step.
+		if m.tagging {
+			return m.updateTagOverlay(msg)
+		}
+		if msg.String() == "ctrl+t" {
+			m.tagOverlay = NewTagOverlay(m.availableTags, m.tags)
+			m.tagging = true
+			return m, nil
+		}
 		switch m.step {
 		case addStepTitle:
 			return m.updateTitle(msg)
@@ -677,9 +695,24 @@ func (m IntentAddModel) finishBodyStep() (tea.Model, tea.Cmd) {
 		Concept: conceptPath,
 		Body:    strings.TrimSpace(m.vimEditor.Content()),
 		Author:  m.author,
+		Tags:    m.tags,
 	}
 	m.step = addStepDone
 	return m, tea.Quit
+}
+
+// updateTagOverlay routes keys to the tag overlay; on confirm it stores the
+// selected tags on the in-progress item.
+func (m IntentAddModel) updateTagOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var done bool
+	m.tagOverlay, done = m.tagOverlay.Update(msg)
+	if done {
+		if !m.tagOverlay.Cancelled() {
+			m.tags = m.tagOverlay.Result()
+		}
+		m.tagging = false
+	}
+	return m, nil
 }
 
 // finishNoteStep completes a note quick-add: the title text is the note, with
@@ -688,6 +721,7 @@ func (m IntentAddModel) finishNoteStep() (tea.Model, tea.Cmd) {
 	m.result = &AddResult{
 		Title:  strings.TrimSpace(m.titleInput.Value()),
 		Author: m.author,
+		Tags:   m.tags,
 	}
 	m.step = addStepDone
 	return m, tea.Quit
@@ -701,7 +735,7 @@ func (m IntentAddModel) collectCurrentResult() *AddResult {
 	}
 
 	if m.noteMode {
-		return &AddResult{Title: title, Author: m.author}
+		return &AddResult{Title: title, Author: m.author, Tags: m.tags}
 	}
 
 	conceptPath := ""
@@ -720,6 +754,7 @@ func (m IntentAddModel) collectCurrentResult() *AddResult {
 		Concept: conceptPath,
 		Body:    body,
 		Author:  m.author,
+		Tags:    m.tags,
 	}
 }
 
@@ -755,6 +790,9 @@ func (m IntentAddModel) saveAndReset() (tea.Model, tea.Cmd) {
 	// Reset vim editor
 	m.vimEditor.SetContent("")
 
+	// Reset tags for the next item
+	m.tags = nil
+
 	return m, textinput.Blink
 }
 
@@ -767,6 +805,10 @@ func (m IntentAddModel) SavedResults() []*AddResult {
 func (m IntentAddModel) View() string {
 	if m.step == addStepDone {
 		return ""
+	}
+
+	if m.tagging {
+		return m.tagOverlay.View()
 	}
 
 	var b strings.Builder
@@ -844,10 +886,14 @@ func (m IntentAddModel) viewTitleStep() string {
 		b.WriteString("\n")
 	}
 
+	if len(m.tags) > 0 {
+		b.WriteString(HelpStyle.Render("Tags: ") + IntentTypeStyle.Render(strings.Join(m.tags, ", ")) + "\n")
+	}
+
 	b.WriteString("\n")
-	help := "Enter: continue • Ctrl+N: save & new • Esc: cancel"
+	help := "Enter: continue • Ctrl+T: tags • Ctrl+N: save & new • Esc: cancel"
 	if m.noteMode {
-		help = "Enter: save note • Ctrl+N: save & new • Esc: cancel"
+		help = "Enter: save note • Ctrl+T: tags • Ctrl+N: save & new • Esc: cancel"
 	}
 	b.WriteString(HelpStyle.Render(help))
 

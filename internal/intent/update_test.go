@@ -228,6 +228,70 @@ func TestUpdateDirect_NoChanges(t *testing.T) {
 	}
 }
 
+func TestUpdateDirect_Tags(t *testing.T) {
+	svc, id, _ := setupTestService(t)
+	ctx := context.Background()
+
+	tags := []string{"personal", "follow-up"}
+	updated, changes, err := svc.UpdateDirect(ctx, id, UpdateOptions{
+		Tags: &tags,
+	})
+	if err != nil {
+		t.Fatalf("UpdateDirect: %v", err)
+	}
+	if !strings.EqualFold(strings.Join(updated.Tags, ","), "personal,follow-up") {
+		t.Fatalf("Tags = %v, want [personal follow-up]", updated.Tags)
+	}
+
+	found := false
+	for _, c := range changes {
+		if c.Field == "tags" {
+			found = true
+			if c.New != "personal,follow-up" {
+				t.Fatalf("tags change new = %q, want %q", c.New, "personal,follow-up")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected a tags field change")
+	}
+
+	// Re-read from disk to confirm tags persisted to frontmatter.
+	reloaded, err := svc.Get(ctx, id)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if len(reloaded.Tags) != 2 {
+		t.Fatalf("persisted tags = %v, want 2", reloaded.Tags)
+	}
+}
+
+func TestUpdateDirect_NilTagsLeavesUnchanged(t *testing.T) {
+	svc, id, _ := setupTestService(t)
+	ctx := context.Background()
+
+	// Seed tags first.
+	seed := []string{"reference"}
+	if _, _, err := svc.UpdateDirect(ctx, id, UpdateOptions{Tags: &seed}); err != nil {
+		t.Fatalf("seed UpdateDirect: %v", err)
+	}
+
+	// An update with nil Tags must not touch the existing tags.
+	newTitle := "Retitled"
+	updated, changes, err := svc.UpdateDirect(ctx, id, UpdateOptions{Title: &newTitle})
+	if err != nil {
+		t.Fatalf("UpdateDirect: %v", err)
+	}
+	if len(updated.Tags) != 1 || updated.Tags[0] != "reference" {
+		t.Fatalf("tags changed unexpectedly: %v", updated.Tags)
+	}
+	for _, c := range changes {
+		if c.Field == "tags" {
+			t.Fatal("nil Tags should not record a tags change")
+		}
+	}
+}
+
 func TestUpdateDirect_NoFieldsSpecified(t *testing.T) {
 	svc, id, _ := setupTestService(t)
 	ctx := context.Background()

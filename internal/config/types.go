@@ -38,10 +38,18 @@ type CampaignConfig struct {
 	ConceptList []ConceptEntry `yaml:"concepts,omitempty"`
 	// Hooks contains optional campaign-local command hooks.
 	Hooks HooksConfig `yaml:"hooks,omitempty"`
+	// Intents holds intent-specific campaign settings (e.g. the tag list).
+	Intents IntentsConfig `yaml:"intents,omitempty"`
 
 	// Jumps holds the loaded jumps configuration (from .campaign/settings/jumps.yaml).
 	// This field is not serialized to campaign.yaml - it's loaded separately.
 	Jumps *JumpsConfig `yaml:"-"`
+}
+
+// IntentsConfig holds intent-specific campaign settings.
+type IntentsConfig struct {
+	// Tags is the suggested tag list offered during intent/note capture.
+	Tags []string `yaml:"tags,omitempty"`
 }
 
 // HooksConfig contains optional campaign-local command hooks.
@@ -86,6 +94,14 @@ func (c *CampaignConfig) Shortcuts() map[string]ShortcutConfig {
 		return c.Jumps.Shortcuts
 	}
 	return DefaultNavigationShortcuts()
+}
+
+// IntentTags returns the configured intent tags, or the default set when unset.
+func (c *CampaignConfig) IntentTags() []string {
+	if len(c.Intents.Tags) > 0 {
+		return c.Intents.Tags
+	}
+	return DefaultIntentTags()
 }
 
 // Concepts returns the concept list for the picker.

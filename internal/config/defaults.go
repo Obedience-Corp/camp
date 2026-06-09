@@ -6,6 +6,11 @@ import "time"
 // ResolvedCampaignsDir() when GlobalConfig.CampaignsDir is empty.
 const defaultCampaignsDirTilde = "~/campaigns/"
 
+// DefaultIntentTags returns the starter tag list for a fresh campaign.
+func DefaultIntentTags() []string {
+	return []string{"personal", "reference", "question", "follow-up"}
+}
+
 // DefaultConcepts returns the default concept configuration for campaigns.
 // Each concept has a name, path, description, and optional depth/ignore settings.
 func DefaultConcepts() []ConceptEntry {

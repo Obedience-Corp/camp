@@ -48,6 +48,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateConvert(msg)
 		}
 
+		if m.tagging {
+			return m.updateTagEdit(msg)
+		}
+
 		if m.focus == focusMove {
 			return m.updateMove(msg)
 		}
@@ -256,6 +260,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Exit multi-select mode and clear selections
 		m.exitMultiSelectMode()
+		return m, m.loadIntents()
+
+	case tagsUpdatedMsg:
+		if msg.err != nil {
+			m.statusMessage = "Tag update failed: " + msg.err.Error()
+		} else {
+			m.statusMessage = "Tags updated"
+		}
 		return m, m.loadIntents()
 
 	case addTUIFinishedMsg:

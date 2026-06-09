@@ -95,6 +95,10 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "N":
 		// Toggle between the intent triage view and the notes view
 		return m, m.toggleNotesMode()
+	case "T":
+		// Open the tag overlay on the selected intent or note
+		m.startTagEdit()
+		return m, nil
 	case "C":
 		// Clear concept filter
 		m.conceptFilterPath = ""

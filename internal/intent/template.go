@@ -29,8 +29,9 @@ type TemplateData struct {
 	Concept   string // Full concept path (e.g., "projects/camp")
 	Status    string // Lifecycle/category directory (defaults to inbox)
 	Author    string
-	CreatedAt string // Formatted as YYYY-MM-DD
-	Body      string // Description/body content
+	CreatedAt string   // Formatted as YYYY-MM-DD
+	Body      string   // Description/body content
+	Tags      []string // Optional frontmatter tags
 }
 
 // RenderTemplate generates an intent file from a template with the given data.

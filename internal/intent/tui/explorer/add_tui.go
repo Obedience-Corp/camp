@@ -16,11 +16,12 @@ type addTUIFinishedMsg struct{}
 // notes view it launches the note quick-add (text only, no type/concept).
 func (m *Model) startAddTUI() {
 	addModel := tui.NewIntentAddModel(m.ctx, m.conceptSvc, tui.AddOptions{
-		FullMode:     !m.notesMode,
-		NoteMode:     m.notesMode,
-		Author:       m.author,
-		CampaignRoot: m.campaignRoot,
-		Shortcuts:    m.shortcuts,
+		FullMode:      !m.notesMode,
+		NoteMode:      m.notesMode,
+		Author:        m.author,
+		CampaignRoot:  m.campaignRoot,
+		Shortcuts:     m.shortcuts,
+		AvailableTags: m.availableTags,
 	})
 	m.addModel = &addModel
 	m.focus = focusAddTUI
@@ -76,6 +77,7 @@ func (m *Model) createIntentFromAddResult(result *tui.AddResult) {
 		Concept: result.Concept,
 		Body:    result.Body,
 		Author:  result.Author,
+		Tags:    result.Tags,
 	}
 
 	noun := "Intent"

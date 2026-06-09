@@ -44,6 +44,7 @@ type CreateOptions struct {
 	Category  Category // Intent (default) or note; decides storage root
 	Author    string
 	Body      string    // Description/body content for the intent
+	Tags      []string  // Optional frontmatter tags
 	Timestamp time.Time // Optional; defaults to time.Now()
 }
 
@@ -58,8 +59,9 @@ func createStatus(category Category) Status {
 
 // renderForCreate renders the right template for the category and stamps the
 // frontmatter status to match the storage root.
-func renderForCreate(data TemplateData, category Category) (string, error) {
+func renderForCreate(data TemplateData, category Category, tags []string) (string, error) {
 	data.Status = string(createStatus(category))
+	data.Tags = tags
 	if category == CategoryNote {
 		return RenderNote(data)
 	}
@@ -82,7 +84,7 @@ func (s *IntentService) CreateDirect(ctx context.Context, opts CreateOptions) (*
 	data := NewTemplateDataFromInput(opts.Title, string(opts.Type), opts.Concept, opts.Author, opts.Body, ts)
 
 	// Render template (note vs intent) and stamp the matching status
-	content, err := renderForCreate(data, opts.Category)
+	content, err := renderForCreate(data, opts.Category, opts.Tags)
 	if err != nil {
 		return nil, camperrors.Wrap(err, "rendering template")
 	}
@@ -132,7 +134,7 @@ func (s *IntentService) CreateWithEditor(ctx context.Context, opts CreateOptions
 	data := NewTemplateDataFromInput(opts.Title, string(opts.Type), opts.Concept, opts.Author, opts.Body, ts)
 
 	// Render template (note vs intent) and stamp the matching status
-	content, err := renderForCreate(data, opts.Category)
+	content, err := renderForCreate(data, opts.Category, opts.Tags)
 	if err != nil {
 		return nil, camperrors.Wrap(err, "rendering template")
 	}

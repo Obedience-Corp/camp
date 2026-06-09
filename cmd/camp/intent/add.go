@@ -85,6 +85,7 @@ func init() {
 	flags.String("body-file", "", "Read intent body from file (- for stdin, 10 MiB cap)")
 	flags.String("concept", "", "Set the concept field (e.g., projects/camp)")
 	flags.String("author", "", "Override the default author attribution")
+	flags.StringArray("tag", nil, "Add a tag (repeatable)")
 }
 
 func runIntentAdd(cmd *cobra.Command, args []string) error {
@@ -99,6 +100,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	targetCampaign, args = normalizeIntentAddCampaignArgs(args, targetCampaign)
 	conceptFlag, _ := cmd.Flags().GetString("concept")
 	authorFlag, _ := cmd.Flags().GetString("author")
+	tagsFlag, _ := cmd.Flags().GetStringArray("tag")
 
 	// Resolve body from --body / --body-file (mutual exclusivity checked inside)
 	body, bodySet, err := resolveBody(cmd)
@@ -143,6 +145,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 			Author:  author,
 			Body:    body,
 			Concept: conceptFlag,
+			Tags:    tagsFlag,
 		}
 
 		// Deep capture overrides ultra-fast; body flags pre-fill the template
@@ -176,11 +179,12 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 
 	// Run BubbleTea TUI
 	model, err := runIntentAddTUI(ctx, conceptSvc, tui.AddOptions{
-		DefaultType:  intentType,
-		FullMode:     fullMode,
-		Author:       author,
-		CampaignRoot: campaignRoot,
-		Shortcuts:    shortcuts,
+		DefaultType:   intentType,
+		FullMode:      fullMode,
+		Author:        author,
+		CampaignRoot:  campaignRoot,
+		Shortcuts:     shortcuts,
+		AvailableTags: cfg.IntentTags(),
 	})
 	if err != nil {
 		return err
@@ -194,6 +198,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 			Concept: saved.Concept,
 			Body:    saved.Body,
 			Author:  saved.Author,
+			Tags:    saved.Tags,
 		}
 		if err := runFastCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, savedOpts); err != nil {
 			return err
@@ -217,6 +222,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 		Concept: result.Concept,
 		Body:    result.Body,
 		Author:  result.Author,
+		Tags:    result.Tags,
 	}
 
 	// Deep capture if requested

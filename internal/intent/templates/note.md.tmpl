@@ -4,7 +4,7 @@ title: {{ .Title }}
 status: {{ .Status }}
 created_at: {{ .CreatedAt }}
 author: {{ .Author }}
-tags: []
+tags: [{{ range $i, $t := .Tags }}{{ if $i }}, {{ end }}{{ $t }}{{ end }}]
 ---
 
 # {{ .Title }}

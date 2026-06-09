@@ -160,6 +160,18 @@ type Model struct {
 	// Convert action state (note → intent)
 	noteToConvert  *intent.Intent
 	convertTypeIdx int
+
+	// Tag overlay (opened with T on a selected item)
+	availableTags []string
+	tagOverlay    tui.TagOverlay
+	tagging       bool
+	tagTarget     *intent.Intent
+}
+
+// WithAvailableTags sets the configured tag list offered by the tag overlay.
+func (m Model) WithAvailableTags(tags []string) Model {
+	m.availableTags = tags
+	return m
 }
 
 // NewModel creates a new Explorer model.
@@ -263,6 +275,11 @@ func (m Model) View() string {
 	// Show convert type picker if active
 	if m.focus == focusConvertType {
 		return m.viewConvert()
+	}
+
+	// Show tag overlay if active
+	if m.tagging {
+		return m.viewTagEdit()
 	}
 
 	// Show confirmation dialog if active

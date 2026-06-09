@@ -46,6 +46,7 @@ func init() {
 	flags.String("body", "", "Set note body as a literal string")
 	flags.String("body-file", "", "Read note body from file (- for stdin, 10 MiB cap)")
 	flags.String("author", "", "Override the default author attribution")
+	flags.StringArrayP("tag", "t", nil, "Add a tag (repeatable)")
 }
 
 func runIntentNote(cmd *cobra.Command, args []string) error {
@@ -53,6 +54,7 @@ func runIntentNote(cmd *cobra.Command, args []string) error {
 
 	noCommit, _ := cmd.Flags().GetBool("no-commit")
 	authorFlag, _ := cmd.Flags().GetString("author")
+	tags, _ := cmd.Flags().GetStringArray("tag")
 
 	body, _, err := resolveBody(cmd)
 	if err != nil {
@@ -76,7 +78,7 @@ func runIntentNote(cmd *cobra.Command, args []string) error {
 		if cmd.Flags().Changed("author") {
 			author = authorFlag
 		}
-		opts := intent.CreateOptions{Title: args[0], Author: author, Body: body}
+		opts := intent.CreateOptions{Title: args[0], Author: author, Body: body, Tags: tags}
 		return runNoteCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, opts)
 	}
 
@@ -92,9 +94,10 @@ func runIntentNote(cmd *cobra.Command, args []string) error {
 
 	conceptSvc := concept.NewService(campaignRoot, cfg.Concepts())
 	model, err := runIntentNoteTUI(ctx, conceptSvc, tui.AddOptions{
-		NoteMode:     true,
-		Author:       author,
-		CampaignRoot: campaignRoot,
+		NoteMode:      true,
+		Author:        author,
+		CampaignRoot:  campaignRoot,
+		AvailableTags: cfg.IntentTags(),
 	})
 	if err != nil {
 		return err
@@ -104,6 +107,7 @@ func runIntentNote(cmd *cobra.Command, args []string) error {
 		if err := runNoteCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, intent.CreateOptions{
 			Title:  saved.Title,
 			Author: saved.Author,
+			Tags:   mergeTags(tags, saved.Tags),
 		}); err != nil {
 			return err
 		}
@@ -120,6 +124,7 @@ func runIntentNote(cmd *cobra.Command, args []string) error {
 	return runNoteCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, intent.CreateOptions{
 		Title:  result.Title,
 		Author: result.Author,
+		Tags:   mergeTags(tags, result.Tags),
 	})
 }
 
@@ -138,6 +143,23 @@ func runIntentNoteTUI(ctx context.Context, conceptSvc concept.Service, opts tui.
 	}
 
 	return &m, nil
+}
+
+// mergeTags unions flag tags and overlay tags, preserving order and dropping
+// duplicates and empties.
+func mergeTags(a, b []string) []string {
+	seen := make(map[string]bool)
+	var out []string
+	for _, list := range [][]string{a, b} {
+		for _, t := range list {
+			if t == "" || seen[t] {
+				continue
+			}
+			seen[t] = true
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 func runNoteCapture(ctx context.Context, svc *intent.IntentService, intentsDir string, cfg *config.CampaignConfig, campaignRoot string, noCommit bool, opts intent.CreateOptions) error {
