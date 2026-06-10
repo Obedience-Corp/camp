@@ -15,7 +15,7 @@ func nestedConceptFixture() []ConceptEntry {
 			Path:        "workflow/",
 			Description: "Workflows",
 			Children: []ConceptEntry{
-				{Name: "festivals", Path: "festivals/", Description: "Planning cycles"},
+				{Name: "festivals", Path: "festivals/", Description: "Multi-step festival plans"},
 				{Name: "design", Path: "workflow/design/", Description: "Design documents", Depth: &depth1},
 				{Name: "explore", Path: "workflow/explore/", Description: "Exploratory notes", Depth: &depth1},
 			},

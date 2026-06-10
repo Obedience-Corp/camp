@@ -37,7 +37,7 @@ func DefaultConcepts() []ConceptEntry {
 			Path:        "workflow/",
 			Description: "Workflows",
 			Children: []ConceptEntry{
-				{Name: "festivals", Path: "festivals/", Description: "Planning cycles"},
+				{Name: "festivals", Path: "festivals/", Description: "Multi-step festival plans"},
 				{Name: "design", Path: "workflow/design/", Description: "Design documents", Depth: &depth1},
 				{Name: "explore", Path: "workflow/explore/", Description: "Exploratory notes and discovery work", Depth: &depth1},
 				{Name: "code_reviews", Path: "workflow/code_reviews/", Description: "Code reviews", Depth: &depth1},

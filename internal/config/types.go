@@ -132,7 +132,7 @@ func (c *CampaignConfig) deriveConceptsFromPaths() []ConceptEntry {
 		path        string
 		description string
 	}{
-		{"festivals", paths.Festivals, "Planning cycles"},
+		{"festivals", paths.Festivals, "Multi-step festival plans"},
 		{"design", paths.Design, "Design documents"},
 		{"explore", "workflow/explore/", "Exploratory notes and discovery work"},
 		{"code_reviews", paths.CodeReviews, "Code reviews"},
