@@ -741,52 +741,51 @@ func TestComputeConceptChanges_UpdatesStalePaths(t *testing.T) {
 		t.Fatal("expected merged concepts, got none")
 	}
 
-	// Verify intents path was updated.
-	var intentsPath string
+	byName := make(map[string]config.ConceptEntry, len(plan.MergedConcepts))
 	for _, c := range plan.MergedConcepts {
-		if c.Name == "intents" {
-			intentsPath = c.Path
-			break
-		}
-	}
-	if intentsPath != ".campaign/intents/" {
-		t.Errorf("intents path = %q, want %q", intentsPath, ".campaign/intents/")
+		byName[c.Name] = c
 	}
 
-	// Verify user-defined "custom" concept is preserved.
-	var foundCustom bool
-	for _, c := range plan.MergedConcepts {
-		if c.Name == "custom" {
-			foundCustom = true
-			if c.Path != "my/custom/" {
-				t.Errorf("custom path = %q, want %q", c.Path, "my/custom/")
-			}
-		}
-	}
-	if !foundCustom {
+	// User-defined "custom" concept is preserved.
+	if custom, ok := byName["custom"]; !ok {
 		t.Error("user-defined 'custom' concept was not preserved")
+	} else if custom.Path != "my/custom/" {
+		t.Errorf("custom path = %q, want %q", custom.Path, "my/custom/")
 	}
 
-	// Verify missing default "explore" was added.
-	var foundExplore bool
-	for _, c := range plan.MergedConcepts {
-		if c.Name == "explore" {
-			foundExplore = true
+	// A concept no longer in defaults (intents) is preserved as a user concept,
+	// untouched. Proper flat -> nested migration of such entries is handled in a
+	// later sequence.
+	if intents, ok := byName["intents"]; !ok {
+		t.Error("preexisting 'intents' concept should be preserved")
+	} else if intents.Path != "workflow/intents/" {
+		t.Errorf("preserved intents path = %q, want it untouched", intents.Path)
+	}
+
+	// The new nested workflow default is added, with its collections as children.
+	workflow, ok := byName["workflow"]
+	if !ok {
+		t.Fatal("nested 'workflow' default concept was not added")
+	}
+	var hasExploreChild bool
+	for _, child := range workflow.Children {
+		if child.Name == "explore" {
+			hasExploreChild = true
 		}
 	}
-	if !foundExplore {
-		t.Error("missing default 'explore' concept was not added")
+	if !hasExploreChild {
+		t.Error("workflow default should include an 'explore' child")
 	}
 
-	// Verify plan changes contain the intents modify entry.
-	var foundModify bool
+	// The workflow addition is recorded as a RepairAdd change.
+	var foundWorkflowAdd bool
 	for _, ch := range plan.Changes {
-		if ch.Category == "concept" && ch.Key == "intents" && ch.Type == RepairModify {
-			foundModify = true
+		if ch.Category == "concept" && ch.Key == "workflow" && ch.Type == RepairAdd {
+			foundWorkflowAdd = true
 		}
 	}
-	if !foundModify {
-		t.Error("expected RepairModify change for intents concept path update")
+	if !foundWorkflowAdd {
+		t.Error("expected RepairAdd change for the workflow concept")
 	}
 }
 
