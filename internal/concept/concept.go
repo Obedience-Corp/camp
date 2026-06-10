@@ -25,6 +25,11 @@ type Concept struct {
 
 	// Ignore lists subdirectory paths to exclude from listing.
 	Ignore []string
+
+	// Children are configured sub-concepts (e.g. workflow collections under a
+	// workflow parent). The picker shows these as the parent's submenu, merged
+	// with any ad-hoc subdirectories discovered on disk.
+	Children []Concept
 }
 
 // Item represents a selectable item within a concept.

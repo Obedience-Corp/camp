@@ -649,3 +649,63 @@ func findSubstring(s, substr string) bool {
 	}
 	return false
 }
+
+func TestConceptPicker_WorkflowParentCascade(t *testing.T) {
+	svc := mockConceptService{
+		concepts: []concept.Concept{
+			{Name: "projects", Path: "projects/", Description: "Projects", HasItems: true},
+			{Name: "workflow", Path: "workflow/", Description: "Workflows", HasItems: true, Children: []concept.Concept{
+				{Name: "festivals", Path: "festivals/"},
+				{Name: "design", Path: "workflow/design/"},
+			}},
+		},
+		items: map[string][]concept.Item{
+			"workflow:": {
+				{Name: "festivals", Path: "festivals/", IsDir: true, Children: 2},
+				{Name: "design", Path: "workflow/design/", IsDir: true, Children: 1},
+			},
+		},
+	}
+
+	picker := NewConceptPickerModel(context.Background(), svc)
+
+	// Select the workflow concept (typeWheel: none, projects, workflow).
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if picker.step != stepSelectingItem {
+		t.Fatalf("selecting workflow should open the sub-concept submenu, step = %v", picker.step)
+	}
+	if len(picker.items) != 2 || picker.items[0].Name != "festivals" {
+		t.Fatalf("submenu items = %+v, want festivals then design", picker.items)
+	}
+
+	// Selecting festivals stores its own path (festivals/), not workflow/festivals/.
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if picker.step != stepDone {
+		t.Fatalf("selecting a sub-concept should finish, step = %v", picker.step)
+	}
+	if picker.SelectedPath() != "festivals/" {
+		t.Errorf("SelectedPath = %q, want %q", picker.SelectedPath(), "festivals/")
+	}
+}
+
+func TestConceptPicker_ChildlessConceptUnchanged(t *testing.T) {
+	svc := mockConceptService{
+		concepts: []concept.Concept{
+			{Name: "docs", Path: "docs/", Description: "Documentation", HasItems: false},
+		},
+	}
+	picker := NewConceptPickerModel(context.Background(), svc)
+	// Select docs (no items): should complete immediately with its path.
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if picker.step != stepDone {
+		t.Fatalf("childless concept should finish at type selection, step = %v", picker.step)
+	}
+	if picker.SelectedPath() != "docs/" {
+		t.Errorf("SelectedPath = %q, want docs/", picker.SelectedPath())
+	}
+}
