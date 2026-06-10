@@ -14,6 +14,7 @@ const (
 	IntentGather  IntentAction = "Gather"
 	IntentPromote IntentAction = "Promote"
 	IntentCrawl   IntentAction = "Crawl"
+	IntentRename  IntentAction = "Rename"
 )
 
 // IntentOptions configures an intent commit.

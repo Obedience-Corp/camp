@@ -31,6 +31,7 @@ const (
 	focusPromoteTarget // Promote target picker
 	focusDungeonReason // Text input for dungeon move reason
 	focusConvertType   // Type picker for converting a note into an intent
+	focusRename        // Text input for renaming an intent
 )
 
 // IntentGroup represents a collapsible group of intents by status.
@@ -166,6 +167,14 @@ type Model struct {
 	tagOverlay    tui.TagOverlay
 	tagging       bool
 	tagTarget     *intent.Intent
+
+	// Rename overlay (opened with R on a selected item)
+	renameInput  textinput.Model
+	renameTarget *intent.Intent
+
+	// pendingReselectID, when set, selects the matching item after the next
+	// list reload (used to keep the renamed intent selected).
+	pendingReselectID string
 }
 
 // WithAvailableTags sets the configured tag list offered by the tag overlay.
@@ -280,6 +289,11 @@ func (m Model) View() string {
 	// Show tag overlay if active
 	if m.tagging {
 		return m.viewTagEdit()
+	}
+
+	// Show rename input if active
+	if m.focus == focusRename {
+		return m.viewRename()
 	}
 
 	// Show confirmation dialog if active

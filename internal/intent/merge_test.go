@@ -338,31 +338,9 @@ func TestMergeIntents_ContentFormat(t *testing.T) {
 	}
 }
 
-func TestGenerateSlugFromTitle(t *testing.T) {
-	tests := []struct {
-		title string
-		want  string
-	}{
-		{"Simple Title", "simple-title"},
-		{"Title With  Multiple   Spaces", "title-with-multiple-spaces"},
-		{"Title-With-Hyphens", "title-with-hyphens"},
-		{"Title_With_Underscores", "titlewithunderscores"},
-		{"Title With 123 Numbers", "title-with-123-numbers"},
-		{"Special!@#$%Characters", "specialcharacters"},
-		{"A Very Long Title That Should Be Truncated Because It Exceeds The Maximum Length", "a-very-long-title-that-should-be-truncated-because"},
-		{"", ""},
-		{"---", ""},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.title, func(t *testing.T) {
-			got := generateSlugFromTitle(tt.title)
-			if got != tt.want {
-				t.Errorf("generateSlugFromTitle(%q) = %q, want %q", tt.title, got, tt.want)
-			}
-		})
-	}
-}
+// Slug generation is covered comprehensively by TestSlugFromTitle in
+// slug_test.go. generateMergedID now shares that single SlugFromTitle helper,
+// so the previous duplicate slug test here has been removed.
 
 func TestExtractBodyContent(t *testing.T) {
 	tests := []struct {

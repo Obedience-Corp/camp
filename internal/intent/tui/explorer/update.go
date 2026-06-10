@@ -52,6 +52,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateTagEdit(msg)
 		}
 
+		if m.focus == focusRename {
+			return m.updateRename(msg)
+		}
+
 		if m.focus == focusMove {
 			return m.updateMove(msg)
 		}
@@ -107,6 +111,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.groups = groupNotes(msg.intents)
 		} else {
 			m.groups = groupIntentsByStatus(msg.intents, m.dungeonExpanded)
+		}
+		if m.pendingReselectID != "" {
+			m.reselectByID(m.pendingReselectID)
+			m.pendingReselectID = ""
 		}
 
 	case editorFinishedMsg:
@@ -268,6 +276,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.statusMessage = "Tags updated"
 		}
+		return m, m.loadIntents()
+
+	case renameFinishedMsg:
+		if msg.err != nil {
+			m.statusMessage = "Rename failed: " + msg.err.Error()
+			return m, nil
+		}
+		m.statusMessage = "Renamed"
+		m.pendingReselectID = msg.renamedID
 		return m, m.loadIntents()
 
 	case addTUIFinishedMsg:

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -25,6 +26,12 @@ var (
 type IntentService struct {
 	campaignRoot string
 	intentsDir   string
+
+	// idIndex maps an intent's id: frontmatter to its file path. It is built
+	// lazily on the first fast-path miss (a renamed file whose slug drifted from
+	// its id) and invalidated on mutation. nil means "not built".
+	idIndex   map[string]string
+	idIndexMu sync.Mutex
 }
 
 // NewIntentService creates a new IntentService.
@@ -114,6 +121,7 @@ func (s *IntentService) CreateDirect(ctx context.Context, opts CreateOptions) (*
 	}
 
 	intent.Path = finalPath
+	s.invalidateIDIndex()
 	return intent, nil
 }
 
@@ -197,6 +205,7 @@ func (s *IntentService) CreateWithEditor(ctx context.Context, opts CreateOptions
 	}
 
 	intent.Path = finalPath
+	s.invalidateIDIndex()
 	return intent, nil
 }
 
@@ -259,6 +268,7 @@ func (s *IntentService) Edit(ctx context.Context, id string, editorFn EditorFunc
 		return nil, err
 	}
 
+	s.invalidateIDIndex()
 	return updated, nil
 }
 
@@ -299,6 +309,7 @@ func (s *IntentService) Delete(ctx context.Context, id string) error {
 		return camperrors.Wrap(err, "removing intent file")
 	}
 
+	s.invalidateIDIndex()
 	return nil
 }
 
@@ -350,6 +361,7 @@ func (s *IntentService) Move(ctx context.Context, id string, newStatus Status) (
 	s.removeAllCopies(id, newPath)
 
 	intent.Path = newPath
+	s.invalidateIDIndex()
 	return intent, nil
 }
 

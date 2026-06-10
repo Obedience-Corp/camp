@@ -99,6 +99,10 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Open the tag overlay on the selected intent or note
 		m.startTagEdit()
 		return m, nil
+	case "R":
+		// Open the rename overlay on the selected intent or note
+		m.startRename()
+		return m, nil
 	case "C":
 		// Clear concept filter
 		m.conceptFilterPath = ""

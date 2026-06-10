@@ -60,46 +60,12 @@ func MergeIntents(sources []*Intent, opts MergeOptions) (*Intent, error) {
 	return merged, nil
 }
 
-// generateMergedID creates an ID for the gathered intent.
+// generateMergedID creates an ID for the gathered intent. The slug uses the
+// shared SlugFromTitle so merged IDs slug identically to created ones.
 func generateMergedID(title string, t time.Time) string {
-	slug := generateSlugFromTitle(title)
+	slug := SlugFromTitle(title)
 	timestamp := t.Format("20060102-150405")
 	return fmt.Sprintf("%s-%s", timestamp, slug)
-}
-
-// generateSlugFromTitle creates a URL-friendly slug from a title.
-func generateSlugFromTitle(title string) string {
-	// Lowercase
-	slug := strings.ToLower(title)
-
-	// Replace spaces with hyphens
-	slug = strings.ReplaceAll(slug, " ", "-")
-
-	// Remove non-alphanumeric chars (except hyphens)
-	var b strings.Builder
-	for _, r := range slug {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
-			b.WriteRune(r)
-		}
-	}
-	slug = b.String()
-
-	// Collapse multiple hyphens
-	for strings.Contains(slug, "--") {
-		slug = strings.ReplaceAll(slug, "--", "-")
-	}
-
-	// Trim leading/trailing hyphens
-	slug = strings.Trim(slug, "-")
-
-	// Limit length
-	if len(slug) > 50 {
-		slug = slug[:50]
-		// Don't end with hyphen
-		slug = strings.TrimRight(slug, "-")
-	}
-
-	return slug
 }
 
 // buildGatheredSources creates GatheredSource entries from source intents.

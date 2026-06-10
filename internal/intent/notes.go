@@ -118,6 +118,7 @@ func (s *IntentService) ArchiveNote(ctx context.Context, id string) (*Intent, er
 	}
 
 	note.Path = newPath
+	s.invalidateIDIndex()
 	return note, nil
 }
 
@@ -162,6 +163,7 @@ func (s *IntentService) Convert(ctx context.Context, id string, newType Type) (*
 	}
 
 	note.Path = newPath
+	s.invalidateIDIndex()
 	return note, nil
 }
 

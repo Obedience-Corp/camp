@@ -150,6 +150,7 @@ func (s *IntentService) UpdateDirect(ctx context.Context, id string, opts Update
 		s.removeAllCopies(intent.ID, intent.Path)
 	}
 
+	s.invalidateIDIndex()
 	return intent, changes, nil
 }
 
