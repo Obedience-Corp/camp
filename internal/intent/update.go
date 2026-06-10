@@ -130,9 +130,10 @@ func (s *IntentService) UpdateDirect(ctx context.Context, id string, opts Update
 
 	intent.UpdatedAt = time.Now()
 
-	// Handle status change (move to new directory)
+	// Handle status change (move to new directory), preserving the basename so
+	// a renamed slug survives.
 	if intent.Status != originalStatus {
-		newPath := s.getIntentPath(intent.Status, intent.ID)
+		newPath := s.moveTargetPath(intent.Status, originalPath)
 		if err := os.MkdirAll(filepath.Dir(newPath), 0755); err != nil {
 			return nil, nil, camperrors.Wrap(err, "creating directory for status change")
 		}

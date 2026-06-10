@@ -218,6 +218,43 @@ func TestConvert_NoteBecomesIntent(t *testing.T) {
 	}
 }
 
+func TestConvert_DoesNotOverwriteExistingIntent(t *testing.T) {
+	svc, ctx := newNotesTestService(t)
+	ts := time.Date(2026, 6, 9, 10, 0, 0, 0, time.UTC)
+
+	// A note and an intent created from the same title at the same timestamp
+	// share an id (slug + timestamp).
+	note, err := svc.CreateNote(ctx, CreateOptions{Title: "duplicate identity", Timestamp: ts})
+	if err != nil {
+		t.Fatalf("CreateNote: %v", err)
+	}
+	existing, err := svc.CreateDirect(ctx, CreateOptions{Title: "duplicate identity", Type: TypeFeature, Timestamp: ts})
+	if err != nil {
+		t.Fatalf("CreateDirect: %v", err)
+	}
+	if note.ID != existing.ID {
+		t.Fatalf("test precondition: ids should collide, got %q vs %q", note.ID, existing.ID)
+	}
+
+	// Converting the note must NOT overwrite the existing inbox intent.
+	if _, err := svc.Convert(ctx, note.ID, TypeIdea); !errors.Is(err, ErrFileExists) {
+		t.Fatalf("Convert on id collision err = %v, want ErrFileExists", err)
+	}
+
+	// The existing intent file is intact (still TypeFeature, not clobbered).
+	raw, err := os.ReadFile(existing.Path)
+	if err != nil {
+		t.Fatalf("read existing intent: %v", err)
+	}
+	if !strings.Contains(string(raw), "type: feature") {
+		t.Errorf("existing intent was overwritten by convert:\n%s", raw)
+	}
+	// The note still exists in the note store.
+	if _, err := svc.GetNote(ctx, note.ID); err != nil {
+		t.Errorf("note should still exist after rejected convert: %v", err)
+	}
+}
+
 func TestConvert_RejectsInvalidType(t *testing.T) {
 	svc, ctx := newNotesTestService(t)
 

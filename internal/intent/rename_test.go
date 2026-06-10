@@ -57,6 +57,64 @@ func TestRename_UpdatesTitleAndFilenameKeepsID(t *testing.T) {
 	}
 }
 
+func TestRename_SurvivesStatusMove(t *testing.T) {
+	ctx := context.Background()
+	tmp := t.TempDir()
+	intentsDir := filepath.Join(tmp, "intents")
+	svc := NewIntentService(tmp, intentsDir)
+
+	created, err := svc.CreateDirect(ctx, CreateOptions{
+		Title:     "fix the thing",
+		Type:      TypeBug,
+		Timestamp: time.Date(2026, 1, 19, 15, 34, 12, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateDirect: %v", err)
+	}
+
+	renamed, err := svc.Rename(ctx, created.ID, "a much clearer title")
+	if err != nil {
+		t.Fatalf("Rename: %v", err)
+	}
+	renamedBase := filepath.Base(renamed.Path)
+	if !strings.HasPrefix(renamedBase, "a-much-clearer-title-") {
+		t.Fatalf("rename did not produce expected slug: %q", renamedBase)
+	}
+
+	// A normal triage move must NOT revert the renamed slug to <id>.md.
+	moved, err := svc.Move(ctx, created.ID, StatusReady)
+	if err != nil {
+		t.Fatalf("Move: %v", err)
+	}
+	if got := filepath.Base(moved.Path); got != renamedBase {
+		t.Errorf("move reverted renamed basename: got %q, want %q", got, renamedBase)
+	}
+	if filepath.Dir(moved.Path) != filepath.Join(intentsDir, "ready") {
+		t.Errorf("moved dir = %q, want ready", filepath.Dir(moved.Path))
+	}
+	// Still resolvable by id after the move, with the renamed title.
+	got, err := svc.Get(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("Get after move: %v", err)
+	}
+	if got.Title != "a much clearer title" {
+		t.Errorf("title = %q after move", got.Title)
+	}
+
+	// The same holds for an audited status change via UpdateDirect.
+	active := StatusActive
+	if _, _, err := svc.UpdateDirect(ctx, created.ID, UpdateOptions{Status: &active}); err != nil {
+		t.Fatalf("UpdateDirect status change: %v", err)
+	}
+	afterUpdate, err := svc.Get(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("Get after UpdateDirect: %v", err)
+	}
+	if filepath.Base(afterUpdate.Path) != renamedBase {
+		t.Errorf("UpdateDirect reverted renamed basename: got %q, want %q", filepath.Base(afterUpdate.Path), renamedBase)
+	}
+}
+
 func TestRename_CollisionProducesDistinctFilename(t *testing.T) {
 	ctx := context.Background()
 	tmp := t.TempDir()

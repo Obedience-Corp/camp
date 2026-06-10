@@ -248,9 +248,10 @@ func (s *IntentService) Edit(ctx context.Context, id string, editorFn EditorFunc
 		return nil, intentValidationError(errs)
 	}
 
-	// Handle status change (move to new directory)
+	// Handle status change (move to new directory), preserving the basename so
+	// a renamed slug survives.
 	if updated.Status != originalStatus {
-		newPath := s.getIntentPath(updated.Status, updated.ID)
+		newPath := s.moveTargetPath(updated.Status, originalPath)
 		if err := os.MkdirAll(filepath.Dir(newPath), 0755); err != nil {
 			return nil, camperrors.Wrap(err, "creating directory")
 		}
@@ -333,8 +334,9 @@ func (s *IntentService) Move(ctx context.Context, id string, newStatus Status) (
 	intent.Status = newStatus
 	intent.UpdatedAt = time.Now()
 
-	// Determine new path
-	newPath := s.getIntentPath(newStatus, intent.ID)
+	// Determine new path, preserving the current (possibly renamed) basename so
+	// a renamed slug survives the move.
+	newPath := s.moveTargetPath(newStatus, oldPath)
 
 	// Ensure directory exists
 	if err := os.MkdirAll(filepath.Dir(newPath), 0755); err != nil {
@@ -414,8 +416,17 @@ func (s *IntentService) Count(ctx context.Context) ([]StatusCount, int, error) {
 // Helper methods
 
 // getIntentPath returns the file path for an intent given its status and ID.
+// Used when creating files (filename derived from id at birth).
 func (s *IntentService) getIntentPath(status Status, id string) string {
 	return filepath.Join(s.intentsDir, string(status), id+".md")
+}
+
+// moveTargetPath returns the destination when moving an existing file to
+// newStatus, preserving its current basename so a renamed slug survives status
+// changes. Identity is the id: frontmatter, not the filename, so carrying the
+// basename across directories is safe.
+func (s *IntentService) moveTargetPath(newStatus Status, oldPath string) string {
+	return filepath.Join(s.intentsDir, string(newStatus), filepath.Base(oldPath))
 }
 
 // removeAllCopies removes all files for the given intent ID across all

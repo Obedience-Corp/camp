@@ -149,6 +149,12 @@ func (s *IntentService) Convert(ctx context.Context, id string, newType Type) (*
 		return nil, camperrors.Wrap(err, "creating directory")
 	}
 
+	// Notes and intents are separate stores that share the same id generator, so
+	// an intent could already occupy inbox/<id>.md. Never overwrite it.
+	if _, err := os.Stat(newPath); err == nil {
+		return nil, camperrors.Wrap(ErrFileExists, newPath)
+	}
+
 	data, err := SerializeIntent(note)
 	if err != nil {
 		return nil, camperrors.Wrap(err, "serializing converted note")
