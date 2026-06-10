@@ -165,3 +165,131 @@ func TestRename_EmptyTitleRejected(t *testing.T) {
 		t.Error("Rename with empty title should error")
 	}
 }
+
+// sharedBasenameAcrossStatuses returns two distinct intents that, after both are
+// renamed to the same title, share a basename across status dirs: a in inbox and
+// b in ready. Rename uniqueness is per-directory, so this collision is legitimate
+// (same timestamp suffix, same new slug, different ids) and a move of a into
+// ready must not overwrite b.
+func sharedBasenameAcrossStatuses(t *testing.T, ctx context.Context) (svc *IntentService, a, b *Intent, intentsDir string) {
+	t.Helper()
+	tmp := t.TempDir()
+	intentsDir = filepath.Join(tmp, "intents")
+	svc = NewIntentService(tmp, intentsDir)
+	ts := time.Date(2026, 1, 19, 15, 34, 12, 0, time.UTC)
+
+	ca, err := svc.CreateDirect(ctx, CreateOptions{Title: "alpha original", Type: TypeIdea, Timestamp: ts})
+	if err != nil {
+		t.Fatalf("create a: %v", err)
+	}
+	cb, err := svc.CreateDirect(ctx, CreateOptions{Title: "beta original", Type: TypeIdea, Timestamp: ts})
+	if err != nil {
+		t.Fatalf("create b: %v", err)
+	}
+	if ca.ID == cb.ID {
+		t.Fatalf("precondition: ids must differ, got %q", ca.ID)
+	}
+
+	if _, err := svc.Move(ctx, cb.ID, StatusReady); err != nil {
+		t.Fatalf("park b in ready: %v", err)
+	}
+	a, err = svc.Rename(ctx, ca.ID, "shared title")
+	if err != nil {
+		t.Fatalf("rename a: %v", err)
+	}
+	b, err = svc.Rename(ctx, cb.ID, "shared title")
+	if err != nil {
+		t.Fatalf("rename b: %v", err)
+	}
+	if filepath.Base(a.Path) != filepath.Base(b.Path) {
+		t.Fatalf("precondition: basenames should collide, got %q vs %q", filepath.Base(a.Path), filepath.Base(b.Path))
+	}
+	if filepath.Dir(a.Path) != filepath.Join(intentsDir, "inbox") {
+		t.Fatalf("precondition: a should be in inbox, got %q", a.Path)
+	}
+	return svc, a, b, intentsDir
+}
+
+func assertNoCrossStatusClobber(t *testing.T, ctx context.Context, svc *IntentService, a, b *Intent, intentsDir, movedPath, bBase string) {
+	t.Helper()
+
+	if filepath.Dir(movedPath) != filepath.Join(intentsDir, "ready") {
+		t.Errorf("moved a not in ready: %q", movedPath)
+	}
+	if filepath.Base(movedPath) == bBase {
+		t.Fatalf("a collided onto b's basename %q", bBase)
+	}
+
+	gotB, err := svc.Get(ctx, b.ID)
+	if err != nil {
+		t.Fatalf("b lost after moving a: %v", err)
+	}
+	if filepath.Base(gotB.Path) != bBase {
+		t.Errorf("b basename changed: got %q want %q", filepath.Base(gotB.Path), bBase)
+	}
+	if gotB.Title != "shared title" {
+		t.Errorf("b title corrupted: %q", gotB.Title)
+	}
+
+	gotA, err := svc.Get(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("a not resolvable after move: %v", err)
+	}
+	if gotA.Title != "shared title" {
+		t.Errorf("a title = %q, want %q", gotA.Title, "shared title")
+	}
+
+	ready := StatusReady
+	inReady, err := svc.List(ctx, &ListOptions{Status: &ready})
+	if err != nil {
+		t.Fatalf("List(ready): %v", err)
+	}
+	if len(inReady) != 2 {
+		t.Errorf("ready holds %d intents, want 2 (a and b distinct)", len(inReady))
+	}
+}
+
+func TestMove_DoesNotOverwriteCrossStatusBasename(t *testing.T) {
+	ctx := context.Background()
+	svc, a, b, intentsDir := sharedBasenameAcrossStatuses(t, ctx)
+	bBase := filepath.Base(b.Path)
+
+	moved, err := svc.Move(ctx, a.ID, StatusReady)
+	if err != nil {
+		t.Fatalf("Move: %v", err)
+	}
+	assertNoCrossStatusClobber(t, ctx, svc, a, b, intentsDir, moved.Path, bBase)
+}
+
+func TestUpdateDirect_DoesNotOverwriteCrossStatusBasename(t *testing.T) {
+	ctx := context.Background()
+	svc, a, b, intentsDir := sharedBasenameAcrossStatuses(t, ctx)
+	bBase := filepath.Base(b.Path)
+
+	ready := StatusReady
+	moved, _, err := svc.UpdateDirect(ctx, a.ID, UpdateOptions{Status: &ready})
+	if err != nil {
+		t.Fatalf("UpdateDirect: %v", err)
+	}
+	assertNoCrossStatusClobber(t, ctx, svc, a, b, intentsDir, moved.Path, bBase)
+}
+
+func TestEdit_DoesNotOverwriteCrossStatusBasename(t *testing.T) {
+	ctx := context.Background()
+	svc, a, b, intentsDir := sharedBasenameAcrossStatuses(t, ctx)
+	bBase := filepath.Base(b.Path)
+
+	editor := func(_ context.Context, path string) error {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		out := strings.Replace(string(raw), "status: inbox", "status: ready", 1)
+		return os.WriteFile(path, []byte(out), 0644)
+	}
+	moved, err := svc.Edit(ctx, a.ID, editor)
+	if err != nil {
+		t.Fatalf("Edit: %v", err)
+	}
+	assertNoCrossStatusClobber(t, ctx, svc, a, b, intentsDir, moved.Path, bBase)
+}

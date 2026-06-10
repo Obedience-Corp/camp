@@ -2,6 +2,7 @@ package intent
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -251,7 +252,7 @@ func (s *IntentService) Edit(ctx context.Context, id string, editorFn EditorFunc
 	// Handle status change (move to new directory), preserving the basename so
 	// a renamed slug survives.
 	if updated.Status != originalStatus {
-		newPath := s.moveTargetPath(updated.Status, originalPath)
+		newPath := s.moveTargetPath(updated.ID, updated.Status, originalPath)
 		if err := os.MkdirAll(filepath.Dir(newPath), 0755); err != nil {
 			return nil, camperrors.Wrap(err, "creating directory")
 		}
@@ -335,8 +336,9 @@ func (s *IntentService) Move(ctx context.Context, id string, newStatus Status) (
 	intent.UpdatedAt = time.Now()
 
 	// Determine new path, preserving the current (possibly renamed) basename so
-	// a renamed slug survives the move.
-	newPath := s.moveTargetPath(newStatus, oldPath)
+	// a renamed slug survives the move without clobbering a different intent that
+	// shares the basename in the target status.
+	newPath := s.moveTargetPath(intent.ID, newStatus, oldPath)
 
 	// Ensure directory exists
 	if err := os.MkdirAll(filepath.Dir(newPath), 0755); err != nil {
@@ -421,12 +423,49 @@ func (s *IntentService) getIntentPath(status Status, id string) string {
 	return filepath.Join(s.intentsDir, string(status), id+".md")
 }
 
-// moveTargetPath returns the destination when moving an existing file to
-// newStatus, preserving its current basename so a renamed slug survives status
-// changes. Identity is the id: frontmatter, not the filename, so carrying the
-// basename across directories is safe.
-func (s *IntentService) moveTargetPath(newStatus Status, oldPath string) string {
-	return filepath.Join(s.intentsDir, string(newStatus), filepath.Base(oldPath))
+// moveTargetPath returns the destination when moving the intent identified by id
+// from oldPath into newStatus. It preserves the current (possibly renamed)
+// basename so a renamed slug survives status changes.
+//
+// Rename only enforces filename uniqueness within a single status directory, so
+// two distinct intents (different id:, same timestamp suffix, same renamed title)
+// can legitimately share a basename across statuses. Carrying that basename into
+// the target status must never clobber a different intent already parked there:
+// when the basename is held by another id we disambiguate with a -2, -3, ...
+// suffix (the same scheme rename uses) rather than overwriting. A path already
+// holding this same id is reused — it is our own orphan copy.
+func (s *IntentService) moveTargetPath(id string, newStatus Status, oldPath string) string {
+	dir := filepath.Join(s.intentsDir, string(newStatus))
+	base := strings.TrimSuffix(filepath.Base(oldPath), ".md")
+	return s.collisionSafeMovePath(dir, base, id)
+}
+
+// collisionSafeMovePath returns dir/base.md, or dir/base-2.md, dir/base-3.md, ...
+// choosing the first candidate that is free or already belongs to id. A candidate
+// occupied by a different frontmatter id is skipped so a move never overwrites an
+// unrelated intent.
+func (s *IntentService) collisionSafeMovePath(dir, base, id string) string {
+	candidate := filepath.Join(dir, base+".md")
+	if s.pathAvailableForID(candidate, id) {
+		return candidate
+	}
+	for i := 2; ; i++ {
+		c := filepath.Join(dir, fmt.Sprintf("%s-%d.md", base, i))
+		if s.pathAvailableForID(c, id) {
+			return c
+		}
+	}
+}
+
+// pathAvailableForID reports whether the intent with the given id may safely
+// occupy path: true when nothing is there or the existing file is the same intent
+// (same id:), false when a different intent holds it or it cannot be read.
+func (s *IntentService) pathAvailableForID(path, id string) bool {
+	it, err := s.loadIntent(path)
+	if err != nil {
+		return os.IsNotExist(err)
+	}
+	return it.ID == id
 }
 
 // removeAllCopies removes all files for the given intent ID across all
