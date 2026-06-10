@@ -115,7 +115,7 @@ func collectFindings(ctx context.Context, campaignRoot string, cfg *config.Campa
 	var findings []finding
 
 	shortcuts := cfg.Shortcuts()
-	concepts := cfg.Concepts()
+	concepts := flattenConcepts(cfg.Concepts())
 
 	// workflow.shortcut.missing-target: shortcut points to nonexistent
 	// workflow/<type>/ directory.

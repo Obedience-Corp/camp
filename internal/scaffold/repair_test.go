@@ -722,7 +722,7 @@ func TestComputeConceptChanges_UpdatesStalePaths(t *testing.T) {
 		CreatedAt: time.Now(),
 		ConceptList: []config.ConceptEntry{
 			{Name: "projects", Path: "projects/", Description: "Active development projects", Depth: &depth1, Ignore: []string{"worktrees/"}},
-			{Name: "intents", Path: "workflow/intents/", Description: "Ideas and tasks", Depth: &depth0},
+			{Name: "intents", Path: ".campaign/intents/", Description: "Ideas and tasks", Depth: &depth0},
 			{Name: "custom", Path: "my/custom/", Description: "User concept"},
 		},
 	}
@@ -758,7 +758,7 @@ func TestComputeConceptChanges_UpdatesStalePaths(t *testing.T) {
 	// later sequence.
 	if intents, ok := byName["intents"]; !ok {
 		t.Error("preexisting 'intents' concept should be preserved")
-	} else if intents.Path != "workflow/intents/" {
+	} else if intents.Path != ".campaign/intents/" {
 		t.Errorf("preserved intents path = %q, want it untouched", intents.Path)
 	}
 
@@ -796,5 +796,90 @@ func setupCampaignDir(t *testing.T, dir string) {
 	settingsDir := filepath.Join(campaignDir, config.SettingsDir)
 	if err := os.MkdirAll(settingsDir, 0755); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func findConceptByName(concepts []config.ConceptEntry, name string) (config.ConceptEntry, bool) {
+	for _, c := range concepts {
+		if c.Name == name {
+			return c, true
+		}
+	}
+	return config.ConceptEntry{}, false
+}
+
+func TestMigrateConceptsToNested_FlatToNested(t *testing.T) {
+	depth1 := 1
+	flat := []config.ConceptEntry{
+		{Name: "projects", Path: "projects/", Depth: &depth1, Ignore: []string{"worktrees/"}},
+		{Name: "worktrees", Path: "projects/worktrees/"},
+		{Name: "festivals", Path: "festivals/"},
+		{Name: "intents", Path: ".campaign/intents/"},
+		{Name: "workflow", Path: "workflow/", Ignore: []string{"design/", "explore/"}},
+		{Name: "design", Path: "workflow/design/", Depth: &depth1},
+		{Name: "explore", Path: "workflow/explore/", Depth: &depth1},
+		{Name: "docs", Path: "docs/"},
+		{Name: "research", Path: "workflow/research/"}, // custom flat workflow
+	}
+
+	got := migrateConceptsToNested(flat)
+
+	// Top level: projects, workflow, intents, docs (worktrees dropped; family moved).
+	if _, ok := findConceptByName(got, "worktrees"); ok {
+		t.Error("default worktrees should be dropped")
+	}
+	for _, name := range []string{"festivals", "design", "explore", "research"} {
+		if _, ok := findConceptByName(got, name); ok {
+			t.Errorf("%q should no longer be top-level", name)
+		}
+	}
+	if _, ok := findConceptByName(got, "intents"); !ok {
+		t.Error("non-workflow custom concept (intents) should be preserved top-level")
+	}
+
+	workflow, ok := findConceptByName(got, "workflow")
+	if !ok {
+		t.Fatal("workflow parent missing")
+	}
+	for _, name := range []string{"festivals", "design", "explore", "research"} {
+		if _, ok := findConceptByName(workflow.Children, name); !ok {
+			t.Errorf("%q should be nested under workflow", name)
+		}
+	}
+}
+
+func TestMigrateConceptsToNested_Idempotent(t *testing.T) {
+	flat := []config.ConceptEntry{
+		{Name: "projects", Path: "projects/"},
+		{Name: "festivals", Path: "festivals/"},
+		{Name: "workflow", Path: "workflow/"},
+		{Name: "design", Path: "workflow/design/"},
+		{Name: "docs", Path: "docs/"},
+	}
+	once := migrateConceptsToNested(flat)
+	twice := migrateConceptsToNested(once)
+	if !conceptListsEqual(once, twice) {
+		t.Errorf("migration not idempotent:\n once  %#v\n twice %#v", once, twice)
+	}
+}
+
+func TestMigrateConceptsToNested_PreservesCustom(t *testing.T) {
+	already := []config.ConceptEntry{
+		{Name: "projects", Path: "projects/"},
+		{Name: "my-area", Path: "my-area/"}, // custom top-level
+		{Name: "workflow", Path: "workflow/", Children: []config.ConceptEntry{
+			{Name: "festivals", Path: "festivals/"},
+			{Name: "research", Path: "workflow/research/"}, // custom child
+		}},
+		{Name: "docs", Path: "docs/"},
+	}
+	got := migrateConceptsToNested(already)
+
+	if _, ok := findConceptByName(got, "my-area"); !ok {
+		t.Error("custom top-level concept should survive")
+	}
+	workflow, _ := findConceptByName(got, "workflow")
+	if _, ok := findConceptByName(workflow.Children, "research"); !ok {
+		t.Error("custom workflow child should survive")
 	}
 }

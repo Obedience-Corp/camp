@@ -61,20 +61,34 @@ func printConcepts(campaignName string, concepts []concept.Concept) {
 	}
 
 	for _, c := range concepts {
-		desc := ""
-		if c.Description != "" {
-			desc = ui.Dim(" # " + c.Description)
-		}
-		fmt.Printf("  %s %s %s%s\n",
-			ui.Accent(fmt.Sprintf("%-8s", c.Name)),
-			ui.ArrowIcon(),
-			ui.Value(c.Path),
-			desc)
+		printConcept(c, 0)
+	}
 
-		// Metadata line
+	// Always show how to customize concepts.
+	fmt.Println()
+	fmt.Printf("Customize concepts in %s. Nest workflows under the\n", ui.Accent(".campaign/campaign.yaml"))
+	fmt.Printf("%s concept's %s list.\n", ui.Accent("workflow"), ui.Accent("children:"))
+}
+
+// printConcept renders a concept and recurses into its children, indenting each
+// level so the parent -> sub-concept tree is visible.
+func printConcept(c concept.Concept, depth int) {
+	indent := strings.Repeat("  ", depth+1)
+
+	desc := ""
+	if c.Description != "" {
+		desc = ui.Dim(" # " + c.Description)
+	}
+	fmt.Printf("%s%s %s %s%s\n",
+		indent,
+		ui.Accent(fmt.Sprintf("%-12s", c.Name)),
+		ui.ArrowIcon(),
+		ui.Value(c.Path),
+		desc)
+
+	// Top-level concepts show a metadata line; children stay compact.
+	if depth == 0 {
 		var meta []string
-
-		// Depth info
 		if c.MaxDepth == nil {
 			meta = append(meta, "depth: unlimited")
 		} else if *c.MaxDepth == 0 {
@@ -82,19 +96,18 @@ func printConcepts(campaignName string, concepts []concept.Concept) {
 		} else {
 			meta = append(meta, fmt.Sprintf("depth: %d", *c.MaxDepth))
 		}
-
-		// Ignore patterns
 		if len(c.Ignore) > 0 {
 			meta = append(meta, fmt.Sprintf("ignore: [%s]", strings.Join(c.Ignore, ", ")))
 		}
-
-		// Items indicator
 		if c.HasItems {
 			meta = append(meta, ui.Success("has items"))
 		} else {
 			meta = append(meta, "no items")
 		}
+		fmt.Printf("%s%s\n", indent+strings.Repeat(" ", 13), ui.Dim(strings.Join(meta, "  ")))
+	}
 
-		fmt.Printf("  %s %s\n", strings.Repeat(" ", 8), ui.Dim(strings.Join(meta, "  ")))
+	for _, child := range c.Children {
+		printConcept(child, depth+1)
 	}
 }

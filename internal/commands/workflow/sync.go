@@ -185,21 +185,35 @@ func (s *syncState) removeShortcut(key string) bool {
 
 func (s *syncState) removeConcept(name string) bool {
 	concepts := s.currentConcepts()
-	next := make([]config.ConceptEntry, 0, len(concepts))
-	removed := false
-	for _, c := range concepts {
-		if strings.EqualFold(c.Name, name) {
-			removed = true
-			continue
-		}
-		next = append(next, c)
-	}
+	next, removed := removeConceptByName(concepts, name)
 	if !removed {
 		return false
 	}
 	s.cfg.ConceptList = next
 	s.conceptsDirty = true
 	return true
+}
+
+// removeConceptByName removes a concept by name from the tree, descending into
+// children (workflow collections nest under the workflow parent).
+func removeConceptByName(concepts []config.ConceptEntry, name string) ([]config.ConceptEntry, bool) {
+	removed := false
+	next := make([]config.ConceptEntry, 0, len(concepts))
+	for _, c := range concepts {
+		if strings.EqualFold(c.Name, name) {
+			removed = true
+			continue
+		}
+		if len(c.Children) > 0 {
+			children, childRemoved := removeConceptByName(c.Children, name)
+			if childRemoved {
+				c.Children = children
+				removed = true
+			}
+		}
+		next = append(next, c)
+	}
+	return next, removed
 }
 
 func (s *syncState) addConcept(target string) bool {
@@ -209,16 +223,30 @@ func (s *syncState) addConcept(target string) bool {
 		return false
 	}
 	concepts := s.currentConcepts()
-	for _, c := range concepts {
+	for _, c := range flattenConcepts(concepts) {
 		if strings.EqualFold(c.Name, typeName) {
 			return false
 		}
 	}
-	s.cfg.ConceptList = append(concepts, config.ConceptEntry{
+
+	// Nest the new collection under the workflow parent, creating it if absent.
+	parentIdx := -1
+	for i := range concepts {
+		if strings.EqualFold(concepts[i].Name, workflowParentName) {
+			parentIdx = i
+			break
+		}
+	}
+	if parentIdx == -1 {
+		concepts = append(concepts, config.ConceptEntry{Name: workflowParentName, Path: "workflow/", Description: "Workflows"})
+		parentIdx = len(concepts) - 1
+	}
+	concepts[parentIdx].Children = append(concepts[parentIdx].Children, config.ConceptEntry{
 		Name:        typeName,
 		Path:        rel,
 		Description: typeName + " workflow",
 	})
+	s.cfg.ConceptList = concepts
 	s.conceptsDirty = true
 	return true
 }

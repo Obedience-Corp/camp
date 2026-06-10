@@ -75,6 +75,7 @@ type shortcutPlan struct {
 type conceptPlan struct {
 	Name     string `json:"name"`
 	Path     string `json:"path"`
+	Parent   string `json:"parent,omitempty"` // parent concept the new collection nests under
 	Existing string `json:"existing,omitempty"`
 	Replaced bool   `json:"replaced"`
 	NoChange bool   `json:"no_change"`

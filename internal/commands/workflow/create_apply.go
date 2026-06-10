@@ -124,37 +124,53 @@ func upsertShortcut(ctx context.Context, campaignRoot string, cfg *config.Campai
 	return nil
 }
 
+// workflowParentName is the concept that groups all workflow collections.
+const workflowParentName = "workflow"
+
 func upsertConcept(ctx context.Context, campaignRoot string, cfg *config.CampaignConfig, name, relPath, title string, replace bool) error {
 	concepts := cfg.ConceptList
 	if len(concepts) == 0 {
 		concepts = cfg.Concepts()
 	}
 
-	for i, concept := range concepts {
-		if strings.EqualFold(concept.Name, name) {
-			if concept.Path == relPath {
-				cfg.ConceptList = concepts
-				return nil
-			}
-			if !replace {
-				return camperrors.NewValidation("type",
-					"concept "+name+" already points to "+concept.Path+"; use --replace to update it", nil)
-			}
-			concepts[i] = config.ConceptEntry{
-				Name:        name,
-				Path:        relPath,
-				Description: title + " workflow",
-			}
-			cfg.ConceptList = concepts
-			return config.SaveCampaignConfig(ctx, campaignRoot, cfg)
+	// Find the workflow parent, creating it if absent.
+	parentIdx := -1
+	for i := range concepts {
+		if strings.EqualFold(concepts[i].Name, workflowParentName) {
+			parentIdx = i
+			break
 		}
 	}
+	if parentIdx == -1 {
+		concepts = append(concepts, config.ConceptEntry{
+			Name:        workflowParentName,
+			Path:        "workflow/",
+			Description: "Workflows",
+		})
+		parentIdx = len(concepts) - 1
+	}
 
-	concepts = append(concepts, config.ConceptEntry{
-		Name:        name,
-		Path:        relPath,
-		Description: title + " workflow",
-	})
+	child := config.ConceptEntry{Name: name, Path: relPath, Description: title + " workflow"}
+	children := concepts[parentIdx].Children
+	for j := range children {
+		if !strings.EqualFold(children[j].Name, name) {
+			continue
+		}
+		if children[j].Path == relPath {
+			cfg.ConceptList = concepts
+			return nil
+		}
+		if !replace {
+			return camperrors.NewValidation("type",
+				"concept "+name+" already points to "+children[j].Path+"; use --replace to update it", nil)
+		}
+		children[j] = child
+		concepts[parentIdx].Children = children
+		cfg.ConceptList = concepts
+		return config.SaveCampaignConfig(ctx, campaignRoot, cfg)
+	}
+
+	concepts[parentIdx].Children = append(children, child)
 	cfg.ConceptList = concepts
 	return config.SaveCampaignConfig(ctx, campaignRoot, cfg)
 }
