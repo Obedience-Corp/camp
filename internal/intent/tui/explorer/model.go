@@ -161,8 +161,9 @@ type Model struct {
 	notesMode bool
 
 	// Convert action state (note → intent)
-	noteToConvert  *intent.Intent
-	convertTypeIdx int
+	noteToConvert       *intent.Intent
+	convertTypeIdx      int
+	convertTargetStatus intent.Status
 
 	// Tag overlay (opened with T on a selected item)
 	availableTags []string

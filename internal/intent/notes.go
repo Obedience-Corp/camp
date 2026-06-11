@@ -2,6 +2,7 @@ package intent
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -122,14 +123,81 @@ func (s *IntentService) ArchiveNote(ctx context.Context, id string) (*Intent, er
 	return note, nil
 }
 
-// Convert promotes a note into the intent lifecycle: it moves
-// notes/<id>.md into inbox/<id>.md, attaches the given type, and refreshes
-// updated_at. This is the only bridge from a note into inbox/ready/active.
-func (s *IntentService) Convert(ctx context.Context, id string, newType Type) (*Intent, error) {
+// MoveIntentToNote moves a lifecycle intent into the active notes/ store. The
+// file keeps its title, body, author, tags, and timestamps, but drops lifecycle
+// metadata that notes do not carry.
+func (s *IntentService) MoveIntentToNote(ctx context.Context, id string) (*Intent, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
+	if _, err := s.GetNote(ctx, id); err == nil {
+		return nil, camperrors.Wrap(ErrFileExists, id)
+	} else if !errors.Is(err, ErrNotFound) {
+		return nil, err
+	}
+
+	it, err := s.Find(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if it.Status.IsNote() {
+		return it, nil
+	}
+
+	oldPath := it.Path
+	it.Status = StatusNote
+	it.Type = ""
+	it.Concept = ""
+	it.Priority = ""
+	it.Horizon = ""
+	it.BlockedBy = nil
+	it.DependsOn = nil
+	it.PromotionCriteria = ""
+	it.PromotedTo = ""
+	it.GatheredFrom = nil
+	it.GatheredAt = time.Time{}
+	it.GatheredInto = ""
+	it.UpdatedAt = time.Now()
+
+	newPath := s.moveTargetPath(it.ID, StatusNote, oldPath)
+	if err := os.MkdirAll(filepath.Dir(newPath), 0755); err != nil {
+		return nil, camperrors.Wrap(err, "creating directory")
+	}
+
+	data, err := SerializeIntent(it)
+	if err != nil {
+		return nil, camperrors.Wrap(err, "serializing note")
+	}
+	if err := os.WriteFile(newPath, data, 0644); err != nil {
+		return nil, camperrors.Wrap(err, "writing note file")
+	}
+	if err := os.Remove(oldPath); err != nil {
+		_ = os.Remove(newPath)
+		return nil, camperrors.Wrap(err, "removing old intent file")
+	}
+
+	s.removeAllCopies(id, newPath)
+	it.Path = newPath
+	s.invalidateIDIndex()
+	return it, nil
+}
+
+// Convert promotes a note into inbox, attaches the given type, and refreshes
+// updated_at. Use MoveNoteToStatus when the caller already has a target status.
+func (s *IntentService) Convert(ctx context.Context, id string, newType Type) (*Intent, error) {
+	return s.MoveNoteToStatus(ctx, id, StatusInbox, newType)
+}
+
+// MoveNoteToStatus promotes a note into the selected non-note lifecycle status.
+func (s *IntentService) MoveNoteToStatus(ctx context.Context, id string, newStatus Status, newType Type) (*Intent, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, camperrors.Wrap(err, "context cancelled")
+	}
+
+	if newStatus.IsNote() || !isLifecycleStatus(newStatus) {
+		return nil, camperrors.Wrapf(ErrInvalidStatus, "%q", newStatus)
+	}
 	if newType != "" && !isValidType(newType) {
 		return nil, camperrors.Wrapf(ErrInvalidType, "%q", newType)
 	}
@@ -138,21 +206,20 @@ func (s *IntentService) Convert(ctx context.Context, id string, newType Type) (*
 	if err != nil {
 		return nil, err
 	}
+	if _, err := s.resolveByID(note.ID); err == nil {
+		return nil, camperrors.Wrap(ErrFileExists, note.ID)
+	} else if !errors.Is(err, ErrNotFound) {
+		return nil, err
+	}
 
 	oldPath := note.Path
-	note.Status = StatusInbox
+	note.Status = newStatus
 	note.Type = newType
 	note.UpdatedAt = time.Now()
 
-	newPath := s.getIntentPath(StatusInbox, note.ID)
+	newPath := s.moveTargetPath(note.ID, newStatus, oldPath)
 	if err := os.MkdirAll(filepath.Dir(newPath), 0755); err != nil {
 		return nil, camperrors.Wrap(err, "creating directory")
-	}
-
-	// Notes and intents are separate stores that share the same id generator, so
-	// an intent could already occupy inbox/<id>.md. Never overwrite it.
-	if _, err := os.Stat(newPath); err == nil {
-		return nil, camperrors.Wrap(ErrFileExists, newPath)
 	}
 
 	data, err := SerializeIntent(note)
@@ -171,6 +238,15 @@ func (s *IntentService) Convert(ctx context.Context, id string, newType Type) (*
 	note.Path = newPath
 	s.invalidateIDIndex()
 	return note, nil
+}
+
+func isLifecycleStatus(status Status) bool {
+	for _, s := range AllStatuses() {
+		if status == s {
+			return true
+		}
+	}
+	return false
 }
 
 // noteSortKey returns the timestamp used to order notes (updated, else created).

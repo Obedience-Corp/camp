@@ -38,6 +38,7 @@ func NewActionMenu(i *intent.Intent) ActionMenu {
 		return newActionMenu([]ActionMenuItem{
 			{Label: "View full screen", Action: "view", Enabled: true},
 			{Label: "Edit in editor", Action: "edit", Enabled: true},
+			{Label: "Move to status", Action: "move", Enabled: i.Status == intent.StatusNote},
 			{Label: "Convert to intent", Action: "convert", Enabled: i.Status == intent.StatusNote},
 		})
 	}

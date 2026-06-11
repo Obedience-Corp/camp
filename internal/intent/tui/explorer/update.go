@@ -323,10 +323,6 @@ func (m Model) handleActionMenuSelection(msg tui.ActionMenuSelectedMsg) (tea.Mod
 			m.startConvert()
 		}
 	case "move":
-		if selected.Status.IsNote() {
-			m.statusMessage = "Convert note to an intent before moving it"
-			return m, nil
-		}
 		m.focus = focusMove
 		m.intentToMove = selected
 		m.moveStatusIdx = 0

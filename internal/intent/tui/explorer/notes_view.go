@@ -59,8 +59,16 @@ func (m *Model) startConvert() {
 	if selected == nil {
 		return
 	}
+	m.startConvertToStatus(selected, intent.StatusInbox)
+}
+
+func (m *Model) startConvertToStatus(selected *intent.Intent, targetStatus intent.Status) {
+	if selected == nil {
+		return
+	}
 	m.noteToConvert = selected
 	m.convertTypeIdx = 0
+	m.convertTargetStatus = targetStatus
 	m.focus = focusConvertType
 }
 
@@ -70,6 +78,7 @@ func (m *Model) updateConvert(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.focus = focusList
 		m.noteToConvert = nil
+		m.convertTargetStatus = ""
 		return m, nil
 	case "j", "down":
 		if m.convertTypeIdx < len(convertTypeOptions)-1 {
@@ -83,26 +92,31 @@ func (m *Model) updateConvert(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.noteToConvert != nil {
 			note := m.noteToConvert
 			newType := convertTypeOptions[m.convertTypeIdx].typ
+			targetStatus := m.convertTargetStatus
+			if targetStatus == "" {
+				targetStatus = intent.StatusInbox
+			}
 			m.focus = focusList
 			m.noteToConvert = nil
-			return m, m.convertNote(note, newType)
+			m.convertTargetStatus = ""
+			return m, m.convertNote(note, newType, targetStatus)
 		}
 	}
 	return m, nil
 }
 
 // convertNote runs the conversion and emits a moveFinishedMsg so the list reloads.
-func (m *Model) convertNote(note *intent.Intent, newType intent.Type) tea.Cmd {
+func (m *Model) convertNote(note *intent.Intent, newType intent.Type, targetStatus intent.Status) tea.Cmd {
 	return func() tea.Msg {
 		sourcePath := note.Path
-		converted, err := m.service.Convert(m.ctx, note.ID, newType)
+		converted, err := m.service.MoveNoteToStatus(m.ctx, note.ID, targetStatus, newType)
 		if err == nil {
 			err = m.appendAuditEvent(audit.Event{
 				Type:   audit.EventMove,
 				ID:     note.ID,
 				Title:  note.Title,
 				From:   string(intent.StatusNote),
-				To:     string(intent.StatusInbox),
+				To:     string(targetStatus),
 				Reason: "converted note to " + string(newType),
 			})
 		}
@@ -112,7 +126,7 @@ func (m *Model) convertNote(note *intent.Intent, newType intent.Type) tea.Cmd {
 		return moveFinishedMsg{
 			err:       err,
 			intentID:  note.ID,
-			newStatus: intent.StatusInbox,
+			newStatus: targetStatus,
 		}
 	}
 }
@@ -121,11 +135,19 @@ func (m *Model) convertNote(note *intent.Intent, newType intent.Type) tea.Cmd {
 func (m *Model) viewConvert() string {
 	var b strings.Builder
 
-	b.WriteString(tui.TitleStyle.Render("Convert Note to Intent"))
+	title := "Convert Note to Intent"
+	if m.convertTargetStatus != "" && m.convertTargetStatus != intent.StatusInbox {
+		title = "Move Note to " + m.convertTargetStatus.String()
+	}
+	b.WriteString(tui.TitleStyle.Render(title))
 	b.WriteString("\n\n")
 
 	if m.noteToConvert != nil {
 		b.WriteString("Note: " + m.noteToConvert.Title + "\n\n")
+	}
+
+	if m.convertTargetStatus != "" {
+		b.WriteString("Moving to: " + m.convertTargetStatus.String() + "\n\n")
 	}
 
 	b.WriteString("Select intent type:\n")

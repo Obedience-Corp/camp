@@ -131,10 +131,6 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "m":
 		// Start move action to change intent status
 		if selected := m.SelectedIntent(); selected != nil {
-			if selected.Status.IsNote() {
-				m.statusMessage = "Convert note to an intent before moving it"
-				return m, nil
-			}
 			m.focus = focusMove
 			m.intentToMove = selected
 			m.moveStatusIdx = 0

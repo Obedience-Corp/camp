@@ -218,6 +218,94 @@ func TestConvert_NoteBecomesIntent(t *testing.T) {
 	}
 }
 
+func TestMoveIntentToNote_ClearsLifecycleMetadata(t *testing.T) {
+	svc, ctx := newNotesTestService(t)
+
+	created, err := svc.CreateDirect(ctx, CreateOptions{
+		Title:     "turn this intent into a note",
+		Type:      TypeFeature,
+		Concept:   "projects/camp",
+		Body:      "important details stay in the body",
+		Timestamp: time.Date(2026, 6, 9, 10, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateDirect: %v", err)
+	}
+	oldPath := created.Path
+
+	note, err := svc.MoveIntentToNote(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("MoveIntentToNote: %v", err)
+	}
+	if note.Status != StatusNote {
+		t.Errorf("Status = %q, want %q", note.Status, StatusNote)
+	}
+	if note.Type != "" {
+		t.Errorf("Type = %q, want empty for note", note.Type)
+	}
+	if note.Concept != "" {
+		t.Errorf("Concept = %q, want empty for note", note.Concept)
+	}
+	if !strings.Contains(note.Content, "important details stay in the body") {
+		t.Errorf("Content = %q, want preserved body details", note.Content)
+	}
+	if filepath.Dir(note.Path) != filepath.Join(svc.intentsDir, "notes") {
+		t.Errorf("note dir = %q, want notes/", filepath.Dir(note.Path))
+	}
+	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
+		t.Errorf("old intent still present at %q", oldPath)
+	}
+	if _, err := svc.Get(ctx, created.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("Get(converted note) err = %v, want ErrNotFound", err)
+	}
+	if _, err := svc.GetNote(ctx, created.ID); err != nil {
+		t.Errorf("GetNote(converted note): %v", err)
+	}
+	raw, err := os.ReadFile(note.Path)
+	if err != nil {
+		t.Fatalf("ReadFile(note): %v", err)
+	}
+	if strings.Contains(string(raw), "type:") || strings.Contains(string(raw), "concept:") {
+		t.Fatalf("note frontmatter retained lifecycle metadata:\n%s", raw)
+	}
+}
+
+func TestMoveNoteToStatus_UsesSelectedStatus(t *testing.T) {
+	svc, ctx := newNotesTestService(t)
+
+	note, err := svc.CreateNote(ctx, CreateOptions{
+		Title:     "ready note",
+		Timestamp: time.Date(2026, 6, 9, 10, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateNote: %v", err)
+	}
+	oldPath := note.Path
+
+	got, err := svc.MoveNoteToStatus(ctx, note.ID, StatusReady, TypeResearch)
+	if err != nil {
+		t.Fatalf("MoveNoteToStatus: %v", err)
+	}
+	if got.Status != StatusReady {
+		t.Errorf("Status = %q, want %q", got.Status, StatusReady)
+	}
+	if got.Type != TypeResearch {
+		t.Errorf("Type = %q, want %q", got.Type, TypeResearch)
+	}
+	if filepath.Dir(got.Path) != filepath.Join(svc.intentsDir, "ready") {
+		t.Errorf("converted dir = %q, want ready/", filepath.Dir(got.Path))
+	}
+	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
+		t.Errorf("note still present in notes/ at %q", oldPath)
+	}
+	if _, err := svc.Get(ctx, note.ID); err != nil {
+		t.Errorf("converted note not resolvable as intent: %v", err)
+	}
+	if _, err := svc.GetNote(ctx, note.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("GetNote(converted intent) err = %v, want ErrNotFound", err)
+	}
+}
+
 func TestConvert_DoesNotOverwriteExistingIntent(t *testing.T) {
 	svc, ctx := newNotesTestService(t)
 	ts := time.Date(2026, 6, 9, 10, 0, 0, 0, time.UTC)

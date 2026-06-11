@@ -124,6 +124,112 @@ func TestConvert_TUIFlow_NoteBecomesIntent(t *testing.T) {
 	}
 }
 
+func TestMove_TUIFlow_IntentBecomesNote(t *testing.T) {
+	ctx := context.Background()
+	tmp := t.TempDir()
+	intentsDir := filepath.Join(tmp, "intents")
+	svc := intent.NewIntentService(tmp, intentsDir)
+
+	created, err := svc.CreateDirect(ctx, intent.CreateOptions{
+		Title:     "not actionable anymore",
+		Type:      intent.TypeFeature,
+		Timestamp: time.Date(2026, 6, 9, 10, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateDirect: %v", err)
+	}
+
+	m := NewModel(ctx, svc, nil, intentsDir, "", "", "", nil)
+	m.ready = true
+	m.intentToMove = created
+	m.focus = focusMove
+	m.moveStatusIdx = moveStatusIndex(t, m.currentMoveStatusOptions(), intent.StatusNote)
+
+	updated, cmd := m.updateMove(tea.KeyMsg{Type: tea.KeyEnter})
+	_ = updated
+	if cmd == nil {
+		t.Fatal("move to notes produced no command")
+	}
+	msg := cmd()
+	if fin, ok := msg.(moveFinishedMsg); !ok {
+		t.Fatalf("expected moveFinishedMsg, got %T", msg)
+	} else if fin.err != nil {
+		t.Fatalf("move to notes failed: %v", fin.err)
+	}
+
+	if _, err := svc.Get(ctx, created.ID); !errors.Is(err, intent.ErrNotFound) {
+		t.Errorf("intent still resolves after move to note, err = %v", err)
+	}
+	note, err := svc.GetNote(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("GetNote after move: %v", err)
+	}
+	if note.Status != intent.StatusNote {
+		t.Errorf("Status = %q, want notes", note.Status)
+	}
+	if note.Type != "" {
+		t.Errorf("Type = %q, want empty for note", note.Type)
+	}
+}
+
+func TestMove_TUIFlow_NoteBecomesReadyIntent(t *testing.T) {
+	ctx := context.Background()
+	tmp := t.TempDir()
+	intentsDir := filepath.Join(tmp, "intents")
+	svc := intent.NewIntentService(tmp, intentsDir)
+
+	note, err := svc.CreateNote(ctx, intent.CreateOptions{
+		Title:     "ready from notes",
+		Timestamp: time.Date(2026, 6, 9, 10, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateNote: %v", err)
+	}
+
+	m := NewModel(ctx, svc, nil, intentsDir, "", "", "", nil)
+	m.ready = true
+	m.intentToMove = note
+	m.focus = focusMove
+	m.moveStatusIdx = moveStatusIndex(t, m.currentMoveStatusOptions(), intent.StatusReady)
+
+	updated, cmd := m.updateMove(tea.KeyMsg{Type: tea.KeyEnter})
+	got := updated.(*Model)
+	if cmd != nil {
+		t.Fatal("note move should open type picker before producing command")
+	}
+	if got.focus != focusConvertType {
+		t.Fatalf("focus = %v, want focusConvertType", got.focus)
+	}
+	if got.convertTargetStatus != intent.StatusReady {
+		t.Fatalf("convertTargetStatus = %q, want ready", got.convertTargetStatus)
+	}
+
+	updated, _ = got.updateConvert(tea.KeyMsg{Type: tea.KeyDown}) // Feature
+	got = updated.(*Model)
+	updated, cmd = got.updateConvert(tea.KeyMsg{Type: tea.KeyEnter})
+	_ = updated
+	if cmd == nil {
+		t.Fatal("confirming note move produced no command")
+	}
+	msg := cmd()
+	if fin, ok := msg.(moveFinishedMsg); !ok {
+		t.Fatalf("expected moveFinishedMsg, got %T", msg)
+	} else if fin.err != nil {
+		t.Fatalf("move from note failed: %v", fin.err)
+	}
+
+	converted, err := svc.Get(ctx, note.ID)
+	if err != nil {
+		t.Fatalf("Get converted intent: %v", err)
+	}
+	if converted.Status != intent.StatusReady {
+		t.Errorf("Status = %q, want ready", converted.Status)
+	}
+	if converted.Type != intent.TypeFeature {
+		t.Errorf("Type = %q, want feature", converted.Type)
+	}
+}
+
 func TestUpdateNormal_COnSelectedNoteStartsConvert(t *testing.T) {
 	ctx := context.Background()
 	note := &intent.Intent{ID: "n", Title: "note", Status: intent.StatusNote}
@@ -143,6 +249,25 @@ func TestUpdateNormal_COnSelectedNoteStartsConvert(t *testing.T) {
 	}
 }
 
+func TestUpdateNormal_MOnSelectedNoteStartsMove(t *testing.T) {
+	ctx := context.Background()
+	note := &intent.Intent{ID: "n", Title: "note", Status: intent.StatusNote}
+	m := NewModel(ctx, nil, nil, "/tmp/intents", "", "", "", nil)
+	m.ready = true
+	m.groups = groupExplorerItemsByStatus([]*intent.Intent{note}, false)
+	m.cursorGroup = 0
+	m.cursorItem = 0
+
+	updated, _ := m.updateNormal(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+	got := updated.(Model)
+	if got.focus != focusMove {
+		t.Fatalf("focus = %v, want focusMove", got.focus)
+	}
+	if got.intentToMove == nil || got.intentToMove.ID != "n" {
+		t.Fatalf("intentToMove = %+v, want note n", got.intentToMove)
+	}
+}
+
 func TestStartAddTUI_FromNotesGroupUsesNoteMode(t *testing.T) {
 	ctx := context.Background()
 	m := NewModel(ctx, nil, nil, "/tmp/intents", "", "", "", nil)
@@ -158,4 +283,15 @@ func TestStartAddTUI_FromNotesGroupUsesNoteMode(t *testing.T) {
 	if m.addModel == nil {
 		t.Fatal("startAddTUI did not create an add model")
 	}
+}
+
+func moveStatusIndex(t *testing.T, options []moveStatusOption, status intent.Status) int {
+	t.Helper()
+	for i, opt := range options {
+		if opt.status == status {
+			return i
+		}
+	}
+	t.Fatalf("status %q not found in move options %+v", status, options)
+	return -1
 }
