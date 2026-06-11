@@ -110,7 +110,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.notesMode {
 			m.groups = groupNotes(msg.intents)
 		} else {
-			m.groups = groupIntentsByStatus(msg.intents, m.dungeonExpanded)
+			m.groups = groupExplorerItemsByStatus(msg.intents, m.dungeonExpanded)
 		}
 		if m.pendingReselectID != "" {
 			m.reselectByID(m.pendingReselectID)
@@ -318,15 +318,35 @@ func (m Model) handleActionMenuSelection(msg tui.ActionMenuSelectedMsg) (tea.Mod
 		)
 	case "edit":
 		return m, openInEditor(m.ctx, selected.Path)
+	case "convert":
+		if selected.Status.IsNote() {
+			m.startConvert()
+		}
 	case "move":
+		if selected.Status.IsNote() {
+			m.statusMessage = "Convert note to an intent before moving it"
+			return m, nil
+		}
 		m.focus = focusMove
 		m.intentToMove = selected
 		m.moveStatusIdx = 0
 	case "promote":
+		if selected.Status.IsNote() {
+			m.statusMessage = "Convert note to an intent before promoting it"
+			return m, nil
+		}
 		return m.handlePromoteAction()
 	case "archive":
+		if selected.Status.IsNote() {
+			m.statusMessage = "Note archiving is not available in the explorer yet"
+			return m, nil
+		}
 		return m.handleArchiveAction()
 	case "delete":
+		if selected.Status.IsNote() {
+			m.statusMessage = "Note deletion is not available in the explorer yet"
+			return m, nil
+		}
 		m.focus = focusConfirm
 		m.pendingAction = "delete"
 		m.pendingIntent = selected

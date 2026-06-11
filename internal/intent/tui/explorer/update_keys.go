@@ -82,9 +82,9 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.focusFilterChip(1)
 		return m, nil
 	case "c":
-		if m.notesMode {
-			// In the notes view, c converts the selected note into an intent
-			// (notes carry no concept, so concept-filtering does not apply).
+		if selected := m.SelectedIntent(); selected != nil && selected.Status.IsNote() {
+			// On notes, c converts the selected note into an intent. Notes carry
+			// no concept, so concept-filtering only applies to lifecycle intents.
 			m.startConvert()
 			return m, nil
 		}
@@ -109,7 +109,8 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.applyFilters()
 		return m, nil
 	case "n":
-		// Launch full add TUI for new intent creation
+		// Launch full add TUI for new intent/note creation. The Notes group
+		// starts note capture; lifecycle groups start intent capture.
 		m.startAddTUI()
 		return m, m.addModel.Init()
 	case "e":
@@ -130,6 +131,10 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "m":
 		// Start move action to change intent status
 		if selected := m.SelectedIntent(); selected != nil {
+			if selected.Status.IsNote() {
+				m.statusMessage = "Convert note to an intent before moving it"
+				return m, nil
+			}
 			m.focus = focusMove
 			m.intentToMove = selected
 			m.moveStatusIdx = 0
@@ -137,12 +142,24 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "p":
 		// Promote to festival (ready intents only)
+		if selected := m.SelectedIntent(); selected != nil && selected.Status.IsNote() {
+			m.statusMessage = "Convert note to an intent before promoting it"
+			return m, nil
+		}
 		return m.handlePromoteAction()
 	case "a":
 		// Archive (move to dungeon/archived) - requires reason
+		if selected := m.SelectedIntent(); selected != nil && selected.Status.IsNote() {
+			m.statusMessage = "Note archiving is not available in the explorer yet"
+			return m, nil
+		}
 		return m.handleArchiveAction()
 	case "d":
 		// Delete intent (permanently) - requires confirmation
+		if selected := m.SelectedIntent(); selected != nil && selected.Status.IsNote() {
+			m.statusMessage = "Note deletion is not available in the explorer yet"
+			return m, nil
+		}
 		return m.handleDeleteAction()
 	case "f":
 		// Open full-screen viewer for selected intent

@@ -29,6 +29,24 @@ func TestGroupNotes_SplitsActiveAndArchived(t *testing.T) {
 	}
 }
 
+func TestGroupExplorerItemsByStatus_PutsNotesFirst(t *testing.T) {
+	items := []*intent.Intent{
+		{ID: "i", Title: "inbox", Status: intent.StatusInbox},
+		{ID: "n", Title: "note", Status: intent.StatusNote},
+	}
+
+	groups := groupExplorerItemsByStatus(items, false)
+	if len(groups) == 0 {
+		t.Fatal("groupExplorerItemsByStatus returned no groups")
+	}
+	if groups[0].Name != "Notes" || groups[0].Status != intent.StatusNote {
+		t.Fatalf("first group = %+v, want Notes group", groups[0])
+	}
+	if len(groups[0].Intents) != 1 || groups[0].Intents[0].ID != "n" {
+		t.Fatalf("Notes group intents = %+v, want note n", groups[0].Intents)
+	}
+}
+
 func TestToggleNotesMode_FlipsAndResetsCursor(t *testing.T) {
 	ctx := context.Background()
 	m := NewModel(ctx, nil, nil, "/tmp/intents", "/tmp/campaign", "test-id", "", nil)
@@ -65,8 +83,7 @@ func TestConvert_TUIFlow_NoteBecomesIntent(t *testing.T) {
 
 	m := NewModel(ctx, svc, nil, intentsDir, "", "", "", nil)
 	m.ready = true
-	m.notesMode = true
-	m.groups = groupNotes([]*intent.Intent{note})
+	m.groups = groupExplorerItemsByStatus([]*intent.Intent{note}, false)
 	m.cursorGroup = 0
 	m.cursorItem = 0
 
@@ -104,5 +121,41 @@ func TestConvert_TUIFlow_NoteBecomesIntent(t *testing.T) {
 	}
 	if got.Type != intent.TypeFeature {
 		t.Errorf("Type = %q, want feature", got.Type)
+	}
+}
+
+func TestUpdateNormal_COnSelectedNoteStartsConvert(t *testing.T) {
+	ctx := context.Background()
+	note := &intent.Intent{ID: "n", Title: "note", Status: intent.StatusNote}
+	m := NewModel(ctx, nil, nil, "/tmp/intents", "", "", "", nil)
+	m.ready = true
+	m.groups = groupExplorerItemsByStatus([]*intent.Intent{note}, false)
+	m.cursorGroup = 0
+	m.cursorItem = 0
+
+	updated, _ := m.updateNormal(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	got := updated.(Model)
+	if got.focus != focusConvertType {
+		t.Fatalf("focus = %v, want focusConvertType", got.focus)
+	}
+	if got.noteToConvert == nil || got.noteToConvert.ID != "n" {
+		t.Fatalf("noteToConvert = %+v, want note n", got.noteToConvert)
+	}
+}
+
+func TestStartAddTUI_FromNotesGroupUsesNoteMode(t *testing.T) {
+	ctx := context.Background()
+	m := NewModel(ctx, nil, nil, "/tmp/intents", "", "", "", nil)
+	m.ready = true
+	m.groups = groupExplorerItemsByStatus(nil, false)
+	m.cursorGroup = 0
+	m.cursorItem = -1
+
+	m.startAddTUI()
+	if !m.addNoteMode {
+		t.Fatal("startAddTUI from Notes group should enable note mode")
+	}
+	if m.addModel == nil {
+		t.Fatal("startAddTUI did not create an add model")
 	}
 }

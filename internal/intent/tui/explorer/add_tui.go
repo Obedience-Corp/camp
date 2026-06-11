@@ -12,19 +12,32 @@ import (
 // This replaces tea.QuitMsg so the explorer stays alive.
 type addTUIFinishedMsg struct{}
 
-// startAddTUI launches the full IntentAddModel within the explorer. In the
-// notes view it launches note capture (title/body/tags, no type/concept).
+// startAddTUI launches the full IntentAddModel within the explorer. From the
+// notes group/view it launches note capture (title/body/tags, no type/concept).
 func (m *Model) startAddTUI() {
+	noteMode := m.shouldCreateNoteFromCurrentPosition()
 	addModel := tui.NewIntentAddModel(m.ctx, m.conceptSvc, tui.AddOptions{
-		FullMode:      !m.notesMode,
-		NoteMode:      m.notesMode,
+		FullMode:      !noteMode,
+		NoteMode:      noteMode,
 		Author:        m.author,
 		CampaignRoot:  m.campaignRoot,
 		Shortcuts:     m.shortcuts,
 		AvailableTags: m.availableTags,
 	})
 	m.addModel = &addModel
+	m.addNoteMode = noteMode
 	m.focus = focusAddTUI
+}
+
+func (m *Model) shouldCreateNoteFromCurrentPosition() bool {
+	if m.notesMode {
+		return true
+	}
+	if m.cursorGroup < 0 || m.cursorGroup >= len(m.groups) {
+		return false
+	}
+	group := m.groups[m.cursorGroup]
+	return group.Status.IsNote()
 }
 
 // updateAddTUI forwards messages to the embedded add model and checks completion.
@@ -63,12 +76,13 @@ func (m *Model) finishAddTUI() (tea.Model, tea.Cmd) {
 	}
 
 	m.addModel = nil
+	m.addNoteMode = false
 	m.focus = focusList
 
 	return m, m.loadIntents()
 }
 
-// createIntentFromAddResult creates an intent (or a note, in notes mode) and
+// createIntentFromAddResult creates an intent (or a note, in add note mode) and
 // auto-commits it.
 func (m *Model) createIntentFromAddResult(result *tui.AddResult) {
 	opts := intent.CreateOptions{
@@ -82,7 +96,7 @@ func (m *Model) createIntentFromAddResult(result *tui.AddResult) {
 
 	noun := "Intent"
 	create := m.service.CreateDirect
-	if m.notesMode {
+	if m.addNoteMode {
 		noun = "Note"
 		create = m.service.CreateNote
 	}

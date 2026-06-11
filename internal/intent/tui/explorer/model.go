@@ -151,11 +151,13 @@ type Model struct {
 	campaignID   string
 
 	// Full add TUI integration
-	addModel  *tui.IntentAddModel
-	author    string
-	shortcuts map[string]string
+	addModel    *tui.IntentAddModel
+	addNoteMode bool
+	author      string
+	shortcuts   map[string]string
 
-	// Notes view: when true the explorer lists notes instead of intents
+	// Notes view: when true the explorer lists only notes. The default explorer
+	// also includes active notes as the first group.
 	notesMode bool
 
 	// Convert action state (note → intent)
@@ -228,8 +230,9 @@ func (m Model) Init() tea.Cmd {
 	return m.loadIntents()
 }
 
-// loadIntents returns a command that loads intents from the service. In notes
-// mode it loads the note store instead, so the default view stays intents-only.
+// loadIntents returns a command that loads explorer items from the service. The
+// default view includes active notes before lifecycle intents; notes mode lists
+// the whole note store including archived notes.
 func (m Model) loadIntents() tea.Cmd {
 	notesMode := m.notesMode
 	return func() tea.Msg {
@@ -238,7 +241,17 @@ func (m Model) loadIntents() tea.Cmd {
 			return intentsLoadedMsg{intents: notes, err: err}
 		}
 		intents, err := m.service.List(m.ctx, nil)
-		return intentsLoadedMsg{intents: intents, err: err}
+		if err != nil {
+			return intentsLoadedMsg{err: err}
+		}
+		notes, err := m.service.ListNotes(m.ctx, false)
+		if err != nil {
+			return intentsLoadedMsg{err: err}
+		}
+		items := make([]*intent.Intent, 0, len(notes)+len(intents))
+		items = append(items, notes...)
+		items = append(items, intents...)
+		return intentsLoadedMsg{intents: items}
 	}
 }
 
@@ -331,8 +344,8 @@ func (m Model) SelectedIntent() *intent.Intent {
 	return nil
 }
 
-// groupIntentsByStatus organizes intents into groups by their status.
-// Groups are ordered: Inbox, Active, Ready, then a collapsible Dungeon parent
+// groupIntentsByStatus organizes lifecycle intents into groups by status.
+// Groups are ordered: Inbox, Ready, Active, then a collapsible Dungeon parent
 // that contains Done, Killed, Archived, Someday as children.
 // When dungeonExpanded is false, only the Dungeon parent group is shown.
 // When true, the 4 child groups are appended after the parent.
@@ -392,4 +405,43 @@ func groupIntentsByStatus(intents []*intent.Intent, dungeonExpanded bool) []Inte
 	}
 
 	return groups
+}
+
+func groupExplorerItemsByStatus(items []*intent.Intent, dungeonExpanded bool) []IntentGroup {
+	notes := IntentGroup{Name: "Notes", Status: intent.StatusNote, Expanded: true}
+	intents := make([]*intent.Intent, 0, len(items))
+	for _, item := range items {
+		if item.Status == intent.StatusNote {
+			notes.Intents = append(notes.Intents, item)
+			continue
+		}
+		if item.Status.IsNote() {
+			continue
+		}
+		intents = append(intents, item)
+	}
+
+	groups := groupIntentsByStatus(intents, dungeonExpanded)
+	return append([]IntentGroup{notes}, groups...)
+}
+
+func (m *Model) rebuildStatusGroups() {
+	if m.notesMode {
+		m.groups = groupNotes(m.filteredIntents)
+		return
+	}
+	if m.hasNotesGroup() {
+		m.groups = groupExplorerItemsByStatus(m.filteredIntents, m.dungeonExpanded)
+		return
+	}
+	m.groups = groupIntentsByStatus(m.filteredIntents, m.dungeonExpanded)
+}
+
+func (m *Model) hasNotesGroup() bool {
+	for _, group := range m.groups {
+		if group.Status.IsNote() {
+			return true
+		}
+	}
+	return false
 }

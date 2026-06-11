@@ -74,7 +74,7 @@ type IntentAddModel struct {
 	campaignRoot string
 	shortcuts    map[string]string // key → campaign-relative path
 
-	// Tag overlay (opened with ctrl+t in any step)
+	// Tag overlay (opened with ctrl+t in the body editor)
 	availableTags []string
 	tags          []string
 	tagOverlay    TagOverlay
@@ -183,14 +183,9 @@ func (m IntentAddModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
-		// Tag overlay (ctrl+t) is modal and reachable from any input step.
+		// Tag overlay (ctrl+t) is modal once opened from the body editor.
 		if m.tagging {
 			return m.updateTagOverlay(msg)
-		}
-		if msg.String() == "ctrl+t" {
-			m.tagOverlay = NewTagOverlay(m.availableTags, m.tags)
-			m.tagging = true
-			return m, nil
 		}
 		switch m.step {
 		case addStepTitle:
@@ -470,6 +465,13 @@ func (m IntentAddModel) updateBody(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Handle ctrl+e for external editor (always available)
 	if msg.String() == "ctrl+e" {
 		return m, m.openExternalEditor()
+	}
+
+	// Handle ctrl+t for tags from the editor step.
+	if msg.String() == "ctrl+t" {
+		m.tagOverlay = NewTagOverlay(m.availableTags, m.tags)
+		m.tagging = true
+		return m, nil
 	}
 
 	// Handle ctrl+n for save-and-new (always available)
@@ -899,14 +901,10 @@ func (m IntentAddModel) viewTitleStep() string {
 		b.WriteString("\n")
 	}
 
-	if len(m.tags) > 0 {
-		b.WriteString(HelpStyle.Render("Tags: ") + IntentTypeStyle.Render(strings.Join(m.tags, ", ")) + "\n")
-	}
-
 	b.WriteString("\n")
-	help := "Enter: continue • Ctrl+T: tags • Ctrl+N: save & new • Esc: cancel"
+	help := "Enter: continue • Ctrl+N: save & new • Esc: cancel"
 	if m.noteMode {
-		help = "Enter: add body • Ctrl+T: tags • Ctrl+N: save title-only & new • Esc: cancel"
+		help = "Enter: add body • Ctrl+N: save title-only & new • Esc: cancel"
 	}
 	b.WriteString(HelpStyle.Render(help))
 
@@ -979,6 +977,10 @@ func (m IntentAddModel) viewBodyStep() string {
 		b.WriteString("\n")
 	}
 
+	if len(m.tags) > 0 {
+		b.WriteString(HelpStyle.Render("Tags: ") + IntentTypeStyle.Render(strings.Join(m.tags, ", ")) + "\n")
+	}
+
 	// Show vim command buffer if in command mode
 	if m.vimEditor.IsCommandMode() {
 		b.WriteString(":" + m.vimEditor.CommandBuffer())
@@ -989,13 +991,13 @@ func (m IntentAddModel) viewBodyStep() string {
 	// Context-sensitive help
 	switch m.vimEditor.Mode() {
 	case vim.ModeInsert:
-		b.WriteString(HelpStyle.Render("Esc: normal mode • Ctrl+S: save • Ctrl+N: save & new • Ctrl+E: editor"))
+		b.WriteString(HelpStyle.Render("Esc: normal mode • Ctrl+S: save • Ctrl+N: save & new • Ctrl+T: tags • Ctrl+E: editor"))
 	case vim.ModeVisual, vim.ModeVisualLine:
 		b.WriteString(HelpStyle.Render("d: delete • y: yank • c: change • Esc: normal"))
 	case vim.ModeCommand:
 		b.WriteString(HelpStyle.Render(":wq save • :q! cancel • Esc: back"))
 	default:
-		b.WriteString(HelpStyle.Render("i: insert • v: visual • Enter/:wq: save • Ctrl+N: new • Ctrl+E: editor"))
+		b.WriteString(HelpStyle.Render("i: insert • v: visual • Enter/:wq: save • Ctrl+N: new • Ctrl+T: tags • Ctrl+E: editor"))
 	}
 
 	return b.String()

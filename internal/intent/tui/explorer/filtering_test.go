@@ -16,6 +16,7 @@ func TestStatusSelectionToStatus(t *testing.T) {
 		wantOK    bool
 	}{
 		{name: "inbox", selection: "Inbox", want: intent.StatusInbox, wantOK: true},
+		{name: "notes", selection: "Notes", want: intent.StatusNote, wantOK: true},
 		{name: "ready", selection: "Ready", want: intent.StatusReady, wantOK: true},
 		{name: "active", selection: "Active", want: intent.StatusActive, wantOK: true},
 		{name: "done label", selection: "Done", want: intent.StatusDone, wantOK: true},
@@ -51,23 +52,57 @@ func TestApplyFilters_StatusDoneAndKilledUseDungeonStatuses(t *testing.T) {
 	m.dungeonExpanded = true
 	m.groups = groupIntentsByStatus(m.intents, m.dungeonExpanded)
 
-	// Select "Done" and verify only dungeon/done intents remain.
 	statusChip := m.filterBar.ChipByLabel("Status")
 	if statusChip == nil {
 		t.Fatal("missing Status filter chip")
 	}
-	statusChip.SetSelected(4) // "Done"
+	statusChip.SetSelected(statusFilterIndex(t, "Done"))
 	m.applyFilters()
 
 	if len(m.filteredIntents) != 1 || m.filteredIntents[0].Status != intent.StatusDone {
 		t.Fatalf("Done filter returned %+v, want one dungeon/done intent", m.filteredIntents)
 	}
 
-	// Select "Killed" and verify only dungeon/killed intents remain.
-	statusChip.SetSelected(5) // "Killed"
+	statusChip.SetSelected(statusFilterIndex(t, "Killed"))
 	m.applyFilters()
 
 	if len(m.filteredIntents) != 1 || m.filteredIntents[0].Status != intent.StatusKilled {
 		t.Fatalf("Killed filter returned %+v, want one dungeon/killed intent", m.filteredIntents)
 	}
+}
+
+func TestApplyFilters_StatusNotes(t *testing.T) {
+	ctx := context.Background()
+	m := NewModel(ctx, nil, nil, "/tmp/intents", "/tmp/campaign", "test-id", "", nil)
+	m.ready = true
+
+	now := time.Now()
+	m.intents = []*intent.Intent{
+		{ID: "note-1", Title: "Note", Status: intent.StatusNote, CreatedAt: now},
+		{ID: "inbox-1", Title: "Inbox", Status: intent.StatusInbox, Type: intent.TypeFeature, CreatedAt: now},
+	}
+	m.filteredIntents = m.intents
+	m.groups = groupIntentsByStatus(m.intents, m.dungeonExpanded)
+
+	statusChip := m.filterBar.ChipByLabel("Status")
+	if statusChip == nil {
+		t.Fatal("missing Status filter chip")
+	}
+	statusChip.SetSelected(statusFilterIndex(t, "Notes"))
+	m.applyFilters()
+
+	if len(m.filteredIntents) != 1 || m.filteredIntents[0].Status != intent.StatusNote {
+		t.Fatalf("Notes filter returned %+v, want one note", m.filteredIntents)
+	}
+}
+
+func statusFilterIndex(t *testing.T, label string) int {
+	t.Helper()
+	for i, item := range statusFilterItems {
+		if item == label {
+			return i
+		}
+	}
+	t.Fatalf("status filter item %q not found in %v", label, statusFilterItems)
+	return -1
 }

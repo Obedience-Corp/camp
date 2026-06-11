@@ -133,6 +133,45 @@ func TestIntentAddModel_NoteModeCollectsBody(t *testing.T) {
 	}
 }
 
+func TestIntentAddModel_TitleStepDoesNotOpenTags(t *testing.T) {
+	ctx := context.Background()
+	svc := mockConceptService{}
+
+	m := NewIntentAddModel(ctx, svc, AddOptions{AvailableTags: []string{"urgent"}})
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
+	m = model.(IntentAddModel)
+
+	if m.tagging {
+		t.Fatal("title step should not open tag overlay")
+	}
+}
+
+func TestIntentAddModel_BodyStepOpensTags(t *testing.T) {
+	ctx := context.Background()
+	svc := mockConceptService{}
+
+	m := NewIntentAddModel(ctx, svc, AddOptions{
+		NoteMode:      true,
+		AvailableTags: []string{"urgent"},
+	})
+
+	for _, char := range "taggable note" {
+		model, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{char}})
+		m = model.(IntentAddModel)
+	}
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(IntentAddModel)
+	if m.step != addStepBody {
+		t.Fatalf("step = %v, want addStepBody", m.step)
+	}
+
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
+	m = model.(IntentAddModel)
+	if !m.tagging {
+		t.Fatal("body step should open tag overlay")
+	}
+}
+
 func TestIntentAddModel_EmptyTitleNoAdvance(t *testing.T) {
 	ctx := context.Background()
 	svc := mockConceptService{}
