@@ -24,6 +24,8 @@ func TestGenerateFish(t *testing.T) {
 		{"cgo function", "function cgo"},
 		{"cint function", "function cint"},
 		{"cint calls intent add", "camp intent add"},
+		{"cnote function", "function cnote"},
+		{"cnote calls intent note", "camp intent note"},
 		{"cd command", "cd $dest"},
 		{"camp go call", "camp go"},
 		{"workitem subcommand", "case workitem wi workitems"},

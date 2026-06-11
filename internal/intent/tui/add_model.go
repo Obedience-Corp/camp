@@ -29,7 +29,7 @@ const (
 type AddOptions struct {
 	DefaultType   string            // Default intent type (e.g., "idea")
 	FullMode      bool              // Include body textarea step
-	NoteMode      bool              // Note quick-add: collect text only, skip type/concept/body
+	NoteMode      bool              // Note capture: collect title/body/tags, skip type/concept
 	Author        string            // Auto-populated author (e.g., from git config)
 	CampaignRoot  string            // Campaign root for @ completion
 	Shortcuts     map[string]string // Navigation shortcuts (key → campaign-relative path, e.g., "de" → "workflow/design/")
@@ -63,7 +63,7 @@ type IntentAddModel struct {
 	// Concept selection
 	conceptPicker ConceptPickerModel
 
-	// Body vim editor (only used in full mode)
+	// Body vim editor (used in full mode and note mode)
 	vimEditor *vim.Editor
 
 	// Configuration
@@ -254,7 +254,7 @@ func (m IntentAddModel) updateTitle(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.noteMode {
-			return m.finishNoteStep()
+			return m.finishNoteTitleStep()
 		}
 		m.step = addStepType
 		m.titleInput.Blur()
@@ -683,6 +683,17 @@ func (m IntentAddModel) openExternalEditor() tea.Cmd {
 
 // finishBodyStep completes the body step and finishes creation.
 func (m IntentAddModel) finishBodyStep() (tea.Model, tea.Cmd) {
+	if m.noteMode {
+		m.result = &AddResult{
+			Title:  strings.TrimSpace(m.titleInput.Value()),
+			Body:   strings.TrimSpace(m.vimEditor.Content()),
+			Author: m.author,
+			Tags:   m.tags,
+		}
+		m.step = addStepDone
+		return m, tea.Quit
+	}
+
 	// Get concept path (may be empty if skipped)
 	conceptPath := ""
 	if m.conceptPicker.SelectedConcept() != nil {
@@ -715,16 +726,14 @@ func (m IntentAddModel) updateTagOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// finishNoteStep completes a note quick-add: the title text is the note, with
-// no type, concept, or body.
-func (m IntentAddModel) finishNoteStep() (tea.Model, tea.Cmd) {
-	m.result = &AddResult{
-		Title:  strings.TrimSpace(m.titleInput.Value()),
-		Author: m.author,
-		Tags:   m.tags,
-	}
-	m.step = addStepDone
-	return m, tea.Quit
+// finishNoteTitleStep completes the note title step and moves to the body
+// editor. Notes skip type and concept, but still support long-form body capture.
+func (m IntentAddModel) finishNoteTitleStep() (tea.Model, tea.Cmd) {
+	m.step = addStepBody
+	w, h := m.calculateBodySize()
+	m.vimEditor.SetSize(w, h)
+	m.vimEditor.State().EnterInsert()
+	return m, nil
 }
 
 // collectCurrentResult builds an AddResult from the model's current state.
@@ -735,7 +744,11 @@ func (m IntentAddModel) collectCurrentResult() *AddResult {
 	}
 
 	if m.noteMode {
-		return &AddResult{Title: title, Author: m.author, Tags: m.tags}
+		body := ""
+		if m.step >= addStepBody {
+			body = strings.TrimSpace(m.vimEditor.Content())
+		}
+		return &AddResult{Title: title, Body: body, Author: m.author, Tags: m.tags}
 	}
 
 	conceptPath := ""
@@ -852,12 +865,12 @@ func (m IntentAddModel) viewProgress() string {
 	}
 
 	// Type
-	if m.step > addStepType {
+	if !m.noteMode && m.step > addStepType {
 		parts = append(parts, HelpStyle.Render("Type: ")+IntentTypeStyle.Render(intentTypes[m.typeIdx]))
 	}
 
 	// Concept (if selected)
-	if m.step > addStepConcept && m.conceptPicker.SelectedPath() != "" {
+	if !m.noteMode && m.step > addStepConcept && m.conceptPicker.SelectedPath() != "" {
 		parts = append(parts, HelpStyle.Render("Concept: ")+IntentConceptStyle.Render(m.conceptPicker.SelectedPath()))
 	}
 
@@ -893,7 +906,7 @@ func (m IntentAddModel) viewTitleStep() string {
 	b.WriteString("\n")
 	help := "Enter: continue • Ctrl+T: tags • Ctrl+N: save & new • Esc: cancel"
 	if m.noteMode {
-		help = "Enter: save note • Ctrl+T: tags • Ctrl+N: save & new • Esc: cancel"
+		help = "Enter: add body • Ctrl+T: tags • Ctrl+N: save title-only & new • Esc: cancel"
 	}
 	b.WriteString(HelpStyle.Render(help))
 
@@ -949,7 +962,11 @@ func (m IntentAddModel) viewBodyStep() string {
 
 	// Show mode indicator
 	modeStr := m.vimEditor.Mode().String()
-	b.WriteString(HelpStyle.Render("Description (optional) — "+modeStr) + "\n")
+	label := "Description"
+	if m.noteMode {
+		label = "Note body"
+	}
+	b.WriteString(HelpStyle.Render(label+" (optional) — "+modeStr) + "\n")
 
 	// Render vim editor
 	cfg := vim.DefaultViewConfig()

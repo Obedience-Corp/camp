@@ -23,6 +23,8 @@ func TestGenerateZsh(t *testing.T) {
 		{"cgo function", "cgo()"},
 		{"cint function", "cint()"},
 		{"cint implementation", "camp intent add"},
+		{"cnote function", "cnote()"},
+		{"cnote implementation", "camp intent note"},
 		{"cd command", "cd \"$dest\""},
 		{"camp go call", "camp go"},
 		{"command camp binary call", "command camp"},

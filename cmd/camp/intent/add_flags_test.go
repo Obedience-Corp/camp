@@ -75,6 +75,56 @@ func TestIntentAdd_WithBody(t *testing.T) {
 	}
 }
 
+func TestIntentAdd_NoteFlagRegistered(t *testing.T) {
+	if intentAddCmd.Flags().Lookup("note") == nil {
+		t.Fatal("intent add should expose --note so c shortcuts can route note capture through add")
+	}
+}
+
+func TestIntentAdd_NoteRouteCreatesNoteWithBody(t *testing.T) {
+	svc, intentsDir, cfg, root := setupAddFlagsTest(t)
+
+	err := runNoteCapture(context.Background(), svc, intentsDir, cfg, root, true, intentcore.CreateOptions{
+		Title:  "Test note with body",
+		Author: "agent",
+		Body:   "This note has details",
+	})
+	if err != nil {
+		t.Fatalf("runNoteCapture: %v", err)
+	}
+
+	notesDir := filepath.Join(intentsDir, "notes")
+	entries, err := os.ReadDir(notesDir)
+	if err != nil {
+		t.Fatalf("ReadDir(notes): %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("notes entries = %d, want 1", len(entries))
+	}
+
+	inboxEntries, err := os.ReadDir(filepath.Join(intentsDir, "inbox"))
+	if err != nil {
+		t.Fatalf("ReadDir(inbox): %v", err)
+	}
+	if len(inboxEntries) != 0 {
+		t.Fatalf("inbox entries = %d, want 0 for note route", len(inboxEntries))
+	}
+
+	content, err := os.ReadFile(filepath.Join(notesDir, entries[0].Name()))
+	if err != nil {
+		t.Fatalf("ReadFile(note): %v", err)
+	}
+	raw := string(content)
+	for _, want := range []string{"status: notes", "This note has details"} {
+		if !strings.Contains(raw, want) {
+			t.Fatalf("note content missing %q:\n%s", want, raw)
+		}
+	}
+	if strings.Contains(raw, "type:") || strings.Contains(raw, "concept:") {
+		t.Fatalf("note should not include lifecycle type/concept:\n%s", raw)
+	}
+}
+
 func TestIntentAdd_WithConcept(t *testing.T) {
 	svc, intentsDir, cfg, root := setupAddFlagsTest(t)
 

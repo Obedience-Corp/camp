@@ -29,7 +29,7 @@ type TemplateData struct {
 	Concept   string // Full concept path (e.g., "projects/camp")
 	Status    string // Lifecycle/category directory (defaults to inbox)
 	Author    string
-	CreatedAt string   // Formatted as YYYY-MM-DD
+	CreatedAt string   // Formatted as RFC3339 so same-day age math is accurate.
 	Body      string   // Description/body content
 	Tags      []string // Optional frontmatter tags
 }
@@ -72,9 +72,11 @@ func RenderNote(data TemplateData) (string, error) {
 	return buf.String(), nil
 }
 
-// FormatCreatedAt formats a time.Time as YYYY-MM-DD for template use.
+// FormatCreatedAt formats a time.Time for frontmatter. Keep the time component:
+// date-only values parse as midnight and make newly-created intents look hours
+// old in the explorer later the same day.
 func FormatCreatedAt(t time.Time) string {
-	return t.Format("2006-01-02")
+	return t.Format(time.RFC3339)
 }
 
 // NewTemplateData creates a TemplateData struct from an Intent struct.

@@ -13,7 +13,7 @@ import (
 type addTUIFinishedMsg struct{}
 
 // startAddTUI launches the full IntentAddModel within the explorer. In the
-// notes view it launches the note quick-add (text only, no type/concept).
+// notes view it launches note capture (title/body/tags, no type/concept).
 func (m *Model) startAddTUI() {
 	addModel := tui.NewIntentAddModel(m.ctx, m.conceptSvc, tui.AddOptions{
 		FullMode:      !m.notesMode,

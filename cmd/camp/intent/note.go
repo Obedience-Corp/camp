@@ -27,13 +27,14 @@ are stored in .campaign/intents/notes/ and do not flow through the
 inbox → ready → active lifecycle. A note carries no type or concept; tags
 organize them.
 
-Fast capture skips the type wheel and concept picker entirely.
+Fast capture skips the TUI. Interactive capture uses the same title/body/tag
+flow as intent add, but skips the type wheel and concept picker.
 
 Examples:
   camp intent note "check the daemon socket path"   Capture a note immediately
   camp intent note "follow up" --body "details..."  Note with a longer body
   echo "body" | camp intent note "idea" --body-file -
-  camp intent note                                  Quick-add note (TUI)`,
+  camp intent note                                  Note TUI (title + body)`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runIntentNote,
 }
@@ -97,6 +98,7 @@ func runIntentNote(cmd *cobra.Command, args []string) error {
 		NoteMode:      true,
 		Author:        author,
 		CampaignRoot:  campaignRoot,
+		Shortcuts:     navigationShortcuts(cfg),
 		AvailableTags: cfg.IntentTags(),
 	})
 	if err != nil {
@@ -107,6 +109,7 @@ func runIntentNote(cmd *cobra.Command, args []string) error {
 		if err := runNoteCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, intent.CreateOptions{
 			Title:  saved.Title,
 			Author: saved.Author,
+			Body:   saved.Body,
 			Tags:   mergeTags(tags, saved.Tags),
 		}); err != nil {
 			return err
@@ -124,6 +127,7 @@ func runIntentNote(cmd *cobra.Command, args []string) error {
 	return runNoteCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, intent.CreateOptions{
 		Title:  result.Title,
 		Author: result.Author,
+		Body:   result.Body,
 		Tags:   mergeTags(tags, result.Tags),
 	})
 }

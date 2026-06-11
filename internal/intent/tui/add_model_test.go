@@ -89,7 +89,7 @@ func TestIntentAddModel_TitleStep(t *testing.T) {
 	}
 }
 
-func TestIntentAddModel_NoteModeFinishesAtTitle(t *testing.T) {
+func TestIntentAddModel_NoteModeCollectsBody(t *testing.T) {
 	ctx := context.Background()
 	svc := mockConceptService{}
 
@@ -103,9 +103,18 @@ func TestIntentAddModel_NoteModeFinishesAtTitle(t *testing.T) {
 	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = model.(IntentAddModel)
 
-	if m.step != addStepDone {
-		t.Fatalf("note mode should finish at title, step = %v", m.step)
+	if m.step != addStepBody {
+		t.Fatalf("note mode should move from title to body, step = %v", m.step)
 	}
+
+	for _, char := range "body details" {
+		model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{char}})
+		m = model.(IntentAddModel)
+	}
+
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	m = model.(IntentAddModel)
+
 	result := m.Result()
 	if result == nil {
 		t.Fatal("note mode produced no result")
@@ -118,6 +127,9 @@ func TestIntentAddModel_NoteModeFinishesAtTitle(t *testing.T) {
 	}
 	if result.Concept != "" {
 		t.Errorf("Concept = %q, want empty for a note", result.Concept)
+	}
+	if result.Body != "body details" {
+		t.Errorf("Body = %q, want %q", result.Body, "body details")
 	}
 }
 
