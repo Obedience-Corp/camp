@@ -11,6 +11,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	intentcore "github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/paths"
+	"github.com/spf13/cobra"
 )
 
 // setupAddFlagsTest creates a campaign root and returns the service, path resolver,
@@ -81,16 +82,54 @@ func TestIntentAdd_NoteFlagRegistered(t *testing.T) {
 	}
 }
 
-func TestIntentAdd_NoteRouteCreatesNoteWithBody(t *testing.T) {
-	svc, intentsDir, cfg, root := setupAddFlagsTest(t)
+func newIntentAddTestCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:  "add [title]",
+		RunE: runIntentAdd,
+	}
+	flags := cmd.Flags()
+	flags.StringP("type", "t", string(intentcore.TypeIdea), "")
+	flags.BoolP("edit", "e", false, "")
+	flags.BoolP("full", "f", false, "")
+	flags.StringP("campaign", "c", "", "")
+	flags.Lookup("campaign").NoOptDefVal = noOptCampaign
+	flags.Bool("no-commit", false, "")
+	flags.String("body", "", "")
+	flags.String("body-file", "", "")
+	flags.String("concept", "", "")
+	flags.Bool("note", false, "")
+	flags.String("author", "", "")
+	flags.StringArray("tag", nil, "")
+	return cmd
+}
 
-	err := runNoteCapture(context.Background(), svc, intentsDir, cfg, root, true, intentcore.CreateOptions{
-		Title:  "Test note with body",
-		Author: "agent",
-		Body:   "This note has details",
-	})
+func TestIntentAdd_NoteFlagRoutesThroughAddCommand(t *testing.T) {
+	_, intentsDir, _, root := setupAddFlagsTest(t)
+
+	originalWD, err := os.Getwd()
 	if err != nil {
-		t.Fatalf("runNoteCapture: %v", err)
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("Chdir(%s): %v", root, err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(originalWD)
+	})
+
+	cmd := newIntentAddTestCmd()
+	cmd.SetContext(context.Background())
+	if err := cmd.Flags().Set("note", "true"); err != nil {
+		t.Fatalf("Set(note): %v", err)
+	}
+	if err := cmd.Flags().Set("body", "This note has details"); err != nil {
+		t.Fatalf("Set(body): %v", err)
+	}
+	if err := cmd.Flags().Set("no-commit", "true"); err != nil {
+		t.Fatalf("Set(no-commit): %v", err)
+	}
+	if err := runIntentAdd(cmd, []string{"Test note with body"}); err != nil {
+		t.Fatalf("runIntentAdd(--note): %v", err)
 	}
 
 	notesDir := filepath.Join(intentsDir, "notes")
