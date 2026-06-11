@@ -331,11 +331,15 @@ cgo p                    # Runs: cd "$(camp go p --print)"
 cgo p api                # Runs: cd "$(camp go p api --print)"
 cgo -c p ls              # Runs: camp go p -c ls (no cd)
 
-# 2. Tab completion for cgo
+# 2. Quick capture helpers
+cint "new feature idea"  # Runs: camp intent add "new feature idea"
+cnote "meeting note"     # Runs: camp intent note "meeting note"
+
+# 3. Tab completion for cgo
 cgo <TAB>                # Completes categories: p f w a d i wt du cr pi de
 cgo p <TAB>              # Completes project names
 
-# 3. Tab completion for camp commands
+# 4. Tab completion for camp commands
 camp <TAB>               # Completes: init go project list register...
 camp project <TAB>       # Completes: add commit link list new prune remote remove run unlink worktree
 ```
