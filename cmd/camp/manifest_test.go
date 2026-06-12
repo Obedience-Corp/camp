@@ -134,6 +134,7 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		expectedCommands["workitem unlink"] = false
 		expectedCommands["workitem commit"] = false
 		expectedCommands["workitem commits"] = false
+		expectedCommands["workitem priority"] = false
 	}
 
 	for _, cmd := range manifest.Commands {
@@ -156,7 +157,7 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		wantCount += 13
 	}
 	if workitemCommandRegistered() {
-		wantCount += 9
+		wantCount += 10
 	}
 	if len(manifest.Commands) != wantCount {
 		t.Errorf("expected exactly %d restricted commands, got %d", wantCount, len(manifest.Commands))
@@ -215,6 +216,7 @@ func TestManifestCommand_AllCommandsHaveAnnotations(t *testing.T) {
 		agentAllowed["workitem unlink"] = true
 		agentAllowed["workitem commit"] = true
 		agentAllowed["workitem commits"] = true
+		agentAllowed["workitem priority"] = true
 	}
 
 	for _, cmd := range manifest.Commands {
