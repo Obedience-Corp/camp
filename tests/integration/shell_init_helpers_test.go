@@ -149,6 +149,31 @@ func runZshScript(t *testing.T, tc *TestContainer, initScript, stubSetup, testCo
 	return output, exitCode
 }
 
+// runZshScriptNoCompinit runs a zsh script that sources the camp init WITHOUT
+// first running compinit. This reproduces the real-world environment of users
+// who source camp before initializing the completion system (or never call
+// compinit at all). The camp init must not emit "command not found: compdef"
+// errors in this case.
+func runZshScriptNoCompinit(t *testing.T, tc *TestContainer, initScript, stubSetup, testCommands string) (string, int) {
+	t.Helper()
+
+	if err := tc.WriteFile("/test/camp-init-nocompinit.zsh", initScript); err != nil {
+		t.Fatalf("write init script: %v", err)
+	}
+
+	fullScript := "emulate -R zsh\n" +
+		stubSetup + "\nsource /test/camp-init-nocompinit.zsh\n" + testCommands
+	if err := tc.WriteFile("/test/test-nocompinit.zsh", fullScript); err != nil {
+		t.Fatalf("write test script: %v", err)
+	}
+
+	output, exitCode, err := tc.ExecCommand("zsh", "--no-rcs", "/test/test-nocompinit.zsh")
+	if err != nil {
+		t.Fatalf("exec zsh: %v", err)
+	}
+	return output, exitCode
+}
+
 // runFishScript assembles and runs a fish script inside the container.
 // Order: stubSetup -> source init -> testCommands.
 func runFishScript(t *testing.T, tc *TestContainer, initScript, stubSetup, testCommands string) (string, int) {

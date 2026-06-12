@@ -509,6 +509,79 @@ func TestShellInit_ZshCompdefRegistered(t *testing.T) {
 	}
 }
 
+func TestShellInit_ZshNoCompinitNoErrors(t *testing.T) {
+	tc := GetSharedContainer(t)
+	installShells(t, tc)
+
+	const targetDir = "/test/zsh-nocompinit-target"
+	if _, _, err := tc.ExecCommand("mkdir", "-p", targetDir); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	initScript := shellInitScript(t, tc, "zsh")
+	stub := stubCampScriptPosix(targetDir)
+
+	t.Run("sourcing_without_compinit_emits_no_errors", func(t *testing.T) {
+		stdout, exitCode := runZshScriptNoCompinit(t, tc, initScript, stub, `
+echo "SOURCED_OK"
+`)
+		if exitCode != 0 {
+			t.Fatalf("sourcing without compinit exited %d, output:\n%s", exitCode, stdout)
+		}
+		if strings.Contains(stdout, "command not found") {
+			t.Errorf("sourcing without compinit emitted 'command not found' (compdef-before-compinit bug), output:\n%s", stdout)
+		}
+		if strings.Contains(stdout, "compdef") {
+			t.Errorf("sourcing without compinit leaked a compdef error, output:\n%s", stdout)
+		}
+		if !strings.Contains(stdout, "SOURCED_OK") {
+			t.Errorf("expected SOURCED_OK marker, output:\n%s", stdout)
+		}
+	})
+
+	t.Run("navigation_still_works_without_compinit", func(t *testing.T) {
+		stdout, exitCode := runZshScriptNoCompinit(t, tc, initScript, stub, `
+cgo foo
+echo "PWD=$PWD"
+`)
+		if exitCode != 0 {
+			t.Fatalf("exit code %d, output: %s", exitCode, stdout)
+		}
+		if !strings.Contains(stdout, "PWD="+targetDir) {
+			t.Errorf("expected PWD=%s, got:\n%s", targetDir, stdout)
+		}
+	})
+}
+
+func TestShellInit_ZshDeferredCompletionRegistersAfterCompinit(t *testing.T) {
+	tc := GetSharedContainer(t)
+	installShells(t, tc)
+	ensureCampInPath(t, tc)
+
+	initScript := shellInitScript(t, tc, "zsh")
+
+	// Source camp BEFORE compinit, then run compinit, then fire the deferred
+	// precmd hook(s) manually. After that, completion must be registered.
+	stdout, exitCode := runZshScriptNoCompinit(t, tc, initScript, `export PATH="/camp-bin:$PATH"`, `
+autoload -Uz compinit && compinit -u 2>/dev/null
+for f in $precmd_functions; do
+  (( $+functions[$f] )) && $f
+done
+if [[ -n "${_comps[cgo]}" ]]; then
+  echo "CGO_COMPLETION_REGISTERED"
+fi
+`)
+	if exitCode != 0 {
+		t.Fatalf("exit code %d, output:\n%s", exitCode, stdout)
+	}
+	if !strings.Contains(stdout, "CGO_COMPLETION_REGISTERED") {
+		t.Errorf("cgo completion not registered after deferred compinit, output:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "command not found") {
+		t.Errorf("deferred completion path emitted 'command not found', output:\n%s", stdout)
+	}
+}
+
 // ---------- Fish behavior tests ----------
 
 func TestShellInit_FishCampWrapperGo(t *testing.T) {

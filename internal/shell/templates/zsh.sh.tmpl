@@ -156,8 +156,6 @@ _cgo() {
     fi
   fi
 }
-compdef _cgo cgo
-
 # Run command from campaign root
 # Usage: cr <command> [args...]
 cr() {
@@ -185,8 +183,6 @@ _csw() {
 
   (( ${#campaigns} )) && compadd -a campaigns
 }
-compdef _csw csw
-
 # Quick intent capture
 # Usage: cint "my idea"
 cint() {
@@ -264,4 +260,31 @@ _camp() {
       ;;
   esac
 }
-compdef _camp camp
+# Register completions, resilient to compinit ordering.
+#
+# compdef only exists after `compinit` has run. Some users source camp before
+# compinit (or never run it), which previously printed three
+# "command not found: compdef" errors at every shell startup and skipped
+# completion entirely. Register immediately when compdef is available;
+# otherwise defer to the first prompt so completion still loads once the
+# user's own compinit runs, without erroring when it never does.
+_camp_register_completions() {
+  compdef _cgo cgo
+  compdef _csw csw
+  compdef _camp camp
+}
+
+if (( $+functions[compdef] )); then
+  _camp_register_completions
+  unfunction _camp_register_completions
+elif autoload -Uz add-zsh-hook 2>/dev/null && (( $+functions[add-zsh-hook] )); then
+  _camp_deferred_completions() {
+    if (( $+functions[compdef] )); then
+      _camp_register_completions
+      unfunction _camp_register_completions
+    fi
+    add-zsh-hook -d precmd _camp_deferred_completions
+    unfunction _camp_deferred_completions
+  }
+  add-zsh-hook precmd _camp_deferred_completions
+fi
