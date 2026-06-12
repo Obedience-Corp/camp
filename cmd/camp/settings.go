@@ -19,18 +19,22 @@ var settingsCmd = &cobra.Command{
 	Short: "Manage camp configuration",
 	Long: `Interactive menu for managing camp configuration.
 
-Today, this command edits global user preferences in
-~/.obey/campaign/config.json.
+Global settings live in ~/.obey/campaign/config.json and apply to every
+campaign. Local settings live in .campaign/settings/local.json and apply
+only to the current campaign; a local theme override wins over the global
+theme while you are inside that campaign.
 
-Campaign-local settings still live in files under .campaign/, and the
-"Local Settings" menu is currently a scaffold rather than a full editor.
-See docs/campaign-settings-files.md in the camp repository for the current
-file layout.`,
-	Example: `  camp settings   # Edit global editor/theme preferences`,
+For non-interactive access, use 'camp settings get' and
+'camp settings set'. See docs/campaign-settings-files.md in the camp
+repository for the file layout.`,
+	Example: `  camp settings                              # Interactive settings menu
+  camp settings get                          # Print all settings
+  camp settings set global.theme dark        # Set the global theme
+  camp settings set local.theme_override light`,
 	GroupID: "system",
 	Annotations: map[string]string{
 		"agent_allowed": "false",
-		"agent_reason":  "Fully interactive TUI menu",
+		"agent_reason":  "Fully interactive TUI menu; use 'settings get/set' for automation",
 		"interactive":   "true",
 	},
 	RunE: runSettings,
@@ -38,23 +42,21 @@ file layout.`,
 
 func init() {
 	rootCmd.AddCommand(settingsCmd)
+	settingsCmd.AddCommand(newSettingsGetCmd())
+	settingsCmd.AddCommand(newSettingsSetCmd())
 }
 
 func runSettings(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
-	// Check if we're in a campaign
-	_, _, err := config.LoadCampaignConfigFromCwd(ctx)
+	_, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	inCampaign := err == nil
 
-	// Build options
 	options := []huh.Option[string]{
 		huh.NewOption("Global Settings", "global"),
+		huh.NewOption("Local Settings (this campaign)", "local"),
+		huh.NewOption("Exit", "exit"),
 	}
-	if inCampaign {
-		options = append(options, huh.NewOption("Local Settings (this campaign)", "local"))
-	}
-	options = append(options, huh.NewOption("Exit", "exit"))
 
 	for {
 		var choice string
@@ -81,7 +83,11 @@ func runSettings(cmd *cobra.Command, args []string) error {
 				return err
 			}
 		case "local":
-			if err := runLocalSettings(ctx); err != nil {
+			if !inCampaign {
+				fmt.Println(ui.Warning("Not inside a campaign. Local settings live in .campaign/settings/local.json; run camp settings from a campaign directory to edit them."))
+				continue
+			}
+			if err := runLocalSettings(ctx, campaignRoot); err != nil {
 				return err
 			}
 		}
@@ -96,7 +102,7 @@ func runGlobalSettings(ctx context.Context) error {
 
 	for {
 		options := []huh.Option[string]{
-			huh.NewOption(fmt.Sprintf("Theme          %s", displayStr(cfg.TUI.Theme, "adaptive")), "theme"),
+			huh.NewOption(fmt.Sprintf("Theme          %s", displayStr(cfg.TUI.Theme, config.ThemeNameAdaptive)), "theme"),
 			huh.NewOption(fmt.Sprintf("Editor         %s", displayStr(cfg.Editor, "$EDITOR")), "editor"),
 			huh.NewOption(fmt.Sprintf("Campaigns Dir  %s", displayStr(cfg.CampaignsDir, "~/campaigns")), "campaigns_dir"),
 			huh.NewOption(fmt.Sprintf("Verbose        %s", boolStr(cfg.Verbose)), "verbose"),
@@ -153,17 +159,18 @@ func runGlobalSettings(ctx context.Context) error {
 	}
 }
 
-// runLocalSettings shows a mock/scaffold menu for local campaign settings.
-// TODO: Implement actual local config loading/saving when local settings are needed.
-// This scaffold exists to establish the navigation structure for future implementation.
-func runLocalSettings(ctx context.Context) error {
+func runLocalSettings(ctx context.Context, campaignRoot string) error {
 	for {
-		// MOCK: These are placeholder settings showing the intended structure.
+		local, err := config.LoadLocalSettings(ctx, campaignRoot)
+		if err != nil {
+			return camperrors.Wrap(err, "loading local settings")
+		}
+
 		options := []huh.Option[string]{
-			huh.NewOption("[MOCK] Theme Override       NOT IMPLEMENTED", "theme"),
-			huh.NewOption("[MOCK] Project Defaults     NOT IMPLEMENTED", "projects"),
-			huh.NewOption("[MOCK] Intent Defaults      NOT IMPLEMENTED", "intents"),
-			huh.NewOption("─────────────────────────────────────────", "_separator"),
+			huh.NewOption(fmt.Sprintf("Theme Override  %s (effective: %s)",
+				displayStr(local.ThemeOverride, "inherit global"),
+				config.EffectiveTheme(ctx)), "theme_override"),
+			huh.NewOption("─────────────────", "_separator"),
 			huh.NewOption("Back", "back"),
 		}
 
@@ -171,7 +178,7 @@ func runLocalSettings(ctx context.Context) error {
 		form := huh.NewForm(huh.NewGroup(
 			huh.NewSelect[string]().
 				Title("Local Settings (Campaign-Specific)").
-				Description("Local settings are not yet implemented - this is a UI scaffold").
+				Description("Changes apply only to this campaign").
 				Options(options...).
 				Value(&choice),
 		))
@@ -187,13 +194,42 @@ func runLocalSettings(ctx context.Context) error {
 		case "back":
 			return nil
 		case "_separator":
-			// Ignore separator selection, continue the loop
 			continue
-		default:
-			fmt.Println("\nThis setting is not yet implemented.")
-			fmt.Println("Local campaign settings will be added in a future update.")
+		case "theme_override":
+			if err := editLocalThemeOverride(ctx, campaignRoot, local.ThemeOverride); err != nil {
+				return err
+			}
 		}
 	}
+}
+
+func editLocalThemeOverride(ctx context.Context, campaignRoot, current string) error {
+	value := current
+	form := huh.NewForm(huh.NewGroup(
+		huh.NewSelect[string]().
+			Title("Theme Override").
+			Description("Campaign-local theme; overrides the global theme in this campaign").
+			Options(
+				huh.NewOption("Inherit global", ""),
+				huh.NewOption("Adaptive - Auto-detect", config.ThemeNameAdaptive),
+				huh.NewOption("Light - For light backgrounds", config.ThemeNameLight),
+				huh.NewOption("Dark - For dark backgrounds", config.ThemeNameDark),
+				huh.NewOption("High Contrast - Maximum visibility", config.ThemeNameHighContrast),
+			).
+			Value(&value),
+	))
+
+	if err := theme.RunForm(ctx, form); err != nil {
+		if theme.IsCancelled(err) {
+			return nil
+		}
+		return err
+	}
+
+	return config.WithLocalSettingsLock(ctx, campaignRoot, func(s *config.LocalSettings) error {
+		s.ThemeOverride = value
+		return nil
+	})
 }
 
 func editTheme(ctx context.Context, cfg *config.GlobalConfig) error {
@@ -202,10 +238,10 @@ func editTheme(ctx context.Context, cfg *config.GlobalConfig) error {
 			Title("Theme").
 			Description("Color theme for TUI elements").
 			Options(
-				huh.NewOption("Adaptive - Auto-detect", "adaptive"),
-				huh.NewOption("Light - For light backgrounds", "light"),
-				huh.NewOption("Dark - For dark backgrounds", "dark"),
-				huh.NewOption("High Contrast - Maximum visibility", "high-contrast"),
+				huh.NewOption("Adaptive - Auto-detect", config.ThemeNameAdaptive),
+				huh.NewOption("Light - For light backgrounds", config.ThemeNameLight),
+				huh.NewOption("Dark - For dark backgrounds", config.ThemeNameDark),
+				huh.NewOption("High Contrast - Maximum visibility", config.ThemeNameHighContrast),
 			).
 			Value(&cfg.TUI.Theme),
 	))

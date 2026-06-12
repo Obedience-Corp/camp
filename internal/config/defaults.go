@@ -167,6 +167,6 @@ func (c *CampaignConfig) ApplyDefaults() {
 func (c *GlobalConfig) ApplyDefaults() {
 	// Apply TUI defaults
 	if c.TUI.Theme == "" {
-		c.TUI.Theme = "adaptive"
+		c.TUI.Theme = ThemeNameAdaptive
 	}
 }

@@ -646,6 +646,7 @@ camp create <name> [flags]
   -m, --mission string       Campaign mission statement
   -n, --name string          Campaign display name (defaults to <name> positional)
       --no-git               Skip git repository initialization
+      --no-skills            Skip linking campaign skills into .claude/skills and .agents/skills
       --path string          Override the base campaigns directory (campaign created at <path>/<name>/)
   -t, --type string          Campaign type (product, research, tools, personal) (default "product")
 ```
@@ -1382,6 +1383,7 @@ camp init [path] [flags]
   -n, --name string          Campaign name (defaults to directory name)
       --no-git               Skip git repository initialization
       --no-register          Don't add to global registry
+      --no-skills            Skip linking campaign skills into .claude/skills and .agents/skills
       --repair               Add missing files to existing campaign
   -t, --type string          Campaign type (product, research, tools, personal) (default "product")
       --yes                  Skip repair confirmation prompt (for scripting)
@@ -4112,13 +4114,14 @@ Manage camp configuration
 
 Interactive menu for managing camp configuration.
 
-Today, this command edits global user preferences in
-~/.obey/campaign/config.json.
+Global settings live in ~/.obey/campaign/config.json and apply to every
+campaign. Local settings live in .campaign/settings/local.json and apply
+only to the current campaign; a local theme override wins over the global
+theme while you are inside that campaign.
 
-Campaign-local settings still live in files under .campaign/, and the
-"Local Settings" menu is currently a scaffold rather than a full editor.
-See docs/campaign-settings-files.md in the camp repository for the current
-file layout.
+For non-interactive access, use 'camp settings get' and
+'camp settings set'. See docs/campaign-settings-files.md in the camp
+repository for the file layout.
 
 ```
 camp settings [flags]
@@ -4127,13 +4130,104 @@ camp settings [flags]
 ### Examples
 
 ```
-  camp settings   # Edit global editor/theme preferences
+  camp settings                              # Interactive settings menu
+  camp settings get                          # Print all settings
+  camp settings set global.theme dark        # Set the global theme
+  camp settings set local.theme_override light
 ```
 
 ### Options
 
 ```
   -h, --help   help for settings
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.json)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
+## camp settings get
+
+Print camp settings
+
+### Synopsis
+
+Print camp settings non-interactively.
+
+With no key, prints all settings including the effective theme. With a key,
+prints just that value.
+
+Keys:
+  global.theme           Color theme in ~/.obey/campaign/config.json
+  global.editor          Preferred editor
+  global.campaigns_dir   Where camp create places new campaigns
+  global.verbose         Verbose output
+  global.no_color        Disable colored output
+  local.theme_override   Campaign-local theme override (requires a campaign)
+
+```
+camp settings get [key] [flags]
+```
+
+### Examples
+
+```
+  camp settings get
+  camp settings get global.theme
+  camp settings get --json
+```
+
+### Options
+
+```
+  -h, --help   help for get
+      --json   emit a structured JSON result
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.json)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
+## camp settings set
+
+Set a camp setting
+
+### Synopsis
+
+Set a camp setting non-interactively.
+
+Accepts the same keys as 'camp settings get'. Theme values are one of
+adaptive, light, dark, or high-contrast. Boolean values accept true/false.
+Setting local.theme_override to 'inherit' clears the override; local.* keys
+require running inside a campaign.
+
+```
+camp settings set <key> <value> [flags]
+```
+
+### Examples
+
+```
+  camp settings set global.theme dark
+  camp settings set global.verbose true
+  camp settings set local.theme_override light
+  camp settings set local.theme_override inherit
+```
+
+### Options
+
+```
+  -h, --help   help for set
 ```
 
 ### Options inherited from parent commands
@@ -4519,7 +4613,10 @@ skills directories.
 This command creates one symlink per skill bundle. It does not replace entire
 provider skills directories, so existing user skills remain intact.
 
+With neither --tool nor --path, skills are projected into every registered tool.
+
 Examples:
+  camp skills link                     Project skills into all registered tools
   camp skills link --tool claude       Project skills into .claude/skills/
   camp skills link --tool agents       Project skills into .agents/skills/
   camp skills link --path custom/dir   Project skills into custom/dir
@@ -5495,6 +5592,45 @@ camp workitem links [selector] [flags]
 
 ```
   -h, --help   help for links
+      --json   emit a structured JSON result
+```
+
+### Options inherited from parent commands
+
+```
+      --config string   config file (default: ~/.obey/campaign/config.json)
+      --no-color        disable colored output
+      --verbose         enable verbose output
+```
+---
+
+## camp workitem priority
+
+Set or clear the manual priority of a workitem
+
+### Synopsis
+
+Set or clear the manual priority of a workitem.
+
+The selector accepts the same forms as 'camp workitem current': a stable
+.workitem id, the workitem key (<type>:<path>), a relative path, or a directory
+slug. Priority is one of high, medium, low, or clear (clear removes any manual
+priority). Assignments persist in .campaign/settings/workitems.json, the same
+store the interactive dashboard writes.
+
+Examples:
+  camp workitem priority festival:festivals/active/demo high
+  camp workitem priority demo clear
+  camp workitem priority demo high --json
+
+```
+camp workitem priority <selector> <high|medium|low|clear> [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for priority
       --json   emit a structured JSON result
 ```
 

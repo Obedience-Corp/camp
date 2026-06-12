@@ -26,22 +26,13 @@ func redirectToTTY(form *huh.Form) (*huh.Form, func()) {
 }
 
 // RunForm runs a huh form with the configured theme applied.
-// It loads the theme from global config and applies it before running.
+// It resolves the effective theme (global config plus any campaign-local
+// override) and applies it before running.
 func RunForm(ctx context.Context, form *huh.Form) error {
 	form, cleanup := redirectToTTY(form)
 	defer cleanup()
 
-	cfg, err := config.LoadGlobalConfig(ctx)
-	if err != nil {
-		return form.WithTheme(GetTheme(ThemeAdaptive)).Run()
-	}
-
-	themeName := ThemeName(cfg.TUI.Theme)
-	if themeName == "" {
-		themeName = ThemeAdaptive
-	}
-
-	return form.WithTheme(GetTheme(themeName)).Run()
+	return form.WithTheme(GetTheme(ThemeName(config.EffectiveTheme(ctx)))).Run()
 }
 
 // RunFormAccessible runs a huh form with accessible mode enabled.
@@ -50,17 +41,7 @@ func RunFormAccessible(ctx context.Context, form *huh.Form) error {
 	form, cleanup := redirectToTTY(form)
 	defer cleanup()
 
-	cfg, err := config.LoadGlobalConfig(ctx)
-	if err != nil {
-		return form.WithTheme(GetTheme(ThemeAdaptive)).WithAccessible(true).Run()
-	}
-
-	themeName := ThemeName(cfg.TUI.Theme)
-	if themeName == "" {
-		themeName = ThemeAdaptive
-	}
-
-	return form.WithTheme(GetTheme(themeName)).WithAccessible(true).Run()
+	return form.WithTheme(GetTheme(ThemeName(config.EffectiveTheme(ctx)))).WithAccessible(true).Run()
 }
 
 // IsCancelled returns true if the error indicates user cancellation.

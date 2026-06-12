@@ -190,12 +190,7 @@ func (m Model) WithAvailableTags(tags []string) Model {
 func NewModel(ctx context.Context, svc *intent.IntentService, conceptSvc concept.Service, intentsDir, campaignRoot, campaignID, author string, shortcuts map[string]string) Model {
 	// Initialize glamour style once at startup (handles adaptive detection).
 	// This avoids the slow OSC terminal query on every markdown render.
-	globalCfg, _ := config.LoadGlobalConfig(ctx)
-	themeName := "adaptive" // default
-	if globalCfg != nil {
-		themeName = globalCfg.TUI.Theme
-	}
-	tui.InitGlamourStyle(themeName)
+	tui.InitGlamourStyle(config.EffectiveTheme(ctx))
 
 	ti := textinput.New()
 	ti.Placeholder = "Search intents..."
