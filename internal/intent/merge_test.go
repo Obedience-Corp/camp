@@ -51,9 +51,15 @@ func TestMergeIntents_Basic(t *testing.T) {
 		t.Errorf("Status = %q, want %q", merged.Status, StatusInbox)
 	}
 
-	// Check ID format (should include timestamp and slug)
-	if !strings.Contains(merged.ID, "unified-auth-feature") {
-		t.Errorf("ID = %q, should contain slug", merged.ID)
+	// The merged ID must follow the canonical slug-YYYYMMDD-HHMMSS contract.
+	if !strings.HasPrefix(merged.ID, "unified-auth-feature-") {
+		t.Errorf("ID = %q, want slug-first canonical format", merged.ID)
+	}
+	if !intentIDPattern.MatchString(merged.ID) {
+		t.Errorf("ID = %q does not match canonical id pattern", merged.ID)
+	}
+	if errs := merged.Validate(); len(errs) > 0 {
+		t.Errorf("merged intent fails validation: %v", errs)
 	}
 
 	// Check type resolution (both are feature)
@@ -338,9 +344,9 @@ func TestMergeIntents_ContentFormat(t *testing.T) {
 	}
 }
 
-// Slug generation is covered comprehensively by TestSlugFromTitle in
-// slug_test.go. generateMergedID now shares that single SlugFromTitle helper,
-// so the previous duplicate slug test here has been removed.
+// Slug and ID generation are covered by TestSlugFromTitle in slug_test.go.
+// MergeIntents shares GenerateID, so the previous duplicate slug test here has
+// been removed; the canonical ID-shape assertion lives in TestMergeIntents_Basic.
 
 func TestExtractBodyContent(t *testing.T) {
 	tests := []struct {

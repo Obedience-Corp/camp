@@ -37,7 +37,7 @@ func MergeIntents(sources []*Intent, opts MergeOptions) (*Intent, error) {
 	now := time.Now()
 
 	merged := &Intent{
-		ID:           generateMergedID(opts.Title, now),
+		ID:           GenerateID(opts.Title, now),
 		Title:        opts.Title,
 		Status:       StatusInbox,
 		CreatedAt:    now,
@@ -58,14 +58,6 @@ func MergeIntents(sources []*Intent, opts MergeOptions) (*Intent, error) {
 	merged.Content = buildMergedContent(sources, now)
 
 	return merged, nil
-}
-
-// generateMergedID creates an ID for the gathered intent. The slug uses the
-// shared SlugFromTitle so merged IDs slug identically to created ones.
-func generateMergedID(title string, t time.Time) string {
-	slug := SlugFromTitle(title)
-	timestamp := t.Format("20060102-150405")
-	return fmt.Sprintf("%s-%s", timestamp, slug)
 }
 
 // buildGatheredSources creates GatheredSource entries from source intents.
