@@ -51,6 +51,14 @@ func (s *IntentService) UpdateDirect(ctx context.Context, id string, opts Update
 		return nil, nil, camperrors.Wrap(camperrors.ErrInvalidInput, "no update fields specified")
 	}
 
+	if opts.Tags != nil {
+		normTags, terr := validateAndNormalizeTags(*opts.Tags)
+		if terr != nil {
+			return nil, nil, terr
+		}
+		opts.Tags = &normTags
+	}
+
 	intent, err := s.Find(ctx, id)
 	if err != nil {
 		return nil, nil, err

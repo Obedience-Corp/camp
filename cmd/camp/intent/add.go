@@ -213,7 +213,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 			Concept: saved.Concept,
 			Body:    saved.Body,
 			Author:  saved.Author,
-			Tags:    saved.Tags,
+			Tags:    mergeTags(tagsFlag, saved.Tags),
 		}
 		if createNote {
 			if err := runNoteCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, savedOpts); err != nil {
@@ -243,7 +243,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 		Concept: result.Concept,
 		Body:    result.Body,
 		Author:  result.Author,
-		Tags:    result.Tags,
+		Tags:    mergeTags(tagsFlag, result.Tags),
 	}
 
 	if createNote {

@@ -83,6 +83,12 @@ func (s *IntentService) CreateDirect(ctx context.Context, opts CreateOptions) (*
 		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
+	normTags, err := validateAndNormalizeTags(opts.Tags)
+	if err != nil {
+		return nil, err
+	}
+	opts.Tags = normTags
+
 	ts := opts.Timestamp
 	if ts.IsZero() {
 		ts = time.Now()
@@ -133,6 +139,12 @@ func (s *IntentService) CreateWithEditor(ctx context.Context, opts CreateOptions
 	if err := ctx.Err(); err != nil {
 		return nil, camperrors.Wrap(err, "context cancelled")
 	}
+
+	normTags, err := validateAndNormalizeTags(opts.Tags)
+	if err != nil {
+		return nil, err
+	}
+	opts.Tags = normTags
 
 	ts := opts.Timestamp
 	if ts.IsZero() {

@@ -21,8 +21,10 @@ var intentRenameCmd = &cobra.Command{
 filename. The intent's stable id is preserved, so references and lookups survive
 the rename.
 
+Resolution is by exact id (run 'camp intent list' to copy one).
+
 Examples:
-  camp intent rename add-dark "Add a dark mode toggle"`,
+  camp intent rename add-dark-mode-20260119-153412 "Add a dark mode toggle"`,
 	Args: cobra.ExactArgs(2),
 	RunE: runIntentRename,
 }
@@ -50,6 +52,11 @@ func runIntentRename(cmd *cobra.Command, args []string) error {
 	}
 
 	before, err := svc.Get(ctx, id)
+	if err != nil {
+		// Notes resolve through a separate store; fall back so a note can be
+		// renamed by id too.
+		before, err = svc.GetNote(ctx, id)
+	}
 	if err != nil {
 		return camperrors.Wrapf(err, "intent not found: %s", id)
 	}

@@ -381,3 +381,69 @@ func TestNoteFrontmatter_HasNotesStatus(t *testing.T) {
 		t.Errorf("note frontmatter missing 'status: notes':\n%s", raw)
 	}
 }
+
+func TestMoveIntentToNote_RejectsPartialID(t *testing.T) {
+	svc, ctx := newNotesTestService(t)
+
+	created, err := svc.CreateDirect(ctx, CreateOptions{
+		Title:     "fix the widget renderer",
+		Type:      TypeBug,
+		Timestamp: time.Date(2026, 6, 9, 10, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateDirect: %v", err)
+	}
+
+	if _, err := svc.MoveIntentToNote(ctx, "widget"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("MoveIntentToNote(partial id) err = %v, want ErrNotFound", err)
+	}
+
+	got, err := svc.Get(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("Get after rejected move: %v", err)
+	}
+	if got.Status != StatusInbox {
+		t.Errorf("status = %q, want inbox; the intent must not move on a fuzzy guess", got.Status)
+	}
+}
+
+func TestRename_WorksForNotes(t *testing.T) {
+	svc, ctx := newNotesTestService(t)
+
+	note, err := svc.CreateNote(ctx, CreateOptions{
+		Title:     "socket path note",
+		Timestamp: time.Date(2026, 1, 19, 15, 34, 12, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateNote: %v", err)
+	}
+
+	renamed, err := svc.Rename(ctx, note.ID, "daemon socket path reminder")
+	if err != nil {
+		t.Fatalf("Rename note: %v", err)
+	}
+	if renamed.ID != note.ID {
+		t.Errorf("id changed on rename: %q -> %q", note.ID, renamed.ID)
+	}
+	if renamed.Status != StatusNote {
+		t.Errorf("status = %q, want %q; rename must keep it a note", renamed.Status, StatusNote)
+	}
+	base := filepath.Base(renamed.Path)
+	if !strings.HasPrefix(base, "daemon-socket-path-reminder-") {
+		t.Errorf("filename = %q, want slug of new title", base)
+	}
+	if filepath.Dir(renamed.Path) != filepath.Join(svc.intentsDir, "notes") {
+		t.Errorf("renamed note dir = %q, want notes/", filepath.Dir(renamed.Path))
+	}
+
+	got, err := svc.GetNote(ctx, note.ID)
+	if err != nil {
+		t.Fatalf("GetNote after rename: %v", err)
+	}
+	if got.Title != "daemon socket path reminder" {
+		t.Errorf("resolved title = %q", got.Title)
+	}
+	if _, err := svc.Get(ctx, note.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("Get(renamed note) err = %v, want ErrNotFound; notes stay out of intent resolution", err)
+	}
+}

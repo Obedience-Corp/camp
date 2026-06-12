@@ -146,6 +146,54 @@ func TestIntentAddModel_TitleStepDoesNotOpenTags(t *testing.T) {
 	}
 }
 
+func TestIntentAddModel_TypeStepOpensTags(t *testing.T) {
+	ctx := context.Background()
+	svc := mockConceptService{}
+
+	m := NewIntentAddModel(ctx, svc, AddOptions{AvailableTags: []string{"urgent"}})
+
+	for _, char := range "an intent" {
+		model, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{char}})
+		m = model.(IntentAddModel)
+	}
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(IntentAddModel)
+	if m.step != addStepType {
+		t.Fatalf("step = %v, want addStepType", m.step)
+	}
+
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
+	m = model.(IntentAddModel)
+	if !m.tagging {
+		t.Fatal("type step should open tag overlay so the fast flow can tag")
+	}
+}
+
+func TestIntentAddModel_ConceptStepOpensTags(t *testing.T) {
+	ctx := context.Background()
+	svc := mockConceptService{}
+
+	m := NewIntentAddModel(ctx, svc, AddOptions{AvailableTags: []string{"urgent"}})
+
+	for _, char := range "an intent" {
+		model, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{char}})
+		m = model.(IntentAddModel)
+	}
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter}) // title -> type
+	m = model.(IntentAddModel)
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter}) // type -> concept
+	m = model.(IntentAddModel)
+	if m.step != addStepConcept {
+		t.Fatalf("step = %v, want addStepConcept", m.step)
+	}
+
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
+	m = model.(IntentAddModel)
+	if !m.tagging {
+		t.Fatal("concept step should open tag overlay so the fast flow can tag")
+	}
+}
+
 func TestIntentAddModel_BodyStepOpensTags(t *testing.T) {
 	ctx := context.Background()
 	svc := mockConceptService{}

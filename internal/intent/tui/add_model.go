@@ -366,6 +366,9 @@ func (m IntentAddModel) updateType(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+n":
 		return m.saveAndReset()
 
+	case "ctrl+t":
+		return m.openTagOverlay()
+
 	case "j", "down":
 		if m.typeIdx < len(intentTypes)-1 {
 			m.typeIdx++
@@ -398,6 +401,9 @@ func (m IntentAddModel) updateConcept(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "ctrl+n":
 		return m.saveAndReset()
+
+	case "ctrl+t":
+		return m.openTagOverlay()
 
 	case "tab":
 		// Skip concept selection
@@ -469,9 +475,7 @@ func (m IntentAddModel) updateBody(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Handle ctrl+t for tags from the editor step.
 	if msg.String() == "ctrl+t" {
-		m.tagOverlay = NewTagOverlay(m.availableTags, m.tags)
-		m.tagging = true
-		return m, nil
+		return m.openTagOverlay()
 	}
 
 	// Handle ctrl+n for save-and-new (always available)
@@ -714,6 +718,15 @@ func (m IntentAddModel) finishBodyStep() (tea.Model, tea.Cmd) {
 	return m, tea.Quit
 }
 
+// openTagOverlay opens the modal tag overlay seeded with the configured tags and
+// the item's current tags. It is reachable from the type, concept, and body
+// steps so the fast capture flow can always attach a tag without a flag.
+func (m IntentAddModel) openTagOverlay() (tea.Model, tea.Cmd) {
+	m.tagOverlay = NewTagOverlay(m.availableTags, m.tags)
+	m.tagging = true
+	return m, nil
+}
+
 // updateTagOverlay routes keys to the tag overlay; on confirm it stores the
 // selected tags on the in-progress item.
 func (m IntentAddModel) updateTagOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -938,7 +951,7 @@ func (m IntentAddModel) viewTypeStep() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(HelpStyle.Render("j/k: navigate • Enter: select • Ctrl+N: save & new • Esc: cancel"))
+	b.WriteString(HelpStyle.Render("j/k: navigate • Enter: select • Ctrl+N: save & new • Ctrl+T: tags • Esc: cancel"))
 
 	return b.String()
 }
@@ -949,7 +962,7 @@ func (m IntentAddModel) viewConceptStep() string {
 
 	b.WriteString(m.conceptPicker.View())
 	b.WriteString("\n")
-	b.WriteString(HelpStyle.Render("Tab: skip • Enter: select • Ctrl+N: save & new • Esc: cancel"))
+	b.WriteString(HelpStyle.Render("Tab: skip • Enter: select • Ctrl+N: save & new • Ctrl+T: tags • Esc: cancel"))
 
 	return b.String()
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -22,20 +23,51 @@ func (s *IntentService) CreateNote(ctx context.Context, opts CreateOptions) (*In
 	return s.CreateDirect(ctx, opts)
 }
 
-// GetNote retrieves a note by its exact ID from the note store.
+// GetNote retrieves a note by its frontmatter id from the note store.
+// Resolution is id-authoritative, not filename-based, so a renamed note whose
+// slug has drifted from its id still resolves.
 func (s *IntentService) GetNote(ctx context.Context, id string) (*Intent, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
+	path, err := s.resolveNoteByID(id)
+	if err != nil {
+		return nil, err
+	}
+	return s.loadIntent(path)
+}
+
+// resolveNoteByID returns the path of the note whose id: frontmatter equals id.
+// Notes are few and live only under NoteStatuses(), so a filename fast path
+// followed by a small directory scan (covering renamed notes) is enough — no
+// cached index is needed here, unlike the lifecycle id index.
+func (s *IntentService) resolveNoteByID(id string) (string, error) {
+	// Fast path: filename == id (an unrenamed note).
 	for _, status := range NoteStatuses() {
-		path := s.getIntentPath(status, id)
-		if note, err := s.loadIntent(path); err == nil {
-			return note, nil
+		p := s.getIntentPath(status, id)
+		if note, err := s.loadIntent(p); err == nil && note.ID == id {
+			return p, nil
 		}
 	}
-
-	return nil, camperrors.Wrap(ErrNotFound, id)
+	// Slow path: a renamed note whose filename no longer matches its id.
+	for _, status := range NoteStatuses() {
+		dir := filepath.Join(s.intentsDir, string(status))
+		files, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, f := range files {
+			if f.IsDir() || !strings.HasSuffix(f.Name(), ".md") {
+				continue
+			}
+			p := filepath.Join(dir, f.Name())
+			if note, err := s.loadIntent(p); err == nil && note.ID == id {
+				return p, nil
+			}
+		}
+	}
+	return "", camperrors.Wrap(ErrNotFound, id)
 }
 
 // ListNotes returns notes from the note store, newest first. By default only
@@ -137,7 +169,10 @@ func (s *IntentService) MoveIntentToNote(ctx context.Context, id string) (*Inten
 		return nil, err
 	}
 
-	it, err := s.Find(ctx, id)
+	// Resolve by exact id, never a fuzzy substring match: this relocates a file
+	// and strips its lifecycle metadata, so acting on a truncated or mistyped id
+	// would silently convert the wrong intent.
+	it, err := s.Get(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -241,12 +276,7 @@ func (s *IntentService) MoveNoteToStatus(ctx context.Context, id string, newStat
 }
 
 func isLifecycleStatus(status Status) bool {
-	for _, s := range AllStatuses() {
-		if status == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(AllStatuses(), status)
 }
 
 // noteSortKey returns the timestamp used to order notes (updated, else created).
