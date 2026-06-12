@@ -19,10 +19,12 @@ import (
 // begins — required for consistency on macOS/Colima where Docker exec runs through
 // a virtualization layer (overlayfs in a Linux VM).
 func (tc *TestContainer) Reset() error {
-	// Remove all test artifacts and recreate clean directories
+	// Remove all test artifacts and recreate clean directories. Include both
+	// current and legacy config homes so registry/global settings never leak
+	// between tests that share a pooled container.
 	exitCode, _, err := tc.container.Exec(tc.ctx, []string{
 		"sh", "-c",
-		"rm -rf /test /campaigns /root/.config/camp /root/.camp 2>/dev/null; " +
+		"rm -rf /test /campaigns /root/.obey /root/.config/camp /root/.camp 2>/dev/null; " +
 			"mkdir -p /test /campaigns /root/.config/camp; sync",
 	})
 	if err != nil {
