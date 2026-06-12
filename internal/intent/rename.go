@@ -46,6 +46,10 @@ func (s *IntentService) Rename(ctx context.Context, id, newTitle string) (*Inten
 	it.Title = newTitle
 	it.UpdatedAt = time.Now()
 
+	if errs := it.Validate(); len(errs) > 0 {
+		return nil, intentValidationError(errs)
+	}
+
 	data, err := SerializeIntent(it)
 	if err != nil {
 		return nil, camperrors.Wrap(err, "serializing renamed intent")

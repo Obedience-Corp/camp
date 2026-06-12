@@ -11,6 +11,7 @@ import (
 	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/intent/audit"
 )
 
 // CreateNote creates a note in the flat notes/ store, bypassing the
@@ -111,6 +112,43 @@ func (s *IntentService) ListNotes(ctx context.Context, includeArchived bool) ([]
 	})
 
 	return notes, nil
+}
+
+// UpdateNoteTags is the note-store equivalent of UpdateDirect's tag path: notes
+// resolve outside the lifecycle id index UpdateDirect uses, so they need their
+// own entry point that still normalizes/validates tags, refreshes updated_at,
+// and returns a FieldChange (empty when unchanged) for the caller's audit/commit.
+func (s *IntentService) UpdateNoteTags(ctx context.Context, id string, tags []string) (*Intent, []audit.FieldChange, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, camperrors.Wrap(err, "context cancelled")
+	}
+
+	normTags, err := validateAndNormalizeTags(tags)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	note, err := s.GetNote(ctx, id)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if slices.Equal(note.Tags, normTags) {
+		return note, nil, nil
+	}
+
+	change := audit.FieldChange{
+		Field: "tags",
+		Old:   strings.Join(note.Tags, ","),
+		New:   strings.Join(normTags, ","),
+	}
+	note.Tags = normTags
+	note.UpdatedAt = time.Now()
+
+	if err := s.Save(ctx, note); err != nil {
+		return nil, nil, err
+	}
+	return note, []audit.FieldChange{change}, nil
 }
 
 // ArchiveNote moves a note from notes/ into notes/archived/.

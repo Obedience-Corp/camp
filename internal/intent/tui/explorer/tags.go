@@ -45,23 +45,21 @@ func (m *Model) updateTagEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, m.persistTags(target, tags)
 }
 
-// persistTags writes the new tag set. Notes are saved directly (they live
-// outside the intent lookup); intents go through UpdateDirect for auditing.
+// persistTags writes the new tag set. Notes resolve through the note store and
+// intents through the lifecycle id index, but both normalize/validate tags,
+// refresh updated_at, and emit the same audit/commit side effects.
 func (m *Model) persistTags(target *intent.Intent, tags []string) tea.Cmd {
 	return func() tea.Msg {
+		var (
+			updated *intent.Intent
+			changes []audit.FieldChange
+			err     error
+		)
 		if target.Status.IsNote() {
-			note, err := m.service.GetNote(m.ctx, target.ID)
-			if err != nil {
-				return tagsUpdatedMsg{err: err}
-			}
-			note.Tags = tags
-			if err := m.service.Save(m.ctx, note); err != nil {
-				return tagsUpdatedMsg{err: err}
-			}
-			return tagsUpdatedMsg{}
+			updated, changes, err = m.service.UpdateNoteTags(m.ctx, target.ID, tags)
+		} else {
+			updated, changes, err = m.service.UpdateDirect(m.ctx, target.ID, intent.UpdateOptions{Tags: &tags})
 		}
-
-		updated, changes, err := m.service.UpdateDirect(m.ctx, target.ID, intent.UpdateOptions{Tags: &tags})
 		if err != nil {
 			return tagsUpdatedMsg{err: err}
 		}

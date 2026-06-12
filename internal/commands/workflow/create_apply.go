@@ -127,10 +127,33 @@ func upsertShortcut(ctx context.Context, campaignRoot string, cfg *config.Campai
 // workflowParentName is the concept that groups all workflow collections.
 const workflowParentName = "workflow"
 
+// flatWorkflowConceptIndex finds a legacy top-level workflow concept of the
+// given name, or -1. These predate the nested shape and survive until init
+// --repair, so create folds one in rather than registering a duplicate child.
+func flatWorkflowConceptIndex(concepts []config.ConceptEntry, name string) int {
+	for i := range concepts {
+		if strings.EqualFold(concepts[i].Name, workflowParentName) {
+			continue
+		}
+		if strings.EqualFold(concepts[i].Name, name) && strings.HasPrefix(concepts[i].Path, "workflow/") {
+			return i
+		}
+	}
+	return -1
+}
+
 func upsertConcept(ctx context.Context, campaignRoot string, cfg *config.CampaignConfig, name, relPath, title string, replace bool) error {
 	concepts := cfg.ConceptList
 	if len(concepts) == 0 {
 		concepts = cfg.Concepts()
+	}
+
+	// Drop a legacy flat top-level workflow concept with this name so it does not
+	// linger beside the nested child registered below.
+	migrated := false
+	if idx := flatWorkflowConceptIndex(concepts, name); idx != -1 {
+		concepts = append(concepts[:idx], concepts[idx+1:]...)
+		migrated = true
 	}
 
 	// Find the workflow parent, creating it if absent.
@@ -157,7 +180,11 @@ func upsertConcept(ctx context.Context, campaignRoot string, cfg *config.Campaig
 			continue
 		}
 		if children[j].Path == relPath {
+			concepts[parentIdx].Children = children
 			cfg.ConceptList = concepts
+			if migrated {
+				return config.SaveCampaignConfig(ctx, campaignRoot, cfg)
+			}
 			return nil
 		}
 		if !replace {

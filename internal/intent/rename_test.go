@@ -166,6 +166,38 @@ func TestRename_EmptyTitleRejected(t *testing.T) {
 	}
 }
 
+func TestRename_InvalidTitleRejectedWithoutMutating(t *testing.T) {
+	ctx := context.Background()
+	tmp := t.TempDir()
+	intentsDir := filepath.Join(tmp, "intents")
+	svc := NewIntentService(tmp, intentsDir)
+
+	created, err := svc.CreateDirect(ctx, CreateOptions{
+		Title:     "keep me valid",
+		Timestamp: time.Date(2026, 1, 19, 15, 34, 12, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateDirect: %v", err)
+	}
+	originalBase := filepath.Base(created.Path)
+
+	// "xy" is non-empty but fails Intent.Validate (ErrTitleTooShort).
+	if _, err := svc.Rename(ctx, created.ID, "xy"); err == nil {
+		t.Fatal("Rename to a too-short title should error")
+	}
+
+	got, err := svc.Get(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("Get after rejected rename: %v", err)
+	}
+	if got.Title != "keep me valid" {
+		t.Errorf("title mutated by rejected rename: %q", got.Title)
+	}
+	if filepath.Base(got.Path) != originalBase {
+		t.Errorf("file moved by rejected rename: %q -> %q", originalBase, filepath.Base(got.Path))
+	}
+}
+
 // sharedBasenameAcrossStatuses returns two distinct intents that, after both are
 // renamed to the same title, share a basename across status dirs: a in inbox and
 // b in ready. Rename uniqueness is per-directory, so this collision is legitimate

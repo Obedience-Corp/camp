@@ -213,6 +213,86 @@ func TestUpsertConceptReplace(t *testing.T) {
 	}
 }
 
+func TestUpsertConceptFoldsLegacyFlatConcept(t *testing.T) {
+	root := t.TempDir()
+	cfg := &config.CampaignConfig{
+		ConceptList: []config.ConceptEntry{
+			{Name: "workflow", Path: "workflow/", Description: "Workflows"},
+			{Name: "research", Path: "workflow/research/", Description: "Research workflow"},
+		},
+	}
+
+	err := upsertConcept(context.Background(), root, cfg, "research", "workflow/research/", "Research", false)
+	if err != nil {
+		t.Fatalf("upsertConcept: %v", err)
+	}
+
+	if len(cfg.ConceptList) != 1 {
+		t.Fatalf("len(ConceptList) = %d, want 1 (legacy flat concept folded under workflow): %#v", len(cfg.ConceptList), cfg.ConceptList)
+	}
+	workflow := cfg.ConceptList[0]
+	if workflow.Name != "workflow" {
+		t.Fatalf("top-level concept = %q, want workflow", workflow.Name)
+	}
+	count := 0
+	for _, ch := range workflow.Children {
+		if strings.EqualFold(ch.Name, "research") {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("research child count = %d, want 1: %#v", count, workflow.Children)
+	}
+}
+
+func TestRunCreateFoldsLegacyFlatConcept(t *testing.T) {
+	root := newWorkflowTestCampaign(t)
+	cfg := &config.CampaignConfig{
+		ID:   "test-campaign",
+		Name: "Workflow Test",
+		Type: config.CampaignTypeProduct,
+		ConceptList: []config.ConceptEntry{
+			{Name: "projects", Path: "projects/", Description: "Projects"},
+			{Name: "research", Path: "workflow/research/", Description: "Research workflow"},
+		},
+	}
+	if err := config.SaveCampaignConfig(context.Background(), root, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	restore := chdir(t, root)
+	defer restore()
+
+	cmd := &cobra.Command{}
+	if err := runCreate(context.Background(), cmd, createOptions{Type: "research", Shortcut: "re", Title: "Research"}); err != nil {
+		t.Fatalf("runCreate: %v", err)
+	}
+
+	reloaded, err := config.LoadCampaignConfig(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	topLevel, child := 0, 0
+	for _, c := range reloaded.ConceptList {
+		if strings.EqualFold(c.Name, "research") {
+			topLevel++
+		}
+		if strings.EqualFold(c.Name, "workflow") {
+			for _, ch := range c.Children {
+				if strings.EqualFold(ch.Name, "research") {
+					child++
+				}
+			}
+		}
+	}
+	if topLevel != 0 {
+		t.Errorf("legacy flat research concept still top-level: %#v", reloaded.ConceptList)
+	}
+	if child != 1 {
+		t.Errorf("research child count = %d, want 1: %#v", child, reloaded.ConceptList)
+	}
+}
+
 func TestRunCreateRegistersExistingUserWorkflow(t *testing.T) {
 	root := newWorkflowTestCampaign(t)
 	workflowDir := filepath.Join(root, "workflow", "research")

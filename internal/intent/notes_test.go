@@ -16,6 +16,62 @@ func newNotesTestService(t *testing.T) (*IntentService, context.Context) {
 	return NewIntentService(tmpDir, filepath.Join(tmpDir, "intents")), context.Background()
 }
 
+func TestUpdateNoteTags_NormalizesStampsAndReturnsChange(t *testing.T) {
+	svc, ctx := newNotesTestService(t)
+
+	note, err := svc.CreateNote(ctx, CreateOptions{
+		Title:     "taggable note",
+		Timestamp: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateNote: %v", err)
+	}
+	if !note.UpdatedAt.IsZero() {
+		t.Fatalf("precondition: fresh note should have zero UpdatedAt, got %v", note.UpdatedAt)
+	}
+
+	updated, changes, err := svc.UpdateNoteTags(ctx, note.ID, []string{" keep ", "keep", "drop-me"})
+	if err != nil {
+		t.Fatalf("UpdateNoteTags: %v", err)
+	}
+	if len(changes) != 1 || changes[0].Field != "tags" {
+		t.Fatalf("changes = %#v, want a single tags change", changes)
+	}
+	if len(updated.Tags) != 2 || updated.Tags[0] != "keep" || updated.Tags[1] != "drop-me" {
+		t.Fatalf("tags = %v, want trimmed+deduped [keep drop-me]", updated.Tags)
+	}
+	if updated.UpdatedAt.IsZero() {
+		t.Error("UpdateNoteTags did not refresh UpdatedAt")
+	}
+
+	reloaded, err := svc.GetNote(ctx, note.ID)
+	if err != nil {
+		t.Fatalf("GetNote: %v", err)
+	}
+	if len(reloaded.Tags) != 2 {
+		t.Fatalf("persisted tags = %v, want 2", reloaded.Tags)
+	}
+	if reloaded.UpdatedAt.IsZero() {
+		t.Error("persisted note has zero UpdatedAt")
+	}
+}
+
+func TestUpdateNoteTags_RejectsInvalidTag(t *testing.T) {
+	svc, ctx := newNotesTestService(t)
+
+	note, err := svc.CreateNote(ctx, CreateOptions{
+		Title:     "another note",
+		Timestamp: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateNote: %v", err)
+	}
+
+	if _, _, err := svc.UpdateNoteTags(ctx, note.ID, []string{"bad,tag"}); err == nil {
+		t.Fatal("UpdateNoteTags should reject a tag containing a comma")
+	}
+}
+
 func TestCreateNote_RoutesToNotesDir(t *testing.T) {
 	svc, ctx := newNotesTestService(t)
 

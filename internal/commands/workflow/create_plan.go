@@ -152,6 +152,18 @@ func planConcept(cfg *config.CampaignConfig, plan *createPlan, opts createOption
 			return nil
 		}
 	}
+
+	// A legacy flat top-level workflow concept counts as an existing entry: apply
+	// folds it under the parent rather than adding a duplicate child.
+	if idx := flatWorkflowConceptIndex(concepts, opts.Type); idx != -1 {
+		existing := concepts[idx]
+		if existing.Path != plan.WorkflowRel && !opts.Replace {
+			return camperrors.NewValidation("type",
+				"concept "+opts.Type+" already points to "+existing.Path+"; use --replace to update it", nil)
+		}
+		plan.Concept.Replaced = true
+		plan.Concept.Existing = existing.Path
+	}
 	return nil
 }
 
