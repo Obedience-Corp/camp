@@ -49,28 +49,46 @@ type workflowEntry struct {
 // enumerateWorkflowEntries returns the union of concept-listed workflows and
 // on-disk workflow/<type>/ directories. Builtin types are filtered out.
 // Entries are sorted by type name.
+// flattenConcepts returns every concept including nested children, depth-first.
+func flattenConcepts(concepts []config.ConceptEntry) []config.ConceptEntry {
+	var out []config.ConceptEntry
+	for _, c := range concepts {
+		out = append(out, c)
+		if len(c.Children) > 0 {
+			out = append(out, flattenConcepts(c.Children)...)
+		}
+	}
+	return out
+}
+
+// collectWorkflowConcepts records non-builtin workflow/ concepts, descending
+// into nested children so collections under the workflow parent are found.
+func collectWorkflowConcepts(concepts []config.ConceptEntry, entries map[string]*workflowEntry) {
+	for _, concept := range concepts {
+		if strings.HasPrefix(concept.Path, "workflow/") {
+			if typeName := workflowTypeFromPath(concept.Path); typeName != "" && !builtinWorkflowTypes[typeName] {
+				entry := entries[typeName]
+				if entry == nil {
+					entry = &workflowEntry{Type: typeName, Path: concept.Path}
+					entries[typeName] = entry
+				}
+				entry.HasConcept = true
+				if entry.Title == "" {
+					entry.Title = stripWorkflowSuffix(concept.Description)
+				}
+			}
+		}
+		if len(concept.Children) > 0 {
+			collectWorkflowConcepts(concept.Children, entries)
+		}
+	}
+}
+
 func enumerateWorkflowEntries(campaignRoot string, cfg *config.CampaignConfig) ([]workflowEntry, error) {
 	entries := make(map[string]*workflowEntry)
 
-	for _, concept := range cfg.Concepts() {
-		relPath := concept.Path
-		if !strings.HasPrefix(relPath, "workflow/") {
-			continue
-		}
-		typeName := workflowTypeFromPath(relPath)
-		if typeName == "" || builtinWorkflowTypes[typeName] {
-			continue
-		}
-		entry := entries[typeName]
-		if entry == nil {
-			entry = &workflowEntry{Type: typeName, Path: relPath}
-			entries[typeName] = entry
-		}
-		entry.HasConcept = true
-		if entry.Title == "" {
-			entry.Title = stripWorkflowSuffix(concept.Description)
-		}
-	}
+	// Workflow concepts may be nested under the workflow parent, so descend.
+	collectWorkflowConcepts(cfg.Concepts(), entries)
 
 	workflowRoot := filepath.Join(campaignRoot, "workflow")
 	dirEntries, err := os.ReadDir(workflowRoot)

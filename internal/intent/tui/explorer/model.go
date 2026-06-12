@@ -30,6 +30,8 @@ const (
 	focusAddTUI        // Full add TUI is active
 	focusPromoteTarget // Promote target picker
 	focusDungeonReason // Text input for dungeon move reason
+	focusConvertType   // Type picker for converting a note into an intent
+	focusRename        // Text input for renaming an intent
 )
 
 // IntentGroup represents a collapsible group of intents by status.
@@ -149,9 +151,39 @@ type Model struct {
 	campaignID   string
 
 	// Full add TUI integration
-	addModel  *tui.IntentAddModel
-	author    string
-	shortcuts map[string]string
+	addModel    *tui.IntentAddModel
+	addNoteMode bool
+	author      string
+	shortcuts   map[string]string
+
+	// Notes view: when true the explorer lists only notes. The default explorer
+	// also includes active notes as the first group.
+	notesMode bool
+
+	// Convert action state (note → intent)
+	noteToConvert       *intent.Intent
+	convertTypeIdx      int
+	convertTargetStatus intent.Status
+
+	// Tag overlay (opened with T on a selected item)
+	availableTags []string
+	tagOverlay    tui.TagOverlay
+	tagging       bool
+	tagTarget     *intent.Intent
+
+	// Rename overlay (opened with R on a selected item)
+	renameInput  textinput.Model
+	renameTarget *intent.Intent
+
+	// pendingReselectID, when set, selects the matching item after the next
+	// list reload (used to keep the renamed intent selected).
+	pendingReselectID string
+}
+
+// WithAvailableTags sets the configured tag list offered by the tag overlay.
+func (m Model) WithAvailableTags(tags []string) Model {
+	m.availableTags = tags
+	return m
 }
 
 // NewModel creates a new Explorer model.
@@ -199,11 +231,28 @@ func (m Model) Init() tea.Cmd {
 	return m.loadIntents()
 }
 
-// loadIntents returns a command that loads intents from the service.
+// loadIntents returns a command that loads explorer items from the service. The
+// default view includes active notes before lifecycle intents; notes mode lists
+// the whole note store including archived notes.
 func (m Model) loadIntents() tea.Cmd {
+	notesMode := m.notesMode
 	return func() tea.Msg {
+		if notesMode {
+			notes, err := m.service.ListNotes(m.ctx, true)
+			return intentsLoadedMsg{intents: notes, err: err}
+		}
 		intents, err := m.service.List(m.ctx, nil)
-		return intentsLoadedMsg{intents: intents, err: err}
+		if err != nil {
+			return intentsLoadedMsg{err: err}
+		}
+		notes, err := m.service.ListNotes(m.ctx, false)
+		if err != nil {
+			return intentsLoadedMsg{err: err}
+		}
+		items := make([]*intent.Intent, 0, len(notes)+len(intents))
+		items = append(items, notes...)
+		items = append(items, intents...)
+		return intentsLoadedMsg{intents: items}
 	}
 }
 
@@ -246,6 +295,21 @@ func (m Model) View() string {
 		return m.viewMove()
 	}
 
+	// Show convert type picker if active
+	if m.focus == focusConvertType {
+		return m.viewConvert()
+	}
+
+	// Show tag overlay if active
+	if m.tagging {
+		return m.viewTagEdit()
+	}
+
+	// Show rename input if active
+	if m.focus == focusRename {
+		return m.viewRename()
+	}
+
 	// Show confirmation dialog if active
 	if m.focus == focusConfirm {
 		return m.viewConfirmation()
@@ -281,8 +345,8 @@ func (m Model) SelectedIntent() *intent.Intent {
 	return nil
 }
 
-// groupIntentsByStatus organizes intents into groups by their status.
-// Groups are ordered: Inbox, Active, Ready, then a collapsible Dungeon parent
+// groupIntentsByStatus organizes lifecycle intents into groups by status.
+// Groups are ordered: Inbox, Ready, Active, then a collapsible Dungeon parent
 // that contains Done, Killed, Archived, Someday as children.
 // When dungeonExpanded is false, only the Dungeon parent group is shown.
 // When true, the 4 child groups are appended after the parent.
@@ -342,4 +406,43 @@ func groupIntentsByStatus(intents []*intent.Intent, dungeonExpanded bool) []Inte
 	}
 
 	return groups
+}
+
+func groupExplorerItemsByStatus(items []*intent.Intent, dungeonExpanded bool) []IntentGroup {
+	notes := IntentGroup{Name: "Notes", Status: intent.StatusNote, Expanded: true}
+	intents := make([]*intent.Intent, 0, len(items))
+	for _, item := range items {
+		if item.Status == intent.StatusNote {
+			notes.Intents = append(notes.Intents, item)
+			continue
+		}
+		if item.Status.IsNote() {
+			continue
+		}
+		intents = append(intents, item)
+	}
+
+	groups := groupIntentsByStatus(intents, dungeonExpanded)
+	return append([]IntentGroup{notes}, groups...)
+}
+
+func (m *Model) rebuildStatusGroups() {
+	if m.notesMode {
+		m.groups = groupNotes(m.filteredIntents)
+		return
+	}
+	if m.hasNotesGroup() {
+		m.groups = groupExplorerItemsByStatus(m.filteredIntents, m.dungeonExpanded)
+		return
+	}
+	m.groups = groupIntentsByStatus(m.filteredIntents, m.dungeonExpanded)
+}
+
+func (m *Model) hasNotesGroup() bool {
+	for _, group := range m.groups {
+		if group.Status.IsNote() {
+			return true
+		}
+	}
+	return false
 }

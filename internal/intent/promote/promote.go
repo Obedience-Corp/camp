@@ -185,7 +185,7 @@ func createDesignDoc(ctx context.Context, campaignRoot string, i *intent.Intent)
 		return "", false, camperrors.Wrap(err, "context cancelled before creating design doc")
 	}
 
-	slug := intent.GenerateSlug(i.Title)
+	slug := intent.SlugFromTitle(i.Title)
 	if slug == "" {
 		return "", false, camperrors.New("could not generate slug from intent title")
 	}
@@ -296,7 +296,7 @@ func createFestival(ctx context.Context, campaignRoot string, i *intent.Intent) 
 		return Result{FestNotFound: true}
 	}
 
-	festivalName := intent.GenerateSlug(i.Title)
+	festivalName := intent.SlugFromTitle(i.Title)
 	festivalGoal := ExtractFirstParagraph(i.Content)
 
 	args := []string{"create", "festival", "--type", "standard", "--name", festivalName, "--json"}

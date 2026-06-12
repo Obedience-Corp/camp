@@ -12,8 +12,14 @@ import (
 //go:embed templates/intent.md.tmpl
 var intentTemplateContent string
 
+//go:embed templates/note.md.tmpl
+var noteTemplateContent string
+
 // intentTemplate is the parsed template, initialized on first use.
 var intentTemplate *template.Template
+
+// noteTemplate is the parsed note template, initialized on first use.
+var noteTemplate *template.Template
 
 // TemplateData contains the values to substitute into the intent template.
 type TemplateData struct {
@@ -21,9 +27,11 @@ type TemplateData struct {
 	Title     string
 	Type      string
 	Concept   string // Full concept path (e.g., "projects/camp")
+	Status    string // Lifecycle/category directory (defaults to inbox)
 	Author    string
-	CreatedAt string // Formatted as YYYY-MM-DD
-	Body      string // Description/body content
+	CreatedAt string   // Formatted as RFC3339 so same-day age math is accurate.
+	Body      string   // Description/body content
+	Tags      []string // Optional frontmatter tags
 }
 
 // RenderTemplate generates an intent file from a template with the given data.
@@ -45,19 +53,45 @@ func RenderTemplate(data TemplateData) (string, error) {
 	return buf.String(), nil
 }
 
-// FormatCreatedAt formats a time.Time as YYYY-MM-DD for template use.
+// RenderNote generates a note file from the lightweight note template. Notes
+// carry no type, concept, or promotion metadata; tags organize them.
+func RenderNote(data TemplateData) (string, error) {
+	if noteTemplate == nil {
+		tmpl, err := template.New("note").Parse(noteTemplateContent)
+		if err != nil {
+			return "", camperrors.Wrap(err, "parsing note template")
+		}
+		noteTemplate = tmpl
+	}
+
+	var buf bytes.Buffer
+	if err := noteTemplate.Execute(&buf, data); err != nil {
+		return "", camperrors.Wrap(err, "executing note template")
+	}
+
+	return buf.String(), nil
+}
+
+// FormatCreatedAt formats a time.Time for frontmatter. Keep the time component:
+// date-only values parse as midnight and make newly-created intents look hours
+// old in the explorer later the same day.
 func FormatCreatedAt(t time.Time) string {
-	return t.Format("2006-01-02")
+	return t.Format(time.RFC3339)
 }
 
 // NewTemplateData creates a TemplateData struct from an Intent struct.
 // This is useful for re-rendering an existing intent.
 func NewTemplateData(intent *Intent) TemplateData {
+	status := intent.Status
+	if status == "" {
+		status = StatusInbox
+	}
 	return TemplateData{
 		ID:        intent.ID,
 		Title:     intent.Title,
 		Type:      string(intent.Type),
 		Concept:   intent.Concept,
+		Status:    string(status),
 		Author:    intent.Author,
 		CreatedAt: FormatCreatedAt(intent.CreatedAt),
 		Body:      intent.Content,
@@ -72,6 +106,7 @@ func NewTemplateDataFromInput(title, typ, concept, author, body string, timestam
 		Title:     title,
 		Type:      typ,
 		Concept:   concept,
+		Status:    string(StatusInbox),
 		Author:    author,
 		CreatedAt: FormatCreatedAt(timestamp),
 		Body:      body,

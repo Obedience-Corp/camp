@@ -239,6 +239,7 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 		Description: description,
 		Mission:     opts.Mission,
 		ConceptList: config.DefaultConcepts(),
+		Intents:     config.IntentsConfig{Tags: config.DefaultIntentTags()},
 	}
 
 	// In repair mode, preserve existing config values and merge concepts
@@ -247,6 +248,11 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 		cfg.Description = existingCfg.Description
 		cfg.Projects = existingCfg.Projects
 		cfg.Hooks = existingCfg.Hooks
+		// Preserve existing intent tags; otherwise the defaults seeded above
+		// fill in the block for campaigns predating it.
+		if len(existingCfg.Intents.Tags) > 0 {
+			cfg.Intents = existingCfg.Intents
+		}
 		// Preserve existing mission unless a new one was provided
 		if opts.Mission != "" {
 			cfg.Mission = opts.Mission

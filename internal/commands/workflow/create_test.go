@@ -161,7 +161,9 @@ func TestUpsertConceptCollisionWithoutReplace(t *testing.T) {
 	root := t.TempDir()
 	cfg := &config.CampaignConfig{
 		ConceptList: []config.ConceptEntry{
-			{Name: "Research", Path: "workflow/old-research/"},
+			{Name: "workflow", Path: "workflow/", Description: "Workflows", Children: []config.ConceptEntry{
+				{Name: "Research", Path: "workflow/old-research/"},
+			}},
 		},
 	}
 
@@ -178,7 +180,9 @@ func TestUpsertConceptReplace(t *testing.T) {
 	root := t.TempDir()
 	cfg := &config.CampaignConfig{
 		ConceptList: []config.ConceptEntry{
-			{Name: "Research", Path: "workflow/old-research/"},
+			{Name: "workflow", Path: "workflow/", Description: "Workflows", Children: []config.ConceptEntry{
+				{Name: "Research", Path: "workflow/old-research/"},
+			}},
 		},
 	}
 
@@ -187,13 +191,17 @@ func TestUpsertConceptReplace(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(cfg.ConceptList) != 1 {
-		t.Fatalf("len(ConceptList) = %d, want 1", len(cfg.ConceptList))
+		t.Fatalf("len(ConceptList) = %d, want 1 (workflow parent)", len(cfg.ConceptList))
 	}
-	if cfg.ConceptList[0].Name != "research" {
-		t.Fatalf("concept name = %q, want research", cfg.ConceptList[0].Name)
+	workflow := cfg.ConceptList[0]
+	if workflow.Name != "workflow" {
+		t.Fatalf("top-level concept = %q, want workflow", workflow.Name)
 	}
-	if cfg.ConceptList[0].Path != "workflow/research/" {
-		t.Fatalf("concept path = %q, want workflow/research/", cfg.ConceptList[0].Path)
+	if len(workflow.Children) != 1 || workflow.Children[0].Name != "research" {
+		t.Fatalf("workflow children = %#v, want [research]", workflow.Children)
+	}
+	if workflow.Children[0].Path != "workflow/research/" {
+		t.Fatalf("research child path = %q, want workflow/research/", workflow.Children[0].Path)
 	}
 
 	campaignYAML, err := os.ReadFile(config.CampaignConfigPath(root))
@@ -202,6 +210,86 @@ func TestUpsertConceptReplace(t *testing.T) {
 	}
 	if !strings.Contains(string(campaignYAML), "path: workflow/research/") {
 		t.Fatalf("campaign.yaml did not persist replacement concept:\n%s", campaignYAML)
+	}
+}
+
+func TestUpsertConceptFoldsLegacyFlatConcept(t *testing.T) {
+	root := t.TempDir()
+	cfg := &config.CampaignConfig{
+		ConceptList: []config.ConceptEntry{
+			{Name: "workflow", Path: "workflow/", Description: "Workflows"},
+			{Name: "research", Path: "workflow/research/", Description: "Research workflow"},
+		},
+	}
+
+	err := upsertConcept(context.Background(), root, cfg, "research", "workflow/research/", "Research", false)
+	if err != nil {
+		t.Fatalf("upsertConcept: %v", err)
+	}
+
+	if len(cfg.ConceptList) != 1 {
+		t.Fatalf("len(ConceptList) = %d, want 1 (legacy flat concept folded under workflow): %#v", len(cfg.ConceptList), cfg.ConceptList)
+	}
+	workflow := cfg.ConceptList[0]
+	if workflow.Name != "workflow" {
+		t.Fatalf("top-level concept = %q, want workflow", workflow.Name)
+	}
+	count := 0
+	for _, ch := range workflow.Children {
+		if strings.EqualFold(ch.Name, "research") {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("research child count = %d, want 1: %#v", count, workflow.Children)
+	}
+}
+
+func TestRunCreateFoldsLegacyFlatConcept(t *testing.T) {
+	root := newWorkflowTestCampaign(t)
+	cfg := &config.CampaignConfig{
+		ID:   "test-campaign",
+		Name: "Workflow Test",
+		Type: config.CampaignTypeProduct,
+		ConceptList: []config.ConceptEntry{
+			{Name: "projects", Path: "projects/", Description: "Projects"},
+			{Name: "research", Path: "workflow/research/", Description: "Research workflow"},
+		},
+	}
+	if err := config.SaveCampaignConfig(context.Background(), root, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	restore := chdir(t, root)
+	defer restore()
+
+	cmd := &cobra.Command{}
+	if err := runCreate(context.Background(), cmd, createOptions{Type: "research", Shortcut: "re", Title: "Research"}); err != nil {
+		t.Fatalf("runCreate: %v", err)
+	}
+
+	reloaded, err := config.LoadCampaignConfig(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	topLevel, child := 0, 0
+	for _, c := range reloaded.ConceptList {
+		if strings.EqualFold(c.Name, "research") {
+			topLevel++
+		}
+		if strings.EqualFold(c.Name, "workflow") {
+			for _, ch := range c.Children {
+				if strings.EqualFold(ch.Name, "research") {
+					child++
+				}
+			}
+		}
+	}
+	if topLevel != 0 {
+		t.Errorf("legacy flat research concept still top-level: %#v", reloaded.ConceptList)
+	}
+	if child != 1 {
+		t.Errorf("research child count = %d, want 1: %#v", child, reloaded.ConceptList)
 	}
 }
 
@@ -275,13 +363,17 @@ func TestRunCreateRegistersExistingUserWorkflow(t *testing.T) {
 	}
 	foundConcept := false
 	for _, concept := range cfg.ConceptList {
-		if concept.Name == "research" && concept.Path == "workflow/research/" {
-			foundConcept = true
-			break
+		if !strings.EqualFold(concept.Name, "workflow") {
+			continue
+		}
+		for _, child := range concept.Children {
+			if child.Name == "research" && child.Path == "workflow/research/" {
+				foundConcept = true
+			}
 		}
 	}
 	if !foundConcept {
-		t.Fatalf("research concept missing from campaign config: %#v", cfg.ConceptList)
+		t.Fatalf("research child concept missing from campaign config: %#v", cfg.ConceptList)
 	}
 }
 
@@ -325,14 +417,20 @@ func TestRunCreateIdempotentForSameWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// research nests as a child of the workflow parent, exactly once.
 	count := 0
 	for _, concept := range cfg.ConceptList {
-		if strings.EqualFold(concept.Name, "research") && concept.Path == "workflow/research/" {
-			count++
+		if !strings.EqualFold(concept.Name, "workflow") {
+			continue
+		}
+		for _, child := range concept.Children {
+			if strings.EqualFold(child.Name, "research") && child.Path == "workflow/research/" {
+				count++
+			}
 		}
 	}
 	if count != 1 {
-		t.Fatalf("research concept count = %d, want 1: %#v", count, cfg.ConceptList)
+		t.Fatalf("research child concept count = %d, want 1: %#v", count, cfg.ConceptList)
 	}
 }
 
@@ -343,7 +441,9 @@ func TestRunCreateReplacePersistsShortcutAndConcept(t *testing.T) {
 		Name: "Workflow Test",
 		Type: config.CampaignTypeProduct,
 		ConceptList: []config.ConceptEntry{
-			{Name: "Research", Path: "workflow/old-research/"},
+			{Name: "workflow", Path: "workflow/", Description: "Workflows", Children: []config.ConceptEntry{
+				{Name: "Research", Path: "workflow/old-research/"},
+			}},
 		},
 	}
 	if err := config.SaveCampaignConfig(context.Background(), root, cfg); err != nil {
@@ -388,13 +488,17 @@ func TestRunCreateReplacePersistsShortcutAndConcept(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(reloadedCfg.ConceptList) != 1 {
-		t.Fatalf("len(ConceptList) = %d, want 1: %#v", len(reloadedCfg.ConceptList), reloadedCfg.ConceptList)
+		t.Fatalf("len(ConceptList) = %d, want 1 (workflow parent): %#v", len(reloadedCfg.ConceptList), reloadedCfg.ConceptList)
 	}
-	if reloadedCfg.ConceptList[0].Name != "research" {
-		t.Fatalf("concept name = %q, want research", reloadedCfg.ConceptList[0].Name)
+	workflow := reloadedCfg.ConceptList[0]
+	if workflow.Name != "workflow" {
+		t.Fatalf("top-level concept = %q, want workflow", workflow.Name)
 	}
-	if reloadedCfg.ConceptList[0].Path != "workflow/research/" {
-		t.Fatalf("concept path = %q, want workflow/research/", reloadedCfg.ConceptList[0].Path)
+	if len(workflow.Children) != 1 || workflow.Children[0].Name != "research" {
+		t.Fatalf("workflow children = %#v, want [research]", workflow.Children)
+	}
+	if workflow.Children[0].Path != "workflow/research/" {
+		t.Fatalf("research child path = %q, want workflow/research/", workflow.Children[0].Path)
 	}
 }
 

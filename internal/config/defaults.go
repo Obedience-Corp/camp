@@ -6,15 +6,24 @@ import "time"
 // ResolvedCampaignsDir() when GlobalConfig.CampaignsDir is empty.
 const defaultCampaignsDirTilde = "~/campaigns/"
 
+// DefaultIntentTags returns the starter tag list for a fresh campaign.
+func DefaultIntentTags() []string {
+	return []string{"personal", "reference", "question", "follow-up"}
+}
+
 // DefaultConcepts returns the default concept configuration for campaigns.
-// Each concept has a name, path, description, and optional depth/ignore settings.
+// The picker is a small tree: projects, a single workflow parent whose children
+// are the workflow collections (festivals, design, explore, code_reviews,
+// pipelines), and docs. workflow keeps its own Path so custom workflow dirs are
+// still surfaced from disk.
+//
+// worktrees, intents, and dungeon are intentionally not picker concepts:
+// worktrees is a projects detail, intents would be circular, and dungeon is
+// resolved dynamically by nearest-path lookup.
 func DefaultConcepts() []ConceptEntry {
 	depth0 := 0
 	depth1 := 1
 
-	// Dungeon is intentionally not modeled as a default concept entry.
-	// Dungeon context is resolved dynamically by nearest-path lookup, and a
-	// static concept path implies root-only behavior that conflicts with that model.
 	return []ConceptEntry{
 		{
 			Name:        "projects",
@@ -24,41 +33,16 @@ func DefaultConcepts() []ConceptEntry {
 			Ignore:      []string{"worktrees/"},
 		},
 		{
-			Name:        "worktrees",
-			Path:        "projects/worktrees/",
-			Description: "Git worktrees",
-			Depth:       &depth1,
-		},
-		{
-			Name:        "festivals",
-			Path:        "festivals/",
-			Description: "Planning cycles",
-			// Depth nil = unlimited
-		},
-		{
-			Name:        "intents",
-			Path:        ".campaign/intents/",
-			Description: "Ideas and tasks",
-			Depth:       &depth0,
-		},
-		{
 			Name:        "workflow",
 			Path:        "workflow/",
-			Description: "Work management",
-			Depth:       &depth1,
-			Ignore:      []string{"intents/", "design/", "explore/"},
-		},
-		{
-			Name:        "design",
-			Path:        "workflow/design/",
-			Description: "Design documents",
-			Depth:       &depth1,
-		},
-		{
-			Name:        "explore",
-			Path:        "workflow/explore/",
-			Description: "Exploratory notes and discovery work",
-			Depth:       &depth1,
+			Description: "Workflows",
+			Children: []ConceptEntry{
+				{Name: "festivals", Path: "festivals/", Description: "Multi-step festival plans"},
+				{Name: "design", Path: "workflow/design/", Description: "Design documents", Depth: &depth1},
+				{Name: "explore", Path: "workflow/explore/", Description: "Exploratory notes and discovery work", Depth: &depth1},
+				{Name: "code_reviews", Path: "workflow/code_reviews/", Description: "Code reviews", Depth: &depth1},
+				{Name: "pipelines", Path: "workflow/pipelines/", Description: "Pipelines", Depth: &depth1},
+			},
 		},
 		{
 			Name:        "docs",

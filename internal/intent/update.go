@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -25,13 +27,16 @@ type UpdateOptions struct {
 
 	Priority *Priority
 	Horizon  *Horizon
+
+	Tags *[]string // Replaces the intent's tags
 }
 
 // hasChanges returns true if any field in the options is set.
 func (o *UpdateOptions) hasChanges() bool {
 	return o.Title != nil || o.Body != nil || o.Append != nil ||
 		o.Type != nil || o.Status != nil || o.Concept != nil ||
-		o.Author != nil || o.Priority != nil || o.Horizon != nil
+		o.Author != nil || o.Priority != nil || o.Horizon != nil ||
+		o.Tags != nil
 }
 
 // UpdateDirect applies programmatic field updates to an existing intent
@@ -44,6 +49,14 @@ func (s *IntentService) UpdateDirect(ctx context.Context, id string, opts Update
 
 	if !opts.hasChanges() {
 		return nil, nil, camperrors.Wrap(camperrors.ErrInvalidInput, "no update fields specified")
+	}
+
+	if opts.Tags != nil {
+		normTags, terr := validateAndNormalizeTags(*opts.Tags)
+		if terr != nil {
+			return nil, nil, terr
+		}
+		opts.Tags = &normTags
 	}
 
 	intent, err := s.Find(ctx, id)
@@ -108,6 +121,11 @@ func (s *IntentService) UpdateDirect(ctx context.Context, id string, opts Update
 		intent.Horizon = *opts.Horizon
 	}
 
+	if opts.Tags != nil && !slices.Equal(intent.Tags, *opts.Tags) {
+		changes = append(changes, audit.FieldChange{Field: "tags", Old: strings.Join(intent.Tags, ","), New: strings.Join(*opts.Tags, ",")})
+		intent.Tags = *opts.Tags
+	}
+
 	if len(changes) == 0 {
 		// All values were identical to existing — no-op
 		return intent, nil, nil
@@ -120,9 +138,10 @@ func (s *IntentService) UpdateDirect(ctx context.Context, id string, opts Update
 
 	intent.UpdatedAt = time.Now()
 
-	// Handle status change (move to new directory)
+	// Handle status change (move to new directory), preserving the basename so
+	// a renamed slug survives.
 	if intent.Status != originalStatus {
-		newPath := s.getIntentPath(intent.Status, intent.ID)
+		newPath := s.moveTargetPath(intent.ID, intent.Status, originalPath)
 		if err := os.MkdirAll(filepath.Dir(newPath), 0755); err != nil {
 			return nil, nil, camperrors.Wrap(err, "creating directory for status change")
 		}
@@ -140,6 +159,7 @@ func (s *IntentService) UpdateDirect(ctx context.Context, id string, opts Update
 		s.removeAllCopies(intent.ID, intent.Path)
 	}
 
+	s.invalidateIDIndex()
 	return intent, changes, nil
 }
 

@@ -88,6 +88,7 @@ func init() {
 	flags.String("priority", "", "Change priority (low, medium, high)")
 	flags.String("horizon", "", "Change horizon (now, next, later, someday)")
 	flags.String("author", "", "Override the author attribution")
+	flags.StringArray("tag", nil, "Replace the intent's tags (repeatable)")
 	flags.Bool("no-commit", false, "Don't create a git commit")
 }
 
@@ -315,6 +316,11 @@ func buildUpdateOptions(cmd *cobra.Command) (intent.UpdateOptions, error) {
 		opts.Author = &v
 	}
 
+	if cmd.Flags().Changed("tag") {
+		v, _ := cmd.Flags().GetStringArray("tag")
+		opts.Tags = &v
+	}
+
 	return opts, nil
 }
 
@@ -323,7 +329,7 @@ func buildUpdateOptions(cmd *cobra.Command) (intent.UpdateOptions, error) {
 func hasProgrammaticEditFlags(cmd *cobra.Command) bool {
 	programmaticFlags := []string{
 		"title", "body", "body-file", "append-body", "append-body-file",
-		"set-type", "set-status", "set-concept", "priority", "horizon", "author",
+		"set-type", "set-status", "set-concept", "priority", "horizon", "author", "tag",
 	}
 	for _, name := range programmaticFlags {
 		if cmd.Flags().Changed(name) {

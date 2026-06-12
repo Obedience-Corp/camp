@@ -27,7 +27,7 @@ func (m *Model) placeCursorAtFirstItem() bool {
 		// Auto-expand the Dungeon parent if it holds the only matches.
 		if m.groups[gi].IsDungeonParent && m.groups[gi].DungeonCount > 0 && !m.dungeonExpanded {
 			m.dungeonExpanded = true
-			m.groups = groupIntentsByStatus(m.filteredIntents, m.dungeonExpanded)
+			m.rebuildStatusGroups()
 			// Restart with the rebuilt slice — dungeon children are now present.
 			return m.placeCursorAtFirstItem()
 		}
@@ -251,7 +251,7 @@ func (m *Model) handleSelect() {
 		if group.IsDungeonParent {
 			// Toggle dungeon expansion and rebuild groups
 			m.dungeonExpanded = !m.dungeonExpanded
-			m.groups = groupIntentsByStatus(m.filteredIntents, m.dungeonExpanded)
+			m.rebuildStatusGroups()
 			m.ensureCursorVisible()
 			return
 		}

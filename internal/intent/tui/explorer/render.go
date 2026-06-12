@@ -42,7 +42,11 @@ func (m *Model) renderIntentRow(i *intent.Intent, isSelected bool, maxTitleWidth
 
 	// Build row parts
 	titlePart := tui.IntentTitleStyle.Render(title)
-	typePart := tui.IntentTypeStyle.Render(fmt.Sprintf("[%s]", i.Type))
+	typeLabel := string(i.Type)
+	if i.Status.IsNote() {
+		typeLabel = "note"
+	}
+	typePart := tui.IntentTypeStyle.Render(fmt.Sprintf("[%s]", typeLabel))
 	datePart := tui.IntentDateStyle.Render(date)
 
 	var row string

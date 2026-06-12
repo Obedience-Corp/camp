@@ -27,18 +27,15 @@ func (s *IntentService) Find(ctx context.Context, id string) (*Intent, error) {
 		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
-	statuses := AllStatuses()
-
-	// First try exact match
-	for _, status := range statuses {
-		path := s.getIntentPath(status, id)
+	// First try exact match by id: frontmatter (fast path + index fallback)
+	if path, err := s.resolveByID(id); err == nil {
 		if intent, err := s.loadIntent(path); err == nil {
 			return intent, nil
 		}
 	}
 
 	// Try fuzzy match (ID contains the search term)
-	for _, status := range statuses {
+	for _, status := range AllStatuses() {
 		dir := filepath.Join(s.intentsDir, string(status))
 		files, err := os.ReadDir(dir)
 		if err != nil {
@@ -62,20 +59,21 @@ func (s *IntentService) Find(ctx context.Context, id string) (*Intent, error) {
 	return nil, camperrors.Wrap(ErrNotFound, id)
 }
 
-// Get retrieves an intent by its exact ID.
+// Get retrieves an intent by its exact ID (resolved via id: frontmatter).
 func (s *IntentService) Get(ctx context.Context, id string) (*Intent, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
-	for _, status := range AllStatuses() {
-		path := s.getIntentPath(status, id)
-		if intent, err := s.loadIntent(path); err == nil {
-			return intent, nil
-		}
+	path, err := s.resolveByID(id)
+	if err != nil {
+		return nil, err
 	}
-
-	return nil, camperrors.Wrap(ErrNotFound, id)
+	intent, err := s.loadIntent(path)
+	if err != nil {
+		return nil, camperrors.Wrap(ErrNotFound, id)
+	}
+	return intent, nil
 }
 
 // List returns all intents matching the given options.

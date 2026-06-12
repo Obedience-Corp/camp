@@ -20,6 +20,7 @@ func TestRenderTemplate(t *testing.T) {
 				Title:     "Test Intent",
 				Type:      "feature",
 				Concept:   "camp",
+				Status:    "inbox",
 				Author:    "lance",
 				CreatedAt: "2026-01-19",
 			},
@@ -276,22 +277,22 @@ func TestFormatCreatedAt(t *testing.T) {
 		{
 			name: "simple date",
 			time: time.Date(2026, 1, 19, 0, 0, 0, 0, time.UTC),
-			want: "2026-01-19",
+			want: "2026-01-19T00:00:00Z",
 		},
 		{
 			name: "date with time",
 			time: time.Date(2026, 6, 15, 12, 30, 45, 0, time.UTC),
-			want: "2026-06-15",
+			want: "2026-06-15T12:30:45Z",
 		},
 		{
 			name: "end of year",
 			time: time.Date(2026, 12, 31, 23, 59, 59, 0, time.UTC),
-			want: "2026-12-31",
+			want: "2026-12-31T23:59:59Z",
 		},
 		{
 			name: "start of year",
 			time: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
-			want: "2026-01-01",
+			want: "2026-01-01T00:00:00Z",
 		},
 	}
 
@@ -332,8 +333,8 @@ func TestNewTemplateData(t *testing.T) {
 	if data.Author != intent.Author {
 		t.Errorf("Author = %q, want %q", data.Author, intent.Author)
 	}
-	if data.CreatedAt != "2026-01-19" {
-		t.Errorf("CreatedAt = %q, want %q", data.CreatedAt, "2026-01-19")
+	if data.CreatedAt != "2026-01-19T15:34:12Z" {
+		t.Errorf("CreatedAt = %q, want %q", data.CreatedAt, "2026-01-19T15:34:12Z")
 	}
 }
 
@@ -361,8 +362,8 @@ func TestNewTemplateDataFromInput(t *testing.T) {
 	if data.Author != "lance" {
 		t.Errorf("Author = %q, want %q", data.Author, "lance")
 	}
-	if data.CreatedAt != "2026-01-19" {
-		t.Errorf("CreatedAt = %q, want %q", data.CreatedAt, "2026-01-19")
+	if data.CreatedAt != "2026-01-19T15:34:12Z" {
+		t.Errorf("CreatedAt = %q, want %q", data.CreatedAt, "2026-01-19T15:34:12Z")
 	}
 	if data.Body != "Test body content" {
 		t.Errorf("Body = %q, want %q", data.Body, "Test body content")
@@ -414,5 +415,22 @@ func TestRenderTemplate_RoundTrip(t *testing.T) {
 	// Body content should include template sections
 	if !strings.Contains(intent.Content, "## Description") {
 		t.Error("Content should contain Description section")
+	}
+}
+
+func TestRenderTemplate_RoundTripPreservesCreatedAtTime(t *testing.T) {
+	ts := time.Date(2026, 6, 10, 23, 42, 31, 0, time.UTC)
+	data := NewTemplateDataFromInput("Fresh intent", "idea", "", "agent", "", ts)
+
+	output, err := RenderTemplate(data)
+	if err != nil {
+		t.Fatalf("RenderTemplate: %v", err)
+	}
+	parsed, err := ParseIntent([]byte(output))
+	if err != nil {
+		t.Fatalf("ParseIntent: %v", err)
+	}
+	if !parsed.CreatedAt.Equal(ts) {
+		t.Fatalf("CreatedAt = %s, want %s", parsed.CreatedAt.Format(time.RFC3339), ts.Format(time.RFC3339))
 	}
 }

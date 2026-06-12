@@ -38,10 +38,18 @@ type CampaignConfig struct {
 	ConceptList []ConceptEntry `yaml:"concepts,omitempty"`
 	// Hooks contains optional campaign-local command hooks.
 	Hooks HooksConfig `yaml:"hooks,omitempty"`
+	// Intents holds intent-specific campaign settings (e.g. the tag list).
+	Intents IntentsConfig `yaml:"intents,omitempty"`
 
 	// Jumps holds the loaded jumps configuration (from .campaign/settings/jumps.yaml).
 	// This field is not serialized to campaign.yaml - it's loaded separately.
 	Jumps *JumpsConfig `yaml:"-"`
+}
+
+// IntentsConfig holds intent-specific campaign settings.
+type IntentsConfig struct {
+	// Tags is the suggested tag list offered during intent/note capture.
+	Tags []string `yaml:"tags,omitempty"`
 }
 
 // HooksConfig contains optional campaign-local command hooks.
@@ -57,17 +65,23 @@ type CommitMessageHookConfig struct {
 }
 
 // ConceptEntry defines a concept for the picker with ordering and depth control.
+// Concepts may nest via Children, so a parent concept (e.g. "workflow") can group
+// sub-concepts. A parent that only groups may omit Path.
 type ConceptEntry struct {
 	// Name is the concept name (e.g., "projects", "festivals").
 	Name string `yaml:"name"`
-	// Path is the relative path from campaign root.
-	Path string `yaml:"path"`
+	// Path is the relative path from campaign root. Optional for pure-parent
+	// nodes that only group children.
+	Path string `yaml:"path,omitempty"`
 	// Description provides human-readable help text.
 	Description string `yaml:"description,omitempty"`
 	// Depth controls drilling depth: nil=unlimited, 0=no drilling, 1+=levels.
 	Depth *int `yaml:"depth,omitempty"`
 	// Ignore lists subdirectories to exclude from listing.
 	Ignore []string `yaml:"ignore,omitempty"`
+	// Children are nested sub-concepts. Absent means a flat concept (today's
+	// behavior); present makes this a parent in the picker tree.
+	Children []ConceptEntry `yaml:"children,omitempty"`
 }
 
 // Paths returns the campaign paths configuration.
@@ -88,6 +102,14 @@ func (c *CampaignConfig) Shortcuts() map[string]ShortcutConfig {
 	return DefaultNavigationShortcuts()
 }
 
+// IntentTags returns the configured intent tags, or the default set when unset.
+func (c *CampaignConfig) IntentTags() []string {
+	if len(c.Intents.Tags) > 0 {
+		return c.Intents.Tags
+	}
+	return DefaultIntentTags()
+}
+
 // Concepts returns the concept list for the picker.
 // If ConceptList is defined in campaign.yaml, returns it directly (preserving order).
 // Otherwise, derives concepts from CampaignPaths as a fallback.
@@ -99,38 +121,40 @@ func (c *CampaignConfig) Concepts() []ConceptEntry {
 	return c.deriveConceptsFromPaths()
 }
 
-// deriveConceptsFromPaths creates ConceptEntry list from CampaignPaths.
-// This provides backwards compatibility when concepts aren't explicitly defined.
+// deriveConceptsFromPaths creates a ConceptEntry list from CampaignPaths when
+// no explicit ConceptList is set. It mirrors the nested DefaultConcepts shape:
+// projects, a workflow parent with its collections as children, and docs.
 func (c *CampaignConfig) deriveConceptsFromPaths() []ConceptEntry {
 	paths := c.Paths()
-	defs := []struct {
+
+	childDefs := []struct {
 		name        string
 		path        string
 		description string
 	}{
-		{"projects", paths.Projects, "Projects directory"},
-		{"worktrees", paths.Worktrees, "Git worktrees"},
-		{"festivals", paths.Festivals, "Festivals directory"},
-		{"intents", paths.Intents, "Intents directory"},
-		{"workflow", paths.Workflow, "Workflow directory"},
-		{"code_reviews", paths.CodeReviews, "Code reviews"},
-		{"pipelines", paths.Pipelines, "Pipelines"},
+		{"festivals", paths.Festivals, "Multi-step festival plans"},
 		{"design", paths.Design, "Design documents"},
 		{"explore", "workflow/explore/", "Exploratory notes and discovery work"},
-		{"ai_docs", paths.AIDocs, "AI documentation"},
-		{"docs", paths.Docs, "Documentation"},
+		{"code_reviews", paths.CodeReviews, "Code reviews"},
+		{"pipelines", paths.Pipelines, "Pipelines"},
 	}
-
-	var concepts []ConceptEntry
-	for _, def := range defs {
+	var children []ConceptEntry
+	for _, def := range childDefs {
 		if def.path == "" {
 			continue
 		}
-		concepts = append(concepts, ConceptEntry{
-			Name:        def.name,
-			Path:        def.path,
-			Description: def.description,
-		})
+		children = append(children, ConceptEntry{Name: def.name, Path: def.path, Description: def.description})
+	}
+
+	var concepts []ConceptEntry
+	if paths.Projects != "" {
+		concepts = append(concepts, ConceptEntry{Name: "projects", Path: paths.Projects, Description: "Active development projects"})
+	}
+	if paths.Workflow != "" || len(children) > 0 {
+		concepts = append(concepts, ConceptEntry{Name: "workflow", Path: paths.Workflow, Description: "Workflows", Children: children})
+	}
+	if paths.Docs != "" {
+		concepts = append(concepts, ConceptEntry{Name: "docs", Path: paths.Docs, Description: "Documentation"})
 	}
 	return concepts
 }

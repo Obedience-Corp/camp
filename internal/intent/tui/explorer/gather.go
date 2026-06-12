@@ -16,6 +16,10 @@ func (m *Model) toggleSelection(i *intent.Intent) {
 	if i == nil {
 		return
 	}
+	if i.Status.IsNote() {
+		m.statusMessage = "Convert note to an intent before gathering it"
+		return
+	}
 
 	if m.selectedIntents[i.ID] {
 		delete(m.selectedIntents, i.ID)
@@ -150,6 +154,10 @@ func (m *Model) handleGatherGroup() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	group := m.groups[m.cursorGroup]
+	if group.Status.IsNote() {
+		m.statusMessage = "Convert notes to intents before gathering them"
+		return m, nil
+	}
 	if len(group.Intents) < 2 {
 		m.statusMessage = "Group needs 2+ intents to gather"
 		return m, nil
@@ -165,6 +173,10 @@ func (m *Model) handleGatherGroup() (tea.Model, tea.Cmd) {
 
 // enterGatherModeFromAction enters multi-select mode with current intent pre-selected.
 func (m *Model) enterGatherModeFromAction(selected *intent.Intent) {
+	if selected.Status.IsNote() {
+		m.statusMessage = "Convert note to an intent before gathering it"
+		return
+	}
 	m.multiSelectMode = true
 	m.selectedIntents[selected.ID] = true
 	m.statusMessage = "Select more intents with Space, then ga to gather"

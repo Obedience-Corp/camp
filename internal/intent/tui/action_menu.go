@@ -12,7 +12,7 @@ import (
 // ActionMenuItem represents an item in the action menu.
 type ActionMenuItem struct {
 	Label   string
-	Action  string // "view", "edit", "move", "promote", "archive", "gather", "delete", "open", "reveal"
+	Action  string // "view", "edit", "convert", "move", "promote", "archive", "gather", "delete", "open", "reveal"
 	Enabled bool
 }
 
@@ -34,6 +34,15 @@ type ActionMenuCancelledMsg struct{}
 
 // NewActionMenu creates a new action menu for the given intent.
 func NewActionMenu(i *intent.Intent) ActionMenu {
+	if i.Status.IsNote() {
+		return newActionMenu([]ActionMenuItem{
+			{Label: "View full screen", Action: "view", Enabled: true},
+			{Label: "Edit in editor", Action: "edit", Enabled: true},
+			{Label: "Move to status", Action: "move", Enabled: i.Status == intent.StatusNote},
+			{Label: "Convert to intent", Action: "convert", Enabled: i.Status == intent.StatusNote},
+		})
+	}
+
 	items := []ActionMenuItem{
 		{Label: "View full screen", Action: "view", Enabled: true},
 		{Label: "Edit in editor", Action: "edit", Enabled: true},
@@ -44,6 +53,10 @@ func NewActionMenu(i *intent.Intent) ActionMenu {
 		{Label: "Delete", Action: "delete", Enabled: true},
 	}
 
+	return newActionMenu(items)
+}
+
+func newActionMenu(items []ActionMenuItem) ActionMenu {
 	// Find first enabled item
 	selectedIdx := 0
 	for idx, item := range items {

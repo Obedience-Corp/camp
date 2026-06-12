@@ -48,6 +48,7 @@ PROGRAMMATIC (agent) FLAGS:
   --body              Set intent body from a literal string
   --body-file         Read intent body from a file (- for stdin)
   --concept           Set the concept field (e.g., "projects/camp")
+  --note              Create a note instead of a lifecycle intent
   --author            Override the default author attribution
 
   --body and --body-file are mutually exclusive.
@@ -60,6 +61,8 @@ Examples:
   camp intent add                        Fast TUI (3-step form)
   camp intent add --campaign             Pick a target campaign interactively
   camp intent add --full                 Full TUI (includes body)
+  camp intent add --note                 Note TUI (title + body, no type/concept)
+  camp intent add --note "Meeting note" --body "Follow up next week"
   camp intent add -e "Complex feature"   Deep capture with editor
   camp intent add -t feature "New API"   Set type explicitly
   camp intent add "Fix login" --body "The login page returns 500"
@@ -84,7 +87,9 @@ func init() {
 	flags.String("body", "", "Set intent body as a literal string")
 	flags.String("body-file", "", "Read intent body from file (- for stdin, 10 MiB cap)")
 	flags.String("concept", "", "Set the concept field (e.g., projects/camp)")
+	flags.Bool("note", false, "Create a note instead of a lifecycle intent")
 	flags.String("author", "", "Override the default author attribution")
+	flags.StringArray("tag", nil, "Add a tag (repeatable)")
 }
 
 func runIntentAdd(cmd *cobra.Command, args []string) error {
@@ -96,9 +101,18 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	fullMode, _ := cmd.Flags().GetBool("full")
 	targetCampaign, _ := cmd.Flags().GetString("campaign")
 	noCommit, _ := cmd.Flags().GetBool("no-commit")
+	createNote, _ := cmd.Flags().GetBool("note")
 	targetCampaign, args = normalizeIntentAddCampaignArgs(args, targetCampaign)
 	conceptFlag, _ := cmd.Flags().GetString("concept")
 	authorFlag, _ := cmd.Flags().GetString("author")
+	tagsFlag, _ := cmd.Flags().GetStringArray("tag")
+
+	if createNote && cmd.Flags().Changed("concept") {
+		return camperrors.Wrap(camperrors.ErrInvalidInput, "--note cannot be combined with --concept")
+	}
+	if createNote && cmd.Flags().Changed("type") {
+		return camperrors.Wrap(camperrors.ErrInvalidInput, "--note cannot be combined with --type")
+	}
 
 	// Resolve body from --body / --body-file (mutual exclusivity checked inside)
 	body, bodySet, err := resolveBody(cmd)
@@ -143,6 +157,14 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 			Author:  author,
 			Body:    body,
 			Concept: conceptFlag,
+			Tags:    tagsFlag,
+		}
+
+		if createNote {
+			if useEditor {
+				return runDeepNoteCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, opts)
+			}
+			return runNoteCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, opts)
 		}
 
 		// Deep capture overrides ultra-fast; body flags pre-fill the template
@@ -167,20 +189,17 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	// Build navigation shortcuts map (key -> path) for @ completion
-	shortcuts := make(map[string]string)
-	for key, sc := range cfg.Shortcuts() {
-		if sc.HasPath() {
-			shortcuts[key] = sc.Path
-		}
-	}
+	shortcuts := navigationShortcuts(cfg)
 
 	// Run BubbleTea TUI
 	model, err := runIntentAddTUI(ctx, conceptSvc, tui.AddOptions{
-		DefaultType:  intentType,
-		FullMode:     fullMode,
-		Author:       author,
-		CampaignRoot: campaignRoot,
-		Shortcuts:    shortcuts,
+		DefaultType:   intentType,
+		FullMode:      fullMode,
+		NoteMode:      createNote,
+		Author:        author,
+		CampaignRoot:  campaignRoot,
+		Shortcuts:     shortcuts,
+		AvailableTags: cfg.IntentTags(),
 	})
 	if err != nil {
 		return err
@@ -194,6 +213,13 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 			Concept: saved.Concept,
 			Body:    saved.Body,
 			Author:  saved.Author,
+			Tags:    mergeTags(tagsFlag, saved.Tags),
+		}
+		if createNote {
+			if err := runNoteCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, savedOpts); err != nil {
+				return err
+			}
+			continue
 		}
 		if err := runFastCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, savedOpts); err != nil {
 			return err
@@ -217,6 +243,11 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 		Concept: result.Concept,
 		Body:    result.Body,
 		Author:  result.Author,
+		Tags:    mergeTags(tagsFlag, result.Tags),
+	}
+
+	if createNote {
+		return runNoteCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, opts)
 	}
 
 	// Deep capture if requested
@@ -225,6 +256,16 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	return runFastCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, opts)
+}
+
+func navigationShortcuts(cfg *config.CampaignConfig) map[string]string {
+	shortcuts := make(map[string]string)
+	for key, sc := range cfg.Shortcuts() {
+		if sc.HasPath() {
+			shortcuts[key] = sc.Path
+		}
+	}
+	return shortcuts
 }
 
 func validateIntentAddArgs(cmd *cobra.Command, args []string) error {
@@ -366,6 +407,26 @@ func runDeepCapture(ctx context.Context, svc *intent.IntentService, intentsDir s
 	}
 
 	return finalizeCreatedIntent(ctx, result, intentsDir, cfg, campaignRoot, noCommit)
+}
+
+// runDeepNoteCapture opens the note template in $EDITOR and saves it to notes/.
+func runDeepNoteCapture(ctx context.Context, svc *intent.IntentService, intentsDir string, cfg *config.CampaignConfig, campaignRoot string, noCommit bool, opts intent.CreateOptions) error {
+	editorFn := func(ctx context.Context, path string) error {
+		return editor.Edit(ctx, path)
+	}
+	opts.Category = intent.CategoryNote
+	opts.Type = ""
+	opts.Concept = ""
+
+	result, err := svc.CreateWithEditor(ctx, opts, editorFn)
+	if err != nil {
+		if errors.Is(err, camperrors.ErrCancelled) {
+			return intent.ErrCancelled
+		}
+		return camperrors.Wrap(err, "failed to create note")
+	}
+
+	return finalizeCreatedNote(ctx, result, intentsDir, cfg, campaignRoot, noCommit)
 }
 
 func finalizeCreatedIntent(ctx context.Context, result *intent.Intent, intentsDir string, cfg *config.CampaignConfig, campaignRoot string, noCommit bool) error {

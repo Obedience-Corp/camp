@@ -2,7 +2,6 @@ package scaffold
 
 import (
 	"context"
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -278,9 +277,12 @@ func computeScaffoldChanges(ctx context.Context, absDir string, opts InitOptions
 	return nil
 }
 
-// computeConceptChanges compares existing campaign concepts with defaults.
-// Default concepts with stale paths are updated. Missing defaults are added.
-// User-defined concepts (names not in defaults) are preserved.
+const conceptWorkflowParent = "workflow"
+
+// computeConceptChanges migrates existing campaign concepts toward the nested
+// shape: flat workflow-family concepts move under a single workflow parent,
+// missing default top-level concepts and workflow children are added, and
+// custom/unknown concepts are preserved. It is idempotent.
 func computeConceptChanges(ctx context.Context, absDir string, plan *RepairPlan) error {
 	existing, err := config.LoadCampaignConfig(ctx, absDir)
 	if err != nil || existing == nil {
@@ -291,58 +293,157 @@ func computeConceptChanges(ctx context.Context, absDir string, plan *RepairPlan)
 		return nil // No concepts; init will use defaults.
 	}
 
-	defaults := config.DefaultConcepts()
-	defaultsByName := make(map[string]config.ConceptEntry, len(defaults))
-	for _, d := range defaults {
-		defaultsByName[d.Name] = d
+	before := existing.ConceptList
+	hadParent := conceptIndexByName(before, conceptWorkflowParent) != -1
+
+	merged := migrateConceptsToNested(before)
+	if !hadParent {
+		plan.Changes = append(plan.Changes, RepairChange{
+			Type:        RepairAdd,
+			Category:    "concept",
+			Key:         conceptWorkflowParent,
+			Description: "Workflows",
+		})
+	} else if !conceptListsEqual(before, merged) {
+		plan.Changes = append(plan.Changes, RepairChange{
+			Type:        RepairModify,
+			Category:    "concept",
+			Key:         conceptWorkflowParent,
+			Description: "nest workflow collections under the workflow parent",
+		})
 	}
 
-	existingByName := make(map[string]config.ConceptEntry, len(existing.ConceptList))
-	for _, e := range existing.ConceptList {
-		existingByName[e.Name] = e
-	}
-
-	var merged []config.ConceptEntry
-
-	// Update existing concepts that match defaults by name.
-	for _, e := range existing.ConceptList {
-		if def, ok := defaultsByName[e.Name]; ok {
-			if e.Path != def.Path {
-				plan.Changes = append(plan.Changes, RepairChange{
-					Type:        RepairModify,
-					Category:    "concept",
-					Key:         e.Name,
-					Description: fmt.Sprintf("update path: %s → %s", e.Path, def.Path),
-				})
-			}
-			merged = append(merged, def)
-		} else {
-			// User-defined concept — preserve it.
-			plan.Changes = append(plan.Changes, RepairChange{
-				Type:        RepairPreserve,
-				Category:    "concept",
-				Key:         e.Name,
-				Description: e.Description,
-			})
-			merged = append(merged, e)
-		}
-	}
-
-	// Add missing default concepts.
-	for _, def := range defaults {
-		if _, exists := existingByName[def.Name]; !exists {
-			plan.Changes = append(plan.Changes, RepairChange{
-				Type:        RepairAdd,
-				Category:    "concept",
-				Key:         def.Name,
-				Description: def.Description,
-			})
-			merged = append(merged, def)
-		}
-	}
+	merged = ensureDefaultConcepts(merged, &plan.Changes)
 
 	plan.MergedConcepts = merged
 	return nil
+}
+
+// workflowFamilyNames returns the concept names that are workflow collections,
+// derived from the default workflow parent's children (plus the festival alias)
+// so there is no second hardcoded list.
+func workflowFamilyNames() map[string]bool {
+	names := map[string]bool{"festival": true}
+	for _, c := range config.DefaultConcepts() {
+		if strings.EqualFold(c.Name, conceptWorkflowParent) {
+			for _, ch := range c.Children {
+				names[strings.ToLower(ch.Name)] = true
+			}
+		}
+	}
+	return names
+}
+
+func isWorkflowFamily(c config.ConceptEntry, family map[string]bool) bool {
+	return family[strings.ToLower(c.Name)] || strings.HasPrefix(c.Path, "workflow/")
+}
+
+func conceptIndexByName(concepts []config.ConceptEntry, name string) int {
+	for i := range concepts {
+		if strings.EqualFold(concepts[i].Name, name) {
+			return i
+		}
+	}
+	return -1
+}
+
+// migrateConceptsToNested moves flat workflow-family concepts under a single
+// workflow parent, drops the default worktrees entry, and is idempotent.
+func migrateConceptsToNested(concepts []config.ConceptEntry) []config.ConceptEntry {
+	family := workflowFamilyNames()
+
+	var toNest []config.ConceptEntry
+	hasParent := false
+	for _, c := range concepts {
+		if strings.EqualFold(c.Name, conceptWorkflowParent) {
+			hasParent = true
+			continue
+		}
+		if isWorkflowFamily(c, family) {
+			toNest = append(toNest, c)
+		}
+	}
+	if len(toNest) == 0 && hasParent {
+		return concepts
+	}
+
+	nest := func(parent config.ConceptEntry) config.ConceptEntry {
+		seen := make(map[string]bool)
+		for _, ch := range parent.Children {
+			seen[strings.ToLower(ch.Name)] = true
+		}
+		for _, c := range toNest {
+			if seen[strings.ToLower(c.Name)] {
+				continue
+			}
+			parent.Children = append(parent.Children, c)
+			seen[strings.ToLower(c.Name)] = true
+		}
+		return parent
+	}
+
+	var result []config.ConceptEntry
+	parentEmitted := false
+	for _, c := range concepts {
+		switch {
+		case strings.EqualFold(c.Name, conceptWorkflowParent):
+			result = append(result, nest(c))
+			parentEmitted = true
+		case strings.EqualFold(c.Name, "worktrees") && c.Path == "projects/worktrees/":
+			// Drop the default worktrees entry (a projects detail, not a picker concept).
+		case isWorkflowFamily(c, family):
+			// Moved under the workflow parent.
+		default:
+			result = append(result, c)
+		}
+	}
+	if !parentEmitted {
+		result = append(result, nest(config.ConceptEntry{Name: conceptWorkflowParent, Path: "workflow/", Description: "Workflows"}))
+	}
+	return result
+}
+
+// ensureDefaultConcepts adds any missing default top-level concept and any
+// missing default workflow child, preserving existing and custom entries.
+func ensureDefaultConcepts(concepts []config.ConceptEntry, changes *[]RepairChange) []config.ConceptEntry {
+	for _, def := range config.DefaultConcepts() {
+		idx := conceptIndexByName(concepts, def.Name)
+		if idx == -1 {
+			concepts = append(concepts, def)
+			*changes = append(*changes, RepairChange{Type: RepairAdd, Category: "concept", Key: def.Name, Description: def.Description})
+			continue
+		}
+		if !strings.EqualFold(def.Name, conceptWorkflowParent) {
+			continue
+		}
+		parent := concepts[idx]
+		seen := make(map[string]bool)
+		for _, ch := range parent.Children {
+			seen[strings.ToLower(ch.Name)] = true
+		}
+		for _, defChild := range def.Children {
+			if seen[strings.ToLower(defChild.Name)] {
+				continue
+			}
+			parent.Children = append(parent.Children, defChild)
+			seen[strings.ToLower(defChild.Name)] = true
+			*changes = append(*changes, RepairChange{Type: RepairAdd, Category: "concept", Key: "workflow/" + defChild.Name, Description: defChild.Description})
+		}
+		concepts[idx] = parent
+	}
+	return concepts
+}
+
+func conceptListsEqual(a, b []config.ConceptEntry) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].Name != b[i].Name || a[i].Path != b[i].Path || len(a[i].Children) != len(b[i].Children) {
+			return false
+		}
+	}
+	return true
 }
 
 // computeJumpsChanges compares existing jumps.yaml shortcuts with defaults,

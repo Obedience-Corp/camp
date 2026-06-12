@@ -11,6 +11,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	intentcore "github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/paths"
+	"github.com/spf13/cobra"
 )
 
 // setupAddFlagsTest creates a campaign root and returns the service, path resolver,
@@ -72,6 +73,94 @@ func TestIntentAdd_WithBody(t *testing.T) {
 	}
 	if !strings.Contains(string(content), "This is the body content") {
 		t.Fatalf("body not found in content: %s", content)
+	}
+}
+
+func TestIntentAdd_NoteFlagRegistered(t *testing.T) {
+	if intentAddCmd.Flags().Lookup("note") == nil {
+		t.Fatal("intent add should expose --note so c shortcuts can route note capture through add")
+	}
+}
+
+func newIntentAddTestCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:  "add [title]",
+		RunE: runIntentAdd,
+	}
+	flags := cmd.Flags()
+	flags.StringP("type", "t", string(intentcore.TypeIdea), "")
+	flags.BoolP("edit", "e", false, "")
+	flags.BoolP("full", "f", false, "")
+	flags.StringP("campaign", "c", "", "")
+	flags.Lookup("campaign").NoOptDefVal = noOptCampaign
+	flags.Bool("no-commit", false, "")
+	flags.String("body", "", "")
+	flags.String("body-file", "", "")
+	flags.String("concept", "", "")
+	flags.Bool("note", false, "")
+	flags.String("author", "", "")
+	flags.StringArray("tag", nil, "")
+	return cmd
+}
+
+func TestIntentAdd_NoteFlagRoutesThroughAddCommand(t *testing.T) {
+	_, intentsDir, _, root := setupAddFlagsTest(t)
+
+	originalWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("Chdir(%s): %v", root, err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(originalWD)
+	})
+
+	cmd := newIntentAddTestCmd()
+	cmd.SetContext(context.Background())
+	if err := cmd.Flags().Set("note", "true"); err != nil {
+		t.Fatalf("Set(note): %v", err)
+	}
+	if err := cmd.Flags().Set("body", "This note has details"); err != nil {
+		t.Fatalf("Set(body): %v", err)
+	}
+	if err := cmd.Flags().Set("no-commit", "true"); err != nil {
+		t.Fatalf("Set(no-commit): %v", err)
+	}
+	if err := runIntentAdd(cmd, []string{"Test note with body"}); err != nil {
+		t.Fatalf("runIntentAdd(--note): %v", err)
+	}
+
+	notesDir := filepath.Join(intentsDir, "notes")
+	entries, err := os.ReadDir(notesDir)
+	if err != nil {
+		t.Fatalf("ReadDir(notes): %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("notes entries = %d, want 1", len(entries))
+	}
+
+	inboxEntries, err := os.ReadDir(filepath.Join(intentsDir, "inbox"))
+	if err != nil {
+		t.Fatalf("ReadDir(inbox): %v", err)
+	}
+	if len(inboxEntries) != 0 {
+		t.Fatalf("inbox entries = %d, want 0 for note route", len(inboxEntries))
+	}
+
+	content, err := os.ReadFile(filepath.Join(notesDir, entries[0].Name()))
+	if err != nil {
+		t.Fatalf("ReadFile(note): %v", err)
+	}
+	raw := string(content)
+	for _, want := range []string{"status: notes", "This note has details"} {
+		if !strings.Contains(raw, want) {
+			t.Fatalf("note content missing %q:\n%s", want, raw)
+		}
+	}
+	if strings.Contains(raw, "type:") || strings.Contains(raw, "concept:") {
+		t.Fatalf("note should not include lifecycle type/concept:\n%s", raw)
 	}
 }
 

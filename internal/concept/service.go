@@ -41,11 +41,11 @@ func (s *DefaultService) List(ctx context.Context) ([]Concept, error) {
 
 	var result []Concept
 	for _, c := range s.concepts {
-		if c.Path == "" {
+		if c.Path == "" && len(c.Children) == 0 {
 			continue
 		}
 
-		hasItems := s.hasItemsWithIgnore(c.Path, c.Ignore, c.Depth)
+		hasItems := len(c.Children) > 0 || s.hasItemsWithIgnore(c.Path, c.Ignore, c.Depth)
 
 		result = append(result, Concept{
 			Name:        c.Name,
@@ -54,6 +54,7 @@ func (s *DefaultService) List(ctx context.Context) ([]Concept, error) {
 			HasItems:    hasItems,
 			MaxDepth:    c.Depth,
 			Ignore:      c.Ignore,
+			Children:    childConcepts(c.Children),
 		})
 	}
 
@@ -70,6 +71,30 @@ func (s *DefaultService) ListItems(ctx context.Context, conceptName, subpath str
 	concept, err := s.Get(ctx, conceptName)
 	if err != nil {
 		return nil, err
+	}
+
+	return s.conceptItems(concept, subpath)
+}
+
+// conceptItems lists the submenu for a concept at the given subpath. A drill
+// subpath whose first segment names a configured child concept continues
+// under the child's own path and depth/ignore rules, not the parent's path.
+func (s *DefaultService) conceptItems(concept *Concept, subpath string) ([]Item, error) {
+	if len(concept.Children) > 0 {
+		// A parent concept's submenu is its configured children merged with
+		// ad-hoc subdirectories under its own path.
+		if subpath == "" {
+			var disk []Item
+			if concept.Path != "" {
+				disk, _ = s.listDirItems(filepath.Join(s.campaignRoot, concept.Path), concept.Path)
+			}
+			return parentChildItems(concept, disk, func(rel string) int {
+				return s.countChildren(filepath.Join(s.campaignRoot, rel))
+			}), nil
+		}
+		if child, rest, ok := childForSubpath(concept, subpath); ok {
+			return s.conceptItems(child, rest)
+		}
 	}
 
 	if concept.Path == "" {
@@ -154,9 +179,10 @@ func (s *DefaultService) Get(ctx context.Context, name string) (*Concept, error)
 				Name:        c.Name,
 				Path:        c.Path,
 				Description: c.Description,
-				HasItems:    s.hasItemsWithIgnore(c.Path, c.Ignore, c.Depth),
+				HasItems:    len(c.Children) > 0 || s.hasItemsWithIgnore(c.Path, c.Ignore, c.Depth),
 				MaxDepth:    c.Depth,
 				Ignore:      c.Ignore,
+				Children:    childConcepts(c.Children),
 			}, nil
 		}
 	}
@@ -391,11 +417,11 @@ func (s *FSService) List(ctx context.Context) ([]Concept, error) {
 
 	var result []Concept
 	for _, c := range s.concepts {
-		if c.Path == "" {
+		if c.Path == "" && len(c.Children) == 0 {
 			continue
 		}
 
-		hasItems := s.hasItemsWithIgnore(c.Path, c.Ignore, c.Depth)
+		hasItems := len(c.Children) > 0 || s.hasItemsWithIgnore(c.Path, c.Ignore, c.Depth)
 
 		result = append(result, Concept{
 			Name:        c.Name,
@@ -404,6 +430,7 @@ func (s *FSService) List(ctx context.Context) ([]Concept, error) {
 			HasItems:    hasItems,
 			MaxDepth:    c.Depth,
 			Ignore:      c.Ignore,
+			Children:    childConcepts(c.Children),
 		})
 	}
 
@@ -419,6 +446,30 @@ func (s *FSService) ListItems(ctx context.Context, conceptName, subpath string) 
 	concept, err := s.Get(ctx, conceptName)
 	if err != nil {
 		return nil, err
+	}
+
+	return s.conceptItems(concept, subpath)
+}
+
+// conceptItems lists the submenu for a concept at the given subpath. A drill
+// subpath whose first segment names a configured child concept continues
+// under the child's own path and depth/ignore rules, not the parent's path.
+func (s *FSService) conceptItems(concept *Concept, subpath string) ([]Item, error) {
+	if len(concept.Children) > 0 {
+		// A parent concept's submenu is its configured children merged with
+		// ad-hoc subdirectories under its own path.
+		if subpath == "" {
+			var disk []Item
+			if concept.Path != "" {
+				disk, _ = s.listDirItemsFS(concept.Path)
+			}
+			return parentChildItems(concept, disk, func(rel string) int {
+				return s.countChildrenFS(rel)
+			}), nil
+		}
+		if child, rest, ok := childForSubpath(concept, subpath); ok {
+			return s.conceptItems(child, rest)
+		}
 	}
 
 	if concept.Path == "" {
@@ -495,9 +546,10 @@ func (s *FSService) Get(ctx context.Context, name string) (*Concept, error) {
 				Name:        c.Name,
 				Path:        c.Path,
 				Description: c.Description,
-				HasItems:    s.hasItemsWithIgnore(c.Path, c.Ignore, c.Depth),
+				HasItems:    len(c.Children) > 0 || s.hasItemsWithIgnore(c.Path, c.Ignore, c.Depth),
 				MaxDepth:    c.Depth,
 				Ignore:      c.Ignore,
+				Children:    childConcepts(c.Children),
 			}, nil
 		}
 	}

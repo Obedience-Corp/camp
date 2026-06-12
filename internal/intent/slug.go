@@ -15,7 +15,9 @@ var (
 	multipleHyphens = regexp.MustCompile(`-+`)
 )
 
-// GenerateSlug creates a URL-safe slug from a title.
+// SlugFromTitle creates a URL-safe slug from a title. It is the single slug
+// generator shared by create, merge, and rename so they all produce identical
+// slugs.
 //
 // Algorithm:
 //  1. Convert to lowercase
@@ -25,7 +27,7 @@ var (
 //  5. Trim leading/trailing hyphens
 //  6. Limit to 5 words maximum
 //  7. Limit to 50 characters maximum
-func GenerateSlug(title string) string {
+func SlugFromTitle(title string) string {
 	// 1. Lowercase
 	slug := strings.ToLower(title)
 
@@ -68,7 +70,7 @@ func GenerateSlug(title string) string {
 // Example: add-dark-mode-toggle-20260119-153412
 func GenerateID(title string, timestamp time.Time) string {
 	suffix := timestamp.Format("20060102-150405")
-	slug := GenerateSlug(title)
+	slug := SlugFromTitle(title)
 	if slug == "" {
 		return suffix
 	}

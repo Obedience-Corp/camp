@@ -47,7 +47,35 @@ const (
 
 	// StatusSomeday indicates the intent is deferred — maybe later, low priority.
 	StatusSomeday Status = "dungeon/someday"
+
+	// Note statuses (under notes/ directory)
+
+	// StatusNote is the flat note store. Notes are a separate category that sits
+	// outside the inbox/ready/active intent lifecycle.
+	StatusNote Status = "notes"
+
+	// StatusNoteArchived is the archived-note bucket: notes kept but hidden.
+	StatusNoteArchived Status = "notes/archived"
 )
+
+// Category distinguishes the two kinds of captured item: action-oriented
+// intents that flow through the inbox/ready/active lifecycle, and freeform
+// notes that live in a flat notes/ store outside that lifecycle. The directory
+// a file lives in is the source of truth for its category.
+type Category string
+
+const (
+	// CategoryIntent is the default category: an actionable intent.
+	CategoryIntent Category = "intent"
+
+	// CategoryNote is a freeform note, stored under notes/.
+	CategoryNote Category = "note"
+)
+
+// String returns the string representation of Category.
+func (c Category) String() string {
+	return string(c)
+}
 
 // String returns the string representation of Status.
 func (s Status) String() string {
@@ -76,6 +104,27 @@ func ActiveStatuses() []Status {
 // DungeonStatuses returns only the dungeon statuses.
 func DungeonStatuses() []Status {
 	return []Status{StatusDone, StatusKilled, StatusArchived, StatusSomeday}
+}
+
+// NoteStatuses returns the note-category directories (flat active + archived).
+// These are intentionally excluded from AllStatuses so intent queries never
+// scan notes.
+func NoteStatuses() []Status {
+	return []Status{StatusNote, StatusNoteArchived}
+}
+
+// IsNote returns true if the status belongs to the note category.
+func (s Status) IsNote() bool {
+	return s == StatusNote || strings.HasPrefix(string(s), string(StatusNote)+"/")
+}
+
+// Category returns the category implied by the status. The note directories map
+// to CategoryNote; everything else is an intent.
+func (s Status) Category() Category {
+	if s.IsNote() {
+		return CategoryNote
+	}
+	return CategoryIntent
 }
 
 // Type categorizes the nature of work described by an intent.

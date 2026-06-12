@@ -12,16 +12,32 @@ import (
 // This replaces tea.QuitMsg so the explorer stays alive.
 type addTUIFinishedMsg struct{}
 
-// startAddTUI launches the full IntentAddModel within the explorer.
+// startAddTUI launches the full IntentAddModel within the explorer. From the
+// notes group/view it launches note capture (title/body/tags, no type/concept).
 func (m *Model) startAddTUI() {
+	noteMode := m.shouldCreateNoteFromCurrentPosition()
 	addModel := tui.NewIntentAddModel(m.ctx, m.conceptSvc, tui.AddOptions{
-		FullMode:     true,
-		Author:       m.author,
-		CampaignRoot: m.campaignRoot,
-		Shortcuts:    m.shortcuts,
+		FullMode:      !noteMode,
+		NoteMode:      noteMode,
+		Author:        m.author,
+		CampaignRoot:  m.campaignRoot,
+		Shortcuts:     m.shortcuts,
+		AvailableTags: m.availableTags,
 	})
 	m.addModel = &addModel
+	m.addNoteMode = noteMode
 	m.focus = focusAddTUI
+}
+
+func (m *Model) shouldCreateNoteFromCurrentPosition() bool {
+	if m.notesMode {
+		return true
+	}
+	if m.cursorGroup < 0 || m.cursorGroup >= len(m.groups) {
+		return false
+	}
+	group := m.groups[m.cursorGroup]
+	return group.Status.IsNote()
 }
 
 // updateAddTUI forwards messages to the embedded add model and checks completion.
@@ -60,12 +76,14 @@ func (m *Model) finishAddTUI() (tea.Model, tea.Cmd) {
 	}
 
 	m.addModel = nil
+	m.addNoteMode = false
 	m.focus = focusList
 
 	return m, m.loadIntents()
 }
 
-// createIntentFromAddResult creates an intent and auto-commits it.
+// createIntentFromAddResult creates an intent (or a note, in add note mode) and
+// auto-commits it.
 func (m *Model) createIntentFromAddResult(result *tui.AddResult) {
 	opts := intent.CreateOptions{
 		Title:   result.Title,
@@ -73,19 +91,26 @@ func (m *Model) createIntentFromAddResult(result *tui.AddResult) {
 		Concept: result.Concept,
 		Body:    result.Body,
 		Author:  result.Author,
+		Tags:    result.Tags,
 	}
 
-	createdIntent, err := m.service.CreateDirect(m.ctx, opts)
+	noun := "Intent"
+	create := m.service.CreateDirect
+	if m.addNoteMode {
+		noun = "Note"
+		create = m.service.CreateNote
+	}
+	created, err := create(m.ctx, opts)
 	if err != nil {
-		m.statusMessage = "Error creating intent: " + err.Error()
+		m.statusMessage = "Error creating " + noun + ": " + err.Error()
 		return
 	}
 
 	if err := m.appendAuditEvent(audit.Event{
 		Type:  audit.EventCreate,
-		ID:    createdIntent.ID,
-		Title: createdIntent.Title,
-		To:    string(createdIntent.Status),
+		ID:    created.ID,
+		Title: created.Title,
+		To:    string(created.Status),
 	}); err != nil {
 		m.statusMessage = "Error writing audit event: " + err.Error()
 		return
@@ -93,10 +118,10 @@ func (m *Model) createIntentFromAddResult(result *tui.AddResult) {
 
 	// Auto-commit
 	if m.campaignRoot != "" && m.campaignID != "" {
-		m.autoCommitIntent(commit.IntentCreate, result.Title, "", createdIntent.Path)
+		m.autoCommitIntent(commit.IntentCreate, result.Title, "", created.Path)
 	}
 
-	m.statusMessage = "Intent created: " + result.Title
+	m.statusMessage = noun + " created: " + result.Title
 }
 
 // filterQuitCmd wraps a tea.Cmd to intercept tea.QuitMsg and convert it

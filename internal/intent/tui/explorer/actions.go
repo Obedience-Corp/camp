@@ -15,12 +15,15 @@ import (
 	"github.com/Obedience-Corp/camp/internal/intent/tui"
 )
 
-// moveStatusOptions are the available statuses for moving intents.
-// Dungeon statuses are visually indented to show hierarchy.
-var moveStatusOptions = []struct {
+type moveStatusOption struct {
 	name   string
 	status intent.Status
-}{
+}
+
+// intentMoveStatusOptions are the available statuses for moving lifecycle
+// intents. Dungeon statuses are visually indented to show hierarchy.
+var intentMoveStatusOptions = []moveStatusOption{
+	{"Notes", intent.StatusNote},
 	{"Inbox", intent.StatusInbox},
 	{"Ready", intent.StatusReady},
 	{"Active", intent.StatusActive},
@@ -30,8 +33,29 @@ var moveStatusOptions = []struct {
 	{"  Someday", intent.StatusSomeday},
 }
 
+var noteMoveStatusOptions = []moveStatusOption{
+	{"Inbox", intent.StatusInbox},
+	{"Ready", intent.StatusReady},
+	{"Active", intent.StatusActive},
+}
+
+func (m *Model) currentMoveStatusOptions() []moveStatusOption {
+	if m.intentToMove != nil && m.intentToMove.Status.IsNote() {
+		return noteMoveStatusOptions
+	}
+	return intentMoveStatusOptions
+}
+
 // updateMove handles key input during move action.
 func (m *Model) updateMove(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	options := m.currentMoveStatusOptions()
+	if m.moveStatusIdx >= len(options) {
+		m.moveStatusIdx = len(options) - 1
+	}
+	if m.moveStatusIdx < 0 {
+		m.moveStatusIdx = 0
+	}
+
 	switch msg.String() {
 	case "esc":
 		// Cancel move
@@ -39,7 +63,7 @@ func (m *Model) updateMove(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.intentToMove = nil
 		return m, nil
 	case "j", "down":
-		if m.moveStatusIdx < len(moveStatusOptions)-1 {
+		if m.moveStatusIdx < len(options)-1 {
 			m.moveStatusIdx++
 		}
 	case "k", "up":
@@ -48,14 +72,23 @@ func (m *Model) updateMove(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "enter":
 		// Execute move
-		if m.intentToMove != nil {
-			newStatus := moveStatusOptions[m.moveStatusIdx].status
+		if m.intentToMove != nil && len(options) > 0 {
+			newStatus := options[m.moveStatusIdx].status
 			if m.intentToMove.Status == newStatus {
 				// Already at this status
 				m.statusMessage = "Already at " + newStatus.String()
 				m.focus = focusList
 				m.intentToMove = nil
 				return m, nil
+			}
+			if m.intentToMove.Status.IsNote() {
+				m.startConvertToStatus(m.intentToMove, newStatus)
+				m.intentToMove = nil
+				return m, nil
+			}
+			if newStatus == intent.StatusNote {
+				m.focus = focusList
+				return m, m.moveIntentToNote(m.intentToMove)
 			}
 			// Require reason for dungeon moves
 			if newStatus.InDungeon() {
@@ -106,6 +139,31 @@ func (m *Model) moveIntent(i *intent.Intent, newStatus intent.Status) tea.Cmd {
 			err:       err,
 			intentID:  i.ID,
 			newStatus: newStatus,
+		}
+	}
+}
+
+func (m *Model) moveIntentToNote(i *intent.Intent) tea.Cmd {
+	return func() tea.Msg {
+		sourcePath := i.Path
+		prevStatus := i.Status
+		movedNote, err := m.service.MoveIntentToNote(m.ctx, i.ID)
+		if err == nil {
+			err = m.appendAuditEvent(audit.Event{
+				Type:  audit.EventMove,
+				ID:    i.ID,
+				Title: i.Title,
+				From:  string(prevStatus),
+				To:    string(intent.StatusNote),
+			})
+		}
+		if err == nil {
+			m.autoCommitIntent(commit.IntentMove, i.Title, "Moved to notes", sourcePath, movedNote.Path)
+		}
+		return moveFinishedMsg{
+			err:       err,
+			intentID:  i.ID,
+			newStatus: intent.StatusNote,
 		}
 	}
 }
@@ -226,7 +284,8 @@ func (m *Model) viewMove() string {
 
 	b.WriteString("Select new status:\n")
 	dungeonLabelShown := false
-	for i, opt := range moveStatusOptions {
+	options := m.currentMoveStatusOptions()
+	for i, opt := range options {
 		// Show dungeon label before first dungeon status
 		if !dungeonLabelShown && opt.status.InDungeon() {
 			dungeonLabelShown = true

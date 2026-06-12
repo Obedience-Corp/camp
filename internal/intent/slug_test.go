@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func TestGenerateSlug(t *testing.T) {
+func TestSlugFromTitle(t *testing.T) {
 	tests := []struct {
 		name  string
 		input string
@@ -80,9 +80,9 @@ func TestGenerateSlug(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := GenerateSlug(tt.input)
+			got := SlugFromTitle(tt.input)
 			if got != tt.want {
-				t.Errorf("GenerateSlug(%q) = %q, want %q", tt.input, got, tt.want)
+				t.Errorf("SlugFromTitle(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
 	}
@@ -150,44 +150,44 @@ func TestGenerateID_DifferentTimestamps(t *testing.T) {
 	}
 }
 
-func TestGenerateSlug_LengthLimit(t *testing.T) {
+func TestSlugFromTitle_LengthLimit(t *testing.T) {
 	// Verify 50 char limit
 	longTitle := "this is a very long title that should be truncated to fifty characters"
-	slug := GenerateSlug(longTitle)
+	slug := SlugFromTitle(longTitle)
 
 	if len(slug) > 50 {
-		t.Errorf("GenerateSlug produced slug longer than 50 chars: %d", len(slug))
+		t.Errorf("SlugFromTitle produced slug longer than 50 chars: %d", len(slug))
 	}
 
 	// Shouldn't end with hyphen
 	if len(slug) > 0 && slug[len(slug)-1] == '-' {
-		t.Errorf("GenerateSlug produced slug ending with hyphen: %q", slug)
+		t.Errorf("SlugFromTitle produced slug ending with hyphen: %q", slug)
 	}
 }
 
-func TestGenerateSlug_WordLimit(t *testing.T) {
+func TestSlugFromTitle_WordLimit(t *testing.T) {
 	// Verify 5 word limit
 	manyWords := "one two three four five six seven eight nine ten"
-	slug := GenerateSlug(manyWords)
+	slug := SlugFromTitle(manyWords)
 
 	words := strings.Split(slug, "-")
 	if len(words) > 5 {
-		t.Errorf("GenerateSlug produced more than 5 words: %d, slug=%q", len(words), slug)
+		t.Errorf("SlugFromTitle produced more than 5 words: %d, slug=%q", len(words), slug)
 	}
 }
 
-func TestGenerateSlug_Idempotent(t *testing.T) {
+func TestSlugFromTitle_Idempotent(t *testing.T) {
 	// Running slug generation twice should produce same result
 	input := "Add dark mode toggle"
-	first := GenerateSlug(input)
-	second := GenerateSlug(first)
+	first := SlugFromTitle(input)
+	second := SlugFromTitle(first)
 
 	if first != second {
-		t.Errorf("GenerateSlug is not idempotent: first=%q, second=%q", first, second)
+		t.Errorf("SlugFromTitle is not idempotent: first=%q, second=%q", first, second)
 	}
 }
 
-func TestGenerateSlug_NoConsecutiveHyphens(t *testing.T) {
+func TestSlugFromTitle_NoConsecutiveHyphens(t *testing.T) {
 	inputs := []string{
 		"Fix   bug",
 		"Fix - - bug",
@@ -197,14 +197,14 @@ func TestGenerateSlug_NoConsecutiveHyphens(t *testing.T) {
 	}
 
 	for _, input := range inputs {
-		slug := GenerateSlug(input)
+		slug := SlugFromTitle(input)
 		if strings.Contains(slug, "--") {
-			t.Errorf("GenerateSlug(%q) produced consecutive hyphens: %q", input, slug)
+			t.Errorf("SlugFromTitle(%q) produced consecutive hyphens: %q", input, slug)
 		}
 	}
 }
 
-func TestGenerateSlug_StartsAndEndsWithAlphanumeric(t *testing.T) {
+func TestSlugFromTitle_StartsAndEndsWithAlphanumeric(t *testing.T) {
 	inputs := []string{
 		"---Fix bug---",
 		"   Fix bug   ",
@@ -214,15 +214,15 @@ func TestGenerateSlug_StartsAndEndsWithAlphanumeric(t *testing.T) {
 	}
 
 	for _, input := range inputs {
-		slug := GenerateSlug(input)
+		slug := SlugFromTitle(input)
 		if slug == "" {
 			continue // Empty slugs are allowed
 		}
 		if slug[0] == '-' {
-			t.Errorf("GenerateSlug(%q) starts with hyphen: %q", input, slug)
+			t.Errorf("SlugFromTitle(%q) starts with hyphen: %q", input, slug)
 		}
 		if slug[len(slug)-1] == '-' {
-			t.Errorf("GenerateSlug(%q) ends with hyphen: %q", input, slug)
+			t.Errorf("SlugFromTitle(%q) ends with hyphen: %q", input, slug)
 		}
 	}
 }

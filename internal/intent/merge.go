@@ -37,7 +37,7 @@ func MergeIntents(sources []*Intent, opts MergeOptions) (*Intent, error) {
 	now := time.Now()
 
 	merged := &Intent{
-		ID:           generateMergedID(opts.Title, now),
+		ID:           GenerateID(opts.Title, now),
 		Title:        opts.Title,
 		Status:       StatusInbox,
 		CreatedAt:    now,
@@ -58,48 +58,6 @@ func MergeIntents(sources []*Intent, opts MergeOptions) (*Intent, error) {
 	merged.Content = buildMergedContent(sources, now)
 
 	return merged, nil
-}
-
-// generateMergedID creates an ID for the gathered intent.
-func generateMergedID(title string, t time.Time) string {
-	slug := generateSlugFromTitle(title)
-	timestamp := t.Format("20060102-150405")
-	return fmt.Sprintf("%s-%s", timestamp, slug)
-}
-
-// generateSlugFromTitle creates a URL-friendly slug from a title.
-func generateSlugFromTitle(title string) string {
-	// Lowercase
-	slug := strings.ToLower(title)
-
-	// Replace spaces with hyphens
-	slug = strings.ReplaceAll(slug, " ", "-")
-
-	// Remove non-alphanumeric chars (except hyphens)
-	var b strings.Builder
-	for _, r := range slug {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
-			b.WriteRune(r)
-		}
-	}
-	slug = b.String()
-
-	// Collapse multiple hyphens
-	for strings.Contains(slug, "--") {
-		slug = strings.ReplaceAll(slug, "--", "-")
-	}
-
-	// Trim leading/trailing hyphens
-	slug = strings.Trim(slug, "-")
-
-	// Limit length
-	if len(slug) > 50 {
-		slug = slug[:50]
-		// Don't end with hyphen
-		slug = strings.TrimRight(slug, "-")
-	}
-
-	return slug
 }
 
 // buildGatheredSources creates GatheredSource entries from source intents.

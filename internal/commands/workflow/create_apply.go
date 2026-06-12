@@ -124,37 +124,80 @@ func upsertShortcut(ctx context.Context, campaignRoot string, cfg *config.Campai
 	return nil
 }
 
+// workflowParentName is the concept that groups all workflow collections.
+const workflowParentName = "workflow"
+
+// flatWorkflowConceptIndex finds a legacy top-level workflow concept of the
+// given name, or -1. These predate the nested shape and survive until init
+// --repair, so create folds one in rather than registering a duplicate child.
+func flatWorkflowConceptIndex(concepts []config.ConceptEntry, name string) int {
+	for i := range concepts {
+		if strings.EqualFold(concepts[i].Name, workflowParentName) {
+			continue
+		}
+		if strings.EqualFold(concepts[i].Name, name) && strings.HasPrefix(concepts[i].Path, "workflow/") {
+			return i
+		}
+	}
+	return -1
+}
+
 func upsertConcept(ctx context.Context, campaignRoot string, cfg *config.CampaignConfig, name, relPath, title string, replace bool) error {
 	concepts := cfg.ConceptList
 	if len(concepts) == 0 {
 		concepts = cfg.Concepts()
 	}
 
-	for i, concept := range concepts {
-		if strings.EqualFold(concept.Name, name) {
-			if concept.Path == relPath {
-				cfg.ConceptList = concepts
-				return nil
-			}
-			if !replace {
-				return camperrors.NewValidation("type",
-					"concept "+name+" already points to "+concept.Path+"; use --replace to update it", nil)
-			}
-			concepts[i] = config.ConceptEntry{
-				Name:        name,
-				Path:        relPath,
-				Description: title + " workflow",
-			}
-			cfg.ConceptList = concepts
-			return config.SaveCampaignConfig(ctx, campaignRoot, cfg)
-		}
+	// Drop a legacy flat top-level workflow concept with this name so it does not
+	// linger beside the nested child registered below.
+	migrated := false
+	if idx := flatWorkflowConceptIndex(concepts, name); idx != -1 {
+		concepts = append(concepts[:idx], concepts[idx+1:]...)
+		migrated = true
 	}
 
-	concepts = append(concepts, config.ConceptEntry{
-		Name:        name,
-		Path:        relPath,
-		Description: title + " workflow",
-	})
+	// Find the workflow parent, creating it if absent.
+	parentIdx := -1
+	for i := range concepts {
+		if strings.EqualFold(concepts[i].Name, workflowParentName) {
+			parentIdx = i
+			break
+		}
+	}
+	if parentIdx == -1 {
+		concepts = append(concepts, config.ConceptEntry{
+			Name:        workflowParentName,
+			Path:        "workflow/",
+			Description: "Workflows",
+		})
+		parentIdx = len(concepts) - 1
+	}
+
+	child := config.ConceptEntry{Name: name, Path: relPath, Description: title + " workflow"}
+	children := concepts[parentIdx].Children
+	for j := range children {
+		if !strings.EqualFold(children[j].Name, name) {
+			continue
+		}
+		if children[j].Path == relPath {
+			concepts[parentIdx].Children = children
+			cfg.ConceptList = concepts
+			if migrated {
+				return config.SaveCampaignConfig(ctx, campaignRoot, cfg)
+			}
+			return nil
+		}
+		if !replace {
+			return camperrors.NewValidation("type",
+				"concept "+name+" already points to "+children[j].Path+"; use --replace to update it", nil)
+		}
+		children[j] = child
+		concepts[parentIdx].Children = children
+		cfg.ConceptList = concepts
+		return config.SaveCampaignConfig(ctx, campaignRoot, cfg)
+	}
+
+	concepts[parentIdx].Children = append(children, child)
 	cfg.ConceptList = concepts
 	return config.SaveCampaignConfig(ctx, campaignRoot, cfg)
 }

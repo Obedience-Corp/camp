@@ -27,11 +27,13 @@ const (
 
 // AddOptions configures the IntentAddModel behavior.
 type AddOptions struct {
-	DefaultType  string            // Default intent type (e.g., "idea")
-	FullMode     bool              // Include body textarea step
-	Author       string            // Auto-populated author (e.g., from git config)
-	CampaignRoot string            // Campaign root for @ completion
-	Shortcuts    map[string]string // Navigation shortcuts (key → campaign-relative path, e.g., "de" → "workflow/design/")
+	DefaultType   string            // Default intent type (e.g., "idea")
+	FullMode      bool              // Include body textarea step
+	NoteMode      bool              // Note capture: collect title/body/tags, skip type/concept
+	Author        string            // Auto-populated author (e.g., from git config)
+	CampaignRoot  string            // Campaign root for @ completion
+	Shortcuts     map[string]string // Navigation shortcuts (key → campaign-relative path, e.g., "de" → "workflow/design/")
+	AvailableTags []string          // Configured tags offered by the tag overlay (ctrl+t)
 }
 
 // AddResult contains the collected intent data.
@@ -41,6 +43,7 @@ type AddResult struct {
 	Concept string
 	Body    string
 	Author  string
+	Tags    []string
 }
 
 // IntentAddModel is a BubbleTea model for creating new intents.
@@ -60,15 +63,22 @@ type IntentAddModel struct {
 	// Concept selection
 	conceptPicker ConceptPickerModel
 
-	// Body vim editor (only used in full mode)
+	// Body vim editor (used in full mode and note mode)
 	vimEditor *vim.Editor
 
 	// Configuration
 	fullMode     bool
+	noteMode     bool
 	defaultType  string
 	author       string
 	campaignRoot string
 	shortcuts    map[string]string // key → campaign-relative path
+
+	// Tag overlay (opened with ctrl+t in the body editor)
+	availableTags []string
+	tags          []string
+	tagOverlay    TagOverlay
+	tagging       bool
 
 	// Completion state
 	completion completionState
@@ -98,6 +108,9 @@ func NewIntentAddModel(ctx context.Context, conceptSvc concept.Service, opts Add
 	// Title input
 	ti := textinput.New()
 	ti.Placeholder = "What's the intent?"
+	if opts.NoteMode {
+		ti.Placeholder = "What's the note?"
+	}
 	ti.CharLimit = 100
 	ti.Width = 50
 	ti.Focus()
@@ -119,17 +132,19 @@ func NewIntentAddModel(ctx context.Context, conceptSvc concept.Service, opts Add
 	}
 
 	return IntentAddModel{
-		ctx:          ctx,
-		conceptSvc:   conceptSvc,
-		step:         addStepTitle,
-		titleInput:   ti,
-		typeIdx:      typeIdx,
-		vimEditor:    vimEd,
-		fullMode:     opts.FullMode,
-		defaultType:  opts.DefaultType,
-		author:       opts.Author,
-		campaignRoot: opts.CampaignRoot,
-		shortcuts:    opts.Shortcuts,
+		ctx:           ctx,
+		conceptSvc:    conceptSvc,
+		step:          addStepTitle,
+		titleInput:    ti,
+		typeIdx:       typeIdx,
+		vimEditor:     vimEd,
+		fullMode:      opts.FullMode,
+		noteMode:      opts.NoteMode,
+		defaultType:   opts.DefaultType,
+		author:        opts.Author,
+		campaignRoot:  opts.CampaignRoot,
+		shortcuts:     opts.Shortcuts,
+		availableTags: opts.AvailableTags,
 	}
 }
 
@@ -168,6 +183,10 @@ func (m IntentAddModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// Tag overlay (ctrl+t) is modal once opened from the body editor.
+		if m.tagging {
+			return m.updateTagOverlay(msg)
+		}
 		switch m.step {
 		case addStepTitle:
 			return m.updateTitle(msg)
@@ -228,6 +247,9 @@ func (m IntentAddModel) updateTitle(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		title := strings.TrimSpace(m.titleInput.Value())
 		if title == "" {
 			return m, nil
+		}
+		if m.noteMode {
+			return m.finishNoteTitleStep()
 		}
 		m.step = addStepType
 		m.titleInput.Blur()
@@ -344,6 +366,9 @@ func (m IntentAddModel) updateType(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+n":
 		return m.saveAndReset()
 
+	case "ctrl+t":
+		return m.openTagOverlay()
+
 	case "j", "down":
 		if m.typeIdx < len(intentTypes)-1 {
 			m.typeIdx++
@@ -376,6 +401,9 @@ func (m IntentAddModel) updateConcept(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "ctrl+n":
 		return m.saveAndReset()
+
+	case "ctrl+t":
+		return m.openTagOverlay()
 
 	case "tab":
 		// Skip concept selection
@@ -443,6 +471,11 @@ func (m IntentAddModel) updateBody(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Handle ctrl+e for external editor (always available)
 	if msg.String() == "ctrl+e" {
 		return m, m.openExternalEditor()
+	}
+
+	// Handle ctrl+t for tags from the editor step.
+	if msg.String() == "ctrl+t" {
+		return m.openTagOverlay()
 	}
 
 	// Handle ctrl+n for save-and-new (always available)
@@ -656,6 +689,17 @@ func (m IntentAddModel) openExternalEditor() tea.Cmd {
 
 // finishBodyStep completes the body step and finishes creation.
 func (m IntentAddModel) finishBodyStep() (tea.Model, tea.Cmd) {
+	if m.noteMode {
+		m.result = &AddResult{
+			Title:  strings.TrimSpace(m.titleInput.Value()),
+			Body:   strings.TrimSpace(m.vimEditor.Content()),
+			Author: m.author,
+			Tags:   m.tags,
+		}
+		m.step = addStepDone
+		return m, tea.Quit
+	}
+
 	// Get concept path (may be empty if skipped)
 	conceptPath := ""
 	if m.conceptPicker.SelectedConcept() != nil {
@@ -668,9 +712,43 @@ func (m IntentAddModel) finishBodyStep() (tea.Model, tea.Cmd) {
 		Concept: conceptPath,
 		Body:    strings.TrimSpace(m.vimEditor.Content()),
 		Author:  m.author,
+		Tags:    m.tags,
 	}
 	m.step = addStepDone
 	return m, tea.Quit
+}
+
+// openTagOverlay opens the modal tag overlay seeded with the configured tags and
+// the item's current tags. It is reachable from the type, concept, and body
+// steps so the fast capture flow can always attach a tag without a flag.
+func (m IntentAddModel) openTagOverlay() (tea.Model, tea.Cmd) {
+	m.tagOverlay = NewTagOverlay(m.availableTags, m.tags)
+	m.tagging = true
+	return m, nil
+}
+
+// updateTagOverlay routes keys to the tag overlay; on confirm it stores the
+// selected tags on the in-progress item.
+func (m IntentAddModel) updateTagOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var done bool
+	m.tagOverlay, done = m.tagOverlay.Update(msg)
+	if done {
+		if !m.tagOverlay.Cancelled() {
+			m.tags = m.tagOverlay.Result()
+		}
+		m.tagging = false
+	}
+	return m, nil
+}
+
+// finishNoteTitleStep completes the note title step and moves to the body
+// editor. Notes skip type and concept, but still support long-form body capture.
+func (m IntentAddModel) finishNoteTitleStep() (tea.Model, tea.Cmd) {
+	m.step = addStepBody
+	w, h := m.calculateBodySize()
+	m.vimEditor.SetSize(w, h)
+	m.vimEditor.State().EnterInsert()
+	return m, nil
 }
 
 // collectCurrentResult builds an AddResult from the model's current state.
@@ -678,6 +756,14 @@ func (m IntentAddModel) collectCurrentResult() *AddResult {
 	title := strings.TrimSpace(m.titleInput.Value())
 	if title == "" {
 		return nil
+	}
+
+	if m.noteMode {
+		body := ""
+		if m.step >= addStepBody {
+			body = strings.TrimSpace(m.vimEditor.Content())
+		}
+		return &AddResult{Title: title, Body: body, Author: m.author, Tags: m.tags}
 	}
 
 	conceptPath := ""
@@ -696,6 +782,7 @@ func (m IntentAddModel) collectCurrentResult() *AddResult {
 		Concept: conceptPath,
 		Body:    body,
 		Author:  m.author,
+		Tags:    m.tags,
 	}
 }
 
@@ -731,6 +818,9 @@ func (m IntentAddModel) saveAndReset() (tea.Model, tea.Cmd) {
 	// Reset vim editor
 	m.vimEditor.SetContent("")
 
+	// Reset tags for the next item
+	m.tags = nil
+
 	return m, textinput.Blink
 }
 
@@ -745,9 +835,17 @@ func (m IntentAddModel) View() string {
 		return ""
 	}
 
+	if m.tagging {
+		return m.tagOverlay.View()
+	}
+
 	var b strings.Builder
 
-	b.WriteString(TitleStyle.Render("Create Intent"))
+	header := "Create Intent"
+	if m.noteMode {
+		header = "Create Note"
+	}
+	b.WriteString(TitleStyle.Render(header))
 	if m.savedCount > 0 {
 		b.WriteString(SuccessStyle.Render(fmt.Sprintf("  [%d saved]", m.savedCount)))
 	}
@@ -782,12 +880,12 @@ func (m IntentAddModel) viewProgress() string {
 	}
 
 	// Type
-	if m.step > addStepType {
+	if !m.noteMode && m.step > addStepType {
 		parts = append(parts, HelpStyle.Render("Type: ")+IntentTypeStyle.Render(intentTypes[m.typeIdx]))
 	}
 
 	// Concept (if selected)
-	if m.step > addStepConcept && m.conceptPicker.SelectedPath() != "" {
+	if !m.noteMode && m.step > addStepConcept && m.conceptPicker.SelectedPath() != "" {
 		parts = append(parts, HelpStyle.Render("Concept: ")+IntentConceptStyle.Render(m.conceptPicker.SelectedPath()))
 	}
 
@@ -802,7 +900,11 @@ func (m IntentAddModel) viewProgress() string {
 func (m IntentAddModel) viewTitleStep() string {
 	var b strings.Builder
 
-	b.WriteString("Title:\n")
+	label := "Title:\n"
+	if m.noteMode {
+		label = "Note:\n"
+	}
+	b.WriteString(label)
 	b.WriteString(m.titleInput.View())
 	b.WriteString("\n")
 
@@ -813,7 +915,11 @@ func (m IntentAddModel) viewTitleStep() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(HelpStyle.Render("Enter: continue • Ctrl+N: save & new • Esc: cancel"))
+	help := "Enter: continue • Ctrl+N: save & new • Esc: cancel"
+	if m.noteMode {
+		help = "Enter: add body • Ctrl+N: save title-only & new • Esc: cancel"
+	}
+	b.WriteString(HelpStyle.Render(help))
 
 	return b.String()
 }
@@ -845,7 +951,7 @@ func (m IntentAddModel) viewTypeStep() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(HelpStyle.Render("j/k: navigate • Enter: select • Ctrl+N: save & new • Esc: cancel"))
+	b.WriteString(HelpStyle.Render("j/k: navigate • Enter: select • Ctrl+N: save & new • Ctrl+T: tags • Esc: cancel"))
 
 	return b.String()
 }
@@ -856,7 +962,7 @@ func (m IntentAddModel) viewConceptStep() string {
 
 	b.WriteString(m.conceptPicker.View())
 	b.WriteString("\n")
-	b.WriteString(HelpStyle.Render("Tab: skip • Enter: select • Ctrl+N: save & new • Esc: cancel"))
+	b.WriteString(HelpStyle.Render("Tab: skip • Enter: select • Ctrl+N: save & new • Ctrl+T: tags • Esc: cancel"))
 
 	return b.String()
 }
@@ -867,7 +973,11 @@ func (m IntentAddModel) viewBodyStep() string {
 
 	// Show mode indicator
 	modeStr := m.vimEditor.Mode().String()
-	b.WriteString(HelpStyle.Render("Description (optional) — "+modeStr) + "\n")
+	label := "Description"
+	if m.noteMode {
+		label = "Note body"
+	}
+	b.WriteString(HelpStyle.Render(label+" (optional) — "+modeStr) + "\n")
 
 	// Render vim editor
 	cfg := vim.DefaultViewConfig()
@@ -880,6 +990,10 @@ func (m IntentAddModel) viewBodyStep() string {
 		b.WriteString("\n")
 	}
 
+	if len(m.tags) > 0 {
+		b.WriteString(HelpStyle.Render("Tags: ") + IntentTypeStyle.Render(strings.Join(m.tags, ", ")) + "\n")
+	}
+
 	// Show vim command buffer if in command mode
 	if m.vimEditor.IsCommandMode() {
 		b.WriteString(":" + m.vimEditor.CommandBuffer())
@@ -890,13 +1004,13 @@ func (m IntentAddModel) viewBodyStep() string {
 	// Context-sensitive help
 	switch m.vimEditor.Mode() {
 	case vim.ModeInsert:
-		b.WriteString(HelpStyle.Render("Esc: normal mode • Ctrl+S: save • Ctrl+N: save & new • Ctrl+E: editor"))
+		b.WriteString(HelpStyle.Render("Esc: normal mode • Ctrl+S: save • Ctrl+N: save & new • Ctrl+T: tags • Ctrl+E: editor"))
 	case vim.ModeVisual, vim.ModeVisualLine:
 		b.WriteString(HelpStyle.Render("d: delete • y: yank • c: change • Esc: normal"))
 	case vim.ModeCommand:
 		b.WriteString(HelpStyle.Render(":wq save • :q! cancel • Esc: back"))
 	default:
-		b.WriteString(HelpStyle.Render("i: insert • v: visual • Enter/:wq: save • Ctrl+N: new • Ctrl+E: editor"))
+		b.WriteString(HelpStyle.Render("i: insert • v: visual • Enter/:wq: save • Ctrl+N: new • Ctrl+T: tags • Ctrl+E: editor"))
 	}
 
 	return b.String()

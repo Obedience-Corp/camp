@@ -4,33 +4,53 @@ import (
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/intent"
+	"github.com/sahilm/fuzzy"
 )
 
 // typeFilterItems are the available type filter options.
 var typeFilterItems = []string{"All", "Idea", "Feature", "Bug", "Research", "Chore"}
 
 // statusFilterItems are the available status filter options.
-var statusFilterItems = []string{"All", "Inbox", "Ready", "Active", "Done", "Killed"}
+var statusFilterItems = []string{"All", "Notes", "Inbox", "Ready", "Active", "Done", "Killed"}
+
+type explorerItemSource []*intent.Intent
+
+func (s explorerItemSource) String(i int) string {
+	item := s[i]
+	return strings.Join([]string{item.Title, item.ID, item.Content}, " ")
+}
+
+func (s explorerItemSource) Len() int { return len(s) }
 
 // applyFilters filters intents using search query and type filter.
 func (m *Model) applyFilters() {
-	query := m.searchInput.Value()
 	m.statusMessage = ""
+
+	// Notes mode: the intent-oriented filters (type/status/concept) and the
+	// intent search index do not apply. Show the loaded notes as-is.
+	if m.notesMode {
+		m.filteredIntents = m.intents
+		m.rebuildStatusGroups()
+		m.cursorGroup = 0
+		m.cursorItem = -1
+		m.scrollOffset = 0
+		return
+	}
+
+	query := m.searchInput.Value()
 
 	// Start with all intents
 	var filtered []*intent.Intent
 
-	// Apply search if there's a query
+	// Apply search if there's a query. Search the loaded explorer items directly
+	// so notes remain searchable in the combined default view.
 	if query == "" {
 		filtered = m.intents
 	} else {
-		// Use fuzzy search via the service
-		results, err := m.service.Search(m.ctx, query)
-		if err != nil {
-			m.statusMessage = "Search error: " + err.Error()
-			filtered = m.intents
-		} else {
-			filtered = results
+		matches := fuzzy.FindFrom(query, explorerItemSource(m.intents))
+		filtered = make([]*intent.Intent, len(matches))
+		for i, match := range matches {
+			filtered[i] = m.intents[match.Index]
 		}
 	}
 
@@ -81,8 +101,8 @@ func (m *Model) applyFilters() {
 
 	m.filteredIntents = filtered
 
-	// Rebuild groups from filtered intents
-	m.groups = groupIntentsByStatus(m.filteredIntents, m.dungeonExpanded)
+	// Rebuild groups from filtered explorer items
+	m.groups = groupExplorerItemsByStatus(m.filteredIntents, m.dungeonExpanded)
 
 	// Reset cursor position and scroll
 	m.cursorGroup = 0
@@ -118,6 +138,8 @@ func (m *Model) clearAllFilters() {
 
 func statusSelectionToStatus(selection string) (intent.Status, bool) {
 	switch strings.ToLower(strings.TrimSpace(selection)) {
+	case "notes":
+		return intent.StatusNote, true
 	case "inbox":
 		return intent.StatusInbox, true
 	case "ready":

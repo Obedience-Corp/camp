@@ -73,6 +73,7 @@ func CreateCampaignConfig(ctx context.Context, campaignRoot string, opts InitOpt
 		CreatedAt:   time.Now().UTC(),
 		Description: fmt.Sprintf("Campaign: %s", opts.Name),
 		ConceptList: config.DefaultConcepts(),
+		Intents:     config.IntentsConfig{Tags: config.DefaultIntentTags()},
 	}
 
 	// Apply defaults

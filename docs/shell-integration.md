@@ -110,6 +110,16 @@ cint "my idea for a new feature"
 
 Equivalent to `camp intent add "..."`. Quickly capture thoughts and ideas.
 
+### `cnote` - Quick Note Capture
+
+```bash
+cnote "quick research note"
+cnote "follow up" --body "details to remember"
+```
+
+Equivalent to `camp intent note "..."`. Quickly capture notes without routing
+them through the intent lifecycle.
+
 ### `cie` - Explore Intents
 
 ```bash

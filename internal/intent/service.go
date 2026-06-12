@@ -2,9 +2,11 @@ package intent
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -25,6 +27,12 @@ var (
 type IntentService struct {
 	campaignRoot string
 	intentsDir   string
+
+	// idIndex maps an intent's id: frontmatter to its file path. It is built
+	// lazily on the first fast-path miss (a renamed file whose slug drifted from
+	// its id) and invalidated on mutation. nil means "not built".
+	idIndex   map[string]string
+	idIndexMu sync.Mutex
 }
 
 // NewIntentService creates a new IntentService.
@@ -40,10 +48,32 @@ func NewIntentService(campaignRoot, intentsDir string) *IntentService {
 type CreateOptions struct {
 	Title     string
 	Type      Type
-	Concept   string // Full concept path (e.g., "projects/camp")
+	Concept   string   // Full concept path (e.g., "projects/camp")
+	Category  Category // Intent (default) or note; decides storage root
 	Author    string
 	Body      string    // Description/body content for the intent
+	Tags      []string  // Optional frontmatter tags
 	Timestamp time.Time // Optional; defaults to time.Now()
+}
+
+// createStatus returns the directory a freshly created item lands in for the
+// given category: notes route to notes/, intents to inbox/.
+func createStatus(category Category) Status {
+	if category == CategoryNote {
+		return StatusNote
+	}
+	return StatusInbox
+}
+
+// renderForCreate renders the right template for the category and stamps the
+// frontmatter status to match the storage root.
+func renderForCreate(data TemplateData, category Category, tags []string) (string, error) {
+	data.Status = string(createStatus(category))
+	data.Tags = tags
+	if category == CategoryNote {
+		return RenderNote(data)
+	}
+	return RenderTemplate(data)
 }
 
 // CreateDirect creates a new intent directly without opening an editor.
@@ -53,6 +83,12 @@ func (s *IntentService) CreateDirect(ctx context.Context, opts CreateOptions) (*
 		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
+	normTags, err := validateAndNormalizeTags(opts.Tags)
+	if err != nil {
+		return nil, err
+	}
+	opts.Tags = normTags
+
 	ts := opts.Timestamp
 	if ts.IsZero() {
 		ts = time.Now()
@@ -61,8 +97,8 @@ func (s *IntentService) CreateDirect(ctx context.Context, opts CreateOptions) (*
 	// Generate ID and template data
 	data := NewTemplateDataFromInput(opts.Title, string(opts.Type), opts.Concept, opts.Author, opts.Body, ts)
 
-	// Render template
-	content, err := RenderTemplate(data)
+	// Render template (note vs intent) and stamp the matching status
+	content, err := renderForCreate(data, opts.Category, opts.Tags)
 	if err != nil {
 		return nil, camperrors.Wrap(err, "rendering template")
 	}
@@ -73,8 +109,8 @@ func (s *IntentService) CreateDirect(ctx context.Context, opts CreateOptions) (*
 		return nil, camperrors.Wrap(err, "parsing rendered template")
 	}
 
-	// Determine final path (inbox by default)
-	finalPath := s.getIntentPath(StatusInbox, data.ID)
+	// Determine final path: notes route to notes/, intents to inbox/
+	finalPath := s.getIntentPath(createStatus(opts.Category), data.ID)
 
 	// Ensure directory exists
 	if err := os.MkdirAll(filepath.Dir(finalPath), 0755); err != nil {
@@ -92,6 +128,7 @@ func (s *IntentService) CreateDirect(ctx context.Context, opts CreateOptions) (*
 	}
 
 	intent.Path = finalPath
+	s.invalidateIDIndex()
 	return intent, nil
 }
 
@@ -103,6 +140,12 @@ func (s *IntentService) CreateWithEditor(ctx context.Context, opts CreateOptions
 		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
+	normTags, err := validateAndNormalizeTags(opts.Tags)
+	if err != nil {
+		return nil, err
+	}
+	opts.Tags = normTags
+
 	ts := opts.Timestamp
 	if ts.IsZero() {
 		ts = time.Now()
@@ -111,8 +154,8 @@ func (s *IntentService) CreateWithEditor(ctx context.Context, opts CreateOptions
 	// Generate template data
 	data := NewTemplateDataFromInput(opts.Title, string(opts.Type), opts.Concept, opts.Author, opts.Body, ts)
 
-	// Render template
-	content, err := RenderTemplate(data)
+	// Render template (note vs intent) and stamp the matching status
+	content, err := renderForCreate(data, opts.Category, opts.Tags)
 	if err != nil {
 		return nil, camperrors.Wrap(err, "rendering template")
 	}
@@ -175,6 +218,7 @@ func (s *IntentService) CreateWithEditor(ctx context.Context, opts CreateOptions
 	}
 
 	intent.Path = finalPath
+	s.invalidateIDIndex()
 	return intent, nil
 }
 
@@ -217,9 +261,10 @@ func (s *IntentService) Edit(ctx context.Context, id string, editorFn EditorFunc
 		return nil, intentValidationError(errs)
 	}
 
-	// Handle status change (move to new directory)
+	// Handle status change (move to new directory), preserving the basename so
+	// a renamed slug survives.
 	if updated.Status != originalStatus {
-		newPath := s.getIntentPath(updated.Status, updated.ID)
+		newPath := s.moveTargetPath(updated.ID, updated.Status, originalPath)
 		if err := os.MkdirAll(filepath.Dir(newPath), 0755); err != nil {
 			return nil, camperrors.Wrap(err, "creating directory")
 		}
@@ -237,6 +282,7 @@ func (s *IntentService) Edit(ctx context.Context, id string, editorFn EditorFunc
 		return nil, err
 	}
 
+	s.invalidateIDIndex()
 	return updated, nil
 }
 
@@ -277,6 +323,7 @@ func (s *IntentService) Delete(ctx context.Context, id string) error {
 		return camperrors.Wrap(err, "removing intent file")
 	}
 
+	s.invalidateIDIndex()
 	return nil
 }
 
@@ -300,8 +347,10 @@ func (s *IntentService) Move(ctx context.Context, id string, newStatus Status) (
 	intent.Status = newStatus
 	intent.UpdatedAt = time.Now()
 
-	// Determine new path
-	newPath := s.getIntentPath(newStatus, intent.ID)
+	// Determine new path, preserving the current (possibly renamed) basename so
+	// a renamed slug survives the move without clobbering a different intent that
+	// shares the basename in the target status.
+	newPath := s.moveTargetPath(intent.ID, newStatus, oldPath)
 
 	// Ensure directory exists
 	if err := os.MkdirAll(filepath.Dir(newPath), 0755); err != nil {
@@ -328,6 +377,7 @@ func (s *IntentService) Move(ctx context.Context, id string, newStatus Status) (
 	s.removeAllCopies(id, newPath)
 
 	intent.Path = newPath
+	s.invalidateIDIndex()
 	return intent, nil
 }
 
@@ -380,8 +430,54 @@ func (s *IntentService) Count(ctx context.Context) ([]StatusCount, int, error) {
 // Helper methods
 
 // getIntentPath returns the file path for an intent given its status and ID.
+// Used when creating files (filename derived from id at birth).
 func (s *IntentService) getIntentPath(status Status, id string) string {
 	return filepath.Join(s.intentsDir, string(status), id+".md")
+}
+
+// moveTargetPath returns the destination when moving the intent identified by id
+// from oldPath into newStatus. It preserves the current (possibly renamed)
+// basename so a renamed slug survives status changes.
+//
+// Rename only enforces filename uniqueness within a single status directory, so
+// two distinct intents (different id:, same timestamp suffix, same renamed title)
+// can legitimately share a basename across statuses. Carrying that basename into
+// the target status must never clobber a different intent already parked there:
+// when the basename is held by another id we disambiguate with a -2, -3, ...
+// suffix (the same scheme rename uses) rather than overwriting. A path already
+// holding this same id is reused — it is our own orphan copy.
+func (s *IntentService) moveTargetPath(id string, newStatus Status, oldPath string) string {
+	dir := filepath.Join(s.intentsDir, string(newStatus))
+	base := strings.TrimSuffix(filepath.Base(oldPath), ".md")
+	return s.collisionSafeMovePath(dir, base, id)
+}
+
+// collisionSafeMovePath returns dir/base.md, or dir/base-2.md, dir/base-3.md, ...
+// choosing the first candidate that is free or already belongs to id. A candidate
+// occupied by a different frontmatter id is skipped so a move never overwrites an
+// unrelated intent.
+func (s *IntentService) collisionSafeMovePath(dir, base, id string) string {
+	candidate := filepath.Join(dir, base+".md")
+	if s.pathAvailableForID(candidate, id) {
+		return candidate
+	}
+	for i := 2; ; i++ {
+		c := filepath.Join(dir, fmt.Sprintf("%s-%d.md", base, i))
+		if s.pathAvailableForID(c, id) {
+			return c
+		}
+	}
+}
+
+// pathAvailableForID reports whether the intent with the given id may safely
+// occupy path: true when nothing is there or the existing file is the same intent
+// (same id:), false when a different intent holds it or it cannot be read.
+func (s *IntentService) pathAvailableForID(path, id string) bool {
+	it, err := s.loadIntent(path)
+	if err != nil {
+		return os.IsNotExist(err)
+	}
+	return it.ID == id
 }
 
 // removeAllCopies removes all files for the given intent ID across all

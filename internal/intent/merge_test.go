@@ -51,9 +51,15 @@ func TestMergeIntents_Basic(t *testing.T) {
 		t.Errorf("Status = %q, want %q", merged.Status, StatusInbox)
 	}
 
-	// Check ID format (should include timestamp and slug)
-	if !strings.Contains(merged.ID, "unified-auth-feature") {
-		t.Errorf("ID = %q, should contain slug", merged.ID)
+	// The merged ID must follow the canonical slug-YYYYMMDD-HHMMSS contract.
+	if !strings.HasPrefix(merged.ID, "unified-auth-feature-") {
+		t.Errorf("ID = %q, want slug-first canonical format", merged.ID)
+	}
+	if !intentIDPattern.MatchString(merged.ID) {
+		t.Errorf("ID = %q does not match canonical id pattern", merged.ID)
+	}
+	if errs := merged.Validate(); len(errs) > 0 {
+		t.Errorf("merged intent fails validation: %v", errs)
 	}
 
 	// Check type resolution (both are feature)
@@ -338,31 +344,9 @@ func TestMergeIntents_ContentFormat(t *testing.T) {
 	}
 }
 
-func TestGenerateSlugFromTitle(t *testing.T) {
-	tests := []struct {
-		title string
-		want  string
-	}{
-		{"Simple Title", "simple-title"},
-		{"Title With  Multiple   Spaces", "title-with-multiple-spaces"},
-		{"Title-With-Hyphens", "title-with-hyphens"},
-		{"Title_With_Underscores", "titlewithunderscores"},
-		{"Title With 123 Numbers", "title-with-123-numbers"},
-		{"Special!@#$%Characters", "specialcharacters"},
-		{"A Very Long Title That Should Be Truncated Because It Exceeds The Maximum Length", "a-very-long-title-that-should-be-truncated-because"},
-		{"", ""},
-		{"---", ""},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.title, func(t *testing.T) {
-			got := generateSlugFromTitle(tt.title)
-			if got != tt.want {
-				t.Errorf("generateSlugFromTitle(%q) = %q, want %q", tt.title, got, tt.want)
-			}
-		})
-	}
-}
+// Slug and ID generation are covered by TestSlugFromTitle in slug_test.go.
+// MergeIntents shares GenerateID, so the previous duplicate slug test here has
+// been removed; the canonical ID-shape assertion lives in TestMergeIntents_Basic.
 
 func TestExtractBodyContent(t *testing.T) {
 	tests := []struct {

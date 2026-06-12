@@ -44,6 +44,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateDungeonReason(msg)
 		}
 
+		if m.focus == focusConvertType {
+			return m.updateConvert(msg)
+		}
+
+		if m.tagging {
+			return m.updateTagEdit(msg)
+		}
+
+		if m.focus == focusRename {
+			return m.updateRename(msg)
+		}
+
 		if m.focus == focusMove {
 			return m.updateMove(msg)
 		}
@@ -95,7 +107,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.intents = msg.intents
 		m.filteredIntents = msg.intents
-		m.groups = groupIntentsByStatus(msg.intents, m.dungeonExpanded)
+		if m.notesMode {
+			m.groups = groupNotes(msg.intents)
+		} else {
+			m.groups = groupExplorerItemsByStatus(msg.intents, m.dungeonExpanded)
+		}
+		if m.pendingReselectID != "" {
+			m.reselectByID(m.pendingReselectID)
+			m.pendingReselectID = ""
+		}
 
 	case editorFinishedMsg:
 		if msg.err != nil {
@@ -250,6 +270,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.exitMultiSelectMode()
 		return m, m.loadIntents()
 
+	case tagsUpdatedMsg:
+		if msg.err != nil {
+			m.statusMessage = "Tag update failed: " + msg.err.Error()
+		} else {
+			m.statusMessage = "Tags updated"
+		}
+		return m, m.loadIntents()
+
+	case renameFinishedMsg:
+		if msg.err != nil {
+			m.statusMessage = "Rename failed: " + msg.err.Error()
+			return m, nil
+		}
+		m.statusMessage = "Renamed"
+		m.pendingReselectID = msg.renamedID
+		return m, m.loadIntents()
+
 	case addTUIFinishedMsg:
 		return m.finishAddTUI()
 
@@ -281,15 +318,31 @@ func (m Model) handleActionMenuSelection(msg tui.ActionMenuSelectedMsg) (tea.Mod
 		)
 	case "edit":
 		return m, openInEditor(m.ctx, selected.Path)
+	case "convert":
+		if selected.Status.IsNote() {
+			m.startConvert()
+		}
 	case "move":
 		m.focus = focusMove
 		m.intentToMove = selected
 		m.moveStatusIdx = 0
 	case "promote":
+		if selected.Status.IsNote() {
+			m.statusMessage = "Convert note to an intent before promoting it"
+			return m, nil
+		}
 		return m.handlePromoteAction()
 	case "archive":
+		if selected.Status.IsNote() {
+			m.statusMessage = "Note archiving is not available in the explorer yet"
+			return m, nil
+		}
 		return m.handleArchiveAction()
 	case "delete":
+		if selected.Status.IsNote() {
+			m.statusMessage = "Note deletion is not available in the explorer yet"
+			return m, nil
+		}
 		m.focus = focusConfirm
 		m.pendingAction = "delete"
 		m.pendingIntent = selected

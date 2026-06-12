@@ -117,7 +117,8 @@ func runIntentExplore(cmd *cobra.Command, args []string) error {
 	defer restoreLogger()
 
 	// Create and run the TUI
-	model := explorer.NewModel(ctx, svc, conceptSvc, intentsDir, campaignRoot, cfg.ID, author, shortcuts)
+	model := explorer.NewModel(ctx, svc, conceptSvc, intentsDir, campaignRoot, cfg.ID, author, shortcuts).
+		WithAvailableTags(cfg.IntentTags())
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {
