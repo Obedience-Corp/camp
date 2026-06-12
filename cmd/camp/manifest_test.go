@@ -137,6 +137,7 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		expectedCommands["workitem unlink"] = false
 		expectedCommands["workitem commit"] = false
 		expectedCommands["workitem commits"] = false
+		expectedCommands["workitem priority"] = false
 	}
 
 	for _, cmd := range manifest.Commands {
@@ -221,6 +222,7 @@ func TestManifestCommand_AllCommandsHaveAnnotations(t *testing.T) {
 		agentAllowed["workitem unlink"] = true
 		agentAllowed["workitem commit"] = true
 		agentAllowed["workitem commits"] = true
+		agentAllowed["workitem priority"] = true
 	}
 
 	for _, cmd := range manifest.Commands {
