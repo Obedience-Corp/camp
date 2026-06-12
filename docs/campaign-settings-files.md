@@ -23,6 +23,7 @@ For the full `.campaign/` directory layout, including `quests/`, `skills/`,
 | `.campaign/settings/fresh.yaml` | Campaign | YAML | `camp init` / `camp init --repair` | Yes |
 | `.campaign/settings/pins.json` | Campaign | JSON | `camp pin` / `camp unpin` | Usually no |
 | `.campaign/settings/allowlist.json` | Campaign | JSON | `camp init`, `camp init --repair`, or tooling that saves allowlist config | Sometimes |
+| `.campaign/settings/local.json` | Campaign | JSON | `camp settings` (Local Settings) or `camp settings set local.*` | Usually no |
 | `.campaign/watchers.yaml` | Campaign | YAML | `camp init`, `camp init --repair`, `fest`, contract writers | No |
 
 ## What `camp init` And `camp init --repair` Create
@@ -42,9 +43,11 @@ Today, `camp init` and `camp init --repair` reliably scaffold:
 They do not currently scaffold:
 
 - `.campaign/settings/pins.json`
+- `.campaign/settings/local.json`
 
-Files like `.campaign/settings/pins.json` and `.campaign/leverage/` are created
-later when the corresponding feature is used.
+Files like `.campaign/settings/pins.json`, `.campaign/settings/local.json`,
+and `.campaign/leverage/` are created later when the corresponding feature is
+used.
 
 ## Typical `.campaign/` Layout
 
@@ -68,7 +71,8 @@ Not everything under `.campaign/` is the same kind of file:
 
 - `campaign.yaml`, `settings/fresh.yaml`, and `settings/jumps.yaml` are normal
   user-editable configuration
-- `watchers.yaml`, `pins.json`, and most quest/runtime state are tool-managed
+- `watchers.yaml`, `pins.json`, `settings/local.json`, and most quest/runtime
+  state are tool-managed
 - `skills/` is campaign content that camp scaffolds and skill-related commands
   consume
 - `leverage/` appears later when leverage commands write config or snapshots
@@ -284,6 +288,29 @@ Notes:
 - `inherit_defaults: false` means only commands listed in this file are
   explicitly allowed.
 
+### `.campaign/settings/local.json`
+
+Campaign-local settings managed by `camp settings`.
+
+Example:
+
+```json
+{
+  "theme_override": "dark"
+}
+```
+
+Notes:
+
+- `theme_override` forces a color theme for this campaign: one of `adaptive`,
+  `light`, `dark`, or `high-contrast`. When absent or empty, the campaign
+  inherits the global theme from `~/.obey/campaign/config.json`.
+- The file is created on first save by `camp settings` (Local Settings) or
+  `camp settings set local.theme_override <value>`. Clearing the last setting
+  deletes the file.
+- Prefer the `camp settings` commands over hand-editing; writes are atomic and
+  lock-protected.
+
 ### `.campaign/watchers.yaml`
 
 The campaign watcher contract. This is camp/fest-owned machine-readable state
@@ -304,14 +331,29 @@ Important:
 - Users generally should not hand-edit it unless they are debugging contract
   behavior.
 
-## `camp settings` Status
+## `camp settings` Scope
 
-`camp settings` is only a partial configuration editor today:
+`camp settings` edits both configuration scopes:
 
-- Global settings are implemented and saved to `~/.obey/campaign/config.json`
-- Local campaign settings in the TUI are still a scaffold and do not write the
-  files under `.campaign/settings/`
+- Global settings are saved to `~/.obey/campaign/config.json`
+- Local Settings edits `.campaign/settings/local.json` (currently the
+  campaign theme override)
 
-For now, campaign-local configuration is file-based. Edit the relevant file
-directly when you need to customize `jumps.yaml`, `fresh.yaml`, or
-`allowlist.json`.
+For non-interactive access (agents, scripts, the festival app), use:
+
+```bash
+camp settings get                       # All settings plus the effective theme
+camp settings get global.theme          # One value
+camp settings get --json                # Versioned JSON payload
+camp settings set global.theme dark
+camp settings set local.theme_override light
+camp settings set local.theme_override inherit   # Clear the override
+```
+
+Keys: `global.theme`, `global.editor`, `global.campaigns_dir`,
+`global.verbose`, `global.no_color`, `local.theme_override`. The `local.*`
+keys require running inside a campaign.
+
+Other campaign-local files (`jumps.yaml`, `fresh.yaml`, `allowlist.json`)
+remain file-based; edit the relevant file directly when you need to customize
+them.

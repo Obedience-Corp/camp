@@ -92,6 +92,8 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		"register":      false,
 		"unregister":    false,
 		"settings":      false,
+		"settings get":  false,
+		"settings set":  false,
 		"shell-init":    false,
 		"move":          false,
 		"doctor":        false,
@@ -130,6 +132,7 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		expectedCommands["workitem current"] = false
 		expectedCommands["workitem link"] = false
 		expectedCommands["workitem links"] = false
+		expectedCommands["workitem priority"] = false
 		expectedCommands["workitem resolve"] = false
 		expectedCommands["workitem unlink"] = false
 		expectedCommands["workitem commit"] = false
@@ -148,15 +151,15 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		}
 	}
 
-	wantCount := 18
+	wantCount := 20
 	if flowCommandsRegistered() {
-		wantCount = 21
+		wantCount = 23
 	}
 	if questCommandsRegistered() {
 		wantCount += 13
 	}
 	if workitemCommandRegistered() {
-		wantCount += 9
+		wantCount += 10
 	}
 	if len(manifest.Commands) != wantCount {
 		t.Errorf("expected exactly %d restricted commands, got %d", wantCount, len(manifest.Commands))
@@ -183,6 +186,8 @@ func TestManifestCommand_AllCommandsHaveAnnotations(t *testing.T) {
 		"dungeon list":  true,
 		"dungeon move":  true,
 		"promote":       true,
+		"settings get":  true,
+		"settings set":  true,
 		"switch":        true,
 		"skills link":   true,
 		"skills status": true,
@@ -211,6 +216,7 @@ func TestManifestCommand_AllCommandsHaveAnnotations(t *testing.T) {
 		agentAllowed["workitem current"] = true
 		agentAllowed["workitem link"] = true
 		agentAllowed["workitem links"] = true
+		agentAllowed["workitem priority"] = true
 		agentAllowed["workitem resolve"] = true
 		agentAllowed["workitem unlink"] = true
 		agentAllowed["workitem commit"] = true
@@ -261,6 +267,8 @@ func TestManifestCommand_InteractiveFlags(t *testing.T) {
 		"clone":         true,
 		"register":      true,
 		"unregister":    true,
+		"settings get":  true,
+		"settings set":  true,
 		"shell-init":    true,
 		"doctor":        true,
 		"dungeon list":  true,
@@ -293,6 +301,7 @@ func TestManifestCommand_InteractiveFlags(t *testing.T) {
 		nonInteractiveCommands["workitem current"] = true
 		nonInteractiveCommands["workitem link"] = true
 		nonInteractiveCommands["workitem links"] = true
+		nonInteractiveCommands["workitem priority"] = true
 		nonInteractiveCommands["workitem resolve"] = true
 		nonInteractiveCommands["workitem unlink"] = true
 		nonInteractiveCommands["workitem commit"] = true
