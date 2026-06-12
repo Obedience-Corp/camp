@@ -112,6 +112,136 @@ func TestListItems_ParentChildren_FiltersIntent(t *testing.T) {
 	}
 }
 
+func TestListItems_ParentChildren_DrillUsesChildPath(t *testing.T) {
+	concepts := workflowParentConcepts(
+		config.ConceptEntry{Name: "festivals", Path: "festivals"},
+	)
+	fsys := fstest.MapFS{
+		"festivals/active/my-fest/FESTIVAL_GOAL.md": &fstest.MapFile{Data: []byte("")},
+		"festivals/planning/other-fest/file":        &fstest.MapFile{Data: []byte("")},
+		"workflow/festivals/decoy/file":             &fstest.MapFile{Data: []byte("")},
+	}
+	svc := NewFSService("", concepts, fsys)
+
+	items, err := svc.ListItems(context.Background(), "workflow", "festivals")
+	if err != nil {
+		t.Fatalf("ListItems: %v", err)
+	}
+	got := itemNames(items)
+	if len(got) != 2 || got[0] != "active" || got[1] != "planning" {
+		t.Fatalf("drill items = %v, want [active planning] from festivals/, not workflow/festivals", got)
+	}
+	if p, _ := itemPath(items, "active"); p != "festivals/active" {
+		t.Errorf("active path = %q, want festivals/active", p)
+	}
+
+	items, err = svc.ListItems(context.Background(), "workflow", "festivals/active")
+	if err != nil {
+		t.Fatalf("ListItems nested: %v", err)
+	}
+	if got := itemNames(items); len(got) != 1 || got[0] != "my-fest" {
+		t.Fatalf("nested drill items = %v, want [my-fest]", got)
+	}
+	if p, _ := itemPath(items, "my-fest"); p != "festivals/active/my-fest" {
+		t.Errorf("my-fest path = %q, want festivals/active/my-fest", p)
+	}
+}
+
+func TestListItems_ParentChildren_DrillHonorsChildDepth(t *testing.T) {
+	depth1 := 1
+	concepts := workflowParentConcepts(
+		config.ConceptEntry{Name: "design", Path: "workflow/design", Depth: &depth1},
+	)
+	fsys := fstest.MapFS{
+		"workflow/design/doc/nested/file": &fstest.MapFile{Data: []byte("")},
+	}
+	svc := NewFSService("", concepts, fsys)
+
+	items, err := svc.ListItems(context.Background(), "workflow", "design")
+	if err != nil {
+		t.Fatalf("ListItems: %v", err)
+	}
+	if len(items) != 1 || items[0].Name != "doc" {
+		t.Fatalf("design items = %v, want [doc]", itemNames(items))
+	}
+	if !items[0].DrillDisabled {
+		t.Error("child depth 1 should mark items at max depth DrillDisabled")
+	}
+
+	items, err = svc.ListItems(context.Background(), "workflow", "design/doc")
+	if err != nil {
+		t.Fatalf("ListItems beyond depth: %v", err)
+	}
+	if len(items) != 0 {
+		t.Errorf("drilling past child depth = %v, want empty", itemNames(items))
+	}
+}
+
+func TestListItems_ParentChildren_DrillHonorsChildIgnore(t *testing.T) {
+	concepts := workflowParentConcepts(
+		config.ConceptEntry{Name: "festivals", Path: "festivals", Ignore: []string{"dungeon/"}},
+	)
+	fsys := fstest.MapFS{
+		"festivals/active/my-fest/file": &fstest.MapFile{Data: []byte("")},
+		"festivals/dungeon/done/file":   &fstest.MapFile{Data: []byte("")},
+	}
+	svc := NewFSService("", concepts, fsys)
+
+	items, err := svc.ListItems(context.Background(), "workflow", "festivals")
+	if err != nil {
+		t.Fatalf("ListItems: %v", err)
+	}
+	if got := itemNames(items); len(got) != 1 || got[0] != "active" {
+		t.Fatalf("drill items = %v, want [active] with dungeon ignored", got)
+	}
+}
+
+func TestListItems_ParentChildren_DiskOnlyDirUsesParentPath(t *testing.T) {
+	concepts := workflowParentConcepts(
+		config.ConceptEntry{Name: "festivals", Path: "festivals"},
+	)
+	fsys := fstest.MapFS{
+		"festivals/active/file":          &fstest.MapFile{Data: []byte("")},
+		"workflow/research/topic/file":   &fstest.MapFile{Data: []byte("")},
+		"workflow/research/another/file": &fstest.MapFile{Data: []byte("")},
+	}
+	svc := NewFSService("", concepts, fsys)
+
+	items, err := svc.ListItems(context.Background(), "workflow", "research")
+	if err != nil {
+		t.Fatalf("ListItems: %v", err)
+	}
+	got := itemNames(items)
+	if len(got) != 2 || got[0] != "another" || got[1] != "topic" {
+		t.Fatalf("disk-only drill items = %v, want [another topic] under workflow/research", got)
+	}
+	if p, _ := itemPath(items, "topic"); p != "workflow/research/topic" {
+		t.Errorf("topic path = %q, want workflow/research/topic", p)
+	}
+}
+
+func TestListItems_ParentChildren_DepthZeroChildNotDrillable(t *testing.T) {
+	depth0 := 0
+	concepts := workflowParentConcepts(
+		config.ConceptEntry{Name: "docs", Path: "docs", Depth: &depth0},
+	)
+	fsys := fstest.MapFS{
+		"docs/api/file": &fstest.MapFile{Data: []byte("")},
+	}
+	svc := NewFSService("", concepts, fsys)
+
+	items, err := svc.ListItems(context.Background(), "workflow", "")
+	if err != nil {
+		t.Fatalf("ListItems: %v", err)
+	}
+	if len(items) != 1 || items[0].Name != "docs" {
+		t.Fatalf("submenu = %v, want [docs]", itemNames(items))
+	}
+	if !items[0].DrillDisabled {
+		t.Error("depth-0 child should be DrillDisabled in the parent submenu")
+	}
+}
+
 func TestList_PopulatesChildren(t *testing.T) {
 	concepts := workflowParentConcepts(
 		config.ConceptEntry{Name: "festivals", Path: "festivals"},

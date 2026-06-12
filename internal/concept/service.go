@@ -73,16 +73,28 @@ func (s *DefaultService) ListItems(ctx context.Context, conceptName, subpath str
 		return nil, err
 	}
 
-	// A parent concept's submenu is its configured children merged with ad-hoc
-	// subdirectories under its own path.
-	if subpath == "" && len(concept.Children) > 0 {
-		var disk []Item
-		if concept.Path != "" {
-			disk, _ = s.listDirItems(filepath.Join(s.campaignRoot, concept.Path), concept.Path)
+	return s.conceptItems(concept, subpath)
+}
+
+// conceptItems lists the submenu for a concept at the given subpath. A drill
+// subpath whose first segment names a configured child concept continues
+// under the child's own path and depth/ignore rules, not the parent's path.
+func (s *DefaultService) conceptItems(concept *Concept, subpath string) ([]Item, error) {
+	if len(concept.Children) > 0 {
+		// A parent concept's submenu is its configured children merged with
+		// ad-hoc subdirectories under its own path.
+		if subpath == "" {
+			var disk []Item
+			if concept.Path != "" {
+				disk, _ = s.listDirItems(filepath.Join(s.campaignRoot, concept.Path), concept.Path)
+			}
+			return parentChildItems(concept, disk, func(rel string) int {
+				return s.countChildren(filepath.Join(s.campaignRoot, rel))
+			}), nil
 		}
-		return parentChildItems(concept, disk, func(rel string) int {
-			return s.countChildren(filepath.Join(s.campaignRoot, rel))
-		}), nil
+		if child, rest, ok := childForSubpath(concept, subpath); ok {
+			return s.conceptItems(child, rest)
+		}
 	}
 
 	if concept.Path == "" {
@@ -436,16 +448,28 @@ func (s *FSService) ListItems(ctx context.Context, conceptName, subpath string) 
 		return nil, err
 	}
 
-	// A parent concept's submenu is its configured children merged with ad-hoc
-	// subdirectories under its own path.
-	if subpath == "" && len(concept.Children) > 0 {
-		var disk []Item
-		if concept.Path != "" {
-			disk, _ = s.listDirItemsFS(concept.Path)
+	return s.conceptItems(concept, subpath)
+}
+
+// conceptItems lists the submenu for a concept at the given subpath. A drill
+// subpath whose first segment names a configured child concept continues
+// under the child's own path and depth/ignore rules, not the parent's path.
+func (s *FSService) conceptItems(concept *Concept, subpath string) ([]Item, error) {
+	if len(concept.Children) > 0 {
+		// A parent concept's submenu is its configured children merged with
+		// ad-hoc subdirectories under its own path.
+		if subpath == "" {
+			var disk []Item
+			if concept.Path != "" {
+				disk, _ = s.listDirItemsFS(concept.Path)
+			}
+			return parentChildItems(concept, disk, func(rel string) int {
+				return s.countChildrenFS(rel)
+			}), nil
 		}
-		return parentChildItems(concept, disk, func(rel string) int {
-			return s.countChildrenFS(rel)
-		}), nil
+		if child, rest, ok := childForSubpath(concept, subpath); ok {
+			return s.conceptItems(child, rest)
+		}
 	}
 
 	if concept.Path == "" {

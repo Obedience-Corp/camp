@@ -3,8 +3,10 @@ package tui
 import (
 	"context"
 	"testing"
+	"testing/fstest"
 
 	"github.com/Obedience-Corp/camp/internal/concept"
+	"github.com/Obedience-Corp/camp/internal/config"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -688,6 +690,74 @@ func TestConceptPicker_WorkflowParentCascade(t *testing.T) {
 	}
 	if picker.SelectedPath() != "festivals/" {
 		t.Errorf("SelectedPath = %q, want %q", picker.SelectedPath(), "festivals/")
+	}
+}
+
+func TestConceptPicker_DrillIntoConfiguredChild(t *testing.T) {
+	concepts := []config.ConceptEntry{
+		{Name: "workflow", Path: "workflow", Children: []config.ConceptEntry{
+			{Name: "festivals", Path: "festivals"},
+			{Name: "design", Path: "workflow/design"},
+		}},
+	}
+	fsys := fstest.MapFS{
+		"festivals/active/my-fest/FESTIVAL_GOAL.md": &fstest.MapFile{Data: []byte("")},
+		"workflow/festivals/decoy/file":             &fstest.MapFile{Data: []byte("")},
+		"workflow/design/doc/file":                  &fstest.MapFile{Data: []byte("")},
+	}
+	svc := concept.NewFSService("", concepts, fsys)
+
+	picker := NewConceptPickerModel(context.Background(), svc)
+
+	// Select the workflow concept (typeWheel: none, workflow).
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if picker.step != stepSelectingItem {
+		t.Fatalf("selecting workflow should open the submenu, step = %v", picker.step)
+	}
+	if len(picker.items) != 2 || picker.items[0].Name != "festivals" {
+		t.Fatalf("submenu items = %+v, want festivals then design", picker.items)
+	}
+
+	// Right-drill into the configured festivals child.
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
+
+	if picker.step != stepSelectingItem {
+		t.Fatalf("drilling into festivals should stay in item selection, step = %v", picker.step)
+	}
+	if len(picker.items) != 1 || picker.items[0].Name != "active" {
+		t.Fatalf("festivals drill items = %+v, want [active] from festivals/, not workflow/festivals", picker.items)
+	}
+	if picker.items[0].Path != "festivals/active" {
+		t.Errorf("active path = %q, want festivals/active", picker.items[0].Path)
+	}
+	if bc := picker.buildBreadcrumb(); bc != "workflow > festivals" {
+		t.Errorf("breadcrumb = %q, want %q", bc, "workflow > festivals")
+	}
+
+	// Drill again into active, then select the festival.
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
+	if len(picker.items) != 1 || picker.items[0].Name != "my-fest" {
+		t.Fatalf("active drill items = %+v, want [my-fest]", picker.items)
+	}
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if picker.step != stepDone {
+		t.Fatalf("selecting a festival should finish, step = %v", picker.step)
+	}
+	if picker.SelectedPath() != "festivals/active/my-fest" {
+		t.Errorf("SelectedPath = %q, want festivals/active/my-fest", picker.SelectedPath())
+	}
+
+	// Backspace returns to the festivals listing, then the submenu.
+	// (Re-run navigation on a fresh picker since this one is done.)
+	picker = NewConceptPickerModel(context.Background(), svc)
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	if len(picker.items) != 2 || picker.items[0].Name != "festivals" {
+		t.Fatalf("backspace should restore the workflow submenu, items = %+v", picker.items)
 	}
 }
 
