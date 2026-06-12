@@ -51,5 +51,6 @@ camp workitem [flags]
 * [camp workitem doctor](camp_workitem_doctor.md)	 - Report workitem link-registry health issues
 * [camp workitem link](camp_workitem_link.md)	 - Attach a workitem to a project, festival, worktree, or campaign path
 * [camp workitem links](camp_workitem_links.md)	 - List workitem links
+* [camp workitem priority](camp_workitem_priority.md)	 - Set or clear the manual priority of a workitem
 * [camp workitem resolve](camp_workitem_resolve.md)	 - Print the workitem the current context resolves to (read-only)
 * [camp workitem unlink](camp_workitem_unlink.md)	 - Remove one or more workitem links
