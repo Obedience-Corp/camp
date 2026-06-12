@@ -275,11 +275,18 @@ _camp_register_completions() {
 }
 
 if (( $+functions[compdef] )); then
+  # Sourced again after compinit: drop any deferred hook a pre-compinit
+  # source left queued, so the first prompt stays silent.
+  if (( $+functions[_camp_deferred_completions] )); then
+    (( $+functions[add-zsh-hook] )) && add-zsh-hook -d precmd _camp_deferred_completions
+    precmd_functions=(${precmd_functions:#_camp_deferred_completions})
+    unfunction _camp_deferred_completions
+  fi
   _camp_register_completions
   unfunction _camp_register_completions
 elif autoload -Uz add-zsh-hook 2>/dev/null && (( $+functions[add-zsh-hook] )); then
   _camp_deferred_completions() {
-    if (( $+functions[compdef] )); then
+    if (( $+functions[compdef] )) && (( $+functions[_camp_register_completions] )); then
       _camp_register_completions
       unfunction _camp_register_completions
     fi

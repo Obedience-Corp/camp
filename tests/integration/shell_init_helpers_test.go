@@ -149,6 +149,8 @@ func runZshScript(t *testing.T, tc *TestContainer, initScript, stubSetup, testCo
 	return output, exitCode
 }
 
+const zshNoCompinitInitPath = "/test/camp-init-nocompinit.zsh"
+
 // runZshScriptNoCompinit runs a zsh script that sources the camp init WITHOUT
 // first running compinit. This reproduces the real-world environment of users
 // who source camp before initializing the completion system (or never call
@@ -157,12 +159,12 @@ func runZshScript(t *testing.T, tc *TestContainer, initScript, stubSetup, testCo
 func runZshScriptNoCompinit(t *testing.T, tc *TestContainer, initScript, stubSetup, testCommands string) (string, int) {
 	t.Helper()
 
-	if err := tc.WriteFile("/test/camp-init-nocompinit.zsh", initScript); err != nil {
+	if err := tc.WriteFile(zshNoCompinitInitPath, initScript); err != nil {
 		t.Fatalf("write init script: %v", err)
 	}
 
 	fullScript := "emulate -R zsh\n" +
-		stubSetup + "\nsource /test/camp-init-nocompinit.zsh\n" + testCommands
+		stubSetup + "\nsource " + zshNoCompinitInitPath + "\n" + testCommands
 	if err := tc.WriteFile("/test/test-nocompinit.zsh", fullScript); err != nil {
 		t.Fatalf("write test script: %v", err)
 	}

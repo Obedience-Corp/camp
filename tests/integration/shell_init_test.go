@@ -582,6 +582,76 @@ fi
 	}
 }
 
+// TestShellInit_ZshRepeatedSourcingAroundCompinit guards against stale deferred
+// hooks when the init is sourced more than once from different rc/plugin paths.
+// The "resource_after_compinit_then_first_prompt" case is the reported bug: the
+// first source (pre-compinit) queues the deferred hook, the second source
+// (post-compinit) registers immediately and removes the registrar, and the
+// stale hook then errored at the first prompt. The helper performs the initial
+// pre-compinit source; each case's commands run after it.
+func TestShellInit_ZshRepeatedSourcingAroundCompinit(t *testing.T) {
+	tc := GetSharedContainer(t)
+	installShells(t, tc)
+	ensureCampInPath(t, tc)
+
+	initScript := shellInitScript(t, tc, "zsh")
+
+	resource := "source " + zshNoCompinitInitPath
+	const compinit = "autoload -Uz compinit && compinit -u 2>/dev/null"
+	const firePrecmd = `for f in $precmd_functions; do
+  (( $+functions[$f] )) && $f
+done`
+	const checkRegistered = `if [[ -n "${_comps[cgo]}" ]]; then
+  echo "CGO_COMPLETION_REGISTERED"
+fi`
+
+	cases := []struct {
+		name           string
+		commands       []string
+		wantRegistered bool
+	}{
+		{
+			name:           "resource_after_compinit_then_first_prompt",
+			commands:       []string{compinit, resource, firePrecmd, checkRegistered},
+			wantRegistered: true,
+		},
+		{
+			name:           "double_source_before_compinit",
+			commands:       []string{resource, compinit, firePrecmd, checkRegistered},
+			wantRegistered: true,
+		},
+		{
+			name:           "resource_after_deferred_hook_already_fired",
+			commands:       []string{compinit, firePrecmd, resource, firePrecmd, checkRegistered},
+			wantRegistered: true,
+		},
+		{
+			name:           "double_source_compinit_never_runs",
+			commands:       []string{resource, firePrecmd, firePrecmd, `echo "STILL_SILENT"`},
+			wantRegistered: false,
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			stdout, exitCode := runZshScriptNoCompinit(t, tc, initScript,
+				`export PATH="/camp-bin:$PATH"`, strings.Join(tt.commands, "\n"))
+			if exitCode != 0 {
+				t.Fatalf("exit code %d, output:\n%s", exitCode, stdout)
+			}
+			if strings.Contains(stdout, "command not found") {
+				t.Errorf("repeated sourcing emitted 'command not found', output:\n%s", stdout)
+			}
+			if strings.Contains(stdout, "unfunction") {
+				t.Errorf("repeated sourcing emitted an unfunction error, output:\n%s", stdout)
+			}
+			if tt.wantRegistered && !strings.Contains(stdout, "CGO_COMPLETION_REGISTERED") {
+				t.Errorf("cgo completion not registered, output:\n%s", stdout)
+			}
+		})
+	}
+}
+
 // TestShellInit_CleanStartupAcrossEnvironments is the general guard against the
 // class of "shell command breaks at startup for some users" bugs. For each
 // supported shell, across the realistic environment variations that differ
