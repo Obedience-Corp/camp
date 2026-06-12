@@ -582,6 +582,96 @@ fi
 	}
 }
 
+// TestShellInit_CleanStartupAcrossEnvironments is the general guard against the
+// class of "shell command breaks at startup for some users" bugs. For each
+// supported shell, across the realistic environment variations that differ
+// between users (notably zsh's completion-system state), sourcing the generated
+// init must:
+//   - write NOTHING to stderr (no errors, no warnings)
+//   - exit 0
+//   - define the camp and cgo wrapper functions
+//
+// The zsh "bare_no_compinit" case is exactly the reported bug: the old script
+// wrote three "command not found: compdef" lines to stderr here.
+func TestShellInit_CleanStartupAcrossEnvironments(t *testing.T) {
+	tc := GetSharedContainer(t)
+	installShells(t, tc)
+
+	const targetDir = "/test/clean-startup-target"
+	if _, _, err := tc.ExecCommand("mkdir", "-p", targetDir); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	posixStub := stubCampScriptPosix(targetDir)
+	fishStub := stubCampScriptFish(targetDir)
+
+	const bashVerify = `[[ $(type -t camp) == function ]] && echo CAMP_FN
+[[ $(type -t cgo) == function ]] && echo CGO_FN`
+
+	const zshVerify = `(( $+functions[camp] )) && echo CAMP_FN
+(( $+functions[cgo] )) && echo CGO_FN`
+
+	const fishVerify = `functions -q camp; and echo CAMP_FN
+functions -q cgo; and echo CGO_FN`
+
+	cases := []struct {
+		name     string
+		shell    string
+		preamble string
+		stub     string
+		verify   string
+	}{
+		{
+			name:     "bash_bare",
+			shell:    "bash",
+			preamble: "",
+			stub:     posixStub,
+			verify:   bashVerify,
+		},
+		{
+			name:     "zsh_bare_no_compinit",
+			shell:    "zsh",
+			preamble: "emulate -R zsh",
+			stub:     posixStub,
+			verify:   zshVerify,
+		},
+		{
+			name:     "zsh_compinit_first",
+			shell:    "zsh",
+			preamble: "emulate -R zsh\nautoload -Uz compinit && compinit -u 2>/dev/null",
+			stub:     posixStub,
+			verify:   zshVerify,
+		},
+		{
+			name:     "fish_bare",
+			shell:    "fish",
+			preamble: "",
+			stub:     fishStub,
+			verify:   fishVerify,
+		},
+	}
+
+	for _, tc2 := range cases {
+		t.Run(tc2.name, func(t *testing.T) {
+			initScript := shellInitScript(t, tc, tc2.shell)
+			srcStderr, output, exitCode := runShellCleanStartup(t, tc, tc2.shell, tc2.preamble, initScript, tc2.stub, tc2.verify)
+
+			if srcStderr != "" {
+				t.Errorf("sourcing camp init wrote to stderr (clean startup must be silent):\n%s\n\nfull output:\n%s", srcStderr, output)
+			}
+			if exitCode != 0 {
+				t.Errorf("shell exited %d, output:\n%s", exitCode, output)
+			}
+			if !strings.Contains(output, "CAMP_FN") {
+				t.Errorf("camp wrapper function not defined, output:\n%s", output)
+			}
+			if !strings.Contains(output, "CGO_FN") {
+				t.Errorf("cgo wrapper function not defined, output:\n%s", output)
+			}
+		})
+	}
+}
+
 // ---------- Fish behavior tests ----------
 
 func TestShellInit_FishCampWrapperGo(t *testing.T) {

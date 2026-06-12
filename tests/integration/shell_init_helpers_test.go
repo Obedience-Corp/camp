@@ -195,6 +195,78 @@ func runFishScript(t *testing.T, tc *TestContainer, initScript, stubSetup, testC
 	return output, exitCode
 }
 
+// sourceStderrMarkerBegin and sourceStderrMarkerEnd delimit the captured stderr
+// of the init-sourcing step inside the combined shell output, so the Go side can
+// extract exactly what was written to stderr while sourcing the camp init.
+const (
+	sourceStderrMarkerBegin = "===CAMP_SRC_STDERR_BEGIN==="
+	sourceStderrMarkerEnd   = "===CAMP_SRC_STDERR_END==="
+)
+
+// runShellCleanStartup sources the camp init for a shell in a controlled
+// environment and reports whatever the init wrote to stderr while sourcing.
+//
+// This is the generalized guard against the whole class of "shell command breaks
+// at startup for some users" bugs: a clean shell startup must produce NOTHING on
+// stderr, regardless of the user's completion-system state or rc ordering. The
+// camp stub is installed before sourcing so the init's `command -v camp` guard
+// passes; `preamble` simulates the user's environment (e.g. running compinit, or
+// not). `verify` runs after sourcing and echoes markers to stdout.
+//
+// Returns (sourceStderr, combinedOutput, exitCode). A non-empty sourceStderr
+// means the init emitted errors/warnings at startup.
+func runShellCleanStartup(t *testing.T, tc *TestContainer, shellName, preamble, initScript, stub, verify string) (string, string, int) {
+	t.Helper()
+
+	initPath := "/test/clean-" + shellName + "-init"
+	srcStderrPath := "/test/clean-" + shellName + "-src.stderr"
+	scriptPath := "/test/clean-" + shellName + ".script"
+
+	if err := tc.WriteFile(initPath, initScript); err != nil {
+		t.Fatalf("write init script: %v", err)
+	}
+
+	fullScript := preamble + "\n" +
+		stub + "\n" +
+		"source " + initPath + " 2>" + srcStderrPath + "\n" +
+		"echo '" + sourceStderrMarkerBegin + "'\n" +
+		"cat " + srcStderrPath + "\n" +
+		"echo '" + sourceStderrMarkerEnd + "'\n" +
+		verify + "\n"
+	if err := tc.WriteFile(scriptPath, fullScript); err != nil {
+		t.Fatalf("write test script: %v", err)
+	}
+
+	var argv []string
+	switch shellName {
+	case "bash":
+		argv = []string{"bash", scriptPath}
+	case "zsh":
+		argv = []string{"zsh", "--no-rcs", scriptPath}
+	case "fish":
+		argv = []string{"fish", "--no-config", scriptPath}
+	default:
+		t.Fatalf("unsupported shell: %s", shellName)
+	}
+
+	output, exitCode, err := tc.ExecCommand(argv...)
+	if err != nil {
+		t.Fatalf("exec %s: %v", shellName, err)
+	}
+	return extractSourceStderr(output), output, exitCode
+}
+
+// extractSourceStderr pulls the text captured between the stderr markers.
+func extractSourceStderr(combined string) string {
+	start := strings.Index(combined, sourceStderrMarkerBegin)
+	end := strings.Index(combined, sourceStderrMarkerEnd)
+	if start == -1 || end == -1 || end < start {
+		return ""
+	}
+	inner := combined[start+len(sourceStderrMarkerBegin) : end]
+	return strings.TrimSpace(inner)
+}
+
 // ensureCampInPath creates a symlink so that `command -v camp` succeeds
 // in the container. The real camp binary is at /camp; we create /camp-bin/camp.
 func ensureCampInPath(t *testing.T, tc *TestContainer) {
