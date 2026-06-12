@@ -293,5 +293,12 @@ elif autoload -Uz add-zsh-hook 2>/dev/null && (( $+functions[add-zsh-hook] )); t
     add-zsh-hook -d precmd _camp_deferred_completions
     unfunction _camp_deferred_completions
   }
-  add-zsh-hook precmd _camp_deferred_completions
+  if ! add-zsh-hook precmd _camp_deferred_completions 2>/dev/null; then
+    # autoload only declared add-zsh-hook; its definition file is not on fpath
+    # (e.g. a stripped fpath), so the precmd registration just failed. Back out
+    # cleanly and stay silent: completion is skipped here, but sourcing the init
+    # must not emit a startup error.
+    unfunction _camp_deferred_completions 2>/dev/null
+    unfunction _camp_register_completions 2>/dev/null
+  fi
 fi

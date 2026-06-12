@@ -713,6 +713,17 @@ functions -q cgo; and echo CGO_FN`
 			verify:   zshVerify,
 		},
 		{
+			// Stripped fpath with no compinit: compdef is absent so the deferred
+			// path runs, but add-zsh-hook is only an autoload stub whose file
+			// cannot be found. Registration must fail silently, not print
+			// "add-zsh-hook: function definition file not found" at startup.
+			name:     "zsh_stripped_fpath_no_compinit",
+			shell:    "zsh",
+			preamble: "emulate -R zsh\nfpath=()",
+			stub:     posixStub,
+			verify:   zshVerify,
+		},
+		{
 			name:     "fish_bare",
 			shell:    "fish",
 			preamble: "",
