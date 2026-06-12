@@ -509,6 +509,250 @@ func TestShellInit_ZshCompdefRegistered(t *testing.T) {
 	}
 }
 
+func TestShellInit_ZshNoCompinitNoErrors(t *testing.T) {
+	tc := GetSharedContainer(t)
+	installShells(t, tc)
+
+	const targetDir = "/test/zsh-nocompinit-target"
+	if _, _, err := tc.ExecCommand("mkdir", "-p", targetDir); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	initScript := shellInitScript(t, tc, "zsh")
+	stub := stubCampScriptPosix(targetDir)
+
+	t.Run("sourcing_without_compinit_emits_no_errors", func(t *testing.T) {
+		stdout, exitCode := runZshScriptNoCompinit(t, tc, initScript, stub, `
+echo "SOURCED_OK"
+`)
+		if exitCode != 0 {
+			t.Fatalf("sourcing without compinit exited %d, output:\n%s", exitCode, stdout)
+		}
+		if strings.Contains(stdout, "command not found") {
+			t.Errorf("sourcing without compinit emitted 'command not found' (compdef-before-compinit bug), output:\n%s", stdout)
+		}
+		if strings.Contains(stdout, "compdef") {
+			t.Errorf("sourcing without compinit leaked a compdef error, output:\n%s", stdout)
+		}
+		if !strings.Contains(stdout, "SOURCED_OK") {
+			t.Errorf("expected SOURCED_OK marker, output:\n%s", stdout)
+		}
+	})
+
+	t.Run("navigation_still_works_without_compinit", func(t *testing.T) {
+		stdout, exitCode := runZshScriptNoCompinit(t, tc, initScript, stub, `
+cgo foo
+echo "PWD=$PWD"
+`)
+		if exitCode != 0 {
+			t.Fatalf("exit code %d, output: %s", exitCode, stdout)
+		}
+		if !strings.Contains(stdout, "PWD="+targetDir) {
+			t.Errorf("expected PWD=%s, got:\n%s", targetDir, stdout)
+		}
+	})
+}
+
+func TestShellInit_ZshDeferredCompletionRegistersAfterCompinit(t *testing.T) {
+	tc := GetSharedContainer(t)
+	installShells(t, tc)
+	ensureCampInPath(t, tc)
+
+	initScript := shellInitScript(t, tc, "zsh")
+
+	// Source camp BEFORE compinit, then run compinit, then fire the deferred
+	// precmd hook(s) manually. After that, completion must be registered.
+	stdout, exitCode := runZshScriptNoCompinit(t, tc, initScript, `export PATH="/camp-bin:$PATH"`, `
+autoload -Uz compinit && compinit -u 2>/dev/null
+for f in $precmd_functions; do
+  (( $+functions[$f] )) && $f
+done
+if [[ -n "${_comps[cgo]}" ]]; then
+  echo "CGO_COMPLETION_REGISTERED"
+fi
+`)
+	if exitCode != 0 {
+		t.Fatalf("exit code %d, output:\n%s", exitCode, stdout)
+	}
+	if !strings.Contains(stdout, "CGO_COMPLETION_REGISTERED") {
+		t.Errorf("cgo completion not registered after deferred compinit, output:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "command not found") {
+		t.Errorf("deferred completion path emitted 'command not found', output:\n%s", stdout)
+	}
+}
+
+// TestShellInit_ZshRepeatedSourcingAroundCompinit guards against stale deferred
+// hooks when the init is sourced more than once from different rc/plugin paths.
+// The "resource_after_compinit_then_first_prompt" case is the reported bug: the
+// first source (pre-compinit) queues the deferred hook, the second source
+// (post-compinit) registers immediately and removes the registrar, and the
+// stale hook then errored at the first prompt. The helper performs the initial
+// pre-compinit source; each case's commands run after it.
+func TestShellInit_ZshRepeatedSourcingAroundCompinit(t *testing.T) {
+	tc := GetSharedContainer(t)
+	installShells(t, tc)
+	ensureCampInPath(t, tc)
+
+	initScript := shellInitScript(t, tc, "zsh")
+
+	resource := "source " + zshNoCompinitInitPath
+	const compinit = "autoload -Uz compinit && compinit -u 2>/dev/null"
+	const firePrecmd = `for f in $precmd_functions; do
+  (( $+functions[$f] )) && $f
+done`
+	const checkRegistered = `if [[ -n "${_comps[cgo]}" ]]; then
+  echo "CGO_COMPLETION_REGISTERED"
+fi`
+
+	cases := []struct {
+		name           string
+		commands       []string
+		wantRegistered bool
+	}{
+		{
+			name:           "resource_after_compinit_then_first_prompt",
+			commands:       []string{compinit, resource, firePrecmd, checkRegistered},
+			wantRegistered: true,
+		},
+		{
+			name:           "double_source_before_compinit",
+			commands:       []string{resource, compinit, firePrecmd, checkRegistered},
+			wantRegistered: true,
+		},
+		{
+			name:           "resource_after_deferred_hook_already_fired",
+			commands:       []string{compinit, firePrecmd, resource, firePrecmd, checkRegistered},
+			wantRegistered: true,
+		},
+		{
+			name:           "double_source_compinit_never_runs",
+			commands:       []string{resource, firePrecmd, firePrecmd, `echo "STILL_SILENT"`},
+			wantRegistered: false,
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			stdout, exitCode := runZshScriptNoCompinit(t, tc, initScript,
+				`export PATH="/camp-bin:$PATH"`, strings.Join(tt.commands, "\n"))
+			if exitCode != 0 {
+				t.Fatalf("exit code %d, output:\n%s", exitCode, stdout)
+			}
+			if strings.Contains(stdout, "command not found") {
+				t.Errorf("repeated sourcing emitted 'command not found', output:\n%s", stdout)
+			}
+			if strings.Contains(stdout, "unfunction") {
+				t.Errorf("repeated sourcing emitted an unfunction error, output:\n%s", stdout)
+			}
+			if tt.wantRegistered && !strings.Contains(stdout, "CGO_COMPLETION_REGISTERED") {
+				t.Errorf("cgo completion not registered, output:\n%s", stdout)
+			}
+		})
+	}
+}
+
+// TestShellInit_CleanStartupAcrossEnvironments is the general guard against the
+// class of "shell command breaks at startup for some users" bugs. For each
+// supported shell, across the realistic environment variations that differ
+// between users (notably zsh's completion-system state), sourcing the generated
+// init must:
+//   - write NOTHING to stderr (no errors, no warnings)
+//   - exit 0
+//   - define the camp and cgo wrapper functions
+//
+// The zsh "bare_no_compinit" case is exactly the reported bug: the old script
+// wrote three "command not found: compdef" lines to stderr here.
+func TestShellInit_CleanStartupAcrossEnvironments(t *testing.T) {
+	tc := GetSharedContainer(t)
+	installShells(t, tc)
+
+	const targetDir = "/test/clean-startup-target"
+	if _, _, err := tc.ExecCommand("mkdir", "-p", targetDir); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	posixStub := stubCampScriptPosix(targetDir)
+	fishStub := stubCampScriptFish(targetDir)
+
+	const bashVerify = `[[ $(type -t camp) == function ]] && echo CAMP_FN
+[[ $(type -t cgo) == function ]] && echo CGO_FN`
+
+	const zshVerify = `(( $+functions[camp] )) && echo CAMP_FN
+(( $+functions[cgo] )) && echo CGO_FN`
+
+	const fishVerify = `functions -q camp; and echo CAMP_FN
+functions -q cgo; and echo CGO_FN`
+
+	cases := []struct {
+		name     string
+		shell    string
+		preamble string
+		stub     string
+		verify   string
+	}{
+		{
+			name:     "bash_bare",
+			shell:    "bash",
+			preamble: "",
+			stub:     posixStub,
+			verify:   bashVerify,
+		},
+		{
+			name:     "zsh_bare_no_compinit",
+			shell:    "zsh",
+			preamble: "emulate -R zsh",
+			stub:     posixStub,
+			verify:   zshVerify,
+		},
+		{
+			name:     "zsh_compinit_first",
+			shell:    "zsh",
+			preamble: "emulate -R zsh\nautoload -Uz compinit && compinit -u 2>/dev/null",
+			stub:     posixStub,
+			verify:   zshVerify,
+		},
+		{
+			// Stripped fpath with no compinit: compdef is absent so the deferred
+			// path runs, but add-zsh-hook is only an autoload stub whose file
+			// cannot be found. Registration must fail silently, not print
+			// "add-zsh-hook: function definition file not found" at startup.
+			name:     "zsh_stripped_fpath_no_compinit",
+			shell:    "zsh",
+			preamble: "emulate -R zsh\nfpath=()",
+			stub:     posixStub,
+			verify:   zshVerify,
+		},
+		{
+			name:     "fish_bare",
+			shell:    "fish",
+			preamble: "",
+			stub:     fishStub,
+			verify:   fishVerify,
+		},
+	}
+
+	for _, tc2 := range cases {
+		t.Run(tc2.name, func(t *testing.T) {
+			initScript := shellInitScript(t, tc, tc2.shell)
+			srcStderr, output, exitCode := runShellCleanStartup(t, tc, tc2.shell, tc2.preamble, initScript, tc2.stub, tc2.verify)
+
+			if srcStderr != "" {
+				t.Errorf("sourcing camp init wrote to stderr (clean startup must be silent):\n%s\n\nfull output:\n%s", srcStderr, output)
+			}
+			if exitCode != 0 {
+				t.Errorf("shell exited %d, output:\n%s", exitCode, output)
+			}
+			if !strings.Contains(output, "CAMP_FN") {
+				t.Errorf("camp wrapper function not defined, output:\n%s", output)
+			}
+			if !strings.Contains(output, "CGO_FN") {
+				t.Errorf("cgo wrapper function not defined, output:\n%s", output)
+			}
+		})
+	}
+}
+
 // ---------- Fish behavior tests ----------
 
 func TestShellInit_FishCampWrapperGo(t *testing.T) {
