@@ -4,6 +4,8 @@ package theme
 import (
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/Obedience-Corp/camp/internal/config"
 )
 
 // ThemeName represents a color theme name.
@@ -11,13 +13,13 @@ type ThemeName string
 
 const (
 	// ThemeAdaptive uses huh's default theme which auto-adapts to terminal.
-	ThemeAdaptive ThemeName = "adaptive"
+	ThemeAdaptive ThemeName = ThemeName(config.ThemeNameAdaptive)
 	// ThemeLight is optimized for light terminal backgrounds.
-	ThemeLight ThemeName = "light"
+	ThemeLight ThemeName = ThemeName(config.ThemeNameLight)
 	// ThemeDark is optimized for dark terminal backgrounds.
-	ThemeDark ThemeName = "dark"
+	ThemeDark ThemeName = ThemeName(config.ThemeNameDark)
 	// ThemeHighContrast provides maximum visibility.
-	ThemeHighContrast ThemeName = "high-contrast"
+	ThemeHighContrast ThemeName = ThemeName(config.ThemeNameHighContrast)
 )
 
 // ValidThemes lists all valid theme names.
