@@ -5,6 +5,7 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
@@ -71,20 +72,51 @@ func runCopy(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "source")
 	}
 
+	// Stat source (needed for same-file guard, dest-under-src guard, and the copy dispatch below).
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return camperrors.Wrap(err, "stat source")
+	}
+
 	// If dest is a directory or ends with /, place source inside it
 	if transfer.IsDestDir(dest) || transfer.IsDestDir(args[1]) {
 		dest = filepath.Join(dest, filepath.Base(src))
 	}
 
-	if !force {
-		if _, err := os.Stat(dest); err == nil {
-			return fmt.Errorf("destination %q already exists (use --force to overwrite)", dest)
+	// Same-file check: stat the resolved destination. If it exists and refers
+	// to the same inode as src, refuse before opening with O_TRUNC.
+	if destStatForSame, err := os.Stat(dest); err == nil {
+		if os.SameFile(srcInfo, destStatForSame) {
+			return fmt.Errorf("source and destination are the same file: %s", dest)
 		}
 	}
 
-	srcInfo, err := os.Stat(src)
-	if err != nil {
-		return camperrors.Wrap(err, "stat source")
+	if srcInfo.IsDir() {
+		// Resolve both paths to their canonical forms before comparing.
+		// On macOS, /var is a symlink to /private/var; without EvalSymlinks
+		// a prefix check would silently fail and allow the recursion.
+		resolvedSrc, err := filepath.EvalSymlinks(src)
+		if err != nil {
+			return camperrors.Wrap(err, "resolve source path")
+		}
+		resolvedDest, resolvedDestErr := filepath.EvalSymlinks(dest)
+		if resolvedDestErr != nil {
+			// dest may not exist yet; resolve the nearest existing ancestor.
+			// If it doesn't exist, self-recursion is impossible.
+			resolvedDest = dest
+		}
+		// Guard: dest must not be inside src. Use separator-guarded prefix check
+		// so that /foo/bar does not falsely match /foo/barsuffix.
+		srcWithSep := resolvedSrc + string(filepath.Separator)
+		if resolvedDest == resolvedSrc || strings.HasPrefix(resolvedDest, srcWithSep) {
+			return fmt.Errorf("cannot copy a directory into itself: %s is inside %s", dest, src)
+		}
+	}
+
+	if !force {
+		if _, err := os.Stat(dest); err == nil {
+			return fmt.Errorf("destination %q already exists", dest)
+		}
 	}
 
 	if srcInfo.IsDir() {
