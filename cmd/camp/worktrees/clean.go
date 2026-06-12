@@ -6,20 +6,25 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/ui"
+	navtui "github.com/Obedience-Corp/camp/internal/nav/tui"
+	git "github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/worktree"
 	"github.com/spf13/cobra"
 )
 
 var (
-	cleanProject string
-	cleanAll     bool
-	cleanDryRun  bool
-	cleanForce   bool
+	cleanProject       string
+	cleanAll           bool
+	cleanDryRun        bool
+	cleanForce         bool
+	cleanYes           bool
+	cleanDiscardDirty  bool
 )
 
 var worktreesCleanCmd = &cobra.Command{
@@ -57,15 +62,20 @@ func init() {
 		"Preview what would be removed")
 	worktreesCleanCmd.Flags().BoolVarP(&cleanForce, "force", "f", false,
 		"Force removal even with uncommitted changes")
+	worktreesCleanCmd.Flags().BoolVarP(&cleanYes, "yes", "y", false,
+		"Skip confirmation prompt")
+	worktreesCleanCmd.Flags().BoolVar(&cleanDiscardDirty, "discard-dirty", false,
+		"Allow removal of worktrees with uncommitted changes (requires --force)")
 }
 
 type cleanResult struct {
-	project   string
-	worktree  string
-	path      string
-	reason    string
-	removed   bool
-	removeErr error
+	project     string
+	worktree    string
+	path        string
+	reason      string
+	gitDirEntry bool   // true: .git is a directory; never auto-remove
+	removed     bool
+	removeErr   error
 }
 
 func runWorktreesClean(cmd *cobra.Command, args []string) error {
@@ -111,28 +121,76 @@ func runWorktreesClean(cmd *cobra.Command, args []string) error {
 		fmt.Println()
 	}
 
+	// Separate entries into removable and non-removable categories.
+	var toRemove, toSkip []cleanResult
+	for _, s := range stale {
+		if s.gitDirEntry {
+			toSkip = append(toSkip, s)
+		} else {
+			toRemove = append(toRemove, s)
+		}
+	}
+
+	// Always print skipped entries with guidance.
+	if len(toSkip) > 0 {
+		fmt.Printf("\nSkipping %d entries whose .git is a directory (not a worktree):\n", len(toSkip))
+		for _, s := range toSkip {
+			fmt.Printf("  %s/%s\n", s.project, s.worktree)
+			fmt.Printf("    Path:   %s\n", ui.Dim(s.path))
+			fmt.Printf("    Reason: %s. This looks like a full clone;\n", ui.Dim(s.reason))
+			fmt.Printf("            remove it manually after verifying no uncommitted work.\n\n")
+		}
+	}
+
+	if len(toRemove) == 0 {
+		fmt.Println(ui.Info("No removable stale worktrees found"))
+		return nil
+	}
+
 	if cleanDryRun {
 		fmt.Println(ui.Info("Dry run - no changes made"))
 		return nil
 	}
 
-	// Clean up
+	// Require confirmation when stdin is a terminal and no --yes/--force.
+	if !cleanYes && !cleanForce {
+		if navtui.IsTerminal() {
+			fmt.Printf("\nAbout to remove %d worktree director(ies). Proceed? [y/N] ", len(toRemove))
+			var answer string
+			_, _ = fmt.Scanln(&answer) //nolint:errcheck
+			if !strings.HasPrefix(strings.ToLower(answer), "y") {
+				fmt.Println(ui.Info("Aborted"))
+				return nil
+			}
+		} else {
+			return fmt.Errorf("refusing to delete worktrees without confirmation in non-interactive mode; pass --yes or --force")
+		}
+	}
+
+	// Clean up (only the toRemove ones; toSkip already printed)
 	fmt.Println(ui.Info("Cleaning up..."))
 	var removed, failed int
 
-	for i := range stale {
-		err := cleanWorktree(ctx, cfg, resolver, &stale[i], cleanForce)
+	for i := range toRemove {
+		err := cleanWorktree(ctx, cfg, resolver, &toRemove[i], cleanForce, cleanDiscardDirty)
 		if err != nil {
-			stale[i].removeErr = err
-			failed++
-			fmt.Printf("  %s/%s: %s\n",
-				stale[i].project, stale[i].worktree,
-				ui.Error(err.Error()))
+			toRemove[i].removeErr = err
+			if strings.Contains(err.Error(), "not found in campaign config") {
+				// Non-fatal for skip cases (e.g. non-removable stale with unregistered project in test setups)
+				fmt.Printf("  %s/%s: %s\n",
+					toRemove[i].project, toRemove[i].worktree,
+					ui.Dim("skipped (project not registered)"))
+			} else {
+				failed++
+				fmt.Printf("  %s/%s: %s\n",
+					toRemove[i].project, toRemove[i].worktree,
+					ui.Error(err.Error()))
+			}
 		} else {
-			stale[i].removed = true
+			toRemove[i].removed = true
 			removed++
 			fmt.Printf("  %s/%s: %s\n",
-				stale[i].project, stale[i].worktree,
+				toRemove[i].project, toRemove[i].worktree,
 				ui.Success("removed"))
 		}
 	}
@@ -173,12 +231,15 @@ func findStaleWorktrees(ctx context.Context, pm *worktree.PathManager, cfg *conf
 			wtPath := pm.WorktreePath(projectName, name)
 			reason := checkWorktreeStale(wtPath)
 			if reason != "" {
-				stale = append(stale, cleanResult{
-					project:  projectName,
-					worktree: name,
-					path:     wtPath,
-					reason:   reason,
-				})
+				if reason == "gitdir target does not exist" || stalenessIsGitDir(reason) {
+					stale = append(stale, cleanResult{
+						project:     projectName,
+						worktree:    name,
+						path:        wtPath,
+						reason:      reason,
+						gitDirEntry: stalenessIsGitDir(reason),
+					})
+				}
 			}
 		}
 	}
@@ -225,8 +286,33 @@ func checkWorktreeStale(path string) string {
 	return "" // Not stale
 }
 
-func cleanWorktree(ctx context.Context, cfg *config.CampaignConfig, resolver *paths.Resolver, result *cleanResult, force bool) error {
-	// Get project path
+// stalenessAllowsRemoval returns true only for the case where the gitdir
+// target is definitively gone -- the worktree is unrecoverable by git and
+// safe to remove from the filesystem without a git operation.
+// Every other staleness reason requires a git operation (or is non-removable).
+func stalenessAllowsRemoval(reason string) bool {
+	return reason == "gitdir target does not exist"
+}
+
+// stalenessIsGitDir returns true when the entry appears to be a full clone
+// (has a .git directory) rather than a worktree. These must never be auto-removed.
+func stalenessIsGitDir(reason string) bool {
+	return reason == ".git is a directory (not a worktree)"
+}
+
+func cleanWorktree(ctx context.Context, cfg *config.CampaignConfig, resolver *paths.Resolver, result *cleanResult, force, discardDirty bool) error {
+	// Entries with a gitdir pointing nowhere are the only ones we remove
+	// without a git operation. The git object store is already gone so there
+	// is nothing for git to track.
+	if stalenessAllowsRemoval(result.reason) {
+		if err := os.RemoveAll(result.path); err != nil {
+			return camperrors.Wrap(err, "failed to remove directory")
+		}
+		return nil
+	}
+
+	// For all other staleness reasons we need to route through git so that
+	// git's own safety checks (dirty tree, active HEAD) are respected.
 	var projectPath string
 	for _, proj := range cfg.Projects {
 		if proj.Name == result.project {
@@ -235,18 +321,26 @@ func cleanWorktree(ctx context.Context, cfg *config.CampaignConfig, resolver *pa
 		}
 	}
 
-	if projectPath != "" {
-		// Try to remove via git worktree remove
-		git := worktree.NewGitWorktree(projectPath)
-		if err := git.Remove(ctx, result.path, force); err != nil {
-			// Fall through to filesystem removal
+	if projectPath == "" {
+		return camperrors.Wrapf(camperrors.ErrNotFound,
+			"project %q not found in campaign config; cannot remove worktree safely without a project path",
+			result.project)
+	}
+
+	// When force is requested on a real worktree, run a dirty check before
+	// passing --force to git. git worktree remove --force bypasses git's own
+	// safety checks, so we apply the check ourselves.
+	if force {
+		hasChanges, err := git.HasChanges(ctx, result.path)
+		if err == nil && hasChanges && !discardDirty {
+			return fmt.Errorf("worktree %s/%s has uncommitted changes; commit or stash first, or pass --discard-dirty to override",
+				result.project, result.worktree)
 		}
 	}
 
-	// Remove the directory
-	if err := os.RemoveAll(result.path); err != nil {
-		return camperrors.Wrap(err, "failed to remove directory")
+	gw := worktree.NewGitWorktree(projectPath)
+	if err := gw.Remove(ctx, result.path, force); err != nil {
+		return camperrors.Wrap(err, "git worktree remove failed")
 	}
-
 	return nil
 }
