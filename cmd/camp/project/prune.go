@@ -39,11 +39,12 @@ Examples:
 }
 
 var (
-	pruneProjectFlag  string
-	pruneDryRun       bool
-	pruneForce        bool
-	pruneRemote       bool
-	pruneRemoteDelete bool
+	pruneProjectFlag    string
+	pruneDryRun         bool
+	pruneForce          bool
+	pruneRemote         bool
+	pruneRemoteDelete   bool
+	pruneDiscardDirty   bool
 )
 
 func init() {
@@ -52,6 +53,7 @@ func init() {
 	projectPruneCmd.Flags().BoolVarP(&pruneForce, "force", "f", false, "Skip local branch deletion confirmation")
 	projectPruneCmd.Flags().BoolVar(&pruneRemote, "remote", false, "Also prune stale remote tracking refs")
 	projectPruneCmd.Flags().BoolVar(&pruneRemoteDelete, "remote-delete", false, "Also delete merged branches on origin (destructive)")
+	projectPruneCmd.Flags().BoolVar(&pruneDiscardDirty, "discard-dirty", false, "Allow removal of worktrees with uncommitted changes (for branches with worktrees)")
 
 	if err := projectPruneCmd.RegisterFlagCompletionFunc("project", cmdutil.CompleteProjectName); err != nil {
 		panic(err)
@@ -71,6 +73,7 @@ func pruneOptionsFromFlags() prune.Options {
 		Force:         pruneForce,
 		Remote:        pruneRemote,
 		RemoteDelete:  pruneRemoteDelete,
+		DiscardDirty:  pruneDiscardDirty,
 		RefreshRemote: true,
 	}
 }

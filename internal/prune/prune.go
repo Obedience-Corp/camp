@@ -42,6 +42,11 @@ type Options struct {
 	// worktrees instead of removing the worktree and deleting the branch.
 	SkipWorktreeBranches bool
 
+	// DiscardDirty allows removal of worktrees that have uncommitted changes
+	// (for the branch-worktree removal path). When false (default), dirty
+	// branch worktrees are skipped with SkipReasonDirtyWorktree.
+	DiscardDirty bool
+
 	// RefreshRemote causes Execute to run 'git fetch --prune <remote>'
 	// before checking upstream:track state. Required for gone-upstream
 	// detection to reflect the current remote. Set true for interactive
@@ -471,6 +476,31 @@ func deleteLocalBranches(ctx context.Context, path string, merged []string, forc
 	// Remove worktrees first for branches that have them.
 	wt := worktree.NewGitWorktree(path)
 	for branch, entry := range worktreesToRemove {
+		if !opts.DiscardDirty {
+			clean, err := detachedWorktreeClean(ctx, entry.Path)
+			if err != nil {
+				pr.Results = append(pr.Results, Result{
+					Branch: branch,
+					Status: StatusError,
+					Detail: fmt.Sprintf("dirty check for worktree: %s", err),
+				})
+				continue
+			}
+			if !clean {
+				detail := fmt.Sprintf("dirty worktree: %s", entry.Path)
+				if opts.DryRun {
+					detail = fmt.Sprintf("would keep dirty worktree: %s", entry.Path)
+				}
+				pr.Results = append(pr.Results, Result{
+					Branch:     branch,
+					Status:     StatusSkipped,
+					Detail:     detail,
+					SkipReason: SkipReasonDirtyWorktree,
+				})
+				continue
+			}
+		}
+
 		if opts.DryRun {
 			pr.Results = append(pr.Results, Result{
 				Branch: branch,
