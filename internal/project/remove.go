@@ -169,6 +169,18 @@ func Remove(ctx context.Context, campaignRoot, name string, opts RemoveOptions) 
 		// metadata causes re-add failures.
 		modulesPath := filepath.Join(campaignRoot, ".git", "modules", "projects", name)
 		if boundErr := pathutil.ValidateBoundary(campaignRoot, modulesPath); boundErr == nil {
+			// Guard: refuse to destroy local history when unpushed branches exist.
+			if !opts.Force {
+				unpushed, checkErr := detectUnpushedRefs(ctx, modulesPath)
+				if checkErr == nil && len(unpushed) > 0 {
+					return result, camperrors.Wrapf(
+						camperrors.ErrInvalidInput,
+						"project %q has %d unpushed branch(es) in .git/modules: %s\n"+
+							"push these branches or pass --force to discard local history",
+						name, len(unpushed), strings.Join(unpushed, ", "),
+					)
+				}
+			}
 			if removeErr := os.RemoveAll(modulesPath); removeErr == nil {
 				addStep(result, fmt.Sprintf("removed .git/modules/projects/%s", name))
 			}
@@ -330,6 +342,54 @@ func isDirtySubmodule(ctx context.Context, path string) (bool, []string, error) 
 		}
 	}
 	return len(changed) > 0, changed, nil
+}
+
+// detectUnpushedRefs returns local branch names whose tips contain commits
+// not reachable from any remote tracking ref. An empty list means all local
+// branches are fully pushed (or there are no local branches).
+//
+// gitDir must be the path to the module's git directory
+// (e.g., .git/modules/projects/<name>). The function runs git commands
+// with --git-dir set to this path rather than relying on the working tree.
+func detectUnpushedRefs(ctx context.Context, gitDir string) ([]string, error) {
+	// List all local branches in the module gitdir.
+	listCmd := exec.CommandContext(ctx, "git",
+		"--git-dir", gitDir,
+		"for-each-ref", "--format=%(refname:short)", "refs/heads/")
+	listOutput, err := listCmd.Output()
+	if err != nil {
+		// If for-each-ref fails (e.g., not a git repo), treat as no branches.
+		return nil, nil
+	}
+
+	var unpushed []string
+	for _, branch := range strings.Split(strings.TrimSpace(string(listOutput)), "\n") {
+		branch = strings.TrimSpace(branch)
+		if branch == "" {
+			continue
+		}
+
+		// Check whether this branch has any commit not reachable from remotes.
+		// `git log --oneline <branch> --not --remotes` lists commits on branch
+		// that do not exist on any remote tracking ref. If the output is
+		// non-empty, the branch has unpushed commits.
+		logCmd := exec.CommandContext(ctx, "git",
+			"--git-dir", gitDir,
+			"log", "--oneline", branch, "--not", "--remotes")
+		logOutput, err := logCmd.Output()
+		if err != nil {
+			// A log failure (e.g., no remotes configured) means we cannot
+			// confirm safety; treat as potentially unpushed to be conservative.
+			unpushed = append(unpushed, branch)
+			continue
+		}
+
+		if strings.TrimSpace(string(logOutput)) != "" {
+			unpushed = append(unpushed, branch)
+		}
+	}
+
+	return unpushed, nil
 }
 
 // removeSubmodule properly removes a git submodule.
