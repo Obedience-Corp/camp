@@ -75,6 +75,58 @@ func TestResolveContext_RootFallback(t *testing.T) {
 	}
 }
 
+func TestResolveContext_IgnoresFestivalsDungeon(t *testing.T) {
+	campaignRoot := t.TempDir()
+
+	rootDungeon := filepath.Join(campaignRoot, "dungeon")
+	if err := os.MkdirAll(rootDungeon, 0755); err != nil {
+		t.Fatalf("creating root dungeon: %v", err)
+	}
+
+	festDungeon := filepath.Join(campaignRoot, "festivals", "dungeon")
+	if err := os.MkdirAll(festDungeon, 0755); err != nil {
+		t.Fatalf("creating festivals dungeon: %v", err)
+	}
+
+	cwd := filepath.Join(campaignRoot, "festivals", "planning", "my-fest")
+	if err := os.MkdirAll(cwd, 0755); err != nil {
+		t.Fatalf("creating festival cwd: %v", err)
+	}
+
+	got, err := ResolveContext(context.Background(), campaignRoot, cwd)
+	if err != nil {
+		t.Fatalf("ResolveContext() error = %v", err)
+	}
+	if got.DungeonPath != mustEval(t, rootDungeon) {
+		t.Fatalf("DungeonPath = %q, want %q", got.DungeonPath, mustEval(t, rootDungeon))
+	}
+	if got.ParentPath != mustEval(t, campaignRoot) {
+		t.Fatalf("ParentPath = %q, want %q", got.ParentPath, mustEval(t, campaignRoot))
+	}
+}
+
+func TestResolveContext_NoDungeonInFestivalsSubtree(t *testing.T) {
+	campaignRoot := t.TempDir()
+
+	festDungeon := filepath.Join(campaignRoot, "festivals", "dungeon")
+	if err := os.MkdirAll(festDungeon, 0755); err != nil {
+		t.Fatalf("creating festivals dungeon: %v", err)
+	}
+
+	cwd := filepath.Join(campaignRoot, "festivals", "planning", "my-fest")
+	if err := os.MkdirAll(cwd, 0755); err != nil {
+		t.Fatalf("creating festival cwd: %v", err)
+	}
+
+	_, err := ResolveContext(context.Background(), campaignRoot, cwd)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, ErrDungeonContextNotFound) {
+		t.Fatalf("error = %v, want ErrDungeonContextNotFound", err)
+	}
+}
+
 func TestResolveContext_NoDungeonFound(t *testing.T) {
 	campaignRoot := t.TempDir()
 	inside := filepath.Join(campaignRoot, "workflow", "design")

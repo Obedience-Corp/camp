@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
@@ -66,6 +67,9 @@ func ResolveContext(ctx context.Context, campaignRoot, cwd string) (Context, err
 		info, statErr := os.Stat(candidate)
 		switch {
 		case statErr == nil && info.IsDir():
+			if isFestOwned(dir) {
+				break
+			}
 			return Context{
 				DungeonPath: candidate,
 				ParentPath:  dir,
@@ -91,4 +95,24 @@ func ResolveContext(ctx context.Context, campaignRoot, cwd string) (Context, err
 		absCwd,
 		absRoot,
 	)
+}
+
+func isFestOwned(dir string) bool {
+	for _, elem := range splitPathElements(dir) {
+		if elem == "festivals" {
+			return true
+		}
+	}
+	return false
+}
+
+func splitPathElements(p string) []string {
+	parts := strings.Split(filepath.Clean(p), string(filepath.Separator))
+	elems := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part != "" {
+			elems = append(elems, part)
+		}
+	}
+	return elems
 }

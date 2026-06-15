@@ -291,6 +291,36 @@ func TestService_MoveToDungeonStatus_Collision(t *testing.T) {
 	}
 }
 
+func TestService_MoveToDungeonStatus_DoesNotWriteBucketUnderFestivals(t *testing.T) {
+	ctx := context.Background()
+
+	root := t.TempDir()
+	dungeonPath := filepath.Join(root, "dungeon")
+	svc := NewService(root, dungeonPath)
+
+	if _, err := svc.Init(ctx, InitOptions{}); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "festivals", "dungeon"), 0755); err != nil {
+		t.Fatalf("failed to create festivals dungeon: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "stale-doc.md"), []byte("stale"), 0644); err != nil {
+		t.Fatalf("failed to create source file: %v", err)
+	}
+
+	targetPath, err := svc.MoveToDungeonStatus(ctx, "stale-doc.md", root, "archived")
+	if err != nil {
+		t.Fatalf("MoveToDungeonStatus failed: %v", err)
+	}
+
+	if filepath.Dir(filepath.Dir(targetPath)) != filepath.Join(dungeonPath, "archived") {
+		t.Fatalf("targetPath = %q, want dated bucket under campaign-root dungeon", targetPath)
+	}
+	if _, err := os.Stat(filepath.Join(root, "festivals", "dungeon", "archived")); !os.IsNotExist(err) {
+		t.Fatalf("festivals/dungeon/archived should not be created, stat err = %v", err)
+	}
+}
+
 func TestService_MoveToDungeonStatus_InvalidStatus(t *testing.T) {
 	ctx := context.Background()
 

@@ -31,14 +31,23 @@ func TestService_Init(t *testing.T) {
 		t.Errorf("expected 4 created dirs, got %d: %v", len(result.CreatedDirs), result.CreatedDirs)
 	}
 
-	// Should create files (OBEY.md + 3 .gitkeep files)
-	if len(result.CreatedFiles) != 4 {
-		t.Errorf("expected 4 created files, got %d: %v", len(result.CreatedFiles), result.CreatedFiles)
+	// Should create files (OBEY.md + 3 .gitkeep files + .crawl.yaml)
+	if len(result.CreatedFiles) != 5 {
+		t.Errorf("expected 5 created files, got %d: %v", len(result.CreatedFiles), result.CreatedFiles)
 	}
 
 	// Verify OBEY.md exists
 	if _, err := os.Stat(filepath.Join(dungeonPath, "OBEY.md")); os.IsNotExist(err) {
 		t.Error("OBEY.md was not created")
+	}
+	crawlConfigPath := filepath.Join(dungeonPath, ".crawl.yaml")
+	crawlConfig, err := os.ReadFile(crawlConfigPath)
+	if err != nil {
+		t.Fatalf(".crawl.yaml was not created: %v", err)
+	}
+	wantCrawlConfig := "excludes:\n  - festivals\n  - projects\n"
+	if string(crawlConfig) != wantCrawlConfig {
+		t.Fatalf(".crawl.yaml = %q, want %q", string(crawlConfig), wantCrawlConfig)
 	}
 
 	// Verify subdirectories exist
@@ -77,9 +86,9 @@ func TestService_Init_Idempotent(t *testing.T) {
 		t.Errorf("expected 0 created files on second init, got %d", len(result.CreatedFiles))
 	}
 
-	// Only OBEY.md should be skipped
-	if len(result.Skipped) != 1 {
-		t.Errorf("expected 1 skipped file on second init, got %d: %v", len(result.Skipped), result.Skipped)
+	// OBEY.md and .crawl.yaml should be skipped
+	if len(result.Skipped) != 2 {
+		t.Errorf("expected 2 skipped files on second init, got %d: %v", len(result.Skipped), result.Skipped)
 	}
 }
 
@@ -107,8 +116,8 @@ func TestService_Init_Force(t *testing.T) {
 		t.Fatalf("second Init with force failed: %v", err)
 	}
 
-	// Only OBEY.md should be recreated with force
-	if len(result.CreatedFiles) != 1 {
-		t.Errorf("expected 1 created file with force, got %d: %v", len(result.CreatedFiles), result.CreatedFiles)
+	// OBEY.md and .crawl.yaml should be recreated with force
+	if len(result.CreatedFiles) != 2 {
+		t.Errorf("expected 2 created files with force, got %d: %v", len(result.CreatedFiles), result.CreatedFiles)
 	}
 }

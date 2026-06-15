@@ -133,6 +133,8 @@ func (s *Service) ListParentItems(ctx context.Context, parentPath string) ([]Dun
 		".gitkeep":     true,
 		".gitignore":   true,
 		".crawlignore": true,
+		"festivals":    true,
+		"projects":     true,
 	}
 
 	// Check .workflow.yaml for structural directory exclusions.
