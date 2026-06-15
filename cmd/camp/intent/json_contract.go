@@ -7,6 +7,7 @@ import (
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	intentcore "github.com/Obedience-Corp/camp/internal/intent"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 	"github.com/spf13/cobra"
 )
 
@@ -64,7 +65,11 @@ type IntentAddPayload struct {
 func outputIntentPayload(w io.Writer, campaignRoot string, intents []*intentcore.Intent) error {
 	items := make([]IntentItem, 0, len(intents))
 	for _, i := range intents {
-		items = append(items, intentItemFromIntent(i))
+		item, err := intentItemFromIntent(campaignRoot, i)
+		if err != nil {
+			return err
+		}
+		items = append(items, item)
 	}
 	return encodeIntentJSON(w, IntentPayload{
 		SchemaVersion: IntentJSONVersion,
@@ -92,16 +97,24 @@ func outputIntentCountPayload(w io.Writer, campaignRoot string, counts []intentc
 }
 
 func outputIntentAddPayload(w io.Writer, campaignRoot string, i *intentcore.Intent) error {
+	relPath, err := pathutil.RelativeToRoot(campaignRoot, i.Path)
+	if err != nil {
+		return camperrors.Wrap(err, "relativizing intent path")
+	}
 	return encodeIntentJSON(w, IntentAddPayload{
 		SchemaVersion: IntentJSONVersion,
 		GeneratedAt:   time.Now().UTC(),
 		CampaignRoot:  campaignRoot,
 		ID:            i.ID,
-		Path:          i.Path,
+		Path:          relPath,
 	})
 }
 
-func intentItemFromIntent(i *intentcore.Intent) IntentItem {
+func intentItemFromIntent(campaignRoot string, i *intentcore.Intent) (IntentItem, error) {
+	relPath, err := pathutil.RelativeToRoot(campaignRoot, i.Path)
+	if err != nil {
+		return IntentItem{}, camperrors.Wrap(err, "relativizing intent path")
+	}
 	item := IntentItem{
 		ID:                i.ID,
 		Title:             i.Title,
@@ -117,12 +130,12 @@ func intentItemFromIntent(i *intentcore.Intent) IntentItem {
 		PromotionCriteria: i.PromotionCriteria,
 		PromotedTo:        i.PromotedTo,
 		CreatedAt:         i.CreatedAt.Format(time.RFC3339),
-		Path:              i.Path,
+		Path:              relPath,
 	}
 	if !i.UpdatedAt.IsZero() {
 		item.UpdatedAt = i.UpdatedAt.Format(time.RFC3339)
 	}
-	return item
+	return item, nil
 }
 
 func encodeIntentJSON(w io.Writer, payload any) error {

@@ -15,6 +15,7 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/paths"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/priority"
 	wktui "github.com/Obedience-Corp/camp/internal/workitem/tui"
@@ -66,6 +67,10 @@ Examples:
 			cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 			if err != nil {
 				return camperrors.Wrap(err, "not in a campaign directory")
+			}
+			campaignRoot, err = pathutil.ResolveRoot(campaignRoot)
+			if err != nil {
+				return camperrors.Wrap(err, "resolving campaign root")
 			}
 			resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
 

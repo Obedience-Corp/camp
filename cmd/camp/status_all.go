@@ -11,6 +11,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 	tuistatus "github.com/Obedience-Corp/camp/internal/tui/status"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	tea "github.com/charmbracelet/bubbletea"
@@ -68,6 +69,11 @@ type repoStatus struct {
 	Error       string `json:"error,omitempty"`
 }
 
+type statusAllOutput struct {
+	CampaignRoot string       `json:"campaign_root"`
+	Repos        []repoStatus `json:"repos"`
+}
+
 func runStatusAll(cmd *cobra.Command, _ []string) error {
 	ctx := cmd.Context()
 	if ctx == nil {
@@ -77,6 +83,10 @@ func runStatusAll(cmd *cobra.Command, _ []string) error {
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
 		return camperrors.Wrap(err, "not in a campaign")
+	}
+	campRoot, err = pathutil.ResolveRoot(campRoot)
+	if err != nil {
+		return camperrors.Wrap(err, "resolving campaign root")
 	}
 
 	// Enumerate submodules (including nested monorepo submodules)
@@ -100,6 +110,7 @@ func runStatusAll(cmd *cobra.Command, _ []string) error {
 
 	// Add campaign root itself (with ref filtering)
 	rootStatus := getRepoStatus(ctx, campRoot, "campaign root", true, statusAllRemoteURL)
+	rootStatus.Path = "."
 	allStatuses := append([]repoStatus{rootStatus}, statuses...)
 
 	// Status cache write removed: no read path existed, and read-style polling
@@ -107,7 +118,7 @@ func runStatusAll(cmd *cobra.Command, _ []string) error {
 
 	// Output
 	if statusAllJSON {
-		return outputStatusJSON(allStatuses)
+		return outputStatusJSON(campRoot, allStatuses)
 	}
 
 	if statusAllView {
@@ -371,8 +382,11 @@ func renderStatusTable(statuses []repoStatus) {
 	fmt.Println(t)
 }
 
-func outputStatusJSON(statuses []repoStatus) error {
+func outputStatusJSON(campaignRoot string, statuses []repoStatus) error {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
-	return enc.Encode(statuses)
+	return enc.Encode(statusAllOutput{
+		CampaignRoot: campaignRoot,
+		Repos:        statuses,
+	})
 }

@@ -40,6 +40,7 @@ func TestIntentListJSONEnvelopeAndFormatAlias(t *testing.T) {
 	if got := len(payload["items"].([]any)); got != 3 {
 		t.Fatalf("items length = %d, want 3", got)
 	}
+	assertIntentPayloadPathsJoin(t, payload)
 
 	aliasStdout, aliasStderr, err := executeIntentJSONTestCommand(t, newIntentListCommand(), "-f", "json")
 	if err != nil {
@@ -51,6 +52,29 @@ func TestIntentListJSONEnvelopeAndFormatAlias(t *testing.T) {
 	if !reflect.DeepEqual(alias, payload) {
 		t.Fatalf("-f json payload differs from --json\nalias=%#v\njson=%#v", alias, payload)
 	}
+}
+
+func TestIntentListJSONPathsJoinFromSymlinkedRoot(t *testing.T) {
+	root, _ := setupIntentJSONCampaign(t)
+	link := filepath.Join(t.TempDir(), "campaign-link")
+	if err := os.Symlink(root, link); err != nil {
+		t.Skipf("symlink campaign root: %v", err)
+	}
+	chdirIntentJSONTest(t, link)
+
+	stdout, stderr, err := executeIntentJSONTestCommand(t, newIntentListCommand(), "--json")
+	if err != nil {
+		t.Fatalf("list --json error = %v\nstderr=%s", err, stderr)
+	}
+	payload := decodeIntentJSONPayload(t, stdout)
+	wantRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(%s): %v", root, err)
+	}
+	if got := payload["campaign_root"]; got != wantRoot {
+		t.Fatalf("campaign_root = %v, want %q", got, wantRoot)
+	}
+	assertIntentPayloadPathsJoin(t, payload)
 }
 
 func TestIntentListJSONHonorsMultipleTypeFilters(t *testing.T) {
@@ -155,7 +179,11 @@ func TestIntentAddJSONEmitsCreatedPayload(t *testing.T) {
 	if !ok || path == "" {
 		t.Fatalf("add payload missing path: %#v", payload)
 	}
-	if _, err := os.Stat(path); err != nil {
+	if filepath.IsAbs(path) {
+		t.Fatalf("add payload path is absolute: %q", path)
+	}
+	campaignRoot := payload["campaign_root"].(string)
+	if _, err := os.Stat(filepath.Join(campaignRoot, path)); err != nil {
 		t.Fatalf("created intent path missing: %v", err)
 	}
 	if bytes.Contains([]byte(stdout), []byte("Intent created")) {
@@ -270,6 +298,32 @@ func decodeIntentJSONPayload(t *testing.T, raw string) map[string]any {
 		t.Fatalf("invalid JSON payload: %v\n%s", err, raw)
 	}
 	return payload
+}
+
+func assertIntentPayloadPathsJoin(t *testing.T, payload map[string]any) {
+	t.Helper()
+
+	campaignRoot, ok := payload["campaign_root"].(string)
+	if !ok || campaignRoot == "" {
+		t.Fatalf("payload missing campaign_root: %#v", payload)
+	}
+	items, ok := payload["items"].([]any)
+	if !ok {
+		t.Fatalf("payload missing items: %#v", payload)
+	}
+	for _, raw := range items {
+		item := raw.(map[string]any)
+		path, ok := item["path"].(string)
+		if !ok || path == "" {
+			t.Fatalf("intent item missing path: %#v", item)
+		}
+		if filepath.IsAbs(path) {
+			t.Fatalf("intent item path is absolute: %q", path)
+		}
+		if _, err := os.Stat(filepath.Join(campaignRoot, path)); err != nil {
+			t.Fatalf("joined intent path missing for %q: %v", path, err)
+		}
+	}
 }
 
 func normalizeGeneratedAt(payload map[string]any) {
