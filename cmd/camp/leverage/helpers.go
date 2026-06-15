@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -237,125 +236,6 @@ func printVerboseLeverageInfo(cmd *cobra.Command, cfg *intleverage.LeverageConfi
 	for _, p := range resolved {
 		fmt.Fprintf(cmd.ErrOrStderr(), "[verbose]   %s -> scc:%s git:%s\n", p.Name, p.SCCDir, p.GitDir)
 	}
-}
-
-type scoreParams struct {
-	AuthorFilter    string
-	PeopleOverride  int
-	FallbackElapsed float64
-}
-
-type currentSnapshotInput struct {
-	project intleverage.ResolvedProject
-	result  *intleverage.SCCResult
-	score   *intleverage.LeverageScore
-}
-
-type headCommitResolver func(context.Context, string) (string, time.Time, error)
-
-func computeProjectScore(ctx context.Context, proj intleverage.ResolvedProject, result *intleverage.SCCResult, params scoreParams) *intleverage.LeverageScore {
-	var projActualPM float64
-	var projPeople int
-	var projElapsed float64
-
-	if params.AuthorFilter != "" {
-		projPeople = 1
-		first, last, gitErr := intleverage.AuthorDateRange(ctx, proj.GitDir, params.AuthorFilter)
-		if gitErr == nil {
-			projElapsed = intleverage.ElapsedMonths(first, last)
-		}
-		if projElapsed <= 0 {
-			projElapsed = 0.1
-		}
-		projActualPM = projElapsed
-	} else if params.PeopleOverride > 0 {
-		projPeople = params.PeopleOverride
-		first, last, gitErr := intleverage.GitDateRange(ctx, proj.GitDir)
-		if gitErr == nil {
-			projElapsed = intleverage.ElapsedMonths(first, last)
-		}
-		if projElapsed <= 0 {
-			projElapsed = params.FallbackElapsed
-		}
-		projActualPM = float64(projPeople) * projElapsed
-	} else if proj.ActualPersonMonths > 0 {
-		projActualPM = proj.ActualPersonMonths
-		projPeople = proj.AuthorCount
-		if projPeople == 0 {
-			projPeople = 1
-		}
-		first, last, gitErr := intleverage.GitDateRange(ctx, proj.GitDir)
-		if gitErr == nil {
-			projElapsed = intleverage.ElapsedMonths(first, last)
-		}
-		if projElapsed <= 0 {
-			projElapsed = params.FallbackElapsed
-		}
-	} else {
-		projPeople = proj.AuthorCount
-		if projPeople == 0 {
-			projPeople = 1
-		}
-		first, last, gitErr := intleverage.GitDateRange(ctx, proj.GitDir)
-		if gitErr == nil {
-			projElapsed = intleverage.ElapsedMonths(first, last)
-		}
-		if projElapsed <= 0 {
-			projElapsed = params.FallbackElapsed
-		}
-		projActualPM = float64(projPeople) * projElapsed
-	}
-
-	score := intleverage.ComputeScore(result, projPeople, projElapsed)
-	score.ProjectName = proj.Name
-	score.AuthorCount = proj.AuthorCount
-
-	if projActualPM > 0 {
-		score.ActualPersonMonths = projActualPM
-		estPM := result.EstimatedPeople * result.EstimatedScheduleMonths
-		score.FullLeverage = estPM / projActualPM
-	}
-
-	return score
-}
-
-func persistCurrentSnapshots(ctx context.Context, store intleverage.SnapshotStorer, inputs []currentSnapshotInput, sampledAt time.Time, resolveHead headCommitResolver) error {
-	if resolveHead == nil {
-		resolveHead = getHeadCommit
-	}
-
-	// TODO: Add snapshot retention trimming. Daily automatic snapshots solve
-	// recent-history freshness but will grow unbounded without an age-based cap.
-	type commitMeta struct {
-		hash string
-		date time.Time
-	}
-
-	byGitDir := make(map[string]commitMeta)
-
-	for _, input := range inputs {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-
-		meta, ok := byGitDir[input.project.GitDir]
-		if !ok {
-			hash, date, err := resolveHead(ctx, input.project.GitDir)
-			if err != nil {
-				return camperrors.Wrapf(err, "reading HEAD commit for %s", input.project.Name)
-			}
-			meta = commitMeta{hash: hash, date: date}
-			byGitDir[input.project.GitDir] = meta
-		}
-
-		scc := intleverage.SCCResultToSnapshotSCC(input.result)
-		snapshot := intleverage.NewSnapshot(input.project.Name, meta.hash, meta.date, sampledAt, scc, input.score, input.project.Authors)
-		if err := store.Save(ctx, snapshot); err != nil {
-			return camperrors.Wrapf(err, "saving current snapshot for %s", input.project.Name)
-		}
-	}
-
-	return nil
 }
 
 func buildScoreRows(scores []*intleverage.LeverageScore) [][]string {

@@ -1,6 +1,7 @@
 package leverage
 
 import (
+	"context"
 	"time"
 )
 
@@ -59,6 +60,80 @@ func ComputeScore(result *SCCResult, actualPeople int, elapsedMonths float64) *L
 		estimatedPersonMonths := result.EstimatedPeople * result.EstimatedScheduleMonths
 		actualPersonMonths := float64(actualPeople) * elapsedMonths
 		score.FullLeverage = estimatedPersonMonths / actualPersonMonths
+	}
+
+	return score
+}
+
+// ProjectScoreParams configures project-level score policy.
+type ProjectScoreParams struct {
+	AuthorFilter    string
+	PeopleOverride  int
+	FallbackElapsed float64
+}
+
+// ComputeProjectScore computes the leverage score for one resolved project.
+func ComputeProjectScore(ctx context.Context, proj ResolvedProject, result *SCCResult, params ProjectScoreParams) *LeverageScore {
+	var projActualPM float64
+	var projPeople int
+	var projElapsed float64
+
+	if params.AuthorFilter != "" {
+		projPeople = 1
+		first, last, gitErr := AuthorDateRange(ctx, proj.GitDir, params.AuthorFilter)
+		if gitErr == nil {
+			projElapsed = ElapsedMonths(first, last)
+		}
+		if projElapsed <= 0 {
+			projElapsed = 0.1
+		}
+		projActualPM = projElapsed
+	} else if params.PeopleOverride > 0 {
+		projPeople = params.PeopleOverride
+		first, last, gitErr := GitDateRange(ctx, proj.GitDir)
+		if gitErr == nil {
+			projElapsed = ElapsedMonths(first, last)
+		}
+		if projElapsed <= 0 {
+			projElapsed = params.FallbackElapsed
+		}
+		projActualPM = float64(projPeople) * projElapsed
+	} else if proj.ActualPersonMonths > 0 {
+		projActualPM = proj.ActualPersonMonths
+		projPeople = proj.AuthorCount
+		if projPeople == 0 {
+			projPeople = 1
+		}
+		first, last, gitErr := GitDateRange(ctx, proj.GitDir)
+		if gitErr == nil {
+			projElapsed = ElapsedMonths(first, last)
+		}
+		if projElapsed <= 0 {
+			projElapsed = params.FallbackElapsed
+		}
+	} else {
+		projPeople = proj.AuthorCount
+		if projPeople == 0 {
+			projPeople = 1
+		}
+		first, last, gitErr := GitDateRange(ctx, proj.GitDir)
+		if gitErr == nil {
+			projElapsed = ElapsedMonths(first, last)
+		}
+		if projElapsed <= 0 {
+			projElapsed = params.FallbackElapsed
+		}
+		projActualPM = float64(projPeople) * projElapsed
+	}
+
+	score := ComputeScore(result, projPeople, projElapsed)
+	score.ProjectName = proj.Name
+	score.AuthorCount = proj.AuthorCount
+
+	if projActualPM > 0 {
+		score.ActualPersonMonths = projActualPM
+		estPM := result.EstimatedPeople * result.EstimatedScheduleMonths
+		score.FullLeverage = estPM / projActualPM
 	}
 
 	return score

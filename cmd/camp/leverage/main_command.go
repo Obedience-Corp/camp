@@ -86,7 +86,7 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 	elapsed := intleverage.ElapsedMonths(cfg.ProjectStart, now)
 
 	var scores []*intleverage.LeverageScore
-	var snapshotInputs []currentSnapshotInput
+	var snapshotInputs []intleverage.CurrentSnapshotInput
 	for _, proj := range resolved {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -102,16 +102,16 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		score := computeProjectScore(ctx, proj, result, scoreParams{
+		score := intleverage.ComputeProjectScore(ctx, proj, result, intleverage.ProjectScoreParams{
 			AuthorFilter:    authorFilter,
 			PeopleOverride:  peopleOverride,
 			FallbackElapsed: elapsed,
 		})
 		scores = append(scores, score)
-		snapshotInputs = append(snapshotInputs, currentSnapshotInput{
-			project: proj,
-			result:  result,
-			score:   score,
+		snapshotInputs = append(snapshotInputs, intleverage.CurrentSnapshotInput{
+			Project: proj,
+			Result:  result,
+			Score:   score,
 		})
 	}
 
@@ -144,7 +144,7 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 
 	store := intleverage.NewFileSnapshotStore(intleverage.DefaultSnapshotDir(setup.Root))
 	if authorFilter == "" && peopleOverride == 0 {
-		if err := persistCurrentSnapshots(ctx, store, snapshotInputs, now, nil); err != nil {
+		if err := intleverage.PersistCurrentSnapshots(ctx, store, snapshotInputs, now, nil); err != nil {
 			fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to save leverage snapshots: %v\n", err)
 		}
 	}

@@ -162,25 +162,25 @@ func TestPersistCurrentSnapshots_SavesEachProjectAndReusesHeadLookup(t *testing.
 	commitDate := time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC)
 	sampledAt := commitDate.Add(2 * time.Hour)
 
-	inputs := []currentSnapshotInput{
+	inputs := []intleverage.CurrentSnapshotInput{
 		{
-			project: intleverage.ResolvedProject{
+			Project: intleverage.ResolvedProject{
 				Name:   "obey-platform-monorepo",
 				GitDir: "/tmp/obey-platform-monorepo",
 				Authors: []intleverage.AuthorContribution{
 					{Name: "A", Email: "a@example.com", Lines: 10},
 				},
 			},
-			result: sampleResult(10, 12, 1000, 500),
-			score:  &intleverage.LeverageScore{ProjectName: "obey-platform-monorepo"},
+			Result: sampleResult(10, 12, 1000, 500),
+			Score:  &intleverage.LeverageScore{ProjectName: "obey-platform-monorepo"},
 		},
 		{
-			project: intleverage.ResolvedProject{
+			Project: intleverage.ResolvedProject{
 				Name:   "obey-platform-monorepo@festui",
 				GitDir: "/tmp/obey-platform-monorepo",
 			},
-			result: sampleResult(2, 3, 100, 50),
-			score:  &intleverage.LeverageScore{ProjectName: "obey-platform-monorepo@festui"},
+			Result: sampleResult(2, 3, 100, 50),
+			Score:  &intleverage.LeverageScore{ProjectName: "obey-platform-monorepo@festui"},
 		},
 	}
 
@@ -193,8 +193,8 @@ func TestPersistCurrentSnapshots_SavesEachProjectAndReusesHeadLookup(t *testing.
 		return "abc123", commitDate, nil
 	}
 
-	if err := persistCurrentSnapshots(context.Background(), store, inputs, sampledAt, resolveHead); err != nil {
-		t.Fatalf("persistCurrentSnapshots failed: %v", err)
+	if err := intleverage.PersistCurrentSnapshots(context.Background(), store, inputs, sampledAt, resolveHead); err != nil {
+		t.Fatalf("PersistCurrentSnapshots failed: %v", err)
 	}
 
 	if headCalls != 1 {

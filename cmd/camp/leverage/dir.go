@@ -186,7 +186,7 @@ func runLeverageDir(cmd *cobra.Command, targetDir string) error {
 		return camperrors.Wrapf(err, "running scc on %s", proj.Name)
 	}
 
-	score := computeProjectScore(ctx, proj, result, scoreParams{
+	score := intleverage.ComputeProjectScore(ctx, proj, result, intleverage.ProjectScoreParams{
 		AuthorFilter:    authorFilter,
 		PeopleOverride:  peopleOverride,
 		FallbackElapsed: elapsed,
