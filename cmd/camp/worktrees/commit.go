@@ -1,7 +1,6 @@
 package worktrees
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -59,9 +58,6 @@ func init() {
 
 func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
 
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
@@ -59,9 +58,6 @@ func init() {
 
 func runStage(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
 
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {

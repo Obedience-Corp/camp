@@ -197,6 +197,8 @@ func runRun(cmd *cobra.Command, args []string) error {
 }
 
 func isProject(campaignRoot, name string) (string, bool) {
+	// Compatibility helper used outside Cobra command execution; command paths use
+	// isProjectCtx with the root command context.
 	return isProjectCtx(context.Background(), campaignRoot, name)
 }
 

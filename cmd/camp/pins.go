@@ -157,7 +157,7 @@ func runPin(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	pin, display, err := buildPinForPath(absPath, campaignRoot)
+	pin, display, err := buildPinForPath(cmd.Context(), absPath, campaignRoot)
 	if err != nil {
 		return err
 	}
@@ -184,7 +184,7 @@ func runPin(cmd *cobra.Command, args []string) error {
 // outside the campaign tree are accepted only when they resolve through a
 // .camp attachment marker that points at the active campaign; those become
 // AbsPath pins.
-func buildPinForPath(absPath, campaignRoot string) (pins.Pin, string, error) {
+func buildPinForPath(ctx context.Context, absPath, campaignRoot string) (pins.Pin, string, error) {
 	relPath, err := filepath.Rel(campaignRoot, absPath)
 	if err != nil {
 		return pins.Pin{}, "", camperrors.Wrapf(err, "compute relative path for %q", absPath)
@@ -195,7 +195,7 @@ func buildPinForPath(absPath, campaignRoot string) (pins.Pin, string, error) {
 
 	// Outside the campaign tree: only allow if a marker resolves to this
 	// campaign root.
-	if !markerResolvesToCampaign(absPath, campaignRoot) {
+	if !markerResolvesToCampaign(ctx, absPath, campaignRoot) {
 		return pins.Pin{}, "", camperrors.Wrapf(fmt.Errorf("outside campaign root"),
 			"pin path %q (run 'camp attach %s' first to bind this directory to the campaign)",
 			absPath, absPath)
@@ -206,8 +206,8 @@ func buildPinForPath(absPath, campaignRoot string) (pins.Pin, string, error) {
 // markerResolvesToCampaign returns true when walking up from path reaches a
 // campaign root that matches campaignRoot. This succeeds for paths under an
 // attachment marker pointing at the active campaign.
-func markerResolvesToCampaign(path, campaignRoot string) bool {
-	ctx, cancel := context.WithTimeout(context.Background(), campaign.DefaultDetectTimeout)
+func markerResolvesToCampaign(ctx context.Context, path, campaignRoot string) bool {
+	ctx, cancel := context.WithTimeout(ctx, campaign.DefaultDetectTimeout)
 	defer cancel()
 
 	root, err := campaign.Detect(ctx, path)

@@ -73,9 +73,6 @@ func init() {
 // completeProjectFlag provides tab completion for the --project flag.
 func completeProjectFlag(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
 
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
@@ -92,9 +89,6 @@ func completeProjectFlag(cmd *cobra.Command, args []string, toComplete string) (
 
 func runCommit(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
 
 	// Find campaign root
 	campRoot, err := campaign.DetectCached(ctx)
