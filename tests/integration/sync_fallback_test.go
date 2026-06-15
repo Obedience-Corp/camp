@@ -5,6 +5,7 @@ package integration
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -48,28 +49,28 @@ func TestSyncFallback_QuarantineDirty(t *testing.T) {
 	tc := GetSharedContainer(t)
 	campPath, projPath, _ := setupRemoveSubmoduleCampaign(t, tc, "sync-fallback")
 
-	// Setup hostile: commit in sub, push, then make super record an old SHA (stale).
-	// Add dirty file in sub.
+	// Setup hostile: make the superproject record an unreachable submodule SHA
+	// while the local submodule worktree has dirty content.
 	tc.Shell(t, fmt.Sprintf(`
 set -e
-git -C %[1]s checkout -b feature
-printf 'new\n' > %[1]s/new.txt
-git -C %[1]s add new.txt && git -C %[1]s commit -m 'new'
-GIT_ALLOW_PROTOCOL=file git -C %[1]s push origin feature
-git -C %[1]s checkout main
-# Record an old SHA in super (simulate stale recorded)
-git -C %[1]s update-ref refs/heads/feature $(git -C %[1]s rev-parse HEAD~1) || true
+fake_sha=1111111111111111111111111111111111111111
+git -C %[2]s update-index --cacheinfo 160000 "$fake_sha" projects/subproj
+git -C %[2]s commit -m 'record unreachable submodule pointer'
 printf 'dirty work\n' > %[1]s/dirty.txt
-`, projPath))
+	`, projPath, campPath))
 
-	// Trigger fallback path by running a command that causes sub init/update with stale.
-	// Use sync --force which may hit the graceful.
-	_, _ = tc.RunCampInDir(campPath, "sync", "--force")
+	// Trigger fallback path. The command exits non-zero because the restored
+	// default-branch checkout intentionally differs from the unreachable gitlink.
+	output, err := tc.RunCampInDir(campPath, "sync", "--force")
+	require.Error(t, err, "sync should report drift after stale fallback")
+	assert.Contains(t, output, "recorded commit unavailable")
 
-	// Assert: dirty file still exists (no RemoveAll destroyed it)
-	exists, err := tc.CheckFileExists(projPath + "/dirty.txt")
+	// Assert: dirty file was preserved in the quarantine sibling.
+	quarantine := strings.TrimSpace(tc.Shell(t, fmt.Sprintf(`find %[1]s/projects -maxdepth 1 -type d -name 'subproj.sync-quarantine-*' | head -n 1`, campPath)))
+	require.NotEmpty(t, quarantine, "dirty submodule dir should be quarantine-renamed")
+	exists, err := tc.CheckFileExists(quarantine + "/dirty.txt")
 	require.NoError(t, err)
-	assert.True(t, exists, "dirty file must survive (quarantine or no removal)")
+	assert.True(t, exists, "dirty file must survive in quarantine")
 
 	// Assert: .git points at parent-managed submodule metadata, not a standalone clone.
 	tc.Shell(t, fmt.Sprintf(`
