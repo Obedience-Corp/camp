@@ -12,7 +12,7 @@ camp() {
   case "$1" in
     switch|sw)
       shift
-      local dest arg passthrough=0 status
+      local dest arg passthrough=0 cmd_status
       for arg in "$@"; do
         case "$arg" in
           --help|-h|--json|--json=*|--print|--print=*)
@@ -26,11 +26,11 @@ camp() {
         return
       fi
       dest=$(command camp switch "$@" --print)
-      status=$?
+      cmd_status=$?
       if [[ -n "$dest" ]]; then
         cd "$dest"
-      elif [[ "$status" -ne 0 ]]; then
-        return $status
+      elif [[ "$cmd_status" -ne 0 ]]; then
+        return $cmd_status
       else
         echo "camp: not found: $*" >&2
         return 1
@@ -38,7 +38,7 @@ camp() {
       ;;
     go|g)
       shift
-      local arg passthrough=0 status
+      local arg passthrough=0 cmd_status
       for arg in "$@"; do
         case "$arg" in
           --help|-h|--json|--json=*|--print|--print=*)
@@ -54,22 +54,22 @@ camp() {
       if [[ $# -eq 0 ]]; then
         local dest
         dest=$(command camp go --print)
-        status=$?
+        cmd_status=$?
         if [[ -n "$dest" ]]; then
           cd "$dest"
-        elif [[ "$status" -ne 0 ]]; then
-          return $status
+        elif [[ "$cmd_status" -ne 0 ]]; then
+          return $cmd_status
         fi
       elif [[ "$1" == "-c" ]]; then
         command camp go "${@}"
       else
         local dest
         dest=$(command camp go "$@" --print)
-        status=$?
+        cmd_status=$?
         if [[ -n "$dest" ]]; then
           cd "$dest"
-        elif [[ "$status" -ne 0 ]]; then
-          return $status
+        elif [[ "$cmd_status" -ne 0 ]]; then
+          return $cmd_status
         else
           echo "camp: not found: $*" >&2
           return 1

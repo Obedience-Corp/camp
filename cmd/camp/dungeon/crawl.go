@@ -51,9 +51,6 @@ func init() {
 
 func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	if !ui.IsTerminal() {
-		return camperrors.Wrap(camperrors.ErrInvalidInput, "dungeon crawl requires an interactive terminal")
-	}
 	triageFlag, _ := cmd.Flags().GetBool("triage")
 	innerFlag, _ := cmd.Flags().GetBool("inner")
 
@@ -61,6 +58,10 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if !ui.IsTerminal() {
+		return camperrors.Wrap(camperrors.ErrInvalidInput, "dungeon crawl requires an interactive terminal")
+	}
+
 	svc := intdungeon.NewService(cmdCtx.CampaignRoot, cmdCtx.Dungeon.DungeonPath)
 	relParent := RelFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.ParentPath)
 	relDungeon := RelFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.DungeonPath)

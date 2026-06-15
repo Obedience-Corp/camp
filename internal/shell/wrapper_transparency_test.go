@@ -29,9 +29,9 @@ func TestGenerateZsh_GoSwitchWrapperTransparency(t *testing.T) {
 		noSuppressedRoot:   `command camp go --print 2>/dev/null`,
 		noSuppressedSwitch: `command camp switch "$@" --print 2>/dev/null`,
 		passthrough:        "--help|-h|--json|--json=*|--print|--print=*",
-		statusCapture:      "status=$?",
-		statusCheck:        `elif [[ "$status" -ne 0 ]]; then`,
-		statusReturn:       "return $status",
+		statusCapture:      "cmd_status=$?",
+		statusCheck:        `elif [[ "$cmd_status" -ne 0 ]]; then`,
+		statusReturn:       "return $cmd_status",
 	})
 }
 
