@@ -13,6 +13,7 @@ import (
 	dungeonscaffold "github.com/Obedience-Corp/camp/internal/dungeon/scaffold"
 	"github.com/Obedience-Corp/camp/internal/dungeon/statuspath"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/quest"
 	"github.com/lancekrogers/guild-scaffold/pkg/scaffold"
@@ -567,7 +568,8 @@ func appendGitignoreEntryIfMissing(absDir, entry string) error {
 		suffix = "\n\n"
 	}
 	addition := suffix + "# Per-machine current-workitem selection (do not share across machines)\n" + entry + "\n"
-	return os.WriteFile(gitignorePath, append(raw, []byte(addition)...), 0o644)
+	// TODO(seq06-lock): concurrent repair runs can still race this read-modify-write append.
+	return fsutil.WriteFileAtomically(gitignorePath, append(raw, []byte(addition)...), 0o644)
 }
 
 // gitignoreHasRule reports whether content contains an active gitignore

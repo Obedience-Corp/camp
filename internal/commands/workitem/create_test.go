@@ -1,10 +1,15 @@
 package workitem
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
+
+	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 )
 
 func TestValidateSlug(t *testing.T) {
@@ -67,17 +72,28 @@ func TestValidateParentPath(t *testing.T) {
 	}
 }
 
-func TestAtomicWriteFile(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "x.yaml")
-	if err := atomicWriteFile(path, []byte("hello"), 0o644); err != nil {
-		t.Fatal(err)
+func TestRunCreateWritesWorkitemMarker(t *testing.T) {
+	root := refQuestTestCampaign(t)
+	restore := chdir(t, root)
+	defer restore()
+	t.Setenv("CAMP_QUEST", "")
+
+	cmd := &cobra.Command{}
+	cmd.SetOut(os.Stdout)
+	cmd.SetErr(os.Stderr)
+
+	if err := runCreate(context.Background(), cmd, "atomic-marker", "design", "Atomic Marker", "", "", "", false); err != nil {
+		t.Fatalf("runCreate() error = %v", err)
 	}
-	got, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
+
+	meta := loadMarker(t, filepath.Join(root, "workflow", "design", "atomic-marker", ".workitem"))
+	if meta.Version != wkitem.WorkitemSchemaVersion {
+		t.Fatalf("version = %q, want %q", meta.Version, wkitem.WorkitemSchemaVersion)
 	}
-	if string(got) != "hello" {
-		t.Errorf("contents = %q, want hello", got)
+	if meta.Title != "Atomic Marker" {
+		t.Fatalf("title = %q, want %q", meta.Title, "Atomic Marker")
+	}
+	if meta.Ref == "" {
+		t.Fatal("expected ref to be written")
 	}
 }

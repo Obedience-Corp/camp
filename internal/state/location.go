@@ -2,12 +2,15 @@ package state
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/Obedience-Corp/camp/internal/fsutil"
 )
 
 const (
@@ -32,7 +35,8 @@ func StatePath(campaignRoot string) string {
 
 // LoadHistory loads all navigation entries from the state file.
 // Returns empty slice if the file doesn't exist (no error).
-// Returns error only for actual I/O or parsing problems.
+// Corrupt lines are skipped with a warning so one torn entry does not brick navigation.
+// Returns error only for actual I/O problems.
 func LoadHistory(ctx context.Context, campaignRoot string) ([]NavigationEntry, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -59,7 +63,8 @@ func LoadHistory(ctx context.Context, campaignRoot string) ([]NavigationEntry, e
 		}
 		var entry NavigationEntry
 		if err := json.Unmarshal([]byte(line), &entry); err != nil {
-			return nil, fmt.Errorf("failed to parse line %d in state file: %w", lineNum, err)
+			fmt.Fprintf(os.Stderr, "camp: state: skipping corrupt line %d in %s: %v\n", lineNum, stateFile, err)
+			continue
 		}
 		entries = append(entries, entry)
 	}
@@ -101,26 +106,17 @@ func SaveEntry(ctx context.Context, campaignRoot string, entry NavigationEntry) 
 		entries = entries[len(entries)-maxHistoryEntries:]
 	}
 
-	// Write all entries back
-	file, err := os.Create(stateFilePath)
-	if err != nil {
-		return fmt.Errorf("failed to create state file: %w", err)
-	}
-	defer file.Close()
-
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
 	for _, e := range entries {
-		data, err := json.Marshal(e)
-		if err != nil {
+		if err := enc.Encode(e); err != nil {
 			return fmt.Errorf("failed to marshal entry: %w", err)
 		}
-		if _, err := file.Write(data); err != nil {
-			return fmt.Errorf("failed to write entry: %w", err)
-		}
-		if _, err := file.WriteString("\n"); err != nil {
-			return fmt.Errorf("failed to write newline: %w", err)
-		}
 	}
 
+	if err := fsutil.WriteFileAtomically(stateFilePath, buf.Bytes(), 0600); err != nil {
+		return fmt.Errorf("failed to write state file: %w", err)
+	}
 	return nil
 }
 

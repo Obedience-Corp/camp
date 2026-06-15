@@ -2,9 +2,11 @@ package state
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,6 +19,44 @@ func TestLoadHistory_NoFile(t *testing.T) {
 	require.NoError(t, err, "LoadHistory should not error when state file doesn't exist")
 	assert.NotNil(t, entries, "should return empty slice, not nil")
 	assert.Len(t, entries, 0, "empty history should have no entries")
+}
+
+func TestLoadHistorySkipsCorruptLine(t *testing.T) {
+	tmpDir := t.TempDir()
+	stateFile := StatePath(tmpDir)
+	require.NoError(t, os.MkdirAll(filepath.Dir(stateFile), 0755))
+
+	valid := NavigationEntry{
+		Location: "/good/path",
+		Time:     time.Date(2026, 1, 20, 3, 0, 0, 0, time.UTC),
+	}
+	validJSON, err := json.Marshal(valid)
+	require.NoError(t, err)
+	content := string(validJSON) + "\nNOT_VALID_JSON\n"
+	require.NoError(t, os.WriteFile(stateFile, []byte(content), 0644))
+
+	entries, err := LoadHistory(context.Background(), tmpDir)
+	require.NoError(t, err, "LoadHistory should skip corrupt lines")
+	require.Len(t, entries, 1)
+	assert.Equal(t, valid.Location, entries[0].Location)
+	assert.True(t, valid.Time.Equal(entries[0].Time), "timestamp should round-trip")
+}
+
+func TestSaveEntryRoundTrip(t *testing.T) {
+	tmpDir := t.TempDir()
+	ctx := context.Background()
+	entry := NavigationEntry{
+		Location: "/test/path",
+		Time:     time.Date(2026, 1, 20, 3, 15, 0, 0, time.UTC),
+	}
+
+	require.NoError(t, SaveEntry(ctx, tmpDir, entry))
+
+	entries, err := LoadHistory(ctx, tmpDir)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	assert.Equal(t, entry.Location, entries[0].Location)
+	assert.True(t, entry.Time.Equal(entries[0].Time), "timestamp should round-trip")
 }
 
 func TestSaveEntryAndLoadHistory(t *testing.T) {

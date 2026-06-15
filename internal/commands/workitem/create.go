@@ -17,6 +17,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/pathsafe"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
@@ -102,7 +103,7 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 	if err != nil {
 		return camperrors.Wrap(err, "marshal metadata")
 	}
-	if err := atomicWriteFile(filepath.Join(target, ".workitem"), buf, 0o644); err != nil {
+	if err := fsutil.WriteFileAtomically(filepath.Join(target, ".workitem"), buf, 0o644); err != nil {
 		return err
 	}
 	invalidateNavigationCache(cmd, campaignRoot)
@@ -244,16 +245,4 @@ func idCollides(ctx context.Context, campaignRoot, id string) (bool, error) {
 		return false, walkErr
 	}
 	return collision, nil
-}
-
-func atomicWriteFile(path string, data []byte, mode os.FileMode) error {
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, mode); err != nil {
-		return camperrors.Wrap(err, "write tmp file")
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return camperrors.Wrap(err, "rename tmp file")
-	}
-	return nil
 }
