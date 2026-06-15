@@ -1,6 +1,13 @@
 package scaffold
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/Obedience-Corp/camp/internal/config"
+)
 
 func TestGitignoreHasRule(t *testing.T) {
 	cases := []struct {
@@ -71,5 +78,42 @@ func TestGitignoreHasRule(t *testing.T) {
 					tc.content, tc.entry, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestAppendGitignoreEntryIfMissingRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	campaignDir := filepath.Join(dir, config.CampaignDir)
+	if err := os.MkdirAll(campaignDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	gitignorePath := filepath.Join(campaignDir, ".gitignore")
+	if err := os.WriteFile(gitignorePath, []byte("state.yaml\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := appendGitignoreEntryIfMissing(dir, "workitems/current.yaml"); err != nil {
+		t.Fatalf("appendGitignoreEntryIfMissing() error = %v", err)
+	}
+	first, err := os.ReadFile(gitignorePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !gitignoreHasRule(string(first), "workitems/current.yaml") {
+		t.Fatalf("gitignore missing appended rule:\n%s", first)
+	}
+	if !strings.Contains(string(first), "Per-machine current-workitem selection") {
+		t.Fatalf("gitignore missing explanatory comment:\n%s", first)
+	}
+
+	if err := appendGitignoreEntryIfMissing(dir, "workitems/current.yaml"); err != nil {
+		t.Fatalf("second appendGitignoreEntryIfMissing() error = %v", err)
+	}
+	second, err := os.ReadFile(gitignorePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(second) != string(first) {
+		t.Fatalf("second append should be idempotent:\nfirst:\n%s\nsecond:\n%s", first, second)
 	}
 }
