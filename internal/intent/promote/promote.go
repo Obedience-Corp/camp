@@ -198,7 +198,22 @@ func createDesignDoc(ctx context.Context, campaignRoot string, i *intent.Intent)
 	relDir := filepath.Join("workflow", "design", dirName)
 	absDir := filepath.Join(campaignRoot, relDir)
 
-	if err := os.MkdirAll(absDir, 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(absDir), 0755); err != nil {
+		return "", false, camperrors.Wrap(err, "creating design parent directory")
+	}
+
+	createdNow := false
+	if err := os.Mkdir(absDir, 0755); err == nil {
+		createdNow = true
+	} else if os.IsExist(err) {
+		info, statErr := os.Stat(absDir)
+		if statErr != nil {
+			return "", false, camperrors.Wrap(statErr, "checking design directory")
+		}
+		if !info.IsDir() {
+			return "", false, camperrors.New("design path exists and is not a directory: " + absDir)
+		}
+	} else {
 		return "", false, camperrors.Wrap(err, "creating design directory")
 	}
 
@@ -231,7 +246,7 @@ func createDesignDoc(ctx context.Context, campaignRoot string, i *intent.Intent)
 		return "", false, camperrors.Wrap(err, "writing design README")
 	}
 
-	return relDir, true, nil
+	return relDir, createdNow, nil
 }
 
 func rollbackIntentToReady(ctx context.Context, svc *intent.IntentService, id string) error {
