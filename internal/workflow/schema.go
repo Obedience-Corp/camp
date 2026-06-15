@@ -3,6 +3,10 @@
 // A workflow defines a set of status directories that items can move between,
 // with optional transition rules and history tracking. The workflow is configured
 // via a .workflow.yaml file in the workflow root directory.
+//
+// Despite the package name, this package backs most status-directory semantics
+// used by camp flow commands. It is distinct from internal/flow, which owns the
+// .campaign/flows shell-command registry and runner.
 package workflow
 
 import (
