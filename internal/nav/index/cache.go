@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"github.com/Obedience-Corp/camp/internal/nav"
 )
@@ -220,12 +221,23 @@ func GetOrBuild(ctx context.Context, campaignRoot string, forceRebuild bool) (*I
 	}
 
 	if !forceRebuild {
-		idx, err := Load(campaignRoot)
-		if err != nil {
-			// Log warning but continue to rebuild
-			// In production, this would go to a logger
+		if idx := loadFreshCachedIndex(campaignRoot); idx != nil {
+			return idx, nil
 		}
-		if idx != nil && !IsStale(idx, campaignRoot) {
+	}
+
+	release, lockErr := acquireCacheLock(ctx, campaignRoot)
+	if lockErr != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		fmt.Fprintf(os.Stderr, "camp: nav cache warning: %v\n", lockErr)
+	} else {
+		defer release()
+	}
+
+	if !forceRebuild {
+		if idx := loadFreshCachedIndex(campaignRoot); idx != nil {
 			return idx, nil
 		}
 	}
@@ -245,10 +257,30 @@ func GetOrBuild(ctx context.Context, campaignRoot string, forceRebuild bool) (*I
 
 	// Save to cache (don't fail if save fails)
 	if saveErr := Save(idx, campaignRoot); saveErr != nil {
-		// In production, this would be logged as a warning
+		fmt.Fprintf(os.Stderr, "camp: nav cache warning: %v\n", saveErr)
 	}
 
 	return idx, nil
+}
+
+func loadFreshCachedIndex(campaignRoot string) *Index {
+	idx, err := Load(campaignRoot)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "camp: nav cache warning: %v\n", err)
+		return nil
+	}
+	if idx != nil && !IsStale(idx, campaignRoot) {
+		return idx
+	}
+	return nil
+}
+
+func acquireCacheLock(ctx context.Context, campaignRoot string) (func(), error) {
+	lockPath := CachePath(campaignRoot) + ".lock"
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
+		return nil, camperrors.Wrap(err, "create nav cache lock directory")
+	}
+	return fsutil.AcquireFileLock(ctx, lockPath)
 }
 
 // Delete removes the cache file.
