@@ -71,9 +71,6 @@ func runPull(cmd *cobra.Command, args []string) error {
 	}
 
 	if _, err := runGitPullWithLockRetry(ctx, target.Path, gitArgs, true); err != nil {
-		// Suppress cobra's usage output — this isn't a usage error.
-		cmd.SilenceUsage = true
-
 		if git.IsRebaseInProgress(ctx, target.Path) {
 			fmt.Fprintln(os.Stderr)
 			fmt.Fprintln(os.Stderr, ui.Warning("Rebase conflict in "+target.Name))

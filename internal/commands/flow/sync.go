@@ -11,6 +11,7 @@ import (
 
 func newSyncCommand() *cobra.Command {
 	var flowSyncDryRun bool
+	var flowSyncVerbose bool
 
 	cmd := &cobra.Command{
 		Use:   "sync",
@@ -55,9 +56,7 @@ Examples:
 				}
 			}
 
-			// Check verbose from root command persistent flags
-			verbose, _ := cmd.Root().PersistentFlags().GetBool("verbose")
-			if len(result.Existing) > 0 && verbose {
+			if len(result.Existing) > 0 && flowSyncVerbose {
 				fmt.Println("\nAlready exist:")
 				for _, d := range result.Existing {
 					fmt.Printf("  %s/\n", d)
@@ -75,6 +74,7 @@ Examples:
 	}
 
 	cmd.Flags().BoolVarP(&flowSyncDryRun, "dry-run", "n", false, "preview changes without creating directories")
+	cmd.Flags().BoolVarP(&flowSyncVerbose, "verbose", "v", false, "show directories that already exist")
 
 	return cmd
 }

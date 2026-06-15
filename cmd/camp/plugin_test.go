@@ -56,27 +56,21 @@ func TestFindFirstPositionalArg(t *testing.T) {
 		},
 		{
 			name:     "bool flag then subcommand",
-			args:     []string{"camp", "--verbose", "graph"},
+			args:     []string{"camp", "--no-color", "graph"},
 			wantName: "graph",
 			wantIdx:  2,
 		},
 		{
-			name:     "config flag with separate value then subcommand",
+			name:     "removed config flag no longer consumes separate value",
 			args:     []string{"camp", "--config", "/tmp/camp.json", "graph"},
-			wantName: "graph",
-			wantIdx:  3,
-		},
-		{
-			name:     "config flag with = value then subcommand",
-			args:     []string{"camp", "--config=/tmp/camp.json", "graph"},
-			wantName: "graph",
+			wantName: "/tmp/camp.json",
 			wantIdx:  2,
 		},
 		{
 			name:     "multiple flags then subcommand",
-			args:     []string{"camp", "--no-color", "--config", "/etc/camp.json", "--verbose", "graph", "build"},
+			args:     []string{"camp", "--no-color", "graph", "build"},
 			wantName: "graph",
-			wantIdx:  5,
+			wantIdx:  2,
 		},
 		{
 			name:     "double dash terminates flags",
@@ -92,15 +86,15 @@ func TestFindFirstPositionalArg(t *testing.T) {
 		},
 		{
 			name:     "only flags no subcommand",
-			args:     []string{"camp", "--verbose", "--no-color"},
+			args:     []string{"camp", "--no-color"},
 			wantName: "",
 			wantIdx:  0,
 		},
 		{
-			name:     "config flag value not mistaken for subcommand",
+			name:     "unknown flag value is positional",
 			args:     []string{"camp", "--config", "myfile"},
-			wantName: "",
-			wantIdx:  0,
+			wantName: "myfile",
+			wantIdx:  2,
 		},
 		{
 			name:     "unknown flag treated as flag not subcommand",

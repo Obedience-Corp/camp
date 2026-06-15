@@ -23,7 +23,7 @@ var errPluginHandled = errors.New("plugin handled")
 // the plugin and returns errPluginHandled (success) or a CommandError.
 // Returns nil to fall through to Cobra's normal dispatch.
 //
-// Note: global flags appearing before the plugin name (e.g. --verbose, --config)
+// Note: global flags appearing before the plugin name (for example, --no-color)
 // are consumed by camp's own arg scanner and are NOT forwarded to the plugin.
 // Only arguments after the plugin name are passed through. This matches git's
 // plugin convention where "git --no-pager foo arg" does not pass --no-pager to
@@ -68,7 +68,7 @@ func dispatchPlugin(ctx context.Context) error {
 // index. Returns ("", 0) if no subcommand is present.
 //
 // It consults the root command's persistent flags so that flags which take
-// values (e.g. --config <file>) have their value skipped rather than being
+// values have their value skipped rather than being
 // mistaken for a subcommand name.
 func firstSubcommand() (string, int) {
 	return findFirstPositionalArg(os.Args)
@@ -76,7 +76,7 @@ func firstSubcommand() (string, int) {
 
 // findFirstPositionalArg scans args (where args[0] is the program name) and
 // returns the first positional (non-flag) argument and its index.
-// It correctly skips values consumed by flags like --config <file> and
+// It correctly skips values consumed by known persistent flags and
 // handles --flag=value, --, and boolean flags.
 func findFirstPositionalArg(args []string) (string, int) {
 	if len(args) < 2 {
