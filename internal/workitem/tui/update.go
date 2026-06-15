@@ -293,12 +293,17 @@ func (m Model) assignPriority(p priority.ManualPriority) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	selectedKey := item.Key
-	priority.Set(m.priorityStore, item.Key, p)
-	if err := priority.SaveOrDelete(m.priorityStorePath(), m.priorityStore); err != nil {
+	var updated *priority.Store
+	if err := priority.WithLock(m.ctx, m.priorityStorePath(), func(store *priority.Store) error {
+		priority.Set(store, item.Key, p)
+		updated = store
+		return nil
+	}); err != nil {
 		m.exitPriorityMode()
 		cmd := m.setStatus("save failed: "+err.Error(), true)
 		return m, cmd
 	}
+	m.priorityStore = updated
 	m.allItems = priority.Apply(m.priorityStore, m.allItems)
 	workitem.Sort(m.allItems)
 	m.refilter()
@@ -315,12 +320,17 @@ func (m Model) clearPriority() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	selectedKey := item.Key
-	priority.Clear(m.priorityStore, item.Key)
-	if err := priority.SaveOrDelete(m.priorityStorePath(), m.priorityStore); err != nil {
+	var updated *priority.Store
+	if err := priority.WithLock(m.ctx, m.priorityStorePath(), func(store *priority.Store) error {
+		priority.Clear(store, item.Key)
+		updated = store
+		return nil
+	}); err != nil {
 		m.exitPriorityMode()
 		cmd := m.setStatus("save failed: "+err.Error(), true)
 		return m, cmd
 	}
+	m.priorityStore = updated
 	m.allItems = priority.Apply(m.priorityStore, m.allItems)
 	workitem.Sort(m.allItems)
 	m.refilter()

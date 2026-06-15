@@ -1,10 +1,12 @@
 package priority
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -117,6 +119,96 @@ func TestSave_Load_Roundtrip(t *testing.T) {
 	}
 	if loaded.ManualPriorities["key-b"].Priority != Low {
 		t.Errorf("key-b priority = %q, want %q", loaded.ManualPriorities["key-b"].Priority, Low)
+	}
+}
+
+func TestWithLockConcurrentSet(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "workitems.json")
+	ctx := context.Background()
+
+	updates := []struct {
+		key      string
+		priority ManualPriority
+	}{
+		{key: "key-a", priority: High},
+		{key: "key-b", priority: Medium},
+	}
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, len(updates))
+	wg.Add(len(updates))
+	for _, update := range updates {
+		update := update
+		go func() {
+			defer wg.Done()
+			errCh <- WithLock(ctx, path, func(store *Store) error {
+				Set(store, update.key, update.priority)
+				return nil
+			})
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		if err != nil {
+			t.Fatalf("WithLock returned error: %v", err)
+		}
+	}
+
+	store, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	for _, update := range updates {
+		got := store.ManualPriorities[update.key].Priority
+		if got != update.priority {
+			t.Fatalf("%s priority = %q, want %q", update.key, got, update.priority)
+		}
+	}
+}
+
+func TestWithLockConcurrentSetClear(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "workitems.json")
+	ctx := context.Background()
+
+	const iterations = 50
+	var wg sync.WaitGroup
+	errCh := make(chan error, iterations*2)
+	for range iterations {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			errCh <- WithLock(ctx, path, func(store *Store) error {
+				Set(store, "race-key", High)
+				return nil
+			})
+		}()
+		go func() {
+			defer wg.Done()
+			errCh <- WithLock(ctx, path, func(store *Store) error {
+				Clear(store, "race-key")
+				return nil
+			})
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		if err != nil {
+			t.Fatalf("WithLock returned error: %v", err)
+		}
+	}
+
+	store, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load after concurrent set/clear returned error: %v", err)
+	}
+	if entry, ok := store.ManualPriorities["race-key"]; ok && entry.Priority != High {
+		t.Fatalf("race-key priority = %q, want absent or %q", entry.Priority, High)
 	}
 }
 

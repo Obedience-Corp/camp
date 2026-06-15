@@ -83,18 +83,15 @@ func runPriority(ctx context.Context, cmd *cobra.Command, selectorArg, levelArg 
 	}
 
 	storePath := priority.StorePath(root)
-	store, err := priority.Load(storePath)
-	if err != nil {
-		return camperrors.Wrap(err, "loading priority store")
-	}
-
-	if clear {
-		priority.Clear(store, wi.Key)
-	} else {
-		priority.Set(store, wi.Key, level)
-	}
-	if err := priority.SaveOrDelete(storePath, store); err != nil {
-		return camperrors.Wrap(err, "saving priority store")
+	if err := priority.WithLock(ctx, storePath, func(store *priority.Store) error {
+		if clear {
+			priority.Clear(store, wi.Key)
+		} else {
+			priority.Set(store, wi.Key, level)
+		}
+		return nil
+	}); err != nil {
+		return camperrors.Wrap(err, "updating priority store")
 	}
 
 	if jsonOut {

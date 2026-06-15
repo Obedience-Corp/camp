@@ -1,6 +1,7 @@
 package priority
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -108,6 +109,34 @@ func SaveOrDelete(path string, store *Store) error {
 		return nil
 	}
 	return Save(path, store)
+}
+
+// WithLock holds an exclusive lock for a full load-mutate-save cycle.
+// The store is re-loaded inside the lock so concurrent priority mutations do
+// not overwrite each other. On success, the store is saved or deleted using the
+// same SaveOrDelete contract as direct callers.
+func WithLock(ctx context.Context, storePath string, fn func(*Store) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(storePath), 0o755); err != nil {
+		return camperrors.Wrap(err, "create priority store directory")
+	}
+
+	release, err := fsutil.AcquireFileLock(ctx, storePath+".lock")
+	if err != nil {
+		return err
+	}
+	defer release()
+
+	store, err := Load(storePath)
+	if err != nil {
+		return err
+	}
+	if err := fn(store); err != nil {
+		return err
+	}
+	return SaveOrDelete(storePath, store)
 }
 
 // IsEmpty reports whether the store has no priority entries.
