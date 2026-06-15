@@ -3,7 +3,7 @@ module github.com/Obedience-Corp/camp
 go 1.25.6
 
 require (
-	github.com/Obedience-Corp/obey-shared v0.4.4-0.20260518211933-8a93452bf649
+	github.com/Obedience-Corp/obey-shared v0.4.4
 	github.com/alecthomas/chroma/v2 v2.23.1
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
@@ -13,7 +13,7 @@ require (
 	github.com/creack/pty v1.1.24
 	github.com/google/uuid v1.6.0
 	github.com/ktr0731/go-fuzzyfinder v0.9.0
-	github.com/lancekrogers/guild-scaffold v0.0.0-20260518211932-1e813ced5fa5
+	github.com/lancekrogers/guild-scaffold v0.1.0
 	github.com/moby/patternmatcher v0.6.1
 	github.com/muesli/termenv v0.16.0
 	github.com/sahilm/fuzzy v0.1.1

@@ -8,8 +8,8 @@ github.com/MakeNowJust/heredoc v1.0.0 h1:cXCdzVdstXyiTqTvfqk9SDHpKNjxuom+DOlyEeQ
 github.com/MakeNowJust/heredoc v1.0.0/go.mod h1:mG5amYoWBHf8vpLOuehzbGGw0EHxpZZ6lCpQ4fNJ8LE=
 github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
-github.com/Obedience-Corp/obey-shared v0.4.4-0.20260518211933-8a93452bf649 h1:lZmH9TH7JpNBLUkTtvhqL/ONZ3G1ksP58THCgy2Db3s=
-github.com/Obedience-Corp/obey-shared v0.4.4-0.20260518211933-8a93452bf649/go.mod h1:X7xXZJ/S8Ek7s6dsihrnpFLnBykOkv2dQnHv+sRHx/Q=
+github.com/Obedience-Corp/obey-shared v0.4.4 h1:BLsOvnvZ0ViHLFVOQ5i1zC3+sa+XLMXhsX67ueMTGpY=
+github.com/Obedience-Corp/obey-shared v0.4.4/go.mod h1:X7xXZJ/S8Ek7s6dsihrnpFLnBykOkv2dQnHv+sRHx/Q=
 github.com/alecthomas/assert/v2 v2.11.0 h1:2Q9r3ki8+JYXvGsDyBXwH3LcJ+WK5D0gc5E8vS6K3D0=
 github.com/alecthomas/assert/v2 v2.11.0/go.mod h1:Bze95FyfUr7x34QZrjL+XP+0qgp/zg8yS+TtBj1WA3k=
 github.com/alecthomas/chroma/v2 v2.23.1 h1:nv2AVZdTyClGbVQkIzlDm/rnhk1E9bU9nXwmZ/Vk/iY=
@@ -135,8 +135,8 @@ github.com/ktr0731/go-fuzzyfinder v0.9.0 h1:JV8S118RABzRl3Lh/RsPhXReJWc2q0rbuipz
 github.com/ktr0731/go-fuzzyfinder v0.9.0/go.mod h1:uybx+5PZFCgMCSDHJDQ9M3nNKx/vccPmGffsXPn2ad8=
 github.com/kylelemons/godebug v1.1.0 h1:RPNrshWIDI6G2gRW9EHilWtl7Z6Sb1BR0xunSBf0SNc=
 github.com/kylelemons/godebug v1.1.0/go.mod h1:9/0rRGxNHcop5bhtWyNeEfOS8JIWk580+fNqagV/RAw=
-github.com/lancekrogers/guild-scaffold v0.0.0-20260518211932-1e813ced5fa5 h1:oho/KeT3TXXGjny2pKrB/M54XHPitqOJk7cxRsbdE0E=
-github.com/lancekrogers/guild-scaffold v0.0.0-20260518211932-1e813ced5fa5/go.mod h1:VZV9DV+hpYR2Ua1nUuFb6ds6/LQk6hz53uPZQzYaAFA=
+github.com/lancekrogers/guild-scaffold v0.1.0 h1:AGxD6nT6+0wQq12EUK3fwPcCua+0Rl6bQQhSw02eBqA=
+github.com/lancekrogers/guild-scaffold v0.1.0/go.mod h1:VZV9DV+hpYR2Ua1nUuFb6ds6/LQk6hz53uPZQzYaAFA=
 github.com/lucasb-eyer/go-colorful v1.3.0 h1:2/yBRLdWBZKrf7gB40FoiKfAWYQ0lqNcbuQwVHXptag=
 github.com/lucasb-eyer/go-colorful v1.3.0/go.mod h1:R4dSotOR9KMtayYi1e77YzuveK+i7ruzyGqttikkLy0=
 github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 h1:6E+4a0GO5zZEnZ81pIr0yLvtUWk2if982qA3F3QD6H4=
