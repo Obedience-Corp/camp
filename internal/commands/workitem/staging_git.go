@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	campgit "github.com/Obedience-Corp/camp/internal/git"
 )
 
 // assertCleanIndex refuses to proceed when repoRoot has pre-existing staged
@@ -53,11 +54,11 @@ func listChangedFilesUnder(ctx context.Context, repoRoot, prefix string) ([]stri
 }
 
 func listStagedFiles(ctx context.Context, repoRoot string) ([]string, error) {
-	out, err := exec.CommandContext(ctx, "git", "-C", repoRoot, "diff", "--cached", "--name-only", "-z").Output()
+	out, err := exec.CommandContext(ctx, "git", "-C", repoRoot, "diff", "--cached", "--name-status", "-z").CombinedOutput()
 	if err != nil {
-		return nil, err
+		return nil, camperrors.NewGit("diff --cached --name-status", "", "", strings.TrimSpace(string(out)), err)
 	}
-	return parseNULPathList(out), nil
+	return campgit.ParseDiffNameStatusZ(out)
 }
 
 func pathIsDirty(ctx context.Context, repoRoot, relPath string) (bool, error) {
@@ -114,18 +115,6 @@ func parseGitStatusPorcelainZ(out []byte) []gitStatusEntry {
 		}
 	}
 	return entries
-}
-
-func parseNULPathList(out []byte) []string {
-	fields := splitNULFields(out)
-	paths := make([]string, 0, len(fields))
-	for _, field := range fields {
-		if len(field) == 0 {
-			continue
-		}
-		paths = append(paths, string(field))
-	}
-	return paths
 }
 
 func splitNULFields(out []byte) [][]byte {
