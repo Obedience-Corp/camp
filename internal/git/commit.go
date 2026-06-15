@@ -50,6 +50,49 @@ func Commit(ctx context.Context, repoPath string, opts *CommitOptions) error {
 	})
 }
 
+// CommitScoped creates a commit from a temporary index populated with only the
+// given paths. The real index is cleaned up only for the committed paths, so
+// unrelated staged content remains staged.
+func CommitScoped(ctx context.Context, repoPath string, paths []string, opts *CommitOptions) error {
+	if opts == nil {
+		return ErrCommitOptionsRequired
+	}
+	if err := opts.Validate(); err != nil {
+		return err
+	}
+	if len(paths) == 0 {
+		return ErrNoChanges
+	}
+
+	tmpPath, _, err := BuildTempIndexPath(repoPath)
+	if err != nil {
+		return err
+	}
+	defer RemoveTempIndex(tmpPath)
+
+	if err := ReadTreeIntoTempIndex(ctx, repoPath, tmpPath); err != nil {
+		return err
+	}
+	if err := AddPathsToTempIndex(ctx, repoPath, tmpPath, paths); err != nil {
+		return err
+	}
+
+	expandedScope, err := ExpandTrackedPathsFromTempIndex(ctx, repoPath, tmpPath, paths)
+	if err != nil {
+		return err
+	}
+	if len(expandedScope) == 0 {
+		return ErrNoChanges
+	}
+
+	scopedOpts := *opts
+	scopedOpts.TempIndexPath = tmpPath
+	if err := Commit(ctx, repoPath, &scopedOpts); err != nil {
+		return err
+	}
+	return ResetIndexToHead(ctx, repoPath, expandedScope)
+}
+
 // executeCommit runs the actual git commit command.
 func executeCommit(ctx context.Context, repoPath string, opts *CommitOptions) error {
 	args := []string{"-C", repoPath, "commit"}
@@ -516,6 +559,19 @@ func HasStagedChanges(ctx context.Context, repoPath string) (bool, error) {
 	}
 
 	// Exit code 0 means no differences (nothing staged)
+	return false, nil
+}
+
+// HasStagedPathChange reports whether path has staged changes relative to HEAD.
+func HasStagedPathChange(ctx context.Context, repoPath, path string) (bool, error) {
+	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "diff", "--cached", "--quiet", "--", path)
+	err := cmd.Run()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+			return true, nil
+		}
+		return false, camperrors.NewGit("diff --cached path", "", "", "", err)
+	}
 	return false, nil
 }
 

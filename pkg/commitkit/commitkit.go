@@ -5,6 +5,9 @@
 //
 // All staging and commit operations use automatic lock retry with stale
 // lock cleanup, making them resilient to index.lock contention.
+//
+// SyncSubmoduleRef commits only the requested submodule gitlink path and
+// preserves unrelated staged campaign-root content.
 package commitkit
 
 import (
@@ -180,7 +183,7 @@ func ShortHash(ctx context.Context, repoPath string) (string, error) {
 // (e.g. "projects/fest").
 //
 // It is a no-op and returns nil when the submodule pointer has not changed
-// (git reports nothing to commit).
+// for projectRelPath.
 //
 // Uses automatic lock retry with stale lock cleanup.
 func SyncSubmoduleRef(ctx context.Context, campaignRoot, projectRelPath, campaignID string) error {
@@ -193,10 +196,10 @@ func SyncSubmoduleRef(ctx context.Context, campaignRoot, projectRelPath, campaig
 		return fmt.Errorf("commitkit: stage submodule %s: %w", projectRelPath, err)
 	}
 
-	// Check whether there is actually something staged before committing.
-	hasChanges, err := git.HasStagedChanges(ctx, campaignRoot)
+	// Check only the ref path so unrelated staged root content is preserved.
+	hasChanges, err := git.HasStagedPathChange(ctx, campaignRoot, projectRelPath)
 	if err != nil {
-		return fmt.Errorf("commitkit: check staged changes: %w", err)
+		return fmt.Errorf("commitkit: check staged submodule %s: %w", projectRelPath, err)
 	}
 	if !hasChanges {
 		return nil // No-op: submodule pointer hasn't changed.
@@ -205,7 +208,7 @@ func SyncSubmoduleRef(ctx context.Context, campaignRoot, projectRelPath, campaig
 	msg := git.PrependCampaignTag(campaignID,
 		fmt.Sprintf("sync submodule ref: %s", projectRelPath))
 
-	if err := git.Commit(ctx, campaignRoot, &git.CommitOptions{Message: msg}); err != nil {
+	if err := git.CommitScoped(ctx, campaignRoot, []string{projectRelPath}, &git.CommitOptions{Message: msg}); err != nil {
 		return fmt.Errorf("commitkit: commit submodule ref for %s: %w", projectRelPath, err)
 	}
 

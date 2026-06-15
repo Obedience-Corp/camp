@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Obedience-Corp/camp/pkg/commitkit"
@@ -358,6 +359,42 @@ func TestSyncSubmoduleRef(t *testing.T) {
 		msg := string(out)
 		assert.Contains(t, msg, "[OBEY-CAMPAIGN-abc12345]")
 		assert.Contains(t, msg, "sync submodule ref: sub")
+	})
+
+	t.Run("preserves unrelated staged campaign root content", func(t *testing.T) {
+		parent := t.TempDir()
+		sub := t.TempDir()
+		makeGitRepo(t, parent)
+		makeGitRepo(t, sub)
+		addSubmodule(t, parent, sub, "sub")
+
+		require.NoError(t, os.WriteFile(filepath.Join(parent, "notes.txt"), []byte("staged\n"), 0644))
+		out, err := exec.Command("git", "-C", parent, "add", "notes.txt").CombinedOutput()
+		require.NoError(t, err, "%s", string(out))
+
+		newFile := filepath.Join(sub, "new.txt")
+		require.NoError(t, os.WriteFile(newFile, []byte("hello\n"), 0644))
+		out, err = exec.Command("git", "-C", sub, "add", ".").CombinedOutput()
+		require.NoError(t, err, "%s", string(out))
+		out, err = exec.Command("git", "-C", sub, "commit", "-m", "advance").CombinedOutput()
+		require.NoError(t, err, "%s", string(out))
+
+		out, err = exec.Command("git", "-c", "protocol.file.allow=always",
+			"-C", parent, "submodule", "update", "--remote", "sub").CombinedOutput()
+		require.NoError(t, err, "%s", string(out))
+
+		err = commitkit.SyncSubmoduleRef(context.Background(), parent, "sub", "abc12345")
+		require.NoError(t, err)
+
+		out, err = exec.Command("git", "-C", parent, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").CombinedOutput()
+		require.NoError(t, err, "%s", string(out))
+		assert.Equal(t, "sub", strings.TrimSpace(string(out)))
+
+		out, err = exec.Command("git", "-C", parent, "diff", "--cached", "--name-only").CombinedOutput()
+		require.NoError(t, err, "%s", string(out))
+		staged := strings.Fields(string(out))
+		assert.Contains(t, staged, "notes.txt")
+		assert.NotContains(t, staged, "sub")
 	})
 
 	t.Run("returns error on cancelled context", func(t *testing.T) {
