@@ -13,26 +13,64 @@ camp() {
   case "$1" in
     switch|sw)
       shift
+      local arg passthrough status
+      passthrough=0
+      for arg in "$@"; do
+        case "$arg" in
+          --help|-h|--json|--json=*|--print|--print=*)
+            passthrough=1
+            break
+            ;;
+        esac
+      done
+      if [ "$passthrough" -eq 1 ]; then
+        command camp switch "$@"
+        return
+      fi
       dest=$(command camp switch "$@" --print)
+      status=$?
       if [ -n "$dest" ]; then
         cd "$dest" || return 1
+      elif [ "$status" -ne 0 ]; then
+        return "$status"
+      else
+        echo "camp: not found: $*" >&2
+        return 1
       fi
       ;;
     go|g)
       shift
+      local arg passthrough status
+      passthrough=0
+      for arg in "$@"; do
+        case "$arg" in
+          --help|-h|--json|--json=*|--print|--print=*)
+            passthrough=1
+            break
+            ;;
+        esac
+      done
+      if [ "$passthrough" -eq 1 ]; then
+        command camp go "$@"
+        return
+      fi
       if [ $# -eq 0 ]; then
-        dest=$(command camp go --print 2>/dev/null)
+        dest=$(command camp go --print)
+        status=$?
         if [ -n "$dest" ]; then
           cd "$dest" || return 1
+        elif [ "$status" -ne 0 ]; then
+          return "$status"
         fi
-      elif [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
-        command camp go --help
       elif [ "$1" = "-c" ]; then
         command camp go "$@"
       else
-        dest=$(command camp go "$@" --print 2>/dev/null)
+        dest=$(command camp go "$@" --print)
+        status=$?
         if [ -n "$dest" ]; then
           cd "$dest" || return 1
+        elif [ "$status" -ne 0 ]; then
+          return "$status"
         else
           echo "camp: not found: $*" >&2
           return 1

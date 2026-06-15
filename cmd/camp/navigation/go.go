@@ -53,6 +53,9 @@ func runGo(cmd *cobra.Command, args []string) error {
 	command, _ := cmd.Flags().GetStringArray("command")
 	forceRoot, _ := cmd.Flags().GetBool("root")
 	listShortcuts, _ := cmd.Flags().GetBool("list")
+	if listShortcuts && printOnly {
+		return camperrors.New("--list and --print are mutually exclusive")
+	}
 
 	// Load campaign config to get custom shortcuts
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
@@ -115,6 +118,9 @@ func runGo(cmd *cobra.Command, args []string) error {
 			cwd, _ := os.Getwd()
 			_ = state.SetLastLocation(ctx, campaignRoot, cwd)
 			if printOnly {
+				if err := ensureExistingPrintPath(pinPath); err != nil {
+					return err
+				}
 				fmt.Println(pinPath)
 			} else {
 				fmt.Printf("cd %s\n", pinPath)
@@ -238,12 +244,13 @@ func runGo(cmd *cobra.Command, args []string) error {
 		// Index resolution failed — fall through to standard resolution
 	}
 
-	resolveResult, err := index.Resolve(ctx, index.ResolveOptions{
+	resolveOpts := index.ResolveOptions{
 		CampaignRoot: jumpResult.Path,
 		Category:     result.Category,
 		Query:        result.Query,
 		SubShortcut:  subShortcut,
-	})
+	}
+	resolveResult, err := index.Resolve(ctx, resolveOpts)
 	if err != nil {
 		// Handle invalid sub-shortcut error
 		if subErr, ok := err.(*index.InvalidSubShortcutError); ok {
@@ -262,7 +269,7 @@ func runGo(cmd *cobra.Command, args []string) error {
 	_ = state.SetLastLocation(ctx, jumpResult.Path, cwd)
 
 	// Multiple matches - inform user
-	if resolveResult.HasMultipleMatches() && !printOnly {
+	if resolveResult.HasMultipleMatches() {
 		fmt.Fprintln(os.Stderr, ui.Warning("Multiple matches found:"))
 		for _, m := range resolveResult.Matches {
 			fmt.Fprintf(os.Stderr, "  %s %s\n", ui.BulletIcon(), ui.Dim(m.Name))
@@ -271,6 +278,10 @@ func runGo(cmd *cobra.Command, args []string) error {
 	}
 
 	if printOnly {
+		resolveResult, err = ensureResolvedPrintPath(ctx, jumpResult.Path, resolveOpts, resolveResult)
+		if err != nil {
+			return err
+		}
 		fmt.Println(resolveResult.Path)
 	} else {
 		fmt.Printf("cd %s\n", resolveResult.Path)
@@ -539,4 +550,41 @@ func resolvePin(campaignRoot, query string) (string, bool) {
 		return "", false
 	}
 	return filepath.Join(campaignRoot, pin.Path), true
+}
+
+func ensureResolvedPrintPath(ctx context.Context, campaignRoot string, opts index.ResolveOptions, result *index.ResolveResult) (*index.ResolveResult, error) {
+	if result == nil {
+		return nil, camperrors.New("resolved path is empty")
+	}
+	if _, err := os.Stat(result.Path); err == nil {
+		return result, nil
+	} else if !os.IsNotExist(err) {
+		return nil, camperrors.Wrapf(err, "failed to stat resolved path %s", result.Path)
+	}
+
+	if _, err := index.GetOrBuild(ctx, campaignRoot, true); err != nil {
+		return nil, camperrors.Wrapf(err, "nav index rebuild failed")
+	}
+	refreshed, err := index.Resolve(ctx, opts)
+	if err != nil {
+		return nil, resolvedPathMissingError(result.Path)
+	}
+	if err := ensureExistingPrintPath(refreshed.Path); err != nil {
+		return nil, err
+	}
+	return refreshed, nil
+}
+
+func ensureExistingPrintPath(path string) error {
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	} else if os.IsNotExist(err) {
+		return resolvedPathMissingError(path)
+	} else {
+		return camperrors.Wrapf(err, "failed to stat resolved path %s", path)
+	}
+}
+
+func resolvedPathMissingError(path string) error {
+	return camperrors.New(fmt.Sprintf("resolved path does not exist: %s", path))
 }

@@ -8,7 +8,10 @@ import (
 	"testing"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/nav"
+	"github.com/Obedience-Corp/camp/internal/nav/index"
 	"github.com/Obedience-Corp/camp/internal/state"
+	"github.com/spf13/cobra"
 )
 
 func TestHandleToggle_ReturnsLastLocation(t *testing.T) {
@@ -155,4 +158,79 @@ func TestFormatConfigShortcuts_ShowsCanonicalIntentPath(t *testing.T) {
 	if strings.Contains(output, "workflow/intents") {
 		t.Fatalf("formatConfigShortcuts() should not mention legacy intent path: %q", output)
 	}
+}
+
+func TestRunGo_ListPrintMutuallyExclusive(t *testing.T) {
+	cmd := &cobra.Command{}
+	cmd.Flags().Bool("print", true, "")
+	cmd.Flags().StringArrayP("command", "c", nil, "")
+	cmd.Flags().Bool("root", false, "")
+	cmd.Flags().BoolP("list", "l", true, "")
+
+	err := runGo(cmd, nil)
+	if err == nil {
+		t.Fatal("expected --list/--print conflict error")
+	}
+	if !strings.Contains(err.Error(), "--list and --print are mutually exclusive") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestEnsureResolvedPrintPath_RebuildsStaleCache(t *testing.T) {
+	ctx := context.Background()
+	root := testNavRoot(t)
+	targetPath := filepath.Join(root, "projects", "app")
+	if err := os.MkdirAll(targetPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	stalePath := filepath.Join(root, "projects", "deleted-app")
+	result := &index.ResolveResult{Path: stalePath, Name: "app", Category: nav.CategoryProjects}
+	opts := index.ResolveOptions{CampaignRoot: root, Category: nav.CategoryProjects, Query: "app"}
+
+	refreshed, err := ensureResolvedPrintPath(ctx, root, opts, result)
+	if err != nil {
+		t.Fatalf("ensureResolvedPrintPath() error = %v", err)
+	}
+	if refreshed.Path != targetPath {
+		t.Fatalf("refreshed path = %q, want %q", refreshed.Path, targetPath)
+	}
+}
+
+func TestEnsureResolvedPrintPath_DeletedTargetReturnsClearError(t *testing.T) {
+	ctx := context.Background()
+	root := testNavRoot(t)
+	stalePath := filepath.Join(root, "projects", "deleted-app")
+	stale := index.NewIndex(root)
+	stale.AddTarget(index.Target{Name: "deleted-app", Path: stalePath, Category: nav.CategoryProjects})
+	if err := index.Save(stale, root); err != nil {
+		t.Fatal(err)
+	}
+
+	result := &index.ResolveResult{Path: stalePath, Name: "deleted-app", Category: nav.CategoryProjects}
+	opts := index.ResolveOptions{CampaignRoot: root, Category: nav.CategoryProjects, Query: "deleted-app"}
+
+	_, err := ensureResolvedPrintPath(ctx, root, opts, result)
+	if err == nil {
+		t.Fatal("expected missing resolved path error")
+	}
+	if !strings.Contains(err.Error(), "resolved path does not exist: "+stalePath) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func testNavRoot(t *testing.T) string {
+	t.Helper()
+
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".campaign"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "projects"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return root
 }
