@@ -24,12 +24,25 @@ Schema versions in this release:
 | `camp workitem doctor --json` | `workitem-doctor/v1alpha1` | Emits findings; exits 2 when error findings exist. |
 | `camp workitem commit --json` | `workitem-commit/v1alpha1` | Emits staging plan and optional commit SHA. |
 | `camp workitem commits --json` | `workitem-commits/v1alpha1` | Emits matching commits and per-repo query errors. |
+| `camp workitem priority --json` | `workitem-priority/v1alpha1` | Emits `cleared: true` when priority is cleared. |
+| `camp intent list/find/show --json` | `intents/v1alpha1` | `--format json` is a deprecated alias. |
+| `camp intent count --json` | `intents/v1alpha1` | Counts are emitted as status-count objects in `items[]`; `--format json` is a deprecated alias. |
+| `camp intent add --json` | `intents/v1alpha1` | Emits created `id` and `path`. |
 | `camp workflow create --json` | `workflow/v1` | Existing workflow collection contract. |
 | `camp workflow list --json` | `workflow/v1` | Existing workflow collection contract. |
 | `camp workflow show --json` | `workflow/v1` | Existing workflow collection contract. |
 | `camp workflow shortcut add --json` | `workflow/v1` | Existing workflow collection contract. |
 | `camp workflow doctor --json` | `workflow/v1` | Emits findings; exits 2 when error findings exist. |
 | `camp workflow sync --json` | `workflow/v1` | Existing workflow repair-plan contract. |
+
+## Scope: contract vs best-effort
+
+Surfaces in this table are **versioned contracts**: `schema_version` will
+increment on breaking changes and festival-app keys on the version string.
+
+Surfaces NOT in this table (for example, `camp status all`, `camp version`,
+and `camp __manifest`) are **best-effort**: they have JSON output but no formal
+version guarantee until explicitly promoted.
 
 ## Field Rules
 

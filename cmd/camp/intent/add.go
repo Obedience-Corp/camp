@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
@@ -19,6 +20,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/intent/audit"
 	"github.com/Obedience-Corp/camp/internal/intent/tui"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	navtui "github.com/Obedience-Corp/camp/internal/nav/tui"
 	"github.com/Obedience-Corp/camp/internal/paths"
 )
@@ -29,10 +31,14 @@ import (
 // reserved.
 const noOptCampaign = "\x00pick"
 
-var intentAddCmd = &cobra.Command{
-	Use:   "add [title]",
-	Short: "Create a new intent",
-	Long: `Create a new intent with fast or deep capture mode.
+var intentAddCmd = newIntentAddCommand()
+
+func newIntentAddCommand() *cobra.Command {
+	var jsonOut bool
+	cmd := &cobra.Command{
+		Use:   "add [title]",
+		Short: "Create a new intent",
+		Long: `Create a new intent with fast or deep capture mode.
 
 CAPTURE MODES:
   Ultra-fast          Title provided as argument → immediate creation
@@ -68,20 +74,20 @@ Examples:
   camp intent add "Fix login" --body "The login page returns 500"
   camp intent add "Migrate DB" --body-file spec.md --concept projects/camp
   echo "body" | camp intent add "Idea" --body-file -`,
-	Args: validateIntentAddArgs,
-	RunE: runIntentAdd,
-}
+	}
+	jsonRequested := func() bool { return jsonOut }
+	cmd.Args = jsoncontract.Args(IntentJSONVersion, jsonRequested, validateIntentAddArgs)
+	cmd.RunE = jsoncontract.RunE(IntentJSONVersion, jsonRequested, runIntentAdd)
+	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(IntentJSONVersion, jsonRequested))
 
-func init() {
-	Cmd.AddCommand(intentAddCmd)
-
-	flags := intentAddCmd.Flags()
+	flags := cmd.Flags()
 	flags.StringP("type", "t", "idea", "Intent type (idea, feature, bug, research, chore)")
 	flags.BoolP("edit", "e", false, "Open in $EDITOR for deep capture")
-	flags.BoolP("full", "f", false, "Full TUI mode with body textarea")
+	flags.Bool("full", false, "Full TUI mode with body textarea")
 	flags.StringP("campaign", "c", "", "Target campaign by name or ID; omit value to pick interactively")
 	flags.Bool("no-commit", false, "Don't create a git commit")
 	flags.Lookup("campaign").NoOptDefVal = noOptCampaign
+	flags.BoolVar(&jsonOut, "json", false, "emit a structured JSON result")
 
 	// Programmatic (agent) flags
 	flags.String("body", "", "Set intent body as a literal string")
@@ -90,6 +96,12 @@ func init() {
 	flags.Bool("note", false, "Create a note instead of a lifecycle intent")
 	flags.String("author", "", "Override the default author attribution")
 	flags.StringArray("tag", nil, "Add a tag (repeatable)")
+
+	return cmd
+}
+
+func init() {
+	Cmd.AddCommand(intentAddCmd)
 }
 
 func runIntentAdd(cmd *cobra.Command, args []string) error {
@@ -99,6 +111,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	intentType, _ := cmd.Flags().GetString("type")
 	useEditor, _ := cmd.Flags().GetBool("edit")
 	fullMode, _ := cmd.Flags().GetBool("full")
+	jsonOut, _ := cmd.Flags().GetBool("json")
 	targetCampaign, _ := cmd.Flags().GetString("campaign")
 	noCommit, _ := cmd.Flags().GetBool("no-commit")
 	createNote, _ := cmd.Flags().GetBool("note")
@@ -112,6 +125,12 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	}
 	if createNote && cmd.Flags().Changed("type") {
 		return camperrors.Wrap(camperrors.ErrInvalidInput, "--note cannot be combined with --type")
+	}
+	if fullMode && jsonOut {
+		return camperrors.Wrap(camperrors.ErrInvalidInput, "--json and --full are mutually exclusive")
+	}
+	if jsonOut && len(args) == 0 {
+		return camperrors.Wrap(camperrors.ErrInvalidInput, "--json requires a title argument")
 	}
 
 	// Resolve body from --body / --body-file (mutual exclusivity checked inside)
@@ -169,10 +188,10 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 
 		// Deep capture overrides ultra-fast; body flags pre-fill the template
 		if useEditor {
-			return runDeepCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, opts)
+			return runDeepCaptureWithOutput(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, opts, cmd.OutOrStdout(), jsonOut)
 		}
 
-		return runFastCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, opts)
+		return runFastCaptureWithOutput(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, opts, cmd.OutOrStdout(), jsonOut)
 	}
 
 	// No title argument: non-TTY always requires a title (can't launch TUI)
@@ -252,10 +271,10 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 
 	// Deep capture if requested
 	if useEditor {
-		return runDeepCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, opts)
+		return runDeepCaptureWithOutput(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, opts, cmd.OutOrStdout(), jsonOut)
 	}
 
-	return runFastCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, opts)
+	return runFastCaptureWithOutput(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, opts, cmd.OutOrStdout(), jsonOut)
 }
 
 func navigationShortcuts(cfg *config.CampaignConfig) map[string]string {
@@ -389,16 +408,24 @@ func runIntentAddTUI(ctx context.Context, conceptSvc concept.Service, opts tui.A
 
 // runFastCapture creates intent file directly without editor.
 func runFastCapture(ctx context.Context, svc *intent.IntentService, intentsDir string, cfg *config.CampaignConfig, campaignRoot string, noCommit bool, opts intent.CreateOptions) error {
+	return runFastCaptureWithOutput(ctx, svc, intentsDir, cfg, campaignRoot, noCommit, opts, os.Stdout, false)
+}
+
+func runFastCaptureWithOutput(ctx context.Context, svc *intent.IntentService, intentsDir string, cfg *config.CampaignConfig, campaignRoot string, noCommit bool, opts intent.CreateOptions, output io.Writer, jsonOut bool) error {
 	result, err := svc.CreateDirect(ctx, opts)
 	if err != nil {
 		return camperrors.Wrap(err, "failed to create intent")
 	}
 
-	return finalizeCreatedIntent(ctx, result, intentsDir, cfg, campaignRoot, noCommit)
+	return finalizeCreatedIntentWithOutput(ctx, result, intentsDir, cfg, campaignRoot, noCommit, output, jsonOut)
 }
 
 // runDeepCapture opens editor for full template expansion.
 func runDeepCapture(ctx context.Context, svc *intent.IntentService, intentsDir string, cfg *config.CampaignConfig, campaignRoot string, noCommit bool, opts intent.CreateOptions) error {
+	return runDeepCaptureWithOutput(ctx, svc, intentsDir, cfg, campaignRoot, noCommit, opts, os.Stdout, false)
+}
+
+func runDeepCaptureWithOutput(ctx context.Context, svc *intent.IntentService, intentsDir string, cfg *config.CampaignConfig, campaignRoot string, noCommit bool, opts intent.CreateOptions, output io.Writer, jsonOut bool) error {
 	// Use editor function from editor package
 	editorFn := func(ctx context.Context, path string) error {
 		return editor.Edit(ctx, path)
@@ -412,7 +439,7 @@ func runDeepCapture(ctx context.Context, svc *intent.IntentService, intentsDir s
 		return camperrors.Wrap(err, "failed to create intent")
 	}
 
-	return finalizeCreatedIntent(ctx, result, intentsDir, cfg, campaignRoot, noCommit)
+	return finalizeCreatedIntentWithOutput(ctx, result, intentsDir, cfg, campaignRoot, noCommit, output, jsonOut)
 }
 
 // runDeepNoteCapture opens the note template in $EDITOR and saves it to notes/.
@@ -436,6 +463,10 @@ func runDeepNoteCapture(ctx context.Context, svc *intent.IntentService, intentsD
 }
 
 func finalizeCreatedIntent(ctx context.Context, result *intent.Intent, intentsDir string, cfg *config.CampaignConfig, campaignRoot string, noCommit bool) error {
+	return finalizeCreatedIntentWithOutput(ctx, result, intentsDir, cfg, campaignRoot, noCommit, os.Stdout, false)
+}
+
+func finalizeCreatedIntentWithOutput(ctx context.Context, result *intent.Intent, intentsDir string, cfg *config.CampaignConfig, campaignRoot string, noCommit bool, output io.Writer, jsonOut bool) error {
 	if err := appendIntentAuditEvent(ctx, intentsDir, audit.Event{
 		Type:  audit.EventCreate,
 		ID:    result.ID,
@@ -445,7 +476,15 @@ func finalizeCreatedIntent(ctx context.Context, result *intent.Intent, intentsDi
 		return err
 	}
 
-	fmt.Printf("✓ Intent created: %s\n", result.Path)
+	if jsonOut {
+		if err := outputIntentAddPayload(output, campaignRoot, result); err != nil {
+			return err
+		}
+	} else {
+		if _, err := fmt.Fprintf(output, "✓ Intent created: %s\n", result.Path); err != nil {
+			return err
+		}
+	}
 
 	// Auto-commit (unless --no-commit)
 	if !noCommit {
@@ -460,8 +499,10 @@ func finalizeCreatedIntent(ctx context.Context, result *intent.Intent, intentsDi
 			Action:      commit.IntentCreate,
 			IntentTitle: result.Title,
 		})
-		if commitResult.Message != "" {
-			fmt.Printf("  %s\n", commitResult.Message)
+		if !jsonOut && commitResult.Message != "" {
+			if _, err := fmt.Fprintf(output, "  %s\n", commitResult.Message); err != nil {
+				return err
+			}
 		}
 	}
 

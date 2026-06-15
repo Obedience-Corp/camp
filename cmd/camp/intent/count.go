@@ -1,23 +1,27 @@
 package intent
 
 import (
-	"encoding/json"
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/intent"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
-var intentCountCmd = &cobra.Command{
-	Use:   "count",
-	Short: "Count intents by status directory",
-	Long: `Display a count of intents grouped by status directory.
+var intentCountCmd = newIntentCountCommand()
+
+func newIntentCountCommand() *cobra.Command {
+	var jsonOut bool
+	cmd := &cobra.Command{
+		Use:   "count",
+		Short: "Count intents by status directory",
+		Long: `Display a count of intents grouped by status directory.
 
 OUTPUT FORMATS:
   table (default)   Styled summary with counts per status
@@ -26,17 +30,24 @@ OUTPUT FORMATS:
 Examples:
   camp intent count              Show counts per status
   camp intent count -f json      JSON output for scripting`,
-	RunE: runIntentCount,
+	}
+	jsonRequested := func() bool { return intentJSONRequested(cmd, &jsonOut) }
+	cmd.Args = jsoncontract.Args(IntentJSONVersion, jsonRequested, cobra.NoArgs)
+	cmd.RunE = jsoncontract.RunE(IntentJSONVersion, jsonRequested, runIntentCount)
+	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(IntentJSONVersion, func() bool { return jsonOut }))
+	cmd.Flags().StringP("format", "f", "table", "Output format: table, json")
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit a structured JSON result")
+	return cmd
 }
 
 func init() {
 	Cmd.AddCommand(intentCountCmd)
-	intentCountCmd.Flags().StringP("format", "f", "table", "Output format: table, json")
 }
 
 func runIntentCount(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	format, _ := cmd.Flags().GetString("format")
+	jsonOut, _ := cmd.Flags().GetBool("json")
 
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
@@ -52,9 +63,9 @@ func runIntentCount(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "counting intents")
 	}
 
-	switch format {
-	case "json":
-		return outputCountJSON(counts, total)
+	switch {
+	case jsonOut || format == "json":
+		return outputIntentCountPayload(cmd.OutOrStdout(), campaignRoot, counts, total)
 	default:
 		return outputCountTable(counts, total)
 	}
@@ -90,35 +101,5 @@ func outputCountTable(counts []intent.StatusCount, total int) error {
 		totalStyle.Render(fmt.Sprintf("%d", total)),
 	)
 
-	return nil
-}
-
-func outputCountJSON(counts []intent.StatusCount, total int) error {
-	type jsonCount struct {
-		Status string `json:"status"`
-		Count  int    `json:"count"`
-	}
-	type jsonOutput struct {
-		Counts []jsonCount `json:"counts"`
-		Total  int         `json:"total"`
-	}
-
-	out := jsonOutput{
-		Counts: make([]jsonCount, len(counts)),
-		Total:  total,
-	}
-	for i, sc := range counts {
-		out.Counts[i] = jsonCount{
-			Status: string(sc.Status),
-			Count:  sc.Count,
-		}
-	}
-
-	data, err := json.MarshalIndent(out, "", "  ")
-	if err != nil {
-		return camperrors.Wrap(err, "marshaling JSON")
-	}
-
-	fmt.Println(string(data))
 	return nil
 }

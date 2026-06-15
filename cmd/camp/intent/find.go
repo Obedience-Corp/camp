@@ -1,25 +1,28 @@
 package intent
 
 import (
-	"encoding/json"
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/intent"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
-var intentFindCmd = &cobra.Command{
-	Use:   "find [query]",
-	Short: "Search for intents by title or content",
-	Long: `Search for intents across all statuses by title, content, or ID.
+var intentFindCmd = newIntentFindCommand()
+
+func newIntentFindCommand() *cobra.Command {
+	var jsonOut bool
+	cmd := &cobra.Command{
+		Use:   "find [query]",
+		Short: "Search for intents by title or content",
+		Long: `Search for intents across all statuses by title, content, or ID.
 
 The search is case-insensitive and matches partial strings.
 Without a query, returns all intents.
@@ -34,16 +37,21 @@ Examples:
   camp intent find dark              Find intents containing "dark"
   camp intent find "bug fix"         Find intents with "bug fix"
   camp intent find -f simple auth    Get IDs of auth-related intents`,
-	Args: cobra.MaximumNArgs(1),
-	RunE: runIntentFind,
+	}
+	jsonRequested := func() bool { return intentJSONRequested(cmd, &jsonOut) }
+	cmd.Args = jsoncontract.Args(IntentJSONVersion, jsonRequested, cobra.MaximumNArgs(1))
+	cmd.RunE = jsoncontract.RunE(IntentJSONVersion, jsonRequested, runIntentFind)
+	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(IntentJSONVersion, func() bool { return jsonOut }))
+
+	flags := cmd.Flags()
+	flags.StringP("format", "f", "table", "Output format: table, simple, json")
+	flags.BoolVar(&jsonOut, "json", false, "emit a structured JSON result")
+	flags.IntP("limit", "n", 0, "Limit results (0 = no limit)")
+	return cmd
 }
 
 func init() {
 	Cmd.AddCommand(intentFindCmd)
-
-	flags := intentFindCmd.Flags()
-	flags.StringP("format", "f", "table", "Output format: table, simple, json")
-	flags.IntP("limit", "n", 0, "Limit results (0 = no limit)")
 }
 
 func runIntentFind(cmd *cobra.Command, args []string) error {
@@ -51,6 +59,7 @@ func runIntentFind(cmd *cobra.Command, args []string) error {
 
 	// Parse flags
 	format, _ := cmd.Flags().GetString("format")
+	jsonOut, _ := cmd.Flags().GetBool("json")
 	limit, _ := cmd.Flags().GetInt("limit")
 
 	// Get query (optional)
@@ -82,10 +91,10 @@ func runIntentFind(cmd *cobra.Command, args []string) error {
 	}
 
 	// Format output
-	switch format {
-	case "json":
-		return outputFindJSON(intents)
-	case "simple":
+	switch {
+	case jsonOut || format == "json":
+		return outputIntentPayload(cmd.OutOrStdout(), campaignRoot, intents)
+	case format == "simple":
 		return outputFindSimple(intents)
 	default:
 		return outputFindTable(intents, query)
@@ -156,43 +165,5 @@ func outputFindSimple(intents []*intent.Intent) error {
 	for _, i := range intents {
 		fmt.Println(i.ID)
 	}
-	return nil
-}
-
-func outputFindJSON(intents []*intent.Intent) error {
-	type jsonIntent struct {
-		ID        string `json:"id"`
-		Title     string `json:"title"`
-		Type      string `json:"type"`
-		Status    string `json:"status"`
-		Concept   string `json:"concept,omitempty"`
-		CreatedAt string `json:"created_at"`
-		UpdatedAt string `json:"updated_at,omitempty"`
-		Path      string `json:"path"`
-	}
-
-	output := make([]jsonIntent, 0, len(intents))
-	for _, i := range intents {
-		j := jsonIntent{
-			ID:        i.ID,
-			Title:     i.Title,
-			Type:      string(i.Type),
-			Status:    string(i.Status),
-			Concept:   i.Concept,
-			CreatedAt: i.CreatedAt.Format(time.RFC3339),
-			Path:      i.Path,
-		}
-		if !i.UpdatedAt.IsZero() {
-			j.UpdatedAt = i.UpdatedAt.Format(time.RFC3339)
-		}
-		output = append(output, j)
-	}
-
-	data, err := json.MarshalIndent(output, "", "  ")
-	if err != nil {
-		return camperrors.Wrap(err, "failed to marshal JSON")
-	}
-
-	fmt.Println(string(data))
 	return nil
 }

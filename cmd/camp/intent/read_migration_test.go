@@ -34,8 +34,12 @@ func TestIntentList_LegacyLayoutWarnsWithoutMutation(t *testing.T) {
 	if !strings.Contains(stderr, "camp init --repair") {
 		t.Fatalf("stderr = %q, want repair warning", stderr)
 	}
-	if strings.TrimSpace(stdout) != "[]" {
-		t.Fatalf("stdout = %q, want empty JSON array", stdout)
+	payload := decodeIntentJSONPayload(t, stdout)
+	if got := payload["schema_version"]; got != IntentJSONVersion {
+		t.Fatalf("schema_version = %v, want %q", got, IntentJSONVersion)
+	}
+	if got := len(payload["items"].([]any)); got != 0 {
+		t.Fatalf("items length = %d, want 0", got)
 	}
 
 	after := intentReadCommandDirTreeSnapshot(t, root)
