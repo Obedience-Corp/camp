@@ -637,22 +637,14 @@ func runShortcutsReset(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("not in a campaign: %w", err)
 	}
 
-	jumps, err := config.LoadJumpsConfig(ctx, root)
+	plan, err := shortcuts.PrepareReset(ctx, root)
 	if err != nil {
-		return camperrors.Wrap(err, "failed to load jumps config")
-	}
-	if jumps == nil {
-		defaultJumps := config.DefaultJumpsConfig()
-		jumps = &defaultJumps
-	}
-	if jumps.Shortcuts == nil {
-		jumps.Shortcuts = make(map[string]config.ShortcutConfig)
+		return err
 	}
 
-	defaults := config.DefaultNavigationShortcuts()
-	diff := shortcuts.ComputeShortcutDiff(jumps.Shortcuts, defaults)
-
-	hasDiff := len(diff.Missing) > 0 || len(diff.Stale) > 0 || len(diff.Modified) > 0
+	defaults := plan.Defaults
+	diff := plan.Diff
+	hasDiff := plan.HasAutoDiff()
 
 	if resetAll {
 		// Count custom shortcuts that will be removed
@@ -674,7 +666,9 @@ func runShortcutsReset(cmd *cobra.Command, _ []string) error {
 			return nil
 		}
 
-		jumps.Shortcuts = defaults
+		if !dryRun {
+			plan.ApplyAll()
+		}
 
 		label := "Reset"
 		if dryRun {
@@ -703,27 +697,18 @@ func runShortcutsReset(cmd *cobra.Command, _ []string) error {
 
 		// Add missing defaults
 		for _, key := range diff.Missing {
-			if !dryRun {
-				jumps.Shortcuts[key] = defaults[key]
-			}
 			fmt.Printf("  %s  Added    %-10s %s %s\n",
 				ui.SuccessIcon(), ui.Accent(key), ui.ArrowIcon(), ui.Value(defaults[key].Path))
 		}
 
 		// Remove stale auto shortcuts
 		for _, key := range diff.Stale {
-			if !dryRun {
-				delete(jumps.Shortcuts, key)
-			}
 			fmt.Printf("  %s  Removed  %-10s %s\n",
 				ui.ErrorIcon(), ui.Accent(key), ui.Dim("(stale default)"))
 		}
 
 		// Update modified auto shortcuts
 		for _, key := range diff.Modified {
-			if !dryRun {
-				jumps.Shortcuts[key] = defaults[key]
-			}
 			fmt.Printf("  %s  Updated  %-10s %s %s\n",
 				ui.WarningIcon(), ui.Accent(key), ui.ArrowIcon(), ui.Value(defaults[key].Path))
 		}
@@ -733,6 +718,10 @@ func runShortcutsReset(cmd *cobra.Command, _ []string) error {
 			fmt.Printf("  %s  Kept     %-10s %s\n",
 				ui.BulletIcon(), ui.Accent(key), ui.Dim("(user-defined)"))
 		}
+
+		if !dryRun {
+			plan.ApplyIncremental()
+		}
 	}
 
 	if dryRun {
@@ -740,7 +729,7 @@ func runShortcutsReset(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	if err := config.SaveJumpsConfig(ctx, root, jumps); err != nil {
+	if err := config.SaveJumpsConfig(ctx, root, plan.Jumps); err != nil {
 		return camperrors.Wrap(err, "failed to save jumps config")
 	}
 
