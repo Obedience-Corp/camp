@@ -181,7 +181,7 @@ type projectCampaignResolver struct {
 	loadCurrent   func(context.Context) (*config.CampaignConfig, string, error)
 	loadRegistry  func(context.Context) (*config.Registry, error)
 	loadCampaign  func(context.Context, string) (*config.CampaignConfig, error)
-	saveRegistry  func(context.Context, *config.Registry) error
+	updateAccess  func(context.Context, string) error
 	pickCampaign  func(context.Context, *config.Registry) (config.RegisteredCampaign, error)
 }
 
@@ -193,7 +193,7 @@ func newProjectCampaignResolver(stderr io.Writer, usageLine string) projectCampa
 		loadCurrent:   config.LoadCampaignConfigFromCwd,
 		loadRegistry:  config.LoadRegistry,
 		loadCampaign:  config.LoadCampaignConfig,
-		saveRegistry:  config.SaveRegistry,
+		updateAccess:  updateProjectRegistryLastAccess,
 		pickCampaign:  cmdutil.PickCampaign,
 	}
 }
@@ -243,12 +243,18 @@ func (r projectCampaignResolver) Resolve(ctx context.Context, targetCampaign str
 		return nil, "", err
 	}
 
-	reg.UpdateLastAccess(selected.ID)
-	if r.saveRegistry != nil {
-		_ = r.saveRegistry(ctx, reg)
+	if r.updateAccess != nil {
+		_ = r.updateAccess(ctx, selected.ID)
 	}
 
 	return cfg, selected.Path, nil
+}
+
+func updateProjectRegistryLastAccess(ctx context.Context, id string) error {
+	return config.UpdateRegistry(ctx, func(reg *config.Registry) error {
+		reg.UpdateLastAccess(id)
+		return nil
+	})
 }
 
 func (r projectCampaignResolver) usage() string {

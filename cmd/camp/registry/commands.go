@@ -174,11 +174,12 @@ func runRegistryPrune(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	for _, c := range toRemove {
-		reg.UnregisterByID(c.ID)
-	}
-
-	if err := config.SaveRegistry(ctx, reg); err != nil {
+	if err := config.UpdateRegistry(ctx, func(reg *config.Registry) error {
+		for _, c := range toRemove {
+			reg.UnregisterByID(c.ID)
+		}
+		return nil
+	}); err != nil {
 		return camperrors.Wrap(err, "failed to save registry")
 	}
 
@@ -226,14 +227,17 @@ func runRegistrySync(cmd *cobra.Command, args []string) error {
 			return nil
 		}
 
-		reg.UnregisterByID(conflicting.ID)
 	}
 
-	if err := reg.Register(cfg.ID, cfg.Name, campaignRoot, cfg.Type); err != nil {
-		return camperrors.Wrap(err, "failed to register")
-	}
-
-	if err := config.SaveRegistry(ctx, reg); err != nil {
+	if err := config.UpdateRegistry(ctx, func(reg *config.Registry) error {
+		if conflictExists && conflicting.ID != cfg.ID {
+			reg.UnregisterByID(conflicting.ID)
+		}
+		if err := reg.Register(cfg.ID, cfg.Name, campaignRoot, cfg.Type); err != nil {
+			return camperrors.Wrap(err, "failed to register")
+		}
+		return nil
+	}); err != nil {
 		return camperrors.Wrap(err, "failed to save registry")
 	}
 

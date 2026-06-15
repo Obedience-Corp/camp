@@ -93,9 +93,12 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 		selected = c
 	}
 
-	// Update last access
-	reg.UpdateLastAccess(selected.ID)
-	_ = config.SaveRegistry(ctx, reg)
+	if err := config.UpdateRegistry(ctx, func(reg *config.Registry) error {
+		reg.UpdateLastAccess(selected.ID)
+		return nil
+	}); err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "camp: warning: failed to update last access: %v\n", err)
+	}
 
 	if printOnly {
 		fmt.Println(selected.Path)

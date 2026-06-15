@@ -85,6 +85,35 @@ func SaveRegistry(ctx context.Context, reg *Registry) error {
 	return nil
 }
 
+// UpdateRegistry holds an exclusive lock for a full load-mutate-save cycle.
+// LoadRegistry remains appropriate for read-only callers; mutating callers use
+// this helper so concurrent camp invocations cannot overwrite each other.
+func UpdateRegistry(ctx context.Context, mutate func(*Registry) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	path := RegistryPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return camperrors.Wrap(err, "failed to create registry directory")
+	}
+
+	release, err := fsutil.AcquireFileLock(ctx, path+".lock")
+	if err != nil {
+		return camperrors.Wrap(err, "acquiring registry lock")
+	}
+	defer release()
+
+	reg, err := LoadRegistry(ctx)
+	if err != nil {
+		return err
+	}
+	if err := mutate(reg); err != nil {
+		return err
+	}
+	return SaveRegistry(ctx, reg)
+}
+
 // rebuildPathIndex rebuilds the path-to-ID lookup index.
 func (r *Registry) rebuildPathIndex() {
 	r.pathIndex = make(map[string]string)

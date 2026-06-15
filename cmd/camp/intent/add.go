@@ -254,7 +254,7 @@ type intentAddCampaignResolver struct {
 	loadCurrent   func(context.Context) (*config.CampaignConfig, string, error)
 	loadRegistry  func(context.Context) (*config.Registry, error)
 	loadCampaign  func(context.Context, string) (*config.CampaignConfig, error)
-	saveRegistry  func(context.Context, *config.Registry) error
+	updateAccess  func(context.Context, string) error
 	pickCampaign  func(context.Context, *config.Registry) (config.RegisteredCampaign, error)
 }
 
@@ -265,7 +265,7 @@ func newIntentAddCampaignResolver(stderr io.Writer) intentAddCampaignResolver {
 		loadCurrent:   config.LoadCampaignConfigFromCwd,
 		loadRegistry:  config.LoadRegistry,
 		loadCampaign:  config.LoadCampaignConfig,
-		saveRegistry:  config.SaveRegistry,
+		updateAccess:  updateIntentAddRegistryLastAccess,
 		pickCampaign:  cmdutil.PickCampaign,
 	}
 }
@@ -308,9 +308,8 @@ func (r intentAddCampaignResolver) resolve(ctx context.Context, targetCampaign s
 		}
 	}
 
-	reg.UpdateLastAccess(selected.ID)
-	if r.saveRegistry != nil {
-		_ = r.saveRegistry(ctx, reg)
+	if r.updateAccess != nil {
+		_ = r.updateAccess(ctx, selected.ID)
 	}
 
 	cfg, err := r.loadCampaign(ctx, selected.Path)
@@ -319,6 +318,13 @@ func (r intentAddCampaignResolver) resolve(ctx context.Context, targetCampaign s
 	}
 
 	return cfg, selected.Path, nil
+}
+
+func updateIntentAddRegistryLastAccess(ctx context.Context, id string) error {
+	return config.UpdateRegistry(ctx, func(reg *config.Registry) error {
+		reg.UpdateLastAccess(id)
+		return nil
+	})
 }
 
 // runIntentAddTUI runs the BubbleTea intent creation form.
