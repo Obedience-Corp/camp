@@ -22,8 +22,8 @@ func (tc *TestContainer) Reset() error {
 	// Remove all test artifacts and recreate clean directories
 	exitCode, _, err := tc.container.Exec(tc.ctx, []string{
 		"sh", "-c",
-		"rm -rf /test /campaigns /root/.config/camp /root/.camp 2>/dev/null; " +
-			"mkdir -p /test /campaigns /root/.config/camp; sync",
+		"rm -rf /test /campaigns /root/.obey /tmp/create-* 2>/dev/null; " +
+			"mkdir -p /test /campaigns; sync",
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reset container: %w", err)

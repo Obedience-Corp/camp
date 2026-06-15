@@ -13,7 +13,6 @@ import (
 
 func TestCampSettings_CampaignsDirEditAndClear(t *testing.T) {
 	tc := GetSharedContainer(t)
-	tc.Shell(t, "rm -rf /root/.obey/campaign")
 
 	backFromGlobalSettings := strings.Repeat("\x1b[B", 6) + "\r"
 	exitCampSettings := "\x1b[B\r"
