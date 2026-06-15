@@ -248,9 +248,9 @@ const (
 	// ExitCloneFailed indicates the clone failed (no campaign created).
 	ExitCloneFailed = 1
 	// ExitPartialSuccess indicates some submodules failed to initialize.
-	ExitPartialSuccess = 2
+	ExitPartialSuccess = 3
 	// ExitValidationFailed indicates post-clone validation failed.
 	ExitValidationFailed = 3
 	// ExitInvalidArgs indicates invalid command-line arguments.
-	ExitInvalidArgs = 4
+	ExitInvalidArgs = 2
 )

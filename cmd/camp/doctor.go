@@ -31,8 +31,8 @@ CHECKS PERFORMED:
 
 EXIT CODES:
   0  All checks passed (no warnings or errors)
-  1  Warnings found (but no errors)
-  2  Errors found
+  1  Warnings or errors found
+  2  Usage error (bad flags or args)
   3  Fix attempted but some issues remain
 
 EXAMPLES:
@@ -119,7 +119,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		if err := outputDoctorJSON(result); err != nil {
 			return err
 		}
-		return exitDoctorWithCodeE(result)
+		return exitDoctorWithCode(result)
 	}
 
 	outputDoctorText(result, doctorOpts.verbose, doctorOpts.fix)
@@ -224,35 +224,20 @@ func hasFixableIssues(result *doctor.DoctorResult) bool {
 	return false
 }
 
-// exitDoctorWithCode exits with appropriate code based on result.
+// exitDoctorWithCode returns the appropriate command error based on result.
 func exitDoctorWithCode(result *doctor.DoctorResult) error {
 	if result.Failed > 0 {
-		os.Exit(doctor.ExitFailures)
+		return camperrors.NewCommand("camp doctor", doctor.ExitFailures, "", nil)
 	}
 
 	if result.Warned > 0 {
-		os.Exit(doctor.ExitWarnings)
+		return camperrors.NewCommand("camp doctor", doctor.ExitWarnings, "", nil)
 	}
 
 	// If fix was attempted and there are still issues
 	if len(result.Fixed) > 0 && len(result.Issues) > len(result.Fixed) {
-		os.Exit(doctor.ExitPartialFix)
+		return camperrors.NewCommand("camp doctor", doctor.ExitPartialFix, "", nil)
 	}
 
 	return nil // Exit 0
-}
-
-func exitDoctorWithCodeE(result *doctor.DoctorResult) error {
-	code := doctor.ExitSuccess
-	if result.Failed > 0 {
-		code = doctor.ExitFailures
-	} else if result.Warned > 0 {
-		code = doctor.ExitWarnings
-	} else if len(result.Fixed) > 0 && len(result.Issues) > len(result.Fixed) {
-		code = doctor.ExitPartialFix
-	}
-	if code == doctor.ExitSuccess {
-		return nil
-	}
-	return camperrors.NewCommand("doctor", code, "", nil)
 }

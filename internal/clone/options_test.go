@@ -255,9 +255,9 @@ func TestExitCodes(t *testing.T) {
 	}{
 		{"ExitSuccess", ExitSuccess, 0},
 		{"ExitCloneFailed", ExitCloneFailed, 1},
-		{"ExitPartialSuccess", ExitPartialSuccess, 2},
+		{"ExitPartialSuccess", ExitPartialSuccess, 3},
 		{"ExitValidationFailed", ExitValidationFailed, 3},
-		{"ExitInvalidArgs", ExitInvalidArgs, 4},
+		{"ExitInvalidArgs", ExitInvalidArgs, 2},
 	}
 
 	for _, tt := range tests {

@@ -28,10 +28,9 @@ This command provides a single-step setup for new devices:
 
 EXIT CODES:
   0  Success
-  1  Clone failed (no campaign created)
-  2  Partial success (some submodules failed)
-  3  Validation failed
-  4  Invalid arguments
+  1  Runtime failure (clone failed before usable campaign)
+  2  Usage error (bad flags or args)
+  3  Partial success or validation failed
 
 EXAMPLES:
   # Clone a campaign (default: SSH)

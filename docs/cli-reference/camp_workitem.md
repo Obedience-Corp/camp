@@ -28,7 +28,7 @@ camp workitem [flags]
       --limit int           Maximum number of items to return
       --print               Print path only (for shell integration)
       --query string        Search query to filter items
-      --stage stringArray   Filter by lifecycle stage (inbox, active, ready, planning)
+      --stage stringArray   Filter by lifecycle stage (none, inbox, active, ready, planning, ritual, chains)
       --type stringArray    Filter by workflow type (builtin: intent, design, explore, festival; or any slug-safe custom type produced by 'camp workitem create --type <name>')
 ```
 
@@ -51,5 +51,6 @@ camp workitem [flags]
 * [camp workitem doctor](camp_workitem_doctor.md)	 - Report workitem link-registry health issues
 * [camp workitem link](camp_workitem_link.md)	 - Attach a workitem to a project, festival, worktree, or campaign path
 * [camp workitem links](camp_workitem_links.md)	 - List workitem links
+* [camp workitem priority](camp_workitem_priority.md)	 - Set or clear the manual priority of a workitem
 * [camp workitem resolve](camp_workitem_resolve.md)	 - Print the workitem the current context resolves to (read-only)
 * [camp workitem unlink](camp_workitem_unlink.md)	 - Remove one or more workitem links

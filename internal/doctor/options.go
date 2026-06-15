@@ -141,9 +141,9 @@ const (
 	// ExitWarnings indicates warnings were found (but no errors).
 	ExitWarnings = 1
 	// ExitFailures indicates errors were found.
-	ExitFailures = 2
+	ExitFailures = 1
 	// ExitPartialFix indicates some but not all issues were fixed.
 	ExitPartialFix = 3
 	// ExitInvalidArgs indicates invalid command-line arguments.
-	ExitInvalidArgs = 4
+	ExitInvalidArgs = 2
 )

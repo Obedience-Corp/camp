@@ -21,6 +21,7 @@ Sorting options:
 
 Examples:
   camp list                  List all campaigns
+  camp list --json           Output as JSON
   camp list --format json    Output as JSON
   camp list --sort name      Sort by name
   camp list --format simple  Names only for scripting
@@ -34,6 +35,7 @@ camp list [flags]
 ```
   -f, --format string    Output format (table, simple, json) (default "table")
   -h, --help             help for list
+      --json             Output as JSON (shorthand for --format json)
   -s, --sort string      Sort by (name, accessed, type) (default "accessed")
       --verify-verbose   Show detailed verification output
 ```

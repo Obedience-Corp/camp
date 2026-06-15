@@ -10,6 +10,7 @@ camp concepts [flags]
 
 ```
   -h, --help   help for concepts
+      --json   emit a structured JSON result
 ```
 
 ### Options inherited from parent commands

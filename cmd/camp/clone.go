@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/clone"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
@@ -39,10 +40,9 @@ This command provides a single-step setup for new devices:
 
 EXIT CODES:
   0  Success
-  1  Clone failed (no campaign created)
-  2  Partial success (some submodules failed)
-  3  Validation failed
-  4  Invalid arguments
+  1  Runtime failure (clone failed before usable campaign)
+  2  Usage error (bad flags or args)
+  3  Partial success or validation failed
 
 EXAMPLES:
   # Clone a campaign (default: SSH)
@@ -154,7 +154,7 @@ func runClone(cmd *cobra.Command, args []string) error {
 	result, err := cloner.Clone(ctx)
 	if err != nil {
 		formatCloneError(err, cloneOpts.json)
-		os.Exit(clone.ExitCloneFailed)
+		return camperrors.NewCommand("camp clone", clone.ExitCloneFailed, "", err)
 	}
 
 	// Format and display output
@@ -162,7 +162,7 @@ func runClone(cmd *cobra.Command, args []string) error {
 		jsonBytes, jsonErr := result.JSON()
 		if jsonErr != nil {
 			fmt.Fprintln(os.Stderr, string(clone.JSONError(jsonErr)))
-			os.Exit(clone.ExitCloneFailed)
+			return camperrors.NewCommand("camp clone", clone.ExitCloneFailed, "", jsonErr)
 		}
 		fmt.Println(string(jsonBytes))
 	} else {
@@ -312,16 +312,15 @@ func determineCloneExitCode(result *clone.CloneResult) error {
 			}
 		}
 		if failed > 0 && failed < len(result.Submodules) {
-			os.Exit(clone.ExitPartialSuccess)
+			return camperrors.NewCommand("camp clone", clone.ExitPartialSuccess, "", nil)
 		}
 	}
 
 	// Check for validation failure
 	if result.Validation != nil && !result.Validation.Passed {
-		os.Exit(clone.ExitValidationFailed)
+		return camperrors.NewCommand("camp clone", clone.ExitValidationFailed, "", nil)
 	}
 
 	// General failure
-	os.Exit(clone.ExitCloneFailed)
-	return nil
+	return camperrors.NewCommand("camp clone", clone.ExitCloneFailed, "", nil)
 }
