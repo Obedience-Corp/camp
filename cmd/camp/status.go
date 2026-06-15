@@ -80,7 +80,10 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	gitCmd.Stderr = os.Stderr
 	gitCmd.Stdin = os.Stdin
 
-	return gitCmd.Run()
+	if err := gitCmd.Run(); err != nil {
+		return camperrors.Wrapf(err, "git status failed for %s", target.Path)
+	}
+	return nil
 }
 
 // extractShowRefs removes --show-refs from args and returns the filtered

@@ -1,4 +1,4 @@
-package pathsafe
+package pathutil
 
 import (
 	"strings"

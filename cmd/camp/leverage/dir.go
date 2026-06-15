@@ -39,7 +39,7 @@ func initDirectorySetup(ctx context.Context, targetDir, gitRoot string) (*levera
 		return nil, camperrors.Wrap(err, "directory not found")
 	}
 	if !info.IsDir() {
-		return nil, camperrors.Wrapf(fmt.Errorf("path is not a directory"), "%s", targetDir)
+		return nil, camperrors.New(fmt.Sprintf("%s: path is not a directory", targetDir))
 	}
 
 	root, campaignErr := campaign.Detect(ctx, targetDir)
@@ -159,7 +159,7 @@ func runLeverageDir(cmd *cobra.Command, targetDir string) error {
 	if authorFilter != "" {
 		hasCommits, gitErr := intleverage.AuthorHasCommits(ctx, proj.GitDir, authorFilter)
 		if gitErr != nil || !hasCommits {
-			return camperrors.Wrapf(fmt.Errorf("no commits for author"), "%s in %s", authorFilter, proj.Name)
+			return camperrors.New(fmt.Sprintf("no commits for author %q in %s", authorFilter, proj.Name))
 		}
 	}
 

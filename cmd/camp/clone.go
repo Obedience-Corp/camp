@@ -193,7 +193,7 @@ func formatCloneHuman(result *clone.CloneResult, verbose bool) {
 	if result.Success {
 		fmt.Println(ui.Success("Campaign cloned successfully"))
 	} else {
-		fmt.Println(ui.Error("Clone completed with issues"))
+		fmt.Fprintln(os.Stderr, ui.Error("Clone completed with issues"))
 	}
 	fmt.Println()
 
@@ -219,7 +219,7 @@ func formatCloneHuman(result *clone.CloneResult, verbose bool) {
 				if sub.Success {
 					fmt.Printf("  %s %s\n", ui.SuccessIcon(), sub.Path)
 				} else {
-					fmt.Printf("  %s %s - %v\n", ui.ErrorIcon(), sub.Path, sub.Error)
+					fmt.Fprintf(os.Stderr, "  %s %s - %v\n", ui.ErrorIcon(), sub.Path, sub.Error)
 				}
 			}
 		}

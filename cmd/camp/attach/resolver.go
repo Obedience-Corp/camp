@@ -64,7 +64,7 @@ func (r attachResolver) Resolve(ctx context.Context, targetCampaign string, targ
 	case "":
 		if !r.isInteractive() {
 			return nil, "", camperrors.Wrapf(camperrors.ErrInvalidInput,
-				"campaign name required in non-interactive mode\n       Usage: %s", r.usageLine)
+				"campaign name required in non-interactive mode (use '%s')", r.usageLine)
 		}
 		selected, err = r.pickCampaign(ctx, reg)
 		if err != nil {

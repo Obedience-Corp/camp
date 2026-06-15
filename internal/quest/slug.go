@@ -4,41 +4,17 @@ import (
 	"crypto/rand"
 	"fmt"
 	"math/big"
-	"regexp"
 	"strings"
 	"time"
-)
 
-var (
-	questWhitespacePattern = regexp.MustCompile(`\s+`)
-	questNonAlphanumeric   = regexp.MustCompile(`[^a-z0-9-]+`)
-	questMultipleHyphens   = regexp.MustCompile(`-+`)
+	"github.com/Obedience-Corp/camp/internal/slug"
 )
 
 const questAlphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
 
 // GenerateSlug creates a filesystem-safe slug from the quest name.
 func GenerateSlug(name string) string {
-	slug := strings.ToLower(name)
-	slug = questWhitespacePattern.ReplaceAllString(slug, "-")
-	slug = questNonAlphanumeric.ReplaceAllString(slug, "")
-	slug = questMultipleHyphens.ReplaceAllString(slug, "-")
-	slug = strings.Trim(slug, "-")
-	if slug == "" {
-		return ""
-	}
-
-	words := strings.Split(slug, "-")
-	if len(words) > 5 {
-		words = words[:5]
-	}
-	slug = strings.Join(words, "-")
-
-	if len(slug) > 50 {
-		slug = strings.TrimRight(slug[:50], "-")
-	}
-
-	return slug
+	return slug.Generate(name)
 }
 
 // GenerateDirectorySlug creates the immutable quest directory slug.

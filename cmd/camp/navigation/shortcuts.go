@@ -376,7 +376,7 @@ func runShortcutsRemove(cmd *cobra.Command, args []string) error {
 	// Find the project (fuzzy match)
 	projectIdx := findProjectIndex(cfg.Projects, projectName)
 	if projectIdx == -1 {
-		return fmt.Errorf("project %q not found", projectName)
+		return fmt.Errorf("project %q not found (run 'camp project list' to see available projects)", projectName)
 	}
 
 	project := &cfg.Projects[projectIdx]
@@ -424,7 +424,7 @@ func runShortcutsList(cmd *cobra.Command, args []string) error {
 	// Find the project (fuzzy match)
 	projectIdx := findProjectIndex(cfg.Projects, projectName)
 	if projectIdx == -1 {
-		return fmt.Errorf("project %q not found", projectName)
+		return fmt.Errorf("project %q not found (run 'camp project list' to see available projects)", projectName)
 	}
 
 	project := cfg.Projects[projectIdx]

@@ -84,7 +84,7 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 		selected = c
 	} else {
 		if !tui.IsTerminal() {
-			return fmt.Errorf("campaign name required in non-interactive mode\n       Usage: camp switch <name> --print")
+			return camperrors.New("campaign name required in non-interactive mode (use 'camp switch <name>' or run interactively)")
 		}
 		c, err := cmdutil.PickCampaign(ctx, reg)
 		if err != nil {

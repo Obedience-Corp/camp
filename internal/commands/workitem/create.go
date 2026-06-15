@@ -19,7 +19,7 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
-	"github.com/Obedience-Corp/camp/internal/pathsafe"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 )
 
@@ -169,7 +169,7 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 }
 
 func validateSlug(slug string) error {
-	return pathsafe.ValidateSegment("slug", slug)
+	return pathutil.ValidateSegment("slug", slug)
 }
 
 func validateParentPath(parent string) error {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -33,7 +34,7 @@ func statusDirsToOptions(dirs []StatusDir) []crawl.Option {
 // or empty string if the user backed out (esc).
 func promptStatusSelection(ctx context.Context, prompt crawl.Prompt, itemName string, dirs []StatusDir) (string, error) {
 	if len(dirs) == 0 {
-		return "", fmt.Errorf("no status directories found. Run 'camp dungeon init' to create defaults")
+		return "", fmt.Errorf("no status directories found (run 'camp dungeon add' to create defaults)")
 	}
 	chosen, err := prompt.SelectDestination(ctx, crawl.Item{ID: itemName, Title: itemName}, statusDirsToOptions(dirs))
 	if err != nil {
@@ -112,7 +113,7 @@ func runCrawlWithPrompt(ctx context.Context, svc *Service, prompt crawl.Prompt) 
 					if crawl.IsAborted(err) || errors.Is(err, ErrCrawlAborted) {
 						return summary, ErrCrawlAborted
 					}
-					fmt.Printf("Error: %v\n", err)
+					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 					summary.Skipped++
 					break itemLoop
 				}
@@ -121,20 +122,20 @@ func runCrawlWithPrompt(ctx context.Context, svc *Service, prompt crawl.Prompt) 
 				}
 
 				if dstPath, err := svc.MoveToStatus(ctx, item.Name, status); err != nil {
-					fmt.Printf("Error moving %s to %s: %v\n", item.Name, status, err)
+					fmt.Fprintf(os.Stderr, "Error moving %s to %s: %v\n", item.Name, status, err)
 					if hint := moveErrorHint(err); hint != "" {
-						fmt.Printf("Hint: %s\n", hint)
+						fmt.Fprintf(os.Stderr, "Hint: %s\n", hint)
 					}
 					summary.Skipped++
 				} else {
 					relDst, relErr := filepath.Rel(svc.campaignRoot, dstPath)
 					if relErr != nil {
-						fmt.Printf("Warning: could not resolve relative path for %s: %v\n", dstPath, relErr)
+						fmt.Fprintf(os.Stderr, "Warning: could not resolve relative path for %s: %v\n", dstPath, relErr)
 						relDst = item.Name
 					}
 					summary.RecordMove(status, relDst)
 					if err := logDecision(ctx, svc, item, MoveDecision(status), stats); err != nil {
-						fmt.Printf("Warning: failed to log decision: %v\n", err)
+						fmt.Fprintf(os.Stderr, "Warning: failed to log decision: %v\n", err)
 					}
 				}
 				break itemLoop
@@ -142,14 +143,14 @@ func runCrawlWithPrompt(ctx context.Context, svc *Service, prompt crawl.Prompt) 
 			case crawl.ActionKeep:
 				summary.Kept++
 				if err := logDecision(ctx, svc, item, DecisionKeep, stats); err != nil {
-					fmt.Printf("Warning: failed to log decision: %v\n", err)
+					fmt.Fprintf(os.Stderr, "Warning: failed to log decision: %v\n", err)
 				}
 				break itemLoop
 
 			case crawl.ActionSkip:
 				summary.Skipped++
 				if err := logDecision(ctx, svc, item, DecisionSkip, stats); err != nil {
-					fmt.Printf("Warning: failed to log decision: %v\n", err)
+					fmt.Fprintf(os.Stderr, "Warning: failed to log decision: %v\n", err)
 				}
 				break itemLoop
 			}

@@ -154,7 +154,7 @@ func renderPullSummary(summary pullsvc.Summary, styles pullStyles) {
 	} else {
 		fmt.Println(styles.yellow.Render(fmt.Sprintf("Pulled %d/%d repos (%d failed)", summary.Pulled, total, summary.Failed)))
 		for _, e := range summary.Errors {
-			fmt.Println(styles.red.Render(e))
+			fmt.Fprintln(os.Stderr, styles.red.Render(e))
 		}
 	}
 

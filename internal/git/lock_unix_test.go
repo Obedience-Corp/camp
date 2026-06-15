@@ -11,13 +11,24 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
+
+func ageLockPastFloor(t *testing.T, lockPath string) {
+	t.Helper()
+
+	old := time.Now().Add(-minLockAge - time.Second)
+	if err := os.Chtimes(lockPath, old, old); err != nil {
+		t.Fatalf("age lock %s: %v", lockPath, err)
+	}
+}
 
 func TestIsLockStale_NoProcess(t *testing.T) {
 	// Create a lock file that no process is using
 	tmpDir := t.TempDir()
 	lockPath := filepath.Join(tmpDir, "index.lock")
 	os.WriteFile(lockPath, []byte{}, 0644)
+	ageLockPastFloor(t, lockPath)
 
 	ctx := context.Background()
 	stale, info, err := IsLockStale(ctx, lockPath)
@@ -32,6 +43,26 @@ func TestIsLockStale_NoProcess(t *testing.T) {
 	}
 	if !info.Stale {
 		t.Error("LockInfo.Stale = false, want true")
+	}
+}
+
+func TestIsLockStale_RecentLockNotStale(t *testing.T) {
+	tmpDir := t.TempDir()
+	lockPath := filepath.Join(tmpDir, "index.lock")
+	if err := os.WriteFile(lockPath, []byte{}, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	stale, info, err := IsLockStale(ctx, lockPath)
+	if err != nil {
+		t.Fatalf("IsLockStale() error = %v", err)
+	}
+	if stale {
+		t.Fatal("IsLockStale() = true, want false for a recently created lock")
+	}
+	if info.Stale {
+		t.Fatal("LockInfo.Stale = true, want false for a recently created lock")
 	}
 }
 
@@ -94,6 +125,8 @@ func TestCheckLocksStaleness(t *testing.T) {
 		lock2 := filepath.Join(tmpDir, "index2.lock")
 		os.WriteFile(lock1, []byte{}, 0644)
 		os.WriteFile(lock2, []byte{}, 0644)
+		ageLockPastFloor(t, lock1)
+		ageLockPastFloor(t, lock2)
 
 		ctx := context.Background()
 		stale, active, err := CheckLocksStaleness(ctx, []string{lock1, lock2})
@@ -115,6 +148,7 @@ func TestCheckLocksStaleness(t *testing.T) {
 		// Create a stale lock
 		staleLock := filepath.Join(tmpDir, "stale.lock")
 		os.WriteFile(staleLock, []byte{}, 0644)
+		ageLockPastFloor(t, staleLock)
 
 		// Create an active lock (file held open)
 		activeLock := filepath.Join(tmpDir, "active.lock")
@@ -227,6 +261,8 @@ func TestRemoveStaleLocks(t *testing.T) {
 		lock2 := filepath.Join(tmpDir, "lock2")
 		os.WriteFile(lock1, []byte{}, 0644)
 		os.WriteFile(lock2, []byte{}, 0644)
+		ageLockPastFloor(t, lock1)
+		ageLockPastFloor(t, lock2)
 
 		ctx := context.Background()
 		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -318,6 +354,7 @@ func TestRemoveStaleLocks(t *testing.T) {
 		if err := os.WriteFile(lockPath, []byte{}, 0644); err != nil {
 			t.Fatal(err)
 		}
+		ageLockPastFloor(t, lockPath)
 
 		info, err := os.Stat(tmpDir)
 		if err != nil {
@@ -360,6 +397,7 @@ func TestRemoveStaleLocks(t *testing.T) {
 		tmpDir := t.TempDir()
 		lockPath := filepath.Join(tmpDir, "lock")
 		os.WriteFile(lockPath, []byte{}, 0644)
+		ageLockPastFloor(t, lockPath)
 
 		ctx := context.Background()
 		removed, _, _, err := RemoveStaleLocks(ctx, []string{lockPath}, nil)
@@ -470,6 +508,7 @@ func TestCleanStaleLocks(t *testing.T) {
 		// Create a stale lock
 		lockPath := filepath.Join(gitDir, "index.lock")
 		os.WriteFile(lockPath, []byte{}, 0644)
+		ageLockPastFloor(t, lockPath)
 
 		ctx := context.Background()
 		logger := slog.New(slog.NewTextHandler(io.Discard, nil))

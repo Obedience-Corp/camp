@@ -199,7 +199,7 @@ func outputDoctorText(result *doctor.DoctorResult, verbose, fixAttempted bool) {
 			}
 		}
 		if unfixedErrors > 0 {
-			fmt.Println(ui.Error(fmt.Sprintf("%d error(s) require attention.", unfixedErrors)))
+			fmt.Fprintln(os.Stderr, ui.Error(fmt.Sprintf("%d error(s) require attention.", unfixedErrors)))
 		}
 	}
 

@@ -5,9 +5,19 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/Obedience-Corp/camp/internal/doctor"
 )
+
+func ageDoctorLockFixture(t *testing.T, lockPath string) {
+	t.Helper()
+
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(lockPath, old, old); err != nil {
+		t.Fatalf("age lock file: %v", err)
+	}
+}
 
 func TestLockCheck_ID(t *testing.T) {
 	check := NewLockCheck()
@@ -60,6 +70,7 @@ func TestLockCheck_Run_StaleLock(t *testing.T) {
 	if err := os.WriteFile(lockPath, []byte{}, 0644); err != nil {
 		t.Fatalf("create lock file: %v", err)
 	}
+	ageDoctorLockFixture(t, lockPath)
 
 	check := NewLockCheck()
 	result, err := check.Run(context.Background(), repoDir)
@@ -101,6 +112,7 @@ func TestLockCheck_Fix_RemovesStaleLock(t *testing.T) {
 	if err := os.WriteFile(lockPath, []byte{}, 0644); err != nil {
 		t.Fatalf("create lock file: %v", err)
 	}
+	ageDoctorLockFixture(t, lockPath)
 
 	check := NewLockCheck()
 

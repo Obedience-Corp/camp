@@ -222,7 +222,7 @@ func (r projectCampaignResolver) Resolve(ctx context.Context, targetCampaign str
 	switch {
 	case targetCampaign == "":
 		if !r.isInteractive() {
-			return nil, "", camperrors.Wrapf(camperrors.ErrInvalidInput, "campaign name required in non-interactive mode\n       Usage: %s", r.usage())
+			return nil, "", camperrors.Wrapf(camperrors.ErrInvalidInput, "campaign name required in non-interactive mode (use '%s')", r.usage())
 		}
 		selected, err = r.pickCampaign(ctx, reg)
 		if err != nil {
@@ -292,7 +292,7 @@ func ensureProjectCampaignRegistered(reg *config.Registry, cfg *config.CampaignC
 	if strings.TrimSpace(name) == "" {
 		name = normalizedRoot
 	}
-	return camperrors.Wrapf(camperrors.ErrNotFound, "target campaign %q is not registered\n       Run 'camp register %s' before adding projects", name, normalizedRoot)
+	return camperrors.Wrapf(camperrors.ErrNotFound, "target campaign %q is not registered (run 'camp register %s' before adding projects)", name, normalizedRoot)
 }
 
 func normalizeProjectCampaignRoot(root string) (string, error) {

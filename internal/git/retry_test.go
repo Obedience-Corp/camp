@@ -100,6 +100,7 @@ func TestWithLockRetry_ReturnsRemovalFailureForStaleLock(t *testing.T) {
 	if err := os.WriteFile(lockPath, []byte{}, 0644); err != nil {
 		t.Fatal(err)
 	}
+	ageLockFileForTest(t, lockPath)
 
 	gitDir := filepath.Join(tmpDir, ".git")
 	info, err := os.Stat(gitDir)

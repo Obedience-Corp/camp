@@ -92,7 +92,7 @@ func runTriageCrawlWithPrompt(ctx context.Context, svc *Service, parentPath stri
 					if crawl.IsAborted(err) || errors.Is(err, ErrCrawlAborted) {
 						return summary, ErrCrawlAborted
 					}
-					fmt.Printf("Error: %v\n", err)
+					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 					summary.Skipped++
 					break itemLoop
 				}
@@ -101,20 +101,20 @@ func runTriageCrawlWithPrompt(ctx context.Context, svc *Service, parentPath stri
 				}
 
 				if dstPath, err := svc.MoveToDungeonStatus(ctx, item.Name, parentPath, status); err != nil {
-					fmt.Printf("Error moving %s to dungeon/%s: %v\n", item.Name, status, err)
+					fmt.Fprintf(os.Stderr, "Error moving %s to dungeon/%s: %v\n", item.Name, status, err)
 					if hint := moveErrorHint(err); hint != "" {
-						fmt.Printf("Hint: %s\n", hint)
+						fmt.Fprintf(os.Stderr, "Hint: %s\n", hint)
 					}
 					summary.Skipped++
 				} else {
 					relDst, relErr := filepath.Rel(svc.campaignRoot, dstPath)
 					if relErr != nil {
-						fmt.Printf("Warning: could not resolve relative path for %s: %v\n", dstPath, relErr)
+						fmt.Fprintf(os.Stderr, "Warning: could not resolve relative path for %s: %v\n", dstPath, relErr)
 						relDst = item.Name
 					}
 					summary.RecordMove(status, relDst)
 					if err := logDecision(ctx, svc, item, MoveDecision(status), stats); err != nil {
-						fmt.Printf("Warning: failed to log decision: %v\n", err)
+						fmt.Fprintf(os.Stderr, "Warning: failed to log decision: %v\n", err)
 					}
 				}
 				break itemLoop
@@ -125,7 +125,7 @@ func runTriageCrawlWithPrompt(ctx context.Context, svc *Service, parentPath stri
 					if errors.Is(err, ErrCrawlAborted) {
 						return summary, err
 					}
-					fmt.Printf("Error: %v\n", err)
+					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 					summary.Skipped++
 					break itemLoop
 				}
@@ -135,21 +135,21 @@ func runTriageCrawlWithPrompt(ctx context.Context, svc *Service, parentPath stri
 
 				targetPath, err := svc.MoveToDocs(ctx, item.Name, parentPath, destination)
 				if err != nil {
-					fmt.Printf("Error routing %s to docs/%s: %v\n", item.Name, destination, err)
+					fmt.Fprintf(os.Stderr, "Error routing %s to docs/%s: %v\n", item.Name, destination, err)
 					if hint := moveErrorHint(err); hint != "" {
-						fmt.Printf("Hint: %s\n", hint)
+						fmt.Fprintf(os.Stderr, "Hint: %s\n", hint)
 					}
 					summary.Skipped++
 				} else {
 					destinationKey := docsMoveSummaryKey(svc.campaignRoot, targetPath)
 					relDst, relErr := filepath.Rel(svc.campaignRoot, targetPath)
 					if relErr != nil {
-						fmt.Printf("Warning: could not resolve relative path for %s: %v\n", targetPath, relErr)
+						fmt.Fprintf(os.Stderr, "Warning: could not resolve relative path for %s: %v\n", targetPath, relErr)
 						relDst = item.Name
 					}
 					summary.RecordMove(destinationKey, relDst)
 					if err := logDecision(ctx, svc, item, MoveDecision(destinationKey), stats); err != nil {
-						fmt.Printf("Warning: failed to log decision: %v\n", err)
+						fmt.Fprintf(os.Stderr, "Warning: failed to log decision: %v\n", err)
 					}
 				}
 				break itemLoop
@@ -157,14 +157,14 @@ func runTriageCrawlWithPrompt(ctx context.Context, svc *Service, parentPath stri
 			case crawl.ActionKeep:
 				summary.Kept++
 				if err := logDecision(ctx, svc, item, DecisionKeep, stats); err != nil {
-					fmt.Printf("Warning: failed to log decision: %v\n", err)
+					fmt.Fprintf(os.Stderr, "Warning: failed to log decision: %v\n", err)
 				}
 				break itemLoop
 
 			case crawl.ActionSkip:
 				summary.Skipped++
 				if err := logDecision(ctx, svc, item, DecisionSkip, stats); err != nil {
-					fmt.Printf("Warning: failed to log decision: %v\n", err)
+					fmt.Fprintf(os.Stderr, "Warning: failed to log decision: %v\n", err)
 				}
 				break itemLoop
 			}

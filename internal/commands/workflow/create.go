@@ -8,7 +8,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
-	"github.com/Obedience-Corp/camp/internal/pathsafe"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
 
 // JSONSchemaVersion is the contract version for `camp workflow` JSON output.
@@ -138,5 +138,5 @@ func runCreate(ctx context.Context, cmd *cobra.Command, opts createOptions) erro
 }
 
 func validatePathSegment(field, value string) error {
-	return pathsafe.ValidateSegment(field, value)
+	return pathutil.ValidateSegment(field, value)
 }

@@ -61,7 +61,7 @@ Examples:
 
 			interactive := isInteractive()
 			if !interactive && !flagJSON && !flagPrint && flagPathOutput == "" {
-				return fmt.Errorf("non-interactive use requires --json or --print flag")
+				return camperrors.New("non-interactive use requires --json or --print flag")
 			}
 
 			cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)

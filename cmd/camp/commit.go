@@ -51,12 +51,14 @@ var (
 	commitIncludeRefs bool
 	commitAutoWrite   bool
 	commitWorkitem    string
+	commitNoEdit      bool
 )
 
 func init() {
 	commitCmd.Flags().StringVarP(&commitMessage, "message", "m", "", "Commit message (required unless --auto-write)")
 	commitCmd.Flags().BoolVarP(&commitAll, "all", "a", true, "Stage all changes before committing")
 	commitCmd.Flags().BoolVar(&commitAmend, "amend", false, "Amend the previous commit")
+	commitCmd.Flags().BoolVar(&commitNoEdit, "no-edit", false, "Amend without editing the commit message (requires --amend)")
 	commitCmd.Flags().BoolVar(&commitSub, "sub", false, "Operate on the submodule detected from current directory")
 	commitCmd.Flags().StringVarP(&commitProject, "project", "p", "", "Operate on a specific project/submodule path")
 	commitCmd.Flags().BoolVar(&commitIncludeRefs, "include-refs", false, "Include submodule ref changes when staging at campaign root")
@@ -109,6 +111,14 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	if commitAutoWrite && commitMessage != "" {
 		return fmt.Errorf("--auto-write cannot be used with --message")
 	}
+	if commitNoEdit && !commitAmend {
+		return camperrors.New("--no-edit requires --amend")
+	}
+	if commitAmend && commitMessage == "" && !commitAutoWrite && !commitNoEdit {
+		return camperrors.New("amend without a message requires --no-edit or --message")
+	}
+
+	stageAll := effectiveCommitAll(cmd, commitAmend, commitAll)
 
 	// Create executor
 	executor, err := git.NewExecutor(target.Path)
@@ -130,7 +140,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Stage if requested
-	if commitAll {
+	if stageAll {
 		fmt.Println(ui.Info("Staging changes..."))
 		if target.IsSubmodule || commitIncludeRefs {
 			if err := executor.StageAll(ctx); err != nil {
@@ -188,7 +198,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	// Prepend campaign tag (graceful degradation if config unavailable).
 	// Resolves the active workitem (and any captured quest) so the tag
 	// includes WI-<ref> when one is in context.
-	if cfg, cfgErr := config.LoadCampaignConfig(ctx, campRoot); cfgErr == nil {
+	if cfg, cfgErr := config.LoadCampaignConfig(ctx, campRoot); cfgErr == nil && message != "" {
 		questID, workitemRef := resolveCommitContext(ctx, campRoot, commitWorkitem)
 		message = commitkit.PrependContextTagsFull(cfg.ID, questID, "", workitemRef, message)
 	}
@@ -198,6 +208,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	opts := &git.CommitOptions{
 		Message: message,
 		Amend:   commitAmend,
+		NoEdit:  commitNoEdit,
 	}
 
 	if err := executor.Commit(ctx, opts); err != nil {
@@ -222,6 +233,13 @@ func runCommit(cmd *cobra.Command, args []string) error {
 
 	fmt.Println(ui.Success("Changes committed successfully"))
 	return nil
+}
+
+func effectiveCommitAll(cmd *cobra.Command, amend, all bool) bool {
+	if amend && !cmd.Flags().Changed("all") {
+		return false
+	}
+	return all
 }
 
 func listStagedProjectRefs(ctx context.Context, repoPath string) ([]string, error) {

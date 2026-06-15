@@ -187,7 +187,7 @@ func runPushAll(ctx context.Context, campRoot string, gitArgs []string, noRecurs
 		gitCmd := exec.CommandContext(ctx, "git", pushArgs...)
 		output, err := gitCmd.CombinedOutput()
 		if err != nil {
-			fmt.Println(red.Render("failed"))
+			fmt.Fprintln(os.Stderr, red.Render("failed"))
 			errMsg := strings.TrimSpace(string(output))
 			if errMsg == "" {
 				errMsg = err.Error()
@@ -213,7 +213,7 @@ func runPushAll(ctx context.Context, campRoot string, gitArgs []string, noRecurs
 	default:
 		fmt.Println(yellow.Render(fmt.Sprintf("Pushed %d repo(s) (%d failed)", pushed, failed)))
 		for _, e := range errors {
-			fmt.Println(red.Render(e))
+			fmt.Fprintln(os.Stderr, red.Render(e))
 		}
 	}
 	if synced > 0 && (pushed > 0 || manual > 0 || failed > 0) {

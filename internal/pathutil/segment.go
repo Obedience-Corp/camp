@@ -1,5 +1,4 @@
-// Package pathsafe owns path segment validation shared by campaign workflows.
-package pathsafe
+package pathutil
 
 import (
 	"regexp"

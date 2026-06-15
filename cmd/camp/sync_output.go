@@ -32,7 +32,7 @@ func formatSyncHuman(result *sync.SyncResult, opts syncOptions, preflight *sync.
 	// Handle preflight failure - don't show more sections
 	if !result.PreflightPassed && !opts.force {
 		fmt.Println()
-		fmt.Println(ui.Error("Aborting: Submodules have uncommitted changes or unpushed commits."))
+		fmt.Fprintln(os.Stderr, ui.Error("Aborting: Submodules have uncommitted changes or unpushed commits."))
 		fmt.Println()
 		formatFixSuggestions(preflight)
 		return
@@ -59,7 +59,7 @@ func formatSyncHuman(result *sync.SyncResult, opts syncOptions, preflight *sync.
 	if result.Success {
 		fmt.Println(ui.Success("Campaign synchronized successfully."))
 	} else {
-		fmt.Println(ui.Error("Sync failed. See errors or warnings above."))
+		fmt.Fprintln(os.Stderr, ui.Error("Sync failed. See errors or warnings above."))
 	}
 }
 

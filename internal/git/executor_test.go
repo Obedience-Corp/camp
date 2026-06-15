@@ -224,6 +224,7 @@ func TestExecutor_CleanLocks(t *testing.T) {
 	// Create a stale lock
 	lockPath := filepath.Join(tmpDir, ".git", "index.lock")
 	os.WriteFile(lockPath, []byte{}, 0644)
+	ageLockFileForTest(t, lockPath)
 
 	ctx := context.Background()
 	result, err := exec.CleanLocks(ctx)

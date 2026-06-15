@@ -51,7 +51,7 @@ type ErrProjectNotLinked struct {
 }
 
 func (e *ErrProjectNotLinked) Error() string {
-	return fmt.Sprintf("project %q is not a linked project\n       Use 'camp project remove %s' for submodules", e.Name, e.Name)
+	return fmt.Sprintf("project %q is not a linked project (use 'camp project remove %s' for submodules)", e.Name, e.Name)
 }
 
 // AddLinked links an existing local directory into the campaign via symlink.
@@ -120,13 +120,6 @@ func AddLinked(ctx context.Context, campaignRoot, localPath string, opts LinkOpt
 		return nil, &ErrProjectExists{Name: name, Path: destPath}
 	}
 
-	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
-		return nil, camperrors.Wrap(err, "create parent directory")
-	}
-	if err := os.Symlink(absLocal, fullPath); err != nil {
-		return nil, camperrors.Wrap(err, "create symlink")
-	}
-
 	isGit := isGitRepo(absLocal)
 	warnings := make([]string, 0, 1)
 	marker := campaign.LinkMarker{
@@ -135,8 +128,15 @@ func AddLinked(ctx context.Context, campaignRoot, localPath string, opts LinkOpt
 		ActiveCampaignID: cfg.ID,
 	}
 	if err := campaign.WriteMarker(absLocal, marker); err != nil {
-		_ = os.Remove(fullPath)
 		return nil, camperrors.Wrap(err, "write .camp marker")
+	}
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+		_ = campaign.RemoveMarker(absLocal)
+		return nil, camperrors.Wrap(err, "create parent directory")
+	}
+	if err := os.Symlink(absLocal, fullPath); err != nil {
+		_ = campaign.RemoveMarker(absLocal)
+		return nil, camperrors.Wrap(err, "create symlink")
 	}
 
 	if isGit {

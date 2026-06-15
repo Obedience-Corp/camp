@@ -20,6 +20,7 @@ type CommitOptions struct {
 	AllowEmpty    bool
 	Author        string // Optional: "Name <email>"
 	TempIndexPath string // When set, passes GIT_INDEX_FILE=<path> to git commit.
+	NoEdit        bool   // When true, passes --no-edit for message-less amends.
 	// Deprecated: scoped commit callers must use the temp-index snapshot engine.
 	// This field is retained for source compatibility and is ignored.
 	Only []string
@@ -95,20 +96,7 @@ func CommitScoped(ctx context.Context, repoPath string, paths []string, opts *Co
 
 // executeCommit runs the actual git commit command.
 func executeCommit(ctx context.Context, repoPath string, opts *CommitOptions) error {
-	args := []string{"-C", repoPath, "commit"}
-
-	if opts.Amend {
-		args = append(args, "--amend")
-	}
-	if opts.AllowEmpty {
-		args = append(args, "--allow-empty")
-	}
-	if opts.Author != "" {
-		args = append(args, "--author", opts.Author)
-	}
-	if opts.Message != "" {
-		args = append(args, "-m", opts.Message)
-	}
+	args := commitArgs(repoPath, opts)
 
 	cmd := exec.CommandContext(ctx, "git", args...)
 	if opts.TempIndexPath != "" {
@@ -133,6 +121,27 @@ func executeCommit(ctx context.Context, repoPath string, opts *CommitOptions) er
 	}
 
 	return nil
+}
+
+func commitArgs(repoPath string, opts *CommitOptions) []string {
+	args := []string{"-C", repoPath, "commit"}
+
+	if opts.Amend {
+		args = append(args, "--amend")
+	}
+	if opts.NoEdit {
+		args = append(args, "--no-edit")
+	}
+	if opts.AllowEmpty {
+		args = append(args, "--allow-empty")
+	}
+	if opts.Author != "" {
+		args = append(args, "--author", opts.Author)
+	}
+	if opts.Message != "" {
+		args = append(args, "-m", opts.Message)
+	}
+	return args
 }
 
 // BuildTempIndexPath resolves the real git index path for repoPath and returns

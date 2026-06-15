@@ -71,7 +71,7 @@ func runQuestCreate(cmd *cobra.Command, args []string) error {
 	// Non-interactive path: flags provide all data
 	if noEditor || description != "" {
 		if name == "" {
-			return camperrors.New("quest name is required in non-interactive mode\n       Provide a name argument or use the interactive TUI")
+			return camperrors.New("quest name is required in non-interactive mode (provide a name argument or run interactively)")
 		}
 		return createQuestDirect(cmd, name, purpose, description, tags, noCommit)
 	}
@@ -83,7 +83,7 @@ func runQuestCreate(cmd *cobra.Command, args []string) error {
 
 	// Interactive TUI path
 	if !navtui.IsTerminal() {
-		return camperrors.New("quest name is required in non-interactive mode\n       Provide a name argument or run in an interactive terminal")
+		return camperrors.New("quest name is required in non-interactive mode (provide a name argument or run interactively)")
 	}
 
 	model := questtui.NewQuestCreateModel(ctx, questtui.CreateOptions{
@@ -139,7 +139,7 @@ func createQuestDirect(cmd *cobra.Command, name, purpose, description, tags stri
 
 func createQuestWithEditor(cmd *cobra.Command, name, purpose, description, tags string, noCommit bool) error {
 	if name == "" {
-		return camperrors.New("quest name is required for --edit mode\n       Provide a name argument")
+		return camperrors.New("quest name is required for --edit mode (provide a name argument)")
 	}
 
 	qctx, err := loadQuestCommandContext(cmd.Context(), true)

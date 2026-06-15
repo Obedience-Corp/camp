@@ -203,7 +203,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	// Programmatic flags like --body/--concept/--author supplement a title,
 	// they don't replace it.
 	if !navtui.IsTerminal() {
-		return camperrors.Wrap(camperrors.ErrInvalidInput, "title argument required in non-interactive mode\n       Usage: camp intent add <title> [flags]")
+		return camperrors.Wrap(camperrors.ErrInvalidInput, "title argument required in non-interactive mode (use 'camp intent add <title>')")
 	}
 
 	// TUI path: use git config author (human), unless --author overrides
@@ -360,7 +360,7 @@ func (r intentAddCampaignResolver) resolve(ctx context.Context, targetCampaign s
 	var selected config.RegisteredCampaign
 	if targetCampaign == "" {
 		if !r.isInteractive() {
-			return nil, "", camperrors.Wrap(camperrors.ErrInvalidInput, "campaign name required in non-interactive mode\n       Usage: camp intent add --campaign <name> [title]")
+			return nil, "", camperrors.Wrap(camperrors.ErrInvalidInput, "campaign name required in non-interactive mode (use 'camp intent add --campaign <name> [title]')")
 		}
 		selected, err = r.pickCampaign(ctx, reg)
 		if err != nil {

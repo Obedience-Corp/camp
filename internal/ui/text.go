@@ -1,3 +1,7 @@
+// Package ui provides terminal text styling helpers.
+//
+// Error and Warning return styled strings only; callers emitting diagnostics
+// should route those strings to stderr rather than fmt.Println on stdout.
 package ui
 
 import (

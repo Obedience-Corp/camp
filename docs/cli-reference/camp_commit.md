@@ -37,6 +37,7 @@ camp commit [flags]
   -h, --help              help for commit
       --include-refs      Include submodule ref changes when staging at campaign root
   -m, --message string    Commit message (required unless --auto-write)
+      --no-edit           Amend without editing the commit message (requires --amend)
   -p, --project string    Operate on a specific project/submodule path
       --sub               Operate on the submodule detected from current directory
       --workitem string   explicit workitem selector for the commit tag (overrides cwd-based resolution)

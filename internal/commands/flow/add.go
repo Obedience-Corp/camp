@@ -160,11 +160,11 @@ func collectFlowAddInput(cmd *cobra.Command, flowAddJSON, flowAddName, flowAddDe
 	if !isInteractive {
 		if hasPartial {
 			if flowAddName == "" {
-				return nil, fmt.Errorf("--name is required in non-interactive mode\n       Use -n/--name flag, or run in an interactive terminal")
+				return nil, camperrors.New("--name is required in non-interactive mode (use -n/--name flag or run interactively)")
 			}
-			return nil, fmt.Errorf("--description is required in non-interactive mode\n       Use -d/--description flag, or run in an interactive terminal")
+			return nil, camperrors.New("--description is required in non-interactive mode (use -d/--description flag or run interactively)")
 		}
-		return nil, fmt.Errorf("--name and --description are required in non-interactive mode\n       Use -n/--name and -d/--description flags, --from-json, or run in an interactive terminal")
+		return nil, camperrors.New("--name and --description are required in non-interactive mode (use -n/--name, -d/--description, or --from-json)")
 	}
 
 	// 4. TUI mode — pre-fill from any partial flags
