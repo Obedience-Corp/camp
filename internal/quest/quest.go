@@ -10,6 +10,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/editor"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"gopkg.in/yaml.v3"
 )
 
@@ -268,7 +269,9 @@ func writeQuestFile(path string, q *Quest) error {
 	if err != nil {
 		return camperrors.Wrapf(err, "marshal quest %q", q.Name)
 	}
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	// TODO(seq06-lock): quest lifecycle commands use this helper for read-modify-write cycles.
+	// Locking here alone is insufficient; the lock must cover Resolve/Load, mutation, and Save.
+	if err := fsutil.WriteFileAtomically(path, data, 0644); err != nil {
 		return camperrors.Wrapf(err, "write quest file %s", path)
 	}
 	q.Path = path
