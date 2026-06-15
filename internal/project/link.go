@@ -10,6 +10,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
@@ -120,6 +121,11 @@ func AddLinked(ctx context.Context, campaignRoot, localPath string, opts LinkOpt
 		return nil, &ErrProjectExists{Name: name, Path: destPath}
 	}
 
+	previousMarker, err := snapshotLinkMarker(absLocal)
+	if err != nil {
+		return nil, camperrors.Wrap(err, "snapshot existing .camp marker")
+	}
+
 	isGit := isGitRepo(absLocal)
 	warnings := make([]string, 0, 1)
 	marker := campaign.LinkMarker{
@@ -131,11 +137,11 @@ func AddLinked(ctx context.Context, campaignRoot, localPath string, opts LinkOpt
 		return nil, camperrors.Wrap(err, "write .camp marker")
 	}
 	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
-		_ = campaign.RemoveMarker(absLocal)
+		_ = restoreLinkMarker(absLocal, previousMarker)
 		return nil, camperrors.Wrap(err, "create parent directory")
 	}
 	if err := os.Symlink(absLocal, fullPath); err != nil {
-		_ = campaign.RemoveMarker(absLocal)
+		_ = restoreLinkMarker(absLocal, previousMarker)
 		return nil, camperrors.Wrap(err, "create symlink")
 	}
 
@@ -310,6 +316,44 @@ func ensureLinkMarkerAvailable(ctx context.Context, projectDir, campaignRoot, ca
 		}
 	}
 	return camperrors.Wrap(camperrors.ErrConflict, msg)
+}
+
+type linkMarkerSnapshot struct {
+	exists bool
+	data   []byte
+	mode   os.FileMode
+}
+
+func snapshotLinkMarker(projectDir string) (linkMarkerSnapshot, error) {
+	markerPath := campaign.MarkerPath(projectDir)
+	data, err := os.ReadFile(markerPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return linkMarkerSnapshot{}, nil
+		}
+		return linkMarkerSnapshot{}, err
+	}
+
+	mode := os.FileMode(0644)
+	if info, err := os.Stat(markerPath); err == nil {
+		mode = info.Mode().Perm()
+	}
+	return linkMarkerSnapshot{
+		exists: true,
+		data:   data,
+		mode:   mode,
+	}, nil
+}
+
+func restoreLinkMarker(projectDir string, snapshot linkMarkerSnapshot) error {
+	if !snapshot.exists {
+		return campaign.RemoveMarker(projectDir)
+	}
+	mode := snapshot.mode
+	if mode == 0 {
+		mode = 0644
+	}
+	return fsutil.WriteFileAtomically(campaign.MarkerPath(projectDir), snapshot.data, mode)
 }
 
 func ensureLinkedTargetUnique(campaignRoot, targetPath, destPath, attemptedName string) error {
