@@ -146,17 +146,26 @@ func (s *IntentService) UpdateDirect(ctx context.Context, id string, opts Update
 			return nil, nil, camperrors.Wrap(err, "creating directory for status change")
 		}
 		intent.Path = newPath
+
+		data, err := SerializeIntent(intent)
+		if err != nil {
+			return nil, nil, camperrors.Wrap(err, "serializing intent")
+		}
+		if err := writeFileExclusive(newPath, data, 0644); err != nil {
+			return nil, nil, camperrors.Wrap(err, "writing intent file")
+		}
+		if err := os.Remove(originalPath); err != nil {
+			_ = os.Remove(newPath)
+			return nil, nil, camperrors.Wrap(err, "removing old intent file")
+		}
+		s.removeAllCopies(intent.ID, intent.Path)
+		s.invalidateIDIndex()
+		return intent, changes, nil
 	}
 
 	// Serialize and write
 	if err := s.Save(ctx, intent); err != nil {
 		return nil, nil, err
-	}
-
-	// Remove old file if status changed
-	if intent.Status != originalStatus && originalPath != intent.Path {
-		_ = os.Remove(originalPath)
-		s.removeAllCopies(intent.ID, intent.Path)
 	}
 
 	s.invalidateIDIndex()

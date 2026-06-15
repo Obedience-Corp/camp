@@ -2,6 +2,7 @@ package intent
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -204,6 +205,50 @@ func TestUpdateDirect_StatusChange(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("expected status change in changes slice")
+	}
+}
+
+func TestUpdateDirect_StatusChangeDestinationCollisionPreservesExisting(t *testing.T) {
+	svc, id, _ := setupTestService(t)
+	ctx := context.Background()
+
+	collisionPath := svc.getIntentPath(StatusReady, id)
+	if err := os.MkdirAll(filepath.Dir(collisionPath), 0755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	collision := &Intent{
+		ID:        id,
+		Title:     "Existing Ready Copy",
+		Status:    StatusReady,
+		CreatedAt: time.Date(2026, 4, 13, 10, 1, 0, 0, time.UTC),
+		Content:   "do not overwrite",
+	}
+	data, err := SerializeIntent(collision)
+	if err != nil {
+		t.Fatalf("SerializeIntent() error = %v", err)
+	}
+	if err := os.WriteFile(collisionPath, data, 0644); err != nil {
+		t.Fatalf("WriteFile(collision) error = %v", err)
+	}
+
+	newStatus := StatusReady
+	_, _, err = svc.UpdateDirect(ctx, id, UpdateOptions{
+		Status: &newStatus,
+	})
+	if !errors.Is(err, ErrFileExists) {
+		t.Fatalf("UpdateDirect() error = %v, want ErrFileExists", err)
+	}
+
+	inboxPath := svc.getIntentPath(StatusInbox, id)
+	if _, err := os.Stat(inboxPath); err != nil {
+		t.Fatalf("source file should remain after failed update: %v", err)
+	}
+	got, err := os.ReadFile(collisionPath)
+	if err != nil {
+		t.Fatalf("ReadFile(collision) error = %v", err)
+	}
+	if !strings.Contains(string(got), "Existing Ready Copy") || !strings.Contains(string(got), "do not overwrite") {
+		t.Fatalf("collision file was overwritten:\n%s", got)
 	}
 }
 

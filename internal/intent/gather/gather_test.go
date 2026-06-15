@@ -2,6 +2,7 @@ package gather
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -195,6 +196,89 @@ func TestService_Gather(t *testing.T) {
 		if _, err := os.Stat(path); os.IsNotExist(err) {
 			t.Errorf("Archived file does not exist: %s", path)
 		}
+	}
+}
+
+func TestGatherFailureLeavesNoOrphan(t *testing.T) {
+	tmpDir, svc := setupTestDir(t)
+
+	i1 := createTestIntent(t, svc, "Auth Feature", []string{"auth"})
+	i2 := createTestIntent(t, svc, "Login Bug", []string{"auth", "bug"})
+
+	oldSave := saveIntentMetadata
+	saveIntentMetadata = func(ctx context.Context, svc *intent.IntentService, in *intent.Intent) error {
+		if in.Title == "Gather Save Fails" {
+			return errors.New("forced save failure")
+		}
+		return oldSave(ctx, svc, in)
+	}
+	t.Cleanup(func() {
+		saveIntentMetadata = oldSave
+	})
+
+	gatherSvc := NewService(svc, tmpDir)
+	_, err := gatherSvc.Gather(context.Background(), []string{i1.ID, i2.ID}, GatherOptions{
+		Title:          "Gather Save Fails",
+		ArchiveSources: true,
+	})
+	if err == nil {
+		t.Fatal("Gather() should fail when saving gathered metadata fails")
+	}
+
+	files, err := filepath.Glob(filepath.Join(tmpDir, "inbox", "*.md"))
+	if err != nil {
+		t.Fatalf("Glob() error = %v", err)
+	}
+	if len(files) != 2 {
+		t.Fatalf("inbox file count = %d, want 2 after orphan cleanup: %v", len(files), files)
+	}
+	for _, path := range files {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("ReadFile(%s) error = %v", path, err)
+		}
+		if strings.Contains(string(data), "Gather Save Fails") {
+			t.Fatalf("found orphan gathered intent at %s:\n%s", path, data)
+		}
+	}
+}
+
+func TestGatherArchiveFailuresCollected(t *testing.T) {
+	tmpDir, svc := setupTestDir(t)
+
+	i1 := createTestIntent(t, svc, "Auth Feature", []string{"auth"})
+	i2 := createTestIntent(t, svc, "Login Bug", []string{"auth", "bug"})
+
+	oldMove := moveIntentStatus
+	moveIntentStatus = func(ctx context.Context, svc *intent.IntentService, id string, status intent.Status) (*intent.Intent, error) {
+		if id == i1.ID {
+			return nil, errors.New("forced archive failure")
+		}
+		return oldMove(ctx, svc, id, status)
+	}
+	t.Cleanup(func() {
+		moveIntentStatus = oldMove
+	})
+
+	gatherSvc := NewService(svc, tmpDir)
+	result, err := gatherSvc.Gather(context.Background(), []string{i1.ID, i2.ID}, GatherOptions{
+		Title:          "Unified Auth System",
+		ArchiveSources: true,
+	})
+	if err != nil {
+		t.Fatalf("Gather() error = %v", err)
+	}
+	if result.Gathered == nil {
+		t.Fatal("Gather() returned nil gathered intent")
+	}
+	if len(result.Errors) != 1 {
+		t.Fatalf("Errors length = %d, want 1: %v", len(result.Errors), result.Errors)
+	}
+	if !strings.Contains(result.Errors[0].Error(), i1.ID) {
+		t.Fatalf("archive error should mention source id %s: %v", i1.ID, result.Errors[0])
+	}
+	if len(result.ArchivedPaths) != 1 {
+		t.Fatalf("ArchivedPaths length = %d, want 1", len(result.ArchivedPaths))
 	}
 }
 

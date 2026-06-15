@@ -315,6 +315,27 @@ Body.
 	}
 }
 
+func TestParseIntentDashInsideValue(t *testing.T) {
+	content := `---
+id: test-001
+title: "My --- value"
+status: inbox
+created_at: 2026-01-19
+---
+Body text.
+`
+	intent, err := ParseIntent([]byte(content))
+	if err != nil {
+		t.Fatalf("ParseIntent() error = %v", err)
+	}
+	if intent.Title != "My --- value" {
+		t.Errorf("Title = %q, want %q", intent.Title, "My --- value")
+	}
+	if intent.Content != "Body text.\n" {
+		t.Errorf("Content = %q, want %q", intent.Content, "Body text.\n")
+	}
+}
+
 func TestSerializeIntent(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -405,6 +426,48 @@ func TestSerializeIntent(t *testing.T) {
 			}
 			tt.checks(t, data)
 		})
+	}
+}
+
+func TestUnknownKeyRoundTrip(t *testing.T) {
+	content := `---
+id: abc
+title: Test
+status: inbox
+created_at: 2026-01-19
+custom_key: my value
+custom_map:
+  nested: true
+---
+Body
+`
+	intent, err := ParseIntent([]byte(content))
+	if err != nil {
+		t.Fatalf("ParseIntent() error = %v", err)
+	}
+
+	data, err := SerializeIntent(intent)
+	if err != nil {
+		t.Fatalf("SerializeIntent() error = %v", err)
+	}
+	got := string(data)
+	if !strings.Contains(got, "custom_key: my value") {
+		t.Fatalf("round-tripped frontmatter missing custom_key:\n%s", got)
+	}
+	if !strings.Contains(got, "custom_map:") || !strings.Contains(got, "nested: true") {
+		t.Fatalf("round-tripped frontmatter missing custom_map:\n%s", got)
+	}
+
+	reparsed, err := ParseIntent(data)
+	if err != nil {
+		t.Fatalf("ParseIntent(round-tripped) error = %v", err)
+	}
+	data, err = SerializeIntent(reparsed)
+	if err != nil {
+		t.Fatalf("SerializeIntent(reparsed) error = %v", err)
+	}
+	if !strings.Contains(string(data), "custom_key: my value") {
+		t.Fatalf("second round trip missing custom_key:\n%s", data)
 	}
 }
 

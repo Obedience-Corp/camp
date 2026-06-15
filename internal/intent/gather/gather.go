@@ -3,10 +3,20 @@ package gather
 import (
 	"context"
 	"fmt"
+	"os"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/intent/index"
+)
+
+var (
+	saveIntentMetadata = func(ctx context.Context, svc *intent.IntentService, in *intent.Intent) error {
+		return svc.Save(ctx, in)
+	}
+	moveIntentStatus = func(ctx context.Context, svc *intent.IntentService, id string, status intent.Status) (*intent.Intent, error) {
+		return svc.Move(ctx, id, status)
+	}
 )
 
 // Service provides gather operations for intents.
@@ -125,6 +135,7 @@ type GatherResult struct {
 	ArchivedPaths   []string         // Paths of archived source intents
 	ArchivedSources []*intent.Intent // Archived source intents after move
 	SourceCount     int              // Number of source intents gathered
+	Errors          []error          // Non-fatal archive errors after gathered intent creation
 }
 
 // ArchiveReason returns the default decision-record reason used when source
@@ -199,8 +210,9 @@ func (s *Service) Gather(ctx context.Context, ids []string, opts GatherOptions) 
 	gathered.GatheredAt = merged.GatheredAt
 
 	// Save with updated metadata
-	if err := s.intentSvc.Save(ctx, gathered); err != nil {
-		return nil, camperrors.Wrap(err, "saving gathered intent")
+	if err := saveIntentMetadata(ctx, s.intentSvc, gathered); err != nil {
+		_ = os.Remove(gathered.Path)
+		return nil, camperrors.Wrap(err, "saving gathered intent metadata (cleaned up partial file)")
 	}
 
 	result := &GatherResult{
@@ -215,15 +227,15 @@ func (s *Service) Gather(ctx context.Context, ids []string, opts GatherOptions) 
 			// Update source with gathered_into reference
 			src.GatheredInto = gathered.ID
 			intent.AppendDecisionRecord(src, intent.StatusArchived, reason)
-			if err := s.intentSvc.Save(ctx, src); err != nil {
-				// Log but continue - non-fatal error
+			if err := saveIntentMetadata(ctx, s.intentSvc, src); err != nil {
+				result.Errors = append(result.Errors, camperrors.Wrapf(err, "save source %s metadata", src.ID))
 				continue
 			}
 
 			// Move to archived status
-			archived, err := s.intentSvc.Move(ctx, src.ID, intent.StatusArchived)
+			archived, err := moveIntentStatus(ctx, s.intentSvc, src.ID, intent.StatusArchived)
 			if err != nil {
-				// Log but continue - non-fatal error
+				result.Errors = append(result.Errors, camperrors.Wrapf(err, "archive source %s", src.ID))
 				continue
 			}
 			result.ArchivedPaths = append(result.ArchivedPaths, archived.Path)

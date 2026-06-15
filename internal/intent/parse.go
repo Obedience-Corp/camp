@@ -39,6 +39,7 @@ type parsedIntent struct {
 	GatheredAt        time.Time        `yaml:"gathered_at,omitempty"`
 	GatheredInto      string           `yaml:"gathered_into,omitempty"`
 	UpdatedAt         time.Time        `yaml:"updated_at,omitempty"`
+	frontmatterExtras []frontmatterEntry
 }
 
 // toIntent converts a parsedIntent to an Intent, handling legacy field migration.
@@ -61,6 +62,7 @@ func (p *parsedIntent) toIntent() *Intent {
 		GatheredAt:        p.GatheredAt,
 		GatheredInto:      p.GatheredInto,
 		UpdatedAt:         p.UpdatedAt,
+		frontmatterExtras: p.frontmatterExtras,
 	}
 
 	// Handle concept/project migration
@@ -75,8 +77,38 @@ func (p *parsedIntent) toIntent() *Intent {
 	return intent
 }
 
-// delimiter is the frontmatter section delimiter.
-var delimiter = []byte("---")
+// Frontmatter delimiters must be on their own lines.
+var (
+	frontmatterStart     = []byte("---\n")
+	frontmatterDelimiter = []byte("\n---\n")
+)
+
+type frontmatterEntry struct {
+	Key   yaml.Node
+	Value yaml.Node
+}
+
+var knownFrontmatterKeys = map[string]struct{}{
+	"id":                 {},
+	"title":              {},
+	"status":             {},
+	"created_at":         {},
+	"type":               {},
+	"concept":            {},
+	"project":            {},
+	"author":             {},
+	"priority":           {},
+	"horizon":            {},
+	"tags":               {},
+	"blocked_by":         {},
+	"depends_on":         {},
+	"promotion_criteria": {},
+	"promoted_to":        {},
+	"gathered_from":      {},
+	"gathered_at":        {},
+	"gathered_into":      {},
+	"updated_at":         {},
+}
 
 // ParseIntent parses an intent from markdown content with YAML frontmatter.
 //
@@ -98,30 +130,35 @@ func ParseIntent(content []byte) (*Intent, error) {
 		return nil, ErrEmptyContent
 	}
 
-	// Find frontmatter delimiters
-	// SplitN with limit 3 splits into at most 3 parts:
-	// [before first ---] [between ---] [after second ---]
-	parts := bytes.SplitN(content, delimiter, 3)
-	if len(parts) < 3 {
+	if !bytes.HasPrefix(content, frontmatterStart) {
 		return nil, ErrInvalidFrontmatter
 	}
 
-	// parts[0] should be empty (or just whitespace) before first ---
-	// parts[1] is frontmatter YAML
-	// parts[2] is body markdown
-	frontmatter := bytes.TrimSpace(parts[1])
-	body := parts[2]
+	rest := content[len(frontmatterStart):]
+	idx := bytes.Index(rest, frontmatterDelimiter)
+	if idx < 0 {
+		return nil, ErrInvalidFrontmatter
+	}
+
+	frontmatter := bytes.TrimSpace(rest[:idx])
+	body := rest[idx+len(frontmatterDelimiter):]
 
 	// Handle case where content starts with --- but has no second delimiter
 	if len(frontmatter) == 0 && len(bytes.TrimSpace(body)) == 0 {
 		return nil, ErrInvalidFrontmatter
 	}
 
-	// Parse YAML into intermediate struct (supports legacy project field)
-	var parsed parsedIntent
-	if err := yaml.Unmarshal(frontmatter, &parsed); err != nil {
+	var doc yaml.Node
+	if err := yaml.Unmarshal(frontmatter, &doc); err != nil {
 		return nil, camperrors.Wrapf(ErrFrontmatterParse, "%v", err)
 	}
+
+	// Parse YAML into intermediate struct (supports legacy project field).
+	var parsed parsedIntent
+	if err := doc.Decode(&parsed); err != nil {
+		return nil, camperrors.Wrapf(ErrFrontmatterParse, "%v", err)
+	}
+	parsed.frontmatterExtras = extractUnknownFrontmatter(&doc)
 
 	// Convert to Intent (handles legacy field migration)
 	intent := parsed.toIntent()
@@ -153,6 +190,19 @@ func SerializeIntent(intent *Intent) ([]byte, error) {
 	if err != nil {
 		return nil, camperrors.Wrapf(ErrFrontmatterMarshal, "%v", err)
 	}
+	if len(intent.frontmatterExtras) > 0 {
+		var doc yaml.Node
+		if err := yaml.Unmarshal(frontmatter, &doc); err != nil {
+			return nil, camperrors.Wrapf(ErrFrontmatterMarshal, "%v", err)
+		}
+		if mapping := frontmatterMapping(&doc); mapping != nil {
+			appendUnknownFrontmatter(mapping, intent.frontmatterExtras)
+			frontmatter, err = yaml.Marshal(&doc)
+			if err != nil {
+				return nil, camperrors.Wrapf(ErrFrontmatterMarshal, "%v", err)
+			}
+		}
+	}
 
 	// Combine frontmatter and body
 	var buf bytes.Buffer
@@ -171,4 +221,82 @@ func SerializeIntent(intent *Intent) ([]byte, error) {
 	}
 
 	return buf.Bytes(), nil
+}
+
+func extractUnknownFrontmatter(doc *yaml.Node) []frontmatterEntry {
+	mapping := frontmatterMapping(doc)
+	if mapping == nil {
+		return nil
+	}
+
+	extras := make([]frontmatterEntry, 0)
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		key := mapping.Content[i]
+		if key == nil {
+			continue
+		}
+		if _, known := knownFrontmatterKeys[key.Value]; known {
+			continue
+		}
+		extras = append(extras, frontmatterEntry{
+			Key:   cloneYAMLNode(key),
+			Value: cloneYAMLNode(mapping.Content[i+1]),
+		})
+	}
+	return extras
+}
+
+func appendUnknownFrontmatter(mapping *yaml.Node, extras []frontmatterEntry) {
+	present := make(map[string]struct{}, len(mapping.Content)/2+len(extras))
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if mapping.Content[i] != nil {
+			present[mapping.Content[i].Value] = struct{}{}
+		}
+	}
+
+	for _, extra := range extras {
+		key := extra.Key.Value
+		if _, known := knownFrontmatterKeys[key]; known {
+			continue
+		}
+		if _, exists := present[key]; exists {
+			continue
+		}
+
+		keyNode := cloneYAMLNode(&extra.Key)
+		valueNode := cloneYAMLNode(&extra.Value)
+		mapping.Content = append(mapping.Content, &keyNode, &valueNode)
+		present[key] = struct{}{}
+	}
+}
+
+func frontmatterMapping(doc *yaml.Node) *yaml.Node {
+	if doc == nil {
+		return nil
+	}
+	if doc.Kind == yaml.DocumentNode {
+		if len(doc.Content) == 0 {
+			return nil
+		}
+		doc = doc.Content[0]
+	}
+	if doc.Kind != yaml.MappingNode {
+		return nil
+	}
+	return doc
+}
+
+func cloneYAMLNode(node *yaml.Node) yaml.Node {
+	if node == nil {
+		return yaml.Node{}
+	}
+	clone := *node
+	if len(node.Content) > 0 {
+		clone.Content = make([]*yaml.Node, len(node.Content))
+		for i, child := range node.Content {
+			childClone := cloneYAMLNode(child)
+			clone.Content[i] = &childClone
+		}
+	}
+	return clone
 }

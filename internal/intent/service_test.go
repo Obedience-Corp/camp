@@ -123,6 +123,64 @@ func TestIntentService_CreateDirect_DuplicateID(t *testing.T) {
 	}
 }
 
+func TestCollisionSuffixLoopUnderConcurrentCreates(t *testing.T) {
+	tmpDir := t.TempDir()
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
+	ctx := context.Background()
+
+	opts := CreateOptions{
+		Title:     "Concurrent Duplicate",
+		Timestamp: time.Date(2026, 1, 19, 15, 35, 12, 0, time.UTC),
+	}
+
+	const workers = 8
+	start := make(chan struct{})
+	errs := make(chan error, workers)
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for range workers {
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := svc.CreateDirect(ctx, opts)
+			errs <- err
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+	close(errs)
+
+	successes := 0
+	existsErrors := 0
+	for err := range errs {
+		switch {
+		case err == nil:
+			successes++
+		case errors.Is(err, ErrFileExists):
+			existsErrors++
+		default:
+			t.Fatalf("CreateDirect() unexpected error = %v", err)
+		}
+	}
+
+	if successes != 1 {
+		t.Fatalf("successes = %d, want 1", successes)
+	}
+	if existsErrors != workers-1 {
+		t.Fatalf("ErrFileExists count = %d, want %d", existsErrors, workers-1)
+	}
+
+	files, err := filepath.Glob(filepath.Join(tmpDir, "intents", "inbox", "*.md"))
+	if err != nil {
+		t.Fatalf("Glob() error = %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("created files = %d, want 1: %v", len(files), files)
+	}
+	assertFileContains(t, files[0], "Concurrent Duplicate")
+}
+
 func TestIntentService_CreateDirect_ContextCancelled(t *testing.T) {
 	tmpDir := t.TempDir()
 	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
@@ -563,6 +621,49 @@ func TestIntentService_Move(t *testing.T) {
 	}
 }
 
+func TestIntentService_MoveDestinationCollisionPreservesExisting(t *testing.T) {
+	tmpDir := t.TempDir()
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
+	ctx := context.Background()
+
+	created, err := svc.CreateDirect(ctx, CreateOptions{
+		Title:     "Move Collision Source",
+		Timestamp: time.Date(2026, 1, 19, 22, 30, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateDirect() error = %v", err)
+	}
+
+	collisionPath := svc.getIntentPath(StatusActive, created.ID)
+	if err := os.MkdirAll(filepath.Dir(collisionPath), 0755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	collision := &Intent{
+		ID:        created.ID,
+		Title:     "Existing Active Copy",
+		Status:    StatusActive,
+		CreatedAt: time.Date(2026, 1, 19, 22, 31, 0, 0, time.UTC),
+		Content:   "do not overwrite",
+	}
+	data, err := SerializeIntent(collision)
+	if err != nil {
+		t.Fatalf("SerializeIntent() error = %v", err)
+	}
+	if err := os.WriteFile(collisionPath, data, 0644); err != nil {
+		t.Fatalf("WriteFile(collision) error = %v", err)
+	}
+
+	_, err = svc.Move(ctx, created.ID, StatusActive)
+	if !errors.Is(err, ErrFileExists) {
+		t.Fatalf("Move() error = %v, want ErrFileExists", err)
+	}
+	if _, err := os.Stat(created.Path); err != nil {
+		t.Fatalf("source file should remain after failed move: %v", err)
+	}
+	assertFileContains(t, collisionPath, "Existing Active Copy")
+	assertFileContains(t, collisionPath, "do not overwrite")
+}
+
 func TestIntentService_Move_SameStatus(t *testing.T) {
 	tmpDir := t.TempDir()
 	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
@@ -855,6 +956,17 @@ func assertFileContent(t *testing.T, path, want string) {
 	}
 	if string(got) != want {
 		t.Fatalf("%s content = %q, want %q", path, string(got), want)
+	}
+}
+
+func assertFileContains(t *testing.T, path, want string) {
+	t.Helper()
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%s) error = %v", path, err)
+	}
+	if !strings.Contains(string(got), want) {
+		t.Fatalf("%s content missing %q:\n%s", path, want, string(got))
 	}
 }
 
@@ -2164,6 +2276,51 @@ func TestIntentService_Move_CleansUpOrphans(t *testing.T) {
 	if _, err := os.Stat(orphanPath); !os.IsNotExist(err) {
 		t.Error("Killed orphan copy should not exist after Move()")
 	}
+}
+
+func TestIntentService_MoveKeepsFilenameMatchWithDifferentFrontmatterID(t *testing.T) {
+	tmpDir := t.TempDir()
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
+	ctx := context.Background()
+
+	created, err := svc.CreateDirect(ctx, CreateOptions{
+		Title:     "False Positive Cleanup Test",
+		Type:      TypeBug,
+		Timestamp: time.Date(2026, 2, 17, 12, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateDirect() error = %v", err)
+	}
+
+	killedDir := filepath.Join(tmpDir, "intents", string(StatusKilled))
+	if err := os.MkdirAll(killedDir, 0755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	foreign := &Intent{
+		ID:        "different-frontmatter-id",
+		Title:     "Keep This Intent",
+		Status:    StatusKilled,
+		CreatedAt: time.Date(2026, 2, 17, 12, 1, 0, 0, time.UTC),
+		Content:   "same filename, different frontmatter id",
+	}
+	data, err := SerializeIntent(foreign)
+	if err != nil {
+		t.Fatalf("SerializeIntent() error = %v", err)
+	}
+	foreignPath := filepath.Join(killedDir, created.ID+".md")
+	if err := os.WriteFile(foreignPath, data, 0644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	if _, err := svc.Move(ctx, created.ID, StatusActive); err != nil {
+		t.Fatalf("Move() error = %v", err)
+	}
+
+	if _, err := os.Stat(foreignPath); err != nil {
+		t.Fatalf("foreign intent should remain after cleanup: %v", err)
+	}
+	assertFileContains(t, foreignPath, "different-frontmatter-id")
+	assertFileContains(t, foreignPath, "Keep This Intent")
 }
 
 func BenchmarkIntentService_Search(b *testing.B) {
