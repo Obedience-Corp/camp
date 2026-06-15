@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -33,6 +32,7 @@ func TestShortenRemoteURL(t *testing.T) {
 
 func TestStatusAll_JSON_NoCache(t *testing.T) {
 	root := setupStatusAllTestCampaign(t)
+	installStatusAllFakeGit(t)
 	t.Setenv(campaign.EnvCampaignRoot, root)
 	campaign.ClearCache()
 	t.Cleanup(campaign.ClearCache)
@@ -86,31 +86,82 @@ func setupStatusAllTestCampaign(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(root, ".campaign", "campaign.yaml"), []byte(config), 0644); err != nil {
 		t.Fatalf("write campaign config: %v", err)
 	}
-
-	runStatusAllTestGit(t, root, "init", "-b", "main")
-	runStatusAllTestGit(t, root, "config", "user.email", "test@example.com")
-	runStatusAllTestGit(t, root, "config", "user.name", "Test User")
-
 	if err := os.MkdirAll(filepath.Join(root, "projects", "alpha"), 0755); err != nil {
 		t.Fatalf("mkdir submodule path: %v", err)
 	}
-	runStatusAllTestGit(t, root, "config", "-f", ".gitmodules", "submodule.alpha.path", "projects/alpha")
-	runStatusAllTestGit(t, root, "config", "-f", ".gitmodules", "submodule.alpha.url", "https://example.com/alpha.git")
-	runStatusAllTestGit(t, root, "add", ".campaign/campaign.yaml", ".gitmodules")
-	runStatusAllTestGit(t, root, "commit", "-m", "initial")
-
 	return root
 }
 
-func runStatusAllTestGit(t *testing.T, repo string, args ...string) {
+func installStatusAllFakeGit(t *testing.T) {
 	t.Helper()
 
-	cmdArgs := append([]string{"-C", repo}, args...)
-	cmd := exec.Command("git", cmdArgs...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %v\n%s", args, err, string(out))
+	binDir := filepath.Join(t.TempDir(), "bin")
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		t.Fatalf("mkdir fake git dir: %v", err)
 	}
+	script := `#!/bin/sh
+repo=""
+if [ "$1" = "-C" ]; then
+	repo="$2"
+	shift 2
+fi
+
+if [ "$1" = "config" ] && [ "$2" = "-f" ] && [ "$3" = ".gitmodules" ] && [ "$4" = "--list" ]; then
+	case "$repo" in
+		*/projects/alpha)
+			exit 1
+			;;
+	esac
+	printf '%s\n' \
+		"submodule.alpha.path=projects/alpha" \
+		"submodule.alpha.url=https://example.com/alpha.git"
+	exit 0
+fi
+
+if [ "$1" = "rev-parse" ] && [ "$2" = "--abbrev-ref" ] && [ "$3" = "HEAD" ]; then
+	printf 'main\n'
+	exit 0
+fi
+
+if [ "$1" = "remote" ]; then
+	printf 'origin\n'
+	exit 0
+fi
+
+if [ "$1" = "status" ]; then
+	exit 0
+fi
+
+if [ "$1" = "submodule" ] && [ "$2" = "status" ]; then
+	exit 0
+fi
+
+if [ "$1" = "rev-list" ]; then
+	printf '0	0\n'
+	exit 0
+fi
+
+if [ "$1" = "symbolic-ref" ]; then
+	printf 'origin/main\n'
+	exit 0
+fi
+
+if [ "$1" = "branch" ]; then
+	exit 0
+fi
+
+if [ "$1" = "rev-parse" ] && [ "$2" = "--verify" ]; then
+	exit 0
+fi
+
+printf 'unexpected fake git invocation: repo=%s args=%s\n' "$repo" "$*" >&2
+exit 1
+`
+	gitPath := filepath.Join(binDir, "git")
+	if err := os.WriteFile(gitPath, []byte(script), 0755); err != nil {
+		t.Fatalf("write fake git: %v", err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
 func captureStatusAllStdout(t *testing.T, fn func() error) (string, error) {
