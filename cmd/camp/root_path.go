@@ -35,9 +35,6 @@ func init() {
 
 func runCampaignRoot(cmd *cobra.Command, _ []string) error {
 	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
 
 	result, err := detectCampaignRootOutput(ctx)
 	if err != nil {

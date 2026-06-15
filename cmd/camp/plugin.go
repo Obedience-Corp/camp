@@ -28,7 +28,7 @@ var errPluginHandled = errors.New("plugin handled")
 // Only arguments after the plugin name are passed through. This matches git's
 // plugin convention where "git --no-pager foo arg" does not pass --no-pager to
 // git-foo.
-func dispatchPlugin() error {
+func dispatchPlugin(ctx context.Context) error {
 	name, argIdx := firstSubcommand()
 	if name == "" {
 		return nil
@@ -50,7 +50,6 @@ func dispatchPlugin() error {
 	}
 
 	// Best-effort campaign root detection for the plugin environment.
-	ctx := context.Background()
 	campRoot, _ := campaign.DetectCached(ctx)
 
 	// Forward all args after the plugin subcommand name.

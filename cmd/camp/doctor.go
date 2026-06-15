@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -86,9 +85,6 @@ func init() {
 
 func runDoctor(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
 
 	// Detect campaign root
 	campRoot, err := campaign.DetectCached(ctx)

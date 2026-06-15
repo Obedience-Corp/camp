@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -117,9 +116,6 @@ func init() {
 
 func runClone(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
 
 	url := args[0]
 	var directory string

@@ -10,21 +10,21 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
+	git "github.com/Obedience-Corp/camp/internal/git"
+	navtui "github.com/Obedience-Corp/camp/internal/nav/tui"
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/ui"
-	navtui "github.com/Obedience-Corp/camp/internal/nav/tui"
-	git "github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/worktree"
 	"github.com/spf13/cobra"
 )
 
 var (
-	cleanProject       string
-	cleanAll           bool
-	cleanDryRun        bool
-	cleanForce         bool
-	cleanYes           bool
-	cleanDiscardDirty  bool
+	cleanProject      string
+	cleanAll          bool
+	cleanDryRun       bool
+	cleanForce        bool
+	cleanYes          bool
+	cleanDiscardDirty bool
 )
 
 var worktreesCleanCmd = &cobra.Command{
@@ -73,16 +73,13 @@ type cleanResult struct {
 	worktree    string
 	path        string
 	reason      string
-	gitDirEntry bool   // true: .git is a directory; never auto-remove
+	gitDirEntry bool // true: .git is a directory; never auto-remove
 	removed     bool
 	removeErr   error
 }
 
 func runWorktreesClean(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
 
 	if !cleanAll && cleanProject == "" {
 		return fmt.Errorf("specify --all or --project <name>")

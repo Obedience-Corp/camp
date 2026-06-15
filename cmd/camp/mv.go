@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
@@ -54,9 +53,6 @@ func completeTransferArgs(cmd *cobra.Command, args []string, toComplete string) 
 	}
 
 	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
 
 	// If starts with @, complete against campaign shortcuts
 	if strings.HasPrefix(toComplete, "@") {

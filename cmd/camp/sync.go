@@ -1,8 +1,6 @@
 package main
 
 import (
-	"context"
-
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
@@ -91,9 +89,6 @@ func init() {
 
 func runSync(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
 
 	// Detect campaign root
 	campRoot, err := campaign.DetectCached(ctx)

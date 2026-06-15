@@ -161,6 +161,8 @@ func GenerateRich(ctx context.Context, args []string) ([]RichCategoryGroup, erro
 // CategoryShortcuts returns category shortcut keys from campaign config.
 // Returns nil if not in a campaign.
 func CategoryShortcuts() []string {
+	// Shell completion runs outside the normal command execution path and does not
+	// receive camp's root signal context.
 	ctx := context.Background()
 	cfg, _, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {

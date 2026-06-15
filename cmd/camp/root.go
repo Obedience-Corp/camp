@@ -57,8 +57,8 @@ var rootCmd = &cobra.Command{
 	},
 }
 
-// Execute runs the root command
-func Execute() error {
+// Execute runs the root command.
+func Execute(ctx context.Context) error {
 	// Expand shortcuts before command execution
 	expandShortcuts()
 
@@ -73,14 +73,14 @@ func Execute() error {
 
 	// Try git-style plugin dispatch for unknown subcommands.
 	// A camp-<name> binary on PATH becomes "camp <name> [args...]".
-	if err := dispatchPlugin(); err != nil {
+	if err := dispatchPlugin(ctx); err != nil {
 		if errors.Is(err, errPluginHandled) {
 			return nil
 		}
 		return err
 	}
 
-	return rootCmd.Execute()
+	return rootCmd.ExecuteContext(ctx)
 }
 
 // expandShortcuts expands shortcut aliases in os.Args before cobra parses them.
@@ -116,6 +116,8 @@ func expandShortcuts() {
 // It merges campaign shortcuts with defaults, prioritizing concept mappings from defaults
 // when the user's shortcuts don't specify a concept.
 func loadShortcutsForExpansion() map[string]config.ShortcutConfig {
+	// Pre-cobra argv rewriting runs before a command object exists, so there is
+	// no cmd.Context() to thread through this helper.
 	ctx := context.Background()
 	defaults := config.DefaultNavigationShortcuts()
 

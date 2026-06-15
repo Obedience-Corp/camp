@@ -450,6 +450,8 @@ func evalSymlinks(path string) (string, error) {
 // formatShortcutsHelp generates the shortcuts section for help output.
 // Only shows shortcuts from campaign.yaml - no hardcoded defaults.
 func formatShortcutsHelp() string {
+	// Help rendering is wired as static command metadata before RunE receives a
+	// command context, so this discovery path intentionally uses a background ctx.
 	ctx := context.Background()
 
 	// Try to load campaign config

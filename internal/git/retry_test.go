@@ -124,3 +124,37 @@ func TestWithLockRetry_ReturnsRemovalFailureForStaleLock(t *testing.T) {
 		t.Fatalf("WithLockRetry() error = %v, did not want ErrLockActive", err)
 	}
 }
+
+func TestRetryLoop_ContextCancellation(t *testing.T) {
+	tmpDir := initTestRepo(t)
+	lockPath := filepath.Join(tmpDir, ".git", "index.lock")
+
+	cfg := DefaultRetryConfig()
+	cfg.AttemptsPerCycle = 1
+	cfg.MaxCycles = 3
+	cfg.InitialBackoff = time.Hour
+	cfg.MaxBackoff = time.Hour
+	cfg.WaitForActive = false
+	cfg.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg.OperationName = "stage"
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		cancel()
+	}()
+
+	start := time.Now()
+	err := WithLockRetry(ctx, tmpDir, cfg, func() error {
+		return &LockError{Path: lockPath, Err: errors.New("index.lock exists")}
+	})
+	elapsed := time.Since(start)
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("WithLockRetry() error = %v, want context.Canceled", err)
+	}
+	if elapsed > 500*time.Millisecond {
+		t.Fatalf("WithLockRetry() took %s, want prompt cancellation", elapsed)
+	}
+}
