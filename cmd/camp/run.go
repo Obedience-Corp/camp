@@ -196,12 +196,6 @@ func runRun(cmd *cobra.Command, args []string) error {
 	return cmdutil.ExecuteCommand(ctx, fullCmd, workDir, root, nil)
 }
 
-func isProject(campaignRoot, name string) (string, bool) {
-	// Compatibility helper used outside Cobra command execution; command paths use
-	// isProjectCtx with the root command context.
-	return isProjectCtx(context.Background(), campaignRoot, name)
-}
-
 func isProjectCtx(ctx context.Context, campaignRoot, name string) (string, bool) {
 	projectDir, err := projectsvc.ResolveByName(ctx, campaignRoot, name)
 	if err != nil {

@@ -34,14 +34,6 @@ func (q *Query) All() []Target {
 	return q.index.Targets
 }
 
-// Count returns the number of targets in the index.
-func (q *Query) Count() int {
-	if q.index == nil {
-		return 0
-	}
-	return len(q.index.Targets)
-}
-
 // ByCategory returns targets in a specific category.
 // If cat is CategoryAll, returns all targets.
 func (q *Query) ByCategory(cat nav.Category) []Target {
@@ -59,56 +51,6 @@ func (q *Query) ByCategory(cat nav.Category) []Target {
 			results = append(results, t)
 		}
 	}
-	return results
-}
-
-// Categories returns all unique categories present in the index.
-func (q *Query) Categories() []nav.Category {
-	if q.index == nil {
-		return nil
-	}
-
-	seen := make(map[nav.Category]bool)
-	cats := make([]nav.Category, 0)
-
-	for _, t := range q.index.Targets {
-		if !seen[t.Category] {
-			seen[t.Category] = true
-			cats = append(cats, t.Category)
-		}
-	}
-	return cats
-}
-
-// Search performs fuzzy search on targets.
-// Returns targets matching the query, filtered by category.
-func (q *Query) Search(query string, cat nav.Category) []Target {
-	targets := q.ByCategory(cat)
-
-	if query == "" {
-		return targets
-	}
-
-	// Convert to string slice for fuzzy matching
-	names := make([]string, len(targets))
-	for i, t := range targets {
-		names[i] = t.Name
-	}
-
-	// Fuzzy filter
-	matches := fuzzy.Filter(names, query)
-
-	// Build result from matches (preserving fuzzy match order)
-	results := make([]Target, 0, len(matches))
-	for _, m := range matches {
-		for _, t := range targets {
-			if t.Name == m.Target {
-				results = append(results, t)
-				break
-			}
-		}
-	}
-
 	return results
 }
 
@@ -179,72 +121,4 @@ func (q *Query) FuzzyComplete(query string, cat nav.Category) []CompletionCandid
 	})
 
 	return candidates
-}
-
-// Find returns exact match by name.
-// Returns nil if not found.
-func (q *Query) Find(name string) *Target {
-	if q.index == nil {
-		return nil
-	}
-
-	for i := range q.index.Targets {
-		if q.index.Targets[i].Name == name {
-			return &q.index.Targets[i]
-		}
-	}
-	return nil
-}
-
-// FindInCategory returns exact match by name within a category.
-// Returns nil if not found.
-func (q *Query) FindInCategory(name string, cat nav.Category) *Target {
-	if q.index == nil {
-		return nil
-	}
-
-	for i := range q.index.Targets {
-		t := &q.index.Targets[i]
-		if t.Name == name && (cat == nav.CategoryAll || t.Category == cat) {
-			return t
-		}
-	}
-	return nil
-}
-
-// Names returns the names of all targets.
-func (q *Query) Names() []string {
-	if q.index == nil {
-		return nil
-	}
-
-	names := make([]string, len(q.index.Targets))
-	for i, t := range q.index.Targets {
-		names[i] = t.Name
-	}
-	return names
-}
-
-// NamesByCategory returns the names of targets in a category.
-func (q *Query) NamesByCategory(cat nav.Category) []string {
-	targets := q.ByCategory(cat)
-
-	names := make([]string, len(targets))
-	for i, t := range targets {
-		names[i] = t.Name
-	}
-	return names
-}
-
-// Paths returns the paths of all targets.
-func (q *Query) Paths() []string {
-	if q.index == nil {
-		return nil
-	}
-
-	paths := make([]string, len(q.index.Targets))
-	for i, t := range q.index.Targets {
-		paths[i] = t.Path
-	}
-	return paths
 }

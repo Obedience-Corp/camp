@@ -163,23 +163,6 @@ func resolveMarkerCampaignRoot(ctx context.Context, marker *LinkMarker) (string,
 	return "", false, nil
 }
 
-// DetectWithTimeout detects campaign root with a timeout.
-// If the filesystem is slow (e.g., network drives), detection will
-// be aborted after the default timeout to prevent hanging.
-func DetectWithTimeout(startDir string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), DefaultDetectTimeout)
-	defer cancel()
-	return Detect(ctx, startDir)
-}
-
-// DetectFromCwdWithTimeout is a convenience function that detects from current
-// working directory with a timeout.
-func DetectFromCwdWithTimeout() (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), DefaultDetectTimeout)
-	defer cancel()
-	return Detect(ctx, "")
-}
-
 // DetectFromCwd is a convenience function that detects from current working directory.
 func DetectFromCwd(ctx context.Context) (string, error) {
 	return Detect(ctx, "")
@@ -190,9 +173,4 @@ func IsCampaignRoot(dir string) bool {
 	campaignPath := filepath.Join(dir, CampaignDir)
 	info, err := os.Stat(campaignPath)
 	return err == nil && info.IsDir()
-}
-
-// CampaignPath returns the path to the .campaign/ directory for a given root.
-func CampaignPath(root string) string {
-	return filepath.Join(root, CampaignDir)
 }

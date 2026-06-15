@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"errors"
 	"os"
 
 	"golang.org/x/term"
@@ -30,39 +29,7 @@ type Keybinding struct {
 	Action string
 }
 
-// ErrNotATerminal indicates stdin is not an interactive terminal.
-var ErrNotATerminal = errors.New("not an interactive terminal")
-
 // IsTerminal checks if stdin is an interactive terminal.
 func IsTerminal() bool {
 	return term.IsTerminal(int(os.Stdin.Fd()))
-}
-
-// EnsureTerminal verifies the terminal supports TUI interaction.
-// Returns ErrNotATerminal if not running in an interactive terminal.
-func EnsureTerminal() error {
-	if !IsTerminal() {
-		return ErrNotATerminal
-	}
-	return nil
-}
-
-// PickWithHelp shows the picker with a help header displaying keybindings.
-func PickWithHelp(targets []Target, opts PickOptions) (*PickResult, error) {
-	// Check terminal first
-	if err := EnsureTerminal(); err != nil {
-		return nil, err
-	}
-
-	// Set defaults
-	if opts.Prompt == "" {
-		opts.Prompt = "Navigate to: "
-	}
-
-	// Add help text as header if not already set
-	if opts.Header == "" {
-		opts.Header = HelpText
-	}
-
-	return Pick(targets, opts)
 }

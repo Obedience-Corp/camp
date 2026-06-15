@@ -180,29 +180,3 @@ func ClassifyGitError(stderr string, exitCode int) GitErrorType {
 		return GitErrorUnknown
 	}
 }
-
-// NewLockError creates a new LockError with the given path.
-func NewLockError(path string, err error) *LockError {
-	return &LockError{
-		Path: path,
-		Err:  err,
-	}
-}
-
-// NewStaleLockError creates a new LockError marked as stale.
-func NewStaleLockError(path string) *LockError {
-	return &LockError{
-		Path:  path,
-		Stale: true,
-	}
-}
-
-// NewActiveLockError creates a new LockError with an active process ID.
-func NewActiveLockError(path string, pid int) *LockError {
-	return &LockError{
-		Path:      path,
-		ProcessID: pid,
-		Stale:     false,
-		Err:       ErrLockActive,
-	}
-}

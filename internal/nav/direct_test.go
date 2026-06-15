@@ -13,6 +13,7 @@ import (
 
 func setupTestCampaign(t *testing.T) string {
 	t.Helper()
+	t.Setenv(campaign.EnvCacheDisable, "1")
 
 	dir := t.TempDir()
 
@@ -48,9 +49,6 @@ func TestDirectJump_CampaignRoot(t *testing.T) {
 		t.Fatalf("Failed to chdir: %v", err)
 	}
 
-	// Clear any cached detection
-	campaign.ClearCache()
-
 	ctx := context.Background()
 	result, err := DirectJump(ctx, CategoryAll)
 	if err != nil {
@@ -77,8 +75,6 @@ func TestDirectJump_Categories(t *testing.T) {
 	if err := os.Chdir(dir); err != nil {
 		t.Fatalf("Failed to chdir: %v", err)
 	}
-
-	campaign.ClearCache()
 
 	tests := []struct {
 		category Category
@@ -121,8 +117,6 @@ func TestDirectJump_MissingCategory(t *testing.T) {
 		t.Fatalf("Failed to chdir: %v", err)
 	}
 
-	campaign.ClearCache()
-
 	ctx := context.Background()
 	// code_reviews doesn't exist
 	_, err := DirectJump(ctx, CategoryCodeReviews)
@@ -144,6 +138,7 @@ func TestDirectJump_MissingCategory(t *testing.T) {
 }
 
 func TestDirectJump_NotACampaign(t *testing.T) {
+	t.Setenv(campaign.EnvCacheDisable, "1")
 	dir := t.TempDir()
 
 	// Change to non-campaign directory
@@ -152,8 +147,6 @@ func TestDirectJump_NotACampaign(t *testing.T) {
 	if err := os.Chdir(dir); err != nil {
 		t.Fatalf("Failed to chdir: %v", err)
 	}
-
-	campaign.ClearCache()
 
 	ctx := context.Background()
 	_, err := DirectJump(ctx, CategoryProjects)
@@ -175,8 +168,6 @@ func TestDirectJump_ContextCancellation(t *testing.T) {
 	if err := os.Chdir(dir); err != nil {
 		t.Fatalf("Failed to chdir: %v", err)
 	}
-
-	campaign.ClearCache()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
@@ -361,8 +352,6 @@ func BenchmarkDirectJump(b *testing.B) {
 	defer func() { _ = os.Chdir(origDir) }()
 	_ = os.Chdir(dir)
 
-	campaign.ClearCache()
-
 	ctx := context.Background()
 
 	b.ResetTimer()
@@ -397,8 +386,6 @@ func TestDirectJump_Performance(t *testing.T) {
 	if err := os.Chdir(dir); err != nil {
 		t.Fatalf("Failed to chdir: %v", err)
 	}
-
-	campaign.ClearCache()
 
 	ctx := context.Background()
 	start := time.Now()

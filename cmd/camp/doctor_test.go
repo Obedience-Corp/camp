@@ -21,8 +21,7 @@ func TestDoctorJSONReturnsFailureCodeAfterValidJSON(t *testing.T) {
 	root := setupDoctorJSONLockCampaign(t)
 	installDoctorJSONFakeFuser(t)
 	t.Setenv(campaign.EnvCampaignRoot, root)
-	campaign.ClearCache()
-	t.Cleanup(campaign.ClearCache)
+	t.Setenv(campaign.EnvCacheDisable, "1")
 
 	oldOpts := doctorOpts
 	doctorOpts = struct {
