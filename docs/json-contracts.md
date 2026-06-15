@@ -34,6 +34,7 @@ Schema versions in this release:
 | `camp workflow shortcut add --json` | `workflow/v1` | Existing workflow collection contract. |
 | `camp workflow doctor --json` | `workflow/v1` | Emits findings; exits 2 when error findings exist. |
 | `camp workflow sync --json` | `workflow/v1` | Existing workflow repair-plan contract. |
+| `camp version --json` | `version/v1alpha1` | Emits version, build metadata, platform, and build profile. Uses snake_case keys only; legacy camelCase keys were dropped before public release. |
 
 ## Scope: contract vs best-effort
 
@@ -41,7 +42,7 @@ Surfaces in this table are **versioned contracts**: `schema_version` will
 increment on breaking changes and festival-app keys on the version string.
 
 Surfaces NOT in this table (for example, `camp status all`,
-dev-profile `camp quest list/show`, `camp version`, and `camp __manifest`) are
+dev-profile `camp quest list/show`, and `camp __manifest`) are
 **best-effort**: they have JSON output but no formal version guarantee until
 explicitly promoted.
 
