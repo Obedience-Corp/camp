@@ -237,6 +237,12 @@ func pullSingleTarget(
 ) pullResult {
 	originalBranch := t.branch
 
+	if git.IsRebaseInProgress(ctx, t.path) {
+		fmt.Printf("  %-30s %s\n", t.name,
+			yellow.Render("skipped (rebase in progress -- resolve or abort manually)"))
+		return pullResult{outcome: pullOutcomeSkipped}
+	}
+
 	// Handle detached HEAD
 	if t.branch == "" || t.branch == "HEAD" {
 		if opts.DefaultBranch && !t.isRoot {
@@ -290,7 +296,8 @@ func pullSingleTarget(
 	pullArgs = append(pullArgs, gitArgs...)
 	output, err := runGitPullWithLockRetry(ctx, t.path, pullArgs, false)
 	if err != nil {
-		return handlePullError(ctx, t, output, err, red)
+		rebaseInitiatedHere := git.IsRebaseInProgress(ctx, t.path)
+		return handlePullError(ctx, t, output, err, red, rebaseInitiatedHere)
 	}
 
 	outStr := strings.TrimSpace(string(output))
@@ -302,14 +309,29 @@ func pullSingleTarget(
 	return pullResult{outcome: pullOutcomePulled}
 }
 
-// handlePullError processes a failed git pull, aborting any in-progress rebase.
-func handlePullError(ctx context.Context, t *pullTarget, output []byte, err error, red lipgloss.Style) pullResult {
+// handlePullError processes a failed git pull.
+func handlePullError(
+	ctx context.Context,
+	t *pullTarget,
+	output []byte,
+	err error,
+	red lipgloss.Style,
+	rebaseInitiatedHere bool,
+) pullResult {
 	if git.IsRebaseInProgress(ctx, t.path) {
-		_ = abortRebase(ctx, t.path)
-		fmt.Println(red.Render("conflict (aborted rebase)"))
+		if rebaseInitiatedHere {
+			_ = abortRebase(ctx, t.path)
+			fmt.Println(red.Render("conflict (aborted rebase)"))
+			return pullResult{
+				outcome: pullOutcomeFailed,
+				errMsg:  fmt.Sprintf("  %s: rebase conflict (try: camp pull -p %s --no-rebase)", t.name, t.name),
+			}
+		}
+
+		fmt.Println(red.Render("failed (pre-existing rebase in progress; not aborted)"))
 		return pullResult{
 			outcome: pullOutcomeFailed,
-			errMsg:  fmt.Sprintf("  %s: rebase conflict (try: camp pull -p %s --no-rebase)", t.name, t.name),
+			errMsg:  fmt.Sprintf("  %s: pull failed; rebase in progress -- resolve it manually", t.name),
 		}
 	}
 
