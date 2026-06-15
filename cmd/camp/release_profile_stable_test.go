@@ -2,7 +2,11 @@
 
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/Obedience-Corp/camp/internal/version"
+)
 
 func TestReleaseProfileStable_GendocsCommandHiddenButRegistered(t *testing.T) {
 	assertGendocsCommand(t)
@@ -18,4 +22,10 @@ func TestReleaseProfileStable_StableCommandsRegistered(t *testing.T) {
 
 func TestReleaseProfileStable_BuildProfileRegistered(t *testing.T) {
 	assertBuildProfileCommand(t)
+}
+
+func TestReleaseProfileStable_VersionProfile(t *testing.T) {
+	if version.Profile != "stable" {
+		t.Fatalf("version.Profile = %q, want %q", version.Profile, "stable")
+	}
 }
