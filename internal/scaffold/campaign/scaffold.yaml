@@ -9,3 +9,4 @@ vars:
   campaign_name: ""
   campaign_id: ""
   campaign_type: "product"
+  Profile: "stable"

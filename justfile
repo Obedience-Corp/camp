@@ -165,7 +165,8 @@ uninstall:
     @echo "camp uninstalled"
 
 # Generate CLI reference docs
-docs: build-camp
+docs:
+    BUILD_TAGS='' just build-camp
     ./{{bin_dir}}/{{binary_name}} gendocs --output docs/cli-reference --format markdown --single
 
 # Run camp (for development)

@@ -15,6 +15,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/quest"
+	"github.com/Obedience-Corp/camp/internal/version"
 )
 
 func TestInit(t *testing.T) {
@@ -140,6 +141,13 @@ func TestInit(t *testing.T) {
 			t.Errorf("standard dungeon OBEY.md was not created at %s", obeyPath)
 		}
 	}
+	rootDungeonObey, err := os.ReadFile(filepath.Join(campaignDir, "dungeon", "OBEY.md"))
+	if err != nil {
+		t.Fatalf("failed to read dungeon/OBEY.md: %v", err)
+	}
+	if strings.Contains(string(rootDungeonObey), "camp flow") {
+		t.Error("dungeon/OBEY.md should not reference dev-only camp flow commands")
+	}
 
 	// Check key skill files were scaffolded
 	expectedSkillFiles := []string{
@@ -153,6 +161,23 @@ func TestInit(t *testing.T) {
 		if _, err := os.Stat(path); os.IsNotExist(err) {
 			t.Errorf("skill file %s was not created", relPath)
 		}
+	}
+	workflowSkillPath := filepath.Join(campaignDir, ".campaign", "skills", "campaign-workflows", "SKILL.md")
+	workflowSkill, err := os.ReadFile(workflowSkillPath)
+	if err != nil {
+		t.Fatalf("failed to read campaign-workflows skill: %v", err)
+	}
+	switch version.Profile {
+	case "stable":
+		if strings.Contains(string(workflowSkill), "camp flow") {
+			t.Error("stable scaffolded campaign-workflows skill should not reference camp flow")
+		}
+	case "dev":
+		if !strings.Contains(string(workflowSkill), "camp flow status") {
+			t.Error("dev scaffolded campaign-workflows skill should include camp flow instructions")
+		}
+	default:
+		t.Fatalf("unexpected version.Profile %q", version.Profile)
 	}
 
 	expectedQuestPaths := []string{

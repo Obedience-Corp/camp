@@ -20,12 +20,14 @@ Campaign workspace manager — group every project, tool, and piece of context y
 - **Tab Completion** — Smart completion for categories, projects, and paths
 - **Plugins** — Discover camp plugins on `PATH` (`plugins`)
 
+Note: `flow` is a dev-channel command and is not available in stable builds.
+
 ## Installation
 
 ### Go Install
 
 ```bash
-go install github.com/Obedience-Corp/camp@latest
+go install github.com/Obedience-Corp/camp/cmd/camp@latest
 ```
 
 ### From Source
@@ -203,7 +205,7 @@ camp intent add --campaign other-campaign "Capture idea"  # Cross-campaign captu
 camp gather                # Import external data into the intent system
 
 # Flows - track work status
-camp flow                  # Manage status workflows for organizing work
+camp flow                  # Manage status workflows for organizing work (dev channel only; not available in stable builds)
 
 # Dungeon - archive deprioritized work
 camp dungeon               # Move items to/from the dungeon

@@ -35,10 +35,8 @@ camp [flags]
 ### Options
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-  -h, --help            help for camp
-      --no-color        disable colored output
-      --verbose         enable verbose output
+  -h, --help       help for camp
+      --no-color   disable colored output
 ```
 
 ### SEE ALSO

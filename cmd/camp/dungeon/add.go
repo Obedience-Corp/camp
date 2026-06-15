@@ -23,8 +23,8 @@ Creates the dungeon directory with:
   - archived/: Preserved for history, truly done
   - someday/: Low priority, might revisit
 
-This creates the same dungeon structure as 'camp flow init' but without
-the full workflow (no .workflow.yaml, active/, or ready/ directories).
+Initialize the dungeon directory structure directly, without requiring
+workflow setup (no .workflow.yaml, active/, or ready/ directories).
 Useful when you only need a dungeon for idea capture or temporary holding.
 
 This operation is idempotent - running it multiple times is safe.

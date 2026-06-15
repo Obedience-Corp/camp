@@ -16,6 +16,7 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/quest"
+	"github.com/Obedience-Corp/camp/internal/version"
 	"github.com/Obedience-Corp/obey-shared/contract"
 	"github.com/google/uuid"
 	"github.com/lancekrogers/guild-scaffold/pkg/scaffold"
@@ -185,6 +186,7 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 				"campaign_type":        string(opts.Type),
 				"campaign_description": opts.Description,
 				"campaign_mission":     opts.Mission,
+				"Profile":              version.Profile,
 			},
 			Dry:       false,
 			Overwrite: false,
