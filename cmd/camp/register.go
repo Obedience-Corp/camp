@@ -122,8 +122,7 @@ func runRegister(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	replaceNameConflict := false
-	replacePathConflict := false
+	confirmed := registerConflictConfirmations{}
 
 	// Check for existing registration with same name but different path.
 	if existing, exists := reg.GetByName(name); exists && existing.Path != absPath {
@@ -136,7 +135,7 @@ func runRegister(cmd *cobra.Command, args []string) error {
 			fmt.Println(ui.Dim("Aborted."))
 			return nil
 		}
-		replaceNameConflict = true
+		confirmed.nameConflictID = existing.ID
 	}
 
 	// Check for path conflict (different campaign ID at same path).
@@ -152,26 +151,11 @@ func runRegister(cmd *cobra.Command, args []string) error {
 			fmt.Println(ui.Dim("Aborted."))
 			return nil
 		}
-		replacePathConflict = true
+		confirmed.pathConflictID = existing.ID
 	}
 
 	if err := config.UpdateRegistry(ctx, func(reg *config.Registry) error {
-		if existing, exists := reg.GetByName(name); exists && existing.Path != absPath {
-			if !replaceNameConflict {
-				return fmt.Errorf("campaign %q is now registered at %s; re-run camp register to confirm replacement", name, existing.Path)
-			}
-			reg.UnregisterByID(existing.ID)
-		}
-		if existing, exists := reg.FindByPath(absPath); exists && existing.ID != cfg.ID {
-			if !replacePathConflict {
-				return fmt.Errorf("path %s is now registered to campaign %s (%s); re-run camp register to confirm replacement", absPath, existing.Name, existing.ID)
-			}
-			reg.UnregisterByID(existing.ID)
-		}
-		if err := reg.Register(cfg.ID, name, absPath, ctype); err != nil {
-			return camperrors.Wrap(err, "failed to register campaign")
-		}
-		return nil
+		return registerCampaignWithConfirmedConflicts(reg, cfg.ID, name, absPath, ctype, confirmed)
 	}); err != nil {
 		return err
 	}
@@ -179,5 +163,35 @@ func runRegister(cmd *cobra.Command, args []string) error {
 	fmt.Printf("%s %s\n", ui.SuccessIcon(), ui.Success("Registered: "+name))
 	fmt.Println(ui.KeyValue("Path:", absPath))
 	fmt.Println(ui.KeyValue("Campaign ID:", cfg.ID))
+	return nil
+}
+
+type registerConflictConfirmations struct {
+	nameConflictID string
+	pathConflictID string
+}
+
+func registerCampaignWithConfirmedConflicts(reg *config.Registry, id, name, absPath string, ctype config.CampaignType, confirmed registerConflictConfirmations) error {
+	if existing, exists := reg.GetByName(name); exists && existing.Path != absPath {
+		if confirmed.nameConflictID == "" {
+			return fmt.Errorf("campaign %q is now registered at %s; re-run camp register to confirm replacement", name, existing.Path)
+		}
+		if existing.ID != confirmed.nameConflictID {
+			return fmt.Errorf("campaign %q registration changed from %s to %s; re-run camp register to confirm replacement", name, confirmed.nameConflictID, existing.ID)
+		}
+		reg.UnregisterByID(existing.ID)
+	}
+	if existing, exists := reg.FindByPath(absPath); exists && existing.ID != id {
+		if confirmed.pathConflictID == "" {
+			return fmt.Errorf("path %s is now registered to campaign %s (%s); re-run camp register to confirm replacement", absPath, existing.Name, existing.ID)
+		}
+		if existing.ID != confirmed.pathConflictID {
+			return fmt.Errorf("path %s registration changed from %s to %s; re-run camp register to confirm replacement", absPath, confirmed.pathConflictID, existing.ID)
+		}
+		reg.UnregisterByID(existing.ID)
+	}
+	if err := reg.Register(id, name, absPath, ctype); err != nil {
+		return camperrors.Wrap(err, "failed to register campaign")
+	}
 	return nil
 }
