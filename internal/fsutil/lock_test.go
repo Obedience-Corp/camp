@@ -89,6 +89,41 @@ func TestTryAcquireFileLock_StaleLockStealRaceHasOneWinner(t *testing.T) {
 	}
 }
 
+func TestAcquireFileLock_StaleLockStealRaceAcquiresSerially(t *testing.T) {
+	lockPath := filepath.Join(t.TempDir(), "links.yaml.lock")
+	if err := os.WriteFile(lockPath, []byte("orphaned"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	staleTime := time.Now().Add(-(staleLockAfter + time.Second))
+	if err := os.Chtimes(lockPath, staleTime, staleTime); err != nil {
+		t.Fatal(err)
+	}
+
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	wg.Add(2)
+	for i := range 2 {
+		i := i
+		go func() {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			release, err := AcquireFileLock(ctx, lockPath)
+			errs[i] = err
+			if release != nil {
+				release()
+			}
+		}()
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("AcquireFileLock goroutine %d error = %v", i, err)
+		}
+	}
+}
+
 func TestAcquireFileLock_ContextCancellation(t *testing.T) {
 	lockPath := filepath.Join(t.TempDir(), "links.yaml.lock")
 	if err := os.WriteFile(lockPath, []byte("held"), 0o644); err != nil {
