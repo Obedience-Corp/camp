@@ -97,7 +97,7 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 		reg.UpdateLastAccess(selected.ID)
 		return nil
 	}); err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "camp: warning: failed to update last access: %v\n", err)
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "camp: warning: failed to update last access: %v\n", err)
 	}
 
 	if printOnly {

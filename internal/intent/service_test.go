@@ -687,13 +687,15 @@ func TestIntentService_SaveAtomicFailurePreservesOriginal(t *testing.T) {
 	if err := os.Chmod(dir, 0555); err != nil {
 		t.Skipf("chmod read-only directory: %v", err)
 	}
-	defer os.Chmod(dir, 0755)
+	defer func() {
+		_ = os.Chmod(dir, 0o755)
+	}()
 
 	intent.Title = "Mutated Atomic Save"
 	err = svc.Save(ctx, intent)
 	if err == nil {
-		_ = os.Chmod(dir, 0755)
-		_ = os.WriteFile(intent.Path, original, 0644)
+		_ = os.Chmod(dir, 0o755)
+		_ = os.WriteFile(intent.Path, original, 0o644)
 		t.Skip("read-only directory did not prevent atomic temp file creation")
 	}
 
