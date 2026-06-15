@@ -112,7 +112,7 @@ func TestBuildCrawlCommitMessage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := buildCrawlCommitMessage(tt.campaignRoot, tt.cwd, tt.triage, tt.inner)
+			result := intdungeon.BuildCrawlCommitMessage(tt.campaignRoot, tt.cwd, tt.triage, tt.inner)
 
 			for _, substr := range tt.contains {
 				if !strings.Contains(result, substr) {
@@ -139,7 +139,7 @@ func TestBuildCrawlCommitMessage_SortedStatuses(t *testing.T) {
 		},
 	}
 
-	result := buildCrawlCommitMessage("/root", "/root/dir", triage, nil)
+	result := intdungeon.BuildCrawlCommitMessage("/root", "/root/dir", triage, nil)
 
 	// Verify alphabetical order: archived before completed before someday
 	archivedIdx := strings.Index(result, "dungeon/archived")
@@ -159,7 +159,7 @@ func TestCrawlCommitPaths(t *testing.T) {
 		},
 	}
 
-	got := crawlCommitPaths("workflow/design/dungeon", summary)
+	got := intdungeon.CrawlCommitPaths("workflow/design/dungeon", summary)
 	want := []string{
 		"docs/api/routed.md",
 		"workflow/design/dungeon/completed/2026-03-15/finished.md",
@@ -189,7 +189,7 @@ func TestCrawlSourceDeletionPaths(t *testing.T) {
 		},
 	}
 
-	got := crawlSourceDeletionPaths(
+	got := intdungeon.CrawlSourceDeletionPaths(
 		"/home/user/campaign",
 		"/home/user/campaign/workflow/design",
 		"workflow/design/dungeon",
