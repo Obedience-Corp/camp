@@ -258,12 +258,16 @@ func cleanupFailedSubmoduleAdd(ctx context.Context, campaignRoot, destPath strin
 	rmSection := exec.CommandContext(ctx, "git", "config", "--file", ".gitmodules",
 		"--remove-section", sectionKey)
 	rmSection.Dir = campaignRoot
-	_ = rmSection.Run()
+	if err := rmSection.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "camp cleanup warning: failed to remove .gitmodules section %s: %v\n", sectionKey, err)
+	}
 
 	// 4. Unstage the gitlink entry (ignore failure — may not be staged).
 	rmCached := exec.CommandContext(ctx, "git", "rm", "--cached", "-f", destPath)
 	rmCached.Dir = campaignRoot
-	_ = rmCached.Run()
+	if err := rmCached.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "camp cleanup warning: failed to unstage cached entry %s: %v\n", destPath, err)
+	}
 }
 
 // addLocalAsSubmodule adds an existing local git repository as a submodule.
