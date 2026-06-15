@@ -71,9 +71,14 @@ printf 'dirty work\n' > %[1]s/dirty.txt
 	require.NoError(t, err)
 	assert.True(t, exists, "dirty file must survive (quarantine or no removal)")
 
-	// Assert: .git is file (real submodule)
-	gitInSub := tc.Shell(t, fmt.Sprintf(`ls -l %s/.git`, projPath))
-	assert.Contains(t, gitInSub, "->", ".git should be a symlink/file for real submodule")
+	// Assert: .git points at parent-managed submodule metadata, not a standalone clone.
+	tc.Shell(t, fmt.Sprintf(`
+set -e
+test -e %[1]s/.git
+if [ ! -L %[1]s/.git ]; then
+	grep -q '^gitdir: ' %[1]s/.git
+fi
+`, projPath))
 
 	// Assert: submodule status ok
 	status := tc.Shell(t, fmt.Sprintf(`git -C %s submodule status projects/subproj || echo status-failed`, campPath))
