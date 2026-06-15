@@ -12,6 +12,7 @@ package promote
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -54,6 +55,7 @@ type Result struct {
 	FestivalCreated bool          // True if fest successfully created the festival
 	IntentCopied    bool          // True if intent file was copied to ingest
 	FestNotFound    bool          // True if fest CLI was not found
+	FestCLIError    string        // Stderr from a failed fest CLI invocation
 	DesignDir       string        // Path to created design doc directory
 	DesignCreated   bool          // True if design doc was created
 	NewStatus       intent.Status // The status the intent was moved to
@@ -323,7 +325,10 @@ func createFestival(ctx context.Context, campaignRoot string, i *intent.Intent) 
 	cmd.Dir = campaignRoot
 	output, err := cmd.Output()
 	if err != nil {
-		return Result{FestivalName: festivalName}
+		return Result{
+			FestivalName: festivalName,
+			FestCLIError: extractFestStderr(err),
+		}
 	}
 
 	// Parse JSON to get actual directory and dest.
@@ -354,6 +359,14 @@ func createFestival(ctx context.Context, campaignRoot string, i *intent.Intent) 
 	return result
 }
 
+func extractFestStderr(err error) string {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
+		return strings.TrimSpace(string(exitErr.Stderr))
+	}
+	return ""
+}
+
 // copyIntentToIngest copies the intent markdown file into the festival's
 // 001_INGEST/input_specs/ directory. Returns true on success.
 func copyIntentToIngest(campaignRoot, dest, festivalDir string, i *intent.Intent) bool {
@@ -364,9 +377,14 @@ func copyIntentToIngest(campaignRoot, dest, festivalDir string, i *intent.Intent
 	ingestDir := filepath.Join(campaignRoot, "festivals", dest, festivalDir, "001_INGEST", "input_specs")
 
 	if _, err := os.Stat(ingestDir); os.IsNotExist(err) {
-		if err := os.MkdirAll(ingestDir, 0755); err != nil {
-			return false
-		}
+		fmt.Fprintf(os.Stderr,
+			"Notice: intent file not copied to festival ingest directory because %s does not exist.\n"+
+				"Use fest to ingest this file once `fest ingest <file>` is available.\n"+
+				"File to ingest: %s\n",
+			ingestDir, i.Path)
+		return false
+	} else if err != nil {
+		return false
 	}
 
 	destPath := filepath.Join(ingestDir, filepath.Base(i.Path))

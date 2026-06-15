@@ -3,7 +3,9 @@ package promote
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -329,6 +331,48 @@ func TestPromoteToDesignRollbackPreservesPreExistingDesignDir(t *testing.T) {
 	}
 	if string(got) != "keep my notes" {
 		t.Fatalf("user file content = %q, want %q", string(got), "keep my notes")
+	}
+}
+
+func TestCopyIntentToIngest_SkipsAbsentIngestDir(t *testing.T) {
+	campaignRoot := t.TempDir()
+	festivalDir := filepath.Join(campaignRoot, "festivals", "planning", "my-festival-abc123")
+	if err := os.MkdirAll(festivalDir, 0755); err != nil {
+		t.Fatalf("MkdirAll(festivalDir) error = %v", err)
+	}
+
+	intentPath := filepath.Join(campaignRoot, "intent.md")
+	if err := os.WriteFile(intentPath, []byte("# Test"), 0644); err != nil {
+		t.Fatalf("WriteFile(intentPath) error = %v", err)
+	}
+
+	i := &intent.Intent{Path: intentPath}
+	if copyIntentToIngest(campaignRoot, "planning", "my-festival-abc123", i) {
+		t.Fatal("copyIntentToIngest returned true, want false")
+	}
+
+	if _, err := os.Stat(filepath.Join(festivalDir, "001_INGEST")); !os.IsNotExist(err) {
+		t.Fatalf("001_INGEST should not have been created, stat err = %v", err)
+	}
+	entries, err := os.ReadDir(festivalDir)
+	if err != nil {
+		t.Fatalf("ReadDir(festivalDir) error = %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("festival dir should remain empty, got %d entries", len(entries))
+	}
+}
+
+func TestCreateFestival_SurfacesStderr(t *testing.T) {
+	cmd := exec.Command("sh", "-c", "echo 'fest: festival already exists' >&2; exit 1")
+	_, err := cmd.Output()
+	if err == nil {
+		t.Fatal("expected non-zero exit")
+	}
+
+	got := extractFestStderr(err)
+	if !strings.Contains(got, "fest: festival already exists") {
+		t.Fatalf("extractFestStderr() = %q, want stderr text", got)
 	}
 }
 
