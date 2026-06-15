@@ -58,8 +58,7 @@ func runDoctorExitCodeFailure(t *testing.T) error {
 	root := setupDoctorJSONLockCampaign(t)
 	installDoctorJSONFakeFuser(t)
 	t.Setenv(campaign.EnvCampaignRoot, root)
-	campaign.ClearCache()
-	t.Cleanup(campaign.ClearCache)
+	t.Setenv(campaign.EnvCacheDisable, "1")
 
 	oldOpts := doctorOpts
 	doctorOpts = struct {
@@ -85,8 +84,7 @@ func runSyncExitCodePreflightFailure(t *testing.T) error {
 	root := setupSyncExitCodeCampaign(t)
 	installSyncExitCodeFakeGit(t)
 	t.Setenv(campaign.EnvCampaignRoot, root)
-	campaign.ClearCache()
-	t.Cleanup(campaign.ClearCache)
+	t.Setenv(campaign.EnvCacheDisable, "1")
 
 	oldOpts := syncOpts
 	syncOpts = struct {

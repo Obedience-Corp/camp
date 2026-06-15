@@ -133,58 +133,6 @@ func TestDetect_PathWithDot(t *testing.T) {
 	}
 }
 
-func TestDetectWithTimeout(t *testing.T) {
-	// Create temp campaign
-	tmpDir := t.TempDir()
-	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
-
-	campaignRoot := filepath.Join(tmpDir, "campaign")
-	if err := os.MkdirAll(filepath.Join(campaignRoot, CampaignDir), 0755); err != nil {
-		t.Fatalf("failed to create campaign: %v", err)
-	}
-
-	// Test successful detection with timeout
-	got, err := DetectWithTimeout(campaignRoot)
-	if err != nil {
-		t.Fatalf("DetectWithTimeout() error = %v", err)
-	}
-
-	if got != campaignRoot {
-		t.Errorf("DetectWithTimeout() = %v, want %v", got, campaignRoot)
-	}
-}
-
-func TestDetectFromCwdWithTimeout(t *testing.T) {
-	// Create temp campaign
-	tmpDir := t.TempDir()
-	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
-
-	campaignRoot := filepath.Join(tmpDir, "campaign")
-	if err := os.MkdirAll(filepath.Join(campaignRoot, CampaignDir), 0755); err != nil {
-		t.Fatalf("failed to create campaign: %v", err)
-	}
-
-	// Save and restore working directory
-	origDir, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("failed to get working directory: %v", err)
-	}
-	defer os.Chdir(origDir)
-
-	if err := os.Chdir(campaignRoot); err != nil {
-		t.Fatalf("failed to change directory: %v", err)
-	}
-
-	got, err := DetectFromCwdWithTimeout()
-	if err != nil {
-		t.Fatalf("DetectFromCwdWithTimeout() error = %v", err)
-	}
-
-	if got != campaignRoot {
-		t.Errorf("DetectFromCwdWithTimeout() = %v, want %v", got, campaignRoot)
-	}
-}
-
 func TestDetect_TimeoutExceeded(t *testing.T) {
 	// Create a context that times out immediately
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Nanosecond)
@@ -240,20 +188,5 @@ func TestDetect_PermissionDenied(t *testing.T) {
 
 	if got != campaignRoot {
 		t.Errorf("Detect() = %v, want %v", got, campaignRoot)
-	}
-}
-
-func BenchmarkDetectWithTimeout(b *testing.B) {
-	tmpDir := b.TempDir()
-	campaignRoot := filepath.Join(tmpDir, "campaign")
-	campaignDir := filepath.Join(campaignRoot, CampaignDir)
-	deepDir := filepath.Join(campaignRoot, "a", "b", "c", "d", "e")
-
-	os.MkdirAll(campaignDir, 0755)
-	os.MkdirAll(deepDir, 0755)
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		DetectWithTimeout(deepDir)
 	}
 }

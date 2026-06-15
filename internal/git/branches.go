@@ -146,21 +146,6 @@ func CurrentBranch(ctx context.Context, repoPath string) string {
 	return branch
 }
 
-// MergedBranches returns local branches that have been merged into the default
-// branch, excluding the default branch itself and the current branch.
-func MergedBranches(ctx context.Context, repoPath string) ([]string, error) {
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-
-	defaultBranch := DefaultBranch(ctx, repoPath)
-	if defaultBranch == "" {
-		return nil, fmt.Errorf("could not determine default branch")
-	}
-
-	return MergedBranchesFromRef(ctx, repoPath, defaultBranch)
-}
-
 // MergedBranchesFromRef returns local branches that have been merged into the
 // given base ref, excluding the base ref itself and the current branch.
 func MergedBranchesFromRef(ctx context.Context, repoPath, baseRef string) ([]string, error) {

@@ -116,16 +116,6 @@ func (s *Syncer) listSubmodules(ctx context.Context) ([]string, error) {
 	return paths, nil
 }
 
-// CheckUncommittedChanges detects submodules with uncommitted changes.
-// Public wrapper that fetches submodule paths for standalone use.
-func (s *Syncer) CheckUncommittedChanges(ctx context.Context) ([]SubmoduleStatus, error) {
-	paths, err := s.listSubmodules(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return s.checkUncommittedChanges(ctx, paths)
-}
-
 // checkUncommittedChanges is the internal implementation that accepts pre-fetched paths.
 func (s *Syncer) checkUncommittedChanges(ctx context.Context, paths []string) ([]SubmoduleStatus, error) {
 	if ctx.Err() != nil {
@@ -176,16 +166,6 @@ func (s *Syncer) getChangesDetails(ctx context.Context, repoPath string) string 
 	return fmt.Sprintf("%d files changed", len(lines))
 }
 
-// CheckUnpushedCommits detects submodules with local commits not on remote.
-// Public wrapper that fetches submodule paths for standalone use.
-func (s *Syncer) CheckUnpushedCommits(ctx context.Context) ([]SubmoduleStatus, error) {
-	paths, err := s.listSubmodules(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return s.checkUnpushedCommits(ctx, paths)
-}
-
 // checkUnpushedCommits is the internal implementation that accepts pre-fetched paths.
 func (s *Syncer) checkUnpushedCommits(ctx context.Context, paths []string) ([]SubmoduleStatus, error) {
 	if ctx.Err() != nil {
@@ -223,16 +203,6 @@ func (s *Syncer) checkUnpushedCommits(ctx context.Context, paths []string) ([]Su
 	return results, nil
 }
 
-// CheckURLMismatches detects URL differences between .gitmodules and .git/config.
-// Public wrapper that fetches submodule paths for standalone use.
-func (s *Syncer) CheckURLMismatches(ctx context.Context) ([]URLMismatch, error) {
-	paths, err := s.listSubmodules(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return s.checkURLMismatches(ctx, paths)
-}
-
 // checkURLMismatches is the internal implementation that accepts pre-fetched paths.
 func (s *Syncer) checkURLMismatches(ctx context.Context, paths []string) ([]URLMismatch, error) {
 	if ctx.Err() != nil {
@@ -261,16 +231,6 @@ func (s *Syncer) checkURLMismatches(ctx context.Context, paths []string) ([]URLM
 	}
 
 	return results, nil
-}
-
-// CheckDetachedHEADs detects submodules in detached HEAD state.
-// Public wrapper that fetches submodule paths for standalone use.
-func (s *Syncer) CheckDetachedHEADs(ctx context.Context) ([]DetachedHEADStatus, error) {
-	paths, err := s.listSubmodules(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return s.checkDetachedHEADs(ctx, paths)
 }
 
 // checkDetachedHEADs is the internal implementation that accepts pre-fetched paths.

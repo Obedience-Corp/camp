@@ -276,12 +276,3 @@ func findPinForCwd(store *pins.Store, cwd, campaignRoot string) (pins.Pin, bool)
 	}
 	return pins.Pin{}, false
 }
-
-// pinNotFoundError returns an error with suggestions for similar pin names.
-func pinNotFoundError(name string, store *pins.Store) error {
-	names := store.Names()
-	if len(names) == 0 {
-		return fmt.Errorf("pin %q not found (no pins saved — use 'camp pin' to create one)", name)
-	}
-	return fmt.Errorf("pin %q not found (available: %s)", name, strings.Join(names, ", "))
-}

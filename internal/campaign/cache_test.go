@@ -8,6 +8,28 @@ import (
 	"testing"
 )
 
+func ClearCache() {
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+
+	cache.cwd = ""
+	cache.root = ""
+	cache.err = nil
+	cache.detected = false
+}
+
+func WarmCache(ctx context.Context) error {
+	_, err := DetectCached(ctx)
+	return err
+}
+
+func IsCached() bool {
+	cache.mu.RLock()
+	defer cache.mu.RUnlock()
+
+	return cache.detected
+}
+
 func TestDetectCached(t *testing.T) {
 	// Create temp campaign
 	tmpDir := t.TempDir()

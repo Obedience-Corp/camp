@@ -88,12 +88,11 @@ func chdirForTest(t *testing.T, dir string) {
 	if err := os.Chdir(dir); err != nil {
 		t.Fatalf("chdir %s: %v", dir, err)
 	}
-	campaign.ClearCache()
+	t.Setenv(campaign.EnvCacheDisable, "1")
 
 	t.Cleanup(func() {
 		if err := os.Chdir(origDir); err != nil {
 			t.Fatalf("restore cwd: %v", err)
 		}
-		campaign.ClearCache()
 	})
 }

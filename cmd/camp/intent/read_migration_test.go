@@ -93,8 +93,7 @@ func setupIntentReadCommandCampaign(t *testing.T) string {
 	}
 
 	t.Setenv(campaign.EnvCampaignRoot, root)
-	campaign.ClearCache()
-	t.Cleanup(campaign.ClearCache)
+	t.Setenv(campaign.EnvCacheDisable, "1")
 	return root
 }
 

@@ -307,12 +307,6 @@ func populateMovedPaths(ps *crawlPathSet, summaries ...*intdungeon.CrawlSummary)
 	}
 }
 
-func crawlMovedItemPaths(summaries ...*intdungeon.CrawlSummary) []string {
-	ps := newCrawlPathSet()
-	populateMovedPaths(ps, summaries...)
-	return ps.sorted()
-}
-
 // crawlCommitPaths returns the full set of paths to include in a crawl auto-commit:
 // destination paths for moved items, plus the crawl log.
 func crawlCommitPaths(relDungeon string, summaries ...*intdungeon.CrawlSummary) []string {

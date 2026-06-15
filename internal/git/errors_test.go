@@ -171,59 +171,6 @@ func TestLockError_Unwrap(t *testing.T) {
 	}
 }
 
-func TestNewLockError(t *testing.T) {
-	path := "/repo/.git/index.lock"
-	underlying := errors.New("test error")
-
-	lockErr := NewLockError(path, underlying)
-
-	if lockErr.Path != path {
-		t.Errorf("NewLockError().Path = %q, want %q", lockErr.Path, path)
-	}
-	if lockErr.Err != underlying {
-		t.Error("NewLockError().Err should be the underlying error")
-	}
-	if lockErr.Stale {
-		t.Error("NewLockError() should not be stale by default")
-	}
-	if lockErr.ProcessID != 0 {
-		t.Errorf("NewLockError().ProcessID = %d, want 0", lockErr.ProcessID)
-	}
-}
-
-func TestNewStaleLockError(t *testing.T) {
-	path := "/repo/.git/index.lock"
-
-	lockErr := NewStaleLockError(path)
-
-	if lockErr.Path != path {
-		t.Errorf("NewStaleLockError().Path = %q, want %q", lockErr.Path, path)
-	}
-	if !lockErr.Stale {
-		t.Error("NewStaleLockError() should be stale")
-	}
-}
-
-func TestNewActiveLockError(t *testing.T) {
-	path := "/repo/.git/index.lock"
-	pid := 12345
-
-	lockErr := NewActiveLockError(path, pid)
-
-	if lockErr.Path != path {
-		t.Errorf("NewActiveLockError().Path = %q, want %q", lockErr.Path, path)
-	}
-	if lockErr.ProcessID != pid {
-		t.Errorf("NewActiveLockError().ProcessID = %d, want %d", lockErr.ProcessID, pid)
-	}
-	if lockErr.Stale {
-		t.Error("NewActiveLockError() should not be stale")
-	}
-	if !errors.Is(lockErr, ErrLockActive) {
-		t.Error("NewActiveLockError() should wrap ErrLockActive")
-	}
-}
-
 func TestSentinelErrors(t *testing.T) {
 	// Verify sentinel errors are distinct
 	sentinels := []error{

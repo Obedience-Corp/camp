@@ -82,13 +82,13 @@ func TestConfigError(t *testing.T) {
 	}{
 		{
 			name:     "with underlying error",
-			err:      NewConfig("database.url", "invalid format", io.EOF),
+			err:      &ConfigError{Key: "database.url", Message: "invalid format", Err: io.EOF},
 			wantMsg:  "config error (database.url): invalid format: EOF",
 			wantWrap: io.EOF,
 		},
 		{
 			name:     "without underlying error",
-			err:      NewConfig("port", "must be between 1-65535", nil),
+			err:      &ConfigError{Key: "port", Message: "must be between 1-65535"},
 			wantMsg:  "config error (port): must be between 1-65535",
 			wantWrap: nil,
 		},
@@ -114,13 +114,13 @@ func TestIOError(t *testing.T) {
 	}{
 		{
 			name:     "with underlying error",
-			err:      NewIO("read", "/tmp/file.txt", io.EOF),
+			err:      &IOError{Op: "read", Path: "/tmp/file.txt", Err: io.EOF},
 			wantMsg:  "io read failed on /tmp/file.txt: EOF",
 			wantWrap: io.EOF,
 		},
 		{
 			name:     "without underlying error",
-			err:      NewIO("write", "/dev/null", nil),
+			err:      &IOError{Op: "write", Path: "/dev/null"},
 			wantMsg:  "io write failed on /dev/null",
 			wantWrap: nil,
 		},
@@ -146,13 +146,13 @@ func TestPermissionError(t *testing.T) {
 	}{
 		{
 			name:     "with underlying error",
-			err:      NewPermission("write", "/etc/config", io.EOF),
+			err:      &PermissionError{Action: "write", Resource: "/etc/config", Err: io.EOF},
 			wantMsg:  "permission denied: write on /etc/config: EOF",
 			wantWrap: io.EOF,
 		},
 		{
 			name:     "without underlying error",
-			err:      NewPermission("delete", "admin-resource", nil),
+			err:      &PermissionError{Action: "delete", Resource: "admin-resource"},
 			wantMsg:  "permission denied: delete on admin-resource",
 			wantWrap: nil,
 		},
@@ -184,7 +184,7 @@ func TestErrorsAs(t *testing.T) {
 	wrapped := fmt.Errorf("outer: %w", original)
 
 	var ve *ValidationError
-	if !As(wrapped, &ve) {
+	if !errors.As(wrapped, &ve) {
 		t.Fatal("As() should extract ValidationError from wrapped error")
 	}
 	if ve.Field != "name" {
@@ -368,7 +368,7 @@ func TestContextCancellation(t *testing.T) {
 	})
 
 	t.Run("typed error wrapping context.Canceled", func(t *testing.T) {
-		ioErr := NewIO("read", "/tmp/data", context.Canceled)
+		ioErr := &IOError{Op: "read", Path: "/tmp/data", Err: context.Canceled}
 		if !Is(ioErr, context.Canceled) {
 			t.Error("IOError wrapping context.Canceled should match with Is()")
 		}
@@ -385,7 +385,7 @@ func TestContextCancellation(t *testing.T) {
 func TestUnwrapAndNew(t *testing.T) {
 	original := New("base error")
 	wrapped := Wrap(original, "layer")
-	unwrapped := Unwrap(wrapped)
+	unwrapped := errors.Unwrap(wrapped)
 	if unwrapped == nil {
 		t.Fatal("Unwrap() should return the inner error")
 	}
@@ -473,7 +473,7 @@ func TestBoundaryError(t *testing.T) {
 		e := NewBoundary("read", "/outside", "/campaign", nil)
 		wrapped := fmt.Errorf("operation failed: %w", e)
 		var be *BoundaryError
-		if !As(wrapped, &be) {
+		if !errors.As(wrapped, &be) {
 			t.Fatal("errors.As failed to extract *BoundaryError")
 		}
 		if be.Path != "/outside" {
@@ -539,7 +539,7 @@ func TestGitError(t *testing.T) {
 		e := NewGit("checkout", "/path", "not_repo", "not a git repo", nil)
 		wrapped := fmt.Errorf("wrap: %w", e)
 		var ge *GitError
-		if !As(wrapped, &ge) {
+		if !errors.As(wrapped, &ge) {
 			t.Fatal("errors.As failed")
 		}
 		if ge.Op != "checkout" {
@@ -597,7 +597,7 @@ func TestCommandError(t *testing.T) {
 		e := NewCommand("go test", 1, "FAIL", nil)
 		wrapped := fmt.Errorf("test run: %w", e)
 		var ce *CommandError
-		if !As(wrapped, &ce) {
+		if !errors.As(wrapped, &ce) {
 			t.Fatal("errors.As failed to extract *CommandError")
 		}
 		if ce.ExitCode != 1 {

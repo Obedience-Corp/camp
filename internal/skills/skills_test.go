@@ -38,8 +38,7 @@ func setupCampaign(t *testing.T) string {
 func TestFindSkillsDir(t *testing.T) {
 	campaignRoot := setupCampaign(t)
 
-	// Clear cache and set env override for campaign detection
-	campaign.ClearCache()
+	// Set env override for campaign detection.
 	t.Setenv(campaign.EnvCampaignRoot, campaignRoot)
 	t.Setenv(campaign.EnvCacheDisable, "1")
 
@@ -58,7 +57,6 @@ func TestFindSkillsDir(t *testing.T) {
 func TestFindSkillsDir_NotInCampaign(t *testing.T) {
 	tmpDir := resolvePath(t, t.TempDir())
 
-	campaign.ClearCache()
 	t.Setenv(campaign.EnvCampaignRoot, "")
 	t.Setenv(campaign.EnvCacheDisable, "1")
 
@@ -85,7 +83,6 @@ func TestFindSkillsDir_NoSkillsDir(t *testing.T) {
 		t.Fatalf("create campaign dir: %v", err)
 	}
 
-	campaign.ClearCache()
 	t.Setenv(campaign.EnvCampaignRoot, tmpDir)
 	t.Setenv(campaign.EnvCacheDisable, "1")
 

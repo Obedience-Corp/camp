@@ -44,8 +44,7 @@ func TestStatusAll_JSON_NoCache(t *testing.T) {
 	}
 	installStatusAllFakeGit(t)
 	t.Setenv(campaign.EnvCampaignRoot, link)
-	campaign.ClearCache()
-	t.Cleanup(campaign.ClearCache)
+	t.Setenv(campaign.EnvCacheDisable, "1")
 
 	oldJSON := statusAllJSON
 	oldView := statusAllView
@@ -102,8 +101,7 @@ func TestStatusAll_JSON_NoCache(t *testing.T) {
 func TestStatusAllJSONNoSubmodulesEmitsEmptyContract(t *testing.T) {
 	root := setupStatusAllEmptyCampaign(t)
 	t.Setenv(campaign.EnvCampaignRoot, root)
-	campaign.ClearCache()
-	t.Cleanup(campaign.ClearCache)
+	t.Setenv(campaign.EnvCacheDisable, "1")
 	restoreStatusAllFlags(t)
 
 	statusAllJSON = true
@@ -144,8 +142,7 @@ func TestStatusAllJSONNoSubmodulesEmitsEmptyContract(t *testing.T) {
 func TestStatusAllNoSubmodulesWritesHumanMessageToStderr(t *testing.T) {
 	root := setupStatusAllEmptyCampaign(t)
 	t.Setenv(campaign.EnvCampaignRoot, root)
-	campaign.ClearCache()
-	t.Cleanup(campaign.ClearCache)
+	t.Setenv(campaign.EnvCacheDisable, "1")
 	restoreStatusAllFlags(t)
 
 	statusAllJSON = false

@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Obedience-Corp/camp/internal/campaign"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
@@ -142,8 +141,6 @@ func TestExecInCategory_Success(t *testing.T) {
 		t.Fatalf("Failed to chdir: %v", err)
 	}
 
-	campaign.ClearCache()
-
 	ctx := context.Background()
 
 	// Run 'pwd' in projects directory
@@ -170,8 +167,6 @@ func TestExecInCategory_NoCommand(t *testing.T) {
 		t.Fatalf("Failed to chdir: %v", err)
 	}
 
-	campaign.ClearCache()
-
 	ctx := context.Background()
 
 	_, err := ExecInCategory(ctx, CategoryProjects, nil)
@@ -188,8 +183,6 @@ func TestExecInCategory_MissingCategory(t *testing.T) {
 	if err := os.Chdir(dir); err != nil {
 		t.Fatalf("Failed to chdir: %v", err)
 	}
-
-	campaign.ClearCache()
 
 	ctx := context.Background()
 
@@ -213,8 +206,6 @@ func TestExecInCategory_CampaignRoot(t *testing.T) {
 	if err := os.Chdir(dir); err != nil {
 		t.Fatalf("Failed to chdir: %v", err)
 	}
-
-	campaign.ClearCache()
 
 	ctx := context.Background()
 

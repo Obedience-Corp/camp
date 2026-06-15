@@ -3,7 +3,6 @@ package git
 import (
 	"context"
 	"log/slog"
-	"os/exec"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
@@ -191,56 +190,6 @@ func (e *Executor) CleanLocks(ctx context.Context) (*RemovalResult, error) {
 		e.logger.Debug("cleaning locks", "path", e.path)
 	}
 	return CleanStaleLocks(ctx, e.path, e.logger)
-}
-
-// SubmoduleExecutor wraps Executor with submodule-specific behavior.
-type SubmoduleExecutor struct {
-	*Executor
-	info *SubmoduleInfo
-}
-
-// NewSubmoduleExecutor creates an executor for a submodule.
-func NewSubmoduleExecutor(path string, opts ...ExecutorOption) (*SubmoduleExecutor, error) {
-	info, err := GetSubmoduleInfo(path)
-	if err != nil {
-		return nil, err
-	}
-
-	exec, err := NewExecutor(info.Path, opts...)
-	if err != nil {
-		return nil, err
-	}
-
-	return &SubmoduleExecutor{
-		Executor: exec,
-		info:     info,
-	}, nil
-}
-
-// Info returns submodule information.
-func (e *SubmoduleExecutor) Info() *SubmoduleInfo {
-	return e.info
-}
-
-// ParentNeedsCommit checks if parent repo shows this submodule as modified.
-func (e *SubmoduleExecutor) ParentNeedsCommit(ctx context.Context) (bool, error) {
-	if e.info.ParentRepo == "" {
-		return false, nil
-	}
-
-	// Check if submodule is modified in parent
-	cmd := exec.CommandContext(ctx, "git", "-C", e.info.ParentRepo,
-		"diff", "--quiet", "--", e.info.Path)
-	err := cmd.Run()
-
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
-			return true, nil // Submodule modified in parent
-		}
-		return false, camperrors.Wrap(err, "failed to check parent status")
-	}
-
-	return false, nil
 }
 
 // Ensure Executor implements GitExecutor.
