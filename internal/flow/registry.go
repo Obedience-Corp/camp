@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"gopkg.in/yaml.v3"
 )
 
@@ -73,7 +74,7 @@ func SaveRegistry(campaignRoot string, registry *Registry) error {
 		return fmt.Errorf("marshaling registry to YAML: %w", err)
 	}
 
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := fsutil.WriteFileAtomically(path, data, 0644); err != nil {
 		return fmt.Errorf("writing registry file: %w", err)
 	}
 

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/fsutil"
 )
 
 // AllowlistConfigFile is the name of the allowlist configuration file.
@@ -81,7 +82,7 @@ func SaveAllowlistConfig(ctx context.Context, campaignRoot string, cfg *Allowlis
 		return camperrors.Wrap(err, "failed to marshal allowlist config")
 	}
 
-	if err := os.WriteFile(configPath, data, 0644); err != nil {
+	if err := fsutil.WriteFileAtomically(configPath, data, 0644); err != nil {
 		return camperrors.Wrap(err, "failed to write allowlist config")
 	}
 

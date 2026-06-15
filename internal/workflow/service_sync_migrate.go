@@ -9,6 +9,7 @@ import (
 
 	dungeonscaffold "github.com/Obedience-Corp/camp/internal/dungeon/scaffold"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"gopkg.in/yaml.v3"
 )
 
@@ -108,7 +109,7 @@ func (s *Service) Migrate(ctx context.Context, opts MigrateOptions) (*MigrateRes
 			return nil, camperrors.Wrap(err, "failed to marshal schema")
 		}
 
-		if err := os.WriteFile(s.schemaPath, data, 0644); err != nil {
+		if err := fsutil.WriteFileAtomically(s.schemaPath, data, 0644); err != nil {
 			return nil, camperrors.Wrap(err, "failed to write schema file")
 		}
 		result.Created = append(result.Created, s.schemaPath)
@@ -140,7 +141,7 @@ func (s *Service) Migrate(ctx context.Context, opts MigrateOptions) (*MigrateRes
 				if err != nil {
 					return nil, camperrors.Wrapf(err, "failed to read template for %s", obey.path)
 				}
-				if err := os.WriteFile(obey.path, content, 0644); err != nil {
+				if err := fsutil.WriteFileAtomically(obey.path, content, 0644); err != nil {
 					return nil, camperrors.Wrapf(err, "failed to write %s", obey.path)
 				}
 				result.Created = append(result.Created, obey.path)
@@ -228,7 +229,7 @@ func (s *Service) migrateV1ToV2(ctx context.Context, dryRun bool, moveItem workf
 		if err != nil {
 			return nil, camperrors.Wrap(err, "marshaling v2 schema")
 		}
-		if err := os.WriteFile(s.schemaPath, data, 0644); err != nil {
+		if err := fsutil.WriteFileAtomically(s.schemaPath, data, 0644); err != nil {
 			return nil, camperrors.Wrap(err, "writing v2 schema")
 		}
 		s.schema = newSchema

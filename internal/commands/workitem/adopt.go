@@ -11,6 +11,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/fsutil"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 )
 
@@ -94,7 +95,7 @@ func runAdopt(ctx context.Context, cmd *cobra.Command, dir, typeFlag, title, idO
 	if err != nil {
 		return camperrors.Wrap(err, "marshal metadata")
 	}
-	if err := atomicWriteFile(markerPath, buf, 0o644); err != nil {
+	if err := fsutil.WriteFileAtomically(markerPath, buf, 0o644); err != nil {
 		return err
 	}
 	// Adoption writes inside an existing directory, which may not update the
