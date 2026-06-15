@@ -105,3 +105,18 @@ func TestRefsFromWorkitems(t *testing.T) {
 		t.Fatalf("missing expected refs: %v", set)
 	}
 }
+
+func TestRefOf_HandlesNilAndEmpty(t *testing.T) {
+	if got := RefOf(nil); got != "" {
+		t.Fatalf("nil workitem: got %q, want empty", got)
+	}
+	if got := RefOf(&WorkItem{}); got != "" {
+		t.Fatalf("empty SourceMetadata: got %q, want empty", got)
+	}
+	wi := &WorkItem{
+		SourceMetadata: map[string]any{"ref": "WI-abcdef"},
+	}
+	if got := RefOf(wi); got != "WI-abcdef" {
+		t.Fatalf("got %q, want WI-abcdef", got)
+	}
+}

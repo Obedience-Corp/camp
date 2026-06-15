@@ -22,17 +22,7 @@ func resolveProjectCommitContext(ctx context.Context, campaignRoot, explicit str
 	if err != nil || res == nil || res.Workitem == nil {
 		return "", ""
 	}
-	return res.QuestID, workitemRefFor(res.Workitem)
-}
-
-func workitemRefFor(wi *wkitem.WorkItem) string {
-	if wi == nil || wi.SourceMetadata == nil {
-		return ""
-	}
-	if v, ok := wi.SourceMetadata["ref"].(string); ok {
-		return v
-	}
-	return ""
+	return res.QuestID, wkitem.RefOf(res.Workitem)
 }
 
 // workitemEnvForProjectCommit resolves the active workitem and returns the
