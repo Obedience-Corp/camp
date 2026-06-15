@@ -508,42 +508,23 @@ func runShortcutsAddJump(cmd *cobra.Command, args []string) error {
 		description, _ = cmd.Flags().GetString("description")
 		concept, _ = cmd.Flags().GetString("concept")
 
-		// Validate: must have path or concept
-		if shortcutPath == "" && concept == "" {
-			return fmt.Errorf("shortcut must have a path or concept (use -c to specify concept)")
-		}
 	}
 
-	// Load jumps config
-	jumps, err := config.LoadJumpsConfig(ctx, root)
+	// Build the validated jumps update; output and saving stay in cmd.
+	plan, err := shortcuts.PrepareAddJump(ctx, root, shortcuts.AddJumpInput{
+		Name:        shortcutName,
+		Path:        shortcutPath,
+		Description: description,
+		Concept:     concept,
+	})
 	if err != nil {
-		return camperrors.Wrap(err, "failed to load jumps config")
+		return err
 	}
 
-	// Create default jumps config if nil
-	if jumps == nil {
-		defaultJumps := config.DefaultJumpsConfig()
-		jumps = &defaultJumps
-	}
-
-	// Initialize shortcuts map if nil
-	if jumps.Shortcuts == nil {
-		jumps.Shortcuts = make(map[string]config.ShortcutConfig)
-	}
-
-	// Validate path exists if provided
-	if shortcutPath != "" {
-		fullPath := filepath.Join(root, shortcutPath)
-		if stat, err := os.Stat(fullPath); err != nil || !stat.IsDir() {
-			return fmt.Errorf("path does not exist or is not a directory: %s", fullPath)
-		}
-	}
-
-	// Check if shortcut already exists
-	if existing, ok := jumps.Shortcuts[shortcutName]; ok {
+	if plan.Existing != nil {
 		fmt.Printf("%s Updating shortcut '%s'\n", ui.WarningIcon(), shortcutName)
-		if existing.Path != "" {
-			fmt.Printf("  Old path: %s\n", ui.Dim(existing.Path))
+		if plan.Existing.Path != "" {
+			fmt.Printf("  Old path: %s\n", ui.Dim(plan.Existing.Path))
 		}
 		if shortcutPath != "" {
 			fmt.Printf("  New path: %s\n", ui.Value(shortcutPath))
@@ -552,15 +533,11 @@ func runShortcutsAddJump(cmd *cobra.Command, args []string) error {
 		fmt.Printf("%s Adding shortcut '%s'\n", ui.SuccessIcon(), shortcutName)
 	}
 
-	// Create shortcut config. Shortcuts added via the CLI are always
-	// user-sourced so the repair system preserves them on reset/diff.
-	sc := shortcuts.NewUserShortcut(shortcutPath, description, concept)
-
 	// Add/update the shortcut
-	jumps.Shortcuts[shortcutName] = sc
+	plan.Jumps.Shortcuts[shortcutName] = plan.Shortcut
 
 	// Save jumps config
-	if err := config.SaveJumpsConfig(ctx, root, jumps); err != nil {
+	if err := config.SaveJumpsConfig(ctx, root, plan.Jumps); err != nil {
 		return camperrors.Wrap(err, "failed to save jumps config")
 	}
 
