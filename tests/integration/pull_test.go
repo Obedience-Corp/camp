@@ -152,6 +152,33 @@ func TestPullAll_FfOnlyOverride(t *testing.T) {
 	require.True(t, exists, "ff.txt should be present after ff-only pull")
 }
 
+func TestPullAll_FfOnlyDivergentBranchesFails(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	const campaignDir = "/campaigns/pull-ffonly-diverge"
+	setupPullLockRootRepo(t, tc, campaignDir)
+
+	tc.Shell(t, `
+		git clone /test/root-remote.git /test/root-seed-ff-diverge
+		cd /test/root-seed-ff-diverge
+		printf 'remote line' > remote_ff.txt
+		git add remote_ff.txt
+		git commit -m 'remote ff diverge'
+		git push origin main
+	`)
+
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s
+		printf 'local line' > local_ff.txt
+		git add local_ff.txt
+		git commit -m 'local ff diverge'
+	`, campaignDir))
+
+	output, err := tc.RunCampInDir(campaignDir, "pull", "all", "--ff-only")
+	require.Error(t, err, "pull all --ff-only should fail on divergent branches")
+	require.Contains(t, output, "Not possible to fast-forward")
+}
+
 func TestPullAll_RebaseConflictAutoAborts(t *testing.T) {
 	tc := GetSharedContainer(t)
 
