@@ -42,6 +42,9 @@ func init() {
 
 func runSettings(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
+	if !ui.IsTerminal() {
+		return camperrors.Wrap(camperrors.ErrInvalidInput, "settings requires an interactive terminal")
+	}
 
 	// Check if we're in a campaign
 	_, _, err := config.LoadCampaignConfigFromCwd(ctx)

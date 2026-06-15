@@ -54,6 +54,9 @@ func init() {
 
 func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
+	if !ui.IsTerminal() {
+		return camperrors.Wrap(camperrors.ErrInvalidInput, "dungeon crawl requires an interactive terminal")
+	}
 	triageFlag, _ := cmd.Flags().GetBool("triage")
 	innerFlag, _ := cmd.Flags().GetBool("inner")
 

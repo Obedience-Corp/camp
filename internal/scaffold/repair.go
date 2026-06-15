@@ -754,7 +754,9 @@ func removeEmptySourceDir(dir string) {
 			return
 		}
 	}
-	_ = os.RemoveAll(dir)
+	if err := os.RemoveAll(dir); err != nil {
+		fmt.Fprintf(os.Stderr, "camp repair warning: failed to remove legacy dir %s: %v\n", dir, err)
+	}
 }
 
 // sortedKeys returns map keys in sorted order.

@@ -17,6 +17,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/intent/tui/explorer"
 	"github.com/Obedience-Corp/camp/internal/paths"
+	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
 var intentExploreCmd = &cobra.Command{
@@ -66,6 +67,11 @@ VIEW
 Examples:
   camp intent explore          Launch the intent explorer`,
 	Args: cobra.NoArgs,
+	Annotations: map[string]string{
+		"agent_allowed": "false",
+		"agent_reason":  "requires interactive terminal",
+		"interactive":   "true",
+	},
 	RunE: runIntentExplore,
 }
 
@@ -75,6 +81,9 @@ func init() {
 
 func runIntentExplore(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
+	if !ui.IsTerminal() {
+		return camperrors.Wrap(camperrors.ErrInvalidInput, "intent explore requires an interactive terminal")
+	}
 
 	// Find campaign root
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)

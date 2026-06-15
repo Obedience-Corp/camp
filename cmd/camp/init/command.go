@@ -3,6 +3,7 @@ package initcmd
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/fest"
 	"github.com/Obedience-Corp/camp/internal/nav/tui"
 	"github.com/Obedience-Corp/camp/internal/scaffold"
 	intskills "github.com/Obedience-Corp/camp/internal/skills"
@@ -75,6 +77,7 @@ Use --no-git to skip git initialization.`,
 	cmd.Flags().Bool("dry-run", false, "Show what would be done without creating anything")
 	cmd.Flags().Bool("repair", false, "Add missing files to existing campaign")
 	cmd.Flags().Bool("yes", false, "Skip repair confirmation prompt (for scripting)")
+	cmd.Flags().BoolP("verbose", "v", false, "Show skipped optional setup details")
 
 	return cmd
 }
@@ -289,7 +292,11 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 	// Initialize Festival Methodology (unless dry-run).
 	var festInitialized bool
 	if !p.DryRun {
-		festInitialized, _ = initializeFestivals(ctx, result.CampaignRoot, w)
+		var festErr error
+		festInitialized, festErr = initializeFestivals(ctx, result.CampaignRoot, w)
+		if festErr != nil && !errors.Is(festErr, fest.ErrFestNotFound) {
+			return festErr
+		}
 	}
 
 	// Print results

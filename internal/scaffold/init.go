@@ -2,6 +2,7 @@ package scaffold
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -21,6 +22,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/lancekrogers/guild-scaffold/pkg/scaffold"
 )
+
+// ErrFestNotInstalled indicates that the fest CLI is unavailable during init.
+var ErrFestNotInstalled = errors.New("fest not installed")
 
 // InitOptions configures the campaign initialization.
 type InitOptions struct {
@@ -354,8 +358,12 @@ workitems/current.yaml
 	// Initialize festivals directory via fest CLI if it doesn't exist
 	if !opts.DryRun {
 		if err := initFestivalsIfNeeded(ctx, absDir); err != nil {
-			// Log the error but don't fail - user can run fest init manually
-			result.Skipped = append(result.Skipped, "festivals/ (fest init failed - run manually)")
+			if errors.Is(err, ErrFestNotInstalled) {
+				result.Skipped = append(result.Skipped, "festivals/ (fest not installed; run 'fest init' after installing)")
+			} else {
+				fmt.Fprintf(os.Stderr, "Warning: fest init failed: %v\n", err)
+				result.Skipped = append(result.Skipped, "festivals/ (fest init failed - run manually)")
+			}
 		} else {
 			// Check if festivals was created
 			festivalsPath := filepath.Join(absDir, "festivals")
@@ -380,7 +388,7 @@ workitems/current.yaml
 		if err := config.UpdateRegistry(ctx, func(reg *config.Registry) error {
 			return reg.Register(campaignID, name, absDir, opts.Type)
 		}); err != nil {
-			fmt.Fprintf(os.Stderr, "camp: warning: failed to register campaign: %v\n", err)
+			return nil, camperrors.Wrap(err, "failed to register campaign")
 		}
 	}
 
@@ -426,8 +434,7 @@ func initFestivalsIfNeeded(ctx context.Context, dir string) error {
 	// Check if fest is available
 	festPath, err := exec.LookPath("fest")
 	if err != nil {
-		// fest not installed, skip silently - user can run fest init manually
-		return nil
+		return ErrFestNotInstalled
 	}
 
 	cmd := exec.CommandContext(ctx, festPath, "init", "--path", dir)

@@ -56,6 +56,9 @@ func init() {
 
 func runIntentCrawl(cmd *cobra.Command, _ []string) error {
 	ctx := cmd.Context()
+	if !ui.IsTerminal() {
+		return camperrors.Wrap(camperrors.ErrInvalidInput, "intent crawl requires an interactive terminal")
+	}
 
 	statusFlags, _ := cmd.Flags().GetStringSlice("status")
 	limit, _ := cmd.Flags().GetInt("limit")
