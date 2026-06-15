@@ -71,6 +71,37 @@ func TestPriority_SetLevels(t *testing.T) {
 	}
 }
 
+func TestPrioritySetPrunesStaleEntries(t *testing.T) {
+	root := linkTestCampaign(t)
+	restore := chdir(t, root)
+	defer restore()
+
+	store := priority.NewStore()
+	priority.Set(store, "design:workflow/design/stale", priority.Low)
+	if err := priority.Save(priority.StorePath(root), store); err != nil {
+		t.Fatalf("save stale priority: %v", err)
+	}
+
+	if _, err := runPriorityCmd(t, testWorkitemID, "high", false); err != nil {
+		t.Fatalf("runPriority: %v", err)
+	}
+
+	store, err := priority.Load(priority.StorePath(root))
+	if err != nil {
+		t.Fatalf("load priority store: %v", err)
+	}
+	if _, ok := store.ManualPriorities["design:workflow/design/stale"]; ok {
+		t.Fatal("expected stale priority entry to be pruned")
+	}
+	entry, ok := store.ManualPriorities[testWorkitemKey]
+	if !ok {
+		t.Fatalf("expected priority entry for %s", testWorkitemKey)
+	}
+	if entry.Priority != priority.High {
+		t.Fatalf("priority = %q, want %q", entry.Priority, priority.High)
+	}
+}
+
 func TestPriority_ClearRemovesEntryAndDeletesEmptyStore(t *testing.T) {
 	root := linkTestCampaign(t)
 	restore := chdir(t, root)

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -409,6 +410,67 @@ func TestModel_RefilterShrinksViewport(t *testing.T) {
 	view := m.View()
 	if !strings.Contains(view, smallItems[0].Title) {
 		t.Error("view should contain first item after shrink")
+	}
+}
+
+func TestModel_RefreshDoesNotPrunePriorityStore(t *testing.T) {
+	root := t.TempDir()
+	items := makeTestItems(1)
+	store := priority.NewStore()
+	priority.Set(store, "test:stale", priority.High)
+	storePath := priority.StorePath(root)
+	if err := priority.Save(storePath, store); err != nil {
+		t.Fatalf("save priority store: %v", err)
+	}
+	before, err := os.ReadFile(storePath)
+	if err != nil {
+		t.Fatalf("read priority store before refresh: %v", err)
+	}
+
+	m := New(context.Background(), items, root, nil, store, storePath)
+	result, _ := m.Update(refreshMsg{items: items})
+	_ = result.(Model)
+
+	after, err := os.ReadFile(storePath)
+	if err != nil {
+		t.Fatalf("read priority store after refresh: %v", err)
+	}
+	if !bytes.Equal(after, before) {
+		t.Fatal("refresh pruned priority store during read")
+	}
+}
+
+func TestModel_AssignPriorityPrunesStaleEntries(t *testing.T) {
+	root := t.TempDir()
+	items := makeTestItems(1)
+	store := priority.NewStore()
+	priority.Set(store, "test:stale", priority.Low)
+	storePath := priority.StorePath(root)
+	if err := priority.Save(storePath, store); err != nil {
+		t.Fatalf("save priority store: %v", err)
+	}
+
+	loaded, err := priority.Load(storePath)
+	if err != nil {
+		t.Fatalf("load priority store: %v", err)
+	}
+	m := New(context.Background(), items, root, nil, loaded, storePath)
+	result, _ := m.assignPriority(priority.High)
+	_ = result.(Model)
+
+	updated, err := priority.Load(storePath)
+	if err != nil {
+		t.Fatalf("load updated priority store: %v", err)
+	}
+	if _, ok := updated.ManualPriorities["test:stale"]; ok {
+		t.Fatal("expected stale priority entry to be pruned")
+	}
+	entry, ok := updated.ManualPriorities[items[0].Key]
+	if !ok {
+		t.Fatalf("expected priority entry for %s", items[0].Key)
+	}
+	if entry.Priority != priority.High {
+		t.Fatalf("priority = %q, want %q", entry.Priority, priority.High)
 	}
 }
 

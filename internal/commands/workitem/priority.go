@@ -13,6 +13,8 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
+	"github.com/Obedience-Corp/camp/internal/paths"
+	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/priority"
 	"github.com/Obedience-Corp/camp/internal/workitem/selector"
 )
@@ -72,7 +74,7 @@ func runPriority(ctx context.Context, cmd *cobra.Command, selectorArg, levelArg 
 		return err
 	}
 
-	_, root, err := config.LoadCampaignConfigFromCwd(ctx)
+	cfg, root, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
 		return camperrors.Wrap(err, "not in a campaign directory")
 	}
@@ -81,6 +83,12 @@ func runPriority(ctx context.Context, cmd *cobra.Command, selectorArg, levelArg 
 	if err != nil {
 		return err
 	}
+	resolver := paths.NewResolverFromConfig(root, cfg)
+	items, err := wkitem.Discover(ctx, root, resolver)
+	if err != nil {
+		return camperrors.Wrap(err, "discovering work items")
+	}
+	validKeys := priority.ValidKeys(items)
 
 	storePath := priority.StorePath(root)
 	if err := priority.WithLock(ctx, storePath, func(store *priority.Store) error {
@@ -89,6 +97,7 @@ func runPriority(ctx context.Context, cmd *cobra.Command, selectorArg, levelArg 
 		} else {
 			priority.Set(store, wi.Key, level)
 		}
+		priority.Prune(store, validKeys)
 		return nil
 	}); err != nil {
 		return camperrors.Wrap(err, "updating priority store")

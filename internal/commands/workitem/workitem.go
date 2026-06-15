@@ -74,20 +74,11 @@ Examples:
 				return camperrors.Wrap(err, "discovering work items")
 			}
 
-			// Load priority store and prune stale entries against full discovery set.
+			// Load priority store read-only; pruning happens only in explicit write paths.
 			storePath := priority.StorePath(campaignRoot)
 			store, err := priority.Load(storePath)
 			if err != nil {
 				return camperrors.Wrap(err, "loading priority store")
-			}
-			validKeys := make(map[string]bool, len(items))
-			for _, item := range items {
-				validKeys[item.Key] = true
-			}
-			if priority.Prune(store, validKeys) {
-				if err := priority.SaveOrDelete(storePath, store); err != nil {
-					return camperrors.Wrap(err, "saving pruned priority store")
-				}
 			}
 
 			// Apply priority overlay and re-sort with priority buckets.
