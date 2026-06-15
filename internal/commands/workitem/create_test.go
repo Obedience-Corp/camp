@@ -2,6 +2,8 @@ package workitem
 
 import (
 	"context"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -95,5 +97,69 @@ func TestRunCreateWritesWorkitemMarker(t *testing.T) {
 	}
 	if meta.Ref == "" {
 		t.Fatal("expected ref to be written")
+	}
+}
+
+func TestRunCreate_DeriveFailureLeavesNoTargetAndRetrySucceeds(t *testing.T) {
+	root := refQuestTestCampaign(t)
+	restore := chdir(t, root)
+	defer restore()
+	t.Setenv("CAMP_QUEST", "")
+
+	target := filepath.Join(root, "workflow", "design", "retryable")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	cmd := &cobra.Command{}
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	err := runCreate(ctx, cmd, "retryable", "design", "Retryable", "design-retryable-id", "", "", false)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("runCreate canceled error = %v, want context.Canceled", err)
+	}
+	if _, statErr := os.Stat(target); !os.IsNotExist(statErr) {
+		t.Fatalf("target dir after failed create stat err = %v, want not exist", statErr)
+	}
+
+	cmd = &cobra.Command{}
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	if err := runCreate(context.Background(), cmd, "retryable", "design", "Retryable", "design-retryable-id", "", "", false); err != nil {
+		t.Fatalf("immediate retry runCreate() error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(target, ".workitem")); err != nil {
+		t.Fatalf("retry did not create marker: %v", err)
+	}
+
+	err = runCreate(context.Background(), cmd, "retryable", "design", "Retryable", "", "", "", false)
+	if err == nil || !strings.Contains(err.Error(), "use `camp workitem adopt`") {
+		t.Fatalf("second create error = %v, want adopt guidance", err)
+	}
+}
+
+func TestRunCreate_PreExistingNonEmptyDirRequiresAdopt(t *testing.T) {
+	root := refQuestTestCampaign(t)
+	restore := chdir(t, root)
+	defer restore()
+	t.Setenv("CAMP_QUEST", "")
+
+	target := filepath.Join(root, "workflow", "design", "legacy")
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatalf("mkdir target: %v", err)
+	}
+	contentPath := filepath.Join(target, "README.md")
+	if err := os.WriteFile(contentPath, []byte("existing work\n"), 0o644); err != nil {
+		t.Fatalf("write existing content: %v", err)
+	}
+
+	cmd := &cobra.Command{}
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	err := runCreate(context.Background(), cmd, "legacy", "design", "Legacy", "", "", "", false)
+	if err == nil || !strings.Contains(err.Error(), "use `camp workitem adopt`") {
+		t.Fatalf("runCreate existing dir error = %v, want adopt guidance", err)
+	}
+	if _, err := os.Stat(contentPath); err != nil {
+		t.Fatalf("existing content was modified or removed: %v", err)
 	}
 }

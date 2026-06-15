@@ -75,7 +75,15 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 		return err
 	}
 
+	ref, err := deriveUniqueRef(ctx, campaignRoot, cfg, id)
+	if err != nil {
+		return err
+	}
+	questID := resolveQuestIDForCreate(ctx, cmd, campaignRoot, questSelector)
+
 	target := filepath.Join(campaignRoot, parent, slug)
+	// Existing directories still require explicit adopt or manual cleanup. This
+	// command only cleans up an empty directory it created in this invocation.
 	if _, err := os.Stat(target); err == nil {
 		return camperrors.NewValidation("path",
 			"target directory already exists: "+target+" — use `camp workitem adopt` to attach metadata to an existing dir", nil)
@@ -83,12 +91,12 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 	if err := os.MkdirAll(target, 0o755); err != nil {
 		return camperrors.Wrap(err, "create directory")
 	}
-
-	ref, err := deriveUniqueRef(ctx, campaignRoot, cfg, id)
-	if err != nil {
-		return err
-	}
-	questID := resolveQuestIDForCreate(ctx, cmd, campaignRoot, questSelector)
+	markerWritten := false
+	defer func() {
+		if !markerWritten {
+			_ = os.Remove(target)
+		}
+	}()
 
 	meta := wkitem.Metadata{
 		Version: wkitem.WorkitemSchemaVersion,
@@ -106,6 +114,7 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 	if err := fsutil.WriteFileAtomically(filepath.Join(target, ".workitem"), buf, 0o644); err != nil {
 		return err
 	}
+	markerWritten = true
 	invalidateNavigationCache(cmd, campaignRoot)
 
 	rel := filepath.Join(parent, slug)
