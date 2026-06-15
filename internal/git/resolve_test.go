@@ -88,6 +88,34 @@ func TestResolveTarget_ContextCancelled(t *testing.T) {
 	}
 }
 
+func TestResolveTarget_SymlinkedCampaignRoot(t *testing.T) {
+	ctx := context.Background()
+	realRoot := t.TempDir()
+	initGitRepo(t, realRoot)
+
+	linkRoot := filepath.Join(t.TempDir(), "campaign-link")
+	if err := os.Symlink(realRoot, linkRoot); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(wd) })
+	if err := os.Chdir(realRoot); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := ResolveTarget(ctx, linkRoot, true, "")
+	if err != nil {
+		t.Fatalf("ResolveTarget() error = %v", err)
+	}
+	if result.IsSubmodule {
+		t.Fatal("ResolveTarget() treated symlinked campaign root as submodule")
+	}
+}
+
 func TestExtractSubFlags(t *testing.T) {
 	tests := []struct {
 		name          string

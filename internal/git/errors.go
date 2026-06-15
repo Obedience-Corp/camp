@@ -174,9 +174,27 @@ func ClassifyGitError(stderr string, exitCode int) GitErrorType {
 		strings.Contains(lower, "failed to connect"),
 		strings.Contains(lower, "connection timed out"):
 		return GitErrorNetwork
-	case strings.Contains(lower, "submodule"):
+	case isSubmoduleError(lower):
 		return GitErrorSubmodule
 	default:
 		return GitErrorUnknown
 	}
+}
+
+func isSubmoduleError(lower string) bool {
+	patterns := []string{
+		"submodule '",
+		"submodule path",
+		"submodule update",
+		"submodule not initialized",
+		"no submodule mapping found",
+		"is already a submodule",
+		"not a submodule",
+	}
+	for _, pattern := range patterns {
+		if strings.Contains(lower, pattern) {
+			return true
+		}
+	}
+	return false
 }

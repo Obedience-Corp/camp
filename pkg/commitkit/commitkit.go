@@ -13,8 +13,6 @@ package commitkit
 import (
 	"context"
 	"fmt"
-	"os/exec"
-	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
@@ -170,12 +168,11 @@ func ShortHash(ctx context.Context, repoPath string) (string, error) {
 	if ctx.Err() != nil {
 		return "", ctx.Err()
 	}
-	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "rev-parse", "--short", "HEAD")
-	out, err := cmd.Output()
+	hash, err := git.Output(ctx, repoPath, "rev-parse", "--short", "HEAD")
 	if err != nil {
 		return "", camperrors.Wrap(err, "commitkit: rev-parse --short HEAD")
 	}
-	return strings.TrimSpace(string(out)), nil
+	return hash, nil
 }
 
 // SyncSubmoduleRef stages the updated submodule pointer for projectRelPath

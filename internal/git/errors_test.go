@@ -93,6 +93,12 @@ func TestClassifyGitError(t *testing.T) {
 			want:     GitErrorSubmodule,
 		},
 		{
+			name:     "submodule word in unrelated error",
+			stderr:   "fatal: documentation mentioned submodule but no operation failed",
+			exitCode: 128,
+			want:     GitErrorUnknown,
+		},
+		{
 			name:     "unknown error",
 			stderr:   "fatal: some unknown git error occurred",
 			exitCode: 1,
@@ -115,6 +121,29 @@ func TestClassifyGitError(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestClassifyGitErrorLocale(t *testing.T) {
+	if got := ClassifyGitError("nichts zu committen, Arbeitsverzeichnis sauber", 1); got != GitErrorUnknown {
+		t.Fatalf("localized stderr classification = %v, want %v", got, GitErrorUnknown)
+	}
+
+	env := gitEnv([]string{"PATH=/bin", "LANG=de_DE.UTF-8", "LC_ALL=de_DE.UTF-8"})
+	if !containsEnv(env, "LANG=C") || !containsEnv(env, "LC_ALL=C") {
+		t.Fatalf("gitEnv() = %v, want LANG=C and LC_ALL=C", env)
+	}
+	if containsEnv(env, "LANG=de_DE.UTF-8") || containsEnv(env, "LC_ALL=de_DE.UTF-8") {
+		t.Fatalf("gitEnv() kept localized git env: %v", env)
+	}
+}
+
+func containsEnv(env []string, want string) bool {
+	for _, item := range env {
+		if item == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestLockError_Error(t *testing.T) {

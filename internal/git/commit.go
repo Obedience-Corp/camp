@@ -533,7 +533,7 @@ func StageFiles(ctx context.Context, repoPath string, files ...string) error {
 }
 
 // StageAllExcluding stages all changes except paths matching the given exclusions.
-// Uses git pathspec exclusion (`:!path`) for atomic single-operation staging.
+// Uses git literal pathspec exclusions for atomic single-operation staging.
 func StageAllExcluding(ctx context.Context, repoPath string, excludePaths []string) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
@@ -545,7 +545,7 @@ func StageAllExcluding(ctx context.Context, repoPath string, excludePaths []stri
 
 	files := []string{"--", "."}
 	for _, p := range excludePaths {
-		files = append(files, ":!"+p)
+		files = append(files, ":(exclude,literal)"+p)
 	}
 	return Stage(ctx, repoPath, files)
 }

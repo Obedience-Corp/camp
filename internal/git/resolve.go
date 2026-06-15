@@ -77,9 +77,7 @@ func resolveFromCwd(_ context.Context, campaignRoot string) (*TargetResult, erro
 	}
 
 	// If we're in the campaign root, just return it
-	absRoot, _ := filepath.Abs(root)
-	absCamp, _ := filepath.Abs(campaignRoot)
-	if absRoot == absCamp {
+	if sameFilesystemPath(root, campaignRoot) {
 		return &TargetResult{
 			Path:        campaignRoot,
 			IsSubmodule: false,
@@ -144,4 +142,19 @@ func ExtractSubFlags(args []string) (remaining []string, sub bool, project strin
 	}
 
 	return remaining, sub, project
+}
+
+func sameFilesystemPath(a, b string) bool {
+	canon := func(path string) string {
+		abs, err := filepath.Abs(path)
+		if err != nil {
+			return filepath.Clean(path)
+		}
+		resolved, err := filepath.EvalSymlinks(abs)
+		if err != nil {
+			return filepath.Clean(abs)
+		}
+		return filepath.Clean(resolved)
+	}
+	return canon(a) == canon(b)
 }

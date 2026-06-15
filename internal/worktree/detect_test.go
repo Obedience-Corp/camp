@@ -104,6 +104,34 @@ func TestDetector_DetectFromPath_RegularGitDir(t *testing.T) {
 	}
 }
 
+func TestDetector_GetCurrentBranchRelativeGitdir(t *testing.T) {
+	tmpDir := t.TempDir()
+	detector := newTestDetector(t, tmpDir)
+
+	wtPath := filepath.Join(tmpDir, "projects", "worktrees", "my-api", "feature")
+	gitDir := filepath.Join(tmpDir, ".git", "worktrees", "feature")
+	if err := os.MkdirAll(gitDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(wtPath, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wtPath, ".git"), []byte("gitdir: ../../../../.git/worktrees/feature"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gitDir, "HEAD"), []byte("ref: refs/heads/feature\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	branch, err := detector.getCurrentBranch(wtPath)
+	if err != nil {
+		t.Fatalf("getCurrentBranch() error = %v", err)
+	}
+	if branch != "feature" {
+		t.Fatalf("branch = %q, want feature", branch)
+	}
+}
+
 func TestDetector_IsInWorktree(t *testing.T) {
 	tmpDir := t.TempDir()
 	detector := newTestDetector(t, tmpDir)

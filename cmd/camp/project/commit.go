@@ -143,7 +143,7 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 	if projectCommitAutoWrite {
 		fmt.Println(ui.Info("Writing commit message..."))
 		var hookErr error
-		extraEnv := workitemEnvForProjectCommit(ctx, campRoot, projectCommitWorkitem)
+		extraEnv := workitemEnvForProjectCommit(ctx, campRoot, resolvedPath, projectCommitWorkitem)
 		message, hookErr = commitkit.AutoWriteCommitMessageWithEnv(ctx, campRoot, resolvedPath, extraEnv)
 		if hookErr != nil {
 			return hookErr
@@ -154,7 +154,7 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 	// Resolves the active workitem so the tag includes WI-<ref> when the
 	// project is linked.
 	if cfg != nil {
-		questID, workitemRef := resolveProjectCommitContext(ctx, campRoot, projectCommitWorkitem)
+		questID, workitemRef := resolveProjectCommitContext(ctx, campRoot, resolvedPath, projectCommitWorkitem)
 		message = commitkit.PrependContextTagsFull(cfg.ID, questID, "", workitemRef, message)
 	}
 

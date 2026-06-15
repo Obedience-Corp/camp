@@ -36,6 +36,29 @@ func TestIsSubmodule_Submodule(t *testing.T) {
 	}
 }
 
+func TestIsSubmoduleDistinguishesWorktrees(t *testing.T) {
+	tmpDir := t.TempDir()
+	worktreeDir := filepath.Join(tmpDir, "feature")
+	if err := os.MkdirAll(worktreeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	gitDir := filepath.Join(tmpDir, ".git", "worktrees", "feature")
+	if err := os.MkdirAll(gitDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(worktreeDir, ".git"), []byte("gitdir: ../.git/worktrees/feature"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := IsSubmodule(worktreeDir)
+	if err != nil {
+		t.Fatalf("IsSubmodule() error = %v", err)
+	}
+	if result {
+		t.Fatal("IsSubmodule() = true, want false for git worktree")
+	}
+}
+
 func TestIsSubmodule_NoGit(t *testing.T) {
 	tmpDir := t.TempDir()
 	// No .git at all

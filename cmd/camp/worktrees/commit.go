@@ -21,6 +21,7 @@ var (
 	wtCommitAll       bool
 	wtCommitAmend     bool
 	wtCommitAutoWrite bool
+	wtCommitWorkitem  string
 )
 
 var worktreesCommitCmd = &cobra.Command{
@@ -54,6 +55,8 @@ func init() {
 		"Amend the previous commit")
 	worktreesCommitCmd.Flags().BoolVar(&wtCommitAutoWrite, "auto-write", false,
 		"Run configured commit message writer")
+	worktreesCommitCmd.Flags().StringVar(&wtCommitWorkitem, "workitem", "",
+		"explicit workitem selector for the commit tag (overrides cwd-based resolution)")
 }
 
 func runWorktreesCommit(cmd *cobra.Command, args []string) error {
@@ -128,14 +131,16 @@ func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 
 	if wtCommitAutoWrite {
 		fmt.Println(ui.Info("Writing commit message..."))
-		message, err = commitkit.AutoWriteCommitMessage(ctx, campRoot, wtCtx.WorktreePath)
+		extraEnv := workitemEnvForWorktreeCommit(ctx, campRoot, wtCtx.WorktreePath, wtCommitWorkitem)
+		message, err = commitkit.AutoWriteCommitMessageWithEnv(ctx, campRoot, wtCtx.WorktreePath, extraEnv)
 		if err != nil {
 			return err
 		}
 	}
 
-	// Prepend campaign tag
-	message = git.PrependCampaignTag(cfg.ID, message)
+	// Prepend campaign/workitem context tag.
+	questID, workitemRef := resolveWorktreeCommitContext(ctx, campRoot, wtCtx.WorktreePath, wtCommitWorkitem)
+	message = commitkit.PrependContextTagsFull(cfg.ID, questID, "", workitemRef, message)
 
 	// Commit
 	fmt.Println(ui.Info("Committing changes..."))

@@ -132,3 +132,15 @@ func HasLockFile(gitDir string) bool {
 	_, err := os.Stat(lockPath)
 	return err == nil
 }
+
+func lockErrorForRepository(repoRoot string, err error) *LockError {
+	return &LockError{Path: indexLockPath(repoRoot), Err: err}
+}
+
+func indexLockPath(repoRoot string) string {
+	gitDir, err := ResolveGitDir(repoRoot)
+	if err != nil {
+		return filepath.Join(repoRoot, ".git", "index.lock")
+	}
+	return filepath.Join(gitDir, "index.lock")
+}

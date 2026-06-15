@@ -3,7 +3,6 @@ package git
 import (
 	"bytes"
 	"context"
-	"os/exec"
 	"strings"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -18,9 +17,9 @@ type StatusEntry struct {
 // StatusPorcelain runs git status --porcelain=v1 -z and returns raw output.
 // Unlike Output, it preserves leading whitespace in XY status codes.
 func StatusPorcelain(ctx context.Context, repoPath string, extraArgs ...string) ([]byte, error) {
-	args := []string{"-C", repoPath, "status", "--porcelain=v1", "-z"}
+	args := []string{"status", "--porcelain=v1", "-z"}
 	args = append(args, extraArgs...)
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := gitCmd(ctx, repoPath, args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	output, err := cmd.Output()

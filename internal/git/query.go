@@ -11,8 +11,7 @@ import (
 
 // Output runs a git command and returns trimmed stdout.
 func Output(ctx context.Context, repoPath string, args ...string) (string, error) {
-	fullArgs := append([]string{"-C", repoPath}, args...)
-	cmd := exec.CommandContext(ctx, "git", fullArgs...)
+	cmd := gitCmd(ctx, repoPath, args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	output, err := cmd.Output()
@@ -28,7 +27,7 @@ func Output(ctx context.Context, repoPath string, args ...string) (string, error
 
 // HasPathDiff reports whether `git diff --quiet -- <path>` sees a change.
 func HasPathDiff(ctx context.Context, repoPath, path string) bool {
-	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "diff", "--quiet", "--", path)
+	cmd := gitCmd(ctx, repoPath, "diff", "--quiet", "--", path)
 	err := cmd.Run()
 	if err == nil {
 		return false
