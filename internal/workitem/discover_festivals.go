@@ -31,8 +31,14 @@ func discoverFestivals(ctx context.Context, campaignRoot string, resolver *paths
 	festivalsRoot := resolver.Festivals()
 	var items []WorkItem
 
-	for _, stage := range []string{"planning", "ready", "active"} {
-		stageDir := filepath.Join(festivalsRoot, stage)
+	for _, stage := range []LifecycleStage{
+		LifecycleStagePlanning,
+		LifecycleStageReady,
+		LifecycleStageActive,
+		LifecycleStageRitual,
+		LifecycleStageChains,
+	} {
+		stageDir := filepath.Join(festivalsRoot, string(stage))
 		entries, err := os.ReadDir(stageDir)
 		if errors.Is(err, os.ErrNotExist) {
 			continue

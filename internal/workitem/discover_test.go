@@ -127,6 +127,9 @@ func TestDiscoverDesign_ExcludesDungeonAndHidden(t *testing.T) {
 	if items[0].WorkflowType != WorkflowTypeDesign {
 		t.Errorf("type = %q, want 'design'", items[0].WorkflowType)
 	}
+	if items[0].LifecycleStage != LifecycleStageNone {
+		t.Errorf("stage = %q, want 'none'", items[0].LifecycleStage)
+	}
 	if items[0].ItemKind != ItemKindDirectory {
 		t.Errorf("kind = %q, want 'directory'", items[0].ItemKind)
 	}
@@ -151,9 +154,12 @@ func TestDiscoverExplore_Works(t *testing.T) {
 	if items[0].WorkflowType != WorkflowTypeExplore {
 		t.Errorf("type = %q, want 'explore'", items[0].WorkflowType)
 	}
+	if items[0].LifecycleStage != LifecycleStageNone {
+		t.Errorf("stage = %q, want 'none'", items[0].LifecycleStage)
+	}
 }
 
-func TestDiscoverFestivals_OnlyPlanningReadyActive(t *testing.T) {
+func TestDiscoverFestivals_IncludesPlanningReadyActiveRitualChains(t *testing.T) {
 	root, resolver := setupTestCampaign(t)
 	ctx := context.Background()
 
@@ -164,30 +170,39 @@ func TestDiscoverFestivals_OnlyPlanningReadyActive(t *testing.T) {
 		"version: \"1.0\"\nmetadata:\n  id: TF0001\n  name: test-fest\n  festival_type: implementation\n  created_at: 2026-03-01T00:00:00Z\n")
 	writeFile(t, filepath.Join(festDir, "FESTIVAL_GOAL.md"), "# Test Fest\n\nGoal description.")
 
-	// Chain festival — should be excluded
 	chainDir := filepath.Join(root, "festivals/chains/chained")
 	os.MkdirAll(chainDir, 0755)
+	writeFile(t, filepath.Join(chainDir, "fest.yaml"),
+		"version: \"1.0\"\nmetadata:\n  id: CH0001\n  name: chain-fest\n  festival_type: chain\n  created_at: 2026-03-02T00:00:00Z\n")
 
-	// Ritual festival — should be excluded
 	ritualDir := filepath.Join(root, "festivals/ritual/daily")
 	os.MkdirAll(ritualDir, 0755)
+	writeFile(t, filepath.Join(ritualDir, "fest.yaml"),
+		"version: \"1.0\"\nmetadata:\n  id: RI0001\n  name: ritual-fest\n  festival_type: ritual\n  created_at: 2026-03-03T00:00:00Z\n")
 
 	items, err := discoverFestivals(ctx, root, resolver)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if len(items) != 1 {
-		t.Fatalf("expected 1 festival (chains/ritual excluded), got %d", len(items))
+	if len(items) != 3 {
+		t.Fatalf("expected 3 festivals, got %d", len(items))
 	}
-	if items[0].Title != "test-fest (TF0001)" {
-		t.Errorf("title = %q, want 'test-fest (TF0001)'", items[0].Title)
+	stages := map[LifecycleStage]bool{}
+	ids := map[string]bool{}
+	for _, item := range items {
+		stages[item.LifecycleStage] = true
+		ids[item.SourceID] = true
 	}
-	if items[0].LifecycleStage != "active" {
-		t.Errorf("stage = %q, want 'active'", items[0].LifecycleStage)
+	for _, want := range []LifecycleStage{LifecycleStageActive, LifecycleStageChains, LifecycleStageRitual} {
+		if !stages[want] {
+			t.Errorf("missing festival stage %q in %#v", want, stages)
+		}
 	}
-	if items[0].SourceID != "TF0001" {
-		t.Errorf("source_id = %q, want 'TF0001'", items[0].SourceID)
+	for _, want := range []string{"TF0001", "CH0001", "RI0001"} {
+		if !ids[want] {
+			t.Errorf("missing festival source id %q in %#v", want, ids)
+		}
 	}
 }
 

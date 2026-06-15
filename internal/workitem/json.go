@@ -13,16 +13,21 @@ import "time"
 //     (current_step, total_steps, completed_steps, run_status, blocked,
 //     doc_hash_changed). All omitempty; populated only when
 //     .workflow/workflow.yaml exists for the workitem directory.
-const SchemaVersion = "workitems/v1alpha5"
+//   - v1alpha6: publish per-type lifecycle stage vocabulary; use explicit
+//     LifecycleStageNone ("none") for no-stage workitems; include ritual/ and
+//     chains/ festivals; always emit workflow int/bool fields when workflow
+//     metadata is present.
+const SchemaVersion = "workitems/v1alpha6"
 
 // Payload is the top-level JSON output for camp workitem --json.
 type Payload struct {
-	SchemaVersion string     `json:"schema_version"`
-	GeneratedAt   time.Time  `json:"generated_at"`
-	CampaignRoot  string     `json:"campaign_root"`
-	Sort          SortInfo   `json:"sort"`
-	Items         []WorkItem `json:"items"`
-	Counts        Counts     `json:"counts"`
+	SchemaVersion   string              `json:"schema_version"`
+	GeneratedAt     time.Time           `json:"generated_at"`
+	CampaignRoot    string              `json:"campaign_root"`
+	Sort            SortInfo            `json:"sort"`
+	Items           []WorkItem          `json:"items"`
+	Counts          Counts              `json:"counts"`
+	StageVocabulary map[string][]string `json:"stage_vocabulary"`
 }
 
 // SortInfo describes the ordering applied to items.
@@ -71,7 +76,8 @@ func NewPayload(campaignRoot string, items []WorkItem) Payload {
 			Secondary: "sort_timestamp",
 			Direction: "desc",
 		},
-		Items:  items,
-		Counts: counts,
+		Items:           items,
+		Counts:          counts,
+		StageVocabulary: StageVocabulary(),
 	}
 }

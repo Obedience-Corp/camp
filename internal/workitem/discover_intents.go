@@ -18,8 +18,8 @@ func discoverIntents(ctx context.Context, campaignRoot string, resolver *paths.R
 	intentsRoot := resolver.Intents()
 	var items []WorkItem
 
-	for _, stage := range []string{"inbox", "active", "ready"} {
-		stageDir := filepath.Join(intentsRoot, stage)
+	for _, stage := range []LifecycleStage{LifecycleStageInbox, LifecycleStageActive, LifecycleStageReady} {
+		stageDir := filepath.Join(intentsRoot, string(stage))
 		entries, err := os.ReadDir(stageDir)
 		if errors.Is(err, os.ErrNotExist) {
 			continue

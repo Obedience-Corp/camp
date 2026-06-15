@@ -79,6 +79,25 @@ func TestNewPayload_CampaignRoot(t *testing.T) {
 	}
 }
 
+func TestNewPayload_StageVocabulary(t *testing.T) {
+	p := NewPayload("/tmp", nil)
+	intentStages := p.StageVocabulary[string(WorkflowTypeIntent)]
+	if len(intentStages) == 0 {
+		t.Fatalf("missing intent stage vocabulary: %#v", p.StageVocabulary)
+	}
+	if !containsString(intentStages, string(LifecycleStageInbox)) {
+		t.Fatalf("intent stage vocabulary = %#v, want inbox", intentStages)
+	}
+
+	data, err := json.Marshal(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"stage_vocabulary"`) {
+		t.Fatalf("payload missing stage_vocabulary: %s", data)
+	}
+}
+
 func TestWorkItem_ManualPriorityOmitEmpty(t *testing.T) {
 	item := WorkItem{Key: "intent:foo"}
 	data, _ := json.Marshal(item)
@@ -115,8 +134,37 @@ func TestWorkItem_StableIDPresentWhenPopulated(t *testing.T) {
 	}
 }
 
-func TestSchemaVersion_IsV1Alpha5(t *testing.T) {
-	if SchemaVersion != "workitems/v1alpha5" {
-		t.Errorf("SchemaVersion = %q, want workitems/v1alpha5", SchemaVersion)
+func TestWorkItemWorkflow_ZeroValuesAreEmitted(t *testing.T) {
+	item := WorkItem{Key: "design:workflow", WorkflowMeta: &WorkItemWorkflow{}}
+	data, err := json.Marshal(item)
+	if err != nil {
+		t.Fatal(err)
 	}
+	out := string(data)
+	for _, field := range []string{
+		`"current_step":0`,
+		`"total_steps":0`,
+		`"completed_steps":0`,
+		`"blocked":false`,
+		`"doc_hash_changed":false`,
+	} {
+		if !strings.Contains(out, field) {
+			t.Fatalf("workflow JSON missing %s: %s", field, out)
+		}
+	}
+}
+
+func TestSchemaVersion_IsV1Alpha6(t *testing.T) {
+	if SchemaVersion != "workitems/v1alpha6" {
+		t.Errorf("SchemaVersion = %q, want workitems/v1alpha6", SchemaVersion)
+	}
+}
+
+func containsString(vals []string, want string) bool {
+	for _, got := range vals {
+		if got == want {
+			return true
+		}
+	}
+	return false
 }

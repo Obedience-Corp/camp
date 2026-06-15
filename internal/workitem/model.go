@@ -34,7 +34,7 @@ const (
 type WorkItem struct {
 	Key            string         `json:"key"`
 	WorkflowType   WorkflowType   `json:"workflow_type"`
-	LifecycleStage string         `json:"lifecycle_stage"`
+	LifecycleStage LifecycleStage `json:"lifecycle_stage"`
 	Title          string         `json:"title"`
 	RelativePath   string         `json:"relative_path"`
 	PrimaryDoc     string         `json:"primary_doc"`
@@ -56,12 +56,12 @@ type WorkItem struct {
 type WorkItemWorkflow struct {
 	WorkflowID     string `json:"workflow_id,omitempty"`
 	ActiveRunID    string `json:"active_run_id,omitempty"`
-	CurrentStep    int    `json:"current_step,omitempty"`
-	TotalSteps     int    `json:"total_steps,omitempty"`
-	CompletedSteps int    `json:"completed_steps,omitempty"`
+	CurrentStep    int    `json:"current_step"`
+	TotalSteps     int    `json:"total_steps"`
+	CompletedSteps int    `json:"completed_steps"`
 	RunStatus      string `json:"run_status,omitempty"`
-	Blocked        bool   `json:"blocked,omitempty"`
-	DocHashChanged bool   `json:"doc_hash_changed,omitempty"`
+	Blocked        bool   `json:"blocked"`
+	DocHashChanged bool   `json:"doc_hash_changed"`
 }
 
 // AbsPath resolves the item's absolute path from the campaign root.
