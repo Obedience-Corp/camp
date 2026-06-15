@@ -272,6 +272,75 @@ func TestListParentItems_ExcludesOBEYManagedDirs(t *testing.T) {
 	}
 }
 
+func TestListParentItems_ExcludesFestivals(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	dungeonPath := filepath.Join(root, "dungeon")
+	svc := NewService(root, dungeonPath)
+
+	if _, err := svc.Init(ctx, InitOptions{}); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "festivals", "planning"), 0755); err != nil {
+		t.Fatalf("failed to create festivals/planning: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "festivals", "dungeon"), 0755); err != nil {
+		t.Fatalf("failed to create festivals/dungeon: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "my-work"), 0755); err != nil {
+		t.Fatalf("failed to create my-work dir: %v", err)
+	}
+
+	items, err := svc.ListParentItems(ctx, root)
+	if err != nil {
+		t.Fatalf("ListParentItems failed: %v", err)
+	}
+
+	names := make(map[string]bool)
+	for _, item := range items {
+		names[item.Name] = true
+	}
+	if names["festivals"] {
+		t.Error("festivals should be excluded from triage candidates")
+	}
+	if !names["my-work"] {
+		t.Error("unmanaged directory should be included")
+	}
+}
+
+func TestListParentItems_ExcludesProjects(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	dungeonPath := filepath.Join(root, "dungeon")
+	svc := NewService(root, dungeonPath)
+
+	if _, err := svc.Init(ctx, InitOptions{}); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "projects", "camp"), 0755); err != nil {
+		t.Fatalf("failed to create projects/camp: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "my-work"), 0755); err != nil {
+		t.Fatalf("failed to create my-work dir: %v", err)
+	}
+
+	items, err := svc.ListParentItems(ctx, root)
+	if err != nil {
+		t.Fatalf("ListParentItems failed: %v", err)
+	}
+
+	names := make(map[string]bool)
+	for _, item := range items {
+		names[item.Name] = true
+	}
+	if names["projects"] {
+		t.Error("projects should be excluded from triage candidates")
+	}
+	if !names["my-work"] {
+		t.Error("unmanaged directory should be included")
+	}
+}
+
 func TestListParentItems_ExcludesWorkflowSchemaDirs(t *testing.T) {
 	ctx := context.Background()
 

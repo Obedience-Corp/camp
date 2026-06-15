@@ -11,6 +11,8 @@ import (
 // StandardStatuses are the canonical status directories for a standard dungeon.
 var StandardStatuses = []string{"completed", "archived", "someday"}
 
+const defaultCrawlConfig = "excludes:\n  - festivals\n  - projects\n"
+
 // InitOptions controls dungeon scaffolding behavior.
 type InitOptions struct {
 	Force bool
@@ -84,6 +86,25 @@ func Init(ctx context.Context, dungeonPath string, opts InitOptions) (*InitResul
 			}
 			result.CreatedFiles = append(result.CreatedFiles, gitkeepPath)
 		}
+	}
+
+	crawlCfgPath := filepath.Join(dungeonPath, ".crawl.yaml")
+	if err := ctx.Err(); err != nil {
+		return nil, camperrors.Wrap(err, "context cancelled")
+	}
+
+	crawlCfgExists := false
+	if _, err := os.Stat(crawlCfgPath); err == nil {
+		crawlCfgExists = true
+	}
+
+	if crawlCfgExists && !opts.Force {
+		result.Skipped = append(result.Skipped, crawlCfgPath)
+	} else {
+		if err := os.WriteFile(crawlCfgPath, []byte(defaultCrawlConfig), 0644); err != nil {
+			return nil, camperrors.Wrapf(err, "writing %s", crawlCfgPath)
+		}
+		result.CreatedFiles = append(result.CreatedFiles, crawlCfgPath)
 	}
 
 	return result, nil
