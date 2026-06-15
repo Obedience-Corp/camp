@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -14,6 +13,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
+	statuspkg "github.com/Obedience-Corp/camp/internal/status"
 	tuistatus "github.com/Obedience-Corp/camp/internal/tui/status"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	tea "github.com/charmbracelet/bubbletea"
@@ -56,29 +56,11 @@ func init() {
 	statusAllCmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(StatusAllJSONVersion, func() bool { return statusAllJSON }))
 }
 
-// repoStatus holds the status of a single repository.
-type repoStatus struct {
-	Name        string `json:"name"`
-	Path        string `json:"path"`
-	Branch      string `json:"branch"`
-	Clean       bool   `json:"clean"`
-	HasUpstream bool   `json:"has_upstream"`
-	Ahead       int    `json:"ahead"`
-	Behind      int    `json:"behind"`
-	Staged      int    `json:"staged"`
-	Modified    int    `json:"modified"`
-	Untracked   int    `json:"untracked"`
-	Unmerged    int    `json:"unmerged"`
-	StaleRefs   int    `json:"stale_refs"`
-	Remote      string `json:"remote"`
-	Error       string `json:"error,omitempty"`
-}
-
 type statusAllOutput struct {
-	SchemaVersion string       `json:"schema_version"`
-	Timestamp     string       `json:"timestamp"`
-	CampaignRoot  string       `json:"campaign_root,omitempty"`
-	Repos         []repoStatus `json:"repos"`
+	SchemaVersion string                 `json:"schema_version"`
+	Timestamp     string                 `json:"timestamp"`
+	CampaignRoot  string                 `json:"campaign_root,omitempty"`
+	Repos         []statuspkg.RepoStatus `json:"repos"`
 }
 
 func runStatusAll(cmd *cobra.Command, _ []string) error {
@@ -106,19 +88,18 @@ func runStatusAll(cmd *cobra.Command, _ []string) error {
 
 	if len(paths) == 0 {
 		if statusAllJSON {
-			return outputStatusJSON("", []repoStatus{})
+			return outputStatusJSON("", []statuspkg.RepoStatus{})
 		}
 		fmt.Fprintln(os.Stderr, ui.Info("No submodules found in this campaign"))
 		return nil
 	}
 
-	// Collect status for each
-	statuses := collectStatuses(ctx, campRoot, paths)
+	statusOpts := statuspkg.Options{ShowRemoteURL: statusAllRemoteURL}
+	statuses := statuspkg.Collect(ctx, campRoot, paths, statusOpts)
 
-	// Add campaign root itself (with ref filtering)
-	rootStatus := getRepoStatus(ctx, campRoot, "campaign root", true, statusAllRemoteURL)
+	rootStatus := statuspkg.GetRepoStatus(ctx, campRoot, "campaign root", true, statusOpts)
 	rootStatus.Path = "."
-	allStatuses := append([]repoStatus{rootStatus}, statuses...)
+	allStatuses := append([]statuspkg.RepoStatus{rootStatus}, statuses...)
 
 	// Status cache write removed: no read path existed, and read-style polling
 	// commands were dirtying git status by creating .campaign/cache files.
@@ -136,7 +117,7 @@ func runStatusAll(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-func runStatusTUI(campRoot string, statuses []repoStatus) error {
+func runStatusTUI(campRoot string, statuses []statuspkg.RepoStatus) error {
 	repos := make([]tuistatus.RepoInfo, len(statuses))
 	for i, s := range statuses {
 		path := s.Path
@@ -166,130 +147,7 @@ func runStatusTUI(campRoot string, statuses []repoStatus) error {
 	return nil
 }
 
-func collectStatuses(ctx context.Context, campRoot string, paths []string) []repoStatus {
-	statuses := make([]repoStatus, 0, len(paths))
-
-	for _, p := range paths {
-		fullPath := filepath.Join(campRoot, p)
-		name := git.SubmoduleDisplayName(p)
-		status := getRepoStatus(ctx, fullPath, name, false, statusAllRemoteURL)
-		status.Path = p
-		statuses = append(statuses, status)
-	}
-
-	return statuses
-}
-
-func getRepoStatus(ctx context.Context, repoPath, name string, isCampaignRoot bool, showRemoteURL bool) repoStatus {
-	rs := repoStatus{
-		Name: name,
-		Path: repoPath,
-	}
-
-	// Get current branch
-	branch, err := git.Output(ctx, repoPath, "rev-parse", "--abbrev-ref", "HEAD")
-	if err != nil {
-		rs.Error = "not a git repo"
-		return rs
-	}
-	rs.Branch = branch
-
-	// Get remote info
-	if showRemoteURL {
-		if remote, err := git.Output(ctx, repoPath, "remote", "get-url", "origin"); err == nil {
-			rs.Remote = shortenRemoteURL(remote)
-		}
-	} else {
-		if remote, err := git.Output(ctx, repoPath, "remote"); err == nil && remote != "" {
-			names := strings.Split(remote, "\n")
-			rs.Remote = strings.Join(names, ", ")
-		}
-	}
-
-	// Get porcelain status — at campaign root, ignore submodule refs so they
-	// don't pollute the dirty state.
-	statusArgs := []string{"status", "--porcelain=v1"}
-	if isCampaignRoot {
-		statusArgs = append(statusArgs, "--ignore-submodules=all")
-	}
-	output, err := git.Output(ctx, repoPath, statusArgs...)
-	if err != nil {
-		rs.Error = "status failed"
-		return rs
-	}
-
-	rs.Clean = output == ""
-	if !rs.Clean {
-		for _, line := range strings.Split(output, "\n") {
-			if len(line) < 2 {
-				continue
-			}
-			x, y := line[0], line[1]
-			if x != ' ' && x != '?' {
-				rs.Staged++
-			}
-			if y != ' ' && y != '?' {
-				rs.Modified++
-			}
-			if x == '?' && y == '?' {
-				rs.Untracked++
-			}
-		}
-	}
-
-	// Count stale submodule refs at campaign root
-	if isCampaignRoot {
-		rs.StaleRefs = countStaleRefs(ctx, repoPath)
-	}
-
-	// Get ahead/behind — also determines if upstream tracking is configured
-	abOutput, err := git.Output(ctx, repoPath, "rev-list", "--left-right", "--count", "HEAD...@{upstream}")
-	if err == nil {
-		rs.HasUpstream = true
-		parts := strings.Fields(abOutput)
-		if len(parts) == 2 {
-			fmt.Sscanf(parts[0], "%d", &rs.Ahead)
-			fmt.Sscanf(parts[1], "%d", &rs.Behind)
-		}
-	}
-
-	// Count unmerged branches
-	rs.Unmerged = git.UnmergedBranchCount(ctx, repoPath)
-
-	return rs
-}
-
-// countStaleRefs counts submodules whose checked-out commit differs from
-// the commit recorded in the superproject index. Lines starting with '+' in
-// `git submodule status` indicate such drift.
-func countStaleRefs(ctx context.Context, repoPath string) int {
-	output, err := git.Output(ctx, repoPath, "submodule", "status")
-	if err != nil || output == "" {
-		return 0
-	}
-	count := 0
-	for _, line := range strings.Split(output, "\n") {
-		if len(line) > 0 && line[0] == '+' {
-			count++
-		}
-	}
-	return count
-}
-
-func shortenRemoteURL(url string) string {
-	// Handle HTTPS: https://github.com/Org/repo.git → Org/repo
-	url = strings.TrimSuffix(url, ".git")
-	if strings.HasPrefix(url, "https://github.com/") {
-		return strings.TrimPrefix(url, "https://github.com/")
-	}
-	// Handle SSH: git@github.com:Org/repo.git → Org/repo
-	if strings.HasPrefix(url, "git@github.com:") {
-		return strings.TrimPrefix(url, "git@github.com:")
-	}
-	return url
-}
-
-func renderStatusTable(statuses []repoStatus) {
+func renderStatusTable(statuses []statuspkg.RepoStatus) {
 	green := lipgloss.NewStyle().Foreground(ui.SuccessColor)
 	red := lipgloss.NewStyle().Foreground(ui.ErrorColor)
 	yellow := lipgloss.NewStyle().Foreground(ui.WarningColor)
@@ -389,11 +247,11 @@ func renderStatusTable(statuses []repoStatus) {
 	fmt.Println(t)
 }
 
-func outputStatusJSON(campaignRoot string, statuses []repoStatus) error {
+func outputStatusJSON(campaignRoot string, statuses []statuspkg.RepoStatus) error {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	if statuses == nil {
-		statuses = []repoStatus{}
+		statuses = []statuspkg.RepoStatus{}
 	}
 	return enc.Encode(statusAllOutput{
 		SchemaVersion: StatusAllJSONVersion,

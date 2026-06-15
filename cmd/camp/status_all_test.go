@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
+	statuspkg "github.com/Obedience-Corp/camp/internal/status"
 	"github.com/spf13/cobra"
 )
 
@@ -26,8 +27,8 @@ func TestShortenRemoteURL(t *testing.T) {
 		{"", ""},
 	}
 	for _, tt := range tests {
-		if got := shortenRemoteURL(tt.input); got != tt.want {
-			t.Errorf("shortenRemoteURL(%q) = %q, want %q", tt.input, got, tt.want)
+		if got := statuspkg.ShortenRemoteURL(tt.input); got != tt.want {
+			t.Errorf("ShortenRemoteURL(%q) = %q, want %q", tt.input, got, tt.want)
 		}
 	}
 }
