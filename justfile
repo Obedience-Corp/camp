@@ -131,6 +131,8 @@ gate:
 
 # Set git core.hooksPath to .githooks so the pre-push gate fires automatically.
 # Idempotent: safe to run multiple times.
+# Note: worktrees of this repo share this config automatically.
+# Submodule-registered copies have separate .git/config and need their own run.
 hooks-install:
     git config core.hooksPath .githooks
     @echo "Hooks installed: .githooks is now the active hooks directory."

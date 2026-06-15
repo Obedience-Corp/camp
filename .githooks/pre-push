@@ -1,0 +1,24 @@
+#!/usr/bin/env sh
+# pre-push hook: run the local gate before pushing.
+# Delegates to just gate-fast (default) or just gate (when CAMP_GATE_FULL=1).
+# githooks(5): stdin carries <local-ref> <local-sha> <remote-ref> <remote-sha> per pushed ref.
+# Must consume stdin even if unused to satisfy the protocol.
+
+# Consume stdin per githooks(5) pre-push contract.
+cat > /dev/null
+
+if [ "${CAMP_GATE_FULL:-0}" = "1" ]; then
+    gate_cmd="just gate"
+else
+    gate_cmd="just gate-fast"
+fi
+
+if ! $gate_cmd; then
+    echo ""
+    echo "========================================================"
+    echo "  PRE-PUSH GATE FAILED"
+    echo "  Reproduce locally: $gate_cmd"
+    echo "  Skip (discouraged): git push --no-verify"
+    echo "========================================================"
+    exit 1
+fi

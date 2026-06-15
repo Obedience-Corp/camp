@@ -506,9 +506,28 @@ just test                 # Show all test recipes
 just test all             # Run all tests
 just install              # Show install options (stable, dev, current)
 just install stable       # Install stable profile to $GOBIN
+just hooks-install        # Activate the pre-push gate hook
 just docs                 # Regenerate CLI reference docs
 just run <args>           # Run with arguments
 ```
+
+### Pre-push Gate Hook
+
+Run once after cloning or checking out this repo to activate the pre-push
+quality gate:
+
+```bash
+just hooks-install
+```
+
+This sets `core.hooksPath` to `.githooks` so git runs
+`.githooks/pre-push` before every push. The hook runs `just gate-fast` by
+default. Set `CAMP_GATE_FULL=1` before pushing to run `just gate` instead.
+
+Git worktrees of this repository share the same git config, so one
+`just hooks-install` run activates the hook for all worktrees that share this
+repo. Submodule-registered copies have separate git config and need their own
+`just hooks-install` run from inside that checkout.
 
 ## Part of Festival
 
