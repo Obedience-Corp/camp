@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
@@ -156,6 +158,19 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	// Show what will be committed
 	cmdutil.ShowStagedSummary(ctx, target.Path)
 
+	// Refuse root content commits that would accidentally sweep pre-staged
+	// submodule gitlinks into this commit's message/tag context. The user can
+	// make that coupling explicit with --include-refs or use refs-sync instead.
+	if !target.IsSubmodule && !commitIncludeRefs {
+		stagedRefs, refErr := listStagedProjectRefs(ctx, target.Path)
+		if refErr != nil {
+			return camperrors.Wrap(refErr, "check staged submodule refs")
+		}
+		if len(stagedRefs) > 0 {
+			return camperrors.NewValidation("pre_staged_refs", preStagedRefsMessage(stagedRefs), nil)
+		}
+	}
+
 	// Check for changes
 	hasChanges, err := executor.HasChanges(ctx)
 	if err != nil {
@@ -193,6 +208,18 @@ func runCommit(cmd *cobra.Command, args []string) error {
 
 	if err := executor.Commit(ctx, opts); err != nil {
 		if errors.Is(err, git.ErrNoChanges) {
+			if !target.IsSubmodule && !commitIncludeRefs {
+				driftRefs, driftErr := listUnstagedProjectRefs(ctx, target.Path)
+				if driftErr != nil {
+					return camperrors.Wrap(driftErr, "check unstaged submodule refs")
+				}
+				if len(driftRefs) > 0 {
+					fmt.Println(ui.Warning("Nothing to commit (submodule ref changes are excluded by default)"))
+					fmt.Println(ui.Dim("  Use 'camp refs-sync' to commit only the submodule pointers."))
+					fmt.Println(ui.Dim("  Use 'camp commit --include-refs -m \"...\"' to include them in this commit."))
+					return nil
+				}
+			}
 			fmt.Println(ui.Success("Nothing to commit"))
 			return nil
 		}
@@ -201,4 +228,56 @@ func runCommit(cmd *cobra.Command, args []string) error {
 
 	fmt.Println(ui.Success("Changes committed successfully"))
 	return nil
+}
+
+func listStagedProjectRefs(ctx context.Context, repoPath string) ([]string, error) {
+	paths, err := git.ListSubmodulePaths(ctx, repoPath)
+	if err != nil {
+		return nil, err
+	}
+
+	var staged []string
+	for _, path := range paths {
+		if !strings.HasPrefix(path, "projects/") {
+			continue
+		}
+		hasChange, err := git.HasStagedPathChange(ctx, repoPath, path)
+		if err != nil {
+			return nil, err
+		}
+		if hasChange {
+			staged = append(staged, path)
+		}
+	}
+	return staged, nil
+}
+
+func listUnstagedProjectRefs(ctx context.Context, repoPath string) ([]string, error) {
+	paths, err := git.ListSubmodulePaths(ctx, repoPath)
+	if err != nil {
+		return nil, err
+	}
+
+	var drift []string
+	for _, path := range paths {
+		if strings.HasPrefix(path, "projects/") && git.HasPathDiff(ctx, repoPath, path) {
+			drift = append(drift, path)
+		}
+	}
+	return drift, nil
+}
+
+func preStagedRefsMessage(paths []string) string {
+	joined := strings.Join(paths, ", ")
+	resetPaths := strings.Join(paths, " ")
+	return fmt.Sprintf(
+		"staged submodule ref(s) found: %s\n"+
+			"These are not committed by 'camp commit' without --include-refs.\n"+
+			"Options:\n"+
+			"  camp refs-sync                         -- commit only the submodule pointers\n"+
+			"  camp commit --include-refs -m \"...\"   -- include them in this commit\n"+
+			"  git reset HEAD %s                      -- unstage them to continue",
+		joined,
+		resetPaths,
+	)
 }

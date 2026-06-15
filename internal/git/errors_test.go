@@ -51,6 +51,12 @@ func TestClassifyGitError(t *testing.T) {
 			want:     GitErrorNoChanges,
 		},
 		{
+			name:     "no changes added to commit",
+			stderr:   "no changes added to commit (use \"git add\" and/or \"git commit -a\")",
+			exitCode: 1,
+			want:     GitErrorNoChanges,
+		},
+		{
 			name:     "not a git repository",
 			stderr:   "fatal: not a git repository (or any of the parent directories): .git",
 			exitCode: 128,

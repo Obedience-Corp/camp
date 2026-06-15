@@ -162,7 +162,8 @@ func ClassifyGitError(stderr string, exitCode int) GitErrorType {
 	switch {
 	case strings.Contains(lower, "index.lock"):
 		return GitErrorLock
-	case strings.Contains(lower, "nothing to commit"):
+	case strings.Contains(lower, "nothing to commit"),
+		strings.Contains(lower, "no changes added to commit"):
 		return GitErrorNoChanges
 	case strings.Contains(lower, "not a git repository"):
 		return GitErrorNotRepo
