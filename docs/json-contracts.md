@@ -25,6 +25,7 @@ Schema versions in this release:
 | `camp workitem commit --json` | `workitem-commit/v1alpha1` | Emits staging plan and optional commit SHA. |
 | `camp workitem commits --json` | `workitem-commits/v1alpha1` | Emits matching commits and per-repo query errors. |
 | `camp workitem priority --json` | `workitem-priority/v1alpha1` | Emits `cleared: true` when priority is cleared. |
+| `camp concepts --json` | `concepts/v1alpha1` | Emits configured campaign concepts with `generated_at`, `campaign_root`, and concept metadata. |
 | `camp intent list/find/show --json` | `intents/v1alpha1` | `--format json` is a deprecated alias. |
 | `camp intent count --json` | `intents/v1alpha1` | Counts are emitted as status-count objects in `items[]`; `--format json` is a deprecated alias. |
 | `camp intent add --json` | `intents/v1alpha1` | Emits created `id` and `path`. |
