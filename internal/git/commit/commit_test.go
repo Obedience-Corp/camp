@@ -290,6 +290,125 @@ func TestIntent_SelectiveStaging(t *testing.T) {
 	}
 }
 
+func TestStageAndCommit_PreStagedCommitsStagedBlobNotWorktree(t *testing.T) {
+	repo := initTempIndexCommitRepo(t)
+	writeCommitTestFile(t, repo, "f.txt", "v1\n")
+	runCommitTestGit(t, repo, "add", "f.txt")
+	runCommitTestGit(t, repo, "commit", "-m", "init")
+
+	writeCommitTestFile(t, repo, "f.txt", "v2\n")
+	runCommitTestGit(t, repo, "add", "f.txt")
+	writeCommitTestFile(t, repo, "f.txt", "v3\n")
+
+	err := stageAndCommit(context.Background(), Options{
+		CampaignRoot:  repo,
+		PreStaged:     []string{"f.txt"},
+		SelectiveOnly: true,
+	}, "commit staged snapshot")
+	if err != nil {
+		t.Fatalf("stageAndCommit() error = %v", err)
+	}
+
+	if got := runCommitTestGitOutput(t, repo, "show", "HEAD:f.txt"); got != "v2\n" {
+		t.Fatalf("HEAD:f.txt = %q, want v2", got)
+	}
+	if got := readCommitTestFile(t, repo, "f.txt"); got != "v3\n" {
+		t.Fatalf("worktree f.txt = %q, want v3", got)
+	}
+	if got := runCommitTestGitOutput(t, repo, "diff", "--cached", "--name-only"); strings.TrimSpace(got) != "" {
+		t.Fatalf("cached diff should be empty after commit, got: %s", got)
+	}
+	if got := runCommitTestGitOutput(t, repo, "diff", "--", "f.txt"); !strings.Contains(got, "v3") {
+		t.Fatalf("worktree v3 should remain unstaged after commit, diff: %s", got)
+	}
+}
+
+func TestStageAndCommit_FilesCaptureAddTimeSnapshot(t *testing.T) {
+	repo := initTempIndexCommitRepo(t)
+	writeCommitTestFile(t, repo, "f.txt", "v1\n")
+	runCommitTestGit(t, repo, "add", "f.txt")
+	runCommitTestGit(t, repo, "commit", "-m", "init")
+
+	writeCommitTestFile(t, repo, "f.txt", "v2\n")
+	hookPath := filepath.Join(repo, ".git", "hooks", "pre-commit")
+	if err := os.WriteFile(hookPath, []byte("#!/bin/sh\nprintf 'v3\\n' > f.txt\n"), 0o755); err != nil {
+		t.Fatalf("failed to write pre-commit hook: %v", err)
+	}
+
+	err := stageAndCommit(context.Background(), Options{
+		CampaignRoot:  repo,
+		Files:         []string{"f.txt"},
+		SelectiveOnly: true,
+	}, "commit add-time snapshot")
+	if err != nil {
+		t.Fatalf("stageAndCommit() error = %v", err)
+	}
+
+	if got := runCommitTestGitOutput(t, repo, "show", "HEAD:f.txt"); got != "v2\n" {
+		t.Fatalf("HEAD:f.txt = %q, want add-time v2", got)
+	}
+	if got := readCommitTestFile(t, repo, "f.txt"); got != "v3\n" {
+		t.Fatalf("worktree f.txt = %q, want hook-written v3", got)
+	}
+	if got := runCommitTestGitOutput(t, repo, "diff", "--cached", "--name-only"); strings.TrimSpace(got) != "" {
+		t.Fatalf("cached diff should be empty after commit, got: %s", got)
+	}
+}
+
+func TestStageAndCommit_PreStagedRenameClearsIndex(t *testing.T) {
+	repo := initTempIndexCommitRepo(t)
+	writeCommitTestFile(t, repo, "a.txt", "content\n")
+	runCommitTestGit(t, repo, "add", "a.txt")
+	runCommitTestGit(t, repo, "commit", "-m", "init")
+	runCommitTestGit(t, repo, "mv", "a.txt", "b.txt")
+
+	err := stageAndCommit(context.Background(), Options{
+		CampaignRoot:  repo,
+		PreStaged:     []string{"a.txt", "b.txt"},
+		SelectiveOnly: true,
+	}, "commit rename")
+	if err != nil {
+		t.Fatalf("stageAndCommit() error = %v", err)
+	}
+
+	if got := runCommitTestGitOutput(t, repo, "show", "HEAD:b.txt"); got != "content\n" {
+		t.Fatalf("HEAD:b.txt = %q, want content", got)
+	}
+	if err := exec.Command("git", "-C", repo, "show", "HEAD:a.txt").Run(); err == nil {
+		t.Fatal("HEAD:a.txt should not exist after rename commit")
+	}
+	if got := runCommitTestGitOutput(t, repo, "diff", "--cached", "--name-status"); strings.TrimSpace(got) != "" {
+		t.Fatalf("cached diff should be empty after rename commit, got: %s", got)
+	}
+	if got := runCommitTestGitOutput(t, repo, "status", "--porcelain"); strings.TrimSpace(got) != "" {
+		t.Fatalf("status should be clean after rename commit, got: %s", got)
+	}
+}
+
+func TestStageAndCommit_RemovesTempIndexOnNoChanges(t *testing.T) {
+	repo := initTempIndexCommitRepo(t)
+	writeCommitTestFile(t, repo, "f.txt", "v1\n")
+	runCommitTestGit(t, repo, "add", "f.txt")
+	runCommitTestGit(t, repo, "commit", "-m", "init")
+
+	err := stageAndCommit(context.Background(), Options{
+		CampaignRoot:  repo,
+		Files:         []string{"f.txt"},
+		SelectiveOnly: true,
+	}, "commit unchanged")
+	if err == nil {
+		t.Fatal("stageAndCommit() error = nil, want no changes")
+	}
+
+	matches, globErr := filepath.Glob(filepath.Join(repo, ".git", "index.tmp.*"))
+	if globErr != nil {
+		t.Fatalf("glob temp index files: %v", globErr)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("temp index files were not cleaned up: %v", matches)
+	}
+}
+
 func TestIntentAction_Values(t *testing.T) {
 	tests := []struct {
 		action   IntentAction
@@ -933,6 +1052,54 @@ func TestRepair(t *testing.T) {
 	if !strings.Contains(commitMsg, "Repair: campaign repair") {
 		t.Errorf("commit message should contain repair subject, got: %s", commitMsg)
 	}
+}
+
+func initTempIndexCommitRepo(t *testing.T) string {
+	t.Helper()
+	repo := t.TempDir()
+	runCommitTestGit(t, repo, "init")
+	runCommitTestGit(t, repo, "config", "user.email", "test@test.com")
+	runCommitTestGit(t, repo, "config", "user.name", "Test")
+	return repo
+}
+
+func writeCommitTestFile(t *testing.T, repo, rel, content string) {
+	t.Helper()
+	path := filepath.Join(repo, rel)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("failed to create parent for %s: %v", rel, err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("failed to write %s: %v", rel, err)
+	}
+}
+
+func readCommitTestFile(t *testing.T, repo, rel string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(repo, rel))
+	if err != nil {
+		t.Fatalf("failed to read %s: %v", rel, err)
+	}
+	return string(data)
+}
+
+func runCommitTestGit(t *testing.T, repo string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, string(out))
+	}
+}
+
+func runCommitTestGitOutput(t *testing.T, repo string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, string(out))
+	}
+	return string(out)
 }
 
 func TestProject(t *testing.T) {

@@ -1,9 +1,13 @@
 package git
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -11,11 +15,14 @@ import (
 
 // CommitOptions configures the commit operation.
 type CommitOptions struct {
-	Message    string
-	Amend      bool
-	AllowEmpty bool
-	Author     string   // Optional: "Name <email>"
-	Only       []string // If set, commit only these paths (git commit --only -- <paths>)
+	Message       string
+	Amend         bool
+	AllowEmpty    bool
+	Author        string // Optional: "Name <email>"
+	TempIndexPath string // When set, passes GIT_INDEX_FILE=<path> to git commit.
+	// Deprecated: scoped commit callers must use the temp-index snapshot engine.
+	// This field is retained for source compatibility and is ignored.
+	Only []string
 }
 
 // Validate checks if options are valid.
@@ -59,12 +66,11 @@ func executeCommit(ctx context.Context, repoPath string, opts *CommitOptions) er
 	if opts.Message != "" {
 		args = append(args, "-m", opts.Message)
 	}
-	if len(opts.Only) > 0 {
-		args = append(args, "--only", "--")
-		args = append(args, opts.Only...)
-	}
 
 	cmd := exec.CommandContext(ctx, "git", args...)
+	if opts.TempIndexPath != "" {
+		cmd.Env = append(os.Environ(), "GIT_INDEX_FILE="+opts.TempIndexPath)
+	}
 	output, err := cmd.CombinedOutput()
 
 	if err != nil {
@@ -84,6 +90,159 @@ func executeCommit(ctx context.Context, repoPath string, opts *CommitOptions) er
 	}
 
 	return nil
+}
+
+// BuildTempIndexPath resolves the real git index path for repoPath and returns
+// a sibling temp-file path suitable for use as GIT_INDEX_FILE.
+func BuildTempIndexPath(repoPath string) (tempPath string, realIndexPath string, err error) {
+	gitDir, err := ResolveGitDir(repoPath)
+	if err != nil {
+		return "", "", err
+	}
+	f, err := os.CreateTemp(gitDir, "index.tmp.*")
+	if err != nil {
+		return "", "", camperrors.Wrapf(err, "create temp index in %s", gitDir)
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(f.Name())
+		return "", "", camperrors.Wrap(err, "close temp index")
+	}
+	return f.Name(), filepath.Join(gitDir, "index"), nil
+}
+
+// RemoveTempIndex removes a temp index file, ignoring missing files.
+func RemoveTempIndex(path string) {
+	if path == "" {
+		return
+	}
+	_ = os.Remove(path)
+}
+
+// CopyFile copies src to dst byte-for-byte. Existing dst content is replaced.
+func CopyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return camperrors.Wrapf(err, "open %s", src)
+	}
+	defer func() {
+		_ = in.Close()
+	}()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return camperrors.Wrapf(err, "create %s", dst)
+	}
+	_, copyErr := io.Copy(out, in)
+	closeErr := out.Close()
+	if copyErr != nil {
+		return camperrors.Wrapf(copyErr, "copy %s to %s", src, dst)
+	}
+	if closeErr != nil {
+		return camperrors.Wrapf(closeErr, "close %s", dst)
+	}
+	return nil
+}
+
+// ReadTreeIntoTempIndex seeds tmpPath from HEAD.
+func ReadTreeIntoTempIndex(ctx context.Context, repoPath, tmpPath string) error {
+	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "read-tree", "HEAD")
+	cmd.Env = append(os.Environ(), "GIT_INDEX_FILE="+tmpPath)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return camperrors.NewGit("read-tree", "", "", strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+// AddPathsToTempIndex stages paths into the provided temp index.
+func AddPathsToTempIndex(ctx context.Context, repoPath, tmpPath string, paths []string) error {
+	if len(paths) == 0 {
+		return ErrNoFilesSpecified
+	}
+	cfg := DefaultRetryConfig()
+	cfg.OperationName = "add-temp-index"
+	return WithLockRetry(ctx, repoPath, cfg, func() error {
+		args := []string{"-C", repoPath, "add", "--"}
+		args = append(args, paths...)
+		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd.Env = append(os.Environ(), "GIT_INDEX_FILE="+tmpPath)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			errType := ClassifyGitError(string(out), cmd.ProcessState.ExitCode())
+			if errType == GitErrorLock {
+				return &LockError{Path: "index.lock", Err: err}
+			}
+			return camperrors.NewGit("add (temp index)", "", errType.String(), strings.TrimSpace(string(out)), err)
+		}
+		return nil
+	})
+}
+
+// ApplyCachedDiffToTempIndex applies the real index's staged diff for paths to tmpPath.
+func ApplyCachedDiffToTempIndex(ctx context.Context, repoPath, tmpPath string, paths []string) error {
+	if len(paths) == 0 {
+		return nil
+	}
+	diffArgs := []string{"-C", repoPath, "diff", "--cached", "--binary", "--"}
+	diffArgs = append(diffArgs, paths...)
+	diffCmd := exec.CommandContext(ctx, "git", diffArgs...)
+	var diffStderr bytes.Buffer
+	diffCmd.Stderr = &diffStderr
+	patch, err := diffCmd.Output()
+	if err != nil {
+		return camperrors.NewGit("diff --cached", "", "", strings.TrimSpace(diffStderr.String()), err)
+	}
+	if len(patch) == 0 {
+		return nil
+	}
+
+	applyCmd := exec.CommandContext(ctx, "git", "-C", repoPath, "apply", "--cached", "--binary")
+	applyCmd.Env = append(os.Environ(), "GIT_INDEX_FILE="+tmpPath)
+	applyCmd.Stdin = bytes.NewReader(patch)
+	out, err := applyCmd.CombinedOutput()
+	if err != nil {
+		return camperrors.NewGit("apply --cached (temp index)", "", "", strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+// ExpandTrackedPathsFromTempIndex resolves pathspecs to staged paths in tmpPath.
+func ExpandTrackedPathsFromTempIndex(ctx context.Context, repoPath, tmpPath string, paths []string) ([]string, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	args := []string{"-C", repoPath, "diff", "--cached", "--name-status", "-z", "--"}
+	args = append(args, paths...)
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Env = append(os.Environ(), "GIT_INDEX_FILE="+tmpPath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, camperrors.NewGit("diff --cached (temp index)", "", "", strings.TrimSpace(string(output)), err)
+	}
+	return parseNameStatusZ("diff --cached (temp index)", output)
+}
+
+// ResetIndexToHead updates the real index entries for paths to match HEAD.
+func ResetIndexToHead(ctx context.Context, repoPath string, paths []string) error {
+	if len(paths) == 0 {
+		return nil
+	}
+	cfg := DefaultRetryConfig()
+	cfg.OperationName = "reset-index"
+	return WithLockRetry(ctx, repoPath, cfg, func() error {
+		args := []string{"-C", repoPath, "reset", "-q", "HEAD", "--"}
+		args = append(args, paths...)
+		cmd := exec.CommandContext(ctx, "git", args...)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			errType := ClassifyGitError(string(out), cmd.ProcessState.ExitCode())
+			if errType == GitErrorLock {
+				return &LockError{Path: "index.lock", Err: err}
+			}
+			return camperrors.NewGit("reset", "", errType.String(), strings.TrimSpace(string(out)), err)
+		}
+		return nil
+	})
 }
 
 // isLockError checks if an error is a lock-related error.
@@ -244,7 +403,7 @@ func FilterTracked(ctx context.Context, repoPath string, paths []string) ([]stri
 
 // ExpandTrackedPaths resolves the given pathspecs to actual staged file paths
 // currently present in the index. This expands directories to the staged file
-// paths they affect so they can be safely passed to `git commit --only`.
+// paths they affect so scoped commits can update the real index after commit.
 // Staged renames are returned as both source and destination paths so a scoped
 // commit does not drop the source-side deletion.
 func ExpandTrackedPaths(ctx context.Context, repoPath string, paths []string) ([]string, error) {
@@ -261,6 +420,10 @@ func ExpandTrackedPaths(ctx context.Context, repoPath string, paths []string) ([
 		return nil, camperrors.NewGit("diff --cached", "", "", strings.TrimSpace(string(output)), err)
 	}
 
+	return parseNameStatusZ("diff --cached", output)
+}
+
+func parseNameStatusZ(operation string, output []byte) ([]string, error) {
 	if len(output) == 0 {
 		return nil, nil
 	}
@@ -289,14 +452,14 @@ func ExpandTrackedPaths(ctx context.Context, repoPath string, paths []string) ([
 		switch status[0] {
 		case 'R', 'C':
 			if i+1 >= len(fields) {
-				return nil, camperrors.NewGit("diff --cached", "", "", "malformed rename/copy status output", nil)
+				return nil, camperrors.NewGit(operation, "", "", "malformed rename/copy status output", nil)
 			}
 			addPath(fields[i])
 			addPath(fields[i+1])
 			i += 2
 		default:
 			if i >= len(fields) {
-				return nil, camperrors.NewGit("diff --cached", "", "", "malformed diff status output", nil)
+				return nil, camperrors.NewGit(operation, "", "", "malformed diff status output", nil)
 			}
 			addPath(fields[i])
 			i++
