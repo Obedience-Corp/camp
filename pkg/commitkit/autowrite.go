@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // ErrCommitMessageHookNotConfigured is returned when --auto-write is requested
@@ -48,7 +48,7 @@ func LoadCommitMessageHook(ctx context.Context, campaignRoot string) (*CommitMes
 
 	cfg, err := config.LoadCampaignConfig(ctx, campaignRoot)
 	if err != nil {
-		return nil, fmt.Errorf("commitkit: load campaign config at %s: %w", campaignRoot, err)
+		return nil, camperrors.Wrapf(err, "commitkit: load campaign config at %s", campaignRoot)
 	}
 
 	command := strings.TrimSpace(cfg.Hooks.CommitMessage.Command)
@@ -119,9 +119,9 @@ func RunCommitMessageCommandWithEnv(ctx context.Context, repoPath, command strin
 		}
 		msg := strings.TrimSpace(stderr.String())
 		if msg != "" {
-			return "", fmt.Errorf("auto-write commit message command failed: %w: %s", err, msg)
+			return "", camperrors.Wrapf(err, "auto-write commit message command failed: %s", msg)
 		}
-		return "", fmt.Errorf("auto-write commit message command failed: %w", err)
+		return "", camperrors.Wrap(err, "auto-write commit message command failed")
 	}
 
 	message := strings.TrimSpace(stdout.String())

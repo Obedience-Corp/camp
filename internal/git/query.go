@@ -1,19 +1,27 @@
 package git
 
 import (
+	"bytes"
 	"context"
-	"fmt"
 	"os/exec"
 	"strings"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // Output runs a git command and returns trimmed stdout.
 func Output(ctx context.Context, repoPath string, args ...string) (string, error) {
 	fullArgs := append([]string{"-C", repoPath}, args...)
 	cmd := exec.CommandContext(ctx, "git", fullArgs...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	output, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
+		detail := strings.TrimSpace(stderr.String())
+		if detail != "" {
+			return "", camperrors.Wrapf(err, "git %s: %s", strings.Join(args, " "), detail)
+		}
+		return "", camperrors.Wrapf(err, "git %s", strings.Join(args, " "))
 	}
 	return strings.TrimSpace(string(output)), nil
 }

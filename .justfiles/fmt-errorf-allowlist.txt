@@ -66,7 +66,6 @@ internal/flow/registry.go
 internal/flow/runner.go
 internal/git/branches.go
 internal/git/lock.go
-internal/git/query.go
 internal/git/resolve.go
 internal/git/submodule.go
 internal/intent/crawl/runner.go
@@ -97,5 +96,3 @@ internal/transfer/resolve.go
 internal/ui/commit_prompt.go
 internal/workflow/service_sync_migrate.go
 internal/workflow/transition.go
-pkg/commitkit/autowrite.go
-pkg/commitkit/commitkit.go
