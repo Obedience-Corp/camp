@@ -29,12 +29,14 @@ func (r *Runner) Run(ctx context.Context, f Flow, extraArgs []string) error {
 
 	workDir := r.resolveWorkDir(f.WorkDir)
 
-	command := f.Command
+	// f.Command is a user-controlled shell expression, like a just recipe.
+	// Extra args are passed as "$@" positionals so they are data, not shell code.
+	shArgs := []string{"-c", f.Command}
 	if len(extraArgs) > 0 {
-		command = command + " " + strings.Join(extraArgs, " ")
+		shArgs = append([]string{"-c", f.Command + ` "$@"`, "sh"}, extraArgs...)
 	}
 
-	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+	cmd := exec.CommandContext(ctx, "sh", shArgs...)
 	cmd.Dir = workDir
 	cmd.Env = r.mergeEnv(f.Env)
 	cmd.Stdin = os.Stdin
