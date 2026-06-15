@@ -127,6 +127,31 @@ func TestResolveContext_NoDungeonInFestivalsSubtree(t *testing.T) {
 	}
 }
 
+func TestResolveContext_RootPathNamedFestivalsStillFindsRootDungeon(t *testing.T) {
+	base := t.TempDir()
+	campaignRoot := filepath.Join(base, "festivals", "campaign")
+	deep := filepath.Join(campaignRoot, "workflow", "design")
+	if err := os.MkdirAll(deep, 0755); err != nil {
+		t.Fatalf("creating deep directory: %v", err)
+	}
+
+	rootDungeon := filepath.Join(campaignRoot, "dungeon")
+	if err := os.MkdirAll(rootDungeon, 0755); err != nil {
+		t.Fatalf("creating root dungeon: %v", err)
+	}
+
+	got, err := ResolveContext(context.Background(), campaignRoot, deep)
+	if err != nil {
+		t.Fatalf("ResolveContext() error = %v", err)
+	}
+	if got.DungeonPath != mustEval(t, rootDungeon) {
+		t.Fatalf("DungeonPath = %q, want %q", got.DungeonPath, mustEval(t, rootDungeon))
+	}
+	if got.ParentPath != mustEval(t, campaignRoot) {
+		t.Fatalf("ParentPath = %q, want %q", got.ParentPath, mustEval(t, campaignRoot))
+	}
+}
+
 func TestResolveContext_NoDungeonFound(t *testing.T) {
 	campaignRoot := t.TempDir()
 	inside := filepath.Join(campaignRoot, "workflow", "design")

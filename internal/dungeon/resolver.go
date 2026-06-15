@@ -67,7 +67,7 @@ func ResolveContext(ctx context.Context, campaignRoot, cwd string) (Context, err
 		info, statErr := os.Stat(candidate)
 		switch {
 		case statErr == nil && info.IsDir():
-			if isFestOwned(dir) {
+			if isFestOwned(root, dir) {
 				break
 			}
 			return Context{
@@ -97,8 +97,12 @@ func ResolveContext(ctx context.Context, campaignRoot, cwd string) (Context, err
 	)
 }
 
-func isFestOwned(dir string) bool {
-	for _, elem := range splitPathElements(dir) {
+func isFestOwned(root, dir string) bool {
+	rel, err := filepath.Rel(root, dir)
+	if err != nil || rel == "." {
+		return false
+	}
+	for _, elem := range splitPathElements(rel) {
 		if elem == "festivals" {
 			return true
 		}
