@@ -91,6 +91,18 @@ func (s *Syncer) Sync(ctx context.Context) (*SyncResult, error) {
 		return result, nil
 	}
 	result.UpdateResults = updateResults
+	for _, sub := range updateResults {
+		if !sub.Success {
+			result.Success = false
+			if sub.Error != nil {
+				result.Errors = append(result.Errors, sub.Error)
+			}
+		}
+		if sub.DriftWarning != "" {
+			result.Success = false
+			result.Warnings = append(result.Warnings, sub.DriftWarning)
+		}
+	}
 
 	// Phase 4: Post-update validation
 	if err := s.validateUpdate(ctx); err != nil {
@@ -246,8 +258,21 @@ func (s *Syncer) updateSubmodules(ctx context.Context) ([]SubmoduleResult, error
 			result.Error = &SyncError{Op: "nested-init", Submodule: path, Cause: camperrors.Wrapf(ErrNestedSubmodules, "%s", strings.TrimSpace(string(output)))}
 		}
 
-		// Checkout default branch instead of leaving on detached HEAD
-		git.CheckoutDefaultBranch(ctx, subDir)
+		// Checkout default branch instead of leaving on detached HEAD.
+		branch, checkoutErr := git.CheckoutDefaultBranch(ctx, subDir)
+		if checkoutErr != nil {
+			result.Success = false
+			result.Error = &SyncError{Op: "checkout", Submodule: path, Cause: checkoutErr}
+			results = append(results, result)
+			continue
+		}
+		result.CheckedOutBranch = branch
+		if warning, driftErr := s.reconcileCheckoutDrift(ctx, path, subDir, branch); driftErr != nil {
+			result.Success = false
+			result.Error = &SyncError{Op: "drift", Submodule: path, Cause: driftErr}
+		} else if warning != "" {
+			result.DriftWarning = warning
+		}
 
 		results = append(results, result)
 	}
@@ -402,11 +427,15 @@ func (s *Syncer) validateUpdate(ctx context.Context) error {
 		return &SyncError{Op: "validate", Cause: camperrors.Wrap(err, ErrSubmoduleValidation.Error())}
 	}
 
-	// Parse output for issues
+	return validateSubmoduleStatusOutput(string(output))
+}
+
+func validateSubmoduleStatusOutput(output string) error {
+	// Parse output for issues.
 	// Format: [+- ]<sha1> <path> (<describe>)
 	// '-' prefix = not initialized
-	// '+' prefix = checked out commit differs from recorded
-	scanner := bufio.NewScanner(strings.NewReader(string(output)))
+	// '+' prefix = checked out commit differs from the recorded gitlink
+	scanner := bufio.NewScanner(strings.NewReader(output))
 	for scanner.Scan() {
 		line := scanner.Text()
 		if line == "" {
@@ -423,9 +452,89 @@ func (s *Syncer) validateUpdate(ctx context.Context) error {
 			return &SyncError{Op: "validate", Submodule: sub, Cause: git.ErrSubmoduleNotInitialized}
 		}
 
-		// '+' prefix means commit differs, but this is expected after sync
-		// since we just updated to the recorded commit
+		if strings.HasPrefix(line, "+") {
+			parts := strings.Fields(line)
+			sub := line
+			recordedSHA := strings.TrimPrefix(line, "+")
+			if len(parts) >= 2 {
+				sub = parts[1]
+				recordedSHA = strings.TrimPrefix(parts[0], "+")
+			}
+			return &SyncError{
+				Op:        "validate-drift",
+				Submodule: sub,
+				Cause: camperrors.Wrapf(
+					ErrSubmoduleValidation,
+					"checked-out commit differs from recorded gitlink %s; run 'camp sync' or inspect the submodule",
+					recordedSHA,
+				),
+			}
+		}
 	}
 
 	return scanner.Err()
+}
+
+func (s *Syncer) reconcileCheckoutDrift(ctx context.Context, path, subDir, branch string) (string, error) {
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+	if strings.TrimSpace(branch) == "" || branch == "HEAD" {
+		return "", nil
+	}
+
+	recordedSHA, err := s.recordedGitlinkSHA(ctx, path)
+	if err != nil {
+		return "", err
+	}
+
+	branchSHA, err := git.Output(ctx, subDir, "rev-parse", "--verify", branch+"^{commit}")
+	if err != nil {
+		return "", err
+	}
+
+	recordedSHA = strings.TrimSpace(recordedSHA)
+	branchSHA = strings.TrimSpace(branchSHA)
+	if branchSHA == recordedSHA {
+		return "", nil
+	}
+
+	canFastForward, err := git.IsAncestor(ctx, subDir, branchSHA, recordedSHA)
+	if err != nil {
+		return fmt.Sprintf("%s: local %s tip %s != recorded %s (could not verify fast-forward: %v)",
+			path, branch, shortSHA(branchSHA), shortSHA(recordedSHA), err), nil
+	}
+	if !canFastForward {
+		return fmt.Sprintf("%s: local %s tip %s != recorded %s (fast-forward not possible)",
+			path, branch, shortSHA(branchSHA), shortSHA(recordedSHA)), nil
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "-C", subDir, "merge", "--ff-only", recordedSHA)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Sprintf("%s: local %s tip %s != recorded %s (fast-forward failed: %s)",
+			path, branch, shortSHA(branchSHA), shortSHA(recordedSHA), strings.TrimSpace(string(output))), nil
+	}
+
+	return fmt.Sprintf("%s: local %s tip %s != recorded %s (fast-forwarded)",
+		path, branch, shortSHA(branchSHA), shortSHA(recordedSHA)), nil
+}
+
+func (s *Syncer) recordedGitlinkSHA(ctx context.Context, path string) (string, error) {
+	output, err := git.Output(ctx, s.repoRoot, "ls-files", "-s", "--", path)
+	if err != nil {
+		return "", err
+	}
+	fields := strings.Fields(output)
+	if len(fields) < 2 || fields[0] != "160000" {
+		return "", camperrors.Wrapf(ErrSubmoduleValidation, "no gitlink entry for %s", path)
+	}
+	return fields[1], nil
+}
+
+func shortSHA(sha string) string {
+	sha = strings.TrimSpace(sha)
+	if len(sha) <= 8 {
+		return sha
+	}
+	return sha[:8]
 }

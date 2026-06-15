@@ -52,13 +52,14 @@ func formatSyncHuman(result *sync.SyncResult, opts syncOptions, preflight *sync.
 
 	// Update results section
 	formatUpdateSection(result, opts.verbose)
+	formatWarningsSection(result.Warnings)
 
 	// Final status
 	fmt.Println()
 	if result.Success {
 		fmt.Println(ui.Success("Campaign synchronized successfully."))
 	} else {
-		fmt.Println(ui.Error("Sync failed. See errors above."))
+		fmt.Println(ui.Error("Sync failed. See errors or warnings above."))
 	}
 }
 
@@ -179,6 +180,19 @@ func formatUpdateSection(result *sync.SyncResult, verbose bool) {
 		}
 	} else {
 		fmt.Printf("  %s %d/%d submodules failed\n", ui.ErrorIcon(), failed, total)
+	}
+}
+
+// formatWarningsSection displays non-fatal sync issues that still require attention.
+func formatWarningsSection(warnings []string) {
+	if len(warnings) == 0 {
+		return
+	}
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Warnings:")
+	for _, warning := range warnings {
+		fmt.Fprintf(os.Stderr, "  %s %s\n", ui.WarningIcon(), warning)
 	}
 }
 
