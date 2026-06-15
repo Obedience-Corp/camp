@@ -115,7 +115,7 @@ Examples:
 	cmd.Flags().StringVar(&flagPathOutput, "path-output", "", "Write selected relative path to file (shell integration)")
 	_ = cmd.Flags().MarkHidden("path-output")
 	cmd.Flags().StringArrayVar(&flagTypes, "type", nil, "Filter by workflow type (builtin: intent, design, explore, festival; or any slug-safe custom type produced by 'camp workitem create --type <name>')")
-	cmd.Flags().StringArrayVar(&flagStages, "stage", nil, "Filter by lifecycle stage (inbox, active, ready, planning)")
+	cmd.Flags().StringArrayVar(&flagStages, "stage", nil, "Filter by lifecycle stage (none, inbox, active, ready, planning, ritual, chains)")
 	cmd.Flags().IntVar(&flagLimit, "limit", 0, "Maximum number of items to return")
 	cmd.Flags().StringVar(&flagQuery, "query", "", "Search query to filter items")
 
@@ -218,10 +218,9 @@ func validateFlags(jsonMode, printMode bool, pathOutput string, types, stages []
 			return fmt.Errorf("invalid --type value %q: must be a path-safe workflow type (no '/', '\\', whitespace, or control chars; no leading '.' or '-'; max 80 chars)", t)
 		}
 	}
-	validStages := map[string]bool{"inbox": true, "active": true, "ready": true, "planning": true}
 	for _, s := range stages {
-		if !validStages[s] {
-			return fmt.Errorf("unknown --stage value: %q (valid: inbox, active, ready, planning)", s)
+		if !wkitem.IsValidStageForTypes(wkitem.LifecycleStage(s), types) {
+			return fmt.Errorf("unknown --stage value: %q (valid stages depend on --type; built-in stages: none, inbox, active, ready, planning, ritual, chains)", s)
 		}
 	}
 	if jsonMode && printMode {

@@ -23,14 +23,46 @@ func TestFilter_ByType(t *testing.T) {
 
 func TestFilter_ByStage(t *testing.T) {
 	items := []WorkItem{
-		{LifecycleStage: "inbox", Title: "a"},
-		{LifecycleStage: "active", Title: "b"},
-		{LifecycleStage: "ready", Title: "c"},
+		{LifecycleStage: LifecycleStageInbox, Title: "a"},
+		{LifecycleStage: LifecycleStageActive, Title: "b"},
+		{LifecycleStage: LifecycleStageReady, Title: "c"},
 	}
 
 	filtered := Filter(items, nil, []string{"active"}, "")
 	if len(filtered) != 1 || filtered[0].Title != "b" {
 		t.Errorf("expected 1 active item, got %v", filtered)
+	}
+}
+
+func TestFilter_ByStageNone(t *testing.T) {
+	items := []WorkItem{
+		{WorkflowType: WorkflowTypeDesign, LifecycleStage: LifecycleStageNone, Title: "design"},
+		{WorkflowType: WorkflowTypeExplore, LifecycleStage: LifecycleStageNone, Title: "explore"},
+		{WorkflowType: WorkflowTypeIntent, LifecycleStage: LifecycleStageInbox, Title: "intent"},
+		{WorkflowType: WorkflowTypeFestival, LifecycleStage: LifecycleStageActive, Title: "festival"},
+	}
+
+	filtered := Filter(items, nil, []string{"none"}, "")
+	if len(filtered) != 2 {
+		t.Fatalf("expected 2 no-stage items, got %d: %v", len(filtered), filtered)
+	}
+	for _, item := range filtered {
+		if item.LifecycleStage != LifecycleStageNone {
+			t.Fatalf("unexpected stage %q in no-stage filter", item.LifecycleStage)
+		}
+	}
+}
+
+func TestFilter_StageActiveExcludesNone(t *testing.T) {
+	items := []WorkItem{
+		{WorkflowType: WorkflowTypeDesign, LifecycleStage: LifecycleStageNone, Title: "design"},
+		{WorkflowType: WorkflowTypeExplore, LifecycleStage: LifecycleStageNone, Title: "explore"},
+		{WorkflowType: WorkflowTypeFestival, LifecycleStage: LifecycleStageActive, Title: "festival"},
+	}
+
+	filtered := Filter(items, nil, []string{"active"}, "")
+	if len(filtered) != 1 || filtered[0].Title != "festival" {
+		t.Fatalf("expected only active festival, got %v", filtered)
 	}
 }
 

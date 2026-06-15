@@ -74,7 +74,7 @@ func buildWorkflowDirItem(ctx context.Context, campaignRoot, dirPath string, wfT
 	item := WorkItem{
 		Key:            string(wfType) + ":" + relPath,
 		WorkflowType:   wfType,
-		LifecycleStage: "",
+		LifecycleStage: LifecycleStageNone,
 		Title:          title,
 		RelativePath:   relPath,
 		PrimaryDoc:     primaryDocRel,

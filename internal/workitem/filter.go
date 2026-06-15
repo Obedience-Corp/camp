@@ -18,7 +18,7 @@ func Filter(items []WorkItem, types, stages []string, query string) []WorkItem {
 		if len(typeSet) > 0 && !typeSet[string(item.WorkflowType)] {
 			continue
 		}
-		if len(stageSet) > 0 && !stageSet[item.LifecycleStage] {
+		if len(stageSet) > 0 && !stageSet[string(item.LifecycleStage)] {
 			continue
 		}
 		if query != "" && !matchesQuery(item, query) {

@@ -14,7 +14,7 @@ Schema versions in this release:
 
 | Command | Schema version | Notes |
 | --- | --- | --- |
-| `camp workitem --json` | `workitems/v1alpha5` | Existing workitem dashboard contract. |
+| `camp workitem --json` | `workitems/v1alpha6` | Workitem dashboard contract with `stage_vocabulary`, explicit `none` stage, ritual/chains festivals, and non-omitempty workflow counters/booleans. |
 | `camp workitem create --json` | `workitem-create/v1alpha1` | Create response with next-step hint. |
 | `camp workitem link --json` | `workitem-links/v1alpha1` | Emits one `link`. |
 | `camp workitem unlink --json` | `workitem-links/v1alpha1` | Emits `removed`. |

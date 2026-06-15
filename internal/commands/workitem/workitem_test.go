@@ -76,6 +76,24 @@ func TestSelectedOpenPathUsesPrimaryDoc(t *testing.T) {
 	}
 }
 
+func TestValidateFlagsAcceptsStageNoneForNoStageTypes(t *testing.T) {
+	if err := validateFlags(true, false, "", []string{"design"}, []string{"none"}); err != nil {
+		t.Fatalf("validateFlags(design, none) error = %v", err)
+	}
+	if err := validateFlags(true, false, "", []string{"explore"}, []string{"none"}); err != nil {
+		t.Fatalf("validateFlags(explore, none) error = %v", err)
+	}
+}
+
+func TestValidateFlagsRejectsStageForWrongType(t *testing.T) {
+	if err := validateFlags(true, false, "", []string{"intent"}, []string{"planning"}); err == nil {
+		t.Fatal("validateFlags(intent, planning) error = nil, want invalid stage")
+	}
+	if err := validateFlags(true, false, "", []string{"design"}, []string{"inbox"}); err == nil {
+		t.Fatal("validateFlags(design, inbox) error = nil, want invalid stage")
+	}
+}
+
 func TestOutputSelectedPathWritesRelativePath(t *testing.T) {
 	item := wkitem.WorkItem{
 		RelativePath: "workflow/design/example",
