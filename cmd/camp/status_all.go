@@ -7,11 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"github.com/Obedience-Corp/camp/internal/git"
 	tuistatus "github.com/Obedience-Corp/camp/internal/tui/status"
 	"github.com/Obedience-Corp/camp/internal/ui"
@@ -27,19 +25,17 @@ var statusAllCmd = &cobra.Command{
 	Long: `Show a visual overview of git status for all submodules in the campaign.
 
 Displays a table with each submodule's name, branch, clean/dirty state,
-and push status. Results are cached for quick subsequent lookups.
+and push status.
 
 Examples:
   camp status all               # Show all submodule statuses
   camp status all --remote-url  # Show remote URLs instead of names
-  camp status all --json        # Output as JSON
-  camp status all --no-cache    # Skip cache, refresh all`,
+  camp status all --json        # Output as JSON`,
 	RunE: runStatusAll,
 }
 
 var (
 	statusAllJSON      bool
-	statusAllNoCache   bool
 	statusAllView      bool
 	statusAllNoRecurse bool
 	statusAllRemoteURL bool
@@ -47,7 +43,6 @@ var (
 
 func init() {
 	statusAllCmd.Flags().BoolVar(&statusAllJSON, "json", false, "Output as JSON")
-	statusAllCmd.Flags().BoolVar(&statusAllNoCache, "no-cache", false, "Skip cache and refresh")
 	statusAllCmd.Flags().BoolVar(&statusAllView, "view", false, "Open interactive TUI viewer")
 	statusAllCmd.Flags().BoolVar(&statusAllNoRecurse, "no-recurse", false, "Only list top-level submodules")
 	statusAllCmd.Flags().BoolVar(&statusAllRemoteURL, "remote-url", false, "Show remote URLs instead of remote names")
@@ -71,12 +66,6 @@ type repoStatus struct {
 	StaleRefs   int    `json:"stale_refs"`
 	Remote      string `json:"remote"`
 	Error       string `json:"error,omitempty"`
-}
-
-// statusAllCache is the JSON cache format.
-type statusAllCache struct {
-	Timestamp time.Time    `json:"timestamp"`
-	Repos     []repoStatus `json:"repos"`
 }
 
 func runStatusAll(cmd *cobra.Command, _ []string) error {
@@ -113,8 +102,8 @@ func runStatusAll(cmd *cobra.Command, _ []string) error {
 	rootStatus := getRepoStatus(ctx, campRoot, "campaign root", true, statusAllRemoteURL)
 	allStatuses := append([]repoStatus{rootStatus}, statuses...)
 
-	// Cache results
-	writeStatusCache(campRoot, allStatuses)
+	// Status cache write removed: no read path existed, and read-style polling
+	// commands were dirtying git status by creating .campaign/cache files.
 
 	// Output
 	if statusAllJSON {
@@ -386,26 +375,4 @@ func outputStatusJSON(statuses []repoStatus) error {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	return enc.Encode(statuses)
-}
-
-func writeStatusCache(campRoot string, statuses []repoStatus) {
-	cacheDir := filepath.Join(campRoot, ".campaign", "cache", "gitstatus")
-	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
-		return
-	}
-
-	cache := statusAllCache{
-		Timestamp: time.Now(),
-		Repos:     statuses,
-	}
-
-	data, err := json.MarshalIndent(cache, "", "  ")
-	if err != nil {
-		return
-	}
-
-	finalFile := filepath.Join(cacheDir, "status.json")
-	if err := fsutil.WriteFileAtomically(finalFile, data, 0o644); err != nil {
-		return
-	}
 }

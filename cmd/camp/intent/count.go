@@ -45,11 +45,7 @@ func runIntentCount(cmd *cobra.Command, args []string) error {
 
 	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
 	svc := intent.NewIntentService(campaignRoot, resolver.Intents())
-
-	// Ensure directories exist and migrate legacy layout
-	if err := svc.EnsureDirectories(ctx); err != nil {
-		return camperrors.Wrap(err, "ensuring intent directories")
-	}
+	warnPendingLegacyMigration(svc)
 
 	counts, total, err := svc.Count(ctx)
 	if err != nil {

@@ -186,6 +186,16 @@ func (s *IntentService) PlanLegacyIntentRootMigration() ([]PlannedPathMove, erro
 	return moves, nil
 }
 
+// PendingLegacyMigration reports whether the legacy workflow/intents layout
+// contains state that explicit repair would migrate. It is read-only.
+func (s *IntentService) PendingLegacyMigration() (bool, error) {
+	moves, err := s.PlanLegacyIntentRootMigration()
+	if err != nil {
+		return false, err
+	}
+	return len(moves) > 0, nil
+}
+
 // PlanLegacyIntentRootCleanup returns scaffold-generated legacy intent paths
 // that can be removed after normalization to the canonical root.
 func (s *IntentService) PlanLegacyIntentRootCleanup() ([]string, error) {
