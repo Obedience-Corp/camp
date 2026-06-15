@@ -468,6 +468,12 @@ func parseNameStatusZ(operation string, output []byte) ([]string, error) {
 	return result, nil
 }
 
+// ParseDiffNameStatusZ parses `git diff --name-status -z` output.
+// For rename/copy records, it returns both paths from the record.
+func ParseDiffNameStatusZ(output []byte) ([]string, error) {
+	return parseNameStatusZ("diff --name-status", output)
+}
+
 // StageFiles stages specific files.
 func StageFiles(ctx context.Context, repoPath string, files ...string) error {
 	if len(files) == 0 {
