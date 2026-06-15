@@ -11,11 +11,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestIntentList_MigratesLegacyIntentRootAndAudit(t *testing.T) {
+func TestIntentList_WarnsWithoutMigratingLegacyIntentRootAndAudit(t *testing.T) {
 	tc := GetSharedContainer(t)
-	path := "/campaigns/intent-migrate-root"
+	path := "/campaigns/intent-read-legacy-root"
 
-	_, err := tc.InitCampaign(path, "intent-migrate-root", "product")
+	_, err := tc.InitCampaign(path, "intent-read-legacy-root", "product")
 	require.NoError(t, err)
 
 	legacyObey := "# legacy intent docs\n"
@@ -35,39 +35,42 @@ func TestIntentList_MigratesLegacyIntentRootAndAudit(t *testing.T) {
 	))
 
 	output, err := tc.RunCampInDir(path, "intent", "list")
-	require.NoError(t, err, "intent list should migrate legacy intent state:\n%s", output)
+	require.NoError(t, err, "intent list should warn but not migrate legacy intent state:\n%s", output)
+	assert.Contains(t, output, "camp init --repair")
+	assert.Contains(t, output, "No intents found.")
 
 	inboxExists, err := tc.CheckFileExists(fmt.Sprintf("%s/.campaign/intents/inbox/%s.md", path, inboxID))
 	require.NoError(t, err)
-	assert.True(t, inboxExists, "legacy inbox intent should move into the canonical root")
+	assert.False(t, inboxExists, "intent list must not move legacy inbox intents into the canonical root")
 
 	donePath := fmt.Sprintf("%s/.campaign/intents/dungeon/done/%s.md", path, doneID)
 	doneExists, err := tc.CheckFileExists(donePath)
 	require.NoError(t, err)
-	assert.True(t, doneExists, "legacy done intent should move into dungeon/done")
+	assert.False(t, doneExists, "intent list must not move legacy done intents into dungeon/done")
 
-	doneContent, err := tc.ReadFile(donePath)
+	legacyDonePath := fmt.Sprintf("%s/workflow/intents/done/%s.md", path, doneID)
+	doneContent, err := tc.ReadFile(legacyDonePath)
 	require.NoError(t, err)
-	assert.Contains(t, doneContent, "status: dungeon/done", "migrated done intent should retain the canonical done status")
+	assert.Contains(t, doneContent, "status: done", "legacy done intent should remain untouched")
 
-	canonicalAudit, err := tc.ReadFile(path + "/.campaign/intents/.intents.jsonl")
+	legacyAuditContent, err := tc.ReadFile(path + "/workflow/intents/.intents.jsonl")
 	require.NoError(t, err)
-	assert.Equal(t, legacyAudit, canonicalAudit, "audit log should be migrated into the canonical root")
+	assert.Equal(t, legacyAudit, legacyAuditContent, "legacy audit log should remain in place")
 
-	canonicalObey, err := tc.ReadFile(path + "/.campaign/intents/OBEY.md")
+	legacyObeyContent, err := tc.ReadFile(path + "/workflow/intents/OBEY.md")
 	require.NoError(t, err)
-	assert.Equal(t, legacyObey, canonicalObey, "legacy marker content should replace the scaffold marker")
+	assert.Equal(t, legacyObey, legacyObeyContent, "legacy marker content should remain in place")
 
 	legacyDirExists, err := tc.CheckDirExists(path + "/workflow/intents")
 	require.NoError(t, err)
-	assert.False(t, legacyDirExists, "legacy workflow/intents root should be removed after migration")
+	assert.True(t, legacyDirExists, "legacy workflow/intents root should remain until init --repair")
 }
 
-func TestIntentList_MigratesLegacyMarkerWithoutIntentState(t *testing.T) {
+func TestIntentList_WarnsWithoutMigratingLegacyMarkerWithoutIntentState(t *testing.T) {
 	tc := GetSharedContainer(t)
-	path := "/campaigns/intent-migrate-marker"
+	path := "/campaigns/intent-read-legacy-marker"
 
-	_, err := tc.InitCampaign(path, "intent-migrate-marker", "product")
+	_, err := tc.InitCampaign(path, "intent-read-legacy-marker", "product")
 	require.NoError(t, err)
 
 	legacyObey := "# legacy marker\n"
@@ -75,15 +78,20 @@ func TestIntentList_MigratesLegacyMarkerWithoutIntentState(t *testing.T) {
 	require.NoError(t, tc.WriteFile(path+"/.campaign/intents/OBEY.md", "# scaffold marker\n"))
 
 	output, err := tc.RunCampInDir(path, "intent", "list")
-	require.NoError(t, err, "intent list should migrate a marker-only legacy root:\n%s", output)
+	require.NoError(t, err, "intent list should warn but not migrate a marker-only legacy root:\n%s", output)
+	assert.Contains(t, output, "camp init --repair")
 
 	canonicalObey, err := tc.ReadFile(path + "/.campaign/intents/OBEY.md")
 	require.NoError(t, err)
-	assert.Equal(t, legacyObey, canonicalObey, "legacy marker should replace the canonical scaffold marker")
+	assert.Equal(t, "# scaffold marker\n", canonicalObey, "intent list must not replace the canonical marker")
+
+	legacyObeyContent, err := tc.ReadFile(path + "/workflow/intents/OBEY.md")
+	require.NoError(t, err)
+	assert.Equal(t, legacyObey, legacyObeyContent, "legacy marker should remain until init --repair")
 
 	legacyDirExists, err := tc.CheckDirExists(path + "/workflow/intents")
 	require.NoError(t, err)
-	assert.False(t, legacyDirExists, "marker-only legacy root should be removed after migration")
+	assert.True(t, legacyDirExists, "marker-only legacy root should remain until init --repair")
 }
 
 func TestInitRepair_RemovesLegacyIntentScaffoldResidue(t *testing.T) {
