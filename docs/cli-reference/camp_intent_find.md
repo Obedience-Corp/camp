@@ -29,6 +29,7 @@ camp intent find [query] [flags]
 ```
   -f, --format string   Output format: table, simple, json (default "table")
   -h, --help            help for find
+      --json            emit a structured JSON result
   -n, --limit int       Limit results (0 = no limit)
 ```
 

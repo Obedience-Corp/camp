@@ -26,6 +26,7 @@ camp project prune [project-name] [flags]
 ### Options
 
 ```
+      --discard-dirty    Allow removal of worktrees with uncommitted changes (for branches with worktrees)
   -n, --dry-run          Preview without deleting
   -f, --force            Skip local branch deletion confirmation
   -h, --help             help for prune

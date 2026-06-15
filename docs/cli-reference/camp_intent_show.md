@@ -31,6 +31,7 @@ camp intent show <id> [flags]
 ```
   -f, --format string   Output format: text, json, yaml (default "text")
   -h, --help            help for show
+      --json            emit a structured JSON result
 ```
 
 ### Options inherited from parent commands

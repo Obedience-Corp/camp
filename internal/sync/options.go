@@ -185,9 +185,9 @@ const (
 	// ExitPreflightFailed indicates a pre-flight check failed in safe mode.
 	ExitPreflightFailed = 1
 	// ExitSyncFailed indicates the sync or update operation failed.
-	ExitSyncFailed = 2
+	ExitSyncFailed = 1
 	// ExitValidationFailed indicates post-sync validation failed.
 	ExitValidationFailed = 3
 	// ExitInvalidArgs indicates invalid command-line arguments.
-	ExitInvalidArgs = 4
+	ExitInvalidArgs = 2
 )

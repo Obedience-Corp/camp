@@ -51,8 +51,9 @@ camp intent add [title] [flags]
   -c, --campaign string    Target campaign by name or ID; omit value to pick interactively
       --concept string     Set the concept field (e.g., projects/camp)
   -e, --edit               Open in $EDITOR for deep capture
-  -f, --full               Full TUI mode with body textarea
+      --full               Full TUI mode with body textarea
   -h, --help               help for add
+      --json               emit a structured JSON result
       --no-commit          Don't create a git commit
   -t, --type string        Intent type (idea, feature, bug, research, chore) (default "idea")
 ```

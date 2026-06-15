@@ -237,10 +237,9 @@ This command provides a single-step setup for new devices:
 
 EXIT CODES:
   0  Success
-  1  Clone failed (no campaign created)
-  2  Partial success (some submodules failed)
-  3  Validation failed
-  4  Invalid arguments
+  1  Runtime failure (clone failed before usable campaign)
+  2  Usage error (bad flags or args)
+  3  Partial success or validation failed
 
 EXAMPLES:
   # Clone a campaign (default: SSH)
@@ -559,6 +558,7 @@ camp concepts [flags]
 
 ```
   -h, --help   help for concepts
+      --json   emit a structured JSON result
 ```
 
 ### Options inherited from parent commands
@@ -761,8 +761,8 @@ CHECKS PERFORMED:
 
 EXIT CODES:
   0  All checks passed (no warnings or errors)
-  1  Warnings found (but no errors)
-  2  Errors found
+  1  Warnings or errors found
+  2  Usage error (bad flags or args)
   3  Fix attempted but some issues remain
 
 EXAMPLES:
@@ -960,6 +960,7 @@ Examples:
   camp dungeon list                  List dungeon root items
   camp dungeon list --triage         List parent items eligible for triage
   cd workflow/design/subdir && camp dungeon list  Uses nearest dungeon context from nested path
+  camp dungeon list --json           JSON output for scripting
   camp dungeon list -f json          JSON output for scripting
   camp dungeon list -f simple        Names only, pipe to other commands
 
@@ -972,6 +973,7 @@ camp dungeon list [flags]
 ```
   -f, --format string   Output format: table, simple, json (default "table")
   -h, --help            help for list
+      --json            Output as JSON (shorthand for --format json)
       --triage          List parent items eligible for triage into dungeon
 ```
 
@@ -1503,8 +1505,9 @@ camp intent add [title] [flags]
   -c, --campaign string    Target campaign by name or ID; omit value to pick interactively
       --concept string     Set the concept field (e.g., projects/camp)
   -e, --edit               Open in $EDITOR for deep capture
-  -f, --full               Full TUI mode with body textarea
+      --full               Full TUI mode with body textarea
   -h, --help               help for add
+      --json               emit a structured JSON result
       --no-commit          Don't create a git commit
   -t, --type string        Intent type (idea, feature, bug, research, chore) (default "idea")
 ```
@@ -1582,6 +1585,7 @@ camp intent count [flags]
 ```
   -f, --format string   Output format: table, json (default "table")
   -h, --help            help for count
+      --json            emit a structured JSON result
 ```
 
 ### Options inherited from parent commands
@@ -1820,6 +1824,7 @@ camp intent find [query] [flags]
 ```
   -f, --format string   Output format: table, simple, json (default "table")
   -h, --help            help for find
+      --json            emit a structured JSON result
   -n, --limit int       Limit results (0 = no limit)
 ```
 
@@ -1938,6 +1943,7 @@ camp intent list [flags]
   -f, --format string    Output format: table, simple, json (default "table")
   -h, --help             help for list
       --horizon string   Filter by horizon
+      --json             emit a structured JSON result
   -n, --limit int        Limit results (0 = no limit)
   -p, --project string   Filter by project
   -S, --sort string      Sort by: updated, created, priority, title (default "updated")
@@ -2082,6 +2088,7 @@ camp intent show <id> [flags]
 ```
   -f, --format string   Output format: text, json, yaml (default "text")
   -h, --help            help for show
+      --json            emit a structured JSON result
 ```
 
 ### Options inherited from parent commands
@@ -2380,6 +2387,7 @@ Sorting options:
 
 Examples:
   camp list                  List all campaigns
+  camp list --json           Output as JSON
   camp list --format json    Output as JSON
   camp list --sort name      Sort by name
   camp list --format simple  Names only for scripting
@@ -2393,6 +2401,7 @@ camp list [flags]
 ```
   -f, --format string    Output format (table, simple, json) (default "table")
   -h, --help             help for list
+      --json             Output as JSON (shorthand for --format json)
   -s, --sort string      Sort by (name, accessed, type) (default "accessed")
       --verify-verbose   Show detailed verification output
 ```
@@ -2781,6 +2790,7 @@ Output formats:
 
 Examples:
   camp project list               List projects in table format
+  camp project list --json        Output as JSON
   camp project list --format json Output as JSON
   camp project list --format simple  Names only for scripting
 
@@ -2793,6 +2803,7 @@ camp project list [flags]
 ```
   -f, --format string   Output format (table, simple, json) (default "table")
   -h, --help            help for list
+      --json            Output as JSON (shorthand for --format json)
 ```
 
 ### Options inherited from parent commands
@@ -2872,6 +2883,7 @@ camp project prune [project-name] [flags]
 ### Options
 
 ```
+      --discard-dirty    Allow removal of worktrees with uncommitted changes (for branches with worktrees)
   -n, --dry-run          Preview without deleting
   -f, --force            Skip local branch deletion confirmation
   -h, --help             help for prune
@@ -3196,7 +3208,8 @@ Remove a project from campaign
 Remove a project from the campaign.
 
 By default, this only removes the project from git submodule tracking.
-The project files remain in place for you to handle manually.
+The project directory is removed from the working tree by git rm. Pass --delete
+to also remove any worktree directories managed by camp.
 
 For linked projects, prefer 'camp project unlink'. Linked projects are
 machine-local symlinks and are never deleted through this command.
@@ -4067,7 +4080,8 @@ and executed from the campaign root directory.
 Use @shortcut prefix to run from a shortcut's directory instead of root.
 Only navigation shortcuts (those with paths) can be used.
 
-All arguments after 'run' (or '@shortcut') are passed directly to the shell.
+Raw command arguments after 'run' (or '@shortcut') are passed directly to the
+shell. Project just-dispatch passes recipe arguments directly to just.
 
 ```
 camp run [project | @shortcut] [command | recipe] [args...] [flags]
@@ -4818,13 +4832,12 @@ Show git status of all submodules
 Show a visual overview of git status for all submodules in the campaign.
 
 Displays a table with each submodule's name, branch, clean/dirty state,
-and push status. Results are cached for quick subsequent lookups.
+and push status.
 
 Examples:
   camp status all               # Show all submodule statuses
   camp status all --remote-url  # Show remote URLs instead of names
   camp status all --json        # Output as JSON
-  camp status all --no-cache    # Skip cache, refresh all
 
 ```
 camp status all [flags]
@@ -4835,7 +4848,6 @@ camp status all [flags]
 ```
   -h, --help         help for all
       --json         Output as JSON
-      --no-cache     Skip cache and refresh
       --no-recurse   Only list top-level submodules
       --remote-url   Show remote URLs instead of remote names
       --view         Open interactive TUI viewer
@@ -4924,10 +4936,9 @@ when URLs change on remote repositories.
 
 EXIT CODES:
   0  Success
-  1  Pre-flight check failed (uncommitted changes)
-  2  Sync or update operation failed
+  1  Runtime failure (including pre-flight, sync, or update failure)
+  2  Usage error (bad flags or args)
   3  Post-sync validation failed
-  4  Invalid arguments
 
 EXAMPLES:
   # Sync all submodules (recommended default)
@@ -5095,6 +5106,8 @@ Show version information
 ### Synopsis
 
 Show camp version, build information, and runtime details.
+
+When both --short and --json are provided, --json wins.
 
 Examples:
   camp version           Show full version info
@@ -5347,7 +5360,7 @@ camp workitem [flags]
       --limit int           Maximum number of items to return
       --print               Print path only (for shell integration)
       --query string        Search query to filter items
-      --stage stringArray   Filter by lifecycle stage (inbox, active, ready, planning)
+      --stage stringArray   Filter by lifecycle stage (none, inbox, active, ready, planning, ritual, chains)
       --type stringArray    Filter by workflow type (builtin: intent, design, explore, festival; or any slug-safe custom type produced by 'camp workitem create --type <name>')
 ```
 

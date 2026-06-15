@@ -6,6 +6,8 @@ Show version information
 
 Show camp version, build information, and runtime details.
 
+When both --short and --json are provided, --json wins.
+
 Examples:
   camp version           Show full version info
   camp version --short   Show only version number
