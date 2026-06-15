@@ -56,7 +56,7 @@ func TestMigrateV1ToV2RollbackOnMoveFailure(t *testing.T) {
 		if calls == 2 {
 			return os.ErrPermission
 		}
-		return migrateWorkflowItemNoReplace(src, dst)
+		return executeWorkflowMigrationMove(src, dst)
 	})
 	if err == nil {
 		t.Fatal("expected injected move failure")

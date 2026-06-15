@@ -2,7 +2,6 @@ package shortcuts
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 
@@ -31,7 +30,7 @@ type AddJumpPlan struct {
 // PrepareAddJump loads and validates the jumps update for a campaign-level shortcut.
 func PrepareAddJump(ctx context.Context, root string, input AddJumpInput) (*AddJumpPlan, error) {
 	if input.Path == "" && input.Concept == "" {
-		return nil, fmt.Errorf("shortcut must have a path or concept (use -c to specify concept)")
+		return nil, camperrors.NewValidation("shortcut", "must have a path or concept (use -c to specify concept)", nil)
 	}
 
 	jumps, err := config.LoadJumpsConfig(ctx, root)
@@ -49,7 +48,7 @@ func PrepareAddJump(ctx context.Context, root string, input AddJumpInput) (*AddJ
 	if input.Path != "" {
 		fullPath := filepath.Join(root, input.Path)
 		if stat, err := os.Stat(fullPath); err != nil || !stat.IsDir() {
-			return nil, fmt.Errorf("path does not exist or is not a directory: %s", fullPath)
+			return nil, camperrors.NewValidation("path", "does not exist or is not a directory: "+fullPath, err)
 		}
 	}
 

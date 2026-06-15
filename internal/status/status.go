@@ -111,8 +111,12 @@ func GetRepoStatus(ctx context.Context, repoPath, name string, isCampaignRoot bo
 		rs.HasUpstream = true
 		parts := strings.Fields(abOutput)
 		if len(parts) == 2 {
-			fmt.Sscanf(parts[0], "%d", &rs.Ahead)
-			fmt.Sscanf(parts[1], "%d", &rs.Behind)
+			if _, err := fmt.Sscanf(parts[0], "%d", &rs.Ahead); err != nil {
+				rs.Ahead = 0
+			}
+			if _, err := fmt.Sscanf(parts[1], "%d", &rs.Behind); err != nil {
+				rs.Behind = 0
+			}
 		}
 	}
 

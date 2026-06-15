@@ -173,7 +173,7 @@ func RunAll(ctx context.Context, campRoot string, gitArgs []string, opts Options
 	}
 
 	if summary.Failed > 0 {
-		return summary, fmt.Errorf("%d repo(s) failed to pull", summary.Failed)
+		return summary, camperrors.New(fmt.Sprintf("%d repo(s) failed to pull", summary.Failed))
 	}
 	return summary, nil
 }

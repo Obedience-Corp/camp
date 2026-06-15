@@ -2,11 +2,12 @@ package workflow
 
 import (
 	"context"
-	"os"
+	"errors"
 	"path/filepath"
 	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/statusmove"
 )
 
 // Move moves an item from its current status to a new status.
@@ -43,21 +44,14 @@ func (s *Service) Move(ctx context.Context, item, to string, opts MoveOptions) (
 	// Destination path
 	destPath := resolveWorkflowDestinationPath(s.root, to, filepath.Base(itemPath), time.Now())
 
-	if _, exists, err := resolveWorkflowItemPath(s.root, to, filepath.Base(itemPath)); err != nil {
-		return nil, camperrors.Wrap(err, "failed to check destination")
-	} else if exists {
-		return nil, camperrors.Wrap(ErrAlreadyExists, destPath)
-	}
-
-	// Ensure destination directory exists
-	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
-		return nil, camperrors.Wrap(err, "failed to create destination directory")
-	}
-
-	// Move the item
-	if err := os.Rename(itemPath, destPath); err != nil {
+	movedPath, err := statusmove.Move(ctx, itemPath, destPath, statusmove.MoveOptions{BoundaryRoot: s.root})
+	if err != nil {
+		if errors.Is(err, statusmove.ErrAlreadyExists) {
+			return nil, camperrors.Wrap(ErrAlreadyExists, destPath)
+		}
 		return nil, camperrors.Wrap(err, "failed to move item")
 	}
+	destPath = movedPath
 
 	result := &MoveResult{
 		Item:            item,

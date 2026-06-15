@@ -781,7 +781,7 @@ func TestExecuteMigrations_MidSequenceFailureReportsProgressAndRerunConflicts(t 
 		if calls == 2 {
 			return os.ErrPermission
 		}
-		return migrateMoveItem(src, dst)
+		return executeMigrationMove(src, dst)
 	})
 	if err == nil {
 		t.Fatal("expected injected move failure")

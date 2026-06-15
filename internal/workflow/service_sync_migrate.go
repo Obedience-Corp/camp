@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	dungeonscaffold "github.com/Obedience-Corp/camp/internal/dungeon/scaffold"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/fsutil"
+	"github.com/Obedience-Corp/camp/internal/statusmove"
 	"gopkg.in/yaml.v3"
 )
 
@@ -164,7 +166,7 @@ func (s *Service) Migrate(ctx context.Context, opts MigrateOptions) (*MigrateRes
 // Moves active/ and ready/ items to root (both are active work in v2),
 // removes empty active/ and ready/ dirs, and updates schema to v2.
 func (s *Service) MigrateV1ToV2(ctx context.Context, dryRun bool) (*MigrateV1ToV2Result, error) {
-	return s.migrateV1ToV2(ctx, dryRun, migrateWorkflowItemNoReplace)
+	return s.migrateV1ToV2(ctx, dryRun, executeWorkflowMigrationMove)
 }
 
 func (s *Service) migrateV1ToV2(ctx context.Context, dryRun bool, moveItem workflowMigrationMover) (*MigrateV1ToV2Result, error) {
@@ -288,8 +290,7 @@ func validateV1ToV2MovePlan(root string, moves []v1ToV2Move) error {
 	return nil
 }
 
-// checkMigrateDestination enforces no-replace semantics for v1->v2 root moves.
-// Structured as a small helper for D003 extraction in sequence 11.05.
+// checkMigrateDestination enforces logical no-replace semantics for v1->v2 root moves.
 func checkMigrateDestination(root, name string) error {
 	dst := filepath.Join(root, name)
 	if existing, exists, err := resolveWorkflowItemPath(root, ".", name); err != nil {
@@ -332,13 +333,12 @@ func rollbackV1ToV2Moves(moved []v1ToV2Move) error {
 	return nil
 }
 
-// migrateWorkflowItemNoReplace moves one workflow item while refusing to replace
-// an existing destination. The full plan is validated before this helper runs.
-func migrateWorkflowItemNoReplace(src, dst string) error {
-	if _, err := os.Stat(dst); err == nil {
-		return camperrors.Wrapf(ErrAlreadyExists, "destination already exists: %s", dst)
-	} else if err != nil && !os.IsNotExist(err) {
-		return camperrors.Wrapf(err, "checking destination: %s", dst)
+func executeWorkflowMigrationMove(src, dst string) error {
+	if _, err := statusmove.Move(context.Background(), src, dst, statusmove.MoveOptions{}); err != nil {
+		if errors.Is(err, statusmove.ErrAlreadyExists) {
+			return camperrors.Wrapf(ErrAlreadyExists, "destination already exists: %s", dst)
+		}
+		return err
 	}
-	return os.Rename(src, dst)
+	return nil
 }

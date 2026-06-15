@@ -2,6 +2,8 @@ package scaffold
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -16,6 +18,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/quest"
+	"github.com/Obedience-Corp/camp/internal/statusmove"
 	"github.com/lancekrogers/guild-scaffold/pkg/scaffold"
 )
 
@@ -758,7 +761,7 @@ type migrationMover func(src, dst string) error
 // It validates every source and destination before moving anything, and returns
 // the number of items moved plus any error.
 func ExecuteMigrations(migrations []MigrationAction) (int, error) {
-	return executeMigrations(migrations, migrateMoveItem)
+	return executeMigrations(migrations, executeMigrationMove)
 }
 
 func executeMigrations(migrations []MigrationAction, moveItem migrationMover) (int, error) {
@@ -824,15 +827,14 @@ func validateMigrationPlan(migrations []MigrationAction) error {
 	return nil
 }
 
-// migrateMoveItem moves one item with no-replace semantics. The destination
-// must be absent; this helper is intentionally small for D003 extraction.
-func migrateMoveItem(src, dst string) error {
-	if _, err := os.Stat(dst); err == nil {
-		return camperrors.New("destination already exists: " + dst)
-	} else if err != nil && !os.IsNotExist(err) {
-		return camperrors.Wrapf(err, "checking destination %s", dst)
+func executeMigrationMove(src, dst string) error {
+	if _, err := statusmove.Move(context.Background(), src, dst, statusmove.MoveOptions{}); err != nil {
+		if errors.Is(err, statusmove.ErrAlreadyExists) {
+			return camperrors.New("destination already exists: " + dst)
+		}
+		return err
 	}
-	return os.Rename(src, dst)
+	return nil
 }
 
 func countMigrationPlanItems(migrations []MigrationAction) int {
