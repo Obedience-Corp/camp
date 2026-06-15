@@ -18,6 +18,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 )
 
@@ -95,7 +96,7 @@ func DetectCampaign(ctx context.Context) (string, error) {
 
 	cfg, err := config.LoadCampaignConfig(ctx, root)
 	if err != nil {
-		return "", fmt.Errorf("commitkit: load campaign config at %s: %w", root, err)
+		return "", camperrors.Wrapf(err, "commitkit: load campaign config at %s", root)
 	}
 
 	return cfg.ID, nil
@@ -106,7 +107,7 @@ func DetectCampaign(ctx context.Context) (string, error) {
 func LoadCampaignID(ctx context.Context, campaignRoot string) (string, error) {
 	cfg, err := config.LoadCampaignConfig(ctx, campaignRoot)
 	if err != nil {
-		return "", fmt.Errorf("commitkit: load campaign config at %s: %w", campaignRoot, err)
+		return "", camperrors.Wrapf(err, "commitkit: load campaign config at %s", campaignRoot)
 	}
 
 	return cfg.ID, nil
@@ -172,7 +173,7 @@ func ShortHash(ctx context.Context, repoPath string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "rev-parse", "--short", "HEAD")
 	out, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("commitkit: rev-parse --short HEAD: %w", err)
+		return "", camperrors.Wrap(err, "commitkit: rev-parse --short HEAD")
 	}
 	return strings.TrimSpace(string(out)), nil
 }
@@ -193,13 +194,13 @@ func SyncSubmoduleRef(ctx context.Context, campaignRoot, projectRelPath, campaig
 
 	// Stage only the submodule ref — not the entire working tree.
 	if err := git.StageFiles(ctx, campaignRoot, projectRelPath); err != nil {
-		return fmt.Errorf("commitkit: stage submodule %s: %w", projectRelPath, err)
+		return camperrors.Wrapf(err, "commitkit: stage submodule %s", projectRelPath)
 	}
 
 	// Check only the ref path so unrelated staged root content is preserved.
 	hasChanges, err := git.HasStagedPathChange(ctx, campaignRoot, projectRelPath)
 	if err != nil {
-		return fmt.Errorf("commitkit: check staged submodule %s: %w", projectRelPath, err)
+		return camperrors.Wrapf(err, "commitkit: check staged submodule %s", projectRelPath)
 	}
 	if !hasChanges {
 		return nil // No-op: submodule pointer hasn't changed.
@@ -209,7 +210,7 @@ func SyncSubmoduleRef(ctx context.Context, campaignRoot, projectRelPath, campaig
 		fmt.Sprintf("sync submodule ref: %s", projectRelPath))
 
 	if err := git.CommitScoped(ctx, campaignRoot, []string{projectRelPath}, &git.CommitOptions{Message: msg}); err != nil {
-		return fmt.Errorf("commitkit: commit submodule ref for %s: %w", projectRelPath, err)
+		return camperrors.Wrapf(err, "commitkit: commit submodule ref for %s", projectRelPath)
 	}
 
 	return nil
