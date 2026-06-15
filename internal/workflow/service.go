@@ -173,8 +173,7 @@ type DirectoryInfo struct {
 
 // ListOptions configures list output.
 type ListOptions struct {
-	All  bool // List all statuses
-	JSON bool // Output as JSON
+	All bool // List all statuses
 }
 
 // ListResult contains items in a status.
@@ -187,7 +186,6 @@ type ListResult struct {
 type HistoryOptions struct {
 	Limit int    // Max entries (0 = all)
 	Item  string // Filter by item name
-	JSON  bool   // Output as JSON
 }
 
 // MoveOptions configures move behavior.
