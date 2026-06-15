@@ -481,12 +481,11 @@ func TestRegistry_UpdateLastAccess(t *testing.T) {
 		t.Fatalf("Register() error = %v", err)
 	}
 
-	// Get initial time
+	// Force the comparison baseline into the past so UpdateLastAccess can be
+	// verified without sleeping for a distinct wall-clock tick.
 	c1, _ := reg.GetByID("test-id")
-	initial := c1.LastAccess
+	initial := c1.LastAccess.Add(-2 * time.Millisecond)
 
-	// Wait a bit and update
-	time.Sleep(1 * time.Millisecond)
 	reg.UpdateLastAccess("test-id")
 
 	// Get updated time

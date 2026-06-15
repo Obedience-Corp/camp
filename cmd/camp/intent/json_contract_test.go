@@ -264,17 +264,7 @@ func setupIntentJSONCampaign(t *testing.T) (string, []*intentcore.Intent) {
 
 func chdirIntentJSONTest(t *testing.T, dir string) {
 	t.Helper()
-
-	oldWD, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Getwd: %v", err)
-	}
-	if err := os.Chdir(dir); err != nil {
-		t.Fatalf("Chdir(%s): %v", dir, err)
-	}
-	t.Cleanup(func() {
-		_ = os.Chdir(oldWD)
-	})
+	t.Chdir(dir)
 }
 
 func executeIntentJSONTestCommand(t *testing.T, cmd *cobra.Command, args ...string) (string, string, error) {

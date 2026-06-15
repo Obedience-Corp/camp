@@ -26,22 +26,33 @@ func TestWithLockRetry_WaitsForActiveLockRelease(t *testing.T) {
 		_ = os.Remove(lockPath)
 	})
 
+	ready := make(chan struct{})
+	released := make(chan struct{})
 	go func() {
-		time.Sleep(150 * time.Millisecond)
+		<-ready
 		_ = f.Close()
 		_ = os.Remove(lockPath)
+		close(released)
 	}()
 
 	cfg := DefaultRetryConfig()
 	cfg.AttemptsPerCycle = 1
 	cfg.MaxCycles = 2
+	cfg.InitialBackoff = time.Millisecond
+	cfg.MaxBackoff = time.Millisecond
 	cfg.ActiveLockWait = 500 * time.Millisecond
 	cfg.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	cfg.OperationName = "stage"
 
 	ctx := context.Background()
+	attempts := 0
 	err = WithLockRetry(ctx, tmpDir, cfg, func() error {
+		attempts++
 		if _, statErr := os.Stat(lockPath); statErr == nil {
+			if attempts == 1 {
+				close(ready)
+				<-released
+			}
 			return &LockError{Path: lockPath, Err: errors.New("index.lock exists")}
 		}
 		return nil

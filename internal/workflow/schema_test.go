@@ -272,13 +272,15 @@ func TestFindSchema_ContextCancellation(t *testing.T) {
 }
 
 func TestFindSchema_ContextTimeout(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Nanosecond)
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Nanosecond))
 	defer cancel()
-	time.Sleep(2 * time.Nanosecond) // Ensure timeout
 
 	_, _, err := FindSchema(ctx, t.TempDir())
 	if err == nil {
 		t.Fatal("expected error for timed out context")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("error = %v, want context.DeadlineExceeded", err)
 	}
 }
 

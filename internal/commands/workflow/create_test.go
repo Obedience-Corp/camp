@@ -379,8 +379,7 @@ func TestRunCreateRegistersExistingUserWorkflow(t *testing.T) {
 
 func TestRunCreateIdempotentForSameWorkflow(t *testing.T) {
 	root := newWorkflowTestCampaign(t)
-	restore := chdir(t, root)
-	defer restore()
+	chdir(t, root)
 
 	cmd := &cobra.Command{}
 	err := runCreate(context.Background(), cmd, createOptions{
@@ -458,8 +457,7 @@ func TestRunCreateReplacePersistsShortcutAndConcept(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	restore := chdir(t, root)
-	defer restore()
+	chdir(t, root)
 
 	cmd := &cobra.Command{}
 	err := runCreate(context.Background(), cmd, createOptions{
@@ -504,19 +502,8 @@ func TestRunCreateReplacePersistsShortcutAndConcept(t *testing.T) {
 
 func chdir(t *testing.T, dir string) func() {
 	t.Helper()
-	oldWd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	return func() {
-		t.Helper()
-		if err := os.Chdir(oldWd); err != nil {
-			t.Fatalf("restore cwd: %v", err)
-		}
-	}
+	t.Chdir(dir)
+	return func() {}
 }
 
 func newWorkflowTestCampaign(t *testing.T) string {

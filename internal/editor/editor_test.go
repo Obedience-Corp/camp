@@ -8,23 +8,13 @@ import (
 	"testing"
 )
 
-func TestGetEditor(t *testing.T) {
-	// Save original env vars and restore after tests
-	origEditor := os.Getenv("EDITOR")
-	origVisual := os.Getenv("VISUAL")
-	defer func() {
-		if origEditor != "" {
-			os.Setenv("EDITOR", origEditor)
-		} else {
-			os.Unsetenv("EDITOR")
-		}
-		if origVisual != "" {
-			os.Setenv("VISUAL", origVisual)
-		} else {
-			os.Unsetenv("VISUAL")
-		}
-	}()
+func setEditorEnv(t *testing.T, editor, visual string) {
+	t.Helper()
+	t.Setenv("EDITOR", editor)
+	t.Setenv("VISUAL", visual)
+}
 
+func TestGetEditor(t *testing.T) {
 	tests := []struct {
 		name         string
 		envEditor    string
@@ -59,9 +49,7 @@ func TestGetEditor(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Set up environment
-			os.Setenv("EDITOR", tt.envEditor)
-			os.Setenv("VISUAL", tt.envVisual)
+			setEditorEnv(t, tt.envEditor, tt.envVisual)
 
 			editor := GetEditor(context.Background())
 			if editor != tt.wantContains {
@@ -72,25 +60,7 @@ func TestGetEditor(t *testing.T) {
 }
 
 func TestGetEditor_PlatformFallback(t *testing.T) {
-	// Save original env vars
-	origEditor := os.Getenv("EDITOR")
-	origVisual := os.Getenv("VISUAL")
-	defer func() {
-		if origEditor != "" {
-			os.Setenv("EDITOR", origEditor)
-		} else {
-			os.Unsetenv("EDITOR")
-		}
-		if origVisual != "" {
-			os.Setenv("VISUAL", origVisual)
-		} else {
-			os.Unsetenv("VISUAL")
-		}
-	}()
-
-	// Clear env vars to trigger fallback
-	os.Unsetenv("EDITOR")
-	os.Unsetenv("VISUAL")
+	setEditorEnv(t, "", "")
 
 	editor := GetEditor(context.Background())
 
@@ -119,25 +89,7 @@ func TestGetEditor_PlatformFallback(t *testing.T) {
 }
 
 func TestGetEditor_ContextCancelled(t *testing.T) {
-	// Save original env vars
-	origEditor := os.Getenv("EDITOR")
-	origVisual := os.Getenv("VISUAL")
-	defer func() {
-		if origEditor != "" {
-			os.Setenv("EDITOR", origEditor)
-		} else {
-			os.Unsetenv("EDITOR")
-		}
-		if origVisual != "" {
-			os.Setenv("VISUAL", origVisual)
-		} else {
-			os.Unsetenv("VISUAL")
-		}
-	}()
-
-	// Clear env vars to force config check
-	os.Unsetenv("EDITOR")
-	os.Unsetenv("VISUAL")
+	setEditorEnv(t, "", "")
 
 	// Cancelled context should still return a valid editor (platform default)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -150,22 +102,6 @@ func TestGetEditor_ContextCancelled(t *testing.T) {
 }
 
 func TestGetEditorSource(t *testing.T) {
-	// Save original env vars
-	origEditor := os.Getenv("EDITOR")
-	origVisual := os.Getenv("VISUAL")
-	defer func() {
-		if origEditor != "" {
-			os.Setenv("EDITOR", origEditor)
-		} else {
-			os.Unsetenv("EDITOR")
-		}
-		if origVisual != "" {
-			os.Setenv("VISUAL", origVisual)
-		} else {
-			os.Unsetenv("VISUAL")
-		}
-	}()
-
 	tests := []struct {
 		name       string
 		envEditor  string
@@ -191,8 +127,7 @@ func TestGetEditorSource(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			os.Setenv("EDITOR", tt.envEditor)
-			os.Setenv("VISUAL", tt.envVisual)
+			setEditorEnv(t, tt.envEditor, tt.envVisual)
 
 			editor, source := GetEditorSource(context.Background())
 			if editor != tt.wantEditor {
@@ -206,24 +141,7 @@ func TestGetEditorSource(t *testing.T) {
 }
 
 func TestGetEditorSource_Fallback(t *testing.T) {
-	// Save original env vars
-	origEditor := os.Getenv("EDITOR")
-	origVisual := os.Getenv("VISUAL")
-	defer func() {
-		if origEditor != "" {
-			os.Setenv("EDITOR", origEditor)
-		} else {
-			os.Unsetenv("EDITOR")
-		}
-		if origVisual != "" {
-			os.Setenv("VISUAL", origVisual)
-		} else {
-			os.Unsetenv("VISUAL")
-		}
-	}()
-
-	os.Unsetenv("EDITOR")
-	os.Unsetenv("VISUAL")
+	setEditorEnv(t, "", "")
 
 	editor, source := GetEditorSource(context.Background())
 
@@ -252,25 +170,7 @@ func TestDefaultEditor(t *testing.T) {
 }
 
 func TestGetEditor_Priority(t *testing.T) {
-	// Save original env vars
-	origEditor := os.Getenv("EDITOR")
-	origVisual := os.Getenv("VISUAL")
-	defer func() {
-		if origEditor != "" {
-			os.Setenv("EDITOR", origEditor)
-		} else {
-			os.Unsetenv("EDITOR")
-		}
-		if origVisual != "" {
-			os.Setenv("VISUAL", origVisual)
-		} else {
-			os.Unsetenv("VISUAL")
-		}
-	}()
-
-	// Test that EDITOR beats VISUAL
-	os.Setenv("EDITOR", "editor_priority")
-	os.Setenv("VISUAL", "visual_priority")
+	setEditorEnv(t, "editor_priority", "visual_priority")
 
 	editor := GetEditor(context.Background())
 	if editor != "editor_priority" {
@@ -637,25 +537,8 @@ func TestBuildEditorCommand_DoesNotSetProcessGroup(t *testing.T) {
 }
 
 func TestEdit(t *testing.T) {
-	// Save original env vars
-	origEditor := os.Getenv("EDITOR")
-	origVisual := os.Getenv("VISUAL")
-	defer func() {
-		if origEditor != "" {
-			os.Setenv("EDITOR", origEditor)
-		} else {
-			os.Unsetenv("EDITOR")
-		}
-		if origVisual != "" {
-			os.Setenv("VISUAL", origVisual)
-		} else {
-			os.Unsetenv("VISUAL")
-		}
-	}()
-
 	// Set EDITOR to a command that will succeed (true on unix)
-	os.Setenv("EDITOR", "true")
-	os.Unsetenv("VISUAL")
+	setEditorEnv(t, "true", "")
 
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.md")

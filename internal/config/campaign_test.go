@@ -336,9 +336,8 @@ func TestLoadCampaignConfig_ContextCancelled(t *testing.T) {
 }
 
 func TestLoadCampaignConfig_ContextTimeout(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Nanosecond)
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Nanosecond))
 	defer cancel()
-	time.Sleep(1 * time.Millisecond)
 
 	_, err := LoadCampaignConfig(ctx, "/some/path")
 	if err != context.DeadlineExceeded {

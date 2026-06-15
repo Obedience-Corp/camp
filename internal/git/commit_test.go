@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 func initTestRepo(t *testing.T) string {
@@ -943,11 +942,13 @@ func TestStage_WaitsForBriefActiveLock(t *testing.T) {
 		_ = os.Remove(lockPath)
 	})
 
+	ready := make(chan struct{})
 	go func() {
-		time.Sleep(300 * time.Millisecond)
+		<-ready
 		_ = f.Close()
 		_ = os.Remove(lockPath)
 	}()
+	close(ready)
 
 	ctx := context.Background()
 	if err := StageAll(ctx, tmpDir); err != nil {

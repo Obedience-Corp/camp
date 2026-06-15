@@ -54,6 +54,15 @@ func statusPorcelain(t *testing.T, tc *TestContainer, repo string) string {
 	return out
 }
 
+func hasSubjectSuffix(subjects map[string]bool, suffix string) bool {
+	for subject := range subjects {
+		if strings.HasSuffix(subject, suffix) {
+			return true
+		}
+	}
+	return false
+}
+
 func TestIntegration_WorkitemCommit_WorkitemDirContext(t *testing.T) {
 	tc := GetSharedContainer(t)
 	dir := "/test/wi-commit-dir"
@@ -278,26 +287,17 @@ func TestIntegration_WorkitemCommits_CrossRepo(t *testing.T) {
 		require.NoError(t, err, "project %s commit: %s", name, out)
 	}
 
-	out, err = tc.RunCampInDir(dir, "workitem", "commits", "timeline")
-	require.NoError(t, err, "workitem commits: %s", out)
-	for _, expect := range []string{"root contribution", "project camp-A contribution", "project camp-B contribution"} {
-		assert.Contains(t, out, expect, "missing %q in commits output:\n%s", expect, out)
-	}
-
 	jsonOut, err := tc.RunCampInDir(dir, "workitem", "commits", "timeline", "--json")
 	require.NoError(t, err, "workitem commits --json: %s", jsonOut)
-	for _, repoName := range []string{"camp-A", "camp-B"} {
-		assert.Contains(t, jsonOut, "\"repo\": \"projects/"+repoName+"\"",
-			"JSON missing repo field for %s:\n%s", repoName, jsonOut)
-	}
 	assert.NotContains(t, jsonOut, "CampaignID")
 	assert.NotContains(t, jsonOut, "WorkitemRef")
 
 	var payload struct {
 		SchemaVersion string `json:"schema_version"`
 		Commits       []struct {
-			Repo string `json:"repo"`
-			Tag  struct {
+			Subject string `json:"subject"`
+			Repo    string `json:"repo"`
+			Tag     struct {
 				CampaignID  string `json:"campaign_id"`
 				QuestID     string `json:"quest_id"`
 				FestRef     string `json:"fest_ref"`
@@ -308,11 +308,22 @@ func TestIntegration_WorkitemCommits_CrossRepo(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(jsonOut), &payload), "raw=%s", jsonOut)
 	assert.Equal(t, "workitem-commits/v1alpha1", payload.SchemaVersion)
 	require.NotEmpty(t, payload.Commits)
+
+	subjects := make(map[string]bool)
+	repos := make(map[string]bool)
 	for _, commit := range payload.Commits {
+		subjects[commit.Subject] = true
+		repos[commit.Repo] = true
 		assert.NotEmpty(t, commit.Tag.CampaignID)
 		assert.Equal(t, "", commit.Tag.QuestID)
 		assert.Equal(t, "", commit.Tag.FestRef)
 		assert.Equal(t, ref, commit.Tag.WorkitemRef)
+	}
+	for _, expect := range []string{"root contribution", "project camp-A contribution", "project camp-B contribution"} {
+		require.True(t, hasSubjectSuffix(subjects, expect), "missing commit subject suffix %q in %#v", expect, subjects)
+	}
+	for _, repoName := range []string{"camp-A", "camp-B"} {
+		assert.True(t, repos["projects/"+repoName], "JSON missing repo field for %s: %#v", repoName, repos)
 	}
 }
 

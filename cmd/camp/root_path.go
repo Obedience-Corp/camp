@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
@@ -86,6 +87,14 @@ func buildCampaignRootOutput(cwd, root string) (campaignRootOutput, error) {
 }
 
 func resolveExistingPath(path string) (string, error) {
+	if path == "." {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", err
+		}
+		path = cwd
+	}
+
 	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {
 		return "", err

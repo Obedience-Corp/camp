@@ -175,6 +175,9 @@ func removeSingleLock(ctx context.Context, lockPath string, logger *slog.Logger)
 	// Step 3: Remove the lock file
 	logger.Debug("removing stale lock", "path", lockPath)
 	if err := os.Remove(lockPath); err != nil {
+		if os.IsNotExist(err) {
+			return info, nil
+		}
 		return info, camperrors.WrapJoinf(ErrLockRemovalFailed, err, "failed to remove lock file %s", lockPath)
 	}
 

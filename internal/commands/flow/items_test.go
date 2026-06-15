@@ -16,8 +16,7 @@ import (
 
 func TestItemsJSONOutput(t *testing.T) {
 	root := setupFlowItemsWorkflow(t)
-	restore := chdirFlowItems(t, root)
-	defer restore()
+	chdirFlowItems(t, root)
 
 	if err := os.WriteFile(filepath.Join(root, "active", "launch.md"), []byte("ship it\n"), 0644); err != nil {
 		t.Fatalf("write active item: %v", err)
@@ -63,8 +62,7 @@ func TestItemsJSONOutput(t *testing.T) {
 
 func TestItemsJSONErrorEnvelopeOnListingFailure(t *testing.T) {
 	root := setupFlowItemsWorkflow(t)
-	restore := chdirFlowItems(t, root)
-	defer restore()
+	chdirFlowItems(t, root)
 
 	if err := os.RemoveAll(filepath.Join(root, "active")); err != nil {
 		t.Fatalf("remove active dir: %v", err)
@@ -117,19 +115,7 @@ func setupFlowItemsWorkflow(t *testing.T) string {
 	return root
 }
 
-func chdirFlowItems(t *testing.T, dir string) func() {
+func chdirFlowItems(t *testing.T, dir string) {
 	t.Helper()
-
-	old, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("get cwd: %v", err)
-	}
-	if err := os.Chdir(dir); err != nil {
-		t.Fatalf("chdir %s: %v", dir, err)
-	}
-	return func() {
-		if err := os.Chdir(old); err != nil {
-			t.Fatalf("restore cwd %s: %v", old, err)
-		}
-	}
+	t.Chdir(dir)
 }
