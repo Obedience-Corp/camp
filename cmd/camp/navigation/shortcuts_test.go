@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/shortcuts"
 )
 
 func TestShortcutsAddDispatch(t *testing.T) {
@@ -90,22 +91,22 @@ func TestDeprecatedCommandsRemoved(t *testing.T) {
 
 func TestComputeShortcutDiff_AllMatch(t *testing.T) {
 	defaults := config.DefaultNavigationShortcuts()
-	diff := computeShortcutDiff(defaults, defaults)
+	diff := shortcuts.ComputeShortcutDiff(defaults, defaults)
 
-	if len(diff.missing) != 0 {
-		t.Errorf("missing = %v, want empty", diff.missing)
+	if len(diff.Missing) != 0 {
+		t.Errorf("Missing = %v, want empty", diff.Missing)
 	}
-	if len(diff.stale) != 0 {
-		t.Errorf("stale = %v, want empty", diff.stale)
+	if len(diff.Stale) != 0 {
+		t.Errorf("Stale = %v, want empty", diff.Stale)
 	}
-	if len(diff.modified) != 0 {
-		t.Errorf("modified = %v, want empty", diff.modified)
+	if len(diff.Modified) != 0 {
+		t.Errorf("Modified = %v, want empty", diff.Modified)
 	}
-	if len(diff.custom) != 0 {
-		t.Errorf("custom = %v, want empty", diff.custom)
+	if len(diff.Custom) != 0 {
+		t.Errorf("Custom = %v, want empty", diff.Custom)
 	}
-	if diff.matched != len(defaults) {
-		t.Errorf("matched = %d, want %d", diff.matched, len(defaults))
+	if diff.Matched != len(defaults) {
+		t.Errorf("Matched = %d, want %d", diff.Matched, len(defaults))
 	}
 }
 
@@ -120,13 +121,13 @@ func TestComputeShortcutDiff_MissingDefaults(t *testing.T) {
 		}
 	}
 
-	diff := computeShortcutDiff(current, defaults)
+	diff := shortcuts.ComputeShortcutDiff(current, defaults)
 
-	if len(diff.missing) != 1 || diff.missing[0] != "ai" {
-		t.Errorf("missing = %v, want [ai]", diff.missing)
+	if len(diff.Missing) != 1 || diff.Missing[0] != "ai" {
+		t.Errorf("Missing = %v, want [ai]", diff.Missing)
 	}
-	if diff.matched != len(defaults)-1 {
-		t.Errorf("matched = %d, want %d", diff.matched, len(defaults)-1)
+	if diff.Matched != len(defaults)-1 {
+		t.Errorf("Matched = %d, want %d", diff.Matched, len(defaults)-1)
 	}
 }
 
@@ -143,10 +144,10 @@ func TestComputeShortcutDiff_StaleAutoShortcut(t *testing.T) {
 		Source: config.ShortcutSourceAuto,
 	}
 
-	diff := computeShortcutDiff(current, defaults)
+	diff := shortcuts.ComputeShortcutDiff(current, defaults)
 
-	if len(diff.stale) != 1 || diff.stale[0] != "a" {
-		t.Errorf("stale = %v, want [a]", diff.stale)
+	if len(diff.Stale) != 1 || diff.Stale[0] != "a" {
+		t.Errorf("Stale = %v, want [a]", diff.Stale)
 	}
 }
 
@@ -162,13 +163,13 @@ func TestComputeShortcutDiff_CustomShortcutPreserved(t *testing.T) {
 		Source: config.ShortcutSourceUser,
 	}
 
-	diff := computeShortcutDiff(current, defaults)
+	diff := shortcuts.ComputeShortcutDiff(current, defaults)
 
-	if len(diff.custom) != 1 || diff.custom[0] != "api" {
-		t.Errorf("custom = %v, want [api]", diff.custom)
+	if len(diff.Custom) != 1 || diff.Custom[0] != "api" {
+		t.Errorf("Custom = %v, want [api]", diff.Custom)
 	}
-	if len(diff.stale) != 0 {
-		t.Errorf("stale = %v, want empty", diff.stale)
+	if len(diff.Stale) != 0 {
+		t.Errorf("Stale = %v, want empty", diff.Stale)
 	}
 }
 
@@ -185,10 +186,10 @@ func TestComputeShortcutDiff_ModifiedAutoShortcut(t *testing.T) {
 	modified.Source = config.ShortcutSourceAuto
 	current["d"] = modified
 
-	diff := computeShortcutDiff(current, defaults)
+	diff := shortcuts.ComputeShortcutDiff(current, defaults)
 
-	if len(diff.modified) != 1 || diff.modified[0] != "d" {
-		t.Errorf("modified = %v, want [d]", diff.modified)
+	if len(diff.Modified) != 1 || diff.Modified[0] != "d" {
+		t.Errorf("Modified = %v, want [d]", diff.Modified)
 	}
 }
 
@@ -206,11 +207,11 @@ func TestComputeShortcutDiff_LegacyEmptySource(t *testing.T) {
 		Source: "", // legacy, no source
 	}
 
-	diff := computeShortcutDiff(current, defaults)
+	diff := shortcuts.ComputeShortcutDiff(current, defaults)
 
 	// Unknown key with empty source and no default match → treated as custom
-	if len(diff.custom) != 1 || diff.custom[0] != "old" {
-		t.Errorf("custom = %v, want [old]", diff.custom)
+	if len(diff.Custom) != 1 || diff.Custom[0] != "old" {
+		t.Errorf("Custom = %v, want [old]", diff.Custom)
 	}
 }
 
@@ -251,9 +252,9 @@ func TestIsAutoShortcut(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := isAutoShortcut(tt.sc, tt.key, defaults)
+			got := shortcuts.IsAutoShortcut(tt.sc, tt.key, defaults)
 			if got != tt.want {
-				t.Errorf("isAutoShortcut() = %v, want %v", got, tt.want)
+				t.Errorf("IsAutoShortcut() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -315,7 +316,7 @@ func TestNewUserShortcut_SetsSourceUser(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			sc := newUserShortcut(tt.path, tt.description, tt.concept)
+			sc := shortcuts.NewUserShortcut(tt.path, tt.description, tt.concept)
 
 			if sc.Source != config.ShortcutSourceUser {
 				t.Errorf("Source = %q, want %q", sc.Source, config.ShortcutSourceUser)
@@ -334,17 +335,17 @@ func TestNewUserShortcut_SetsSourceUser(t *testing.T) {
 }
 
 // TestNewUserShortcut_NotTreatedAsAuto verifies that shortcuts created via the
-// CLI helper are recognized by isAutoShortcut() as user-defined (not auto),
+// CLI helper are recognized by IsAutoShortcut() as user-defined (not auto),
 // which is the semantic property the repair system relies on.
 func TestNewUserShortcut_NotTreatedAsAuto(t *testing.T) {
 	defaults := config.DefaultNavigationShortcuts()
-	sc := newUserShortcut("projects/api/", "API", "service")
+	sc := shortcuts.NewUserShortcut("projects/api/", "API", "service")
 
 	// Even if the key happens to collide with a default key, a user-sourced
 	// shortcut must not be classified as auto.
 	for _, key := range []string{"api", "p", "unknown-key"} {
-		if isAutoShortcut(sc, key, defaults) {
-			t.Errorf("isAutoShortcut(key=%q) = true, want false for user-sourced shortcut", key)
+		if shortcuts.IsAutoShortcut(sc, key, defaults) {
+			t.Errorf("IsAutoShortcut(key=%q) = true, want false for user-sourced shortcut", key)
 		}
 	}
 }
