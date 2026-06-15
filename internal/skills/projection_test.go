@@ -1,8 +1,10 @@
 package skills
 
 import (
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -223,6 +225,59 @@ func TestProjectSkillEntries_Idempotent(t *testing.T) {
 	}
 }
 
+func TestProjectSkillEntriesForceUnmanagedSymlinkWarns(t *testing.T) {
+	tmpDir := resolvePath(t, t.TempDir())
+
+	skillsDir := filepath.Join(tmpDir, ".campaign", "skills")
+	slugDir := filepath.Join(skillsDir, "alpha")
+	if err := os.MkdirAll(slugDir, 0755); err != nil {
+		t.Fatalf("mkdir skill dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(slugDir, "SKILL.md"), []byte("name: alpha"), 0644); err != nil {
+		t.Fatalf("write skill: %v", err)
+	}
+
+	foreignDir := filepath.Join(tmpDir, "foreign-skill")
+	if err := os.MkdirAll(foreignDir, 0755); err != nil {
+		t.Fatalf("mkdir foreign dir: %v", err)
+	}
+
+	destDir := filepath.Join(tmpDir, ".claude", "skills")
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		t.Fatalf("mkdir dest dir: %v", err)
+	}
+	destPath := filepath.Join(destDir, "alpha")
+	if err := os.Symlink(foreignDir, destPath); err != nil {
+		t.Fatalf("create foreign symlink: %v", err)
+	}
+
+	var summary ProjectionSummary
+	var projectErr error
+	stderr := captureStderr(t, func() {
+		summary, projectErr = ProjectSkillEntries(destDir, skillsDir, []string{"alpha"}, false, true)
+	})
+	if projectErr != nil {
+		t.Fatalf("ProjectSkillEntries: %v", projectErr)
+	}
+	if summary.Replaced != 1 {
+		t.Fatalf("Replaced = %d, want 1", summary.Replaced)
+	}
+	if !strings.Contains(stderr, "warning: replacing unmanaged symlink") {
+		t.Fatalf("stderr missing unmanaged symlink warning:\n%s", stderr)
+	}
+	if !strings.Contains(stderr, foreignDir) {
+		t.Fatalf("stderr missing replaced target %q:\n%s", foreignDir, stderr)
+	}
+
+	state, err := CheckLinkState(destPath, slugDir)
+	if err != nil {
+		t.Fatalf("CheckLinkState: %v", err)
+	}
+	if state != StateValid {
+		t.Fatalf("state = %s, want %s", state, StateValid)
+	}
+}
+
 func TestInspectSkillProjection_MixedStates(t *testing.T) {
 	t.Parallel()
 	tmpDir := resolvePath(t, t.TempDir())
@@ -270,6 +325,32 @@ func TestInspectSkillProjection_MixedStates(t *testing.T) {
 	if state.Conflicts < 1 {
 		t.Errorf("expected at least 1 conflict, got %d", state.Conflicts)
 	}
+}
+
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+
+	old := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe stderr: %v", err)
+	}
+	os.Stderr = w
+	defer func() {
+		os.Stderr = old
+		_ = r.Close()
+	}()
+
+	fn()
+
+	if err := w.Close(); err != nil {
+		t.Fatalf("close stderr pipe: %v", err)
+	}
+	data, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("read stderr: %v", err)
+	}
+	return string(data)
 }
 
 func TestRemoveProjectedSkillEntries_OnlyRemovesManaged(t *testing.T) {

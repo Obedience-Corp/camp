@@ -2,8 +2,10 @@ package pins
 
 import (
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -396,6 +398,63 @@ func TestMigrateAbsoluteToRelative(t *testing.T) {
 	}
 }
 
+func TestMigrateAbsoluteToRelativeSymlinkedRoot(t *testing.T) {
+	tmpDir := t.TempDir()
+	realRoot := filepath.Join(tmpDir, "real-campaign")
+	if err := os.MkdirAll(filepath.Join(realRoot, "projects", "foo"), 0755); err != nil {
+		t.Fatalf("mkdir real root: %v", err)
+	}
+	linkRoot := filepath.Join(tmpDir, "link-campaign")
+	if err := os.Symlink(realRoot, linkRoot); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	resolvedPin, err := filepath.EvalSymlinks(filepath.Join(linkRoot, "projects", "foo"))
+	if err != nil {
+		t.Fatalf("resolve pin path: %v", err)
+	}
+
+	s := NewStore("")
+	if err := s.Add("proj", resolvedPin); err != nil {
+		t.Fatalf("Add() error: %v", err)
+	}
+
+	changed := s.MigrateAbsoluteToRelative(linkRoot)
+	if !changed {
+		t.Fatal("MigrateAbsoluteToRelative() changed = false, want true")
+	}
+	pins := s.List()
+	if len(pins) != 1 {
+		t.Fatalf("pin count = %d, want 1", len(pins))
+	}
+	if pins[0].Path != filepath.Join("projects", "foo") {
+		t.Fatalf("pin path = %q, want %q", pins[0].Path, filepath.Join("projects", "foo"))
+	}
+}
+
+func TestMigrateAbsoluteToRelativeReportsDroppedPins(t *testing.T) {
+	s := NewStore("")
+	if err := s.Add("outside", "/outside/campaign/path"); err != nil {
+		t.Fatalf("Add() error: %v", err)
+	}
+
+	stderr := capturePinsStderr(t, func() {
+		changed := s.MigrateAbsoluteToRelative("/home/user/campaign")
+		if !changed {
+			t.Fatal("MigrateAbsoluteToRelative() changed = false, want true")
+		}
+	})
+
+	if len(s.List()) != 0 {
+		t.Fatalf("pin count = %d, want 0", len(s.List()))
+	}
+	if !strings.Contains(stderr, "warning: dropping pin") {
+		t.Fatalf("stderr missing dropped-pin warning:\n%s", stderr)
+	}
+	if !strings.Contains(stderr, "outside") || !strings.Contains(stderr, "/outside/campaign/path") {
+		t.Fatalf("stderr missing pin name/path:\n%s", stderr)
+	}
+}
+
 func TestTogglePersistence(t *testing.T) {
 	dir := t.TempDir()
 	storePath := filepath.Join(dir, "pins.json")
@@ -425,4 +484,30 @@ func TestTogglePersistence(t *testing.T) {
 	if len(store3.List()) != 0 {
 		t.Errorf("expected 0 pins after toggle-off, got %d", len(store3.List()))
 	}
+}
+
+func capturePinsStderr(t *testing.T, fn func()) string {
+	t.Helper()
+
+	old := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe stderr: %v", err)
+	}
+	os.Stderr = w
+	defer func() {
+		os.Stderr = old
+		_ = r.Close()
+	}()
+
+	fn()
+
+	if err := w.Close(); err != nil {
+		t.Fatalf("close stderr pipe: %v", err)
+	}
+	data, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("read stderr: %v", err)
+	}
+	return string(data)
 }

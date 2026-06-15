@@ -2,6 +2,7 @@
 package tasks
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,10 +11,22 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/camp/internal/buildutil/ui"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
+
+const campModulePath = "module github.com/Obedience-Corp/camp"
 
 // Clean removes build artifacts
 func Clean(verbose bool) error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return camperrors.Wrap(err, "clean: determine cwd")
+	}
+	repoRoot, err := findCampRepoRoot(cwd)
+	if err != nil {
+		return err
+	}
+
 	ui.Section("Cleaning Build Artifacts")
 
 	artifacts := []string{
@@ -42,19 +55,23 @@ func Clean(verbose bool) error {
 		ui.Progress(i+1, total, fmt.Sprintf("Removing %s", pattern))
 
 		if strings.Contains(pattern, "*") {
-			// Use shell expansion for patterns
-			cmd := exec.Command("sh", "-c", fmt.Sprintf("rm -rf %s 2>/dev/null || true", pattern))
-			if verbose {
-				cmd.Stdout = os.Stdout
-				cmd.Stderr = os.Stderr
+			matches, err := filepath.Glob(filepath.Join(repoRoot, pattern))
+			if err != nil {
+				return camperrors.Wrapf(err, "clean glob %s", pattern)
 			}
-			cmd.Run()
-			removed++
-		} else {
-			// Direct removal for specific files/directories
-			if err := os.RemoveAll(pattern); err == nil {
+			for _, match := range matches {
+				if err := os.RemoveAll(match); err != nil {
+					return camperrors.Wrapf(err, "remove %s", match)
+				}
 				removed++
 			}
+		} else {
+			// Direct removal for specific files/directories
+			target := filepath.Join(repoRoot, pattern)
+			if err := os.RemoveAll(target); err != nil {
+				return camperrors.Wrapf(err, "remove %s", target)
+			}
+			removed++
 		}
 
 		time.Sleep(50 * time.Millisecond) // Small delay for visual effect
@@ -63,7 +80,7 @@ func Clean(verbose bool) error {
 	ui.ClearProgress()
 
 	// Also clean up any .test binaries in subdirectories
-	filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
+	if err := filepath.Walk(repoRoot, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -80,7 +97,9 @@ func Clean(verbose bool) error {
 		}
 
 		return nil
-	})
+	}); err != nil {
+		return camperrors.Wrap(err, "walk repo for test binaries")
+	}
 
 	// Clean up orphaned test containers (testcontainers)
 	ui.Task("Cleaning", "orphaned Docker test containers")
@@ -115,4 +134,27 @@ func Clean(verbose bool) error {
 	ui.SummaryCardWithStatus("Clean Summary", rows, "< 1s", true, "✓ CLEAN SUCCESSFUL", "✗ CLEAN FAILED")
 
 	return nil
+}
+
+func findCampRepoRoot(start string) (string, error) {
+	dir := filepath.Clean(start)
+	for {
+		goModPath := filepath.Join(dir, "go.mod")
+		data, err := os.ReadFile(goModPath)
+		if err == nil {
+			if bytes.Contains(data, []byte(campModulePath)) {
+				return dir, nil
+			}
+		} else if !os.IsNotExist(err) {
+			return "", camperrors.Wrapf(err, "read %s", goModPath)
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+
+	return "", camperrors.Wrapf(camperrors.ErrNotFound, "clean: cannot find camp repo root from cwd %s", start)
 }
