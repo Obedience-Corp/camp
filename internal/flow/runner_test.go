@@ -2,8 +2,11 @@ package flow
 
 import (
 	"context"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -98,17 +101,80 @@ func TestRunner_Run_Success(t *testing.T) {
 	}
 }
 
-func TestRunner_Run_WithExtraArgs(t *testing.T) {
+func TestRunner_Run_ExtraArgPositionals(t *testing.T) {
+	tests := []struct {
+		name      string
+		extraArgs []string
+		want      []string
+	}{
+		{
+			name:      "space remains one arg",
+			extraArgs: []string{"us east"},
+			want:      []string{"us east"},
+		},
+		{
+			name:      "command substitution is data",
+			extraArgs: []string{"$(echo injected)"},
+			want:      []string{"$(echo injected)"},
+		},
+		{
+			name:      "semicolon is data",
+			extraArgs: []string{"a;b"},
+			want:      []string{"a;b"},
+		},
+		{
+			name:      "pipe is data",
+			extraArgs: []string{"a|b"},
+			want:      []string{"a|b"},
+		},
+		{
+			name:      "multiple args retain boundaries",
+			extraArgs: []string{"one two", "--flag", "-v", "*.go"},
+			want:      []string{"one two", "--flag", "-v", "*.go"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmp := t.TempDir()
+			r := NewRunner(tmp)
+
+			outFile := filepath.Join(tmp, "args.txt")
+			f := Flow{
+				Command: "printf '%s\n' > \"$OUT_FILE\"",
+				Env:     map[string]string{"OUT_FILE": outFile},
+			}
+
+			if err := r.Run(context.Background(), f, tt.extraArgs); err != nil {
+				t.Fatalf("Run() error = %v", err)
+			}
+
+			data, err := os.ReadFile(outFile)
+			if err != nil {
+				t.Fatalf("reading output file: %v", err)
+			}
+			got := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
+			if len(tt.want) == 0 && len(got) == 1 && got[0] == "" {
+				got = nil
+			}
+			if strings.Join(got, "\x00") != strings.Join(tt.want, "\x00") {
+				t.Errorf("output args = %#v, want %#v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRunner_Run_EmptyExtraArgs(t *testing.T) {
 	tmp := t.TempDir()
 	r := NewRunner(tmp)
 
-	outFile := filepath.Join(tmp, "args.txt")
+	outFile := filepath.Join(tmp, "empty.txt")
 	f := Flow{
-		Command: "echo",
+		Command: "printf 'hello\n' > \"$OUT_FILE\"",
+		Env:     map[string]string{"OUT_FILE": outFile},
 	}
 
-	ctx := context.Background()
-	if err := r.Run(ctx, f, []string{"extra", "args", "> " + outFile}); err != nil {
+	if err := r.Run(context.Background(), f, nil); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 
@@ -116,8 +182,8 @@ func TestRunner_Run_WithExtraArgs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading output file: %v", err)
 	}
-	if got := string(data); got != "extra args\n" {
-		t.Errorf("output = %q, want %q", got, "extra args\n")
+	if got := string(data); got != "hello\n" {
+		t.Errorf("output = %q, want %q", got, "hello\n")
 	}
 }
 
@@ -182,12 +248,20 @@ func TestRunner_Run_WithEnv(t *testing.T) {
 func TestRunner_Run_FailingCommand(t *testing.T) {
 	r := NewRunner(t.TempDir())
 	f := Flow{
-		Command: "exit 1",
+		Command: "exit 7",
 	}
 
 	ctx := context.Background()
-	if err := r.Run(ctx, f, nil); err == nil {
+	err := r.Run(ctx, f, nil)
+	if err == nil {
 		t.Error("expected error for failing command")
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("Run() error = %T %v, want *exec.ExitError in chain", err, err)
+	}
+	if exitErr.ExitCode() != 7 {
+		t.Fatalf("exit code = %d, want 7", exitErr.ExitCode())
 	}
 }
 
