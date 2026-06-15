@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1403,6 +1405,89 @@ func TestIntentService_PlanLegacyIntentRootMigration(t *testing.T) {
 	}
 }
 
+func TestIntentService_PendingLegacyMigration_LegacyLayoutNoMutation(t *testing.T) {
+	campaignRoot, svc := setupLegacyIntentReadFixture(t)
+	before := intentDirTreeSnapshot(t, campaignRoot)
+
+	pending, err := svc.PendingLegacyMigration()
+	if err != nil {
+		t.Fatalf("PendingLegacyMigration() error = %v", err)
+	}
+	if !pending {
+		t.Fatal("PendingLegacyMigration() = false, want true")
+	}
+
+	intents, err := svc.List(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(intents) != 0 {
+		t.Fatalf("List() returned %d canonical intents, want 0", len(intents))
+	}
+
+	after := intentDirTreeSnapshot(t, campaignRoot)
+	if before != after {
+		t.Fatalf("read mutated filesystem:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+func TestIntentService_PendingLegacyMigration_ConcurrentReadsNoMutation(t *testing.T) {
+	campaignRoot, svc := setupLegacyIntentReadFixture(t)
+	before := intentDirTreeSnapshot(t, campaignRoot)
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 10)
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			readSvc := NewIntentService(svc.campaignRoot, svc.intentsDir)
+			if _, err := readSvc.PendingLegacyMigration(); err != nil {
+				errs <- err
+				return
+			}
+			if _, err := readSvc.List(context.Background(), nil); err != nil {
+				errs <- err
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		t.Fatalf("concurrent read error = %v", err)
+	}
+
+	after := intentDirTreeSnapshot(t, campaignRoot)
+	if before != after {
+		t.Fatalf("concurrent reads mutated filesystem:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+func TestIntentService_List_ReadOnlyCanonicalDirNoPermissionError(t *testing.T) {
+	campaignRoot := t.TempDir()
+	svc := NewIntentService(campaignRoot, filepath.Join(campaignRoot, ".campaign", "intents"))
+	mustWriteIntentFile(t, filepath.Join(svc.intentsDir, "inbox", "20260316-read-only.md"), StatusInbox, "read-only")
+
+	if err := os.Chmod(svc.intentsDir, 0555); err != nil {
+		t.Fatalf("chmod read-only: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(svc.intentsDir, 0755)
+	})
+
+	intents, err := svc.List(context.Background(), nil)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "permission denied") {
+			t.Fatalf("List() attempted a write in read-only dir: %v", err)
+		}
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(intents) != 1 {
+		t.Fatalf("List() returned %d intents, want 1", len(intents))
+	}
+}
+
 func TestIntentService_PlanLegacyIntentRootCleanup(t *testing.T) {
 	campaignRoot := t.TempDir()
 	legacyRoot := filepath.Join(campaignRoot, "workflow", "intents")
@@ -2133,4 +2218,39 @@ func mustWriteIntentFile(t *testing.T, path string, status Status, slug string) 
 	}
 
 	return intent
+}
+
+func setupLegacyIntentReadFixture(t *testing.T) (string, *IntentService) {
+	t.Helper()
+
+	campaignRoot := t.TempDir()
+	svc := NewIntentService(campaignRoot, filepath.Join(campaignRoot, ".campaign", "intents"))
+	mustWriteIntentFile(t, filepath.Join(campaignRoot, "workflow", "intents", "inbox", "20260316-legacy-read.md"), StatusInbox, "legacy-read")
+	return campaignRoot, svc
+}
+
+func intentDirTreeSnapshot(t *testing.T, root string) string {
+	t.Helper()
+
+	var entries []string
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		entries = append(entries, fmt.Sprintf("%s|dir=%t|mode=%o|size=%d", rel, d.IsDir(), info.Mode().Perm(), info.Size()))
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("snapshot %s: %v", root, err)
+	}
+	sort.Strings(entries)
+	return strings.Join(entries, "\n")
 }
