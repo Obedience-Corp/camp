@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/doctor"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/spf13/cobra"
 )
 
@@ -34,6 +36,8 @@ func TestDoctorJSONReturnsFailureCodeAfterValidJSON(t *testing.T) {
 
 	cmd := newDoctorJSONTestCommand()
 	cmd.SetArgs([]string{"--json", "--check", "lock"})
+	var stderr bytes.Buffer
+	cmd.SetErr(&stderr)
 
 	stdout, err := captureDoctorJSONStdout(t, func() error {
 		return cmd.ExecuteContext(context.Background())
@@ -57,6 +61,17 @@ func TestDoctorJSONReturnsFailureCodeAfterValidJSON(t *testing.T) {
 	if len(payload) == 0 {
 		t.Fatal("doctor --json emitted an empty JSON object")
 	}
+
+	var envelope jsoncontract.ErrorEnvelope
+	if err := json.Unmarshal(stderr.Bytes(), &envelope); err != nil {
+		t.Fatalf("doctor --json stderr is not a JSON error envelope: %v\n%s", err, stderr.String())
+	}
+	if envelope.SchemaVersion != DoctorJSONVersion {
+		t.Fatalf("error schema_version = %q, want %q", envelope.SchemaVersion, DoctorJSONVersion)
+	}
+	if envelope.Error.ExitCode != doctor.ExitFailures {
+		t.Fatalf("error exit_code = %d, want %d", envelope.Error.ExitCode, doctor.ExitFailures)
+	}
 }
 
 func newDoctorJSONTestCommand() *cobra.Command {
@@ -64,7 +79,7 @@ func newDoctorJSONTestCommand() *cobra.Command {
 		Use:           "doctor",
 		SilenceErrors: true,
 		SilenceUsage:  true,
-		RunE:          runDoctor,
+		RunE:          jsoncontract.RunE(DoctorJSONVersion, func() bool { return doctorOpts.jsonOutput }, runDoctor),
 	}
 	cmd.Flags().BoolVarP(&doctorOpts.fix, "fix", "f", false, "")
 	cmd.Flags().BoolVarP(&doctorOpts.verbose, "verbose", "v", false, "")

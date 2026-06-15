@@ -23,16 +23,20 @@ Output formats:
 
 Examples:
   camp project list               List projects in table format
+  camp project list --json        Output as JSON
   camp project list --format json Output as JSON
   camp project list --format simple  Names only for scripting`,
 	Aliases: []string{"ls"},
 	RunE:    runProjectList,
 }
 
+var projectListJSON bool
+
 func init() {
 	Cmd.AddCommand(projectListCmd)
 
 	projectListCmd.Flags().StringP("format", "f", "table", "Output format (table, simple, json)")
+	projectListCmd.Flags().BoolVar(&projectListJSON, "json", false, "Output as JSON (shorthand for --format json)")
 }
 
 func runProjectList(cmd *cobra.Command, args []string) error {
@@ -52,6 +56,9 @@ func runProjectList(cmd *cobra.Command, args []string) error {
 
 	// Get format flag
 	formatStr, _ := cmd.Flags().GetString("format")
+	if projectListJSON {
+		formatStr = "json"
+	}
 	format := projectsvc.OutputFormat(formatStr)
 
 	// Output projects

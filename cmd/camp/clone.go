@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/clone"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -70,13 +71,15 @@ EXAMPLES:
 
   # JSON output for scripting
   camp clone git@github.com:org/repo.git --json`,
-	Args: cobra.RangeArgs(1, 2),
+	Args: jsoncontract.Args(CloneJSONVersion, func() bool { return cloneOpts.json }, cobra.RangeArgs(1, 2)),
 	Annotations: map[string]string{
 		"agent_allowed": "false",
 		"agent_reason":  "Clones repos, needs human judgment on URL/SSH",
 	},
-	RunE: runClone,
+	RunE: jsoncontract.RunE(CloneJSONVersion, func() bool { return cloneOpts.json }, runClone),
 }
+
+const CloneJSONVersion = "clone/v1alpha1"
 
 var cloneOpts struct {
 	branch       string
@@ -109,6 +112,7 @@ func init() {
 
 	rootCmd.AddCommand(cloneCmd)
 	cloneCmd.GroupID = "setup"
+	cloneCmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(CloneJSONVersion, func() bool { return cloneOpts.json }))
 }
 
 func runClone(cmd *cobra.Command, args []string) error {

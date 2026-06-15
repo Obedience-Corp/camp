@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/sync"
 	"github.com/spf13/cobra"
 )
@@ -57,8 +58,10 @@ EXAMPLES:
   # JSON output for scripting
   camp sync --json`,
 	Args: cobra.ArbitraryArgs,
-	RunE: runSync,
+	RunE: jsoncontract.RunE(SyncJSONVersion, func() bool { return syncOpts.json }, runSync),
 }
+
+const SyncJSONVersion = "sync/v1alpha1"
 
 var syncOpts struct {
 	dryRun   bool
@@ -85,6 +88,7 @@ func init() {
 
 	rootCmd.AddCommand(syncCmd)
 	syncCmd.GroupID = "campaign"
+	syncCmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(SyncJSONVersion, func() bool { return syncOpts.json }))
 }
 
 func runSync(cmd *cobra.Command, args []string) error {

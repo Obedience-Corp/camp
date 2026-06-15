@@ -4,17 +4,22 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	intleverage "github.com/Obedience-Corp/camp/internal/leverage"
 	"github.com/spf13/cobra"
 )
 
+const LeverageJSONVersion = "leverage/v1alpha1"
+
 // sccRunner is the package-level runner used by the leverage command.
 // Tests can replace this to inject a mock.
 var sccRunner intleverage.Runner
+var leverageJSON bool
 
 func init() {
-	Cmd.RunE = runLeverage
-	Cmd.Flags().Bool("json", false, "output as JSON")
+	Cmd.Args = jsoncontract.Args(LeverageJSONVersion, func() bool { return leverageJSON }, cobra.MaximumNArgs(1))
+	Cmd.RunE = jsoncontract.RunE(LeverageJSONVersion, func() bool { return leverageJSON }, runLeverage)
+	Cmd.Flags().BoolVar(&leverageJSON, "json", false, "output as JSON")
 	Cmd.Flags().StringP("project", "p", "", "filter by project name")
 	Cmd.Flags().Int("people", 0, "override team size (0 = auto-detect from git)")
 	Cmd.Flags().Bool("no-legend", false, "hide the leverage formula legend")
@@ -22,6 +27,7 @@ func init() {
 	Cmd.Flags().String("author", "", "filter by author email (git substring match — 'alice@co' matches 'alice@co.com')")
 	Cmd.Flags().Bool("by-author", false, "show per-author leverage breakdown")
 	Cmd.Flags().String("dir", "", "score a specific directory (skips campaign project resolution)")
+	Cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(LeverageJSONVersion, func() bool { return leverageJSON }))
 }
 
 func runLeverage(cmd *cobra.Command, args []string) error {
@@ -39,7 +45,6 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 
 	ctx := cmd.Context()
 
-	jsonOut, _ := cmd.Flags().GetBool("json")
 	projectFilter, _ := cmd.Flags().GetString("project")
 	peopleOverride, _ := cmd.Flags().GetInt("people")
 	verbose, _ := cmd.Flags().GetBool("verbose")
@@ -146,7 +151,7 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 	week7, has7 := intleverage.RecentLeverage(ctx, store, scores, effectivePeople, now.AddDate(0, 0, -7))
 	month30, has30 := intleverage.RecentLeverage(ctx, store, scores, effectivePeople, now.AddDate(0, 0, -30))
 
-	if jsonOut {
+	if leverageJSON {
 		return leverageOutputJSON(cmd, agg, scores)
 	}
 

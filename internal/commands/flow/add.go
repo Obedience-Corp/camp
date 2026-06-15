@@ -43,8 +43,8 @@ Use --force to overwrite an existing workflow configuration.
 
 Provide name/description via flags, JSON, or interactive TUI:
   --name/-n and --description/-d   Set via flags
-  --json/-j '{"name":"...","description":"..."}'  Set via JSON
-  --json -   Read JSON from stdin (for piping)
+  --from-json '{"name":"...","description":"..."}'  Set via JSON
+  --from-json -   Read JSON from stdin (for piping)
 
 Note: Flows cannot be nested inside other flows. If you're inside a flow,
 navigate to a directory outside of it before running this command.
@@ -52,12 +52,12 @@ navigate to a directory outside of it before running this command.
 Examples:
   camp flow add                                      Interactive TUI
   camp flow add --name "API" --description "API dev" Via flags
-  camp flow add --json '{"name":"API","description":"API development"}'
-  echo '{"name":"X","description":"Y"}' | camp flow add --json -
+  camp flow add --from-json '{"name":"API","description":"API development"}'
+  echo '{"name":"X","description":"Y"}' | camp flow add --from-json -
   camp flow add --force                              Overwrite existing`,
 		Annotations: map[string]string{
 			"agent_allowed": "true",
-			"agent_reason":  "Agents can use --json or --name/--description flags",
+			"agent_reason":  "Agents can use --from-json or --name/--description flags",
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -127,7 +127,7 @@ Examples:
 	cmd.Flags().BoolVarP(&flowAddForce, "force", "f", false, "overwrite existing workflow")
 	cmd.Flags().StringVarP(&flowAddName, "name", "n", "", "workflow name")
 	cmd.Flags().StringVarP(&flowAddDescription, "description", "d", "", "workflow description/purpose")
-	cmd.Flags().StringVarP(&flowAddJSON, "json", "j", "", `JSON input (use "-" for stdin)`)
+	cmd.Flags().StringVar(&flowAddJSON, "from-json", "", `JSON input (use "-" for stdin)`)
 
 	return cmd
 }
@@ -164,7 +164,7 @@ func collectFlowAddInput(cmd *cobra.Command, flowAddJSON, flowAddName, flowAddDe
 			}
 			return nil, fmt.Errorf("--description is required in non-interactive mode\n       Use -d/--description flag, or run in an interactive terminal")
 		}
-		return nil, fmt.Errorf("--name and --description are required in non-interactive mode\n       Use -n/--name and -d/--description flags, --json, or run in an interactive terminal")
+		return nil, fmt.Errorf("--name and --description are required in non-interactive mode\n       Use -n/--name and -d/--description flags, --from-json, or run in an interactive terminal")
 	}
 
 	// 4. TUI mode — pre-fill from any partial flags
