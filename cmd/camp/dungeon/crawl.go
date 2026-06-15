@@ -40,7 +40,7 @@ Examples:
 	Args: cobra.NoArgs,
 	Annotations: map[string]string{
 		"agent_allowed": "false",
-		"agent_reason":  "Interactive review session",
+		"agent_reason":  "requires interactive terminal",
 		"interactive":   "true",
 	},
 	RunE: runDungeonCrawl,

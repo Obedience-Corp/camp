@@ -39,7 +39,7 @@ Examples:
 	Args: cobra.NoArgs,
 	Annotations: map[string]string{
 		"agent_allowed": "false",
-		"agent_reason":  "Interactive intent triage session",
+		"agent_reason":  "requires interactive terminal",
 		"interactive":   "true",
 	},
 	RunE: runIntentCrawl,
