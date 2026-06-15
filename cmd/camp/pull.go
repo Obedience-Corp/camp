@@ -1,19 +1,14 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"errors"
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"io"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
+	pullsvc "github.com/Obedience-Corp/camp/internal/pull"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
@@ -70,7 +65,7 @@ func runPull(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(os.Stderr, ui.Info(fmt.Sprintf("Submodule: %s", target.Name)))
 	}
 
-	if _, err := runGitPullWithLockRetry(ctx, target.Path, gitArgs, true); err != nil {
+	if _, err := pullsvc.RunGitPullWithLockRetry(ctx, target.Path, gitArgs, true, pullsvc.DefaultIO()); err != nil {
 		if git.IsRebaseInProgress(ctx, target.Path) {
 			fmt.Fprintln(os.Stderr)
 			fmt.Fprintln(os.Stderr, ui.Warning("Rebase conflict in "+target.Name))
@@ -85,367 +80,98 @@ func runPull(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runGitPullWithLockRetry(ctx context.Context, repoPath string, gitArgs []string, stream bool) ([]byte, error) {
-	cfg := git.DefaultRetryConfig()
-	cfg.OperationName = "pull"
-
-	var output []byte
-	err := git.WithLockRetry(ctx, repoPath, cfg, func() error {
-		pullArgs := append([]string{"-C", repoPath, "pull"}, gitArgs...)
-		gitCmd := exec.CommandContext(ctx, "git", pullArgs...)
-		gitCmd.Stdin = os.Stdin
-
-		var err error
-		if stream {
-			var stderr bytes.Buffer
-			gitCmd.Stdout = os.Stdout
-			gitCmd.Stderr = io.MultiWriter(os.Stderr, &stderr)
-			err = gitCmd.Run()
-			output = stderr.Bytes()
-		} else {
-			output, err = gitCmd.CombinedOutput()
-		}
-		if err != nil {
-			return classifyPullCommandError(repoPath, output, err)
-		}
-		return nil
-	})
-	return output, err
-}
-
-func classifyPullCommandError(repoPath string, output []byte, err error) error {
-	exitCode := 0
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
-		exitCode = exitErr.ExitCode()
-	}
-
-	if git.ClassifyGitError(string(output), exitCode) == git.GitErrorLock {
-		lockPath := "index.lock"
-		if gitDir, resolveErr := git.ResolveGitDir(repoPath); resolveErr == nil {
-			lockPath = filepath.Join(gitDir, "index.lock")
-		}
-		return &git.LockError{Path: lockPath, Err: err}
-	}
+func runPullAll(ctx context.Context, campRoot string, gitArgs []string, opts pullsvc.Options) error {
+	_, err := pullsvc.RunAll(ctx, campRoot, gitArgs, opts, newPullHooks())
 	return err
 }
 
-// PullAllOptions holds configuration for pull-all operations.
-type PullAllOptions struct {
-	NoRecurse     bool
-	DefaultBranch bool
+type pullStyles struct {
+	green  lipgloss.Style
+	yellow lipgloss.Style
+	red    lipgloss.Style
+	dim    lipgloss.Style
 }
 
-// pullTarget holds information about a repo to potentially pull.
-type pullTarget struct {
-	name    string
-	path    string
-	relPath string
-	branch  string
-	isRoot  bool // campaign root repo (skip recursive submodule fetch)
-}
-
-// checkoutDefaultIfNeeded switches a submodule to its default branch when
-// --default-branch is active and the submodule is on detached HEAD or has no
-// upstream tracking. Returns the original branch name before any switch.
-// If the checkout fails, it appends to errs and returns skip=true.
-func checkoutDefaultIfNeeded(ctx context.Context, t *pullTarget) (originalBranch string, switched bool, err error) {
-	originalBranch = t.branch
-
-	if t.branch != "" && t.branch != "HEAD" {
-		return originalBranch, false, nil
+func newPullStyles() pullStyles {
+	return pullStyles{
+		green:  lipgloss.NewStyle().Foreground(ui.SuccessColor),
+		yellow: lipgloss.NewStyle().Foreground(ui.WarningColor),
+		red:    lipgloss.NewStyle().Foreground(ui.ErrorColor),
+		dim:    lipgloss.NewStyle().Foreground(ui.DimColor),
 	}
-
-	branch, err := git.CheckoutDefaultBranch(ctx, t.path)
-	if err != nil {
-		return originalBranch, false, err
-	}
-	t.branch = branch
-	return originalBranch, true, nil
 }
 
-// runPullAll discovers all submodules + campaign root, and pulls them.
-func runPullAll(ctx context.Context, campRoot string, gitArgs []string, opts PullAllOptions) error {
-	green := lipgloss.NewStyle().Foreground(ui.SuccessColor)
-	yellow := lipgloss.NewStyle().Foreground(ui.WarningColor)
-	red := lipgloss.NewStyle().Foreground(ui.ErrorColor)
-	dim := lipgloss.NewStyle().Foreground(ui.DimColor)
+func newPullHooks() pullsvc.Hooks {
+	styles := newPullStyles()
+	return pullsvc.Hooks{
+		OnStart:       renderPullStart,
+		OnSkip:        func(t pullsvc.Target, status string) { renderPullSkip(t, status, styles) },
+		OnPulling:     func(t pullsvc.Target, originalBranch string) { renderPulling(t, originalBranch, styles) },
+		OnResult:      func(result pullsvc.Result) { renderPullResult(result, styles) },
+		OnChangedRefs: func(paths []string) { renderChangedRefs(paths, styles) },
+		OnSummary:     func(summary pullsvc.Summary) { renderPullSummary(summary, styles) },
+	}
+}
 
+func renderPullStart() {
 	fmt.Println(ui.Info("Pulling all repos..."))
 	fmt.Println()
-
-	paths, err := discoverSubmodules(ctx, campRoot, opts.NoRecurse)
-	if err != nil {
-		return err
-	}
-
-	targets := buildPullTargets(ctx, campRoot, paths)
-
-	var pulled, skipped, failed int
-	var errors []string
-
-	for i := range targets {
-		t := &targets[i]
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-
-		result := pullSingleTarget(ctx, t, gitArgs, opts, dim, green, yellow, red)
-		switch result.outcome {
-		case pullOutcomePulled:
-			pulled++
-		case pullOutcomeSkipped:
-			skipped++
-		case pullOutcomeFailed:
-			failed++
-			errors = append(errors, result.errMsg)
-		}
-	}
-
-	changedRefs := reportChangedRefs(ctx, campRoot, paths, yellow)
-	printPullSummary(pulled, failed, changedRefs, errors, green, yellow, red, dim)
-
-	if failed > 0 {
-		return fmt.Errorf("%d repo(s) failed to pull", failed)
-	}
-	return nil
 }
 
-type pullOutcome int
-
-const (
-	pullOutcomePulled pullOutcome = iota
-	pullOutcomeSkipped
-	pullOutcomeFailed
-)
-
-type pullResult struct {
-	outcome pullOutcome
-	errMsg  string
+func renderPullSkip(t pullsvc.Target, status string, styles pullStyles) {
+	fmt.Printf("  %-30s %s\n", t.Name, styles.yellow.Render(status))
 }
 
-// pullSingleTarget handles the checkout-if-needed, upstream check, and pull
-// for a single target. Returns the outcome and optional error message.
-func pullSingleTarget(
-	ctx context.Context,
-	t *pullTarget,
-	gitArgs []string,
-	opts PullAllOptions,
-	dim, green, yellow, red lipgloss.Style,
-) pullResult {
-	originalBranch := t.branch
-
-	if git.IsRebaseInProgress(ctx, t.path) {
-		fmt.Printf("  %-30s %s\n", t.name,
-			yellow.Render("skipped (rebase in progress -- resolve or abort manually)"))
-		return pullResult{outcome: pullOutcomeSkipped}
-	}
-
-	// Handle detached HEAD
-	if t.branch == "" || t.branch == "HEAD" {
-		if opts.DefaultBranch && !t.isRoot {
-			if _, _, err := checkoutDefaultIfNeeded(ctx, t); err != nil {
-				fmt.Printf("  %-30s %s\n", t.name, yellow.Render("detached HEAD (checkout failed)"))
-				return pullResult{outcome: pullOutcomeSkipped}
-			}
-		} else {
-			fmt.Printf("  %-30s %s\n", t.name, yellow.Render("detached HEAD"))
-			return pullResult{outcome: pullOutcomeSkipped}
-		}
-	}
-
-	// Check upstream tracking
-	if _, err := git.Output(ctx, t.path, "rev-parse", "--abbrev-ref", "@{upstream}"); err != nil {
-		if opts.DefaultBranch && !t.isRoot {
-			branch, checkoutErr := git.CheckoutDefaultBranch(ctx, t.path)
-			if checkoutErr != nil {
-				fmt.Printf("  %-30s %s\n", t.name, yellow.Render("no upstream (checkout failed)"))
-				return pullResult{outcome: pullOutcomeSkipped}
-			}
-			if t.branch != branch {
-				t.branch = branch
-			}
-			// Re-check upstream after checkout
-			if _, err := git.Output(ctx, t.path, "rev-parse", "--abbrev-ref", "@{upstream}"); err != nil {
-				fmt.Printf("  %-30s %s\n", t.name, yellow.Render("no upstream"))
-				return pullResult{outcome: pullOutcomeSkipped}
-			}
-		} else {
-			fmt.Printf("  %-30s %s\n", t.name, yellow.Render("no upstream"))
-			return pullResult{outcome: pullOutcomeSkipped}
-		}
-	}
-
-	// Print progress line
-	if originalBranch != "" && originalBranch != "HEAD" && originalBranch != t.branch {
+func renderPulling(t pullsvc.Target, originalBranch string, styles pullStyles) {
+	if originalBranch != "" && originalBranch != "HEAD" && originalBranch != t.Branch {
 		fmt.Printf("  %-30s %s  %s  pulling... ",
-			t.name, dim.Render(t.branch),
-			dim.Render(fmt.Sprintf("(was %s)", originalBranch)))
+			t.Name, styles.dim.Render(t.Branch),
+			styles.dim.Render(fmt.Sprintf("(was %s)", originalBranch)))
 	} else {
 		fmt.Printf("  %-30s %s  pulling... ",
-			t.name, dim.Render(t.branch))
-	}
-
-	// Execute pull
-	pullArgs := make([]string, 0, len(gitArgs)+1)
-	if t.isRoot {
-		pullArgs = append(pullArgs, "--no-recurse-submodules")
-	}
-	pullArgs = append(pullArgs, gitArgs...)
-	output, err := runGitPullWithLockRetry(ctx, t.path, pullArgs, false)
-	if err != nil {
-		rebaseInitiatedHere := git.IsRebaseInProgress(ctx, t.path)
-		return handlePullError(ctx, t, output, err, red, rebaseInitiatedHere)
-	}
-
-	outStr := strings.TrimSpace(string(output))
-	if strings.Contains(outStr, "Already up to date") {
-		fmt.Println(dim.Render("up-to-date"))
-		return pullResult{outcome: pullOutcomeSkipped}
-	}
-	fmt.Println(green.Render("done"))
-	return pullResult{outcome: pullOutcomePulled}
-}
-
-// handlePullError processes a failed git pull.
-func handlePullError(
-	ctx context.Context,
-	t *pullTarget,
-	output []byte,
-	err error,
-	red lipgloss.Style,
-	rebaseInitiatedHere bool,
-) pullResult {
-	if git.IsRebaseInProgress(ctx, t.path) {
-		if rebaseInitiatedHere {
-			_ = abortRebase(ctx, t.path)
-			fmt.Println(red.Render("conflict (aborted rebase)"))
-			return pullResult{
-				outcome: pullOutcomeFailed,
-				errMsg:  fmt.Sprintf("  %s: rebase conflict (try: %s)", t.name, pullNoRebaseHint(t)),
-			}
-		}
-
-		fmt.Println(red.Render("failed (pre-existing rebase in progress; not aborted)"))
-		return pullResult{
-			outcome: pullOutcomeFailed,
-			errMsg:  fmt.Sprintf("  %s: pull failed; rebase in progress -- resolve it manually", t.name),
-		}
-	}
-
-	fmt.Println(red.Render("failed"))
-	errMsg := strings.TrimSpace(string(output))
-	if isDivergentError(errMsg) {
-		errMsg = "branches diverged (try: camp pull all --ff-only, --rebase, or resolve manually)"
-	} else if errMsg == "" {
-		errMsg = err.Error()
-	}
-	return pullResult{
-		outcome: pullOutcomeFailed,
-		errMsg:  fmt.Sprintf("  %s: %s", t.name, errMsg),
+			t.Name, styles.dim.Render(t.Branch))
 	}
 }
 
-// discoverSubmodules lists submodule paths, optionally filtering to top-level only.
-func discoverSubmodules(ctx context.Context, campRoot string, noRecurse bool) ([]string, error) {
-	if noRecurse {
-		paths, err := git.ListSubmodulePathsFiltered(ctx, campRoot, "projects/")
-		if err != nil {
-			return nil, camperrors.Wrap(err, "failed to list submodules")
-		}
-		return paths, nil
+func renderPullResult(result pullsvc.Result, styles pullStyles) {
+	switch result.Outcome {
+	case pullsvc.OutcomePulled:
+		fmt.Println(styles.green.Render(result.Status))
+	case pullsvc.OutcomeSkipped:
+		fmt.Println(styles.dim.Render(result.Status))
+	case pullsvc.OutcomeFailed:
+		fmt.Println(styles.red.Render(result.Status))
 	}
-	paths, err := git.ListSubmodulePathsRecursive(ctx, campRoot, "projects/")
-	if err != nil {
-		return nil, camperrors.Wrap(err, "failed to list submodules")
-	}
-	return paths, nil
 }
 
-// buildPullTargets constructs the target list: campaign root first, then submodules.
-func buildPullTargets(ctx context.Context, campRoot string, paths []string) []pullTarget {
-	targets := make([]pullTarget, 0, len(paths)+1)
-	rootBranch, _ := git.Output(ctx, campRoot, "rev-parse", "--abbrev-ref", "HEAD")
-	targets = append(targets, pullTarget{
-		name:   "campaign root",
-		path:   campRoot,
-		branch: rootBranch,
-		isRoot: true,
-	})
-	for _, p := range paths {
-		fullPath := filepath.Join(campRoot, p)
-		branch, _ := git.Output(ctx, fullPath, "rev-parse", "--abbrev-ref", "HEAD")
-		targets = append(targets, pullTarget{
-			name:    git.SubmoduleDisplayName(p),
-			path:    fullPath,
-			relPath: p,
-			branch:  branch,
-		})
-	}
-	return targets
-}
-
-func pullNoRebaseHint(t *pullTarget) string {
-	if t != nil && !t.isRoot && t.relPath != "" {
-		return fmt.Sprintf("camp pull --project=%s --no-rebase", t.relPath)
-	}
-	return "camp pull --no-rebase"
-}
-
-// printPullSummary outputs the final pull-all summary.
-func printPullSummary(pulled, failed, changedRefs int, errors []string, green, yellow, red, dim lipgloss.Style) {
+func renderPullSummary(summary pullsvc.Summary, styles pullStyles) {
 	fmt.Println()
-	total := pulled + failed
+	total := summary.Pulled + summary.Failed
 	if total == 0 {
 		fmt.Println(ui.Info("All repos are up-to-date, nothing to pull"))
-	} else if failed == 0 {
-		fmt.Println(green.Render(fmt.Sprintf("Pulled %d/%d repos successfully", pulled, total)))
+	} else if summary.Failed == 0 {
+		fmt.Println(styles.green.Render(fmt.Sprintf("Pulled %d/%d repos successfully", summary.Pulled, total)))
 	} else {
-		fmt.Println(yellow.Render(fmt.Sprintf("Pulled %d/%d repos (%d failed)", pulled, total, failed)))
-		for _, e := range errors {
-			fmt.Println(red.Render(e))
+		fmt.Println(styles.yellow.Render(fmt.Sprintf("Pulled %d/%d repos (%d failed)", summary.Pulled, total, summary.Failed)))
+		for _, e := range summary.Errors {
+			fmt.Println(styles.red.Render(e))
 		}
 	}
 
-	if changedRefs > 0 {
+	if len(summary.ChangedRefs) > 0 {
 		fmt.Println()
-		fmt.Println(dim.Render("  Run 'camp commit' to record these ref updates."))
+		fmt.Println(styles.dim.Render("  Run 'camp commit' to record these ref updates."))
 	}
 }
 
-// reportChangedRefs checks which submodules have new refs after pulling
-// and prints a summary. Does not stage or commit anything.
-func reportChangedRefs(ctx context.Context, campRoot string, subPaths []string, style lipgloss.Style) int {
-	var changed []string
-	for _, p := range subPaths {
-		fullPath := filepath.Join(campRoot, p)
-		if git.HasPathDiff(ctx, campRoot, fullPath) {
-			changed = append(changed, p)
-		}
-	}
-
+func renderChangedRefs(changed []string, styles pullStyles) {
 	if len(changed) == 0 {
-		return 0
+		return
 	}
 
 	fmt.Println()
-	fmt.Println(style.Render("  Submodule refs updated (not yet committed):"))
+	fmt.Println(styles.yellow.Render("  Submodule refs updated (not yet committed):"))
 	for _, p := range changed {
 		fmt.Printf("    %-30s (new commits)\n", git.SubmoduleDisplayName(p))
 	}
-
-	return len(changed)
-}
-
-// isDivergentError checks if git output indicates divergent branches.
-func isDivergentError(output string) bool {
-	lower := strings.ToLower(output)
-	return strings.Contains(lower, "divergent branches") ||
-		strings.Contains(lower, "need to specify how to reconcile")
-}
-
-// abortRebase runs git rebase --abort for the repo at the given path.
-func abortRebase(ctx context.Context, repoPath string) error {
-	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "rebase", "--abort")
-	return cmd.Run()
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/Obedience-Corp/camp/internal/campaign"
+	pullsvc "github.com/Obedience-Corp/camp/internal/pull"
 	"github.com/spf13/cobra"
 )
 
@@ -49,8 +50,9 @@ func runPullAllCmd(cmd *cobra.Command, args []string) error {
 	args, noRecurse = extractFlag(args, "--no-recurse")
 	args, useDefault = extractFlag(args, "--default-branch")
 
-	return runPullAll(ctx, campRoot, args, PullAllOptions{
+	return runPullAll(ctx, campRoot, args, pullsvc.Options{
 		NoRecurse:     noRecurse,
 		DefaultBranch: useDefault,
+		IO:            pullsvc.DefaultIO(),
 	})
 }
