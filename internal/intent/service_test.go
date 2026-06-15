@@ -1,6 +1,7 @@
 package intent
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -638,6 +639,70 @@ func TestIntentService_Save(t *testing.T) {
 	}
 	if reloaded.Priority != PriorityHigh {
 		t.Errorf("Priority = %q, want %q", reloaded.Priority, PriorityHigh)
+	}
+}
+
+func TestIntentService_CreateDirectAtomicWriteContent(t *testing.T) {
+	tmpDir := t.TempDir()
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
+	ctx := context.Background()
+
+	intent, err := svc.CreateDirect(ctx, CreateOptions{
+		Title:     "Atomic Create Test",
+		Type:      TypeChore,
+		Timestamp: time.Date(2026, 1, 20, 1, 30, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateDirect() error = %v", err)
+	}
+
+	got, err := os.ReadFile(intent.Path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if !bytes.Contains(got, []byte("Atomic Create Test")) {
+		t.Fatalf("created intent content missing title:\n%s", got)
+	}
+}
+
+func TestIntentService_SaveAtomicFailurePreservesOriginal(t *testing.T) {
+	tmpDir := t.TempDir()
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
+	ctx := context.Background()
+
+	intent, err := svc.CreateDirect(ctx, CreateOptions{
+		Title:     "Original Atomic Save",
+		Type:      TypeChore,
+		Timestamp: time.Date(2026, 1, 20, 1, 45, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateDirect() error = %v", err)
+	}
+	original, err := os.ReadFile(intent.Path)
+	if err != nil {
+		t.Fatalf("ReadFile(original) error = %v", err)
+	}
+
+	dir := filepath.Dir(intent.Path)
+	if err := os.Chmod(dir, 0555); err != nil {
+		t.Skipf("chmod read-only directory: %v", err)
+	}
+	defer os.Chmod(dir, 0755)
+
+	intent.Title = "Mutated Atomic Save"
+	err = svc.Save(ctx, intent)
+	if err == nil {
+		_ = os.Chmod(dir, 0755)
+		_ = os.WriteFile(intent.Path, original, 0644)
+		t.Skip("read-only directory did not prevent atomic temp file creation")
+	}
+
+	got, err := os.ReadFile(intent.Path)
+	if err != nil {
+		t.Fatalf("ReadFile(after failed Save) error = %v", err)
+	}
+	if !bytes.Equal(got, original) {
+		t.Fatalf("failed Save changed original content:\n got: %q\nwant: %q", got, original)
 	}
 }
 

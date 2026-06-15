@@ -8,6 +8,7 @@ import (
 	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/fsutil"
 )
 
 // Service errors.
@@ -87,7 +88,7 @@ func (s *IntentService) CreateDirect(ctx context.Context, opts CreateOptions) (*
 	}
 
 	// Write intent file
-	if err := os.WriteFile(finalPath, []byte(content), 0644); err != nil {
+	if err := fsutil.WriteFileAtomically(finalPath, []byte(content), 0644); err != nil {
 		return nil, camperrors.Wrap(err, "writing intent file")
 	}
 
@@ -255,7 +256,10 @@ func (s *IntentService) Save(ctx context.Context, intent *Intent) error {
 		return camperrors.Wrap(err, "serializing intent")
 	}
 
-	if err := os.WriteFile(intent.Path, data, 0644); err != nil {
+	// TODO(seq06-lock): this write is part of a read-modify-write cycle (load -> mutate -> Save).
+	// Adding a file lock here alone does not close the race; the lock must span the caller's load
+	// and mutation before Save.
+	if err := fsutil.WriteFileAtomically(intent.Path, data, 0644); err != nil {
 		return camperrors.Wrap(err, "writing intent file")
 	}
 
@@ -314,7 +318,7 @@ func (s *IntentService) Move(ctx context.Context, id string, newStatus Status) (
 		return nil, camperrors.Wrap(err, "serializing intent")
 	}
 
-	if err := os.WriteFile(newPath, data, 0644); err != nil {
+	if err := fsutil.WriteFileAtomically(newPath, data, 0644); err != nil {
 		return nil, camperrors.Wrap(err, "writing intent file")
 	}
 

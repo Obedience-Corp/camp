@@ -1,6 +1,7 @@
 package quest
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -20,6 +21,74 @@ func setupQuestCampaign(t *testing.T) (context.Context, string, *Service) {
 	}
 
 	return ctx, root, NewService(root)
+}
+
+func TestSaveAtomicWriteContent(t *testing.T) {
+	ctx, root, _ := setupQuestCampaign(t)
+	now := time.Date(2026, 1, 20, 2, 0, 0, 0, time.UTC)
+	path := QuestPathForDir(QuestDir(root, "atomic-quest"))
+	q := &Quest{
+		ID:        "qst_atomic",
+		Name:      "Atomic Quest",
+		Status:    StatusOpen,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+
+	if err := Save(ctx, path, q); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if !bytes.Contains(got, []byte("Atomic Quest")) {
+		t.Fatalf("saved quest content missing name:\n%s", got)
+	}
+}
+
+func TestSaveAtomicFailurePreservesOriginal(t *testing.T) {
+	ctx, root, _ := setupQuestCampaign(t)
+	now := time.Date(2026, 1, 20, 2, 15, 0, 0, time.UTC)
+	path := QuestPathForDir(QuestDir(root, "preserve-quest"))
+	q := &Quest{
+		ID:        "qst_preserve",
+		Name:      "Original Quest",
+		Status:    StatusOpen,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+
+	if err := Save(ctx, path, q); err != nil {
+		t.Fatalf("Save(original) error = %v", err)
+	}
+	original, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(original) error = %v", err)
+	}
+
+	dir := filepath.Dir(path)
+	if err := os.Chmod(dir, 0555); err != nil {
+		t.Skipf("chmod read-only directory: %v", err)
+	}
+	defer os.Chmod(dir, 0755)
+
+	q.Name = "Mutated Quest"
+	err = Save(ctx, path, q)
+	if err == nil {
+		_ = os.Chmod(dir, 0755)
+		_ = os.WriteFile(path, original, 0644)
+		t.Skip("read-only directory did not prevent atomic temp file creation")
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(after failed Save) error = %v", err)
+	}
+	if !bytes.Equal(got, original) {
+		t.Fatalf("failed Save changed original content:\n got: %q\nwant: %q", got, original)
+	}
 }
 
 func TestServiceCreatePauseResumeCompleteRestore(t *testing.T) {
