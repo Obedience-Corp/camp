@@ -456,6 +456,12 @@ func (s *IntentService) moveTargetPath(id string, newStatus Status, oldPath stri
 // occupied by a different frontmatter id is skipped so a move never overwrites an
 // unrelated intent.
 func (s *IntentService) collisionSafeMovePath(dir, base, id string) string {
+	if info, err := os.Stat(dir); err == nil && !info.IsDir() {
+		return filepath.Join(dir, base+".md")
+	} else if err != nil && !os.IsNotExist(err) {
+		return filepath.Join(dir, base+".md")
+	}
+
 	candidate := filepath.Join(dir, base+".md")
 	if s.pathAvailableForID(candidate, id) {
 		return candidate

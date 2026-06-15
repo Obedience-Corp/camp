@@ -312,9 +312,12 @@ func TestPromoteToDesignRollbackPreservesPreExistingDesignDir(t *testing.T) {
 		t.Fatalf("WriteFile(userFile) error = %v", err)
 	}
 
-	activePath := filepath.Join(intentsDir, "active", ready.ID+".md")
-	if err := os.MkdirAll(activePath, 0755); err != nil {
-		t.Fatalf("MkdirAll(active collision path) error = %v", err)
+	activeDir := filepath.Join(intentsDir, "active")
+	if err := os.RemoveAll(activeDir); err != nil {
+		t.Fatalf("RemoveAll(activeDir) error = %v", err)
+	}
+	if err := os.WriteFile(activeDir, []byte("blocked"), 0644); err != nil {
+		t.Fatalf("WriteFile(activeDir blocker) error = %v", err)
 	}
 
 	_, err = Promote(ctx, svc, ready, Options{
@@ -322,7 +325,7 @@ func TestPromoteToDesignRollbackPreservesPreExistingDesignDir(t *testing.T) {
 		Target:       TargetDesign,
 	})
 	if err == nil {
-		t.Fatal("Promote() expected error when active destination already exists")
+		t.Fatal("Promote() expected error when active status directory is blocked")
 	}
 
 	got, err := os.ReadFile(userFile)

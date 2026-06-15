@@ -45,6 +45,8 @@ var manifestAgentAllowedReasons = map[string]string{
 	"quest unlink":        "Non-interactive quest unlink operation",
 	"registry check":      "Read-only registry integrity report",
 	"root":                "Read-only campaign root output",
+	"settings get":        "Read-only settings output with --json support",
+	"settings set":        "Non-interactive settings mutation with validated values",
 	"shelve":              "Non-interactive shelving with explicit arguments",
 	"skills link":         "Non-interactive skill link operation",
 	"skills status":       "Read-only skill status",

@@ -8,16 +8,6 @@ import (
 	"testing"
 )
 
-func ClearCache() {
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
-
-	cache.cwd = ""
-	cache.root = ""
-	cache.err = nil
-	cache.detected = false
-}
-
 func WarmCache(ctx context.Context) error {
 	_, err := DetectCached(ctx)
 	return err

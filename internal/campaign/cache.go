@@ -21,6 +21,17 @@ type detectionCache struct {
 
 var cache = &detectionCache{}
 
+// ClearCache resets the cached campaign detection result.
+func ClearCache() {
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+
+	cache.cwd = ""
+	cache.root = ""
+	cache.err = nil
+	cache.detected = false
+}
+
 // DetectCached returns campaign root, using cache if valid.
 // The cache is invalidated when cwd changes.
 func DetectCached(ctx context.Context) (string, error) {

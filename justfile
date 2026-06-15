@@ -143,8 +143,24 @@ test-ratchet:
         exit 1
     fi
 
+# Lightweight default pre-push smoke. This catches formatting whitespace,
+# stable/dev build breaks, and lint ratchet regressions without running the full
+# unit suite on every push.
+gate-push:
+    #!/usr/bin/env sh
+    set -eu
+    echo "=== gate-push: whitespace ==="
+    git diff --check
+    echo "=== gate-push: stable build ==="
+    just build-camp
+    echo "=== gate-push: dev build ==="
+    BUILD_TAGS=dev just build-camp
+    echo "=== gate-push: lint stable ==="
+    just lint
+    echo "=== gate-push: PASSED ==="
+
 # Run both-profile builds, vet (stable/dev/integration), lint both profiles, and dev unit tests.
-# This is the pre-push hook's default payload (D005 gate-fast). See also: just gate.
+# Use this before moving a PR out of draft or when touching broad behavior. See also: just gate.
 gate-fast:
     #!/usr/bin/env sh
     set -eu
