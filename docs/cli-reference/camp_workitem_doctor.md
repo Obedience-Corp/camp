@@ -17,9 +17,7 @@ camp workitem doctor [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 
 ### SEE ALSO
