@@ -1,7 +1,6 @@
 package workitem
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os/exec"
@@ -38,16 +37,16 @@ func assertCleanIndex(ctx context.Context, repoRoot string) error {
 // with `--untracked-files=all` so untracked directories are expanded to
 // individual files (otherwise --exclude cannot target leaf paths).
 func listChangedFilesUnder(ctx context.Context, repoRoot, prefix string) ([]string, error) {
-	args := []string{"-C", repoRoot, "status", "--porcelain", "-z", "--untracked-files=all"}
+	args := []string{"--untracked-files=all"}
 	if prefix != "" {
 		args = append(args, "--", prefix)
 	}
-	entries, err := gitStatusPorcelainZ(ctx, args...)
+	out, err := campgit.StatusPorcelain(ctx, repoRoot, args...)
 	if err != nil {
 		return nil, err
 	}
 	var files []string
-	for _, entry := range entries {
+	for _, entry := range campgit.ParseStatusPorcelainZ(out) {
 		files = append(files, entry.Path)
 	}
 	return files, nil
@@ -62,63 +61,25 @@ func listStagedFiles(ctx context.Context, repoRoot string) ([]string, error) {
 }
 
 func pathIsDirty(ctx context.Context, repoRoot, relPath string) (bool, error) {
-	entries, err := gitStatusPorcelainZ(ctx, "-C", repoRoot, "status", "--porcelain", "-z", "--", relPath)
+	out, err := campgit.StatusPorcelain(ctx, repoRoot, "--", relPath)
 	if err != nil {
 		return false, err
 	}
-	return len(entries) != 0, nil
+	return len(campgit.ParseStatusPorcelainZ(out)) != 0, nil
 }
 
 func listDirtySubmodulePointers(ctx context.Context, repoRoot string) ([]string, error) {
-	entries, err := gitStatusPorcelainZ(ctx, "-C", repoRoot, "status", "--porcelain", "-z", "--", "projects")
+	out, err := campgit.StatusPorcelain(ctx, repoRoot, "--", "projects")
 	if err != nil {
 		return nil, err
 	}
 	var pointers []string
-	for _, entry := range entries {
+	for _, entry := range campgit.ParseStatusPorcelainZ(out) {
 		if strings.HasPrefix(entry.Path, "projects/") {
 			pointers = append(pointers, entry.Path)
 		}
 	}
 	return pointers, nil
-}
-
-type gitStatusEntry struct {
-	Code string
-	Path string
-}
-
-func gitStatusPorcelainZ(ctx context.Context, args ...string) ([]gitStatusEntry, error) {
-	out, err := exec.CommandContext(ctx, "git", args...).Output()
-	if err != nil {
-		return nil, err
-	}
-	return parseGitStatusPorcelainZ(out), nil
-}
-
-func parseGitStatusPorcelainZ(out []byte) []gitStatusEntry {
-	fields := splitNULFields(out)
-	entries := make([]gitStatusEntry, 0, len(fields))
-	for i := 0; i < len(fields); i++ {
-		field := fields[i]
-		if len(field) == 0 {
-			continue
-		}
-		if len(field) < 4 {
-			continue
-		}
-		code := string(field[:2])
-		path := string(field[3:])
-		entries = append(entries, gitStatusEntry{Code: code, Path: path})
-		if code[0] == 'R' || code[0] == 'C' {
-			i++ // -z emits the old path as a second NUL-delimited field.
-		}
-	}
-	return entries
-}
-
-func splitNULFields(out []byte) [][]byte {
-	return bytes.Split(bytes.TrimRight(out, "\x00"), []byte{0})
 }
 
 func listSubmodulePointerSkips(ctx context.Context, root string, allowed bool) []SkippedEntry {

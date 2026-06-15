@@ -404,7 +404,7 @@ func FilterTracked(ctx context.Context, repoPath string, paths []string) ([]stri
 		return nil, nil
 	}
 
-	args := []string{"-C", repoPath, "ls-files", "--"}
+	args := []string{"-C", repoPath, "ls-files", "-z", "--"}
 	args = append(args, paths...)
 
 	cmd := exec.CommandContext(ctx, "git", args...)
@@ -413,13 +413,20 @@ func FilterTracked(ctx context.Context, repoPath string, paths []string) ([]stri
 		return nil, camperrors.NewGit("ls-files", "", "", strings.TrimSpace(string(output)), err)
 	}
 
-	raw := strings.TrimSpace(string(output))
-	if raw == "" {
+	if len(output) == 0 {
 		return nil, nil
 	}
 
-	// Build a set of tracked file paths returned by git
-	trackedFiles := strings.Split(raw, "\n")
+	var trackedFiles []string
+	for _, field := range bytes.Split(bytes.TrimRight(output, "\x00"), []byte{0}) {
+		if len(field) > 0 {
+			trackedFiles = append(trackedFiles, string(field))
+		}
+	}
+	return filterTrackedPaths(paths, trackedFiles), nil
+}
+
+func filterTrackedPaths(paths, trackedFiles []string) []string {
 	trackedSet := make(map[string]bool, len(trackedFiles))
 	for _, f := range trackedFiles {
 		trackedSet[f] = true
@@ -441,7 +448,7 @@ func FilterTracked(ctx context.Context, repoPath string, paths []string) ([]stri
 			}
 		}
 	}
-	return result, nil
+	return result
 }
 
 // ExpandTrackedPaths resolves the given pathspecs to actual staged file paths

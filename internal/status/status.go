@@ -73,23 +73,23 @@ func GetRepoStatus(ctx context.Context, repoPath, name string, isCampaignRoot bo
 		}
 	}
 
-	statusArgs := []string{"status", "--porcelain=v1"}
+	statusArgs := []string{}
 	if isCampaignRoot {
 		statusArgs = append(statusArgs, "--ignore-submodules=all")
 	}
-	output, err := git.Output(ctx, repoPath, statusArgs...)
+	output, err := git.StatusPorcelain(ctx, repoPath, statusArgs...)
 	if err != nil {
 		rs.Error = "status failed"
 		return rs
 	}
 
-	rs.Clean = output == ""
+	rs.Clean = len(output) == 0
 	if !rs.Clean {
-		for _, line := range strings.Split(output, "\n") {
-			if len(line) < 2 {
+		for _, entry := range git.ParseStatusPorcelainZ(output) {
+			if len(entry.Code) < 2 {
 				continue
 			}
-			x, y := line[0], line[1]
+			x, y := entry.Code[0], entry.Code[1]
 			if x != ' ' && x != '?' {
 				rs.Staged++
 			}

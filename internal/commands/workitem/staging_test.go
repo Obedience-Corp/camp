@@ -9,7 +9,7 @@ import (
 
 func TestParseGitStatusPorcelainZ_RenameKeepsNewPath(t *testing.T) {
 	out := []byte("R  new name\x00old name\x00?? path with \"quote\".md\x00")
-	entries := parseGitStatusPorcelainZ(out)
+	entries := campgit.ParseStatusPorcelainZ(out)
 	if len(entries) != 2 {
 		t.Fatalf("entries = %#v, want 2", entries)
 	}

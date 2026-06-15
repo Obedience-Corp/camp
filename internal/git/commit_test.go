@@ -802,6 +802,13 @@ func TestFilterTracked(t *testing.T) {
 	})
 }
 
+func TestFilterTrackedNonASCII(t *testing.T) {
+	got := filterTrackedPaths([]string{"docs/cafe.md", "docs/café.md"}, []string{"docs/café.md"})
+	if len(got) != 1 || got[0] != "docs/café.md" {
+		t.Fatalf("filterTrackedPaths() = %v, want [docs/café.md]", got)
+	}
+}
+
 func TestExpandTrackedPaths(t *testing.T) {
 	t.Run("staged directory expands to tracked descendants", func(t *testing.T) {
 		tmpDir := initTestRepo(t)
