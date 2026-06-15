@@ -1,4 +1,7 @@
-// Package flow provides workflow flow registry and execution.
+// Package flow provides the .campaign/flows shell-command registry and runner.
+//
+// It is distinct from internal/workflow, which owns the .workflow.yaml
+// status-directory state machine used by most camp flow command semantics.
 package flow
 
 import (
