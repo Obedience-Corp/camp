@@ -166,6 +166,61 @@ func TestIntentService_CreateWithEditor(t *testing.T) {
 	}
 }
 
+func TestIntentService_CreateWithEditor_EditedIDCollisionPreservesExisting(t *testing.T) {
+	tmpDir := t.TempDir()
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
+	ctx := context.Background()
+
+	existing, err := svc.CreateDirect(ctx, CreateOptions{
+		Title:     "Existing Intent",
+		Type:      TypeFeature,
+		Timestamp: time.Date(2026, 1, 19, 17, 10, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateDirect(existing) error = %v", err)
+	}
+	before, err := os.ReadFile(existing.Path)
+	if err != nil {
+		t.Fatalf("ReadFile(existing before) error = %v", err)
+	}
+
+	mockEditor := func(ctx context.Context, path string) error {
+		edited := &Intent{
+			ID:        existing.ID,
+			Title:     "Collision Attempt",
+			Status:    StatusInbox,
+			CreatedAt: time.Date(2026, 1, 19, 17, 11, 0, 0, time.UTC),
+			Type:      TypeFeature,
+			Content:   "this should not replace the existing file",
+		}
+		data, err := SerializeIntent(edited)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(path, data, 0644)
+	}
+
+	_, err = svc.CreateWithEditor(ctx, CreateOptions{
+		Title:     "New Intent",
+		Type:      TypeFeature,
+		Timestamp: time.Date(2026, 1, 19, 17, 12, 0, 0, time.UTC),
+	}, mockEditor)
+	if err == nil {
+		t.Fatal("CreateWithEditor() should fail on edited ID collision")
+	}
+	if !errors.Is(err, ErrFileExists) {
+		t.Fatalf("CreateWithEditor() error = %v, want ErrFileExists", err)
+	}
+
+	after, err := os.ReadFile(existing.Path)
+	if err != nil {
+		t.Fatalf("ReadFile(existing after) error = %v", err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("existing intent was modified:\n got: %q\nwant: %q", string(after), string(before))
+	}
+}
+
 func TestIntentService_CreateWithEditor_Cancelled(t *testing.T) {
 	tmpDir := t.TempDir()
 	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
@@ -703,6 +758,37 @@ func TestMoveFile(t *testing.T) {
 	}
 }
 
+func TestMoveFile_DestinationExistsReturnsErrFileExists(t *testing.T) {
+	tmpDir := t.TempDir()
+	srcPath := filepath.Join(tmpDir, "source.txt")
+	dstPath := filepath.Join(tmpDir, "dest.txt")
+	if err := os.WriteFile(srcPath, []byte("source content"), 0644); err != nil {
+		t.Fatalf("WriteFile(src) error = %v", err)
+	}
+	if err := os.WriteFile(dstPath, []byte("existing content"), 0644); err != nil {
+		t.Fatalf("WriteFile(dst) error = %v", err)
+	}
+
+	err := moveFile(srcPath, dstPath)
+	if !errors.Is(err, ErrFileExists) {
+		t.Fatalf("moveFile() error = %v, want ErrFileExists", err)
+	}
+
+	assertFileContent(t, srcPath, "source content")
+	assertFileContent(t, dstPath, "existing content")
+}
+
+func assertFileContent(t *testing.T, path, want string) {
+	t.Helper()
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%s) error = %v", path, err)
+	}
+	if string(got) != want {
+		t.Fatalf("%s content = %q, want %q", path, string(got), want)
+	}
+}
+
 func TestIsCancelled(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -1099,6 +1185,9 @@ func TestMoveFile_SourceNotExist(t *testing.T) {
 	err := moveFile(srcPath, dstPath)
 	if err == nil {
 		t.Fatal("moveFile() should fail when source doesn't exist")
+	}
+	if _, statErr := os.Stat(dstPath); !os.IsNotExist(statErr) {
+		t.Fatalf("destination should not be created for non-EXDEV rename error, stat err = %v", statErr)
 	}
 }
 

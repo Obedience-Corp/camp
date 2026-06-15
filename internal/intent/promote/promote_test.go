@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/Obedience-Corp/camp/internal/intent"
 )
@@ -273,6 +274,61 @@ func TestPromoteToDesign_IsTransactionalOnDesignDocFailure(t *testing.T) {
 	}
 	if reloaded.PromotedTo != "" {
 		t.Fatalf("PromotedTo = %q, want empty", reloaded.PromotedTo)
+	}
+}
+
+func TestPromoteToDesignRollbackPreservesPreExistingDesignDir(t *testing.T) {
+	ctx := context.Background()
+	campaignRoot := t.TempDir()
+	intentsDir := filepath.Join(campaignRoot, "workflow", "intents")
+	svc := intent.NewIntentService(campaignRoot, intentsDir)
+	if err := svc.EnsureDirectories(ctx); err != nil {
+		t.Fatalf("EnsureDirectories() error = %v", err)
+	}
+
+	created, err := svc.CreateDirect(ctx, intent.CreateOptions{
+		Title:     "Design API request signing flow",
+		Type:      intent.TypeResearch,
+		Author:    "test",
+		Body:      "We need a clear signing strategy with replay protection.",
+		Timestamp: time.Date(2026, 3, 4, 12, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateDirect() error = %v", err)
+	}
+	ready, err := svc.Move(ctx, created.ID, intent.StatusReady)
+	if err != nil {
+		t.Fatalf("Move() to ready error = %v", err)
+	}
+
+	designDir := filepath.Join(campaignRoot, "workflow", "design", ready.ID)
+	if err := os.MkdirAll(designDir, 0755); err != nil {
+		t.Fatalf("MkdirAll(designDir) error = %v", err)
+	}
+	userFile := filepath.Join(designDir, "notes.md")
+	if err := os.WriteFile(userFile, []byte("keep my notes"), 0644); err != nil {
+		t.Fatalf("WriteFile(userFile) error = %v", err)
+	}
+
+	activePath := filepath.Join(intentsDir, "active", ready.ID+".md")
+	if err := os.MkdirAll(activePath, 0755); err != nil {
+		t.Fatalf("MkdirAll(active collision path) error = %v", err)
+	}
+
+	_, err = Promote(ctx, svc, ready, Options{
+		CampaignRoot: campaignRoot,
+		Target:       TargetDesign,
+	})
+	if err == nil {
+		t.Fatal("Promote() expected error when active destination already exists")
+	}
+
+	got, err := os.ReadFile(userFile)
+	if err != nil {
+		t.Fatalf("pre-existing design file should remain after rollback: %v", err)
+	}
+	if string(got) != "keep my notes" {
+		t.Fatalf("user file content = %q, want %q", string(got), "keep my notes")
 	}
 }
 
