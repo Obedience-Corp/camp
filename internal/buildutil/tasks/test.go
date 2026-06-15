@@ -81,7 +81,7 @@ func Test(verbose bool) error {
 				// paths), and CPU/IO contention under the parallel pool can push
 				// them over a tight limit. Keep generous headroom so the gate
 				// stays reliable while still catching true hangs.
-				cmd := exec.Command("go", "test", "-count=1", "-json", "-short", "-timeout", "120s", pkg)
+				cmd := exec.Command("go", goTestArgs(pkg)...)
 				output, runErr := cmd.Output()
 				duration := time.Since(start)
 
@@ -222,6 +222,11 @@ func Test(verbose bool) error {
 	return nil
 }
 
+func goTestArgs(pkg string) []string {
+	args := []string{"test", "-count=1", "-json", "-short", "-timeout", "120s"}
+	return append(args, appendBuildTags(pkg)...)
+}
+
 // packageFailReason classifies a non-zero `go test` exit that produced no
 // per-test failure (build error, timeout, setup failure) and returns a short
 // label for the summary plus the captured detail for loud printing. stdout is
@@ -302,7 +307,7 @@ func discoverTestPackages() ([]string, error) {
 		}
 
 		// Check if package has test files
-		cmd := exec.Command("go", "list", "-f", "{{.TestGoFiles}}", pkg)
+		cmd := exec.Command("go", goListArgs("-f", "{{.TestGoFiles}}", pkg)...)
 		output, err := cmd.Output()
 		if err != nil {
 			continue

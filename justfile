@@ -95,6 +95,47 @@ lint-no-host-fs-tests:
     fi
     echo "lint-no-host-fs-tests: clean (no NEW violators; $(echo $hits | wc -w | tr -d ' ') legacy files on allowlist)"
 
+# Run both-profile builds, vet (stable/dev/integration), lint both profiles, and dev unit tests.
+# This is the pre-push hook's default payload (D005 gate-fast). See also: just gate.
+gate-fast:
+    #!/usr/bin/env sh
+    set -eu
+    echo "=== gate-fast: stable build ==="
+    just build-camp
+    echo "=== gate-fast: dev build ==="
+    BUILD_TAGS=dev just build-camp
+    echo "=== gate-fast: vet stable ==="
+    go vet ./...
+    echo "=== gate-fast: vet dev ==="
+    go vet -tags dev ./...
+    echo "=== gate-fast: vet integration ==="
+    go vet -tags=integration ./...
+    echo "=== gate-fast: lint stable ==="
+    just lint
+    echo "=== gate-fast: lint dev ==="
+    BUILD_TAGS=dev just lint
+    echo "=== gate-fast: unit tests dev (the profile festival-app ships) ==="
+    BUILD_TAGS=dev just test unit
+    echo "=== gate-fast: PASSED ==="
+
+# Run the full both-profile gate: gate-fast plus stable unit tests (C-2 matrix).
+# Required by release recipes before tagging; the per-sequence closing command for sequences 05-12.
+# No GitHub Actions: all enforcement is local (C-1).
+gate:
+    #!/usr/bin/env sh
+    set -eu
+    just gate-fast
+    echo "=== gate: unit tests stable ==="
+    just test unit
+    echo "=== gate: PASSED ==="
+
+# Set git core.hooksPath to .githooks so the pre-push gate fires automatically.
+# Idempotent: safe to run multiple times.
+hooks-install:
+    git config core.hooksPath .githooks
+    @echo "Hooks installed: .githooks is now the active hooks directory."
+    @echo "To verify: git config --get core.hooksPath"
+
 # Install required development tools
 install-tools:
     go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest

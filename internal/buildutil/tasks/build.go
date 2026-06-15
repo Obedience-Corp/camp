@@ -67,6 +67,12 @@ func goVetArgs(args ...string) []string {
 	return out
 }
 
+func goListArgs(args ...string) []string {
+	out := []string{"list"}
+	out = append(out, appendBuildTags(args...)...)
+	return out
+}
+
 // Build runs go vet and go build on all packages
 func Build(verbose bool) error {
 	ui.Section("Building Camp CLI")
@@ -231,7 +237,7 @@ func Build(verbose bool) error {
 
 // discoverPackages finds all Go packages in the project
 func discoverPackages() ([]string, error) {
-	cmd := exec.Command("go", "list", "./...")
+	cmd := exec.Command("go", goListArgs("./...")...)
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, err
