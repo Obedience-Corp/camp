@@ -32,7 +32,8 @@ and executed from the campaign root directory.
 Use @shortcut prefix to run from a shortcut's directory instead of root.
 Only navigation shortcuts (those with paths) can be used.
 
-All arguments after 'run' (or '@shortcut') are passed directly to the shell.`,
+Raw command arguments after 'run' (or '@shortcut') are passed directly to the
+shell. Project just-dispatch passes recipe arguments directly to just.`,
 	Example: `  # Project just dispatch (first arg matches a project name):
   camp run camp              # Show just recipes for camp project
   camp run camp test all     # Run 'just test all' in projects/camp/
@@ -157,7 +158,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 						return camperrors.Wrapf(camperrors.ErrNotFound, "directory does not exist: %s", workDir)
 					}
 
-					// Build and execute command
+					// Raw-command form: shell interprets the joined args; shell metacharacters are intentional.
 					fullCmd := strings.Join(commandArgs, " ")
 					return cmdutil.ExecuteCommand(ctx, fullCmd, workDir, root, nil)
 				}
@@ -180,7 +181,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 	// Exact match only.
 	if len(commandArgs) > 0 {
 		if projectDir, ok := isProjectCtx(ctx, root, commandArgs[0]); ok {
-			return cmdutil.ExecuteCommand(ctx, "just", projectDir, root, commandArgs[1:])
+			return cmdutil.ExecuteDirect(ctx, "just", commandArgs[1:], projectDir, root)
 		}
 	}
 
@@ -188,7 +189,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(camperrors.ErrInvalidInput, "no command specified")
 	}
 
-	// Build the full command string
+	// Raw-command form: shell interprets the joined args; shell metacharacters are intentional.
 	fullCmd := strings.Join(commandArgs, " ")
 
 	// Execute from working directory
