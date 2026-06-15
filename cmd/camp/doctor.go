@@ -50,8 +50,8 @@ EXAMPLES:
   # JSON output for scripting
   camp doctor --json`,
 	Annotations: map[string]string{
-		"agent_allowed": "false",
-		"agent_reason":  "Has --fix mode that is destructive",
+		"agent_allowed": "true",
+		"agent_reason":  "Read path (--json) is safe; never pass --fix from an agent",
 	},
 	RunE: runDoctor,
 }

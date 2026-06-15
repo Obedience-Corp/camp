@@ -30,7 +30,7 @@ file layout.`,
 	GroupID: "system",
 	Annotations: map[string]string{
 		"agent_allowed": "false",
-		"agent_reason":  "Fully interactive TUI menu",
+		"agent_reason":  "requires interactive terminal",
 		"interactive":   "true",
 	},
 	RunE: runSettings,

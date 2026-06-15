@@ -9,6 +9,9 @@ import (
 
 // Manifest represents the CLI command restriction manifest.
 type Manifest struct {
+	// Version is an incrementing integer, not a semantic version string.
+	// Other JSON surfaces use schema_version strings; this manifest predates
+	// that convention and remains an integer contract.
 	Version  int            `json:"version"`
 	CLI      string         `json:"cli"`
 	Commands []CommandEntry `json:"commands"`
@@ -28,7 +31,7 @@ var manifestCmd = &cobra.Command{
 	Hidden: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		manifest := Manifest{
-			Version:  1,
+			Version:  2,
 			CLI:      "camp",
 			Commands: []CommandEntry{},
 		}
