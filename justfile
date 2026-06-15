@@ -58,6 +58,7 @@ lint:
         golangci-lint run --new ./...
     fi
     just lint-no-host-fs-tests
+    just lint-no-fmt-errorf
     go vet -tags=integration ./...
 
 # Reject NEW host-side filesystem-mutating test patterns outside
@@ -95,6 +96,52 @@ lint-no-host-fs-tests:
         exit 1
     fi
     echo "lint-no-host-fs-tests: clean (no NEW violators; $(echo $hits | wc -w | tr -d ' ') legacy files on allowlist)"
+
+# Reject NEW fmt.Errorf occurrences in production code outside tools/.
+# The allowlist captures pre-existing violators tracked under CH0001-11-01.
+# Removing a file from the allowlist as you migrate it tightens the rule.
+# The end state is an empty allowlist.
+lint-no-fmt-errorf:
+    #!/usr/bin/env sh
+    set -eu
+    if [ -f .justfiles/fmt-errorf-allowlist.txt ]; then
+        allowlist=$(sed '/^[[:space:]]*#/d; /^[[:space:]]*$/d' .justfiles/fmt-errorf-allowlist.txt | tr '\n' ' ')
+    else
+        allowlist=""
+    fi
+    hits=$(find ./cmd ./internal ./pkg -name '*.go' \
+        -not -name '*_test.go' -print0 2>/dev/null | \
+        xargs -0 grep -l "fmt\.Errorf" 2>/dev/null | sed 's#^\./##' || true)
+    new_violators=""
+    for hit in $hits; do
+        case " $allowlist " in
+            *" $hit "*) ;;
+            *) new_violators="$new_violators $hit" ;;
+        esac
+    done
+    if [ -n "$new_violators" ]; then
+        echo "FAIL: NEW fmt.Errorf in production code (outside tools/):"
+        for v in $new_violators; do echo "  $v"; done
+        echo ""
+        echo "Use camperrors.Wrap / camperrors.Wrapf instead."
+        exit 1
+    fi
+    echo "lint-no-fmt-errorf: clean (no NEW violators; $(echo $hits | wc -w | tr -d ' ') legacy files on allowlist)"
+
+# Verify the fmt.Errorf ratchet rejects a new production violator.
+test-ratchet:
+    #!/usr/bin/env sh
+    set -eu
+    tmpfile=./internal/tmptest_fmt_errorf_ratchet.go
+    cleanup() { rm -f "$tmpfile"; }
+    trap cleanup EXIT INT TERM
+    printf 'package internal\nimport "fmt"\nfunc _tmp() error { return fmt.Errorf("bad") }\n' > "$tmpfile"
+    if just lint-no-fmt-errorf 2>&1 | grep -q "FAIL"; then
+        echo "ratchet test: PASS (correctly rejected new fmt.Errorf)"
+    else
+        echo "ratchet test: FAIL (should have rejected new fmt.Errorf)"
+        exit 1
+    fi
 
 # Run both-profile builds, vet (stable/dev/integration), lint both profiles, and dev unit tests.
 # This is the pre-push hook's default payload (D005 gate-fast). See also: just gate.
