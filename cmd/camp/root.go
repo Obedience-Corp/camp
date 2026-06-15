@@ -25,6 +25,7 @@ import (
 	workflowcmd "github.com/Obedience-Corp/camp/internal/commands/workflow"
 	workitemcmd "github.com/Obedience-Corp/camp/internal/commands/workitem"
 	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/Obedience-Corp/camp/internal/version"
 	"github.com/spf13/cobra"
@@ -32,9 +33,7 @@ import (
 
 var (
 	// Global flags
-	cfgFile string
 	noColor bool
-	verbose bool
 )
 
 var rootCmd = &cobra.Command{
@@ -42,6 +41,7 @@ var rootCmd = &cobra.Command{
 	Short:         "Campaign management CLI for multi-project AI workspaces",
 	Version:       fmt.Sprintf("%s (built %s, commit %s)", version.Version, version.BuildDate, version.Commit),
 	SilenceErrors: true,
+	SilenceUsage:  true,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		// Skip color detection for completion commands to avoid
 		// termenv interfering with zsh's completion state machine.
@@ -191,9 +191,14 @@ func init() {
 	)
 
 	// Global persistent flags
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: ~/.obey/campaign/config.json)")
 	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "disable colored output")
-	rootCmd.PersistentFlags().BoolVar(&verbose, "verbose", false, "enable verbose output")
+	rootCmd.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
+		cmd.SilenceUsage = false
+		if root := cmd.Root(); root != nil {
+			root.SilenceUsage = false
+		}
+		return camperrors.NewCommand(cmd.CommandPath(), 2, "", err)
+	})
 
 	rootCmd.AddCommand(skillspkg.Cmd)
 	rootCmd.AddCommand(cachepkg.Cmd)

@@ -69,7 +69,6 @@ func newDoctorCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDoctor(cmd.Context(), cmd, jsonOut)
 		},
-		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
 	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(JSONSchemaVersion, func() bool { return jsonOut }))

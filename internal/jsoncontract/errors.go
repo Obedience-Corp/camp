@@ -72,8 +72,15 @@ func RunE(schemaVersion string, jsonRequested func() bool, run func(*cobra.Comma
 // only chance to keep the machine-readable contract.
 func FlagErrorFunc(schemaVersion string, jsonRequested func() bool) func(*cobra.Command, error) error {
 	return func(cmd *cobra.Command, err error) error {
-		if err == nil || !Requested(jsonRequested) {
+		if err == nil {
 			return err
+		}
+		if !Requested(jsonRequested) {
+			cmd.SilenceUsage = false
+			if root := cmd.Root(); root != nil {
+				root.SilenceUsage = false
+			}
+			return camperrors.NewCommand(cmd.CommandPath(), 2, "", err)
 		}
 		return RenderError(cmd, schemaVersion, err)
 	}

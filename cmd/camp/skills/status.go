@@ -28,8 +28,7 @@ Reports whether each tool's skills directory has projected entries from
 Examples:
   camp skills status          Show projection states in table format
   camp skills status --json   Machine-readable JSON output`,
-	Args:         cobra.NoArgs,
-	SilenceUsage: true,
+	Args: cobra.NoArgs,
 	Annotations: map[string]string{
 		"agent_allowed": "true",
 		"agent_reason":  "Non-interactive status listing",

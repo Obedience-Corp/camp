@@ -33,8 +33,7 @@ Examples:
   camp register ~/Dev/my-project         # Register specified path
   camp register . --name custom-name     # Override the campaign name
   camp register . --type research        # Override the campaign type`,
-	Aliases: []string{"reg"},
-	Args:    cobra.MaximumNArgs(1),
+	Args: cobra.MaximumNArgs(1),
 	Annotations: map[string]string{
 		"agent_allowed": "false",
 		"agent_reason":  "Global registry modification",
