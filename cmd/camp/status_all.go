@@ -7,10 +7,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
 	tuistatus "github.com/Obedience-Corp/camp/internal/tui/status"
 	"github.com/Obedience-Corp/camp/internal/ui"
@@ -32,8 +34,10 @@ Examples:
   camp status all               # Show all submodule statuses
   camp status all --remote-url  # Show remote URLs instead of names
   camp status all --json        # Output as JSON`,
-	RunE: runStatusAll,
+	RunE: jsoncontract.RunE(StatusAllJSONVersion, func() bool { return statusAllJSON }, runStatusAll),
 }
+
+const StatusAllJSONVersion = "status-all/v1alpha1"
 
 var (
 	statusAllJSON      bool
@@ -49,6 +53,7 @@ func init() {
 	statusAllCmd.Flags().BoolVar(&statusAllRemoteURL, "remote-url", false, "Show remote URLs instead of remote names")
 
 	statusCmd.AddCommand(statusAllCmd)
+	statusAllCmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(StatusAllJSONVersion, func() bool { return statusAllJSON }))
 }
 
 // repoStatus holds the status of a single repository.
@@ -70,8 +75,10 @@ type repoStatus struct {
 }
 
 type statusAllOutput struct {
-	CampaignRoot string       `json:"campaign_root"`
-	Repos        []repoStatus `json:"repos"`
+	SchemaVersion string       `json:"schema_version"`
+	Timestamp     string       `json:"timestamp"`
+	CampaignRoot  string       `json:"campaign_root,omitempty"`
+	Repos         []repoStatus `json:"repos"`
 }
 
 func runStatusAll(cmd *cobra.Command, _ []string) error {
@@ -101,7 +108,10 @@ func runStatusAll(cmd *cobra.Command, _ []string) error {
 	}
 
 	if len(paths) == 0 {
-		fmt.Println(ui.Info("No submodules found in this campaign"))
+		if statusAllJSON {
+			return outputStatusJSON("", []repoStatus{})
+		}
+		fmt.Fprintln(os.Stderr, ui.Info("No submodules found in this campaign"))
 		return nil
 	}
 
@@ -385,8 +395,13 @@ func renderStatusTable(statuses []repoStatus) {
 func outputStatusJSON(campaignRoot string, statuses []repoStatus) error {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
+	if statuses == nil {
+		statuses = []repoStatus{}
+	}
 	return enc.Encode(statusAllOutput{
-		CampaignRoot: campaignRoot,
-		Repos:        statuses,
+		SchemaVersion: StatusAllJSONVersion,
+		Timestamp:     time.Now().UTC().Format(time.RFC3339),
+		CampaignRoot:  campaignRoot,
+		Repos:         statuses,
 	})
 }

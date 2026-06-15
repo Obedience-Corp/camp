@@ -10,6 +10,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/doctor"
 	"github.com/Obedience-Corp/camp/internal/doctor/checks"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -53,8 +54,10 @@ EXAMPLES:
 		"agent_allowed": "true",
 		"agent_reason":  "Read path (--json) is safe; never pass --fix from an agent",
 	},
-	RunE: runDoctor,
+	RunE: jsoncontract.RunE(DoctorJSONVersion, func() bool { return doctorOpts.jsonOutput }, runDoctor),
 }
+
+const DoctorJSONVersion = "doctor/v1alpha1"
 
 var doctorOpts struct {
 	fix            bool
@@ -78,6 +81,7 @@ func init() {
 
 	rootCmd.AddCommand(doctorCmd)
 	doctorCmd.GroupID = "campaign"
+	doctorCmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(DoctorJSONVersion, func() bool { return doctorOpts.jsonOutput }))
 }
 
 func runDoctor(cmd *cobra.Command, args []string) error {

@@ -10,8 +10,13 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/quest"
 )
+
+const QuestLinksJSONVersion = "quest-links/v1alpha1"
+
+var questLinksJSON bool
 
 var questLinksCmd = &cobra.Command{
 	Use:   "links <quest>",
@@ -23,25 +28,25 @@ Default output is a table. Use --json for machine-readable output.
 Examples:
   camp quest links myquest
   camp quest links myquest --json`,
-	Args: cobra.ExactArgs(1),
+	Args: jsoncontract.Args(QuestLinksJSONVersion, func() bool { return questLinksJSON }, cobra.ExactArgs(1)),
 	Annotations: map[string]string{
 		"agent_allowed": "true",
 		"agent_reason":  "Non-interactive quest links listing",
 	},
-	RunE: runQuestLinks,
+	RunE: jsoncontract.RunE(QuestLinksJSONVersion, func() bool { return questLinksJSON }, runQuestLinks),
 }
 
 func init() {
 	Cmd.AddCommand(questLinksCmd)
 
-	questLinksCmd.Flags().Bool("json", false, "Output as JSON")
+	questLinksCmd.Flags().BoolVar(&questLinksJSON, "json", false, "Output as JSON")
 	questLinksCmd.ValidArgsFunction = completeQuestSelector
+	questLinksCmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(QuestLinksJSONVersion, func() bool { return questLinksJSON }))
 }
 
 func runQuestLinks(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	selector := args[0]
-	asJSON, _ := cmd.Flags().GetBool("json")
 
 	qctx, err := loadQuestCommandContext(ctx, false)
 	if err != nil {
@@ -53,7 +58,7 @@ func runQuestLinks(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if asJSON {
+	if questLinksJSON {
 		return outputLinksJSON(links)
 	}
 	return outputLinksTable(links)

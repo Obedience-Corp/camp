@@ -6,7 +6,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/spf13/cobra"
@@ -97,6 +99,91 @@ func TestStatusAll_JSON_NoCache(t *testing.T) {
 	}
 }
 
+func TestStatusAllJSONNoSubmodulesEmitsEmptyContract(t *testing.T) {
+	root := setupStatusAllEmptyCampaign(t)
+	t.Setenv(campaign.EnvCampaignRoot, root)
+	campaign.ClearCache()
+	t.Cleanup(campaign.ClearCache)
+	restoreStatusAllFlags(t)
+
+	statusAllJSON = true
+	statusAllView = false
+	statusAllNoRecurse = false
+	statusAllRemoteURL = false
+
+	stdout, stderr, err := captureStatusAllOutput(t, func() error {
+		cmd := &cobra.Command{}
+		cmd.SetContext(context.Background())
+		return runStatusAll(cmd, nil)
+	})
+	if err != nil {
+		t.Fatalf("runStatusAll() error = %v", err)
+	}
+	if stderr != "" {
+		t.Fatalf("status all --json wrote stderr %q, want empty", stderr)
+	}
+
+	var payload statusAllOutput
+	if err := json.Unmarshal([]byte(stdout), &payload); err != nil {
+		t.Fatalf("status all empty JSON invalid: %v\nraw: %s", err, stdout)
+	}
+	if payload.SchemaVersion != StatusAllJSONVersion {
+		t.Fatalf("schema_version = %q, want %q", payload.SchemaVersion, StatusAllJSONVersion)
+	}
+	if _, err := time.Parse(time.RFC3339, payload.Timestamp); err != nil {
+		t.Fatalf("timestamp = %q, want RFC3339: %v", payload.Timestamp, err)
+	}
+	if payload.CampaignRoot != "" {
+		t.Fatalf("campaign_root = %q, want omitted/empty for empty submodules", payload.CampaignRoot)
+	}
+	if payload.Repos == nil || len(payload.Repos) != 0 {
+		t.Fatalf("repos = %#v, want empty JSON array", payload.Repos)
+	}
+}
+
+func TestStatusAllNoSubmodulesWritesHumanMessageToStderr(t *testing.T) {
+	root := setupStatusAllEmptyCampaign(t)
+	t.Setenv(campaign.EnvCampaignRoot, root)
+	campaign.ClearCache()
+	t.Cleanup(campaign.ClearCache)
+	restoreStatusAllFlags(t)
+
+	statusAllJSON = false
+	statusAllView = false
+	statusAllNoRecurse = false
+	statusAllRemoteURL = false
+
+	stdout, stderr, err := captureStatusAllOutput(t, func() error {
+		cmd := &cobra.Command{}
+		cmd.SetContext(context.Background())
+		return runStatusAll(cmd, nil)
+	})
+	if err != nil {
+		t.Fatalf("runStatusAll() error = %v", err)
+	}
+	if stdout != "" {
+		t.Fatalf("status all wrote stdout %q, want empty", stdout)
+	}
+	if !strings.Contains(stderr, "No submodules found in this campaign") {
+		t.Fatalf("stderr = %q, want no-submodules message", stderr)
+	}
+}
+
+func restoreStatusAllFlags(t *testing.T) {
+	t.Helper()
+
+	oldJSON := statusAllJSON
+	oldView := statusAllView
+	oldNoRecurse := statusAllNoRecurse
+	oldRemoteURL := statusAllRemoteURL
+	t.Cleanup(func() {
+		statusAllJSON = oldJSON
+		statusAllView = oldView
+		statusAllNoRecurse = oldNoRecurse
+		statusAllRemoteURL = oldRemoteURL
+	})
+}
+
 func setupStatusAllTestCampaign(t *testing.T) string {
 	t.Helper()
 
@@ -110,6 +197,20 @@ func setupStatusAllTestCampaign(t *testing.T) string {
 	}
 	if err := os.MkdirAll(filepath.Join(root, "projects", "alpha"), 0755); err != nil {
 		t.Fatalf("mkdir submodule path: %v", err)
+	}
+	return root
+}
+
+func setupStatusAllEmptyCampaign(t *testing.T) string {
+	t.Helper()
+
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".campaign"), 0755); err != nil {
+		t.Fatalf("mkdir .campaign: %v", err)
+	}
+	config := "id: test-status-all-empty\nname: test-status-all-empty\ntype: product\n"
+	if err := os.WriteFile(filepath.Join(root, ".campaign", "campaign.yaml"), []byte(config), 0644); err != nil {
+		t.Fatalf("write campaign config: %v", err)
 	}
 	return root
 }
@@ -189,19 +290,40 @@ exit 1
 func captureStatusAllStdout(t *testing.T, fn func() error) (string, error) {
 	t.Helper()
 
+	stdout, _, err := captureStatusAllOutput(t, fn)
+	return stdout, err
+}
+
+func captureStatusAllOutput(t *testing.T, fn func() error) (string, string, error) {
+	t.Helper()
+
 	oldStdout := os.Stdout
-	r, w, err := os.Pipe()
+	oldStderr := os.Stderr
+
+	stdoutR, stdoutW, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("stdout pipe: %v", err)
 	}
-	os.Stdout = w
-	runErr := fn()
-	_ = w.Close()
-	os.Stdout = oldStdout
+	stderrR, stderrW, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("stderr pipe: %v", err)
+	}
+	os.Stdout = stdoutW
+	os.Stderr = stderrW
 
-	out, readErr := io.ReadAll(r)
+	runErr := fn()
+	_ = stdoutW.Close()
+	_ = stderrW.Close()
+	os.Stdout = oldStdout
+	os.Stderr = oldStderr
+
+	out, readErr := io.ReadAll(stdoutR)
 	if readErr != nil {
 		t.Fatalf("read stdout: %v", readErr)
 	}
-	return string(out), runErr
+	errOut, readErr := io.ReadAll(stderrR)
+	if readErr != nil {
+		t.Fatalf("read stderr: %v", readErr)
+	}
+	return string(out), string(errOut), runErr
 }

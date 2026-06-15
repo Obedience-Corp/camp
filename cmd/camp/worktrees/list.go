@@ -11,10 +11,13 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/worktree"
 	"github.com/spf13/cobra"
 )
+
+const WorktreesListJSONVersion = "worktrees-list/v1alpha1"
 
 var (
 	listProject string
@@ -40,7 +43,7 @@ Examples:
   # JSON output for scripting
   camp worktrees list --json`,
 	Aliases: []string{"ls"},
-	RunE:    runWorktreesList,
+	RunE:    jsoncontract.RunE(WorktreesListJSONVersion, func() bool { return listJSON }, runWorktreesList),
 }
 
 func init() {
@@ -52,6 +55,7 @@ func init() {
 		"Show only stale worktrees")
 	worktreesListCmd.Flags().BoolVar(&listJSON, "json", false,
 		"Output as JSON")
+	worktreesListCmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(WorktreesListJSONVersion, func() bool { return listJSON }))
 }
 
 // WorktreeListItem contains information about a worktree for listing.
