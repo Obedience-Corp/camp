@@ -54,7 +54,7 @@ func runQuestList(cmd *cobra.Command, args []string) error {
 	}
 
 	if questListJSON {
-		return outputQuestJSON(quests)
+		return outputQuestListJSON(qctx, quests)
 	}
 	return outputQuestTable(qctx, quests)
 }

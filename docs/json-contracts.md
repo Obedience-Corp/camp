@@ -40,9 +40,27 @@ Schema versions in this release:
 Surfaces in this table are **versioned contracts**: `schema_version` will
 increment on breaking changes and festival-app keys on the version string.
 
-Surfaces NOT in this table (for example, `camp status all`, `camp version`,
-and `camp __manifest`) are **best-effort**: they have JSON output but no formal
-version guarantee until explicitly promoted.
+Surfaces NOT in this table (for example, `camp status all`,
+dev-profile `camp quest list/show`, `camp version`, and `camp __manifest`) are
+**best-effort**: they have JSON output but no formal version guarantee until
+explicitly promoted.
+
+## Path Semantics
+
+All JSON path fields are campaign-relative. To resolve a path to an absolute
+filesystem path, use the payload root:
+
+```go
+abs_path = filepath.Join(campaign_root, relative_path)
+```
+
+`campaign_root` is symlink-resolved with `filepath.EvalSymlinks`; on macOS,
+this normalizes paths such as `/tmp` to `/private/tmp`. Consumers should use
+the `campaign_root` from the payload instead of resolving roots independently.
+
+The `camp status all --json` campaign-root repo entry uses `.` as its relative
+path. Dev-profile quest JSON follows the same path rule as a best-effort
+surface; it is not a formal versioned contract today.
 
 ## Field Rules
 

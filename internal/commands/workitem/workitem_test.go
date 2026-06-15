@@ -3,6 +3,7 @@ package workitem
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -133,7 +134,7 @@ func TestWorkitemListNoPruneOnRead(t *testing.T) {
 	cmd := NewWorkitemCommand()
 	cmd.SetArgs([]string{"--json"})
 	cmd.SetErr(io.Discard)
-	if err := captureStdout(func() error {
+	if _, err := captureStdout(func() error {
 		return cmd.ExecuteContext(context.Background())
 	}); err != nil {
 		t.Fatalf("workitem --json: %v", err)
@@ -148,11 +149,59 @@ func TestWorkitemListNoPruneOnRead(t *testing.T) {
 	}
 }
 
-func captureStdout(fn func() error) error {
+func TestWorkitemJSONUsesResolvedRootAndRelativePaths(t *testing.T) {
+	root := linkTestCampaign(t)
+	link := filepath.Join(t.TempDir(), "campaign-link")
+	if err := os.Symlink(root, link); err != nil {
+		t.Skipf("symlink campaign root: %v", err)
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(%s): %v", root, err)
+	}
+
+	restore := chdir(t, link)
+	defer restore()
+
+	cmd := NewWorkitemCommand()
+	cmd.SetArgs([]string{"--json", "--type", "design", "--limit", "1"})
+	cmd.SetErr(io.Discard)
+	stdout, err := captureStdout(func() error {
+		return cmd.ExecuteContext(context.Background())
+	})
+	if err != nil {
+		t.Fatalf("workitem --json: %v", err)
+	}
+
+	var payload struct {
+		CampaignRoot string `json:"campaign_root"`
+		Items        []struct {
+			RelativePath string `json:"relative_path"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &payload); err != nil {
+		t.Fatalf("workitem JSON invalid: %v\nraw: %s", err, stdout)
+	}
+	if payload.CampaignRoot != resolvedRoot {
+		t.Fatalf("campaign_root = %q, want %q", payload.CampaignRoot, resolvedRoot)
+	}
+	if len(payload.Items) != 1 {
+		t.Fatalf("items length = %d, want 1", len(payload.Items))
+	}
+	path := payload.Items[0].RelativePath
+	if filepath.IsAbs(path) {
+		t.Fatalf("workitem relative_path is absolute: %q", path)
+	}
+	if _, err := os.Stat(filepath.Join(payload.CampaignRoot, path)); err != nil {
+		t.Fatalf("joined workitem path missing for %q: %v", path, err)
+	}
+}
+
+func captureStdout(fn func() error) (string, error) {
 	old := os.Stdout
 	r, w, err := os.Pipe()
 	if err != nil {
-		return err
+		return "", err
 	}
 	os.Stdout = w
 	defer func() {
@@ -162,8 +211,11 @@ func captureStdout(fn func() error) error {
 
 	runErr := fn()
 	_ = w.Close()
-	_, _ = io.Copy(io.Discard, r)
-	return runErr
+	out, readErr := io.ReadAll(r)
+	if readErr != nil {
+		return "", readErr
+	}
+	return string(out), runErr
 }
 
 func TestValidateFlagsAcceptsBuiltinAndCustomTypes(t *testing.T) {

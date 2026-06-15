@@ -12,6 +12,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/paths"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
@@ -72,6 +73,10 @@ func runIntentFind(cmd *cobra.Command, args []string) error {
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
 		return camperrors.Wrap(err, "not in a campaign directory")
+	}
+	campaignRoot, err = pathutil.ResolveRoot(campaignRoot)
+	if err != nil {
+		return camperrors.Wrap(err, "resolving campaign root")
 	}
 
 	// Create path resolver and service

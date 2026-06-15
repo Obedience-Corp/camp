@@ -3,7 +3,6 @@
 package quest
 
 import (
-	"encoding/json"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -58,9 +57,7 @@ func runQuestShow(cmd *cobra.Command, args []string) error {
 		_, err = os.Stdout.Write(raw)
 		return err
 	case jsonOut:
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		return enc.Encode(q)
+		return outputQuestShowJSON(qctx, q)
 	default:
 		outputQuestShow(qctx, q)
 		return nil

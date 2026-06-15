@@ -17,6 +17,7 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 	"github.com/Obedience-Corp/camp/internal/quest"
 )
 
@@ -30,6 +31,10 @@ func loadQuestCommandContext(ctx context.Context, ensureScaffold bool) (*questCo
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
 		return nil, camperrors.Wrap(err, "not in a campaign directory")
+	}
+	campaignRoot, err = pathutil.ResolveRoot(campaignRoot)
+	if err != nil {
+		return nil, camperrors.Wrap(err, "resolving campaign root")
 	}
 
 	if ensureScaffold {
@@ -105,10 +110,65 @@ func completeQuestSelector(cmd *cobra.Command, _ []string, toComplete string) ([
 	return matches, cobra.ShellCompDirectiveNoFileComp
 }
 
-func outputQuestJSON(quests []*quest.Quest) error {
+type questListJSONPayload struct {
+	CampaignRoot string         `json:"campaign_root"`
+	Items        []*quest.Quest `json:"items"`
+}
+
+type questShowJSONPayload struct {
+	CampaignRoot string       `json:"campaign_root"`
+	Quest        *quest.Quest `json:"quest"`
+}
+
+func outputQuestListJSON(qctx *questCommandContext, quests []*quest.Quest) error {
+	items, err := questsForJSON(qctx, quests)
+	if err != nil {
+		return err
+	}
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
-	return enc.Encode(quests)
+	return enc.Encode(questListJSONPayload{
+		CampaignRoot: qctx.campaignRoot,
+		Items:        items,
+	})
+}
+
+func outputQuestShowJSON(qctx *questCommandContext, q *quest.Quest) error {
+	item, err := questForJSON(qctx, q)
+	if err != nil {
+		return err
+	}
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(questShowJSONPayload{
+		CampaignRoot: qctx.campaignRoot,
+		Quest:        item,
+	})
+}
+
+func questsForJSON(qctx *questCommandContext, quests []*quest.Quest) ([]*quest.Quest, error) {
+	items := make([]*quest.Quest, 0, len(quests))
+	for _, q := range quests {
+		item, err := questForJSON(qctx, q)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+func questForJSON(qctx *questCommandContext, q *quest.Quest) (*quest.Quest, error) {
+	item := q.Clone()
+	if item == nil {
+		return nil, nil
+	}
+	relPath, err := pathutil.RelativeToRoot(qctx.campaignRoot, item.Path)
+	if err != nil {
+		return nil, camperrors.Wrap(err, "relativizing quest path")
+	}
+	item.Path = relPath
+	return item, nil
 }
 
 func outputQuestTable(qctx *questCommandContext, quests []*quest.Quest) error {

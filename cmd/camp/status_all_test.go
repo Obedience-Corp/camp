@@ -32,8 +32,16 @@ func TestShortenRemoteURL(t *testing.T) {
 
 func TestStatusAll_JSON_NoCache(t *testing.T) {
 	root := setupStatusAllTestCampaign(t)
+	link := filepath.Join(t.TempDir(), "campaign-link")
+	if err := os.Symlink(root, link); err != nil {
+		t.Skipf("symlink campaign root: %v", err)
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(%s): %v", root, err)
+	}
 	installStatusAllFakeGit(t)
-	t.Setenv(campaign.EnvCampaignRoot, root)
+	t.Setenv(campaign.EnvCampaignRoot, link)
 	campaign.ClearCache()
 	t.Cleanup(campaign.ClearCache)
 
@@ -61,15 +69,29 @@ func TestStatusAll_JSON_NoCache(t *testing.T) {
 		t.Fatalf("runStatusAll() error = %v", err)
 	}
 
-	var statuses []repoStatus
-	if err := json.Unmarshal([]byte(stdout), &statuses); err != nil {
+	var payload statusAllOutput
+	if err := json.Unmarshal([]byte(stdout), &payload); err != nil {
 		t.Fatalf("status all JSON invalid: %v\nraw: %s", err, stdout)
 	}
-	if len(statuses) == 0 {
+	if payload.CampaignRoot != resolvedRoot {
+		t.Fatalf("campaign_root = %q, want %q", payload.CampaignRoot, resolvedRoot)
+	}
+	if len(payload.Repos) == 0 {
 		t.Fatal("status all JSON returned no statuses")
 	}
+	if got := payload.Repos[0].Path; got != "." {
+		t.Fatalf("campaign root repo path = %q, want .", got)
+	}
+	for _, status := range payload.Repos {
+		if filepath.IsAbs(status.Path) {
+			t.Fatalf("repo %q path is absolute: %q", status.Name, status.Path)
+		}
+		if _, err := os.Stat(filepath.Join(payload.CampaignRoot, status.Path)); err != nil {
+			t.Fatalf("joined repo path missing for %q: %v", status.Path, err)
+		}
+	}
 
-	cacheFile := filepath.Join(root, ".campaign", "cache", "gitstatus", "status.json")
+	cacheFile := filepath.Join(resolvedRoot, ".campaign", "cache", "gitstatus", "status.json")
 	if _, err := os.Stat(cacheFile); !os.IsNotExist(err) {
 		t.Fatalf("status all wrote cache file %s, stat err = %v", cacheFile, err)
 	}

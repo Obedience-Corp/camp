@@ -23,6 +23,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	navtui "github.com/Obedience-Corp/camp/internal/nav/tui"
 	"github.com/Obedience-Corp/camp/internal/paths"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
 
 // noOptCampaign is the NoOptDefVal for the --campaign flag. Cobra requires a
@@ -133,6 +134,10 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	cfg, campaignRoot, err := campaignResolver.resolve(ctx, targetCampaign, cmd.Flags().Changed("campaign"))
 	if err != nil {
 		return err
+	}
+	campaignRoot, err = pathutil.ResolveRoot(campaignRoot)
+	if err != nil {
+		return camperrors.Wrap(err, "resolving campaign root")
 	}
 
 	// Create path resolver
