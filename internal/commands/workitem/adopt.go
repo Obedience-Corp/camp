@@ -29,7 +29,7 @@ func newAdoptCommand() *cobra.Command {
 	cmd.Flags().StringVar(&typeFlag, "type", "feature", "workitem type (feature, bug, chore, or custom)")
 	cmd.Flags().StringVar(&title, "title", "", "human-readable title")
 	cmd.Flags().StringVar(&idOverride, "id", "", "override the generated id")
-	cmd.Flags().StringVar(&questSelector, "quest", "", "capture quest_id from this quest (defaults to CAMP_QUEST env var if set)")
+	cmd.Flags().StringVar(&questSelector, "quest", "", questFlagHelp())
 	return cmd
 }
 

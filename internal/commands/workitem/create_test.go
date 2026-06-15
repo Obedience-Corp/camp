@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Obedience-Corp/camp/internal/version"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 )
 
@@ -70,6 +71,27 @@ func TestValidateParentPath(t *testing.T) {
 		err := validateParentPath(c.path)
 		if (err == nil) != c.ok {
 			t.Errorf("validateParentPath(%q) error=%v, want ok=%v", c.path, err, c.ok)
+		}
+	}
+}
+
+func TestQuestFlagHelpTextMatchesProfile(t *testing.T) {
+	for _, cmd := range []*cobra.Command{newCreateCommand(), newAdoptCommand()} {
+		flag := cmd.Flags().Lookup("quest")
+		if flag == nil {
+			t.Fatalf("%s command missing --quest flag", cmd.Name())
+		}
+		switch version.Profile {
+		case "dev":
+			if !strings.Contains(flag.Usage, "defaults to CAMP_QUEST") {
+				t.Fatalf("%s --quest usage = %q, want dev help", cmd.Name(), flag.Usage)
+			}
+		case "stable":
+			if !strings.Contains(flag.Usage, "requires dev-profile camp") {
+				t.Fatalf("%s --quest usage = %q, want stable forward-compatible help", cmd.Name(), flag.Usage)
+			}
+		default:
+			t.Fatalf("unexpected version.Profile %q", version.Profile)
 		}
 	}
 }

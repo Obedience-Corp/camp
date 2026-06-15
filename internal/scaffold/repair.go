@@ -19,6 +19,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/quest"
 	"github.com/Obedience-Corp/camp/internal/statusmove"
+	"github.com/Obedience-Corp/camp/internal/version"
 	"github.com/lancekrogers/guild-scaffold/pkg/scaffold"
 )
 
@@ -126,7 +127,9 @@ func ComputeRepairPlan(ctx context.Context, dir string, opts InitOptions) (*Repa
 	computeStandardDungeonScaffoldChanges(absDir, plan)
 
 	// Phase 6: Account for imperative quest scaffold files created outside scaffold FS.
-	computeQuestScaffoldChanges(absDir, plan)
+	if version.Profile == "dev" {
+		computeQuestScaffoldChanges(absDir, plan)
+	}
 
 	// Phase 7: Detect misplaced completed/ dirs that should be in dungeon/completed/YYYY-MM-DD/.
 	// This runs after scaffold detection so we know which dungeon dirs will be created.
@@ -252,12 +255,18 @@ func computeScaffoldChanges(ctx context.Context, absDir string, opts InitOptions
 			"campaign_name": name,
 			"campaign_id":   campaignID,
 			"campaign_type": string(opts.Type),
+			"Profile":       version.Profile,
 		},
 		Dry:       true,
 		Overwrite: false,
 	})
 	if err != nil {
 		return err
+	}
+	if version.Profile == "stable" {
+		stats.CreatedDirs = filterOutQuestScaffoldPaths(stats.CreatedDirs)
+		stats.CreatedFiles = filterOutQuestScaffoldPaths(stats.CreatedFiles)
+		stats.SkippedPaths = filterOutQuestScaffoldPaths(stats.SkippedPaths)
 	}
 
 	for _, d := range stats.CreatedDirs {

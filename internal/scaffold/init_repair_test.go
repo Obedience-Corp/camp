@@ -16,6 +16,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/intent"
 
 	"github.com/Obedience-Corp/camp/internal/quest"
+	"github.com/Obedience-Corp/camp/internal/version"
 )
 
 func TestInit_RepairPreservesMission(t *testing.T) {
@@ -335,6 +336,10 @@ func TestInit_RepairPreservesLegacyConceptList(t *testing.T) {
 }
 
 func TestInit_RepairRestoresQuestScaffold(t *testing.T) {
+	if version.Profile != "dev" {
+		t.Skip("quest scaffold repair is dev-profile only")
+	}
+
 	tmpDir := t.TempDir()
 	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
 	t.Setenv("XDG_CONFIG_HOME", tmpDir)
@@ -380,5 +385,39 @@ func TestInit_RepairRestoresQuestScaffold(t *testing.T) {
 	activePath := filepath.Join(campaignDir, quest.RootDirName, ".active")
 	if _, err := os.Stat(activePath); !os.IsNotExist(err) {
 		t.Errorf(".active file should not be created on repair: %s", activePath)
+	}
+}
+
+func TestInit_RepairStableDoesNotRestoreQuestScaffold(t *testing.T) {
+	if version.Profile != "stable" {
+		t.Skip("stable quest scaffold absence is covered in stable profile")
+	}
+
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	campaignDir := filepath.Join(tmpDir, "repair-stable-no-quest")
+	if err := os.MkdirAll(campaignDir, 0755); err != nil {
+		t.Fatalf("failed to create campaign dir: %v", err)
+	}
+
+	ctx := context.Background()
+	if _, err := Init(ctx, campaignDir, InitOptions{
+		Name:       "repair-stable-no-quest",
+		NoRegister: true,
+	}); err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+	if _, err := Init(ctx, campaignDir, InitOptions{
+		Name:       "repair-stable-no-quest",
+		Repair:     true,
+		NoRegister: true,
+	}); err != nil {
+		t.Fatalf("Init() with repair error = %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(campaignDir, quest.RootDirName)); !os.IsNotExist(err) {
+		t.Fatalf("stable repair should not create quest scaffold, stat err = %v", err)
 	}
 }

@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
@@ -198,6 +200,11 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 		if scaffoldErr != nil {
 			return nil, camperrors.Wrap(scaffoldErr, "failed to create scaffold")
 		}
+		if version.Profile == "stable" {
+			if err := pruneStableQuestScaffold(absDir, stats); err != nil {
+				return nil, err
+			}
+		}
 
 		// Use scaffold results directly - single source of truth
 		for _, dir := range stats.CreatedDirs {
@@ -222,13 +229,15 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 			result.Skipped = appendUniquePaths(result.Skipped, dungeonResult.Skipped...)
 		}
 
-		questResult, err := quest.EnsureQuestDungeon(ctx, absDir)
-		if err != nil {
-			return nil, camperrors.Wrap(err, "failed to initialize quest dungeon")
+		if version.Profile == "dev" {
+			questResult, err := quest.EnsureQuestDungeon(ctx, absDir)
+			if err != nil {
+				return nil, camperrors.Wrap(err, "failed to initialize quest dungeon")
+			}
+			result.DirsCreated = appendUniquePaths(result.DirsCreated, questResult.CreatedDirs...)
+			result.FilesCreated = appendUniquePaths(result.FilesCreated, questResult.CreatedFiles...)
+			result.Skipped = appendUniquePaths(result.Skipped, questResult.Skipped...)
 		}
-		result.DirsCreated = appendUniquePaths(result.DirsCreated, questResult.CreatedDirs...)
-		result.FilesCreated = appendUniquePaths(result.FilesCreated, questResult.CreatedFiles...)
-		result.Skipped = appendUniquePaths(result.Skipped, questResult.Skipped...)
 	}
 
 	// Create campaign.yaml (metadata and concepts - paths/shortcuts go in jumps.yaml)
@@ -399,6 +408,67 @@ workitems/current.yaml
 	}
 
 	return result, nil
+}
+
+func pruneStableQuestScaffold(absDir string, stats *scaffold.ScaffoldStats) error {
+	if stats == nil {
+		return nil
+	}
+	questRootCreated := containsRelPath(stats.CreatedDirs, quest.RootDirName)
+	if questRootCreated {
+		if err := os.RemoveAll(filepath.Join(absDir, quest.RootDirName)); err != nil {
+			return camperrors.Wrap(err, "remove stable quest scaffold")
+		}
+	} else {
+		for _, rel := range stats.CreatedFiles {
+			if isQuestScaffoldRelPath(rel) {
+				_ = os.Remove(filepath.Join(absDir, filepath.FromSlash(filepath.ToSlash(rel))))
+			}
+		}
+		dirs := append([]string(nil), stats.CreatedDirs...)
+		sort.Slice(dirs, func(i, j int) bool {
+			return strings.Count(filepath.ToSlash(dirs[i]), "/") > strings.Count(filepath.ToSlash(dirs[j]), "/")
+		})
+		for _, rel := range dirs {
+			if isQuestScaffoldRelPath(rel) {
+				_ = os.Remove(filepath.Join(absDir, filepath.FromSlash(filepath.ToSlash(rel))))
+			}
+		}
+	}
+
+	stats.CreatedDirs = filterOutQuestScaffoldPaths(stats.CreatedDirs)
+	stats.CreatedFiles = filterOutQuestScaffoldPaths(stats.CreatedFiles)
+	stats.SkippedPaths = filterOutQuestScaffoldPaths(stats.SkippedPaths)
+	return nil
+}
+
+func filterOutQuestScaffoldPaths(paths []string) []string {
+	if len(paths) == 0 {
+		return paths
+	}
+	filtered := paths[:0]
+	for _, path := range paths {
+		if !isQuestScaffoldRelPath(path) {
+			filtered = append(filtered, path)
+		}
+	}
+	return filtered
+}
+
+func containsRelPath(paths []string, want string) bool {
+	want = filepath.ToSlash(strings.TrimSpace(want))
+	for _, path := range paths {
+		if filepath.ToSlash(strings.TrimSpace(path)) == want {
+			return true
+		}
+	}
+	return false
+}
+
+func isQuestScaffoldRelPath(path string) bool {
+	normalized := filepath.ToSlash(strings.TrimSpace(path))
+	root := filepath.ToSlash(quest.RootDirName)
+	return normalized == root || strings.HasPrefix(normalized, root+"/")
 }
 
 func appendUniquePaths(existing []string, paths ...string) []string {

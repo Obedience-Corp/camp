@@ -3,6 +3,7 @@ package quest
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -134,7 +135,8 @@ func List(ctx context.Context, campaignRoot string, includeDungeon bool) ([]*Que
 		}
 		q, err := Load(ctx, QuestPathForDir(filepath.Join(QuestsDir(campaignRoot), entry.Name())))
 		if err != nil {
-			return nil, err
+			warnUnreadableQuest(entry.Name(), err)
+			continue
 		}
 		quests = append(quests, q)
 	}
@@ -155,7 +157,8 @@ func List(ctx context.Context, campaignRoot string, includeDungeon bool) ([]*Que
 				}
 				q, err := Load(ctx, QuestPathForDir(filepath.Join(statusDir, entry.Name())))
 				if err != nil {
-					return nil, err
+					warnUnreadableQuest(filepath.Join(status.String(), entry.Name()), err)
+					continue
 				}
 				quests = append(quests, q)
 			}
@@ -163,6 +166,10 @@ func List(ctx context.Context, campaignRoot string, includeDungeon bool) ([]*Que
 	}
 
 	return quests, nil
+}
+
+func warnUnreadableQuest(name string, err error) {
+	_, _ = fmt.Fprintf(os.Stderr, "warning: skipping unreadable quest %q: %v\n", name, err)
 }
 
 // Resolve finds a quest by ID, slug, or exact human name.

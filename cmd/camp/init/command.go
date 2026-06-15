@@ -19,21 +19,20 @@ import (
 	"github.com/Obedience-Corp/camp/internal/scaffold"
 	intskills "github.com/Obedience-Corp/camp/internal/skills"
 	"github.com/Obedience-Corp/camp/internal/ui"
+	"github.com/Obedience-Corp/camp/internal/version"
 	"github.com/spf13/cobra"
 )
 
-// New builds the camp init command.
-func New() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:     "init [path]",
-		Short:   "Initialize a new campaign",
-		GroupID: "setup",
-		Long: `Initialize a new campaign directory structure.
+func initLongDescription() string {
+	questLine := ""
+	if version.Profile == "dev" {
+		questLine = "  .campaign/quests/       - Quest execution contexts\n"
+	}
+	return `Initialize a new campaign directory structure.
 
 Creates the standard campaign directories:
   .campaign/              - Campaign configuration and metadata
-  .campaign/quests/       - Quest execution contexts
-  .campaign/intents/      - System-managed intent state
+` + questLine + `  .campaign/intents/      - System-managed intent state
   projects/               - Project repositories (submodules or worktrees)
   projects/worktrees/     - Git worktrees for parallel development
   festivals/              - Festival methodology workspace (via fest init)
@@ -51,7 +50,16 @@ Also creates:
 
 Initializes a git repository if not already inside one.
 
-Use --no-git to skip git initialization.`,
+Use --no-git to skip git initialization.`
+}
+
+// New builds the camp init command.
+func New() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "init [path]",
+		Short:   "Initialize a new campaign",
+		GroupID: "setup",
+		Long:    initLongDescription(),
 		Example: `  camp init                      Initialize current directory
   camp init my-campaign          Create and initialize new directory
   camp init --name "My Project"  Set custom campaign name
