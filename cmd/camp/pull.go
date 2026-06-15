@@ -28,7 +28,7 @@ Works from anywhere within the campaign - always pulls to
 the campaign root repository.
 
 Use --sub to pull the submodule detected from your current directory.
-Use --project/-p to pull a specific project.
+Use --project to pull a specific project.
 Use 'camp pull all' to pull all repos with upstream tracking.
 
 Any git pull flags are passed through (e.g. --rebase, --ff-only).
@@ -38,7 +38,7 @@ Examples:
   camp pull --rebase           # Pull with rebase
   camp pull --ff-only          # Fast-forward only
   camp pull --sub              # Pull current submodule
-  camp pull -p projects/camp   # Pull camp project
+  camp pull --project=projects/camp  # Pull camp project
   camp pull all                # Pull all repos
   camp pull all --ff-only      # Pull all repos, fast-forward only`,
 	RunE:               runPull,
@@ -138,10 +138,11 @@ type PullAllOptions struct {
 
 // pullTarget holds information about a repo to potentially pull.
 type pullTarget struct {
-	name   string
-	path   string
-	branch string
-	isRoot bool // campaign root repo (skip recursive submodule fetch)
+	name    string
+	path    string
+	relPath string
+	branch  string
+	isRoot  bool // campaign root repo (skip recursive submodule fetch)
 }
 
 // checkoutDefaultIfNeeded switches a submodule to its default branch when
@@ -321,7 +322,7 @@ func handlePullError(
 			fmt.Println(red.Render("conflict (aborted rebase)"))
 			return pullResult{
 				outcome: pullOutcomeFailed,
-				errMsg:  fmt.Sprintf("  %s: rebase conflict (try: camp pull -p %s --no-rebase)", t.name, t.name),
+				errMsg:  fmt.Sprintf("  %s: rebase conflict (try: %s)", t.name, pullNoRebaseHint(t)),
 			}
 		}
 
@@ -375,12 +376,20 @@ func buildPullTargets(ctx context.Context, campRoot string, paths []string) []pu
 		fullPath := filepath.Join(campRoot, p)
 		branch, _ := git.Output(ctx, fullPath, "rev-parse", "--abbrev-ref", "HEAD")
 		targets = append(targets, pullTarget{
-			name:   git.SubmoduleDisplayName(p),
-			path:   fullPath,
-			branch: branch,
+			name:    git.SubmoduleDisplayName(p),
+			path:    fullPath,
+			relPath: p,
+			branch:  branch,
 		})
 	}
 	return targets
+}
+
+func pullNoRebaseHint(t *pullTarget) string {
+	if t != nil && !t.isRoot && t.relPath != "" {
+		return fmt.Sprintf("camp pull --project=%s --no-rebase", t.relPath)
+	}
+	return "camp pull --no-rebase"
 }
 
 // printPullSummary outputs the final pull-all summary.

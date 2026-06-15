@@ -10,7 +10,7 @@ Works from anywhere within the campaign - always pulls to
 the campaign root repository.
 
 Use --sub to pull the submodule detected from your current directory.
-Use --project/-p to pull a specific project.
+Use --project to pull a specific project.
 Use 'camp pull all' to pull all repos with upstream tracking.
 
 Any git pull flags are passed through (e.g. --rebase, --ff-only).
@@ -20,7 +20,7 @@ Examples:
   camp pull --rebase           # Pull with rebase
   camp pull --ff-only          # Fast-forward only
   camp pull --sub              # Pull current submodule
-  camp pull -p projects/camp   # Pull camp project
+  camp pull --project=projects/camp  # Pull camp project
   camp pull all                # Pull all repos
   camp pull all --ff-only      # Pull all repos, fast-forward only
 

@@ -110,7 +110,7 @@ func HasPullStrategyFlag(gitArgs []string) bool {
 	return false
 }
 
-// ExtractSubFlags extracts --sub and --project/-p flags from a raw args slice.
+// ExtractSubFlags extracts --sub and --project flags from a raw args slice.
 // Returns the remaining args (to pass to git) and the flag values.
 // This is used by commands with DisableFlagParsing that need to extract
 // camp-specific flags before passing the rest to git.
@@ -121,10 +121,14 @@ func ExtractSubFlags(args []string) (remaining []string, sub bool, project strin
 		arg := args[i]
 
 		switch {
+		case arg == "--":
+			remaining = append(remaining, args[i:]...)
+			return remaining, sub, project
+
 		case arg == "--sub":
 			sub = true
 
-		case arg == "--project" || arg == "-p":
+		case arg == "--project":
 			// Next arg is the project path
 			if i+1 < len(args) {
 				i++

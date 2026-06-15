@@ -3475,7 +3475,7 @@ Works from anywhere within the campaign - always pulls to
 the campaign root repository.
 
 Use --sub to pull the submodule detected from your current directory.
-Use --project/-p to pull a specific project.
+Use --project to pull a specific project.
 Use 'camp pull all' to pull all repos with upstream tracking.
 
 Any git pull flags are passed through (e.g. --rebase, --ff-only).
@@ -3485,7 +3485,7 @@ Examples:
   camp pull --rebase           # Pull with rebase
   camp pull --ff-only          # Fast-forward only
   camp pull --sub              # Pull current submodule
-  camp pull -p projects/camp   # Pull camp project
+  camp pull --project=projects/camp  # Pull camp project
   camp pull all                # Pull all repos
   camp pull all --ff-only      # Pull all repos, fast-forward only
 
@@ -3562,7 +3562,7 @@ Works from anywhere within the campaign - always pushes from
 the campaign root repository.
 
 Use --sub to push from the submodule detected from your current directory.
-Use --project/-p to push from a specific project.
+Use --project to push from a specific project.
 Use 'camp push all' to push all repos that have unpushed commits.
 
 Examples:
@@ -3571,7 +3571,7 @@ Examples:
   camp push --force            # Force push
   camp push -u origin feature  # Push and set upstream
   camp push --sub              # Push current submodule
-  camp push -p projects/camp   # Push camp project
+  camp push --project=projects/camp  # Push camp project
   camp push all                # Push all repos with unpushed commits
   camp push all --force        # Force push all repos
 
