@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
+	"github.com/Obedience-Corp/camp/internal/workitem/priority"
 	"github.com/Obedience-Corp/camp/internal/workitem/resolver"
 )
 
@@ -324,6 +325,35 @@ func TestDoctor_FixRemovesOrphanLink(t *testing.T) {
 	}
 	if len(registry.Links) != 0 {
 		t.Fatalf("expected 0 links after --fix, got %d", len(registry.Links))
+	}
+}
+
+func TestDoctorFixPrunesOrphanPriority(t *testing.T) {
+	root := linkTestCampaign(t)
+	restore := chdir(t, root)
+	defer restore()
+
+	store := priority.NewStore()
+	priority.Set(store, testWorkitemKey, priority.High)
+	priority.Set(store, "design:workflow/design/stale", priority.Low)
+	if err := priority.Save(priority.StorePath(root), store); err != nil {
+		t.Fatalf("save priority store: %v", err)
+	}
+
+	cmd := newCmd()
+	if err := runDoctor(context.Background(), cmd, false, true); err != nil {
+		t.Fatalf("doctor --fix: %v", err)
+	}
+
+	store, err := priority.Load(priority.StorePath(root))
+	if err != nil {
+		t.Fatalf("load priority store: %v", err)
+	}
+	if _, ok := store.ManualPriorities["design:workflow/design/stale"]; ok {
+		t.Fatal("expected stale priority entry to be pruned")
+	}
+	if _, ok := store.ManualPriorities[testWorkitemKey]; !ok {
+		t.Fatalf("expected valid priority entry %s to remain", testWorkitemKey)
 	}
 }
 

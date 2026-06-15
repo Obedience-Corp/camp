@@ -1,11 +1,15 @@
 package workitem
 
 import (
+	"bytes"
+	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
 
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
+	"github.com/Obedience-Corp/camp/internal/workitem/priority"
 )
 
 func TestSelectedJumpPathUsesCampaignRelativeDirectoryPath(t *testing.T) {
@@ -90,6 +94,58 @@ func TestOutputSelectedPathWritesRelativePath(t *testing.T) {
 	if got := string(data); got != item.RelativePath {
 		t.Fatalf("path output = %q, want %q", got, item.RelativePath)
 	}
+}
+
+func TestWorkitemListNoPruneOnRead(t *testing.T) {
+	root := linkTestCampaign(t)
+	restore := chdir(t, root)
+	defer restore()
+
+	store := priority.NewStore()
+	priority.Set(store, "design:workflow/design/transiently-missing", priority.High)
+	storePath := priority.StorePath(root)
+	if err := priority.Save(storePath, store); err != nil {
+		t.Fatalf("save priority store: %v", err)
+	}
+	before, err := os.ReadFile(storePath)
+	if err != nil {
+		t.Fatalf("read priority store before list: %v", err)
+	}
+
+	cmd := NewWorkitemCommand()
+	cmd.SetArgs([]string{"--json"})
+	cmd.SetErr(io.Discard)
+	if err := captureStdout(func() error {
+		return cmd.ExecuteContext(context.Background())
+	}); err != nil {
+		t.Fatalf("workitem --json: %v", err)
+	}
+
+	after, err := os.ReadFile(storePath)
+	if err != nil {
+		t.Fatalf("read priority store after list: %v", err)
+	}
+	if !bytes.Equal(after, before) {
+		t.Fatal("workitem --json mutated priority store during read")
+	}
+}
+
+func captureStdout(fn func() error) error {
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		return err
+	}
+	os.Stdout = w
+	defer func() {
+		os.Stdout = old
+		_ = r.Close()
+	}()
+
+	runErr := fn()
+	_ = w.Close()
+	_, _ = io.Copy(io.Discard, r)
+	return runErr
 }
 
 func TestValidateFlagsAcceptsBuiltinAndCustomTypes(t *testing.T) {

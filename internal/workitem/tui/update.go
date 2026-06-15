@@ -31,13 +31,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			selectedKey := m.currentItem().Key
 			items := msg.items
 			if m.priorityStore != nil {
-				validKeys := make(map[string]bool, len(items))
-				for _, item := range items {
-					validKeys[item.Key] = true
-				}
-				if priority.Prune(m.priorityStore, validKeys) {
-					_ = priority.SaveOrDelete(m.priorityStorePath(), m.priorityStore)
-				}
 				items = priority.Apply(m.priorityStore, items)
 			}
 			workitem.Sort(items)
@@ -296,6 +289,7 @@ func (m Model) assignPriority(p priority.ManualPriority) (tea.Model, tea.Cmd) {
 	var updated *priority.Store
 	if err := priority.WithLock(m.ctx, m.priorityStorePath(), func(store *priority.Store) error {
 		priority.Set(store, item.Key, p)
+		priority.Prune(store, priority.ValidKeys(m.allItems))
 		updated = store
 		return nil
 	}); err != nil {
@@ -323,6 +317,7 @@ func (m Model) clearPriority() (tea.Model, tea.Cmd) {
 	var updated *priority.Store
 	if err := priority.WithLock(m.ctx, m.priorityStorePath(), func(store *priority.Store) error {
 		priority.Clear(store, item.Key)
+		priority.Prune(store, priority.ValidKeys(m.allItems))
 		updated = store
 		return nil
 	}); err != nil {

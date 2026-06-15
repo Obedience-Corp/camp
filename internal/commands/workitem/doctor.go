@@ -22,6 +22,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/quest"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
+	"github.com/Obedience-Corp/camp/internal/workitem/priority"
 )
 
 // Doctor finding codes (dotted-domain form). Stable strings; consumers
@@ -122,6 +123,15 @@ func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut, fix bool) error
 		if err != nil {
 			return renderWorkitemDoctorError(cmd, jsonOut, err)
 		}
+		knownIDs, err = workitemIDsOnDisk(ctx, root)
+		if err != nil {
+			return renderWorkitemDoctorError(cmd, jsonOut, err)
+		}
+		if err := prunePriorityStoreIfPresent(ctx, root, knownIDs); err != nil {
+			if _, writeErr := fmt.Fprintf(cmd.ErrOrStderr(), "warning: priority prune during fix: %v\n", err); writeErr != nil {
+				return writeErr
+			}
+		}
 	} else {
 		registry, loadErr := links.Load(ctx, root)
 		if loadErr != nil {
@@ -161,6 +171,24 @@ func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut, fix bool) error
 		return errDoctorIssues
 	}
 	return nil
+}
+
+func prunePriorityStoreIfPresent(ctx context.Context, root string, knownIDs map[string]struct{}) error {
+	storePath := priority.StorePath(root)
+	if _, err := os.Stat(storePath); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return camperrors.Wrap(err, "stat priority store")
+	}
+	validKeys := make(map[string]bool, len(knownIDs))
+	for id := range knownIDs {
+		validKeys[id] = true
+	}
+	return priority.WithLock(ctx, storePath, func(store *priority.Store) error {
+		priority.Prune(store, validKeys)
+		return nil
+	})
 }
 
 func renderWorkitemDoctorError(cmd *cobra.Command, jsonOut bool, err error) error {

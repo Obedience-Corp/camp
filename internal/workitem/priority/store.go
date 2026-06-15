@@ -86,6 +86,15 @@ func Prune(store *Store, validKeys map[string]bool) bool {
 	return len(stale) > 0
 }
 
+// ValidKeys returns the full set of item keys that may retain priority entries.
+func ValidKeys(items []workitem.WorkItem) map[string]bool {
+	validKeys := make(map[string]bool, len(items))
+	for _, item := range items {
+		validKeys[item.Key] = true
+	}
+	return validKeys
+}
+
 // Apply decorates each WorkItem with its stored manual priority. Items not in
 // the store have their ManualPriority cleared to ensure idempotency after Clear.
 func Apply(store *Store, items []workitem.WorkItem) []workitem.WorkItem {
