@@ -205,6 +205,7 @@ func (m *Model) promoteToFestival(i *intent.Intent) tea.Cmd {
 			intentID:        i.ID,
 			intentTitle:     i.Title,
 			festNotFound:    result.FestNotFound,
+			festCLIError:    result.FestCLIError,
 			festivalCreated: result.FestivalCreated,
 			festivalName:    result.FestivalName,
 			festivalDir:     result.FestivalDir,
