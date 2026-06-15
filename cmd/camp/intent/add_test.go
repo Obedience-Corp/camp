@@ -59,7 +59,8 @@ func TestIntentAddCampaignResolver_CurrentCampaignFromCwd(t *testing.T) {
 func TestIntentAddCampaignResolver_ExplicitCampaignLookup(t *testing.T) {
 	reg := testRegistry(t)
 	var matched bytes.Buffer
-	saveCalls := 0
+	updateCalls := 0
+	var updatedID string
 
 	r := intentAddCampaignResolver{
 		stderr:        &matched,
@@ -70,8 +71,9 @@ func TestIntentAddCampaignResolver_ExplicitCampaignLookup(t *testing.T) {
 		loadCampaign: func(ctx context.Context, path string) (*config.CampaignConfig, error) {
 			return testLoadCampaign(path)
 		},
-		saveRegistry: func(context.Context, *config.Registry) error {
-			saveCalls++
+		updateAccess: func(_ context.Context, id string) error {
+			updateCalls++
+			updatedID = id
 			return nil
 		},
 	}
@@ -86,8 +88,11 @@ func TestIntentAddCampaignResolver_ExplicitCampaignLookup(t *testing.T) {
 	if cfg.Name != "/campaigns/beta" {
 		t.Fatalf("cfg.Name = %q, want %q", cfg.Name, "/campaigns/beta")
 	}
-	if saveCalls != 1 {
-		t.Fatalf("saveRegistry calls = %d, want 1", saveCalls)
+	if updateCalls != 1 {
+		t.Fatalf("updateAccess calls = %d, want 1", updateCalls)
+	}
+	if updatedID != "bbbb-2222" {
+		t.Fatalf("updatedID = %q, want bbbb-2222", updatedID)
 	}
 	if matched.Len() != 0 {
 		t.Fatalf("unexpected fuzzy match output: %q", matched.String())
@@ -106,7 +111,7 @@ func TestIntentAddCampaignResolver_BareCampaignUsesPicker(t *testing.T) {
 		loadCampaign: func(ctx context.Context, path string) (*config.CampaignConfig, error) {
 			return testLoadCampaign(path)
 		},
-		saveRegistry: func(context.Context, *config.Registry) error { return nil },
+		updateAccess: func(context.Context, string) error { return nil },
 		pickCampaign: func(context.Context, *config.Registry) (config.RegisteredCampaign, error) {
 			pickCalls++
 			c, _ := reg.GetByName("alpha")

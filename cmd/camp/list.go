@@ -76,7 +76,15 @@ func runList(cmd *cobra.Command, args []string) error {
 
 	// Save if changes made
 	if report.HasChanges() {
-		if err := config.SaveRegistry(ctx, reg); err != nil {
+		if err := config.UpdateRegistry(ctx, func(locked *config.Registry) error {
+			updatedReport, err := locked.VerifyAndRepair(ctx)
+			if err != nil {
+				return err
+			}
+			reg = locked
+			report = updatedReport
+			return nil
+		}); err != nil {
 			return camperrors.Wrap(err, "failed to save registry")
 		}
 

@@ -122,8 +122,10 @@ func runRegister(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	replaceNameConflict := false
+	replacePathConflict := false
 
-	// Check for existing registration with same name but different path
+	// Check for existing registration with same name but different path.
 	if existing, exists := reg.GetByName(name); exists && existing.Path != absPath {
 		fmt.Printf("%s Campaign '%s' already registered at %s\n", ui.WarningIcon(), ui.Value(name), ui.Dim(existing.Path))
 		fmt.Print("Replace with new path? [y/N] ")
@@ -134,11 +136,10 @@ func runRegister(cmd *cobra.Command, args []string) error {
 			fmt.Println(ui.Dim("Aborted."))
 			return nil
 		}
-		// Remove the old entry before adding new one
-		reg.UnregisterByID(existing.ID)
+		replaceNameConflict = true
 	}
 
-	// Check for path conflict (different campaign ID at same path)
+	// Check for path conflict (different campaign ID at same path).
 	if existing, exists := reg.FindByPath(absPath); exists && existing.ID != cfg.ID {
 		fmt.Printf("%s Path already registered to different campaign\n", ui.WarningIcon())
 		fmt.Println(ui.KeyValue("Existing:", existing.Name+" ("+existing.ID[:8]+"...)"))
@@ -151,17 +152,27 @@ func runRegister(cmd *cobra.Command, args []string) error {
 			fmt.Println(ui.Dim("Aborted."))
 			return nil
 		}
-		// Remove the conflicting entry before adding new one
-		reg.UnregisterByID(existing.ID)
+		replacePathConflict = true
 	}
 
-	// Register using campaign ID
-	if err := reg.Register(cfg.ID, name, absPath, ctype); err != nil {
-		return camperrors.Wrap(err, "failed to register campaign")
-	}
-
-	// Save registry
-	if err := config.SaveRegistry(ctx, reg); err != nil {
+	if err := config.UpdateRegistry(ctx, func(reg *config.Registry) error {
+		if existing, exists := reg.GetByName(name); exists && existing.Path != absPath {
+			if !replaceNameConflict {
+				return fmt.Errorf("campaign %q is now registered at %s; re-run camp register to confirm replacement", name, existing.Path)
+			}
+			reg.UnregisterByID(existing.ID)
+		}
+		if existing, exists := reg.FindByPath(absPath); exists && existing.ID != cfg.ID {
+			if !replacePathConflict {
+				return fmt.Errorf("path %s is now registered to campaign %s (%s); re-run camp register to confirm replacement", absPath, existing.Name, existing.ID)
+			}
+			reg.UnregisterByID(existing.ID)
+		}
+		if err := reg.Register(cfg.ID, name, absPath, ctype); err != nil {
+			return camperrors.Wrap(err, "failed to register campaign")
+		}
+		return nil
+	}); err != nil {
 		return err
 	}
 

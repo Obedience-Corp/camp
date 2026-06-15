@@ -100,7 +100,7 @@ func TestProjectAddCampaignResolver_NoCurrentCampaignUsesPicker(t *testing.T) {
 		loadCampaign: func(context.Context, string) (*config.CampaignConfig, error) {
 			return testProjectAddLoadCampaign("/campaigns/alpha")
 		},
-		saveRegistry: func(context.Context, *config.Registry) error { return nil },
+		updateAccess: func(context.Context, string) error { return nil },
 		pickCampaign: func(context.Context, *config.Registry) (config.RegisteredCampaign, error) {
 			pickCalls++
 			c, _ := reg.GetByName("alpha")
@@ -148,7 +148,8 @@ func TestProjectAddCampaignResolver_NoCurrentCampaignNonInteractiveFails(t *test
 func TestProjectAddCampaignResolver_ExplicitCampaignLookup(t *testing.T) {
 	reg := testProjectAddRegistry(t)
 	var matched bytes.Buffer
-	saveCalls := 0
+	updateCalls := 0
+	var updatedID string
 
 	r := projectCampaignResolver{
 		stderr:        &matched,
@@ -159,8 +160,9 @@ func TestProjectAddCampaignResolver_ExplicitCampaignLookup(t *testing.T) {
 		loadCampaign: func(context.Context, string) (*config.CampaignConfig, error) {
 			return testProjectAddLoadCampaign("/campaigns/beta")
 		},
-		saveRegistry: func(context.Context, *config.Registry) error {
-			saveCalls++
+		updateAccess: func(_ context.Context, id string) error {
+			updateCalls++
+			updatedID = id
 			return nil
 		},
 	}
@@ -175,8 +177,11 @@ func TestProjectAddCampaignResolver_ExplicitCampaignLookup(t *testing.T) {
 	if cfg.Name != "beta" {
 		t.Fatalf("cfg.Name = %q, want %q", cfg.Name, "beta")
 	}
-	if saveCalls != 1 {
-		t.Fatalf("saveRegistry calls = %d, want 1", saveCalls)
+	if updateCalls != 1 {
+		t.Fatalf("updateAccess calls = %d, want 1", updateCalls)
+	}
+	if updatedID != "beta-3333" {
+		t.Fatalf("updatedID = %q, want beta-3333", updatedID)
 	}
 	if matched.Len() != 0 {
 		t.Fatalf("unexpected fuzzy match output: %q", matched.String())
@@ -195,7 +200,7 @@ func TestProjectAddCampaignResolver_BareCampaignUsesPicker(t *testing.T) {
 		loadCampaign: func(context.Context, string) (*config.CampaignConfig, error) {
 			return testProjectAddLoadCampaign("/campaigns/alpha")
 		},
-		saveRegistry: func(context.Context, *config.Registry) error { return nil },
+		updateAccess: func(context.Context, string) error { return nil },
 		pickCampaign: func(context.Context, *config.Registry) (config.RegisteredCampaign, error) {
 			pickCalls++
 			c, _ := reg.GetByName("alpha")

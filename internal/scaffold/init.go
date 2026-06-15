@@ -381,12 +381,10 @@ workitems/current.yaml
 
 	// Register in global registry
 	if !opts.NoRegister && !opts.DryRun {
-		reg, err := config.LoadRegistry(ctx)
-		if err == nil {
-			if err := reg.Register(campaignID, name, absDir, opts.Type); err == nil {
-				// Ignore registry save errors - not critical
-				_ = config.SaveRegistry(ctx, reg)
-			}
+		if err := config.UpdateRegistry(ctx, func(reg *config.Registry) error {
+			return reg.Register(campaignID, name, absDir, opts.Type)
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "camp: warning: failed to register campaign: %v\n", err)
 		}
 	}
 

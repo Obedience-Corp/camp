@@ -77,11 +77,10 @@ func runUnregister(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Remove from registry by ID
-	reg.UnregisterByID(campaign.ID)
-
-	// Save registry
-	if err := config.SaveRegistry(ctx, reg); err != nil {
+	if err := config.UpdateRegistry(ctx, func(reg *config.Registry) error {
+		reg.UnregisterByID(campaign.ID)
+		return nil
+	}); err != nil {
 		return err
 	}
 
