@@ -24,7 +24,7 @@ type Options struct {
 	FestivalRef   string   // Optional festival ref for additive commit context
 	WorkitemRef   string   // Optional workitem ref (WI-<6 hex>) for additive commit context
 	Files         []string // If set, stage only these paths instead of everything
-	PreStaged     []string // Paths already staged (included in --only commit scope, not re-staged)
+	PreStaged     []string // Paths already staged; copied from the real index into the temp-index commit scope
 	SelectiveOnly bool     // When true, never fall back to CommitAll; no-op if Files is empty
 }
 
@@ -74,34 +74,53 @@ func doCommit(ctx context.Context, opts Options, action, subject, description st
 	}
 }
 
-// stageAndCommit stages files and commits. If opts.Files is set, only those
-// paths are staged and committed (using --only to scope the commit).
-// opts.PreStaged paths are included in the --only commit scope but are NOT
-// re-staged (they were already staged externally, e.g. via git add -u).
+// stageAndCommit snapshots scoped commits through a temporary git index.
+// opts.Files are added to a temp index at add time; opts.PreStaged-only commits
+// copy the real index so the commit captures exactly the staged blobs.
 // When SelectiveOnly is true and no paths exist, returns ErrNoChanges instead
 // of falling back to CommitAll. Otherwise all changes are staged (legacy behavior).
 func stageAndCommit(ctx context.Context, opts Options, message string) error {
 	commitScope := append(append([]string{}, opts.Files...), opts.PreStaged...)
-	if len(commitScope) > 0 {
-		if len(opts.Files) > 0 {
-			if err := git.StageFiles(ctx, opts.CampaignRoot, opts.Files...); err != nil {
-				return err
-			}
-		}
-		expandedScope, err := git.ExpandTrackedPaths(ctx, opts.CampaignRoot, commitScope)
-		if err != nil {
-			return err
-		}
-		if len(expandedScope) == 0 {
+	if len(commitScope) == 0 {
+		if opts.SelectiveOnly {
 			return git.ErrNoChanges
 		}
-		return git.Commit(ctx, opts.CampaignRoot, &git.CommitOptions{
-			Message: message,
-			Only:    expandedScope,
-		})
+		return git.CommitAll(ctx, opts.CampaignRoot, message)
 	}
-	if opts.SelectiveOnly {
+
+	tmpPath, realIndex, err := git.BuildTempIndexPath(opts.CampaignRoot)
+	if err != nil {
+		return err
+	}
+	defer git.RemoveTempIndex(tmpPath)
+
+	if len(opts.Files) > 0 {
+		if err := git.ReadTreeIntoTempIndex(ctx, opts.CampaignRoot, tmpPath); err != nil {
+			return err
+		}
+		if err := git.AddPathsToTempIndex(ctx, opts.CampaignRoot, tmpPath, opts.Files); err != nil {
+			return err
+		}
+		if err := git.ApplyCachedDiffToTempIndex(ctx, opts.CampaignRoot, tmpPath, opts.PreStaged); err != nil {
+			return err
+		}
+	} else if err := git.CopyFile(realIndex, tmpPath); err != nil {
+		return err
+	}
+
+	expandedScope, err := git.ExpandTrackedPathsFromTempIndex(ctx, opts.CampaignRoot, tmpPath, commitScope)
+	if err != nil {
+		return err
+	}
+	if len(expandedScope) == 0 {
 		return git.ErrNoChanges
 	}
-	return git.CommitAll(ctx, opts.CampaignRoot, message)
+
+	if err := git.Commit(ctx, opts.CampaignRoot, &git.CommitOptions{
+		Message:       message,
+		TempIndexPath: tmpPath,
+	}); err != nil {
+		return err
+	}
+	return git.ResetIndexToHead(ctx, opts.CampaignRoot, expandedScope)
 }
