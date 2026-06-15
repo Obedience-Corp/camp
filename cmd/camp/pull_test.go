@@ -5,13 +5,15 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	pullsvc "github.com/Obedience-Corp/camp/internal/pull"
 )
 
 func TestRunGitPullWithLockRetry_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	output, err := runGitPullWithLockRetry(ctx, "/path/that/should/not/be/touched", nil, false)
+	output, err := pullsvc.RunGitPullWithLockRetry(ctx, "/path/that/should/not/be/touched", nil, false, pullsvc.IO{})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("runGitPullWithLockRetry() error = %v, want context.Canceled", err)
 	}
@@ -21,12 +23,12 @@ func TestRunGitPullWithLockRetry_ContextCancelled(t *testing.T) {
 }
 
 func TestPullNoRebaseHintUsesRelativeProjectPath(t *testing.T) {
-	target := &pullTarget{
-		name:    "camp",
-		relPath: "projects/camp",
+	target := &pullsvc.Target{
+		Name:    "camp",
+		RelPath: "projects/camp",
 	}
 
-	got := pullNoRebaseHint(target)
+	got := pullsvc.PullNoRebaseHint(target)
 	want := "camp pull --project=projects/camp --no-rebase"
 	if got != want {
 		t.Fatalf("pullNoRebaseHint() = %q, want %q", got, want)
@@ -34,12 +36,12 @@ func TestPullNoRebaseHintUsesRelativeProjectPath(t *testing.T) {
 }
 
 func TestPullNoRebaseHintFallsBackForRoot(t *testing.T) {
-	target := &pullTarget{
-		name:   "campaign root",
-		isRoot: true,
+	target := &pullsvc.Target{
+		Name:   "campaign root",
+		IsRoot: true,
 	}
 
-	got := pullNoRebaseHint(target)
+	got := pullsvc.PullNoRebaseHint(target)
 	want := "camp pull --no-rebase"
 	if got != want {
 		t.Fatalf("pullNoRebaseHint() = %q, want %q", got, want)
