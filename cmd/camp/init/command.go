@@ -260,9 +260,12 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 	// Execute migrations if repair detected misplaced directories.
 	var migrationCount int
 	if p.Repair && opts.RepairPlan != nil && len(opts.RepairPlan.Migrations) > 0 {
-		moved, err := scaffold.ExecuteMigrations(opts.RepairPlan.Migrations)
-		if err != nil {
-			writef(w.HumanOut, "  %s Migration error: %v\n", ui.WarningIcon(), err)
+		moved, migrationErr := scaffold.ExecuteMigrations(opts.RepairPlan.Migrations)
+		if migrationErr != nil {
+			writef(w.HumanOut, "  %s Migration failed after %d item(s) moved: %v\n",
+				ui.ErrorIcon(), moved, migrationErr)
+			writef(w.HumanOut, "  Recovery: fix the issue above and re-run camp init --repair\n")
+			return migrationErr
 		}
 		migrationCount = moved
 	}

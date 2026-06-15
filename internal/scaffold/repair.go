@@ -649,43 +649,110 @@ func computeIntentMigrationChanges(absDir string, plan *RepairPlan) error {
 	return nil
 }
 
+type migrationMover func(src, dst string) error
+
 // ExecuteMigrations moves items from misplaced directories to their correct locations.
-// Returns the number of items moved and any error.
+// It validates every source and destination before moving anything, and returns
+// the number of items moved plus any error.
 func ExecuteMigrations(migrations []MigrationAction) (int, error) {
+	return executeMigrations(migrations, migrateMoveItem)
+}
+
+func executeMigrations(migrations []MigrationAction, moveItem migrationMover) (int, error) {
+	if err := validateMigrationPlan(migrations); err != nil {
+		return 0, err
+	}
+
 	moved := 0
+	total := countMigrationPlanItems(migrations)
 	for _, m := range migrations {
 		// Ensure destination exists
 		if err := os.MkdirAll(m.Dest, 0755); err != nil {
-			return moved, camperrors.Wrapf(err, "creating %s", m.Dest)
+			remaining := total - moved
+			return moved, camperrors.Wrapf(err,
+				"creating destination directory %s (%d item(s) moved; %d item(s) remaining)",
+				m.Dest, moved, remaining)
 		}
 
 		for _, item := range m.Items {
 			src := filepath.Join(m.Source, item)
 			dst := filepath.Join(m.Dest, item)
 
-			if err := os.Rename(src, dst); err != nil {
-				return moved, camperrors.Wrapf(err, "moving %s to %s", src, dst)
+			if err := moveItem(src, dst); err != nil {
+				remaining := total - moved
+				return moved, camperrors.Wrapf(err,
+					"moving %s to %s (%d item(s) moved; %d item(s) remaining)",
+					src, dst, moved, remaining)
 			}
 			moved++
 		}
 
-		// Remove the now-empty source directory (best effort)
-		// Only remove if empty or contains only .gitkeep
-		entries, err := os.ReadDir(m.Source)
-		if err == nil {
-			empty := true
-			for _, e := range entries {
-				if e.Name() != ".gitkeep" {
-					empty = false
-					break
+		removeEmptySourceDir(m.Source)
+	}
+	return moved, nil
+}
+
+// validateMigrationPlan checks every (src, dst) pair before any file is moved.
+func validateMigrationPlan(migrations []MigrationAction) error {
+	var errs []string
+	for _, m := range migrations {
+		for _, item := range m.Items {
+			src := filepath.Join(m.Source, item)
+			dst := filepath.Join(m.Dest, item)
+
+			if _, err := os.Stat(src); err != nil {
+				if os.IsNotExist(err) {
+					errs = append(errs, "source not found: "+src)
+				} else {
+					errs = append(errs, fmt.Sprintf("cannot stat source %s: %v", src, err))
 				}
 			}
-			if empty {
-				os.RemoveAll(m.Source)
+
+			if existing, exists, err := statuspath.ExistingItemPath(m.Dest, item); err != nil {
+				errs = append(errs, fmt.Sprintf("cannot check destination %s: %v", dst, err))
+			} else if exists {
+				errs = append(errs, "destination already exists: "+existing)
 			}
 		}
 	}
-	return moved, nil
+	if len(errs) > 0 {
+		return camperrors.New("migration pre-validation failed:\n  " + strings.Join(errs, "\n  "))
+	}
+	return nil
+}
+
+// migrateMoveItem moves one item with no-replace semantics. The destination
+// must be absent; this helper is intentionally small for D003 extraction.
+func migrateMoveItem(src, dst string) error {
+	if _, err := os.Stat(dst); err == nil {
+		return camperrors.New("destination already exists: " + dst)
+	} else if err != nil && !os.IsNotExist(err) {
+		return camperrors.Wrapf(err, "checking destination %s", dst)
+	}
+	return os.Rename(src, dst)
+}
+
+func countMigrationPlanItems(migrations []MigrationAction) int {
+	total := 0
+	for _, m := range migrations {
+		total += len(m.Items)
+	}
+	return total
+}
+
+// removeEmptySourceDir removes a source directory only if it is empty or
+// contains only .gitkeep. Cleanup is best-effort after successful moves.
+func removeEmptySourceDir(dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if e.Name() != ".gitkeep" {
+			return
+		}
+	}
+	_ = os.RemoveAll(dir)
 }
 
 // sortedKeys returns map keys in sorted order.
