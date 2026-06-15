@@ -112,7 +112,10 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 
 	// Output results
 	if doctorOpts.jsonOutput {
-		return outputDoctorJSON(result)
+		if err := outputDoctorJSON(result); err != nil {
+			return err
+		}
+		return exitDoctorWithCodeE(result)
 	}
 
 	outputDoctorText(result, doctorOpts.verbose, doctorOpts.fix)
@@ -233,4 +236,19 @@ func exitDoctorWithCode(result *doctor.DoctorResult) error {
 	}
 
 	return nil // Exit 0
+}
+
+func exitDoctorWithCodeE(result *doctor.DoctorResult) error {
+	code := doctor.ExitSuccess
+	if result.Failed > 0 {
+		code = doctor.ExitFailures
+	} else if result.Warned > 0 {
+		code = doctor.ExitWarnings
+	} else if len(result.Fixed) > 0 && len(result.Issues) > len(result.Fixed) {
+		code = doctor.ExitPartialFix
+	}
+	if code == doctor.ExitSuccess {
+		return nil
+	}
+	return camperrors.NewCommand("doctor", code, "", nil)
 }
