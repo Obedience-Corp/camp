@@ -338,7 +338,7 @@ cint "new feature idea"  # Runs: camp intent add "new feature idea"
 cnote "meeting note"     # Runs: camp intent note "meeting note"
 
 # 3. Tab completion for cgo
-cgo <TAB>                # Completes categories: p f w a d i wt du cr pi de
+cgo <TAB>                # Completes categories: p f w ai d i wt du cr pi de ex
 cgo p <TAB>              # Completes project names
 
 # 4. Tab completion for camp commands

@@ -28,10 +28,8 @@ workflow setup (no .workflow.yaml, active/, or ready/ directories).
 Useful when you only need a dungeon for idea capture or temporary holding.
 
 This operation is idempotent - running it multiple times is safe.
-Use --force to overwrite existing files.
-
-Examples:
-  camp dungeon add          Initialize dungeon (skip existing files)
+Use --force to overwrite existing files.`,
+	Example: `  camp dungeon add          Initialize dungeon (skip existing files)
   camp dungeon add --force  Overwrite existing documentation`,
 	Args: cobra.NoArgs,
 	RunE: runDungeonAdd,

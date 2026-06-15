@@ -78,3 +78,13 @@ func TestResolvePreviousTagSkipsSameCommitTags(t *testing.T) {
 		t.Fatalf("resolvePreviousTag() = %q, want %q", previous, "v0.2.0")
 	}
 }
+
+func TestCommitSubjectsFirstReleaseSkipsHistory(t *testing.T) {
+	subjects, err := commitSubjects("v1.0.0", "")
+	if err != nil {
+		t.Fatalf("commitSubjects() error = %v", err)
+	}
+	if subjects != nil {
+		t.Fatalf("subjects = %#v, want nil for first release", subjects)
+	}
+}

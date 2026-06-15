@@ -14,14 +14,17 @@ Commands:
   sync    Update registry entry for current campaign
   check   Validate registry integrity
 
-Examples:
+```
+camp registry [flags]
+```
+
+### Examples
+
+```
   camp registry prune             Remove entries for non-existent campaigns
   camp registry prune --dry-run   Show what would be removed
   camp registry sync              Update path for current campaign
   camp registry check             Check for issues
-
-```
-camp registry [flags]
 ```
 
 ### Options

@@ -2,6 +2,15 @@
 
 Show a workflow collection's config and recent workitems
 
+### Synopsis
+
+Show configuration and recent workitems for a workflow collection.
+
+The command reads campaign configuration plus the workflow/<type>/ directory,
+then prints the collection path, shortcut state, concept state, and recent
+.workitem-backed items. Use --json for machine-readable collection details and
+recent workitem data.
+
 ```
 camp workflow show <type> [flags]
 ```

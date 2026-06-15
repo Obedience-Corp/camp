@@ -2,6 +2,15 @@
 
 Attach a navigation shortcut to an existing workflow
 
+### Synopsis
+
+Attach a navigation shortcut to an existing workflow collection.
+
+The command updates .campaign/settings/jumps.yaml so cgo and camp navigation
+can jump to workflow/<type>/ by key. The workflow type must already exist. Use
+--replace to overwrite a conflicting shortcut and --json for machine-readable
+result details.
+
 ```
 camp workflow shortcut add <type> <key> [flags]
 ```

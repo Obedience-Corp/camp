@@ -830,12 +830,15 @@ Useful when you only need a dungeon for idea capture or temporary holding.
 This operation is idempotent - running it multiple times is safe.
 Use --force to overwrite existing files.
 
-Examples:
-  camp dungeon add          Initialize dungeon (skip existing files)
-  camp dungeon add --force  Overwrite existing documentation
-
 ```
 camp dungeon add [flags]
+```
+
+### Examples
+
+```
+  camp dungeon add          Initialize dungeon (skip existing files)
+  camp dungeon add --force  Overwrite existing documentation
 ```
 
 ### Options
@@ -1281,7 +1284,6 @@ Initialize a new campaign directory structure.
 
 Creates the standard campaign directories:
   .campaign/              - Campaign configuration and metadata
-  .campaign/quests/       - Quest execution contexts
   .campaign/intents/      - System-managed intent state
   projects/               - Project repositories (submodules or worktrees)
   projects/worktrees/     - Git worktrees for parallel development
@@ -3423,46 +3425,6 @@ camp project worktree remove <name> [flags]
 ```
 ---
 
-## camp promote
-
-Promote the workitem at cwd to a dungeon status
-
-### Synopsis
-
-Promote the directory-style workitem containing the current working
-directory to a named status. Status directories live under the workitem
-type's local dungeon (workflow/<type>/dungeon/<status>/); outside the
-dungeon a workitem is treated as active.
-
-Run this from anywhere inside workflow/<type>/<slug>/. The workitem
-boundary is detected from cwd. The status argument is the destination
-directory name (e.g., completed, archived, someday) - no need to spell
-out "dungeon/".
-
-Examples:
-  camp promote completed   Shelve the workitem to its local dungeon/completed
-  camp promote archived    Move to dungeon/archived
-  camp promote someday     Move to dungeon/someday
-
-```
-camp promote <status> [flags]
-```
-
-### Options
-
-```
-  -h, --help        help for promote
-      --json        Output result as JSON
-      --no-commit   Skip auto-commit after promotion
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
 ## camp pull
 
 Pull latest changes from remote
@@ -3723,14 +3685,17 @@ Commands:
   sync    Update registry entry for current campaign
   check   Validate registry integrity
 
-Examples:
+```
+camp registry [flags]
+```
+
+### Examples
+
+```
   camp registry prune             Remove entries for non-existent campaigns
   camp registry prune --dry-run   Show what would be removed
   camp registry sync              Update path for current campaign
   camp registry check             Check for issues
-
-```
-camp registry [flags]
 ```
 
 ### Options
@@ -4087,9 +4052,21 @@ Add to your shell config:
   fish: camp shell-init fish | source
 
 This provides:
+  - A camp shell function that wraps the camp binary
   - cgo function for navigation
   - Tab completion for camp commands
   - Category shortcuts (p, c, f, etc.)
+
+IMPORTANT: this defines a shell function named 'camp' that wraps the camp
+binary. The function intercepts 'camp switch' and 'camp go' to perform
+directory changes in the current shell session.
+
+The following shell aliases and functions are also installed:
+  cr     camp run (run a just recipe in a project)
+  csw    camp switch (shorthand)
+  cint   camp intent add (quick idea capture)
+  cnote  camp intent note (add a note to an existing intent)
+  cie    camp intent explore (interactive intent browser)
 
 The cgo function enables quick navigation:
   cgo                 Interactive picker or jump to campaign root
@@ -4118,6 +4095,49 @@ camp shell-init <shell> [flags]
 
 ```
   -h, --help   help for shell-init
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp shelve
+
+Shelve the workitem at cwd to a dungeon status
+
+### Synopsis
+
+Shelve the directory-style workitem containing the current working
+directory to a named dungeon status. Status directories live under the
+workitem type's local dungeon (workflow/<type>/dungeon/<status>/); outside
+the dungeon a workitem is treated as active.
+
+Run this from anywhere inside workflow/<type>/<slug>/. The workitem
+boundary is detected from cwd. The status argument is the destination
+directory name (e.g., completed, archived, someday) - no need to spell
+out "dungeon/".
+
+```
+camp shelve <status> [flags]
+```
+
+### Examples
+
+```
+  camp shelve completed   Shelve the workitem to its local dungeon/completed
+  camp shelve archived    Move to dungeon/archived
+  camp shelve someday     Move to dungeon/someday
+```
+
+### Options
+
+```
+  -h, --help        help for shelve
+      --json        Output result as JSON
+      --no-commit   Skip auto-commit after shelving
 ```
 
 ### Options inherited from parent commands
@@ -4191,7 +4211,7 @@ With no arguments, launches an interactive TUI for entering
 shortcut details.
 
 ```
-camp shortcuts add [name] [path] or [project] [name] [path] [flags]
+camp shortcuts add <name> <path> | <project> <name> <path> [flags]
 ```
 
 ### Examples
@@ -4592,22 +4612,29 @@ of the campaign root repository.
 
 Use --sub to show status of the submodule detected from your current directory.
 Use --project/-p to show status of a specific project.
-
-Examples:
-  camp status           # Full status
-  camp status -s        # Short format (git flag)
-  camp status --short   # Short format (git flag)
-  camp status --sub     # Status of current submodule
-  camp status -p projects/camp  # Status of camp project
+Pass git status flags after -- to forward them directly to git.
 
 ```
-camp status [flags]
+camp status [flags] [-- <git-flags>]
+```
+
+### Examples
+
+```
+  camp status           # Full status
+  camp status -s        # Short format
+  camp status --sub     # Status of current submodule
+  camp status -p projects/camp  # Status of camp project
 ```
 
 ### Options
 
 ```
-  -h, --help   help for status
+  -h, --help             help for status
+  -p, --project string   Status of a specific project path
+  -s, --short            Give output in short format
+      --show-refs        Show campaign root submodule ref changes
+      --sub              Status of the submodule detected from current directory
 ```
 
 ### Options inherited from parent commands
@@ -4944,6 +4971,16 @@ navigation config and workitem type support.
 
 Create a custom workflow collection
 
+### Synopsis
+
+Create a custom workflow collection under workflow/<type>/.
+
+The command creates the workflow directory, terminal dungeon directories,
+.gitkeep files, and an OBEY.md guide, then registers the collection in
+campaign configuration through a concept and navigation shortcut. A shortcut is
+required. Use --dry-run to inspect planned writes and --json for
+machine-readable planning or apply results.
+
 ```
 camp workflow create <type> [flags]
 ```
@@ -4970,6 +5007,15 @@ camp workflow create <type> [flags]
 
 Report workflow surface inconsistencies
 
+### Synopsis
+
+Report inconsistencies between workflow directories and campaign configuration.
+
+The command reads campaign.yaml, .campaign/settings/jumps.yaml, workflow/
+directories, and the navigation cache to find missing concepts, stale
+shortcuts, duplicate shortcut keys, and cache drift. Use --json for
+machine-readable findings and stable finding codes.
+
 ```
 camp workflow doctor [flags]
 ```
@@ -4991,6 +5037,15 @@ camp workflow doctor [flags]
 ## camp workflow list
 
 List user-created workflow collections
+
+### Synopsis
+
+List user-created workflow collections registered in the campaign.
+
+The command reads campaign configuration and workflow/ directories, then shows
+each collection's shortcut, item count, and latest workitem update. Built-in
+workflow types are omitted so the output focuses on custom collections. Use
+--json for machine-readable workflow inventory output.
 
 ```
 camp workflow list [flags]
@@ -5014,6 +5069,14 @@ camp workflow list [flags]
 
 Manage navigation shortcuts for workflow collections
 
+### Synopsis
+
+Manage navigation shortcuts for custom workflow collections.
+
+Workflow shortcuts are stored in campaign configuration and point to
+workflow/<type>/ directories. Use subcommands to attach or repair shortcut
+entries after creating or moving workflow collections.
+
 ### Options
 
 ```
@@ -5030,6 +5093,15 @@ Manage navigation shortcuts for workflow collections
 ## camp workflow shortcut add
 
 Attach a navigation shortcut to an existing workflow
+
+### Synopsis
+
+Attach a navigation shortcut to an existing workflow collection.
+
+The command updates .campaign/settings/jumps.yaml so cgo and camp navigation
+can jump to workflow/<type>/ by key. The workflow type must already exist. Use
+--replace to overwrite a conflicting shortcut and --json for machine-readable
+result details.
 
 ```
 camp workflow shortcut add <type> <key> [flags]
@@ -5054,6 +5126,15 @@ camp workflow shortcut add <type> <key> [flags]
 
 Show a workflow collection's config and recent workitems
 
+### Synopsis
+
+Show configuration and recent workitems for a workflow collection.
+
+The command reads campaign configuration plus the workflow/<type>/ directory,
+then prints the collection path, shortcut state, concept state, and recent
+.workitem-backed items. Use --json for machine-readable collection details and
+recent workitem data.
+
 ```
 camp workflow show <type> [flags]
 ```
@@ -5075,6 +5156,16 @@ camp workflow show <type> [flags]
 ## camp workflow sync
 
 Repair auto-fixable doctor findings
+
+### Synopsis
+
+Repair auto-fixable workflow findings reported by workflow doctor.
+
+The command plans changes to campaign.yaml, .campaign/settings/jumps.yaml, and
+the navigation cache for stale shortcuts, missing concepts, duplicate shortcut
+keys, and cache drift. By default it reports the planned actions only; pass
+--apply to write changes. Use --json for machine-readable plans and applied
+actions.
 
 ```
 camp workflow sync [flags]
@@ -5140,6 +5231,16 @@ camp workitem [flags]
 
 Attach .workitem metadata to an existing directory
 
+### Synopsis
+
+Attach workitem metadata to an existing campaign directory without moving it.
+
+The target directory must already exist and must not already contain a
+.workitem file. The command writes that .workitem metadata file with the
+selected type, title, generated or supplied id, and optional quest link. Use
+this when a workflow directory already exists and needs to become a tracked
+workitem.
+
 ```
 camp workitem adopt <dir> [flags]
 ```
@@ -5149,7 +5250,7 @@ camp workitem adopt <dir> [flags]
 ```
   -h, --help           help for adopt
       --id string      override the generated id
-      --quest string   capture quest_id from this quest (defaults to CAMP_QUEST env var if set)
+      --quest string   quest ID to associate (requires dev-profile camp; forward-compatible flag)
       --title string   human-readable title
       --type string    workitem type (feature, bug, chore, or custom) (default "feature")
 ```
@@ -5244,6 +5345,16 @@ camp workitem commits [selector] [flags]
 
 Create a new workitem with v1 minimum metadata
 
+### Synopsis
+
+Create a new workitem directory with minimal v1 metadata.
+
+The workitem is created under workflow/<type>/<slug>/ unless --dir supplies a
+different campaign-relative parent directory. A .workitem file is written with
+the id, type, title, ref, creation metadata, and optional quest link. Use --json
+for machine-readable output containing the new workitem identity and next-step
+location.
+
 ```
 camp workitem create <slug> [flags]
 ```
@@ -5255,7 +5366,7 @@ camp workitem create <slug> [flags]
   -h, --help           help for create
       --id string      override the generated id
       --json           emit a structured JSON result
-      --quest string   capture quest_id from this quest (defaults to CAMP_QUEST env var if set)
+      --quest string   quest ID to associate (requires dev-profile camp; forward-compatible flag)
       --title string   human-readable title
       --type string    workitem type (feature, bug, chore, or custom) (default "feature")
 ```
@@ -5270,6 +5381,15 @@ camp workitem create <slug> [flags]
 ## camp workitem current
 
 Get, set, or clear the local current workitem
+
+### Synopsis
+
+Get, set, or clear the campaign-local current workitem pointer.
+
+The selection is stored in .campaign/workitems/current.yaml and is used by
+commands that need a default workitem when cwd alone is ambiguous. Pass a
+selector to set the current workitem, omit it to read the selection, or use
+--clear to remove it. Use --json for machine-readable current selection output.
 
 ```
 camp workitem current [selector] [flags]
@@ -5294,6 +5414,15 @@ camp workitem current [selector] [flags]
 
 Report workitem link-registry health issues
 
+### Synopsis
+
+Report health issues in the campaign workitem link registry.
+
+The command reads .campaign/workitems/links.yaml, scans .workitem metadata on
+disk, and checks current-workitem and priority stores for stale or inconsistent
+references. Use --fix to apply auto-repairs for supported findings. Use --json
+for machine-readable findings and stable finding codes.
+
 ```
 camp workitem doctor [flags]
 ```
@@ -5316,6 +5445,15 @@ camp workitem doctor [flags]
 ## camp workitem link
 
 Attach a workitem to a project, festival, worktree, or campaign path
+
+### Synopsis
+
+Attach a workitem to a project, festival, worktree, or campaign path.
+
+Links are stored in .campaign/workitems/links.yaml and connect a .workitem
+identity to an explicit scope for planning, execution, and lookup. Pass a
+workitem selector plus a path, or use --project, --festival, --worktree, or
+--cwd to derive the scope. Use --json for machine-readable link output.
 
 ```
 camp workitem link <selector> [path] [flags]
@@ -5345,6 +5483,15 @@ camp workitem link <selector> [path] [flags]
 ## camp workitem links
 
 List workitem links
+
+### Synopsis
+
+List workitem links recorded in the campaign link registry.
+
+The command reads .campaign/workitems/links.yaml and prints every link, or only
+links for the supplied workitem selector. Use this to audit which projects,
+festivals, worktrees, or paths are attached to a workitem. Use --json for
+machine-readable link lists.
 
 ```
 camp workitem links [selector] [flags]
@@ -5405,6 +5552,15 @@ camp workitem priority <selector> <high|medium|low|clear> [flags]
 
 Print the workitem the current context resolves to (read-only)
 
+### Synopsis
+
+Resolve the active workitem from the current campaign context.
+
+Resolution checks explicit selectors, cwd, festival context, linked scopes,
+and the current-workitem file without mutating any files. Use --explain to show
+the tier-by-tier trace used to choose the result. Use --json for
+machine-readable resolution details and trace data.
+
 ```
 camp workitem resolve [flags]
 ```
@@ -5429,6 +5585,15 @@ camp workitem resolve [flags]
 ## camp workitem unlink
 
 Remove one or more workitem links
+
+### Synopsis
+
+Remove workitem links from the campaign link registry.
+
+The command updates .campaign/workitems/links.yaml by link id, workitem
+selector, explicit path, or scope filter. Use --all when a selector matches
+multiple links and every match should be removed. Use --json for
+machine-readable details about the removed links.
 
 ```
 camp workitem unlink [selector] [path] [flags]

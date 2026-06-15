@@ -20,6 +20,11 @@ func newShortcutCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "shortcut",
 		Short: "Manage navigation shortcuts for workflow collections",
+		Long: `Manage navigation shortcuts for custom workflow collections.
+
+Workflow shortcuts are stored in campaign configuration and point to
+workflow/<type>/ directories. Use subcommands to attach or repair shortcut
+entries after creating or moving workflow collections.`,
 	}
 	cmd.AddCommand(newShortcutAddCommand())
 	return cmd
@@ -30,7 +35,13 @@ func newShortcutAddCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add <type> <key>",
 		Short: "Attach a navigation shortcut to an existing workflow",
-		Args:  jsoncontract.Args(JSONSchemaVersion, func() bool { return jsonOut }, cobra.ExactArgs(2)),
+		Long: `Attach a navigation shortcut to an existing workflow collection.
+
+The command updates .campaign/settings/jumps.yaml so cgo and camp navigation
+can jump to workflow/<type>/ by key. The workflow type must already exist. Use
+--replace to overwrite a conflicting shortcut and --json for machine-readable
+result details.`,
+		Args: jsoncontract.Args(JSONSchemaVersion, func() bool { return jsonOut }, cobra.ExactArgs(2)),
 		RunE: jsoncontract.RunE(JSONSchemaVersion, func() bool { return jsonOut }, func(cmd *cobra.Command, args []string) error {
 			return runShortcutAdd(cmd.Context(), cmd, args[0], args[1], replace, jsonOut)
 		}),

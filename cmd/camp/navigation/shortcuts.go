@@ -40,7 +40,7 @@ You can customize shortcuts by editing .campaign/settings/jumps.yaml.`,
 }
 
 var shortcutsAddCmd = &cobra.Command{
-	Use:   "add [name] [path] or [project] [name] [path]",
+	Use:   "add <name> <path> | <project> <name> <path>",
 	Short: "Add a shortcut (campaign-level or project sub-shortcut)",
 	Long: `Add a shortcut for quick navigation.
 
@@ -312,7 +312,7 @@ func runShortcutsAdd(cmd *cobra.Command, args []string) error {
 	// Find the project (fuzzy match)
 	projectIdx := findProjectIndex(cfg.Projects, projectName)
 	if projectIdx == -1 {
-		return fmt.Errorf("project %q not found (run 'camp projects' to see available projects)", projectName)
+		return fmt.Errorf("project %q not found (run 'camp project list' to see available projects)", projectName)
 	}
 
 	project := &cfg.Projects[projectIdx]

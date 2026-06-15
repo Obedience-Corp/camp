@@ -2,7 +2,9 @@ package workflow
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -80,6 +82,37 @@ func (s *Service) Move(ctx context.Context, item, to string, opts MoveOptions) (
 
 // appendHistory adds an entry to the history file.
 func (s *Service) appendHistory(ctx context.Context, entry HistoryEntry) error {
-	// TODO: Implement history file writing
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	if entry.Timestamp.IsZero() {
+		entry.Timestamp = time.Now().UTC()
+	}
+
+	historyFile := s.schema.HistoryFile
+	if historyFile == "" {
+		historyFile = DefaultHistoryFile
+	}
+	historyPath := filepath.Join(s.root, historyFile)
+
+	if err := os.MkdirAll(filepath.Dir(historyPath), 0755); err != nil {
+		return camperrors.Wrap(err, "create history directory")
+	}
+
+	f, err := os.OpenFile(historyPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return camperrors.Wrap(err, "open history file")
+	}
+	defer func() { _ = f.Close() }()
+
+	data, err := json.Marshal(entry)
+	if err != nil {
+		return camperrors.Wrap(err, "marshal history entry")
+	}
+
+	if _, err := f.Write(append(data, '\n')); err != nil {
+		return camperrors.Wrap(err, "write history entry")
+	}
 	return nil
 }

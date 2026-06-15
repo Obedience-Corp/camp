@@ -20,7 +20,13 @@ func newListCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List user-created workflow collections",
-		Args:  jsoncontract.Args(JSONSchemaVersion, func() bool { return jsonOut }, cobra.NoArgs),
+		Long: `List user-created workflow collections registered in the campaign.
+
+The command reads campaign configuration and workflow/ directories, then shows
+each collection's shortcut, item count, and latest workitem update. Built-in
+workflow types are omitted so the output focuses on custom collections. Use
+--json for machine-readable workflow inventory output.`,
+		Args: jsoncontract.Args(JSONSchemaVersion, func() bool { return jsonOut }, cobra.NoArgs),
 		RunE: jsoncontract.RunE(JSONSchemaVersion, func() bool { return jsonOut }, func(cmd *cobra.Command, args []string) error {
 			return runList(cmd.Context(), cmd, jsonOut)
 		}),

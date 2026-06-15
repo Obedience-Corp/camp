@@ -24,7 +24,13 @@ func newUnlinkCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "unlink [selector] [path]",
 		Short: "Remove one or more workitem links",
-		Args:  jsoncontract.Args(links.LinksSchemaVersion, func() bool { return jsonOut }, cobra.RangeArgs(0, 2)),
+		Long: `Remove workitem links from the campaign link registry.
+
+The command updates .campaign/workitems/links.yaml by link id, workitem
+selector, explicit path, or scope filter. Use --all when a selector matches
+multiple links and every match should be removed. Use --json for
+machine-readable details about the removed links.`,
+		Args: jsoncontract.Args(links.LinksSchemaVersion, func() bool { return jsonOut }, cobra.RangeArgs(0, 2)),
 		Annotations: map[string]string{
 			"agent_allowed": "true",
 			"agent_reason":  "Removes workitem links with --json output for automation",

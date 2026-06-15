@@ -99,6 +99,8 @@ func run(args []string) error {
 	fmt.Printf("Wrote release notes to %s\n", absOutput)
 	if previousTag != "" {
 		fmt.Printf("Compared %s...%s\n", previousTag, *tag)
+	} else {
+		fmt.Println("First release: no previous tag found; skipping commit-diff sections.")
 	}
 	return nil
 }
@@ -108,7 +110,7 @@ func commitSubjects(tag, previousTag string) ([]string, error) {
 	if previousTag != "" {
 		args = append(args, previousTag+".."+tag)
 	} else {
-		args = append(args, tag)
+		return nil, nil
 	}
 	return gitLines(args...)
 }

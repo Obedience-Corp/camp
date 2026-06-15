@@ -20,7 +20,13 @@ func newCurrentCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "current [selector]",
 		Short: "Get, set, or clear the local current workitem",
-		Args:  jsoncontract.Args(links.CurrentSchemaVersion, func() bool { return jsonOut }, cobra.RangeArgs(0, 1)),
+		Long: `Get, set, or clear the campaign-local current workitem pointer.
+
+The selection is stored in .campaign/workitems/current.yaml and is used by
+commands that need a default workitem when cwd alone is ambiguous. Pass a
+selector to set the current workitem, omit it to read the selection, or use
+--clear to remove it. Use --json for machine-readable current selection output.`,
+		Args: jsoncontract.Args(links.CurrentSchemaVersion, func() bool { return jsonOut }, cobra.RangeArgs(0, 1)),
 		Annotations: map[string]string{
 			"agent_allowed": "true",
 			"agent_reason":  "Gets or sets current workitem with --json output for automation",

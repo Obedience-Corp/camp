@@ -20,7 +20,14 @@ func newAdoptCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "adopt <dir>",
 		Short: "Attach .workitem metadata to an existing directory",
-		Args:  cobra.ExactArgs(1),
+		Long: `Attach workitem metadata to an existing campaign directory without moving it.
+
+The target directory must already exist and must not already contain a
+.workitem file. The command writes that .workitem metadata file with the
+selected type, title, generated or supplied id, and optional quest link. Use
+this when a workflow directory already exists and needs to become a tracked
+workitem.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			return runAdopt(ctx, cmd, args[0], typeFlag, title, idOverride, questSelector)

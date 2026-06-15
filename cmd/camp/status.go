@@ -12,8 +12,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	statusSub      bool
+	statusProject  string
+	statusShort    bool
+	statusShowRefs bool
+)
+
 var statusCmd = &cobra.Command{
-	Use:   "status [flags]",
+	Use:   "status [flags] [-- <git-flags>]",
 	Short: "Show git status of the campaign",
 	Long: `Show git status of the campaign root directory.
 
@@ -22,20 +29,21 @@ of the campaign root repository.
 
 Use --sub to show status of the submodule detected from your current directory.
 Use --project/-p to show status of a specific project.
-
-Examples:
-  camp status           # Full status
-  camp status -s        # Short format (git flag)
-  camp status --short   # Short format (git flag)
+Pass git status flags after -- to forward them directly to git.`,
+	Example: `  camp status           # Full status
+  camp status -s        # Short format
   camp status --sub     # Status of current submodule
   camp status -p projects/camp  # Status of camp project`,
-	RunE:               runStatus,
-	DisableFlagParsing: true,
+	RunE: runStatus,
 }
 
 func init() {
 	rootCmd.AddCommand(statusCmd)
 	statusCmd.GroupID = "git"
+	statusCmd.Flags().BoolVar(&statusSub, "sub", false, "Status of the submodule detected from current directory")
+	statusCmd.Flags().StringVarP(&statusProject, "project", "p", "", "Status of a specific project path")
+	statusCmd.Flags().BoolVarP(&statusShort, "short", "s", false, "Give output in short format")
+	statusCmd.Flags().BoolVar(&statusShowRefs, "show-refs", false, "Show campaign root submodule ref changes")
 }
 
 func runStatus(cmd *cobra.Command, args []string) error {
@@ -46,14 +54,13 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "not in a campaign")
 	}
 
-	// Extract camp-specific flags, pass rest to git
-	gitArgs, sub, project := git.ExtractSubFlags(args)
+	gitArgs, showRefsArg := extractShowRefs(args)
+	showRefs := statusShowRefs || showRefsArg
+	if statusShort {
+		gitArgs = append(gitArgs, "--short")
+	}
 
-	// Extract --show-refs before passing to git
-	var showRefs bool
-	gitArgs, showRefs = extractShowRefs(gitArgs)
-
-	target, err := git.ResolveTarget(ctx, campRoot, sub, project)
+	target, err := git.ResolveTarget(ctx, campRoot, statusSub, statusProject)
 	if err != nil {
 		return camperrors.Wrap(err, "failed to resolve target")
 	}

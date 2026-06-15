@@ -30,7 +30,14 @@ func newCreateCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create <type>",
 		Short: "Create a custom workflow collection",
-		Args:  jsoncontract.Args(JSONSchemaVersion, func() bool { return jsonOut }, cobra.ExactArgs(1)),
+		Long: `Create a custom workflow collection under workflow/<type>/.
+
+The command creates the workflow directory, terminal dungeon directories,
+.gitkeep files, and an OBEY.md guide, then registers the collection in
+campaign configuration through a concept and navigation shortcut. A shortcut is
+required. Use --dry-run to inspect planned writes and --json for
+machine-readable planning or apply results.`,
+		Args: jsoncontract.Args(JSONSchemaVersion, func() bool { return jsonOut }, cobra.ExactArgs(1)),
 		RunE: jsoncontract.RunE(JSONSchemaVersion, func() bool { return jsonOut }, func(cmd *cobra.Command, args []string) error {
 			return runCreate(cmd.Context(), cmd, createOptions{
 				Type:     args[0],

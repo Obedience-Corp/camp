@@ -29,7 +29,14 @@ func newCreateCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create <slug>",
 		Short: "Create a new workitem with v1 minimum metadata",
-		Args:  jsoncontract.Args(WorkitemCreateJSONVersion, func() bool { return jsonOut }, cobra.ExactArgs(1)),
+		Long: `Create a new workitem directory with minimal v1 metadata.
+
+The workitem is created under workflow/<type>/<slug>/ unless --dir supplies a
+different campaign-relative parent directory. A .workitem file is written with
+the id, type, title, ref, creation metadata, and optional quest link. Use --json
+for machine-readable output containing the new workitem identity and next-step
+location.`,
+		Args: jsoncontract.Args(WorkitemCreateJSONVersion, func() bool { return jsonOut }, cobra.ExactArgs(1)),
 		Annotations: map[string]string{
 			"agent_allowed": "true",
 			"agent_reason":  "Creates workitems with --json output for automation",

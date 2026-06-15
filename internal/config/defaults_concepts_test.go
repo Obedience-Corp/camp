@@ -84,6 +84,14 @@ func TestDefaultNavigationShortcuts_DungeonIsNavigationOnly(t *testing.T) {
 		t.Fatalf("i concept = %q, want %q", intent.Concept, "intent")
 	}
 
+	wt, ok := shortcuts["wt"]
+	if !ok {
+		t.Fatal("default navigation shortcuts should include wt")
+	}
+	if wt.Concept != "project worktree" {
+		t.Fatalf("wt concept = %q, want %q", wt.Concept, "project worktree")
+	}
+
 	ex, ok := shortcuts["ex"]
 	if !ok {
 		t.Fatal("default navigation shortcuts should include ex")

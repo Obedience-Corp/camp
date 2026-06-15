@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	attachpkg "github.com/Obedience-Corp/camp/cmd/camp/attach"
 	cachepkg "github.com/Obedience-Corp/camp/cmd/camp/cache"
@@ -108,8 +109,20 @@ func expandShortcuts() {
 		return
 	}
 
-	// Expand the shortcut
-	os.Args[argIndex] = sc.Concept
+	concept := sc.Concept
+	if concept == "worktrees" {
+		concept = "project worktree"
+	}
+	conceptParts := strings.Fields(concept)
+	if len(conceptParts) == 0 {
+		return
+	}
+
+	expanded := make([]string, 0, len(os.Args)+len(conceptParts)-1)
+	expanded = append(expanded, os.Args[:argIndex]...)
+	expanded = append(expanded, conceptParts...)
+	expanded = append(expanded, os.Args[argIndex+1:]...)
+	os.Args = expanded
 }
 
 // loadShortcutsForExpansion loads shortcuts from campaign config if available.

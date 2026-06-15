@@ -2,6 +2,15 @@
 
 List workitem links
 
+### Synopsis
+
+List workitem links recorded in the campaign link registry.
+
+The command reads .campaign/workitems/links.yaml and prints every link, or only
+links for the supplied workitem selector. Use this to audit which projects,
+festivals, worktrees, or paths are attached to a workitem. Use --json for
+machine-readable link lists.
+
 ```
 camp workitem links [selector] [flags]
 ```

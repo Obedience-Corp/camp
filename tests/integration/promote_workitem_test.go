@@ -35,10 +35,10 @@ func TestPromote_FromActive(t *testing.T) {
 	path := setupPromoteWorkitem(t, tc, "promote-from-active", "design", "feature-x")
 
 	wkDir := path + "/workflow/design/feature-x"
-	output, err := tc.RunCampInDir(wkDir, "promote", "completed")
-	require.NoError(t, err, "promote from active should succeed: %s", output)
+	output, err := tc.RunCampInDir(wkDir, "shelve", "completed")
+	require.NoError(t, err, "shelve from active should succeed: %s", output)
 
-	assert.Contains(t, output, "Promoted feature-x")
+	assert.Contains(t, output, "Shelved feature-x")
 	assert.Contains(t, output, "workflow/design/feature-x")
 	assert.Contains(t, output, "workflow/design/dungeon/completed")
 	assert.Contains(t, output, "Committed", "should auto-commit")
@@ -63,10 +63,10 @@ func TestPromote_FromSubdir(t *testing.T) {
 	_, _, err := tc.ExecCommand("sh", "-c", "mkdir -p "+path+"/workflow/design/feature-y/notes/deep")
 	require.NoError(t, err)
 
-	output, err := tc.RunCampInDir(path+"/workflow/design/feature-y/notes/deep", "promote", "archived")
-	require.NoError(t, err, "promote from deep subdir should succeed: %s", output)
+	output, err := tc.RunCampInDir(path+"/workflow/design/feature-y/notes/deep", "shelve", "archived")
+	require.NoError(t, err, "shelve from deep subdir should succeed: %s", output)
 
-	assert.Contains(t, output, "Promoted feature-y")
+	assert.Contains(t, output, "Shelved feature-y")
 	assert.Contains(t, output, "workflow/design/dungeon/archived")
 
 	exists, err := checkDatedDungeonStatusItemExists(tc, path+"/workflow/design/dungeon/archived", "feature-y")
@@ -78,7 +78,7 @@ func TestPromote_BetweenDungeonStatuses(t *testing.T) {
 	tc := GetSharedContainer(t)
 	path := setupPromoteWorkitem(t, tc, "promote-between-statuses", "design", "feature-z")
 
-	_, err := tc.RunCampInDir(path+"/workflow/design/feature-z", "promote", "completed")
+	_, err := tc.RunCampInDir(path+"/workflow/design/feature-z", "shelve", "completed")
 	require.NoError(t, err)
 
 	findOutput, _, err := tc.ExecCommand(
@@ -91,10 +91,10 @@ func TestPromote_BetweenDungeonStatuses(t *testing.T) {
 	currentDir := strings.TrimSpace(findOutput)
 	require.NotEmpty(t, currentDir, "should have found dated dungeon dir for feature-z")
 
-	output, err := tc.RunCampInDir(currentDir, "promote", "archived")
-	require.NoError(t, err, "promote between dungeon statuses should succeed: %s", output)
+	output, err := tc.RunCampInDir(currentDir, "shelve", "archived")
+	require.NoError(t, err, "shelve between dungeon statuses should succeed: %s", output)
 
-	assert.Contains(t, output, "Promoted feature-z")
+	assert.Contains(t, output, "Shelved feature-z")
 	assert.Contains(t, output, "workflow/design/dungeon/archived")
 
 	exists, err := checkDatedDungeonStatusItemExists(tc, path+"/workflow/design/dungeon/archived", "feature-z")
@@ -110,8 +110,8 @@ func TestPromote_NotInWorkitem(t *testing.T) {
 	tc := GetSharedContainer(t)
 	path := setupDungeonCampaign(t, tc, "promote-not-in-workitem")
 
-	output, err := tc.RunCampInDir(path, "promote", "completed")
-	require.Error(t, err, "promote outside workitem should fail")
+	output, err := tc.RunCampInDir(path, "shelve", "completed")
+	require.Error(t, err, "shelve outside workitem should fail")
 	assert.Contains(t, output+err.Error(), "not inside a workitem")
 }
 
@@ -119,8 +119,8 @@ func TestPromote_InvalidStatus(t *testing.T) {
 	tc := GetSharedContainer(t)
 	path := setupPromoteWorkitem(t, tc, "promote-invalid-status", "design", "feature-q")
 
-	output, err := tc.RunCampInDir(path+"/workflow/design/feature-q", "promote", "foo/bar")
-	require.Error(t, err, "promote with invalid status should fail")
+	output, err := tc.RunCampInDir(path+"/workflow/design/feature-q", "shelve", "foo/bar")
+	require.Error(t, err, "shelve with invalid status should fail")
 	assert.Contains(t, output+err.Error(), "invalid status")
 }
 
@@ -128,7 +128,7 @@ func TestPromote_AlreadyAtStatus(t *testing.T) {
 	tc := GetSharedContainer(t)
 	path := setupPromoteWorkitem(t, tc, "promote-already-at-status", "design", "feature-r")
 
-	_, err := tc.RunCampInDir(path+"/workflow/design/feature-r", "promote", "completed")
+	_, err := tc.RunCampInDir(path+"/workflow/design/feature-r", "shelve", "completed")
 	require.NoError(t, err)
 
 	findOutput, _, err := tc.ExecCommand(
@@ -141,8 +141,8 @@ func TestPromote_AlreadyAtStatus(t *testing.T) {
 	currentDir := strings.TrimSpace(findOutput)
 	require.NotEmpty(t, currentDir)
 
-	output, err := tc.RunCampInDir(currentDir, "promote", "completed")
-	require.Error(t, err, "re-promote to same status should fail")
+	output, err := tc.RunCampInDir(currentDir, "shelve", "completed")
+	require.Error(t, err, "re-shelve to same status should fail")
 	assert.Contains(t, output+err.Error(), "already at status")
 }
 
@@ -150,8 +150,8 @@ func TestPromote_ActiveRejected(t *testing.T) {
 	tc := GetSharedContainer(t)
 	path := setupPromoteWorkitem(t, tc, "promote-active-rejected", "design", "feature-a")
 
-	output, err := tc.RunCampInDir(path+"/workflow/design/feature-a", "promote", "active")
-	require.Error(t, err, "promote active should fail")
+	output, err := tc.RunCampInDir(path+"/workflow/design/feature-a", "shelve", "active")
+	require.Error(t, err, "shelve active should fail")
 	assert.Contains(t, output+err.Error(), "not a dungeon status")
 
 	exists, err := tc.CheckDirExists(path + "/workflow/design/feature-a")
@@ -167,8 +167,8 @@ func TestPromote_JsonOutput(t *testing.T) {
 	tc := GetSharedContainer(t)
 	path := setupPromoteWorkitem(t, tc, "promote-json", "design", "feature-j")
 
-	output, err := tc.RunCampInDir(path+"/workflow/design/feature-j", "promote", "completed", "--json")
-	require.NoError(t, err, "promote --json should succeed: %s", output)
+	output, err := tc.RunCampInDir(path+"/workflow/design/feature-j", "shelve", "completed", "--json")
+	require.NoError(t, err, "shelve --json should succeed: %s", output)
 
 	trimmed := strings.TrimSpace(output)
 	require.NotEmpty(t, trimmed, "JSON output should not be empty")
@@ -198,8 +198,8 @@ func TestPromote_JsonOutputNoCommit(t *testing.T) {
 	tc := GetSharedContainer(t)
 	path := setupPromoteWorkitem(t, tc, "promote-json-no-commit", "design", "feature-k")
 
-	output, err := tc.RunCampInDir(path+"/workflow/design/feature-k", "promote", "someday", "--json", "--no-commit")
-	require.NoError(t, err, "promote --json --no-commit should succeed: %s", output)
+	output, err := tc.RunCampInDir(path+"/workflow/design/feature-k", "shelve", "someday", "--json", "--no-commit")
+	require.NoError(t, err, "shelve --json --no-commit should succeed: %s", output)
 
 	var result struct {
 		Committed bool `json:"committed"`
@@ -214,8 +214,8 @@ func TestPromote_NoCommit(t *testing.T) {
 
 	headBefore := strings.TrimSpace(tc.GitOutput(t, path, "rev-parse", "HEAD"))
 
-	output, err := tc.RunCampInDir(path+"/workflow/design/feature-s", "promote", "someday", "--no-commit")
-	require.NoError(t, err, "promote --no-commit should succeed: %s", output)
+	output, err := tc.RunCampInDir(path+"/workflow/design/feature-s", "shelve", "someday", "--no-commit")
+	require.NoError(t, err, "shelve --no-commit should succeed: %s", output)
 
 	exists, err := checkDatedDungeonStatusItemExists(tc, path+"/workflow/design/dungeon/someday", "feature-s")
 	require.NoError(t, err)

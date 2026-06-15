@@ -4,6 +4,23 @@ import (
 	"testing"
 )
 
+func TestStatusCommandRegistersRealFlags(t *testing.T) {
+	for _, name := range []string{"sub", "project", "short", "show-refs"} {
+		if statusCmd.Flags().Lookup(name) == nil {
+			t.Fatalf("status flag %q is not registered", name)
+		}
+	}
+	if got := statusCmd.Flags().ShorthandLookup("p"); got == nil || got.Name != "project" {
+		t.Fatalf("-p shorthand = %#v, want project", got)
+	}
+	if got := statusCmd.Flags().ShorthandLookup("s"); got == nil || got.Name != "short" {
+		t.Fatalf("-s shorthand = %#v, want short", got)
+	}
+	if statusCmd.DisableFlagParsing {
+		t.Fatal("status command should use cobra flag parsing")
+	}
+}
+
 func TestExtractShowRefs_NotPresent(t *testing.T) {
 	args := []string{"--short", "-s"}
 	filtered, showRefs := extractShowRefs(args)

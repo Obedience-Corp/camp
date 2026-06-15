@@ -16,10 +16,8 @@ Use these commands to maintain registry health and resolve issues.
 Commands:
   prune   Remove stale entries (campaigns that no longer exist)
   sync    Update registry entry for current campaign
-  check   Validate registry integrity
-
-Examples:
-  camp registry prune             Remove entries for non-existent campaigns
+  check   Validate registry integrity`,
+	Example: `  camp registry prune             Remove entries for non-existent campaigns
   camp registry prune --dry-run   Show what would be removed
   camp registry sync              Update path for current campaign
   camp registry check             Check for issues`,

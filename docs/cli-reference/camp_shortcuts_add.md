@@ -18,7 +18,7 @@ With no arguments, launches an interactive TUI for entering
 shortcut details.
 
 ```
-camp shortcuts add [name] [path] or [project] [name] [path] [flags]
+camp shortcuts add <name> <path> | <project> <name> <path> [flags]
 ```
 
 ### Examples

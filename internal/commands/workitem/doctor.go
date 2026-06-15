@@ -69,7 +69,13 @@ func newDoctorCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Report workitem link-registry health issues",
-		Args:  jsoncontract.Args(WorkitemDoctorJSONVersion, func() bool { return jsonOut }, cobra.NoArgs),
+		Long: `Report health issues in the campaign workitem link registry.
+
+The command reads .campaign/workitems/links.yaml, scans .workitem metadata on
+disk, and checks current-workitem and priority stores for stale or inconsistent
+references. Use --fix to apply auto-repairs for supported findings. Use --json
+for machine-readable findings and stable finding codes.`,
+		Args: jsoncontract.Args(WorkitemDoctorJSONVersion, func() bool { return jsonOut }, cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDoctor(cmd.Context(), cmd, jsonOut, fix)
 		},

@@ -2,6 +2,15 @@
 
 Report workflow surface inconsistencies
 
+### Synopsis
+
+Report inconsistencies between workflow directories and campaign configuration.
+
+The command reads campaign.yaml, .campaign/settings/jumps.yaml, workflow/
+directories, and the navigation cache to find missing concepts, stale
+shortcuts, duplicate shortcut keys, and cache drift. Use --json for
+machine-readable findings and stable finding codes.
+
 ```
 camp workflow doctor [flags]
 ```

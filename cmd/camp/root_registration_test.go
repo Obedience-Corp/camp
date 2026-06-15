@@ -67,8 +67,8 @@ func TestPackageOwnedRootMetadataPreserved(t *testing.T) {
 	if worktreespkg.Cmd.GroupID != "project" {
 		t.Fatalf("worktrees GroupID = %q, want project", worktreespkg.Cmd.GroupID)
 	}
-	if !hasAlias(worktreespkg.Cmd, "wt") {
-		t.Fatal("worktrees command missing wt alias")
+	if hasAlias(worktreespkg.Cmd, "wt") {
+		t.Fatal("deprecated worktrees command should not own wt alias")
 	}
 	if worktreespkg.Cmd.Deprecated == "" {
 		t.Fatal("worktrees command lost deprecation text")

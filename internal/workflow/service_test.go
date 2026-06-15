@@ -682,6 +682,67 @@ func TestService_Move_WithReason(t *testing.T) {
 	}
 }
 
+func TestService_Move_AppendsHistory(t *testing.T) {
+	dir, svc := testWorkflow(t)
+	if _, err := svc.Init(context.Background(), InitOptions{}); err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "active", "project-1"), 0755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+
+	_, err := svc.Move(context.Background(), "project-1", "ready", MoveOptions{
+		Reason: "Ready for review",
+	})
+	if err != nil {
+		t.Fatalf("Move() error = %v", err)
+	}
+
+	entries, err := svc.History(context.Background(), HistoryOptions{})
+	if err != nil {
+		t.Fatalf("History() error = %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("history entries = %d, want 1: %#v", len(entries), entries)
+	}
+	entry := entries[0]
+	if entry.Item != "project-1" || entry.From != "active" || entry.To != "ready" {
+		t.Fatalf("entry = %#v, want project-1 active -> ready", entry)
+	}
+	if entry.Reason != "Ready for review" {
+		t.Fatalf("Reason = %q, want Ready for review", entry.Reason)
+	}
+	if entry.Timestamp.IsZero() {
+		t.Fatal("Timestamp is zero")
+	}
+}
+
+func TestService_History_FilterAndLimit(t *testing.T) {
+	dir, _ := testWorkflow(t)
+	svc := NewService(dir, WithSchema(DefaultSchema()))
+
+	for _, entry := range []HistoryEntry{
+		{Item: "one", From: "active", To: "ready"},
+		{Item: "two", From: "active", To: "ready"},
+		{Item: "one", From: "ready", To: "dungeon/completed"},
+	} {
+		if err := svc.appendHistory(context.Background(), entry); err != nil {
+			t.Fatalf("appendHistory() error = %v", err)
+		}
+	}
+
+	entries, err := svc.History(context.Background(), HistoryOptions{Item: "one", Limit: 1})
+	if err != nil {
+		t.Fatalf("History() error = %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("history entries = %d, want 1: %#v", len(entries), entries)
+	}
+	if entries[0].Item != "one" || entries[0].To != "dungeon/completed" {
+		t.Fatalf("entry = %#v, want latest item one completion", entries[0])
+	}
+}
+
 func TestService_findItem(t *testing.T) {
 	dir, svc := testWorkflow(t)
 	svc.Init(context.Background(), InitOptions{})

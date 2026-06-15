@@ -65,7 +65,13 @@ func newDoctorCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Report workflow surface inconsistencies",
-		Args:  jsoncontract.Args(JSONSchemaVersion, func() bool { return jsonOut }, cobra.NoArgs),
+		Long: `Report inconsistencies between workflow directories and campaign configuration.
+
+The command reads campaign.yaml, .campaign/settings/jumps.yaml, workflow/
+directories, and the navigation cache to find missing concepts, stale
+shortcuts, duplicate shortcut keys, and cache drift. Use --json for
+machine-readable findings and stable finding codes.`,
+		Args: jsoncontract.Args(JSONSchemaVersion, func() bool { return jsonOut }, cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDoctor(cmd.Context(), cmd, jsonOut)
 		},

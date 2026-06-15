@@ -79,7 +79,7 @@ func DefaultNavigationShortcuts() map[string]ShortcutConfig {
 		"p":  {Path: "projects/", Concept: "project", Description: "Projects directory and commands", Source: ShortcutSourceAuto},
 		"f":  {Path: "festivals/", Concept: "festival", Description: "Festivals directory and commands", Source: ShortcutSourceAuto},
 		"i":  {Path: ".campaign/intents/", Concept: "intent", Description: "Intents directory and commands", Source: ShortcutSourceAuto},
-		"wt": {Path: "projects/worktrees/", Concept: "worktrees", Description: "Worktrees directory and commands", Source: ShortcutSourceAuto},
+		"wt": {Path: "projects/worktrees/", Concept: "project worktree", Description: "Project worktree directory and commands", Source: ShortcutSourceAuto},
 
 		// Navigation-only shortcuts (no command expansion)
 		"w":  {Path: "workflow/", Description: "Jump to workflow directory", Source: ShortcutSourceAuto},
