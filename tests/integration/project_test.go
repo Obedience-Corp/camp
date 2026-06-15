@@ -208,8 +208,11 @@ func TestProject_Help(t *testing.T) {
 func TestProject_NotInCampaign(t *testing.T) {
 	tc := GetSharedContainer(t)
 
+	_, err := tc.InitCampaign("/campaigns/proj-target-required", "proj-target-required", "product")
+	require.NoError(t, err)
+
 	// Create a git repo outside campaign
-	err := tc.CreateGitRepo("/test/orphan")
+	err = tc.CreateGitRepo("/test/orphan")
 	require.NoError(t, err)
 
 	// Try to add project when not in a campaign and no target campaign is registered.
