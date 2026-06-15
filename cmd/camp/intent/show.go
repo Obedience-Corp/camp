@@ -1,23 +1,27 @@
 package intent
 
 import (
-	"encoding/json"
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"strings"
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/intent"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/paths"
 )
 
-var intentShowCmd = &cobra.Command{
-	Use:   "show <id>",
-	Short: "Show detailed intent information",
-	Long: `Display detailed information about a specific intent.
+var intentShowCmd = newIntentShowCommand()
+
+func newIntentShowCommand() *cobra.Command {
+	var jsonOut bool
+	cmd := &cobra.Command{
+		Use:   "show <id>",
+		Short: "Show detailed intent information",
+		Long: `Display detailed information about a specific intent.
 
 Supports partial ID matching - you can use:
   - Full ID: 20260119-153412-add-retry-logic
@@ -34,15 +38,20 @@ Examples:
   camp intent show retry-logic           Show by partial match
   camp intent show retry -f json         JSON output
   camp intent show retry -f yaml         YAML output`,
-	Args: cobra.ExactArgs(1),
-	RunE: runIntentShow,
+	}
+	jsonRequested := func() bool { return intentJSONRequested(cmd, &jsonOut) }
+	cmd.Args = jsoncontract.Args(IntentJSONVersion, jsonRequested, cobra.ExactArgs(1))
+	cmd.RunE = jsoncontract.RunE(IntentJSONVersion, jsonRequested, runIntentShow)
+	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(IntentJSONVersion, func() bool { return jsonOut }))
+
+	flags := cmd.Flags()
+	flags.StringP("format", "f", "text", "Output format: text, json, yaml")
+	flags.BoolVar(&jsonOut, "json", false, "emit a structured JSON result")
+	return cmd
 }
 
 func init() {
 	Cmd.AddCommand(intentShowCmd)
-
-	flags := intentShowCmd.Flags()
-	flags.StringP("format", "f", "text", "Output format: text, json, yaml")
 }
 
 func runIntentShow(cmd *cobra.Command, args []string) error {
@@ -51,6 +60,7 @@ func runIntentShow(cmd *cobra.Command, args []string) error {
 
 	// Parse flags
 	format, _ := cmd.Flags().GetString("format")
+	jsonOut, _ := cmd.Flags().GetBool("json")
 
 	// Validate format
 	if format != "text" && format != "json" && format != "yaml" {
@@ -75,10 +85,10 @@ func runIntentShow(cmd *cobra.Command, args []string) error {
 	}
 
 	// Format and output
-	switch format {
-	case "json":
-		return showJSON(i)
-	case "yaml":
+	switch {
+	case jsonOut || format == "json":
+		return outputIntentPayload(cmd.OutOrStdout(), campaignRoot, []*intent.Intent{i})
+	case format == "yaml":
 		return showYAML(i)
 	default:
 		return showText(i)
@@ -164,39 +174,6 @@ func showText(i *intent.Intent) error {
 	}
 
 	fmt.Print(sb.String())
-	return nil
-}
-
-func showJSON(i *intent.Intent) error {
-	output := map[string]interface{}{
-		"id":                 i.ID,
-		"title":              i.Title,
-		"type":               string(i.Type),
-		"status":             string(i.Status),
-		"concept":            i.Concept,
-		"author":             i.Author,
-		"priority":           string(i.Priority),
-		"horizon":            string(i.Horizon),
-		"tags":               i.Tags,
-		"blocked_by":         i.BlockedBy,
-		"depends_on":         i.DependsOn,
-		"promotion_criteria": i.PromotionCriteria,
-		"promoted_to":        i.PromotedTo,
-		"created_at":         i.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		"path":               i.Path,
-		"content":            i.Content,
-	}
-
-	if !i.UpdatedAt.IsZero() {
-		output["updated_at"] = i.UpdatedAt.Format("2006-01-02T15:04:05Z07:00")
-	}
-
-	data, err := json.MarshalIndent(output, "", "  ")
-	if err != nil {
-		return camperrors.Wrap(err, "failed to marshal JSON")
-	}
-
-	fmt.Println(string(data))
 	return nil
 }
 
