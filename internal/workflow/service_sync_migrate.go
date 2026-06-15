@@ -5,11 +5,21 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	dungeonscaffold "github.com/Obedience-Corp/camp/internal/dungeon/scaffold"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"gopkg.in/yaml.v3"
 )
+
+type v1ToV2Move struct {
+	statusDir string
+	name      string
+	src       string
+	dst       string
+}
+
+type workflowMigrationMover func(src, dst string) error
 
 // Sync ensures all directories defined in the schema exist.
 // It creates any missing directories but does not remove extra directories.
@@ -153,6 +163,10 @@ func (s *Service) Migrate(ctx context.Context, opts MigrateOptions) (*MigrateRes
 // Moves active/ and ready/ items to root (both are active work in v2),
 // removes empty active/ and ready/ dirs, and updates schema to v2.
 func (s *Service) MigrateV1ToV2(ctx context.Context, dryRun bool) (*MigrateV1ToV2Result, error) {
+	return s.migrateV1ToV2(ctx, dryRun, migrateWorkflowItemNoReplace)
+}
+
+func (s *Service) migrateV1ToV2(ctx context.Context, dryRun bool, moveItem workflowMigrationMover) (*MigrateV1ToV2Result, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -169,26 +183,22 @@ func (s *Service) MigrateV1ToV2(ctx context.Context, dryRun bool) (*MigrateV1ToV
 
 	result := &MigrateV1ToV2Result{}
 
-	// Move active/ and ready/ items to root (both are active work in v2)
-	for _, statusDir := range []string{"active", "ready"} {
-		dirPath := s.resolvePath(statusDir)
-		if entries, err := os.ReadDir(dirPath); err == nil {
-			for _, entry := range entries {
-				name := entry.Name()
-				if name == ".gitkeep" || name == "OBEY.md" {
-					continue
-				}
-				src := filepath.Join(dirPath, name)
-				dst := filepath.Join(s.root, name)
+	moves, err := s.planV1ToV2Moves()
+	if err != nil {
+		return nil, err
+	}
+	if err := validateV1ToV2MovePlan(s.root, moves); err != nil {
+		return nil, err
+	}
 
-				if !dryRun {
-					if err := os.Rename(src, dst); err != nil {
-						return nil, camperrors.Wrapf(err, "moving %s to root", name)
-					}
-				}
-				result.MovedItems = append(result.MovedItems, fmt.Sprintf("%s/%s → ./%s", statusDir, name, name))
-			}
+	if !dryRun {
+		if err := executeV1ToV2Moves(moves, moveItem); err != nil {
+			return nil, err
 		}
+	}
+	for _, move := range moves {
+		result.MovedItems = append(result.MovedItems,
+			fmt.Sprintf("%s/%s → ./%s", move.statusDir, move.name, move.name))
 	}
 
 	// Remove empty active/ and ready/ directories
@@ -226,4 +236,108 @@ func (s *Service) MigrateV1ToV2(ctx context.Context, dryRun bool) (*MigrateV1ToV
 	result.SchemaUpdate = true
 
 	return result, nil
+}
+
+func (s *Service) planV1ToV2Moves() ([]v1ToV2Move, error) {
+	var moves []v1ToV2Move
+	for _, statusDir := range []string{"active", "ready"} {
+		dirPath := s.resolvePath(statusDir)
+		entries, err := os.ReadDir(dirPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, camperrors.Wrapf(err, "reading %s", statusDir)
+		}
+
+		for _, entry := range entries {
+			name := entry.Name()
+			if name == ".gitkeep" || name == "OBEY.md" {
+				continue
+			}
+			moves = append(moves, v1ToV2Move{
+				statusDir: statusDir,
+				name:      name,
+				src:       filepath.Join(dirPath, name),
+				dst:       filepath.Join(s.root, name),
+			})
+		}
+	}
+	return moves, nil
+}
+
+func validateV1ToV2MovePlan(root string, moves []v1ToV2Move) error {
+	var errs []string
+	seen := make(map[string]v1ToV2Move, len(moves))
+	for _, move := range moves {
+		if err := checkMigrateDestination(root, move.name); err != nil {
+			errs = append(errs, fmt.Sprintf("%s/%s: %v", move.statusDir, move.name, err))
+		}
+		if previous, ok := seen[move.name]; ok {
+			errs = append(errs, fmt.Sprintf(
+				"%s/%s: duplicate destination ./%s already planned by %s/%s",
+				move.statusDir, move.name, move.name, previous.statusDir, previous.name))
+			continue
+		}
+		seen[move.name] = move
+	}
+	if len(errs) > 0 {
+		return camperrors.New("v1 to v2 migration validation failed:\n  " + strings.Join(errs, "\n  "))
+	}
+	return nil
+}
+
+// checkMigrateDestination enforces no-replace semantics for v1->v2 root moves.
+// Structured as a small helper for D003 extraction in sequence 11.05.
+func checkMigrateDestination(root, name string) error {
+	dst := filepath.Join(root, name)
+	if existing, exists, err := resolveWorkflowItemPath(root, ".", name); err != nil {
+		return camperrors.Wrapf(err, "checking destination: %s", dst)
+	} else if exists {
+		return camperrors.Wrapf(ErrAlreadyExists, "destination already exists: %s", existing)
+	}
+	return nil
+}
+
+func executeV1ToV2Moves(moves []v1ToV2Move, moveItem workflowMigrationMover) error {
+	moved := make([]v1ToV2Move, 0, len(moves))
+	for _, move := range moves {
+		if err := moveItem(move.src, move.dst); err != nil {
+			if rollbackErr := rollbackV1ToV2Moves(moved); rollbackErr != nil {
+				return camperrors.Wrapf(rollbackErr,
+					"moving %s/%s to root failed after %d move(s): %v",
+					move.statusDir, move.name, len(moved), err)
+			}
+			return camperrors.Wrapf(err,
+				"moving %s/%s to root failed after %d move(s); rolled back",
+				move.statusDir, move.name, len(moved))
+		}
+		moved = append(moved, move)
+	}
+	return nil
+}
+
+func rollbackV1ToV2Moves(moved []v1ToV2Move) error {
+	var errs []string
+	for i := len(moved) - 1; i >= 0; i-- {
+		move := moved[i]
+		if err := os.Rename(move.dst, move.src); err != nil {
+			errs = append(errs, fmt.Sprintf("%s -> %s: %v", move.dst, move.src, err))
+		}
+	}
+	if len(errs) > 0 {
+		return camperrors.New("rollback failed:\n  " + strings.Join(errs, "\n  "))
+	}
+	return nil
+}
+
+// migrateWorkflowItemNoReplace moves one workflow item while refusing to replace
+// an existing destination. The full plan is validated before this helper runs.
+func migrateWorkflowItemNoReplace(src, dst string) error {
+	if _, err := os.Stat(dst); err == nil {
+		return camperrors.Wrapf(ErrAlreadyExists, "destination already exists: %s", dst)
+	} else if err != nil && !os.IsNotExist(err) {
+		return camperrors.Wrapf(err, "checking destination: %s", dst)
+	}
+	return os.Rename(src, dst)
 }
