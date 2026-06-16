@@ -7,8 +7,10 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/fsutil"
@@ -166,9 +168,12 @@ func rewriteLinksInContent(content []byte, oldBase, newBase, srcPath string) ([]
 	return result, changed
 }
 
-// rewriteExternalLinksToMoved rewrites links in an unmoved file that point to
-// a file/directory that moved from oldPath to newPath.
-func rewriteExternalLinksToMoved(content []byte, fileDir, oldPath, newPath string) ([]byte, bool) {
+// rewriteExternalLinksForMovesInContent rewrites links in an unmoved file that
+// point to any of the moved items. The regular expressions run once over the
+// file regardless of how many moves there are; each link target is matched
+// against every move with cheap path arithmetic. This keeps a batch rewrite
+// O(files) rather than O(files * moves).
+func rewriteExternalLinksForMovesInContent(content []byte, fileDir string, moves []Move) ([]byte, bool) {
 	protected := protectedRanges(content)
 	changed := false
 
@@ -187,27 +192,30 @@ func rewriteExternalLinksToMoved(content []byte, fileDir, oldPath, newPath strin
 
 		abs := filepath.Clean(filepath.Join(fileDir, inner))
 
-		if !pathMatchesMoved(abs, oldPath) {
-			return target, false
-		}
+		for _, m := range moves {
+			if !pathMatchesMoved(abs, m.Src) {
+				continue
+			}
 
-		suffix := strings.TrimPrefix(abs, oldPath)
-		newAbs := newPath + suffix
-		rel, err := filepath.Rel(fileDir, newAbs)
-		if err != nil {
-			return target, false
-		}
-		rel = filepath.ToSlash(rel)
+			suffix := strings.TrimPrefix(abs, m.Src)
+			newAbs := m.Dst + suffix
+			rel, err := filepath.Rel(fileDir, newAbs)
+			if err != nil {
+				return target, false
+			}
+			rel = filepath.ToSlash(rel)
 
-		dest := rel
-		if hadBrackets {
-			dest = "<" + rel + ">"
+			dest := rel
+			if hadBrackets {
+				dest = "<" + rel + ">"
+			}
+			newTarget := dest + anchor
+			if newTarget == target {
+				return target, false
+			}
+			return newTarget, true
 		}
-		newTarget := dest + anchor
-		if newTarget == target {
-			return target, false
-		}
-		return newTarget, true
+		return target, false
 	}
 
 	result := rewriteWithIndex(content, mdLinkRe, func(match []byte, start int) []byte {
@@ -514,32 +522,71 @@ func RewriteExternalLinksForMoves(ctx context.Context, campaignRoot string, move
 		return nil, camperrors.Wrap(err, "collecting campaign md files")
 	}
 
-	modified := newModifiedFileSet(campaignRoot)
-	for _, mdFile := range allMD {
-		if err := ctx.Err(); err != nil {
-			return nil, camperrors.Wrap(err, "context cancelled")
+	// Rewrite files concurrently. Chunks are disjoint, so each worker writes
+	// only its own files and its own result slot; there is no shared mutable
+	// state during the parallel phase. Results are merged and sorted after, so
+	// output stays deterministic regardless of scheduling.
+	workers := max(runtime.NumCPU(), 1)
+	workers = min(workers, len(allMD))
+
+	type workerResult struct {
+		modified []string
+		err      error
+	}
+	results := make([]workerResult, workers)
+	chunk := (len(allMD) + workers - 1) / workers
+
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		start := w * chunk
+		if start >= len(allMD) {
+			break
 		}
-		cleanFile := filepath.Clean(mdFile)
-		fileDir := filepath.Dir(mdFile)
-		changed, err := rewriteFile(mdFile, func(b []byte) ([]byte, bool) {
-			out := b
-			any := false
-			for _, m := range cleaned {
-				if pathMatchesMoved(cleanFile, m.Dst) {
+		end := min(start+chunk, len(allMD))
+
+		wg.Add(1)
+		go func(slot int, files []string) {
+			defer wg.Done()
+			for _, mdFile := range files {
+				if err := ctx.Err(); err != nil {
+					results[slot].err = camperrors.Wrap(err, "context cancelled")
+					return
+				}
+				cleanFile := filepath.Clean(mdFile)
+				fileDir := filepath.Dir(mdFile)
+
+				applicable := make([]Move, 0, len(cleaned))
+				for _, m := range cleaned {
+					if pathMatchesMoved(cleanFile, m.Dst) {
+						continue
+					}
+					applicable = append(applicable, m)
+				}
+				if len(applicable) == 0 {
 					continue
 				}
-				rewritten, didChange := rewriteExternalLinksToMoved(out, fileDir, m.Src, m.Dst)
-				if didChange {
-					out = rewritten
-					any = true
+
+				changed, err := rewriteFile(mdFile, func(b []byte) ([]byte, bool) {
+					return rewriteExternalLinksForMovesInContent(b, fileDir, applicable)
+				})
+				if err != nil {
+					results[slot].err = camperrors.Wrapf(err, "rewriting external links in %s", mdFile)
+					return
+				}
+				if changed {
+					results[slot].modified = append(results[slot].modified, mdFile)
 				}
 			}
-			return out, any
-		})
-		if err != nil {
-			return nil, camperrors.Wrapf(err, "rewriting external links in %s", mdFile)
+		}(w, allMD[start:end])
+	}
+	wg.Wait()
+
+	modified := newModifiedFileSet(campaignRoot)
+	for _, r := range results {
+		if r.err != nil {
+			return nil, r.err
 		}
-		if changed {
+		for _, mdFile := range r.modified {
 			modified.add(mdFile)
 		}
 	}
