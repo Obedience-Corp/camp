@@ -1,12 +1,16 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"strings"
+
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/nav"
 	"github.com/Obedience-Corp/camp/internal/nav/fuzzy"
 	"github.com/Obedience-Corp/camp/internal/nav/tui"
 )
@@ -25,11 +29,16 @@ Use with the cgo shell function for instant navigation:
   cgo switch a1b2             # Switch by ID prefix
 
 The --print flag outputs just the path for shell integration:
-  cd "$(camp switch --print)"`,
-	Example: `  camp switch                    # Interactive picker
-  camp switch obey-campaign      # Switch by name
-  camp switch a1b2               # Switch by ID prefix
-  camp switch --print            # Picker, output path only`,
+  cd "$(camp switch --print)"
+
+Use campaign@tab to navigate to a specific location in the target campaign:
+  camp switch obey-campaign@p    # Switch and navigate to projects/
+  camp switch obey-campaign@f    # Switch and navigate to festivals/`,
+	Example: `  camp switch                        # Interactive picker
+  camp switch obey-campaign          # Switch by name
+  camp switch a1b2                   # Switch by ID prefix
+  camp switch --print                # Picker, output path only
+  camp switch obey-campaign@p        # Switch and navigate to projects/`,
 	Aliases: []string{"sw"},
 	Args:    cobra.MaximumNArgs(1),
 	Annotations: map[string]string{
@@ -47,6 +56,18 @@ The --print flag outputs just the path for shell integration:
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveError
 		}
+
+		if at := strings.IndexByte(toComplete, '@'); at >= 0 {
+			campaignQuery := toComplete[:at]
+			tabPrefix := toComplete[at+1:]
+			tabs := completeSwitchTabs(ctx, reg, campaignQuery, tabPrefix)
+			completions := make([]string, len(tabs))
+			for i, t := range tabs {
+				completions[i] = campaignQuery + "@" + t
+			}
+			return completions, cobra.ShellCompDirectiveNoFileComp
+		}
+
 		names := reg.List()
 		if toComplete == "" {
 			return names, cobra.ShellCompDirectiveNoFileComp
@@ -60,6 +81,39 @@ func init() {
 	rootCmd.AddCommand(switchCmd)
 	switchCmd.GroupID = "global"
 	switchCmd.Flags().Bool("print", false, "Print path only (for shell integration)")
+}
+
+func completeSwitchTabs(ctx context.Context, reg *config.Registry, campaignQuery, tabPrefix string) []string {
+	c, ok := reg.GetByName(campaignQuery)
+	if !ok {
+		names := reg.List()
+		matches := fuzzy.Filter(names, campaignQuery)
+		if len(matches) == 0 {
+			return nil
+		}
+		c, ok = reg.GetByName(matches[0].Target)
+		if !ok {
+			return nil
+		}
+	}
+
+	cfg, err := config.LoadCampaignConfig(ctx, c.Path)
+	if err != nil {
+		return nil
+	}
+
+	all := nav.TopLevelNavigationNames(cfg)
+	if tabPrefix == "" {
+		return all
+	}
+
+	var filtered []string
+	for _, name := range all {
+		if strings.HasPrefix(name, tabPrefix) {
+			filtered = append(filtered, name)
+		}
+	}
+	return filtered
 }
 
 func runSwitch(cmd *cobra.Command, args []string) error {
