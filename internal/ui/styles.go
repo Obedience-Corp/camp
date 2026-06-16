@@ -172,6 +172,22 @@ func GetWorkflowTypeColor(wfType string) lipgloss.TerminalColor {
 	}
 }
 
+// GetQuestStatusStyle returns the style for a quest status.
+func GetQuestStatusStyle(status string) lipgloss.Style {
+	switch status {
+	case "open":
+		return lipgloss.NewStyle().Foreground(StatusActiveColor)
+	case "paused":
+		return lipgloss.NewStyle().Foreground(WarningColor)
+	case "completed":
+		return lipgloss.NewStyle().Foreground(SuccessColor)
+	case "archived":
+		return lipgloss.NewStyle().Foreground(DimColor)
+	default:
+		return lipgloss.NewStyle().Foreground(DimColor)
+	}
+}
+
 // GetLifecycleStageStyle returns the style for a lifecycle stage.
 func GetLifecycleStageStyle(stage string) lipgloss.Style {
 	switch stage {

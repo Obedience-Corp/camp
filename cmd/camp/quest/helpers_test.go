@@ -115,3 +115,127 @@ func captureQuestStdout(fn func() error) (string, error) {
 	}
 	return string(out), runErr
 }
+
+func TestOutputQuestTableRendersColumns(t *testing.T) {
+	root := t.TempDir()
+	qctx := &questCommandContext{
+		cfg:          &config.CampaignConfig{ID: "camp1234"},
+		campaignRoot: root,
+		service:      quest.NewService(root),
+	}
+	now := time.Now().UTC()
+	quests := []*quest.Quest{
+		{
+			ID:        "qst_abc",
+			Name:      "Alpha Quest",
+			Status:    quest.StatusOpen,
+			CreatedAt: now,
+			UpdatedAt: now,
+			Slug:      "alpha-quest",
+			Path:      filepath.Join(root, ".campaign", "quests", "alpha-quest"),
+		},
+		{
+			ID:        "qst_def",
+			Name:      "Beta Quest",
+			Status:    quest.StatusPaused,
+			CreatedAt: now,
+			UpdatedAt: now,
+			Slug:      "beta-quest",
+			Path:      filepath.Join(root, ".campaign", "quests", "beta-quest"),
+		},
+	}
+
+	out, err := captureQuestStdout(func() error {
+		return outputQuestTable(qctx, quests)
+	})
+	if err != nil {
+		t.Fatalf("outputQuestTable: %v", err)
+	}
+
+	for _, col := range []string{"NAME", "STATUS", "ID", "UPDATED", "PATH"} {
+		if !strings.Contains(out, col) {
+			t.Errorf("outputQuestTable output missing column header %q", col)
+		}
+	}
+	if !strings.Contains(out, "Alpha Quest") {
+		t.Error("outputQuestTable output missing quest name Alpha Quest")
+	}
+	if !strings.Contains(out, "qst_abc") {
+		t.Error("outputQuestTable output missing quest ID qst_abc")
+	}
+	if !strings.Contains(out, "2 quest(s)") {
+		t.Errorf("outputQuestTable output missing count line, got:\n%s", out)
+	}
+}
+
+func TestOutputQuestTable_Empty(t *testing.T) {
+	root := t.TempDir()
+	qctx := &questCommandContext{
+		cfg:          &config.CampaignConfig{ID: "camp1234"},
+		campaignRoot: root,
+		service:      quest.NewService(root),
+	}
+
+	out, err := captureQuestStdout(func() error {
+		return outputQuestTable(qctx, nil)
+	})
+	if err != nil {
+		t.Fatalf("outputQuestTable: %v", err)
+	}
+	if !strings.Contains(out, "No quests found") {
+		t.Errorf("expected empty message, got: %s", out)
+	}
+}
+
+func TestOutputQuestTable_JSONUnchanged(t *testing.T) {
+	root := t.TempDir()
+	questPath := filepath.Join(root, ".campaign", "quests", "example", "quest.yaml")
+	if err := os.MkdirAll(filepath.Dir(questPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(questPath, []byte("id: qst_example\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	qctx := &questCommandContext{
+		cfg:          &config.CampaignConfig{ID: "camp1234"},
+		campaignRoot: root,
+		service:      quest.NewService(root),
+	}
+	now := time.Now().UTC()
+	q := &quest.Quest{
+		ID:        "qst_json_check",
+		Name:      "JSON Check",
+		Status:    quest.StatusOpen,
+		CreatedAt: now,
+		UpdatedAt: now,
+		Slug:      "json-check",
+		Path:      questPath,
+	}
+
+	out, err := captureQuestStdout(func() error {
+		return outputQuestListJSON(qctx, []*quest.Quest{q})
+	})
+	if err != nil {
+		t.Fatalf("outputQuestListJSON: %v", err)
+	}
+
+	var payload questListJSONPayload
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("JSON output still valid after lipgloss refactor: %v\nraw: %s", err, out)
+	}
+	if len(payload.Items) != 1 || payload.Items[0].ID != "qst_json_check" {
+		t.Fatalf("unexpected JSON payload: %+v", payload)
+	}
+}
+
+func TestAutoCommitQuestNilResultIsNoOp(t *testing.T) {
+	root := t.TempDir()
+	qctx := &questCommandContext{
+		cfg:          &config.CampaignConfig{ID: "camp1234"},
+		campaignRoot: root,
+		service:      quest.NewService(root),
+	}
+	if err := autoCommitQuest(context.Background(), qctx, commit.QuestComplete, nil, ""); err != nil {
+		t.Fatalf("expected nil result to be a no-op, got: %v", err)
+	}
+}
