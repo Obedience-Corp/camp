@@ -3,12 +3,12 @@ package main
 import (
 	"bufio"
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/scaffold"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
@@ -113,7 +113,7 @@ func runRegister(cmd *cobra.Command, args []string) error {
 
 	// Validate type if specified
 	if typeFlag != "" && !ctype.Valid() {
-		return fmt.Errorf("invalid campaign type: %s (must be product, research, tools, or personal)", typeFlag)
+		return camperrors.Wrapf(camperrors.ErrInvalidInput, "invalid campaign type: %s (must be product, research, tools, or personal)", typeFlag)
 	}
 
 	// Load registry
@@ -173,19 +173,19 @@ type registerConflictConfirmations struct {
 func registerCampaignWithConfirmedConflicts(reg *config.Registry, id, name, absPath string, ctype config.CampaignType, confirmed registerConflictConfirmations) error {
 	if existing, exists := reg.GetByName(name); exists && existing.Path != absPath {
 		if confirmed.nameConflictID == "" {
-			return fmt.Errorf("campaign %q is now registered at %s; re-run camp register to confirm replacement", name, existing.Path)
+			return camperrors.Wrapf(camperrors.ErrConflict, "campaign %q is now registered at %s; re-run camp register to confirm replacement", name, existing.Path)
 		}
 		if existing.ID != confirmed.nameConflictID {
-			return fmt.Errorf("campaign %q registration changed from %s to %s; re-run camp register to confirm replacement", name, confirmed.nameConflictID, existing.ID)
+			return camperrors.Wrapf(camperrors.ErrConflict, "campaign %q registration changed from %s to %s; re-run camp register to confirm replacement", name, confirmed.nameConflictID, existing.ID)
 		}
 		reg.UnregisterByID(existing.ID)
 	}
 	if existing, exists := reg.FindByPath(absPath); exists && existing.ID != id {
 		if confirmed.pathConflictID == "" {
-			return fmt.Errorf("path %s is now registered to campaign %s (%s); re-run camp register to confirm replacement", absPath, existing.Name, existing.ID)
+			return camperrors.Wrapf(camperrors.ErrConflict, "path %s is now registered to campaign %s (%s); re-run camp register to confirm replacement", absPath, existing.Name, existing.ID)
 		}
 		if existing.ID != confirmed.pathConflictID {
-			return fmt.Errorf("path %s registration changed from %s to %s; re-run camp register to confirm replacement", absPath, confirmed.pathConflictID, existing.ID)
+			return camperrors.Wrapf(camperrors.ErrConflict, "path %s registration changed from %s to %s; re-run camp register to confirm replacement", absPath, confirmed.pathConflictID, existing.ID)
 		}
 		reg.UnregisterByID(existing.ID)
 	}

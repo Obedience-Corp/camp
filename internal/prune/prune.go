@@ -475,10 +475,12 @@ func deleteLocalBranches(ctx context.Context, path string, merged []string, forc
 
 	// Remove worktrees first for branches that have them.
 	wt := worktree.NewGitWorktree(path)
+	skipBranchDelete := make(map[string]struct{})
 	for branch, entry := range worktreesToRemove {
 		if !opts.DiscardDirty {
 			clean, err := detachedWorktreeClean(ctx, entry.Path)
 			if err != nil {
+				skipBranchDelete[branch] = struct{}{}
 				pr.Results = append(pr.Results, Result{
 					Branch: branch,
 					Status: StatusError,
@@ -491,6 +493,7 @@ func deleteLocalBranches(ctx context.Context, path string, merged []string, forc
 				if opts.DryRun {
 					detail = fmt.Sprintf("would keep dirty worktree: %s", entry.Path)
 				}
+				skipBranchDelete[branch] = struct{}{}
 				pr.Results = append(pr.Results, Result{
 					Branch:     branch,
 					Status:     StatusSkipped,
@@ -510,6 +513,7 @@ func deleteLocalBranches(ctx context.Context, path string, merged []string, forc
 			continue
 		}
 		if err := wt.Remove(ctx, entry.Path, true); err != nil {
+			skipBranchDelete[branch] = struct{}{}
 			pr.Results = append(pr.Results, Result{
 				Branch: branch,
 				Status: StatusError,
@@ -530,6 +534,10 @@ func deleteLocalBranches(ctx context.Context, path string, merged []string, forc
 	}
 
 	for _, branch := range branchesToDelete {
+		if _, skip := skipBranchDelete[branch]; skip {
+			continue
+		}
+
 		detail := ""
 		if _, isForced := forced[branch]; isForced {
 			detail = "gone upstream"

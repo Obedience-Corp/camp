@@ -56,6 +56,9 @@ func (s *Service) MoveToDocs(ctx context.Context, itemName, parentPath, destinat
 		return "", err
 	}
 	itemName = validName
+	if err := s.validateParentMoveCandidate(ctx, parentPath, itemName); err != nil {
+		return "", err
+	}
 
 	sourcePath := filepath.Join(parentPath, itemName)
 	if err := pathutil.ValidateBoundary(parentPath, sourcePath); err != nil {

@@ -383,6 +383,39 @@ func TestService_MoveToDungeonStatus_DoesNotWriteBucketUnderFestivals(t *testing
 	}
 }
 
+func TestDungeonMove_RejectsFestivalsTriage(t *testing.T) {
+	ctx := context.Background()
+
+	root := t.TempDir()
+	dungeonPath := filepath.Join(root, "dungeon")
+	svc := NewService(root, dungeonPath)
+
+	if _, err := svc.Init(ctx, InitOptions{}); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	festivalsDir := filepath.Join(root, "festivals")
+	if err := os.MkdirAll(filepath.Join(festivalsDir, "active"), 0755); err != nil {
+		t.Fatalf("failed to create festivals/active: %v", err)
+	}
+	docsDest := filepath.Join(root, "docs", "archive")
+	if err := os.MkdirAll(docsDest, 0755); err != nil {
+		t.Fatalf("failed to create docs destination: %v", err)
+	}
+
+	if err := svc.MoveToDungeon(ctx, "festivals", root); !errors.Is(err, ErrNotInDungeon) {
+		t.Fatalf("MoveToDungeon() error = %v, want ErrNotInDungeon", err)
+	}
+	if _, err := svc.MoveToDungeonStatus(ctx, "festivals", root, "archived"); !errors.Is(err, ErrNotInDungeon) {
+		t.Fatalf("MoveToDungeonStatus() error = %v, want ErrNotInDungeon", err)
+	}
+	if _, err := svc.MoveToDocs(ctx, "festivals", root, "archive"); !errors.Is(err, ErrNotInDungeon) {
+		t.Fatalf("MoveToDocs() error = %v, want ErrNotInDungeon", err)
+	}
+	if _, err := os.Stat(festivalsDir); err != nil {
+		t.Fatalf("festivals should remain after rejected moves: %v", err)
+	}
+}
+
 func TestService_MoveToDungeonStatus_InvalidStatus(t *testing.T) {
 	ctx := context.Background()
 

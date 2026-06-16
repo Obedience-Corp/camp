@@ -3,13 +3,13 @@ package worktrees
 import (
 	"context"
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	git "github.com/Obedience-Corp/camp/internal/git"
 	navtui "github.com/Obedience-Corp/camp/internal/nav/tui"
 	"github.com/Obedience-Corp/camp/internal/paths"
@@ -82,7 +82,7 @@ func runWorktreesClean(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
 	if !cleanAll && cleanProject == "" {
-		return fmt.Errorf("specify --all or --project <name>")
+		return camperrors.New("specify --all or --project <name>")
 	}
 
 	campRoot, err := campaign.DetectCached(ctx)
@@ -160,7 +160,7 @@ func runWorktreesClean(cmd *cobra.Command, args []string) error {
 				return nil
 			}
 		} else {
-			return fmt.Errorf("refusing to delete worktrees without confirmation in non-interactive mode; pass --yes or --force")
+			return camperrors.New("refusing to delete worktrees without confirmation in non-interactive mode; pass --yes or --force")
 		}
 	}
 
@@ -195,7 +195,7 @@ func runWorktreesClean(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 	if failed > 0 {
 		fmt.Printf("Removed %d, failed %d\n", removed, failed)
-		return fmt.Errorf("some worktrees could not be removed")
+		return camperrors.New("some worktrees could not be removed")
 	}
 
 	fmt.Println(ui.Success(fmt.Sprintf("Removed %d stale worktrees", removed)))
@@ -330,7 +330,8 @@ func cleanWorktree(ctx context.Context, cfg *config.CampaignConfig, resolver *pa
 	if force {
 		hasChanges, err := git.HasChanges(ctx, result.path)
 		if err == nil && hasChanges && !discardDirty {
-			return fmt.Errorf("worktree %s/%s has uncommitted changes; commit or stash first, or pass --discard-dirty to override",
+			return camperrors.Wrapf(camperrors.ErrInvalidInput,
+				"worktree %s/%s has uncommitted changes; commit or stash first, or pass --discard-dirty to override",
 				result.project, result.worktree)
 		}
 	}

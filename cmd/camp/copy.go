@@ -2,13 +2,13 @@ package main
 
 import (
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/transfer"
 	"github.com/spf13/cobra"
 )
@@ -87,7 +87,7 @@ func runCopy(cmd *cobra.Command, args []string) error {
 	// to the same inode as src, refuse before opening with O_TRUNC.
 	if destStatForSame, err := os.Stat(dest); err == nil {
 		if os.SameFile(srcInfo, destStatForSame) {
-			return fmt.Errorf("source and destination are the same file: %s", dest)
+			return camperrors.Wrapf(camperrors.ErrInvalidInput, "source and destination are the same file: %s", dest)
 		}
 	}
 
@@ -99,23 +99,21 @@ func runCopy(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return camperrors.Wrap(err, "resolve source path")
 		}
-		resolvedDest, resolvedDestErr := filepath.EvalSymlinks(dest)
-		if resolvedDestErr != nil {
-			// dest may not exist yet; resolve the nearest existing ancestor.
-			// If it doesn't exist, self-recursion is impossible.
-			resolvedDest = dest
+		resolvedDest, err := resolvePathThroughExistingAncestor(dest)
+		if err != nil {
+			return camperrors.Wrap(err, "resolve destination path")
 		}
 		// Guard: dest must not be inside src. Use separator-guarded prefix check
 		// so that /foo/bar does not falsely match /foo/barsuffix.
 		srcWithSep := resolvedSrc + string(filepath.Separator)
 		if resolvedDest == resolvedSrc || strings.HasPrefix(resolvedDest, srcWithSep) {
-			return fmt.Errorf("cannot copy a directory into itself: %s is inside %s", dest, src)
+			return camperrors.Wrapf(camperrors.ErrInvalidInput, "cannot copy a directory into itself: %s is inside %s", dest, src)
 		}
 	}
 
 	if !force {
 		if _, err := os.Stat(dest); err == nil {
-			return fmt.Errorf("destination %q already exists", dest)
+			return camperrors.Wrapf(camperrors.ErrAlreadyExists, "destination %q already exists", dest)
 		}
 	}
 
@@ -136,4 +134,28 @@ func runCopy(cmd *cobra.Command, args []string) error {
 	destRel, _ := filepath.Rel(root, dest)
 	fmt.Printf("Copied %s → %s\n", srcRel, destRel)
 	return nil
+}
+
+func resolvePathThroughExistingAncestor(path string) (string, error) {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return resolved, nil
+	}
+
+	clean := filepath.Clean(path)
+	current := clean
+	for {
+		if resolved, err := filepath.EvalSymlinks(current); err == nil {
+			rel, relErr := filepath.Rel(current, clean)
+			if relErr != nil {
+				return "", relErr
+			}
+			return filepath.Join(resolved, rel), nil
+		}
+
+		parent := filepath.Dir(current)
+		if parent == current {
+			return clean, nil
+		}
+		current = parent
+	}
 }

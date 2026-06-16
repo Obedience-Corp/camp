@@ -122,6 +122,47 @@ func (s *Service) ListParentItems(ctx context.Context, parentPath string) ([]Dun
 		return nil, camperrors.Wrap(err, "reading parent directory")
 	}
 
+	excluder := s.parentItemExcluder(ctx, parentPath)
+
+	var items []DungeonItem
+	for _, entry := range entries {
+		name := entry.Name()
+
+		if excluder.excludes(parentPath, name, entry.IsDir()) {
+			continue
+		}
+
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+
+		itemType := ItemTypeFile
+		if entry.IsDir() {
+			itemType = ItemTypeDirectory
+		}
+
+		items = append(items, DungeonItem{
+			Name:    name,
+			Path:    filepath.Join(parentPath, name),
+			Type:    itemType,
+			ModTime: info.ModTime(),
+		})
+	}
+
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].ModTime.Before(items[j].ModTime)
+	})
+
+	return items, nil
+}
+
+type parentItemExcluder struct {
+	names       map[string]bool
+	crawlIgnore *CrawlIgnoreMatcher
+}
+
+func (s *Service) parentItemExcluder(ctx context.Context, parentPath string) parentItemExcluder {
 	excluded := map[string]bool{
 		"dungeon":      true,
 		".campaign":    true,
@@ -171,56 +212,34 @@ func (s *Service) ListParentItems(ctx context.Context, parentPath string) ([]Dun
 		fmt.Fprintf(os.Stderr, "Warning: failed to parse %s: %v\n", crawlIgnorePath, err)
 	}
 
-	var items []DungeonItem
-	for _, entry := range entries {
-		name := entry.Name()
+	return parentItemExcluder{names: excluded, crawlIgnore: crawlIgnore}
+}
 
-		if excluded[name] {
-			continue
-		}
-
-		// Skip hidden files not explicitly excluded
-		if strings.HasPrefix(name, ".") {
-			continue
-		}
-
-		// Skip directories that contain OBEY.md (managed campaign directories).
-		// These are structural directories that should not be triage candidates.
-		if entry.IsDir() {
-			obeyPath := filepath.Join(parentPath, name, "OBEY.md")
-			if _, err := os.Stat(obeyPath); err == nil {
-				continue
-			}
-		}
-
-		// Layer 5: gitignore-style pattern matching from .crawlignore.
-		if crawlIgnore != nil {
-			if matched, _ := crawlIgnore.Excludes(name, entry.IsDir()); matched {
-				continue
-			}
-		}
-
-		info, err := entry.Info()
-		if err != nil {
-			continue
-		}
-
-		itemType := ItemTypeFile
-		if entry.IsDir() {
-			itemType = ItemTypeDirectory
-		}
-
-		items = append(items, DungeonItem{
-			Name:    name,
-			Path:    filepath.Join(parentPath, name),
-			Type:    itemType,
-			ModTime: info.ModTime(),
-		})
+func (e parentItemExcluder) excludes(parentPath, name string, isDir bool) bool {
+	if e.names[name] {
+		return true
 	}
 
-	sort.Slice(items, func(i, j int) bool {
-		return items[i].ModTime.Before(items[j].ModTime)
-	})
+	// Skip hidden files not explicitly excluded
+	if strings.HasPrefix(name, ".") {
+		return true
+	}
 
-	return items, nil
+	// Skip directories that contain OBEY.md (managed campaign directories).
+	// These are structural directories that should not be triage candidates.
+	if isDir {
+		obeyPath := filepath.Join(parentPath, name, "OBEY.md")
+		if _, err := os.Stat(obeyPath); err == nil {
+			return true
+		}
+	}
+
+	// Layer 5: gitignore-style pattern matching from .crawlignore.
+	if e.crawlIgnore != nil {
+		if matched, _ := e.crawlIgnore.Excludes(name, isDir); matched {
+			return true
+		}
+	}
+
+	return false
 }

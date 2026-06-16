@@ -22,6 +22,9 @@ func (s *Service) MoveToDungeon(ctx context.Context, itemName, parentPath string
 		return err
 	}
 	itemName = validName
+	if err := s.validateParentMoveCandidate(ctx, parentPath, itemName); err != nil {
+		return err
+	}
 
 	sourcePath := filepath.Join(parentPath, itemName)
 	targetPath := filepath.Join(s.dungeonPath, itemName)
@@ -116,6 +119,9 @@ func (s *Service) MoveToDungeonStatus(ctx context.Context, itemName, parentPath,
 		return "", err
 	}
 	itemName = validName
+	if err := s.validateParentMoveCandidate(ctx, parentPath, itemName); err != nil {
+		return "", err
+	}
 
 	// Validate parentPath is within campaign root
 	sourcePath := filepath.Join(parentPath, itemName)
@@ -140,6 +146,32 @@ func (s *Service) MoveToDungeonStatus(ctx context.Context, itemName, parentPath,
 	}
 
 	return targetPath, nil
+}
+
+func (s *Service) validateParentMoveCandidate(ctx context.Context, parentPath, itemName string) error {
+	if err := ctx.Err(); err != nil {
+		return camperrors.Wrap(err, "context cancelled")
+	}
+
+	sourcePath := filepath.Join(parentPath, itemName)
+	if err := pathutil.ValidateBoundary(s.campaignRoot, sourcePath); err != nil {
+		return camperrors.Wrap(ErrNotInDungeon, "source outside campaign root")
+	}
+
+	info, err := os.Stat(sourcePath)
+	if err != nil {
+		return nil
+	}
+
+	if s.parentItemExcluder(ctx, parentPath).excludes(parentPath, itemName, info.IsDir()) {
+		return camperrors.Wrapf(
+			ErrNotInDungeon,
+			"refusing to move structural parent item %q; run 'camp dungeon list --triage' to confirm eligible items",
+			itemName,
+		)
+	}
+
+	return nil
 }
 
 // Archive moves an item from the dungeon root to archived/.
