@@ -170,16 +170,9 @@ func printIntentCrawlSummary(result *intentcrawl.Result, aborted bool) {
 }
 
 func commitIntentCrawl(ctx context.Context, campaignRoot, campaignID string, result *intentcrawl.Result) error {
-	// IntentService returns absolute paths; commit.Intent expects
-	// repo-relative scope. NormalizeFiles handles the conversion
-	// (and dedups) for both the file list and the pre-staged set.
 	files := commit.NormalizeFiles(campaignRoot, result.CommitPaths.Files...)
 	preStaged := commit.NormalizeFiles(campaignRoot, result.CommitPaths.PreStaged...)
 
-	// Stage source deletions for tracked files so the commit scope
-	// includes the removal of the original intent file alongside
-	// the new destination. Mirrors stageTrackedCrawlSourceDeletions
-	// in cmd/camp/dungeon/crawl.go.
 	if len(preStaged) > 0 {
 		tracked, err := git.FilterTracked(ctx, campaignRoot, preStaged)
 		if err != nil {
@@ -195,6 +188,11 @@ func commitIntentCrawl(ctx context.Context, campaignRoot, campaignID string, res
 		}
 	}
 
+	crawlID, err := commit.NewCrawlID()
+	if err != nil {
+		crawlID = ""
+	}
+
 	res := commit.Intent(ctx, commit.IntentOptions{
 		Options: commit.Options{
 			CampaignRoot:  campaignRoot,
@@ -204,7 +202,7 @@ func commitIntentCrawl(ctx context.Context, campaignRoot, campaignID string, res
 			SelectiveOnly: true,
 		},
 		Action:      commit.IntentCrawl,
-		IntentTitle: "intent crawl completed",
+		IntentTitle: commit.IntentCrawlSubject(crawlID),
 		Description: buildIntentCrawlCommitDescription(result),
 	})
 
