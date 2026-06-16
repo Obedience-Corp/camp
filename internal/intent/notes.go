@@ -11,6 +11,7 @@ import (
 	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"github.com/Obedience-Corp/camp/internal/intent/audit"
 )
 
@@ -179,7 +180,7 @@ func (s *IntentService) ArchiveNote(ctx context.Context, id string) (*Intent, er
 	if err != nil {
 		return nil, camperrors.Wrap(err, "serializing note")
 	}
-	if err := os.WriteFile(newPath, data, 0644); err != nil {
+	if err := fsutil.WriteFileAtomically(newPath, data, 0644); err != nil {
 		return nil, camperrors.Wrap(err, "writing note file")
 	}
 
@@ -242,7 +243,7 @@ func (s *IntentService) MoveIntentToNote(ctx context.Context, id string) (*Inten
 	if err != nil {
 		return nil, camperrors.Wrap(err, "serializing note")
 	}
-	if err := os.WriteFile(newPath, data, 0644); err != nil {
+	if err := fsutil.WriteFileAtomically(newPath, data, 0644); err != nil {
 		return nil, camperrors.Wrap(err, "writing note file")
 	}
 	if err := os.Remove(oldPath); err != nil {
@@ -299,7 +300,7 @@ func (s *IntentService) MoveNoteToStatus(ctx context.Context, id string, newStat
 	if err != nil {
 		return nil, camperrors.Wrap(err, "serializing converted note")
 	}
-	if err := os.WriteFile(newPath, data, 0644); err != nil {
+	if err := fsutil.WriteFileAtomically(newPath, data, 0644); err != nil {
 		return nil, camperrors.Wrap(err, "writing intent file")
 	}
 
