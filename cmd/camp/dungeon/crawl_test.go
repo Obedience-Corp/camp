@@ -1,11 +1,72 @@
 package dungeon
 
 import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	intdungeon "github.com/Obedience-Corp/camp/internal/dungeon"
 )
+
+func TestFinalizeCrawl_FlushesPendingRewritesOnSessionError(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	dungeonPath := filepath.Join(root, "dungeon")
+	svc := intdungeon.NewService(root, dungeonPath)
+	if _, err := svc.Init(ctx, intdungeon.InitOptions{}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(root, "item.md"), []byte("# Item\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "notes"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	referrer := filepath.Join(root, "notes", "ref.md")
+	if err := os.WriteFile(referrer, []byte("[i](../item.md)\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc.BeginLinkBatch()
+	dst, err := svc.MoveToDungeonStatus(ctx, "item.md", root, "completed")
+	if err != nil {
+		t.Fatalf("MoveToDungeonStatus: %v", err)
+	}
+
+	if got := readCrawlTestFile(t, referrer); got != "[i](../item.md)\n" {
+		t.Fatalf("referrer rewritten before finalize: %q", got)
+	}
+
+	relDst, err := filepath.Rel(root, dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	triage := &intdungeon.CrawlSummary{MovedItems: map[string][]string{"completed": {filepath.ToSlash(relDst)}}}
+
+	sessionErr := errors.New("forced inner crawl failure")
+	gotErr := finalizeCrawl(ctx, nil, svc, triage, nil, false, sessionErr)
+
+	if !errors.Is(gotErr, sessionErr) {
+		t.Fatalf("finalizeCrawl error = %v, want it to surface the session error", gotErr)
+	}
+	want := "[i](../" + filepath.ToSlash(relDst) + ")\n"
+	if got := readCrawlTestFile(t, referrer); got != want {
+		t.Fatalf("finalizeCrawl must flush pending rewrites even on session error: referrer = %q, want %q", got, want)
+	}
+}
+
+func readCrawlTestFile(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%s): %v", path, err)
+	}
+	return string(data)
+}
 
 func TestBuildCrawlCommitMessage(t *testing.T) {
 	tests := []struct {

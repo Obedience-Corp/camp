@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
 
 	intdungeon "github.com/Obedience-Corp/camp/internal/dungeon"
@@ -65,7 +66,9 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 	svc := intdungeon.NewService(cmdCtx.CampaignRoot, cmdCtx.Dungeon.DungeonPath)
 	// Defer external markdown-link rewriting so the campaign tree is scanned
 	// once after all moves, not once per move (which is O(moves x workspace)
-	// and dominates wall-clock time on large workspaces).
+	// and dominates wall-clock time on large workspaces). finalizeCrawl flushes
+	// on every exit path, so a mid-crawl error never leaves moved items on disk
+	// with stale links.
 	svc.BeginLinkBatch()
 	relParent := RelFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.ParentPath)
 	relDungeon := RelFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.DungeonPath)
@@ -91,9 +94,9 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 
 	// Run triage crawl if needed
 	if runTriage {
-		parentItems, err := svc.ListParentItems(ctx, cmdCtx.Dungeon.ParentPath)
-		if err != nil {
-			return camperrors.Wrap(err, "listing parent items")
+		parentItems, listErr := svc.ListParentItems(ctx, cmdCtx.Dungeon.ParentPath)
+		if listErr != nil {
+			return finalizeCrawl(ctx, cmdCtx, svc, triageSummary, innerSummary, aborted, camperrors.Wrap(listErr, "listing parent items"))
 		}
 		if len(parentItems) > 0 {
 			fmt.Printf(
@@ -108,7 +111,7 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 				if errors.Is(err, intdungeon.ErrCrawlAborted) {
 					aborted = true
 				} else {
-					return camperrors.Wrap(err, "triage crawl failed")
+					return finalizeCrawl(ctx, cmdCtx, svc, triageSummary, innerSummary, aborted, camperrors.Wrap(err, "triage crawl failed"))
 				}
 			}
 		} else {
@@ -116,21 +119,11 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// flushLinkRewrites applies the deferred external-link rewrites for every
-	// item moved so far in a single campaign-tree scan.
-	flushLinkRewrites := func() error {
-		if (triageSummary != nil && triageSummary.HasMoves()) ||
-			(innerSummary != nil && innerSummary.HasMoves()) {
-			fmt.Printf("%s Updating markdown cross-references...\n", ui.InfoIcon())
-		}
-		return svc.FlushLinkRewrites(ctx)
-	}
-
 	// Run inner crawl if the triage step did not abort.
 	if !aborted && runInner {
-		dungeonItems, err := svc.ListItems(ctx)
-		if err != nil {
-			return camperrors.Wrap(err, "listing dungeon items")
+		dungeonItems, listErr := svc.ListItems(ctx)
+		if listErr != nil {
+			return finalizeCrawl(ctx, cmdCtx, svc, triageSummary, innerSummary, aborted, camperrors.Wrap(listErr, "listing dungeon items"))
 		}
 		if len(dungeonItems) > 0 {
 			if runTriage {
@@ -147,7 +140,7 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 				if errors.Is(err, intdungeon.ErrCrawlAborted) {
 					aborted = true
 				} else {
-					return camperrors.Wrap(err, "inner crawl failed")
+					return finalizeCrawl(ctx, cmdCtx, svc, triageSummary, innerSummary, aborted, camperrors.Wrap(err, "inner crawl failed"))
 				}
 			}
 		} else {
@@ -155,27 +148,46 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	return finalizeCrawl(ctx, cmdCtx, svc, triageSummary, innerSummary, aborted, nil)
+}
+
+// finalizeCrawl flushes the deferred external-link rewrites for every moved item
+// in a single campaign-tree scan, then auto-commits unless the crawl aborted or
+// errored. It always flushes first so a mid-crawl error never leaves moved items
+// on disk with stale links; a flush failure is surfaced (folded into the return
+// when there is no prior error, or reported alongside it).
+func finalizeCrawl(
+	ctx context.Context,
+	cmdCtx *dungeonCommandContext,
+	svc *intdungeon.Service,
+	triage, inner *intdungeon.CrawlSummary,
+	aborted bool,
+	sessionErr error,
+) error {
+	if (triage != nil && triage.HasMoves()) || (inner != nil && inner.HasMoves()) {
+		fmt.Printf("%s Updating markdown cross-references...\n", ui.InfoIcon())
+	}
+	flushErr := svc.FlushLinkRewrites(ctx)
+
+	if sessionErr != nil {
+		if flushErr != nil {
+			fmt.Fprintf(os.Stderr, "%s additionally, updating markdown cross-references failed: %v\n", ui.WarningIcon(), flushErr)
+		}
+		return sessionErr
+	}
+	if flushErr != nil {
+		return camperrors.Wrap(flushErr, "updating markdown cross-references")
+	}
+
 	if aborted {
-		// Apply rewrites for items moved before the abort so the on-disk state
-		// stays consistent, but do not auto-commit a cancelled crawl.
-		_ = flushLinkRewrites()
-		displayCrawlSummary(fmt.Sprintf("%s Crawl cancelled.\n", ui.InfoIcon()), triageSummary, innerSummary)
+		// Moves before the abort were applied and rewritten on disk, but a
+		// cancelled crawl is not auto-committed.
+		displayCrawlSummary(fmt.Sprintf("%s Crawl cancelled.\n", ui.InfoIcon()), triage, inner)
 		return nil
 	}
 
-	if err := flushLinkRewrites(); err != nil {
-		return camperrors.Wrap(err, "updating markdown cross-references")
-	}
-
-	// Display summary
-	displayCrawlSummary(fmt.Sprintf("%s Crawl complete!\n", ui.SuccessIcon()), triageSummary, innerSummary)
-
-	// Autocommit if anything was moved
-	if err := commitCrawlChanges(ctx, cmdCtx, svc, triageSummary, innerSummary); err != nil {
-		return err
-	}
-
-	return nil
+	displayCrawlSummary(fmt.Sprintf("%s Crawl complete!\n", ui.SuccessIcon()), triage, inner)
+	return commitCrawlChanges(ctx, cmdCtx, svc, triage, inner)
 }
 
 // commitCrawlChanges creates a git commit if any items were moved during crawl.
