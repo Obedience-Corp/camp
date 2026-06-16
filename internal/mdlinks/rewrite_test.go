@@ -275,6 +275,148 @@ func TestRewriteForMove_DirectoryMoved_IntraDirectoryLinksUnchanged(t *testing.T
 	}
 }
 
+func TestRewriteForMove_LinkInFencedCodeBlock_Unchanged(t *testing.T) {
+	root := t.TempDir()
+
+	other := filepath.Join(root, "docs", "other.md")
+	src := filepath.Join(root, "notes", "note.md")
+	dst := filepath.Join(root, "archive", "2026-01-01", "note.md")
+
+	content := "```markdown\n[link](../docs/other.md)\n```\n\nOutside: [real](../docs/other.md)"
+	writeFile(t, other, "hello")
+	writeFile(t, src, content)
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(src, dst); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RewriteForMove(context.Background(), root, src, dst); err != nil {
+		t.Fatalf("RewriteForMove: %v", err)
+	}
+
+	got := readFile(t, dst)
+	want := "```markdown\n[link](../docs/other.md)\n```\n\nOutside: [real](../../docs/other.md)"
+	if got != want {
+		t.Errorf("fenced code block: got %q, want %q", got, want)
+	}
+}
+
+func TestRewriteForMove_LinkInInlineCode_Unchanged(t *testing.T) {
+	root := t.TempDir()
+
+	other := filepath.Join(root, "docs", "other.md")
+	src := filepath.Join(root, "notes", "note.md")
+	dst := filepath.Join(root, "archive", "2026-01-01", "note.md")
+
+	content := "Use `[link](../docs/other.md)` as example. Real: [link](../docs/other.md)"
+	writeFile(t, other, "hello")
+	writeFile(t, src, content)
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(src, dst); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RewriteForMove(context.Background(), root, src, dst); err != nil {
+		t.Fatalf("RewriteForMove: %v", err)
+	}
+
+	got := readFile(t, dst)
+	want := "Use `[link](../docs/other.md)` as example. Real: [link](../../docs/other.md)"
+	if got != want {
+		t.Errorf("inline code: got %q, want %q", got, want)
+	}
+}
+
+func TestRewriteForMove_AngleBracketDestination(t *testing.T) {
+	root := t.TempDir()
+
+	other := filepath.Join(root, "docs", "other.md")
+	src := filepath.Join(root, "notes", "note.md")
+	dst := filepath.Join(root, "archive", "2026-01-01", "note.md")
+
+	writeFile(t, other, "hello")
+	writeFile(t, src, "[link](<../docs/other.md>)")
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(src, dst); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RewriteForMove(context.Background(), root, src, dst); err != nil {
+		t.Fatalf("RewriteForMove: %v", err)
+	}
+
+	got := readFile(t, dst)
+	want := "[link](<../../docs/other.md>)"
+	if got != want {
+		t.Errorf("angle-bracket destination: got %q, want %q", got, want)
+	}
+}
+
+func TestRewriteForMove_ReferenceStyleDefinition(t *testing.T) {
+	root := t.TempDir()
+
+	other := filepath.Join(root, "docs", "other.md")
+	src := filepath.Join(root, "notes", "note.md")
+	dst := filepath.Join(root, "archive", "2026-01-01", "note.md")
+
+	writeFile(t, other, "hello")
+	writeFile(t, src, "[link][ref]\n\n[ref]: ../docs/other.md \"title\"")
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(src, dst); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RewriteForMove(context.Background(), root, src, dst); err != nil {
+		t.Fatalf("RewriteForMove: %v", err)
+	}
+
+	got := readFile(t, dst)
+	want := "[link][ref]\n\n[ref]: ../../docs/other.md \"title\""
+	if got != want {
+		t.Errorf("reference-style definition: got %q, want %q", got, want)
+	}
+}
+
+func TestRewriteForMove_ReferenceStyleDefinitionInCodeBlock_Unchanged(t *testing.T) {
+	root := t.TempDir()
+
+	other := filepath.Join(root, "docs", "other.md")
+	src := filepath.Join(root, "notes", "note.md")
+	dst := filepath.Join(root, "archive", "2026-01-01", "note.md")
+
+	writeFile(t, other, "hello")
+	writeFile(t, src, "```\n[ref]: ../docs/other.md\n```\n\n[ref]: ../docs/other.md")
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(src, dst); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RewriteForMove(context.Background(), root, src, dst); err != nil {
+		t.Fatalf("RewriteForMove: %v", err)
+	}
+
+	got := readFile(t, dst)
+	want := "```\n[ref]: ../docs/other.md\n```\n\n[ref]: ../../docs/other.md"
+	if got != want {
+		t.Errorf("ref def in code block: got %q, want %q", got, want)
+	}
+}
+
 func TestRewriteForMove_ContextCancelled(t *testing.T) {
 	root := t.TempDir()
 
