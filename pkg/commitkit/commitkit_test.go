@@ -8,11 +8,19 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Obedience-Corp/camp/pkg/commitkit"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func ageLockFileForTest(t *testing.T, lockPath string) {
+	t.Helper()
+
+	old := time.Now().Add(-time.Hour)
+	require.NoError(t, os.Chtimes(lockPath, old, old))
+}
 
 // ---------------------------------------------------------------------------
 // FormatCampaignTag
@@ -476,6 +484,7 @@ func TestStageAll(t *testing.T) {
 		// Create a stale lock (no process holding it).
 		lockPath := filepath.Join(dir, ".git", "index.lock")
 		require.NoError(t, os.WriteFile(lockPath, []byte{}, 0644))
+		ageLockFileForTest(t, lockPath)
 
 		err := commitkit.StageAll(context.Background(), dir)
 		require.NoError(t, err)
@@ -615,6 +624,7 @@ func TestCommit(t *testing.T) {
 		// Create a stale lock (no process holding it).
 		lockPath := filepath.Join(dir, ".git", "index.lock")
 		require.NoError(t, os.WriteFile(lockPath, []byte{}, 0644))
+		ageLockFileForTest(t, lockPath)
 
 		err := commitkit.Commit(context.Background(), dir, commitkit.CommitOptions{
 			Message: "commit with lock",

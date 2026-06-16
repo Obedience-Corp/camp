@@ -215,10 +215,10 @@ func TestProject_NotInCampaign(t *testing.T) {
 	err = tc.CreateGitRepo("/test/orphan")
 	require.NoError(t, err)
 
-	// Try to add project when not in a campaign and no target campaign is registered.
+	// Try to add project when not in a campaign and no target campaign is selected.
 	output, err := tc.RunCampInDir("/test", "project", "add", "--local", "/test/orphan")
 	require.Error(t, err, "project add should fail outside campaign")
-	assert.Contains(t, strings.ToLower(output), "no campaigns registered", "error should explain there is no target campaign to select")
+	assert.Contains(t, strings.ToLower(output), "campaign name required in non-interactive mode", "error should explain --campaign is required")
 }
 
 func TestProject_NotAGitRepo(t *testing.T) {
