@@ -172,12 +172,18 @@ func commitCrawlChanges(ctx context.Context, cmdCtx *dungeonCommandContext, tria
 		return nil
 	}
 
+	crawlID, err := commit.NewCrawlID()
+	if err != nil {
+		crawlID = ""
+	}
+
 	result := commit.Crawl(ctx, commit.CrawlOptions{
 		Options: commit.Options{
 			CampaignRoot: cmdCtx.CampaignRoot,
 			CampaignID:   cmdCtx.Config.ID,
 			PreStaged:    plan.PreStaged,
 		},
+		CrawlID:     crawlID,
 		Description: plan.Description,
 		Files:       plan.Files,
 	})
