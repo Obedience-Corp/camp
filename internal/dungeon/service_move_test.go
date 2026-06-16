@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -249,6 +250,67 @@ func TestService_MoveToDungeonStatus(t *testing.T) {
 	}
 }
 
+func TestService_MoveToDungeon_Collision(t *testing.T) {
+	ctx := context.Background()
+
+	tmpDir := t.TempDir()
+	dungeonPath := filepath.Join(tmpDir, "dungeon")
+	svc := NewService(tmpDir, dungeonPath)
+	if _, err := svc.Init(ctx, InitOptions{}); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+
+	source := filepath.Join(tmpDir, "collide.md")
+	existing := filepath.Join(dungeonPath, "collide.md")
+	if err := os.WriteFile(source, []byte("source"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(existing, []byte("existing"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := svc.MoveToDungeon(ctx, "collide.md", tmpDir)
+	if !errors.Is(err, ErrAlreadyExists) {
+		t.Fatalf("MoveToDungeon() error = %v, want ErrAlreadyExists", err)
+	}
+	assertDungeonFileContent(t, source, "source")
+	assertDungeonFileContent(t, existing, "existing")
+}
+
+func TestService_MoveToDungeonStatErrorNotFoundConflation(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("permission-mode stat failure is platform/user dependent")
+	}
+
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	dungeonPath := filepath.Join(tmpDir, "dungeon")
+	svc := NewService(tmpDir, dungeonPath)
+	if _, err := svc.Init(ctx, InitOptions{}); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+
+	parentPath := filepath.Join(tmpDir, "locked")
+	if err := os.MkdirAll(parentPath, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(parentPath, "locked.md"), []byte("locked"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(parentPath, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(parentPath, 0755) })
+
+	err := svc.MoveToDungeon(ctx, "locked.md", parentPath)
+	if err == nil {
+		t.Fatal("MoveToDungeon() expected stat error")
+	}
+	if errors.Is(err, ErrNotFound) {
+		t.Fatalf("MoveToDungeon() error = %v, should preserve non-not-exist stat error", err)
+	}
+}
+
 func TestService_MoveToDungeonStatus_Collision(t *testing.T) {
 	ctx := context.Background()
 
@@ -288,6 +350,69 @@ func TestService_MoveToDungeonStatus_Collision(t *testing.T) {
 	}
 	if !errors.Is(err, ErrAlreadyExists) {
 		t.Errorf("expected ErrAlreadyExists, got: %v", err)
+	}
+}
+
+func TestService_MoveToDungeonStatus_DoesNotWriteBucketUnderFestivals(t *testing.T) {
+	ctx := context.Background()
+
+	root := t.TempDir()
+	dungeonPath := filepath.Join(root, "dungeon")
+	svc := NewService(root, dungeonPath)
+
+	if _, err := svc.Init(ctx, InitOptions{}); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "festivals", "dungeon"), 0755); err != nil {
+		t.Fatalf("failed to create festivals dungeon: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "stale-doc.md"), []byte("stale"), 0644); err != nil {
+		t.Fatalf("failed to create source file: %v", err)
+	}
+
+	targetPath, err := svc.MoveToDungeonStatus(ctx, "stale-doc.md", root, "archived")
+	if err != nil {
+		t.Fatalf("MoveToDungeonStatus failed: %v", err)
+	}
+
+	if filepath.Dir(filepath.Dir(targetPath)) != filepath.Join(dungeonPath, "archived") {
+		t.Fatalf("targetPath = %q, want dated bucket under campaign-root dungeon", targetPath)
+	}
+	if _, err := os.Stat(filepath.Join(root, "festivals", "dungeon", "archived")); !os.IsNotExist(err) {
+		t.Fatalf("festivals/dungeon/archived should not be created, stat err = %v", err)
+	}
+}
+
+func TestDungeonMove_RejectsFestivalsTriage(t *testing.T) {
+	ctx := context.Background()
+
+	root := t.TempDir()
+	dungeonPath := filepath.Join(root, "dungeon")
+	svc := NewService(root, dungeonPath)
+
+	if _, err := svc.Init(ctx, InitOptions{}); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	festivalsDir := filepath.Join(root, "festivals")
+	if err := os.MkdirAll(filepath.Join(festivalsDir, "active"), 0755); err != nil {
+		t.Fatalf("failed to create festivals/active: %v", err)
+	}
+	docsDest := filepath.Join(root, "docs", "archive")
+	if err := os.MkdirAll(docsDest, 0755); err != nil {
+		t.Fatalf("failed to create docs destination: %v", err)
+	}
+
+	if err := svc.MoveToDungeon(ctx, "festivals", root); !errors.Is(err, ErrNotInDungeon) {
+		t.Fatalf("MoveToDungeon() error = %v, want ErrNotInDungeon", err)
+	}
+	if _, err := svc.MoveToDungeonStatus(ctx, "festivals", root, "archived"); !errors.Is(err, ErrNotInDungeon) {
+		t.Fatalf("MoveToDungeonStatus() error = %v, want ErrNotInDungeon", err)
+	}
+	if _, err := svc.MoveToDocs(ctx, "festivals", root, "archive"); !errors.Is(err, ErrNotInDungeon) {
+		t.Fatalf("MoveToDocs() error = %v, want ErrNotInDungeon", err)
+	}
+	if _, err := os.Stat(festivalsDir); err != nil {
+		t.Fatalf("festivals should remain after rejected moves: %v", err)
 	}
 }
 
@@ -604,6 +729,17 @@ func TestService_MoveToDungeonStatus_InvalidItemPath(t *testing.T) {
 
 	if _, err := os.Stat(filepath.Join(tmpDir, "safe.md")); err != nil {
 		t.Fatalf("source file should remain in parent after failed move: %v", err)
+	}
+}
+
+func assertDungeonFileContent(t *testing.T, path, want string) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%s) error = %v", path, err)
+	}
+	if string(data) != want {
+		t.Fatalf("%s content = %q, want %q", path, data, want)
 	}
 }
 

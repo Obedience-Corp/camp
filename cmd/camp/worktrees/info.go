@@ -12,11 +12,14 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/Obedience-Corp/camp/internal/worktree"
 	"github.com/spf13/cobra"
 )
+
+const WorktreesInfoJSONVersion = "worktrees-info/v1alpha1"
 
 var (
 	infoPath string
@@ -39,7 +42,7 @@ Examples:
 
   # JSON output
   camp worktrees info --json`,
-	RunE: runWorktreesInfo,
+	RunE: jsoncontract.RunE(WorktreesInfoJSONVersion, func() bool { return infoJSON }, runWorktreesInfo),
 }
 
 func init() {
@@ -49,6 +52,7 @@ func init() {
 		"Worktree path (defaults to current directory)")
 	worktreesInfoCmd.Flags().BoolVar(&infoJSON, "json", false,
 		"Output as JSON")
+	worktreesInfoCmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(WorktreesInfoJSONVersion, func() bool { return infoJSON }))
 }
 
 // WorktreeInfoResult contains detailed worktree information.
@@ -71,9 +75,6 @@ type WorktreeCommitInfo struct {
 
 func runWorktreesInfo(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
 
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {

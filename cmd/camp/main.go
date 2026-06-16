@@ -1,15 +1,21 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 func main() {
-	if err := Execute(); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := Execute(ctx); err != nil {
 		// If a child process exited with a specific code (e.g. camp run),
 		// propagate that code without printing a redundant error message.
 		var cmdErr *camperrors.CommandError

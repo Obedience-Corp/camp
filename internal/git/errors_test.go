@@ -51,6 +51,12 @@ func TestClassifyGitError(t *testing.T) {
 			want:     GitErrorNoChanges,
 		},
 		{
+			name:     "no changes added to commit",
+			stderr:   "no changes added to commit (use \"git add\" and/or \"git commit -a\")",
+			exitCode: 1,
+			want:     GitErrorNoChanges,
+		},
+		{
 			name:     "not a git repository",
 			stderr:   "fatal: not a git repository (or any of the parent directories): .git",
 			exitCode: 128,
@@ -87,6 +93,12 @@ func TestClassifyGitError(t *testing.T) {
 			want:     GitErrorSubmodule,
 		},
 		{
+			name:     "submodule word in unrelated error",
+			stderr:   "fatal: documentation mentioned submodule but no operation failed",
+			exitCode: 128,
+			want:     GitErrorUnknown,
+		},
+		{
 			name:     "unknown error",
 			stderr:   "fatal: some unknown git error occurred",
 			exitCode: 1,
@@ -109,6 +121,29 @@ func TestClassifyGitError(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestClassifyGitErrorLocale(t *testing.T) {
+	if got := ClassifyGitError("nichts zu committen, Arbeitsverzeichnis sauber", 1); got != GitErrorUnknown {
+		t.Fatalf("localized stderr classification = %v, want %v", got, GitErrorUnknown)
+	}
+
+	env := gitEnv([]string{"PATH=/bin", "LANG=de_DE.UTF-8", "LC_ALL=de_DE.UTF-8"})
+	if !containsEnv(env, "LANG=C") || !containsEnv(env, "LC_ALL=C") {
+		t.Fatalf("gitEnv() = %v, want LANG=C and LC_ALL=C", env)
+	}
+	if containsEnv(env, "LANG=de_DE.UTF-8") || containsEnv(env, "LC_ALL=de_DE.UTF-8") {
+		t.Fatalf("gitEnv() kept localized git env: %v", env)
+	}
+}
+
+func containsEnv(env []string, want string) bool {
+	for _, item := range env {
+		if item == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestLockError_Error(t *testing.T) {
@@ -162,59 +197,6 @@ func TestLockError_Unwrap(t *testing.T) {
 
 	if !errors.Is(lockErr, underlying) {
 		t.Error("LockError.Unwrap() should allow errors.Is to find underlying error")
-	}
-}
-
-func TestNewLockError(t *testing.T) {
-	path := "/repo/.git/index.lock"
-	underlying := errors.New("test error")
-
-	lockErr := NewLockError(path, underlying)
-
-	if lockErr.Path != path {
-		t.Errorf("NewLockError().Path = %q, want %q", lockErr.Path, path)
-	}
-	if lockErr.Err != underlying {
-		t.Error("NewLockError().Err should be the underlying error")
-	}
-	if lockErr.Stale {
-		t.Error("NewLockError() should not be stale by default")
-	}
-	if lockErr.ProcessID != 0 {
-		t.Errorf("NewLockError().ProcessID = %d, want 0", lockErr.ProcessID)
-	}
-}
-
-func TestNewStaleLockError(t *testing.T) {
-	path := "/repo/.git/index.lock"
-
-	lockErr := NewStaleLockError(path)
-
-	if lockErr.Path != path {
-		t.Errorf("NewStaleLockError().Path = %q, want %q", lockErr.Path, path)
-	}
-	if !lockErr.Stale {
-		t.Error("NewStaleLockError() should be stale")
-	}
-}
-
-func TestNewActiveLockError(t *testing.T) {
-	path := "/repo/.git/index.lock"
-	pid := 12345
-
-	lockErr := NewActiveLockError(path, pid)
-
-	if lockErr.Path != path {
-		t.Errorf("NewActiveLockError().Path = %q, want %q", lockErr.Path, path)
-	}
-	if lockErr.ProcessID != pid {
-		t.Errorf("NewActiveLockError().ProcessID = %d, want %d", lockErr.ProcessID, pid)
-	}
-	if lockErr.Stale {
-		t.Error("NewActiveLockError() should not be stale")
-	}
-	if !errors.Is(lockErr, ErrLockActive) {
-		t.Error("NewActiveLockError() should wrap ErrLockActive")
 	}
 }
 

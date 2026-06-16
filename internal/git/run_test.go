@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os/exec"
+	"path/filepath"
 	"testing"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -73,6 +74,10 @@ func TestRunGitCmd_LockError(t *testing.T) {
 	var lockErr *git.LockError
 	if !errors.As(err, &lockErr) {
 		t.Errorf("expected *LockError, got: %T: %v", err, err)
+		return
+	}
+	if lockErr.Path != filepath.Join(dir, ".git", "index.lock") {
+		t.Errorf("LockError.Path = %q, want repo gitdir lock path", lockErr.Path)
 	}
 }
 

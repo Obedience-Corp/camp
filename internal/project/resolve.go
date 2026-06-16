@@ -233,7 +233,7 @@ type ProjectNotFoundError struct {
 }
 
 func (e *ProjectNotFoundError) Error() string {
-	return fmt.Sprintf("project %q not found in campaign", e.Name)
+	return fmt.Sprintf("project %q not found in campaign (run 'camp project list' to see available projects)", e.Name)
 }
 
 // Unwrap returns ErrNotFound so errors.Is(err, camperrors.ErrNotFound) works.

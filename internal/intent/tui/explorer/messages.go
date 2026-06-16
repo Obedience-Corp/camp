@@ -55,6 +55,7 @@ type promoteFinishedMsg struct {
 	festivalName    string
 	festivalDir     string
 	festNotFound    bool
+	festCLIError    string
 	festivalCreated bool
 	designDir       string // Set when promoted to design doc
 }

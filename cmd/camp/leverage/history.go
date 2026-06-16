@@ -7,6 +7,7 @@ import (
 	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	intleverage "github.com/Obedience-Corp/camp/internal/leverage"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/charmbracelet/lipgloss"
@@ -30,17 +31,22 @@ Examples:
   camp leverage history --since 2025-06-01         Start from June 2025
   camp leverage history --json                     Output as JSON
   camp leverage history --by-author                Per-author breakdown`,
-	RunE: runLeverageHistory,
+	RunE: jsoncontract.RunE(LeverageHistoryJSONVersion, func() bool { return leverageHistoryJSON }, runLeverageHistory),
 }
+
+const LeverageHistoryJSONVersion = "leverage-history/v1alpha1"
+
+var leverageHistoryJSON bool
 
 func init() {
 	leverageHistoryCmd.Flags().StringP("project", "p", "", "filter to specific project")
 	leverageHistoryCmd.Flags().String("since", "", "start date (YYYY-MM-DD)")
 	leverageHistoryCmd.Flags().String("until", "", "end date (YYYY-MM-DD, default: today)")
 	leverageHistoryCmd.Flags().String("period", "monthly", "aggregation period: weekly or monthly")
-	leverageHistoryCmd.Flags().Bool("json", false, "output as JSON")
+	leverageHistoryCmd.Flags().BoolVar(&leverageHistoryJSON, "json", false, "output as JSON")
 	leverageHistoryCmd.Flags().Bool("by-author", false, "show per-author leverage breakdown")
 	Cmd.AddCommand(leverageHistoryCmd)
+	leverageHistoryCmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(LeverageHistoryJSONVersion, func() bool { return leverageHistoryJSON }))
 }
 
 func runLeverageHistory(cmd *cobra.Command, args []string) error {
@@ -120,10 +126,9 @@ func runLeverageHistory(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	jsonFlag, _ := cmd.Flags().GetBool("json")
 	byAuthor, _ := cmd.Flags().GetBool("by-author")
 
-	if jsonFlag {
+	if leverageHistoryJSON {
 		return historyOutputJSON(cmd, history)
 	}
 	if byAuthor {

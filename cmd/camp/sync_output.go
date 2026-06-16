@@ -32,7 +32,7 @@ func formatSyncHuman(result *sync.SyncResult, opts syncOptions, preflight *sync.
 	// Handle preflight failure - don't show more sections
 	if !result.PreflightPassed && !opts.force {
 		fmt.Println()
-		fmt.Println(ui.Error("Aborting: Submodules have uncommitted changes or unpushed commits."))
+		fmt.Fprintln(os.Stderr, ui.Error("Aborting: Submodules have uncommitted changes or unpushed commits."))
 		fmt.Println()
 		formatFixSuggestions(preflight)
 		return
@@ -52,13 +52,14 @@ func formatSyncHuman(result *sync.SyncResult, opts syncOptions, preflight *sync.
 
 	// Update results section
 	formatUpdateSection(result, opts.verbose)
+	formatWarningsSection(result.Warnings)
 
 	// Final status
 	fmt.Println()
 	if result.Success {
 		fmt.Println(ui.Success("Campaign synchronized successfully."))
 	} else {
-		fmt.Println(ui.Error("Sync failed. See errors above."))
+		fmt.Fprintln(os.Stderr, ui.Error("Sync failed. See errors or warnings above."))
 	}
 }
 
@@ -179,6 +180,19 @@ func formatUpdateSection(result *sync.SyncResult, verbose bool) {
 		}
 	} else {
 		fmt.Printf("  %s %d/%d submodules failed\n", ui.ErrorIcon(), failed, total)
+	}
+}
+
+// formatWarningsSection displays non-fatal sync issues that still require attention.
+func formatWarningsSection(warnings []string) {
+	if len(warnings) == 0 {
+		return
+	}
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Warnings:")
+	for _, warning := range warnings {
+		fmt.Fprintf(os.Stderr, "  %s %s\n", ui.WarningIcon(), warning)
 	}
 }
 

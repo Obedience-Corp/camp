@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	attachpkg "github.com/Obedience-Corp/camp/cmd/camp/attach"
 	cachepkg "github.com/Obedience-Corp/camp/cmd/camp/cache"
@@ -25,6 +26,7 @@ import (
 	workflowcmd "github.com/Obedience-Corp/camp/internal/commands/workflow"
 	workitemcmd "github.com/Obedience-Corp/camp/internal/commands/workitem"
 	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/Obedience-Corp/camp/internal/version"
 	"github.com/spf13/cobra"
@@ -32,9 +34,7 @@ import (
 
 var (
 	// Global flags
-	cfgFile string
 	noColor bool
-	verbose bool
 )
 
 var rootCmd = &cobra.Command{
@@ -42,6 +42,7 @@ var rootCmd = &cobra.Command{
 	Short:         "Campaign management CLI for multi-project AI workspaces",
 	Version:       fmt.Sprintf("%s (built %s, commit %s)", version.Version, version.BuildDate, version.Commit),
 	SilenceErrors: true,
+	SilenceUsage:  true,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		// Skip color detection for completion commands to avoid
 		// termenv interfering with zsh's completion state machine.
@@ -57,8 +58,8 @@ var rootCmd = &cobra.Command{
 	},
 }
 
-// Execute runs the root command
-func Execute() error {
+// Execute runs the root command.
+func Execute(ctx context.Context) error {
 	// Expand shortcuts before command execution
 	expandShortcuts()
 
@@ -73,14 +74,14 @@ func Execute() error {
 
 	// Try git-style plugin dispatch for unknown subcommands.
 	// A camp-<name> binary on PATH becomes "camp <name> [args...]".
-	if err := dispatchPlugin(); err != nil {
+	if err := dispatchPlugin(ctx); err != nil {
 		if errors.Is(err, errPluginHandled) {
 			return nil
 		}
 		return err
 	}
 
-	return rootCmd.Execute()
+	return rootCmd.ExecuteContext(ctx)
 }
 
 // expandShortcuts expands shortcut aliases in os.Args before cobra parses them.
@@ -108,14 +109,28 @@ func expandShortcuts() {
 		return
 	}
 
-	// Expand the shortcut
-	os.Args[argIndex] = sc.Concept
+	concept := sc.Concept
+	if concept == "worktrees" {
+		concept = "project worktree"
+	}
+	conceptParts := strings.Fields(concept)
+	if len(conceptParts) == 0 {
+		return
+	}
+
+	expanded := make([]string, 0, len(os.Args)+len(conceptParts)-1)
+	expanded = append(expanded, os.Args[:argIndex]...)
+	expanded = append(expanded, conceptParts...)
+	expanded = append(expanded, os.Args[argIndex+1:]...)
+	os.Args = expanded
 }
 
 // loadShortcutsForExpansion loads shortcuts from campaign config if available.
 // It merges campaign shortcuts with defaults, prioritizing concept mappings from defaults
 // when the user's shortcuts don't specify a concept.
 func loadShortcutsForExpansion() map[string]config.ShortcutConfig {
+	// Pre-cobra argv rewriting runs before a command object exists, so there is
+	// no cmd.Context() to thread through this helper.
 	ctx := context.Background()
 	defaults := config.DefaultNavigationShortcuts()
 
@@ -189,9 +204,14 @@ func init() {
 	)
 
 	// Global persistent flags
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: ~/.obey/campaign/config.json)")
 	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "disable colored output")
-	rootCmd.PersistentFlags().BoolVar(&verbose, "verbose", false, "enable verbose output")
+	rootCmd.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
+		cmd.SilenceUsage = false
+		if root := cmd.Root(); root != nil {
+			root.SilenceUsage = false
+		}
+		return camperrors.NewCommand(cmd.CommandPath(), 2, "", err)
+	})
 
 	rootCmd.AddCommand(skillspkg.Cmd)
 	rootCmd.AddCommand(cachepkg.Cmd)

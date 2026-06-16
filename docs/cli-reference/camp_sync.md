@@ -24,10 +24,9 @@ when URLs change on remote repositories.
 
 EXIT CODES:
   0  Success
-  1  Pre-flight check failed (uncommitted changes)
-  2  Sync or update operation failed
+  1  Runtime failure (including pre-flight, sync, or update failure)
+  2  Usage error (bad flags or args)
   3  Post-sync validation failed
-  4  Invalid arguments
 
 EXAMPLES:
   # Sync all submodules (recommended default)
@@ -67,8 +66,7 @@ camp sync [submodule...] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
+      --no-color   disable colored output
 ```
 
 ### SEE ALSO

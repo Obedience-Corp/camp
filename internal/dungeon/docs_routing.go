@@ -2,12 +2,14 @@ package dungeon
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
+	"github.com/Obedience-Corp/camp/internal/statusmove"
 )
 
 const docsDirName = "docs"
@@ -54,6 +56,9 @@ func (s *Service) MoveToDocs(ctx context.Context, itemName, parentPath, destinat
 		return "", err
 	}
 	itemName = validName
+	if err := s.validateParentMoveCandidate(ctx, parentPath, itemName); err != nil {
+		return "", err
+	}
 
 	sourcePath := filepath.Join(parentPath, itemName)
 	if err := pathutil.ValidateBoundary(parentPath, sourcePath); err != nil {
@@ -65,10 +70,6 @@ func (s *Service) MoveToDocs(ctx context.Context, itemName, parentPath, destinat
 	}
 	if err := pathutil.ValidateBoundary(s.campaignRoot, sourcePath); err != nil {
 		return "", camperrors.Wrap(ErrNotInDungeon, "source outside campaign root")
-	}
-
-	if _, err := os.Stat(sourcePath); err != nil {
-		return "", camperrors.Wrap(ErrNotFound, itemName)
 	}
 
 	targetDir, err := ResolveDocsDestination(s.campaignRoot, destination)
@@ -122,15 +123,18 @@ func (s *Service) MoveToDocs(ctx context.Context, itemName, parentPath, destinat
 		)
 	}
 
-	if _, err := os.Stat(targetPath); err == nil {
-		return "", camperrors.Wrapf(ErrAlreadyExists, "%s already exists in docs destination", itemName)
-	}
-
-	if err := os.Rename(sourcePath, targetPath); err != nil {
+	movedPath, err := statusmove.Move(ctx, sourcePath, targetPath, statusmove.MoveOptions{BoundaryRoot: docsRoot})
+	if err != nil {
+		if errors.Is(err, camperrors.ErrNotFound) {
+			return "", camperrors.Wrap(ErrNotFound, itemName)
+		}
+		if errors.Is(err, statusmove.ErrAlreadyExists) {
+			return "", camperrors.Wrapf(ErrAlreadyExists, "%s already exists in docs destination", itemName)
+		}
 		return "", camperrors.Wrapf(err, "moving %s to docs/%s", itemName, destination)
 	}
 
-	return targetPath, nil
+	return movedPath, nil
 }
 
 func normalizeDocsDestinationSubpath(destination string) (string, error) {

@@ -116,6 +116,37 @@ func TestService_MoveToDocs(t *testing.T) {
 	}
 }
 
+func TestService_MoveToDocs_Collision(t *testing.T) {
+	ctx := context.Background()
+
+	root := t.TempDir()
+	dungeonPath := filepath.Join(root, "dungeon")
+	parentPath := filepath.Join(root, "workflow", "design")
+	targetDir := filepath.Join(root, "docs", "architecture", "api")
+	for _, dir := range []string{dungeonPath, parentPath, targetDir} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	source := filepath.Join(parentPath, "old-notes.md")
+	existing := filepath.Join(targetDir, "old-notes.md")
+	if err := os.WriteFile(source, []byte("source"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(existing, []byte("existing"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := NewService(root, dungeonPath)
+	_, err := svc.MoveToDocs(ctx, "old-notes.md", parentPath, "architecture/api")
+	if !errors.Is(err, ErrAlreadyExists) {
+		t.Fatalf("MoveToDocs() error = %v, want ErrAlreadyExists", err)
+	}
+	assertDocsFileContent(t, source, "source")
+	assertDocsFileContent(t, existing, "existing")
+}
+
 func TestService_MoveToDocs_RequiresExistingDestination(t *testing.T) {
 	ctx := context.Background()
 
@@ -151,6 +182,17 @@ func TestService_MoveToDocs_RequiresExistingDestination(t *testing.T) {
 
 	if _, statErr := os.Stat(source); statErr != nil {
 		t.Fatalf("source should remain in place after failed move: %v", statErr)
+	}
+}
+
+func assertDocsFileContent(t *testing.T, path, want string) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%s) error = %v", path, err)
+	}
+	if string(data) != want {
+		t.Fatalf("%s content = %q, want %q", path, data, want)
 	}
 }
 

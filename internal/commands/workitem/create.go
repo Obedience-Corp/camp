@@ -17,8 +17,9 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
-	"github.com/Obedience-Corp/camp/internal/pathsafe"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 )
 
@@ -28,7 +29,14 @@ func newCreateCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create <slug>",
 		Short: "Create a new workitem with v1 minimum metadata",
-		Args:  jsoncontract.Args(WorkitemCreateJSONVersion, func() bool { return jsonOut }, cobra.ExactArgs(1)),
+		Long: `Create a new workitem directory with minimal v1 metadata.
+
+The workitem is created under workflow/<type>/<slug>/ unless --dir supplies a
+different campaign-relative parent directory. A .workitem file is written with
+the id, type, title, ref, creation metadata, and optional quest link. Use --json
+for machine-readable output containing the new workitem identity and next-step
+location.`,
+		Args: jsoncontract.Args(WorkitemCreateJSONVersion, func() bool { return jsonOut }, cobra.ExactArgs(1)),
 		Annotations: map[string]string{
 			"agent_allowed": "true",
 			"agent_reason":  "Creates workitems with --json output for automation",
@@ -43,7 +51,7 @@ func newCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&title, "title", "", "human-readable title")
 	cmd.Flags().StringVar(&idOverride, "id", "", "override the generated id")
 	cmd.Flags().StringVar(&dirOverride, "dir", "", "parent dir override (default: workflow/<type>)")
-	cmd.Flags().StringVar(&questSelector, "quest", "", "capture quest_id from this quest (defaults to CAMP_QUEST env var if set)")
+	cmd.Flags().StringVar(&questSelector, "quest", "", questFlagHelp())
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit a structured JSON result")
 	return cmd
 }
@@ -74,7 +82,15 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 		return err
 	}
 
+	ref, err := deriveUniqueRef(ctx, campaignRoot, cfg, id)
+	if err != nil {
+		return err
+	}
+	questID := resolveQuestIDForCreate(ctx, cmd, campaignRoot, questSelector)
+
 	target := filepath.Join(campaignRoot, parent, slug)
+	// Existing directories still require explicit adopt or manual cleanup. This
+	// command only cleans up an empty directory it created in this invocation.
 	if _, err := os.Stat(target); err == nil {
 		return camperrors.NewValidation("path",
 			"target directory already exists: "+target+" — use `camp workitem adopt` to attach metadata to an existing dir", nil)
@@ -82,12 +98,12 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 	if err := os.MkdirAll(target, 0o755); err != nil {
 		return camperrors.Wrap(err, "create directory")
 	}
-
-	ref, err := deriveUniqueRef(ctx, campaignRoot, cfg, id)
-	if err != nil {
-		return err
-	}
-	questID := resolveQuestIDForCreate(ctx, cmd, campaignRoot, questSelector)
+	markerWritten := false
+	defer func() {
+		if !markerWritten {
+			_ = os.Remove(target)
+		}
+	}()
 
 	meta := wkitem.Metadata{
 		Version: wkitem.WorkitemSchemaVersion,
@@ -102,9 +118,10 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 	if err != nil {
 		return camperrors.Wrap(err, "marshal metadata")
 	}
-	if err := atomicWriteFile(filepath.Join(target, ".workitem"), buf, 0o644); err != nil {
+	if err := fsutil.WriteFileAtomically(filepath.Join(target, ".workitem"), buf, 0o644); err != nil {
 		return err
 	}
+	markerWritten = true
 	invalidateNavigationCache(cmd, campaignRoot)
 
 	rel := filepath.Join(parent, slug)
@@ -152,7 +169,7 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 }
 
 func validateSlug(slug string) error {
-	return pathsafe.ValidateSegment("slug", slug)
+	return pathutil.ValidateSegment("slug", slug)
 }
 
 func validateParentPath(parent string) error {
@@ -244,16 +261,4 @@ func idCollides(ctx context.Context, campaignRoot, id string) (bool, error) {
 		return false, walkErr
 	}
 	return collision, nil
-}
-
-func atomicWriteFile(path string, data []byte, mode os.FileMode) error {
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, mode); err != nil {
-		return camperrors.Wrap(err, "write tmp file")
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return camperrors.Wrap(err, "rename tmp file")
-	}
-	return nil
 }

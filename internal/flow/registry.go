@@ -1,4 +1,7 @@
-// Package flow provides workflow flow registry and execution.
+// Package flow provides the .campaign/flows shell-command registry and runner.
+//
+// It is distinct from internal/workflow, which owns the .workflow.yaml
+// status-directory state machine used by most camp flow command semantics.
 package flow
 
 import (
@@ -7,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"gopkg.in/yaml.v3"
 )
 
@@ -73,7 +77,7 @@ func SaveRegistry(campaignRoot string, registry *Registry) error {
 		return fmt.Errorf("marshaling registry to YAML: %w", err)
 	}
 
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := fsutil.WriteFileAtomically(path, data, 0644); err != nil {
 		return fmt.Errorf("writing registry file: %w", err)
 	}
 

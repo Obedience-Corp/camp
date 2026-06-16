@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -255,4 +256,75 @@ func (s *FileSnapshotStore) ListProjects(ctx context.Context) ([]string, error) 
 
 	sort.Strings(projects)
 	return projects, nil
+}
+
+// CurrentSnapshotInput is the per-project data needed for current snapshot persistence.
+type CurrentSnapshotInput struct {
+	Project ResolvedProject
+	Result  *SCCResult
+	Score   *LeverageScore
+}
+
+// HeadCommitResolver resolves the current HEAD hash and commit date for a git directory.
+type HeadCommitResolver func(context.Context, string) (string, time.Time, error)
+
+// GetHeadCommit returns the current HEAD commit hash and committer date for gitDir.
+func GetHeadCommit(ctx context.Context, gitDir string) (string, time.Time, error) {
+	cmd := exec.CommandContext(ctx, "git", "-C", gitDir, "log", "-1", "--format=%H%n%cI")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", time.Time{}, camperrors.Wrap(err, "git log")
+	}
+
+	lines := strings.SplitN(strings.TrimSpace(string(out)), "\n", 2)
+	if len(lines) != 2 {
+		return "", time.Time{}, camperrors.Wrap(camperrors.ErrInvalidInput, "unexpected git log output")
+	}
+
+	date, err := time.Parse(time.RFC3339, lines[1])
+	if err != nil {
+		return "", time.Time{}, camperrors.Wrap(err, "parsing commit date")
+	}
+
+	return lines[0], date, nil
+}
+
+// PersistCurrentSnapshots writes current leverage snapshots for all inputs.
+func PersistCurrentSnapshots(ctx context.Context, store SnapshotStorer, inputs []CurrentSnapshotInput, sampledAt time.Time, resolveHead HeadCommitResolver) error {
+	if resolveHead == nil {
+		resolveHead = GetHeadCommit
+	}
+
+	// TODO: Add snapshot retention trimming. Daily automatic snapshots solve
+	// recent-history freshness but will grow unbounded without an age-based cap.
+	type commitMeta struct {
+		hash string
+		date time.Time
+	}
+
+	byGitDir := make(map[string]commitMeta)
+
+	for _, input := range inputs {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		meta, ok := byGitDir[input.Project.GitDir]
+		if !ok {
+			hash, date, err := resolveHead(ctx, input.Project.GitDir)
+			if err != nil {
+				return camperrors.Wrapf(err, "reading HEAD commit for %s", input.Project.Name)
+			}
+			meta = commitMeta{hash: hash, date: date}
+			byGitDir[input.Project.GitDir] = meta
+		}
+
+		scc := SCCResultToSnapshotSCC(input.Result)
+		snapshot := NewSnapshot(input.Project.Name, meta.hash, meta.date, sampledAt, scc, input.Score, input.Project.Authors)
+		if err := store.Save(ctx, snapshot); err != nil {
+			return camperrors.Wrapf(err, "saving current snapshot for %s", input.Project.Name)
+		}
+	}
+
+	return nil
 }

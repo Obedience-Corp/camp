@@ -112,7 +112,7 @@ func TestBuildCrawlCommitMessage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := buildCrawlCommitMessage(tt.campaignRoot, tt.cwd, tt.triage, tt.inner)
+			result := intdungeon.BuildCrawlCommitMessage(tt.campaignRoot, tt.cwd, tt.triage, tt.inner)
 
 			for _, substr := range tt.contains {
 				if !strings.Contains(result, substr) {
@@ -139,7 +139,7 @@ func TestBuildCrawlCommitMessage_SortedStatuses(t *testing.T) {
 		},
 	}
 
-	result := buildCrawlCommitMessage("/root", "/root/dir", triage, nil)
+	result := intdungeon.BuildCrawlCommitMessage("/root", "/root/dir", triage, nil)
 
 	// Verify alphabetical order: archived before completed before someday
 	archivedIdx := strings.Index(result, "dungeon/archived")
@@ -151,76 +151,6 @@ func TestBuildCrawlCommitMessage_SortedStatuses(t *testing.T) {
 	}
 }
 
-func TestCrawlMovedItemPaths(t *testing.T) {
-	tests := []struct {
-		name    string
-		summary *intdungeon.CrawlSummary
-		want    []string
-	}{
-		{
-			name: "nil summary",
-		},
-		{
-			name: "single move with dated path",
-			summary: &intdungeon.CrawlSummary{
-				MovedItems: map[string][]string{
-					"archived": {"workflow/design/dungeon/archived/2026-03-15/old.md"},
-				},
-			},
-			want: []string{"workflow/design/dungeon/archived/2026-03-15/old.md"},
-		},
-		{
-			name: "collect docs and dungeon destinations sorted and unique",
-			summary: &intdungeon.CrawlSummary{
-				MovedItems: map[string][]string{
-					"docs/api":          {"docs/api/a.md", "docs/api/a.md"},
-					"docs/guides/setup": {"docs/guides/setup/b.md"},
-					"completed":         {"workflow/design/dungeon/completed/2026-03-15/c.md"},
-				},
-			},
-			want: []string{
-				"docs/api/a.md",
-				"docs/guides/setup/b.md",
-				"workflow/design/dungeon/completed/2026-03-15/c.md",
-			},
-		},
-		{
-			name: "drop unsafe paths",
-			summary: &intdungeon.CrawlSummary{
-				MovedItems: map[string][]string{
-					"completed": {"../bad.md", "workflow/design/dungeon/completed/2026-03-15/good.md"},
-				},
-			},
-			want: []string{
-				"workflow/design/dungeon/completed/2026-03-15/good.md",
-			},
-		},
-		{
-			name: "support direct docs root destination",
-			summary: &intdungeon.CrawlSummary{
-				MovedItems: map[string][]string{
-					"docs": {"docs/top-level.md"},
-				},
-			},
-			want: []string{"docs/top-level.md"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := crawlMovedItemPaths(tt.summary)
-			if len(got) != len(tt.want) {
-				t.Fatalf("crawlMovedItemPaths() len=%d, want=%d (%v)", len(got), len(tt.want), got)
-			}
-			for i := range tt.want {
-				if got[i] != tt.want[i] {
-					t.Fatalf("crawlMovedItemPaths()[%d]=%q, want=%q (full=%v)", i, got[i], tt.want[i], got)
-				}
-			}
-		})
-	}
-}
-
 func TestCrawlCommitPaths(t *testing.T) {
 	summary := &intdungeon.CrawlSummary{
 		MovedItems: map[string][]string{
@@ -229,7 +159,7 @@ func TestCrawlCommitPaths(t *testing.T) {
 		},
 	}
 
-	got := crawlCommitPaths("workflow/design/dungeon", summary)
+	got := intdungeon.CrawlCommitPaths("workflow/design/dungeon", summary)
 	want := []string{
 		"docs/api/routed.md",
 		"workflow/design/dungeon/completed/2026-03-15/finished.md",
@@ -259,7 +189,7 @@ func TestCrawlSourceDeletionPaths(t *testing.T) {
 		},
 	}
 
-	got := crawlSourceDeletionPaths(
+	got := intdungeon.CrawlSourceDeletionPaths(
 		"/home/user/campaign",
 		"/home/user/campaign/workflow/design",
 		"workflow/design/dungeon",

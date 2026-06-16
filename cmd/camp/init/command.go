@@ -3,6 +3,7 @@ package initcmd
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -13,25 +14,25 @@ import (
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/fest"
 	"github.com/Obedience-Corp/camp/internal/nav/tui"
 	"github.com/Obedience-Corp/camp/internal/scaffold"
 	intskills "github.com/Obedience-Corp/camp/internal/skills"
 	"github.com/Obedience-Corp/camp/internal/ui"
+	"github.com/Obedience-Corp/camp/internal/version"
 	"github.com/spf13/cobra"
 )
 
-// New builds the camp init command.
-func New() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:     "init [path]",
-		Short:   "Initialize a new campaign",
-		GroupID: "setup",
-		Long: `Initialize a new campaign directory structure.
+func initLongDescription() string {
+	questLine := ""
+	if version.Profile == "dev" {
+		questLine = "  .campaign/quests/       - Quest execution contexts\n"
+	}
+	return `Initialize a new campaign directory structure.
 
 Creates the standard campaign directories:
   .campaign/              - Campaign configuration and metadata
-  .campaign/quests/       - Quest execution contexts
-  .campaign/intents/      - System-managed intent state
+` + questLine + `  .campaign/intents/      - System-managed intent state
   projects/               - Project repositories (submodules or worktrees)
   projects/worktrees/     - Git worktrees for parallel development
   festivals/              - Festival methodology workspace (via fest init)
@@ -49,7 +50,16 @@ Also creates:
 
 Initializes a git repository if not already inside one.
 
-Use --no-git to skip git initialization.`,
+Use --no-git to skip git initialization.`
+}
+
+// New builds the camp init command.
+func New() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "init [path]",
+		Short:   "Initialize a new campaign",
+		GroupID: "setup",
+		Long:    initLongDescription(),
 		Example: `  camp init                      Initialize current directory
   camp init my-campaign          Create and initialize new directory
   camp init --name "My Project"  Set custom campaign name
@@ -75,6 +85,7 @@ Use --no-git to skip git initialization.`,
 	cmd.Flags().Bool("dry-run", false, "Show what would be done without creating anything")
 	cmd.Flags().Bool("repair", false, "Add missing files to existing campaign")
 	cmd.Flags().Bool("yes", false, "Skip repair confirmation prompt (for scripting)")
+	cmd.Flags().BoolP("verbose", "v", false, "Show skipped optional setup details")
 
 	return cmd
 }
@@ -163,7 +174,7 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 			if cfg != nil && cfg.Name != "" {
 				name = cfg.Name
 			}
-			return camperrors.New(fmt.Sprintf("already inside campaign '%s' at %s\n       Use 'camp init --repair' to add missing files", name, existingRoot))
+			return camperrors.New(fmt.Sprintf("already inside campaign %q at %s (use 'camp init --repair' to add missing files)", name, existingRoot))
 		}
 	}
 
@@ -236,7 +247,7 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 
 		if !p.Yes {
 			if !isInteractive {
-				return camperrors.New("repair requires confirmation\n       Use --yes to skip the prompt in non-interactive mode")
+				return camperrors.New("repair requires confirmation (use --yes to skip the prompt in non-interactive mode)")
 			}
 			write(w.HumanOut, "\nApply changes? [y/N] ")
 			reader := bufio.NewReader(os.Stdin)
@@ -260,9 +271,12 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 	// Execute migrations if repair detected misplaced directories.
 	var migrationCount int
 	if p.Repair && opts.RepairPlan != nil && len(opts.RepairPlan.Migrations) > 0 {
-		moved, err := scaffold.ExecuteMigrations(opts.RepairPlan.Migrations)
-		if err != nil {
-			writef(w.HumanOut, "  %s Migration error: %v\n", ui.WarningIcon(), err)
+		moved, migrationErr := scaffold.ExecuteMigrations(opts.RepairPlan.Migrations)
+		if migrationErr != nil {
+			writef(w.HumanOut, "  %s Migration failed after %d item(s) moved: %v\n",
+				ui.ErrorIcon(), moved, migrationErr)
+			writef(w.HumanOut, "  Recovery: fix the issue above and re-run camp init --repair\n")
+			return migrationErr
 		}
 		migrationCount = moved
 	}
@@ -286,7 +300,11 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 	// Initialize Festival Methodology (unless dry-run).
 	var festInitialized bool
 	if !p.DryRun {
-		festInitialized, _ = initializeFestivals(ctx, result.CampaignRoot, w)
+		var festErr error
+		festInitialized, festErr = initializeFestivals(ctx, result.CampaignRoot, w)
+		if festErr != nil && !errors.Is(festErr, fest.ErrFestNotFound) {
+			return festErr
+		}
 	}
 
 	// Print results

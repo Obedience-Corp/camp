@@ -8,7 +8,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
-	"github.com/Obedience-Corp/camp/internal/pathsafe"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
 
 // JSONSchemaVersion is the contract version for `camp workflow` JSON output.
@@ -30,7 +30,14 @@ func newCreateCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create <type>",
 		Short: "Create a custom workflow collection",
-		Args:  jsoncontract.Args(JSONSchemaVersion, func() bool { return jsonOut }, cobra.ExactArgs(1)),
+		Long: `Create a custom workflow collection under workflow/<type>/.
+
+The command creates the workflow directory, terminal dungeon directories,
+.gitkeep files, and an OBEY.md guide, then registers the collection in
+campaign configuration through a concept and navigation shortcut. A shortcut is
+required. Use --dry-run to inspect planned writes and --json for
+machine-readable planning or apply results.`,
+		Args: jsoncontract.Args(JSONSchemaVersion, func() bool { return jsonOut }, cobra.ExactArgs(1)),
 		RunE: jsoncontract.RunE(JSONSchemaVersion, func() bool { return jsonOut }, func(cmd *cobra.Command, args []string) error {
 			return runCreate(cmd.Context(), cmd, createOptions{
 				Type:     args[0],
@@ -131,5 +138,5 @@ func runCreate(ctx context.Context, cmd *cobra.Command, opts createOptions) erro
 }
 
 func validatePathSegment(field, value string) error {
-	return pathsafe.ValidateSegment(field, value)
+	return pathutil.ValidateSegment(field, value)
 }

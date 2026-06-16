@@ -3,9 +3,12 @@
 package quest
 
 import (
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/quest"
 	"github.com/spf13/cobra"
 )
+
+const QuestListJSONVersion = "quest-list/v1alpha1"
 
 var (
 	questListAll      bool
@@ -21,7 +24,7 @@ var questListCmd = &cobra.Command{
 		"agent_allowed": "true",
 		"agent_reason":  "Non-interactive quest listing",
 	},
-	RunE: runQuestList,
+	RunE: jsoncontract.RunE(QuestListJSONVersion, func() bool { return questListJSON }, runQuestList),
 }
 
 func init() {
@@ -30,6 +33,7 @@ func init() {
 	questListCmd.Flags().BoolVar(&questListDungeon, "dungeon", false, "Show only dungeon quests")
 	questListCmd.Flags().BoolVar(&questListJSON, "json", false, "Emit JSON output")
 	questListCmd.Flags().StringSliceVar(&questListStatuses, "status", nil, "Filter by quest status")
+	questListCmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(QuestListJSONVersion, func() bool { return questListJSON }))
 }
 
 func runQuestList(cmd *cobra.Command, args []string) error {
@@ -54,7 +58,7 @@ func runQuestList(cmd *cobra.Command, args []string) error {
 	}
 
 	if questListJSON {
-		return outputQuestJSON(quests)
+		return outputQuestListJSON(qctx, quests)
 	}
 	return outputQuestTable(qctx, quests)
 }

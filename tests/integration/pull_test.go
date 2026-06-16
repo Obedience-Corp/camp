@@ -70,6 +70,148 @@ func TestPullAll_RemovesSubmoduleStaleIndexLock(t *testing.T) {
 	require.True(t, exists, "submodule file should be pulled after stale lock cleanup")
 }
 
+func TestPullAll_DivergentBranchesRebase(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	const campaignDir = "/campaigns/pull-diverge-rebase"
+	setupPullLockRootRepo(t, tc, campaignDir)
+
+	tc.Shell(t, `
+		git clone /test/root-remote.git /test/root-seed-diverge
+		cd /test/root-seed-diverge
+		printf 'remote line' > remote.txt
+		git add remote.txt
+		git commit -m 'remote diverge'
+		git push origin main
+	`)
+
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s
+		printf 'local line' > local.txt
+		git add local.txt
+		git commit -m 'local diverge'
+	`, campaignDir))
+
+	output, err := tc.RunCampInDir(campaignDir, "pull", "all", "--rebase")
+	require.NoError(t, err, "pull all --rebase should succeed on divergent branches; output:\n%s", output)
+
+	for _, path := range []string{"remote.txt", "local.txt"} {
+		exists, err := tc.CheckFileExists(campaignDir + "/" + path)
+		require.NoError(t, err)
+		require.True(t, exists, "%s should be present after rebase pull", path)
+	}
+}
+
+func TestPullAll_DivergentBranchesDefaultFails(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	const campaignDir = "/campaigns/pull-diverge-default"
+	setupPullLockRootRepo(t, tc, campaignDir)
+
+	tc.Shell(t, `
+		git clone /test/root-remote.git /test/root-seed-divdef
+		cd /test/root-seed-divdef
+		printf 'remote line' > remote_def.txt
+		git add remote_def.txt
+		git commit -m 'remote diverge default'
+		git push origin main
+	`)
+
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s
+		printf 'local line' > local_def.txt
+		git add local_def.txt
+		git commit -m 'local diverge default'
+	`, campaignDir))
+
+	output, err := tc.RunCampInDir(campaignDir, "pull", "all")
+	require.Error(t, err, "default pull all should fail on divergent branches")
+	require.Contains(t, output, "branches diverged")
+}
+
+func TestPullAll_FfOnlyOverride(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	const campaignDir = "/campaigns/pull-ffonly"
+	setupPullLockRootRepo(t, tc, campaignDir)
+
+	tc.Shell(t, `
+		git clone /test/root-remote.git /test/root-seed-ff
+		cd /test/root-seed-ff
+		printf 'remote ff content' > ff.txt
+		git add ff.txt
+		git commit -m 'remote ff'
+		git push origin main
+	`)
+
+	output, err := tc.RunCampInDir(campaignDir, "pull", "all", "--ff-only")
+	require.NoError(t, err, "pull all --ff-only should succeed when no divergence; output:\n%s", output)
+
+	exists, err := tc.CheckFileExists(campaignDir + "/ff.txt")
+	require.NoError(t, err)
+	require.True(t, exists, "ff.txt should be present after ff-only pull")
+}
+
+func TestPullAll_FfOnlyDivergentBranchesFails(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	const campaignDir = "/campaigns/pull-ffonly-diverge"
+	setupPullLockRootRepo(t, tc, campaignDir)
+
+	tc.Shell(t, `
+		git clone /test/root-remote.git /test/root-seed-ff-diverge
+		cd /test/root-seed-ff-diverge
+		printf 'remote line' > remote_ff.txt
+		git add remote_ff.txt
+		git commit -m 'remote ff diverge'
+		git push origin main
+	`)
+
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s
+		printf 'local line' > local_ff.txt
+		git add local_ff.txt
+		git commit -m 'local ff diverge'
+	`, campaignDir))
+
+	output, err := tc.RunCampInDir(campaignDir, "pull", "all", "--ff-only")
+	require.Error(t, err, "pull all --ff-only should fail on divergent branches")
+	require.Contains(t, output, "Not possible to fast-forward")
+}
+
+func TestPullAll_RebaseConflictAutoAborts(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	const campaignDir = "/campaigns/pull-rebase-conflict"
+	setupPullLockRootRepo(t, tc, campaignDir)
+
+	tc.Shell(t, `
+		git clone /test/root-remote.git /test/root-seed-conflict
+		cd /test/root-seed-conflict
+		printf 'remote version' > conflict.txt
+		git add conflict.txt
+		git commit -m 'remote adds conflict.txt'
+		git push origin main
+	`)
+
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s
+		printf 'local version' > conflict.txt
+		git add conflict.txt
+		git commit -m 'local adds conflict.txt'
+	`, campaignDir))
+
+	output, err := tc.RunCampInDir(campaignDir, "pull", "all", "--rebase")
+	require.Error(t, err, "rebase pull should fail on conflict")
+	require.Contains(t, output, "conflict (aborted rebase)")
+
+	status := tc.GitOutput(t, campaignDir, "status")
+	require.NotContains(t, status, "rebase in progress", "repo should not be in mid-rebase state after auto-abort")
+
+	branch := tc.GitOutput(t, campaignDir, "rev-parse", "--abbrev-ref", "HEAD")
+	require.NotEqual(t, "HEAD", branch, "repo should not be left detached after auto-abort")
+}
+
 func setupPullLockRootRepo(t *testing.T, tc *TestContainer, campaignDir string) {
 	t.Helper()
 

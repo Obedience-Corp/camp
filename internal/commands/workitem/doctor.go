@@ -22,6 +22,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/quest"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
+	"github.com/Obedience-Corp/camp/internal/workitem/priority"
 )
 
 // Doctor finding codes (dotted-domain form). Stable strings; consumers
@@ -68,11 +69,16 @@ func newDoctorCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Report workitem link-registry health issues",
-		Args:  jsoncontract.Args(WorkitemDoctorJSONVersion, func() bool { return jsonOut }, cobra.NoArgs),
+		Long: `Report health issues in the campaign workitem link registry.
+
+The command reads .campaign/workitems/links.yaml, scans .workitem metadata on
+disk, and checks current-workitem and priority stores for stale or inconsistent
+references. Use --fix to apply auto-repairs for supported findings. Use --json
+for machine-readable findings and stable finding codes.`,
+		Args: jsoncontract.Args(WorkitemDoctorJSONVersion, func() bool { return jsonOut }, cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDoctor(cmd.Context(), cmd, jsonOut, fix)
 		},
-		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
 	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(WorkitemDoctorJSONVersion, func() bool { return jsonOut }))
@@ -122,6 +128,15 @@ func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut, fix bool) error
 		if err != nil {
 			return renderWorkitemDoctorError(cmd, jsonOut, err)
 		}
+		knownIDs, err = workitemIDsOnDisk(ctx, root)
+		if err != nil {
+			return renderWorkitemDoctorError(cmd, jsonOut, err)
+		}
+		if err := prunePriorityStoreIfPresent(ctx, root, knownIDs); err != nil {
+			if _, writeErr := fmt.Fprintf(cmd.ErrOrStderr(), "warning: priority prune during fix: %v\n", err); writeErr != nil {
+				return writeErr
+			}
+		}
 	} else {
 		registry, loadErr := links.Load(ctx, root)
 		if loadErr != nil {
@@ -161,6 +176,24 @@ func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut, fix bool) error
 		return errDoctorIssues
 	}
 	return nil
+}
+
+func prunePriorityStoreIfPresent(ctx context.Context, root string, knownIDs map[string]struct{}) error {
+	storePath := priority.StorePath(root)
+	if _, err := os.Stat(storePath); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return camperrors.Wrap(err, "stat priority store")
+	}
+	validKeys := make(map[string]bool, len(knownIDs))
+	for id := range knownIDs {
+		validKeys[id] = true
+	}
+	return priority.WithLock(ctx, storePath, func(store *priority.Store) error {
+		priority.Prune(store, validKeys)
+		return nil
+	})
 }
 
 func renderWorkitemDoctorError(cmd *cobra.Command, jsonOut bool, err error) error {

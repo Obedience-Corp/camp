@@ -1,5 +1,5 @@
 // Package pathutil provides filesystem path utilities for camp, including
-// boundary enforcement to prevent path traversal attacks.
+// boundary enforcement and path segment safety checks.
 //
 // macOS note: /var is a symlink to /private/var. Always resolve symlinks via
 // filepath.EvalSymlinks before comparing paths to avoid false boundary escapes.

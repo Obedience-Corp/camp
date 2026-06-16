@@ -2,11 +2,14 @@ package scaffold
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
@@ -16,10 +19,14 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/quest"
+	"github.com/Obedience-Corp/camp/internal/version"
 	"github.com/Obedience-Corp/obey-shared/contract"
 	"github.com/google/uuid"
 	"github.com/lancekrogers/guild-scaffold/pkg/scaffold"
 )
+
+// ErrFestNotInstalled indicates that the fest CLI is unavailable during init.
+var ErrFestNotInstalled = errors.New("fest not installed")
 
 // InitOptions configures the campaign initialization.
 type InitOptions struct {
@@ -185,12 +192,18 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 				"campaign_type":        string(opts.Type),
 				"campaign_description": opts.Description,
 				"campaign_mission":     opts.Mission,
+				"Profile":              version.Profile,
 			},
 			Dry:       false,
 			Overwrite: false,
 		})
 		if scaffoldErr != nil {
 			return nil, camperrors.Wrap(scaffoldErr, "failed to create scaffold")
+		}
+		if version.Profile == "stable" {
+			if err := pruneStableQuestScaffold(absDir, stats); err != nil {
+				return nil, err
+			}
 		}
 
 		// Use scaffold results directly - single source of truth
@@ -216,13 +229,15 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 			result.Skipped = appendUniquePaths(result.Skipped, dungeonResult.Skipped...)
 		}
 
-		questResult, err := quest.EnsureQuestDungeon(ctx, absDir)
-		if err != nil {
-			return nil, camperrors.Wrap(err, "failed to initialize quest dungeon")
+		if version.Profile == "dev" {
+			questResult, err := quest.EnsureQuestDungeon(ctx, absDir)
+			if err != nil {
+				return nil, camperrors.Wrap(err, "failed to initialize quest dungeon")
+			}
+			result.DirsCreated = appendUniquePaths(result.DirsCreated, questResult.CreatedDirs...)
+			result.FilesCreated = appendUniquePaths(result.FilesCreated, questResult.CreatedFiles...)
+			result.Skipped = appendUniquePaths(result.Skipped, questResult.Skipped...)
 		}
-		result.DirsCreated = appendUniquePaths(result.DirsCreated, questResult.CreatedDirs...)
-		result.FilesCreated = appendUniquePaths(result.FilesCreated, questResult.CreatedFiles...)
-		result.Skipped = appendUniquePaths(result.Skipped, questResult.Skipped...)
 	}
 
 	// Create campaign.yaml (metadata and concepts - paths/shortcuts go in jumps.yaml)
@@ -358,8 +373,12 @@ workitems/current.yaml
 	// Initialize festivals directory via fest CLI if it doesn't exist
 	if !opts.DryRun {
 		if err := initFestivalsIfNeeded(ctx, absDir); err != nil {
-			// Log the error but don't fail - user can run fest init manually
-			result.Skipped = append(result.Skipped, "festivals/ (fest init failed - run manually)")
+			if errors.Is(err, ErrFestNotInstalled) {
+				result.Skipped = append(result.Skipped, "festivals/ (fest not installed; run 'fest init' after installing)")
+			} else {
+				fmt.Fprintf(os.Stderr, "Warning: fest init failed: %v\n", err)
+				result.Skipped = append(result.Skipped, "festivals/ (fest init failed - run manually)")
+			}
 		} else {
 			// Check if festivals was created
 			festivalsPath := filepath.Join(absDir, "festivals")
@@ -381,16 +400,75 @@ workitems/current.yaml
 
 	// Register in global registry
 	if !opts.NoRegister && !opts.DryRun {
-		reg, err := config.LoadRegistry(ctx)
-		if err == nil {
-			if err := reg.Register(campaignID, name, absDir, opts.Type); err == nil {
-				// Ignore registry save errors - not critical
-				_ = config.SaveRegistry(ctx, reg)
-			}
+		if err := config.UpdateRegistry(ctx, func(reg *config.Registry) error {
+			return reg.Register(campaignID, name, absDir, opts.Type)
+		}); err != nil {
+			return nil, camperrors.Wrap(err, "failed to register campaign")
 		}
 	}
 
 	return result, nil
+}
+
+func pruneStableQuestScaffold(absDir string, stats *scaffold.ScaffoldStats) error {
+	if stats == nil {
+		return nil
+	}
+	questRootCreated := containsRelPath(stats.CreatedDirs, quest.RootDirName)
+	if questRootCreated {
+		if err := os.RemoveAll(filepath.Join(absDir, quest.RootDirName)); err != nil {
+			return camperrors.Wrap(err, "remove stable quest scaffold")
+		}
+	} else {
+		for _, rel := range stats.CreatedFiles {
+			if isQuestScaffoldRelPath(rel) {
+				_ = os.Remove(filepath.Join(absDir, filepath.FromSlash(filepath.ToSlash(rel))))
+			}
+		}
+		dirs := append([]string(nil), stats.CreatedDirs...)
+		sort.Slice(dirs, func(i, j int) bool {
+			return strings.Count(filepath.ToSlash(dirs[i]), "/") > strings.Count(filepath.ToSlash(dirs[j]), "/")
+		})
+		for _, rel := range dirs {
+			if isQuestScaffoldRelPath(rel) {
+				_ = os.Remove(filepath.Join(absDir, filepath.FromSlash(filepath.ToSlash(rel))))
+			}
+		}
+	}
+
+	stats.CreatedDirs = filterOutQuestScaffoldPaths(stats.CreatedDirs)
+	stats.CreatedFiles = filterOutQuestScaffoldPaths(stats.CreatedFiles)
+	stats.SkippedPaths = filterOutQuestScaffoldPaths(stats.SkippedPaths)
+	return nil
+}
+
+func filterOutQuestScaffoldPaths(paths []string) []string {
+	if len(paths) == 0 {
+		return paths
+	}
+	filtered := paths[:0]
+	for _, path := range paths {
+		if !isQuestScaffoldRelPath(path) {
+			filtered = append(filtered, path)
+		}
+	}
+	return filtered
+}
+
+func containsRelPath(paths []string, want string) bool {
+	want = filepath.ToSlash(strings.TrimSpace(want))
+	for _, path := range paths {
+		if filepath.ToSlash(strings.TrimSpace(path)) == want {
+			return true
+		}
+	}
+	return false
+}
+
+func isQuestScaffoldRelPath(path string) bool {
+	normalized := filepath.ToSlash(strings.TrimSpace(path))
+	root := filepath.ToSlash(quest.RootDirName)
+	return normalized == root || strings.HasPrefix(normalized, root+"/")
 }
 
 func appendUniquePaths(existing []string, paths ...string) []string {
@@ -432,8 +510,7 @@ func initFestivalsIfNeeded(ctx context.Context, dir string) error {
 	// Check if fest is available
 	festPath, err := exec.LookPath("fest")
 	if err != nil {
-		// fest not installed, skip silently - user can run fest init manually
-		return nil
+		return ErrFestNotInstalled
 	}
 
 	cmd := exec.CommandContext(ctx, festPath, "init", "--path", dir)

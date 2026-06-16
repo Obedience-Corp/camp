@@ -8,10 +8,12 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/Obedience-Corp/camp/internal/config/registryfile"
+	"github.com/Obedience-Corp/camp/internal/fsutil"
 )
 
 func TestLoadRegistry_Empty(t *testing.T) {
@@ -147,6 +149,93 @@ func TestSaveRegistry_ContextCancelled(t *testing.T) {
 	err := SaveRegistry(ctx, reg)
 	if err != context.Canceled {
 		t.Errorf("SaveRegistry() error = %v, want %v", err, context.Canceled)
+	}
+}
+
+func TestUpdateRegistryConcurrent(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CAMP_REGISTRY_PATH", filepath.Join(dir, "registry.json"))
+
+	ctx := context.Background()
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	registrations := []struct {
+		id   string
+		name string
+		path string
+	}{
+		{id: "id-a", name: "campaign-a", path: filepath.Join(dir, "a")},
+		{id: "id-b", name: "campaign-b", path: filepath.Join(dir, "b")},
+	}
+
+	wg.Add(len(registrations))
+	for i, registration := range registrations {
+		i, registration := i, registration
+		go func() {
+			defer wg.Done()
+			errs[i] = UpdateRegistry(ctx, func(reg *Registry) error {
+				return reg.Register(registration.id, registration.name, registration.path, CampaignTypeProduct)
+			})
+		}()
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("UpdateRegistry goroutine %d error = %v", i, err)
+		}
+	}
+
+	reg, err := LoadRegistry(ctx)
+	if err != nil {
+		t.Fatalf("LoadRegistry() error = %v", err)
+	}
+	for _, registration := range registrations {
+		if _, ok := reg.GetByID(registration.id); !ok {
+			t.Fatalf("%s missing after concurrent UpdateRegistry", registration.id)
+		}
+	}
+}
+
+func TestUpdateRegistryContextCancellationWhileWaitingForLock(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CAMP_REGISTRY_PATH", filepath.Join(dir, "registry.json"))
+	path := RegistryPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	release, err := fsutil.AcquireFileLock(context.Background(), path+".lock")
+	if err != nil {
+		t.Fatalf("AcquireFileLock() error = %v", err)
+	}
+	defer release()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	mutateCalled := false
+	done := make(chan error, 1)
+	go func() {
+		done <- UpdateRegistry(ctx, func(reg *Registry) error {
+			mutateCalled = true
+			return reg.Register("blocked", "blocked", filepath.Join(dir, "blocked"), CampaignTypeProduct)
+		})
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	err = <-done
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("UpdateRegistry() error = %v, want context.Canceled", err)
+	}
+	if mutateCalled {
+		t.Fatal("mutate function should not be called when lock acquisition is canceled")
+	}
+
+	reg, err := LoadRegistry(context.Background())
+	if err != nil {
+		t.Fatalf("LoadRegistry() error = %v", err)
+	}
+	if reg.Len() != 0 {
+		t.Fatalf("registry length = %d, want 0", reg.Len())
 	}
 }
 
@@ -392,12 +481,11 @@ func TestRegistry_UpdateLastAccess(t *testing.T) {
 		t.Fatalf("Register() error = %v", err)
 	}
 
-	// Get initial time
+	// Force the comparison baseline into the past so UpdateLastAccess can be
+	// verified without sleeping for a distinct wall-clock tick.
 	c1, _ := reg.GetByID("test-id")
-	initial := c1.LastAccess
+	initial := c1.LastAccess.Add(-2 * time.Millisecond)
 
-	// Wait a bit and update
-	time.Sleep(1 * time.Millisecond)
 	reg.UpdateLastAccess("test-id")
 
 	// Get updated time

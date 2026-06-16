@@ -52,12 +52,6 @@ func WrapJoinf(sentinel, cause error, format string, args ...any) error {
 // Is delegates to errors.Is for convenience.
 func Is(err, target error) bool { return errors.Is(err, target) }
 
-// As delegates to errors.As for convenience.
-func As(err error, target any) bool { return errors.As(err, target) }
-
-// Unwrap delegates to errors.Unwrap for convenience.
-func Unwrap(err error) error { return errors.Unwrap(err) }
-
 // New delegates to errors.New for convenience.
 func New(text string) error { return errors.New(text) }
 

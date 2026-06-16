@@ -44,10 +44,8 @@ camp [flags]
 ### Options
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-  -h, --help            help for camp
-      --no-color        disable colored output
-      --verbose         enable verbose output
+  -h, --help       help for camp
+      --no-color   disable colored output
 ```
 ---
 
@@ -93,9 +91,7 @@ camp attach <path> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -120,9 +116,7 @@ camp cache [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -147,9 +141,7 @@ camp cache clear [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -174,9 +166,7 @@ camp cache info [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -201,9 +191,7 @@ camp cache rebuild [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -237,10 +225,9 @@ This command provides a single-step setup for new devices:
 
 EXIT CODES:
   0  Success
-  1  Clone failed (no campaign created)
-  2  Partial success (some submodules failed)
-  3  Validation failed
-  4  Invalid arguments
+  1  Runtime failure (clone failed before usable campaign)
+  2  Usage error (bad flags or args)
+  3  Partial success or validation failed
 
 EXAMPLES:
   # Clone a campaign (default: SSH)
@@ -291,8 +278,7 @@ camp clone <url> [directory] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
+      --no-color   disable colored output
 ```
 ---
 
@@ -335,6 +321,7 @@ camp commit [flags]
   -h, --help              help for commit
       --include-refs      Include submodule ref changes when staging at campaign root
   -m, --message string    Commit message (required unless --auto-write)
+      --no-edit           Amend without editing the commit message (requires --amend)
   -p, --project string    Operate on a specific project/submodule path
       --sub               Operate on the submodule detected from current directory
       --workitem string   explicit workitem selector for the commit tag (overrides cwd-based resolution)
@@ -343,9 +330,7 @@ camp commit [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -368,9 +353,7 @@ See each sub-command's help for details on how to use the generated script.
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -416,9 +399,7 @@ camp completion bash
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -455,9 +436,7 @@ camp completion fish [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -491,9 +470,7 @@ camp completion powershell [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -541,9 +518,7 @@ camp completion zsh [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -559,14 +534,13 @@ camp concepts [flags]
 
 ```
   -h, --help   help for concepts
+      --json   emit a structured JSON result
 ```
 
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -610,9 +584,7 @@ camp copy <src> <dest> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -654,9 +626,7 @@ camp create <name> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -702,9 +672,7 @@ camp date <path> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -736,9 +704,7 @@ camp detach <path> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -761,8 +727,8 @@ CHECKS PERFORMED:
 
 EXIT CODES:
   0  All checks passed (no warnings or errors)
-  1  Warnings found (but no errors)
-  2  Errors found
+  1  Warnings or errors found
+  2  Usage error (bad flags or args)
   3  Fix attempted but some issues remain
 
 EXAMPLES:
@@ -799,8 +765,7 @@ camp doctor [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
+      --no-color   disable colored output
 ```
 ---
 
@@ -841,9 +806,7 @@ camp dungeon [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -861,19 +824,22 @@ Creates the dungeon directory with:
   - archived/: Preserved for history, truly done
   - someday/: Low priority, might revisit
 
-This creates the same dungeon structure as 'camp flow init' but without
-the full workflow (no .workflow.yaml, active/, or ready/ directories).
+Initialize the dungeon directory structure directly, without requiring
+workflow setup (no .workflow.yaml, active/, or ready/ directories).
 Useful when you only need a dungeon for idea capture or temporary holding.
 
 This operation is idempotent - running it multiple times is safe.
 Use --force to overwrite existing files.
 
-Examples:
-  camp dungeon add          Initialize dungeon (skip existing files)
-  camp dungeon add --force  Overwrite existing documentation
-
 ```
 camp dungeon add [flags]
+```
+
+### Examples
+
+```
+  camp dungeon add          Initialize dungeon (skip existing files)
+  camp dungeon add --force  Overwrite existing documentation
 ```
 
 ### Options
@@ -886,9 +852,7 @@ camp dungeon add [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -932,9 +896,7 @@ camp dungeon crawl [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -960,6 +922,7 @@ Examples:
   camp dungeon list                  List dungeon root items
   camp dungeon list --triage         List parent items eligible for triage
   cd workflow/design/subdir && camp dungeon list  Uses nearest dungeon context from nested path
+  camp dungeon list --json           JSON output for scripting
   camp dungeon list -f json          JSON output for scripting
   camp dungeon list -f simple        Names only, pipe to other commands
 
@@ -972,15 +935,14 @@ camp dungeon list [flags]
 ```
   -f, --format string   Output format: table, simple, json (default "table")
   -h, --help            help for list
+      --json            Output as JSON (shorthand for --format json)
       --triage          List parent items eligible for triage into dungeon
 ```
 
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -1025,9 +987,7 @@ camp dungeon move <item> [status] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -1074,9 +1034,7 @@ camp fresh [project-name] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -1109,13 +1067,11 @@ camp fresh all [flags]
 
 ```
   -b, --branch string   Branch to create after syncing (overrides config)
-      --config string   config file (default: ~/.obey/campaign/config.json)
   -n, --dry-run         Preview without making changes
       --no-branch       Skip branch creation even if configured
       --no-color        disable colored output
       --no-prune        Skip pruning merged branches
       --no-push         Skip pushing the new branch upstream
-      --verbose         enable verbose output
 ```
 ---
 
@@ -1146,9 +1102,7 @@ camp gather [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -1207,9 +1161,7 @@ camp gather feedback [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -1288,9 +1240,7 @@ camp go [shortcut] [query...] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -1321,9 +1271,7 @@ camp id [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -1337,7 +1285,6 @@ Initialize a new campaign directory structure.
 
 Creates the standard campaign directories:
   .campaign/              - Campaign configuration and metadata
-  .campaign/quests/       - Quest execution contexts
   .campaign/intents/      - System-managed intent state
   projects/               - Project repositories (submodules or worktrees)
   projects/worktrees/     - Git worktrees for parallel development
@@ -1386,15 +1333,14 @@ camp init [path] [flags]
       --no-skills            Skip linking campaign skills into .claude/skills and .agents/skills
       --repair               Add missing files to existing campaign
   -t, --type string          Campaign type (product, research, tools, personal) (default "product")
+  -v, --verbose              Show skipped optional setup details
       --yes                  Skip repair confirmation prompt (for scripting)
 ```
 
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -1444,9 +1390,7 @@ camp intent [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -1503,8 +1447,9 @@ camp intent add [title] [flags]
   -c, --campaign string    Target campaign by name or ID; omit value to pick interactively
       --concept string     Set the concept field (e.g., projects/camp)
   -e, --edit               Open in $EDITOR for deep capture
-  -f, --full               Full TUI mode with body textarea
+      --full               Full TUI mode with body textarea
   -h, --help               help for add
+      --json               emit a structured JSON result
       --no-commit          Don't create a git commit
   -t, --type string        Intent type (idea, feature, bug, research, chore) (default "idea")
 ```
@@ -1512,9 +1457,7 @@ camp intent add [title] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -1551,9 +1494,7 @@ camp intent archive <id> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -1582,14 +1523,13 @@ camp intent count [flags]
 ```
   -f, --format string   Output format: table, json (default "table")
   -h, --help            help for count
+      --json            emit a structured JSON result
 ```
 
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -1631,9 +1571,7 @@ camp intent crawl [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -1714,9 +1652,7 @@ camp intent edit [id] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -1783,9 +1719,7 @@ camp intent explore [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -1820,15 +1754,14 @@ camp intent find [query] [flags]
 ```
   -f, --format string   Output format: table, simple, json (default "table")
   -h, --help            help for find
+      --json            emit a structured JSON result
   -n, --limit int       Limit results (0 = no limit)
 ```
 
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -1898,9 +1831,7 @@ camp intent gather [ids...] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -1938,6 +1869,7 @@ camp intent list [flags]
   -f, --format string    Output format: table, simple, json (default "table")
   -h, --help             help for list
       --horizon string   Filter by horizon
+      --json             emit a structured JSON result
   -n, --limit int        Limit results (0 = no limit)
   -p, --project string   Filter by project
   -S, --sort string      Sort by: updated, created, priority, title (default "updated")
@@ -1948,9 +1880,7 @@ camp intent list [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -1998,9 +1928,7 @@ camp intent move <id> <status> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -2043,9 +1971,7 @@ camp intent promote <id> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -2082,14 +2008,13 @@ camp intent show <id> [flags]
 ```
   -f, --format string   Output format: text, json, yaml (default "text")
   -h, --help            help for show
+      --json            emit a structured JSON result
 ```
 
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -2139,8 +2064,7 @@ camp leverage [directory] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
+      --no-color   disable colored output
 ```
 ---
 
@@ -2181,9 +2105,7 @@ camp leverage backfill [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -2231,9 +2153,7 @@ camp leverage config [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -2276,9 +2196,7 @@ camp leverage history [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -2312,9 +2230,7 @@ camp leverage reset [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -2351,9 +2267,7 @@ camp leverage snapshot [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -2380,6 +2294,7 @@ Sorting options:
 
 Examples:
   camp list                  List all campaigns
+  camp list --json           Output as JSON
   camp list --format json    Output as JSON
   camp list --sort name      Sort by name
   camp list --format simple  Names only for scripting
@@ -2393,6 +2308,7 @@ camp list [flags]
 ```
   -f, --format string    Output format (table, simple, json) (default "table")
   -h, --help             help for list
+      --json             Output as JSON (shorthand for --format json)
   -s, --sort string      Sort by (name, accessed, type) (default "accessed")
       --verify-verbose   Show detailed verification output
 ```
@@ -2400,9 +2316,7 @@ camp list [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -2441,9 +2355,7 @@ camp log [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -2486,9 +2398,7 @@ camp move <src> <dest> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -2524,9 +2434,7 @@ camp pin <name> [path] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -2551,9 +2459,7 @@ camp pins [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -2574,9 +2480,7 @@ camp plugins [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -2614,9 +2518,7 @@ camp project [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -2665,9 +2567,7 @@ camp project add [source] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -2710,9 +2610,7 @@ camp project commit [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -2757,9 +2655,7 @@ camp project link [path] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -2781,6 +2677,7 @@ Output formats:
 
 Examples:
   camp project list               List projects in table format
+  camp project list --json        Output as JSON
   camp project list --format json Output as JSON
   camp project list --format simple  Names only for scripting
 
@@ -2793,14 +2690,13 @@ camp project list [flags]
 ```
   -f, --format string   Output format (table, simple, json) (default "table")
   -h, --help            help for list
+      --json            Output as JSON (shorthand for --format json)
 ```
 
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -2838,9 +2734,7 @@ camp project new <name> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -2872,6 +2766,7 @@ camp project prune [project-name] [flags]
 ### Options
 
 ```
+      --discard-dirty    Allow removal of worktrees with uncommitted changes (for branches with worktrees)
   -n, --dry-run          Preview without deleting
   -f, --force            Skip local branch deletion confirmation
   -h, --help             help for prune
@@ -2883,9 +2778,7 @@ camp project prune [project-name] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -2919,9 +2812,7 @@ camp project prune all [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -2969,9 +2860,7 @@ camp project remote [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -3007,10 +2896,8 @@ camp project remote add <name> <url> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string    config file (default: ~/.obey/campaign/config.json)
       --no-color         disable colored output
   -p, --project string   Project name (auto-detected from cwd if not specified)
-      --verbose          enable verbose output
 ```
 ---
 
@@ -3042,10 +2929,8 @@ camp project remote list [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string    config file (default: ~/.obey/campaign/config.json)
       --no-color         disable colored output
   -p, --project string   Project name (auto-detected from cwd if not specified)
-      --verbose          enable verbose output
 ```
 ---
 
@@ -3084,10 +2969,8 @@ camp project remote remove <name> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string    config file (default: ~/.obey/campaign/config.json)
       --no-color         disable colored output
   -p, --project string   Project name (auto-detected from cwd if not specified)
-      --verbose          enable verbose output
 ```
 ---
 
@@ -3128,10 +3011,8 @@ camp project remote rename <old> <new> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string    config file (default: ~/.obey/campaign/config.json)
       --no-color         disable colored output
   -p, --project string   Project name (auto-detected from cwd if not specified)
-      --verbose          enable verbose output
 ```
 ---
 
@@ -3180,10 +3061,8 @@ camp project remote set-url <url> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string    config file (default: ~/.obey/campaign/config.json)
       --no-color         disable colored output
   -p, --project string   Project name (auto-detected from cwd if not specified)
-      --verbose          enable verbose output
 ```
 ---
 
@@ -3196,7 +3075,8 @@ Remove a project from campaign
 Remove a project from the campaign.
 
 By default, this only removes the project from git submodule tracking.
-The project files remain in place for you to handle manually.
+The project directory is removed from the working tree by git rm. Pass --delete
+to also remove any worktree directories managed by camp.
 
 For linked projects, prefer 'camp project unlink'. Linked projects are
 machine-local symlinks and are never deleted through this command.
@@ -3227,9 +3107,7 @@ camp project remove <name> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -3275,9 +3153,7 @@ camp project run [--project <name>] [--] <command> [args...] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -3318,9 +3194,7 @@ camp project stage [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -3368,9 +3242,7 @@ camp project unlink [name] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -3419,9 +3291,7 @@ camp project worktree [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -3474,9 +3344,7 @@ camp project worktree add <name> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -3513,9 +3381,7 @@ camp project worktree list [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -3556,51 +3422,7 @@ camp project worktree remove <name> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
-```
----
-
-## camp promote
-
-Promote the workitem at cwd to a dungeon status
-
-### Synopsis
-
-Promote the directory-style workitem containing the current working
-directory to a named status. Status directories live under the workitem
-type's local dungeon (workflow/<type>/dungeon/<status>/); outside the
-dungeon a workitem is treated as active.
-
-Run this from anywhere inside workflow/<type>/<slug>/. The workitem
-boundary is detected from cwd. The status argument is the destination
-directory name (e.g., completed, archived, someday) - no need to spell
-out "dungeon/".
-
-Examples:
-  camp promote completed   Shelve the workitem to its local dungeon/completed
-  camp promote archived    Move to dungeon/archived
-  camp promote someday     Move to dungeon/someday
-
-```
-camp promote <status> [flags]
-```
-
-### Options
-
-```
-  -h, --help        help for promote
-      --json        Output result as JSON
-      --no-commit   Skip auto-commit after promotion
-```
-
-### Options inherited from parent commands
-
-```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -3616,7 +3438,7 @@ Works from anywhere within the campaign - always pulls to
 the campaign root repository.
 
 Use --sub to pull the submodule detected from your current directory.
-Use --project/-p to pull a specific project.
+Use --project to pull a specific project.
 Use 'camp pull all' to pull all repos with upstream tracking.
 
 Any git pull flags are passed through (e.g. --rebase, --ff-only).
@@ -3626,7 +3448,7 @@ Examples:
   camp pull --rebase           # Pull with rebase
   camp pull --ff-only          # Fast-forward only
   camp pull --sub              # Pull current submodule
-  camp pull -p projects/camp   # Pull camp project
+  camp pull --project=projects/camp  # Pull camp project
   camp pull all                # Pull all repos
   camp pull all --ff-only      # Pull all repos, fast-forward only
 
@@ -3643,9 +3465,7 @@ camp pull [flags] [remote] [branch]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -3689,9 +3509,7 @@ camp pull all [git pull flags] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -3707,7 +3525,7 @@ Works from anywhere within the campaign - always pushes from
 the campaign root repository.
 
 Use --sub to push from the submodule detected from your current directory.
-Use --project/-p to push from a specific project.
+Use --project to push from a specific project.
 Use 'camp push all' to push all repos that have unpushed commits.
 
 Examples:
@@ -3716,7 +3534,7 @@ Examples:
   camp push --force            # Force push
   camp push -u origin feature  # Push and set upstream
   camp push --sub              # Push current submodule
-  camp push -p projects/camp   # Push camp project
+  camp push --project=projects/camp  # Push camp project
   camp push all                # Push all repos with unpushed commits
   camp push all --force        # Force push all repos
 
@@ -3733,9 +3551,7 @@ camp push [flags] [remote] [branch]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -3773,9 +3589,7 @@ camp push all [git push flags] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -3810,9 +3624,7 @@ camp refs-sync [submodule...] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -3854,9 +3666,7 @@ camp register [path] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -3876,14 +3686,17 @@ Commands:
   sync    Update registry entry for current campaign
   check   Validate registry integrity
 
-Examples:
+```
+camp registry [flags]
+```
+
+### Examples
+
+```
   camp registry prune             Remove entries for non-existent campaigns
   camp registry prune --dry-run   Show what would be removed
   camp registry sync              Update path for current campaign
   camp registry check             Check for issues
-
-```
-camp registry [flags]
 ```
 
 ### Options
@@ -3895,9 +3708,7 @@ camp registry [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -3931,9 +3742,7 @@ camp registry check [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -3973,9 +3782,7 @@ camp registry prune [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -4007,9 +3814,7 @@ camp registry sync [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -4042,9 +3847,7 @@ camp root [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -4067,7 +3870,8 @@ and executed from the campaign root directory.
 Use @shortcut prefix to run from a shortcut's directory instead of root.
 Only navigation shortcuts (those with paths) can be used.
 
-All arguments after 'run' (or '@shortcut') are passed directly to the shell.
+Raw command arguments after 'run' (or '@shortcut') are passed directly to the
+shell. Project just-dispatch passes recipe arguments directly to just.
 
 ```
 camp run [project | @shortcut] [command | recipe] [args...] [flags]
@@ -4100,9 +3904,7 @@ camp run [project | @shortcut] [command | recipe] [args...] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -4145,9 +3947,7 @@ camp settings [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -4253,9 +4053,21 @@ Add to your shell config:
   fish: camp shell-init fish | source
 
 This provides:
+  - A camp shell function that wraps the camp binary
   - cgo function for navigation
   - Tab completion for camp commands
   - Category shortcuts (p, c, f, etc.)
+
+IMPORTANT: this defines a shell function named 'camp' that wraps the camp
+binary. The function intercepts 'camp switch' and 'camp go' to perform
+directory changes in the current shell session.
+
+The following shell aliases and functions are also installed:
+  cr     camp run (run a just recipe in a project)
+  csw    camp switch (shorthand)
+  cint   camp intent add (quick idea capture)
+  cnote  camp intent note (add a note to an existing intent)
+  cie    camp intent explore (interactive intent browser)
 
 The cgo function enables quick navigation:
   cgo                 Interactive picker or jump to campaign root
@@ -4289,9 +4101,50 @@ camp shell-init <shell> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
+```
+---
+
+## camp shelve
+
+Shelve the workitem at cwd to a dungeon status
+
+### Synopsis
+
+Shelve the directory-style workitem containing the current working
+directory to a named dungeon status. Status directories live under the
+workitem type's local dungeon (workflow/<type>/dungeon/<status>/); outside
+the dungeon a workitem is treated as active.
+
+Run this from anywhere inside workflow/<type>/<slug>/. The workitem
+boundary is detected from cwd. The status argument is the destination
+directory name (e.g., completed, archived, someday) - no need to spell
+out "dungeon/".
+
+```
+camp shelve <status> [flags]
+```
+
+### Examples
+
+```
+  camp shelve completed   Shelve the workitem to its local dungeon/completed
+  camp shelve archived    Move to dungeon/archived
+  camp shelve someday     Move to dungeon/someday
+```
+
+### Options
+
+```
+  -h, --help        help for shelve
+      --json        Output result as JSON
+      --no-commit   Skip auto-commit after shelving
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
 ```
 ---
 
@@ -4335,9 +4188,7 @@ camp shortcuts [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -4361,7 +4212,7 @@ With no arguments, launches an interactive TUI for entering
 shortcut details.
 
 ```
-camp shortcuts add [name] [path] or [project] [name] [path] [flags]
+camp shortcuts add <name> <path> | <project> <name> <path> [flags]
 ```
 
 ### Examples
@@ -4385,9 +4236,7 @@ camp shortcuts add [name] [path] or [project] [name] [path] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -4427,9 +4276,7 @@ camp shortcuts diff [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -4463,9 +4310,7 @@ camp shortcuts list [project] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -4503,9 +4348,7 @@ camp shortcuts remove <name> or <project> <name> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -4553,9 +4396,7 @@ camp shortcuts reset [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -4595,9 +4436,7 @@ camp skills [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -4640,9 +4479,7 @@ camp skills link [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -4676,9 +4513,7 @@ camp skills status [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -4715,9 +4550,7 @@ camp skills unlink [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -4763,9 +4596,7 @@ camp stage [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -4782,30 +4613,35 @@ of the campaign root repository.
 
 Use --sub to show status of the submodule detected from your current directory.
 Use --project/-p to show status of a specific project.
-
-Examples:
-  camp status           # Full status
-  camp status -s        # Short format (git flag)
-  camp status --short   # Short format (git flag)
-  camp status --sub     # Status of current submodule
-  camp status -p projects/camp  # Status of camp project
+Pass git status flags after -- to forward them directly to git.
 
 ```
-camp status [flags]
+camp status [flags] [-- <git-flags>]
+```
+
+### Examples
+
+```
+  camp status           # Full status
+  camp status -s        # Short format
+  camp status --sub     # Status of current submodule
+  camp status -p projects/camp  # Status of camp project
 ```
 
 ### Options
 
 ```
-  -h, --help   help for status
+  -h, --help             help for status
+  -p, --project string   Status of a specific project path
+  -s, --short            Give output in short format
+      --show-refs        Show campaign root submodule ref changes
+      --sub              Status of the submodule detected from current directory
 ```
 
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -4818,13 +4654,12 @@ Show git status of all submodules
 Show a visual overview of git status for all submodules in the campaign.
 
 Displays a table with each submodule's name, branch, clean/dirty state,
-and push status. Results are cached for quick subsequent lookups.
+and push status.
 
 Examples:
   camp status all               # Show all submodule statuses
   camp status all --remote-url  # Show remote URLs instead of names
   camp status all --json        # Output as JSON
-  camp status all --no-cache    # Skip cache, refresh all
 
 ```
 camp status all [flags]
@@ -4835,7 +4670,6 @@ camp status all [flags]
 ```
   -h, --help         help for all
       --json         Output as JSON
-      --no-cache     Skip cache and refresh
       --no-recurse   Only list top-level submodules
       --remote-url   Show remote URLs instead of remote names
       --view         Open interactive TUI viewer
@@ -4844,9 +4678,7 @@ camp status all [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -4892,9 +4724,7 @@ camp switch [campaign] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -4924,10 +4754,9 @@ when URLs change on remote repositories.
 
 EXIT CODES:
   0  Success
-  1  Pre-flight check failed (uncommitted changes)
-  2  Sync or update operation failed
+  1  Runtime failure (including pre-flight, sync, or update failure)
+  2  Usage error (bad flags or args)
   3  Post-sync validation failed
-  4  Invalid arguments
 
 EXAMPLES:
   # Sync all submodules (recommended default)
@@ -4967,8 +4796,7 @@ camp sync [submodule...] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
+      --no-color   disable colored output
 ```
 ---
 
@@ -5010,9 +4838,7 @@ camp transfer <src> <dest> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -5039,9 +4865,7 @@ camp unpin [name] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -5082,9 +4906,7 @@ camp unregister <name-or-id> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -5095,6 +4917,8 @@ Show version information
 ### Synopsis
 
 Show camp version, build information, and runtime details.
+
+When both --short and --json are provided, --json wins.
 
 Examples:
   camp version           Show full version info
@@ -5116,9 +4940,7 @@ camp version [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -5142,15 +4964,23 @@ navigation config and workitem type support.
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
 ## camp workflow create
 
 Create a custom workflow collection
+
+### Synopsis
+
+Create a custom workflow collection under workflow/<type>/.
+
+The command creates the workflow directory, terminal dungeon directories,
+.gitkeep files, and an OBEY.md guide, then registers the collection in
+campaign configuration through a concept and navigation shortcut. A shortcut is
+required. Use --dry-run to inspect planned writes and --json for
+machine-readable planning or apply results.
 
 ```
 camp workflow create <type> [flags]
@@ -5170,15 +5000,22 @@ camp workflow create <type> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
 ## camp workflow doctor
 
 Report workflow surface inconsistencies
+
+### Synopsis
+
+Report inconsistencies between workflow directories and campaign configuration.
+
+The command reads campaign.yaml, .campaign/settings/jumps.yaml, workflow/
+directories, and the navigation cache to find missing concepts, stale
+shortcuts, duplicate shortcut keys, and cache drift. Use --json for
+machine-readable findings and stable finding codes.
 
 ```
 camp workflow doctor [flags]
@@ -5194,15 +5031,22 @@ camp workflow doctor [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
 ## camp workflow list
 
 List user-created workflow collections
+
+### Synopsis
+
+List user-created workflow collections registered in the campaign.
+
+The command reads campaign configuration and workflow/ directories, then shows
+each collection's shortcut, item count, and latest workitem update. Built-in
+workflow types are omitted so the output focuses on custom collections. Use
+--json for machine-readable workflow inventory output.
 
 ```
 camp workflow list [flags]
@@ -5218,15 +5062,21 @@ camp workflow list [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
 ## camp workflow shortcut
 
 Manage navigation shortcuts for workflow collections
+
+### Synopsis
+
+Manage navigation shortcuts for custom workflow collections.
+
+Workflow shortcuts are stored in campaign configuration and point to
+workflow/<type>/ directories. Use subcommands to attach or repair shortcut
+entries after creating or moving workflow collections.
 
 ### Options
 
@@ -5237,15 +5087,22 @@ Manage navigation shortcuts for workflow collections
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
 ## camp workflow shortcut add
 
 Attach a navigation shortcut to an existing workflow
+
+### Synopsis
+
+Attach a navigation shortcut to an existing workflow collection.
+
+The command updates .campaign/settings/jumps.yaml so cgo and camp navigation
+can jump to workflow/<type>/ by key. The workflow type must already exist. Use
+--replace to overwrite a conflicting shortcut and --json for machine-readable
+result details.
 
 ```
 camp workflow shortcut add <type> <key> [flags]
@@ -5262,15 +5119,22 @@ camp workflow shortcut add <type> <key> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
 ## camp workflow show
 
 Show a workflow collection's config and recent workitems
+
+### Synopsis
+
+Show configuration and recent workitems for a workflow collection.
+
+The command reads campaign configuration plus the workflow/<type>/ directory,
+then prints the collection path, shortcut state, concept state, and recent
+.workitem-backed items. Use --json for machine-readable collection details and
+recent workitem data.
 
 ```
 camp workflow show <type> [flags]
@@ -5286,15 +5150,23 @@ camp workflow show <type> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
 ## camp workflow sync
 
 Repair auto-fixable doctor findings
+
+### Synopsis
+
+Repair auto-fixable workflow findings reported by workflow doctor.
+
+The command plans changes to campaign.yaml, .campaign/settings/jumps.yaml, and
+the navigation cache for stale shortcuts, missing concepts, duplicate shortcut
+keys, and cache drift. By default it reports the planned actions only; pass
+--apply to write changes. Use --json for machine-readable plans and applied
+actions.
 
 ```
 camp workflow sync [flags]
@@ -5311,9 +5183,7 @@ camp workflow sync [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -5347,22 +5217,30 @@ camp workitem [flags]
       --limit int           Maximum number of items to return
       --print               Print path only (for shell integration)
       --query string        Search query to filter items
-      --stage stringArray   Filter by lifecycle stage (inbox, active, ready, planning)
+      --stage stringArray   Filter by lifecycle stage (none, inbox, active, ready, planning, ritual, chains)
       --type stringArray    Filter by workflow type (builtin: intent, design, explore, festival; or any slug-safe custom type produced by 'camp workitem create --type <name>')
 ```
 
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
 ## camp workitem adopt
 
 Attach .workitem metadata to an existing directory
+
+### Synopsis
+
+Attach workitem metadata to an existing campaign directory without moving it.
+
+The target directory must already exist and must not already contain a
+.workitem file. The command writes that .workitem metadata file with the
+selected type, title, generated or supplied id, and optional quest link. Use
+this when a workflow directory already exists and needs to become a tracked
+workitem.
 
 ```
 camp workitem adopt <dir> [flags]
@@ -5373,7 +5251,7 @@ camp workitem adopt <dir> [flags]
 ```
   -h, --help           help for adopt
       --id string      override the generated id
-      --quest string   capture quest_id from this quest (defaults to CAMP_QUEST env var if set)
+      --quest string   quest ID to associate (requires dev-profile camp; forward-compatible flag)
       --title string   human-readable title
       --type string    workitem type (feature, bug, chore, or custom) (default "feature")
 ```
@@ -5381,9 +5259,7 @@ camp workitem adopt <dir> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -5426,9 +5302,7 @@ camp workitem commit [selector] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -5464,15 +5338,23 @@ camp workitem commits [selector] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
 ## camp workitem create
 
 Create a new workitem with v1 minimum metadata
+
+### Synopsis
+
+Create a new workitem directory with minimal v1 metadata.
+
+The workitem is created under workflow/<type>/<slug>/ unless --dir supplies a
+different campaign-relative parent directory. A .workitem file is written with
+the id, type, title, ref, creation metadata, and optional quest link. Use --json
+for machine-readable output containing the new workitem identity and next-step
+location.
 
 ```
 camp workitem create <slug> [flags]
@@ -5485,7 +5367,7 @@ camp workitem create <slug> [flags]
   -h, --help           help for create
       --id string      override the generated id
       --json           emit a structured JSON result
-      --quest string   capture quest_id from this quest (defaults to CAMP_QUEST env var if set)
+      --quest string   quest ID to associate (requires dev-profile camp; forward-compatible flag)
       --title string   human-readable title
       --type string    workitem type (feature, bug, chore, or custom) (default "feature")
 ```
@@ -5493,15 +5375,22 @@ camp workitem create <slug> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
 ## camp workitem current
 
 Get, set, or clear the local current workitem
+
+### Synopsis
+
+Get, set, or clear the campaign-local current workitem pointer.
+
+The selection is stored in .campaign/workitems/current.yaml and is used by
+commands that need a default workitem when cwd alone is ambiguous. Pass a
+selector to set the current workitem, omit it to read the selection, or use
+--clear to remove it. Use --json for machine-readable current selection output.
 
 ```
 camp workitem current [selector] [flags]
@@ -5518,15 +5407,22 @@ camp workitem current [selector] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
 ## camp workitem doctor
 
 Report workitem link-registry health issues
+
+### Synopsis
+
+Report health issues in the campaign workitem link registry.
+
+The command reads .campaign/workitems/links.yaml, scans .workitem metadata on
+disk, and checks current-workitem and priority stores for stale or inconsistent
+references. Use --fix to apply auto-repairs for supported findings. Use --json
+for machine-readable findings and stable finding codes.
 
 ```
 camp workitem doctor [flags]
@@ -5543,15 +5439,22 @@ camp workitem doctor [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
 ## camp workitem link
 
 Attach a workitem to a project, festival, worktree, or campaign path
+
+### Synopsis
+
+Attach a workitem to a project, festival, worktree, or campaign path.
+
+Links are stored in .campaign/workitems/links.yaml and connect a .workitem
+identity to an explicit scope for planning, execution, and lookup. Pass a
+workitem selector plus a path, or use --project, --festival, --worktree, or
+--cwd to derive the scope. Use --json for machine-readable link output.
 
 ```
 camp workitem link <selector> [path] [flags]
@@ -5574,15 +5477,22 @@ camp workitem link <selector> [path] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
 ## camp workitem links
 
 List workitem links
+
+### Synopsis
+
+List workitem links recorded in the campaign link registry.
+
+The command reads .campaign/workitems/links.yaml and prints every link, or only
+links for the supplied workitem selector. Use this to audit which projects,
+festivals, worktrees, or paths are attached to a workitem. Use --json for
+machine-readable link lists.
 
 ```
 camp workitem links [selector] [flags]
@@ -5598,9 +5508,7 @@ camp workitem links [selector] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -5637,15 +5545,22 @@ camp workitem priority <selector> <high|medium|low|clear> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
 ## camp workitem resolve
 
 Print the workitem the current context resolves to (read-only)
+
+### Synopsis
+
+Resolve the active workitem from the current campaign context.
+
+Resolution checks explicit selectors, cwd, festival context, linked scopes,
+and the current-workitem file without mutating any files. Use --explain to show
+the tier-by-tier trace used to choose the result. Use --json for
+machine-readable resolution details and trace data.
 
 ```
 camp workitem resolve [flags]
@@ -5664,15 +5579,22 @@ camp workitem resolve [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
 ## camp workitem unlink
 
 Remove one or more workitem links
+
+### Synopsis
+
+Remove workitem links from the campaign link registry.
+
+The command updates .campaign/workitems/links.yaml by link id, workitem
+selector, explicit path, or scope filter. Use --all when a selector matches
+multiple links and every match should be removed. Use --json for
+machine-readable details about the removed links.
 
 ```
 camp workitem unlink [selector] [path] [flags]
@@ -5693,7 +5615,5 @@ camp workitem unlink [selector] [path] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```

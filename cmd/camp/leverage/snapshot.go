@@ -1,10 +1,7 @@
 package leverage
 
 import (
-	"context"
 	"fmt"
-	"os/exec"
-	"strings"
 	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -69,7 +66,7 @@ func runLeverageSnapshot(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		hash, commitDate, err := getHeadCommit(ctx, proj.GitDir)
+		hash, commitDate, err := intleverage.GetHeadCommit(ctx, proj.GitDir)
 		if err != nil {
 			fmt.Fprintf(cmd.ErrOrStderr(), "Warning: skipping %s: %v\n", proj.Name, err)
 			continue
@@ -114,24 +111,4 @@ func runLeverageSnapshot(cmd *cobra.Command, args []string) error {
 
 	fmt.Fprintf(cmd.OutOrStdout(), "Saved %d snapshots to .campaign/leverage/snapshots/\n", count)
 	return nil
-}
-
-func getHeadCommit(ctx context.Context, gitDir string) (string, time.Time, error) {
-	cmd := exec.CommandContext(ctx, "git", "-C", gitDir, "log", "-1", "--format=%H%n%cI")
-	out, err := cmd.Output()
-	if err != nil {
-		return "", time.Time{}, camperrors.Wrap(err, "git log")
-	}
-
-	lines := strings.SplitN(strings.TrimSpace(string(out)), "\n", 2)
-	if len(lines) != 2 {
-		return "", time.Time{}, fmt.Errorf("unexpected git log output")
-	}
-
-	date, err := time.Parse(time.RFC3339, lines[1])
-	if err != nil {
-		return "", time.Time{}, camperrors.Wrap(err, "parsing commit date")
-	}
-
-	return lines[0], date, nil
 }

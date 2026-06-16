@@ -180,14 +180,6 @@ func TestIsCampaignRoot(t *testing.T) {
 	}
 }
 
-func TestCampaignPath(t *testing.T) {
-	got := CampaignPath("/foo/bar")
-	want := filepath.Join("/foo/bar", CampaignDir)
-	if got != want {
-		t.Errorf("CampaignPath() = %v, want %v", got, want)
-	}
-}
-
 func BenchmarkDetect(b *testing.B) {
 	tmpDir := b.TempDir()
 	campaignRoot := filepath.Join(tmpDir, "campaign")

@@ -25,18 +25,17 @@ func RunGitCmd(ctx context.Context, repoPath string, args ...string) (string, er
 		return "", ctx.Err()
 	}
 
-	fullArgs := append([]string{"-C", repoPath}, args...)
-	cmd := exec.CommandContext(ctx, "git", fullArgs...)
+	cmd := gitCmd(ctx, repoPath, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", classifyGitCmdError(output, err, args)
+		return "", classifyGitCmdError(repoPath, output, err, args)
 	}
 
 	return strings.TrimSpace(string(output)), nil
 }
 
 // classifyGitCmdError converts raw git command failure into a structured error.
-func classifyGitCmdError(output []byte, err error, args []string) error {
+func classifyGitCmdError(repoPath string, output []byte, err error, args []string) error {
 	stderr := strings.TrimSpace(string(output))
 	exitCode := 0
 
@@ -53,7 +52,7 @@ func classifyGitCmdError(output []byte, err error, args []string) error {
 
 	switch errType {
 	case GitErrorLock:
-		return &LockError{Path: "index.lock", Err: err}
+		return lockErrorForRepository(repoPath, err)
 	case GitErrorNotRepo:
 		return camperrors.WrapJoin(ErrNotRepository, err, op)
 	case GitErrorNetwork:

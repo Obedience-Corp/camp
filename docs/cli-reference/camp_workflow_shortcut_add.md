@@ -2,6 +2,15 @@
 
 Attach a navigation shortcut to an existing workflow
 
+### Synopsis
+
+Attach a navigation shortcut to an existing workflow collection.
+
+The command updates .campaign/settings/jumps.yaml so cgo and camp navigation
+can jump to workflow/<type>/ by key. The workflow type must already exist. Use
+--replace to overwrite a conflicting shortcut and --json for machine-readable
+result details.
+
 ```
 camp workflow shortcut add <type> <key> [flags]
 ```
@@ -17,9 +26,7 @@ camp workflow shortcut add <type> <key> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 
 ### SEE ALSO

@@ -67,6 +67,7 @@ Customize by editing .workflow.yaml and running 'camp flow sync'.`,
 	flowCmd.AddCommand(newItemsCommand())
 	flowCmd.AddCommand(newStatusCommand())
 	flowCmd.AddCommand(newShowCommand())
+	flowCmd.AddCommand(newHistoryCommand())
 	flowCmd.AddCommand(newSyncCommand())
 	flowCmd.AddCommand(newMigrateCommand())
 	flowCmd.AddCommand(newRunCommand())

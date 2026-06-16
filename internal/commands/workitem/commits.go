@@ -21,6 +21,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
+	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
 	"github.com/Obedience-Corp/camp/internal/workitem/resolver"
 	"github.com/Obedience-Corp/camp/pkg/commitkit"
@@ -128,7 +129,7 @@ func runCommitsQuery(ctx context.Context, cmd *cobra.Command, flags commitsFlags
 			return camperrors.NewValidation("workitem",
 				"no workitem context resolved; pass <selector> or --ref WI-...", nil)
 		}
-		ref = refOf(res.Workitem)
+		ref = wkitem.RefOf(res.Workitem)
 		if ref == "" {
 			return camperrors.NewValidation("workitem",
 				"workitem has no ref; run `camp workitem doctor --fix` to backfill", nil)

@@ -1,20 +1,39 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/Obedience-Corp/camp/internal/concept"
 	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
 
-var conceptsCmd = &cobra.Command{
-	Use:     "concepts",
-	Short:   "List configured concepts",
-	Aliases: []string{"concept"},
-	RunE:    runConcepts,
+const ConceptsJSONVersion = "concepts/v1alpha1"
+
+var conceptsCmd = newConceptsCommand()
+
+type conceptsPayload struct {
+	SchemaVersion string        `json:"schema_version"`
+	GeneratedAt   time.Time     `json:"generated_at"`
+	CampaignRoot  string        `json:"campaign_root"`
+	Concepts      []conceptItem `json:"concepts"`
+}
+
+type conceptItem struct {
+	Name        string        `json:"name"`
+	Path        string        `json:"path"`
+	Description string        `json:"description,omitempty"`
+	MaxDepth    *int          `json:"max_depth,omitempty"`
+	HasItems    bool          `json:"has_items"`
+	Ignore      []string      `json:"ignore,omitempty"`
+	Children    []conceptItem `json:"children,omitempty"`
 }
 
 func init() {
@@ -22,15 +41,27 @@ func init() {
 	conceptsCmd.GroupID = "campaign"
 }
 
+func newConceptsCommand() *cobra.Command {
+	var jsonOut bool
+	cmd := &cobra.Command{
+		Use:     "concepts",
+		Short:   "List configured concepts",
+		Aliases: []string{"concept"},
+		RunE:    jsoncontract.RunE(ConceptsJSONVersion, func() bool { return jsonOut }, runConcepts),
+	}
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit a structured JSON result")
+	return cmd
+}
+
 func runConcepts(cmd *cobra.Command, _ []string) error {
 	ctx := cmd.Context()
 
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		fmt.Println(ui.Warning("Not in a campaign"))
-		fmt.Println()
-		fmt.Printf("Run %s to create a new campaign.\n", ui.Accent("camp init"))
-		return nil
+		return jsoncontract.WithHint(
+			camperrors.Wrap(err, "not in a campaign directory"),
+			"run 'camp init' to create a new campaign",
+		)
 	}
 
 	svc := concept.NewService(campaignRoot, cfg.Concepts())
@@ -39,8 +70,57 @@ func runConcepts(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
+	jsonOut, _ := cmd.Flags().GetBool("json")
+	if jsonOut {
+		return printConceptsJSON(cmd, campaignRoot, concepts)
+	}
+
 	printConcepts(cfg.Name, concepts)
 	return nil
+}
+
+func printConceptsJSON(cmd *cobra.Command, campaignRoot string, concepts []concept.Concept) error {
+	resolvedRoot, err := filepath.EvalSymlinks(campaignRoot)
+	if err != nil {
+		return camperrors.Wrap(err, "resolve campaign root")
+	}
+	resolvedRoot, err = filepath.Abs(resolvedRoot)
+	if err != nil {
+		return camperrors.Wrap(err, "resolve campaign root")
+	}
+
+	items := make([]conceptItem, 0, len(concepts))
+	for _, c := range concepts {
+		items = append(items, conceptItemFromConcept(c))
+	}
+
+	payload := conceptsPayload{
+		SchemaVersion: ConceptsJSONVersion,
+		GeneratedAt:   time.Now().UTC(),
+		CampaignRoot:  resolvedRoot,
+		Concepts:      items,
+	}
+	enc := json.NewEncoder(cmd.OutOrStdout())
+	enc.SetIndent("", "  ")
+	return enc.Encode(payload)
+}
+
+func conceptItemFromConcept(c concept.Concept) conceptItem {
+	item := conceptItem{
+		Name:        c.Name,
+		Path:        c.Path,
+		Description: c.Description,
+		MaxDepth:    c.MaxDepth,
+		HasItems:    c.HasItems,
+		Ignore:      c.Ignore,
+	}
+	if len(c.Children) > 0 {
+		item.Children = make([]conceptItem, 0, len(c.Children))
+		for _, child := range c.Children {
+			item.Children = append(item.Children, conceptItemFromConcept(child))
+		}
+	}
+	return item
 }
 
 func printConcepts(campaignName string, concepts []concept.Concept) {

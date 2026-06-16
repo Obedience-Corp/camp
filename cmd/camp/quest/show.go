@@ -3,13 +3,17 @@
 package quest
 
 import (
-	"encoding/json"
 	"os"
 
 	"github.com/spf13/cobra"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 )
+
+const QuestShowJSONVersion = "quest-show/v1alpha1"
+
+var questShowJSON bool
 
 var questShowCmd = &cobra.Command{
 	Use:   "show <quest>",
@@ -20,26 +24,26 @@ Examples:
   camp quest show qst_default
   camp quest show platform-launch --json
   camp quest show platform-launch --yaml`,
-	Args: cobra.ExactArgs(1),
+	Args: jsoncontract.Args(QuestShowJSONVersion, func() bool { return questShowJSON }, cobra.ExactArgs(1)),
 	Annotations: map[string]string{
 		"agent_allowed": "true",
 		"agent_reason":  "Non-interactive quest metadata display",
 	},
-	RunE: runQuestShow,
+	RunE: jsoncontract.RunE(QuestShowJSONVersion, func() bool { return questShowJSON }, runQuestShow),
 }
 
 func init() {
 	Cmd.AddCommand(questShowCmd)
-	questShowCmd.Flags().Bool("json", false, "Output JSON")
+	questShowCmd.Flags().BoolVar(&questShowJSON, "json", false, "Output JSON")
 	questShowCmd.Flags().Bool("yaml", false, "Output raw YAML")
 	questShowCmd.ValidArgsFunction = completeQuestSelector
+	questShowCmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(QuestShowJSONVersion, func() bool { return questShowJSON }))
 }
 
 func runQuestShow(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	jsonOut, _ := cmd.Flags().GetBool("json")
 	yamlOut, _ := cmd.Flags().GetBool("yaml")
-	if jsonOut && yamlOut {
+	if questShowJSON && yamlOut {
 		return camperrors.New("use only one of --json or --yaml")
 	}
 
@@ -57,10 +61,8 @@ func runQuestShow(cmd *cobra.Command, args []string) error {
 	case yamlOut:
 		_, err = os.Stdout.Write(raw)
 		return err
-	case jsonOut:
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		return enc.Encode(q)
+	case questShowJSON:
+		return outputQuestShowJSON(qctx, q)
 	default:
 		outputQuestShow(qctx, q)
 		return nil

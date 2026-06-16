@@ -2,13 +2,14 @@ package intent
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
-	"io"
-	"os"
 	"strings"
 	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/statusmove"
 )
 
 // priorityRank returns a numeric rank for priority (higher = more urgent).
@@ -42,36 +43,13 @@ func AppendDecisionRecord(i *Intent, newStatus Status, reason string) {
 	i.UpdatedAt = time.Now()
 }
 
-// moveFile moves a file from src to dst, handling cross-device moves.
+// moveFile moves src to dst with shared no-replace semantics.
 func moveFile(src, dst string) error {
-	// Try rename first (same filesystem)
-	if err := os.Rename(src, dst); err == nil {
-		return nil
+	if _, err := statusmove.Move(context.Background(), src, dst, statusmove.MoveOptions{}); err != nil {
+		if errors.Is(err, statusmove.ErrAlreadyExists) {
+			return camperrors.Wrap(ErrFileExists, dst)
+		}
+		return err
 	}
-
-	// Fall back to copy + delete (cross-device)
-	srcFile, err := os.Open(src)
-	if err != nil {
-		return camperrors.Wrap(err, "opening source file")
-	}
-	defer srcFile.Close()
-
-	dstFile, err := os.Create(dst)
-	if err != nil {
-		return camperrors.Wrap(err, "creating destination file")
-	}
-	defer dstFile.Close()
-
-	if _, err := io.Copy(dstFile, srcFile); err != nil {
-		os.Remove(dst)
-		return camperrors.Wrap(err, "copying file")
-	}
-
-	// Ensure data is flushed to disk
-	if err := dstFile.Sync(); err != nil {
-		os.Remove(dst)
-		return camperrors.Wrap(err, "syncing destination file")
-	}
-
-	return os.Remove(src)
+	return nil
 }

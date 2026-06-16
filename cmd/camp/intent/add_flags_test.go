@@ -265,7 +265,7 @@ func TestIntentAdd_WithBodyFile(t *testing.T) {
 func TestIntentAdd_FullAndBodyMutualExclusivity(t *testing.T) {
 	// This tests the flag validation logic, not the full command
 	cmd := newTestCmd()
-	cmd.Flags().BoolP("full", "f", false, "")
+	cmd.Flags().Bool("full", false, "")
 
 	if err := cmd.Flags().Set("full", "true"); err != nil {
 		t.Fatalf("Set(full) error: %v", err)

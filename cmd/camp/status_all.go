@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -11,8 +10,10 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"github.com/Obedience-Corp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
+	statuspkg "github.com/Obedience-Corp/camp/internal/status"
 	tuistatus "github.com/Obedience-Corp/camp/internal/tui/status"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	tea "github.com/charmbracelet/bubbletea"
@@ -27,19 +28,19 @@ var statusAllCmd = &cobra.Command{
 	Long: `Show a visual overview of git status for all submodules in the campaign.
 
 Displays a table with each submodule's name, branch, clean/dirty state,
-and push status. Results are cached for quick subsequent lookups.
+and push status.
 
 Examples:
   camp status all               # Show all submodule statuses
   camp status all --remote-url  # Show remote URLs instead of names
-  camp status all --json        # Output as JSON
-  camp status all --no-cache    # Skip cache, refresh all`,
-	RunE: runStatusAll,
+  camp status all --json        # Output as JSON`,
+	RunE: jsoncontract.RunE(StatusAllJSONVersion, func() bool { return statusAllJSON }, runStatusAll),
 }
+
+const StatusAllJSONVersion = "status-all/v1alpha1"
 
 var (
 	statusAllJSON      bool
-	statusAllNoCache   bool
 	statusAllView      bool
 	statusAllNoRecurse bool
 	statusAllRemoteURL bool
@@ -47,47 +48,31 @@ var (
 
 func init() {
 	statusAllCmd.Flags().BoolVar(&statusAllJSON, "json", false, "Output as JSON")
-	statusAllCmd.Flags().BoolVar(&statusAllNoCache, "no-cache", false, "Skip cache and refresh")
 	statusAllCmd.Flags().BoolVar(&statusAllView, "view", false, "Open interactive TUI viewer")
 	statusAllCmd.Flags().BoolVar(&statusAllNoRecurse, "no-recurse", false, "Only list top-level submodules")
 	statusAllCmd.Flags().BoolVar(&statusAllRemoteURL, "remote-url", false, "Show remote URLs instead of remote names")
 
 	statusCmd.AddCommand(statusAllCmd)
+	statusAllCmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(StatusAllJSONVersion, func() bool { return statusAllJSON }))
 }
 
-// repoStatus holds the status of a single repository.
-type repoStatus struct {
-	Name        string `json:"name"`
-	Path        string `json:"path"`
-	Branch      string `json:"branch"`
-	Clean       bool   `json:"clean"`
-	HasUpstream bool   `json:"has_upstream"`
-	Ahead       int    `json:"ahead"`
-	Behind      int    `json:"behind"`
-	Staged      int    `json:"staged"`
-	Modified    int    `json:"modified"`
-	Untracked   int    `json:"untracked"`
-	Unmerged    int    `json:"unmerged"`
-	StaleRefs   int    `json:"stale_refs"`
-	Remote      string `json:"remote"`
-	Error       string `json:"error,omitempty"`
-}
-
-// statusAllCache is the JSON cache format.
-type statusAllCache struct {
-	Timestamp time.Time    `json:"timestamp"`
-	Repos     []repoStatus `json:"repos"`
+type statusAllOutput struct {
+	SchemaVersion string                 `json:"schema_version"`
+	Timestamp     string                 `json:"timestamp"`
+	CampaignRoot  string                 `json:"campaign_root,omitempty"`
+	Repos         []statuspkg.RepoStatus `json:"repos"`
 }
 
 func runStatusAll(cmd *cobra.Command, _ []string) error {
 	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
 
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
 		return camperrors.Wrap(err, "not in a campaign")
+	}
+	campRoot, err = pathutil.ResolveRoot(campRoot)
+	if err != nil {
+		return camperrors.Wrap(err, "resolving campaign root")
 	}
 
 	// Enumerate submodules (including nested monorepo submodules)
@@ -102,23 +87,26 @@ func runStatusAll(cmd *cobra.Command, _ []string) error {
 	}
 
 	if len(paths) == 0 {
-		fmt.Println(ui.Info("No submodules found in this campaign"))
+		if statusAllJSON {
+			return outputStatusJSON("", []statuspkg.RepoStatus{})
+		}
+		fmt.Fprintln(os.Stderr, ui.Info("No submodules found in this campaign"))
 		return nil
 	}
 
-	// Collect status for each
-	statuses := collectStatuses(ctx, campRoot, paths)
+	statusOpts := statuspkg.Options{ShowRemoteURL: statusAllRemoteURL}
+	statuses := statuspkg.Collect(ctx, campRoot, paths, statusOpts)
 
-	// Add campaign root itself (with ref filtering)
-	rootStatus := getRepoStatus(ctx, campRoot, "campaign root", true, statusAllRemoteURL)
-	allStatuses := append([]repoStatus{rootStatus}, statuses...)
+	rootStatus := statuspkg.GetRepoStatus(ctx, campRoot, "campaign root", true, statusOpts)
+	rootStatus.Path = "."
+	allStatuses := append([]statuspkg.RepoStatus{rootStatus}, statuses...)
 
-	// Cache results
-	writeStatusCache(campRoot, allStatuses)
+	// Status cache write removed: no read path existed, and read-style polling
+	// commands were dirtying git status by creating .campaign/cache files.
 
 	// Output
 	if statusAllJSON {
-		return outputStatusJSON(allStatuses)
+		return outputStatusJSON(campRoot, allStatuses)
 	}
 
 	if statusAllView {
@@ -129,7 +117,7 @@ func runStatusAll(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-func runStatusTUI(campRoot string, statuses []repoStatus) error {
+func runStatusTUI(campRoot string, statuses []statuspkg.RepoStatus) error {
 	repos := make([]tuistatus.RepoInfo, len(statuses))
 	for i, s := range statuses {
 		path := s.Path
@@ -159,130 +147,7 @@ func runStatusTUI(campRoot string, statuses []repoStatus) error {
 	return nil
 }
 
-func collectStatuses(ctx context.Context, campRoot string, paths []string) []repoStatus {
-	statuses := make([]repoStatus, 0, len(paths))
-
-	for _, p := range paths {
-		fullPath := filepath.Join(campRoot, p)
-		name := git.SubmoduleDisplayName(p)
-		status := getRepoStatus(ctx, fullPath, name, false, statusAllRemoteURL)
-		status.Path = p
-		statuses = append(statuses, status)
-	}
-
-	return statuses
-}
-
-func getRepoStatus(ctx context.Context, repoPath, name string, isCampaignRoot bool, showRemoteURL bool) repoStatus {
-	rs := repoStatus{
-		Name: name,
-		Path: repoPath,
-	}
-
-	// Get current branch
-	branch, err := git.Output(ctx, repoPath, "rev-parse", "--abbrev-ref", "HEAD")
-	if err != nil {
-		rs.Error = "not a git repo"
-		return rs
-	}
-	rs.Branch = branch
-
-	// Get remote info
-	if showRemoteURL {
-		if remote, err := git.Output(ctx, repoPath, "remote", "get-url", "origin"); err == nil {
-			rs.Remote = shortenRemoteURL(remote)
-		}
-	} else {
-		if remote, err := git.Output(ctx, repoPath, "remote"); err == nil && remote != "" {
-			names := strings.Split(remote, "\n")
-			rs.Remote = strings.Join(names, ", ")
-		}
-	}
-
-	// Get porcelain status — at campaign root, ignore submodule refs so they
-	// don't pollute the dirty state.
-	statusArgs := []string{"status", "--porcelain=v1"}
-	if isCampaignRoot {
-		statusArgs = append(statusArgs, "--ignore-submodules=all")
-	}
-	output, err := git.Output(ctx, repoPath, statusArgs...)
-	if err != nil {
-		rs.Error = "status failed"
-		return rs
-	}
-
-	rs.Clean = output == ""
-	if !rs.Clean {
-		for _, line := range strings.Split(output, "\n") {
-			if len(line) < 2 {
-				continue
-			}
-			x, y := line[0], line[1]
-			if x != ' ' && x != '?' {
-				rs.Staged++
-			}
-			if y != ' ' && y != '?' {
-				rs.Modified++
-			}
-			if x == '?' && y == '?' {
-				rs.Untracked++
-			}
-		}
-	}
-
-	// Count stale submodule refs at campaign root
-	if isCampaignRoot {
-		rs.StaleRefs = countStaleRefs(ctx, repoPath)
-	}
-
-	// Get ahead/behind — also determines if upstream tracking is configured
-	abOutput, err := git.Output(ctx, repoPath, "rev-list", "--left-right", "--count", "HEAD...@{upstream}")
-	if err == nil {
-		rs.HasUpstream = true
-		parts := strings.Fields(abOutput)
-		if len(parts) == 2 {
-			fmt.Sscanf(parts[0], "%d", &rs.Ahead)
-			fmt.Sscanf(parts[1], "%d", &rs.Behind)
-		}
-	}
-
-	// Count unmerged branches
-	rs.Unmerged = git.UnmergedBranchCount(ctx, repoPath)
-
-	return rs
-}
-
-// countStaleRefs counts submodules whose checked-out commit differs from
-// the commit recorded in the superproject index. Lines starting with '+' in
-// `git submodule status` indicate such drift.
-func countStaleRefs(ctx context.Context, repoPath string) int {
-	output, err := git.Output(ctx, repoPath, "submodule", "status")
-	if err != nil || output == "" {
-		return 0
-	}
-	count := 0
-	for _, line := range strings.Split(output, "\n") {
-		if len(line) > 0 && line[0] == '+' {
-			count++
-		}
-	}
-	return count
-}
-
-func shortenRemoteURL(url string) string {
-	// Handle HTTPS: https://github.com/Org/repo.git → Org/repo
-	url = strings.TrimSuffix(url, ".git")
-	if strings.HasPrefix(url, "https://github.com/") {
-		return strings.TrimPrefix(url, "https://github.com/")
-	}
-	// Handle SSH: git@github.com:Org/repo.git → Org/repo
-	if strings.HasPrefix(url, "git@github.com:") {
-		return strings.TrimPrefix(url, "git@github.com:")
-	}
-	return url
-}
-
-func renderStatusTable(statuses []repoStatus) {
+func renderStatusTable(statuses []statuspkg.RepoStatus) {
 	green := lipgloss.NewStyle().Foreground(ui.SuccessColor)
 	red := lipgloss.NewStyle().Foreground(ui.ErrorColor)
 	yellow := lipgloss.NewStyle().Foreground(ui.WarningColor)
@@ -382,30 +247,16 @@ func renderStatusTable(statuses []repoStatus) {
 	fmt.Println(t)
 }
 
-func outputStatusJSON(statuses []repoStatus) error {
+func outputStatusJSON(campaignRoot string, statuses []statuspkg.RepoStatus) error {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
-	return enc.Encode(statuses)
-}
-
-func writeStatusCache(campRoot string, statuses []repoStatus) {
-	cacheDir := filepath.Join(campRoot, ".campaign", "cache", "gitstatus")
-	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
-		return
+	if statuses == nil {
+		statuses = []statuspkg.RepoStatus{}
 	}
-
-	cache := statusAllCache{
-		Timestamp: time.Now(),
-		Repos:     statuses,
-	}
-
-	data, err := json.MarshalIndent(cache, "", "  ")
-	if err != nil {
-		return
-	}
-
-	finalFile := filepath.Join(cacheDir, "status.json")
-	if err := fsutil.WriteFileAtomically(finalFile, data, 0o644); err != nil {
-		return
-	}
+	return enc.Encode(statusAllOutput{
+		SchemaVersion: StatusAllJSONVersion,
+		Timestamp:     time.Now().UTC().Format(time.RFC3339),
+		CampaignRoot:  campaignRoot,
+		Repos:         statuses,
+	})
 }

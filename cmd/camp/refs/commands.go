@@ -28,6 +28,11 @@ type refChange struct {
 	Changed     bool
 }
 
+type refSkip struct {
+	Path   string
+	Reason string
+}
+
 func init() {
 	Cmd.RunE = runRefsSync
 	Cmd.Flags().BoolVarP(&refsSyncOpts.dryRun, "dry-run", "n", false, "Show plan without executing")
@@ -61,12 +66,13 @@ func runRefsSync(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	changes, err := detectRefChanges(ctx, campRoot, paths)
+	changes, skips, err := detectRefChanges(ctx, campRoot, paths)
 	if err != nil {
 		return err
 	}
 
 	displayRefPlan(changes)
+	displayRefSkips(skips)
 
 	var toSync []string
 	var names []string
@@ -87,20 +93,12 @@ func runRefsSync(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	executor, err := git.NewExecutor(campRoot)
-	if err != nil {
-		return camperrors.Wrap(err, "git executor")
-	}
-	if err := executor.Stage(ctx, toSync); err != nil {
-		return camperrors.Wrap(err, "staging refs")
-	}
-
 	cfg, _ := config.LoadCampaignConfig(ctx, campRoot)
 	msg := fmt.Sprintf("sync submodule refs: %s", strings.Join(names, ", "))
 	if cfg != nil {
 		msg = git.PrependCampaignTag(cfg.ID, msg)
 	}
-	if err := executor.Commit(ctx, &git.CommitOptions{Message: msg}); err != nil {
+	if err := git.CommitScoped(ctx, campRoot, toSync, &git.CommitOptions{Message: msg}); err != nil {
 		return camperrors.Wrap(err, "commit")
 	}
 
@@ -108,18 +106,21 @@ func runRefsSync(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func detectRefChanges(ctx context.Context, campRoot string, paths []string) ([]refChange, error) {
+func detectRefChanges(ctx context.Context, campRoot string, paths []string) ([]refChange, []refSkip, error) {
 	var changes []refChange
+	var skips []refSkip
 	for _, p := range paths {
 		fullPath := filepath.Join(campRoot, p)
 
 		lsTreeOut, err := exec.CommandContext(ctx, "git", "-C", campRoot,
 			"ls-tree", "HEAD", "--", p).Output()
 		if err != nil {
+			skips = append(skips, refSkip{Path: p, Reason: "could not read recorded ref: " + err.Error()})
 			continue
 		}
 		fields := strings.Fields(strings.TrimSpace(string(lsTreeOut)))
 		if len(fields) < 3 {
+			skips = append(skips, refSkip{Path: p, Reason: "not recorded in HEAD"})
 			continue
 		}
 		recordedSHA := fields[2]
@@ -127,19 +128,24 @@ func detectRefChanges(ctx context.Context, campRoot string, paths []string) ([]r
 		headOut, err := exec.CommandContext(ctx, "git", "-C", fullPath,
 			"rev-parse", "HEAD").Output()
 		if err != nil {
+			skips = append(skips, refSkip{Path: p, Reason: "could not read submodule HEAD: " + err.Error()})
 			continue
 		}
 		currentSHA := strings.TrimSpace(string(headOut))
+		changed := recordedSHA != currentSHA
 
 		changes = append(changes, refChange{
 			Path:        p,
 			Name:        git.SubmoduleDisplayName(p),
-			RecordedSHA: recordedSHA[:7],
-			CurrentSHA:  currentSHA[:7],
-			Changed:     recordedSHA != currentSHA,
+			RecordedSHA: shortSHA(recordedSHA),
+			CurrentSHA:  shortSHA(currentSHA),
+			Changed:     changed,
 		})
+		if !changed {
+			skips = append(skips, refSkip{Path: p, Reason: "already up to date"})
+		}
 	}
-	return changes, nil
+	return changes, skips, nil
 }
 
 func displayRefPlan(changes []refChange) {
@@ -152,6 +158,25 @@ func displayRefPlan(changes []refChange) {
 		}
 	}
 	fmt.Println()
+}
+
+func displayRefSkips(skips []refSkip) {
+	if len(skips) == 0 {
+		return
+	}
+
+	fmt.Println(ui.Dim("Skipped submodules:"))
+	for _, skip := range skips {
+		fmt.Printf("  %-35s %s\n", skip.Path, ui.Dim(skip.Reason))
+	}
+	fmt.Println()
+}
+
+func shortSHA(sha string) string {
+	if len(sha) <= 7 {
+		return sha
+	}
+	return sha[:7]
 }
 
 func filterRefPaths(all []string, targets []string) []string {

@@ -32,15 +32,13 @@ dungeon/
 ## Workflow
 
 ### Finishing Work
-```bash
-camp flow move some-item dungeon/completed   # Done
-camp flow move some-item dungeon/archived    # Done, won't need again
-```
+
+Move completed work into `dungeon/completed/YYYY-MM-DD/`.
+Move superseded or historical work into `dungeon/archived/YYYY-MM-DD/`.
 
 ### Deferring Work
-```bash
-camp flow move some-item dungeon/someday     # Not now, maybe later
-```
+
+Move work you may revisit later into `dungeon/someday/YYYY-MM-DD/`.
 
 ## Reviewing Items
 

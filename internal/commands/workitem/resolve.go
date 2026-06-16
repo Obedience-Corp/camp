@@ -25,7 +25,13 @@ func newResolveCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "resolve",
 		Short: "Print the workitem the current context resolves to (read-only)",
-		Args:  jsoncontract.Args(WorkitemResolveJSONVersion, func() bool { return jsonOut }, cobra.NoArgs),
+		Long: `Resolve the active workitem from the current campaign context.
+
+Resolution checks explicit selectors, cwd, festival context, linked scopes,
+and the current-workitem file without mutating any files. Use --explain to show
+the tier-by-tier trace used to choose the result. Use --json for
+machine-readable resolution details and trace data.`,
+		Args: jsoncontract.Args(WorkitemResolveJSONVersion, func() bool { return jsonOut }, cobra.NoArgs),
 		Annotations: map[string]string{
 			"agent_allowed": "true",
 			"agent_reason":  "Read-only context resolution with --json output for automation",

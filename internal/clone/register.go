@@ -28,19 +28,17 @@ func (c *Cloner) registerCampaign(ctx context.Context, dir string) *Registration
 		return &RegistrationResult{Error: err}
 	}
 
-	// Load global registry
-	reg, err := config.LoadRegistry(ctx)
-	if err != nil {
-		return &RegistrationResult{Error: err}
-	}
-
-	// Register the campaign
-	if err := reg.Register(cfg.ID, cfg.Name, dir, cfg.Type); err != nil {
-		return &RegistrationResult{Error: err}
-	}
-
-	// Save registry (non-fatal on failure)
-	if err := config.SaveRegistry(ctx, reg); err != nil {
+	registered := false
+	if err := config.UpdateRegistry(ctx, func(reg *config.Registry) error {
+		if err := reg.Register(cfg.ID, cfg.Name, dir, cfg.Type); err != nil {
+			return err
+		}
+		registered = true
+		return nil
+	}); err != nil {
+		if !registered {
+			return &RegistrationResult{Error: err}
+		}
 		return &RegistrationResult{
 			Registered:   true,
 			CampaignID:   cfg.ID,

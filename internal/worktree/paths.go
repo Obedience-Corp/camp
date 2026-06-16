@@ -54,7 +54,8 @@ func (pm *PathManager) ParseWorktreePath(path string) (project, name string, err
 	}
 
 	wtRoot := pm.WorktreesRoot()
-	if !strings.HasPrefix(absPath, wtRoot) {
+	wtRoot = filepath.Clean(wtRoot)
+	if absPath != wtRoot && !strings.HasPrefix(absPath, wtRoot+string(filepath.Separator)) {
 		return "", "", ErrNotInWorktree
 	}
 

@@ -77,9 +77,7 @@ func resolveFromCwd(_ context.Context, campaignRoot string) (*TargetResult, erro
 	}
 
 	// If we're in the campaign root, just return it
-	absRoot, _ := filepath.Abs(root)
-	absCamp, _ := filepath.Abs(campaignRoot)
-	if absRoot == absCamp {
+	if sameFilesystemPath(root, campaignRoot) {
 		return &TargetResult{
 			Path:        campaignRoot,
 			IsSubmodule: false,
@@ -110,7 +108,7 @@ func HasPullStrategyFlag(gitArgs []string) bool {
 	return false
 }
 
-// ExtractSubFlags extracts --sub and --project/-p flags from a raw args slice.
+// ExtractSubFlags extracts --sub and --project flags from a raw args slice.
 // Returns the remaining args (to pass to git) and the flag values.
 // This is used by commands with DisableFlagParsing that need to extract
 // camp-specific flags before passing the rest to git.
@@ -121,10 +119,14 @@ func ExtractSubFlags(args []string) (remaining []string, sub bool, project strin
 		arg := args[i]
 
 		switch {
+		case arg == "--":
+			remaining = append(remaining, args[i:]...)
+			return remaining, sub, project
+
 		case arg == "--sub":
 			sub = true
 
-		case arg == "--project" || arg == "-p":
+		case arg == "--project":
 			// Next arg is the project path
 			if i+1 < len(args) {
 				i++
@@ -140,4 +142,19 @@ func ExtractSubFlags(args []string) (remaining []string, sub bool, project strin
 	}
 
 	return remaining, sub, project
+}
+
+func sameFilesystemPath(a, b string) bool {
+	canon := func(path string) string {
+		abs, err := filepath.Abs(path)
+		if err != nil {
+			return filepath.Clean(path)
+		}
+		resolved, err := filepath.EvalSymlinks(abs)
+		if err != nil {
+			return filepath.Clean(abs)
+		}
+		return filepath.Clean(resolved)
+	}
+	return canon(a) == canon(b)
 }

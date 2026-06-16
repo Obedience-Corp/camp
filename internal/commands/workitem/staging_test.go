@@ -3,11 +3,13 @@ package workitem
 import (
 	"reflect"
 	"testing"
+
+	campgit "github.com/Obedience-Corp/camp/internal/git"
 )
 
 func TestParseGitStatusPorcelainZ_RenameKeepsNewPath(t *testing.T) {
 	out := []byte("R  new name\x00old name\x00?? path with \"quote\".md\x00")
-	entries := parseGitStatusPorcelainZ(out)
+	entries := campgit.ParseStatusPorcelainZ(out)
 	if len(entries) != 2 {
 		t.Fatalf("entries = %#v, want 2", entries)
 	}
@@ -16,6 +18,17 @@ func TestParseGitStatusPorcelainZ_RenameKeepsNewPath(t *testing.T) {
 	}
 	if entries[1].Path != "path with \"quote\".md" {
 		t.Fatalf("quoted path = %q", entries[1].Path)
+	}
+}
+
+func TestParseDiffNameStatusZ_RenameIncludesBothPaths(t *testing.T) {
+	out := []byte("R100\x00a.txt\x00b.txt\x00")
+	paths, err := campgit.ParseDiffNameStatusZ(out)
+	if err != nil {
+		t.Fatalf("ParseDiffNameStatusZ() error = %v", err)
+	}
+	if !contains(paths, "a.txt") || !contains(paths, "b.txt") {
+		t.Fatalf("ParseDiffNameStatusZ() = %v, want both rename paths", paths)
 	}
 }
 

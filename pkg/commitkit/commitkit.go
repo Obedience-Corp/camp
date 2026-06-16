@@ -5,16 +5,18 @@
 //
 // All staging and commit operations use automatic lock retry with stale
 // lock cleanup, making them resilient to index.lock contention.
+//
+// SyncSubmoduleRef commits only the requested submodule gitlink path and
+// preserves unrelated staged campaign-root content.
 package commitkit
 
 import (
 	"context"
 	"fmt"
-	"os/exec"
-	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 )
 
@@ -92,7 +94,7 @@ func DetectCampaign(ctx context.Context) (string, error) {
 
 	cfg, err := config.LoadCampaignConfig(ctx, root)
 	if err != nil {
-		return "", fmt.Errorf("commitkit: load campaign config at %s: %w", root, err)
+		return "", camperrors.Wrapf(err, "commitkit: load campaign config at %s", root)
 	}
 
 	return cfg.ID, nil
@@ -103,7 +105,7 @@ func DetectCampaign(ctx context.Context) (string, error) {
 func LoadCampaignID(ctx context.Context, campaignRoot string) (string, error) {
 	cfg, err := config.LoadCampaignConfig(ctx, campaignRoot)
 	if err != nil {
-		return "", fmt.Errorf("commitkit: load campaign config at %s: %w", campaignRoot, err)
+		return "", camperrors.Wrapf(err, "commitkit: load campaign config at %s", campaignRoot)
 	}
 
 	return cfg.ID, nil
@@ -166,12 +168,11 @@ func ShortHash(ctx context.Context, repoPath string) (string, error) {
 	if ctx.Err() != nil {
 		return "", ctx.Err()
 	}
-	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "rev-parse", "--short", "HEAD")
-	out, err := cmd.Output()
+	hash, err := git.Output(ctx, repoPath, "rev-parse", "--short", "HEAD")
 	if err != nil {
-		return "", fmt.Errorf("commitkit: rev-parse --short HEAD: %w", err)
+		return "", camperrors.Wrap(err, "commitkit: rev-parse --short HEAD")
 	}
-	return strings.TrimSpace(string(out)), nil
+	return hash, nil
 }
 
 // SyncSubmoduleRef stages the updated submodule pointer for projectRelPath
@@ -180,7 +181,7 @@ func ShortHash(ctx context.Context, repoPath string) (string, error) {
 // (e.g. "projects/fest").
 //
 // It is a no-op and returns nil when the submodule pointer has not changed
-// (git reports nothing to commit).
+// for projectRelPath.
 //
 // Uses automatic lock retry with stale lock cleanup.
 func SyncSubmoduleRef(ctx context.Context, campaignRoot, projectRelPath, campaignID string) error {
@@ -190,13 +191,13 @@ func SyncSubmoduleRef(ctx context.Context, campaignRoot, projectRelPath, campaig
 
 	// Stage only the submodule ref — not the entire working tree.
 	if err := git.StageFiles(ctx, campaignRoot, projectRelPath); err != nil {
-		return fmt.Errorf("commitkit: stage submodule %s: %w", projectRelPath, err)
+		return camperrors.Wrapf(err, "commitkit: stage submodule %s", projectRelPath)
 	}
 
-	// Check whether there is actually something staged before committing.
-	hasChanges, err := git.HasStagedChanges(ctx, campaignRoot)
+	// Check only the ref path so unrelated staged root content is preserved.
+	hasChanges, err := git.HasStagedPathChange(ctx, campaignRoot, projectRelPath)
 	if err != nil {
-		return fmt.Errorf("commitkit: check staged changes: %w", err)
+		return camperrors.Wrapf(err, "commitkit: check staged submodule %s", projectRelPath)
 	}
 	if !hasChanges {
 		return nil // No-op: submodule pointer hasn't changed.
@@ -205,8 +206,8 @@ func SyncSubmoduleRef(ctx context.Context, campaignRoot, projectRelPath, campaig
 	msg := git.PrependCampaignTag(campaignID,
 		fmt.Sprintf("sync submodule ref: %s", projectRelPath))
 
-	if err := git.Commit(ctx, campaignRoot, &git.CommitOptions{Message: msg}); err != nil {
-		return fmt.Errorf("commitkit: commit submodule ref for %s: %w", projectRelPath, err)
+	if err := git.CommitScoped(ctx, campaignRoot, []string{projectRelPath}, &git.CommitOptions{Message: msg}); err != nil {
+		return camperrors.Wrapf(err, "commitkit: commit submodule ref for %s", projectRelPath)
 	}
 
 	return nil

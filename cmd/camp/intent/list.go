@@ -1,9 +1,7 @@
 package intent
 
 import (
-	"encoding/json"
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -11,16 +9,23 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/intent"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/paths"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
-var intentListCmd = &cobra.Command{
-	Use:     "list",
-	Aliases: []string{"ls"},
-	Short:   "List intents in the campaign",
-	Long: `List intents with filtering, sorting, and output format options.
+var intentListCmd = newIntentListCommand()
+
+func newIntentListCommand() *cobra.Command {
+	var jsonOut bool
+	cmd := &cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List intents in the campaign",
+		Long: `List intents with filtering, sorting, and output format options.
 
 By default, lists intents in inbox, active, and ready status.
 Use --all to include dungeon intents.
@@ -36,14 +41,15 @@ Examples:
   camp intent list -f json                 JSON output
   camp intent list -f simple | xargs ...   Pipe IDs to commands
   camp intent list --all                   Include archived`,
-	RunE: runIntentList,
-}
+	}
+	jsonRequested := func() bool { return intentJSONRequested(cmd, &jsonOut) }
+	cmd.Args = jsoncontract.Args(IntentJSONVersion, jsonRequested, cobra.NoArgs)
+	cmd.RunE = jsoncontract.RunE(IntentJSONVersion, jsonRequested, runIntentList)
+	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(IntentJSONVersion, jsonRequested))
 
-func init() {
-	Cmd.AddCommand(intentListCmd)
-
-	flags := intentListCmd.Flags()
+	flags := cmd.Flags()
 	flags.StringP("format", "f", "table", "Output format: table, simple, json")
+	flags.BoolVar(&jsonOut, "json", false, "emit a structured JSON result")
 	flags.StringP("sort", "S", "updated", "Sort by: updated, created, priority, title")
 	flags.StringSliceP("status", "s", nil, "Filter by status (repeatable)")
 	flags.StringSliceP("type", "t", nil, "Filter by type (repeatable)")
@@ -51,6 +57,11 @@ func init() {
 	flags.String("horizon", "", "Filter by horizon")
 	flags.IntP("limit", "n", 0, "Limit results (0 = no limit)")
 	flags.BoolP("all", "a", false, "Include dungeon intents")
+	return cmd
+}
+
+func init() {
+	Cmd.AddCommand(intentListCmd)
 }
 
 func runIntentList(cmd *cobra.Command, args []string) error {
@@ -58,6 +69,7 @@ func runIntentList(cmd *cobra.Command, args []string) error {
 
 	// Parse flags
 	format, _ := cmd.Flags().GetString("format")
+	jsonOut, _ := cmd.Flags().GetBool("json")
 	sortBy, _ := cmd.Flags().GetString("sort")
 	statuses, _ := cmd.Flags().GetStringSlice("status")
 	types, _ := cmd.Flags().GetStringSlice("type")
@@ -71,15 +83,15 @@ func runIntentList(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return camperrors.Wrap(err, "not in a campaign directory")
 	}
+	campaignRoot, err = pathutil.ResolveRoot(campaignRoot)
+	if err != nil {
+		return camperrors.Wrap(err, "resolving campaign root")
+	}
 
 	// Create path resolver and service
 	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
 	svc := intent.NewIntentService(campaignRoot, resolver.Intents())
-
-	// Ensure directories exist and migrate legacy layout
-	if err := svc.EnsureDirectories(ctx); err != nil {
-		return camperrors.Wrap(err, "ensuring intent directories")
-	}
+	warnPendingLegacyMigration(svc)
 
 	// Build list options
 	opts, err := buildListOptions(statuses, types, project, horizon, sortBy, includeAll)
@@ -95,6 +107,7 @@ func runIntentList(cmd *cobra.Command, args []string) error {
 
 	// Apply status filtering (exclude dungeon statuses by default)
 	intents = filterStatuses(intents, includeAll, statuses)
+	intents = filterTypes(intents, types)
 
 	// Apply limit
 	if limit > 0 && len(intents) > limit {
@@ -102,14 +115,32 @@ func runIntentList(cmd *cobra.Command, args []string) error {
 	}
 
 	// Format output
-	switch format {
-	case "json":
-		return outputJSON(intents)
-	case "simple":
+	switch {
+	case jsonOut || format == "json":
+		return outputIntentPayload(cmd.OutOrStdout(), campaignRoot, intents)
+	case format == "simple":
 		return outputSimple(intents)
 	default:
 		return outputTable(intents)
 	}
+}
+
+func filterTypes(intents []*intent.Intent, allowedTypes []string) []*intent.Intent {
+	if len(allowedTypes) == 0 {
+		return intents
+	}
+	typeSet := make(map[intent.Type]bool, len(allowedTypes))
+	for _, raw := range allowedTypes {
+		typeSet[intent.Type(raw)] = true
+	}
+
+	result := make([]*intent.Intent, 0, len(intents))
+	for _, i := range intents {
+		if typeSet[i.Type] {
+			result = append(result, i)
+		}
+	}
+	return result
 }
 
 func buildListOptions(statuses, types []string, project, horizon, sortBy string, includeAll bool) (*intent.ListOptions, error) {
@@ -131,12 +162,6 @@ func buildListOptions(statuses, types []string, project, horizon, sortBy string,
 	} else if !includeAll {
 		// By default, exclude dungeon statuses (handled in list filtering later)
 		// Note: service doesn't support "not in" filter, so we handle client-side
-	}
-
-	// Handle type filtering
-	if len(types) > 0 {
-		t := intent.Type(types[0])
-		opts.Type = &t
 	}
 
 	return opts, nil
@@ -206,61 +231,6 @@ func outputSimple(intents []*intent.Intent) error {
 	for _, i := range intents {
 		fmt.Println(i.ID)
 	}
-	return nil
-}
-
-func outputJSON(intents []*intent.Intent) error {
-	// Create JSON-friendly structure
-	type jsonIntent struct {
-		ID                string   `json:"id"`
-		Title             string   `json:"title"`
-		Type              string   `json:"type"`
-		Status            string   `json:"status"`
-		Concept           string   `json:"concept,omitempty"`
-		Author            string   `json:"author,omitempty"`
-		Priority          string   `json:"priority,omitempty"`
-		Horizon           string   `json:"horizon,omitempty"`
-		Tags              []string `json:"tags,omitempty"`
-		BlockedBy         []string `json:"blocked_by,omitempty"`
-		DependsOn         []string `json:"depends_on,omitempty"`
-		PromotionCriteria string   `json:"promotion_criteria,omitempty"`
-		PromotedTo        string   `json:"promoted_to,omitempty"`
-		CreatedAt         string   `json:"created_at"`
-		UpdatedAt         string   `json:"updated_at,omitempty"`
-		Path              string   `json:"path"`
-	}
-
-	output := make([]jsonIntent, 0, len(intents))
-	for _, i := range intents {
-		j := jsonIntent{
-			ID:                i.ID,
-			Title:             i.Title,
-			Type:              string(i.Type),
-			Status:            string(i.Status),
-			Concept:           i.Concept,
-			Author:            i.Author,
-			Priority:          string(i.Priority),
-			Horizon:           string(i.Horizon),
-			Tags:              i.Tags,
-			BlockedBy:         i.BlockedBy,
-			DependsOn:         i.DependsOn,
-			PromotionCriteria: i.PromotionCriteria,
-			PromotedTo:        i.PromotedTo,
-			CreatedAt:         i.CreatedAt.Format(time.RFC3339),
-			Path:              i.Path,
-		}
-		if !i.UpdatedAt.IsZero() {
-			j.UpdatedAt = i.UpdatedAt.Format(time.RFC3339)
-		}
-		output = append(output, j)
-	}
-
-	data, err := json.MarshalIndent(output, "", "  ")
-	if err != nil {
-		return camperrors.Wrap(err, "failed to marshal JSON")
-	}
-
-	fmt.Println(string(data))
 	return nil
 }
 

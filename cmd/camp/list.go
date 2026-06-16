@@ -44,6 +44,7 @@ Sorting options:
 
 Examples:
   camp list                  List all campaigns
+  camp list --json           Output as JSON
   camp list --format json    Output as JSON
   camp list --sort name      Sort by name
   camp list --format simple  Names only for scripting`,
@@ -51,17 +52,24 @@ Examples:
 	RunE:    runList,
 }
 
+var listJSON bool
+
 func init() {
 	rootCmd.AddCommand(listCmd)
 	listCmd.GroupID = "registry"
 
 	listCmd.Flags().StringP("format", "f", "table", "Output format (table, simple, json)")
+	listCmd.Flags().BoolVar(&listJSON, "json", false, "Output as JSON (shorthand for --format json)")
 	listCmd.Flags().StringP("sort", "s", "accessed", "Sort by (name, accessed, type)")
 	listCmd.Flags().Bool("verify-verbose", false, "Show detailed verification output")
 }
 
 func runList(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
+	formatStr, _ := cmd.Flags().GetString("format")
+	if listJSON {
+		formatStr = "json"
+	}
 
 	reg, err := config.LoadRegistry(ctx)
 	if err != nil {
@@ -76,7 +84,15 @@ func runList(cmd *cobra.Command, args []string) error {
 
 	// Save if changes made
 	if report.HasChanges() {
-		if err := config.SaveRegistry(ctx, reg); err != nil {
+		if err := config.UpdateRegistry(ctx, func(locked *config.Registry) error {
+			updatedReport, err := locked.VerifyAndRepair(ctx)
+			if err != nil {
+				return err
+			}
+			reg = locked
+			report = updatedReport
+			return nil
+		}); err != nil {
 			return camperrors.Wrap(err, "failed to save registry")
 		}
 
@@ -89,6 +105,9 @@ func runList(cmd *cobra.Command, args []string) error {
 	}
 
 	if reg.Len() == 0 {
+		if formatStr == "json" {
+			return outputCampaigns([]campaignEntry{}, formatStr)
+		}
 		fmt.Println(ui.Warning("No campaigns registered."))
 		fmt.Println()
 		fmt.Printf("  Create one with: %s\n", ui.Accent("camp init"))
@@ -96,7 +115,6 @@ func runList(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	formatStr, _ := cmd.Flags().GetString("format")
 	sortBy, _ := cmd.Flags().GetString("sort")
 
 	campaigns := sortCampaigns(reg.Campaigns, sortBy)

@@ -9,13 +9,12 @@ import (
 )
 
 var idCmd = &cobra.Command{
-	Use:          "id",
-	Short:        "Print the current campaign ID",
-	Long:         "Print the current campaign ID from .campaign/campaign.yaml.",
-	Example:      "  camp id",
-	Args:         cobra.NoArgs,
-	SilenceUsage: true,
-	RunE:         runID,
+	Use:     "id",
+	Short:   "Print the current campaign ID",
+	Long:    "Print the current campaign ID from .campaign/campaign.yaml.",
+	Example: "  camp id",
+	Args:    cobra.NoArgs,
+	RunE:    runID,
 }
 
 func init() {

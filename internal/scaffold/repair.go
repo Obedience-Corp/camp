@@ -2,6 +2,8 @@ package scaffold
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -13,8 +15,11 @@ import (
 	dungeonscaffold "github.com/Obedience-Corp/camp/internal/dungeon/scaffold"
 	"github.com/Obedience-Corp/camp/internal/dungeon/statuspath"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/quest"
+	"github.com/Obedience-Corp/camp/internal/statusmove"
+	"github.com/Obedience-Corp/camp/internal/version"
 	"github.com/lancekrogers/guild-scaffold/pkg/scaffold"
 )
 
@@ -122,7 +127,9 @@ func ComputeRepairPlan(ctx context.Context, dir string, opts InitOptions) (*Repa
 	computeStandardDungeonScaffoldChanges(absDir, plan)
 
 	// Phase 6: Account for imperative quest scaffold files created outside scaffold FS.
-	computeQuestScaffoldChanges(absDir, plan)
+	if version.Profile == "dev" {
+		computeQuestScaffoldChanges(absDir, plan)
+	}
 
 	// Phase 7: Detect misplaced completed/ dirs that should be in dungeon/completed/YYYY-MM-DD/.
 	// This runs after scaffold detection so we know which dungeon dirs will be created.
@@ -248,12 +255,18 @@ func computeScaffoldChanges(ctx context.Context, absDir string, opts InitOptions
 			"campaign_name": name,
 			"campaign_id":   campaignID,
 			"campaign_type": string(opts.Type),
+			"Profile":       version.Profile,
 		},
 		Dry:       true,
 		Overwrite: false,
 	})
 	if err != nil {
 		return err
+	}
+	if version.Profile == "stable" {
+		stats.CreatedDirs = filterOutQuestScaffoldPaths(stats.CreatedDirs)
+		stats.CreatedFiles = filterOutQuestScaffoldPaths(stats.CreatedFiles)
+		stats.SkippedPaths = filterOutQuestScaffoldPaths(stats.SkippedPaths)
 	}
 
 	for _, d := range stats.CreatedDirs {
@@ -567,7 +580,8 @@ func appendGitignoreEntryIfMissing(absDir, entry string) error {
 		suffix = "\n\n"
 	}
 	addition := suffix + "# Per-machine current-workitem selection (do not share across machines)\n" + entry + "\n"
-	return os.WriteFile(gitignorePath, append(raw, []byte(addition)...), 0o644)
+	// TODO(seq06-lock): concurrent repair runs can still race this read-modify-write append.
+	return fsutil.WriteFileAtomically(gitignorePath, append(raw, []byte(addition)...), 0o644)
 }
 
 // gitignoreHasRule reports whether content contains an active gitignore
@@ -750,43 +764,111 @@ func computeIntentMigrationChanges(absDir string, plan *RepairPlan) error {
 	return nil
 }
 
+type migrationMover func(src, dst string) error
+
 // ExecuteMigrations moves items from misplaced directories to their correct locations.
-// Returns the number of items moved and any error.
+// It validates every source and destination before moving anything, and returns
+// the number of items moved plus any error.
 func ExecuteMigrations(migrations []MigrationAction) (int, error) {
+	return executeMigrations(migrations, executeMigrationMove)
+}
+
+func executeMigrations(migrations []MigrationAction, moveItem migrationMover) (int, error) {
+	if err := validateMigrationPlan(migrations); err != nil {
+		return 0, err
+	}
+
 	moved := 0
+	total := countMigrationPlanItems(migrations)
 	for _, m := range migrations {
 		// Ensure destination exists
 		if err := os.MkdirAll(m.Dest, 0755); err != nil {
-			return moved, camperrors.Wrapf(err, "creating %s", m.Dest)
+			remaining := total - moved
+			return moved, camperrors.Wrapf(err,
+				"creating destination directory %s (%d item(s) moved; %d item(s) remaining)",
+				m.Dest, moved, remaining)
 		}
 
 		for _, item := range m.Items {
 			src := filepath.Join(m.Source, item)
 			dst := filepath.Join(m.Dest, item)
 
-			if err := os.Rename(src, dst); err != nil {
-				return moved, camperrors.Wrapf(err, "moving %s to %s", src, dst)
+			if err := moveItem(src, dst); err != nil {
+				remaining := total - moved
+				return moved, camperrors.Wrapf(err,
+					"moving %s to %s (%d item(s) moved; %d item(s) remaining)",
+					src, dst, moved, remaining)
 			}
 			moved++
 		}
 
-		// Remove the now-empty source directory (best effort)
-		// Only remove if empty or contains only .gitkeep
-		entries, err := os.ReadDir(m.Source)
-		if err == nil {
-			empty := true
-			for _, e := range entries {
-				if e.Name() != ".gitkeep" {
-					empty = false
-					break
+		removeEmptySourceDir(m.Source)
+	}
+	return moved, nil
+}
+
+// validateMigrationPlan checks every (src, dst) pair before any file is moved.
+func validateMigrationPlan(migrations []MigrationAction) error {
+	var errs []string
+	for _, m := range migrations {
+		for _, item := range m.Items {
+			src := filepath.Join(m.Source, item)
+			dst := filepath.Join(m.Dest, item)
+
+			if _, err := os.Stat(src); err != nil {
+				if os.IsNotExist(err) {
+					errs = append(errs, "source not found: "+src)
+				} else {
+					errs = append(errs, fmt.Sprintf("cannot stat source %s: %v", src, err))
 				}
 			}
-			if empty {
-				os.RemoveAll(m.Source)
+
+			if existing, exists, err := statuspath.ExistingItemPath(m.Dest, item); err != nil {
+				errs = append(errs, fmt.Sprintf("cannot check destination %s: %v", dst, err))
+			} else if exists {
+				errs = append(errs, "destination already exists: "+existing)
 			}
 		}
 	}
-	return moved, nil
+	if len(errs) > 0 {
+		return camperrors.New("migration pre-validation failed:\n  " + strings.Join(errs, "\n  "))
+	}
+	return nil
+}
+
+func executeMigrationMove(src, dst string) error {
+	if _, err := statusmove.Move(context.Background(), src, dst, statusmove.MoveOptions{}); err != nil {
+		if errors.Is(err, statusmove.ErrAlreadyExists) {
+			return camperrors.New("destination already exists: " + dst)
+		}
+		return err
+	}
+	return nil
+}
+
+func countMigrationPlanItems(migrations []MigrationAction) int {
+	total := 0
+	for _, m := range migrations {
+		total += len(m.Items)
+	}
+	return total
+}
+
+// removeEmptySourceDir removes a source directory only if it is empty or
+// contains only .gitkeep. Cleanup is best-effort after successful moves.
+func removeEmptySourceDir(dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if e.Name() != ".gitkeep" {
+			return
+		}
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		fmt.Fprintf(os.Stderr, "camp repair warning: failed to remove legacy dir %s: %v\n", dir, err)
+	}
 }
 
 // sortedKeys returns map keys in sorted order.

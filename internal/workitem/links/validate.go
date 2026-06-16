@@ -8,7 +8,7 @@ import (
 	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"github.com/Obedience-Corp/camp/internal/pathsafe"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 	"github.com/Obedience-Corp/camp/internal/quest"
 )
 
@@ -115,7 +115,7 @@ func validateOneLink(link Link, opts ValidateOptions, now time.Time,
 		addErr("workitem_id", "required")
 	} else if len(link.WorkitemID) > maxWorkitemIDLen {
 		addErr("workitem_id", fmt.Sprintf("must be at most %d chars", maxWorkitemIDLen))
-	} else if err := pathsafe.ValidateSegment("workitem_id", link.WorkitemID); err != nil {
+	} else if err := pathutil.ValidateSegment("workitem_id", link.WorkitemID); err != nil {
 		addErr("workitem_id", err.Error())
 	} else if opts.WorkitemIDs != nil {
 		if _, known := opts.WorkitemIDs[link.WorkitemID]; !known && !opts.AllowMissing {

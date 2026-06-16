@@ -99,7 +99,7 @@ func TestAttachmentPin_RejectsExternalWithoutMarker(t *testing.T) {
 
 	output, err := tc.RunCampInDir(campaignPath, "pin", "should-fail", externalPath)
 	require.Error(t, err, "pin of unattached external path should fail; got output: %s", output)
-	assert.Contains(t, output, "outside campaign root",
+	assert.Contains(t, output, "outside the campaign root",
 		"error should mention outside-campaign-root")
 	assert.Contains(t, output, "camp attach",
 		"error hint should point user at camp attach")

@@ -1,10 +1,14 @@
 package quest
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -20,6 +24,241 @@ func setupQuestCampaign(t *testing.T) (context.Context, string, *Service) {
 	}
 
 	return ctx, root, NewService(root)
+}
+
+func TestListSkipsCorruptQuest(t *testing.T) {
+	ctx, root, svc := setupQuestCampaign(t)
+
+	created, err := svc.Create(ctx, "Corruption Survivor", "", "", nil)
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if _, err := svc.Complete(ctx, created.Quest.ID); err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+
+	corruptRoot := QuestDir(root, "corrupt-root")
+	if err := os.MkdirAll(corruptRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(QuestPathForDir(corruptRoot), []byte(":\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	corruptDungeon := filepath.Join(DungeonStatusDir(root, StatusCompleted), "corrupt-dungeon")
+	if err := os.MkdirAll(corruptDungeon, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(QuestPathForDir(corruptDungeon), []byte(":\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var quests []*Quest
+	warnings := captureStderr(t, func() {
+		var listErr error
+		quests, listErr = List(ctx, root, true)
+		if listErr != nil {
+			t.Fatalf("List() error = %v", listErr)
+		}
+	})
+
+	if len(quests) != 2 {
+		t.Fatalf("List() returned %d quest(s), want default plus completed survivor: %#v", len(quests), quests)
+	}
+	if !strings.Contains(warnings, `warning: skipping unreadable quest "corrupt-root"`) {
+		t.Fatalf("missing root corrupt warning:\n%s", warnings)
+	}
+	if !strings.Contains(warnings, `warning: skipping unreadable quest "completed/corrupt-dungeon"`) {
+		t.Fatalf("missing dungeon corrupt warning:\n%s", warnings)
+	}
+	for _, q := range quests {
+		if q.Slug == "corrupt-root" || q.Slug == "corrupt-dungeon" {
+			t.Fatalf("corrupt quest leaked into List result: %#v", q)
+		}
+	}
+}
+
+func TestConcurrentSameNameQuestCreate(t *testing.T) {
+	ctx, _, svc := setupQuestCampaign(t)
+	fixed := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	withQuestClock(t, fixed)
+
+	start := make(chan struct{})
+	results := make(chan *MutationResult, 2)
+	errs := make(chan error, 2)
+
+	var wg sync.WaitGroup
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			result, err := svc.Create(ctx, "Concurrent Quest", "", "", nil)
+			if err != nil {
+				errs <- err
+				return
+			}
+			results <- result
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	close(errs)
+
+	for err := range errs {
+		t.Fatalf("Create() concurrent error = %v", err)
+	}
+	seenDirs := map[string]bool{}
+	for result := range results {
+		dir := filepath.Base(filepath.Dir(result.Quest.Path))
+		if seenDirs[dir] {
+			t.Fatalf("duplicate quest dir claimed: %s", dir)
+		}
+		seenDirs[dir] = true
+	}
+	if len(seenDirs) != 2 {
+		t.Fatalf("claimed %d distinct quest dir(s), want 2: %v", len(seenDirs), seenDirs)
+	}
+}
+
+func TestCreateRegeneratesDuplicateQuestID(t *testing.T) {
+	ctx, _, svc := setupQuestCampaign(t)
+	fixed := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	withQuestClock(t, fixed)
+
+	calls := 0
+	withQuestIDGenerator(t, func(time.Time) (string, error) {
+		calls++
+		if calls == 1 {
+			return DefaultQuestID, nil
+		}
+		return "qst_20260615_unique", nil
+	})
+
+	result, err := svc.Create(ctx, "Unique ID", "", "", nil)
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if result.Quest.ID != "qst_20260615_unique" {
+		t.Fatalf("quest ID = %q, want regenerated ID", result.Quest.ID)
+	}
+	if calls != 2 {
+		t.Fatalf("GenerateID calls = %d, want 2", calls)
+	}
+}
+
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	old := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = w
+	t.Cleanup(func() {
+		os.Stderr = old
+	})
+
+	fn()
+
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = old
+	raw, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
+}
+
+func withQuestClock(t *testing.T, now time.Time) {
+	t.Helper()
+	old := nowUTC
+	nowUTC = func() time.Time { return now }
+	t.Cleanup(func() {
+		nowUTC = old
+	})
+}
+
+func withQuestIDGenerator(t *testing.T, fn func(time.Time) (string, error)) {
+	t.Helper()
+	old := generateQuestID
+	generateQuestID = fn
+	t.Cleanup(func() {
+		generateQuestID = old
+	})
+}
+
+func TestSaveAtomicWriteContent(t *testing.T) {
+	ctx, root, _ := setupQuestCampaign(t)
+	now := time.Date(2026, 1, 20, 2, 0, 0, 0, time.UTC)
+	path := QuestPathForDir(QuestDir(root, "atomic-quest"))
+	q := &Quest{
+		ID:        "qst_atomic",
+		Name:      "Atomic Quest",
+		Status:    StatusOpen,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+
+	if err := Save(ctx, path, q); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if !bytes.Contains(got, []byte("Atomic Quest")) {
+		t.Fatalf("saved quest content missing name:\n%s", got)
+	}
+}
+
+func TestSaveAtomicFailurePreservesOriginal(t *testing.T) {
+	ctx, root, _ := setupQuestCampaign(t)
+	now := time.Date(2026, 1, 20, 2, 15, 0, 0, time.UTC)
+	path := QuestPathForDir(QuestDir(root, "preserve-quest"))
+	q := &Quest{
+		ID:        "qst_preserve",
+		Name:      "Original Quest",
+		Status:    StatusOpen,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+
+	if err := Save(ctx, path, q); err != nil {
+		t.Fatalf("Save(original) error = %v", err)
+	}
+	original, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(original) error = %v", err)
+	}
+
+	dir := filepath.Dir(path)
+	if err := os.Chmod(dir, 0555); err != nil {
+		t.Skipf("chmod read-only directory: %v", err)
+	}
+	defer func() {
+		_ = os.Chmod(dir, 0o755)
+	}()
+
+	q.Name = "Mutated Quest"
+	err = Save(ctx, path, q)
+	if err == nil {
+		_ = os.Chmod(dir, 0o755)
+		_ = os.WriteFile(path, original, 0o644)
+		t.Skip("read-only directory did not prevent atomic temp file creation")
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(after failed Save) error = %v", err)
+	}
+	if !bytes.Equal(got, original) {
+		t.Fatalf("failed Save changed original content:\n got: %q\nwant: %q", got, original)
+	}
 }
 
 func TestServiceCreatePauseResumeCompleteRestore(t *testing.T) {

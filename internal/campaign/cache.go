@@ -21,6 +21,17 @@ type detectionCache struct {
 
 var cache = &detectionCache{}
 
+// ClearCache resets the cached campaign detection result.
+func ClearCache() {
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+
+	cache.cwd = ""
+	cache.root = ""
+	cache.err = nil
+	cache.detected = false
+}
+
 // DetectCached returns campaign root, using cache if valid.
 // The cache is invalidated when cwd changes.
 func DetectCached(ctx context.Context) (string, error) {
@@ -62,37 +73,4 @@ func DetectCached(ctx context.Context) (string, error) {
 	cache.mu.Unlock()
 
 	return root, detectErr
-}
-
-// ClearCache invalidates the detection cache.
-func ClearCache() {
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
-	cache.detected = false
-	cache.cwd = ""
-	cache.root = ""
-	cache.err = nil
-}
-
-// WarmCache proactively detects and caches campaign root.
-// Returns any detection error.
-func WarmCache(ctx context.Context) error {
-	_, err := DetectCached(ctx)
-	return err
-}
-
-// IsCached returns whether a valid cache entry exists for the current directory.
-func IsCached() bool {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return false
-	}
-	cwd, err = filepath.EvalSymlinks(cwd)
-	if err != nil {
-		return false
-	}
-
-	cache.mu.RLock()
-	defer cache.mu.RUnlock()
-	return cache.detected && cache.cwd == cwd
 }

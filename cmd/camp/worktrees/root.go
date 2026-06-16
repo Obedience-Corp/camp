@@ -8,7 +8,6 @@ var Cmd = &cobra.Command{
 	Short:      "Manage git worktrees for projects",
 	GroupID:    "project",
 	Deprecated: "use 'camp project worktree' instead for project-scoped operations",
-	Aliases:    []string{"wt"},
 	Long: `Manage git worktrees across campaign projects.
 
 Worktrees allow you to have multiple working directories for the same repository,

@@ -82,6 +82,11 @@ func TestPathManager_ParseWorktreePath(t *testing.T) {
 			path:    tmpDir,
 			wantErr: true,
 		},
+		{
+			name:    "sibling with shared prefix",
+			path:    filepath.Join(tmpDir, "projects", "worktrees-other", "my-api", "feature"),
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {

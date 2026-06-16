@@ -38,7 +38,14 @@ func newSyncCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "sync",
 		Short: "Repair auto-fixable doctor findings",
-		Args:  jsoncontract.Args(JSONSchemaVersion, func() bool { return jsonOut }, cobra.NoArgs),
+		Long: `Repair auto-fixable workflow findings reported by workflow doctor.
+
+The command plans changes to campaign.yaml, .campaign/settings/jumps.yaml, and
+the navigation cache for stale shortcuts, missing concepts, duplicate shortcut
+keys, and cache drift. By default it reports the planned actions only; pass
+--apply to write changes. Use --json for machine-readable plans and applied
+actions.`,
+		Args: jsoncontract.Args(JSONSchemaVersion, func() bool { return jsonOut }, cobra.NoArgs),
 		RunE: jsoncontract.RunE(JSONSchemaVersion, func() bool { return jsonOut }, func(cmd *cobra.Command, args []string) error {
 			return runSync(cmd.Context(), cmd, apply, jsonOut)
 		}),

@@ -8,6 +8,10 @@ import (
 func TestGet(t *testing.T) {
 	info := Get()
 
+	if info.SchemaVersion != SchemaVersion {
+		t.Errorf("SchemaVersion = %s; want %s", info.SchemaVersion, SchemaVersion)
+	}
+
 	// Check that basic fields are populated
 	if info.Version == "" {
 		t.Error("Version should not be empty")
@@ -30,6 +34,10 @@ func TestGet(t *testing.T) {
 	if info.Platform != expectedPlatform {
 		t.Errorf("Platform = %s; want %s", info.Platform, expectedPlatform)
 	}
+
+	if info.Profile != Profile {
+		t.Errorf("Profile = %s; want %s", info.Profile, Profile)
+	}
 }
 
 func TestDefaultValues(t *testing.T) {
@@ -44,5 +52,9 @@ func TestDefaultValues(t *testing.T) {
 
 	if BuildDate == "" {
 		t.Error("BuildDate should have a default value")
+	}
+
+	if Profile == "" {
+		t.Error("Profile should have a default value")
 	}
 }

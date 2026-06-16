@@ -20,7 +20,7 @@ type attachResolver struct {
 	loadCurrent   func(context.Context) (*config.CampaignConfig, string, error)
 	loadRegistry  func(context.Context) (*config.Registry, error)
 	loadCampaign  func(context.Context, string) (*config.CampaignConfig, error)
-	saveRegistry  func(context.Context, *config.Registry) error
+	updateAccess  func(context.Context, string) error
 	pickCampaign  func(context.Context, *config.Registry) (config.RegisteredCampaign, error)
 }
 
@@ -33,7 +33,7 @@ func NewResolver(stderr io.Writer, usageLine string) CampaignResolver {
 		loadCurrent:   config.LoadCampaignConfigFromCwd,
 		loadRegistry:  config.LoadRegistry,
 		loadCampaign:  config.LoadCampaignConfig,
-		saveRegistry:  config.SaveRegistry,
+		updateAccess:  updateAttachRegistryLastAccess,
 		pickCampaign:  cmdutil.PickCampaign,
 	}
 }
@@ -64,7 +64,7 @@ func (r attachResolver) Resolve(ctx context.Context, targetCampaign string, targ
 	case "":
 		if !r.isInteractive() {
 			return nil, "", camperrors.Wrapf(camperrors.ErrInvalidInput,
-				"campaign name required in non-interactive mode\n       Usage: %s", r.usageLine)
+				"campaign name required in non-interactive mode (use '%s')", r.usageLine)
 		}
 		selected, err = r.pickCampaign(ctx, reg)
 		if err != nil {
@@ -82,10 +82,16 @@ func (r attachResolver) Resolve(ctx context.Context, targetCampaign string, targ
 		return nil, "", camperrors.Wrapf(err, "load target campaign %s", selected.Path)
 	}
 
-	reg.UpdateLastAccess(selected.ID)
-	if r.saveRegistry != nil {
-		_ = r.saveRegistry(ctx, reg)
+	if r.updateAccess != nil {
+		_ = r.updateAccess(ctx, selected.ID)
 	}
 
 	return cfg, selected.Path, nil
+}
+
+func updateAttachRegistryLastAccess(ctx context.Context, id string) error {
+	return config.UpdateRegistry(ctx, func(reg *config.Registry) error {
+		reg.UpdateLastAccess(id)
+		return nil
+	})
 }

@@ -40,7 +40,7 @@ You can customize shortcuts by editing .campaign/settings/jumps.yaml.`,
 }
 
 var shortcutsAddCmd = &cobra.Command{
-	Use:   "add [name] [path] or [project] [name] [path]",
+	Use:   "add <name> <path> | <project> <name> <path>",
 	Short: "Add a shortcut (campaign-level or project sub-shortcut)",
 	Long: `Add a shortcut for quick navigation.
 
@@ -312,7 +312,7 @@ func runShortcutsAdd(cmd *cobra.Command, args []string) error {
 	// Find the project (fuzzy match)
 	projectIdx := findProjectIndex(cfg.Projects, projectName)
 	if projectIdx == -1 {
-		return fmt.Errorf("project %q not found (run 'camp projects' to see available projects)", projectName)
+		return fmt.Errorf("project %q not found (run 'camp project list' to see available projects)", projectName)
 	}
 
 	project := &cfg.Projects[projectIdx]
@@ -376,7 +376,7 @@ func runShortcutsRemove(cmd *cobra.Command, args []string) error {
 	// Find the project (fuzzy match)
 	projectIdx := findProjectIndex(cfg.Projects, projectName)
 	if projectIdx == -1 {
-		return fmt.Errorf("project %q not found", projectName)
+		return fmt.Errorf("project %q not found (run 'camp project list' to see available projects)", projectName)
 	}
 
 	project := &cfg.Projects[projectIdx]
@@ -424,7 +424,7 @@ func runShortcutsList(cmd *cobra.Command, args []string) error {
 	// Find the project (fuzzy match)
 	projectIdx := findProjectIndex(cfg.Projects, projectName)
 	if projectIdx == -1 {
-		return fmt.Errorf("project %q not found", projectName)
+		return fmt.Errorf("project %q not found (run 'camp project list' to see available projects)", projectName)
 	}
 
 	project := cfg.Projects[projectIdx]
@@ -508,42 +508,23 @@ func runShortcutsAddJump(cmd *cobra.Command, args []string) error {
 		description, _ = cmd.Flags().GetString("description")
 		concept, _ = cmd.Flags().GetString("concept")
 
-		// Validate: must have path or concept
-		if shortcutPath == "" && concept == "" {
-			return fmt.Errorf("shortcut must have a path or concept (use -c to specify concept)")
-		}
 	}
 
-	// Load jumps config
-	jumps, err := config.LoadJumpsConfig(ctx, root)
+	// Build the validated jumps update; output and saving stay in cmd.
+	plan, err := shortcuts.PrepareAddJump(ctx, root, shortcuts.AddJumpInput{
+		Name:        shortcutName,
+		Path:        shortcutPath,
+		Description: description,
+		Concept:     concept,
+	})
 	if err != nil {
-		return camperrors.Wrap(err, "failed to load jumps config")
+		return err
 	}
 
-	// Create default jumps config if nil
-	if jumps == nil {
-		defaultJumps := config.DefaultJumpsConfig()
-		jumps = &defaultJumps
-	}
-
-	// Initialize shortcuts map if nil
-	if jumps.Shortcuts == nil {
-		jumps.Shortcuts = make(map[string]config.ShortcutConfig)
-	}
-
-	// Validate path exists if provided
-	if shortcutPath != "" {
-		fullPath := filepath.Join(root, shortcutPath)
-		if stat, err := os.Stat(fullPath); err != nil || !stat.IsDir() {
-			return fmt.Errorf("path does not exist or is not a directory: %s", fullPath)
-		}
-	}
-
-	// Check if shortcut already exists
-	if existing, ok := jumps.Shortcuts[shortcutName]; ok {
+	if plan.Existing != nil {
 		fmt.Printf("%s Updating shortcut '%s'\n", ui.WarningIcon(), shortcutName)
-		if existing.Path != "" {
-			fmt.Printf("  Old path: %s\n", ui.Dim(existing.Path))
+		if plan.Existing.Path != "" {
+			fmt.Printf("  Old path: %s\n", ui.Dim(plan.Existing.Path))
 		}
 		if shortcutPath != "" {
 			fmt.Printf("  New path: %s\n", ui.Value(shortcutPath))
@@ -552,15 +533,11 @@ func runShortcutsAddJump(cmd *cobra.Command, args []string) error {
 		fmt.Printf("%s Adding shortcut '%s'\n", ui.SuccessIcon(), shortcutName)
 	}
 
-	// Create shortcut config. Shortcuts added via the CLI are always
-	// user-sourced so the repair system preserves them on reset/diff.
-	sc := newUserShortcut(shortcutPath, description, concept)
-
 	// Add/update the shortcut
-	jumps.Shortcuts[shortcutName] = sc
+	plan.Jumps.Shortcuts[shortcutName] = plan.Shortcut
 
 	// Save jumps config
-	if err := config.SaveJumpsConfig(ctx, root, jumps); err != nil {
+	if err := config.SaveJumpsConfig(ctx, root, plan.Jumps); err != nil {
 		return camperrors.Wrap(err, "failed to save jumps config")
 	}
 
@@ -576,84 +553,6 @@ func runShortcutsAddJump(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// newUserShortcut builds a ShortcutConfig for a shortcut added via the CLI.
-// Source is always ShortcutSourceUser so the repair system preserves it on
-// reset and diff operations (see internal/scaffold/repair.go).
-func newUserShortcut(path, description, concept string) config.ShortcutConfig {
-	return config.ShortcutConfig{
-		Path:        path,
-		Description: description,
-		Concept:     concept,
-		Source:      config.ShortcutSourceUser,
-	}
-}
-
-// isAutoShortcut returns true if the shortcut was auto-generated (not user-defined).
-// Legacy entries (empty Source) are checked against known defaults.
-func isAutoShortcut(sc config.ShortcutConfig, key string, defaults map[string]config.ShortcutConfig) bool {
-	if sc.Source == config.ShortcutSourceUser {
-		return false
-	}
-	if sc.Source == config.ShortcutSourceAuto {
-		return true
-	}
-	// Legacy (empty Source): treat as auto if it matches a known default by path
-	if def, ok := defaults[key]; ok {
-		return sc.Path == def.Path && sc.Concept == def.Concept
-	}
-	return false
-}
-
-// shortcutDiff holds the categorized differences between current and default shortcuts.
-type shortcutDiff struct {
-	missing  []string // default keys not in current config
-	stale    []string // auto keys in current config not in defaults
-	modified []string // same key, different path/concept (auto only)
-	custom   []string // user-defined shortcuts
-	matched  int      // count of shortcuts matching defaults
-}
-
-// computeShortcutDiff compares current shortcuts against defaults.
-func computeShortcutDiff(current, defaults map[string]config.ShortcutConfig) shortcutDiff {
-	var diff shortcutDiff
-
-	// Find missing and modified defaults
-	for key, def := range defaults {
-		cur, exists := current[key]
-		if !exists {
-			diff.missing = append(diff.missing, key)
-			continue
-		}
-		if cur.Path == def.Path && cur.Concept == def.Concept {
-			diff.matched++
-		} else if isAutoShortcut(cur, key, defaults) {
-			diff.modified = append(diff.modified, key)
-		} else {
-			// User modified a default key — treat as custom
-			diff.custom = append(diff.custom, key)
-		}
-	}
-
-	// Find stale and custom shortcuts
-	for key, sc := range current {
-		if _, isDefault := defaults[key]; isDefault {
-			continue // already handled above
-		}
-		if isAutoShortcut(sc, key, defaults) {
-			diff.stale = append(diff.stale, key)
-		} else {
-			diff.custom = append(diff.custom, key)
-		}
-	}
-
-	sort.Strings(diff.missing)
-	sort.Strings(diff.stale)
-	sort.Strings(diff.modified)
-	sort.Strings(diff.custom)
-
-	return diff
-}
-
 func runShortcutsDiff(cmd *cobra.Command, _ []string) error {
 	ctx := cmd.Context()
 
@@ -664,17 +563,17 @@ func runShortcutsDiff(cmd *cobra.Command, _ []string) error {
 
 	current := cfg.Shortcuts()
 	defaults := config.DefaultNavigationShortcuts()
-	diff := computeShortcutDiff(current, defaults)
+	diff := shortcuts.ComputeShortcutDiff(current, defaults)
 
-	hasDiff := len(diff.missing) > 0 || len(diff.stale) > 0 || len(diff.modified) > 0
+	hasDiff := len(diff.Missing) > 0 || len(diff.Stale) > 0 || len(diff.Modified) > 0
 
 	fmt.Println(ui.Subheader("Shortcuts Diff"))
 	fmt.Printf("Campaign: %s\n", ui.Accent(cfg.Name))
 	fmt.Println()
 
-	if len(diff.missing) > 0 {
+	if len(diff.Missing) > 0 {
 		fmt.Printf("  %s\n", ui.Info("Missing from your config (run 'camp shortcuts reset' to add):"))
-		for _, key := range diff.missing {
+		for _, key := range diff.Missing {
 			def := defaults[key]
 			fmt.Printf("    %s %-10s %-20s %s\n",
 				ui.Success("+"), ui.Accent(key), ui.Value(def.Path), ui.Dim(def.Description))
@@ -682,9 +581,9 @@ func runShortcutsDiff(cmd *cobra.Command, _ []string) error {
 		fmt.Println()
 	}
 
-	if len(diff.stale) > 0 {
+	if len(diff.Stale) > 0 {
 		fmt.Printf("  %s\n", ui.Warning("Stale defaults (no longer in default set):"))
-		for _, key := range diff.stale {
+		for _, key := range diff.Stale {
 			sc := current[key]
 			fmt.Printf("    %s %-10s %-20s %s\n",
 				ui.Error("-"), ui.Accent(key), ui.Dim(sc.Path), ui.Dim("was auto-generated"))
@@ -692,9 +591,9 @@ func runShortcutsDiff(cmd *cobra.Command, _ []string) error {
 		fmt.Println()
 	}
 
-	if len(diff.modified) > 0 {
+	if len(diff.Modified) > 0 {
 		fmt.Printf("  %s\n", ui.Warning("Modified (auto-generated, differs from default):"))
-		for _, key := range diff.modified {
+		for _, key := range diff.Modified {
 			cur := current[key]
 			def := defaults[key]
 			fmt.Printf("    %s %-10s yours: %-16s default: %s\n",
@@ -703,9 +602,9 @@ func runShortcutsDiff(cmd *cobra.Command, _ []string) error {
 		fmt.Println()
 	}
 
-	if len(diff.custom) > 0 {
+	if len(diff.Custom) > 0 {
 		fmt.Printf("  %s\n", ui.Info("Custom shortcuts (always preserved):"))
-		for _, key := range diff.custom {
+		for _, key := range diff.Custom {
 			sc := current[key]
 			path := sc.Path
 			if path == "" {
@@ -717,8 +616,8 @@ func runShortcutsDiff(cmd *cobra.Command, _ []string) error {
 		fmt.Println()
 	}
 
-	if diff.matched > 0 {
-		fmt.Printf("  %s %d shortcuts match defaults\n", ui.SuccessIcon(), diff.matched)
+	if diff.Matched > 0 {
+		fmt.Printf("  %s %d shortcuts match defaults\n", ui.SuccessIcon(), diff.Matched)
 	}
 
 	if !hasDiff {
@@ -738,28 +637,20 @@ func runShortcutsReset(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("not in a campaign: %w", err)
 	}
 
-	jumps, err := config.LoadJumpsConfig(ctx, root)
+	plan, err := shortcuts.PrepareReset(ctx, root)
 	if err != nil {
-		return camperrors.Wrap(err, "failed to load jumps config")
-	}
-	if jumps == nil {
-		defaultJumps := config.DefaultJumpsConfig()
-		jumps = &defaultJumps
-	}
-	if jumps.Shortcuts == nil {
-		jumps.Shortcuts = make(map[string]config.ShortcutConfig)
+		return err
 	}
 
-	defaults := config.DefaultNavigationShortcuts()
-	diff := computeShortcutDiff(jumps.Shortcuts, defaults)
-
-	hasDiff := len(diff.missing) > 0 || len(diff.stale) > 0 || len(diff.modified) > 0
+	defaults := plan.Defaults
+	diff := plan.Diff
+	hasDiff := plan.HasAutoDiff()
 
 	if resetAll {
 		// Count custom shortcuts that will be removed
-		if len(diff.custom) > 0 && !dryRun {
+		if len(diff.Custom) > 0 && !dryRun {
 			fmt.Printf("%s This will remove %d custom shortcut(s): %s\n",
-				ui.WarningIcon(), len(diff.custom), strings.Join(diff.custom, ", "))
+				ui.WarningIcon(), len(diff.Custom), strings.Join(diff.Custom, ", "))
 			fmt.Print("Continue? [y/N] ")
 			reader := bufio.NewReader(os.Stdin)
 			answer, _ := reader.ReadString('\n')
@@ -770,12 +661,14 @@ func runShortcutsReset(cmd *cobra.Command, _ []string) error {
 			}
 		}
 
-		if !hasDiff && len(diff.custom) == 0 {
+		if !hasDiff && len(diff.Custom) == 0 {
 			fmt.Printf("%s Shortcuts are already at defaults\n", ui.SuccessIcon())
 			return nil
 		}
 
-		jumps.Shortcuts = defaults
+		if !dryRun {
+			plan.ApplyAll()
+		}
 
 		label := "Reset"
 		if dryRun {
@@ -783,14 +676,14 @@ func runShortcutsReset(cmd *cobra.Command, _ []string) error {
 		}
 		fmt.Println(ui.Subheader(fmt.Sprintf("Shortcuts %s (--all)", label)))
 		fmt.Printf("  Replaced all shortcuts with %d defaults\n", len(defaults))
-		if len(diff.custom) > 0 {
-			fmt.Printf("  Removed %d custom shortcut(s)\n", len(diff.custom))
+		if len(diff.Custom) > 0 {
+			fmt.Printf("  Removed %d custom shortcut(s)\n", len(diff.Custom))
 		}
 	} else {
 		if !hasDiff {
 			fmt.Printf("%s Shortcuts are already up to date (auto shortcuts match defaults)\n", ui.SuccessIcon())
-			if len(diff.custom) > 0 {
-				fmt.Printf("  %d custom shortcut(s) preserved\n", len(diff.custom))
+			if len(diff.Custom) > 0 {
+				fmt.Printf("  %d custom shortcut(s) preserved\n", len(diff.Custom))
 			}
 			return nil
 		}
@@ -803,36 +696,31 @@ func runShortcutsReset(cmd *cobra.Command, _ []string) error {
 		fmt.Println()
 
 		// Add missing defaults
-		for _, key := range diff.missing {
-			if !dryRun {
-				jumps.Shortcuts[key] = defaults[key]
-			}
+		for _, key := range diff.Missing {
 			fmt.Printf("  %s  Added    %-10s %s %s\n",
 				ui.SuccessIcon(), ui.Accent(key), ui.ArrowIcon(), ui.Value(defaults[key].Path))
 		}
 
 		// Remove stale auto shortcuts
-		for _, key := range diff.stale {
-			if !dryRun {
-				delete(jumps.Shortcuts, key)
-			}
+		for _, key := range diff.Stale {
 			fmt.Printf("  %s  Removed  %-10s %s\n",
 				ui.ErrorIcon(), ui.Accent(key), ui.Dim("(stale default)"))
 		}
 
 		// Update modified auto shortcuts
-		for _, key := range diff.modified {
-			if !dryRun {
-				jumps.Shortcuts[key] = defaults[key]
-			}
+		for _, key := range diff.Modified {
 			fmt.Printf("  %s  Updated  %-10s %s %s\n",
 				ui.WarningIcon(), ui.Accent(key), ui.ArrowIcon(), ui.Value(defaults[key].Path))
 		}
 
 		// Show preserved custom shortcuts
-		for _, key := range diff.custom {
+		for _, key := range diff.Custom {
 			fmt.Printf("  %s  Kept     %-10s %s\n",
 				ui.BulletIcon(), ui.Accent(key), ui.Dim("(user-defined)"))
+		}
+
+		if !dryRun {
+			plan.ApplyIncremental()
 		}
 	}
 
@@ -841,7 +729,7 @@ func runShortcutsReset(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	if err := config.SaveJumpsConfig(ctx, root, jumps); err != nil {
+	if err := config.SaveJumpsConfig(ctx, root, plan.Jumps); err != nil {
 		return camperrors.Wrap(err, "failed to save jumps config")
 	}
 

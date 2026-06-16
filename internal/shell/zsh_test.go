@@ -75,6 +75,16 @@ func TestGenerateZsh_ValidSyntax(t *testing.T) {
 	// that makes simple counting unreliable.
 }
 
+func TestGenerateZsh_DoesNotAssignReadonlyStatus(t *testing.T) {
+	output := generateZsh()
+
+	for _, forbidden := range []string{"local status", " status=$?", "\"$status\"", "return $status"} {
+		if strings.Contains(output, forbidden) {
+			t.Fatalf("zsh init assigns or reads readonly status variable via %q", forbidden)
+		}
+	}
+}
+
 func TestGenerate(t *testing.T) {
 	tests := []struct {
 		shell   string

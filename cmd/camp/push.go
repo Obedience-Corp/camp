@@ -25,7 +25,7 @@ Works from anywhere within the campaign - always pushes from
 the campaign root repository.
 
 Use --sub to push from the submodule detected from your current directory.
-Use --project/-p to push from a specific project.
+Use --project to push from a specific project.
 Use 'camp push all' to push all repos that have unpushed commits.
 
 Examples:
@@ -34,7 +34,7 @@ Examples:
   camp push --force            # Force push
   camp push -u origin feature  # Push and set upstream
   camp push --sub              # Push current submodule
-  camp push -p projects/camp   # Push camp project
+  camp push --project=projects/camp  # Push camp project
   camp push all                # Push all repos with unpushed commits
   camp push all --force        # Force push all repos`,
 	RunE:               runPush,
@@ -187,7 +187,7 @@ func runPushAll(ctx context.Context, campRoot string, gitArgs []string, noRecurs
 		gitCmd := exec.CommandContext(ctx, "git", pushArgs...)
 		output, err := gitCmd.CombinedOutput()
 		if err != nil {
-			fmt.Println(red.Render("failed"))
+			fmt.Fprintln(os.Stderr, red.Render("failed"))
 			errMsg := strings.TrimSpace(string(output))
 			if errMsg == "" {
 				errMsg = err.Error()
@@ -213,7 +213,7 @@ func runPushAll(ctx context.Context, campRoot string, gitArgs []string, noRecurs
 	default:
 		fmt.Println(yellow.Render(fmt.Sprintf("Pushed %d repo(s) (%d failed)", pushed, failed)))
 		for _, e := range errors {
-			fmt.Println(red.Render(e))
+			fmt.Fprintln(os.Stderr, red.Render(e))
 		}
 	}
 	if synced > 0 && (pushed > 0 || manual > 0 || failed > 0) {

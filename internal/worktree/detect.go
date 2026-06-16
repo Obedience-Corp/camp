@@ -123,6 +123,7 @@ func (d *Detector) getCurrentBranch(wtPath string) (string, error) {
 		return "", ErrNotInWorktree
 	}
 	gitdir := strings.TrimPrefix(gitdirLine, "gitdir: ")
+	gitdir = resolveGitdirPath(wtPath, gitdir)
 
 	// Read HEAD from gitdir
 	headRef := filepath.Join(gitdir, "HEAD")
@@ -144,6 +145,13 @@ func (d *Detector) getCurrentBranch(wtPath string) (string, error) {
 	}
 
 	return ref, nil
+}
+
+func resolveGitdirPath(wtPath, gitdir string) string {
+	if filepath.IsAbs(gitdir) {
+		return filepath.Clean(gitdir)
+	}
+	return filepath.Clean(filepath.Join(wtPath, gitdir))
 }
 
 // IsInWorktree checks if a path is inside any worktree.

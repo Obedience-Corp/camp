@@ -156,7 +156,11 @@ func WithLockRetry(ctx context.Context, repoPath string, cfg RetryConfig, operat
 				"operation", cfg.OperationName,
 				"cycle", cycle,
 				"backoff", backoff)
-			time.Sleep(backoff)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(backoff):
+			}
 			backoff = min(backoff*2, cfg.MaxBackoff)
 		}
 	}

@@ -80,11 +80,6 @@ func (e *ConfigError) Error() string {
 // Unwrap returns the underlying error for errors.Is/As support.
 func (e *ConfigError) Unwrap() error { return e.Err }
 
-// NewConfig creates a ConfigError.
-func NewConfig(key, message string, err error) *ConfigError {
-	return &ConfigError{Key: key, Message: message, Err: err}
-}
-
 // IOError indicates a filesystem or network I/O failure.
 type IOError struct {
 	// Op is the operation that failed (e.g., "read", "write", "open").
@@ -106,11 +101,6 @@ func (e *IOError) Error() string {
 // Unwrap returns the underlying error for errors.Is/As support.
 func (e *IOError) Unwrap() error { return e.Err }
 
-// NewIO creates an IOError.
-func NewIO(op, path string, err error) *IOError {
-	return &IOError{Op: op, Path: path, Err: err}
-}
-
 // PermissionError indicates an unauthorized or forbidden operation.
 type PermissionError struct {
 	// Action is the operation that was denied.
@@ -131,11 +121,6 @@ func (e *PermissionError) Error() string {
 
 // Unwrap returns the underlying error for errors.Is/As support.
 func (e *PermissionError) Unwrap() error { return e.Err }
-
-// NewPermission creates a PermissionError.
-func NewPermission(action, resource string, err error) *PermissionError {
-	return &PermissionError{Action: action, Resource: resource, Err: err}
-}
 
 // BoundaryError indicates a path escaped the campaign boundary (path containment violation).
 // This is returned when a resolved path is not under the campaign root, including

@@ -1,4 +1,4 @@
-// Package shortcuts provides TUI components for adding shortcuts interactively.
+// Package shortcuts provides shortcut workflows and TUI components.
 package shortcuts
 
 import (

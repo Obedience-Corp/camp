@@ -2,15 +2,12 @@ package main
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"github.com/Obedience-Corp/camp/internal/nav"
 	"github.com/Obedience-Corp/camp/internal/nav/index"
 	projectsvc "github.com/Obedience-Corp/camp/internal/project"
 	"github.com/spf13/cobra"
@@ -32,7 +29,8 @@ and executed from the campaign root directory.
 Use @shortcut prefix to run from a shortcut's directory instead of root.
 Only navigation shortcuts (those with paths) can be used.
 
-All arguments after 'run' (or '@shortcut') are passed directly to the shell.`,
+Raw command arguments after 'run' (or '@shortcut') are passed directly to the
+shell. Project just-dispatch passes recipe arguments directly to just.`,
 	Example: `  # Project just dispatch (first arg matches a project name):
   camp run camp              # Show just recipes for camp project
   camp run camp test all     # Run 'just test all' in projects/camp/
@@ -80,107 +78,23 @@ func runRun(cmd *cobra.Command, args []string) error {
 			return camperrors.Wrap(err, "failed to load campaign config")
 		}
 
-		// Look up shortcut
-		sc, ok := cfg.Shortcuts()[shortcutName]
-		if !ok {
-			return camperrors.Wrapf(camperrors.ErrNotFound, "unknown shortcut %q (run 'camp shortcuts' to see available shortcuts)", shortcutName)
+		resolution, err := index.ResolveRunShortcut(ctx, root, cfg, shortcutName, args[1:])
+		if err != nil {
+			return err
 		}
-
-		// Only navigation shortcuts can be used for directory context
-		if !sc.IsNavigation() {
-			return camperrors.Wrapf(camperrors.ErrInvalidInput, "shortcut %q is not a navigation shortcut (only shortcuts with paths can be used)", shortcutName)
+		workDir = resolution.WorkDir
+		commandArgs = resolution.CommandArgs
+		if resolution.BypassProjectDispatch {
+			fullCmd := strings.Join(commandArgs, " ")
+			return cmdutil.ExecuteCommand(ctx, fullCmd, workDir, root, nil)
 		}
-
-		// Check if this is a standard path that supports project sub-shortcuts
-		// e.g., @p fest cli -> projects/festival-methodology/fest/cmd/fest/
-		if nav.IsStandardPath(sc.Path) {
-			// Build category mappings from config shortcuts
-			configMappings := nav.BuildCategoryMappings(cfg.Shortcuts())
-
-			// Parse the remaining args to see if there's a project + optional sub-shortcut
-			remainingArgs := args[1:]
-			if len(remainingArgs) > 0 {
-				// Use ParseShortcut to determine if first remaining arg is a query
-				// Create a synthetic args list with just the shortcut + potential query
-				syntheticArgs := append([]string{shortcutName}, remainingArgs...)
-				parseResult := nav.ParseShortcut(syntheticArgs, configMappings)
-
-				// If we have a query, resolve it
-				if parseResult.Query != "" {
-					// Check for sub-shortcut in query
-					// But only if the next arg after project name is a valid shortcut
-					queryParts := strings.Fields(parseResult.Query)
-					projectQuery := queryParts[0]
-					var subShortcut string
-					consumed := 2 // @p + project
-
-					// First resolve the project to check if it has the potential sub-shortcut
-					if len(queryParts) > 1 {
-						potentialSubShortcut := queryParts[1]
-						// Try resolution first to see if the project has this shortcut
-						testResult, testErr := index.Resolve(ctx, index.ResolveOptions{
-							CampaignRoot: root,
-							Category:     parseResult.Category,
-							Query:        projectQuery,
-						})
-						if testErr == nil && testResult.Target != nil && testResult.Target.HasShortcut(potentialSubShortcut) {
-							subShortcut = potentialSubShortcut
-							consumed = 3 // @p + project + subshortcut
-						}
-					}
-
-					// Resolve the project with sub-shortcut
-					resolveResult, err := index.Resolve(ctx, index.ResolveOptions{
-						CampaignRoot: root,
-						Category:     parseResult.Category,
-						Query:        projectQuery,
-						SubShortcut:  subShortcut,
-					})
-					if err != nil {
-						// Handle invalid sub-shortcut error
-						if subErr, ok := err.(*index.InvalidSubShortcutError); ok {
-							return cmdutil.FormatSubShortcutError(subErr)
-						}
-						return err
-					}
-
-					workDir = resolveResult.Path
-
-					// Determine how many args were consumed
-					if consumed >= len(args) {
-						return camperrors.Wrap(camperrors.ErrInvalidInput, "no command specified")
-					}
-					commandArgs = args[consumed:]
-
-					// Verify directory exists
-					if stat, err := os.Stat(workDir); err != nil || !stat.IsDir() {
-						return camperrors.Wrapf(camperrors.ErrNotFound, "directory does not exist: %s", workDir)
-					}
-
-					// Build and execute command
-					fullCmd := strings.Join(commandArgs, " ")
-					return cmdutil.ExecuteCommand(ctx, fullCmd, workDir, root, nil)
-				}
-			}
-		}
-
-		// Resolve shortcut path to absolute directory (non-project case)
-		workDir = filepath.Join(root, sc.Path)
-
-		// Verify directory exists
-		if stat, err := os.Stat(workDir); err != nil || !stat.IsDir() {
-			return camperrors.Wrapf(camperrors.ErrNotFound, "shortcut directory does not exist: %s", workDir)
-		}
-
-		// Remaining args are the command
-		commandArgs = args[1:]
 	}
 
 	// Project just dispatch: if first arg matches a project, run just in it.
 	// Exact match only.
 	if len(commandArgs) > 0 {
 		if projectDir, ok := isProjectCtx(ctx, root, commandArgs[0]); ok {
-			return cmdutil.ExecuteCommand(ctx, "just", projectDir, root, commandArgs[1:])
+			return cmdutil.ExecuteDirect(ctx, "just", commandArgs[1:], projectDir, root)
 		}
 	}
 
@@ -188,15 +102,11 @@ func runRun(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(camperrors.ErrInvalidInput, "no command specified")
 	}
 
-	// Build the full command string
+	// Raw-command form: shell interprets the joined args; shell metacharacters are intentional.
 	fullCmd := strings.Join(commandArgs, " ")
 
 	// Execute from working directory
 	return cmdutil.ExecuteCommand(ctx, fullCmd, workDir, root, nil)
-}
-
-func isProject(campaignRoot, name string) (string, bool) {
-	return isProjectCtx(context.Background(), campaignRoot, name)
 }
 
 func isProjectCtx(ctx context.Context, campaignRoot, name string) (string, bool) {

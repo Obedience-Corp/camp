@@ -259,8 +259,9 @@ type Intent struct {
 	UpdatedAt time.Time `yaml:"updated_at,omitempty"`
 
 	// Runtime fields (not serialized to YAML)
-	Path    string `yaml:"-"` // Filesystem path to the intent file
-	Content string `yaml:"-"` // Markdown body content (after frontmatter)
+	Path              string             `yaml:"-"` // Filesystem path to the intent file
+	Content           string             `yaml:"-"` // Markdown body content (after frontmatter)
+	frontmatterExtras []frontmatterEntry `yaml:"-"` // Unknown frontmatter keys preserved across writes
 }
 
 // ConceptType returns the concept type from the path (e.g., "projects" from "projects/camp").

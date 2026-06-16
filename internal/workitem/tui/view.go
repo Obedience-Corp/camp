@@ -138,7 +138,7 @@ func (m Model) renderEmpty(_, height int) string {
 	b.WriteString("\n")
 	b.WriteString(footerStyle.Render("    workflow/explore/"))
 	b.WriteString("\n")
-	b.WriteString(footerStyle.Render("    festivals/{planning,ready,active}"))
+	b.WriteString(footerStyle.Render("    festivals/{planning,ready,active,ritual,chains}"))
 	b.WriteString("\n")
 	if m.typeFilter != "" {
 		b.WriteString(fmt.Sprintf("\n  Filter active: %s\n", filterActiveStyle.Render("type="+m.typeFilter)))
@@ -170,7 +170,7 @@ func priorityBadge(p string) (string, lipgloss.Style) {
 
 func renderRow(item workitem.WorkItem, width int, selected bool) string {
 	wfType := padRight(string(item.WorkflowType), 9)
-	stage := padRight(item.LifecycleStage, 9)
+	stage := padRight(string(item.LifecycleStage), 9)
 	rec := formatRecency(item.SortTimestamp)
 
 	badgeText, badgeStyle := priorityBadge(item.ManualPriority)
@@ -188,7 +188,7 @@ func renderRow(item workitem.WorkItem, width int, selected bool) string {
 	title = padRight(title, titleWidth)
 
 	styledType := workflowStyle(item.WorkflowType).Render(wfType)
-	styledStage := stageStyle(item.LifecycleStage).Render(stage)
+	styledStage := stageStyle(string(item.LifecycleStage)).Render(stage)
 	styledBadge := ""
 	if badgeText != "" {
 		styledBadge = badgeStyle.Render(badgeText)
@@ -235,7 +235,7 @@ func renderPreview(item workitem.WorkItem, width, height int) string {
 	b.WriteString(previewSepStyle.Render(sep))
 	b.WriteString("\n\n")
 
-	stage := item.LifecycleStage
+	stage := string(item.LifecycleStage)
 	if stage == "" {
 		stage = "—"
 	}

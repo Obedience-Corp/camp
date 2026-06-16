@@ -58,6 +58,8 @@ lint:
         golangci-lint run --new ./...
     fi
     just lint-no-host-fs-tests
+    just lint-no-fmt-errorf
+    go vet -tags=integration ./...
 
 # Reject NEW host-side filesystem-mutating test patterns outside
 # tests/integration/. Standing rule (feedback_docker_integration_tests.md):
@@ -75,7 +77,7 @@ lint-no-host-fs-tests:
     # and adjacent legacy patterns. Goal: drive this list to empty by migrating
     # tests to tests/integration/ + the container harness. The rule blocks any
     # NEW addition beyond this set.
-    allowlist="./internal/git/remote_test.go ./internal/git/commit_test.go ./internal/git/lock_integration_test.go ./internal/git/info_exclude_test.go ./pkg/commitkit/commitkit_test.go ./cmd/camp/commit_integration_test.go ./cmd/camp/project/remote/remote_test.go ./cmd/camp/refs/commands_integration_test.go ./tools/release-notes/main_test.go ./internal/doctor/checks/orphan_test.go ./internal/doctor/checks/head_test.go ./internal/doctor/checks/url_test.go ./internal/project/add_test.go ./internal/project/resolve_test.go ./internal/project/list_test.go ./internal/attach/attach_test.go ./internal/leverage/backfill_test.go ./internal/leverage/authors_test.go ./internal/leverage/projects_test.go ./internal/leverage/blame_cache_test.go ./internal/leverage/sampler_test.go ./internal/leverage/config_test.go ./internal/clone/git_test.go ./internal/quest/autocommit_integration_test.go ./internal/sync/sync_test.go ./internal/sync/preflight_test.go ./internal/scaffold/init_behavior_test.go ./internal/git/commit/commit_test.go ./internal/git/executor_test.go ./internal/git/submodule_test.go ./internal/git/submodule_list_test.go ./internal/git/branches_test.go ./internal/git/submodule_orphan_test.go ./internal/git/resolve_test.go"
+    allowlist="./internal/git/remote_test.go ./internal/git/commit_test.go ./internal/git/info_exclude_test.go ./pkg/commitkit/commitkit_test.go ./cmd/camp/project/remote/remote_test.go ./tools/release-notes/main_test.go ./internal/doctor/checks/orphan_test.go ./internal/doctor/checks/head_test.go ./internal/doctor/checks/url_test.go ./internal/project/add_test.go ./internal/project/resolve_test.go ./internal/project/list_test.go ./internal/attach/attach_test.go ./internal/leverage/backfill_test.go ./internal/leverage/authors_test.go ./internal/leverage/projects_test.go ./internal/leverage/blame_cache_test.go ./internal/leverage/sampler_test.go ./internal/leverage/config_test.go ./internal/clone/git_test.go ./internal/quest/autocommit_integration_test.go ./internal/sync/sync_test.go ./internal/sync/preflight_test.go ./internal/scaffold/init_behavior_test.go ./internal/git/commit/commit_test.go ./internal/git/executor_test.go ./internal/git/submodule_test.go ./internal/git/submodule_list_test.go ./internal/git/branches_test.go ./internal/git/submodule_orphan_test.go ./internal/git/resolve_test.go"
     hits=$(find . -name '*_test.go' -not -path './tests/integration/*' -not -path './vendor/*' -print0 2>/dev/null | \
         xargs -0 grep -lE 'exec\.Command\("git"|exec\.CommandContext\(.*"git"' 2>/dev/null || true)
     new_violators=""
@@ -94,6 +96,134 @@ lint-no-host-fs-tests:
         exit 1
     fi
     echo "lint-no-host-fs-tests: clean (no NEW violators; $(echo $hits | wc -w | tr -d ' ') legacy files on allowlist)"
+
+# Reject NEW fmt.Errorf occurrences in production code outside tools/.
+# This is a count ratchet against the merge-base with origin/main, so legacy
+# files can be burned down incrementally but cannot accumulate new uses.
+lint-no-fmt-errorf:
+    #!/usr/bin/env sh
+    set -eu
+    base_ref="${FMT_ERRORF_BASE:-origin/main}"
+    if ! base_commit=$(git merge-base HEAD "$base_ref" 2>/dev/null); then
+        echo "FAIL: cannot find merge-base with $base_ref for fmt.Errorf ratchet"
+        echo "Fetch $base_ref or set FMT_ERRORF_BASE to a reachable base ref."
+        exit 1
+    fi
+    files=$(find ./cmd ./internal ./pkg -name '*.go' -not -name '*_test.go' -print 2>/dev/null | sed 's#^\./##' || true)
+    new_violators=""
+    current_files=0
+    for file in $files; do
+        current_count=$(grep -o "fmt\\.Errorf" "$file" 2>/dev/null | wc -l | tr -d ' ')
+        if [ "$current_count" -eq 0 ]; then
+            continue
+        fi
+        current_files=$((current_files + 1))
+        if git cat-file -e "$base_commit:$file" 2>/dev/null; then
+            base_count=$(git show "$base_commit:$file" | grep -o "fmt\\.Errorf" | wc -l | tr -d ' ')
+        else
+            base_count=0
+        fi
+        if [ "$current_count" -gt "$base_count" ]; then
+            new_violators="$new_violators $file:$current_count:$base_count"
+        fi
+    done
+    if [ -n "$new_violators" ]; then
+        echo "FAIL: fmt.Errorf count regression in production code (outside tools/):"
+        for violation in $new_violators; do
+            file=$(printf "%s" "$violation" | cut -d: -f1)
+            current_count=$(printf "%s" "$violation" | cut -d: -f2)
+            base_count=$(printf "%s" "$violation" | cut -d: -f3)
+            echo "  $file ($current_count current, $base_count at $base_ref merge-base)"
+        done
+        echo ""
+        echo "Use camperrors.Wrap / camperrors.Wrapf instead."
+        exit 1
+    fi
+    echo "lint-no-fmt-errorf: clean (no fmt.Errorf count regressions; $current_files current file(s) at/below merge-base baseline)"
+
+# Verify the fmt.Errorf ratchet rejects a new production violator.
+test-ratchet:
+    #!/usr/bin/env sh
+    set -eu
+    tmpfile=./internal/tmptest_fmt_errorf_ratchet.go
+    cleanup() { rm -f "$tmpfile"; }
+    trap cleanup EXIT INT TERM
+    printf 'package internal\nimport "fmt"\nfunc _tmp() error { return fmt.Errorf("bad") }\n' > "$tmpfile"
+    if just lint-no-fmt-errorf 2>&1 | grep -q "FAIL"; then
+        echo "ratchet test: PASS (correctly rejected new fmt.Errorf)"
+    else
+        echo "ratchet test: FAIL (should have rejected new fmt.Errorf)"
+        exit 1
+    fi
+
+# Default pre-push smoke. This catches formatting whitespace, stable/dev build
+# breaks, vet regressions, lint ratchet regressions, and the fast dev-profile
+# unit subset without running the full release gate on every push.
+gate-push:
+    #!/usr/bin/env sh
+    set -eu
+    echo "=== gate-push: whitespace ==="
+    git diff --check
+    echo "=== gate-push: stable build ==="
+    just build-camp
+    echo "=== gate-push: dev build ==="
+    BUILD_TAGS=dev just build-camp
+    echo "=== gate-push: vet stable ==="
+    go vet ./...
+    echo "=== gate-push: vet dev ==="
+    go vet -tags dev ./...
+    echo "=== gate-push: vet integration ==="
+    go vet -tags=integration ./...
+    echo "=== gate-push: lint stable ==="
+    just lint
+    echo "=== gate-push: lint dev ==="
+    BUILD_TAGS=dev just lint
+    echo "=== gate-push: dev short tests ==="
+    go test -short -tags dev ./...
+    echo "=== gate-push: PASSED ==="
+
+# Run both-profile builds, vet (stable/dev/integration), lint both profiles, and dev unit tests.
+# Use this before moving a PR out of draft or when touching broad behavior. See also: just gate.
+gate-fast:
+    #!/usr/bin/env sh
+    set -eu
+    echo "=== gate-fast: stable build ==="
+    just build-camp
+    echo "=== gate-fast: dev build ==="
+    BUILD_TAGS=dev just build-camp
+    echo "=== gate-fast: vet stable ==="
+    go vet ./...
+    echo "=== gate-fast: vet dev ==="
+    go vet -tags dev ./...
+    echo "=== gate-fast: vet integration ==="
+    go vet -tags=integration ./...
+    echo "=== gate-fast: lint stable ==="
+    just lint
+    echo "=== gate-fast: lint dev ==="
+    BUILD_TAGS=dev just lint
+    echo "=== gate-fast: unit tests dev (the profile festival-app ships) ==="
+    BUILD_TAGS=dev just test unit
+    echo "=== gate-fast: PASSED ==="
+
+# Run the full both-profile gate: gate-fast plus stable unit tests (C-2 matrix).
+# Required by release recipes before tagging; the per-sequence closing command for sequences 05-12.
+# No GitHub Actions: all enforcement is local (C-1).
+gate:
+    #!/usr/bin/env sh
+    set -eu
+    just gate-fast
+    echo "=== gate: unit tests stable ==="
+    just test unit
+    echo "=== gate: PASSED ==="
+
+# Set git core.hooksPath to .githooks so the pre-push gate fires automatically.
+# Idempotent: safe to run multiple times.
+# Note: worktrees of this repo share this config automatically.
+# Submodule-registered copies have separate .git/config and need their own run.
+hooks-install:
+    git config core.hooksPath .githooks
+    @echo "Hooks installed: .githooks is now the active hooks directory."
+    @echo "To verify: git config --get core.hooksPath"
 
 # Install required development tools
 install-tools:
@@ -121,7 +251,8 @@ uninstall:
     @echo "camp uninstalled"
 
 # Generate CLI reference docs
-docs: build-camp
+docs:
+    BUILD_TAGS='' just build-camp
     ./{{bin_dir}}/{{binary_name}} gendocs --output docs/cli-reference --format markdown --single
 
 # Run camp (for development)

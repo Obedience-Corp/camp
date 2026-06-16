@@ -44,6 +44,11 @@ type Service struct {
 	campaignRoot string
 }
 
+var (
+	nowUTC          = func() time.Time { return time.Now().UTC() }
+	generateQuestID = GenerateID
+)
+
 func NewService(campaignRoot string) *Service {
 	return &Service{campaignRoot: campaignRoot}
 }
@@ -73,12 +78,12 @@ func (s *Service) Create(ctx context.Context, name, purpose, description string,
 		return nil, errors.New("quest name is required")
 	}
 
-	now := time.Now().UTC()
-	id, err := GenerateID(now)
+	now := nowUTC()
+	id, err := s.generateUniqueID(ctx, now)
 	if err != nil {
 		return nil, err
 	}
-	dir, err := s.uniqueQuestDir(ctx, name, now)
+	dir, err := s.claimQuestDir(ctx, name, now)
 	if err != nil {
 		return nil, err
 	}
@@ -94,6 +99,7 @@ func (s *Service) Create(ctx context.Context, name, purpose, description string,
 	}
 	path := QuestPathForDir(dir)
 	if err := Save(ctx, path, q); err != nil {
+		cleanupClaimedQuestDir(dir)
 		return nil, err
 	}
 
@@ -169,8 +175,8 @@ func (s *Service) CreateWithEditor(ctx context.Context, name, purpose, descripti
 		return nil, errors.New("quest name is required")
 	}
 
-	now := time.Now().UTC()
-	id, err := GenerateID(now)
+	now := nowUTC()
+	id, err := s.generateUniqueID(ctx, now)
 	if err != nil {
 		return nil, err
 	}
@@ -214,15 +220,16 @@ func (s *Service) CreateWithEditor(ctx context.Context, name, purpose, descripti
 	edited.ID = template.ID
 	edited.Status = StatusOpen
 	edited.CreatedAt = template.CreatedAt
-	edited.UpdatedAt = time.Now().UTC()
+	edited.UpdatedAt = nowUTC()
 	edited.Tags = normalizeTags(edited.Tags)
 
-	dir, err := s.uniqueQuestDir(ctx, edited.Name, edited.CreatedAt)
+	dir, err := s.claimQuestDir(ctx, edited.Name, edited.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
 	path := QuestPathForDir(dir)
 	if err := Save(ctx, path, edited); err != nil {
+		cleanupClaimedQuestDir(dir)
 		return nil, err
 	}
 
@@ -476,24 +483,61 @@ func (s *Service) ensureInitialized() error {
 	return nil
 }
 
-func (s *Service) uniqueQuestDir(ctx context.Context, name string, now time.Time) (string, error) {
-	base := GenerateDirectorySlug(name, now)
-	dir := QuestDir(s.campaignRoot, base)
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		return dir, nil
+func (s *Service) generateUniqueID(ctx context.Context, now time.Time) (string, error) {
+	var collided string
+	for attempt := 0; attempt < 2; attempt++ {
+		id, err := generateQuestID(now)
+		if err != nil {
+			return "", camperrors.Wrap(err, "generate quest id")
+		}
+		exists, err := s.questIDExists(ctx, id)
+		if err != nil {
+			return "", err
+		}
+		if !exists {
+			return id, nil
+		}
+		collided = id
 	}
+	return "", camperrors.Wrapf(camperrors.ErrInvalidInput, "quest id collision after retry: %s", collided)
+}
 
-	for i := 2; i < 1000; i++ {
+func (s *Service) questIDExists(ctx context.Context, id string) (bool, error) {
+	quests, err := List(ctx, s.campaignRoot, true)
+	if err != nil {
+		return false, err
+	}
+	for _, q := range quests {
+		if q.ID == id {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (s *Service) claimQuestDir(ctx context.Context, name string, now time.Time) (string, error) {
+	base := GenerateDirectorySlug(name, now)
+	for i := 0; i < 1000; i++ {
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
-		candidate := QuestDir(s.campaignRoot, fmt.Sprintf("%s-%d", base, i))
-		if _, err := os.Stat(candidate); os.IsNotExist(err) {
-			return candidate, nil
+		slug := base
+		if i > 0 {
+			slug = fmt.Sprintf("%s-%d", base, i+1)
+		}
+		dir := QuestDir(s.campaignRoot, slug)
+		if err := os.Mkdir(dir, 0755); err == nil {
+			return dir, nil
+		} else if !os.IsExist(err) {
+			return "", camperrors.Wrapf(err, "create quest dir %s", dir)
 		}
 	}
 
-	return "", camperrors.Wrapf(camperrors.ErrInvalidInput, "could not allocate quest directory for %q", name)
+	return "", camperrors.Wrapf(camperrors.ErrInvalidInput, "could not allocate quest directory for %q after 1000 attempts", name)
+}
+
+func cleanupClaimedQuestDir(dir string) {
+	_ = os.Remove(dir)
 }
 
 func (s *Service) updateInPlace(ctx context.Context, identifier string, from, to Status) (*MutationResult, error) {

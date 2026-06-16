@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
@@ -18,13 +19,12 @@ type campaignRootOutput struct {
 }
 
 var campaignRootCmd = &cobra.Command{
-	Use:          "root",
-	Short:        "Print the current campaign root",
-	Long:         "Print the current campaign root relative to the current working directory.",
-	Example:      "  camp root\n  camp root --json",
-	Args:         cobra.NoArgs,
-	SilenceUsage: true,
-	RunE:         runCampaignRoot,
+	Use:     "root",
+	Short:   "Print the current campaign root",
+	Long:    "Print the current campaign root relative to the current working directory.",
+	Example: "  camp root\n  camp root --json",
+	Args:    cobra.NoArgs,
+	RunE:    runCampaignRoot,
 }
 
 func init() {
@@ -35,9 +35,6 @@ func init() {
 
 func runCampaignRoot(cmd *cobra.Command, _ []string) error {
 	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
 
 	result, err := detectCampaignRootOutput(ctx)
 	if err != nil {
@@ -90,6 +87,14 @@ func buildCampaignRootOutput(cwd, root string) (campaignRootOutput, error) {
 }
 
 func resolveExistingPath(path string) (string, error) {
+	if path == "." {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", err
+		}
+		path = cwd
+	}
+
 	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {
 		return "", err

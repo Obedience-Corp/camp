@@ -28,7 +28,13 @@ func newShowCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show <type>",
 		Short: "Show a workflow collection's config and recent workitems",
-		Args:  jsoncontract.Args(JSONSchemaVersion, func() bool { return jsonOut }, cobra.ExactArgs(1)),
+		Long: `Show configuration and recent workitems for a workflow collection.
+
+The command reads campaign configuration plus the workflow/<type>/ directory,
+then prints the collection path, shortcut state, concept state, and recent
+.workitem-backed items. Use --json for machine-readable collection details and
+recent workitem data.`,
+		Args: jsoncontract.Args(JSONSchemaVersion, func() bool { return jsonOut }, cobra.ExactArgs(1)),
 		RunE: jsoncontract.RunE(JSONSchemaVersion, func() bool { return jsonOut }, func(cmd *cobra.Command, args []string) error {
 			return runShow(cmd.Context(), cmd, args[0], jsonOut)
 		}),

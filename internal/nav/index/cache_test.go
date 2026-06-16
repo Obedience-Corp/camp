@@ -486,8 +486,15 @@ func TestGetOrBuild_ForceRebuild(t *testing.T) {
 	// First call builds
 	idx1, _ := GetOrBuild(ctx, root, false)
 
-	// Small delay to ensure different build time
-	time.Sleep(10 * time.Millisecond)
+	cachedBuildTime := idx1.BuildTime.Add(-time.Second)
+	idx1.BuildTime = cachedBuildTime
+	if err := Save(idx1, root); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	now := time.Now().Add(time.Second)
+	if err := os.Chtimes(root, now, now); err != nil {
+		t.Fatalf("Chtimes: %v", err)
+	}
 
 	// Force rebuild should create new index
 	idx2, err := GetOrBuild(ctx, root, true)
@@ -495,9 +502,9 @@ func TestGetOrBuild_ForceRebuild(t *testing.T) {
 		t.Fatalf("GetOrBuild() error = %v", err)
 	}
 
-	// Build times should be different
-	if idx1.BuildTime.Equal(idx2.BuildTime) {
-		t.Error("Force rebuild should create new index with different build time")
+	// Build time should come from the forced rebuild, not the cached value.
+	if !idx2.BuildTime.After(cachedBuildTime) {
+		t.Errorf("Force rebuild BuildTime = %v, want after cached %v", idx2.BuildTime, cachedBuildTime)
 	}
 }
 

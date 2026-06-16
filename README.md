@@ -20,12 +20,14 @@ Campaign workspace manager — group every project, tool, and piece of context y
 - **Tab Completion** — Smart completion for categories, projects, and paths
 - **Plugins** — Discover camp plugins on `PATH` (`plugins`)
 
+Note: `flow` is a dev-channel command and is not available in stable builds.
+
 ## Installation
 
 ### Go Install
 
 ```bash
-go install github.com/Obedience-Corp/camp@latest
+go install github.com/Obedience-Corp/camp/cmd/camp@latest
 ```
 
 ### From Source
@@ -203,7 +205,7 @@ camp intent add --campaign other-campaign "Capture idea"  # Cross-campaign captu
 camp gather                # Import external data into the intent system
 
 # Flows - track work status
-camp flow                  # Manage status workflows for organizing work
+camp flow                  # Manage status workflows for organizing work (dev channel only; not available in stable builds)
 
 # Dungeon - archive deprioritized work
 camp dungeon               # Move items to/from the dungeon
@@ -336,7 +338,7 @@ cint "new feature idea"  # Runs: camp intent add "new feature idea"
 cnote "meeting note"     # Runs: camp intent note "meeting note"
 
 # 3. Tab completion for cgo
-cgo <TAB>                # Completes categories: p f w a d i wt du cr pi de
+cgo <TAB>                # Completes categories: p f w ai d i wt du cr pi de ex
 cgo p <TAB>              # Completes project names
 
 # 4. Tab completion for camp commands
@@ -510,9 +512,28 @@ just test                 # Show all test recipes
 just test all             # Run all tests
 just install              # Show install options (stable, dev, current)
 just install stable       # Install stable profile to $GOBIN
+just hooks-install        # Activate the pre-push gate hook
 just docs                 # Regenerate CLI reference docs
 just run <args>           # Run with arguments
 ```
+
+### Pre-push Gate Hook
+
+Run once after cloning or checking out this repo to activate the pre-push
+quality gate:
+
+```bash
+just hooks-install
+```
+
+This sets `core.hooksPath` to `.githooks` so git runs
+`.githooks/pre-push` before every push. The hook runs `just gate-fast` by
+default. Set `CAMP_GATE_FULL=1` before pushing to run `just gate` instead.
+
+Git worktrees of this repository share the same git config, so one
+`just hooks-install` run activates the hook for all worktrees that share this
+repo. Submodule-registered copies have separate git config and need their own
+`just hooks-install` run from inside that checkout.
 
 ## Part of Festival
 

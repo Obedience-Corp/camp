@@ -1,11 +1,9 @@
 package main
 
 import (
-	"context"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"os"
-
 	"github.com/Obedience-Corp/camp/internal/campaign"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/sync"
 	"github.com/spf13/cobra"
 )
@@ -33,10 +31,9 @@ when URLs change on remote repositories.
 
 EXIT CODES:
   0  Success
-  1  Pre-flight check failed (uncommitted changes)
-  2  Sync or update operation failed
+  1  Runtime failure (including pre-flight, sync, or update failure)
+  2  Usage error (bad flags or args)
   3  Post-sync validation failed
-  4  Invalid arguments
 
 EXAMPLES:
   # Sync all submodules (recommended default)
@@ -57,8 +54,10 @@ EXAMPLES:
   # JSON output for scripting
   camp sync --json`,
 	Args: cobra.ArbitraryArgs,
-	RunE: runSync,
+	RunE: jsoncontract.RunE(SyncJSONVersion, func() bool { return syncOpts.json }, runSync),
 }
+
+const SyncJSONVersion = "sync/v1alpha1"
 
 var syncOpts struct {
 	dryRun   bool
@@ -85,13 +84,11 @@ func init() {
 
 	rootCmd.AddCommand(syncCmd)
 	syncCmd.GroupID = "campaign"
+	syncCmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(SyncJSONVersion, func() bool { return syncOpts.json }))
 }
 
 func runSync(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
 
 	// Detect campaign root
 	campRoot, err := campaign.DetectCached(ctx)
@@ -141,9 +138,9 @@ func runSync(cmd *cobra.Command, args []string) error {
 	// Return appropriate exit code
 	if !result.Success {
 		if !result.PreflightPassed && !syncOpts.force {
-			os.Exit(sync.ExitPreflightFailed)
+			return camperrors.NewCommand("camp sync", sync.ExitPreflightFailed, "", nil)
 		}
-		os.Exit(sync.ExitSyncFailed)
+		return camperrors.NewCommand("camp sync", sync.ExitSyncFailed, "", nil)
 	}
 
 	return nil

@@ -194,6 +194,9 @@ func ProjectSkillEntries(destDir, skillsDir string, slugs []string, dryRun, forc
 				addConflict(&summary, slug)
 				continue
 			}
+			if !managed {
+				warnReplacingUnmanagedSkillLink(destPath)
+			}
 			if !dryRun {
 				if err := os.Remove(destPath); err != nil && !os.IsNotExist(err) {
 					return summary, camperrors.Wrapf(err, "remove broken skill link %q", slug)
@@ -215,6 +218,14 @@ func addConflict(summary *ProjectionSummary, name string) {
 	if len(summary.ConflictNames) < 5 {
 		summary.ConflictNames = append(summary.ConflictNames, name)
 	}
+}
+
+func warnReplacingUnmanagedSkillLink(destPath string) {
+	if target, err := os.Readlink(destPath); err == nil {
+		fmt.Fprintf(os.Stderr, "warning: replacing unmanaged symlink %q -> %q with skill link\n", destPath, target)
+		return
+	}
+	fmt.Fprintf(os.Stderr, "warning: replacing unmanaged broken symlink %q with skill link\n", destPath)
 }
 
 // InspectSkillProjection returns the current projection state for a destination.

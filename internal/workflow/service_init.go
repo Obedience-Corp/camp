@@ -9,6 +9,7 @@ import (
 
 	dungeonscaffold "github.com/Obedience-Corp/camp/internal/dungeon/scaffold"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"gopkg.in/yaml.v3"
 )
 
@@ -55,7 +56,7 @@ func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, erro
 		return nil, camperrors.Wrap(err, "failed to marshal schema")
 	}
 
-	if err := os.WriteFile(s.schemaPath, data, 0644); err != nil {
+	if err := fsutil.WriteFileAtomically(s.schemaPath, data, 0644); err != nil {
 		return nil, camperrors.Wrap(err, "failed to write schema file")
 	}
 	result.CreatedFiles = append(result.CreatedFiles, s.schemaPath)
@@ -112,7 +113,7 @@ func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, erro
 			return nil, camperrors.Wrapf(err, "failed to read template for %s", obey.path)
 		}
 
-		if err := os.WriteFile(obey.path, content, 0644); err != nil {
+		if err := fsutil.WriteFileAtomically(obey.path, content, 0644); err != nil {
 			return nil, camperrors.Wrapf(err, "failed to write %s", obey.path)
 		}
 		result.CreatedFiles = append(result.CreatedFiles, obey.path)
@@ -178,7 +179,7 @@ func (s *Service) createRootOBEY(ctx context.Context, schema *Schema, force bool
 		return false, camperrors.Wrap(err, "failed to render root OBEY.md")
 	}
 
-	if err := os.WriteFile(obeyPath, buf.Bytes(), 0644); err != nil {
+	if err := fsutil.WriteFileAtomically(obeyPath, buf.Bytes(), 0644); err != nil {
 		return false, camperrors.Wrap(err, "failed to write root OBEY.md")
 	}
 

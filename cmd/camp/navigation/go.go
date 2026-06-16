@@ -12,7 +12,6 @@ import (
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/nav"
-	"github.com/Obedience-Corp/camp/internal/nav/fuzzy"
 	"github.com/Obedience-Corp/camp/internal/nav/index"
 	"github.com/Obedience-Corp/camp/internal/pins"
 	"github.com/Obedience-Corp/camp/internal/state"
@@ -53,6 +52,9 @@ func runGo(cmd *cobra.Command, args []string) error {
 	command, _ := cmd.Flags().GetStringArray("command")
 	forceRoot, _ := cmd.Flags().GetBool("root")
 	listShortcuts, _ := cmd.Flags().GetBool("list")
+	if listShortcuts && printOnly {
+		return camperrors.New("--list and --print are mutually exclusive")
+	}
 
 	// Load campaign config to get custom shortcuts
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
@@ -115,6 +117,9 @@ func runGo(cmd *cobra.Command, args []string) error {
 			cwd, _ := os.Getwd()
 			_ = state.SetLastLocation(ctx, campaignRoot, cwd)
 			if printOnly {
+				if err := ensureExistingPrintPath(pinPath); err != nil {
+					return err
+				}
 				fmt.Println(pinPath)
 			} else {
 				fmt.Printf("cd %s\n", pinPath)
@@ -238,12 +243,13 @@ func runGo(cmd *cobra.Command, args []string) error {
 		// Index resolution failed — fall through to standard resolution
 	}
 
-	resolveResult, err := index.Resolve(ctx, index.ResolveOptions{
+	resolveOpts := index.ResolveOptions{
 		CampaignRoot: jumpResult.Path,
 		Category:     result.Category,
 		Query:        result.Query,
 		SubShortcut:  subShortcut,
-	})
+	}
+	resolveResult, err := index.Resolve(ctx, resolveOpts)
 	if err != nil {
 		// Handle invalid sub-shortcut error
 		if subErr, ok := err.(*index.InvalidSubShortcutError); ok {
@@ -262,7 +268,7 @@ func runGo(cmd *cobra.Command, args []string) error {
 	_ = state.SetLastLocation(ctx, jumpResult.Path, cwd)
 
 	// Multiple matches - inform user
-	if resolveResult.HasMultipleMatches() && !printOnly {
+	if resolveResult.HasMultipleMatches() {
 		fmt.Fprintln(os.Stderr, ui.Warning("Multiple matches found:"))
 		for _, m := range resolveResult.Matches {
 			fmt.Fprintf(os.Stderr, "  %s %s\n", ui.BulletIcon(), ui.Dim(m.Name))
@@ -271,6 +277,10 @@ func runGo(cmd *cobra.Command, args []string) error {
 	}
 
 	if printOnly {
+		resolveResult, err = ensureResolvedPrintPath(ctx, jumpResult.Path, resolveOpts, resolveResult)
+		if err != nil {
+			return err
+		}
 		fmt.Println(resolveResult.Path)
 	} else {
 		fmt.Printf("cd %s\n", resolveResult.Path)
@@ -337,7 +347,7 @@ func listProjectShortcuts(result *index.ResolveResult) error {
 // handleRelativePathNavigation resolves a configured relative path plus optional
 // query and executes the standard camp go output flow for the resolved target.
 func handleRelativePathNavigation(ctx context.Context, campaignRoot, relativePath, query string, printOnly bool, command []string) error {
-	targetPath, err := resolveRelativePathNavigation(ctx, campaignRoot, relativePath, query)
+	targetPath, err := nav.ResolveRelativePathNavigation(ctx, campaignRoot, relativePath, query)
 	if err != nil {
 		return err
 	}
@@ -364,80 +374,6 @@ func handleRelativePathNavigation(ctx context.Context, campaignRoot, relativePat
 	return nil
 }
 
-func resolveRelativePathNavigation(ctx context.Context, campaignRoot, relativePath, query string) (string, error) {
-	if ctx.Err() != nil {
-		return "", ctx.Err()
-	}
-
-	if query == "" {
-		jumpResult, err := nav.JumpToPathFromRoot(ctx, campaignRoot, relativePath)
-		if err != nil {
-			return "", err
-		}
-		return jumpResult.Path, nil
-	}
-
-	basePath := filepath.Join(campaignRoot, relativePath)
-	exactPath := filepath.Join(basePath, query)
-	if info, err := os.Stat(exactPath); err == nil && info.IsDir() {
-		return exactPath, nil
-	}
-
-	if strings.Contains(query, "/") {
-		parts := strings.SplitN(query, "/", 2)
-		prefixPath, err := fuzzyResolveDirectory(ctx, basePath, parts[0], relativePath)
-		if err != nil {
-			return "", err
-		}
-		if ctx.Err() != nil {
-			return "", ctx.Err()
-		}
-		nestedPath := filepath.Join(prefixPath, parts[1])
-		if info, err := os.Stat(nestedPath); err == nil && info.IsDir() {
-			return nestedPath, nil
-		}
-		return "", camperrors.Wrapf(errNavigationPathNotFound, "%s/%s", strings.TrimRight(relativePath, "/"), query)
-	}
-
-	return fuzzyResolveDirectory(ctx, basePath, query, relativePath)
-}
-
-func fuzzyResolveDirectory(ctx context.Context, basePath, query, relativePath string) (string, error) {
-	if ctx.Err() != nil {
-		return "", ctx.Err()
-	}
-
-	entries, err := os.ReadDir(basePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", camperrors.Wrap(errNavigationPathNotFound, relativePath)
-		}
-		return "", camperrors.Wrap(err, "failed to read navigation path")
-	}
-
-	var names []string
-	for _, entry := range entries {
-		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
-			continue
-		}
-		names = append(names, entry.Name())
-	}
-
-	matches := fuzzy.FilterMulti(names, query)
-	if len(matches) == 0 {
-		return "", camperrors.Wrapf(errNavigationNoMatch, "%q in %s", query, strings.TrimRight(relativePath, "/"))
-	}
-
-	return filepath.Join(basePath, matches[0].Target), nil
-}
-
-// errNavigationPathNotFound indicates the requested navigation target directory
-// could not be resolved to an existing path under the campaign root.
-var errNavigationPathNotFound = camperrors.New("navigation path does not exist")
-
-// errNavigationNoMatch indicates fuzzy resolution found no matching directory.
-var errNavigationNoMatch = camperrors.New("no directories match navigation query")
-
 // evalSymlinks resolves symlinks in a path, returning the original path if resolution fails.
 func evalSymlinks(path string) (string, error) {
 	resolved, err := filepath.EvalSymlinks(path)
@@ -450,6 +386,8 @@ func evalSymlinks(path string) (string, error) {
 // formatShortcutsHelp generates the shortcuts section for help output.
 // Only shows shortcuts from campaign.yaml - no hardcoded defaults.
 func formatShortcutsHelp() string {
+	// Help rendering is wired as static command metadata before RunE receives a
+	// command context, so this discovery path intentionally uses a background ctx.
 	ctx := context.Background()
 
 	// Try to load campaign config
@@ -537,4 +475,41 @@ func resolvePin(campaignRoot, query string) (string, bool) {
 		return "", false
 	}
 	return filepath.Join(campaignRoot, pin.Path), true
+}
+
+func ensureResolvedPrintPath(ctx context.Context, campaignRoot string, opts index.ResolveOptions, result *index.ResolveResult) (*index.ResolveResult, error) {
+	if result == nil {
+		return nil, camperrors.New("resolved path is empty")
+	}
+	if _, err := os.Stat(result.Path); err == nil {
+		return result, nil
+	} else if !os.IsNotExist(err) {
+		return nil, camperrors.Wrapf(err, "failed to stat resolved path %s", result.Path)
+	}
+
+	if _, err := index.GetOrBuild(ctx, campaignRoot, true); err != nil {
+		return nil, camperrors.Wrapf(err, "nav index rebuild failed")
+	}
+	refreshed, err := index.Resolve(ctx, opts)
+	if err != nil {
+		return nil, resolvedPathMissingError(result.Path)
+	}
+	if err := ensureExistingPrintPath(refreshed.Path); err != nil {
+		return nil, err
+	}
+	return refreshed, nil
+}
+
+func ensureExistingPrintPath(path string) error {
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	} else if os.IsNotExist(err) {
+		return resolvedPathMissingError(path)
+	} else {
+		return camperrors.Wrapf(err, "failed to stat resolved path %s", path)
+	}
+}
+
+func resolvedPathMissingError(path string) error {
+	return camperrors.New(fmt.Sprintf("resolved path does not exist: %s", path))
 }

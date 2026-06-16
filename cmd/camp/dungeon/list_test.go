@@ -66,3 +66,9 @@ func TestBuildDungeonEmptyMessage(t *testing.T) {
 		})
 	}
 }
+
+func TestDungeonListJSONAliasRegistered(t *testing.T) {
+	if dungeonListCmd.Flags().Lookup("json") == nil {
+		t.Fatal("camp dungeon list missing --json alias")
+	}
+}

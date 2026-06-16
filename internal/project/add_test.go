@@ -163,9 +163,8 @@ func TestAdd_ContextCancelled(t *testing.T) {
 }
 
 func TestAdd_ContextTimeout(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Nanosecond)
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Nanosecond))
 	defer cancel()
-	time.Sleep(1 * time.Millisecond)
 
 	_, err := Add(ctx, "/some/path", "git@github.com:org/repo.git", AddOptions{})
 	if err != context.DeadlineExceeded {

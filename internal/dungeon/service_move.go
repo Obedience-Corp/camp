@@ -3,13 +3,13 @@ package dungeon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
-	"time"
 
-	"github.com/Obedience-Corp/camp/internal/dungeon/statuspath"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
+	"github.com/Obedience-Corp/camp/internal/statusmove"
 )
 
 // MoveToDungeon moves an item from the parent directory into the dungeon root.
@@ -22,23 +22,28 @@ func (s *Service) MoveToDungeon(ctx context.Context, itemName, parentPath string
 		return err
 	}
 	itemName = validName
+	if err := s.validateParentMoveCandidate(ctx, parentPath, itemName); err != nil {
+		return err
+	}
 
 	sourcePath := filepath.Join(parentPath, itemName)
 	targetPath := filepath.Join(s.dungeonPath, itemName)
 
-	if _, err := os.Stat(sourcePath); err != nil {
-		return camperrors.Wrap(ErrNotFound, itemName)
+	if err := pathutil.ValidateBoundary(s.campaignRoot, targetPath); err != nil {
+		return camperrors.Wrap(ErrNotInDungeon, "target outside campaign root")
 	}
 
 	if _, err := os.Stat(s.dungeonPath); err != nil {
 		return camperrors.Wrap(err, "dungeon directory does not exist")
 	}
 
-	if _, err := os.Stat(targetPath); err == nil {
-		return camperrors.Wrapf(ErrAlreadyExists, "%s already in dungeon", itemName)
-	}
-
-	if err := os.Rename(sourcePath, targetPath); err != nil {
+	if _, err := statusmove.Move(ctx, sourcePath, targetPath, statusmove.MoveOptions{BoundaryRoot: s.campaignRoot}); err != nil {
+		if errors.Is(err, camperrors.ErrNotFound) {
+			return camperrors.Wrap(ErrNotFound, itemName)
+		}
+		if errors.Is(err, statusmove.ErrAlreadyExists) {
+			return camperrors.Wrapf(ErrAlreadyExists, "%s already in dungeon", itemName)
+		}
 		return camperrors.Wrapf(err, "moving %s to dungeon", itemName)
 	}
 
@@ -63,7 +68,6 @@ func (s *Service) MoveToStatus(ctx context.Context, itemName, status string) (st
 
 	srcPath := filepath.Join(s.dungeonPath, itemName)
 	statusDir := filepath.Join(s.dungeonPath, status)
-	dstPath := statuspath.DatedItemPath(statusDir, itemName, time.Now())
 
 	// Verify source exists
 	if _, err := os.Stat(srcPath); os.IsNotExist(err) {
@@ -83,17 +87,17 @@ func (s *Service) MoveToStatus(ctx context.Context, itemName, status string) (st
 		return "", camperrors.Wrap(ErrNotInDungeon, itemName)
 	}
 
-	if _, exists, err := statuspath.ExistingItemPath(statusDir, itemName); err != nil {
-		return "", camperrors.Wrapf(err, "checking %s destination", status)
-	} else if exists {
-		return "", camperrors.Wrapf(ErrAlreadyExists, "%s already in %s/", itemName, status)
-	}
-
-	if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
-		return "", camperrors.Wrapf(err, "creating %s directory", status)
-	}
-
-	if err := os.Rename(srcPath, dstPath); err != nil {
+	dstPath, err := statusmove.Move(ctx, srcPath, statusDir, statusmove.MoveOptions{
+		DatedBucket:  true,
+		BoundaryRoot: s.campaignRoot,
+	})
+	if err != nil {
+		if errors.Is(err, camperrors.ErrNotFound) {
+			return "", camperrors.Wrap(ErrNotFound, itemName)
+		}
+		if errors.Is(err, statusmove.ErrAlreadyExists) {
+			return "", camperrors.Wrapf(ErrAlreadyExists, "%s already in %s/", itemName, status)
+		}
 		return "", camperrors.Wrapf(err, "moving %s to %s", itemName, status)
 	}
 
@@ -115,6 +119,9 @@ func (s *Service) MoveToDungeonStatus(ctx context.Context, itemName, parentPath,
 		return "", err
 	}
 	itemName = validName
+	if err := s.validateParentMoveCandidate(ctx, parentPath, itemName); err != nil {
+		return "", err
+	}
 
 	// Validate parentPath is within campaign root
 	sourcePath := filepath.Join(parentPath, itemName)
@@ -123,27 +130,48 @@ func (s *Service) MoveToDungeonStatus(ctx context.Context, itemName, parentPath,
 	}
 
 	statusDir := filepath.Join(s.dungeonPath, status)
-	targetPath := statuspath.DatedItemPath(statusDir, itemName, time.Now())
 
-	if _, err := os.Stat(sourcePath); err != nil {
-		return "", camperrors.Wrap(ErrNotFound, itemName)
-	}
-
-	if _, exists, err := statuspath.ExistingItemPath(statusDir, itemName); err != nil {
-		return "", camperrors.Wrapf(err, "checking %s destination", status)
-	} else if exists {
-		return "", camperrors.Wrapf(ErrAlreadyExists, "%s already in %s/", itemName, status)
-	}
-
-	if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
-		return "", camperrors.Wrapf(err, "creating %s directory", status)
-	}
-
-	if err := os.Rename(sourcePath, targetPath); err != nil {
+	targetPath, err := statusmove.Move(ctx, sourcePath, statusDir, statusmove.MoveOptions{
+		DatedBucket:  true,
+		BoundaryRoot: s.campaignRoot,
+	})
+	if err != nil {
+		if errors.Is(err, camperrors.ErrNotFound) {
+			return "", camperrors.Wrap(ErrNotFound, itemName)
+		}
+		if errors.Is(err, statusmove.ErrAlreadyExists) {
+			return "", camperrors.Wrapf(ErrAlreadyExists, "%s already in %s/", itemName, status)
+		}
 		return "", camperrors.Wrapf(err, "moving %s to dungeon/%s", itemName, status)
 	}
 
 	return targetPath, nil
+}
+
+func (s *Service) validateParentMoveCandidate(ctx context.Context, parentPath, itemName string) error {
+	if err := ctx.Err(); err != nil {
+		return camperrors.Wrap(err, "context cancelled")
+	}
+
+	sourcePath := filepath.Join(parentPath, itemName)
+	if err := pathutil.ValidateBoundary(s.campaignRoot, sourcePath); err != nil {
+		return camperrors.Wrap(ErrNotInDungeon, "source outside campaign root")
+	}
+
+	info, err := os.Stat(sourcePath)
+	if err != nil {
+		return nil
+	}
+
+	if s.parentItemExcluder(ctx, parentPath).excludes(parentPath, itemName, info.IsDir()) {
+		return camperrors.Wrapf(
+			ErrNotInDungeon,
+			"refusing to move structural parent item %q; run 'camp dungeon list --triage' to confirm eligible items",
+			itemName,
+		)
+	}
+
+	return nil
 }
 
 // Archive moves an item from the dungeon root to archived/.
@@ -160,7 +188,6 @@ func (s *Service) Archive(ctx context.Context, itemName string) error {
 
 	srcPath := filepath.Join(s.dungeonPath, itemName)
 	archivedDir := filepath.Join(s.dungeonPath, "archived")
-	dstPath := statuspath.DatedItemPath(archivedDir, itemName, time.Now())
 
 	// Verify source exists
 	if _, err := os.Stat(srcPath); os.IsNotExist(err) {
@@ -180,17 +207,16 @@ func (s *Service) Archive(ctx context.Context, itemName string) error {
 		return camperrors.Wrap(ErrNotInDungeon, itemName)
 	}
 
-	if _, exists, err := statuspath.ExistingItemPath(archivedDir, itemName); err != nil {
-		return camperrors.Wrap(err, "checking archived destination")
-	} else if exists {
-		return camperrors.Wrapf(ErrAlreadyExists, "%s already in archived/", itemName)
-	}
-
-	if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
-		return camperrors.Wrap(err, "creating archived directory")
-	}
-
-	if err := os.Rename(srcPath, dstPath); err != nil {
+	if _, err := statusmove.Move(ctx, srcPath, archivedDir, statusmove.MoveOptions{
+		DatedBucket:  true,
+		BoundaryRoot: s.campaignRoot,
+	}); err != nil {
+		if errors.Is(err, camperrors.ErrNotFound) {
+			return camperrors.Wrap(ErrNotFound, itemName)
+		}
+		if errors.Is(err, statusmove.ErrAlreadyExists) {
+			return camperrors.Wrapf(ErrAlreadyExists, "%s already in archived/", itemName)
+		}
 		return camperrors.Wrapf(err, "moving %s to archived", itemName)
 	}
 

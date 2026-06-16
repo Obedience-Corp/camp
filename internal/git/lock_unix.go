@@ -16,6 +16,8 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
+const minLockAge = 5 * time.Second
+
 // LockInfo contains information about a lock file.
 type LockInfo struct {
 	// Path is the path to the lock file.
@@ -38,7 +40,7 @@ func IsLockStale(ctx context.Context, lockPath string) (bool, *LockInfo, error) 
 	if err == nil {
 		info.Stale = stale
 		info.ProcessID = pid
-		return stale, info, nil
+		return applyLockAgeFloor(lockPath, stale, info), info, nil
 	}
 
 	// Fall back to lsof
@@ -50,7 +52,23 @@ func IsLockStale(ctx context.Context, lockPath string) (bool, *LockInfo, error) 
 	info.Stale = stale
 	info.ProcessID = pid
 	info.Command = cmd
-	return stale, info, nil
+	return applyLockAgeFloor(lockPath, stale, info), info, nil
+}
+
+func applyLockAgeFloor(lockPath string, stale bool, info *LockInfo) bool {
+	if !stale {
+		return false
+	}
+
+	stat, err := os.Stat(lockPath)
+	if err != nil {
+		return stale
+	}
+	if time.Since(stat.ModTime()) < minLockAge {
+		info.Stale = false
+		return false
+	}
+	return true
 }
 
 // checkWithFuser uses fuser to check if any process has the file open.
@@ -175,6 +193,9 @@ func removeSingleLock(ctx context.Context, lockPath string, logger *slog.Logger)
 	// Step 3: Remove the lock file
 	logger.Debug("removing stale lock", "path", lockPath)
 	if err := os.Remove(lockPath); err != nil {
+		if os.IsNotExist(err) {
+			return info, nil
+		}
 		return info, camperrors.WrapJoinf(ErrLockRemovalFailed, err, "failed to remove lock file %s", lockPath)
 	}
 

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/fsutil"
 )
 
 // Service errors.
@@ -117,13 +118,8 @@ func (s *IntentService) CreateDirect(ctx context.Context, opts CreateOptions) (*
 		return nil, camperrors.Wrap(err, "creating directory")
 	}
 
-	// Check if file already exists
-	if _, err := os.Stat(finalPath); err == nil {
-		return nil, camperrors.Wrap(ErrFileExists, finalPath)
-	}
-
 	// Write intent file
-	if err := os.WriteFile(finalPath, []byte(content), 0644); err != nil {
+	if err := writeFileExclusive(finalPath, []byte(content), 0644); err != nil {
 		return nil, camperrors.Wrap(err, "writing intent file")
 	}
 
@@ -301,7 +297,10 @@ func (s *IntentService) Save(ctx context.Context, intent *Intent) error {
 		return camperrors.Wrap(err, "serializing intent")
 	}
 
-	if err := os.WriteFile(intent.Path, data, 0644); err != nil {
+	// TODO(seq06-lock): this write is part of a read-modify-write cycle (load -> mutate -> Save).
+	// Adding a file lock here alone does not close the race; the lock must span the caller's load
+	// and mutation before Save.
+	if err := fsutil.WriteFileAtomically(intent.Path, data, 0644); err != nil {
 		return camperrors.Wrap(err, "writing intent file")
 	}
 
@@ -363,7 +362,7 @@ func (s *IntentService) Move(ctx context.Context, id string, newStatus Status) (
 		return nil, camperrors.Wrap(err, "serializing intent")
 	}
 
-	if err := os.WriteFile(newPath, data, 0644); err != nil {
+	if err := writeFileExclusive(newPath, data, 0644); err != nil {
 		return nil, camperrors.Wrap(err, "writing intent file")
 	}
 
@@ -457,6 +456,12 @@ func (s *IntentService) moveTargetPath(id string, newStatus Status, oldPath stri
 // occupied by a different frontmatter id is skipped so a move never overwrites an
 // unrelated intent.
 func (s *IntentService) collisionSafeMovePath(dir, base, id string) string {
+	if info, err := os.Stat(dir); err == nil && !info.IsDir() {
+		return filepath.Join(dir, base+".md")
+	} else if err != nil && !os.IsNotExist(err) {
+		return filepath.Join(dir, base+".md")
+	}
+
 	candidate := filepath.Join(dir, base+".md")
 	if s.pathAvailableForID(candidate, id) {
 		return candidate
@@ -489,6 +494,10 @@ func (s *IntentService) removeAllCopies(id string, exceptPath string) {
 		if p == exceptPath {
 			continue
 		}
+		candidate, err := s.loadIntent(p)
+		if err != nil || candidate.ID != id {
+			continue
+		}
 		os.Remove(p) // ignore errors — file may not exist
 	}
 }
@@ -510,4 +519,36 @@ func (s *IntentService) loadIntent(path string) (*Intent, error) {
 
 func intentValidationError(errs []error) error {
 	return camperrors.NewValidation("intent", "one or more fields failed validation", camperrors.Join(errs...))
+}
+
+func writeFileExclusive(path string, data []byte, mode os.FileMode) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
+	if err != nil {
+		if os.IsExist(err) {
+			return camperrors.Wrap(ErrFileExists, path)
+		}
+		return err
+	}
+
+	removeOnFailure := true
+	defer func() {
+		if removeOnFailure {
+			_ = os.Remove(path)
+		}
+	}()
+
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+
+	removeOnFailure = false
+	return nil
 }

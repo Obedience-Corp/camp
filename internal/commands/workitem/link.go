@@ -33,7 +33,13 @@ func newLinkCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "link <selector> [path]",
 		Short: "Attach a workitem to a project, festival, worktree, or campaign path",
-		Args:  jsoncontract.Args(links.LinksSchemaVersion, func() bool { return jsonOut }, cobra.RangeArgs(1, 2)),
+		Long: `Attach a workitem to a project, festival, worktree, or campaign path.
+
+Links are stored in .campaign/workitems/links.yaml and connect a .workitem
+identity to an explicit scope for planning, execution, and lookup. Pass a
+workitem selector plus a path, or use --project, --festival, --worktree, or
+--cwd to derive the scope. Use --json for machine-readable link output.`,
+		Args: jsoncontract.Args(links.LinksSchemaVersion, func() bool { return jsonOut }, cobra.RangeArgs(1, 2)),
 		Annotations: map[string]string{
 			"agent_allowed": "true",
 			"agent_reason":  "Links workitems to scopes with --json output for automation",

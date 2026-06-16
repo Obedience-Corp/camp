@@ -1,12 +1,15 @@
 package intent
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -120,6 +123,64 @@ func TestIntentService_CreateDirect_DuplicateID(t *testing.T) {
 	}
 }
 
+func TestCollisionSuffixLoopUnderConcurrentCreates(t *testing.T) {
+	tmpDir := t.TempDir()
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
+	ctx := context.Background()
+
+	opts := CreateOptions{
+		Title:     "Concurrent Duplicate",
+		Timestamp: time.Date(2026, 1, 19, 15, 35, 12, 0, time.UTC),
+	}
+
+	const workers = 8
+	start := make(chan struct{})
+	errs := make(chan error, workers)
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for range workers {
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := svc.CreateDirect(ctx, opts)
+			errs <- err
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+	close(errs)
+
+	successes := 0
+	existsErrors := 0
+	for err := range errs {
+		switch {
+		case err == nil:
+			successes++
+		case errors.Is(err, ErrFileExists):
+			existsErrors++
+		default:
+			t.Fatalf("CreateDirect() unexpected error = %v", err)
+		}
+	}
+
+	if successes != 1 {
+		t.Fatalf("successes = %d, want 1", successes)
+	}
+	if existsErrors != workers-1 {
+		t.Fatalf("ErrFileExists count = %d, want %d", existsErrors, workers-1)
+	}
+
+	files, err := filepath.Glob(filepath.Join(tmpDir, "intents", "inbox", "*.md"))
+	if err != nil {
+		t.Fatalf("Glob() error = %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("created files = %d, want 1: %v", len(files), files)
+	}
+	assertFileContains(t, files[0], "Concurrent Duplicate")
+}
+
 func TestIntentService_CreateDirect_ContextCancelled(t *testing.T) {
 	tmpDir := t.TempDir()
 	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
@@ -163,6 +224,61 @@ func TestIntentService_CreateWithEditor(t *testing.T) {
 	}
 	if !strings.Contains(intent.Content, "Edited content") {
 		t.Error("Content should contain edited text")
+	}
+}
+
+func TestIntentService_CreateWithEditor_EditedIDCollisionPreservesExisting(t *testing.T) {
+	tmpDir := t.TempDir()
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
+	ctx := context.Background()
+
+	existing, err := svc.CreateDirect(ctx, CreateOptions{
+		Title:     "Existing Intent",
+		Type:      TypeFeature,
+		Timestamp: time.Date(2026, 1, 19, 17, 10, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateDirect(existing) error = %v", err)
+	}
+	before, err := os.ReadFile(existing.Path)
+	if err != nil {
+		t.Fatalf("ReadFile(existing before) error = %v", err)
+	}
+
+	mockEditor := func(ctx context.Context, path string) error {
+		edited := &Intent{
+			ID:        existing.ID,
+			Title:     "Collision Attempt",
+			Status:    StatusInbox,
+			CreatedAt: time.Date(2026, 1, 19, 17, 11, 0, 0, time.UTC),
+			Type:      TypeFeature,
+			Content:   "this should not replace the existing file",
+		}
+		data, err := SerializeIntent(edited)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(path, data, 0644)
+	}
+
+	_, err = svc.CreateWithEditor(ctx, CreateOptions{
+		Title:     "New Intent",
+		Type:      TypeFeature,
+		Timestamp: time.Date(2026, 1, 19, 17, 12, 0, 0, time.UTC),
+	}, mockEditor)
+	if err == nil {
+		t.Fatal("CreateWithEditor() should fail on edited ID collision")
+	}
+	if !errors.Is(err, ErrFileExists) {
+		t.Fatalf("CreateWithEditor() error = %v, want ErrFileExists", err)
+	}
+
+	after, err := os.ReadFile(existing.Path)
+	if err != nil {
+		t.Fatalf("ReadFile(existing after) error = %v", err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("existing intent was modified:\n got: %q\nwant: %q", string(after), string(before))
 	}
 }
 
@@ -505,6 +621,49 @@ func TestIntentService_Move(t *testing.T) {
 	}
 }
 
+func TestIntentService_MoveDestinationCollisionPreservesExisting(t *testing.T) {
+	tmpDir := t.TempDir()
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
+	ctx := context.Background()
+
+	created, err := svc.CreateDirect(ctx, CreateOptions{
+		Title:     "Move Collision Source",
+		Timestamp: time.Date(2026, 1, 19, 22, 30, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateDirect() error = %v", err)
+	}
+
+	collisionPath := svc.getIntentPath(StatusActive, created.ID)
+	if err := os.MkdirAll(filepath.Dir(collisionPath), 0755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	collision := &Intent{
+		ID:        created.ID,
+		Title:     "Existing Active Copy",
+		Status:    StatusActive,
+		CreatedAt: time.Date(2026, 1, 19, 22, 31, 0, 0, time.UTC),
+		Content:   "do not overwrite",
+	}
+	data, err := SerializeIntent(collision)
+	if err != nil {
+		t.Fatalf("SerializeIntent() error = %v", err)
+	}
+	if err := os.WriteFile(collisionPath, data, 0644); err != nil {
+		t.Fatalf("WriteFile(collision) error = %v", err)
+	}
+
+	_, err = svc.Move(ctx, created.ID, StatusActive)
+	if !errors.Is(err, ErrFileExists) {
+		t.Fatalf("Move() error = %v, want ErrFileExists", err)
+	}
+	if _, err := os.Stat(created.Path); err != nil {
+		t.Fatalf("source file should remain after failed move: %v", err)
+	}
+	assertFileContains(t, collisionPath, "Existing Active Copy")
+	assertFileContains(t, collisionPath, "do not overwrite")
+}
+
 func TestIntentService_Move_SameStatus(t *testing.T) {
 	tmpDir := t.TempDir()
 	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
@@ -583,6 +742,72 @@ func TestIntentService_Save(t *testing.T) {
 	}
 	if reloaded.Priority != PriorityHigh {
 		t.Errorf("Priority = %q, want %q", reloaded.Priority, PriorityHigh)
+	}
+}
+
+func TestIntentService_CreateDirectAtomicWriteContent(t *testing.T) {
+	tmpDir := t.TempDir()
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
+	ctx := context.Background()
+
+	intent, err := svc.CreateDirect(ctx, CreateOptions{
+		Title:     "Atomic Create Test",
+		Type:      TypeChore,
+		Timestamp: time.Date(2026, 1, 20, 1, 30, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateDirect() error = %v", err)
+	}
+
+	got, err := os.ReadFile(intent.Path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if !bytes.Contains(got, []byte("Atomic Create Test")) {
+		t.Fatalf("created intent content missing title:\n%s", got)
+	}
+}
+
+func TestIntentService_SaveAtomicFailurePreservesOriginal(t *testing.T) {
+	tmpDir := t.TempDir()
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
+	ctx := context.Background()
+
+	intent, err := svc.CreateDirect(ctx, CreateOptions{
+		Title:     "Original Atomic Save",
+		Type:      TypeChore,
+		Timestamp: time.Date(2026, 1, 20, 1, 45, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateDirect() error = %v", err)
+	}
+	original, err := os.ReadFile(intent.Path)
+	if err != nil {
+		t.Fatalf("ReadFile(original) error = %v", err)
+	}
+
+	dir := filepath.Dir(intent.Path)
+	if err := os.Chmod(dir, 0555); err != nil {
+		t.Skipf("chmod read-only directory: %v", err)
+	}
+	defer func() {
+		_ = os.Chmod(dir, 0o755)
+	}()
+
+	intent.Title = "Mutated Atomic Save"
+	err = svc.Save(ctx, intent)
+	if err == nil {
+		_ = os.Chmod(dir, 0o755)
+		_ = os.WriteFile(intent.Path, original, 0o644)
+		t.Skip("read-only directory did not prevent atomic temp file creation")
+	}
+
+	got, err := os.ReadFile(intent.Path)
+	if err != nil {
+		t.Fatalf("ReadFile(after failed Save) error = %v", err)
+	}
+	if !bytes.Equal(got, original) {
+		t.Fatalf("failed Save changed original content:\n got: %q\nwant: %q", got, original)
 	}
 }
 
@@ -700,6 +925,48 @@ func TestMoveFile(t *testing.T) {
 	}
 	if string(data) != content {
 		t.Errorf("Content = %q, want %q", string(data), content)
+	}
+}
+
+func TestMoveFile_DestinationExistsReturnsErrFileExists(t *testing.T) {
+	tmpDir := t.TempDir()
+	srcPath := filepath.Join(tmpDir, "source.txt")
+	dstPath := filepath.Join(tmpDir, "dest.txt")
+	if err := os.WriteFile(srcPath, []byte("source content"), 0644); err != nil {
+		t.Fatalf("WriteFile(src) error = %v", err)
+	}
+	if err := os.WriteFile(dstPath, []byte("existing content"), 0644); err != nil {
+		t.Fatalf("WriteFile(dst) error = %v", err)
+	}
+
+	err := moveFile(srcPath, dstPath)
+	if !errors.Is(err, ErrFileExists) {
+		t.Fatalf("moveFile() error = %v, want ErrFileExists", err)
+	}
+
+	assertFileContent(t, srcPath, "source content")
+	assertFileContent(t, dstPath, "existing content")
+}
+
+func assertFileContent(t *testing.T, path, want string) {
+	t.Helper()
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%s) error = %v", path, err)
+	}
+	if string(got) != want {
+		t.Fatalf("%s content = %q, want %q", path, string(got), want)
+	}
+}
+
+func assertFileContains(t *testing.T, path, want string) {
+	t.Helper()
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%s) error = %v", path, err)
+	}
+	if !strings.Contains(string(got), want) {
+		t.Fatalf("%s content missing %q:\n%s", path, want, string(got))
 	}
 }
 
@@ -1100,6 +1367,9 @@ func TestMoveFile_SourceNotExist(t *testing.T) {
 	if err == nil {
 		t.Fatal("moveFile() should fail when source doesn't exist")
 	}
+	if _, statErr := os.Stat(dstPath); !os.IsNotExist(statErr) {
+		t.Fatalf("destination should not be created for non-EXDEV rename error, stat err = %v", statErr)
+	}
 }
 
 func TestIntentService_loadIntent_Error(t *testing.T) {
@@ -1244,6 +1514,89 @@ func TestIntentService_PlanLegacyIntentRootMigration(t *testing.T) {
 	}
 	if len(want) != 0 {
 		t.Fatalf("missing planned moves: %#v", want)
+	}
+}
+
+func TestIntentService_PendingLegacyMigration_LegacyLayoutNoMutation(t *testing.T) {
+	campaignRoot, svc := setupLegacyIntentReadFixture(t)
+	before := intentDirTreeSnapshot(t, campaignRoot)
+
+	pending, err := svc.PendingLegacyMigration()
+	if err != nil {
+		t.Fatalf("PendingLegacyMigration() error = %v", err)
+	}
+	if !pending {
+		t.Fatal("PendingLegacyMigration() = false, want true")
+	}
+
+	intents, err := svc.List(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(intents) != 0 {
+		t.Fatalf("List() returned %d canonical intents, want 0", len(intents))
+	}
+
+	after := intentDirTreeSnapshot(t, campaignRoot)
+	if before != after {
+		t.Fatalf("read mutated filesystem:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+func TestIntentService_PendingLegacyMigration_ConcurrentReadsNoMutation(t *testing.T) {
+	campaignRoot, svc := setupLegacyIntentReadFixture(t)
+	before := intentDirTreeSnapshot(t, campaignRoot)
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 10)
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			readSvc := NewIntentService(svc.campaignRoot, svc.intentsDir)
+			if _, err := readSvc.PendingLegacyMigration(); err != nil {
+				errs <- err
+				return
+			}
+			if _, err := readSvc.List(context.Background(), nil); err != nil {
+				errs <- err
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		t.Fatalf("concurrent read error = %v", err)
+	}
+
+	after := intentDirTreeSnapshot(t, campaignRoot)
+	if before != after {
+		t.Fatalf("concurrent reads mutated filesystem:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+func TestIntentService_List_ReadOnlyCanonicalDirNoPermissionError(t *testing.T) {
+	campaignRoot := t.TempDir()
+	svc := NewIntentService(campaignRoot, filepath.Join(campaignRoot, ".campaign", "intents"))
+	mustWriteIntentFile(t, filepath.Join(svc.intentsDir, "inbox", "20260316-read-only.md"), StatusInbox, "read-only")
+
+	if err := os.Chmod(svc.intentsDir, 0555); err != nil {
+		t.Fatalf("chmod read-only: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(svc.intentsDir, 0755)
+	})
+
+	intents, err := svc.List(context.Background(), nil)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "permission denied") {
+			t.Fatalf("List() attempted a write in read-only dir: %v", err)
+		}
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(intents) != 1 {
+		t.Fatalf("List() returned %d intents, want 1", len(intents))
 	}
 }
 
@@ -1925,6 +2278,51 @@ func TestIntentService_Move_CleansUpOrphans(t *testing.T) {
 	}
 }
 
+func TestIntentService_MoveKeepsFilenameMatchWithDifferentFrontmatterID(t *testing.T) {
+	tmpDir := t.TempDir()
+	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
+	ctx := context.Background()
+
+	created, err := svc.CreateDirect(ctx, CreateOptions{
+		Title:     "False Positive Cleanup Test",
+		Type:      TypeBug,
+		Timestamp: time.Date(2026, 2, 17, 12, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateDirect() error = %v", err)
+	}
+
+	killedDir := filepath.Join(tmpDir, "intents", string(StatusKilled))
+	if err := os.MkdirAll(killedDir, 0755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	foreign := &Intent{
+		ID:        "different-frontmatter-id",
+		Title:     "Keep This Intent",
+		Status:    StatusKilled,
+		CreatedAt: time.Date(2026, 2, 17, 12, 1, 0, 0, time.UTC),
+		Content:   "same filename, different frontmatter id",
+	}
+	data, err := SerializeIntent(foreign)
+	if err != nil {
+		t.Fatalf("SerializeIntent() error = %v", err)
+	}
+	foreignPath := filepath.Join(killedDir, created.ID+".md")
+	if err := os.WriteFile(foreignPath, data, 0644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	if _, err := svc.Move(ctx, created.ID, StatusActive); err != nil {
+		t.Fatalf("Move() error = %v", err)
+	}
+
+	if _, err := os.Stat(foreignPath); err != nil {
+		t.Fatalf("foreign intent should remain after cleanup: %v", err)
+	}
+	assertFileContains(t, foreignPath, "different-frontmatter-id")
+	assertFileContains(t, foreignPath, "Keep This Intent")
+}
+
 func BenchmarkIntentService_Search(b *testing.B) {
 	tmpDir := b.TempDir()
 	svc := NewIntentService(tmpDir, filepath.Join(tmpDir, "intents"))
@@ -1977,4 +2375,39 @@ func mustWriteIntentFile(t *testing.T, path string, status Status, slug string) 
 	}
 
 	return intent
+}
+
+func setupLegacyIntentReadFixture(t *testing.T) (string, *IntentService) {
+	t.Helper()
+
+	campaignRoot := t.TempDir()
+	svc := NewIntentService(campaignRoot, filepath.Join(campaignRoot, ".campaign", "intents"))
+	mustWriteIntentFile(t, filepath.Join(campaignRoot, "workflow", "intents", "inbox", "20260316-legacy-read.md"), StatusInbox, "legacy-read")
+	return campaignRoot, svc
+}
+
+func intentDirTreeSnapshot(t *testing.T, root string) string {
+	t.Helper()
+
+	var entries []string
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		entries = append(entries, fmt.Sprintf("%s|dir=%t|mode=%o|size=%d", rel, d.IsDir(), info.Mode().Perm(), info.Size()))
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("snapshot %s: %v", root, err)
+	}
+	sort.Strings(entries)
+	return strings.Join(entries, "\n")
 }

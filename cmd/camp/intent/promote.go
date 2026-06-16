@@ -2,6 +2,7 @@ package intent
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
@@ -184,6 +185,9 @@ func runIntentPromote(cmd *cobra.Command, args []string) error {
 		} else {
 			fmt.Println()
 			fmt.Printf("%s festival creation failed\n", ui.WarningIcon())
+			if result.FestCLIError != "" {
+				fmt.Fprintf(os.Stderr, "fest error: %s\n", result.FestCLIError)
+			}
 			fmt.Println("Intent was promoted successfully. Create the festival manually with:")
 			fmt.Printf("  fest create festival --type standard --name %q\n", result.FestivalName)
 		}

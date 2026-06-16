@@ -2,6 +2,15 @@
 
 Remove one or more workitem links
 
+### Synopsis
+
+Remove workitem links from the campaign link registry.
+
+The command updates .campaign/workitems/links.yaml by link id, workitem
+selector, explicit path, or scope filter. Use --all when a selector matches
+multiple links and every match should be removed. Use --json for
+machine-readable details about the removed links.
+
 ```
 camp workitem unlink [selector] [path] [flags]
 ```
@@ -21,9 +30,7 @@ camp workitem unlink [selector] [path] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 
 ### SEE ALSO

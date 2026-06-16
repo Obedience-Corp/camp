@@ -73,7 +73,7 @@ func checkDirectoryEmpty(dir string, force, isInteractive bool, w Writers) error
 	}
 
 	// Non-interactive mode without --force
-	return camperrors.New(fmt.Sprintf("directory '%s' is not empty\n       Use --force to initialize anyway, or run in an interactive terminal to confirm", filepath.Base(absDir)))
+	return camperrors.New(fmt.Sprintf("directory %q is not empty (use --force to initialize anyway or run interactively)", filepath.Base(absDir)))
 }
 
 // collectCampaignInfo gathers description and mission from user input.
@@ -87,13 +87,13 @@ func collectCampaignInfo(ctx context.Context, description, mission string, isInt
 	// Non-interactive mode without required fields
 	if !isInteractive {
 		if description == "" && mission == "" {
-			return "", "", camperrors.New("--description and --mission are required in non-interactive mode\n       Use -d/--description and -m/--mission flags, or run in an interactive terminal")
+			return "", "", camperrors.New("--description and --mission are required in non-interactive mode (use -d/--description and -m/--mission flags or run interactively)")
 		}
 		if description == "" {
-			return "", "", camperrors.New("--description is required in non-interactive mode\n       Use -d/--description flag, or run in an interactive terminal")
+			return "", "", camperrors.New("--description is required in non-interactive mode (use -d/--description flag or run interactively)")
 		}
 		if mission == "" {
-			return "", "", camperrors.New("--mission is required in non-interactive mode\n       Use -m/--mission flag, or run in an interactive terminal")
+			return "", "", camperrors.New("--mission is required in non-interactive mode (use -m/--mission flag or run interactively)")
 		}
 	}
 

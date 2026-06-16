@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -87,106 +88,108 @@ func TestResolveTarget_ContextCancelled(t *testing.T) {
 	}
 }
 
-func TestExtractSubFlags_NoFlags(t *testing.T) {
-	args := []string{"--oneline", "-5"}
-	remaining, sub, project := ExtractSubFlags(args)
+func TestResolveTarget_SymlinkedCampaignRoot(t *testing.T) {
+	ctx := context.Background()
+	realRoot := t.TempDir()
+	initGitRepo(t, realRoot)
 
-	if sub {
-		t.Error("sub should be false")
+	linkRoot := filepath.Join(t.TempDir(), "campaign-link")
+	if err := os.Symlink(realRoot, linkRoot); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
 	}
-	if project != "" {
-		t.Errorf("project = %q, want empty", project)
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if len(remaining) != 2 || remaining[0] != "--oneline" || remaining[1] != "-5" {
-		t.Errorf("remaining = %v, want [--oneline -5]", remaining)
+	t.Cleanup(func() { _ = os.Chdir(wd) })
+	if err := os.Chdir(realRoot); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := ResolveTarget(ctx, linkRoot, true, "")
+	if err != nil {
+		t.Fatalf("ResolveTarget() error = %v", err)
+	}
+	if result.IsSubmodule {
+		t.Fatal("ResolveTarget() treated symlinked campaign root as submodule")
 	}
 }
 
-func TestExtractSubFlags_SubFlag(t *testing.T) {
-	args := []string{"--sub", "--oneline"}
-	remaining, sub, project := ExtractSubFlags(args)
+func TestExtractSubFlags(t *testing.T) {
+	tests := []struct {
+		name          string
+		args          []string
+		wantRemaining []string
+		wantSub       bool
+		wantProject   string
+	}{
+		{
+			name:          "no camp flags",
+			args:          []string{"--oneline", "-5"},
+			wantRemaining: []string{"--oneline", "-5"},
+		},
+		{
+			name:          "sub flag extracted",
+			args:          []string{"--sub", "--oneline"},
+			wantRemaining: []string{"--oneline"},
+			wantSub:       true,
+		},
+		{
+			name:          "bare -p passes through to git untouched",
+			args:          []string{"-p", "origin"},
+			wantRemaining: []string{"-p", "origin"},
+		},
+		{
+			name:          "bare -p at end passes through to git untouched",
+			args:          []string{"-p"},
+			wantRemaining: []string{"-p"},
+		},
+		{
+			name:          "project equals form extracted",
+			args:          []string{"--project=projects/camp", "origin"},
+			wantRemaining: []string{"origin"},
+			wantProject:   "projects/camp",
+		},
+		{
+			name:          "project space form extracted",
+			args:          []string{"--project", "projects/camp", "origin"},
+			wantRemaining: []string{"origin"},
+			wantProject:   "projects/camp",
+		},
+		{
+			name:        "sub and project long flags extracted",
+			args:        []string{"--sub", "--project", "projects/camp"},
+			wantSub:     true,
+			wantProject: "projects/camp",
+		},
+		{
+			name:          "terminator stops camp flag extraction",
+			args:          []string{"--", "-p", "origin"},
+			wantRemaining: []string{"--", "-p", "origin"},
+		},
+		{
+			name:          "terminator preserves later camp-looking flags",
+			args:          []string{"--sub", "--", "--project=projects/camp", "-p", "origin"},
+			wantRemaining: []string{"--", "--project=projects/camp", "-p", "origin"},
+			wantSub:       true,
+		},
+	}
 
-	if !sub {
-		t.Error("sub should be true")
-	}
-	if len(remaining) != 1 || remaining[0] != "--oneline" {
-		t.Errorf("remaining = %v, want [--oneline]", remaining)
-	}
-	if project != "" {
-		t.Errorf("project = %q, want empty", project)
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			remaining, sub, project := ExtractSubFlags(tt.args)
 
-func TestExtractSubFlags_ProjectFlag(t *testing.T) {
-	args := []string{"-p", "projects/camp", "--oneline"}
-	remaining, sub, project := ExtractSubFlags(args)
-
-	if sub {
-		t.Error("sub should be false")
-	}
-	if project != "projects/camp" {
-		t.Errorf("project = %q, want %q", project, "projects/camp")
-	}
-	if len(remaining) != 1 || remaining[0] != "--oneline" {
-		t.Errorf("remaining = %v, want [--oneline]", remaining)
-	}
-}
-
-func TestExtractSubFlags_ProjectLongFlag(t *testing.T) {
-	args := []string{"--project", "projects/fest", "-s"}
-	remaining, sub, project := ExtractSubFlags(args)
-
-	if sub {
-		t.Error("sub should be false")
-	}
-	if project != "projects/fest" {
-		t.Errorf("project = %q, want %q", project, "projects/fest")
-	}
-	if len(remaining) != 1 || remaining[0] != "-s" {
-		t.Errorf("remaining = %v, want [-s]", remaining)
-	}
-}
-
-func TestExtractSubFlags_ProjectEquals(t *testing.T) {
-	args := []string{"--project=projects/camp", "--graph"}
-	remaining, sub, project := ExtractSubFlags(args)
-
-	if sub {
-		t.Error("sub should be false")
-	}
-	if project != "projects/camp" {
-		t.Errorf("project = %q, want %q", project, "projects/camp")
-	}
-	if len(remaining) != 1 || remaining[0] != "--graph" {
-		t.Errorf("remaining = %v, want [--graph]", remaining)
-	}
-}
-
-func TestExtractSubFlags_BothFlags(t *testing.T) {
-	args := []string{"--sub", "-p", "projects/camp"}
-	remaining, sub, project := ExtractSubFlags(args)
-
-	if !sub {
-		t.Error("sub should be true")
-	}
-	if project != "projects/camp" {
-		t.Errorf("project = %q, want %q", project, "projects/camp")
-	}
-	if len(remaining) != 0 {
-		t.Errorf("remaining = %v, want empty", remaining)
-	}
-}
-
-func TestExtractSubFlags_ProjectAtEnd(t *testing.T) {
-	// -p at end without value should not panic
-	args := []string{"-p"}
-	remaining, _, project := ExtractSubFlags(args)
-
-	if project != "" {
-		t.Errorf("project = %q, want empty (no value provided)", project)
-	}
-	if len(remaining) != 0 {
-		t.Errorf("remaining = %v, want empty", remaining)
+			if !slices.Equal(remaining, tt.wantRemaining) {
+				t.Errorf("remaining = %v, want %v", remaining, tt.wantRemaining)
+			}
+			if sub != tt.wantSub {
+				t.Errorf("sub = %v, want %v", sub, tt.wantSub)
+			}
+			if project != tt.wantProject {
+				t.Errorf("project = %q, want %q", project, tt.wantProject)
+			}
+		})
 	}
 }
 

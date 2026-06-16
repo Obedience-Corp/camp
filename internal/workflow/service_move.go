@@ -2,11 +2,14 @@ package workflow
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/statusmove"
 )
 
 // Move moves an item from its current status to a new status.
@@ -43,21 +46,14 @@ func (s *Service) Move(ctx context.Context, item, to string, opts MoveOptions) (
 	// Destination path
 	destPath := resolveWorkflowDestinationPath(s.root, to, filepath.Base(itemPath), time.Now())
 
-	if _, exists, err := resolveWorkflowItemPath(s.root, to, filepath.Base(itemPath)); err != nil {
-		return nil, camperrors.Wrap(err, "failed to check destination")
-	} else if exists {
-		return nil, camperrors.Wrap(ErrAlreadyExists, destPath)
-	}
-
-	// Ensure destination directory exists
-	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
-		return nil, camperrors.Wrap(err, "failed to create destination directory")
-	}
-
-	// Move the item
-	if err := os.Rename(itemPath, destPath); err != nil {
+	movedPath, err := statusmove.Move(ctx, itemPath, destPath, statusmove.MoveOptions{BoundaryRoot: s.root})
+	if err != nil {
+		if errors.Is(err, statusmove.ErrAlreadyExists) {
+			return nil, camperrors.Wrap(ErrAlreadyExists, destPath)
+		}
 		return nil, camperrors.Wrap(err, "failed to move item")
 	}
+	destPath = movedPath
 
 	result := &MoveResult{
 		Item:            item,
@@ -86,6 +82,37 @@ func (s *Service) Move(ctx context.Context, item, to string, opts MoveOptions) (
 
 // appendHistory adds an entry to the history file.
 func (s *Service) appendHistory(ctx context.Context, entry HistoryEntry) error {
-	// TODO: Implement history file writing
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	if entry.Timestamp.IsZero() {
+		entry.Timestamp = time.Now().UTC()
+	}
+
+	historyFile := s.schema.HistoryFile
+	if historyFile == "" {
+		historyFile = DefaultHistoryFile
+	}
+	historyPath := filepath.Join(s.root, historyFile)
+
+	if err := os.MkdirAll(filepath.Dir(historyPath), 0755); err != nil {
+		return camperrors.Wrap(err, "create history directory")
+	}
+
+	f, err := os.OpenFile(historyPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return camperrors.Wrap(err, "open history file")
+	}
+	defer func() { _ = f.Close() }()
+
+	data, err := json.Marshal(entry)
+	if err != nil {
+		return camperrors.Wrap(err, "marshal history entry")
+	}
+
+	if _, err := f.Write(append(data, '\n')); err != nil {
+		return camperrors.Wrap(err, "write history entry")
+	}
 	return nil
 }

@@ -1,5 +1,17 @@
 # Release and versioning recipes
 # Three channels: dev (pre-release), rc (release candidate), and stable (public)
+#
+# Division of labor with projects/festival:
+# - These recipes create channel tags (vX.Y.Z-dev.N, vX.Y.Z-rc.N, vX.Y.Z) and GitHub
+#   releases for the camp binary on github.com/Obedience-Corp/camp.
+# - projects/festival is responsible for aggregating camp + fest binaries into the
+#   unified Festival release artifact. Festival's refresh-dev/rc/stable recipes pin
+#   the channel tag from this repo.
+# - Consequence: cutting a camp tag here is the trigger for festival to update. Do not
+#   create tags from a failing tree. Every recipe below gates on `just gate` first.
+#
+# Gate: no GitHub Actions (C-1). Enforcement is local via `just gate` (both-profile
+# build, vet, lint, and unit tests). Run `just hooks-install` to wire the pre-push hook.
 
 # Show available release commands (default)
 [private]
@@ -16,6 +28,8 @@ notes tag repo="Obedience-Corp/camp":
 dev level="":
     #!/usr/bin/env bash
     set -euo pipefail
+    echo "Running gate before tagging..."
+    just gate
 
     level="{{level}}"
     latest=$(git tag -l "v*-dev.*" --sort=-version:refname | head -1)
@@ -58,6 +72,8 @@ dev level="":
 rc version n="1":
     #!/usr/bin/env bash
     set -euo pipefail
+    echo "Running gate before tagging..."
+    just gate
 
     tag="v{{version}}-rc.{{n}}"
 
@@ -82,6 +98,8 @@ rc version n="1":
 stable level="patch":
     #!/usr/bin/env bash
     set -euo pipefail
+    echo "Running gate before tagging..."
+    just gate
 
     level="{{level}}"
 
@@ -122,6 +140,8 @@ stable level="patch":
 promote-rc version="":
     #!/usr/bin/env bash
     set -euo pipefail
+    echo "Running gate before tagging..."
+    just gate
 
     if [ -n "{{version}}" ]; then
         latest_rc=$(git tag -l "v{{version}}-rc.*" --sort=-version:refname | head -1)
@@ -153,6 +173,8 @@ promote-rc version="":
 promote:
     #!/usr/bin/env bash
     set -euo pipefail
+    echo "Running gate before tagging..."
+    just gate
 
     latest_dev=$(git tag -l "v*-dev.*" --sort=-version:refname | head -1)
     if [ -z "$latest_dev" ]; then

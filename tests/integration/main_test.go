@@ -106,8 +106,8 @@ func poolSize() int {
 
 // GetSharedContainer checks a container out of the pool for the calling test,
 // marks the test parallel, and resets the container to a clean state. The
-// container is returned to the pool (and reset again) when the test and all its
-// subtests finish. Each test therefore runs against an isolated container, so
+// container is returned to the pool when the test and all its subtests finish.
+// Each checkout resets before use, so
 // tests can execute concurrently despite sharing hardcoded paths like /test.
 func GetSharedContainer(t *testing.T) *TestContainer {
 	t.Helper()
@@ -128,7 +128,6 @@ func GetSharedContainer(t *testing.T) *TestContainer {
 	// Register cleanup only after a successful checkout so the container is
 	// returned to the pool exactly once.
 	t.Cleanup(func() {
-		_ = c.Reset()
 		containerPool <- c
 	})
 

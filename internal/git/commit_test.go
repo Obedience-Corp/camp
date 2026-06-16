@@ -12,6 +12,15 @@ import (
 	"time"
 )
 
+func ageLockFileForTest(t *testing.T, lockPath string) {
+	t.Helper()
+
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(lockPath, old, old); err != nil {
+		t.Fatalf("age lock %s: %v", lockPath, err)
+	}
+}
+
 func initTestRepo(t *testing.T) string {
 	t.Helper()
 	tmpDir := t.TempDir()
@@ -364,6 +373,15 @@ func TestCommitOptions_Validate(t *testing.T) {
 	}
 }
 
+func TestCommitArgs_AmendNoEdit(t *testing.T) {
+	args := commitArgs("/repo", &CommitOptions{Amend: true, NoEdit: true})
+	got := strings.Join(args, " ")
+	want := "-C /repo commit --amend --no-edit"
+	if got != want {
+		t.Fatalf("commitArgs() = %q, want %q", got, want)
+	}
+}
+
 func TestCommit_NilOptions(t *testing.T) {
 	tmpDir := initTestRepo(t)
 	ctx := context.Background()
@@ -446,6 +464,35 @@ func TestCommit_WithAmend(t *testing.T) {
 	}
 }
 
+func TestCommit_WithAmendNoEdit(t *testing.T) {
+	tmpDir := initTestRepo(t)
+
+	if err := os.WriteFile(filepath.Join(tmpDir, "test.txt"), []byte("content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, tmpDir, nil, "add", ".")
+	runGit(t, tmpDir, nil, "commit", "-m", "initial")
+
+	if err := os.WriteFile(filepath.Join(tmpDir, "test.txt"), []byte("changed"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := StageAll(context.Background(), tmpDir); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	err := Commit(ctx, tmpDir, &CommitOptions{Amend: true, NoEdit: true})
+	if err != nil {
+		t.Fatalf("Commit() with amend --no-edit error = %v", err)
+	}
+
+	cmd := exec.Command("git", "-C", tmpDir, "log", "--format=%s", "-1")
+	output, _ := cmd.Output()
+	if strings.TrimSpace(string(output)) != "initial" {
+		t.Fatalf("amended commit subject = %q, want initial", strings.TrimSpace(string(output)))
+	}
+}
+
 func TestCommit_WithAllowEmpty(t *testing.T) {
 	tmpDir := initTestRepo(t)
 
@@ -504,6 +551,7 @@ func TestCommit_WithStaleLock(t *testing.T) {
 	// Create stale lock
 	lockPath := filepath.Join(tmpDir, ".git", "index.lock")
 	os.WriteFile(lockPath, []byte{}, 0644)
+	ageLockFileForTest(t, lockPath)
 
 	// Commit should succeed after cleaning lock
 	ctx := context.Background()
@@ -802,6 +850,13 @@ func TestFilterTracked(t *testing.T) {
 	})
 }
 
+func TestFilterTrackedNonASCII(t *testing.T) {
+	got := filterTrackedPaths([]string{"docs/cafe.md", "docs/café.md"}, []string{"docs/café.md"})
+	if len(got) != 1 || got[0] != "docs/café.md" {
+		t.Fatalf("filterTrackedPaths() = %v, want [docs/café.md]", got)
+	}
+}
+
 func TestExpandTrackedPaths(t *testing.T) {
 	t.Run("staged directory expands to tracked descendants", func(t *testing.T) {
 		tmpDir := initTestRepo(t)
@@ -895,6 +950,7 @@ func TestStage_WithStaleLock(t *testing.T) {
 	// Create stale lock file
 	lockPath := filepath.Join(tmpDir, ".git", "index.lock")
 	os.WriteFile(lockPath, []byte{}, 0644)
+	ageLockFileForTest(t, lockPath)
 
 	// Stage should succeed after cleaning lock
 	ctx := context.Background()
@@ -936,11 +992,13 @@ func TestStage_WaitsForBriefActiveLock(t *testing.T) {
 		_ = os.Remove(lockPath)
 	})
 
+	ready := make(chan struct{})
 	go func() {
-		time.Sleep(300 * time.Millisecond)
+		<-ready
 		_ = f.Close()
 		_ = os.Remove(lockPath)
 	}()
+	close(ready)
 
 	ctx := context.Background()
 	if err := StageAll(ctx, tmpDir); err != nil {
@@ -967,6 +1025,7 @@ func TestStage_ReturnsRemovalFailureForStaleLock(t *testing.T) {
 	if err := os.WriteFile(lockPath, []byte{}, 0644); err != nil {
 		t.Fatal(err)
 	}
+	ageLockFileForTest(t, lockPath)
 
 	gitDir := filepath.Join(tmpDir, ".git")
 	info, err := os.Stat(gitDir)

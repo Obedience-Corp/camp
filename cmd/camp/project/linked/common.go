@@ -167,7 +167,7 @@ func resolveUnlinkName(ctx context.Context, campaignRoot string, args []string) 
 
 	resolved, err := projectsvc.Resolve(ctx, campaignRoot, "")
 	if err != nil {
-		return "", camperrors.Wrap(err, "could not infer linked project from current directory\n       Use 'camp project unlink <name>' to target it explicitly")
+		return "", camperrors.Wrap(err, "could not infer linked project from current directory (use 'camp project unlink <name>' to target it explicitly)")
 	}
 	return strings.TrimPrefix(resolved.Name, "projects/"), nil
 }

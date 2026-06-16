@@ -11,6 +11,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/fsutil"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 )
 
@@ -19,7 +20,14 @@ func newAdoptCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "adopt <dir>",
 		Short: "Attach .workitem metadata to an existing directory",
-		Args:  cobra.ExactArgs(1),
+		Long: `Attach workitem metadata to an existing campaign directory without moving it.
+
+The target directory must already exist and must not already contain a
+.workitem file. The command writes that .workitem metadata file with the
+selected type, title, generated or supplied id, and optional quest link. Use
+this when a workflow directory already exists and needs to become a tracked
+workitem.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			return runAdopt(ctx, cmd, args[0], typeFlag, title, idOverride, questSelector)
@@ -28,7 +36,7 @@ func newAdoptCommand() *cobra.Command {
 	cmd.Flags().StringVar(&typeFlag, "type", "feature", "workitem type (feature, bug, chore, or custom)")
 	cmd.Flags().StringVar(&title, "title", "", "human-readable title")
 	cmd.Flags().StringVar(&idOverride, "id", "", "override the generated id")
-	cmd.Flags().StringVar(&questSelector, "quest", "", "capture quest_id from this quest (defaults to CAMP_QUEST env var if set)")
+	cmd.Flags().StringVar(&questSelector, "quest", "", questFlagHelp())
 	return cmd
 }
 
@@ -94,7 +102,7 @@ func runAdopt(ctx context.Context, cmd *cobra.Command, dir, typeFlag, title, idO
 	if err != nil {
 		return camperrors.Wrap(err, "marshal metadata")
 	}
-	if err := atomicWriteFile(markerPath, buf, 0o644); err != nil {
+	if err := fsutil.WriteFileAtomically(markerPath, buf, 0o644); err != nil {
 		return err
 	}
 	// Adoption writes inside an existing directory, which may not update the

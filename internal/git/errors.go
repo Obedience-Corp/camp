@@ -162,7 +162,8 @@ func ClassifyGitError(stderr string, exitCode int) GitErrorType {
 	switch {
 	case strings.Contains(lower, "index.lock"):
 		return GitErrorLock
-	case strings.Contains(lower, "nothing to commit"):
+	case strings.Contains(lower, "nothing to commit"),
+		strings.Contains(lower, "no changes added to commit"):
 		return GitErrorNoChanges
 	case strings.Contains(lower, "not a git repository"):
 		return GitErrorNotRepo
@@ -173,35 +174,27 @@ func ClassifyGitError(stderr string, exitCode int) GitErrorType {
 		strings.Contains(lower, "failed to connect"),
 		strings.Contains(lower, "connection timed out"):
 		return GitErrorNetwork
-	case strings.Contains(lower, "submodule"):
+	case isSubmoduleError(lower):
 		return GitErrorSubmodule
 	default:
 		return GitErrorUnknown
 	}
 }
 
-// NewLockError creates a new LockError with the given path.
-func NewLockError(path string, err error) *LockError {
-	return &LockError{
-		Path: path,
-		Err:  err,
+func isSubmoduleError(lower string) bool {
+	patterns := []string{
+		"submodule '",
+		"submodule path",
+		"submodule update",
+		"submodule not initialized",
+		"no submodule mapping found",
+		"is already a submodule",
+		"not a submodule",
 	}
-}
-
-// NewStaleLockError creates a new LockError marked as stale.
-func NewStaleLockError(path string) *LockError {
-	return &LockError{
-		Path:  path,
-		Stale: true,
+	for _, pattern := range patterns {
+		if strings.Contains(lower, pattern) {
+			return true
+		}
 	}
-}
-
-// NewActiveLockError creates a new LockError with an active process ID.
-func NewActiveLockError(path string, pid int) *LockError {
-	return &LockError{
-		Path:      path,
-		ProcessID: pid,
-		Stale:     false,
-		Err:       ErrLockActive,
-	}
+	return false
 }

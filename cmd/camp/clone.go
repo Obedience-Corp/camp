@@ -1,12 +1,13 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/clone"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -38,10 +39,9 @@ This command provides a single-step setup for new devices:
 
 EXIT CODES:
   0  Success
-  1  Clone failed (no campaign created)
-  2  Partial success (some submodules failed)
-  3  Validation failed
-  4  Invalid arguments
+  1  Runtime failure (clone failed before usable campaign)
+  2  Usage error (bad flags or args)
+  3  Partial success or validation failed
 
 EXAMPLES:
   # Clone a campaign (default: SSH)
@@ -70,13 +70,15 @@ EXAMPLES:
 
   # JSON output for scripting
   camp clone git@github.com:org/repo.git --json`,
-	Args: cobra.RangeArgs(1, 2),
+	Args: jsoncontract.Args(CloneJSONVersion, func() bool { return cloneOpts.json }, cobra.RangeArgs(1, 2)),
 	Annotations: map[string]string{
 		"agent_allowed": "false",
 		"agent_reason":  "Clones repos, needs human judgment on URL/SSH",
 	},
-	RunE: runClone,
+	RunE: jsoncontract.RunE(CloneJSONVersion, func() bool { return cloneOpts.json }, runClone),
 }
+
+const CloneJSONVersion = "clone/v1alpha1"
 
 var cloneOpts struct {
 	branch       string
@@ -109,13 +111,11 @@ func init() {
 
 	rootCmd.AddCommand(cloneCmd)
 	cloneCmd.GroupID = "setup"
+	cloneCmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(CloneJSONVersion, func() bool { return cloneOpts.json }))
 }
 
 func runClone(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
 
 	url := args[0]
 	var directory string
@@ -150,7 +150,7 @@ func runClone(cmd *cobra.Command, args []string) error {
 	result, err := cloner.Clone(ctx)
 	if err != nil {
 		formatCloneError(err, cloneOpts.json)
-		os.Exit(clone.ExitCloneFailed)
+		return camperrors.NewCommand("camp clone", clone.ExitCloneFailed, "", err)
 	}
 
 	// Format and display output
@@ -158,7 +158,7 @@ func runClone(cmd *cobra.Command, args []string) error {
 		jsonBytes, jsonErr := result.JSON()
 		if jsonErr != nil {
 			fmt.Fprintln(os.Stderr, string(clone.JSONError(jsonErr)))
-			os.Exit(clone.ExitCloneFailed)
+			return camperrors.NewCommand("camp clone", clone.ExitCloneFailed, "", jsonErr)
 		}
 		fmt.Println(string(jsonBytes))
 	} else {
@@ -193,7 +193,7 @@ func formatCloneHuman(result *clone.CloneResult, verbose bool) {
 	if result.Success {
 		fmt.Println(ui.Success("Campaign cloned successfully"))
 	} else {
-		fmt.Println(ui.Error("Clone completed with issues"))
+		fmt.Fprintln(os.Stderr, ui.Error("Clone completed with issues"))
 	}
 	fmt.Println()
 
@@ -219,7 +219,7 @@ func formatCloneHuman(result *clone.CloneResult, verbose bool) {
 				if sub.Success {
 					fmt.Printf("  %s %s\n", ui.SuccessIcon(), sub.Path)
 				} else {
-					fmt.Printf("  %s %s - %v\n", ui.ErrorIcon(), sub.Path, sub.Error)
+					fmt.Fprintf(os.Stderr, "  %s %s - %v\n", ui.ErrorIcon(), sub.Path, sub.Error)
 				}
 			}
 		}
@@ -308,16 +308,15 @@ func determineCloneExitCode(result *clone.CloneResult) error {
 			}
 		}
 		if failed > 0 && failed < len(result.Submodules) {
-			os.Exit(clone.ExitPartialSuccess)
+			return camperrors.NewCommand("camp clone", clone.ExitPartialSuccess, "", nil)
 		}
 	}
 
 	// Check for validation failure
 	if result.Validation != nil && !result.Validation.Passed {
-		os.Exit(clone.ExitValidationFailed)
+		return camperrors.NewCommand("camp clone", clone.ExitValidationFailed, "", nil)
 	}
 
 	// General failure
-	os.Exit(clone.ExitCloneFailed)
-	return nil
+	return camperrors.NewCommand("camp clone", clone.ExitCloneFailed, "", nil)
 }

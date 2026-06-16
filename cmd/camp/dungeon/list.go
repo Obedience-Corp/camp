@@ -39,21 +39,25 @@ Examples:
   camp dungeon list                  List dungeon root items
   camp dungeon list --triage         List parent items eligible for triage
   cd workflow/design/subdir && camp dungeon list  Uses nearest dungeon context from nested path
+  camp dungeon list --json           JSON output for scripting
   camp dungeon list -f json          JSON output for scripting
   camp dungeon list -f simple        Names only, pipe to other commands`,
-	Args: cobra.NoArgs,
 	Annotations: map[string]string{
 		"agent_allowed": "true",
 		"agent_reason":  "Non-interactive listing of dungeon items",
 	},
+	Args: cobra.NoArgs,
 	RunE: runDungeonList,
 }
+
+var dungeonListJSON bool
 
 func init() {
 	Cmd.AddCommand(dungeonListCmd)
 
 	flags := dungeonListCmd.Flags()
 	flags.StringP("format", "f", "table", "Output format: table, simple, json")
+	flags.BoolVar(&dungeonListJSON, "json", false, "Output as JSON (shorthand for --format json)")
 	flags.Bool("triage", false, "List parent items eligible for triage into dungeon")
 }
 
@@ -61,6 +65,9 @@ func runDungeonList(cmd *cobra.Command, _ []string) error {
 	ctx := cmd.Context()
 
 	format, _ := cmd.Flags().GetString("format")
+	if dungeonListJSON {
+		format = "json"
+	}
 	triageMode, _ := cmd.Flags().GetBool("triage")
 
 	cmdCtx, err := resolveDungeonCommandContext(ctx)

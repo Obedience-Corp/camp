@@ -3,8 +3,11 @@ package promote
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/Obedience-Corp/camp/internal/intent"
 )
@@ -273,6 +276,106 @@ func TestPromoteToDesign_IsTransactionalOnDesignDocFailure(t *testing.T) {
 	}
 	if reloaded.PromotedTo != "" {
 		t.Fatalf("PromotedTo = %q, want empty", reloaded.PromotedTo)
+	}
+}
+
+func TestPromoteToDesignRollbackPreservesPreExistingDesignDir(t *testing.T) {
+	ctx := context.Background()
+	campaignRoot := t.TempDir()
+	intentsDir := filepath.Join(campaignRoot, "workflow", "intents")
+	svc := intent.NewIntentService(campaignRoot, intentsDir)
+	if err := svc.EnsureDirectories(ctx); err != nil {
+		t.Fatalf("EnsureDirectories() error = %v", err)
+	}
+
+	created, err := svc.CreateDirect(ctx, intent.CreateOptions{
+		Title:     "Design API request signing flow",
+		Type:      intent.TypeResearch,
+		Author:    "test",
+		Body:      "We need a clear signing strategy with replay protection.",
+		Timestamp: time.Date(2026, 3, 4, 12, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateDirect() error = %v", err)
+	}
+	ready, err := svc.Move(ctx, created.ID, intent.StatusReady)
+	if err != nil {
+		t.Fatalf("Move() to ready error = %v", err)
+	}
+
+	designDir := filepath.Join(campaignRoot, "workflow", "design", ready.ID)
+	if err := os.MkdirAll(designDir, 0755); err != nil {
+		t.Fatalf("MkdirAll(designDir) error = %v", err)
+	}
+	userFile := filepath.Join(designDir, "notes.md")
+	if err := os.WriteFile(userFile, []byte("keep my notes"), 0644); err != nil {
+		t.Fatalf("WriteFile(userFile) error = %v", err)
+	}
+
+	activeDir := filepath.Join(intentsDir, "active")
+	if err := os.RemoveAll(activeDir); err != nil {
+		t.Fatalf("RemoveAll(activeDir) error = %v", err)
+	}
+	if err := os.WriteFile(activeDir, []byte("blocked"), 0644); err != nil {
+		t.Fatalf("WriteFile(activeDir blocker) error = %v", err)
+	}
+
+	_, err = Promote(ctx, svc, ready, Options{
+		CampaignRoot: campaignRoot,
+		Target:       TargetDesign,
+	})
+	if err == nil {
+		t.Fatal("Promote() expected error when active status directory is blocked")
+	}
+
+	got, err := os.ReadFile(userFile)
+	if err != nil {
+		t.Fatalf("pre-existing design file should remain after rollback: %v", err)
+	}
+	if string(got) != "keep my notes" {
+		t.Fatalf("user file content = %q, want %q", string(got), "keep my notes")
+	}
+}
+
+func TestCopyIntentToIngest_SkipsAbsentIngestDir(t *testing.T) {
+	campaignRoot := t.TempDir()
+	festivalDir := filepath.Join(campaignRoot, "festivals", "planning", "my-festival-abc123")
+	if err := os.MkdirAll(festivalDir, 0755); err != nil {
+		t.Fatalf("MkdirAll(festivalDir) error = %v", err)
+	}
+
+	intentPath := filepath.Join(campaignRoot, "intent.md")
+	if err := os.WriteFile(intentPath, []byte("# Test"), 0644); err != nil {
+		t.Fatalf("WriteFile(intentPath) error = %v", err)
+	}
+
+	i := &intent.Intent{Path: intentPath}
+	if copyIntentToIngest(campaignRoot, "planning", "my-festival-abc123", i) {
+		t.Fatal("copyIntentToIngest returned true, want false")
+	}
+
+	if _, err := os.Stat(filepath.Join(festivalDir, "001_INGEST")); !os.IsNotExist(err) {
+		t.Fatalf("001_INGEST should not have been created, stat err = %v", err)
+	}
+	entries, err := os.ReadDir(festivalDir)
+	if err != nil {
+		t.Fatalf("ReadDir(festivalDir) error = %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("festival dir should remain empty, got %d entries", len(entries))
+	}
+}
+
+func TestCreateFestival_SurfacesStderr(t *testing.T) {
+	cmd := exec.Command("sh", "-c", "echo 'fest: festival already exists' >&2; exit 1")
+	_, err := cmd.Output()
+	if err == nil {
+		t.Fatal("expected non-zero exit")
+	}
+
+	got := extractFestStderr(err)
+	if !strings.Contains(got, "fest: festival already exists") {
+		t.Fatalf("extractFestStderr() = %q, want stderr text", got)
 	}
 }
 

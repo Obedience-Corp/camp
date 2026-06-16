@@ -224,6 +224,7 @@ func TestExecutor_CleanLocks(t *testing.T) {
 	// Create a stale lock
 	lockPath := filepath.Join(tmpDir, ".git", "index.lock")
 	os.WriteFile(lockPath, []byte{}, 0644)
+	ageLockFileForTest(t, lockPath)
 
 	ctx := context.Background()
 	result, err := exec.CleanLocks(ctx)
@@ -314,41 +315,4 @@ func (m *MockExecutor) Path() string {
 func TestMockExecutor_ImplementsInterface(t *testing.T) {
 	mock := &MockExecutor{path: "/tmp/test"}
 	var _ GitExecutor = mock
-}
-
-func TestNewSubmoduleExecutor_NotSubmodule(t *testing.T) {
-	tmpDir := setupGitRepo(t)
-
-	_, err := NewSubmoduleExecutor(tmpDir)
-	if err == nil {
-		t.Error("NewSubmoduleExecutor() should fail for non-submodule")
-	}
-}
-
-func TestNewSubmoduleExecutor_Valid(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	// Create parent git structure
-	parentGitDir := filepath.Join(tmpDir, ".git", "modules", "sub")
-	os.MkdirAll(parentGitDir, 0755)
-
-	// Create parent .git directory
-	os.MkdirAll(filepath.Join(tmpDir, ".git"), 0755)
-
-	// Create submodule with gitdir file
-	subDir := filepath.Join(tmpDir, "sub")
-	os.MkdirAll(subDir, 0755)
-	os.WriteFile(filepath.Join(subDir, ".git"), []byte("gitdir: ../.git/modules/sub"), 0644)
-
-	exec, err := NewSubmoduleExecutor(subDir)
-	if err != nil {
-		t.Fatalf("NewSubmoduleExecutor() error = %v", err)
-	}
-
-	if exec.Info().Path != subDir {
-		t.Errorf("Info().Path = %v, want %v", exec.Info().Path, subDir)
-	}
-	if exec.Info().ParentRepo != tmpDir {
-		t.Errorf("Info().ParentRepo = %v, want %v", exec.Info().ParentRepo, tmpDir)
-	}
 }

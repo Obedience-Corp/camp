@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 
-	workitemcmd "github.com/Obedience-Corp/camp/internal/commands/workitem"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/resolver"
 	"github.com/Obedience-Corp/camp/pkg/commitkit"
@@ -27,27 +26,14 @@ func resolveCommitContext(ctx context.Context, campaignRoot, explicit string) (q
 	if err != nil || res == nil || res.Workitem == nil {
 		return "", ""
 	}
-	ref, ensureErr := workitemcmd.EnsureRefForCommit(ctx, campaignRoot, res.Workitem, os.Stderr)
+	ref, ensureErr := wkitem.EnsureRefForCommit(ctx, campaignRoot, res.Workitem, os.Stderr)
 	if ensureErr != nil {
-		return res.QuestID, workitemRefFor(res.Workitem)
+		return res.QuestID, wkitem.RefOf(res.Workitem)
 	}
 	if ref != "" {
 		return res.QuestID, ref
 	}
-	return res.QuestID, workitemRefFor(res.Workitem)
-}
-
-// workitemRefFor returns the ref carried on the resolved workitem's
-// SourceMetadata, or empty if none was captured (e.g. v1alpha5 workitems
-// that have not yet been backfilled).
-func workitemRefFor(wi *wkitem.WorkItem) string {
-	if wi == nil || wi.SourceMetadata == nil {
-		return ""
-	}
-	if v, ok := wi.SourceMetadata["ref"].(string); ok {
-		return v
-	}
-	return ""
+	return res.QuestID, wkitem.RefOf(res.Workitem)
 }
 
 // workitemEnvForCommit resolves the active workitem and returns the

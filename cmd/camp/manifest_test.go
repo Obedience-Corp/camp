@@ -62,11 +62,35 @@ func TestManifestCommand_SchemaFields(t *testing.T) {
 		t.Fatalf("invalid JSON: %v", err)
 	}
 
-	if manifest.Version != 1 {
-		t.Errorf("expected version 1, got %d", manifest.Version)
+	if manifest.Version != 2 {
+		t.Errorf("expected version 2, got %d", manifest.Version)
 	}
 	if manifest.CLI != "camp" {
 		t.Errorf("expected cli 'camp', got %q", manifest.CLI)
+	}
+}
+
+func TestManifestCommand_CoversVisibleCommandTree(t *testing.T) {
+	var missing []string
+	walkMissingManifestAnnotations(rootCmd, "", &missing)
+	if len(missing) > 0 {
+		t.Fatalf("commands missing agent_allowed annotation: %v", missing)
+	}
+}
+
+func walkMissingManifestAnnotations(cmd *cobra.Command, prefix string, missing *[]string) {
+	for _, child := range cmd.Commands() {
+		path := child.Name()
+		if prefix != "" {
+			path = prefix + " " + child.Name()
+		}
+		if skipManifestCommand(path, child) {
+			continue
+		}
+		if _, ok := child.Annotations["agent_allowed"]; !ok {
+			*missing = append(*missing, path)
+		}
+		walkMissingManifestAnnotations(child, path, missing)
 	}
 }
 
@@ -101,7 +125,7 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		"dungeon list":  false,
 		"dungeon move":  false,
 		"intent crawl":  false,
-		"promote":       false,
+		"shelve":        false,
 		"skills link":   false,
 		"skills status": false,
 		"skills unlink": false,
@@ -137,6 +161,7 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		expectedCommands["workitem unlink"] = false
 		expectedCommands["workitem commit"] = false
 		expectedCommands["workitem commits"] = false
+		expectedCommands["workitem priority"] = false
 	}
 
 	for _, cmd := range manifest.Commands {
@@ -151,18 +176,9 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		}
 	}
 
-	wantCount := 20
-	if flowCommandsRegistered() {
-		wantCount = 23
-	}
-	if questCommandsRegistered() {
-		wantCount += 13
-	}
-	if workitemCommandRegistered() {
-		wantCount += 10
-	}
+	wantCount := countVisibleManifestCommands(rootCmd, "")
 	if len(manifest.Commands) != wantCount {
-		t.Errorf("expected exactly %d restricted commands, got %d", wantCount, len(manifest.Commands))
+		t.Errorf("expected exactly %d manifest commands, got %d", wantCount, len(manifest.Commands))
 	}
 }
 
@@ -180,47 +196,9 @@ func TestManifestCommand_AllCommandsHaveAnnotations(t *testing.T) {
 		t.Fatalf("invalid JSON: %v", err)
 	}
 
-	// Commands that are explicitly agent-allowed (have non-interactive input modes)
-	agentAllowed := map[string]bool{
-		"create":        true,
-		"dungeon list":  true,
-		"dungeon move":  true,
-		"promote":       true,
-		"settings get":  true,
-		"settings set":  true,
-		"switch":        true,
-		"skills link":   true,
-		"skills status": true,
-		"skills unlink": true,
-	}
-	if flowCommandsRegistered() {
-		agentAllowed["flow add"] = true
-	}
-	if questCommandsRegistered() {
-		agentAllowed["quest archive"] = true
-		agentAllowed["quest complete"] = true
-		agentAllowed["quest create"] = true
-		agentAllowed["quest link"] = true
-		agentAllowed["quest links"] = true
-		agentAllowed["quest list"] = true
-		agentAllowed["quest pause"] = true
-		agentAllowed["quest rename"] = true
-		agentAllowed["quest restore"] = true
-		agentAllowed["quest resume"] = true
-		agentAllowed["quest show"] = true
-		agentAllowed["quest unlink"] = true
-	}
-	if workitemCommandRegistered() {
-		agentAllowed["workitem"] = true
-		agentAllowed["workitem create"] = true
-		agentAllowed["workitem current"] = true
-		agentAllowed["workitem link"] = true
-		agentAllowed["workitem links"] = true
-		agentAllowed["workitem priority"] = true
-		agentAllowed["workitem resolve"] = true
-		agentAllowed["workitem unlink"] = true
-		agentAllowed["workitem commit"] = true
-		agentAllowed["workitem commits"] = true
+	agentAllowed := map[string]bool{}
+	for path := range manifestAgentAllowedReasons {
+		agentAllowed[path] = true
 	}
 
 	for _, cmd := range manifest.Commands {
@@ -253,6 +231,7 @@ func TestManifestCommand_InteractiveFlags(t *testing.T) {
 	interactiveCommands := map[string]bool{
 		"init":          true,
 		"create":        true,
+		"intent add":    true,
 		"switch":        true,
 		"settings":      true,
 		"move":          true,
@@ -333,6 +312,22 @@ func TestManifestCommand_InteractiveFlags(t *testing.T) {
 			t.Errorf("command %q should NOT be marked interactive but is", path)
 		}
 	}
+}
+
+func countVisibleManifestCommands(cmd *cobra.Command, prefix string) int {
+	var count int
+	for _, child := range cmd.Commands() {
+		path := child.Name()
+		if prefix != "" {
+			path = prefix + " " + child.Name()
+		}
+		if skipManifestCommand(path, child) {
+			continue
+		}
+		count++
+		count += countVisibleManifestCommands(child, path)
+	}
+	return count
 }
 
 // TestCampCreate_ManifestAnnotations asserts the registration, group, annotations,

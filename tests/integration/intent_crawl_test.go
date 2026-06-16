@@ -116,6 +116,9 @@ func TestIntentCrawl_AutoCommitMoveCommitsScopedFiles(t *testing.T) {
 	// Drop an unrelated dirty file so the test can prove auto-commit
 	// scopes only intent crawl owned changes.
 	require.NoError(t, tc.WriteFile(campaignPath+"/unrelated-dirty.txt", "should not be committed\n"))
+	require.NoError(t, tc.WriteFile(campaignPath+"/pre-staged-unrelated.txt", "should stay staged\n"))
+	_, _, err = tc.ExecCommand("git", "-C", campaignPath, "add", "pre-staged-unrelated.txt")
+	require.NoError(t, err)
 
 	preCrawlHead := tc.GitOutput(t, campaignPath, "rev-parse", "HEAD")
 
@@ -155,11 +158,16 @@ func TestIntentCrawl_AutoCommitMoveCommitsScopedFiles(t *testing.T) {
 		"audit log should be in the commit")
 	assert.NotContains(t, diff, "unrelated-dirty.txt",
 		"unrelated dirty file must not be in the commit")
+	assert.NotContains(t, diff, "pre-staged-unrelated.txt",
+		"pre-staged unrelated file must not be swept into the commit")
 
 	// Sanity: unrelated dirty file is still dirty in the working tree.
 	statusOut := tc.GitOutput(t, campaignPath, "status", "--porcelain", "unrelated-dirty.txt")
 	assert.Contains(t, statusOut, "unrelated-dirty.txt",
 		"unrelated dirty file should remain uncommitted")
+	stagedOut := tc.GitOutput(t, campaignPath, "diff", "--cached", "--name-only")
+	assert.Contains(t, stagedOut, "pre-staged-unrelated.txt",
+		"pre-staged unrelated file should remain staged")
 }
 
 // TestIntentCrawl_KeepOnlyAutoCommitsCrawlLog verifies that a

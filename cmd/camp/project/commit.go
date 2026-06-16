@@ -143,7 +143,7 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 	if projectCommitAutoWrite {
 		fmt.Println(ui.Info("Writing commit message..."))
 		var hookErr error
-		extraEnv := workitemEnvForProjectCommit(ctx, campRoot, projectCommitWorkitem)
+		extraEnv := workitemEnvForProjectCommit(ctx, campRoot, resolvedPath, projectCommitWorkitem)
 		message, hookErr = commitkit.AutoWriteCommitMessageWithEnv(ctx, campRoot, resolvedPath, extraEnv)
 		if hookErr != nil {
 			return hookErr
@@ -154,7 +154,7 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 	// Resolves the active workitem so the tag includes WI-<ref> when the
 	// project is linked.
 	if cfg != nil {
-		questID, workitemRef := resolveProjectCommitContext(ctx, campRoot, projectCommitWorkitem)
+		questID, workitemRef := resolveProjectCommitContext(ctx, campRoot, resolvedPath, projectCommitWorkitem)
 		message = commitkit.PrependContextTagsFull(cfg.ID, questID, "", workitemRef, message)
 	}
 
@@ -188,13 +188,15 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 
 // syncParentRef stages and commits the submodule ref update in the campaign root.
 func syncParentRef(ctx context.Context, campRoot, relPath string, cfg *config.CampaignConfig) error {
-	parentExec, err := git.NewExecutor(campRoot)
-	if err != nil {
-		return camperrors.Wrap(err, "campaign root git")
-	}
-
-	if err := parentExec.Stage(ctx, []string{relPath}); err != nil {
+	if err := git.StageFiles(ctx, campRoot, relPath); err != nil {
 		return camperrors.Wrap(err, "staging submodule ref")
+	}
+	hasRefChange, err := git.HasStagedPathChange(ctx, campRoot, relPath)
+	if err != nil {
+		return camperrors.Wrap(err, "check staged submodule ref")
+	}
+	if !hasRefChange {
+		return nil
 	}
 
 	projName := filepath.Base(relPath)
@@ -204,7 +206,7 @@ func syncParentRef(ctx context.Context, campRoot, relPath string, cfg *config.Ca
 	}
 
 	opts := &git.CommitOptions{Message: msg}
-	if err := parentExec.Commit(ctx, opts); err != nil {
+	if err := git.CommitScoped(ctx, campRoot, []string{relPath}, opts); err != nil {
 		if errors.Is(err, git.ErrNoChanges) {
 			return nil
 		}

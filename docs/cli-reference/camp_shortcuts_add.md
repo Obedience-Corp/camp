@@ -18,7 +18,7 @@ With no arguments, launches an interactive TUI for entering
 shortcut details.
 
 ```
-camp shortcuts add [name] [path] or [project] [name] [path] [flags]
+camp shortcuts add <name> <path> | <project> <name> <path> [flags]
 ```
 
 ### Examples
@@ -42,9 +42,7 @@ camp shortcuts add [name] [path] or [project] [name] [path] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 
 ### SEE ALSO

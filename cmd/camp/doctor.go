@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -10,6 +9,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/doctor"
 	"github.com/Obedience-Corp/camp/internal/doctor/checks"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -30,8 +30,8 @@ CHECKS PERFORMED:
 
 EXIT CODES:
   0  All checks passed (no warnings or errors)
-  1  Warnings found (but no errors)
-  2  Errors found
+  1  Warnings or errors found
+  2  Usage error (bad flags or args)
   3  Fix attempted but some issues remain
 
 EXAMPLES:
@@ -50,11 +50,13 @@ EXAMPLES:
   # JSON output for scripting
   camp doctor --json`,
 	Annotations: map[string]string{
-		"agent_allowed": "false",
-		"agent_reason":  "Has --fix mode that is destructive",
+		"agent_allowed": "true",
+		"agent_reason":  "Read path (--json) is safe; never pass --fix from an agent",
 	},
-	RunE: runDoctor,
+	RunE: jsoncontract.RunE(DoctorJSONVersion, func() bool { return doctorOpts.jsonOutput }, runDoctor),
 }
+
+const DoctorJSONVersion = "doctor/v1alpha1"
 
 var doctorOpts struct {
 	fix            bool
@@ -78,13 +80,11 @@ func init() {
 
 	rootCmd.AddCommand(doctorCmd)
 	doctorCmd.GroupID = "campaign"
+	doctorCmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(DoctorJSONVersion, func() bool { return doctorOpts.jsonOutput }))
 }
 
 func runDoctor(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
 
 	// Detect campaign root
 	campRoot, err := campaign.DetectCached(ctx)
@@ -112,7 +112,10 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 
 	// Output results
 	if doctorOpts.jsonOutput {
-		return outputDoctorJSON(result)
+		if err := outputDoctorJSON(result); err != nil {
+			return err
+		}
+		return exitDoctorWithCode(result)
 	}
 
 	outputDoctorText(result, doctorOpts.verbose, doctorOpts.fix)
@@ -196,7 +199,7 @@ func outputDoctorText(result *doctor.DoctorResult, verbose, fixAttempted bool) {
 			}
 		}
 		if unfixedErrors > 0 {
-			fmt.Println(ui.Error(fmt.Sprintf("%d error(s) require attention.", unfixedErrors)))
+			fmt.Fprintln(os.Stderr, ui.Error(fmt.Sprintf("%d error(s) require attention.", unfixedErrors)))
 		}
 	}
 
@@ -217,19 +220,19 @@ func hasFixableIssues(result *doctor.DoctorResult) bool {
 	return false
 }
 
-// exitDoctorWithCode exits with appropriate code based on result.
+// exitDoctorWithCode returns the appropriate command error based on result.
 func exitDoctorWithCode(result *doctor.DoctorResult) error {
 	if result.Failed > 0 {
-		os.Exit(doctor.ExitFailures)
+		return camperrors.NewCommand("camp doctor", doctor.ExitFailures, "", nil)
 	}
 
 	if result.Warned > 0 {
-		os.Exit(doctor.ExitWarnings)
+		return camperrors.NewCommand("camp doctor", doctor.ExitWarnings, "", nil)
 	}
 
 	// If fix was attempted and there are still issues
 	if len(result.Fixed) > 0 && len(result.Issues) > len(result.Fixed) {
-		os.Exit(doctor.ExitPartialFix)
+		return camperrors.NewCommand("camp doctor", doctor.ExitPartialFix, "", nil)
 	}
 
 	return nil // Exit 0

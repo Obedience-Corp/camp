@@ -8,9 +8,14 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	intskills "github.com/Obedience-Corp/camp/internal/skills"
 	"github.com/spf13/cobra"
 )
+
+const SkillsStatusJSONVersion = "skills-status/v1alpha1"
+
+var skillsStatusJSON bool
 
 var skillsStatusCmd = &cobra.Command{
 	Use:   "status",
@@ -23,19 +28,19 @@ Reports whether each tool's skills directory has projected entries from
 Examples:
   camp skills status          Show projection states in table format
   camp skills status --json   Machine-readable JSON output`,
-	Args:         cobra.NoArgs,
-	SilenceUsage: true,
+	Args: cobra.NoArgs,
 	Annotations: map[string]string{
 		"agent_allowed": "true",
 		"agent_reason":  "Non-interactive status listing",
 	},
-	RunE: runSkillsStatus,
+	RunE: jsoncontract.RunE(SkillsStatusJSONVersion, func() bool { return skillsStatusJSON }, runSkillsStatus),
 }
 
 func init() {
 	Cmd.AddCommand(skillsStatusCmd)
-	skillsStatusCmd.Flags().Bool("json", false, "Output as JSON")
+	skillsStatusCmd.Flags().BoolVar(&skillsStatusJSON, "json", false, "Output as JSON")
 	skillsStatusCmd.Flags().Bool("strict", false, "Return non-zero exit code when links need attention (for CI)")
+	skillsStatusCmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(SkillsStatusJSONVersion, func() bool { return skillsStatusJSON }))
 }
 
 type skillStatusEntry struct {
@@ -49,7 +54,6 @@ type skillStatusEntry struct {
 func runSkillsStatus(cmd *cobra.Command, _ []string) error {
 	ctx := cmd.Context()
 	out := cmd.OutOrStdout()
-	jsonOutput, _ := cmd.Flags().GetBool("json")
 
 	root, err := campaign.DetectCached(ctx)
 	if err != nil {
@@ -66,7 +70,7 @@ func runSkillsStatus(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	if len(slugs) == 0 {
-		if jsonOutput {
+		if skillsStatusJSON {
 			if _, err := fmt.Fprintln(out, "[]"); err != nil {
 				return err
 			}
@@ -141,7 +145,7 @@ func runSkillsStatus(cmd *cobra.Command, _ []string) error {
 		entries = append(entries, entry)
 	}
 
-	if jsonOutput {
+	if skillsStatusJSON {
 		data, err := json.MarshalIndent(entries, "", "  ")
 		if err != nil {
 			return camperrors.Wrap(err, "marshal JSON")

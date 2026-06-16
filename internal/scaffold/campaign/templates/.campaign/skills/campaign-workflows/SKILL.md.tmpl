@@ -7,7 +7,7 @@ description: Manage campaign intents, dungeons, and flow transitions with `camp`
 
 All workflow commands here are `camp`, not `fest`.
 
-Use `camp` for intents/dungeons/flows. `fest` is for festival planning/execution.
+Use `camp` for intents and dungeons. `fest` is for festival planning/execution.
 
 ## Intents
 
@@ -27,16 +27,19 @@ camp dungeon crawl
 
 `crawl` is interactive/TTY-oriented.
 
-## Flow
+{{- if eq .vars.Profile "dev"}}
+
+## Flow (dev channel)
 
 ```bash
 camp flow status
 camp flow move <item> <status>
 camp flow sync
 ```
+{{- end}}
 
 ## Common Mistakes
 
-- Running `fest` commands for intent/flow operations.
+- Running `fest` commands for intent or dungeon operations.
 - Deleting old work instead of moving it to dungeon statuses.
 - Promoting intents before they are sufficiently shaped.

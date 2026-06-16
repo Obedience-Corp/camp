@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,6 +42,7 @@ func List(ctx context.Context, campaignRoot string) ([]Project, error) {
 		if entry.Type()&os.ModeSymlink != 0 {
 			resolvedPath, err := filepath.EvalSymlinks(projectPath)
 			if err != nil {
+				fmt.Fprintf(os.Stderr, "warning: project symlink %q is broken: %v\n", projectPath, err)
 				continue
 			}
 			info, err := os.Stat(resolvedPath)

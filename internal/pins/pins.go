@@ -2,6 +2,7 @@ package pins
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -222,17 +223,23 @@ func (s *Store) MigrateAbsoluteToRelative(root string) bool {
 					s.pins[i].Path = rel2
 					changed = true
 				} else {
+					warnDroppedPin(s.pins[i], root)
 					s.pins = append(s.pins[:i], s.pins[i+1:]...)
 					changed = true
 				}
 			} else {
 				// External pin — remove from list
+				warnDroppedPin(s.pins[i], root)
 				s.pins = append(s.pins[:i], s.pins[i+1:]...)
 				changed = true
 			}
 		}
 	}
 	return changed
+}
+
+func warnDroppedPin(pin Pin, root string) {
+	fmt.Fprintf(os.Stderr, "warning: dropping pin %q at %q: outside campaign root %q\n", pin.Name, pin.Path, root)
 }
 
 // MigrateLegacyStore moves a legacy pins.json into the current store location

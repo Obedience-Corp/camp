@@ -2,6 +2,16 @@
 
 Repair auto-fixable doctor findings
 
+### Synopsis
+
+Repair auto-fixable workflow findings reported by workflow doctor.
+
+The command plans changes to campaign.yaml, .campaign/settings/jumps.yaml, and
+the navigation cache for stale shortcuts, missing concepts, duplicate shortcut
+keys, and cache drift. By default it reports the planned actions only; pass
+--apply to write changes. Use --json for machine-readable plans and applied
+actions.
+
 ```
 camp workflow sync [flags]
 ```
@@ -17,9 +27,7 @@ camp workflow sync [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 
 ### SEE ALSO

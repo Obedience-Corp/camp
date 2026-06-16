@@ -62,6 +62,10 @@ type SubmoduleResult struct {
 	OldURL string
 	// NewURL is the new URL (if URLChanged is true).
 	NewURL string
+	// CheckedOutBranch is the default branch checked out after submodule update.
+	CheckedOutBranch string
+	// DriftWarning describes detected gitlink drift for this submodule.
+	DriftWarning string
 }
 
 // URLChange represents a URL that was updated during synchronization.
@@ -181,9 +185,9 @@ const (
 	// ExitPreflightFailed indicates a pre-flight check failed in safe mode.
 	ExitPreflightFailed = 1
 	// ExitSyncFailed indicates the sync or update operation failed.
-	ExitSyncFailed = 2
+	ExitSyncFailed = 1
 	// ExitValidationFailed indicates post-sync validation failed.
 	ExitValidationFailed = 3
 	// ExitInvalidArgs indicates invalid command-line arguments.
-	ExitInvalidArgs = 4
+	ExitInvalidArgs = 2
 )

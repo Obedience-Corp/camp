@@ -24,7 +24,7 @@ func (tc *TestContainer) Reset() error {
 	// between tests that share a pooled container.
 	exitCode, _, err := tc.container.Exec(tc.ctx, []string{
 		"sh", "-c",
-		"rm -rf /test /campaigns /root/.obey /root/.config/camp /root/.camp 2>/dev/null; " +
+		"rm -rf /test /campaigns /root/.obey /root/.config/camp /root/.camp /tmp/create-* 2>/dev/null; " +
 			"mkdir -p /test /campaigns /root/.config/camp; sync",
 	})
 	if err != nil {

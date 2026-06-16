@@ -113,7 +113,7 @@ func ComputePlan(ctx context.Context, campaignRoot string, opts PlanOptions) (*S
 	if errw == nil {
 		errw = os.Stderr
 	}
-	ref, err := ensureRefForCommit(ctx, campaignRoot, wi, errw)
+	ref, err := wkitem.EnsureRefForCommit(ctx, campaignRoot, wi, errw)
 	if err != nil {
 		return nil, err
 	}

@@ -3,9 +3,11 @@ package project
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -188,6 +190,48 @@ func TestList_SkipsFiles(t *testing.T) {
 
 	if len(projects) != 0 {
 		t.Errorf("List() returned %d projects, want 0", len(projects))
+	}
+}
+
+func TestList_WarnsForBrokenProjectSymlink(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+
+	projectsDir := filepath.Join(tmpDir, "projects")
+	if err := os.MkdirAll(projectsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	linkPath := filepath.Join(projectsDir, "broken")
+	if err := os.Symlink(filepath.Join(tmpDir, "missing-target"), linkPath); err != nil {
+		t.Skipf("symlink creation failed: %v", err)
+	}
+
+	oldStderr := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = w
+	projects, listErr := List(context.Background(), tmpDir)
+	_ = w.Close()
+	os.Stderr = oldStderr
+	t.Cleanup(func() {
+		_ = r.Close()
+		os.Stderr = oldStderr
+	})
+	out, readErr := io.ReadAll(r)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+
+	if listErr != nil {
+		t.Fatalf("List() error = %v", listErr)
+	}
+	if len(projects) != 0 {
+		t.Fatalf("List() returned %d projects, want 0", len(projects))
+	}
+	if got := string(out); !strings.Contains(got, "warning: project symlink") || !strings.Contains(got, "broken") {
+		t.Fatalf("stderr = %q, want broken symlink warning", got)
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
@@ -22,6 +23,71 @@ func IsStaleRefError(err error) bool {
 	return strings.Contains(errStr, "not our ref") ||
 		strings.Contains(errStr, "did not contain") ||
 		strings.Contains(errStr, "reference is not a tree")
+}
+
+// isDirEmpty reports whether dir exists and contains no files or directories
+// (ignoring the case where dir does not exist at all).
+func isDirEmpty(dir string) (bool, error) {
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return len(entries) == 0, nil
+}
+
+func submoduleModuleGitDir(ctx context.Context, repoDir, subPath string) (string, error) {
+	modulePath := filepath.ToSlash(filepath.Join("modules", filepath.FromSlash(subPath)))
+	cmd := exec.CommandContext(ctx, "git", "-C", repoDir,
+		"rev-parse", "--path-format=absolute", "--git-path", modulePath)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+func isGitDir(path string) bool {
+	if path == "" {
+		return false
+	}
+	if info, err := os.Stat(filepath.Join(path, "config")); err == nil && !info.IsDir() {
+		return true
+	}
+	return false
+}
+
+func quarantineSuffix(quarantine string) string {
+	if quarantine == "" {
+		return ""
+	}
+	return fmt.Sprintf(" (quarantine available at %s)", quarantine)
+}
+
+// resolveSubmoduleURL resolves a potentially relative submodule URL against
+// the superproject's remote origin URL. Relative means starting with "../" or "./".
+// If the URL is not relative, it is returned unchanged.
+func resolveSubmoduleURL(ctx context.Context, repoDir, url string) string {
+	if !strings.HasPrefix(url, "../") && !strings.HasPrefix(url, "./") {
+		return url
+	}
+	remoteURL, err := RemoteOriginURL(ctx, repoDir)
+	if err != nil || remoteURL == "" {
+		return url
+	}
+	// filepath.Join is wrong here (would strip the scheme); use path.Join on
+	// the path component only, then reassemble.
+	base := strings.TrimSuffix(remoteURL, "/")
+	// Strip trailing component to get the "parent" remote dir.
+	slash := strings.LastIndex(base, "/")
+	if slash < 0 {
+		return url
+	}
+	parent := base[:slash]
+	rel := strings.TrimPrefix(url, "../")
+	return parent + "/" + rel
 }
 
 // DetectDefaultBranch determines the default branch for a submodule using
@@ -149,24 +215,74 @@ func InitFromDefaultBranch(ctx context.Context, repoDir, subPath string) error {
 		return camperrors.WrapJoinf(ErrSubmoduleClone, err, "%s", subPath)
 	}
 
-	// Get submodule URL from .gitmodules
 	url, err := getSubmoduleURL(ctx, repoDir, subPath)
 	if err != nil {
 		return camperrors.WrapJoinf(ErrSubmoduleURL, err, "%s", subPath)
 	}
+	url = resolveSubmoduleURL(ctx, repoDir, url)
 
 	subDir := filepath.Join(repoDir, subPath)
+	quarantine := ""
 
-	// Remove empty submodule directory if exists
-	if err := os.RemoveAll(subDir); err != nil {
-		return camperrors.WrapJoinf(ErrSubmoduleRemove, err, "%s", subPath)
+	empty, err := isDirEmpty(subDir)
+	if err != nil {
+		return camperrors.WrapJoinf(ErrSubmoduleRemove, err, "checking %s", subPath)
 	}
 
-	// Clone directly to submodule path (will use remote's default branch)
-	cmd := exec.CommandContext(ctx, "git", "clone", url, subDir)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return camperrors.WrapJoinf(ErrSubmoduleClone, err, "%s: %s", subPath, strings.TrimSpace(string(output)))
+	if !empty {
+		// Quarantine-rename instead of RemoveAll so uncommitted content survives.
+		ts := time.Now().UTC().Format("20060102-150405")
+		quarantine = subDir + ".sync-quarantine-" + ts
+		if renErr := os.Rename(subDir, quarantine); renErr != nil {
+			return camperrors.WrapJoinf(ErrSubmoduleRemove, renErr,
+				"%s: non-empty dir cannot be quarantined (inspect %s)", subPath, quarantine)
+		}
+	} else {
+		if err := os.RemoveAll(subDir); err != nil {
+			return camperrors.WrapJoinf(ErrSubmoduleRemove, err, "%s", subPath)
+		}
+	}
+
+	moduleGitDir, moduleErr := submoduleModuleGitDir(ctx, repoDir, subPath)
+	if moduleErr != nil {
+		return camperrors.WrapJoinf(ErrSubmoduleUpdate, moduleErr,
+			"%s: resolving submodule gitdir%s", subPath, quarantineSuffix(quarantine))
+	}
+
+	var fetchFailure string
+	if isGitDir(moduleGitDir) {
+		// Fetch into .git/modules/<subPath>, not the superproject, so the
+		// fallback preserves submodule wiring and cannot pollute root remotes.
+		fetchCmd := exec.CommandContext(ctx, "git",
+			"--git-dir", moduleGitDir,
+			"fetch", "--recurse-submodules=no", url,
+			"+refs/heads/*:refs/remotes/origin/*")
+		if output, fetchErr := fetchCmd.CombinedOutput(); fetchErr != nil {
+			fetchFailure = fmt.Sprintf("fetch into %s failed: %s", moduleGitDir, strings.TrimSpace(string(output)))
+		}
+	}
+
+	updateCmd := exec.CommandContext(ctx, "git", "-C", repoDir,
+		"submodule", "update", "--init", subPath)
+	if output, updateErr := updateCmd.CombinedOutput(); updateErr != nil {
+		updateOutput := strings.TrimSpace(string(output))
+		if !IsStaleRefError(camperrors.Wrapf(updateErr, "%s", updateOutput)) {
+			return camperrors.WrapJoinf(ErrSubmoduleUpdate, updateErr,
+				"%s: %s%s", subPath, updateOutput, quarantineSuffix(quarantine))
+		}
+
+		remoteCmd := exec.CommandContext(ctx, "git", "-C", repoDir,
+			"submodule", "update", "--init", "--remote", "--checkout", subPath)
+		if remoteOutput, remoteErr := remoteCmd.CombinedOutput(); remoteErr != nil {
+			detail := updateOutput
+			if fetchFailure != "" {
+				detail = fetchFailure + "; " + detail
+			}
+			return camperrors.WrapJoinf(ErrSubmoduleUpdate, remoteErr,
+				"%s: recorded commit unavailable (%s); remote fallback failed: %s%s",
+				subPath, detail, strings.TrimSpace(string(remoteOutput)), quarantineSuffix(quarantine))
+		}
+		return nil
 	}
 
 	return nil

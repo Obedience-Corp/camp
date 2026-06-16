@@ -26,18 +26,16 @@ Supports two migration paths:
   - v1 → v2 (dungeon-centric model)
 
 For v1→v2 migration:
-  - active/ items move to root directory
-  - ready/ items move to dungeon/ready/
-  - Empty active/ and ready/ directories are removed
+  - active/ items move to the workflow root directory
+  - ready/ items move to the workflow root directory
+  - Empty active/ and ready/ directories are removed after migration
   - Schema is updated to version 2
 
 Use --dry-run to preview changes without applying them.
-Use --force to skip confirmation prompts.
 
 Examples:
-  camp flow migrate            Migrate with confirmation
-  camp flow migrate --dry-run  Preview migration
-  camp flow migrate --force    Migrate without confirmation`,
+  camp flow migrate            Migrate to the latest schema
+  camp flow migrate --dry-run  Preview migration`,
 		Annotations: map[string]string{
 			"agent_allowed": "false",
 			"agent_reason":  "Migrates workflow structure, destructive operation",
@@ -75,7 +73,7 @@ Examples:
 	}
 
 	cmd.Flags().BoolVarP(&flowMigrateDryRun, "dry-run", "n", false, "preview migration without making changes")
-	cmd.Flags().BoolVarP(&flowMigrateForce, "force", "f", false, "skip confirmation")
+	cmd.Flags().BoolVarP(&flowMigrateForce, "force", "f", false, "force legacy dungeon migration overwrites")
 
 	return cmd
 }

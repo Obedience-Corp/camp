@@ -3,6 +3,7 @@ package crawl
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +12,62 @@ import (
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/intent/audit"
 )
+
+type actionResponse struct {
+	Action sharedcrawl.Action
+	Err    error
+}
+
+type destinationResponse struct {
+	Option sharedcrawl.Option
+	Err    error
+}
+
+type reasonResponse struct {
+	Reason string
+	Err    error
+}
+
+type fakePrompt struct {
+	ActionScript      []actionResponse
+	DestinationScript []destinationResponse
+	ReasonScript      []reasonResponse
+
+	actionIdx, destIdx, reasonIdx int
+}
+
+func (p *fakePrompt) SelectAction(_ context.Context, _ sharedcrawl.Item, _ []sharedcrawl.Option) (sharedcrawl.Action, error) {
+	if p.actionIdx >= len(p.ActionScript) {
+		return "", fmt.Errorf("fakePrompt: SelectAction script exhausted (call %d)", p.actionIdx+1)
+	}
+	r := p.ActionScript[p.actionIdx]
+	p.actionIdx++
+	return r.Action, r.Err
+}
+
+func (p *fakePrompt) SelectDestination(_ context.Context, _ sharedcrawl.Item, _ []sharedcrawl.Option) (sharedcrawl.Option, error) {
+	if p.destIdx >= len(p.DestinationScript) {
+		return sharedcrawl.Option{}, fmt.Errorf("fakePrompt: SelectDestination script exhausted (call %d)", p.destIdx+1)
+	}
+	r := p.DestinationScript[p.destIdx]
+	p.destIdx++
+	return r.Option, r.Err
+}
+
+func (p *fakePrompt) Reason(_ context.Context, _ sharedcrawl.Item, _ sharedcrawl.Option) (string, error) {
+	if p.reasonIdx >= len(p.ReasonScript) {
+		return "", fmt.Errorf("fakePrompt: Reason script exhausted (call %d)", p.reasonIdx+1)
+	}
+	r := p.ReasonScript[p.reasonIdx]
+	p.reasonIdx++
+	return r.Reason, r.Err
+}
+
+func (p *fakePrompt) ActionsConsumed() int { return p.actionIdx }
+
+func (p *fakePrompt) DestinationsConsumed() int { return p.destIdx }
+
+func (p *fakePrompt) ReasonsConsumed() int { return p.reasonIdx }
 
 // captureWriters returns AppendAudit and AppendLog implementations
 // that record events into the provided slices. They are the
@@ -42,7 +99,7 @@ func newRunnerConfig(store IntentStore, prompt sharedcrawl.Prompt, audits *[]aud
 
 func TestRun_NoCandidatesReturnsEmptyResult(t *testing.T) {
 	store := newFakeStore()
-	prompt := &sharedcrawl.FakePrompt{}
+	prompt := &fakePrompt{}
 	res, err := Run(context.Background(), newRunnerConfig(store, prompt, &[]audit.Event{}, &[]LogEntry{}), Options{})
 	if err != nil {
 		t.Fatalf("Run error = %v", err)
@@ -59,8 +116,8 @@ func TestRun_KeepRecordsKeepLog(t *testing.T) {
 	store := newFakeStore(&intent.Intent{
 		ID: "a", Title: "A", Status: intent.StatusInbox, CreatedAt: time.Unix(100, 0),
 	})
-	prompt := &sharedcrawl.FakePrompt{
-		ActionScript: []sharedcrawl.ActionResponse{{Action: sharedcrawl.ActionKeep}},
+	prompt := &fakePrompt{
+		ActionScript: []actionResponse{{Action: sharedcrawl.ActionKeep}},
 	}
 	var audits []audit.Event
 	var logs []LogEntry
@@ -87,8 +144,8 @@ func TestRun_SkipRecordsSkipLog(t *testing.T) {
 	store := newFakeStore(&intent.Intent{
 		ID: "a", Title: "A", Status: intent.StatusInbox, CreatedAt: time.Unix(100, 0),
 	})
-	prompt := &sharedcrawl.FakePrompt{
-		ActionScript: []sharedcrawl.ActionResponse{{Action: sharedcrawl.ActionSkip}},
+	prompt := &fakePrompt{
+		ActionScript: []actionResponse{{Action: sharedcrawl.ActionSkip}},
 	}
 	var audits []audit.Event
 	var logs []LogEntry
@@ -106,8 +163,8 @@ func TestRun_QuitStopsImmediately(t *testing.T) {
 		&intent.Intent{ID: "a", Title: "A", Status: intent.StatusInbox, CreatedAt: time.Unix(100, 0)},
 		&intent.Intent{ID: "b", Title: "B", Status: intent.StatusInbox, CreatedAt: time.Unix(200, 0)},
 	)
-	prompt := &sharedcrawl.FakePrompt{
-		ActionScript: []sharedcrawl.ActionResponse{{Action: sharedcrawl.ActionQuit}},
+	prompt := &fakePrompt{
+		ActionScript: []actionResponse{{Action: sharedcrawl.ActionQuit}},
 	}
 	var audits []audit.Event
 	var logs []LogEntry
@@ -127,9 +184,9 @@ func TestRun_QuitStopsImmediately(t *testing.T) {
 func TestRun_MoveToLiveStatusNoReason(t *testing.T) {
 	in := &intent.Intent{ID: "a", Title: "A", Status: intent.StatusInbox, CreatedAt: time.Unix(100, 0)}
 	store := newFakeStore(in)
-	prompt := &sharedcrawl.FakePrompt{
-		ActionScript: []sharedcrawl.ActionResponse{{Action: sharedcrawl.ActionMove}},
-		DestinationScript: []sharedcrawl.DestinationResponse{
+	prompt := &fakePrompt{
+		ActionScript: []actionResponse{{Action: sharedcrawl.ActionMove}},
+		DestinationScript: []destinationResponse{
 			{Option: sharedcrawl.Option{Action: sharedcrawl.ActionMove, Target: "ready"}},
 		},
 	}
@@ -164,14 +221,14 @@ func TestRun_MoveToLiveStatusNoReason(t *testing.T) {
 func TestRun_MoveToDungeonRequiresReasonAndDecisionRecord(t *testing.T) {
 	in := &intent.Intent{ID: "a", Title: "A", Status: intent.StatusReady, CreatedAt: time.Unix(100, 0)}
 	store := newFakeStore(in)
-	prompt := &sharedcrawl.FakePrompt{
-		ActionScript: []sharedcrawl.ActionResponse{{Action: sharedcrawl.ActionMove}},
-		DestinationScript: []sharedcrawl.DestinationResponse{
+	prompt := &fakePrompt{
+		ActionScript: []actionResponse{{Action: sharedcrawl.ActionMove}},
+		DestinationScript: []destinationResponse{
 			{Option: sharedcrawl.Option{
 				Action: sharedcrawl.ActionMove, Target: "dungeon/archived", RequiresReason: true,
 			}},
 		},
-		ReasonScript: []sharedcrawl.ReasonResponse{{Reason: "superseded"}},
+		ReasonScript: []reasonResponse{{Reason: "superseded"}},
 	}
 	var audits []audit.Event
 	var logs []LogEntry
@@ -201,17 +258,17 @@ func TestRun_MoveToDungeonRequiresReasonAndDecisionRecord(t *testing.T) {
 func TestRun_MoveToDungeonEmptyReasonReturnsToFirstStep(t *testing.T) {
 	in := &intent.Intent{ID: "a", Title: "A", Status: intent.StatusReady, CreatedAt: time.Unix(100, 0)}
 	store := newFakeStore(in)
-	prompt := &sharedcrawl.FakePrompt{
-		ActionScript: []sharedcrawl.ActionResponse{
+	prompt := &fakePrompt{
+		ActionScript: []actionResponse{
 			{Action: sharedcrawl.ActionMove},
 			{Action: sharedcrawl.ActionSkip},
 		},
-		DestinationScript: []sharedcrawl.DestinationResponse{
+		DestinationScript: []destinationResponse{
 			{Option: sharedcrawl.Option{
 				Action: sharedcrawl.ActionMove, Target: "dungeon/archived", RequiresReason: true,
 			}},
 		},
-		ReasonScript: []sharedcrawl.ReasonResponse{{Reason: ""}},
+		ReasonScript: []reasonResponse{{Reason: ""}},
 	}
 	var audits []audit.Event
 	var logs []LogEntry
@@ -231,12 +288,12 @@ func TestRun_MoveToDungeonEmptyReasonReturnsToFirstStep(t *testing.T) {
 func TestRun_DestinationBackoutReturnsToFirstStep(t *testing.T) {
 	in := &intent.Intent{ID: "a", Title: "A", Status: intent.StatusInbox, CreatedAt: time.Unix(100, 0)}
 	store := newFakeStore(in)
-	prompt := &sharedcrawl.FakePrompt{
-		ActionScript: []sharedcrawl.ActionResponse{
+	prompt := &fakePrompt{
+		ActionScript: []actionResponse{
 			{Action: sharedcrawl.ActionMove},
 			{Action: sharedcrawl.ActionKeep},
 		},
-		DestinationScript: []sharedcrawl.DestinationResponse{
+		DestinationScript: []destinationResponse{
 			{Option: sharedcrawl.Option{}}, // back gesture
 		},
 	}
@@ -255,9 +312,9 @@ func TestRun_DestinationBackoutReturnsToFirstStep(t *testing.T) {
 func TestRun_MoveToCurrentStatusTreatedAsKeep(t *testing.T) {
 	in := &intent.Intent{ID: "a", Title: "A", Status: intent.StatusReady, CreatedAt: time.Unix(100, 0)}
 	store := newFakeStore(in)
-	prompt := &sharedcrawl.FakePrompt{
-		ActionScript: []sharedcrawl.ActionResponse{{Action: sharedcrawl.ActionMove}},
-		DestinationScript: []sharedcrawl.DestinationResponse{
+	prompt := &fakePrompt{
+		ActionScript: []actionResponse{{Action: sharedcrawl.ActionMove}},
+		DestinationScript: []destinationResponse{
 			{Option: sharedcrawl.Option{Action: sharedcrawl.ActionMove, Target: "ready"}},
 		},
 	}
@@ -281,8 +338,8 @@ func TestRun_AbortPropagatesPartialSummary(t *testing.T) {
 		&intent.Intent{ID: "a", Title: "A", Status: intent.StatusInbox, CreatedAt: time.Unix(100, 0)},
 		&intent.Intent{ID: "b", Title: "B", Status: intent.StatusInbox, CreatedAt: time.Unix(200, 0)},
 	)
-	prompt := &sharedcrawl.FakePrompt{
-		ActionScript: []sharedcrawl.ActionResponse{
+	prompt := &fakePrompt{
+		ActionScript: []actionResponse{
 			{Action: sharedcrawl.ActionKeep},
 			{Err: sharedcrawl.ErrAborted},
 		},
@@ -303,9 +360,9 @@ func TestRun_AuditWriteFailureReturnsError(t *testing.T) {
 	store := newFakeStore(&intent.Intent{
 		ID: "a", Title: "A", Status: intent.StatusInbox, CreatedAt: time.Unix(100, 0),
 	})
-	prompt := &sharedcrawl.FakePrompt{
-		ActionScript: []sharedcrawl.ActionResponse{{Action: sharedcrawl.ActionMove}},
-		DestinationScript: []sharedcrawl.DestinationResponse{
+	prompt := &fakePrompt{
+		ActionScript: []actionResponse{{Action: sharedcrawl.ActionMove}},
+		DestinationScript: []destinationResponse{
 			{Option: sharedcrawl.Option{Action: sharedcrawl.ActionMove, Target: "ready"}},
 		},
 	}
@@ -331,8 +388,8 @@ func TestRun_LogWriteFailureReturnsError(t *testing.T) {
 	store := newFakeStore(&intent.Intent{
 		ID: "a", Title: "A", Status: intent.StatusInbox, CreatedAt: time.Unix(100, 0),
 	})
-	prompt := &sharedcrawl.FakePrompt{
-		ActionScript: []sharedcrawl.ActionResponse{{Action: sharedcrawl.ActionKeep}},
+	prompt := &fakePrompt{
+		ActionScript: []actionResponse{{Action: sharedcrawl.ActionKeep}},
 	}
 	cfg := Config{
 		Store:      store,
@@ -352,7 +409,7 @@ func TestRun_LogWriteFailureReturnsError(t *testing.T) {
 
 func TestRun_RejectsInvalidOptions(t *testing.T) {
 	store := newFakeStore()
-	prompt := &sharedcrawl.FakePrompt{}
+	prompt := &fakePrompt{}
 	if _, err := Run(context.Background(), newRunnerConfig(store, prompt, &[]audit.Event{}, &[]LogEntry{}),
 		Options{Limit: -5}); err == nil {
 		t.Fatal("expected validation error for negative limit")
@@ -371,9 +428,9 @@ func TestRun_RequiresStoreAndPrompt(t *testing.T) {
 func TestRun_CommitPathsFlattenAfterMoves(t *testing.T) {
 	in := &intent.Intent{ID: "a", Title: "A", Status: intent.StatusInbox, CreatedAt: time.Unix(100, 0)}
 	store := newFakeStore(in)
-	prompt := &sharedcrawl.FakePrompt{
-		ActionScript: []sharedcrawl.ActionResponse{{Action: sharedcrawl.ActionMove}},
-		DestinationScript: []sharedcrawl.DestinationResponse{
+	prompt := &fakePrompt{
+		ActionScript: []actionResponse{{Action: sharedcrawl.ActionMove}},
+		DestinationScript: []destinationResponse{
 			{Option: sharedcrawl.Option{Action: sharedcrawl.ActionMove, Target: "ready"}},
 		},
 	}

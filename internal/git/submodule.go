@@ -24,9 +24,23 @@ func IsSubmodule(path string) (bool, error) {
 		}
 		return false, camperrors.Wrapf(err, "cannot access .git at %s", path)
 	}
+	if info.IsDir() {
+		return false, nil
+	}
 
-	// Submodules have .git as a file, regular repos have it as a directory
-	return !info.IsDir(), nil
+	// Submodules and git worktrees both have .git as a gitdir file. Worktree
+	// gitdirs live under the main repository's .git/worktrees area.
+	gitDir, err := ResolveGitDir(path)
+	if err != nil {
+		return false, err
+	}
+	return !isWorktreeGitDir(gitDir), nil
+}
+
+func isWorktreeGitDir(gitDir string) bool {
+	clean := filepath.Clean(gitDir)
+	needle := string(filepath.Separator) + ".git" + string(filepath.Separator) + "worktrees" + string(filepath.Separator)
+	return strings.Contains(clean, needle)
 }
 
 // GetSubmoduleGitDir resolves the actual .git directory for a submodule.

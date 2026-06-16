@@ -2,6 +2,15 @@
 
 Report workitem link-registry health issues
 
+### Synopsis
+
+Report health issues in the campaign workitem link registry.
+
+The command reads .campaign/workitems/links.yaml, scans .workitem metadata on
+disk, and checks current-workitem and priority stores for stale or inconsistent
+references. Use --fix to apply auto-repairs for supported findings. Use --json
+for machine-readable findings and stable finding codes.
+
 ```
 camp workitem doctor [flags]
 ```
@@ -17,9 +26,7 @@ camp workitem doctor [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 
 ### SEE ALSO

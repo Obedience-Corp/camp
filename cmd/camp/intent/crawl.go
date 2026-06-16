@@ -39,7 +39,7 @@ Examples:
 	Args: cobra.NoArgs,
 	Annotations: map[string]string{
 		"agent_allowed": "false",
-		"agent_reason":  "Interactive intent triage session",
+		"agent_reason":  "requires interactive terminal",
 		"interactive":   "true",
 	},
 	RunE: runIntentCrawl,
@@ -56,7 +56,6 @@ func init() {
 
 func runIntentCrawl(cmd *cobra.Command, _ []string) error {
 	ctx := cmd.Context()
-
 	statusFlags, _ := cmd.Flags().GetStringSlice("status")
 	limit, _ := cmd.Flags().GetInt("limit")
 	sortMode, _ := cmd.Flags().GetString("sort")
@@ -84,6 +83,13 @@ func runIntentCrawl(cmd *cobra.Command, _ []string) error {
 		Limit:    limit,
 		Sort:     intentcrawl.SortMode(sortMode),
 	}
+	if err := opts.Validate(); err != nil {
+		return err
+	}
+	if !ui.IsTerminal() {
+		return camperrors.Wrap(camperrors.ErrInvalidInput, "intent crawl requires an interactive terminal")
+	}
+
 	runCfg := intentcrawl.Config{
 		Store:      svc,
 		Prompt:     sharedcrawl.NewDefaultPrompt(),

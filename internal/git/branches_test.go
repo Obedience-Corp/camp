@@ -260,7 +260,7 @@ func TestMergedBranches_NoMerged(t *testing.T) {
 	dir := initBranchTestRepo(t, "main")
 
 	ctx := context.Background()
-	branches, err := MergedBranches(ctx, dir)
+	branches, err := MergedBranchesFromRef(ctx, dir, DefaultBranch(ctx, dir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -342,7 +342,7 @@ func TestMergedBranches_ReturnsMerged(t *testing.T) {
 	run("merge", "feature-done")
 
 	ctx := context.Background()
-	branches, err := MergedBranches(ctx, dir)
+	branches, err := MergedBranchesFromRef(ctx, dir, DefaultBranch(ctx, dir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -379,7 +379,7 @@ func TestMergedBranches_ExcludesDefaultAndCurrent(t *testing.T) {
 
 	// Stay on main — both feat-a and feat-b should be returned, not main
 	ctx := context.Background()
-	branches, err := MergedBranches(ctx, dir)
+	branches, err := MergedBranchesFromRef(ctx, dir, DefaultBranch(ctx, dir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -449,7 +449,7 @@ func TestDeleteBranch(t *testing.T) {
 	}
 
 	// Verify it's gone
-	branches, _ := MergedBranches(ctx, dir)
+	branches, _ := MergedBranchesFromRef(ctx, dir, DefaultBranch(ctx, dir))
 	for _, b := range branches {
 		if b == "to-delete" {
 			t.Fatal("branch 'to-delete' should have been deleted")
@@ -489,13 +489,13 @@ func TestDeleteBranch_CancelledContext(t *testing.T) {
 	}
 }
 
-func TestMergedBranches_CancelledContext(t *testing.T) {
+func TestMergedBranchesFromRef_CancelledContext(t *testing.T) {
 	dir := initBranchTestRepo(t, "main")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	branches, err := MergedBranches(ctx, dir)
+	branches, err := MergedBranchesFromRef(ctx, dir, "main")
 	if err == nil {
 		t.Fatal("expected error for cancelled context, got nil")
 	}

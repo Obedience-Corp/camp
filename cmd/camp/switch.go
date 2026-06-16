@@ -84,7 +84,7 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 		selected = c
 	} else {
 		if !tui.IsTerminal() {
-			return fmt.Errorf("campaign name required in non-interactive mode\n       Usage: camp switch <name> --print")
+			return camperrors.New("campaign name required in non-interactive mode (use 'camp switch <name>' or run interactively)")
 		}
 		c, err := cmdutil.PickCampaign(ctx, reg)
 		if err != nil {
@@ -93,9 +93,12 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 		selected = c
 	}
 
-	// Update last access
-	reg.UpdateLastAccess(selected.ID)
-	_ = config.SaveRegistry(ctx, reg)
+	if err := config.UpdateRegistry(ctx, func(reg *config.Registry) error {
+		reg.UpdateLastAccess(selected.ID)
+		return nil
+	}); err != nil {
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "camp: warning: failed to update last access: %v\n", err)
+	}
 
 	if printOnly {
 		fmt.Println(selected.Path)

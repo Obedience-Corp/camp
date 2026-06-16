@@ -79,21 +79,6 @@ func makeTestCampaign(t *testing.T, id string) string {
 
 func chdirForTest(t *testing.T, dir string) {
 	t.Helper()
-
-	origDir, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-
-	if err := os.Chdir(dir); err != nil {
-		t.Fatalf("chdir %s: %v", dir, err)
-	}
-	campaign.ClearCache()
-
-	t.Cleanup(func() {
-		if err := os.Chdir(origDir); err != nil {
-			t.Fatalf("restore cwd: %v", err)
-		}
-		campaign.ClearCache()
-	})
+	t.Chdir(dir)
+	t.Setenv(campaign.EnvCacheDisable, "1")
 }

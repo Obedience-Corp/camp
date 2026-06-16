@@ -254,6 +254,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				name = msg.festivalName
 			}
 			m.statusMessage = fmt.Sprintf("Promoted '%s' → festival '%s'", msg.intentTitle, name)
+		} else if msg.festCLIError != "" {
+			m.statusMessage = fmt.Sprintf("Promoted '%s' to active (festival creation failed: %s)", msg.intentTitle, msg.festCLIError)
 		} else {
 			m.statusMessage = fmt.Sprintf("Promoted '%s' to active (festival creation failed)", msg.intentTitle)
 		}

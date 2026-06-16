@@ -3,6 +3,11 @@ binary_name := "camp"
 bin_dir := "bin"
 BUILDTOOL := "go run ./internal/buildutil"
 build_tags := env_var_or_default("BUILD_TAGS", "")
+version_pkg := "github.com/Obedience-Corp/camp/internal/version"
+version := env_var_or_default("VERSION", "dev")
+commit := `git rev-parse --short HEAD 2>/dev/null || echo "unknown"`
+build_date := `date -u +"%Y-%m-%dT%H:%M:%SZ"`
+platform_ldflags := "-s -w -X " + version_pkg + ".Version=" + version + " -X " + version_pkg + ".Commit=" + commit + " -X " + version_pkg + ".BuildDate=" + build_date
 
 [private]
 default:
@@ -66,9 +71,9 @@ linux:
     #!/usr/bin/env bash
     set -euo pipefail
     if [ -n "{{build_tags}}" ]; then
-        GOOS=linux GOARCH=amd64 go build -tags '{{build_tags}}' -ldflags '-s -w' -o {{bin_dir}}/{{binary_name}}-linux-amd64 ./cmd/camp
+        GOOS=linux GOARCH=amd64 go build -tags '{{build_tags}}' -ldflags '{{platform_ldflags}}' -o {{bin_dir}}/{{binary_name}}-linux-amd64 ./cmd/camp
     else
-        GOOS=linux GOARCH=amd64 go build -ldflags '-s -w' -o {{bin_dir}}/{{binary_name}}-linux-amd64 ./cmd/camp
+        GOOS=linux GOARCH=amd64 go build -ldflags '{{platform_ldflags}}' -o {{bin_dir}}/{{binary_name}}-linux-amd64 ./cmd/camp
     fi
 
 # Build for macOS Intel
@@ -77,9 +82,9 @@ darwin:
     #!/usr/bin/env bash
     set -euo pipefail
     if [ -n "{{build_tags}}" ]; then
-        GOOS=darwin GOARCH=amd64 go build -tags '{{build_tags}}' -ldflags '-s -w' -o {{bin_dir}}/{{binary_name}}-darwin-amd64 ./cmd/camp
+        GOOS=darwin GOARCH=amd64 go build -tags '{{build_tags}}' -ldflags '{{platform_ldflags}}' -o {{bin_dir}}/{{binary_name}}-darwin-amd64 ./cmd/camp
     else
-        GOOS=darwin GOARCH=amd64 go build -ldflags '-s -w' -o {{bin_dir}}/{{binary_name}}-darwin-amd64 ./cmd/camp
+        GOOS=darwin GOARCH=amd64 go build -ldflags '{{platform_ldflags}}' -o {{bin_dir}}/{{binary_name}}-darwin-amd64 ./cmd/camp
     fi
 
 # Build for macOS Apple Silicon
@@ -88,9 +93,9 @@ darwin-arm64:
     #!/usr/bin/env bash
     set -euo pipefail
     if [ -n "{{build_tags}}" ]; then
-        GOOS=darwin GOARCH=arm64 go build -tags '{{build_tags}}' -ldflags '-s -w' -o {{bin_dir}}/{{binary_name}}-darwin-arm64 ./cmd/camp
+        GOOS=darwin GOARCH=arm64 go build -tags '{{build_tags}}' -ldflags '{{platform_ldflags}}' -o {{bin_dir}}/{{binary_name}}-darwin-arm64 ./cmd/camp
     else
-        GOOS=darwin GOARCH=arm64 go build -ldflags '-s -w' -o {{bin_dir}}/{{binary_name}}-darwin-arm64 ./cmd/camp
+        GOOS=darwin GOARCH=arm64 go build -ldflags '{{platform_ldflags}}' -o {{bin_dir}}/{{binary_name}}-darwin-arm64 ./cmd/camp
     fi
 
 # Build for Windows AMD64

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -704,6 +705,119 @@ func TestExecuteMigrations_KeepsSourceWithRemainingItems(t *testing.T) {
 	// Source should still exist (has remaining items)
 	if _, err := os.Stat(src); err != nil {
 		t.Error("source directory should still exist when it has remaining items")
+	}
+}
+
+func TestExecuteMigrations_PreValidationRejectsExistingDestination(t *testing.T) {
+	dir := t.TempDir()
+
+	src := filepath.Join(dir, "completed")
+	dst := filepath.Join(dir, "dungeon", "completed", time.Now().Format("2006-01-02"))
+	if err := os.MkdirAll(src, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dst, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "item.md"), []byte("source"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dst, "item.md"), []byte("destination"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	moved, err := ExecuteMigrations([]MigrationAction{
+		{Source: src, Dest: dst, Items: []string{"item.md"}},
+	})
+	if err == nil {
+		t.Fatal("expected pre-validation error")
+	}
+	if moved != 0 {
+		t.Fatalf("moved = %d, want 0", moved)
+	}
+	if !strings.Contains(err.Error(), "migration pre-validation failed") {
+		t.Fatalf("error missing pre-validation context: %v", err)
+	}
+	if !strings.Contains(err.Error(), "destination already exists") {
+		t.Fatalf("error missing destination conflict: %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(src, "item.md"))
+	if err != nil {
+		t.Fatalf("source file was moved despite pre-validation failure: %v", err)
+	}
+	if string(got) != "source" {
+		t.Fatalf("source content = %q, want source", got)
+	}
+	got, err = os.ReadFile(filepath.Join(dst, "item.md"))
+	if err != nil {
+		t.Fatalf("destination file missing after pre-validation failure: %v", err)
+	}
+	if string(got) != "destination" {
+		t.Fatalf("destination content = %q, want destination", got)
+	}
+}
+
+func TestExecuteMigrations_MidSequenceFailureReportsProgressAndRerunConflicts(t *testing.T) {
+	dir := t.TempDir()
+
+	src := filepath.Join(dir, "completed")
+	dst := filepath.Join(dir, "dungeon", "completed", time.Now().Format("2006-01-02"))
+	if err := os.MkdirAll(src, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range []string{"a.md", "b.md", "c.md"} {
+		if err := os.WriteFile(filepath.Join(src, item), []byte(item), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	migrations := []MigrationAction{
+		{Source: src, Dest: dst, Items: []string{"a.md", "b.md", "c.md"}},
+	}
+
+	calls := 0
+	moved, err := executeMigrations(migrations, func(src, dst string) error {
+		calls++
+		if calls == 2 {
+			return os.ErrPermission
+		}
+		return executeMigrationMove(src, dst)
+	})
+	if err == nil {
+		t.Fatal("expected injected move failure")
+	}
+	if moved != 1 {
+		t.Fatalf("moved = %d, want 1", moved)
+	}
+	if !strings.Contains(err.Error(), "1 item(s) moved; 2 item(s) remaining") {
+		t.Fatalf("error missing progress context: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dst, "a.md")); err != nil {
+		t.Fatalf("first item should have moved before injected failure: %v", err)
+	}
+	for _, item := range []string{"b.md", "c.md"} {
+		if _, err := os.Stat(filepath.Join(src, item)); err != nil {
+			t.Fatalf("%s should remain in source after injected failure: %v", item, err)
+		}
+	}
+
+	moved, err = ExecuteMigrations(migrations)
+	if err == nil {
+		t.Fatal("expected rerun to fail validation on partial destination")
+	}
+	if moved != 0 {
+		t.Fatalf("rerun moved = %d, want 0", moved)
+	}
+	if !strings.Contains(err.Error(), "destination already exists") ||
+		!strings.Contains(err.Error(), "a.md") {
+		t.Fatalf("rerun error should report moved destination conflict: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(dst, "a.md"))
+	if err != nil {
+		t.Fatalf("moved destination missing after rerun: %v", err)
+	}
+	if string(got) != "a.md" {
+		t.Fatalf("moved destination was clobbered on rerun: %q", got)
 	}
 }
 

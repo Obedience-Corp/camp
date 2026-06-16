@@ -174,11 +174,12 @@ func runRegistryPrune(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	for _, c := range toRemove {
-		reg.UnregisterByID(c.ID)
-	}
-
-	if err := config.SaveRegistry(ctx, reg); err != nil {
+	if err := config.UpdateRegistry(ctx, func(reg *config.Registry) error {
+		for _, c := range toRemove {
+			reg.UnregisterByID(c.ID)
+		}
+		return nil
+	}); err != nil {
 		return camperrors.Wrap(err, "failed to save registry")
 	}
 
@@ -208,6 +209,7 @@ func runRegistrySync(cmd *cobra.Command, args []string) error {
 	}
 
 	conflicting, conflictExists := reg.FindByPath(campaignRoot)
+	confirmedConflictID := ""
 	if conflictExists && conflicting.ID != cfg.ID {
 		fmt.Printf("%s Path is registered to a different campaign\n", ui.WarningIcon())
 		fmt.Println(ui.KeyValue("Current registration:", conflicting.Name+" ("+conflicting.ID[:8]+"...)"))
@@ -225,15 +227,13 @@ func runRegistrySync(cmd *cobra.Command, args []string) error {
 			fmt.Println(ui.Dim("Aborted."))
 			return nil
 		}
+		confirmedConflictID = conflicting.ID
 
-		reg.UnregisterByID(conflicting.ID)
 	}
 
-	if err := reg.Register(cfg.ID, cfg.Name, campaignRoot, cfg.Type); err != nil {
-		return camperrors.Wrap(err, "failed to register")
-	}
-
-	if err := config.SaveRegistry(ctx, reg); err != nil {
+	if err := config.UpdateRegistry(ctx, func(reg *config.Registry) error {
+		return syncRegistryCampaignWithConfirmedConflict(reg, cfg, campaignRoot, confirmedConflictID)
+	}); err != nil {
 		return camperrors.Wrap(err, "failed to save registry")
 	}
 
@@ -253,6 +253,22 @@ func runRegistrySync(cmd *cobra.Command, args []string) error {
 		fmt.Println(ui.KeyValue("Path:", campaignRoot))
 	}
 
+	return nil
+}
+
+func syncRegistryCampaignWithConfirmedConflict(reg *config.Registry, cfg *config.CampaignConfig, campaignRoot, confirmedConflictID string) error {
+	if existing, exists := reg.FindByPath(campaignRoot); exists && existing.ID != cfg.ID {
+		if confirmedConflictID == "" {
+			return camperrors.Wrapf(camperrors.ErrConflict, "path %s is now registered to campaign %s (%s); re-run camp registry sync to confirm replacement", campaignRoot, existing.Name, existing.ID)
+		}
+		if existing.ID != confirmedConflictID {
+			return camperrors.Wrapf(camperrors.ErrConflict, "path %s registration changed from %s to %s; re-run camp registry sync to confirm replacement", campaignRoot, confirmedConflictID, existing.ID)
+		}
+		reg.UnregisterByID(existing.ID)
+	}
+	if err := reg.Register(cfg.ID, cfg.Name, campaignRoot, cfg.Type); err != nil {
+		return camperrors.Wrap(err, "failed to register")
+	}
 	return nil
 }
 

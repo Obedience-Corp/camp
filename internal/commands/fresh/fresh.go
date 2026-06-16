@@ -215,9 +215,10 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 	// 'git fetch --prune' first.
 	if opts.prune {
 		pruneOpts := prune.Options{
-			DryRun: opts.dryRun,
-			Force:  true, // Skip confirmation — fresh is deliberate
-			Remote: opts.pruneRemote,
+			DryRun:       opts.dryRun,
+			Force:        true,  // Skip confirmation — fresh is deliberate
+			DiscardDirty: false, // preserve dirty worktrees (new guard); fresh should not destroy uncommitted work
+			Remote:       opts.pruneRemote,
 			// Refresh even on dry-run: 'git fetch --prune' only updates
 			// remote-tracking refs, not the worktree, so the dry-run
 			// preview must include it or squash-merged branches stay

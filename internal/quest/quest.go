@@ -3,6 +3,7 @@ package quest
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/editor"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"gopkg.in/yaml.v3"
 )
 
@@ -133,7 +135,8 @@ func List(ctx context.Context, campaignRoot string, includeDungeon bool) ([]*Que
 		}
 		q, err := Load(ctx, QuestPathForDir(filepath.Join(QuestsDir(campaignRoot), entry.Name())))
 		if err != nil {
-			return nil, err
+			warnUnreadableQuest(entry.Name(), err)
+			continue
 		}
 		quests = append(quests, q)
 	}
@@ -154,7 +157,8 @@ func List(ctx context.Context, campaignRoot string, includeDungeon bool) ([]*Que
 				}
 				q, err := Load(ctx, QuestPathForDir(filepath.Join(statusDir, entry.Name())))
 				if err != nil {
-					return nil, err
+					warnUnreadableQuest(filepath.Join(status.String(), entry.Name()), err)
+					continue
 				}
 				quests = append(quests, q)
 			}
@@ -162,6 +166,10 @@ func List(ctx context.Context, campaignRoot string, includeDungeon bool) ([]*Que
 	}
 
 	return quests, nil
+}
+
+func warnUnreadableQuest(name string, err error) {
+	_, _ = fmt.Fprintf(os.Stderr, "warning: skipping unreadable quest %q: %v\n", name, err)
 }
 
 // Resolve finds a quest by ID, slug, or exact human name.
@@ -268,7 +276,9 @@ func writeQuestFile(path string, q *Quest) error {
 	if err != nil {
 		return camperrors.Wrapf(err, "marshal quest %q", q.Name)
 	}
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	// TODO(seq06-lock): quest lifecycle commands use this helper for read-modify-write cycles.
+	// Locking here alone is insufficient; the lock must cover Resolve/Load, mutation, and Save.
+	if err := fsutil.WriteFileAtomically(path, data, 0644); err != nil {
 		return camperrors.Wrapf(err, "write quest file %s", path)
 	}
 	q.Path = path

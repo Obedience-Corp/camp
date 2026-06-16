@@ -21,7 +21,13 @@ func newLinksCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "links [selector]",
 		Short: "List workitem links",
-		Args:  jsoncontract.Args(links.LinksSchemaVersion, func() bool { return jsonOut }, cobra.RangeArgs(0, 1)),
+		Long: `List workitem links recorded in the campaign link registry.
+
+The command reads .campaign/workitems/links.yaml and prints every link, or only
+links for the supplied workitem selector. Use this to audit which projects,
+festivals, worktrees, or paths are attached to a workitem. Use --json for
+machine-readable link lists.`,
+		Args: jsoncontract.Args(links.LinksSchemaVersion, func() bool { return jsonOut }, cobra.RangeArgs(0, 1)),
 		Annotations: map[string]string{
 			"agent_allowed": "true",
 			"agent_reason":  "Read-only link listing with --json output for automation",
