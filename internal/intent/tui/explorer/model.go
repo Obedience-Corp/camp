@@ -92,7 +92,7 @@ type Model struct {
 
 	// Confirmation dialog state
 	confirmDialog tui.ConfirmationDialog
-	pendingAction string         // "delete", "promote", "promote-ready", or "gather"
+	pendingAction string         // "delete", "promote-ready", or "gather"
 	pendingIntent *intent.Intent // Intent for pending action
 
 	// Preview pane state
