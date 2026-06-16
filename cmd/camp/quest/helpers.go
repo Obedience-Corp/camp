@@ -8,9 +8,10 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"text/tabwriter"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/table"
 	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/camp/internal/config"
@@ -19,6 +20,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
 	"github.com/Obedience-Corp/camp/internal/quest"
+	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
 type questCommandContext struct {
@@ -177,22 +179,41 @@ func outputQuestTable(qctx *questCommandContext, quests []*quest.Quest) error {
 		return nil
 	}
 
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "NAME\tSTATUS\tID\tUPDATED\tPATH")
+	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.CategoryColor)
+
+	statusStyle := func(s quest.Status) string {
+		return ui.GetQuestStatusStyle(string(s)).Render(string(s))
+	}
+
+	headers := []string{"NAME", "STATUS", "ID", "UPDATED", "PATH"}
+	rows := make([][]string, 0, len(quests))
+
 	for _, q := range quests {
 		updated := q.UpdatedAt
 		if updated.IsZero() {
 			updated = q.CreatedAt
 		}
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+		rows = append(rows, []string{
 			q.Name,
-			q.Status,
+			statusStyle(q.Status),
 			q.ID,
 			updated.Format("2006-01-02 15:04"),
 			quest.RelativePath(qctx.campaignRoot, q.Path),
-		)
+		})
 	}
-	_ = w.Flush()
+
+	t := table.New().
+		Border(lipgloss.HiddenBorder()).
+		Headers(headers...).
+		Rows(rows...).
+		StyleFunc(func(row, col int) lipgloss.Style {
+			if row == table.HeaderRow {
+				return headerStyle
+			}
+			return lipgloss.NewStyle()
+		})
+
+	fmt.Println(t)
 	fmt.Printf("\n%d quest(s)\n", len(quests))
 	return nil
 }
