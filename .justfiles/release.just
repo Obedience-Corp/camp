@@ -11,7 +11,7 @@
 #   create tags from a failing tree. Every recipe below gates on `just gate` first.
 #
 # Gate: no GitHub Actions (C-1). Enforcement is local via `just gate` (both-profile
-# build, vet, lint, and unit tests). Run `just hooks-install` to wire the pre-push hook.
+# build, vet, lint, and unit tests), run on demand and required before every release tag.
 
 # Show available release commands (default)
 [private]
