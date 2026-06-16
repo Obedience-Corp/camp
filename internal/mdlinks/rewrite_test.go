@@ -1,0 +1,278 @@
+package mdlinks
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatalf("MkdirAll(%s): %v", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("WriteFile(%s): %v", path, err)
+	}
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%s): %v", path, err)
+	}
+	return string(data)
+}
+
+func TestRewriteForMove_SingleFileMoved_InternalLinksUpdated(t *testing.T) {
+	root := t.TempDir()
+
+	other := filepath.Join(root, "docs", "other.md")
+	src := filepath.Join(root, "notes", "note.md")
+	dst := filepath.Join(root, "archive", "note.md")
+
+	writeFile(t, other, "hello")
+	writeFile(t, src, "[link](../docs/other.md)")
+
+	if err := os.MkdirAll(filepath.Join(root, "archive"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(src, dst); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RewriteForMove(context.Background(), root, src, dst); err != nil {
+		t.Fatalf("RewriteForMove: %v", err)
+	}
+
+	got := readFile(t, dst)
+	if got != "[link](../docs/other.md)" {
+		t.Errorf("internal link: got %q", got)
+	}
+}
+
+func TestRewriteForMove_SingleFileMoved_InternalLinksRewritten(t *testing.T) {
+	root := t.TempDir()
+
+	other := filepath.Join(root, "docs", "other.md")
+	src := filepath.Join(root, "notes", "note.md")
+	dst := filepath.Join(root, "archive", "2026-01-01", "note.md")
+
+	writeFile(t, other, "hello")
+	writeFile(t, src, "[link](../docs/other.md)")
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(src, dst); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RewriteForMove(context.Background(), root, src, dst); err != nil {
+		t.Fatalf("RewriteForMove: %v", err)
+	}
+
+	got := readFile(t, dst)
+	want := "[link](../../docs/other.md)"
+	if got != want {
+		t.Errorf("internal link after deep move: got %q, want %q", got, want)
+	}
+}
+
+func TestRewriteForMove_ExternalFileLinksToMoved_Updated(t *testing.T) {
+	root := t.TempDir()
+
+	src := filepath.Join(root, "notes", "note.md")
+	dst := filepath.Join(root, "archive", "2026-01-01", "note.md")
+	referrer := filepath.Join(root, "docs", "index.md")
+
+	writeFile(t, src, "# Note")
+	writeFile(t, referrer, "[see note](../notes/note.md)")
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(src, dst); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RewriteForMove(context.Background(), root, src, dst); err != nil {
+		t.Fatalf("RewriteForMove: %v", err)
+	}
+
+	got := readFile(t, referrer)
+	want := "[see note](../archive/2026-01-01/note.md)"
+	if got != want {
+		t.Errorf("external referrer: got %q, want %q", got, want)
+	}
+}
+
+func TestRewriteForMove_ExternalURLsUntouched(t *testing.T) {
+	root := t.TempDir()
+
+	src := filepath.Join(root, "notes", "note.md")
+	dst := filepath.Join(root, "archive", "note.md")
+	referrer := filepath.Join(root, "docs", "index.md")
+
+	writeFile(t, src, "# Note")
+	writeFile(t, referrer, "[ext](https://example.com) [local](../notes/note.md)")
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(src, dst); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RewriteForMove(context.Background(), root, src, dst); err != nil {
+		t.Fatalf("RewriteForMove: %v", err)
+	}
+
+	got := readFile(t, referrer)
+	want := "[ext](https://example.com) [local](../archive/note.md)"
+	if got != want {
+		t.Errorf("mixed links: got %q, want %q", got, want)
+	}
+}
+
+func TestRewriteForMove_AbsolutePathsUntouched(t *testing.T) {
+	root := t.TempDir()
+
+	src := filepath.Join(root, "notes", "note.md")
+	dst := filepath.Join(root, "archive", "note.md")
+	referrer := filepath.Join(root, "docs", "index.md")
+
+	writeFile(t, src, "# Note")
+	writeFile(t, referrer, "[abs](/absolute/path.md)")
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(src, dst); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RewriteForMove(context.Background(), root, src, dst); err != nil {
+		t.Fatalf("RewriteForMove: %v", err)
+	}
+
+	got := readFile(t, referrer)
+	want := "[abs](/absolute/path.md)"
+	if got != want {
+		t.Errorf("absolute link: got %q, want %q", got, want)
+	}
+}
+
+func TestRewriteForMove_AnchorsOnlyUntouched(t *testing.T) {
+	root := t.TempDir()
+
+	src := filepath.Join(root, "notes", "note.md")
+	dst := filepath.Join(root, "archive", "note.md")
+	referrer := filepath.Join(root, "docs", "index.md")
+
+	writeFile(t, src, "# Note")
+	writeFile(t, referrer, "[anchor](#section)")
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(src, dst); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RewriteForMove(context.Background(), root, src, dst); err != nil {
+		t.Fatalf("RewriteForMove: %v", err)
+	}
+
+	got := readFile(t, referrer)
+	want := "[anchor](#section)"
+	if got != want {
+		t.Errorf("anchor-only link: got %q, want %q", got, want)
+	}
+}
+
+func TestRewriteForMove_DirectoryMoved_AllMDFilesRewritten(t *testing.T) {
+	root := t.TempDir()
+
+	srcDir := filepath.Join(root, "project")
+	dstDir := filepath.Join(root, "archive", "project")
+
+	writeFile(t, filepath.Join(srcDir, "README.md"), "[link](../shared/guide.md)")
+	writeFile(t, filepath.Join(srcDir, "sub", "page.md"), "[link](../../shared/guide.md)")
+	writeFile(t, filepath.Join(root, "shared", "guide.md"), "guide")
+	referrer := filepath.Join(root, "docs", "index.md")
+	writeFile(t, referrer, "[proj readme](../project/README.md)")
+
+	if err := os.MkdirAll(filepath.Dir(dstDir), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(srcDir, dstDir); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RewriteForMove(context.Background(), root, srcDir, dstDir); err != nil {
+		t.Fatalf("RewriteForMove: %v", err)
+	}
+
+	readme := readFile(t, filepath.Join(dstDir, "README.md"))
+	wantReadme := "[link](../../shared/guide.md)"
+	if readme != wantReadme {
+		t.Errorf("moved README: got %q, want %q", readme, wantReadme)
+	}
+
+	page := readFile(t, filepath.Join(dstDir, "sub", "page.md"))
+	wantPage := "[link](../../../shared/guide.md)"
+	if page != wantPage {
+		t.Errorf("moved sub/page.md: got %q, want %q", page, wantPage)
+	}
+
+	gotReferrer := readFile(t, referrer)
+	wantReferrer := "[proj readme](../archive/project/README.md)"
+	if gotReferrer != wantReferrer {
+		t.Errorf("external referrer: got %q, want %q", gotReferrer, wantReferrer)
+	}
+}
+
+func TestRewriteForMove_ContextCancelled(t *testing.T) {
+	root := t.TempDir()
+
+	src := filepath.Join(root, "notes", "note.md")
+	dst := filepath.Join(root, "archive", "note.md")
+	writeFile(t, src, "# Note")
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(src, dst); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := RewriteForMove(ctx, root, src, dst)
+	if err == nil {
+		t.Fatal("expected error for cancelled context")
+	}
+}
+
+func TestIsRelative(t *testing.T) {
+	cases := []struct {
+		target string
+		want   bool
+	}{
+		{"relative/path.md", true},
+		{"../other.md", true},
+		{"https://example.com", false},
+		{"http://example.com", false},
+		{"/absolute/path.md", false},
+		{"#section", false},
+		{"", false},
+	}
+	for _, c := range cases {
+		if got := isRelative(c.target); got != c.want {
+			t.Errorf("isRelative(%q) = %v, want %v", c.target, got, c.want)
+		}
+	}
+}

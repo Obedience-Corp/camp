@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/mdlinks"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
 	"github.com/Obedience-Corp/camp/internal/statusmove"
 )
@@ -45,6 +46,10 @@ func (s *Service) MoveToDungeon(ctx context.Context, itemName, parentPath string
 			return camperrors.Wrapf(ErrAlreadyExists, "%s already in dungeon", itemName)
 		}
 		return camperrors.Wrapf(err, "moving %s to dungeon", itemName)
+	}
+
+	if err := mdlinks.RewriteForMove(ctx, s.campaignRoot, sourcePath, targetPath); err != nil {
+		return camperrors.Wrapf(err, "rewriting markdown links after moving %s", itemName)
 	}
 
 	return nil
@@ -101,6 +106,10 @@ func (s *Service) MoveToStatus(ctx context.Context, itemName, status string) (st
 		return "", camperrors.Wrapf(err, "moving %s to %s", itemName, status)
 	}
 
+	if err := mdlinks.RewriteForMove(ctx, s.campaignRoot, srcPath, dstPath); err != nil {
+		return "", camperrors.Wrapf(err, "rewriting markdown links after moving %s", itemName)
+	}
+
 	return dstPath, nil
 }
 
@@ -143,6 +152,10 @@ func (s *Service) MoveToDungeonStatus(ctx context.Context, itemName, parentPath,
 			return "", camperrors.Wrapf(ErrAlreadyExists, "%s already in %s/", itemName, status)
 		}
 		return "", camperrors.Wrapf(err, "moving %s to dungeon/%s", itemName, status)
+	}
+
+	if err := mdlinks.RewriteForMove(ctx, s.campaignRoot, sourcePath, targetPath); err != nil {
+		return "", camperrors.Wrapf(err, "rewriting markdown links after moving %s", itemName)
 	}
 
 	return targetPath, nil
