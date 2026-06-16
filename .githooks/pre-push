@@ -8,6 +8,13 @@
 # Consume stdin per githooks(5) pre-push contract.
 cat > /dev/null
 
+# Git hooks run with repository-local GIT_* variables set. The gate runs tests
+# that create and mutate temporary git repos, so those variables must not leak
+# into child git commands.
+if local_env_vars=$(git rev-parse --local-env-vars 2>/dev/null); then
+    unset $local_env_vars
+fi
+
 if [ "${CAMP_GATE_FULL:-0}" = "1" ]; then
     gate_cmd="just gate"
 elif [ "${CAMP_GATE_FAST:-0}" = "1" ]; then
