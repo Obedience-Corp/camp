@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -414,6 +415,39 @@ func TestRewriteForMove_ReferenceStyleDefinitionInCodeBlock_Unchanged(t *testing
 	want := "```\n[ref]: ../docs/other.md\n```\n\n[ref]: ../../docs/other.md"
 	if got != want {
 		t.Errorf("ref def in code block: got %q, want %q", got, want)
+	}
+}
+
+func TestRewriteForMove_RefDefInCodeBlockAfterInlineRewrites_Unchanged(t *testing.T) {
+	root := t.TempDir()
+
+	other := filepath.Join(root, "docs", "other.md")
+	src := filepath.Join(root, "notes", "note.md")
+	dst := filepath.Join(root, "a", "b", "c", "d", "e", "note.md")
+
+	writeFile(t, other, "hello")
+
+	links := strings.Repeat("[x](../docs/other.md) ", 6)
+	fenced := "```\n[ref]: ../docs/other.md\n```"
+	writeFile(t, src, links+"\n\n"+fenced+"\n")
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(src, dst); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RewriteForMove(context.Background(), root, src, dst); err != nil {
+		t.Fatalf("RewriteForMove: %v", err)
+	}
+
+	got := readFile(t, dst)
+	if !strings.Contains(got, fenced) {
+		t.Errorf("ref-def inside fenced code block was corrupted after preceding inline rewrites:\n%s", got)
+	}
+	if !strings.Contains(got, "../../../../../docs/other.md") {
+		t.Errorf("inline links outside the fence should have been rewritten:\n%s", got)
 	}
 }
 

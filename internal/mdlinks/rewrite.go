@@ -155,7 +155,7 @@ func rewriteLinksInContent(content []byte, oldBase, newBase, srcPath string) ([]
 		return append(label, []byte("("+newTarget+")")...)
 	})
 
-	result, refChanged := rewriteRefDefs(result, protected, func(target string) (string, bool) {
+	result, refChanged := rewriteRefDefs(result, protectedRanges(result), func(target string) (string, bool) {
 		return rewriteTarget(target, oldBase, newBase, srcPath)
 	})
 	if refChanged {
@@ -228,7 +228,7 @@ func rewriteExternalLinksToMoved(content []byte, fileDir, oldPath, newPath strin
 		return append(label, []byte("("+newTarget+")")...)
 	})
 
-	result, refChanged := rewriteRefDefs(result, protected, rewriteFn)
+	result, refChanged := rewriteRefDefs(result, protectedRanges(result), rewriteFn)
 	if refChanged {
 		changed = true
 	}
