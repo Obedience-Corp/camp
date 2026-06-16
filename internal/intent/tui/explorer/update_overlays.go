@@ -90,10 +90,13 @@ func (m Model) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			case "promote":
 				if m.pendingIntent != nil {
-					cmd := m.promoteToFestival(m.pendingIntent)
+					i := m.pendingIntent
 					m.pendingAction = ""
 					m.pendingIntent = nil
-					return m, cmd
+					m.focus = focusPromoteTarget
+					m.promoteTargetIdx = 0
+					m.promoteTargetIntent = i
+					return m, nil
 				}
 			case "promote-ready":
 				if m.pendingIntent != nil {
