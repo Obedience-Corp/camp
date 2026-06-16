@@ -530,6 +530,9 @@ just gate        # full matrix: gate-fast plus stable unit tests
 Every release recipe runs `just gate` before tagging, so releases are always
 gated. There is no pre-push hook; run a gate when you want a signal.
 
+If you previously ran `just hooks-install`, run `git config --unset core.hooksPath`
+once to fully revert that local setting, it now points at a removed directory.
+
 ## Part of Festival
 
 Camp is one half of [Festival](https://github.com/Obedience-Corp/festival), the current product from [Obedience Corp](https://github.com/Obedience-Corp).
