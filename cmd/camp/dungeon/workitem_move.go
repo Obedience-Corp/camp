@@ -24,6 +24,7 @@ type DungeonMoveCommit struct {
 	Description      string
 	SourcePaths      []string
 	DestinationPaths []string
+	RewrittenFiles   []string
 }
 
 type resolvedWorkitemDungeonTarget struct {
@@ -90,6 +91,7 @@ func moveWorkitemToDungeon(ctx context.Context, cmd *cobra.Command, target, stat
 		Description:      description,
 		SourcePaths:      []string{resolved.SourcePath},
 		DestinationPaths: destinationPaths,
+		RewrittenFiles:   svc.RewrittenLinkFiles(),
 	}, nil
 }
 

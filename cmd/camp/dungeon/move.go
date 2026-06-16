@@ -165,6 +165,7 @@ func runDungeonMove(cmd *cobra.Command, args []string) error {
 		Description:      description,
 		SourcePaths:      sourcePaths,
 		DestinationPaths: destinationPaths,
+		RewrittenFiles:   svc.RewrittenLinkFiles(),
 	})
 }
 
@@ -179,6 +180,7 @@ type DungeonMoveCommitOutcome struct {
 func StageAndCommitDungeonMove(ctx context.Context, move *DungeonMoveCommit) *DungeonMoveCommitOutcome {
 	outcome := &DungeonMoveCommitOutcome{}
 	files := commit.NormalizeFiles(move.CampaignRoot, move.DestinationPaths...)
+	files = append(files, commit.NormalizeFiles(move.CampaignRoot, move.RewrittenFiles...)...)
 	preStaged, err := stageTrackedMoveSourceDeletions(ctx, move.CampaignRoot, move.SourcePaths)
 	if err != nil {
 		outcome.StagingErr = err

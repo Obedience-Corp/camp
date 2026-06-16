@@ -4,17 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
-	"text/tabwriter"
 	"time"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/table"
+	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/paths"
+	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/Obedience-Corp/camp/internal/worktree"
-	"github.com/spf13/cobra"
 )
 
 const WorktreesListJSONVersion = "worktrees-list/v1alpha1"
@@ -286,37 +289,46 @@ func outputListTable(result *WorktreeListResult) error {
 		return nil
 	}
 
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.CategoryColor)
 
-	currentProject := ""
+	staleStyle := lipgloss.NewStyle().Foreground(ui.WarningColor)
+
+	headers := []string{"PROJECT", "NAME", "BRANCH", "LAST ACCESSED", "STATUS"}
+	rows := make([][]string, 0, len(result.Worktrees))
+
 	for _, wt := range result.Worktrees {
-		if wt.Project != currentProject {
-			if currentProject != "" {
-				fmt.Fprintln(w)
-			}
-			fmt.Fprintf(w, "%s/\n", wt.Project)
-			currentProject = wt.Project
-		}
-
 		status := ""
 		if wt.Stale {
-			status = " [stale]"
+			status = staleStyle.Render("stale")
+			if wt.StaleReason != "" {
+				status = staleStyle.Render("stale: " + wt.StaleReason)
+			}
 		}
-
-		fmt.Fprintf(w, "  ├── %s\t%s\t%s%s\n",
+		rows = append(rows, []string{
+			wt.Project,
 			wt.Name,
 			wt.Branch,
 			wt.LastAccessed,
 			status,
-		)
+		})
 	}
 
-	fmt.Fprintln(w)
-	fmt.Fprintf(w, "Total: %d worktrees", result.Total)
+	t := table.New().
+		Border(lipgloss.HiddenBorder()).
+		Headers(headers...).
+		Rows(rows...).
+		StyleFunc(func(row, col int) lipgloss.Style {
+			if row == table.HeaderRow {
+				return headerStyle
+			}
+			return lipgloss.NewStyle()
+		})
+
+	fmt.Println(t)
+	summary := fmt.Sprintf("\n%d worktree(s)", result.Total)
 	if result.StaleCount > 0 {
-		fmt.Fprintf(w, " (%d stale)", result.StaleCount)
+		summary += fmt.Sprintf(" (%d stale)", result.StaleCount)
 	}
-	fmt.Fprintln(w)
-
-	return w.Flush()
+	fmt.Println(summary)
+	return nil
 }

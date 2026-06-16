@@ -767,3 +767,50 @@ func TestValidateStatusName(t *testing.T) {
 		})
 	}
 }
+
+func TestService_MoveToStatus_ExternalLinkRewriteFlowsIntoCommit(t *testing.T) {
+	root := t.TempDir()
+	dungeonPath := filepath.Join(root, "dungeon")
+	if err := os.MkdirAll(dungeonPath, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dungeonPath, "myitem.md"), []byte("# Item\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "notes"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "notes", "index.md"), []byte("see [item](../dungeon/myitem.md)\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := NewService(root, dungeonPath)
+	dst, err := svc.MoveToStatus(context.Background(), "myitem.md", "completed")
+	if err != nil {
+		t.Fatalf("MoveToStatus: %v", err)
+	}
+
+	rewritten := svc.RewrittenLinkFiles()
+	if !sliceContains(rewritten, "notes/index.md") {
+		t.Fatalf("RewrittenLinkFiles() = %v, want it to include notes/index.md", rewritten)
+	}
+
+	relDst, err := filepath.Rel(root, dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary := &CrawlSummary{MovedItems: map[string][]string{"completed": {filepath.ToSlash(relDst)}}}
+	paths := CrawlCommitPaths("dungeon", rewritten, summary)
+	if !sliceContains(paths, "notes/index.md") {
+		t.Fatalf("CrawlCommitPaths() = %v, want it to include the rewritten external file notes/index.md", paths)
+	}
+}
+
+func sliceContains(s []string, want string) bool {
+	for _, v := range s {
+		if v == want {
+			return true
+		}
+	}
+	return false
+}

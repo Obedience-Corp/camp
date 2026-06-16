@@ -476,6 +476,91 @@ func TestCrawl(t *testing.T) {
 	}
 }
 
+func TestNewCrawlID_UniqueAndHex(t *testing.T) {
+	id1, err := NewCrawlID()
+	if err != nil {
+		t.Fatalf("NewCrawlID() error = %v", err)
+	}
+	id2, err := NewCrawlID()
+	if err != nil {
+		t.Fatalf("NewCrawlID() error = %v", err)
+	}
+	if len(id1) != crawlIDLen*2 {
+		t.Errorf("crawl ID length = %d, want %d", len(id1), crawlIDLen*2)
+	}
+	for _, c := range id1 {
+		if !strings.ContainsRune("0123456789abcdef", c) {
+			t.Errorf("crawl ID %q contains non-hex character %q", id1, c)
+		}
+	}
+	if id1 == id2 {
+		t.Errorf("two consecutive NewCrawlID() calls returned identical IDs: %q", id1)
+	}
+}
+
+func TestCrawl_WithCrawlIDInSubject(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	if err := exec.Command("git", "-C", tmpDir, "init").Run(); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.email", "test@test.com").Run(); err != nil {
+		t.Fatalf("failed to configure git email: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.name", "Test").Run(); err != nil {
+		t.Fatalf("failed to configure git name: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(tmpDir, "a.txt"), []byte("x"), 0644); err != nil {
+		t.Fatalf("failed to create file: %v", err)
+	}
+
+	crawlID, err := NewCrawlID()
+	if err != nil {
+		t.Fatalf("NewCrawlID() error = %v", err)
+	}
+
+	result := Crawl(context.Background(), CrawlOptions{
+		Options: Options{
+			CampaignRoot: tmpDir,
+			CampaignID:   "test1234",
+		},
+		CrawlID:     crawlID,
+		Description: "one item moved",
+	})
+	if !result.Committed {
+		t.Fatalf("expected commit to succeed, got message: %s", result.Message)
+	}
+
+	out, err := exec.Command("git", "-C", tmpDir, "log", "-1", "--format=%s").Output()
+	if err != nil {
+		t.Fatalf("failed to get git log: %v", err)
+	}
+	subject := strings.TrimSpace(string(out))
+	if !strings.Contains(subject, "Crawl:") {
+		t.Errorf("subject missing Crawl: prefix: %q", subject)
+	}
+	if !strings.Contains(subject, "[CW-"+crawlID+"]") {
+		t.Errorf("subject missing crawl ID [CW-%s]: %q", crawlID, subject)
+	}
+}
+
+func TestIntentCrawlSubject_WithAndWithoutID(t *testing.T) {
+	tests := []struct {
+		crawlID string
+		want    string
+	}{
+		{"", "intent crawl completed"},
+		{"abc123", "intent crawl completed [CW-abc123]"},
+	}
+	for _, tt := range tests {
+		got := IntentCrawlSubject(tt.crawlID)
+		if got != tt.want {
+			t.Errorf("IntentCrawlSubject(%q) = %q, want %q", tt.crawlID, got, tt.want)
+		}
+	}
+}
+
 func TestCrawl_SelectiveStaging(t *testing.T) {
 	tmpDir := t.TempDir()
 

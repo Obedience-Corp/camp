@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -255,6 +257,65 @@ func TestSwitchTabCompletionFuzzy(t *testing.T) {
 	}
 }
 
+func TestResolveTabInCampaign(t *testing.T) {
+	root, campaign := newTestCampaignDir(t, "tab-campaign")
+
+	tests := []struct {
+		name        string
+		tabKey      string
+		wantSuffix  string
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:       "p resolves to projects/",
+			tabKey:     "p",
+			wantSuffix: "projects",
+		},
+		{
+			name:       "f resolves to festivals/",
+			tabKey:     "f",
+			wantSuffix: "festivals",
+		},
+		{
+			name:       "d resolves to docs/",
+			tabKey:     "d",
+			wantSuffix: "docs",
+		},
+		{
+			name:        "unknown tab returns error",
+			tabKey:      "zzz-no-such-tab",
+			wantErr:     true,
+			errContains: "not found",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			got, err := resolveTabInCampaign(ctx, campaign, tt.tabKey)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error for tab %q, got path %q", tt.tabKey, got)
+				}
+				if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
+					t.Errorf("error %q does not contain %q", err.Error(), tt.errContains)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("resolveTabInCampaign(%q): %v", tt.tabKey, err)
+			}
+			if !strings.HasPrefix(got, root) {
+				t.Errorf("path %q does not start with campaign root %q", got, root)
+			}
+			if !strings.HasSuffix(got, tt.wantSuffix) {
+				t.Errorf("path %q does not end with %q", got, tt.wantSuffix)
+			}
+		})
+	}
+}
+
 func TestSwitchContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -262,5 +323,96 @@ func TestSwitchContextCancellation(t *testing.T) {
 	_, err := config.LoadRegistry(ctx)
 	if err == nil {
 		t.Fatal("expected error for cancelled context")
+	}
+}
+
+func newTestCampaignDir(t *testing.T, name string) (string, config.RegisteredCampaign) {
+	t.Helper()
+	root := t.TempDir()
+	cfg := &config.CampaignConfig{
+		ID:        name + "-id",
+		Name:      name,
+		Type:      config.CampaignTypeProduct,
+		CreatedAt: time.Now(),
+	}
+	if err := config.SaveCampaignConfig(context.Background(), root, cfg); err != nil {
+		t.Fatalf("save campaign config: %v", err)
+	}
+	c := config.RegisteredCampaign{
+		ID:   name + "-id",
+		Name: name,
+		Path: root,
+		Type: "product",
+	}
+	return root, c
+}
+
+func TestCompleteSwitchTabs(t *testing.T) {
+	_, campaign := newTestCampaignDir(t, "test-campaign")
+	reg := newTestRegistry(campaign)
+
+	tests := []struct {
+		name          string
+		campaignQuery string
+		tabPrefix     string
+		wantContains  []string
+		wantEmpty     bool
+	}{
+		{
+			name:          "exact campaign no prefix returns default tabs",
+			campaignQuery: "test-campaign",
+			tabPrefix:     "",
+			wantContains:  []string{"p", "f", "d", "w"},
+		},
+		{
+			name:          "tab prefix filters to matching tabs",
+			campaignQuery: "test-campaign",
+			tabPrefix:     "d",
+			wantContains:  []string{"d", "de", "du", "docs"},
+		},
+		{
+			name:          "fuzzy campaign name resolves and returns tabs",
+			campaignQuery: "test",
+			tabPrefix:     "",
+			wantContains:  []string{"p", "f"},
+		},
+		{
+			name:          "unknown campaign returns empty",
+			campaignQuery: "does-not-exist",
+			tabPrefix:     "",
+			wantEmpty:     true,
+		},
+		{
+			name:          "tab prefix with no matches returns empty",
+			campaignQuery: "test-campaign",
+			tabPrefix:     "zzz",
+			wantEmpty:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			got := completeSwitchTabs(ctx, reg, tt.campaignQuery, tt.tabPrefix)
+			if tt.wantEmpty {
+				if len(got) != 0 {
+					t.Errorf("expected empty result, got %v", got)
+				}
+				return
+			}
+			sort.Strings(got)
+			for _, want := range tt.wantContains {
+				found := false
+				for _, g := range got {
+					if g == want {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("completeSwitchTabs(%q, %q): missing %q in %v", tt.campaignQuery, tt.tabPrefix, want, got)
+				}
+			}
+		})
 	}
 }
