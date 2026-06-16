@@ -9,6 +9,7 @@ import (
 	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/fsutil"
 )
 
 // Rename updates an intent's title and regenerates its human-readable filename
@@ -57,7 +58,7 @@ func (s *IntentService) Rename(ctx context.Context, id, newTitle string) (*Inten
 
 	if newPath == oldPath {
 		// Slug unchanged: rewrite in place.
-		if err := os.WriteFile(oldPath, data, 0644); err != nil {
+		if err := fsutil.WriteFileAtomically(oldPath, data, 0644); err != nil {
 			return nil, camperrors.Wrap(err, "writing renamed intent")
 		}
 		it.Path = oldPath
@@ -65,7 +66,7 @@ func (s *IntentService) Rename(ctx context.Context, id, newTitle string) (*Inten
 		return it, nil
 	}
 
-	if err := os.WriteFile(newPath, data, 0644); err != nil {
+	if err := fsutil.WriteFileAtomically(newPath, data, 0644); err != nil {
 		return nil, camperrors.Wrap(err, "writing renamed intent")
 	}
 	if err := os.Remove(oldPath); err != nil {
