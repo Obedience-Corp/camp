@@ -135,9 +135,11 @@ func (s *Service) MoveToDocs(ctx context.Context, itemName, parentPath, destinat
 		return "", camperrors.Wrapf(err, "moving %s to docs/%s", itemName, destination)
 	}
 
-	if err := mdlinks.RewriteForMove(ctx, s.campaignRoot, sourcePath, movedPath); err != nil {
+	rewritten, err := mdlinks.RewriteForMove(ctx, s.campaignRoot, sourcePath, movedPath)
+	if err != nil {
 		return "", camperrors.Wrapf(err, "rewriting markdown links after moving %s", itemName)
 	}
+	s.recordRewrittenLinkFiles(rewritten)
 
 	return movedPath, nil
 }

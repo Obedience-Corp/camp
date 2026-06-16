@@ -159,7 +159,7 @@ func TestCrawlCommitPaths(t *testing.T) {
 		},
 	}
 
-	got := intdungeon.CrawlCommitPaths("workflow/design/dungeon", summary)
+	got := intdungeon.CrawlCommitPaths("workflow/design/dungeon", nil, summary)
 	want := []string{
 		"docs/api/routed.md",
 		"workflow/design/dungeon/completed/2026-03-15/finished.md",

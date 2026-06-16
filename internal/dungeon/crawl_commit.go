@@ -20,7 +20,7 @@ type CrawlCommitPlan struct {
 
 // PrepareCrawlCommit builds the file list and stages tracked source deletions
 // for a crawl auto-commit. It returns nil when the summaries contain no moves.
-func PrepareCrawlCommit(ctx context.Context, campaignRoot, parentPath, dungeonPath string, triage, inner *CrawlSummary) (*CrawlCommitPlan, error) {
+func PrepareCrawlCommit(ctx context.Context, campaignRoot, parentPath, dungeonPath string, rewrittenFiles []string, triage, inner *CrawlSummary) (*CrawlCommitPlan, error) {
 	hasMoves := (triage != nil && triage.HasMoves()) || (inner != nil && inner.HasMoves())
 	if !hasMoves {
 		return nil, nil
@@ -33,7 +33,7 @@ func PrepareCrawlCommit(ctx context.Context, campaignRoot, parentPath, dungeonPa
 		relDungeon = dungeonPath
 	}
 
-	files := CrawlCommitPaths(relDungeon, triage, inner)
+	files := CrawlCommitPaths(relDungeon, rewrittenFiles, triage, inner)
 	preStaged, err := stageTrackedCrawlSourceDeletions(
 		ctx,
 		campaignRoot,
@@ -141,10 +141,15 @@ func populateMovedPaths(ps *crawlPathSet, summaries ...*CrawlSummary) {
 }
 
 // CrawlCommitPaths returns the full set of paths to include in a crawl auto-commit:
-// destination paths for moved items, plus the crawl log.
-func CrawlCommitPaths(relDungeon string, summaries ...*CrawlSummary) []string {
+// destination paths for moved items, any files whose markdown links were rewritten
+// by the move, plus the crawl log.
+func CrawlCommitPaths(relDungeon string, rewrittenFiles []string, summaries ...*CrawlSummary) []string {
 	ps := newCrawlPathSet()
 	populateMovedPaths(ps, summaries...)
+
+	for _, f := range rewrittenFiles {
+		ps.appendSafe(f)
+	}
 
 	// Always include the crawl log.
 	ps.appendSafe(filepath.Join(relDungeon, "crawl.jsonl"))

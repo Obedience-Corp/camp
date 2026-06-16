@@ -44,7 +44,7 @@ func TestRewriteForMove_SingleFileMoved_InternalLinksUpdated(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := RewriteForMove(context.Background(), root, src, dst); err != nil {
+	if _, err := RewriteForMove(context.Background(), root, src, dst); err != nil {
 		t.Fatalf("RewriteForMove: %v", err)
 	}
 
@@ -71,7 +71,7 @@ func TestRewriteForMove_SingleFileMoved_InternalLinksRewritten(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := RewriteForMove(context.Background(), root, src, dst); err != nil {
+	if _, err := RewriteForMove(context.Background(), root, src, dst); err != nil {
 		t.Fatalf("RewriteForMove: %v", err)
 	}
 
@@ -99,7 +99,7 @@ func TestRewriteForMove_ExternalFileLinksToMoved_Updated(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := RewriteForMove(context.Background(), root, src, dst); err != nil {
+	if _, err := RewriteForMove(context.Background(), root, src, dst); err != nil {
 		t.Fatalf("RewriteForMove: %v", err)
 	}
 
@@ -107,6 +107,43 @@ func TestRewriteForMove_ExternalFileLinksToMoved_Updated(t *testing.T) {
 	want := "[see note](../archive/2026-01-01/note.md)"
 	if got != want {
 		t.Errorf("external referrer: got %q, want %q", got, want)
+	}
+}
+
+func TestRewriteForMove_ReturnsModifiedFiles(t *testing.T) {
+	root := t.TempDir()
+
+	src := filepath.Join(root, "notes", "note.md")
+	dst := filepath.Join(root, "archive", "note.md")
+	referrer := filepath.Join(root, "docs", "index.md")
+
+	writeFile(t, src, "# Note\n")
+	writeFile(t, referrer, "[see note](../notes/note.md)\n")
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(src, dst); err != nil {
+		t.Fatal(err)
+	}
+
+	modified, err := RewriteForMove(context.Background(), root, src, dst)
+	if err != nil {
+		t.Fatalf("RewriteForMove: %v", err)
+	}
+
+	const wantExternal = "docs/index.md"
+	found := false
+	for _, p := range modified {
+		if filepath.IsAbs(p) {
+			t.Errorf("modified path %q is absolute, want campaign-relative", p)
+		}
+		if p == wantExternal {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("RewriteForMove returned %v, want it to include rewritten external file %q", modified, wantExternal)
 	}
 }
 
@@ -127,7 +164,7 @@ func TestRewriteForMove_ExternalURLsUntouched(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := RewriteForMove(context.Background(), root, src, dst); err != nil {
+	if _, err := RewriteForMove(context.Background(), root, src, dst); err != nil {
 		t.Fatalf("RewriteForMove: %v", err)
 	}
 
@@ -155,7 +192,7 @@ func TestRewriteForMove_AbsolutePathsUntouched(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := RewriteForMove(context.Background(), root, src, dst); err != nil {
+	if _, err := RewriteForMove(context.Background(), root, src, dst); err != nil {
 		t.Fatalf("RewriteForMove: %v", err)
 	}
 
@@ -183,7 +220,7 @@ func TestRewriteForMove_AnchorsOnlyUntouched(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := RewriteForMove(context.Background(), root, src, dst); err != nil {
+	if _, err := RewriteForMove(context.Background(), root, src, dst); err != nil {
 		t.Fatalf("RewriteForMove: %v", err)
 	}
 
@@ -213,7 +250,7 @@ func TestRewriteForMove_DirectoryMoved_AllMDFilesRewritten(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := RewriteForMove(context.Background(), root, srcDir, dstDir); err != nil {
+	if _, err := RewriteForMove(context.Background(), root, srcDir, dstDir); err != nil {
 		t.Fatalf("RewriteForMove: %v", err)
 	}
 
@@ -255,7 +292,7 @@ func TestRewriteForMove_DirectoryMoved_IntraDirectoryLinksUnchanged(t *testing.T
 		t.Fatal(err)
 	}
 
-	if err := RewriteForMove(context.Background(), root, srcDir, dstDir); err != nil {
+	if _, err := RewriteForMove(context.Background(), root, srcDir, dstDir); err != nil {
 		t.Fatalf("RewriteForMove: %v", err)
 	}
 
@@ -294,7 +331,7 @@ func TestRewriteForMove_LinkInFencedCodeBlock_Unchanged(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := RewriteForMove(context.Background(), root, src, dst); err != nil {
+	if _, err := RewriteForMove(context.Background(), root, src, dst); err != nil {
 		t.Fatalf("RewriteForMove: %v", err)
 	}
 
@@ -323,7 +360,7 @@ func TestRewriteForMove_LinkInInlineCode_Unchanged(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := RewriteForMove(context.Background(), root, src, dst); err != nil {
+	if _, err := RewriteForMove(context.Background(), root, src, dst); err != nil {
 		t.Fatalf("RewriteForMove: %v", err)
 	}
 
@@ -351,7 +388,7 @@ func TestRewriteForMove_AngleBracketDestination(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := RewriteForMove(context.Background(), root, src, dst); err != nil {
+	if _, err := RewriteForMove(context.Background(), root, src, dst); err != nil {
 		t.Fatalf("RewriteForMove: %v", err)
 	}
 
@@ -379,7 +416,7 @@ func TestRewriteForMove_ReferenceStyleDefinition(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := RewriteForMove(context.Background(), root, src, dst); err != nil {
+	if _, err := RewriteForMove(context.Background(), root, src, dst); err != nil {
 		t.Fatalf("RewriteForMove: %v", err)
 	}
 
@@ -407,7 +444,7 @@ func TestRewriteForMove_ReferenceStyleDefinitionInCodeBlock_Unchanged(t *testing
 		t.Fatal(err)
 	}
 
-	if err := RewriteForMove(context.Background(), root, src, dst); err != nil {
+	if _, err := RewriteForMove(context.Background(), root, src, dst); err != nil {
 		t.Fatalf("RewriteForMove: %v", err)
 	}
 
@@ -438,7 +475,7 @@ func TestRewriteForMove_RefDefInCodeBlockAfterInlineRewrites_Unchanged(t *testin
 		t.Fatal(err)
 	}
 
-	if err := RewriteForMove(context.Background(), root, src, dst); err != nil {
+	if _, err := RewriteForMove(context.Background(), root, src, dst); err != nil {
 		t.Fatalf("RewriteForMove: %v", err)
 	}
 
@@ -467,7 +504,7 @@ func TestRewriteForMove_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := RewriteForMove(ctx, root, src, dst)
+	_, err := RewriteForMove(ctx, root, src, dst)
 	if err == nil {
 		t.Fatal("expected error for cancelled context")
 	}

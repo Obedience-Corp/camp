@@ -48,9 +48,11 @@ func (s *Service) MoveToDungeon(ctx context.Context, itemName, parentPath string
 		return camperrors.Wrapf(err, "moving %s to dungeon", itemName)
 	}
 
-	if err := mdlinks.RewriteForMove(ctx, s.campaignRoot, sourcePath, targetPath); err != nil {
+	rewritten, err := mdlinks.RewriteForMove(ctx, s.campaignRoot, sourcePath, targetPath)
+	if err != nil {
 		return camperrors.Wrapf(err, "rewriting markdown links after moving %s", itemName)
 	}
+	s.recordRewrittenLinkFiles(rewritten)
 
 	return nil
 }
@@ -106,9 +108,11 @@ func (s *Service) MoveToStatus(ctx context.Context, itemName, status string) (st
 		return "", camperrors.Wrapf(err, "moving %s to %s", itemName, status)
 	}
 
-	if err := mdlinks.RewriteForMove(ctx, s.campaignRoot, srcPath, dstPath); err != nil {
+	rewritten, err := mdlinks.RewriteForMove(ctx, s.campaignRoot, srcPath, dstPath)
+	if err != nil {
 		return "", camperrors.Wrapf(err, "rewriting markdown links after moving %s", itemName)
 	}
+	s.recordRewrittenLinkFiles(rewritten)
 
 	return dstPath, nil
 }
@@ -154,9 +158,11 @@ func (s *Service) MoveToDungeonStatus(ctx context.Context, itemName, parentPath,
 		return "", camperrors.Wrapf(err, "moving %s to dungeon/%s", itemName, status)
 	}
 
-	if err := mdlinks.RewriteForMove(ctx, s.campaignRoot, sourcePath, targetPath); err != nil {
+	rewritten, err := mdlinks.RewriteForMove(ctx, s.campaignRoot, sourcePath, targetPath)
+	if err != nil {
 		return "", camperrors.Wrapf(err, "rewriting markdown links after moving %s", itemName)
 	}
+	s.recordRewrittenLinkFiles(rewritten)
 
 	return targetPath, nil
 }

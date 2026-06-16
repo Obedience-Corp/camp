@@ -155,7 +155,7 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 	displayCrawlSummary(fmt.Sprintf("%s Crawl complete!\n", ui.SuccessIcon()), triageSummary, innerSummary)
 
 	// Autocommit if anything was moved
-	if err := commitCrawlChanges(ctx, cmdCtx, triageSummary, innerSummary); err != nil {
+	if err := commitCrawlChanges(ctx, cmdCtx, svc, triageSummary, innerSummary); err != nil {
 		return err
 	}
 
@@ -163,8 +163,8 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 }
 
 // commitCrawlChanges creates a git commit if any items were moved during crawl.
-func commitCrawlChanges(ctx context.Context, cmdCtx *dungeonCommandContext, triage, inner *intdungeon.CrawlSummary) error {
-	plan, err := intdungeon.PrepareCrawlCommit(ctx, cmdCtx.CampaignRoot, cmdCtx.Dungeon.ParentPath, cmdCtx.Dungeon.DungeonPath, triage, inner)
+func commitCrawlChanges(ctx context.Context, cmdCtx *dungeonCommandContext, svc *intdungeon.Service, triage, inner *intdungeon.CrawlSummary) error {
+	plan, err := intdungeon.PrepareCrawlCommit(ctx, cmdCtx.CampaignRoot, cmdCtx.Dungeon.ParentPath, cmdCtx.Dungeon.DungeonPath, svc.RewrittenLinkFiles(), triage, inner)
 	if err != nil {
 		return err
 	}

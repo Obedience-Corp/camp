@@ -148,6 +148,7 @@ func runPromote(cmd *cobra.Command, args []string) error {
 			Description:      description,
 			SourcePaths:      []string{loc.SourcePath},
 			DestinationPaths: destinationPaths,
+			RewrittenFiles:   svc.RewrittenLinkFiles(),
 		})
 		dungeoncmd.PrintDungeonMoveOutcome(textOut, outcome)
 		result.Committed = outcome.Committed

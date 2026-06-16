@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -14,9 +15,9 @@ import (
 )
 
 var (
-	mdLinkRe    = regexp.MustCompile(`(!?\[(?:[^\[\]]*|\[[^\[\]]*\])*\])\(([^)]+)\)`)
-	mdRefDefRe  = regexp.MustCompile(`(?m)^(\[[^\[\]]+\]:\s+)(<[^>]*>|\S+)((?:\s+"[^"]*"|\s+'[^']*'|\s+\([^)]*\))?)`)
-	fencedRe    = regexp.MustCompile("(?s)```[^\n]*\n.*?```|~~~[^\n]*\n.*?~~~")
+	mdLinkRe     = regexp.MustCompile(`(!?\[(?:[^\[\]]*|\[[^\[\]]*\])*\])\(([^)]+)\)`)
+	mdRefDefRe   = regexp.MustCompile(`(?m)^(\[[^\[\]]+\]:\s+)(<[^>]*>|\S+)((?:\s+"[^"]*"|\s+'[^']*'|\s+\([^)]*\))?)`)
+	fencedRe     = regexp.MustCompile("(?s)```[^\n]*\n.*?```|~~~[^\n]*\n.*?~~~")
 	inlineCodeRe = regexp.MustCompile("`+[^`]+`+")
 )
 
@@ -344,40 +345,77 @@ func collectMDFilesUnder(root string) ([]string, error) {
 	return collectMDFiles(root)
 }
 
-func rewriteFile(path string, rewriteFn func([]byte) ([]byte, bool)) error {
+func rewriteFile(path string, rewriteFn func([]byte) ([]byte, bool)) (bool, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return camperrors.Wrap(err, "reading file")
+		return false, camperrors.Wrap(err, "reading file")
 	}
 	updated, changed := rewriteFn(content)
 	if !changed {
-		return nil
+		return false, nil
 	}
 	if err := fsutil.WriteFileAtomically(path, updated, 0644); err != nil {
-		return camperrors.Wrap(err, "writing file")
+		return false, camperrors.Wrap(err, "writing file")
 	}
-	return nil
+	return true, nil
 }
 
-func RewriteForMove(ctx context.Context, campaignRoot, srcPath, dstPath string) error {
+// modifiedFileSet accumulates campaign-root-relative, slash-separated paths of
+// files a rewrite actually modified, deduplicated and sorted on read.
+type modifiedFileSet struct {
+	campaignRoot string
+	seen         map[string]struct{}
+	paths        []string
+}
+
+func newModifiedFileSet(campaignRoot string) *modifiedFileSet {
+	return &modifiedFileSet{campaignRoot: campaignRoot, seen: make(map[string]struct{})}
+}
+
+func (m *modifiedFileSet) add(absPath string) {
+	rel, err := filepath.Rel(m.campaignRoot, absPath)
+	if err != nil {
+		rel = absPath
+	}
+	rel = filepath.ToSlash(rel)
+	if _, ok := m.seen[rel]; ok {
+		return
+	}
+	m.seen[rel] = struct{}{}
+	m.paths = append(m.paths, rel)
+}
+
+func (m *modifiedFileSet) sorted() []string {
+	sort.Strings(m.paths)
+	return m.paths
+}
+
+// RewriteForMove updates relative markdown links after a file or directory is
+// moved from srcPath to dstPath, rewriting both the moved files' own links and
+// links in other campaign files that pointed at the moved item. It returns the
+// campaign-root-relative, slash-separated paths of every file it modified, so
+// callers can stage them into the same commit as the move.
+func RewriteForMove(ctx context.Context, campaignRoot, srcPath, dstPath string) ([]string, error) {
 	if err := ctx.Err(); err != nil {
-		return camperrors.Wrap(err, "context cancelled")
+		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
 	srcPath = filepath.Clean(srcPath)
 	dstPath = filepath.Clean(dstPath)
 
 	if srcPath == dstPath {
-		return nil
+		return nil, nil
 	}
 
 	movedMD, err := collectMDFilesUnder(dstPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil
+			return nil, nil
 		}
-		return camperrors.Wrap(err, "collecting moved md files")
+		return nil, camperrors.Wrap(err, "collecting moved md files")
 	}
+
+	modified := newModifiedFileSet(campaignRoot)
 
 	movedSet := make(map[string]struct{}, len(movedMD))
 	for _, f := range movedMD {
@@ -386,39 +424,47 @@ func RewriteForMove(ctx context.Context, campaignRoot, srcPath, dstPath string) 
 
 	for _, mdFile := range movedMD {
 		if err := ctx.Err(); err != nil {
-			return camperrors.Wrap(err, "context cancelled")
+			return nil, camperrors.Wrap(err, "context cancelled")
 		}
 		oldBase := filepath.Dir(filepath.Join(srcPath, strings.TrimPrefix(mdFile, dstPath)))
 		newBase := filepath.Dir(mdFile)
 		if oldBase == newBase {
 			continue
 		}
-		if err := rewriteFile(mdFile, func(b []byte) ([]byte, bool) {
+		changed, err := rewriteFile(mdFile, func(b []byte) ([]byte, bool) {
 			return rewriteLinksInContent(b, oldBase, newBase, srcPath)
-		}); err != nil {
-			return camperrors.Wrapf(err, "rewriting links in %s", mdFile)
+		})
+		if err != nil {
+			return nil, camperrors.Wrapf(err, "rewriting links in %s", mdFile)
+		}
+		if changed {
+			modified.add(mdFile)
 		}
 	}
 
 	allMD, err := collectMDFiles(campaignRoot)
 	if err != nil {
-		return camperrors.Wrap(err, "collecting campaign md files")
+		return nil, camperrors.Wrap(err, "collecting campaign md files")
 	}
 
 	for _, mdFile := range allMD {
 		if err := ctx.Err(); err != nil {
-			return camperrors.Wrap(err, "context cancelled")
+			return nil, camperrors.Wrap(err, "context cancelled")
 		}
 		if _, isMoved := movedSet[mdFile]; isMoved {
 			continue
 		}
 		fileDir := filepath.Dir(mdFile)
-		if err := rewriteFile(mdFile, func(b []byte) ([]byte, bool) {
+		changed, err := rewriteFile(mdFile, func(b []byte) ([]byte, bool) {
 			return rewriteExternalLinksToMoved(b, fileDir, srcPath, dstPath)
-		}); err != nil {
-			return camperrors.Wrapf(err, "rewriting external links in %s", mdFile)
+		})
+		if err != nil {
+			return nil, camperrors.Wrapf(err, "rewriting external links in %s", mdFile)
+		}
+		if changed {
+			modified.add(mdFile)
 		}
 	}
 
-	return nil
+	return modified.sorted(), nil
 }

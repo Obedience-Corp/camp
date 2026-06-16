@@ -3,6 +3,7 @@ package dungeon
 import (
 	"errors"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -32,6 +33,8 @@ var systemFiles = map[string]bool{
 type Service struct {
 	campaignRoot string
 	dungeonPath  string
+
+	rewrittenLinkFiles []string
 }
 
 // NewService creates a new dungeon Service.
@@ -63,6 +66,30 @@ func (s *Service) Path() string {
 // ArchivedPath returns the full path to the archived directory.
 func (s *Service) ArchivedPath() string {
 	return filepath.Join(s.dungeonPath, "archived")
+}
+
+func (s *Service) recordRewrittenLinkFiles(paths []string) {
+	s.rewrittenLinkFiles = append(s.rewrittenLinkFiles, paths...)
+}
+
+// RewrittenLinkFiles returns the deduplicated, sorted campaign-relative paths of
+// files whose markdown links were rewritten by moves on this Service, for the
+// caller to stage into the same commit as the move.
+func (s *Service) RewrittenLinkFiles() []string {
+	if len(s.rewrittenLinkFiles) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(s.rewrittenLinkFiles))
+	out := make([]string, 0, len(s.rewrittenLinkFiles))
+	for _, p := range s.rewrittenLinkFiles {
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // validateStatusName ensures a status name is safe (no path separators or traversal).
