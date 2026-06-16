@@ -98,35 +98,48 @@ lint-no-host-fs-tests:
     echo "lint-no-host-fs-tests: clean (no NEW violators; $(echo $hits | wc -w | tr -d ' ') legacy files on allowlist)"
 
 # Reject NEW fmt.Errorf occurrences in production code outside tools/.
-# The allowlist captures pre-existing violators tracked under CH0001-11-01.
-# Removing a file from the allowlist as you migrate it tightens the rule.
-# The end state is an empty allowlist.
+# This is a count ratchet against the merge-base with origin/main, so legacy
+# files can be burned down incrementally but cannot accumulate new uses.
 lint-no-fmt-errorf:
     #!/usr/bin/env sh
     set -eu
-    if [ -f .justfiles/fmt-errorf-allowlist.txt ]; then
-        allowlist=$(sed '/^[[:space:]]*#/d; /^[[:space:]]*$/d' .justfiles/fmt-errorf-allowlist.txt | tr '\n' ' ')
-    else
-        allowlist=""
+    base_ref="${FMT_ERRORF_BASE:-origin/main}"
+    if ! base_commit=$(git merge-base HEAD "$base_ref" 2>/dev/null); then
+        echo "FAIL: cannot find merge-base with $base_ref for fmt.Errorf ratchet"
+        echo "Fetch $base_ref or set FMT_ERRORF_BASE to a reachable base ref."
+        exit 1
     fi
-    hits=$(find ./cmd ./internal ./pkg -name '*.go' \
-        -not -name '*_test.go' -print0 2>/dev/null | \
-        xargs -0 grep -l "fmt\.Errorf" 2>/dev/null | sed 's#^\./##' || true)
+    files=$(find ./cmd ./internal ./pkg -name '*.go' -not -name '*_test.go' -print 2>/dev/null | sed 's#^\./##' || true)
     new_violators=""
-    for hit in $hits; do
-        case " $allowlist " in
-            *" $hit "*) ;;
-            *) new_violators="$new_violators $hit" ;;
-        esac
+    current_files=0
+    for file in $files; do
+        current_count=$(grep -o "fmt\\.Errorf" "$file" 2>/dev/null | wc -l | tr -d ' ')
+        if [ "$current_count" -eq 0 ]; then
+            continue
+        fi
+        current_files=$((current_files + 1))
+        if git cat-file -e "$base_commit:$file" 2>/dev/null; then
+            base_count=$(git show "$base_commit:$file" | grep -o "fmt\\.Errorf" | wc -l | tr -d ' ')
+        else
+            base_count=0
+        fi
+        if [ "$current_count" -gt "$base_count" ]; then
+            new_violators="$new_violators $file:$current_count:$base_count"
+        fi
     done
     if [ -n "$new_violators" ]; then
-        echo "FAIL: NEW fmt.Errorf in production code (outside tools/):"
-        for v in $new_violators; do echo "  $v"; done
+        echo "FAIL: fmt.Errorf count regression in production code (outside tools/):"
+        for violation in $new_violators; do
+            file=$(printf "%s" "$violation" | cut -d: -f1)
+            current_count=$(printf "%s" "$violation" | cut -d: -f2)
+            base_count=$(printf "%s" "$violation" | cut -d: -f3)
+            echo "  $file ($current_count current, $base_count at $base_ref merge-base)"
+        done
         echo ""
         echo "Use camperrors.Wrap / camperrors.Wrapf instead."
         exit 1
     fi
-    echo "lint-no-fmt-errorf: clean (no NEW violators; $(echo $hits | wc -w | tr -d ' ') legacy files on allowlist)"
+    echo "lint-no-fmt-errorf: clean (no fmt.Errorf count regressions; $current_files current file(s) at/below merge-base baseline)"
 
 # Verify the fmt.Errorf ratchet rejects a new production violator.
 test-ratchet:
@@ -143,9 +156,9 @@ test-ratchet:
         exit 1
     fi
 
-# Lightweight default pre-push smoke. This catches formatting whitespace,
-# stable/dev build breaks, and lint ratchet regressions without running the full
-# unit suite on every push.
+# Default pre-push smoke. This catches formatting whitespace, stable/dev build
+# breaks, vet regressions, lint ratchet regressions, and the fast dev-profile
+# unit subset without running the full release gate on every push.
 gate-push:
     #!/usr/bin/env sh
     set -eu
@@ -155,8 +168,18 @@ gate-push:
     just build-camp
     echo "=== gate-push: dev build ==="
     BUILD_TAGS=dev just build-camp
+    echo "=== gate-push: vet stable ==="
+    go vet ./...
+    echo "=== gate-push: vet dev ==="
+    go vet -tags dev ./...
+    echo "=== gate-push: vet integration ==="
+    go vet -tags=integration ./...
     echo "=== gate-push: lint stable ==="
     just lint
+    echo "=== gate-push: lint dev ==="
+    BUILD_TAGS=dev just lint
+    echo "=== gate-push: dev short tests ==="
+    go test -short -tags dev ./...
     echo "=== gate-push: PASSED ==="
 
 # Run both-profile builds, vet (stable/dev/integration), lint both profiles, and dev unit tests.

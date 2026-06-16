@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -137,6 +138,42 @@ func TestMoveMissingSource(t *testing.T) {
 	_, err := Move(context.Background(), filepath.Join(root, "missing.md"), filepath.Join(root, "dest.md"), MoveOptions{})
 	if !errors.Is(err, camperrors.ErrNotFound) {
 		t.Fatalf("Move() error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestCopyThenDeleteDirectoryRestoresReadOnlyModeAfterCopy(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("directory permission semantics are platform dependent on Windows")
+	}
+
+	root := t.TempDir()
+	src := filepath.Join(root, "source")
+	if err := os.MkdirAll(filepath.Join(src, "nested"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "nested", "item.md"), []byte("item"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(src, 0555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(src, 0755) })
+
+	dst := filepath.Join(root, "dest")
+	t.Cleanup(func() { _ = makeDirTreeWritableForRemoval(dst) })
+	if err := copyThenDelete(src, dst); err != nil {
+		t.Fatalf("copyThenDelete() error = %v", err)
+	}
+	assertFile(t, filepath.Join(dst, "nested", "item.md"), "item")
+	if _, err := os.Stat(src); !os.IsNotExist(err) {
+		t.Fatalf("source should be removed, stat err = %v", err)
+	}
+	info, err := os.Stat(dst)
+	if err != nil {
+		t.Fatalf("stat destination: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0555 {
+		t.Fatalf("destination mode = %o, want 0555", got)
 	}
 }
 

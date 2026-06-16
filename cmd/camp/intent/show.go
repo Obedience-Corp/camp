@@ -43,7 +43,7 @@ Examples:
 	jsonRequested := func() bool { return intentJSONRequested(cmd, &jsonOut) }
 	cmd.Args = jsoncontract.Args(IntentJSONVersion, jsonRequested, cobra.ExactArgs(1))
 	cmd.RunE = jsoncontract.RunE(IntentJSONVersion, jsonRequested, runIntentShow)
-	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(IntentJSONVersion, func() bool { return jsonOut }))
+	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(IntentJSONVersion, jsonRequested))
 
 	flags := cmd.Flags()
 	flags.StringP("format", "f", "text", "Output format: text, json, yaml")

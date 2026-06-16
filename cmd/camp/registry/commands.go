@@ -259,10 +259,10 @@ func runRegistrySync(cmd *cobra.Command, args []string) error {
 func syncRegistryCampaignWithConfirmedConflict(reg *config.Registry, cfg *config.CampaignConfig, campaignRoot, confirmedConflictID string) error {
 	if existing, exists := reg.FindByPath(campaignRoot); exists && existing.ID != cfg.ID {
 		if confirmedConflictID == "" {
-			return fmt.Errorf("path %s is now registered to campaign %s (%s); re-run camp registry sync to confirm replacement", campaignRoot, existing.Name, existing.ID)
+			return camperrors.Wrapf(camperrors.ErrConflict, "path %s is now registered to campaign %s (%s); re-run camp registry sync to confirm replacement", campaignRoot, existing.Name, existing.ID)
 		}
 		if existing.ID != confirmedConflictID {
-			return fmt.Errorf("path %s registration changed from %s to %s; re-run camp registry sync to confirm replacement", campaignRoot, confirmedConflictID, existing.ID)
+			return camperrors.Wrapf(camperrors.ErrConflict, "path %s registration changed from %s to %s; re-run camp registry sync to confirm replacement", campaignRoot, confirmedConflictID, existing.ID)
 		}
 		reg.UnregisterByID(existing.ID)
 	}

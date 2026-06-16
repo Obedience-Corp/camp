@@ -2,6 +2,7 @@ package statusmove
 
 import (
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -39,6 +40,14 @@ func copyThenDelete(src, dst string) error {
 	if err != nil {
 		return err
 	}
+	if info.IsDir() {
+		if err := makeDirTreeWritableForRemoval(src); err != nil {
+			if removeOnFailure {
+				_ = os.RemoveAll(dst)
+			}
+			return camperrors.Wrapf(err, "prepare source removal %s", src)
+		}
+	}
 	if err := os.RemoveAll(src); err != nil {
 		if removeOnFailure {
 			_ = os.RemoveAll(dst)
@@ -46,6 +55,27 @@ func copyThenDelete(src, dst string) error {
 		return camperrors.Wrapf(err, "remove source %s", src)
 	}
 	return nil
+}
+
+func makeDirTreeWritableForRemoval(root string) error {
+	return filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if !entry.IsDir() {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		mode := info.Mode().Perm()
+		writable := mode | 0700
+		if writable == mode {
+			return nil
+		}
+		return os.Chmod(path, writable)
+	})
 }
 
 func copyFileNoReplace(src, dst string, mode os.FileMode) (bool, error) {
@@ -84,7 +114,7 @@ func copyFileNoReplace(src, dst string, mode os.FileMode) (bool, error) {
 }
 
 func copyDirNoReplace(src, dst string, mode os.FileMode) (bool, error) {
-	if err := os.Mkdir(dst, mode); err != nil {
+	if err := os.Mkdir(dst, writableDirMode(mode)); err != nil {
 		if os.IsExist(err) {
 			return false, ErrAlreadyExists
 		}
@@ -105,7 +135,15 @@ func copyDirNoReplace(src, dst string, mode os.FileMode) (bool, error) {
 			return false, err
 		}
 	}
+	if err := os.Chmod(dst, mode); err != nil {
+		_ = os.RemoveAll(dst)
+		return false, camperrors.Wrapf(err, "restore directory mode %s", dst)
+	}
 	return removeOnFailure, nil
+}
+
+func writableDirMode(mode os.FileMode) os.FileMode {
+	return mode | 0700
 }
 
 func copyEntryNoReplace(src, dst string) error {

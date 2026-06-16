@@ -221,6 +221,43 @@ func TestIntentListJSONErrorEnvelope(t *testing.T) {
 	}
 }
 
+func TestIntentFormatJSONFlagErrorsUseJSONEnvelope(t *testing.T) {
+	chdirIntentJSONTest(t, t.TempDir())
+
+	tests := []struct {
+		name string
+		cmd  *cobra.Command
+	}{
+		{name: "list", cmd: newIntentListCommand()},
+		{name: "count", cmd: newIntentCountCommand()},
+		{name: "find", cmd: newIntentFindCommand()},
+		{name: "show", cmd: newIntentShowCommand()},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stdout, stderr, err := executeIntentJSONTestCommand(t, tt.cmd, "-f", "json", "--badflag")
+			if err == nil {
+				t.Fatal("-f json flag error = nil, want non-zero command error")
+			}
+			if stdout != "" {
+				t.Fatalf("stdout = %q, want empty on JSON flag error", stdout)
+			}
+			var cmdErr *camperrors.CommandError
+			if !errors.As(err, &cmdErr) {
+				t.Fatalf("error = %T %v, want *CommandError", err, err)
+			}
+			payload := decodeIntentJSONPayload(t, stderr)
+			if got := payload["schema_version"]; got != IntentJSONVersion {
+				t.Fatalf("error schema_version = %v, want %q", got, IntentJSONVersion)
+			}
+			if _, ok := payload["error"].(map[string]any); !ok {
+				t.Fatalf("missing error envelope: %#v", payload)
+			}
+		})
+	}
+}
+
 func setupIntentJSONCampaign(t *testing.T) (string, []*intentcore.Intent) {
 	t.Helper()
 

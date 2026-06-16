@@ -278,7 +278,7 @@ func GetHeadCommit(ctx context.Context, gitDir string) (string, time.Time, error
 
 	lines := strings.SplitN(strings.TrimSpace(string(out)), "\n", 2)
 	if len(lines) != 2 {
-		return "", time.Time{}, fmt.Errorf("unexpected git log output")
+		return "", time.Time{}, camperrors.Wrap(camperrors.ErrInvalidInput, "unexpected git log output")
 	}
 
 	date, err := time.Parse(time.RFC3339, lines[1])

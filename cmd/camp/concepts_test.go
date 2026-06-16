@@ -131,8 +131,8 @@ func TestConceptsJSONPayload(t *testing.T) {
 	if payload.CampaignRoot != expectedRoot {
 		t.Fatalf("campaign_root = %q, want %q", payload.CampaignRoot, expectedRoot)
 	}
-	if len(payload.Concepts) != 1 {
-		t.Fatalf("len(concepts) = %d, want 1", len(payload.Concepts))
+	if len(payload.Concepts) != 2 {
+		t.Fatalf("len(concepts) = %d, want 2", len(payload.Concepts))
 	}
 
 	got := payload.Concepts[0]
@@ -153,6 +153,20 @@ func TestConceptsJSONPayload(t *testing.T) {
 	}
 	if len(got.Ignore) != 1 || got.Ignore[0] != "ignore-me" {
 		t.Fatalf("concept.ignore = %#v", got.Ignore)
+	}
+
+	workflow := payload.Concepts[1]
+	if workflow.Name != "workflow" {
+		t.Fatalf("second concept.name = %q, want workflow", workflow.Name)
+	}
+	if len(workflow.Children) != 2 {
+		t.Fatalf("workflow.children length = %d, want 2", len(workflow.Children))
+	}
+	if workflow.Children[0].Name != "design" || workflow.Children[0].Path != "workflow/design" {
+		t.Fatalf("first workflow child = %#v, want design at workflow/design", workflow.Children[0])
+	}
+	if workflow.Children[1].Name != "explore" || workflow.Children[1].Path != "workflow/explore" {
+		t.Fatalf("second workflow child = %#v, want explore at workflow/explore", workflow.Children[1])
 	}
 }
 
@@ -177,6 +191,12 @@ func setupConceptsJSONCampaign(t *testing.T) string {
 	if err := os.MkdirAll(filepath.Join(root, "projects", "ignore-me"), 0755); err != nil {
 		t.Fatalf("mkdir ignored concept item: %v", err)
 	}
+	if err := os.MkdirAll(filepath.Join(root, "workflow", "design"), 0755); err != nil {
+		t.Fatalf("mkdir workflow/design: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "workflow", "explore"), 0755); err != nil {
+		t.Fatalf("mkdir workflow/explore: %v", err)
+	}
 
 	depth := 1
 	cfg := &config.CampaignConfig{
@@ -191,6 +211,15 @@ func setupConceptsJSONCampaign(t *testing.T) string {
 				Description: "Project directories",
 				Depth:       &depth,
 				Ignore:      []string{"ignore-me"},
+			},
+			{
+				Name:        "workflow",
+				Path:        "workflow",
+				Description: "Workflow directories",
+				Children: []config.ConceptEntry{
+					{Name: "design", Path: "workflow/design", Description: "Design work"},
+					{Name: "explore", Path: "workflow/explore", Description: "Exploration"},
+				},
 			},
 		},
 	}

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/fsutil"
 )
 
@@ -115,7 +116,7 @@ func SaveEntry(ctx context.Context, campaignRoot string, entry NavigationEntry) 
 	}
 
 	if err := fsutil.WriteFileAtomically(stateFilePath, buf.Bytes(), 0600); err != nil {
-		return fmt.Errorf("failed to write state file: %w", err)
+		return camperrors.Wrap(err, "failed to write state file")
 	}
 	return nil
 }

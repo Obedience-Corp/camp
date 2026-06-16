@@ -27,12 +27,13 @@ type conceptsPayload struct {
 }
 
 type conceptItem struct {
-	Name        string   `json:"name"`
-	Path        string   `json:"path"`
-	Description string   `json:"description,omitempty"`
-	MaxDepth    *int     `json:"max_depth,omitempty"`
-	HasItems    bool     `json:"has_items"`
-	Ignore      []string `json:"ignore,omitempty"`
+	Name        string        `json:"name"`
+	Path        string        `json:"path"`
+	Description string        `json:"description,omitempty"`
+	MaxDepth    *int          `json:"max_depth,omitempty"`
+	HasItems    bool          `json:"has_items"`
+	Ignore      []string      `json:"ignore,omitempty"`
+	Children    []conceptItem `json:"children,omitempty"`
 }
 
 func init() {
@@ -90,14 +91,7 @@ func printConceptsJSON(cmd *cobra.Command, campaignRoot string, concepts []conce
 
 	items := make([]conceptItem, 0, len(concepts))
 	for _, c := range concepts {
-		items = append(items, conceptItem{
-			Name:        c.Name,
-			Path:        c.Path,
-			Description: c.Description,
-			MaxDepth:    c.MaxDepth,
-			HasItems:    c.HasItems,
-			Ignore:      c.Ignore,
-		})
+		items = append(items, conceptItemFromConcept(c))
 	}
 
 	payload := conceptsPayload{
@@ -109,6 +103,24 @@ func printConceptsJSON(cmd *cobra.Command, campaignRoot string, concepts []conce
 	enc := json.NewEncoder(cmd.OutOrStdout())
 	enc.SetIndent("", "  ")
 	return enc.Encode(payload)
+}
+
+func conceptItemFromConcept(c concept.Concept) conceptItem {
+	item := conceptItem{
+		Name:        c.Name,
+		Path:        c.Path,
+		Description: c.Description,
+		MaxDepth:    c.MaxDepth,
+		HasItems:    c.HasItems,
+		Ignore:      c.Ignore,
+	}
+	if len(c.Children) > 0 {
+		item.Children = make([]conceptItem, 0, len(c.Children))
+		for _, child := range c.Children {
+			item.Children = append(item.Children, conceptItemFromConcept(child))
+		}
+	}
+	return item
 }
 
 func printConcepts(campaignName string, concepts []concept.Concept) {
