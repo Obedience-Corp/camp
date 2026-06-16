@@ -63,6 +63,10 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 	}
 
 	svc := intdungeon.NewService(cmdCtx.CampaignRoot, cmdCtx.Dungeon.DungeonPath)
+	// Defer external markdown-link rewriting so the campaign tree is scanned
+	// once after all moves, not once per move (which is O(moves x workspace)
+	// and dominates wall-clock time on large workspaces).
+	svc.BeginLinkBatch()
 	relParent := RelFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.ParentPath)
 	relDungeon := RelFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.DungeonPath)
 
@@ -112,13 +116,18 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if aborted {
-		displayCrawlSummary(fmt.Sprintf("%s Crawl cancelled.\n", ui.InfoIcon()), triageSummary, innerSummary)
-		return nil
+	// flushLinkRewrites applies the deferred external-link rewrites for every
+	// item moved so far in a single campaign-tree scan.
+	flushLinkRewrites := func() error {
+		if (triageSummary != nil && triageSummary.HasMoves()) ||
+			(innerSummary != nil && innerSummary.HasMoves()) {
+			fmt.Printf("%s Updating markdown cross-references...\n", ui.InfoIcon())
+		}
+		return svc.FlushLinkRewrites(ctx)
 	}
 
-	// Run inner crawl if needed
-	if runInner {
+	// Run inner crawl if the triage step did not abort.
+	if !aborted && runInner {
 		dungeonItems, err := svc.ListItems(ctx)
 		if err != nil {
 			return camperrors.Wrap(err, "listing dungeon items")
@@ -147,8 +156,15 @@ func runDungeonCrawl(cmd *cobra.Command, args []string) error {
 	}
 
 	if aborted {
+		// Apply rewrites for items moved before the abort so the on-disk state
+		// stays consistent, but do not auto-commit a cancelled crawl.
+		_ = flushLinkRewrites()
 		displayCrawlSummary(fmt.Sprintf("%s Crawl cancelled.\n", ui.InfoIcon()), triageSummary, innerSummary)
 		return nil
+	}
+
+	if err := flushLinkRewrites(); err != nil {
+		return camperrors.Wrap(err, "updating markdown cross-references")
 	}
 
 	// Display summary

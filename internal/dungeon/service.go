@@ -1,12 +1,14 @@
 package dungeon
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/mdlinks"
 )
 
 // Service errors.
@@ -35,6 +37,9 @@ type Service struct {
 	dungeonPath  string
 
 	rewrittenLinkFiles []string
+
+	batchLinks   bool
+	pendingMoves []mdlinks.Move
 }
 
 // NewService creates a new dungeon Service.
@@ -70,6 +75,57 @@ func (s *Service) ArchivedPath() string {
 
 func (s *Service) recordRewrittenLinkFiles(paths []string) {
 	s.rewrittenLinkFiles = append(s.rewrittenLinkFiles, paths...)
+}
+
+// BeginLinkBatch defers external markdown-link rewriting until FlushLinkRewrites
+// is called. A multi-move crawl can then scan the campaign tree a single time
+// instead of once per move, which otherwise dominates wall-clock time on large
+// workspaces. The moved item's own internal links are still rewritten on each
+// move regardless of batching.
+func (s *Service) BeginLinkBatch() {
+	s.batchLinks = true
+}
+
+// FlushLinkRewrites performs the deferred external-link rewrite for every move
+// recorded since BeginLinkBatch, scanning the campaign tree once, then exits
+// batch mode. It is a no-op when no moves were recorded.
+func (s *Service) FlushLinkRewrites(ctx context.Context) error {
+	s.batchLinks = false
+	if len(s.pendingMoves) == 0 {
+		return nil
+	}
+	moves := s.pendingMoves
+	s.pendingMoves = nil
+
+	rewritten, err := mdlinks.RewriteExternalLinksForMoves(ctx, s.campaignRoot, moves)
+	if err != nil {
+		return camperrors.Wrap(err, "rewriting markdown links after moves")
+	}
+	s.recordRewrittenLinkFiles(rewritten)
+	return nil
+}
+
+// rewriteLinksAfterMove rewrites the moved item's own internal links
+// immediately, then either records the move for a batched external-link
+// rewrite (batch mode) or rewrites external links right away.
+func (s *Service) rewriteLinksAfterMove(ctx context.Context, srcPath, dstPath string) error {
+	internal, err := mdlinks.RewriteMovedInternalLinks(ctx, s.campaignRoot, srcPath, dstPath)
+	if err != nil {
+		return err
+	}
+	s.recordRewrittenLinkFiles(internal)
+
+	if s.batchLinks {
+		s.pendingMoves = append(s.pendingMoves, mdlinks.Move{Src: srcPath, Dst: dstPath})
+		return nil
+	}
+
+	external, err := mdlinks.RewriteExternalLinksForMoves(ctx, s.campaignRoot, []mdlinks.Move{{Src: srcPath, Dst: dstPath}})
+	if err != nil {
+		return err
+	}
+	s.recordRewrittenLinkFiles(external)
+	return nil
 }
 
 // RewrittenLinkFiles returns the deduplicated, sorted campaign-relative paths of
