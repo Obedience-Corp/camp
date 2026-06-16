@@ -37,7 +37,7 @@ func splitAnchor(target string) (path, anchor string) {
 	return target, ""
 }
 
-func rewriteLinksInContent(content []byte, oldBase, newBase string) ([]byte, bool) {
+func rewriteLinksInContent(content []byte, oldBase, newBase, srcPath string) ([]byte, bool) {
 	changed := false
 	result := mdLinkRe.ReplaceAllFunc(content, func(match []byte) []byte {
 		sub := mdLinkRe.FindSubmatch(match)
@@ -57,6 +57,11 @@ func rewriteLinksInContent(content []byte, oldBase, newBase string) ([]byte, boo
 		}
 
 		abs := filepath.Join(oldBase, path)
+
+		if srcPath != "" && pathMatchesMoved(abs, srcPath) {
+			return match
+		}
+
 		rel, err := filepath.Rel(newBase, abs)
 		if err != nil {
 			return match
@@ -214,7 +219,7 @@ func RewriteForMove(ctx context.Context, campaignRoot, srcPath, dstPath string) 
 			continue
 		}
 		if err := rewriteFile(mdFile, func(b []byte) ([]byte, bool) {
-			return rewriteLinksInContent(b, oldBase, newBase)
+			return rewriteLinksInContent(b, oldBase, newBase, srcPath)
 		}); err != nil {
 			return camperrors.Wrapf(err, "rewriting links in %s", mdFile)
 		}

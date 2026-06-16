@@ -235,6 +235,46 @@ func TestRewriteForMove_DirectoryMoved_AllMDFilesRewritten(t *testing.T) {
 	}
 }
 
+func TestRewriteForMove_DirectoryMoved_IntraDirectoryLinksUnchanged(t *testing.T) {
+	root := t.TempDir()
+
+	srcDir := filepath.Join(root, "project")
+	dstDir := filepath.Join(root, "archive", "project")
+
+	writeFile(t, filepath.Join(srcDir, "README.md"), "[page](sub/page.md)")
+	writeFile(t, filepath.Join(srcDir, "sub", "page.md"), "[back](../README.md)")
+	writeFile(t, filepath.Join(root, "shared", "guide.md"), "guide")
+	referrer := filepath.Join(root, "docs", "index.md")
+	writeFile(t, referrer, "[proj](../project/README.md)")
+
+	if err := os.MkdirAll(filepath.Dir(dstDir), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(srcDir, dstDir); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RewriteForMove(context.Background(), root, srcDir, dstDir); err != nil {
+		t.Fatalf("RewriteForMove: %v", err)
+	}
+
+	readme := readFile(t, filepath.Join(dstDir, "README.md"))
+	if readme != "[page](sub/page.md)" {
+		t.Errorf("README intra-dir link: got %q, want unchanged %q", readme, "[page](sub/page.md)")
+	}
+
+	page := readFile(t, filepath.Join(dstDir, "sub", "page.md"))
+	if page != "[back](../README.md)" {
+		t.Errorf("sub/page.md intra-dir link: got %q, want unchanged %q", page, "[back](../README.md)")
+	}
+
+	gotReferrer := readFile(t, referrer)
+	wantReferrer := "[proj](../archive/project/README.md)"
+	if gotReferrer != wantReferrer {
+		t.Errorf("external referrer: got %q, want %q", gotReferrer, wantReferrer)
+	}
+}
+
 func TestRewriteForMove_ContextCancelled(t *testing.T) {
 	root := t.TempDir()
 

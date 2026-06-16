@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -83,6 +84,25 @@ func init() {
 	switchCmd.Flags().Bool("print", false, "Print path only (for shell integration)")
 }
 
+func resolveTabInCampaign(ctx context.Context, c config.RegisteredCampaign, tabKey string) (string, error) {
+	cfg, err := config.LoadCampaignConfig(ctx, c.Path)
+	if err != nil {
+		return "", camperrors.Wrapf(err, "loading campaign config for %s", c.Name)
+	}
+	resolved := nav.ResolveConfiguredTarget(cfg, []string{tabKey})
+	if !resolved.Matched {
+		return "", camperrors.New(fmt.Sprintf("tab %q not found in campaign %s", tabKey, c.Name))
+	}
+	relativePath := resolved.RelativePath
+	if relativePath == "" && resolved.Category != nav.CategoryAll {
+		relativePath = resolved.Category.Dir()
+	}
+	if relativePath == "" {
+		return "", camperrors.New(fmt.Sprintf("tab %q resolved to campaign root in %s", tabKey, c.Name))
+	}
+	return filepath.Join(c.Path, relativePath), nil
+}
+
 func completeSwitchTabs(ctx context.Context, reg *config.Registry, campaignQuery, tabPrefix string) []string {
 	c, ok := reg.GetByName(campaignQuery)
 	if !ok {
@@ -131,7 +151,26 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 	var selected config.RegisteredCampaign
 
 	if len(args) == 1 {
-		c, err := cmdutil.ResolveCampaignSelection(args[0], reg, cmd.ErrOrStderr())
+		arg := args[0]
+		if at := strings.IndexByte(arg, '@'); at >= 0 {
+			campaignQuery := arg[:at]
+			tabKey := arg[at+1:]
+			c, err := cmdutil.ResolveCampaignSelection(campaignQuery, reg, cmd.ErrOrStderr())
+			if err != nil {
+				return err
+			}
+			tabPath, err := resolveTabInCampaign(ctx, c, tabKey)
+			if err != nil {
+				return err
+			}
+			if printOnly {
+				fmt.Println(tabPath)
+			} else {
+				fmt.Printf("cd %s\n", tabPath)
+			}
+			return nil
+		}
+		c, err := cmdutil.ResolveCampaignSelection(arg, reg, cmd.ErrOrStderr())
 		if err != nil {
 			return err
 		}

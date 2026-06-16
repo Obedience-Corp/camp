@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -251,6 +252,65 @@ func TestSwitchTabCompletionFuzzy(t *testing.T) {
 				if matches[0].Target != tt.wantFirst {
 					t.Errorf("Filter(%q)[0] = %q, want %q", tt.toComplete, matches[0].Target, tt.wantFirst)
 				}
+			}
+		})
+	}
+}
+
+func TestResolveTabInCampaign(t *testing.T) {
+	root, campaign := newTestCampaignDir(t, "tab-campaign")
+
+	tests := []struct {
+		name        string
+		tabKey      string
+		wantSuffix  string
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:       "p resolves to projects/",
+			tabKey:     "p",
+			wantSuffix: "projects",
+		},
+		{
+			name:       "f resolves to festivals/",
+			tabKey:     "f",
+			wantSuffix: "festivals",
+		},
+		{
+			name:       "d resolves to docs/",
+			tabKey:     "d",
+			wantSuffix: "docs",
+		},
+		{
+			name:        "unknown tab returns error",
+			tabKey:      "zzz-no-such-tab",
+			wantErr:     true,
+			errContains: "not found",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			got, err := resolveTabInCampaign(ctx, campaign, tt.tabKey)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error for tab %q, got path %q", tt.tabKey, got)
+				}
+				if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
+					t.Errorf("error %q does not contain %q", err.Error(), tt.errContains)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("resolveTabInCampaign(%q): %v", tt.tabKey, err)
+			}
+			if !strings.HasPrefix(got, root) {
+				t.Errorf("path %q does not start with campaign root %q", got, root)
+			}
+			if !strings.HasSuffix(got, tt.wantSuffix) {
+				t.Errorf("path %q does not end with %q", got, tt.wantSuffix)
 			}
 		})
 	}
