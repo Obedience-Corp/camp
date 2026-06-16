@@ -156,9 +156,9 @@ test-ratchet:
         exit 1
     fi
 
-# Default pre-push smoke. This catches formatting whitespace, stable/dev build
-# breaks, vet regressions, lint ratchet regressions, and the fast dev-profile
-# unit subset without running the full release gate on every push.
+# Lightweight on-demand smoke check, faster than gate-fast: whitespace,
+# stable/dev build, vet, lint, and the short dev-profile test subset.
+# Run it for a quick signal before pushing. See also: just gate-fast, just gate.
 gate-push:
     #!/usr/bin/env sh
     set -eu
@@ -215,15 +215,6 @@ gate:
     echo "=== gate: unit tests stable ==="
     just test unit
     echo "=== gate: PASSED ==="
-
-# Set git core.hooksPath to .githooks so the pre-push gate fires automatically.
-# Idempotent: safe to run multiple times.
-# Note: worktrees of this repo share this config automatically.
-# Submodule-registered copies have separate .git/config and need their own run.
-hooks-install:
-    git config core.hooksPath .githooks
-    @echo "Hooks installed: .githooks is now the active hooks directory."
-    @echo "To verify: git config --get core.hooksPath"
 
 # Install required development tools
 install-tools:
