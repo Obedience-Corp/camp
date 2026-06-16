@@ -512,28 +512,26 @@ just test                 # Show all test recipes
 just test all             # Run all tests
 just install              # Show install options (stable, dev, current)
 just install stable       # Install stable profile to $GOBIN
-just hooks-install        # Activate the pre-push gate hook
+just gate-fast            # Run the local quality gate on demand
 just docs                 # Regenerate CLI reference docs
 just run <args>           # Run with arguments
 ```
 
-### Pre-push Gate Hook
+### Quality Gate
 
-Run once after cloning or checking out this repo to activate the pre-push
-quality gate:
+Camp has no hosted CI. Quality gates run locally, on demand:
 
 ```bash
-just hooks-install
+just gate-push   # quick smoke: whitespace, build, vet, lint, short dev tests
+just gate-fast   # broader: both-profile build, vet, lint, full dev unit tests
+just gate        # full matrix: gate-fast plus stable unit tests
 ```
 
-This sets `core.hooksPath` to `.githooks` so git runs
-`.githooks/pre-push` before every push. The hook runs `just gate-fast` by
-default. Set `CAMP_GATE_FULL=1` before pushing to run `just gate` instead.
+Every release recipe runs `just gate` before tagging, so releases are always
+gated. There is no pre-push hook; run a gate when you want a signal.
 
-Git worktrees of this repository share the same git config, so one
-`just hooks-install` run activates the hook for all worktrees that share this
-repo. Submodule-registered copies have separate git config and need their own
-`just hooks-install` run from inside that checkout.
+If you previously ran `just hooks-install`, run `git config --unset core.hooksPath`
+once to fully revert that local setting, it now points at a removed directory.
 
 ## Part of Festival
 
