@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/mdlinks"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
 	"github.com/Obedience-Corp/camp/internal/statusmove"
 )
@@ -132,6 +133,10 @@ func (s *Service) MoveToDocs(ctx context.Context, itemName, parentPath, destinat
 			return "", camperrors.Wrapf(ErrAlreadyExists, "%s already exists in docs destination", itemName)
 		}
 		return "", camperrors.Wrapf(err, "moving %s to docs/%s", itemName, destination)
+	}
+
+	if err := mdlinks.RewriteForMove(ctx, s.campaignRoot, sourcePath, movedPath); err != nil {
+		return "", camperrors.Wrapf(err, "rewriting markdown links after moving %s", itemName)
 	}
 
 	return movedPath, nil
