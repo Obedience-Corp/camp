@@ -97,6 +97,18 @@ func TestTagAdd_SetSemantics(t *testing.T) {
 	}
 }
 
+func TestTagRm_InvalidTag_NoWrite(t *testing.T) {
+	path := setTagRegistry(t, tagFixture)
+	before, _ := os.ReadFile(path)
+	if _, err := execTag(t, runTagRm, false, "beta", "Bad-Tag"); err == nil {
+		t.Fatal("expected error for invalid tag name on rm")
+	}
+	after, _ := os.ReadFile(path)
+	if !bytes.Equal(before, after) {
+		t.Error("registry modified after invalid tag on rm")
+	}
+}
+
 func TestTagRm_RemovesAndAbsentNoOp(t *testing.T) {
 	setTagRegistry(t, tagFixture)
 	if _, err := execTag(t, runTagAdd, false, "beta", "q3-2026", "outreach"); err != nil {

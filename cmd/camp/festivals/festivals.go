@@ -106,13 +106,7 @@ func runFestivals(cmd *cobra.Command, _ []string) error {
 	}
 	campaigns := selectCampaigns(reg, org, tags, allCampaigns)
 
-	festPath, err := fest.FindFestCLI()
-	if err != nil {
-		return camperrors.Wrap(err, "camp festivals needs the fest CLI")
-	}
-
-	passthrough := passthroughFlags(cmd)
-	items, err := aggregate(ctx, festPath, campaigns, passthrough)
+	items, err := collectFestivalItems(ctx, campaigns, passthroughFlags(cmd), fest.FindFestCLI)
 	if err != nil {
 		return err
 	}
@@ -163,12 +157,31 @@ func campaignHasAllTags(c config.RegisteredCampaign, tags []string) bool {
 	return true
 }
 
+func collectFestivalItems(ctx context.Context, campaigns []config.RegisteredCampaign, passthrough []string, festLookup func() (string, error)) ([]festivalItem, error) {
+	queryable := campaignsWithWorkspace(campaigns)
+	if len(queryable) == 0 {
+		return []festivalItem{}, nil
+	}
+	festPath, err := festLookup()
+	if err != nil {
+		return nil, camperrors.Wrap(err, "camp festivals needs the fest CLI")
+	}
+	return aggregate(ctx, festPath, queryable, passthrough)
+}
+
+func campaignsWithWorkspace(campaigns []config.RegisteredCampaign) []config.RegisteredCampaign {
+	var out []config.RegisteredCampaign
+	for _, c := range campaigns {
+		if hasFestivalsWorkspace(c.Path) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 func aggregate(ctx context.Context, festPath string, campaigns []config.RegisteredCampaign, passthrough []string) ([]festivalItem, error) {
 	items := []festivalItem{}
 	for _, c := range campaigns {
-		if !hasFestivalsWorkspace(c.Path) {
-			continue
-		}
 		entries, err := runFestList(ctx, festPath, c.Path, passthrough)
 		if err != nil {
 			return nil, camperrors.Wrapf(err, "fest list failed for campaign %q (%s)", c.Name, c.Path)

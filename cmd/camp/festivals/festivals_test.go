@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -155,17 +156,46 @@ func TestAggregate_ComposesAndAnnotates(t *testing.T) {
 	}
 }
 
-func TestAggregate_NoWorkspaceContributesNothing(t *testing.T) {
-	festPath := writeFakeFest(t, fakeFestFail)
+func TestCampaignsWithWorkspace(t *testing.T) {
+	withWs := camp("A", "a", "obey", "active")
+	withWs.Path = campaignWithFestivals(t)
+	noWs := camp("B", "b", "obey", "active")
+	noWs.Path = t.TempDir()
+
+	got := campaignsWithWorkspace([]config.RegisteredCampaign{withWs, noWs})
+	if len(got) != 1 || got[0].Name != "a" {
+		t.Errorf("want only the campaign with a festivals/ workspace, got %v", names(got))
+	}
+}
+
+func TestCollectFestivalItems_NoWorkspaceSkipsFest(t *testing.T) {
 	campaigns := []config.RegisteredCampaign{camp("X", "alpha", "obey", "active")}
 	campaigns[0].Path = t.TempDir()
 
-	items, err := aggregate(context.Background(), festPath, campaigns, nil)
+	called := false
+	lookup := func() (string, error) {
+		called = true
+		return "", errors.New("fest missing")
+	}
+	items, err := collectFestivalItems(context.Background(), campaigns, nil, lookup)
 	if err != nil {
-		t.Fatalf("a campaign without festivals/ must not error: %v", err)
+		t.Fatalf("no queryable workspace must not error: %v", err)
 	}
 	if len(items) != 0 {
 		t.Errorf("want 0 items, got %d", len(items))
+	}
+	if called {
+		t.Error("fest must not be required when no campaign has a festivals/ workspace")
+	}
+}
+
+func TestCollectFestivalItems_RequiresFestWhenQueryable(t *testing.T) {
+	campaigns := []config.RegisteredCampaign{camp("X", "alpha", "obey", "active")}
+	campaigns[0].Path = campaignWithFestivals(t)
+
+	lookup := func() (string, error) { return "", errors.New("fest missing") }
+	if _, err := collectFestivalItems(context.Background(), campaigns, nil, lookup); err == nil {
+		t.Fatal("expected error when a workspace is present but fest is unavailable")
 	}
 }
 

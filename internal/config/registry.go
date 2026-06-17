@@ -169,18 +169,24 @@ func (r *Registry) Register(id, name, path string, campaignType CampaignType) er
 		return camperrors.Wrap(ErrPathConflict, existingID)
 	}
 
-	// If this ID exists with a different path, remove old path from index
-	if existing, exists := r.Campaigns[id]; exists && existing.Path != path {
-		delete(r.pathIndex, existing.Path)
-	}
-
-	r.Campaigns[id] = RegisteredCampaign{
+	entry := RegisteredCampaign{
 		ID:         id,
 		Name:       name,
 		Path:       path,
 		Type:       campaignType,
 		LastAccess: time.Now(),
 	}
+
+	if existing, exists := r.Campaigns[id]; exists {
+		if existing.Path != path {
+			delete(r.pathIndex, existing.Path)
+		}
+		entry.Org = existing.Org
+		entry.Tags = existing.Tags
+		entry.Status = existing.Status
+	}
+
+	r.Campaigns[id] = entry
 	r.pathIndex[path] = id
 
 	return nil

@@ -266,6 +266,36 @@ func TestUpdateRegistry_PersistsOnlyMutatedEntry(t *testing.T) {
 	}
 }
 
+func TestRegister_PreservesOrgTagsStatus(t *testing.T) {
+	reg := NewRegistry()
+	if err := reg.Register("ID-1", "alpha", "/tmp/alpha", CampaignTypeProduct); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	c := reg.Campaigns["ID-1"]
+	c.Org = "obey"
+	c.Tags = []string{"paid-work"}
+	c.Status = StatusReference
+	reg.Campaigns["ID-1"] = c
+
+	if err := reg.Register("ID-1", "alpha", "/tmp/alpha-moved", CampaignTypeProduct); err != nil {
+		t.Fatalf("re-register: %v", err)
+	}
+
+	got := reg.Campaigns["ID-1"]
+	if got.Path != "/tmp/alpha-moved" {
+		t.Errorf("Path = %q, want /tmp/alpha-moved", got.Path)
+	}
+	if got.Org != "obey" {
+		t.Errorf("Org = %q, want obey (re-register must preserve org)", got.Org)
+	}
+	if len(got.Tags) != 1 || got.Tags[0] != "paid-work" {
+		t.Errorf("Tags = %v, want [paid-work]", got.Tags)
+	}
+	if got.Status != StatusReference {
+		t.Errorf("Status = %q, want reference", got.Status)
+	}
+}
+
 func TestSaveRegistry_DefaultEntryOmitsKeys(t *testing.T) {
 	const fixture = `{
   "version": 2,

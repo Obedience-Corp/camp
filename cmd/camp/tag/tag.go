@@ -98,6 +98,11 @@ func runTagAdd(cmd *cobra.Command, args []string) error {
 
 func runTagRm(cmd *cobra.Command, args []string) error {
 	campaignQuery, tags := args[0], args[1:]
+	for _, tg := range tags {
+		if err := config.ValidateName("tag", tg); err != nil {
+			return err
+		}
+	}
 	asJSON, _ := cmd.Flags().GetBool("json")
 
 	result := tagChangeResult{Removed: []string{}}
