@@ -37,13 +37,18 @@ func LoadRegistry(ctx context.Context) (*Registry, error) {
 	reg := NewRegistry()
 	reg.Version = file.Version
 	for id, entry := range file.Campaigns {
-		reg.Campaigns[id] = RegisteredCampaign{
+		c := RegisteredCampaign{
 			ID:         id,
 			Name:       entry.Name,
 			Path:       entry.Path,
 			Type:       CampaignType(entry.Type),
 			LastAccess: entry.LastAccess,
+			Org:        entry.Org,
+			Tags:       entry.Tags,
+			Status:     entry.Status,
 		}
+		c.normalize()
+		reg.Campaigns[id] = c
 	}
 
 	// Default to current version when loading legacy/empty files.

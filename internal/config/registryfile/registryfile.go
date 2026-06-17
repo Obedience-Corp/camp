@@ -19,6 +19,10 @@ type Campaign struct {
 	Path       string    `json:"path"`
 	Type       string    `json:"type,omitempty"`
 	LastAccess time.Time `json:"last_access,omitempty"`
+
+	Org    string   `json:"org,omitempty"`
+	Tags   []string `json:"tags,omitempty"`
+	Status string   `json:"status,omitempty"`
 }
 
 // Path returns the path to the campaign registry file.
