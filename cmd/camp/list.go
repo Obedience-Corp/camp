@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -47,12 +48,16 @@ Examples:
   camp list --json           Output as JSON
   camp list --format json    Output as JSON
   camp list --sort name      Sort by name
-  camp list --format simple  Names only for scripting`,
+  camp list --format simple  Names only for scripting
+  camp list --count          Print only the total number of campaigns`,
 	Aliases: []string{"ls"},
 	RunE:    runList,
 }
 
-var listJSON bool
+var (
+	listJSON  bool
+	listCount bool
+)
 
 func init() {
 	rootCmd.AddCommand(listCmd)
@@ -60,6 +65,7 @@ func init() {
 
 	listCmd.Flags().StringP("format", "f", "table", "Output format (table, simple, json)")
 	listCmd.Flags().BoolVar(&listJSON, "json", false, "Output as JSON (shorthand for --format json)")
+	listCmd.Flags().BoolVar(&listCount, "count", false, "Print only the total number of campaigns")
 	listCmd.Flags().StringP("sort", "s", "accessed", "Sort by (name, accessed, type)")
 	listCmd.Flags().Bool("verify-verbose", false, "Show detailed verification output")
 }
@@ -104,9 +110,19 @@ func runList(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	if listCount {
+		if formatStr == "json" {
+			encoder := json.NewEncoder(os.Stdout)
+			encoder.SetIndent("", "  ")
+			return encoder.Encode(map[string]int{"count": reg.Len()})
+		}
+		fmt.Println(ui.CountLabel(reg.Len(), "campaign", "campaigns"))
+		return nil
+	}
+
 	if reg.Len() == 0 {
 		if formatStr == "json" {
-			return outputCampaigns([]campaignEntry{}, formatStr)
+			return outputCampaigns(os.Stdout, []campaignEntry{}, formatStr)
 		}
 		fmt.Println(ui.Warning("No campaigns registered."))
 		fmt.Println()
@@ -118,7 +134,7 @@ func runList(cmd *cobra.Command, args []string) error {
 	sortBy, _ := cmd.Flags().GetString("sort")
 
 	campaigns := sortCampaigns(reg.Campaigns, sortBy)
-	return outputCampaigns(campaigns, formatStr)
+	return outputCampaigns(os.Stdout, campaigns, formatStr)
 }
 
 // sortCampaigns converts the registry map to a sorted slice.
@@ -155,20 +171,22 @@ func sortCampaigns(campaigns map[string]config.RegisteredCampaign, by string) []
 	return entries
 }
 
-// outputCampaigns writes campaigns to stdout in the specified format.
-func outputCampaigns(campaigns []campaignEntry, format string) error {
+// outputCampaigns writes campaigns to out in the specified format.
+func outputCampaigns(out io.Writer, campaigns []campaignEntry, format string) error {
 	switch format {
 	case "json":
-		encoder := json.NewEncoder(os.Stdout)
+		encoder := json.NewEncoder(out)
 		encoder.SetIndent("", "  ")
 		return encoder.Encode(campaigns)
 	case "simple":
 		for _, c := range campaigns {
-			fmt.Println(c.Name)
+			if _, err := fmt.Fprintln(out, c.Name); err != nil {
+				return err
+			}
 		}
 		return nil
 	default: // table
-		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
 			ui.Label("ID"), ui.Label("NAME"), ui.Label("TYPE"), ui.Label("PATH"))
 		for _, c := range campaigns {
@@ -188,7 +206,14 @@ func outputCampaigns(campaigns []campaignEntry, format string) error {
 				typeStyle.Render(campaignType),
 				ui.Dim(c.Path))
 		}
-		return w.Flush()
+		if err := w.Flush(); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintln(out); err != nil {
+			return err
+		}
+		_, err := fmt.Fprintln(out, ui.Dim(ui.CountLabel(len(campaigns), "campaign", "campaigns")))
+		return err
 	}
 }
 
