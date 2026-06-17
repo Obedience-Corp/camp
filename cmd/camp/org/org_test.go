@@ -246,6 +246,13 @@ func TestOrgRename_ReassignsAllMembers(t *testing.T) {
 	}
 }
 
+func TestOrgRename_SameName_Rejected(t *testing.T) {
+	setOrgRegistry(t, orgFixture)
+	if _, err := execOrg(t, runOrgRename, false, "obey", "obey"); err == nil {
+		t.Error("expected error renaming an org to the same name")
+	}
+}
+
 func TestOrgRename_CollisionRejected_NoWrite(t *testing.T) {
 	path := setOrgRegistry(t, orgFixture)
 	if _, err := execOrg(t, runOrgAdd, false, "client", "alpha"); err != nil {

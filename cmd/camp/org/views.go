@@ -106,6 +106,9 @@ func runOrgRename(cmd *cobra.Command, args []string) error {
 }
 
 func renameOrgInRegistry(reg *config.Registry, oldOrg, newOrg string) (int, error) {
+	if oldOrg == newOrg {
+		return 0, camperrors.NewValidation("org", "old and new org are the same: \""+oldOrg+"\"", nil)
+	}
 	fallback := reg.FallbackOrg()
 	isFallback := oldOrg == fallback
 
