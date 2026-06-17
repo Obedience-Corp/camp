@@ -68,12 +68,12 @@ func runOrgAdd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	asJSON, _ := cmd.Flags().GetBool("json")
-	return reassignOrg(cmd, org, args[1:], asJSON)
+	return reassignOrg(cmd, func(*config.Registry) string { return org }, args[1:], asJSON)
 }
 
 func runOrgRemove(cmd *cobra.Command, args []string) error {
 	asJSON, _ := cmd.Flags().GetBool("json")
-	return reassignOrg(cmd, config.DefaultOrg, args, asJSON)
+	return reassignOrg(cmd, (*config.Registry).FallbackOrg, args, asJSON)
 }
 
 func validateOrgName(name string) error {
@@ -84,10 +84,12 @@ func validateOrgName(name string) error {
 		"invalid org name \""+name+"\": must be lowercase letters, digits, and hyphens with no leading digit", nil)
 }
 
-func reassignOrg(cmd *cobra.Command, targetOrg string, campaignArgs []string, asJSON bool) error {
-	result := orgMoveResult{Org: targetOrg, Moved: []orgMove{}, Unchanged: []string{}}
+func reassignOrg(cmd *cobra.Command, target func(*config.Registry) string, campaignArgs []string, asJSON bool) error {
+	result := orgMoveResult{Moved: []orgMove{}, Unchanged: []string{}}
 
 	err := config.UpdateRegistry(cmd.Context(), func(reg *config.Registry) error {
+		targetOrg := target(reg)
+		result.Org = targetOrg
 		resolved, err := resolveUnique(reg, campaignArgs)
 		if err != nil {
 			return err

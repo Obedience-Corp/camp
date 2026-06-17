@@ -36,6 +36,8 @@ func LoadRegistry(ctx context.Context) (*Registry, error) {
 
 	reg := NewRegistry()
 	reg.Version = file.Version
+	reg.DefaultOrg = file.DefaultOrg
+	fallback := reg.FallbackOrg()
 	for id, entry := range file.Campaigns {
 		c := RegisteredCampaign{
 			ID:         id,
@@ -47,7 +49,7 @@ func LoadRegistry(ctx context.Context) (*Registry, error) {
 			Tags:       entry.Tags,
 			Status:     entry.Status,
 		}
-		c.normalize()
+		c.normalize(fallback)
 		reg.Campaigns[id] = c
 	}
 
@@ -76,7 +78,7 @@ func SaveRegistry(ctx context.Context, reg *Registry) error {
 	// Set version
 	reg.Version = RegistryVersion
 
-	data, err := json.MarshalIndent(reg, "", "  ")
+	data, err := json.MarshalIndent(denormalizeForPersist(reg), "", "  ")
 	if err != nil {
 		return camperrors.Wrap(err, "failed to marshal registry")
 	}
@@ -88,6 +90,19 @@ func SaveRegistry(ctx context.Context, reg *Registry) error {
 	}
 
 	return nil
+}
+
+func denormalizeForPersist(reg *Registry) *Registry {
+	fallback := reg.FallbackOrg()
+	out := *reg
+	out.Campaigns = make(map[string]RegisteredCampaign, len(reg.Campaigns))
+	for id, c := range reg.Campaigns {
+		if c.Org == fallback {
+			c.Org = ""
+		}
+		out.Campaigns[id] = c
+	}
+	return &out
 }
 
 // UpdateRegistry holds an exclusive lock for a full load-mutate-save cycle.

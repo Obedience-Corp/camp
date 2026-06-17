@@ -323,11 +323,21 @@ const RegistryVersion = 2
 type Registry struct {
 	// Version is the registry format version.
 	Version int `json:"version" yaml:"version,omitempty"`
+
+	DefaultOrg string `json:"default_org,omitempty" yaml:"default_org,omitempty"`
+
 	// Campaigns maps campaign IDs to their registration info.
 	Campaigns map[string]RegisteredCampaign `json:"campaigns" yaml:"campaigns,omitempty"`
 
 	// pathIndex maps paths to campaign IDs for fast lookup (not serialized).
 	pathIndex map[string]string `json:"-" yaml:"-"`
+}
+
+func (r *Registry) FallbackOrg() string {
+	if r.DefaultOrg == "" {
+		return DefaultOrg
+	}
+	return r.DefaultOrg
 }
 
 // RegisteredCampaign holds information about a registered campaign.
@@ -357,9 +367,9 @@ const (
 	StatusReference = "reference"
 )
 
-func (c *RegisteredCampaign) normalize() {
+func (c *RegisteredCampaign) normalize(fallbackOrg string) {
 	if c.Org == "" {
-		c.Org = DefaultOrg
+		c.Org = fallbackOrg
 	}
 	if c.Tags == nil {
 		c.Tags = []string{}
@@ -387,9 +397,6 @@ func (c RegisteredCampaign) MarshalJSON() ([]byte, error) {
 		Org:        c.Org,
 		Tags:       c.Tags,
 		Status:     c.Status,
-	}
-	if p.Org == DefaultOrg {
-		p.Org = ""
 	}
 	if p.Status == StatusActive {
 		p.Status = ""

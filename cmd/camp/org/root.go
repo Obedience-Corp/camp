@@ -15,9 +15,9 @@ leaves. There is no "org create".
 Commands:
   add     Assign campaigns to an org (also reassigns; single-membership)
   remove  Return campaigns to the default org`,
-	Example: `  camp org add obey obey-campaign obey-content   Move campaigns into "obey"
+	Example: `  camp org                                       Print the current campaign's org
+  camp org add obey obey-campaign obey-content   Move campaigns into "obey"
   camp org remove obey-content                   Return a campaign to "default"`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return cmd.Help()
-	},
+	Args: cobra.NoArgs,
+	RunE: runOrgBare,
 }

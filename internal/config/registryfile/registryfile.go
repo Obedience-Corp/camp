@@ -9,8 +9,9 @@ import (
 
 // File is the on-disk registry representation shared by registry readers.
 type File struct {
-	Version   int                 `json:"version"`
-	Campaigns map[string]Campaign `json:"campaigns"`
+	Version    int                 `json:"version"`
+	DefaultOrg string              `json:"default_org,omitempty"`
+	Campaigns  map[string]Campaign `json:"campaigns"`
 }
 
 // Campaign is the minimal persisted registry campaign shape.
