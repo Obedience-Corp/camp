@@ -340,6 +340,10 @@ type RegisteredCampaign struct {
 	Type CampaignType `json:"type,omitempty" yaml:"type,omitempty"`
 	// LastAccess is when the campaign was last accessed.
 	LastAccess time.Time `json:"last_access,omitempty" yaml:"last_access,omitempty"`
+
+	Org    string   `json:"org,omitempty" yaml:"org,omitempty"`
+	Tags   []string `json:"tags,omitempty" yaml:"tags,omitempty"`
+	Status string   `json:"status,omitempty" yaml:"status,omitempty"`
 }
 
 // Valid returns true if the campaign type is a known valid type.
