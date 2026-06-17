@@ -4,15 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"regexp"
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/spf13/cobra"
 )
-
-var orgNamePattern = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 
 type orgMove struct {
 	Campaign string `json:"campaign"`
@@ -77,11 +74,7 @@ func runOrgRemove(cmd *cobra.Command, args []string) error {
 }
 
 func validateOrgName(name string) error {
-	if orgNamePattern.MatchString(name) {
-		return nil
-	}
-	return camperrors.NewValidation("org",
-		"invalid org name \""+name+"\": must be lowercase letters, digits, and hyphens with no leading digit", nil)
+	return config.ValidateName("org", name)
 }
 
 func reassignOrg(cmd *cobra.Command, target func(*config.Registry) string, campaignArgs []string, asJSON bool) error {

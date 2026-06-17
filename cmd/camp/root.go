@@ -21,6 +21,7 @@ import (
 	refspkg "github.com/Obedience-Corp/camp/cmd/camp/refs"
 	registrypkg "github.com/Obedience-Corp/camp/cmd/camp/registry"
 	skillspkg "github.com/Obedience-Corp/camp/cmd/camp/skills"
+	tagpkg "github.com/Obedience-Corp/camp/cmd/camp/tag"
 	worktreespkg "github.com/Obedience-Corp/camp/cmd/camp/worktrees"
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/commands/release"
@@ -221,6 +222,7 @@ func init() {
 	rootCmd.AddCommand(navigationpkg.ShortcutsCmd)
 	rootCmd.AddCommand(registrypkg.Cmd)
 	rootCmd.AddCommand(orgpkg.Cmd)
+	rootCmd.AddCommand(tagpkg.Cmd)
 	rootCmd.AddCommand(projectpkg.Cmd)
 	rootCmd.AddCommand(dungeonpkg.Cmd)
 	rootCmd.AddCommand(intentpkg.Cmd)
