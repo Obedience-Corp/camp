@@ -14,6 +14,7 @@ import (
 	initcmd "github.com/Obedience-Corp/camp/cmd/camp/init"
 	intentpkg "github.com/Obedience-Corp/camp/cmd/camp/intent"
 	leveragepkg "github.com/Obedience-Corp/camp/cmd/camp/leverage"
+	lifecyclepkg "github.com/Obedience-Corp/camp/cmd/camp/lifecycle"
 	navigationpkg "github.com/Obedience-Corp/camp/cmd/camp/navigation"
 	orgpkg "github.com/Obedience-Corp/camp/cmd/camp/org"
 	projectpkg "github.com/Obedience-Corp/camp/cmd/camp/project"
@@ -223,6 +224,7 @@ func init() {
 	rootCmd.AddCommand(registrypkg.Cmd)
 	rootCmd.AddCommand(orgpkg.Cmd)
 	rootCmd.AddCommand(tagpkg.Cmd)
+	rootCmd.AddCommand(lifecyclepkg.Cmd)
 	rootCmd.AddCommand(projectpkg.Cmd)
 	rootCmd.AddCommand(dungeonpkg.Cmd)
 	rootCmd.AddCommand(intentpkg.Cmd)
