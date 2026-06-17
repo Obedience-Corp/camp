@@ -212,8 +212,12 @@ func runFestList(ctx context.Context, festPath, campaignPath string, passthrough
 		return nil, camperrors.Wrapf(err, "fest list --json failed: %s", detail)
 	}
 
+	return parseFestListJSON(stdout.Bytes())
+}
+
+func parseFestListJSON(data []byte) ([]festEntry, error) {
 	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(stdout.Bytes(), &raw); err != nil {
+	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, camperrors.Wrap(err, "parsing fest list --json output")
 	}
 	var entries []festEntry
