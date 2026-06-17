@@ -588,6 +588,28 @@ func TestRewriteExternalLinksForMoves_MultipleMovesSingleScan(t *testing.T) {
 	}
 }
 
+func TestRewriteExternalLinksForMoves_ChainedMovesResolveToFinalDestination(t *testing.T) {
+	root := t.TempDir()
+
+	referrer := filepath.Join(root, "notes", "ref.md")
+	writeFile(t, referrer, "[issue](../bugs/issue.md)")
+
+	moves := []Move{
+		{Src: filepath.Join(root, "bugs", "issue.md"), Dst: filepath.Join(root, "dungeon", "issue.md")},
+		{Src: filepath.Join(root, "dungeon", "issue.md"), Dst: filepath.Join(root, "dungeon", "completed", "2026-06-16", "issue.md")},
+	}
+
+	if _, err := RewriteExternalLinksForMoves(context.Background(), root, moves); err != nil {
+		t.Fatalf("RewriteExternalLinksForMoves: %v", err)
+	}
+
+	got := readFile(t, referrer)
+	want := "[issue](../dungeon/completed/2026-06-16/issue.md)"
+	if got != want {
+		t.Errorf("chained moves should resolve to final destination: got %q, want %q", got, want)
+	}
+}
+
 func TestRewriteExternalLinksForMoves_LinksBetweenMovedItems(t *testing.T) {
 	root := t.TempDir()
 

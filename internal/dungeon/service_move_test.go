@@ -869,6 +869,48 @@ func TestService_BeginLinkBatch_DefersExternalRewriteUntilFlush(t *testing.T) {
 	}
 }
 
+func TestService_BeginLinkBatch_ChainedMovesResolveToFinalDestination(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	dungeonPath := filepath.Join(root, "dungeon")
+	svc := NewService(root, dungeonPath)
+	if _, err := svc.Init(ctx, InitOptions{}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(root, "issue.md"), []byte("# Issue\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "notes"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	referrer := filepath.Join(root, "notes", "ref.md")
+	if err := os.WriteFile(referrer, []byte("[issue](../issue.md)\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc.BeginLinkBatch()
+	if err := svc.MoveToDungeon(ctx, "issue.md", root); err != nil {
+		t.Fatalf("MoveToDungeon: %v", err)
+	}
+	dst, err := svc.MoveToStatus(ctx, "issue.md", "completed")
+	if err != nil {
+		t.Fatalf("MoveToStatus: %v", err)
+	}
+	if err := svc.FlushLinkRewrites(ctx); err != nil {
+		t.Fatalf("FlushLinkRewrites: %v", err)
+	}
+
+	relDst, err := filepath.Rel(root, dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "[issue](../" + filepath.ToSlash(relDst) + ")\n"
+	if got := readFileContent(t, referrer); got != want {
+		t.Fatalf("chained batch move referrer = %q, want %q", got, want)
+	}
+}
+
 func readFileContent(t *testing.T, path string) string {
 	t.Helper()
 	data, err := os.ReadFile(path)

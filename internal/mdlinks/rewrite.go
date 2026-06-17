@@ -192,30 +192,37 @@ func rewriteExternalLinksForMovesInContent(content []byte, fileDir string, moves
 
 		abs := filepath.Clean(filepath.Join(fileDir, inner))
 
+		// Apply moves in chronological order so a target that maps through a
+		// chain of moves in the same batch (e.g. parent -> dungeon -> dated
+		// status) resolves to the final destination, matching the sequential
+		// per-move rewriting it replaces.
+		moved := false
 		for _, m := range moves {
 			if !pathMatchesMoved(abs, m.Src) {
 				continue
 			}
-
-			suffix := strings.TrimPrefix(abs, m.Src)
-			newAbs := m.Dst + suffix
-			rel, err := filepath.Rel(fileDir, newAbs)
-			if err != nil {
-				return target, false
-			}
-			rel = filepath.ToSlash(rel)
-
-			dest := rel
-			if hadBrackets {
-				dest = "<" + rel + ">"
-			}
-			newTarget := dest + anchor
-			if newTarget == target {
-				return target, false
-			}
-			return newTarget, true
+			abs = m.Dst + strings.TrimPrefix(abs, m.Src)
+			moved = true
 		}
-		return target, false
+		if !moved {
+			return target, false
+		}
+
+		rel, err := filepath.Rel(fileDir, abs)
+		if err != nil {
+			return target, false
+		}
+		rel = filepath.ToSlash(rel)
+
+		dest := rel
+		if hadBrackets {
+			dest = "<" + rel + ">"
+		}
+		newTarget := dest + anchor
+		if newTarget == target {
+			return target, false
+		}
+		return newTarget, true
 	}
 
 	result := rewriteWithIndex(content, mdLinkRe, func(match []byte, start int) []byte {
