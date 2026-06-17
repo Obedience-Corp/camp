@@ -806,6 +806,120 @@ func TestService_MoveToStatus_ExternalLinkRewriteFlowsIntoCommit(t *testing.T) {
 	}
 }
 
+func TestService_BeginLinkBatch_DefersExternalRewriteUntilFlush(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	dungeonPath := filepath.Join(root, "dungeon")
+	svc := NewService(root, dungeonPath)
+	if _, err := svc.Init(ctx, InitOptions{}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	for _, name := range []string{"alpha.md", "beta.md"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte("# "+name+"\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(root, "notes"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	refA := filepath.Join(root, "notes", "a.md")
+	refB := filepath.Join(root, "notes", "b.md")
+	if err := os.WriteFile(refA, []byte("[a](../alpha.md)\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(refB, []byte("[b](../beta.md)\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc.BeginLinkBatch()
+	dstA, err := svc.MoveToDungeonStatus(ctx, "alpha.md", root, "completed")
+	if err != nil {
+		t.Fatalf("move alpha: %v", err)
+	}
+	if _, err := svc.MoveToDungeonStatus(ctx, "beta.md", root, "completed"); err != nil {
+		t.Fatalf("move beta: %v", err)
+	}
+
+	if got := readFileContent(t, refA); got != "[a](../alpha.md)\n" {
+		t.Fatalf("refA rewritten before flush: %q", got)
+	}
+	if got := readFileContent(t, refB); got != "[b](../beta.md)\n" {
+		t.Fatalf("refB rewritten before flush: %q", got)
+	}
+	if files := svc.RewrittenLinkFiles(); sliceContains(files, "notes/a.md") || sliceContains(files, "notes/b.md") {
+		t.Fatalf("external files recorded before flush: %v", files)
+	}
+
+	if err := svc.FlushLinkRewrites(ctx); err != nil {
+		t.Fatalf("FlushLinkRewrites: %v", err)
+	}
+
+	relA, err := filepath.Rel(root, dstA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantA := "[a](../" + filepath.ToSlash(relA) + ")\n"
+	if got := readFileContent(t, refA); got != wantA {
+		t.Fatalf("refA after flush: got %q, want %q", got, wantA)
+	}
+	files := svc.RewrittenLinkFiles()
+	if !sliceContains(files, "notes/a.md") || !sliceContains(files, "notes/b.md") {
+		t.Fatalf("RewrittenLinkFiles after flush = %v, want notes/a.md and notes/b.md", files)
+	}
+}
+
+func TestService_BeginLinkBatch_ChainedMovesResolveToFinalDestination(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	dungeonPath := filepath.Join(root, "dungeon")
+	svc := NewService(root, dungeonPath)
+	if _, err := svc.Init(ctx, InitOptions{}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(root, "issue.md"), []byte("# Issue\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "notes"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	referrer := filepath.Join(root, "notes", "ref.md")
+	if err := os.WriteFile(referrer, []byte("[issue](../issue.md)\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc.BeginLinkBatch()
+	if err := svc.MoveToDungeon(ctx, "issue.md", root); err != nil {
+		t.Fatalf("MoveToDungeon: %v", err)
+	}
+	dst, err := svc.MoveToStatus(ctx, "issue.md", "completed")
+	if err != nil {
+		t.Fatalf("MoveToStatus: %v", err)
+	}
+	if err := svc.FlushLinkRewrites(ctx); err != nil {
+		t.Fatalf("FlushLinkRewrites: %v", err)
+	}
+
+	relDst, err := filepath.Rel(root, dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "[issue](../" + filepath.ToSlash(relDst) + ")\n"
+	if got := readFileContent(t, referrer); got != want {
+		t.Fatalf("chained batch move referrer = %q, want %q", got, want)
+	}
+}
+
+func readFileContent(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%s): %v", path, err)
+	}
+	return string(data)
+}
+
 func sliceContains(s []string, want string) bool {
 	for _, v := range s {
 		if v == want {

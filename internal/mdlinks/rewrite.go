@@ -7,8 +7,10 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/fsutil"
@@ -166,9 +168,12 @@ func rewriteLinksInContent(content []byte, oldBase, newBase, srcPath string) ([]
 	return result, changed
 }
 
-// rewriteExternalLinksToMoved rewrites links in an unmoved file that point to
-// a file/directory that moved from oldPath to newPath.
-func rewriteExternalLinksToMoved(content []byte, fileDir, oldPath, newPath string) ([]byte, bool) {
+// rewriteExternalLinksForMovesInContent rewrites links in an unmoved file that
+// point to any of the moved items. The regular expressions run once over the
+// file regardless of how many moves there are; each link target is matched
+// against every move with cheap path arithmetic. This keeps a batch rewrite
+// O(files) rather than O(files * moves).
+func rewriteExternalLinksForMovesInContent(content []byte, fileDir string, moves []Move) ([]byte, bool) {
 	protected := protectedRanges(content)
 	changed := false
 
@@ -187,13 +192,23 @@ func rewriteExternalLinksToMoved(content []byte, fileDir, oldPath, newPath strin
 
 		abs := filepath.Clean(filepath.Join(fileDir, inner))
 
-		if !pathMatchesMoved(abs, oldPath) {
+		// Apply moves in chronological order so a target that maps through a
+		// chain of moves in the same batch (e.g. parent -> dungeon -> dated
+		// status) resolves to the final destination, matching the sequential
+		// per-move rewriting it replaces.
+		moved := false
+		for _, m := range moves {
+			if !pathMatchesMoved(abs, m.Src) {
+				continue
+			}
+			abs = m.Dst + strings.TrimPrefix(abs, m.Src)
+			moved = true
+		}
+		if !moved {
 			return target, false
 		}
 
-		suffix := strings.TrimPrefix(abs, oldPath)
-		newAbs := newPath + suffix
-		rel, err := filepath.Rel(fileDir, newAbs)
+		rel, err := filepath.Rel(fileDir, abs)
 		if err != nil {
 			return target, false
 		}
@@ -308,6 +323,7 @@ func pathMatchesMoved(absPath, movedPath string) bool {
 }
 
 func collectMDFiles(root string) ([]string, error) {
+	root = filepath.Clean(root)
 	var files []string
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -316,6 +332,14 @@ func collectMDFiles(root string) ([]string, error) {
 		if d.IsDir() {
 			base := d.Name()
 			if base == ".git" || base == "node_modules" {
+				return filepath.SkipDir
+			}
+			// Do not descend into nested git repositories (submodules or
+			// worktrees). Link rewriting only owns files tracked by the repo
+			// rooted at root; editing another repo's files cannot be staged into
+			// this repo's commit and would leave that repo with dirty,
+			// uncommitted changes.
+			if path != root && isGitRepoRoot(path) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -329,6 +353,15 @@ func collectMDFiles(root string) ([]string, error) {
 		return nil, err
 	}
 	return files, nil
+}
+
+// isGitRepoRoot reports whether dir is the root of a separate git repository,
+// detected by the presence of a .git entry. For submodules and worktrees .git
+// is a file pointing at the parent gitdir; for a standalone clone it is a
+// directory. Either way the directory belongs to a different repository.
+func isGitRepoRoot(dir string) bool {
+	_, err := os.Lstat(filepath.Join(dir, ".git"))
+	return err == nil
 }
 
 func collectMDFilesUnder(root string) ([]string, error) {
@@ -390,12 +423,40 @@ func (m *modifiedFileSet) sorted() []string {
 	return m.paths
 }
 
+// Move describes a single file or directory move from Src to Dst, used to
+// batch external-link rewriting across many moves into a single tree scan.
+type Move struct {
+	Src string
+	Dst string
+}
+
 // RewriteForMove updates relative markdown links after a file or directory is
 // moved from srcPath to dstPath, rewriting both the moved files' own links and
 // links in other campaign files that pointed at the moved item. It returns the
 // campaign-root-relative, slash-separated paths of every file it modified, so
 // callers can stage them into the same commit as the move.
+//
+// For a crawl that performs many moves, prefer RewriteMovedInternalLinks per
+// move plus a single RewriteExternalLinksForMoves over all moves, which scans
+// the campaign tree once instead of once per move.
 func RewriteForMove(ctx context.Context, campaignRoot, srcPath, dstPath string) ([]string, error) {
+	internal, err := RewriteMovedInternalLinks(ctx, campaignRoot, srcPath, dstPath)
+	if err != nil {
+		return nil, err
+	}
+	external, err := RewriteExternalLinksForMoves(ctx, campaignRoot, []Move{{Src: srcPath, Dst: dstPath}})
+	if err != nil {
+		return nil, err
+	}
+	return mergeRelPaths(internal, external), nil
+}
+
+// RewriteMovedInternalLinks rewrites the relative links inside the markdown
+// files that were moved from srcPath to dstPath, so links that pointed outside
+// the moved subtree still resolve from the new location. It does not touch any
+// file outside the moved subtree, so it is cheap regardless of campaign size.
+// It returns the campaign-root-relative, slash-separated paths it modified.
+func RewriteMovedInternalLinks(ctx context.Context, campaignRoot, srcPath, dstPath string) ([]string, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, camperrors.Wrap(err, "context cancelled")
 	}
@@ -416,12 +477,6 @@ func RewriteForMove(ctx context.Context, campaignRoot, srcPath, dstPath string) 
 	}
 
 	modified := newModifiedFileSet(campaignRoot)
-
-	movedSet := make(map[string]struct{}, len(movedMD))
-	for _, f := range movedMD {
-		movedSet[f] = struct{}{}
-	}
-
 	for _, mdFile := range movedMD {
 		if err := ctx.Err(); err != nil {
 			return nil, camperrors.Wrap(err, "context cancelled")
@@ -442,29 +497,128 @@ func RewriteForMove(ctx context.Context, campaignRoot, srcPath, dstPath string) 
 		}
 	}
 
+	return modified.sorted(), nil
+}
+
+// RewriteExternalLinksForMoves rewrites links in campaign markdown files that
+// pointed at any moved item, scanning the campaign tree a single time for all
+// moves. A file that itself moved as part of move m has its own links handled
+// by RewriteMovedInternalLinks, so m is skipped for that file; links between
+// two distinct moved items are still rewritten. It returns the
+// campaign-root-relative, slash-separated paths it modified.
+func RewriteExternalLinksForMoves(ctx context.Context, campaignRoot string, moves []Move) ([]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, camperrors.Wrap(err, "context cancelled")
+	}
+
+	cleaned := make([]Move, 0, len(moves))
+	for _, m := range moves {
+		src := filepath.Clean(m.Src)
+		dst := filepath.Clean(m.Dst)
+		if src == dst {
+			continue
+		}
+		cleaned = append(cleaned, Move{Src: src, Dst: dst})
+	}
+	if len(cleaned) == 0 {
+		return nil, nil
+	}
+
 	allMD, err := collectMDFiles(campaignRoot)
 	if err != nil {
 		return nil, camperrors.Wrap(err, "collecting campaign md files")
 	}
 
-	for _, mdFile := range allMD {
-		if err := ctx.Err(); err != nil {
-			return nil, camperrors.Wrap(err, "context cancelled")
+	// Rewrite files concurrently. Chunks are disjoint, so each worker writes
+	// only its own files and its own result slot; there is no shared mutable
+	// state during the parallel phase. Results are merged and sorted after, so
+	// output stays deterministic regardless of scheduling.
+	workers := max(runtime.NumCPU(), 1)
+	workers = min(workers, len(allMD))
+
+	type workerResult struct {
+		modified []string
+		err      error
+	}
+	results := make([]workerResult, workers)
+	chunk := (len(allMD) + workers - 1) / workers
+
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		start := w * chunk
+		if start >= len(allMD) {
+			break
 		}
-		if _, isMoved := movedSet[mdFile]; isMoved {
-			continue
+		end := min(start+chunk, len(allMD))
+
+		wg.Add(1)
+		go func(slot int, files []string) {
+			defer wg.Done()
+			for _, mdFile := range files {
+				if err := ctx.Err(); err != nil {
+					results[slot].err = camperrors.Wrap(err, "context cancelled")
+					return
+				}
+				cleanFile := filepath.Clean(mdFile)
+				fileDir := filepath.Dir(mdFile)
+
+				applicable := make([]Move, 0, len(cleaned))
+				for _, m := range cleaned {
+					if pathMatchesMoved(cleanFile, m.Dst) {
+						continue
+					}
+					applicable = append(applicable, m)
+				}
+				if len(applicable) == 0 {
+					continue
+				}
+
+				changed, err := rewriteFile(mdFile, func(b []byte) ([]byte, bool) {
+					return rewriteExternalLinksForMovesInContent(b, fileDir, applicable)
+				})
+				if err != nil {
+					results[slot].err = camperrors.Wrapf(err, "rewriting external links in %s", mdFile)
+					return
+				}
+				if changed {
+					results[slot].modified = append(results[slot].modified, mdFile)
+				}
+			}
+		}(w, allMD[start:end])
+	}
+	wg.Wait()
+
+	modified := newModifiedFileSet(campaignRoot)
+	for _, r := range results {
+		if r.err != nil {
+			return nil, r.err
 		}
-		fileDir := filepath.Dir(mdFile)
-		changed, err := rewriteFile(mdFile, func(b []byte) ([]byte, bool) {
-			return rewriteExternalLinksToMoved(b, fileDir, srcPath, dstPath)
-		})
-		if err != nil {
-			return nil, camperrors.Wrapf(err, "rewriting external links in %s", mdFile)
-		}
-		if changed {
+		for _, mdFile := range r.modified {
 			modified.add(mdFile)
 		}
 	}
 
 	return modified.sorted(), nil
+}
+
+// mergeRelPaths returns the sorted, deduplicated union of two slices of
+// campaign-root-relative paths.
+func mergeRelPaths(a, b []string) []string {
+	if len(a) == 0 {
+		return b
+	}
+	if len(b) == 0 {
+		return a
+	}
+	seen := make(map[string]struct{}, len(a)+len(b))
+	out := make([]string, 0, len(a)+len(b))
+	for _, p := range append(append([]string{}, a...), b...) {
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	sort.Strings(out)
+	return out
 }

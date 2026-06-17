@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"github.com/Obedience-Corp/camp/internal/mdlinks"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
 	"github.com/Obedience-Corp/camp/internal/statusmove"
 )
@@ -135,11 +134,9 @@ func (s *Service) MoveToDocs(ctx context.Context, itemName, parentPath, destinat
 		return "", camperrors.Wrapf(err, "moving %s to docs/%s", itemName, destination)
 	}
 
-	rewritten, err := mdlinks.RewriteForMove(ctx, s.campaignRoot, sourcePath, movedPath)
-	if err != nil {
+	if err := s.rewriteLinksAfterMove(ctx, sourcePath, movedPath); err != nil {
 		return "", camperrors.Wrapf(err, "rewriting markdown links after moving %s", itemName)
 	}
-	s.recordRewrittenLinkFiles(rewritten)
 
 	return movedPath, nil
 }

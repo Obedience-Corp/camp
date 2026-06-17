@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"github.com/Obedience-Corp/camp/internal/mdlinks"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
 	"github.com/Obedience-Corp/camp/internal/statusmove"
 )
@@ -48,11 +47,9 @@ func (s *Service) MoveToDungeon(ctx context.Context, itemName, parentPath string
 		return camperrors.Wrapf(err, "moving %s to dungeon", itemName)
 	}
 
-	rewritten, err := mdlinks.RewriteForMove(ctx, s.campaignRoot, sourcePath, targetPath)
-	if err != nil {
+	if err := s.rewriteLinksAfterMove(ctx, sourcePath, targetPath); err != nil {
 		return camperrors.Wrapf(err, "rewriting markdown links after moving %s", itemName)
 	}
-	s.recordRewrittenLinkFiles(rewritten)
 
 	return nil
 }
@@ -108,11 +105,9 @@ func (s *Service) MoveToStatus(ctx context.Context, itemName, status string) (st
 		return "", camperrors.Wrapf(err, "moving %s to %s", itemName, status)
 	}
 
-	rewritten, err := mdlinks.RewriteForMove(ctx, s.campaignRoot, srcPath, dstPath)
-	if err != nil {
+	if err := s.rewriteLinksAfterMove(ctx, srcPath, dstPath); err != nil {
 		return "", camperrors.Wrapf(err, "rewriting markdown links after moving %s", itemName)
 	}
-	s.recordRewrittenLinkFiles(rewritten)
 
 	return dstPath, nil
 }
@@ -158,11 +153,9 @@ func (s *Service) MoveToDungeonStatus(ctx context.Context, itemName, parentPath,
 		return "", camperrors.Wrapf(err, "moving %s to dungeon/%s", itemName, status)
 	}
 
-	rewritten, err := mdlinks.RewriteForMove(ctx, s.campaignRoot, sourcePath, targetPath)
-	if err != nil {
+	if err := s.rewriteLinksAfterMove(ctx, sourcePath, targetPath); err != nil {
 		return "", camperrors.Wrapf(err, "rewriting markdown links after moving %s", itemName)
 	}
-	s.recordRewrittenLinkFiles(rewritten)
 
 	return targetPath, nil
 }
