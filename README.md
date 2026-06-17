@@ -268,13 +268,51 @@ camp cache clear           # Delete the navigation cache
 ### Cross-Campaign
 
 ```bash
-camp list                  # List all registered campaigns
+camp list                  # List campaigns (active only by default; grouped by org)
+camp list --org obey       # Filter by org; also --tag (AND), --status, --all, --group/--no-group
 camp switch                # Switch to a different campaign
 camp transfer              # Copy files between campaigns
 camp register              # Register campaign in global registry
 camp unregister            # Remove campaign from registry
 camp registry              # Maintain ~/.obey/campaign/registry.json (prune, sync, check)
 ```
+
+### Organizing Campaigns (org / tags / lifecycle)
+
+Campaigns carry three orthogonal organizational axes in the registry
+(`~/.obey/campaign/registry.json`), filesystem + git only, no database:
+
+- **org** — single membership; every campaign is in exactly one org (default
+  `default`). Group related campaigns; reassign by adding to a new org.
+- **tags** — a single global pool of labels; a campaign can carry any number,
+  and the same tag crosses orgs freely.
+- **status** — lifecycle, one of `active` / `inactive` / `reference`. The default
+  `camp list` shows only `active`; the command is `camp lifecycle`, not
+  `camp status` (which stays the git-status wrapper).
+
+A campaign at its defaults (org `default`, no tags, `active`) stores no extra
+keys, so existing registries are untouched until you organize something.
+
+```bash
+camp org add obey c1 c2       # Assign campaigns to an org (also reassigns)
+camp org remove c1            # Return campaigns to the default org
+camp org rename obey obedience# Rename an org, reassigning all members atomically
+camp org list                 # Orgs with member + active counts
+camp org show obey            # Member campaigns of an org
+camp org                      # Print the current campaign's org
+
+camp tag add c1 paid-work q3  # Add tags (set semantics; re-adding is a no-op)
+camp tag rm c1 q3             # Remove tags
+camp tag list                 # Global tag pool with counts
+
+camp lifecycle set c1 reference  # Set status: active | inactive | reference
+camp lifecycle list              # Status counts
+
+camp festivals --org obey     # Festivals across an org's campaigns (composes 'fest list')
+```
+
+All of these accept `--json`. `camp festivals` filters campaigns by org/tag and
+composes `fest list --json` per campaign; it does not modify `fest list`.
 
 ### Skills
 

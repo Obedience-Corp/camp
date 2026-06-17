@@ -52,6 +52,7 @@ camp intent [flags]
 * [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
 * [camp intent add](camp_intent_add.md)	 - Create a new intent
 * [camp intent archive](camp_intent_archive.md)	 - Archive an intent
+* [camp intent convert](camp_intent_convert.md)	 - Convert a note into an intent
 * [camp intent count](camp_intent_count.md)	 - Count intents by status directory
 * [camp intent crawl](camp_intent_crawl.md)	 - Interactive intent triage
 * [camp intent edit](camp_intent_edit.md)	 - Edit an existing intent
@@ -60,5 +61,7 @@ camp intent [flags]
 * [camp intent gather](camp_intent_gather.md)	 - Gather related intents into a unified document
 * [camp intent list](camp_intent_list.md)	 - List intents in the campaign
 * [camp intent move](camp_intent_move.md)	 - Move intent to a different status
+* [camp intent note](camp_intent_note.md)	 - Capture a quick note
 * [camp intent promote](camp_intent_promote.md)	 - Promote an intent through the pipeline
+* [camp intent rename](camp_intent_rename.md)	 - Rename an intent
 * [camp intent show](camp_intent_show.md)	 - Show detailed intent information

@@ -53,6 +53,7 @@ camp [flags]
 * [camp detach](camp_detach.md)	 - Remove the attachment marker from a directory
 * [camp doctor](camp_doctor.md)	 - Diagnose and fix campaign health issues
 * [camp dungeon](camp_dungeon.md)	 - Manage the campaign dungeon
+* [camp festivals](camp_festivals.md)	 - List festivals across campaigns, filtered by org/tag
 * [camp fresh](camp_fresh.md)	 - Post-merge branch cycling: sync to default branch and optionally create a new working branch
 * [camp gather](camp_gather.md)	 - Import external data into the intent system
 * [camp go](camp_go.md)	 - Navigate to campaign directories
@@ -60,9 +61,11 @@ camp [flags]
 * [camp init](camp_init.md)	 - Initialize a new campaign
 * [camp intent](camp_intent.md)	 - Manage campaign intents
 * [camp leverage](camp_leverage.md)	 - Compute leverage scores for campaign projects
+* [camp lifecycle](camp_lifecycle.md)	 - Manage campaign lifecycle status
 * [camp list](camp_list.md)	 - List all registered campaigns
 * [camp log](camp_log.md)	 - Show git log of the campaign
 * [camp move](camp_move.md)	 - Move a file or directory within the campaign
+* [camp org](camp_org.md)	 - Group campaigns into orgs
 * [camp pin](camp_pin.md)	 - Pin a directory
 * [camp pins](camp_pins.md)	 - List all pinned directories
 * [camp plugins](camp_plugins.md)	 - List discovered camp plugins on PATH
@@ -83,6 +86,7 @@ camp [flags]
 * [camp status](camp_status.md)	 - Show git status of the campaign
 * [camp switch](camp_switch.md)	 - Switch to a different campaign
 * [camp sync](camp_sync.md)	 - Safely synchronize submodules
+* [camp tag](camp_tag.md)	 - Label campaigns with tags
 * [camp transfer](camp_transfer.md)	 - Copy files between campaigns
 * [camp unpin](camp_unpin.md)	 - Remove a saved pin
 * [camp unregister](camp_unregister.md)	 - Remove campaign from registry

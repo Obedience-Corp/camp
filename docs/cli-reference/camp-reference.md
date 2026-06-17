@@ -991,6 +991,57 @@ camp dungeon move <item> [status] [flags]
 ```
 ---
 
+## camp festivals
+
+List festivals across campaigns, filtered by org/tag
+
+### Synopsis
+
+Aggregate festivals across campaigns, filtered by campaign org/tag.
+
+Selects campaigns from the registry by --org and --tag (AND), then composes
+'fest list --json' in each matching campaign and aggregates the result. The
+campaign set defaults to active campaigns; --all-campaigns includes inactive and
+reference campaigns. Festival-level flags (--status, --all, --since, --until,
+--sort) are passed through to each underlying 'fest list'.
+
+Runs one 'fest list' per matching campaign (sequentially); campaigns without a
+festivals/ workspace contribute nothing. Read-only.
+
+```
+camp festivals [flags]
+```
+
+### Examples
+
+```
+  camp festivals --org obey
+  camp festivals --org obey --status active
+  camp festivals --tag paid-work --all-campaigns --json
+```
+
+### Options
+
+```
+      --all             Include completed/dungeon festivals, passed to fest list
+      --all-campaigns   Include inactive/reference campaigns (default: active only)
+  -h, --help            help for festivals
+      --json            Output as JSON
+      --org string      Only campaigns in this org
+      --since string    Festivals created on or after this date, passed to fest list
+      --sort string     Festival sort, passed to fest list
+      --status string   Festival status filter, passed to fest list
+      --tag strings     Only campaigns carrying this tag (repeat for AND)
+      --until string    Festivals created on or before this date, passed to fest list
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
 ## camp fresh
 
 Post-merge branch cycling: sync to default branch and optionally create a new working branch
@@ -1416,6 +1467,7 @@ PROGRAMMATIC (agent) FLAGS:
   --body              Set intent body from a literal string
   --body-file         Read intent body from a file (- for stdin)
   --concept           Set the concept field (e.g., "projects/camp")
+  --note              Create a note instead of a lifecycle intent
   --author            Override the default author attribution
 
   --body and --body-file are mutually exclusive.
@@ -1428,6 +1480,8 @@ Examples:
   camp intent add                        Fast TUI (3-step form)
   camp intent add --campaign             Pick a target campaign interactively
   camp intent add --full                 Full TUI (includes body)
+  camp intent add --note                 Note TUI (title + body, no type/concept)
+  camp intent add --note "Meeting note" --body "Follow up next week"
   camp intent add -e "Complex feature"   Deep capture with editor
   camp intent add -t feature "New API"   Set type explicitly
   camp intent add "Fix login" --body "The login page returns 500"
@@ -1451,6 +1505,8 @@ camp intent add [title] [flags]
   -h, --help               help for add
       --json               emit a structured JSON result
       --no-commit          Don't create a git commit
+      --note               Create a note instead of a lifecycle intent
+      --tag stringArray    Add a tag (repeatable)
   -t, --type string        Intent type (idea, feature, bug, research, chore) (default "idea")
 ```
 
@@ -1489,6 +1545,41 @@ camp intent archive <id> [flags]
   -h, --help            help for archive
       --no-commit       Don't create a git commit
       --reason string   Reason for archiving (required)
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp intent convert
+
+Convert a note into an intent
+
+### Synopsis
+
+Promote a note into the intent lifecycle.
+
+A note lives outside the inbox → ready → active lifecycle. Converting it moves
+the note into inbox/ and attaches an intent type, after which it behaves like
+any other intent. This is the only bridge from a note into the lifecycle.
+
+Examples:
+  camp intent convert check-daemon-socket --type idea
+  camp intent convert check-daemon-socket -t feature
+
+```
+camp intent convert <id> [flags]
+```
+
+### Options
+
+```
+  -h, --help          help for convert
+      --no-commit     Don't create a git commit
+  -t, --type string   Intent type to attach (idea, feature, bug, research, chore) (default "idea")
 ```
 
 ### Options inherited from parent commands
@@ -1645,6 +1736,7 @@ camp intent edit [id] [flags]
       --set-status string         Change the intent status
       --set-type string           Change the intent type (idea, feature, bug, research, chore)
   -s, --status string             Filter picker by status
+      --tag stringArray           Replace the intent's tags (repeatable)
       --title string              Set a new title
   -t, --type string               Filter picker by type
 ```
@@ -1932,6 +2024,48 @@ camp intent move <id> <status> [flags]
 ```
 ---
 
+## camp intent note
+
+Capture a quick note
+
+### Synopsis
+
+Capture a freeform note. Notes are a separate category from intents: they
+are stored in .campaign/intents/notes/ and do not flow through the
+inbox → ready → active lifecycle. A note carries no type or concept; tags
+organize them.
+
+Fast capture skips the TUI. Interactive capture uses the same title/body/tag
+flow as intent add, but skips the type wheel and concept picker.
+
+Examples:
+  camp intent note "check the daemon socket path"   Capture a note immediately
+  camp intent note "follow up" --body "details..."  Note with a longer body
+  echo "body" | camp intent note "idea" --body-file -
+  camp intent note                                  Note TUI (title + body)
+
+```
+camp intent note [text] [flags]
+```
+
+### Options
+
+```
+      --author string      Override the default author attribution
+      --body string        Set note body as a literal string
+      --body-file string   Read note body from file (- for stdin, 10 MiB cap)
+  -h, --help               help for note
+      --no-commit          Don't create a git commit
+  -t, --tag stringArray    Add a tag (repeatable)
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
 ## camp intent promote
 
 Promote an intent through the pipeline
@@ -1966,6 +2100,39 @@ camp intent promote <id> [flags]
   -h, --help            help for promote
       --no-commit       Don't create a git commit
       --target string   Promote target: ready, festival, design (default "festival")
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp intent rename
+
+Rename an intent
+
+### Synopsis
+
+Rename an intent: update its title and regenerate its human-readable
+filename. The intent's stable id is preserved, so references and lookups survive
+the rename.
+
+Resolution is by exact id (run 'camp intent list' to copy one).
+
+Examples:
+  camp intent rename add-dark-mode-20260119-153412 "Add a dark mode toggle"
+
+```
+camp intent rename <id> <new title> [flags]
+```
+
+### Options
+
+```
+  -h, --help        help for rename
+      --no-commit   Don't create a git commit
 ```
 
 ### Options inherited from parent commands
@@ -2271,6 +2438,112 @@ camp leverage snapshot [flags]
 ```
 ---
 
+## camp lifecycle
+
+Manage campaign lifecycle status
+
+### Synopsis
+
+Manage a campaign's lifecycle status.
+
+The status is one of a fixed set:
+  active      in current use (default); shown in 'camp list'
+  inactive    paused or shelved; hidden from default 'camp list'
+  reference   preserved read-only context; hidden from default views
+
+Setting inactive or reference does not unregister the campaign; use
+'camp unregister' to remove it from the registry entirely.
+
+This group is 'camp lifecycle', not 'camp status' ('camp status' is the git
+status wrapper).
+
+```
+camp lifecycle [flags]
+```
+
+### Examples
+
+```
+  camp lifecycle set old-project reference
+  camp lifecycle list
+```
+
+### Options
+
+```
+  -h, --help   help for lifecycle
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp lifecycle list
+
+List status counts across the registry
+
+```
+camp lifecycle list [flags]
+```
+
+### Examples
+
+```
+  camp lifecycle list
+```
+
+### Options
+
+```
+  -h, --help   help for list
+      --json   Output as JSON
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp lifecycle set
+
+Set a campaign's lifecycle status
+
+### Synopsis
+
+Transition a campaign to one of: active, inactive, reference.
+
+Any other value is rejected. Setting inactive or reference does not unregister
+the campaign.
+
+```
+camp lifecycle set <campaign> <status> [flags]
+```
+
+### Examples
+
+```
+  camp lifecycle set old-project reference
+```
+
+### Options
+
+```
+  -h, --help   help for set
+      --json   Output as JSON
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
 ## camp list
 
 List all registered campaigns
@@ -2306,10 +2579,16 @@ camp list [flags]
 ### Options
 
 ```
+      --all              Show all statuses (default hides inactive/reference)
   -f, --format string    Output format (table, simple, json) (default "table")
+      --group            Force org grouping
   -h, --help             help for list
       --json             Output as JSON (shorthand for --format json)
+      --no-group         Suppress org grouping
+      --org string       Only campaigns in this org
   -s, --sort string      Sort by (name, accessed, type) (default "accessed")
+      --status string    Only campaigns in this status (active, inactive, reference)
+      --tag strings      Only campaigns carrying this tag (repeat for AND)
       --verify-verbose   Show detailed verification output
 ```
 
@@ -2393,6 +2672,212 @@ camp move <src> <dest> [flags]
 ```
   -f, --force   Overwrite destination without prompting
   -h, --help    help for move
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp org
+
+Group campaigns into orgs
+
+### Synopsis
+
+Group related campaigns into orgs.
+
+Every campaign belongs to exactly one org (default "default"). Orgs are derived:
+an org exists because a campaign names it, and disappears when its last member
+leaves. There is no "org create".
+
+Commands:
+  add     Assign campaigns to an org (also reassigns; single-membership)
+  remove  Return campaigns to the default org
+
+```
+camp org [flags]
+```
+
+### Examples
+
+```
+  camp org                                       Print the current campaign's org
+  camp org add obey obey-campaign obey-content   Move campaigns into "obey"
+  camp org remove obey-content                   Return a campaign to "default"
+```
+
+### Options
+
+```
+  -h, --help   help for org
+      --json   Output as JSON
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp org add
+
+Assign campaigns to an org (reassigns; single-membership)
+
+### Synopsis
+
+Assign one or more campaigns to <org>.
+
+Membership is single, so this is also the reassign verb: a campaign added to a
+new org leaves its previous org in the same step. The org is created implicitly.
+Adding a campaign already in <org> is a no-op for that campaign.
+
+```
+camp org add <org> <campaign>... [flags]
+```
+
+### Examples
+
+```
+  camp org add obey obey-campaign obey-content
+  camp org add client-acme acme-site --json
+```
+
+### Options
+
+```
+  -h, --help   help for add
+      --json   Output as JSON
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp org list
+
+List orgs with member and active counts
+
+```
+camp org list [flags]
+```
+
+### Examples
+
+```
+  camp org list
+```
+
+### Options
+
+```
+  -h, --help   help for list
+      --json   Output as JSON
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp org remove
+
+Return campaigns to the default org
+
+### Synopsis
+
+Return one or more campaigns to the "default" org.
+
+Since a campaign is always in exactly one org, you do not name the org.
+Removing a campaign already in "default" is a no-op.
+
+```
+camp org remove <campaign>... [flags]
+```
+
+### Examples
+
+```
+  camp org remove obey-content
+  camp org remove acme-site other-site --json
+```
+
+### Options
+
+```
+  -h, --help   help for remove
+      --json   Output as JSON
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp org rename
+
+Rename an org, reassigning all members atomically
+
+### Synopsis
+
+Rename <old> to <new>, reassigning every member in one atomic write.
+
+Errors if <old> has no members or if <new> already exists (no implicit merge).
+Renaming the fallback org ("default" by default) makes <new> the new fallback.
+
+```
+camp org rename <old> <new> [flags]
+```
+
+### Examples
+
+```
+  camp org rename obey obedience
+```
+
+### Options
+
+```
+  -h, --help   help for rename
+      --json   Output as JSON
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp org show
+
+Show an org's member campaigns
+
+```
+camp org show <org> [flags]
+```
+
+### Examples
+
+```
+  camp org show obey
+```
+
+### Options
+
+```
+  -h, --help   help for show
+      --json   Output as JSON
 ```
 
 ### Options inherited from parent commands
@@ -3992,9 +4477,7 @@ camp settings get [key] [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -4033,9 +4516,7 @@ camp settings set <key> <value> [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default: ~/.obey/campaign/config.json)
-      --no-color        disable colored output
-      --verbose         enable verbose output
+      --no-color   disable colored output
 ```
 ---
 
@@ -4701,6 +5182,10 @@ Use with the cgo shell function for instant navigation:
 The --print flag outputs just the path for shell integration:
   cd "$(camp switch --print)"
 
+Use campaign@tab to navigate to a specific location in the target campaign:
+  camp switch obey-campaign@p    # Switch and navigate to projects/
+  camp switch obey-campaign@f    # Switch and navigate to festivals/
+
 ```
 camp switch [campaign] [flags]
 ```
@@ -4708,10 +5193,11 @@ camp switch [campaign] [flags]
 ### Examples
 
 ```
-  camp switch                    # Interactive picker
-  camp switch obey-campaign      # Switch by name
-  camp switch a1b2               # Switch by ID prefix
-  camp switch --print            # Picker, output path only
+  camp switch                        # Interactive picker
+  camp switch obey-campaign          # Switch by name
+  camp switch a1b2                   # Switch by ID prefix
+  camp switch --print                # Picker, output path only
+  camp switch obey-campaign@p        # Switch and navigate to projects/
 ```
 
 ### Options
@@ -4791,6 +5277,145 @@ camp sync [submodule...] [flags]
       --no-fetch       Skip fetching from remote (use local refs only)
   -p, --parallel int   Number of parallel git operations (default 4)
   -v, --verbose        Show detailed output for each submodule
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp tag
+
+Label campaigns with tags
+
+### Synopsis
+
+Label campaigns with tags from a single global pool.
+
+Tags are orthogonal to orgs: any campaign can carry any tag regardless of its
+org, and the same tag can appear across orgs. Tags are a set per campaign
+(re-adding is a no-op).
+
+Commands:
+  add   Add tags to a campaign
+  rm    Remove tags from a campaign
+  list  List all tags in use with counts
+
+```
+camp tag [flags]
+```
+
+### Examples
+
+```
+  camp tag add obey-campaign paid-work q3-2026
+  camp tag rm obey-campaign q3-2026
+  camp tag list
+```
+
+### Options
+
+```
+  -h, --help   help for tag
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp tag add
+
+Add tags to a campaign
+
+### Synopsis
+
+Add one or more tags to a campaign (set semantics).
+
+Re-adding a tag the campaign already carries is a no-op for that tag. Each tag
+name must be lowercase letters, digits, and hyphens with no leading digit.
+
+```
+camp tag add <campaign> <tag>... [flags]
+```
+
+### Examples
+
+```
+  camp tag add obey-campaign paid-work q3-2026
+```
+
+### Options
+
+```
+  -h, --help   help for add
+      --json   Output as JSON
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp tag list
+
+List all tags in use with campaign counts
+
+```
+camp tag list [flags]
+```
+
+### Examples
+
+```
+  camp tag list
+```
+
+### Options
+
+```
+  -h, --help   help for list
+      --json   Output as JSON
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp tag rm
+
+Remove tags from a campaign
+
+### Synopsis
+
+Remove one or more tags from a campaign.
+
+Removing a tag the campaign does not carry is a no-op for that tag.
+
+```
+camp tag rm <campaign> <tag>... [flags]
+```
+
+### Examples
+
+```
+  camp tag rm obey-campaign q3-2026
+```
+
+### Options
+
+```
+  -h, --help   help for rm
+      --json   Output as JSON
 ```
 
 ### Options inherited from parent commands
