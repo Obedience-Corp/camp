@@ -2,15 +2,18 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/Obedience-Corp/camp/internal/ui"
+	"github.com/spf13/cobra"
 )
 
 func ent(id, name, typ, org, status string, tags ...string) campaignEntry {
@@ -161,6 +164,21 @@ func TestList_GroupedOutput(t *testing.T) {
 
 func shouldGroupEntries(entries []campaignEntry) bool {
 	return distinctOrgs(entries) > 1
+}
+
+func TestList_InvalidStatusRejectedBeforeRegistryWork(t *testing.T) {
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	cmd.Flags().String("format", "table", "")
+	cmd.Flags().String("org", "", "")
+	cmd.Flags().StringSlice("tag", nil, "")
+	cmd.Flags().String("status", "bogus", "")
+	cmd.Flags().Bool("all", false, "")
+	t.Setenv("CAMP_REGISTRY_PATH", filepath.Join(t.TempDir(), "registry.json"))
+
+	if err := runList(cmd, nil); err == nil {
+		t.Fatal("expected error: invalid --status must be rejected even on an empty registry")
+	}
 }
 
 func TestList_FilterGroupPerformance(t *testing.T) {

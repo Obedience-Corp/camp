@@ -80,6 +80,11 @@ func runList(cmd *cobra.Command, args []string) error {
 		formatStr = "json"
 	}
 
+	filter, err := parseListFilter(cmd)
+	if err != nil {
+		return err
+	}
+
 	reg, err := config.LoadRegistry(ctx)
 	if err != nil {
 		return err
@@ -122,11 +127,6 @@ func runList(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  Create one with: %s\n", ui.Accent("camp init"))
 		fmt.Printf("  Or register existing: %s\n", ui.Accent("camp register <path>"))
 		return nil
-	}
-
-	filter, err := parseListFilter(cmd)
-	if err != nil {
-		return err
 	}
 
 	sortBy, _ := cmd.Flags().GetString("sort")
