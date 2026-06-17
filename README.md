@@ -282,11 +282,11 @@ camp registry              # Maintain ~/.obey/campaign/registry.json (prune, syn
 Campaigns carry three orthogonal organizational axes in the registry
 (`~/.obey/campaign/registry.json`), filesystem + git only, no database:
 
-- **org** — single membership; every campaign is in exactly one org (default
+- **org**: single membership; every campaign is in exactly one org (default
   `default`). Group related campaigns; reassign by adding to a new org.
-- **tags** — a single global pool of labels; a campaign can carry any number,
+- **tags**: a single global pool of labels; a campaign can carry any number,
   and the same tag crosses orgs freely.
-- **status** — lifecycle, one of `active` / `inactive` / `reference`. The default
+- **status**: lifecycle, one of `active` / `inactive` / `reference`. The default
   `camp list` shows only `active`; the command is `camp lifecycle`, not
   `camp status` (which stays the git-status wrapper).
 
