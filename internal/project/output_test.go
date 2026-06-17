@@ -144,6 +144,91 @@ func TestFormatProjects_JSONEmpty(t *testing.T) {
 	}
 }
 
+func TestFormatProjects_TableShowsCount(t *testing.T) {
+	projects := []Project{
+		{Name: "api", Path: "projects/api", Type: "go"},
+		{Name: "frontend", Path: "projects/frontend", Type: "typescript"},
+	}
+
+	var buf bytes.Buffer
+	if err := FormatProjects(&buf, projects, FormatTable); err != nil {
+		t.Fatalf("FormatProjects() error = %v", err)
+	}
+
+	if !strings.Contains(buf.String(), "2 projects") {
+		t.Errorf("table output missing count footer; got:\n%s", buf.String())
+	}
+}
+
+func TestFormatProjects_SimpleHasNoCount(t *testing.T) {
+	projects := []Project{
+		{Name: "api", Path: "projects/api", Type: "go"},
+		{Name: "frontend", Path: "projects/frontend", Type: "typescript"},
+	}
+
+	var buf bytes.Buffer
+	if err := FormatProjects(&buf, projects, FormatSimple); err != nil {
+		t.Fatalf("FormatProjects() error = %v", err)
+	}
+
+	if strings.Contains(buf.String(), "projects") {
+		t.Errorf("simple output should not include count footer; got:\n%s", buf.String())
+	}
+}
+
+func TestFormatProjects_JSONHasNoCount(t *testing.T) {
+	projects := []Project{{Name: "api", Path: "projects/api", Type: "go"}}
+
+	var buf bytes.Buffer
+	if err := FormatProjects(&buf, projects, FormatJSON); err != nil {
+		t.Fatalf("FormatProjects() error = %v", err)
+	}
+
+	var parsed []Project
+	if err := json.Unmarshal(buf.Bytes(), &parsed); err != nil {
+		t.Fatalf("JSON output is no longer a bare array: %v", err)
+	}
+	if len(parsed) != 1 {
+		t.Errorf("JSON has %d projects, want 1", len(parsed))
+	}
+}
+
+func TestFormatCount_Labeled(t *testing.T) {
+	cases := []struct {
+		n      int
+		format OutputFormat
+		want   string
+	}{
+		{3, FormatTable, "3 projects"},
+		{1, FormatSimple, "1 project"},
+		{0, FormatTable, "0 projects"},
+	}
+	for _, tc := range cases {
+		var buf bytes.Buffer
+		if err := FormatCount(&buf, tc.n, tc.format); err != nil {
+			t.Fatalf("FormatCount() error = %v", err)
+		}
+		if got := strings.TrimSpace(buf.String()); got != tc.want {
+			t.Errorf("FormatCount(%d, %q) = %q, want %q", tc.n, tc.format, got, tc.want)
+		}
+	}
+}
+
+func TestFormatCount_JSON(t *testing.T) {
+	var buf bytes.Buffer
+	if err := FormatCount(&buf, 5, FormatJSON); err != nil {
+		t.Fatalf("FormatCount() error = %v", err)
+	}
+
+	var parsed map[string]int
+	if err := json.Unmarshal(buf.Bytes(), &parsed); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if parsed["count"] != 5 {
+		t.Errorf("count = %d, want 5", parsed["count"])
+	}
+}
+
 func TestFormatProjects_DefaultIsTable(t *testing.T) {
 	projects := []Project{
 		{Name: "test", Path: "projects/test", Type: "go"},

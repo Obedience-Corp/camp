@@ -76,7 +76,25 @@ func formatTable(w io.Writer, projects []Project) error {
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\n", ui.Value(p.Name), ui.Dim(p.Path), getProjectTypeStyled(projectType))
 	}
-	return tw.Flush()
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	_, err := fmt.Fprintln(w, ui.Dim(ui.CountLabel(len(projects), "project", "projects")))
+	return err
+}
+
+// FormatCount writes only the project total to w, emitting {"count": n} for JSON.
+func FormatCount(w io.Writer, n int, format OutputFormat) error {
+	if format == FormatJSON {
+		encoder := json.NewEncoder(w)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(map[string]int{"count": n})
+	}
+	_, err := fmt.Fprintln(w, ui.CountLabel(n, "project", "projects"))
+	return err
 }
 
 // getProjectTypeStyled returns styled project type text.
