@@ -139,6 +139,30 @@ func TestLifecycleList_CountsPerStatus(t *testing.T) {
 	}
 }
 
+func TestLifecycleSet_NoOpWhenAlreadySet(t *testing.T) {
+	setLifecycleRegistry(t, lifecycleFixture)
+	out, err := execLifecycle(t, runLifecycleSet, false, "beta", "inactive")
+	if err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if !strings.Contains(out, "already inactive") {
+		t.Errorf("expected no-op message, got: %s", out)
+	}
+}
+
+func TestLifecycleList_TextOutput(t *testing.T) {
+	setLifecycleRegistry(t, lifecycleFixture)
+	out, err := execLifecycle(t, runLifecycleList, false)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	for _, want := range []string{"STATUS", "active", "inactive", "reference"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("list output missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestLifecycle_StatusDefaultsToActiveOnLoad(t *testing.T) {
 	setLifecycleRegistry(t, lifecycleFixture)
 	if got := statusOf(t, "A-1"); got != "active" {
