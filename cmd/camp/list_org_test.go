@@ -102,7 +102,7 @@ func TestList_JSONShape(t *testing.T) {
 		ent("A-1", "alpha", "campaign", "default", "active"),
 		ent("B-2", "beta", "campaign", "obey", "active", "paid-work"),
 	}
-	out := captureListStdout(t, func() error { return outputCampaigns(entries, "json") })
+	out := captureListStdout(t, func() error { return outputCampaigns(os.Stdout, entries, "json") })
 
 	var got []map[string]any
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
@@ -134,10 +134,12 @@ func TestList_GoldenSingleOrgActive(t *testing.T) {
 	if shouldGroupEntries(entries) {
 		t.Fatal("single-org entries must not group")
 	}
-	out := captureListStdout(t, func() error { return outputCampaigns(entries, "table") })
+	out := captureListStdout(t, func() error { return outputCampaigns(os.Stdout, entries, "table") })
 	const golden = "ID        NAME   TYPE      PATH\n" +
 		"AAAAAAAA  alpha  campaign  /tmp/alpha\n" +
-		"BBBBBBBB  beta   product   /tmp/beta\n"
+		"BBBBBBBB  beta   product   /tmp/beta\n" +
+		"\n" +
+		"2 campaigns\n"
 	if out != golden {
 		t.Errorf("flat table output drifted:\n--- got ---\n%q\n--- want ---\n%q", out, golden)
 	}
@@ -156,7 +158,9 @@ func TestList_GroupedOutput(t *testing.T) {
 		"\n" +
 		"obey\n" +
 		"  ID        NAME  TYPE      PATH\n" +
-		"  BBBBBBBB  beta  campaign  /tmp/beta\n"
+		"  BBBBBBBB  beta  campaign  /tmp/beta\n" +
+		"\n" +
+		"2 campaigns\n"
 	if out != golden {
 		t.Errorf("grouped output drifted:\n--- got ---\n%q\n--- want ---\n%q", out, golden)
 	}

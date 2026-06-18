@@ -36,6 +36,8 @@ func outputGrouped(entries []campaignEntry, format, fallbackOrg string) error {
 			return err
 		}
 	}
+	fmt.Println()
+	fmt.Println(ui.Dim(ui.CountLabel(len(entries), "campaign", "campaigns")))
 	return nil
 }
 

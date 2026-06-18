@@ -5,6 +5,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -137,6 +138,14 @@ func KeyValue(key, value string) string {
 // KeyValueColored formats a key-value pair with a colored value
 func KeyValueColored(key, value string, color lipgloss.Color) string {
 	return Label(key) + " " + Value(value, color)
+}
+
+// CountLabel formats a count with its noun, pluralizing when n != 1.
+func CountLabel(n int, singular, plural string) string {
+	if n == 1 {
+		return fmt.Sprintf("%d %s", n, singular)
+	}
+	return fmt.Sprintf("%d %s", n, plural)
 }
 
 // Indent adds indentation to text
