@@ -125,7 +125,6 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		"dungeon list":  false,
 		"dungeon move":  false,
 		"intent crawl":  false,
-		"shelve":        false,
 		"skills link":   false,
 		"skills status": false,
 		"skills unlink": false,

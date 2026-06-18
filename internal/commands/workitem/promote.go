@@ -222,18 +222,18 @@ func emitPromoteJSON(cmd *cobra.Command, result workitemPromoteResult) error {
 }
 
 func doDungeonPromote(ctx context.Context, campaignRoot string, loc *locate.Location, status string, result *workitemPromoteResult) (*commitInputs, error) {
-	moveRes, err := promoteToDungeon(ctx, campaignRoot, loc, status)
+	moveRes, err := MoveToDungeon(ctx, campaignRoot, loc, status)
 	if err != nil {
 		return nil, err
 	}
-	result.To = moveRes.toRel
+	result.To = moveRes.ToRel
 
-	dest := append([]string{moveRes.targetPath}, moveRes.createdFiles...)
+	dest := append([]string{moveRes.TargetPath}, moveRes.CreatedFiles...)
 	return &commitInputs{
 		description: fmt.Sprintf("Promote workitem %s to %s", loc.Slug, status),
 		sourcePaths: []string{loc.SourcePath},
 		destPaths:   dest,
-		rewritten:   moveRes.svc.RewrittenLinkFiles(),
+		rewritten:   moveRes.Svc.RewrittenLinkFiles(),
 	}, nil
 }
 
@@ -347,56 +347,61 @@ func appendShelve(ctx context.Context, opts runWorkitemPromoteOptions, campaignR
 		return ci, nil
 	}
 
-	moveRes, err := promoteToDungeon(ctx, campaignRoot, loc, "completed")
+	moveRes, err := MoveToDungeon(ctx, campaignRoot, loc, "completed")
 	if err != nil {
 		return nil, camperrors.Wrap(err, "shelving source workitem")
 	}
-	result.SourceShelved = moveRes.toRel
+	result.SourceShelved = moveRes.ToRel
 	ci.sourcePaths = []string{loc.SourcePath}
-	ci.destPaths = append(ci.destPaths, moveRes.targetPath)
-	ci.destPaths = append(ci.destPaths, moveRes.createdFiles...)
-	ci.rewritten = moveRes.svc.RewrittenLinkFiles()
+	ci.destPaths = append(ci.destPaths, moveRes.TargetPath)
+	ci.destPaths = append(ci.destPaths, moveRes.CreatedFiles...)
+	ci.rewritten = moveRes.Svc.RewrittenLinkFiles()
 	return ci, nil
 }
 
-type dungeonMoveResult struct {
-	svc          *intdungeon.Service
-	createdFiles []string
-	targetPath   string
-	fromRel      string
-	toRel        string
+// DungeonMove is the outcome of moving a workitem directory into a dungeon
+// status, carrying everything the auto-commit step needs.
+type DungeonMove struct {
+	Svc          *intdungeon.Service
+	CreatedFiles []string
+	TargetPath   string
+	FromRel      string
+	ToRel        string
 }
 
-func promoteToDungeon(ctx context.Context, campaignRoot string, loc *locate.Location, status string) (dungeonMoveResult, error) {
+// MoveToDungeon moves the workitem at loc into the given dungeon status using
+// the shared dungeon plumbing. It is the single implementation behind both
+// camp workitem promote and the deprecated camp shelve alias.
+func MoveToDungeon(ctx context.Context, campaignRoot string, loc *locate.Location, status string) (DungeonMove, error) {
 	info, err := os.Stat(loc.SourcePath)
 	if err != nil {
-		return dungeonMoveResult{}, camperrors.Wrapf(err, "stat workitem %s", loc.SourcePath)
+		return DungeonMove{}, camperrors.Wrapf(err, "stat workitem %s", loc.SourcePath)
 	}
 	if !info.IsDir() {
-		return dungeonMoveResult{}, camperrors.New(fmt.Sprintf("workitem %s is not a directory; promote dungeon targets only handle directory-style workitems", dungeoncmd.RelFromRoot(campaignRoot, loc.SourcePath)))
+		return DungeonMove{}, camperrors.New(fmt.Sprintf("workitem %s is not a directory; only directory-style workitems can be moved to the dungeon", dungeoncmd.RelFromRoot(campaignRoot, loc.SourcePath)))
 	}
 
 	if loc.InDungeon && loc.Status == status {
-		return dungeonMoveResult{}, camperrors.New(fmt.Sprintf("workitem %q is already at status %q", loc.Slug, status))
+		return DungeonMove{}, camperrors.New(fmt.Sprintf("workitem %q is already at status %q", loc.Slug, status))
 	}
 
 	svc := intdungeon.NewService(campaignRoot, loc.DungeonPath)
 	initResult, err := svc.Init(ctx, intdungeon.InitOptions{})
 	if err != nil {
-		return dungeonMoveResult{}, camperrors.Wrap(err, "initializing workitem dungeon")
+		return DungeonMove{}, camperrors.Wrap(err, "initializing workitem dungeon")
 	}
 
 	targetPath, err := svc.MoveToDungeonStatus(ctx, loc.Slug, loc.ParentPath, status)
 	if err != nil {
-		return dungeonMoveResult{}, dungeoncmd.WrapDungeonMoveError(err, loc.Slug, status)
+		return DungeonMove{}, dungeoncmd.WrapDungeonMoveError(err, loc.Slug, status)
 	}
 
-	return dungeonMoveResult{
-		svc:          svc,
-		createdFiles: initResult.CreatedFiles,
-		targetPath:   targetPath,
-		fromRel:      filepath.ToSlash(dungeoncmd.RelFromRoot(campaignRoot, loc.SourcePath)),
-		toRel:        filepath.ToSlash(dungeoncmd.RelFromRoot(campaignRoot, targetPath)),
+	return DungeonMove{
+		Svc:          svc,
+		CreatedFiles: initResult.CreatedFiles,
+		TargetPath:   targetPath,
+		FromRel:      filepath.ToSlash(dungeoncmd.RelFromRoot(campaignRoot, loc.SourcePath)),
+		ToRel:        filepath.ToSlash(dungeoncmd.RelFromRoot(campaignRoot, targetPath)),
 	}, nil
 }
 

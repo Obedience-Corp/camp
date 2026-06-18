@@ -5,13 +5,12 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 
 	dungeoncmd "github.com/Obedience-Corp/camp/cmd/camp/dungeon"
+	wicmd "github.com/Obedience-Corp/camp/internal/commands/workitem"
 	"github.com/Obedience-Corp/camp/internal/config"
-	intdungeon "github.com/Obedience-Corp/camp/internal/dungeon"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	navindex "github.com/Obedience-Corp/camp/internal/nav/index"
 	"github.com/Obedience-Corp/camp/internal/ui"
@@ -19,27 +18,22 @@ import (
 )
 
 var Cmd = &cobra.Command{
-	Use:     "shelve <status>",
-	Short:   "Shelve the workitem at cwd to a dungeon status",
-	GroupID: "planning",
-	Long: `Shelve the directory-style workitem containing the current working
-directory to a named dungeon status. Status directories live under the
-workitem type's local dungeon (workflow/<type>/dungeon/<status>/); outside
-the dungeon a workitem is treated as active.
+	Use:    "shelve <status>",
+	Short:  "Deprecated: use camp workitem promote --target <status>",
+	Hidden: true,
+	Long: `Deprecated alias for camp workitem promote --target <status>.
 
-Run this from anywhere inside workflow/<type>/<slug>/. The workitem
-boundary is detected from cwd. The status argument is the destination
-directory name (e.g., completed, archived, someday) - no need to spell
-out "dungeon/".`,
-	Example: `  camp shelve completed   Shelve the workitem to its local dungeon/completed
-  camp shelve archived    Move to dungeon/archived
-  camp shelve someday     Move to dungeon/someday`,
-	Args: cobra.ExactArgs(1),
+Shelve the directory-style workitem containing the current working directory
+to a named dungeon status (completed, archived, someday). Run from anywhere
+inside workflow/<type>/<slug>/. Prefer camp workitem promote --target <status>
+or camp promote.`,
+	Example: `  camp shelve completed   # use: camp workitem promote --target completed`,
+	Args:    cobra.ExactArgs(1),
 	Annotations: map[string]string{
 		"agent_allowed": "true",
 		"agent_reason":  "Non-interactive shelving of the workitem at cwd to a dungeon status",
 	},
-	RunE: runPromote,
+	RunE: runShelveAlias,
 }
 
 func init() {
@@ -59,7 +53,7 @@ type promoteResult struct {
 	Warnings      []string `json:"warnings,omitempty"`
 }
 
-func runPromote(cmd *cobra.Command, args []string) error {
+func runShelveAlias(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	status := args[0]
 
@@ -67,7 +61,7 @@ func runPromote(cmd *cobra.Command, args []string) error {
 	jsonOut, _ := cmd.Flags().GetBool("json")
 
 	if status == "active" {
-		return fmt.Errorf("shelve cannot target %q: %q is not a dungeon status (outside the dungeon a workitem is already active); restoring workitems out of dungeon is not supported by shelve", status, status)
+		return camperrors.New(fmt.Sprintf("shelve cannot target %q: %q is not a dungeon status (outside the dungeon a workitem is already active); restoring workitems out of dungeon is not supported by shelve", status, status))
 	}
 
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
@@ -85,35 +79,17 @@ func runPromote(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	info, err := os.Stat(loc.SourcePath)
+	move, err := wicmd.MoveToDungeon(ctx, campaignRoot, loc, status)
 	if err != nil {
-		return camperrors.Wrapf(err, "stat workitem %s", loc.SourcePath)
-	}
-	if !info.IsDir() {
-		return fmt.Errorf("workitem %s is not a directory; shelve only handles directory-style workitems", dungeoncmd.RelFromRoot(campaignRoot, loc.SourcePath))
-	}
-
-	if loc.InDungeon && loc.Status == status {
-		return fmt.Errorf("workitem %q is already at status %q", loc.Slug, status)
-	}
-
-	svc := intdungeon.NewService(campaignRoot, loc.DungeonPath)
-	initResult, err := svc.Init(ctx, intdungeon.InitOptions{})
-	if err != nil {
-		return camperrors.Wrap(err, "initializing workitem dungeon")
-	}
-
-	targetPath, err := svc.MoveToDungeonStatus(ctx, loc.Slug, loc.ParentPath, status)
-	if err != nil {
-		return dungeoncmd.WrapDungeonMoveError(err, loc.Slug, status)
+		return err
 	}
 
 	result := promoteResult{
 		Slug:   loc.Slug,
 		Type:   loc.Type,
 		Status: status,
-		From:   filepath.ToSlash(dungeoncmd.RelFromRoot(campaignRoot, loc.SourcePath)),
-		To:     filepath.ToSlash(dungeoncmd.RelFromRoot(campaignRoot, targetPath)),
+		From:   move.FromRel,
+		To:     move.ToRel,
 	}
 
 	stdout := cmd.OutOrStdout()
@@ -133,14 +109,14 @@ func runPromote(cmd *cobra.Command, args []string) error {
 		if jsonOut {
 			result.Warnings = append(result.Warnings, msg)
 		} else {
-			fmt.Fprintf(stdout, "%s %s\n", ui.WarningIcon(), msg)
+			_, _ = fmt.Fprintf(stdout, "%s %s\n", ui.WarningIcon(), msg)
 		}
 	}
 
 	var commitErr error
 	if !noCommit {
-		destinationPaths := append([]string{}, initResult.CreatedFiles...)
-		destinationPaths = append(destinationPaths, targetPath)
+		destinationPaths := append([]string{}, move.CreatedFiles...)
+		destinationPaths = append(destinationPaths, move.TargetPath)
 		description := fmt.Sprintf("Shelve workitem %s → %s", loc.Slug, result.To)
 
 		outcome := dungeoncmd.StageAndCommitDungeonMove(ctx, &dungeoncmd.DungeonMoveCommit{
@@ -149,7 +125,7 @@ func runPromote(cmd *cobra.Command, args []string) error {
 			Description:      description,
 			SourcePaths:      []string{loc.SourcePath},
 			DestinationPaths: destinationPaths,
-			RewrittenFiles:   svc.RewrittenLinkFiles(),
+			RewrittenFiles:   move.Svc.RewrittenLinkFiles(),
 		})
 		dungeoncmd.PrintDungeonMoveOutcome(textOut, outcome)
 		result.Committed = outcome.Committed
@@ -161,7 +137,9 @@ func runPromote(cmd *cobra.Command, args []string) error {
 		if err := json.NewEncoder(stdout).Encode(result); err != nil {
 			return camperrors.Wrap(err, "encoding JSON output")
 		}
+		return commitErr
 	}
 
+	_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "camp shelve is deprecated; use camp workitem promote --target "+status+" (or camp promote).")
 	return commitErr
 }
