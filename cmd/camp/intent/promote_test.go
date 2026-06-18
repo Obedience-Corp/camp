@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Obedience-Corp/camp/internal/intent/promote"
+	"github.com/Obedience-Corp/camp/internal/promote"
 )
 
 func TestExtractFirstParagraph(t *testing.T) {
