@@ -1,4 +1,4 @@
-package promote
+package locate
 
 import (
 	"path/filepath"
@@ -6,20 +6,20 @@ import (
 	"testing"
 )
 
-func TestDetectWorkitemFromCwd(t *testing.T) {
+func TestDetectFromCwd(t *testing.T) {
 	const root = "/campaign"
 
 	tests := []struct {
-		name      string
-		cwd       string
-		wantErr   string
-		wantType  string
-		wantSlug  string
-		wantSrc   string
-		wantPar   string
-		wantDun   string
-		wantIn    bool
-		wantStat  string
+		name     string
+		cwd      string
+		wantErr  string
+		wantType string
+		wantSlug string
+		wantSrc  string
+		wantPar  string
+		wantDun  string
+		wantIn   bool
+		wantStat string
 	}{
 		{
 			name:     "active workitem root",
@@ -130,7 +130,7 @@ func TestDetectWorkitemFromCwd(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := detectWorkitemFromCwd(root, tc.cwd)
+			got, err := DetectFromCwd(root, tc.cwd)
 			if tc.wantErr != "" {
 				if err == nil {
 					t.Fatalf("expected error containing %q, got nil (result=%+v)", tc.wantErr, got)

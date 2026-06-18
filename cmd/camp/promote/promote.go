@@ -15,6 +15,7 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	navindex "github.com/Obedience-Corp/camp/internal/nav/index"
 	"github.com/Obedience-Corp/camp/internal/ui"
+	"github.com/Obedience-Corp/camp/internal/workitem/locate"
 )
 
 var Cmd = &cobra.Command{
@@ -79,7 +80,7 @@ func runPromote(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "getting current directory")
 	}
 
-	loc, err := detectWorkitemFromCwd(campaignRoot, cwd)
+	loc, err := locate.DetectFromCwd(campaignRoot, cwd)
 	if err != nil {
 		return err
 	}

@@ -49,6 +49,11 @@ type Metadata struct {
 	// or adopted. Empty when no quest resolved (no --quest flag and no
 	// CAMP_QUEST env var). Added in v1alpha6.
 	QuestID string `yaml:"quest_id,omitempty"`
+	// PromotedTo records the destination a workitem was promoted to
+	// (festivals/<dir> or docs/<dest>). Set by `camp workitem promote`.
+	PromotedTo string `yaml:"promoted_to,omitempty"`
+	// PromotedAt is the RFC3339 UTC timestamp of the promotion.
+	PromotedAt string `yaml:"promoted_at,omitempty"`
 }
 
 // LoadMetadata reads .workitem from dir on the host filesystem.
