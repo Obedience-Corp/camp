@@ -11,15 +11,19 @@ import (
 	attachpkg "github.com/Obedience-Corp/camp/cmd/camp/attach"
 	cachepkg "github.com/Obedience-Corp/camp/cmd/camp/cache"
 	dungeonpkg "github.com/Obedience-Corp/camp/cmd/camp/dungeon"
+	festivalspkg "github.com/Obedience-Corp/camp/cmd/camp/festivals"
 	initcmd "github.com/Obedience-Corp/camp/cmd/camp/init"
 	intentpkg "github.com/Obedience-Corp/camp/cmd/camp/intent"
 	leveragepkg "github.com/Obedience-Corp/camp/cmd/camp/leverage"
+	lifecyclepkg "github.com/Obedience-Corp/camp/cmd/camp/lifecycle"
 	navigationpkg "github.com/Obedience-Corp/camp/cmd/camp/navigation"
+	orgpkg "github.com/Obedience-Corp/camp/cmd/camp/org"
 	projectpkg "github.com/Obedience-Corp/camp/cmd/camp/project"
 	promotepkg "github.com/Obedience-Corp/camp/cmd/camp/promote"
 	refspkg "github.com/Obedience-Corp/camp/cmd/camp/refs"
 	registrypkg "github.com/Obedience-Corp/camp/cmd/camp/registry"
 	skillspkg "github.com/Obedience-Corp/camp/cmd/camp/skills"
+	tagpkg "github.com/Obedience-Corp/camp/cmd/camp/tag"
 	worktreespkg "github.com/Obedience-Corp/camp/cmd/camp/worktrees"
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/commands/release"
@@ -219,6 +223,10 @@ func init() {
 	rootCmd.AddCommand(initcmd.New())
 	rootCmd.AddCommand(navigationpkg.ShortcutsCmd)
 	rootCmd.AddCommand(registrypkg.Cmd)
+	rootCmd.AddCommand(orgpkg.Cmd)
+	rootCmd.AddCommand(tagpkg.Cmd)
+	rootCmd.AddCommand(lifecyclepkg.Cmd)
+	rootCmd.AddCommand(festivalspkg.Cmd)
 	rootCmd.AddCommand(projectpkg.Cmd)
 	rootCmd.AddCommand(dungeonpkg.Cmd)
 	rootCmd.AddCommand(intentpkg.Cmd)

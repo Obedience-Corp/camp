@@ -1,7 +1,10 @@
 // Package config provides configuration types and loading for camp.
 package config
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // CampaignType represents the type of campaign.
 type CampaignType string
@@ -320,11 +323,21 @@ const RegistryVersion = 2
 type Registry struct {
 	// Version is the registry format version.
 	Version int `json:"version" yaml:"version,omitempty"`
+
+	DefaultOrg string `json:"default_org,omitempty" yaml:"default_org,omitempty"`
+
 	// Campaigns maps campaign IDs to their registration info.
 	Campaigns map[string]RegisteredCampaign `json:"campaigns" yaml:"campaigns,omitempty"`
 
 	// pathIndex maps paths to campaign IDs for fast lookup (not serialized).
 	pathIndex map[string]string `json:"-" yaml:"-"`
+}
+
+func (r *Registry) FallbackOrg() string {
+	if r.DefaultOrg == "" {
+		return DefaultOrg
+	}
+	return r.DefaultOrg
 }
 
 // RegisteredCampaign holds information about a registered campaign.
@@ -340,6 +353,58 @@ type RegisteredCampaign struct {
 	Type CampaignType `json:"type,omitempty" yaml:"type,omitempty"`
 	// LastAccess is when the campaign was last accessed.
 	LastAccess time.Time `json:"last_access,omitempty" yaml:"last_access,omitempty"`
+
+	Org    string   `json:"org,omitempty" yaml:"org,omitempty"`
+	Tags   []string `json:"tags,omitempty" yaml:"tags,omitempty"`
+	Status string   `json:"status,omitempty" yaml:"status,omitempty"`
+}
+
+const DefaultOrg = "default"
+
+const (
+	StatusActive    = "active"
+	StatusInactive  = "inactive"
+	StatusReference = "reference"
+)
+
+func (c *RegisteredCampaign) normalize(fallbackOrg string) {
+	if c.Org == "" {
+		c.Org = fallbackOrg
+	}
+	if c.Tags == nil {
+		c.Tags = []string{}
+	}
+	if c.Status == "" {
+		c.Status = StatusActive
+	}
+}
+
+func (c RegisteredCampaign) MarshalJSON() ([]byte, error) {
+	type persisted struct {
+		Name       string       `json:"name"`
+		Path       string       `json:"path"`
+		Type       CampaignType `json:"type,omitempty"`
+		LastAccess time.Time    `json:"last_access,omitempty"`
+		Org        string       `json:"org,omitempty"`
+		Tags       []string     `json:"tags,omitempty"`
+		Status     string       `json:"status,omitempty"`
+	}
+	p := persisted{
+		Name:       c.Name,
+		Path:       c.Path,
+		Type:       c.Type,
+		LastAccess: c.LastAccess,
+		Org:        c.Org,
+		Tags:       c.Tags,
+		Status:     c.Status,
+	}
+	if p.Status == StatusActive {
+		p.Status = ""
+	}
+	if len(p.Tags) == 0 {
+		p.Tags = nil
+	}
+	return json.Marshal(p)
 }
 
 // Valid returns true if the campaign type is a known valid type.

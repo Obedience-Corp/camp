@@ -9,8 +9,9 @@ import (
 
 // File is the on-disk registry representation shared by registry readers.
 type File struct {
-	Version   int                 `json:"version"`
-	Campaigns map[string]Campaign `json:"campaigns"`
+	Version    int                 `json:"version"`
+	DefaultOrg string              `json:"default_org,omitempty"`
+	Campaigns  map[string]Campaign `json:"campaigns"`
 }
 
 // Campaign is the minimal persisted registry campaign shape.
@@ -19,6 +20,10 @@ type Campaign struct {
 	Path       string    `json:"path"`
 	Type       string    `json:"type,omitempty"`
 	LastAccess time.Time `json:"last_access,omitempty"`
+
+	Org    string   `json:"org,omitempty"`
+	Tags   []string `json:"tags,omitempty"`
+	Status string   `json:"status,omitempty"`
 }
 
 // Path returns the path to the campaign registry file.

@@ -23,6 +23,9 @@ type campaignEntry struct {
 	Type       string    `json:"type"`
 	Path       string    `json:"path"`
 	LastAccess time.Time `json:"last_access,omitempty"`
+	Org        string    `json:"org"`
+	Status     string    `json:"status"`
+	Tags       []string  `json:"tags"`
 }
 
 var listCmd = &cobra.Command{
@@ -68,6 +71,12 @@ func init() {
 	listCmd.Flags().BoolVar(&listCount, "count", false, "Print only the total number of campaigns")
 	listCmd.Flags().StringP("sort", "s", "accessed", "Sort by (name, accessed, type)")
 	listCmd.Flags().Bool("verify-verbose", false, "Show detailed verification output")
+	listCmd.Flags().String("org", "", "Only campaigns in this org")
+	listCmd.Flags().StringSlice("tag", nil, "Only campaigns carrying this tag (repeat for AND)")
+	listCmd.Flags().String("status", "", "Only campaigns in this status (active, inactive, reference)")
+	listCmd.Flags().Bool("all", false, "Show all statuses (default hides inactive/reference)")
+	listCmd.Flags().Bool("group", false, "Force org grouping")
+	listCmd.Flags().Bool("no-group", false, "Suppress org grouping")
 }
 
 func runList(cmd *cobra.Command, args []string) error {
@@ -75,6 +84,11 @@ func runList(cmd *cobra.Command, args []string) error {
 	formatStr, _ := cmd.Flags().GetString("format")
 	if listJSON {
 		formatStr = "json"
+	}
+
+	filter, err := parseListFilter(cmd)
+	if err != nil {
+		return err
 	}
 
 	reg, err := config.LoadRegistry(ctx)
@@ -110,13 +124,16 @@ func runList(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	sortBy, _ := cmd.Flags().GetString("sort")
+	campaigns := filterEntries(sortCampaigns(reg.Campaigns, sortBy), filter)
+
 	if listCount {
 		if formatStr == "json" {
 			encoder := json.NewEncoder(os.Stdout)
 			encoder.SetIndent("", "  ")
-			return encoder.Encode(map[string]int{"count": reg.Len()})
+			return encoder.Encode(map[string]int{"count": len(campaigns)})
 		}
-		fmt.Println(ui.CountLabel(reg.Len(), "campaign", "campaigns"))
+		fmt.Println(ui.CountLabel(len(campaigns), "campaign", "campaigns"))
 		return nil
 	}
 
@@ -131,9 +148,12 @@ func runList(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	sortBy, _ := cmd.Flags().GetString("sort")
-
-	campaigns := sortCampaigns(reg.Campaigns, sortBy)
+	if formatStr == "json" {
+		return outputCampaigns(os.Stdout, campaigns, formatStr)
+	}
+	if shouldGroup(cmd, campaigns) {
+		return outputGrouped(campaigns, formatStr, reg.FallbackOrg())
+	}
 	return outputCampaigns(os.Stdout, campaigns, formatStr)
 }
 
@@ -141,12 +161,19 @@ func runList(cmd *cobra.Command, args []string) error {
 func sortCampaigns(campaigns map[string]config.RegisteredCampaign, by string) []campaignEntry {
 	entries := make([]campaignEntry, 0, len(campaigns))
 	for id, c := range campaigns {
+		tags := c.Tags
+		if tags == nil {
+			tags = []string{}
+		}
 		entries = append(entries, campaignEntry{
 			ID:         id,
 			Name:       c.Name,
 			Type:       string(c.Type),
 			Path:       c.Path,
 			LastAccess: c.LastAccess,
+			Org:        c.Org,
+			Status:     c.Status,
+			Tags:       tags,
 		})
 	}
 
@@ -187,24 +214,15 @@ func outputCampaigns(out io.Writer, campaigns []campaignEntry, format string) er
 		return nil
 	default: // table
 		w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
-			ui.Label("ID"), ui.Label("NAME"), ui.Label("TYPE"), ui.Label("PATH"))
+		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+			ui.Label("ID"), ui.Label("NAME"), ui.Label("TYPE"), ui.Label("PATH")); err != nil {
+			return err
+		}
 		for _, c := range campaigns {
-			campaignType := c.Type
-			if campaignType == "" {
-				campaignType = "-"
+			id, name, typ, path := campaignTableCells(c)
+			if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", id, name, typ, path); err != nil {
+				return err
 			}
-			// Truncate ID for display (first 8 chars like git)
-			shortID := c.ID
-			if len(shortID) > 8 {
-				shortID = shortID[:8]
-			}
-			typeStyle := ui.GetCampaignTypeStyle(c.Type)
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
-				ui.Dim(shortID),
-				ui.Value(c.Name),
-				typeStyle.Render(campaignType),
-				ui.Dim(c.Path))
 		}
 		if err := w.Flush(); err != nil {
 			return err

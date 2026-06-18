@@ -17,6 +17,10 @@ Use with the cgo shell function for instant navigation:
 The --print flag outputs just the path for shell integration:
   cd "$(camp switch --print)"
 
+Use campaign@tab to navigate to a specific location in the target campaign:
+  camp switch obey-campaign@p    # Switch and navigate to projects/
+  camp switch obey-campaign@f    # Switch and navigate to festivals/
+
 ```
 camp switch [campaign] [flags]
 ```
@@ -24,10 +28,11 @@ camp switch [campaign] [flags]
 ### Examples
 
 ```
-  camp switch                    # Interactive picker
-  camp switch obey-campaign      # Switch by name
-  camp switch a1b2               # Switch by ID prefix
-  camp switch --print            # Picker, output path only
+  camp switch                        # Interactive picker
+  camp switch obey-campaign          # Switch by name
+  camp switch a1b2                   # Switch by ID prefix
+  camp switch --print                # Picker, output path only
+  camp switch obey-campaign@p        # Switch and navigate to projects/
 ```
 
 ### Options
