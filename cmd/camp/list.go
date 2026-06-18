@@ -124,13 +124,16 @@ func runList(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	sortBy, _ := cmd.Flags().GetString("sort")
+	campaigns := filterEntries(sortCampaigns(reg.Campaigns, sortBy), filter)
+
 	if listCount {
 		if formatStr == "json" {
 			encoder := json.NewEncoder(os.Stdout)
 			encoder.SetIndent("", "  ")
-			return encoder.Encode(map[string]int{"count": reg.Len()})
+			return encoder.Encode(map[string]int{"count": len(campaigns)})
 		}
-		fmt.Println(ui.CountLabel(reg.Len(), "campaign", "campaigns"))
+		fmt.Println(ui.CountLabel(len(campaigns), "campaign", "campaigns"))
 		return nil
 	}
 
@@ -144,9 +147,6 @@ func runList(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  Or register existing: %s\n", ui.Accent("camp register <path>"))
 		return nil
 	}
-
-	sortBy, _ := cmd.Flags().GetString("sort")
-	campaigns := filterEntries(sortCampaigns(reg.Campaigns, sortBy), filter)
 
 	if formatStr == "json" {
 		return outputCampaigns(os.Stdout, campaigns, formatStr)
