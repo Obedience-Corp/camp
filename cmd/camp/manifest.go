@@ -54,6 +54,12 @@ func walkCommands(cmd *cobra.Command, prefix string, entries *[]CommandEntry) {
 			path = prefix + " " + child.Name()
 		}
 
+		// Hidden commands (e.g. the deprecated shelve alias) are not advertised
+		// in the agent manifest, mirroring their absence from --help.
+		if child.Hidden {
+			continue
+		}
+
 		// Only include commands that have the agent_allowed annotation
 		if val, ok := child.Annotations["agent_allowed"]; ok {
 			entry := CommandEntry{

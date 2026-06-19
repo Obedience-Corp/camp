@@ -11,19 +11,15 @@ package promote
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"github.com/Obedience-Corp/camp/internal/fest"
 	"github.com/Obedience-Corp/camp/internal/intent"
+	promotecore "github.com/Obedience-Corp/camp/internal/promote"
 )
 
 // Target identifies the promotion target.
@@ -59,12 +55,6 @@ type Result struct {
 	DesignDir       string        // Path to created design doc directory
 	DesignCreated   bool          // True if design doc was created
 	NewStatus       intent.Status // The status the intent was moved to
-}
-
-// festCreateOutput mirrors the JSON output from `fest create festival --json`.
-type festCreateOutput struct {
-	OK       bool              `json:"ok"`
-	Festival map[string]string `json:"festival"`
 }
 
 // Promote orchestrates intent promotion based on the target.
@@ -116,20 +106,34 @@ func promoteToFestival(ctx context.Context, svc *intent.IntentService, i *intent
 		return Result{}, camperrors.New("intent is not ready for promotion (status: " + i.Status.String() + ")")
 	}
 
-	// Move to active status (work is beginning, not done).
 	moved, err := svc.Move(ctx, i.ID, intent.StatusActive)
 	if err != nil {
 		return Result{}, camperrors.Wrap(err, "failed to move intent to active")
 	}
 
-	// Create festival (best-effort from here on).
-	result := createFestival(ctx, opts.CampaignRoot, moved)
-	result.NewStatus = intent.StatusActive
+	name := intent.SlugFromTitle(moved.Title)
+	goal := promotecore.ExtractFirstParagraph(moved.Content)
+	fr, _ := promotecore.FindAndCreateFestival(ctx, opts.CampaignRoot, name, goal)
 
-	// Set PromotedTo if a festival was created.
-	if result.FestivalCreated && result.FestivalDir != "" {
-		moved.PromotedTo = result.FestivalDir
-		if err := svc.Save(ctx, moved); err != nil {
+	result := Result{
+		FestivalName:    fr.Name,
+		FestivalDir:     fr.Dir,
+		FestivalDest:    fr.Dest,
+		FestivalCreated: fr.Created,
+		FestNotFound:    fr.NotFound,
+		FestCLIError:    fr.CLIError,
+		NewStatus:       intent.StatusActive,
+	}
+
+	if fr.Created {
+		result.IntentCopied = promotecore.CopyIntoFestivalIngest(opts.CampaignRoot, fr.Dest, fr.Dir, moved.Path)
+	}
+
+	if fr.Created && fr.Dir != "" {
+		moved.PromotedTo = fr.Dir
+		if err := promotecore.RecordPromotion(fr.Dir, func(promotecore.PromotionRecord) error {
+			return svc.Save(ctx, moved)
+		}); err != nil {
 			return result, camperrors.Wrap(err, "saving promoted_to for festival")
 		}
 	}
@@ -220,7 +224,7 @@ func createDesignDoc(ctx context.Context, campaignRoot string, i *intent.Intent)
 	}
 
 	// Build README content from intent.
-	firstParagraph := ExtractFirstParagraph(i.Content)
+	firstParagraph := promotecore.ExtractFirstParagraph(i.Content)
 	date := time.Now().Format("2006-01-02")
 
 	var content strings.Builder
@@ -303,140 +307,4 @@ func ValidTargetsForStatus(status intent.Status) []Target {
 	default:
 		return nil
 	}
-}
-
-// createFestival runs `fest create festival --json` and parses the output
-// to determine the actual directory name (which includes an ID suffix).
-func createFestival(ctx context.Context, campaignRoot string, i *intent.Intent) Result {
-	festPath, err := fest.FindFestCLI()
-	if err != nil {
-		return Result{FestNotFound: true}
-	}
-
-	festivalName := intent.SlugFromTitle(i.Title)
-	festivalGoal := ExtractFirstParagraph(i.Content)
-
-	args := []string{"create", "festival", "--type", "standard", "--name", festivalName, "--json"}
-	if festivalGoal != "" {
-		args = append(args, "--goal", festivalGoal)
-	}
-
-	cmd := exec.CommandContext(ctx, festPath, args...)
-	cmd.Dir = campaignRoot
-	output, err := cmd.Output()
-	if err != nil {
-		return Result{
-			FestivalName: festivalName,
-			FestCLIError: extractFestStderr(err),
-		}
-	}
-
-	// Parse JSON to get actual directory and dest.
-	var festOut festCreateOutput
-	if err := json.Unmarshal(output, &festOut); err != nil || !festOut.OK {
-		return Result{FestivalName: festivalName}
-	}
-
-	dir := festOut.Festival["directory"]
-	dest := festOut.Festival["dest"]
-	if dir == "" {
-		dir = festivalName
-	}
-	if dest == "" {
-		dest = "planning"
-	}
-
-	result := Result{
-		FestivalName:    festivalName,
-		FestivalDir:     dir,
-		FestivalDest:    dest,
-		FestivalCreated: true,
-	}
-
-	// Copy intent file into the festival's ingest directory.
-	result.IntentCopied = copyIntentToIngest(campaignRoot, dest, dir, i)
-
-	return result
-}
-
-func extractFestStderr(err error) string {
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
-		return strings.TrimSpace(string(exitErr.Stderr))
-	}
-	return ""
-}
-
-// copyIntentToIngest copies the intent markdown file into the festival's
-// 001_INGEST/input_specs/ directory. Returns true on success.
-func copyIntentToIngest(campaignRoot, dest, festivalDir string, i *intent.Intent) bool {
-	if i.Path == "" {
-		return false
-	}
-
-	ingestDir := filepath.Join(campaignRoot, "festivals", dest, festivalDir, "001_INGEST", "input_specs")
-
-	if _, err := os.Stat(ingestDir); os.IsNotExist(err) {
-		fmt.Fprintf(os.Stderr,
-			"Notice: intent file not copied to festival ingest directory because %s does not exist.\n"+
-				"Use fest to ingest this file once `fest ingest <file>` is available.\n"+
-				"File to ingest: %s\n",
-			ingestDir, i.Path)
-		return false
-	} else if err != nil {
-		return false
-	}
-
-	destPath := filepath.Join(ingestDir, filepath.Base(i.Path))
-	return copyFile(i.Path, destPath) == nil
-}
-
-// copyFile copies src to dst.
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return camperrors.Wrap(err, "opening source file")
-	}
-	defer in.Close()
-
-	out, err := os.Create(dst)
-	if err != nil {
-		return camperrors.Wrap(err, "creating destination file")
-	}
-	defer out.Close()
-
-	_, err = io.Copy(out, in)
-	if err != nil {
-		return camperrors.Wrap(err, "copying file contents")
-	}
-	return nil
-}
-
-// ExtractFirstParagraph returns the first non-header paragraph from markdown content.
-func ExtractFirstParagraph(content string) string {
-	content = strings.TrimSpace(content)
-	if content == "" {
-		return ""
-	}
-
-	paragraphs := strings.Split(content, "\n\n")
-	for _, p := range paragraphs {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
-
-		// Skip paragraphs that are just markdown headers.
-		if strings.HasPrefix(p, "#") {
-			lines := strings.SplitN(p, "\n", 2)
-			if len(lines) > 1 {
-				return strings.TrimSpace(lines[1])
-			}
-			continue
-		}
-
-		return p
-	}
-
-	return ""
 }

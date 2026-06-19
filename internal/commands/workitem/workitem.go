@@ -132,6 +132,7 @@ Examples:
 	cmd.AddCommand(newCurrentCommand())
 	cmd.AddCommand(newResolveCommand())
 	cmd.AddCommand(newPriorityCommand())
+	cmd.AddCommand(newPromoteCommand())
 	cmd.AddCommand(newDoctorCommand())
 	cmd.AddCommand(newCommitCommand())
 	cmd.AddCommand(newCommitsCommand())

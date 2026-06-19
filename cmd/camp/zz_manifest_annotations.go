@@ -67,6 +67,7 @@ var manifestAgentAllowedReasons = map[string]string{
 	"workitem link":       "Non-interactive workitem link operation",
 	"workitem links":      "Read-only workitem link listing",
 	"workitem priority":   "Non-interactive priority update with explicit selector",
+	"workitem promote":    "Non-interactive promote fully specified by --target and flags",
 	"workitem resolve":    "Read-only workitem context resolution",
 	"workitem unlink":     "Non-interactive workitem unlink operation",
 	"worktrees info":      "Read-only worktree metadata",

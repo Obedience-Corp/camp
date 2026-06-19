@@ -1,25 +1,46 @@
-package promote
+package locate
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func TestDetectWorkitemFromCwd(t *testing.T) {
+func TestDetectFromCwd_ResolvesSymlinkedRoot(t *testing.T) {
+	real := t.TempDir()
+	wiDir := filepath.Join(real, "workflow", "design", "slug")
+	if err := os.MkdirAll(wiDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	link := filepath.Join(t.TempDir(), "campaign-link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatalf("Symlink: %v", err)
+	}
+
+	loc, err := DetectFromCwd(link, wiDir)
+	if err != nil {
+		t.Fatalf("DetectFromCwd with symlinked root: %v", err)
+	}
+	if loc.Type != "design" || loc.Slug != "slug" {
+		t.Fatalf("loc = %+v, want design/slug", loc)
+	}
+}
+
+func TestDetectFromCwd(t *testing.T) {
 	const root = "/campaign"
 
 	tests := []struct {
-		name      string
-		cwd       string
-		wantErr   string
-		wantType  string
-		wantSlug  string
-		wantSrc   string
-		wantPar   string
-		wantDun   string
-		wantIn    bool
-		wantStat  string
+		name     string
+		cwd      string
+		wantErr  string
+		wantType string
+		wantSlug string
+		wantSrc  string
+		wantPar  string
+		wantDun  string
+		wantIn   bool
+		wantStat string
 	}{
 		{
 			name:     "active workitem root",
@@ -130,7 +151,7 @@ func TestDetectWorkitemFromCwd(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := detectWorkitemFromCwd(root, tc.cwd)
+			got, err := DetectFromCwd(root, tc.cwd)
 			if tc.wantErr != "" {
 				if err == nil {
 					t.Fatalf("expected error containing %q, got nil (result=%+v)", tc.wantErr, got)
