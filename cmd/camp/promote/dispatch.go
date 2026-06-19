@@ -2,6 +2,7 @@ package promote
 
 import (
 	"context"
+	"io"
 	"os"
 	"os/exec"
 
@@ -11,16 +12,16 @@ import (
 )
 
 type commandRunner interface {
-	run(ctx context.Context, dir, bin string, args []string) error
+	run(ctx context.Context, dir, bin string, args []string, stdout io.Writer) error
 }
 
 type execRunner struct{}
 
-func (execRunner) run(ctx context.Context, dir, bin string, args []string) error {
+func (execRunner) run(ctx context.Context, dir, bin string, args []string, stdout io.Writer) error {
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = dir
 	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
+	cmd.Stdout = stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return camperrors.Wrapf(err, "dispatching %s %v", bin, args)
@@ -67,33 +68,33 @@ func kindForType(wt workitem.WorkflowType) promoteKind {
 	}
 }
 
-func dispatchIntent(ctx context.Context, id, target string) error {
+func dispatchIntent(ctx context.Context, id, target string, stdout io.Writer) error {
 	bin, err := campBinary()
 	if err != nil {
 		return err
 	}
 	args := []string{"intent", "promote", id, "--target", target}
-	return runner.run(ctx, "", bin, args)
+	return runner.run(ctx, "", bin, args, stdout)
 }
 
-func dispatchWorkitem(ctx context.Context, dir, target string, pass []string) error {
+func dispatchWorkitem(ctx context.Context, dir, target string, pass []string, stdout io.Writer) error {
 	bin, err := campBinary()
 	if err != nil {
 		return err
 	}
 	args := []string{"workitem", "promote", "--target", target}
 	args = append(args, pass...)
-	return runner.run(ctx, dir, bin, args)
+	return runner.run(ctx, dir, bin, args, stdout)
 }
 
-func dispatchFestival(ctx context.Context, dir string, festArgs []string) error {
+func dispatchFestival(ctx context.Context, dir string, festArgs []string, stdout io.Writer) error {
 	bin, err := festBinary()
 	if err != nil {
 		return err
 	}
 	args := []string{"promote"}
 	args = append(args, festArgs...)
-	return runner.run(ctx, dir, bin, args)
+	return runner.run(ctx, dir, bin, args, stdout)
 }
 
 func festPassthrough(target string, pass []string) []string {

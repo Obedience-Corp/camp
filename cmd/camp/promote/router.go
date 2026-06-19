@@ -2,7 +2,9 @@ package promote
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -73,7 +75,7 @@ func runRouter(cmd *cobra.Command, args []string) error {
 	}
 
 	pass := passthroughFlags(cmd)
-	return dispatch(cmd, item, campaignRoot, target, interactive, dryRun, pass)
+	return dispatch(cmd, item, campaignRoot, target, interactive, dryRun, jsonOut, pass)
 }
 
 func resolveItem(ctx context.Context, campaignRoot string, resolver *paths.Resolver, args []string) (workitem.WorkItem, bool, error) {
@@ -108,7 +110,7 @@ func resolveItem(ctx context.Context, campaignRoot string, resolver *paths.Resol
 	return workitem.WorkItem{}, false, nil
 }
 
-func dispatch(cmd *cobra.Command, item workitem.WorkItem, campaignRoot, target string, interactive, dryRun bool, pass []string) error {
+func dispatch(cmd *cobra.Command, item workitem.WorkItem, campaignRoot, target string, interactive, dryRun, jsonOut bool, pass []string) error {
 	ctx := cmd.Context()
 	kind := kindForType(item.WorkflowType)
 
@@ -120,44 +122,85 @@ func dispatch(cmd *cobra.Command, item workitem.WorkItem, campaignRoot, target s
 		target = picked
 	}
 
+	display := target
 	switch kind {
 	case kindFestival:
 		if _, ok := festivalTarget(target); !ok {
 			return camperrors.New("festival target must be next, completed, archived, or someday")
 		}
-		display := target
 		if display == "" {
 			display = "next"
 		}
-		if dryRun {
-			return printDryRun(cmd, item, display)
+	case kindIntent, kindWorkitem:
+		if target == "" {
+			return camperrors.New("--target is required in non-interactive mode")
 		}
+	}
+
+	if dryRun {
+		return reportPlan(cmd, jsonOut, kind, item, display)
+	}
+
+	out := cmd.OutOrStdout()
+	switch kind {
+	case kindFestival:
 		status, _ := festivalTarget(target)
-		return dispatchFestival(ctx, item.AbsPath(campaignRoot), festPassthrough(status, pass))
+		return dispatchFestival(ctx, item.AbsPath(campaignRoot), festPassthrough(status, pass), out)
 	case kindIntent:
-		if target == "" {
-			return camperrors.New("--target is required in non-interactive mode")
+		if jsonOut {
+			if err := dispatchIntent(ctx, item.SourceID, target, io.Discard); err != nil {
+				return err
+			}
+			return reportResult(cmd, kind, item, display)
 		}
-		if dryRun {
-			return printDryRun(cmd, item, target)
-		}
-		return dispatchIntent(ctx, item.SourceID, target)
+		return dispatchIntent(ctx, item.SourceID, target, out)
 	case kindWorkitem:
-		if target == "" {
-			return camperrors.New("--target is required in non-interactive mode")
-		}
-		if dryRun {
-			return printDryRun(cmd, item, target)
-		}
-		return dispatchWorkitem(ctx, item.AbsPath(campaignRoot), target, pass)
+		return dispatchWorkitem(ctx, item.AbsPath(campaignRoot), target, pass, out)
 	}
 	return camperrors.New("unknown promote kind")
 }
 
-func printDryRun(cmd *cobra.Command, item workitem.WorkItem, target string) error {
-	_, err := fmt.Fprintf(cmd.OutOrStdout(),
-		"dry-run: would promote %q (%s) to %s; no changes made\n", item.Title, item.WorkflowType, target)
-	return err
+type routerResult struct {
+	Kind   string `json:"kind"`
+	ID     string `json:"id,omitempty"`
+	Title  string `json:"title"`
+	Target string `json:"target"`
+	DryRun bool   `json:"dry_run"`
+	OK     bool   `json:"ok"`
+}
+
+func reportPlan(cmd *cobra.Command, jsonOut bool, kind promoteKind, item workitem.WorkItem, target string) error {
+	if !jsonOut {
+		_, err := fmt.Fprintf(cmd.OutOrStdout(),
+			"dry-run: would promote %q (%s) to %s; no changes made\n", item.Title, item.WorkflowType, target)
+		return err
+	}
+	return encodeResult(cmd, routerResult{
+		Kind: kindName(kind), ID: item.Key, Title: item.Title, Target: target, DryRun: true, OK: true,
+	})
+}
+
+func reportResult(cmd *cobra.Command, kind promoteKind, item workitem.WorkItem, target string) error {
+	return encodeResult(cmd, routerResult{
+		Kind: kindName(kind), ID: item.Key, Title: item.Title, Target: target, OK: true,
+	})
+}
+
+func encodeResult(cmd *cobra.Command, res routerResult) error {
+	enc := json.NewEncoder(cmd.OutOrStdout())
+	enc.SetIndent("", "  ")
+	return enc.Encode(res)
+}
+
+func kindName(kind promoteKind) string {
+	switch kind {
+	case kindIntent:
+		return "intent"
+	case kindFestival:
+		return "festival"
+	default:
+		return "workitem"
+	}
 }
 
 func festivalTarget(target string) (string, bool) {

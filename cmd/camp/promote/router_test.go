@@ -3,6 +3,8 @@ package promote
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -22,7 +24,7 @@ type recordingRunner struct {
 	args []string
 }
 
-func (r *recordingRunner) run(_ context.Context, dir, bin string, args []string) error {
+func (r *recordingRunner) run(_ context.Context, dir, bin string, args []string, _ io.Writer) error {
 	r.dir, r.bin, r.args = dir, bin, args
 	return nil
 }
@@ -64,7 +66,7 @@ func TestDispatchArgv(t *testing.T) {
 		runner = rec
 		t.Cleanup(func() { runner = orig })
 
-		if err := dispatchIntent(context.Background(), "add-dark", "festival"); err != nil {
+		if err := dispatchIntent(context.Background(), "add-dark", "festival", io.Discard); err != nil {
 			t.Fatalf("dispatchIntent: %v", err)
 		}
 		want := []string{"intent", "promote", "add-dark", "--target", "festival"}
@@ -80,7 +82,7 @@ func TestDispatchArgv(t *testing.T) {
 		t.Cleanup(func() { runner = orig })
 
 		dir := filepath.FromSlash("/camp/workflow/design/x")
-		if err := dispatchWorkitem(context.Background(), dir, "doc", []string{"--no-commit"}); err != nil {
+		if err := dispatchWorkitem(context.Background(), dir, "doc", []string{"--no-commit"}, io.Discard); err != nil {
 			t.Fatalf("dispatchWorkitem: %v", err)
 		}
 		want := []string{"workitem", "promote", "--target", "doc", "--no-commit"}
@@ -101,7 +103,7 @@ func TestDispatchArgv(t *testing.T) {
 		t.Cleanup(func() { runner = origR; festLookup = origF })
 
 		dir := filepath.FromSlash("/camp/festivals/planning/f")
-		if err := dispatchFestival(context.Background(), dir, festPassthrough("archived", nil)); err != nil {
+		if err := dispatchFestival(context.Background(), dir, festPassthrough("archived", nil), io.Discard); err != nil {
 			t.Fatalf("dispatchFestival: %v", err)
 		}
 		want := []string{"promote", "--dungeon", "archived"}
@@ -121,7 +123,7 @@ func TestDispatchArgv(t *testing.T) {
 		festLookup = func() (string, error) { return "fest", nil }
 		t.Cleanup(func() { runner = origR; festLookup = origF })
 
-		if err := dispatchFestival(context.Background(), "/x", festPassthrough("", nil)); err != nil {
+		if err := dispatchFestival(context.Background(), "/x", festPassthrough("", nil), io.Discard); err != nil {
 			t.Fatalf("dispatchFestival: %v", err)
 		}
 		want := []string{"promote"}
@@ -201,6 +203,98 @@ func TestRouterDryRunDoesNotDispatch(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "dry-run") {
 		t.Fatalf("stdout = %q, want dry-run notice", out.String())
+	}
+}
+
+func TestDispatchIntentJSONEmitsEnvelopeNotChildText(t *testing.T) {
+	rec := &recordingRunner{}
+	orig := runner
+	runner = rec
+	t.Cleanup(func() { runner = orig })
+
+	cmd := newRouterCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	item := workitem.WorkItem{
+		WorkflowType: workitem.WorkflowTypeIntent,
+		SourceID:     "add-dark",
+		Key:          "intent:add-dark",
+		Title:        "Add dark mode",
+	}
+	if err := dispatch(cmd, item, filepath.FromSlash("/camp"), "ready", false, false, true, nil); err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+
+	wantArgs := []string{"intent", "promote", "add-dark", "--target", "ready"}
+	if !reflect.DeepEqual(rec.args, wantArgs) {
+		t.Fatalf("intent argv = %v, want %v (must not forward --json)", rec.args, wantArgs)
+	}
+	var got routerResult
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("stdout is not a single JSON object: %v (raw %q)", err, out.String())
+	}
+	if got.Kind != "intent" || !got.OK || got.Target != "ready" {
+		t.Fatalf("envelope = %+v, want kind=intent ok=true target=ready", got)
+	}
+}
+
+func TestDispatchDryRunJSONEmitsEnvelope(t *testing.T) {
+	rec := &recordingRunner{}
+	orig := runner
+	runner = rec
+	t.Cleanup(func() { runner = orig })
+
+	cmd := newRouterCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	item := workitem.WorkItem{
+		WorkflowType: workitem.WorkflowTypeDesign,
+		Key:          "design:workflow/design/x",
+		Title:        "X",
+	}
+	if err := dispatch(cmd, item, filepath.FromSlash("/camp"), "doc", false, true, true, nil); err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	if rec.args != nil {
+		t.Fatalf("dry-run must not dispatch, got args %v", rec.args)
+	}
+	var got routerResult
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("stdout is not a single JSON object: %v (raw %q)", err, out.String())
+	}
+	if !got.DryRun || !got.OK || got.Target != "doc" {
+		t.Fatalf("envelope = %+v, want dry_run=true ok=true target=doc", got)
+	}
+}
+
+func TestRouterWorkitemJSONForwardsToChild(t *testing.T) {
+	root := promoteFixture(t)
+	t.Chdir(root)
+
+	rec := &recordingRunner{}
+	orig := runner
+	runner = rec
+	t.Cleanup(func() { runner = orig })
+
+	cmd := newRouterCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"design:workflow/design/sample", "--target", "doc", "--json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+
+	foundJSON := false
+	for _, a := range rec.args {
+		if a == "--json" {
+			foundJSON = true
+		}
+	}
+	if !foundJSON {
+		t.Fatalf("workitem dispatch must forward --json, got %v", rec.args)
+	}
+	if out.Len() != 0 {
+		t.Fatalf("router must delegate JSON to the workitem child, but emitted %q", out.String())
 	}
 }
 
