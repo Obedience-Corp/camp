@@ -4,6 +4,8 @@
 
 # camp
 
+<p align="center"><a href="https://github.com/Obedience-Corp/camp/stargazers"><img src="https://img.shields.io/github/stars/Obedience-Corp/camp?style=social" alt="Star camp on GitHub"></a></p>
+
 > **One place for all your context and all your work.** Part of [Festival](https://github.com/Obedience-Corp/festival). Camp handles the workspace — your projects, tools, intents, and context. [fest](https://github.com/Obedience-Corp/fest) handles the planning and execution inside it.
 
 Campaign workspace manager — group every project, tool, and piece of context you care about into a single campaign, and navigate between them instantly.
@@ -578,6 +580,8 @@ Camp is one half of [Festival](https://github.com/Obedience-Corp/festival), the 
 - **camp** — workspace and context. One place for all your projects, tools, intents, agents, and work.
 - **[fest](https://github.com/Obedience-Corp/fest)** — planning and execution. Hierarchical: festival → phase → sequence → task.
 - **[Festival](https://github.com/Obedience-Corp/festival)** — combined distribution of camp + fest. Full docs at [fest.build](https://fest.build).
+
+<p align="center"><strong>Find camp useful?</strong> <a href="https://github.com/Obedience-Corp/camp">Star the repo</a> so others can find it.</p>
 
 ## License
 
