@@ -1,10 +1,31 @@
 package locate
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestDetectFromCwd_ResolvesSymlinkedRoot(t *testing.T) {
+	real := t.TempDir()
+	wiDir := filepath.Join(real, "workflow", "design", "slug")
+	if err := os.MkdirAll(wiDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	link := filepath.Join(t.TempDir(), "campaign-link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatalf("Symlink: %v", err)
+	}
+
+	loc, err := DetectFromCwd(link, wiDir)
+	if err != nil {
+		t.Fatalf("DetectFromCwd with symlinked root: %v", err)
+	}
+	if loc.Type != "design" || loc.Slug != "slug" {
+		t.Fatalf("loc = %+v, want design/slug", loc)
+	}
+}
 
 func TestDetectFromCwd(t *testing.T) {
 	const root = "/campaign"

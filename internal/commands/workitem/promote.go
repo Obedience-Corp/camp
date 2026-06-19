@@ -16,6 +16,7 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/intent"
 	navindex "github.com/Obedience-Corp/camp/internal/nav/index"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 	promotepkg "github.com/Obedience-Corp/camp/internal/promote"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
@@ -98,7 +99,7 @@ TARGETS:
 
 	f := cmd.Flags()
 	f.StringVar(&target, "target", "", "Promotion target: festival, doc, completed, archived, someday")
-	f.StringVar(&dest, "dest", "", "Destination path override for doc/festival targets")
+	f.StringVar(&dest, "dest", "", "Destination path under docs/ for the doc target (must stay within docs/)")
 	f.StringVar(&goal, "goal", "", "Festival goal override (default: first paragraph of the workitem doc)")
 	f.BoolVar(&keep, "keep", false, "On festival/doc, do not move the source workitem to the dungeon")
 	f.BoolVar(&force, "force", false, "Skip readiness checks (e.g. empty doc)")
@@ -245,6 +246,9 @@ func doFestivalPromote(ctx context.Context, cmd *cobra.Command, opts runWorkitem
 	if !opts.Force && strings.TrimSpace(docContent) == "" {
 		return nil, camperrors.New("workitem doc is empty; use --force to promote anyway")
 	}
+	if opts.Dest != "" {
+		return nil, camperrors.New("--dest is only valid for --target doc; fest chooses the festival directory")
+	}
 
 	name := intent.SlugFromTitle(titleFromDoc(docContent, loc.Slug))
 	goal := opts.Goal
@@ -302,7 +306,14 @@ func doDocPromote(ctx context.Context, opts runWorkitemPromoteOptions, campaignR
 	if relDest == "" {
 		relDest = loc.Slug
 	}
-	destDir := filepath.Join(campaignRoot, "docs", relDest)
+	docsRoot := filepath.Join(campaignRoot, "docs")
+	if err := os.MkdirAll(docsRoot, 0o755); err != nil {
+		return nil, camperrors.Wrap(err, "creating docs directory")
+	}
+	destDir := filepath.Join(docsRoot, relDest)
+	if err := pathutil.ValidateBoundary(docsRoot, destDir); err != nil {
+		return nil, camperrors.Wrapf(err, "doc destination %q must stay within docs/", relDest)
+	}
 
 	if !opts.Force {
 		if entries, _ := os.ReadDir(destDir); len(entries) > 0 {
