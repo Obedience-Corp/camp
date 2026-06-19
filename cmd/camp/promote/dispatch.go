@@ -68,13 +68,25 @@ func kindForType(wt workitem.WorkflowType) promoteKind {
 	}
 }
 
-func dispatchIntent(ctx context.Context, id, target string, stdout io.Writer) error {
+func dispatchIntent(ctx context.Context, id, target string, pass []string, stdout io.Writer) error {
 	bin, err := campBinary()
 	if err != nil {
 		return err
 	}
 	args := []string{"intent", "promote", id, "--target", target}
+	args = append(args, pass...)
 	return runner.run(ctx, "", bin, args, stdout)
+}
+
+func intentPassthrough(pass []string) []string {
+	var out []string
+	for _, f := range pass {
+		switch f {
+		case "--force", "--no-commit":
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 func dispatchWorkitem(ctx context.Context, dir, target string, pass []string, stdout io.Writer) error {

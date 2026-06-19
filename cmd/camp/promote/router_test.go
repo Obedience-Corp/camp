@@ -66,7 +66,7 @@ func TestDispatchArgv(t *testing.T) {
 		runner = rec
 		t.Cleanup(func() { runner = orig })
 
-		if err := dispatchIntent(context.Background(), "add-dark", "festival", io.Discard); err != nil {
+		if err := dispatchIntent(context.Background(), "add-dark", "festival", nil, io.Discard); err != nil {
 			t.Fatalf("dispatchIntent: %v", err)
 		}
 		want := []string{"intent", "promote", "add-dark", "--target", "festival"}
@@ -182,6 +182,26 @@ func TestRouterNonInteractiveGuard(t *testing.T) {
 	}
 }
 
+func TestRouterNonInteractiveRejectsCwdResolution(t *testing.T) {
+	root := promoteFixture(t)
+	t.Chdir(filepath.Join(root, "workflow", "design", "sample"))
+
+	rec := &recordingRunner{}
+	orig := runner
+	runner = rec
+	t.Cleanup(func() { runner = orig })
+
+	cmd := newRouterCmd()
+	cmd.SetArgs([]string{"--json", "--target", "doc"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "no item in context") {
+		t.Fatalf("err = %v, want contains %q", err, "no item in context")
+	}
+	if rec.args != nil {
+		t.Fatalf("non-interactive cwd promote must not dispatch, got args %v", rec.args)
+	}
+}
+
 func TestRouterDryRunDoesNotDispatch(t *testing.T) {
 	root := promoteFixture(t)
 	t.Chdir(root)
@@ -235,6 +255,39 @@ func TestDispatchIntentJSONEmitsEnvelopeNotChildText(t *testing.T) {
 	}
 	if got.Kind != "intent" || !got.OK || got.Target != "ready" {
 		t.Fatalf("envelope = %+v, want kind=intent ok=true target=ready", got)
+	}
+}
+
+func TestDispatchIntentForwardsSafeFlags(t *testing.T) {
+	for _, jsonOut := range []bool{false, true} {
+		name := "text"
+		if jsonOut {
+			name = "json"
+		}
+		t.Run(name, func(t *testing.T) {
+			rec := &recordingRunner{}
+			orig := runner
+			runner = rec
+			t.Cleanup(func() { runner = orig })
+
+			cmd := newRouterCmd()
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			item := workitem.WorkItem{
+				WorkflowType: workitem.WorkflowTypeIntent,
+				SourceID:     "add-dark",
+				Key:          "intent:add-dark",
+				Title:        "Add dark mode",
+			}
+			pass := []string{"--force", "--no-commit", "--json"}
+			if err := dispatch(cmd, item, filepath.FromSlash("/camp"), "ready", false, false, jsonOut, pass); err != nil {
+				t.Fatalf("dispatch: %v", err)
+			}
+			want := []string{"intent", "promote", "add-dark", "--target", "ready", "--force", "--no-commit"}
+			if !reflect.DeepEqual(rec.args, want) {
+				t.Fatalf("intent argv = %v, want %v (forward --force/--no-commit, drop --json)", rec.args, want)
+			}
+		})
 	}
 }
 
@@ -315,7 +368,7 @@ func TestResolveItemDisambiguatesByWorkflowType(t *testing.T) {
 	}
 	resolver := paths.NewResolverFromConfig(cRoot, cfg)
 
-	item, resolved, err := resolveItem(ctx, cRoot, resolver, nil)
+	item, resolved, err := resolveItem(ctx, cRoot, resolver, nil, true)
 	if err != nil {
 		t.Fatalf("resolveItem: %v", err)
 	}

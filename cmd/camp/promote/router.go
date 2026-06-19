@@ -60,7 +60,7 @@ func runRouter(cmd *cobra.Command, args []string) error {
 	}
 	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
 
-	item, resolved, err := resolveItem(ctx, campaignRoot, resolver, args)
+	item, resolved, err := resolveItem(ctx, campaignRoot, resolver, args, interactive)
 	if err != nil {
 		return err
 	}
@@ -78,7 +78,7 @@ func runRouter(cmd *cobra.Command, args []string) error {
 	return dispatch(cmd, item, campaignRoot, target, interactive, dryRun, jsonOut, pass)
 }
 
-func resolveItem(ctx context.Context, campaignRoot string, resolver *paths.Resolver, args []string) (workitem.WorkItem, bool, error) {
+func resolveItem(ctx context.Context, campaignRoot string, resolver *paths.Resolver, args []string, interactive bool) (workitem.WorkItem, bool, error) {
 	pool, err := promotablePool(ctx, campaignRoot, resolver)
 	if err != nil {
 		return workitem.WorkItem{}, false, err
@@ -91,6 +91,10 @@ func resolveItem(ctx context.Context, campaignRoot string, resolver *paths.Resol
 			}
 		}
 		return workitem.WorkItem{}, false, camperrors.Wrapf(camperrors.New("not a promotable item"), "id %q", args[0])
+	}
+
+	if !interactive {
+		return workitem.WorkItem{}, false, nil
 	}
 
 	cwd, err := os.Getwd()
@@ -147,13 +151,14 @@ func dispatch(cmd *cobra.Command, item workitem.WorkItem, campaignRoot, target s
 		status, _ := festivalTarget(target)
 		return dispatchFestival(ctx, item.AbsPath(campaignRoot), festPassthrough(status, pass), out)
 	case kindIntent:
+		ipass := intentPassthrough(pass)
 		if jsonOut {
-			if err := dispatchIntent(ctx, item.SourceID, target, io.Discard); err != nil {
+			if err := dispatchIntent(ctx, item.SourceID, target, ipass, io.Discard); err != nil {
 				return err
 			}
 			return reportResult(cmd, kind, item, display)
 		}
-		return dispatchIntent(ctx, item.SourceID, target, out)
+		return dispatchIntent(ctx, item.SourceID, target, ipass, out)
 	case kindWorkitem:
 		return dispatchWorkitem(ctx, item.AbsPath(campaignRoot), target, pass, out)
 	}
