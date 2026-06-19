@@ -38,8 +38,10 @@ func campBinary() (string, error) {
 	return exe, nil
 }
 
+var festLookup = fest.FindFestCLI
+
 func festBinary() (string, error) {
-	p, err := fest.FindFestCLI()
+	p, err := festLookup()
 	if err != nil {
 		return "", camperrors.Wrap(err, "locating fest binary")
 	}

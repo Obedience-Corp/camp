@@ -28,7 +28,12 @@ var RouterCmd = &cobra.Command{
 }
 
 func init() {
-	flags := RouterCmd.Flags()
+	addPromoteRouterFlags(RouterCmd)
+	RouterCmd.ValidArgsFunction = completePromotable
+}
+
+func addPromoteRouterFlags(cmd *cobra.Command) {
+	flags := cmd.Flags()
 	flags.String("target", "", "Promote target (kind-specific); required in non-interactive mode")
 	flags.Bool("json", false, "Machine-readable output; implies non-interactive")
 	flags.Bool("force", false, "Skip readiness checks")
@@ -37,7 +42,6 @@ func init() {
 	flags.Bool("keep", false, "Keep the source (festival/doc targets)")
 	flags.String("dest", "", "Destination override (doc/festival targets)")
 	flags.String("goal", "", "Festival goal override")
-	RouterCmd.ValidArgsFunction = completePromotable
 }
 
 func runRouter(cmd *cobra.Command, args []string) error {
