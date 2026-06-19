@@ -1,6 +1,7 @@
 package promote
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -10,6 +11,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/workitem"
 )
 
@@ -61,7 +64,7 @@ func TestDispatchArgv(t *testing.T) {
 		runner = rec
 		t.Cleanup(func() { runner = orig })
 
-		if err := dispatchIntent(context.Background(), "add-dark", "festival", nil); err != nil {
+		if err := dispatchIntent(context.Background(), "add-dark", "festival"); err != nil {
 			t.Fatalf("dispatchIntent: %v", err)
 		}
 		want := []string{"intent", "promote", "add-dark", "--target", "festival"}
@@ -174,6 +177,59 @@ func TestRouterNonInteractiveGuard(t *testing.T) {
 				t.Fatalf("err = %v, want contains %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestRouterDryRunDoesNotDispatch(t *testing.T) {
+	root := promoteFixture(t)
+	t.Chdir(root)
+
+	rec := &recordingRunner{}
+	orig := runner
+	runner = rec
+	t.Cleanup(func() { runner = orig })
+
+	cmd := newRouterCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"design:workflow/design/sample", "--target", "doc", "--dry-run"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("dry-run: %v", err)
+	}
+	if rec.args != nil {
+		t.Fatalf("dry-run must not dispatch, got args %v", rec.args)
+	}
+	if !strings.Contains(out.String(), "dry-run") {
+		t.Fatalf("stdout = %q, want dry-run notice", out.String())
+	}
+}
+
+func TestResolveItemDisambiguatesByWorkflowType(t *testing.T) {
+	root := t.TempDir()
+	writeFixtureFile(t, filepath.Join(root, ".campaign", "campaign.yaml"), "id: t\nname: T\ntype: product\n")
+	for _, wt := range []string{"design", "explore"} {
+		dir := filepath.Join(root, "workflow", wt, "dup")
+		writeFixtureFile(t, filepath.Join(dir, ".workitem"), "version: v1alpha6\nkind: workitem\nid: "+wt+"-dup\ntype: "+wt+"\ntitle: Dup\n")
+		writeFixtureFile(t, filepath.Join(dir, "README.md"), "# Dup\n\nbody\n")
+	}
+	t.Chdir(filepath.Join(root, "workflow", "explore", "dup"))
+
+	ctx := context.Background()
+	cfg, cRoot, err := config.LoadCampaignConfigFromCwd(ctx)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	resolver := paths.NewResolverFromConfig(cRoot, cfg)
+
+	item, resolved, err := resolveItem(ctx, cRoot, resolver, nil)
+	if err != nil {
+		t.Fatalf("resolveItem: %v", err)
+	}
+	if !resolved {
+		t.Fatal("expected cwd resolution to find the explore workitem")
+	}
+	if string(item.WorkflowType) != "explore" {
+		t.Fatalf("resolved %s/dup, want explore/dup (basename collision must disambiguate by type)", item.WorkflowType)
 	}
 }
 

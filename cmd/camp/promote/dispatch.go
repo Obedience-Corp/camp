@@ -67,13 +67,12 @@ func kindForType(wt workitem.WorkflowType) promoteKind {
 	}
 }
 
-func dispatchIntent(ctx context.Context, id, target string, pass []string) error {
+func dispatchIntent(ctx context.Context, id, target string) error {
 	bin, err := campBinary()
 	if err != nil {
 		return err
 	}
 	args := []string{"intent", "promote", id, "--target", target}
-	args = append(args, pass...)
 	return runner.run(ctx, "", bin, args)
 }
 

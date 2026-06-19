@@ -2,6 +2,7 @@ package promote
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -48,6 +49,7 @@ func runRouter(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	target, _ := cmd.Flags().GetString("target")
 	jsonOut, _ := cmd.Flags().GetBool("json")
+	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	interactive := ui.IsTerminal() && !jsonOut
 
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
@@ -71,7 +73,7 @@ func runRouter(cmd *cobra.Command, args []string) error {
 	}
 
 	pass := passthroughFlags(cmd)
-	return dispatch(ctx, item, campaignRoot, target, interactive, pass)
+	return dispatch(cmd, item, campaignRoot, target, interactive, dryRun, pass)
 }
 
 func resolveItem(ctx context.Context, campaignRoot string, resolver *paths.Resolver, args []string) (workitem.WorkItem, bool, error) {
@@ -98,7 +100,7 @@ func resolveItem(ctx context.Context, campaignRoot string, resolver *paths.Resol
 			if it.WorkflowType == workitem.WorkflowTypeIntent || it.WorkflowType == workitem.WorkflowTypeFestival {
 				continue
 			}
-			if filepath.Base(it.RelativePath) == loc.Slug {
+			if string(it.WorkflowType) == loc.Type && filepath.Base(it.RelativePath) == loc.Slug {
 				return it, true, nil
 			}
 		}
@@ -106,7 +108,8 @@ func resolveItem(ctx context.Context, campaignRoot string, resolver *paths.Resol
 	return workitem.WorkItem{}, false, nil
 }
 
-func dispatch(ctx context.Context, item workitem.WorkItem, campaignRoot, target string, interactive bool, pass []string) error {
+func dispatch(cmd *cobra.Command, item workitem.WorkItem, campaignRoot, target string, interactive, dryRun bool, pass []string) error {
+	ctx := cmd.Context()
 	kind := kindForType(item.WorkflowType)
 
 	if target == "" && interactive {
@@ -119,23 +122,42 @@ func dispatch(ctx context.Context, item workitem.WorkItem, campaignRoot, target 
 
 	switch kind {
 	case kindFestival:
-		status, ok := festivalTarget(target)
-		if !ok {
+		if _, ok := festivalTarget(target); !ok {
 			return camperrors.New("festival target must be next, completed, archived, or someday")
 		}
+		display := target
+		if display == "" {
+			display = "next"
+		}
+		if dryRun {
+			return printDryRun(cmd, item, display)
+		}
+		status, _ := festivalTarget(target)
 		return dispatchFestival(ctx, item.AbsPath(campaignRoot), festPassthrough(status, pass))
 	case kindIntent:
 		if target == "" {
 			return camperrors.New("--target is required in non-interactive mode")
 		}
-		return dispatchIntent(ctx, item.SourceID, target, pass)
+		if dryRun {
+			return printDryRun(cmd, item, target)
+		}
+		return dispatchIntent(ctx, item.SourceID, target)
 	case kindWorkitem:
 		if target == "" {
 			return camperrors.New("--target is required in non-interactive mode")
 		}
+		if dryRun {
+			return printDryRun(cmd, item, target)
+		}
 		return dispatchWorkitem(ctx, item.AbsPath(campaignRoot), target, pass)
 	}
 	return camperrors.New("unknown promote kind")
+}
+
+func printDryRun(cmd *cobra.Command, item workitem.WorkItem, target string) error {
+	_, err := fmt.Fprintf(cmd.OutOrStdout(),
+		"dry-run: would promote %q (%s) to %s; no changes made\n", item.Title, item.WorkflowType, target)
+	return err
 }
 
 func festivalTarget(target string) (string, bool) {
@@ -150,7 +172,7 @@ func festivalTarget(target string) (string, bool) {
 
 func passthroughFlags(cmd *cobra.Command) []string {
 	var pass []string
-	for _, name := range []string{"force", "dry-run", "no-commit", "keep", "json"} {
+	for _, name := range []string{"force", "no-commit", "keep", "json"} {
 		if cmd.Flags().Changed(name) {
 			pass = append(pass, "--"+name)
 		}
