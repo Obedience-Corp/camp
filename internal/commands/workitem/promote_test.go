@@ -402,3 +402,26 @@ func TestPromoteJSONSingleObject(t *testing.T) {
 		t.Fatal("Committed should be false with --no-commit")
 	}
 }
+
+func TestPromoteDocRejectsDestEscape(t *testing.T) {
+	root := promoteCampaign(t)
+	src := addWorkitem(t, root, "design", "feat", "Feat", "body")
+
+	_, _, err := execPromote(t, src, "--target", "doc", "--dest", "../escaped", "--keep", "--no-commit")
+	if err == nil || !strings.Contains(err.Error(), "docs/") {
+		t.Fatalf("err = %v, want a docs boundary error", err)
+	}
+	if _, serr := os.Stat(filepath.Join(root, "escaped")); serr == nil {
+		t.Fatal("escaped directory must not be created outside docs/")
+	}
+}
+
+func TestPromoteFestivalRejectsDest(t *testing.T) {
+	root := promoteCampaign(t)
+	src := addWorkitem(t, root, "design", "feat", "Feat", "body")
+
+	_, _, err := execPromote(t, src, "--target", "festival", "--dest", "whatever", "--no-commit")
+	if err == nil || !strings.Contains(err.Error(), "--dest is only valid for --target doc") {
+		t.Fatalf("err = %v, want festival --dest rejection", err)
+	}
+}

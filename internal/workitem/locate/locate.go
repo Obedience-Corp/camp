@@ -22,6 +22,12 @@ type Location struct {
 }
 
 func DetectFromCwd(campaignRoot, cwd string) (*Location, error) {
+	if resolved, rerr := filepath.EvalSymlinks(campaignRoot); rerr == nil {
+		campaignRoot = resolved
+	}
+	if resolved, rerr := filepath.EvalSymlinks(cwd); rerr == nil {
+		cwd = resolved
+	}
 	rel, err := filepath.Rel(campaignRoot, cwd)
 	if err != nil {
 		return nil, camperrors.Wrap(err, "resolving cwd relative to campaign root")
