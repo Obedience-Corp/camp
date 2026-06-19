@@ -14,7 +14,7 @@ Campaign workspace manager — group every project, tool, and piece of context y
 
 - **Navigation** — Category shortcuts, fuzzy finding, pins, and a cached index for instant project lookups (`go`, `pin`, `shortcuts`, `cache`)
 - **Project Management** — Git submodules, linked local workspaces, worktrees, and scaffolding (`project add/link/list/new/remote/remove/run/unlink/worktree/prune`)
-- **Planning** — Intents, status flows, dungeon for deprioritized work, and a unified work-item dashboard (`intent`, `flow`, `dungeon`, `gather`, `workitem`)
+- **Planning** — Intents, promotion, dungeon for deprioritized work, and a unified work-item dashboard (`intent`, `promote`, `dungeon`, `gather`, `workitem`)
 - **Productivity** — Leverage scoring to identify high-impact work (`leverage`)
 - **Git Integration** — Campaign-level git operations with submodule fan-out (`stage`, `commit`, `log`, `push [all]`, `pull [all]`, `status [all]`, `fresh [all]`, `refs-sync`)
 - **Campaign Ops** — Health checks, file operations, cross-campaign tools (`doctor`, `copy`, `move`, `sync`, `transfer`)
@@ -22,7 +22,7 @@ Campaign workspace manager — group every project, tool, and piece of context y
 - **Tab Completion** — Smart completion for categories, projects, and paths
 - **Plugins** — Discover camp plugins on `PATH` (`plugins`)
 
-Note: `flow` is a dev-channel command and is not available in stable builds.
+Note: `flow` is a hidden low-level status engine. Use `camp promote` for lifecycle promotion.
 
 ## Installation
 
@@ -198,7 +198,7 @@ cgo external-repo
 
 ### Planning
 
-Intents, status flows, and the dungeon provide lightweight planning tools:
+Intents, promotion, and the dungeon provide lightweight planning tools:
 
 ```bash
 # Intents - capture ideas, goals, and work items
@@ -206,8 +206,8 @@ camp intent                # Manage campaign intents
 camp intent add --campaign other-campaign "Capture idea"  # Cross-campaign capture (add only)
 camp gather                # Import external data into the intent system
 
-# Flows - track work status
-camp flow                  # Manage status workflows for organizing work (dev channel only; not available in stable builds)
+# Promotion - move intents, workitems, and festivals through lifecycle stages
+camp promote               # Resolve context and dispatch to the right promote command
 
 # Dungeon - archive deprioritized work
 camp dungeon               # Move items to/from the dungeon

@@ -17,11 +17,6 @@ func findCmd(path ...string) *cobra.Command {
 	return cmd
 }
 
-func flowCommandsRegistered() bool {
-	cmd, _, err := rootCmd.Find([]string{"flow"})
-	return err == nil && cmd != nil && cmd.Name() == "flow"
-}
-
 func questCommandsRegistered() bool {
 	cmd, _, err := rootCmd.Find([]string{"quest"})
 	return err == nil && cmd != nil && cmd.Name() == "quest"
@@ -78,6 +73,34 @@ func TestManifestCommand_CoversVisibleCommandTree(t *testing.T) {
 	}
 }
 
+func TestManifestCommand_HiddenCommandsOmitted(t *testing.T) {
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"__manifest"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("__manifest command failed: %v", err)
+	}
+
+	var manifest Manifest
+	if err := json.Unmarshal(buf.Bytes(), &manifest); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+
+	visible := map[string]bool{}
+	for _, cmd := range manifest.Commands {
+		visible[cmd.Path] = true
+	}
+
+	var hidden []string
+	collectHiddenCommandPaths(rootCmd, "", &hidden)
+	for _, path := range hidden {
+		if visible[path] {
+			t.Errorf("hidden command %q should not be emitted in the agent manifest", path)
+		}
+	}
+}
+
 func walkMissingManifestAnnotations(cmd *cobra.Command, prefix string, missing *[]string) {
 	for _, child := range cmd.Commands() {
 		path := child.Name()
@@ -91,6 +114,20 @@ func walkMissingManifestAnnotations(cmd *cobra.Command, prefix string, missing *
 			*missing = append(*missing, path)
 		}
 		walkMissingManifestAnnotations(child, path, missing)
+	}
+}
+
+func collectHiddenCommandPaths(cmd *cobra.Command, prefix string, hidden *[]string) {
+	for _, child := range cmd.Commands() {
+		path := child.Name()
+		if prefix != "" {
+			path = prefix + " " + child.Name()
+		}
+		if child.Hidden {
+			*hidden = append(*hidden, path)
+			continue
+		}
+		collectHiddenCommandPaths(child, path, hidden)
 	}
 }
 
@@ -128,11 +165,6 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		"skills link":   false,
 		"skills status": false,
 		"skills unlink": false,
-	}
-	if flowCommandsRegistered() {
-		expectedCommands["flow"] = false
-		expectedCommands["flow add"] = false
-		expectedCommands["flow migrate"] = false
 	}
 	if questCommandsRegistered() {
 		expectedCommands["quest archive"] = false
@@ -254,10 +286,6 @@ func TestManifestCommand_InteractiveFlags(t *testing.T) {
 		"skills link":   true,
 		"skills status": true,
 		"skills unlink": true,
-	}
-	if flowCommandsRegistered() {
-		nonInteractiveCommands["flow add"] = true
-		nonInteractiveCommands["flow migrate"] = true
 	}
 	if questCommandsRegistered() {
 		nonInteractiveCommands["quest archive"] = true
