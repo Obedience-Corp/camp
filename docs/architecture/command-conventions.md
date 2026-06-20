@@ -20,3 +20,5 @@ Tree A (package-level vars plus `init()`) exists in older code under `cmd/camp/`
 `internal/flow` is a shell-command registry/runner (`.campaign/flows/registry.yaml`).
 The CLI command `camp flow` is mostly backed by `internal/workflow`; `camp workflow` manages workflow collections.
 These names are inverted relative to what a reader expects. Until they are renamed, both packages carry a doc comment cross-referencing the other.
+
+`camp flow` is hidden from `camp --help`; it is the low-level engine, and `camp promote` is the user-facing front door.

@@ -16,6 +16,13 @@ state machine driven by `camp flow` and `.workflow.yaml`, is unrelated.
 | Workflow collection (this doc) | `workflow/<type>/` | User-created collection of workitems of one type, with navigation config |
 | Flow status | `.workflow.yaml` per workitem | Per-workitem lifecycle state machine, owned by `camp flow` |
 
+> `camp flow` is the low-level `.workflow.yaml` status engine. The dungeon move
+> it performs (active -> dungeon/completed|archived|someday) is the primitive that
+> `camp shelve` and `camp workitem promote --target {completed,archived,someday}`
+> build on. It is intentionally hidden from `camp --help`: the user-facing surface
+> for moving work forward is `camp promote` (and `camp intent promote` /
+> `fest promote`), not `camp flow`.
+
 A workflow collection is not:
 
 - a workitem (a single tracked unit of work)

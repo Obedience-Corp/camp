@@ -29,3 +29,16 @@ func TestReleaseProfileDev_VersionProfile(t *testing.T) {
 		t.Fatalf("version.Profile = %q, want %q", version.Profile, "dev")
 	}
 }
+
+func TestReleaseProfileDev_FlowCommandHiddenButRegistered(t *testing.T) {
+	cmd, _, err := rootCmd.Find([]string{"flow"})
+	if err != nil {
+		t.Fatalf("expected flow command: %v", err)
+	}
+	if cmd == nil || cmd.Name() != "flow" {
+		t.Fatalf("expected flow command, got %#v", cmd)
+	}
+	if !cmd.Hidden {
+		t.Fatal("flow should be hidden from the primary help surface")
+	}
+}
