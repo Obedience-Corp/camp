@@ -231,6 +231,7 @@ func init() {
 	rootCmd.AddCommand(dungeonpkg.Cmd)
 	rootCmd.AddCommand(intentpkg.Cmd)
 	rootCmd.AddCommand(promotepkg.Cmd)
+	rootCmd.AddCommand(promotepkg.RouterCmd)
 	rootCmd.AddCommand(leveragepkg.Cmd)
 	rootCmd.AddCommand(worktreespkg.Cmd)
 	rootCmd.AddCommand(refspkg.Cmd)

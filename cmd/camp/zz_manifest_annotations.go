@@ -31,6 +31,7 @@ var manifestAgentAllowedReasons = map[string]string{
 	"log":                 "Read-only git log",
 	"project list":        "Read-only project listing",
 	"project remote list": "Read-only project remote listing",
+	"promote":             "Routes to a type-specific promote; needs an explicit id and --target in non-interactive use",
 	"quest archive":       "Non-interactive quest archive with explicit selector",
 	"quest complete":      "Non-interactive quest completion with explicit selector",
 	"quest create":        "Non-interactive quest creation with explicit arguments",
