@@ -9,7 +9,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
-func campaignTableCells(c campaignEntry) (id, name, typ, path string) {
+func campaignTableCells(c campaignEntry) (id, name, org, typ, path string) {
 	campaignType := c.Type
 	if campaignType == "" {
 		campaignType = "-"
@@ -18,8 +18,12 @@ func campaignTableCells(c campaignEntry) (id, name, typ, path string) {
 	if len(shortID) > 8 {
 		shortID = shortID[:8]
 	}
+	orgCell := c.Org
+	if orgCell == "" {
+		orgCell = "-"
+	}
 	typeStyle := ui.GetCampaignTypeStyle(c.Type)
-	return ui.Dim(shortID), ui.Value(c.Name), typeStyle.Render(campaignType), ui.Dim(c.Path)
+	return ui.Dim(shortID), ui.Value(c.Name), ui.Accent(orgCell), typeStyle.Render(campaignType), ui.Dim(c.Path)
 }
 
 func outputGrouped(entries []campaignEntry, format, fallbackOrg string) error {
@@ -31,7 +35,7 @@ func outputGrouped(entries []campaignEntry, format, fallbackOrg string) error {
 		if i > 0 {
 			fmt.Println()
 		}
-		fmt.Println(org)
+		fmt.Printf("%s %s\n", ui.Accent(org), ui.Dim(fmt.Sprintf("(%s)", ui.CountLabel(len(byOrg[org]), "campaign", "campaigns"))))
 		if err := writeGroupSection(byOrg[org], format); err != nil {
 			return err
 		}
@@ -70,7 +74,7 @@ func writeGroupSection(entries []campaignEntry, format string) error {
 		return err
 	}
 	for _, c := range entries {
-		id, name, typ, path := campaignTableCells(c)
+		id, name, _, typ, path := campaignTableCells(c)
 		if _, err := fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\n", id, name, typ, path); err != nil {
 			return err
 		}

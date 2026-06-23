@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -96,6 +97,45 @@ func TestShouldGroupAndOrgOrder(t *testing.T) {
 	}
 }
 
+func TestSortCampaigns_ByOrg(t *testing.T) {
+	campaigns := map[string]config.RegisteredCampaign{
+		"A-1": {Name: "alpha", Org: "obey", Status: "active"},
+		"B-2": {Name: "beta", Org: "default", Status: "active"},
+		"C-3": {Name: "gamma", Org: "acme", Status: "active"},
+		"D-4": {Name: "delta", Org: "obey", Status: "active"},
+	}
+	got := names(sortCampaigns(campaigns, "org", "default"))
+	want := []string{"beta", "gamma", "alpha", "delta"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("--sort org = %v, want %v (fallback first, then org alphabetical, then name)", got, want)
+	}
+}
+
+func TestSortCampaigns_ByOrg_CustomFallback(t *testing.T) {
+	campaigns := map[string]config.RegisteredCampaign{
+		"A-1": {Name: "alpha", Org: "obey", Status: "active"},
+		"B-2": {Name: "beta", Org: "acme", Status: "active"},
+	}
+	got := names(sortCampaigns(campaigns, "org", "obey"))
+	want := []string{"alpha", "beta"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("--sort org (fallback=obey) = %v, want %v (custom fallback sorts first)", got, want)
+	}
+}
+
+func TestSortCampaigns_InvalidSortFallsToAccessed(t *testing.T) {
+	now := time.Now()
+	campaigns := map[string]config.RegisteredCampaign{
+		"A-1": {Name: "old", Org: "default", Status: "active", LastAccess: now.Add(-time.Hour)},
+		"B-2": {Name: "new", Org: "default", Status: "active", LastAccess: now},
+	}
+	got := names(sortCampaigns(campaigns, "bogus", "default"))
+	want := []string{"new", "old"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("--sort bogus = %v, want %v (falls through to accessed: most recent first)", got, want)
+	}
+}
+
 func TestList_JSONShape(t *testing.T) {
 	ui.SetNoColor(true)
 	entries := []campaignEntry{
@@ -135,9 +175,9 @@ func TestList_GoldenSingleOrgActive(t *testing.T) {
 		t.Fatal("single-org entries must not group")
 	}
 	out := captureListStdout(t, func() error { return outputCampaigns(os.Stdout, entries, "table") })
-	const golden = "ID        NAME   TYPE      PATH\n" +
-		"AAAAAAAA  alpha  campaign  /tmp/alpha\n" +
-		"BBBBBBBB  beta   product   /tmp/beta\n" +
+	const golden = "ID        NAME   ORG      TYPE      PATH\n" +
+		"AAAAAAAA  alpha  default  campaign  /tmp/alpha\n" +
+		"BBBBBBBB  beta   default  product   /tmp/beta\n" +
 		"\n" +
 		"2 campaigns\n"
 	if out != golden {
@@ -152,11 +192,11 @@ func TestList_GroupedOutput(t *testing.T) {
 		ent("BBBBBBBB2222", "beta", "campaign", "obey", "active"),
 	}
 	out := captureListStdout(t, func() error { return outputGrouped(entries, "table", "default") })
-	const golden = "default\n" +
+	const golden = "default (1 campaign)\n" +
 		"  ID        NAME   TYPE      PATH\n" +
 		"  AAAAAAAA  alpha  campaign  /tmp/alpha\n" +
 		"\n" +
-		"obey\n" +
+		"obey (1 campaign)\n" +
 		"  ID        NAME  TYPE      PATH\n" +
 		"  BBBBBBBB  beta  campaign  /tmp/beta\n" +
 		"\n" +

@@ -306,7 +306,47 @@ func TestOrgShow_MembersAndUnknown(t *testing.T) {
 	}
 }
 
+func forceNoTTY(t *testing.T) {
+	t.Helper()
+	prev := stdoutIsTTY
+	stdoutIsTTY = func() bool { return false }
+	t.Cleanup(func() { stdoutIsTTY = prev })
+}
+
+func TestShouldOpenOrgTUI(t *testing.T) {
+	cases := []struct {
+		json, interactive, tty, want bool
+	}{
+		{false, false, true, true},   // bare in a terminal opens the TUI
+		{false, false, false, false}, // bare piped prints the org
+		{false, true, false, true},   // -i forces the TUI even when piped
+		{true, false, true, false},   // --json never opens the TUI
+		{true, true, true, false},    // --json wins over -i
+	}
+	for _, c := range cases {
+		if got := shouldOpenOrgTUI(c.json, c.interactive, c.tty); got != c.want {
+			t.Errorf("shouldOpenOrgTUI(json=%v, i=%v, tty=%v) = %v, want %v", c.json, c.interactive, c.tty, got, c.want)
+		}
+	}
+}
+
+func TestOrgWhich_PrintsCurrentOrg(t *testing.T) {
+	root := makeOrgTestCampaign(t, "B-2")
+	t.Chdir(root)
+	t.Setenv(campaign.EnvCacheDisable, "1")
+	setOrgRegistry(t, orgFixture)
+
+	out, err := execOrg(t, runOrgWhich, false)
+	if err != nil {
+		t.Fatalf("org which: %v", err)
+	}
+	if strings.TrimSpace(out) != "obey" {
+		t.Errorf("org which = %q, want obey", strings.TrimSpace(out))
+	}
+}
+
 func TestOrgBare_PrintsCurrentOrg(t *testing.T) {
+	forceNoTTY(t)
 	root := makeOrgTestCampaign(t, "B-2")
 	t.Chdir(root)
 	t.Setenv(campaign.EnvCacheDisable, "1")
