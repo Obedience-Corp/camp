@@ -76,6 +76,7 @@ func init() {
 	orgListCmd.Flags().Bool("json", false, "Output as JSON")
 	orgShowCmd.Flags().Bool("json", false, "Output as JSON")
 	Cmd.Flags().Bool("json", false, "Output as JSON")
+	Cmd.Flags().BoolP("interactive", "i", false, "Launch the interactive org browser")
 }
 
 func runOrgRename(cmd *cobra.Command, args []string) error {
@@ -252,6 +253,9 @@ func writeOrgShow(w io.Writer, r orgShowResult) error {
 
 func runOrgBare(cmd *cobra.Command, _ []string) error {
 	ctx := cmd.Context()
+	if interactive, _ := cmd.Flags().GetBool("interactive"); interactive {
+		return runOrgTUI(cmd)
+	}
 	asJSON, _ := cmd.Flags().GetBool("json")
 
 	root, err := campaign.DetectCached(ctx)

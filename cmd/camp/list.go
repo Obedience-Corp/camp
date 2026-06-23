@@ -45,12 +45,14 @@ Sorting options:
   accessed - Most recently accessed first (default)
   name     - Alphabetically by name
   type     - Alphabetically by type
+  org      - By org (fallback first, then alphabetical), then by name
 
 Examples:
   camp list                  List all campaigns
   camp list --json           Output as JSON
   camp list --format json    Output as JSON
   camp list --sort name      Sort by name
+  camp list --sort org       Sort by org, then name
   camp list --format simple  Names only for scripting
   camp list --count          Print only the total number of campaigns`,
 	Aliases: []string{"ls"},
@@ -69,7 +71,7 @@ func init() {
 	listCmd.Flags().StringP("format", "f", "table", "Output format (table, simple, json)")
 	listCmd.Flags().BoolVar(&listJSON, "json", false, "Output as JSON (shorthand for --format json)")
 	listCmd.Flags().BoolVar(&listCount, "count", false, "Print only the total number of campaigns")
-	listCmd.Flags().StringP("sort", "s", "accessed", "Sort by (name, accessed, type)")
+	listCmd.Flags().StringP("sort", "s", "accessed", "Sort by (name, accessed, type, org)")
 	listCmd.Flags().Bool("verify-verbose", false, "Show detailed verification output")
 	listCmd.Flags().String("org", "", "Only campaigns in this org")
 	listCmd.Flags().StringSlice("tag", nil, "Only campaigns carrying this tag (repeat for AND)")
@@ -125,7 +127,7 @@ func runList(cmd *cobra.Command, args []string) error {
 	}
 
 	sortBy, _ := cmd.Flags().GetString("sort")
-	campaigns := filterEntries(sortCampaigns(reg.Campaigns, sortBy), filter)
+	campaigns := filterEntries(sortCampaigns(reg.Campaigns, sortBy, reg.FallbackOrg()), filter)
 
 	if listCount {
 		if formatStr == "json" {
@@ -158,7 +160,7 @@ func runList(cmd *cobra.Command, args []string) error {
 }
 
 // sortCampaigns converts the registry map to a sorted slice.
-func sortCampaigns(campaigns map[string]config.RegisteredCampaign, by string) []campaignEntry {
+func sortCampaigns(campaigns map[string]config.RegisteredCampaign, by, fallbackOrg string) []campaignEntry {
 	entries := make([]campaignEntry, 0, len(campaigns))
 	for id, c := range campaigns {
 		tags := c.Tags
@@ -189,6 +191,17 @@ func sortCampaigns(campaigns map[string]config.RegisteredCampaign, by string) []
 			}
 			return entries[i].Type < entries[j].Type
 		})
+	case "org":
+		sort.Slice(entries, func(i, j int) bool {
+			oi, oj := entries[i].Org, entries[j].Org
+			if (oi == fallbackOrg) != (oj == fallbackOrg) {
+				return oi == fallbackOrg
+			}
+			if oi != oj {
+				return oi < oj
+			}
+			return entries[i].Name < entries[j].Name
+		})
 	default: // "accessed"
 		sort.Slice(entries, func(i, j int) bool {
 			return entries[i].LastAccess.After(entries[j].LastAccess)
@@ -214,13 +227,13 @@ func outputCampaigns(out io.Writer, campaigns []campaignEntry, format string) er
 		return nil
 	default: // table
 		w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
-			ui.Label("ID"), ui.Label("NAME"), ui.Label("TYPE"), ui.Label("PATH")); err != nil {
+		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+			ui.Label("ID"), ui.Label("NAME"), ui.Label("ORG"), ui.Label("TYPE"), ui.Label("PATH")); err != nil {
 			return err
 		}
 		for _, c := range campaigns {
-			id, name, typ, path := campaignTableCells(c)
-			if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", id, name, typ, path); err != nil {
+			id, name, org, typ, path := campaignTableCells(c)
+			if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", id, name, org, typ, path); err != nil {
 				return err
 			}
 		}
