@@ -69,9 +69,6 @@ func (m orgTUIModel) updateBrowse(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "d":
 		if m.pane == paneMembers && len(m.members) > 0 {
 			member := m.members[m.memCursor]
-			if member.Status == "" || m.fallback == "" {
-				return m, nil
-			}
 			if err := m.assignOrg(member.ID, m.fallback); err != nil {
 				m.setError(err)
 			} else {
