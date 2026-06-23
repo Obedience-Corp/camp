@@ -44,6 +44,7 @@ var manifestAgentAllowedReasons = map[string]string{
 	"quest resume":        "Non-interactive quest resume with explicit selector",
 	"quest show":          "Read-only quest detail",
 	"quest unlink":        "Non-interactive quest unlink operation",
+	"quest update":        "Non-interactive quest metadata update with explicit selector",
 	"registry check":      "Read-only registry integrity report",
 	"root":                "Read-only campaign root output",
 	"settings get":        "Read-only settings output with --json support",
