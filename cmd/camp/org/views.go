@@ -95,7 +95,7 @@ func init() {
 	orgShowCmd.Flags().Bool("json", false, "Output as JSON")
 	orgWhichCmd.Flags().Bool("json", false, "Output as JSON")
 	Cmd.Flags().Bool("json", false, "Output as JSON")
-	Cmd.Flags().BoolP("interactive", "i", false, "Force the interactive org browser even when output is piped")
+	Cmd.Flags().BoolP("interactive", "i", false, "Open the interactive org browser (prints the org list when stdout is not a terminal)")
 }
 
 func runOrgRename(cmd *cobra.Command, args []string) error {
