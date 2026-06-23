@@ -100,6 +100,32 @@ func TestOrgTUI_MoveToTypedNewOrg_Appears(t *testing.T) {
 	}
 }
 
+func TestOrgTUI_CreateOrg(t *testing.T) {
+	m := newTestOrgModel(t)
+	m = key(m, "enter") // default -> members (alpha)
+	m = key(m, "c")
+	if m.overlay != overlayCreate {
+		t.Fatal("expected create overlay")
+	}
+	m = key(m, "fresh")
+	m = key(m, "enter")
+	if m.statusErr {
+		t.Fatalf("unexpected error: %s", m.status)
+	}
+	if got := orgOf(t, "A-1"); got != "fresh" {
+		t.Errorf("alpha org = %q, want fresh", got)
+	}
+	found := false
+	for _, o := range m.orgs {
+		if o.Org == "fresh" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("new org 'fresh' not present after create: %v", m.orgs)
+	}
+}
+
 func TestOrgTUI_ReturnToDefault(t *testing.T) {
 	m := newTestOrgModel(t)
 	m = key(m, "j")     // obey

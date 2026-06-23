@@ -6,7 +6,9 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/Obedience-Corp/camp/internal/config"
 	tuistyles "github.com/Obedience-Corp/camp/internal/intent/tui"
+	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/Obedience-Corp/camp/internal/ui/theme"
 )
 
@@ -22,8 +24,28 @@ var (
 	orgSelStyle    = lipgloss.NewStyle().Foreground(orgPal.Accent).Bold(true)
 	orgRowStyle    = lipgloss.NewStyle().Foreground(orgPal.TextPrimary)
 	orgMutedStyle  = lipgloss.NewStyle().Foreground(orgPal.TextMuted)
-	orgHereStyle   = lipgloss.NewStyle().Foreground(orgPal.Success)
+	orgHereStyle   = lipgloss.NewStyle().Foreground(orgPal.Success).Bold(true)
+	orgCountStyle  = lipgloss.NewStyle().Foreground(orgPal.TextSecondary)
+	orgActiveStyle = lipgloss.NewStyle().Foreground(orgPal.Success)
+	orgBadgeActive = lipgloss.NewStyle().Foreground(orgPal.Success)
+	orgBadgeOff    = lipgloss.NewStyle().Foreground(orgPal.Warning)
+	orgBadgeRef    = lipgloss.NewStyle().Foreground(orgPal.AccentAlt)
+	orgHeaderBar   = lipgloss.NewStyle().Foreground(orgPal.TextMuted)
 )
+
+// styleMemberStatus renders a campaign lifecycle status as a colored badge.
+func styleMemberStatus(status string) string {
+	switch status {
+	case config.StatusActive:
+		return orgBadgeActive.Render(status)
+	case config.StatusInactive:
+		return orgBadgeOff.Render(status)
+	case config.StatusReference:
+		return orgBadgeRef.Render(status)
+	default:
+		return orgMutedStyle.Render(status)
+	}
+}
 
 func (m orgTUIModel) View() string {
 	if m.quitting {
@@ -49,7 +71,22 @@ func (m orgTUIModel) View() string {
 		body = lipgloss.JoinHorizontal(lipgloss.Top, m.renderOrgPane(), "  ", m.renderMemberPane())
 	}
 
-	return body + "\n" + m.statusLine() + m.footer() + "\n"
+	return m.topBar() + "\n" + body + "\n" + m.statusLine() + m.footer() + "\n"
+}
+
+func (m orgTUIModel) topBar() string {
+	return orgTitleStyle.Render("Campaign Orgs") + "  " +
+		orgHeaderBar.Render(fmt.Sprintf("%s . %s",
+			ui.CountLabel(len(m.orgs), "org", "orgs"),
+			ui.CountLabel(m.totalCampaigns(), "campaign", "campaigns")))
+}
+
+func (m orgTUIModel) totalCampaigns() int {
+	n := 0
+	for _, o := range m.orgs {
+		n += o.Campaigns
+	}
+	return n
 }
 
 func (m orgTUIModel) renderOrgPane() string {
@@ -57,18 +94,20 @@ func (m orgTUIModel) renderOrgPane() string {
 	b.WriteString(orgTitleStyle.Render("Orgs") + "\n")
 	for i, o := range m.orgs {
 		cursor := "  "
-		label := fmt.Sprintf("%-16s %d (%d active)", o.Org, o.Campaigns, o.Active)
+		name := fmt.Sprintf("%-16s", o.Org)
 		switch {
 		case i == m.orgCursor && m.pane == paneOrgs:
 			cursor = "> "
-			label = orgSelStyle.Render(label)
+			name = orgSelStyle.Render(name)
 		case i == m.orgCursor:
 			cursor = "> "
-			label = orgRowStyle.Render(label)
+			name = orgRowStyle.Render(name)
 		default:
-			label = orgMutedStyle.Render(label)
+			name = orgMutedStyle.Render(name)
 		}
-		b.WriteString(cursor + label + "\n")
+		counts := orgCountStyle.Render(fmt.Sprintf("%d", o.Campaigns)) + " " +
+			orgActiveStyle.Render(fmt.Sprintf("(%d active)", o.Active))
+		b.WriteString(cursor + name + "  " + counts + "\n")
 	}
 	return m.paneStyle(paneOrgs).Render(strings.TrimRight(b.String(), "\n"))
 }
@@ -89,18 +128,18 @@ func (m orgTUIModel) renderMemberPane() string {
 		if mem.ID == m.currentID && m.currentID != "" {
 			here = orgHereStyle.Render("* ")
 		}
-		label := fmt.Sprintf("%-24s %s", mem.Name, mem.Status)
+		name := fmt.Sprintf("%-24s", mem.Name)
 		switch {
 		case i == m.memCursor && m.pane == paneMembers:
 			cursor = "> "
-			label = orgSelStyle.Render(label)
+			name = orgSelStyle.Render(name)
 		case i == m.memCursor:
 			cursor = "> "
-			label = orgRowStyle.Render(label)
+			name = orgRowStyle.Render(name)
 		default:
-			label = orgMutedStyle.Render(label)
+			name = orgMutedStyle.Render(name)
 		}
-		b.WriteString(cursor + here + label + "\n")
+		b.WriteString(cursor + here + name + " " + styleMemberStatus(mem.Status) + "\n")
 	}
 	return m.paneStyle(paneMembers).Render(strings.TrimRight(b.String(), "\n"))
 }
@@ -116,7 +155,7 @@ func (m orgTUIModel) footer() string {
 	if m.pane == paneOrgs {
 		return orgHelpStyle.Render("j/k: orgs . l: members . r: rename . q: quit")
 	}
-	return orgHelpStyle.Render("j/k: members . h: orgs . m: move . d: default . esc: back . q: quit")
+	return orgHelpStyle.Render("j/k: members . h: orgs . m: move . c: create . d: default . q: quit")
 }
 
 func (m orgTUIModel) statusLine() string {
@@ -136,6 +175,8 @@ func (m orgTUIModel) overlayView() string {
 		prompt = fmt.Sprintf("Rename org %q to:", m.orgs[m.orgCursor].Org)
 	case overlayMove:
 		prompt = fmt.Sprintf("Move %q to org:", m.members[m.memCursor].Name)
+	case overlayCreate:
+		prompt = fmt.Sprintf("Create org and add %q:", m.members[m.memCursor].Name)
 	}
 	box := orgTitleStyle.Render(prompt) + "\n\n" +
 		m.input.View() + "\n\n" +

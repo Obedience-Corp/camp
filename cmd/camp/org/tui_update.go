@@ -61,6 +61,11 @@ func (m orgTUIModel) updateBrowse(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.openOverlay(overlayMove, "target org")
 		}
 		return m, nil
+	case "c":
+		if m.pane == paneMembers && len(m.members) > 0 {
+			m.openOverlay(overlayCreate, "new org name")
+		}
+		return m, nil
 	case "d":
 		if m.pane == paneMembers && len(m.members) > 0 {
 			member := m.members[m.memCursor]
@@ -150,6 +155,16 @@ func (m orgTUIModel) commitOverlay() (tea.Model, tea.Cmd) {
 			m.setError(err)
 		} else {
 			m.setStatus(fmt.Sprintf("moved %q to org %q", member.Name, value))
+		}
+	case overlayCreate:
+		member := m.members[m.memCursor]
+		existed := m.orgExists(value)
+		if err := m.assignOrg(member.ID, value); err != nil {
+			m.setError(err)
+		} else if existed {
+			m.setStatus(fmt.Sprintf("added %q to existing org %q", member.Name, value))
+		} else {
+			m.setStatus(fmt.Sprintf("created org %q with %q", value, member.Name))
 		}
 	}
 	m.overlay = overlayNone

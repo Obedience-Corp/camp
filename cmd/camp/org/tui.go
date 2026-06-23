@@ -31,6 +31,7 @@ const (
 	overlayNone orgOverlay = iota
 	overlayMove
 	overlayRename
+	overlayCreate
 )
 
 type orgTUIModel struct {
@@ -163,6 +164,15 @@ func (m *orgTUIModel) renameOrg(oldOrg, newOrg string) error {
 		return err
 	}
 	return m.reload()
+}
+
+func (m orgTUIModel) orgExists(name string) bool {
+	for _, o := range m.orgs {
+		if o.Org == name {
+			return true
+		}
+	}
+	return false
 }
 
 func (m orgTUIModel) orgNamesCSV() string {

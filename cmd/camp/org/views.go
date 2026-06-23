@@ -4,15 +4,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strings"
 	"text/tabwriter"
 
+	"golang.org/x/term"
+
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
+
+// stdoutIsTTY reports whether stdout is an interactive terminal. It is a
+// package variable so tests can make the bare-org dispatch deterministic.
+var stdoutIsTTY = func() bool { return term.IsTerminal(int(os.Stdout.Fd())) }
 
 type orgRenameResult struct {
 	Old        string `json:"old"`
@@ -68,15 +76,26 @@ var orgShowCmd = &cobra.Command{
 	RunE:    runOrgShow,
 }
 
+var orgWhichCmd = &cobra.Command{
+	Use:     "which",
+	Aliases: []string{"current"},
+	Short:   "Print the current campaign's org",
+	Example: `  camp org which`,
+	Args:    cobra.NoArgs,
+	RunE:    runOrgWhich,
+}
+
 func init() {
 	Cmd.AddCommand(orgRenameCmd)
 	Cmd.AddCommand(orgListCmd)
 	Cmd.AddCommand(orgShowCmd)
+	Cmd.AddCommand(orgWhichCmd)
 	orgRenameCmd.Flags().Bool("json", false, "Output as JSON")
 	orgListCmd.Flags().Bool("json", false, "Output as JSON")
 	orgShowCmd.Flags().Bool("json", false, "Output as JSON")
+	orgWhichCmd.Flags().Bool("json", false, "Output as JSON")
 	Cmd.Flags().Bool("json", false, "Output as JSON")
-	Cmd.Flags().BoolP("interactive", "i", false, "Launch the interactive org browser")
+	Cmd.Flags().BoolP("interactive", "i", false, "Force the interactive org browser even when output is piped")
 }
 
 func runOrgRename(cmd *cobra.Command, args []string) error {
@@ -185,15 +204,33 @@ func computeOrgCounts(reg *config.Registry) []orgCount {
 
 func writeOrgCounts(w io.Writer, counts []orgCount) error {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintln(tw, "ORG\tCAMPAIGNS\tACTIVE"); err != nil {
+	if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\n", ui.Label("ORG"), ui.Label("CAMPAIGNS"), ui.Label("ACTIVE")); err != nil {
 		return err
 	}
 	for _, c := range counts {
-		if _, err := fmt.Fprintf(tw, "%s\t%d\t%d\n", c.Org, c.Campaigns, c.Active); err != nil {
+		active := ui.Dim(fmt.Sprintf("%d", c.Active))
+		if c.Active > 0 {
+			active = ui.Success(fmt.Sprintf("%d", c.Active))
+		}
+		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\n", ui.Accent(c.Org), ui.Value(fmt.Sprintf("%d", c.Campaigns)), active); err != nil {
 			return err
 		}
 	}
 	return tw.Flush()
+}
+
+// styleOrgStatus renders a campaign lifecycle status with a semantic color.
+func styleOrgStatus(status string) string {
+	switch status {
+	case config.StatusActive:
+		return ui.Success(status)
+	case config.StatusInactive:
+		return ui.Warning(status)
+	case config.StatusReference:
+		return ui.Info(status)
+	default:
+		return ui.Dim(status)
+	}
 }
 
 func runOrgShow(cmd *cobra.Command, args []string) error {
@@ -232,32 +269,56 @@ func buildOrgShow(reg *config.Registry, org string) orgShowResult {
 }
 
 func writeOrgShow(w io.Writer, r orgShowResult) error {
-	if _, err := fmt.Fprintf(w, "org: %s   (%d campaigns, %d active)\n\n", r.Org, r.Campaigns, r.Active); err != nil {
+	if _, err := fmt.Fprintf(w, "%s %s   %s\n\n",
+		ui.Label("org:"), ui.Accent(r.Org),
+		ui.Dim(fmt.Sprintf("(%d campaigns, %d active)", r.Campaigns, r.Active))); err != nil {
 		return err
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintln(tw, "  ID\tNAME\tSTATUS\tTAGS"); err != nil {
+	if _, err := fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\n", ui.Label("ID"), ui.Label("NAME"), ui.Label("STATUS"), ui.Label("TAGS")); err != nil {
 		return err
 	}
 	for _, m := range r.Members {
-		tags := "-"
+		tags := ui.Dim("-")
 		if len(m.Tags) > 0 {
-			tags = strings.Join(m.Tags, ",")
+			tags = ui.Info(strings.Join(m.Tags, ","))
 		}
-		if _, err := fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\n", m.ID, m.Name, m.Status, tags); err != nil {
+		if _, err := fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\n", ui.Dim(m.ID), ui.Value(m.Name), styleOrgStatus(m.Status), tags); err != nil {
 			return err
 		}
 	}
 	return tw.Flush()
 }
 
+// runOrgBare is the default action for `camp org`. In an interactive terminal it
+// opens the org browser; otherwise (piped, or --json) it prints the current
+// campaign's org. Use `camp org which` to print the org unconditionally.
 func runOrgBare(cmd *cobra.Command, _ []string) error {
-	ctx := cmd.Context()
-	if interactive, _ := cmd.Flags().GetBool("interactive"); interactive {
+	asJSON, _ := cmd.Flags().GetBool("json")
+	interactive, _ := cmd.Flags().GetBool("interactive")
+	if shouldOpenOrgTUI(asJSON, interactive, stdoutIsTTY()) {
 		return runOrgTUI(cmd)
 	}
-	asJSON, _ := cmd.Flags().GetBool("json")
+	return printCurrentOrg(cmd, asJSON)
+}
 
+// shouldOpenOrgTUI decides whether bare `camp org` opens the interactive
+// browser. --json always means machine output; otherwise an explicit -i or an
+// interactive terminal opens the TUI.
+func shouldOpenOrgTUI(asJSON, interactive, isTTY bool) bool {
+	if asJSON {
+		return false
+	}
+	return interactive || isTTY
+}
+
+func runOrgWhich(cmd *cobra.Command, _ []string) error {
+	asJSON, _ := cmd.Flags().GetBool("json")
+	return printCurrentOrg(cmd, asJSON)
+}
+
+func printCurrentOrg(cmd *cobra.Command, asJSON bool) error {
+	ctx := cmd.Context()
 	root, err := campaign.DetectCached(ctx)
 	if err != nil {
 		return err

@@ -23,7 +23,7 @@ func campaignTableCells(c campaignEntry) (id, name, org, typ, path string) {
 		orgCell = "-"
 	}
 	typeStyle := ui.GetCampaignTypeStyle(c.Type)
-	return ui.Dim(shortID), ui.Value(c.Name), ui.Dim(orgCell), typeStyle.Render(campaignType), ui.Dim(c.Path)
+	return ui.Dim(shortID), ui.Value(c.Name), ui.Accent(orgCell), typeStyle.Render(campaignType), ui.Dim(c.Path)
 }
 
 func outputGrouped(entries []campaignEntry, format, fallbackOrg string) error {
@@ -35,7 +35,7 @@ func outputGrouped(entries []campaignEntry, format, fallbackOrg string) error {
 		if i > 0 {
 			fmt.Println()
 		}
-		fmt.Println(org)
+		fmt.Printf("%s %s\n", ui.Accent(org), ui.Dim(fmt.Sprintf("(%s)", ui.CountLabel(len(byOrg[org]), "campaign", "campaigns"))))
 		if err := writeGroupSection(byOrg[org], format); err != nil {
 			return err
 		}

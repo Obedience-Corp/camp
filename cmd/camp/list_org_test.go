@@ -192,11 +192,11 @@ func TestList_GroupedOutput(t *testing.T) {
 		ent("BBBBBBBB2222", "beta", "campaign", "obey", "active"),
 	}
 	out := captureListStdout(t, func() error { return outputGrouped(entries, "table", "default") })
-	const golden = "default\n" +
+	const golden = "default (1 campaign)\n" +
 		"  ID        NAME   TYPE      PATH\n" +
 		"  AAAAAAAA  alpha  campaign  /tmp/alpha\n" +
 		"\n" +
-		"obey\n" +
+		"obey (1 campaign)\n" +
 		"  ID        NAME  TYPE      PATH\n" +
 		"  BBBBBBBB  beta  campaign  /tmp/beta\n" +
 		"\n" +
