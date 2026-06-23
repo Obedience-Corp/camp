@@ -9,6 +9,7 @@ const (
 	QuestCreate   QuestAction = "QuestCreate"
 	QuestRename   QuestAction = "QuestRename"
 	QuestEdit     QuestAction = "QuestEdit"
+	QuestUpdate   QuestAction = "QuestUpdate"
 	QuestPause    QuestAction = "QuestPause"
 	QuestResume   QuestAction = "QuestResume"
 	QuestComplete QuestAction = "QuestComplete"
