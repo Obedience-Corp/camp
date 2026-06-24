@@ -122,7 +122,7 @@ func (m listTUIModel) topBar() string {
 }
 
 func (m listTUIModel) footer() string {
-	return listHelpStyle.Render("j/k: move . s: status . m: move org . y: copy . f: filter . q: quit")
+	return listHelpStyle.Render("g: go . j/k: move . s: status . m: org . y: copy . f: filter . q: quit")
 }
 
 func (m listTUIModel) statusLine() string {

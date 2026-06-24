@@ -302,3 +302,76 @@ func TestListTUI_ViewSmoke(t *testing.T) {
 		t.Error("constrained view should not be empty")
 	}
 }
+
+func TestListTUI_Go_Enabled(t *testing.T) {
+	m := newTestListModel(t) // cursor 0 = alpha (/tmp/a)
+	m.gotoEnabled = true
+	m = lkey(m, "g")
+	if !m.quitting {
+		t.Error("g should quit the browser")
+	}
+	if m.gotoPath != "/tmp/a" {
+		t.Errorf("gotoPath = %q, want /tmp/a", m.gotoPath)
+	}
+}
+
+func TestListTUI_Go_EnterAlsoGoes(t *testing.T) {
+	m := newTestListModel(t)
+	m.gotoEnabled = true
+	m = lkey(m, "enter")
+	if !m.quitting || m.gotoPath != "/tmp/a" {
+		t.Errorf("enter should go: quitting=%v gotoPath=%q", m.quitting, m.gotoPath)
+	}
+}
+
+func TestListTUI_Go_DisabledShowsHint(t *testing.T) {
+	m := newTestListModel(t) // gotoEnabled defaults false
+	m = lkey(m, "g")
+	if m.quitting {
+		t.Error("g must not quit when goto is disabled")
+	}
+	if m.gotoPath != "" {
+		t.Errorf("gotoPath = %q, want empty when disabled", m.gotoPath)
+	}
+	if !m.statusErr || m.status == "" {
+		t.Error("expected a shell-integration hint")
+	}
+}
+
+func TestListTUI_EnterInOverlayMovesNotGoes(t *testing.T) {
+	m := newTestListModel(t)
+	m.gotoEnabled = true
+	m = lkey(m, "m")
+	m = lkey(m, "newco")
+	m = lkey(m, "enter") // confirms the move, not a go
+	if m.quitting {
+		t.Error("enter inside the move overlay should not quit")
+	}
+	if got := campaignOrg(t, "A-1"); got != "newco" {
+		t.Errorf("alpha org = %q, want newco (overlay enter moves)", got)
+	}
+}
+
+func TestWriteGotoSelection(t *testing.T) {
+	dir := t.TempDir()
+
+	out := filepath.Join(dir, "sel")
+	if err := writeGotoSelection(listTUIModel{gotoPath: "/abs/campaign"}, out); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if b, _ := os.ReadFile(out); string(b) != "/abs/campaign" {
+		t.Errorf("wrote %q, want /abs/campaign", b)
+	}
+
+	out2 := filepath.Join(dir, "sel2")
+	if err := writeGotoSelection(listTUIModel{}, out2); err != nil {
+		t.Fatalf("write (no goto): %v", err)
+	}
+	if _, err := os.Stat(out2); !os.IsNotExist(err) {
+		t.Error("file must not be written when no campaign was chosen")
+	}
+
+	if err := writeGotoSelection(listTUIModel{gotoPath: "/x"}, ""); err != nil {
+		t.Errorf("no path-output should be a no-op, got %v", err)
+	}
+}
