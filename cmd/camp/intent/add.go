@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
+	wkcmd "github.com/Obedience-Corp/camp/internal/commands/workitem"
 	"github.com/Obedience-Corp/camp/internal/concept"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/editor"
@@ -494,10 +495,15 @@ func finalizeCreatedIntentWithOutput(ctx context.Context, result *intent.Intent,
 	// Auto-commit (unless --no-commit)
 	if !noCommit {
 		files := commit.NormalizeFiles(campaignRoot, result.Path, audit.FilePath(intentsDir))
+		cwd, _ := os.Getwd()
+		cc := wkcmd.ResolveCommitContext(ctx, campaignRoot, cwd, os.Stderr)
 		commitResult := commit.Intent(ctx, commit.IntentOptions{
 			Options: commit.Options{
 				CampaignRoot:  campaignRoot,
 				CampaignID:    cfg.ID,
+				QuestID:       cc.QuestID,
+				FestivalRef:   cc.FestivalRef,
+				WorkitemRef:   cc.WorkitemRef,
 				Files:         files,
 				SelectiveOnly: true,
 			},
