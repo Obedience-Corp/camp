@@ -197,6 +197,44 @@ ref: NOT-A-VALID-REF-12345
 		"output must not echo hand-edited junk ref: %s", out)
 }
 
+func TestIntegration_CommitTags_NoteInheritsWorkitemContext(t *testing.T) {
+	tc := GetSharedContainer(t)
+	dir := "/test/commit-tags-note-context"
+	initCommitTagsCampaign(t, tc, dir)
+	ref := seedDesignWorkitemWithRef(t, tc, dir, "notectx")
+
+	// A note captured from inside a workitem directory should inherit that
+	// workitem's WI-<ref> in its commit tag, even though the note file itself
+	// is written under .campaign/intents/notes/.
+	wiDir := dir + "/workflow/design/notectx"
+	out, err := tc.RunCampInDir(wiDir, "intent", "note", "check the daemon socket path")
+	require.NoError(t, err, "camp intent note: %s", out)
+
+	subject := lastCommitSubject(t, tc, dir)
+	assert.Contains(t, subject, "WI-"+ref,
+		"note captured inside a workitem should inherit its WI-<ref>: %s", subject)
+	assert.Contains(t, subject, "check the daemon socket path",
+		"note commit subject should carry the note title: %s", subject)
+}
+
+func TestIntegration_CommitTags_NoteNoContext(t *testing.T) {
+	tc := GetSharedContainer(t)
+	dir := "/test/commit-tags-note-no-context"
+	initCommitTagsCampaign(t, tc, dir)
+
+	// No workitems and no ambient context: a note from the campaign root gets
+	// the bare campaign tag with no WI-/qst_/FE- segments.
+	out, err := tc.RunCampInDir(dir, "intent", "note", "loose thought")
+	require.NoError(t, err, "camp intent note: %s", out)
+
+	subject := lastCommitSubject(t, tc, dir)
+	assert.NotContains(t, subject, "WI-", "no-context note must not include WI-: %s", subject)
+	assert.NotContains(t, subject, "qst_", "no-context note must not include qst_: %s", subject)
+	assert.NotContains(t, subject, "FE-", "no-context note must not include FE-: %s", subject)
+	assert.Regexp(t, `^\[OBEY-CAMPAIGN-[0-9a-f]{1,8}\]`, subject,
+		"note should still carry the campaign tag: %s", subject)
+}
+
 func TestIntegration_AutoWriteEnv(t *testing.T) {
 	tc := GetSharedContainer(t)
 	dir := "/test/commit-tags-autowrite"

@@ -3,10 +3,12 @@ package intent
 import (
 	"context"
 	"fmt"
+	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
+	wkcmd "github.com/Obedience-Corp/camp/internal/commands/workitem"
 	"github.com/Obedience-Corp/camp/internal/concept"
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -189,10 +191,15 @@ func finalizeCreatedNote(ctx context.Context, result *intent.Intent, intentsDir 
 
 	if !noCommit {
 		files := commit.NormalizeFiles(campaignRoot, result.Path, audit.FilePath(intentsDir))
+		cwd, _ := os.Getwd()
+		cc := wkcmd.ResolveCommitContext(ctx, campaignRoot, cwd, os.Stderr)
 		commitResult := commit.Intent(ctx, commit.IntentOptions{
 			Options: commit.Options{
 				CampaignRoot:  campaignRoot,
 				CampaignID:    cfg.ID,
+				QuestID:       cc.QuestID,
+				FestivalRef:   cc.FestivalRef,
+				WorkitemRef:   cc.WorkitemRef,
 				Files:         files,
 				SelectiveOnly: true,
 			},
