@@ -1,9 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"io"
 	"os"
 	"sort"
@@ -12,11 +12,11 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
 
-// campaignEntry represents a campaign for display purposes.
 type campaignEntry struct {
 	ID         string    `json:"id"`
 	Name       string    `json:"name"`
@@ -35,6 +35,11 @@ var listCmd = &cobra.Command{
 
 Campaigns are registered when created with 'camp init' or manually
 with 'camp register'. The registry lives at ~/.obey/campaign/registry.json.
+
+In a terminal, 'camp list' (with no flags) opens an interactive browser where you
+can deactivate/reactivate campaigns (cycle lifecycle status), reassign their org,
+and copy paths. Piped, with --json/--count, or with any filter/sort flag it
+prints the table instead. Home paths display as '~'.
 
 Output formats:
   table   - Aligned columns with headers (default)
@@ -79,9 +84,17 @@ func init() {
 	listCmd.Flags().Bool("all", false, "Show all statuses (default hides inactive/reference)")
 	listCmd.Flags().Bool("group", false, "Force org grouping")
 	listCmd.Flags().Bool("no-group", false, "Suppress org grouping")
+	listCmd.Flags().BoolP("interactive", "i", false, "Open the interactive campaign browser (prints the table when stdout is not a terminal)")
 }
 
 func runList(cmd *cobra.Command, args []string) error {
+	if listTUIRequested(cmd, stdoutIsTTY()) {
+		return runListTUI(cmd)
+	}
+	return renderListTable(cmd)
+}
+
+func renderListTable(cmd *cobra.Command) error {
 	ctx := cmd.Context()
 	formatStr, _ := cmd.Flags().GetString("format")
 	if listJSON {
@@ -93,31 +106,12 @@ func runList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	reg, err := config.LoadRegistry(ctx)
+	reg, report, err := loadVerifiedListRegistry(ctx)
 	if err != nil {
 		return err
 	}
 
-	// Verify and self-heal registry
-	report, err := reg.VerifyAndRepair(ctx)
-	if err != nil {
-		return camperrors.Wrap(err, "registry verification failed")
-	}
-
-	// Save if changes made
 	if report.HasChanges() {
-		if err := config.UpdateRegistry(ctx, func(locked *config.Registry) error {
-			updatedReport, err := locked.VerifyAndRepair(ctx)
-			if err != nil {
-				return err
-			}
-			reg = locked
-			report = updatedReport
-			return nil
-		}); err != nil {
-			return camperrors.Wrap(err, "failed to save registry")
-		}
-
 		verbose, _ := cmd.Flags().GetBool("verify-verbose")
 		if verbose {
 			printVerificationDetails(report)
@@ -159,7 +153,36 @@ func runList(cmd *cobra.Command, args []string) error {
 	return outputCampaigns(os.Stdout, campaigns, formatStr)
 }
 
-// sortCampaigns converts the registry map to a sorted slice.
+func loadVerifiedListRegistry(ctx context.Context) (*config.Registry, *config.VerificationReport, error) {
+	reg, err := config.LoadRegistry(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	report, err := reg.VerifyAndRepair(ctx)
+	if err != nil {
+		return nil, nil, camperrors.Wrap(err, "registry verification failed")
+	}
+
+	if !report.HasChanges() {
+		return reg, report, nil
+	}
+
+	if err := config.UpdateRegistry(ctx, func(locked *config.Registry) error {
+		updatedReport, err := locked.VerifyAndRepair(ctx)
+		if err != nil {
+			return err
+		}
+		reg = locked
+		report = updatedReport
+		return nil
+	}); err != nil {
+		return nil, nil, camperrors.Wrap(err, "failed to save registry")
+	}
+
+	return reg, report, nil
+}
+
 func sortCampaigns(campaigns map[string]config.RegisteredCampaign, by, fallbackOrg string) []campaignEntry {
 	entries := make([]campaignEntry, 0, len(campaigns))
 	for id, c := range campaigns {
@@ -211,7 +234,6 @@ func sortCampaigns(campaigns map[string]config.RegisteredCampaign, by, fallbackO
 	return entries
 }
 
-// outputCampaigns writes campaigns to out in the specified format.
 func outputCampaigns(out io.Writer, campaigns []campaignEntry, format string) error {
 	switch format {
 	case "json":
@@ -248,8 +270,7 @@ func outputCampaigns(out io.Writer, campaigns []campaignEntry, format string) er
 	}
 }
 
-// printVerificationSummary prints a brief summary of verification changes.
-func printVerificationSummary(r *config.VerificationReport) {
+func verificationSummaryText(r *config.VerificationReport) string {
 	var parts []string
 	if len(r.Removed) > 0 {
 		parts = append(parts, fmt.Sprintf("removed %d", len(r.Removed)))
@@ -260,10 +281,13 @@ func printVerificationSummary(r *config.VerificationReport) {
 	if len(r.Updated) > 0 {
 		parts = append(parts, fmt.Sprintf("updated %d", len(r.Updated)))
 	}
-	fmt.Printf("%s Registry cleaned: %s\n\n", ui.SuccessIcon(), strings.Join(parts, ", "))
+	return strings.Join(parts, ", ")
 }
 
-// printVerificationDetails prints detailed information about verification changes.
+func printVerificationSummary(r *config.VerificationReport) {
+	fmt.Printf("%s Registry cleaned: %s\n\n", ui.SuccessIcon(), verificationSummaryText(r))
+}
+
 func printVerificationDetails(r *config.VerificationReport) {
 	fmt.Println("Registry verification:")
 	for _, e := range r.Removed {
