@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -93,6 +94,21 @@ func TestQuestFlagHelpTextMatchesProfile(t *testing.T) {
 		default:
 			t.Fatalf("unexpected version.Profile %q", version.Profile)
 		}
+	}
+}
+
+func TestAdoptCommandHasInitAlias(t *testing.T) {
+	if !slices.Contains(newAdoptCommand().Aliases, "init") {
+		t.Fatal("adopt command missing init alias")
+	}
+
+	parent := NewWorkitemCommand()
+	found, _, err := parent.Find([]string{"init"})
+	if err != nil {
+		t.Fatalf("Find init: %v", err)
+	}
+	if found.Name() != "adopt" {
+		t.Fatalf("init resolved to %q, want adopt", found.Name())
 	}
 }
 
