@@ -6,6 +6,7 @@ import (
 	"sort"
 	"text/tabwriter"
 
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
@@ -23,7 +24,7 @@ func campaignTableCells(c campaignEntry) (id, name, org, typ, path string) {
 		orgCell = "-"
 	}
 	typeStyle := ui.GetCampaignTypeStyle(c.Type)
-	return ui.Dim(shortID), ui.Value(c.Name), ui.Accent(orgCell), typeStyle.Render(campaignType), ui.Dim(c.Path)
+	return ui.Dim(shortID), ui.Value(c.Name), ui.Accent(orgCell), typeStyle.Render(campaignType), ui.Dim(pathutil.AbbreviateHome(c.Path))
 }
 
 func outputGrouped(entries []campaignEntry, format, fallbackOrg string) error {

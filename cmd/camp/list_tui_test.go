@@ -1,0 +1,253 @@
+package main
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/spf13/cobra"
+
+	"github.com/Obedience-Corp/camp/internal/config"
+)
+
+const listFixture = `{
+  "version": 2,
+  "campaigns": {
+    "A-1": {"name":"alpha","path":"/tmp/a","type":"product","org":"default","status":"active","last_access":"2026-06-16T10:00:00Z"},
+    "B-2": {"name":"beta","path":"/tmp/b","type":"product","org":"obey","status":"active","last_access":"2026-06-16T10:00:00Z"},
+    "C-3": {"name":"gamma","path":"/tmp/c","type":"product","org":"obey","status":"inactive","last_access":"2026-06-16T10:00:00Z"}
+  }
+}`
+
+func setListRegistry(t *testing.T) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "registry.json")
+	t.Setenv("CAMP_REGISTRY_PATH", path)
+	if err := os.WriteFile(path, []byte(listFixture), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+}
+
+func newTestListModel(t *testing.T) listTUIModel {
+	t.Helper()
+	setListRegistry(t)
+	reg, err := config.LoadRegistry(context.Background())
+	if err != nil {
+		t.Fatalf("load registry: %v", err)
+	}
+	return newListTUIModel(context.Background(), reg)
+}
+
+func lkey(m listTUIModel, s string) listTUIModel {
+	var msg tea.KeyMsg
+	switch s {
+	case "enter":
+		msg = tea.KeyMsg{Type: tea.KeyEnter}
+	case "esc":
+		msg = tea.KeyMsg{Type: tea.KeyEsc}
+	default:
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+	}
+	next, _ := m.Update(msg)
+	return next.(listTUIModel)
+}
+
+func campaignStatus(t *testing.T, id string) string {
+	t.Helper()
+	reg, err := config.LoadRegistry(context.Background())
+	if err != nil {
+		t.Fatalf("load registry: %v", err)
+	}
+	return reg.Campaigns[id].Status
+}
+
+func campaignOrg(t *testing.T, id string) string {
+	t.Helper()
+	reg, _ := config.LoadRegistry(context.Background())
+	return reg.Campaigns[id].Org
+}
+
+func listTestCmd() *cobra.Command {
+	c := &cobra.Command{}
+	c.Flags().String("format", "table", "")
+	c.Flags().BoolP("interactive", "i", false, "")
+	c.Flags().String("sort", "accessed", "")
+	c.Flags().String("org", "", "")
+	c.Flags().StringSlice("tag", nil, "")
+	c.Flags().String("status", "", "")
+	c.Flags().Bool("all", false, "")
+	c.Flags().Bool("group", false, "")
+	c.Flags().Bool("no-group", false, "")
+	return c
+}
+
+func TestListTUIRequested(t *testing.T) {
+	defer func() { listJSON, listCount = false, false }()
+
+	t.Run("tty no flags opens", func(t *testing.T) {
+		listJSON, listCount = false, false
+		if !listTUIRequested(listTestCmd(), true) {
+			t.Error("bare camp list in a TTY should open the browser")
+		}
+	})
+	t.Run("piped no flags prints", func(t *testing.T) {
+		listJSON, listCount = false, false
+		if listTUIRequested(listTestCmd(), false) {
+			t.Error("piped camp list should print the table")
+		}
+	})
+	t.Run("json never opens", func(t *testing.T) {
+		listJSON, listCount = true, false
+		if listTUIRequested(listTestCmd(), true) {
+			t.Error("--json must never open the browser")
+		}
+	})
+	t.Run("count never opens", func(t *testing.T) {
+		listJSON, listCount = false, true
+		if listTUIRequested(listTestCmd(), true) {
+			t.Error("--count must never open the browser")
+		}
+	})
+	t.Run("non-table format never opens", func(t *testing.T) {
+		listJSON, listCount = false, false
+		c := listTestCmd()
+		_ = c.Flags().Set("format", "simple")
+		if listTUIRequested(c, true) {
+			t.Error("--format simple must not open the browser")
+		}
+	})
+	t.Run("interactive forces even when piped", func(t *testing.T) {
+		listJSON, listCount = false, false
+		c := listTestCmd()
+		_ = c.Flags().Set("interactive", "true")
+		if !listTUIRequested(c, false) {
+			t.Error("-i should request the browser even when piped")
+		}
+	})
+	t.Run("shaping flag in a TTY prints table", func(t *testing.T) {
+		listJSON, listCount = false, false
+		c := listTestCmd()
+		_ = c.Flags().Set("org", "obey")
+		if listTUIRequested(c, true) {
+			t.Error("a shaping flag should print the table, not open the browser")
+		}
+	})
+}
+
+func TestListTUI_OpensOrgMajorAllStatuses(t *testing.T) {
+	m := newTestListModel(t)
+	if len(m.visible) != 3 {
+		t.Fatalf("visible = %d, want 3 (all statuses by default)", len(m.visible))
+	}
+	if m.visible[0].Name != "alpha" {
+		t.Errorf("first row = %q, want alpha (default org first)", m.visible[0].Name)
+	}
+}
+
+func TestListTUI_CycleStatus_Deactivate(t *testing.T) {
+	m := newTestListModel(t) // cursor 0 = alpha (active)
+	m = lkey(m, "s")
+	if m.statusErr {
+		t.Fatalf("unexpected error: %s", m.status)
+	}
+	if got := campaignStatus(t, "A-1"); got != "inactive" {
+		t.Errorf("alpha status = %q, want inactive after one cycle", got)
+	}
+	if len(m.visible) != 3 {
+		t.Error("deactivated campaign should stay visible in show-all mode")
+	}
+}
+
+func TestListTUI_Filter_HidesInactive(t *testing.T) {
+	m := newTestListModel(t)
+	m = lkey(m, "f") // active only
+	for _, e := range m.visible {
+		if e.Status != "active" {
+			t.Errorf("active-only filter still shows %q (%s)", e.Name, e.Status)
+		}
+	}
+	if len(m.visible) != 2 {
+		t.Errorf("active-only visible = %d, want 2", len(m.visible))
+	}
+	m = lkey(m, "f") // back to all
+	if len(m.visible) != 3 {
+		t.Errorf("show-all visible = %d, want 3", len(m.visible))
+	}
+}
+
+func TestListTUI_MoveOrg(t *testing.T) {
+	m := newTestListModel(t) // cursor 0 = alpha
+	m = lkey(m, "m")
+	if m.overlay != listOverlayMove {
+		t.Fatal("expected move overlay")
+	}
+	m = lkey(m, "newco")
+	m = lkey(m, "enter")
+	if m.statusErr {
+		t.Fatalf("unexpected error: %s", m.status)
+	}
+	if got := campaignOrg(t, "A-1"); got != "newco" {
+		t.Errorf("alpha org = %q, want newco", got)
+	}
+}
+
+func TestListTUI_MoveOrg_InvalidName_NoMutation(t *testing.T) {
+	m := newTestListModel(t)
+	m = lkey(m, "m")
+	m = lkey(m, "Bad Org")
+	m = lkey(m, "enter")
+	if !m.statusErr {
+		t.Errorf("expected error status for invalid org name, got %q", m.status)
+	}
+	if got := campaignOrg(t, "A-1"); got != "default" {
+		t.Errorf("alpha org = %q, want default (unchanged)", got)
+	}
+}
+
+func TestListTUI_CopyPath_UsesTilde(t *testing.T) {
+	prev := writeClipboard
+	var copied string
+	writeClipboard = func(s string) error { copied = s; return nil }
+	defer func() { writeClipboard = prev }()
+
+	m := newTestListModel(t)
+	m = lkey(m, "y")
+	if m.statusErr {
+		t.Fatalf("copy failed: %s", m.status)
+	}
+	if copied != "/tmp/a" {
+		t.Errorf("copied %q, want /tmp/a (fixture path, not under home)", copied)
+	}
+	if m.status != "copied!" {
+		t.Errorf("status = %q, want copied!", m.status)
+	}
+}
+
+func TestListTUI_Quit(t *testing.T) {
+	m := newTestListModel(t)
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	if !next.(listTUIModel).quitting {
+		t.Error("q should set quitting")
+	}
+	if cmd == nil {
+		t.Error("q should return a quit command")
+	}
+}
+
+func TestListTUI_ViewSmoke(t *testing.T) {
+	m := newTestListModel(t)
+	m.width, m.height = 100, 30
+	out := m.View()
+	for _, want := range []string{"Campaigns", "alpha", "active", "obey"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("view missing %q:\n%s", want, out)
+		}
+	}
+	m.width, m.height = 40, 10 // narrow/short must still render
+	if m.View() == "" {
+		t.Error("constrained view should not be empty")
+	}
+}

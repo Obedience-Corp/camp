@@ -36,6 +36,11 @@ var listCmd = &cobra.Command{
 Campaigns are registered when created with 'camp init' or manually
 with 'camp register'. The registry lives at ~/.obey/campaign/registry.json.
 
+In a terminal, 'camp list' (with no flags) opens an interactive browser where you
+can deactivate/reactivate campaigns (cycle lifecycle status), reassign their org,
+and copy paths. Piped, with --json/--count, or with any filter/sort flag it
+prints the table instead. Home paths display as '~'.
+
 Output formats:
   table   - Aligned columns with headers (default)
   simple  - Campaign names only, one per line
@@ -79,9 +84,17 @@ func init() {
 	listCmd.Flags().Bool("all", false, "Show all statuses (default hides inactive/reference)")
 	listCmd.Flags().Bool("group", false, "Force org grouping")
 	listCmd.Flags().Bool("no-group", false, "Suppress org grouping")
+	listCmd.Flags().BoolP("interactive", "i", false, "Open the interactive campaign browser (prints the table when stdout is not a terminal)")
 }
 
 func runList(cmd *cobra.Command, args []string) error {
+	if listTUIRequested(cmd, stdoutIsTTY()) {
+		return runListTUI(cmd)
+	}
+	return renderListTable(cmd)
+}
+
+func renderListTable(cmd *cobra.Command) error {
 	ctx := cmd.Context()
 	formatStr, _ := cmd.Flags().GetString("format")
 	if listJSON {
