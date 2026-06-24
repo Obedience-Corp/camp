@@ -85,6 +85,8 @@ func init() {
 	listCmd.Flags().Bool("group", false, "Force org grouping")
 	listCmd.Flags().Bool("no-group", false, "Suppress org grouping")
 	listCmd.Flags().BoolP("interactive", "i", false, "Open the interactive campaign browser (prints the table when stdout is not a terminal)")
+	listCmd.Flags().String("path-output", "", "Write the selected campaign path to a file (shell integration)")
+	_ = listCmd.Flags().MarkHidden("path-output")
 }
 
 func runList(cmd *cobra.Command, args []string) error {

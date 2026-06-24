@@ -43,6 +43,9 @@ type listTUIModel struct {
 	status    string
 	statusErr bool
 
+	gotoEnabled bool
+	gotoPath    string
+
 	width    int
 	height   int
 	quitting bool
@@ -74,19 +77,33 @@ func runListTUI(cmd *cobra.Command) error {
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
 		return renderListTable(cmd)
 	}
+	pathOutput, _ := cmd.Flags().GetString("path-output")
 	reg, report, err := loadVerifiedListRegistry(ctx)
 	if err != nil {
 		return camperrors.Wrap(err, "failed to load registry")
 	}
 	model := newListTUIModel(ctx, reg)
+	model.gotoEnabled = pathOutput != ""
 	if report.HasChanges() {
 		model.setStatus("registry cleaned: "+verificationSummaryText(report), false)
 	}
 	prog := tea.NewProgram(model, tea.WithContext(ctx), tea.WithAltScreen())
-	if _, err := prog.Run(); err != nil {
+	final, err := prog.Run()
+	if err != nil {
 		return camperrors.Wrap(err, "running campaign browser")
 	}
-	return nil
+	return writeGotoSelection(final, pathOutput)
+}
+
+// writeGotoSelection persists the campaign the user chose to go to, for the
+// shell function to cd into. No-op unless a path-output file was supplied and a
+// selection was made.
+func writeGotoSelection(final tea.Model, pathOutput string) error {
+	m, ok := final.(listTUIModel)
+	if !ok || pathOutput == "" || m.gotoPath == "" {
+		return nil
+	}
+	return os.WriteFile(pathOutput, []byte(m.gotoPath), 0o600)
 }
 
 func newListTUIModel(ctx context.Context, reg *config.Registry) listTUIModel {

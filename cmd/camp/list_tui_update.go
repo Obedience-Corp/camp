@@ -26,6 +26,17 @@ func (m listTUIModel) updateBrowse(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+c", "q", "esc":
 		m.quitting = true
 		return m, tea.Quit
+	case "g", "enter":
+		if len(m.visible) == 0 {
+			return m, nil
+		}
+		if !m.gotoEnabled {
+			m.setStatus("go needs shell integration: run eval \"$(camp shell-init <shell>)\"", true)
+			return m, nil
+		}
+		m.gotoPath = m.visible[m.cursor].Path
+		m.quitting = true
+		return m, tea.Quit
 	case "down", "j":
 		if len(m.visible) > 0 {
 			m.cursor = (m.cursor + 1) % len(m.visible)
