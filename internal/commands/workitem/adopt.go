@@ -18,8 +18,9 @@ import (
 func newAdoptCommand() *cobra.Command {
 	var typeFlag, title, idOverride, questSelector string
 	cmd := &cobra.Command{
-		Use:   "adopt <dir>",
-		Short: "Attach .workitem metadata to an existing directory",
+		Use:     "adopt <dir>",
+		Aliases: []string{"init"},
+		Short:   "Attach .workitem metadata to an existing directory",
 		Long: `Attach workitem metadata to an existing campaign directory without moving it.
 
 The target directory must already exist and must not already contain a
