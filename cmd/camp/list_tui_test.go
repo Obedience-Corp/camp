@@ -199,7 +199,7 @@ func TestListTUI_OpensOrgMajorAllStatuses(t *testing.T) {
 }
 
 func TestListTUI_CycleStatus_Deactivate(t *testing.T) {
-	m := newTestListModel(t) // cursor 0 = alpha (active)
+	m := newTestListModel(t)
 	m = lkey(m, "s")
 	if m.statusErr {
 		t.Fatalf("unexpected error: %s", m.status)
@@ -214,7 +214,7 @@ func TestListTUI_CycleStatus_Deactivate(t *testing.T) {
 
 func TestListTUI_Filter_HidesInactive(t *testing.T) {
 	m := newTestListModel(t)
-	m = lkey(m, "f") // active only
+	m = lkey(m, "f")
 	for _, e := range m.visible {
 		if e.Status != "active" {
 			t.Errorf("active-only filter still shows %q (%s)", e.Name, e.Status)
@@ -223,14 +223,14 @@ func TestListTUI_Filter_HidesInactive(t *testing.T) {
 	if len(m.visible) != 2 {
 		t.Errorf("active-only visible = %d, want 2", len(m.visible))
 	}
-	m = lkey(m, "f") // back to all
+	m = lkey(m, "f")
 	if len(m.visible) != 3 {
 		t.Errorf("show-all visible = %d, want 3", len(m.visible))
 	}
 }
 
 func TestListTUI_MoveOrg(t *testing.T) {
-	m := newTestListModel(t) // cursor 0 = alpha
+	m := newTestListModel(t)
 	m = lkey(m, "m")
 	if m.overlay != listOverlayMove {
 		t.Fatal("expected move overlay")
@@ -297,7 +297,7 @@ func TestListTUI_ViewSmoke(t *testing.T) {
 			t.Errorf("view missing %q:\n%s", want, out)
 		}
 	}
-	m.width, m.height = 40, 10 // narrow/short must still render
+	m.width, m.height = 40, 10
 	if m.View() == "" {
 		t.Error("constrained view should not be empty")
 	}

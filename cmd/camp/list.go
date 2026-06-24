@@ -17,7 +17,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// campaignEntry represents a campaign for display purposes.
 type campaignEntry struct {
 	ID         string    `json:"id"`
 	Name       string    `json:"name"`
@@ -184,7 +183,6 @@ func loadVerifiedListRegistry(ctx context.Context) (*config.Registry, *config.Ve
 	return reg, report, nil
 }
 
-// sortCampaigns converts the registry map to a sorted slice.
 func sortCampaigns(campaigns map[string]config.RegisteredCampaign, by, fallbackOrg string) []campaignEntry {
 	entries := make([]campaignEntry, 0, len(campaigns))
 	for id, c := range campaigns {
@@ -236,7 +234,6 @@ func sortCampaigns(campaigns map[string]config.RegisteredCampaign, by, fallbackO
 	return entries
 }
 
-// outputCampaigns writes campaigns to out in the specified format.
 func outputCampaigns(out io.Writer, campaigns []campaignEntry, format string) error {
 	switch format {
 	case "json":
@@ -287,12 +284,10 @@ func verificationSummaryText(r *config.VerificationReport) string {
 	return strings.Join(parts, ", ")
 }
 
-// printVerificationSummary prints a brief summary of verification changes.
 func printVerificationSummary(r *config.VerificationReport) {
 	fmt.Printf("%s Registry cleaned: %s\n\n", ui.SuccessIcon(), verificationSummaryText(r))
 }
 
-// printVerificationDetails prints detailed information about verification changes.
 func printVerificationDetails(r *config.VerificationReport) {
 	fmt.Println("Registry verification:")
 	for _, e := range r.Removed {

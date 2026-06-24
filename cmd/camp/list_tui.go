@@ -18,8 +18,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// stdoutIsTTY reports whether stdout is an interactive terminal. A package var so
-// the dispatch is deterministic under test.
+// Overridden in tests so dispatch does not depend on the runner's terminal.
 var stdoutIsTTY = func() bool { return term.IsTerminal(int(os.Stdout.Fd())) }
 
 type listOverlay int
@@ -33,8 +32,8 @@ type listTUIModel struct {
 	ctx context.Context
 
 	fallback   string
-	all        []campaignEntry // every campaign, org-major sorted
-	visible    []campaignEntry // after the activeOnly filter
+	all        []campaignEntry
+	visible    []campaignEntry
 	cursor     int
 	activeOnly bool
 
@@ -70,8 +69,6 @@ func listTUIRequested(cmd *cobra.Command, isTTY bool) bool {
 	return isTTY
 }
 
-// runListTUI launches the browser, degrading to the table when stdout is not a
-// terminal (bubbletea needs a TTY).
 func runListTUI(cmd *cobra.Command) error {
 	ctx := cmd.Context()
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
@@ -144,8 +141,6 @@ func (m *listTUIModel) reload() error {
 
 func (m listTUIModel) Init() tea.Cmd { return textinput.Blink }
 
-// cycleStatus advances the selected campaign active -> inactive -> reference ->
-// active through the shared atomic registry write path.
 func (m *listTUIModel) cycleStatus() error {
 	e := m.visible[m.cursor]
 	next := nextLifecycleStatus(e.Status)
@@ -186,8 +181,7 @@ func (m *listTUIModel) mutate(id string, apply func(*config.RegisteredCampaign))
 	return m.reload()
 }
 
-// writeClipboard copies s to the system clipboard. A package var so tests can
-// intercept it instead of touching the real clipboard.
+// Package var so tests do not touch the real clipboard.
 var writeClipboard = func(s string) error {
 	var c *exec.Cmd
 	switch runtime.GOOS {
