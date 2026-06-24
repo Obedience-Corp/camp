@@ -77,11 +77,15 @@ func runListTUI(cmd *cobra.Command) error {
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
 		return renderListTable(cmd)
 	}
-	reg, err := config.LoadRegistry(ctx)
+	reg, report, err := loadVerifiedListRegistry(ctx)
 	if err != nil {
 		return camperrors.Wrap(err, "failed to load registry")
 	}
-	prog := tea.NewProgram(newListTUIModel(ctx, reg), tea.WithContext(ctx), tea.WithAltScreen())
+	model := newListTUIModel(ctx, reg)
+	if report.HasChanges() {
+		model.setStatus("registry cleaned: "+verificationSummaryText(report), false)
+	}
+	prog := tea.NewProgram(model, tea.WithContext(ctx), tea.WithAltScreen())
 	if _, err := prog.Run(); err != nil {
 		return camperrors.Wrap(err, "running campaign browser")
 	}

@@ -1,9 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"io"
 	"os"
 	"sort"
@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -106,31 +107,12 @@ func renderListTable(cmd *cobra.Command) error {
 		return err
 	}
 
-	reg, err := config.LoadRegistry(ctx)
+	reg, report, err := loadVerifiedListRegistry(ctx)
 	if err != nil {
 		return err
 	}
 
-	// Verify and self-heal registry
-	report, err := reg.VerifyAndRepair(ctx)
-	if err != nil {
-		return camperrors.Wrap(err, "registry verification failed")
-	}
-
-	// Save if changes made
 	if report.HasChanges() {
-		if err := config.UpdateRegistry(ctx, func(locked *config.Registry) error {
-			updatedReport, err := locked.VerifyAndRepair(ctx)
-			if err != nil {
-				return err
-			}
-			reg = locked
-			report = updatedReport
-			return nil
-		}); err != nil {
-			return camperrors.Wrap(err, "failed to save registry")
-		}
-
 		verbose, _ := cmd.Flags().GetBool("verify-verbose")
 		if verbose {
 			printVerificationDetails(report)
@@ -170,6 +152,36 @@ func renderListTable(cmd *cobra.Command) error {
 		return outputGrouped(campaigns, formatStr, reg.FallbackOrg())
 	}
 	return outputCampaigns(os.Stdout, campaigns, formatStr)
+}
+
+func loadVerifiedListRegistry(ctx context.Context) (*config.Registry, *config.VerificationReport, error) {
+	reg, err := config.LoadRegistry(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	report, err := reg.VerifyAndRepair(ctx)
+	if err != nil {
+		return nil, nil, camperrors.Wrap(err, "registry verification failed")
+	}
+
+	if !report.HasChanges() {
+		return reg, report, nil
+	}
+
+	if err := config.UpdateRegistry(ctx, func(locked *config.Registry) error {
+		updatedReport, err := locked.VerifyAndRepair(ctx)
+		if err != nil {
+			return err
+		}
+		reg = locked
+		report = updatedReport
+		return nil
+	}); err != nil {
+		return nil, nil, camperrors.Wrap(err, "failed to save registry")
+	}
+
+	return reg, report, nil
 }
 
 // sortCampaigns converts the registry map to a sorted slice.
@@ -261,8 +273,7 @@ func outputCampaigns(out io.Writer, campaigns []campaignEntry, format string) er
 	}
 }
 
-// printVerificationSummary prints a brief summary of verification changes.
-func printVerificationSummary(r *config.VerificationReport) {
+func verificationSummaryText(r *config.VerificationReport) string {
 	var parts []string
 	if len(r.Removed) > 0 {
 		parts = append(parts, fmt.Sprintf("removed %d", len(r.Removed)))
@@ -273,7 +284,12 @@ func printVerificationSummary(r *config.VerificationReport) {
 	if len(r.Updated) > 0 {
 		parts = append(parts, fmt.Sprintf("updated %d", len(r.Updated)))
 	}
-	fmt.Printf("%s Registry cleaned: %s\n\n", ui.SuccessIcon(), strings.Join(parts, ", "))
+	return strings.Join(parts, ", ")
+}
+
+// printVerificationSummary prints a brief summary of verification changes.
+func printVerificationSummary(r *config.VerificationReport) {
+	fmt.Printf("%s Registry cleaned: %s\n\n", ui.SuccessIcon(), verificationSummaryText(r))
 }
 
 // printVerificationDetails prints detailed information about verification changes.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -135,6 +136,56 @@ func TestListTUIRequested(t *testing.T) {
 			t.Error("a shaping flag should print the table, not open the browser")
 		}
 	})
+}
+
+func TestLoadVerifiedListRegistry_RepairsBeforeBrowser(t *testing.T) {
+	dir := t.TempDir()
+	registryPath := filepath.Join(dir, "registry.json")
+	campaignRoot := filepath.Join(dir, "actual")
+	if err := os.MkdirAll(filepath.Join(campaignRoot, ".campaign"), 0o755); err != nil {
+		t.Fatalf("create campaign dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(campaignRoot, ".campaign", "campaign.yaml"),
+		[]byte("id: actual-id\nname: fresh-name\ntype: research\n"), 0o644); err != nil {
+		t.Fatalf("write campaign config: %v", err)
+	}
+
+	t.Setenv("CAMP_REGISTRY_PATH", registryPath)
+	registry := `{
+  "version": 2,
+  "campaigns": {
+    "wrong-id": {"name":"stale-name","path":` + strconv.Quote(campaignRoot) + `,"type":"product","status":"active"},
+    "missing-id": {"name":"missing","path":` + strconv.Quote(filepath.Join(dir, "missing")) + `,"type":"product","status":"active"}
+  }
+}`
+	if err := os.WriteFile(registryPath, []byte(registry), 0o644); err != nil {
+		t.Fatalf("write registry: %v", err)
+	}
+
+	reg, report, err := loadVerifiedListRegistry(context.Background())
+	if err != nil {
+		t.Fatalf("loadVerifiedListRegistry: %v", err)
+	}
+	if !report.HasChanges() {
+		t.Fatal("expected registry repair changes")
+	}
+	if _, ok := reg.Campaigns["wrong-id"]; ok {
+		t.Fatal("wrong ID should be removed")
+	}
+	if _, ok := reg.Campaigns["missing-id"]; ok {
+		t.Fatal("missing path should be removed")
+	}
+	if got := reg.Campaigns["actual-id"]; got.Name != "fresh-name" || got.Type != config.CampaignTypeResearch {
+		t.Fatalf("actual campaign not repaired from campaign.yaml: %+v", got)
+	}
+
+	persisted, err := config.LoadRegistry(context.Background())
+	if err != nil {
+		t.Fatalf("reload registry: %v", err)
+	}
+	if _, ok := persisted.Campaigns["actual-id"]; !ok {
+		t.Fatal("repaired registry was not persisted")
+	}
 }
 
 func TestListTUI_OpensOrgMajorAllStatuses(t *testing.T) {
