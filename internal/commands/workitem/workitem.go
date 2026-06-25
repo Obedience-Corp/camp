@@ -25,6 +25,7 @@ import (
 func NewWorkitemCommand() *cobra.Command {
 	var (
 		flagJSON            bool
+		flagList            bool
 		flagPrint           bool
 		flagPathOutput      string
 		flagTypes           []string
@@ -59,13 +60,13 @@ Examples:
 		RunE: jsoncontract.RunE(wkitem.SchemaVersion, func() bool { return flagJSON }, func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
-			if err := validateFlags(flagJSON, flagPrint, flagPathOutput, flagTypes, flagStages, flagAttentionStages, flagGroups, flagGroupBy); err != nil {
+			if err := validateFlags(flagJSON, flagList, flagPrint, flagPathOutput, flagTypes, flagStages, flagAttentionStages, flagGroups, flagGroupBy); err != nil {
 				return err
 			}
 
 			interactive := isInteractive()
-			if !interactive && !flagJSON && !flagPrint && flagPathOutput == "" {
-				return camperrors.New("non-interactive use requires --json or --print flag")
+			if !interactive && !flagJSON && !flagList && !flagPrint && flagPathOutput == "" {
+				return camperrors.New("non-interactive use requires --json, --list, or --print flag")
 			}
 
 			cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
@@ -106,9 +107,16 @@ Examples:
 				items = items[:flagLimit]
 			}
 
+			displayGroupBy := flagGroupBy
+			if flagList && !cmd.Flags().Changed("group-by") {
+				displayGroupBy = "group"
+			}
+
 			switch {
+			case flagList:
+				return outputList(cmd.OutOrStdout(), items, displayGroupBy)
 			case flagJSON:
-				return outputJSON(campaignRoot, items, flagGroupBy)
+				return outputJSON(campaignRoot, items, displayGroupBy)
 			case !interactive:
 				// Non-interactive --print/--path-output: output first item path directly.
 				if len(items) == 0 {
@@ -127,14 +135,15 @@ Examples:
 	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(wkitem.SchemaVersion, func() bool { return flagJSON }))
 
 	cmd.Flags().BoolVar(&flagJSON, "json", false, "Output as JSON")
+	cmd.Flags().BoolVar(&flagList, "list", false, "Output a compact grouped list")
 	cmd.Flags().BoolVar(&flagPrint, "print", false, "Print path only (for shell integration)")
 	cmd.Flags().StringVar(&flagPathOutput, "path-output", "", "Write selected relative path to file (shell integration)")
 	_ = cmd.Flags().MarkHidden("path-output")
 	cmd.Flags().StringArrayVar(&flagTypes, "type", nil, "Filter by workflow type (builtin: intent, design, explore, festival; or any slug-safe custom type produced by 'camp workitem create --type <name>')")
 	cmd.Flags().StringArrayVar(&flagStages, "stage", nil, "Filter by lifecycle stage (none, inbox, active, ready, planning, ritual, chains)")
-	cmd.Flags().StringArrayVar(&flagAttentionStages, "attention-stage", nil, "Filter by attention stage (current, staged, active, parked)")
+	cmd.Flags().StringArrayVar(&flagAttentionStages, "attention-stage", nil, "Filter by attention stage (current, next, active, parked)")
 	cmd.Flags().StringArrayVar(&flagGroups, "group", nil, "Filter by workitem group")
-	cmd.Flags().StringVar(&flagGroupBy, "group-by", "attention_stage", "Group JSON sections by attention_stage, group, or type")
+	cmd.Flags().StringVar(&flagGroupBy, "group-by", "attention_stage", "Group JSON/list sections by attention_stage, group, or type; --list defaults to group unless set")
 	cmd.Flags().BoolVar(&flagShowParked, "show-parked", false, "include parked attention-stage workitems in default output")
 	cmd.Flags().IntVar(&flagLimit, "limit", 0, "Maximum number of items to return")
 	cmd.Flags().StringVar(&flagQuery, "query", "", "Search query to filter items")
@@ -235,7 +244,7 @@ func isInteractive() bool {
 	return fi.Mode()&os.ModeCharDevice != 0
 }
 
-func validateFlags(jsonMode, printMode bool, pathOutput string, types, stages, attentionStages, groups []string, groupBy string) error {
+func validateFlags(jsonMode, listMode, printMode bool, pathOutput string, types, stages, attentionStages, groups []string, groupBy string) error {
 	for _, t := range types {
 		if err := validateSlug(t); err != nil {
 			return fmt.Errorf("invalid --type value %q: must be a path-safe workflow type (no '/', '\\', whitespace, or control chars; no leading '.' or '-'; max 80 chars)", t)
@@ -248,7 +257,7 @@ func validateFlags(jsonMode, printMode bool, pathOutput string, types, stages, a
 	}
 	for _, s := range attentionStages {
 		if !isValidAttentionStage(s) {
-			return fmt.Errorf("unknown --attention-stage value: %q (valid: current, staged, active, parked)", s)
+			return fmt.Errorf("unknown --attention-stage value: %q (valid: current, next, active, parked)", s)
 		}
 	}
 	for _, group := range groups {
@@ -264,8 +273,17 @@ func validateFlags(jsonMode, printMode bool, pathOutput string, types, stages, a
 	if jsonMode && printMode {
 		return fmt.Errorf("--json and --print are mutually exclusive")
 	}
+	if jsonMode && listMode {
+		return fmt.Errorf("--json and --list are mutually exclusive")
+	}
+	if listMode && printMode {
+		return fmt.Errorf("--list and --print are mutually exclusive")
+	}
 	if jsonMode && pathOutput != "" {
 		return fmt.Errorf("--json and --path-output are mutually exclusive")
+	}
+	if listMode && pathOutput != "" {
+		return fmt.Errorf("--list and --path-output are mutually exclusive")
 	}
 	if printMode && pathOutput != "" {
 		return fmt.Errorf("--print and --path-output are mutually exclusive")

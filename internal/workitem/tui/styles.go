@@ -67,7 +67,7 @@ var (
 
 var (
 	attentionCurrentStyle = lipgloss.NewStyle().Bold(true).Foreground(pal.Accent)
-	attentionStagedStyle  = lipgloss.NewStyle().Bold(true).Foreground(pal.AccentAlt)
+	attentionNextStyle    = lipgloss.NewStyle().Bold(true).Foreground(pal.AccentAlt)
 	attentionActiveStyle  = lipgloss.NewStyle().Foreground(pal.TextSecondary)
 	attentionParkedStyle  = lipgloss.NewStyle().Foreground(pal.TextDim)
 )
@@ -91,8 +91,8 @@ func attentionStyle(stage string) lipgloss.Style {
 	switch stage {
 	case "current":
 		return attentionCurrentStyle
-	case "staged":
-		return attentionStagedStyle
+	case "next":
+		return attentionNextStyle
 	case "active":
 		return attentionActiveStyle
 	case "parked":

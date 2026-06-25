@@ -95,7 +95,7 @@ func (m Model) renderFooter() string {
 		return footerStyle.Render("priority: h high  m medium  l low  0 clear  Esc cancel")
 	}
 	if m.isStageMode() {
-		return footerStyle.Render("stage: c current  s staged  a active  p parked  0 clear  Esc cancel")
+		return footerStyle.Render("stage: c current  s next  a active  p parked  0 clear  Esc cancel")
 	}
 	count := fmt.Sprintf("%d items", len(m.filteredItems))
 	keys := "j/k move  / search  1-4 filter  0 all  S stage  P priority  tab preview  r refresh  ? help  q quit"
@@ -224,8 +224,8 @@ func shortAttention(stage string) string {
 	switch stage {
 	case "current":
 		return "cur"
-	case "staged":
-		return "stg"
+	case "next":
+		return "nxt"
 	case "active":
 		return "act"
 	case "parked":
@@ -413,7 +413,7 @@ func (m Model) renderHelp() string {
 		}},
 		{"Priority", [][2]string{
 			{"S", "Assign attention stage to selected item"},
-			{"c/s/a/p", "Set current/staged/active/parked (in stage mode)"},
+			{"c/s/a/p", "Set current/next/active/parked (in stage mode)"},
 			{"P", "Assign manual priority to selected item"},
 			{"h / 1", "Set high priority (in priority mode)"},
 			{"m / 2", "Set medium priority (in priority mode)"},

@@ -23,11 +23,12 @@ camp workitem [flags]
 ### Options
 
 ```
-      --attention-stage stringArray   Filter by attention stage (current, staged, active, parked)
+      --attention-stage stringArray   Filter by attention stage (current, next, active, parked)
       --group stringArray             Filter by workitem group
-      --group-by string               Group JSON sections by attention_stage, group, or type (default "attention_stage")
+      --group-by string               Group JSON/list sections by attention_stage, group, or type; --list defaults to group unless set (default "attention_stage")
   -h, --help                          help for workitem
       --json                          Output as JSON
+      --list                          Output a compact grouped list
       --limit int                     Maximum number of items to return
       --print                         Print path only (for shell integration)
       --query string                  Search query to filter items

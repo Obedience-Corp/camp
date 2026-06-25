@@ -7,7 +7,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/priority"
@@ -78,19 +80,19 @@ func TestSelectedOpenPathUsesPrimaryDoc(t *testing.T) {
 }
 
 func TestValidateFlagsAcceptsStageNoneForNoStageTypes(t *testing.T) {
-	if err := validateFlags(true, false, "", []string{"design"}, []string{"none"}, nil, nil, "attention_stage"); err != nil {
+	if err := validateFlags(true, false, false, "", []string{"design"}, []string{"none"}, nil, nil, "attention_stage"); err != nil {
 		t.Fatalf("validateFlags(design, none) error = %v", err)
 	}
-	if err := validateFlags(true, false, "", []string{"explore"}, []string{"none"}, nil, nil, "attention_stage"); err != nil {
+	if err := validateFlags(true, false, false, "", []string{"explore"}, []string{"none"}, nil, nil, "attention_stage"); err != nil {
 		t.Fatalf("validateFlags(explore, none) error = %v", err)
 	}
 }
 
 func TestValidateFlagsRejectsStageForWrongType(t *testing.T) {
-	if err := validateFlags(true, false, "", []string{"intent"}, []string{"planning"}, nil, nil, "attention_stage"); err == nil {
+	if err := validateFlags(true, false, false, "", []string{"intent"}, []string{"planning"}, nil, nil, "attention_stage"); err == nil {
 		t.Fatal("validateFlags(intent, planning) error = nil, want invalid stage")
 	}
-	if err := validateFlags(true, false, "", []string{"design"}, []string{"inbox"}, nil, nil, "attention_stage"); err == nil {
+	if err := validateFlags(true, false, false, "", []string{"design"}, []string{"inbox"}, nil, nil, "attention_stage"); err == nil {
 		t.Fatal("validateFlags(design, inbox) error = nil, want invalid stage")
 	}
 }
@@ -197,6 +199,39 @@ func TestWorkitemJSONUsesResolvedRootAndRelativePaths(t *testing.T) {
 	}
 }
 
+func TestOutputListGroupsByGroup(t *testing.T) {
+	var out bytes.Buffer
+	items := []wkitem.WorkItem{
+		{
+			Key:            "design:workflow/design/example",
+			WorkflowType:   wkitem.WorkflowTypeDesign,
+			Title:          "Example Workitem",
+			RelativePath:   "workflow/design/example",
+			SortTimestamp:  time.Now(),
+			AttentionStage: "next",
+			Group:          "camp-workflow",
+		},
+		{
+			Key:            "design:workflow/design/other",
+			WorkflowType:   wkitem.WorkflowTypeDesign,
+			Title:          "Other Workitem",
+			RelativePath:   "workflow/design/other",
+			SortTimestamp:  time.Now(),
+			AttentionStage: "active",
+		},
+	}
+
+	if err := outputList(&out, items, "group"); err != nil {
+		t.Fatalf("outputList() error = %v", err)
+	}
+	got := out.String()
+	for _, want := range []string{"CAMP-WORKFLOW", "UNGROUPED", "next", "active", "Example Workitem", "workflow/design/example"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("output missing %q:\n%s", want, got)
+		}
+	}
+}
+
 func captureStdout(fn func() error) (string, error) {
 	old := os.Stdout
 	r, w, err := os.Pipe()
@@ -226,7 +261,7 @@ func TestValidateFlagsAcceptsBuiltinAndCustomTypes(t *testing.T) {
 	}
 	for _, tname := range cases {
 		t.Run(tname, func(t *testing.T) {
-			if err := validateFlags(false, false, "", []string{tname}, nil, nil, nil, "attention_stage"); err != nil {
+			if err := validateFlags(false, false, false, "", []string{tname}, nil, nil, nil, "attention_stage"); err != nil {
 				t.Fatalf("validateFlags(--type=%q) = %v, want nil", tname, err)
 			}
 		})
@@ -237,7 +272,7 @@ func TestValidateFlagsRejectsInvalidTypeSlugs(t *testing.T) {
 	cases := []string{"with space", "has/slash", "-leading", ".hidden", ""}
 	for _, tname := range cases {
 		t.Run(tname, func(t *testing.T) {
-			if err := validateFlags(false, false, "", []string{tname}, nil, nil, nil, "attention_stage"); err == nil {
+			if err := validateFlags(false, false, false, "", []string{tname}, nil, nil, nil, "attention_stage"); err == nil {
 				t.Fatalf("validateFlags(--type=%q) = nil, want validation error", tname)
 			}
 		})
@@ -256,7 +291,29 @@ func TestValidateFlagsRejectsPathOutputConflicts(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateFlags(tt.jsonMode, tt.printMode, "selected-path", nil, nil, nil, nil, "attention_stage")
+			err := validateFlags(tt.jsonMode, false, tt.printMode, "selected-path", nil, nil, nil, nil, "attention_stage")
+			if err == nil {
+				t.Fatal("validateFlags() error = nil, want conflict")
+			}
+		})
+	}
+}
+
+func TestValidateFlagsRejectsListConflicts(t *testing.T) {
+	tests := []struct {
+		name       string
+		jsonMode   bool
+		printMode  bool
+		pathOutput string
+	}{
+		{name: "json", jsonMode: true},
+		{name: "print", printMode: true},
+		{name: "path-output", pathOutput: "selected-path"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateFlags(tt.jsonMode, true, tt.printMode, tt.pathOutput, nil, nil, nil, nil, "attention_stage")
 			if err == nil {
 				t.Fatal("validateFlags() error = nil, want conflict")
 			}

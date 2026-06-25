@@ -3,7 +3,7 @@
 Set or clear the attention stage of a workitem
 
 ```
-camp workitem stage <selector> <current|staged|active|parked|clear> [flags]
+camp workitem stage <selector> <current|next|active|parked|clear> [flags]
 ```
 
 ### Options

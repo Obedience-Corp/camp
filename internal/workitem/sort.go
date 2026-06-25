@@ -8,7 +8,7 @@ import (
 
 // Sort orders items by the design's deterministic rule:
 //
-//	primary:   attention bucket (current < staged < active < parked < none)
+//	primary:   attention bucket (current < next < active < parked < none)
 //	secondary: ManualPriority bucket (high < medium < low < none)
 //	tertiary:  sort_timestamp DESC (most recent first)
 //	next:      created_at DESC
@@ -35,7 +35,7 @@ func attentionRank(stage string) int {
 	switch stage {
 	case "current":
 		return 1
-	case "staged":
+	case "next":
 		return 2
 	case "active":
 		return 3

@@ -150,7 +150,7 @@ func TestAttentionRoundtrip(t *testing.T) {
 
 func TestApplyAttentionDerivedAndExplicit(t *testing.T) {
 	store := NewStore()
-	SetAttentionStage(store, "design:workflow/design/example", AttentionStaged)
+	SetAttentionStage(store, "design:workflow/design/example", AttentionNext)
 	SetGroup(store, "design:workflow/design/example", "camp-workflow")
 	items := []workitem.WorkItem{
 		{
@@ -174,8 +174,8 @@ func TestApplyAttentionDerivedAndExplicit(t *testing.T) {
 	}
 
 	out := Apply(store, items)
-	if out[0].AttentionStage != string(AttentionStaged) || out[0].AttentionStageSource != "explicit" {
-		t.Fatalf("explicit attention = %q/%q, want staged/explicit", out[0].AttentionStage, out[0].AttentionStageSource)
+	if out[0].AttentionStage != string(AttentionNext) || out[0].AttentionStageSource != "explicit" {
+		t.Fatalf("explicit attention = %q/%q, want next/explicit", out[0].AttentionStage, out[0].AttentionStageSource)
 	}
 	if out[0].Group != "camp-workflow" {
 		t.Fatalf("group = %q, want camp-workflow", out[0].Group)

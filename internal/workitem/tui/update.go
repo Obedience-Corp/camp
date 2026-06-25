@@ -351,7 +351,7 @@ func (m Model) handleStageKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "c", "1":
 		return m.assignStage(priority.AttentionCurrent)
 	case "s", "2":
-		return m.assignStage(priority.AttentionStaged)
+		return m.assignStage(priority.AttentionNext)
 	case "a", "3":
 		return m.assignStage(priority.AttentionActive)
 	case "p", "4":

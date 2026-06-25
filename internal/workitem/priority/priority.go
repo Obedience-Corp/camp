@@ -19,7 +19,7 @@ type AttentionStage string
 const (
 	AttentionNone    AttentionStage = ""
 	AttentionCurrent AttentionStage = "current"
-	AttentionStaged  AttentionStage = "staged"
+	AttentionNext    AttentionStage = "next"
 	AttentionActive  AttentionStage = "active"
 	AttentionParked  AttentionStage = "parked"
 )
@@ -73,14 +73,14 @@ func NewStore() *Store {
 }
 
 func (s AttentionStage) Valid() bool {
-	return s == AttentionCurrent || s == AttentionStaged || s == AttentionActive || s == AttentionParked
+	return s == AttentionCurrent || s == AttentionNext || s == AttentionActive || s == AttentionParked
 }
 
 func (s AttentionStage) Rank() int {
 	switch s {
 	case AttentionCurrent:
 		return 1
-	case AttentionStaged:
+	case AttentionNext:
 		return 2
 	case AttentionActive:
 		return 3

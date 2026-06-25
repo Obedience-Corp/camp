@@ -22,7 +22,7 @@ import (
 func newStageCommand() *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
-		Use:   "stage <selector> <current|staged|active|parked|clear>",
+		Use:   "stage <selector> <current|next|active|parked|clear>",
 		Short: "Set or clear the attention stage of a workitem",
 		Args:  jsoncontract.Args(WorkitemStageJSONVersion, func() bool { return jsonOut }, cobra.ExactArgs(2)),
 		RunE: jsoncontract.RunE(WorkitemStageJSONVersion, func() bool { return jsonOut }, func(cmd *cobra.Command, args []string) error {
@@ -42,8 +42,8 @@ func parseAttentionStage(raw string) (priority.AttentionStage, bool, error) {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "current":
 		return priority.AttentionCurrent, false, nil
-	case "staged":
-		return priority.AttentionStaged, false, nil
+	case "next":
+		return priority.AttentionNext, false, nil
 	case "active":
 		return priority.AttentionActive, false, nil
 	case "parked":
@@ -52,7 +52,7 @@ func parseAttentionStage(raw string) (priority.AttentionStage, bool, error) {
 		return priority.AttentionNone, true, nil
 	default:
 		return priority.AttentionNone, false, camperrors.NewValidation("attention_stage",
-			fmt.Sprintf("unknown attention stage %q (valid: current, staged, active, parked, clear)", raw), nil)
+			fmt.Sprintf("unknown attention stage %q (valid: current, next, active, parked, clear)", raw), nil)
 	}
 }
 

@@ -37,7 +37,7 @@ func TestStage_SetAndClear(t *testing.T) {
 	restore := chdir(t, root)
 	defer restore()
 
-	if _, err := runStageCmd(t, testWorkitemID, "staged", false); err != nil {
+	if _, err := runStageCmd(t, testWorkitemID, "next", false); err != nil {
 		t.Fatalf("stage set: %v", err)
 	}
 	store, err := priority.Load(priority.StorePath(root))
@@ -48,8 +48,8 @@ func TestStage_SetAndClear(t *testing.T) {
 	if !ok {
 		t.Fatalf("missing attention entry for %s", testWorkitemKey)
 	}
-	if entry.Stage != priority.AttentionStaged {
-		t.Fatalf("stage = %q, want staged", entry.Stage)
+	if entry.Stage != priority.AttentionNext {
+		t.Fatalf("stage = %q, want next", entry.Stage)
 	}
 
 	if _, err := runStageCmd(t, testWorkitemID, "clear", false); err != nil {
