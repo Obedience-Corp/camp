@@ -207,17 +207,20 @@ func TestOutputListGroupsByGroup(t *testing.T) {
 			WorkflowType:   wkitem.WorkflowTypeDesign,
 			Title:          "Example Workitem",
 			RelativePath:   "workflow/design/example",
+			ItemKind:       wkitem.ItemKindDirectory,
 			SortTimestamp:  time.Now(),
 			AttentionStage: "next",
 			Group:          "camp-workflow",
 		},
 		{
-			Key:            "design:workflow/design/other",
-			WorkflowType:   wkitem.WorkflowTypeDesign,
+			Key:            "intent:.campaign/intents/inbox/other.md",
+			WorkflowType:   wkitem.WorkflowTypeIntent,
+			LifecycleStage: wkitem.LifecycleStageInbox,
 			Title:          "Other Workitem",
-			RelativePath:   "workflow/design/other",
+			RelativePath:   ".campaign/intents/inbox/other.md",
+			ItemKind:       wkitem.ItemKindFile,
 			SortTimestamp:  time.Now(),
-			AttentionStage: "active",
+			AttentionStage: "current",
 		},
 	}
 
@@ -225,7 +228,7 @@ func TestOutputListGroupsByGroup(t *testing.T) {
 		t.Fatalf("outputList() error = %v", err)
 	}
 	got := out.String()
-	for _, want := range []string{"CAMP-WORKFLOW", "UNGROUPED", "next", "active", "Example Workitem", "workflow/design/example"} {
+	for _, want := range []string{"CAMP-WORKFLOW", "UNGROUPED", "next", "inbox", "Example Workitem", "workflow/design/example"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("output missing %q:\n%s", want, got)
 		}

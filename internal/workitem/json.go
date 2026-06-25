@@ -90,8 +90,8 @@ func NewPayloadWithGrouping(campaignRoot string, items []WorkItem, groupBy strin
 		GeneratedAt:   time.Now().UTC(),
 		CampaignRoot:  campaignRoot,
 		Sort: SortInfo{
-			Primary:   "attention_stage",
-			Secondary: "manual_priority",
+			Primary:   "manual_priority",
+			Secondary: "sort_timestamp",
 			Direction: "desc",
 		},
 		Grouping: listview.Grouping{

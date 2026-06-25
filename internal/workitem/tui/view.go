@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/camp/internal/workitem"
+	"github.com/Obedience-Corp/camp/internal/workitem/priority"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -173,7 +174,8 @@ func priorityBadge(p string) (string, lipgloss.Style) {
 
 func renderRow(item workitem.WorkItem, width int, selected bool) string {
 	wfType := padRight(string(item.WorkflowType), 9)
-	stage := padRight(shortAttention(item.AttentionStage), 7)
+	statusText, statusStyle := rowStatus(item)
+	status := padRight(statusText, 7)
 	rec := formatRecency(item.SortTimestamp)
 
 	badgeText, badgeStyle := priorityBadge(item.ManualPriority)
@@ -200,7 +202,7 @@ func renderRow(item workitem.WorkItem, width int, selected bool) string {
 	title = padRight(title, titleWidth)
 
 	styledType := workflowStyle(item.WorkflowType).Render(wfType)
-	styledStage := attentionStyle(item.AttentionStage).Render(stage)
+	styledStatus := statusStyle.Render(status)
 	styledBadge := ""
 	if badgeText != "" {
 		styledBadge = badgeStyle.Render(badgeText)
@@ -212,11 +214,18 @@ func renderRow(item workitem.WorkItem, width int, selected bool) string {
 	styledTitle := rowTitleStyle.Render(title)
 	styledRecency := recencyStyle(item.SortTimestamp).Render(rec)
 
-	row := fmt.Sprintf(" %s %s %s%s%s %s", styledType, styledStage, styledBadge, styledGroup, styledTitle, styledRecency)
+	row := fmt.Sprintf(" %s %s %s%s%s %s", styledType, styledStatus, styledBadge, styledGroup, styledTitle, styledRecency)
 	if selected {
 		return rowSelectedStyle.Width(width).Render(row)
 	}
 	return row
+}
+
+func rowStatus(item workitem.WorkItem) (string, lipgloss.Style) {
+	if priority.EligibleForAttention(item) {
+		return shortAttention(item.AttentionStage), attentionStyle(item.AttentionStage)
+	}
+	return shortLifecycle(item.LifecycleStage), stageStyle(string(item.LifecycleStage))
 }
 
 func shortAttention(stage string) string {
@@ -231,6 +240,27 @@ func shortAttention(stage string) string {
 		return "prk"
 	default:
 		return "-"
+	}
+}
+
+func shortLifecycle(stage workitem.LifecycleStage) string {
+	switch stage {
+	case workitem.LifecycleStageInbox:
+		return "inbox"
+	case workitem.LifecycleStageActive:
+		return "active"
+	case workitem.LifecycleStageReady:
+		return "ready"
+	case workitem.LifecycleStagePlanning:
+		return "plan"
+	case workitem.LifecycleStageRitual:
+		return "ritual"
+	case workitem.LifecycleStageChains:
+		return "chains"
+	case workitem.LifecycleStageNone, "":
+		return "-"
+	default:
+		return string(stage)
 	}
 }
 

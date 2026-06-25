@@ -61,11 +61,11 @@ func TestNewPayload_NilItemsBecomesEmptyArray(t *testing.T) {
 
 func TestNewPayload_SortInfo(t *testing.T) {
 	p := NewPayload("/tmp", nil)
-	if p.Sort.Primary != "attention_stage" {
-		t.Errorf("sort.primary = %q, want attention_stage", p.Sort.Primary)
+	if p.Sort.Primary != "manual_priority" {
+		t.Errorf("sort.primary = %q, want manual_priority", p.Sort.Primary)
 	}
-	if p.Sort.Secondary != "manual_priority" {
-		t.Errorf("sort.secondary = %q, want manual_priority", p.Sort.Secondary)
+	if p.Sort.Secondary != "sort_timestamp" {
+		t.Errorf("sort.secondary = %q, want sort_timestamp", p.Sort.Secondary)
 	}
 	if p.Sort.Direction != "desc" {
 		t.Errorf("sort.direction = %q, want desc", p.Sort.Direction)

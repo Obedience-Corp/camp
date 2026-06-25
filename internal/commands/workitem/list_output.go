@@ -12,6 +12,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/listview"
 	"github.com/Obedience-Corp/camp/internal/ui/theme"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
+	"github.com/Obedience-Corp/camp/internal/workitem/priority"
 )
 
 var listPalette = theme.TUI()
@@ -61,13 +62,21 @@ func listSectionHeader(section listview.Section) string {
 }
 
 func listRow(item wkitem.WorkItem) string {
-	lane := listAttentionStyle(item.AttentionStage).Render(padList(listAttentionLabel(item.AttentionStage), 7))
-	priority := listPriorityStyle(item.ManualPriority).Render(padList(listPriorityLabel(item.ManualPriority), 1))
+	statusText, statusStyle := listStatus(item)
+	status := statusStyle.Render(padList(statusText, 7))
+	priorityMark := listPriorityStyle(item.ManualPriority).Render(padList(listPriorityLabel(item.ManualPriority), 1))
 	wfType := lipgloss.NewStyle().Foreground(listPalette.TextSecondary).Render(padList(string(item.WorkflowType), 8))
 	age := lipgloss.NewStyle().Foreground(listPalette.TextMuted).Render(padList(listRecency(item.SortTimestamp), 4))
 	title := lipgloss.NewStyle().Foreground(listPalette.TextPrimary).Render(item.Title)
 	path := lipgloss.NewStyle().Foreground(listPalette.TextDim).Render(item.RelativePath)
-	return fmt.Sprintf("  %s %s %s %s  %s  %s", lane, priority, wfType, age, title, path)
+	return fmt.Sprintf("  %s %s %s %s  %s  %s", status, priorityMark, wfType, age, title, path)
+}
+
+func listStatus(item wkitem.WorkItem) (string, lipgloss.Style) {
+	if priority.EligibleForAttention(item) {
+		return listAttentionLabel(item.AttentionStage), listAttentionStyle(item.AttentionStage)
+	}
+	return listLifecycleLabel(item.LifecycleStage), listLifecycleStyle(item.LifecycleStage)
 }
 
 func listAttentionLabel(stage string) string {
@@ -82,6 +91,27 @@ func listAttentionLabel(stage string) string {
 		return "parked"
 	default:
 		return "-"
+	}
+}
+
+func listLifecycleLabel(stage wkitem.LifecycleStage) string {
+	switch stage {
+	case wkitem.LifecycleStageInbox:
+		return "inbox"
+	case wkitem.LifecycleStageActive:
+		return "active"
+	case wkitem.LifecycleStageReady:
+		return "ready"
+	case wkitem.LifecycleStagePlanning:
+		return "plan"
+	case wkitem.LifecycleStageRitual:
+		return "ritual"
+	case wkitem.LifecycleStageChains:
+		return "chains"
+	case wkitem.LifecycleStageNone, "":
+		return "-"
+	default:
+		return string(stage)
 	}
 }
 
@@ -127,6 +157,21 @@ func listAttentionStyle(stage string) lipgloss.Style {
 		return lipgloss.NewStyle().Foreground(listPalette.TextSecondary)
 	case "parked":
 		return lipgloss.NewStyle().Foreground(listPalette.TextDim)
+	default:
+		return lipgloss.NewStyle().Foreground(listPalette.TextDim)
+	}
+}
+
+func listLifecycleStyle(stage wkitem.LifecycleStage) lipgloss.Style {
+	switch stage {
+	case wkitem.LifecycleStageActive:
+		return lipgloss.NewStyle().Foreground(listPalette.Success)
+	case wkitem.LifecycleStageReady:
+		return lipgloss.NewStyle().Foreground(listPalette.Warning)
+	case wkitem.LifecycleStageInbox:
+		return lipgloss.NewStyle().Foreground(listPalette.TextMuted)
+	case wkitem.LifecycleStagePlanning, wkitem.LifecycleStageRitual, wkitem.LifecycleStageChains:
+		return lipgloss.NewStyle().Foreground(listPalette.AccentAlt)
 	default:
 		return lipgloss.NewStyle().Foreground(listPalette.TextDim)
 	}

@@ -157,3 +157,37 @@ func TestSort_ManualPriorityBuckets(t *testing.T) {
 		})
 	}
 }
+
+func TestSort_AttentionLaneDoesNotPreemptRecency(t *testing.T) {
+	now := time.Now()
+	items := []WorkItem{
+		{
+			RelativePath:   "workflow/design/older-active",
+			WorkflowType:   WorkflowTypeDesign,
+			AttentionStage: "active",
+			SortTimestamp:  now.Add(-2 * time.Hour),
+			CreatedAt:      now.Add(-2 * time.Hour),
+		},
+		{
+			RelativePath:  ".campaign/intents/inbox/recent.md",
+			WorkflowType:  WorkflowTypeIntent,
+			SortTimestamp: now,
+			CreatedAt:     now,
+		},
+		{
+			RelativePath:  "festivals/active/recent-festival",
+			WorkflowType:  WorkflowTypeFestival,
+			SortTimestamp: now.Add(-1 * time.Hour),
+			CreatedAt:     now.Add(-1 * time.Hour),
+		},
+	}
+
+	Sort(items)
+
+	want := []string{".campaign/intents/inbox/recent.md", "festivals/active/recent-festival", "workflow/design/older-active"}
+	for i, wantPath := range want {
+		if items[i].RelativePath != wantPath {
+			t.Fatalf("items[%d].RelativePath = %q, want %q", i, items[i].RelativePath, wantPath)
+		}
+	}
+}
