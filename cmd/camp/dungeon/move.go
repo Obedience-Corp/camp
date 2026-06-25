@@ -22,8 +22,10 @@ var dungeonMoveCmd = &cobra.Command{
 	Short: "Move dungeon items between statuses",
 	Long: `Move items within the dungeon or from the parent directory into the dungeon.
 
-Without --triage, moves an item already in the dungeon root to a status directory.
-With --triage, moves an item from the parent directory into the dungeon.
+By default, moves an item already in the dungeon root to a status directory.
+When the item exists in the parent directory and not in the dungeon root, the
+command automatically treats it as triage work and moves it into the dungeon.
+Use --triage to force a parent-directory move.
 With --triage and --to-docs, routes an item to an existing campaign-root docs/<subdirectory>.
 With --workitem, resolves a campaign workitem from anywhere and moves its directory
 into the workitem type's local dungeon.
@@ -96,6 +98,13 @@ func runDungeonMove(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	svc := intdungeon.NewService(cmdCtx.CampaignRoot, cmdCtx.Dungeon.DungeonPath)
+	if !triageMode {
+		inferred, err := inferDungeonMoveTriageMode(ctx, svc, cmdCtx.Dungeon, itemName)
+		if err != nil {
+			return err
+		}
+		triageMode = inferred
+	}
 
 	var description string
 	var sourcePaths []string
@@ -167,6 +176,51 @@ func runDungeonMove(cmd *cobra.Command, args []string) error {
 		DestinationPaths: destinationPaths,
 		RewrittenFiles:   svc.RewrittenLinkFiles(),
 	})
+}
+
+func inferDungeonMoveTriageMode(ctx context.Context, svc *intdungeon.Service, dungeonCtx intdungeon.Context, itemName string) (bool, error) {
+	cleanItem, ok := dungeonMoveDirectChildName(itemName)
+	if !ok {
+		return false, nil
+	}
+
+	dungeonRootExists := false
+	if _, err := os.Stat(filepath.Join(dungeonCtx.DungeonPath, cleanItem)); err == nil {
+		dungeonRootExists = true
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return false, camperrors.Wrapf(err, "checking dungeon item %s", cleanItem)
+	}
+
+	parentEligible := false
+	items, err := svc.ListParentItems(ctx, dungeonCtx.ParentPath)
+	if err != nil {
+		return false, camperrors.Wrap(err, "checking parent triage items")
+	}
+	for _, item := range items {
+		if item.Name == cleanItem {
+			parentEligible = true
+			break
+		}
+	}
+	return shouldInferDungeonMoveTriageMode(cleanItem, dungeonRootExists, parentEligible), nil
+}
+
+func shouldInferDungeonMoveTriageMode(itemName string, dungeonRootExists, parentEligible bool) bool {
+	if _, ok := dungeonMoveDirectChildName(itemName); !ok {
+		return false
+	}
+	return !dungeonRootExists && parentEligible
+}
+
+func dungeonMoveDirectChildName(itemName string) (string, bool) {
+	cleanItem := strings.TrimSpace(itemName)
+	if cleanItem == "" || cleanItem != itemName || filepath.Clean(cleanItem) != cleanItem || filepath.Base(cleanItem) != cleanItem {
+		return "", false
+	}
+	if strings.Contains(cleanItem, "/") || strings.Contains(cleanItem, "\\") {
+		return "", false
+	}
+	return cleanItem, true
 }
 
 type DungeonMoveCommitOutcome struct {

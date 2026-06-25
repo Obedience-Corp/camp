@@ -36,6 +36,57 @@ func TestDungeonMove_NoCommitFlagRemoved(t *testing.T) {
 	}
 }
 
+func TestShouldInferDungeonMoveTriageMode(t *testing.T) {
+	tests := []struct {
+		name              string
+		itemName          string
+		dungeonRootExists bool
+		parentEligible    bool
+		want              bool
+	}{
+		{
+			name:           "parent item",
+			itemName:       "finished.md",
+			parentEligible: true,
+			want:           true,
+		},
+		{
+			name:              "dungeon root wins",
+			itemName:          "same.md",
+			dungeonRootExists: true,
+			parentEligible:    true,
+			want:              false,
+		},
+		{
+			name:           "not an eligible parent item",
+			itemName:       "projects",
+			parentEligible: false,
+			want:           false,
+		},
+		{
+			name:           "path traversal is not inferred",
+			itemName:       "../secret.md",
+			parentEligible: true,
+			want:           false,
+		},
+		{
+			name:           "nested path is not inferred",
+			itemName:       "group/finished.md",
+			parentEligible: true,
+			want:           false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := shouldInferDungeonMoveTriageMode(tt.itemName, tt.dungeonRootExists, tt.parentEligible)
+			if got != tt.want {
+				t.Fatalf("shouldInferDungeonMoveTriageMode() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestWrapDungeonDocsRouteError_InvalidItemPath(t *testing.T) {
 	err := wrapDungeonDocsRouteError(intdungeon.ErrInvalidItemPath, "../secret.md", "architecture")
 	if err == nil {
