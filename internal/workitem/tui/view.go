@@ -94,8 +94,11 @@ func (m Model) renderFooter() string {
 	if m.isPriorityMode() {
 		return footerStyle.Render("priority: h high  m medium  l low  0 clear  Esc cancel")
 	}
+	if m.isStageMode() {
+		return footerStyle.Render("stage: c current  s staged  a active  p parked  0 clear  Esc cancel")
+	}
 	count := fmt.Sprintf("%d items", len(m.filteredItems))
-	keys := "j/k move  / search  1-4 filter  0 all  P priority  tab preview  r refresh  ? help  q quit"
+	keys := "j/k move  / search  1-4 filter  0 all  S stage  P priority  tab preview  r refresh  ? help  q quit"
 	if len(keys)+len(count)+2 > m.width {
 		keys = "j/k / 1-4 P tab r ? q"
 	}
@@ -170,13 +173,23 @@ func priorityBadge(p string) (string, lipgloss.Style) {
 
 func renderRow(item workitem.WorkItem, width int, selected bool) string {
 	wfType := padRight(string(item.WorkflowType), 9)
-	stage := padRight(string(item.LifecycleStage), 9)
+	stage := padRight(shortAttention(item.AttentionStage), 7)
 	rec := formatRecency(item.SortTimestamp)
 
 	badgeText, badgeStyle := priorityBadge(item.ManualPriority)
 	badgeWidth := len(badgeText)
 
-	titleWidth := width - 9 - 9 - len(rec) - 4 - badgeWidth
+	group := truncate(item.Group, 12)
+	groupWidth := len(group)
+	if group != "" {
+		groupWidth += 1
+	}
+	titleWidth := width - 9 - 7 - groupWidth - len(rec) - 5 - badgeWidth
+	if titleWidth < 10 {
+		group = ""
+		groupWidth = 0
+		titleWidth = width - 9 - 7 - len(rec) - 5 - badgeWidth
+	}
 	if titleWidth < 10 {
 		titleWidth += badgeWidth
 		badgeText = ""
@@ -188,19 +201,38 @@ func renderRow(item workitem.WorkItem, width int, selected bool) string {
 	title = padRight(title, titleWidth)
 
 	styledType := workflowStyle(item.WorkflowType).Render(wfType)
-	styledStage := stageStyle(string(item.LifecycleStage)).Render(stage)
+	styledStage := attentionStyle(item.AttentionStage).Render(stage)
 	styledBadge := ""
 	if badgeText != "" {
 		styledBadge = badgeStyle.Render(badgeText)
 	}
+	styledGroup := ""
+	if group != "" {
+		styledGroup = previewValueStyle.Render(group + " ")
+	}
 	styledTitle := rowTitleStyle.Render(title)
 	styledRecency := recencyStyle(item.SortTimestamp).Render(rec)
 
-	row := fmt.Sprintf(" %s %s %s%s %s", styledType, styledStage, styledBadge, styledTitle, styledRecency)
+	row := fmt.Sprintf(" %s %s %s%s%s %s", styledType, styledStage, styledBadge, styledGroup, styledTitle, styledRecency)
 	if selected {
 		return rowSelectedStyle.Width(width).Render(row)
 	}
 	return row
+}
+
+func shortAttention(stage string) string {
+	switch stage {
+	case "current":
+		return "cur"
+	case "staged":
+		return "stg"
+	case "active":
+		return "act"
+	case "parked":
+		return "prk"
+	default:
+		return "-"
+	}
 }
 
 func formatRecency(t time.Time) string {
@@ -247,8 +279,23 @@ func renderPreview(item workitem.WorkItem, width, height int) string {
 		previewLabelStyle.Render("type:"),
 		workflowStyle(item.WorkflowType).Render(string(item.WorkflowType))))
 	b.WriteString(fmt.Sprintf("%s %s\n",
-		previewLabelStyle.Render("stage:"),
+		previewLabelStyle.Render("lifecycle:"),
 		stageStyle(stage).Render(stage)))
+	attention := item.AttentionStage
+	if attention == "" {
+		attention = "none"
+	}
+	if item.AttentionStageSource != "" && item.AttentionStageSource != "none" {
+		attention += " (" + item.AttentionStageSource + ")"
+	}
+	b.WriteString(fmt.Sprintf("%s %s\n",
+		previewLabelStyle.Render("attention:"),
+		attentionStyle(item.AttentionStage).Render(attention)))
+	if item.Group != "" {
+		b.WriteString(fmt.Sprintf("%s %s\n",
+			previewLabelStyle.Render("group:"),
+			previewValueStyle.Render(item.Group)))
+	}
 	if item.ManualPriority != "" {
 		_, style := priorityBadge(item.ManualPriority)
 		b.WriteString(fmt.Sprintf("%s %s\n",
@@ -365,6 +412,8 @@ func (m Model) renderHelp() string {
 			{"r", "Refresh (re-scan)"},
 		}},
 		{"Priority", [][2]string{
+			{"S", "Assign attention stage to selected item"},
+			{"c/s/a/p", "Set current/staged/active/parked (in stage mode)"},
 			{"P", "Assign manual priority to selected item"},
 			{"h / 1", "Set high priority (in priority mode)"},
 			{"m / 2", "Set medium priority (in priority mode)"},

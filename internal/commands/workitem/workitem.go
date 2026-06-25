@@ -24,13 +24,17 @@ import (
 // NewWorkitemCommand creates the camp workitem command.
 func NewWorkitemCommand() *cobra.Command {
 	var (
-		flagJSON       bool
-		flagPrint      bool
-		flagPathOutput string
-		flagTypes      []string
-		flagStages     []string
-		flagLimit      int
-		flagQuery      string
+		flagJSON            bool
+		flagPrint           bool
+		flagPathOutput      string
+		flagTypes           []string
+		flagStages          []string
+		flagAttentionStages []string
+		flagGroups          []string
+		flagGroupBy         string
+		flagShowParked      bool
+		flagLimit           int
+		flagQuery           string
 	)
 
 	cmd := &cobra.Command{
@@ -55,7 +59,7 @@ Examples:
 		RunE: jsoncontract.RunE(wkitem.SchemaVersion, func() bool { return flagJSON }, func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
-			if err := validateFlags(flagJSON, flagPrint, flagPathOutput, flagTypes, flagStages); err != nil {
+			if err := validateFlags(flagJSON, flagPrint, flagPathOutput, flagTypes, flagStages, flagAttentionStages, flagGroups, flagGroupBy); err != nil {
 				return err
 			}
 
@@ -90,14 +94,21 @@ Examples:
 			items = priority.Apply(store, items)
 			wkitem.Sort(items)
 
-			items = wkitem.Filter(items, flagTypes, flagStages, flagQuery)
+			items = wkitem.FilterAdvanced(items, wkitem.FilterOptions{
+				Types:           flagTypes,
+				LifecycleStages: flagStages,
+				AttentionStages: flagAttentionStages,
+				Groups:          flagGroups,
+				Query:           flagQuery,
+				ShowParked:      flagShowParked,
+			})
 			if flagLimit > 0 && flagLimit < len(items) {
 				items = items[:flagLimit]
 			}
 
 			switch {
 			case flagJSON:
-				return outputJSON(campaignRoot, items)
+				return outputJSON(campaignRoot, items, flagGroupBy)
 			case !interactive:
 				// Non-interactive --print/--path-output: output first item path directly.
 				if len(items) == 0 {
@@ -105,11 +116,11 @@ Examples:
 				}
 				return outputSelectedPath(items[0], flagPrint, flagPathOutput)
 			case flagPathOutput != "":
-				return runTUI(ctx, items, false, flagPathOutput, campaignRoot, resolver, store, storePath)
+				return runTUI(ctx, items, false, flagPathOutput, campaignRoot, resolver, store, storePath, flagShowParked)
 			case flagPrint:
-				return runTUI(ctx, items, true, "", campaignRoot, resolver, store, storePath)
+				return runTUI(ctx, items, true, "", campaignRoot, resolver, store, storePath, flagShowParked)
 			default:
-				return runTUI(ctx, items, false, "", campaignRoot, resolver, store, storePath)
+				return runTUI(ctx, items, false, "", campaignRoot, resolver, store, storePath, flagShowParked)
 			}
 		}),
 	}
@@ -121,6 +132,10 @@ Examples:
 	_ = cmd.Flags().MarkHidden("path-output")
 	cmd.Flags().StringArrayVar(&flagTypes, "type", nil, "Filter by workflow type (builtin: intent, design, explore, festival; or any slug-safe custom type produced by 'camp workitem create --type <name>')")
 	cmd.Flags().StringArrayVar(&flagStages, "stage", nil, "Filter by lifecycle stage (none, inbox, active, ready, planning, ritual, chains)")
+	cmd.Flags().StringArrayVar(&flagAttentionStages, "attention-stage", nil, "Filter by attention stage (current, staged, active, parked)")
+	cmd.Flags().StringArrayVar(&flagGroups, "group", nil, "Filter by workitem group")
+	cmd.Flags().StringVar(&flagGroupBy, "group-by", "attention_stage", "Group JSON sections by attention_stage, group, or type")
+	cmd.Flags().BoolVar(&flagShowParked, "show-parked", false, "include parked attention-stage workitems in default output")
 	cmd.Flags().IntVar(&flagLimit, "limit", 0, "Maximum number of items to return")
 	cmd.Flags().StringVar(&flagQuery, "query", "", "Search query to filter items")
 
@@ -132,6 +147,8 @@ Examples:
 	cmd.AddCommand(newCurrentCommand())
 	cmd.AddCommand(newResolveCommand())
 	cmd.AddCommand(newPriorityCommand())
+	cmd.AddCommand(newStageCommand())
+	cmd.AddCommand(newGroupCommand())
 	cmd.AddCommand(newPromoteCommand())
 	cmd.AddCommand(newDoctorCommand())
 	cmd.AddCommand(newCommitCommand())
@@ -218,7 +235,7 @@ func isInteractive() bool {
 	return fi.Mode()&os.ModeCharDevice != 0
 }
 
-func validateFlags(jsonMode, printMode bool, pathOutput string, types, stages []string) error {
+func validateFlags(jsonMode, printMode bool, pathOutput string, types, stages, attentionStages, groups []string, groupBy string) error {
 	for _, t := range types {
 		if err := validateSlug(t); err != nil {
 			return fmt.Errorf("invalid --type value %q: must be a path-safe workflow type (no '/', '\\', whitespace, or control chars; no leading '.' or '-'; max 80 chars)", t)
@@ -228,6 +245,21 @@ func validateFlags(jsonMode, printMode bool, pathOutput string, types, stages []
 		if !wkitem.IsValidStageForTypes(wkitem.LifecycleStage(s), types) {
 			return fmt.Errorf("unknown --stage value: %q (valid stages depend on --type; built-in stages: none, inbox, active, ready, planning, ritual, chains)", s)
 		}
+	}
+	for _, s := range attentionStages {
+		if !isValidAttentionStage(s) {
+			return fmt.Errorf("unknown --attention-stage value: %q (valid: current, staged, active, parked)", s)
+		}
+	}
+	for _, group := range groups {
+		if !priority.ValidGroup(group) {
+			return fmt.Errorf("invalid --group value %q: must be lowercase letters, numbers, dash, or underscore; no leading dash or dot; max 80 chars", group)
+		}
+	}
+	switch groupBy {
+	case "", "attention_stage", "group", "type":
+	default:
+		return fmt.Errorf("unknown --group-by value %q (valid: attention_stage, group, type)", groupBy)
 	}
 	if jsonMode && printMode {
 		return fmt.Errorf("--json and --print are mutually exclusive")
@@ -241,19 +273,19 @@ func validateFlags(jsonMode, printMode bool, pathOutput string, types, stages []
 	return nil
 }
 
-func outputJSON(campaignRoot string, items []wkitem.WorkItem) error {
-	payload := wkitem.NewPayload(campaignRoot, items)
+func outputJSON(campaignRoot string, items []wkitem.WorkItem, groupBy string) error {
+	payload := wkitem.NewPayloadWithGrouping(campaignRoot, items, groupBy)
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	return enc.Encode(payload)
 }
 
-func runTUI(ctx context.Context, items []wkitem.WorkItem, printOnly bool, pathOutput string, campaignRoot string, resolver *paths.Resolver, store *priority.Store, storePath string) error {
+func runTUI(ctx context.Context, items []wkitem.WorkItem, printOnly bool, pathOutput string, campaignRoot string, resolver *paths.Resolver, store *priority.Store, storePath string, showParked bool) error {
 	if len(items) == 0 {
 		return fmt.Errorf("no work items found")
 	}
 
-	model := wktui.New(ctx, items, campaignRoot, resolver, store, storePath)
+	model := wktui.New(ctx, items, campaignRoot, resolver, store, storePath, showParked)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	result, err := p.Run()
 	if err != nil {

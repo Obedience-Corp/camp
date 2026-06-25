@@ -14,6 +14,16 @@ const (
 	High   ManualPriority = "high"
 )
 
+type AttentionStage string
+
+const (
+	AttentionNone    AttentionStage = ""
+	AttentionCurrent AttentionStage = "current"
+	AttentionStaged  AttentionStage = "staged"
+	AttentionActive  AttentionStage = "active"
+	AttentionParked  AttentionStage = "parked"
+)
+
 // Rank returns a sort-order integer: High=1, Medium=2, Low=3, None/unknown=4.
 func (p ManualPriority) Rank() int {
 	switch p {
@@ -40,16 +50,43 @@ type PriorityEntry struct {
 	UpdatedAt time.Time      `json:"updated_at"`
 }
 
-// Store is the on-disk JSON representation of all manual priority assignments.
+type AttentionEntry struct {
+	Stage     AttentionStage `json:"stage,omitempty"`
+	Group     string         `json:"group,omitempty"`
+	UpdatedAt time.Time      `json:"updated_at"`
+}
+
+// Store is the on-disk JSON representation of all shared workitem settings.
 type Store struct {
-	Version          int                      `json:"version"`
-	ManualPriorities map[string]PriorityEntry `json:"manual_priorities"`
+	Version          int                       `json:"version"`
+	ManualPriorities map[string]PriorityEntry  `json:"manual_priorities"`
+	Attention        map[string]AttentionEntry `json:"attention,omitempty"`
 }
 
 // NewStore returns an initialized Store ready for use.
 func NewStore() *Store {
 	return &Store{
-		Version:          1,
+		Version:          2,
 		ManualPriorities: make(map[string]PriorityEntry),
+		Attention:        make(map[string]AttentionEntry),
+	}
+}
+
+func (s AttentionStage) Valid() bool {
+	return s == AttentionCurrent || s == AttentionStaged || s == AttentionActive || s == AttentionParked
+}
+
+func (s AttentionStage) Rank() int {
+	switch s {
+	case AttentionCurrent:
+		return 1
+	case AttentionStaged:
+		return 2
+	case AttentionActive:
+		return 3
+	case AttentionParked:
+		return 4
+	default:
+		return 5
 	}
 }

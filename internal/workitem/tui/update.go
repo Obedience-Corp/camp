@@ -48,6 +48,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if m.isStageMode() {
+			return m.handleStageKey(msg)
+		}
 		if m.isPriorityMode() {
 			return m.handlePriorityKey(msg)
 		}
@@ -132,6 +135,8 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Priority mode
 	case "P":
 		m.enterPriorityMode()
+	case "S":
+		m.enterStageMode()
 
 	// Quick actions (read-only)
 	case "e":
@@ -186,7 +191,11 @@ func (m Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.typeFilter != "" {
 		types = []string{m.typeFilter}
 	}
-	m.filteredItems = workitem.Filter(m.allItems, types, nil, draftQuery)
+	m.filteredItems = workitem.FilterAdvanced(m.allItems, workitem.FilterOptions{
+		Types:      types,
+		Query:      draftQuery,
+		ShowParked: m.showParked,
+	})
 	if m.cursor >= len(m.filteredItems) {
 		m.cursor = max(0, len(m.filteredItems)-1)
 	}
@@ -332,5 +341,92 @@ func (m Model) clearPriority() (tea.Model, tea.Cmd) {
 	m.preserveSelection(selectedKey)
 	m.exitPriorityMode()
 	cmd := m.setStatus("priority cleared", false)
+	return m, cmd
+}
+
+// --- Attention stage mode handlers ---
+
+func (m Model) handleStageKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "c", "1":
+		return m.assignStage(priority.AttentionCurrent)
+	case "s", "2":
+		return m.assignStage(priority.AttentionStaged)
+	case "a", "3":
+		return m.assignStage(priority.AttentionActive)
+	case "p", "4":
+		return m.assignStage(priority.AttentionParked)
+	case "0":
+		return m.clearStage()
+	case "esc":
+		m.exitStageMode()
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m Model) assignStage(stage priority.AttentionStage) (tea.Model, tea.Cmd) {
+	item := m.currentItem()
+	if item.Key == "" {
+		m.exitStageMode()
+		return m, nil
+	}
+	if !priority.EligibleForAttention(item) {
+		m.exitStageMode()
+		cmd := m.setStatus("stage unsupported for this item", true)
+		return m, cmd
+	}
+	selectedKey := item.Key
+	var updated *priority.Store
+	if err := priority.WithLock(m.ctx, m.priorityStorePath(), func(store *priority.Store) error {
+		priority.SetAttentionStage(store, item.Key, stage)
+		priority.Prune(store, priority.ValidKeys(m.allItems))
+		updated = store
+		return nil
+	}); err != nil {
+		m.exitStageMode()
+		cmd := m.setStatus("save failed: "+err.Error(), true)
+		return m, cmd
+	}
+	m.priorityStore = updated
+	m.allItems = priority.Apply(m.priorityStore, m.allItems)
+	workitem.Sort(m.allItems)
+	m.refilter()
+	m.preserveSelection(selectedKey)
+	m.exitStageMode()
+	cmd := m.setStatus("stage set: "+string(stage), false)
+	return m, cmd
+}
+
+func (m Model) clearStage() (tea.Model, tea.Cmd) {
+	item := m.currentItem()
+	if item.Key == "" {
+		m.exitStageMode()
+		return m, nil
+	}
+	if !priority.EligibleForAttention(item) {
+		m.exitStageMode()
+		cmd := m.setStatus("stage unsupported for this item", true)
+		return m, cmd
+	}
+	selectedKey := item.Key
+	var updated *priority.Store
+	if err := priority.WithLock(m.ctx, m.priorityStorePath(), func(store *priority.Store) error {
+		priority.ClearAttentionStage(store, item.Key)
+		priority.Prune(store, priority.ValidKeys(m.allItems))
+		updated = store
+		return nil
+	}); err != nil {
+		m.exitStageMode()
+		cmd := m.setStatus("save failed: "+err.Error(), true)
+		return m, cmd
+	}
+	m.priorityStore = updated
+	m.allItems = priority.Apply(m.priorityStore, m.allItems)
+	workitem.Sort(m.allItems)
+	m.refilter()
+	m.preserveSelection(selectedKey)
+	m.exitStageMode()
+	cmd := m.setStatus("stage cleared", false)
 	return m, cmd
 }

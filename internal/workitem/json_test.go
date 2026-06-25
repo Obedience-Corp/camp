@@ -61,11 +61,11 @@ func TestNewPayload_NilItemsBecomesEmptyArray(t *testing.T) {
 
 func TestNewPayload_SortInfo(t *testing.T) {
 	p := NewPayload("/tmp", nil)
-	if p.Sort.Primary != "manual_priority" {
-		t.Errorf("sort.primary = %q, want manual_priority", p.Sort.Primary)
+	if p.Sort.Primary != "attention_stage" {
+		t.Errorf("sort.primary = %q, want attention_stage", p.Sort.Primary)
 	}
-	if p.Sort.Secondary != "sort_timestamp" {
-		t.Errorf("sort.secondary = %q, want sort_timestamp", p.Sort.Secondary)
+	if p.Sort.Secondary != "manual_priority" {
+		t.Errorf("sort.secondary = %q, want manual_priority", p.Sort.Secondary)
 	}
 	if p.Sort.Direction != "desc" {
 		t.Errorf("sort.direction = %q, want desc", p.Sort.Direction)
@@ -154,9 +154,29 @@ func TestWorkItemWorkflow_ZeroValuesAreEmitted(t *testing.T) {
 	}
 }
 
-func TestSchemaVersion_IsV1Alpha6(t *testing.T) {
-	if SchemaVersion != "workitems/v1alpha6" {
-		t.Errorf("SchemaVersion = %q, want workitems/v1alpha6", SchemaVersion)
+func TestSchemaVersion_IsV1Alpha7(t *testing.T) {
+	if SchemaVersion != "workitems/v1alpha7" {
+		t.Errorf("SchemaVersion = %q, want workitems/v1alpha7", SchemaVersion)
+	}
+}
+
+func TestNewPayload_AttentionAndSections(t *testing.T) {
+	items := []WorkItem{
+		{Key: "a", Title: "A", AttentionStage: "current", AttentionStageSource: "explicit", Group: "camp-workflow"},
+		{Key: "b", Title: "B", AttentionStage: "active", AttentionStageSource: "derived"},
+	}
+	p := NewPayloadWithGrouping("/tmp", items, "group")
+	if len(p.AttentionStageVocabulary) == 0 {
+		t.Fatal("missing attention stage vocabulary")
+	}
+	if len(p.GroupVocabulary) != 1 || p.GroupVocabulary[0] != "camp-workflow" {
+		t.Fatalf("group vocabulary = %#v, want camp-workflow", p.GroupVocabulary)
+	}
+	if p.Grouping.GroupBy != "group" {
+		t.Fatalf("group_by = %q, want group", p.Grouping.GroupBy)
+	}
+	if len(p.Sections) != 2 {
+		t.Fatalf("len(sections) = %d, want 2", len(p.Sections))
 	}
 }
 
