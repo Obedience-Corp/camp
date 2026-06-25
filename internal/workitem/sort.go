@@ -8,10 +8,10 @@ import (
 
 // Sort orders items by the design's deterministic rule:
 //
-//	primary:   ManualPriority bucket (high=1 < medium=2 < low=3 < none=4)
+//	primary:   ManualPriority bucket (high < medium < low < none)
 //	secondary: sort_timestamp DESC (most recent first)
-//	tertiary:  created_at DESC
-//	quaternary: relative_path ASC (alphabetical for stable tie-breaking)
+//	next:      created_at DESC
+//	final:     relative_path ASC (alphabetical for stable tie-breaking)
 func Sort(items []WorkItem) {
 	slices.SortStableFunc(items, func(a, b WorkItem) int {
 		if c := cmp.Compare(priorityRank(a.ManualPriority), priorityRank(b.ManualPriority)); c != 0 {

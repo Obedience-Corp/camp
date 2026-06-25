@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"github.com/Obedience-Corp/camp/internal/workitem"
 )
+
+var groupShape = regexp.MustCompile(`^[a-z0-9_][a-z0-9_-]{0,79}$`)
 
 // StorePath returns the absolute path to the priority store file within a campaign.
 func StorePath(campaignRoot string) string {
@@ -33,6 +36,12 @@ func Load(path string) (*Store, error) {
 	}
 	if s.ManualPriorities == nil {
 		s.ManualPriorities = make(map[string]PriorityEntry)
+	}
+	if s.Attention == nil {
+		s.Attention = make(map[string]AttentionEntry)
+	}
+	if s.Version == 0 {
+		s.Version = 1
 	}
 	return &s, nil
 }
@@ -65,6 +74,52 @@ func Set(store *Store, key string, p ManualPriority) {
 	}
 }
 
+func SetAttentionStage(store *Store, key string, stage AttentionStage) {
+	entry := store.Attention[key]
+	entry.Stage = stage
+	entry.UpdatedAt = time.Now().UTC()
+	store.Attention[key] = entry
+	store.Version = 2
+}
+
+func ClearAttentionStage(store *Store, key string) {
+	entry, ok := store.Attention[key]
+	if !ok {
+		return
+	}
+	entry.Stage = AttentionNone
+	entry.UpdatedAt = time.Now().UTC()
+	if entry.Group == "" {
+		delete(store.Attention, key)
+		return
+	}
+	store.Attention[key] = entry
+	store.Version = 2
+}
+
+func SetGroup(store *Store, key, group string) {
+	entry := store.Attention[key]
+	entry.Group = group
+	entry.UpdatedAt = time.Now().UTC()
+	store.Attention[key] = entry
+	store.Version = 2
+}
+
+func ClearGroup(store *Store, key string) {
+	entry, ok := store.Attention[key]
+	if !ok {
+		return
+	}
+	entry.Group = ""
+	entry.UpdatedAt = time.Now().UTC()
+	if entry.Stage == AttentionNone {
+		delete(store.Attention, key)
+		return
+	}
+	store.Attention[key] = entry
+	store.Version = 2
+}
+
 // Clear removes the priority entry for the given key.
 func Clear(store *Store, key string) {
 	delete(store.ManualPriorities, key)
@@ -83,7 +138,16 @@ func Prune(store *Store, validKeys map[string]bool) bool {
 	for _, k := range stale {
 		delete(store.ManualPriorities, k)
 	}
-	return len(stale) > 0
+	var staleAttention []string
+	for k := range store.Attention {
+		if !validKeys[k] {
+			staleAttention = append(staleAttention, k)
+		}
+	}
+	for _, k := range staleAttention {
+		delete(store.Attention, k)
+	}
+	return len(stale) > 0 || len(staleAttention) > 0
 }
 
 // ValidKeys returns the full set of item keys that may retain priority entries.
@@ -104,8 +168,40 @@ func Apply(store *Store, items []workitem.WorkItem) []workitem.WorkItem {
 		} else {
 			items[i].ManualPriority = ""
 		}
+		ApplyAttentionToItem(store, &items[i])
 	}
 	return items
+}
+
+func ApplyAttentionToItem(store *Store, item *workitem.WorkItem) {
+	item.AttentionStage = ""
+	item.AttentionStageSource = "none"
+	item.Group = ""
+	if EligibleForAttention(*item) {
+		item.AttentionStage = string(AttentionActive)
+		item.AttentionStageSource = "derived"
+	} else {
+		return
+	}
+	if store == nil {
+		return
+	}
+	entry, ok := store.Attention[item.Key]
+	if !ok {
+		return
+	}
+	if entry.Stage != AttentionNone {
+		item.AttentionStage = string(entry.Stage)
+		item.AttentionStageSource = "explicit"
+	}
+	item.Group = entry.Group
+}
+
+func EligibleForAttention(item workitem.WorkItem) bool {
+	return item.ItemKind == workitem.ItemKindDirectory &&
+		(item.WorkflowType == workitem.WorkflowTypeDesign ||
+			item.WorkflowType == workitem.WorkflowTypeExplore ||
+			item.LifecycleStage == workitem.LifecycleStageNone)
 }
 
 // SaveOrDelete saves the store if it contains entries, or deletes the file if empty.
@@ -150,5 +246,9 @@ func WithLock(ctx context.Context, storePath string, fn func(*Store) error) erro
 
 // IsEmpty reports whether the store has no priority entries.
 func IsEmpty(store *Store) bool {
-	return len(store.ManualPriorities) == 0
+	return len(store.ManualPriorities) == 0 && len(store.Attention) == 0
+}
+
+func ValidGroup(group string) bool {
+	return groupShape.MatchString(group)
 }

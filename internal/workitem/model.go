@@ -32,20 +32,23 @@ const (
 // WorkItem is the normalized model shared by --json output and the TUI dashboard.
 // All path fields are campaign-relative. The campaign root is the boundary.
 type WorkItem struct {
-	Key            string         `json:"key"`
-	WorkflowType   WorkflowType   `json:"workflow_type"`
-	LifecycleStage LifecycleStage `json:"lifecycle_stage"`
-	Title          string         `json:"title"`
-	RelativePath   string         `json:"relative_path"`
-	PrimaryDoc     string         `json:"primary_doc"`
-	ItemKind       ItemKind       `json:"item_kind"`
-	CreatedAt      time.Time      `json:"created_at"`
-	UpdatedAt      time.Time      `json:"updated_at"`
-	SortTimestamp  time.Time      `json:"sort_timestamp"`
-	ManualPriority string         `json:"manual_priority,omitempty"`
-	Summary        string         `json:"summary"`
-	SourceID       string         `json:"source_id"`
-	SourceMetadata map[string]any `json:"source_metadata"`
+	Key                  string         `json:"key"`
+	WorkflowType         WorkflowType   `json:"workflow_type"`
+	LifecycleStage       LifecycleStage `json:"lifecycle_stage"`
+	Title                string         `json:"title"`
+	RelativePath         string         `json:"relative_path"`
+	PrimaryDoc           string         `json:"primary_doc"`
+	ItemKind             ItemKind       `json:"item_kind"`
+	CreatedAt            time.Time      `json:"created_at"`
+	UpdatedAt            time.Time      `json:"updated_at"`
+	SortTimestamp        time.Time      `json:"sort_timestamp"`
+	ManualPriority       string         `json:"manual_priority,omitempty"`
+	AttentionStage       string         `json:"attention_stage,omitempty"`
+	AttentionStageSource string         `json:"attention_stage_source,omitempty"`
+	Group                string         `json:"group,omitempty"`
+	Summary              string         `json:"summary"`
+	SourceID             string         `json:"source_id"`
+	SourceMetadata       map[string]any `json:"source_metadata"`
 
 	StableID     string            `json:"stable_id,omitempty"`
 	WorkflowMeta *WorkItemWorkflow `json:"workflow,omitempty"`

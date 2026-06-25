@@ -65,6 +65,13 @@ var (
 	priorityLowStyle    = lipgloss.NewStyle().Foreground(pal.TextDim)
 )
 
+var (
+	attentionCurrentStyle = lipgloss.NewStyle().Bold(true).Foreground(pal.Accent)
+	attentionNextStyle    = lipgloss.NewStyle().Bold(true).Foreground(pal.AccentAlt)
+	attentionActiveStyle  = lipgloss.NewStyle().Foreground(pal.TextSecondary)
+	attentionParkedStyle  = lipgloss.NewStyle().Foreground(pal.TextDim)
+)
+
 // Empty state
 var (
 	emptyMsgStyle = lipgloss.NewStyle().Foreground(pal.Warning)
@@ -78,6 +85,21 @@ func workflowStyle(wfType workitem.WorkflowType) lipgloss.Style {
 // stageStyle returns the style for a lifecycle stage badge.
 func stageStyle(stage string) lipgloss.Style {
 	return ui.GetLifecycleStageStyle(stage)
+}
+
+func attentionStyle(stage string) lipgloss.Style {
+	switch stage {
+	case "current":
+		return attentionCurrentStyle
+	case "next":
+		return attentionNextStyle
+	case "active":
+		return attentionActiveStyle
+	case "parked":
+		return attentionParkedStyle
+	default:
+		return recencyOldStyle
+	}
 }
 
 // recencyStyle returns the appropriate style based on how old a timestamp is.

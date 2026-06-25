@@ -544,6 +544,45 @@ func TestFormatRecency_ZeroTime(t *testing.T) {
 	}
 }
 
+func TestRenderRowShowsLifecycleForIntentAndFestival(t *testing.T) {
+	items := []workitem.WorkItem{
+		{
+			WorkflowType:   workitem.WorkflowTypeIntent,
+			LifecycleStage: workitem.LifecycleStageInbox,
+			Title:          "Captured idea",
+			RelativePath:   ".campaign/intents/inbox/captured.md",
+			ItemKind:       workitem.ItemKindFile,
+			AttentionStage: "current",
+			SortTimestamp:  time.Now(),
+		},
+		{
+			WorkflowType:   workitem.WorkflowTypeFestival,
+			LifecycleStage: workitem.LifecycleStagePlanning,
+			Title:          "Planning festival",
+			RelativePath:   "festivals/planning/planning-festival",
+			ItemKind:       workitem.ItemKindDirectory,
+			AttentionStage: "current",
+			SortTimestamp:  time.Now(),
+		},
+	}
+
+	intentRow := renderRow(items[0], 120, false)
+	if !strings.Contains(intentRow, "inbox") {
+		t.Fatalf("intent row should show lifecycle inbox, got:\n%s", intentRow)
+	}
+	if strings.Contains(intentRow, "cur") {
+		t.Fatalf("intent row should not show attention lane, got:\n%s", intentRow)
+	}
+
+	festivalRow := renderRow(items[1], 120, false)
+	if !strings.Contains(festivalRow, "plan") {
+		t.Fatalf("festival row should show lifecycle planning, got:\n%s", festivalRow)
+	}
+	if strings.Contains(festivalRow, "cur") {
+		t.Fatalf("festival row should not show attention lane, got:\n%s", festivalRow)
+	}
+}
+
 func TestModel_PreserveSelection_KeyFound(t *testing.T) {
 	items := makeTestItems(10)
 	m := New(context.Background(), items, "", nil, priority.NewStore(), "")

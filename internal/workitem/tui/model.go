@@ -50,6 +50,7 @@ type Model struct {
 
 	// Filters
 	typeFilter string // empty = all, or "intent"/"design"/"explore"/"festival"
+	showParked bool
 
 	// Preview
 	showPreview    bool
@@ -76,13 +77,19 @@ type Model struct {
 	priorityStore *priority.Store
 	storePath     string
 	priorityMode  bool
+	stageMode     bool
 }
 
 // New creates the dashboard model from a pre-discovered item list.
-func New(ctx context.Context, items []workitem.WorkItem, campaignRoot string, resolver *paths.Resolver, store *priority.Store, storePath string) Model {
+func New(ctx context.Context, items []workitem.WorkItem, campaignRoot string, resolver *paths.Resolver, store *priority.Store, storePath string, showParked ...bool) Model {
 	ti := textinput.New()
 	ti.Placeholder = "search..."
 	ti.CharLimit = 64
+
+	includeParked := false
+	if len(showParked) > 0 {
+		includeParked = showParked[0]
+	}
 
 	return Model{
 		allItems:      items,
@@ -94,6 +101,7 @@ func New(ctx context.Context, items []workitem.WorkItem, campaignRoot string, re
 		resolver:      resolver,
 		priorityStore: store,
 		storePath:     storePath,
+		showParked:    includeParked,
 	}
 }
 
@@ -125,7 +133,11 @@ func (m *Model) refilter() {
 	if m.typeFilter != "" {
 		types = []string{m.typeFilter}
 	}
-	m.filteredItems = workitem.Filter(m.allItems, types, nil, m.searchQuery)
+	m.filteredItems = workitem.FilterAdvanced(m.allItems, workitem.FilterOptions{
+		Types:      types,
+		Query:      m.searchQuery,
+		ShowParked: m.showParked,
+	})
 	if m.cursor >= len(m.filteredItems) {
 		m.cursor = max(0, len(m.filteredItems)-1)
 	}
@@ -190,6 +202,20 @@ func (m *Model) exitPriorityMode() {
 // isPriorityMode reports whether the priority picker is active.
 func (m Model) isPriorityMode() bool {
 	return m.priorityMode
+}
+
+func (m *Model) enterStageMode() {
+	if len(m.filteredItems) > 0 && m.priorityStore != nil {
+		m.stageMode = true
+	}
+}
+
+func (m *Model) exitStageMode() {
+	m.stageMode = false
+}
+
+func (m Model) isStageMode() bool {
+	return m.stageMode
 }
 
 // refreshMsg carries the result of a background re-discovery.

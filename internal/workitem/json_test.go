@@ -154,9 +154,29 @@ func TestWorkItemWorkflow_ZeroValuesAreEmitted(t *testing.T) {
 	}
 }
 
-func TestSchemaVersion_IsV1Alpha6(t *testing.T) {
-	if SchemaVersion != "workitems/v1alpha6" {
-		t.Errorf("SchemaVersion = %q, want workitems/v1alpha6", SchemaVersion)
+func TestSchemaVersion_IsV1Alpha7(t *testing.T) {
+	if SchemaVersion != "workitems/v1alpha7" {
+		t.Errorf("SchemaVersion = %q, want workitems/v1alpha7", SchemaVersion)
+	}
+}
+
+func TestNewPayload_AttentionAndSections(t *testing.T) {
+	items := []WorkItem{
+		{Key: "a", Title: "A", AttentionStage: "current", AttentionStageSource: "explicit", Group: "camp-workflow"},
+		{Key: "b", Title: "B", AttentionStage: "active", AttentionStageSource: "derived"},
+	}
+	p := NewPayloadWithGrouping("/tmp", items, "group")
+	if len(p.AttentionStageVocabulary) == 0 {
+		t.Fatal("missing attention stage vocabulary")
+	}
+	if len(p.GroupVocabulary) != 1 || p.GroupVocabulary[0] != "camp-workflow" {
+		t.Fatalf("group vocabulary = %#v, want camp-workflow", p.GroupVocabulary)
+	}
+	if p.Grouping.GroupBy != "group" {
+		t.Fatalf("group_by = %q, want group", p.Grouping.GroupBy)
+	}
+	if len(p.Sections) != 2 {
+		t.Fatalf("len(sections) = %d, want 2", len(p.Sections))
 	}
 }
 

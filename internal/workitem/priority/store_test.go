@@ -36,14 +36,17 @@ func TestLoad_NonexistentFile(t *testing.T) {
 	if s == nil {
 		t.Fatal("Load of nonexistent file returned nil store")
 	}
-	if s.Version != 1 {
-		t.Errorf("Version = %d, want 1", s.Version)
+	if s.Version != 2 {
+		t.Errorf("Version = %d, want 2", s.Version)
 	}
 	if s.ManualPriorities == nil {
 		t.Error("ManualPriorities should be initialized, got nil")
 	}
 	if len(s.ManualPriorities) != 0 {
 		t.Errorf("ManualPriorities should be empty, got %d entries", len(s.ManualPriorities))
+	}
+	if s.Attention == nil {
+		t.Error("Attention should be initialized, got nil")
 	}
 }
 
@@ -119,6 +122,69 @@ func TestSave_Load_Roundtrip(t *testing.T) {
 	}
 	if loaded.ManualPriorities["key-b"].Priority != Low {
 		t.Errorf("key-b priority = %q, want %q", loaded.ManualPriorities["key-b"].Priority, Low)
+	}
+}
+
+func TestAttentionRoundtrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "workitems.json")
+	store := NewStore()
+	SetAttentionStage(store, "design:workflow/design/example", AttentionCurrent)
+	SetGroup(store, "design:workflow/design/example", "camp-workflow")
+
+	if err := Save(path, store); err != nil {
+		t.Fatalf("Save returned error: %v", err)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	entry := loaded.Attention["design:workflow/design/example"]
+	if entry.Stage != AttentionCurrent {
+		t.Fatalf("stage = %q, want current", entry.Stage)
+	}
+	if entry.Group != "camp-workflow" {
+		t.Fatalf("group = %q, want camp-workflow", entry.Group)
+	}
+}
+
+func TestApplyAttentionDerivedAndExplicit(t *testing.T) {
+	store := NewStore()
+	SetAttentionStage(store, "design:workflow/design/example", AttentionNext)
+	SetGroup(store, "design:workflow/design/example", "camp-workflow")
+	items := []workitem.WorkItem{
+		{
+			Key:            "design:workflow/design/example",
+			WorkflowType:   workitem.WorkflowTypeDesign,
+			LifecycleStage: workitem.LifecycleStageNone,
+			ItemKind:       workitem.ItemKindDirectory,
+		},
+		{
+			Key:            "design:workflow/design/other",
+			WorkflowType:   workitem.WorkflowTypeDesign,
+			LifecycleStage: workitem.LifecycleStageNone,
+			ItemKind:       workitem.ItemKindDirectory,
+		},
+		{
+			Key:            "intent:idea",
+			WorkflowType:   workitem.WorkflowTypeIntent,
+			LifecycleStage: workitem.LifecycleStageInbox,
+			ItemKind:       workitem.ItemKindFile,
+		},
+	}
+
+	out := Apply(store, items)
+	if out[0].AttentionStage != string(AttentionNext) || out[0].AttentionStageSource != "explicit" {
+		t.Fatalf("explicit attention = %q/%q, want next/explicit", out[0].AttentionStage, out[0].AttentionStageSource)
+	}
+	if out[0].Group != "camp-workflow" {
+		t.Fatalf("group = %q, want camp-workflow", out[0].Group)
+	}
+	if out[1].AttentionStage != string(AttentionActive) || out[1].AttentionStageSource != "derived" {
+		t.Fatalf("derived attention = %q/%q, want active/derived", out[1].AttentionStage, out[1].AttentionStageSource)
+	}
+	if out[2].AttentionStageSource != "none" {
+		t.Fatalf("intent attention source = %q, want none", out[2].AttentionStageSource)
 	}
 }
 
