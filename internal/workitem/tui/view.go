@@ -187,7 +187,6 @@ func renderRow(item workitem.WorkItem, width int, selected bool) string {
 	titleWidth := width - 9 - 7 - groupWidth - len(rec) - 5 - badgeWidth
 	if titleWidth < 10 {
 		group = ""
-		groupWidth = 0
 		titleWidth = width - 9 - 7 - len(rec) - 5 - badgeWidth
 	}
 	if titleWidth < 10 {
@@ -288,13 +287,13 @@ func renderPreview(item workitem.WorkItem, width, height int) string {
 	if item.AttentionStageSource != "" && item.AttentionStageSource != "none" {
 		attention += " (" + item.AttentionStageSource + ")"
 	}
-	b.WriteString(fmt.Sprintf("%s %s\n",
+	fmt.Fprintf(&b, "%s %s\n",
 		previewLabelStyle.Render("attention:"),
-		attentionStyle(item.AttentionStage).Render(attention)))
+		attentionStyle(item.AttentionStage).Render(attention))
 	if item.Group != "" {
-		b.WriteString(fmt.Sprintf("%s %s\n",
+		fmt.Fprintf(&b, "%s %s\n",
 			previewLabelStyle.Render("group:"),
-			previewValueStyle.Render(item.Group)))
+			previewValueStyle.Render(item.Group))
 	}
 	if item.ManualPriority != "" {
 		_, style := priorityBadge(item.ManualPriority)

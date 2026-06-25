@@ -247,46 +247,51 @@ func isInteractive() bool {
 func validateFlags(jsonMode, listMode, printMode bool, pathOutput string, types, stages, attentionStages, groups []string, groupBy string) error {
 	for _, t := range types {
 		if err := validateSlug(t); err != nil {
-			return fmt.Errorf("invalid --type value %q: must be a path-safe workflow type (no '/', '\\', whitespace, or control chars; no leading '.' or '-'; max 80 chars)", t)
+			return camperrors.NewValidation("type",
+				fmt.Sprintf("invalid --type value %q: must be a path-safe workflow type (no '/', '\\', whitespace, or control chars; no leading '.' or '-'; max 80 chars)", t), nil)
 		}
 	}
 	for _, s := range stages {
 		if !wkitem.IsValidStageForTypes(wkitem.LifecycleStage(s), types) {
-			return fmt.Errorf("unknown --stage value: %q (valid stages depend on --type; built-in stages: none, inbox, active, ready, planning, ritual, chains)", s)
+			return camperrors.NewValidation("stage",
+				fmt.Sprintf("unknown --stage value: %q (valid stages depend on --type; built-in stages: none, inbox, active, ready, planning, ritual, chains)", s), nil)
 		}
 	}
 	for _, s := range attentionStages {
 		if !isValidAttentionStage(s) {
-			return fmt.Errorf("unknown --attention-stage value: %q (valid: current, next, active, parked)", s)
+			return camperrors.NewValidation("attention_stage",
+				fmt.Sprintf("unknown --attention-stage value: %q (valid: current, next, active, parked)", s), nil)
 		}
 	}
 	for _, group := range groups {
 		if !priority.ValidGroup(group) {
-			return fmt.Errorf("invalid --group value %q: must be lowercase letters, numbers, dash, or underscore; no leading dash or dot; max 80 chars", group)
+			return camperrors.NewValidation("group",
+				fmt.Sprintf("invalid --group value %q: must be lowercase letters, numbers, dash, or underscore; no leading dash or dot; max 80 chars", group), nil)
 		}
 	}
 	switch groupBy {
 	case "", "attention_stage", "group", "type":
 	default:
-		return fmt.Errorf("unknown --group-by value %q (valid: attention_stage, group, type)", groupBy)
+		return camperrors.NewValidation("group_by",
+			fmt.Sprintf("unknown --group-by value %q (valid: attention_stage, group, type)", groupBy), nil)
 	}
 	if jsonMode && printMode {
-		return fmt.Errorf("--json and --print are mutually exclusive")
+		return camperrors.NewValidation("output_mode", "--json and --print are mutually exclusive", nil)
 	}
 	if jsonMode && listMode {
-		return fmt.Errorf("--json and --list are mutually exclusive")
+		return camperrors.NewValidation("output_mode", "--json and --list are mutually exclusive", nil)
 	}
 	if listMode && printMode {
-		return fmt.Errorf("--list and --print are mutually exclusive")
+		return camperrors.NewValidation("output_mode", "--list and --print are mutually exclusive", nil)
 	}
 	if jsonMode && pathOutput != "" {
-		return fmt.Errorf("--json and --path-output are mutually exclusive")
+		return camperrors.NewValidation("output_mode", "--json and --path-output are mutually exclusive", nil)
 	}
 	if listMode && pathOutput != "" {
-		return fmt.Errorf("--list and --path-output are mutually exclusive")
+		return camperrors.NewValidation("output_mode", "--list and --path-output are mutually exclusive", nil)
 	}
 	if printMode && pathOutput != "" {
-		return fmt.Errorf("--print and --path-output are mutually exclusive")
+		return camperrors.NewValidation("output_mode", "--print and --path-output are mutually exclusive", nil)
 	}
 	return nil
 }
