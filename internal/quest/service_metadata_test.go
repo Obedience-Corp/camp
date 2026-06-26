@@ -1,7 +1,6 @@
 package quest
 
 import (
-	"errors"
 	"testing"
 )
 
@@ -58,11 +57,17 @@ func TestServiceUpdateMetadataRequiresField(t *testing.T) {
 	}
 }
 
-func TestServiceUpdateMetadataRejectsDefaultQuest(t *testing.T) {
+func TestServiceUpdateMetadataAllowsDefaultQuest(t *testing.T) {
 	ctx, _, svc := setupQuestCampaign(t)
 
+	// The default quest is editable like any other quest; updating its metadata
+	// must succeed.
 	purpose := "new default purpose"
-	if _, err := svc.UpdateMetadata(ctx, DefaultQuestID, MetadataUpdateOptions{Purpose: &purpose}); !errors.Is(err, ErrDefaultQuestReadOnly) {
-		t.Fatalf("UpdateMetadata(default) error = %v, want %v", err, ErrDefaultQuestReadOnly)
+	updated, err := svc.UpdateMetadata(ctx, DefaultQuestID, MetadataUpdateOptions{Purpose: &purpose})
+	if err != nil {
+		t.Fatalf("UpdateMetadata(default) unexpected error: %v", err)
+	}
+	if updated.Quest.Purpose != "new default purpose" {
+		t.Fatalf("Purpose = %q, want %q", updated.Quest.Purpose, "new default purpose")
 	}
 }

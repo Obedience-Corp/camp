@@ -3,7 +3,6 @@ package quest
 import (
 	"bytes"
 	"context"
-	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -412,11 +411,17 @@ func TestServiceEditAndList(t *testing.T) {
 	}
 }
 
-func TestServiceDefaultQuestLifecycleProtected(t *testing.T) {
+func TestServiceDefaultQuestIsMutable(t *testing.T) {
 	ctx, _, svc := setupQuestCampaign(t)
 
-	if _, err := svc.Pause(ctx, DefaultQuestID); !errors.Is(err, ErrDefaultQuestReadOnly) {
-		t.Fatalf("Pause(default) error = %v, want %v", err, ErrDefaultQuestReadOnly)
+	// The default quest is a normal quest: it can be renamed and have its
+	// lifecycle changed like any other. It exists only to guarantee a campaign
+	// always has a quest, not to be read-only.
+	if _, err := svc.Rename(ctx, DefaultQuestID, "My Workspace"); err != nil {
+		t.Fatalf("Rename(default) unexpected error: %v", err)
+	}
+	if _, err := svc.Pause(ctx, DefaultQuestID); err != nil {
+		t.Fatalf("Pause(default) unexpected error: %v", err)
 	}
 }
 

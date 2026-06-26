@@ -248,9 +248,6 @@ func (s *Service) Edit(ctx context.Context, identifier string, editorFn EditorFu
 	if err != nil {
 		return nil, err
 	}
-	if q.IsDefault() {
-		return nil, ErrDefaultQuestReadOnly
-	}
 	originalPath := q.Path
 
 	tmp, err := os.CreateTemp("", "quest_edit_*.yaml")
@@ -307,9 +304,6 @@ func (s *Service) Rename(ctx context.Context, identifier, newName string) (*Muta
 	if err != nil {
 		return nil, err
 	}
-	if q.IsDefault() {
-		return nil, ErrDefaultQuestReadOnly
-	}
 
 	q.Name = newName
 	q.UpdatedAt = time.Now().UTC()
@@ -347,9 +341,6 @@ func (s *Service) Restore(ctx context.Context, identifier string) (*MutationResu
 	q, err := Resolve(ctx, s.campaignRoot, identifier)
 	if err != nil {
 		return nil, err
-	}
-	if q.IsDefault() {
-		return nil, ErrDefaultQuestReadOnly
 	}
 	if q.Status != StatusCompleted && q.Status != StatusArchived {
 		return nil, camperrors.Wrapf(ErrInvalidTransition, "cannot restore quest from %s", q.Status)
@@ -396,9 +387,6 @@ func (s *Service) Link(ctx context.Context, identifier, path, linkType string) (
 	if err != nil {
 		return nil, err
 	}
-	if q.IsDefault() {
-		return nil, ErrDefaultQuestReadOnly
-	}
 
 	path = strings.TrimSpace(path)
 	if path == "" {
@@ -442,9 +430,6 @@ func (s *Service) Unlink(ctx context.Context, identifier, path string) (*Mutatio
 	q, err := Resolve(ctx, s.campaignRoot, identifier)
 	if err != nil {
 		return nil, err
-	}
-	if q.IsDefault() {
-		return nil, ErrDefaultQuestReadOnly
 	}
 
 	if err := RemoveLink(q, path); err != nil {
@@ -549,9 +534,6 @@ func (s *Service) updateInPlace(ctx context.Context, identifier string, from, to
 	if err != nil {
 		return nil, err
 	}
-	if q.IsDefault() {
-		return nil, ErrDefaultQuestReadOnly
-	}
 	if q.Status != from {
 		return nil, camperrors.Wrapf(ErrInvalidTransition, "expected %s, found %s", from, q.Status)
 	}
@@ -576,9 +558,6 @@ func (s *Service) moveToStatus(ctx context.Context, identifier string, from []St
 	q, err := Resolve(ctx, s.campaignRoot, identifier)
 	if err != nil {
 		return nil, err
-	}
-	if q.IsDefault() {
-		return nil, ErrDefaultQuestReadOnly
 	}
 	if !slices.Contains(from, q.Status) {
 		return nil, camperrors.Wrapf(ErrInvalidTransition, "cannot move quest from %s to %s", q.Status, target)

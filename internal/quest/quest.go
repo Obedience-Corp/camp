@@ -16,17 +16,16 @@ import (
 )
 
 var (
-	ErrNotInitialized       = camperrors.Wrap(camperrors.ErrNotFound, "quest system not initialized")
-	ErrQuestNotFound        = camperrors.Wrap(camperrors.ErrNotFound, "quest not found")
-	ErrQuestAmbiguous       = camperrors.Wrap(camperrors.ErrInvalidInput, "quest identifier is ambiguous")
-	ErrDefaultQuestReadOnly = camperrors.Wrap(camperrors.ErrInvalidInput, "default quest cannot change lifecycle state")
-	ErrInvalidTransition    = camperrors.Wrap(camperrors.ErrInvalidInput, "invalid quest status transition")
-	ErrInvalidQuest         = camperrors.Wrap(camperrors.ErrInvalidInput, "invalid quest")
-	ErrMissingID            = camperrors.Wrap(camperrors.ErrInvalidInput, "quest id is required")
-	ErrMissingName          = camperrors.Wrap(camperrors.ErrInvalidInput, "quest name is required")
-	ErrInvalidStatus        = camperrors.Wrap(camperrors.ErrInvalidInput, "quest status is invalid")
-	ErrMissingCreatedAt     = camperrors.Wrap(camperrors.ErrInvalidInput, "quest created_at is required")
-	ErrMissingUpdatedAt     = camperrors.Wrap(camperrors.ErrInvalidInput, "quest updated_at is required")
+	ErrNotInitialized    = camperrors.Wrap(camperrors.ErrNotFound, "quest system not initialized")
+	ErrQuestNotFound     = camperrors.Wrap(camperrors.ErrNotFound, "quest not found")
+	ErrQuestAmbiguous    = camperrors.Wrap(camperrors.ErrInvalidInput, "quest identifier is ambiguous")
+	ErrInvalidTransition = camperrors.Wrap(camperrors.ErrInvalidInput, "invalid quest status transition")
+	ErrInvalidQuest      = camperrors.Wrap(camperrors.ErrInvalidInput, "invalid quest")
+	ErrMissingID         = camperrors.Wrap(camperrors.ErrInvalidInput, "quest id is required")
+	ErrMissingName       = camperrors.Wrap(camperrors.ErrInvalidInput, "quest name is required")
+	ErrInvalidStatus     = camperrors.Wrap(camperrors.ErrInvalidInput, "quest status is invalid")
+	ErrMissingCreatedAt  = camperrors.Wrap(camperrors.ErrInvalidInput, "quest created_at is required")
+	ErrMissingUpdatedAt  = camperrors.Wrap(camperrors.ErrInvalidInput, "quest updated_at is required")
 )
 
 // QuestsDir returns the quest root directory for a campaign.
