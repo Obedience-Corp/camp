@@ -64,12 +64,6 @@ func Exists(campaignRoot string) bool {
 	return err == nil && info.IsDir()
 }
 
-// IsInitialized reports whether the canonical default quest exists.
-func IsInitialized(campaignRoot string) bool {
-	info, err := os.Stat(DefaultQuestPath(campaignRoot))
-	return err == nil && !info.IsDir()
-}
-
 // LegacyDefaultPath returns the pre-directory default quest path (default.yaml).
 // Used only for migration from the old flat-file layout.
 func LegacyDefaultPath(campaignRoot string) string {

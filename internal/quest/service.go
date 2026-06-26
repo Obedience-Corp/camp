@@ -462,7 +462,7 @@ func (s *Service) Links(ctx context.Context, identifier string) ([]Link, error) 
 }
 
 func (s *Service) ensureInitialized() error {
-	if !Exists(s.campaignRoot) || !IsInitialized(s.campaignRoot) {
+	if !Exists(s.campaignRoot) {
 		return ErrNotInitialized
 	}
 	return nil
