@@ -3,7 +3,6 @@ package quest
 import (
 	"bytes"
 	"context"
-	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -412,11 +411,64 @@ func TestServiceEditAndList(t *testing.T) {
 	}
 }
 
-func TestServiceDefaultQuestLifecycleProtected(t *testing.T) {
+func TestServiceDefaultQuestIsMutable(t *testing.T) {
 	ctx, _, svc := setupQuestCampaign(t)
 
-	if _, err := svc.Pause(ctx, DefaultQuestID); !errors.Is(err, ErrDefaultQuestReadOnly) {
-		t.Fatalf("Pause(default) error = %v, want %v", err, ErrDefaultQuestReadOnly)
+	// The default quest is a normal quest: it can be renamed and have its
+	// lifecycle changed like any other. It exists only to guarantee a campaign
+	// always has a quest, not to be read-only.
+	if _, err := svc.Rename(ctx, DefaultQuestID, "My Workspace"); err != nil {
+		t.Fatalf("Rename(default) unexpected error: %v", err)
+	}
+	if _, err := svc.Pause(ctx, DefaultQuestID); err != nil {
+		t.Fatalf("Pause(default) unexpected error: %v", err)
+	}
+}
+
+func TestEnsureScaffoldDoesNotDuplicateCompletedDefault(t *testing.T) {
+	ctx, root, svc := setupQuestCampaign(t)
+
+	if _, err := svc.Complete(ctx, DefaultQuestID); err != nil {
+		t.Fatalf("Complete(default) error = %v", err)
+	}
+
+	// quest list re-runs EnsureScaffold; it must not mint a second quest sharing
+	// the fixed default identity while the completed default sits in the dungeon.
+	if _, err := EnsureScaffold(ctx, root); err != nil {
+		t.Fatalf("EnsureScaffold() error = %v", err)
+	}
+
+	all, err := List(ctx, root, true)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	var defaults []*Quest
+	for _, q := range all {
+		if q.IsDefault() {
+			defaults = append(defaults, q)
+		}
+	}
+	if len(defaults) != 1 {
+		t.Fatalf("found %d default quests, want 1: %#v", len(defaults), defaults)
+	}
+	if defaults[0].Status != StatusCompleted {
+		t.Fatalf("default status = %s, want %s", defaults[0].Status, StatusCompleted)
+	}
+
+	resolved, err := Resolve(ctx, root, DefaultQuestID)
+	if err != nil {
+		t.Fatalf("Resolve(%s) error = %v", DefaultQuestID, err)
+	}
+	if resolved.Status != StatusCompleted {
+		t.Fatalf("resolved default status = %s, want %s", resolved.Status, StatusCompleted)
+	}
+
+	restored, err := svc.Restore(ctx, DefaultQuestID)
+	if err != nil {
+		t.Fatalf("Restore(%s) error = %v", DefaultQuestID, err)
+	}
+	if restored.Quest.Status != StatusOpen {
+		t.Fatalf("restored default status = %s, want %s", restored.Quest.Status, StatusOpen)
 	}
 }
 

@@ -121,12 +121,43 @@ func ensureDefaultQuest(ctx context.Context, campaignRoot string, result *Scaffo
 		return nil
 	}
 
+	// The default quest can be completed or archived, which moves it into the
+	// quest dungeon under its fixed qst_default identity. Recreating a root
+	// default in that state would mint a second quest sharing that identity and
+	// leave the historical default ambiguous and unaddressable, so only create a
+	// fresh default when none exists anywhere.
+	exists, err := defaultQuestExists(ctx, campaignRoot)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+
 	q := DefaultQuest(time.Now().UTC())
 	if err := Save(ctx, path, q); err != nil {
 		return camperrors.Wrap(err, "writing default quest")
 	}
 	result.CreatedFiles = appendUnique(result.CreatedFiles, path)
 	return nil
+}
+
+// defaultQuestExists reports whether a quest with the fixed default identity is
+// present anywhere in the campaign, including the quest dungeon.
+func defaultQuestExists(ctx context.Context, campaignRoot string) (bool, error) {
+	if !Exists(campaignRoot) {
+		return false, nil
+	}
+	quests, err := List(ctx, campaignRoot, true)
+	if err != nil {
+		return false, err
+	}
+	for _, q := range quests {
+		if q.IsDefault() {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // RootPath returns the quest root path for a campaign.

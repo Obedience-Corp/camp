@@ -38,7 +38,10 @@ func init() {
 
 func runQuestList(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	qctx, err := loadQuestCommandContext(ctx, false)
+	// Ensure the quest scaffold (and the default quest) exists before listing so
+	// a freshly-opened campaign always has at least one quest instead of failing
+	// with ErrNotInitialized. This is what guarantees "you always have a quest".
+	qctx, err := loadQuestCommandContext(ctx, true)
 	if err != nil {
 		return err
 	}

@@ -24,9 +24,6 @@ func (s *Service) UpdateMetadata(ctx context.Context, identifier string, opts Me
 	if err != nil {
 		return nil, err
 	}
-	if q.IsDefault() {
-		return nil, ErrDefaultQuestReadOnly
-	}
 
 	if opts.Purpose != nil {
 		q.Purpose = strings.TrimSpace(*opts.Purpose)
