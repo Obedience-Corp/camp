@@ -28,8 +28,8 @@ camp workitem [flags]
       --group-by string               Group JSON/list sections by attention_stage, group, or type; --list defaults to group unless set (default "attention_stage")
   -h, --help                          help for workitem
       --json                          Output as JSON
-      --list                          Output a compact grouped list
       --limit int                     Maximum number of items to return
+      --list                          Output a compact grouped list
       --print                         Print path only (for shell integration)
       --query string                  Search query to filter items
       --show-parked                   include parked attention-stage workitems in default output
@@ -56,6 +56,7 @@ camp workitem [flags]
 * [camp workitem link](camp_workitem_link.md)	 - Attach a workitem to a project, festival, worktree, or campaign path
 * [camp workitem links](camp_workitem_links.md)	 - List workitem links
 * [camp workitem priority](camp_workitem_priority.md)	 - Set or clear the manual priority of a workitem
+* [camp workitem promote](camp_workitem_promote.md)	 - Promote a workitem to a festival, doc, or dungeon status
 * [camp workitem resolve](camp_workitem_resolve.md)	 - Print the workitem the current context resolves to (read-only)
 * [camp workitem stage](camp_workitem_stage.md)	 - Set or clear the attention stage of a workitem
 * [camp workitem unlink](camp_workitem_unlink.md)	 - Remove one or more workitem links

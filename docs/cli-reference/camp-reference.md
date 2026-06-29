@@ -954,8 +954,10 @@ Move dungeon items between statuses
 
 Move items within the dungeon or from the parent directory into the dungeon.
 
-Without --triage, moves an item already in the dungeon root to a status directory.
-With --triage, moves an item from the parent directory into the dungeon.
+By default, moves an item already in the dungeon root to a status directory.
+When the item exists in the parent directory and not in the dungeon root, the
+command automatically treats it as triage work and moves it into the dungeon.
+Use --triage to force a parent-directory move.
 With --triage and --to-docs, routes an item to an existing campaign-root docs/<subdirectory>.
 With --workitem, resolves a campaign workitem from anywhere and moves its directory
 into the workitem type's local dungeon.
@@ -2554,6 +2556,11 @@ List all campaigns registered in the global registry.
 Campaigns are registered when created with 'camp init' or manually
 with 'camp register'. The registry lives at ~/.obey/campaign/registry.json.
 
+In a terminal, 'camp list' (with no flags) opens an interactive browser where you
+can deactivate/reactivate campaigns (cycle lifecycle status), reassign their org,
+and copy paths. Piped, with --json/--count, or with any filter/sort flag it
+prints the table instead. Home paths display as '~'.
+
 Output formats:
   table   - Aligned columns with headers (default)
   simple  - Campaign names only, one per line
@@ -2563,13 +2570,16 @@ Sorting options:
   accessed - Most recently accessed first (default)
   name     - Alphabetically by name
   type     - Alphabetically by type
+  org      - By org (fallback first, then alphabetical), then by name
 
 Examples:
   camp list                  List all campaigns
   camp list --json           Output as JSON
   camp list --format json    Output as JSON
   camp list --sort name      Sort by name
+  camp list --sort org       Sort by org, then name
   camp list --format simple  Names only for scripting
+  camp list --count          Print only the total number of campaigns
 
 ```
 camp list [flags]
@@ -2579,13 +2589,15 @@ camp list [flags]
 
 ```
       --all              Show all statuses (default hides inactive/reference)
+      --count            Print only the total number of campaigns
   -f, --format string    Output format (table, simple, json) (default "table")
       --group            Force org grouping
   -h, --help             help for list
+  -i, --interactive      Open the interactive campaign browser (prints the table when stdout is not a terminal)
       --json             Output as JSON (shorthand for --format json)
       --no-group         Suppress org grouping
       --org string       Only campaigns in this org
-  -s, --sort string      Sort by (name, accessed, type) (default "accessed")
+  -s, --sort string      Sort by (name, accessed, type, org) (default "accessed")
       --status string    Only campaigns in this status (active, inactive, reference)
       --tag strings      Only campaigns carrying this tag (repeat for AND)
       --verify-verbose   Show detailed verification output
@@ -2690,9 +2702,16 @@ Group related campaigns into orgs.
 
 Every campaign belongs to exactly one org (default "default"). Orgs are derived:
 an org exists because a campaign names it, and disappears when its last member
-leaves. There is no "org create".
+leaves.
+
+In a terminal, 'camp org' (no arguments) opens an interactive browser of orgs
+and their members where you can move, create, rename, and return campaigns. When
+piped or with --json it prints the current campaign's org instead; use
+'camp org which' to print the org unconditionally.
 
 Commands:
+  which   Print the current campaign's org
+  create  Create an org by joining campaigns (the current campaign if none named)
   add     Assign campaigns to an org (also reassigns; single-membership)
   remove  Return campaigns to the default org
 
@@ -2703,7 +2722,9 @@ camp org [flags]
 ### Examples
 
 ```
-  camp org                                       Print the current campaign's org
+  camp org                                       Browse and manage orgs interactively (TTY)
+  camp org which                                 Print the current campaign's org
+  camp org create obey                           Add the current campaign to "obey"
   camp org add obey obey-campaign obey-content   Move campaigns into "obey"
   camp org remove obey-content                   Return a campaign to "default"
 ```
@@ -2711,8 +2732,9 @@ camp org [flags]
 ### Options
 
 ```
-  -h, --help   help for org
-      --json   Output as JSON
+  -h, --help          help for org
+  -i, --interactive   Open the interactive org browser (prints the org list when stdout is not a terminal)
+      --json          Output as JSON
 ```
 
 ### Options inherited from parent commands
@@ -2749,6 +2771,49 @@ camp org add <org> <campaign>... [flags]
 
 ```
   -h, --help   help for add
+      --json   Output as JSON
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp org create
+
+Create an org by joining campaigns (the current campaign if none named)
+
+### Synopsis
+
+Create an org by joining campaigns to it.
+
+Run inside a campaign with no campaign arguments to add the current campaign:
+  camp org create obey
+
+Or name the campaigns explicitly:
+  camp org create obey obey-campaign obey-content
+
+Orgs remain derived: "create" assigns membership and never makes an empty org.
+Joining an org that already has members is allowed; there is no "already exists"
+error, and a campaign already in the org is reported as unchanged.
+
+```
+camp org create <org> [campaign...] [flags]
+```
+
+### Examples
+
+```
+  camp org create obey
+  camp org create client-acme acme-site other-site
+```
+
+### Options
+
+```
+  -h, --help   help for create
       --json   Output as JSON
 ```
 
@@ -2876,6 +2941,34 @@ camp org show <org> [flags]
 
 ```
   -h, --help   help for show
+      --json   Output as JSON
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp org which
+
+Print the current campaign's org
+
+```
+camp org which [flags]
+```
+
+### Examples
+
+```
+  camp org which
+```
+
+### Options
+
+```
+  -h, --help   help for which
       --json   Output as JSON
 ```
 
@@ -3164,6 +3257,7 @@ Examples:
   camp project list --json        Output as JSON
   camp project list --format json Output as JSON
   camp project list --format simple  Names only for scripting
+  camp project list --count       Print only the total number of projects
 
 ```
 camp project list [flags]
@@ -3172,6 +3266,7 @@ camp project list [flags]
 ### Options
 
 ```
+      --count           Print only the total number of projects
   -f, --format string   Output format (table, simple, json) (default "table")
   -h, --help            help for list
       --json            Output as JSON (shorthand for --format json)
@@ -3910,6 +4005,35 @@ camp project worktree remove <name> [flags]
 ```
 ---
 
+## camp promote
+
+Promote any intent, workitem, or festival (universal front door)
+
+```
+camp promote [id] [flags]
+```
+
+### Options
+
+```
+      --dest string     Destination override (doc/festival targets)
+      --dry-run         Preview without making changes
+      --force           Skip readiness checks
+      --goal string     Festival goal override
+  -h, --help            help for promote
+      --json            Machine-readable output; implies non-interactive
+      --keep            Keep the source (festival/doc targets)
+      --no-commit       Skip auto-commit
+      --target string   Promote target (kind-specific); required in non-interactive mode
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
 ## camp pull
 
 Pull latest changes from remote
@@ -4576,49 +4700,6 @@ camp shell-init <shell> [flags]
 
 ```
   -h, --help   help for shell-init
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp shelve
-
-Shelve the workitem at cwd to a dungeon status
-
-### Synopsis
-
-Shelve the directory-style workitem containing the current working
-directory to a named dungeon status. Status directories live under the
-workitem type's local dungeon (workflow/<type>/dungeon/<status>/); outside
-the dungeon a workitem is treated as active.
-
-Run this from anywhere inside workflow/<type>/<slug>/. The workitem
-boundary is detected from cwd. The status argument is the destination
-directory name (e.g., completed, archived, someday) - no need to spell
-out "dungeon/".
-
-```
-camp shelve <status> [flags]
-```
-
-### Examples
-
-```
-  camp shelve completed   Shelve the workitem to its local dungeon/completed
-  camp shelve archived    Move to dungeon/archived
-  camp shelve someday     Move to dungeon/someday
-```
-
-### Options
-
-```
-  -h, --help        help for shelve
-      --json        Output result as JSON
-      --no-commit   Skip auto-commit after shelving
 ```
 
 ### Options inherited from parent commands
@@ -5836,13 +5917,18 @@ camp workitem [flags]
 ### Options
 
 ```
-  -h, --help                help for workitem
-      --json                Output as JSON
-      --limit int           Maximum number of items to return
-      --print               Print path only (for shell integration)
-      --query string        Search query to filter items
-      --stage stringArray   Filter by lifecycle stage (none, inbox, active, ready, planning, ritual, chains)
-      --type stringArray    Filter by workflow type (builtin: intent, design, explore, festival; or any slug-safe custom type produced by 'camp workitem create --type <name>')
+      --attention-stage stringArray   Filter by attention stage (current, next, active, parked)
+      --group stringArray             Filter by workitem group
+      --group-by string               Group JSON/list sections by attention_stage, group, or type; --list defaults to group unless set (default "attention_stage")
+  -h, --help                          help for workitem
+      --json                          Output as JSON
+      --limit int                     Maximum number of items to return
+      --list                          Output a compact grouped list
+      --print                         Print path only (for shell integration)
+      --query string                  Search query to filter items
+      --show-parked                   include parked attention-stage workitems in default output
+      --stage stringArray             Filter by lifecycle stage (none, inbox, active, ready, planning, ritual, chains)
+      --type stringArray              Filter by workflow type (builtin: intent, design, explore, festival; or any slug-safe custom type produced by 'camp workitem create --type <name>')
 ```
 
 ### Options inherited from parent commands
@@ -6067,6 +6153,28 @@ camp workitem doctor [flags]
 ```
 ---
 
+## camp workitem group
+
+Set or clear the group of a workitem
+
+```
+camp workitem group <selector> <group|clear> [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for group
+      --json   emit a structured JSON result
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
 ## camp workitem link
 
 Attach a workitem to a project, festival, worktree, or campaign path
@@ -6173,6 +6281,46 @@ camp workitem priority <selector> <high|medium|low|clear> [flags]
 ```
 ---
 
+## camp workitem promote
+
+Promote a workitem to a festival, doc, or dungeon status
+
+### Synopsis
+
+Promote the workitem identified by [id], by cwd, or by the current pointer.
+
+TARGETS:
+  festival    Create a festival from the workitem and shelve the source
+  doc         Copy the workitem doc into docs/ and shelve the source
+  completed   Move the workitem to its local dungeon/completed
+  archived    Move the workitem to its local dungeon/archived
+  someday     Move the workitem to its local dungeon/someday
+
+```
+camp workitem promote [id] --target <target> [flags]
+```
+
+### Options
+
+```
+      --dest string     Destination path under docs/ for the doc target (must stay within docs/)
+      --dry-run         Print the planned action, change nothing
+      --force           Skip readiness checks (e.g. empty doc)
+      --goal string     Festival goal override (default: first paragraph of the workitem doc)
+  -h, --help            help for promote
+      --json            Output result as a single JSON object
+      --keep            On festival/doc, do not move the source workitem to the dungeon
+      --no-commit       Skip the auto-commit
+      --target string   Promotion target: festival, doc, completed, archived, someday
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
 ## camp workitem resolve
 
 Print the workitem the current context resolves to (read-only)
@@ -6198,6 +6346,28 @@ camp workitem resolve [flags]
   -h, --help              help for resolve
       --json              emit a structured JSON result
       --workitem string   explicit workitem selector (overrides cwd-based detection)
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp workitem stage
+
+Set or clear the attention stage of a workitem
+
+```
+camp workitem stage <selector> <current|next|active|parked|clear> [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for stage
+      --json   emit a structured JSON result
 ```
 
 ### Options inherited from parent commands

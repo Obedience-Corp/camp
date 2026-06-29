@@ -1,0 +1,30 @@
+## camp org which
+
+Print the current campaign's org
+
+```
+camp org which [flags]
+```
+
+### Examples
+
+```
+  camp org which
+```
+
+### Options
+
+```
+  -h, --help   help for which
+      --json   Output as JSON
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+
+### SEE ALSO
+
+* [camp org](camp_org.md)	 - Group campaigns into orgs
