@@ -101,7 +101,7 @@ func TestReadmeTemplate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			if err := tmpl.Execute(&buf, tt.vars); err != nil {
+			if err := tmpl.Execute(&buf, map[string]any{"vars": tt.vars}); err != nil {
 				t.Fatalf("template execution failed: %v", err)
 			}
 
