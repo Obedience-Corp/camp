@@ -1,10 +1,10 @@
-# {{ .campaign_name }}
+# {{ .vars.campaign_name }}
 
-{{ if .campaign_description }}{{ .campaign_description }}{{ else }}A campaign workspace managed by camp CLI.{{ end }}
-{{ if .campaign_mission }}
+{{ if .vars.campaign_description }}{{ .vars.campaign_description }}{{ else }}A campaign workspace managed by camp CLI.{{ end }}
+{{ if .vars.campaign_mission }}
 ## Mission
 
-{{ .campaign_mission }}
+{{ .vars.campaign_mission }}
 {{ end }}
 ## Directory Structure
 

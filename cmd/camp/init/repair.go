@@ -21,6 +21,9 @@ func commitRepairChanges(ctx context.Context, initResult *scaffold.InitResult, p
 	if plan != nil && len(plan.IntentMigrations) > 0 {
 		hasChanges = true
 	}
+	if plan != nil && plan.QuestDateBackfill != nil {
+		hasChanges = true
+	}
 	if !hasChanges {
 		return
 	}
@@ -72,6 +75,9 @@ func buildRepairCommitFiles(initResult *scaffold.InitResult, plan *scaffold.Repa
 					filepath.Join(m.Dest, item),
 				)
 			}
+		}
+		if plan.QuestDateBackfill != nil {
+			files = append(files, plan.QuestDateBackfill.Path)
 		}
 	}
 
@@ -125,6 +131,13 @@ func buildRepairCommitMessage(initResult *scaffold.InitResult, plan *scaffold.Re
 				fmt.Fprintf(&b, "  - %s → %s\n", filepath.Join(m.Source, item), m.Dest)
 			}
 		}
+	}
+
+	if plan != nil && plan.QuestDateBackfill != nil {
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		fmt.Fprintf(&b, "Backfilled default quest timestamp:\n  - %s\n", plan.QuestDateBackfill.Path)
 	}
 
 	return strings.TrimRight(b.String(), "\n")

@@ -23,6 +23,10 @@ import (
 	"github.com/lancekrogers/guild-scaffold/pkg/scaffold"
 )
 
+// questDateSentinel is the fake timestamp older campaigns stamped on the default
+// quest. A default quest carrying this value is backfilled with a real date.
+var questDateSentinel = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+
 // RepairChangeType categorizes a proposed repair change.
 type RepairChangeType string
 
@@ -72,6 +76,16 @@ type RepairPlan struct {
 	Migrations []MigrationAction
 	// IntentMigrations lists legacy intent-root moves handled internally by Init.
 	IntentMigrations []MigrationAction
+	// QuestDateBackfill, when set, rewrites a default quest's sentinel timestamps
+	// to a real date during apply.
+	QuestDateBackfill *QuestDateBackfill
+}
+
+// QuestDateBackfill describes a default quest whose sentinel timestamps must be
+// rewritten to Replacement during the apply phase.
+type QuestDateBackfill struct {
+	Path        string
+	Replacement time.Time
 }
 
 // HasMigrations returns true if any migration actions are planned.
@@ -129,6 +143,9 @@ func ComputeRepairPlan(ctx context.Context, dir string, opts InitOptions) (*Repa
 	// Phase 6: Account for imperative quest scaffold files created outside scaffold FS.
 	if version.Profile == "dev" {
 		computeQuestScaffoldChanges(absDir, plan)
+		if err := computeQuestSentinelDateChange(ctx, absDir, plan); err != nil {
+			return nil, err
+		}
 	}
 
 	// Phase 7: Detect misplaced completed/ dirs that should be in dungeon/completed/YYYY-MM-DD/.
@@ -142,6 +159,70 @@ func ComputeRepairPlan(ctx context.Context, dir string, opts InitOptions) (*Repa
 	}
 
 	return plan, nil
+}
+
+// computeQuestSentinelDateChange detects a default quest stamped with the fake
+// sentinel date and stages a backfill on the plan without writing anything.
+func computeQuestSentinelDateChange(ctx context.Context, absDir string, plan *RepairPlan) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	path := quest.DefaultQuestPath(absDir)
+	q, err := quest.Load(ctx, path)
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return nil
+	}
+	if !q.CreatedAt.Equal(questDateSentinel) && !q.UpdatedAt.Equal(questDateSentinel) {
+		return nil
+	}
+
+	replacement := time.Now().UTC()
+	if info, statErr := os.Stat(path); statErr == nil {
+		replacement = info.ModTime().UTC()
+	}
+	plan.QuestDateBackfill = &QuestDateBackfill{Path: path, Replacement: replacement}
+	plan.Changes = append(plan.Changes, RepairChange{
+		Type:        RepairModify,
+		Category:    "quest",
+		Key:         "default",
+		Description: "backfill default quest sentinel date",
+	})
+	return nil
+}
+
+// applyQuestDateBackfill rewrites a default quest's sentinel timestamps to the
+// staged replacement value. It is a no-op when no backfill was planned.
+func applyQuestDateBackfill(ctx context.Context, backfill *QuestDateBackfill) error {
+	if backfill == nil {
+		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	q, err := quest.Load(ctx, backfill.Path)
+	if err != nil {
+		return camperrors.Wrapf(err, "load default quest for date backfill %s", backfill.Path)
+	}
+
+	changed := false
+	if q.CreatedAt.Equal(questDateSentinel) {
+		q.CreatedAt = backfill.Replacement
+		changed = true
+	}
+	if q.UpdatedAt.Equal(questDateSentinel) {
+		q.UpdatedAt = backfill.Replacement
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+	if err := quest.Save(ctx, backfill.Path, q); err != nil {
+		return camperrors.Wrapf(err, "save default quest date backfill %s", backfill.Path)
+	}
+	return nil
 }
 
 func computeStandardDungeonScaffoldChanges(absDir string, plan *RepairPlan) {
@@ -256,6 +337,7 @@ func computeScaffoldChanges(ctx context.Context, absDir string, opts InitOptions
 			"campaign_id":   campaignID,
 			"campaign_type": string(opts.Type),
 			"Profile":       version.Profile,
+			"now":           time.Now().UTC().Format(time.RFC3339),
 		},
 		Dry:       true,
 		Overwrite: false,

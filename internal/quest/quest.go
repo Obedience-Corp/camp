@@ -109,6 +109,13 @@ func LoadDefault(ctx context.Context, campaignRoot string) (*Quest, error) {
 }
 
 // List returns quests from the root and optionally the dungeon.
+//
+// A directory under .campaign/quests/ is a quest if and only if it contains a
+// quest.yaml. Three cases are handled:
+//   - valid: quest.yaml present and parseable, included in the result.
+//   - stray: no quest.yaml (e.g. a festival-app per-quest ui-state.json dir),
+//     skipped silently.
+//   - malformed: quest.yaml present but unparseable, skipped with a warning.
 func List(ctx context.Context, campaignRoot string, includeDungeon bool) ([]*Quest, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -128,6 +135,9 @@ func List(ctx context.Context, campaignRoot string, includeDungeon bool) ([]*Que
 		}
 		q, err := Load(ctx, QuestPathForDir(filepath.Join(QuestsDir(campaignRoot), entry.Name())))
 		if err != nil {
+			if errors.Is(err, ErrQuestNotFound) {
+				continue
+			}
 			warnUnreadableQuest(entry.Name(), err)
 			continue
 		}
@@ -150,6 +160,9 @@ func List(ctx context.Context, campaignRoot string, includeDungeon bool) ([]*Que
 				}
 				q, err := Load(ctx, QuestPathForDir(filepath.Join(statusDir, entry.Name())))
 				if err != nil {
+					if errors.Is(err, ErrQuestNotFound) {
+						continue
+					}
 					warnUnreadableQuest(filepath.Join(status.String(), entry.Name()), err)
 					continue
 				}
