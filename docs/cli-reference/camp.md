@@ -70,6 +70,7 @@ camp [flags]
 * [camp pins](camp_pins.md)	 - List all pinned directories
 * [camp plugins](camp_plugins.md)	 - List discovered camp plugins on PATH
 * [camp project](camp_project.md)	 - Manage campaign projects
+* [camp promote](camp_promote.md)	 - Promote any intent, workitem, or festival (universal front door)
 * [camp pull](camp_pull.md)	 - Pull latest changes from remote
 * [camp push](camp_push.md)	 - Push campaign changes to remote
 * [camp refs-sync](camp_refs-sync.md)	 - Sync submodule ref pointers in campaign root
@@ -79,7 +80,6 @@ camp [flags]
 * [camp run](camp_run.md)	 - Execute command from campaign root, or just recipe in a project
 * [camp settings](camp_settings.md)	 - Manage camp configuration
 * [camp shell-init](camp_shell-init.md)	 - Output shell initialization code
-* [camp shelve](camp_shelve.md)	 - Shelve the workitem at cwd to a dungeon status
 * [camp shortcuts](camp_shortcuts.md)	 - List all available shortcuts
 * [camp skills](camp_skills.md)	 - Manage campaign skill directory links
 * [camp stage](camp_stage.md)	 - Stage changes in the campaign root
