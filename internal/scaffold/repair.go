@@ -256,6 +256,7 @@ func computeScaffoldChanges(ctx context.Context, absDir string, opts InitOptions
 			"campaign_id":   campaignID,
 			"campaign_type": string(opts.Type),
 			"Profile":       version.Profile,
+			"now":           time.Now().UTC().Format(time.RFC3339),
 		},
 		Dry:       true,
 		Overwrite: false,

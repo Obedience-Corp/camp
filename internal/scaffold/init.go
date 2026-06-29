@@ -193,6 +193,7 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 				"campaign_description": opts.Description,
 				"campaign_mission":     opts.Mission,
 				"Profile":              version.Profile,
+				"now":                  time.Now().UTC().Format(time.RFC3339),
 			},
 			Dry:       false,
 			Overwrite: false,
