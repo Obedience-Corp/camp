@@ -109,6 +109,13 @@ func LoadDefault(ctx context.Context, campaignRoot string) (*Quest, error) {
 }
 
 // List returns quests from the root and optionally the dungeon.
+//
+// A directory under .campaign/quests/ is a quest if and only if it contains a
+// quest.yaml. Three cases are handled:
+//   - valid: quest.yaml present and parseable, included in the result.
+//   - stray: no quest.yaml (e.g. a festival-app per-quest ui-state.json dir),
+//     skipped silently.
+//   - malformed: quest.yaml present but unparseable, skipped with a warning.
 func List(ctx context.Context, campaignRoot string, includeDungeon bool) ([]*Quest, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
