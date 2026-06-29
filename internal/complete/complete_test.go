@@ -90,8 +90,6 @@ func TestGenerate_NoArgs(t *testing.T) {
 
 	assertContainsCandidate(t, candidates, "de")
 	assertContainsCandidate(t, candidates, "design")
-	assertContainsCandidate(t, candidates, "ai")
-	assertContainsCandidate(t, candidates, "ai_docs")
 }
 
 func TestGenerate_NoArgs_NotInCampaign(t *testing.T) {
@@ -376,8 +374,6 @@ func TestCategoryShortcuts(t *testing.T) {
 
 	assertContainsCandidate(t, shortcuts, "de")
 	assertContainsCandidate(t, shortcuts, "design")
-	assertContainsCandidate(t, shortcuts, "ai")
-	assertContainsCandidate(t, shortcuts, "ai_docs")
 }
 
 func TestGenerate_FirstArgSlashDrill(t *testing.T) {

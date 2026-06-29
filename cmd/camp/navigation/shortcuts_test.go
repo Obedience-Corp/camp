@@ -113,18 +113,18 @@ func TestComputeShortcutDiff_AllMatch(t *testing.T) {
 func TestComputeShortcutDiff_MissingDefaults(t *testing.T) {
 	defaults := config.DefaultNavigationShortcuts()
 
-	// Current config is missing the "ai" shortcut
+	// Current config is missing the "de" shortcut
 	current := make(map[string]config.ShortcutConfig)
 	for k, v := range defaults {
-		if k != "ai" {
+		if k != "de" {
 			current[k] = v
 		}
 	}
 
 	diff := shortcuts.ComputeShortcutDiff(current, defaults)
 
-	if len(diff.Missing) != 1 || diff.Missing[0] != "ai" {
-		t.Errorf("Missing = %v, want [ai]", diff.Missing)
+	if len(diff.Missing) != 1 || diff.Missing[0] != "de" {
+		t.Errorf("Missing = %v, want [de]", diff.Missing)
 	}
 	if diff.Matched != len(defaults)-1 {
 		t.Errorf("Matched = %d, want %d", diff.Matched, len(defaults)-1)

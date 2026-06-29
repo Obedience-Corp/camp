@@ -166,9 +166,6 @@ func (j *JumpsConfig) ApplyDefaults() {
 	if j.Paths.Worktrees == "" {
 		j.Paths.Worktrees = defaults.Paths.Worktrees
 	}
-	if j.Paths.AIDocs == "" {
-		j.Paths.AIDocs = defaults.Paths.AIDocs
-	}
 	if j.Paths.Docs == "" {
 		j.Paths.Docs = defaults.Paths.Docs
 	}
