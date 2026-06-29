@@ -290,6 +290,13 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 	}
 	result.FilesCreated = append(result.FilesCreated, config.CampaignConfigPath(absDir))
 
+	// Repair: rewrite a default quest still stamped with the sentinel date.
+	if opts.Repair && !opts.DryRun && opts.RepairPlan != nil {
+		if err := applyQuestDateBackfill(ctx, opts.RepairPlan.QuestDateBackfill); err != nil {
+			return nil, err
+		}
+	}
+
 	// Create jumps.yaml (paths and shortcuts).
 	// In repair mode with a pre-computed plan, use the merged config that preserves user entries.
 	jumps := config.DefaultJumpsConfig()
