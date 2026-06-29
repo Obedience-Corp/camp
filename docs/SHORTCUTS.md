@@ -96,7 +96,6 @@ These defaults are written by `camp init` and can be overridden per campaign:
 | `i` | `.campaign/intents/` | navigation plus command expansion |
 | `wt` | `projects/worktrees/` | navigation plus command expansion |
 | `w` | `workflow/` | navigation only |
-| `ai` | `ai_docs/` | navigation only |
 | `d` | `docs/` | navigation only |
 | `du` | `dungeon/` | navigation only |
 | `cr` | `workflow/code_reviews/` | navigation only |

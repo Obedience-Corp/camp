@@ -187,8 +187,8 @@ func TestDefaultCampaignPaths(t *testing.T) {
 	if paths.Worktrees != "projects/worktrees/" {
 		t.Errorf("Worktrees = %q, want %q", paths.Worktrees, "projects/worktrees/")
 	}
-	if paths.AIDocs != "ai_docs/" {
-		t.Errorf("AIDocs = %q, want %q", paths.AIDocs, "ai_docs/")
+	if paths.AIDocs != "" {
+		t.Errorf("AIDocs = %q, want empty (no longer a default)", paths.AIDocs)
 	}
 	if paths.Docs != "docs/" {
 		t.Errorf("Docs = %q, want %q", paths.Docs, "docs/")

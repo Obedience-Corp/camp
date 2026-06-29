@@ -17,7 +17,6 @@ func TestCategories(t *testing.T) {
 		"p":      "projects/",
 		"pw":     "projects/worktrees/",
 		"f":      "festivals/",
-		"ai":     "ai_docs/",
 		"d":      "docs/",
 		"du":     "dungeon/",
 		"w":      "workflow/",
@@ -60,7 +59,6 @@ func TestCategories_HasCorrectCategories(t *testing.T) {
 		{"p", nav.CategoryProjects},
 		{"pw", nav.CategoryWorktrees},
 		{"f", nav.CategoryFestivals},
-		{"ai", nav.CategoryAIDocs},
 		{"d", nav.CategoryDocs},
 		{"du", nav.CategoryDungeon},
 		{"w", nav.CategoryWorkflow},
@@ -110,15 +108,15 @@ func TestGenerateWithDescriptions_NoArgs(t *testing.T) {
 	}
 
 	// First candidates should be category shortcuts
-	shortcuts := map[string]bool{"p": true, "pw": true, "f": true, "ai": true, "d": true, "du": true, "w": true, "cr": true, "pi": true, "de": true, "i": true}
+	shortcuts := map[string]bool{"p": true, "pw": true, "f": true, "d": true, "du": true, "w": true, "cr": true, "pi": true, "de": true, "i": true}
 	foundShortcuts := 0
 	for _, c := range candidates {
 		if shortcuts[c.Value] {
 			foundShortcuts++
 		}
 	}
-	if foundShortcuts != 11 {
-		t.Errorf("Found %d shortcuts, want 11", foundShortcuts)
+	if foundShortcuts != 10 {
+		t.Errorf("Found %d shortcuts, want 10", foundShortcuts)
 	}
 }
 
@@ -211,7 +209,6 @@ func TestCategoryByShortcut(t *testing.T) {
 		{"p", nav.CategoryProjects},
 		{"pw", nav.CategoryWorktrees},
 		{"f", nav.CategoryFestivals},
-		{"ai", nav.CategoryAIDocs},
 		{"d", nav.CategoryDocs},
 		{"du", nav.CategoryDungeon},
 		{"w", nav.CategoryWorkflow},
@@ -219,6 +216,7 @@ func TestCategoryByShortcut(t *testing.T) {
 		{"pi", nav.CategoryPipelines},
 		{"de", nav.CategoryDesign},
 		{"i", nav.CategoryIntents},
+		{"ai", nav.CategoryAll},
 		{"invalid", nav.CategoryAll},
 		{"", nav.CategoryAll},
 	}

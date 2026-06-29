@@ -49,7 +49,7 @@ Campaign selection:
   - use --campaign <name-or-id> for scripts or to skip the picker
 
 Examples:
-  camp attach ai_docs/examples/external-repo
+  camp attach docs/examples/external-repo
   camp attach ~/scratch/notes-link
   camp attach ~/scratch/notes-link --campaign
   camp attach /abs/path/to/dir --campaign platform`,
@@ -100,7 +100,7 @@ Refuses on linked-project markers; use 'camp project unlink' for those.
 The user-managed symlink (if any) is not modified.
 
 Examples:
-  camp detach ai_docs/examples/external-repo
+  camp detach docs/examples/external-repo
   camp detach ~/scratch/notes-link`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

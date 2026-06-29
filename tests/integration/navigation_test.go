@@ -86,9 +86,11 @@ func TestGo_CategoryShortcuts(t *testing.T) {
 	})
 
 	t.Run("ai_docs", func(t *testing.T) {
+		// ai_docs is no longer scaffolded or a default path, so it does not
+		// resolve to a target on a fresh campaign.
 		output, err := tc.RunCampInDir("/campaigns/cat-test", "go", "ai_docs", "--print")
-		require.NoError(t, err, "long-form directory alias 'ai_docs' should resolve on a new campaign")
-		assert.Contains(t, output, "ai_docs", "output should contain ai_docs path")
+		require.Error(t, err, "'ai_docs' should not resolve on a new campaign")
+		assert.Contains(t, strings.ToLower(output), "no targets", "output should report no targets for ai_docs")
 	})
 
 	t.Run("design_slash_drill", func(t *testing.T) {

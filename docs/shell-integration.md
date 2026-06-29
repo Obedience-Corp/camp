@@ -36,7 +36,6 @@ cgo p         # projects/
 cgo f         # festivals/
 cgo i         # .campaign/intents/
 cgo d         # docs/
-cgo ai        # ai_docs/
 cgo w         # workflow/
 cgo wt        # projects/worktrees/
 cgo cr        # workflow/code_reviews/
@@ -57,7 +56,6 @@ cgo f fest    # festivals/*fest* (fuzzy match)
 | f        | festivals/     | Festival planning       |
 | i        | .campaign/intents/ | Intents via `camp intent` |
 | d        | docs/          | Documentation           |
-| ai       | ai_docs/       | AI documentation        |
 | w        | workflow/      | Workflow resources      |
 | wt       | projects/worktrees/ | Git worktrees     |
 | cr       | workflow/code_reviews/ | Code review materials |

@@ -46,12 +46,17 @@ func TestInit(t *testing.T) {
 	}
 
 	// Check key directories were created (based on templates/ structure)
-	expectedDirs := []string{".campaign", "projects", "docs", "ai_docs", "dungeon", "workflow"}
+	expectedDirs := []string{".campaign", "projects", "docs", "dungeon", "workflow"}
 	for _, dir := range expectedDirs {
 		path := filepath.Join(campaignDir, dir)
 		if _, err := os.Stat(path); os.IsNotExist(err) {
 			t.Errorf("directory %s was not created", dir)
 		}
+	}
+
+	// ai_docs is no longer scaffolded.
+	if _, err := os.Stat(filepath.Join(campaignDir, "ai_docs")); !os.IsNotExist(err) {
+		t.Error("ai_docs directory should not be created")
 	}
 
 	// workflow/explore should be scaffolded by default.
@@ -308,7 +313,7 @@ func TestInit_DryRun(t *testing.T) {
 	}
 
 	// In dry run, scaffold doesn't run so directories should NOT exist
-	expectedDirs := []string{".campaign", "projects", "docs", "ai_docs", "dungeon", "workflow"}
+	expectedDirs := []string{".campaign", "projects", "docs", "dungeon", "workflow"}
 	for _, dir := range expectedDirs {
 		path := filepath.Join(campaignDir, dir)
 		if _, err := os.Stat(path); err == nil {

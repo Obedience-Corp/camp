@@ -91,7 +91,6 @@ Navigate instantly with single-letter shortcuts:
 | `p`      | projects/              | Project subdirectories |
 | `f`      | festivals/             | Festival methodology   |
 | `w`      | workflow/              | Workflow directory     |
-| `ai`     | ai_docs/               | AI documentation       |
 | `d`      | docs/                  | Human documentation    |
 | `i`      | .campaign/intents/     | Intents via `camp intent` |
 | `wt`     | projects/worktrees/    | Git worktrees          |
@@ -181,14 +180,14 @@ inside the campaign tree, run `camp attach` on the symlink to bind its
 target so detection works from inside it:
 
 ```bash
-ln -s ~/Dev/external-repo ai_docs/examples/external-repo
-camp attach ai_docs/examples/external-repo
+ln -s ~/Dev/external-repo docs/examples/external-repo
+camp attach docs/examples/external-repo
 
 # Force the campaign picker instead of using the current campaign:
-camp attach ai_docs/examples/external-repo --campaign
+camp attach docs/examples/external-repo --campaign
 
 # now you can pin and navigate to it:
-cd ai_docs/examples/external-repo
+cd docs/examples/external-repo
 camp pin external-repo
 cgo external-repo
 ```
@@ -378,7 +377,7 @@ cint "new feature idea"  # Runs: camp intent add "new feature idea"
 cnote "meeting note"     # Runs: camp intent note "meeting note"
 
 # 3. Tab completion for cgo
-cgo <TAB>                # Completes categories: p f w ai d i wt du cr pi de ex
+cgo <TAB>                # Completes categories: p f w d i wt du cr pi de ex
 cgo p <TAB>              # Completes project names
 
 # 4. Tab completion for camp commands
@@ -438,7 +437,6 @@ my-campaign/
 │   ├── code_reviews/    # Review notes (cgo cr)
 │   ├── pipelines/       # CI/CD configs (cgo pi)
 │   └── design/          # Design documents (cgo de)
-├── ai_docs/             # AI documentation (cgo ai)
 ├── docs/                # Human documentation (cgo d)
 └── dungeon/             # Archived work (cgo du)
 ```
@@ -459,7 +457,7 @@ The shell integration includes intelligent tab completion:
 
 ```bash
 # Navigation
-cgo <TAB>                              # Shows: p f w ai d i wt du cr pi de ex
+cgo <TAB>                              # Shows: p f w d i wt du cr pi de ex
 cgo p <TAB>                            # Shows: api-service web-app cli-tool
 cgo p api<TAB>                         # Completes to: api-service api-gateway
 cgo wt api@<TAB>                       # Shows worktree branches
