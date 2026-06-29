@@ -135,6 +135,9 @@ func List(ctx context.Context, campaignRoot string, includeDungeon bool) ([]*Que
 		}
 		q, err := Load(ctx, QuestPathForDir(filepath.Join(QuestsDir(campaignRoot), entry.Name())))
 		if err != nil {
+			if errors.Is(err, ErrQuestNotFound) {
+				continue
+			}
 			warnUnreadableQuest(entry.Name(), err)
 			continue
 		}
@@ -157,6 +160,9 @@ func List(ctx context.Context, campaignRoot string, includeDungeon bool) ([]*Que
 				}
 				q, err := Load(ctx, QuestPathForDir(filepath.Join(statusDir, entry.Name())))
 				if err != nil {
+					if errors.Is(err, ErrQuestNotFound) {
+						continue
+					}
 					warnUnreadableQuest(filepath.Join(status.String(), entry.Name()), err)
 					continue
 				}
