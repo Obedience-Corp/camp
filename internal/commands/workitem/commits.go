@@ -271,7 +271,10 @@ func queryRepo(ctx context.Context, campaignRoot, repo, ref string) ([]CommitRec
 	if !ok {
 		return nil, nil
 	}
-	grep := "-WI-" + ref
+	// The ref already starts with WI-, so "-"+ref anchors on the segment
+	// separator and matches both the single-prefix (-WI-abc123) and the
+	// historical doubled (-WI-WI-abc123) subject forms.
+	grep := "-" + ref
 	cmd := exec.CommandContext(cctx, "git",
 		"-C", repo,
 		"log", "--all",
