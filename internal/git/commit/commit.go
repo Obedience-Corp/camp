@@ -30,11 +30,8 @@ type Options struct {
 	SelectiveOnly bool     // When true, never fall back to CommitAll; no-op if Files is empty
 }
 
-// resolveCampaignName returns the campaign name used to build the commit tag.
-// It prefers an explicitly supplied opts.CampaignName and otherwise reads it
-// from the campaign config at opts.CampaignRoot. A failed load is non-fatal:
-// the tag formatter falls back to the legacy id-only form when the name is
-// empty.
+// resolveCampaignName prefers opts.CampaignName, else loads it from the config
+// at opts.CampaignRoot. A failed load yields "" (formatter falls back to legacy).
 func resolveCampaignName(ctx context.Context, opts Options) string {
 	if opts.CampaignName != "" {
 		return opts.CampaignName

@@ -155,7 +155,7 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 	// project is linked.
 	if cfg != nil {
 		questID, workitemRef := resolveProjectCommitContext(ctx, campRoot, resolvedPath, projectCommitWorkitem)
-		message = commitkit.PrependContextTagsFull(cfg.Name, cfg.ID, questID, "", workitemRef, message)
+		message = commitkit.PrependContextTagsFullNamed(cfg.Name, cfg.ID, questID, "", workitemRef, message)
 	}
 
 	// Commit

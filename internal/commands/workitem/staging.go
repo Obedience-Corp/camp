@@ -127,7 +127,7 @@ func ComputePlan(ctx context.Context, campaignRoot string, opts PlanOptions) (*S
 		WorkitemRef: ref,
 		QuestID:     res.QuestID,
 		FestivalRef: festivalRef,
-		Tag:         commitkit.FormatContextTagsFull(opts.CampaignName, opts.CampaignID, res.QuestID, festivalRef, ref),
+		Tag:         commitkit.FormatContextTagsFullNamed(opts.CampaignName, opts.CampaignID, res.QuestID, festivalRef, ref),
 	}
 	if ref == "" && wi != nil && wi.ItemKind == wkitem.ItemKindDirectory && wi.StableID != "" {
 		plan.Warnings = append(plan.Warnings,

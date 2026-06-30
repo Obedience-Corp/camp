@@ -26,6 +26,8 @@ func TestIntegration_RefsSyncAtomic(t *testing.T) {
 	require.Equal(t, before+1, after, "refs-sync should create exactly one campaign root commit")
 
 	subject := tc.GitOutput(t, campaignDir, "log", "-1", "--pretty=%s")
+	require.Regexp(t, `^\[refs-sync:[0-9a-f]{1,8}\]`, subject,
+		"refs-sync commit must carry the campaign-name tag: %s", subject)
 	require.Contains(t, subject, "alpha")
 	require.Contains(t, subject, "beta")
 
