@@ -47,9 +47,9 @@ func FormatContextTagsFull(campaignName, campaignID, questID, festRef, workitemR
 		if !strings.HasPrefix(workitemRef, "WI-") {
 			workitemRef = "WI-" + workitemRef
 		}
-		// The ref already starts with WI-, so the WI- segment marker produces
-		// the intentional WI-WI- double prefix.
-		parts = append(parts, "WI-"+workitemRef)
+		// The ref already carries WI-, so it is self-identifying and embedded
+		// verbatim (no extra marker).
+		parts = append(parts, workitemRef)
 	}
 	return "[" + strings.Join(parts, "-") + "]"
 }
@@ -199,20 +199,24 @@ func ParseTagDetailed(subject string) (TagComponents, []TagParseWarning) {
 			}
 			rest = after
 		case strings.HasPrefix(rest, "WI-"):
-			// WI- is always the last segment, so the remainder is the ref.
-			payload := rest[len("WI-"):]
-			if !tagWorkitemRefRe.MatchString(payload) {
+			// WI- is the last segment. Accept the single-prefix ref (WI-abcdef)
+			// and the historical doubled form (WI-WI-abcdef).
+			ref := rest
+			if strings.HasPrefix(ref, "WI-WI-") {
+				ref = ref[len("WI-"):]
+			}
+			if !tagWorkitemRefRe.MatchString(ref) {
 				warnings = append(warnings, TagParseWarning{
-					Field: "workitem_ref", Value: payload,
+					Field: "workitem_ref", Value: ref,
 					Reason: "shape check failed (want WI-<6 hex>)",
 				})
 			} else if out.WorkitemRef != "" {
 				warnings = append(warnings, TagParseWarning{
-					Field: "workitem_ref", Value: payload,
+					Field: "workitem_ref", Value: ref,
 					Reason: "duplicate workitem_ref segment",
 				})
 			} else {
-				out.WorkitemRef = payload
+				out.WorkitemRef = ref
 			}
 			rest = ""
 		default:

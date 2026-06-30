@@ -5,4 +5,4 @@ staging:
   M  .campaign/workitems/links.yaml
 skipped:
   festivals/active/camp-workitem-linking-and-commits-CW0003/.fest/state.json (out of scope)
-tag:    [obey-campaign:8deed8b4-qst_active-FE-CW0003-WI-WI-def456]
+tag:    [obey-campaign:8deed8b4-qst_active-FE-CW0003-WI-def456]
