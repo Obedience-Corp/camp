@@ -102,7 +102,8 @@ These defaults are written by `camp init` and can be overridden per campaign:
 | `pi` | `workflow/pipelines/` | navigation only |
 | `de` | `workflow/design/` | navigation only |
 | `ex` | `workflow/explore/` | navigation only |
-| `cfg` | no path | command expansion only |
+| `settings` | `.campaign/` | navigation only |
+| `cfg` | `.campaign/` | navigation plus command expansion |
 
 `camp go i` and `cgo i` remain available as operator shortcuts, but the primary
 human interface for this state is `camp intent`.

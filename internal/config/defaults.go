@@ -81,13 +81,14 @@ func DefaultNavigationShortcuts() map[string]ShortcutConfig {
 		"wt": {Path: "projects/worktrees/", Concept: "project worktree", Description: "Project worktree directory and commands", Source: ShortcutSourceAuto},
 
 		// Navigation-only shortcuts (no command expansion)
-		"w":  {Path: "workflow/", Description: "Jump to workflow directory", Source: ShortcutSourceAuto},
-		"d":  {Path: "docs/", Description: "Jump to docs directory", Source: ShortcutSourceAuto},
-		"du": {Path: "dungeon/", Description: "Jump to dungeon directory (navigation only)", Source: ShortcutSourceAuto},
-		"cr": {Path: "workflow/code_reviews/", Description: "Jump to code reviews", Source: ShortcutSourceAuto},
-		"pi": {Path: "workflow/pipelines/", Description: "Jump to pipelines", Source: ShortcutSourceAuto},
-		"de": {Path: "workflow/design/", Description: "Jump to design", Source: ShortcutSourceAuto},
-		"ex": {Path: "workflow/explore/", Description: "Jump to explore", Source: ShortcutSourceAuto},
+		"w":        {Path: "workflow/", Description: "Jump to workflow directory", Source: ShortcutSourceAuto},
+		"d":        {Path: "docs/", Description: "Jump to docs directory", Source: ShortcutSourceAuto},
+		"du":       {Path: "dungeon/", Description: "Jump to dungeon directory (navigation only)", Source: ShortcutSourceAuto},
+		"cr":       {Path: "workflow/code_reviews/", Description: "Jump to code reviews", Source: ShortcutSourceAuto},
+		"pi":       {Path: "workflow/pipelines/", Description: "Jump to pipelines", Source: ShortcutSourceAuto},
+		"de":       {Path: "workflow/design/", Description: "Jump to design", Source: ShortcutSourceAuto},
+		"ex":       {Path: "workflow/explore/", Description: "Jump to explore", Source: ShortcutSourceAuto},
+		"settings": {Path: ".campaign/", Description: "Jump to campaign settings directory", Source: ShortcutSourceAuto},
 
 		// Navigation + command expansion
 		"cfg": {Path: ".campaign/", Concept: "config", Description: "Campaign config directory and commands", Source: ShortcutSourceAuto},

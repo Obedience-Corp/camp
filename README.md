@@ -93,6 +93,7 @@ Navigate instantly with single-letter shortcuts:
 | `w`      | workflow/              | Workflow directory     |
 | `d`      | docs/                  | Human documentation    |
 | `i`      | .campaign/intents/     | Intents via `camp intent` |
+| `settings` | .campaign/          | Campaign settings directory |
 | `wt`     | projects/worktrees/    | Git worktrees          |
 | `du`     | dungeon/               | Archived work          |
 | `cr`     | workflow/code_reviews/ | Code review materials  |
