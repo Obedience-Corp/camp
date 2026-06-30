@@ -34,7 +34,7 @@ func TestFormatContextTagsFull_AllCombinations(t *testing.T) {
 		{
 			name:     "campaign + workitem",
 			campaign: "8deed8b4", workitem: "WI-abcdef",
-			want: "[OBEY-CAMPAIGN-8deed8b4-WI-WI-abcdef]",
+			want: "[OBEY-CAMPAIGN-8deed8b4-WI-abcdef]",
 		},
 		{
 			name:     "campaign + quest + festival",
@@ -44,27 +44,27 @@ func TestFormatContextTagsFull_AllCombinations(t *testing.T) {
 		{
 			name:     "campaign + quest + workitem",
 			campaign: "8deed8b4", quest: "qst_abc", workitem: "WI-abcdef",
-			want: "[OBEY-CAMPAIGN-8deed8b4-qst_abc-WI-WI-abcdef]",
+			want: "[OBEY-CAMPAIGN-8deed8b4-qst_abc-WI-abcdef]",
 		},
 		{
 			name:     "campaign + festival + workitem",
 			campaign: "8deed8b4", fest: "CW0003", workitem: "WI-abcdef",
-			want: "[OBEY-CAMPAIGN-8deed8b4-FE-CW0003-WI-WI-abcdef]",
+			want: "[OBEY-CAMPAIGN-8deed8b4-FE-CW0003-WI-abcdef]",
 		},
 		{
 			name:     "all four components",
 			campaign: "8deed8b4", quest: "qst_abc", fest: "CW0003", workitem: "WI-abcdef",
-			want: "[OBEY-CAMPAIGN-8deed8b4-qst_abc-FE-CW0003-WI-WI-abcdef]",
+			want: "[OBEY-CAMPAIGN-8deed8b4-qst_abc-FE-CW0003-WI-abcdef]",
 		},
 		{
 			name:     "campaign id truncated to 8 chars",
 			campaign: "8deed8b4abcdef", workitem: "WI-abcdef",
-			want: "[OBEY-CAMPAIGN-8deed8b4-WI-WI-abcdef]",
+			want: "[OBEY-CAMPAIGN-8deed8b4-WI-abcdef]",
 		},
 		{
 			name:     "workitem ref normalized",
 			campaign: "8deed8b4", workitem: "abcdef",
-			want: "[OBEY-CAMPAIGN-8deed8b4-WI-WI-abcdef]",
+			want: "[OBEY-CAMPAIGN-8deed8b4-WI-abcdef]",
 		},
 		{
 			name:  "name only",
@@ -74,7 +74,7 @@ func TestFormatContextTagsFull_AllCombinations(t *testing.T) {
 		{
 			name:  "name + all components",
 			cname: "obey-campaign", campaign: "8deed8b4", quest: "qst_abc", fest: "CW0003", workitem: "WI-abcdef",
-			want: "[obey-campaign:8deed8b4-qst_abc-FE-CW0003-WI-WI-abcdef]",
+			want: "[obey-campaign:8deed8b4-qst_abc-FE-CW0003-WI-abcdef]",
 		},
 		{
 			name:  "name slugified (spaces and case)",
@@ -158,6 +158,18 @@ func TestParseTag_KnownCombinations(t *testing.T) {
 		{
 			subject:      "[brainshare-planning:8deed8b4-WI-WI-abcdef] x",
 			wantCampaign: "8deed8b4", wantName: "brainshare-planning", wantWorkitem: "WI-abcdef",
+		},
+		{
+			subject:      "[OBEY-CAMPAIGN-8deed8b4-WI-abcdef] single-prefix legacy",
+			wantCampaign: "8deed8b4", wantWorkitem: "WI-abcdef",
+		},
+		{
+			subject:      "[obey-campaign:8deed8b4-WI-abcdef] single-prefix name",
+			wantCampaign: "8deed8b4", wantName: "obey-campaign", wantWorkitem: "WI-abcdef",
+		},
+		{
+			subject:      "[obey-campaign:8deed8b4-qst_abc-FE-CW0003-WI-abcdef] all single",
+			wantCampaign: "8deed8b4", wantName: "obey-campaign", wantQuest: "qst_abc", wantFest: "CW0003", wantWorkitem: "WI-abcdef",
 		},
 		{
 			subject:      "no tag here at all",
@@ -258,6 +270,7 @@ func TestParseTag_AnchoringAdversarial(t *testing.T) {
 	}{
 		{name: "happy path leading legacy tag", subject: "[OBEY-CAMPAIGN-abcd1234-WI-WI-deadbe] feat: X", wantParsed: true, wantID: "abcd1234", wantWIRef: "WI-deadbe"},
 		{name: "happy path leading name tag", subject: "[obey-campaign:abcd1234-WI-WI-deadbe] feat: X", wantParsed: true, wantID: "abcd1234", wantWIRef: "WI-deadbe"},
+		{name: "single-prefix name tag", subject: "[obey-campaign:abcd1234-WI-deadbe] feat: X", wantParsed: true, wantID: "abcd1234", wantWIRef: "WI-deadbe"},
 		{name: "revert legacy subject", subject: `Revert "[OBEY-CAMPAIGN-abcd1234] feat: X"`, wantParsed: false},
 		{name: "revert name subject", subject: `Revert "[obey-campaign:abcd1234] feat: X"`, wantParsed: false},
 		{name: "leading whitespace", subject: " [OBEY-CAMPAIGN-abcd1234] x", wantParsed: false},

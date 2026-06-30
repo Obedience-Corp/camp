@@ -5,4 +5,4 @@ staging:
   A  internal/timeline/render_test.go
 skipped:
   scratch.txt (gitignored)
-tag:    [obey-campaign:8deed8b4-WI-WI-abc123]
+tag:    [obey-campaign:8deed8b4-WI-abc123]

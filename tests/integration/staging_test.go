@@ -77,7 +77,7 @@ func TestIntegration_ComputePlan_WorkitemDirAncestor(t *testing.T) {
 	plan := runStagingPlan(t, tc, dir+"/workflow/design/example")
 	assert.Equal(t, "workitem directory", plan.Context, "context: %+v", plan)
 	assert.Contains(t, plan.Stage, "workflow/design/example/notes.md", "stage missing notes.md: %+v", plan)
-	assert.Contains(t, plan.Tag, "WI-WI-abc123", "tag missing ref: %s", plan.Tag)
+	assert.Contains(t, plan.Tag, "WI-abc123", "tag missing ref: %s", plan.Tag)
 }
 
 func TestIntegration_ComputePlan_AutoIncludedLinkRegistryAnnotated(t *testing.T) {

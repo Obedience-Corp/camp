@@ -20,7 +20,7 @@ func TestPrependContextTagsFull_Legacy(t *testing.T) {
 			name:     "id only emits legacy marker",
 			campaign: "8deed8b4", quest: "qst_abc", fest: "CW0003", workitem: "WI-abcdef",
 			msg:  "full",
-			want: "[OBEY-CAMPAIGN-8deed8b4-qst_abc-FE-CW0003-WI-WI-abcdef] full",
+			want: "[OBEY-CAMPAIGN-8deed8b4-qst_abc-FE-CW0003-WI-abcdef] full",
 		},
 	}
 	for _, tc := range cases {
@@ -35,7 +35,7 @@ func TestPrependContextTagsFull_Legacy(t *testing.T) {
 
 func TestPrependContextTagsFullNamed(t *testing.T) {
 	got := commitkit.PrependContextTagsFullNamed("obey-campaign", "8deed8b4", "qst_abc", "CW0003", "WI-abcdef", "full")
-	want := "[obey-campaign:8deed8b4-qst_abc-FE-CW0003-WI-WI-abcdef] full"
+	want := "[obey-campaign:8deed8b4-qst_abc-FE-CW0003-WI-abcdef] full"
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}

@@ -157,7 +157,7 @@ title: legacy
 		"stderr must warn user about the auto-backfill: %s", out)
 
 	subject := lastCommitSubject(t, tc, dir)
-	assert.Regexp(t, `WI-WI-[0-9a-f]{6}`, subject,
+	assert.Regexp(t, `-WI-[0-9a-f]{6}`, subject,
 		"backfilled ref must appear in commit subject: %s", subject)
 
 	body, err := tc.ReadFile(wiDir + "/.workitem")
