@@ -210,3 +210,19 @@ paths:
 		t.Fatalf("Paths.Projects = %q, want %q", got, "projects/")
 	}
 }
+
+func TestDefaultNavigationShortcuts_SettingsShortcut(t *testing.T) {
+	shortcut, ok := DefaultNavigationShortcuts()["settings"]
+	if !ok {
+		t.Fatal("settings shortcut missing from defaults")
+	}
+	if shortcut.Path != ".campaign/" {
+		t.Fatalf("settings shortcut path = %q, want %q", shortcut.Path, ".campaign/")
+	}
+	if shortcut.Concept != "" {
+		t.Fatalf("settings shortcut concept = %q, want empty so camp settings is not expanded", shortcut.Concept)
+	}
+	if !shortcut.IsNavigation() {
+		t.Fatal("settings shortcut should be navigation-capable")
+	}
+}

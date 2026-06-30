@@ -298,11 +298,17 @@ func TestShortcuts_OnlyFromConfig(t *testing.T) {
 	require.NoError(t, err, "shortcut 'p' should work when defined in jumps.yaml")
 	assert.Contains(t, output, "projects", "shortcut 'p' should resolve to projects/")
 
+	// Verify long-form settings shortcut works for .campaign/
+	output, err = tc.RunCampInDir("/campaigns/shortcuts-test", "go", "settings", "--print")
+	require.NoError(t, err, "shortcut 'settings' should work when defined in jumps.yaml")
+	assert.Contains(t, output, "/campaigns/shortcuts-test/.campaign", "shortcut 'settings' should resolve to .campaign/")
+
 	// Read jumps.yaml to verify shortcuts are there
 	config, err := tc.ReadFile("/campaigns/shortcuts-test/.campaign/settings/jumps.yaml")
 	require.NoError(t, err)
 	assert.Contains(t, config, "shortcuts:", "jumps.yaml should have shortcuts section")
 	assert.Contains(t, config, "p:", "jumps.yaml should have 'p' shortcut")
+	assert.Contains(t, config, "settings:", "jumps.yaml should have 'settings' shortcut")
 }
 
 // TestShortcuts_HelpShowsConfigOnly verifies that --help shows shortcuts from jumps.yaml
