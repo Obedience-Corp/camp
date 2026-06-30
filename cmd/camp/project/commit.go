@@ -155,7 +155,7 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 	// project is linked.
 	if cfg != nil {
 		questID, workitemRef := resolveProjectCommitContext(ctx, campRoot, resolvedPath, projectCommitWorkitem)
-		message = commitkit.PrependContextTagsFull(cfg.ID, questID, "", workitemRef, message)
+		message = commitkit.PrependContextTagsFullNamed(cfg.Name, cfg.ID, questID, "", workitemRef, message)
 	}
 
 	// Commit
@@ -202,7 +202,7 @@ func syncParentRef(ctx context.Context, campRoot, relPath string, cfg *config.Ca
 	projName := filepath.Base(relPath)
 	msg := fmt.Sprintf("update %s submodule ref", projName)
 	if cfg != nil {
-		msg = git.PrependCampaignTag(cfg.ID, msg)
+		msg = git.PrependContextTagsFull(cfg.Name, cfg.ID, "", "", "", msg)
 	}
 
 	opts := &git.CommitOptions{Message: msg}

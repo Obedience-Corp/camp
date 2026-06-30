@@ -46,6 +46,7 @@ type PlanOptions struct {
 	IncludeSubmodulePointer bool     // --include-submodule-pointer
 	FestivalID              string   // --festival <id>, or inferred from cwd
 	CampaignID              string
+	CampaignName            string    // campaign name; slugified into the commit tag
 	Stderr                  io.Writer // for warning lines from ref backfill (default: os.Stderr)
 }
 
@@ -126,7 +127,7 @@ func ComputePlan(ctx context.Context, campaignRoot string, opts PlanOptions) (*S
 		WorkitemRef: ref,
 		QuestID:     res.QuestID,
 		FestivalRef: festivalRef,
-		Tag:         commitkit.FormatContextTagsFull(opts.CampaignID, res.QuestID, festivalRef, ref),
+		Tag:         commitkit.FormatContextTagsFullNamed(opts.CampaignName, opts.CampaignID, res.QuestID, festivalRef, ref),
 	}
 	if ref == "" && wi != nil && wi.ItemKind == wkitem.ItemKindDirectory && wi.StableID != "" {
 		plan.Warnings = append(plan.Warnings,

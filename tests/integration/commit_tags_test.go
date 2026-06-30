@@ -110,7 +110,7 @@ func TestIntegration_CommitTags_NoContext(t *testing.T) {
 	subject := lastCommitSubject(t, tc, dir)
 	assert.NotContains(t, subject, "WI-", "no-context commit must not include WI-: %s", subject)
 	assert.NotContains(t, subject, "qst_", "no-context commit must not include qst_: %s", subject)
-	assert.Regexp(t, `^\[OBEY-CAMPAIGN-[0-9a-f]{1,8}\]`, subject,
+	assert.Regexp(t, `^\[commit-tags:[0-9a-f]{1,8}\]`, subject,
 		"subject should still carry the campaign tag: %s", subject)
 }
 
@@ -231,7 +231,7 @@ func TestIntegration_CommitTags_NoteNoContext(t *testing.T) {
 	assert.NotContains(t, subject, "WI-", "no-context note must not include WI-: %s", subject)
 	assert.NotContains(t, subject, "qst_", "no-context note must not include qst_: %s", subject)
 	assert.NotContains(t, subject, "FE-", "no-context note must not include FE-: %s", subject)
-	assert.Regexp(t, `^\[OBEY-CAMPAIGN-[0-9a-f]{1,8}\]`, subject,
+	assert.Regexp(t, `^\[commit-tags:[0-9a-f]{1,8}\]`, subject,
 		"note should still carry the campaign tag: %s", subject)
 }
 

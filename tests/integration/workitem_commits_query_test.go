@@ -104,7 +104,7 @@ func TestIntegration_WorkitemCommits_FiltersFalsePositives(t *testing.T) {
 
 	got := runCommitsJSON(t, tc, dir, "example")
 	for _, c := range got.Commits {
-		assert.True(t, strings.Contains(c.Subject, "[OBEY-CAMPAIGN-"),
+		assert.True(t, strings.Contains(c.Subject, "[commit-tags:"),
 			"non-tagged commit leaked into results: %+v", c)
 	}
 }

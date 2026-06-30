@@ -3,18 +3,23 @@ package git
 import (
 	"regexp"
 	"strings"
+
+	"github.com/Obedience-Corp/camp/internal/slug"
 )
 
 const campaignTagMaxIDLen = 8
 
-// FormatContextTagsFull composes the consolidated campaign tag from any
-// subset of the four components. Component order inside the bracket is
-// fixed: campaign id, then quest id (qst_<...>), then festival ref
-// (FE-<ref>), then workitem ref (WI-<ref>). Absent components are
-// omitted entirely; their separators do not appear in the output.
-//
-// Returns "" when campaignID is empty (no tag without a campaign).
-func FormatContextTagsFull(campaignID, questID, festRef, workitemRef string) string {
+// legacyTagMarker is the leading token used before tags embedded the campaign
+// name. It remains the fallback when no name resolves, and ParseTag still
+// recognizes it so historical commits resolve.
+const legacyTagMarker = "OBEY-CAMPAIGN"
+
+// FormatContextTagsFull builds the campaign tag. The leading token is the
+// slugified campaign name plus the short id ("[obey-campaign:8deed8b4]"),
+// falling back to "[OBEY-CAMPAIGN-<id>]" when campaignName has no slug. The
+// remaining components follow in fixed order: quest, festival, workitem.
+// Returns "" when campaignID is empty.
+func FormatContextTagsFull(campaignName, campaignID, questID, festRef, workitemRef string) string {
 	if campaignID == "" {
 		return ""
 	}
@@ -22,7 +27,16 @@ func FormatContextTagsFull(campaignID, questID, festRef, workitemRef string) str
 	if len(shortID) > campaignTagMaxIDLen {
 		shortID = shortID[:campaignTagMaxIDLen]
 	}
-	parts := []string{"OBEY-CAMPAIGN", shortID}
+
+	// Only emit the name-style head when shortID has the hex shape the parser
+	// requires (isNameStyleHead); otherwise fall back to the legacy form so the
+	// emit and parse sides cannot diverge.
+	head := legacyTagMarker + "-" + shortID
+	if nameSlug := slug.Generate(campaignName); nameSlug != "" && tagNameStyleIDRe.MatchString(shortID) {
+		head = nameSlug + ":" + shortID
+	}
+
+	parts := []string{head}
 	if questID != "" {
 		parts = append(parts, questID)
 	}
@@ -33,123 +47,120 @@ func FormatContextTagsFull(campaignID, questID, festRef, workitemRef string) str
 		if !strings.HasPrefix(workitemRef, "WI-") {
 			workitemRef = "WI-" + workitemRef
 		}
-		// Workitem refs already carry the WI- prefix per
-		// internal/workitem/ref.go::Derive. Embed verbatim so the bracket
-		// reads `WI-WI-abcdef`, matching the documented tag grammar.
+		// The ref already starts with WI-, so the WI- segment marker produces
+		// the intentional WI-WI- double prefix.
 		parts = append(parts, "WI-"+workitemRef)
 	}
 	return "[" + strings.Join(parts, "-") + "]"
 }
 
-// FormatCampaignTag returns the "[OBEY-CAMPAIGN-{id}]" prefix string.
-// If a questID is provided, it is appended inside the same bracket:
-// "[OBEY-CAMPAIGN-{id}-{questID}]".
-// Truncates campaignID to 8 characters. Returns empty string if campaignID is empty.
+// FormatCampaignTag returns the legacy id-only "[OBEY-CAMPAIGN-{id}]" prefix,
+// optionally appending a quest id. Truncates campaignID to 8 chars.
 func FormatCampaignTag(campaignID string, questID ...string) string {
 	qid := ""
 	if len(questID) > 0 {
 		qid = questID[0]
 	}
-	return FormatContextTagsFull(campaignID, qid, "", "")
+	return FormatContextTagsFull("", campaignID, qid, "", "")
 }
 
-// PrependCampaignTag prepends the campaign tag to a commit message.
-// If campaignID is empty, returns the message unchanged.
+// PrependCampaignTag prepends the legacy id-only tag to a message.
 func PrependCampaignTag(campaignID, message string) string {
-	return PrependContextTags(campaignID, "", message)
+	return PrependContextTagsFull("", campaignID, "", "", "", message)
 }
 
-// FormatContextTags returns the combined campaign/quest tag prefix string.
-// When questID is non-empty, produces "[OBEY-CAMPAIGN-{id}-{questID}]".
-func FormatContextTags(campaignID, questID string) string {
-	return FormatContextTagsFull(campaignID, questID, "", "")
+// FormatContextTags returns the campaign/quest tag prefix.
+func FormatContextTags(campaignName, campaignID, questID string) string {
+	return FormatContextTagsFull(campaignName, campaignID, questID, "", "")
 }
 
-// PrependContextTags prepends the campaign and optional quest tag to a message.
-func PrependContextTags(campaignID, questID, message string) string {
-	tag := FormatContextTags(campaignID, questID)
+// PrependContextTags prepends the campaign/quest tag to a message.
+func PrependContextTags(campaignName, campaignID, questID, message string) string {
+	return PrependContextTagsFull(campaignName, campaignID, questID, "", "", message)
+}
+
+// PrependContextTagsFull prepends the full campaign tag to a message,
+// returning it unchanged when campaignID is empty.
+func PrependContextTagsFull(campaignName, campaignID, questID, festRef, workitemRef, message string) string {
+	tag := FormatContextTagsFull(campaignName, campaignID, questID, festRef, workitemRef)
 	if tag == "" {
 		return message
 	}
 	return tag + " " + message
 }
 
-// TagComponents are the parsed pieces of a `[OBEY-CAMPAIGN-...]` tag.
-// Empty fields indicate the component was absent.
+// TagComponents are the parsed pieces of a campaign tag; empty fields were absent.
 type TagComponents struct {
-	CampaignID  string `json:"campaign_id"`  // short form, max 8 chars
-	QuestID     string `json:"quest_id"`     // quest id component, when present
-	FestRef     string `json:"fest_ref"`     // festival ref component, when present
-	WorkitemRef string `json:"workitem_ref"` // includes the leading "WI-" prefix (e.g. "WI-abcdef")
+	CampaignID   string `json:"campaign_id"`
+	CampaignName string `json:"campaign_name,omitempty"` // slug, name-style tags only
+	QuestID      string `json:"quest_id"`
+	FestRef      string `json:"fest_ref"`
+	WorkitemRef  string `json:"workitem_ref"` // carries the WI- prefix
 }
 
-// leadingTagRegex anchors the tag match to the start of the subject. This is
-// the contract ParseTag enforces: a tag is only what FormatContextTagsFull
-// produces at position 0. Embedded mentions in revert subjects, code
-// samples, or appended notes are intentionally ignored.
-var leadingTagRegex = regexp.MustCompile(`^\[OBEY-CAMPAIGN-([^\]]+)\]`)
+// leadingTagRegex captures the leading bracket content; tags are only honored
+// at position 0 (see ParseTagDetailed).
+var leadingTagRegex = regexp.MustCompile(`^\[([^\]]+)\]`)
 
-// tagBodyScanRegex is the unanchored form, retained for callers that
-// intentionally scan commit bodies for tag mentions (e.g. body-grep paths
-// that surface "this commit references campaign X" attributions). Do NOT
-// use this in ParseTag; the contract there is "leading tag only".
-var tagBodyScanRegex = regexp.MustCompile(`\[OBEY-CAMPAIGN-([^\]]+)\]`)
+// tagBodyScanRegex matches name-style or legacy tags anywhere in a string, for
+// body-grep callers only. ParseTag uses leadingTagRegex instead.
+var tagBodyScanRegex = regexp.MustCompile(`\[(?:` + legacyTagMarker + `-[^\]]+|[a-z0-9][a-z0-9-]*:[0-9a-f]{1,8}[^\]]*)\]`)
 
 var (
 	tagWorkitemRefRe = regexp.MustCompile(`^WI-[0-9a-f]{6}$`)
 	tagQuestIDRe     = regexp.MustCompile(`^qst_[A-Za-z0-9_]{1,40}$`)
 	tagFestRefRe     = regexp.MustCompile(`^[A-Za-z0-9]{1,32}$`)
+	// Real campaign ids are UUID-derived hex; gating on it rejects ordinary
+	// bracket prefixes like "[scope:msg]".
+	tagNameStyleIDRe  = regexp.MustCompile(`^[0-9a-f]{1,8}$`)
+	tagCampaignNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 )
 
-// TagParseWarning records a degraded parse: a component whose shape check
-// failed (and was zeroed out) or an unknown segment encountered between
-// known prefixes. ParseTagDetailed returns these so callers can decide
-// whether to log, surface, or treat as a hard error.
+// TagParseWarning records a degraded parse: a component that failed its shape
+// check (and was zeroed) or an unknown segment.
 type TagParseWarning struct {
 	Field  string
 	Value  string
 	Reason string
 }
 
-// ParseTag extracts the components of a campaign tag from a commit subject.
-// Returns a zero-valued TagComponents when no tag is present.
-//
-// ParseTag matches only the leading bracket; embedded mentions in revert
-// subjects or code samples are intentionally ignored. Callers that need
-// body-grep semantics must use tagBodyScanRegex directly.
-//
-// ParseTag assumes quest IDs match `qst_[0-9]+_[a-z0-9]+` per
-// internal/quest/slug.go. If that alphabet is extended to include "-",
-// update indexOfNextPrefix and add adversarial quest-id cases.
-//
-// Two-stage parse: regex strips the bracket and the OBEY-CAMPAIGN prefix,
-// then the inner string is walked once to peel off quest, festival, and
-// workitem segments in their fixed order. Each peeled segment is anchored
-// on its prefix (`qst_`, `FE-`, `WI-`); whatever is left between the
-// previous prefix and the next belongs to the previous segment. This
-// matches FormatContextTagsFull's grammar exactly.
+// ParseTag extracts the components of a leading campaign tag, returning a
+// zero value when none is present.
 func ParseTag(subject string) TagComponents {
 	tc, _ := ParseTagDetailed(subject)
 	return tc
 }
 
-// ParseTagDetailed is the warnings-aware peer of ParseTag. It continues
-// scanning past unknown segments, applies shape checks to extracted
-// component values, zeros out failures, and records each fixup in the
-// returned warnings slice.
+// ParseTagDetailed is the warnings-aware peer of ParseTag. It accepts both the
+// name-style and legacy tag forms, then peels quest/festival/workitem segments
+// by their prefixes, zeroing and reporting any that fail their shape check.
 func ParseTagDetailed(subject string) (TagComponents, []TagParseWarning) {
 	m := leadingTagRegex.FindStringSubmatch(subject)
 	if m == nil {
 		return TagComponents{}, nil
 	}
 	inner := m[1]
+
+	var out TagComponents
+	switch {
+	case isNameStyleHead(inner):
+		colon := strings.IndexByte(inner, ':')
+		out.CampaignName = inner[:colon]
+		inner = inner[colon+1:]
+	case strings.HasPrefix(inner, legacyTagMarker+"-"):
+		inner = inner[len(legacyTagMarker)+1:]
+	default:
+		return TagComponents{}, nil
+	}
+
 	var warnings []TagParseWarning
 
 	idEnd := strings.Index(inner, "-")
 	if idEnd < 0 {
-		return TagComponents{CampaignID: inner}, nil
+		out.CampaignID = inner
+		return out, warnings
 	}
-	out := TagComponents{CampaignID: inner[:idEnd]}
+	out.CampaignID = inner[:idEnd]
 	rest := inner[idEnd+1:]
 
 	for rest != "" {
@@ -188,10 +199,7 @@ func ParseTagDetailed(subject string) (TagComponents, []TagParseWarning) {
 			}
 			rest = after
 		case strings.HasPrefix(rest, "WI-"):
-			// Per the tag grammar, WI- is always the last segment, so the
-			// rest of the payload IS the workitem ref. Anything that does
-			// not match the canonical shape is rejected wholesale rather
-			// than peeled apart into multiple unknown segments.
+			// WI- is always the last segment, so the remainder is the ref.
 			payload := rest[len("WI-"):]
 			if !tagWorkitemRefRe.MatchString(payload) {
 				warnings = append(warnings, TagParseWarning{
@@ -219,12 +227,23 @@ func ParseTagDetailed(subject string) (TagComponents, []TagParseWarning) {
 	return out, warnings
 }
 
-// splitAtDash returns the substring up to the next "-" and the remainder
-// after the dash. If no dash is present, returns (s, "").
+// isNameStyleHead reports whether inner leads with a "<name-slug>:<hex-id>" head.
+func isNameStyleHead(inner string) bool {
+	colon := strings.IndexByte(inner, ':')
+	if colon <= 0 {
+		return false
+	}
+	if !tagCampaignNameRe.MatchString(inner[:colon]) {
+		return false
+	}
+	id, _ := splitAtDash(inner[colon+1:])
+	return tagNameStyleIDRe.MatchString(id)
+}
+
+// splitAtDash splits s at the first "-", returning (s, "") when none is present.
 func splitAtDash(s string) (string, string) {
 	if i := strings.Index(s, "-"); i >= 0 {
 		return s[:i], s[i+1:]
 	}
 	return s, ""
 }
-

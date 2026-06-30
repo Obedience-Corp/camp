@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/git"
 )
 
@@ -20,6 +21,7 @@ type Result struct {
 type Options struct {
 	CampaignRoot  string   // Path to campaign root
 	CampaignID    string   // Campaign ID (truncated to 8 chars)
+	CampaignName  string   // Optional campaign name; when empty it is resolved from CampaignRoot
 	QuestID       string   // Optional quest ID for additive commit context
 	FestivalRef   string   // Optional festival ref for additive commit context
 	WorkitemRef   string   // Optional workitem ref (WI-<6 hex>) for additive commit context
@@ -28,12 +30,25 @@ type Options struct {
 	SelectiveOnly bool     // When true, never fall back to CommitAll; no-op if Files is empty
 }
 
+// resolveCampaignName prefers opts.CampaignName, else loads it from the config
+// at opts.CampaignRoot. A failed load yields "" (formatter falls back to legacy).
+func resolveCampaignName(ctx context.Context, opts Options) string {
+	if opts.CampaignName != "" {
+		return opts.CampaignName
+	}
+	cfg, err := config.LoadCampaignConfig(ctx, opts.CampaignRoot)
+	if err != nil {
+		return ""
+	}
+	return cfg.Name
+}
+
 // doCommit stages all changes and commits with standardized format.
 // Commit failures are non-fatal and reported via Result.
 //
 // Commit message format:
 //
-//	[OBEY-CAMPAIGN-{id}] Action: Subject
+//	[{campaign-name}:{id}] Action: Subject
 //
 //	Optional description body
 func doCommit(ctx context.Context, opts Options, action, subject, description string) Result {
@@ -45,7 +60,7 @@ func doCommit(ctx context.Context, opts Options, action, subject, description st
 	}
 
 	commitMsg := fmt.Sprintf("%s %s: %s",
-		git.FormatContextTagsFull(opts.CampaignID, opts.QuestID, opts.FestivalRef, opts.WorkitemRef),
+		git.FormatContextTagsFull(resolveCampaignName(ctx, opts), opts.CampaignID, opts.QuestID, opts.FestivalRef, opts.WorkitemRef),
 		action,
 		subject,
 	)

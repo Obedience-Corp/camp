@@ -6,10 +6,10 @@ import (
 	"github.com/Obedience-Corp/camp/pkg/commitkit"
 )
 
-func TestPrependContextTagsFull(t *testing.T) {
+func TestPrependContextTagsFull_Legacy(t *testing.T) {
 	cases := []struct {
-		name                                            string
-		campaign, quest, fest, workitem, msg, want      string
+		name                                       string
+		campaign, quest, fest, workitem, msg, want string
 	}{
 		{
 			name:     "no campaign returns message unchanged",
@@ -17,14 +17,9 @@ func TestPrependContextTagsFull(t *testing.T) {
 			msg: "hello", want: "hello",
 		},
 		{
-			name:     "campaign only",
-			campaign: "8deed8b4", msg: "feat: thing",
-			want: "[OBEY-CAMPAIGN-8deed8b4] feat: thing",
-		},
-		{
-			name:     "all four components",
+			name:     "id only emits legacy marker",
 			campaign: "8deed8b4", quest: "qst_abc", fest: "CW0003", workitem: "WI-abcdef",
-			msg: "full",
+			msg:  "full",
 			want: "[OBEY-CAMPAIGN-8deed8b4-qst_abc-FE-CW0003-WI-WI-abcdef] full",
 		},
 	}
@@ -38,10 +33,18 @@ func TestPrependContextTagsFull(t *testing.T) {
 	}
 }
 
+func TestPrependContextTagsFullNamed(t *testing.T) {
+	got := commitkit.PrependContextTagsFullNamed("obey-campaign", "8deed8b4", "qst_abc", "CW0003", "WI-abcdef", "full")
+	want := "[obey-campaign:8deed8b4-qst_abc-FE-CW0003-WI-WI-abcdef] full"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
 func TestCommitkit_ParseTag_RoundTrip(t *testing.T) {
-	tag := commitkit.PrependContextTagsFull("8deed8b4", "qst_abc", "CW0003", "WI-abcdef", "subject")
+	tag := commitkit.PrependContextTagsFullNamed("obey-campaign", "8deed8b4", "qst_abc", "CW0003", "WI-abcdef", "subject")
 	got := commitkit.ParseTag(tag)
-	if got.CampaignID != "8deed8b4" || got.QuestID != "qst_abc" || got.FestRef != "CW0003" || got.WorkitemRef != "WI-abcdef" {
+	if got.CampaignName != "obey-campaign" || got.CampaignID != "8deed8b4" || got.QuestID != "qst_abc" || got.FestRef != "CW0003" || got.WorkitemRef != "WI-abcdef" {
 		t.Fatalf("parse round-trip broke: %#v", got)
 	}
 }
