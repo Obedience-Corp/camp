@@ -278,7 +278,11 @@ func TestComputeMiscFileChanges_FilesExist(t *testing.T) {
 
 	// Create the files
 	gitignorePath := filepath.Join(dir, config.CampaignDir, ".gitignore")
-	if err := os.WriteFile(gitignorePath, []byte("state.yaml\n"), 0644); err != nil {
+	if err := os.WriteFile(gitignorePath, []byte("state.yaml\nworkitems/current.yaml\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	rootGitignorePath := filepath.Join(dir, ".gitignore")
+	if err := os.WriteFile(rootGitignorePath, []byte("/projects/worktrees/\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	claudePath := filepath.Join(dir, "CLAUDE.md")

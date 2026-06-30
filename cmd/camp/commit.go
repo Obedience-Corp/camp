@@ -153,6 +153,9 @@ func runCommit(cmd *cobra.Command, args []string) error {
 			if pathErr != nil {
 				return pathErr
 			}
+			if spec := worktreesExcludeSpec(ctx, campRoot); spec != "" {
+				paths = append(paths, spec)
+			}
 			if err := git.StageAllExcluding(ctx, target.Path, paths); err != nil {
 				return err
 			}
@@ -233,6 +236,16 @@ func runCommit(cmd *cobra.Command, args []string) error {
 
 	fmt.Println(ui.Success("Changes committed successfully"))
 	return nil
+}
+
+func worktreesExcludeSpec(ctx context.Context, campRoot string) string {
+	worktreesPath := config.DefaultCampaignPaths().Worktrees
+	if cfg, err := config.LoadCampaignConfig(ctx, campRoot); err == nil {
+		if wt := cfg.Paths().Worktrees; wt != "" {
+			worktreesPath = wt
+		}
+	}
+	return strings.Trim(strings.TrimSpace(worktreesPath), "/")
 }
 
 func effectiveCommitAll(cmd *cobra.Command, amend, all bool) bool {

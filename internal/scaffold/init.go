@@ -363,6 +363,20 @@ workitems/current.yaml
 		}
 	}
 
+	if !opts.DryRun {
+		worktreesPath := jumps.Paths.Worktrees
+		if worktreesPath == "" {
+			worktreesPath = config.DefaultCampaignPaths().Worktrees
+		}
+		created, _, giErr := ensureRootGitignoreWorktrees(absDir, worktreesPath)
+		if giErr != nil {
+			return nil, giErr
+		}
+		if created {
+			result.FilesCreated = append(result.FilesCreated, filepath.Join(absDir, ".gitignore"))
+		}
+	}
+
 	// Create CLAUDE.md symlink to AGENTS.md (AGENTS.md is the source of truth)
 	claudePath := filepath.Join(absDir, "CLAUDE.md")
 
