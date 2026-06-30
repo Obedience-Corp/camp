@@ -220,6 +220,53 @@ func TestLoadCampaignID(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// LoadCampaignName / DetectCampaignName
+// ---------------------------------------------------------------------------
+
+func TestLoadCampaignName(t *testing.T) {
+	t.Run("returns name from valid campaign", func(t *testing.T) {
+		root := makeCampaign(t, "name-id-1234")
+		name, err := commitkit.LoadCampaignName(context.Background(), root)
+		require.NoError(t, err)
+		assert.Equal(t, "test-campaign", name)
+	})
+
+	t.Run("returns error when campaign.yaml missing", func(t *testing.T) {
+		root := t.TempDir()
+		_, err := commitkit.LoadCampaignName(context.Background(), root)
+		require.Error(t, err)
+	})
+}
+
+func TestDetectCampaignName(t *testing.T) {
+	t.Run("detects name from subdirectory", func(t *testing.T) {
+		root := makeCampaign(t, "detect-name-id")
+		sub := filepath.Join(root, "projects", "mypkg")
+		require.NoError(t, os.MkdirAll(sub, 0755))
+
+		origWd, err := os.Getwd()
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = os.Chdir(origWd) })
+		require.NoError(t, os.Chdir(sub))
+
+		name, err := commitkit.DetectCampaignName(context.Background())
+		require.NoError(t, err)
+		assert.Equal(t, "test-campaign", name)
+	})
+
+	t.Run("returns error when not inside a campaign", func(t *testing.T) {
+		bare := t.TempDir()
+		origWd, err := os.Getwd()
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = os.Chdir(origWd) })
+		require.NoError(t, os.Chdir(bare))
+
+		_, err = commitkit.DetectCampaignName(context.Background())
+		require.Error(t, err)
+	})
+}
+
+// ---------------------------------------------------------------------------
 // DetectCampaign
 // ---------------------------------------------------------------------------
 
