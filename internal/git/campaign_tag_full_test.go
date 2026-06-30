@@ -8,8 +8,8 @@ import (
 
 func TestFormatContextTagsFull_AllCombinations(t *testing.T) {
 	cases := []struct {
-		name                                  string
-		campaign, quest, fest, workitem, want string
+		name                                         string
+		cname, campaign, quest, fest, workitem, want string
 	}{
 		{
 			name:     "empty campaign returns empty",
@@ -66,10 +66,30 @@ func TestFormatContextTagsFull_AllCombinations(t *testing.T) {
 			campaign: "8deed8b4", workitem: "abcdef",
 			want: "[OBEY-CAMPAIGN-8deed8b4-WI-WI-abcdef]",
 		},
+		{
+			name:  "name only",
+			cname: "obey-campaign", campaign: "8deed8b4",
+			want: "[obey-campaign:8deed8b4]",
+		},
+		{
+			name:  "name + all components",
+			cname: "obey-campaign", campaign: "8deed8b4", quest: "qst_abc", fest: "CW0003", workitem: "WI-abcdef",
+			want: "[obey-campaign:8deed8b4-qst_abc-FE-CW0003-WI-WI-abcdef]",
+		},
+		{
+			name:  "name slugified (spaces and case)",
+			cname: "Brainshare Planning", campaign: "8deed8b4",
+			want: "[brainshare-planning:8deed8b4]",
+		},
+		{
+			name:  "unslugifiable name falls back to legacy marker",
+			cname: "!!!", campaign: "8deed8b4",
+			want: "[OBEY-CAMPAIGN-8deed8b4]",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := FormatContextTagsFull(tc.campaign, tc.quest, tc.fest, tc.workitem)
+			got := FormatContextTagsFull(tc.cname, tc.campaign, tc.quest, tc.fest, tc.workitem)
 			if got != tc.want {
 				t.Fatalf("FormatContextTagsFull = %q, want %q", got, tc.want)
 			}
@@ -99,8 +119,8 @@ func TestFormatCampaignTag_BackwardCompat(t *testing.T) {
 
 func TestParseTag_KnownCombinations(t *testing.T) {
 	cases := []struct {
-		subject                                         string
-		wantCampaign, wantQuest, wantFest, wantWorkitem string
+		subject                                                   string
+		wantCampaign, wantName, wantQuest, wantFest, wantWorkitem string
 	}{
 		{
 			subject:      "[OBEY-CAMPAIGN-8deed8b4] feat: thing",
@@ -123,11 +143,35 @@ func TestParseTag_KnownCombinations(t *testing.T) {
 			wantCampaign: "8deed8b4", wantQuest: "qst_abc", wantFest: "CW0003", wantWorkitem: "WI-abcdef",
 		},
 		{
+			subject:      "[obey-campaign:8deed8b4] feat: thing",
+			wantCampaign: "8deed8b4", wantName: "obey-campaign",
+		},
+		{
+			subject:      "[shrapnel:8deed8b4-qst_abc-FE-CW0003-WI-WI-abcdef] all",
+			wantCampaign: "8deed8b4", wantName: "shrapnel", wantQuest: "qst_abc", wantFest: "CW0003", wantWorkitem: "WI-abcdef",
+		},
+		{
+			subject:      "[brainshare-planning:8deed8b4-WI-WI-abcdef] x",
+			wantCampaign: "8deed8b4", wantName: "brainshare-planning", wantWorkitem: "WI-abcdef",
+		},
+		{
 			subject:      "no tag here at all",
 			wantCampaign: "",
 		},
 		{
+			subject:      "[wip] feat: thing",
+			wantCampaign: "",
+		},
+		{
+			subject:      "[scope:msg] not a campaign tag",
+			wantCampaign: "",
+		},
+		{
 			subject:      `Revert "[OBEY-CAMPAIGN-8deed8b4-WI-WI-fake01] feat: x"`,
+			wantCampaign: "",
+		},
+		{
+			subject:      `Revert "[obey-campaign:8deed8b4] feat: x"`,
 			wantCampaign: "",
 		},
 		{
@@ -145,6 +189,9 @@ func TestParseTag_KnownCombinations(t *testing.T) {
 			if got.CampaignID != tc.wantCampaign {
 				t.Fatalf("CampaignID = %q, want %q", got.CampaignID, tc.wantCampaign)
 			}
+			if got.CampaignName != tc.wantName {
+				t.Fatalf("CampaignName = %q, want %q", got.CampaignName, tc.wantName)
+			}
 			if got.QuestID != tc.wantQuest {
 				t.Fatalf("QuestID = %q, want %q", got.QuestID, tc.wantQuest)
 			}
@@ -161,6 +208,7 @@ func TestParseTag_KnownCombinations(t *testing.T) {
 func TestParseTag_RoundTripProperty(t *testing.T) {
 	const iterations = 100
 	for i := 0; i < iterations; i++ {
+		cname := "c" + randHex(t, 2)
 		campaign := randHex(t, 4)
 		quest := ""
 		fest := ""
@@ -175,8 +223,11 @@ func TestParseTag_RoundTripProperty(t *testing.T) {
 			workitem = "WI-" + randHex(t, 3)
 		}
 
-		tag := FormatContextTagsFull(campaign, quest, fest, workitem)
+		tag := FormatContextTagsFull(cname, campaign, quest, fest, workitem)
 		got := ParseTag(tag)
+		if got.CampaignName != cname {
+			t.Fatalf("iter %d: name round-trip broke: %q -> %q (tag %q)", i, cname, got.CampaignName, tag)
+		}
 		if got.CampaignID != campaign {
 			t.Fatalf("iter %d: campaign round-trip broke: %q -> %q", i, campaign, got.CampaignID)
 		}
@@ -200,8 +251,10 @@ func TestParseTag_AnchoringAdversarial(t *testing.T) {
 		wantID     string
 		wantWIRef  string
 	}{
-		{name: "happy path leading tag", subject: "[OBEY-CAMPAIGN-abcd1234-WI-WI-deadbe] feat: X", wantParsed: true, wantID: "abcd1234", wantWIRef: "WI-deadbe"},
-		{name: "revert subject", subject: `Revert "[OBEY-CAMPAIGN-abcd1234] feat: X"`, wantParsed: false},
+		{name: "happy path leading legacy tag", subject: "[OBEY-CAMPAIGN-abcd1234-WI-WI-deadbe] feat: X", wantParsed: true, wantID: "abcd1234", wantWIRef: "WI-deadbe"},
+		{name: "happy path leading name tag", subject: "[obey-campaign:abcd1234-WI-WI-deadbe] feat: X", wantParsed: true, wantID: "abcd1234", wantWIRef: "WI-deadbe"},
+		{name: "revert legacy subject", subject: `Revert "[OBEY-CAMPAIGN-abcd1234] feat: X"`, wantParsed: false},
+		{name: "revert name subject", subject: `Revert "[obey-campaign:abcd1234] feat: X"`, wantParsed: false},
 		{name: "leading whitespace", subject: " [OBEY-CAMPAIGN-abcd1234] x", wantParsed: false},
 		{name: "embedded mid-subject", subject: "fix: tag was [OBEY-CAMPAIGN-abcd1234] in old log", wantParsed: false},
 		{name: "tag inside backticks", subject: "docs: example `[OBEY-CAMPAIGN-abcd1234]`", wantParsed: false},
@@ -229,6 +282,7 @@ func TestParseTagDetailed_RejectsSilentMerge(t *testing.T) {
 		name             string
 		subject          string
 		wantCampaign     string
+		wantName         string
 		wantQuest        string
 		wantFest         string
 		wantWorkitem     string
@@ -269,12 +323,23 @@ func TestParseTagDetailed_RejectsSilentMerge(t *testing.T) {
 			wantWorkitem:     "WI-aaa111",
 			wantWarningField: []string{"unknown"},
 		},
+		{
+			name:             "name-style tag warns on duplicate FE",
+			subject:          "[obey-campaign:abcdef12-FE-CW0003-FE-SE0001] x",
+			wantCampaign:     "abcdef12",
+			wantName:         "obey-campaign",
+			wantFest:         "CW0003",
+			wantWarningField: []string{"fest_ref"},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			got, warnings := ParseTagDetailed(tc.subject)
 			if got.CampaignID != tc.wantCampaign {
 				t.Errorf("CampaignID = %q, want %q", got.CampaignID, tc.wantCampaign)
+			}
+			if got.CampaignName != tc.wantName {
+				t.Errorf("CampaignName = %q, want %q", got.CampaignName, tc.wantName)
 			}
 			if got.QuestID != tc.wantQuest {
 				t.Errorf("QuestID = %q, want %q", got.QuestID, tc.wantQuest)
@@ -299,12 +364,12 @@ func TestParseTagDetailed_RejectsSilentMerge(t *testing.T) {
 }
 
 func TestTagBodyScanRegex_FindsEmbedded(t *testing.T) {
-	subject := "body has [OBEY-CAMPAIGN-aaa] and [OBEY-CAMPAIGN-bbb]"
+	subject := "body has [OBEY-CAMPAIGN-aaa] and [obey-campaign:8deed8b4] tags"
 	matches := tagBodyScanRegex.FindAllString(subject, -1)
 	if len(matches) != 2 {
 		t.Fatalf("expected 2 matches from body-scan regex, got %d: %v", len(matches), matches)
 	}
-	want := []string{"[OBEY-CAMPAIGN-aaa]", "[OBEY-CAMPAIGN-bbb]"}
+	want := []string{"[OBEY-CAMPAIGN-aaa]", "[obey-campaign:8deed8b4]"}
 	for i, m := range matches {
 		if m != want[i] {
 			t.Errorf("match[%d] = %q, want %q", i, m, want[i])

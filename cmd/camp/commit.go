@@ -200,7 +200,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	// includes WI-<ref> when one is in context.
 	if cfg, cfgErr := config.LoadCampaignConfig(ctx, campRoot); cfgErr == nil && message != "" {
 		questID, workitemRef := resolveCommitContext(ctx, campRoot, commitWorkitem)
-		message = commitkit.PrependContextTagsFull(cfg.ID, questID, "", workitemRef, message)
+		message = commitkit.PrependContextTagsFull(cfg.Name, cfg.ID, questID, "", workitemRef, message)
 	}
 
 	// Perform commit

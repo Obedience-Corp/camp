@@ -118,7 +118,7 @@ skipped:
   <path> (out of scope)
   <path> (submodule pointer; use --include-submodule-pointer)
   <path> (--exclude)
-tag:    [OBEY-CAMPAIGN-<8hex>[-qst_<...>][-FE-<festival-ref>][-WI-WI-<6hex>]]
+tag:    [<campaign-name>:<8hex>[-qst_<...>][-FE-<festival-ref>][-WI-WI-<6hex>]]
 ```
 
 `S` marks files already in the index (from `--staged` mode). `A` marks files
@@ -196,8 +196,8 @@ Results are sorted newest first across all repos before `--limit` and
 
 ```
 REPO    SHA       DATE        SUBJECT
-.       a1b2c3d4  2026-05-25  [OBEY-CAMPAIGN-abc-WI-WI-def123] feat: ...
-projects/camp  e5f6a7b8  2026-05-24  [OBEY-CAMPAIGN-abc-WI-WI-def123] fix: ...
+.       a1b2c3d4  2026-05-25  [obey-campaign:2736169c-WI-WI-def123] feat: ...
+projects/camp  e5f6a7b8  2026-05-24  [obey-campaign:2736169c-WI-WI-def123] fix: ...
 ```
 
 Per-repo errors are reported on stderr as a summary warning. Under `--json`,
@@ -211,12 +211,18 @@ Every commit produced by `camp workitem commit` (and `camp commit` / `camp p
 commit` when run in a workitem context) carries a tag with this structure:
 
 ```
-[OBEY-CAMPAIGN-<campaign-id>[-<quest-id>][-FE-<festival-ref>][-WI-WI-<workitem-ref>]]
+[<campaign-name>:<campaign-id>[-<quest-id>][-FE-<festival-ref>][-WI-WI-<workitem-ref>]]
 ```
 
 Segment rules:
 
-- All four components appear in fixed order inside the bracket. Absent
+- The leading token is the slugified campaign name followed by `:` and the
+  short campaign id. The colon separates the name (which may itself contain
+  hyphens) from the rest of the tag, which uses `-` between components.
+- `<campaign-name>` is the campaign's name, lowercased and slugified (spaces
+  and other separators become hyphens) via the shared `internal/slug`
+  generator.
+- All remaining components appear in fixed order inside the bracket. Absent
   components are omitted entirely; their separators do not appear.
 - `<campaign-id>` is the first 8 hex characters of the campaign UUID.
 - `<quest-id>` matches `qst_<digits>_<alphanum>` when a quest is active.
@@ -226,16 +232,22 @@ Segment rules:
   ref already starts with `WI-`, the segment marker adds a second `WI-`,
   producing the `WI-WI-` double prefix. This is intentional. The segment
   marker and the ref are distinct: flattening to a single prefix breaks the
-  parser's segment-boundary detection (see `indexOfNextPrefix` in
-  `internal/git/campaign_tag.go`).
+  parser's segment-boundary detection (see the segment walker in
+  `ParseTagDetailed`, `internal/git/campaign_tag.go`).
+
+When the campaign name cannot be resolved or slugifies to nothing, the tag
+falls back to the legacy `[OBEY-CAMPAIGN-<campaign-id>...]` form. The parser
+recognizes both forms, so the entire pre-existing commit history still
+resolves correctly.
 
 Concrete examples:
 
 ```
-[OBEY-CAMPAIGN-2736169c] feat: no workitem
-[OBEY-CAMPAIGN-2736169c-WI-WI-861089] fix: workitem only
-[OBEY-CAMPAIGN-2736169c-qst_1_alpha-WI-WI-861089] fix: with quest
-[OBEY-CAMPAIGN-2736169c-FE-CW0003-WI-WI-861089] feat: festival + workitem
+[obey-campaign:2736169c] feat: no workitem
+[obey-campaign:2736169c-WI-WI-861089] fix: workitem only
+[obey-campaign:2736169c-qst_1_alpha-WI-WI-861089] fix: with quest
+[obey-campaign:2736169c-FE-CW0003-WI-WI-861089] feat: festival + workitem
+[OBEY-CAMPAIGN-2736169c] feat: legacy fallback (name unavailable)
 ```
 
 The full composer is `FormatContextTagsFull` in

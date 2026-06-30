@@ -122,6 +122,7 @@ func runCommit(ctx context.Context, cmd *cobra.Command, flags commitFlags) error
 		StagedOnly:              flags.Staged,
 		IncludeSubmodulePointer: flags.IncludeSubmodulePointer,
 		CampaignID:              cfg.ID,
+		CampaignName:            cfg.Name,
 	})
 	if err != nil {
 		if errors.Is(err, ErrNoWorkitemContext) {
@@ -173,6 +174,7 @@ func runCommit(ctx context.Context, cmd *cobra.Command, flags commitFlags) error
 		Options: commit.Options{
 			CampaignRoot:  plan.RepoRoot,
 			CampaignID:    cfg.ID,
+			CampaignName:  cfg.Name,
 			Files:         plan.Stage,
 			PreStaged:     plan.PreStaged,
 			SelectiveOnly: true,

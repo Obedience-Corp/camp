@@ -31,15 +31,16 @@ type CommitOptions struct {
 	Author     string // Optional: "Name <email>"
 }
 
-// FormatCampaignTag returns the "[OBEY-CAMPAIGN-{id}]" prefix string.
-// Truncates campaignID to 8 characters. Returns empty string if campaignID
-// is empty.
+// FormatCampaignTag returns the legacy id-only "[OBEY-CAMPAIGN-{id}]" prefix
+// string. Truncates campaignID to 8 characters. Returns empty string if
+// campaignID is empty. Callers that have the campaign name should use
+// FormatContextTagsFull to emit a name-style "[{name}:{id}]" tag instead.
 func FormatCampaignTag(campaignID string) string {
 	return git.FormatCampaignTag(campaignID)
 }
 
-// PrependCampaignTag prepends the campaign tag to a commit message.
-// If campaignID is empty, returns the message unchanged.
+// PrependCampaignTag prepends the legacy id-only campaign tag to a commit
+// message. If campaignID is empty, returns the message unchanged.
 func PrependCampaignTag(campaignID, message string) string {
 	return git.PrependCampaignTag(campaignID, message)
 }
@@ -49,17 +50,20 @@ func PrependCampaignTag(campaignID, message string) string {
 type TagComponents = git.TagComponents
 
 // FormatContextTagsFull composes the consolidated campaign tag from any
-// subset of (campaign id, quest id, festival ref, workitem ref). Component
-// order is fixed: campaign → quest → festival → workitem.
-func FormatContextTagsFull(campaignID, questID, festRef, workitemRef string) string {
-	return git.FormatContextTagsFull(campaignID, questID, festRef, workitemRef)
+// subset of (campaign name, campaign id, quest id, festival ref, workitem
+// ref). The leading token is the slugified campaign name plus the short id
+// ("[{name}:{id}]"), falling back to the legacy "[OBEY-CAMPAIGN-{id}]" form
+// when campaignName is empty. Remaining order is fixed: quest → festival →
+// workitem.
+func FormatContextTagsFull(campaignName, campaignID, questID, festRef, workitemRef string) string {
+	return git.FormatContextTagsFull(campaignName, campaignID, questID, festRef, workitemRef)
 }
 
 // PrependContextTagsFull prepends the consolidated campaign tag to a commit
 // message. If campaignID is empty, returns the message unchanged (no tag
 // without a campaign).
-func PrependContextTagsFull(campaignID, questID, festRef, workitemRef, message string) string {
-	tag := FormatContextTagsFull(campaignID, questID, festRef, workitemRef)
+func PrependContextTagsFull(campaignName, campaignID, questID, festRef, workitemRef, message string) string {
+	tag := FormatContextTagsFull(campaignName, campaignID, questID, festRef, workitemRef)
 	if tag == "" {
 		return message
 	}

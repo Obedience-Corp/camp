@@ -4,4 +4,4 @@ staging:
   M  projects/camp-timeline
   M  workflow/design/timeline/plan.md
 skipped:
-tag:    [OBEY-CAMPAIGN-8deed8b4-WI-WI-abc123]
+tag:    [obey-campaign:8deed8b4-WI-WI-abc123]

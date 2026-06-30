@@ -5,4 +5,4 @@ staging:
 skipped:
   README.md (out of scope)
   projects/camp-timeline (submodule pointer; use --include-submodule-pointer)
-tag:    [OBEY-CAMPAIGN-8deed8b4-WI-WI-abc123]
+tag:    [obey-campaign:8deed8b4-WI-WI-abc123]

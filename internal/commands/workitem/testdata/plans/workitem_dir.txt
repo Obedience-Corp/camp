@@ -6,4 +6,4 @@ staging:
   M  .campaign/workitems/links.yaml
 skipped:
   workflow/design/timeline/scratch.tmp (gitignored)
-tag:    [OBEY-CAMPAIGN-8deed8b4-WI-WI-abc123]
+tag:    [obey-campaign:8deed8b4-WI-WI-abc123]

@@ -172,7 +172,7 @@ func TestProject_Commit_LinkedGitRepo(t *testing.T) {
 	logOutput, exitCode, err := tc.ExecCommand("sh", "-c", "cd "+linkedPath+" && git log -1 --pretty=%s")
 	require.NoError(t, err)
 	assert.Equal(t, 0, exitCode)
-	assert.Contains(t, strings.TrimSpace(logOutput), "[OBEY-CAMPAIGN-")
+	assert.Contains(t, strings.TrimSpace(logOutput), "[proj-link-commit:")
 	assert.Contains(t, strings.TrimSpace(logOutput), "linked change")
 }
 
