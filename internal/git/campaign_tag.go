@@ -28,8 +28,11 @@ func FormatContextTagsFull(campaignName, campaignID, questID, festRef, workitemR
 		shortID = shortID[:campaignTagMaxIDLen]
 	}
 
+	// Only emit the name-style head when shortID has the hex shape the parser
+	// requires (isNameStyleHead); otherwise fall back to the legacy form so the
+	// emit and parse sides cannot diverge.
 	head := legacyTagMarker + "-" + shortID
-	if nameSlug := slug.Generate(campaignName); nameSlug != "" {
+	if nameSlug := slug.Generate(campaignName); nameSlug != "" && tagNameStyleIDRe.MatchString(shortID) {
 		head = nameSlug + ":" + shortID
 	}
 

@@ -86,6 +86,11 @@ func TestFormatContextTagsFull_AllCombinations(t *testing.T) {
 			cname: "!!!", campaign: "8deed8b4",
 			want: "[OBEY-CAMPAIGN-8deed8b4]",
 		},
+		{
+			name:  "non-hex id falls back to legacy marker",
+			cname: "obey-campaign", campaign: "zzzzzzzz",
+			want: "[OBEY-CAMPAIGN-zzzzzzzz]",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
