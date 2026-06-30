@@ -55,6 +55,7 @@ cgo f fest    # festivals/*fest* (fuzzy match)
 | p        | projects/      | Project directories     |
 | f        | festivals/     | Festival planning       |
 | i        | .campaign/intents/ | Intents via `camp intent` |
+| settings | .campaign/ | Campaign settings directory |
 | d        | docs/          | Documentation           |
 | w        | workflow/      | Workflow resources      |
 | wt       | projects/worktrees/ | Git worktrees     |
