@@ -11,6 +11,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/priority"
@@ -121,17 +122,22 @@ func TestModel_TypeFilter(t *testing.T) {
 	}
 }
 
-func TestCustomTypes(t *testing.T) {
+func TestFilterOptions(t *testing.T) {
 	tests := []struct {
-		name  string
-		types []string
-		want  []string
+		name   string
+		types  []string
+		ensure string
+		want   []string
 	}{
-		{"builtins only", []string{"intent", "design", "explore", "festival"}, nil},
-		{"sorted", []string{"feature", "bug"}, []string{"bug", "feature"}},
-		{"dedup", []string{"bug", "bug", "feature"}, []string{"bug", "feature"}},
-		{"skips builtins and empty", []string{"festival", "", "chore"}, []string{"chore"}},
-		{"no cap", []string{"f", "e", "d", "c", "b", "a"}, []string{"a", "b", "c", "d", "e", "f"}},
+		{"builtins canonical then customs sorted", []string{"feature", "festival", "bug", "intent", "bug"}, "",
+			[]string{"", "intent", "festival", "bug", "feature"}},
+		{"builtins only", []string{"design", "intent"}, "", []string{"", "intent", "design"}},
+		{"skips empty type", []string{"", "chore"}, "", []string{"", "chore"}},
+		{"no cap", []string{"f", "e", "d", "c", "b", "a"}, "", []string{"", "a", "b", "c", "d", "e", "f"}},
+		{"ensure keeps absent custom", []string{"intent", "chore"}, "bug", []string{"", "intent", "bug", "chore"}},
+		{"ensure keeps absent builtin", []string{"intent", "bug"}, "explore", []string{"", "intent", "explore", "bug"}},
+		{"ensure already present", []string{"bug"}, "bug", []string{"", "bug"}},
+		{"no items", nil, "bug", []string{"", "bug"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -139,36 +145,29 @@ func TestCustomTypes(t *testing.T) {
 			for i, typ := range tt.types {
 				items[i] = workitem.WorkItem{WorkflowType: workitem.WorkflowType(typ)}
 			}
-			got := customTypes(items)
+			got := filterOptions(items, tt.ensure)
 			if len(got) != len(tt.want) {
-				t.Fatalf("customTypes = %v, want %v", got, tt.want)
+				t.Fatalf("filterOptions = %v, want %v", got, tt.want)
 			}
 			for i := range got {
 				if got[i] != tt.want[i] {
-					t.Fatalf("customTypes = %v, want %v", got, tt.want)
+					t.Fatalf("filterOptions = %v, want %v", got, tt.want)
 				}
 			}
 		})
 	}
 }
 
-func TestFilterOptions(t *testing.T) {
-	items := []workitem.WorkItem{
-		{WorkflowType: "feature"},
-		{WorkflowType: workitem.WorkflowTypeFestival},
-		{WorkflowType: "bug"},
-		{WorkflowType: workitem.WorkflowTypeIntent},
-		{WorkflowType: "bug"},
+func assertFilterStateConsistent(t *testing.T, m Model) {
+	t.Helper()
+	if !m.isFilterMode() {
+		t.Fatal("expected filter mode to be active")
 	}
-	got := filterOptions(items)
-	want := []string{"", "intent", "festival", "bug", "feature"}
-	if len(got) != len(want) {
-		t.Fatalf("filterOptions = %v, want %v", got, want)
+	if m.filterIndex < 0 || m.filterIndex >= len(m.filterOptions) {
+		t.Fatalf("filterIndex %d out of range of options %v", m.filterIndex, m.filterOptions)
 	}
-	for i := range got {
-		if got[i] != want[i] {
-			t.Fatalf("filterOptions = %v, want %v", got, want)
-		}
+	if m.filterOptions[m.filterIndex] != m.typeFilter {
+		t.Fatalf("highlighted chip %q != applied filter %q", m.filterOptions[m.filterIndex], m.typeFilter)
 	}
 }
 
@@ -327,7 +326,7 @@ func TestModel_FilterModeRefreshRebuildsOptions(t *testing.T) {
 	result, _ = m.Update(refreshMsg{items: refreshed})
 	m = result.(Model)
 
-	want := []string{"", "intent", "chore"}
+	want := []string{"", "intent", "bug", "chore"}
 	if len(m.filterOptions) != len(want) {
 		t.Fatalf("filterOptions = %v, want %v", m.filterOptions, want)
 	}
@@ -336,8 +335,52 @@ func TestModel_FilterModeRefreshRebuildsOptions(t *testing.T) {
 			t.Fatalf("filterOptions = %v, want %v", m.filterOptions, want)
 		}
 	}
+	assertFilterStateConsistent(t, m)
+	if m.typeFilter != "bug" {
+		t.Errorf("typeFilter = %q, want the kept 'bug' filter", m.typeFilter)
+	}
 	if len(m.filteredItems) != 0 {
-		t.Errorf("stale 'bug' filter: %d items, want 0", len(m.filteredItems))
+		t.Errorf("kept 'bug' filter: %d items, want 0", len(m.filteredItems))
+	}
+	m.width = 120
+	m.height = 24
+	m.ready = true
+	if footer := m.renderFooter(); !strings.Contains(footer, "[bug 0]") {
+		t.Errorf("footer = %q, want the kept filter shown as zero-count chip", footer)
+	}
+}
+
+func TestModel_FilterModeEntryWithAbsentBuiltin(t *testing.T) {
+	items := []workitem.WorkItem{
+		{WorkflowType: workitem.WorkflowTypeIntent, Title: "intent"},
+		{WorkflowType: "bug", Title: "bug"},
+	}
+	m := New(context.Background(), items, "", nil, priority.NewStore(), "")
+	m.width = 120
+	m.height = 24
+	m.ready = true
+
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	m = result.(Model)
+	if m.typeFilter != "explore" || len(m.filteredItems) != 0 {
+		t.Fatalf("after '3': filter=%q items=%d, want explore/0", m.typeFilter, len(m.filteredItems))
+	}
+
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	m = result.(Model)
+	assertFilterStateConsistent(t, m)
+	if m.typeFilter != "explore" {
+		t.Fatalf("entering filter mode changed filter to %q", m.typeFilter)
+	}
+	if footer := m.renderFooter(); !strings.Contains(footer, "[explore 0]") {
+		t.Errorf("footer = %q, want active explore chip with zero count", footer)
+	}
+
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m = result.(Model)
+	assertFilterStateConsistent(t, m)
+	if m.typeFilter != "bug" || len(m.filteredItems) != 1 {
+		t.Fatalf("step off absent chip: filter=%q items=%d, want bug/1", m.typeFilter, len(m.filteredItems))
 	}
 }
 
@@ -393,8 +436,8 @@ func TestChipWindow(t *testing.T) {
 		wantEnd   int
 	}{
 		{"everything fits", 2, 200, 0, 5},
-		{"window around active", 3, 31, 2, 5},
-		{"active only", 0, 8, 0, 1},
+		{"window around active", 3, 34, 2, 5},
+		{"active only", 0, 14, 0, 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -405,7 +448,54 @@ func TestChipWindow(t *testing.T) {
 			if tt.active < start || tt.active >= end {
 				t.Errorf("active %d outside window [%d, %d)", tt.active, start, end)
 			}
+			if got := chipRowWidth(labels, tt.active, start, end); got > tt.avail && (end-start) > 1 {
+				t.Errorf("window width %d exceeds avail %d", got, tt.avail)
+			}
 		})
+	}
+}
+
+func TestModel_FilterChipsFitNarrowWidth(t *testing.T) {
+	items := []workitem.WorkItem{
+		{WorkflowType: workitem.WorkflowTypeIntent, Title: "a"},
+		{WorkflowType: "alpha", Title: "b"},
+		{WorkflowType: "bug", Title: "c"},
+		{WorkflowType: "chore", Title: "d"},
+		{WorkflowType: "feature", Title: "e"},
+		{WorkflowType: "zebra", Title: "f"},
+	}
+	m := New(context.Background(), items, "", nil, priority.NewStore(), "")
+	m.width = 30
+	m.height = 24
+	m.ready = true
+
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	m = result.(Model)
+	for range 4 {
+		result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		m = result.(Model)
+	}
+	assertFilterStateConsistent(t, m)
+	if m.typeFilter != "chore" {
+		t.Fatalf("filter = %q, want chore (middle chip)", m.typeFilter)
+	}
+
+	footer := m.renderFooter()
+	if got := lipgloss.Width(footer); got > m.width {
+		t.Errorf("footer width %d exceeds terminal width %d: %q", got, m.width, footer)
+	}
+	if !strings.Contains(footer, "[chore 1]") {
+		t.Errorf("footer = %q, missing active chip", footer)
+	}
+	if strings.Count(footer, "…") != 2 {
+		t.Errorf("footer = %q, want ellipses on both sides", footer)
+	}
+
+	for _, width := range []int{12, 16, 20, 24, 40, 60} {
+		m.width = width
+		if got := lipgloss.Width(m.renderFooter()); got > width {
+			t.Errorf("width %d: footer width %d overflows", width, got)
+		}
 	}
 }
 

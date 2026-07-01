@@ -27,35 +27,23 @@ var builtinFilterTypes = []string{
 	string(workitem.WorkflowTypeFestival),
 }
 
-// customTypes returns the distinct non-builtin workflow types in items,
-// sorted alphabetically.
-func customTypes(items []workitem.WorkItem) []string {
+// filterOptions returns the filter-mode chip values: "" (all) first, then
+// builtins present in the items in canonical order, then custom types
+// sorted alphabetically. ensure is always included even when no item has
+// that type, so the active filter is representable as a (zero-count) chip.
+func filterOptions(items []workitem.WorkItem, ensure string) []string {
 	builtin := make(map[string]bool, len(builtinFilterTypes))
 	for _, t := range builtinFilterTypes {
 		builtin[t] = true
 	}
-	seen := make(map[string]bool)
-	var out []string
-	for _, item := range items {
-		t := string(item.WorkflowType)
-		if t == "" || builtin[t] || seen[t] {
-			continue
-		}
-		seen[t] = true
-		out = append(out, t)
-	}
-	sort.Strings(out)
-	return out
-}
-
-// filterOptions returns the filter-mode chip values: "" (all) first, then
-// builtins present in the items in canonical order, then custom types.
-func filterOptions(items []workitem.WorkItem) []string {
 	present := make(map[string]bool, len(items))
 	for _, item := range items {
 		if t := string(item.WorkflowType); t != "" {
 			present[t] = true
 		}
+	}
+	if ensure != "" {
+		present[ensure] = true
 	}
 	opts := []string{""}
 	for _, t := range builtinFilterTypes {
@@ -63,7 +51,14 @@ func filterOptions(items []workitem.WorkItem) []string {
 			opts = append(opts, t)
 		}
 	}
-	return append(opts, customTypes(items)...)
+	var customs []string
+	for t := range present {
+		if !builtin[t] {
+			customs = append(customs, t)
+		}
+	}
+	sort.Strings(customs)
+	return append(opts, customs...)
 }
 
 // Model is the Bubble Tea model for the workitem dashboard.
@@ -162,14 +157,7 @@ func (m Model) typeFilterFor(key string) (string, bool) {
 // enterFilterMode activates the type filter stepper with chips rebuilt from
 // the current item set and the index positioned on the active filter.
 func (m *Model) enterFilterMode() {
-	m.filterOptions = filterOptions(m.allItems)
-	m.filterIndex = 0
-	for i, opt := range m.filterOptions {
-		if opt == m.typeFilter {
-			m.filterIndex = i
-			break
-		}
-	}
+	m.rebuildFilterOptions()
 	m.savedTypeFilter = m.typeFilter
 	m.filterMode = true
 }
@@ -182,10 +170,11 @@ func (m Model) isFilterMode() bool {
 	return m.filterMode
 }
 
-// rebuildFilterOptions refreshes filter-mode chips after the item set
-// changed, re-locating the active chip by value.
+// rebuildFilterOptions derives chips from the current item set. The active
+// filter is always among the options (filterOptions ensures it), so the
+// highlighted chip and the applied filter cannot diverge.
 func (m *Model) rebuildFilterOptions() {
-	m.filterOptions = filterOptions(m.allItems)
+	m.filterOptions = filterOptions(m.allItems, m.typeFilter)
 	m.filterIndex = 0
 	for i, opt := range m.filterOptions {
 		if opt == m.typeFilter {

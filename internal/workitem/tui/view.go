@@ -109,6 +109,14 @@ func (m Model) renderFooter() string {
 	return footerStyle.Render(fmt.Sprintf("%s  %s", count, keys))
 }
 
+const (
+	filterChipPrefix    = "filter: "
+	chipSeparatorWidth  = 2 // width of the "  " join between parts
+	chipBracketWidth    = 2 // "[" + "]" around the active chip
+	chipEllipsisWidth   = 1 // rendered width of "…"
+	minChipLabelColumns = 4
+)
+
 // renderFilterChips renders the filter-mode footer: one chip per type with
 // its item count, windowed around the active chip when the row overflows.
 func (m Model) renderFilterChips() string {
@@ -122,8 +130,18 @@ func (m Model) renderFilterChips() string {
 		}
 	}
 
-	const prefix = "filter: "
-	avail := m.width - len(prefix) - 4
+	avail := m.width - len(filterChipPrefix)
+	// Cap label widths so even a bracketed single chip flanked by two
+	// ellipses fits. Narrower than that, fall back to a plain row truncated
+	// before styling so the footer can never overflow the terminal.
+	maxLabel := avail - chipBracketWidth - 2*(chipEllipsisWidth+chipSeparatorWidth)
+	if maxLabel < minChipLabelColumns {
+		row := filterChipPrefix + "[" + labels[m.filterIndex] + "]"
+		return footerStyle.Render(truncate(row, max(m.width, 1)))
+	}
+	for i := range labels {
+		labels[i] = truncate(labels[i], maxLabel)
+	}
 	start, end := chipWindow(labels, m.filterIndex, avail)
 
 	var parts []string
@@ -140,11 +158,40 @@ func (m Model) renderFilterChips() string {
 	if end < len(labels) {
 		parts = append(parts, footerStyle.Render("…"))
 	}
-	return footerStyle.Render(prefix) + strings.Join(parts, "  ")
+	return footerStyle.Render(filterChipPrefix) + strings.Join(parts, "  ")
 }
 
-// chipWindow returns the [start, end) range of chips that fit in avail
-// columns, expanded outward from the active chip.
+// chipRowWidth returns the rendered width of the chip row for the window
+// [start, end): labels, active brackets, ellipsis markers on truncated
+// sides, and the separators joining every part. Label widths use byte
+// length, which never understates terminal columns.
+func chipRowWidth(labels []string, active, start, end int) int {
+	width := 0
+	parts := 0
+	if start > 0 {
+		width += chipEllipsisWidth
+		parts++
+	}
+	for i := start; i < end; i++ {
+		width += len(labels[i])
+		if i == active {
+			width += chipBracketWidth
+		}
+		parts++
+	}
+	if end < len(labels) {
+		width += chipEllipsisWidth
+		parts++
+	}
+	if parts > 1 {
+		width += chipSeparatorWidth * (parts - 1)
+	}
+	return width
+}
+
+// chipWindow returns the [start, end) chip range that fits in avail
+// columns, expanded outward from the active chip. Every expansion is
+// checked against the exact rendered width of the candidate window.
 func chipWindow(labels []string, active, avail int) (int, int) {
 	if len(labels) == 0 {
 		return 0, 0
@@ -153,17 +200,14 @@ func chipWindow(labels []string, active, avail int) (int, int) {
 		active = 0
 	}
 	start, end := active, active+1
-	used := len(labels[active]) + 2
 	for start > 0 || end < len(labels) {
 		extended := false
-		if end < len(labels) && used+len(labels[end])+2 <= avail {
-			used += len(labels[end]) + 2
+		if end < len(labels) && chipRowWidth(labels, active, start, end+1) <= avail {
 			end++
 			extended = true
 		}
-		if start > 0 && used+len(labels[start-1])+2 <= avail {
+		if start > 0 && chipRowWidth(labels, active, start-1, end) <= avail {
 			start--
-			used += len(labels[start]) + 2
 			extended = true
 		}
 		if !extended {
