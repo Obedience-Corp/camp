@@ -86,6 +86,16 @@ func (m Model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.filterIndex = 0
 		m.typeFilter = ""
 		m.refilter()
+	case "1", "2", "3", "4":
+		t, _ := m.typeFilterFor(msg.String())
+		for i, opt := range m.filterOptions {
+			if opt == t {
+				m.filterIndex = i
+				m.typeFilter = t
+				m.refilter()
+				break
+			}
+		}
 	case "enter", "f":
 		m.exitFilterMode()
 	case "esc":

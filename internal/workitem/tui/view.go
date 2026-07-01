@@ -111,6 +111,7 @@ func (m Model) renderFooter() string {
 
 const (
 	filterChipPrefix    = "filter: "
+	filterModeHint      = "j/k step  Enter apply  Esc cancel"
 	chipSeparatorWidth  = 2 // width of the "  " join between parts
 	chipBracketWidth    = 2 // "[" + "]" around the active chip
 	chipEllipsisWidth   = 1 // rendered width of "…"
@@ -158,7 +159,15 @@ func (m Model) renderFilterChips() string {
 	if end < len(labels) {
 		parts = append(parts, footerStyle.Render("…"))
 	}
-	return footerStyle.Render(filterChipPrefix) + strings.Join(parts, "  ")
+	row := footerStyle.Render(filterChipPrefix) + strings.Join(parts, "  ")
+
+	// Teach the mode keys like the priority/stage footers do; the chip row
+	// wins the space when both cannot fit.
+	rowWidth := len(filterChipPrefix) + chipRowWidth(labels, m.filterIndex, start, end)
+	if rowWidth+chipSeparatorWidth+len(filterModeHint) <= m.width {
+		row += "  " + footerStyle.Render(filterModeHint)
+	}
+	return row
 }
 
 // chipRowWidth returns the rendered width of the chip row for the window

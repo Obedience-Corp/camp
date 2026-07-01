@@ -27,11 +27,11 @@ var builtinFilterTypes = []string{
 	string(workitem.WorkflowTypeFestival),
 }
 
-// filterOptions returns the filter-mode chip values: "" (all) first, then
-// builtins present in the items in canonical order, then custom types
+// deriveFilterOptions returns the filter-mode chip values: "" (all) first,
+// then builtins present in the items in canonical order, then custom types
 // sorted alphabetically. ensure is always included even when no item has
 // that type, so the active filter is representable as a (zero-count) chip.
-func filterOptions(items []workitem.WorkItem, ensure string) []string {
+func deriveFilterOptions(items []workitem.WorkItem, ensure string) []string {
 	builtin := make(map[string]bool, len(builtinFilterTypes))
 	for _, t := range builtinFilterTypes {
 		builtin[t] = true
@@ -170,11 +170,11 @@ func (m Model) isFilterMode() bool {
 	return m.filterMode
 }
 
-// rebuildFilterOptions derives chips from the visible item set. The active
-// filter is always among the options (filterOptions ensures it), so the
-// highlighted chip and the applied filter cannot diverge.
+// rebuildFilterOptions derives chips from the visible item set; the active
+// filter is always among the options, so the highlighted chip and the
+// applied filter cannot diverge.
 func (m *Model) rebuildFilterOptions() {
-	m.filterOptions = filterOptions(m.visibleBaseItems(), m.typeFilter)
+	m.filterOptions = deriveFilterOptions(m.visibleBaseItems(), m.typeFilter)
 	m.filterIndex = 0
 	for i, opt := range m.filterOptions {
 		if opt == m.typeFilter {
@@ -184,21 +184,13 @@ func (m *Model) rebuildFilterOptions() {
 	}
 }
 
-// visibleBaseItems returns allItems under the parked visibility rule the
-// list applies, so chips and counts never offer types the list cannot show.
-// Initial items arrive pre-filtered by the command layer, but a refresh
-// stores the raw discovered set, which can include parked items.
+// visibleBaseItems returns allItems narrowed by the committed search and
+// parked visibility: exactly what the list shows before any type filter.
 func (m Model) visibleBaseItems() []workitem.WorkItem {
-	if m.showParked {
-		return m.allItems
-	}
-	var out []workitem.WorkItem
-	for _, item := range m.allItems {
-		if item.AttentionStage != "parked" {
-			out = append(out, item)
-		}
-	}
-	return out
+	return workitem.FilterAdvanced(m.allItems, workitem.FilterOptions{
+		Query:      m.searchQuery,
+		ShowParked: m.showParked,
+	})
 }
 
 // visibleTypeCounts tallies visible items per workflow type, returning the
