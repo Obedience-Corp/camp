@@ -17,7 +17,7 @@ import (
 // or replaced during repair; they must be staged explicitly because the repair
 // commit uses a selective file list.
 func commitRepairChanges(ctx context.Context, initResult *scaffold.InitResult, plan *scaffold.RepairPlan, migrationCount int, skillPaths []string, w Writers) {
-	hasChanges := len(initResult.DirsCreated) > 0 || len(initResult.FilesCreated) > 0 || migrationCount > 0 || len(skillPaths) > 0
+	hasChanges := len(initResult.DirsCreated) > 0 || len(initResult.FilesCreated) > 0 || len(initResult.FilesModified) > 0 || migrationCount > 0 || len(skillPaths) > 0
 	if plan != nil && len(plan.IntentMigrations) > 0 {
 		hasChanges = true
 	}
@@ -54,8 +54,9 @@ func commitRepairChanges(ctx context.Context, initResult *scaffold.InitResult, p
 }
 
 func buildRepairCommitFiles(initResult *scaffold.InitResult, plan *scaffold.RepairPlan, skillPaths []string) []string {
-	files := make([]string, 0, len(initResult.FilesCreated)+len(initResult.DirsCreated)+len(skillPaths))
+	files := make([]string, 0, len(initResult.FilesCreated)+len(initResult.FilesModified)+len(initResult.DirsCreated)+len(skillPaths))
 	files = append(files, initResult.FilesCreated...)
+	files = append(files, initResult.FilesModified...)
 	files = append(files, initResult.DirsCreated...)
 	files = append(files, skillPaths...)
 
@@ -107,6 +108,14 @@ func buildRepairCommitMessage(initResult *scaffold.InitResult, plan *scaffold.Re
 	if len(initResult.FilesCreated) > 0 {
 		fmt.Fprintf(&b, "Files created:\n")
 		for _, f := range initResult.FilesCreated {
+			fmt.Fprintf(&b, "  - %s\n", f)
+		}
+		b.WriteString("\n")
+	}
+
+	if len(initResult.FilesModified) > 0 {
+		fmt.Fprintf(&b, "Files updated:\n")
+		for _, f := range initResult.FilesModified {
 			fmt.Fprintf(&b, "  - %s\n", f)
 		}
 		b.WriteString("\n")

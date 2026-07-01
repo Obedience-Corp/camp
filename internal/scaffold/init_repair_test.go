@@ -7,6 +7,8 @@ import (
 
 	"path/filepath"
 
+	"strings"
+
 	"testing"
 
 	"time"
@@ -61,6 +63,62 @@ func TestInit_RepairPreservesMission(t *testing.T) {
 
 	if cfg.Mission != "Original mission" {
 		t.Errorf("Mission = %q, want %q (should preserve existing)", cfg.Mission, "Original mission")
+	}
+}
+
+func TestInit_RepairRecordsModifiedRootGitignore(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	campaignDir := filepath.Join(tmpDir, "repair-gitignore")
+	mustMkdirAll(t, filepath.Join(campaignDir, config.CampaignDir))
+
+	ctx := context.Background()
+
+	initialCfg := &config.CampaignConfig{
+		ID:        "test-id",
+		Name:      "repair-gitignore",
+		Type:      config.CampaignTypeProduct,
+		CreatedAt: time.Now(),
+	}
+	if err := config.SaveCampaignConfig(ctx, campaignDir, initialCfg); err != nil {
+		t.Fatalf("SaveCampaignConfig() error = %v", err)
+	}
+
+	rootGitignore := filepath.Join(campaignDir, ".gitignore")
+	if err := os.WriteFile(rootGitignore, []byte("*.log\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Init(ctx, campaignDir, InitOptions{
+		Name:       "repair-gitignore",
+		Repair:     true,
+		NoRegister: true,
+	})
+	if err != nil {
+		t.Fatalf("Init() with repair error = %v", err)
+	}
+
+	foundModified := false
+	for _, f := range result.FilesModified {
+		if strings.HasSuffix(f, ".gitignore") {
+			foundModified = true
+		}
+	}
+	if !foundModified {
+		t.Fatalf("expected root .gitignore recorded in FilesModified, got %v", result.FilesModified)
+	}
+
+	content, err := os.ReadFile(rootGitignore)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !gitignoreIgnoresWorktrees(string(content), config.DefaultCampaignPaths().Worktrees) {
+		t.Fatalf("worktrees rule not appended to existing root .gitignore:\n%s", content)
+	}
+	if !strings.HasPrefix(string(content), "*.log\n") {
+		t.Fatalf("existing content not preserved:\n%s", content)
 	}
 }
 

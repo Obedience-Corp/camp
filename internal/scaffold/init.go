@@ -67,6 +67,8 @@ type InitResult struct {
 	DirsCreated []string
 	// FilesCreated lists files that were created.
 	FilesCreated []string
+	// FilesModified lists existing files that were modified in place.
+	FilesModified []string
 	// Skipped lists items that were skipped (already exist).
 	Skipped []string
 	// GitInitialized indicates if a git repository was initialized.
@@ -368,12 +370,15 @@ workitems/current.yaml
 		if worktreesPath == "" {
 			worktreesPath = config.DefaultCampaignPaths().Worktrees
 		}
-		created, _, giErr := ensureRootGitignoreWorktrees(absDir, worktreesPath)
+		created, modified, giErr := ensureRootGitignoreWorktrees(absDir, worktreesPath)
 		if giErr != nil {
 			return nil, giErr
 		}
+		gitignoreAbs := filepath.Join(absDir, ".gitignore")
 		if created {
-			result.FilesCreated = append(result.FilesCreated, filepath.Join(absDir, ".gitignore"))
+			result.FilesCreated = append(result.FilesCreated, gitignoreAbs)
+		} else if modified {
+			result.FilesModified = append(result.FilesModified, gitignoreAbs)
 		}
 	}
 
