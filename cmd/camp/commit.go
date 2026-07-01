@@ -153,11 +153,16 @@ func runCommit(cmd *cobra.Command, args []string) error {
 			if pathErr != nil {
 				return pathErr
 			}
-			if spec := worktreesExcludeSpec(ctx, campRoot); spec != "" {
-				paths = append(paths, spec)
-			}
 			if err := git.StageAllExcluding(ctx, target.Path, paths); err != nil {
 				return err
+			}
+			// git add rejects exclude pathspecs whose target contains
+			// gitignored entries, so worktrees are unstaged after staging
+			// instead of excluded up front.
+			if wt := worktreesRelPath(ctx, campRoot); wt != "" {
+				if err := git.UnstagePath(ctx, target.Path, wt); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -238,24 +243,14 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func worktreesExcludeSpec(ctx context.Context, campRoot string) string {
+func worktreesRelPath(ctx context.Context, campRoot string) string {
 	worktreesPath := config.DefaultCampaignPaths().Worktrees
 	if cfg, err := config.LoadCampaignConfig(ctx, campRoot); err == nil {
 		if wt := cfg.Paths().Worktrees; wt != "" {
 			worktreesPath = wt
 		}
 	}
-	spec := strings.Trim(strings.TrimSpace(worktreesPath), "/")
-	if spec == "" {
-		return ""
-	}
-	// git add rejects pathspecs naming gitignored paths, even exclude-magic
-	// ones. When gitignore already covers the worktrees dir the exclusion is
-	// redundant; only keep it for campaigns without the ignore rule.
-	if ignored, err := git.PathIgnored(ctx, campRoot, spec); err == nil && ignored {
-		return ""
-	}
-	return spec
+	return strings.Trim(strings.TrimSpace(worktreesPath), "/")
 }
 
 func effectiveCommitAll(cmd *cobra.Command, amend, all bool) bool {
