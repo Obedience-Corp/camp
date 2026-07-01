@@ -170,11 +170,11 @@ func (m Model) isFilterMode() bool {
 	return m.filterMode
 }
 
-// rebuildFilterOptions derives chips from the current item set. The active
+// rebuildFilterOptions derives chips from the visible item set. The active
 // filter is always among the options (filterOptions ensures it), so the
 // highlighted chip and the applied filter cannot diverge.
 func (m *Model) rebuildFilterOptions() {
-	m.filterOptions = filterOptions(m.allItems, m.typeFilter)
+	m.filterOptions = filterOptions(m.visibleBaseItems(), m.typeFilter)
 	m.filterIndex = 0
 	for i, opt := range m.filterOptions {
 		if opt == m.typeFilter {
@@ -184,15 +184,29 @@ func (m *Model) rebuildFilterOptions() {
 	}
 }
 
-// visibleTypeCounts tallies items per workflow type under the same parked
-// visibility rule the list applies, returning the counts and the total.
+// visibleBaseItems returns allItems under the parked visibility rule the
+// list applies, so chips and counts never offer types the list cannot show.
+// Initial items arrive pre-filtered by the command layer, but a refresh
+// stores the raw discovered set, which can include parked items.
+func (m Model) visibleBaseItems() []workitem.WorkItem {
+	if m.showParked {
+		return m.allItems
+	}
+	var out []workitem.WorkItem
+	for _, item := range m.allItems {
+		if item.AttentionStage != "parked" {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+// visibleTypeCounts tallies visible items per workflow type, returning the
+// counts and the total.
 func (m Model) visibleTypeCounts() (map[string]int, int) {
 	counts := make(map[string]int)
 	total := 0
-	for _, item := range m.allItems {
-		if !m.showParked && item.AttentionStage == "parked" {
-			continue
-		}
+	for _, item := range m.visibleBaseItems() {
 		counts[string(item.WorkflowType)]++
 		total++
 	}

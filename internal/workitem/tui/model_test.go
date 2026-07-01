@@ -350,6 +350,79 @@ func TestModel_FilterModeRefreshRebuildsOptions(t *testing.T) {
 	}
 }
 
+func TestModel_FilterModeRefreshHidesParkedOnlyTypes(t *testing.T) {
+	items := []workitem.WorkItem{
+		{Key: "test:intent", WorkflowType: workitem.WorkflowTypeIntent, Title: "intent"},
+		{Key: "test:bug", WorkflowType: "bug", Title: "bug", ItemKind: workitem.ItemKindDirectory},
+	}
+	store := priority.NewStore()
+	priority.SetAttentionStage(store, "test:parked", priority.AttentionParked)
+	m := New(context.Background(), items, "", nil, store, "")
+
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	m = result.(Model)
+
+	refreshed := []workitem.WorkItem{
+		{Key: "test:intent", WorkflowType: workitem.WorkflowTypeIntent, Title: "intent"},
+		{Key: "test:bug", WorkflowType: "bug", Title: "bug", ItemKind: workitem.ItemKindDirectory},
+		{Key: "test:parked", WorkflowType: "chore", Title: "parked chore",
+			ItemKind: workitem.ItemKindDirectory, LifecycleStage: workitem.LifecycleStageNone},
+	}
+	result, _ = m.Update(refreshMsg{items: refreshed})
+	m = result.(Model)
+	for _, item := range m.allItems {
+		if item.Key == "test:parked" && item.AttentionStage != "parked" {
+			t.Fatalf("test setup: parked item stage = %q, want parked", item.AttentionStage)
+		}
+	}
+
+	assertFilterStateConsistent(t, m)
+	want := []string{"", "intent", "bug"}
+	if len(m.filterOptions) != len(want) {
+		t.Fatalf("filterOptions = %v, want %v (parked-only type must not be offered)", m.filterOptions, want)
+	}
+	for i := range want {
+		if m.filterOptions[i] != want[i] {
+			t.Fatalf("filterOptions = %v, want %v", m.filterOptions, want)
+		}
+	}
+
+	counts, total := m.visibleTypeCounts()
+	if total != 2 || counts["chore"] != 0 {
+		t.Errorf("counts = %v total=%d, want parked chore excluded", counts, total)
+	}
+}
+
+func TestModel_FilterModeShowParkedOffersParkedTypes(t *testing.T) {
+	items := []workitem.WorkItem{
+		{Key: "test:intent", WorkflowType: workitem.WorkflowTypeIntent, Title: "intent"},
+		{Key: "test:parked", WorkflowType: "chore", Title: "parked chore", AttentionStage: "parked"},
+	}
+	m := New(context.Background(), items, "", nil, priority.NewStore(), "", true)
+
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	m = result.(Model)
+
+	assertFilterStateConsistent(t, m)
+	want := []string{"", "intent", "chore"}
+	if len(m.filterOptions) != len(want) {
+		t.Fatalf("filterOptions = %v, want %v (parked types offered with --show-parked)", m.filterOptions, want)
+	}
+	for i := range want {
+		if m.filterOptions[i] != want[i] {
+			t.Fatalf("filterOptions = %v, want %v", m.filterOptions, want)
+		}
+	}
+
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m = result.(Model)
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m = result.(Model)
+	if m.typeFilter != "chore" || len(m.filteredItems) != 1 {
+		t.Fatalf("step to chore: filter=%q items=%d, want chore/1", m.typeFilter, len(m.filteredItems))
+	}
+}
+
 func TestModel_FilterModeEntryWithAbsentBuiltin(t *testing.T) {
 	items := []workitem.WorkItem{
 		{WorkflowType: workitem.WorkflowTypeIntent, Title: "intent"},
