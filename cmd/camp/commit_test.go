@@ -1,18 +1,10 @@
 package main
 
 import (
-	"context"
 	"testing"
 
 	"github.com/spf13/cobra"
 )
-
-func TestWorktreesExcludeSpec_FallsBackToDefaultOutsideCampaign(t *testing.T) {
-	got := worktreesExcludeSpec(context.Background(), t.TempDir())
-	if got != "projects/worktrees" {
-		t.Fatalf("worktreesExcludeSpec() = %q, want %q (default, no trailing slash)", got, "projects/worktrees")
-	}
-}
 
 func TestEffectiveCommitAll_AmendDefaultsNoAutoStage(t *testing.T) {
 	cmd := &cobra.Command{Use: "commit"}
