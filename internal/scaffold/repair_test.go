@@ -278,7 +278,11 @@ func TestComputeMiscFileChanges_FilesExist(t *testing.T) {
 
 	// Create the files
 	gitignorePath := filepath.Join(dir, config.CampaignDir, ".gitignore")
-	if err := os.WriteFile(gitignorePath, []byte("state.yaml\n"), 0644); err != nil {
+	if err := os.WriteFile(gitignorePath, []byte("state.yaml\nworkitems/current.yaml\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	rootGitignorePath := filepath.Join(dir, ".gitignore")
+	if err := os.WriteFile(rootGitignorePath, []byte("/projects/worktrees/\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	claudePath := filepath.Join(dir, "CLAUDE.md")
@@ -293,6 +297,31 @@ func TestComputeMiscFileChanges_FilesExist(t *testing.T) {
 		if c.Type == RepairAdd {
 			t.Errorf("unexpected add change: %s", c.Key)
 		}
+	}
+}
+
+func TestComputeMiscFileChanges_CustomWorktreesPath(t *testing.T) {
+	dir := t.TempDir()
+	setupCampaignDir(t, dir)
+
+	rootGitignorePath := filepath.Join(dir, ".gitignore")
+	if err := os.WriteFile(rootGitignorePath, []byte("/projects/worktrees/\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	jumps := config.DefaultJumpsConfig()
+	jumps.Paths.Worktrees = "custom/wt/"
+	plan := &RepairPlan{MergedJumps: &jumps}
+	computeMiscFileChanges(dir, plan)
+
+	found := false
+	for _, c := range plan.Changes {
+		if c.Key == ".gitignore" && c.Type == RepairModify {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected .gitignore modify for custom worktrees path, got changes: %+v", plan.Changes)
 	}
 }
 

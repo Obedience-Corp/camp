@@ -632,6 +632,27 @@ func computeMiscFileChanges(absDir string, plan *RepairPlan) {
 		}
 	}
 
+	rootGitignorePath := filepath.Join(absDir, ".gitignore")
+	worktreesPath := config.DefaultCampaignPaths().Worktrees
+	if plan.MergedJumps != nil && plan.MergedJumps.Paths.Worktrees != "" {
+		worktreesPath = plan.MergedJumps.Paths.Worktrees
+	}
+	if raw, err := os.ReadFile(rootGitignorePath); os.IsNotExist(err) {
+		plan.Changes = append(plan.Changes, RepairChange{
+			Type:        RepairAdd,
+			Category:    "file",
+			Key:         ".gitignore",
+			Description: "missing worktrees ignore rule",
+		})
+	} else if err == nil && !gitignoreIgnoresWorktrees(string(raw), worktreesPath) {
+		plan.Changes = append(plan.Changes, RepairChange{
+			Type:        RepairModify,
+			Category:    "file",
+			Key:         ".gitignore",
+			Description: "missing worktrees ignore rule",
+		})
+	}
+
 	claudePath := filepath.Join(absDir, "CLAUDE.md")
 	if _, err := os.Lstat(claudePath); os.IsNotExist(err) {
 		plan.Changes = append(plan.Changes, RepairChange{
@@ -686,6 +707,70 @@ func gitignoreHasRule(content, entry string) bool {
 		}
 	}
 	return false
+}
+
+const rootGitignoreWorktreesComment = "# Git worktrees (machine-local)"
+
+func ensureRootGitignoreWorktrees(absDir, worktreesPath string) (created, modified bool, err error) {
+	rule := rootGitignoreWorktreeRule(worktreesPath)
+	gitignorePath := filepath.Join(absDir, ".gitignore")
+
+	raw, readErr := os.ReadFile(gitignorePath)
+	if os.IsNotExist(readErr) {
+		content := rootGitignoreWorktreesComment + "\n" + rule + "\n"
+		if writeErr := fsutil.WriteFileAtomically(gitignorePath, []byte(content), 0o644); writeErr != nil {
+			return false, false, camperrors.Wrap(writeErr, "create root .gitignore")
+		}
+		return true, false, nil
+	}
+	if readErr != nil {
+		return false, false, camperrors.Wrap(readErr, "read root .gitignore")
+	}
+
+	if gitignoreIgnoresWorktrees(string(raw), worktreesPath) {
+		return false, false, nil
+	}
+
+	suffix := "\n"
+	if len(raw) > 0 && raw[len(raw)-1] != '\n' {
+		suffix = "\n\n"
+	}
+	addition := suffix + rootGitignoreWorktreesComment + "\n" + rule + "\n"
+	if writeErr := fsutil.WriteFileAtomically(gitignorePath, append(raw, []byte(addition)...), 0o644); writeErr != nil {
+		return false, false, camperrors.Wrap(writeErr, "update root .gitignore")
+	}
+	return false, true, nil
+}
+
+func rootGitignoreWorktreeRule(worktreesPath string) string {
+	p := normalizeWorktreesPath(worktreesPath)
+	return "/" + p + "/"
+}
+
+func gitignoreIgnoresWorktrees(content, worktreesPath string) bool {
+	p := normalizeWorktreesPath(worktreesPath)
+	base := p
+	if idx := strings.LastIndex(p, "/"); idx >= 0 {
+		base = p[idx+1:]
+	}
+	for _, candidate := range []string{
+		"/" + p + "/", "/" + p,
+		p + "/", p,
+		base + "/", base,
+	} {
+		if gitignoreHasRule(content, candidate) {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeWorktreesPath(worktreesPath string) string {
+	p := strings.Trim(strings.TrimSpace(worktreesPath), "/")
+	if p == "" {
+		p = strings.Trim(config.DefaultCampaignPaths().Worktrees, "/")
+	}
+	return p
 }
 
 // isUserDefined returns true if a shortcut was added by the user (not auto-generated).

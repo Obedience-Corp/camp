@@ -331,6 +331,14 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 		}
 	}
 
+	if len(result.FilesModified) > 0 {
+		writeLine(w.HumanOut)
+		writeLine(w.HumanOut, ui.Subheader("Files updated:"))
+		for _, f := range result.FilesModified {
+			writef(w.HumanOut, "  %s %s\n", ui.SuccessIcon(), ui.Value(f))
+		}
+	}
+
 	if len(result.Skipped) > 0 && p.VerboseOutput {
 		writeLine(w.HumanOut)
 		writeLine(w.HumanOut, ui.Subheader("Skipped (already exist):"))
