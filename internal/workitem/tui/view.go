@@ -99,9 +99,10 @@ func (m Model) renderFooter() string {
 		return footerStyle.Render("stage: c current  s next  a active  p parked  0 clear  Esc cancel")
 	}
 	count := fmt.Sprintf("%d items", len(m.filteredItems))
-	keys := "j/k move  / search  1-4 filter  0 all  S stage  P priority  tab preview  r refresh  ? help  q quit"
+	filterRange := fmt.Sprintf("1-%d", m.maxTypeFilterKey())
+	keys := fmt.Sprintf("j/k move  / search  %s filter  0 all  S stage  P priority  tab preview  r refresh  ? help  q quit", filterRange)
 	if len(keys)+len(count)+2 > m.width {
-		keys = "j/k / 1-4 P tab r ? q"
+		keys = fmt.Sprintf("j/k / %s P tab r ? q", filterRange)
 	}
 	return footerStyle.Render(fmt.Sprintf("%s  %s", count, keys))
 }
@@ -413,6 +414,15 @@ func (m Model) renderHelp() string {
 	b.WriteString("  " + previewSepStyle.Render("───────────────────────"))
 	b.WriteString("\n\n")
 
+	searchFilterKeys := [][2]string{
+		{"/", "Start search"},
+		{"Esc", "Clear search / close overlay"},
+		{"0", "Show all types"},
+	}
+	for _, binding := range m.typeFilterBindings() {
+		searchFilterKeys = append(searchFilterKeys, [2]string{binding.key, "Filter: " + binding.workflow})
+	}
+
 	sections := []struct {
 		title string
 		keys  [][2]string
@@ -423,15 +433,7 @@ func (m Model) renderHelp() string {
 			{"g g", "Jump to top"},
 			{"G", "Jump to bottom"},
 		}},
-		{"Search & Filter", [][2]string{
-			{"/", "Start search"},
-			{"Esc", "Clear search / close overlay"},
-			{"0", "Show all types"},
-			{"1", "Filter: intent"},
-			{"2", "Filter: design"},
-			{"3", "Filter: explore"},
-			{"4", "Filter: festival"},
-		}},
+		{"Search & Filter", searchFilterKeys},
 		{"Actions", [][2]string{
 			{"Enter", "Open intents or jump to directories"},
 			{"e", "Open primary doc in $EDITOR"},
