@@ -245,7 +245,17 @@ func worktreesExcludeSpec(ctx context.Context, campRoot string) string {
 			worktreesPath = wt
 		}
 	}
-	return strings.Trim(strings.TrimSpace(worktreesPath), "/")
+	spec := strings.Trim(strings.TrimSpace(worktreesPath), "/")
+	if spec == "" {
+		return ""
+	}
+	// git add rejects pathspecs naming gitignored paths, even exclude-magic
+	// ones. When gitignore already covers the worktrees dir the exclusion is
+	// redundant; only keep it for campaigns without the ignore rule.
+	if ignored, err := git.PathIgnored(ctx, campRoot, spec); err == nil && ignored {
+		return ""
+	}
+	return spec
 }
 
 func effectiveCommitAll(cmd *cobra.Command, amend, all bool) bool {
