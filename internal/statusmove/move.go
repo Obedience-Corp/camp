@@ -28,28 +28,30 @@ type MoveOptions struct {
 	Now *time.Time
 }
 
-// Move moves src to dst with no-replace semantics and returns the final path.
-// If DatedBucket is true, dst is treated as the status root and the final path
-// is dst/YYYY-MM-DD/base(src). Cross-device moves fall back to copy-then-delete.
-func Move(ctx context.Context, src, dst string, opts MoveOptions) (string, error) {
+type Plan struct {
+	Src      string
+	FinalDst string
+}
+
+func PlanMove(ctx context.Context, src, dst string, opts MoveOptions) (Plan, error) {
 	if err := ctx.Err(); err != nil {
-		return "", camperrors.Wrap(err, "context cancelled")
+		return Plan{}, camperrors.Wrap(err, "context cancelled")
 	}
 
 	if _, err := os.Lstat(src); err != nil {
 		if os.IsNotExist(err) {
-			return "", camperrors.WrapJoin(camperrors.ErrNotFound, err, "stat source "+src)
+			return Plan{}, camperrors.WrapJoin(camperrors.ErrNotFound, err, "stat source "+src)
 		}
-		return "", camperrors.Wrapf(err, "stat source %s", src)
+		return Plan{}, camperrors.Wrapf(err, "stat source %s", src)
 	}
 
 	finalDst := dst
 	if opts.DatedBucket {
 		itemName := filepath.Base(src)
 		if existing, exists, err := existingDatedItemPath(dst, itemName); err != nil {
-			return "", camperrors.Wrapf(err, "checking destination %s", dst)
+			return Plan{}, camperrors.Wrapf(err, "checking destination %s", dst)
 		} else if exists {
-			return "", camperrors.Wrapf(ErrAlreadyExists, "destination already exists: %s", existing)
+			return Plan{}, camperrors.Wrapf(ErrAlreadyExists, "destination already exists: %s", existing)
 		}
 
 		now := time.Now()
@@ -61,25 +63,44 @@ func Move(ctx context.Context, src, dst string, opts MoveOptions) (string, error
 
 	if opts.BoundaryRoot != "" {
 		if err := pathutil.ValidateBoundary(opts.BoundaryRoot, finalDst); err != nil {
-			return "", camperrors.Wrapf(err, "move destination %s outside boundary", finalDst)
+			return Plan{}, camperrors.Wrapf(err, "move destination %s outside boundary", finalDst)
 		}
 	}
 
-	if err := os.MkdirAll(filepath.Dir(finalDst), 0755); err != nil {
-		return "", camperrors.Wrapf(err, "create destination directory for %s", finalDst)
+	return Plan{Src: src, FinalDst: finalDst}, nil
+}
+
+func (p Plan) Apply(ctx context.Context) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", camperrors.Wrap(err, "context cancelled")
 	}
 
-	if err := noReplaceMove(src, finalDst); err != nil {
+	if err := os.MkdirAll(filepath.Dir(p.FinalDst), 0755); err != nil {
+		return "", camperrors.Wrapf(err, "create destination directory for %s", p.FinalDst)
+	}
+
+	if err := noReplaceMove(p.Src, p.FinalDst); err != nil {
 		return "", err
 	}
-	return finalDst, nil
+	return p.FinalDst, nil
+}
+
+// Move moves src to dst with no-replace semantics and returns the final path.
+// If DatedBucket is true, dst is treated as the status root and the final path
+// is dst/YYYY-MM-DD/base(src). Cross-device moves fall back to copy-then-delete.
+func Move(ctx context.Context, src, dst string, opts MoveOptions) (string, error) {
+	plan, err := PlanMove(ctx, src, dst, opts)
+	if err != nil {
+		return "", err
+	}
+	return plan.Apply(ctx)
 }
 
 func existingDatedItemPath(statusRoot, itemName string) (string, bool, error) {
 	legacyPath := filepath.Join(statusRoot, itemName)
 	if _, err := os.Stat(legacyPath); err == nil {
 		return legacyPath, true, nil
-	} else if err != nil && !os.IsNotExist(err) {
+	} else if !os.IsNotExist(err) {
 		return "", false, err
 	}
 
@@ -103,7 +124,7 @@ func existingDatedItemPath(statusRoot, itemName string) (string, bool, error) {
 		candidate := filepath.Join(statusRoot, dirName, itemName)
 		if _, err := os.Stat(candidate); err == nil {
 			return candidate, true, nil
-		} else if err != nil && !os.IsNotExist(err) {
+		} else if !os.IsNotExist(err) {
 			return "", false, err
 		}
 	}

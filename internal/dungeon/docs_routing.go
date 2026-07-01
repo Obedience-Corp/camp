@@ -2,7 +2,7 @@ package dungeon
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,30 +48,59 @@ func ResolveDocsDestination(campaignRoot, destination string) (string, error) {
 // MoveToDocs routes an item from a parent directory into campaign-root docs.
 // destination must resolve to a docs subdirectory (for example: "api/reference").
 func (s *Service) MoveToDocs(ctx context.Context, itemName, parentPath, destination string) (string, error) {
-	if err := ctx.Err(); err != nil {
-		return "", camperrors.Wrap(err, "context cancelled")
-	}
-	validName, err := validateDirectChildItemName(itemName)
+	mp, err := s.PlanMoveToDocs(ctx, itemName, parentPath, destination)
 	if err != nil {
 		return "", err
 	}
+	return s.ApplyMove(ctx, mp)
+}
+
+func (s *Service) PlanMoveToDocs(ctx context.Context, itemName, parentPath, destination string) (*MovePlan, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, camperrors.Wrap(err, "context cancelled")
+	}
+	validName, err := validateDirectChildItemName(itemName)
+	if err != nil {
+		return nil, err
+	}
 	itemName = validName
 	if err := s.validateParentMoveCandidate(ctx, parentPath, itemName); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	sourcePath := filepath.Join(parentPath, itemName)
 	if err := pathutil.ValidateBoundary(parentPath, sourcePath); err != nil {
-		return "", camperrors.Wrapf(
+		return nil, camperrors.Wrapf(
 			ErrInvalidItemPath,
 			"%q is not a direct child item name in the resolved triage context",
 			itemName,
 		)
 	}
 	if err := pathutil.ValidateBoundary(s.campaignRoot, sourcePath); err != nil {
-		return "", camperrors.Wrap(ErrNotInDungeon, "source outside campaign root")
+		return nil, camperrors.Wrap(ErrNotInDungeon, "source outside campaign root")
 	}
 
+	targetPath, err := s.resolveDocsTargetPath(itemName, destination)
+	if err != nil {
+		return nil, err
+	}
+
+	mp := &MovePlan{
+		Kind:          MoveKindDocs,
+		ItemName:      itemName,
+		Status:        destination,
+		alreadyExists: fmt.Sprintf("%s already exists in docs destination", itemName),
+		moveContext:   fmt.Sprintf("moving %s to docs/%s", itemName, destination),
+	}
+	if err := mp.resolve(ctx, sourcePath, targetPath, statusmove.MoveOptions{
+		BoundaryRoot: filepath.Join(s.campaignRoot, docsDirName),
+	}); err != nil {
+		return nil, err
+	}
+	return mp, nil
+}
+
+func (s *Service) resolveDocsTargetPath(itemName, destination string) (string, error) {
 	targetDir, err := ResolveDocsDestination(s.campaignRoot, destination)
 	if err != nil {
 		return "", err
@@ -122,23 +151,7 @@ func (s *Service) MoveToDocs(ctx context.Context, itemName, parentPath, destinat
 			destination,
 		)
 	}
-
-	movedPath, err := statusmove.Move(ctx, sourcePath, targetPath, statusmove.MoveOptions{BoundaryRoot: docsRoot})
-	if err != nil {
-		if errors.Is(err, camperrors.ErrNotFound) {
-			return "", camperrors.Wrap(ErrNotFound, itemName)
-		}
-		if errors.Is(err, statusmove.ErrAlreadyExists) {
-			return "", camperrors.Wrapf(ErrAlreadyExists, "%s already exists in docs destination", itemName)
-		}
-		return "", camperrors.Wrapf(err, "moving %s to docs/%s", itemName, destination)
-	}
-
-	if err := s.rewriteLinksAfterMove(ctx, sourcePath, movedPath); err != nil {
-		return "", camperrors.Wrapf(err, "rewriting markdown links after moving %s", itemName)
-	}
-
-	return movedPath, nil
+	return targetPath, nil
 }
 
 func normalizeDocsDestinationSubpath(destination string) (string, error) {

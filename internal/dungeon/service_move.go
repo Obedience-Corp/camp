@@ -14,150 +14,32 @@ import (
 
 // MoveToDungeon moves an item from the parent directory into the dungeon root.
 func (s *Service) MoveToDungeon(ctx context.Context, itemName, parentPath string) error {
-	if err := ctx.Err(); err != nil {
-		return camperrors.Wrap(err, "context cancelled")
-	}
-	validName, err := validateDirectChildItemName(itemName)
+	mp, err := s.PlanMoveToDungeon(ctx, itemName, parentPath)
 	if err != nil {
 		return err
 	}
-	itemName = validName
-	if err := s.validateParentMoveCandidate(ctx, parentPath, itemName); err != nil {
-		return err
-	}
-
-	sourcePath := filepath.Join(parentPath, itemName)
-	targetPath := filepath.Join(s.dungeonPath, itemName)
-
-	if err := pathutil.ValidateBoundary(s.campaignRoot, targetPath); err != nil {
-		return camperrors.Wrap(ErrNotInDungeon, "target outside campaign root")
-	}
-
-	if _, err := os.Stat(s.dungeonPath); err != nil {
-		return camperrors.Wrap(err, "dungeon directory does not exist")
-	}
-
-	if _, err := statusmove.Move(ctx, sourcePath, targetPath, statusmove.MoveOptions{BoundaryRoot: s.campaignRoot}); err != nil {
-		if errors.Is(err, camperrors.ErrNotFound) {
-			return camperrors.Wrap(ErrNotFound, itemName)
-		}
-		if errors.Is(err, statusmove.ErrAlreadyExists) {
-			return camperrors.Wrapf(ErrAlreadyExists, "%s already in dungeon", itemName)
-		}
-		return camperrors.Wrapf(err, "moving %s to dungeon", itemName)
-	}
-
-	if err := s.rewriteLinksAfterMove(ctx, sourcePath, targetPath); err != nil {
-		return camperrors.Wrapf(err, "rewriting markdown links after moving %s", itemName)
-	}
-
-	return nil
+	_, err = s.ApplyMove(ctx, mp)
+	return err
 }
 
 // MoveToStatus moves an item from the dungeon root to a status directory.
 // The status must be a simple directory name (no path separators).
 func (s *Service) MoveToStatus(ctx context.Context, itemName, status string) (string, error) {
-	if err := ctx.Err(); err != nil {
-		return "", camperrors.Wrap(err, "context cancelled")
-	}
-
-	if err := validateStatusName(status); err != nil {
-		return "", err
-	}
-	validName, err := validateDirectChildItemName(itemName)
+	mp, err := s.PlanMoveToStatus(ctx, itemName, status)
 	if err != nil {
 		return "", err
 	}
-	itemName = validName
-
-	srcPath := filepath.Join(s.dungeonPath, itemName)
-	statusDir := filepath.Join(s.dungeonPath, status)
-
-	// Verify source exists
-	if _, err := os.Stat(srcPath); os.IsNotExist(err) {
-		return "", camperrors.Wrap(ErrNotFound, itemName)
-	}
-
-	// Verify source is in dungeon root (not a path traversal)
-	absSource, err := filepath.Abs(srcPath)
-	if err != nil {
-		return "", camperrors.Wrap(err, "resolving source path")
-	}
-	absDungeon, err := filepath.Abs(s.dungeonPath)
-	if err != nil {
-		return "", camperrors.Wrap(err, "resolving dungeon path")
-	}
-	if filepath.Dir(absSource) != absDungeon {
-		return "", camperrors.Wrap(ErrNotInDungeon, itemName)
-	}
-
-	dstPath, err := statusmove.Move(ctx, srcPath, statusDir, statusmove.MoveOptions{
-		DatedBucket:  true,
-		BoundaryRoot: s.campaignRoot,
-	})
-	if err != nil {
-		if errors.Is(err, camperrors.ErrNotFound) {
-			return "", camperrors.Wrap(ErrNotFound, itemName)
-		}
-		if errors.Is(err, statusmove.ErrAlreadyExists) {
-			return "", camperrors.Wrapf(ErrAlreadyExists, "%s already in %s/", itemName, status)
-		}
-		return "", camperrors.Wrapf(err, "moving %s to %s", itemName, status)
-	}
-
-	if err := s.rewriteLinksAfterMove(ctx, srcPath, dstPath); err != nil {
-		return "", camperrors.Wrapf(err, "rewriting markdown links after moving %s", itemName)
-	}
-
-	return dstPath, nil
+	return s.ApplyMove(ctx, mp)
 }
 
 // MoveToDungeonStatus moves an item from a parent directory directly into a dungeon status directory.
 // The status must be a simple directory name (no path separators).
 func (s *Service) MoveToDungeonStatus(ctx context.Context, itemName, parentPath, status string) (string, error) {
-	if err := ctx.Err(); err != nil {
-		return "", camperrors.Wrap(err, "context cancelled")
-	}
-
-	if err := validateStatusName(status); err != nil {
-		return "", err
-	}
-	validName, err := validateDirectChildItemName(itemName)
+	mp, err := s.PlanMoveToDungeonStatus(ctx, itemName, parentPath, status)
 	if err != nil {
 		return "", err
 	}
-	itemName = validName
-	if err := s.validateParentMoveCandidate(ctx, parentPath, itemName); err != nil {
-		return "", err
-	}
-
-	// Validate parentPath is within campaign root
-	sourcePath := filepath.Join(parentPath, itemName)
-	if err := pathutil.ValidateBoundary(s.campaignRoot, sourcePath); err != nil {
-		return "", camperrors.Wrap(ErrNotInDungeon, "source outside campaign root")
-	}
-
-	statusDir := filepath.Join(s.dungeonPath, status)
-
-	targetPath, err := statusmove.Move(ctx, sourcePath, statusDir, statusmove.MoveOptions{
-		DatedBucket:  true,
-		BoundaryRoot: s.campaignRoot,
-	})
-	if err != nil {
-		if errors.Is(err, camperrors.ErrNotFound) {
-			return "", camperrors.Wrap(ErrNotFound, itemName)
-		}
-		if errors.Is(err, statusmove.ErrAlreadyExists) {
-			return "", camperrors.Wrapf(ErrAlreadyExists, "%s already in %s/", itemName, status)
-		}
-		return "", camperrors.Wrapf(err, "moving %s to dungeon/%s", itemName, status)
-	}
-
-	if err := s.rewriteLinksAfterMove(ctx, sourcePath, targetPath); err != nil {
-		return "", camperrors.Wrapf(err, "rewriting markdown links after moving %s", itemName)
-	}
-
-	return targetPath, nil
+	return s.ApplyMove(ctx, mp)
 }
 
 func (s *Service) validateParentMoveCandidate(ctx context.Context, parentPath, itemName string) error {
