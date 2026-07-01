@@ -3,6 +3,8 @@ package tui
 
 import (
 	"context"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,14 +20,45 @@ import (
 // Update this if the layout structure changes.
 const chromeHeight = 3
 
-// typeFilterKeys maps keyboard shortcuts to workflow type filter values.
-// Empty string means "show all".
-var typeFilterKeys = map[string]string{
-	"0": "",
-	"1": "intent",
-	"2": "design",
-	"3": "explore",
-	"4": "festival",
+// builtinFilterTypes pins keys 1-4 to the builtin workflow types.
+var builtinFilterTypes = []string{
+	string(workitem.WorkflowTypeIntent),
+	string(workitem.WorkflowTypeDesign),
+	string(workitem.WorkflowTypeExplore),
+	string(workitem.WorkflowTypeFestival),
+}
+
+// maxCustomFilterTypes caps custom type bindings so keys stay within 5-9.
+const maxCustomFilterTypes = 5
+
+// typeFilterBinding pairs a digit key with the workflow type it filters.
+type typeFilterBinding struct {
+	key      string
+	workflow string
+}
+
+// customTypes returns the distinct non-builtin workflow types in items,
+// sorted alphabetically and capped at maxCustomFilterTypes.
+func customTypes(items []workitem.WorkItem) []string {
+	builtin := make(map[string]bool, len(builtinFilterTypes))
+	for _, t := range builtinFilterTypes {
+		builtin[t] = true
+	}
+	seen := make(map[string]bool)
+	var out []string
+	for _, item := range items {
+		t := string(item.WorkflowType)
+		if t == "" || builtin[t] || seen[t] {
+			continue
+		}
+		seen[t] = true
+		out = append(out, t)
+	}
+	sort.Strings(out)
+	if len(out) > maxCustomFilterTypes {
+		out = out[:maxCustomFilterTypes]
+	}
+	return out
 }
 
 // Model is the Bubble Tea model for the workitem dashboard.
@@ -49,8 +82,9 @@ type Model struct {
 	savedSearchQuery string // snapshot of committed query when search mode starts
 
 	// Filters
-	typeFilter string // empty = all, or "intent"/"design"/"explore"/"festival"
-	showParked bool
+	typeFilter        string // empty = all, or any workflow type bound to a filter key
+	customFilterTypes []string
+	showParked        bool
 
 	// Preview
 	showPreview    bool
@@ -92,17 +126,55 @@ func New(ctx context.Context, items []workitem.WorkItem, campaignRoot string, re
 	}
 
 	return Model{
-		allItems:      items,
-		filteredItems: items,
-		searchInput:   ti,
-		showPreview:   true,
-		ctx:           ctx,
-		campaignRoot:  campaignRoot,
-		resolver:      resolver,
-		priorityStore: store,
-		storePath:     storePath,
-		showParked:    includeParked,
+		allItems:          items,
+		filteredItems:     items,
+		customFilterTypes: customTypes(items),
+		searchInput:       ti,
+		showPreview:       true,
+		ctx:               ctx,
+		campaignRoot:      campaignRoot,
+		resolver:          resolver,
+		priorityStore:     store,
+		storePath:         storePath,
+		showParked:        includeParked,
 	}
+}
+
+// typeFilterFor resolves a pressed key to a type filter value.
+// "0" clears the filter; 1-4 are builtins; 5-9 are custom type slots.
+func (m Model) typeFilterFor(key string) (string, bool) {
+	if key == "0" {
+		return "", true
+	}
+	if len(key) != 1 || key[0] < '1' || key[0] > '9' {
+		return "", false
+	}
+	idx := int(key[0] - '1')
+	if idx < len(builtinFilterTypes) {
+		return builtinFilterTypes[idx], true
+	}
+	idx -= len(builtinFilterTypes)
+	if idx < len(m.customFilterTypes) {
+		return m.customFilterTypes[idx], true
+	}
+	return "", false
+}
+
+// typeFilterBindings returns the active key-to-type mappings in key order.
+func (m Model) typeFilterBindings() []typeFilterBinding {
+	bindings := make([]typeFilterBinding, 0, len(builtinFilterTypes)+len(m.customFilterTypes))
+	for i, t := range builtinFilterTypes {
+		bindings = append(bindings, typeFilterBinding{key: strconv.Itoa(i + 1), workflow: t})
+	}
+	for i, t := range m.customFilterTypes {
+		bindings = append(bindings, typeFilterBinding{key: strconv.Itoa(len(builtinFilterTypes) + i + 1), workflow: t})
+	}
+	return bindings
+}
+
+// maxTypeFilterKey returns the highest bound filter digit.
+func (m Model) maxTypeFilterKey() int {
+	return len(builtinFilterTypes) + len(m.customFilterTypes)
 }
 
 func (m Model) Init() tea.Cmd {

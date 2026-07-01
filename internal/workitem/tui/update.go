@@ -35,6 +35,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			workitem.Sort(items)
 			m.allItems = items
+			m.customFilterTypes = customTypes(items)
 			m.refilter()
 			m.preserveSelection(selectedKey)
 		}
@@ -78,8 +79,8 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	m.lastKeyWasG = false
 
-	// Type filter keys (0-4) — handled via lookup table
-	if filter, ok := typeFilterKeys[key]; ok {
+	// Type filter keys (0-9) — builtins pinned to 1-4, custom types on 5-9
+	if filter, ok := m.typeFilterFor(key); ok {
 		m.typeFilter = filter
 		m.refilter()
 		return m, nil
