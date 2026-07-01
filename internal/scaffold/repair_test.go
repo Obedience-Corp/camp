@@ -300,6 +300,31 @@ func TestComputeMiscFileChanges_FilesExist(t *testing.T) {
 	}
 }
 
+func TestComputeMiscFileChanges_CustomWorktreesPath(t *testing.T) {
+	dir := t.TempDir()
+	setupCampaignDir(t, dir)
+
+	rootGitignorePath := filepath.Join(dir, ".gitignore")
+	if err := os.WriteFile(rootGitignorePath, []byte("/projects/worktrees/\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	jumps := config.DefaultJumpsConfig()
+	jumps.Paths.Worktrees = "custom/wt/"
+	plan := &RepairPlan{MergedJumps: &jumps}
+	computeMiscFileChanges(dir, plan)
+
+	found := false
+	for _, c := range plan.Changes {
+		if c.Key == ".gitignore" && c.Type == RepairModify {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected .gitignore modify for custom worktrees path, got changes: %+v", plan.Changes)
+	}
+}
+
 func TestComputeRepairPlan_CancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

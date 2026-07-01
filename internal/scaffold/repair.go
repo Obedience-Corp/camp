@@ -634,6 +634,9 @@ func computeMiscFileChanges(absDir string, plan *RepairPlan) {
 
 	rootGitignorePath := filepath.Join(absDir, ".gitignore")
 	worktreesPath := config.DefaultCampaignPaths().Worktrees
+	if plan.MergedJumps != nil && plan.MergedJumps.Paths.Worktrees != "" {
+		worktreesPath = plan.MergedJumps.Paths.Worktrees
+	}
 	if raw, err := os.ReadFile(rootGitignorePath); os.IsNotExist(err) {
 		plan.Changes = append(plan.Changes, RepairChange{
 			Type:        RepairAdd,
