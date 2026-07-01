@@ -75,6 +75,55 @@ func TestIntegration_CommitExcludesWorktreesWithoutIgnoreRule(t *testing.T) {
 		"worktrees content should remain untracked, not staged")
 }
 
+func TestIntegration_CommitSucceedsWithTrackedContentUnderIgnoredWorktrees(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	const campaignDir = "/campaigns/commit-worktrees-tracked"
+	_, err := tc.InitCampaign(campaignDir, "Worktrees Tracked", "product")
+	require.NoError(t, err)
+
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s
+		mkdir -p projects/worktrees/samantha
+		touch projects/worktrees/.gitkeep
+		git init -q projects/worktrees/samantha/wt-mod
+		git -C projects/worktrees/samantha/wt-mod commit --allow-empty -qm c1
+		git -c advice.addEmbeddedRepo=false add -f projects/worktrees/.gitkeep projects/worktrees/samantha/wt-mod
+		git commit -qm 'track worktrees content'
+		git -C projects/worktrees/samantha/wt-mod commit --allow-empty -qm c2
+		mkdir -p projects/worktrees/samantha/review-pr
+		echo z > projects/worktrees/samantha/review-pr/f.txt
+		printf 'root content' > root.txt
+	`, campaignDir))
+
+	ignoreCheck := tc.Shell(t, fmt.Sprintf(`
+		cd %s
+		git check-ignore -q -- projects/worktrees || echo DIR_NOT_IGNORED
+		git status --porcelain -- projects/worktrees
+	`, campaignDir))
+	require.Contains(t, ignoreCheck, "DIR_NOT_IGNORED",
+		"tracked content must keep the worktrees dir itself unignored to model the regression")
+	require.Contains(t, ignoreCheck, " M projects/worktrees/samantha/wt-mod")
+
+	output, err := tc.RunCampInDir(campaignDir, "commit", "-m", "root content")
+	require.NoError(t, err,
+		"camp commit must not fail when the ignored worktrees dir contains tracked content; output:\n%s", output)
+
+	committed := strings.Fields(tc.GitOutput(t, campaignDir, "show", "--name-only", "--format=", "HEAD"))
+	require.Contains(t, committed, "root.txt")
+	for _, path := range committed {
+		require.NotContains(t, path, "projects/worktrees")
+	}
+
+	status := tc.GitOutput(t, campaignDir, "status", "--porcelain", "--", "projects/worktrees")
+	require.Contains(t, status, "M projects/worktrees/samantha/wt-mod",
+		"dirty worktree gitlink must remain unstaged, not committed or discarded")
+	require.NotContains(t, status, "M  projects/worktrees/samantha/wt-mod",
+		"dirty worktree gitlink must not be left staged")
+	staged := strings.TrimSpace(tc.GitOutput(t, campaignDir, "diff", "--cached", "--name-only"))
+	require.Empty(t, staged, "nothing should remain staged after camp commit")
+}
+
 func TestIntegration_StageExcludesWorktreesWithoutIgnoreRule(t *testing.T) {
 	tc := GetSharedContainer(t)
 

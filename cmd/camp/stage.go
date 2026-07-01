@@ -85,11 +85,13 @@ func runStage(cmd *cobra.Command, args []string) error {
 		if pathErr != nil {
 			return pathErr
 		}
-		if spec := worktreesExcludeSpec(ctx, campRoot); spec != "" {
-			paths = append(paths, spec)
-		}
 		if err := git.StageAllExcluding(ctx, target.Path, paths); err != nil {
 			return err
+		}
+		if wt := worktreesRelPath(ctx, campRoot); wt != "" {
+			if err := git.UnstagePath(ctx, target.Path, wt); err != nil {
+				return err
+			}
 		}
 	} else {
 		if err := executor.StageAll(ctx); err != nil {
