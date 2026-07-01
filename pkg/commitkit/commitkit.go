@@ -112,6 +112,33 @@ func LoadCampaignID(ctx context.Context, campaignRoot string) (string, error) {
 	return cfg.ID, nil
 }
 
+// DetectCampaignName is DetectCampaign for the campaign name, for callers that
+// build name-style tags (FormatContextTagsFullNamed).
+func DetectCampaignName(ctx context.Context) (string, error) {
+	root, err := campaign.DetectFromCwd(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	cfg, err := config.LoadCampaignConfig(ctx, root)
+	if err != nil {
+		return "", camperrors.Wrapf(err, "commitkit: load campaign config at %s", root)
+	}
+
+	return cfg.Name, nil
+}
+
+// LoadCampaignName reads the campaign name from the campaign.yaml located at
+// campaignRoot. campaignRoot must be the directory that contains .campaign/.
+func LoadCampaignName(ctx context.Context, campaignRoot string) (string, error) {
+	cfg, err := config.LoadCampaignConfig(ctx, campaignRoot)
+	if err != nil {
+		return "", camperrors.Wrapf(err, "commitkit: load campaign config at %s", campaignRoot)
+	}
+
+	return cfg.Name, nil
+}
+
 // StageAll stages all changes in the repository at repoPath.
 // Uses automatic lock retry with stale lock cleanup.
 func StageAll(ctx context.Context, repoPath string) error {
