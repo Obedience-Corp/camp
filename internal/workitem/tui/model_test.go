@@ -131,7 +131,7 @@ func TestCustomTypes(t *testing.T) {
 		{"sorted", []string{"feature", "bug"}, []string{"bug", "feature"}},
 		{"dedup", []string{"bug", "bug", "feature"}, []string{"bug", "feature"}},
 		{"skips builtins and empty", []string{"festival", "", "chore"}, []string{"chore"}},
-		{"caps at five", []string{"f", "e", "d", "c", "b", "a"}, []string{"a", "b", "c", "d", "e"}},
+		{"no cap", []string{"f", "e", "d", "c", "b", "a"}, []string{"a", "b", "c", "d", "e", "f"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -152,7 +152,27 @@ func TestCustomTypes(t *testing.T) {
 	}
 }
 
-func TestModel_CustomTypeFilter(t *testing.T) {
+func TestFilterOptions(t *testing.T) {
+	items := []workitem.WorkItem{
+		{WorkflowType: "feature"},
+		{WorkflowType: workitem.WorkflowTypeFestival},
+		{WorkflowType: "bug"},
+		{WorkflowType: workitem.WorkflowTypeIntent},
+		{WorkflowType: "bug"},
+	}
+	got := filterOptions(items)
+	want := []string{"", "intent", "festival", "bug", "feature"}
+	if len(got) != len(want) {
+		t.Fatalf("filterOptions = %v, want %v", got, want)
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Fatalf("filterOptions = %v, want %v", got, want)
+		}
+	}
+}
+
+func TestModel_FilterModeStepsLive(t *testing.T) {
 	items := []workitem.WorkItem{
 		{WorkflowType: workitem.WorkflowTypeIntent, Title: "intent"},
 		{WorkflowType: "feature", Title: "feature item"},
@@ -161,61 +181,143 @@ func TestModel_CustomTypeFilter(t *testing.T) {
 	}
 	m := New(context.Background(), items, "", nil, priority.NewStore(), "")
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'5'}})
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 	m = result.(Model)
-	if len(m.filteredItems) != 2 {
-		t.Fatalf("after '5': %d items, want 2", len(m.filteredItems))
+	if !m.isFilterMode() {
+		t.Fatal("expected filter mode after 'f'")
 	}
-	for _, item := range m.filteredItems {
-		if item.WorkflowType != "bug" {
-			t.Errorf("filtered type = %q, want 'bug'", item.WorkflowType)
-		}
+	if m.filterIndex != 0 || m.typeFilter != "" {
+		t.Fatalf("entering mode changed the filter: index=%d filter=%q", m.filterIndex, m.typeFilter)
 	}
 
-	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'6'}})
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
 	m = result.(Model)
-	if len(m.filteredItems) != 1 || m.filteredItems[0].Title != "feature item" {
-		t.Fatalf("after '6': %d items, want only the feature item", len(m.filteredItems))
+	if m.typeFilter != "intent" || len(m.filteredItems) != 1 {
+		t.Fatalf("step 1: filter=%q items=%d, want intent/1", m.typeFilter, len(m.filteredItems))
 	}
 
-	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'0'}})
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
 	m = result.(Model)
-	if len(m.filteredItems) != 4 {
-		t.Errorf("after '0': %d items, want 4", len(m.filteredItems))
+	if m.typeFilter != "bug" || len(m.filteredItems) != 2 {
+		t.Fatalf("step 2: filter=%q items=%d, want bug/2", m.typeFilter, len(m.filteredItems))
+	}
+
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	m = result.(Model)
+	if m.typeFilter != "feature" || len(m.filteredItems) != 1 {
+		t.Fatalf("step 3: filter=%q items=%d, want feature/1", m.typeFilter, len(m.filteredItems))
+	}
+
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	m = result.(Model)
+	if m.typeFilter != "feature" {
+		t.Fatalf("step past end moved filter to %q", m.typeFilter)
+	}
+
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = result.(Model)
+	if m.isFilterMode() {
+		t.Fatal("expected filter mode to exit on enter")
+	}
+	if m.typeFilter != "feature" || len(m.filteredItems) != 1 {
+		t.Fatalf("after enter: filter=%q items=%d, want feature/1", m.typeFilter, len(m.filteredItems))
 	}
 }
 
-func TestModel_UnboundFilterKeyIsNoop(t *testing.T) {
+func TestModel_FilterModeEscRestores(t *testing.T) {
+	items := []workitem.WorkItem{
+		{WorkflowType: workitem.WorkflowTypeIntent, Title: "intent"},
+		{WorkflowType: "bug", Title: "bug one"},
+		{WorkflowType: "bug", Title: "bug two"},
+	}
+	m := New(context.Background(), items, "", nil, priority.NewStore(), "")
+
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}})
+	m = result.(Model)
+
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	m = result.(Model)
+	if m.filterIndex != 1 {
+		t.Fatalf("filterIndex = %d, want 1 (positioned on active filter)", m.filterIndex)
+	}
+
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m = result.(Model)
+	if m.typeFilter != "bug" || len(m.filteredItems) != 2 {
+		t.Fatalf("step: filter=%q items=%d, want bug/2", m.typeFilter, len(m.filteredItems))
+	}
+
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = result.(Model)
+	if m.isFilterMode() {
+		t.Fatal("expected filter mode to exit on esc")
+	}
+	if m.typeFilter != "intent" || len(m.filteredItems) != 1 {
+		t.Fatalf("after esc: filter=%q items=%d, want intent/1", m.typeFilter, len(m.filteredItems))
+	}
+}
+
+func TestModel_FilterModeZeroJumpsToAll(t *testing.T) {
 	items := []workitem.WorkItem{
 		{WorkflowType: workitem.WorkflowTypeIntent, Title: "intent"},
 		{WorkflowType: "bug", Title: "bug"},
 	}
 	m := New(context.Background(), items, "", nil, priority.NewStore(), "")
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'5'}})
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 	m = result.(Model)
-	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'7'}})
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m = result.(Model)
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'0'}})
 	m = result.(Model)
 
-	if m.typeFilter != "bug" {
-		t.Errorf("typeFilter = %q, want 'bug' after unbound key", m.typeFilter)
+	if m.filterIndex != 0 || m.typeFilter != "" {
+		t.Fatalf("after '0': index=%d filter=%q, want 0/all", m.filterIndex, m.typeFilter)
 	}
-	if len(m.filteredItems) != 1 {
-		t.Errorf("filtered = %d, want 1", len(m.filteredItems))
+	if len(m.filteredItems) != 2 {
+		t.Errorf("after '0': %d items, want 2", len(m.filteredItems))
+	}
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	m = result.(Model)
+	if m.filterIndex != 0 {
+		t.Errorf("step before start moved index to %d", m.filterIndex)
 	}
 }
 
-func TestModel_RefreshRebindsCustomTypes(t *testing.T) {
+func TestModel_CustomDigitsUnbound(t *testing.T) {
+	items := []workitem.WorkItem{
+		{WorkflowType: workitem.WorkflowTypeIntent, Title: "intent"},
+		{WorkflowType: "bug", Title: "bug"},
+	}
+	m := New(context.Background(), items, "", nil, priority.NewStore(), "")
+
+	for _, key := range []rune{'5', '6', '7', '8', '9'} {
+		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{key}})
+		m = result.(Model)
+		if m.typeFilter != "" {
+			t.Fatalf("digit %q bound a filter: %q", key, m.typeFilter)
+		}
+	}
+	if len(m.filteredItems) != 2 {
+		t.Errorf("filtered = %d, want 2", len(m.filteredItems))
+	}
+}
+
+func TestModel_FilterModeRefreshRebuildsOptions(t *testing.T) {
 	items := []workitem.WorkItem{
 		{Key: "test:intent", WorkflowType: workitem.WorkflowTypeIntent, Title: "intent"},
 		{Key: "test:bug", WorkflowType: "bug", Title: "bug"},
 	}
 	m := New(context.Background(), items, "", nil, priority.NewStore(), "")
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'5'}})
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 	m = result.(Model)
-	if len(m.filteredItems) != 1 || m.filteredItems[0].Title != "bug" {
-		t.Fatalf("after '5': %d items, want only the bug item", len(m.filteredItems))
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m = result.(Model)
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m = result.(Model)
+	if m.typeFilter != "bug" {
+		t.Fatalf("filter = %q, want bug", m.typeFilter)
 	}
 
 	refreshed := []workitem.WorkItem{
@@ -225,42 +327,41 @@ func TestModel_RefreshRebindsCustomTypes(t *testing.T) {
 	result, _ = m.Update(refreshMsg{items: refreshed})
 	m = result.(Model)
 
+	want := []string{"", "intent", "chore"}
+	if len(m.filterOptions) != len(want) {
+		t.Fatalf("filterOptions = %v, want %v", m.filterOptions, want)
+	}
+	for i := range want {
+		if m.filterOptions[i] != want[i] {
+			t.Fatalf("filterOptions = %v, want %v", m.filterOptions, want)
+		}
+	}
 	if len(m.filteredItems) != 0 {
 		t.Errorf("stale 'bug' filter: %d items, want 0", len(m.filteredItems))
 	}
-
-	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'5'}})
-	m = result.(Model)
-	if len(m.filteredItems) != 1 || m.filteredItems[0].Title != "chore" {
-		t.Fatalf("after refresh + '5': %d items, want only the chore item", len(m.filteredItems))
-	}
 }
 
-func TestModel_HelpListsCustomTypeFilters(t *testing.T) {
-	items := []workitem.WorkItem{
-		{WorkflowType: workitem.WorkflowTypeIntent, Title: "intent"},
-		{WorkflowType: "bug", Title: "bug"},
-		{WorkflowType: "feature", Title: "feature"},
-	}
-	m := New(context.Background(), items, "", nil, priority.NewStore(), "")
+func TestModel_HelpListsFilterMode(t *testing.T) {
+	m := New(context.Background(), makeTestItems(2), "", nil, priority.NewStore(), "")
 	m.width = 80
 	m.height = 24
 	m.ready = true
 	m.helpVisible = true
 
 	help := m.View()
-	for _, want := range []string{"Filter: intent", "Filter: bug", "Filter: feature"} {
-		if !strings.Contains(help, want) {
-			t.Errorf("help missing %q", want)
-		}
+	if !strings.Contains(help, "Filter by type") {
+		t.Error("help missing the 'f' filter mode row")
+	}
+	if !strings.Contains(help, "Filter: intent") {
+		t.Error("help missing builtin accelerator rows")
 	}
 }
 
-func TestModel_FooterShowsDynamicFilterRange(t *testing.T) {
+func TestModel_FooterRendersFilterChips(t *testing.T) {
 	items := []workitem.WorkItem{
 		{WorkflowType: workitem.WorkflowTypeIntent, Title: "intent"},
-		{WorkflowType: "bug", Title: "bug"},
-		{WorkflowType: "feature", Title: "feature"},
+		{WorkflowType: "bug", Title: "bug one"},
+		{WorkflowType: "bug", Title: "bug two"},
 	}
 	m := New(context.Background(), items, "", nil, priority.NewStore(), "")
 	m.width = 120
@@ -268,8 +369,43 @@ func TestModel_FooterShowsDynamicFilterRange(t *testing.T) {
 	m.ready = true
 
 	footer := m.renderFooter()
-	if !strings.Contains(footer, "1-6 filter") {
-		t.Errorf("footer = %q, want it to contain '1-6 filter'", footer)
+	if !strings.Contains(footer, "f filter") {
+		t.Errorf("normal footer = %q, want it to contain 'f filter'", footer)
+	}
+
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	m = result.(Model)
+	footer = m.renderFooter()
+	for _, want := range []string{"[all 3]", "intent 1", "bug 2"} {
+		if !strings.Contains(footer, want) {
+			t.Errorf("filter-mode footer = %q, missing %q", footer, want)
+		}
+	}
+}
+
+func TestChipWindow(t *testing.T) {
+	labels := []string{"all 40", "intent 10", "design 10", "bug 10", "feature 10"}
+	tests := []struct {
+		name      string
+		active    int
+		avail     int
+		wantStart int
+		wantEnd   int
+	}{
+		{"everything fits", 2, 200, 0, 5},
+		{"window around active", 3, 31, 2, 5},
+		{"active only", 0, 8, 0, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			start, end := chipWindow(labels, tt.active, tt.avail)
+			if start != tt.wantStart || end != tt.wantEnd {
+				t.Errorf("chipWindow = [%d, %d), want [%d, %d)", start, end, tt.wantStart, tt.wantEnd)
+			}
+			if tt.active < start || tt.active >= end {
+				t.Errorf("active %d outside window [%d, %d)", tt.active, start, end)
+			}
+		})
 	}
 }
 

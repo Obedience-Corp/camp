@@ -98,13 +98,79 @@ func (m Model) renderFooter() string {
 	if m.isStageMode() {
 		return footerStyle.Render("stage: c current  s next  a active  p parked  0 clear  Esc cancel")
 	}
+	if m.isFilterMode() {
+		return m.renderFilterChips()
+	}
 	count := fmt.Sprintf("%d items", len(m.filteredItems))
-	filterRange := fmt.Sprintf("1-%d", m.maxTypeFilterKey())
-	keys := fmt.Sprintf("j/k move  / search  %s filter  0 all  S stage  P priority  tab preview  r refresh  ? help  q quit", filterRange)
+	keys := "j/k move  / search  f filter  0 all  S stage  P priority  tab preview  r refresh  ? help  q quit"
 	if len(keys)+len(count)+2 > m.width {
-		keys = fmt.Sprintf("j/k / %s P tab r ? q", filterRange)
+		keys = "j/k / f P tab r ? q"
 	}
 	return footerStyle.Render(fmt.Sprintf("%s  %s", count, keys))
+}
+
+// renderFilterChips renders the filter-mode footer: one chip per type with
+// its item count, windowed around the active chip when the row overflows.
+func (m Model) renderFilterChips() string {
+	counts, total := m.visibleTypeCounts()
+	labels := make([]string, len(m.filterOptions))
+	for i, opt := range m.filterOptions {
+		if opt == "" {
+			labels[i] = fmt.Sprintf("all %d", total)
+		} else {
+			labels[i] = fmt.Sprintf("%s %d", opt, counts[opt])
+		}
+	}
+
+	const prefix = "filter: "
+	avail := m.width - len(prefix) - 4
+	start, end := chipWindow(labels, m.filterIndex, avail)
+
+	var parts []string
+	if start > 0 {
+		parts = append(parts, footerStyle.Render("…"))
+	}
+	for i := start; i < end; i++ {
+		if i == m.filterIndex {
+			parts = append(parts, filterActiveStyle.Render("["+labels[i]+"]"))
+		} else {
+			parts = append(parts, footerStyle.Render(labels[i]))
+		}
+	}
+	if end < len(labels) {
+		parts = append(parts, footerStyle.Render("…"))
+	}
+	return footerStyle.Render(prefix) + strings.Join(parts, "  ")
+}
+
+// chipWindow returns the [start, end) range of chips that fit in avail
+// columns, expanded outward from the active chip.
+func chipWindow(labels []string, active, avail int) (int, int) {
+	if len(labels) == 0 {
+		return 0, 0
+	}
+	if active < 0 || active >= len(labels) {
+		active = 0
+	}
+	start, end := active, active+1
+	used := len(labels[active]) + 2
+	for start > 0 || end < len(labels) {
+		extended := false
+		if end < len(labels) && used+len(labels[end])+2 <= avail {
+			used += len(labels[end]) + 2
+			end++
+			extended = true
+		}
+		if start > 0 && used+len(labels[start-1])+2 <= avail {
+			start--
+			used += len(labels[start]) + 2
+			extended = true
+		}
+		if !extended {
+			break
+		}
+	}
+	return start, end
 }
 
 func (m Model) renderList(width, height int) string {
@@ -414,15 +480,6 @@ func (m Model) renderHelp() string {
 	b.WriteString("  " + previewSepStyle.Render("───────────────────────"))
 	b.WriteString("\n\n")
 
-	searchFilterKeys := [][2]string{
-		{"/", "Start search"},
-		{"Esc", "Clear search / close overlay"},
-		{"0", "Show all types"},
-	}
-	for _, binding := range m.typeFilterBindings() {
-		searchFilterKeys = append(searchFilterKeys, [2]string{binding.key, "Filter: " + binding.workflow})
-	}
-
 	sections := []struct {
 		title string
 		keys  [][2]string
@@ -433,7 +490,16 @@ func (m Model) renderHelp() string {
 			{"g g", "Jump to top"},
 			{"G", "Jump to bottom"},
 		}},
-		{"Search & Filter", searchFilterKeys},
+		{"Search & Filter", [][2]string{
+			{"/", "Start search"},
+			{"Esc", "Clear search / close overlay"},
+			{"f", "Filter by type (j/k or arrows step, Enter apply, Esc cancel)"},
+			{"0", "Show all types"},
+			{"1", "Filter: intent"},
+			{"2", "Filter: design"},
+			{"3", "Filter: explore"},
+			{"4", "Filter: festival"},
+		}},
 		{"Actions", [][2]string{
 			{"Enter", "Open intents or jump to directories"},
 			{"e", "Open primary doc in $EDITOR"},
