@@ -35,7 +35,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			workitem.Sort(items)
 			m.allItems = items
-			m.customFilterTypes = customTypes(items)
+			if m.isFilterMode() {
+				m.rebuildFilterOptions()
+			}
 			m.refilter()
 			m.preserveSelection(selectedKey)
 		}
@@ -55,10 +57,51 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.isPriorityMode() {
 			return m.handlePriorityKey(msg)
 		}
+		if m.isFilterMode() {
+			return m.handleFilterKey(msg)
+		}
 		if m.searchMode {
 			return m.handleSearchKey(msg)
 		}
 		return m.handleNormalKey(msg)
+	}
+	return m, nil
+}
+
+func (m Model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "j", "down", "l", "right":
+		if m.filterIndex < len(m.filterOptions)-1 {
+			m.filterIndex++
+			m.typeFilter = m.filterOptions[m.filterIndex]
+			m.refilter()
+		}
+	case "k", "up", "h", "left":
+		if m.filterIndex > 0 {
+			m.filterIndex--
+			m.typeFilter = m.filterOptions[m.filterIndex]
+			m.refilter()
+		}
+	case "0":
+		m.filterIndex = 0
+		m.typeFilter = ""
+		m.refilter()
+	case "1", "2", "3", "4":
+		t, _ := m.typeFilterFor(msg.String())
+		for i, opt := range m.filterOptions {
+			if opt == t {
+				m.filterIndex = i
+				m.typeFilter = t
+				m.refilter()
+				break
+			}
+		}
+	case "enter", "f":
+		m.exitFilterMode()
+	case "esc":
+		m.typeFilter = m.savedTypeFilter
+		m.refilter()
+		m.exitFilterMode()
 	}
 	return m, nil
 }
@@ -79,7 +122,7 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	m.lastKeyWasG = false
 
-	// Type filter keys (0-9) — builtins pinned to 1-4, custom types on 5-9
+	// Type filter accelerators — 0 for all, 1-4 for the builtin types
 	if filter, ok := m.typeFilterFor(key); ok {
 		m.typeFilter = filter
 		m.refilter()
@@ -138,6 +181,10 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.enterPriorityMode()
 	case "S":
 		m.enterStageMode()
+
+	// Type filter mode
+	case "f":
+		m.enterFilterMode()
 
 	// Quick actions (read-only)
 	case "e":
