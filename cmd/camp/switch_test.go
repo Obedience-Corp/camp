@@ -1,20 +1,38 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"sort"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/nav/fuzzy"
+	"github.com/spf13/cobra"
 )
 
 func newTestRegistry(campaigns ...config.RegisteredCampaign) *config.Registry {
 	reg := config.NewRegistry()
 	for _, c := range campaigns {
 		_ = reg.Register(c.ID, c.Name, c.Path, c.Type)
+	}
+	return reg
+}
+
+func newSwitchScopedRegistry(campaigns ...config.RegisteredCampaign) *config.Registry {
+	reg := config.NewRegistry()
+	for _, c := range campaigns {
+		if c.Org == "" {
+			c.Org = config.DefaultOrg
+		}
+		if c.Status == "" {
+			c.Status = config.StatusActive
+		}
+		reg.Campaigns[c.ID] = c
 	}
 	return reg
 }
@@ -209,6 +227,116 @@ func TestSwitchExactMatchPreserved(t *testing.T) {
 	}
 }
 
+func TestParseSwitchSelector(t *testing.T) {
+	tests := []struct {
+		input        string
+		wantOrg      string
+		wantCampaign string
+		wantTab      string
+		wantHasTab   bool
+	}{
+		{input: "platform", wantCampaign: "platform"},
+		{input: "platform@p", wantCampaign: "platform", wantTab: "p", wantHasTab: true},
+		{input: "obey/platform", wantOrg: "obey", wantCampaign: "platform"},
+		{input: "obey/platform@p", wantOrg: "obey", wantCampaign: "platform", wantTab: "p", wantHasTab: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := cmdutil.ParseSwitchSelector(tt.input)
+			if got.Org != tt.wantOrg || got.Campaign != tt.wantCampaign || got.Tab != tt.wantTab || got.HasTab != tt.wantHasTab {
+				t.Fatalf("ParseSwitchSelector(%q) = %#v, want org=%q campaign=%q tab=%q hasTab=%v",
+					tt.input, got, tt.wantOrg, tt.wantCampaign, tt.wantTab, tt.wantHasTab)
+			}
+		})
+	}
+}
+
+func TestSwitchScopedFilteringAndResolution(t *testing.T) {
+	reg := newSwitchScopedRegistry(
+		config.RegisteredCampaign{ID: "default-alpha", Name: "alpha", Path: "/tmp/alpha", Org: config.DefaultOrg, Status: config.StatusActive},
+		config.RegisteredCampaign{ID: "obey-platform", Name: "platform", Path: "/tmp/obey-platform", Org: "obey", Status: config.StatusActive},
+		config.RegisteredCampaign{ID: "obey-content", Name: "content", Path: "/tmp/obey-content", Org: "obey", Status: config.StatusInactive},
+		config.RegisteredCampaign{ID: "acme-platform", Name: "platform", Path: "/tmp/acme-platform", Org: "client-acme", Status: config.StatusActive},
+		config.RegisteredCampaign{ID: "acme-archive", Name: "archive", Path: "/tmp/acme-archive", Org: "client-acme", Status: config.StatusReference},
+	)
+
+	got := cmdutil.FilterCampaigns(reg, cmdutil.CampaignScope{Org: "obey"})
+	if names := campaignNamesForTest(got); strings.Join(names, ",") != "platform" {
+		t.Fatalf("active obey candidates = %v, want [platform]", names)
+	}
+
+	_, err := cmdutil.ResolveCampaignSelectionScoped("content", reg, cmdutil.CampaignScope{Org: "obey"}, nil)
+	if err == nil || !strings.Contains(err.Error(), "status \"active\"") {
+		t.Fatalf("inactive default resolve error = %v, want active-status not found", err)
+	}
+
+	c, err := cmdutil.ResolveCampaignSelectionScoped("content", reg, cmdutil.CampaignScope{Org: "obey", All: true}, nil)
+	if err != nil {
+		t.Fatalf("--all inactive resolve: %v", err)
+	}
+	if c.ID != "obey-content" {
+		t.Fatalf("--all resolved %q, want obey-content", c.ID)
+	}
+
+	c, err = cmdutil.ResolveCampaignSelectionScoped("plat", reg, cmdutil.CampaignScope{Org: "client-acme"}, nil)
+	if err != nil {
+		t.Fatalf("scoped fuzzy resolve: %v", err)
+	}
+	if c.ID != "acme-platform" {
+		t.Fatalf("scoped fuzzy resolved %q, want acme-platform", c.ID)
+	}
+}
+
+func TestSwitchCompletionScopedByOrgAndStatus(t *testing.T) {
+	reg := newSwitchScopedRegistry(
+		config.RegisteredCampaign{ID: "obey-platform", Name: "platform", Path: "/tmp/obey-platform", Org: "obey", Status: config.StatusActive},
+		config.RegisteredCampaign{ID: "obey-content", Name: "content", Path: "/tmp/obey-content", Org: "obey", Status: config.StatusInactive},
+		config.RegisteredCampaign{ID: "acme-platform", Name: "platform", Path: "/tmp/acme-platform", Org: "client-acme", Status: config.StatusActive},
+	)
+
+	got := completeSwitchCampaigns(reg, cmdutil.CampaignScope{}, "obey/")
+	if strings.Join(got, ",") != "obey/platform" {
+		t.Fatalf("obey/ completion = %v, want [obey/platform]", got)
+	}
+
+	got = completeSwitchCampaigns(reg, cmdutil.CampaignScope{Org: "obey"}, "")
+	if strings.Join(got, ",") != "platform" {
+		t.Fatalf("--org obey completion = %v, want [platform]", got)
+	}
+
+	got = completeSwitchCampaigns(reg, cmdutil.CampaignScope{Org: "obey", All: true}, "")
+	if strings.Join(got, ",") != "content,platform" {
+		t.Fatalf("--org obey --all completion = %v, want [content platform]", got)
+	}
+
+	got = completeSwitchCampaigns(reg, cmdutil.CampaignScope{}, "obe")
+	if !containsString(got, "obey/") {
+		t.Fatalf("org namespace completion = %v, want obey/", got)
+	}
+}
+
+func TestSwitchJSONOutput(t *testing.T) {
+	var buf bytes.Buffer
+	cmd := switchCommandForTest(&buf)
+	selected := config.RegisteredCampaign{
+		ID:     "obey-platform",
+		Name:   "platform",
+		Org:    "obey",
+		Status: config.StatusActive,
+		Path:   "/tmp/platform",
+	}
+	if err := emitSwitchSelection(cmd, selected, "/tmp/platform/projects", "p", false, true); err != nil {
+		t.Fatalf("emitSwitchSelection: %v", err)
+	}
+	var got switchOutput
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("json output: %v\n%s", err, buf.String())
+	}
+	if got.SchemaVersion != "camp-switch/v1" || got.Campaign.Org != "obey" || got.Target.Tab != "p" || got.Target.Path != "/tmp/platform/projects" {
+		t.Fatalf("json output = %#v", got)
+	}
+}
+
 func TestSwitchTabCompletionFuzzy(t *testing.T) {
 	names := []string{"obey-platform-monorepo", "side-project", "research-ai"}
 
@@ -255,6 +383,37 @@ func TestSwitchTabCompletionFuzzy(t *testing.T) {
 			}
 		})
 	}
+}
+
+func campaignNamesForTest(campaigns []config.RegisteredCampaign) []string {
+	names := make([]string, len(campaigns))
+	for i, c := range campaigns {
+		names[i] = c.Name
+	}
+	sort.Strings(names)
+	return names
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func switchCommandForTest(out *bytes.Buffer) *cobra.Command {
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	cmd.SetOut(out)
+	cmd.SetErr(out)
+	cmd.Flags().Bool("print", false, "")
+	cmd.Flags().Bool("json", false, "")
+	cmd.Flags().String("org", "", "")
+	cmd.Flags().String("status", "", "")
+	cmd.Flags().Bool("all", false, "")
+	return cmd
 }
 
 func TestResolveTabInCampaign(t *testing.T) {
@@ -393,7 +552,7 @@ func TestCompleteSwitchTabs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			got := completeSwitchTabs(ctx, reg, tt.campaignQuery, tt.tabPrefix)
+			got := completeSwitchTabs(ctx, reg, tt.campaignQuery, tt.tabPrefix, cmdutil.CampaignScope{All: true})
 			if tt.wantEmpty {
 				if len(got) != 0 {
 					t.Errorf("expected empty result, got %v", got)
