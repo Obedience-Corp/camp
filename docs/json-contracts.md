@@ -32,12 +32,12 @@ Schema versions in this release:
 | `camp intent count --json` | `intents/v1alpha1` | Counts are emitted as status-count objects in `items[]`; `--format json` is a deprecated alias. |
 | `camp intent add --json` | `intents/v1alpha1` | Emits created `id` and `path`. |
 | `camp clone --json` | `clone/v1alpha1` | Existing clone result shape; setup and validation failures use the JSON error envelope. |
-| `camp doctor --json` | `doctor/v1alpha1` | Existing health result shape on stdout; discovered error findings also emit a JSON error envelope on stderr with the same exit code. |
+| `camp doctor --json` | `doctor/v1alpha1` | Emits `schema_version` plus the snake_case health result on stdout; discovered error findings also emit a JSON error envelope on stderr with the same exit code. |
 | `camp leverage --json` | `leverage/v1alpha1` | Existing leverage result shape; refusals use the JSON error envelope. |
 | `camp leverage history --json` | `leverage-history/v1alpha1` | Existing history result shape; refusals use the JSON error envelope. |
 | `camp quest list --json` | `quest-list/v1alpha1` | Dev-profile quest listing; refusals use the JSON error envelope. |
 | `camp quest show --json` | `quest-show/v1alpha1` | Dev-profile quest metadata; refusals use the JSON error envelope. |
-| `camp quest links --json` | `quest-links/v1alpha1` | Dev-profile quest links; refusals use the JSON error envelope. |
+| `camp quest links --json` | `quest-links/v1alpha1` | Emits `schema_version`, `campaign_root`, and `links` with campaign-relative paths, matching `status all`. |
 | `camp skills status --json` | `skills-status/v1alpha1` | Existing skill projection status shape; failures use the JSON error envelope. |
 | `camp status all --json` | `status-all/v1alpha1` | Emits `schema_version`, `timestamp`, optional `campaign_root`, and `repos`; an empty campaign emits `repos: []`. |
 | `camp sync --json` | `sync/v1alpha1` | Existing sync result shape; returned failures use the JSON error envelope. |
@@ -81,8 +81,8 @@ this normalizes paths such as `/tmp` to `/private/tmp`. Consumers should use
 the `campaign_root` from the payload instead of resolving roots independently.
 
 The `camp status all --json` campaign-root repo entry uses `.` as its relative
-path. Dev-profile quest JSON follows the same path rule while preserving its
-existing success payload shape.
+path. Dev-profile quest JSON (`quest list`, `quest show`, `quest links`)
+follows the same path rule and carries `campaign_root` in its envelope.
 
 ## Field Rules
 

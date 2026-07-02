@@ -10,7 +10,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 	"github.com/Obedience-Corp/camp/internal/quest"
 )
 
@@ -59,18 +61,37 @@ func runQuestLinks(cmd *cobra.Command, args []string) error {
 	}
 
 	if questLinksJSON {
-		return outputLinksJSON(links)
+		return outputLinksJSON(qctx, links)
 	}
 	return outputLinksTable(links)
 }
 
-func outputLinksJSON(links []quest.Link) error {
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
+type questLinksJSONPayload struct {
+	SchemaVersion string       `json:"schema_version"`
+	CampaignRoot  string       `json:"campaign_root"`
+	Links         []quest.Link `json:"links"`
+}
+
+func outputLinksJSON(qctx *questCommandContext, links []quest.Link) error {
 	if links == nil {
 		links = []quest.Link{}
 	}
-	return enc.Encode(links)
+	relLinks := make([]quest.Link, len(links))
+	for i, link := range links {
+		relPath, err := pathutil.RelativeToRoot(qctx.campaignRoot, link.Path)
+		if err != nil {
+			return camperrors.Wrap(err, "relativizing link path")
+		}
+		link.Path = relPath
+		relLinks[i] = link
+	}
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(questLinksJSONPayload{
+		SchemaVersion: QuestLinksJSONVersion,
+		CampaignRoot:  qctx.campaignRoot,
+		Links:         relLinks,
+	})
 }
 
 func outputLinksTable(links []quest.Link) error {

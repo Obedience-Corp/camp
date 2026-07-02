@@ -40,19 +40,19 @@ func (s Severity) String() string {
 // Issue represents a detected problem in the campaign.
 type Issue struct {
 	// Severity indicates the importance of this issue.
-	Severity Severity
+	Severity Severity `json:"severity"`
 	// CheckID identifies which check found this issue.
-	CheckID string
+	CheckID string `json:"check_id"`
 	// Submodule is the affected submodule path (empty for root-level issues).
-	Submodule string
+	Submodule string `json:"submodule,omitempty"`
 	// Description explains what's wrong.
-	Description string
+	Description string `json:"description"`
 	// FixCommand suggests a command to fix this issue.
-	FixCommand string
+	FixCommand string `json:"fix_command,omitempty"`
 	// AutoFixable indicates whether this issue can be automatically fixed.
-	AutoFixable bool
+	AutoFixable bool `json:"auto_fixable"`
 	// Details contains additional context for the issue.
-	Details map[string]any
+	Details map[string]any `json:"details,omitempty"`
 }
 
 // IsError returns true if this is an error-level issue.

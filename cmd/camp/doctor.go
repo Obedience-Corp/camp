@@ -136,11 +136,25 @@ func registerChecks(d *doctor.Doctor) {
 	d.RegisterCheck(checks.NewLockCheck())
 }
 
+type doctorJSONPayload struct {
+	SchemaVersion string `json:"schema_version"`
+	*doctor.DoctorResult
+}
+
 // outputDoctorJSON outputs results as JSON.
 func outputDoctorJSON(result *doctor.DoctorResult) error {
+	if result.Issues == nil {
+		result.Issues = []doctor.Issue{}
+	}
+	if result.Fixed == nil {
+		result.Fixed = []doctor.Issue{}
+	}
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
-	return encoder.Encode(result)
+	return encoder.Encode(doctorJSONPayload{
+		SchemaVersion: DoctorJSONVersion,
+		DoctorResult:  result,
+	})
 }
 
 // outputDoctorText outputs results in human-readable format.
