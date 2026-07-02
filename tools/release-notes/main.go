@@ -55,27 +55,14 @@ func run(args []string) error {
 		return err
 	}
 
-	subjects, err := commitSubjects(*tag, previousTag)
+	entries, err := commitGroups(*tag, previousTag)
 	if err != nil {
 		return err
 	}
 
-	var changes []notes.Change
-	seen := map[string]struct{}{}
-	for _, subject := range subjects {
-		change, ok := notes.ParseCommitSubject(subject)
-		if !ok {
-			continue
-		}
-		key := strings.ToLower(change.Text)
-		if _, exists := seen[key]; exists {
-			continue
-		}
-		seen[key] = struct{}{}
-		changes = append(changes, change)
-	}
+	groups := notes.BuildGroups(entries)
 
-	rendered, err := notes.Render(*repo, current, previousTag, changes)
+	rendered, err := notes.Render(*repo, current, previousTag, groups)
 	if err != nil {
 		return err
 	}
@@ -105,14 +92,34 @@ func run(args []string) error {
 	return nil
 }
 
-func commitSubjects(tag, previousTag string) ([]string, error) {
-	args := []string{"log", "--format=%s"}
-	if previousTag != "" {
-		args = append(args, previousTag+".."+tag)
-	} else {
+func commitGroups(tag, previousTag string) ([]notes.RawEntry, error) {
+	if previousTag == "" {
 		return nil, nil
 	}
-	return gitLines(args...)
+
+	spine, err := gitLines("log", "--first-parent", "--format=%H%x1f%P%x1f%s", previousTag+".."+tag)
+	if err != nil {
+		return nil, err
+	}
+
+	var entries []notes.RawEntry
+	for _, line := range spine {
+		fields := strings.Split(line, "\x1f")
+		if len(fields) != 3 {
+			continue
+		}
+		entry := notes.RawEntry{Subject: fields[2]}
+		if parents := strings.Fields(fields[1]); len(parents) == 2 {
+			children, err := gitLines("log", "--format=%s", parents[0]+".."+parents[1])
+			if err != nil {
+				return nil, err
+			}
+			entry.IsMerge = true
+			entry.ChildSubjects = children
+		}
+		entries = append(entries, entry)
+	}
+	return entries, nil
 }
 
 func resolvePreviousTag(current notes.TagInfo, targetCommit string, tags []string) (string, error) {

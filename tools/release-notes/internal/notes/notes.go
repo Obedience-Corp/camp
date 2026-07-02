@@ -105,14 +105,7 @@ func FindPreviousTag(target TagInfo, tags []string) string {
 }
 
 func ParseCommitSubject(subject string) (Change, bool) {
-	subject = strings.TrimSpace(subject)
-	for {
-		trimmed := bracketLeadRe.ReplaceAllString(subject, "")
-		if trimmed == subject {
-			break
-		}
-		subject = strings.TrimSpace(trimmed)
-	}
+	subject = stripBracketTags(subject)
 
 	if subject == "" || strings.HasPrefix(subject, "Merge ") {
 		return Change{}, false
@@ -148,47 +141,72 @@ func ParseCommitSubject(subject string) (Change, bool) {
 	}, true
 }
 
-func Render(repo string, current TagInfo, previousTag string, changes []Change) (string, error) {
+func stripBracketTags(subject string) string {
+	subject = strings.TrimSpace(subject)
+	for {
+		trimmed := bracketLeadRe.ReplaceAllString(subject, "")
+		if trimmed == subject {
+			break
+		}
+		subject = strings.TrimSpace(trimmed)
+	}
+	return subject
+}
+
+func Render(repo string, current TagInfo, previousTag string, groups []Group) (string, error) {
 	if repo == "" {
 		return "", fmt.Errorf("repo is required")
 	}
 
-	changes = dedupeChanges(changes)
-
 	var b strings.Builder
-	writeLine := func(s string) {
+	write := func(s string) {
 		b.WriteString(s)
 		b.WriteByte('\n')
 	}
 
-	writeLine("## Release " + current.Raw)
-	writeLine("")
-	writeLine(fmt.Sprintf("This %s release includes the following changes.", channelLabel(current.Mode)))
-	writeLine("")
+	write("## Release " + current.Raw)
+	write("")
+	write(fmt.Sprintf("This %s release includes the following changes.", channelLabel(current.Mode)))
+	write("")
 
-	if previousTag != "" {
-		writeLine("Summary:")
-		for _, line := range summaryLines(changes) {
-			writeLine("- " + line)
-		}
-		writeLine("")
-		writeLine(fmt.Sprintf("Compare: https://github.com/%s/compare/%s...%s", repo, previousTag, current.Raw))
-		writeLine("")
-	} else {
-		writeLine("This is the first release covered by the structured release-notes generator.")
-		writeLine("")
+	writeSummary(write, repo, current, previousTag, LeafChanges(groups))
+	writeHighlights(write, repo, headlineChanges(groups))
+	writeSections(write, repo, groups)
+
+	return strings.TrimSpace(b.String()) + "\n", nil
+}
+
+func writeSummary(write func(string), repo string, current TagInfo, previousTag string, leaves []Change) {
+	if previousTag == "" {
+		write("This is the first release covered by the structured release-notes generator.")
+		write("")
+		return
 	}
 
-	highlights := highlightChanges(changes)
-	if len(highlights) > 0 && !(len(highlights) == 1 && countUserFacing(changes) == 1) {
-		writeLine("## Highlights")
-		writeLine("")
-		for _, change := range highlights {
-			writeLine("- " + renderChange(repo, change))
-		}
-		writeLine("")
+	write("Summary:")
+	for _, line := range summaryLines(leaves) {
+		write("- " + line)
+	}
+	write("")
+	write(fmt.Sprintf("Compare: https://github.com/%s/compare/%s...%s", repo, previousTag, current.Raw))
+	write("")
+}
+
+func writeHighlights(write func(string), repo string, headlines []Change) {
+	highlights := highlightChanges(headlines)
+	if len(highlights) == 0 || (len(highlights) == 1 && countUserFacing(headlines) == 1) {
+		return
 	}
 
+	write("## Highlights")
+	write("")
+	for _, change := range highlights {
+		write("- " + renderChange(repo, change))
+	}
+	write("")
+}
+
+func writeSections(write func(string), repo string, groups []Group) {
 	sections := []struct {
 		title    string
 		category ChangeCategory
@@ -201,19 +219,27 @@ func Render(repo string, current TagInfo, previousTag string, changes []Change) 
 	}
 
 	for _, section := range sections {
-		entries := filterChanges(changes, section.category)
+		entries := sectionGroups(groups, section.category)
 		if len(entries) == 0 {
 			continue
 		}
-		writeLine("## " + section.title)
-		writeLine("")
-		for _, change := range entries {
-			writeLine("- " + renderChange(repo, change))
+		write("## " + section.title)
+		write("")
+		for _, group := range entries {
+			for _, line := range renderGroup(repo, group) {
+				write(line)
+			}
 		}
-		writeLine("")
+		write("")
 	}
+}
 
-	return strings.TrimSpace(b.String()) + "\n", nil
+func renderGroup(repo string, group Group) []string {
+	lines := []string{"- " + renderChange(repo, group.Change)}
+	for _, child := range group.Children {
+		lines = append(lines, "  - "+renderChange(repo, child))
+	}
+	return lines
 }
 
 func findPreviousStable(target TagInfo, tags []string) string {
@@ -357,68 +383,8 @@ func highlightChanges(changes []Change) []Change {
 	return changes
 }
 
-func filterChanges(changes []Change, category ChangeCategory) []Change {
-	var filtered []Change
-	for _, change := range changes {
-		if change.Category == category {
-			filtered = append(filtered, change)
-		}
-	}
-	return filtered
-}
-
-func dedupeChanges(changes []Change) []Change {
-	if len(changes) < 2 {
-		return changes
-	}
-
-	var deduped []Change
-	indexByKey := map[string]int{}
-
-	for _, change := range changes {
-		key := normalizedChangeKey(change)
-		if idx, ok := indexByKey[key]; ok {
-			deduped[idx] = preferChange(deduped[idx], change)
-			continue
-		}
-
-		indexByKey[key] = len(deduped)
-		deduped = append(deduped, change)
-	}
-
-	return deduped
-}
-
 func normalizedChangeKey(change Change) string {
 	return strings.ToLower(strings.TrimSpace(change.Text))
-}
-
-func preferChange(current, candidate Change) Change {
-	switch {
-	case current.PRNumber == 0 && candidate.PRNumber != 0:
-		return candidate
-	case current.PRNumber != 0 && candidate.PRNumber == 0:
-		return current
-	case categoryRank(candidate.Category) < categoryRank(current.Category):
-		return candidate
-	default:
-		return current
-	}
-}
-
-func categoryRank(category ChangeCategory) int {
-	switch category {
-	case CategoryFeature:
-		return 0
-	case CategoryFix:
-		return 1
-	case CategoryDocs:
-		return 2
-	case CategoryMaintenance:
-		return 3
-	default:
-		return 4
-	}
 }
 
 func countUserFacing(changes []Change) int {

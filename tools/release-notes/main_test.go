@@ -79,12 +79,12 @@ func TestResolvePreviousTagSkipsSameCommitTags(t *testing.T) {
 	}
 }
 
-func TestCommitSubjectsFirstReleaseSkipsHistory(t *testing.T) {
-	subjects, err := commitSubjects("v1.0.0", "")
+func TestCommitGroupsFirstReleaseSkipsHistory(t *testing.T) {
+	entries, err := commitGroups("v1.0.0", "")
 	if err != nil {
-		t.Fatalf("commitSubjects() error = %v", err)
+		t.Fatalf("commitGroups() error = %v", err)
 	}
-	if subjects != nil {
-		t.Fatalf("subjects = %#v, want nil for first release", subjects)
+	if entries != nil {
+		t.Fatalf("entries = %#v, want nil for first release", entries)
 	}
 }
