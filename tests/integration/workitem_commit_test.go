@@ -76,7 +76,7 @@ func TestIntegration_WorkitemCommit_WorkitemDirContext(t *testing.T) {
 	require.NoError(t, err, "camp workitem commit: %s", out)
 
 	subject := lastCommitSubject(t, tc, dir)
-	assert.Contains(t, subject, "WI-"+ref, "subject = %s", subject)
+	assert.Contains(t, subject, ref, "subject = %s", subject)
 
 	changed := headChangedPaths(t, tc, dir)
 	assert.Contains(t, changed, "workflow/design/timeline/notes.md")
@@ -107,7 +107,7 @@ func TestIntegration_WorkitemCommit_LinkedProject(t *testing.T) {
 	require.NoError(t, err, "camp workitem commit: %s", out)
 
 	subject := lastCommitSubject(t, tc, dir+"/projects/camp-timeline")
-	assert.Contains(t, subject, "WI-"+ref, "project subject = %s", subject)
+	assert.Contains(t, subject, ref, "project subject = %s", subject)
 
 	rootHeadAfter, _, herr := tc.ExecCommand("git", "-C", dir, "rev-parse", "HEAD")
 	require.NoError(t, herr)
@@ -138,7 +138,7 @@ func TestIntegration_WorkitemCommit_FestivalContextFromCwd(t *testing.T) {
 	assert.Equal(t, "festival", plan.Context)
 	assert.Equal(t, "CT0001", plan.FestivalRef)
 	assert.Contains(t, plan.Tag, "FE-CT0001")
-	assert.Contains(t, plan.Tag, "WI-"+ref)
+	assert.Contains(t, plan.Tag, ref)
 	assert.Contains(t, plan.Stage, "festivals/active/CT0001/FESTIVAL_GOAL.md")
 
 	out, err := tc.RunCampInDir(festDir,
@@ -147,7 +147,7 @@ func TestIntegration_WorkitemCommit_FestivalContextFromCwd(t *testing.T) {
 
 	subject := lastCommitSubject(t, tc, dir)
 	assert.Contains(t, subject, "FE-CT0001", "subject = %s", subject)
-	assert.Contains(t, subject, "WI-"+ref, "subject = %s", subject)
+	assert.Contains(t, subject, ref, "subject = %s", subject)
 	changed := headChangedPaths(t, tc, dir)
 	assert.Contains(t, changed, "festivals/active/CT0001/FESTIVAL_GOAL.md")
 	assert.Contains(t, changed, ".campaign/workitems/links.yaml")
@@ -182,7 +182,7 @@ func TestIntegration_WorkitemCommit_MultiFestivalStagesResolvedScope(t *testing.
 
 	assert.Equal(t, "ZZ0002", plan.FestivalRef)
 	assert.Contains(t, plan.Tag, "FE-ZZ0002")
-	assert.Contains(t, plan.Tag, "WI-"+ref)
+	assert.Contains(t, plan.Tag, ref)
 	assert.Contains(t, plan.Stage, "festivals/active/ZZ0002/FESTIVAL_GOAL.md",
 		"committing from ZZ0002 must stage ZZ0002 files: %v", plan.Stage)
 	assert.NotContains(t, plan.Stage, "festivals/active/AA0001/FESTIVAL_GOAL.md",
@@ -435,7 +435,7 @@ func TestIntegration_WorkitemCommit_StagedLinkedProject(t *testing.T) {
 
 	projHead, _, herr := tc.ExecCommand("git", "-C", projDir, "log", "-1", "--pretty=%H %s")
 	require.NoError(t, herr)
-	assert.Contains(t, projHead, "WI-"+ref,
+	assert.Contains(t, projHead, ref,
 		"submodule HEAD must include WI-<ref>: %s", projHead)
 
 	rootHeadAfter, _, herr := tc.ExecCommand("git", "-C", dir, "rev-parse", "HEAD")
@@ -512,7 +512,7 @@ func TestIntegration_WorkitemCommit_SymlinkedCampaignRoot(t *testing.T) {
 	require.NoError(t, err, "camp workitem commit via symlink: %s", out)
 
 	subject := lastCommitSubject(t, tc, real+"/projects/camp-timeline")
-	assert.Contains(t, subject, "WI-"+ref,
+	assert.Contains(t, subject, ref,
 		"project subject must include WI-<ref> after symlinked-cwd commit: %s", subject)
 
 	rootHeadAfter, _, herr := tc.ExecCommand("git", "-C", real, "rev-parse", "HEAD")

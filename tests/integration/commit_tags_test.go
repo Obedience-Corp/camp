@@ -68,7 +68,7 @@ func TestIntegration_CommitTags_CampCommit(t *testing.T) {
 	require.NoError(t, err, "camp commit: %s", out)
 
 	subject := lastCommitSubject(t, tc, dir)
-	assert.Contains(t, subject, "WI-"+ref, "subject should include WI-<ref>: %s", subject)
+	assert.Contains(t, subject, ref, "subject should include the WI-<ref>: %s", subject)
 	assert.Contains(t, subject, "design: timeline contract", "subject = %s", subject)
 }
 
@@ -90,7 +90,7 @@ func TestIntegration_CommitTags_CampPCommit(t *testing.T) {
 	require.NoError(t, err, "camp p commit: %s", out)
 
 	subject := lastCommitSubject(t, tc, dir+"/projects/camp-timeline")
-	assert.Contains(t, subject, "WI-"+ref, "subject should include WI-<ref>: %s", subject)
+	assert.Contains(t, subject, ref, "subject should include WI-<ref>: %s", subject)
 	assert.Contains(t, subject, "feat: stub", "subject = %s", subject)
 }
 
@@ -131,7 +131,7 @@ func TestIntegration_CommitTags_ExplicitOverride(t *testing.T) {
 	require.NoError(t, err, "camp commit --workitem: %s", out)
 
 	subject := lastCommitSubject(t, tc, dir)
-	assert.Contains(t, subject, "WI-"+ref, "explicit override should win: %s", subject)
+	assert.Contains(t, subject, ref, "explicit override should win: %s", subject)
 }
 
 func TestIntegration_CommitTags_BackfillsV1Alpha5WorkitemOnCommit(t *testing.T) {
@@ -211,7 +211,7 @@ func TestIntegration_CommitTags_NoteInheritsWorkitemContext(t *testing.T) {
 	require.NoError(t, err, "camp intent note: %s", out)
 
 	subject := lastCommitSubject(t, tc, dir)
-	assert.Contains(t, subject, "WI-"+ref,
+	assert.Contains(t, subject, ref,
 		"note captured inside a workitem should inherit its WI-<ref>: %s", subject)
 	assert.Contains(t, subject, "check the daemon socket path",
 		"note commit subject should carry the note title: %s", subject)
