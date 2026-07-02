@@ -113,13 +113,15 @@ func completeQuestSelector(cmd *cobra.Command, _ []string, toComplete string) ([
 }
 
 type questListJSONPayload struct {
-	CampaignRoot string         `json:"campaign_root"`
-	Items        []*quest.Quest `json:"items"`
+	SchemaVersion string         `json:"schema_version"`
+	CampaignRoot  string         `json:"campaign_root"`
+	Items         []*quest.Quest `json:"items"`
 }
 
 type questShowJSONPayload struct {
-	CampaignRoot string       `json:"campaign_root"`
-	Quest        *quest.Quest `json:"quest"`
+	SchemaVersion string       `json:"schema_version"`
+	CampaignRoot  string       `json:"campaign_root"`
+	Quest         *quest.Quest `json:"quest"`
 }
 
 func outputQuestListJSON(qctx *questCommandContext, quests []*quest.Quest) error {
@@ -130,8 +132,9 @@ func outputQuestListJSON(qctx *questCommandContext, quests []*quest.Quest) error
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	return enc.Encode(questListJSONPayload{
-		CampaignRoot: qctx.campaignRoot,
-		Items:        items,
+		SchemaVersion: QuestListJSONVersion,
+		CampaignRoot:  qctx.campaignRoot,
+		Items:         items,
 	})
 }
 
@@ -143,8 +146,9 @@ func outputQuestShowJSON(qctx *questCommandContext, q *quest.Quest) error {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	return enc.Encode(questShowJSONPayload{
-		CampaignRoot: qctx.campaignRoot,
-		Quest:        item,
+		SchemaVersion: QuestShowJSONVersion,
+		CampaignRoot:  qctx.campaignRoot,
+		Quest:         item,
 	})
 }
 

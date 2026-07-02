@@ -122,6 +122,98 @@ func installDoctorJSONFakeFuser(t *testing.T) {
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
+func TestOutputDoctorJSONUsesSnakeCaseKeysAndSchemaVersion(t *testing.T) {
+	result := &doctor.DoctorResult{
+		Success: false,
+		Passed:  1,
+		Warned:  1,
+		Failed:  1,
+		Issues: []doctor.Issue{
+			{Severity: doctor.SeverityError, CheckID: "url", Description: "mismatch"},
+		},
+		CheckResults: map[string]bool{"url": false},
+	}
+
+	stdout, err := captureDoctorJSONStdout(t, func() error {
+		return outputDoctorJSON(result)
+	})
+	if err != nil {
+		t.Fatalf("outputDoctorJSON: %v", err)
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(stdout), &raw); err != nil {
+		t.Fatalf("doctor JSON output is not valid JSON: %v\n%s", err, stdout)
+	}
+
+	for _, key := range []string{"schema_version", "success", "passed", "warned", "failed", "issues", "fixed", "check_results"} {
+		if _, ok := raw[key]; !ok {
+			t.Errorf("doctor JSON missing expected snake_case key %q, got: %s", key, stdout)
+		}
+	}
+	for _, key := range []string{"Success", "Passed", "Warned", "Failed", "Issues", "Fixed", "CheckResults"} {
+		if _, ok := raw[key]; ok {
+			t.Errorf("doctor JSON still emits PascalCase key %q, got: %s", key, stdout)
+		}
+	}
+
+	var schemaVersion string
+	if err := json.Unmarshal(raw["schema_version"], &schemaVersion); err != nil {
+		t.Fatalf("schema_version is not a string: %v", err)
+	}
+	if schemaVersion != DoctorJSONVersion {
+		t.Errorf("schema_version = %q, want %q", schemaVersion, DoctorJSONVersion)
+	}
+
+	var issues []map[string]json.RawMessage
+	if err := json.Unmarshal(raw["issues"], &issues); err != nil {
+		t.Fatalf("issues is not an array: %v", err)
+	}
+	if len(issues) != 1 {
+		t.Fatalf("issues length = %d, want 1", len(issues))
+	}
+	for _, key := range []string{"severity", "check_id", "description", "auto_fixable"} {
+		if _, ok := issues[0][key]; !ok {
+			t.Errorf("issue missing expected snake_case key %q, got: %v", key, issues[0])
+		}
+	}
+	var severity string
+	if err := json.Unmarshal(issues[0]["severity"], &severity); err != nil {
+		t.Fatalf("severity is not a string: %v", err)
+	}
+	if severity != "error" {
+		t.Errorf("severity = %q, want %q", severity, "error")
+	}
+}
+
+func TestOutputDoctorJSONEmitsEmptyArraysNotNull(t *testing.T) {
+	result := &doctor.DoctorResult{Success: true, CheckResults: map[string]bool{}}
+
+	stdout, err := captureDoctorJSONStdout(t, func() error {
+		return outputDoctorJSON(result)
+	})
+	if err != nil {
+		t.Fatalf("outputDoctorJSON: %v", err)
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(stdout), &raw); err != nil {
+		t.Fatalf("doctor JSON output is not valid JSON: %v\n%s", err, stdout)
+	}
+	for _, key := range []string{"issues", "fixed"} {
+		got := string(raw[key])
+		if got != "[]" {
+			t.Errorf("%s = %s, want empty array []", key, got)
+		}
+	}
+	if result.Issues != nil {
+		t.Errorf("outputDoctorJSON mutated result.Issues to non-nil: %#v", result.Issues)
+	}
+	if result.Fixed != nil {
+		t.Errorf("outputDoctorJSON mutated result.Fixed to non-nil: %#v", result.Fixed)
+	}
+}
+
 func captureDoctorJSONStdout(t *testing.T, fn func() error) (string, error) {
 	t.Helper()
 

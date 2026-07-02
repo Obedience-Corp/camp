@@ -19,19 +19,19 @@ type DoctorOptions struct {
 // DoctorResult contains the outcome of a health check.
 type DoctorResult struct {
 	// Success is true when no errors are found (warnings are OK).
-	Success bool
+	Success bool `json:"success"`
 	// Passed is the number of checks that passed without issues.
-	Passed int
+	Passed int `json:"passed"`
 	// Warned is the number of checks that found warnings.
-	Warned int
+	Warned int `json:"warned"`
 	// Failed is the number of checks that found errors.
-	Failed int
+	Failed int `json:"failed"`
 	// Issues contains all detected problems.
-	Issues []Issue
+	Issues []Issue `json:"issues"`
 	// Fixed contains issues that were successfully repaired (when Fix=true).
-	Fixed []Issue
+	Fixed []Issue `json:"fixed"`
 	// CheckResults contains per-check pass/fail status.
-	CheckResults map[string]bool
+	CheckResults map[string]bool `json:"check_results"`
 }
 
 // CheckResult contains findings from a single health check.

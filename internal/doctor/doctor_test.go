@@ -2,6 +2,7 @@ package doctor
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 )
@@ -384,6 +385,16 @@ func TestSeverityString(t *testing.T) {
 				t.Errorf("expected %q, got %q", tt.expected, got)
 			}
 		})
+	}
+}
+
+func TestSeverityMarshalJSONUsesStringValue(t *testing.T) {
+	got, err := json.Marshal(SeverityWarning)
+	if err != nil {
+		t.Fatalf("MarshalJSON: %v", err)
+	}
+	if string(got) != `"warning"` {
+		t.Fatalf("severity JSON = %s, want %q", got, `"warning"`)
 	}
 }
 
