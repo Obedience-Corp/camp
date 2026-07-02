@@ -85,6 +85,8 @@ Use campaign@tab to navigate to a specific location in the target campaign:
 	},
 }
 
+const switchSchemaVersion = "camp-switch/v1"
+
 func init() {
 	rootCmd.AddCommand(switchCmd)
 	switchCmd.GroupID = "global"
@@ -370,7 +372,7 @@ func emitSwitchSelection(cmd *cobra.Command, selected config.RegisteredCampaign,
 	}
 	if jsonOut {
 		out := switchOutput{
-			SchemaVersion: "camp-switch/v1",
+			SchemaVersion: switchSchemaVersion,
 			Campaign: switchCampaignOutput{
 				ID:     selected.ID,
 				Name:   selected.Name,

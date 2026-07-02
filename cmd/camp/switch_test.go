@@ -332,7 +332,7 @@ func TestSwitchJSONOutput(t *testing.T) {
 	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
 		t.Fatalf("json output: %v\n%s", err, buf.String())
 	}
-	if got.SchemaVersion != "camp-switch/v1" || got.Campaign.Org != "obey" || got.Target.Tab != "p" || got.Target.Path != "/tmp/platform/projects" {
+	if got.SchemaVersion != switchSchemaVersion || got.Campaign.Org != "obey" || got.Target.Tab != "p" || got.Target.Path != "/tmp/platform/projects" {
 		t.Fatalf("json output = %#v", got)
 	}
 }
