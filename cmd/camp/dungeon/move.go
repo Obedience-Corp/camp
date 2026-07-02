@@ -18,7 +18,7 @@ import (
 )
 
 var dungeonMoveCmd = &cobra.Command{
-	Use:   "move <item> [status]",
+	Use:   "move <item>... [status]",
 	Short: "Move dungeon items between statuses",
 	Long: `Move items within the dungeon or from the parent directory into the dungeon.
 
@@ -26,21 +26,32 @@ By default, moves an item already in the dungeon root to a status directory.
 When the item exists in the parent directory and not in the dungeon root, the
 command automatically treats it as triage work and moves it into the dungeon.
 Use --triage to force a parent-directory move.
-With --triage and --to-docs, routes an item to an existing campaign-root docs/<subdirectory>.
+With --triage and --to-docs, routes items to an existing campaign-root docs/<subdirectory>.
 With --workitem, resolves a campaign workitem from anywhere and moves its directory
 into the workitem type's local dungeon.
 Moves are always auto-committed so dungeon history remains auditable.
 
 Statuses: completed, archived, someday
 
+Batch: pass several items followed by one shared status to move them together
+(default, --triage, and --to-docs modes). Every item is validated before any
+move is applied, so an invalid item aborts the whole sweep. --workitem accepts a
+single item per invocation.
+
+Dry run: --dry-run resolves and validates exactly as a real move would, prints
+the source -> destination for each item, and exits without touching the
+filesystem or creating a commit. Add --json for a machine-readable plan.
+
 Examples:
   camp dungeon move old-feature archived         Move dungeon item to archived
   camp dungeon move stale-doc completed          Move dungeon item to completed
+  camp dungeon move a b c archived               Move three items to archived (batch)
+  camp dungeon move a b c completed --dry-run    Preview the sweep, change nothing
   camp dungeon move old-project --triage         Move parent item into dungeon root
   camp dungeon move old-project archived --triage Move parent item directly to archived
   camp dungeon move stale-note.md --triage --to-docs architecture/api Route to docs subdirectory
   camp dungeon move feature-slug archived --workitem Move workitem directory to its local archive`,
-	Args: cobra.RangeArgs(1, 2),
+	Args: cobra.MinimumNArgs(1),
 	Annotations: map[string]string{
 		"agent_allowed": "true",
 		"agent_reason":  "Non-interactive move of dungeon items between statuses",
@@ -55,127 +66,32 @@ func init() {
 	flags.Bool("triage", false, "Move from parent directory (not from dungeon root)")
 	flags.String("to-docs", "", "Route triage item into an existing campaign-root docs/<subdir> (requires --triage)")
 	flags.Bool("workitem", false, "Resolve item as a campaign workitem and move its directory to the local dungeon")
+	flags.Bool("dry-run", false, "Preview the move(s) without touching the filesystem or creating a commit")
+	flags.Bool("json", false, "Emit the dry-run plan as JSON (requires --dry-run)")
 }
 
 func runDungeonMove(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
-	triageMode, _ := cmd.Flags().GetBool("triage")
-	toDocs, _ := cmd.Flags().GetString("to-docs")
-	workitemMode, _ := cmd.Flags().GetBool("workitem")
+	f := moveFlags{}
+	f.triage, _ = cmd.Flags().GetBool("triage")
+	f.toDocs, _ = cmd.Flags().GetString("to-docs")
+	f.workitem, _ = cmd.Flags().GetBool("workitem")
+	f.dryRun, _ = cmd.Flags().GetBool("dry-run")
+	f.jsonOut, _ = cmd.Flags().GetBool("json")
 
-	itemName := args[0]
-	status := ""
-	if len(args) > 1 {
-		status = args[1]
-	}
-
-	if toDocs != "" {
-		if !triageMode {
-			return fmt.Errorf("--to-docs requires --triage because docs routing moves parent triage items")
-		}
-		if status != "" {
-			return fmt.Errorf("status argument cannot be combined with --to-docs; use either a dungeon status or --to-docs <subdir>")
-		}
-	}
-
-	if workitemMode {
-		if triageMode {
-			return fmt.Errorf("--workitem cannot be combined with --triage because workitem mode resolves the source directory itself")
-		}
-		if toDocs != "" {
-			return fmt.Errorf("--workitem cannot be combined with --to-docs")
-		}
-		move, err := moveWorkitemToDungeon(ctx, cmd, itemName, status)
-		if err != nil {
-			return err
-		}
-		return CommitDungeonMove(ctx, move)
-	}
-
-	cmdCtx, err := resolveDungeonCommandContext(ctx)
+	items, status, err := resolveItemsAndStatus(args, f)
 	if err != nil {
 		return err
 	}
-	svc := intdungeon.NewService(cmdCtx.CampaignRoot, cmdCtx.Dungeon.DungeonPath)
-	if !triageMode {
-		inferred, err := inferDungeonMoveTriageMode(ctx, svc, cmdCtx.Dungeon, itemName)
-		if err != nil {
-			return err
-		}
-		triageMode = inferred
+	if err := validateMoveModes(f, items); err != nil {
+		return err
 	}
 
-	var description string
-	var sourcePaths []string
-	var destinationPaths []string
-
-	if triageMode {
-		if toDocs != "" {
-			targetPath, err := svc.MoveToDocs(ctx, itemName, cmdCtx.Dungeon.ParentPath, toDocs)
-			if err != nil {
-				return wrapDungeonDocsRouteError(err, itemName, toDocs)
-			}
-			src := filepath.Join(RelFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.ParentPath), itemName)
-			dst := RelFromRoot(cmdCtx.CampaignRoot, targetPath)
-			fmt.Printf("%s Moved %s (%s → %s)\n", ui.SuccessIcon(), itemName, src, dst)
-			description = fmt.Sprintf("Route %s → %s", itemName, dst)
-			sourcePaths = []string{filepath.Join(cmdCtx.Dungeon.ParentPath, itemName)}
-			destinationPaths = []string{targetPath}
-		} else if status != "" {
-			// Triage directly to a status directory
-			targetPath, err := svc.MoveToDungeonStatus(ctx, itemName, cmdCtx.Dungeon.ParentPath, status)
-			if err != nil {
-				return WrapDungeonMoveError(err, itemName, status)
-			}
-			src := filepath.Join(RelFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.ParentPath), itemName)
-			dst := RelFromRoot(cmdCtx.CampaignRoot, targetPath)
-			fmt.Printf("%s Moved %s (%s → %s)\n", ui.SuccessIcon(), itemName, src, dst)
-			description = fmt.Sprintf("Triage %s → dungeon/%s", itemName, status)
-			sourcePaths = []string{filepath.Join(cmdCtx.Dungeon.ParentPath, itemName)}
-			destinationPaths = []string{targetPath}
-		} else {
-			// Triage to dungeon root
-			if err := svc.MoveToDungeon(ctx, itemName, cmdCtx.Dungeon.ParentPath); err != nil {
-				return WrapDungeonMoveError(err, itemName, "dungeon")
-			}
-			src := filepath.Join(RelFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.ParentPath), itemName)
-			dst := filepath.Join(RelFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.DungeonPath), itemName)
-			fmt.Printf("%s Moved %s (%s → %s)\n", ui.SuccessIcon(), itemName, src, dst)
-			description = fmt.Sprintf("Triage %s → dungeon", itemName)
-			sourcePaths = []string{filepath.Join(cmdCtx.Dungeon.ParentPath, itemName)}
-			destinationPaths = []string{filepath.Join(cmdCtx.Dungeon.DungeonPath, itemName)}
-		}
-	} else {
-		// Inner move: dungeon root → status directory
-		if status == "" {
-			return fmt.Errorf("status is required when moving within the dungeon (e.g., completed, archived, someday)")
-		}
-		targetPath, err := svc.MoveToStatus(ctx, itemName, status)
-		if err != nil {
-			return WrapDungeonMoveError(err, itemName, status)
-		}
-		src := filepath.Join(RelFromRoot(cmdCtx.CampaignRoot, cmdCtx.Dungeon.DungeonPath), itemName)
-		dst := RelFromRoot(cmdCtx.CampaignRoot, targetPath)
-		fmt.Printf("%s Moved %s (%s → %s)\n", ui.SuccessIcon(), itemName, src, dst)
-
-		relDir, relErr := filepath.Rel(cmdCtx.CampaignRoot, cmdCtx.Dungeon.ParentPath)
-		if relErr != nil {
-			relDir = cmdCtx.Dungeon.ParentPath
-		}
-		description = fmt.Sprintf("Moved to dungeon/%s:\n  - %s/%s", status, relDir, itemName)
-		sourcePaths = []string{filepath.Join(cmdCtx.Dungeon.DungeonPath, itemName)}
-		destinationPaths = []string{targetPath}
+	if f.workitem {
+		return runWorkitemMove(ctx, cmd, items[0], status, f)
 	}
-
-	return CommitDungeonMove(ctx, &DungeonMoveCommit{
-		Config:           cmdCtx.Config,
-		CampaignRoot:     cmdCtx.CampaignRoot,
-		Description:      description,
-		SourcePaths:      sourcePaths,
-		DestinationPaths: destinationPaths,
-		RewrittenFiles:   svc.RewrittenLinkFiles(),
-	})
+	return runDungeonItemsMove(ctx, items, status, f)
 }
 
 func inferDungeonMoveTriageMode(ctx context.Context, svc *intdungeon.Service, dungeonCtx intdungeon.Context, itemName string) (bool, error) {
