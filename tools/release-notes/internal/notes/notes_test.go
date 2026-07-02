@@ -90,9 +90,9 @@ func TestRender(t *testing.T) {
 		t.Fatalf("ParseTag() error = %v", err)
 	}
 
-	rendered, err := Render("Obedience-Corp/camp", tag, "v0.2.0", []Change{
-		{Text: "Verify actual remote in push all", PRNumber: 200, Category: CategoryFix},
-		{Text: "Make push-all remote fixture deterministic", Category: CategoryMaintenance},
+	rendered, err := Render("Obedience-Corp/camp", tag, "v0.2.0", []Group{
+		{Change: Change{Text: "Verify actual remote in push all", PRNumber: 200, Category: CategoryFix}},
+		{Change: Change{Text: "Make push-all remote fixture deterministic", Category: CategoryMaintenance}},
 	})
 	if err != nil {
 		t.Fatalf("Render() error = %v", err)
@@ -113,27 +113,65 @@ func TestRender(t *testing.T) {
 	}
 }
 
-func TestRenderDeduplicatesChangesByText(t *testing.T) {
+func TestRenderNestsPRChildrenUnderHeadline(t *testing.T) {
 	t.Parallel()
 
-	tag, err := ParseTag("v0.2.2")
+	tag, err := ParseTag("v0.2.15")
 	if err != nil {
 		t.Fatalf("ParseTag() error = %v", err)
 	}
 
-	rendered, err := Render("Obedience-Corp/camp", tag, "v0.2.0", []Change{
-		{Text: "Verify actual remote in push all", Category: CategoryFix},
-		{Text: "Verify actual remote in push all", PRNumber: 200, Category: CategoryFix},
+	rendered, err := Render("Obedience-Corp/camp", tag, "v0.2.14", []Group{
+		{
+			Change: Change{Text: "Keep git worktrees out of campaign status and commits", PRNumber: 361, Category: CategoryFix},
+			Children: []Change{
+				{Text: "Commit in-place root .gitignore edits during repair", Category: CategoryFix},
+				{Text: "Derive worktrees .gitignore check from configured path", Category: CategoryFix},
+			},
+		},
 	})
 	if err != nil {
 		t.Fatalf("Render() error = %v", err)
 	}
 
-	want := "Verify actual remote in push all ([#200](https://github.com/Obedience-Corp/camp/pull/200))"
-	if strings.Count(rendered, want) != 1 {
-		t.Fatalf("Render() should keep one PR-linked entry, got:\n%s", rendered)
+	wantSubstrings := []string{
+		"- Keep git worktrees out of campaign status and commits ([#361](https://github.com/Obedience-Corp/camp/pull/361))",
+		"  - Commit in-place root .gitignore edits during repair",
+		"  - Derive worktrees .gitignore check from configured path",
 	}
-	if strings.Count(rendered, "Verify actual remote in push all") != 1 {
-		t.Fatalf("Render() should suppress duplicate section entries when only one user-facing change exists, got:\n%s", rendered)
+	for _, want := range wantSubstrings {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("Render() missing nested line %q\n%s", want, rendered)
+		}
+	}
+}
+
+func TestRenderSummaryCountsLeafChanges(t *testing.T) {
+	t.Parallel()
+
+	tag, err := ParseTag("v0.2.15")
+	if err != nil {
+		t.Fatalf("ParseTag() error = %v", err)
+	}
+
+	rendered, err := Render("Obedience-Corp/camp", tag, "v0.2.14", []Group{
+		{Change: Change{Text: "Expose campaign name accessors", PRNumber: 360, Category: CategoryFeature}},
+		{
+			Change: Change{Text: "Keep git worktrees out of campaign status and commits", PRNumber: 361, Category: CategoryFix},
+			Children: []Change{
+				{Text: "Commit in-place root .gitignore edits during repair", Category: CategoryFix},
+				{Text: "Derive worktrees .gitignore check from configured path", Category: CategoryFix},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	if !strings.Contains(rendered, "- 1 feature") {
+		t.Fatalf("Render() summary should count the childless feature once\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "- 2 fixes") {
+		t.Fatalf("Render() summary should count the PR's two children, not the headline\n%s", rendered)
 	}
 }
