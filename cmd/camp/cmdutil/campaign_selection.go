@@ -13,39 +13,33 @@ import (
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"github.com/Obedience-Corp/camp/internal/nav/fuzzy"
 )
 
 // ResolveCampaignSelection applies the same exact/prefix/name/fuzzy registry
 // lookup behavior used by `camp switch`.
 func ResolveCampaignSelection(query string, reg *config.Registry, matchWriter io.Writer) (config.RegisteredCampaign, error) {
-	c, ok := reg.Get(query)
-	if ok {
-		return c, nil
-	}
-
-	names := reg.List()
-	matches := fuzzy.Filter(names, query)
-	if len(matches) == 0 {
-		return config.RegisteredCampaign{}, fmt.Errorf("campaign %q not found in registry", query)
-	}
-
-	bestName := matches[0].Target
-	c, ok = reg.GetByName(bestName)
-	if !ok {
-		return config.RegisteredCampaign{}, fmt.Errorf("campaign %q not found in registry", query)
-	}
-
-	if matchWriter != nil {
-		_, _ = fmt.Fprintf(matchWriter, "Matched: %s -> %s\n", query, c.Name)
-	}
-
-	return c, nil
+	return resolveCampaignFromCandidates(query, reg.ListAll(), CampaignScope{All: true}, matchWriter)
 }
 
-// PickCampaign opens the shared campaign picker UI used by `camp switch`.
+// PickCampaignOptions controls candidate filtering and display for the shared
+// campaign picker UI used by `camp switch`.
+type PickCampaignOptions struct {
+	Scope CampaignScope
+}
+
+// PickCampaign opens the shared campaign picker UI used by callers that want
+// the legacy all-campaign picker behavior.
 func PickCampaign(ctx context.Context, reg *config.Registry) (config.RegisteredCampaign, error) {
-	all := reg.ListAll()
+	return PickCampaignWithOptions(ctx, reg, PickCampaignOptions{Scope: CampaignScope{All: true}})
+}
+
+// PickCampaignWithOptions opens the shared campaign picker UI used by
+// `camp switch` with scoped candidate filtering.
+func PickCampaignWithOptions(ctx context.Context, reg *config.Registry, opts PickCampaignOptions) (config.RegisteredCampaign, error) {
+	all := FilterCampaigns(reg, opts.Scope)
+	if len(all) == 0 {
+		return config.RegisteredCampaign{}, camperrors.New(fmt.Sprintf("no campaigns found%s", scopeDescription(opts.Scope)))
+	}
 
 	sort.Slice(all, func(i, j int) bool {
 		return all[i].LastAccess.After(all[j].LastAccess)
@@ -71,10 +65,14 @@ func PickCampaign(ctx context.Context, reg *config.Registry) (config.RegisteredC
 		all,
 		func(i int) string {
 			c := all[i]
+			prefix := "  "
 			if c.Path == currentPath {
-				return "* " + c.Name
+				prefix = "* "
 			}
-			return "  " + c.Name
+			if opts.Scope.Org == "" {
+				return prefix + c.Org + "/" + c.Name
+			}
+			return prefix + c.Name
 		},
 		fuzzyfinder.WithPreviewWindow(func(i, w, h int) string {
 			if i < 0 || i >= len(all) {
