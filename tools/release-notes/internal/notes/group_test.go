@@ -145,3 +145,75 @@ func TestLeafChangesCountsChildrenNotHeadline(t *testing.T) {
 		}
 	}
 }
+
+func TestMixedCategoryPRCountsAndSectionsAgree(t *testing.T) {
+	t.Parallel()
+
+	groups := []Group{
+		{
+			Change: Change{Text: "Add release dashboard", PRNumber: 9, Category: CategoryFeature},
+			Children: []Change{
+				{Text: "Fix flaky dashboard test", Category: CategoryFix},
+				{Text: "Refactor dashboard data layer", Category: CategoryMaintenance},
+			},
+		},
+	}
+
+	leaves := LeafChanges(groups)
+	counts := map[ChangeCategory]int{}
+	for _, leaf := range leaves {
+		counts[leaf.Category]++
+	}
+	if counts[CategoryFeature] != 1 || counts[CategoryFix] != 1 || counts[CategoryMaintenance] != 1 {
+		t.Fatalf("counts = %v, want 1 feature (headline leaf), 1 fix, 1 maintenance", counts)
+	}
+
+	for category, wantChildren := range map[ChangeCategory]int{
+		CategoryFeature:     0,
+		CategoryFix:         1,
+		CategoryMaintenance: 1,
+	} {
+		entries := sectionGroups(groups, category)
+		if len(entries) != 1 {
+			t.Fatalf("%s: sectionGroups len = %d, want 1", category, len(entries))
+		}
+		if got := len(entries[0].Children); got != wantChildren {
+			t.Fatalf("%s: children = %d, want %d", category, got, wantChildren)
+		}
+		if entries[0].Change.Text != "Add release dashboard" {
+			t.Fatalf("%s: headline context missing, got %q", category, entries[0].Change.Text)
+		}
+	}
+
+	if entries := sectionGroups(groups, CategoryDocs); len(entries) != 0 {
+		t.Fatalf("docs section should be empty, got %d entries", len(entries))
+	}
+}
+
+func TestHeadlineNotLeafWhenChildRestatesCategory(t *testing.T) {
+	t.Parallel()
+
+	groups := []Group{
+		{
+			Change: Change{Text: "Add widgets", PRNumber: 4, Category: CategoryFeature},
+			Children: []Change{
+				{Text: "Add widget storage", Category: CategoryFeature},
+				{Text: "Fix widget save", Category: CategoryFix},
+			},
+		},
+	}
+
+	leaves := LeafChanges(groups)
+	if len(leaves) != 2 {
+		t.Fatalf("LeafChanges len = %d, want 2 (headline covered by feature child)", len(leaves))
+	}
+
+	features := sectionGroups(groups, CategoryFeature)
+	if len(features) != 1 || len(features[0].Children) != 1 {
+		t.Fatalf("features section should nest the single feature child under the headline")
+	}
+	fixes := sectionGroups(groups, CategoryFix)
+	if len(fixes) != 1 || len(fixes[0].Children) != 1 {
+		t.Fatalf("fixes section should nest the single fix child under the headline")
+	}
+}

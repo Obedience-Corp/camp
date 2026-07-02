@@ -219,7 +219,7 @@ func writeSections(write func(string), repo string, groups []Group) {
 	}
 
 	for _, section := range sections {
-		entries := filterGroups(groups, section.category)
+		entries := sectionGroups(groups, section.category)
 		if len(entries) == 0 {
 			continue
 		}

@@ -66,13 +66,33 @@ func isNoiseSubject(subject string) bool {
 func LeafChanges(groups []Group) []Change {
 	var leaves []Change
 	for _, group := range groups {
-		if len(group.Children) == 0 {
-			leaves = append(leaves, group.Change)
-			continue
-		}
-		leaves = append(leaves, group.Children...)
+		leaves = append(leaves, groupLeaves(group)...)
 	}
 	return leaves
+}
+
+// groupLeaves returns the changes a group contributes to summary counts. A
+// headline only counts when no child restates its category, so grouped PRs
+// are counted by their constituents without losing a headline whose category
+// no child covers.
+func groupLeaves(group Group) []Change {
+	if len(group.Children) == 0 {
+		return []Change{group.Change}
+	}
+	leaves := make([]Change, 0, len(group.Children)+1)
+	if !hasCategory(group.Children, group.Change.Category) {
+		leaves = append(leaves, group.Change)
+	}
+	return append(leaves, group.Children...)
+}
+
+func hasCategory(changes []Change, category ChangeCategory) bool {
+	for _, change := range changes {
+		if change.Category == category {
+			return true
+		}
+	}
+	return false
 }
 
 func headlineChanges(groups []Group) []Change {
@@ -83,12 +103,31 @@ func headlineChanges(groups []Group) []Change {
 	return changes
 }
 
-func filterGroups(groups []Group, category ChangeCategory) []Group {
-	var filtered []Group
+// sectionGroups projects groups into one category's section: children of the
+// category render nested under their headline (repeated per section as
+// grouping context), and a headline appears bare only when it is itself a
+// counted leaf of the category. Section contents therefore always agree with
+// the LeafChanges counts.
+func sectionGroups(groups []Group, category ChangeCategory) []Group {
+	var out []Group
 	for _, group := range groups {
-		if group.Change.Category == category {
-			filtered = append(filtered, group)
+		children := filterChanges(group.Children, category)
+		switch {
+		case len(children) > 0:
+			out = append(out, Group{Change: group.Change, Children: children})
+		case group.Change.Category == category:
+			out = append(out, Group{Change: group.Change})
 		}
 	}
-	return filtered
+	return out
+}
+
+func filterChanges(changes []Change, category ChangeCategory) []Change {
+	var out []Change
+	for _, change := range changes {
+		if change.Category == category {
+			out = append(out, change)
+		}
+	}
+	return out
 }
