@@ -35,9 +35,9 @@ Schema versions in this release:
 | `camp doctor --json` | `doctor/v1alpha1` | Emits `schema_version` plus the snake_case health result on stdout; discovered error findings also emit a JSON error envelope on stderr with the same exit code. |
 | `camp leverage --json` | `leverage/v1alpha1` | Existing leverage result shape; refusals use the JSON error envelope. |
 | `camp leverage history --json` | `leverage-history/v1alpha1` | Existing history result shape; refusals use the JSON error envelope. |
-| `camp quest list --json` | `quest-list/v1alpha1` | Dev-profile quest listing; refusals use the JSON error envelope. |
-| `camp quest show --json` | `quest-show/v1alpha1` | Dev-profile quest metadata; refusals use the JSON error envelope. |
-| `camp quest links --json` | `quest-links/v1alpha1` | Emits `schema_version`, `campaign_root`, and `links` with campaign-relative paths, matching `status all`. |
+| `camp quest list --json` | `quest-list/v1alpha1` | Emits `schema_version`, `campaign_root`, and `items` with campaign-relative paths. |
+| `camp quest show --json` | `quest-show/v1alpha1` | Emits `schema_version`, `campaign_root`, and `quest` with campaign-relative paths. |
+| `camp quest links --json` | `quest-links/v1alpha1` | Emits `schema_version`, `campaign_root`, and `links` with campaign-relative paths. |
 | `camp skills status --json` | `skills-status/v1alpha1` | Existing skill projection status shape; failures use the JSON error envelope. |
 | `camp status all --json` | `status-all/v1alpha1` | Emits `schema_version`, `timestamp`, optional `campaign_root`, and `repos`; an empty campaign emits `repos: []`. |
 | `camp sync --json` | `sync/v1alpha1` | Existing sync result shape; returned failures use the JSON error envelope. |

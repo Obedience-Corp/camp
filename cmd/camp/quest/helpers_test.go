@@ -79,6 +79,9 @@ func TestOutputQuestListJSONUsesCampaignRelativePaths(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &payload); err != nil {
 		t.Fatalf("quest JSON invalid: %v\nraw: %s", err, stdout)
 	}
+	if payload.SchemaVersion != QuestListJSONVersion {
+		t.Fatalf("schema_version = %q, want %q", payload.SchemaVersion, QuestListJSONVersion)
+	}
 	if payload.CampaignRoot != root {
 		t.Fatalf("campaign_root = %q, want %q", payload.CampaignRoot, root)
 	}
@@ -225,6 +228,56 @@ func TestOutputQuestTable_JSONUnchanged(t *testing.T) {
 	}
 	if len(payload.Items) != 1 || payload.Items[0].ID != "qst_json_check" {
 		t.Fatalf("unexpected JSON payload: %+v", payload)
+	}
+}
+
+func TestOutputQuestShowJSONUsesSchemaVersionAndCampaignRelativePath(t *testing.T) {
+	root := t.TempDir()
+	questPath := filepath.Join(root, ".campaign", "quests", "example", "quest.yaml")
+	if err := os.MkdirAll(filepath.Dir(questPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	qctx := &questCommandContext{
+		cfg:          &config.CampaignConfig{ID: "camp1234"},
+		campaignRoot: root,
+		service:      quest.NewService(root),
+	}
+	now := time.Now().UTC()
+	q := &quest.Quest{
+		ID:        "qst_example",
+		Name:      "Example",
+		Status:    quest.StatusOpen,
+		CreatedAt: now,
+		UpdatedAt: now,
+		Slug:      "example",
+		Path:      questPath,
+	}
+
+	out, err := captureQuestStdout(func() error {
+		return outputQuestShowJSON(qctx, q)
+	})
+	if err != nil {
+		t.Fatalf("outputQuestShowJSON: %v", err)
+	}
+
+	var payload questShowJSONPayload
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("quest show JSON invalid: %v\nraw: %s", err, out)
+	}
+	if payload.SchemaVersion != QuestShowJSONVersion {
+		t.Fatalf("schema_version = %q, want %q", payload.SchemaVersion, QuestShowJSONVersion)
+	}
+	if payload.CampaignRoot != root {
+		t.Fatalf("campaign_root = %q, want %q", payload.CampaignRoot, root)
+	}
+	if payload.Quest == nil {
+		t.Fatal("quest is nil")
+	}
+	if filepath.IsAbs(payload.Quest.Path) {
+		t.Fatalf("quest path is absolute: %q", payload.Quest.Path)
+	}
+	if q.Path != questPath {
+		t.Fatalf("output mutated original quest path: %q", q.Path)
 	}
 }
 

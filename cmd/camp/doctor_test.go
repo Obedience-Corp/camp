@@ -177,6 +177,13 @@ func TestOutputDoctorJSONUsesSnakeCaseKeysAndSchemaVersion(t *testing.T) {
 			t.Errorf("issue missing expected snake_case key %q, got: %v", key, issues[0])
 		}
 	}
+	var severity string
+	if err := json.Unmarshal(issues[0]["severity"], &severity); err != nil {
+		t.Fatalf("severity is not a string: %v", err)
+	}
+	if severity != "error" {
+		t.Errorf("severity = %q, want %q", severity, "error")
+	}
 }
 
 func TestOutputDoctorJSONEmitsEmptyArraysNotNull(t *testing.T) {
@@ -198,6 +205,12 @@ func TestOutputDoctorJSONEmitsEmptyArraysNotNull(t *testing.T) {
 		if got != "[]" {
 			t.Errorf("%s = %s, want empty array []", key, got)
 		}
+	}
+	if result.Issues != nil {
+		t.Errorf("outputDoctorJSON mutated result.Issues to non-nil: %#v", result.Issues)
+	}
+	if result.Fixed != nil {
+		t.Errorf("outputDoctorJSON mutated result.Fixed to non-nil: %#v", result.Fixed)
 	}
 }
 

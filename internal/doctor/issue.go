@@ -11,6 +11,8 @@
 // When run with --fix, it can automatically repair common issues.
 package doctor
 
+import "encoding/json"
+
 // Severity indicates the level of concern for an issue.
 type Severity int
 
@@ -35,6 +37,11 @@ func (s Severity) String() string {
 	default:
 		return "unknown"
 	}
+}
+
+// MarshalJSON emits severity values as their stable string representation.
+func (s Severity) MarshalJSON() ([]byte, error) {
+	return json.Marshal(s.String())
 }
 
 // Issue represents a detected problem in the campaign.
