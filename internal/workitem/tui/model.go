@@ -4,7 +4,6 @@ package tui
 import (
 	"context"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -28,37 +27,38 @@ var builtinFilterTypes = []string{
 	string(workitem.WorkflowTypeFestival),
 }
 
-// maxCustomFilterTypes caps custom type bindings so keys stay within 5-9.
-const maxCustomFilterTypes = 5
-
-// typeFilterBinding pairs a digit key with the workflow type it filters.
-type typeFilterBinding struct {
-	key      string
-	workflow string
-}
-
-// customTypes returns the distinct non-builtin workflow types in items,
-// sorted alphabetically and capped at maxCustomFilterTypes.
-func customTypes(items []workitem.WorkItem) []string {
+// deriveFilterOptions returns the filter-mode chip values: "" (all) first,
+// then builtins present in the items in canonical order, then custom types
+// sorted alphabetically. ensure is always included even when no item has
+// that type, so the active filter is representable as a (zero-count) chip.
+func deriveFilterOptions(items []workitem.WorkItem, ensure string) []string {
 	builtin := make(map[string]bool, len(builtinFilterTypes))
 	for _, t := range builtinFilterTypes {
 		builtin[t] = true
 	}
-	seen := make(map[string]bool)
-	var out []string
+	present := make(map[string]bool, len(items))
 	for _, item := range items {
-		t := string(item.WorkflowType)
-		if t == "" || builtin[t] || seen[t] {
-			continue
+		if t := string(item.WorkflowType); t != "" {
+			present[t] = true
 		}
-		seen[t] = true
-		out = append(out, t)
 	}
-	sort.Strings(out)
-	if len(out) > maxCustomFilterTypes {
-		out = out[:maxCustomFilterTypes]
+	if ensure != "" {
+		present[ensure] = true
 	}
-	return out
+	opts := []string{""}
+	for _, t := range builtinFilterTypes {
+		if present[t] {
+			opts = append(opts, t)
+		}
+	}
+	var customs []string
+	for t := range present {
+		if !builtin[t] {
+			customs = append(customs, t)
+		}
+	}
+	sort.Strings(customs)
+	return append(opts, customs...)
 }
 
 // Model is the Bubble Tea model for the workitem dashboard.
@@ -82,9 +82,12 @@ type Model struct {
 	savedSearchQuery string // snapshot of committed query when search mode starts
 
 	// Filters
-	typeFilter        string // empty = all, or any workflow type bound to a filter key
-	customFilterTypes []string
-	showParked        bool
+	typeFilter      string // empty = all, or any workflow type
+	showParked      bool
+	filterMode      bool
+	filterOptions   []string // chip values while filter mode is active; "" = all
+	filterIndex     int
+	savedTypeFilter string // snapshot of typeFilter when filter mode starts
 
 	// Preview
 	showPreview    bool
@@ -126,55 +129,80 @@ func New(ctx context.Context, items []workitem.WorkItem, campaignRoot string, re
 	}
 
 	return Model{
-		allItems:          items,
-		filteredItems:     items,
-		customFilterTypes: customTypes(items),
-		searchInput:       ti,
-		showPreview:       true,
-		ctx:               ctx,
-		campaignRoot:      campaignRoot,
-		resolver:          resolver,
-		priorityStore:     store,
-		storePath:         storePath,
-		showParked:        includeParked,
+		allItems:      items,
+		filteredItems: items,
+		searchInput:   ti,
+		showPreview:   true,
+		ctx:           ctx,
+		campaignRoot:  campaignRoot,
+		resolver:      resolver,
+		priorityStore: store,
+		storePath:     storePath,
+		showParked:    includeParked,
 	}
 }
 
 // typeFilterFor resolves a pressed key to a type filter value.
-// "0" clears the filter; 1-4 are builtins; 5-9 are custom type slots.
+// "0" clears the filter; 1-4 are the builtin types.
 func (m Model) typeFilterFor(key string) (string, bool) {
 	if key == "0" {
 		return "", true
 	}
-	if len(key) != 1 || key[0] < '1' || key[0] > '9' {
+	if len(key) != 1 || key[0] < '1' || key[0] > '0'+byte(len(builtinFilterTypes)) {
 		return "", false
 	}
-	idx := int(key[0] - '1')
-	if idx < len(builtinFilterTypes) {
-		return builtinFilterTypes[idx], true
-	}
-	idx -= len(builtinFilterTypes)
-	if idx < len(m.customFilterTypes) {
-		return m.customFilterTypes[idx], true
-	}
-	return "", false
+	return builtinFilterTypes[key[0]-'1'], true
 }
 
-// typeFilterBindings returns the active key-to-type mappings in key order.
-func (m Model) typeFilterBindings() []typeFilterBinding {
-	bindings := make([]typeFilterBinding, 0, len(builtinFilterTypes)+len(m.customFilterTypes))
-	for i, t := range builtinFilterTypes {
-		bindings = append(bindings, typeFilterBinding{key: strconv.Itoa(i + 1), workflow: t})
-	}
-	for i, t := range m.customFilterTypes {
-		bindings = append(bindings, typeFilterBinding{key: strconv.Itoa(len(builtinFilterTypes) + i + 1), workflow: t})
-	}
-	return bindings
+// enterFilterMode activates the type filter stepper with chips rebuilt from
+// the current item set and the index positioned on the active filter.
+func (m *Model) enterFilterMode() {
+	m.rebuildFilterOptions()
+	m.savedTypeFilter = m.typeFilter
+	m.filterMode = true
 }
 
-// maxTypeFilterKey returns the highest bound filter digit.
-func (m Model) maxTypeFilterKey() int {
-	return len(builtinFilterTypes) + len(m.customFilterTypes)
+func (m *Model) exitFilterMode() {
+	m.filterMode = false
+}
+
+func (m Model) isFilterMode() bool {
+	return m.filterMode
+}
+
+// rebuildFilterOptions derives chips from the visible item set; the active
+// filter is always among the options, so the highlighted chip and the
+// applied filter cannot diverge.
+func (m *Model) rebuildFilterOptions() {
+	m.filterOptions = deriveFilterOptions(m.visibleBaseItems(), m.typeFilter)
+	m.filterIndex = 0
+	for i, opt := range m.filterOptions {
+		if opt == m.typeFilter {
+			m.filterIndex = i
+			break
+		}
+	}
+}
+
+// visibleBaseItems returns allItems narrowed by the committed search and
+// parked visibility: exactly what the list shows before any type filter.
+func (m Model) visibleBaseItems() []workitem.WorkItem {
+	return workitem.FilterAdvanced(m.allItems, workitem.FilterOptions{
+		Query:      m.searchQuery,
+		ShowParked: m.showParked,
+	})
+}
+
+// visibleTypeCounts tallies visible items per workflow type, returning the
+// counts and the total.
+func (m Model) visibleTypeCounts() (map[string]int, int) {
+	counts := make(map[string]int)
+	total := 0
+	for _, item := range m.visibleBaseItems() {
+		counts[string(item.WorkflowType)]++
+		total++
+	}
+	return counts, total
 }
 
 func (m Model) Init() tea.Cmd {
