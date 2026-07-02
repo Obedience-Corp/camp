@@ -289,8 +289,9 @@ Campaigns carry three orthogonal organizational axes in the registry
 - **tags**: a single global pool of labels; a campaign can carry any number,
   and the same tag crosses orgs freely.
 - **status**: lifecycle, one of `active` / `inactive` / `reference`. The default
-  `camp list` shows only `active`; the command is `camp lifecycle`, not
-  `camp status` (which stays the git-status wrapper).
+  `camp list` and `camp switch` surfaces show only `active`; use `--all` or
+  `--status` to include inactive/reference campaigns. The lifecycle command is
+  `camp lifecycle`, not `camp status` (which stays the git-status wrapper).
 
 A campaign at its defaults (org `default`, no tags, `active`) stores no extra
 keys, so existing registries are untouched until you organize something.

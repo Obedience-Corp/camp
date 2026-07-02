@@ -38,7 +38,7 @@ func PickCampaign(ctx context.Context, reg *config.Registry) (config.RegisteredC
 func PickCampaignWithOptions(ctx context.Context, reg *config.Registry, opts PickCampaignOptions) (config.RegisteredCampaign, error) {
 	all := FilterCampaigns(reg, opts.Scope)
 	if len(all) == 0 {
-		return config.RegisteredCampaign{}, fmt.Errorf("no campaigns found%s", scopeDescription(opts.Scope))
+		return config.RegisteredCampaign{}, camperrors.New(fmt.Sprintf("no campaigns found%s", scopeDescription(opts.Scope)))
 	}
 
 	sort.Slice(all, func(i, j int) bool {
