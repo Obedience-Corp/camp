@@ -10,6 +10,7 @@ func Filter(items []WorkItem, types, stages []string, query string) []WorkItem {
 
 type FilterOptions struct {
 	Types           []string
+	Categories      []string
 	LifecycleStages []string
 	AttentionStages []string
 	Groups          []string
@@ -18,11 +19,12 @@ type FilterOptions struct {
 }
 
 func FilterAdvanced(items []WorkItem, opts FilterOptions) []WorkItem {
-	if len(opts.Types) == 0 && len(opts.LifecycleStages) == 0 && len(opts.AttentionStages) == 0 && len(opts.Groups) == 0 && opts.Query == "" && opts.ShowParked {
+	if len(opts.Types) == 0 && len(opts.Categories) == 0 && len(opts.LifecycleStages) == 0 && len(opts.AttentionStages) == 0 && len(opts.Groups) == 0 && opts.Query == "" && opts.ShowParked {
 		return items
 	}
 
 	typeSet := toSet(opts.Types)
+	categorySet := toSet(opts.Categories)
 	stageSet := toSet(opts.LifecycleStages)
 	attentionSet := toSet(opts.AttentionStages)
 	groupSet := toSet(opts.Groups)
@@ -31,6 +33,9 @@ func FilterAdvanced(items []WorkItem, opts FilterOptions) []WorkItem {
 	var result []WorkItem
 	for _, item := range items {
 		if len(typeSet) > 0 && !typeSet[string(item.WorkflowType)] {
+			continue
+		}
+		if len(categorySet) > 0 && !categorySet[item.WorkflowCategory] {
 			continue
 		}
 		if len(stageSet) > 0 && !stageSet[string(item.LifecycleStage)] {
@@ -69,5 +74,6 @@ func matchesQuery(item WorkItem, query string) bool {
 		strings.Contains(strings.ToLower(item.RelativePath), query) ||
 		strings.Contains(strings.ToLower(item.Summary), query) ||
 		strings.Contains(strings.ToLower(item.SourceID), query) ||
-		strings.Contains(strings.ToLower(item.Group), query)
+		strings.Contains(strings.ToLower(item.Group), query) ||
+		strings.Contains(strings.ToLower(item.WorkflowCategory), query)
 }
