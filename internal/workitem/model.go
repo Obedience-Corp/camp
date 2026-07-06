@@ -34,6 +34,7 @@ const (
 type WorkItem struct {
 	Key                  string         `json:"key"`
 	WorkflowType         WorkflowType   `json:"workflow_type"`
+	WorkflowCategory     string         `json:"workflow_category,omitempty"`
 	LifecycleStage       LifecycleStage `json:"lifecycle_stage"`
 	Title                string         `json:"title"`
 	RelativePath         string         `json:"relative_path"`
