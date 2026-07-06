@@ -388,6 +388,58 @@ func TestComputeJumpsChanges_OnlyUserEntries(t *testing.T) {
 	}
 }
 
+func TestComputeWorkflowsChanges_BackfillsPreservingUser(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	setupCampaignDir(t, dir)
+
+	existing := &config.CampaignConfig{
+		Name: "test",
+		Type: config.CampaignTypeProduct,
+		Workflows: config.WorkflowsConfig{
+			Categories: map[string]config.WorkflowCategoryConfig{
+				"plan":     {Label: "Plan"},
+				"research": {Label: "Research"},
+			},
+			CategoryByType: map[string]string{
+				"design":  "research",
+				"explore": "research",
+			},
+		},
+	}
+	if err := config.SaveCampaignConfig(ctx, dir, existing); err != nil {
+		t.Fatal(err)
+	}
+
+	plan := &RepairPlan{}
+	if err := computeWorkflowsChanges(ctx, dir, plan); err != nil {
+		t.Fatal(err)
+	}
+	if plan.MergedWorkflows == nil {
+		t.Fatal("expected MergedWorkflows to be set")
+	}
+
+	if got := plan.MergedWorkflows.CategoryByType["design"]; got != "research" {
+		t.Fatalf("design override = %q, want research (preserved)", got)
+	}
+	if _, ok := plan.MergedWorkflows.Categories["review"]; !ok {
+		t.Fatal("expected review category backfilled")
+	}
+	if got := plan.MergedWorkflows.CategoryByType["code_reviews"]; got != "review" {
+		t.Fatalf("code_reviews mapping = %q, want review (backfilled)", got)
+	}
+
+	var addedReview bool
+	for _, c := range plan.Changes {
+		if c.Category == "workflow_category" && c.Key == "review" && c.Type == RepairAdd {
+			addedReview = true
+		}
+	}
+	if !addedReview {
+		t.Fatal("expected a repair change adding the review category")
+	}
+}
+
 func TestComputeMigrationChanges_DetectsMisplacedCompleted(t *testing.T) {
 	dir := t.TempDir()
 	today := time.Now().Format("2006-01-02")
