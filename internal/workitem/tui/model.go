@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/priority"
@@ -25,6 +26,48 @@ var builtinFilterTypes = []string{
 	string(workitem.WorkflowTypeDesign),
 	string(workitem.WorkflowTypeExplore),
 	string(workitem.WorkflowTypeFestival),
+}
+
+// builtinFilterCategories pins the canonical category cycle order.
+var builtinFilterCategories = []string{
+	config.WorkflowCategoryPlan,
+	config.WorkflowCategoryResearch,
+	config.WorkflowCategoryPipeline,
+	config.WorkflowCategoryReview,
+}
+
+// deriveCategoryOptions returns the category cycle values: "" (all) first, then
+// builtin categories present in items in canonical order, then custom categories
+// (including uncategorized) alphabetically. ensure is always included so the
+// active filter is always a cycle stop.
+func deriveCategoryOptions(items []workitem.WorkItem, ensure string) []string {
+	builtin := make(map[string]bool, len(builtinFilterCategories))
+	for _, c := range builtinFilterCategories {
+		builtin[c] = true
+	}
+	present := make(map[string]bool, len(items))
+	for _, item := range items {
+		if c := item.WorkflowCategory; c != "" {
+			present[c] = true
+		}
+	}
+	if ensure != "" {
+		present[ensure] = true
+	}
+	opts := []string{""}
+	for _, c := range builtinFilterCategories {
+		if present[c] {
+			opts = append(opts, c)
+		}
+	}
+	var customs []string
+	for c := range present {
+		if !builtin[c] {
+			customs = append(customs, c)
+		}
+	}
+	sort.Strings(customs)
+	return append(opts, customs...)
 }
 
 // deriveFilterOptions returns the filter-mode chip values: "" (all) first,
@@ -83,6 +126,7 @@ type Model struct {
 
 	// Filters
 	typeFilter      string // empty = all, or any workflow type
+	categoryFilter  string // empty = all, or any workflow category
 	showParked      bool
 	filterMode      bool
 	filterOptions   []string // chip values while filter mode is active; "" = all
@@ -229,19 +273,48 @@ func (m Model) currentItem() workitem.WorkItem {
 // refilter applies current type filter and search query to allItems,
 // then clamps cursor and scrollOffset to stay within bounds.
 func (m *Model) refilter() {
-	var types []string
-	if m.typeFilter != "" {
-		types = []string{m.typeFilter}
-	}
-	m.filteredItems = workitem.FilterAdvanced(m.allItems, workitem.FilterOptions{
-		Types:      types,
-		Query:      m.searchQuery,
-		ShowParked: m.showParked,
-	})
+	m.filteredItems = workitem.FilterAdvanced(m.allItems, m.filterOptionsForState(m.searchQuery))
 	if m.cursor >= len(m.filteredItems) {
 		m.cursor = max(0, len(m.filteredItems)-1)
 	}
 	m.clampScroll()
+}
+
+// filterOptionsForState builds the FilterOptions for the current type/category
+// filters and the given query (committed or draft).
+func (m Model) filterOptionsForState(query string) workitem.FilterOptions {
+	var types []string
+	if m.typeFilter != "" {
+		types = []string{m.typeFilter}
+	}
+	var categories []string
+	if m.categoryFilter != "" {
+		categories = []string{m.categoryFilter}
+	}
+	return workitem.FilterOptions{
+		Types:      types,
+		Categories: categories,
+		Query:      query,
+		ShowParked: m.showParked,
+	}
+}
+
+// cycleCategory advances the category filter to the next value present in the
+// current view, wrapping through "" (all). Type filtering is unaffected.
+func (m *Model) cycleCategory() {
+	opts := deriveCategoryOptions(m.visibleBaseItems(), m.categoryFilter)
+	if len(opts) <= 1 {
+		return
+	}
+	idx := 0
+	for i, opt := range opts {
+		if opt == m.categoryFilter {
+			idx = i
+			break
+		}
+	}
+	m.categoryFilter = opts[(idx+1)%len(opts)]
+	m.refilter()
 }
 
 // clampScroll ensures scrollOffset is valid for the current item count and viewport.
