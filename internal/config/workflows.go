@@ -65,6 +65,25 @@ func DefaultWorkflowCategoryByType() map[string]string {
 	}
 }
 
+// DefaultWorkflowsConfig returns the workflows block written into a fresh
+// campaign.yaml (and backfilled by init --repair). It ships the full category
+// vocabulary plus explicit mappings for camp's own built-in types so the block
+// is a readable, editable starting point. Custom types default to
+// WorkflowCategoryUncategorized via WorkflowCategoryForType until mapped.
+func DefaultWorkflowsConfig() WorkflowsConfig {
+	return WorkflowsConfig{
+		Categories: DefaultWorkflowCategories(),
+		CategoryByType: map[string]string{
+			"intent":       WorkflowCategoryPlan,
+			"design":       WorkflowCategoryPlan,
+			"explore":      WorkflowCategoryResearch,
+			"festival":     WorkflowCategoryPlan,
+			"code_reviews": WorkflowCategoryReview,
+			"pipelines":    WorkflowCategoryPipeline,
+		},
+	}
+}
+
 // WorkflowCategories returns the effective category vocabulary: built-in
 // defaults merged with, and overridden by, user categories. It never mutates
 // the loaded config.

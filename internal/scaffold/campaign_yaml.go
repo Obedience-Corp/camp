@@ -74,6 +74,7 @@ func CreateCampaignConfig(ctx context.Context, campaignRoot string, opts InitOpt
 		Description: fmt.Sprintf("Campaign: %s", opts.Name),
 		ConceptList: config.DefaultConcepts(),
 		Intents:     config.IntentsConfig{Tags: config.DefaultIntentTags()},
+		Workflows:   config.DefaultWorkflowsConfig(),
 	}
 
 	// Apply defaults

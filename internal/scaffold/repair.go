@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -72,6 +73,9 @@ type RepairPlan struct {
 	MergedJumps *config.JumpsConfig
 	// MergedConcepts is the computed concept list after repair (updating stale default paths).
 	MergedConcepts []config.ConceptEntry
+	// MergedWorkflows is the computed workflows config after repair (backfilling
+	// missing default categories/mappings while preserving user definitions).
+	MergedWorkflows *config.WorkflowsConfig
 	// Migrations lists directories whose contents need to be moved.
 	Migrations []MigrationAction
 	// IntentMigrations lists legacy intent-root moves handled internally by Init.
@@ -131,6 +135,11 @@ func ComputeRepairPlan(ctx context.Context, dir string, opts InitOptions) (*Repa
 
 	// Phase 3: Compute jumps.yaml changes (shortcuts with user-defined preservation).
 	if err := computeJumpsChanges(ctx, absDir, plan); err != nil {
+		return nil, err
+	}
+
+	// Phase 3b: Backfill missing default workflow categories/mappings.
+	if err := computeWorkflowsChanges(ctx, absDir, plan); err != nil {
 		return nil, err
 	}
 
@@ -539,6 +548,55 @@ func conceptListsEqual(a, b []config.ConceptEntry) bool {
 		}
 	}
 	return true
+}
+
+// computeWorkflowsChanges backfills missing default workflow categories and
+// type mappings into an existing campaign, preserving user definitions. It is
+// idempotent: a campaign already carrying the defaults yields no changes and no
+// MergedWorkflows override.
+func computeWorkflowsChanges(ctx context.Context, absDir string, plan *RepairPlan) error {
+	existing, err := config.LoadCampaignConfig(ctx, absDir)
+	if err != nil || existing == nil {
+		return nil // No campaign.yaml yet; init writes the default block.
+	}
+
+	defaults := config.DefaultWorkflowsConfig()
+
+	merged := config.WorkflowsConfig{
+		Categories:     make(map[string]config.WorkflowCategoryConfig, len(existing.Workflows.Categories)),
+		CategoryByType: make(map[string]string, len(existing.Workflows.CategoryByType)),
+	}
+	maps.Copy(merged.Categories, existing.Workflows.Categories)
+	maps.Copy(merged.CategoryByType, existing.Workflows.CategoryByType)
+
+	for _, key := range sortedMapKeys(defaults.Categories) {
+		if _, ok := merged.Categories[key]; ok {
+			continue
+		}
+		merged.Categories[key] = defaults.Categories[key]
+		plan.Changes = append(plan.Changes, RepairChange{
+			Type:        RepairAdd,
+			Category:    "workflow_category",
+			Key:         key,
+			Description: "missing default workflow category",
+		})
+	}
+
+	for _, typeKey := range sortedMapKeys(defaults.CategoryByType) {
+		if _, ok := merged.CategoryByType[typeKey]; ok {
+			continue
+		}
+		merged.CategoryByType[typeKey] = defaults.CategoryByType[typeKey]
+		plan.Changes = append(plan.Changes, RepairChange{
+			Type:        RepairAdd,
+			Category:    "workflow_mapping",
+			Key:         typeKey,
+			Description: "missing default category mapping",
+		})
+	}
+
+	plan.MergedWorkflows = &merged
+	return nil
 }
 
 // computeJumpsChanges compares existing jumps.yaml shortcuts with defaults,
@@ -1040,6 +1098,16 @@ func removeEmptySourceDir(dir string) {
 
 // sortedKeys returns map keys in sorted order.
 func sortedKeys(m map[string]config.ShortcutConfig) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// sortedMapKeys returns keys of any string-keyed map in sorted order.
+func sortedMapKeys[V any](m map[string]V) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
