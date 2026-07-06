@@ -39,7 +39,22 @@ func applyCreatePlan(ctx context.Context, cmd *cobra.Command, campaignRoot strin
 	if err := upsertConcept(ctx, campaignRoot, cfg, plan.Type, plan.WorkflowRel, plan.Title, plan.Concept.Replaced); err != nil {
 		return err
 	}
+	if !plan.Category.NoChange {
+		if err := upsertCategoryMapping(ctx, campaignRoot, cfg, plan.Type, plan.Category.Category); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// upsertCategoryMapping records workflows.category_by_type.<type> = category in
+// campaign.yaml so the collection's workitems classify under that category.
+func upsertCategoryMapping(ctx context.Context, campaignRoot string, cfg *config.CampaignConfig, workflowType, category string) error {
+	if cfg.Workflows.CategoryByType == nil {
+		cfg.Workflows.CategoryByType = make(map[string]string)
+	}
+	cfg.Workflows.CategoryByType[workflowType] = category
+	return config.SaveCampaignConfig(ctx, campaignRoot, cfg)
 }
 
 func writeWorkflowScaffold(plan *createPlan) error {

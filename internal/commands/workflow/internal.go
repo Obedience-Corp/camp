@@ -37,6 +37,7 @@ type workflowEntry struct {
 	Type          string
 	Path          string // relative, with trailing slash, e.g. "workflow/research/"
 	Title         string
+	Category      string
 	HasConcept    bool
 	HasDir        bool
 	ShortcutKey   string
@@ -116,6 +117,7 @@ func enumerateWorkflowEntries(campaignRoot string, cfg *config.CampaignConfig) (
 
 	shortcuts := cfg.Shortcuts()
 	for _, entry := range entries {
+		entry.Category = cfg.WorkflowCategoryForType(entry.Type)
 		if key, ok := findShortcutByPath(shortcuts, entry.Path); ok {
 			entry.HasShortcut = true
 			entry.ShortcutKey = key

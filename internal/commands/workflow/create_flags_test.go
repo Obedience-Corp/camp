@@ -46,6 +46,55 @@ func TestRunCreateDefaultOutputMatchesGolden(t *testing.T) {
 	}
 }
 
+func TestRunCreateWritesCategoryMapping(t *testing.T) {
+	root := newWorkflowTestCampaign(t)
+	restore := chdir(t, root)
+	defer restore()
+
+	cmd := &cobra.Command{}
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+
+	if err := runCreate(context.Background(), cmd, createOptions{
+		Type:     "interviews",
+		Shortcut: "iv",
+		Title:    "Interviews",
+		Category: "research",
+	}); err != nil {
+		t.Fatalf("runCreate: %v", err)
+	}
+
+	cfg, _, err := config.LoadCampaignConfigFromCwd(context.Background())
+	if err != nil {
+		t.Fatalf("reload config: %v", err)
+	}
+	if got := cfg.WorkflowCategoryForType("interviews"); got != "research" {
+		t.Fatalf("category for interviews = %q, want research", got)
+	}
+	if got := cfg.Workflows.CategoryByType["interviews"]; got != "research" {
+		t.Fatalf("category_by_type[interviews] = %q, want research", got)
+	}
+}
+
+func TestRunCreateRejectsUnknownCategory(t *testing.T) {
+	root := newWorkflowTestCampaign(t)
+	restore := chdir(t, root)
+	defer restore()
+
+	cmd := &cobra.Command{}
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+
+	err := runCreate(context.Background(), cmd, createOptions{
+		Type:     "interviews",
+		Shortcut: "iv",
+		Category: "bogus",
+	})
+	if err == nil {
+		t.Fatal("expected error for unknown category, got nil")
+	}
+}
+
 func TestRunCreateScaffoldsTerminalDungeonDirsWithGitkeep(t *testing.T) {
 	root := newWorkflowTestCampaign(t)
 	restore := chdir(t, root)

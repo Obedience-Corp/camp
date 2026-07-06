@@ -165,6 +165,11 @@ func emitShowHuman(w io.Writer, entry workflowEntry, recent []recentItem) error 
 	if _, err := fmt.Fprintf(w, "  path: %s\n", entry.Path); err != nil {
 		return err
 	}
+	if entry.Category != "" {
+		if _, err := fmt.Fprintf(w, "  category: %s\n", entry.Category); err != nil {
+			return err
+		}
+	}
 	if entry.HasShortcut {
 		if _, err := fmt.Fprintf(w, "  shortcut: %s -> %s\n", entry.ShortcutKey, entry.ShortcutPath); err != nil {
 			return err
@@ -206,6 +211,7 @@ func emitShowJSON(w io.Writer, entry workflowEntry, recent []recentItem) error {
 		Type          string       `json:"type"`
 		Title         string       `json:"title,omitempty"`
 		Path          string       `json:"path"`
+		Category      string       `json:"category,omitempty"`
 		Shortcut      string       `json:"shortcut,omitempty"`
 		ShortcutPath  string       `json:"shortcut_path,omitempty"`
 		HasConcept    bool         `json:"has_concept"`
@@ -219,6 +225,7 @@ func emitShowJSON(w io.Writer, entry workflowEntry, recent []recentItem) error {
 		Type:          entry.Type,
 		Title:         entry.Title,
 		Path:          entry.Path,
+		Category:      entry.Category,
 		Shortcut:      entry.ShortcutKey,
 		ShortcutPath:  entry.ShortcutPath,
 		HasConcept:    entry.HasConcept,

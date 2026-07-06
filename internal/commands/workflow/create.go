@@ -24,7 +24,7 @@ var terminalDungeonDirs = []string{
 }
 
 func newCreateCommand() *cobra.Command {
-	var shortcut, title string
+	var shortcut, title, category string
 	var replace, dryRun, jsonOut bool
 
 	cmd := &cobra.Command{
@@ -43,6 +43,7 @@ machine-readable planning or apply results.`,
 				Type:     args[0],
 				Shortcut: shortcut,
 				Title:    title,
+				Category: category,
 				Replace:  replace,
 				DryRun:   dryRun,
 				JSON:     jsonOut,
@@ -53,6 +54,7 @@ machine-readable planning or apply results.`,
 
 	cmd.Flags().StringVar(&shortcut, "shortcut", "", "navigation shortcut for this workflow")
 	cmd.Flags().StringVar(&title, "title", "", "human-readable workflow title")
+	cmd.Flags().StringVar(&category, "category", "", "workflow category for filtering (default plan; must exist under workflows.categories in campaign.yaml)")
 	cmd.Flags().BoolVar(&replace, "replace", false, "replace an existing shortcut or concept with the same name")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report planned writes without modifying the filesystem")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit a structured JSON result")
@@ -64,6 +66,7 @@ type createOptions struct {
 	Type     string
 	Shortcut string
 	Title    string
+	Category string
 	Replace  bool
 	DryRun   bool
 	JSON     bool
@@ -75,6 +78,14 @@ type shortcutPlan struct {
 	Path     string `json:"path"`
 	Existing string `json:"existing,omitempty"`
 	Replaced bool   `json:"replaced"`
+	NoChange bool   `json:"no_change"`
+}
+
+// categoryPlan describes the planned mutation to the workflow category mapping
+// (workflows.category_by_type.<type>).
+type categoryPlan struct {
+	Category string `json:"category"`
+	Existing string `json:"existing,omitempty"`
 	NoChange bool   `json:"no_change"`
 }
 
@@ -102,6 +113,7 @@ type createPlan struct {
 
 	Shortcut shortcutPlan
 	Concept  conceptPlan
+	Category categoryPlan
 
 	Replaced  []string // shortcut keys removed under --replace (e.g. case variants)
 	NoChanges bool     // every action would be a no-op

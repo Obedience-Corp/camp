@@ -68,6 +68,9 @@ func computeCreatePlan(campaignRoot string, cfg *config.CampaignConfig, opts cre
 	if err := planConcept(cfg, plan, opts); err != nil {
 		return nil, err
 	}
+	if err := planCategory(cfg, plan, opts); err != nil {
+		return nil, err
+	}
 
 	plan.NoChanges = !plan.WorkflowDirCreate &&
 		len(plan.MissingScaffoldDirs) == 0 &&
@@ -75,9 +78,33 @@ func computeCreatePlan(campaignRoot string, cfg *config.CampaignConfig, opts cre
 		!plan.OBEYWrite &&
 		plan.Shortcut.NoChange &&
 		plan.Concept.NoChange &&
+		plan.Category.NoChange &&
 		len(plan.Replaced) == 0
 
 	return plan, nil
+}
+
+// planCategory resolves the workflow category (default plan) and plans the
+// workflows.category_by_type.<type> mapping. The category must already exist in
+// the effective vocabulary (defaults plus user config); unknown categories are
+// rejected to prevent typo-taxonomy rather than silently created.
+func planCategory(cfg *config.CampaignConfig, plan *createPlan, opts createOptions) error {
+	category := opts.Category
+	if category == "" {
+		category = config.WorkflowCategoryPlan
+	}
+	if _, ok := cfg.WorkflowCategories()[category]; !ok {
+		return camperrors.NewValidation("category",
+			"unknown category "+category+"; define it under workflows.categories in campaign.yaml or use one of: "+strings.Join(cfg.OrderedWorkflowCategoryKeys(), ", "), nil)
+	}
+
+	plan.Category.Category = category
+	existing, ok := cfg.Workflows.CategoryByType[opts.Type]
+	if ok {
+		plan.Category.Existing = existing
+	}
+	plan.Category.NoChange = ok && existing == category
+	return nil
 }
 
 func planShortcut(cfg *config.CampaignConfig, plan *createPlan, opts createOptions) error {

@@ -1,5 +1,6 @@
 created workflow/research
   shortcut: re -> workflow/research/
   workitem type: research
+  category: plan
   dungeon dirs: dungeon/completed/, dungeon/archived/, dungeon/someday/
 next: camp workitem create <slug> --type research
