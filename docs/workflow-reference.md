@@ -41,7 +41,7 @@ completion.
 ### 1. Create
 
 ```
-camp workflow create research --shortcut re --title "Research"
+camp workflow create research --shortcut re --title "Research" --category research
 ```
 
 Output on first run:
@@ -50,9 +50,15 @@ Output on first run:
 created workflow/research
   shortcut: re -> workflow/research/
   workitem type: research
+  category: research
   dungeon dirs: dungeon/completed/, dungeon/archived/, dungeon/someday/
 next: camp workitem create <slug> --type research
 ```
+
+`--category` sets the workflow category (default `plan`). The category must
+already exist under `workflows.categories` in `campaign.yaml` (shipped:
+`plan`, `research`, `pipeline`, `review`); unknown categories are rejected. On
+apply it writes `workflows.category_by_type.<type>`.
 
 What `create` writes:
 
@@ -86,9 +92,9 @@ camp workflow list
 ```
 
 ```
-TYPE        SHORTCUT  ITEMS  UPDATED
-research    re        4      2026-05-20T14:32:00Z
-feature     fe        12     2026-05-22T09:01:00Z
+TYPE        CATEGORY  SHORTCUT  ITEMS  UPDATED
+research    research  re        4      2026-05-20T14:32:00Z
+feature     plan      fe        12     2026-05-22T09:01:00Z
 ```
 
 Lists every user-created workflow collection. Builtin types (`intent`, `design`,
