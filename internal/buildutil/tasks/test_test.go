@@ -15,7 +15,7 @@ func TestGoTestArgsHonorsBuildTags(t *testing.T) {
 		"-json",
 		"-short",
 		"-timeout",
-		"120s",
+		"300s",
 		"-tags",
 		"dev",
 		"./cmd/camp",
@@ -36,7 +36,7 @@ func TestGoTestArgsOmitsEmptyBuildTags(t *testing.T) {
 		"-json",
 		"-short",
 		"-timeout",
-		"120s",
+		"300s",
 		"./cmd/camp",
 	}
 
