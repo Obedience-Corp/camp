@@ -70,6 +70,9 @@ func (m Model) renderHeader() string {
 	if m.typeFilter != "" {
 		filters = append(filters, filterActiveStyle.Render("type:"+m.typeFilter))
 	}
+	if m.categoryFilter != "" {
+		filters = append(filters, filterActiveStyle.Render("category:"+m.categoryFilter))
+	}
 	if m.searchQuery != "" {
 		filters = append(filters, filterActiveStyle.Render("search:"+m.searchQuery))
 	}
@@ -102,9 +105,9 @@ func (m Model) renderFooter() string {
 		return m.renderFilterChips()
 	}
 	count := fmt.Sprintf("%d items", len(m.filteredItems))
-	keys := "j/k move  / search  f filter  0 all  S stage  P priority  tab preview  r refresh  ? help  q quit"
+	keys := "j/k move  / search  f filter  c category  0 all  S stage  P priority  tab preview  r refresh  ? help  q quit"
 	if len(keys)+len(count)+2 > m.width {
-		keys = "j/k / f P tab r ? q"
+		keys = "j/k / f c P tab r ? q"
 	}
 	return footerStyle.Render(fmt.Sprintf("%s  %s", count, keys))
 }

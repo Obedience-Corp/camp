@@ -24,21 +24,31 @@ import (
 //     metadata is present.
 //   - v1alpha7: add attention_stage/attention_stage_source/group fields,
 //     attention/group vocabularies, grouping metadata, and reusable section rows.
-const SchemaVersion = "workitems/v1alpha7"
+//   - v1alpha8: add config-derived workflow_category per item, category_vocabulary,
+//     category_counts, and category in available_group_by and section rows.
+const SchemaVersion = "workitems/v1alpha8"
 
 // Payload is the top-level JSON output for camp workitem --json.
 type Payload struct {
-	SchemaVersion            string              `json:"schema_version"`
-	GeneratedAt              time.Time           `json:"generated_at"`
-	CampaignRoot             string              `json:"campaign_root"`
-	Sort                     SortInfo            `json:"sort"`
-	Grouping                 listview.Grouping   `json:"grouping"`
-	Items                    []WorkItem          `json:"items"`
-	Sections                 []listview.Section  `json:"sections,omitempty"`
-	Counts                   Counts              `json:"counts"`
-	StageVocabulary          map[string][]string `json:"stage_vocabulary"`
-	AttentionStageVocabulary []string            `json:"attention_stage_vocabulary"`
-	GroupVocabulary          []string            `json:"group_vocabulary"`
+	SchemaVersion            string               `json:"schema_version"`
+	GeneratedAt              time.Time            `json:"generated_at"`
+	CampaignRoot             string               `json:"campaign_root"`
+	Sort                     SortInfo             `json:"sort"`
+	Grouping                 listview.Grouping    `json:"grouping"`
+	Items                    []WorkItem           `json:"items"`
+	Sections                 []listview.Section   `json:"sections,omitempty"`
+	Counts                   Counts               `json:"counts"`
+	CategoryCounts           map[string]int       `json:"category_counts"`
+	StageVocabulary          map[string][]string  `json:"stage_vocabulary"`
+	AttentionStageVocabulary []string             `json:"attention_stage_vocabulary"`
+	GroupVocabulary          []string             `json:"group_vocabulary"`
+	CategoryVocabulary       []CategoryVocabEntry `json:"category_vocabulary"`
+}
+
+type CategoryVocabEntry struct {
+	Key         string `json:"key"`
+	Label       string `json:"label,omitempty"`
+	Description string `json:"description,omitempty"`
 }
 
 // SortInfo describes the ordering applied to items.
@@ -64,6 +74,7 @@ func NewPayload(campaignRoot string, items []WorkItem) Payload {
 
 func NewPayloadWithGrouping(campaignRoot string, items []WorkItem, groupBy string) Payload {
 	counts := Counts{Total: len(items)}
+	categoryCounts := map[string]int{}
 	for _, item := range items {
 		switch item.WorkflowType {
 		case WorkflowTypeIntent:
@@ -74,6 +85,9 @@ func NewPayloadWithGrouping(campaignRoot string, items []WorkItem, groupBy strin
 			counts.Explore++
 		case WorkflowTypeFestival:
 			counts.Festival++
+		}
+		if item.WorkflowCategory != "" {
+			categoryCounts[item.WorkflowCategory]++
 		}
 	}
 
@@ -96,14 +110,16 @@ func NewPayloadWithGrouping(campaignRoot string, items []WorkItem, groupBy strin
 		},
 		Grouping: listview.Grouping{
 			GroupBy:          groupBy,
-			AvailableGroupBy: []string{"attention_stage", "group", "type"},
+			AvailableGroupBy: []string{"attention_stage", "group", "type", "category"},
 		},
 		Items:                    items,
 		Sections:                 sections,
 		Counts:                   counts,
+		CategoryCounts:           categoryCounts,
 		StageVocabulary:          StageVocabulary(),
 		AttentionStageVocabulary: []string{"current", "next", "active", "parked"},
 		GroupVocabulary:          GroupVocabulary(items),
+		CategoryVocabulary:       []CategoryVocabEntry{},
 	}
 }
 
@@ -127,6 +143,7 @@ func ListRows(items []WorkItem) []listview.Row {
 				"attention_stage": item.AttentionStage,
 				"group":           groupKey,
 				"type":            string(item.WorkflowType),
+				"category":        item.WorkflowCategory,
 			},
 		})
 	}

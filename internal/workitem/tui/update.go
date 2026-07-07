@@ -29,7 +29,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err
 		} else {
 			selectedKey := m.currentItem().Key
-			items := msg.items
+			items := workitem.ApplyWorkflowCategories(msg.items, m.categoryForType)
 			if m.priorityStore != nil {
 				items = priority.Apply(m.priorityStore, items)
 			}
@@ -186,6 +186,10 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "f":
 		m.enterFilterMode()
 
+	case "c":
+		m.cycleCategory()
+		return m, nil
+
 	// Quick actions (read-only)
 	case "e":
 		return m.openEditor()
@@ -207,6 +211,9 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else if m.searchQuery != "" {
 			m.searchQuery = ""
 			m.searchInput.SetValue("")
+			m.refilter()
+		} else if m.categoryFilter != "" {
+			m.categoryFilter = ""
 			m.refilter()
 		}
 	}
@@ -235,15 +242,7 @@ func (m Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.searchInput, cmd = m.searchInput.Update(msg)
 	draftQuery := m.searchInput.Value()
-	var types []string
-	if m.typeFilter != "" {
-		types = []string{m.typeFilter}
-	}
-	m.filteredItems = workitem.FilterAdvanced(m.allItems, workitem.FilterOptions{
-		Types:      types,
-		Query:      draftQuery,
-		ShowParked: m.showParked,
-	})
+	m.filteredItems = workitem.FilterAdvanced(m.allItems, m.filterOptionsForState(draftQuery))
 	if m.cursor >= len(m.filteredItems) {
 		m.cursor = max(0, len(m.filteredItems)-1)
 	}

@@ -136,6 +136,7 @@ It stores:
 - Human context: `description`, `mission`
 - Project entries under `projects`
 - Picker concepts under `concepts`
+- Workflow categories under `workflows`
 
 Navigation paths and shortcuts do not live here anymore; those live in
 `.campaign/settings/jumps.yaml`.
@@ -144,6 +145,43 @@ Navigation paths and shortcuts do not live here anymore; those live in
 the workflow type. The entry name is the workflow type slug and the path
 points to `workflow/<type>/`. Use `--replace` to overwrite a concept entry
 that already exists under the same name.
+
+#### `workflows` (categories)
+
+The `workflows` block classifies workflow/workitem types into broad categories
+so `camp workitem` can filter and group by kind of work. It is written by
+`camp init` and backfilled by `camp init --repair` (repair preserves your edits).
+
+```yaml
+workflows:
+  categories:
+    plan:
+      label: Plan
+      description: Planning, design, intents, festivals, and structured execution work
+    research:
+      label: Research
+    pipeline:
+      label: Pipeline
+    review:
+      label: Review
+  category_by_type:
+    intent: plan
+    design: plan
+    explore: research
+    festival: plan
+    code_reviews: review
+    pipelines: pipeline
+```
+
+- `categories` defines the vocabulary and display metadata. The shipped set is
+  `plan`, `research`, `pipeline`, `review`; add your own as needed.
+- `category_by_type` maps a workflow/workitem type key to a category key. Any
+  slug-safe type may be mapped, even before a matching item exists. Types with
+  no mapping resolve to `uncategorized` and still appear in listings.
+- `camp workflow create <type> --category <cat>` writes the mapping for you; the
+  category must already exist under `categories`.
+- Category is derived at read time; it is never stored in `.workitem` files, so
+  changing a mapping reclassifies every item of that type at once.
 
 ### `.campaign/settings/jumps.yaml`
 

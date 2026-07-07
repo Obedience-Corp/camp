@@ -16,7 +16,7 @@ Schema versions in this release:
 
 | Command | Schema version | Notes |
 | --- | --- | --- |
-| `camp workitem --json` | `workitems/v1alpha6` | Workitem dashboard contract with `stage_vocabulary`, explicit `none` stage, ritual/chains festivals, and non-omitempty workflow counters/booleans. |
+| `camp workitem --json` | `workitems/v1alpha8` | Workitem dashboard contract. Each item carries a config-derived `workflow_category` (omitempty); the payload adds `category_vocabulary` (ordered categories with labels), `category_counts`, `category` in `grouping.available_group_by`, and a `category` field on section rows. Filter with `--category` and group with `--group-by category`. |
 | `camp workitem create --json` | `workitem-create/v1alpha1` | Create response with next-step hint. |
 | `camp workitem link --json` | `workitem-links/v1alpha1` | Emits one `link`. |
 | `camp workitem unlink --json` | `workitem-links/v1alpha1` | Emits `removed`. |
@@ -43,9 +43,9 @@ Schema versions in this release:
 | `camp sync --json` | `sync/v1alpha1` | Existing sync result shape; returned failures use the JSON error envelope. |
 | `camp worktrees info --json` | `worktrees-info/v1alpha1` | Deprecated compatibility surface; failures use the JSON error envelope. |
 | `camp worktrees list --json` | `worktrees-list/v1alpha1` | Deprecated compatibility surface; failures use the JSON error envelope. |
-| `camp workflow create --json` | `workflow/v1` | Existing workflow collection contract. |
-| `camp workflow list --json` | `workflow/v1` | Existing workflow collection contract. |
-| `camp workflow show --json` | `workflow/v1` | Existing workflow collection contract. |
+| `camp workflow create --json` | `workflow/v1` | Workflow collection contract; `category` object reports the planned `category_by_type` mapping. |
+| `camp workflow list --json` | `workflow/v1` | Workflow collection contract; each entry includes its `category`. |
+| `camp workflow show --json` | `workflow/v1` | Workflow collection contract; includes the collection `category`. |
 | `camp workflow shortcut add --json` | `workflow/v1` | Existing workflow collection contract. |
 | `camp workflow doctor --json` | `workflow/v1` | Emits findings; exits 2 when error findings exist. |
 | `camp workflow sync --json` | `workflow/v1` | Existing workflow repair-plan contract. |

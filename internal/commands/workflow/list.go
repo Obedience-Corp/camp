@@ -63,7 +63,7 @@ func emitListHuman(w io.Writer, entries []workflowEntry) error {
 		return err
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintln(tw, "TYPE\tSHORTCUT\tITEMS\tUPDATED"); err != nil {
+	if _, err := fmt.Fprintln(tw, "TYPE\tCATEGORY\tSHORTCUT\tITEMS\tUPDATED"); err != nil {
 		return err
 	}
 	for _, e := range entries {
@@ -71,11 +71,15 @@ func emitListHuman(w io.Writer, entries []workflowEntry) error {
 		if shortcut == "" {
 			shortcut = "-"
 		}
+		category := e.Category
+		if category == "" {
+			category = "-"
+		}
 		updated := "-"
 		if !e.LastModified.IsZero() {
 			updated = e.LastModified.Format(time.RFC3339)
 		}
-		if _, err := fmt.Fprintf(tw, "%s\t%s\t%d\t%s\n", e.Type, shortcut, e.WorkitemCount, updated); err != nil {
+		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s\n", e.Type, category, shortcut, e.WorkitemCount, updated); err != nil {
 			return err
 		}
 	}
@@ -85,6 +89,7 @@ func emitListHuman(w io.Writer, entries []workflowEntry) error {
 type listJSONEntry struct {
 	Type          string    `json:"type"`
 	Path          string    `json:"path"`
+	Category      string    `json:"category,omitempty"`
 	Shortcut      string    `json:"shortcut,omitempty"`
 	WorkitemCount int       `json:"workitem_count"`
 	HasConcept    bool      `json:"has_concept"`
@@ -107,6 +112,7 @@ func emitListJSON(w io.Writer, entries []workflowEntry) error {
 		out.Workflows = append(out.Workflows, listJSONEntry{
 			Type:          e.Type,
 			Path:          e.Path,
+			Category:      e.Category,
 			Shortcut:      e.ShortcutKey,
 			WorkitemCount: e.WorkitemCount,
 			HasConcept:    e.HasConcept,

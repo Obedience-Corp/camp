@@ -47,6 +47,9 @@ func emitCreateHuman(cmd *cobra.Command, plan *createPlan, opts createOptions) e
 	if _, err := fmt.Fprintf(w, "  workitem type: %s\n", plan.Type); err != nil {
 		return err
 	}
+	if _, err := fmt.Fprintf(w, "  category: %s\n", plan.Category.Category); err != nil {
+		return err
+	}
 	if _, err := fmt.Fprintf(w, "  dungeon dirs: %s\n", strings.Join(statusDirsForOutput(), ", ")); err != nil {
 		return err
 	}
@@ -116,6 +119,15 @@ func planActionLines(plan *createPlan) []string {
 		lines = append(lines, "create concept "+plan.Concept.Name+" -> "+plan.Concept.Path)
 	}
 
+	switch {
+	case plan.Category.NoChange:
+		lines = append(lines, "no-op category "+plan.Type+" -> "+plan.Category.Category)
+	case plan.Category.Existing != "":
+		lines = append(lines, "update category "+plan.Type+" -> "+plan.Category.Category+" (was "+plan.Category.Existing+")")
+	default:
+		lines = append(lines, "map category "+plan.Type+" -> "+plan.Category.Category)
+	}
+
 	for _, key := range plan.Replaced {
 		lines = append(lines, "remove shortcut "+key+" (replaced under --replace)")
 	}
@@ -134,6 +146,7 @@ func emitCreateJSON(cmd *cobra.Command, plan *createPlan, opts createOptions) er
 		OBEYWritten   bool         `json:"obey_written"`
 		Shortcut      shortcutPlan `json:"shortcut"`
 		Concept       conceptPlan  `json:"concept"`
+		Category      categoryPlan `json:"category"`
 		Replaced      []string     `json:"replaced"`
 		NoChanges     bool         `json:"no_changes"`
 		DryRun        bool         `json:"dry_run"`
@@ -148,6 +161,7 @@ func emitCreateJSON(cmd *cobra.Command, plan *createPlan, opts createOptions) er
 		OBEYWritten:   plan.OBEYWrite && !opts.DryRun,
 		Shortcut:      plan.Shortcut,
 		Concept:       plan.Concept,
+		Category:      plan.Category,
 		Replaced:      append([]string(nil), plan.Replaced...),
 		NoChanges:     plan.NoChanges,
 		DryRun:        opts.DryRun,

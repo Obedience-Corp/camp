@@ -154,9 +154,9 @@ func TestWorkItemWorkflow_ZeroValuesAreEmitted(t *testing.T) {
 	}
 }
 
-func TestSchemaVersion_IsV1Alpha7(t *testing.T) {
-	if SchemaVersion != "workitems/v1alpha7" {
-		t.Errorf("SchemaVersion = %q, want workitems/v1alpha7", SchemaVersion)
+func TestSchemaVersion_IsV1Alpha8(t *testing.T) {
+	if SchemaVersion != "workitems/v1alpha8" {
+		t.Errorf("SchemaVersion = %q, want workitems/v1alpha8", SchemaVersion)
 	}
 }
 
@@ -177,6 +177,57 @@ func TestNewPayload_AttentionAndSections(t *testing.T) {
 	}
 	if len(p.Sections) != 2 {
 		t.Fatalf("len(sections) = %d, want 2", len(p.Sections))
+	}
+}
+
+func TestNewPayload_CategoryGroupingAndCounts(t *testing.T) {
+	items := []WorkItem{
+		{Key: "a", Title: "A", WorkflowType: WorkflowTypeDesign, WorkflowCategory: "plan"},
+		{Key: "b", Title: "B", WorkflowType: WorkflowTypeExplore, WorkflowCategory: "research"},
+		{Key: "c", Title: "C", WorkflowType: WorkflowTypeFestival, WorkflowCategory: "plan"},
+	}
+	p := NewPayloadWithGrouping("/tmp", items, "category")
+
+	if p.CategoryCounts["plan"] != 2 || p.CategoryCounts["research"] != 1 {
+		t.Fatalf("category_counts = %#v, want plan:2 research:1", p.CategoryCounts)
+	}
+	if !containsString(p.Grouping.AvailableGroupBy, "category") {
+		t.Fatalf("available_group_by missing category: %#v", p.Grouping.AvailableGroupBy)
+	}
+	if len(p.Sections) != 2 {
+		t.Fatalf("category sections = %d, want 2", len(p.Sections))
+	}
+}
+
+func TestNewPayload_CategoryFieldsNonNull(t *testing.T) {
+	p := NewPayload("/tmp", nil)
+	data, err := json.Marshal(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatal(err)
+	}
+	if string(raw["category_vocabulary"]) == "null" {
+		t.Error("category_vocabulary should be [] not null")
+	}
+	if string(raw["category_counts"]) == "null" {
+		t.Error("category_counts should be {} not null")
+	}
+}
+
+func TestWorkItem_WorkflowCategoryOmitEmpty(t *testing.T) {
+	item := WorkItem{Key: "design:foo"}
+	data, _ := json.Marshal(item)
+	if strings.Contains(string(data), "workflow_category") {
+		t.Error("workflow_category should be omitted when empty")
+	}
+
+	item.WorkflowCategory = "plan"
+	data, _ = json.Marshal(item)
+	if !strings.Contains(string(data), `"workflow_category":"plan"`) {
+		t.Errorf("workflow_category should be present, got: %s", data)
 	}
 }
 

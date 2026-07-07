@@ -94,6 +94,47 @@ func TestFilter_NoFilters(t *testing.T) {
 	}
 }
 
+func TestFilter_ByCategory(t *testing.T) {
+	items := []WorkItem{
+		{WorkflowType: WorkflowTypeDesign, WorkflowCategory: "plan", Title: "d"},
+		{WorkflowType: WorkflowTypeExplore, WorkflowCategory: "research", Title: "e"},
+		{WorkflowType: WorkflowType("code_reviews"), WorkflowCategory: "review", Title: "r"},
+	}
+
+	got := FilterAdvanced(items, FilterOptions{Categories: []string{"research"}, ShowParked: true})
+	if len(got) != 1 || got[0].Title != "e" {
+		t.Fatalf("category filter = %v, want single research item", got)
+	}
+
+	got = FilterAdvanced(items, FilterOptions{Categories: []string{"plan", "review"}, ShowParked: true})
+	if len(got) != 2 {
+		t.Fatalf("multi-category filter len = %d, want 2", len(got))
+	}
+}
+
+func TestFilter_CategoryCombinesWithType(t *testing.T) {
+	items := []WorkItem{
+		{WorkflowType: WorkflowTypeDesign, WorkflowCategory: "plan", Title: "d"},
+		{WorkflowType: WorkflowTypeFestival, WorkflowCategory: "plan", Title: "f"},
+		{WorkflowType: WorkflowTypeExplore, WorkflowCategory: "research", Title: "e"},
+	}
+	got := FilterAdvanced(items, FilterOptions{Types: []string{"festival"}, Categories: []string{"plan"}, ShowParked: true})
+	if len(got) != 1 || got[0].Title != "f" {
+		t.Fatalf("type+category filter = %v, want festival plan item", got)
+	}
+}
+
+func TestFilter_QueryMatchesCategory(t *testing.T) {
+	items := []WorkItem{
+		{WorkflowType: WorkflowTypeExplore, WorkflowCategory: "research", Title: "alpha"},
+		{WorkflowType: WorkflowTypeDesign, WorkflowCategory: "plan", Title: "beta"},
+	}
+	got := FilterAdvanced(items, FilterOptions{Query: "research", ShowParked: true})
+	if len(got) != 1 || got[0].Title != "alpha" {
+		t.Fatalf("query on category = %v, want the research item", got)
+	}
+}
+
 func TestFilter_PreservesOrder(t *testing.T) {
 	items := []WorkItem{
 		{WorkflowType: WorkflowTypeIntent, Title: "first"},

@@ -42,6 +42,10 @@ func ValidateCampaignConfig(cfg *CampaignConfig) error {
 		}
 	}
 
+	if err := ValidateWorkflowsConfig(&cfg.Workflows); err != nil {
+		return err
+	}
+
 	return nil
 }
 

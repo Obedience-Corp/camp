@@ -29,6 +29,7 @@ func NewWorkitemCommand() *cobra.Command {
 		flagPrint           bool
 		flagPathOutput      string
 		flagTypes           []string
+		flagCategories      []string
 		flagStages          []string
 		flagAttentionStages []string
 		flagGroups          []string
@@ -60,7 +61,7 @@ Examples:
 		RunE: jsoncontract.RunE(wkitem.SchemaVersion, func() bool { return flagJSON }, func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
-			if err := validateFlags(flagJSON, flagList, flagPrint, flagPathOutput, flagTypes, flagStages, flagAttentionStages, flagGroups, flagGroupBy); err != nil {
+			if err := validateFlags(flagJSON, flagList, flagPrint, flagPathOutput, flagTypes, flagCategories, flagStages, flagAttentionStages, flagGroups, flagGroupBy); err != nil {
 				return err
 			}
 
@@ -83,6 +84,7 @@ Examples:
 			if err != nil {
 				return camperrors.Wrap(err, "discovering work items")
 			}
+			items = wkitem.ApplyWorkflowCategories(items, cfg.WorkflowCategoryForType)
 
 			// Load priority store read-only; pruning happens only in explicit write paths.
 			storePath := priority.StorePath(campaignRoot)
@@ -97,6 +99,7 @@ Examples:
 
 			items = wkitem.FilterAdvanced(items, wkitem.FilterOptions{
 				Types:           flagTypes,
+				Categories:      flagCategories,
 				LifecycleStages: flagStages,
 				AttentionStages: flagAttentionStages,
 				Groups:          flagGroups,
@@ -116,7 +119,7 @@ Examples:
 			case flagList:
 				return outputList(cmd.OutOrStdout(), items, displayGroupBy)
 			case flagJSON:
-				return outputJSON(campaignRoot, items, displayGroupBy)
+				return outputJSON(campaignRoot, cfg, items, displayGroupBy)
 			case !interactive:
 				// Non-interactive --print/--path-output: output first item path directly.
 				if len(items) == 0 {
@@ -124,11 +127,11 @@ Examples:
 				}
 				return outputSelectedPath(items[0], flagPrint, flagPathOutput)
 			case flagPathOutput != "":
-				return runTUI(ctx, items, false, flagPathOutput, campaignRoot, resolver, store, storePath, flagShowParked)
+				return runTUI(ctx, items, false, flagPathOutput, campaignRoot, resolver, store, storePath, flagShowParked, cfg.WorkflowCategoryForType)
 			case flagPrint:
-				return runTUI(ctx, items, true, "", campaignRoot, resolver, store, storePath, flagShowParked)
+				return runTUI(ctx, items, true, "", campaignRoot, resolver, store, storePath, flagShowParked, cfg.WorkflowCategoryForType)
 			default:
-				return runTUI(ctx, items, false, "", campaignRoot, resolver, store, storePath, flagShowParked)
+				return runTUI(ctx, items, false, "", campaignRoot, resolver, store, storePath, flagShowParked, cfg.WorkflowCategoryForType)
 			}
 		}),
 	}
@@ -140,10 +143,11 @@ Examples:
 	cmd.Flags().StringVar(&flagPathOutput, "path-output", "", "Write selected relative path to file (shell integration)")
 	_ = cmd.Flags().MarkHidden("path-output")
 	cmd.Flags().StringArrayVar(&flagTypes, "type", nil, "Filter by workflow type (builtin: intent, design, explore, festival; or any slug-safe custom type produced by 'camp workitem create --type <name>')")
+	cmd.Flags().StringArrayVar(&flagCategories, "category", nil, "Filter by workflow category (builtin: plan, research, pipeline, review, uncategorized; or any category defined under workflows in campaign.yaml)")
 	cmd.Flags().StringArrayVar(&flagStages, "stage", nil, "Filter by lifecycle stage (none, inbox, active, ready, planning, ritual, chains)")
 	cmd.Flags().StringArrayVar(&flagAttentionStages, "attention-stage", nil, "Filter by attention stage (current, next, active, parked)")
 	cmd.Flags().StringArrayVar(&flagGroups, "group", nil, "Filter by workitem group")
-	cmd.Flags().StringVar(&flagGroupBy, "group-by", "attention_stage", "Group JSON/list sections by attention_stage, group, or type; --list defaults to group unless set")
+	cmd.Flags().StringVar(&flagGroupBy, "group-by", "attention_stage", "Group JSON/list sections by attention_stage, group, type, or category; --list defaults to group unless set")
 	cmd.Flags().BoolVar(&flagShowParked, "show-parked", false, "include parked attention-stage workitems in default output")
 	cmd.Flags().IntVar(&flagLimit, "limit", 0, "Maximum number of items to return")
 	cmd.Flags().StringVar(&flagQuery, "query", "", "Search query to filter items")
@@ -244,11 +248,17 @@ func isInteractive() bool {
 	return fi.Mode()&os.ModeCharDevice != 0
 }
 
-func validateFlags(jsonMode, listMode, printMode bool, pathOutput string, types, stages, attentionStages, groups []string, groupBy string) error {
+func validateFlags(jsonMode, listMode, printMode bool, pathOutput string, types, categories, stages, attentionStages, groups []string, groupBy string) error {
 	for _, t := range types {
 		if err := validateSlug(t); err != nil {
 			return camperrors.NewValidation("type",
 				fmt.Sprintf("invalid --type value %q: must be a path-safe workflow type (no '/', '\\', whitespace, or control chars; no leading '.' or '-'; max 80 chars)", t), nil)
+		}
+	}
+	for _, c := range categories {
+		if err := validateSlug(c); err != nil {
+			return camperrors.NewValidation("category",
+				fmt.Sprintf("invalid --category value %q: must be a path-safe workflow category (no '/', '\\', whitespace, or control chars; no leading '.' or '-'; max 80 chars)", c), nil)
 		}
 	}
 	for _, s := range stages {
@@ -270,10 +280,10 @@ func validateFlags(jsonMode, listMode, printMode bool, pathOutput string, types,
 		}
 	}
 	switch groupBy {
-	case "", "attention_stage", "group", "type":
+	case "", "attention_stage", "group", "type", "category":
 	default:
 		return camperrors.NewValidation("group_by",
-			fmt.Sprintf("unknown --group-by value %q (valid: attention_stage, group, type)", groupBy), nil)
+			fmt.Sprintf("unknown --group-by value %q (valid: attention_stage, group, type, category)", groupBy), nil)
 	}
 	if jsonMode && printMode {
 		return camperrors.NewValidation("output_mode", "--json and --print are mutually exclusive", nil)
@@ -296,19 +306,32 @@ func validateFlags(jsonMode, listMode, printMode bool, pathOutput string, types,
 	return nil
 }
 
-func outputJSON(campaignRoot string, items []wkitem.WorkItem, groupBy string) error {
+func outputJSON(campaignRoot string, cfg *config.CampaignConfig, items []wkitem.WorkItem, groupBy string) error {
 	payload := wkitem.NewPayloadWithGrouping(campaignRoot, items, groupBy)
+	payload.CategoryVocabulary = categoryVocabulary(cfg)
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	return enc.Encode(payload)
 }
 
-func runTUI(ctx context.Context, items []wkitem.WorkItem, printOnly bool, pathOutput string, campaignRoot string, resolver *paths.Resolver, store *priority.Store, storePath string, showParked bool) error {
+func categoryVocabulary(cfg *config.CampaignConfig) []wkitem.CategoryVocabEntry {
+	cats := cfg.WorkflowCategories()
+	keys := cfg.OrderedWorkflowCategoryKeys()
+	out := make([]wkitem.CategoryVocabEntry, 0, len(keys))
+	for _, k := range keys {
+		c := cats[k]
+		out = append(out, wkitem.CategoryVocabEntry{Key: k, Label: c.Label, Description: c.Description})
+	}
+	return out
+}
+
+func runTUI(ctx context.Context, items []wkitem.WorkItem, printOnly bool, pathOutput string, campaignRoot string, resolver *paths.Resolver, store *priority.Store, storePath string, showParked bool, categoryForType func(string) string) error {
 	if len(items) == 0 {
 		return fmt.Errorf("no work items found")
 	}
 
 	model := wktui.New(ctx, items, campaignRoot, resolver, store, storePath, showParked)
+	model.SetCategoryResolver(categoryForType)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	result, err := p.Run()
 	if err != nil {

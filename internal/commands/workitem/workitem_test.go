@@ -80,19 +80,19 @@ func TestSelectedOpenPathUsesPrimaryDoc(t *testing.T) {
 }
 
 func TestValidateFlagsAcceptsStageNoneForNoStageTypes(t *testing.T) {
-	if err := validateFlags(true, false, false, "", []string{"design"}, []string{"none"}, nil, nil, "attention_stage"); err != nil {
+	if err := validateFlags(true, false, false, "", []string{"design"}, nil, []string{"none"}, nil, nil, "attention_stage"); err != nil {
 		t.Fatalf("validateFlags(design, none) error = %v", err)
 	}
-	if err := validateFlags(true, false, false, "", []string{"explore"}, []string{"none"}, nil, nil, "attention_stage"); err != nil {
+	if err := validateFlags(true, false, false, "", []string{"explore"}, nil, []string{"none"}, nil, nil, "attention_stage"); err != nil {
 		t.Fatalf("validateFlags(explore, none) error = %v", err)
 	}
 }
 
 func TestValidateFlagsRejectsStageForWrongType(t *testing.T) {
-	if err := validateFlags(true, false, false, "", []string{"intent"}, []string{"planning"}, nil, nil, "attention_stage"); err == nil {
+	if err := validateFlags(true, false, false, "", []string{"intent"}, nil, []string{"planning"}, nil, nil, "attention_stage"); err == nil {
 		t.Fatal("validateFlags(intent, planning) error = nil, want invalid stage")
 	}
-	if err := validateFlags(true, false, false, "", []string{"design"}, []string{"inbox"}, nil, nil, "attention_stage"); err == nil {
+	if err := validateFlags(true, false, false, "", []string{"design"}, nil, []string{"inbox"}, nil, nil, "attention_stage"); err == nil {
 		t.Fatal("validateFlags(design, inbox) error = nil, want invalid stage")
 	}
 }
@@ -264,7 +264,7 @@ func TestValidateFlagsAcceptsBuiltinAndCustomTypes(t *testing.T) {
 	}
 	for _, tname := range cases {
 		t.Run(tname, func(t *testing.T) {
-			if err := validateFlags(false, false, false, "", []string{tname}, nil, nil, nil, "attention_stage"); err != nil {
+			if err := validateFlags(false, false, false, "", []string{tname}, nil, nil, nil, nil, "attention_stage"); err != nil {
 				t.Fatalf("validateFlags(--type=%q) = %v, want nil", tname, err)
 			}
 		})
@@ -275,7 +275,7 @@ func TestValidateFlagsRejectsInvalidTypeSlugs(t *testing.T) {
 	cases := []string{"with space", "has/slash", "-leading", ".hidden", ""}
 	for _, tname := range cases {
 		t.Run(tname, func(t *testing.T) {
-			if err := validateFlags(false, false, false, "", []string{tname}, nil, nil, nil, "attention_stage"); err == nil {
+			if err := validateFlags(false, false, false, "", []string{tname}, nil, nil, nil, nil, "attention_stage"); err == nil {
 				t.Fatalf("validateFlags(--type=%q) = nil, want validation error", tname)
 			}
 		})
@@ -294,7 +294,7 @@ func TestValidateFlagsRejectsPathOutputConflicts(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateFlags(tt.jsonMode, false, tt.printMode, "selected-path", nil, nil, nil, nil, "attention_stage")
+			err := validateFlags(tt.jsonMode, false, tt.printMode, "selected-path", nil, nil, nil, nil, nil, "attention_stage")
 			if err == nil {
 				t.Fatal("validateFlags() error = nil, want conflict")
 			}
@@ -316,7 +316,7 @@ func TestValidateFlagsRejectsListConflicts(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateFlags(tt.jsonMode, true, tt.printMode, tt.pathOutput, nil, nil, nil, nil, "attention_stage")
+			err := validateFlags(tt.jsonMode, true, tt.printMode, tt.pathOutput, nil, nil, nil, nil, nil, "attention_stage")
 			if err == nil {
 				t.Fatal("validateFlags() error = nil, want conflict")
 			}

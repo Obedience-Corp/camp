@@ -24,8 +24,9 @@ camp workitem [flags]
 
 ```
       --attention-stage stringArray   Filter by attention stage (current, next, active, parked)
+      --category stringArray          Filter by workflow category (builtin: plan, research, pipeline, review, uncategorized; or any category defined under workflows in campaign.yaml)
       --group stringArray             Filter by workitem group
-      --group-by string               Group JSON/list sections by attention_stage, group, or type; --list defaults to group unless set (default "attention_stage")
+      --group-by string               Group JSON/list sections by attention_stage, group, type, or category; --list defaults to group unless set (default "attention_stage")
   -h, --help                          help for workitem
       --json                          Output as JSON
       --limit int                     Maximum number of items to return
