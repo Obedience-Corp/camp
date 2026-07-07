@@ -127,6 +127,7 @@ type Model struct {
 	// Filters
 	typeFilter      string // empty = all, or any workflow type
 	categoryFilter  string // empty = all, or any workflow category
+	categoryForType func(string) string // re-applies category enrichment on refresh
 	showParked      bool
 	filterMode      bool
 	filterOptions   []string // chip values while filter mode is active; "" = all
@@ -184,6 +185,12 @@ func New(ctx context.Context, items []workitem.WorkItem, campaignRoot string, re
 		storePath:     storePath,
 		showParked:    includeParked,
 	}
+}
+
+// SetCategoryResolver installs the type->category function so refreshed items
+// (re-discovered raw) are re-enriched with their workflow category.
+func (m *Model) SetCategoryResolver(fn func(string) string) {
+	m.categoryForType = fn
 }
 
 // typeFilterFor resolves a pressed key to a type filter value.

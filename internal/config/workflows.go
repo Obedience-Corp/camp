@@ -44,43 +44,28 @@ func DefaultWorkflowCategories() map[string]WorkflowCategoryConfig {
 	}
 }
 
-// DefaultWorkflowCategoryByType returns the built-in type->category mapping.
-// Common `camp workitem create` types (feature, bug, chore) are included so
-// freshly created items are not uncategorized.
+// DefaultWorkflowCategoryByType maps camp's shipped workflow types to categories.
+// Only types that ship with camp are mapped; every other type (custom workflow
+// collections, etc.) is uncategorized until the user maps it.
 func DefaultWorkflowCategoryByType() map[string]string {
 	return map[string]string{
 		"intent":       WorkflowCategoryPlan,
 		"design":       WorkflowCategoryPlan,
 		"explore":      WorkflowCategoryResearch,
 		"festival":     WorkflowCategoryPlan,
-		"feature":      WorkflowCategoryPlan,
-		"bug":          WorkflowCategoryPlan,
-		"chore":        WorkflowCategoryPlan,
 		"code_reviews": WorkflowCategoryReview,
-		"review":       WorkflowCategoryReview,
-		"pipeline":     WorkflowCategoryPipeline,
 		"pipelines":    WorkflowCategoryPipeline,
-		"research":     WorkflowCategoryResearch,
-		"experiment":   WorkflowCategoryResearch,
 	}
 }
 
-// DefaultWorkflowsConfig returns the workflows block written into a fresh
-// campaign.yaml (and backfilled by init --repair). It ships the full category
-// vocabulary plus explicit mappings for camp's own built-in types so the block
-// is a readable, editable starting point. Custom types default to
-// WorkflowCategoryUncategorized via WorkflowCategoryForType until mapped.
+// DefaultWorkflowsConfig is the workflows block written by camp init and
+// backfilled by init --repair: the category vocabulary plus the shipped-type
+// mappings. It reuses DefaultWorkflowCategoryByType so there are no mappings
+// hidden from what init writes to campaign.yaml.
 func DefaultWorkflowsConfig() WorkflowsConfig {
 	return WorkflowsConfig{
-		Categories: DefaultWorkflowCategories(),
-		CategoryByType: map[string]string{
-			"intent":       WorkflowCategoryPlan,
-			"design":       WorkflowCategoryPlan,
-			"explore":      WorkflowCategoryResearch,
-			"festival":     WorkflowCategoryPlan,
-			"code_reviews": WorkflowCategoryReview,
-			"pipelines":    WorkflowCategoryPipeline,
-		},
+		Categories:     DefaultWorkflowCategories(),
+		CategoryByType: DefaultWorkflowCategoryByType(),
 	}
 }
 

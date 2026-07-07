@@ -127,11 +127,11 @@ Examples:
 				}
 				return outputSelectedPath(items[0], flagPrint, flagPathOutput)
 			case flagPathOutput != "":
-				return runTUI(ctx, items, false, flagPathOutput, campaignRoot, resolver, store, storePath, flagShowParked)
+				return runTUI(ctx, items, false, flagPathOutput, campaignRoot, resolver, store, storePath, flagShowParked, cfg.WorkflowCategoryForType)
 			case flagPrint:
-				return runTUI(ctx, items, true, "", campaignRoot, resolver, store, storePath, flagShowParked)
+				return runTUI(ctx, items, true, "", campaignRoot, resolver, store, storePath, flagShowParked, cfg.WorkflowCategoryForType)
 			default:
-				return runTUI(ctx, items, false, "", campaignRoot, resolver, store, storePath, flagShowParked)
+				return runTUI(ctx, items, false, "", campaignRoot, resolver, store, storePath, flagShowParked, cfg.WorkflowCategoryForType)
 			}
 		}),
 	}
@@ -325,12 +325,13 @@ func categoryVocabulary(cfg *config.CampaignConfig) []wkitem.CategoryVocabEntry 
 	return out
 }
 
-func runTUI(ctx context.Context, items []wkitem.WorkItem, printOnly bool, pathOutput string, campaignRoot string, resolver *paths.Resolver, store *priority.Store, storePath string, showParked bool) error {
+func runTUI(ctx context.Context, items []wkitem.WorkItem, printOnly bool, pathOutput string, campaignRoot string, resolver *paths.Resolver, store *priority.Store, storePath string, showParked bool, categoryForType func(string) string) error {
 	if len(items) == 0 {
 		return fmt.Errorf("no work items found")
 	}
 
 	model := wktui.New(ctx, items, campaignRoot, resolver, store, storePath, showParked)
+	model.SetCategoryResolver(categoryForType)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	result, err := p.Run()
 	if err != nil {

@@ -29,7 +29,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err
 		} else {
 			selectedKey := m.currentItem().Key
-			items := msg.items
+			items := workitem.ApplyWorkflowCategories(msg.items, m.categoryForType)
 			if m.priorityStore != nil {
 				items = priority.Apply(m.priorityStore, items)
 			}
