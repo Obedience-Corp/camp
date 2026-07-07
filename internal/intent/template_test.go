@@ -32,7 +32,7 @@ func TestRenderTemplate(t *testing.T) {
 					}
 				},
 				func(t *testing.T, output string) {
-					if !strings.Contains(output, "title: Test Intent") {
+					if !strings.Contains(output, `title: "Test Intent"`) {
 						t.Error("missing title in output")
 					}
 				},
@@ -111,7 +111,7 @@ func TestRenderTemplate(t *testing.T) {
 					}
 				},
 				func(t *testing.T, output string) {
-					if !strings.Contains(output, "title: Minimal Intent") {
+					if !strings.Contains(output, `title: "Minimal Intent"`) {
 						t.Error("missing title in output")
 					}
 				},
@@ -220,6 +220,14 @@ func TestRenderTemplate(t *testing.T) {
 
 			if tt.wantErr {
 				return
+			}
+
+			parsed, err := ParseIntent([]byte(output))
+			if err != nil {
+				t.Fatalf("ParseIntent() on rendered output = %v", err)
+			}
+			if parsed.Title != tt.data.Title {
+				t.Errorf("round-trip Title = %q, want %q", parsed.Title, tt.data.Title)
 			}
 
 			for _, check := range tt.checks {

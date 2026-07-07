@@ -3,11 +3,18 @@ package intent
 import (
 	"bytes"
 	_ "embed"
+	"strconv"
 	"text/template"
 	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
+
+// templateFuncs quotes frontmatter scalars so titles containing YAML
+// metacharacters (colons especially) stay parseable.
+var templateFuncs = template.FuncMap{
+	"yamlQuote": strconv.Quote,
+}
 
 //go:embed templates/intent.md.tmpl
 var intentTemplateContent string
@@ -38,7 +45,7 @@ type TemplateData struct {
 func RenderTemplate(data TemplateData) (string, error) {
 	// Parse template on first use (lazy initialization)
 	if intentTemplate == nil {
-		tmpl, err := template.New("intent").Parse(intentTemplateContent)
+		tmpl, err := template.New("intent").Funcs(templateFuncs).Parse(intentTemplateContent)
 		if err != nil {
 			return "", camperrors.Wrap(err, "parsing intent template")
 		}
@@ -57,7 +64,7 @@ func RenderTemplate(data TemplateData) (string, error) {
 // carry no type, concept, or promotion metadata; tags organize them.
 func RenderNote(data TemplateData) (string, error) {
 	if noteTemplate == nil {
-		tmpl, err := template.New("note").Parse(noteTemplateContent)
+		tmpl, err := template.New("note").Funcs(templateFuncs).Parse(noteTemplateContent)
 		if err != nil {
 			return "", camperrors.Wrap(err, "parsing note template")
 		}
