@@ -81,8 +81,7 @@ type shortcutPlan struct {
 	NoChange bool   `json:"no_change"`
 }
 
-// categoryPlan describes the planned mutation to the workflow category mapping
-// (workflows.category_by_type.<type>).
+// categoryPlan describes the planned category_by_type mutation.
 type categoryPlan struct {
 	Category string `json:"category"`
 	Existing string `json:"existing,omitempty"`

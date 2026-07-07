@@ -186,7 +186,6 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "f":
 		m.enterFilterMode()
 
-	// Category filter — cycle through categories present in the current view
 	case "c":
 		m.cycleCategory()
 		return m, nil

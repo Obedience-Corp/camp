@@ -36,10 +36,6 @@ var builtinFilterCategories = []string{
 	config.WorkflowCategoryReview,
 }
 
-// deriveCategoryOptions returns the category cycle values: "" (all) first, then
-// builtin categories present in items in canonical order, then custom categories
-// (including uncategorized) alphabetically. ensure is always included so the
-// active filter is always a cycle stop.
 func deriveCategoryOptions(items []workitem.WorkItem, ensure string) []string {
 	builtin := make(map[string]bool, len(builtinFilterCategories))
 	for _, c := range builtinFilterCategories {
@@ -127,7 +123,7 @@ type Model struct {
 	// Filters
 	typeFilter      string // empty = all, or any workflow type
 	categoryFilter  string // empty = all, or any workflow category
-	categoryForType func(string) string // re-applies category enrichment on refresh
+	categoryForType func(string) string
 	showParked      bool
 	filterMode      bool
 	filterOptions   []string // chip values while filter mode is active; "" = all
@@ -187,8 +183,6 @@ func New(ctx context.Context, items []workitem.WorkItem, campaignRoot string, re
 	}
 }
 
-// SetCategoryResolver installs the type->category function so refreshed items
-// (re-discovered raw) are re-enriched with their workflow category.
 func (m *Model) SetCategoryResolver(fn func(string) string) {
 	m.categoryForType = fn
 }
@@ -287,8 +281,6 @@ func (m *Model) refilter() {
 	m.clampScroll()
 }
 
-// filterOptionsForState builds the FilterOptions for the current type/category
-// filters and the given query (committed or draft).
 func (m Model) filterOptionsForState(query string) workitem.FilterOptions {
 	var types []string
 	if m.typeFilter != "" {
@@ -306,8 +298,6 @@ func (m Model) filterOptionsForState(query string) workitem.FilterOptions {
 	}
 }
 
-// cycleCategory advances the category filter to the next value present in the
-// current view, wrapping through "" (all). Type filtering is unaffected.
 func (m *Model) cycleCategory() {
 	opts := deriveCategoryOptions(m.visibleBaseItems(), m.categoryFilter)
 	if len(opts) <= 1 {

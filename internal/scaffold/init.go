@@ -284,8 +284,7 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 		} else if len(existingCfg.ConceptList) > 0 {
 			cfg.ConceptList = existingCfg.ConceptList
 		}
-		// Use merged workflows from repair plan (backfills missing default
-		// categories/mappings, preserving user definitions).
+		// Use merged workflows from repair plan (backfills defaults, preserves user mappings).
 		if opts.RepairPlan != nil && opts.RepairPlan.MergedWorkflows != nil {
 			cfg.Workflows = *opts.RepairPlan.MergedWorkflows
 		} else {

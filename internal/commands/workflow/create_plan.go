@@ -84,10 +84,6 @@ func computeCreatePlan(campaignRoot string, cfg *config.CampaignConfig, opts cre
 	return plan, nil
 }
 
-// planCategory resolves the workflow category (default plan) and plans the
-// workflows.category_by_type.<type> mapping. The category must already exist in
-// the effective vocabulary (defaults plus user config); unknown categories are
-// rejected to prevent typo-taxonomy rather than silently created.
 func planCategory(cfg *config.CampaignConfig, plan *createPlan, opts createOptions) error {
 	category := opts.Category
 	if category == "" {

@@ -24,20 +24,17 @@ import (
 //     metadata is present.
 //   - v1alpha7: add attention_stage/attention_stage_source/group fields,
 //     attention/group vocabularies, grouping metadata, and reusable section rows.
-//   - v1alpha8: add config-derived workflow_category on each item, category to
-//     available_group_by and section row fields, category_vocabulary, and
-//     category_counts. workflow_category is omitempty; items are enriched at read
-//     time, so unenriched payloads serialize byte-identically except for this
-//     constant and the always-present category_vocabulary/category_counts.
+//   - v1alpha8: add config-derived workflow_category per item, category_vocabulary,
+//     category_counts, and category in available_group_by and section rows.
 const SchemaVersion = "workitems/v1alpha8"
 
 // Payload is the top-level JSON output for camp workitem --json.
 type Payload struct {
-	SchemaVersion            string              `json:"schema_version"`
-	GeneratedAt              time.Time           `json:"generated_at"`
-	CampaignRoot             string              `json:"campaign_root"`
-	Sort                     SortInfo            `json:"sort"`
-	Grouping                 listview.Grouping   `json:"grouping"`
+	SchemaVersion            string               `json:"schema_version"`
+	GeneratedAt              time.Time            `json:"generated_at"`
+	CampaignRoot             string               `json:"campaign_root"`
+	Sort                     SortInfo             `json:"sort"`
+	Grouping                 listview.Grouping    `json:"grouping"`
 	Items                    []WorkItem           `json:"items"`
 	Sections                 []listview.Section   `json:"sections,omitempty"`
 	Counts                   Counts               `json:"counts"`
@@ -48,8 +45,6 @@ type Payload struct {
 	CategoryVocabulary       []CategoryVocabEntry `json:"category_vocabulary"`
 }
 
-// CategoryVocabEntry is a workflow category with display metadata, listed in the
-// deterministic order returned by config (defaults first, then custom).
 type CategoryVocabEntry struct {
 	Key         string `json:"key"`
 	Label       string `json:"label,omitempty"`

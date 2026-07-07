@@ -17,24 +17,16 @@ const (
 	WorkflowCategoryUncategorized = "uncategorized"
 )
 
-// WorkflowsConfig is the campaign workflow-category taxonomy stored under the
-// `workflows:` block in .campaign/campaign.yaml. Categories classify workflow
-// and workitem type keys into broad families so camp workitem, the TUI, and
-// downstream consumers can filter and group by kind of work without changing
-// the workitem type contract.
 type WorkflowsConfig struct {
 	Categories     map[string]WorkflowCategoryConfig `yaml:"categories,omitempty"`
 	CategoryByType map[string]string                 `yaml:"category_by_type,omitempty"`
 }
 
-// WorkflowCategoryConfig is the display metadata for a single category.
 type WorkflowCategoryConfig struct {
 	Label       string `yaml:"label,omitempty"`
 	Description string `yaml:"description,omitempty"`
 }
 
-// DefaultWorkflowCategories returns the built-in category vocabulary. The set is
-// intentionally generic so any custom workflow type can be mapped into one of it.
 func DefaultWorkflowCategories() map[string]WorkflowCategoryConfig {
 	return map[string]WorkflowCategoryConfig{
 		WorkflowCategoryPlan:     {Label: "Plan", Description: "Planning, design, intents, festivals, and structured execution work"},
@@ -44,9 +36,6 @@ func DefaultWorkflowCategories() map[string]WorkflowCategoryConfig {
 	}
 }
 
-// DefaultWorkflowCategoryByType maps camp's shipped workflow types to categories.
-// Only types that ship with camp are mapped; every other type (custom workflow
-// collections, etc.) is uncategorized until the user maps it.
 func DefaultWorkflowCategoryByType() map[string]string {
 	return map[string]string{
 		"intent":       WorkflowCategoryPlan,
@@ -58,10 +47,6 @@ func DefaultWorkflowCategoryByType() map[string]string {
 	}
 }
 
-// DefaultWorkflowsConfig is the workflows block written by camp init and
-// backfilled by init --repair: the category vocabulary plus the shipped-type
-// mappings. It reuses DefaultWorkflowCategoryByType so there are no mappings
-// hidden from what init writes to campaign.yaml.
 func DefaultWorkflowsConfig() WorkflowsConfig {
 	return WorkflowsConfig{
 		Categories:     DefaultWorkflowCategories(),
@@ -69,18 +54,12 @@ func DefaultWorkflowsConfig() WorkflowsConfig {
 	}
 }
 
-// WorkflowCategories returns the effective category vocabulary: built-in
-// defaults merged with, and overridden by, user categories. It never mutates
-// the loaded config.
 func (c *CampaignConfig) WorkflowCategories() map[string]WorkflowCategoryConfig {
 	merged := DefaultWorkflowCategories()
 	maps.Copy(merged, c.Workflows.Categories)
 	return merged
 }
 
-// WorkflowCategoryForType returns the category key for a workflow type. User
-// mappings take precedence over defaults; unmapped types return
-// WorkflowCategoryUncategorized.
 func (c *CampaignConfig) WorkflowCategoryForType(workflowType string) string {
 	if cat, ok := c.Workflows.CategoryByType[workflowType]; ok && cat != "" {
 		return cat
@@ -91,9 +70,6 @@ func (c *CampaignConfig) WorkflowCategoryForType(workflowType string) string {
 	return WorkflowCategoryUncategorized
 }
 
-// OrderedWorkflowCategoryKeys returns category keys in a deterministic order:
-// the built-in defaults first (plan, research, pipeline, review), then any
-// custom categories alphabetically.
 func (c *CampaignConfig) OrderedWorkflowCategoryKeys() []string {
 	ordered := []string{WorkflowCategoryPlan, WorkflowCategoryResearch, WorkflowCategoryPipeline, WorkflowCategoryReview}
 	seen := make(map[string]bool, len(ordered))
@@ -110,11 +86,6 @@ func (c *CampaignConfig) OrderedWorkflowCategoryKeys() []string {
 	return append(ordered, custom...)
 }
 
-// ValidateWorkflowsConfig validates the workflows block. Category keys and
-// mapped type keys must be slug-safe (same contract as workitem types). Each
-// category_by_type value must resolve to a category that exists in the effective
-// (default plus user) vocabulary. Unknown type keys are allowed so a type can be
-// mapped before any matching workitem exists.
 func ValidateWorkflowsConfig(cfg *WorkflowsConfig) error {
 	if cfg == nil {
 		return nil

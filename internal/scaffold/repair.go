@@ -73,8 +73,7 @@ type RepairPlan struct {
 	MergedJumps *config.JumpsConfig
 	// MergedConcepts is the computed concept list after repair (updating stale default paths).
 	MergedConcepts []config.ConceptEntry
-	// MergedWorkflows is the computed workflows config after repair (backfilling
-	// missing default categories/mappings while preserving user definitions).
+	// MergedWorkflows is the computed workflows config after repair (backfills defaults, preserves user).
 	MergedWorkflows *config.WorkflowsConfig
 	// Migrations lists directories whose contents need to be moved.
 	Migrations []MigrationAction
@@ -550,10 +549,8 @@ func conceptListsEqual(a, b []config.ConceptEntry) bool {
 	return true
 }
 
-// computeWorkflowsChanges backfills missing default workflow categories and
-// type mappings into an existing campaign, preserving user definitions. It is
-// idempotent: a campaign already carrying the defaults yields no changes and no
-// MergedWorkflows override.
+// computeWorkflowsChanges backfills missing default categories/mappings into an
+// existing campaign, preserving user definitions.
 func computeWorkflowsChanges(ctx context.Context, absDir string, plan *RepairPlan) error {
 	existing, err := config.LoadCampaignConfig(ctx, absDir)
 	if err != nil || existing == nil {
