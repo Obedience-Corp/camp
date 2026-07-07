@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -16,6 +17,7 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/paths"
+	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/Obedience-Corp/camp/internal/worktree"
 )
@@ -95,7 +97,7 @@ func runWorktreesList(cmd *cobra.Command, args []string) error {
 	resolver := paths.NewResolver(campRoot, cfg.Paths())
 	pathManager := worktree.NewPathManager(resolver)
 
-	result, err := listWorktrees(ctx, pathManager, cfg, listProject, listStale)
+	result, err := listWorktrees(ctx, campRoot, pathManager, listProject, listStale)
 	if err != nil {
 		return err
 	}
@@ -107,29 +109,36 @@ func runWorktreesList(cmd *cobra.Command, args []string) error {
 	return outputListTable(result)
 }
 
-func listWorktrees(_ context.Context, pm *worktree.PathManager, _ *config.CampaignConfig, filterProject string, staleOnly bool) (*WorktreeListResult, error) {
+type listProjectTarget struct {
+	name string
+	path string
+}
+
+func listWorktrees(ctx context.Context, campRoot string, pm *worktree.PathManager, filterProject string, staleOnly bool) (*WorktreeListResult, error) {
 	var allWorktrees []WorktreeListItem
 
-	// Get projects to scan
-	var projectNames []string
-	if filterProject != "" {
-		projectNames = []string{filterProject}
-	} else {
-		projects, err := pm.ListAllProjects()
-		if err != nil {
-			return nil, err
-		}
-		projectNames = projects
+	projectTargets, err := listWorktreeProjectTargets(ctx, campRoot, filterProject)
+	if err != nil {
+		return nil, err
 	}
 
 	// Scan each project
-	for _, projectName := range projectNames {
+	for _, target := range projectTargets {
+		gitEntries, err := worktree.NewGitWorktree(target.path).List(ctx)
+		if err != nil {
+			if filterProject != "" {
+				return nil, camperrors.Wrapf(err, "failed to list git worktrees for project %q", target.name)
+			}
+			continue
+		}
+
+		projectName := target.name
 		fsWorktrees, err := pm.ListProjectWorktrees(projectName)
 		if err != nil {
 			continue // Skip projects with errors
 		}
 
-		for _, name := range fsWorktrees {
+		for _, name := range filterRegisteredWorktreeNames(projectName, fsWorktrees, gitEntries, pm) {
 			wtPath := pm.WorktreePath(projectName, name)
 			info := buildWorktreeListItem(projectName, name, wtPath)
 			allWorktrees = append(allWorktrees, info)
@@ -154,6 +163,48 @@ func listWorktrees(_ context.Context, pm *worktree.PathManager, _ *config.Campai
 		Total:      len(allWorktrees),
 		StaleCount: staleCount,
 	}, nil
+}
+
+func listWorktreeProjectTargets(ctx context.Context, campRoot, filterProject string) ([]listProjectTarget, error) {
+	if filterProject != "" {
+		resolved, err := project.Resolve(ctx, campRoot, filterProject)
+		if err != nil {
+			return nil, err
+		}
+		return []listProjectTarget{{
+			name: resolved.Name,
+			path: resolved.Path,
+		}}, nil
+	}
+
+	projects, err := project.List(ctx, campRoot)
+	if err != nil {
+		return nil, camperrors.Wrap(err, "failed to list projects")
+	}
+
+	targets := make([]listProjectTarget, 0, len(projects))
+	for _, proj := range projects {
+		targets = append(targets, listProjectTarget{
+			name: proj.Name,
+			path: project.ResolveProjectPath(campRoot, proj),
+		})
+	}
+	return targets, nil
+}
+
+func filterRegisteredWorktreeNames(projectName string, names []string, entries []worktree.GitWorktreeEntry, pm *worktree.PathManager) []string {
+	registered := make(map[string]struct{}, len(entries))
+	for _, entry := range entries {
+		registered[filepath.Clean(entry.Path)] = struct{}{}
+	}
+
+	filtered := make([]string, 0, len(names))
+	for _, name := range names {
+		if _, ok := registered[filepath.Clean(pm.WorktreePath(projectName, name))]; ok {
+			filtered = append(filtered, name)
+		}
+	}
+	return filtered
 }
 
 func buildWorktreeListItem(project, name, path string) WorktreeListItem {
