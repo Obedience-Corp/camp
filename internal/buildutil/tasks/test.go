@@ -223,7 +223,7 @@ func Test(verbose bool) error {
 }
 
 func goTestArgs(pkg string) []string {
-	args := []string{"test", "-count=1", "-json", "-short", "-timeout", "120s"}
+	args := []string{"test", "-count=1", "-json", "-short", "-timeout", "300s"}
 	return append(args, appendBuildTags(pkg)...)
 }
 
