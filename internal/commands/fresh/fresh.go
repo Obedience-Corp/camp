@@ -152,7 +152,7 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 	// Step 1: Checkout default branch
 	defaultBranch := git.DefaultBranch(ctx, path)
 	if defaultBranch == "" {
-		return fmt.Errorf("could not determine default branch for %s", name)
+		return camperrors.Newf("could not determine default branch for %s", name)
 	}
 
 	currentBranch := git.CurrentBranch(ctx, path)
@@ -394,12 +394,12 @@ func freshSafetyChecks(ctx context.Context, path string, dryRun bool) error {
 
 	// Check for merge in progress
 	if git.IsMergeInProgress(ctx, path) {
-		return fmt.Errorf("merge in progress — complete or abort first")
+		return camperrors.Newf("merge in progress — complete or abort first")
 	}
 
 	// Check for rebase in progress
 	if git.IsRebaseInProgress(ctx, path) {
-		return fmt.Errorf("rebase in progress — complete or abort first")
+		return camperrors.Newf("rebase in progress — complete or abort first")
 	}
 
 	// Check for uncommitted changes
@@ -408,7 +408,7 @@ func freshSafetyChecks(ctx context.Context, path string, dryRun bool) error {
 		return camperrors.Wrap(err, "checking for uncommitted changes")
 	}
 	if hasChanges {
-		return fmt.Errorf("uncommitted changes — commit or stash first")
+		return camperrors.Newf("uncommitted changes — commit or stash first")
 	}
 
 	return nil

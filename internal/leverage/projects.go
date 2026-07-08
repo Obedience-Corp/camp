@@ -2,7 +2,6 @@ package leverage
 
 import (
 	"context"
-	"fmt"
 	"path/filepath"
 	"sort"
 
@@ -159,7 +158,7 @@ func resolveFromConfig(ctx context.Context, campaignRoot string, projects map[st
 		}
 
 		if entry.Path == "" {
-			return nil, fmt.Errorf("project %q: path is required", name)
+			return nil, camperrors.Newf("project %q: path is required", name)
 		}
 
 		sccDir := filepath.Join(campaignRoot, entry.Path)
@@ -228,7 +227,7 @@ func FilterByName(projects []ResolvedProject, name string) ([]ResolvedProject, e
 		}
 	}
 	if len(filtered) == 0 {
-		return nil, fmt.Errorf("project not found: %s", name)
+		return nil, camperrors.Newf("project not found: %s", name)
 	}
 	return filtered, nil
 }

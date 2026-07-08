@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+
 	"github.com/Obedience-Corp/camp/internal/doctor"
 )
 
@@ -51,7 +53,7 @@ func (c *CommitsCheck) Run(ctx context.Context, repoRoot string) (*doctor.CheckR
 	// Get submodule paths
 	submodules, err := c.listSubmodules(ctx, repoRoot)
 	if err != nil {
-		return nil, fmt.Errorf("list submodules: %w", err)
+		return nil, camperrors.Newf("list submodules: %w", err)
 	}
 
 	result.Total = len(submodules)
@@ -141,7 +143,7 @@ func (c *CommitsCheck) listSubmodules(ctx context.Context, repoRoot string) ([]s
 			// No submodules configured
 			return nil, nil
 		}
-		return nil, fmt.Errorf("list submodules: %w", err)
+		return nil, camperrors.Newf("list submodules: %w", err)
 	}
 
 	var paths []string
@@ -162,14 +164,14 @@ func (c *CommitsCheck) getExpectedCommit(ctx context.Context, repoRoot, subPath 
 	cmd := exec.CommandContext(ctx, "git", "-C", repoRoot, "ls-tree", "HEAD", subPath)
 	output, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("ls-tree: %w", err)
+		return "", camperrors.Newf("ls-tree: %w", err)
 	}
 
 	// Format: "mode type hash\tpath"
 	// Example: "160000 commit a1b2c3d4e5f6...\tprojects/camp"
 	fields := strings.Fields(strings.TrimSpace(string(output)))
 	if len(fields) < 3 {
-		return "", fmt.Errorf("unexpected ls-tree output: %q", string(output))
+		return "", camperrors.Newf("unexpected ls-tree output: %q", string(output))
 	}
 
 	return fields[2], nil
@@ -180,7 +182,7 @@ func (c *CommitsCheck) getActualCommit(ctx context.Context, subPath string) (str
 	cmd := exec.CommandContext(ctx, "git", "-C", subPath, "rev-parse", "HEAD")
 	output, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("rev-parse: %w", err)
+		return "", camperrors.Newf("rev-parse: %w", err)
 	}
 
 	return strings.TrimSpace(string(output)), nil

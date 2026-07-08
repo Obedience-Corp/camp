@@ -98,7 +98,7 @@ func moveWorkitemToDungeon(ctx context.Context, cmd *cobra.Command, target, stat
 func selectWorkitemDungeonTarget(campaignRoot string, items []wkitem.WorkItem, target string) (wkitem.WorkItem, error) {
 	raw := strings.TrimSpace(target)
 	if raw == "" {
-		return wkitem.WorkItem{}, fmt.Errorf("workitem target must not be empty")
+		return wkitem.WorkItem{}, camperrors.Newf("workitem target must not be empty")
 	}
 
 	matchStages := []struct {
@@ -131,11 +131,11 @@ func selectWorkitemDungeonTarget(campaignRoot string, items []wkitem.WorkItem, t
 			return matches[0], nil
 		}
 		if len(matches) > 1 {
-			return wkitem.WorkItem{}, fmt.Errorf("workitem target %q is ambiguous by %s; matches: %s", raw, stage.name, formatWorkitemMatches(matches))
+			return wkitem.WorkItem{}, camperrors.Newf("workitem target %q is ambiguous by %s; matches: %s", raw, stage.name, formatWorkitemMatches(matches))
 		}
 	}
 
-	return wkitem.WorkItem{}, fmt.Errorf("workitem %q not found; run 'camp workitem --json' to inspect available workitems", raw)
+	return wkitem.WorkItem{}, camperrors.Newf("workitem %q not found; run 'camp workitem --json' to inspect available workitems", raw)
 }
 
 func matchingWorkitems(items []wkitem.WorkItem, match func(wkitem.WorkItem) bool) []wkitem.WorkItem {
@@ -182,13 +182,13 @@ func normalizeRelativeWorkitemPath(path string) string {
 
 func resolveWorkitemDungeonTarget(campaignRoot string, item wkitem.WorkItem) (*resolvedWorkitemDungeonTarget, error) {
 	if item.ItemKind != wkitem.ItemKindDirectory {
-		return nil, fmt.Errorf("workitem %q resolves to %s, but only directory workitems under workflow/<type>/<slug> can be moved with --workitem", item.RelativePath, item.ItemKind)
+		return nil, camperrors.Newf("workitem %q resolves to %s, but only directory workitems under workflow/<type>/<slug> can be moved with --workitem", item.RelativePath, item.ItemKind)
 	}
 
 	rel := normalizeRelativeWorkitemPath(item.RelativePath)
 	parts := strings.Split(rel, "/")
 	if len(parts) != 3 || parts[0] != "workflow" || parts[1] == "" || parts[2] == "" || parts[1] == "dungeon" || parts[2] == "dungeon" {
-		return nil, fmt.Errorf("workitem %q is not under workflow/<type>/<slug>; only directory workitems under workflow/<type>/<slug> can be moved with --workitem", item.RelativePath)
+		return nil, camperrors.Newf("workitem %q is not under workflow/<type>/<slug>; only directory workitems under workflow/<type>/<slug> can be moved with --workitem", item.RelativePath)
 	}
 
 	parentRel := filepath.FromSlash(strings.Join(parts[:2], "/"))

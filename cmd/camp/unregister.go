@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
@@ -60,7 +62,7 @@ func runUnregister(cmd *cobra.Command, args []string) error {
 	// Find campaign by ID, ID prefix, or name
 	campaign, exists := reg.Get(query)
 	if !exists {
-		return fmt.Errorf("campaign %q not found in registry\n"+
+		return camperrors.Newf("campaign %q not found in registry\n"+
 			"Hint: Run '%s' to see registered campaigns", query, ui.Accent("camp list"))
 	}
 

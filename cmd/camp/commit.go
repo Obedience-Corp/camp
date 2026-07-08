@@ -109,7 +109,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	}
 
 	if commitAutoWrite && commitMessage != "" {
-		return fmt.Errorf("--auto-write cannot be used with --message")
+		return camperrors.Newf("--auto-write cannot be used with --message")
 	}
 	if commitNoEdit && !commitAmend {
 		return camperrors.New("--no-edit requires --amend")

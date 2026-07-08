@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+
 	"github.com/Obedience-Corp/camp/internal/doctor"
 )
 
@@ -51,7 +53,7 @@ func (c *HeadCheck) Run(ctx context.Context, repoRoot string) (*doctor.CheckResu
 	// Get submodule paths
 	submodules, err := c.listSubmodules(ctx, repoRoot)
 	if err != nil {
-		return nil, fmt.Errorf("list submodules: %w", err)
+		return nil, camperrors.Newf("list submodules: %w", err)
 	}
 
 	result.Total = len(submodules)
@@ -99,7 +101,7 @@ func (c *HeadCheck) listSubmodules(ctx context.Context, repoRoot string) ([]stri
 			// No submodules configured
 			return nil, nil
 		}
-		return nil, fmt.Errorf("list submodules: %w", err)
+		return nil, camperrors.Newf("list submodules: %w", err)
 	}
 
 	var paths []string

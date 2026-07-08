@@ -4,8 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"path/filepath"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/Obedience-Corp/camp/internal/campaign"
@@ -100,7 +101,7 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 	}
 
 	if projectCommitAutoWrite && projectCommitMessage != "" {
-		return fmt.Errorf("--auto-write cannot be used with --message")
+		return camperrors.Newf("--auto-write cannot be used with --message")
 	}
 
 	// Get commit message - prompt if not provided

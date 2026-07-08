@@ -1,11 +1,12 @@
 package tui
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/Obedience-Corp/camp/internal/editor"
 	"github.com/Obedience-Corp/camp/internal/intent"
@@ -17,7 +18,7 @@ func (m IntentViewerModel) openInEditor() tea.Cmd {
 	if _, err := os.Stat(m.intent.Path); os.IsNotExist(err) {
 		return func() tea.Msg {
 			return ViewerEditorFinishedMsg{
-				Err:  fmt.Errorf("file no longer exists: %s", filepath.Base(m.intent.Path)),
+				Err:  camperrors.Newf("file no longer exists: %s", filepath.Base(m.intent.Path)),
 				Path: m.intent.Path,
 			}
 		}

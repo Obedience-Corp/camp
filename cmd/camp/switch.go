@@ -256,7 +256,7 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "load registry")
 	}
 	if reg.Len() == 0 {
-		return fmt.Errorf("no campaigns registered (use 'camp init' to create one)")
+		return camperrors.Newf("no campaigns registered (use 'camp init' to create one)")
 	}
 
 	var selected config.RegisteredCampaign

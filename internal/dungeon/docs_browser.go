@@ -704,7 +704,7 @@ func runDocsBrowser(ctx context.Context, itemName, campaignRoot string) (string,
 
 	browserModel, ok := finalModel.(docsBrowserModel)
 	if !ok {
-		return "", fmt.Errorf("unexpected docs browser model type %T", finalModel)
+		return "", camperrors.Newf("unexpected docs browser model type %T", finalModel)
 	}
 	if browserModel.err != nil {
 		return "", browserModel.err

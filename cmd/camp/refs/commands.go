@@ -62,7 +62,7 @@ func runRefsSync(cmd *cobra.Command, args []string) error {
 	if !refsSyncOpts.force {
 		stagedCmd := exec.CommandContext(ctx, "git", "-C", campRoot, "diff", "--cached", "--quiet")
 		if err := stagedCmd.Run(); err != nil {
-			return fmt.Errorf("campaign root has staged changes; use --force to override")
+			return camperrors.Newf("campaign root has staged changes; use --force to override")
 		}
 	}
 

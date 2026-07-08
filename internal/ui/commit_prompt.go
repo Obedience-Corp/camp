@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"strings"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+
 	"github.com/charmbracelet/huh"
 
 	"github.com/Obedience-Corp/camp/internal/git"
@@ -117,7 +119,7 @@ func PromptCommitMessageMultiline(ctx context.Context, executor git.GitExecutor,
 // validateCommitMessage ensures the message isn't empty.
 func validateCommitMessage(s string) error {
 	if strings.TrimSpace(s) == "" {
-		return fmt.Errorf("commit message cannot be empty")
+		return camperrors.Newf("commit message cannot be empty")
 	}
 	return nil
 }

@@ -3,7 +3,6 @@ package leverage
 import (
 	"bufio"
 	"context"
-	"fmt"
 	"os/exec"
 	"runtime"
 	"sort"
@@ -325,7 +324,7 @@ func AuthorDateRange(ctx context.Context, gitDir, authorEmail string) (first, la
 
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 	if len(lines) == 0 || lines[0] == "" {
-		return time.Time{}, time.Time{}, fmt.Errorf("no commits by %s in %s", authorEmail, gitDir)
+		return time.Time{}, time.Time{}, camperrors.Newf("no commits by %s in %s", authorEmail, gitDir)
 	}
 
 	for _, line := range lines {
@@ -346,7 +345,7 @@ func AuthorDateRange(ctx context.Context, gitDir, authorEmail string) (first, la
 	}
 
 	if first.IsZero() {
-		return time.Time{}, time.Time{}, fmt.Errorf("no valid commit dates by %s in %s", authorEmail, gitDir)
+		return time.Time{}, time.Time{}, camperrors.Newf("no valid commit dates by %s in %s", authorEmail, gitDir)
 	}
 
 	return first, last, nil

@@ -88,7 +88,7 @@ func PickCampaignWithOptions(ctx context.Context, reg *config.Registry, opts Pic
 	)
 	if err != nil {
 		if errors.Is(err, fuzzyfinder.ErrAbort) {
-			return config.RegisteredCampaign{}, fmt.Errorf("cancelled")
+			return config.RegisteredCampaign{}, camperrors.Newf("cancelled")
 		}
 		return config.RegisteredCampaign{}, camperrors.Wrap(err, "picker")
 	}

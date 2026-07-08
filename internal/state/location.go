@@ -49,7 +49,7 @@ func LoadHistory(ctx context.Context, campaignRoot string) ([]NavigationEntry, e
 		if os.IsNotExist(err) {
 			return []NavigationEntry{}, nil
 		}
-		return nil, fmt.Errorf("failed to open state file %s: %w", stateFile, err)
+		return nil, camperrors.Newf("failed to open state file %s: %w", stateFile, err)
 	}
 	defer file.Close()
 
@@ -71,7 +71,7 @@ func LoadHistory(ctx context.Context, campaignRoot string) ([]NavigationEntry, e
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("failed to read state file: %w", err)
+		return nil, camperrors.Newf("failed to read state file: %w", err)
 	}
 
 	return entries, nil
@@ -89,7 +89,7 @@ func SaveEntry(ctx context.Context, campaignRoot string, entry NavigationEntry) 
 
 	// Ensure cache directory exists
 	if err := os.MkdirAll(stateDir, 0755); err != nil {
-		return fmt.Errorf("failed to create cache directory: %w", err)
+		return camperrors.Newf("failed to create cache directory: %w", err)
 	}
 
 	// Load existing entries
@@ -111,7 +111,7 @@ func SaveEntry(ctx context.Context, campaignRoot string, entry NavigationEntry) 
 	enc := json.NewEncoder(&buf)
 	for _, e := range entries {
 		if err := enc.Encode(e); err != nil {
-			return fmt.Errorf("failed to marshal entry: %w", err)
+			return camperrors.Newf("failed to marshal entry: %w", err)
 		}
 	}
 
@@ -169,7 +169,7 @@ func SetLastLocation(ctx context.Context, campaignRoot, location string) error {
 
 	// Validate that the location exists
 	if info, err := os.Stat(location); err != nil || !info.IsDir() {
-		return fmt.Errorf("invalid location: %s does not exist or is not a directory", location)
+		return camperrors.Newf("invalid location: %s does not exist or is not a directory", location)
 	}
 
 	entry := NavigationEntry{
@@ -192,7 +192,7 @@ func ClearState(ctx context.Context, campaignRoot string) error {
 		if os.IsNotExist(err) {
 			return nil // Idempotent - no state to clear
 		}
-		return fmt.Errorf("failed to remove state file: %w", err)
+		return camperrors.Newf("failed to remove state file: %w", err)
 	}
 
 	return nil

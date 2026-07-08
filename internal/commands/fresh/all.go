@@ -105,7 +105,7 @@ Examples:
 			}
 
 			if failed > 0 {
-				return fmt.Errorf("%d project(s) failed", failed)
+				return camperrors.Newf("%d project(s) failed", failed)
 			}
 			return nil
 		},

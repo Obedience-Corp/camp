@@ -275,6 +275,25 @@ func TestWrapf(t *testing.T) {
 	}
 }
 
+func TestNewf(t *testing.T) {
+	t.Run("formats message", func(t *testing.T) {
+		err := Newf("invalid %s %d", "value", 7)
+		if err == nil {
+			t.Fatal("Newf() returned nil")
+		}
+		if got := err.Error(); got != "invalid value 7" {
+			t.Errorf("Newf().Error() = %q, want %q", got, "invalid value 7")
+		}
+	})
+
+	t.Run("wraps with percent w", func(t *testing.T) {
+		err := Newf("outer: %w", io.EOF)
+		if !Is(err, io.EOF) {
+			t.Error("Newf() should preserve %w wrapping")
+		}
+	})
+}
+
 func TestWrapJoin(t *testing.T) {
 	sentinel := New("sentinel")
 	cause := New("cause")

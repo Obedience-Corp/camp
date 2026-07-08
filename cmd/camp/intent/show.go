@@ -65,7 +65,7 @@ func runIntentShow(cmd *cobra.Command, args []string) error {
 
 	// Validate format
 	if format != "text" && format != "json" && format != "yaml" {
-		return fmt.Errorf("invalid format: %s (use text, json, or yaml)", format)
+		return camperrors.Newf("invalid format: %s (use text, json, or yaml)", format)
 	}
 
 	// Find campaign root
@@ -86,7 +86,7 @@ func runIntentShow(cmd *cobra.Command, args []string) error {
 	// Find the intent (supports partial matching)
 	i, err := svc.Find(ctx, id)
 	if err != nil {
-		return fmt.Errorf("intent not found: %s", id)
+		return camperrors.Newf("intent not found: %s", id)
 	}
 
 	// Format and output

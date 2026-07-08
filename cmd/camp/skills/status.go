@@ -62,7 +62,7 @@ func runSkillsStatus(cmd *cobra.Command, _ []string) error {
 
 	skillsDir := filepath.Join(root, campaign.CampaignDir, intskills.SkillsSubdir)
 	if _, err := os.Stat(skillsDir); err != nil {
-		return fmt.Errorf(".campaign/skills/ not found: run 'camp init' or create the directory")
+		return camperrors.Newf(".campaign/skills/ not found: run 'camp init' or create the directory")
 	}
 
 	slugs, err := intskills.DiscoverSkillSlugs(skillsDir)
@@ -190,7 +190,7 @@ func runSkillsStatus(cmd *cobra.Command, _ []string) error {
 
 	strict, _ := cmd.Flags().GetBool("strict")
 	if hasAttention && strict {
-		return fmt.Errorf("one or more skill projection targets need attention")
+		return camperrors.Newf("one or more skill projection targets need attention")
 	}
 
 	return nil
