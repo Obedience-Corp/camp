@@ -123,7 +123,7 @@ Examples:
 			case !interactive:
 				// Non-interactive --print/--path-output: output first item path directly.
 				if len(items) == 0 {
-					return fmt.Errorf("no work items found")
+					return camperrors.Newf("no work items found")
 				}
 				return outputSelectedPath(items[0], flagPrint, flagPathOutput)
 			case flagPathOutput != "":
@@ -227,7 +227,7 @@ func runSelectedAction(ctx context.Context, item wkitem.WorkItem, printOnly bool
 func openSelectedItem(ctx context.Context, item wkitem.WorkItem, campaignRoot string) error {
 	path := selectedOpenPath(item, campaignRoot)
 	if path == "" {
-		return fmt.Errorf("selected work item has no path to open")
+		return camperrors.Newf("selected work item has no path to open")
 	}
 	editorName := editor.GetEditor(ctx)
 	cmd := editor.BuildEditorCommand(ctx, editorName, path)
@@ -327,7 +327,7 @@ func categoryVocabulary(cfg *config.CampaignConfig) []wkitem.CategoryVocabEntry 
 
 func runTUI(ctx context.Context, items []wkitem.WorkItem, printOnly bool, pathOutput string, campaignRoot string, resolver *paths.Resolver, store *priority.Store, storePath string, showParked bool, categoryForType func(string) string) error {
 	if len(items) == 0 {
-		return fmt.Errorf("no work items found")
+		return camperrors.Newf("no work items found")
 	}
 
 	model := wktui.New(ctx, items, campaignRoot, resolver, store, storePath, showParked)

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+
 	"github.com/Obedience-Corp/camp/internal/buildutil/ui"
 )
 
@@ -79,7 +81,7 @@ func Build(verbose bool) error {
 
 	packages, err := discoverPackages()
 	if err != nil {
-		return fmt.Errorf("failed to discover packages: %w", err)
+		return camperrors.Newf("failed to discover packages: %w", err)
 	}
 
 	if verbose {
@@ -229,7 +231,7 @@ func Build(verbose bool) error {
 				failedPackages = append(failedPackages, r.Package)
 			}
 		}
-		return fmt.Errorf("build failed for packages: %s", strings.Join(failedPackages, ", "))
+		return camperrors.Newf("build failed for packages: %s", strings.Join(failedPackages, ", "))
 	}
 
 	return nil
@@ -293,7 +295,7 @@ func BuildOnly(verbose bool) error {
 
 	// Create bin directory
 	if err := os.MkdirAll("bin", 0o755); err != nil {
-		return fmt.Errorf("failed to create bin directory: %w", err)
+		return camperrors.Newf("failed to create bin directory: %w", err)
 	}
 
 	ui.Task("Building", "camp binary")
@@ -307,7 +309,7 @@ func BuildOnly(verbose bool) error {
 
 	if err := cmd.Run(); err != nil {
 		ui.TaskFail()
-		return fmt.Errorf("failed to build camp binary: %w", err)
+		return camperrors.Newf("failed to build camp binary: %w", err)
 	}
 
 	ui.TaskPass()

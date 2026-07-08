@@ -1230,7 +1230,7 @@ func TestIntentService_Edit_ValidationError(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		modified := strings.Replace(string(content), "title: Validation Error Test", "title:", 1)
+		modified := strings.Replace(string(content), `title: "Validation Error Test"`, "title:", 1)
 		return os.WriteFile(path, []byte(modified), 0644)
 	}
 
@@ -1333,7 +1333,7 @@ func TestIntentService_CreateWithEditor_ValidationFails(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		modified := strings.Replace(string(content), "title: Validation Fail", "title:", 1)
+		modified := strings.Replace(string(content), `title: "Validation Fail"`, "title:", 1)
 		modified = modified + "\n# Modified"
 		return os.WriteFile(path, []byte(modified), 0644)
 	}

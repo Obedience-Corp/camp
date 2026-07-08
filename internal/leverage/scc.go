@@ -3,7 +3,6 @@ package leverage
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os/exec"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -44,7 +43,7 @@ type SCCRunner struct {
 func NewSCCRunner(cocomoType string) (*SCCRunner, error) {
 	path, err := exec.LookPath("scc")
 	if err != nil {
-		return nil, fmt.Errorf("scc not found: install with 'brew install scc' or visit https://github.com/boyter/scc")
+		return nil, camperrors.Newf("scc not found: install with 'brew install scc' or visit https://github.com/boyter/scc")
 	}
 	return &SCCRunner{binaryPath: path, cocomoType: cocomoType}, nil
 }
@@ -75,7 +74,7 @@ func (r *SCCRunner) Run(ctx context.Context, dir string, excludeDirs []string) (
 			return nil, camperrors.Wrap(ctx.Err(), "scc cancelled")
 		}
 		if exitErr, ok := err.(*exec.ExitError); ok {
-			return nil, fmt.Errorf("scc failed on %s: %w\nstderr: %s", dir, err, exitErr.Stderr)
+			return nil, camperrors.Newf("scc failed on %s: %w\nstderr: %s", dir, err, exitErr.Stderr)
 		}
 		return nil, camperrors.Wrapf(err, "scc failed on %s", dir)
 	}

@@ -71,7 +71,7 @@ func FindProjectRoot(path string) (string, error) {
 		parent := filepath.Dir(current)
 		if parent == current {
 			// Reached filesystem root
-			return "", fmt.Errorf("not inside a git repository: %s", path)
+			return "", camperrors.Newf("not inside a git repository: %s", path)
 		}
 		current = parent
 	}
@@ -126,7 +126,7 @@ func GetSubmoduleInfo(path string) (*SubmoduleInfo, error) {
 	}
 
 	if !isSubmodule {
-		return nil, fmt.Errorf("path is not in a submodule: %s", path)
+		return nil, camperrors.Newf("path is not in a submodule: %s", path)
 	}
 
 	gitDir, err := GetSubmoduleGitDir(root)
@@ -158,7 +158,7 @@ func GetDeclaredURL(ctx context.Context, repoRoot, submodulePath string) (string
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
-			return "", fmt.Errorf("submodule %q not found in .gitmodules", submodulePath)
+			return "", camperrors.Newf("submodule %q not found in .gitmodules", submodulePath)
 		}
 		return "", camperrors.Wrapf(err, "get declared URL for %s", submodulePath)
 	}

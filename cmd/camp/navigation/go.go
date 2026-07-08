@@ -3,11 +3,12 @@ package navigation
 import (
 	"context"
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/Obedience-Corp/camp/internal/config"
@@ -299,13 +300,13 @@ func handleToggle(ctx context.Context, campaignRoot string, printOnly bool) erro
 
 	lastLoc, err := state.GetLastLocation(ctx, campaignRoot)
 	if err != nil || lastLoc == "" {
-		return fmt.Errorf("no previous location in history")
+		return camperrors.Newf("no previous location in history")
 	}
 
 	cwdReal, _ := evalSymlinks(cwd)
 	lastReal, _ := evalSymlinks(lastLoc)
 	if cwdReal == lastReal {
-		return fmt.Errorf("already at last visited location")
+		return camperrors.Newf("already at last visited location")
 	}
 
 	// Save current location so calling toggle again bounces back

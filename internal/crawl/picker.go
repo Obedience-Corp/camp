@@ -35,7 +35,7 @@ type pickerModel struct {
 
 func newPickerModel(item Item, options []Option) (pickerModel, error) {
 	if len(options) == 0 {
-		return pickerModel{}, fmt.Errorf("no destination options provided")
+		return pickerModel{}, camperrors.Newf("no destination options provided")
 	}
 	return pickerModel{
 		item:    item,
@@ -194,7 +194,7 @@ func runDestinationPicker(ctx context.Context, item Item, options []Option) (Opt
 
 	pm, ok := finalModel.(pickerModel)
 	if !ok {
-		return Option{}, fmt.Errorf("unexpected picker model type %T", finalModel)
+		return Option{}, camperrors.Newf("unexpected picker model type %T", finalModel)
 	}
 	if pm.aborted {
 		return Option{}, ErrAborted

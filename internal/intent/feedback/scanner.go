@@ -152,7 +152,7 @@ func (s *Scanner) readGoalFrontmatter(festDir string) (*FestivalInfo, error) {
 	}
 
 	if fm.ID == "" {
-		return nil, fmt.Errorf("FESTIVAL_GOAL.md missing fest_id")
+		return nil, camperrors.Newf("FESTIVAL_GOAL.md missing fest_id")
 	}
 
 	return &FestivalInfo{
@@ -188,12 +188,12 @@ func parseFrontmatter(data []byte) (*GoalFrontmatter, error) {
 
 	// Find frontmatter delimiters
 	if !strings.HasPrefix(content, "---\n") {
-		return nil, fmt.Errorf("no frontmatter found")
+		return nil, camperrors.Newf("no frontmatter found")
 	}
 
 	end := strings.Index(content[4:], "\n---")
 	if end < 0 {
-		return nil, fmt.Errorf("unterminated frontmatter")
+		return nil, camperrors.Newf("unterminated frontmatter")
 	}
 
 	fmContent := content[4 : 4+end]

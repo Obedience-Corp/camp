@@ -226,27 +226,27 @@ func stageTrackedMoveSourceDeletions(ctx context.Context, campaignRoot string, s
 func WrapDungeonMoveError(err error, itemName, status string) error {
 	switch {
 	case errors.Is(err, intdungeon.ErrAlreadyExists):
-		return fmt.Errorf(
+		return camperrors.Newf(
 			"cannot move %q to %q because destination already exists; choose another status or rename the item: %w",
 			itemName,
 			status,
 			err,
 		)
 	case errors.Is(err, intdungeon.ErrInvalidStatus):
-		return fmt.Errorf(
+		return camperrors.Newf(
 			"invalid status %q for %q; use a single directory name like completed, archived, or someday: %w",
 			status,
 			itemName,
 			err,
 		)
 	case errors.Is(err, intdungeon.ErrInvalidItemPath):
-		return fmt.Errorf(
+		return camperrors.Newf(
 			"invalid item path %q; use a direct child file or directory name from the current dungeon context (no slashes or traversal). Run 'camp dungeon list --triage' or 'camp dungeon list' to confirm available items: %w",
 			itemName,
 			err,
 		)
 	case errors.Is(err, intdungeon.ErrNotFound):
-		return fmt.Errorf(
+		return camperrors.Newf(
 			"item %q was not found in the resolved context; run 'camp dungeon list --triage' or 'camp dungeon list' to confirm available items: %w",
 			itemName,
 			err,
@@ -259,26 +259,26 @@ func WrapDungeonMoveError(err error, itemName, status string) error {
 func wrapDungeonDocsRouteError(err error, itemName, destination string) error {
 	switch {
 	case errors.Is(err, intdungeon.ErrAlreadyExists):
-		return fmt.Errorf(
+		return camperrors.Newf(
 			"cannot route %q to docs/%s because destination already exists; choose another docs destination or rename the item: %w",
 			itemName,
 			destination,
 			err,
 		)
 	case errors.Is(err, intdungeon.ErrInvalidDocsDestination):
-		return fmt.Errorf(
+		return camperrors.Newf(
 			"invalid docs destination %q; use an existing subdirectory under campaign-root docs/ (for example: --to-docs architecture/api): %w",
 			destination,
 			err,
 		)
 	case errors.Is(err, intdungeon.ErrInvalidItemPath):
-		return fmt.Errorf(
+		return camperrors.Newf(
 			"invalid item path %q; use a direct child file or directory name from the resolved triage context (no slashes or traversal). Run 'camp dungeon list --triage' to confirm available items: %w",
 			itemName,
 			err,
 		)
 	case errors.Is(err, intdungeon.ErrNotFound):
-		return fmt.Errorf(
+		return camperrors.Newf(
 			"item %q was not found in the resolved triage context; run 'camp dungeon list --triage' to confirm available items: %w",
 			itemName,
 			err,

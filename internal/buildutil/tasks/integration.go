@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+
 	"github.com/Obedience-Corp/camp/internal/buildutil/ui"
 )
 
@@ -62,7 +64,7 @@ func Integration(verbose bool) error {
 	ui.Task("Building", "Linux binary for Docker tests")
 	if err := os.MkdirAll("bin/linux", 0o755); err != nil {
 		ui.TaskFail()
-		return fmt.Errorf("failed to create bin/linux directory: %w", err)
+		return camperrors.Newf("failed to create bin/linux directory: %w", err)
 	}
 
 	cmd := exec.Command("go", "build", "-ldflags", "-s -w", "-o", "bin/linux/camp", "./cmd/camp")
@@ -73,13 +75,13 @@ func Integration(verbose bool) error {
 	}
 	if err := cmd.Run(); err != nil {
 		ui.TaskFail()
-		return fmt.Errorf("failed to build Linux binary: %w", err)
+		return camperrors.Newf("failed to build Linux binary: %w", err)
 	}
 	ui.TaskPass()
 
 	suites, err := discoverIntegrationSuites()
 	if err != nil {
-		return fmt.Errorf("failed to discover integration test suites: %w", err)
+		return camperrors.Newf("failed to discover integration test suites: %w", err)
 	}
 
 	if len(suites) == 0 {
@@ -126,11 +128,11 @@ func Integration(verbose bool) error {
 			cmd.Env = dockerEnv
 			stdout, err := cmd.StdoutPipe()
 			if err != nil {
-				return fmt.Errorf("failed to create stdout pipe: %w", err)
+				return camperrors.Newf("failed to create stdout pipe: %w", err)
 			}
 
 			if err := cmd.Start(); err != nil {
-				return fmt.Errorf("failed to start test: %w", err)
+				return camperrors.Newf("failed to start test: %w", err)
 			}
 
 			// Track state for progress display
@@ -327,7 +329,7 @@ func Integration(verbose bool) error {
 	ui.SummaryCardWithStatus("Integration Test Summary", rows, fmt.Sprintf("%.2fs", totalTime.Seconds()), success, successMsg, failMsg)
 
 	if failures > 0 {
-		return fmt.Errorf("%d integration test suites failed", failures)
+		return camperrors.Newf("%d integration test suites failed", failures)
 	}
 
 	return nil

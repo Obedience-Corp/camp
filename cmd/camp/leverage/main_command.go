@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	intleverage "github.com/Obedience-Corp/camp/internal/leverage"
 	"github.com/spf13/cobra"
@@ -38,7 +40,7 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 	if targetDir != "" {
 		projectFilter, _ := cmd.Flags().GetString("project")
 		if projectFilter != "" {
-			return fmt.Errorf("--project and --dir (or positional directory) are mutually exclusive")
+			return camperrors.Newf("--project and --dir (or positional directory) are mutually exclusive")
 		}
 		return runLeverageDir(cmd, targetDir)
 	}
@@ -116,7 +118,7 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 	}
 
 	if projectFilter != "" && len(scores) == 0 {
-		return fmt.Errorf("project not found: %s", projectFilter)
+		return camperrors.Newf("project not found: %s", projectFilter)
 	}
 
 	effectivePeople := cfg.ActualPeople

@@ -8,6 +8,8 @@ import (
 	"os"
 	"time"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+
 	"github.com/Obedience-Corp/camp/internal/buildutil/tasks"
 	"github.com/Obedience-Corp/camp/internal/buildutil/ui"
 )
@@ -62,31 +64,30 @@ func main() {
 
 		fmt.Println("\n🧹 Cleaning...")
 		if cleanErr := tasks.Clean(verbose); cleanErr != nil {
-			errors = append(errors, fmt.Errorf("clean failed: %w", cleanErr))
+			errors = append(errors, camperrors.Newf("clean failed: %w", cleanErr))
 		}
 
 		fmt.Println("\n🔨 Building...")
 		if buildErr := tasks.Build(verbose); buildErr != nil {
-			errors = append(errors, fmt.Errorf("build failed: %w", buildErr))
 			// Don't continue if build fails - can't test broken code
-			err = fmt.Errorf("stopping due to build failure: %w", buildErr)
+			err = camperrors.Newf("stopping due to build failure: %w", buildErr)
 			break
 		}
 
 		fmt.Println("\n🧪 Testing...")
 		if testErr := tasks.Test(verbose); testErr != nil {
-			errors = append(errors, fmt.Errorf("tests failed: %w", testErr))
+			errors = append(errors, camperrors.Newf("tests failed: %w", testErr))
 			// Continue to integration tests even if unit tests fail
 		}
 
 		fmt.Println("\n🔗 Integration Testing...")
 		if integrationErr := tasks.Integration(verbose); integrationErr != nil {
-			errors = append(errors, fmt.Errorf("integration tests failed: %w", integrationErr))
+			errors = append(errors, camperrors.Newf("integration tests failed: %w", integrationErr))
 		}
 
 		// Set overall error if any step failed
 		if len(errors) > 0 {
-			err = fmt.Errorf("%d tasks failed", len(errors))
+			err = camperrors.Newf("%d tasks failed", len(errors))
 		}
 
 		// Show overall summary

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+
 	"github.com/Obedience-Corp/camp/internal/doctor"
 	"github.com/Obedience-Corp/camp/internal/git"
 )
@@ -47,7 +49,7 @@ func (c *OrphanCheck) Run(ctx context.Context, repoRoot string) (*doctor.CheckRe
 
 	orphans, err := git.ListOrphanedGitlinks(ctx, repoRoot)
 	if err != nil {
-		return nil, fmt.Errorf("detect orphaned gitlinks: %w", err)
+		return nil, camperrors.Newf("detect orphaned gitlinks: %w", err)
 	}
 
 	result.Total = len(orphans)
@@ -96,7 +98,7 @@ func (c *OrphanCheck) Fix(ctx context.Context, repoRoot string, issues []doctor.
 
 	removed, err := git.RemoveOrphanedGitlinks(ctx, repoRoot, orphans)
 	if err != nil {
-		return nil, fmt.Errorf("remove orphaned gitlinks: %w", err)
+		return nil, camperrors.Newf("remove orphaned gitlinks: %w", err)
 	}
 
 	// Map removed paths back to fixed issues

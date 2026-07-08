@@ -3,6 +3,8 @@ package skills
 import (
 	"fmt"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	intskills "github.com/Obedience-Corp/camp/internal/skills"
 	"github.com/spf13/cobra"
@@ -47,10 +49,10 @@ func runSkillsUnlink(cmd *cobra.Command, _ []string) error {
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 
 	if tool != "" && destPath != "" {
-		return fmt.Errorf("--tool and --path are mutually exclusive; use one or the other")
+		return camperrors.Newf("--tool and --path are mutually exclusive; use one or the other")
 	}
 	if tool == "" && destPath == "" {
-		return fmt.Errorf("specify --tool <name> or --path <destination>\n\nAvailable tools: claude, agents")
+		return camperrors.Newf("specify --tool <name> or --path <destination>\n\nAvailable tools: claude, agents")
 	}
 
 	root, err := campaign.DetectCached(ctx)
@@ -95,7 +97,7 @@ func runSkillsUnlink(cmd *cobra.Command, _ []string) error {
 		}
 		return nil
 	case intskills.TypeFile, intskills.TypeSymlink:
-		return fmt.Errorf("destination is not a projection directory: %s", dest)
+		return camperrors.Newf("destination is not a projection directory: %s", dest)
 	}
 
 	removed, err := intskills.RemoveProjectedSkillEntries(dest, skillsDir, slugs, dryRun)

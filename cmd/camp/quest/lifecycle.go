@@ -125,7 +125,7 @@ func runQuestLifecycle(cmd *cobra.Command, selector, action string) error {
 		commitType = commit.QuestRestore
 		desc = "Restored quest"
 	default:
-		return fmt.Errorf("unknown quest action: %s", action)
+		return camperrors.Newf("unknown quest action: %s", action)
 	}
 	if err != nil {
 		return err

@@ -1,7 +1,6 @@
 package project
 
 import (
-	"fmt"
 	"net/url"
 	"strings"
 
@@ -36,7 +35,7 @@ type ParsedGitURL struct {
 func ParseGitURL(rawURL string) (*ParsedGitURL, error) {
 	rawURL = strings.TrimSpace(rawURL)
 	if rawURL == "" {
-		return nil, fmt.Errorf("URL cannot be empty")
+		return nil, camperrors.Newf("URL cannot be empty")
 	}
 
 	// Check for SSH URLs (git@host:path or ssh://...)
@@ -63,7 +62,7 @@ func ParseGitURL(rawURL string) (*ParsedGitURL, error) {
 		}, nil
 	}
 
-	return nil, fmt.Errorf("invalid git URL format: %s\nExpected formats:\n  SSH:   git@github.com:org/repo.git\n  HTTPS: https://github.com/org/repo.git\n  Local: /path/to/repo or ./repo", rawURL)
+	return nil, camperrors.Newf("invalid git URL format: %s\nExpected formats:\n  SSH:   git@github.com:org/repo.git\n  HTTPS: https://github.com/org/repo.git\n  Local: /path/to/repo or ./repo", rawURL)
 }
 
 // parseSSHURL parses SSH URLs in the format git@host:path
@@ -71,23 +70,23 @@ func parseSSHURL(rawURL string) (*ParsedGitURL, error) {
 	// Format: git@github.com:org/repo.git
 	parts := strings.SplitN(rawURL, "@", 2)
 	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid SSH URL format: %s\nExpected: git@host:org/repo.git", rawURL)
+		return nil, camperrors.Newf("invalid SSH URL format: %s\nExpected: git@host:org/repo.git", rawURL)
 	}
 
 	hostPath := parts[1]
 	colonIdx := strings.Index(hostPath, ":")
 	if colonIdx == -1 {
-		return nil, fmt.Errorf("invalid SSH URL format: %s\nExpected: git@host:org/repo.git", rawURL)
+		return nil, camperrors.Newf("invalid SSH URL format: %s\nExpected: git@host:org/repo.git", rawURL)
 	}
 
 	host := hostPath[:colonIdx]
 	path := hostPath[colonIdx+1:]
 
 	if host == "" {
-		return nil, fmt.Errorf("invalid SSH URL: host cannot be empty")
+		return nil, camperrors.Newf("invalid SSH URL: host cannot be empty")
 	}
 	if path == "" {
-		return nil, fmt.Errorf("invalid SSH URL: repository path cannot be empty")
+		return nil, camperrors.Newf("invalid SSH URL: repository path cannot be empty")
 	}
 
 	return &ParsedGitURL{
@@ -112,10 +111,10 @@ func parseSSHProtocolURL(rawURL string) (*ParsedGitURL, error) {
 	}
 
 	if u.Host == "" {
-		return nil, fmt.Errorf("invalid SSH URL: host cannot be empty")
+		return nil, camperrors.Newf("invalid SSH URL: host cannot be empty")
 	}
 	if u.Path == "" || u.Path == "/" {
-		return nil, fmt.Errorf("invalid SSH URL: repository path cannot be empty")
+		return nil, camperrors.Newf("invalid SSH URL: repository path cannot be empty")
 	}
 
 	return &ParsedGitURL{
@@ -134,10 +133,10 @@ func parseHTTPSURL(rawURL string) (*ParsedGitURL, error) {
 	}
 
 	if u.Host == "" {
-		return nil, fmt.Errorf("invalid HTTPS URL: host cannot be empty")
+		return nil, camperrors.Newf("invalid HTTPS URL: host cannot be empty")
 	}
 	if u.Path == "" || u.Path == "/" {
-		return nil, fmt.Errorf("invalid HTTPS URL: repository path cannot be empty")
+		return nil, camperrors.Newf("invalid HTTPS URL: repository path cannot be empty")
 	}
 
 	return &ParsedGitURL{
