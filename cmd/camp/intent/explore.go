@@ -1,10 +1,12 @@
 package intent
 
 import (
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
@@ -134,8 +136,31 @@ func runIntentExplore(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "running explorer")
 	}
 
+	// The explorer fires intent auto-commits asynchronously to keep the UI
+	// responsive, so drain any still in flight before returning; otherwise a
+	// change already written to disk could exit without ever being committed.
+	// A fast drain stays silent. If commits are still running (e.g. contending
+	// for the git lock) tell the user why the terminal is pausing, then wait a
+	// bounded amount so a wedged lock cannot hang the exit.
+	if !explorer.WaitForAutoCommits(quickDrainTimeout) {
+		_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Finalizing intent commits...")
+		if !explorer.WaitForAutoCommits(autoCommitDrainTimeout) {
+			_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "warning: some intent auto-commits did not finish; run 'camp status' to check for uncommitted intent changes")
+		}
+	}
+
 	return nil
 }
+
+// quickDrainTimeout is the silent grace period for in-flight auto-commits to
+// finish on exit before the user is told the shutdown is waiting on them.
+const quickDrainTimeout = 300 * time.Millisecond
+
+// autoCommitDrainTimeout bounds how long the explorer waits for background
+// auto-commits to finish on exit. The commit path retries on git lock
+// contention for several seconds (internal/git/retry.go), so this caps the wait
+// generously while still ensuring a wedged lock cannot hang process shutdown.
+const autoCommitDrainTimeout = 15 * time.Second
 
 // quietSlogDuringTUI swaps slog.Default with a handler that writes to a log
 // file under <campaignRoot>/.campaign/logs/ instead of stderr. It returns a

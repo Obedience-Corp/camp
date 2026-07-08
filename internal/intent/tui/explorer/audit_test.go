@@ -138,3 +138,40 @@ func TestAutoCommitIntentSerializesBackgroundCommits(t *testing.T) {
 		t.Fatal("second background auto-commit did not start after first commit released")
 	}
 }
+
+func TestWaitForAutoCommitsDrainsInFlightCommit(t *testing.T) {
+	oldRun := runAutoCommitIntent
+	defer func() { runAutoCommitIntent = oldRun }()
+
+	// Absorb any stragglers from prior tests so the count starts clean.
+	WaitForAutoCommits(time.Second)
+
+	release := make(chan struct{})
+	committed := make(chan struct{})
+	runAutoCommitIntent = func(ctx context.Context, opts commit.IntentOptions) {
+		<-release
+		close(committed)
+	}
+
+	campaignRoot := filepath.Join(string(filepath.Separator), "tmp", "campaign")
+	intentsDir := filepath.Join(campaignRoot, ".campaign", "intents")
+	m := NewModel(context.Background(), nil, nil, intentsDir, campaignRoot, "test-id", "", nil)
+
+	m.autoCommitIntent(commit.IntentMove, "Pending action", "Moved", filepath.Join(intentsDir, "pending.md"))
+
+	if WaitForAutoCommits(50 * time.Millisecond) {
+		t.Fatal("WaitForAutoCommits reported drained while a commit was still in flight")
+	}
+
+	close(release)
+
+	if !WaitForAutoCommits(time.Second) {
+		t.Fatal("WaitForAutoCommits did not drain after the commit finished")
+	}
+
+	select {
+	case <-committed:
+	default:
+		t.Fatal("auto-commit did not run to completion before drain returned")
+	}
+}
