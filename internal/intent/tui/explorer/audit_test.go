@@ -88,3 +88,53 @@ func TestAutoCommitIntentReturnsBeforeCommitFinishes(t *testing.T) {
 		t.Fatal("background auto-commit did not finish after release")
 	}
 }
+
+func TestAutoCommitIntentSerializesBackgroundCommits(t *testing.T) {
+	oldRun := runAutoCommitIntent
+	defer func() { runAutoCommitIntent = oldRun }()
+
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	secondStarted := make(chan struct{})
+	done := make(chan struct{})
+	calls := 0
+
+	runAutoCommitIntent = func(ctx context.Context, opts commit.IntentOptions) {
+		calls++
+		switch calls {
+		case 1:
+			close(firstStarted)
+			<-releaseFirst
+		case 2:
+			close(secondStarted)
+			close(done)
+		default:
+			t.Fatalf("unexpected auto-commit call %d", calls)
+		}
+	}
+
+	campaignRoot := filepath.Join(string(filepath.Separator), "tmp", "campaign")
+	intentsDir := filepath.Join(campaignRoot, ".campaign", "intents")
+	m := NewModel(context.Background(), nil, nil, intentsDir, campaignRoot, "test-id", "", nil)
+
+	m.autoCommitIntent(commit.IntentMove, "First action", "Moved", filepath.Join(intentsDir, "first.md"))
+	select {
+	case <-firstStarted:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("first background auto-commit did not start")
+	}
+
+	m.autoCommitIntent(commit.IntentMove, "Second action", "Moved", filepath.Join(intentsDir, "second.md"))
+	select {
+	case <-secondStarted:
+		t.Fatal("second background auto-commit started while first commit was still running")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(releaseFirst)
+	select {
+	case <-done:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("second background auto-commit did not start after first commit released")
+	}
+}

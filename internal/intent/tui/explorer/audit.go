@@ -3,6 +3,7 @@ package explorer
 import (
 	"context"
 	"strings"
+	"sync"
 
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/intent/audit"
@@ -11,6 +12,8 @@ import (
 var runAutoCommitIntent = func(ctx context.Context, opts commit.IntentOptions) {
 	_ = commit.Intent(ctx, opts)
 }
+
+var autoCommitIntentMu sync.Mutex
 
 func (m *Model) auditActor() string {
 	actor := strings.TrimSpace(m.author)
@@ -56,5 +59,9 @@ func (m *Model) autoCommitIntent(action commit.IntentAction, title, description 
 		IntentTitle: title,
 		Description: description,
 	}
-	go runAutoCommitIntent(ctx, opts)
+	go func() {
+		autoCommitIntentMu.Lock()
+		defer autoCommitIntentMu.Unlock()
+		runAutoCommitIntent(ctx, opts)
+	}()
 }
