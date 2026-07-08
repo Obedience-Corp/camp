@@ -2,10 +2,11 @@ package main
 
 import (
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"path/filepath"
 	"strings"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
@@ -183,7 +184,7 @@ func runMove(cmd *cobra.Command, args []string) error {
 
 	if !force {
 		if _, err := os.Stat(dest); err == nil {
-			return fmt.Errorf("destination %q already exists (use --force to overwrite)", dest)
+			return camperrors.Newf("destination %q already exists (use --force to overwrite)", dest)
 		}
 	}
 

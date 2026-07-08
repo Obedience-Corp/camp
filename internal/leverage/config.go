@@ -3,7 +3,6 @@ package leverage
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -193,7 +192,7 @@ func latestCommitDate(ctx context.Context, repoPath string) (time.Time, error) {
 
 	dateStr := strings.TrimSpace(string(output))
 	if dateStr == "" {
-		return time.Time{}, fmt.Errorf("no commits in %s", repoPath)
+		return time.Time{}, camperrors.Newf("no commits in %s", repoPath)
 	}
 
 	t, err := time.Parse(time.RFC3339, dateStr)
@@ -219,7 +218,7 @@ func earliestCommitDate(ctx context.Context, repoPath string) (time.Time, error)
 
 	dateStr := strings.TrimSpace(string(output))
 	if dateStr == "" {
-		return time.Time{}, fmt.Errorf("no commits in %s", repoPath)
+		return time.Time{}, camperrors.Newf("no commits in %s", repoPath)
 	}
 
 	// There may be multiple root commits (merged unrelated histories).
@@ -240,7 +239,7 @@ func earliestCommitDate(ctx context.Context, repoPath string) (time.Time, error)
 	}
 
 	if earliest.IsZero() {
-		return time.Time{}, fmt.Errorf("no valid commit dates in %s", repoPath)
+		return time.Time{}, camperrors.Newf("no valid commit dates in %s", repoPath)
 	}
 
 	return earliest, nil

@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"os"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+
 	"github.com/Obedience-Corp/camp/internal/doctor"
 	"github.com/Obedience-Corp/camp/internal/git"
 )
@@ -49,7 +51,7 @@ func (c *LockCheck) Run(ctx context.Context, repoRoot string) (*doctor.CheckResu
 	// Find all lock files in the repository
 	locks, err := git.FindLocksInRepository(ctx, repoRoot)
 	if err != nil {
-		return nil, fmt.Errorf("find lock files: %w", err)
+		return nil, camperrors.Newf("find lock files: %w", err)
 	}
 
 	result.Total = len(locks)
@@ -61,7 +63,7 @@ func (c *LockCheck) Run(ctx context.Context, repoRoot string) (*doctor.CheckResu
 	// Check staleness of each lock
 	stale, active, err := git.CheckLocksStaleness(ctx, locks)
 	if err != nil {
-		return nil, fmt.Errorf("check lock staleness: %w", err)
+		return nil, camperrors.Newf("check lock staleness: %w", err)
 	}
 
 	// Report stale locks as errors (auto-fixable)
@@ -134,7 +136,7 @@ func (c *LockCheck) Fix(ctx context.Context, repoRoot string, issues []doctor.Is
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	removed, _, _, err := git.RemoveStaleLocks(ctx, stalePaths, logger)
 	if err != nil {
-		return nil, fmt.Errorf("remove stale locks: %w", err)
+		return nil, camperrors.Newf("remove stale locks: %w", err)
 	}
 
 	// Map removed paths back to their issues

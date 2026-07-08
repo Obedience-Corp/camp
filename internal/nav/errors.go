@@ -12,7 +12,7 @@ import (
 // to enable cross-package errors.Is() matching.
 var (
 	// ErrCategoryNotFound is returned when a category directory does not exist.
-	ErrCategoryNotFound = fmt.Errorf("category directory not found: %w", camperrors.ErrNotFound)
+	ErrCategoryNotFound = camperrors.Newf("category directory not found: %w", camperrors.ErrNotFound)
 
 	// ErrNotADirectory is returned when a category path exists but is not a directory.
 	ErrNotADirectory = errors.New("category path is not a directory")

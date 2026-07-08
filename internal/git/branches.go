@@ -3,7 +3,6 @@ package git
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os/exec"
 	"strings"
 
@@ -153,7 +152,7 @@ func MergedBranchesFromRef(ctx context.Context, repoPath, baseRef string) ([]str
 		return nil, ctx.Err()
 	}
 	if strings.TrimSpace(baseRef) == "" {
-		return nil, fmt.Errorf("base ref is required")
+		return nil, camperrors.Newf("base ref is required")
 	}
 
 	currentBranch := CurrentBranch(ctx, repoPath)

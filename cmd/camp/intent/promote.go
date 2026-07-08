@@ -70,7 +70,7 @@ func runIntentPromote(cmd *cobra.Command, args []string) error {
 	case "design":
 		target = promote.TargetDesign
 	default:
-		return fmt.Errorf("invalid target: %s (use ready, festival, or design)", targetStr)
+		return camperrors.Newf("invalid target: %s (use ready, festival, or design)", targetStr)
 	}
 
 	// Find campaign root
@@ -89,7 +89,7 @@ func runIntentPromote(cmd *cobra.Command, args []string) error {
 	// Find the intent
 	i, err := svc.Find(ctx, id)
 	if err != nil {
-		return fmt.Errorf("intent not found: %s", id)
+		return camperrors.Newf("intent not found: %s", id)
 	}
 
 	// Dry run mode

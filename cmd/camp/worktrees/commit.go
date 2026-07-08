@@ -3,6 +3,7 @@ package worktrees
 import (
 	"errors"
 	"fmt"
+
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
@@ -93,7 +94,7 @@ func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 	}
 
 	if wtCommitAutoWrite && wtCommitMessage != "" {
-		return fmt.Errorf("--auto-write cannot be used with --message")
+		return camperrors.Newf("--auto-write cannot be used with --message")
 	}
 
 	// Get commit message - prompt if not provided
@@ -104,7 +105,7 @@ func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 			return camperrors.Wrap(err, "prompt failed")
 		}
 		if message == "" {
-			return fmt.Errorf("commit cancelled")
+			return camperrors.Newf("commit cancelled")
 		}
 	}
 

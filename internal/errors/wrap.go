@@ -20,7 +20,7 @@ func Wrapf(err error, format string, args ...any) error {
 	if err == nil {
 		return nil
 	}
-	return fmt.Errorf("%s: %w", fmt.Sprintf(format, args...), err)
+	return Wrap(err, fmt.Sprintf(format, args...))
 }
 
 // WrapJoin creates an error that wraps both sentinel and cause in the error chain.
@@ -54,6 +54,9 @@ func Is(err, target error) bool { return errors.Is(err, target) }
 
 // New delegates to errors.New for convenience.
 func New(text string) error { return errors.New(text) }
+
+// Newf returns a formatted error.
+func Newf(format string, args ...any) error { return fmt.Errorf(format, args...) }
 
 // Join delegates to errors.Join for convenience.
 func Join(errs ...error) error { return errors.Join(errs...) }

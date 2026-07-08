@@ -95,7 +95,7 @@ func RunAddSubShortcutTUI(ctx context.Context, root string) (*AddSubShortcutResu
 					// Validate path exists
 					fullPath := filepath.Join(projectPath, s)
 					if stat, err := os.Stat(fullPath); err != nil || !stat.IsDir() {
-						return fmt.Errorf("path does not exist: %s", s)
+						return camperrors.Newf("path does not exist: %s", s)
 					}
 					return nil
 				}),
@@ -155,7 +155,7 @@ func RunAddJumpTUI(ctx context.Context, root string) (*AddJumpResult, error) {
 					// Validate path exists if provided
 					fullPath := filepath.Join(root, s)
 					if stat, err := os.Stat(fullPath); err != nil || !stat.IsDir() {
-						return fmt.Errorf("path does not exist: %s", s)
+						return camperrors.Newf("path does not exist: %s", s)
 					}
 					return nil
 				}),

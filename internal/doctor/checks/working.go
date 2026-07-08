@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+
 	"github.com/Obedience-Corp/camp/internal/doctor"
 )
 
@@ -51,7 +53,7 @@ func (c *WorkingCheck) Run(ctx context.Context, repoRoot string) (*doctor.CheckR
 	// Get submodule paths
 	submodules, err := c.listSubmodules(ctx, repoRoot)
 	if err != nil {
-		return nil, fmt.Errorf("list submodules: %w", err)
+		return nil, camperrors.Newf("list submodules: %w", err)
 	}
 
 	result.Total = len(submodules)
@@ -117,7 +119,7 @@ func (c *WorkingCheck) listSubmodules(ctx context.Context, repoRoot string) ([]s
 			// No submodules configured
 			return nil, nil
 		}
-		return nil, fmt.Errorf("list submodules: %w", err)
+		return nil, camperrors.Newf("list submodules: %w", err)
 	}
 
 	var paths []string
@@ -138,7 +140,7 @@ func (c *WorkingCheck) getUncommittedChanges(ctx context.Context, repoPath strin
 	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "status", "--porcelain")
 	output, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("git status: %w", err)
+		return nil, camperrors.Newf("git status: %w", err)
 	}
 
 	var changes []string

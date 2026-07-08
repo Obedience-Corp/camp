@@ -34,7 +34,7 @@ func statusDirsToOptions(dirs []StatusDir) []crawl.Option {
 // or empty string if the user backed out (esc).
 func promptStatusSelection(ctx context.Context, prompt crawl.Prompt, itemName string, dirs []StatusDir) (string, error) {
 	if len(dirs) == 0 {
-		return "", fmt.Errorf("no status directories found (run 'camp dungeon add' to create defaults)")
+		return "", camperrors.Newf("no status directories found (run 'camp dungeon add' to create defaults)")
 	}
 	chosen, err := prompt.SelectDestination(ctx, crawl.Item{ID: itemName, Title: itemName}, statusDirsToOptions(dirs))
 	if err != nil {

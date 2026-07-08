@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"strings"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+
 	"github.com/Obedience-Corp/camp/internal/doctor"
 	"github.com/Obedience-Corp/camp/internal/git"
 )
@@ -51,7 +53,7 @@ func (c *URLCheck) Run(ctx context.Context, repoRoot string) (*doctor.CheckResul
 	// Get list of submodules
 	submodules, err := c.listSubmodules(ctx, repoRoot)
 	if err != nil {
-		return nil, fmt.Errorf("list submodules: %w", err)
+		return nil, camperrors.Newf("list submodules: %w", err)
 	}
 
 	result.Total = len(submodules)
@@ -102,7 +104,7 @@ func (c *URLCheck) Fix(ctx context.Context, repoRoot string, issues []doctor.Iss
 	// Run git submodule sync --recursive to fix all URL mismatches at once
 	cmd := exec.CommandContext(ctx, "git", "-C", repoRoot, "submodule", "sync", "--recursive")
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("git submodule sync: %w", err)
+		return nil, camperrors.Newf("git submodule sync: %w", err)
 	}
 
 	// All issues should be fixed after sync
@@ -125,7 +127,7 @@ func (c *URLCheck) listSubmodules(ctx context.Context, repoRoot string) ([]strin
 			// No submodules configured
 			return nil, nil
 		}
-		return nil, fmt.Errorf("list submodules: %w", err)
+		return nil, camperrors.Newf("list submodules: %w", err)
 	}
 
 	var paths []string

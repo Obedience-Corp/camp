@@ -3,7 +3,6 @@ package concept
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -337,7 +336,7 @@ func (s *DefaultService) ResolvePath(ctx context.Context, path string) (*Item, e
 	info, err := os.Stat(fullPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("path not found: %s", path)
+			return nil, camperrors.Newf("path not found: %s", path)
 		}
 		return nil, camperrors.Wrap(err, "checking path")
 	}
@@ -377,7 +376,7 @@ func (s *DefaultService) ConceptForPath(ctx context.Context, path string) (*Conc
 		}
 	}
 
-	return nil, fmt.Errorf("path not within any concept: %s", path)
+	return nil, camperrors.Newf("path not within any concept: %s", path)
 }
 
 // hasPathPrefix checks if path starts with prefix as a proper path prefix.

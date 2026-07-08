@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+
 	"github.com/Obedience-Corp/camp/internal/shell"
 	"github.com/spf13/cobra"
 )
@@ -66,7 +68,7 @@ func runShellInit(cmd *cobra.Command, args []string) error {
 	shellType := strings.ToLower(args[0])
 
 	if !shell.IsSupported(shellType) {
-		return fmt.Errorf("unsupported shell: %s\nSupported: %s",
+		return camperrors.Newf("unsupported shell: %s\nSupported: %s",
 			shellType, strings.Join(shell.SupportedShells, ", "))
 	}
 

@@ -294,7 +294,7 @@ func runShortcutsAdd(cmd *cobra.Command, args []string) error {
 		result, err := shortcuts.RunAddSubShortcutTUI(ctx, root)
 		if err != nil {
 			if errors.Is(err, shortcuts.ErrAborted) {
-				return fmt.Errorf("shortcut creation cancelled")
+				return camperrors.Newf("shortcut creation cancelled")
 			}
 			return err
 		}
@@ -306,13 +306,13 @@ func runShortcutsAdd(cmd *cobra.Command, args []string) error {
 		shortcutName = args[1]
 		shortcutPath = args[2]
 	} else {
-		return fmt.Errorf("expected 0, 2, or 3 arguments, got %d\n  2 args: camp shortcuts add <name> <path> (campaign shortcut)\n  3 args: camp shortcuts add <project> <name> <path> (project sub-shortcut)", len(args))
+		return camperrors.Newf("expected 0, 2, or 3 arguments, got %d\n  2 args: camp shortcuts add <name> <path> (campaign shortcut)\n  3 args: camp shortcuts add <project> <name> <path> (project sub-shortcut)", len(args))
 	}
 
 	// Find the project (fuzzy match)
 	projectIdx := findProjectIndex(cfg.Projects, projectName)
 	if projectIdx == -1 {
-		return fmt.Errorf("project %q not found (run 'camp project list' to see available projects)", projectName)
+		return camperrors.Newf("project %q not found (run 'camp project list' to see available projects)", projectName)
 	}
 
 	project := &cfg.Projects[projectIdx]
@@ -320,7 +320,7 @@ func runShortcutsAdd(cmd *cobra.Command, args []string) error {
 	// Validate path exists
 	fullPath := filepath.Join(root, project.Path, shortcutPath)
 	if stat, err := os.Stat(fullPath); err != nil || !stat.IsDir() {
-		return fmt.Errorf("path does not exist or is not a directory: %s", fullPath)
+		return camperrors.Newf("path does not exist or is not a directory: %s", fullPath)
 	}
 
 	// Initialize shortcuts map if nil
@@ -376,18 +376,18 @@ func runShortcutsRemove(cmd *cobra.Command, args []string) error {
 	// Find the project (fuzzy match)
 	projectIdx := findProjectIndex(cfg.Projects, projectName)
 	if projectIdx == -1 {
-		return fmt.Errorf("project %q not found (run 'camp project list' to see available projects)", projectName)
+		return camperrors.Newf("project %q not found (run 'camp project list' to see available projects)", projectName)
 	}
 
 	project := &cfg.Projects[projectIdx]
 
 	// Check if shortcut exists
 	if project.Shortcuts == nil {
-		return fmt.Errorf("project '%s' has no shortcuts configured", project.Name)
+		return camperrors.Newf("project '%s' has no shortcuts configured", project.Name)
 	}
 
 	if _, ok := project.Shortcuts[shortcutName]; !ok {
-		return fmt.Errorf("shortcut '%s' not found in project '%s'", shortcutName, project.Name)
+		return camperrors.Newf("shortcut '%s' not found in project '%s'", shortcutName, project.Name)
 	}
 
 	// Remove the shortcut
@@ -424,7 +424,7 @@ func runShortcutsList(cmd *cobra.Command, args []string) error {
 	// Find the project (fuzzy match)
 	projectIdx := findProjectIndex(cfg.Projects, projectName)
 	if projectIdx == -1 {
-		return fmt.Errorf("project %q not found (run 'camp project list' to see available projects)", projectName)
+		return camperrors.Newf("project %q not found (run 'camp project list' to see available projects)", projectName)
 	}
 
 	project := cfg.Projects[projectIdx]
@@ -490,7 +490,7 @@ func runShortcutsAddJump(cmd *cobra.Command, args []string) error {
 		result, err := shortcuts.RunAddJumpTUI(ctx, root)
 		if err != nil {
 			if errors.Is(err, shortcuts.ErrAborted) {
-				return fmt.Errorf("shortcut creation cancelled")
+				return camperrors.Newf("shortcut creation cancelled")
 			}
 			return err
 		}
@@ -558,7 +558,7 @@ func runShortcutsDiff(cmd *cobra.Command, _ []string) error {
 
 	cfg, _, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign: %w", err)
+		return camperrors.Newf("not in a campaign: %w", err)
 	}
 
 	current := cfg.Shortcuts()
@@ -634,7 +634,7 @@ func runShortcutsReset(cmd *cobra.Command, _ []string) error {
 
 	_, root, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return fmt.Errorf("not in a campaign: %w", err)
+		return camperrors.Newf("not in a campaign: %w", err)
 	}
 
 	plan, err := shortcuts.PrepareReset(ctx, root)
@@ -756,12 +756,12 @@ func runShortcutsRemoveJump(cmd *cobra.Command, args []string) error {
 
 	// Check if jumps config exists
 	if jumps == nil || jumps.Shortcuts == nil {
-		return fmt.Errorf("no shortcuts configured")
+		return camperrors.Newf("no shortcuts configured")
 	}
 
 	// Check if shortcut exists
 	if _, ok := jumps.Shortcuts[shortcutName]; !ok {
-		return fmt.Errorf("shortcut '%s' not found", shortcutName)
+		return camperrors.Newf("shortcut '%s' not found", shortcutName)
 	}
 
 	// Remove the shortcut
