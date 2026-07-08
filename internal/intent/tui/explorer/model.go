@@ -51,6 +51,7 @@ type Model struct {
 	// Data
 	intents         []*intent.Intent
 	filteredIntents []*intent.Intent
+	searchCorpus    []string
 	groups          []IntentGroup
 	service         *intent.IntentService
 	ctx             context.Context

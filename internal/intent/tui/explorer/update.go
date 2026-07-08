@@ -107,6 +107,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.intents = msg.intents
 		m.filteredIntents = msg.intents
+		m.rebuildSearchCorpus()
 		if m.notesMode {
 			m.groups = groupNotes(msg.intents)
 		} else {

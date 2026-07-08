@@ -96,6 +96,37 @@ func TestApplyFilters_StatusNotes(t *testing.T) {
 	}
 }
 
+func TestApplyFilters_UsesCachedSearchCorpus(t *testing.T) {
+	ctx := context.Background()
+	m := NewModel(ctx, nil, nil, "/tmp/intents", "/tmp/campaign", "test-id", "", nil)
+	m.ready = true
+
+	now := time.Now()
+	m.intents = []*intent.Intent{
+		{ID: "alpha", Title: "Alpha", Content: "cached-match", Status: intent.StatusInbox, Type: intent.TypeFeature, CreatedAt: now},
+		{ID: "beta", Title: "Beta", Content: "other", Status: intent.StatusInbox, Type: intent.TypeFeature, CreatedAt: now},
+	}
+	m.rebuildSearchCorpus()
+	m.filteredIntents = m.intents
+	m.groups = groupIntentsByStatus(m.intents, m.dungeonExpanded)
+
+	m.searchInput.SetValue("cached-match")
+	m.applyFilters()
+
+	if len(m.filteredIntents) != 1 || m.filteredIntents[0].ID != "alpha" {
+		t.Fatalf("cached search returned %+v, want alpha", m.filteredIntents)
+	}
+
+	m.searchCorpus[0] = "stale-only-match"
+	m.intents[0].Content = "content-changed-without-rebuild"
+	m.searchInput.SetValue("stale-only-match")
+	m.applyFilters()
+
+	if len(m.filteredIntents) != 1 || m.filteredIntents[0].ID != "alpha" {
+		t.Fatalf("search did not use cached corpus; got %+v, want alpha from cache", m.filteredIntents)
+	}
+}
+
 func statusFilterIndex(t *testing.T, label string) int {
 	t.Helper()
 	for i, item := range statusFilterItems {

@@ -1,11 +1,16 @@
 package explorer
 
 import (
+	"context"
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/intent/audit"
 )
+
+var runAutoCommitIntent = func(ctx context.Context, opts commit.IntentOptions) {
+	_ = commit.Intent(ctx, opts)
+}
 
 func (m *Model) auditActor() string {
 	actor := strings.TrimSpace(m.author)
@@ -29,12 +34,18 @@ func (m *Model) autoCommitFiles(files ...string) []string {
 	return commit.NormalizeFiles(m.campaignRoot, files...)
 }
 
-// autoCommitIntent performs a best-effort intent commit if campaign context is available.
+// autoCommitIntent starts a best-effort intent commit if campaign context is available.
 func (m *Model) autoCommitIntent(action commit.IntentAction, title, description string, files ...string) {
 	if m.campaignRoot == "" || m.campaignID == "" {
 		return
 	}
-	_ = commit.Intent(m.ctx, commit.IntentOptions{
+	ctx := m.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	} else {
+		ctx = context.WithoutCancel(ctx)
+	}
+	opts := commit.IntentOptions{
 		Options: commit.Options{
 			CampaignRoot:  m.campaignRoot,
 			CampaignID:    m.campaignID,
@@ -44,5 +55,6 @@ func (m *Model) autoCommitIntent(action commit.IntentAction, title, description 
 		Action:      action,
 		IntentTitle: title,
 		Description: description,
-	})
+	}
+	go runAutoCommitIntent(ctx, opts)
 }
