@@ -73,6 +73,14 @@ Use campaign@tab to navigate to a specific location in the target campaign:
 			return nil, cobra.ShellCompDirectiveError
 		}
 
+		// Machine dimension: a "machine:" prefix completes the campaign part on
+		// that machine from the warm cache — the keystroke path never does a live
+		// ssh; a cache miss/unreachable completes the machine id only, immediately.
+		if id, remainder, hasMachine := strings.Cut(toComplete, ":"); hasMachine {
+			return completeMachineSelector(reg, scope, id, remainder, readMachineCacheCampaigns),
+				cobra.ShellCompDirectiveNoFileComp
+		}
+
 		if at := strings.IndexByte(toComplete, '@'); at >= 0 {
 			campaignQuery := toComplete[:at]
 			tabPrefix := toComplete[at+1:]
@@ -84,7 +92,13 @@ Use campaign@tab to navigate to a specific location in the target campaign:
 			return completions, cobra.ShellCompDirectiveNoFileComp
 		}
 
-		return completeSwitchCampaigns(reg, scope, toComplete), cobra.ShellCompDirectiveNoFileComp
+		// No colon: existing local completion, plus "<machine>:" candidates so the
+		// machine dimension is discoverable. Absent machines file => today's output.
+		out := completeSwitchCampaigns(reg, scope, toComplete)
+		if mf, err := machines.Load(); err == nil {
+			out = append(out, machineCandidatesFrom(mf.Machines, toComplete)...)
+		}
+		return out, cobra.ShellCompDirectiveNoFileComp
 	},
 }
 

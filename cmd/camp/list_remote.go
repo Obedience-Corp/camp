@@ -62,6 +62,7 @@ func enumerateRemote(ctx context.Context, m *machines.Machine) ([]campaignEntry,
 	if err := json.Unmarshal(out, &rows); err != nil {
 		return nil, camperrors.Wrap(err, "parse remote camp list --json")
 	}
+	names := make([]string, 0, len(rows))
 	for i := range rows {
 		rows[i].Machine = m.ID
 		// Preserve the []-not-null tags guard on re-emitted rows so a Rust Vec<T>
@@ -69,7 +70,11 @@ func enumerateRemote(ctx context.Context, m *machines.Machine) ([]campaignEntry,
 		if rows[i].Tags == nil {
 			rows[i].Tags = []string{}
 		}
+		names = append(names, rows[i].Name)
 	}
+	// Warm the completion cache so `csw <id>:<tab>` has campaigns without the
+	// keystroke path ever doing a live ssh.
+	writeMachineCacheCampaigns(m.ID, names)
 	return rows, nil
 }
 
