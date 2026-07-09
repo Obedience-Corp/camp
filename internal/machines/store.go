@@ -89,3 +89,20 @@ func (f *File) Lookup(id string) (m *Machine, isLocal bool, found bool) {
 	}
 	return nil, false, false
 }
+
+// Upsert replaces the machine sharing m.ID, or appends m if no existing machine
+// has that id. Idempotent: calling Upsert twice with the same id leaves exactly
+// one machine under that id (the later call's fields win), so `camp machine add`
+// can re-run against an existing id without duplicating rows. It never persists
+// LocalMachineID itself — that guarantee is enforced by Save/encode, not here, so
+// callers relying on Save to drop "local" still get it even if this is called
+// directly with that id.
+func (f *File) Upsert(m Machine) {
+	for i := range f.Machines {
+		if f.Machines[i].ID == m.ID {
+			f.Machines[i] = m
+			return
+		}
+	}
+	f.Machines = append(f.Machines, m)
+}

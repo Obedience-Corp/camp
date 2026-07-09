@@ -87,6 +87,33 @@ func TestLookup(t *testing.T) {
 	}
 }
 
+func TestUpsertIdempotent(t *testing.T) {
+	f := &File{}
+
+	f.Upsert(Machine{ID: "devbox", Host: "devbox.ts.net", AuthMethod: AuthSSHAgent})
+	if len(f.Machines) != 1 {
+		t.Fatalf("first Upsert: len(Machines) = %d, want 1", len(f.Machines))
+	}
+
+	// Second Upsert with the same id must replace in place, not append.
+	f.Upsert(Machine{ID: "devbox", Host: "devbox2.ts.net", AuthMethod: AuthTailscaleSSH})
+	if len(f.Machines) != 1 {
+		t.Fatalf("second Upsert with same id: len(Machines) = %d, want 1 (no duplicate)", len(f.Machines))
+	}
+	if got := f.Machines[0]; got.Host != "devbox2.ts.net" || got.AuthMethod != AuthTailscaleSSH {
+		t.Fatalf("second Upsert did not update fields in place: %+v", got)
+	}
+
+	// Upsert of a new id appends without disturbing the existing entry's position.
+	f.Upsert(Machine{ID: "buildbox", Host: "buildbox.ts.net", AuthMethod: AuthSSHAgent})
+	if len(f.Machines) != 2 {
+		t.Fatalf("Upsert of new id: len(Machines) = %d, want 2", len(f.Machines))
+	}
+	if f.Machines[0].ID != "devbox" || f.Machines[1].ID != "buildbox" {
+		t.Fatalf("Upsert of new id reordered existing entries: %+v", f.Machines)
+	}
+}
+
 func TestLoadAbsentFileDegradesToEmpty(t *testing.T) {
 	t.Setenv("CAMP_MACHINES_PATH", "/nonexistent-mm-test-dir/does-not-exist/machines.yaml")
 	f, err := Load()
