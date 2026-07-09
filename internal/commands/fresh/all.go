@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
@@ -51,63 +50,17 @@ Examples:
 			}
 
 			// Read persistent flags from parent (freshCmd)
-			freshBranch, freshNoBranch, freshNoPush, freshNoPrune, freshDryRun := getFreshFlags(freshCmd)
+			flags := getFreshFlagSet(freshCmd)
 
-			green := lipgloss.NewStyle().Foreground(ui.SuccessColor)
-			red := lipgloss.NewStyle().Foreground(ui.ErrorColor)
-
-			fmt.Println(ui.Info("Running fresh across all projects..."))
-			fmt.Println()
-
-			var succeeded, failed int
-			var failedNames []string
-
+			targets := make([]freshTarget, 0, len(paths))
 			for _, p := range paths {
-				if ctx.Err() != nil {
-					return ctx.Err()
-				}
-
-				fullPath := filepath.Join(campRoot, p)
-				name := git.SubmoduleDisplayName(p)
-
-				// Resolve per-project settings
-				branch := cfg.ResolveFreshBranch(freshBranch, freshNoBranch, name)
-				doPrune := !freshNoPrune && cfg.ResolveFreshPrune()
-				doPush := !freshNoPush && cfg.ResolveFreshPushUpstream(name)
-
-				err := executeFresh(ctx, name, fullPath, freshOptions{
-					branch:      branch,
-					prune:       doPrune,
-					pruneRemote: cfg.ResolveFreshPruneRemote(),
-					push:        doPush,
-					dryRun:      freshDryRun,
+				targets = append(targets, freshTarget{
+					name: git.SubmoduleDisplayName(p),
+					path: filepath.Join(campRoot, p),
 				})
-				if err != nil {
-					fmt.Printf("  %s %s: %s\n", red.Render("FAILED"), name, err)
-					failed++
-					failedNames = append(failedNames, name)
-				} else {
-					succeeded++
-				}
 			}
 
-			// Summary
-			fmt.Println()
-			fmt.Println(ui.Separator(50))
-			if failed == 0 {
-				fmt.Printf("%s Fresh completed for %d project(s)\n", green.Render("All done!"), succeeded)
-			} else {
-				fmt.Printf("%s %d succeeded, %d failed\n",
-					ui.Warning("Fresh completed with errors:"), succeeded, failed)
-				for _, name := range failedNames {
-					fmt.Printf("  %s %s\n", red.Render("-"), name)
-				}
-			}
-
-			if failed > 0 {
-				return camperrors.Newf("%d project(s) failed", failed)
-			}
-			return nil
+			return runFreshBatch(ctx, cfg, targets, flags, "Running fresh across all projects...")
 		},
 	}
 }
