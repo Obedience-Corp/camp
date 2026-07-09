@@ -58,6 +58,31 @@ func TestGenerateBash(t *testing.T) {
 	}
 }
 
+func TestGenerateBash_FestivalsArm(t *testing.T) {
+	output := generateBash()
+	section := shellWrapperSection(t, output, "    festivals)", "    *)")
+
+	checks := []struct {
+		name    string
+		content string
+	}{
+		{"festivals path output", `command camp festivals "$@" --path-output`},
+		{"festivals temp file", "camp-festivals.XXXXXX"},
+		{"festivals absolute cd", `cd "$dest"`},
+	}
+	for _, check := range checks {
+		t.Run(check.name, func(t *testing.T) {
+			if !strings.Contains(section, check.content) {
+				t.Errorf("bash festivals arm missing %s: %q", check.name, check.content)
+			}
+		})
+	}
+
+	if strings.Contains(section, `cd "$root/$dest"`) {
+		t.Error("festivals arm must not use the root-relative cd form (paths are absolute)")
+	}
+}
+
 func TestGenerateBash_ContainsDynamicShortcuts(t *testing.T) {
 	output := generateBash()
 

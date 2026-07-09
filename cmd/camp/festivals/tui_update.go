@@ -1,0 +1,86 @@
+package festivals
+
+import (
+	"os/exec"
+	"runtime"
+	"strings"
+
+	tea "github.com/charmbracelet/bubbletea"
+)
+
+func (m festivalsTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width, m.height = msg.Width, msg.Height
+		return m, nil
+	case tea.KeyMsg:
+		return m.updateBrowse(msg)
+	}
+	return m, nil
+}
+
+func (m festivalsTUIModel) updateBrowse(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	m.status = ""
+	switch key.String() {
+	case "ctrl+c", "q", "esc":
+		m.quitting = true
+		return m, tea.Quit
+	case "g", "enter":
+		if len(m.visible) == 0 {
+			return m, nil
+		}
+		if !m.gotoEnabled {
+			m.setStatus(`go needs shell integration: run eval "$(camp shell-init <shell>)"`, true)
+			return m, nil
+		}
+		m.gotoPath = m.visible[m.cursor].Path // absolute; cross-campaign
+		m.quitting = true
+		return m, tea.Quit
+	case "down", "j":
+		if len(m.visible) > 0 {
+			m.cursor = (m.cursor + 1) % len(m.visible)
+		}
+		return m, nil
+	case "up", "k":
+		if len(m.visible) > 0 {
+			m.cursor = (m.cursor - 1 + len(m.visible)) % len(m.visible)
+		}
+		return m, nil
+	case "f":
+		m.activeOnly = !m.activeOnly
+		m.rebuildVisible()
+		return m, nil
+	case "y":
+		if len(m.visible) > 0 {
+			if err := m.copyPath(); err != nil {
+				m.setStatus("copy failed: "+err.Error(), true)
+			} else {
+				m.setStatus("copied!", false)
+			}
+		}
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m *festivalsTUIModel) setStatus(s string, isErr bool) {
+	m.status, m.statusErr = s, isErr
+}
+
+// Package var so tests do not touch the real clipboard. (Candidate for the shared
+// internal/ui extraction later; kept local for now.)
+var writeClipboard = func(s string) error {
+	var c *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		c = exec.Command("pbcopy")
+	default:
+		c = exec.Command("xclip", "-selection", "clipboard")
+	}
+	c.Stdin = strings.NewReader(s)
+	return c.Run()
+}
+
+func (m *festivalsTUIModel) copyPath() error {
+	return writeClipboard(m.visible[m.cursor].Path)
+}
