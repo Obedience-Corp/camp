@@ -21,6 +21,7 @@ var manifestAgentAllowedReasons = map[string]string{
 	"flow list":           "Read-only flow listing",
 	"flow show":           "Read-only flow structure display",
 	"flow status":         "Read-only flow statistics",
+	"gather design":       "Non-interactive with explicit selectors and --title; interactive picker otherwise",
 	"go":                  "Non-interactive path resolution when used with explicit arguments",
 	"id":                  "Read-only campaign ID output",
 	"intent add":          "Programmatic create path is safe with title/body flags; agents must not use TUI-only flags",
@@ -79,9 +80,10 @@ var manifestAgentAllowedReasons = map[string]string{
 }
 
 var manifestAllowedInteractivePaths = map[string]bool{
-	"create":     true,
-	"intent add": true,
-	"switch":     true,
+	"create":        true,
+	"gather design": true,
+	"intent add":    true,
+	"switch":        true,
 }
 
 var manifestInteractivePaths = map[string]bool{

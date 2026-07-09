@@ -54,6 +54,14 @@ type Metadata struct {
 	PromotedTo string `yaml:"promoted_to,omitempty"`
 	// PromotedAt is the RFC3339 UTC timestamp of the promotion.
 	PromotedAt string `yaml:"promoted_at,omitempty"`
+	// GatheredInto records the id of the combined workitem this workitem was
+	// merged into by `camp gather`. Set on source workitems when their
+	// directories are moved inside the gathered package. Added without a
+	// schema version bump, following the promoted_to precedent; loaders use
+	// non-strict YAML so older binaries ignore the field.
+	GatheredInto string `yaml:"gathered_into,omitempty"`
+	// GatheredAt is the RFC3339 UTC timestamp of the gather.
+	GatheredAt string `yaml:"gathered_at,omitempty"`
 }
 
 // LoadMetadata reads .workitem from dir on the host filesystem.
