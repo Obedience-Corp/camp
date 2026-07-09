@@ -194,6 +194,49 @@ func (s *IntentService) ArchiveNote(ctx context.Context, id string) (*Intent, er
 	return note, nil
 }
 
+// RestoreNote moves a note back from notes/archived/ into the active notes/
+// store, reversing ArchiveNote so an archived note is never a dead end.
+func (s *IntentService) RestoreNote(ctx context.Context, id string) (*Intent, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, camperrors.Wrap(err, "context cancelled")
+	}
+
+	note, err := s.GetNote(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	if note.Status == StatusNote {
+		return note, nil
+	}
+
+	oldPath := note.Path
+	note.Status = StatusNote
+	note.UpdatedAt = time.Now()
+
+	newPath := s.getIntentPath(StatusNote, note.ID)
+	if err := os.MkdirAll(filepath.Dir(newPath), 0755); err != nil {
+		return nil, camperrors.Wrap(err, "creating directory")
+	}
+
+	data, err := SerializeIntent(note)
+	if err != nil {
+		return nil, camperrors.Wrap(err, "serializing note")
+	}
+	if err := fsutil.WriteFileAtomically(newPath, data, 0644); err != nil {
+		return nil, camperrors.Wrap(err, "writing note file")
+	}
+
+	if err := os.Remove(oldPath); err != nil {
+		_ = os.Remove(newPath)
+		return nil, camperrors.Wrap(err, "removing old note file")
+	}
+
+	note.Path = newPath
+	s.invalidateIDIndex()
+	return note, nil
+}
+
 // MoveIntentToNote moves a lifecycle intent into the active notes/ store. The
 // file keeps its title, body, author, tags, and timestamps, but drops lifecycle
 // metadata that notes do not carry.

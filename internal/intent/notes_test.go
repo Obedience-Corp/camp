@@ -224,6 +224,67 @@ func TestArchiveNote_MovesToArchived(t *testing.T) {
 	}
 }
 
+func TestRestoreNote_MovesArchivedBackToActive(t *testing.T) {
+	svc, ctx := newNotesTestService(t)
+
+	note, err := svc.CreateNote(ctx, CreateOptions{
+		Title:     "note to archive then restore",
+		Timestamp: time.Date(2026, 6, 9, 10, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateNote: %v", err)
+	}
+
+	archived, err := svc.ArchiveNote(ctx, note.ID)
+	if err != nil {
+		t.Fatalf("ArchiveNote: %v", err)
+	}
+	archivedPath := archived.Path
+
+	restored, err := svc.RestoreNote(ctx, note.ID)
+	if err != nil {
+		t.Fatalf("RestoreNote: %v", err)
+	}
+	if restored.Status != StatusNote {
+		t.Errorf("Status = %q, want %q", restored.Status, StatusNote)
+	}
+	wantDir := filepath.Join(svc.intentsDir, "notes")
+	if filepath.Dir(restored.Path) != wantDir {
+		t.Errorf("restored dir = %q, want %q", filepath.Dir(restored.Path), wantDir)
+	}
+	if _, err := os.Stat(archivedPath); !os.IsNotExist(err) {
+		t.Errorf("archived note file still present at %q", archivedPath)
+	}
+
+	active, err := svc.ListNotes(ctx, false)
+	if err != nil {
+		t.Fatalf("ListNotes(active): %v", err)
+	}
+	if len(active) != 1 {
+		t.Errorf("active notes = %d, want 1 after restore", len(active))
+	}
+}
+
+func TestRestoreNote_ActiveNoteIsNoOp(t *testing.T) {
+	svc, ctx := newNotesTestService(t)
+
+	note, err := svc.CreateNote(ctx, CreateOptions{
+		Title:     "already active note",
+		Timestamp: time.Date(2026, 6, 9, 10, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateNote: %v", err)
+	}
+
+	restored, err := svc.RestoreNote(ctx, note.ID)
+	if err != nil {
+		t.Fatalf("RestoreNote: %v", err)
+	}
+	if restored.Status != StatusNote {
+		t.Errorf("Status = %q, want %q", restored.Status, StatusNote)
+	}
+}
+
 func TestConvert_NoteBecomesIntent(t *testing.T) {
 	svc, ctx := newNotesTestService(t)
 
