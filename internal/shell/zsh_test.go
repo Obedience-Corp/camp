@@ -56,6 +56,38 @@ func TestGenerateZsh(t *testing.T) {
 	}
 }
 
+func TestGenerateZsh_FestivalsArm(t *testing.T) {
+	output := generateZsh()
+	section := shellWrapperSection(t, output, "    festivals)", "    *)")
+
+	checks := []struct {
+		name    string
+		content string
+	}{
+		{"festivals path output", `command camp festivals "$@" --path-output`},
+		{"festivals temp file", "camp-festivals.XXXXXX"},
+		{"festivals absolute cd", `cd "$dest"`},
+		{"festivals org passthrough", `--org|--org=*`},
+		{"festivals status passthrough", `--status|--status=*`},
+		{"festivals all campaigns passthrough", `--all-campaigns`},
+		{"festivals sort passthrough", `--sort|--sort=*`},
+	}
+	for _, check := range checks {
+		t.Run(check.name, func(t *testing.T) {
+			if !strings.Contains(section, check.content) {
+				t.Errorf("zsh festivals arm missing %s: %q", check.name, check.content)
+			}
+		})
+	}
+
+	if strings.Contains(section, `cd "$root/$dest"`) {
+		t.Error("festivals arm must not use the root-relative cd form (paths are absolute)")
+	}
+	if strings.Contains(section, `--count|--count=*`) || strings.Contains(section, `--format|--format=*`) {
+		t.Error("festivals arm must not use list-only passthrough flags")
+	}
+}
+
 func TestGenerateZsh_ValidSyntax(t *testing.T) {
 	output := generateZsh()
 
