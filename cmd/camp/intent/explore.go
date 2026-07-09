@@ -127,6 +127,14 @@ func runIntentExplore(cmd *cobra.Command, args []string) error {
 	}
 	defer restoreLogger()
 
+	// The explorer fires intent auto-commits asynchronously to keep the UI
+	// responsive, so any still in flight must be drained before this function
+	// returns; otherwise a change already written to disk could exit without
+	// ever being committed. Deferred (not inline after p.Run) so the drain also
+	// covers error-exit paths, and registered after restoreLogger so LIFO runs
+	// it first, while slog is still routed to the TUI log file.
+	defer drainExplorerAutoCommits(cmd.ErrOrStderr())
+
 	// Create and run the TUI
 	model := explorer.NewModel(ctx, svc, conceptSvc, intentsDir, campaignRoot, cfg.ID, author, shortcuts).
 		WithAvailableTags(cfg.IntentTags())
@@ -136,20 +144,22 @@ func runIntentExplore(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "running explorer")
 	}
 
-	// The explorer fires intent auto-commits asynchronously to keep the UI
-	// responsive, so drain any still in flight before returning; otherwise a
-	// change already written to disk could exit without ever being committed.
-	// A fast drain stays silent. If commits are still running (e.g. contending
-	// for the git lock) tell the user why the terminal is pausing, then wait a
-	// bounded amount so a wedged lock cannot hang the exit.
-	if !explorer.WaitForAutoCommits(quickDrainTimeout) {
-		_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Finalizing intent commits...")
-		if !explorer.WaitForAutoCommits(autoCommitDrainTimeout) {
-			_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "warning: some intent auto-commits did not finish; run 'camp status' to check for uncommitted intent changes")
-		}
-	}
-
 	return nil
+}
+
+// drainExplorerAutoCommits waits for the explorer's background intent
+// auto-commits to finish on exit. A fast drain stays silent; if commits are
+// still running (e.g. contending for the git lock) it tells the user why the
+// terminal is pausing, then waits a bounded amount so a wedged lock cannot hang
+// the exit.
+func drainExplorerAutoCommits(w io.Writer) {
+	if explorer.WaitForAutoCommits(quickDrainTimeout) {
+		return
+	}
+	_, _ = fmt.Fprintln(w, "Finalizing intent commits...")
+	if !explorer.WaitForAutoCommits(autoCommitDrainTimeout) {
+		_, _ = fmt.Fprintln(w, "warning: some intent auto-commits did not finish; run 'camp status' to check for uncommitted intent changes")
+	}
 }
 
 // quickDrainTimeout is the silent grace period for in-flight auto-commits to
