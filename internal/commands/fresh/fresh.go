@@ -25,7 +25,6 @@ import (
 var (
 	freshStepDim   = lipgloss.NewStyle().Foreground(ui.DimColor)
 	freshStepGreen = lipgloss.NewStyle().Foreground(ui.SuccessColor)
-	freshStepRed   = lipgloss.NewStyle().Foreground(ui.ErrorColor)
 )
 
 // NewFreshCommand creates and returns the fresh cobra command with all subcommands.
@@ -37,28 +36,31 @@ func NewFreshCommand() *cobra.Command {
 		freshNoPrune     bool
 		freshDryRun      bool
 		freshProjectFlag string
+		freshList        []string
 	)
 
 	freshCmd := &cobra.Command{
 		Use:   "fresh [project-name]",
 		Short: "Post-merge branch cycling: sync to default branch and optionally create a new working branch",
-		Long: `Reset a project to a fresh state after merging a PR.
+		Long: `Reset one or more projects to a fresh state after merging a PR.
 
 Performs the post-merge cycle: checkout default branch, pull latest,
 prune merged branches, and optionally create a new working branch.
 
-Auto-detects the current project from your working directory,
-or accepts a project name as a positional argument.
+Auto-detects the current project from your working directory, or accepts a
+single project name. Use --list to cycle a specific set of projects in one
+run, or 'camp fresh all' to cycle every project submodule in the campaign.
 
 Without configuration, syncs to the default branch and prunes.
 Configure .campaign/settings/fresh.yaml to set a default working branch.
 
 Examples:
-  camp fresh                         # Sync current project (checkout default, pull, prune)
-  camp fresh --branch develop        # Sync and create develop branch
-  camp fresh camp -b feat/new-thing  # Sync camp project, create feature branch
-  camp fresh --no-prune              # Sync without pruning
-  camp fresh --dry-run               # Preview what would happen`,
+  camp fresh                            # Sync current project (checkout default, pull, prune)
+  camp fresh --branch develop           # Sync and create develop branch
+  camp fresh camp -b feat/new-thing     # Sync camp project, create feature branch
+  camp fresh --list camp,fest,festival  # Sync a specific set of projects
+  camp fresh --no-prune                 # Sync without pruning
+  camp fresh --dry-run                  # Preview what would happen`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeProjectName,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -69,7 +71,40 @@ Examples:
 				return camperrors.Wrap(err, "not in a campaign")
 			}
 
-			// Resolve project: positional arg > flag > cwd
+			// Load fresh config
+			cfg, err := config.LoadFreshConfig(ctx, campRoot)
+			if err != nil {
+				return camperrors.Wrap(err, "loading fresh config")
+			}
+
+			flags := freshFlagSet{
+				branch:   freshBranch,
+				noBranch: freshNoBranch,
+				noPush:   freshNoPush,
+				noPrune:  freshNoPrune,
+				dryRun:   freshDryRun,
+			}
+
+			// --list runs a batch across an explicit set of projects. It is
+			// mutually exclusive with a positional project name (the -p/--project
+			// flag is guarded by MarkFlagsMutuallyExclusive below).
+			list := cleanProjectList(freshList)
+			if len(list) > 0 {
+				if len(args) > 0 {
+					return camperrors.New("specify a project with a positional name or --list, not both")
+				}
+
+				// Resolve all names up front (fail fast on a bad name), then
+				// run the batch cycle with an aggregate summary.
+				targets, err := resolveFreshTargets(ctx, campRoot, list)
+				if err != nil {
+					return err
+				}
+				header := fmt.Sprintf("Running fresh across %d project(s)...", len(targets))
+				return runFreshBatch(ctx, cfg, targets, flags, header)
+			}
+
+			// Single project: positional name > --project > cwd auto-detect.
 			projectName := freshProjectFlag
 			if len(args) > 0 {
 				projectName = args[0]
@@ -82,12 +117,6 @@ Examples:
 					fmt.Println(ui.Dim("\n" + project.FormatProjectList(notFound.AvailableProjects())))
 				}
 				return err
-			}
-
-			// Load fresh config
-			cfg, err := config.LoadFreshConfig(ctx, campRoot)
-			if err != nil {
-				return camperrors.Wrap(err, "loading fresh config")
 			}
 
 			// Resolve settings
@@ -113,6 +142,9 @@ Examples:
 	freshCmd.PersistentFlags().BoolVarP(&freshDryRun, "dry-run", "n", false, "Preview without making changes")
 	freshCmd.Flags().StringVarP(&freshProjectFlag, "project", "p", "", "Project name (auto-detected from cwd)")
 	freshCmd.RegisterFlagCompletionFunc("project", completeProjectName)
+	freshCmd.Flags().StringSliceVar(&freshList, "list", nil, "Comma-separated set of projects to cycle in one run")
+	_ = freshCmd.RegisterFlagCompletionFunc("list", completeProjectName)
+	freshCmd.MarkFlagsMutuallyExclusive("project", "list")
 
 	// Add subcommand
 	freshCmd.AddCommand(newAllCommand(freshCmd))
@@ -436,15 +468,4 @@ func completeProjectName(cmd *cobra.Command, _ []string, toComplete string) ([]s
 	}
 
 	return names, cobra.ShellCompDirectiveNoFileComp
-}
-
-// getFreshFlags extracts persistent flags from the fresh command.
-// These are stored on the parent command (freshCmd) and accessed here.
-func getFreshFlags(freshCmd *cobra.Command) (branch string, noBranch, noPush, noPrune, dryRun bool) {
-	branch, _ = freshCmd.PersistentFlags().GetString("branch")
-	noBranch, _ = freshCmd.PersistentFlags().GetBool("no-branch")
-	noPush, _ = freshCmd.PersistentFlags().GetBool("no-push")
-	noPrune, _ = freshCmd.PersistentFlags().GetBool("no-prune")
-	dryRun, _ = freshCmd.PersistentFlags().GetBool("dry-run")
-	return
 }
