@@ -45,6 +45,9 @@ exit 1
 	require.NoError(t, tc.WriteFile("/usr/local/bin/tailscale", script))
 	_, _, err := tc.ExecCommand("chmod", "+x", "/usr/local/bin/tailscale")
 	require.NoError(t, err)
+	// The pooled container's Reset() does not clean /usr/local/bin, so remove the
+	// stub after this test or a later test asserting "no tailscale" would find it.
+	t.Cleanup(func() { _, _, _ = tc.ExecCommand("rm", "-f", "/usr/local/bin/tailscale") })
 }
 
 // TestMachineAddDiscoverYes proves --discover --yes runs fully non-interactively
@@ -98,6 +101,10 @@ func TestMachineAddDiscoverByID(t *testing.T) {
 // PATH gets a clear, actionable error rather than a raw exec failure or hang.
 func TestMachineAddDiscoverMissingBinary(t *testing.T) {
 	tc := GetSharedContainer(t)
+	// Defensively remove any tailscale stub a prior discover test may have left in
+	// the pooled container (Reset does not clean /usr/local/bin), so the precondition
+	// "no tailscale on PATH" holds regardless of test order.
+	_, _, _ = tc.ExecCommand("rm", "-f", "/usr/local/bin/tailscale")
 
 	out, err := tc.RunCamp("machine", "add", "--discover", "--yes")
 	require.Error(t, err, "machine add --discover with no tailscale on PATH should fail: %s", out)
