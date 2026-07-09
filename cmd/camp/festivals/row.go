@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/Obedience-Corp/camp/internal/ui/theme"
 )
 
@@ -22,6 +23,15 @@ var (
 	festBarDone  = lipgloss.NewStyle().Foreground(festPal.Success)
 	festBarFill  = lipgloss.NewStyle().Foreground(festPal.Accent)
 	festBarEmpty = lipgloss.NewStyle().Foreground(festPal.TextMuted)
+
+	festNameStyle = lipgloss.NewStyle().Foreground(festPal.TextPrimary)
+	festSelStyle  = lipgloss.NewStyle().Foreground(festPal.Accent).Bold(true)
+)
+
+const (
+	festNameMax   = 40
+	festNameMin   = 8
+	festProgressW = 20 // approx width of "[##########] nn/nn 100%"
 )
 
 // festStatusW is the badge cell width. The widest label rendered is COMPLETED
@@ -65,4 +75,38 @@ func festProgressCell(p progress) string {
 		festBarEmpty.Render(strings.Repeat(".", festBarW-filled))
 	pct := int(math.Round(ratio * 100))
 	return fmt.Sprintf("[%s] %d/%d %3d%%", bar, p.Completed, p.Total, pct)
+}
+
+func festColumns(cw int) (nameW int, showBadge, showProgress bool) {
+	// full: name + 2 gap + badge + 2 gap + progress
+	if cw >= festNameMin+2+festStatusW+2+festProgressW {
+		return min(cw-2-festStatusW-2-festProgressW, festNameMax), true, true
+	}
+	// drop progress: name + 2 gap + badge
+	if cw >= festNameMin+2+festStatusW {
+		return min(cw-2-festStatusW, festNameMax), true, false
+	}
+	// name only
+	return max(min(cw, festNameMax), 1), false, false
+}
+
+func festRow(it festivalItem, cw int, selected bool) string {
+	nameW, showBadge, showProgress := festColumns(cw)
+	cell := fmt.Sprintf("%-*s", nameW, ui.Truncate(it.Festival, nameW))
+	if selected {
+		cell = festSelStyle.Render(cell)
+	} else {
+		cell = festNameStyle.Render(cell)
+	}
+	row := cell
+	if showBadge {
+		row += "  " + festStatusCell(it.Status)
+	}
+	if showProgress {
+		row += "  " + festProgressCell(it.Progress)
+	}
+	// festProgressW is an approximation of the progress cell's width; the
+	// actual width varies with digit count, so hard-clamp as a final guard
+	// (mirrors listTUIModel.frame's use of ui.ClampWidth in list_tui_view.go).
+	return ui.ClampWidth(row, cw)
 }
