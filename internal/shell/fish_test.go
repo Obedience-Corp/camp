@@ -66,6 +66,10 @@ func TestGenerateFish_FestivalsArm(t *testing.T) {
 		{"festivals path output", "command camp festivals $rest --path-output"},
 		{"festivals temp file", "camp-festivals.XXXXXX"},
 		{"festivals absolute cd", `cd "$dest"`},
+		{"festivals org passthrough", `--org '--org=*'`},
+		{"festivals status passthrough", `--status '--status=*'`},
+		{"festivals all campaigns passthrough", `--all-campaigns`},
+		{"festivals sort passthrough", `--sort '--sort=*'`},
 	}
 	for _, check := range checks {
 		t.Run(check.name, func(t *testing.T) {
@@ -73,6 +77,9 @@ func TestGenerateFish_FestivalsArm(t *testing.T) {
 				t.Errorf("fish festivals arm missing %s: %q", check.name, check.content)
 			}
 		})
+	}
+	if strings.Contains(section, `--count '--count=*'`) || strings.Contains(section, `--format '--format=*'`) {
+		t.Error("festivals arm must not use list-only passthrough flags")
 	}
 }
 

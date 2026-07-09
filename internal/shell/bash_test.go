@@ -69,6 +69,10 @@ func TestGenerateBash_FestivalsArm(t *testing.T) {
 		{"festivals path output", `command camp festivals "$@" --path-output`},
 		{"festivals temp file", "camp-festivals.XXXXXX"},
 		{"festivals absolute cd", `cd "$dest"`},
+		{"festivals org passthrough", `--org|--org=*`},
+		{"festivals status passthrough", `--status|--status=*`},
+		{"festivals all campaigns passthrough", `--all-campaigns`},
+		{"festivals sort passthrough", `--sort|--sort=*`},
 	}
 	for _, check := range checks {
 		t.Run(check.name, func(t *testing.T) {
@@ -80,6 +84,9 @@ func TestGenerateBash_FestivalsArm(t *testing.T) {
 
 	if strings.Contains(section, `cd "$root/$dest"`) {
 		t.Error("festivals arm must not use the root-relative cd form (paths are absolute)")
+	}
+	if strings.Contains(section, `--count|--count=*`) || strings.Contains(section, `--format|--format=*`) {
+		t.Error("festivals arm must not use list-only passthrough flags")
 	}
 }
 

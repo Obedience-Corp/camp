@@ -1,17 +1,21 @@
 package festivals
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/Obedience-Corp/camp/internal/config/registryfile"
+	festdetect "github.com/Obedience-Corp/camp/internal/fest"
 )
 
 func newTestFestivalsCmd() *cobra.Command {
@@ -106,6 +110,45 @@ func TestRunFestivalsTUI_AggregateErrorBeforeOpen(t *testing.T) {
 
 	if err := runFestivalsTUI(cmd); err == nil {
 		t.Fatal("expected the aggregation error to surface before the TUI opens")
+	}
+}
+
+func TestRunFestivalsTUI_NonTTYFallsBackToText(t *testing.T) {
+	if term.IsTerminal(int(os.Stdout.Fd())) {
+		t.Skip("stdout is a TTY")
+	}
+	festPath := writeFakeFest(t, fakeFestSuccess)
+	festdetect.ResetCache()
+	t.Cleanup(festdetect.ResetCache)
+	t.Setenv("PATH", filepath.Dir(festPath)+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	campPath := campaignWithFestivals(t)
+	registryPath := filepath.Join(t.TempDir(), "registry.json")
+	t.Setenv("CAMP_REGISTRY_PATH", registryPath)
+	file := registryfile.File{
+		Version: 1,
+		Campaigns: map[string]registryfile.Campaign{
+			"x": {Name: "alpha", Path: campPath, Org: "obey", Status: "active"},
+		},
+	}
+	data, err := json.Marshal(file)
+	if err != nil {
+		t.Fatalf("marshal registry: %v", err)
+	}
+	if err := os.WriteFile(registryPath, data, 0o600); err != nil {
+		t.Fatalf("write registry: %v", err)
+	}
+
+	cmd := newTestFestivalsCmd()
+	cmd.SetContext(context.Background())
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	if err := runFestivalsTUI(cmd); err != nil {
+		t.Fatalf("fallback render: %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "f1") || !strings.Contains(got, "alpha") {
+		t.Fatalf("expected text renderer output, got:\n%s", got)
 	}
 }
 

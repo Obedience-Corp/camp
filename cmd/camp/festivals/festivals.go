@@ -97,17 +97,20 @@ func init() {
 }
 
 func runFestivals(cmd *cobra.Command, _ []string) error {
-	ctx := cmd.Context()
-	org, _ := cmd.Flags().GetString("org")
-	tags, _ := cmd.Flags().GetStringSlice("tag")
-	allCampaigns, _ := cmd.Flags().GetBool("all-campaigns")
-	asJSON, _ := cmd.Flags().GetBool("json")
-
 	// Bare TTY with no shaping flag opens the interactive browser; everything
 	// else (filters, --json, non-tty) stays on the text/JSON path below.
 	if festivalsTUIRequested(cmd, stdoutIsTTY()) {
 		return runFestivalsTUI(cmd)
 	}
+	return runFestivalsText(cmd)
+}
+
+func runFestivalsText(cmd *cobra.Command) error {
+	ctx := cmd.Context()
+	org, _ := cmd.Flags().GetString("org")
+	tags, _ := cmd.Flags().GetStringSlice("tag")
+	allCampaigns, _ := cmd.Flags().GetBool("all-campaigns")
+	asJSON, _ := cmd.Flags().GetBool("json")
 
 	reg, err := config.LoadRegistry(ctx)
 	if err != nil {

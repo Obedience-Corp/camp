@@ -41,6 +41,9 @@ var festCLILookup = fest.FindFestCLI
 
 func runFestivalsTUI(cmd *cobra.Command) error {
 	ctx := cmd.Context()
+	if !term.IsTerminal(int(os.Stdout.Fd())) {
+		return runFestivalsText(cmd)
+	}
 	pathOutput, _ := cmd.Flags().GetString("path-output")
 
 	reg, err := config.LoadRegistry(ctx)

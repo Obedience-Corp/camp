@@ -184,7 +184,7 @@ function camp --description "Camp CLI wrapper with directory-changing support"
             set -l passthrough 0
             for arg in $rest
                 switch "$arg"
-                    case --help -h --json '--json=*' --count '--count=*' --format '--format=*'
+                    case --help -h --json '--json=*' --org '--org=*' --tag '--tag=*' --status '--status=*' --all --all-campaigns --since '--since=*' --until '--until=*' --sort '--sort=*'
                         set passthrough 1
                         break
                 end

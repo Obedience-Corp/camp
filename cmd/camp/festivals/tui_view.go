@@ -135,7 +135,7 @@ func (m festivalsTUIModel) topBar() string {
 	}
 	return festTitleStyle.Render("Festivals") + "  " +
 		festMutedStyle.Render(fmt.Sprintf("%s across %s  .  active only: %s",
-			ui.CountLabel(len(m.all), "festival", "festivals"),
+			ui.CountLabel(len(m.visible), "festival", "festivals"),
 			ui.CountLabel(m.distinctCampaigns(), "campaign", "campaigns"), mode))
 }
 
@@ -204,9 +204,7 @@ func (m festivalsTUIModel) bodyLines(lay festLayout) []string {
 		first := m.visible[start]
 		out = append(out, festMutedStyle.Render("  "+first.Org+" / "+first.Campaign))
 	}
-	// headers=true keeps mid-window org/campaign boundaries visible; frame()
-	// hard-caps the final line count, so extra header lines can never overflow.
-	out = append(out, m.renderRange(start, end, true, lay.cw)...)
+	out = append(out, m.renderRange(start, end, false, lay.cw)...)
 	if showChrome {
 		out = append(out, festMutedStyle.Render(fmt.Sprintf("  [%d-%d of %d]", start+1, end, total)))
 	}

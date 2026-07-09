@@ -163,7 +163,7 @@ camp() {
       passthrough=0
       for arg in "$@"; do
         case "$arg" in
-          --help|-h|--json|--json=*|--count|--count=*|--format|--format=*)
+          --help|-h|--json|--json=*|--org|--org=*|--tag|--tag=*|--status|--status=*|--all|--all-campaigns|--since|--since=*|--until|--until=*|--sort|--sort=*)
             passthrough=1
             break
             ;;
