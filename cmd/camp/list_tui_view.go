@@ -131,7 +131,7 @@ func (m listTUIModel) frame(lines []string, lay listLayout) string {
 			lines = lines[:budget]
 		}
 	}
-	content := strings.Join(clampLines(lines, lay.cw), "\n")
+	content := strings.Join(ui.ClampLines(lines, lay.cw), "\n")
 	if lay.boxed {
 		return listBox.Render(content) + "\n"
 	}
@@ -158,7 +158,7 @@ func (m listTUIModel) bodyLines(lay listLayout) []string {
 	if showIndicator {
 		rows = budget - 1
 	}
-	start, end := windowRange(m.cursor, total, rows)
+	start, end := ui.WindowRange(m.cursor, total, rows)
 	out := m.renderRange(start, end, false, lay.cw)
 	if showIndicator {
 		out = append(out, listMutedStyle.Render(fmt.Sprintf("  [%d-%d of %d]", start+1, end, total)))
@@ -181,7 +181,7 @@ func (m listTUIModel) renderRange(start, end int, headers bool, cw int) []string
 }
 
 func (m listTUIModel) rowLine(e campaignEntry, selected bool, cw int) string {
-	prefix := "  " + cursorGlyph(selected)
+	prefix := "  " + ui.CursorGlyph(selected)
 	if cw <= 0 {
 		name := styleName(fmt.Sprintf("%-*s", listNameMax, e.Name), selected)
 		return prefix + name + "  " + listStatusCell(e.Status) + "  " +
@@ -194,12 +194,12 @@ func (m listTUIModel) rowLine(e campaignEntry, selected bool, cw int) string {
 	}
 
 	nameW, statusOn, pathW := listColumns(rem)
-	row := prefix + styleName(fmt.Sprintf("%-*s", nameW, truncate(e.Name, nameW)), selected)
+	row := prefix + styleName(fmt.Sprintf("%-*s", nameW, ui.Truncate(e.Name, nameW)), selected)
 	if statusOn {
 		row += "  " + listStatusCell(e.Status)
 	}
 	if pathW > 0 {
-		row += "  " + listMutedStyle.Render(truncate(pathutil.AbbreviateHome(e.Path), pathW))
+		row += "  " + listMutedStyle.Render(ui.Truncate(pathutil.AbbreviateHome(e.Path), pathW))
 	}
 	return row
 }
@@ -217,24 +217,6 @@ func listColumns(rem int) (nameW int, statusOn bool, pathW int) {
 	}
 	nameW = min(nameBudget-2-listPathMin, listNameMax)
 	return nameW, true, nameBudget - 2 - nameW
-}
-
-// windowRange centers a capacity-sized window on the cursor within a list of
-// total items, clamping to the list bounds.
-func windowRange(cursor, total, capacity int) (int, int) {
-	if capacity >= total {
-		return 0, total
-	}
-	start := cursor - capacity/2
-	if start < 0 {
-		start = 0
-	}
-	end := start + capacity
-	if end > total {
-		end = total
-		start = end - capacity
-	}
-	return max(start, 0), end
 }
 
 func (m listTUIModel) distinctOrgs() int {
@@ -293,13 +275,6 @@ func (m listTUIModel) overlayView() string {
 	return m.frame(lines, lay)
 }
 
-func cursorGlyph(selected bool) string {
-	if selected {
-		return "> "
-	}
-	return "  "
-}
-
 func styleName(s string, selected bool) string {
 	if selected {
 		return listSelStyle.Render(s)
@@ -307,36 +282,3 @@ func styleName(s string, selected bool) string {
 	return listNameStyle.Render(s)
 }
 
-func truncate(s string, n int) string {
-	if n <= 0 {
-		return ""
-	}
-	r := []rune(s)
-	if len(r) <= n {
-		return s
-	}
-	if n <= 3 {
-		return string(r[:n])
-	}
-	return string(r[:n-3]) + "..."
-}
-
-// clampWidth hard-limits a rendered line to w visible columns, truncating ANSI
-// styling safely. A width of zero or less leaves the line untouched.
-func clampWidth(s string, w int) string {
-	if w <= 0 {
-		return s
-	}
-	return lipgloss.NewStyle().MaxWidth(w).Render(s)
-}
-
-func clampLines(lines []string, w int) []string {
-	if w <= 0 {
-		return lines
-	}
-	out := make([]string, len(lines))
-	for i, l := range lines {
-		out[i] = clampWidth(l, w)
-	}
-	return out
-}

@@ -15,6 +15,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
+	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -132,7 +133,7 @@ func (m *listTUIModel) rebuildVisible() {
 		}
 		m.visible = out
 	}
-	m.cursor = clampIdx(m.cursor, len(m.visible))
+	m.cursor = ui.ClampIdx(m.cursor, len(m.visible))
 }
 
 func (m *listTUIModel) reload() error {
@@ -246,17 +247,4 @@ func (m listTUIModel) orgNamesCSV() string {
 		}
 	}
 	return strings.Join(names, ", ")
-}
-
-func clampIdx(v, n int) int {
-	if n <= 0 {
-		return 0
-	}
-	if v < 0 {
-		return 0
-	}
-	if v > n-1 {
-		return n - 1
-	}
-	return v
 }
