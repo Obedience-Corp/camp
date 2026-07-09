@@ -13,7 +13,7 @@ camp() {
   case "$1" in
     switch|sw)
       shift
-      local arg passthrough status
+      local arg passthrough line
       passthrough=0
       for arg in "$@"; do
         case "$arg" in
@@ -27,16 +27,11 @@ camp() {
         command camp switch "$@"
         return
       fi
-      dest=$(command camp switch "$@" --print)
-      status=$?
-      if [ -n "$dest" ]; then
-        cd "$dest" || return 1
-      elif [ "$status" -ne 0 ]; then
-        return "$status"
-      else
-        echo "camp: not found: $*" >&2
-        return 1
-      fi
+      # --shell-connect emits one line to eval: `cd -- <path>` for a local
+      # target, `exec ssh -t ...` to hop to a machine: target. On error camp
+      # prints to stderr and exits non-zero (empty stdout), so we propagate.
+      line=$(command camp switch "$@" --shell-connect) || return "$?"
+      eval "$line"
       ;;
     go|g)
       shift

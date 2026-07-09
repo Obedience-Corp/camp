@@ -8,7 +8,9 @@ package remote
 import (
 	"bytes"
 	"context"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -41,12 +43,31 @@ func authArgs(m *machines.Machine) []string {
 	return args
 }
 
-// Opts returns the ssh option args (excluding the target) for a bounded,
-// non-interactive command on m. ControlMaster multiplexing is layered on in
-// sequence 02; this is the single-connection form.
+// Opts returns the ssh option args (excluding the target) for a command on m.
+// ControlMaster multiplexing means the resolve step (ResolveRoot's
+// `camp switch --print`) and the interactive hop share ONE connection — one auth,
+// one handshake — because both build opts from the same per-machine ControlPath.
+// Conceptually mirrors the app's ssh_base_args (connection.rs:241-255); host
+// details beyond the machine's identity_file are left to the user's ~/.ssh/config.
 func Opts(m *machines.Machine) []string {
-	opts := []string{"-o", "StrictHostKeyChecking=accept-new"}
+	opts := []string{
+		"-o", "StrictHostKeyChecking=accept-new",
+		"-o", "ControlMaster=auto",
+		"-o", "ControlPath=" + controlPath(m),
+		"-o", "ControlPersist=30s",
+	}
 	return append(opts, authArgs(m)...)
+}
+
+// controlPath returns the per-machine ssh ControlMaster socket path under
+// ~/.obey/ssh-ctl and best-effort-creates the directory so ControlMaster=auto can
+// bind the socket. A short, per-id name keeps the path under the OS socket-length
+// limit for typical home directories.
+func controlPath(m *machines.Machine) string {
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, ".obey", "ssh-ctl")
+	_ = os.MkdirAll(dir, 0o700)
+	return filepath.Join(dir, m.ID+".sock")
 }
 
 // EnsureKeyAuth rejects password-auth machines: v1 terminal switch/list is

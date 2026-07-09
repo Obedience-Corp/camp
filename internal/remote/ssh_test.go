@@ -35,6 +35,27 @@ func TestOptsAuthArgs(t *testing.T) {
 	}
 }
 
+func TestOptsControlMaster(t *testing.T) {
+	m := &machines.Machine{ID: "devbox", Host: "devbox.ts.net", AuthMethod: machines.AuthSSHAgent}
+	opts := Opts(m)
+	for _, want := range []string{"ControlMaster=auto", "ControlPersist=30s"} {
+		if !slices.Contains(opts, want) {
+			t.Errorf("Opts missing %q: %v", want, opts)
+		}
+	}
+	// The ControlPath is per-machine and shared between ResolveRoot and the hop
+	// (both build opts from Opts), so multiplexing reuses one connection.
+	var ctlPath string
+	for _, o := range opts {
+		if after, ok := strings.CutPrefix(o, "ControlPath="); ok {
+			ctlPath = after
+		}
+	}
+	if !strings.HasSuffix(ctlPath, "/ssh-ctl/devbox.sock") {
+		t.Errorf("ControlPath not the per-machine socket: %q", ctlPath)
+	}
+}
+
 func TestEnsureKeyAuth(t *testing.T) {
 	if err := EnsureKeyAuth(&machines.Machine{ID: "dev", AuthMethod: machines.AuthSSHAgent}); err != nil {
 		t.Errorf("agent auth rejected: %v", err)

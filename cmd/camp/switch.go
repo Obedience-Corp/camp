@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -97,6 +98,8 @@ func init() {
 	switchCmd.Flags().String("status", "", "Only switch among campaigns with this lifecycle status")
 	switchCmd.Flags().Bool("all", false, "Include inactive and reference campaigns")
 	switchCmd.Flags().Bool("json", false, "Output selected campaign and target path as JSON")
+	switchCmd.Flags().Bool("shell-connect", false, "Emit a shell line for the camp() wrapper to eval (internal)")
+	_ = switchCmd.Flags().MarkHidden("shell-connect")
 	_ = switchCmd.RegisterFlagCompletionFunc("org", completeSwitchOrgFlag)
 	_ = switchCmd.RegisterFlagCompletionFunc("status", completeSwitchStatusFlag)
 }
@@ -245,8 +248,12 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	printOnly, _ := cmd.Flags().GetBool("print")
 	jsonOut, _ := cmd.Flags().GetBool("json")
+	shellConnect, _ := cmd.Flags().GetBool("shell-connect")
 	if printOnly && jsonOut {
 		return camperrors.New("cannot use --json with --print")
+	}
+	if shellConnect && (printOnly || jsonOut) {
+		return camperrors.New("--shell-connect cannot be combined with --print or --json")
 	}
 	scope, err := switchScopeFromFlags(cmd)
 	if err != nil {
@@ -271,7 +278,7 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		if msel.Machine != "" && msel.Machine != machines.LocalMachineID {
-			return runRemoteSwitch(ctx, cmd, msel, printOnly, jsonOut)
+			return runRemoteSwitch(ctx, cmd, msel, printOnly, shellConnect, jsonOut)
 		}
 		// Local (no "machine:" prefix, or "local:"): Remainder equals args[0]
 		// verbatim for the no-colon case, so local resolution stays byte-identical.
@@ -315,7 +322,27 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "camp: warning: failed to update last access: %v\n", err)
 	}
 
+	if shellConnect {
+		return emitShellConnect(cmd.OutOrStdout(), false, targetPath, nil)
+	}
 	return emitSwitchSelection(cmd, selected, targetPath, targetTab, printOnly, jsonOut)
+}
+
+// emitShellConnect prints exactly one shell line for the camp() wrapper to eval.
+// Local: `cd -- '<abs-path>'` (identical effect to today's --print + wrapper cd).
+// Remote: `exec ssh -t <opts> '<target>' '<cd root && exec $SHELL -l>'`, where exec
+// replaces the shell (so quitting the remote shell returns the user locally), -t
+// forces a PTY, and $SHELL expands on the REMOTE side because the whole remote
+// command is single-quoted here so the local shell never touches the '$'.
+func emitShellConnect(w io.Writer, isRemote bool, path string, m *machines.Machine) error {
+	if !isRemote {
+		_, err := fmt.Fprintf(w, "cd -- %s\n", remote.ShellQuote(path))
+		return err
+	}
+	inner := "cd " + remote.ShellQuote(path) + " && exec $SHELL -l"
+	_, err := fmt.Fprintf(w, "exec ssh -t %s %s %s\n",
+		strings.Join(remote.Opts(m), " "), remote.ShellQuote(remote.Target(m)), remote.ShellQuote(inner))
+	return err
 }
 
 func switchScopeFromFlags(cmd *cobra.Command) (cmdutil.CampaignScope, error) {
@@ -358,13 +385,17 @@ func parseSwitchArg(raw string, scope cmdutil.CampaignScope) (cmdutil.ParsedSwit
 }
 
 // runRemoteSwitch resolves a machine:campaign selector by asking the remote
-// machine's own `camp switch --print` for the absolute campaign root over ssh, so
-// the remote registry decides the path. The interactive ssh hop (--shell-connect)
-// and the csw template change land in sequence 02; until then resolution is
-// exposed via --print.
-func runRemoteSwitch(ctx context.Context, cmd *cobra.Command, msel cmdutil.ParsedMachineSelector, printOnly, jsonOut bool) error {
+// machine's own `camp switch --print` for the absolute campaign root over ssh (so
+// the remote registry decides the path), then emits the interactive ssh hop line
+// under --shell-connect. --print is local-only: it MUST print nothing for a remote
+// target so `cd "$(camp switch x --print)"` fails loudly instead of cd-ing wrong.
+func runRemoteSwitch(ctx context.Context, cmd *cobra.Command, msel cmdutil.ParsedMachineSelector, printOnly, shellConnect, jsonOut bool) error {
+	if printOnly {
+		return camperrors.New("remote target " + msel.Machine +
+			": --print is local-only; use the csw shell wrapper to hop there")
+	}
 	if jsonOut {
-		return camperrors.New("--json is not supported for a remote (machine:) switch yet; use --print")
+		return camperrors.New("--json is not supported for a remote (machine:) switch; use the csw shell wrapper")
 	}
 	mf, err := machines.Load()
 	if err != nil {
@@ -378,12 +409,11 @@ func runRemoteSwitch(ctx context.Context, cmd *cobra.Command, msel cmdutil.Parse
 	if err != nil {
 		return err
 	}
-	if printOnly {
-		_, err := fmt.Fprintln(cmd.OutOrStdout(), root)
-		return err
+	if shellConnect {
+		return emitShellConnect(cmd.OutOrStdout(), true, root, m)
 	}
 	return camperrors.New("resolved " + msel.Machine + ":" + msel.Remainder + " -> " + root +
-		" (use --print; the interactive remote hop lands in the next slice)")
+		"; run via the csw shell wrapper to hop there")
 }
 
 type switchOutput struct {
