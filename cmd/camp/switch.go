@@ -13,9 +13,11 @@ import (
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/machines"
 	"github.com/Obedience-Corp/camp/internal/nav"
 	navfuzzy "github.com/Obedience-Corp/camp/internal/nav/fuzzy"
 	"github.com/Obedience-Corp/camp/internal/nav/tui"
+	"github.com/Obedience-Corp/camp/internal/remote"
 )
 
 var switchCmd = &cobra.Command{
@@ -264,7 +266,16 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 	targetTab := ""
 
 	if len(args) == 1 {
-		parsed, err := parseSwitchArg(args[0], scope)
+		msel, err := cmdutil.ParseMachineSelector(args[0])
+		if err != nil {
+			return err
+		}
+		if msel.Machine != "" && msel.Machine != machines.LocalMachineID {
+			return runRemoteSwitch(ctx, cmd, msel, printOnly, jsonOut)
+		}
+		// Local (no "machine:" prefix, or "local:"): Remainder equals args[0]
+		// verbatim for the no-colon case, so local resolution stays byte-identical.
+		parsed, err := parseSwitchArg(msel.Remainder, scope)
 		if err != nil {
 			return err
 		}
@@ -344,6 +355,35 @@ func parseSwitchArg(raw string, scope cmdutil.CampaignScope) (cmdutil.ParsedSwit
 		}
 	}
 	return parsed, nil
+}
+
+// runRemoteSwitch resolves a machine:campaign selector by asking the remote
+// machine's own `camp switch --print` for the absolute campaign root over ssh, so
+// the remote registry decides the path. The interactive ssh hop (--shell-connect)
+// and the csw template change land in sequence 02; until then resolution is
+// exposed via --print.
+func runRemoteSwitch(ctx context.Context, cmd *cobra.Command, msel cmdutil.ParsedMachineSelector, printOnly, jsonOut bool) error {
+	if jsonOut {
+		return camperrors.New("--json is not supported for a remote (machine:) switch yet; use --print")
+	}
+	mf, err := machines.Load()
+	if err != nil {
+		return err
+	}
+	m, _, found := mf.Lookup(msel.Machine)
+	if !found {
+		return camperrors.New("unknown machine \"" + msel.Machine + "\"; add it to ~/.obey/machines.yaml")
+	}
+	root, err := remote.ResolveRoot(ctx, m, msel.Remainder)
+	if err != nil {
+		return err
+	}
+	if printOnly {
+		_, err := fmt.Fprintln(cmd.OutOrStdout(), root)
+		return err
+	}
+	return camperrors.New("resolved " + msel.Machine + ":" + msel.Remainder + " -> " + root +
+		" (use --print; the interactive remote hop lands in the next slice)")
 }
 
 type switchOutput struct {
