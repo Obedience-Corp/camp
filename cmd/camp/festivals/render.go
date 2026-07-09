@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"io"
 	"sort"
-	"strings"
-	"text/tabwriter"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 func encodeJSON(w io.Writer, v any) error {
@@ -29,7 +29,7 @@ func renderFestivalsHuman(w io.Writer, items []festivalItem, fallbackOrg string)
 				return err
 			}
 		}
-		if _, err := fmt.Fprintln(w, org); err != nil {
+		if _, err := fmt.Fprintln(w, festOrgHeader.Render(org)); err != nil {
 			return err
 		}
 		if err := renderOrgSection(w, byOrg[org]); err != nil {
@@ -47,7 +47,7 @@ func renderOrgSection(w io.Writer, byCampaign map[string][]festivalItem) error {
 	sort.Strings(campaigns)
 
 	for _, name := range campaigns {
-		if _, err := fmt.Fprintf(w, "  %s\n", name); err != nil {
+		if _, err := fmt.Fprintf(w, "  %s\n", festCampaignHeader.Render(name)); err != nil {
 			return err
 		}
 		if err := renderFestivalRows(w, byCampaign[name]); err != nil {
@@ -58,14 +58,27 @@ func renderOrgSection(w io.Writer, byCampaign map[string][]festivalItem) error {
 }
 
 func renderFestivalRows(w io.Writer, items []festivalItem) error {
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	// Shared name width for this campaign, measured on the UNSTYLED names.
+	nameW := 0
 	for _, it := range items {
-		row := fmt.Sprintf("    %s\t%s\t%d/%d", strings.ToUpper(it.Status), it.Festival, it.Progress.Completed, it.Progress.Total)
-		if _, err := fmt.Fprintln(tw, row); err != nil {
+		if n := lipgloss.Width(it.Festival); n > nameW {
+			nameW = n
+		}
+	}
+	if nameW > festNameMax {
+		nameW = festNameMax
+	}
+	if nameW < festNameMin {
+		nameW = festNameMin
+	}
+	cw := nameW + 2 + festStatusW + 2 + festProgressW
+	for _, it := range items {
+		// four-space indent under the campaign header; festRow adds no gutter.
+		if _, err := fmt.Fprintf(w, "    %s\n", festRow(it, cw, false)); err != nil {
 			return err
 		}
 	}
-	return tw.Flush()
+	return nil
 }
 
 func groupByOrgCampaign(items []festivalItem) map[string]map[string][]festivalItem {

@@ -26,12 +26,18 @@ var (
 
 	festNameStyle = lipgloss.NewStyle().Foreground(festPal.TextPrimary)
 	festSelStyle  = lipgloss.NewStyle().Foreground(festPal.Accent).Bold(true)
+
+	festOrgHeader      = lipgloss.NewStyle().Foreground(festPal.AccentAlt).Bold(true)
+	festCampaignHeader = lipgloss.NewStyle().Foreground(festPal.Accent)
 )
 
 const (
-	festNameMax   = 40
-	festNameMin   = 8
-	festProgressW = 20 // approx width of "[##########] nn/nn 100%"
+	festNameMax = 40
+	festNameMin = 8
+	// festProgressW is a conservative upper bound for the progress cell's
+	// width: "[##########] nnn/nnn 100%" (3-digit completed/total). Actual
+	// width varies with digit count, so festRow still hard-clamps to cw.
+	festProgressW = 25
 )
 
 // festStatusW is the badge cell width. The widest label rendered is COMPLETED
