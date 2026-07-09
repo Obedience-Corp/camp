@@ -50,6 +50,30 @@ func TestEmitShellConnectRemoteNoUser(t *testing.T) {
 	}
 }
 
+func TestEmitShellConnectRemoteQuotesOptsWithSpaces(t *testing.T) {
+	var buf bytes.Buffer
+	// An identity file with a space is a real case (macOS "~/Library/Application Support/…"
+	// style paths); unquoted it would split into two ssh args when the wrapper
+	// evals the line.
+	m := &machines.Machine{
+		ID:           "box",
+		Host:         "box.local",
+		AuthMethod:   machines.AuthSSHAgent,
+		IdentityFile: "/tmp/my key",
+	}
+	if err := emitShellConnect(&buf, true, "/x", m); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `'/tmp/my key'`) {
+		t.Errorf("identity file with a space must be a single quoted token: %q", out)
+	}
+	// The bare, unquoted form must not appear as adjacent tokens.
+	if strings.Contains(out, " /tmp/my key ") {
+		t.Errorf("identity path leaked unquoted: %q", out)
+	}
+}
+
 func TestEmitShellConnectRemoteInjectionSafe(t *testing.T) {
 	var buf bytes.Buffer
 	m := &machines.Machine{ID: "box", Host: "box.local", AuthMethod: machines.AuthSSHAgent}

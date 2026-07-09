@@ -141,7 +141,7 @@ func renderListTable(cmd *cobra.Command) error {
 		if err != nil {
 			return err
 		}
-		remoteResults = fanOutRemote(ctx, mf.Machines, enumerateRemote)
+		remoteResults = fanOutRemote(ctx, mf.Machines, enumerateRemoteFor(filter))
 		for _, r := range remoteResults {
 			if r.err == nil {
 				campaigns = append(campaigns, r.rows...)
@@ -149,6 +149,10 @@ func renderListTable(cmd *cobra.Command) error {
 			// A failed result becomes a labeled muted row in the human render
 			// (task 2); it never contaminates the local/reachable rows here.
 		}
+		// Correctness backstop: a version-skewed or looser remote may return rows
+		// outside the requested --org/--tag/--status, so re-apply the local filter
+		// to the combined set. Idempotent for the already-filtered local rows.
+		campaigns = filterEntries(campaigns, filter)
 	}
 
 	if listCount {

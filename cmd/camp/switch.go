@@ -354,8 +354,16 @@ func emitShellConnect(w io.Writer, isRemote bool, path string, m *machines.Machi
 		return err
 	}
 	inner := "cd " + remote.ShellQuote(path) + " && exec $SHELL -l"
+	// Quote every opt token, not just target/inner: ControlPath (under $HOME) and
+	// an -i identity file may hold spaces/metacharacters, which would otherwise
+	// split the eval'd line into the wrong argv before ssh ever runs.
+	opts := remote.Opts(m)
+	quoted := make([]string, len(opts))
+	for i, o := range opts {
+		quoted[i] = remote.ShellQuote(o)
+	}
 	_, err := fmt.Fprintf(w, "exec ssh -t %s %s %s\n",
-		strings.Join(remote.Opts(m), " "), remote.ShellQuote(remote.Target(m)), remote.ShellQuote(inner))
+		strings.Join(quoted, " "), remote.ShellQuote(remote.Target(m)), remote.ShellQuote(inner))
 	return err
 }
 

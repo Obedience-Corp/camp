@@ -46,36 +46,64 @@ func fanOutRemote(ctx context.Context, ms []machines.Machine, enumerate enumerat
 	return results
 }
 
-// enumerateRemote runs the remote machine's OWN `camp list --json` over ssh, so
+// remoteListArgs re-expresses the local list filter as flags on the remote
+// `camp list --json`. Passing --all/--status is a correctness requirement, not
+// just payload reduction: the remote default emits active campaigns only, so any
+// row outside the active set must be explicitly requested or it is never fetched
+// (a local re-filter cannot recover rows the remote never sent). --org/--tag also
+// shrink the ssh payload. renderListTable still re-filters the combined set as the
+// authoritative backstop against a version-skewed or looser remote.
+func remoteListArgs(f listFilter) string {
+	cmd := "camp list --json"
+	if f.org != "" {
+		cmd += " --org " + remote.ShellQuote(f.org)
+	}
+	for _, t := range f.tags {
+		cmd += " --tag " + remote.ShellQuote(t)
+	}
+	if f.status != "" {
+		cmd += " --status " + remote.ShellQuote(f.status)
+	}
+	if f.all {
+		cmd += " --all"
+	}
+	return cmd
+}
+
+// enumerateRemoteFor returns an enumerateFunc that runs the remote machine's OWN
+// `camp list --json` (with the active filter re-expressed as flags) over ssh, so
 // its registry, org config, and absolute paths are authoritative, then re-tags
 // each row with the machine id. Remote paths are left verbatim (meaningful only on
 // the far machine).
-func enumerateRemote(ctx context.Context, m *machines.Machine) ([]campaignEntry, error) {
-	if err := remote.EnsureKeyAuth(m); err != nil {
-		return nil, err
-	}
-	out, err := remote.Run(ctx, remote.Target(m), remote.Opts(m), "camp list --json")
-	if err != nil {
-		return nil, err
-	}
-	var rows []campaignEntry
-	if err := json.Unmarshal(out, &rows); err != nil {
-		return nil, camperrors.Wrap(err, "parse remote camp list --json")
-	}
-	names := make([]string, 0, len(rows))
-	for i := range rows {
-		rows[i].Machine = m.ID
-		// Preserve the []-not-null tags guard on re-emitted rows so a Rust Vec<T>
-		// (or any strict) consumer of `camp list --json` never sees null tags.
-		if rows[i].Tags == nil {
-			rows[i].Tags = []string{}
+func enumerateRemoteFor(f listFilter) enumerateFunc {
+	remoteCmd := remoteListArgs(f)
+	return func(ctx context.Context, m *machines.Machine) ([]campaignEntry, error) {
+		if err := remote.EnsureKeyAuth(m); err != nil {
+			return nil, err
 		}
-		names = append(names, rows[i].Name)
+		out, err := remote.Run(ctx, remote.Target(m), remote.Opts(m), remoteCmd)
+		if err != nil {
+			return nil, err
+		}
+		var rows []campaignEntry
+		if err := json.Unmarshal(out, &rows); err != nil {
+			return nil, camperrors.Wrap(err, "parse remote camp list --json")
+		}
+		names := make([]string, 0, len(rows))
+		for i := range rows {
+			rows[i].Machine = m.ID
+			// Preserve the []-not-null tags guard on re-emitted rows so a Rust Vec<T>
+			// (or any strict) consumer of `camp list --json` never sees null tags.
+			if rows[i].Tags == nil {
+				rows[i].Tags = []string{}
+			}
+			names = append(names, rows[i].Name)
+		}
+		// Warm the completion cache so `csw <id>:<tab>` has campaigns without the
+		// keystroke path ever doing a live ssh.
+		writeMachineCacheCampaigns(m.ID, names)
+		return rows, nil
 	}
-	// Warm the completion cache so `csw <id>:<tab>` has campaigns without the
-	// keystroke path ever doing a live ssh.
-	writeMachineCacheCampaigns(m.ID, names)
-	return rows, nil
 }
 
 // hasRemoteDimension reports whether the output involves any machine other than

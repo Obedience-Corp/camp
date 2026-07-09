@@ -64,7 +64,7 @@ func listTUIRequested(cmd *cobra.Command, isTTY bool) bool {
 	if interactive, _ := cmd.Flags().GetBool("interactive"); interactive {
 		return true
 	}
-	for _, f := range []string{"sort", "org", "tag", "status", "all", "group", "no-group"} {
+	for _, f := range []string{"sort", "org", "tag", "status", "all", "group", "no-group", "remote"} {
 		if cmd.Flags().Changed(f) {
 			return false
 		}

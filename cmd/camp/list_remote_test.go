@@ -6,8 +6,57 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/machines"
 )
+
+func TestRemoteListArgs(t *testing.T) {
+	cases := []struct {
+		name string
+		f    listFilter
+		want string
+	}{
+		{"empty", listFilter{}, "camp list --json"},
+		{"org", listFilter{org: "obey"}, "camp list --json --org 'obey'"},
+		{"tags repeat", listFilter{tags: []string{"a", "b"}}, "camp list --json --tag 'a' --tag 'b'"},
+		{"status", listFilter{status: "inactive"}, "camp list --json --status 'inactive'"},
+		{"all", listFilter{all: true}, "camp list --json --all"},
+		{"combined", listFilter{org: "obey", tags: []string{"x"}, all: true}, "camp list --json --org 'obey' --tag 'x' --all"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := remoteListArgs(tc.f); got != tc.want {
+				t.Errorf("remoteListArgs(%+v) = %q, want %q", tc.f, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestRemoteRowsReFilteredByOrg proves the local re-filter backstop narrows a
+// remote that returns mixed orgs (e.g. a version-skewed camp that ignored the
+// forwarded --org) down to the requested org, so `--remote --org X` never leaks
+// other orgs from the far machine.
+func TestRemoteRowsReFilteredByOrg(t *testing.T) {
+	enumerate := func(_ context.Context, m *machines.Machine) ([]campaignEntry, error) {
+		return []campaignEntry{
+			{ID: "a", Name: "keep", Org: "obey", Machine: m.ID, Status: config.StatusActive},
+			{ID: "b", Name: "drop", Org: "other", Machine: m.ID, Status: config.StatusActive},
+		}, nil
+	}
+	ms := []machines.Machine{{ID: "devbox", Host: "h"}}
+	results := fanOutRemote(context.Background(), ms, enumerate)
+
+	var combined []campaignEntry
+	for _, r := range results {
+		if r.err == nil {
+			combined = append(combined, r.rows...)
+		}
+	}
+	filtered := filterEntries(combined, listFilter{org: "obey"})
+	if len(filtered) != 1 || filtered[0].Org != "obey" || filtered[0].Machine != "devbox" {
+		t.Fatalf("org backstop failed, want single obey/devbox row, got %+v", filtered)
+	}
+}
 
 func TestFanOutRemoteReTagsAndIsolatesFailures(t *testing.T) {
 	ms := []machines.Machine{
