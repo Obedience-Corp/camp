@@ -1,11 +1,9 @@
 package festivals
 
 import (
-	"os/exec"
-	"runtime"
-	"strings"
-
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
 func (m festivalsTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -67,20 +65,6 @@ func (m *festivalsTUIModel) setStatus(s string, isErr bool) {
 	m.status, m.statusErr = s, isErr
 }
 
-// Package var so tests do not touch the real clipboard. (Candidate for the shared
-// internal/ui extraction later; kept local for now.)
-var writeClipboard = func(s string) error {
-	var c *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		c = exec.Command("pbcopy")
-	default:
-		c = exec.Command("xclip", "-selection", "clipboard")
-	}
-	c.Stdin = strings.NewReader(s)
-	return c.Run()
-}
-
 func (m *festivalsTUIModel) copyPath() error {
-	return writeClipboard(m.visible[m.cursor].Path)
+	return ui.WriteClipboard(m.visible[m.cursor].Path)
 }

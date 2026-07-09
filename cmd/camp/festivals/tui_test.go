@@ -16,6 +16,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config/registryfile"
 	festdetect "github.com/Obedience-Corp/camp/internal/fest"
+	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
 func newTestFestivalsCmd() *cobra.Command {
@@ -211,10 +212,10 @@ func TestKeymap_GotoHintWhenDisabled(t *testing.T) {
 }
 
 func TestKeymap_CopyUsesInjectedClipboard(t *testing.T) {
-	orig := writeClipboard
-	t.Cleanup(func() { writeClipboard = orig })
+	orig := ui.WriteClipboard
+	t.Cleanup(func() { ui.WriteClipboard = orig })
 	var got string
-	writeClipboard = func(s string) error { got = s; return nil }
+	ui.WriteClipboard = func(s string) error { got = s; return nil }
 	m := newFestivalsTUIModel(context.Background(), "a", []festivalItem{{Festival: "1", Path: "/p/1"}})
 	m.updateBrowse(keyMsg("y"))
 	if got != "/p/1" {

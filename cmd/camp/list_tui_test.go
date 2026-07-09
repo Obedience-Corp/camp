@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
 const listFixture = `{
@@ -259,10 +260,10 @@ func TestListTUI_MoveOrg_InvalidName_NoMutation(t *testing.T) {
 }
 
 func TestListTUI_CopyPath_UsesTilde(t *testing.T) {
-	prev := writeClipboard
+	prev := ui.WriteClipboard
 	var copied string
-	writeClipboard = func(s string) error { copied = s; return nil }
-	defer func() { writeClipboard = prev }()
+	ui.WriteClipboard = func(s string) error { copied = s; return nil }
+	defer func() { ui.WriteClipboard = prev }()
 
 	m := newTestListModel(t)
 	m = lkey(m, "y")

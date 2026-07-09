@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
-	"runtime"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -199,21 +197,8 @@ func (m *listTUIModel) mutate(id string, apply func(*config.RegisteredCampaign))
 	return m.reload()
 }
 
-// Package var so tests do not touch the real clipboard.
-var writeClipboard = func(s string) error {
-	var c *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		c = exec.Command("pbcopy")
-	default:
-		c = exec.Command("xclip", "-selection", "clipboard")
-	}
-	c.Stdin = strings.NewReader(s)
-	return c.Run()
-}
-
 func (m *listTUIModel) copyPath() error {
-	return writeClipboard(pathutil.AbbreviateHome(m.visible[m.cursor].Path))
+	return ui.WriteClipboard(pathutil.AbbreviateHome(m.visible[m.cursor].Path))
 }
 
 func (m *listTUIModel) setStatus(s string, isErr bool) {
