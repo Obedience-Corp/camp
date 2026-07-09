@@ -281,4 +281,3 @@ func styleName(s string, selected bool) string {
 	}
 	return listNameStyle.Render(s)
 }
-
