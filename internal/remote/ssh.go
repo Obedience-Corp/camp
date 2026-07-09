@@ -52,6 +52,7 @@ func authArgs(m *machines.Machine) []string {
 func Opts(m *machines.Machine) []string {
 	opts := []string{
 		"-o", "StrictHostKeyChecking=accept-new",
+		"-o", "ConnectTimeout=8",
 		"-o", "ControlMaster=auto",
 		"-o", "ControlPath=" + controlPath(m),
 		"-o", "ControlPersist=30s",

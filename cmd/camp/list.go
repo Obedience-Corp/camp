@@ -13,6 +13,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/machines"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -26,6 +27,10 @@ type campaignEntry struct {
 	Org        string    `json:"org"`
 	Status     string    `json:"status"`
 	Tags       []string  `json:"tags"`
+	// Machine is the source machine id under --remote ("local" for this machine,
+	// the machine id for a remote row). omitempty keeps default `camp list --json`
+	// byte-identical for every existing consumer when --remote is off.
+	Machine string `json:"machine,omitempty"`
 }
 
 var listCmd = &cobra.Command{
@@ -65,8 +70,9 @@ Examples:
 }
 
 var (
-	listJSON  bool
-	listCount bool
+	listJSON   bool
+	listCount  bool
+	listRemote bool
 )
 
 func init() {
@@ -84,6 +90,7 @@ func init() {
 	listCmd.Flags().Bool("all", false, "Show all statuses (default hides inactive/reference)")
 	listCmd.Flags().Bool("group", false, "Force org grouping")
 	listCmd.Flags().Bool("no-group", false, "Suppress org grouping")
+	listCmd.Flags().BoolVar(&listRemote, "remote", false, "Also list campaigns on machines in ~/.obey/machines.yaml (ssh)")
 	listCmd.Flags().BoolP("interactive", "i", false, "Open the interactive campaign browser (prints the table when stdout is not a terminal)")
 	listCmd.Flags().String("path-output", "", "Write the selected campaign path to a file (shell integration)")
 	_ = listCmd.Flags().MarkHidden("path-output")
@@ -125,6 +132,25 @@ func renderListTable(cmd *cobra.Command) error {
 	sortBy, _ := cmd.Flags().GetString("sort")
 	campaigns := filterEntries(sortCampaigns(reg.Campaigns, sortBy, reg.FallbackOrg()), filter)
 
+	var remoteResults []remoteResult
+	if listRemote {
+		for i := range campaigns {
+			campaigns[i].Machine = machines.LocalMachineID
+		}
+		mf, err := machines.Load()
+		if err != nil {
+			return err
+		}
+		remoteResults = fanOutRemote(ctx, mf.Machines, enumerateRemote)
+		for _, r := range remoteResults {
+			if r.err == nil {
+				campaigns = append(campaigns, r.rows...)
+			}
+			// A failed result becomes a labeled muted row in the human render
+			// (task 2); it never contaminates the local/reachable rows here.
+		}
+	}
+
 	if listCount {
 		if formatStr == "json" {
 			encoder := json.NewEncoder(os.Stdout)
@@ -135,7 +161,7 @@ func renderListTable(cmd *cobra.Command) error {
 		return nil
 	}
 
-	if reg.Len() == 0 {
+	if reg.Len() == 0 && !listRemote {
 		if formatStr == "json" {
 			return outputCampaigns(os.Stdout, []campaignEntry{}, formatStr)
 		}
@@ -146,6 +172,9 @@ func renderListTable(cmd *cobra.Command) error {
 		return nil
 	}
 
+	if listRemote {
+		return outputRemoteList(os.Stdout, cmd.ErrOrStderr(), campaigns, remoteResults, formatStr)
+	}
 	if formatStr == "json" {
 		return outputCampaigns(os.Stdout, campaigns, formatStr)
 	}
