@@ -13,14 +13,23 @@ var typeFilterItems = []string{"All", "Idea", "Feature", "Bug", "Research", "Cho
 // statusFilterItems are the available status filter options.
 var statusFilterItems = []string{"All", "Notes", "Inbox", "Ready", "Active", "Done", "Killed"}
 
-type explorerItemSource []*intent.Intent
+type explorerSearchCorpus []string
 
-func (s explorerItemSource) String(i int) string {
-	item := s[i]
-	return strings.Join([]string{item.Title, item.ID, item.Content}, " ")
+func (s explorerSearchCorpus) String(i int) string { return s[i] }
+
+func (s explorerSearchCorpus) Len() int { return len(s) }
+
+func buildSearchCorpus(items []*intent.Intent) []string {
+	corpus := make([]string, len(items))
+	for i, item := range items {
+		corpus[i] = strings.Join([]string{item.Title, item.ID, item.Content}, " ")
+	}
+	return corpus
 }
 
-func (s explorerItemSource) Len() int { return len(s) }
+func (m *Model) rebuildSearchCorpus() {
+	m.searchCorpus = buildSearchCorpus(m.intents)
+}
 
 // applyFilters filters intents using search query and type filter.
 func (m *Model) applyFilters() {
@@ -47,7 +56,10 @@ func (m *Model) applyFilters() {
 	if query == "" {
 		filtered = m.intents
 	} else {
-		matches := fuzzy.FindFrom(query, explorerItemSource(m.intents))
+		if len(m.searchCorpus) != len(m.intents) {
+			m.rebuildSearchCorpus()
+		}
+		matches := fuzzy.FindFrom(query, explorerSearchCorpus(m.searchCorpus))
 		filtered = make([]*intent.Intent, len(matches))
 		for i, match := range matches {
 			filtered[i] = m.intents[match.Index]

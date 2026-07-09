@@ -51,8 +51,10 @@ type Model struct {
 	// Data
 	intents         []*intent.Intent
 	filteredIntents []*intent.Intent
+	searchCorpus    []string
 	groups          []IntentGroup
 	service         *intent.IntentService
+	autoCommit      *autoCommitter
 	ctx             context.Context
 
 	// Cursor position in nested structure
@@ -204,6 +206,7 @@ func NewModel(ctx context.Context, svc *intent.IntentService, conceptSvc concept
 
 	return Model{
 		service:         svc,
+		autoCommit:      newAutoCommitter(),
 		ctx:             ctx,
 		conceptSvc:      conceptSvc,
 		cursorGroup:     0,
