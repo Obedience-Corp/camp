@@ -1,12 +1,10 @@
 package intent
 
 import (
-	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
-	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
@@ -127,50 +125,19 @@ func runIntentExplore(cmd *cobra.Command, args []string) error {
 	}
 	defer restoreLogger()
 
-	// The explorer fires intent auto-commits asynchronously to keep the UI
-	// responsive, so any still in flight must be drained before this function
-	// returns; otherwise a change already written to disk could exit without
-	// ever being committed. Deferred (not inline after p.Run) so the drain also
-	// covers error-exit paths, and registered after restoreLogger so LIFO runs
-	// it first, while slog is still routed to the TUI log file.
-	defer drainExplorerAutoCommits(cmd.ErrOrStderr())
-
-	// Create and run the TUI
 	model := explorer.NewModel(ctx, svc, conceptSvc, intentsDir, campaignRoot, cfg.ID, author, shortcuts).
 		WithAvailableTags(cfg.IntentTags())
-	p := tea.NewProgram(model, tea.WithAltScreen())
 
-	if _, err := p.Run(); err != nil {
+	// Deferred after restoreLogger so LIFO drains in-flight auto-commits (on both
+	// success and error exits) while slog is still routed to the TUI log file.
+	defer model.DrainAutoCommits(cmd.ErrOrStderr())
+
+	if _, err := tea.NewProgram(model, tea.WithAltScreen()).Run(); err != nil {
 		return camperrors.Wrap(err, "running explorer")
 	}
 
 	return nil
 }
-
-// drainExplorerAutoCommits waits for the explorer's background intent
-// auto-commits to finish on exit. A fast drain stays silent; if commits are
-// still running (e.g. contending for the git lock) it tells the user why the
-// terminal is pausing, then waits a bounded amount so a wedged lock cannot hang
-// the exit.
-func drainExplorerAutoCommits(w io.Writer) {
-	if explorer.WaitForAutoCommits(quickDrainTimeout) {
-		return
-	}
-	_, _ = fmt.Fprintln(w, "Finalizing intent commits...")
-	if !explorer.WaitForAutoCommits(autoCommitDrainTimeout) {
-		_, _ = fmt.Fprintln(w, "warning: some intent auto-commits did not finish; run 'camp status' to check for uncommitted intent changes")
-	}
-}
-
-// quickDrainTimeout is the silent grace period for in-flight auto-commits to
-// finish on exit before the user is told the shutdown is waiting on them.
-const quickDrainTimeout = 300 * time.Millisecond
-
-// autoCommitDrainTimeout bounds how long the explorer waits for background
-// auto-commits to finish on exit. The commit path retries on git lock
-// contention for several seconds (internal/git/retry.go), so this caps the wait
-// generously while still ensuring a wedged lock cannot hang process shutdown.
-const autoCommitDrainTimeout = 15 * time.Second
 
 // quietSlogDuringTUI swaps slog.Default with a handler that writes to a log
 // file under <campaignRoot>/.campaign/logs/ instead of stderr. It returns a

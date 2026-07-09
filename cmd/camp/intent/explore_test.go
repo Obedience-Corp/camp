@@ -104,15 +104,3 @@ func TestQuietSlogDuringTUI_FallsBackToDiscardOnDirError(t *testing.T) {
 	// Should not panic when emitting to the discard handler.
 	slog.Info("info-to-discard", "key", "value")
 }
-
-// TestDrainExplorerAutoCommits_SilentWhenNothingPending asserts the exit drain
-// returns without printing anything when no background auto-commits are in
-// flight, so a normal quit does not spam the terminal with "Finalizing..."
-// noise on every exit.
-func TestDrainExplorerAutoCommits_SilentWhenNothingPending(t *testing.T) {
-	var buf bytes.Buffer
-	drainExplorerAutoCommits(&buf)
-	if buf.Len() != 0 {
-		t.Fatalf("expected no output when no commits pending, got %q", buf.String())
-	}
-}

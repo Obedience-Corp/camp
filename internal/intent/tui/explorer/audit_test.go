@@ -1,6 +1,7 @@
 package explorer
 
 import (
+	"bytes"
 	"context"
 	"path/filepath"
 	"reflect"
@@ -41,21 +42,18 @@ func TestAutoCommitFiles_SkipsAuditLogWithoutIntentsDir(t *testing.T) {
 }
 
 func TestAutoCommitIntentReturnsBeforeCommitFinishes(t *testing.T) {
-	oldRun := runAutoCommitIntent
-	defer func() { runAutoCommitIntent = oldRun }()
-
 	started := make(chan struct{})
 	release := make(chan struct{})
 	done := make(chan struct{})
-	runAutoCommitIntent = func(ctx context.Context, opts commit.IntentOptions) {
-		close(started)
-		<-release
-		close(done)
-	}
 
 	campaignRoot := filepath.Join(string(filepath.Separator), "tmp", "campaign")
 	intentsDir := filepath.Join(campaignRoot, ".campaign", "intents")
 	m := NewModel(context.Background(), nil, nil, intentsDir, campaignRoot, "test-id", "", nil)
+	m.autoCommit.run = func(ctx context.Context, opts commit.IntentOptions) {
+		close(started)
+		<-release
+		close(done)
+	}
 
 	returned := make(chan struct{})
 	go func() {
@@ -90,16 +88,16 @@ func TestAutoCommitIntentReturnsBeforeCommitFinishes(t *testing.T) {
 }
 
 func TestAutoCommitIntentSerializesBackgroundCommits(t *testing.T) {
-	oldRun := runAutoCommitIntent
-	defer func() { runAutoCommitIntent = oldRun }()
-
 	firstStarted := make(chan struct{})
 	releaseFirst := make(chan struct{})
 	secondStarted := make(chan struct{})
 	done := make(chan struct{})
 	calls := 0
 
-	runAutoCommitIntent = func(ctx context.Context, opts commit.IntentOptions) {
+	campaignRoot := filepath.Join(string(filepath.Separator), "tmp", "campaign")
+	intentsDir := filepath.Join(campaignRoot, ".campaign", "intents")
+	m := NewModel(context.Background(), nil, nil, intentsDir, campaignRoot, "test-id", "", nil)
+	m.autoCommit.run = func(ctx context.Context, opts commit.IntentOptions) {
 		calls++
 		switch calls {
 		case 1:
@@ -112,10 +110,6 @@ func TestAutoCommitIntentSerializesBackgroundCommits(t *testing.T) {
 			t.Fatalf("unexpected auto-commit call %d", calls)
 		}
 	}
-
-	campaignRoot := filepath.Join(string(filepath.Separator), "tmp", "campaign")
-	intentsDir := filepath.Join(campaignRoot, ".campaign", "intents")
-	m := NewModel(context.Background(), nil, nil, intentsDir, campaignRoot, "test-id", "", nil)
 
 	m.autoCommitIntent(commit.IntentMove, "First action", "Moved", filepath.Join(intentsDir, "first.md"))
 	select {
@@ -139,39 +133,42 @@ func TestAutoCommitIntentSerializesBackgroundCommits(t *testing.T) {
 	}
 }
 
-func TestWaitForAutoCommitsDrainsInFlightCommit(t *testing.T) {
-	oldRun := runAutoCommitIntent
-	defer func() { runAutoCommitIntent = oldRun }()
-
-	// Absorb any stragglers from prior tests so the count starts clean.
-	WaitForAutoCommits(time.Second)
-
+func TestAutoCommitterDrainsInFlightCommit(t *testing.T) {
 	release := make(chan struct{})
 	committed := make(chan struct{})
-	runAutoCommitIntent = func(ctx context.Context, opts commit.IntentOptions) {
-		<-release
-		close(committed)
-	}
 
 	campaignRoot := filepath.Join(string(filepath.Separator), "tmp", "campaign")
 	intentsDir := filepath.Join(campaignRoot, ".campaign", "intents")
 	m := NewModel(context.Background(), nil, nil, intentsDir, campaignRoot, "test-id", "", nil)
+	m.autoCommit.run = func(ctx context.Context, opts commit.IntentOptions) {
+		<-release
+		close(committed)
+	}
 
 	m.autoCommitIntent(commit.IntentMove, "Pending action", "Moved", filepath.Join(intentsDir, "pending.md"))
 
-	if WaitForAutoCommits(50 * time.Millisecond) {
-		t.Fatal("WaitForAutoCommits reported drained while a commit was still in flight")
+	if m.autoCommit.wait(50 * time.Millisecond) {
+		t.Fatal("wait reported drained while a commit was still in flight")
 	}
 
 	close(release)
 
-	if !WaitForAutoCommits(time.Second) {
-		t.Fatal("WaitForAutoCommits did not drain after the commit finished")
+	if !m.autoCommit.wait(time.Second) {
+		t.Fatal("wait did not drain after the commit finished")
 	}
 
 	select {
 	case <-committed:
 	default:
 		t.Fatal("auto-commit did not run to completion before drain returned")
+	}
+}
+
+func TestDrainAutoCommitsSilentWhenNothingPending(t *testing.T) {
+	m := NewModel(context.Background(), nil, nil, "/tmp/intents", "/tmp/campaign", "test-id", "", nil)
+	var buf bytes.Buffer
+	m.DrainAutoCommits(&buf)
+	if buf.Len() != 0 {
+		t.Fatalf("expected no output when no commits pending, got %q", buf.String())
 	}
 }
