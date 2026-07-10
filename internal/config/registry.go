@@ -188,6 +188,12 @@ var ErrEmptyID = errors.New("campaign ID cannot be empty")
 // The campaign is keyed by its ID for uniqueness.
 // Returns an error if the path is already registered to a different campaign.
 func (r *Registry) Register(id, name, path string, campaignType CampaignType) error {
+	return r.RegisterWithOrg(id, name, path, campaignType, "")
+}
+
+// RegisterWithOrg registers a campaign and assigns it to org when non-empty.
+// The org is ensured in r.Orgs in the same mutation (created if new).
+func (r *Registry) RegisterWithOrg(id, name, path string, campaignType CampaignType, org string) error {
 	// Validate: ID must not be empty
 	if id == "" {
 		return ErrEmptyID
@@ -220,12 +226,37 @@ func (r *Registry) Register(id, name, path string, campaignType CampaignType) er
 		entry.Org = existing.Org
 		entry.Tags = existing.Tags
 		entry.Status = existing.Status
+		// Explicit org on re-register overrides prior membership.
+		if org != "" {
+			entry.Org = org
+		}
+	} else if org != "" {
+		entry.Org = org
+	}
+
+	// Persist the org in the first-class set when membership is explicit.
+	// Empty Org still normalizes to the fallback on load (not stored).
+	if entry.Org != "" {
+		r.EnsureOrg(entry.Org)
 	}
 
 	r.Campaigns[id] = entry
 	r.pathIndex[path] = id
 
 	return nil
+}
+
+// EnsureOrg appends name to r.Orgs if absent. Idempotent.
+func (r *Registry) EnsureOrg(name string) {
+	if name == "" {
+		return
+	}
+	for _, o := range r.Orgs {
+		if o.Name == name {
+			return
+		}
+	}
+	r.Orgs = append(r.Orgs, OrgEntry{Name: name})
 }
 
 // UnregisterByID removes a campaign from the registry by ID.

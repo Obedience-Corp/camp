@@ -108,10 +108,7 @@ func reassignOrg(cmd *cobra.Command, target func(*config.Registry) string, campa
 
 // ensureOrg appends name to reg.Orgs if it is not already present. Idempotent.
 func ensureOrg(reg *config.Registry, name string) {
-	if name == "" || orgExists(reg, name) {
-		return
-	}
-	reg.Orgs = append(reg.Orgs, config.OrgEntry{Name: name})
+	reg.EnsureOrg(name)
 }
 
 func orgExists(reg *config.Registry, name string) bool {
