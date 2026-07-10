@@ -151,7 +151,7 @@ func StageAndCommitDungeonMove(ctx context.Context, move *DungeonMoveCommit) *Du
 	outcome := &DungeonMoveCommitOutcome{}
 	files := commit.NormalizeFiles(move.CampaignRoot, move.DestinationPaths...)
 	files = append(files, commit.NormalizeFiles(move.CampaignRoot, move.RewrittenFiles...)...)
-	preStaged, err := stageTrackedMoveSourceDeletions(ctx, move.CampaignRoot, move.SourcePaths)
+	preStaged, err := StageTrackedMoveSourceDeletions(ctx, move.CampaignRoot, move.SourcePaths)
 	if err != nil {
 		outcome.StagingErr = err
 		return outcome
@@ -205,7 +205,11 @@ func CommitDungeonMove(ctx context.Context, move *DungeonMoveCommit) error {
 	return outcome.Err()
 }
 
-func stageTrackedMoveSourceDeletions(ctx context.Context, campaignRoot string, sourcePaths []string) ([]string, error) {
+// StageTrackedMoveSourceDeletions pre-stages the deletion of tracked source
+// paths so a selective commit records a directory move as a rename instead of
+// leaving stale deletions unstaged. Returns the campaign-relative paths that
+// were staged; untracked sources are skipped.
+func StageTrackedMoveSourceDeletions(ctx context.Context, campaignRoot string, sourcePaths []string) ([]string, error) {
 	sources := commit.NormalizeFiles(campaignRoot, sourcePaths...)
 	if len(sources) == 0 {
 		return nil, nil

@@ -16,17 +16,21 @@ const AuditFile = ".workitems.jsonl"
 
 type EventType string
 
-const EventPromote EventType = "promote"
+const (
+	EventPromote EventType = "promote"
+	EventGather  EventType = "gather"
+)
 
 type Event struct {
-	Timestamp  time.Time `json:"ts"`
-	Event      EventType `json:"event"`
-	ID         string    `json:"id"`
-	Type       string    `json:"type,omitempty"`
-	From       string    `json:"from,omitempty"`
-	To         string    `json:"to,omitempty"`
-	Target     string    `json:"target,omitempty"`
-	PromotedTo string    `json:"promoted_to,omitempty"`
+	Timestamp    time.Time `json:"ts"`
+	Event        EventType `json:"event"`
+	ID           string    `json:"id"`
+	Type         string    `json:"type,omitempty"`
+	From         string    `json:"from,omitempty"`
+	To           string    `json:"to,omitempty"`
+	Target       string    `json:"target,omitempty"`
+	PromotedTo   string    `json:"promoted_to,omitempty"`
+	GatheredInto string    `json:"gathered_into,omitempty"`
 }
 
 func AppendEvent(ctx context.Context, campaignRoot string, e Event) error {
