@@ -2,6 +2,8 @@ package org
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -330,6 +332,45 @@ func TestOrgTUI_NewCampaign_CallsSeam(t *testing.T) {
 	}
 	if m.statusErr {
 		t.Fatalf("status error: %s", m.status)
+	}
+}
+
+func TestDefaultCreateCampaignInOrgRejectsPathLikeNames(t *testing.T) {
+	dir := t.TempDir()
+	base := filepath.Join(dir, "campaigns")
+	t.Setenv("HOME", dir)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	t.Setenv("CAMP_REGISTRY_PATH", filepath.Join(dir, "registry.json"))
+
+	cases := []struct {
+		name       string
+		shouldMiss string
+	}{
+		{name: "../outside", shouldMiss: filepath.Join(dir, "outside")},
+		{name: "nested/name", shouldMiss: filepath.Join(base, "nested")},
+		{name: `nested\name`, shouldMiss: filepath.Join(base, `nested\name`)},
+		{name: ".hidden", shouldMiss: filepath.Join(base, ".hidden")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := defaultCreateCampaignInOrg(context.Background(), tc.name, "obey")
+			if err == nil {
+				t.Fatalf("defaultCreateCampaignInOrg(%q) = nil, want validation error", tc.name)
+			}
+			if _, statErr := os.Stat(tc.shouldMiss); !os.IsNotExist(statErr) {
+				t.Fatalf("invalid name %q created %s (stat err=%v)", tc.name, tc.shouldMiss, statErr)
+			}
+		})
+	}
+	if _, statErr := os.Stat(base); !os.IsNotExist(statErr) {
+		t.Fatalf("invalid names should not create campaigns base %s (stat err=%v)", base, statErr)
+	}
+	reg, err := config.LoadRegistry(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reg.Campaigns) != 0 {
+		t.Fatalf("invalid names wrote registry campaigns: %d", len(reg.Campaigns))
 	}
 }
 
