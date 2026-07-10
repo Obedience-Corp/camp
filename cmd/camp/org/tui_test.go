@@ -195,3 +195,151 @@ func TestOrgTUI_ViewSmoke(t *testing.T) {
 		t.Error("narrow view should not be empty")
 	}
 }
+
+func TestOrgTUI_CreateEmptyOrg(t *testing.T) {
+	// 08-T1
+	m := newTestOrgModel(t)
+	m = key(m, "n")
+	if m.overlay != overlayCreateEmpty {
+		t.Fatalf("overlay = %v, want create empty", m.overlay)
+	}
+	m = key(m, "client-acme")
+	m = key(m, "enter")
+	if m.statusErr {
+		t.Fatalf("error: %s", m.status)
+	}
+	if m.overlay != overlayNone {
+		t.Fatal("overlay should close")
+	}
+	found := false
+	for _, o := range m.orgs {
+		if o.Org == "client-acme" && o.Campaigns == 0 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("empty org not listed: %v", m.orgs)
+	}
+}
+
+func TestOrgTUI_CreateEmptyOrg_InvalidKeepsOverlay(t *testing.T) {
+	m := newTestOrgModel(t)
+	m = key(m, "n")
+	m = key(m, "Bad Name")
+	m = key(m, "enter")
+	if !m.statusErr {
+		t.Fatal("expected error for invalid name")
+	}
+	if m.overlay != overlayCreateEmpty {
+		t.Fatalf("overlay should stay open, got %v", m.overlay)
+	}
+	m = key(m, "esc")
+	if m.overlay != overlayNone {
+		t.Fatal("esc should cancel")
+	}
+}
+
+func TestOrgTUI_DeleteEmptyOrg_Confirm(t *testing.T) {
+	// seed empty org
+	setOrgRegistry(t, fixtureWithEmptyOrg)
+	reg, err := config.LoadRegistry(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newOrgTUIModel(context.Background(), reg)
+
+	// find client-acme cursor
+	for i, o := range m.orgs {
+		if o.Org == "client-acme" {
+			m.orgCursor = i
+			m.syncFocusedOrg()
+			break
+		}
+	}
+	m = key(m, "x")
+	if m.overlay != overlayConfirmDelete {
+		t.Fatalf("overlay = %v, want confirm delete", m.overlay)
+	}
+	// before confirm, org still present
+	regMid, _ := config.LoadRegistry(context.Background())
+	if !orgExists(regMid, "client-acme") {
+		t.Fatal("org deleted before confirm")
+	}
+	m = key(m, "y")
+	if m.statusErr {
+		t.Fatalf("delete error: %s", m.status)
+	}
+	regAfter, _ := config.LoadRegistry(context.Background())
+	if orgExists(regAfter, "client-acme") {
+		t.Fatal("org still present after confirm")
+	}
+}
+
+func TestOrgTUI_DeleteGuards(t *testing.T) {
+	// 08-T3
+	m := newTestOrgModel(t)
+	// fallback first
+	m = key(m, "x")
+	if !m.statusErr || !strings.Contains(m.status, "fallback") {
+		t.Fatalf("expected fallback guard, status=%q", m.status)
+	}
+	// non-empty obey
+	m = key(m, "j") // obey
+	before, _ := config.LoadRegistry(context.Background())
+	m = key(m, "x")
+	if !m.statusErr || !strings.Contains(m.status, "member") {
+		t.Fatalf("expected members guard, status=%q", m.status)
+	}
+	after, _ := config.LoadRegistry(context.Background())
+	if len(before.Orgs) != len(after.Orgs) {
+		t.Fatal("registry mutated on guarded delete")
+	}
+}
+
+func TestOrgTUI_NewCampaign_CallsSeam(t *testing.T) {
+	// 08-T4
+	var gotName, gotOrg string
+	prev := createCampaignInOrg
+	createCampaignInOrg = func(ctx context.Context, name, org string) error {
+		gotName, gotOrg = name, org
+		return nil
+	}
+	t.Cleanup(func() { createCampaignInOrg = prev })
+
+	m := newTestOrgModel(t)
+	m = key(m, "j") // obey
+	m = key(m, "N")
+	if m.overlay != overlayNewCampaign {
+		t.Fatalf("overlay = %v", m.overlay)
+	}
+	if m.pendingOrg != "obey" {
+		t.Fatalf("pendingOrg = %q", m.pendingOrg)
+	}
+	m = key(m, "new-demo")
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(orgTUIModel)
+	if cmd == nil {
+		t.Fatal("expected async create cmd")
+	}
+	// Run the cmd synchronously
+	msg := cmd()
+	next, _ = m.Update(msg)
+	m = next.(orgTUIModel)
+	if gotName != "new-demo" || gotOrg != "obey" {
+		t.Fatalf("seam called with name=%q org=%q", gotName, gotOrg)
+	}
+	if m.statusErr {
+		t.Fatalf("status error: %s", m.status)
+	}
+}
+
+func TestOrgTUI_HelpAdvertisesNewKeys(t *testing.T) {
+	m := newTestOrgModel(t)
+	m.width = 120
+	out := m.View()
+	for _, want := range []string{"n: new org", "N: new campaign", "x: delete"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("help missing %q:\n%s", want, out)
+		}
+	}
+}
