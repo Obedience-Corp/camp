@@ -37,6 +37,10 @@ func LoadRegistry(ctx context.Context) (*Registry, error) {
 	reg := NewRegistry()
 	reg.Version = file.Version
 	reg.DefaultOrg = file.DefaultOrg
+	reg.Orgs = make([]OrgEntry, 0, len(file.Orgs))
+	for _, o := range file.Orgs {
+		reg.Orgs = append(reg.Orgs, OrgEntry{Name: o.Name})
+	}
 	fallback := reg.FallbackOrg()
 	for id, entry := range file.Campaigns {
 		c := RegisteredCampaign{
@@ -58,9 +62,33 @@ func LoadRegistry(ctx context.Context) (*Registry, error) {
 		reg.Version = RegistryVersion
 	}
 
+	reg.reconcileOrgs()
 	reg.rebuildPathIndex()
 
 	return reg, nil
+}
+
+// reconcileOrgs ensures reg.Orgs contains every persisted org, every org named
+// by a campaign, and the fallback org, deduped by name. Idempotent.
+func (r *Registry) reconcileOrgs() {
+	seen := make(map[string]bool)
+	ordered := make([]OrgEntry, 0, len(r.Orgs)+len(r.Campaigns)+1)
+	add := func(name string) {
+		if name == "" || seen[name] {
+			return
+		}
+		seen[name] = true
+		ordered = append(ordered, OrgEntry{Name: name})
+	}
+	add(r.FallbackOrg()) // fallback always present (synthesized, Q12)
+	for _, o := range r.Orgs {
+		add(o.Name)
+	}
+	for _, c := range r.Campaigns {
+		// c.Org is already normalized to the fallback if empty.
+		add(c.Org)
+	}
+	r.Orgs = ordered
 }
 
 // SaveRegistry saves the campaign registry to ~/.obey/campaign/registry.json.
