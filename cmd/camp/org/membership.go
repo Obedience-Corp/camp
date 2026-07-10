@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/config"
@@ -141,7 +142,8 @@ func renameOrgEntry(reg *config.Registry, oldName, newName string) {
 	}
 }
 
-// membersOf returns campaigns whose Org equals name.
+// membersOf returns campaigns whose Org equals name, ordered by name then ID so
+// callers (e.g. --force delete reassignment) produce stable, deterministic output.
 func membersOf(reg *config.Registry, name string) []config.RegisteredCampaign {
 	var members []config.RegisteredCampaign
 	for _, c := range reg.Campaigns {
@@ -149,6 +151,12 @@ func membersOf(reg *config.Registry, name string) []config.RegisteredCampaign {
 			members = append(members, c)
 		}
 	}
+	sort.Slice(members, func(i, j int) bool {
+		if members[i].Name != members[j].Name {
+			return members[i].Name < members[j].Name
+		}
+		return members[i].ID < members[j].ID
+	})
 	return members
 }
 

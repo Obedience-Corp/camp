@@ -74,27 +74,29 @@ type orgCreateEmptyResult struct {
 
 func createEmptyOrg(cmd *cobra.Command, org string, asJSON bool) error {
 	created := false
+	members := 0
 	err := config.UpdateRegistry(cmd.Context(), func(reg *config.Registry) error {
 		if !orgExists(reg, org) {
 			created = true
 		}
 		ensureOrg(reg, org)
+		members = len(membersOf(reg, org))
 		return nil
 	})
 	if err != nil {
 		return err
 	}
-	result := orgCreateEmptyResult{Org: org, Created: created, Members: 0}
+	result := orgCreateEmptyResult{Org: org, Created: created, Members: members}
 	if asJSON {
 		enc := json.NewEncoder(cmd.OutOrStdout())
 		enc.SetIndent("", "  ")
 		return enc.Encode(result)
 	}
 	if created {
-		_, err := fmt.Fprintf(cmd.OutOrStdout(), "created org %q (0 members)\n", org)
+		_, err := fmt.Fprintf(cmd.OutOrStdout(), "created org %q (%d members)\n", org, members)
 		return err
 	}
-	_, err = fmt.Fprintf(cmd.OutOrStdout(), "org %q already exists (0 members added)\n", org)
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "org %q already exists (%d members)\n", org, members)
 	return err
 }
 

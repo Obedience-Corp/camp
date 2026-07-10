@@ -52,9 +52,11 @@ func defaultCreateCampaignInOrg(ctx context.Context, name, org string) error {
 		TypeStr:     string(config.CampaignTypeProduct),
 		Description: "Created from camp org browser",
 		Mission:     "Created from camp org browser",
-		NoGit:       true,
-		NoSkills:    true,
-		Org:         org,
+		// Match `camp create` defaults (git init + skills linking) so a campaign
+		// made from the org browser is not a silent subset of `camp create`.
+		NoGit:    false,
+		NoSkills: false,
+		Org:      org,
 	}
 	// Non-interactive: description/mission already set, no forms.
 	return initcmd.RunFlow(ctx, p, initcmd.Writers{HumanOut: os.Stderr}, false)

@@ -88,10 +88,6 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		displayName = name
 	}
 
-	if dryRun && org != "" {
-		_, _ = fmt.Fprintf(w.HumanOut, "would assign org: %s\n", org)
-	}
-
 	p := initcmd.Params{
 		Dir:         target,
 		Name:        displayName,

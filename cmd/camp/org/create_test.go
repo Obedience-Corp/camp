@@ -180,3 +180,23 @@ func TestOrgCreate_JoinPersistsOrgAfterLastMemberRemoved(t *testing.T) {
 		t.Fatalf("alpha org = %q, want default", got)
 	}
 }
+
+func TestOrgCreate_Empty_PopulatedOrg_ReportsActualCount(t *testing.T) {
+	// create --empty on an org that already has members must report the actual
+	// current membership count, not a hardcoded 0 (PR #387 review cleanup).
+	setOrgRegistry(t, orgFixture) // org "obey" already has 2 members (beta, gamma)
+	out, err := execOrgWithFlags(t, runOrgCreate, map[string]bool{"empty": true, "json": true}, "obey")
+	if err != nil {
+		t.Fatalf("create --empty on existing org: %v", err)
+	}
+	var result orgCreateEmptyResult
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("unmarshal: %v\nout=%s", err, out)
+	}
+	if result.Created {
+		t.Fatalf("Created = true, want false for an existing org")
+	}
+	if result.Members != 2 {
+		t.Fatalf("Members = %d, want 2 (actual current membership, not hardcoded 0)", result.Members)
+	}
+}
