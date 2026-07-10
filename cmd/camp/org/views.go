@@ -129,29 +129,26 @@ func renameOrgInRegistry(reg *config.Registry, oldOrg, newOrg string) (int, erro
 	if oldOrg == newOrg {
 		return 0, camperrors.NewValidation("org", "old and new org are the same: \""+oldOrg+"\"", nil)
 	}
-	fallback := reg.FallbackOrg()
-	isFallback := oldOrg == fallback
-
-	var memberIDs []string
-	for _, c := range reg.ListAll() {
-		switch c.Org {
-		case newOrg:
-			if newOrg != oldOrg {
-				return 0, camperrors.NewValidation("org",
-					"org \""+newOrg+"\" already exists; no implicit merge", nil)
-			}
-		case oldOrg:
-			memberIDs = append(memberIDs, c.ID)
-		}
-	}
-	if len(memberIDs) == 0 && !isFallback {
+	if !orgExists(reg, oldOrg) {
 		return 0, camperrors.NewNotFound("org", oldOrg, nil)
 	}
-	for _, id := range memberIDs {
-		e := reg.Campaigns[id]
-		e.Org = newOrg
-		reg.Campaigns[id] = e
+	if orgExists(reg, newOrg) {
+		return 0, camperrors.NewValidation("org",
+			fmt.Sprintf("target org %q already exists; no implicit merge", newOrg), nil)
 	}
+
+	fallback := reg.FallbackOrg()
+	isFallback := oldOrg == fallback
+	n := 0
+	for id, c := range reg.Campaigns {
+		if c.Org != oldOrg {
+			continue
+		}
+		c.Org = newOrg
+		reg.Campaigns[id] = c
+		n++
+	}
+	renameOrgEntry(reg, oldOrg, newOrg)
 	if isFallback {
 		if newOrg == config.DefaultOrg {
 			reg.DefaultOrg = ""
@@ -159,7 +156,7 @@ func renameOrgInRegistry(reg *config.Registry, oldOrg, newOrg string) (int, erro
 			reg.DefaultOrg = newOrg
 		}
 	}
-	return len(memberIDs), nil
+	return n, nil
 }
 
 func runOrgList(cmd *cobra.Command, _ []string) error {

@@ -134,6 +134,16 @@ func removeOrg(reg *config.Registry, name string) {
 	reg.Orgs = out
 }
 
+// renameOrgEntry renames an OrgEntry in reg.Orgs. No-op if oldName is absent.
+func renameOrgEntry(reg *config.Registry, oldName, newName string) {
+	for i, o := range reg.Orgs {
+		if o.Name == oldName {
+			reg.Orgs[i].Name = newName
+			return
+		}
+	}
+}
+
 // membersOf returns campaigns whose Org equals name.
 func membersOf(reg *config.Registry, name string) []config.RegisteredCampaign {
 	var members []config.RegisteredCampaign
