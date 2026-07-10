@@ -44,16 +44,15 @@ function camp --description "Camp CLI wrapper with directory-changing support"
                 command camp switch $rest
                 return $status
             end
-            set -l dest (command camp switch $rest --print)
+            # --shell-connect emits one line to eval: `cd -- <path>` for a local
+            # target, `exec ssh -t ...` to hop to a machine: target. On error camp
+            # prints to stderr and exits non-zero (empty stdout), so we propagate.
+            set -l line (command camp switch $rest --shell-connect)
             set -l cmd_status $status
-            if test -n "$dest"
-                cd $dest
-            else if test "$cmd_status" -ne 0
+            if test "$cmd_status" -ne 0
                 return $cmd_status
-            else
-                echo "camp: not found: $rest" >&2
-                return 1
             end
+            eval "$line"
         case go g
             set -l rest $argv[2..-1]
             set -l passthrough 0
