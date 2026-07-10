@@ -95,6 +95,14 @@ func SaveRegistry(ctx context.Context, reg *Registry) error {
 func denormalizeForPersist(reg *Registry) *Registry {
 	fallback := reg.FallbackOrg()
 	out := *reg
+	// Fallback is synthesized on load, not persisted (Q12).
+	out.Orgs = make([]OrgEntry, 0, len(reg.Orgs))
+	for _, o := range reg.Orgs {
+		if o.Name == fallback {
+			continue
+		}
+		out.Orgs = append(out.Orgs, o)
+	}
 	out.Campaigns = make(map[string]RegisteredCampaign, len(reg.Campaigns))
 	for id, c := range reg.Campaigns {
 		if c.Org == fallback {
