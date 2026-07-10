@@ -350,6 +350,8 @@ func (m Model) handleActionMenuSelection(msg tui.ActionMenuSelectedMsg) (tea.Mod
 			m.statusMessage = "Restoring note..."
 			return m, m.restoreNote(selected)
 		}
+		m.statusMessage = "Note is not archived"
+		return m, nil
 	case "delete":
 		if selected.Status.IsNote() {
 			m.statusMessage = "Note deletion is not available in the explorer yet"

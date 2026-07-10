@@ -354,6 +354,9 @@ func TestRestore_TUIFlow_NonArchivedNoOp(t *testing.T) {
 	if got.pendingAction == "delete" {
 		t.Errorf("pendingAction = %q, restore must not reach the delete path", got.pendingAction)
 	}
+	if got.statusMessage == "" {
+		t.Error("restore on a non-archived note should surface a status message, not silently no-op")
+	}
 
 	// The note still exists and is unchanged.
 	if _, err := svc.GetNote(ctx, note.ID); err != nil {
