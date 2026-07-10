@@ -83,6 +83,7 @@ func reassignOrg(cmd *cobra.Command, target func(*config.Registry) string, campa
 	err := config.UpdateRegistry(cmd.Context(), func(reg *config.Registry) error {
 		targetOrg := target(reg)
 		result.Org = targetOrg
+		ensureOrg(reg, targetOrg)
 		resolved, err := resolveUnique(reg, campaignArgs)
 		if err != nil {
 			return err
@@ -103,6 +104,45 @@ func reassignOrg(cmd *cobra.Command, target func(*config.Registry) string, campa
 		return err
 	}
 	return renderOrgMoveResult(cmd.OutOrStdout(), result, asJSON)
+}
+
+// ensureOrg appends name to reg.Orgs if it is not already present. Idempotent.
+func ensureOrg(reg *config.Registry, name string) {
+	if name == "" || orgExists(reg, name) {
+		return
+	}
+	reg.Orgs = append(reg.Orgs, config.OrgEntry{Name: name})
+}
+
+func orgExists(reg *config.Registry, name string) bool {
+	for _, o := range reg.Orgs {
+		if o.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func removeOrg(reg *config.Registry, name string) {
+	out := make([]config.OrgEntry, 0, len(reg.Orgs))
+	for _, o := range reg.Orgs {
+		if o.Name == name {
+			continue
+		}
+		out = append(out, o)
+	}
+	reg.Orgs = out
+}
+
+// membersOf returns campaigns whose Org equals name.
+func membersOf(reg *config.Registry, name string) []config.RegisteredCampaign {
+	var members []config.RegisteredCampaign
+	for _, c := range reg.Campaigns {
+		if c.Org == name {
+			members = append(members, c)
+		}
+	}
+	return members
 }
 
 func resolveUnique(reg *config.Registry, queries []string) ([]config.RegisteredCampaign, error) {
