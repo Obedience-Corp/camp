@@ -318,6 +318,49 @@ func TestRestore_TUIFlow_ArchivedNoteBecomesActive(t *testing.T) {
 	}
 }
 
+// TestRestore_TUIFlow_NonArchivedNoOp pins that dispatching "restore" on a note
+// that is not archived is an inert no-op: Go switch cases do not fall through,
+// so it never reaches the "delete" case. The action menu already disables
+// Restore for active notes; this guards the dispatch layer directly.
+func TestRestore_TUIFlow_NonArchivedNoOp(t *testing.T) {
+	ctx := context.Background()
+	tmp := t.TempDir()
+	intentsDir := filepath.Join(tmp, "intents")
+	svc := intent.NewIntentService(tmp, intentsDir)
+
+	note, err := svc.CreateNote(ctx, intent.CreateOptions{
+		Title:     "active note, restore should no-op",
+		Timestamp: time.Date(2026, 6, 9, 10, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateNote: %v", err)
+	}
+
+	m := NewModel(ctx, svc, nil, intentsDir, "", "", "", nil)
+	m.ready = true
+	m.notesMode = true
+	m.groups = groupNotes([]*intent.Intent{note})
+	m.cursorGroup = 0
+	m.cursorItem = 0
+
+	updated, cmd := m.handleActionMenuSelection(tui.ActionMenuSelectedMsg{Action: "restore"})
+	if cmd != nil {
+		t.Fatalf("restore on active note produced a command: %T", cmd())
+	}
+	got := updated.(Model)
+	if got.focus == focusConfirm {
+		t.Error("restore on active note fell through into delete confirmation")
+	}
+	if got.pendingAction == "delete" {
+		t.Errorf("pendingAction = %q, restore must not reach the delete path", got.pendingAction)
+	}
+
+	// The note still exists and is unchanged.
+	if _, err := svc.GetNote(ctx, note.ID); err != nil {
+		t.Fatalf("note missing after restore no-op: %v", err)
+	}
+}
+
 func TestUpdateNormal_COnSelectedNoteStartsConvert(t *testing.T) {
 	ctx := context.Background()
 	note := &intent.Intent{ID: "n", Title: "note", Status: intent.StatusNote}
