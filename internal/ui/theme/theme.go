@@ -51,13 +51,17 @@ type palette struct {
 func GetTheme(name ThemeName) *huh.Theme {
 	switch name {
 	case ThemeLight:
+		lipgloss.SetHasDarkBackground(false)
 		return buildTheme(lightPalette())
 	case ThemeDark:
+		lipgloss.SetHasDarkBackground(true)
 		return buildTheme(darkPalette())
 	case ThemeHighContrast:
+		lipgloss.SetHasDarkBackground(true)
 		return buildTheme(highContrastPalette())
 	default:
-		// Adaptive: ThemeCharm with only Help style fixes
+		// Adaptive keeps the background seeded by bginit (COLORFGBG or dark)
+		// so ThemeCharm resolves adaptive colors without querying the terminal.
 		return buildAdaptiveTheme()
 	}
 }

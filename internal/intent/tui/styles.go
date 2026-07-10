@@ -1,14 +1,12 @@
 package tui
 
 import (
-	"os"
 	"strings"
 	"sync"
 
 	"github.com/Obedience-Corp/camp/internal/ui/theme"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
 )
 
 var (
@@ -29,9 +27,9 @@ func InitGlamourStyle(themeName string) {
 		case "high-contrast":
 			glamourStyle = "dark" // high-contrast uses dark base
 		default: // "adaptive" or empty
-			// Detect once - this is the slow operation
-			output := termenv.NewOutput(os.Stdout)
-			if output.HasDarkBackground() {
+			// bginit seeded this cache before bubbletea initialization, so this
+			// resolves adaptive styling without issuing an OSC terminal query.
+			if lipgloss.HasDarkBackground() {
 				glamourStyle = "dark"
 			} else {
 				glamourStyle = "light"
