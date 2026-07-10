@@ -141,6 +141,52 @@ func TestGatherDesign_PriorityMigratesToGatheredItem(t *testing.T) {
 	assert.NotContains(t, store, "design:workflow/design/cache-l2")
 }
 
+func TestGatherDesign_AuditFailureIsWarningNotError(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campaign := "/campaigns/gather-design-audit-warn"
+
+	_, err := tc.InitCampaign(campaign, "gather-design-audit-warn", "product")
+	require.NoError(t, err)
+
+	createDesignWorkitem(t, tc, campaign, "svc-a", "Service A", "# Service A\n\nDesign.\n")
+	createDesignWorkitem(t, tc, campaign, "svc-b", "Service B", "# Service B\n\nDesign.\n")
+	tc.GitOutput(t, campaign, "add", "-A")
+	tc.GitOutput(t, campaign, "commit", "-m", "seed design workitems")
+
+	// Force the post-move audit append to fail by replacing the audit log with a
+	// directory, so os.OpenFile(..., O_APPEND) errors even as root. Audit runs
+	// only after the sources are already moved, so the command must surface a
+	// warning and still exit zero rather than stranding a mutated filesystem
+	// behind a non-zero exit.
+	auditPath := campaign + "/.campaign/workitems/.workitems.jsonl"
+	tc.Shell(t, "rm -rf "+auditPath+" && mkdir -p "+auditPath)
+
+	output, err := tc.RunCampInDir(campaign, "gather", "design", "svc-a", "svc-b", "--title", "Unified Svc", "--no-commit", "--json")
+	require.NoError(t, err, "audit failure must not fail the command; output: %s", output)
+
+	var result struct {
+		Warnings []string `json:"warnings"`
+	}
+	jsonStart := strings.Index(output, "{")
+	require.GreaterOrEqual(t, jsonStart, 0, "no JSON in output: %s", output)
+	require.NoError(t, json.Unmarshal([]byte(output[jsonStart:]), &result), "output: %s", output)
+
+	// The gather still applied on disk despite the audit failure.
+	moved, err := tc.CheckDirExists(campaign + "/workflow/design/unified-svc/svc-a")
+	require.NoError(t, err)
+	assert.True(t, moved, "sources should be moved despite the audit failure")
+
+	// The audit write failure is reported as a warning, not swallowed or fatal.
+	var auditWarn bool
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "gather audit event") {
+			auditWarn = true
+			break
+		}
+	}
+	assert.True(t, auditWarn, "audit write failure should surface as a warning, got: %v", result.Warnings)
+}
+
 func TestGatherDesign_Guards(t *testing.T) {
 	tc := GetSharedContainer(t)
 	campaign := "/campaigns/gather-design-guards"

@@ -179,7 +179,7 @@ func executeGather(ctx context.Context, cmd *cobra.Command, cfg *config.Campaign
 			To:           move.To,
 			GatheredInto: id,
 		}); err != nil {
-			return nil, camperrors.Wrap(err, "writing workitem audit event")
+			execution.Warnings = append(execution.Warnings, fmt.Sprintf("write gather audit event for %s: %v", eventID, err))
 		}
 	}
 	if err := wkaudit.AppendEvent(ctx, root, wkaudit.Event{
@@ -188,7 +188,7 @@ func executeGather(ctx context.Context, cmd *cobra.Command, cfg *config.Campaign
 		Type:  plan.WorkflowType,
 		To:    plan.TargetRel,
 	}); err != nil {
-		return nil, camperrors.Wrap(err, "writing workitem audit event")
+		execution.Warnings = append(execution.Warnings, fmt.Sprintf("write gather audit event for %s: %v", id, err))
 	}
 
 	if navErr := navindex.Delete(root); navErr != nil {
