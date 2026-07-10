@@ -50,6 +50,7 @@ camp list [flags]
       --json             Output as JSON (shorthand for --format json)
       --no-group         Suppress org grouping
       --org string       Only campaigns in this org
+      --remote           Also list campaigns on machines in ~/.obey/machines.yaml (ssh)
   -s, --sort string      Sort by (name, accessed, type, org) (default "accessed")
       --status string    Only campaigns in this status (active, inactive, reference)
       --tag strings      Only campaigns carrying this tag (repeat for AND)

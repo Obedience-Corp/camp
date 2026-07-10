@@ -35,12 +35,39 @@ func Target(m *machines.Machine) string {
 // agent/key case: BatchMode=yes (never prompt), plus IdentitiesOnly and -i when
 // an identity file is configured. Password auth is rejected upstream by
 // EnsureKeyAuth, so its interactive-prompt args are never emitted.
+//
+// The identity path is tilde-expanded here: OpenSSH's IdentityFile config
+// directive expands a leading ~, but whether ssh expands ~ in a -i argument is
+// client- and platform-dependent, so camp resolves it to an absolute path
+// itself. That makes `camp machine add --identity '~/.ssh/id'` behave the way
+// users expect from ssh_config regardless of the ssh build, and keeps the path
+// camp hands off unambiguous.
 func authArgs(m *machines.Machine) []string {
 	args := []string{"-o", "BatchMode=yes"}
 	if m.IdentityFile != "" {
-		args = append(args, "-o", "IdentitiesOnly=yes", "-i", m.IdentityFile)
+		args = append(args, "-o", "IdentitiesOnly=yes", "-i", expandTilde(m.IdentityFile))
 	}
 	return args
+}
+
+// expandTilde resolves a leading ~ or ~/ to the current user's home directory,
+// matching OpenSSH's IdentityFile expansion. A ~otheruser/ prefix is left
+// untouched for ssh to resolve, and a path with no leading tilde (including one
+// where ~ appears mid-path) is returned unchanged. If the home directory cannot
+// be determined, the original path is returned so ssh still sees something.
+func expandTilde(path string) string {
+	if path == "~" {
+		if home, err := os.UserHomeDir(); err == nil {
+			return home
+		}
+		return path
+	}
+	if strings.HasPrefix(path, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, path[len("~/"):])
+		}
+	}
+	return path
 }
 
 // Opts returns the ssh option args (excluding the target) for a command on m.
@@ -60,15 +87,99 @@ func Opts(m *machines.Machine) []string {
 	return append(opts, authArgs(m)...)
 }
 
-// controlPath returns the per-machine ssh ControlMaster socket path under
-// ~/.obey/ssh-ctl and best-effort-creates the directory so ControlMaster=auto can
-// bind the socket. A short, per-id name keeps the path under the OS socket-length
-// limit for typical home directories.
-func controlPath(m *machines.Machine) string {
+// controlDir is ~/.obey/ssh-ctl, the directory holding one ControlMaster socket
+// per machine.
+func controlDir() string {
 	home, _ := os.UserHomeDir()
-	dir := filepath.Join(home, ".obey", "ssh-ctl")
-	_ = os.MkdirAll(dir, 0o700)
-	return filepath.Join(dir, m.ID+".sock")
+	return filepath.Join(home, ".obey", "ssh-ctl")
+}
+
+// ControlSocketPath returns the per-machine ssh ControlMaster socket path under
+// ~/.obey/ssh-ctl without creating anything. A short, per-id name keeps the path
+// under the OS socket-length limit for typical home directories. Exposed so
+// diagnostics can inspect and clear a machine's multiplex socket.
+func ControlSocketPath(m *machines.Machine) string {
+	return filepath.Join(controlDir(), m.ID+".sock")
+}
+
+// controlPath returns the machine's ControlMaster socket path and
+// best-effort-creates ~/.obey/ssh-ctl so ControlMaster=auto can bind the socket.
+func controlPath(m *machines.Machine) string {
+	_ = os.MkdirAll(controlDir(), 0o700)
+	return ControlSocketPath(m)
+}
+
+// ControlMasterState describes a machine's ssh ControlMaster multiplex socket.
+type ControlMasterState string
+
+const (
+	// ControlNone means no socket file exists — the next hop opens a fresh master.
+	ControlNone ControlMasterState = "none"
+	// ControlLive means the socket exists and its master answers `ssh -O check`.
+	ControlLive ControlMasterState = "live"
+	// ControlStale means the socket exists but the master no longer answers —
+	// the state a sleep/network flap leaves behind, which can hang later hops
+	// until ControlPersist expires or the socket is removed.
+	ControlStale ControlMasterState = "stale"
+)
+
+// SocketDiagnosis is one machine's ControlMaster socket status.
+type SocketDiagnosis struct {
+	MachineID string             `json:"machine_id"`
+	Socket    string             `json:"socket"`
+	State     ControlMasterState `json:"state"`
+}
+
+// controlProbeTimeout bounds the local `ssh -O check`/`-O exit` control
+// operations. They talk only to the local multiplex socket, so they are fast or
+// they are hung; either way we do not wait long.
+const controlProbeTimeout = 3 * time.Second
+
+// CheckControlMaster reports the state of m's ControlMaster socket. A missing
+// socket is ControlNone; a present socket is probed with `ssh -O check` and
+// classified ControlLive or ControlStale. It never opens a new connection.
+func CheckControlMaster(ctx context.Context, m *machines.Machine) SocketDiagnosis {
+	d := SocketDiagnosis{MachineID: m.ID, Socket: ControlSocketPath(m), State: ControlNone}
+	fi, err := os.Stat(d.Socket)
+	if err != nil || fi.Mode()&os.ModeSocket == 0 {
+		return d
+	}
+	if controlMasterAlive(ctx, m) {
+		d.State = ControlLive
+	} else {
+		d.State = ControlStale
+	}
+	return d
+}
+
+// controlMasterAlive returns true when `ssh -O check` reports a running master
+// for m. It uses the same per-machine opts (and thus ControlPath) as a real hop,
+// and does not fall back to opening a connection.
+func controlMasterAlive(ctx context.Context, m *machines.Machine) bool {
+	ctx, cancel := context.WithTimeout(ctx, controlProbeTimeout)
+	defer cancel()
+	args := append(append([]string{}, Opts(m)...), "-O", "check", Target(m))
+	return exec.CommandContext(ctx, "ssh", args...).Run() == nil
+}
+
+// ResetControlMaster tears down m's ControlMaster socket: it asks the master to
+// exit (`ssh -O exit`, best effort — a stale master will not answer) and then
+// removes the socket file so a stuck socket cannot hang the next hop. A machine
+// with no socket is a no-op. It returns an error only if the socket file is
+// present and cannot be removed.
+func ResetControlMaster(ctx context.Context, m *machines.Machine) error {
+	socket := ControlSocketPath(m)
+	if _, err := os.Stat(socket); err != nil {
+		return nil
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, controlProbeTimeout)
+	defer cancel()
+	args := append(append([]string{}, Opts(m)...), "-O", "exit", Target(m))
+	_ = exec.CommandContext(probeCtx, "ssh", args...).Run()
+	if err := os.Remove(socket); err != nil && !os.IsNotExist(err) {
+		return camperrors.Wrapf(err, "remove control socket %s", socket)
+	}
+	return nil
 }
 
 // EnsureKeyAuth rejects password-auth machines: v1 terminal switch/list is

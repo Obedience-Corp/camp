@@ -64,6 +64,7 @@ camp [flags]
 * [camp lifecycle](camp_lifecycle.md)	 - Manage campaign lifecycle status
 * [camp list](camp_list.md)	 - List all registered campaigns
 * [camp log](camp_log.md)	 - Show git log of the campaign
+* [camp machine](camp_machine.md)	 - Manage remote machines (~/.obey/machines.yaml)
 * [camp move](camp_move.md)	 - Move a file or directory within the campaign
 * [camp org](camp_org.md)	 - Group campaigns into orgs
 * [camp pin](camp_pin.md)	 - Pin a directory
