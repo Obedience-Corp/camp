@@ -180,6 +180,11 @@ func (s *IntentService) ArchiveNote(ctx context.Context, id string) (*Intent, er
 	if err != nil {
 		return nil, camperrors.Wrap(err, "serializing note")
 	}
+	if _, statErr := os.Stat(newPath); statErr == nil {
+		return nil, camperrors.Wrap(ErrFileExists, newPath)
+	} else if !os.IsNotExist(statErr) {
+		return nil, camperrors.Wrap(statErr, "checking destination note file")
+	}
 	if err := fsutil.WriteFileAtomically(newPath, data, 0644); err != nil {
 		return nil, camperrors.Wrap(err, "writing note file")
 	}
@@ -222,6 +227,11 @@ func (s *IntentService) RestoreNote(ctx context.Context, id string) (*Intent, er
 	data, err := SerializeIntent(note)
 	if err != nil {
 		return nil, camperrors.Wrap(err, "serializing note")
+	}
+	if _, statErr := os.Stat(newPath); statErr == nil {
+		return nil, camperrors.Wrap(ErrFileExists, newPath)
+	} else if !os.IsNotExist(statErr) {
+		return nil, camperrors.Wrap(statErr, "checking destination note file")
 	}
 	if err := fsutil.WriteFileAtomically(newPath, data, 0644); err != nil {
 		return nil, camperrors.Wrap(err, "writing note file")
