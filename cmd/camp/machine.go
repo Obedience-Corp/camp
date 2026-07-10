@@ -11,6 +11,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/machines"
+	"github.com/Obedience-Corp/camp/internal/remote"
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
@@ -58,11 +59,17 @@ var machineCmd = &cobra.Command{
 and 'camp list --remote'.
 
 Machines are stored in ~/.obey/machines.yaml. The current machine is always
-implicitly available as "local" and is never written to that file.`,
+implicitly available as "local" and is never written to that file.
+
+'camp machine diagnose' inspects the per-machine ssh ControlMaster sockets and
+can clear a stale one (the state a sleep or network flap can leave behind, which
+would otherwise hang the next hop until ControlPersist expires).`,
 	Example: `  camp machine list
   camp machine add devbox --host devbox.tailnet.ts.net --auth tailscale-ssh
   camp machine add --discover
-  camp machine remove devbox`,
+  camp machine remove devbox
+  camp machine diagnose
+  camp machine diagnose devbox --reset`,
 }
 
 var machineListCmd = &cobra.Command{
@@ -104,15 +111,40 @@ var machineRemoveCmd = &cobra.Command{
 	RunE:    runMachineRemove,
 }
 
+var machineDiagnoseCmd = &cobra.Command{
+	Use:   "diagnose [id]",
+	Short: "Inspect (and optionally clear) ssh ControlMaster sockets",
+	Long: `Report the ssh ControlMaster multiplex socket state for each configured machine
+(or one machine if an id is given):
+
+  none   no socket — the next hop opens a fresh master
+  live   socket present and the master answers 'ssh -O check'
+  stale  socket present but the master no longer answers
+
+A stale socket is what a sleep or network flap can leave behind; until it is
+removed (or ControlPersist expires) the next 'camp switch machine:...' or
+'camp list --remote' hop to that machine can hang. Pass --reset to tear down
+stale sockets so the next hop reconnects cleanly. Live and absent sockets are
+left untouched.`,
+	Example: `  camp machine diagnose
+  camp machine diagnose devbox
+  camp machine diagnose --reset
+  camp machine diagnose devbox --reset --json`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: runMachineDiagnose,
+}
+
 var (
-	machineListJSON    bool
-	machineAddHost     string
-	machineAddLabel    string
-	machineAddAuth     string
-	machineAddUser     string
-	machineAddIdentity string
-	machineAddDiscover bool
-	machineAddYes      bool
+	machineListJSON      bool
+	machineAddHost       string
+	machineAddLabel      string
+	machineAddAuth       string
+	machineAddUser       string
+	machineAddIdentity   string
+	machineAddDiscover   bool
+	machineAddYes        bool
+	machineDiagnoseReset bool
+	machineDiagnoseJSON  bool
 )
 
 func init() {
@@ -121,8 +153,12 @@ func init() {
 	machineCmd.AddCommand(machineListCmd)
 	machineCmd.AddCommand(machineAddCmd)
 	machineCmd.AddCommand(machineRemoveCmd)
+	machineCmd.AddCommand(machineDiagnoseCmd)
 
 	machineListCmd.Flags().BoolVar(&machineListJSON, "json", false, "Output as JSON")
+
+	machineDiagnoseCmd.Flags().BoolVar(&machineDiagnoseReset, "reset", false, "Tear down stale ControlMaster sockets so the next hop reconnects")
+	machineDiagnoseCmd.Flags().BoolVar(&machineDiagnoseJSON, "json", false, "Output as JSON")
 
 	machineAddCmd.Flags().StringVar(&machineAddHost, "host", "", "SSH host or Tailscale MagicDNS name (required unless --discover)")
 	machineAddCmd.Flags().StringVar(&machineAddLabel, "label", "", "Human-readable label")
@@ -248,6 +284,113 @@ func runMachineRemove(cmd *cobra.Command, args []string) error {
 	}
 	_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s machine %q removed\n", ui.SuccessIcon(), id)
 	return err
+}
+
+// machineDiagnoseRow is one machine's ControlMaster status in
+// `camp machine diagnose --json`. Reset is true when --reset cleared a stale
+// socket for this machine on this run.
+type machineDiagnoseRow struct {
+	ID     string `json:"id"`
+	Socket string `json:"socket"`
+	State  string `json:"state"`
+	Reset  bool   `json:"reset"`
+}
+
+func runMachineDiagnose(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+
+	mf, err := machines.Load()
+	if err != nil {
+		return err
+	}
+
+	targets := mf.Machines
+	if len(args) == 1 {
+		id := args[0]
+		if id == machines.LocalMachineID {
+			return camperrors.New(`"local" is this machine and has no ControlMaster socket`)
+		}
+		found := false
+		for _, m := range mf.Machines {
+			if m.ID == id {
+				targets = []machines.Machine{m}
+				found = true
+				break
+			}
+		}
+		if !found {
+			return camperrors.New(fmt.Sprintf("unknown machine %q", id))
+		}
+	}
+
+	rows := make([]machineDiagnoseRow, 0, len(targets))
+	for i := range targets {
+		m := &targets[i]
+		d := remote.CheckControlMaster(ctx, m)
+		row := machineDiagnoseRow{ID: m.ID, Socket: d.Socket, State: string(d.State)}
+		if machineDiagnoseReset && d.State == remote.ControlStale {
+			if err := remote.ResetControlMaster(ctx, m); err != nil {
+				return err
+			}
+			row.State = string(remote.ControlNone)
+			row.Reset = true
+		}
+		rows = append(rows, row)
+	}
+
+	if machineDiagnoseJSON {
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		return enc.Encode(struct {
+			Machines []machineDiagnoseRow `json:"machines"`
+		}{Machines: rows})
+	}
+	return renderMachineDiagnoseTable(cmd.OutOrStdout(), rows)
+}
+
+func renderMachineDiagnoseTable(w io.Writer, rows []machineDiagnoseRow) error {
+	if len(rows) == 0 {
+		_, err := fmt.Fprintln(w, ui.Dim("No machines configured; nothing to diagnose."))
+		return err
+	}
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\n", ui.Label("ID"), ui.Label("STATE"), ui.Label("SOCKET")); err != nil {
+		return err
+	}
+	reset := 0
+	for _, r := range rows {
+		state := r.State
+		if r.Reset {
+			state = r.State + " (was stale, cleared)"
+			reset++
+		}
+		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\n", ui.Label(r.ID), state, ui.Dim(r.Socket)); err != nil {
+			return err
+		}
+	}
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	if !machineDiagnoseReset && machineDiagnoseHasStale(rows) {
+		if _, err := fmt.Fprintln(w, ui.Dim("Stale socket(s) found. Run 'camp machine diagnose --reset' to clear them.")); err != nil {
+			return err
+		}
+	}
+	if machineDiagnoseReset {
+		if _, err := fmt.Fprintln(w, ui.Dim(ui.CountLabel(reset, "stale socket cleared", "stale sockets cleared"))); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func machineDiagnoseHasStale(rows []machineDiagnoseRow) bool {
+	for _, r := range rows {
+		if r.State == string(remote.ControlStale) {
+			return true
+		}
+	}
+	return false
 }
 
 // validateMachineID rejects the reserved "local" id and enforces the same

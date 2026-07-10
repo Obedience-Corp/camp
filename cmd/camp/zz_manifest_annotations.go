@@ -30,6 +30,7 @@ var manifestAgentAllowedReasons = map[string]string{
 	"intent show":         "Read-only intent detail",
 	"log":                 "Read-only git log",
 	"machine add":         "Explicit id/host/auth args (or --discover with --yes/an id) are non-interactive",
+	"machine diagnose":    "Read path (socket status) is safe; never pass --reset from an agent",
 	"machine list":        "Read-only listing of ~/.obey/machines.yaml",
 	"machine remove":      "Non-interactive removal with explicit id argument",
 	"project list":        "Read-only project listing",
