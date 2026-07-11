@@ -13,6 +13,10 @@ var builtinTypes = map[WorkflowType]bool{
 	WorkflowTypeFestival: true,
 }
 
+func IsBuiltinWorkflowType(wt WorkflowType) bool {
+	return builtinTypes[wt]
+}
+
 func emitCandidateFS(fsys fs.FS, typeDir, dir string) (bool, string) {
 	if builtinTypes[WorkflowType(typeDir)] {
 		return true, "builtin"

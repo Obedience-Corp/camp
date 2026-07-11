@@ -201,7 +201,7 @@ func EligibleForAttention(item workitem.WorkItem) bool {
 	return item.ItemKind == workitem.ItemKindDirectory &&
 		(item.WorkflowType == workitem.WorkflowTypeDesign ||
 			item.WorkflowType == workitem.WorkflowTypeExplore ||
-			item.LifecycleStage == workitem.LifecycleStageNone)
+			!workitem.IsBuiltinWorkflowType(item.WorkflowType))
 }
 
 // SaveOrDelete saves the store if it contains entries, or deletes the file if empty.
