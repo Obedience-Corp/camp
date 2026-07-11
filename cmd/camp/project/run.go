@@ -17,11 +17,14 @@ import (
 
 var projectRunCmd = &cobra.Command{
 	Use:   "run [--project <name>] [--] <command> [args...]",
-	Short: "Run a command inside a project directory",
+	Short: "Run a command inside a project directory, like cr but project-scoped",
 	Long: `Run any shell command inside a project directory from anywhere in the campaign.
 
+This is the project-scoped counterpart to 'camp run' (cr): cr runs from the
+campaign root, camp project run (cr -p) runs inside a project.
+
 The project is resolved in this order:
-  1. --project / -p flag (explicit project name)
+  1. --project / -p flag (explicit project name, tab-completes registered projects)
   2. Auto-detect from current working directory
   3. Interactive fuzzy picker (if neither above applies)
 
@@ -39,12 +42,25 @@ Examples:
   camp project run -- just test all
 
   # Simple commands (no -- needed when no flags)
-  camp project run make build`,
+  camp project run make build
+
+  # Shell shorthand (after 'eval "$(camp shell-init <shell>)"')
+  cr -p fest -- just build
+  cr -p camp go test ./...`,
 	DisableFlagParsing: true,
 	RunE:               runProjectRun,
+	ValidArgsFunction:  completeProjectRunArgs,
 }
 
 func init() {
+	// Registered only so cobra's completion machinery advertises --project/-p
+	// as known flag names (see completeRequireFlags/doCompleteFlags in
+	// cobra's completions.go, which walk NonInheritedFlags() even when
+	// DisableFlagParsing is set). DisableFlagParsing means cobra never
+	// parses or binds this flag at runtime; parseProjectRunArgs below does
+	// that manually, and completeProjectRunArgs handles its value completion.
+	projectRunCmd.Flags().StringP("project", "p", "", "Project name (auto-detected from cwd, or interactive picker if omitted)")
+
 	Cmd.AddCommand(projectRunCmd)
 }
 
@@ -152,6 +168,68 @@ func parseProjectRunArgs(args []string) (projectName string, command []string) {
 	}
 
 	return projectName, nil
+}
+
+// completeProjectRunArgs provides --project/-p value completion for a
+// DisableFlagParsing command. Cobra skips its own flag-value detection in
+// this mode (checkIfFlagCompletion short-circuits when DisableFlagParsing is
+// set), so ValidArgsFunction receives the raw, unparsed args and must decide
+// for itself whether toComplete is a flag value. args mirrors what
+// parseProjectRunArgs would have already consumed.
+func completeProjectRunArgs(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	inZone, awaitingValue := projectRunFlagZone(args)
+	if awaitingValue {
+		return cmdutil.CompleteProjectName(cmd, args, toComplete)
+	}
+
+	if inZone {
+		for _, prefix := range []string{"--project=", "-p="} {
+			if strings.HasPrefix(toComplete, prefix) {
+				names, directive := cmdutil.CompleteProjectName(cmd, args, strings.TrimPrefix(toComplete, prefix))
+				return prefixCompletions(names, prefix), directive
+			}
+		}
+	}
+
+	return nil, cobra.ShellCompDirectiveDefault
+}
+
+// projectRunFlagZone walks already-typed args the same way parseProjectRunArgs
+// does, reporting whether a fresh --project/-p is still eligible (inZone,
+// i.e. no "--" or command word seen yet) and whether the word currently being
+// completed is the value for a trailing, unconsumed --project/-p.
+func projectRunFlagZone(args []string) (inZone, awaitingValue bool) {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+
+		if arg == "--" {
+			return false, false
+		}
+		if strings.HasPrefix(arg, "--project=") || strings.HasPrefix(arg, "-p=") {
+			continue
+		}
+		if arg == "--project" || arg == "-p" {
+			if i+1 < len(args) {
+				i++
+				continue
+			}
+			return true, true
+		}
+
+		return false, false
+	}
+
+	return true, false
+}
+
+// prefixCompletions re-applies prefix to each completion so a "--project="
+// or "-p=" style value completes back into the same flag=value form.
+func prefixCompletions(names []string, prefix string) []string {
+	out := make([]string, len(names))
+	for i, n := range names {
+		out[i] = prefix + n
+	}
+	return out
 }
 
 // pickProject launches an interactive fuzzy finder for project selection.

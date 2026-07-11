@@ -55,6 +55,27 @@ func TestGenerateFish(t *testing.T) {
 	}
 }
 
+func TestGenerateFish_CrProjectShorthand(t *testing.T) {
+	output := generateFish()
+
+	checks := []struct {
+		name    string
+		content string
+	}{
+		{"cr recognizes -p", `"$argv[1]" = "-p"`},
+		{"cr dispatches to project run", `camp project run -p "$cr_project" -- $rest`},
+		{"project subcommand list includes run", `-a "run" -d "Run a command inside a project directory"`},
+	}
+
+	for _, check := range checks {
+		t.Run(check.name, func(t *testing.T) {
+			if !strings.Contains(output, check.content) {
+				t.Errorf("fish init missing %s: %q", check.name, check.content)
+			}
+		})
+	}
+}
+
 func TestGenerateFish_FestivalsArm(t *testing.T) {
 	output := generateFish()
 	section := shellWrapperSection(t, output, "        case festivals", "        case '*'")

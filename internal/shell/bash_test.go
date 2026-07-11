@@ -58,6 +58,27 @@ func TestGenerateBash(t *testing.T) {
 	}
 }
 
+func TestGenerateBash_CrProjectShorthand(t *testing.T) {
+	output := generateBash()
+
+	checks := []struct {
+		name    string
+		content string
+	}{
+		{"cr recognizes -p", `"$1" = "-p"`},
+		{"cr dispatches to project run", `camp project run -p "$cr_project" -- "$@"`},
+		{"project subcommand list includes run", "add commit link list new prune remote remove run stage unlink worktree"},
+	}
+
+	for _, check := range checks {
+		t.Run(check.name, func(t *testing.T) {
+			if !strings.Contains(output, check.content) {
+				t.Errorf("bash init missing %s: %q", check.name, check.content)
+			}
+		})
+	}
+}
+
 func TestGenerateBash_FestivalsArm(t *testing.T) {
 	output := generateBash()
 	section := shellWrapperSection(t, output, "    festivals)", "    *)")
