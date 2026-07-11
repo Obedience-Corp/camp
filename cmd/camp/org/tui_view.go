@@ -153,7 +153,7 @@ func (m orgTUIModel) paneStyle(p orgPane) lipgloss.Style {
 
 func (m orgTUIModel) footer() string {
 	if m.pane == paneOrgs {
-		return orgHelpStyle.Render("j/k: orgs . l: members . r: rename . q: quit")
+		return orgHelpStyle.Render("j/k: orgs . l: members . n: new org . N: new campaign . x: delete (empty) . r: rename . q: quit")
 	}
 	return orgHelpStyle.Render("j/k: members . h: orgs . m: move . c: create . d: default . q: quit")
 }
@@ -169,18 +169,34 @@ func (m orgTUIModel) statusLine() string {
 }
 
 func (m orgTUIModel) overlayView() string {
+	if m.overlay == overlayConfirmDelete {
+		prompt := fmt.Sprintf("Delete empty org %q?", m.pendingDelete)
+		box := orgTitleStyle.Render(prompt) + "\n\n" +
+			orgHelpStyle.Render("y/enter: delete . n/esc: cancel")
+		return orgPaneFocused.Render(box) + "\n"
+	}
 	var prompt string
+	var help string
 	switch m.overlay {
 	case overlayRename:
 		prompt = fmt.Sprintf("Rename org %q to:", m.orgs[m.orgCursor].Org)
+		help = "enter: confirm . esc: cancel"
 	case overlayMove:
 		prompt = fmt.Sprintf("Move %q to org:", m.members[m.memCursor].Name)
+		help = "enter: confirm . esc: cancel"
 	case overlayCreate:
 		prompt = fmt.Sprintf("Create org and add %q:", m.members[m.memCursor].Name)
+		help = "enter: confirm . esc: cancel"
+	case overlayCreateEmpty:
+		prompt = "New org name:"
+		help = "enter: create . esc: cancel"
+	case overlayNewCampaign:
+		prompt = fmt.Sprintf("New campaign in org %q:", m.pendingOrg)
+		help = "enter: create . esc: cancel"
 	}
 	box := orgTitleStyle.Render(prompt) + "\n\n" +
 		m.input.View() + "\n\n" +
 		orgMutedStyle.Render("existing orgs: "+m.orgNamesCSV()) + "\n\n" +
-		orgHelpStyle.Render("enter: confirm . esc: cancel")
+		orgHelpStyle.Render(help)
 	return orgPaneFocused.Render(box) + "\n"
 }

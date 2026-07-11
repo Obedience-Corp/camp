@@ -37,6 +37,10 @@ func LoadRegistry(ctx context.Context) (*Registry, error) {
 	reg := NewRegistry()
 	reg.Version = file.Version
 	reg.DefaultOrg = file.DefaultOrg
+	reg.Orgs = make([]OrgEntry, 0, len(file.Orgs))
+	for _, o := range file.Orgs {
+		reg.Orgs = append(reg.Orgs, OrgEntry{Name: o.Name})
+	}
 	fallback := reg.FallbackOrg()
 	for id, entry := range file.Campaigns {
 		c := RegisteredCampaign{
@@ -58,9 +62,33 @@ func LoadRegistry(ctx context.Context) (*Registry, error) {
 		reg.Version = RegistryVersion
 	}
 
+	reg.reconcileOrgs()
 	reg.rebuildPathIndex()
 
 	return reg, nil
+}
+
+// reconcileOrgs ensures reg.Orgs contains every persisted org, every org named
+// by a campaign, and the fallback org, deduped by name. Idempotent.
+func (r *Registry) reconcileOrgs() {
+	seen := make(map[string]bool)
+	ordered := make([]OrgEntry, 0, len(r.Orgs)+len(r.Campaigns)+1)
+	add := func(name string) {
+		if name == "" || seen[name] {
+			return
+		}
+		seen[name] = true
+		ordered = append(ordered, OrgEntry{Name: name})
+	}
+	add(r.FallbackOrg()) // fallback always present (synthesized, Q12)
+	for _, o := range r.Orgs {
+		add(o.Name)
+	}
+	for _, c := range r.Campaigns {
+		// c.Org is already normalized to the fallback if empty.
+		add(c.Org)
+	}
+	r.Orgs = ordered
 }
 
 // SaveRegistry saves the campaign registry to ~/.obey/campaign/registry.json.
@@ -95,6 +123,14 @@ func SaveRegistry(ctx context.Context, reg *Registry) error {
 func denormalizeForPersist(reg *Registry) *Registry {
 	fallback := reg.FallbackOrg()
 	out := *reg
+	// Fallback is synthesized on load, not persisted (Q12).
+	out.Orgs = make([]OrgEntry, 0, len(reg.Orgs))
+	for _, o := range reg.Orgs {
+		if o.Name == fallback {
+			continue
+		}
+		out.Orgs = append(out.Orgs, o)
+	}
 	out.Campaigns = make(map[string]RegisteredCampaign, len(reg.Campaigns))
 	for id, c := range reg.Campaigns {
 		if c.Org == fallback {
@@ -152,6 +188,12 @@ var ErrEmptyID = errors.New("campaign ID cannot be empty")
 // The campaign is keyed by its ID for uniqueness.
 // Returns an error if the path is already registered to a different campaign.
 func (r *Registry) Register(id, name, path string, campaignType CampaignType) error {
+	return r.RegisterWithOrg(id, name, path, campaignType, "")
+}
+
+// RegisterWithOrg registers a campaign and assigns it to org when non-empty.
+// The org is ensured in r.Orgs in the same mutation (created if new).
+func (r *Registry) RegisterWithOrg(id, name, path string, campaignType CampaignType, org string) error {
 	// Validate: ID must not be empty
 	if id == "" {
 		return ErrEmptyID
@@ -184,12 +226,37 @@ func (r *Registry) Register(id, name, path string, campaignType CampaignType) er
 		entry.Org = existing.Org
 		entry.Tags = existing.Tags
 		entry.Status = existing.Status
+		// Explicit org on re-register overrides prior membership.
+		if org != "" {
+			entry.Org = org
+		}
+	} else if org != "" {
+		entry.Org = org
+	}
+
+	// Persist the org in the first-class set when membership is explicit.
+	// Empty Org still normalizes to the fallback on load (not stored).
+	if entry.Org != "" {
+		r.EnsureOrg(entry.Org)
 	}
 
 	r.Campaigns[id] = entry
 	r.pathIndex[path] = id
 
 	return nil
+}
+
+// EnsureOrg appends name to r.Orgs if absent. Idempotent.
+func (r *Registry) EnsureOrg(name string) {
+	if name == "" {
+		return
+	}
+	for _, o := range r.Orgs {
+		if o.Name == name {
+			return
+		}
+	}
+	r.Orgs = append(r.Orgs, OrgEntry{Name: name})
 }
 
 // UnregisterByID removes a campaign from the registry by ID.
