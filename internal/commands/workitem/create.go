@@ -21,6 +21,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
+	wkaudit "github.com/Obedience-Corp/camp/internal/workitem/audit"
 )
 
 func newCreateCommand() *cobra.Command {
@@ -122,9 +123,17 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 		return err
 	}
 	markerWritten = true
-	invalidateNavigationCache(cmd, campaignRoot)
-
 	rel := filepath.Join(parent, slug)
+	invalidateNavigationCache(cmd, campaignRoot)
+	appendWorkitemAuditEvent(ctx, cmd, campaignRoot, wkaudit.Event{
+		Event: wkaudit.EventCreate,
+		ID:    id,
+		Ref:   ref,
+		Type:  typeFlag,
+		Title: title,
+		To:    filepath.ToSlash(rel),
+	})
+
 	if jsonOut {
 		payload := struct {
 			SchemaVersion string    `json:"schema_version"`

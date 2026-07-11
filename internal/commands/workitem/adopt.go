@@ -13,6 +13,7 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/fsutil"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
+	wkaudit "github.com/Obedience-Corp/camp/internal/workitem/audit"
 )
 
 func newAdoptCommand() *cobra.Command {
@@ -109,6 +110,14 @@ func runAdopt(ctx context.Context, cmd *cobra.Command, dir, typeFlag, title, idO
 	// Adoption writes inside an existing directory, which may not update the
 	// workflow/type parent mtime watched by passive cache staleness checks.
 	invalidateNavigationCache(cmd, campaignRoot)
+	appendWorkitemAuditEvent(ctx, cmd, campaignRoot, wkaudit.Event{
+		Event: wkaudit.EventAdopt,
+		ID:    id,
+		Ref:   ref,
+		Type:  typeFlag,
+		Title: title,
+		To:    filepath.ToSlash(rel),
+	})
 
 	questLine := ""
 	if questID != "" {

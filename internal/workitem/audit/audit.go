@@ -19,13 +19,19 @@ type EventType string
 const (
 	EventPromote EventType = "promote"
 	EventGather  EventType = "gather"
+	EventCreate  EventType = "create"
+	EventAdopt   EventType = "adopt"
+	EventStage   EventType = "stage"
+	EventGroup   EventType = "group"
 )
 
 type Event struct {
 	Timestamp    time.Time `json:"ts"`
 	Event        EventType `json:"event"`
 	ID           string    `json:"id"`
+	Ref          string    `json:"ref,omitempty"`
 	Type         string    `json:"type,omitempty"`
+	Title        string    `json:"title,omitempty"`
 	From         string    `json:"from,omitempty"`
 	To           string    `json:"to,omitempty"`
 	Target       string    `json:"target,omitempty"`
