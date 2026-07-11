@@ -2,10 +2,12 @@ package intent
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
 
+	wkcmd "github.com/Obedience-Corp/camp/internal/commands/workitem"
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
@@ -83,14 +85,11 @@ func runIntentRename(cmd *cobra.Command, args []string) error {
 	}
 
 	if !noCommit {
-		files := commit.NormalizeFiles(campaignRoot, oldPath, renamed.Path, audit.FilePath(resolver.Intents()))
+		opts := wkcmd.AmbientCommitOptions(ctx, campaignRoot, cfg.ID, os.Stderr)
+		opts.Files = commit.NormalizeFiles(campaignRoot, oldPath, renamed.Path, audit.FilePath(resolver.Intents()))
+		opts.SelectiveOnly = true
 		commitResult := commit.Intent(ctx, commit.IntentOptions{
-			Options: commit.Options{
-				CampaignRoot:  campaignRoot,
-				CampaignID:    cfg.ID,
-				Files:         files,
-				SelectiveOnly: true,
-			},
+			Options:     opts,
 			Action:      commit.IntentRename,
 			IntentTitle: renamed.Title,
 			Description: "Renamed from " + oldTitle,
@@ -98,6 +97,7 @@ func runIntentRename(cmd *cobra.Command, args []string) error {
 		if commitResult.Message != "" {
 			fmt.Printf("  %s\n", commitResult.Message)
 		}
+		commit.WarnIfSkipped(os.Stderr, commitResult)
 	}
 
 	return nil

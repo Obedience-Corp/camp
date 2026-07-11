@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	wkcmd "github.com/Obedience-Corp/camp/internal/commands/workitem"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/intent/audit"
 )
@@ -32,13 +33,37 @@ func newAutoCommitter() *autoCommitter {
 }
 
 func runAutoCommitIntent(ctx context.Context, opts commit.IntentOptions) {
-	if res := commit.Intent(ctx, opts); res.Err != nil {
+	res := commit.Intent(ctx, opts)
+	if res.Err != nil {
 		slog.WarnContext(ctx, "intent auto-commit failed",
 			"action", opts.Action,
 			"intent", opts.IntentTitle,
 			"error", res.Err,
 		)
+		return
 	}
+	if res.Skipped {
+		slog.WarnContext(ctx, "intent auto-commit skipped",
+			"action", opts.Action,
+			"intent", opts.IntentTitle,
+			"reason", res.SkipReason,
+		)
+	}
+}
+
+// slogWarnWriter adapts an io.Writer to slog.WarnContext so best-effort
+// ambient-context resolution warnings (ref backfill, etc.) reach the TUI's
+// redirected log file instead of the live terminal. Writing raw text to
+// stderr here would corrupt the bubbletea alt-screen; quietSlogDuringTUI
+// already routes the default slog handler to a log file for the same
+// reason, so this keeps warnings on that same path.
+type slogWarnWriter struct {
+	ctx context.Context
+}
+
+func (w slogWarnWriter) Write(p []byte) (int, error) {
+	slog.WarnContext(w.ctx, "intent auto-commit context resolution warning", "message", strings.TrimSpace(string(p)))
+	return len(p), nil
 }
 
 func (a *autoCommitter) start(ctx context.Context, opts commit.IntentOptions) {
@@ -87,22 +112,25 @@ func (m *Model) autoCommitFiles(files ...string) []string {
 
 // autoCommitIntent starts a best-effort intent commit if campaign context is available.
 func (m *Model) autoCommitIntent(action commit.IntentAction, title, description string, files ...string) {
-	if m.campaignRoot == "" || m.campaignID == "" {
-		return
-	}
 	ctx := m.ctx
 	if ctx == nil {
 		ctx = context.Background()
 	} else {
 		ctx = context.WithoutCancel(ctx)
 	}
+	if m.campaignRoot == "" || m.campaignID == "" {
+		slog.WarnContext(ctx, "intent auto-commit skipped",
+			"action", action,
+			"intent", title,
+			"reason", "missing campaign context: campaignRoot or campaignID is empty",
+		)
+		return
+	}
+	opts := wkcmd.AmbientCommitOptions(ctx, m.campaignRoot, m.campaignID, slogWarnWriter{ctx: ctx})
+	opts.Files = m.autoCommitFiles(files...)
+	opts.SelectiveOnly = true
 	m.autoCommit.start(ctx, commit.IntentOptions{
-		Options: commit.Options{
-			CampaignRoot:  m.campaignRoot,
-			CampaignID:    m.campaignID,
-			Files:         m.autoCommitFiles(files...),
-			SelectiveOnly: true,
-		},
+		Options:     opts,
 		Action:      action,
 		IntentTitle: title,
 		Description: description,

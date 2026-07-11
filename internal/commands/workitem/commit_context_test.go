@@ -76,3 +76,45 @@ func TestResolveCommitContext_CancelledContextIsZero(t *testing.T) {
 		t.Errorf("expected zero CommitContext on cancelled context, got %+v", cc)
 	}
 }
+
+func TestAmbientCommitOptions_ContextPresent(t *testing.T) {
+	const ref = "WI-abc123"
+	root := writeCommitContextCampaign(t)
+	wiDir := seedDesignWorkitemMarker(t, root, ref)
+	restore := chdir(t, wiDir)
+	t.Cleanup(restore)
+
+	var errw bytes.Buffer
+	opts := AmbientCommitOptions(context.Background(), root, "campaign-id", &errw)
+
+	if opts.CampaignRoot != root {
+		t.Errorf("CampaignRoot = %q, want %q", opts.CampaignRoot, root)
+	}
+	if opts.CampaignID != "campaign-id" {
+		t.Errorf("CampaignID = %q, want %q", opts.CampaignID, "campaign-id")
+	}
+	if opts.WorkitemRef != ref {
+		t.Errorf("WorkitemRef = %q, want %q (errw=%q)", opts.WorkitemRef, ref, errw.String())
+	}
+	if opts.FestivalRef != "" {
+		t.Errorf("FestivalRef = %q, want empty for a non-festival source", opts.FestivalRef)
+	}
+}
+
+func TestAmbientCommitOptions_ContextAbsent(t *testing.T) {
+	root := writeCommitContextCampaign(t)
+	restore := chdir(t, root)
+	t.Cleanup(restore)
+
+	opts := AmbientCommitOptions(context.Background(), root, "campaign-id", nil)
+
+	if opts.CampaignRoot != root {
+		t.Errorf("CampaignRoot = %q, want %q", opts.CampaignRoot, root)
+	}
+	if opts.CampaignID != "campaign-id" {
+		t.Errorf("CampaignID = %q, want %q", opts.CampaignID, "campaign-id")
+	}
+	if opts.QuestID != "" || opts.FestivalRef != "" || opts.WorkitemRef != "" {
+		t.Errorf("expected zero ambient context, got QuestID=%q FestivalRef=%q WorkitemRef=%q", opts.QuestID, opts.FestivalRef, opts.WorkitemRef)
+	}
+}

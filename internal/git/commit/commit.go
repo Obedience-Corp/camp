@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/git"
@@ -15,6 +16,30 @@ type Result struct {
 	NoChanges bool   // True if there was nothing to commit
 	Err       error  // Set when a commit attempt failed
 	Message   string // User-facing message
+
+	// Skipped is true when the commit was never attempted because of a
+	// caller-detectable precondition (missing campaign context, or a
+	// selective commit that resolved to zero files to stage) rather than
+	// git genuinely finding nothing changed. SkipReason explains why.
+	// Both preconditions would otherwise look identical to a legitimate
+	// "nothing to commit" outcome, so callers that want to surface a
+	// symptom like "my capture didn't commit" should check Skipped via
+	// WarnIfSkipped instead of relying on Message alone.
+	Skipped    bool
+	SkipReason string
+}
+
+// WarnIfSkipped writes a warning line to w when res reports a guaranteed
+// commit skip (see Result.Skipped). It is a no-op otherwise. Committed,
+// NoChanges, Message, and Err are unaffected by a skip, so existing
+// Message-based output at call sites is unchanged; this only adds an
+// explicit, greppable signal for the skip causes that would otherwise be
+// silent or indistinguishable from a normal no-op commit.
+func WarnIfSkipped(w io.Writer, res Result) {
+	if !res.Skipped {
+		return
+	}
+	_, _ = fmt.Fprintf(w, "warning: %s\n", res.SkipReason)
 }
 
 // Options configures common commit parameters.
@@ -54,8 +79,19 @@ func resolveCampaignName(ctx context.Context, opts Options) string {
 func doCommit(ctx context.Context, opts Options, action, subject, description string) Result {
 	if opts.CampaignRoot == "" || opts.CampaignID == "" {
 		return Result{
-			Committed: false,
-			Message:   "", // Silent failure - campaign info not available
+			Committed:  false,
+			Skipped:    true,
+			SkipReason: fmt.Sprintf("%s: missing campaign context (CampaignRoot or CampaignID is empty)", action),
+		}
+	}
+
+	if opts.SelectiveOnly && len(opts.Files) == 0 && len(opts.PreStaged) == 0 {
+		return Result{
+			Committed:  false,
+			NoChanges:  true,
+			Skipped:    true,
+			SkipReason: fmt.Sprintf("%s: selective commit requested but no files resolved to stage", action),
+			Message:    "(no changes to commit)",
 		}
 	}
 
