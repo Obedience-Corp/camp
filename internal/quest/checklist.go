@@ -79,6 +79,7 @@ var (
 	ErrInvalidChecklistStatus = camperrors.Wrap(camperrors.ErrInvalidInput, "checklist item status is invalid")
 	ErrEmptyChecklistTitle    = camperrors.Wrap(camperrors.ErrInvalidInput, "checklist item title is required")
 	ErrChecklistItemIDFailed  = camperrors.Wrap(camperrors.ErrInvalidInput, "could not allocate a unique checklist item id")
+	ErrNegativeChecklistRank  = camperrors.Wrap(camperrors.ErrInvalidInput, "checklist item rank must be zero or greater")
 )
 
 // ChecklistWorkitem is a stored reference to a workitem that backs an item.
@@ -193,9 +194,14 @@ func (cl *Checklist) Resolve(selector string) (*ChecklistItem, error) {
 			return &cl.Items[i], nil
 		}
 	}
+	// Fuzzy matching stays out of the shared date segment: a suffix match runs
+	// against the full id (the random suffix trails it), while substring match
+	// is restricted to the hex segment after the last '_'. Otherwise a selector
+	// like "2026" would collide with every item's date and read as ambiguous.
 	var matches []*ChecklistItem
 	for i := range cl.Items {
-		if strings.HasSuffix(cl.Items[i].ID, selector) || strings.Contains(cl.Items[i].ID, selector) {
+		id := cl.Items[i].ID
+		if strings.HasSuffix(id, selector) || strings.Contains(hexSuffix(id), selector) {
 			matches = append(matches, &cl.Items[i])
 		}
 	}
@@ -207,6 +213,16 @@ func (cl *Checklist) Resolve(selector string) (*ChecklistItem, error) {
 	default:
 		return nil, camperrors.Wrapf(ErrChecklistItemAmbiguous, "%q matches %d items", selector, len(matches))
 	}
+}
+
+// hexSuffix returns the random segment after the last '_' in a checklist item
+// id (qci_YYYYMMDD_<hex>). Substring resolution matches against this segment
+// only, so a selector cannot fuzzy-match the shared date portion.
+func hexSuffix(id string) string {
+	if idx := strings.LastIndex(id, "_"); idx >= 0 {
+		return id[idx+1:]
+	}
+	return id
 }
 
 // NextRank returns a rank that sorts after every existing item.

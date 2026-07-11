@@ -86,9 +86,15 @@ func TestChecklist_Resolve(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "one", got.Title)
 
-	// ambiguous substring (cc22 matches two + three)
+	// ambiguous substring (cc22 matches two + three via their hex suffixes)
 	_, err = cl.Resolve("cc22")
 	require.ErrorIs(t, err, ErrChecklistItemAmbiguous)
+
+	// the shared date segment must not fuzzy-match: substring resolution is
+	// scoped to the hex suffix, so "20260710" resolves to nothing rather than
+	// ambiguously matching every same-day item.
+	_, err = cl.Resolve("20260710")
+	require.ErrorIs(t, err, ErrChecklistItemNotFound)
 
 	// not found
 	_, err = cl.Resolve("zzz")

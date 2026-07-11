@@ -72,7 +72,7 @@ func emitChecklistMutation(cmd *cobra.Command, qctx *questCommandContext, res *q
 	noCommit, _ := cmd.Flags().GetBool("no-commit")
 
 	if !jsonOut && humanLine != "" {
-		fmt.Println(humanLine)
+		fmt.Fprintln(cmd.OutOrStdout(), humanLine)
 	}
 	if !noCommit {
 		mr := &quest.MutationResult{Quest: res.Quest, Files: res.Files}
@@ -81,7 +81,7 @@ func emitChecklistMutation(cmd *cobra.Command, qctx *questCommandContext, res *q
 		}
 	}
 	if jsonOut {
-		return outputChecklistItemResultJSON(ctx, qctx.campaignRoot, res.Quest, res.Item)
+		return outputChecklistItemResultJSON(ctx, cmd.OutOrStdout(), qctx.campaignRoot, res.Quest, res.Item)
 	}
 	return nil
 }

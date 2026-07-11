@@ -6,7 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
+	"io"
 	"strings"
 	"time"
 
@@ -104,12 +104,12 @@ func checklistItemToJSON(ctx context.Context, root string, item quest.ChecklistI
 	}
 }
 
-func outputChecklistJSON(ctx context.Context, root string, q *quest.Quest, items []quest.ChecklistItem) error {
+func outputChecklistJSON(ctx context.Context, w io.Writer, root string, q *quest.Quest, items []quest.ChecklistItem) error {
 	jsonItems := make([]checklistItemJSON, 0, len(items))
 	for _, item := range items {
 		jsonItems = append(jsonItems, checklistItemToJSON(ctx, root, item))
 	}
-	enc := json.NewEncoder(os.Stdout)
+	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(checklistJSON{
 		SchemaVersion: QuestChecklistJSONVersion,
@@ -119,8 +119,8 @@ func outputChecklistJSON(ctx context.Context, root string, q *quest.Quest, items
 	})
 }
 
-func outputChecklistItemResultJSON(ctx context.Context, root string, q *quest.Quest, item *quest.ChecklistItem) error {
-	enc := json.NewEncoder(os.Stdout)
+func outputChecklistItemResultJSON(ctx context.Context, w io.Writer, root string, q *quest.Quest, item *quest.ChecklistItem) error {
+	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(checklistItemResultJSON{
 		SchemaVersion: QuestChecklistJSONVersion,
@@ -174,10 +174,10 @@ func workitemCell(ctx context.Context, root string, wi *quest.ChecklistWorkitem)
 	return resolved.ID
 }
 
-func outputChecklistTable(ctx context.Context, root string, q *quest.Quest, items []quest.ChecklistItem) error {
-	fmt.Printf("Quest: %s (%s)\n", q.Name, q.ID)
+func outputChecklistTable(ctx context.Context, w io.Writer, root string, q *quest.Quest, items []quest.ChecklistItem) error {
+	fmt.Fprintf(w, "Quest: %s (%s)\n", q.Name, q.ID)
 	if len(items) == 0 {
-		fmt.Println("No checklist items. Add one with: camp quest item add " + q.Name + " \"<title>\"")
+		fmt.Fprintln(w, "No checklist items. Add one with: camp quest item add "+q.Name+" \"<title>\"")
 		return nil
 	}
 
@@ -205,13 +205,13 @@ func outputChecklistTable(ctx context.Context, root string, q *quest.Quest, item
 			return lipgloss.NewStyle()
 		})
 
-	fmt.Println(t)
+	fmt.Fprintln(w, t)
 	open := 0
 	for _, item := range items {
 		if !item.Status.Terminal() {
 			open++
 		}
 	}
-	fmt.Printf("\n%d item(s), %d open\n", len(items), open)
+	fmt.Fprintf(w, "\n%d item(s), %d open\n", len(items), open)
 	return nil
 }

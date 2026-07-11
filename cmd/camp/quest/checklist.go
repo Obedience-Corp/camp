@@ -62,9 +62,9 @@ func runQuestChecklist(cmd *cobra.Command, args []string) error {
 	}
 
 	if checklistJSONFlag {
-		return outputChecklistJSON(ctx, qctx.campaignRoot, q, items)
+		return outputChecklistJSON(ctx, cmd.OutOrStdout(), qctx.campaignRoot, q, items)
 	}
-	return outputChecklistTable(ctx, qctx.campaignRoot, q, items)
+	return outputChecklistTable(ctx, cmd.OutOrStdout(), qctx.campaignRoot, q, items)
 }
 
 func filterOpenItems(items []quest.ChecklistItem) []quest.ChecklistItem {
