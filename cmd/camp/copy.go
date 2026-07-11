@@ -31,6 +31,8 @@ recursively.`,
   camp cp @f/active/my-fest/OVERVIEW.md @d/
   camp cp @w/design/active/ @w/explore/backup/`,
 	Aliases:           []string{"cp"},
+	Hidden:            true,
+	Deprecated:        "unused; use your shell's cp or 'camp move' instead",
 	Args:              cobra.ExactArgs(2),
 	ValidArgsFunction: completeTransferArgs,
 	RunE:              runCopy,

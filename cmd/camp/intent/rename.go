@@ -15,8 +15,10 @@ import (
 )
 
 var intentRenameCmd = &cobra.Command{
-	Use:   "rename <id> <new title>",
-	Short: "Rename an intent",
+	Use:        "rename <id> <new title>",
+	Short:      "Rename an intent",
+	Hidden:     true,
+	Deprecated: "unused; use 'camp intent edit' to update the title instead",
 	Long: `Rename an intent: update its title and regenerate its human-readable
 filename. The intent's stable id is preserved, so references and lookups survive
 the rename.

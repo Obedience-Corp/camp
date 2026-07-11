@@ -7,6 +7,15 @@ import (
 	"testing"
 )
 
+func TestCopyCommand_HiddenAndDeprecated(t *testing.T) {
+	if !copyCmd.Hidden {
+		t.Error("copyCmd.Hidden = false, want true")
+	}
+	if copyCmd.Deprecated == "" {
+		t.Error("copyCmd.Deprecated is empty, want a deprecation notice")
+	}
+}
+
 func TestResolvePathThroughExistingAncestorResolvesSymlinkAncestor(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink behavior is platform dependent on Windows")

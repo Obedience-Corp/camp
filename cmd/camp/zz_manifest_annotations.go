@@ -26,7 +26,6 @@ var manifestAgentAllowedReasons = map[string]string{
 	"id":                  "Read-only campaign ID output",
 	"intent add":          "Programmatic create path is safe with title/body flags; agents must not use TUI-only flags",
 	"intent count":        "Read-only intent count",
-	"intent find":         "Read-only intent search",
 	"intent list":         "Read-only intent listing",
 	"intent show":         "Read-only intent detail",
 	"log":                 "Read-only git log",

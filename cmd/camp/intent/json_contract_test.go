@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -314,7 +316,23 @@ func executeIntentJSONTestCommand(t *testing.T, cmd *cobra.Command, args ...stri
 	cmd.SilenceUsage = true
 	cmd.SilenceErrors = true
 	err := cmd.ExecuteContext(context.Background())
-	return stdout.String(), stderr.String(), err
+
+	// Cobra prints the deprecation notice (when cmd.Deprecated is set) through
+	// OutOrStderr, which resolves to the captured stdout buffer here because
+	// SetOut was called above; it never reaches the stderr buffer in this
+	// harness. In production nothing calls SetOut on rootCmd, so the same
+	// notice lands on the real stderr instead, never mixing into stdout or
+	// into a JSON error envelope (which uses ErrOrStderr and so already
+	// lands cleanly in the stderr buffer here). Strip the notice from stdout
+	// so JSON contract assertions see the same clean stdout production
+	// emits; deprecation behavior itself is covered by
+	// TestDeprecatedIntentSubcommands_HiddenAndDeprecated.
+	out := stdout.String()
+	if cmd.Deprecated != "" {
+		prefix := fmt.Sprintf("Command %q is deprecated, %s\n", cmd.Name(), cmd.Deprecated)
+		out = strings.TrimPrefix(out, prefix)
+	}
+	return out, stderr.String(), err
 }
 
 func decodeIntentJSONPayload(t *testing.T, raw string) map[string]any {

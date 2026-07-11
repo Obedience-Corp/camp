@@ -14,8 +14,10 @@ import (
 )
 
 var intentConvertCmd = &cobra.Command{
-	Use:   "convert <id>",
-	Short: "Convert a note into an intent",
+	Use:        "convert <id>",
+	Short:      "Convert a note into an intent",
+	Hidden:     true,
+	Deprecated: "unused; edit the note's frontmatter type and move it into inbox/ by hand",
 	Long: `Promote a note into the intent lifecycle.
 
 A note lives outside the inbox → ready → active lifecycle. Converting it moves

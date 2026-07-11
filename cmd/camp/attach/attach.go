@@ -91,9 +91,11 @@ Examples:
 // NewDetachCommand builds the camp detach command.
 func NewDetachCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "detach <path>",
-		Short:   "Remove the attachment marker from a directory",
-		GroupID: "campaign",
+		Use:        "detach <path>",
+		Short:      "Remove the attachment marker from a directory",
+		GroupID:    "campaign",
+		Hidden:     true,
+		Deprecated: "unused; remove the .camp marker by hand, or use 'camp project unlink' for linked projects",
 		Long: `Remove the .camp attachment marker from the target directory.
 
 Refuses on linked-project markers; use 'camp project unlink' for those.

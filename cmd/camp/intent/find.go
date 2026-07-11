@@ -21,8 +21,10 @@ var intentFindCmd = newIntentFindCommand()
 func newIntentFindCommand() *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
-		Use:   "find [query]",
-		Short: "Search for intents by title or content",
+		Use:        "find [query]",
+		Short:      "Search for intents by title or content",
+		Hidden:     true,
+		Deprecated: "unused; use 'camp intent list' or 'camp workitem' instead",
 		Long: `Search for intents across all statuses by title, content, or ID.
 
 The search is case-insensitive and matches partial strings.
