@@ -64,7 +64,13 @@ Examples:
   camp list --sort name      Sort by name
   camp list --sort org       Sort by org, then name
   camp list --format simple  Names only for scripting
-  camp list --count          Print only the total number of campaigns`,
+  camp list --count          Print only the total number of campaigns
+  camp list --remote         Also list campaigns on machines in ~/.obey/machines.yaml
+
+--remote runs each machine's own 'camp list --json' through a login shell
+(sh -lc) so PATH entries a login profile exports (~/.profile, etc.) are
+picked up. If camp still can't be found on a machine, set
+CAMP_REMOTE_CAMP_PATH to its exact path there.`,
 	Aliases: []string{"ls"},
 	RunE:    runList,
 }

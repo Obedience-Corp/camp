@@ -3,11 +3,13 @@ package remote
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/machines"
 )
 
@@ -157,5 +159,186 @@ func TestShellQuote(t *testing.T) {
 		if got := ShellQuote(in); got != want {
 			t.Errorf("ShellQuote(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestCampRemoteCommandLineWrapsLoginShell(t *testing.T) {
+	cases := []struct {
+		name   string
+		binary string
+		args   string
+		want   string
+	}{
+		{
+			name:   "simple switch",
+			binary: "camp",
+			args:   "switch 'my-campaign' --print",
+			want:   `sh -lc 'camp switch '\''my-campaign'\'' --print'`,
+		},
+		{
+			name:   "list json",
+			binary: "camp",
+			args:   "list --json",
+			want:   `sh -lc 'camp list --json'`,
+		},
+		{
+			name:   "explicit binary path with a space",
+			binary: `'/opt/my camp/camp'`,
+			args:   "list --json",
+			want:   `sh -lc ''\''/opt/my camp/camp'\'' list --json'`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := campRemoteCommandLine(tc.binary, tc.args); got != tc.want {
+				t.Errorf("campRemoteCommandLine(%q, %q) = %q, want %q", tc.binary, tc.args, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestInnerCommandRoundTripsThroughPosixShell proves the quoting
+// campRemoteCommandLine relies on actually survives being parsed by a real
+// POSIX shell, the way the remote's login shell (`sh -lc '<inner>'`) parses
+// <inner> a second time on the far machine: it hands `binary+" "+args`
+// (the exact string ShellQuote wraps as <inner>) to a plain, non-login
+// `sh -c`, using an absolute-path probe script as the binary so the test
+// depends on neither PATH nor any login-shell profile file — only on the
+// shell's ordinary command-line parsing, which is what both the remote's
+// non-login default shell and its login shell use for this. This is
+// local-only shell parsing, not a live ssh connection.
+func TestInnerCommandRoundTripsThroughPosixShell(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh on PATH")
+	}
+	dir := t.TempDir()
+	probePath := filepath.Join(dir, "probe.sh")
+	if err := os.WriteFile(probePath, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\"\n"), 0o700); err != nil {
+		t.Fatalf("write probe script: %v", err)
+	}
+
+	cases := []struct {
+		name      string
+		remainder string
+	}{
+		{"plain", "my-campaign"},
+		{"spaces", "my campaign name"},
+		{"single quote", "o'brien's-campaign"},
+		{"glob chars", "campaign-*[1]?"},
+		{"org scoped", "obey/platform@f"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			args := resolveRootArgs(tc.remainder)
+			inner := ShellQuote(probePath) + " " + args
+
+			out, err := exec.Command("sh", "-c", inner).CombinedOutput()
+			if err != nil {
+				t.Fatalf("round-trip parse failed: %v\noutput: %s", err, out)
+			}
+			got := strings.Split(strings.TrimRight(string(out), "\n"), "\n")
+			want := []string{"switch", tc.remainder, "--print"}
+			if len(got) != len(want) {
+				t.Fatalf("round-trip argv = %q, want %q", got, want)
+			}
+			for i := range want {
+				if got[i] != want[i] {
+					t.Errorf("round-trip argv[%d] = %q, want %q", i, got[i], want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestResolveRootArgs(t *testing.T) {
+	cases := map[string]string{
+		"my-campaign":       `switch 'my-campaign' --print`,
+		"org/campaign":      `switch 'org/campaign' --print`,
+		"has 'quote":        `switch 'has '\''quote' --print`,
+		"campaign-*[glob]?": `switch 'campaign-*[glob]?' --print`,
+	}
+	for in, want := range cases {
+		if got := resolveRootArgs(in); got != want {
+			t.Errorf("resolveRootArgs(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestRemoteCampBinaryDefault(t *testing.T) {
+	t.Setenv(RemoteCampPathEnv, "")
+	if got := remoteCampBinary(); got != "camp" {
+		t.Errorf("remoteCampBinary() with no override = %q, want %q", got, "camp")
+	}
+}
+
+func TestRemoteCampBinaryOverride(t *testing.T) {
+	t.Setenv(RemoteCampPathEnv, "/opt/camp/bin/camp")
+	want := `'/opt/camp/bin/camp'`
+	if got := remoteCampBinary(); got != want {
+		t.Errorf("remoteCampBinary() with override = %q, want %q", got, want)
+	}
+}
+
+func TestRemoteCampBinaryOverrideWithSpace(t *testing.T) {
+	t.Setenv(RemoteCampPathEnv, "/opt/my camp/camp")
+	want := `'/opt/my camp/camp'`
+	if got := remoteCampBinary(); got != want {
+		t.Errorf("remoteCampBinary() with spaced override = %q, want %q", got, want)
+	}
+}
+
+func TestCampNotFoundHintDetectsExit127(t *testing.T) {
+	m := &machines.Machine{ID: "devbox"}
+	err := camperrors.NewCommand("ssh devbox", 127, "sh: line 1: camp: command not found", nil)
+	got := campNotFoundHint(err, m, "camp")
+	if got == nil {
+		t.Fatal("expected a non-nil error")
+	}
+	if !strings.Contains(got.Error(), RemoteCampPathEnv) {
+		t.Errorf("not-found hint missing %s mention: %v", RemoteCampPathEnv, got)
+	}
+	if !strings.Contains(got.Error(), "devbox") {
+		t.Errorf("not-found hint missing machine id: %v", got)
+	}
+}
+
+// TestCampNotFoundHintIgnoresNotFoundTextAtOtherExitCodes guards the false
+// positive that motivated using exit code 127 alone: camp's own
+// ErrCampaignNotFound ("campaign not found: ...") can legitimately appear in
+// stderr when the far machine's camp ran fine but the campaign name just
+// does not resolve there. That must never be relabeled as a missing binary.
+func TestCampNotFoundHintIgnoresNotFoundTextAtOtherExitCodes(t *testing.T) {
+	m := &machines.Machine{ID: "devbox"}
+	original := camperrors.NewCommand("ssh devbox", 1, `campaign not found: "nope"`, nil)
+	got := campNotFoundHint(original, m, "camp")
+	if got != original {
+		t.Errorf("campNotFoundHint relabeled a domain 'not found' error as a missing binary: got %v, want unchanged %v", got, original)
+	}
+}
+
+func TestCampNotFoundHintIgnoresPermissionDenied(t *testing.T) {
+	m := &machines.Machine{ID: "devbox"}
+	original := camperrors.NewCommand("ssh devbox", 126, "sh: camp: Permission denied", nil)
+	got := campNotFoundHint(original, m, "camp")
+	if got != original {
+		t.Errorf("campNotFoundHint should leave a permission-denied (126, not 127) failure unchanged: got %v, want unchanged %v", got, original)
+	}
+}
+
+func TestCampNotFoundHintLeavesUnrelatedErrorsUnchanged(t *testing.T) {
+	m := &machines.Machine{ID: "devbox"}
+	original := camperrors.NewCommand("ssh devbox", 1, "campaign \"nope\" not registered", nil)
+	got := campNotFoundHint(original, m, "camp")
+	if got != original {
+		t.Errorf("campNotFoundHint changed an unrelated command failure: got %v, want unchanged %v", got, original)
+	}
+}
+
+func TestCampNotFoundHintPassesThroughNonCommandErrors(t *testing.T) {
+	m := &machines.Machine{ID: "devbox"}
+	original := camperrors.New("ssh to devbox timed out")
+	got := campNotFoundHint(original, m, "camp")
+	if got != original {
+		t.Errorf("campNotFoundHint changed a non-CommandError: got %v, want unchanged %v", got, original)
 	}
 }

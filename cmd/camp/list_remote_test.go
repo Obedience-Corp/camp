@@ -16,12 +16,12 @@ func TestRemoteListArgs(t *testing.T) {
 		f    listFilter
 		want string
 	}{
-		{"empty", listFilter{}, "camp list --json"},
-		{"org", listFilter{org: "obey"}, "camp list --json --org 'obey'"},
-		{"tags repeat", listFilter{tags: []string{"a", "b"}}, "camp list --json --tag 'a' --tag 'b'"},
-		{"status", listFilter{status: "inactive"}, "camp list --json --status 'inactive'"},
-		{"all", listFilter{all: true}, "camp list --json --all"},
-		{"combined", listFilter{org: "obey", tags: []string{"x"}, all: true}, "camp list --json --org 'obey' --tag 'x' --all"},
+		{"empty", listFilter{}, "list --json"},
+		{"org", listFilter{org: "obey"}, "list --json --org 'obey'"},
+		{"tags repeat", listFilter{tags: []string{"a", "b"}}, "list --json --tag 'a' --tag 'b'"},
+		{"status", listFilter{status: "inactive"}, "list --json --status 'inactive'"},
+		{"all", listFilter{all: true}, "list --json --all"},
+		{"combined", listFilter{org: "obey", tags: []string{"x"}, all: true}, "list --json --org 'obey' --tag 'x' --all"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
