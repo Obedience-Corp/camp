@@ -3,10 +3,12 @@ package intent
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/ktr0731/go-fuzzyfinder"
 	"github.com/spf13/cobra"
 
+	wkcmd "github.com/Obedience-Corp/camp/internal/commands/workitem"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/editor"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -228,20 +230,18 @@ func runProgrammaticEdit(
 		if target.Path != updated.Path {
 			filesToCommit = append(filesToCommit, target.Path)
 		}
-		files := commit.NormalizeFiles(campaignRoot, filesToCommit...)
+		opts := wkcmd.AmbientCommitOptions(ctx, campaignRoot, cfg.ID, os.Stderr)
+		opts.Files = commit.NormalizeFiles(campaignRoot, filesToCommit...)
+		opts.SelectiveOnly = true
 		commitResult := commit.Intent(ctx, commit.IntentOptions{
-			Options: commit.Options{
-				CampaignRoot:  campaignRoot,
-				CampaignID:    cfg.ID,
-				Files:         files,
-				SelectiveOnly: true,
-			},
+			Options:     opts,
 			Action:      commit.IntentEdit,
 			IntentTitle: updated.Title,
 		})
 		if commitResult.Message != "" {
 			fmt.Printf("  %s\n", commitResult.Message)
 		}
+		commit.WarnIfSkipped(os.Stderr, commitResult)
 	}
 
 	return nil

@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
 
 	"github.com/spf13/cobra"
 
+	wkcmd "github.com/Obedience-Corp/camp/internal/commands/workitem"
 	"github.com/Obedience-Corp/camp/internal/config"
 	sharedcrawl "github.com/Obedience-Corp/camp/internal/crawl"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -193,18 +195,17 @@ func commitIntentCrawl(ctx context.Context, campaignRoot, campaignID string, res
 		crawlID = ""
 	}
 
+	opts := wkcmd.AmbientCommitOptions(ctx, campaignRoot, campaignID, os.Stderr)
+	opts.Files = files
+	opts.PreStaged = preStaged
+	opts.SelectiveOnly = true
 	res := commit.Intent(ctx, commit.IntentOptions{
-		Options: commit.Options{
-			CampaignRoot:  campaignRoot,
-			CampaignID:    campaignID,
-			Files:         files,
-			PreStaged:     preStaged,
-			SelectiveOnly: true,
-		},
+		Options:     opts,
 		Action:      commit.IntentCrawl,
 		IntentTitle: commit.IntentCrawlSubject(crawlID),
 		Description: buildIntentCrawlCommitDescription(result),
 	})
+	commit.WarnIfSkipped(os.Stderr, res)
 
 	if res.Committed {
 		fmt.Printf("\n%s %s\n", ui.SuccessIcon(), res.Message)

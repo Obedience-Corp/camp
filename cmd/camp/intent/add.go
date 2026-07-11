@@ -496,19 +496,11 @@ func finalizeCreatedIntentWithOutput(ctx context.Context, result *intent.Intent,
 
 	// Auto-commit (unless --no-commit)
 	if !noCommit {
-		files := commit.NormalizeFiles(campaignRoot, result.Path, audit.FilePath(intentsDir))
-		cwd, _ := os.Getwd()
-		cc := wkcmd.ResolveCommitContext(ctx, campaignRoot, cwd, os.Stderr)
+		opts := wkcmd.AmbientCommitOptions(ctx, campaignRoot, cfg.ID, os.Stderr)
+		opts.Files = commit.NormalizeFiles(campaignRoot, result.Path, audit.FilePath(intentsDir))
+		opts.SelectiveOnly = true
 		commitResult := commit.Intent(ctx, commit.IntentOptions{
-			Options: commit.Options{
-				CampaignRoot:  campaignRoot,
-				CampaignID:    cfg.ID,
-				QuestID:       cc.QuestID,
-				FestivalRef:   cc.FestivalRef,
-				WorkitemRef:   cc.WorkitemRef,
-				Files:         files,
-				SelectiveOnly: true,
-			},
+			Options:     opts,
 			Action:      commit.IntentCreate,
 			IntentTitle: result.Title,
 		})
@@ -517,6 +509,7 @@ func finalizeCreatedIntentWithOutput(ctx context.Context, result *intent.Intent,
 				return err
 			}
 		}
+		commit.WarnIfSkipped(os.Stderr, commitResult)
 	}
 
 	return nil
