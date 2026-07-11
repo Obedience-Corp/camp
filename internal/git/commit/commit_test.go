@@ -328,6 +328,97 @@ func TestIntent_WithQuestTag(t *testing.T) {
 	}
 }
 
+func TestIntent_WithNoteRefTag(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	if err := exec.Command("git", "-C", tmpDir, "init").Run(); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.email", "test@test.com").Run(); err != nil {
+		t.Fatalf("failed to configure git email: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.name", "Test").Run(); err != nil {
+		t.Fatalf("failed to configure git name: %v", err)
+	}
+
+	testFile := filepath.Join(tmpDir, "note.txt")
+	if err := os.WriteFile(testFile, []byte("note content"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	result := Intent(context.Background(), IntentOptions{
+		Options: Options{
+			CampaignRoot: tmpDir,
+			CampaignID:   "abcdef12",
+			WorkitemRef:  "WI-deadbe",
+			NoteRef:      "NT-abcdef",
+		},
+		Action:      IntentCreate,
+		IntentTitle: "Note-tagged intent",
+	})
+
+	if !result.Committed {
+		t.Fatalf("expected commit to succeed, got %s", result.Message)
+	}
+
+	out, err := exec.Command("git", "-C", tmpDir, "log", "-1", "--format=%B").Output()
+	if err != nil {
+		t.Fatalf("failed to get git log: %v", err)
+	}
+	commitMsg := string(out)
+	if !strings.Contains(commitMsg, "[OBEY-CAMPAIGN-abcdef12-WI-deadbe-NT-abcdef]") {
+		t.Fatalf("commit message missing note tag co-occurring with workitem: %s", commitMsg)
+	}
+}
+
+func TestIntent_NoteRefUnsetOmitsNoteSegment(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	if err := exec.Command("git", "-C", tmpDir, "init").Run(); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.email", "test@test.com").Run(); err != nil {
+		t.Fatalf("failed to configure git email: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.name", "Test").Run(); err != nil {
+		t.Fatalf("failed to configure git name: %v", err)
+	}
+
+	testFile := filepath.Join(tmpDir, "move.txt")
+	if err := os.WriteFile(testFile, []byte("move content"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	// A non-note action (e.g. IntentMove) with an active workitem in scope
+	// but NoteRef left unset (as every non-note call site does) must never
+	// emit an NT- segment.
+	result := Intent(context.Background(), IntentOptions{
+		Options: Options{
+			CampaignRoot: tmpDir,
+			CampaignID:   "abcdef12",
+			WorkitemRef:  "WI-deadbe",
+		},
+		Action:      IntentMove,
+		IntentTitle: "Moved intent",
+	})
+
+	if !result.Committed {
+		t.Fatalf("expected commit to succeed, got %s", result.Message)
+	}
+
+	out, err := exec.Command("git", "-C", tmpDir, "log", "-1", "--format=%B").Output()
+	if err != nil {
+		t.Fatalf("failed to get git log: %v", err)
+	}
+	commitMsg := string(out)
+	if strings.Contains(commitMsg, "-NT-") {
+		t.Fatalf("non-note commit must never carry an NT- segment: %s", commitMsg)
+	}
+	if !strings.Contains(commitMsg, "[OBEY-CAMPAIGN-abcdef12-WI-deadbe]") {
+		t.Fatalf("commit message missing expected workitem tag: %s", commitMsg)
+	}
+}
+
 func TestIntent_SelectiveStaging(t *testing.T) {
 	tmpDir := t.TempDir()
 

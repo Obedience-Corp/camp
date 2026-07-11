@@ -50,6 +50,7 @@ type Options struct {
 	QuestID       string   // Optional quest ID for additive commit context
 	FestivalRef   string   // Optional festival ref for additive commit context
 	WorkitemRef   string   // Optional workitem ref (WI-<6 hex>) for additive commit context
+	NoteRef       string   // Optional note ref (NT-<6 hex>); set only by the note commit path
 	Files         []string // If set, stage only these paths instead of everything
 	PreStaged     []string // Paths already staged; copied from the real index into the temp-index commit scope
 	SelectiveOnly bool     // When true, never fall back to CommitAll; no-op if Files is empty
@@ -96,7 +97,7 @@ func doCommit(ctx context.Context, opts Options, action, subject, description st
 	}
 
 	commitMsg := fmt.Sprintf("%s %s: %s",
-		git.FormatContextTagsFull(resolveCampaignName(ctx, opts), opts.CampaignID, opts.QuestID, opts.FestivalRef, opts.WorkitemRef),
+		git.FormatContextTagsFull(resolveCampaignName(ctx, opts), opts.CampaignID, opts.QuestID, opts.FestivalRef, opts.WorkitemRef, opts.NoteRef),
 		action,
 		subject,
 	)
