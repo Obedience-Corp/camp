@@ -95,7 +95,9 @@ func TestGenerateZsh_CrProjectShorthand(t *testing.T) {
 		name    string
 		content string
 	}{
-		{"cr recognizes -p", `"$1" == "-p"`},
+		{"cr recognizes -p", `-p|--project)`},
+		{"cr recognizes equals form", `-p=*|--project=*)`},
+		{"cr rejects missing project", `usage: cr -p <project>`},
 		{"cr dispatches to project run", `camp project run -p "$cr_project" -- "$@"`},
 		{"cr registered for completion", "compdef _cr cr"},
 		{"cr completion calls __complete", "command camp __complete project run -p"},

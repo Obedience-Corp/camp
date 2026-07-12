@@ -252,15 +252,31 @@ complete -c cgo -n "not __camp_is_first_arg; and not __camp_is_first_arg_drill" 
 # Usage: cr <command> [args...]
 #        cr -p <project> [--] <command> [args...]
 function cr --description "Run command from campaign root, or in a project with -p"
+    set -l cr_project
+    set -l rest
     if test "$argv[1]" = "-p" -o "$argv[1]" = "--project"
-        set -l cr_project $argv[2]
-        set -l rest
+		if test (count $argv) -lt 2 -o -z "$argv[2]"
+			echo "usage: cr -p <project> [--] <command> [args...]" >&2
+			return 2
+		end
+		set cr_project $argv[2]
         if test (count $argv) -gt 2
             set rest $argv[3..-1]
         end
-        if test (count $rest) -gt 0 -a "$rest[1]" = "--"
-            set rest $rest[2..-1]
-        end
+    else if string match -q -- '-p=*' "$argv[1]"; or string match -q -- '--project=*' "$argv[1]"
+		set cr_project (string replace -r '^[^=]*=' '' -- "$argv[1]")
+		if test -z "$cr_project"
+			echo "usage: cr -p <project> [--] <command> [args...]" >&2
+			return 2
+		end
+		if test (count $argv) -gt 1
+			set rest $argv[2..-1]
+		end
+    end
+    if test -n "$cr_project"
+		if test (count $rest) -gt 0 -a "$rest[1]" = "--"
+			set rest $rest[2..-1]
+		end
         camp project run -p "$cr_project" -- $rest
     else
         camp run $argv

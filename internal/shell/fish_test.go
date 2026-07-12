@@ -63,6 +63,8 @@ func TestGenerateFish_CrProjectShorthand(t *testing.T) {
 		content string
 	}{
 		{"cr recognizes -p", `"$argv[1]" = "-p"`},
+		{"cr recognizes equals form", `string match -q -- '-p=*'`},
+		{"cr rejects missing project", `usage: cr -p <project>`},
 		{"cr dispatches to project run", `camp project run -p "$cr_project" -- $rest`},
 		{"project subcommand list includes run", `-a "run" -d "Run a command inside a project directory"`},
 	}

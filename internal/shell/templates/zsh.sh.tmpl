@@ -268,10 +268,26 @@ _cgo() {
 # Usage: cr <command> [args...]
 #        cr -p <project> [--] <command> [args...]
 cr() {
-  if [[ "$1" == "-p" || "$1" == "--project" ]]; then
-    shift
-    local cr_project="$1"
-    [[ $# -gt 0 ]] && shift
+  local cr_project=""
+  case "${1:-}" in
+    -p|--project)
+      if [[ $# -lt 2 || -z "$2" ]]; then
+        echo "usage: cr -p <project> [--] <command> [args...]" >&2
+        return 2
+      fi
+      cr_project="$2"
+      shift 2
+      ;;
+    -p=*|--project=*)
+      cr_project="${1#*=}"
+      if [[ -z "$cr_project" ]]; then
+        echo "usage: cr -p <project> [--] <command> [args...]" >&2
+        return 2
+      fi
+      shift
+      ;;
+  esac
+  if [[ -n "$cr_project" ]]; then
     [[ "$1" == "--" ]] && shift
     camp project run -p "$cr_project" -- "$@"
   else

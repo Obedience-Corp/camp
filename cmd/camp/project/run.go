@@ -179,6 +179,10 @@ func parseProjectRunArgs(args []string) (projectName string, command []string) {
 func completeProjectRunArgs(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	inZone, awaitingValue := projectRunFlagZone(args)
 	if awaitingValue {
+		// Deliberately offer a value after a trailing bare -p/--project even
+		// though runtime parsing treats that token as the command when no value
+		// follows. Completion runs before the value exists and should help the
+		// user finish the intended project flag.
 		return cmdutil.CompleteProjectName(cmd, args, toComplete)
 	}
 
