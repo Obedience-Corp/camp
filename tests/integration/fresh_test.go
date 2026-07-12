@@ -104,6 +104,49 @@ GIT_ALLOW_PROTOCOL=file git -C %[1]s/projects/test-project submodule update --in
 	return campaignPath, campaignPath + "/projects/test-project", campaignPath + "/projects/test-project/vendor/tool"
 }
 
+// setupFreshCampaignWithTwoSubmodules creates a campaign with two independent
+// submodule projects (test-a, test-b), each with its own bare origin on main.
+// Used to exercise the multi-project `camp fresh <a> <b>` batch path.
+func setupFreshCampaignWithTwoSubmodules(t *testing.T, tc *TestContainer, name string) (string, string, string) {
+	t.Helper()
+
+	campaignPath := "/campaigns/" + name
+	bareA := "/test/" + name + "-a-origin.git"
+	seedA := "/test/" + name + "-a-seed"
+	bareB := "/test/" + name + "-b-origin.git"
+	seedB := "/test/" + name + "-b-seed"
+
+	tc.Shell(t, fmt.Sprintf(`
+set -e
+for spec in "%[1]s %[2]s" "%[3]s %[4]s"; do
+  set -- $spec
+  git init --bare "$1"
+  git clone "$1" "$2"
+  git -C "$2" config user.email test@test.com
+  git -C "$2" config user.name Test
+  printf '# Test Project\n' > "$2"/README.md
+  git -C "$2" add .
+  git -C "$2" commit -m 'Initial commit'
+  git -C "$2" branch -M main
+  git -C "$2" push origin main
+  git --git-dir "$1" symbolic-ref HEAD refs/heads/main
+done
+`, bareA, seedA, bareB, seedB))
+
+	_, err := tc.InitCampaign(campaignPath, name, "product")
+	require.NoError(t, err)
+
+	tc.Shell(t, fmt.Sprintf(`
+set -e
+cd %[1]s
+GIT_ALLOW_PROTOCOL=file git submodule add %[2]s projects/test-a
+GIT_ALLOW_PROTOCOL=file git submodule add %[3]s projects/test-b
+git commit -m 'Add submodules'
+`, campaignPath, bareA, bareB))
+
+	return campaignPath, campaignPath + "/projects/test-a", campaignPath + "/projects/test-b"
+}
+
 // skipIfShort skips container-backed tests under `go test -short`. Each test
 // calls Reset() which wipes + reinitializes the full container fixture, so the
 // suite is not cheap enough for short-mode runs.
@@ -369,6 +412,62 @@ git -C %[1]s commit -m 'Nested drift'
 
 	current := tc.GitOutput(t, projectDir, "rev-parse", "--abbrev-ref", "HEAD")
 	assert.Equal(t, "develop", current)
+}
+
+// TestFresh_ListCyclesEachProject verifies `camp fresh --list a,b` runs the
+// fresh cycle against each named project in a single invocation.
+func TestFresh_ListCyclesEachProject(t *testing.T) {
+	skipIfShort(t)
+	tc := GetSharedContainer(t)
+	const name = "fresh-list-cycle"
+	campaignPath, projectDirA, projectDirB := setupFreshCampaignWithTwoSubmodules(t, tc, name)
+
+	output, err := tc.RunCampInDir(campaignPath, "fresh", "--list", "test-a,test-b", "--branch", "develop", "--no-push")
+	require.NoError(t, err, "camp fresh --list should cycle each named project:\n%s", output)
+
+	assert.Contains(t, output, "Running fresh across 2 project(s)",
+		"batch run should announce the number of projects")
+
+	currentA := tc.GitOutput(t, projectDirA, "rev-parse", "--abbrev-ref", "HEAD")
+	assert.Equal(t, "develop", currentA, "test-a should be cycled onto the new branch")
+
+	currentB := tc.GitOutput(t, projectDirB, "rev-parse", "--abbrev-ref", "HEAD")
+	assert.Equal(t, "develop", currentB, "test-b should be cycled onto the new branch")
+}
+
+// TestFresh_ListFailFastOnUnknownName verifies that an unknown project name
+// anywhere in --list aborts the batch before mutating any project, since all
+// names are resolved up front.
+func TestFresh_ListFailFastOnUnknownName(t *testing.T) {
+	skipIfShort(t)
+	tc := GetSharedContainer(t)
+	const name = "fresh-list-badname"
+	campaignPath, projectDirA, _ := setupFreshCampaignWithTwoSubmodules(t, tc, name)
+
+	output, err := tc.RunCampInDir(campaignPath, "fresh", "--list", "test-a,does-not-exist", "--branch", "develop", "--no-push")
+	require.Error(t, err, "camp fresh --list should fail when a project name is unknown:\n%s", output)
+
+	currentA := tc.GitOutput(t, projectDirA, "rev-parse", "--abbrev-ref", "HEAD")
+	assert.Equal(t, "main", currentA, "test-a must not be mutated when the batch fails name validation")
+
+	_, exitCode, err := tc.ExecCommand("git", "-C", projectDirA, "rev-parse", "--verify", "--quiet", "refs/heads/develop")
+	require.NoError(t, err)
+	assert.NotEqual(t, 0, exitCode, "develop branch should not be created when the batch aborts on validation")
+}
+
+// TestFresh_ListRejectsPositionalArg verifies that combining --list with a
+// positional project name is rejected rather than silently ignoring one.
+func TestFresh_ListRejectsPositionalArg(t *testing.T) {
+	skipIfShort(t)
+	tc := GetSharedContainer(t)
+	const name = "fresh-list-conflict"
+	campaignPath, projectDirA, _ := setupFreshCampaignWithTwoSubmodules(t, tc, name)
+
+	output, err := tc.RunCampInDir(campaignPath, "fresh", "test-a", "--list", "test-b", "--no-push")
+	require.Error(t, err, "camp fresh should reject a positional name combined with --list:\n%s", output)
+
+	currentA := tc.GitOutput(t, projectDirA, "rev-parse", "--abbrev-ref", "HEAD")
+	assert.Equal(t, "main", currentA, "no project should be mutated when the invocation is rejected")
 }
 
 func TestFresh_DoesNotDeleteRemoteBranches(t *testing.T) {

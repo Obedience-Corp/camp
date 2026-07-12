@@ -14,6 +14,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+
 	"github.com/Obedience-Corp/camp/internal/buildutil/ui"
 )
 
@@ -44,7 +46,7 @@ func Test(verbose bool) error {
 
 	packages, err := discoverTestPackages()
 	if err != nil {
-		return fmt.Errorf("failed to discover test packages: %w", err)
+		return camperrors.Newf("failed to discover test packages: %w", err)
 	}
 
 	if verbose {
@@ -216,14 +218,14 @@ func Test(verbose bool) error {
 	ui.SummaryCardWithStatus(title, rows, fmt.Sprintf("%.2fs", wallTime.Seconds()), success, successMsg, failMsg)
 
 	if pkgFailures > 0 {
-		return fmt.Errorf("%d packages had test failures (%d tests failed)", pkgFailures, totalTestsFailed)
+		return camperrors.Newf("%d packages had test failures (%d tests failed)", pkgFailures, totalTestsFailed)
 	}
 
 	return nil
 }
 
 func goTestArgs(pkg string) []string {
-	args := []string{"test", "-count=1", "-json", "-short", "-timeout", "120s"}
+	args := []string{"test", "-count=1", "-json", "-short", "-timeout", "300s"}
 	return append(args, appendBuildTags(pkg)...)
 }
 

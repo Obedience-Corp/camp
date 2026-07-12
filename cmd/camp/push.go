@@ -3,11 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/git"
@@ -224,7 +225,7 @@ func runPushAll(ctx context.Context, campRoot string, gitArgs []string, noRecurs
 	}
 
 	if failed > 0 {
-		return fmt.Errorf("%d repo(s) failed to push", failed)
+		return camperrors.Newf("%d repo(s) failed to push", failed)
 	}
 	return nil
 }

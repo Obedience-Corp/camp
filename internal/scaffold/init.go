@@ -50,6 +50,9 @@ type InitOptions struct {
 	Repair bool
 	// SkipSkills disables projecting campaign skills into tool directories.
 	SkipSkills bool
+	// Org assigns the new campaign to this org on register (created if new).
+	// Empty leaves the campaign in the fallback org.
+	Org string
 	// RepairPlan is the pre-computed repair plan (set by the caller after preview).
 	// When set, Init uses the merged jumps config from the plan instead of defaults.
 	RepairPlan *RepairPlan
@@ -435,7 +438,7 @@ workitems/current.yaml
 	// Register in global registry
 	if !opts.NoRegister && !opts.DryRun {
 		if err := config.UpdateRegistry(ctx, func(reg *config.Registry) error {
-			return reg.Register(campaignID, name, absDir, opts.Type)
+			return reg.RegisterWithOrg(campaignID, name, absDir, opts.Type, opts.Org)
 		}); err != nil {
 			return nil, camperrors.Wrap(err, "failed to register campaign")
 		}

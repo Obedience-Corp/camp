@@ -3,7 +3,6 @@ package dungeon
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 
@@ -34,7 +33,7 @@ func resolveDungeonCommandContext(ctx context.Context) (*dungeonCommandContext, 
 	dungeonCtx, err := intdungeon.ResolveContext(ctx, campaignRoot, cwd)
 	if err != nil {
 		if errors.Is(err, intdungeon.ErrDungeonContextNotFound) {
-			return nil, fmt.Errorf(
+			return nil, camperrors.Newf(
 				"no dungeon context found from %s to campaign root; run 'camp dungeon add' in the target directory",
 				cwd,
 			)

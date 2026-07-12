@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"path/filepath"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+
 	"github.com/Obedience-Corp/camp/internal/nav"
 	"github.com/Obedience-Corp/camp/internal/nav/fuzzy"
 )
@@ -60,7 +62,7 @@ func Resolve(ctx context.Context, opts ResolveOptions) (*ResolveResult, error) {
 	}
 
 	if opts.CampaignRoot == "" {
-		return nil, fmt.Errorf("campaign root is required")
+		return nil, camperrors.Newf("campaign root is required")
 	}
 
 	// No query - direct category path
@@ -92,7 +94,7 @@ func resolveWithQuery(ctx context.Context, opts ResolveOptions) (*ResolveResult,
 	// Get or build index
 	idx, err := GetOrBuild(ctx, opts.CampaignRoot, false)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build index: %w", err)
+		return nil, camperrors.Newf("failed to build index: %w", err)
 	}
 
 	// Query the index
@@ -100,7 +102,7 @@ func resolveWithQuery(ctx context.Context, opts ResolveOptions) (*ResolveResult,
 	targets := query.ByCategory(opts.Category)
 
 	if len(targets) == 0 {
-		return nil, fmt.Errorf("no targets in category %s", opts.Category)
+		return nil, camperrors.Newf("no targets in category %s", opts.Category)
 	}
 
 	// First try exact match
@@ -129,7 +131,7 @@ func resolveWithQuery(ctx context.Context, opts ResolveOptions) (*ResolveResult,
 
 	// If exact only requested, fail
 	if opts.ExactOnly {
-		return nil, fmt.Errorf("no exact match for %q in category %s", opts.Query, opts.Category)
+		return nil, camperrors.Newf("no exact match for %q in category %s", opts.Query, opts.Category)
 	}
 
 	// Fuzzy search
@@ -140,7 +142,7 @@ func resolveWithQuery(ctx context.Context, opts ResolveOptions) (*ResolveResult,
 
 	matches := fuzzy.Filter(names, opts.Query)
 	if len(matches) == 0 {
-		return nil, fmt.Errorf("no targets matching %q in category %s", opts.Query, opts.Category)
+		return nil, camperrors.Newf("no targets matching %q in category %s", opts.Query, opts.Category)
 	}
 
 	// Build matched targets list

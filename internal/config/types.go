@@ -325,7 +325,7 @@ type GlobalConfig struct {
 }
 
 // RegistryVersion is the current registry format version.
-const RegistryVersion = 2
+const RegistryVersion = 3
 
 // Registry represents ~/.obey/campaign/registry.json for tracking campaigns.
 type Registry struct {
@@ -333,6 +333,10 @@ type Registry struct {
 	Version int `json:"version" yaml:"version,omitempty"`
 
 	DefaultOrg string `json:"default_org,omitempty" yaml:"default_org,omitempty"`
+
+	// Orgs is the persisted set of orgs. The fallback org is synthesized on load,
+	// not stored here (see LoadRegistry reconciliation).
+	Orgs []OrgEntry `json:"orgs,omitempty" yaml:"orgs,omitempty"`
 
 	// Campaigns maps campaign IDs to their registration info.
 	Campaigns map[string]RegisteredCampaign `json:"campaigns" yaml:"campaigns,omitempty"`
@@ -346,6 +350,12 @@ func (r *Registry) FallbackOrg() string {
 		return DefaultOrg
 	}
 	return r.DefaultOrg
+}
+
+// OrgEntry is a persisted org. Membership stays a field on each campaign; this
+// records the org's existence so an org with zero members survives a round-trip.
+type OrgEntry struct {
+	Name string `json:"name" yaml:"name"`
 }
 
 // RegisteredCampaign holds information about a registered campaign.

@@ -2,10 +2,11 @@ package transfer
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/Obedience-Corp/camp/internal/config"
 )
@@ -36,12 +37,12 @@ func ResolveCrossCampaignPath(ctx context.Context, currentCampRoot, spec string)
 	// Look up campaign in registry
 	reg, err := config.LoadRegistry(ctx)
 	if err != nil {
-		return "", fmt.Errorf("load campaign registry: %w", err)
+		return "", camperrors.Newf("load campaign registry: %w", err)
 	}
 
 	entry, ok := reg.Get(campaign)
 	if !ok {
-		return "", fmt.Errorf("campaign %q not found in registry", campaign)
+		return "", camperrors.Newf("campaign %q not found in registry", campaign)
 	}
 
 	resolved := filepath.Join(entry.Path, relPath)
@@ -51,7 +52,7 @@ func ResolveCrossCampaignPath(ctx context.Context, currentCampRoot, spec string)
 // ValidatePathExists checks that the resolved path exists on disk.
 func ValidatePathExists(path string) error {
 	if _, err := os.Stat(path); err != nil {
-		return fmt.Errorf("path does not exist: %s", path)
+		return camperrors.Newf("path does not exist: %s", path)
 	}
 	return nil
 }
@@ -89,7 +90,7 @@ func ResolveAtPrefix(campRoot, path string, shortcuts map[string]string) (string
 		for k := range shortcuts {
 			keys = append(keys, "@"+k)
 		}
-		return "", fmt.Errorf("unknown shortcut: @%s (valid: %s)", key, strings.Join(keys, ", "))
+		return "", camperrors.Newf("unknown shortcut: @%s (valid: %s)", key, strings.Join(keys, ", "))
 	}
 
 	resolved := filepath.Join(campRoot, dir)
@@ -107,7 +108,7 @@ func ResolveCwdRelative(path string) (string, error) {
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
-		return "", fmt.Errorf("get working directory: %w", err)
+		return "", camperrors.Newf("get working directory: %w", err)
 	}
 	return filepath.Join(cwd, path), nil
 }

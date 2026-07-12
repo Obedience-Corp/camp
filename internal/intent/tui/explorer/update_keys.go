@@ -1,6 +1,7 @@
 package explorer
 
 import (
+	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/intent/tui"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -144,10 +145,15 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m.handlePromoteAction()
 	case "a":
-		// Archive (move to dungeon/archived) - requires reason
+		// Archive (move to dungeon/archived). Notes archive into notes/archived/
+		// reason-free; lifecycle intents require a dungeon reason.
 		if selected := m.SelectedIntent(); selected != nil && selected.Status.IsNote() {
-			m.statusMessage = "Note archiving is not available in the explorer yet"
-			return m, nil
+			if selected.Status != intent.StatusNote {
+				m.statusMessage = "Note is already archived"
+				return m, nil
+			}
+			m.statusMessage = "Archiving note..."
+			return m, m.archiveNote(selected)
 		}
 		return m.handleArchiveAction()
 	case "d":

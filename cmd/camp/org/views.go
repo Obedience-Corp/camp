@@ -129,29 +129,26 @@ func renameOrgInRegistry(reg *config.Registry, oldOrg, newOrg string) (int, erro
 	if oldOrg == newOrg {
 		return 0, camperrors.NewValidation("org", "old and new org are the same: \""+oldOrg+"\"", nil)
 	}
-	fallback := reg.FallbackOrg()
-	isFallback := oldOrg == fallback
-
-	var memberIDs []string
-	for _, c := range reg.ListAll() {
-		switch c.Org {
-		case newOrg:
-			if newOrg != oldOrg {
-				return 0, camperrors.NewValidation("org",
-					"org \""+newOrg+"\" already exists; no implicit merge", nil)
-			}
-		case oldOrg:
-			memberIDs = append(memberIDs, c.ID)
-		}
-	}
-	if len(memberIDs) == 0 && !isFallback {
+	if !orgExists(reg, oldOrg) {
 		return 0, camperrors.NewNotFound("org", oldOrg, nil)
 	}
-	for _, id := range memberIDs {
-		e := reg.Campaigns[id]
-		e.Org = newOrg
-		reg.Campaigns[id] = e
+	if orgExists(reg, newOrg) {
+		return 0, camperrors.NewValidation("org",
+			fmt.Sprintf("target org %q already exists; no implicit merge", newOrg), nil)
 	}
+
+	fallback := reg.FallbackOrg()
+	isFallback := oldOrg == fallback
+	n := 0
+	for id, c := range reg.Campaigns {
+		if c.Org != oldOrg {
+			continue
+		}
+		c.Org = newOrg
+		reg.Campaigns[id] = c
+		n++
+	}
+	renameOrgEntry(reg, oldOrg, newOrg)
 	if isFallback {
 		if newOrg == config.DefaultOrg {
 			reg.DefaultOrg = ""
@@ -159,7 +156,7 @@ func renameOrgInRegistry(reg *config.Registry, oldOrg, newOrg string) (int, erro
 			reg.DefaultOrg = newOrg
 		}
 	}
-	return len(memberIDs), nil
+	return n, nil
 }
 
 func runOrgList(cmd *cobra.Command, _ []string) error {
@@ -177,9 +174,14 @@ func runOrgList(cmd *cobra.Command, _ []string) error {
 
 func computeOrgCounts(reg *config.Registry) []orgCount {
 	byOrg := make(map[string]*orgCount)
+	// Seed every persisted first-class org at zero so empty orgs appear in list.
+	for _, o := range reg.Orgs {
+		byOrg[o.Name] = &orgCount{Org: o.Name}
+	}
 	for _, c := range reg.ListAll() {
 		oc := byOrg[c.Org]
 		if oc == nil {
+			// Defensive: reconcileOrgs should prevent missing membership orgs.
 			oc = &orgCount{Org: c.Org}
 			byOrg[c.Org] = oc
 		}
@@ -240,10 +242,10 @@ func runOrgShow(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return camperrors.Wrap(err, "failed to load registry")
 	}
-	result := buildOrgShow(reg, org)
-	if result.Campaigns == 0 {
+	if !orgExists(reg, org) {
 		return camperrors.NewNotFound("org", org, nil)
 	}
+	result := buildOrgShow(reg, org)
 	if asJSON {
 		return encodeJSON(cmd.OutOrStdout(), result)
 	}

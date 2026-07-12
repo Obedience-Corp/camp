@@ -155,11 +155,11 @@ func (s *Service) Gather(ctx context.Context, ids []string, opts GatherOptions) 
 	}
 
 	if len(ids) < 2 {
-		return nil, fmt.Errorf("need at least 2 intents to gather, got %d", len(ids))
+		return nil, camperrors.Newf("need at least 2 intents to gather, got %d", len(ids))
 	}
 
 	if opts.Title == "" {
-		return nil, fmt.Errorf("title is required for gathered intent")
+		return nil, camperrors.Newf("title is required for gathered intent")
 	}
 
 	// Load source intents

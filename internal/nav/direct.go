@@ -2,7 +2,6 @@ package nav
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 
@@ -134,13 +133,13 @@ func JumpToPathFromRoot(ctx context.Context, root string, relativePath string) (
 	// Verify directory exists
 	info, err := os.Stat(absPath)
 	if os.IsNotExist(err) {
-		return nil, fmt.Errorf("path does not exist: %s", relativePath)
+		return nil, camperrors.Newf("path does not exist: %s", relativePath)
 	}
 	if err != nil {
 		return nil, camperrors.Wrapf(err, "failed to stat path %s", relativePath)
 	}
 	if !info.IsDir() {
-		return nil, fmt.Errorf("path is not a directory: %s", relativePath)
+		return nil, camperrors.Newf("path is not a directory: %s", relativePath)
 	}
 
 	return &DirectJumpResult{

@@ -4,9 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"io"
 	"os"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
@@ -189,16 +190,16 @@ func collectFlowAddInput(cmd *cobra.Command, flowAddJSON, flowAddName, flowAddDe
 
 	if err := theme.RunForm(ctx, form); err != nil {
 		if theme.IsCancelled(err) {
-			return nil, fmt.Errorf("initialization cancelled")
+			return nil, camperrors.Newf("initialization cancelled")
 		}
 		return nil, camperrors.Wrap(err, "failed to collect workflow info")
 	}
 
 	if name == "" {
-		return nil, fmt.Errorf("workflow name is required")
+		return nil, camperrors.Newf("workflow name is required")
 	}
 	if description == "" {
-		return nil, fmt.Errorf("workflow description is required")
+		return nil, camperrors.Newf("workflow description is required")
 	}
 
 	return &flowAddInput{Name: name, Description: description}, nil
@@ -224,10 +225,10 @@ func parseFlowAddJSON(value string) (*flowAddInput, error) {
 	}
 
 	if input.Name == "" {
-		return nil, fmt.Errorf("JSON input requires \"name\" field")
+		return nil, camperrors.Newf("JSON input requires \"name\" field")
 	}
 	if input.Description == "" {
-		return nil, fmt.Errorf("JSON input requires \"description\" field")
+		return nil, camperrors.Newf("JSON input requires \"description\" field")
 	}
 
 	return &input, nil

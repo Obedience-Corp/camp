@@ -12,7 +12,7 @@ camp() {
   case "$1" in
     switch|sw)
       shift
-      local dest arg passthrough=0 cmd_status
+      local line arg passthrough=0
       for arg in "$@"; do
         case "$arg" in
           --help|-h|--json|--json=*|--print|--print=*)
@@ -25,16 +25,11 @@ camp() {
         command camp switch "$@"
         return
       fi
-      dest=$(command camp switch "$@" --print)
-      cmd_status=$?
-      if [[ -n "$dest" ]]; then
-        cd "$dest"
-      elif [[ "$cmd_status" -ne 0 ]]; then
-        return $cmd_status
-      else
-        echo "camp: not found: $*" >&2
-        return 1
-      fi
+      # --shell-connect emits one line to eval: `cd -- <path>` for a local
+      # target, `exec ssh -t ...` to hop to a machine: target. On error camp
+      # prints to stderr and exits non-zero (empty stdout), so we propagate.
+      line=$(command camp switch "$@" --shell-connect) || return $?
+      eval "$line"
       ;;
     go|g)
       shift
@@ -154,6 +149,69 @@ camp() {
       else
         rm -f "$tmp"
       fi
+      ;;
+    festivals)
+      shift
+      local arg passthrough tmp dest cmd_status
+      passthrough=0
+      for arg in "$@"; do
+        case "$arg" in
+          --help|-h|--json|--json=*|--org|--org=*|--tag|--tag=*|--status|--status=*|--all|--all-campaigns|--since|--since=*|--until|--until=*|--sort|--sort=*)
+            passthrough=1
+            break
+            ;;
+        esac
+      done
+      if [[ "$passthrough" -eq 1 ]]; then
+        command camp festivals "$@"
+        return
+      fi
+      if [[ ! -t 0 || ! -t 1 ]]; then
+        command camp festivals "$@"
+        return
+      fi
+
+      tmp=$(mktemp "${TMPDIR:-/tmp}/camp-festivals.XXXXXX") || return 1
+      command camp festivals "$@" --path-output "$tmp"
+      cmd_status=$?
+      if [[ "$cmd_status" -ne 0 ]]; then
+        rm -f "$tmp"
+        return "$cmd_status"
+      fi
+
+      if [[ -s "$tmp" ]]; then
+        dest=$(cat "$tmp")
+        rm -f "$tmp"
+        if [[ -n "$dest" ]]; then
+          cd "$dest"
+        fi
+      else
+        rm -f "$tmp"
+      fi
+      ;;
+    quest)
+      # Intercept 'quest use'/'quest clear' to mutate CAMP_QUEST in this shell.
+      # All other quest subcommands run normally.
+      case "$2" in
+        use|clear)
+          local arg line
+          for arg in "$@"; do
+            case "$arg" in
+              --help|-h)
+                command camp "$@"
+                return
+                ;;
+            esac
+          done
+          # camp emits shell code on stdout only after validation succeeds and
+          # diagnostics on stderr, so eval only a successful non-empty result.
+          line=$(command camp "$@" --shell zsh) || return "$?"
+          [[ -n "$line" ]] && eval "$line"
+          ;;
+        *)
+          command camp "$@"
+          ;;
+      esac
       ;;
     *)
       command camp "$@"

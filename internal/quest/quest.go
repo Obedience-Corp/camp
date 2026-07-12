@@ -225,7 +225,7 @@ func ResolveContext(ctx context.Context, campaignRoot, explicit string) (*Quest,
 		return Resolve(ctx, campaignRoot, explicit)
 	}
 
-	if envID := strings.TrimSpace(os.Getenv("CAMP_QUEST")); envID != "" {
+	if envID := strings.TrimSpace(os.Getenv(QuestEnvVar)); envID != "" {
 		return Resolve(ctx, campaignRoot, envID)
 	}
 

@@ -149,7 +149,7 @@ func runPin(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrapf(err, "path %q does not exist", absPath)
 	}
 	if !info.IsDir() {
-		return fmt.Errorf("path %q is not a directory", absPath)
+		return camperrors.Newf("path %q is not a directory", absPath)
 	}
 
 	store, campaignRoot, err := loadPinStore(cmd)
@@ -242,7 +242,7 @@ func runUnpin(cmd *cobra.Command, args []string) error {
 		}
 		pin, ok := findPinForCwd(store, cwd, campaignRoot)
 		if !ok {
-			return fmt.Errorf("directory not pinned: %s", cwd)
+			return camperrors.Newf("directory not pinned: %s", cwd)
 		}
 		name = pin.Name
 	}

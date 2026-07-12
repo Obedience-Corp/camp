@@ -55,7 +55,7 @@ camp [flags]
 * [camp dungeon](camp_dungeon.md)	 - Manage the campaign dungeon
 * [camp festivals](camp_festivals.md)	 - List festivals across campaigns, filtered by org/tag
 * [camp fresh](camp_fresh.md)	 - Post-merge branch cycling: sync to default branch and optionally create a new working branch
-* [camp gather](camp_gather.md)	 - Import external data into the intent system
+* [camp gather](camp_gather.md)	 - Gather related work into unified items
 * [camp go](camp_go.md)	 - Navigate to campaign directories
 * [camp id](camp_id.md)	 - Print the current campaign ID
 * [camp init](camp_init.md)	 - Initialize a new campaign
@@ -64,6 +64,7 @@ camp [flags]
 * [camp lifecycle](camp_lifecycle.md)	 - Manage campaign lifecycle status
 * [camp list](camp_list.md)	 - List all registered campaigns
 * [camp log](camp_log.md)	 - Show git log of the campaign
+* [camp machine](camp_machine.md)	 - Manage remote machines (~/.obey/machines.yaml)
 * [camp move](camp_move.md)	 - Move a file or directory within the campaign
 * [camp org](camp_org.md)	 - Group campaigns into orgs
 * [camp pin](camp_pin.md)	 - Pin a directory

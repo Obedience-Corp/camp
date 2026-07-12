@@ -48,7 +48,7 @@ func runIntentArchive(cmd *cobra.Command, args []string) error {
 	reason, _ := cmd.Flags().GetString("reason")
 	reason = strings.TrimSpace(reason)
 	if reason == "" {
-		return fmt.Errorf("--reason is required when archiving an intent")
+		return camperrors.Newf("--reason is required when archiving an intent")
 	}
 
 	// Find campaign root
@@ -68,7 +68,7 @@ func runIntentArchive(cmd *cobra.Command, args []string) error {
 	// Get intent title for commit message (before archiving)
 	i, err := svc.Find(ctx, id)
 	if err != nil {
-		return fmt.Errorf("intent not found: %s", id)
+		return camperrors.Newf("intent not found: %s", id)
 	}
 	intentTitle := i.Title
 	sourcePath := i.Path

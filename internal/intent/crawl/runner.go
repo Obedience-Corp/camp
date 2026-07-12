@@ -2,7 +2,6 @@ package crawl
 
 import (
 	"context"
-	"fmt"
 
 	sharedcrawl "github.com/Obedience-Corp/camp/internal/crawl"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -269,7 +268,7 @@ func processOne(
 			return appliedMove, sourcePath, moveDest{target: dest.Target}, nil
 		}
 
-		return appliedNone, "", moveDest{}, fmt.Errorf("intent crawl: unhandled action %q", action)
+		return appliedNone, "", moveDest{}, camperrors.Newf("intent crawl: unhandled action %q", action)
 	}
 }
 

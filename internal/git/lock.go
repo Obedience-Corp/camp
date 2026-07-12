@@ -2,7 +2,6 @@ package git
 
 import (
 	"context"
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -27,7 +26,7 @@ func FindIndexLocks(ctx context.Context, gitDir string) ([]string, error) {
 		return nil, camperrors.Wrapf(err, "git directory not accessible: %s", gitDir)
 	}
 	if !info.IsDir() {
-		return nil, fmt.Errorf("path is not a directory: %s", gitDir)
+		return nil, camperrors.Newf("path is not a directory: %s", gitDir)
 	}
 
 	// Check main index.lock
@@ -112,7 +111,7 @@ func ResolveGitDir(repoRoot string) (string, error) {
 func parseGitdirFile(repoRoot, content string) (string, error) {
 	content = strings.TrimSpace(content)
 	if !strings.HasPrefix(content, "gitdir: ") {
-		return "", fmt.Errorf("invalid .git file format: %s", content)
+		return "", camperrors.Newf("invalid .git file format: %s", content)
 	}
 
 	relPath := strings.TrimPrefix(content, "gitdir: ")

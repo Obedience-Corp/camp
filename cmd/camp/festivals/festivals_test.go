@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -256,6 +257,39 @@ func TestRenderHuman_GroupedFormat(t *testing.T) {
 	}
 	if strings.Index(out, "default") > strings.Index(out, "obey\n") {
 		t.Errorf("fallback org 'default' must render before 'obey':\n%s", out)
+	}
+}
+
+func TestRenderFestivalsHuman_NoColorIsPlainAndAligned(t *testing.T) {
+	ui.SetNoColor(true)
+	defer ui.SetNoColor(false)
+	var buf bytes.Buffer
+	items := []festivalItem{
+		{Org: "obc", Campaign: "obey-campaign", Festival: "festival-app-read-scaling-FA0019", Status: "active", Progress: progress{Completed: 53, Total: 53}},
+		{Org: "obc", Campaign: "obey-campaign", Festival: "obey-installer-security-OI0007", Status: "planning", Progress: progress{Completed: 0, Total: 7}},
+	}
+	if err := renderFestivalsHuman(&buf, items, "obc"); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if strings.Contains(out, "\x1b[") {
+		t.Errorf("no-color output contains ANSI escapes:\n%s", out)
+	}
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	activeIdx, planningIdx := -1, -1
+	for _, line := range lines {
+		if strings.Contains(line, "ACTIVE") {
+			activeIdx = strings.Index(line, "ACTIVE")
+		}
+		if strings.Contains(line, "PLANNING") {
+			planningIdx = strings.Index(line, "PLANNING")
+		}
+	}
+	if activeIdx == -1 || planningIdx == -1 {
+		t.Fatalf("expected both ACTIVE and PLANNING rows:\n%s", out)
+	}
+	if activeIdx != planningIdx {
+		t.Errorf("badge column not aligned: ACTIVE at %d, PLANNING at %d\n%s", activeIdx, planningIdx, out)
 	}
 }
 

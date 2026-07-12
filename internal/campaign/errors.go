@@ -3,7 +3,6 @@ package campaign
 
 import (
 	"errors"
-	"fmt"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
@@ -16,8 +15,8 @@ var (
 		"Hint: Run 'camp init' to create a campaign, or navigate to an existing one")
 
 	// ErrCampaignExists is returned when trying to initialize a campaign that already exists.
-	ErrCampaignExists = fmt.Errorf("campaign already exists in this directory: %w", camperrors.ErrAlreadyExists)
+	ErrCampaignExists = camperrors.Newf("campaign already exists in this directory: %w", camperrors.ErrAlreadyExists)
 
 	// ErrInvalidCampaign is returned when the campaign directory is corrupted or invalid.
-	ErrInvalidCampaign = fmt.Errorf("invalid campaign directory: %w", camperrors.ErrInvalidInput)
+	ErrInvalidCampaign = camperrors.Newf("invalid campaign directory: %w", camperrors.ErrInvalidInput)
 )

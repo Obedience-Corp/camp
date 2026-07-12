@@ -68,7 +68,7 @@ func runIntentMove(cmd *cobra.Command, args []string) error {
 
 	// Require reason for dungeon moves
 	if status.InDungeon() && reason == "" {
-		return fmt.Errorf("--reason is required when moving to a dungeon status (%s)", status)
+		return camperrors.Newf("--reason is required when moving to a dungeon status (%s)", status)
 	}
 
 	// Find campaign root
@@ -90,7 +90,7 @@ func runIntentMove(cmd *cobra.Command, args []string) error {
 	// Get intent title for commit message (before moving)
 	i, err := svc.Find(ctx, id)
 	if err != nil {
-		return fmt.Errorf("intent not found: %s", id)
+		return camperrors.Newf("intent not found: %s", id)
 	}
 	intentTitle := i.Title
 	sourcePath := i.Path

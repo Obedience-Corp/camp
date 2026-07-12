@@ -4,12 +4,13 @@ package editor
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/obey-shared/procutil"
@@ -97,32 +98,32 @@ func MoveFile(src, dst string) error {
 	// Fall back to copy + delete (cross-filesystem)
 	srcFile, err := os.Open(src)
 	if err != nil {
-		return fmt.Errorf("opening source file %q: %w", src, err)
+		return camperrors.Newf("opening source file %q: %w", src, err)
 	}
 	defer srcFile.Close()
 
 	// Get source file info for permissions
 	srcInfo, err := srcFile.Stat()
 	if err != nil {
-		return fmt.Errorf("getting source file info %q: %w", src, err)
+		return camperrors.Newf("getting source file info %q: %w", src, err)
 	}
 
 	dstFile, err := os.Create(dst)
 	if err != nil {
-		return fmt.Errorf("creating destination file %q: %w", dst, err)
+		return camperrors.Newf("creating destination file %q: %w", dst, err)
 	}
 	defer dstFile.Close()
 
 	// Copy contents
 	if _, err := io.Copy(dstFile, srcFile); err != nil {
 		os.Remove(dst) // Clean up partial copy
-		return fmt.Errorf("copying file from %q to %q: %w", src, dst, err)
+		return camperrors.Newf("copying file from %q to %q: %w", src, dst, err)
 	}
 
 	// Sync to ensure data is written
 	if err := dstFile.Sync(); err != nil {
 		os.Remove(dst) // Clean up on sync failure
-		return fmt.Errorf("syncing destination file %q: %w", dst, err)
+		return camperrors.Newf("syncing destination file %q: %w", dst, err)
 	}
 
 	// Set permissions to match source
@@ -200,7 +201,7 @@ func OpenEditor(ctx context.Context, editor, path string) error {
 	cmd.Stderr = os.Stderr
 
 	if err := procutil.RunWithCleanup(ctx, cmd); err != nil {
-		return fmt.Errorf("running editor %q with %q: %w", editor, path, err)
+		return camperrors.Newf("running editor %q with %q: %w", editor, path, err)
 	}
 
 	return nil

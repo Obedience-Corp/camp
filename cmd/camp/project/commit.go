@@ -4,8 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"path/filepath"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/Obedience-Corp/camp/internal/campaign"
@@ -39,7 +40,7 @@ Examples:
 
 var (
 	projectCommitProject   string
-	projectCommitMessage   string
+	projectCommitMessages  []string
 	projectCommitAll       bool
 	projectCommitAmend     bool
 	projectCommitSync      bool
@@ -49,7 +50,7 @@ var (
 
 func init() {
 	projectCommitCmd.Flags().StringVarP(&projectCommitProject, "project", "p", "", "Project name (auto-detected from cwd if not specified)")
-	projectCommitCmd.Flags().StringVarP(&projectCommitMessage, "message", "m", "", "Commit message (required unless --auto-write)")
+	projectCommitCmd.Flags().StringArrayVarP(&projectCommitMessages, "message", "m", nil, "Commit message (repeatable; multiple -m are joined git-style into subject + body; required unless --auto-write)")
 	projectCommitCmd.Flags().BoolVarP(&projectCommitAll, "all", "a", true, "Stage all changes")
 	projectCommitCmd.Flags().BoolVar(&projectCommitAmend, "amend", false, "Amend the previous commit")
 	projectCommitCmd.Flags().BoolVar(&projectCommitSync, "sync", false, "Sync submodule ref at campaign root after commit (opt-in)")
@@ -65,6 +66,10 @@ func init() {
 
 func runProjectCommit(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
+
+	// Join repeated -m values git-style before any tag prepending so the tag
+	// lands on the subject line.
+	projectCommitMessage := commitkit.JoinMessages(projectCommitMessages)
 
 	// Find campaign root
 	campRoot, err := campaign.DetectCached(ctx)
@@ -102,7 +107,7 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 	}
 
 	if projectCommitAutoWrite && projectCommitMessage != "" {
-		return fmt.Errorf("--auto-write cannot be used with --message")
+		return camperrors.Newf("--auto-write cannot be used with --message")
 	}
 
 	// Get commit message - prompt if not provided

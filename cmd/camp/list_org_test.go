@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -248,5 +249,67 @@ func TestList_FilterGroupPerformance(t *testing.T) {
 	_ = sortedGroupOrgs(byOrg, "default")
 	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
 		t.Errorf("filter+group of %d campaigns took %v, want <100ms", n, elapsed)
+	}
+}
+
+func TestList_EmptyOrgDoesNotAppearOrChangeGrouping(t *testing.T) {
+	// Campaigns only in default and obey; empty client-acme must not create a group header
+	// or change auto-group threshold (still 2 member orgs => group).
+	dir := t.TempDir()
+	path := filepath.Join(dir, "registry.json")
+	t.Setenv("CAMP_REGISTRY_PATH", path)
+	fixture := `{
+  "version": 3,
+  "orgs": [{"name":"client-acme"},{"name":"obey"}],
+  "campaigns": {
+    "A-1": {"name":"alpha","path":"/tmp/a","type":"campaign","org":"","status":"active"},
+    "B-2": {"name":"beta","path":"/tmp/b","type":"campaign","org":"obey","status":"active"}
+  }
+}`
+	if err := os.WriteFile(path, []byte(fixture), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	entries := []campaignEntry{
+		ent("A-1", "alpha", "campaign", "default", "active"),
+		ent("B-2", "beta", "campaign", "obey", "active"),
+	}
+	// Empty orgs are not campaign entries — distinctOrgs remains 2.
+	if distinctOrgs(entries) != 2 {
+		t.Fatalf("distinctOrgs = %d, want 2 (empty orgs must not count)", distinctOrgs(entries))
+	}
+	if !shouldGroupEntries(entries) {
+		t.Fatal("two member-orgs should auto-group")
+	}
+
+	// --org empty returns zero rows, no error.
+	filtered := filterEntries(entries, listFilter{org: "client-acme"})
+	if len(filtered) != 0 {
+		t.Fatalf("--org client-acme = %v, want empty", names(filtered))
+	}
+
+	// Grouped render has only default and obey headers.
+	ui.SetNoColor(true)
+	out := captureListStdout(t, func() error { return outputGrouped(entries, "table", "default") })
+	if strings.Contains(out, "client-acme") {
+		t.Fatalf("empty org leaked into camp list output:\n%s", out)
+	}
+	if !strings.Contains(out, "default") || !strings.Contains(out, "obey") {
+		t.Fatalf("expected default and obey groups:\n%s", out)
+	}
+
+	// JSON field set unchanged.
+	jsonOut := captureListStdout(t, func() error { return outputCampaigns(os.Stdout, entries, "json") })
+	var rows []map[string]any
+	if err := json.Unmarshal([]byte(jsonOut), &rows); err != nil {
+		t.Fatalf("json: %v\n%s", err, jsonOut)
+	}
+	wantKeys := map[string]bool{"id": true, "name": true, "type": true, "path": true, "org": true, "status": true, "tags": true}
+	for _, row := range rows {
+		for k := range wantKeys {
+			if _, ok := row[k]; !ok {
+				t.Fatalf("json row missing key %q: %v", k, row)
+			}
+		}
 	}
 }

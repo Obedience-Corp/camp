@@ -184,7 +184,7 @@ func updateProjectInclusion(cmd *cobra.Command, ctx context.Context, root, confi
 		name, _ := cmd.Flags().GetString("exclude")
 		entry, exists := cfg.Projects[name]
 		if !exists {
-			return fmt.Errorf("project %q not found in config", name)
+			return camperrors.Newf("project %q not found in config", name)
 		}
 		entry.Include = false
 		cfg.Projects[name] = entry
@@ -195,7 +195,7 @@ func updateProjectInclusion(cmd *cobra.Command, ctx context.Context, root, confi
 		name, _ := cmd.Flags().GetString("include")
 		entry, exists := cfg.Projects[name]
 		if !exists {
-			return fmt.Errorf("project %q not found in config", name)
+			return camperrors.Newf("project %q not found in config", name)
 		}
 		entry.Include = true
 		cfg.Projects[name] = entry
@@ -221,7 +221,7 @@ func updateLeverageConfig(cmd *cobra.Command, configPath string, peopleChanged, 
 	if peopleChanged {
 		people, _ := cmd.Flags().GetInt("people")
 		if people < 0 {
-			return fmt.Errorf("people must be >= 0 (0 = auto-detect from git)")
+			return camperrors.Newf("people must be >= 0 (0 = auto-detect from git)")
 		}
 		cfg.ActualPeople = people
 	}
@@ -244,7 +244,7 @@ func updateLeverageConfig(cmd *cobra.Command, configPath string, peopleChanged, 
 		cocomoType, _ := cmd.Flags().GetString("cocomo-type")
 		valid := map[string]bool{"organic": true, "semi-detached": true, "embedded": true}
 		if !valid[cocomoType] {
-			return fmt.Errorf("invalid COCOMO type %q: must be organic, semi-detached, or embedded", cocomoType)
+			return camperrors.Newf("invalid COCOMO type %q: must be organic, semi-detached, or embedded", cocomoType)
 		}
 		cfg.COCOMOProjectType = cocomoType
 	}

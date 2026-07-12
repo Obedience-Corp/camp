@@ -131,13 +131,13 @@ func EnsureProjectionDirectory(destDir string, dryRun bool, errOut io.Writer) er
 		return nil
 
 	case TypeFile:
-		return fmt.Errorf("destination exists and is a file: %s", destDir)
+		return camperrors.Newf("destination exists and is a file: %s", destDir)
 
 	case TypeSymlink:
-		return fmt.Errorf("destination exists as a symlink; camp skills now projects individual skill bundles into a directory: %s", destDir)
+		return camperrors.Newf("destination exists as a symlink; camp skills now projects individual skill bundles into a directory: %s", destDir)
 	}
 
-	return fmt.Errorf("unsupported destination type for %s", destDir)
+	return camperrors.Newf("unsupported destination type for %s", destDir)
 }
 
 // CreateSkillProjectionLink creates a relative symlink from linkPath to sourcePath.

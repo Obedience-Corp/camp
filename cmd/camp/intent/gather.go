@@ -3,8 +3,9 @@ package intent
 import (
 	"context"
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"strings"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/spf13/cobra"
 
@@ -131,12 +132,12 @@ func runIntentGather(cmd *cobra.Command, args []string) error {
 	ids = deduplicateIDs(ids)
 
 	if len(ids) < 2 {
-		return fmt.Errorf("need at least 2 intents to gather, found %d", len(ids))
+		return camperrors.Newf("need at least 2 intents to gather, found %d", len(ids))
 	}
 
 	// Title is required
 	if gatherTitle == "" {
-		return fmt.Errorf("--title is required")
+		return camperrors.Newf("--title is required")
 	}
 
 	// Capture source file paths before gather potentially moves them.
@@ -277,11 +278,11 @@ func discoverIntentsToGather(ctx context.Context, svc *gather.Service, intentSvc
 	}
 
 	if methods == 0 {
-		return nil, fmt.Errorf("specify intent IDs or use --tag, --hashtag, or --similar")
+		return nil, camperrors.Newf("specify intent IDs or use --tag, --hashtag, or --similar")
 	}
 
 	if methods > 1 {
-		return nil, fmt.Errorf("use only one discovery method: IDs, --tag, --hashtag, or --similar")
+		return nil, camperrors.Newf("use only one discovery method: IDs, --tag, --hashtag, or --similar")
 	}
 
 	// By explicit IDs — filter out dungeon intents
@@ -335,7 +336,7 @@ func discoverIntentsToGather(ctx context.Context, svc *gather.Service, intentSvc
 			return nil, camperrors.Wrapf(err, "reference intent %q not found", gatherSimilar)
 		}
 		if refIntent.Status.InDungeon() {
-			return nil, fmt.Errorf("reference intent %q is in %s status — only inbox/active/ready intents can be gathered", gatherSimilar, refIntent.Status)
+			return nil, camperrors.Newf("reference intent %q is in %s status — only inbox/active/ready intents can be gathered", gatherSimilar, refIntent.Status)
 		}
 
 		similar, err := svc.FindSimilar(ctx, gatherSimilar, gatherMinScore)
@@ -350,7 +351,7 @@ func discoverIntentsToGather(ctx context.Context, svc *gather.Service, intentSvc
 		return ids, nil
 	}
 
-	return nil, fmt.Errorf("no discovery method specified")
+	return nil, camperrors.Newf("no discovery method specified")
 }
 
 func showDryRun(ctx context.Context, svc *intent.IntentService, ids []string, title string) error {

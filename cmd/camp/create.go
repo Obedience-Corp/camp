@@ -44,12 +44,19 @@ func init() {
 	createCmd.Flags().Bool("no-skills", false, "Skip linking campaign skills into .claude/skills and .agents/skills")
 	createCmd.Flags().Bool("dry-run", false, "Show what would be done without creating anything")
 	createCmd.Flags().String("path", "", "Override the base campaigns directory (campaign created at <path>/<name>/)")
+	createCmd.Flags().String("org", "", "Assign the new campaign to this org (created if new; defaults to the fallback org)")
 }
 
 func runCreate(cmd *cobra.Command, args []string) error {
 	name := args[0]
 	if err := validateCampaignName(name); err != nil {
 		return err
+	}
+	org := cmdutil.GetFlagString(cmd, "org")
+	if org != "" {
+		if err := config.ValidateName("org", org); err != nil {
+			return err
+		}
 	}
 	ctx := cmd.Context()
 	dryRun := cmdutil.GetFlagBool(cmd, "dry-run")
@@ -90,6 +97,7 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		NoGit:       cmdutil.GetFlagBool(cmd, "no-git"),
 		NoSkills:    cmdutil.GetFlagBool(cmd, "no-skills"),
 		DryRun:      dryRun,
+		Org:         org,
 		// force, noRegister, repair, yes stay zero — create deliberately does not support them.
 	}
 	return initcmd.RunFlow(ctx, p, w, tui.IsTerminal())

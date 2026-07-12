@@ -9,6 +9,8 @@ import (
 	"runtime"
 	"time"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Obedience-Corp/camp/internal/editor"
@@ -55,7 +57,7 @@ func openInEditor(ctx context.Context, filePath string) tea.Cmd {
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		return func() tea.Msg {
 			return editorFinishedMsg{
-				err:  fmt.Errorf("file no longer exists: %s", filepath.Base(filePath)),
+				err:  camperrors.Newf("file no longer exists: %s", filepath.Base(filePath)),
 				path: filePath,
 			}
 		}
@@ -82,7 +84,7 @@ func openWithSystem(filePath string) tea.Cmd {
 		case "windows":
 			cmd = exec.Command("cmd", "/c", "start", "", filePath)
 		default:
-			return openFinishedMsg{err: fmt.Errorf("unsupported platform: %s", runtime.GOOS)}
+			return openFinishedMsg{err: camperrors.Newf("unsupported platform: %s", runtime.GOOS)}
 		}
 		err := cmd.Start()
 		return openFinishedMsg{err: err}
@@ -104,7 +106,7 @@ func revealInFileManager(filePath string) tea.Cmd {
 			// Windows: explorer /select, highlights the file
 			cmd = exec.Command("explorer", "/select,", filePath)
 		default:
-			return openFinishedMsg{err: fmt.Errorf("unsupported platform: %s", runtime.GOOS)}
+			return openFinishedMsg{err: camperrors.Newf("unsupported platform: %s", runtime.GOOS)}
 		}
 		err := cmd.Start()
 		return openFinishedMsg{err: err}

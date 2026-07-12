@@ -85,7 +85,7 @@ func initProjectRepo(ctx context.Context, path, name string) error {
 	// git init
 	cmd := exec.CommandContext(ctx, "git", "init", path)
 	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git init failed: %w (output: %s)", err, string(output))
+		return camperrors.Newf("git init failed: %w (output: %s)", err, string(output))
 	}
 
 	// Write README
@@ -97,12 +97,12 @@ func initProjectRepo(ctx context.Context, path, name string) error {
 	// git add + commit
 	cmd = exec.CommandContext(ctx, "git", "-C", path, "add", ".")
 	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git add failed: %w (output: %s)", err, string(output))
+		return camperrors.Newf("git add failed: %w (output: %s)", err, string(output))
 	}
 
 	cmd = exec.CommandContext(ctx, "git", "-C", path, "commit", "-m", "Initial commit")
 	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git commit failed: %w (output: %s)", err, string(output))
+		return camperrors.Newf("git commit failed: %w (output: %s)", err, string(output))
 	}
 
 	return nil

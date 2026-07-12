@@ -1,7 +1,9 @@
 // Package shell provides shell integration scripts for camp.
 package shell
 
-import "fmt"
+import (
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+)
 
 // SupportedShells lists all shells with integration support.
 var SupportedShells = []string{"zsh", "bash", "fish"}
@@ -16,7 +18,7 @@ func Generate(shellType string) (string, error) {
 	case "fish":
 		return generateFish(), nil
 	default:
-		return "", fmt.Errorf("unsupported shell: %s (supported: zsh, bash, fish)", shellType)
+		return "", camperrors.Newf("unsupported shell: %s (supported: zsh, bash, fish)", shellType)
 	}
 }
 

@@ -32,7 +32,7 @@ func CachePath(campaignRoot string) string {
 // The write is atomic (write to temp file, then rename) to prevent corruption.
 func Save(idx *Index, campaignRoot string) error {
 	if idx == nil {
-		return fmt.Errorf("cannot save nil index")
+		return camperrors.Newf("cannot save nil index")
 	}
 
 	path := CachePath(campaignRoot)
@@ -40,17 +40,17 @@ func Save(idx *Index, campaignRoot string) error {
 	// Ensure cache directory exists
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create cache directory: %w", err)
+		return camperrors.Newf("failed to create cache directory: %w", err)
 	}
 
 	// Marshal to JSON with indentation for readability
 	data, err := json.MarshalIndent(idx, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal index: %w", err)
+		return camperrors.Newf("failed to marshal index: %w", err)
 	}
 
 	if err := fsutil.WriteFileAtomically(path, data, 0o644); err != nil {
-		return fmt.Errorf("failed to write cache file: %w", err)
+		return camperrors.Newf("failed to write cache file: %w", err)
 	}
 
 	return nil
@@ -66,12 +66,12 @@ func Load(campaignRoot string) (*Index, error) {
 		return nil, nil // Cache doesn't exist
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to read cache file: %w", err)
+		return nil, camperrors.Newf("failed to read cache file: %w", err)
 	}
 
 	var idx Index
 	if err := json.Unmarshal(data, &idx); err != nil {
-		return nil, fmt.Errorf("failed to parse cache file: %w", err)
+		return nil, camperrors.Newf("failed to parse cache file: %w", err)
 	}
 
 	return &idx, nil
@@ -252,7 +252,7 @@ func GetOrBuild(ctx context.Context, campaignRoot string, forceRebuild bool) (*I
 	builder := NewBuilder(campaignRoot).WithProjects(projects)
 	idx, err := builder.Build(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build index: %w", err)
+		return nil, camperrors.Newf("failed to build index: %w", err)
 	}
 
 	// Save to cache (don't fail if save fails)
@@ -323,7 +323,7 @@ func Info(campaignRoot string) (*CacheInfo, error) {
 		return info, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to stat cache file: %w", err)
+		return nil, camperrors.Newf("failed to stat cache file: %w", err)
 	}
 
 	info.Exists = true
