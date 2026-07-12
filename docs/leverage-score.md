@@ -122,7 +122,9 @@ checkouts that would inflate COCOMO estimates: `node_modules`, `vendor`,
 `dist`, `build`, `target`, `worktrees`, `.worktrees`, `.camp-worktrees`,
 and similar. Project worktrees under `projects/worktrees/` are full source
 trees; counting them would multi-count the same codebase in leverage scores.
-Per-project extras can still be set via config `ExcludeDirs`.
+Monorepo root entries additionally exclude their expanded subproject
+directories via the project list's `ExcludeDirs`, so submodule code is
+not double-counted.
 
 ### From configuration (actual)
 
