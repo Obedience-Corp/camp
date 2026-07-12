@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/lipgloss/table"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/quest"
 	"github.com/Obedience-Corp/camp/internal/ui"
@@ -77,11 +78,11 @@ type checklistWorkitemIndex map[string]workitem.WorkItem
 func loadChecklistWorkitemIndex(ctx context.Context, root string) (checklistWorkitemIndex, error) {
 	cfg, err := config.LoadCampaignConfig(ctx, root)
 	if err != nil {
-		return nil, fmt.Errorf("load campaign config for checklist workitems: %w", err)
+		return nil, camperrors.Wrap(err, "load campaign config for checklist workitems")
 	}
 	items, err := workitem.Discover(ctx, root, paths.NewResolverFromConfig(root, cfg))
 	if err != nil {
-		return nil, fmt.Errorf("discover checklist workitems: %w", err)
+		return nil, camperrors.Wrap(err, "discover checklist workitems")
 	}
 	index := make(checklistWorkitemIndex, len(items))
 	for _, item := range items {
