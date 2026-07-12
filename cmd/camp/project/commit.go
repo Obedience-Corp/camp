@@ -11,9 +11,11 @@ import (
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/ledger"
 	projectsvc "github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/Obedience-Corp/camp/pkg/commitkit"
+	"github.com/Obedience-Corp/camp/pkg/ledgerkit"
 	"github.com/spf13/cobra"
 )
 
@@ -174,9 +176,16 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 
 	fmt.Println(ui.Success("✓ Project changes committed"))
 
+	// One emitter for the whole invocation so the project commit and any root
+	// pointer-sync commit share a single action id (D002).
+	emitter := ledger.NewFromRoot(ctx, campRoot, ledger.WarnTo(cmd.ErrOrStderr()))
+	if sha, shaErr := commitkit.ShortHash(ctx, resolvedPath); shaErr == nil {
+		emitter.CommitEvidence(ctx, ledgerkit.Scope{}, campRoot, resolvedPath, sha, message)
+	}
+
 	// Auto-sync submodule ref in campaign root
 	if projectCommitSync && git.HasPathDiff(ctx, campRoot, resolvedPath) {
-		if err := syncParentRef(ctx, campRoot, relPath, cfg); err != nil {
+		if err := syncParentRef(ctx, campRoot, relPath, cfg, emitter); err != nil {
 			fmt.Println()
 			fmt.Println(ui.Warning("Could not auto-sync campaign root: " + err.Error()))
 			fmt.Println(ui.Dim("Run 'camp commit' to update manually."))
@@ -187,7 +196,7 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 }
 
 // syncParentRef stages and commits the submodule ref update in the campaign root.
-func syncParentRef(ctx context.Context, campRoot, relPath string, cfg *config.CampaignConfig) error {
+func syncParentRef(ctx context.Context, campRoot, relPath string, cfg *config.CampaignConfig, emitter *ledger.Emitter) error {
 	if err := git.StageFiles(ctx, campRoot, relPath); err != nil {
 		return camperrors.Wrap(err, "staging submodule ref")
 	}
@@ -211,6 +220,12 @@ func syncParentRef(ctx context.Context, campRoot, relPath string, cfg *config.Ca
 			return nil
 		}
 		return camperrors.Wrap(err, "commit")
+	}
+
+	if emitter != nil {
+		if sha, shaErr := commitkit.ShortHash(ctx, campRoot); shaErr == nil {
+			emitter.CommitEvidence(ctx, ledgerkit.Scope{}, campRoot, campRoot, sha, msg)
+		}
 	}
 
 	fmt.Println(ui.Success("✓ Campaign root synced (" + relPath + ")"))

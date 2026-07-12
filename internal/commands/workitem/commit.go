@@ -14,6 +14,8 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
+	"github.com/Obedience-Corp/camp/internal/ledger"
+	"github.com/Obedience-Corp/camp/pkg/ledgerkit"
 )
 
 // noContextHint is the multi-line refusal message printed when the resolver
@@ -202,6 +204,12 @@ func runCommit(ctx context.Context, cmd *cobra.Command, flags commitFlags) error
 		if _, writeErr := fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not read last commit SHA: %v\n", shaErr); writeErr != nil {
 			return writeErr
 		}
+	}
+	if sha != "" {
+		ledger.NewFromRoot(ctx, campaignRoot, ledger.WarnTo(cmd.ErrOrStderr())).
+			CommitEvidence(ctx,
+				ledgerkit.Scope{Workitem: plan.WorkitemRef, Festival: plan.FestivalRef, Quest: plan.QuestID},
+				campaignRoot, plan.RepoRoot, sha, flags.Message)
 	}
 	if flags.JSON {
 		return emitJSON(cmd.OutOrStdout(), plan, sha)
