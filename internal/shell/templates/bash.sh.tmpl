@@ -265,10 +265,35 @@ _cgo_complete() {
 }
 complete -o nospace -F _cgo_complete cgo
 
-# Run command from campaign root
+# Run command from campaign root, or in a project with -p
 # Usage: cr <command> [args...]
+#        cr -p <project> [--] <command> [args...]
 cr() {
-  camp run "$@"
+  local cr_project=""
+  case "${1:-}" in
+    -p|--project)
+      if [ $# -lt 2 ] || [ -z "$2" ]; then
+        echo "usage: cr -p <project> [--] <command> [args...]" >&2
+        return 2
+      fi
+      cr_project="$2"
+      shift 2
+      ;;
+    -p=*|--project=*)
+      cr_project="${1#*=}"
+      if [ -z "$cr_project" ]; then
+        echo "usage: cr -p <project> [--] <command> [args...]" >&2
+        return 2
+      fi
+      shift
+      ;;
+  esac
+  if [ -n "$cr_project" ]; then
+    [ "$1" = "--" ] && shift
+    camp project run -p "$cr_project" -- "$@"
+  else
+    camp run "$@"
+  fi
 }
 
 # Switch campaigns
@@ -315,7 +340,7 @@ _camp_complete() {
       ;;
     project)
       if [ "$COMP_CWORD" -eq 2 ]; then
-        COMPREPLY=($(compgen -W "add list remove" -- "$cur"))
+        COMPREPLY=($(compgen -W "add commit link list new prune remote remove run stage unlink worktree" -- "$cur"))
       fi
       ;;
     shell-init)

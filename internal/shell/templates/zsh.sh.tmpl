@@ -288,10 +288,82 @@ _cgo() {
     fi
   fi
 }
-# Run command from campaign root
+# Run command from campaign root, or in a project with -p
 # Usage: cr <command> [args...]
+#        cr -p <project> [--] <command> [args...]
 cr() {
-  camp run "$@"
+  local cr_project=""
+  case "${1:-}" in
+    -p|--project)
+      if [[ $# -lt 2 || -z "$2" ]]; then
+        echo "usage: cr -p <project> [--] <command> [args...]" >&2
+        return 2
+      fi
+      cr_project="$2"
+      shift 2
+      ;;
+    -p=*|--project=*)
+      cr_project="${1#*=}"
+      if [[ -z "$cr_project" ]]; then
+        echo "usage: cr -p <project> [--] <command> [args...]" >&2
+        return 2
+      fi
+      shift
+      ;;
+  esac
+  if [[ -n "$cr_project" ]]; then
+    [[ "$1" == "--" ]] && shift
+    camp project run -p "$cr_project" -- "$@"
+  else
+    camp run "$@"
+  fi
+}
+
+# Tab completion for cr / cr -p <project>.
+# Delegates to _normal (the same technique zsh's own _precommand uses for
+# nohup/time/env-style wrappers) so the wrapped command completes exactly
+# as it would at the top level, once cr's own leading words are consumed.
+_cr() {
+  if [[ "${words[2]}" == "-p" || "${words[2]}" == "--project" ]]; then
+    if (( CURRENT == 3 )); then
+      local -a projects
+      local output line
+      output=$(command camp __complete project run -p "${words[3]:-}" 2>/dev/null)
+      for line in ${(f)output}; do
+        [[ "$line" == :* ]] && continue
+        [[ -n "$line" ]] && projects+=("$line")
+      done
+      (( ${#projects} )) && compadd -a projects
+      return
+    fi
+
+    shift 3 words
+    (( CURRENT -= 3 ))
+    [[ "${words[1]}" == "--" ]] && { shift words; (( CURRENT-- )) }
+    _normal
+    return
+  fi
+
+  shift words
+  (( CURRENT-- ))
+  _normal
+}
+
+# Tab completion for 'camp project run -p <project>' (called from _camp
+# with the previous word and the word being completed, taken from _camp's
+# pre-_arguments snapshot rather than the live, rebased $words/$CURRENT).
+_camp_project_run() {
+  local prev="$1" cur="$2"
+  if [[ "$prev" == "-p" || "$prev" == "--project" ]]; then
+    local -a projects
+    local output line
+    output=$(command camp __complete project run -p "$cur" 2>/dev/null)
+    for line in ${(f)output}; do
+      [[ "$line" == :* ]] && continue
+      [[ -n "$line" ]] && projects+=("$line")
+    done
+    (( ${#projects} )) && compadd -a projects
+  fi
 }
 
 # Switch campaigns
@@ -335,6 +407,14 @@ cie() {
 
 # Camp command completion
 _camp() {
+  # _arguments -C rebases (and may re-invoke with alternate splits of)
+  # $words/$CURRENT/$line while it resolves the '*::arg:->args' spec below,
+  # so a snapshot taken before calling it is the only reliable way to see
+  # the original, full command line inside the nested 'args' dispatch.
+  local -a orig_words
+  orig_words=("${words[@]}")
+  local orig_current="$CURRENT"
+
   local curcontext="$curcontext" state line
   typeset -A opt_args
 
@@ -375,13 +455,26 @@ _camp() {
             '1:directory:_directories'
           ;;
         project)
-          local -a project_cmds
-          project_cmds=(
-            'add:Add a project'
-            'list:List projects'
-            'remove:Remove a project'
-          )
-          _describe 'project command' project_cmds
+          if (( orig_current == 3 )); then
+            local -a project_cmds
+            project_cmds=(
+              'add:Add a project (submodule)'
+              'commit:Commit changes in a project submodule'
+              'link:Link an existing local project into the campaign'
+              'list:List projects in campaign'
+              'new:Create a new project in campaign'
+              'prune:Delete merged branches in a project'
+              'remote:Manage remotes for a project'
+              'remove:Remove a project from campaign'
+              'run:Run a command inside a project directory'
+              'stage:Stage changes in a project submodule'
+              'unlink:Unlink a linked project from the campaign'
+              'worktree:Manage worktrees for a project'
+            )
+            _describe 'project command' project_cmds
+          elif [[ "${orig_words[3]}" == "run" ]]; then
+            _camp_project_run "${orig_words[orig_current-1]}" "${orig_words[orig_current]:-}"
+          fi
           ;;
         shell-init)
           local -a shells
@@ -408,6 +501,7 @@ _camp() {
 # user's own compinit runs, without erroring when it never does.
 _camp_register_completions() {
   compdef _cgo cgo
+  compdef _cr cr
   compdef _csw csw
   compdef _camp camp
 }
