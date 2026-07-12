@@ -22,12 +22,14 @@ import (
 // action id, the resolved actor, and the campaign id onto every event so a
 // root+submodule action is grouped (D002) and scope is consistent.
 type Emitter struct {
-	writer     ledgerAppender
-	campaignID string
-	actionID   string
-	actor      ledgerkit.Actor
-	warn       func(error)
-	disabled   bool
+	writer       ledgerAppender
+	campaignID   string
+	campaignRoot string
+	writerID     string
+	actionID     string
+	actor        ledgerkit.Actor
+	warn         func(error)
+	disabled     bool
 }
 
 // ledgerAppender is the subset of *ledgerkit.Writer the emitter needs, so tests
@@ -68,7 +70,36 @@ func New(ctx context.Context, campaignRoot, campaignID string, warn func(error))
 		return e
 	}
 	e.writer = w
+	e.campaignRoot = campaignRoot
+	e.writerID = writerID
 	return e
+}
+
+// AddExplicit emits an explicit (source: explicit) event - the camp event add
+// primitive for actions that never touch git - and returns the created event id
+// and the shard file it landed in, for the command to report. Returns empty
+// strings when the emitter is disabled.
+func (e *Emitter) AddExplicit(ctx context.Context, kind ledgerkit.Kind, scope ledgerkit.Scope, opts ...Option) (eventID, shardPath string) {
+	if e.disabled || e.writer == nil {
+		return "", ""
+	}
+	scope.Campaign = e.campaignID
+	now := time.Now()
+	ev := &ledgerkit.Event{
+		V:      ledgerkit.EnvelopeVersion,
+		ID:     ledgerkit.NewEventID(),
+		TS:     ledgerkit.NowUTC(now),
+		Kind:   kind,
+		Scope:  scope,
+		Action: e.actionID,
+		Actor:  e.actor,
+		Source: ledgerkit.SourceExplicit,
+	}
+	for _, o := range opts {
+		o(ev)
+	}
+	_ = e.writer.Emit(ctx, ev, e.warn)
+	return ev.ID, ledgerkit.ShardPath(e.campaignRoot, e.writerID, now)
 }
 
 // NewFromRoot builds an emitter for the campaign rooted at campaignRoot,

@@ -11,6 +11,7 @@ import (
 	attachpkg "github.com/Obedience-Corp/camp/cmd/camp/attach"
 	cachepkg "github.com/Obedience-Corp/camp/cmd/camp/cache"
 	dungeonpkg "github.com/Obedience-Corp/camp/cmd/camp/dungeon"
+	eventpkg "github.com/Obedience-Corp/camp/cmd/camp/event"
 	festivalspkg "github.com/Obedience-Corp/camp/cmd/camp/festivals"
 	initcmd "github.com/Obedience-Corp/camp/cmd/camp/init"
 	intentpkg "github.com/Obedience-Corp/camp/cmd/camp/intent"
@@ -218,6 +219,7 @@ func init() {
 	})
 
 	rootCmd.AddCommand(skillspkg.Cmd)
+	rootCmd.AddCommand(eventpkg.Cmd)
 	rootCmd.AddCommand(cachepkg.Cmd)
 	rootCmd.AddCommand(navigationpkg.Cmd)
 	rootCmd.AddCommand(initcmd.New())
