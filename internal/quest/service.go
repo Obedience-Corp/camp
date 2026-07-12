@@ -42,6 +42,10 @@ type EditorFunc func(ctx context.Context, path string) error
 // Service manages quest lifecycle operations for a campaign.
 type Service struct {
 	campaignRoot string
+	// emitter appends campaign-ledger events for quest lifecycle transitions. Set
+	// by the (dev-gated) command layer; nil in service tests, so emission never
+	// touches the ledger unless wired. See ledger_emit.go.
+	emitter ledgerEmitter
 }
 
 var (
@@ -345,6 +349,7 @@ func (s *Service) Restore(ctx context.Context, identifier string) (*MutationResu
 	if q.Status != StatusCompleted && q.Status != StatusArchived {
 		return nil, camperrors.Wrapf(ErrInvalidTransition, "cannot restore quest from %s", q.Status)
 	}
+	oldStatus := q.Status
 
 	oldDir := filepath.Dir(q.Path)
 	newDir := QuestDir(s.campaignRoot, q.Slug)
@@ -368,6 +373,7 @@ func (s *Service) Restore(ctx context.Context, identifier string) (*MutationResu
 		}
 		return nil, err
 	}
+	s.emitTransition(ctx, q, oldStatus, StatusOpen)
 
 	return &MutationResult{
 		Quest:     q,
@@ -543,6 +549,7 @@ func (s *Service) updateInPlace(ctx context.Context, identifier string, from, to
 	if err := Save(ctx, q.Path, q); err != nil {
 		return nil, err
 	}
+	s.emitTransition(ctx, q, from, to)
 
 	return &MutationResult{
 		Quest: q,
@@ -562,6 +569,7 @@ func (s *Service) moveToStatus(ctx context.Context, identifier string, from []St
 	if !slices.Contains(from, q.Status) {
 		return nil, camperrors.Wrapf(ErrInvalidTransition, "cannot move quest from %s to %s", q.Status, target)
 	}
+	oldStatus := q.Status
 
 	oldDir := filepath.Dir(q.Path)
 	newDir := filepath.Join(DungeonStatusDir(s.campaignRoot, target), q.Slug)
@@ -585,6 +593,7 @@ func (s *Service) moveToStatus(ctx context.Context, identifier string, from []St
 		}
 		return nil, err
 	}
+	s.emitTransition(ctx, q, oldStatus, target)
 
 	return &MutationResult{
 		Quest:     q,
