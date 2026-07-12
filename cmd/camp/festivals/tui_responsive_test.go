@@ -41,6 +41,18 @@ func TestBrowser_NoLineExceedsWidth(t *testing.T) {
 	}
 }
 
+func TestBrowser_HasNoPhantomTrailingRow(t *testing.T) {
+	m := makeBrowserWithNFestivals(50)
+	m.width, m.height = 80, 24
+	out := m.View()
+	if strings.HasSuffix(out, "\n") {
+		t.Fatalf("full-screen festivals view ends with a phantom row: %q", out)
+	}
+	if got := len(strings.Split(out, "\n")); got > m.height {
+		t.Fatalf("rendered %d rows for terminal height %d", got, m.height)
+	}
+}
+
 func TestBrowser_ScrollKeepsCursorVisible(t *testing.T) {
 	ui.SetNoColor(true)
 	m := makeBrowserWithNFestivals(50)

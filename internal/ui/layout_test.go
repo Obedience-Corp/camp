@@ -1,6 +1,9 @@
 package ui
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestTruncate(t *testing.T) {
 	cases := []struct {
@@ -42,6 +45,30 @@ func TestClampLines_ZeroWidthIsPassthrough(t *testing.T) {
 		if out[i] != in[i] {
 			t.Errorf("ClampLines width 0 altered line %d: %q -> %q", i, in[i], out[i])
 		}
+	}
+}
+
+func TestFitFullscreenView_RemovesPhantomTrailingRows(t *testing.T) {
+	got := FitFullscreenView("top\nmiddle\nbottom\n", 3)
+	if got != "top\nmiddle\nbottom" {
+		t.Fatalf("FitFullscreenView = %q, want view without trailing row", got)
+	}
+	if strings.HasSuffix(got, "\n") {
+		t.Fatal("fullscreen view must not end with a newline")
+	}
+}
+
+func TestFitFullscreenView_PreservesTopWhenContentOverflows(t *testing.T) {
+	got := FitFullscreenView("top\nsecond\nthird\nbottom", 3)
+	if got != "top\nsecond\nthird" {
+		t.Fatalf("FitFullscreenView = %q, want top three rows", got)
+	}
+}
+
+func TestFitFullscreenView_UnknownHeightOnlyTrimsTrailingRows(t *testing.T) {
+	got := FitFullscreenView("top\nbottom\n\n", 0)
+	if got != "top\nbottom" {
+		t.Fatalf("FitFullscreenView unknown height = %q", got)
 	}
 }
 

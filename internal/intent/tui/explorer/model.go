@@ -10,6 +10,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/intent/gather"
 	"github.com/Obedience-Corp/camp/internal/intent/tui"
 	"github.com/Obedience-Corp/camp/internal/intent/tui/filterchip"
+	campui "github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -256,6 +257,10 @@ func (m Model) loadIntents() tea.Cmd {
 
 // View implements tea.Model.
 func (m Model) View() string {
+	return campui.FitFullscreenView(m.view(), m.height)
+}
+
+func (m Model) view() string {
 	if m.quitting {
 		return ""
 	}
