@@ -13,6 +13,7 @@ package commitkit
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
@@ -22,6 +23,25 @@ import (
 
 // ErrNoChanges is returned when there are no changes to commit.
 var ErrNoChanges = git.ErrNoChanges
+
+// JoinMessages assembles repeated -m/--message flag values using git's exact
+// multi -m semantics: empty values are dropped and the remaining values are
+// joined with a blank line, so each becomes its own paragraph and the first is
+// the commit subject. A single non-empty value is returned unchanged (embedded
+// newlines preserved). Zero values, or an all-empty input, yield "" so callers
+// keep their existing "no message" path (prompt, editor, or error) intact.
+//
+// This must run before the campaign tag is prepended so the tag lands on the
+// real subject line rather than a body paragraph.
+func JoinMessages(messages []string) string {
+	nonEmpty := make([]string, 0, len(messages))
+	for _, m := range messages {
+		if m != "" {
+			nonEmpty = append(nonEmpty, m)
+		}
+	}
+	return strings.Join(nonEmpty, "\n\n")
+}
 
 // CommitOptions configures a commit operation.
 type CommitOptions struct {

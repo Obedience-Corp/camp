@@ -14,6 +14,7 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
+	"github.com/Obedience-Corp/camp/pkg/commitkit"
 )
 
 // noContextHint is the multi-line refusal message printed when the resolver
@@ -27,7 +28,7 @@ Try one of:
 
 func newCommitCommand() *cobra.Command {
 	var (
-		flagMessage                 string
+		flagMessage                 []string
 		flagWorkitem                string
 		flagProject                 string
 		flagFestival                string
@@ -63,7 +64,7 @@ precedence.`,
 				selector = args[0]
 			}
 			return runCommit(ctx, cmd, commitFlags{
-				Message:                 flagMessage,
+				Message:                 commitkit.JoinMessages(flagMessage),
 				Workitem:                selector,
 				Project:                 flagProject,
 				Festival:                flagFestival,
@@ -77,7 +78,7 @@ precedence.`,
 		}),
 	}
 	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(WorkitemCommitJSONVersion, func() bool { return flagJSON }))
-	cmd.Flags().StringVarP(&flagMessage, "message", "m", "", "commit message (required unless --dry-run)")
+	cmd.Flags().StringArrayVarP(&flagMessage, "message", "m", nil, "commit message (repeatable; multiple -m are joined git-style into subject + body; required unless --dry-run)")
 	cmd.Flags().StringVar(&flagWorkitem, "workitem", "", "explicit workitem selector (overrides cwd-based resolution)")
 	cmd.Flags().StringVar(&flagProject, "project", "", "force project-repo context by name (skips resolver)")
 	cmd.Flags().StringVar(&flagFestival, "festival", "", "festival id for the festival resolver tier")
