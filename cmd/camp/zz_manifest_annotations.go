@@ -9,6 +9,7 @@ const (
 )
 
 var manifestAgentAllowedReasons = map[string]string{
+	"audit doctor":               "Read-only bypass scan; --json output for automation",
 	"cache info":                 "Read-only cache metadata",
 	"concepts":                   "Read-only concept listing",
 	"create":                     "Non-interactive with -d and -m; interactive fallback otherwise",

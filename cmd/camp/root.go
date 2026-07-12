@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	attachpkg "github.com/Obedience-Corp/camp/cmd/camp/attach"
+	auditpkg "github.com/Obedience-Corp/camp/cmd/camp/audit"
 	cachepkg "github.com/Obedience-Corp/camp/cmd/camp/cache"
 	dungeonpkg "github.com/Obedience-Corp/camp/cmd/camp/dungeon"
 	eventpkg "github.com/Obedience-Corp/camp/cmd/camp/event"
@@ -220,6 +221,7 @@ func init() {
 
 	rootCmd.AddCommand(skillspkg.Cmd)
 	rootCmd.AddCommand(eventpkg.Cmd)
+	rootCmd.AddCommand(auditpkg.Cmd)
 	rootCmd.AddCommand(cachepkg.Cmd)
 	rootCmd.AddCommand(navigationpkg.Cmd)
 	rootCmd.AddCommand(initcmd.New())
