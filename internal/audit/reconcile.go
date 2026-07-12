@@ -17,11 +17,12 @@ import (
 // checked against the ledger. Backfill emits every fact; reconciliation emits
 // only facts the ledger does not already capture.
 type DerivedFact struct {
-	Kind    ledgerkit.Kind
-	Scope   ledgerkit.Scope
-	TS      string
-	Why     string
-	Payload map[string]any
+	Kind     ledgerkit.Kind
+	Scope    ledgerkit.Scope
+	TS       string
+	Why      string
+	Payload  map[string]any
+	Evidence []ledgerkit.Evidence
 	// IdentityKey is the stable content identity used to derive the event id and
 	// to detect whether the ledger already captures this fact.
 	IdentityKey string
@@ -168,6 +169,15 @@ func capturedIndex(events []*ledgerkit.Event) map[string]bool {
 				idx["fest-transitioned:"+e.Scope.Festival+":"+from+"->"+to] = true
 			}
 		}
+		// Commit evidence (live or backfilled) covers a commit fact regardless of
+		// the event kind, so backfill does not re-attach an already-recorded sha.
+		// Shas are normalized to a short prefix so live short shas and backfill
+		// full shas for the same commit match.
+		for _, ev := range e.Evidence {
+			if ev.Type == ledgerkit.EvidenceCommit && ev.SHA != "" {
+				idx["commit:"+ev.Repo+"@"+normSHA(ev.SHA)] = true
+			}
+		}
 	}
 	return idx
 }
@@ -186,8 +196,22 @@ func factCoverageKey(f DerivedFact) string {
 			to, _ := f.Payload["to"].(string)
 			return "fest-transitioned:" + f.Scope.Festival + ":" + from + "->" + to
 		}
+	case ledgerkit.KindEvidenceAttached:
+		if len(f.Evidence) > 0 && f.Evidence[0].Type == ledgerkit.EvidenceCommit {
+			return "commit:" + f.Evidence[0].Repo + "@" + normSHA(f.Evidence[0].SHA)
+		}
 	}
 	return f.IdentityKey
+}
+
+// normSHA normalizes a commit sha to a short prefix so a short sha stored by
+// live capture and a full sha derived by backfill for the same commit compare
+// equal in coverage keys.
+func normSHA(sha string) string {
+	if len(sha) > 7 {
+		return sha[:7]
+	}
+	return sha
 }
 
 // ---- small helpers ----

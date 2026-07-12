@@ -9,6 +9,7 @@ const (
 )
 
 var manifestAgentAllowedReasons = map[string]string{
+	"audit backfill":             "Dry-run backfill is read-only; --apply is an explicit opt-in write",
 	"audit doctor":               "Read-only bypass scan; --json output for automation",
 	"audit reconcile":            "Dry-run reconciliation is read-only; --apply is an explicit opt-in write",
 	"audit repair":               "Appends a commit-attribution event from explicit flags",
