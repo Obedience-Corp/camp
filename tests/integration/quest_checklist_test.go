@@ -105,6 +105,17 @@ func TestQuestChecklist_WorkitemLinkResolvesAtReadTime(t *testing.T) {
 	assert.Contains(t, listOut, `"resolved_path"`)
 	assert.Contains(t, listOut, "workflow/feature/billing-dunning")
 
+	// Deleting the linked workitem must preserve its stored identity while
+	// removing stale resolved data from the read-time join.
+	_, exitCode, err := tc.ExecCommand("rm", "-rf", path+"/workflow/feature/billing-dunning")
+	require.NoError(t, err)
+	require.Zero(t, exitCode)
+	missingOut, err := tc.RunCampInDir(path, "quest", "checklist", "billing", "--json")
+	require.NoError(t, err, missingOut)
+	assert.Contains(t, missingOut, "feature-billing-dunning")
+	assert.Contains(t, missingOut, `"missing": true`)
+	assert.NotContains(t, missingOut, `"resolved_path"`)
+
 	// Unlink drops the reference.
 	_, err = tc.RunCampInDir(path, "quest", "item", "unlink-workitem", "billing", item.Item.ID, "--no-commit")
 	require.NoError(t, err)

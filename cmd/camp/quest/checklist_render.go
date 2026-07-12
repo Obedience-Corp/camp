@@ -13,10 +13,11 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 
+	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/quest"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/Obedience-Corp/camp/internal/workitem"
-	"github.com/Obedience-Corp/camp/internal/workitem/selector"
 )
 
 // QuestChecklistJSONVersion is the schema tag for checklist JSON output. It
@@ -68,16 +69,40 @@ func questJSON(q *quest.Quest) checklistQuestJSON {
 	return checklistQuestJSON{ID: q.ID, Name: q.Name, Status: string(q.Status)}
 }
 
+type checklistWorkitemIndex map[string]workitem.WorkItem
+
+// loadChecklistWorkitemIndex discovers once per render. Checklist links store
+// stable workitem ids, so the read-time join does not need to repeat a full
+// campaign discovery for every row.
+func loadChecklistWorkitemIndex(ctx context.Context, root string) (checklistWorkitemIndex, error) {
+	cfg, err := config.LoadCampaignConfig(ctx, root)
+	if err != nil {
+		return nil, fmt.Errorf("load campaign config for checklist workitems: %w", err)
+	}
+	items, err := workitem.Discover(ctx, root, paths.NewResolverFromConfig(root, cfg))
+	if err != nil {
+		return nil, fmt.Errorf("discover checklist workitems: %w", err)
+	}
+	index := make(checklistWorkitemIndex, len(items))
+	for _, item := range items {
+		if item.StableID != "" {
+			index[item.StableID] = item
+		}
+	}
+	return index, nil
+}
+
 // resolveChecklistWorkitem performs the read-time join: the stored id is the
-// source of truth, and the path/stage are looked up now so a workitem moving to
-// the dungeon surfaces as missing rather than a stale path.
-func resolveChecklistWorkitem(ctx context.Context, root string, wi *quest.ChecklistWorkitem) *checklistWorkitemJSON {
+// source of truth, and the path/stage are looked up from the current discovery.
+// Workitems outside the discoverable inventory (including dungeoned or deleted
+// items) surface as missing rather than retaining a stale path.
+func resolveChecklistWorkitem(index checklistWorkitemIndex, wi *quest.ChecklistWorkitem) *checklistWorkitemJSON {
 	if wi == nil {
 		return nil
 	}
 	out := &checklistWorkitemJSON{ID: wi.ID, Ref: wi.Ref}
-	w, err := selector.Resolve(ctx, root, wi.ID, selector.ResolveOptions{})
-	if err != nil {
+	w, ok := index[wi.ID]
+	if !ok {
 		out.Missing = true
 		return out
 	}
@@ -90,13 +115,13 @@ func resolveChecklistWorkitem(ctx context.Context, root string, wi *quest.Checkl
 	return out
 }
 
-func checklistItemToJSON(ctx context.Context, root string, item quest.ChecklistItem) checklistItemJSON {
+func checklistItemToJSON(index checklistWorkitemIndex, item quest.ChecklistItem) checklistItemJSON {
 	return checklistItemJSON{
 		ID:          item.ID,
 		Title:       item.Title,
 		Status:      string(item.Status),
 		Rank:        item.Rank,
-		Workitem:    resolveChecklistWorkitem(ctx, root, item.Workitem),
+		Workitem:    resolveChecklistWorkitem(index, item.Workitem),
 		Notes:       item.Notes,
 		CreatedAt:   item.CreatedAt,
 		UpdatedAt:   item.UpdatedAt,
@@ -105,9 +130,13 @@ func checklistItemToJSON(ctx context.Context, root string, item quest.ChecklistI
 }
 
 func outputChecklistJSON(ctx context.Context, w io.Writer, root string, q *quest.Quest, items []quest.ChecklistItem) error {
+	index, err := loadChecklistWorkitemIndex(ctx, root)
+	if err != nil {
+		return err
+	}
 	jsonItems := make([]checklistItemJSON, 0, len(items))
 	for _, item := range items {
-		jsonItems = append(jsonItems, checklistItemToJSON(ctx, root, item))
+		jsonItems = append(jsonItems, checklistItemToJSON(index, item))
 	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
@@ -120,13 +149,17 @@ func outputChecklistJSON(ctx context.Context, w io.Writer, root string, q *quest
 }
 
 func outputChecklistItemResultJSON(ctx context.Context, w io.Writer, root string, q *quest.Quest, item *quest.ChecklistItem) error {
+	index, err := loadChecklistWorkitemIndex(ctx, root)
+	if err != nil {
+		return err
+	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(checklistItemResultJSON{
 		SchemaVersion: QuestChecklistJSONVersion,
 		CampaignRoot:  root,
 		Quest:         questJSON(q),
-		Item:          checklistItemToJSON(ctx, root, *item),
+		Item:          checklistItemToJSON(index, *item),
 	})
 }
 
@@ -153,11 +186,11 @@ func shortItemID(id string) string {
 	return id
 }
 
-func workitemCell(ctx context.Context, root string, wi *quest.ChecklistWorkitem) string {
+func workitemCell(index checklistWorkitemIndex, wi *quest.ChecklistWorkitem) string {
 	if wi == nil {
 		return ""
 	}
-	resolved := resolveChecklistWorkitem(ctx, root, wi)
+	resolved := resolveChecklistWorkitem(index, wi)
 	if resolved.Missing {
 		label := resolved.Ref
 		if label == "" {
@@ -175,6 +208,10 @@ func workitemCell(ctx context.Context, root string, wi *quest.ChecklistWorkitem)
 }
 
 func outputChecklistTable(ctx context.Context, w io.Writer, root string, q *quest.Quest, items []quest.ChecklistItem) error {
+	index, err := loadChecklistWorkitemIndex(ctx, root)
+	if err != nil {
+		return err
+	}
 	fmt.Fprintf(w, "Quest: %s (%s)\n", q.Name, q.ID)
 	if len(items) == 0 {
 		fmt.Fprintln(w, "No checklist items. Add one with: camp quest item add "+q.Name+" \"<title>\"")
@@ -190,7 +227,7 @@ func outputChecklistTable(ctx context.Context, w io.Writer, root string, q *ques
 			shortItemID(item.ID),
 			fmt.Sprintf("%d", item.Rank),
 			item.Title,
-			workitemCell(ctx, root, item.Workitem),
+			workitemCell(index, item.Workitem),
 		})
 	}
 
