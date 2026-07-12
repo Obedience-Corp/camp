@@ -112,8 +112,17 @@ We use it as the baseline because:
 scc is invoked as:
 
 ```bash
-scc --format json2 --cocomo-project-type <type> <directory>
+scc --format json2 --cocomo-project-type <type> \
+  --exclude-dir node_modules --exclude-dir vendor ... \
+  <directory>
 ```
+
+Default `--exclude-dir` values skip dependency/build caches and parallel
+checkouts that would inflate COCOMO estimates: `node_modules`, `vendor`,
+`dist`, `build`, `target`, `worktrees`, `.worktrees`, `.camp-worktrees`,
+and similar. Project worktrees under `projects/worktrees/` are full source
+trees; counting them would multi-count the same codebase in leverage scores.
+Per-project extras can still be set via config `ExcludeDirs`.
 
 ### From configuration (actual)
 
