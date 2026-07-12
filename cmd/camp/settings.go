@@ -10,8 +10,16 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
+	"github.com/Obedience-Corp/camp/internal/settings"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/Obedience-Corp/camp/internal/ui/theme"
+)
+
+const (
+	rowSeparator = "─────────────────"
+	valSeparator = "_separator"
+	valBack      = "back"
 )
 
 var settingsCmd = &cobra.Command{
@@ -55,6 +63,11 @@ func runSettings(cmd *cobra.Command, args []string) error {
 	_, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	inCampaign := err == nil
 
+	cat, err := settings.BuildCatalog(ctx, campaignRoot)
+	if err != nil {
+		return camperrors.Wrap(err, "building settings catalog")
+	}
+
 	options := []huh.Option[string]{
 		huh.NewOption("Global Settings", "global"),
 		huh.NewOption("Local Settings (this campaign)", "local"),
@@ -82,7 +95,7 @@ func runSettings(cmd *cobra.Command, args []string) error {
 		case "exit", "":
 			return nil
 		case "global":
-			if err := runGlobalSettings(ctx); err != nil {
+			if err := runScopeMenu(ctx, cat, settings.ScopeGlobal, campaignRoot); err != nil {
 				return err
 			}
 		case "local":
@@ -90,19 +103,119 @@ func runSettings(cmd *cobra.Command, args []string) error {
 				fmt.Println(ui.Warning("Not inside a campaign. Local settings live in .campaign/settings/local.json; run camp settings from a campaign directory to edit them."))
 				continue
 			}
-			if err := runLocalSettings(ctx, campaignRoot); err != nil {
+			if err := runScopeMenu(ctx, cat, settings.ScopeLocal, campaignRoot); err != nil {
 				return err
 			}
 		}
 	}
 }
 
-func runGlobalSettings(ctx context.Context) error {
+// runScopeMenu renders one scope's sub-menu entirely from the catalog: rows are
+// the listable entries for that scope (Hidden/Secret never appear), and each
+// selection is dispatched to its editor by entry ID.
+func runScopeMenu(ctx context.Context, cat []settings.SettingEntry, scope settings.Scope, campaignRoot string) error {
+	title, description := scopeHeader(scope, campaignRoot)
+	for {
+		var choice string
+		form := huh.NewForm(huh.NewGroup(
+			huh.NewSelect[string]().
+				Title(title).
+				Description(description).
+				Options(scopeOptions(cat, scope)...).
+				Value(&choice),
+		))
+
+		if err := theme.RunForm(ctx, form); err != nil {
+			if theme.IsCancelled(err) {
+				return nil
+			}
+			return err
+		}
+
+		switch choice {
+		case valBack:
+			return nil
+		case valSeparator:
+			continue
+		default:
+			entry, ok := entryByID(cat, choice)
+			if !ok {
+				continue
+			}
+			if err := editEntry(ctx, entry, campaignRoot); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+// scopeOptions builds the selectable rows for a scope from the catalog, followed
+// by a separator and a Back row. Each row's value is the entry ID, which the
+// router dispatches on.
+func scopeOptions(cat []settings.SettingEntry, scope settings.Scope) []huh.Option[string] {
+	var options []huh.Option[string]
+	for _, e := range settings.ForScope(cat, scope) {
+		options = append(options, huh.NewOption(e.Title, e.ID))
+	}
+	return append(options,
+		huh.NewOption(rowSeparator, valSeparator),
+		huh.NewOption("Back", valBack),
+	)
+}
+
+// scopeHeader returns the menu title and a description naming where the scope's
+// files live. The precise per-file path is shown on each editor screen.
+func scopeHeader(scope settings.Scope, campaignRoot string) (title, description string) {
+	switch scope {
+	case settings.ScopeGlobal:
+		return "Global Settings", "Files under " + pathutil.AbbreviateHome(config.ConfigDir()) + "/"
+	case settings.ScopeLocal:
+		return "Local Settings (this campaign)", "Files under .campaign/"
+	default:
+		return "Settings", ""
+	}
+}
+
+func entryByID(cat []settings.SettingEntry, id string) (settings.SettingEntry, bool) {
+	for _, e := range cat {
+		if e.ID == id {
+			return e, true
+		}
+	}
+	return settings.SettingEntry{}, false
+}
+
+// editEntry dispatches a selected catalog entry to its editor by ID. This is the
+// single extension point sequences 03-05 plug their editors into. Entries whose
+// editor is not implemented yet show a clear message and return to the menu.
+func editEntry(ctx context.Context, e settings.SettingEntry, campaignRoot string) error {
+	switch e.ID {
+	case "global_config":
+		return editGlobalConfig(ctx, e, campaignRoot)
+	case "local_settings":
+		return editLocalSettingsFile(ctx, e, campaignRoot)
+	case "campaign_manifest":
+		return editCampaignManifest(ctx, e, campaignRoot)
+	case "registry":
+		return editRegistry(ctx, e, campaignRoot)
+	case "allowlist":
+		return editAllowlist(ctx, e, campaignRoot)
+	default:
+		fmt.Println(ui.Warning(fmt.Sprintf("%s is not editable from the TUI yet.", e.Title)))
+		return nil
+	}
+}
+
+// editGlobalConfig opens the global config.json fields as a sub-form under the
+// global_config catalog entry. Behavior and persistence are unchanged from the
+// former flat global menu.
+func editGlobalConfig(ctx context.Context, e settings.SettingEntry, campaignRoot string) error {
 	cfg, err := config.LoadGlobalConfig(ctx)
 	if err != nil {
 		return camperrors.Wrap(err, "loading global config")
 	}
 
+	header := "File: " + settings.CatalogPath(e, campaignRoot)
 	for {
 		options := []huh.Option[string]{
 			huh.NewOption(fmt.Sprintf("Theme          %s", displayStr(cfg.TUI.Theme, config.ThemeNameAdaptive)), "theme"),
@@ -110,15 +223,15 @@ func runGlobalSettings(ctx context.Context) error {
 			huh.NewOption(fmt.Sprintf("Campaigns Dir  %s", displayStr(cfg.CampaignsDir, "~/campaigns")), "campaigns_dir"),
 			huh.NewOption(fmt.Sprintf("Verbose        %s", boolStr(cfg.Verbose)), "verbose"),
 			huh.NewOption(fmt.Sprintf("No Color       %s", boolStr(cfg.NoColor)), "no_color"),
-			huh.NewOption("─────────────────", "_separator"),
-			huh.NewOption("Back", "back"),
+			huh.NewOption(rowSeparator, valSeparator),
+			huh.NewOption("Back", valBack),
 		}
 
 		var choice string
 		form := huh.NewForm(huh.NewGroup(
 			huh.NewSelect[string]().
-				Title("Global Settings").
-				Description("Changes apply to all campaigns").
+				Title(e.Title).
+				Description(header).
 				Options(options...).
 				Value(&choice),
 		))
@@ -131,10 +244,9 @@ func runGlobalSettings(ctx context.Context) error {
 		}
 
 		switch choice {
-		case "back":
+		case valBack:
 			return nil
-		case "_separator":
-			// Ignore separator selection, continue the loop
+		case valSeparator:
 			continue
 		case "theme":
 			if err := editTheme(ctx, cfg); err != nil {
@@ -162,7 +274,11 @@ func runGlobalSettings(ctx context.Context) error {
 	}
 }
 
-func runLocalSettings(ctx context.Context, campaignRoot string) error {
+// editLocalSettingsFile opens the local.json fields (theme override) as a
+// sub-form under the local_settings catalog entry. Behavior and persistence are
+// unchanged from the former flat local menu.
+func editLocalSettingsFile(ctx context.Context, e settings.SettingEntry, campaignRoot string) error {
+	header := "File: " + settings.CatalogPath(e, campaignRoot)
 	for {
 		local, err := config.LoadLocalSettings(ctx, campaignRoot)
 		if err != nil {
@@ -173,15 +289,15 @@ func runLocalSettings(ctx context.Context, campaignRoot string) error {
 			huh.NewOption(fmt.Sprintf("Theme Override  %s (effective: %s)",
 				displayStr(local.ThemeOverride, "inherit global"),
 				config.EffectiveTheme(ctx)), "theme_override"),
-			huh.NewOption("─────────────────", "_separator"),
-			huh.NewOption("Back", "back"),
+			huh.NewOption(rowSeparator, valSeparator),
+			huh.NewOption("Back", valBack),
 		}
 
 		var choice string
 		form := huh.NewForm(huh.NewGroup(
 			huh.NewSelect[string]().
-				Title("Local Settings (Campaign-Specific)").
-				Description("Changes apply only to this campaign").
+				Title(e.Title).
+				Description(header).
 				Options(options...).
 				Value(&choice),
 		))
@@ -194,9 +310,9 @@ func runLocalSettings(ctx context.Context, campaignRoot string) error {
 		}
 
 		switch choice {
-		case "back":
+		case valBack:
 			return nil
-		case "_separator":
+		case valSeparator:
 			continue
 		case "theme_override":
 			if err := editLocalThemeOverride(ctx, campaignRoot, local.ThemeOverride); err != nil {

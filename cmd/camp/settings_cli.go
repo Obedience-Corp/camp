@@ -34,6 +34,14 @@ const (
 	settingsKeyGlobalNoColor      = "global.no_color"
 	settingsKeyLocalThemeOverride = "local.theme_override"
 	settingsKeyEffectiveTheme     = "effective.theme"
+
+	// campaign.yaml scalar twins of the manifest editor. List and tree fields
+	// (intents.tags, concepts) have no flat representation and stay TUI-only.
+	settingsKeyLocalCampaignName        = "local.campaign.name"
+	settingsKeyLocalCampaignDescription = "local.campaign.description"
+	settingsKeyLocalCampaignMission     = "local.campaign.mission"
+	settingsKeyLocalCampaignType        = "local.campaign.type"
+	settingsKeyLocalCampaignCommitHook  = "local.campaign.commit_hook"
 )
 
 const settingsThemeInherit = "inherit"
@@ -46,6 +54,22 @@ func settingsKeys() []string {
 		settingsKeyGlobalVerbose,
 		settingsKeyGlobalNoColor,
 		settingsKeyLocalThemeOverride,
+		settingsKeyLocalCampaignName,
+		settingsKeyLocalCampaignDescription,
+		settingsKeyLocalCampaignMission,
+		settingsKeyLocalCampaignType,
+		settingsKeyLocalCampaignCommitHook,
+	}
+}
+
+func isCampaignScalarKey(key string) bool {
+	switch key {
+	case settingsKeyLocalCampaignName, settingsKeyLocalCampaignDescription,
+		settingsKeyLocalCampaignMission, settingsKeyLocalCampaignType,
+		settingsKeyLocalCampaignCommitHook:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -92,12 +116,20 @@ With no key, prints all settings including the effective theme. With a key,
 prints just that value.
 
 Keys:
-  global.theme           Color theme in ~/.obey/campaign/config.json
-  global.editor          Preferred editor
-  global.campaigns_dir   Where camp create places new campaigns
-  global.verbose         Verbose output
-  global.no_color        Disable colored output
-  local.theme_override   Campaign-local theme override (requires a campaign)`,
+  global.theme               Color theme in ~/.obey/campaign/config.json
+  global.editor              Preferred editor
+  global.campaigns_dir       Where camp create places new campaigns
+  global.verbose             Verbose output
+  global.no_color            Disable colored output
+  local.theme_override       Campaign-local theme override (requires a campaign)
+  local.campaign.name        Campaign name in .campaign/campaign.yaml
+  local.campaign.description Campaign description
+  local.campaign.mission     Campaign mission
+  local.campaign.type        Campaign type (product, research, tools, personal)
+  local.campaign.commit_hook Commit-message hook command
+
+The campaign.yaml list and tree fields (intents.tags, concepts) have no flat
+key and are edited only through the interactive 'camp settings' TUI.`,
 		Example: `  camp settings get
   camp settings get global.theme
   camp settings get --json`,
@@ -162,12 +194,47 @@ func runSettingsGet(ctx context.Context, cmd *cobra.Command, args []string, json
 	effective := config.EffectiveThemeFrom(cfg, local)
 
 	if len(args) == 1 {
-		return printSettingsValue(cmd, args[0], cfg, local, inCampaign, jsonOut)
+		return printSettingsValue(ctx, cmd, args[0], cfg, local, inCampaign, jsonOut)
 	}
 	if jsonOut {
 		return emitSettingsJSON(cmd.OutOrStdout(), cfg, local, inCampaign, effective)
 	}
 	return printSettingsAll(cmd.OutOrStdout(), cfg, local, inCampaign, effective)
+}
+
+// resolveSettingValue returns the value for a key, loading campaign.yaml for the
+// campaign scalar twins and delegating everything else to settingsValueFor so
+// existing keys resolve exactly as before.
+func resolveSettingValue(ctx context.Context, key string, cfg *config.GlobalConfig, local *config.LocalSettings, inCampaign bool) (any, error) {
+	if isCampaignScalarKey(key) {
+		return campaignScalarGet(ctx, key)
+	}
+	return settingsValueFor(key, cfg, local, inCampaign)
+}
+
+func campaignScalarGet(ctx context.Context, key string) (any, error) {
+	root, err := campaign.DetectCached(ctx)
+	if err != nil || root == "" {
+		return nil, errSettingsLocalOutsideCampaign(key)
+	}
+	cfg, err := config.LoadCampaignConfig(ctx, root)
+	if err != nil {
+		return nil, camperrors.Wrap(err, "loading campaign.yaml")
+	}
+	switch key {
+	case settingsKeyLocalCampaignName:
+		return cfg.Name, nil
+	case settingsKeyLocalCampaignDescription:
+		return cfg.Description, nil
+	case settingsKeyLocalCampaignMission:
+		return cfg.Mission, nil
+	case settingsKeyLocalCampaignType:
+		return string(cfg.Type), nil
+	case settingsKeyLocalCampaignCommitHook:
+		return cfg.Hooks.CommitMessage.Command, nil
+	default:
+		return nil, errSettingsUnknownKey(key)
+	}
 }
 
 func settingsValueFor(key string, cfg *config.GlobalConfig, local *config.LocalSettings, inCampaign bool) (any, error) {
@@ -192,8 +259,8 @@ func settingsValueFor(key string, cfg *config.GlobalConfig, local *config.LocalS
 	}
 }
 
-func printSettingsValue(cmd *cobra.Command, key string, cfg *config.GlobalConfig, local *config.LocalSettings, inCampaign, jsonOut bool) error {
-	value, err := settingsValueFor(key, cfg, local, inCampaign)
+func printSettingsValue(ctx context.Context, cmd *cobra.Command, key string, cfg *config.GlobalConfig, local *config.LocalSettings, inCampaign, jsonOut bool) error {
+	value, err := resolveSettingValue(ctx, key, cfg, local, inCampaign)
 	if err != nil {
 		return err
 	}
@@ -259,14 +326,71 @@ func emitSettingsJSON(w io.Writer, cfg *config.GlobalConfig, local *config.Local
 }
 
 func runSettingsSet(ctx context.Context, cmd *cobra.Command, key, value string) error {
-	switch key {
-	case settingsKeyGlobalTheme, settingsKeyGlobalEditor, settingsKeyGlobalCampaignsDir,
-		settingsKeyGlobalVerbose, settingsKeyGlobalNoColor:
+	switch {
+	case key == settingsKeyGlobalTheme, key == settingsKeyGlobalEditor, key == settingsKeyGlobalCampaignsDir,
+		key == settingsKeyGlobalVerbose, key == settingsKeyGlobalNoColor:
 		return setGlobalSetting(ctx, cmd, key, value)
-	case settingsKeyLocalThemeOverride:
+	case key == settingsKeyLocalThemeOverride:
 		return setLocalThemeOverride(ctx, cmd, value)
+	case isCampaignScalarKey(key):
+		return setCampaignScalar(ctx, cmd, key, value)
 	default:
 		return errSettingsUnknownKey(key)
+	}
+}
+
+func setCampaignScalar(ctx context.Context, cmd *cobra.Command, key, value string) error {
+	root, err := campaign.DetectCached(ctx)
+	if err != nil || root == "" {
+		return errSettingsLocalOutsideCampaign(key)
+	}
+	cfg, err := config.LoadCampaignConfig(ctx, root)
+	if err != nil {
+		return camperrors.Wrap(err, "loading campaign.yaml")
+	}
+	display, err := applyCampaignScalarKey(cfg, key, value)
+	if err != nil {
+		return err
+	}
+	// Same load-time invariant as SaveCampaignConfig consumers: refuse empty
+	// or illegal names before they brick subsequent camp commands.
+	if err := config.ValidateCampaignConfig(cfg); err != nil {
+		return camperrors.Wrap(err, "invalid campaign.yaml")
+	}
+	if err := config.SaveCampaignConfig(ctx, root, cfg); err != nil {
+		return camperrors.Wrap(err, "saving campaign.yaml")
+	}
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "set %s = %s\n", key, display)
+	return err
+}
+
+// applyCampaignScalarKey sets a single campaign.yaml scalar and returns the
+// stored value. type is validated against the known campaign types; the others
+// are free text. Only the addressed field changes.
+func applyCampaignScalarKey(cfg *config.CampaignConfig, key, value string) (string, error) {
+	switch key {
+	case settingsKeyLocalCampaignName:
+		cfg.Name = strings.TrimSpace(value)
+		return cfg.Name, nil
+	case settingsKeyLocalCampaignDescription:
+		cfg.Description = strings.TrimSpace(value)
+		return cfg.Description, nil
+	case settingsKeyLocalCampaignMission:
+		cfg.Mission = strings.TrimSpace(value)
+		return cfg.Mission, nil
+	case settingsKeyLocalCampaignType:
+		t := config.CampaignType(strings.ToLower(strings.TrimSpace(value)))
+		if !t.Valid() {
+			return "", camperrors.NewValidation(key,
+				fmt.Sprintf("unknown campaign type %q (valid: product, research, tools, personal)", value), nil)
+		}
+		cfg.Type = t
+		return string(t), nil
+	case settingsKeyLocalCampaignCommitHook:
+		cfg.Hooks.CommitMessage.Command = strings.TrimSpace(value)
+		return cfg.Hooks.CommitMessage.Command, nil
+	default:
+		return "", errSettingsUnknownKey(key)
 	}
 }
 
