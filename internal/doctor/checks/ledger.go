@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/doctor"
 	"github.com/Obedience-Corp/camp/pkg/ledgerkit"
@@ -151,14 +152,25 @@ func (c *LedgerCheck) evidenceIssues(ctx context.Context, campaignRoot string, e
 	return issues
 }
 
-// gitResolveCommit maps an evidence repo label to a local path and checks the
-// sha exists there. "campaign-root", "." and "" resolve to the campaign root;
-// any other label resolves to projects/<label>.
-func gitResolveCommit(ctx context.Context, campaignRoot, repo, sha string) evidenceStatus {
-	repoPath := campaignRoot
-	if repo != "" && repo != "campaign-root" && repo != "." {
-		repoPath = filepath.Join(campaignRoot, "projects", repo)
+// resolveRepoPath maps an evidence repo label to a local path. Labels match
+// ledger.RepoLabel:
+//   - "campaign-root", "." and "" → campaign root
+//   - labels containing "/" (e.g. "projects/camp") → campaignRoot-relative path
+//   - bare names (legacy) → projects/<label>
+func resolveRepoPath(campaignRoot, repo string) string {
+	if repo == "" || repo == "campaign-root" || repo == "." {
+		return campaignRoot
 	}
+	if strings.Contains(repo, "/") || strings.Contains(repo, string(filepath.Separator)) {
+		return filepath.Join(campaignRoot, filepath.FromSlash(repo))
+	}
+	return filepath.Join(campaignRoot, "projects", repo)
+}
+
+// gitResolveCommit maps an evidence repo label to a local path and checks the
+// sha exists there.
+func gitResolveCommit(ctx context.Context, campaignRoot, repo, sha string) evidenceStatus {
+	repoPath := resolveRepoPath(campaignRoot, repo)
 	if info, err := os.Stat(filepath.Join(repoPath, ".git")); err != nil || (info != nil && !info.IsDir() && !info.Mode().IsRegular()) {
 		return evidenceRepoMissing
 	}

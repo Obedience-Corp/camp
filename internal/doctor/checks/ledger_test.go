@@ -2,6 +2,7 @@ package checks
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
 	"github.com/Obedience-Corp/camp/internal/doctor"
@@ -92,4 +93,25 @@ func TestLedgerCheckMetadata(t *testing.T) {
 	fixed, err := c.Fix(context.Background(), "/camp", []doctor.Issue{{CheckID: "ledger"}})
 	require.NoError(t, err)
 	assert.Empty(t, fixed)
+}
+
+func TestGitResolveCommitRepoPath(t *testing.T) {
+	// Pure path-mapping check via the same rules as gitResolveCommit (without
+	// requiring a git object). Slash labels join to campaign root; bare names
+	// go under projects/.
+	root := "/campaign"
+	cases := []struct {
+		repo string
+		want string
+	}{
+		{"", root},
+		{"campaign-root", root},
+		{".", root},
+		{"projects/camp", filepath.Join(root, "projects", "camp")},
+		{"camp", filepath.Join(root, "projects", "camp")}, // legacy bare label
+	}
+	for _, tc := range cases {
+		got := resolveRepoPath(root, tc.repo)
+		assert.Equal(t, tc.want, got, "repo=%q", tc.repo)
+	}
 }

@@ -86,6 +86,30 @@ func TestDisabledEmitterIsSilentNoOp(t *testing.T) {
 	e.Emit(context.Background(), ledgerkit.KindCreated, ledgerkit.Scope{})
 }
 
+func TestAddExplicitFailsClosedOnWriteError(t *testing.T) {
+	app := &captureAppender{fail: errors.New("disk full")}
+	e := newWith(app, "c", ledgerkit.Actor{Type: ledgerkit.ActorHuman}, nil)
+	e.campaignRoot = "/tmp/camp"
+	e.writerID = "test"
+	id, shard, err := e.AddExplicit(context.Background(), ledgerkit.KindDecided, ledgerkit.Scope{})
+	require.Error(t, err)
+	assert.Empty(t, id, "must not return a fake event_id when the write failed")
+	assert.Empty(t, shard)
+}
+
+func TestAddExplicitReturnsIDOnSuccess(t *testing.T) {
+	app := &captureAppender{}
+	e := newWith(app, "c", ledgerkit.Actor{Type: ledgerkit.ActorHuman}, nil)
+	e.campaignRoot = "/tmp/camp"
+	e.writerID = "test"
+	id, shard, err := e.AddExplicit(context.Background(), ledgerkit.KindDecided, ledgerkit.Scope{}, WithWhy("note"))
+	require.NoError(t, err)
+	assert.NotEmpty(t, id)
+	assert.NotEmpty(t, shard)
+	require.Len(t, app.events, 1)
+	assert.Equal(t, ledgerkit.SourceExplicit, app.events[0].Source)
+}
+
 func TestWarnToWritesLoudly(t *testing.T) {
 	var buf testWriter
 	warn := WarnTo(&buf)

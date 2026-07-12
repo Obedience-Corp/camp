@@ -129,7 +129,10 @@ func runAdd(cmd *cobra.Command, title string, opts *addOptions) error {
 	}
 	emitOpts = append(emitOpts, ledger.WithPayload(map[string]any{"title": title}))
 
-	eventID, shard := emitter.AddExplicit(ctx, kind, scope, emitOpts...)
+	eventID, shard, err := emitter.AddExplicit(ctx, kind, scope, emitOpts...)
+	if err != nil {
+		return camperrors.Wrap(err, "event not recorded: ledger write failed")
+	}
 	if eventID == "" {
 		return camperrors.New("event not recorded: the campaign ledger could not be written (see warning above)")
 	}

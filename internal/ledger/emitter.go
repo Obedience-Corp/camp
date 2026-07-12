@@ -77,11 +77,13 @@ func New(ctx context.Context, campaignRoot, campaignID string, warn func(error))
 
 // AddExplicit emits an explicit (source: explicit) event - the camp event add
 // primitive for actions that never touch git - and returns the created event id
-// and the shard file it landed in, for the command to report. Returns empty
-// strings when the emitter is disabled.
-func (e *Emitter) AddExplicit(ctx context.Context, kind ledgerkit.Kind, scope ledgerkit.Scope, opts ...Option) (eventID, shardPath string) {
+// and the shard file it landed in, for the command to report. Unlike best-effort
+// Emit on state-changing verbs (D003), the ledger write *is* the action here:
+// Emit failures fail closed so agents never receive a fake event_id.
+// Returns empty strings and a nil error when the emitter is disabled.
+func (e *Emitter) AddExplicit(ctx context.Context, kind ledgerkit.Kind, scope ledgerkit.Scope, opts ...Option) (eventID, shardPath string, err error) {
 	if e.disabled || e.writer == nil {
-		return "", ""
+		return "", "", nil
 	}
 	scope.Campaign = e.campaignID
 	now := time.Now()
@@ -98,8 +100,10 @@ func (e *Emitter) AddExplicit(ctx context.Context, kind ledgerkit.Kind, scope le
 	for _, o := range opts {
 		o(ev)
 	}
-	_ = e.writer.Emit(ctx, ev, e.warn)
-	return ev.ID, ledgerkit.ShardPath(e.campaignRoot, e.writerID, now)
+	if err := e.writer.Emit(ctx, ev, e.warn); err != nil {
+		return "", "", err
+	}
+	return ev.ID, ledgerkit.ShardPath(e.campaignRoot, e.writerID, now), nil
 }
 
 // NewFromRoot builds an emitter for the campaign rooted at campaignRoot,
@@ -152,6 +156,10 @@ func WithEvidence(refs ...ledgerkit.Evidence) Option {
 // WithAction overrides the invocation action id (e.g. to join an ongoing
 // action). Default is the emitter's per-invocation id.
 func WithAction(id string) Option { return func(ev *ledgerkit.Event) { ev.Action = id } }
+
+// WithTS overrides the event timestamp (RFC3339/UTC). Used for commit evidence
+// so live capture stamps the commit author-date, matching backfill and git log.
+func WithTS(ts string) Option { return func(ev *ledgerkit.Event) { ev.TS = ts } }
 
 // Emit appends one event of the given kind and scope, stamping campaign, action,
 // actor, ts, and source. It is best-effort: failure warns but never returns to
