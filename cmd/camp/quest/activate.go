@@ -4,6 +4,7 @@ package quest
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -143,6 +144,9 @@ func runQuestStatus(cmd *cobra.Command, _ []string) error {
 		payload.RawEnv = raw
 		q, findErr := qctx.service.Find(ctx, raw)
 		if findErr != nil {
+			if !errors.Is(findErr, quest.ErrQuestNotFound) {
+				return findErr
+			}
 			payload.Valid = false
 			payload.Reason = "quest not found"
 		} else {
@@ -158,11 +162,11 @@ func runQuestStatus(cmd *cobra.Command, _ []string) error {
 		enc.SetIndent("", "  ")
 		return enc.Encode(payload)
 	}
-	printQuestStatusHuman(cmd.OutOrStdout(), qctx, payload)
+	printQuestStatusHuman(cmd.OutOrStdout(), payload)
 	return nil
 }
 
-func printQuestStatusHuman(w io.Writer, qctx *questCommandContext, p questStatusPayload) {
+func printQuestStatusHuman(w io.Writer, p questStatusPayload) {
 	switch {
 	case !p.Active:
 		fmt.Fprintln(w, "No terminal quest active.")

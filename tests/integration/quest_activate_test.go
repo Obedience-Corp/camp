@@ -44,6 +44,35 @@ func TestQuestUse_EmitsShellCodeForDialect(t *testing.T) {
 	assert.Contains(t, clear, "unset CAMP_QUEST")
 }
 
+func TestQuestUse_SeparatesEvalOutputFromDiagnostics(t *testing.T) {
+	path := "/campaigns/quest-activate-streams"
+	tc, id := setupActivationQuest(t, path)
+
+	stdoutPath := "/tmp/quest-use-stdout"
+	stderrPath := "/tmp/quest-use-stderr"
+	_, exitCode, err := tc.ExecCommand("sh", "-c",
+		"cd "+path+" && /camp quest use billing >"+stdoutPath+" 2>"+stderrPath)
+	require.NoError(t, err)
+	require.Zero(t, exitCode)
+	stdout, err := tc.ReadFile(stdoutPath)
+	require.NoError(t, err)
+	stderr, err := tc.ReadFile(stderrPath)
+	require.NoError(t, err)
+	assert.Equal(t, "export CAMP_QUEST='"+id+"'\n", stdout)
+	assert.Contains(t, stderr, "Activated quest for this terminal")
+	assert.NotContains(t, stdout, "Activated quest")
+
+	_, exitCode, err = tc.ExecCommand("sh", "-c",
+		"cd "+path+" && /camp quest use missing >"+stdoutPath+" 2>"+stderrPath)
+	require.NoError(t, err)
+	require.NotZero(t, exitCode)
+	stdout, err = tc.ReadFile(stdoutPath)
+	require.NoError(t, err)
+	assert.Empty(t, stdout, "failed activation must emit no shell code")
+
+	_, _, _ = tc.ExecCommand("rm", "-f", stdoutPath, stderrPath)
+}
+
 func TestQuestStatus_ReflectsEnv(t *testing.T) {
 	path := "/campaigns/quest-activate-status"
 	tc, id := setupActivationQuest(t, path)
