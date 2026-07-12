@@ -222,6 +222,31 @@ function camp --description "Camp CLI wrapper with directory-changing support"
             else
                 rm -f "$tmp"
             end
+        case quest
+            # Intercept 'quest use'/'quest clear' to mutate CAMP_QUEST in this
+            # shell. All other quest subcommands run normally.
+            switch "$argv[2]"
+                case use clear
+                    for arg in $argv
+                        switch "$arg"
+                            case --help -h
+                                command camp $argv
+                                return $status
+                        end
+                    end
+                    # camp emits shell code on stdout only after validation
+                    # succeeds; eval only a successful non-empty result.
+                    set -l line (command camp $argv --shell fish)
+                    set -l cmd_status $status
+                    if test "$cmd_status" -ne 0
+                        return $cmd_status
+                    end
+                    if test -n "$line"
+                        eval "$line"
+                    end
+                case '*'
+                    command camp $argv
+            end
         case '*'
             command camp $argv
     end

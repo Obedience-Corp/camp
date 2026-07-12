@@ -191,6 +191,30 @@ camp() {
         rm -f "$tmp"
       fi
       ;;
+    quest)
+      # Intercept 'quest use'/'quest clear' to mutate CAMP_QUEST in this shell.
+      # All other quest subcommands run normally.
+      case "$2" in
+        use|clear)
+          local arg line
+          for arg in "$@"; do
+            case "$arg" in
+              --help|-h)
+                command camp "$@"
+                return
+                ;;
+            esac
+          done
+          # camp emits shell code on stdout only after validation succeeds and
+          # diagnostics on stderr, so eval only a successful non-empty result.
+          line=$(command camp "$@" --shell bash) || return "$?"
+          [ -n "$line" ] && eval "$line"
+          ;;
+        *)
+          command camp "$@"
+          ;;
+      esac
+      ;;
     *)
       command camp "$@"
       ;;
