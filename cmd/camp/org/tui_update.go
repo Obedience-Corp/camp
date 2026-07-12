@@ -20,6 +20,10 @@ func (m orgTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		// Keep the text input inside the canvas on split resizes.
+		if msg.Width > 0 {
+			m.input.Width = max(msg.Width-8, 1)
+		}
 		return m, nil
 	case createCampaignDoneMsg:
 		return m.handleCreateCampaignDone(msg)

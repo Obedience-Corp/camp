@@ -33,6 +33,80 @@ var (
 	orgHeaderBar   = lipgloss.NewStyle().Foreground(orgPal.TextMuted)
 )
 
+const (
+	orgPaneOverheadW = 4 // L/R border + horizontal padding
+	orgPaneOverheadH = 2 // T/B border
+	orgPaneGapW      = 2 // spaces between dual panes
+	orgMinBoxWidth   = 30
+	orgMinBoxHeight  = 8
+	orgMinFooterH    = 6
+	orgRowPrefixW    = 2 // "> " / "  "
+	orgHereMarkW     = 2 // "* " / "  "
+	orgNameMinW      = 4
+)
+
+// orgLayout is the size-dependent shape of a frame. Zero cw/listRows means
+// unbounded (size not yet known), matching camp list/festivals.
+type orgLayout struct {
+	cw         int
+	dual       bool
+	boxed      bool
+	showFooter bool
+	orgW       int
+	memW       int
+	listRows   int
+}
+
+func (m orgTUIModel) layout() orgLayout {
+	wKnown, hKnown := m.width > 0, m.height > 0
+	l := orgLayout{
+		boxed:      (!wKnown || m.width >= orgMinBoxWidth) && (!hKnown || m.height >= orgMinBoxHeight),
+		showFooter: !hKnown || m.height >= orgMinFooterH,
+		dual:       !wKnown || m.width >= orgTUIMinWide,
+	}
+	if wKnown {
+		l.cw = max(m.width, 1)
+		if l.dual {
+			usable := m.width - orgPaneGapW
+			if l.boxed {
+				usable -= 2 * orgPaneOverheadW
+			}
+			usable = max(usable, 2)
+			// Orgs stay narrower; members get the remaining share.
+			l.orgW = max(usable/3, orgNameMinW)
+			if l.orgW > usable-1 {
+				l.orgW = max(usable/2, 1)
+			}
+			l.memW = max(usable-l.orgW, 1)
+		} else {
+			pane := m.width
+			if l.boxed {
+				pane -= orgPaneOverheadW
+			}
+			pane = max(pane, 1)
+			l.orgW, l.memW = pane, pane
+		}
+	}
+	if hKnown {
+		// topBar + optional status + optional footer; body fills the rest.
+		chrome := 1 // top bar
+		if l.showFooter {
+			chrome++ // footer
+			if m.status != "" {
+				chrome++ // status line
+			}
+		}
+		bodyH := max(m.height-chrome, 1)
+		inner := bodyH
+		if l.boxed {
+			inner = max(bodyH-orgPaneOverheadH, 1)
+		}
+		// One line for the pane title; remaining rows are list capacity.
+		l.listRows = max(inner-1, 1)
+	}
+	return l
+}
+
 // styleMemberStatus renders a campaign lifecycle status as a colored badge.
 func styleMemberStatus(status string) string {
 	switch status {
@@ -52,33 +126,78 @@ func (m orgTUIModel) View() string {
 		return ""
 	}
 	if len(m.orgs) == 0 {
-		return orgTitleStyle.Render("Orgs") + "\n\n" +
-			orgMutedStyle.Render("No campaigns registered yet. Run camp init or camp register.") + "\n\n" +
-			orgHelpStyle.Render("q: quit") + "\n"
+		return m.emptyView()
 	}
 	if m.overlay != overlayNone {
 		return m.overlayView()
 	}
 
-	var body string
-	if m.width > 0 && m.width < orgTUIMinWide {
-		if m.pane == paneMembers {
-			body = m.renderMemberPane()
-		} else {
-			body = m.renderOrgPane()
+	lay := m.layout()
+	lines := []string{m.topBar(lay.cw)}
+	lines = append(lines, m.bodyLines(lay)...)
+	if lay.showFooter {
+		if s := m.statusLine(); s != "" {
+			lines = append(lines, s)
 		}
-	} else {
-		body = lipgloss.JoinHorizontal(lipgloss.Top, m.renderOrgPane(), "  ", m.renderMemberPane())
+		lines = append(lines, m.footer(lay.cw))
 	}
-
-	return m.topBar() + "\n" + body + "\n" + m.statusLine() + m.footer() + "\n"
+	return m.frame(lines, lay)
 }
 
-func (m orgTUIModel) topBar() string {
-	return orgTitleStyle.Render("Campaign Orgs") + "  " +
-		orgHeaderBar.Render(fmt.Sprintf("%s . %s",
-			ui.CountLabel(len(m.orgs), "org", "orgs"),
-			ui.CountLabel(m.totalCampaigns(), "campaign", "campaigns")))
+func (m orgTUIModel) emptyView() string {
+	lay := m.layout()
+	lines := []string{
+		orgTitleStyle.Render("Orgs"),
+		"",
+		orgMutedStyle.Render("No campaigns registered yet. Run camp init or camp register."),
+	}
+	if lay.showFooter {
+		lines = append(lines, "", orgHelpStyle.Render("q: quit"))
+	}
+	return m.frame(lines, lay)
+}
+
+// frame hard-caps line count and width so a short/narrow split can never be
+// overpainted. Dual-pane body lines are pre-joined; this is the final guard.
+func (m orgTUIModel) frame(lines []string, lay orgLayout) string {
+	if m.height > 0 {
+		budget := max(m.height, 1)
+		if len(lines) > budget {
+			lines = lines[:budget]
+		}
+	}
+	// Body lines from dual panes may already span full terminal width; clamp
+	// everything to the outer canvas when known.
+	cw := lay.cw
+	if cw <= 0 && m.width > 0 {
+		cw = m.width
+	}
+	return strings.Join(ui.ClampLines(lines, cw), "\n") + "\n"
+}
+
+func (m orgTUIModel) bodyLines(lay orgLayout) []string {
+	if lay.dual {
+		left := m.renderOrgPane(lay)
+		right := m.renderMemberPane(lay)
+		joined := lipgloss.JoinHorizontal(lipgloss.Top, left, strings.Repeat(" ", orgPaneGapW), right)
+		return strings.Split(joined, "\n")
+	}
+	if m.pane == paneMembers {
+		return strings.Split(m.renderMemberPane(lay), "\n")
+	}
+	return strings.Split(m.renderOrgPane(lay), "\n")
+}
+
+func (m orgTUIModel) topBar(cw int) string {
+	title := orgTitleStyle.Render("Campaign Orgs")
+	meta := orgHeaderBar.Render(fmt.Sprintf("%s . %s",
+		ui.CountLabel(len(m.orgs), "org", "orgs"),
+		ui.CountLabel(m.totalCampaigns(), "campaign", "campaigns")))
+	line := title + "  " + meta
+	if cw > 0 {
+		return ui.ClampWidth(line, cw)
+	}
+	return line
 }
 
 func (m orgTUIModel) totalCampaigns() int {
@@ -89,59 +208,189 @@ func (m orgTUIModel) totalCampaigns() int {
 	return n
 }
 
-func (m orgTUIModel) renderOrgPane() string {
-	var b strings.Builder
-	b.WriteString(orgTitleStyle.Render("Orgs") + "\n")
-	for i, o := range m.orgs {
-		cursor := "  "
-		name := fmt.Sprintf("%-16s", o.Org)
-		switch {
-		case i == m.orgCursor && m.pane == paneOrgs:
-			cursor = "> "
-			name = orgSelStyle.Render(name)
-		case i == m.orgCursor:
-			cursor = "> "
-			name = orgRowStyle.Render(name)
-		default:
-			name = orgMutedStyle.Render(name)
-		}
-		counts := orgCountStyle.Render(fmt.Sprintf("%d", o.Campaigns)) + " " +
-			orgActiveStyle.Render(fmt.Sprintf("(%d active)", o.Active))
-		b.WriteString(cursor + name + "  " + counts + "\n")
-	}
-	return m.paneStyle(paneOrgs).Render(strings.TrimRight(b.String(), "\n"))
+func (m orgTUIModel) renderOrgPane(lay orgLayout) string {
+	cw := lay.orgW
+	lines := []string{ui.ClampWidth(orgTitleStyle.Render("Orgs"), cw)}
+	lines = append(lines, m.orgListLines(lay)...)
+	return m.finishPane(paneOrgs, lines, cw, lay)
 }
 
-func (m orgTUIModel) renderMemberPane() string {
-	var b strings.Builder
+func (m orgTUIModel) renderMemberPane(lay orgLayout) string {
+	cw := lay.memW
 	title := "Members"
 	if m.focusedOrg != "" {
 		title = fmt.Sprintf("Members of %q", m.focusedOrg)
 	}
-	b.WriteString(orgTitleStyle.Render(title) + "\n")
-	if len(m.members) == 0 {
-		b.WriteString(orgMutedStyle.Render("no campaigns in this org") + "\n")
-	}
-	for i, mem := range m.members {
-		cursor := "  "
-		here := "  "
-		if mem.ID == m.currentID && m.currentID != "" {
-			here = orgHereStyle.Render("* ")
+	lines := []string{ui.ClampWidth(orgTitleStyle.Render(title), cw)}
+	lines = append(lines, m.memberListLines(lay)...)
+	return m.finishPane(paneMembers, lines, cw, lay)
+}
+
+func (m orgTUIModel) finishPane(p orgPane, lines []string, cw int, lay orgLayout) string {
+	// Pad to a stable dual-pane height so JoinHorizontal lines up cleanly.
+	if lay.listRows > 0 {
+		want := lay.listRows + 1 // title + listRows
+		for len(lines) < want {
+			lines = append(lines, "")
 		}
-		name := fmt.Sprintf("%-24s", mem.Name)
-		switch {
-		case i == m.memCursor && m.pane == paneMembers:
-			cursor = "> "
-			name = orgSelStyle.Render(name)
-		case i == m.memCursor:
-			cursor = "> "
-			name = orgRowStyle.Render(name)
-		default:
-			name = orgMutedStyle.Render(name)
+		if len(lines) > want {
+			lines = lines[:want]
 		}
-		b.WriteString(cursor + here + name + " " + styleMemberStatus(mem.Status) + "\n")
 	}
-	return m.paneStyle(paneMembers).Render(strings.TrimRight(b.String(), "\n"))
+	content := strings.Join(ui.ClampLines(lines, cw), "\n")
+	if !lay.boxed {
+		return content
+	}
+	return m.paneStyle(p).Render(content)
+}
+
+func (m orgTUIModel) orgListLines(lay orgLayout) []string {
+	total := len(m.orgs)
+	if total == 0 {
+		return []string{orgMutedStyle.Render("no orgs")}
+	}
+	budget := lay.listRows
+	if budget <= 0 {
+		return m.renderOrgRange(0, total, lay.orgW)
+	}
+	showInd := total > budget && budget >= 2
+	rows := budget
+	if showInd {
+		rows = budget - 1
+	}
+	start, end := ui.WindowRange(m.orgCursor, total, rows)
+	out := m.renderOrgRange(start, end, lay.orgW)
+	if showInd {
+		out = append(out, orgMutedStyle.Render(fmt.Sprintf("[%d-%d of %d]", start+1, end, total)))
+	}
+	return out
+}
+
+func (m orgTUIModel) memberListLines(lay orgLayout) []string {
+	total := len(m.members)
+	if total == 0 {
+		return []string{orgMutedStyle.Render("no campaigns in this org")}
+	}
+	budget := lay.listRows
+	if budget <= 0 {
+		return m.renderMemberRange(0, total, lay.memW)
+	}
+	showInd := total > budget && budget >= 2
+	rows := budget
+	if showInd {
+		rows = budget - 1
+	}
+	start, end := ui.WindowRange(m.memCursor, total, rows)
+	out := m.renderMemberRange(start, end, lay.memW)
+	if showInd {
+		out = append(out, orgMutedStyle.Render(fmt.Sprintf("[%d-%d of %d]", start+1, end, total)))
+	}
+	return out
+}
+
+func (m orgTUIModel) renderOrgRange(start, end, cw int) []string {
+	out := make([]string, 0, end-start)
+	for i := start; i < end; i++ {
+		out = append(out, m.orgRow(i, cw))
+	}
+	return out
+}
+
+func (m orgTUIModel) renderMemberRange(start, end, cw int) []string {
+	out := make([]string, 0, end-start)
+	for i := start; i < end; i++ {
+		out = append(out, m.memberRow(i, cw))
+	}
+	return out
+}
+
+func (m orgTUIModel) orgRow(i, cw int) string {
+	o := m.orgs[i]
+	selected := i == m.orgCursor
+	focused := selected && m.pane == paneOrgs
+	prefix := ui.CursorGlyph(focused || selected)
+
+	if cw <= 0 {
+		name := styleOrgName(fmt.Sprintf("%-16s", o.Org), focused, selected)
+		counts := orgCountStyle.Render(fmt.Sprintf("%d", o.Campaigns)) + " " +
+			orgActiveStyle.Render(fmt.Sprintf("(%d active)", o.Active))
+		return prefix + name + "  " + counts
+	}
+
+	rem := cw - orgRowPrefixW
+	if rem < 1 {
+		return ui.ClampWidth(prefix, cw)
+	}
+
+	// Prefer name; append counts only when they fit after a minimum name width.
+	countPlain := fmt.Sprintf("%d (%d active)", o.Campaigns, o.Active)
+	countW := lipgloss.Width(countPlain)
+	nameW := rem
+	showCounts := false
+	if rem >= orgNameMinW+1+countW {
+		showCounts = true
+		nameW = rem - 1 - countW
+	}
+	name := styleOrgName(ui.Truncate(o.Org, nameW), focused, selected)
+	// Pad plain runes before styling width is hard; clamp the finished row.
+	row := prefix + name
+	if showCounts {
+		row += " " + orgCountStyle.Render(fmt.Sprintf("%d", o.Campaigns)) +
+			" " + orgActiveStyle.Render(fmt.Sprintf("(%d active)", o.Active))
+	}
+	return ui.ClampWidth(row, cw)
+}
+
+func (m orgTUIModel) memberRow(i, cw int) string {
+	mem := m.members[i]
+	selected := i == m.memCursor
+	focused := selected && m.pane == paneMembers
+	prefix := ui.CursorGlyph(focused || selected)
+	here := "  "
+	if mem.ID == m.currentID && m.currentID != "" {
+		here = orgHereStyle.Render("* ")
+	}
+
+	if cw <= 0 {
+		name := styleOrgName(fmt.Sprintf("%-24s", mem.Name), focused, selected)
+		return prefix + here + name + " " + styleMemberStatus(mem.Status)
+	}
+
+	rem := cw - orgRowPrefixW
+	if rem < 1 {
+		return ui.ClampWidth(prefix, cw)
+	}
+	// here mark always reserved when present as two columns of content budget.
+	rem -= orgHereMarkW
+	if rem < 1 {
+		return ui.ClampWidth(prefix+here, cw)
+	}
+
+	statusPlain := mem.Status
+	statusW := lipgloss.Width(statusPlain)
+	nameW := rem
+	showStatus := false
+	if rem >= orgNameMinW+1+statusW {
+		showStatus = true
+		nameW = rem - 1 - statusW
+	}
+	name := styleOrgName(ui.Truncate(mem.Name, nameW), focused, selected)
+	row := prefix + here + name
+	if showStatus {
+		row += " " + styleMemberStatus(mem.Status)
+	}
+	return ui.ClampWidth(row, cw)
+}
+
+func styleOrgName(s string, focused, selected bool) string {
+	switch {
+	case focused:
+		return orgSelStyle.Render(s)
+	case selected:
+		return orgRowStyle.Render(s)
+	default:
+		return orgMutedStyle.Render(s)
+	}
 }
 
 func (m orgTUIModel) paneStyle(p orgPane) lipgloss.Style {
@@ -151,11 +400,28 @@ func (m orgTUIModel) paneStyle(p orgPane) lipgloss.Style {
 	return orgPaneBlurred
 }
 
-func (m orgTUIModel) footer() string {
+func (m orgTUIModel) footer(cw int) string {
+	var full, mid, short string
 	if m.pane == paneOrgs {
-		return orgHelpStyle.Render("j/k: orgs . l: members . n: new org . N: new campaign . x: delete (empty) . r: rename . q: quit")
+		full = "j/k: orgs . l: members . n: new org . N: new campaign . x: delete (empty) . r: rename . q: quit"
+		mid = "j/k orgs . l members . n/N new . x del . r ren . q"
+		short = "j/k . l . q"
+	} else {
+		full = "j/k: members . h: orgs . m: move . c: create . d: default . q: quit"
+		mid = "j/k members . h orgs . m move . c create . q"
+		short = "j/k . h . q"
 	}
-	return orgHelpStyle.Render("j/k: members . h: orgs . m: move . c: create . d: default . q: quit")
+	help := full
+	if cw > 0 && lipgloss.Width(help) > cw {
+		help = mid
+	}
+	if cw > 0 && lipgloss.Width(help) > cw {
+		help = short
+	}
+	if cw > 0 && lipgloss.Width(help) > cw {
+		help = "q"
+	}
+	return orgHelpStyle.Render(help)
 }
 
 func (m orgTUIModel) statusLine() string {
@@ -163,18 +429,23 @@ func (m orgTUIModel) statusLine() string {
 		return ""
 	}
 	if m.statusErr {
-		return orgErrStyle.Render(m.status) + "\n"
+		return orgErrStyle.Render(m.status)
 	}
-	return orgOkStyle.Render(m.status) + "\n"
+	return orgOkStyle.Render(m.status)
 }
 
 func (m orgTUIModel) overlayView() string {
+	lay := m.layout()
+	var lines []string
 	if m.overlay == overlayConfirmDelete {
-		prompt := fmt.Sprintf("Delete empty org %q?", m.pendingDelete)
-		box := orgTitleStyle.Render(prompt) + "\n\n" +
-			orgHelpStyle.Render("y/enter: delete . n/esc: cancel")
-		return orgPaneFocused.Render(box) + "\n"
+		lines = []string{
+			orgTitleStyle.Render(fmt.Sprintf("Delete empty org %q?", m.pendingDelete)),
+			"",
+			orgHelpStyle.Render("y/enter: delete . n/esc: cancel"),
+		}
+		return m.frame(lines, lay)
 	}
+
 	var prompt string
 	var help string
 	switch m.overlay {
@@ -194,9 +465,14 @@ func (m orgTUIModel) overlayView() string {
 		prompt = fmt.Sprintf("New campaign in org %q:", m.pendingOrg)
 		help = "enter: create . esc: cancel"
 	}
-	box := orgTitleStyle.Render(prompt) + "\n\n" +
-		m.input.View() + "\n\n" +
-		orgMutedStyle.Render("existing orgs: "+m.orgNamesCSV()) + "\n\n" +
-		orgHelpStyle.Render(help)
-	return orgPaneFocused.Render(box) + "\n"
+	lines = []string{
+		orgTitleStyle.Render(prompt),
+		"",
+		m.input.View(),
+		"",
+		orgMutedStyle.Render("existing orgs: " + m.orgNamesCSV()),
+		"",
+		orgHelpStyle.Render(help),
+	}
+	return m.frame(lines, lay)
 }
