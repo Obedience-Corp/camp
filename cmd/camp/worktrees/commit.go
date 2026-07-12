@@ -18,7 +18,7 @@ import (
 )
 
 var (
-	wtCommitMessage   string
+	wtCommitMessages  []string
 	wtCommitAll       bool
 	wtCommitAmend     bool
 	wtCommitAutoWrite bool
@@ -48,8 +48,8 @@ Examples:
 func init() {
 	Cmd.AddCommand(worktreesCommitCmd)
 
-	worktreesCommitCmd.Flags().StringVarP(&wtCommitMessage, "message", "m", "",
-		"Commit message (required unless --auto-write)")
+	worktreesCommitCmd.Flags().StringArrayVarP(&wtCommitMessages, "message", "m", nil,
+		"Commit message (repeatable; multiple -m are joined git-style into subject + body; required unless --auto-write)")
 	worktreesCommitCmd.Flags().BoolVarP(&wtCommitAll, "all", "a", true,
 		"Stage all changes before committing")
 	worktreesCommitCmd.Flags().BoolVar(&wtCommitAmend, "amend", false,
@@ -62,6 +62,10 @@ func init() {
 
 func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
+
+	// Join repeated -m values git-style before any tag prepending so the tag
+	// lands on the subject line.
+	wtCommitMessage := commitkit.JoinMessages(wtCommitMessages)
 
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {

@@ -13,7 +13,9 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
+	"github.com/Obedience-Corp/camp/internal/ledger"
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
+	"github.com/Obedience-Corp/camp/pkg/ledgerkit"
 )
 
 func newUnlinkCommand() *cobra.Command {
@@ -120,6 +122,12 @@ func runUnlink(ctx context.Context, cmd *cobra.Command, opts unlinkOptions) erro
 	})
 	if err != nil {
 		return err
+	}
+
+	emitter := ledger.NewFromRoot(ctx, root, ledger.WarnTo(cmd.ErrOrStderr()))
+	for _, link := range removed {
+		emitter.Emit(ctx, ledgerkit.KindTransitioned, ledgerkit.Scope{Workitem: link.WorkitemID},
+			ledger.WithPayload(map[string]any{"op": "unlink", "link_id": link.ID, "role": string(link.Role)}))
 	}
 
 	if opts.JSON {

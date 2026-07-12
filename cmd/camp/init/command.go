@@ -15,11 +15,13 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/fest"
+	"github.com/Obedience-Corp/camp/internal/ledger"
 	"github.com/Obedience-Corp/camp/internal/nav/tui"
 	"github.com/Obedience-Corp/camp/internal/scaffold"
 	intskills "github.com/Obedience-Corp/camp/internal/skills"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/Obedience-Corp/camp/internal/version"
+	"github.com/Obedience-Corp/camp/pkg/ledgerkit"
 	"github.com/spf13/cobra"
 )
 
@@ -315,6 +317,18 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 		if festErr != nil && !errors.Is(festErr, fest.ErrFestNotFound) {
 			return festErr
 		}
+	}
+
+	// Emit the campaign ledger event for the init/repair itself (D003 boundary:
+	// after the scaffold and config are on disk). NewFromRoot reads the campaign
+	// id that init just wrote.
+	if !p.DryRun {
+		kind := ledgerkit.KindCreated
+		if p.Repair {
+			kind = ledgerkit.KindRepaired
+		}
+		ledger.NewFromRoot(ctx, result.CampaignRoot, ledger.WarnToStderr()).
+			Emit(ctx, kind, ledgerkit.Scope{})
 	}
 
 	// Print results

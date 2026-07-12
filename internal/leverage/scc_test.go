@@ -109,6 +109,21 @@ func TestDefaultExcludeDirs_NotEmpty(t *testing.T) {
 	}
 }
 
+func TestDefaultExcludeDirs_IncludesWorktrees(t *testing.T) {
+	// Project worktrees are full source checkouts. Without excluding them,
+	// camp leverage multiplies LOC by 1+N worktrees (seen as multi-x spikes).
+	required := []string{"worktrees", ".worktrees", ".camp-worktrees"}
+	present := make(map[string]bool, len(DefaultExcludeDirs))
+	for _, d := range DefaultExcludeDirs {
+		present[d] = true
+	}
+	for _, d := range required {
+		if !present[d] {
+			t.Errorf("DefaultExcludeDirs missing %q — worktree checkouts inflate leverage", d)
+		}
+	}
+}
+
 func TestNewSCCRunner(t *testing.T) {
 	// scc is installed on this machine, so this should succeed.
 	runner, err := NewSCCRunner(COCOMOOrganic)

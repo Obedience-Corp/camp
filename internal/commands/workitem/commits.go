@@ -25,6 +25,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
 	"github.com/Obedience-Corp/camp/internal/workitem/resolver"
 	"github.com/Obedience-Corp/camp/pkg/commitkit"
+	"github.com/Obedience-Corp/camp/pkg/ledgerkit"
 )
 
 const (
@@ -61,18 +62,24 @@ func newCommitsCommand() *cobra.Command {
 		flagLimit    int
 		flagOffset   int
 		flagWorkitem string
+		flagSource   string
 	)
 
 	cmd := &cobra.Command{
 		Use:   "commits [selector]",
 		Short: "List commits referencing a workitem across linked repos",
-		Long: `Search the campaign root and every linked project/repo/worktree/festival
-repo for commits whose campaign tag references this workitem's ref.
+		Long: `List commits referencing this workitem, newest first.
 
-Default sort: most recent first across all repos. Use --json for structured
-output. Repos that are not git checkouts or that fail their git log invocation
-are reported under "errors" in JSON mode; table mode warns on stderr when
-repo queries fail.`,
+When the campaign event ledger already holds the workitem's commit evidence,
+the answer comes from a single merged ledger read (fast path). Otherwise it
+falls back to scanning the campaign root and every linked
+project/repo/worktree/festival repo for commits whose campaign tag references
+the workitem's ref (pre-ledger history).
+
+Use --json for structured output; the "source" field reports which path
+answered ("ledger" or "scan"). Repos that are not git checkouts or that fail
+their git log invocation are reported under "errors" in JSON mode; table mode
+warns on stderr when repo queries fail.`,
 		Args: jsoncontract.Args(WorkitemCommitsJSONVersion, func() bool { return flagJSON }, cobra.MaximumNArgs(1)),
 		Annotations: map[string]string{
 			"agent_allowed": "true",
@@ -93,6 +100,7 @@ repo queries fail.`,
 				JSON:     flagJSON,
 				Limit:    flagLimit,
 				Offset:   flagOffset,
+				Source:   flagSource,
 			})
 		}),
 	}
@@ -102,8 +110,15 @@ repo queries fail.`,
 	cmd.Flags().BoolVar(&flagJSON, "json", false, "emit JSON instead of the default table")
 	cmd.Flags().IntVar(&flagLimit, "limit", commitsDefaultLimit, "maximum commits to return")
 	cmd.Flags().IntVar(&flagOffset, "offset", 0, "number of commits to skip (after sorting)")
+	cmd.Flags().StringVar(&flagSource, "source", commitsSourceAuto, "where to read commits from: auto (ledger when present, else scan), ledger, or scan")
 	return cmd
 }
+
+const (
+	commitsSourceAuto   = "auto"
+	commitsSourceLedger = "ledger"
+	commitsSourceScan   = "scan"
+)
 
 type commitsFlags struct {
 	Selector string
@@ -111,6 +126,7 @@ type commitsFlags struct {
 	JSON     bool
 	Limit    int
 	Offset   int
+	Source   string
 }
 
 func runCommitsQuery(ctx context.Context, cmd *cobra.Command, flags commitsFlags) error {
@@ -120,6 +136,7 @@ func runCommitsQuery(ctx context.Context, cmd *cobra.Command, flags commitsFlags
 	}
 
 	ref := flags.Ref
+	var wi *wkitem.WorkItem
 	if ref == "" {
 		res, rerr := resolver.Resolve(ctx, campaignRoot, resolver.Options{Explicit: flags.Selector})
 		if rerr != nil {
@@ -129,19 +146,63 @@ func runCommitsQuery(ctx context.Context, cmd *cobra.Command, flags commitsFlags
 			return camperrors.NewValidation("workitem",
 				"no workitem context resolved; pass <selector> or --ref WI-...", nil)
 		}
-		ref = wkitem.RefOf(res.Workitem)
+		wi = res.Workitem
+		ref = wkitem.RefOf(wi)
 		if ref == "" {
 			return camperrors.NewValidation("workitem",
 				"workitem has no ref; run `camp workitem doctor --fix` to backfill", nil)
 		}
+	} else {
+		// --ref skips the full resolve for the identity, but still expand D007
+		// aliases (stable id / key / slug) when the ref maps to an on-disk workitem.
+		if res, rerr := resolver.Resolve(ctx, campaignRoot, resolver.Options{Explicit: ref}); rerr == nil && res != nil && res.Workitem != nil {
+			wi = res.Workitem
+			if r := wkitem.RefOf(wi); r != "" {
+				ref = r
+			}
+		}
 	}
 
-	repos, err := enumerateQueryRepos(ctx, campaignRoot)
-	if err != nil {
-		return camperrors.Wrap(err, "enumerate query repos")
+	requested := flags.Source
+	if requested == "" {
+		requested = commitsSourceAuto
+	}
+	if requested != commitsSourceAuto && requested != commitsSourceLedger && requested != commitsSourceScan {
+		return camperrors.NewValidation("source",
+			"must be auto, ledger, or scan", nil)
 	}
 
-	records, queryErrs := searchRepos(ctx, campaignRoot, repos, ref)
+	// Ledger-first (D007/A6): when the campaign event ledger holds this
+	// workitem's commit evidence, answer from one merged ledger read instead of a
+	// git-log fan-out across every linked repo. In auto, an empty or unreadable
+	// ledger falls back to the cross-repo tag scan; --source scan forces the scan
+	// (the exhaustive git --all view) and --source ledger forces the ledger.
+	aliases := workitemAliases(ref, wi)
+	var records []CommitRecord
+	var queryErrs []commitsQueryError
+	answered := commitsSourceScan
+	if requested == commitsSourceLedger || requested == commitsSourceAuto {
+		ledgerRecs, lerr := ledgerCommits(ctx, campaignRoot, aliases)
+		if requested == commitsSourceLedger {
+			if lerr != nil {
+				return camperrors.Wrap(lerr, "read campaign ledger")
+			}
+			records, answered = ledgerRecs, commitsSourceLedger
+		} else if lerr == nil && len(ledgerRecs) > 0 {
+			records, answered = ledgerRecs, commitsSourceLedger
+		} else if lerr != nil {
+			// Empty ledger → silent scan is fine; unreadable/corrupt is loud.
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: campaign ledger unreadable (%v); falling back to scan\n", lerr)
+		}
+	}
+	if answered == commitsSourceScan && requested != commitsSourceLedger {
+		repos, rerr := enumerateQueryRepos(ctx, campaignRoot)
+		if rerr != nil {
+			return camperrors.Wrap(rerr, "enumerate query repos")
+		}
+		records, queryErrs = searchRepos(ctx, campaignRoot, repos, ref)
+	}
+	source := answered
 	sort.Slice(records, func(i, j int) bool { return records[i].Date.After(records[j].Date) })
 
 	if flags.Offset > 0 && flags.Offset < len(records) {
@@ -154,12 +215,122 @@ func runCommitsQuery(ctx context.Context, cmd *cobra.Command, flags commitsFlags
 	}
 
 	if flags.JSON {
-		return emitCommitsJSON(cmd.OutOrStdout(), records, queryErrs)
+		return emitCommitsJSON(cmd.OutOrStdout(), source, records, queryErrs)
 	}
-	if err := emitCommitsTable(cmd.OutOrStdout(), records); err != nil {
+	if err := emitCommitsTable(cmd.OutOrStdout(), source, records); err != nil {
 		return err
 	}
 	return emitCommitsQueryWarnings(cmd.ErrOrStderr(), queryErrs)
+}
+
+// workitemAliases returns the identifier forms a ledger event's scope.workitem
+// might carry for this workitem (D007 workitem-id normalization): the ref, the
+// stable id, the workitem key, and the on-disk directory slug all name it.
+func workitemAliases(ref string, wi *wkitem.WorkItem) map[string]bool {
+	aliases := map[string]bool{}
+	if ref != "" {
+		aliases[ref] = true
+	}
+	if wi != nil {
+		if wi.StableID != "" {
+			aliases[wi.StableID] = true
+		}
+		if wi.Key != "" {
+			aliases[wi.Key] = true
+		}
+		if slug := filepath.Base(filepath.FromSlash(wi.RelativePath)); slug != "" && slug != "." {
+			aliases[slug] = true
+		}
+	}
+	return aliases
+}
+
+// ledgerCommits answers the query from the campaign event ledger: the commit
+// evidence on every evidence_attached/repaired event whose scope.workitem names
+// this workitem. A missing or empty ledger yields no records so the caller
+// falls back to the cross-repo scan.
+func ledgerCommits(ctx context.Context, campaignRoot string, aliases map[string]bool) ([]CommitRecord, error) {
+	if len(aliases) == 0 {
+		return nil, nil
+	}
+	reader, err := ledgerkit.NewReader(campaignRoot)
+	if err != nil {
+		return nil, err
+	}
+	events, _, err := reader.Query(ctx, ledgerkit.Filter{
+		Kinds: []ledgerkit.Kind{ledgerkit.KindEvidenceAttached, ledgerkit.KindRepaired},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return commitsFromLedgerEvents(events, aliases), nil
+}
+
+// commitsFromLedgerEvents maps commit evidence to CommitRecords, matching the
+// git-log path's record shape exactly (tag parsed from the subject) so the
+// --json commit contract is identical whichever path answered. Pure so the
+// mapping is unit-testable without a ledger on disk.
+func commitsFromLedgerEvents(events []*ledgerkit.Event, aliases map[string]bool) []CommitRecord {
+	var records []CommitRecord
+	seen := map[string]bool{}
+	for _, ev := range events {
+		if !aliases[ev.Scope.Workitem] {
+			continue
+		}
+		for _, e := range ev.Evidence {
+			if e.Type != ledgerkit.EvidenceCommit || e.SHA == "" {
+				continue
+			}
+			key := e.Repo + "\x00" + e.SHA
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			records = append(records, CommitRecord{
+				SHA:      e.SHA,
+				Author:   ledgerCommitAuthor(ev),
+				Date:     ledgerCommitDate(ev),
+				Subject:  ev.Why,
+				Repo:     e.Repo,
+				TagParts: commitkit.ParseTag(ev.Why),
+			})
+		}
+	}
+	return records
+}
+
+func ledgerCommitAuthor(ev *ledgerkit.Event) string {
+	if ev.Payload != nil {
+		if a, ok := ev.Payload["author"].(string); ok && a != "" {
+			return a
+		}
+	}
+	return ev.Actor.Name
+}
+
+// ledgerCommitDate prefers payload commit_date/date (live capture + backfill)
+// and falls back to the event timestamp.
+func ledgerCommitDate(ev *ledgerkit.Event) time.Time {
+	if ev.Payload != nil {
+		for _, key := range []string{"commit_date", "date"} {
+			if d, ok := ev.Payload[key].(string); ok && d != "" {
+				if t := parseLedgerTS(d); !t.IsZero() {
+					return t
+				}
+			}
+		}
+	}
+	return parseLedgerTS(ev.TS)
+}
+
+func parseLedgerTS(ts string) time.Time {
+	if t, err := time.Parse(time.RFC3339Nano, ts); err == nil {
+		return t.UTC()
+	}
+	if t, err := time.Parse("2006-01-02", ts); err == nil {
+		return t.UTC()
+	}
+	return time.Time{}
 }
 
 // enumerateQueryRepos returns absolute paths of every git repo to search,
@@ -360,7 +531,12 @@ func isGitRepo(ctx context.Context, path string) (bool, error) {
 	return true, nil
 }
 
-func emitCommitsTable(w io.Writer, records []CommitRecord) error {
+func emitCommitsTable(w io.Writer, source string, records []CommitRecord) error {
+	if source != "" {
+		if _, err := fmt.Fprintf(w, "source: %s\n", source); err != nil {
+			return err
+		}
+	}
 	if len(records) == 0 {
 		_, err := fmt.Fprintln(w, "no commits found")
 		return err
@@ -393,16 +569,18 @@ func emitCommitsQueryWarnings(w io.Writer, errs []commitsQueryError) error {
 // WorkitemCommitsJSONVersion is declared in json_contract.go alongside the
 // rest of the agent-facing JSON schema versions.
 
-func emitCommitsJSON(w io.Writer, records []CommitRecord, errs []commitsQueryError) error {
+func emitCommitsJSON(w io.Writer, source string, records []CommitRecord, errs []commitsQueryError) error {
 	if records == nil {
 		records = []CommitRecord{}
 	}
 	payload := struct {
 		SchemaVersion string              `json:"schema_version"`
+		Source        string              `json:"source"`
 		Commits       []CommitRecord      `json:"commits"`
 		Errors        []commitsQueryError `json:"errors,omitempty"`
 	}{
 		SchemaVersion: WorkitemCommitsJSONVersion,
+		Source:        source,
 		Commits:       records,
 		Errors:        errs,
 	}

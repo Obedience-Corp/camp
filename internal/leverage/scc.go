@@ -9,8 +9,12 @@ import (
 )
 
 // DefaultExcludeDirs are directories excluded from scc scans by default.
-// These contain vendored dependencies, build output, or caches that
-// would inflate COCOMO estimates beyond authored code.
+// These contain vendored dependencies, build output, caches, or parallel
+// checkouts that would inflate COCOMO estimates beyond authored code.
+//
+// worktrees / .worktrees / .camp-worktrees must be excluded: camp project
+// worktrees live under projects/worktrees/ and are full source checkouts.
+// Counting them double/triple-counts the same codebase in leverage scores.
 var DefaultExcludeDirs = []string{
 	"node_modules",
 	"vendor",
@@ -29,6 +33,9 @@ var DefaultExcludeDirs = []string{
 	".mypy_cache",
 	".pytest_cache",
 	".cargo",
+	"worktrees",
+	".worktrees",
+	".camp-worktrees",
 }
 
 // SCCRunner implements Runner by shelling out to the scc binary.

@@ -12,6 +12,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/intent/audit"
+	"github.com/Obedience-Corp/camp/internal/ledger"
 	"github.com/Obedience-Corp/camp/internal/paths"
 )
 
@@ -79,6 +80,7 @@ func runIntentMove(cmd *cobra.Command, args []string) error {
 	// Create path resolver and service
 	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
 	svc := intent.NewIntentService(campaignRoot, resolver.Intents())
+	svc.SetLedger(ledger.NewFromRoot(ctx, campaignRoot, ledger.WarnTo(cmd.ErrOrStderr())))
 
 	// Ensure directories exist and migrate legacy layout
 	if err := svc.EnsureDirectories(ctx); err != nil {

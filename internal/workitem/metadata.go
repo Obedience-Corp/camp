@@ -142,3 +142,23 @@ func supportedWorkitemVersions() []string {
 	sort.Strings(versions)
 	return versions
 }
+
+// IsAcceptedVersion reports whether v is a loadable .workitem schema version.
+func IsAcceptedVersion(v string) bool {
+	return acceptedWorkitemVersions[v]
+}
+
+// IsCurrentVersion reports whether v is the current .workitem schema version.
+func IsCurrentVersion(v string) bool {
+	return v == WorkitemSchemaVersion
+}
+
+// ValidRef reports whether s is a well-formed workitem ref (WI-<6 hex>).
+func ValidRef(s string) bool {
+	return refShape.MatchString(s)
+}
+
+// ValidQuestID reports whether s is a well-formed quest id (qst_<id>).
+func ValidQuestID(s string) bool {
+	return questIDShape.MatchString(s)
+}

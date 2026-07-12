@@ -13,10 +13,12 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
+	"github.com/Obedience-Corp/camp/internal/ledger"
 	"github.com/Obedience-Corp/camp/internal/paths"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/priority"
 	"github.com/Obedience-Corp/camp/internal/workitem/selector"
+	"github.com/Obedience-Corp/camp/pkg/ledgerkit"
 )
 
 func newPriorityCommand() *cobra.Command {
@@ -102,6 +104,10 @@ func runPriority(ctx context.Context, cmd *cobra.Command, selectorArg, levelArg 
 	}); err != nil {
 		return camperrors.Wrap(err, "updating priority store")
 	}
+
+	ledger.NewFromRoot(ctx, root, ledger.WarnTo(cmd.ErrOrStderr())).
+		Emit(ctx, ledgerkit.KindTransitioned, ledgerkit.Scope{Workitem: wi.StableID},
+			ledger.WithPayload(map[string]any{"priority": string(level), "cleared": clear}))
 
 	if jsonOut {
 		return emitPriorityJSON(cmd.OutOrStdout(), wi.Key, level, clear)

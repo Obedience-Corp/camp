@@ -15,7 +15,11 @@
 //
 // The seed mirrors termenv's non-query fallback: the last field of COLORFGBG
 // is the background ANSI color, and a missing or unparsable value means dark.
-// An explicit theme choice refines this later through the theme package.
+// Values 0..6 and 8 count as dark, 7 and 9..15 as light. ANSI 8 (bright black)
+// intentionally diverges from termenv's luminance math and is treated as dark,
+// because dark is the safer readability default when the terminal cannot be
+// queried. An explicit theme choice refines this later through the theme
+// package.
 package bginit
 
 import (

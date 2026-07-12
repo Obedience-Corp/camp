@@ -164,6 +164,8 @@ Examples:
 	cmd.AddCommand(newGroupCommand())
 	cmd.AddCommand(newPromoteCommand())
 	cmd.AddCommand(newDoctorCommand())
+	cmd.AddCommand(newValidateCommand())
+	cmd.AddCommand(newRepairCommand())
 	cmd.AddCommand(newCommitCommand())
 	cmd.AddCommand(newCommitsCommand())
 

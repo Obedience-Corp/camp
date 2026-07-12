@@ -13,8 +13,18 @@ var builtinTypes = map[WorkflowType]bool{
 	WorkflowTypeFestival: true,
 }
 
-func IsBuiltinWorkflowType(wt WorkflowType) bool {
-	return builtinTypes[wt]
+// IsBuiltinType reports whether t is a builtin workflow type with dedicated
+// discovery semantics. Custom types only surface work items when an explicit
+// .workitem marker is present.
+func IsBuiltinType(t WorkflowType) bool {
+	return builtinTypes[t]
+}
+
+// IsBuiltinDocType reports whether t is a builtin directory-doc workflow type
+// (design or explore) whose child directories are treated as work items by
+// location, without requiring a .workitem marker.
+func IsBuiltinDocType(t WorkflowType) bool {
+	return t == WorkflowTypeDesign || t == WorkflowTypeExplore
 }
 
 func emitCandidateFS(fsys fs.FS, typeDir, dir string) (bool, string) {

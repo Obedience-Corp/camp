@@ -1,7 +1,10 @@
 package worktrees
 
 import (
+	"context"
 	"fmt"
+	"path/filepath"
+
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
@@ -9,6 +12,8 @@ import (
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/ui"
+	"github.com/Obedience-Corp/camp/internal/workitem/links"
+	"github.com/Obedience-Corp/camp/internal/workitem/selector"
 	"github.com/Obedience-Corp/camp/internal/worktree"
 	"github.com/spf13/cobra"
 )
@@ -17,6 +22,7 @@ var (
 	createBranch     string
 	createStartPoint string
 	createTrack      string
+	createWorkitem   string
 )
 
 var worktreesCreateCmd = &cobra.Command{
@@ -40,7 +46,10 @@ Examples:
   camp worktrees create my-api hotfix --branch hotfix-123
 
   # Create worktree tracking remote branch
-  camp worktrees create web pr-review --track origin/feature-xyz`,
+  camp worktrees create web pr-review --track origin/feature-xyz
+
+  # Link a design workitem so camp p commit tags WI-*
+  camp worktrees create fest fest-list-watch --workitem WI-2a7950`,
 	Args: cobra.ExactArgs(2),
 	RunE: runWorktreesCreate,
 }
@@ -54,6 +63,8 @@ func init() {
 		"Base branch/commit for new branch (default: current branch)")
 	worktreesCreateCmd.Flags().StringVarP(&createTrack, "track", "t", "",
 		"Remote branch to track (creates new local tracking branch)")
+	worktreesCreateCmd.Flags().StringVar(&createWorkitem, "workitem", "",
+		"workitem selector (ref, path, or id) to primary-link to this worktree for camp p commit tags")
 }
 
 func runWorktreesCreate(cmd *cobra.Command, args []string) error {
@@ -134,8 +145,39 @@ func runWorktreesCreate(cmd *cobra.Command, args []string) error {
 	fmt.Println(ui.Success(fmt.Sprintf("Created worktree: %s/%s", result.Project, result.Name)))
 	fmt.Printf("  Path:   %s\n", ui.Value(result.Path))
 	fmt.Printf("  Branch: %s\n", ui.Value(result.Branch))
+
+	if createWorkitem != "" {
+		link, lerr := linkWorktreeToWorkitem(ctx, campRoot, createWorkitem, filepath.ToSlash(result.RelativePath))
+		if lerr != nil {
+			return camperrors.Wrap(lerr, "worktree created but workitem link failed")
+		}
+		fmt.Printf("  Workitem: %s (%s)\n", ui.Value(link.WorkitemID), ui.Dim(link.WorkitemKey))
+		fmt.Println(ui.Dim("  camp p commit in this worktree will include WI-* in the campaign tag"))
+	}
+
 	fmt.Println()
 	fmt.Println(ui.Dim(fmt.Sprintf("To navigate: cd %s", result.RelativePath)))
 
 	return nil
+}
+
+func linkWorktreeToWorkitem(ctx context.Context, campRoot, selectorQuery, relativeWorktreePath string) (links.Link, error) {
+	wi, err := selector.Resolve(ctx, campRoot, selectorQuery, selector.ResolveOptions{})
+	if err != nil {
+		return links.Link{}, camperrors.Wrap(err, "resolve workitem "+selectorQuery)
+	}
+	workitemID := wi.StableID
+	if workitemID == "" {
+		workitemID = wi.Key
+	}
+	return links.AttachPrimary(ctx, campRoot, links.AttachOptions{
+		WorkitemID:  workitemID,
+		WorkitemKey: wi.Key,
+		Scope: links.LinkScope{
+			Kind: links.ScopeWorktree,
+			Path: relativeWorktreePath,
+		},
+		CreatedBy: "camp_worktrees_create",
+		Replace:   true,
+	})
 }

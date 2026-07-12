@@ -88,6 +88,33 @@ func TestGenerateZsh_FestivalsArm(t *testing.T) {
 	}
 }
 
+func TestGenerateZsh_CrProjectShorthand(t *testing.T) {
+	output := generateZsh()
+
+	checks := []struct {
+		name    string
+		content string
+	}{
+		{"cr recognizes -p", `-p|--project)`},
+		{"cr recognizes equals form", `-p=*|--project=*)`},
+		{"cr rejects missing project", `usage: cr -p <project>`},
+		{"cr dispatches to project run", `camp project run -p "$cr_project" -- "$@"`},
+		{"cr registered for completion", "compdef _cr cr"},
+		{"cr completion calls __complete", "command camp __complete project run -p"},
+		{"cr completion delegates to _normal", "_normal"},
+		{"project run wired into project dispatch", "_camp_project_run"},
+		{"project subcommand list includes run", "'run:Run a command inside a project directory'"},
+	}
+
+	for _, check := range checks {
+		t.Run(check.name, func(t *testing.T) {
+			if !strings.Contains(output, check.content) {
+				t.Errorf("zsh init missing %s: %q", check.name, check.content)
+			}
+		})
+	}
+}
+
 func TestGenerateZsh_ValidSyntax(t *testing.T) {
 	output := generateZsh()
 

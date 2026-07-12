@@ -38,3 +38,4 @@ __debug_bin*
 CLAUDE.md
 .claude/
 dist/
+projects/worktrees/
