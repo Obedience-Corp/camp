@@ -87,7 +87,15 @@ func (s *Service) mutateChecklist(ctx context.Context, identifier string, fn fun
 	if err != nil {
 		return nil, err
 	}
+	itemID := item.ID
 	if err := SaveChecklist(ctx, path, cl); err != nil {
+		return nil, err
+	}
+	// SaveChecklist sorts cl.Items in place. Resolve the affected item again so
+	// the result never retains a pointer to a slice slot that now contains a
+	// different item after reordering.
+	item, err = cl.Resolve(itemID)
+	if err != nil {
 		return nil, err
 	}
 	return &ChecklistMutationResult{

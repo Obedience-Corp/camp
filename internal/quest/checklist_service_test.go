@@ -81,3 +81,34 @@ func TestRankChecklistItem_RejectsNegative(t *testing.T) {
 		t.Fatalf("RankChecklistItem(5) error = %v", err)
 	}
 }
+
+func TestRankChecklistItem_ReturnsAffectedItemAfterSort(t *testing.T) {
+	ctx, _, svc := setupQuestCampaign(t)
+
+	created, err := svc.Create(ctx, "Sorted Result Quest", "", "", nil)
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	first, err := svc.AddChecklistItem(ctx, created.Quest.ID, AddChecklistItemOptions{Title: "first"})
+	if err != nil {
+		t.Fatalf("AddChecklistItem(first) error = %v", err)
+	}
+	second, err := svc.AddChecklistItem(ctx, created.Quest.ID, AddChecklistItemOptions{Title: "second"})
+	if err != nil {
+		t.Fatalf("AddChecklistItem(second) error = %v", err)
+	}
+
+	result, err := svc.RankChecklistItem(ctx, created.Quest.ID, first.Item.ID, 30)
+	if err != nil {
+		t.Fatalf("RankChecklistItem() error = %v", err)
+	}
+	if result.Item.ID != first.Item.ID {
+		t.Fatalf("result item ID = %q, want affected item %q", result.Item.ID, first.Item.ID)
+	}
+	if result.Item.Rank != 30 {
+		t.Fatalf("result item rank = %d, want 30", result.Item.Rank)
+	}
+	if len(result.Checklist.Items) != 2 || result.Checklist.Items[0].ID != second.Item.ID || result.Checklist.Items[1].ID != first.Item.ID {
+		t.Fatalf("sorted checklist IDs = %#v, want [%q, %q]", result.Checklist.Items, second.Item.ID, first.Item.ID)
+	}
+}
