@@ -54,10 +54,23 @@ func parseWorkflowTarget(root string, resolver *paths.Resolver, target string) (
 			"ambiguous target; expected exactly "+prefix+"<type>/<dir>, got "+rel, nil)
 	}
 	pathType = sub[0]
-	if pathType == "dungeon" || wkitem.IsBuiltinType(wkitem.WorkflowType(pathType)) && !wkitem.IsBuiltinDocType(wkitem.WorkflowType(pathType)) {
+	if !isWorkflowWorkitemType(pathType) {
 		return "", "", camperrors.NewValidation("path", pathType+" directories are not workflow work items", nil)
 	}
 	return rel, pathType, nil
+}
+
+func isWorkflowWorkitemType(typeName string) bool {
+	wt := wkitem.WorkflowType(typeName)
+	return typeName != "dungeon" && (!wkitem.IsBuiltinType(wt) || wkitem.IsBuiltinDocType(wt))
+}
+
+func workflowTypeScannable(typeName string, isDir bool) bool {
+	return isDir && !strings.HasPrefix(typeName, ".") && isWorkflowWorkitemType(typeName)
+}
+
+func workflowChildScannable(childName string, isDir, docType, hasMarker bool) bool {
+	return isDir && !strings.HasPrefix(childName, ".") && childName != "dungeon" && (docType || hasMarker)
 }
 
 // scanWorkflowWorkitemDirs enumerates work item directories under workflow/,
@@ -80,13 +93,10 @@ func scanWorkflowWorkitemDirs(ctx context.Context, root string, resolver *paths.
 			return nil, err
 		}
 		typeName := typeEntry.Name()
-		if !typeEntry.IsDir() || strings.HasPrefix(typeName, ".") || typeName == "dungeon" {
+		if !workflowTypeScannable(typeName, typeEntry.IsDir()) {
 			continue
 		}
 		wt := wkitem.WorkflowType(typeName)
-		if wkitem.IsBuiltinType(wt) && !wkitem.IsBuiltinDocType(wt) {
-			continue
-		}
 		docType := wkitem.IsBuiltinDocType(wt)
 
 		typeDir := filepath.Join(workflowRoot, typeName)
@@ -99,14 +109,10 @@ func scanWorkflowWorkitemDirs(ctx context.Context, root string, resolver *paths.
 				return nil, err
 			}
 			childName := child.Name()
-			if !child.IsDir() || strings.HasPrefix(childName, ".") || childName == "dungeon" {
-				continue
-			}
 			childAbs := filepath.Join(typeDir, childName)
-			if !docType {
-				if _, statErr := os.Stat(filepath.Join(childAbs, wkitem.MetadataFilename)); statErr != nil {
-					continue
-				}
+			_, markerErr := os.Stat(filepath.Join(childAbs, wkitem.MetadataFilename))
+			if !workflowChildScannable(childName, child.IsDir(), docType, markerErr == nil) {
+				continue
 			}
 			rel, rerr := filepath.Rel(root, childAbs)
 			if rerr != nil {

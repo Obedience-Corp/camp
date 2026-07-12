@@ -20,6 +20,7 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/paths"
+	"github.com/Obedience-Corp/camp/internal/remote"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 )
 
@@ -247,7 +248,7 @@ func requiredFieldProblems(meta wkitem.Metadata) []string {
 }
 
 func repairCommandFor(relPath string) string {
-	return "camp workitem repair " + relPath
+	return "camp workitem repair " + remote.ShellQuote(relPath)
 }
 
 func renderValidateError(cmd *cobra.Command, jsonOut bool, err error) error {

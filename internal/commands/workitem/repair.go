@@ -89,6 +89,9 @@ func runRepair(ctx context.Context, cmd *cobra.Command, target, typeOverride str
 		if err := validateSlug(typeOverride); err != nil {
 			return camperrors.NewValidation("type", "invalid --type slug: "+err.Error(), nil)
 		}
+		if !isWorkflowWorkitemType(typeOverride) {
+			return camperrors.NewValidation("type", "--type must name a workflow document or custom type; got "+strconv.Quote(typeOverride), nil)
+		}
 		pathType = typeOverride
 	}
 
@@ -266,12 +269,12 @@ func emitRepairJSON(w io.Writer, relPath string, dryRun bool, plan markerRepair)
 		changes = []repairChange{}
 	}
 	out := struct {
-		SchemaVersion string    `json:"schema_version"`
-		GeneratedAt   time.Time `json:"generated_at"`
-		Target        string    `json:"target"`
-		DryRun        bool      `json:"dry_run"`
-		CreatedMarker bool      `json:"created_marker"`
-		Changed       bool      `json:"changed"`
+		SchemaVersion string         `json:"schema_version"`
+		GeneratedAt   time.Time      `json:"generated_at"`
+		Target        string         `json:"target"`
+		DryRun        bool           `json:"dry_run"`
+		CreatedMarker bool           `json:"created_marker"`
+		Changed       bool           `json:"changed"`
 		Changes       []repairChange `json:"changes"`
 		Workitem      struct {
 			ID            string `json:"id"`
