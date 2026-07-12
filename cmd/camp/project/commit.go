@@ -13,8 +13,10 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/ledger"
+	"github.com/Obedience-Corp/camp/internal/paths"
 	projectsvc "github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/ui"
+	"github.com/Obedience-Corp/camp/internal/worktree"
 	"github.com/Obedience-Corp/camp/pkg/commitkit"
 	"github.com/Obedience-Corp/camp/pkg/ledgerkit"
 	"github.com/spf13/cobra"
@@ -77,28 +79,46 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "not in a campaign")
 	}
 
-	// Resolve project
-	result, err := projectsvc.Resolve(ctx, campRoot, projectCommitProject)
-	if err != nil {
-		var notFound *projectsvc.ProjectNotFoundError
-		if errors.As(err, &notFound) {
-			fmt.Println(ui.Dim("\n" + projectsvc.FormatProjectList(notFound.AvailableProjects())))
+	// Load campaign config once (used for worktree detection, the commit tag,
+	// and the optional parent-ref sync).
+	cfg, _ := config.LoadCampaignConfig(ctx, campRoot)
+
+	// Resolve the working directory to commit in. With no explicit --project and
+	// a cwd inside a worktree, commit in the worktree itself: the generic project
+	// resolver only understands projects/<name> and submodule roots, so a commit
+	// from projects/worktrees/<project>/<name> would otherwise fail to resolve.
+	var (
+		resolvedPath string
+		relPath      string
+		inWorktree   bool
+	)
+	if projectCommitProject == "" && cfg != nil {
+		if wtCtx, derr := worktree.NewDetector(paths.NewResolver(campRoot, cfg.Paths())).DetectFromCwd(); derr == nil {
+			resolvedPath = wtCtx.WorktreePath
+			relPath, _ = filepath.Rel(campRoot, resolvedPath)
+			inWorktree = true
+			fmt.Printf("Worktree: %s\n", ui.Value(wtCtx.Project+"/"+wtCtx.WorktreeName))
 		}
-		return err
 	}
-
-	resolvedPath := result.Path
-
-	if err := result.RequireGit("git commits"); err != nil {
-		return err
+	if !inWorktree {
+		result, rerr := projectsvc.Resolve(ctx, campRoot, projectCommitProject)
+		if rerr != nil {
+			var notFound *projectsvc.ProjectNotFoundError
+			if errors.As(rerr, &notFound) {
+				fmt.Println(ui.Dim("\n" + projectsvc.FormatProjectList(notFound.AvailableProjects())))
+			}
+			return rerr
+		}
+		if rgErr := result.RequireGit("git commits"); rgErr != nil {
+			return rgErr
+		}
+		resolvedPath = result.Path
+		relPath = result.LogicalPath
+		if relPath == "" {
+			relPath, _ = filepath.Rel(campRoot, resolvedPath)
+		}
+		fmt.Printf("Project: %s\n", ui.Value(relPath))
 	}
-
-	// Display which project
-	relPath := result.LogicalPath
-	if relPath == "" {
-		relPath, _ = filepath.Rel(campRoot, resolvedPath)
-	}
-	fmt.Printf("Project: %s\n", ui.Value(relPath))
 
 	// Create executor for the submodule
 	executor, err := git.NewExecutor(resolvedPath)
@@ -144,9 +164,6 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 	// Show what's staged
 	cmdutil.ShowStagedSummary(ctx, resolvedPath)
 
-	// Load campaign config (used for tag and parent sync)
-	cfg, _ := config.LoadCampaignConfig(ctx, campRoot)
-
 	if projectCommitAutoWrite {
 		fmt.Println(ui.Info("Writing commit message..."))
 		var hookErr error
@@ -188,8 +205,10 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 		emitter.CommitEvidence(ctx, ledgerkit.Scope{}, campRoot, resolvedPath, sha, message)
 	}
 
-	// Auto-sync submodule ref in campaign root
-	if projectCommitSync && git.HasPathDiff(ctx, campRoot, resolvedPath) {
+	// Auto-sync submodule ref in campaign root. A worktree commit lands on its
+	// own branch under the gitignored worktrees dir, so there is no submodule
+	// ref to sync at the campaign root.
+	if projectCommitSync && !inWorktree && git.HasPathDiff(ctx, campRoot, resolvedPath) {
 		if err := syncParentRef(ctx, campRoot, relPath, cfg, emitter); err != nil {
 			fmt.Println()
 			fmt.Println(ui.Warning("Could not auto-sync campaign root: " + err.Error()))
