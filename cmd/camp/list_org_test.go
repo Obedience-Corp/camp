@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -82,6 +84,40 @@ func TestFilterEntries(t *testing.T) {
 				t.Errorf("filter = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestParseListPositionalOrg(t *testing.T) {
+	cmd := listTestCmd()
+	got, err := parseListPositionalOrg(cmd, []string{"obey"})
+	if err != nil {
+		t.Fatalf("parse positional org: %v", err)
+	}
+	if got != "obey" {
+		t.Fatalf("org = %q, want obey", got)
+	}
+
+	if err := cmd.Flags().Set("org", "default"); err != nil {
+		t.Fatalf("set --org: %v", err)
+	}
+	if _, err := parseListPositionalOrg(cmd, []string{"obey"}); err == nil {
+		t.Fatal("expected positional org and --org conflict")
+	}
+}
+
+func TestRequireListOrg(t *testing.T) {
+	reg := config.NewRegistry()
+	reg.Orgs = append(reg.Orgs, config.OrgEntry{Name: "obey"}, config.OrgEntry{Name: "empty-co"})
+	for _, org := range []string{"obey", "empty-co"} {
+		if err := requireListOrg(reg, org); err != nil {
+			t.Fatalf("require existing org %q: %v", org, err)
+		}
+	}
+
+	err := requireListOrg(reg, "missing")
+	var notFound *camperrors.NotFoundError
+	if !errors.As(err, &notFound) || notFound.Resource != "org" || notFound.ID != "missing" {
+		t.Fatalf("missing org error = %v, want typed org not-found", err)
 	}
 }
 
