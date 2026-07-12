@@ -13,7 +13,9 @@ import (
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/intent/audit"
 	"github.com/Obedience-Corp/camp/internal/intent/gather"
+	"github.com/Obedience-Corp/camp/internal/ledger"
 	"github.com/Obedience-Corp/camp/internal/paths"
+	"github.com/Obedience-Corp/camp/pkg/ledgerkit"
 )
 
 var (
@@ -169,6 +171,22 @@ func runIntentGather(cmd *cobra.Command, args []string) error {
 	result, err := gatherSvc.Gather(ctx, ids, opts)
 	if err != nil {
 		return camperrors.Wrap(err, "gather failed")
+	}
+
+	// Ledger: one action for the whole gather - the gathered intent is created,
+	// each archived source transitions to archived (gathered_into the new id).
+	gatherEmitter := ledger.NewFromRoot(ctx, campaignRoot, ledger.WarnTo(cmd.ErrOrStderr()))
+	gatherEmitter.Emit(ctx, ledgerkit.KindCreated, ledgerkit.Scope{Intent: result.Gathered.ID},
+		ledger.WithWhy(result.Gathered.Title),
+		ledger.WithPayload(map[string]any{"status": string(result.Gathered.Status), "gathered_count": len(ids)}))
+	if !gatherNoArchive {
+		for _, archived := range result.ArchivedSources {
+			gatherEmitter.Emit(ctx, ledgerkit.KindTransitioned, ledgerkit.Scope{Intent: archived.ID},
+				ledger.WithPayload(map[string]any{
+					"from": string(sourceStatusByID[archived.ID]), "to": string(intent.StatusArchived),
+					"gathered_into": result.Gathered.ID,
+				}))
+		}
 	}
 
 	if err := appendIntentAuditEvent(ctx, resolver.Intents(), audit.Event{
