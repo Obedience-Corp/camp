@@ -193,8 +193,8 @@ camp pin external-repo
 cgo external-repo
 ```
 
-`camp detach <path>` removes the marker. Linked projects keep using
-`camp project link` / `camp project unlink`.
+To undo an attachment, remove the `.camp` marker by hand. Linked projects
+keep using `camp project link` / `camp project unlink`.
 
 ### Planning
 
