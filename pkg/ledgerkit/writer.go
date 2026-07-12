@@ -106,8 +106,12 @@ func (w *Writer) Append(ctx context.Context, ev *Event) error {
 	if err != nil {
 		return err
 	}
+	open := w.open
+	if open == nil {
+		open = osAppend // safe to zero-construct: default to the real filesystem
+	}
 	path := ShardPath(w.campaignRoot, w.writerID, shardTime(ev))
-	f, err := w.open(path)
+	f, err := open(path)
 	if err != nil {
 		return err
 	}
