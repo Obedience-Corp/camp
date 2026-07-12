@@ -19,8 +19,10 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
+	"github.com/Obedience-Corp/camp/internal/ledger"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
+	"github.com/Obedience-Corp/camp/pkg/ledgerkit"
 )
 
 func newCreateCommand() *cobra.Command {
@@ -125,6 +127,10 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 	invalidateNavigationCache(cmd, campaignRoot)
 
 	rel := filepath.Join(parent, slug)
+	ledger.NewFromRoot(ctx, campaignRoot, ledger.WarnTo(cmd.ErrOrStderr())).
+		Emit(ctx, ledgerkit.KindCreated, ledgerkit.Scope{Workitem: ref, Quest: questID},
+			ledger.WithWhy(title),
+			ledger.WithPayload(map[string]any{"type": typeFlag, "title": title, "path": rel}))
 	if jsonOut {
 		payload := struct {
 			SchemaVersion string    `json:"schema_version"`
