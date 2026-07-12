@@ -4,6 +4,7 @@
 package integration
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -233,6 +234,58 @@ func TestIntegration_CommitTags_NoteNoContext(t *testing.T) {
 	assert.NotContains(t, subject, "FE-", "no-context note must not include FE-: %s", subject)
 	assert.Regexp(t, `^\[commit-tags:[0-9a-f]{1,8}\]`, subject,
 		"note should still carry the campaign tag: %s", subject)
+}
+
+func TestIntegration_CommitTags_NoteRefSegment(t *testing.T) {
+	tc := GetSharedContainer(t)
+	dir := "/test/commit-tags-note-ref"
+	initCommitTagsCampaign(t, tc, dir)
+
+	// No workitem context: the note still gets its own NT-<ref> segment even
+	// though there is no WI- to sit alongside.
+	out, err := tc.RunCampInDir(dir, "intent", "note", "loose note for NT ref")
+	require.NoError(t, err, "camp intent note: %s", out)
+
+	subject := lastCommitSubject(t, tc, dir)
+	assert.Regexp(t, `-NT-[0-9a-f]{6}\]`, subject,
+		"note commit should carry its own NT-<ref> segment: %s", subject)
+}
+
+func TestIntegration_CommitTags_NoteRefCoOccursWithWorkitem(t *testing.T) {
+	tc := GetSharedContainer(t)
+	dir := "/test/commit-tags-note-ref-wi"
+	initCommitTagsCampaign(t, tc, dir)
+	ref := seedDesignWorkitemWithRef(t, tc, dir, "noteref")
+
+	// A note captured inside an active workitem carries both: WI- (the ambient
+	// context it was captured in) and NT- (the note itself), in that order.
+	wiDir := dir + "/workflow/design/noteref"
+	out, err := tc.RunCampInDir(wiDir, "intent", "note", "note inside a workitem")
+	require.NoError(t, err, "camp intent note: %s", out)
+
+	subject := lastCommitSubject(t, tc, dir)
+	assert.Contains(t, subject, ref, "note commit should still inherit the ambient WI-<ref>: %s", subject)
+	assert.Regexp(t, regexp.QuoteMeta(ref)+`-NT-[0-9a-f]{6}\]`, subject,
+		"NT- should follow WI- in the fixed tag order: %s", subject)
+}
+
+func TestIntegration_CommitTags_NonNoteActionNeverEmitsNoteRef(t *testing.T) {
+	tc := GetSharedContainer(t)
+	dir := "/test/commit-tags-no-note-leak"
+	initCommitTagsCampaign(t, tc, dir)
+	ref := seedDesignWorkitemWithRef(t, tc, dir, "noleak")
+
+	// A non-note intent action from inside the same workitem context: it must
+	// still carry WI- but never NT-, since only the note commit path derives
+	// a note ref (guards against AmbientCommitOptions accidentally leaking one
+	// into every other intent auto-commit call site).
+	wiDir := dir + "/workflow/design/noleak"
+	out, err := tc.RunCampInDir(wiDir, "intent", "add", "regular intent, not a note")
+	require.NoError(t, err, "camp intent add: %s", out)
+
+	subject := lastCommitSubject(t, tc, dir)
+	assert.Contains(t, subject, ref, "intent add should still inherit ambient WI-<ref>: %s", subject)
+	assert.NotContains(t, subject, "-NT-", "non-note commit must never carry an NT- segment: %s", subject)
 }
 
 func TestIntegration_AutoWriteEnv(t *testing.T) {

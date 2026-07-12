@@ -3,12 +3,14 @@ package intent
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/spf13/cobra"
 
+	wkcmd "github.com/Obedience-Corp/camp/internal/commands/workitem"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/intent"
@@ -242,13 +244,11 @@ func runIntentGather(cmd *cobra.Command, args []string) error {
 		files = append(files, result.ArchivedPaths...)
 		files = append(files, audit.FilePath(resolver.Intents()))
 
+		opts := wkcmd.AmbientCommitOptions(ctx, campaignRoot, cfg.ID, os.Stderr)
+		opts.Files = commit.NormalizeFiles(campaignRoot, files...)
+		opts.SelectiveOnly = true
 		commitResult := commit.Intent(ctx, commit.IntentOptions{
-			Options: commit.Options{
-				CampaignRoot:  campaignRoot,
-				CampaignID:    cfg.ID,
-				Files:         commit.NormalizeFiles(campaignRoot, files...),
-				SelectiveOnly: true,
-			},
+			Options:     opts,
 			Action:      commit.IntentGather,
 			IntentTitle: gatherTitle,
 			Description: description,
@@ -256,6 +256,7 @@ func runIntentGather(cmd *cobra.Command, args []string) error {
 		if commitResult.Message != "" {
 			fmt.Printf("  %s\n", commitResult.Message)
 		}
+		commit.WarnIfSkipped(os.Stderr, commitResult)
 	}
 
 	return nil

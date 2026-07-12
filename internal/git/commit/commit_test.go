@@ -1,6 +1,7 @@
 package commit
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"os/exec"
@@ -41,6 +42,108 @@ func TestIntent_MissingCampaignInfo(t *testing.T) {
 
 	if result.Committed {
 		t.Error("expected Committed to be false when CampaignID is empty")
+	}
+}
+
+func TestDoCommit_SkippedReasons(t *testing.T) {
+	tests := []struct {
+		name           string
+		opts           Options
+		wantSkipped    bool
+		wantNoChanges  bool
+		wantMessage    string
+		wantReasonPart string
+	}{
+		{
+			name:           "missing campaign root",
+			opts:           Options{CampaignRoot: "", CampaignID: "test-id"},
+			wantSkipped:    true,
+			wantNoChanges:  false,
+			wantMessage:    "",
+			wantReasonPart: "missing campaign context",
+		},
+		{
+			name:           "missing campaign id",
+			opts:           Options{CampaignRoot: "/some/path", CampaignID: ""},
+			wantSkipped:    true,
+			wantNoChanges:  false,
+			wantMessage:    "",
+			wantReasonPart: "missing campaign context",
+		},
+		{
+			name:           "selective commit with zero resolved files",
+			opts:           Options{CampaignRoot: "/some/path", CampaignID: "test-id", SelectiveOnly: true},
+			wantSkipped:    true,
+			wantNoChanges:  true,
+			wantMessage:    "(no changes to commit)",
+			wantReasonPart: "no files resolved to stage",
+		},
+		{
+			name:        "selective commit with pre-staged files is not a skip precondition",
+			opts:        Options{CampaignRoot: "/nonexistent-repo-for-test", CampaignID: "test-id", SelectiveOnly: true, PreStaged: []string{"a.txt"}},
+			wantSkipped: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.name == "selective commit with pre-staged files is not a skip precondition" {
+				// This case is expected to attempt a real commit and fail
+				// because the campaign root does not exist; we only care
+				// that it was not classified as a guaranteed Skip.
+				result := doCommit(context.Background(), tt.opts, "Test", "subject", "")
+				if result.Skipped != tt.wantSkipped {
+					t.Errorf("Skipped = %v, want %v (result=%+v)", result.Skipped, tt.wantSkipped, result)
+				}
+				return
+			}
+
+			result := doCommit(context.Background(), tt.opts, "Test", "subject", "")
+			if result.Skipped != tt.wantSkipped {
+				t.Errorf("Skipped = %v, want %v", result.Skipped, tt.wantSkipped)
+			}
+			if result.NoChanges != tt.wantNoChanges {
+				t.Errorf("NoChanges = %v, want %v", result.NoChanges, tt.wantNoChanges)
+			}
+			if result.Message != tt.wantMessage {
+				t.Errorf("Message = %q, want %q", result.Message, tt.wantMessage)
+			}
+			if result.Committed {
+				t.Error("Committed = true, want false for a skip precondition")
+			}
+			if tt.wantReasonPart != "" && !strings.Contains(result.SkipReason, tt.wantReasonPart) {
+				t.Errorf("SkipReason = %q, want it to contain %q", result.SkipReason, tt.wantReasonPart)
+			}
+		})
+	}
+}
+
+func TestWarnIfSkipped(t *testing.T) {
+	tests := []struct {
+		name string
+		res  Result
+		want string
+	}{
+		{
+			name: "skipped writes a warning",
+			res:  Result{Skipped: true, SkipReason: "missing campaign context"},
+			want: "warning: missing campaign context\n",
+		},
+		{
+			name: "not skipped writes nothing",
+			res:  Result{Skipped: false, Message: "(no changes to commit)"},
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			WarnIfSkipped(&buf, tt.res)
+			if got := buf.String(); got != tt.want {
+				t.Errorf("WarnIfSkipped() wrote %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -222,6 +325,97 @@ func TestIntent_WithQuestTag(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "[OBEY-CAMPAIGN-abcdef12-qst_20260313_abc123]") {
 		t.Fatalf("commit message missing quest tag: %s", string(out))
+	}
+}
+
+func TestIntent_WithNoteRefTag(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	if err := exec.Command("git", "-C", tmpDir, "init").Run(); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.email", "test@test.com").Run(); err != nil {
+		t.Fatalf("failed to configure git email: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.name", "Test").Run(); err != nil {
+		t.Fatalf("failed to configure git name: %v", err)
+	}
+
+	testFile := filepath.Join(tmpDir, "note.txt")
+	if err := os.WriteFile(testFile, []byte("note content"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	result := Intent(context.Background(), IntentOptions{
+		Options: Options{
+			CampaignRoot: tmpDir,
+			CampaignID:   "abcdef12",
+			WorkitemRef:  "WI-deadbe",
+			NoteRef:      "NT-abcdef",
+		},
+		Action:      IntentCreate,
+		IntentTitle: "Note-tagged intent",
+	})
+
+	if !result.Committed {
+		t.Fatalf("expected commit to succeed, got %s", result.Message)
+	}
+
+	out, err := exec.Command("git", "-C", tmpDir, "log", "-1", "--format=%B").Output()
+	if err != nil {
+		t.Fatalf("failed to get git log: %v", err)
+	}
+	commitMsg := string(out)
+	if !strings.Contains(commitMsg, "[OBEY-CAMPAIGN-abcdef12-WI-deadbe-NT-abcdef]") {
+		t.Fatalf("commit message missing note tag co-occurring with workitem: %s", commitMsg)
+	}
+}
+
+func TestIntent_NoteRefUnsetOmitsNoteSegment(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	if err := exec.Command("git", "-C", tmpDir, "init").Run(); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.email", "test@test.com").Run(); err != nil {
+		t.Fatalf("failed to configure git email: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.name", "Test").Run(); err != nil {
+		t.Fatalf("failed to configure git name: %v", err)
+	}
+
+	testFile := filepath.Join(tmpDir, "move.txt")
+	if err := os.WriteFile(testFile, []byte("move content"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	// A non-note action (e.g. IntentMove) with an active workitem in scope
+	// but NoteRef left unset (as every non-note call site does) must never
+	// emit an NT- segment.
+	result := Intent(context.Background(), IntentOptions{
+		Options: Options{
+			CampaignRoot: tmpDir,
+			CampaignID:   "abcdef12",
+			WorkitemRef:  "WI-deadbe",
+		},
+		Action:      IntentMove,
+		IntentTitle: "Moved intent",
+	})
+
+	if !result.Committed {
+		t.Fatalf("expected commit to succeed, got %s", result.Message)
+	}
+
+	out, err := exec.Command("git", "-C", tmpDir, "log", "-1", "--format=%B").Output()
+	if err != nil {
+		t.Fatalf("failed to get git log: %v", err)
+	}
+	commitMsg := string(out)
+	if strings.Contains(commitMsg, "-NT-") {
+		t.Fatalf("non-note commit must never carry an NT- segment: %s", commitMsg)
+	}
+	if !strings.Contains(commitMsg, "[OBEY-CAMPAIGN-abcdef12-WI-deadbe]") {
+		t.Fatalf("commit message missing expected workitem tag: %s", commitMsg)
 	}
 }
 

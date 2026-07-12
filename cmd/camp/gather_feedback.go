@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	workitemcmd "github.com/Obedience-Corp/camp/internal/commands/workitem"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/intent/feedback"
@@ -241,13 +243,11 @@ func commitGatherFeedback(ctx context.Context, campaignRoot, campaignID string, 
 	description := fmt.Sprintf("Gathered %d observations from %d festivals: %s",
 		result.NewObservations, len(ids), strings.Join(ids, ", "))
 
+	opts := workitemcmd.AmbientCommitOptions(ctx, campaignRoot, campaignID, os.Stderr)
+	opts.Files = commit.NormalizeFiles(campaignRoot, files...)
+	opts.SelectiveOnly = true
 	commitResult := commit.Intent(ctx, commit.IntentOptions{
-		Options: commit.Options{
-			CampaignRoot:  campaignRoot,
-			CampaignID:    campaignID,
-			Files:         commit.NormalizeFiles(campaignRoot, files...),
-			SelectiveOnly: true,
-		},
+		Options:     opts,
 		Action:      commit.IntentGather,
 		IntentTitle: "Gather festival feedback",
 		Description: description,
@@ -255,4 +255,5 @@ func commitGatherFeedback(ctx context.Context, campaignRoot, campaignID string, 
 	if commitResult.Message != "" {
 		fmt.Printf("  %s\n", commitResult.Message)
 	}
+	commit.WarnIfSkipped(os.Stderr, commitResult)
 }

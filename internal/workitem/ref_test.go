@@ -25,6 +25,38 @@ func TestDerive_Deterministic(t *testing.T) {
 	}
 }
 
+func TestDerive_MatchesDeriveWithPrefix(t *testing.T) {
+	id := "design-foo-2026-05-24"
+	if got, want := Derive(id), DeriveWithPrefix(RefPrefix, id); got != want {
+		t.Fatalf("Derive(%q) = %q, want DeriveWithPrefix(RefPrefix, id) = %q", id, got, want)
+	}
+}
+
+func TestDeriveWithPrefix_Deterministic(t *testing.T) {
+	id := "give-notes-their-own-nt-20260623-221250"
+	first := DeriveWithPrefix("NT-", id)
+	second := DeriveWithPrefix("NT-", id)
+	if first != second {
+		t.Fatalf("DeriveWithPrefix(%q) is non-deterministic: %q vs %q", id, first, second)
+	}
+	notePattern := regexp.MustCompile(`^NT-[0-9a-f]{6}$`)
+	if !notePattern.MatchString(first) {
+		t.Fatalf("DeriveWithPrefix(%q) = %q does not match %s", id, first, notePattern)
+	}
+}
+
+func TestDeriveWithPrefix_DifferentPrefixesDifferentRefs(t *testing.T) {
+	id := "design-foo-2026-05-24"
+	wi := DeriveWithPrefix("WI-", id)
+	nt := DeriveWithPrefix("NT-", id)
+	if wi == nt {
+		t.Fatalf("DeriveWithPrefix with different prefixes collided: %q == %q", wi, nt)
+	}
+	if wi[len("WI-"):] != nt[len("NT-"):] {
+		t.Fatalf("expected same hash suffix across prefixes: WI %q, NT %q", wi, nt)
+	}
+}
+
 func TestDerive_DifferentIDsDifferentRefs(t *testing.T) {
 	a := Derive("design-foo-2026-05-24")
 	b := Derive("design-bar-2026-05-24")

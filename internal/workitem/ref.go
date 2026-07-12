@@ -14,13 +14,20 @@ const RefPrefix = "WI-"
 
 const maxRefCollisionRetries = 1 << 24
 
-// Derive returns the canonical ref for a workitem id. The shape is stable:
-// "WI-" plus the first 6 lowercase hex chars of sha256(id). Same id always
-// yields the same ref; this is the reason the field is safe to recompute
-// during migrations and doctor backfills.
+// Derive returns the canonical ref for a workitem id via DeriveWithPrefix.
+// Same id always yields the same ref; this is the reason the field is safe
+// to recompute during migrations and doctor backfills.
 func Derive(id string) string {
+	return DeriveWithPrefix(RefPrefix, id)
+}
+
+// DeriveWithPrefix returns "<prefix>" plus the first 6 lowercase hex chars
+// of sha256(id). Derive is DeriveWithPrefix(RefPrefix, id); other ref
+// families that share this scheme but are not workitems (e.g. note refs)
+// call it directly instead of duplicating the hashing logic.
+func DeriveWithPrefix(prefix, id string) string {
 	sum := sha256.Sum256([]byte(id))
-	return RefPrefix + hex.EncodeToString(sum[:])[:6]
+	return prefix + hex.EncodeToString(sum[:])[:6]
 }
 
 // DeriveUnique returns a ref guaranteed not to collide with the keys of

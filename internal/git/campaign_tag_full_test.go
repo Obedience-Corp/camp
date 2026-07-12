@@ -102,6 +102,62 @@ func TestFormatContextTagsFull_AllCombinations(t *testing.T) {
 	}
 }
 
+func TestFormatContextTagsFull_NoteRef(t *testing.T) {
+	cases := []struct {
+		name                                               string
+		cname, campaign, quest, fest, workitem, note, want string
+	}{
+		{
+			name:     "note only",
+			campaign: "8deed8b4", note: "NT-abcdef",
+			want: "[OBEY-CAMPAIGN-8deed8b4-NT-abcdef]",
+		},
+		{
+			name:     "note ref normalized",
+			campaign: "8deed8b4", note: "abcdef",
+			want: "[OBEY-CAMPAIGN-8deed8b4-NT-abcdef]",
+		},
+		{
+			name:     "note co-occurs with workitem, note goes last",
+			campaign: "8deed8b4", workitem: "WI-abcdef", note: "NT-123456",
+			want: "[OBEY-CAMPAIGN-8deed8b4-WI-abcdef-NT-123456]",
+		},
+		{
+			name:     "note co-occurs with quest, festival, and workitem",
+			campaign: "8deed8b4", quest: "qst_abc", fest: "CW0003", workitem: "WI-abcdef", note: "NT-123456",
+			want: "[OBEY-CAMPAIGN-8deed8b4-qst_abc-FE-CW0003-WI-abcdef-NT-123456]",
+		},
+		{
+			name:  "name-style head with note ref",
+			cname: "obey-campaign", campaign: "8deed8b4", note: "NT-abcdef",
+			want: "[obey-campaign:8deed8b4-NT-abcdef]",
+		},
+		{
+			name:     "no note ref omits the segment",
+			campaign: "8deed8b4", workitem: "WI-abcdef",
+			want: "[OBEY-CAMPAIGN-8deed8b4-WI-abcdef]",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := FormatContextTagsFull(tc.cname, tc.campaign, tc.quest, tc.fest, tc.workitem, tc.note)
+			if got != tc.want {
+				t.Fatalf("FormatContextTagsFull = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFormatContextTagsFull_NoteRefOmittedWhenNotPassed(t *testing.T) {
+	// Existing 5-arg callers (no noteRef argument at all) must be unaffected
+	// by the new variadic trailing parameter.
+	got := FormatContextTagsFull("", "8deed8b4", "", "", "WI-abcdef")
+	want := "[OBEY-CAMPAIGN-8deed8b4-WI-abcdef]"
+	if got != want {
+		t.Fatalf("FormatContextTagsFull (5-arg call) = %q, want %q", got, want)
+	}
+}
+
 func TestFormatCampaignTag_BackwardCompat(t *testing.T) {
 	cases := []struct {
 		campaign, quest, want string
@@ -257,6 +313,140 @@ func TestParseTag_RoundTripProperty(t *testing.T) {
 		if got.WorkitemRef != workitem {
 			t.Fatalf("iter %d: workitem round-trip broke: %q -> %q (tag %q)", i, workitem, got.WorkitemRef, tag)
 		}
+	}
+}
+
+func TestParseTag_NoteRefRoundTripProperty(t *testing.T) {
+	const iterations = 100
+	for i := 0; i < iterations; i++ {
+		cname := "c" + randHex(t, 2)
+		campaign := randHex(t, 4)
+		quest := ""
+		fest := ""
+		workitem := ""
+		note := ""
+		if i%2 == 0 {
+			quest = "qst_" + randHex(t, 3)
+		}
+		if i%3 == 0 {
+			fest = "CW" + randHex(t, 2)
+		}
+		if i%5 == 0 {
+			workitem = "WI-" + randHex(t, 3)
+		}
+		if i%7 == 0 {
+			note = "NT-" + randHex(t, 3)
+		}
+
+		tag := FormatContextTagsFull(cname, campaign, quest, fest, workitem, note)
+		got := ParseTag(tag)
+		if got.WorkitemRef != workitem {
+			t.Fatalf("iter %d: workitem round-trip broke: %q -> %q (tag %q)", i, workitem, got.WorkitemRef, tag)
+		}
+		if got.NoteRef != note {
+			t.Fatalf("iter %d: note round-trip broke: %q -> %q (tag %q)", i, note, got.NoteRef, tag)
+		}
+	}
+}
+
+func TestFormatAndParse_NoteRefWithWorkitem_RoundTrip(t *testing.T) {
+	tag := FormatContextTagsFull("obey-campaign", "8deed8b4", "qst_abc", "CW0003", "WI-abcdef", "NT-123456")
+	got := ParseTag(tag)
+	if got.WorkitemRef != "WI-abcdef" {
+		t.Fatalf("WorkitemRef = %q, want WI-abcdef (tag %q)", got.WorkitemRef, tag)
+	}
+	if got.NoteRef != "NT-123456" {
+		t.Fatalf("NoteRef = %q, want NT-123456 (tag %q)", got.NoteRef, tag)
+	}
+	if got.FestRef != "CW0003" {
+		t.Fatalf("FestRef = %q, want CW0003 (tag %q)", got.FestRef, tag)
+	}
+	if got.QuestID != "qst_abc" {
+		t.Fatalf("QuestID = %q, want qst_abc (tag %q)", got.QuestID, tag)
+	}
+}
+
+func TestFormatAndParse_NoteRefWithoutWorkitem_RoundTrip(t *testing.T) {
+	tag := FormatContextTagsFull("obey-campaign", "8deed8b4", "", "", "", "NT-123456")
+	got := ParseTag(tag)
+	if got.WorkitemRef != "" {
+		t.Fatalf("WorkitemRef = %q, want empty (tag %q)", got.WorkitemRef, tag)
+	}
+	if got.NoteRef != "NT-123456" {
+		t.Fatalf("NoteRef = %q, want NT-123456 (tag %q)", got.NoteRef, tag)
+	}
+}
+
+func TestParseTagDetailed_NoteRefShapeChecks(t *testing.T) {
+	cases := []struct {
+		name             string
+		subject          string
+		wantNoteRef      string
+		wantWarningField []string
+	}{
+		{
+			name:        "valid note ref, no workitem",
+			subject:     "[OBEY-CAMPAIGN-abc-NT-abcdef] x",
+			wantNoteRef: "NT-abcdef",
+		},
+		{
+			name:        "valid note ref co-occurring with workitem",
+			subject:     "[OBEY-CAMPAIGN-abc-WI-WI-deadbe-NT-abcdef] x",
+			wantNoteRef: "NT-abcdef",
+		},
+		{
+			name:             "malformed note ref (bad hex) zeroes ref",
+			subject:          "[OBEY-CAMPAIGN-abc-NT-ZZZZZZ] x",
+			wantWarningField: []string{"note_ref"},
+		},
+		{
+			name:             "malformed note ref (wrong length) zeroes ref",
+			subject:          "[OBEY-CAMPAIGN-abc-NT-abcd] x",
+			wantWarningField: []string{"note_ref"},
+		},
+		{
+			// NT- is terminal (unlike WI-, it never has a following segment), so
+			// once the "NT-" prefix is seen the whole remainder is the shape-check
+			// candidate; a second "-NT-..." here is just more malformed content,
+			// not a separate duplicate segment.
+			name:             "trailing junk after note ref fails shape as one segment",
+			subject:          "[OBEY-CAMPAIGN-abc-NT-aaaaaa-NT-bbbbbb] x",
+			wantWarningField: []string{"note_ref"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, warnings := ParseTagDetailed(tc.subject)
+			if got.NoteRef != tc.wantNoteRef {
+				t.Errorf("NoteRef = %q, want %q", got.NoteRef, tc.wantNoteRef)
+			}
+			if len(warnings) != len(tc.wantWarningField) {
+				t.Fatalf("warnings count = %d, want %d: %+v", len(warnings), len(tc.wantWarningField), warnings)
+			}
+			for i, want := range tc.wantWarningField {
+				if warnings[i].Field != want {
+					t.Errorf("warning[%d].Field = %q, want %q", i, warnings[i].Field, want)
+				}
+			}
+		})
+	}
+}
+
+func TestParseTagDetailed_UnrecognizedNotePrefixIsUnknownSegment(t *testing.T) {
+	// "NTX-..." does not match the "NT-" prefix boundary, so it falls to the
+	// generic unknown-segment path (split at each dash) instead of the
+	// dedicated note_ref check, the same way "WIX-..." would miss the WI- case.
+	got, warnings := ParseTagDetailed("[OBEY-CAMPAIGN-abc-NTX-abcdef] x")
+	if got.NoteRef != "" {
+		t.Fatalf("NoteRef = %q, want empty", got.NoteRef)
+	}
+	for i, w := range warnings {
+		if w.Field != "unknown" {
+			t.Errorf("warning[%d].Field = %q, want unknown", i, w.Field)
+		}
+	}
+	if len(warnings) != 2 {
+		t.Fatalf("warnings = %+v, want two unknown-segment warnings (NTX, abcdef)", warnings)
 	}
 }
 
