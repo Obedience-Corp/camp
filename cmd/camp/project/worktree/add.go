@@ -1,8 +1,10 @@
 package worktree
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/Obedience-Corp/camp/internal/campaign"
@@ -11,6 +13,8 @@ import (
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/ui"
+	"github.com/Obedience-Corp/camp/internal/workitem/links"
+	"github.com/Obedience-Corp/camp/internal/workitem/selector"
 	intworktree "github.com/Obedience-Corp/camp/internal/worktree"
 	"github.com/spf13/cobra"
 )
@@ -20,6 +24,7 @@ var (
 	wtAddBranch     string
 	wtAddStartPoint string
 	wtAddTrack      string
+	wtAddWorkitem   string
 )
 
 var projectWorktreeAddCmd = &cobra.Command{
@@ -49,7 +54,11 @@ Examples:
   camp project worktree add pr-review --track origin/feature-xyz
 
   # Explicit project
-  camp project worktree add feature --project my-api`,
+  camp project worktree add feature --project my-api
+
+  # Link a design/explore workitem so camp p commit in the worktree tags WI-*
+  camp project worktree add fest-list-watch --project fest --workitem WI-2a7950
+  camp project worktree add settings-tui --project camp --workitem workflow/design/camp-settings-tui`,
 	Args: cobra.ExactArgs(1),
 	RunE: runProjectWorktreeAdd,
 }
@@ -61,6 +70,7 @@ func init() {
 	projectWorktreeAddCmd.Flags().StringVarP(&wtAddBranch, "branch", "b", "", "Checkout existing branch instead of creating new one")
 	projectWorktreeAddCmd.Flags().StringVarP(&wtAddStartPoint, "start-point", "s", "", "Base branch/commit for new branch (default: current branch)")
 	projectWorktreeAddCmd.Flags().StringVarP(&wtAddTrack, "track", "t", "", "Remote branch to track (creates new local tracking branch)")
+	projectWorktreeAddCmd.Flags().StringVar(&wtAddWorkitem, "workitem", "", "workitem selector (ref, path, or id) to primary-link to this worktree for camp p commit tags")
 
 	if err := projectWorktreeAddCmd.RegisterFlagCompletionFunc("project", cmdutil.CompleteProjectName); err != nil {
 		panic(err)
@@ -132,8 +142,45 @@ func runProjectWorktreeAdd(cmd *cobra.Command, args []string) error {
 	fmt.Println(ui.Success(fmt.Sprintf("Created worktree: %s/%s", result.Project, result.Name)))
 	fmt.Printf("  Path:   %s\n", ui.Value(result.Path))
 	fmt.Printf("  Branch: %s\n", ui.Value(result.Branch))
+
+	if wtAddWorkitem != "" {
+		link, lerr := linkWorktreeToWorkitem(ctx, campRoot, wtAddWorkitem, filepath.ToSlash(result.RelativePath))
+		if lerr != nil {
+			return camperrors.Wrap(lerr, "worktree created but workitem link failed")
+		}
+		fmt.Printf("  Workitem: %s (%s)\n", ui.Value(link.WorkitemID), ui.Dim(link.WorkitemKey))
+		fmt.Println(ui.Dim("  camp p commit in this worktree will include WI-* in the campaign tag"))
+	}
+
 	fmt.Println()
 	fmt.Println(ui.Dim(fmt.Sprintf("To navigate: cd %s", result.RelativePath)))
 
 	return nil
+}
+
+// linkWorktreeToWorkitem attaches a primary worktree link so the resolver
+// (and therefore camp p commit) picks up the workitem ref inside that tree.
+func linkWorktreeToWorkitem(ctx context.Context, campRoot, selectorQuery, relativeWorktreePath string) (links.Link, error) {
+	wi, err := selector.Resolve(ctx, campRoot, selectorQuery, selector.ResolveOptions{})
+	if err != nil {
+		return links.Link{}, camperrors.Wrap(err, "resolve workitem "+selectorQuery)
+	}
+	workitemID := wi.StableID
+	if workitemID == "" {
+		workitemID = wi.Key
+	}
+	scopePath := relativeWorktreePath
+	if scopePath == "" {
+		return links.Link{}, camperrors.NewValidation("worktree", "missing worktree relative path", nil)
+	}
+	return links.AttachPrimary(ctx, campRoot, links.AttachOptions{
+		WorkitemID:  workitemID,
+		WorkitemKey: wi.Key,
+		Scope: links.LinkScope{
+			Kind: links.ScopeWorktree,
+			Path: scopePath,
+		},
+		CreatedBy: "camp_project_worktree_add",
+		Replace:   true,
+	})
 }

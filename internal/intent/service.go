@@ -34,6 +34,11 @@ type IntentService struct {
 	// its id) and invalidated on mutation. nil means "not built".
 	idIndex   map[string]string
 	idIndexMu sync.Mutex
+
+	// emitter appends campaign-ledger events for intent lifecycle changes. It is
+	// set by the command layer (SetLedger) after the campaign is resolved; nil in
+	// service unit tests. Emission is best-effort and never fails a mutation (D003).
+	emitter ledgerEmitter
 }
 
 // NewIntentService creates a new IntentService.
@@ -125,6 +130,7 @@ func (s *IntentService) CreateDirect(ctx context.Context, opts CreateOptions) (*
 
 	intent.Path = finalPath
 	s.invalidateIDIndex()
+	s.emitCreated(ctx, intent)
 	return intent, nil
 }
 
@@ -215,6 +221,7 @@ func (s *IntentService) CreateWithEditor(ctx context.Context, opts CreateOptions
 
 	intent.Path = finalPath
 	s.invalidateIDIndex()
+	s.emitCreated(ctx, intent)
 	return intent, nil
 }
 
@@ -343,6 +350,7 @@ func (s *IntentService) Move(ctx context.Context, id string, newStatus Status) (
 
 	// Update intent
 	oldPath := intent.Path
+	oldStatus := intent.Status
 	intent.Status = newStatus
 	intent.UpdatedAt = time.Now()
 
@@ -377,6 +385,7 @@ func (s *IntentService) Move(ctx context.Context, id string, newStatus Status) (
 
 	intent.Path = newPath
 	s.invalidateIDIndex()
+	s.emitTransitioned(ctx, intent, oldStatus, newStatus)
 	return intent, nil
 }
 

@@ -316,6 +316,12 @@ type GlobalConfig struct {
 	// Empty means use the built-in default (~/campaigns/). Tilde-prefixed and
 	// relative paths are expanded at read time via ResolvedCampaignsDir().
 	CampaignsDir string `json:"campaigns_dir,omitempty" yaml:"campaigns_dir,omitempty"`
+	// LedgerWriterID is this machine's stable slug for campaign event-ledger
+	// shard names (.campaign/events/<YYYY-MM>/<writer>.jsonl). It is machine-local
+	// (never committed to a campaign) so two machines never write the same shard,
+	// keeping the ledger merge-conflict-free. Generated once on first ledger
+	// write via ledgerkit.ResolveWriterID.
+	LedgerWriterID string `json:"ledger_writer_id,omitempty" yaml:"ledger_writer_id,omitempty"`
 }
 
 // RegistryVersion is the current registry format version.
