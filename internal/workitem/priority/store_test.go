@@ -462,6 +462,47 @@ func TestStorePath(t *testing.T) {
 	}
 }
 
+func TestEligibleForAttention(t *testing.T) {
+	cases := []struct {
+		name string
+		item workitem.WorkItem
+		want bool
+	}{
+		{
+			name: "design directory active by location",
+			item: workitem.WorkItem{WorkflowType: workitem.WorkflowTypeDesign, ItemKind: workitem.ItemKindDirectory, LifecycleStage: workitem.LifecycleStageActive},
+			want: true,
+		},
+		{
+			name: "explore directory active by location",
+			item: workitem.WorkItem{WorkflowType: workitem.WorkflowTypeExplore, ItemKind: workitem.ItemKindDirectory, LifecycleStage: workitem.LifecycleStageActive},
+			want: true,
+		},
+		{
+			name: "custom type directory active by location",
+			item: workitem.WorkItem{WorkflowType: workitem.WorkflowType("feature"), ItemKind: workitem.ItemKindDirectory, LifecycleStage: workitem.LifecycleStageActive},
+			want: true,
+		},
+		{
+			name: "intent file is not eligible",
+			item: workitem.WorkItem{WorkflowType: workitem.WorkflowTypeIntent, ItemKind: workitem.ItemKindFile, LifecycleStage: workitem.LifecycleStageInbox},
+			want: false,
+		},
+		{
+			name: "festival directory is not eligible",
+			item: workitem.WorkItem{WorkflowType: workitem.WorkflowTypeFestival, ItemKind: workitem.ItemKindDirectory, LifecycleStage: workitem.LifecycleStageActive},
+			want: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := EligibleForAttention(tc.item); got != tc.want {
+				t.Errorf("EligibleForAttention(%+v) = %v, want %v", tc.item, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestApply_DecoratesMatchingItems(t *testing.T) {
 	s := NewStore()
 	Set(s, "intent:a", High)

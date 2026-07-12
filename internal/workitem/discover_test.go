@@ -127,8 +127,8 @@ func TestDiscoverDesign_ExcludesDungeonAndHidden(t *testing.T) {
 	if items[0].WorkflowType != WorkflowTypeDesign {
 		t.Errorf("type = %q, want 'design'", items[0].WorkflowType)
 	}
-	if items[0].LifecycleStage != LifecycleStageNone {
-		t.Errorf("stage = %q, want 'none'", items[0].LifecycleStage)
+	if items[0].LifecycleStage != LifecycleStageActive {
+		t.Errorf("stage = %q, want 'active' (workflow items are active by location)", items[0].LifecycleStage)
 	}
 	if items[0].ItemKind != ItemKindDirectory {
 		t.Errorf("kind = %q, want 'directory'", items[0].ItemKind)
@@ -154,8 +154,59 @@ func TestDiscoverExplore_Works(t *testing.T) {
 	if items[0].WorkflowType != WorkflowTypeExplore {
 		t.Errorf("type = %q, want 'explore'", items[0].WorkflowType)
 	}
-	if items[0].LifecycleStage != LifecycleStageNone {
-		t.Errorf("stage = %q, want 'none'", items[0].LifecycleStage)
+	if items[0].LifecycleStage != LifecycleStageActive {
+		t.Errorf("stage = %q, want 'active' (workflow items are active by location)", items[0].LifecycleStage)
+	}
+}
+
+func TestDiscoverCustomWorkflowTypes_ActiveByLocationAndDungeonExcluded(t *testing.T) {
+	root, resolver := setupTestCampaign(t)
+	ctx := context.Background()
+
+	const marker = "version: v1alpha6\nkind: workitem\nid: feature-sample\ntype: feature\n"
+
+	activeDir := filepath.Join(root, "workflow/feature/sample")
+	if err := os.MkdirAll(activeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(activeDir, ".workitem"), marker)
+	writeFile(t, filepath.Join(activeDir, "README.md"), "# Sample Feature\n\nDetails.")
+
+	// Dungeon subtree for the custom type keeps explicit status semantics
+	// and must not surface as a top-level active workitem.
+	dungeonDir := filepath.Join(root, "workflow/feature/dungeon/completed/old-sample")
+	if err := os.MkdirAll(dungeonDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(dungeonDir, ".workitem"), marker)
+
+	hiddenDir := filepath.Join(root, "workflow/feature/.hidden")
+	if err := os.MkdirAll(hiddenDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(hiddenDir, ".workitem"), marker)
+
+	unmarkedDir := filepath.Join(root, "workflow/feature/no-marker")
+	if err := os.MkdirAll(unmarkedDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := discoverCustomWorkflowTypes(ctx, root, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(items) != 1 {
+		t.Fatalf("expected 1 custom workitem, got %d: %+v", len(items), items)
+	}
+	if items[0].WorkflowType != WorkflowType("feature") {
+		t.Errorf("type = %q, want 'feature'", items[0].WorkflowType)
+	}
+	if items[0].LifecycleStage != LifecycleStageActive {
+		t.Errorf("stage = %q, want 'active' (workflow items are active by location)", items[0].LifecycleStage)
+	}
+	if items[0].RelativePath != filepath.Join("workflow", "feature", "sample") {
+		t.Errorf("path = %q, want workflow/feature/sample", items[0].RelativePath)
 	}
 }
 
