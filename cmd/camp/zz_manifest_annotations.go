@@ -15,6 +15,7 @@ var manifestAgentAllowedReasons = map[string]string{
 	"doctor":                     "Read path (--json) is safe; never pass --fix from an agent",
 	"dungeon list":               "Read-only dungeon listing",
 	"dungeon move":               "Non-interactive move with explicit arguments",
+	"event add":                  "Explicit ledger capture; flags-only, supports --json for automation",
 	"flow add":                   "Non-interactive flow registration",
 	"flow history":               "Read-only workflow transition history",
 	"flow items":                 "Read-only workflow item listing",

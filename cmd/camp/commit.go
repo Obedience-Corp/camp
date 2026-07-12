@@ -12,8 +12,10 @@ import (
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/ledger"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/Obedience-Corp/camp/pkg/commitkit"
+	"github.com/Obedience-Corp/camp/pkg/ledgerkit"
 	"github.com/spf13/cobra"
 )
 
@@ -241,6 +243,14 @@ func runCommit(cmd *cobra.Command, args []string) error {
 			return nil
 		}
 		return err
+	}
+
+	// Record the landed commit as ledger evidence (D003: after the commit
+	// exists). Tagging and the message above are untouched.
+	if sha, shaErr := commitkit.ShortHash(ctx, target.Path); shaErr == nil {
+		_, workitemRef := resolveCommitContext(ctx, campRoot, commitWorkitem)
+		ledger.NewFromRoot(ctx, campRoot, ledger.WarnTo(cmd.ErrOrStderr())).
+			CommitEvidence(ctx, ledgerkit.Scope{Workitem: workitemRef}, campRoot, target.Path, sha, message)
 	}
 
 	fmt.Println(ui.Success("Changes committed successfully"))

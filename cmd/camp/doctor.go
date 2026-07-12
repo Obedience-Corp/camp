@@ -134,6 +134,7 @@ func registerChecks(d *doctor.Doctor) {
 	d.RegisterCheck(checks.NewWorkingCheck())
 	d.RegisterCheck(checks.NewCommitsCheck())
 	d.RegisterCheck(checks.NewLockCheck())
+	d.RegisterCheck(checks.NewLedgerCheck())
 }
 
 type doctorJSONPayload struct {

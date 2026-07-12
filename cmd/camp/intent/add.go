@@ -22,6 +22,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/intent/audit"
 	"github.com/Obedience-Corp/camp/internal/intent/tui"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
+	"github.com/Obedience-Corp/camp/internal/ledger"
 	navtui "github.com/Obedience-Corp/camp/internal/nav/tui"
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
@@ -161,6 +162,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 
 	// Create services
 	svc := intent.NewIntentService(campaignRoot, resolver.Intents())
+	svc.SetLedger(ledger.NewFromRoot(ctx, campaignRoot, ledger.WarnTo(cmd.ErrOrStderr())))
 	conceptSvc := concept.NewService(campaignRoot, cfg.Concepts())
 
 	// Ensure directories exist and migrate legacy layout

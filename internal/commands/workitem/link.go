@@ -17,10 +17,12 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
+	"github.com/Obedience-Corp/camp/internal/ledger"
 	"github.com/Obedience-Corp/camp/internal/quest"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
 	"github.com/Obedience-Corp/camp/internal/workitem/selector"
+	"github.com/Obedience-Corp/camp/pkg/ledgerkit"
 )
 
 func newLinkCommand() *cobra.Command {
@@ -171,6 +173,13 @@ func runLink(ctx context.Context, cmd *cobra.Command, opts linkOptions) error {
 	if err != nil {
 		return err
 	}
+
+	ledger.NewFromRoot(ctx, root, ledger.WarnTo(cmd.ErrOrStderr())).
+		Emit(ctx, ledgerkit.KindCreated, ledgerkit.Scope{Workitem: link.WorkitemID},
+			ledger.WithPayload(map[string]any{
+				"link_id": link.ID, "role": string(link.Role),
+				"scope_kind": string(link.Scope.Kind), "scope_path": link.Scope.Path,
+			}))
 
 	if opts.JSON {
 		return emitLinkJSON(cmd.OutOrStdout(), link)

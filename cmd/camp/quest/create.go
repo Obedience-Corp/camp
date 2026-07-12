@@ -10,9 +10,11 @@ import (
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
+	"github.com/Obedience-Corp/camp/internal/ledger"
 	navtui "github.com/Obedience-Corp/camp/internal/nav/tui"
 	"github.com/Obedience-Corp/camp/internal/quest"
 	questtui "github.com/Obedience-Corp/camp/internal/quest/tui"
+	"github.com/Obedience-Corp/camp/pkg/ledgerkit"
 )
 
 var questCreateCmd = &cobra.Command{
@@ -126,6 +128,9 @@ func createQuestDirect(cmd *cobra.Command, name, purpose, description, tags stri
 		return err
 	}
 
+	ledger.NewFromRoot(cmd.Context(), qctx.campaignRoot, ledger.WarnTo(cmd.ErrOrStderr())).
+		Emit(cmd.Context(), ledgerkit.KindCreated, ledgerkit.Scope{Quest: result.Quest.ID}, ledger.WithWhy(result.Quest.Name))
+
 	fmt.Printf("✓ Quest created: %s (%s)\n", result.Quest.Name, result.Quest.ID)
 	fmt.Printf("  %s\n", quest.RelativePath(qctx.campaignRoot, result.Quest.Path))
 
@@ -151,6 +156,9 @@ func createQuestWithEditor(cmd *cobra.Command, name, purpose, description, tags 
 	if err != nil {
 		return err
 	}
+
+	ledger.NewFromRoot(cmd.Context(), qctx.campaignRoot, ledger.WarnTo(cmd.ErrOrStderr())).
+		Emit(cmd.Context(), ledgerkit.KindCreated, ledgerkit.Scope{Quest: result.Quest.ID}, ledger.WithWhy(result.Quest.Name))
 
 	fmt.Printf("✓ Quest created: %s (%s)\n", result.Quest.Name, result.Quest.ID)
 	fmt.Printf("  %s\n", quest.RelativePath(qctx.campaignRoot, result.Quest.Path))

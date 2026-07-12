@@ -12,8 +12,10 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/fsutil"
+	"github.com/Obedience-Corp/camp/internal/ledger"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	wkaudit "github.com/Obedience-Corp/camp/internal/workitem/audit"
+	"github.com/Obedience-Corp/camp/pkg/ledgerkit"
 )
 
 func newAdoptCommand() *cobra.Command {
@@ -118,6 +120,11 @@ func runAdopt(ctx context.Context, cmd *cobra.Command, dir, typeFlag, title, idO
 		Title: title,
 		To:    filepath.ToSlash(rel),
 	})
+
+	ledger.NewFromRoot(ctx, campaignRoot, ledger.WarnTo(cmd.ErrOrStderr())).
+		Emit(ctx, ledgerkit.KindCreated, ledgerkit.Scope{Workitem: ref, Quest: questID},
+			ledger.WithWhy(title),
+			ledger.WithPayload(map[string]any{"type": typeFlag, "title": title, "path": rel, "adopted": true}))
 
 	questLine := ""
 	if questID != "" {
