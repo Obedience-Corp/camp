@@ -18,6 +18,7 @@ import (
 // intact. Runs entirely inside the shared container so it never touches the host
 // filesystem.
 func TestIntegration_SettingsConceptsEditorRoundTrip(t *testing.T) {
+	skipUnlessSettingsTTYTests(t)
 	tc := GetSharedContainer(t)
 
 	const (

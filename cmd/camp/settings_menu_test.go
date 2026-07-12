@@ -142,7 +142,6 @@ func TestEditEntry_UnimplementedReturnsToMenu(t *testing.T) {
 		entry      settings.SettingEntry
 		wantSubstr string
 	}{
-		{"registry stub names the entry", settings.SettingEntry{ID: "registry", Title: "Campaign registry", Scope: settings.ScopeGlobal, Path: "/home/u/.obey/campaign/registry.json"}, "Campaign registry"},
 		{"allowlist stub names the file", settings.SettingEntry{ID: "allowlist", Title: "Command allowlist", Scope: settings.ScopeLocal, Path: ".campaign/settings/allowlist.json"}, ".campaign/settings/allowlist.json"},
 		{"unknown id shows generic message", settings.SettingEntry{ID: "mystery", Title: "Mystery", Scope: settings.ScopeLocal}, "not editable"},
 	}

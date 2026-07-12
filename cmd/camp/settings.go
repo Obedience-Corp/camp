@@ -215,11 +215,6 @@ func notYetEditable(e settings.SettingEntry, campaignRoot string) error {
 	return nil
 }
 
-// editRegistry edits the global campaign registry (filled in by sequence 04).
-func editRegistry(_ context.Context, e settings.SettingEntry, campaignRoot string) error {
-	return notYetEditable(e, campaignRoot)
-}
-
 // editAllowlist edits .campaign/settings/allowlist.json (filled in by sequence 05).
 func editAllowlist(_ context.Context, e settings.SettingEntry, campaignRoot string) error {
 	return notYetEditable(e, campaignRoot)
