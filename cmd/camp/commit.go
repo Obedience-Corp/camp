@@ -43,7 +43,7 @@ Examples:
 }
 
 var (
-	commitMessage     string
+	commitMessages    []string
 	commitAll         bool
 	commitAmend       bool
 	commitSub         bool
@@ -55,7 +55,7 @@ var (
 )
 
 func init() {
-	commitCmd.Flags().StringVarP(&commitMessage, "message", "m", "", "Commit message (required unless --auto-write)")
+	commitCmd.Flags().StringArrayVarP(&commitMessages, "message", "m", nil, "Commit message (repeatable; multiple -m are joined git-style into subject + body; required unless --auto-write)")
 	commitCmd.Flags().BoolVarP(&commitAll, "all", "a", true, "Stage all changes before committing")
 	commitCmd.Flags().BoolVar(&commitAmend, "amend", false, "Amend the previous commit")
 	commitCmd.Flags().BoolVar(&commitNoEdit, "no-edit", false, "Amend without editing the commit message (requires --amend)")
@@ -91,6 +91,10 @@ func completeProjectFlag(cmd *cobra.Command, args []string, toComplete string) (
 
 func runCommit(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
+
+	// Join repeated -m values git-style before any tag prepending so the tag
+	// lands on the subject line.
+	commitMessage := commitkit.JoinMessages(commitMessages)
 
 	// Find campaign root
 	campRoot, err := campaign.DetectCached(ctx)
