@@ -16,13 +16,13 @@ For the full `.campaign/` directory layout, including `quests/`, `skills/`,
 
 | File | Scope | Format | Created by | Edit directly? |
 | --- | --- | --- | --- | --- |
-| `~/.obey/campaign/config.json` | Global | JSON | Auto-created on first load or via `camp settings` | Yes |
-| `~/.obey/campaign/registry.json` | Global | JSON | `camp register`, `camp list`, `camp switch` flows | Usually no |
-| `.campaign/campaign.yaml` | Campaign | YAML | `camp init` / `camp init --repair` | Yes |
+| `~/.obey/campaign/config.json` | Global | JSON | Auto-created on first load or via `camp settings` | Yes, or via `camp settings` |
+| `~/.obey/campaign/registry.json` | Global | JSON | `camp register`, `camp list`, `camp switch` flows | Safe edits via `camp settings` |
+| `.campaign/campaign.yaml` | Campaign | YAML | `camp init` / `camp init --repair` | Yes, or via `camp settings` |
 | `.campaign/settings/jumps.yaml` | Campaign | YAML | `camp init`, `camp init --repair`, or auto-created on load if missing | Yes |
 | `.campaign/settings/fresh.yaml` | Campaign | YAML | `camp init` / `camp init --repair` | Yes |
 | `.campaign/settings/pins.json` | Campaign | JSON | `camp pin` / `camp unpin` | Usually no |
-| `.campaign/settings/allowlist.json` | Campaign | JSON | `camp init`, `camp init --repair`, or tooling that saves allowlist config | Sometimes |
+| `.campaign/settings/allowlist.json` | Campaign | JSON | `camp init`, `camp init --repair`, or `camp settings` | Yes, or via `camp settings` |
 | `.campaign/settings/local.json` | Campaign | JSON | `camp settings` (Local Settings) or `camp settings set local.*` | Usually no |
 | `.campaign/watchers.yaml` | Campaign | YAML | `camp init`, `camp init --repair`, `fest`, contract writers | No |
 
@@ -121,8 +121,11 @@ The registry tracks known campaigns for commands like `camp list` and
 `camp switch`. It is camp-managed state rather than a normal hand-authored
 settings file.
 
-You usually should not edit it manually unless you are repairing a broken
-registry entry.
+You usually should not edit it manually. For the common repair cases,
+`camp settings` (Global Settings, then Campaign registry) offers safe
+per-campaign edits - org assignment, display rename, and path repair - written
+through the registry API so the format and other entries stay intact. Lifecycle
+operations (register, unregister, switch, transfer) remain dedicated commands.
 
 ## Campaign Files
 
@@ -325,6 +328,9 @@ Notes:
 - `inherit_defaults: true` means the campaign file extends the daemon defaults.
 - `inherit_defaults: false` means only commands listed in this file are
   explicitly allowed.
+- `camp settings` (Local Settings, then Command allowlist) edits this file:
+  toggle `allowed` per command, add, and remove commands. `inherit_defaults` is
+  shown there but only changed by hand-editing.
 
 ### `.campaign/settings/local.json`
 
@@ -371,27 +377,75 @@ Important:
 
 ## `camp settings` Scope
 
-`camp settings` edits both configuration scopes:
+`camp settings` is a catalog-driven, path-transparent editor for both
+configuration scopes. It presents one row per settings file and, on every
+screen, shows the exact file it edits: campaign-root-relative for local files
+(for example `.campaign/campaign.yaml`) and tilde-based for global files (for
+example `~/.obey/campaign/registry.json`). Editing through the TUI is a guided,
+safer version of hand-editing the same files.
 
-- Global settings are saved to `~/.obey/campaign/config.json`
-- Local Settings edits `.campaign/settings/local.json` (currently the
-  campaign theme override)
+### What it edits
 
-For non-interactive access (agents, scripts, the festival app), use:
+Local (under `.campaign/`):
+
+- `campaign.yaml` - identity, mission, and type via a structured form; the
+  `intents.tags` list via a one-per-line editor; and the nested `concepts`
+  taxonomy via a `$EDITOR` round-trip (the single explicit editor exception,
+  validated all-or-nothing so an invalid edit never touches the file).
+- `settings/local.json` - the campaign theme override.
+- `settings/allowlist.json` - toggle `allowed` per command, add, and remove
+  commands. `inherit_defaults` is shown but not changed here.
+
+Global (under `~/.obey/campaign/`):
+
+- `config.json` - theme, editor, campaigns dir, verbose, and no-color.
+- `registry.json` - view registered campaigns and make safe per-campaign edits
+  (org, display name, and path repair). Path repair only points at an existing
+  directory and asks for confirmation. Lifecycle operations (register,
+  unregister, switch, transfer) stay in `camp registry` / `camp org`.
+
+Machine-managed files (leverage config, pins, jumps, watcher state, and the
+like) are marked hidden in the catalog and never appear in the menu; secrets
+such as `~/.obey/.env` are never listed or read. See "Extending the settings
+surface" below.
+
+### Non-interactive access
+
+For agents, scripts, and the festival app, the `get`/`set` twin mirrors the TUI
+for values that map to a single flat key:
 
 ```bash
-camp settings get                       # All settings plus the effective theme
-camp settings get global.theme          # One value
-camp settings get --json                # Versioned JSON payload
+camp settings get                          # Aggregate view plus the effective theme
+camp settings get global.theme             # One value
+camp settings get local.campaign.mission   # One campaign.yaml scalar
+camp settings get --json                   # Versioned JSON payload
 camp settings set global.theme dark
 camp settings set local.theme_override light
-camp settings set local.theme_override inherit   # Clear the override
+camp settings set local.theme_override inherit    # Clear the override
+camp settings set local.campaign.type research
 ```
 
 Keys: `global.theme`, `global.editor`, `global.campaigns_dir`,
-`global.verbose`, `global.no_color`, `local.theme_override`. The `local.*`
-keys require running inside a campaign.
+`global.verbose`, `global.no_color`, `local.theme_override`,
+`local.campaign.name`, `local.campaign.description`, `local.campaign.mission`,
+`local.campaign.type`, and `local.campaign.commit_hook`. The `local.*` keys
+require running inside a campaign. The campaign.yaml list and tree fields
+(`intents.tags`, `concepts`) and the registry per-campaign edits have no flat
+key and are edited only through the interactive TUI.
 
-Other campaign-local files (`jumps.yaml`, `fresh.yaml`, `allowlist.json`)
-remain file-based; edit the relevant file directly when you need to customize
-them.
+Other campaign-local files (`jumps.yaml`, `fresh.yaml`) remain file-based; edit
+the relevant file directly when you need to customize them.
+
+### Extending the settings surface
+
+The settings menu is generated from an in-code catalog (`internal/settings`),
+so adding a file is data, not menu code:
+
+- A **structured** entry needs one catalog line plus a hand-authored form; that
+  form is the irreducible part.
+- A **read-only** or **hidden** entry needs only a catalog line, and no
+  `settings.go` change.
+- The **hidden** set is derived from the watcher contract
+  (`internal/contract`), so any newly-watched camp-managed file is excluded
+  from the menu automatically.
+- **Secret** files are hard-coded as never listed and never read.

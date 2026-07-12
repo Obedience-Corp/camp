@@ -206,20 +206,6 @@ func editEntry(ctx context.Context, e settings.SettingEntry, campaignRoot string
 	}
 }
 
-// notYetEditable reports that an entry's structured editor lands in a later
-// sequence, naming the exact file so the user can still edit it by hand.
-func notYetEditable(e settings.SettingEntry, campaignRoot string) error {
-	fmt.Println(ui.Warning(fmt.Sprintf(
-		"Editing %s (%s) from the TUI is coming soon.",
-		e.Title, settings.CatalogPath(e, campaignRoot))))
-	return nil
-}
-
-// editAllowlist edits .campaign/settings/allowlist.json (filled in by sequence 05).
-func editAllowlist(_ context.Context, e settings.SettingEntry, campaignRoot string) error {
-	return notYetEditable(e, campaignRoot)
-}
-
 // editGlobalConfig opens the global config.json fields as a sub-form under the
 // global_config catalog entry. Behavior and persistence are unchanged from the
 // former flat global menu.
