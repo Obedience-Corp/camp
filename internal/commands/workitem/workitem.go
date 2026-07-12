@@ -157,6 +157,7 @@ Examples:
 	cmd.AddCommand(newLinkCommand())
 	cmd.AddCommand(newUnlinkCommand())
 	cmd.AddCommand(newLinksCommand())
+	cmd.AddCommand(newWorktreeCommand())
 	cmd.AddCommand(newCurrentCommand())
 	cmd.AddCommand(newResolveCommand())
 	cmd.AddCommand(newPriorityCommand())

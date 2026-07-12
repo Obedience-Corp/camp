@@ -61,3 +61,4 @@ camp workitem [flags]
 * [camp workitem resolve](camp_workitem_resolve.md)	 - Print the workitem the current context resolves to (read-only)
 * [camp workitem stage](camp_workitem_stage.md)	 - Set or clear the attention stage of a workitem
 * [camp workitem unlink](camp_workitem_unlink.md)	 - Remove one or more workitem links
+* [camp workitem worktree](camp_workitem_worktree.md)	 - Create a project worktree from a workitem
