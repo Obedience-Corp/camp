@@ -95,6 +95,7 @@ var manifestAgentAllowedReasons = map[string]string{
 	"workitem stage":             "Non-interactive attention-stage update with explicit selector",
 	"workitem unlink":            "Non-interactive workitem unlink operation",
 	"workitem validate":          "Read-only structural validator with --json output",
+	"workitem worktree":          "Creates an isolated worktree for a workitem with an explicit selector; --print yields a cd-able path",
 	"worktrees info":             "Read-only worktree metadata",
 	"worktrees list":             "Read-only worktree listing",
 }
