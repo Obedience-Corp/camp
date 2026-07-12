@@ -10,31 +10,12 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/ui"
+	"github.com/Obedience-Corp/camp/internal/ui/uitest"
 )
 
 func sizedOrg(m orgTUIModel, w, h int) orgTUIModel {
 	next, _ := m.Update(tea.WindowSizeMsg{Width: w, Height: h})
 	return next.(orgTUIModel)
-}
-
-func orgViewLines(s string) []string {
-	return strings.Split(strings.TrimRight(s, "\n"), "\n")
-}
-
-func assertOrgBounded(t *testing.T, out string, w, h int) {
-	t.Helper()
-	lines := orgViewLines(out)
-	if h > 0 && len(lines) > h {
-		t.Fatalf("%dx%d: rendered %d lines, exceeds height %d:\n%s", w, h, len(lines), h, out)
-	}
-	if w <= 0 {
-		return
-	}
-	for i, ln := range lines {
-		if got := lipgloss.Width(ln); got > w {
-			t.Fatalf("%dx%d: line %d width %d exceeds terminal width %d: %q", w, h, i, got, w, ln)
-		}
-	}
 }
 
 func manyOrgsModel(t *testing.T, nOrgs, membersPer int) orgTUIModel {
@@ -71,11 +52,11 @@ func TestOrgView_BoundedAtEverySize(t *testing.T) {
 		m := sizedOrg(manyOrgsModel(t, 20, 15), s.w, s.h)
 		m.orgCursor = 12
 		m.syncFocusedOrg()
-		assertOrgBounded(t, m.View(), s.w, s.h)
+		uitest.AssertBounded(t, m.View(), s.w, s.h)
 
 		m.pane = paneMembers
 		m.memCursor = 10
-		assertOrgBounded(t, m.View(), s.w, s.h)
+		uitest.AssertBounded(t, m.View(), s.w, s.h)
 	}
 }
 
@@ -87,7 +68,7 @@ func TestOrgView_SelectionVisibleWhenScrolled(t *testing.T) {
 	m.orgCursor = len(m.orgs) - 1
 	m.syncFocusedOrg()
 	out := m.View()
-	assertOrgBounded(t, out, 40, 10)
+	uitest.AssertBounded(t, out, 40, 10)
 	want := m.orgs[m.orgCursor].Org
 	// Name may be truncated; require a distinctive prefix.
 	prefix := ui.Truncate(want, 12)
@@ -115,7 +96,7 @@ func TestOrgView_NoPanicAtAbsurdSizes(t *testing.T) {
 			t.Fatalf("%dx%d produced empty view", s.w, s.h)
 		}
 		if s.w > 0 && s.h > 0 {
-			assertOrgBounded(t, out, s.w, s.h)
+			uitest.AssertBounded(t, out, s.w, s.h)
 		}
 	}
 }
@@ -126,7 +107,7 @@ func TestOrgView_DualVsSingleReflow(t *testing.T) {
 
 	m := sizedOrg(newTestOrgModel(t), 100, 24)
 	wide := m.View()
-	assertOrgBounded(t, wide, 100, 24)
+	uitest.AssertBounded(t, wide, 100, 24)
 	// Wide dual should mention both pane titles.
 	if !strings.Contains(wide, "Orgs") || !strings.Contains(wide, "Members") {
 		t.Fatalf("wide view missing pane titles:\n%s", wide)
@@ -134,7 +115,7 @@ func TestOrgView_DualVsSingleReflow(t *testing.T) {
 
 	m = sizedOrg(m, 40, 24)
 	narrow := m.View()
-	assertOrgBounded(t, narrow, 40, 24)
+	uitest.AssertBounded(t, narrow, 40, 24)
 	// Single-pane still usable; focused org list remains.
 	if !strings.Contains(narrow, "default") && !strings.Contains(narrow, "Orgs") {
 		t.Fatalf("narrow view missing org content:\n%s", narrow)
@@ -153,7 +134,7 @@ func TestOrgView_OverlayBounded(t *testing.T) {
 		if out == "" {
 			t.Fatalf("%dx%d overlay empty", s.w, s.h)
 		}
-		assertOrgBounded(t, out, s.w, s.h)
+		uitest.AssertBounded(t, out, s.w, s.h)
 	}
 }
 
@@ -188,6 +169,6 @@ func TestOrgView_EmptyRegistryBounded(t *testing.T) {
 		if !strings.Contains(out, "No campaigns") && !strings.Contains(out, "Orgs") {
 			t.Fatalf("%dx%d empty view missing placeholder:\n%s", s.w, s.h, out)
 		}
-		assertOrgBounded(t, out, s.w, s.h)
+		uitest.AssertBounded(t, out, s.w, s.h)
 	}
 }

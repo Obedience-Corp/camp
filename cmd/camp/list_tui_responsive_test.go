@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/ui/uitest"
 )
 
 func responsiveModel() listTUIModel {
@@ -31,23 +32,6 @@ func sized(m listTUIModel, w, h int) listTUIModel {
 	return next.(listTUIModel)
 }
 
-func viewLines(s string) []string {
-	return strings.Split(strings.TrimRight(s, "\n"), "\n")
-}
-
-func assertBounded(t *testing.T, out string, w, h int) {
-	t.Helper()
-	lines := viewLines(out)
-	if len(lines) > h {
-		t.Fatalf("%dx%d: rendered %d lines, exceeds height %d:\n%s", w, h, len(lines), h, out)
-	}
-	for i, ln := range lines {
-		if got := lipgloss.Width(ln); got > w {
-			t.Fatalf("%dx%d: line %d width %d exceeds terminal width %d: %q", w, h, i, got, w, ln)
-		}
-	}
-}
-
 func TestListView_BoundedAtEverySize(t *testing.T) {
 	sizes := []struct{ w, h int }{
 		{120, 40}, {80, 24}, {60, 20}, {40, 10}, {30, 8}, {24, 6}, {20, 5}, {15, 6},
@@ -55,7 +39,7 @@ func TestListView_BoundedAtEverySize(t *testing.T) {
 	for _, s := range sizes {
 		m := sized(responsiveModel(), s.w, s.h)
 		m.cursor = 3
-		assertBounded(t, m.View(), s.w, s.h)
+		uitest.AssertBounded(t, m.View(), s.w, s.h)
 	}
 }
 
@@ -74,7 +58,7 @@ func TestListView_SelectionVisibleWhenScrolled(t *testing.T) {
 	m := sized(responsiveModel(), 40, 10)
 	m.cursor = len(m.visible) - 1
 	out := m.View()
-	assertBounded(t, out, 40, 10)
+	uitest.AssertBounded(t, out, 40, 10)
 	if !strings.Contains(out, "> ") {
 		t.Fatalf("selected row cursor not rendered at 40x10:\n%s", out)
 	}
@@ -92,7 +76,7 @@ func TestListView_NoPanicAtAbsurdSizes(t *testing.T) {
 			t.Fatalf("%dx%d produced empty view", s.w, s.h)
 		}
 		if s.w > 0 && s.h > 0 {
-			assertBounded(t, out, s.w, s.h)
+			uitest.AssertBounded(t, out, s.w, s.h)
 		}
 	}
 }
@@ -108,7 +92,7 @@ func TestListView_EmptyListBounded(t *testing.T) {
 			t.Fatalf("%dx%d empty view missing placeholder:\n%s", s.w, s.h, out)
 		}
 		if s.w > 0 && s.h > 0 {
-			assertBounded(t, out, s.w, s.h)
+			uitest.AssertBounded(t, out, s.w, s.h)
 		}
 	}
 }
@@ -123,7 +107,7 @@ func TestListView_OverlayBounded(t *testing.T) {
 			t.Fatalf("%dx%d overlay empty", s.w, s.h)
 		}
 		if s.w > 0 && s.h > 0 {
-			assertBounded(t, out, s.w, s.h)
+			uitest.AssertBounded(t, out, s.w, s.h)
 		}
 	}
 }
