@@ -2,11 +2,10 @@ package ledgerkit
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
-	"os"
-	"path/filepath"
 	"sort"
 	"time"
 
@@ -28,11 +27,32 @@ type ReadReport struct {
 	UnknownVersions int
 }
 
+// Reader reads and merges every shard under a campaign's ledger. Filesystem
+// access is via an injected shardStore so reads are unit-testable in memory.
+type Reader struct {
+	store shardStore
+}
+
+// NewReader returns a Reader for the campaign at campaignRoot.
+func NewReader(campaignRoot string) (*Reader, error) {
+	if campaignRoot == "" {
+		return nil, camperrors.New("ledgerkit: empty campaign root")
+	}
+	return &Reader{store: osShardStore{campaignRoot: campaignRoot}}, nil
+}
+
+// Read returns every event across all shards, ordered by ts then id and
+// de-duplicated by id, plus a report of anything skipped. A missing events
+// directory is not an error: a campaign with no ledger yet reads as empty.
+func (r *Reader) Read(ctx context.Context) ([]*Event, *ReadReport, error) {
+	return r.Query(ctx, Filter{})
+}
+
 // ParseShard parses one shard's lines into events, collecting malformed or
 // incomplete lines into skipped rather than failing the whole read. It is pure
-// (reads from r, does no disk access) so it is unit-testable. shard labels the
-// SkippedLine entries. Unknown top-level fields are ignored by encoding/json;
-// unknown kinds are kept.
+// (reads from r, does no filesystem access) so it is unit-testable. shard labels
+// the SkippedLine entries. Unknown top-level fields are ignored by
+// encoding/json; unknown kinds are kept.
 func ParseShard(shard string, r io.Reader) ([]*Event, []SkippedLine, int) {
 	var events []*Event
 	var skipped []SkippedLine
@@ -43,7 +63,7 @@ func ParseShard(shard string, r io.Reader) ([]*Event, []SkippedLine, int) {
 	for sc.Scan() {
 		lineNo++
 		raw := sc.Bytes()
-		if len(trimSpace(raw)) == 0 {
+		if len(bytes.TrimSpace(raw)) == 0 {
 			continue
 		}
 		var ev Event
@@ -111,78 +131,3 @@ func parseTS(s string) time.Time {
 	}
 	return time.Unix(1<<62, 0)
 }
-
-// Reader reads and merges every shard under a campaign's ledger.
-type Reader struct {
-	campaignRoot string
-}
-
-// NewReader returns a Reader for the campaign at campaignRoot.
-func NewReader(campaignRoot string) (*Reader, error) {
-	if campaignRoot == "" {
-		return nil, camperrors.New("ledgerkit: empty campaign root")
-	}
-	return &Reader{campaignRoot: campaignRoot}, nil
-}
-
-// Read globs every shard, parses each tolerantly, and returns the merged event
-// stream plus a report of anything skipped. A missing events directory is not
-// an error: a campaign with no ledger yet reads as empty.
-func (r *Reader) Read(ctx context.Context) ([]*Event, *ReadReport, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, nil, err
-	}
-	root := filepath.Join(r.campaignRoot, EventsDir)
-	pattern := filepath.Join(root, "*", "*.jsonl")
-	matches, err := filepath.Glob(pattern)
-	if err != nil {
-		return nil, nil, camperrors.Wrapf(err, "ledgerkit: glob shards under %s", root)
-	}
-	sort.Strings(matches)
-	report := &ReadReport{}
-	shards := make([][]*Event, 0, len(matches))
-	for _, path := range matches {
-		if err := ctx.Err(); err != nil {
-			return nil, nil, err
-		}
-		rel, relErr := filepath.Rel(r.campaignRoot, path)
-		if relErr != nil {
-			rel = path
-		}
-		events, skipped, unknown := parseShardFile(path, rel)
-		report.Skipped = append(report.Skipped, skipped...)
-		report.UnknownVersions += unknown
-		shards = append(shards, events)
-	}
-	merged, err := Merge(ctx, shards)
-	if err != nil {
-		return nil, nil, err
-	}
-	return merged, report, nil
-}
-
-// parseShardFile opens and parses one shard file. An open failure is reported
-// as a skipped line rather than aborting the whole read.
-func parseShardFile(path, label string) ([]*Event, []SkippedLine, int) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, []SkippedLine{{Shard: label, Line: 0, Reason: "open failed: " + err.Error()}}, 0
-	}
-	defer func() { _ = f.Close() }()
-	return ParseShard(label, f)
-}
-
-// trimSpace reports the byte slice with surrounding ASCII whitespace removed,
-// used to detect blank lines without allocating a string.
-func trimSpace(b []byte) []byte {
-	start, end := 0, len(b)
-	for start < end && isSpace(b[start]) {
-		start++
-	}
-	for end > start && isSpace(b[end-1]) {
-		end--
-	}
-	return b[start:end]
-}
-
-func isSpace(c byte) bool { return c == ' ' || c == '\t' || c == '\r' || c == '\n' }
