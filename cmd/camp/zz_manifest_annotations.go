@@ -10,6 +10,8 @@ const (
 
 var manifestAgentAllowedReasons = map[string]string{
 	"audit doctor":               "Read-only bypass scan; --json output for automation",
+	"audit reconcile":            "Dry-run reconciliation is read-only; --apply is an explicit opt-in write",
+	"audit repair":               "Appends a commit-attribution event from explicit flags",
 	"cache info":                 "Read-only cache metadata",
 	"concepts":                   "Read-only concept listing",
 	"create":                     "Non-interactive with -d and -m; interactive fallback otherwise",
