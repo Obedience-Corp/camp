@@ -13,7 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/camp/internal/audit"
-	"github.com/Obedience-Corp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/ledger"
@@ -65,7 +65,7 @@ most recent N commits (default: full history).`,
 
 func runDoctor(cmd *cobra.Command, window int, jsonOut bool) error {
 	ctx := cmd.Context()
-	campRoot, err := campaign.DetectCached(ctx)
+	cfg, campRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
 		return camperrors.Wrap(err, "not in a campaign")
 	}
@@ -90,19 +90,28 @@ func runDoctor(cmd *cobra.Command, window int, jsonOut bool) error {
 		totalCommits += scan.Total
 	}
 
+	// Second pass (D004): reconciliation gaps, read-only. The doctor surfaces
+	// how many state-file facts the ledger does not capture; the actual write is
+	// opt-in via `camp audit reconcile --apply`.
+	gaps, err := audit.Reconcile(ctx, campRoot, cfg.ID)
+	if err != nil {
+		return err
+	}
+
 	if jsonOut {
 		return json.NewEncoder(cmd.OutOrStdout()).Encode(struct {
 			SchemaVersion string           `json:"schema_version"`
 			TotalCommits  int              `json:"total_commits"`
 			TotalUntagged int              `json:"total_untagged"`
+			ReconcileGaps int              `json:"reconcile_gaps"`
 			Repos         []audit.RepoScan `json:"repos"`
-		}{"camp-audit-doctor/v1", totalCommits, totalUntagged, scans})
+		}{"camp-audit-doctor/v1", totalCommits, totalUntagged, len(gaps), scans})
 	}
 
-	return printReport(cmd, scans, totalCommits, totalUntagged)
+	return printReport(cmd, scans, totalCommits, totalUntagged, len(gaps))
 }
 
-func printReport(cmd *cobra.Command, scans []audit.RepoScan, totalCommits, totalUntagged int) error {
+func printReport(cmd *cobra.Command, scans []audit.RepoScan, totalCommits, totalUntagged, reconcileGaps int) error {
 	w := cmd.OutOrStdout()
 	if _, err := fmt.Fprintln(w, ui.Subheader("Campaign audit trail: commit attribution")); err != nil {
 		return err
@@ -124,6 +133,12 @@ func printReport(cmd *cobra.Command, scans []audit.RepoScan, totalCommits, total
 	if _, err := fmt.Fprintf(w, "\n%s %d of %d commits (%.0f%%) have no captured intent linkage.\n",
 		ui.InfoIcon(), totalUntagged, totalCommits, overall); err != nil {
 		return err
+	}
+	if reconcileGaps > 0 {
+		if _, err := fmt.Fprintf(w, "%s %d state-file fact(s) are not in the ledger. Run 'camp audit reconcile --apply' to record them.\n",
+			ui.InfoIcon(), reconcileGaps); err != nil {
+			return err
+		}
 	}
 	_, err := fmt.Fprintln(w, ui.Dim("  This is informational. Capture in state-changing commands (not commit discipline) is the trail; reconciliation and opt-in repair attribute the rest."))
 	return err
