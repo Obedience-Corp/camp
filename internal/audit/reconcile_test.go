@@ -24,8 +24,15 @@ func TestCoverageMatchingAcrossIdSchemes(t *testing.T) {
 	assert.True(t, captured[factCoverageKey(coveredIntent)], "intent already captured live is covered")
 
 	coveredTransition := DerivedFact{Kind: ledgerkit.KindTransitioned, Scope: ledgerkit.Scope{Festival: "CA0002"},
-		Payload: map[string]any{"from": "ready", "to": "active"}}
+		Payload:     map[string]any{"from": "ready", "to": "active"},
+		IdentityKey: "fest-transitioned:CA0002:ready:active:0"}
 	assert.True(t, captured[factCoverageKey(coveredTransition)], "festival transition already backfilled is covered")
+
+	// A second ready→active occurrence is a gap under occurrence-faithful coverage.
+	secondBounce := DerivedFact{Kind: ledgerkit.KindTransitioned, Scope: ledgerkit.Scope{Festival: "CA0002"},
+		Payload:     map[string]any{"from": "ready", "to": "active"},
+		IdentityKey: "fest-transitioned:CA0002:ready:active:1"}
+	assert.False(t, captured[factCoverageKey(secondBounce)], "second bounce of the same edge remains a gap")
 
 	// A gap: an intent with no event in the ledger.
 	gap := DerivedFact{Kind: ledgerkit.KindCreated, Scope: ledgerkit.Scope{Intent: "i2"}, IdentityKey: "intent-created:i2"}

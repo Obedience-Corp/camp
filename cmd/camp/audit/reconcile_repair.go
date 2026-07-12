@@ -92,7 +92,7 @@ in the ledger (D004). Use it to claim an untagged commit surfaced by
 		Args: cobra.NoArgs,
 		Annotations: map[string]string{
 			"agent_allowed": "true",
-			"agent_reason":  "Appends an attribution event from explicit flags",
+			"agent_reason":  "Appends attribution; requires --why and is write-idempotent on re-run",
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, campRoot, err := config.LoadCampaignConfigFromCwd(cmd.Context())
@@ -108,6 +108,16 @@ in the ledger (D004). Use it to claim an untagged commit surfaced by
 			if err != nil {
 				return err
 			}
+			// Write-idempotent: content-derived rp_ ids skip when already present.
+			present, perr := audit.EventIDPresent(cmd.Context(), campRoot, ev.ID)
+			if perr != nil {
+				return camperrors.Wrap(perr, "check existing repair")
+			}
+			if present {
+				_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s Already repaired: %s@%s → %s (no new event)\n",
+					ui.InfoIcon(), in.Repo, shortSHA(in.SHA), scopeLabel(in))
+				return err
+			}
 			if _, err := audit.Apply(cmd.Context(), campRoot, []*ledgerkit.Event{ev}); err != nil {
 				return err
 			}
@@ -121,7 +131,8 @@ in the ledger (D004). Use it to claim an untagged commit surfaced by
 	f.StringVar(&in.Repo, "repo", "", "evidence repo label (default: campaign-root)")
 	f.StringVar(&in.Workitem, "workitem", "", "workitem to attribute the commit to")
 	f.StringVar(&in.Festival, "festival", "", "festival to attribute the commit to")
-	f.StringVar(&in.Why, "why", "", "the reason / context for the attribution")
+	f.StringVar(&in.Why, "why", "", "reason for the attribution (required)")
+	_ = cmd.MarkFlagRequired("why")
 	return cmd
 }
 

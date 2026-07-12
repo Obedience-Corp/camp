@@ -166,7 +166,19 @@ func capturedIndex(events []*ledgerkit.Event) map[string]bool {
 			if e.Scope.Festival != "" {
 				from, _ := e.Payload["from"].(string)
 				to, _ := e.Payload["to"].(string)
-				idx["fest-transitioned:"+e.Scope.Festival+":"+from+"->"+to] = true
+				// Occurrence-faithful: each from→to edge keeps a sequential
+				// index so bouncing festivals (ready→active→ready→active) are
+				// not collapsed when any live edge already exists.
+				base := fmtKey("fest-transitioned", e.Scope.Festival, from, to)
+				i := 0
+				for {
+					key := fmtKey(base, itoaSmall(i))
+					if !idx[key] {
+						idx[key] = true
+						break
+					}
+					i++
+				}
 			}
 		}
 		// Commit evidence (live or backfilled) covers a commit fact regardless of
@@ -191,10 +203,14 @@ func factCoverageKey(f DerivedFact) string {
 			return "intent-created:" + f.Scope.Intent
 		}
 	case ledgerkit.KindTransitioned:
+		// Prefer the occurrence-indexed IdentityKey (set by deriveFestivalFacts).
+		if f.IdentityKey != "" {
+			return f.IdentityKey
+		}
 		if f.Scope.Festival != "" {
 			from, _ := f.Payload["from"].(string)
 			to, _ := f.Payload["to"].(string)
-			return "fest-transitioned:" + f.Scope.Festival + ":" + from + "->" + to
+			return fmtKey("fest-transitioned", f.Scope.Festival, from, to, "0")
 		}
 	case ledgerkit.KindEvidenceAttached:
 		if len(f.Evidence) > 0 && f.Evidence[0].Type == ledgerkit.EvidenceCommit {

@@ -52,4 +52,3 @@ The writer slug in each shard filename is machine-local, so two machines never
 write the same shard and the ledger merges without conflict. Running backfill on
 two machines derives the same content-addressed ids, so the streams dedupe on
 read.
-</content>

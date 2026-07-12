@@ -2,6 +2,7 @@ package audit
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -52,13 +53,16 @@ type RepairInput struct {
 // BuildRepair constructs a repaired event attributing the evidence to a
 // workitem/festival. It never rewrites git history; it only appends an
 // attribution event (D004). The id is content-derived so re-running the same
-// repair converges.
+// repair converges (callers must skip when the id is already on disk).
 func BuildRepair(in RepairInput) (*ledgerkit.Event, error) {
 	if in.SHA == "" {
 		return nil, camperrors.NewValidation("sha", "a commit sha is required to repair", nil)
 	}
 	if in.Workitem == "" && in.Festival == "" {
 		return nil, camperrors.NewValidation("scope", "repair needs a --workitem or --festival to attribute the commit to", nil)
+	}
+	if strings.TrimSpace(in.Why) == "" {
+		return nil, camperrors.NewValidation("why", "a non-empty --why reason is required for repair", nil)
 	}
 	scope := ledgerkit.Scope{Campaign: in.CampaignID, Workitem: in.Workitem, Festival: in.Festival}
 	evidence := []ledgerkit.Evidence{{Type: ledgerkit.EvidenceCommit, Repo: in.Repo, SHA: in.SHA}}
@@ -69,8 +73,30 @@ func BuildRepair(in RepairInput) (*ledgerkit.Event, error) {
 		Kind:     ledgerkit.KindRepaired,
 		Scope:    scope,
 		Actor:    in.Actor,
-		Why:      in.Why,
+		Why:      strings.TrimSpace(in.Why),
 		Evidence: evidence,
 		Source:   ledgerkit.SourceReconciled,
 	}, nil
+}
+
+// EventIDPresent reports whether the campaign ledger already holds an event
+// with the given id (used so repair skips instead of re-appending).
+func EventIDPresent(ctx context.Context, campaignRoot, eventID string) (bool, error) {
+	if eventID == "" {
+		return false, nil
+	}
+	reader, err := ledgerkit.NewReader(campaignRoot)
+	if err != nil {
+		return false, err
+	}
+	events, _, err := reader.Query(ctx, ledgerkit.Filter{})
+	if err != nil {
+		return false, err
+	}
+	for _, ev := range events {
+		if ev.ID == eventID {
+			return true, nil
+		}
+	}
+	return false, nil
 }
