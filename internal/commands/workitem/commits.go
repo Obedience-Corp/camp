@@ -152,6 +152,15 @@ func runCommitsQuery(ctx context.Context, cmd *cobra.Command, flags commitsFlags
 			return camperrors.NewValidation("workitem",
 				"workitem has no ref; run `camp workitem doctor --fix` to backfill", nil)
 		}
+	} else {
+		// --ref skips the full resolve for the identity, but still expand D007
+		// aliases (stable id / key / slug) when the ref maps to an on-disk workitem.
+		if res, rerr := resolver.Resolve(ctx, campaignRoot, resolver.Options{Explicit: ref}); rerr == nil && res != nil && res.Workitem != nil {
+			wi = res.Workitem
+			if r := wkitem.RefOf(wi); r != "" {
+				ref = r
+			}
+		}
 	}
 
 	requested := flags.Source
@@ -181,6 +190,9 @@ func runCommitsQuery(ctx context.Context, cmd *cobra.Command, flags commitsFlags
 			records, answered = ledgerRecs, commitsSourceLedger
 		} else if lerr == nil && len(ledgerRecs) > 0 {
 			records, answered = ledgerRecs, commitsSourceLedger
+		} else if lerr != nil {
+			// Empty ledger → silent scan is fine; unreadable/corrupt is loud.
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: campaign ledger unreadable (%v); falling back to scan\n", lerr)
 		}
 	}
 	if answered == commitsSourceScan && requested != commitsSourceLedger {
@@ -205,7 +217,7 @@ func runCommitsQuery(ctx context.Context, cmd *cobra.Command, flags commitsFlags
 	if flags.JSON {
 		return emitCommitsJSON(cmd.OutOrStdout(), source, records, queryErrs)
 	}
-	if err := emitCommitsTable(cmd.OutOrStdout(), records); err != nil {
+	if err := emitCommitsTable(cmd.OutOrStdout(), source, records); err != nil {
 		return err
 	}
 	return emitCommitsQueryWarnings(cmd.ErrOrStderr(), queryErrs)
@@ -277,7 +289,7 @@ func commitsFromLedgerEvents(events []*ledgerkit.Event, aliases map[string]bool)
 			records = append(records, CommitRecord{
 				SHA:      e.SHA,
 				Author:   ledgerCommitAuthor(ev),
-				Date:     parseLedgerTS(ev.TS),
+				Date:     ledgerCommitDate(ev),
 				Subject:  ev.Why,
 				Repo:     e.Repo,
 				TagParts: commitkit.ParseTag(ev.Why),
@@ -294,6 +306,21 @@ func ledgerCommitAuthor(ev *ledgerkit.Event) string {
 		}
 	}
 	return ev.Actor.Name
+}
+
+// ledgerCommitDate prefers payload commit_date/date (live capture + backfill)
+// and falls back to the event timestamp.
+func ledgerCommitDate(ev *ledgerkit.Event) time.Time {
+	if ev.Payload != nil {
+		for _, key := range []string{"commit_date", "date"} {
+			if d, ok := ev.Payload[key].(string); ok && d != "" {
+				if t := parseLedgerTS(d); !t.IsZero() {
+					return t
+				}
+			}
+		}
+	}
+	return parseLedgerTS(ev.TS)
 }
 
 func parseLedgerTS(ts string) time.Time {
@@ -504,7 +531,12 @@ func isGitRepo(ctx context.Context, path string) (bool, error) {
 	return true, nil
 }
 
-func emitCommitsTable(w io.Writer, records []CommitRecord) error {
+func emitCommitsTable(w io.Writer, source string, records []CommitRecord) error {
+	if source != "" {
+		if _, err := fmt.Fprintf(w, "source: %s\n", source); err != nil {
+			return err
+		}
+	}
 	if len(records) == 0 {
 		_, err := fmt.Fprintln(w, "no commits found")
 		return err

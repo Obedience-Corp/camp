@@ -154,3 +154,21 @@ func TestEmitCommitsJSONIncludesSource(t *testing.T) {
 		t.Fatal("commits must serialize as [] not null")
 	}
 }
+
+
+func TestLedgerCommitDatePrefersPayload(t *testing.T) {
+	ev := &ledgerkit.Event{
+		TS: "2026-01-01T00:00:00Z",
+		Payload: map[string]any{
+			"commit_date": "2020-06-15T12:00:00Z",
+			"author":      "Ada",
+		},
+	}
+	got := ledgerCommitDate(ev)
+	if got.Year() != 2020 {
+		t.Fatalf("date = %v, want 2020 from payload", got)
+	}
+	if ledgerCommitAuthor(ev) != "Ada" {
+		t.Fatalf("author = %q, want Ada", ledgerCommitAuthor(ev))
+	}
+}
