@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/config"
@@ -83,6 +84,7 @@ func reassignOrg(cmd *cobra.Command, target func(*config.Registry) string, campa
 	err := config.UpdateRegistry(cmd.Context(), func(reg *config.Registry) error {
 		targetOrg := target(reg)
 		result.Org = targetOrg
+		ensureOrg(reg, targetOrg)
 		resolved, err := resolveUnique(reg, campaignArgs)
 		if err != nil {
 			return err
@@ -103,6 +105,59 @@ func reassignOrg(cmd *cobra.Command, target func(*config.Registry) string, campa
 		return err
 	}
 	return renderOrgMoveResult(cmd.OutOrStdout(), result, asJSON)
+}
+
+// ensureOrg appends name to reg.Orgs if it is not already present. Idempotent.
+func ensureOrg(reg *config.Registry, name string) {
+	reg.EnsureOrg(name)
+}
+
+func orgExists(reg *config.Registry, name string) bool {
+	for _, o := range reg.Orgs {
+		if o.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func removeOrg(reg *config.Registry, name string) {
+	out := make([]config.OrgEntry, 0, len(reg.Orgs))
+	for _, o := range reg.Orgs {
+		if o.Name == name {
+			continue
+		}
+		out = append(out, o)
+	}
+	reg.Orgs = out
+}
+
+// renameOrgEntry renames an OrgEntry in reg.Orgs. No-op if oldName is absent.
+func renameOrgEntry(reg *config.Registry, oldName, newName string) {
+	for i, o := range reg.Orgs {
+		if o.Name == oldName {
+			reg.Orgs[i].Name = newName
+			return
+		}
+	}
+}
+
+// membersOf returns campaigns whose Org equals name, ordered by name then ID so
+// callers (e.g. --force delete reassignment) produce stable, deterministic output.
+func membersOf(reg *config.Registry, name string) []config.RegisteredCampaign {
+	var members []config.RegisteredCampaign
+	for _, c := range reg.Campaigns {
+		if c.Org == name {
+			members = append(members, c)
+		}
+	}
+	sort.Slice(members, func(i, j int) bool {
+		if members[i].Name != members[j].Name {
+			return members[i].Name < members[j].Name
+		}
+		return members[i].ID < members[j].ID
+	})
+	return members
 }
 
 func resolveUnique(reg *config.Registry, queries []string) ([]config.RegisteredCampaign, error) {

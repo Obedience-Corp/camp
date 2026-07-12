@@ -11,7 +11,14 @@ import (
 type File struct {
 	Version    int                 `json:"version"`
 	DefaultOrg string              `json:"default_org,omitempty"`
+	Orgs       []OrgEntry          `json:"orgs,omitempty"`
 	Campaigns  map[string]Campaign `json:"campaigns"`
+}
+
+// OrgEntry is a persisted org in the registry file. Mirrors config.OrgEntry
+// so Load can deserialize orgs without importing config (import cycle).
+type OrgEntry struct {
+	Name string `json:"name"`
 }
 
 // Campaign is the minimal persisted registry campaign shape.

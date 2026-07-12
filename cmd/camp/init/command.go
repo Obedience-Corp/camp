@@ -85,6 +85,7 @@ func New() *cobra.Command {
 	cmd.Flags().Bool("repair", false, "Add missing files to existing campaign")
 	cmd.Flags().Bool("yes", false, "Skip repair confirmation prompt (for scripting)")
 	cmd.Flags().BoolP("verbose", "v", false, "Show skipped optional setup details")
+	cmd.Flags().String("org", "", "Assign the new campaign to this org (created if new; defaults to the fallback org)")
 
 	return cmd
 }
@@ -105,6 +106,8 @@ type Params struct {
 	Repair        bool
 	Yes           bool
 	VerboseOutput bool
+	// Org assigns the campaign to this org on register (created if new).
+	Org string
 }
 
 // Writers routes init flow output for command callers.
@@ -139,6 +142,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "failed to resolve directory path")
 	}
 	verboseOutput := cmdutil.GetFlagBool(cmd, "verbose")
+	org := cmdutil.GetFlagString(cmd, "org")
+	if org != "" {
+		if err := config.ValidateName("org", org); err != nil {
+			return err
+		}
+	}
 	p := Params{
 		Dir:           absDir,
 		Name:          cmdutil.GetFlagString(cmd, "name"),
@@ -153,6 +162,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		Repair:        cmdutil.GetFlagBool(cmd, "repair"),
 		Yes:           cmdutil.GetFlagBool(cmd, "yes"),
 		VerboseOutput: verboseOutput,
+		Org:           org,
 	}
 	w := ChooseWriters()
 	return RunFlow(cmd.Context(), p, w, tui.IsTerminal())
@@ -215,6 +225,7 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 		DryRun:      p.DryRun,
 		Repair:      p.Repair,
 		SkipSkills:  p.NoSkills,
+		Org:         p.Org,
 	}
 
 	// Validate options
@@ -309,6 +320,9 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 	// Print results
 	if p.DryRun {
 		writeLine(w.HumanOut, ui.Warning("Dry run - would create:"))
+		if p.Org != "" {
+			writef(w.HumanOut, "  would assign org: %s\n", p.Org)
+		}
 	} else if p.Repair {
 		writeLine(w.HumanOut, ui.Success("✓ Campaign Repaired"))
 	} else {

@@ -31,7 +31,10 @@ const (
 	overlayNone orgOverlay = iota
 	overlayMove
 	overlayRename
-	overlayCreate
+	overlayCreate      // create org and add focused member (members pane, "c")
+	overlayCreateEmpty // create empty org (orgs pane, "n")
+	overlayConfirmDelete
+	overlayNewCampaign
 )
 
 type orgTUIModel struct {
@@ -49,8 +52,10 @@ type orgTUIModel struct {
 	orgCursor int
 	memCursor int
 
-	overlay orgOverlay
-	input   textinput.Model
+	overlay       orgOverlay
+	input         textinput.Model
+	pendingDelete string
+	pendingOrg    string // focused org for new-campaign action
 
 	status    string
 	statusErr bool
@@ -59,6 +64,9 @@ type orgTUIModel struct {
 	height   int
 	quitting bool
 }
+
+// createCampaignInOrg is the seam for TUI "N new campaign". Tests stub it.
+var createCampaignInOrg = defaultCreateCampaignInOrg
 
 func newOrgTUIModel(ctx context.Context, reg *config.Registry) orgTUIModel {
 	ti := textinput.New()
@@ -144,7 +152,48 @@ func (m *orgTUIModel) assignOrg(campaignID, targetOrg string) error {
 		}
 		entry.Org = targetOrg
 		reg.Campaigns[campaignID] = entry
+		ensureOrg(reg, targetOrg)
 		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return m.reload()
+}
+
+// createEmptyOrg persists name in reg.Orgs (idempotent) and reloads.
+func (m *orgTUIModel) createEmptyOrg(name string) error {
+	if err := validateOrgName(name); err != nil {
+		return err
+	}
+	err := config.UpdateRegistry(m.ctx, func(reg *config.Registry) error {
+		ensureOrg(reg, name)
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return m.reload()
+}
+
+// deleteOrgIfEmpty removes name when it is empty and not the fallback.
+func deleteOrgIfEmpty(reg *config.Registry, name string) error {
+	if name == reg.FallbackOrg() {
+		return camperrors.NewValidation("org", "cannot delete the fallback org", nil)
+	}
+	if !orgExists(reg, name) {
+		return camperrors.NewNotFound("org", name, nil)
+	}
+	if len(membersOf(reg, name)) > 0 {
+		return camperrors.NewValidation("org", "cannot delete: org has members", nil)
+	}
+	removeOrg(reg, name)
+	return nil
+}
+
+func (m *orgTUIModel) deleteEmptyOrg(name string) error {
+	err := config.UpdateRegistry(m.ctx, func(reg *config.Registry) error {
+		return deleteOrgIfEmpty(reg, name)
 	})
 	if err != nil {
 		return err
