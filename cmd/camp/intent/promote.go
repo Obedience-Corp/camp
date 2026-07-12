@@ -14,6 +14,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/intent/audit"
 	"github.com/Obedience-Corp/camp/internal/intent/promote"
+	"github.com/Obedience-Corp/camp/internal/ledger"
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
@@ -82,6 +83,7 @@ func runIntentPromote(cmd *cobra.Command, args []string) error {
 	// Create path resolver and service
 	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
 	svc := intent.NewIntentService(campaignRoot, resolver.Intents())
+	svc.SetLedger(ledger.NewFromRoot(ctx, campaignRoot, ledger.WarnTo(cmd.ErrOrStderr())))
 	if err := svc.EnsureDirectories(ctx); err != nil {
 		return camperrors.Wrap(err, "failed to ensure intent directories")
 	}
