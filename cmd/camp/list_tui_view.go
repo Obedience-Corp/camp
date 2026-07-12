@@ -133,9 +133,9 @@ func (m listTUIModel) frame(lines []string, lay listLayout) string {
 	}
 	content := strings.Join(ui.ClampLines(lines, lay.cw), "\n")
 	if lay.boxed {
-		return listBox.Render(content) + "\n"
+		return ui.FitFullscreenView(listBox.Render(content), m.height)
 	}
-	return content + "\n"
+	return ui.FitFullscreenView(content, m.height)
 }
 
 // bodyLines renders the campaign rows for the current window. Org headers are

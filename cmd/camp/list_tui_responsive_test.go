@@ -59,6 +59,17 @@ func TestListView_BoundedAtEverySize(t *testing.T) {
 	}
 }
 
+func TestListView_HasNoPhantomTrailingRow(t *testing.T) {
+	m := sized(responsiveModel(), 80, 24)
+	out := m.View()
+	if strings.HasSuffix(out, "\n") {
+		t.Fatalf("full-screen list view ends with a phantom row: %q", out)
+	}
+	if got := len(strings.Split(out, "\n")); got > m.height {
+		t.Fatalf("rendered %d rows for terminal height %d", got, m.height)
+	}
+}
+
 func TestListView_SelectionVisibleWhenScrolled(t *testing.T) {
 	m := sized(responsiveModel(), 40, 10)
 	m.cursor = len(m.visible) - 1

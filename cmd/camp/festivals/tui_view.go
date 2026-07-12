@@ -93,9 +93,9 @@ func (m festivalsTUIModel) frame(lines []string, lay festLayout) string {
 	}
 	content := strings.Join(ui.ClampLines(lines, lay.cw), "\n")
 	if lay.boxed {
-		return festBox.Render(content) + "\n"
+		return ui.FitFullscreenView(festBox.Render(content), m.height)
 	}
-	return content + "\n"
+	return ui.FitFullscreenView(content, m.height)
 }
 
 func (m festivalsTUIModel) renderRange(start, end int, headers bool, cw int) []string {

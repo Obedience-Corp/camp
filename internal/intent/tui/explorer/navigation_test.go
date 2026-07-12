@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/camp/internal/intent"
+	"github.com/Obedience-Corp/camp/internal/intent/tui"
 )
 
 // makeTestModel creates a Model with test intents across groups.
@@ -406,6 +407,24 @@ func TestBuildMainView_DynamicHeight(t *testing.T) {
 
 	if len(lines) != m.height {
 		t.Errorf("buildMainView output = %d lines, want exactly %d", len(lines), m.height)
+	}
+}
+
+func TestView_ProtectsTopRowFromFullscreenOverflow(t *testing.T) {
+	m := makeTestModel(5, 3)
+	m.ready = true
+	m.width = 100
+	m.height = 10
+	m.focus = focusActionMenu
+	m.actionMenu = tui.NewActionMenu(m.filteredIntents[0])
+
+	view := m.View()
+	lines := strings.Split(view, "\n")
+	if len(lines) > m.height {
+		t.Fatalf("View output = %d lines, exceeds terminal height %d", len(lines), m.height)
+	}
+	if !strings.Contains(lines[0], "Intent Explorer") {
+		t.Fatalf("top row was not preserved: %q", lines[0])
 	}
 }
 

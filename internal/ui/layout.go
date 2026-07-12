@@ -1,6 +1,10 @@
 package ui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 func Truncate(s string, n int) string {
 	if n <= 0 {
@@ -32,6 +36,22 @@ func ClampLines(lines []string, w int) []string {
 		out[i] = ClampWidth(l, w)
 	}
 	return out
+}
+
+// FitFullscreenView keeps a Bubble Tea full-screen view within the terminal's
+// row budget. Bubble Tea splits views on newlines and, when there are too many
+// rows, keeps the bottom rows. A trailing newline therefore creates a phantom
+// row that can evict the title or top border. Keep the top of the view instead.
+func FitFullscreenView(view string, height int) string {
+	view = strings.TrimRight(view, "\n")
+	if height <= 0 {
+		return view
+	}
+	lines := strings.Split(view, "\n")
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	return strings.Join(lines, "\n")
 }
 
 func WindowRange(cursor, total, capacity int) (int, int) {
