@@ -8,6 +8,26 @@ import (
 	"unicode"
 )
 
+// InferTitle returns a human title for a workflow directory: the first markdown
+// H1 of its primary doc (README.md or the first top-level .md) when present,
+// otherwise the humanized directory basename. Shared by discovery and
+// `camp workitem repair` so both derive titles identically.
+func InferTitle(dir string) string {
+	return titleFromDoc(findPrimaryDoc(dir), dir)
+}
+
+// titleFromDoc derives a title from an already-resolved primary doc path,
+// falling back to the humanized basename of dir. Split from InferTitle so
+// discovery can reuse the primary doc it already located without a second scan.
+func titleFromDoc(primaryDocAbs, dir string) string {
+	if primaryDocAbs != "" {
+		if heading := extractFirstHeading(primaryDocAbs); heading != "" {
+			return heading
+		}
+	}
+	return humanizeBasename(filepath.Base(dir))
+}
+
 // findPrimaryDoc returns README.md if it exists, else the first top-level .md file.
 func findPrimaryDoc(dir string) string {
 	readme := filepath.Join(dir, "README.md")

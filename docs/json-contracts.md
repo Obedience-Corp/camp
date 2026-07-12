@@ -24,6 +24,8 @@ Schema versions in this release:
 | `camp workitem current --json` | `workitem-current/v1alpha1` | Emits local current selection. |
 | `camp workitem resolve --json` | `workitem-resolve/v1alpha1` | Emits resolver result and trace. |
 | `camp workitem doctor --json` | `workitem-doctor/v1alpha1` | Emits findings; exits 2 when error findings exist. |
+| `camp workitem validate --json` | `workitem-validate/v1alpha1` | Emits structural findings for workflow work item directories with stable finding codes and a `repair_command` per finding; exits 2 when error findings exist. Codes are documented in `docs/workitem-validate-reference.md`. |
+| `camp workitem repair --json` | `workitem-repair/v1alpha1` | Emits the repair result: `created_marker`, `changed`, ordered `changes`, and the resulting `workitem` identity. Idempotent and non-destructive; supports `--dry-run`. |
 | `camp workitem commit --json` | `workitem-commit/v1alpha1` | Emits staging plan and optional commit SHA. |
 | `camp workitem commits --json` | `workitem-commits/v1alpha1` | Emits matching commits and per-repo query errors. |
 | `camp workitem priority --json` | `workitem-priority/v1alpha1` | Emits `cleared: true` when priority is cleared. |

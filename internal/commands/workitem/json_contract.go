@@ -19,6 +19,10 @@ const (
 	WorkitemCommitsJSONVersion = "workitem-commits/v1alpha1"
 	// WorkitemDoctorJSONVersion is the schema version of camp workitem doctor --json.
 	WorkitemDoctorJSONVersion = "workitem-doctor/v1alpha1"
+	// WorkitemValidateJSONVersion is the schema version of camp workitem validate --json.
+	WorkitemValidateJSONVersion = "workitem-validate/v1alpha1"
+	// WorkitemRepairJSONVersion is the schema version of camp workitem repair --json.
+	WorkitemRepairJSONVersion = "workitem-repair/v1alpha1"
 	// WorkitemGatherJSONVersion is the schema version of camp gather <type> --json.
 	WorkitemGatherJSONVersion = "workitem-gather/v1alpha1"
 )

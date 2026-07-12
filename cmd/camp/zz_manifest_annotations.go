@@ -90,9 +90,11 @@ var manifestAgentAllowedReasons = map[string]string{
 	"workitem group":             "Non-interactive group update with explicit selector",
 	"workitem priority":          "Non-interactive priority update with explicit selector",
 	"workitem promote":           "Non-interactive promote fully specified by --target and flags",
+	"workitem repair":            "Idempotent, non-destructive marker repair with --json and --dry-run",
 	"workitem resolve":           "Read-only workitem context resolution",
 	"workitem stage":             "Non-interactive attention-stage update with explicit selector",
 	"workitem unlink":            "Non-interactive workitem unlink operation",
+	"workitem validate":          "Read-only structural validator with --json output",
 	"worktrees info":             "Read-only worktree metadata",
 	"worktrees list":             "Read-only worktree listing",
 }
