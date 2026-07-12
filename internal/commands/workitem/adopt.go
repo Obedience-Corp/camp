@@ -12,7 +12,9 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/fsutil"
+	"github.com/Obedience-Corp/camp/internal/ledger"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
+	"github.com/Obedience-Corp/camp/pkg/ledgerkit"
 )
 
 func newAdoptCommand() *cobra.Command {
@@ -109,6 +111,11 @@ func runAdopt(ctx context.Context, cmd *cobra.Command, dir, typeFlag, title, idO
 	// Adoption writes inside an existing directory, which may not update the
 	// workflow/type parent mtime watched by passive cache staleness checks.
 	invalidateNavigationCache(cmd, campaignRoot)
+
+	ledger.NewFromRoot(ctx, campaignRoot, ledger.WarnTo(cmd.ErrOrStderr())).
+		Emit(ctx, ledgerkit.KindCreated, ledgerkit.Scope{Workitem: ref, Quest: questID},
+			ledger.WithWhy(title),
+			ledger.WithPayload(map[string]any{"type": typeFlag, "title": title, "path": rel, "adopted": true}))
 
 	questLine := ""
 	if questID != "" {
