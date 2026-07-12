@@ -8,6 +8,7 @@ package remote
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -199,8 +200,11 @@ func ShellQuote(s string) string {
 }
 
 // Run execs `ssh <opts> <target> <remoteCmd>` and returns stdout. The call is
-// bounded by ctx (and DefaultTimeout if ctx has no earlier deadline). A non-zero
-// exit or timeout is a wrapped error carrying the remote stderr.
+// bounded by ctx (and DefaultTimeout if ctx has no earlier deadline). A
+// timeout is a wrapped context error; a non-zero exit is a *camperrors.
+// CommandError carrying the exit code and trimmed remote stderr, so callers
+// can distinguish failure shapes (e.g. RunCampCommand's "binary not found"
+// detection) without re-parsing the error string.
 func Run(ctx context.Context, target string, opts []string, remoteCmd string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, DefaultTimeout)
 	defer cancel()
@@ -214,9 +218,93 @@ func Run(ctx context.Context, target string, opts []string, remoteCmd string) ([
 		if ctx.Err() != nil {
 			return nil, camperrors.Wrapf(ctx.Err(), "ssh to %s timed out", target)
 		}
-		return nil, camperrors.Wrapf(err, "ssh to %s: %s", target, strings.TrimSpace(stderr.String()))
+		exitCode := 0
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			exitCode = exitErr.ExitCode()
+		}
+		return nil, camperrors.NewCommand("ssh "+target, exitCode, strings.TrimSpace(stderr.String()), err)
 	}
 	return stdout.Bytes(), nil
+}
+
+// RemoteCampPathEnv, when set, is the exact camp invocation used on the far
+// machine in place of the bare name "camp" resolved off the login shell's
+// PATH. It is the escape hatch for a machine where camp is installed
+// somewhere no profile script exports onto PATH, and is documented on
+// `camp switch --help` and `camp list --help`.
+const RemoteCampPathEnv = "CAMP_REMOTE_CAMP_PATH"
+
+// remoteCampBinary returns the argv[0] token for a remote camp invocation:
+// CAMP_REMOTE_CAMP_PATH, shell-quoted, when set; otherwise the bare name
+// "camp" for the remote login shell to resolve off its own PATH.
+func remoteCampBinary() string {
+	if p := os.Getenv(RemoteCampPathEnv); p != "" {
+		return ShellQuote(p)
+	}
+	return "camp"
+}
+
+// RunCampCommand execs the remote machine's OWN camp binary over ssh, through
+// a POSIX login shell (`sh -lc`), and returns stdout. args is everything
+// after the binary name, e.g. `switch 'foo' --print` or `list --json`.
+//
+// A bare non-interactive `ssh host 'camp ...'` runs under ssh's own
+// non-login shell, which never sources a login profile (~/.profile,
+// ~/.bash_profile, etc.) — so a camp installed via a PATH addition that only
+// a login shell picks up (~/.local/bin, asdf, a shell-managed version
+// manager) was invisible to it. `sh -lc` forces the remote's POSIX shell to
+// run as a login shell first, then execute the command, so it sees the same
+// PATH an interactive ssh session would. sh is used rather than assuming
+// bash/zsh because POSIX guarantees /bin/sh exists; the user's actual login
+// shell is whatever their own account is configured to run.
+func RunCampCommand(ctx context.Context, m *machines.Machine, args string) ([]byte, error) {
+	if err := EnsureKeyAuth(m); err != nil {
+		return nil, err
+	}
+	binary := remoteCampBinary()
+	out, err := Run(ctx, Target(m), Opts(m), campRemoteCommandLine(binary, args))
+	if err != nil {
+		return nil, campNotFoundHint(err, m, binary)
+	}
+	return out, nil
+}
+
+// campRemoteCommandLine builds the single token handed to ssh as the remote
+// command for a camp invocation: binary+args wrapped in a POSIX login shell
+// (`sh -lc '<binary> <args>'`). Kept as a pure function of its inputs (no ssh,
+// no machine lookup) so the exact wrapping and quoting is unit-testable
+// without a live ssh connection.
+func campRemoteCommandLine(binary, args string) string {
+	return "sh -lc " + ShellQuote(binary+" "+args)
+}
+
+// campNotFoundHint appends the login-shell context and the
+// CAMP_REMOTE_CAMP_PATH escape hatch to err, but only when the failure
+// carries exit code 127 — the POSIX convention every common shell (sh, bash,
+// dash, ash/busybox, zsh) uses exclusively for "command not found". That
+// narrow, explicit signal (rather than matching stderr text) matters here:
+// camp's own domain errors can legitimately contain the words "not found"
+// too (e.g. ErrCampaignNotFound, when the campaign name just does not
+// resolve on a far machine whose camp binary ran fine), and mislabeling
+// those as a missing binary would send the user chasing PATH for nothing.
+// Any exit code other than 127 is returned unchanged.
+func campNotFoundHint(err error, m *machines.Machine, binary string) error {
+	var cmdErr *camperrors.CommandError
+	if !errors.As(err, &cmdErr) || cmdErr.ExitCode != 127 {
+		return err
+	}
+	return camperrors.Wrapf(err,
+		"remote camp not found on %s (tried %q via sh -lc, i.e. the machine's login-shell PATH); "+
+			"if camp lives outside that PATH, set %s to its exact path on that machine",
+		m.ID, binary, RemoteCampPathEnv)
+}
+
+// resolveRootArgs builds the `switch` args RunCampCommand appends after the
+// resolved camp binary. remainder is single-quoted for injection safety.
+// Split out from ResolveRoot so it is unit-testable without ssh.
+func resolveRootArgs(remainder string) string {
+	return "switch " + ShellQuote(remainder) + " --print"
 }
 
 // ResolveRoot runs the remote's OWN `camp switch <remainder> --print` so the
@@ -224,11 +312,7 @@ func Run(ctx context.Context, target string, opts []string, remoteCmd string) ([
 // never the local filesystem. The remainder is single-quoted for injection
 // safety. The returned path is meaningful only on the far machine.
 func ResolveRoot(ctx context.Context, m *machines.Machine, remainder string) (string, error) {
-	if err := EnsureKeyAuth(m); err != nil {
-		return "", err
-	}
-	remoteCmd := "camp switch " + ShellQuote(remainder) + " --print"
-	out, err := Run(ctx, Target(m), Opts(m), remoteCmd)
+	out, err := RunCampCommand(ctx, m, resolveRootArgs(remainder))
 	if err != nil {
 		return "", camperrors.Wrapf(err, "could not resolve %q on %s", remainder, m.ID)
 	}

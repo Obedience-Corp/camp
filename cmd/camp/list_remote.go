@@ -47,14 +47,15 @@ func fanOutRemote(ctx context.Context, ms []machines.Machine, enumerate enumerat
 }
 
 // remoteListArgs re-expresses the local list filter as flags on the remote
-// `camp list --json`. Passing --all/--status is a correctness requirement, not
-// just payload reduction: the remote default emits active campaigns only, so any
+// `list --json` (the args RunCampCommand appends after the resolved camp
+// binary). Passing --all/--status is a correctness requirement, not just
+// payload reduction: the remote default emits active campaigns only, so any
 // row outside the active set must be explicitly requested or it is never fetched
 // (a local re-filter cannot recover rows the remote never sent). --org/--tag also
 // shrink the ssh payload. renderListTable still re-filters the combined set as the
 // authoritative backstop against a version-skewed or looser remote.
 func remoteListArgs(f listFilter) string {
-	cmd := "camp list --json"
+	cmd := "list --json"
 	if f.org != "" {
 		cmd += " --org " + remote.ShellQuote(f.org)
 	}
@@ -76,12 +77,9 @@ func remoteListArgs(f listFilter) string {
 // each row with the machine id. Remote paths are left verbatim (meaningful only on
 // the far machine).
 func enumerateRemoteFor(f listFilter) enumerateFunc {
-	remoteCmd := remoteListArgs(f)
+	args := remoteListArgs(f)
 	return func(ctx context.Context, m *machines.Machine) ([]campaignEntry, error) {
-		if err := remote.EnsureKeyAuth(m); err != nil {
-			return nil, err
-		}
-		out, err := remote.Run(ctx, remote.Target(m), remote.Opts(m), remoteCmd)
+		out, err := remote.RunCampCommand(ctx, m, args)
 		if err != nil {
 			return nil, err
 		}
