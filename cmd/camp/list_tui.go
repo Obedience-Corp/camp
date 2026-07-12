@@ -31,6 +31,7 @@ type listTUIModel struct {
 	ctx context.Context
 
 	fallback   string
+	orgFilter  string
 	all        []campaignEntry
 	visible    []campaignEntry
 	cursor     int
@@ -71,17 +72,21 @@ func listTUIRequested(cmd *cobra.Command, isTTY bool) bool {
 	return isTTY
 }
 
-func runListTUI(cmd *cobra.Command) error {
+func runListTUI(cmd *cobra.Command, positionalOrg string) error {
 	ctx := cmd.Context()
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
-		return renderListTable(cmd)
+		return renderListTable(cmd, positionalOrg)
 	}
 	pathOutput, _ := cmd.Flags().GetString("path-output")
 	reg, report, err := loadVerifiedListRegistry(ctx)
 	if err != nil {
 		return camperrors.Wrap(err, "failed to load registry")
 	}
-	model := newListTUIModel(ctx, reg)
+	orgFilter, _ := cmd.Flags().GetString("org")
+	if err := requireListOrg(reg, orgFilter); err != nil {
+		return err
+	}
+	model := newListTUIModel(ctx, reg, orgFilter)
 	model.gotoEnabled = pathOutput != ""
 	if report.HasChanges() {
 		model.setStatus("registry cleaned: "+verificationSummaryText(report), false)
@@ -105,10 +110,10 @@ func writeGotoSelection(final tea.Model, pathOutput string) error {
 	return os.WriteFile(pathOutput, []byte(m.gotoPath), 0o600)
 }
 
-func newListTUIModel(ctx context.Context, reg *config.Registry) listTUIModel {
+func newListTUIModel(ctx context.Context, reg *config.Registry, orgFilter string) listTUIModel {
 	ti := textinput.New()
 	ti.Prompt = "> "
-	m := listTUIModel{ctx: ctx, input: ti}
+	m := listTUIModel{ctx: ctx, input: ti, orgFilter: orgFilter}
 	m.loadFromRegistry(reg)
 	return m
 }
@@ -120,17 +125,17 @@ func (m *listTUIModel) loadFromRegistry(reg *config.Registry) {
 }
 
 func (m *listTUIModel) rebuildVisible() {
-	if !m.activeOnly {
-		m.visible = m.all
-	} else {
-		out := make([]campaignEntry, 0, len(m.all))
-		for _, e := range m.all {
-			if e.Status == config.StatusActive {
-				out = append(out, e)
-			}
+	out := make([]campaignEntry, 0, len(m.all))
+	for _, e := range m.all {
+		if m.orgFilter != "" && e.Org != m.orgFilter {
+			continue
 		}
-		m.visible = out
+		if m.activeOnly && e.Status != config.StatusActive {
+			continue
+		}
+		out = append(out, e)
 	}
+	m.visible = out
 	m.cursor = ui.ClampIdx(m.cursor, len(m.visible))
 }
 

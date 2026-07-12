@@ -34,7 +34,7 @@ type campaignEntry struct {
 }
 
 var listCmd = &cobra.Command{
-	Use:   "list",
+	Use:   "list [org]",
 	Short: "List all registered campaigns",
 	Long: `List all campaigns registered in the global registry.
 
@@ -43,8 +43,9 @@ with 'camp register'. The registry lives at ~/.obey/campaign/registry.json.
 
 In a terminal, 'camp list' (with no flags) opens an interactive browser where you
 can deactivate/reactivate campaigns (cycle lifecycle status), reassign their org,
-and copy paths. Piped, with --json/--count, or with any filter/sort flag it
-prints the table instead. Home paths display as '~'.
+and copy paths. Pass an org as a positional argument to open the browser filtered
+to that org. Piped, with --json/--count, or with any filter/sort flag it prints
+the table instead. Home paths display as '~'.
 
 Output formats:
   table   - Aligned columns with headers (default)
@@ -59,6 +60,7 @@ Sorting options:
 
 Examples:
   camp list                  List all campaigns
+  camp list obey             Browse campaigns in the obey org
   camp list --json           Output as JSON
   camp list --format json    Output as JSON
   camp list --sort name      Sort by name
@@ -72,6 +74,7 @@ Examples:
 picked up. If camp still can't be found on a machine, set
 CAMP_REMOTE_CAMP_PATH to its exact path there.`,
 	Aliases: []string{"ls"},
+	Args:    cobra.MaximumNArgs(1),
 	RunE:    runList,
 }
 
@@ -103,13 +106,48 @@ func init() {
 }
 
 func runList(cmd *cobra.Command, args []string) error {
-	if listTUIRequested(cmd, stdoutIsTTY()) {
-		return runListTUI(cmd)
+	positionalOrg, err := parseListPositionalOrg(cmd, args)
+	if err != nil {
+		return err
 	}
-	return renderListTable(cmd)
+	openTUI := listTUIRequested(cmd, stdoutIsTTY())
+	if positionalOrg != "" {
+		if err := cmd.Flags().Set("org", positionalOrg); err != nil {
+			return camperrors.Wrap(err, "setting positional org filter")
+		}
+	}
+	if openTUI {
+		return runListTUI(cmd, positionalOrg)
+	}
+	return renderListTable(cmd, positionalOrg)
 }
 
-func renderListTable(cmd *cobra.Command) error {
+func parseListPositionalOrg(cmd *cobra.Command, args []string) (string, error) {
+	if len(args) == 0 {
+		return "", nil
+	}
+	if cmd.Flags().Changed("org") {
+		return "", camperrors.NewValidation("org", "provide an org either positionally or with --org, not both", nil)
+	}
+	if err := config.ValidateName("org", args[0]); err != nil {
+		return "", err
+	}
+	return args[0], nil
+}
+
+func requireListOrg(reg *config.Registry, org string) error {
+	if org == "" {
+		return nil
+	}
+	for _, entry := range reg.Orgs {
+		if entry.Name == org {
+			return nil
+		}
+	}
+	return camperrors.NewNotFound("org", org, nil)
+}
+
+func renderListTable(cmd *cobra.Command, positionalOrg string) error {
 	ctx := cmd.Context()
 	formatStr, _ := cmd.Flags().GetString("format")
 	if listJSON {
@@ -123,6 +161,9 @@ func renderListTable(cmd *cobra.Command) error {
 
 	reg, report, err := loadVerifiedListRegistry(ctx)
 	if err != nil {
+		return err
+	}
+	if err := requireListOrg(reg, positionalOrg); err != nil {
 		return err
 	}
 

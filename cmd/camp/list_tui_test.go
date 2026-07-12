@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -40,7 +41,7 @@ func newTestListModel(t *testing.T) listTUIModel {
 	if err != nil {
 		t.Fatalf("load registry: %v", err)
 	}
-	return newListTUIModel(context.Background(), reg)
+	return newListTUIModel(context.Background(), reg, "")
 }
 
 func lkey(m listTUIModel, s string) listTUIModel {
@@ -205,6 +206,25 @@ func TestListTUI_OpensOrgMajorAllStatuses(t *testing.T) {
 	}
 	if m.visible[0].Name != "alpha" {
 		t.Errorf("first row = %q, want alpha (default org first)", m.visible[0].Name)
+	}
+}
+
+func TestListTUI_PositionalOrgFilterIncludesAllStatuses(t *testing.T) {
+	reg := config.NewRegistry()
+	reg.Campaigns = map[string]config.RegisteredCampaign{
+		"A-1": {Name: "alpha", Org: "default", Status: config.StatusActive},
+		"B-2": {Name: "beta", Org: "obey", Status: config.StatusActive},
+		"C-3": {Name: "gamma", Org: "obey", Status: config.StatusInactive},
+	}
+	m := newListTUIModel(context.Background(), reg, "obey")
+	if got := names(m.visible); !reflect.DeepEqual(got, []string{"beta", "gamma"}) {
+		t.Fatalf("visible = %v, want obey campaigns across all statuses", got)
+	}
+
+	m.activeOnly = true
+	m.rebuildVisible()
+	if got := names(m.visible); !reflect.DeepEqual(got, []string{"beta"}) {
+		t.Fatalf("active visible = %v, want only active obey campaign", got)
 	}
 }
 
