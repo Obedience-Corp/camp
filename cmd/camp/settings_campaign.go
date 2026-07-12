@@ -273,7 +273,11 @@ func writeConceptsTempFile(data []byte) (string, error) {
 
 // saveCampaignManifest persists campaign.yaml edits through SaveCampaignConfig,
 // the canonical writer (atomic write, preserved ordering, hooks placeholder).
+// Validate before write so an empty/illegal name cannot brick the next load.
 func saveCampaignManifest(ctx context.Context, campaignRoot string, cfg *config.CampaignConfig) error {
+	if err := config.ValidateCampaignConfig(cfg); err != nil {
+		return camperrors.Wrap(err, "invalid campaign.yaml")
+	}
 	if err := config.SaveCampaignConfig(ctx, campaignRoot, cfg); err != nil {
 		return camperrors.Wrap(err, "saving campaign.yaml")
 	}

@@ -352,6 +352,11 @@ func setCampaignScalar(ctx context.Context, cmd *cobra.Command, key, value strin
 	if err != nil {
 		return err
 	}
+	// Same load-time invariant as SaveCampaignConfig consumers: refuse empty
+	// or illegal names before they brick subsequent camp commands.
+	if err := config.ValidateCampaignConfig(cfg); err != nil {
+		return camperrors.Wrap(err, "invalid campaign.yaml")
+	}
 	if err := config.SaveCampaignConfig(ctx, root, cfg); err != nil {
 		return camperrors.Wrap(err, "saving campaign.yaml")
 	}

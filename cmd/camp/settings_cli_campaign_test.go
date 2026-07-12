@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"testing"
 
 	"github.com/Obedience-Corp/camp/internal/config"
@@ -23,7 +24,7 @@ func TestApplyCampaignScalarKey(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := &config.CampaignConfig{ID: "keep-me", Type: config.CampaignTypeProduct}
+			cfg := &config.CampaignConfig{ID: "keep-me", Name: "keep", Type: config.CampaignTypeProduct}
 			_, err := applyCampaignScalarKey(cfg, tt.key, tt.value)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("applyCampaignScalarKey(%s, %q) err = %v, wantErr %v", tt.key, tt.value, err, tt.wantErr)
@@ -35,6 +36,17 @@ func TestApplyCampaignScalarKey(t *testing.T) {
 				t.Errorf("field not set correctly for key %s", tt.key)
 			}
 		})
+	}
+}
+
+func TestSaveCampaignManifest_RejectsInvalidName(t *testing.T) {
+	cfg := &config.CampaignConfig{ID: "id", Name: "", Type: config.CampaignTypeProduct}
+	if err := saveCampaignManifest(context.Background(), t.TempDir(), cfg); err == nil {
+		t.Fatal("expected validation error for empty name")
+	}
+	cfg.Name = "bad/name"
+	if err := saveCampaignManifest(context.Background(), t.TempDir(), cfg); err == nil {
+		t.Fatal("expected validation error for illegal name characters")
 	}
 }
 

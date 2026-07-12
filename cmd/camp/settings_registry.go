@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -106,6 +107,14 @@ func editRegistryEntry(ctx context.Context, c config.RegisteredCampaign, uuid st
 		return err
 	}
 
+	// Registry consumers expect absolute paths; expand CWD-relative input before
+	// existence checks so a relative confirm cannot persist.
+	normalized, nerr := normalizeRegistryPath(path)
+	if nerr != nil {
+		return nerr
+	}
+	path = normalized
+
 	switch classifyPathRepair(c.Path, path, isExistingDir) {
 	case pathUnchanged:
 		// path == c.Path already; nothing to guard.
@@ -123,6 +132,24 @@ func editRegistryEntry(ctx context.Context, c config.RegisteredCampaign, uuid st
 	}
 
 	return saveRegistryEntry(ctx, uuid, applyRegistryEdits(c, name, org, path))
+}
+
+// normalizeRegistryPath Abs+Cleans a registry path so relative CWD forms never
+// land in registry.json. Empty input is rejected.
+func normalizeRegistryPath(path string) (string, error) {
+	path = filepath.Clean(path)
+	if path == "" || path == "." {
+		return "", camperrors.NewValidation("path", "campaign path is required", nil)
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", camperrors.Wrap(err, "resolve registry path")
+	}
+	abs = filepath.Clean(abs)
+	if !filepath.IsAbs(abs) {
+		return "", camperrors.NewValidation("path", "campaign path must be absolute", nil)
+	}
+	return abs, nil
 }
 
 // pathRepair classifies a proposed registry path change so the interactive guard
@@ -179,11 +206,22 @@ func confirmForm(ctx context.Context, prompt string) (bool, error) {
 
 // saveRegistryEntry persists a single entry through UpdateRegistry, which holds
 // the registry lock for an atomic load-mutate-save and stamps RegistryVersion.
-// The UUID key and every other entry are left unchanged.
+// The UUID key and every other entry are left unchanged. Path uniqueness matches
+// Registry.Register: another UUID already owning the path is rejected.
 func saveRegistryEntry(ctx context.Context, uuid string, entry config.RegisteredCampaign) error {
+	absPath, err := normalizeRegistryPath(entry.Path)
+	if err != nil {
+		return err
+	}
+	entry.Path = absPath
 	return camperrors.Wrap(config.UpdateRegistry(ctx, func(r *config.Registry) error {
 		if _, ok := r.Campaigns[uuid]; !ok {
 			return camperrors.Wrap(camperrors.ErrNotFound, "campaign not in registry")
+		}
+		for id, other := range r.Campaigns {
+			if id != uuid && other.Path == entry.Path {
+				return camperrors.Wrap(config.ErrPathConflict, id)
+			}
 		}
 		r.Campaigns[uuid] = entry
 		return nil

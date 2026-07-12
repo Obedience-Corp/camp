@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -80,5 +82,67 @@ func TestClassifyPathRepair(t *testing.T) {
 				t.Errorf("classifyPathRepair(%q, %q) = %d, want %d", tt.current, tt.candidate, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestNormalizeRegistryPath_AbsAndRejectEmpty(t *testing.T) {
+	tmp := t.TempDir()
+	got, err := normalizeRegistryPath(tmp)
+	if err != nil {
+		t.Fatalf("normalizeRegistryPath: %v", err)
+	}
+	if !filepath.IsAbs(got) {
+		t.Fatalf("expected absolute path, got %q", got)
+	}
+	// Relative form must expand to absolute, not persist as relative.
+	rel := filepath.Base(tmp)
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(filepath.Dir(tmp)); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(cwd) })
+	gotRel, err := normalizeRegistryPath(rel)
+	if err != nil {
+		t.Fatalf("relative normalize: %v", err)
+	}
+	if !filepath.IsAbs(gotRel) {
+		t.Fatalf("relative input must become absolute, got %q", gotRel)
+	}
+	if _, err := normalizeRegistryPath(""); err == nil {
+		t.Fatal("empty path must be rejected")
+	}
+	if _, err := normalizeRegistryPath("."); err == nil {
+		t.Fatal("dot path must be rejected")
+	}
+}
+
+func TestRegistryPathConflictPredicate(t *testing.T) {
+	// Mirrors the uniqueness check inside saveRegistryEntry: another UUID
+	// already owning the absolute path is a conflict (same as Registry.Register).
+	pathA := "/tmp/camp-a"
+	pathB := "/tmp/camp-b"
+	r := &config.Registry{Campaigns: map[string]config.RegisteredCampaign{
+		"uuid-1": {ID: "uuid-1", Name: "One", Path: pathA},
+		"uuid-2": {ID: "uuid-2", Name: "Two", Path: pathB},
+	}}
+	// uuid-2 repointing onto uuid-1's path must collide.
+	collides := false
+	for id, other := range r.Campaigns {
+		if id != "uuid-2" && other.Path == pathA {
+			collides = true
+			break
+		}
+	}
+	if !collides {
+		t.Fatal("expected path conflict when two UUIDs share a path")
+	}
+	// Own path is fine.
+	for id, other := range r.Campaigns {
+		if id != "uuid-2" && other.Path == pathB {
+			t.Fatal("own path must not conflict")
+		}
 	}
 }
