@@ -19,7 +19,19 @@ import (
 	"github.com/Obedience-Corp/camp/internal/intent/tui"
 	navtui "github.com/Obedience-Corp/camp/internal/nav/tui"
 	"github.com/Obedience-Corp/camp/internal/paths"
+	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 )
+
+// noteRefPrefix is the NT- tag prefix for note commits, mirroring
+// wkitem.RefPrefix ("WI-") for workitems.
+const noteRefPrefix = "NT-"
+
+// noteRef derives the NT-<6 hex> commit tag ref for a note from its
+// frontmatter id, reusing the same sha256-prefix scheme workitem refs use
+// (internal/workitem/ref.go) via wkitem.DeriveWithPrefix.
+func noteRef(id string) string {
+	return wkitem.DeriveWithPrefix(noteRefPrefix, id)
+}
 
 var intentNoteCmd = &cobra.Command{
 	Use:   "note [text]",
@@ -191,6 +203,7 @@ func finalizeCreatedNote(ctx context.Context, result *intent.Intent, intentsDir 
 
 	if !noCommit {
 		opts := wkcmd.AmbientCommitOptions(ctx, campaignRoot, cfg.ID, os.Stderr)
+		opts.NoteRef = noteRef(result.ID)
 		opts.Files = commit.NormalizeFiles(campaignRoot, result.Path, audit.FilePath(intentsDir))
 		opts.SelectiveOnly = true
 		commitResult := commit.Intent(ctx, commit.IntentOptions{
