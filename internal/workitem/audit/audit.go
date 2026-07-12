@@ -21,8 +21,6 @@ const (
 	EventGather  EventType = "gather"
 	EventCreate  EventType = "create"
 	EventAdopt   EventType = "adopt"
-	EventStage   EventType = "stage"
-	EventGroup   EventType = "group"
 )
 
 type Event struct {

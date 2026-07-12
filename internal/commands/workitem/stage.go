@@ -15,7 +15,6 @@ import (
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/paths"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
-	wkaudit "github.com/Obedience-Corp/camp/internal/workitem/audit"
 	"github.com/Obedience-Corp/camp/internal/workitem/priority"
 	"github.com/Obedience-Corp/camp/internal/workitem/selector"
 )
@@ -85,9 +84,7 @@ func runStage(ctx context.Context, cmd *cobra.Command, selectorArg, stageArg str
 	}
 	validKeys := priority.ValidKeys(items)
 	storePath := priority.StorePath(root)
-	prevStage := priority.AttentionNone
 	if err := priority.WithLock(ctx, storePath, func(store *priority.Store) error {
-		prevStage = store.Attention[wi.Key].Stage
 		if clear {
 			priority.ClearAttentionStage(store, wi.Key)
 		} else {
@@ -98,25 +95,6 @@ func runStage(ctx context.Context, cmd *cobra.Command, selectorArg, stageArg str
 	}); err != nil {
 		return camperrors.Wrap(err, "updating workitem attention stage")
 	}
-
-	auditID := wi.StableID
-	if auditID == "" {
-		auditID = wi.Key
-	}
-	newStage := stage
-	if clear {
-		newStage = priority.AttentionNone
-	}
-	auditRef, _ := wi.SourceMetadata["ref"].(string)
-	appendWorkitemAuditEvent(ctx, cmd, root, wkaudit.Event{
-		Event: wkaudit.EventStage,
-		ID:    auditID,
-		Ref:   auditRef,
-		Type:  string(wi.WorkflowType),
-		From:  attentionStageLabel(prevStage),
-		To:    attentionStageLabel(newStage),
-	})
-
 	if jsonOut {
 		return emitStageJSON(cmd.OutOrStdout(), wi.Key, stage, clear)
 	}

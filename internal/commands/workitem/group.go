@@ -15,7 +15,6 @@ import (
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/paths"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
-	wkaudit "github.com/Obedience-Corp/camp/internal/workitem/audit"
 	"github.com/Obedience-Corp/camp/internal/workitem/priority"
 	"github.com/Obedience-Corp/camp/internal/workitem/selector"
 )
@@ -74,9 +73,7 @@ func runGroup(ctx context.Context, cmd *cobra.Command, selectorArg, groupArg str
 	}
 	validKeys := priority.ValidKeys(items)
 	storePath := priority.StorePath(root)
-	prevGroup := ""
 	if err := priority.WithLock(ctx, storePath, func(store *priority.Store) error {
-		prevGroup = store.Attention[wi.Key].Group
 		if clear {
 			priority.ClearGroup(store, wi.Key)
 		} else {
@@ -87,25 +84,6 @@ func runGroup(ctx context.Context, cmd *cobra.Command, selectorArg, groupArg str
 	}); err != nil {
 		return camperrors.Wrap(err, "updating workitem group")
 	}
-
-	auditID := wi.StableID
-	if auditID == "" {
-		auditID = wi.Key
-	}
-	newGroup := group
-	if clear {
-		newGroup = ""
-	}
-	auditRef, _ := wi.SourceMetadata["ref"].(string)
-	appendWorkitemAuditEvent(ctx, cmd, root, wkaudit.Event{
-		Event: wkaudit.EventGroup,
-		ID:    auditID,
-		Ref:   auditRef,
-		Type:  string(wi.WorkflowType),
-		From:  groupLabel(prevGroup),
-		To:    groupLabel(newGroup),
-	})
-
 	if jsonOut {
 		return emitGroupJSON(cmd.OutOrStdout(), wi.Key, group, clear)
 	}

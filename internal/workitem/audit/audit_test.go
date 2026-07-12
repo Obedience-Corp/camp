@@ -71,28 +71,6 @@ func TestAppendEvent_NewEventTypes(t *testing.T) {
 				To:    "workflow/design/legacy",
 			},
 		},
-		{
-			name: "stage",
-			event: Event{
-				Event: EventStage,
-				ID:    "design-example-2026-07-11",
-				Ref:   "WI-abc123",
-				Type:  "design",
-				From:  "none",
-				To:    "next",
-			},
-		},
-		{
-			name: "group",
-			event: Event{
-				Event: EventGroup,
-				ID:    "design-example-2026-07-11",
-				Ref:   "WI-abc123",
-				Type:  "design",
-				From:  "none",
-				To:    "camp-workflow",
-			},
-		},
 	}
 
 	for _, c := range cases {
