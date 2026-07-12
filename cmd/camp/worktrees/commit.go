@@ -3,6 +3,7 @@ package worktrees
 import (
 	"errors"
 	"fmt"
+
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
@@ -17,7 +18,7 @@ import (
 )
 
 var (
-	wtCommitMessage   string
+	wtCommitMessages  []string
 	wtCommitAll       bool
 	wtCommitAmend     bool
 	wtCommitAutoWrite bool
@@ -47,8 +48,8 @@ Examples:
 func init() {
 	Cmd.AddCommand(worktreesCommitCmd)
 
-	worktreesCommitCmd.Flags().StringVarP(&wtCommitMessage, "message", "m", "",
-		"Commit message (required unless --auto-write)")
+	worktreesCommitCmd.Flags().StringArrayVarP(&wtCommitMessages, "message", "m", nil,
+		"Commit message (repeatable; multiple -m are joined git-style into subject + body; required unless --auto-write)")
 	worktreesCommitCmd.Flags().BoolVarP(&wtCommitAll, "all", "a", true,
 		"Stage all changes before committing")
 	worktreesCommitCmd.Flags().BoolVar(&wtCommitAmend, "amend", false,
@@ -61,6 +62,10 @@ func init() {
 
 func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
+
+	// Join repeated -m values git-style before any tag prepending so the tag
+	// lands on the subject line.
+	wtCommitMessage := commitkit.JoinMessages(wtCommitMessages)
 
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
@@ -93,7 +98,7 @@ func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 	}
 
 	if wtCommitAutoWrite && wtCommitMessage != "" {
-		return fmt.Errorf("--auto-write cannot be used with --message")
+		return camperrors.Newf("--auto-write cannot be used with --message")
 	}
 
 	// Get commit message - prompt if not provided
@@ -104,7 +109,7 @@ func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 			return camperrors.Wrap(err, "prompt failed")
 		}
 		if message == "" {
-			return fmt.Errorf("commit cancelled")
+			return camperrors.Newf("commit cancelled")
 		}
 	}
 

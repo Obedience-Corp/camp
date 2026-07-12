@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // MergeOptions configures the gather/merge operation.
@@ -27,11 +29,11 @@ type GatherResult struct {
 // The sources are not modified; the caller is responsible for archiving them.
 func MergeIntents(sources []*Intent, opts MergeOptions) (*Intent, error) {
 	if len(sources) < 2 {
-		return nil, fmt.Errorf("need at least 2 intents to gather, got %d", len(sources))
+		return nil, camperrors.Newf("need at least 2 intents to gather, got %d", len(sources))
 	}
 
 	if opts.Title == "" {
-		return nil, fmt.Errorf("title is required for gathered intent")
+		return nil, camperrors.Newf("title is required for gathered intent")
 	}
 
 	now := time.Now()

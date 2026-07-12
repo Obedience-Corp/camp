@@ -3,15 +3,18 @@ package leverage
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os/exec"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // DefaultExcludeDirs are directories excluded from scc scans by default.
-// These contain vendored dependencies, build output, or caches that
-// would inflate COCOMO estimates beyond authored code.
+// These contain vendored dependencies, build output, caches, or parallel
+// checkouts that would inflate COCOMO estimates beyond authored code.
+//
+// worktrees / .worktrees / .camp-worktrees must be excluded: camp project
+// worktrees live under projects/worktrees/ and are full source checkouts.
+// Counting them double/triple-counts the same codebase in leverage scores.
 var DefaultExcludeDirs = []string{
 	"node_modules",
 	"vendor",
@@ -30,6 +33,9 @@ var DefaultExcludeDirs = []string{
 	".mypy_cache",
 	".pytest_cache",
 	".cargo",
+	"worktrees",
+	".worktrees",
+	".camp-worktrees",
 }
 
 // SCCRunner implements Runner by shelling out to the scc binary.
@@ -44,7 +50,7 @@ type SCCRunner struct {
 func NewSCCRunner(cocomoType string) (*SCCRunner, error) {
 	path, err := exec.LookPath("scc")
 	if err != nil {
-		return nil, fmt.Errorf("scc not found: install with 'brew install scc' or visit https://github.com/boyter/scc")
+		return nil, camperrors.Newf("scc not found: install with 'brew install scc' or visit https://github.com/boyter/scc")
 	}
 	return &SCCRunner{binaryPath: path, cocomoType: cocomoType}, nil
 }
@@ -75,7 +81,7 @@ func (r *SCCRunner) Run(ctx context.Context, dir string, excludeDirs []string) (
 			return nil, camperrors.Wrap(ctx.Err(), "scc cancelled")
 		}
 		if exitErr, ok := err.(*exec.ExitError); ok {
-			return nil, fmt.Errorf("scc failed on %s: %w\nstderr: %s", dir, err, exitErr.Stderr)
+			return nil, camperrors.Newf("scc failed on %s: %w\nstderr: %s", dir, err, exitErr.Stderr)
 		}
 		return nil, camperrors.Wrapf(err, "scc failed on %s", dir)
 	}

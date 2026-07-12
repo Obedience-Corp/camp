@@ -17,9 +17,13 @@ const legacyTagMarker = "OBEY-CAMPAIGN"
 // FormatContextTagsFull builds the campaign tag. The leading token is the
 // slugified campaign name plus the short id ("[obey-campaign:8deed8b4]"),
 // falling back to "[OBEY-CAMPAIGN-<id>]" when campaignName has no slug. The
-// remaining components follow in fixed order: quest, festival, workitem.
+// remaining components follow in fixed order: quest, festival, workitem,
+// note. noteRef is optional (mirroring FormatCampaignTag's questID) so
+// existing callers are unaffected; only the note commit path passes one, and
+// it may co-occur with workitemRef since they describe different things (the
+// ambient context a note was captured in vs. the note itself).
 // Returns "" when campaignID is empty.
-func FormatContextTagsFull(campaignName, campaignID, questID, festRef, workitemRef string) string {
+func FormatContextTagsFull(campaignName, campaignID, questID, festRef, workitemRef string, noteRef ...string) string {
 	if campaignID == "" {
 		return ""
 	}
@@ -50,6 +54,16 @@ func FormatContextTagsFull(campaignName, campaignID, questID, festRef, workitemR
 		// The ref already carries WI-, so it is self-identifying and embedded
 		// verbatim (no extra marker).
 		parts = append(parts, workitemRef)
+	}
+	nr := ""
+	if len(noteRef) > 0 {
+		nr = noteRef[0]
+	}
+	if nr != "" {
+		if !strings.HasPrefix(nr, "NT-") {
+			nr = "NT-" + nr
+		}
+		parts = append(parts, nr)
 	}
 	return "[" + strings.Join(parts, "-") + "]"
 }
@@ -96,6 +110,7 @@ type TagComponents struct {
 	QuestID      string `json:"quest_id"`
 	FestRef      string `json:"fest_ref"`
 	WorkitemRef  string `json:"workitem_ref"` // carries the WI- prefix
+	NoteRef      string `json:"note_ref"`     // carries the NT- prefix
 }
 
 // leadingTagRegex captures the leading bracket content; tags are only honored
@@ -108,6 +123,7 @@ var tagBodyScanRegex = regexp.MustCompile(`\[(?:` + legacyTagMarker + `-[^\]]+|[
 
 var (
 	tagWorkitemRefRe = regexp.MustCompile(`^WI-[0-9a-f]{6}$`)
+	tagNoteRefRe     = regexp.MustCompile(`^NT-[0-9a-f]{6}$`)
 	tagQuestIDRe     = regexp.MustCompile(`^qst_[A-Za-z0-9_]{1,40}$`)
 	tagFestRefRe     = regexp.MustCompile(`^[A-Za-z0-9]{1,32}$`)
 	// Real campaign ids are UUID-derived hex; gating on it rejects ordinary
@@ -199,24 +215,40 @@ func ParseTagDetailed(subject string) (TagComponents, []TagParseWarning) {
 			}
 			rest = after
 		case strings.HasPrefix(rest, "WI-"):
-			// WI- is the last segment. Accept the single-prefix ref (WI-abcdef)
-			// and the historical doubled form (WI-WI-abcdef).
-			ref := rest
-			if strings.HasPrefix(ref, "WI-WI-") {
-				ref = ref[len("WI-"):]
-			}
-			if !tagWorkitemRefRe.MatchString(ref) {
+			// WI- used to be the last segment; it no longer is (NT- may follow,
+			// since a note captured inside an active workitem carries both).
+			// splitWorkitemSegment bounds the match at the fixed ref length so
+			// any trailing "-NT-..." is left for the next loop iteration.
+			seg, after := splitWorkitemSegment(rest)
+			if !tagWorkitemRefRe.MatchString(seg) {
 				warnings = append(warnings, TagParseWarning{
-					Field: "workitem_ref", Value: ref,
+					Field: "workitem_ref", Value: seg,
 					Reason: "shape check failed (want WI-<6 hex>)",
 				})
 			} else if out.WorkitemRef != "" {
 				warnings = append(warnings, TagParseWarning{
-					Field: "workitem_ref", Value: ref,
+					Field: "workitem_ref", Value: seg,
 					Reason: "duplicate workitem_ref segment",
 				})
 			} else {
-				out.WorkitemRef = ref
+				out.WorkitemRef = seg
+			}
+			rest = after
+		case strings.HasPrefix(rest, "NT-"):
+			// NT- is always the last segment in the fixed order.
+			seg := rest
+			if !tagNoteRefRe.MatchString(seg) {
+				warnings = append(warnings, TagParseWarning{
+					Field: "note_ref", Value: seg,
+					Reason: "shape check failed (want NT-<6 hex>)",
+				})
+			} else if out.NoteRef != "" {
+				warnings = append(warnings, TagParseWarning{
+					Field: "note_ref", Value: seg,
+					Reason: "duplicate note_ref segment",
+				})
+			} else {
+				out.NoteRef = seg
 			}
 			rest = ""
 		default:
@@ -250,4 +282,42 @@ func splitAtDash(s string) (string, string) {
 		return s[:i], s[i+1:]
 	}
 	return s, ""
+}
+
+// splitWorkitemSegment extracts a WI- segment from the front of rest,
+// returning the remainder that follows it. splitAtDash cannot be used here:
+// the historical doubled form (WI-WI-abcdef) has an internal dash that is
+// not a segment boundary. On a shape match (single or doubled prefix plus
+// exactly 6 lowercase hex chars) it returns the normalized single-prefix
+// ref and the trailing remainder (leading "-" stripped) so a following
+// segment such as NT- is left for the next parse iteration. On a shape
+// mismatch it falls back to the legacy behavior of treating the entire
+// remainder as the malformed value (doubled-prefix stripped once, mirroring
+// the historical ref-detection step) so existing malformed-tag warnings are
+// unchanged.
+func splitWorkitemSegment(rest string) (seg, after string) {
+	doubled := strings.HasPrefix(rest, "WI-WI-")
+	prefixLen := len("WI-")
+	if doubled {
+		prefixLen = len("WI-WI-")
+	}
+	if len(rest) >= prefixLen+6 && isLowerHex(rest[prefixLen:prefixLen+6]) {
+		end := prefixLen + 6
+		return "WI-" + rest[prefixLen:end], strings.TrimPrefix(rest[end:], "-")
+	}
+	seg = rest
+	if doubled {
+		seg = rest[len("WI-"):]
+	}
+	return seg, ""
+}
+
+// isLowerHex reports whether s consists solely of lowercase hex digits.
+func isLowerHex(s string) bool {
+	for _, r := range s {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
 }

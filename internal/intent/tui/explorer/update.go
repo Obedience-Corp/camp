@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/intent/tui"
 	"github.com/Obedience-Corp/camp/internal/intent/tui/filterchip"
 	tea "github.com/charmbracelet/bubbletea"
@@ -107,6 +108,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.intents = msg.intents
 		m.filteredIntents = msg.intents
+		m.rebuildSearchCorpus()
 		if m.notesMode {
 			m.groups = groupNotes(msg.intents)
 		} else {
@@ -336,10 +338,21 @@ func (m Model) handleActionMenuSelection(msg tui.ActionMenuSelectedMsg) (tea.Mod
 		return m.handlePromoteAction()
 	case "archive":
 		if selected.Status.IsNote() {
-			m.statusMessage = "Note archiving is not available in the explorer yet"
-			return m, nil
+			if selected.Status != intent.StatusNote {
+				m.statusMessage = "Note is already archived"
+				return m, nil
+			}
+			m.statusMessage = "Archiving note..."
+			return m, m.archiveNote(selected)
 		}
 		return m.handleArchiveAction()
+	case "restore":
+		if selected.Status == intent.StatusNoteArchived {
+			m.statusMessage = "Restoring note..."
+			return m, m.restoreNote(selected)
+		}
+		m.statusMessage = "Note is not archived"
+		return m, nil
 	case "delete":
 		if selected.Status.IsNote() {
 			m.statusMessage = "Note deletion is not available in the explorer yet"

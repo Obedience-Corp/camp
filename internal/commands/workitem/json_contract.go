@@ -14,7 +14,15 @@ const (
 	// WorkitemCommitJSONVersion is the schema version of camp workitem commit --json.
 	WorkitemCommitJSONVersion = "workitem-commit/v1alpha1"
 	// WorkitemCommitsJSONVersion is the schema version of camp workitem commits --json.
+	// v1alpha1 additively gained a top-level "source" field ("ledger"|"scan")
+	// reporting which path answered; the "commits" record shape is unchanged.
 	WorkitemCommitsJSONVersion = "workitem-commits/v1alpha1"
 	// WorkitemDoctorJSONVersion is the schema version of camp workitem doctor --json.
 	WorkitemDoctorJSONVersion = "workitem-doctor/v1alpha1"
+	// WorkitemValidateJSONVersion is the schema version of camp workitem validate --json.
+	WorkitemValidateJSONVersion = "workitem-validate/v1alpha1"
+	// WorkitemRepairJSONVersion is the schema version of camp workitem repair --json.
+	WorkitemRepairJSONVersion = "workitem-repair/v1alpha1"
+	// WorkitemGatherJSONVersion is the schema version of camp gather <type> --json.
+	WorkitemGatherJSONVersion = "workitem-gather/v1alpha1"
 )

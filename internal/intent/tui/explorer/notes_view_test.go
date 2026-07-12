@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Obedience-Corp/camp/internal/intent"
+	"github.com/Obedience-Corp/camp/internal/intent/tui"
 )
 
 func TestGroupNotes_SplitsActiveAndArchived(t *testing.T) {
@@ -227,6 +228,139 @@ func TestMove_TUIFlow_NoteBecomesReadyIntent(t *testing.T) {
 	}
 	if converted.Type != intent.TypeFeature {
 		t.Errorf("Type = %q, want feature", converted.Type)
+	}
+}
+
+func TestArchive_TUIFlow_NoteMovesToArchived(t *testing.T) {
+	ctx := context.Background()
+	tmp := t.TempDir()
+	intentsDir := filepath.Join(tmp, "intents")
+	svc := intent.NewIntentService(tmp, intentsDir)
+
+	note, err := svc.CreateNote(ctx, intent.CreateOptions{
+		Title:     "note to dungeon",
+		Timestamp: time.Date(2026, 6, 9, 10, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateNote: %v", err)
+	}
+
+	m := NewModel(ctx, svc, nil, intentsDir, "", "", "", nil)
+	m.ready = true
+	m.notesMode = true
+	m.groups = groupNotes([]*intent.Intent{note})
+	m.cursorGroup = 0
+	m.cursorItem = 0
+
+	// Dispatch the Archive action the note action menu now offers.
+	_, cmd := m.handleActionMenuSelection(tui.ActionMenuSelectedMsg{Action: "archive"})
+	if cmd == nil {
+		t.Fatal("archive action produced no command")
+	}
+	msg := cmd()
+	if fin, ok := msg.(archiveFinishedMsg); !ok {
+		t.Fatalf("expected archiveFinishedMsg, got %T", msg)
+	} else if fin.err != nil {
+		t.Fatalf("archive failed: %v", fin.err)
+	}
+
+	archived, err := svc.GetNote(ctx, note.ID)
+	if err != nil {
+		t.Fatalf("GetNote after archive: %v", err)
+	}
+	if archived.Status != intent.StatusNoteArchived {
+		t.Errorf("Status = %q, want %q", archived.Status, intent.StatusNoteArchived)
+	}
+}
+
+func TestRestore_TUIFlow_ArchivedNoteBecomesActive(t *testing.T) {
+	ctx := context.Background()
+	tmp := t.TempDir()
+	intentsDir := filepath.Join(tmp, "intents")
+	svc := intent.NewIntentService(tmp, intentsDir)
+
+	note, err := svc.CreateNote(ctx, intent.CreateOptions{
+		Title:     "archived note to restore",
+		Timestamp: time.Date(2026, 6, 9, 10, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateNote: %v", err)
+	}
+	archived, err := svc.ArchiveNote(ctx, note.ID)
+	if err != nil {
+		t.Fatalf("ArchiveNote: %v", err)
+	}
+
+	m := NewModel(ctx, svc, nil, intentsDir, "", "", "", nil)
+	m.ready = true
+	m.notesMode = true
+	m.groups = groupNotes([]*intent.Intent{archived})
+	m.cursorGroup = 1 // Archived group
+	m.cursorItem = 0
+
+	_, cmd := m.handleActionMenuSelection(tui.ActionMenuSelectedMsg{Action: "restore"})
+	if cmd == nil {
+		t.Fatal("restore action produced no command")
+	}
+	msg := cmd()
+	if fin, ok := msg.(moveFinishedMsg); !ok {
+		t.Fatalf("expected moveFinishedMsg, got %T", msg)
+	} else if fin.err != nil {
+		t.Fatalf("restore failed: %v", fin.err)
+	}
+
+	restored, err := svc.GetNote(ctx, note.ID)
+	if err != nil {
+		t.Fatalf("GetNote after restore: %v", err)
+	}
+	if restored.Status != intent.StatusNote {
+		t.Errorf("Status = %q, want %q", restored.Status, intent.StatusNote)
+	}
+}
+
+// TestRestore_TUIFlow_NonArchivedNoOp pins that dispatching "restore" on a note
+// that is not archived is an inert no-op: Go switch cases do not fall through,
+// so it never reaches the "delete" case. The action menu already disables
+// Restore for active notes; this guards the dispatch layer directly.
+func TestRestore_TUIFlow_NonArchivedNoOp(t *testing.T) {
+	ctx := context.Background()
+	tmp := t.TempDir()
+	intentsDir := filepath.Join(tmp, "intents")
+	svc := intent.NewIntentService(tmp, intentsDir)
+
+	note, err := svc.CreateNote(ctx, intent.CreateOptions{
+		Title:     "active note, restore should no-op",
+		Timestamp: time.Date(2026, 6, 9, 10, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateNote: %v", err)
+	}
+
+	m := NewModel(ctx, svc, nil, intentsDir, "", "", "", nil)
+	m.ready = true
+	m.notesMode = true
+	m.groups = groupNotes([]*intent.Intent{note})
+	m.cursorGroup = 0
+	m.cursorItem = 0
+
+	updated, cmd := m.handleActionMenuSelection(tui.ActionMenuSelectedMsg{Action: "restore"})
+	if cmd != nil {
+		t.Fatalf("restore on active note produced a command: %T", cmd())
+	}
+	got := updated.(Model)
+	if got.focus == focusConfirm {
+		t.Error("restore on active note fell through into delete confirmation")
+	}
+	if got.pendingAction == "delete" {
+		t.Errorf("pendingAction = %q, restore must not reach the delete path", got.pendingAction)
+	}
+	if got.statusMessage == "" {
+		t.Error("restore on a non-archived note should surface a status message, not silently no-op")
+	}
+
+	// The note still exists and is unchanged.
+	if _, err := svc.GetNote(ctx, note.ID); err != nil {
+		t.Fatalf("note missing after restore no-op: %v", err)
 	}
 }
 

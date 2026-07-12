@@ -13,10 +13,12 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
+	"github.com/Obedience-Corp/camp/internal/ledger"
 	"github.com/Obedience-Corp/camp/internal/paths"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/priority"
 	"github.com/Obedience-Corp/camp/internal/workitem/selector"
+	"github.com/Obedience-Corp/camp/pkg/ledgerkit"
 )
 
 func newStageCommand() *cobra.Command {
@@ -95,6 +97,11 @@ func runStage(ctx context.Context, cmd *cobra.Command, selectorArg, stageArg str
 	}); err != nil {
 		return camperrors.Wrap(err, "updating workitem attention stage")
 	}
+
+	ledger.NewFromRoot(ctx, root, ledger.WarnTo(cmd.ErrOrStderr())).
+		Emit(ctx, ledgerkit.KindTransitioned, ledgerkit.Scope{Workitem: wi.StableID},
+			ledger.WithPayload(map[string]any{"attention_stage": string(stage), "cleared": clear}))
+
 	if jsonOut {
 		return emitStageJSON(cmd.OutOrStdout(), wi.Key, stage, clear)
 	}

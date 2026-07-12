@@ -106,7 +106,7 @@ func runLeverageSnapshot(cmd *cobra.Command, args []string) error {
 	}
 
 	if projectFilter != "" && count == 0 {
-		return fmt.Errorf("project not found: %s", projectFilter)
+		return camperrors.Newf("project not found: %s", projectFilter)
 	}
 
 	fmt.Fprintf(cmd.OutOrStdout(), "Saved %d snapshots to .campaign/leverage/snapshots/\n", count)

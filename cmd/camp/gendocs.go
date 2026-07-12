@@ -77,7 +77,7 @@ func runGendocs(cmd *cobra.Command, args []string) error {
 		}
 		fmt.Fprintf(os.Stderr, "YAML docs written to %s\n", gendocsOutput)
 	default:
-		return fmt.Errorf("unknown format %q (use markdown or yaml)", gendocsFormat)
+		return camperrors.Newf("unknown format %q (use markdown or yaml)", gendocsFormat)
 	}
 
 	if gendocsSingle && gendocsFormat == "markdown" {

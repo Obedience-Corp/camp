@@ -5,10 +5,11 @@
 package flow
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"gopkg.in/yaml.v3"
@@ -48,12 +49,12 @@ func LoadRegistry(campaignRoot string) (*Registry, error) {
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("reading registry file: %w", err)
+		return nil, camperrors.Newf("reading registry file: %w", err)
 	}
 
 	var registry Registry
 	if err := yaml.Unmarshal(data, &registry); err != nil {
-		return nil, fmt.Errorf("parsing registry YAML: %w", err)
+		return nil, camperrors.Newf("parsing registry YAML: %w", err)
 	}
 
 	if registry.Flows == nil {
@@ -69,16 +70,16 @@ func SaveRegistry(campaignRoot string, registry *Registry) error {
 
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("creating registry directory: %w", err)
+		return camperrors.Newf("creating registry directory: %w", err)
 	}
 
 	data, err := yaml.Marshal(registry)
 	if err != nil {
-		return fmt.Errorf("marshaling registry to YAML: %w", err)
+		return camperrors.Newf("marshaling registry to YAML: %w", err)
 	}
 
 	if err := fsutil.WriteFileAtomically(path, data, 0644); err != nil {
-		return fmt.Errorf("writing registry file: %w", err)
+		return camperrors.Newf("writing registry file: %w", err)
 	}
 
 	return nil

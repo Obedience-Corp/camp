@@ -8,6 +8,9 @@ import (
 	"os/signal"
 	"syscall"
 
+	// bginit must initialize before the bubbletea subtree under the command
+	// packages; its path keeps it first under gofmt.
+	_ "github.com/Obedience-Corp/camp/internal/bginit"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 

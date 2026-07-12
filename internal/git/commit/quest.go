@@ -6,17 +6,18 @@ import "context"
 type QuestAction string
 
 const (
-	QuestCreate   QuestAction = "QuestCreate"
-	QuestRename   QuestAction = "QuestRename"
-	QuestEdit     QuestAction = "QuestEdit"
-	QuestUpdate   QuestAction = "QuestUpdate"
-	QuestPause    QuestAction = "QuestPause"
-	QuestResume   QuestAction = "QuestResume"
-	QuestComplete QuestAction = "QuestComplete"
-	QuestArchive  QuestAction = "QuestArchive"
-	QuestRestore  QuestAction = "QuestRestore"
-	QuestLink     QuestAction = "QuestLink"
-	QuestUnlink   QuestAction = "QuestUnlink"
+	QuestCreate    QuestAction = "QuestCreate"
+	QuestRename    QuestAction = "QuestRename"
+	QuestEdit      QuestAction = "QuestEdit"
+	QuestUpdate    QuestAction = "QuestUpdate"
+	QuestPause     QuestAction = "QuestPause"
+	QuestResume    QuestAction = "QuestResume"
+	QuestComplete  QuestAction = "QuestComplete"
+	QuestArchive   QuestAction = "QuestArchive"
+	QuestRestore   QuestAction = "QuestRestore"
+	QuestLink      QuestAction = "QuestLink"
+	QuestUnlink    QuestAction = "QuestUnlink"
+	QuestChecklist QuestAction = "QuestChecklist"
 )
 
 // QuestOptions configures a quest commit.

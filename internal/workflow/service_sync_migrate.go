@@ -181,7 +181,7 @@ func (s *Service) migrateV1ToV2(ctx context.Context, dryRun bool, moveItem workf
 	}
 
 	if s.schema.Version == 2 {
-		return nil, fmt.Errorf("workflow is already v2")
+		return nil, camperrors.Newf("workflow is already v2")
 	}
 
 	result := &MigrateV1ToV2Result{}

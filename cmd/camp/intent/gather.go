@@ -3,17 +3,22 @@ package intent
 import (
 	"context"
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"os"
 	"strings"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/spf13/cobra"
 
+	wkcmd "github.com/Obedience-Corp/camp/internal/commands/workitem"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/intent/audit"
 	"github.com/Obedience-Corp/camp/internal/intent/gather"
+	"github.com/Obedience-Corp/camp/internal/ledger"
 	"github.com/Obedience-Corp/camp/internal/paths"
+	"github.com/Obedience-Corp/camp/pkg/ledgerkit"
 )
 
 var (
@@ -129,12 +134,12 @@ func runIntentGather(cmd *cobra.Command, args []string) error {
 	ids = deduplicateIDs(ids)
 
 	if len(ids) < 2 {
-		return fmt.Errorf("need at least 2 intents to gather, found %d", len(ids))
+		return camperrors.Newf("need at least 2 intents to gather, found %d", len(ids))
 	}
 
 	// Title is required
 	if gatherTitle == "" {
-		return fmt.Errorf("--title is required")
+		return camperrors.Newf("--title is required")
 	}
 
 	// Capture source file paths before gather potentially moves them.
@@ -169,6 +174,22 @@ func runIntentGather(cmd *cobra.Command, args []string) error {
 	result, err := gatherSvc.Gather(ctx, ids, opts)
 	if err != nil {
 		return camperrors.Wrap(err, "gather failed")
+	}
+
+	// Ledger: one action for the whole gather - the gathered intent is created,
+	// each archived source transitions to archived (gathered_into the new id).
+	gatherEmitter := ledger.NewFromRoot(ctx, campaignRoot, ledger.WarnTo(cmd.ErrOrStderr()))
+	gatherEmitter.Emit(ctx, ledgerkit.KindCreated, ledgerkit.Scope{Intent: result.Gathered.ID},
+		ledger.WithWhy(result.Gathered.Title),
+		ledger.WithPayload(map[string]any{"status": string(result.Gathered.Status), "gathered_count": len(ids)}))
+	if !gatherNoArchive {
+		for _, archived := range result.ArchivedSources {
+			gatherEmitter.Emit(ctx, ledgerkit.KindTransitioned, ledgerkit.Scope{Intent: archived.ID},
+				ledger.WithPayload(map[string]any{
+					"from": string(sourceStatusByID[archived.ID]), "to": string(intent.StatusArchived),
+					"gathered_into": result.Gathered.ID,
+				}))
+		}
 	}
 
 	if err := appendIntentAuditEvent(ctx, resolver.Intents(), audit.Event{
@@ -223,13 +244,11 @@ func runIntentGather(cmd *cobra.Command, args []string) error {
 		files = append(files, result.ArchivedPaths...)
 		files = append(files, audit.FilePath(resolver.Intents()))
 
+		opts := wkcmd.AmbientCommitOptions(ctx, campaignRoot, cfg.ID, os.Stderr)
+		opts.Files = commit.NormalizeFiles(campaignRoot, files...)
+		opts.SelectiveOnly = true
 		commitResult := commit.Intent(ctx, commit.IntentOptions{
-			Options: commit.Options{
-				CampaignRoot:  campaignRoot,
-				CampaignID:    cfg.ID,
-				Files:         commit.NormalizeFiles(campaignRoot, files...),
-				SelectiveOnly: true,
-			},
+			Options:     opts,
 			Action:      commit.IntentGather,
 			IntentTitle: gatherTitle,
 			Description: description,
@@ -237,6 +256,7 @@ func runIntentGather(cmd *cobra.Command, args []string) error {
 		if commitResult.Message != "" {
 			fmt.Printf("  %s\n", commitResult.Message)
 		}
+		commit.WarnIfSkipped(os.Stderr, commitResult)
 	}
 
 	return nil
@@ -259,11 +279,11 @@ func discoverIntentsToGather(ctx context.Context, svc *gather.Service, intentSvc
 	}
 
 	if methods == 0 {
-		return nil, fmt.Errorf("specify intent IDs or use --tag, --hashtag, or --similar")
+		return nil, camperrors.Newf("specify intent IDs or use --tag, --hashtag, or --similar")
 	}
 
 	if methods > 1 {
-		return nil, fmt.Errorf("use only one discovery method: IDs, --tag, --hashtag, or --similar")
+		return nil, camperrors.Newf("use only one discovery method: IDs, --tag, --hashtag, or --similar")
 	}
 
 	// By explicit IDs — filter out dungeon intents
@@ -317,7 +337,7 @@ func discoverIntentsToGather(ctx context.Context, svc *gather.Service, intentSvc
 			return nil, camperrors.Wrapf(err, "reference intent %q not found", gatherSimilar)
 		}
 		if refIntent.Status.InDungeon() {
-			return nil, fmt.Errorf("reference intent %q is in %s status — only inbox/active/ready intents can be gathered", gatherSimilar, refIntent.Status)
+			return nil, camperrors.Newf("reference intent %q is in %s status — only inbox/active/ready intents can be gathered", gatherSimilar, refIntent.Status)
 		}
 
 		similar, err := svc.FindSimilar(ctx, gatherSimilar, gatherMinScore)
@@ -332,7 +352,7 @@ func discoverIntentsToGather(ctx context.Context, svc *gather.Service, intentSvc
 		return ids, nil
 	}
 
-	return nil, fmt.Errorf("no discovery method specified")
+	return nil, camperrors.Newf("no discovery method specified")
 }
 
 func showDryRun(ctx context.Context, svc *intent.IntentService, ids []string, title string) error {

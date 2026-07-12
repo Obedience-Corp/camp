@@ -57,12 +57,7 @@ func buildWorkflowDirItem(ctx context.Context, campaignRoot, dirPath string, wfT
 	}
 
 	primaryDocAbs := findPrimaryDoc(dirPath)
-	title := humanizeBasename(filepath.Base(dirPath))
-	if primaryDocAbs != "" {
-		if heading := extractFirstHeading(primaryDocAbs); heading != "" {
-			title = heading
-		}
-	}
+	title := titleFromDoc(primaryDocAbs, dirPath)
 
 	created, updated := ScanDirTimestamps(ctx, dirPath)
 
@@ -74,7 +69,7 @@ func buildWorkflowDirItem(ctx context.Context, campaignRoot, dirPath string, wfT
 	item := WorkItem{
 		Key:            string(wfType) + ":" + relPath,
 		WorkflowType:   wfType,
-		LifecycleStage: LifecycleStageNone,
+		LifecycleStage: LifecycleStageActive,
 		Title:          title,
 		RelativePath:   relPath,
 		PrimaryDoc:     primaryDocRel,

@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
@@ -99,9 +100,9 @@ func runWorktreesInfo(cmd *cobra.Command, args []string) error {
 
 	if err != nil {
 		if infoPath == "" {
-			return fmt.Errorf("not inside a worktree (use --path to specify)")
+			return camperrors.Newf("not inside a worktree (use --path to specify)")
 		}
-		return fmt.Errorf("not a valid worktree: %s", infoPath)
+		return camperrors.Newf("not a valid worktree: %s", infoPath)
 	}
 
 	// Build detailed info

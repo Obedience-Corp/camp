@@ -18,6 +18,7 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
+	"github.com/Obedience-Corp/camp/internal/ledger"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
 	"github.com/Obedience-Corp/camp/internal/quest"
 	"github.com/Obedience-Corp/camp/internal/ui"
@@ -45,10 +46,12 @@ func loadQuestCommandContext(ctx context.Context, ensureScaffold bool) (*questCo
 		}
 	}
 
+	svc := quest.NewService(campaignRoot)
+	svc.SetLedger(ledger.NewFromRoot(ctx, campaignRoot, ledger.WarnToStderr()))
 	return &questCommandContext{
 		cfg:          cfg,
 		campaignRoot: campaignRoot,
-		service:      quest.NewService(campaignRoot),
+		service:      svc,
 	}, nil
 }
 
@@ -249,6 +252,12 @@ func outputQuestShow(qctx *questCommandContext, q *quest.Quest) {
 }
 
 func autoCommitQuest(ctx context.Context, qctx *questCommandContext, action commit.QuestAction, result *quest.MutationResult, detail string) error {
+	return autoCommitQuestQuiet(ctx, qctx, action, result, detail, false)
+}
+
+// autoCommitQuestQuiet is autoCommitQuest with an option to suppress the commit
+// message on stdout, which callers use to keep --json output uncorrupted.
+func autoCommitQuestQuiet(ctx context.Context, qctx *questCommandContext, action commit.QuestAction, result *quest.MutationResult, detail string, quiet bool) error {
 	if result == nil || result.Quest == nil {
 		return nil
 	}
@@ -281,7 +290,7 @@ func autoCommitQuest(ctx context.Context, qctx *questCommandContext, action comm
 	if commitResult.Err != nil {
 		return camperrors.Wrap(commitResult.Err, "auto-commit quest changes")
 	}
-	if commitResult.Message != "" {
+	if commitResult.Message != "" && !quiet {
 		fmt.Printf("  %s\n", commitResult.Message)
 	}
 	return nil

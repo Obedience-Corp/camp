@@ -1,7 +1,6 @@
 package flow
 
 import (
-	"fmt"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/spf13/cobra"
@@ -41,7 +40,7 @@ Examples:
 
 			flowDef, ok := registry.Get(flowName)
 			if !ok {
-				return fmt.Errorf("flow %q not found\n\nAvailable flows: %v", flowName, registry.List())
+				return camperrors.Newf("flow %q not found\n\nAvailable flows: %v", flowName, registry.List())
 			}
 
 			runner := flow.NewRunner(campaignRoot)

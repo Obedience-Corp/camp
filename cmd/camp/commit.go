@@ -12,8 +12,10 @@ import (
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/ledger"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/Obedience-Corp/camp/pkg/commitkit"
+	"github.com/Obedience-Corp/camp/pkg/ledgerkit"
 	"github.com/spf13/cobra"
 )
 
@@ -43,7 +45,7 @@ Examples:
 }
 
 var (
-	commitMessage     string
+	commitMessages    []string
 	commitAll         bool
 	commitAmend       bool
 	commitSub         bool
@@ -55,7 +57,7 @@ var (
 )
 
 func init() {
-	commitCmd.Flags().StringVarP(&commitMessage, "message", "m", "", "Commit message (required unless --auto-write)")
+	commitCmd.Flags().StringArrayVarP(&commitMessages, "message", "m", nil, "Commit message (repeatable; multiple -m are joined git-style into subject + body; required unless --auto-write)")
 	commitCmd.Flags().BoolVarP(&commitAll, "all", "a", true, "Stage all changes before committing")
 	commitCmd.Flags().BoolVar(&commitAmend, "amend", false, "Amend the previous commit")
 	commitCmd.Flags().BoolVar(&commitNoEdit, "no-edit", false, "Amend without editing the commit message (requires --amend)")
@@ -92,6 +94,10 @@ func completeProjectFlag(cmd *cobra.Command, args []string, toComplete string) (
 func runCommit(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
+	// Join repeated -m values git-style before any tag prepending so the tag
+	// lands on the subject line.
+	commitMessage := commitkit.JoinMessages(commitMessages)
+
 	// Find campaign root
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
@@ -109,7 +115,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	}
 
 	if commitAutoWrite && commitMessage != "" {
-		return fmt.Errorf("--auto-write cannot be used with --message")
+		return camperrors.Newf("--auto-write cannot be used with --message")
 	}
 	if commitNoEdit && !commitAmend {
 		return camperrors.New("--no-edit requires --amend")
@@ -237,6 +243,14 @@ func runCommit(cmd *cobra.Command, args []string) error {
 			return nil
 		}
 		return err
+	}
+
+	// Record the landed commit as ledger evidence (D003: after the commit
+	// exists). Tagging and the message above are untouched.
+	if sha, shaErr := commitkit.ShortHash(ctx, target.Path); shaErr == nil {
+		_, workitemRef := resolveCommitContext(ctx, campRoot, commitWorkitem)
+		ledger.NewFromRoot(ctx, campRoot, ledger.WarnTo(cmd.ErrOrStderr())).
+			CommitEvidence(ctx, ledgerkit.Scope{Workitem: workitemRef}, campRoot, target.Path, sha, message)
 	}
 
 	fmt.Println(ui.Success("Changes committed successfully"))

@@ -1,8 +1,9 @@
 package intent
 
 import (
-	"fmt"
 	"strings"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/Obedience-Corp/camp/internal/intent"
 )
@@ -24,6 +25,6 @@ func parseIntentStatus(raw string) (intent.Status, error) {
 	case "someday", string(intent.StatusSomeday):
 		return intent.StatusSomeday, nil
 	default:
-		return "", fmt.Errorf("invalid status: %s (use inbox, ready, active, done, killed, archived, someday, or dungeon/<status>)", raw)
+		return "", camperrors.Newf("invalid status: %s (use inbox, ready, active, done, killed, archived, someday, or dungeon/<status>)", raw)
 	}
 }

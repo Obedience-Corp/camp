@@ -58,6 +58,61 @@ func TestGenerateBash(t *testing.T) {
 	}
 }
 
+func TestGenerateBash_CrProjectShorthand(t *testing.T) {
+	output := generateBash()
+
+	checks := []struct {
+		name    string
+		content string
+	}{
+		{"cr recognizes -p", `-p|--project)`},
+		{"cr recognizes equals form", `-p=*|--project=*)`},
+		{"cr rejects missing project", `usage: cr -p <project>`},
+		{"cr dispatches to project run", `camp project run -p "$cr_project" -- "$@"`},
+		{"project subcommand list includes run", "add commit link list new prune remote remove run stage unlink worktree"},
+	}
+
+	for _, check := range checks {
+		t.Run(check.name, func(t *testing.T) {
+			if !strings.Contains(output, check.content) {
+				t.Errorf("bash init missing %s: %q", check.name, check.content)
+			}
+		})
+	}
+}
+
+func TestGenerateBash_FestivalsArm(t *testing.T) {
+	output := generateBash()
+	section := shellWrapperSection(t, output, "    festivals)", "    *)")
+
+	checks := []struct {
+		name    string
+		content string
+	}{
+		{"festivals path output", `command camp festivals "$@" --path-output`},
+		{"festivals temp file", "camp-festivals.XXXXXX"},
+		{"festivals absolute cd", `cd "$dest"`},
+		{"festivals org passthrough", `--org|--org=*`},
+		{"festivals status passthrough", `--status|--status=*`},
+		{"festivals all campaigns passthrough", `--all-campaigns`},
+		{"festivals sort passthrough", `--sort|--sort=*`},
+	}
+	for _, check := range checks {
+		t.Run(check.name, func(t *testing.T) {
+			if !strings.Contains(section, check.content) {
+				t.Errorf("bash festivals arm missing %s: %q", check.name, check.content)
+			}
+		})
+	}
+
+	if strings.Contains(section, `cd "$root/$dest"`) {
+		t.Error("festivals arm must not use the root-relative cd form (paths are absolute)")
+	}
+	if strings.Contains(section, `--count|--count=*`) || strings.Contains(section, `--format|--format=*`) {
+		t.Error("festivals arm must not use list-only passthrough flags")
+	}
+}
+
 func TestGenerateBash_ContainsDynamicShortcuts(t *testing.T) {
 	output := generateBash()
 

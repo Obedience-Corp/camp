@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
-	"runtime"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -15,6 +13,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
+	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -64,7 +63,7 @@ func listTUIRequested(cmd *cobra.Command, isTTY bool) bool {
 	if interactive, _ := cmd.Flags().GetBool("interactive"); interactive {
 		return true
 	}
-	for _, f := range []string{"sort", "org", "tag", "status", "all", "group", "no-group"} {
+	for _, f := range []string{"sort", "org", "tag", "status", "all", "group", "no-group", "remote"} {
 		if cmd.Flags().Changed(f) {
 			return false
 		}
@@ -132,7 +131,7 @@ func (m *listTUIModel) rebuildVisible() {
 		}
 		m.visible = out
 	}
-	m.cursor = clampIdx(m.cursor, len(m.visible))
+	m.cursor = ui.ClampIdx(m.cursor, len(m.visible))
 }
 
 func (m *listTUIModel) reload() error {
@@ -198,21 +197,8 @@ func (m *listTUIModel) mutate(id string, apply func(*config.RegisteredCampaign))
 	return m.reload()
 }
 
-// Package var so tests do not touch the real clipboard.
-var writeClipboard = func(s string) error {
-	var c *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		c = exec.Command("pbcopy")
-	default:
-		c = exec.Command("xclip", "-selection", "clipboard")
-	}
-	c.Stdin = strings.NewReader(s)
-	return c.Run()
-}
-
 func (m *listTUIModel) copyPath() error {
-	return writeClipboard(pathutil.AbbreviateHome(m.visible[m.cursor].Path))
+	return ui.WriteClipboard(pathutil.AbbreviateHome(m.visible[m.cursor].Path))
 }
 
 func (m *listTUIModel) setStatus(s string, isErr bool) {
@@ -246,17 +232,4 @@ func (m listTUIModel) orgNamesCSV() string {
 		}
 	}
 	return strings.Join(names, ", ")
-}
-
-func clampIdx(v, n int) int {
-	if n <= 0 {
-		return 0
-	}
-	if v < 0 {
-		return 0
-	}
-	if v > n-1 {
-		return n - 1
-	}
-	return v
 }

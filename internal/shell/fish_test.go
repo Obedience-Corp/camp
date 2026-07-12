@@ -55,6 +55,57 @@ func TestGenerateFish(t *testing.T) {
 	}
 }
 
+func TestGenerateFish_CrProjectShorthand(t *testing.T) {
+	output := generateFish()
+
+	checks := []struct {
+		name    string
+		content string
+	}{
+		{"cr recognizes -p", `"$argv[1]" = "-p"`},
+		{"cr recognizes equals form", `string match -q -- '-p=*'`},
+		{"cr rejects missing project", `usage: cr -p <project>`},
+		{"cr dispatches to project run", `camp project run -p "$cr_project" -- $rest`},
+		{"project subcommand list includes run", `-a "run" -d "Run a command inside a project directory"`},
+	}
+
+	for _, check := range checks {
+		t.Run(check.name, func(t *testing.T) {
+			if !strings.Contains(output, check.content) {
+				t.Errorf("fish init missing %s: %q", check.name, check.content)
+			}
+		})
+	}
+}
+
+func TestGenerateFish_FestivalsArm(t *testing.T) {
+	output := generateFish()
+	section := shellWrapperSection(t, output, "        case festivals", "        case '*'")
+
+	checks := []struct {
+		name    string
+		content string
+	}{
+		{"festivals path output", "command camp festivals $rest --path-output"},
+		{"festivals temp file", "camp-festivals.XXXXXX"},
+		{"festivals absolute cd", `cd "$dest"`},
+		{"festivals org passthrough", `--org '--org=*'`},
+		{"festivals status passthrough", `--status '--status=*'`},
+		{"festivals all campaigns passthrough", `--all-campaigns`},
+		{"festivals sort passthrough", `--sort '--sort=*'`},
+	}
+	for _, check := range checks {
+		t.Run(check.name, func(t *testing.T) {
+			if !strings.Contains(section, check.content) {
+				t.Errorf("fish festivals arm missing %s: %q", check.name, check.content)
+			}
+		})
+	}
+	if strings.Contains(section, `--count '--count=*'`) || strings.Contains(section, `--format '--format=*'`) {
+		t.Error("festivals arm must not use list-only passthrough flags")
+	}
+}
+
 func TestGenerateFish_ValidSyntax(t *testing.T) {
 	// Skip if fish is not available
 	if _, err := exec.LookPath("fish"); err != nil {

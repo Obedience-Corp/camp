@@ -2,16 +2,19 @@ package intent
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
+	wkcmd "github.com/Obedience-Corp/camp/internal/commands/workitem"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/intent/audit"
+	"github.com/Obedience-Corp/camp/internal/ledger"
 	"github.com/Obedience-Corp/camp/internal/paths"
 )
 
@@ -67,7 +70,7 @@ func runIntentMove(cmd *cobra.Command, args []string) error {
 
 	// Require reason for dungeon moves
 	if status.InDungeon() && reason == "" {
-		return fmt.Errorf("--reason is required when moving to a dungeon status (%s)", status)
+		return camperrors.Newf("--reason is required when moving to a dungeon status (%s)", status)
 	}
 
 	// Find campaign root
@@ -79,6 +82,7 @@ func runIntentMove(cmd *cobra.Command, args []string) error {
 	// Create path resolver and service
 	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
 	svc := intent.NewIntentService(campaignRoot, resolver.Intents())
+	svc.SetLedger(ledger.NewFromRoot(ctx, campaignRoot, ledger.WarnTo(cmd.ErrOrStderr())))
 
 	// Ensure directories exist and migrate legacy layout
 	if err := svc.EnsureDirectories(ctx); err != nil {
@@ -88,7 +92,7 @@ func runIntentMove(cmd *cobra.Command, args []string) error {
 	// Get intent title for commit message (before moving)
 	i, err := svc.Find(ctx, id)
 	if err != nil {
-		return fmt.Errorf("intent not found: %s", id)
+		return camperrors.Newf("intent not found: %s", id)
 	}
 	intentTitle := i.Title
 	sourcePath := i.Path
@@ -129,14 +133,11 @@ func runIntentMove(cmd *cobra.Command, args []string) error {
 
 	// Auto-commit (unless --no-commit)
 	if !noCommit {
-		files := commit.NormalizeFiles(campaignRoot, sourcePath, result.Path, audit.FilePath(resolver.Intents()))
+		opts := wkcmd.AmbientCommitOptions(ctx, campaignRoot, cfg.ID, os.Stderr)
+		opts.Files = commit.NormalizeFiles(campaignRoot, sourcePath, result.Path, audit.FilePath(resolver.Intents()))
+		opts.SelectiveOnly = true
 		commitResult := commit.Intent(ctx, commit.IntentOptions{
-			Options: commit.Options{
-				CampaignRoot:  campaignRoot,
-				CampaignID:    cfg.ID,
-				Files:         files,
-				SelectiveOnly: true,
-			},
+			Options:     opts,
 			Action:      commit.IntentMove,
 			IntentTitle: intentTitle,
 			Description: fmt.Sprintf("Moved to %s status", status),
@@ -144,6 +145,7 @@ func runIntentMove(cmd *cobra.Command, args []string) error {
 		if commitResult.Message != "" {
 			fmt.Printf("  %s\n", commitResult.Message)
 		}
+		commit.WarnIfSkipped(os.Stderr, commitResult)
 	}
 
 	return nil

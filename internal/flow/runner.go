@@ -2,11 +2,12 @@ package flow
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // Runner executes workflow flows with proper context handling,
@@ -24,7 +25,7 @@ func NewRunner(campaignRoot string) *Runner {
 // Commands are executed via "sh -c" with inherited stdio.
 func (r *Runner) Run(ctx context.Context, f Flow, extraArgs []string) error {
 	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("context cancelled: %w", err)
+		return camperrors.Newf("context cancelled: %w", err)
 	}
 
 	workDir := r.resolveWorkDir(f.WorkDir)
@@ -44,7 +45,7 @@ func (r *Runner) Run(ctx context.Context, f Flow, extraArgs []string) error {
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("executing flow command: %w", err)
+		return camperrors.Newf("executing flow command: %w", err)
 	}
 
 	return nil

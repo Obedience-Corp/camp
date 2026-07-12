@@ -37,6 +37,9 @@ func shellInitScript(t *testing.T, tc *TestContainer, shell string) string {
 // stubCampScriptPosix returns POSIX shell code (bash/zsh compatible) that creates
 // a fake "camp" binary in a temp directory and prepends it to PATH. The stub handles:
 //   - any invocation containing --print: prints the target directory
+//   - any invocation containing --shell-connect: prints the local eval line
+//     `cd -- '<targetDir>'`, mirroring emitShellConnect's local output, so the
+//     csw wrapper's `eval "$(camp switch ... --shell-connect)"` lands in targetDir
 //   - everything else: prints STUB_PASSTHROUGH
 func stubCampScriptPosix(targetDir string) string {
 	return fmt.Sprintf(`
@@ -45,7 +48,11 @@ cat > "$_stub_dir/camp" << 'STUBEOF'
 #!/bin/sh
 for arg in "$@"; do
   if [ "$arg" = "--print" ]; then
-    echo "%s"
+    echo "%[1]s"
+    exit 0
+  fi
+  if [ "$arg" = "--shell-connect" ]; then
+    echo "cd -- '%[1]s'"
     exit 0
   fi
 done
@@ -57,11 +64,14 @@ export PATH="$_stub_dir:$PATH"
 }
 
 // stubCampScriptFish returns fish shell code that creates a fake "camp" binary
-// in a temp directory and prepends it to PATH.
+// in a temp directory and prepends it to PATH. Like the posix stub it answers
+// --print with the target dir and --shell-connect with the `cd -- '<dir>'` local
+// eval line (fish accepts \' as a literal quote inside single quotes), so the
+// fish csw wrapper's eval lands in the target dir.
 func stubCampScriptFish(targetDir string) string {
 	return fmt.Sprintf(`
 set -l _stub_dir (mktemp -d)
-printf '#!/bin/sh\nfor arg in "$@"; do\n  if [ "$arg" = "--print" ]; then\n    echo "%s"\n    exit 0\n  fi\ndone\necho "STUB_PASSTHROUGH"\n' > $_stub_dir/camp
+printf '#!/bin/sh\nfor arg in "$@"; do\n  if [ "$arg" = "--print" ]; then\n    echo "%[1]s"\n    exit 0\n  fi\n  if [ "$arg" = "--shell-connect" ]; then\n    echo "cd -- \'%[1]s\'"\n    exit 0\n  fi\ndone\necho "STUB_PASSTHROUGH"\n' > $_stub_dir/camp
 chmod +x $_stub_dir/camp
 set -gx PATH $_stub_dir $PATH
 `, targetDir)

@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
 const listFixture = `{
@@ -82,6 +83,7 @@ func listTestCmd() *cobra.Command {
 	c.Flags().Bool("all", false, "")
 	c.Flags().Bool("group", false, "")
 	c.Flags().Bool("no-group", false, "")
+	c.Flags().Bool("remote", false, "")
 	return c
 }
 
@@ -134,6 +136,14 @@ func TestListTUIRequested(t *testing.T) {
 		_ = c.Flags().Set("org", "obey")
 		if listTUIRequested(c, true) {
 			t.Error("a shaping flag should print the table, not open the browser")
+		}
+	})
+	t.Run("remote in a TTY forces the fan-out path", func(t *testing.T) {
+		listJSON, listCount = false, false
+		c := listTestCmd()
+		_ = c.Flags().Set("remote", "true")
+		if listTUIRequested(c, true) {
+			t.Error("--remote must force the text fan-out path, not open the local browser")
 		}
 	})
 }
@@ -259,10 +269,10 @@ func TestListTUI_MoveOrg_InvalidName_NoMutation(t *testing.T) {
 }
 
 func TestListTUI_CopyPath_UsesTilde(t *testing.T) {
-	prev := writeClipboard
+	prev := ui.WriteClipboard
 	var copied string
-	writeClipboard = func(s string) error { copied = s; return nil }
-	defer func() { writeClipboard = prev }()
+	ui.WriteClipboard = func(s string) error { copied = s; return nil }
+	defer func() { ui.WriteClipboard = prev }()
 
 	m := newTestListModel(t)
 	m = lkey(m, "y")

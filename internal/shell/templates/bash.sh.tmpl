@@ -13,7 +13,7 @@ camp() {
   case "$1" in
     switch|sw)
       shift
-      local arg passthrough status
+      local arg passthrough line
       passthrough=0
       for arg in "$@"; do
         case "$arg" in
@@ -27,16 +27,11 @@ camp() {
         command camp switch "$@"
         return
       fi
-      dest=$(command camp switch "$@" --print)
-      status=$?
-      if [ -n "$dest" ]; then
-        cd "$dest" || return 1
-      elif [ "$status" -ne 0 ]; then
-        return "$status"
-      else
-        echo "camp: not found: $*" >&2
-        return 1
-      fi
+      # --shell-connect emits one line to eval: `cd -- <path>` for a local
+      # target, `exec ssh -t ...` to hop to a machine: target. On error camp
+      # prints to stderr and exits non-zero (empty stdout), so we propagate.
+      line=$(command camp switch "$@" --shell-connect) || return "$?"
+      eval "$line"
       ;;
     go|g)
       shift
@@ -157,6 +152,69 @@ camp() {
         rm -f "$tmp"
       fi
       ;;
+    festivals)
+      shift
+      local arg passthrough cmd_status tmp
+      passthrough=0
+      for arg in "$@"; do
+        case "$arg" in
+          --help|-h|--json|--json=*|--org|--org=*|--tag|--tag=*|--status|--status=*|--all|--all-campaigns|--since|--since=*|--until|--until=*|--sort|--sort=*)
+            passthrough=1
+            break
+            ;;
+        esac
+      done
+      if [ "$passthrough" -eq 1 ]; then
+        command camp festivals "$@"
+        return
+      fi
+      if ! [ -t 0 ] || ! [ -t 1 ]; then
+        command camp festivals "$@"
+        return
+      fi
+
+      tmp=$(mktemp "${TMPDIR:-/tmp}/camp-festivals.XXXXXX") || return 1
+      command camp festivals "$@" --path-output "$tmp"
+      cmd_status=$?
+      if [ "$cmd_status" -ne 0 ]; then
+        rm -f "$tmp"
+        return "$cmd_status"
+      fi
+
+      if [ -s "$tmp" ]; then
+        dest=$(cat "$tmp")
+        rm -f "$tmp"
+        if [ -n "$dest" ]; then
+          cd "$dest" || return 1
+        fi
+      else
+        rm -f "$tmp"
+      fi
+      ;;
+    quest)
+      # Intercept 'quest use'/'quest clear' to mutate CAMP_QUEST in this shell.
+      # All other quest subcommands run normally.
+      case "$2" in
+        use|clear)
+          local arg line
+          for arg in "$@"; do
+            case "$arg" in
+              --help|-h)
+                command camp "$@"
+                return
+                ;;
+            esac
+          done
+          # camp emits shell code on stdout only after validation succeeds and
+          # diagnostics on stderr, so eval only a successful non-empty result.
+          line=$(command camp "$@" --shell bash) || return "$?"
+          [ -n "$line" ] && eval "$line"
+          ;;
+        *)
+          command camp "$@"
+          ;;
+      esac
+      ;;
     *)
       command camp "$@"
       ;;
@@ -207,10 +265,35 @@ _cgo_complete() {
 }
 complete -o nospace -F _cgo_complete cgo
 
-# Run command from campaign root
+# Run command from campaign root, or in a project with -p
 # Usage: cr <command> [args...]
+#        cr -p <project> [--] <command> [args...]
 cr() {
-  camp run "$@"
+  local cr_project=""
+  case "${1:-}" in
+    -p|--project)
+      if [ $# -lt 2 ] || [ -z "$2" ]; then
+        echo "usage: cr -p <project> [--] <command> [args...]" >&2
+        return 2
+      fi
+      cr_project="$2"
+      shift 2
+      ;;
+    -p=*|--project=*)
+      cr_project="${1#*=}"
+      if [ -z "$cr_project" ]; then
+        echo "usage: cr -p <project> [--] <command> [args...]" >&2
+        return 2
+      fi
+      shift
+      ;;
+  esac
+  if [ -n "$cr_project" ]; then
+    [ "$1" = "--" ] && shift
+    camp project run -p "$cr_project" -- "$@"
+  else
+    camp run "$@"
+  fi
 }
 
 # Switch campaigns
@@ -257,7 +340,7 @@ _camp_complete() {
       ;;
     project)
       if [ "$COMP_CWORD" -eq 2 ]; then
-        COMPREPLY=($(compgen -W "add list remove" -- "$cur"))
+        COMPREPLY=($(compgen -W "add commit link list new prune remote remove run stage unlink worktree" -- "$cur"))
       fi
       ;;
     shell-init)

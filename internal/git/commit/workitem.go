@@ -5,11 +5,13 @@ import "context"
 // WorkitemAction identifies the high-level operation captured by the commit.
 // WorkitemScope is the generic case used by `camp workitem commit`.
 // WorkitemEdit is reserved for flows that mutate workitem metadata.
+// WorkitemGather marks `camp gather <type>` combining workitems into one package.
 type WorkitemAction string
 
 const (
-	WorkitemEdit  WorkitemAction = "WorkitemEdit"
-	WorkitemScope WorkitemAction = "WorkitemScope"
+	WorkitemEdit   WorkitemAction = "WorkitemEdit"
+	WorkitemScope  WorkitemAction = "WorkitemScope"
+	WorkitemGather WorkitemAction = "WorkitemGather"
 )
 
 // WorkitemOptions configures a workitem-scoped commit. The embedded Options

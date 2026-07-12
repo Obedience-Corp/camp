@@ -91,9 +91,21 @@ func init() {
 	Cmd.Flags().String("since", "", "Festivals created on or after this date, passed to fest list")
 	Cmd.Flags().String("until", "", "Festivals created on or before this date, passed to fest list")
 	Cmd.Flags().String("sort", "", "Festival sort, passed to fest list")
+	Cmd.Flags().BoolP("interactive", "i", false, "Open the interactive festivals browser")
+	Cmd.Flags().String("path-output", "", "Write the selected festival path to a file (shell integration)")
+	_ = Cmd.Flags().MarkHidden("path-output")
 }
 
 func runFestivals(cmd *cobra.Command, _ []string) error {
+	// Bare TTY with no shaping flag opens the interactive browser; everything
+	// else (filters, --json, non-tty) stays on the text/JSON path below.
+	if festivalsTUIRequested(cmd, stdoutIsTTY()) {
+		return runFestivalsTUI(cmd)
+	}
+	return runFestivalsText(cmd)
+}
+
+func runFestivalsText(cmd *cobra.Command) error {
 	ctx := cmd.Context()
 	org, _ := cmd.Flags().GetString("org")
 	tags, _ := cmd.Flags().GetStringSlice("tag")

@@ -19,8 +19,11 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
+	"github.com/Obedience-Corp/camp/internal/ledger"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
+	wkaudit "github.com/Obedience-Corp/camp/internal/workitem/audit"
+	"github.com/Obedience-Corp/camp/pkg/ledgerkit"
 )
 
 func newCreateCommand() *cobra.Command {
@@ -122,9 +125,20 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 		return err
 	}
 	markerWritten = true
-	invalidateNavigationCache(cmd, campaignRoot)
-
 	rel := filepath.Join(parent, slug)
+	invalidateNavigationCache(cmd, campaignRoot)
+	appendWorkitemAuditEvent(ctx, cmd, campaignRoot, wkaudit.Event{
+		Event: wkaudit.EventCreate,
+		ID:    id,
+		Ref:   ref,
+		Type:  typeFlag,
+		Title: title,
+		To:    filepath.ToSlash(rel),
+	})
+	ledger.NewFromRoot(ctx, campaignRoot, ledger.WarnTo(cmd.ErrOrStderr())).
+		Emit(ctx, ledgerkit.KindCreated, ledgerkit.Scope{Workitem: ref, Quest: questID},
+			ledger.WithWhy(title),
+			ledger.WithPayload(map[string]any{"type": typeFlag, "title": title, "path": rel}))
 	if jsonOut {
 		payload := struct {
 			SchemaVersion string    `json:"schema_version"`

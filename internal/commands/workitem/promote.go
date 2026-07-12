@@ -15,6 +15,7 @@ import (
 	intdungeon "github.com/Obedience-Corp/camp/internal/dungeon"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/intent"
+	"github.com/Obedience-Corp/camp/internal/ledger"
 	navindex "github.com/Obedience-Corp/camp/internal/nav/index"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
 	promotepkg "github.com/Obedience-Corp/camp/internal/promote"
@@ -23,6 +24,7 @@ import (
 	wkaudit "github.com/Obedience-Corp/camp/internal/workitem/audit"
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
 	"github.com/Obedience-Corp/camp/internal/workitem/locate"
+	"github.com/Obedience-Corp/camp/pkg/ledgerkit"
 )
 
 type runWorkitemPromoteOptions struct {
@@ -178,6 +180,14 @@ func runWorkitemPromote(cmd *cobra.Command, opts runWorkitemPromoteOptions) erro
 		return camperrors.Wrap(err, "writing workitem audit event")
 	}
 	ci.destPaths = append(ci.destPaths, filepath.Join(root, ".campaign", "workitems", wkaudit.AuditFile))
+
+	ledger.NewFromRoot(ctx, root, ledger.WarnTo(cmd.ErrOrStderr())).
+		Emit(ctx, ledgerkit.KindTransitioned, ledgerkit.Scope{Workitem: result.ID},
+			ledger.WithWhy("promote to "+opts.Target),
+			ledger.WithPayload(map[string]any{
+				"target": result.Target, "from": result.From,
+				"to": result.To, "promoted_to": result.PromotedTo,
+			}))
 
 	if !opts.NoCommit {
 		outcome := dungeoncmd.StageAndCommitDungeonMove(ctx, &dungeoncmd.DungeonMoveCommit{

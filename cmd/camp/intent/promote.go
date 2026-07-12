@@ -9,11 +9,13 @@ import (
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
+	wkcmd "github.com/Obedience-Corp/camp/internal/commands/workitem"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/intent/audit"
 	"github.com/Obedience-Corp/camp/internal/intent/promote"
+	"github.com/Obedience-Corp/camp/internal/ledger"
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
@@ -70,7 +72,7 @@ func runIntentPromote(cmd *cobra.Command, args []string) error {
 	case "design":
 		target = promote.TargetDesign
 	default:
-		return fmt.Errorf("invalid target: %s (use ready, festival, or design)", targetStr)
+		return camperrors.Newf("invalid target: %s (use ready, festival, or design)", targetStr)
 	}
 
 	// Find campaign root
@@ -82,6 +84,7 @@ func runIntentPromote(cmd *cobra.Command, args []string) error {
 	// Create path resolver and service
 	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
 	svc := intent.NewIntentService(campaignRoot, resolver.Intents())
+	svc.SetLedger(ledger.NewFromRoot(ctx, campaignRoot, ledger.WarnTo(cmd.ErrOrStderr())))
 	if err := svc.EnsureDirectories(ctx); err != nil {
 		return camperrors.Wrap(err, "failed to ensure intent directories")
 	}
@@ -89,7 +92,7 @@ func runIntentPromote(cmd *cobra.Command, args []string) error {
 	// Find the intent
 	i, err := svc.Find(ctx, id)
 	if err != nil {
-		return fmt.Errorf("intent not found: %s", id)
+		return camperrors.Newf("intent not found: %s", id)
 	}
 
 	// Dry run mode
@@ -148,13 +151,11 @@ func runIntentPromote(cmd *cobra.Command, args []string) error {
 		}
 
 		files = append(files, audit.FilePath(resolver.Intents()))
+		opts := wkcmd.AmbientCommitOptions(ctx, campaignRoot, cfg.ID, os.Stderr)
+		opts.Files = commit.NormalizeFiles(campaignRoot, files...)
+		opts.SelectiveOnly = true
 		commitResult := commit.Intent(ctx, commit.IntentOptions{
-			Options: commit.Options{
-				CampaignRoot:  campaignRoot,
-				CampaignID:    cfg.ID,
-				Files:         commit.NormalizeFiles(campaignRoot, files...),
-				SelectiveOnly: true,
-			},
+			Options:     opts,
 			Action:      commit.IntentPromote,
 			IntentTitle: i.Title,
 			Description: fmt.Sprintf("Promoted from %s to %s", prevStatus, result.NewStatus),
@@ -162,6 +163,7 @@ func runIntentPromote(cmd *cobra.Command, args []string) error {
 		if commitResult.Message != "" {
 			fmt.Printf("  %s\n", commitResult.Message)
 		}
+		commit.WarnIfSkipped(os.Stderr, commitResult)
 	}
 
 	// Report outcome based on target.

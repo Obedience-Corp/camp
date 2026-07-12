@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	intskills "github.com/Obedience-Corp/camp/internal/skills"
 	"github.com/spf13/cobra"
@@ -56,7 +58,7 @@ func runSkillsLink(cmd *cobra.Command, _ []string) error {
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 
 	if tool != "" && destPath != "" {
-		return fmt.Errorf("--tool and --path are mutually exclusive; use one or the other")
+		return camperrors.Newf("--tool and --path are mutually exclusive; use one or the other")
 	}
 
 	skillsDir, err := intskills.FindSkillsDir(ctx)
@@ -113,7 +115,7 @@ func runSkillsLink(cmd *cobra.Command, _ []string) error {
 	}
 
 	if summary.Conflicts > 0 {
-		return fmt.Errorf(
+		return camperrors.Newf(
 			"projection incomplete: %d conflicting skill path(s) exist and were not overwritten: %v",
 			summary.Conflicts,
 			summary.ConflictNames,
@@ -145,7 +147,7 @@ func linkAllTools(out, errOut io.Writer, root, skillsDir string, force, dryRun b
 	var conflictNames []string
 	for _, res := range results {
 		if res.Err != nil {
-			return fmt.Errorf("link %s: %w", res.Tool, res.Err)
+			return camperrors.Newf("link %s: %w", res.Tool, res.Err)
 		}
 		s := res.Summary
 		if _, err := fmt.Fprintf(out, "%s %d skill bundle(s) into %s (created=%d replaced=%d unchanged=%d)\n",
@@ -157,7 +159,7 @@ func linkAllTools(out, errOut io.Writer, root, skillsDir string, force, dryRun b
 	}
 
 	if conflicts > 0 {
-		return fmt.Errorf("projection incomplete: %d conflicting skill path(s) exist and were not overwritten: %v", conflicts, conflictNames)
+		return camperrors.Newf("projection incomplete: %d conflicting skill path(s) exist and were not overwritten: %v", conflicts, conflictNames)
 	}
 
 	return nil

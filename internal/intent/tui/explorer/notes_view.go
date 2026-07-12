@@ -131,6 +131,51 @@ func (m *Model) convertNote(note *intent.Intent, newType intent.Type, targetStat
 	}
 }
 
+// archiveNote moves the note into notes/archived/ and emits an
+// archiveFinishedMsg so the list reloads. Notes carry no lifecycle metadata or
+// decision records, so archiving is reason-free, unlike dungeoning an intent.
+func (m *Model) archiveNote(note *intent.Intent) tea.Cmd {
+	return func() tea.Msg {
+		sourcePath := note.Path
+		archived, err := m.service.ArchiveNote(m.ctx, note.ID)
+		if err == nil {
+			err = m.appendAuditEvent(audit.Event{
+				Type:  audit.EventArchive,
+				ID:    note.ID,
+				Title: note.Title,
+				From:  string(intent.StatusNote),
+				To:    string(intent.StatusNoteArchived),
+			})
+		}
+		if err == nil {
+			m.autoCommitIntent(commit.IntentArchive, note.Title, "Archived note", sourcePath, archived.Path)
+		}
+		return archiveFinishedMsg{err: err, intentID: note.ID}
+	}
+}
+
+// restoreNote moves an archived note back into the active notes/ store and emits
+// a moveFinishedMsg so the list reloads.
+func (m *Model) restoreNote(note *intent.Intent) tea.Cmd {
+	return func() tea.Msg {
+		sourcePath := note.Path
+		restored, err := m.service.RestoreNote(m.ctx, note.ID)
+		if err == nil {
+			err = m.appendAuditEvent(audit.Event{
+				Type:  audit.EventMove,
+				ID:    note.ID,
+				Title: note.Title,
+				From:  string(intent.StatusNoteArchived),
+				To:    string(intent.StatusNote),
+			})
+		}
+		if err == nil {
+			m.autoCommitIntent(commit.IntentMove, note.Title, "Restored note", sourcePath, restored.Path)
+		}
+		return moveFinishedMsg{err: err, intentID: note.ID, newStatus: intent.StatusNote}
+	}
+}
+
 // viewConvert renders the convert type picker.
 func (m *Model) viewConvert() string {
 	var b strings.Builder

@@ -3,7 +3,6 @@ package skills
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -74,7 +73,7 @@ func FindSkillsDir(ctx context.Context) (string, error) {
 		return "", camperrors.Wrap(err, "find skills dir")
 	}
 	if !info.IsDir() {
-		return "", fmt.Errorf("find skills dir: %s is not a directory", skillsDir)
+		return "", camperrors.Newf("find skills dir: %s is not a directory", skillsDir)
 	}
 
 	return skillsDir, nil
@@ -180,7 +179,7 @@ func DiscoverSkillSlugs(skillsDir string) ([]string, error) {
 func ResolveToolPath(tool string) (string, error) {
 	p, ok := toolPaths[tool]
 	if !ok {
-		return "", fmt.Errorf("unknown tool %q: valid tools are: %s", tool, strings.Join(ToolNames(), ", "))
+		return "", camperrors.Newf("unknown tool %q: valid tools are: %s", tool, strings.Join(ToolNames(), ", "))
 	}
 	return p, nil
 }
@@ -203,10 +202,10 @@ const (
 // campaign root, .campaign/, filesystem root, or paths outside the campaign.
 func ValidateDestination(dest, campaignRoot string) error {
 	if strings.TrimSpace(dest) == "" {
-		return fmt.Errorf("destination path cannot be empty")
+		return camperrors.Newf("destination path cannot be empty")
 	}
 	if strings.TrimSpace(campaignRoot) == "" {
-		return fmt.Errorf("campaign root cannot be empty")
+		return camperrors.Newf("campaign root cannot be empty")
 	}
 
 	// Resolve both paths through existing parent symlinks. This ensures a path
@@ -222,23 +221,23 @@ func ValidateDestination(dest, campaignRoot string) error {
 
 	// Reject filesystem root
 	if resolvedDest == string(filepath.Separator) {
-		return fmt.Errorf("refusing to use filesystem root as destination")
+		return camperrors.Newf("refusing to use filesystem root as destination")
 	}
 
 	// Reject campaign root itself
 	if resolvedDest == resolvedRoot {
-		return fmt.Errorf("refusing to use campaign root as destination: %s", resolvedDest)
+		return camperrors.Newf("refusing to use campaign root as destination: %s", resolvedDest)
 	}
 
 	// Reject .campaign/ directory
 	campaignDir := filepath.Join(resolvedRoot, campaign.CampaignDir)
 	if resolvedDest == campaignDir || isSubpath(resolvedDest, campaignDir) {
-		return fmt.Errorf("refusing to use .campaign/ directory as destination: %s", resolvedDest)
+		return camperrors.Newf("refusing to use .campaign/ directory as destination: %s", resolvedDest)
 	}
 
 	// Reject paths outside the campaign root
 	if !isSubpath(resolvedDest, resolvedRoot) {
-		return fmt.Errorf("destination must be inside campaign root: %s", resolvedDest)
+		return camperrors.Newf("destination must be inside campaign root: %s", resolvedDest)
 	}
 
 	return nil

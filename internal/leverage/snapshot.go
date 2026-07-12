@@ -3,7 +3,6 @@ package leverage
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -120,7 +119,7 @@ func DefaultSnapshotDir(campaignRoot string) string {
 // validateProjectName ensures a project name is safe for filesystem paths.
 func validateProjectName(name string) error {
 	if name == "" || strings.Contains(name, "/") || strings.Contains(name, "\\") || strings.Contains(name, "..") {
-		return fmt.Errorf("invalid project name %q: must not be empty or contain path separators", name)
+		return camperrors.Newf("invalid project name %q: must not be empty or contain path separators", name)
 	}
 	return nil
 }

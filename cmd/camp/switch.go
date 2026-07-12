@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -13,9 +14,11 @@ import (
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/machines"
 	"github.com/Obedience-Corp/camp/internal/nav"
 	navfuzzy "github.com/Obedience-Corp/camp/internal/nav/fuzzy"
 	"github.com/Obedience-Corp/camp/internal/nav/tui"
+	"github.com/Obedience-Corp/camp/internal/remote"
 )
 
 var switchCmd = &cobra.Command{
@@ -38,7 +41,16 @@ The --print flag outputs just the path for shell integration:
 
 Use campaign@tab to navigate to a specific location in the target campaign:
   camp switch obey-campaign@p    # Switch and navigate to projects/
-  camp switch obey/platform@f    # Switch inside org and navigate to festivals/`,
+  camp switch obey/platform@f    # Switch inside org and navigate to festivals/
+
+Use machine:campaign to resolve a campaign on a machine registered in
+~/.obey/machines.yaml (via the csw shell wrapper, which hops there over ssh):
+  csw devbox:obey-campaign       # Resolve and hop to obey-campaign on devbox
+
+Remote resolution runs the far machine's own 'camp switch' through a login
+shell (sh -lc) so PATH entries a login profile exports (~/.profile, etc.) are
+picked up. If camp still can't be found there, set CAMP_REMOTE_CAMP_PATH to
+its exact path on that machine.`,
 	Example: `  camp switch                        # Interactive picker
   camp switch obey-campaign          # Switch by name
   camp switch --org obey platform    # Switch by name within an org
@@ -70,6 +82,14 @@ Use campaign@tab to navigate to a specific location in the target campaign:
 			return nil, cobra.ShellCompDirectiveError
 		}
 
+		// Machine dimension: a "machine:" prefix completes the campaign part on
+		// that machine from the warm cache — the keystroke path never does a live
+		// ssh; a cache miss/unreachable completes the machine id only, immediately.
+		if id, remainder, hasMachine := strings.Cut(toComplete, ":"); hasMachine {
+			return completeMachineSelector(reg, scope, id, remainder, readMachineCacheCampaigns),
+				cobra.ShellCompDirectiveNoFileComp
+		}
+
 		if at := strings.IndexByte(toComplete, '@'); at >= 0 {
 			campaignQuery := toComplete[:at]
 			tabPrefix := toComplete[at+1:]
@@ -81,7 +101,13 @@ Use campaign@tab to navigate to a specific location in the target campaign:
 			return completions, cobra.ShellCompDirectiveNoFileComp
 		}
 
-		return completeSwitchCampaigns(reg, scope, toComplete), cobra.ShellCompDirectiveNoFileComp
+		// No colon: existing local completion, plus "<machine>:" candidates so the
+		// machine dimension is discoverable. Absent machines file => today's output.
+		out := completeSwitchCampaigns(reg, scope, toComplete)
+		if mf, err := machines.Load(); err == nil {
+			out = append(out, machineCandidatesFrom(mf.Machines, toComplete)...)
+		}
+		return out, cobra.ShellCompDirectiveNoFileComp
 	},
 }
 
@@ -95,6 +121,8 @@ func init() {
 	switchCmd.Flags().String("status", "", "Only switch among campaigns with this lifecycle status")
 	switchCmd.Flags().Bool("all", false, "Include inactive and reference campaigns")
 	switchCmd.Flags().Bool("json", false, "Output selected campaign and target path as JSON")
+	switchCmd.Flags().Bool("shell-connect", false, "Emit a shell line for the camp() wrapper to eval (internal)")
+	_ = switchCmd.Flags().MarkHidden("shell-connect")
 	_ = switchCmd.RegisterFlagCompletionFunc("org", completeSwitchOrgFlag)
 	_ = switchCmd.RegisterFlagCompletionFunc("status", completeSwitchStatusFlag)
 }
@@ -243,8 +271,12 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	printOnly, _ := cmd.Flags().GetBool("print")
 	jsonOut, _ := cmd.Flags().GetBool("json")
+	shellConnect, _ := cmd.Flags().GetBool("shell-connect")
 	if printOnly && jsonOut {
 		return camperrors.New("cannot use --json with --print")
+	}
+	if shellConnect && (printOnly || jsonOut) {
+		return camperrors.New("--shell-connect cannot be combined with --print or --json")
 	}
 	scope, err := switchScopeFromFlags(cmd)
 	if err != nil {
@@ -256,7 +288,7 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "load registry")
 	}
 	if reg.Len() == 0 {
-		return fmt.Errorf("no campaigns registered (use 'camp init' to create one)")
+		return camperrors.Newf("no campaigns registered (use 'camp init' to create one)")
 	}
 
 	var selected config.RegisteredCampaign
@@ -264,7 +296,16 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 	targetTab := ""
 
 	if len(args) == 1 {
-		parsed, err := parseSwitchArg(args[0], scope)
+		msel, err := cmdutil.ParseMachineSelector(args[0])
+		if err != nil {
+			return err
+		}
+		if msel.Machine != "" && msel.Machine != machines.LocalMachineID {
+			return runRemoteSwitch(ctx, cmd, msel, printOnly, shellConnect, jsonOut)
+		}
+		// Local (no "machine:" prefix, or "local:"): Remainder equals args[0]
+		// verbatim for the no-colon case, so local resolution stays byte-identical.
+		parsed, err := parseSwitchArg(msel.Remainder, scope)
 		if err != nil {
 			return err
 		}
@@ -304,7 +345,35 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "camp: warning: failed to update last access: %v\n", err)
 	}
 
+	if shellConnect {
+		return emitShellConnect(cmd.OutOrStdout(), false, targetPath, nil)
+	}
 	return emitSwitchSelection(cmd, selected, targetPath, targetTab, printOnly, jsonOut)
+}
+
+// emitShellConnect prints exactly one shell line for the camp() wrapper to eval.
+// Local: `cd -- '<abs-path>'` (identical effect to today's --print + wrapper cd).
+// Remote: `exec ssh -t <opts> '<target>' '<cd root && exec $SHELL -l>'`, where exec
+// replaces the shell (so quitting the remote shell returns the user locally), -t
+// forces a PTY, and $SHELL expands on the REMOTE side because the whole remote
+// command is single-quoted here so the local shell never touches the '$'.
+func emitShellConnect(w io.Writer, isRemote bool, path string, m *machines.Machine) error {
+	if !isRemote {
+		_, err := fmt.Fprintf(w, "cd -- %s\n", remote.ShellQuote(path))
+		return err
+	}
+	inner := "cd " + remote.ShellQuote(path) + " && exec $SHELL -l"
+	// Quote every opt token, not just target/inner: ControlPath (under $HOME) and
+	// an -i identity file may hold spaces/metacharacters, which would otherwise
+	// split the eval'd line into the wrong argv before ssh ever runs.
+	opts := remote.Opts(m)
+	quoted := make([]string, len(opts))
+	for i, o := range opts {
+		quoted[i] = remote.ShellQuote(o)
+	}
+	_, err := fmt.Fprintf(w, "exec ssh -t %s %s %s\n",
+		strings.Join(quoted, " "), remote.ShellQuote(remote.Target(m)), remote.ShellQuote(inner))
+	return err
 }
 
 func switchScopeFromFlags(cmd *cobra.Command) (cmdutil.CampaignScope, error) {
@@ -344,6 +413,38 @@ func parseSwitchArg(raw string, scope cmdutil.CampaignScope) (cmdutil.ParsedSwit
 		}
 	}
 	return parsed, nil
+}
+
+// runRemoteSwitch resolves a machine:campaign selector by asking the remote
+// machine's own `camp switch --print` for the absolute campaign root over ssh (so
+// the remote registry decides the path), then emits the interactive ssh hop line
+// under --shell-connect. --print is local-only: it MUST print nothing for a remote
+// target so `cd "$(camp switch x --print)"` fails loudly instead of cd-ing wrong.
+func runRemoteSwitch(ctx context.Context, cmd *cobra.Command, msel cmdutil.ParsedMachineSelector, printOnly, shellConnect, jsonOut bool) error {
+	if printOnly {
+		return camperrors.New("remote target " + msel.Machine +
+			": --print is local-only; use the csw shell wrapper to hop there")
+	}
+	if jsonOut {
+		return camperrors.New("--json is not supported for a remote (machine:) switch; use the csw shell wrapper")
+	}
+	mf, err := machines.Load()
+	if err != nil {
+		return err
+	}
+	m, _, found := mf.Lookup(msel.Machine)
+	if !found {
+		return camperrors.New("unknown machine \"" + msel.Machine + "\"; add it to ~/.obey/machines.yaml")
+	}
+	root, err := remote.ResolveRoot(ctx, m, msel.Remainder)
+	if err != nil {
+		return err
+	}
+	if shellConnect {
+		return emitShellConnect(cmd.OutOrStdout(), true, root, m)
+	}
+	return camperrors.New("resolved " + msel.Machine + ":" + msel.Remainder + " -> " + root +
+		"; run via the csw shell wrapper to hop there")
 }
 
 type switchOutput struct {

@@ -40,12 +40,13 @@ var StagesByType = map[WorkflowType][]LifecycleStage{
 }
 
 // ValidStagesForType returns the stages accepted for a workflow type. Custom
-// workflow types are directory-backed workitems and currently have no stage.
+// workflow types are directory-backed workitems that are active by location,
+// same as design/explore.
 func ValidStagesForType(wt WorkflowType) []LifecycleStage {
 	if stages, ok := StagesByType[wt]; ok {
 		return stages
 	}
-	return []LifecycleStage{LifecycleStageNone}
+	return []LifecycleStage{LifecycleStageNone, LifecycleStageActive}
 }
 
 func IsValidStageForTypes(stage LifecycleStage, types []string) bool {

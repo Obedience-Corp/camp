@@ -2,7 +2,6 @@ package git
 
 import (
 	"context"
-	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -86,7 +85,7 @@ func resolveFromCwd(_ context.Context, campaignRoot string) (*TargetResult, erro
 	}
 
 	if !isSubmodule {
-		return nil, fmt.Errorf("current directory is in a git repository but not a submodule of the campaign")
+		return nil, camperrors.Newf("current directory is in a git repository but not a submodule of the campaign")
 	}
 
 	return &TargetResult{
