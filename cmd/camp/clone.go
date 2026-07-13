@@ -167,10 +167,16 @@ func runClone(cmd *cobra.Command, args []string) error {
 		}
 		src, err := peer.FromMachine(ctx, cloneOpts.from, name)
 		if err != nil {
-			formatCloneError(err, cloneOpts.json)
-			return camperrors.NewCommand("camp clone", clone.ExitCloneFailed, "", err)
+			// Help text promises peer failures fall back to a plain origin
+			// clone; a resolve failure (unreachable/typo'd peer) must degrade,
+			// not abort. Warn and clone from origin with no peer configured.
+			if !cloneOpts.json {
+				fmt.Fprintf(os.Stderr, "%s peer %q unavailable (%v); cloning from origin\n",
+					ui.WarningIcon(), cloneOpts.from, err)
+			}
+		} else {
+			clonerOpts = append(clonerOpts, clone.WithPeer(src))
 		}
-		clonerOpts = append(clonerOpts, clone.WithPeer(src))
 	}
 	cloner := clone.NewCloner(clonerOpts...)
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
@@ -124,9 +125,14 @@ func runSync(cmd *cobra.Command, args []string) error {
 	if syncOpts.from != "" {
 		src, err := resolveSyncPeer(ctx, campRoot, syncOpts.from)
 		if err != nil {
-			return err
+			// Help text promises an unreachable peer degrades to a warning
+			// and the git sync still runs via origin; a resolve failure
+			// (unreachable/typo'd peer) must not abort the whole command.
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "camp: warning: peer %q unavailable (%v); syncing via origin\n",
+				syncOpts.from, err)
+		} else {
+			syncerOpts = append(syncerOpts, sync.WithPeer(src))
 		}
-		syncerOpts = append(syncerOpts, sync.WithPeer(src))
 	}
 	syncer := sync.NewSyncer(campRoot, syncerOpts...)
 
