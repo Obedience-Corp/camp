@@ -109,7 +109,8 @@ func listLifecycleLabel(stage wkitem.LifecycleStage) string {
 	case wkitem.LifecycleStageChains:
 		return "chains"
 	case wkitem.LifecycleStageNone, "":
-		return "-"
+		// Match DisplayStatus / --status none filter token.
+		return "none"
 	default:
 		return string(stage)
 	}

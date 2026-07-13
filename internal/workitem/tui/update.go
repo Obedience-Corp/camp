@@ -127,8 +127,9 @@ func (m Model) handleStatusFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.applyStatusFilter(m.statusOptions[m.statusIndex])
 		}
 	case "0":
+		// Explicit clear of the whole status dimension (display + stage/attention).
 		m.statusIndex = 0
-		m.applyStatusFilter("")
+		m.clearStatusDimension()
 	case "enter", "s":
 		m.statusMode = false
 	case "esc":
@@ -142,8 +143,22 @@ func (m Model) handleStatusFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// applyStatusFilter sets the interactive displayed-status chip. A concrete
+// status supersedes lifecycle/attention seeds; empty ("all") only clears the
+// chip and multi-status seeds so stage/attention prefilters survive live
+// navigation back to "all" (explicit full clear is clearStatusDimension / 0).
 func (m *Model) applyStatusFilter(status string) {
 	m.statusFilter = status
+	m.initialFilters.Statuses = nil
+	if status != "" {
+		m.initialFilters.LifecycleStages = nil
+		m.initialFilters.AttentionStages = nil
+	}
+	m.refilter()
+}
+
+func (m *Model) clearStatusDimension() {
+	m.statusFilter = ""
 	m.initialFilters.Statuses = nil
 	m.initialFilters.LifecycleStages = nil
 	m.initialFilters.AttentionStages = nil
@@ -156,6 +171,7 @@ func (m *Model) clearAllFilters() {
 	m.statusFilter = ""
 	m.searchQuery = ""
 	m.searchInput.SetValue("")
+	m.limit = 0
 	m.initialFilters.Types = nil
 	m.initialFilters.Categories = nil
 	m.initialFilters.Statuses = nil

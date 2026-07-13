@@ -79,9 +79,7 @@ Examples:
 			if err != nil {
 				return err
 			}
-			items := state.items
-
-			items = wkitem.FilterAdvanced(items, wkitem.FilterOptions{
+			filters := wkitem.FilterOptions{
 				Types:           flagTypes,
 				Categories:      flagCategories,
 				Statuses:        flagStatuses,
@@ -90,9 +88,6 @@ Examples:
 				Groups:          flagGroups,
 				Query:           flagQuery,
 				ShowParked:      flagShowParked,
-			})
-			if flagLimit > 0 && flagLimit < len(items) {
-				items = items[:flagLimit]
 			}
 
 			displayGroupBy := flagGroupBy
@@ -100,23 +95,28 @@ Examples:
 				displayGroupBy = "group"
 			}
 
+			// Interactive TUI: pass the full discovery set + editable prefilters
+			// (same contract as `camp workitem list`). Do not pre-slice allItems.
+			if interactive && !flagList && !flagJSON {
+				return runTUIWithFilters(ctx, state, filters, flagPrint, flagPathOutput)
+			}
+
+			items := wkitem.FilterAdvanced(state.items, filters)
+			if flagLimit > 0 && flagLimit < len(items) {
+				items = items[:flagLimit]
+			}
+
 			switch {
 			case flagList:
 				return outputList(cmd.OutOrStdout(), items, displayGroupBy)
 			case flagJSON:
 				return outputJSON(state.campaignRoot, state.cfg, items, displayGroupBy)
-			case !interactive:
+			default:
 				// Non-interactive --print/--path-output: output first item path directly.
 				if len(items) == 0 {
 					return camperrors.Newf("no work items found")
 				}
 				return outputSelectedPath(items[0], flagPrint, flagPathOutput)
-			case flagPathOutput != "":
-				return runTUI(ctx, items, false, flagPathOutput, state.campaignRoot, state.resolver, state.store, state.storePath, flagShowParked, state.cfg.WorkflowCategoryForType)
-			case flagPrint:
-				return runTUI(ctx, items, true, "", state.campaignRoot, state.resolver, state.store, state.storePath, flagShowParked, state.cfg.WorkflowCategoryForType)
-			default:
-				return runTUI(ctx, items, false, "", state.campaignRoot, state.resolver, state.store, state.storePath, flagShowParked, state.cfg.WorkflowCategoryForType)
 			}
 		}),
 	}
@@ -359,29 +359,13 @@ func categoryVocabulary(cfg *config.CampaignConfig) []wkitem.CategoryVocabEntry 
 	return out
 }
 
-func runTUI(ctx context.Context, items []wkitem.WorkItem, printOnly bool, pathOutput string, campaignRoot string, resolver *paths.Resolver, store *priority.Store, storePath string, showParked bool, categoryForType func(string) string) error {
-	if len(items) == 0 {
+func runTUIWithFilters(ctx context.Context, state *discoveredWorkitems, filters wkitem.FilterOptions, printOnly bool, pathOutput string) error {
+	if len(state.items) == 0 {
 		return camperrors.Newf("no work items found")
 	}
-
-	model := wktui.New(ctx, items, campaignRoot, resolver, store, storePath, showParked)
-	model.SetCategoryResolver(categoryForType)
-	p := tea.NewProgram(model, tea.WithAltScreen())
-	result, err := p.Run()
-	if err != nil {
-		return camperrors.Wrap(err, "TUI error")
-	}
-	m, ok := result.(wktui.Model)
-	if !ok || m.Selected == nil {
-		return nil
-	}
-	return runSelectedAction(ctx, *m.Selected, printOnly, pathOutput, campaignRoot)
-}
-
-func runTUIWithFilters(ctx context.Context, state *discoveredWorkitems, filters wkitem.FilterOptions, limit int) error {
 	model := wktui.New(ctx, state.items, state.campaignRoot, state.resolver, state.store, state.storePath, filters.ShowParked)
 	model.SetCategoryResolver(state.cfg.WorkflowCategoryForType)
-	model.SetInitialFilters(filters, limit)
+	model.SetInitialFilters(filters)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	result, err := p.Run()
 	if err != nil {
@@ -391,5 +375,5 @@ func runTUIWithFilters(ctx context.Context, state *discoveredWorkitems, filters 
 	if !ok || m.Selected == nil {
 		return nil
 	}
-	return runSelectedAction(ctx, *m.Selected, false, "", state.campaignRoot)
+	return runSelectedAction(ctx, *m.Selected, printOnly, pathOutput, state.campaignRoot)
 }

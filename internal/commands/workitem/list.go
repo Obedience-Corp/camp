@@ -81,7 +81,8 @@ Examples:
 			}
 			filters := opts.filterOptions()
 			if isInteractive() && !opts.json {
-				return runTUIWithFilters(cmd.Context(), state, filters, opts.limit)
+				// --limit applies only to non-TTY / --json result size, not the TUI.
+				return runTUIWithFilters(cmd.Context(), state, filters, false, "")
 			}
 
 			items := wkitem.FilterAdvanced(state.items, filters)
@@ -107,13 +108,13 @@ Examples:
 	cmd.Flags().BoolVar(&opts.json, "json", false, "Output as JSON")
 	cmd.Flags().StringArrayVar(&opts.types, "type", nil, "Filter by workflow type (repeat for OR)")
 	cmd.Flags().StringArrayVar(&opts.categories, "category", nil, "Filter by workflow category (repeat for OR)")
-	cmd.Flags().StringArrayVar(&opts.statuses, "status", nil, "Filter by displayed status (repeat for OR)")
+	cmd.Flags().StringArrayVar(&opts.statuses, "status", nil, "Filter by displayed status: current, next, active, parked, inbox, ready, plan, ritual, chains, none (repeat for OR)")
 	cmd.Flags().StringArrayVar(&opts.stages, "stage", nil, "Filter by lifecycle stage (repeat for OR)")
 	cmd.Flags().StringArrayVar(&opts.attentionStages, "attention-stage", nil, "Filter by attention stage (repeat for OR)")
 	cmd.Flags().StringArrayVar(&opts.groups, "group", nil, "Filter by workitem group (repeat for OR)")
 	cmd.Flags().StringVar(&opts.groupBy, "group-by", "", "Group output sections by attention_stage, group, type, or category")
 	cmd.Flags().BoolVar(&opts.showParked, "show-parked", false, "Include parked attention-stage workitems")
-	cmd.Flags().IntVar(&opts.limit, "limit", 0, "Maximum number of items to return")
+	cmd.Flags().IntVar(&opts.limit, "limit", 0, "Maximum number of items to return (non-interactive / --json only)")
 	cmd.Flags().StringVar(&opts.query, "query", "", "Search query to filter items")
 	return cmd
 }
@@ -158,7 +159,15 @@ func applyPositionalFilter(raw string, state *discoveredWorkitems, opts *listOpt
 		return camperrors.NewValidation("filter", fmt.Sprintf("unknown workitem filter %q; use --type, --status, or --category", raw), nil)
 	}
 	if len(dimensions) > 1 {
-		return camperrors.NewValidation("filter", fmt.Sprintf("ambiguous workitem filter %q matches %s; use an explicit flag", raw, strings.Join(dimensions, " and ")), nil)
+		// Name the flags so callers (especially always-ambiguous "plan") know
+		// which dimension to pin without re-reading the help text.
+		flagHints := make([]string, 0, len(dimensions))
+		for _, d := range dimensions {
+			flagHints = append(flagHints, "--"+d+" "+value)
+		}
+		return camperrors.NewValidation("filter", fmt.Sprintf(
+			"ambiguous workitem filter %q matches %s; use %s",
+			raw, strings.Join(dimensions, " and "), strings.Join(flagHints, " or ")), nil)
 	}
 	switch dimensions[0] {
 	case "type":

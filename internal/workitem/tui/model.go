@@ -199,9 +199,11 @@ func (m *Model) SetCategoryResolver(fn func(string) string) {
 }
 
 // SetInitialFilters seeds visible, editable filters supplied by the command.
-func (m *Model) SetInitialFilters(opts workitem.FilterOptions, limit int) {
+// Result-size limits (--limit) are intentionally not applied here: limit is a
+// non-interactive result control, not a browsable TUI prefilter.
+func (m *Model) SetInitialFilters(opts workitem.FilterOptions) {
 	m.initialFilters = opts
-	m.limit = limit
+	m.limit = 0
 	m.showParked = opts.ShowParked
 	m.searchQuery = opts.Query
 	m.searchInput.SetValue(opts.Query)

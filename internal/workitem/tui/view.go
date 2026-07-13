@@ -439,7 +439,8 @@ func shortLifecycle(stage workitem.LifecycleStage) string {
 	case workitem.LifecycleStageChains:
 		return "chains"
 	case workitem.LifecycleStageNone, "":
-		return "-"
+		// Match DisplayStatus / --status none filter token.
+		return "none"
 	default:
 		return string(stage)
 	}

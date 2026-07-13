@@ -601,7 +601,7 @@ func TestModel_InitialFiltersAreVisibleAndEditable(t *testing.T) {
 		Statuses:   []string{"active"},
 		Query:      "auth",
 		ShowParked: false,
-	}, 0)
+	})
 	if len(m.filteredItems) != 1 || m.filteredItems[0].Key != "design" {
 		t.Fatalf("initial filters = %v, want design", m.filteredItems)
 	}
@@ -636,7 +636,7 @@ func TestModel_ZeroClearsSeededSelectionFilters(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			m := New(context.Background(), items, "/campaign", nil, nil, "")
-			m.SetInitialFilters(tt.filters, 0)
+			m.SetInitialFilters(tt.filters)
 			if len(m.filteredItems) != 1 {
 				t.Fatalf("seeded filter returned %d items, want 1", len(m.filteredItems))
 			}
@@ -666,7 +666,7 @@ func TestModel_StatusFilterModeClearsSeededStatus(t *testing.T) {
 		{Key: "active", AttentionStage: "active"},
 	}
 	m := New(context.Background(), items, "/campaign", nil, nil, "")
-	m.SetInitialFilters(workitem.FilterOptions{Statuses: []string{"current"}}, 0)
+	m.SetInitialFilters(workitem.FilterOptions{Statuses: []string{"current"}})
 	if len(m.filteredItems) != 1 {
 		t.Fatalf("seeded status returned %d items", len(m.filteredItems))
 	}
@@ -675,6 +675,60 @@ func TestModel_StatusFilterModeClearsSeededStatus(t *testing.T) {
 	m = updated.(Model)
 	if m.statusFilter != "" || len(m.initialFilters.Statuses) != 0 || len(m.filteredItems) != 2 {
 		t.Fatalf("status clear failed: filter=%q seed=%v items=%d", m.statusFilter, m.initialFilters.Statuses, len(m.filteredItems))
+	}
+}
+
+// Stage seeds must survive live navigation back to "all" in status mode; only
+// a concrete status (or explicit 0) clears lifecycle/attention prefilters.
+func TestModel_StatusModePreservesStageSeedsOnAll(t *testing.T) {
+	items := []workitem.WorkItem{
+		{Key: "active", LifecycleStage: workitem.LifecycleStageActive, Title: "active"},
+		{Key: "ready", LifecycleStage: workitem.LifecycleStageReady, Title: "ready"},
+	}
+	m := New(context.Background(), items, "/campaign", nil, nil, "")
+	m.SetInitialFilters(workitem.FilterOptions{LifecycleStages: []string{"active"}})
+	if len(m.filteredItems) != 1 {
+		t.Fatalf("seeded stage returned %d items", len(m.filteredItems))
+	}
+	m.enterStatusMode()
+	// Navigate to a concrete status then back to "all" (index 0).
+	m.statusIndex = 1
+	m.applyStatusFilter(m.statusOptions[1])
+	if len(m.initialFilters.LifecycleStages) != 0 {
+		t.Fatalf("concrete status should clear lifecycle seeds, got %v", m.initialFilters.LifecycleStages)
+	}
+	m.statusIndex = 0
+	m.applyStatusFilter("")
+	// "all" does not restore seeds (they were cleared by concrete status), but
+	// also must not panic; re-seed and verify empty apply leaves stages alone.
+	m.initialFilters.LifecycleStages = []string{"active"}
+	m.applyStatusFilter("")
+	if got := m.initialFilters.LifecycleStages; len(got) != 1 || got[0] != "active" {
+		t.Fatalf("applyStatusFilter(\"\") clobbered lifecycle seeds: %v", got)
+	}
+	if len(m.filteredItems) != 1 {
+		t.Fatalf("stage seed after all: %d items, want 1", len(m.filteredItems))
+	}
+}
+
+func TestModel_LimitNotAppliedInTUI(t *testing.T) {
+	items := makeTestItems(3)
+	m := New(context.Background(), items, "/campaign", nil, nil, "")
+	// Even if a caller left limit set, SetInitialFilters clears it.
+	m.limit = 1
+	m.SetInitialFilters(workitem.FilterOptions{})
+	if m.limit != 0 {
+		t.Fatalf("limit after SetInitialFilters = %d, want 0", m.limit)
+	}
+	if len(m.filteredItems) != 3 {
+		t.Fatalf("filtered = %d, want full set 3", len(m.filteredItems))
+	}
+	m.limit = 1
+	m.refilter()
+	// refilter still honors an explicit internal limit if set, but clear-all drops it.
+	m.clearAllFilters()
+	if m.limit != 0 || len(m.filteredItems) != 3 {
+		t.Fatalf("after clearAll: limit=%d items=%d", m.limit, len(m.filteredItems))
 	}
 }
 
