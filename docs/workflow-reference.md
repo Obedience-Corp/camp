@@ -98,7 +98,8 @@ feature     plan      fe        12     2026-05-22T09:01:00Z
 ```
 
 Lists every user-created workflow collection. Builtin types (`intent`, `design`,
-`explore`, `festival`, `code_reviews`, `pipelines`) are excluded. Entries come
+`explore`, `festival`, `reviews`) are excluded. Legacy scaffold names
+(`code_reviews`, `pipelines`) remain excluded for compatibility. Entries come
 from the union of concepts listed in `campaign.yaml` and directories present on
 disk under `workflow/`. The workitem count is the number of `.workitem` marker
 files found under the type directory.
@@ -405,7 +406,10 @@ rerun: only the missing pieces are created.
 The following names are reserved and excluded from user workflow enumeration
 even if a directory or concept entry exists for them:
 
-`intent`, `design`, `explore`, `festival`, `code_reviews`, `pipelines`
+`intent`, `design`, `explore`, `festival`, `reviews`
+
+The former scaffold names `code_reviews` and `pipelines` also remain reserved
+for compatibility with existing campaigns.
 
 ---
 

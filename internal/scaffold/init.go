@@ -165,10 +165,9 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 
 	standardDungeonPaths := []string{
 		filepath.Join(absDir, "dungeon"),
-		filepath.Join(absDir, "workflow", "code_reviews", "dungeon"),
+		filepath.Join(absDir, "workflow", "reviews", "dungeon"),
 		filepath.Join(absDir, "workflow", "design", "dungeon"),
 		filepath.Join(absDir, "workflow", "explore", "dungeon"),
-		filepath.Join(absDir, "workflow", "pipelines", "dungeon"),
 	}
 	preExistingDungeons := make(map[string]bool, len(standardDungeonPaths))
 	for _, path := range standardDungeonPaths {

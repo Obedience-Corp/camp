@@ -202,11 +202,11 @@ func TestDefaultCampaignPaths(t *testing.T) {
 	if paths.Intents != ".campaign/intents/" {
 		t.Errorf("Intents = %q, want %q", paths.Intents, ".campaign/intents/")
 	}
-	if paths.CodeReviews != "workflow/code_reviews/" {
-		t.Errorf("CodeReviews = %q, want %q", paths.CodeReviews, "workflow/code_reviews/")
+	if paths.Reviews != "workflow/reviews/" {
+		t.Errorf("Reviews = %q, want %q", paths.Reviews, "workflow/reviews/")
 	}
-	if paths.Pipelines != "workflow/pipelines/" {
-		t.Errorf("Pipelines = %q, want %q", paths.Pipelines, "workflow/pipelines/")
+	if paths.CodeReviews != "" || paths.Pipelines != "" {
+		t.Errorf("legacy paths should not have defaults: code_reviews=%q pipelines=%q", paths.CodeReviews, paths.Pipelines)
 	}
 	if paths.Design != "workflow/design/" {
 		t.Errorf("Design = %q, want %q", paths.Design, "workflow/design/")

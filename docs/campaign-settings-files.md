@@ -172,6 +172,7 @@ workflows:
     design: plan
     explore: research
     festival: plan
+    reviews: review
     code_reviews: review
     pipelines: pipeline
 ```

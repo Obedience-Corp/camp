@@ -17,6 +17,8 @@ var standardPathCategories = map[string]Category{
 	"dungeon":                CategoryDungeon,
 	"workflow/":              CategoryWorkflow,
 	"workflow":               CategoryWorkflow,
+	"workflow/reviews/":      CategoryReviews,
+	"workflow/reviews":       CategoryReviews,
 	"workflow/code_reviews/": CategoryCodeReviews,
 	"workflow/code_reviews":  CategoryCodeReviews,
 	"workflow/pipelines/":    CategoryPipelines,

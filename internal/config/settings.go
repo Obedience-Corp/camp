@@ -178,11 +178,8 @@ func (j *JumpsConfig) ApplyDefaults() {
 	if j.Paths.Intents == "" {
 		j.Paths.Intents = defaults.Paths.Intents
 	}
-	if j.Paths.CodeReviews == "" {
-		j.Paths.CodeReviews = defaults.Paths.CodeReviews
-	}
-	if j.Paths.Pipelines == "" {
-		j.Paths.Pipelines = defaults.Paths.Pipelines
+	if j.Paths.Reviews == "" {
+		j.Paths.Reviews = defaults.Paths.Reviews
 	}
 	if j.Paths.Design == "" {
 		j.Paths.Design = defaults.Paths.Design

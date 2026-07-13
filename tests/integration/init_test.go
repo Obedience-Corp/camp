@@ -104,6 +104,7 @@ func TestInit_DirectoryStructure(t *testing.T) {
 	expectedDirs := []string{
 		"/campaigns/test-structure/.campaign",
 		"/campaigns/test-structure/projects",
+		"/campaigns/test-structure/workflow/reviews",
 	}
 
 	for _, dir := range expectedDirs {
@@ -116,6 +117,18 @@ func TestInit_DirectoryStructure(t *testing.T) {
 	exists, err := tc.CheckFileExists("/campaigns/test-structure/.campaign/campaign.yaml")
 	require.NoError(t, err)
 	assert.True(t, exists, "campaign.yaml should exist")
+
+	for _, removed := range []string{"code_reviews", "pipelines"} {
+		exists, err := tc.CheckDirExists("/campaigns/test-structure/workflow/" + removed)
+		require.NoError(t, err)
+		assert.False(t, exists, "workflow/%s should not be scaffolded", removed)
+	}
+
+	jumps, err := tc.ReadFile("/campaigns/test-structure/.campaign/settings/jumps.yaml")
+	require.NoError(t, err)
+	assert.Contains(t, jumps, "workflow/reviews/")
+	assert.NotContains(t, jumps, "workflow/code_reviews/")
+	assert.NotContains(t, jumps, "workflow/pipelines/")
 }
 
 func TestInit_ScaffoldsCampWorkitemsSkill(t *testing.T) {

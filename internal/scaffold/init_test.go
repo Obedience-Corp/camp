@@ -136,10 +136,14 @@ func TestInit(t *testing.T) {
 
 	standardDungeonObeys := []string{
 		filepath.Join(campaignDir, "dungeon", "OBEY.md"),
-		filepath.Join(campaignDir, "workflow", "code_reviews", "dungeon", "OBEY.md"),
+		filepath.Join(campaignDir, "workflow", "reviews", "dungeon", "OBEY.md"),
 		filepath.Join(campaignDir, "workflow", "design", "dungeon", "OBEY.md"),
 		filepath.Join(campaignDir, "workflow", "explore", "dungeon", "OBEY.md"),
-		filepath.Join(campaignDir, "workflow", "pipelines", "dungeon", "OBEY.md"),
+	}
+	for _, removed := range []string{"code_reviews", "pipelines"} {
+		if _, err := os.Stat(filepath.Join(campaignDir, "workflow", removed)); !os.IsNotExist(err) {
+			t.Errorf("workflow/%s should not be scaffolded for new campaigns", removed)
+		}
 	}
 	for _, obeyPath := range standardDungeonObeys {
 		if _, err := os.Stat(obeyPath); os.IsNotExist(err) {

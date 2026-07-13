@@ -28,18 +28,15 @@ festivals and often become input material for a festival ingest or planning phas
 - `festivals/` is for hierarchical plans with explicit phases, sequences, and
   tasks.
 
-`workflow/code_reviews/` and `workflow/pipelines/` support adjacent operational
-work, but the main planning split is between intent capture, explore, design,
-and festivals.
+`workflow/reviews/` supports feedback and assessment across any kind of campaign.
 
 ## Structure
 
 ```
 workflow/
-├── code_reviews/       # Review artifacts and quality notes
 ├── design/             # Implementation-bound design work
 ├── explore/            # Research, spikes, and prototypes
-└── pipelines/          # CI/CD and automation workflow material
+└── reviews/            # Review artifacts, feedback, and quality notes
 ```
 
 Intent state is intentionally not scaffolded under `workflow/`. Use
@@ -49,9 +46,8 @@ Intent state is intentionally not scaffolded under `workflow/`. Use
 
 ```bash
 cgo w                   # Jump to workflow/
-cgo cr                  # Jump to code_reviews/
 cgo de                  # Jump to design/
 cgo ex                  # Jump to explore/
-cgo pi                  # Jump to pipelines/
+cgo r                   # Jump to reviews/
 cgo i                   # Jump to .campaign/intents/ (camp-managed state)
 ```

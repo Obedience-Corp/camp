@@ -74,6 +74,11 @@ func (r *Resolver) Intents() string {
 	return filepath.Join(r.root, r.paths.Intents)
 }
 
+// Reviews returns the full path to the reviews directory.
+func (r *Resolver) Reviews() string {
+	return filepath.Join(r.root, r.paths.Reviews)
+}
+
 // CodeReviews returns the full path to the code reviews directory.
 func (r *Resolver) CodeReviews() string {
 	return filepath.Join(r.root, r.paths.CodeReviews)

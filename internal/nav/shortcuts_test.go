@@ -31,7 +31,7 @@ func TestParseShortcut_SingleLetterShortcuts(t *testing.T) {
 		{[]string{"d"}, CategoryDocs, ""},
 		{[]string{"du"}, CategoryDungeon, ""},
 		{[]string{"w"}, CategoryWorkflow, ""},
-		{[]string{"cr"}, CategoryCodeReviews, ""},
+		{[]string{"r"}, CategoryReviews, ""},
 		{[]string{"de"}, CategoryDesign, ""},
 		{[]string{"i"}, CategoryIntents, ""},
 	}
@@ -54,12 +54,12 @@ func TestParseShortcut_SingleLetterShortcuts(t *testing.T) {
 	}
 }
 
-func TestParseShortcut_TwoLetterShortcut(t *testing.T) {
+func TestParseShortcut_ReviewsShortcut(t *testing.T) {
 	// Must pass shortcuts explicitly - no defaults used
-	result := ParseShortcut([]string{"pi"}, DefaultShortcuts)
+	result := ParseShortcut([]string{"r"}, DefaultShortcuts)
 
-	if result.Category != CategoryPipelines {
-		t.Errorf("Category = %q, want %q", result.Category, CategoryPipelines)
+	if result.Category != CategoryReviews {
+		t.Errorf("Category = %q, want %q", result.Category, CategoryReviews)
 	}
 	if result.Query != "" {
 		t.Errorf("Query = %q, want empty", result.Query)
@@ -78,7 +78,7 @@ func TestParseShortcut_ShortcutWithQuery(t *testing.T) {
 		{[]string{"p", "api"}, CategoryProjects, "api"},
 		{[]string{"p", "api", "service"}, CategoryProjects, "api service"},
 		{[]string{"f", "camp-cli"}, CategoryFestivals, "camp-cli"},
-		{[]string{"pi", "data", "pipeline"}, CategoryPipelines, "data pipeline"},
+		{[]string{"r", "quarterly", "assessment"}, CategoryReviews, "quarterly assessment"},
 	}
 
 	for _, tt := range tests {
@@ -136,8 +136,8 @@ func TestParseShortcut_CaseInsensitive(t *testing.T) {
 	}{
 		{"p", CategoryProjects},
 		{"P", CategoryProjects},
-		{"PI", CategoryPipelines},
-		{"Pi", CategoryPipelines},
+		{"R", CategoryReviews},
+		{"r", CategoryReviews},
 	}
 
 	for _, tt := range tests {
@@ -214,6 +214,7 @@ func TestCategoryDir(t *testing.T) {
 		{CategoryDocs, "docs"},
 		{CategoryDungeon, "dungeon"},
 		{CategoryWorkflow, "workflow"},
+		{CategoryReviews, "workflow/reviews"},
 		{CategoryCodeReviews, "workflow/code_reviews"},
 		{CategoryPipelines, "workflow/pipelines"},
 		{CategoryDesign, "workflow/design"},
@@ -242,8 +243,8 @@ func TestCategoryString(t *testing.T) {
 
 func TestValidCategories(t *testing.T) {
 	cats := ValidCategories()
-	if len(cats) != 11 {
-		t.Errorf("len(ValidCategories()) = %d, want 11", len(cats))
+	if len(cats) != 12 {
+		t.Errorf("len(ValidCategories()) = %d, want 12", len(cats))
 	}
 
 	// Verify all expected categories are present
@@ -255,6 +256,7 @@ func TestValidCategories(t *testing.T) {
 		CategoryDocs:        false,
 		CategoryDungeon:     false,
 		CategoryWorkflow:    false,
+		CategoryReviews:     false,
 		CategoryCodeReviews: false,
 		CategoryPipelines:   false,
 		CategoryDesign:      false,
@@ -284,7 +286,9 @@ func TestShortcutForCategory(t *testing.T) {
 		{CategoryWorktrees, "pw"},
 		{CategoryDungeon, "du"},
 		{CategoryWorkflow, "w"},
-		{CategoryPipelines, "pi"},
+		{CategoryReviews, "r"},
+		{CategoryCodeReviews, ""},
+		{CategoryPipelines, ""},
 		{CategoryDesign, "de"},
 		{CategoryIntents, "i"},
 		{CategoryAll, ""}, // No shortcut for all
@@ -302,13 +306,16 @@ func TestShortcutForCategory(t *testing.T) {
 
 func TestDefaultShortcutsComplete(t *testing.T) {
 	// Verify all shortcuts are defined
-	expectedCount := 11 // p, pw, f, a, d, du, w, cr, pi, de, i
+	expectedCount := 10 // p, pw, f, ai, d, du, w, r, de, i
 	if len(DefaultShortcuts) != expectedCount {
 		t.Errorf("len(DefaultShortcuts) = %d, want %d", len(DefaultShortcuts), expectedCount)
 	}
 
 	// Verify all categories have a shortcut
 	for _, cat := range ValidCategories() {
+		if cat == CategoryCodeReviews || cat == CategoryPipelines {
+			continue // Compatibility-only categories are not new-campaign defaults.
+		}
 		found := false
 		for _, c := range DefaultShortcuts {
 			if c == cat {

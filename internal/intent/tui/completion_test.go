@@ -15,7 +15,7 @@ func testShortcuts() map[string]string {
 		"d":  "docs/",
 		"a":  "ai_docs/",
 		"de": "workflow/design/",
-		"cr": "workflow/code_reviews/",
+		"r":  "workflow/reviews/",
 		"du": "dungeon/",
 		"i":  ".campaign/intents/",
 	}
