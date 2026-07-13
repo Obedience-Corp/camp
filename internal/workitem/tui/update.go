@@ -150,6 +150,22 @@ func (m *Model) applyStatusFilter(status string) {
 	m.refilter()
 }
 
+func (m *Model) clearAllFilters() {
+	m.typeFilter = ""
+	m.categoryFilter = ""
+	m.statusFilter = ""
+	m.searchQuery = ""
+	m.searchInput.SetValue("")
+	m.initialFilters.Types = nil
+	m.initialFilters.Categories = nil
+	m.initialFilters.Statuses = nil
+	m.initialFilters.LifecycleStages = nil
+	m.initialFilters.AttentionStages = nil
+	m.initialFilters.Groups = nil
+	m.initialFilters.Query = ""
+	m.refilter()
+}
+
 func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 
@@ -166,7 +182,15 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	m.lastKeyWasG = false
 
-	// Type filter accelerators — 0 for all, 1-4 for the builtin types
+	// Clear every selection filter before handling the type accelerators so
+	// command-seeded category, status, stage, and group filters do not survive
+	// the footer-advertised "0 all" action.
+	if key == "0" {
+		m.clearAllFilters()
+		return m, nil
+	}
+
+	// Type filter accelerators — 1-4 for the builtin types.
 	if filter, ok := m.typeFilterFor(key); ok {
 		m.typeFilter = filter
 		m.initialFilters.Types = nil

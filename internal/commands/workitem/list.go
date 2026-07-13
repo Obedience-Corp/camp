@@ -119,34 +119,36 @@ Examples:
 }
 
 func applyPositionalFilter(raw string, state *discoveredWorkitems, opts *listOptions) error {
-	value := strings.ToLower(strings.TrimSpace(raw))
-	types := map[string]bool{
-		string(wkitem.WorkflowTypeIntent): true, string(wkitem.WorkflowTypeDesign): true,
-		string(wkitem.WorkflowTypeExplore): true, string(wkitem.WorkflowTypeFestival): true,
+	value := strings.TrimSpace(raw)
+	normalized := strings.ToLower(value)
+	types := map[string]string{
+		string(wkitem.WorkflowTypeIntent): string(wkitem.WorkflowTypeIntent), string(wkitem.WorkflowTypeDesign): string(wkitem.WorkflowTypeDesign),
+		string(wkitem.WorkflowTypeExplore): string(wkitem.WorkflowTypeExplore), string(wkitem.WorkflowTypeFestival): string(wkitem.WorkflowTypeFestival),
 	}
 	for _, item := range state.items {
-		types[string(item.WorkflowType)] = true
+		workflowType := string(item.WorkflowType)
+		types[strings.ToLower(workflowType)] = workflowType
 	}
-	categories := map[string]bool{
-		config.WorkflowCategoryPlan: true, config.WorkflowCategoryResearch: true,
-		config.WorkflowCategoryPipeline: true, config.WorkflowCategoryReview: true,
-		"uncategorized": true,
+	categories := map[string]string{
+		config.WorkflowCategoryPlan: config.WorkflowCategoryPlan, config.WorkflowCategoryResearch: config.WorkflowCategoryResearch,
+		config.WorkflowCategoryPipeline: config.WorkflowCategoryPipeline, config.WorkflowCategoryReview: config.WorkflowCategoryReview,
+		"uncategorized": "uncategorized",
 	}
 	for _, category := range categoryVocabulary(state.cfg) {
-		categories[category.Key] = true
+		categories[strings.ToLower(category.Key)] = category.Key
 	}
 	for _, item := range state.items {
 		if item.WorkflowCategory != "" {
-			categories[item.WorkflowCategory] = true
+			categories[strings.ToLower(item.WorkflowCategory)] = item.WorkflowCategory
 		}
 	}
 
-	status := wkitem.NormalizeDisplayStatus(value)
+	status := wkitem.NormalizeDisplayStatus(normalized)
 	var dimensions []string
-	if types[value] {
+	if _, ok := types[normalized]; ok {
 		dimensions = append(dimensions, "type")
 	}
-	if categories[value] {
+	if _, ok := categories[normalized]; ok {
 		dimensions = append(dimensions, "category")
 	}
 	if wkitem.IsDisplayStatus(status) {
@@ -160,9 +162,9 @@ func applyPositionalFilter(raw string, state *discoveredWorkitems, opts *listOpt
 	}
 	switch dimensions[0] {
 	case "type":
-		opts.types = append(opts.types, value)
+		opts.types = append(opts.types, types[normalized])
 	case "category":
-		opts.categories = append(opts.categories, value)
+		opts.categories = append(opts.categories, categories[normalized])
 	case "status":
 		opts.statuses = append(opts.statuses, status)
 	}

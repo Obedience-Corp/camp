@@ -95,6 +95,7 @@ func TestApplyPositionalFilter(t *testing.T) {
 		items: []wkitem.WorkItem{
 			{WorkflowType: wkitem.WorkflowTypeDesign, WorkflowCategory: "plan"},
 			{WorkflowType: wkitem.WorkflowType("bug"), WorkflowCategory: "review"},
+			{WorkflowType: wkitem.WorkflowType("PascalCase"), WorkflowCategory: "CamelCase"},
 		},
 	}
 	tests := []struct {
@@ -108,6 +109,8 @@ func TestApplyPositionalFilter(t *testing.T) {
 		{value: "research", wantCat: "research"},
 		{value: "active", wantState: "active"},
 		{value: "planning", wantState: "plan"},
+		{value: "PascalCase", wantType: "PascalCase"},
+		{value: "CamelCase", wantCat: "CamelCase"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.value, func(t *testing.T) {

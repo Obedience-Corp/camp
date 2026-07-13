@@ -619,6 +619,47 @@ func TestModel_InitialFiltersAreVisibleAndEditable(t *testing.T) {
 	}
 }
 
+func TestModel_ZeroClearsSeededSelectionFilters(t *testing.T) {
+	items := []workitem.WorkItem{
+		{Key: "one", Title: "one", WorkflowType: workitem.WorkflowTypeDesign, WorkflowCategory: "plan", AttentionStage: "active", Group: "alpha"},
+		{Key: "two", Title: "two", WorkflowType: workitem.WorkflowTypeIntent, WorkflowCategory: "research", AttentionStage: "ready", Group: "beta"},
+	}
+	tests := []struct {
+		name    string
+		filters workitem.FilterOptions
+	}{
+		{name: "category", filters: workitem.FilterOptions{Categories: []string{"plan"}}},
+		{name: "status", filters: workitem.FilterOptions{Statuses: []string{"active"}}},
+		{name: "group", filters: workitem.FilterOptions{Groups: []string{"alpha"}}},
+		{name: "query", filters: workitem.FilterOptions{Query: "one"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := New(context.Background(), items, "/campaign", nil, nil, "")
+			m.SetInitialFilters(tt.filters, 0)
+			if len(m.filteredItems) != 1 {
+				t.Fatalf("seeded filter returned %d items, want 1", len(m.filteredItems))
+			}
+
+			updated, _ := m.handleNormalKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'0'}})
+			m = updated.(Model)
+			if len(m.filteredItems) != len(items) {
+				t.Fatalf("after '0': %d items, want %d", len(m.filteredItems), len(items))
+			}
+			if m.typeFilter != "" || m.categoryFilter != "" || m.statusFilter != "" {
+				t.Fatalf("interactive filters remain: type=%q category=%q status=%q", m.typeFilter, m.categoryFilter, m.statusFilter)
+			}
+			if m.searchQuery != "" || m.searchInput.Value() != "" {
+				t.Fatalf("search filter remains: query=%q input=%q", m.searchQuery, m.searchInput.Value())
+			}
+			if len(m.initialFilters.Types) != 0 || len(m.initialFilters.Categories) != 0 || len(m.initialFilters.Statuses) != 0 ||
+				len(m.initialFilters.LifecycleStages) != 0 || len(m.initialFilters.AttentionStages) != 0 || len(m.initialFilters.Groups) != 0 {
+				t.Fatalf("seeded filters remain: %+v", m.initialFilters)
+			}
+		})
+	}
+}
+
 func TestModel_StatusFilterModeClearsSeededStatus(t *testing.T) {
 	items := []workitem.WorkItem{
 		{Key: "current", AttentionStage: "current"},

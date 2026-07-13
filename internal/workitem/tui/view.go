@@ -608,7 +608,7 @@ func (m Model) renderHelp() string {
 			{"/", "Start search"},
 			{"Esc", "Clear search / close overlay"},
 			{"f", "Filter by type (j/k or arrows step, Enter apply, Esc cancel)"},
-			{"0", "Show all types"},
+			{"0", "Clear all filters"},
 			{"1", "Filter: intent"},
 			{"2", "Filter: design"},
 			{"3", "Filter: explore"},
