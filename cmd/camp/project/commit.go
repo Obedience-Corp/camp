@@ -176,10 +176,17 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Prepend campaign tag (graceful degradation if config unavailable).
-	// Resolves the active workitem so the tag includes WI-<ref> when the
-	// project is linked. Skip when commit tracing is disabled in settings.
-	commitPrefs := config.EffectiveCommitPrefs(ctx, campRoot)
+	// Resolve commit prefs before committing so a malformed commit config fails
+	// the commit instead of silently switching policy — in particular so a
+	// corrupt local.json cannot inherit a global sync_project_refs and turn this
+	// project commit into an unexpected campaign-root pointer commit below. A
+	// missing config is not an error (loaders return defaults).
+	commitPrefs, err := config.EffectiveCommitPrefs(ctx, campRoot)
+	if err != nil {
+		return err
+	}
+	// Prepend campaign tag unless tracing is disabled. Resolves the active
+	// workitem so the tag includes WI-<ref> when the project is linked.
 	if cfg != nil && commitPrefs.TagCommits() {
 		questID, workitemRef := resolveProjectCommitContext(ctx, campRoot, resolvedPath, projectCommitWorkitem)
 		message = commitkit.PrependContextTagsFullNamed(cfg.Name, cfg.ID, questID, "", workitemRef, message)

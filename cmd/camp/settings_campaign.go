@@ -223,6 +223,11 @@ func editConceptsInTUI(ctx context.Context, e settings.SettingEntry, campaignRoo
 		huh.NewText().
 			Title("Concepts taxonomy (YAML)").
 			Description("File: " + settings.CatalogPath(e, campaignRoot) + "\n" + conceptsEditorHelp).
+			// Disable huh's Ctrl+E external-editor shortcut: it invokes $EDITOR
+			// directly via tea.ExecProcess, bypassing camp's GUI-editor wait
+			// handling and reintroducing the hang/no-op this in-TUI editor
+			// exists to eliminate.
+			ExternalEditor(false).
 			Value(&body),
 	))
 

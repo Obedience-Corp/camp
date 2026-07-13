@@ -214,7 +214,11 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	// includes WI-<ref> when one is in context. Skip when commit tracing is
 	// disabled via settings.
 	if cfg, cfgErr := config.LoadCampaignConfig(ctx, campRoot); cfgErr == nil && message != "" {
-		if config.EffectiveCommitPrefs(ctx, campRoot).TagCommits() {
+		prefs, err := config.EffectiveCommitPrefs(ctx, campRoot)
+		if err != nil {
+			return err
+		}
+		if prefs.TagCommits() {
 			questID, workitemRef := resolveCommitContext(ctx, campRoot, commitWorkitem)
 			message = commitkit.PrependContextTagsFullNamed(cfg.Name, cfg.ID, questID, "", workitemRef, message)
 		}

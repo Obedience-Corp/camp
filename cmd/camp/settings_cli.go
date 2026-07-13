@@ -225,18 +225,18 @@ func runSettingsGet(ctx context.Context, cmd *cobra.Command, args []string, json
 	}
 
 	effective := config.EffectiveThemeFrom(cfg, local)
+	// Resolve effective commit prefs once from the snapshot already loaded above
+	// so the text and JSON views cannot mix values from different reads, and so
+	// no formatter re-enters I/O with a detached context.
+	effectivePrefs := config.MergeCommitPrefs(cfg.Commit, local)
 
 	if len(args) == 1 {
 		return printSettingsValue(ctx, cmd, args[0], cfg, local, inCampaign, jsonOut)
 	}
-	rootForEffective := ""
-	if inCampaign {
-		rootForEffective = root
-	}
 	if jsonOut {
-		return emitSettingsJSON(cmd.OutOrStdout(), cfg, local, inCampaign, effective, rootForEffective)
+		return emitSettingsJSON(cmd.OutOrStdout(), cfg, local, inCampaign, effective, effectivePrefs)
 	}
-	return printSettingsAll(cmd.OutOrStdout(), cfg, local, inCampaign, effective, rootForEffective)
+	return printSettingsAll(cmd.OutOrStdout(), cfg, local, inCampaign, effective, effectivePrefs)
 }
 
 // resolveSettingValue returns the value for a key, loading campaign.yaml for the
@@ -254,7 +254,10 @@ func resolveSettingValue(ctx context.Context, key string, cfg *config.GlobalConf
 				root = r
 			}
 		}
-		prefs := config.EffectiveCommitPrefs(ctx, root)
+		prefs, err := config.EffectiveCommitPrefs(ctx, root)
+		if err != nil {
+			return nil, err
+		}
 		if key == settingsKeyEffectiveCommitSyncRefs {
 			return prefs.SyncProjectRefs, nil
 		}
@@ -349,7 +352,7 @@ func printSettingsValue(ctx context.Context, cmd *cobra.Command, key string, cfg
 	return err
 }
 
-func printSettingsAll(w io.Writer, cfg *config.GlobalConfig, local *config.LocalSettings, inCampaign bool, effective, campaignRoot string) error {
+func printSettingsAll(w io.Writer, cfg *config.GlobalConfig, local *config.LocalSettings, inCampaign bool, effective string, prefs config.CommitPrefs) error {
 	lines := []struct {
 		key   string
 		value any
@@ -382,9 +385,8 @@ func printSettingsAll(w io.Writer, cfg *config.GlobalConfig, local *config.Local
 			return err
 		}
 	}
-	// printSettingsAll is pure formatting; effective prefs are already merged
-	// via EffectiveCommitPrefs using campaignRoot (empty when outside a campaign).
-	prefs := config.EffectiveCommitPrefs(context.TODO(), campaignRoot)
+	// printSettingsAll is pure formatting; effective theme and commit prefs are
+	// resolved once by the caller from a single config snapshot and passed in.
 	if _, err := fmt.Fprintf(w, "%s = %s\n", settingsKeyEffectiveTheme, effective); err != nil {
 		return err
 	}
@@ -395,8 +397,7 @@ func printSettingsAll(w io.Writer, cfg *config.GlobalConfig, local *config.Local
 	return err
 }
 
-func emitSettingsJSON(w io.Writer, cfg *config.GlobalConfig, local *config.LocalSettings, inCampaign bool, effective, campaignRoot string) error {
-	prefs := config.EffectiveCommitPrefs(context.TODO(), campaignRoot)
+func emitSettingsJSON(w io.Writer, cfg *config.GlobalConfig, local *config.LocalSettings, inCampaign bool, effective string, prefs config.CommitPrefs) error {
 	payload := settingsPayload{
 		SchemaVersion: SettingsJSONVersion,
 		GeneratedAt:   time.Now().UTC(),
@@ -601,7 +602,10 @@ func setLocalCommitPref(ctx context.Context, cmd *cobra.Command, key, value stri
 			fmt.Sprintf("invalid boolean %q (valid: true, false)", value), err)
 	}
 	if err := config.WithLocalSettingsLock(ctx, root, func(s *config.LocalSettings) error {
-		base := config.EffectiveCommitPrefs(ctx, root)
+		base, err := config.EffectiveCommitPrefs(ctx, root)
+		if err != nil {
+			return err
+		}
 		if s.Commit != nil {
 			base = *s.Commit
 		}

@@ -303,7 +303,10 @@ func editLocalSettingsFile(ctx context.Context, e settings.SettingEntry, campaig
 		if local.Commit != nil {
 			locSync, locTags = local.Commit.SyncProjectRefs, local.Commit.DisableCommitTags
 		}
-		eff := config.EffectiveCommitPrefs(ctx, campaignRoot)
+		eff, err := config.EffectiveCommitPrefs(ctx, campaignRoot)
+		if err != nil {
+			return err
+		}
 		options := []huh.Option[string]{
 			huh.NewOption(fmt.Sprintf("Theme Override  %s (effective: %s)",
 				displayStr(local.ThemeOverride, "inherit global"),
@@ -358,7 +361,10 @@ func editLocalSettingsFile(ctx context.Context, e settings.SettingEntry, campaig
 // global meaning until explicitly changed.
 func toggleLocalCommitPref(ctx context.Context, campaignRoot string, syncRefs bool) error {
 	return config.WithLocalSettingsLock(ctx, campaignRoot, func(s *config.LocalSettings) error {
-		base := config.EffectiveCommitPrefs(ctx, campaignRoot)
+		base, err := config.EffectiveCommitPrefs(ctx, campaignRoot)
+		if err != nil {
+			return err
+		}
 		if s.Commit != nil {
 			base = *s.Commit
 		}

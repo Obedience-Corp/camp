@@ -5,6 +5,7 @@ package integration
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -12,7 +13,7 @@ import (
 
 // TestIntegration_SettingsConceptsEditorRoundTrip drives `camp settings` through
 // a real TTY to the campaign-manifest concepts editor (in-TUI YAML text field),
-// pastes a known-valid concept list, and verifies the edit is persisted to
+// enters a known-valid concept entry, and verifies it is persisted to
 // .campaign/campaign.yaml while the rest of the manifest is left intact.
 func TestIntegration_SettingsConceptsEditorRoundTrip(t *testing.T) {
 	skipUnlessSettingsTTYTests(t)
@@ -35,21 +36,32 @@ func TestIntegration_SettingsConceptsEditorRoundTrip(t *testing.T) {
 	)
 	require.NoError(t, err, "camp init should succeed")
 
-	// huh Text: type replacement YAML, then Ctrl+D / submit per form binding.
-	// Interactive harness uses Enter to submit multi-line when WaitFor matches
-	// the text field title, then aborts menus with Ctrl+C.
-	conceptYAML := "- name: integration-concept\n  path: some/integration/path/\n  description: added by integration test\n"
+	// Input encoding for the concepts editor (huh Text over a bubbles textarea):
+	//   - "\n" (0x0a = Ctrl+J) inserts a newline INTO the textarea; plain
+	//     "\r" (Enter) is the field's submit key, not a newline.
+	//   - "\x01\x0b" is Ctrl+A then Ctrl+K: move to line start, kill to end of
+	//     line. This is a partial in-place edit, NOT a whole-buffer clear, so
+	//     the seeded concepts remain and the new entry is appended. The test
+	//     therefore asserts presence of the new concept, not a clean replace.
+	//   - "\x03" is Ctrl+C, used to back out of each menu level.
+	// The external-editor escape hatch (Ctrl+E) is disabled on this field, so
+	// the flow stays entirely in-TUI.
+	conceptYAML := "- name: integration-concept\n  path: some/integration/path/\n"
 	steps := []InteractiveStep{
-		{WaitFor: "Select configuration scope", Input: "\x1b[B\r"}, // top: Local
-		{WaitFor: "Files under .campaign/", Input: "\r"},           // Campaign manifest
-		{WaitFor: "Concepts taxonomy", Input: "\x1b[B\x1b[B\r"},    // Concepts row
-		{WaitFor: "Concepts taxonomy (YAML)", Input: "\x01\x0b" + conceptYAML + "\r"}, // clear-ish + paste + submit
-		{WaitFor: "Concepts taxonomy", Input: "\x03"},              // back at manifest
-		{WaitFor: "Files under .campaign/", Input: "\x03"},         // local
-		{WaitFor: "Select configuration scope", Input: "\x03"},     // top exit
+		{WaitFor: "Select configuration scope", Input: "\x1b[B\r"},                    // top: Local
+		{WaitFor: "Files under .campaign/", Input: "\r"},                              // Campaign manifest
+		{WaitFor: "Concepts taxonomy", Input: "\x1b[B\x1b[B\r"},                       // Concepts row
+		{WaitFor: "Concepts taxonomy (YAML)", Input: "\x01\x0b" + conceptYAML + "\r"}, // edit + append + submit
+		{WaitFor: "Concepts taxonomy", Input: "\x03"},                                 // back at manifest
+		{WaitFor: "Files under .campaign/", Input: "\x03"},                            // local
+		{WaitFor: "Select configuration scope", Input: "\x03"},                        // top exit
 	}
-	output, err := tc.RunCampInteractiveStepsInDir(
+	// Deep multi-screen flow with a multiline paste: give it more than the
+	// default per-session budget so per-character typing plus camp's TUI init
+	// latency cannot trip the deadline mid-run.
+	output, err := tc.RunCampInteractiveStepsInDirTimeout(
 		campaignDir,
+		60*time.Second,
 		steps,
 		"--no-color", "settings",
 	)
