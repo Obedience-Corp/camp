@@ -211,10 +211,13 @@ func runCommit(cmd *cobra.Command, args []string) error {
 
 	// Prepend campaign tag (graceful degradation if config unavailable).
 	// Resolves the active workitem (and any captured quest) so the tag
-	// includes WI-<ref> when one is in context.
+	// includes WI-<ref> when one is in context. Skip when commit tracing is
+	// disabled via settings.
 	if cfg, cfgErr := config.LoadCampaignConfig(ctx, campRoot); cfgErr == nil && message != "" {
-		questID, workitemRef := resolveCommitContext(ctx, campRoot, commitWorkitem)
-		message = commitkit.PrependContextTagsFullNamed(cfg.Name, cfg.ID, questID, "", workitemRef, message)
+		if config.EffectiveCommitPrefs(ctx, campRoot).TagCommits() {
+			questID, workitemRef := resolveCommitContext(ctx, campRoot, commitWorkitem)
+			message = commitkit.PrependContextTagsFullNamed(cfg.Name, cfg.ID, questID, "", workitemRef, message)
+		}
 	}
 
 	// Perform commit

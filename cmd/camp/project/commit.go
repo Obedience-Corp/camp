@@ -46,6 +46,7 @@ var (
 	projectCommitAll       bool
 	projectCommitAmend     bool
 	projectCommitSync      bool
+	projectCommitNoSync    bool
 	projectCommitAutoWrite bool
 	projectCommitWorkitem  string
 )
@@ -55,7 +56,8 @@ func init() {
 	projectCommitCmd.Flags().StringArrayVarP(&projectCommitMessages, "message", "m", nil, "Commit message (repeatable; multiple -m are joined git-style into subject + body; required unless --auto-write)")
 	projectCommitCmd.Flags().BoolVarP(&projectCommitAll, "all", "a", true, "Stage all changes")
 	projectCommitCmd.Flags().BoolVar(&projectCommitAmend, "amend", false, "Amend the previous commit")
-	projectCommitCmd.Flags().BoolVar(&projectCommitSync, "sync", false, "Sync submodule ref at campaign root after commit (opt-in)")
+	projectCommitCmd.Flags().BoolVar(&projectCommitSync, "sync", false, "Sync submodule ref at campaign root after commit (also enabled by commit.sync_project_refs setting)")
+	projectCommitCmd.Flags().BoolVar(&projectCommitNoSync, "no-sync", false, "Do not sync submodule ref even if settings enable it")
 	projectCommitCmd.Flags().BoolVar(&projectCommitAutoWrite, "auto-write", false, "Run configured commit message writer")
 	projectCommitCmd.Flags().StringVar(&projectCommitWorkitem, "workitem", "", "explicit workitem selector for the commit tag (overrides cwd-based resolution)")
 
@@ -176,8 +178,9 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 
 	// Prepend campaign tag (graceful degradation if config unavailable).
 	// Resolves the active workitem so the tag includes WI-<ref> when the
-	// project is linked.
-	if cfg != nil {
+	// project is linked. Skip when commit tracing is disabled in settings.
+	commitPrefs := config.EffectiveCommitPrefs(ctx, campRoot)
+	if cfg != nil && commitPrefs.TagCommits() {
 		questID, workitemRef := resolveProjectCommitContext(ctx, campRoot, resolvedPath, projectCommitWorkitem)
 		message = commitkit.PrependContextTagsFullNamed(cfg.Name, cfg.ID, questID, "", workitemRef, message)
 	}
@@ -205,11 +208,13 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 		emitter.CommitEvidence(ctx, ledgerkit.Scope{}, campRoot, resolvedPath, sha, message)
 	}
 
-	// Auto-sync submodule ref in campaign root. A worktree commit lands on its
-	// own branch under the gitignored worktrees dir, so there is no submodule
-	// ref to sync at the campaign root.
-	if projectCommitSync && !inWorktree && git.HasPathDiff(ctx, campRoot, resolvedPath) {
-		if err := syncParentRef(ctx, campRoot, relPath, cfg, emitter); err != nil {
+	// Sync submodule ref in campaign root when enabled by --sync or by the
+	// commit.sync_project_refs setting (and not disabled by --no-sync). A
+	// worktree commit lands on its own branch under the gitignored worktrees
+	// dir, so there is no submodule ref to sync at the campaign root.
+	doSync := (commitPrefs.SyncProjectRefs || projectCommitSync) && !projectCommitNoSync
+	if doSync && !inWorktree && git.HasPathDiff(ctx, campRoot, resolvedPath) {
+		if err := syncParentRef(ctx, campRoot, relPath, cfg, emitter, commitPrefs); err != nil {
 			fmt.Println()
 			fmt.Println(ui.Warning("Could not auto-sync campaign root: " + err.Error()))
 			fmt.Println(ui.Dim("Run 'camp commit' to update manually."))
@@ -220,7 +225,7 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 }
 
 // syncParentRef stages and commits the submodule ref update in the campaign root.
-func syncParentRef(ctx context.Context, campRoot, relPath string, cfg *config.CampaignConfig, emitter *ledger.Emitter) error {
+func syncParentRef(ctx context.Context, campRoot, relPath string, cfg *config.CampaignConfig, emitter *ledger.Emitter, prefs config.CommitPrefs) error {
 	if err := git.StageFiles(ctx, campRoot, relPath); err != nil {
 		return camperrors.Wrap(err, "staging submodule ref")
 	}
@@ -234,7 +239,7 @@ func syncParentRef(ctx context.Context, campRoot, relPath string, cfg *config.Ca
 
 	projName := filepath.Base(relPath)
 	msg := fmt.Sprintf("update %s submodule ref", projName)
-	if cfg != nil {
+	if cfg != nil && prefs.TagCommits() {
 		msg = git.PrependContextTagsFull(cfg.Name, cfg.ID, "", "", "", msg)
 	}
 
