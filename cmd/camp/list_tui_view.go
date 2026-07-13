@@ -121,17 +121,14 @@ func (m listTUIModel) View() string {
 // guard so an unexpectedly tall render can never overflow a short window, then
 // wraps it in the border when the size allows.
 func (m listTUIModel) frame(lines []string, lay listLayout) string {
+	budget := 0
 	if m.height > 0 {
-		budget := m.height
+		budget = m.height
 		if lay.boxed {
-			budget -= 2
-		}
-		budget = max(budget, 1)
-		if len(lines) > budget {
-			lines = lines[:budget]
+			budget = max(budget-2, 1)
 		}
 	}
-	content := strings.Join(ui.ClampLines(lines, lay.cw), "\n")
+	content := strings.Join(ui.CapFrame(lines, lay.cw, budget), "\n")
 	if lay.boxed {
 		return ui.FitFullscreenView(listBox.Render(content), m.height)
 	}
@@ -237,13 +234,11 @@ func (m listTUIModel) topBar() string {
 }
 
 func (m listTUIModel) footer(cw int) string {
-	help := "g: go . j/k: move . s: status . m: org . y: copy . f: filter . q: quit"
-	if cw > 0 && lipgloss.Width(help) > cw {
-		help = "j/k move . g go . f filter . q quit"
-	}
-	if cw > 0 && lipgloss.Width(help) > cw {
-		help = "q quit"
-	}
+	help := ui.CollapseHelp(cw,
+		"g: go . j/k: move . s: status . m: org . y: copy . f: filter . q: quit",
+		"j/k move . g go . f filter . q quit",
+		"q quit",
+	)
 	return listHelpStyle.Render(help)
 }
 

@@ -38,6 +38,34 @@ func ClampLines(lines []string, w int) []string {
 	return out
 }
 
+// CapFrame is the pure canvas guard used by interactive views: keep at most h
+// rows and clamp each line to width w. h <= 0 skips the height cap; w <= 0
+// skips width clamping (same passthrough contract as ClampLines).
+func CapFrame(lines []string, w, h int) []string {
+	if h > 0 && len(lines) > h {
+		lines = lines[:h]
+	}
+	return ClampLines(lines, w)
+}
+
+// CollapseHelp picks the first help level whose display width fits in cw.
+// When cw <= 0 (size unknown), the first level is returned. If no level fits,
+// the last level is returned so callers can still render a minimal prompt.
+func CollapseHelp(cw int, levels ...string) string {
+	if len(levels) == 0 {
+		return ""
+	}
+	if cw <= 0 {
+		return levels[0]
+	}
+	for _, s := range levels {
+		if lipgloss.Width(s) <= cw {
+			return s
+		}
+	}
+	return levels[len(levels)-1]
+}
+
 // FitFullscreenView keeps a Bubble Tea full-screen view within the terminal's
 // row budget. Bubble Tea splits views on newlines and, when there are too many
 // rows, keeps the bottom rows. A trailing newline therefore creates a phantom

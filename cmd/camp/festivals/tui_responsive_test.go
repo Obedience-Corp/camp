@@ -6,9 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
-
 	"github.com/Obedience-Corp/camp/internal/ui"
+	"github.com/Obedience-Corp/camp/internal/ui/uitest"
 )
 
 func makeBrowserWithNFestivals(n int) festivalsTUIModel {
@@ -33,11 +32,7 @@ func TestBrowser_NoLineExceedsWidth(t *testing.T) {
 	m := makeBrowserWithNFestivals(50)
 	for _, w := range []int{20, 30, 40, 60, 80, 120} {
 		m.width, m.height = w, 24
-		for _, line := range strings.Split(m.View(), "\n") {
-			if lipgloss.Width(line) > w {
-				t.Errorf("width %d: line exceeds cw: %q (%d)", w, line, lipgloss.Width(line))
-			}
-		}
+		uitest.AssertBounded(t, m.View(), w, 24)
 	}
 }
 

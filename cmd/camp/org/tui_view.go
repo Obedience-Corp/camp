@@ -160,19 +160,15 @@ func (m orgTUIModel) emptyView() string {
 // frame hard-caps line count and width so a short/narrow split can never be
 // overpainted. Dual-pane body lines are pre-joined; this is the final guard.
 func (m orgTUIModel) frame(lines []string, lay orgLayout) string {
-	if m.height > 0 {
-		budget := max(m.height, 1)
-		if len(lines) > budget {
-			lines = lines[:budget]
-		}
-	}
-	// Body lines from dual panes may already span full terminal width; clamp
-	// everything to the outer canvas when known.
 	cw := lay.cw
 	if cw <= 0 && m.width > 0 {
 		cw = m.width
 	}
-	return strings.Join(ui.ClampLines(lines, cw), "\n") + "\n"
+	budget := 0
+	if m.height > 0 {
+		budget = max(m.height, 1)
+	}
+	return ui.FitFullscreenView(strings.Join(ui.CapFrame(lines, cw, budget), "\n"), m.height)
 }
 
 func (m orgTUIModel) bodyLines(lay orgLayout) []string {
@@ -411,17 +407,7 @@ func (m orgTUIModel) footer(cw int) string {
 		mid = "j/k members . h orgs . m move . c create . q"
 		short = "j/k . h . q"
 	}
-	help := full
-	if cw > 0 && lipgloss.Width(help) > cw {
-		help = mid
-	}
-	if cw > 0 && lipgloss.Width(help) > cw {
-		help = short
-	}
-	if cw > 0 && lipgloss.Width(help) > cw {
-		help = "q"
-	}
-	return orgHelpStyle.Render(help)
+	return orgHelpStyle.Render(ui.CollapseHelp(cw, full, mid, short, "q"))
 }
 
 func (m orgTUIModel) statusLine() string {

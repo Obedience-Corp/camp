@@ -3,6 +3,8 @@ package ui
 import (
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 func TestTruncate(t *testing.T) {
@@ -45,6 +47,48 @@ func TestClampLines_ZeroWidthIsPassthrough(t *testing.T) {
 		if out[i] != in[i] {
 			t.Errorf("ClampLines width 0 altered line %d: %q -> %q", i, in[i], out[i])
 		}
+	}
+}
+
+func TestCapFrame_HeightAndWidth(t *testing.T) {
+	in := []string{"alpha", "bravo-charlie", "delta", "echo"}
+	out := CapFrame(in, 5, 2)
+	if len(out) != 2 {
+		t.Fatalf("CapFrame height: got %d lines, want 2: %v", len(out), out)
+	}
+	for i, line := range out {
+		if got := lipgloss.Width(line); got > 5 {
+			t.Errorf("CapFrame width: line %d width %d > 5 (%q)", i, got, line)
+		}
+	}
+}
+
+func TestCapFrame_ZeroMeansPassthroughLimits(t *testing.T) {
+	in := []string{"one", "two", "three"}
+	out := CapFrame(in, 0, 0)
+	if len(out) != 3 || out[0] != "one" || out[2] != "three" {
+		t.Fatalf("CapFrame(0,0) = %v, want passthrough", out)
+	}
+}
+
+func TestCollapseHelp(t *testing.T) {
+	full := "j/k move . g go . f filter . q quit"
+	mid := "j/k . g . q"
+	short := "q"
+	if got := CollapseHelp(0, full, mid, short); got != full {
+		t.Errorf("unknown width: got %q, want full", got)
+	}
+	if got := CollapseHelp(80, full, mid, short); got != full {
+		t.Errorf("wide: got %q, want full", got)
+	}
+	if got := CollapseHelp(lipgloss.Width(mid), full, mid, short); got != mid {
+		t.Errorf("mid width: got %q, want mid", got)
+	}
+	if got := CollapseHelp(1, full, mid, short); got != short {
+		t.Errorf("tiny: got %q, want short", got)
+	}
+	if got := CollapseHelp(10); got != "" {
+		t.Errorf("no levels: got %q, want empty", got)
 	}
 }
 

@@ -81,17 +81,14 @@ func (m festivalsTUIModel) View() string {
 }
 
 func (m festivalsTUIModel) frame(lines []string, lay festLayout) string {
+	budget := 0
 	if m.height > 0 {
-		budget := m.height
+		budget = m.height
 		if lay.boxed {
-			budget -= 2
-		}
-		budget = max(budget, 1)
-		if len(lines) > budget {
-			lines = lines[:budget]
+			budget = max(budget-2, 1)
 		}
 	}
-	content := strings.Join(ui.ClampLines(lines, lay.cw), "\n")
+	content := strings.Join(ui.CapFrame(lines, lay.cw, budget), "\n")
 	if lay.boxed {
 		return ui.FitFullscreenView(festBox.Render(content), m.height)
 	}
@@ -140,13 +137,11 @@ func (m festivalsTUIModel) topBar() string {
 }
 
 func (m festivalsTUIModel) footer(cw int) string {
-	help := "g/enter: go . j/k: move . f: active-only . y: copy . q: quit"
-	if cw > 0 && lipgloss.Width(help) > cw {
-		help = "j/k move . g go . f filter . q quit"
-	}
-	if cw > 0 && lipgloss.Width(help) > cw {
-		help = "q quit"
-	}
+	help := ui.CollapseHelp(cw,
+		"g/enter: go . j/k: move . f: active-only . y: copy . q: quit",
+		"j/k move . g go . f filter . q quit",
+		"q quit",
+	)
 	return festHelpStyle.Render(help)
 }
 
