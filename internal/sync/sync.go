@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	gosync "sync"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
@@ -217,9 +218,12 @@ func (s *Syncer) diffURLs(before, after map[string]string) []URLChange {
 	return changes
 }
 
-// updateSubmodules initializes and updates submodules one-by-one with graceful
+// updateSubmodules initializes and updates submodules individually with graceful
 // stale reference handling. This replaces the bulk `git submodule update --init --recursive`
-// which fails entirely if any single submodule has a stale ref.
+// which fails entirely if any single submodule has a stale ref. Submodules are
+// processed concurrently under a semaphore bounded by SyncOptions.Parallel,
+// mirroring the worker pattern clone uses for submodule initialization; results
+// preserve .gitmodules declaration order.
 func (s *Syncer) updateSubmodules(ctx context.Context) ([]SubmoduleResult, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -229,55 +233,97 @@ func (s *Syncer) updateSubmodules(ctx context.Context) ([]SubmoduleResult, error
 	if err != nil {
 		return nil, err
 	}
+	if len(paths) == 0 {
+		return nil, nil
+	}
 
-	var results []SubmoduleResult
-	for _, path := range paths {
+	parallel := s.options.Parallel
+	if parallel <= 0 {
+		parallel = 4
+	}
+	if parallel > len(paths) {
+		parallel = len(paths)
+	}
+
+	results := make([]SubmoduleResult, len(paths))
+	sem := make(chan struct{}, parallel)
+	var wg gosync.WaitGroup
+
+	for i, path := range paths {
 		if ctx.Err() != nil {
-			return nil, ctx.Err()
+			break
 		}
 
-		result := SubmoduleResult{
-			Path:    path,
-			Name:    path,
-			Success: true,
-		}
+		wg.Add(1)
+		go func(idx int, path string) {
+			defer wg.Done()
 
-		// Use shared graceful init (handles stale refs with fallback)
-		if err := git.InitSubmoduleGraceful(ctx, s.repoRoot, path); err != nil {
-			result.Success = false
-			result.Error = &SyncError{Op: "init", Submodule: path, Cause: err}
-			results = append(results, result)
-			continue
-		}
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			case <-ctx.Done():
+				results[idx] = SubmoduleResult{
+					Path:    path,
+					Name:    path,
+					Success: false,
+					Error:   ctx.Err(),
+				}
+				return
+			}
 
-		// Initialize nested submodules within this submodule
-		subDir := filepath.Join(s.repoRoot, path)
-		cmd := exec.CommandContext(ctx, "git", "-C", subDir, "submodule", "update", "--init", "--recursive")
-		if output, nestedErr := cmd.CombinedOutput(); nestedErr != nil {
-			// Nested failure is non-fatal for the parent submodule
-			result.Error = &SyncError{Op: "nested-init", Submodule: path, Cause: camperrors.Wrapf(ErrNestedSubmodules, "%s", strings.TrimSpace(string(output)))}
-		}
+			results[idx] = s.updateSubmodule(ctx, path)
+		}(i, path)
+	}
+	wg.Wait()
 
-		// Checkout default branch instead of leaving on detached HEAD.
-		branch, checkoutErr := git.CheckoutDefaultBranch(ctx, subDir)
-		if checkoutErr != nil {
-			result.Success = false
-			result.Error = &SyncError{Op: "checkout", Submodule: path, Cause: checkoutErr}
-			results = append(results, result)
-			continue
-		}
-		result.CheckedOutBranch = branch
-		if warning, driftErr := s.reconcileCheckoutDrift(ctx, path, subDir, branch); driftErr != nil {
-			result.Success = false
-			result.Error = &SyncError{Op: "drift", Submodule: path, Cause: driftErr}
-		} else if warning != "" {
-			result.DriftWarning = warning
-		}
-
-		results = append(results, result)
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
 	return results, nil
+}
+
+// updateSubmodule runs the full update pipeline for a single submodule:
+// graceful init, nested submodule init, default-branch checkout, and
+// gitlink drift reconciliation.
+func (s *Syncer) updateSubmodule(ctx context.Context, path string) SubmoduleResult {
+	result := SubmoduleResult{
+		Path:    path,
+		Name:    path,
+		Success: true,
+	}
+
+	// Use shared graceful init (handles stale refs with fallback)
+	if err := git.InitSubmoduleGraceful(ctx, s.repoRoot, path); err != nil {
+		result.Success = false
+		result.Error = &SyncError{Op: "init", Submodule: path, Cause: err}
+		return result
+	}
+
+	// Initialize nested submodules within this submodule
+	subDir := filepath.Join(s.repoRoot, path)
+	cmd := exec.CommandContext(ctx, "git", "-C", subDir, "submodule", "update", "--init", "--recursive")
+	if output, nestedErr := cmd.CombinedOutput(); nestedErr != nil {
+		// Nested failure is non-fatal for the parent submodule
+		result.Error = &SyncError{Op: "nested-init", Submodule: path, Cause: camperrors.Wrapf(ErrNestedSubmodules, "%s", strings.TrimSpace(string(output)))}
+	}
+
+	// Checkout default branch instead of leaving on detached HEAD.
+	branch, checkoutErr := git.CheckoutDefaultBranch(ctx, subDir)
+	if checkoutErr != nil {
+		result.Success = false
+		result.Error = &SyncError{Op: "checkout", Submodule: path, Cause: checkoutErr}
+		return result
+	}
+	result.CheckedOutBranch = branch
+	if warning, driftErr := s.reconcileCheckoutDrift(ctx, path, subDir, branch); driftErr != nil {
+		result.Success = false
+		result.Error = &SyncError{Op: "drift", Submodule: path, Cause: driftErr}
+	} else if warning != "" {
+		result.DriftWarning = warning
+	}
+
+	return result
 }
 
 // verifySubmodules checks the status of all submodules after update.

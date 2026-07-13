@@ -2,6 +2,7 @@ package sync
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -148,6 +149,101 @@ func TestSync_ParallelJobs(t *testing.T) {
 	// Both submodules should be in results
 	if len(result.UpdateResults) != 2 {
 		t.Errorf("UpdateResults = %d, want 2", len(result.UpdateResults))
+	}
+}
+
+func TestUpdateSubmodules_PreservesDeclarationOrder(t *testing.T) {
+	ctx := context.Background()
+	repoRoot := setupTestRepo(t)
+	want := []string{"projects/sub1", "projects/sub2", "projects/sub3", "projects/sub4"}
+	for _, p := range want {
+		setupSubmodule(t, repoRoot, p)
+	}
+
+	syncer := NewSyncer(repoRoot, WithParallel(2))
+	results, err := syncer.updateSubmodules(ctx)
+	if err != nil {
+		t.Fatalf("updateSubmodules() error = %v", err)
+	}
+
+	if len(results) != len(want) {
+		t.Fatalf("updateSubmodules() results = %d, want %d", len(results), len(want))
+	}
+	for i, r := range results {
+		if r.Path != want[i] {
+			t.Errorf("results[%d].Path = %q, want %q", i, r.Path, want[i])
+		}
+		if !r.Success {
+			t.Errorf("results[%d] (%s) Success = false, want true: %v", i, r.Path, r.Error)
+		}
+	}
+}
+
+func TestUpdateSubmodules_PartialFailureIsolation(t *testing.T) {
+	ctx := context.Background()
+	repoRoot := setupTestRepo(t)
+	setupSubmodule(t, repoRoot, "projects/healthy")
+	setupSubmodule(t, repoRoot, "projects/broken")
+
+	// Break the second submodule: deinit it, drop its module gitdir, and
+	// remove its source repo so re-init has nowhere to clone from.
+	cmd := exec.Command("git", "-C", repoRoot, "config", "-f", ".gitmodules", "submodule.projects/broken.url")
+	urlBytes, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("reading broken submodule url: %v", err)
+	}
+	sourceRepo := strings.TrimSpace(string(urlBytes))
+	runGit(t, repoRoot, "submodule", "deinit", "-f", "projects/broken")
+	if err := os.RemoveAll(filepath.Join(repoRoot, ".git", "modules", "projects/broken")); err != nil {
+		t.Fatalf("removing module gitdir: %v", err)
+	}
+	if err := os.RemoveAll(sourceRepo); err != nil {
+		t.Fatalf("removing source repo: %v", err)
+	}
+
+	syncer := NewSyncer(repoRoot, WithParallel(2))
+	results, err := syncer.updateSubmodules(ctx)
+	if err != nil {
+		t.Fatalf("updateSubmodules() error = %v", err)
+	}
+
+	if len(results) != 2 {
+		t.Fatalf("updateSubmodules() results = %d, want 2", len(results))
+	}
+	byPath := make(map[string]SubmoduleResult, len(results))
+	for _, r := range results {
+		byPath[r.Path] = r
+	}
+	if !byPath["projects/healthy"].Success {
+		t.Errorf("healthy submodule Success = false, want true: %v", byPath["projects/healthy"].Error)
+	}
+	broken := byPath["projects/broken"]
+	if broken.Success {
+		t.Error("broken submodule Success = true, want false")
+	}
+	if broken.Error == nil {
+		t.Fatal("broken submodule Error = nil, want error")
+	}
+	syncErr, ok := broken.Error.(*SyncError)
+	if !ok {
+		t.Fatalf("broken submodule error type = %T, want *SyncError", broken.Error)
+	}
+	if syncErr.Op != "init" {
+		t.Errorf("SyncError.Op = %q, want %q", syncErr.Op, "init")
+	}
+}
+
+func TestUpdateSubmodules_ContextCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	repoRoot := setupTestRepo(t)
+	setupSubmodule(t, repoRoot, "projects/sub")
+
+	syncer := NewSyncer(repoRoot)
+	_, err := syncer.updateSubmodules(ctx)
+	if err != context.Canceled {
+		t.Errorf("updateSubmodules() error = %v, want context.Canceled", err)
 	}
 }
 
