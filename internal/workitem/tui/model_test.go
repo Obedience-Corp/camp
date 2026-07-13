@@ -588,6 +588,55 @@ func TestModel_FooterRendersFilterChips(t *testing.T) {
 	}
 }
 
+func TestModel_InitialFiltersAreVisibleAndEditable(t *testing.T) {
+	items := []workitem.WorkItem{
+		{Key: "design", WorkflowType: workitem.WorkflowTypeDesign, WorkflowCategory: "plan", AttentionStage: "active", Title: "auth design"},
+		{Key: "intent", WorkflowType: workitem.WorkflowTypeIntent, WorkflowCategory: "plan", LifecycleStage: workitem.LifecycleStageActive, Title: "auth intent"},
+		{Key: "other", WorkflowType: workitem.WorkflowTypeExplore, WorkflowCategory: "research", AttentionStage: "active", Title: "other"},
+	}
+	m := New(context.Background(), items, "/campaign", nil, nil, "")
+	m.SetInitialFilters(workitem.FilterOptions{
+		Types:      []string{"design"},
+		Categories: []string{"plan"},
+		Statuses:   []string{"active"},
+		Query:      "auth",
+		ShowParked: false,
+	}, 0)
+	if len(m.filteredItems) != 1 || m.filteredItems[0].Key != "design" {
+		t.Fatalf("initial filters = %v, want design", m.filteredItems)
+	}
+	header := m.renderHeader()
+	for _, want := range []string{"type:design", "category:plan", "status:active", "search:auth"} {
+		if !strings.Contains(header, want) {
+			t.Fatalf("header missing %q: %s", want, header)
+		}
+	}
+
+	updated, _ := m.handleNormalKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'0'}})
+	m = updated.(Model)
+	if m.typeFilter != "" || len(m.initialFilters.Types) != 0 {
+		t.Fatalf("type filter not cleared: %q / %v", m.typeFilter, m.initialFilters.Types)
+	}
+}
+
+func TestModel_StatusFilterModeClearsSeededStatus(t *testing.T) {
+	items := []workitem.WorkItem{
+		{Key: "current", AttentionStage: "current"},
+		{Key: "active", AttentionStage: "active"},
+	}
+	m := New(context.Background(), items, "/campaign", nil, nil, "")
+	m.SetInitialFilters(workitem.FilterOptions{Statuses: []string{"current"}}, 0)
+	if len(m.filteredItems) != 1 {
+		t.Fatalf("seeded status returned %d items", len(m.filteredItems))
+	}
+	m.enterStatusMode()
+	updated, _ := m.handleStatusFilterKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'0'}})
+	m = updated.(Model)
+	if m.statusFilter != "" || len(m.initialFilters.Statuses) != 0 || len(m.filteredItems) != 2 {
+		t.Fatalf("status clear failed: filter=%q seed=%v items=%d", m.statusFilter, m.initialFilters.Statuses, len(m.filteredItems))
+	}
+}
+
 func TestChipWindow(t *testing.T) {
 	labels := []string{"all 40", "intent 10", "design 10", "bug 10", "feature 10"}
 	tests := []struct {

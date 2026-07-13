@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Obedience-Corp/camp/internal/config"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/priority"
 )
@@ -85,6 +86,65 @@ func TestValidateFlagsAcceptsStageNoneForNoStageTypes(t *testing.T) {
 	}
 	if err := validateFlags(true, false, false, "", []string{"explore"}, nil, []string{"none"}, nil, nil, "attention_stage"); err != nil {
 		t.Fatalf("validateFlags(explore, none) error = %v", err)
+	}
+}
+
+func TestApplyPositionalFilter(t *testing.T) {
+	state := &discoveredWorkitems{
+		cfg: &config.CampaignConfig{},
+		items: []wkitem.WorkItem{
+			{WorkflowType: wkitem.WorkflowTypeDesign, WorkflowCategory: "plan"},
+			{WorkflowType: wkitem.WorkflowType("bug"), WorkflowCategory: "review"},
+		},
+	}
+	tests := []struct {
+		value     string
+		wantType  string
+		wantCat   string
+		wantState string
+	}{
+		{value: "intent", wantType: "intent"},
+		{value: "bug", wantType: "bug"},
+		{value: "research", wantCat: "research"},
+		{value: "active", wantState: "active"},
+		{value: "planning", wantState: "plan"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.value, func(t *testing.T) {
+			var opts listOptions
+			if err := applyPositionalFilter(tc.value, state, &opts); err != nil {
+				t.Fatalf("applyPositionalFilter: %v", err)
+			}
+			if tc.wantType != "" && (len(opts.types) != 1 || opts.types[0] != tc.wantType) {
+				t.Fatalf("types = %v, want %q", opts.types, tc.wantType)
+			}
+			if tc.wantCat != "" && (len(opts.categories) != 1 || opts.categories[0] != tc.wantCat) {
+				t.Fatalf("categories = %v, want %q", opts.categories, tc.wantCat)
+			}
+			if tc.wantState != "" && (len(opts.statuses) != 1 || opts.statuses[0] != tc.wantState) {
+				t.Fatalf("statuses = %v, want %q", opts.statuses, tc.wantState)
+			}
+		})
+	}
+}
+
+func TestApplyPositionalFilterRejectsAmbiguousAndUnknown(t *testing.T) {
+	state := &discoveredWorkitems{
+		cfg:   &config.CampaignConfig{},
+		items: []wkitem.WorkItem{{WorkflowType: wkitem.WorkflowType("plan"), WorkflowCategory: "plan"}},
+	}
+	for _, value := range []string{"plan", "does-not-exist"} {
+		if err := applyPositionalFilter(value, state, &listOptions{}); err == nil {
+			t.Fatalf("applyPositionalFilter(%q) error = nil", value)
+		}
+	}
+}
+
+func TestWorkitemCommandIncludesListSubcommand(t *testing.T) {
+	cmd := NewWorkitemCommand()
+	child, _, err := cmd.Find([]string{"list"})
+	if err != nil || child == cmd || child.Name() != "list" {
+		t.Fatalf("list subcommand not registered: child=%v err=%v", child, err)
 	}
 }
 

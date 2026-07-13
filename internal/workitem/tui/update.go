@@ -60,6 +60,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.isFilterMode() {
 			return m.handleFilterKey(msg)
 		}
+		if m.isStatusMode() {
+			return m.handleStatusFilterKey(msg)
+		}
 		if m.searchMode {
 			return m.handleSearchKey(msg)
 		}
@@ -74,17 +77,20 @@ func (m Model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.filterIndex < len(m.filterOptions)-1 {
 			m.filterIndex++
 			m.typeFilter = m.filterOptions[m.filterIndex]
+			m.initialFilters.Types = nil
 			m.refilter()
 		}
 	case "k", "up", "h", "left":
 		if m.filterIndex > 0 {
 			m.filterIndex--
 			m.typeFilter = m.filterOptions[m.filterIndex]
+			m.initialFilters.Types = nil
 			m.refilter()
 		}
 	case "0":
 		m.filterIndex = 0
 		m.typeFilter = ""
+		m.initialFilters.Types = nil
 		m.refilter()
 	case "1", "2", "3", "4":
 		t, _ := m.typeFilterFor(msg.String())
@@ -92,6 +98,7 @@ func (m Model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if opt == t {
 				m.filterIndex = i
 				m.typeFilter = t
+				m.initialFilters.Types = nil
 				m.refilter()
 				break
 			}
@@ -100,10 +107,47 @@ func (m Model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.exitFilterMode()
 	case "esc":
 		m.typeFilter = m.savedTypeFilter
+		m.initialFilters.Types = append([]string(nil), m.savedTypes...)
 		m.refilter()
 		m.exitFilterMode()
 	}
 	return m, nil
+}
+
+func (m Model) handleStatusFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "j", "down", "l", "right":
+		if m.statusIndex < len(m.statusOptions)-1 {
+			m.statusIndex++
+			m.applyStatusFilter(m.statusOptions[m.statusIndex])
+		}
+	case "k", "up", "h", "left":
+		if m.statusIndex > 0 {
+			m.statusIndex--
+			m.applyStatusFilter(m.statusOptions[m.statusIndex])
+		}
+	case "0":
+		m.statusIndex = 0
+		m.applyStatusFilter("")
+	case "enter", "s":
+		m.statusMode = false
+	case "esc":
+		m.statusFilter = m.savedStatus
+		m.initialFilters.Statuses = append([]string(nil), m.savedStatuses...)
+		m.initialFilters.LifecycleStages = append([]string(nil), m.savedStages...)
+		m.initialFilters.AttentionStages = append([]string(nil), m.savedAttention...)
+		m.refilter()
+		m.statusMode = false
+	}
+	return m, nil
+}
+
+func (m *Model) applyStatusFilter(status string) {
+	m.statusFilter = status
+	m.initialFilters.Statuses = nil
+	m.initialFilters.LifecycleStages = nil
+	m.initialFilters.AttentionStages = nil
+	m.refilter()
 }
 
 func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -125,6 +169,7 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Type filter accelerators — 0 for all, 1-4 for the builtin types
 	if filter, ok := m.typeFilterFor(key); ok {
 		m.typeFilter = filter
+		m.initialFilters.Types = nil
 		m.refilter()
 		return m, nil
 	}
@@ -181,6 +226,8 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.enterPriorityMode()
 	case "S":
 		m.enterStageMode()
+	case "s":
+		m.enterStatusMode()
 
 	// Type filter mode
 	case "f":
@@ -212,8 +259,14 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.searchQuery = ""
 			m.searchInput.SetValue("")
 			m.refilter()
-		} else if m.categoryFilter != "" {
+		} else if m.categoryFilter != "" || len(m.initialFilters.Categories) > 0 {
 			m.categoryFilter = ""
+			m.initialFilters.Categories = nil
+			m.refilter()
+		} else if m.statusFilter != "" || len(m.initialFilters.Statuses) > 0 || len(m.initialFilters.LifecycleStages) > 0 || len(m.initialFilters.AttentionStages) > 0 {
+			m.applyStatusFilter("")
+		} else if len(m.initialFilters.Groups) > 0 {
+			m.initialFilters.Groups = nil
 			m.refilter()
 		}
 	}

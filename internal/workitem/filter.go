@@ -11,6 +11,7 @@ func Filter(items []WorkItem, types, stages []string, query string) []WorkItem {
 type FilterOptions struct {
 	Types           []string
 	Categories      []string
+	Statuses        []string
 	LifecycleStages []string
 	AttentionStages []string
 	Groups          []string
@@ -19,12 +20,13 @@ type FilterOptions struct {
 }
 
 func FilterAdvanced(items []WorkItem, opts FilterOptions) []WorkItem {
-	if len(opts.Types) == 0 && len(opts.Categories) == 0 && len(opts.LifecycleStages) == 0 && len(opts.AttentionStages) == 0 && len(opts.Groups) == 0 && opts.Query == "" && opts.ShowParked {
+	if len(opts.Types) == 0 && len(opts.Categories) == 0 && len(opts.Statuses) == 0 && len(opts.LifecycleStages) == 0 && len(opts.AttentionStages) == 0 && len(opts.Groups) == 0 && opts.Query == "" && opts.ShowParked {
 		return items
 	}
 
 	typeSet := toSet(opts.Types)
 	categorySet := toSet(opts.Categories)
+	statusSet := normalizedStatusSet(opts.Statuses)
 	stageSet := toSet(opts.LifecycleStages)
 	attentionSet := toSet(opts.AttentionStages)
 	groupSet := toSet(opts.Groups)
@@ -35,7 +37,14 @@ func FilterAdvanced(items []WorkItem, opts FilterOptions) []WorkItem {
 		if len(typeSet) > 0 && !typeSet[string(item.WorkflowType)] {
 			continue
 		}
-		if len(categorySet) > 0 && !categorySet[item.WorkflowCategory] {
+		category := item.WorkflowCategory
+		if category == "" {
+			category = "uncategorized"
+		}
+		if len(categorySet) > 0 && !categorySet[category] {
+			continue
+		}
+		if len(statusSet) > 0 && !statusSet[DisplayStatus(item)] {
 			continue
 		}
 		if len(stageSet) > 0 && !stageSet[string(item.LifecycleStage)] {
@@ -47,7 +56,7 @@ func FilterAdvanced(items []WorkItem, opts FilterOptions) []WorkItem {
 		if len(groupSet) > 0 && !groupSet[item.Group] {
 			continue
 		}
-		if !opts.ShowParked && len(attentionSet) == 0 && item.AttentionStage == "parked" {
+		if !opts.ShowParked && len(attentionSet) == 0 && len(statusSet) == 0 && item.AttentionStage == "parked" {
 			continue
 		}
 		if query != "" && !matchesQuery(item, query) {
@@ -56,6 +65,17 @@ func FilterAdvanced(items []WorkItem, opts FilterOptions) []WorkItem {
 		result = append(result, item)
 	}
 	return result
+}
+
+func normalizedStatusSet(vals []string) map[string]bool {
+	set := make(map[string]bool, len(vals))
+	for _, value := range vals {
+		set[NormalizeDisplayStatus(value)] = true
+	}
+	if len(set) == 0 {
+		return nil
+	}
+	return set
 }
 
 func toSet(vals []string) map[string]bool {

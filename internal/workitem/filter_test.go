@@ -112,6 +112,14 @@ func TestFilter_ByCategory(t *testing.T) {
 	}
 }
 
+func TestFilter_UncategorizedMatchesEmptyCategory(t *testing.T) {
+	items := []WorkItem{{Title: "uncategorized"}, {Title: "plan", WorkflowCategory: "plan"}}
+	got := FilterAdvanced(items, FilterOptions{Categories: []string{"uncategorized"}, ShowParked: true})
+	if len(got) != 1 || got[0].Title != "uncategorized" {
+		t.Fatalf("uncategorized filter = %v", got)
+	}
+}
+
 func TestFilter_CategoryCombinesWithType(t *testing.T) {
 	items := []WorkItem{
 		{WorkflowType: WorkflowTypeDesign, WorkflowCategory: "plan", Title: "d"},
@@ -121,6 +129,32 @@ func TestFilter_CategoryCombinesWithType(t *testing.T) {
 	got := FilterAdvanced(items, FilterOptions{Types: []string{"festival"}, Categories: []string{"plan"}, ShowParked: true})
 	if len(got) != 1 || got[0].Title != "f" {
 		t.Fatalf("type+category filter = %v, want festival plan item", got)
+	}
+}
+
+func TestFilter_ByDisplayedStatus(t *testing.T) {
+	items := []WorkItem{
+		{Title: "intent active", LifecycleStage: LifecycleStageActive},
+		{Title: "design active", LifecycleStage: LifecycleStageNone, AttentionStage: "active"},
+		{Title: "current", LifecycleStage: LifecycleStageNone, AttentionStage: "current"},
+		{Title: "planning", LifecycleStage: LifecycleStagePlanning},
+	}
+
+	got := FilterAdvanced(items, FilterOptions{Statuses: []string{"active"}})
+	if len(got) != 2 || got[0].Title != "intent active" || got[1].Title != "design active" {
+		t.Fatalf("display status active = %v", got)
+	}
+	got = FilterAdvanced(items, FilterOptions{Statuses: []string{"planning"}})
+	if len(got) != 1 || got[0].Title != "planning" {
+		t.Fatalf("planning alias = %v", got)
+	}
+}
+
+func TestFilter_StatusParkedOverridesDefaultHiding(t *testing.T) {
+	items := []WorkItem{{Title: "parked", AttentionStage: "parked"}, {Title: "active", AttentionStage: "active"}}
+	got := FilterAdvanced(items, FilterOptions{Statuses: []string{"parked"}, ShowParked: false})
+	if len(got) != 1 || got[0].Title != "parked" {
+		t.Fatalf("status parked = %v", got)
 	}
 }
 

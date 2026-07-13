@@ -87,6 +87,7 @@ var manifestAgentAllowedReasons = map[string]string{
 	"workitem doctor":            "Read path (--json) is safe; never pass --fix from an agent",
 	"workitem link":              "Non-interactive workitem link operation",
 	"workitem links":             "Read-only workitem link listing",
+	"workitem list":              "Read-only filtered listing with non-interactive compact and JSON output",
 	"workitem group":             "Non-interactive group update with explicit selector",
 	"workitem priority":          "Non-interactive priority update with explicit selector",
 	"workitem promote":           "Non-interactive promote fully specified by --target and flags",

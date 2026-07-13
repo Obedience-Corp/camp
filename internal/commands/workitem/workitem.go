@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
@@ -30,6 +31,7 @@ func NewWorkitemCommand() *cobra.Command {
 		flagPathOutput      string
 		flagTypes           []string
 		flagCategories      []string
+		flagStatuses        []string
 		flagStages          []string
 		flagAttentionStages []string
 		flagGroups          []string
@@ -64,42 +66,25 @@ Examples:
 			if err := validateFlags(flagJSON, flagList, flagPrint, flagPathOutput, flagTypes, flagCategories, flagStages, flagAttentionStages, flagGroups, flagGroupBy); err != nil {
 				return err
 			}
+			if err := validateDisplayStatuses(flagStatuses); err != nil {
+				return err
+			}
 
 			interactive := isInteractive()
 			if !interactive && !flagJSON && !flagList && !flagPrint && flagPathOutput == "" {
 				return camperrors.New("non-interactive use requires --json, --list, or --print flag")
 			}
 
-			cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
+			state, err := discoverWorkitems(ctx)
 			if err != nil {
-				return camperrors.Wrap(err, "not in a campaign directory")
+				return err
 			}
-			campaignRoot, err = pathutil.ResolveRoot(campaignRoot)
-			if err != nil {
-				return camperrors.Wrap(err, "resolving campaign root")
-			}
-			resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
-
-			items, err := wkitem.Discover(ctx, campaignRoot, resolver)
-			if err != nil {
-				return camperrors.Wrap(err, "discovering work items")
-			}
-			items = wkitem.ApplyWorkflowCategories(items, cfg.WorkflowCategoryForType)
-
-			// Load priority store read-only; pruning happens only in explicit write paths.
-			storePath := priority.StorePath(campaignRoot)
-			store, err := priority.Load(storePath)
-			if err != nil {
-				return camperrors.Wrap(err, "loading priority store")
-			}
-
-			// Apply priority overlay and re-sort with priority buckets.
-			items = priority.Apply(store, items)
-			wkitem.Sort(items)
+			items := state.items
 
 			items = wkitem.FilterAdvanced(items, wkitem.FilterOptions{
 				Types:           flagTypes,
 				Categories:      flagCategories,
+				Statuses:        flagStatuses,
 				LifecycleStages: flagStages,
 				AttentionStages: flagAttentionStages,
 				Groups:          flagGroups,
@@ -119,7 +104,7 @@ Examples:
 			case flagList:
 				return outputList(cmd.OutOrStdout(), items, displayGroupBy)
 			case flagJSON:
-				return outputJSON(campaignRoot, cfg, items, displayGroupBy)
+				return outputJSON(state.campaignRoot, state.cfg, items, displayGroupBy)
 			case !interactive:
 				// Non-interactive --print/--path-output: output first item path directly.
 				if len(items) == 0 {
@@ -127,11 +112,11 @@ Examples:
 				}
 				return outputSelectedPath(items[0], flagPrint, flagPathOutput)
 			case flagPathOutput != "":
-				return runTUI(ctx, items, false, flagPathOutput, campaignRoot, resolver, store, storePath, flagShowParked, cfg.WorkflowCategoryForType)
+				return runTUI(ctx, items, false, flagPathOutput, state.campaignRoot, state.resolver, state.store, state.storePath, flagShowParked, state.cfg.WorkflowCategoryForType)
 			case flagPrint:
-				return runTUI(ctx, items, true, "", campaignRoot, resolver, store, storePath, flagShowParked, cfg.WorkflowCategoryForType)
+				return runTUI(ctx, items, true, "", state.campaignRoot, state.resolver, state.store, state.storePath, flagShowParked, state.cfg.WorkflowCategoryForType)
 			default:
-				return runTUI(ctx, items, false, "", campaignRoot, resolver, store, storePath, flagShowParked, cfg.WorkflowCategoryForType)
+				return runTUI(ctx, items, false, "", state.campaignRoot, state.resolver, state.store, state.storePath, flagShowParked, state.cfg.WorkflowCategoryForType)
 			}
 		}),
 	}
@@ -144,6 +129,7 @@ Examples:
 	_ = cmd.Flags().MarkHidden("path-output")
 	cmd.Flags().StringArrayVar(&flagTypes, "type", nil, "Filter by workflow type (builtin: intent, design, explore, festival; or any slug-safe custom type produced by 'camp workitem create --type <name>')")
 	cmd.Flags().StringArrayVar(&flagCategories, "category", nil, "Filter by workflow category (builtin: plan, research, pipeline, review, uncategorized; or any category defined under workflows in campaign.yaml)")
+	cmd.Flags().StringArrayVar(&flagStatuses, "status", nil, "Filter by displayed status (current, next, active, parked, inbox, ready, plan, ritual, chains, none)")
 	cmd.Flags().StringArrayVar(&flagStages, "stage", nil, "Filter by lifecycle stage (none, inbox, active, ready, planning, ritual, chains)")
 	cmd.Flags().StringArrayVar(&flagAttentionStages, "attention-stage", nil, "Filter by attention stage (current, next, active, parked)")
 	cmd.Flags().StringArrayVar(&flagGroups, "group", nil, "Filter by workitem group")
@@ -169,8 +155,43 @@ Examples:
 	cmd.AddCommand(newRepairCommand())
 	cmd.AddCommand(newCommitCommand())
 	cmd.AddCommand(newCommitsCommand())
+	cmd.AddCommand(newListCommand())
 
 	return cmd
+}
+
+type discoveredWorkitems struct {
+	cfg          *config.CampaignConfig
+	campaignRoot string
+	resolver     *paths.Resolver
+	items        []wkitem.WorkItem
+	store        *priority.Store
+	storePath    string
+}
+
+func discoverWorkitems(ctx context.Context) (*discoveredWorkitems, error) {
+	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
+	if err != nil {
+		return nil, camperrors.Wrap(err, "not in a campaign directory")
+	}
+	campaignRoot, err = pathutil.ResolveRoot(campaignRoot)
+	if err != nil {
+		return nil, camperrors.Wrap(err, "resolving campaign root")
+	}
+	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
+	items, err := wkitem.Discover(ctx, campaignRoot, resolver)
+	if err != nil {
+		return nil, camperrors.Wrap(err, "discovering work items")
+	}
+	items = wkitem.ApplyWorkflowCategories(items, cfg.WorkflowCategoryForType)
+	storePath := priority.StorePath(campaignRoot)
+	store, err := priority.Load(storePath)
+	if err != nil {
+		return nil, camperrors.Wrap(err, "loading priority store")
+	}
+	items = priority.Apply(store, items)
+	wkitem.Sort(items)
+	return &discoveredWorkitems{cfg: cfg, campaignRoot: campaignRoot, resolver: resolver, items: items, store: store, storePath: storePath}, nil
 }
 
 func outputSelectedPath(item wkitem.WorkItem, printOnly bool, pathOutput string) error {
@@ -309,6 +330,16 @@ func validateFlags(jsonMode, listMode, printMode bool, pathOutput string, types,
 	return nil
 }
 
+func validateDisplayStatuses(statuses []string) error {
+	for _, status := range statuses {
+		if !wkitem.IsDisplayStatus(status) {
+			return camperrors.NewValidation("status",
+				fmt.Sprintf("unknown --status value %q (valid: %s)", status, strings.Join(wkitem.DisplayStatusVocabulary(), ", ")), nil)
+		}
+	}
+	return nil
+}
+
 func outputJSON(campaignRoot string, cfg *config.CampaignConfig, items []wkitem.WorkItem, groupBy string) error {
 	payload := wkitem.NewPayloadWithGrouping(campaignRoot, items, groupBy)
 	payload.CategoryVocabulary = categoryVocabulary(cfg)
@@ -345,4 +376,20 @@ func runTUI(ctx context.Context, items []wkitem.WorkItem, printOnly bool, pathOu
 		return nil
 	}
 	return runSelectedAction(ctx, *m.Selected, printOnly, pathOutput, campaignRoot)
+}
+
+func runTUIWithFilters(ctx context.Context, state *discoveredWorkitems, filters wkitem.FilterOptions, limit int) error {
+	model := wktui.New(ctx, state.items, state.campaignRoot, state.resolver, state.store, state.storePath, filters.ShowParked)
+	model.SetCategoryResolver(state.cfg.WorkflowCategoryForType)
+	model.SetInitialFilters(filters, limit)
+	p := tea.NewProgram(model, tea.WithAltScreen())
+	result, err := p.Run()
+	if err != nil {
+		return camperrors.Wrap(err, "TUI error")
+	}
+	m, ok := result.(wktui.Model)
+	if !ok || m.Selected == nil {
+		return nil
+	}
+	return runSelectedAction(ctx, *m.Selected, false, "", state.campaignRoot)
 }
