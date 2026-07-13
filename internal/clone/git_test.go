@@ -144,6 +144,99 @@ func TestGitCloneFromPeer_CleansPartialOnRepointFailure(t *testing.T) {
 	}
 }
 
+// A peer-seeded clone must be a true origin replica: the peer's private
+// branches (as origin/*) and tags that the real origin lacks are pruned by
+// repointOrigin, not carried into the clone.
+func TestGitCloneFromPeer_PrunesPeerOnlyRefs(t *testing.T) {
+	ctx := context.Background()
+	origin := setupTestRepo(t)
+
+	peerRoot := filepath.Join(t.TempDir(), "peer-campaign")
+	runGit(t, t.TempDir(), "clone", origin, peerRoot)
+	// Private refs that exist only on the peer, not on origin.
+	runGit(t, peerRoot, "branch", "peer-wip")
+	runGit(t, peerRoot, "tag", "peer-only-tag")
+
+	target := filepath.Join(t.TempDir(), "cloned")
+	cloner := NewCloner(
+		WithURL(origin),
+		WithDirectory(target),
+		WithNoRegister(true),
+		WithNoSubmodules(true),
+		WithPeer(peer.FromPath("peerbox", peerRoot)),
+	)
+	result, err := cloner.Clone(ctx)
+	if err != nil || !result.Success {
+		t.Fatalf("Clone() err=%v success=%v warnings=%v", err, result.Success, result.Warnings)
+	}
+
+	remotes, err := exec.Command("git", "-C", target, "branch", "-r").Output()
+	if err != nil {
+		t.Fatalf("listing remote branches: %v", err)
+	}
+	if strings.Contains(string(remotes), "peer-wip") {
+		t.Errorf("origin/peer-wip survived; peer-only branch not pruned:\n%s", remotes)
+	}
+
+	tags, err := exec.Command("git", "-C", target, "tag").Output()
+	if err != nil {
+		t.Fatalf("listing tags: %v", err)
+	}
+	if strings.Contains(string(tags), "peer-only-tag") {
+		t.Errorf("peer-only-tag survived; peer-only tag not pruned:\n%s", tags)
+	}
+}
+
+// --branch must be forwarded into the peer clone and honored by the final
+// checkout, so camp clone --from <peer> --branch X lands on X.
+func TestGitCloneFromPeer_ForwardsBranch(t *testing.T) {
+	ctx := context.Background()
+	origin := setupTestRepo(t)
+
+	defOut, err := exec.Command("git", "-C", origin, "rev-parse", "--abbrev-ref", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("reading default branch: %v", err)
+	}
+	def := strings.TrimSpace(string(defOut))
+
+	// A non-default branch with distinct content on origin.
+	runGit(t, origin, "checkout", "-b", "release")
+	createFile(t, filepath.Join(origin, "release.txt"), "release content")
+	runGit(t, origin, "add", ".")
+	runGit(t, origin, "commit", "-m", "release work")
+	runGit(t, origin, "checkout", def)
+
+	// Peer needs release as a LOCAL branch for --branch to seed from it.
+	peerRoot := filepath.Join(t.TempDir(), "peer-campaign")
+	runGit(t, t.TempDir(), "clone", origin, peerRoot)
+	runGit(t, peerRoot, "branch", "release", "origin/release")
+
+	target := filepath.Join(t.TempDir(), "cloned")
+	cloner := NewCloner(
+		WithURL(origin),
+		WithDirectory(target),
+		WithBranch("release"),
+		WithNoRegister(true),
+		WithNoSubmodules(true),
+		WithPeer(peer.FromPath("peerbox", peerRoot)),
+	)
+	result, err := cloner.Clone(ctx)
+	if err != nil || !result.Success {
+		t.Fatalf("Clone() err=%v success=%v warnings=%v", err, result.Success, result.Warnings)
+	}
+
+	headOut, err := exec.Command("git", "-C", target, "rev-parse", "--abbrev-ref", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("reading cloned HEAD: %v", err)
+	}
+	if got := strings.TrimSpace(string(headOut)); got != "release" {
+		t.Errorf("cloned checkout on %q, want release", got)
+	}
+	if _, statErr := os.Stat(filepath.Join(target, "release.txt")); statErr != nil {
+		t.Errorf("release.txt missing; clone did not land on the release branch content")
+	}
+}
+
 func TestParseSubmoduleStatus(t *testing.T) {
 	tests := []struct {
 		name        string

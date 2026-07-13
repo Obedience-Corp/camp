@@ -289,9 +289,12 @@ func (c *Cloner) gitCloneFromPeer(ctx context.Context) (string, error) {
 // clone is fresh: there is no local work to lose, and clone semantics promise
 // an origin replica.
 func (c *Cloner) repointOrigin(ctx context.Context, dir string) error {
+	// --prune/--prune-tags drop the peer's branches (as origin/*) and tags that
+	// the real origin does not have, so a peer-seeded clone is a true origin
+	// replica rather than carrying the peer's private refs.
 	steps := [][]string{
 		{"remote", "set-url", "origin", c.options.URL},
-		{"fetch", "--tags", "origin"},
+		{"fetch", "--prune", "--prune-tags", "--tags", "origin"},
 		{"remote", "set-head", "origin", "--auto"},
 	}
 	for _, step := range steps {
