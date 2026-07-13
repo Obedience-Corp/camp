@@ -104,6 +104,44 @@ func TestIntegration_CommitPrefs_LocalRoundTrip(t *testing.T) {
 	assert.Equal(t, "true", strings.TrimSpace(got), "local sync should round-trip")
 }
 
+// TestIntegration_CommitPrefs_LocalInheritClear covers unset vs explicit false
+// vs whole-block clear: get reports "inherit" when local.Commit is absent,
+// "false" when explicitly overridden, and "inherit" again after
+// `settings set local.commit.* inherit` clears the full-replace block so
+// effective falls back to global.
+func TestIntegration_CommitPrefs_LocalInheritClear(t *testing.T) {
+	tc := GetSharedContainer(t)
+	dir := "/test/commit-prefs-inherit"
+	initCommitPrefsCampaign(t, tc, dir)
+
+	unsetOut, err := tc.RunCampInDir(dir, "settings", "get", "local.commit.sync_project_refs")
+	require.NoError(t, err, "get unset local sync: %s", unsetOut)
+	assert.Equal(t, "inherit", strings.TrimSpace(unsetOut),
+		"unset local commit block must report inherit, not false")
+
+	_, err = tc.RunCampInDir(dir, "settings", "set", "global.commit.sync_project_refs", "true")
+	require.NoError(t, err, "set global sync")
+	_, err = tc.RunCampInDir(dir, "settings", "set", "local.commit.sync_project_refs", "false")
+	require.NoError(t, err, "set local sync false")
+
+	localOut, err := tc.RunCampInDir(dir, "settings", "get", "local.commit.sync_project_refs")
+	require.NoError(t, err, "get local sync: %s", localOut)
+	assert.Equal(t, "false", strings.TrimSpace(localOut), "explicit local override should be false")
+
+	clearOut, err := tc.RunCampInDir(dir, "settings", "set", "local.commit.sync_project_refs", "inherit")
+	require.NoError(t, err, "set local sync inherit: %s", clearOut)
+
+	afterClear, err := tc.RunCampInDir(dir, "settings", "get", "local.commit.sync_project_refs")
+	require.NoError(t, err, "get after inherit: %s", afterClear)
+	assert.Equal(t, "inherit", strings.TrimSpace(afterClear),
+		"after inherit, local commit block must be cleared")
+
+	effOut, err := tc.RunCampInDir(dir, "settings", "get", "effective.commit.sync_project_refs")
+	require.NoError(t, err, "get effective after inherit: %s", effOut)
+	assert.Equal(t, "true", strings.TrimSpace(effOut),
+		"effective should fall back to global true after local clear")
+}
+
 // TestIntegration_CommitPrefs_MalformedLocalFailsClosed covers the safety fix:
 // when the global default enables project-ref sync but the campaign-local
 // override is unreadable, `camp p commit` must fail loudly rather than silently
