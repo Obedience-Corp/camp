@@ -32,7 +32,9 @@ func editAllowlist(ctx context.Context, e settings.SettingEntry, campaignRoot st
 			return camperrors.Wrap(err, "loading allowlist")
 		}
 
-		desc := fmt.Sprintf("File: %s (inherit_defaults: %v)", settings.CatalogPath(e, campaignRoot), al.InheritDefaults)
+		desc := fmt.Sprintf(
+			"File: %s (inherit_defaults: %v)\nDaemon/agent tool permissions — not camp CLI gates. Edit for obey-daemon consumers.",
+			settings.CatalogPath(e, campaignRoot), al.InheritDefaults)
 		var choice string
 		form := huh.NewForm(huh.NewGroup(
 			huh.NewSelect[string]().

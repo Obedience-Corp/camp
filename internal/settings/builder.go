@@ -67,9 +67,10 @@ func staticEntries() []SettingEntry {
 			Owner:  "camp",
 		},
 		{
-			ID:     "allowlist",
-			Title:  "Command allowlist",
-			Desc:   "Tools this campaign permits agents to run.",
+			ID:    "allowlist",
+			Title: "Daemon command allowlist",
+			Desc: "Agent/daemon tool permissions for this campaign (not camp CLI itself). " +
+				"Consumers: obey-daemon / agent runners that honor .campaign/settings/allowlist.json.",
 			Scope:  ScopeLocal,
 			Path:   ".campaign/settings/allowlist.json",
 			Format: FormatJSON,

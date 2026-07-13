@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -11,7 +10,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/Obedience-Corp/camp/internal/config"
-	"github.com/Obedience-Corp/camp/internal/editor"
 	"github.com/Obedience-Corp/camp/internal/settings"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/Obedience-Corp/camp/internal/ui/theme"
@@ -26,7 +24,7 @@ func editCampaignManifest(ctx context.Context, e settings.SettingEntry, campaign
 		options := []huh.Option[string]{
 			huh.NewOption("Identity, mission, and type", "scalars"),
 			huh.NewOption("Intent tags", "tags"),
-			huh.NewOption("Concepts taxonomy (opens editor)", "concepts"),
+			huh.NewOption("Concepts taxonomy", "concepts"),
 			huh.NewOption(rowSeparator, valSeparator),
 			huh.NewOption("Back", valBack),
 		}
@@ -48,7 +46,7 @@ func editCampaignManifest(ctx context.Context, e settings.SettingEntry, campaign
 		}
 
 		switch choice {
-		case valBack:
+		case valBack, "":
 			return nil
 		case valSeparator:
 			continue
@@ -61,7 +59,7 @@ func editCampaignManifest(ctx context.Context, e settings.SettingEntry, campaign
 				return err
 			}
 		case "concepts":
-			if err := editConceptsViaEditor(ctx, e, campaignRoot); err != nil {
+			if err := editConceptsInTUI(ctx, e, campaignRoot); err != nil {
 				return err
 			}
 		}
@@ -173,11 +171,7 @@ func editIntentTags(ctx context.Context, e settings.SettingEntry, campaignRoot s
 	return saveCampaignManifest(ctx, campaignRoot, cfg)
 }
 
-const conceptsEditorHeader = `# Edit the campaign concept taxonomy below (YAML list of concepts).
-# Each concept needs a name. A group-only parent may omit path but must have
-# children. Invalid YAML or a missing name is rejected and campaign.yaml is
-# left unchanged.
-`
+const conceptsEditorHelp = `YAML list of concepts. Each needs a name. A group-only parent may omit path but must have children. Invalid YAML or a missing name is rejected and campaign.yaml is left unchanged.`
 
 // validateConcepts checks an edited concept tree before it is written. Each
 // entry needs a name, and needs either a path or children (a pure-parent node
@@ -202,10 +196,11 @@ func validateConceptEntries(entries []config.ConceptEntry, loc string) error {
 	return nil
 }
 
-// editConceptsViaEditor round-trips the concepts subtree through $EDITOR. It is
-// the single explicit editor exception (DP2): the edit is all-or-nothing, so an
-// invalid or unparseable result never touches campaign.yaml.
-func editConceptsViaEditor(ctx context.Context, e settings.SettingEntry, campaignRoot string) error {
+// editConceptsInTUI edits the concepts subtree as YAML inside the settings TUI.
+// External $EDITOR was unreliable here (GUI editors without --wait hang; nested
+// TUI + editor leaves the terminal wedged). The edit is all-or-nothing: invalid
+// YAML or validation failure never touches campaign.yaml.
+func editConceptsInTUI(ctx context.Context, e settings.SettingEntry, campaignRoot string) error {
 	if !ui.IsTerminal() {
 		return camperrors.Wrap(camperrors.ErrInvalidInput, "editing concepts requires an interactive terminal")
 	}
@@ -219,24 +214,27 @@ func editConceptsViaEditor(ctx context.Context, e settings.SettingEntry, campaig
 	if err != nil {
 		return camperrors.Wrap(err, "serializing concepts")
 	}
+	body := strings.TrimSpace(string(data))
+	if body == "null" || body == "" {
+		body = "[]"
+	}
 
-	tmpPath, err := writeConceptsTempFile(data)
-	if err != nil {
+	form := huh.NewForm(huh.NewGroup(
+		huh.NewText().
+			Title("Concepts taxonomy (YAML)").
+			Description("File: " + settings.CatalogPath(e, campaignRoot) + "\n" + conceptsEditorHelp).
+			Value(&body),
+	))
+
+	if err := theme.RunForm(ctx, form); err != nil {
+		if theme.IsCancelled(err) {
+			return nil
+		}
 		return err
-	}
-	defer func() { _ = os.Remove(tmpPath) }()
-
-	if err := editor.Edit(ctx, tmpPath); err != nil {
-		return camperrors.Wrap(err, "running editor")
-	}
-
-	raw, err := os.ReadFile(tmpPath)
-	if err != nil {
-		return camperrors.Wrap(err, "reading edited concepts")
 	}
 
 	var edited []config.ConceptEntry
-	if err := yaml.Unmarshal(raw, &edited); err != nil {
+	if err := yaml.Unmarshal([]byte(body), &edited); err != nil {
 		fmt.Println(ui.Warning(fmt.Sprintf("Concepts not saved: invalid YAML: %v", err)))
 		return nil
 	}
@@ -247,28 +245,6 @@ func editConceptsViaEditor(ctx context.Context, e settings.SettingEntry, campaig
 
 	cfg.ConceptList = edited
 	return saveCampaignManifest(ctx, campaignRoot, cfg)
-}
-
-func writeConceptsTempFile(data []byte) (string, error) {
-	tmp, err := os.CreateTemp("", "camp-concepts-*.yaml")
-	if err != nil {
-		return "", camperrors.Wrap(err, "creating temp file")
-	}
-	if _, err := tmp.WriteString(conceptsEditorHeader); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(tmp.Name())
-		return "", camperrors.Wrap(err, "writing temp file")
-	}
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(tmp.Name())
-		return "", camperrors.Wrap(err, "writing temp file")
-	}
-	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmp.Name())
-		return "", camperrors.Wrap(err, "closing temp file")
-	}
-	return tmp.Name(), nil
 }
 
 // saveCampaignManifest persists campaign.yaml edits through SaveCampaignConfig,

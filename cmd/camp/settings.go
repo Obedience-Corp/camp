@@ -133,7 +133,9 @@ func runScopeMenu(ctx context.Context, cat []settings.SettingEntry, scope settin
 		}
 
 		switch choice {
-		case valBack:
+		case valBack, "":
+			// Empty choice is how some terminals surface ESC on Select
+			// without ErrUserAborted — treat it as Back.
 			return nil
 		case valSeparator:
 			continue
@@ -244,7 +246,7 @@ func editGlobalConfig(ctx context.Context, e settings.SettingEntry, campaignRoot
 		}
 
 		switch choice {
-		case valBack:
+		case valBack, "":
 			return nil
 		case valSeparator:
 			continue
@@ -310,7 +312,7 @@ func editLocalSettingsFile(ctx context.Context, e settings.SettingEntry, campaig
 		}
 
 		switch choice {
-		case valBack:
+		case valBack, "":
 			return nil
 		case valSeparator:
 			continue

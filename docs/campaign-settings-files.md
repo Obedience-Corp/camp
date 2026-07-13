@@ -299,7 +299,9 @@ Notes:
 
 ### `.campaign/settings/allowlist.json`
 
-Optional daemon command allowlist overrides for a specific campaign.
+Optional **daemon/agent** command allowlist overrides for a specific campaign.
+This is not a camp CLI gate — `camp` itself never consults this file. It is for
+obey-daemon / agent runners that honor campaign tool permissions.
 
 Example:
 
@@ -329,9 +331,9 @@ Notes:
 - `inherit_defaults: true` means the campaign file extends the daemon defaults.
 - `inherit_defaults: false` means only commands listed in this file are
   explicitly allowed.
-- `camp settings` (Local Settings, then Command allowlist) edits this file:
-  toggle `allowed` per command, add, and remove commands. `inherit_defaults` is
-  shown there but only changed by hand-editing.
+- `camp settings` (Local Settings, then Daemon command allowlist) edits this
+  file: toggle `allowed` per command, add, and remove commands.
+  `inherit_defaults` is shown there but only changed by hand-editing.
 
 ### `.campaign/settings/local.json`
 
@@ -391,11 +393,12 @@ Local (under `.campaign/`):
 
 - `campaign.yaml` - identity, mission, and type via a structured form; the
   `intents.tags` list via a one-per-line editor; and the nested `concepts`
-  taxonomy via a `$EDITOR` round-trip (the single explicit editor exception,
-  validated all-or-nothing so an invalid edit never touches the file).
+  taxonomy via an in-TUI YAML editor (validated all-or-nothing so an invalid
+  edit never touches the file).
 - `settings/local.json` - the campaign theme override.
-- `settings/allowlist.json` - toggle `allowed` per command, add, and remove
-  commands. `inherit_defaults` is shown but not changed here.
+- `settings/allowlist.json` - daemon/agent tool allowlist (not camp CLI):
+  toggle `allowed` per command, add, and remove commands. `inherit_defaults` is
+  shown but not changed here.
 
 Global (under `~/.obey/campaign/`):
 
