@@ -119,21 +119,41 @@ func (s *Source) Refspec() string {
 	return s.Refspecs()[1]
 }
 
-// GitEnv returns the environment for git commands that dial this source:
-// os.Environ plus a GIT_SSH_COMMAND carrying the machine's ssh options
-// (BatchMode, ConnectTimeout, ControlMaster multiplexing, identity file).
-// Filesystem sources need no override and return nil, which keeps the
-// calling process environment for exec.Cmd.
-func (s *Source) GitEnv() []string {
+// SSHCommand returns the ssh command line (binary plus quoted options) that
+// dials this source, carrying BatchMode, ConnectTimeout, ControlMaster
+// multiplexing, and the identity file. Empty for filesystem sources.
+func (s *Source) SSHCommand() string {
 	if s.target == "" {
-		return nil
+		return ""
 	}
 	parts := make([]string, 0, len(s.sshOpts)+1)
 	parts = append(parts, "ssh")
 	for _, o := range s.sshOpts {
 		parts = append(parts, remote.ShellQuote(o))
 	}
-	return append(os.Environ(), "GIT_SSH_COMMAND="+strings.Join(parts, " "))
+	return strings.Join(parts, " ")
+}
+
+// GitEnv returns the environment for git commands that dial this source:
+// os.Environ plus a GIT_SSH_COMMAND carrying the machine's ssh options.
+// Filesystem sources need no override and return nil, which keeps the
+// calling process environment for exec.Cmd.
+func (s *Source) GitEnv() []string {
+	if s.target == "" {
+		return nil
+	}
+	return append(os.Environ(), "GIT_SSH_COMMAND="+s.SSHCommand())
+}
+
+// RsyncSpec returns the rsync source spec for the directory at relPath under
+// the peer's campaign root, with a trailing slash so rsync copies contents
+// into the destination directory rather than nesting it.
+func (s *Source) RsyncSpec(relPath string) string {
+	p := path.Join(s.root, relPath)
+	if s.target == "" {
+		return p + "/"
+	}
+	return s.target + ":" + p + "/"
 }
 
 // Fetch fetches heads and HEAD from the peer copy of the repository at

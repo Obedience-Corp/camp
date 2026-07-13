@@ -8,7 +8,10 @@
 // This prevents data loss from stale URLs or uncommitted changes during sync operations.
 package sync
 
-import "github.com/Obedience-Corp/camp/internal/peer"
+import (
+	"github.com/Obedience-Corp/camp/internal/artifacts"
+	"github.com/Obedience-Corp/camp/internal/peer"
+)
 
 // SyncOptions configures sync behavior.
 type SyncOptions struct {
@@ -26,6 +29,17 @@ type SyncOptions struct {
 	JSON bool
 	// Submodules lists specific submodules to sync (empty = all).
 	Submodules []string
+	// GitOnly skips artifact transfer on a peer-assisted sync.
+	GitOnly bool
+	// ArtifactsOnly skips the git phases and only pulls declared artifact
+	// roots from the peer (all policies, since the ask is explicit).
+	ArtifactsOnly bool
+	// VerifyArtifacts checks artifact roots against last-transfer snapshots
+	// (no transfer, no git phases). VerifyPeer scopes it to one peer id;
+	// empty means every peer with a snapshot.
+	VerifyArtifacts bool
+	// VerifyPeer scopes VerifyArtifacts to one peer id.
+	VerifyPeer string
 }
 
 // SyncResult contains the outcome of a sync operation.
@@ -38,10 +52,21 @@ type SyncResult struct {
 	URLChanges []URLChange
 	// UpdateResults contains the outcome for each submodule.
 	UpdateResults []SubmoduleResult
+	// Artifacts contains per-root outcomes of the peer artifact pull.
+	Artifacts []*artifacts.PullResult
+	// ArtifactVerifies contains per-root, per-peer verification outcomes.
+	ArtifactVerifies []ArtifactVerify
 	// Warnings contains non-fatal issues encountered.
 	Warnings []string
 	// Errors contains fatal errors that occurred.
 	Errors []error
+}
+
+// ArtifactVerify pairs a verification result with the peer snapshot it ran
+// against.
+type ArtifactVerify struct {
+	Peer   string
+	Result *artifacts.VerifyResult
 }
 
 // SubmoduleResult tracks the outcome for a single submodule.
@@ -194,6 +219,31 @@ func WithPeer(p *peer.Source) SyncerOption {
 func WithSubmodules(submodules []string) SyncerOption {
 	return func(s *Syncer) {
 		s.options.Submodules = submodules
+	}
+}
+
+// WithGitOnly skips artifact transfer on a peer-assisted sync.
+func WithGitOnly(gitOnly bool) SyncerOption {
+	return func(s *Syncer) {
+		s.options.GitOnly = gitOnly
+	}
+}
+
+// WithArtifactsOnly skips the git phases and only pulls declared artifact
+// roots from the configured peer.
+func WithArtifactsOnly(artifactsOnly bool) SyncerOption {
+	return func(s *Syncer) {
+		s.options.ArtifactsOnly = artifactsOnly
+	}
+}
+
+// WithVerifyArtifacts checks artifact roots against last-transfer snapshots
+// instead of syncing. peerID scopes the check to one peer; empty checks every
+// peer with a snapshot.
+func WithVerifyArtifacts(verify bool, peerID string) SyncerOption {
+	return func(s *Syncer) {
+		s.options.VerifyArtifacts = verify
+		s.options.VerifyPeer = peerID
 	}
 }
 

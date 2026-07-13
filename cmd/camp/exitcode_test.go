@@ -88,13 +88,16 @@ func runSyncExitCodePreflightFailure(t *testing.T) error {
 
 	oldOpts := syncOpts
 	syncOpts = struct {
-		dryRun   bool
-		force    bool
-		verbose  bool
-		parallel int
-		noFetch  bool
-		json     bool
-		from     string
+		dryRun          bool
+		force           bool
+		verbose         bool
+		parallel        int
+		noFetch         bool
+		json            bool
+		from            string
+		gitOnly         bool
+		artifactsOnly   bool
+		verifyArtifacts bool
 	}{}
 	t.Cleanup(func() { syncOpts = oldOpts })
 

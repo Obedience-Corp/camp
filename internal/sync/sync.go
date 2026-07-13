@@ -10,6 +10,7 @@ import (
 	"strings"
 	gosync "sync"
 
+	"github.com/Obedience-Corp/camp/internal/artifacts"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 )
@@ -57,6 +58,17 @@ func (s *Syncer) Sync(ctx context.Context) (*SyncResult, error) {
 	if s.options.DryRun {
 		// Add potential URL changes to result
 		result.URLChanges = s.predictURLChanges(preflight)
+		return result, nil
+	}
+
+	// Artifact-only variants keep the preflight above (every sync variant
+	// runs it) but skip the git phases entirely.
+	if s.options.VerifyArtifacts {
+		s.verifyArtifacts(ctx, result)
+		return result, nil
+	}
+	if s.options.ArtifactsOnly {
+		s.pullArtifacts(ctx, result)
 		return result, nil
 	}
 
@@ -115,7 +127,107 @@ func (s *Syncer) Sync(ctx context.Context) (*SyncResult, error) {
 		result.Errors = append(result.Errors, err)
 	}
 
+	// Phase 5: Artifact pull rides the peer connection when one is
+	// configured; policy=always roots only, and failures degrade to
+	// warnings (the accelerated sync must not be worse than a plain one).
+	if s.peer != nil && !s.options.GitOnly {
+		s.pullArtifacts(ctx, result)
+	}
+
 	return result, nil
+}
+
+// pullArtifacts transfers declared artifact roots from the configured peer.
+// Default syncs move policy=always roots; an explicit --artifacts-only run
+// moves every declared root and treats per-root failures as sync failures
+// (the artifacts were the whole ask).
+func (s *Syncer) pullArtifacts(ctx context.Context, result *SyncResult) {
+	if s.peer == nil {
+		result.Success = false
+		result.Errors = append(result.Errors, &SyncError{Op: "artifacts",
+			Cause: camperrors.New("artifact sync needs a peer (--from <machine>)")})
+		return
+	}
+	cfg, err := artifacts.Load(s.repoRoot)
+	if err != nil {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("artifacts config: %v", err))
+		return
+	}
+	for _, root := range cfg.Roots {
+		if ctx.Err() != nil {
+			result.Errors = append(result.Errors, ctx.Err())
+			result.Success = false
+			return
+		}
+		if !s.options.ArtifactsOnly && root.EffectivePolicy() != artifacts.PolicyAlways {
+			continue
+		}
+		pr := artifacts.Pull(ctx, s.repoRoot, s.peer, root)
+		result.Artifacts = append(result.Artifacts, pr)
+		if pr.Warning != "" {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("artifacts %s: %s", pr.Root, pr.Warning))
+			if s.options.ArtifactsOnly {
+				result.Success = false
+			}
+		}
+	}
+}
+
+// verifyArtifacts compares each declared root against last-transfer
+// snapshots: no transfer, no git phases. Discrepancies fail the run so
+// scripting can rely on the exit code.
+func (s *Syncer) verifyArtifacts(ctx context.Context, result *SyncResult) {
+	cfg, err := artifacts.Load(s.repoRoot)
+	if err != nil {
+		result.Success = false
+		result.Errors = append(result.Errors, &SyncError{Op: "artifacts-verify", Cause: err})
+		return
+	}
+
+	peers := []string{s.options.VerifyPeer}
+	if s.options.VerifyPeer == "" {
+		peers, err = artifacts.ListSnapshotPeers(s.repoRoot)
+		if err != nil {
+			result.Success = false
+			result.Errors = append(result.Errors, &SyncError{Op: "artifacts-verify", Cause: err})
+			return
+		}
+		if len(peers) == 0 {
+			result.Warnings = append(result.Warnings,
+				"no peer snapshots recorded yet; nothing to verify against (run 'camp sync --from <machine>' first)")
+			return
+		}
+	}
+
+	for _, root := range cfg.Roots {
+		if ctx.Err() != nil {
+			result.Errors = append(result.Errors, ctx.Err())
+			result.Success = false
+			return
+		}
+		local, err := artifacts.BuildManifest(ctx, s.repoRoot, root.Path)
+		if err != nil {
+			result.Success = false
+			result.Errors = append(result.Errors, &SyncError{Op: "artifacts-verify", Submodule: root.Path, Cause: err})
+			continue
+		}
+		for _, peerID := range peers {
+			snapshot, err := artifacts.LoadSnapshot(s.repoRoot, peerID, root.Path)
+			if err != nil {
+				result.Success = false
+				result.Errors = append(result.Errors, &SyncError{Op: "artifacts-verify", Submodule: root.Path, Cause: err})
+				continue
+			}
+			if snapshot == nil {
+				continue
+			}
+			verify := artifacts.Verify(local, snapshot)
+			result.ArtifactVerifies = append(result.ArtifactVerifies, ArtifactVerify{Peer: peerID, Result: verify})
+			if !verify.Clean() {
+				result.Success = false
+			}
+		}
+	}
 }
 
 // collectWarnings gathers warning messages from preflight results.
