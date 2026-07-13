@@ -24,17 +24,20 @@ type Manifest struct {
 	Files       []FileEntry `json:"files"`
 }
 
-// FileEntry is one regular file inside an artifact root.
+// FileEntry is one regular file (or symlink) inside an artifact root.
 type FileEntry struct {
-	Path  string `json:"path"` // slash-separated, relative to the root
-	Size  int64  `json:"size"`
-	MTime int64  `json:"mtime_unix"`
+	Path string `json:"path"` // slash-separated, relative to the root
+	Size int64  `json:"size"`
+	MTime int64 `json:"mtime_unix"`
+	// Symlink marks an entry that is a symbolic link (recorded via lstat, not
+	// followed) so a local symlink participates in conflict protection instead
+	// of being invisible to it.
+	Symlink bool `json:"symlink,omitempty"`
 }
 
-// BuildManifest walks the artifact root and records every regular file.
-// Symlinks and directories are skipped: an artifact root is expected to hold
-// plain payload files. A root directory that does not exist yet yields an
-// empty manifest.
+// BuildManifest walks the artifact root and records every regular file and
+// symlink (symlinks via lstat, never followed). Directories are skipped. A
+// root directory that does not exist yet yields an empty manifest.
 func BuildManifest(ctx context.Context, campaignRoot, rootRel string) (*Manifest, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -61,10 +64,11 @@ func BuildManifest(ctx context.Context, campaignRoot, rootRel string) (*Manifest
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if !d.Type().IsRegular() {
+		isSymlink := d.Type()&fs.ModeSymlink != 0
+		if !d.Type().IsRegular() && !isSymlink {
 			return nil
 		}
-		fi, err := d.Info()
+		fi, err := d.Info() // WalkDir uses lstat, so symlinks are not followed
 		if err != nil {
 			return err
 		}
@@ -73,9 +77,10 @@ func BuildManifest(ctx context.Context, campaignRoot, rootRel string) (*Manifest
 			return err
 		}
 		m.Files = append(m.Files, FileEntry{
-			Path:  filepath.ToSlash(rel),
-			Size:  fi.Size(),
-			MTime: fi.ModTime().Unix(),
+			Path:    filepath.ToSlash(rel),
+			Size:    fi.Size(),
+			MTime:   fi.ModTime().Unix(),
+			Symlink: isSymlink,
 		})
 		return nil
 	})
@@ -111,11 +116,19 @@ func (m *Manifest) ProtectedPaths(baseline *Manifest) []string {
 	var protected []string
 	for _, f := range m.Files {
 		b, ok := base[f.Path]
-		if !ok || b.Size != f.Size || b.MTime != f.MTime {
+		if !ok || !sameEntry(b, f) {
 			protected = append(protected, f.Path)
 		}
 	}
 	return protected
+}
+
+// sameEntry reports whether two entries represent the same file version:
+// same size, same mtime, and same kind (a regular file and a symlink at one
+// path are never "the same," so a peer file replacing a local symlink counts
+// as a change and stays protected).
+func sameEntry(a, b FileEntry) bool {
+	return a.Size == b.Size && a.MTime == b.MTime && a.Symlink == b.Symlink
 }
 
 // VerifyResult compares a local tree against a reference manifest.
@@ -147,7 +160,7 @@ func Verify(local, reference *Manifest) *VerifyResult {
 			result.Missing = append(result.Missing, f.Path)
 			continue
 		}
-		if l.Size != f.Size || l.MTime != f.MTime {
+		if !sameEntry(l, f) {
 			result.Differ = append(result.Differ, f.Path)
 		}
 	}

@@ -158,8 +158,65 @@ func ValidateRootPath(path string) error {
 	if !filepath.IsLocal(filepath.FromSlash(normalized)) {
 		return camperrors.Newf("artifact root %q escapes the campaign root", path)
 	}
-	if normalized == ".campaign" || strings.HasPrefix(normalized, ".campaign/") {
+	if strings.EqualFold(normalized, ".campaign") || hasCaseInsensitivePrefix(normalized, ".campaign/") {
 		return camperrors.Newf("artifact root %q may not live under .campaign", path)
 	}
 	return nil
+}
+
+// hasCaseInsensitivePrefix reports whether s starts with prefix, ignoring
+// case. The .campaign guard uses it so a case-insensitive filesystem (APFS,
+// NTFS) cannot smuggle a ".Campaign/" root past the check.
+func hasCaseInsensitivePrefix(s, prefix string) bool {
+	return len(s) >= len(prefix) && strings.EqualFold(s[:len(prefix)], prefix)
+}
+
+// EnsureRootWithin re-validates a root about to be consumed by the sync/pull
+// engine, not just declared: it re-runs ValidateRootPath (defending against a
+// hand-edited or malicious .campaign/artifacts.yaml that never went through
+// Add) and then resolves symlinks so a symlinked root cannot redirect rsync
+// writes outside the campaign. Returns the cleaned, campaign-relative root on
+// success.
+func EnsureRootWithin(campaignRoot, rootPath string) (string, error) {
+	if err := ValidateRootPath(rootPath); err != nil {
+		return "", err
+	}
+	normalized := NormalizeRootPath(rootPath)
+
+	campReal, err := filepath.EvalSymlinks(campaignRoot)
+	if err != nil {
+		campReal = campaignRoot // campaign root should exist; fall back to literal
+	}
+	abs := filepath.Join(campReal, filepath.FromSlash(normalized))
+
+	// Resolve the longest existing prefix of the target: a not-yet-created
+	// root is fine, but any existing symlink component must stay inside the
+	// campaign.
+	real, err := resolveExistingPrefix(abs)
+	if err != nil {
+		return "", camperrors.Wrapf(err, "resolve artifact root %s", normalized)
+	}
+	rel, err := filepath.Rel(campReal, real)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", camperrors.Newf("artifact root %q resolves outside the campaign root", rootPath)
+	}
+	return normalized, nil
+}
+
+// resolveExistingPrefix EvalSymlinks the longest existing ancestor of p and
+// re-appends the non-existent tail, so a root that does not exist yet can
+// still be checked for symlinked ancestors that escape the campaign.
+func resolveExistingPrefix(p string) (string, error) {
+	if real, err := filepath.EvalSymlinks(p); err == nil {
+		return real, nil
+	}
+	parent := filepath.Dir(p)
+	if parent == p {
+		return p, nil
+	}
+	realParent, err := resolveExistingPrefix(parent)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(realParent, filepath.Base(p)), nil
 }

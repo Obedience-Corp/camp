@@ -2,6 +2,8 @@ package artifacts
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,16 +14,23 @@ import (
 	"github.com/Obedience-Corp/camp/internal/peer"
 )
 
-// PullResult is the outcome of pulling one artifact root from a peer.
+// PullResult is the outcome of pulling one artifact root from a peer. JSON
+// field names are camelCase to match the sync/v1alpha1 envelope this is
+// embedded in.
 type PullResult struct {
 	Root   string `json:"root"`
 	Policy string `json:"policy"`
-	// Synced reports whether the rsync transfer completed.
+	// Synced reports whether the rsync transfer completed (including a
+	// partial transfer that rsync flagged with exit 23/24).
 	Synced bool `json:"synced"`
 	// FirstSync marks a pull with no prior snapshot for this peer: every
 	// pre-existing local file was protected, because there is no baseline to
 	// tell local edits from stale copies. Only new files arrived.
-	FirstSync bool `json:"first_sync"`
+	FirstSync bool `json:"firstSync"`
+	// Partial marks a transfer rsync reported as incomplete (exit 23/24);
+	// files that did transfer are still snapshotted so they are not poisoned
+	// into never-agreed protection on the next run.
+	Partial bool `json:"partial,omitempty"`
 	// Protected counts local files excluded from this pull (not overwritable:
 	// modified since the last transfer from this peer, or never agreed with
 	// it). SkippedConflicts lists the modified-since-baseline subset.
@@ -30,7 +39,7 @@ type PullResult struct {
 	// from this peer; they were excluded and left as-is, and stay protected
 	// on future pulls until resolved (e.g. remove the local file to take the
 	// peer's copy on the next sync). Media merge is a human decision.
-	SkippedConflicts []string `json:"skipped_conflicts,omitempty"`
+	SkippedConflicts []string `json:"skippedConflicts,omitempty"`
 	// Warning carries a non-fatal transfer problem; the sync itself proceeds.
 	Warning string `json:"warning,omitempty"`
 }
@@ -62,7 +71,14 @@ func pull(ctx context.Context, campaignRoot string, src *peer.Source, result *Pu
 		return camperrors.New("rsync not found on PATH; artifact sync needs rsync on both machines")
 	}
 
-	rootRel := result.Root
+	// Re-validate the root at consume time: a hand-edited or malicious
+	// artifacts.yaml never passed through Add, and a symlinked root must not
+	// redirect the rsync destination outside the campaign.
+	rootRel, err := EnsureRootWithin(campaignRoot, result.Root)
+	if err != nil {
+		return err
+	}
+	result.Root = rootRel
 	destAbs := filepath.Join(campaignRoot, filepath.FromSlash(rootRel))
 	if err := os.MkdirAll(destAbs, 0o755); err != nil {
 		return camperrors.Wrapf(err, "create artifact root %s", rootRel)
@@ -85,7 +101,20 @@ func pull(ctx context.Context, campaignRoot string, src *peer.Source, result *Pu
 		result.SkippedConflicts = modifiedSubset(protected, baseline)
 	}
 
-	args := []string{"-a", "--partial"}
+	// --partial-dir keeps interrupted-transfer bytes OUT of the destination
+	// tree (a bare --partial would leave a truncated file at the real name,
+	// which the post-pull manifest would then record as an agreed baseline
+	// and refuse to repair). The partial dir lives under .campaign/cache
+	// (gitignored, same filesystem as the root so completed files rename
+	// atomically) and is never walked by BuildManifest.
+	// --no-links: never materialize a peer symlink locally (phantom state no
+	// snapshot could track); local symlinks are recorded in the manifest and
+	// so are protected like any other entry.
+	partialDir := filepath.Join(campaignRoot, ".campaign", "cache", "rsync-partial")
+	if err := os.MkdirAll(partialDir, 0o755); err != nil {
+		return camperrors.Wrap(err, "create rsync partial dir")
+	}
+	args := []string{"-a", "--no-links", "--partial-dir=" + partialDir}
 	if sshCmd := src.SSHCommand(); sshCmd != "" {
 		args = append(args, "-e", sshCmd)
 	}
@@ -100,16 +129,61 @@ func pull(ctx context.Context, campaignRoot string, src *peer.Source, result *Pu
 	args = append(args, src.RsyncSpec(rootRel), destAbs+string(os.PathSeparator))
 
 	cmd := exec.CommandContext(ctx, "rsync", args...)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return camperrors.Wrapf(err, "rsync %s from %s: %s", rootRel, src.ID(), lastLines(string(output), 3))
+	output, runErr := cmd.CombinedOutput()
+
+	after, mErr := BuildManifest(ctx, campaignRoot, rootRel)
+	if mErr != nil {
+		return camperrors.Wrap(mErr, "manifest after pull")
+	}
+
+	if runErr != nil {
+		// rsync 23 (partial transfer due to error) and 24 (source files
+		// vanished mid-transfer) can be partial successes: the files that DID
+		// arrive are valid, so snapshotting them avoids poisoning them into
+		// never-agreed protection on the next run. But the SAME exit codes
+		// also cover "source root does not exist," where nothing transferred.
+		// Distinguish by whether any complete file actually changed locally
+		// (--partial-dir keeps incomplete files out of the tree, so an
+		// unchanged tree means nothing landed) and treat a no-op as the hard
+		// failure it is.
+		code := exitCode(runErr)
+		if (code == 23 || code == 24) && !manifestsEqual(local, after) {
+			result.Partial = true
+			result.Warning = fmt.Sprintf("partial transfer (rsync exit %d): %s", code, lastLines(string(output), 3))
+		} else {
+			return camperrors.Wrapf(runErr, "rsync %s from %s: %s", rootRel, src.ID(), lastLines(string(output), 3))
+		}
 	}
 	result.Synced = true
 
-	after, err := BuildManifest(ctx, campaignRoot, rootRel)
-	if err != nil {
-		return camperrors.Wrap(err, "manifest after pull")
-	}
 	return SaveSnapshot(campaignRoot, src.ID(), rootRel, agreedState(after, baseline, protected))
+}
+
+// manifestsEqual reports whether two manifests describe the same set of files
+// with the same versions, so a failed rsync that changed nothing can be told
+// apart from a partial transfer that landed at least one complete file.
+func manifestsEqual(a, b *Manifest) bool {
+	if len(a.Files) != len(b.Files) {
+		return false
+	}
+	bi := b.Index()
+	for _, f := range a.Files {
+		g, ok := bi[f.Path]
+		if !ok || !sameEntry(f, g) {
+			return false
+		}
+	}
+	return true
+}
+
+// exitCode extracts a process exit code from an exec error, or -1 if the
+// error is not an exit status (e.g. the binary could not start).
+func exitCode(err error) int {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return exitErr.ExitCode()
+	}
+	return -1
 }
 
 // agreedState builds the snapshot to record after a pull: files touched or
@@ -191,9 +265,11 @@ func excludeArguments(protected []string) (tempFile string, args []string, err e
 }
 
 // escapeRsyncPattern escapes rsync glob metacharacters so a literal filename
-// is matched literally.
+// is matched literally. Backslash is escaped first (and thus mapped by the
+// single Replacer pass, not re-processed) so a filename containing a
+// backslash before a glob char does not produce an active wildcard.
 func escapeRsyncPattern(p string) string {
-	r := strings.NewReplacer(`[`, `\[`, `]`, `\]`, `*`, `\*`, `?`, `\?`)
+	r := strings.NewReplacer(`\`, `\\`, `[`, `\[`, `]`, `\]`, `*`, `\*`, `?`, `\?`)
 	return r.Replace(p)
 }
 

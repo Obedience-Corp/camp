@@ -199,34 +199,52 @@ func (s *Syncer) verifyArtifacts(ctx context.Context, result *SyncResult) {
 		}
 	}
 
+	matched := 0
 	for _, root := range cfg.Roots {
 		if ctx.Err() != nil {
 			result.Errors = append(result.Errors, ctx.Err())
 			result.Success = false
 			return
 		}
-		local, err := artifacts.BuildManifest(ctx, s.repoRoot, root.Path)
+		rootRel, err := artifacts.EnsureRootWithin(s.repoRoot, root.Path)
 		if err != nil {
 			result.Success = false
 			result.Errors = append(result.Errors, &SyncError{Op: "artifacts-verify", Submodule: root.Path, Cause: err})
 			continue
 		}
+		local, err := artifacts.BuildManifest(ctx, s.repoRoot, rootRel)
+		if err != nil {
+			result.Success = false
+			result.Errors = append(result.Errors, &SyncError{Op: "artifacts-verify", Submodule: rootRel, Cause: err})
+			continue
+		}
 		for _, peerID := range peers {
-			snapshot, err := artifacts.LoadSnapshot(s.repoRoot, peerID, root.Path)
+			snapshot, err := artifacts.LoadSnapshot(s.repoRoot, peerID, rootRel)
 			if err != nil {
 				result.Success = false
-				result.Errors = append(result.Errors, &SyncError{Op: "artifacts-verify", Submodule: root.Path, Cause: err})
+				result.Errors = append(result.Errors, &SyncError{Op: "artifacts-verify", Submodule: rootRel, Cause: err})
 				continue
 			}
 			if snapshot == nil {
 				continue
 			}
+			matched++
 			verify := artifacts.Verify(local, snapshot)
 			result.ArtifactVerifies = append(result.ArtifactVerifies, ArtifactVerify{Peer: peerID, Result: verify})
 			if !verify.Clean() {
 				result.Success = false
 			}
 		}
+	}
+
+	// A --from-scoped verify that matched no snapshot for any root is almost
+	// always a typo'd or never-synced peer id: report it rather than exiting
+	// 0 "complete" having checked nothing.
+	if s.options.VerifyPeer != "" && matched == 0 && len(cfg.Roots) > 0 {
+		result.Success = false
+		result.Errors = append(result.Errors, &SyncError{Op: "artifacts-verify",
+			Cause: camperrors.Newf("no snapshots recorded for peer %q; check the machine id or run 'camp sync --from %s' first",
+				s.options.VerifyPeer, s.options.VerifyPeer)})
 	}
 }
 
