@@ -58,10 +58,12 @@ EXAMPLES:
   # JSON output for scripting
   camp sync --json
 
-  # Accelerate over a peer machine from ~/.obey/machines.yaml: fetch each
-  # submodule's objects from that machine first (LAN/tailnet), then run the
-  # normal origin-based update. Preflight, origin URLs, validation, and exit
-  # codes are unchanged; an unreachable peer degrades to a warning.
+  # Accelerate over a peer machine from ~/.obey/machines.yaml: for each
+  # already-initialized submodule, fetch objects from that machine first
+  # (LAN/tailnet), then run the normal origin-based update. Uninitialized
+  # submodules skip the peer step and init from origin. Preflight, origin
+  # URLs, validation, and exit codes are unchanged; an unreachable peer
+  # degrades to a warning.
   camp sync --from studio-mac`,
 	Args: cobra.ArbitraryArgs,
 	RunE: jsoncontract.RunE(SyncJSONVersion, func() bool { return syncOpts.json }, runSync),
@@ -93,7 +95,7 @@ func init() {
 	syncCmd.Flags().BoolVar(&syncOpts.json, "json", false,
 		"Output results as JSON for scripting")
 	syncCmd.Flags().StringVar(&syncOpts.from, "from", "",
-		"Fetch submodule objects from this machine (id from ~/.obey/machines.yaml) before the origin update")
+		"Fetch objects for already-initialized submodules from this machine (id from ~/.obey/machines.yaml) before the origin update")
 
 	rootCmd.AddCommand(syncCmd)
 	syncCmd.GroupID = "campaign"

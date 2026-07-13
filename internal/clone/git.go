@@ -231,8 +231,8 @@ func (c *Cloner) cleanOrphanedGitlinks(ctx context.Context, dir string) ([]strin
 // gitCloneFromPeer clones the root repository from the peer copy, then
 // re-points origin at the real URL and fetches the delta, so the resulting
 // checkout is an origin replica that merely arrived over the fast path. Any
-// failure removes the partial clone and returns an error for the caller to
-// fall back to the plain origin clone.
+// failure after clone starts removes the partial clone and returns an error
+// for the caller to fall back to the plain origin clone.
 func (c *Cloner) gitCloneFromPeer(ctx context.Context) (string, error) {
 	if ctx.Err() != nil {
 		return "", ctx.Err()
@@ -245,6 +245,16 @@ func (c *Cloner) gitCloneFromPeer(ctx context.Context) (string, error) {
 	if _, err := os.Stat(targetDir); err == nil {
 		return "", camperrors.Newf("target directory %s already exists", targetDir)
 	}
+
+	// Clean up a partial destination on any error after we attempt the clone
+	// (including cancel mid-clone). Without this the origin fallback fails
+	// with "destination already exists".
+	success := false
+	defer func() {
+		if !success {
+			_ = os.RemoveAll(targetDir)
+		}
+	}()
 
 	args := []string{"clone"}
 	if c.options.Branch != "" {
@@ -262,10 +272,10 @@ func (c *Cloner) gitCloneFromPeer(ctx context.Context) (string, error) {
 	}
 
 	if err := c.repointOrigin(ctx, targetDir); err != nil {
-		_ = os.RemoveAll(targetDir)
 		return "", err
 	}
 
+	success = true
 	absDir, err := filepath.Abs(targetDir)
 	if err != nil {
 		return targetDir, nil
@@ -338,20 +348,29 @@ func (c *Cloner) seedSubmoduleFromPeer(ctx context.Context, repoDir string, sub 
 	updateCmd.Env = c.peer.GitEnv()
 	output, updateErr := updateCmd.CombinedOutput()
 
-	// Best-effort re-point even when update failed partway (e.g. peer lacked
-	// the recorded SHA after a successful module clone), so the fallback path
-	// and all future fetches talk to the declared origin.
+	// Always re-point when a module repo exists, even if update failed
+	// partway (e.g. peer lacked the recorded SHA after a successful module
+	// clone). Prefer a loud seed failure over leaving peer as origin.
 	subDir := filepath.Join(repoDir, sub.Path)
+	var repointErr error
 	if _, statErr := os.Stat(filepath.Join(subDir, ".git")); statErr == nil {
 		setURLCmd := exec.CommandContext(ctx, "git", "-C", subDir, "remote", "set-url", "origin", sub.URL)
-		if setOut, setErr := setURLCmd.CombinedOutput(); setErr != nil && updateErr == nil {
-			return camperrors.Wrapf(setErr, "re-point %s origin: %s", sub.Path, strings.TrimSpace(string(setOut)))
+		if setOut, setErr := setURLCmd.CombinedOutput(); setErr != nil {
+			repointErr = camperrors.Wrapf(setErr, "re-point %s origin: %s",
+				sub.Path, strings.TrimSpace(string(setOut)))
 		}
 	}
 
 	if updateErr != nil {
-		return camperrors.Wrapf(updateErr, "seed %s from peer %s: %s",
+		msg := fmt.Sprintf("seed %s from peer %s: %s",
 			sub.Path, c.peer.ID(), strings.TrimSpace(string(output)))
+		if repointErr != nil {
+			return camperrors.Wrapf(updateErr, "%s (also re-point failed: %v)", msg, repointErr)
+		}
+		return camperrors.Wrapf(updateErr, "%s", msg)
+	}
+	if repointErr != nil {
+		return repointErr
 	}
 	return nil
 }

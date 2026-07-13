@@ -85,11 +85,23 @@ func (s *Source) URL(relPath string) string {
 	return "ssh://" + s.target + p
 }
 
-// Refspec returns the refspec peer fetches use. Fetched heads land under
+// Refspecs returns the refspecs peer fetches use. Heads land under
 // refs/peer/<id>/* so transferred objects stay reachable (no GC exposure)
-// without touching origin's remote-tracking refs.
+// without touching origin's remote-tracking refs. HEAD is included so a
+// detached gitlink SHA (common for recorded submodule commits that are not
+// branch tips) still transfers when the peer checkout is detached there.
+func (s *Source) Refspecs() []string {
+	ns := "refs/peer/" + s.id
+	return []string{
+		"+HEAD:" + ns + "/HEAD",
+		"+refs/heads/*:" + ns + "/*",
+	}
+}
+
+// Refspec returns the primary heads refspec (kept for callers/tests that
+// only need the heads mapping). Prefer Refspecs for fetches.
 func (s *Source) Refspec() string {
-	return "+refs/heads/*:refs/peer/" + s.id + "/*"
+	return s.Refspecs()[1]
 }
 
 // GitEnv returns the environment for git commands that dial this source:
@@ -109,14 +121,17 @@ func (s *Source) GitEnv() []string {
 	return append(os.Environ(), "GIT_SSH_COMMAND="+strings.Join(parts, " "))
 }
 
-// Fetch fetches heads from the peer copy of the repository at relPath into
-// the local repository at dir, under the Refspec namespace. It moves objects
-// only: refs outside refs/peer/<id>/* and the working tree are untouched.
+// Fetch fetches heads and HEAD from the peer copy of the repository at
+// relPath into the local repository at dir, under the Refspecs namespace.
+// It moves objects only: refs outside refs/peer/<id>/* and the working tree
+// are untouched.
 func (s *Source) Fetch(ctx context.Context, dir, relPath string) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	cmd := exec.CommandContext(ctx, "git", "-C", dir, "fetch", "--no-tags", s.URL(relPath), s.Refspec())
+	args := []string{"-C", dir, "fetch", "--no-tags", s.URL(relPath)}
+	args = append(args, s.Refspecs()...)
+	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Env = s.GitEnv()
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return camperrors.Wrapf(err, "peer fetch %q from %s: %s", relPath, s.id, strings.TrimSpace(string(output)))

@@ -49,9 +49,22 @@ func TestSourceURL(t *testing.T) {
 
 func TestSourceRefspec(t *testing.T) {
 	s := FromPath("studio-mac", "/x")
-	want := "+refs/heads/*:refs/peer/studio-mac/*"
-	if got := s.Refspec(); got != want {
-		t.Errorf("Refspec() = %q, want %q", got, want)
+	wantHeads := "+refs/heads/*:refs/peer/studio-mac/*"
+	if got := s.Refspec(); got != wantHeads {
+		t.Errorf("Refspec() = %q, want %q", got, wantHeads)
+	}
+	want := []string{
+		"+HEAD:refs/peer/studio-mac/HEAD",
+		wantHeads,
+	}
+	got := s.Refspecs()
+	if len(got) != len(want) {
+		t.Fatalf("Refspecs() len = %d, want %d (%v)", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("Refspecs()[%d] = %q, want %q", i, got[i], want[i])
+		}
 	}
 }
 

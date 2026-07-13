@@ -354,6 +354,66 @@ func TestUpdateSubmodules_PeerUnreachableDegrades(t *testing.T) {
 	}
 }
 
+// Peer submodule sitting detached at a commit that is not a branch tip: HEAD
+// must still transfer so gitlink objects accelerate without origin.
+func TestUpdateSubmodules_PeerFetchDetachedHEAD(t *testing.T) {
+	ctx := context.Background()
+	repoRoot := setupTestRepo(t)
+	setupSubmodule(t, repoRoot, "projects/sub")
+
+	cmd := exec.Command("git", "-C", repoRoot, "config", "-f", ".gitmodules", "submodule.projects/sub.url")
+	urlBytes, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("reading submodule url: %v", err)
+	}
+	sourceRepo := strings.TrimSpace(string(urlBytes))
+
+	peerRoot := t.TempDir()
+	peerSub := filepath.Join(peerRoot, "projects", "sub")
+	runGit(t, t.TempDir(), "clone", sourceRepo, peerSub)
+	runGit(t, peerSub, "config", "user.email", "test@test.com")
+	runGit(t, peerSub, "config", "user.name", "Test")
+	// Detached commit reachable only via HEAD (delete the only branch tip).
+	runGit(t, peerSub, "checkout", "--detach")
+	createFile(t, filepath.Join(peerSub, "detached-only.txt"), "only on detached peer HEAD")
+	runGit(t, peerSub, "add", ".")
+	runGit(t, peerSub, "commit", "-m", "detached peer tip")
+	shaOut, err := exec.Command("git", "-C", peerSub, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("peer HEAD: %v", err)
+	}
+	detachedSHA := strings.TrimSpace(string(shaOut))
+	// Drop all local branches so heads refspec alone would miss this object.
+	branches, err := exec.Command("git", "-C", peerSub, "for-each-ref", "--format=%(refname:short)", "refs/heads").Output()
+	if err != nil {
+		t.Fatalf("list branches: %v", err)
+	}
+	for _, b := range strings.Fields(string(branches)) {
+		runGit(t, peerSub, "branch", "-D", b)
+	}
+
+	syncer := NewSyncer(repoRoot, WithPeer(peer.FromPath("peerbox", peerRoot)))
+	results, err := syncer.updateSubmodules(ctx)
+	if err != nil {
+		t.Fatalf("updateSubmodules() error = %v", err)
+	}
+	if len(results) != 1 || !results[0].Success {
+		t.Fatalf("update failed: %+v", results)
+	}
+	if !results[0].PeerFetched {
+		t.Fatalf("PeerFetched = false (warning: %q)", results[0].PeerWarning)
+	}
+
+	localSub := filepath.Join(repoRoot, "projects/sub")
+	if out, verifyErr := exec.Command("git", "-C", localSub, "cat-file", "-e", detachedSHA).CombinedOutput(); verifyErr != nil {
+		t.Errorf("detached peer HEAD object %s missing after peer fetch: %s",
+			detachedSHA, strings.TrimSpace(string(out)))
+	}
+	if out, verifyErr := exec.Command("git", "-C", localSub, "rev-parse", "--verify", "refs/peer/peerbox/HEAD").CombinedOutput(); verifyErr != nil {
+		t.Errorf("refs/peer/peerbox/HEAD not present: %s", strings.TrimSpace(string(out)))
+	}
+}
+
 func TestUpdateSubmodules_ContextCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

@@ -121,6 +121,29 @@ func TestGitCloneFromPeer_FallsBackToOrigin(t *testing.T) {
 	}
 }
 
+// Peer clone succeeds but re-point to origin fails: the partial destination
+// must be removed so a subsequent origin clone is not blocked by "already exists".
+func TestGitCloneFromPeer_CleansPartialOnRepointFailure(t *testing.T) {
+	ctx := context.Background()
+	peerRoot := setupTestRepo(t)
+
+	target := filepath.Join(t.TempDir(), "cloned")
+	cloner := NewCloner(
+		WithURL("file:///nonexistent/origin-does-not-exist.git"),
+		WithDirectory(target),
+		WithNoRegister(true),
+		WithNoSubmodules(true),
+		WithPeer(peer.FromPath("peerbox", peerRoot)),
+	)
+	_, err := cloner.gitCloneFromPeer(ctx)
+	if err == nil {
+		t.Fatal("gitCloneFromPeer() error = nil, want re-point failure")
+	}
+	if _, statErr := os.Stat(target); !os.IsNotExist(statErr) {
+		t.Errorf("partial peer clone left at %s after failure; want removed for origin fallback", target)
+	}
+}
+
 func TestParseSubmoduleStatus(t *testing.T) {
 	tests := []struct {
 		name        string
