@@ -64,6 +64,7 @@ func TestWorkflowCategoryForType(t *testing.T) {
 	}{
 		{"builtin design", WorkflowsConfig{}, "design", WorkflowCategoryPlan},
 		{"builtin explore", WorkflowsConfig{}, "explore", WorkflowCategoryResearch},
+		{"builtin reviews", WorkflowsConfig{}, "reviews", WorkflowCategoryReview},
 		{"builtin code_reviews", WorkflowsConfig{}, "code_reviews", WorkflowCategoryReview},
 		{"unknown type", WorkflowsConfig{}, "customthing", WorkflowCategoryUncategorized},
 		{

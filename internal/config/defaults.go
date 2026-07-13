@@ -13,8 +13,8 @@ func DefaultIntentTags() []string {
 
 // DefaultConcepts returns the default concept configuration for campaigns.
 // The picker is a small tree: projects, a single workflow parent whose children
-// are the workflow collections (festivals, design, explore, code_reviews,
-// pipelines), and docs. workflow keeps its own Path so custom workflow dirs are
+// are the workflow collections (festivals, design, explore, reviews), and docs.
+// workflow keeps its own Path so custom workflow dirs are
 // still surfaced from disk.
 //
 // worktrees, intents, and dungeon are intentionally not picker concepts:
@@ -40,8 +40,7 @@ func DefaultConcepts() []ConceptEntry {
 				{Name: "festivals", Path: "festivals/", Description: "Multi-step festival plans"},
 				{Name: "design", Path: "workflow/design/", Description: "Design documents", Depth: &depth1},
 				{Name: "explore", Path: "workflow/explore/", Description: "Exploratory notes and discovery work", Depth: &depth1},
-				{Name: "code_reviews", Path: "workflow/code_reviews/", Description: "Code reviews", Depth: &depth1},
-				{Name: "pipelines", Path: "workflow/pipelines/", Description: "Pipelines", Depth: &depth1},
+				{Name: "reviews", Path: "workflow/reviews/", Description: "Reviews", Depth: &depth1},
 			},
 		},
 		{
@@ -56,16 +55,15 @@ func DefaultConcepts() []ConceptEntry {
 // DefaultCampaignPaths returns the default directory structure for campaigns.
 func DefaultCampaignPaths() CampaignPaths {
 	return CampaignPaths{
-		Projects:    "projects/",
-		Worktrees:   "projects/worktrees/",
-		Docs:        "docs/",
-		Festivals:   "festivals/",
-		Workflow:    "workflow/",
-		Intents:     ".campaign/intents/",
-		CodeReviews: "workflow/code_reviews/",
-		Pipelines:   "workflow/pipelines/",
-		Design:      "workflow/design/",
-		Dungeon:     "dungeon/",
+		Projects:  "projects/",
+		Worktrees: "projects/worktrees/",
+		Docs:      "docs/",
+		Festivals: "festivals/",
+		Workflow:  "workflow/",
+		Intents:   ".campaign/intents/",
+		Reviews:   "workflow/reviews/",
+		Design:    "workflow/design/",
+		Dungeon:   "dungeon/",
 	}
 }
 
@@ -84,8 +82,7 @@ func DefaultNavigationShortcuts() map[string]ShortcutConfig {
 		"w":        {Path: "workflow/", Description: "Jump to workflow directory", Source: ShortcutSourceAuto},
 		"d":        {Path: "docs/", Description: "Jump to docs directory", Source: ShortcutSourceAuto},
 		"du":       {Path: "dungeon/", Description: "Jump to dungeon directory (navigation only)", Source: ShortcutSourceAuto},
-		"cr":       {Path: "workflow/code_reviews/", Description: "Jump to code reviews", Source: ShortcutSourceAuto},
-		"pi":       {Path: "workflow/pipelines/", Description: "Jump to pipelines", Source: ShortcutSourceAuto},
+		"r":        {Path: "workflow/reviews/", Description: "Jump to reviews", Source: ShortcutSourceAuto},
 		"de":       {Path: "workflow/design/", Description: "Jump to design", Source: ShortcutSourceAuto},
 		"ex":       {Path: "workflow/explore/", Description: "Jump to explore", Source: ShortcutSourceAuto},
 		"settings": {Path: ".campaign/", Description: "Jump to campaign settings directory", Source: ShortcutSourceAuto},

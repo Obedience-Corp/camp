@@ -42,6 +42,7 @@ func DefaultWorkflowCategoryByType() map[string]string {
 		"design":       WorkflowCategoryPlan,
 		"explore":      WorkflowCategoryResearch,
 		"festival":     WorkflowCategoryPlan,
+		"reviews":      WorkflowCategoryReview,
 		"code_reviews": WorkflowCategoryReview,
 		"pipelines":    WorkflowCategoryPipeline,
 	}

@@ -38,8 +38,7 @@ cgo i         # .campaign/intents/
 cgo d         # docs/
 cgo w         # workflow/
 cgo wt        # projects/worktrees/
-cgo cr        # workflow/code_reviews/
-cgo pi        # workflow/pipelines/
+cgo r         # workflow/reviews/
 cgo de        # workflow/design/
 cgo ex        # workflow/explore/
 
@@ -59,8 +58,7 @@ cgo f fest    # festivals/*fest* (fuzzy match)
 | d        | docs/          | Documentation           |
 | w        | workflow/      | Workflow resources      |
 | wt       | projects/worktrees/ | Git worktrees     |
-| cr       | workflow/code_reviews/ | Code review materials |
-| pi       | workflow/pipelines/ | CI/CD pipelines     |
+| r        | workflow/reviews/ | Review materials     |
 | de       | workflow/design/ | Design documents       |
 | ex       | workflow/explore/ | Exploratory notes     |
 

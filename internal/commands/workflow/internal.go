@@ -20,14 +20,15 @@ import (
 // directory happens to exist for them.
 //
 // `intent`, `design`, `explore`, `festival` are the workitem builtins;
-// `code_reviews` and `pipelines` are scaffolded as auto-source shortcuts in
-// camp's default config (see internal/config/defaults.go) and are not
-// user-created workflow collections.
+// `reviews` is scaffolded as an auto-source shortcut in camp's default config
+// (see internal/config/defaults.go) and is not a user-created workflow
+// collection. Legacy scaffold types remain reserved for compatibility.
 var builtinWorkflowTypes = map[string]bool{
 	"intent":       true,
 	"design":       true,
 	"explore":      true,
 	"festival":     true,
+	"reviews":      true,
 	"code_reviews": true,
 	"pipelines":    true,
 }

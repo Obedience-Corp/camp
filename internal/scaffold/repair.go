@@ -235,10 +235,9 @@ func applyQuestDateBackfill(ctx context.Context, backfill *QuestDateBackfill) er
 
 func computeStandardDungeonScaffoldChanges(absDir string, plan *RepairPlan) {
 	standardDungeonObeys := []string{
-		"workflow/code_reviews/dungeon/OBEY.md",
+		"workflow/reviews/dungeon/OBEY.md",
 		"workflow/design/dungeon/OBEY.md",
 		"workflow/explore/dungeon/OBEY.md",
-		"workflow/pipelines/dungeon/OBEY.md",
 	}
 
 	seen := make(map[string]bool, len(plan.Changes))
@@ -854,6 +853,7 @@ func shortcutMatchesDefault(sc, def config.ShortcutConfig) bool {
 // Only these roots are scanned, preventing accidental migration of items
 // inside projects/* submodules or other unrelated directories.
 var knownWorkflowRoots = []string{
+	"workflow/reviews",
 	"workflow/code_reviews",
 	"workflow/design",
 	"workflow/explore",

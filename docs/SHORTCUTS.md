@@ -98,8 +98,7 @@ These defaults are written by `camp init` and can be overridden per campaign:
 | `w` | `workflow/` | navigation only |
 | `d` | `docs/` | navigation only |
 | `du` | `dungeon/` | navigation only |
-| `cr` | `workflow/code_reviews/` | navigation only |
-| `pi` | `workflow/pipelines/` | navigation only |
+| `r` | `workflow/reviews/` | navigation only |
 | `de` | `workflow/design/` | navigation only |
 | `ex` | `workflow/explore/` | navigation only |
 | `settings` | `.campaign/` | navigation only |

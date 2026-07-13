@@ -140,6 +140,7 @@ func (c *CampaignConfig) deriveConceptsFromPaths() []ConceptEntry {
 		{"festivals", paths.Festivals, "Multi-step festival plans"},
 		{"design", paths.Design, "Design documents"},
 		{"explore", "workflow/explore/", "Exploratory notes and discovery work"},
+		{"reviews", paths.Reviews, "Reviews"},
 		{"code_reviews", paths.CodeReviews, "Code reviews"},
 		{"pipelines", paths.Pipelines, "Pipelines"},
 	}
@@ -180,9 +181,11 @@ type CampaignPaths struct {
 	Workflow string `yaml:"workflow,omitempty"`
 	// Intents is the canonical path to the intents directory (under .campaign/).
 	Intents string `yaml:"intents,omitempty"`
-	// CodeReviews is the path to code reviews directory (under workflow/).
+	// Reviews is the path to review materials (under workflow/).
+	Reviews string `yaml:"reviews,omitempty"`
+	// CodeReviews is the legacy path to code review materials.
 	CodeReviews string `yaml:"code_reviews,omitempty"`
-	// Pipelines is the path to pipelines directory (under workflow/).
+	// Pipelines is the legacy path to pipelines materials.
 	Pipelines string `yaml:"pipelines,omitempty"`
 	// Design is the path to design directory (under workflow/).
 	Design string `yaml:"design,omitempty"`

@@ -12,7 +12,7 @@ func TestCycleCategory(t *testing.T) {
 	items := []workitem.WorkItem{
 		{Key: "a", WorkflowType: workitem.WorkflowTypeDesign, WorkflowCategory: "plan"},
 		{Key: "b", WorkflowType: workitem.WorkflowTypeExplore, WorkflowCategory: "research"},
-		{Key: "c", WorkflowType: workitem.WorkflowType("code_reviews"), WorkflowCategory: "review"},
+		{Key: "c", WorkflowType: workitem.WorkflowType("reviews"), WorkflowCategory: "review"},
 	}
 	m := New(context.Background(), items, "", nil, priority.NewStore(), "")
 	m.refilter()

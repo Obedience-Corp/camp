@@ -379,8 +379,7 @@ func TestShortcuts_OverrideAndRestore(t *testing.T) {
   dungeon: "dungeon/"
   festivals: "festivals/"
   workflow: "workflow/"
-  code_reviews: "workflow/code_reviews/"
-  pipelines: "workflow/pipelines/"
+  reviews: "workflow/reviews/"
   design: "workflow/design/"
   intents: ".campaign/intents/"
 shortcuts:

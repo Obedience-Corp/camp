@@ -43,6 +43,15 @@ func TestDefaultConcepts_NestedWorkflowShape(t *testing.T) {
 	if _, ok := childByName(workflow.Children, "festivals"); !ok {
 		t.Fatal("festivals should be a child of workflow")
 	}
+	reviews, ok := childByName(workflow.Children, "reviews")
+	if !ok || reviews.Path != "workflow/reviews/" {
+		t.Fatalf("reviews child = %#v, want workflow/reviews/", reviews)
+	}
+	for _, removed := range []string{"code_reviews", "pipelines"} {
+		if _, ok := childByName(workflow.Children, removed); ok {
+			t.Fatalf("%s should not be a default workflow child", removed)
+		}
+	}
 }
 
 func TestCampaignConfigConcepts_FallbackNestedShape(t *testing.T) {
@@ -67,6 +76,9 @@ func TestCampaignConfigConcepts_FallbackNestedShape(t *testing.T) {
 	}
 	if explore.Path != "workflow/explore/" {
 		t.Fatalf("fallback explore path = %q, want %q", explore.Path, "workflow/explore/")
+	}
+	if reviews, ok := childByName(workflow.Children, "reviews"); !ok || reviews.Path != "workflow/reviews/" {
+		t.Fatalf("fallback reviews child = %#v, want workflow/reviews/", reviews)
 	}
 }
 
@@ -101,6 +113,16 @@ func TestDefaultNavigationShortcuts_DungeonIsNavigationOnly(t *testing.T) {
 	}
 	if ex.Concept != "" {
 		t.Fatalf("ex concept = %q, want empty for navigation-only shortcut", ex.Concept)
+	}
+
+	review, ok := shortcuts["r"]
+	if !ok || review.Path != "workflow/reviews/" {
+		t.Fatalf("r shortcut = %#v, want workflow/reviews/", review)
+	}
+	for _, removed := range []string{"cr", "pi"} {
+		if _, ok := shortcuts[removed]; ok {
+			t.Fatalf("%s should not be a default shortcut", removed)
+		}
 	}
 
 	du, ok := shortcuts["du"]

@@ -96,8 +96,7 @@ Navigate instantly with single-letter shortcuts:
 | `settings` | .campaign/          | Campaign settings directory |
 | `wt`     | projects/worktrees/    | Git worktrees          |
 | `du`     | dungeon/               | Archived work          |
-| `cr`     | workflow/code_reviews/ | Code review materials  |
-| `pi`     | workflow/pipelines/    | CI/CD pipelines        |
+| `r`      | workflow/reviews/      | Review materials       |
 | `de`     | workflow/design/       | Design documents       |
 | `ex`     | workflow/explore/      | Exploratory notes      |
 
@@ -436,9 +435,9 @@ my-campaign/
 │   ├── ritual/
 │   └── dungeon/         # completed/, archived/, someday/
 ├── workflow/            # Workflow resources (cgo w)
-│   ├── code_reviews/    # Review notes (cgo cr)
-│   ├── pipelines/       # CI/CD configs (cgo pi)
-│   └── design/          # Design documents (cgo de)
+│   ├── design/          # Design documents (cgo de)
+│   ├── explore/         # Exploratory notes (cgo ex)
+│   └── reviews/         # Review materials (cgo r)
 ├── docs/                # Human documentation (cgo d)
 └── dungeon/             # Archived work (cgo du)
 ```

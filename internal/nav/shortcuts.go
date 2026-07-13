@@ -23,6 +23,8 @@ const (
 	CategoryDungeon Category = "dungeon"
 	// CategoryWorkflow is the workflow directory.
 	CategoryWorkflow Category = "workflow"
+	// CategoryReviews is the reviews directory (under workflow/).
+	CategoryReviews Category = "workflow/reviews"
 	// CategoryCodeReviews is the code reviews directory (under workflow/).
 	CategoryCodeReviews Category = "workflow/code_reviews"
 	// CategoryPipelines is the pipelines directory (under workflow/).
@@ -43,17 +45,16 @@ const (
 // All runtime shortcut resolution uses shortcuts from campaign.yaml.
 // New campaigns get these defaults scaffolded via config.DefaultNavigationShortcuts().
 var DefaultShortcuts = map[string]Category{
-	"p":  CategoryProjects,    // p = projects
-	"pw": CategoryWorktrees,   // pw = project worktrees
-	"f":  CategoryFestivals,   // f = festivals
-	"ai": CategoryAIDocs,      // ai = ai_docs
-	"d":  CategoryDocs,        // d = docs
-	"du": CategoryDungeon,     // du = dungeon
-	"w":  CategoryWorkflow,    // w = workflow
-	"cr": CategoryCodeReviews, // cr = code_reviews
-	"pi": CategoryPipelines,   // pi = pipelines
-	"de": CategoryDesign,      // de = design
-	"i":  CategoryIntents,     // i = intents
+	"p":  CategoryProjects,  // p = projects
+	"pw": CategoryWorktrees, // pw = project worktrees
+	"f":  CategoryFestivals, // f = festivals
+	"ai": CategoryAIDocs,    // ai = ai_docs
+	"d":  CategoryDocs,      // d = docs
+	"du": CategoryDungeon,   // du = dungeon
+	"w":  CategoryWorkflow,  // w = workflow
+	"r":  CategoryReviews,   // r = reviews
+	"de": CategoryDesign,    // de = design
+	"i":  CategoryIntents,   // i = intents
 }
 
 // ParseResult contains the parsed shortcut and remaining query.
@@ -116,6 +117,7 @@ func ValidCategories() []Category {
 		CategoryDocs,
 		CategoryDungeon,
 		CategoryWorkflow,
+		CategoryReviews,
 		CategoryCodeReviews,
 		CategoryPipelines,
 		CategoryDesign,
