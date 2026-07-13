@@ -676,12 +676,20 @@ func computeMiscFileChanges(absDir string, plan *RepairPlan) {
 		})
 	} else if err == nil {
 		raw, readErr := os.ReadFile(gitignorePath)
-		if readErr == nil && !gitignoreHasRule(string(raw), "workitems/current.yaml") {
+		missing := make([]string, 0, len(campaignGitignoreRequiredRules))
+		if readErr == nil {
+			for _, entry := range campaignGitignoreRequiredRules {
+				if !gitignoreHasRule(string(raw), entry) {
+					missing = append(missing, entry)
+				}
+			}
+		}
+		if len(missing) > 0 {
 			plan.Changes = append(plan.Changes, RepairChange{
 				Type:        RepairModify,
 				Category:    "file",
 				Key:         ".campaign/.gitignore",
-				Description: "missing workitems/current.yaml entry",
+				Description: "missing " + strings.Join(missing, ", ") + " entries",
 			})
 		}
 	}
@@ -718,6 +726,16 @@ func computeMiscFileChanges(absDir string, plan *RepairPlan) {
 	}
 }
 
+const (
+	campaignEventsGitignoreRule  = "events/"
+	currentWorkitemGitignoreRule = "workitems/current.yaml"
+)
+
+var campaignGitignoreRequiredRules = []string{
+	campaignEventsGitignoreRule,
+	currentWorkitemGitignoreRule,
+}
+
 // appendGitignoreEntryIfMissing appends a single line to the campaign
 // .gitignore when the entry is not already present. Presence is detected
 // using gitignore-line semantics (non-comment, trimmed exact match) so a
@@ -736,9 +754,20 @@ func appendGitignoreEntryIfMissing(absDir, entry string) error {
 	if len(raw) > 0 && raw[len(raw)-1] != '\n' {
 		suffix = "\n\n"
 	}
-	addition := suffix + "# Per-machine current-workitem selection (do not share across machines)\n" + entry + "\n"
+	addition := suffix + campaignGitignoreRuleComment(entry) + "\n" + entry + "\n"
 	// TODO(seq06-lock): concurrent repair runs can still race this read-modify-write append.
 	return fsutil.WriteFileAtomically(gitignorePath, append(raw, []byte(addition)...), 0o644)
+}
+
+func campaignGitignoreRuleComment(entry string) string {
+	switch entry {
+	case campaignEventsGitignoreRule:
+		return "# Local campaign event ledger (append-only runtime history)"
+	case currentWorkitemGitignoreRule:
+		return "# Per-machine current-workitem selection (do not share across machines)"
+	default:
+		return "# Machine-local campaign state"
+	}
 }
 
 // gitignoreHasRule reports whether content contains an active gitignore

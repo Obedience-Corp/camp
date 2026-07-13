@@ -157,7 +157,7 @@ func TestInitRepair_PreservesUserShortcuts(t *testing.T) {
 	assert.Contains(t, output, path+"/my-stuff")
 }
 
-func TestIntegration_Init_GitignoreCurrentYaml(t *testing.T) {
+func TestIntegration_Init_GitignoreLocalState(t *testing.T) {
 	tc := GetSharedContainer(t)
 	path := setupRepairCampaign(t, tc, "init-gitignore-current")
 
@@ -165,6 +165,8 @@ func TestIntegration_Init_GitignoreCurrentYaml(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, gi, "workitems/current.yaml",
 		"camp init must seed .campaign/.gitignore with workitems/current.yaml: %s", gi)
+	assert.Contains(t, gi, "events/",
+		"camp init must seed .campaign/.gitignore with events/: %s", gi)
 }
 
 func TestIntegration_InitRepair_AppendsCurrentYamlIfMissing(t *testing.T) {
@@ -183,6 +185,23 @@ func TestIntegration_InitRepair_AppendsCurrentYamlIfMissing(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, after, "workitems/current.yaml",
 		"repair must append workitems/current.yaml when missing")
+}
+
+func TestIntegration_InitRepair_AppendsEventsIfMissing(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupRepairCampaign(t, tc, "repair-gitignore-events")
+
+	gi, err := tc.ReadFile(path + "/.campaign/.gitignore")
+	require.NoError(t, err)
+	stripped := strings.ReplaceAll(gi, "events/\n", "")
+	require.NotEqual(t, gi, stripped, "fixture must have the events rule so we can remove it")
+	require.NoError(t, tc.WriteFile(path+"/.campaign/.gitignore", stripped))
+
+	runRepair(t, tc, path)
+
+	after, err := tc.ReadFile(path + "/.campaign/.gitignore")
+	require.NoError(t, err)
+	assert.Contains(t, after, "events/", "repair must append events/ when missing")
 }
 
 func TestIntegration_InitRepair_AppendsCurrentYamlWhenCommentedOut(t *testing.T) {

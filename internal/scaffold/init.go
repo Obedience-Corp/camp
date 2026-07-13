@@ -357,6 +357,9 @@ state.yaml
 # Generated cache (navigation index, rebuilt automatically)
 cache/
 
+# Local campaign event ledger (append-only runtime history)
+events/
+
 # Tool-managed state (workitem priorities, regenerated automatically)
 settings/workitems.json
 
@@ -368,8 +371,10 @@ workitems/current.yaml
 			}
 			result.FilesCreated = append(result.FilesCreated, ".campaign/.gitignore")
 		} else if opts.Repair {
-			if err := appendGitignoreEntryIfMissing(absDir, "workitems/current.yaml"); err != nil {
-				return nil, camperrors.Wrap(err, "failed to append workitems/current.yaml to .gitignore")
+			for _, entry := range campaignGitignoreRequiredRules {
+				if err := appendGitignoreEntryIfMissing(absDir, entry); err != nil {
+					return nil, camperrors.Wrapf(err, "failed to append %s to .gitignore", entry)
+				}
 			}
 		}
 	}
