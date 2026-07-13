@@ -4,7 +4,6 @@
 package integration
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -12,11 +11,9 @@ import (
 )
 
 // TestIntegration_SettingsConceptsEditorRoundTrip drives `camp settings` through
-// a real TTY to the campaign-manifest concepts editor, hands off to a scripted
-// $EDITOR that rewrites the concepts temp file, and verifies the edit is
-// persisted to .campaign/campaign.yaml while the rest of the manifest is left
-// intact. Runs entirely inside the shared container so it never touches the host
-// filesystem.
+// a real TTY to the campaign-manifest concepts editor (in-TUI YAML text field),
+// pastes a known-valid concept list, and verifies the edit is persisted to
+// .campaign/campaign.yaml while the rest of the manifest is left intact.
 func TestIntegration_SettingsConceptsEditorRoundTrip(t *testing.T) {
 	skipUnlessSettingsTTYTests(t)
 	tc := GetSharedContainer(t)
@@ -24,7 +21,6 @@ func TestIntegration_SettingsConceptsEditorRoundTrip(t *testing.T) {
 	const (
 		campaignDir = "/test/settings-concepts"
 		campaignYML = campaignDir + "/.campaign/campaign.yaml"
-		editorPath  = "/test/concepts-editor.sh"
 	)
 
 	_, err := tc.RunCamp(
@@ -39,36 +35,21 @@ func TestIntegration_SettingsConceptsEditorRoundTrip(t *testing.T) {
 	)
 	require.NoError(t, err, "camp init should succeed")
 
-	// The scripted editor overwrites the concepts temp file with a known-valid
-	// concept list, so the outcome is deterministic regardless of the seeded
-	// concepts.
-	editorScript := `#!/bin/sh
-set -eu
-printf 'EDITOR_START\n'
-cat > "$1" <<'YAML'
-- name: integration-concept
-  path: some/integration/path/
-  description: added by the integration editor
-YAML
-printf 'EDITOR_DONE\n'
-`
-	require.NoError(t, tc.WriteFile(editorPath, editorScript))
-	tc.Shell(t, fmt.Sprintf("chmod +x %s", editorPath))
-
-	// huh aborts a form on Ctrl+C (\x03); each abort backs out one menu level,
-	// so three unwind manifest -> local -> top and exit camp settings cleanly.
+	// huh Text: type replacement YAML, then Ctrl+D / submit per form binding.
+	// Interactive harness uses Enter to submit multi-line when WaitFor matches
+	// the text field title, then aborts menus with Ctrl+C.
+	conceptYAML := "- name: integration-concept\n  path: some/integration/path/\n  description: added by integration test\n"
 	steps := []InteractiveStep{
-		{WaitFor: "Select configuration scope", Input: "\x1b[B\r"}, // top menu: down to Local, enter
-		{WaitFor: "Files under .campaign/", Input: "\r"},           // local menu: Campaign manifest (first row), enter
-		{WaitFor: "Concepts taxonomy", Input: "\x1b[B\x1b[B\r"},    // manifest menu: down to Concepts, enter
-		{WaitFor: "EDITOR_DONE"},                                   // scripted editor rewrote the temp file
-		{WaitFor: "Concepts taxonomy", Input: "\x03"},              // back at manifest menu, abort
-		{WaitFor: "Files under .campaign/", Input: "\x03"},         // back at local menu, abort
-		{WaitFor: "Select configuration scope", Input: "\x03"},     // back at top menu, abort -> exit
+		{WaitFor: "Select configuration scope", Input: "\x1b[B\r"}, // top: Local
+		{WaitFor: "Files under .campaign/", Input: "\r"},           // Campaign manifest
+		{WaitFor: "Concepts taxonomy", Input: "\x1b[B\x1b[B\r"},    // Concepts row
+		{WaitFor: "Concepts taxonomy (YAML)", Input: "\x01\x0b" + conceptYAML + "\r"}, // clear-ish + paste + submit
+		{WaitFor: "Concepts taxonomy", Input: "\x03"},              // back at manifest
+		{WaitFor: "Files under .campaign/", Input: "\x03"},         // local
+		{WaitFor: "Select configuration scope", Input: "\x03"},     // top exit
 	}
-	output, err := tc.RunCampInteractiveStepsInDirWithEnv(
+	output, err := tc.RunCampInteractiveStepsInDir(
 		campaignDir,
-		map[string]string{"EDITOR": editorPath},
 		steps,
 		"--no-color", "settings",
 	)

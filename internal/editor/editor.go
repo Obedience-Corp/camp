@@ -161,12 +161,20 @@ func MoveFile(src, dst string) error {
 //   - macOS/Linux: nano
 
 // guiEditors contains editor names that require --wait flag to block.
+// Without --wait these fork and return immediately, which looks like a hang
+// to callers that expect the editor session to finish (or worse, a no-op save).
 var guiEditors = map[string]bool{
 	"code":          true,
 	"code-insiders": true,
 	"subl":          true,
 	"sublime_text":  true,
 	"atom":          true,
+	"cursor":        true,
+	"zed":           true,
+	"zeditor":       true,
+	"windsurf":      true,
+	"codium":        true,
+	"code-oss":      true,
 }
 
 // BuildEditorCommand constructs an exec.Cmd for launching the specified editor.
