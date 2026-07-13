@@ -23,7 +23,9 @@ import (
 //   - v1alpha1: initial payload (global theme/editor/campaigns_dir/verbose/
 //     no_color, local theme_override when inside a campaign, effective theme,
 //     in_campaign). Single-key form emits {schema_version, generated_at, key,
-//     value}.
+//     value}. Additive: global.commit / effective.commit / local.commit
+//     (sync_project_refs, disable_commit_tags). Unset local.commit keys report
+//     "inherit" in text/single-key get; full JSON omits local.commit when unset.
 const SettingsJSONVersion = "settings/v1alpha1"
 
 const (
@@ -148,11 +150,11 @@ Keys:
   global.campaigns_dir       Where camp create places new campaigns
   global.verbose             Verbose output
   global.no_color            Disable colored output
-  global.commit.sync_project_refs   Default: camp p commit updates campaign-root submodule pointer
-  global.commit.disable_commit_tags Default: skip [campaign:…] tags on camp commits
+  global.commit.sync_project_refs   When true, camp p commit updates campaign-root submodule pointer (default false)
+  global.commit.disable_commit_tags When true, skip [campaign:…] tags on camp commits (default false; tags on)
   local.theme_override       Campaign-local theme override (requires a campaign)
-  local.commit.sync_project_refs    Campaign override for project-ref sync after project commits
-  local.commit.disable_commit_tags  Campaign override to skip commit subject tags
+  local.commit.sync_project_refs    Campaign override for project-ref sync (true/false/inherit)
+  local.commit.disable_commit_tags  Campaign override to skip commit subject tags (true/false/inherit)
   local.campaign.name        Campaign name in .campaign/campaign.yaml
   local.campaign.description Campaign description
   local.campaign.mission     Campaign mission
@@ -316,16 +318,17 @@ func settingsValueFor(key string, cfg *config.GlobalConfig, local *config.LocalS
 		if !inCampaign {
 			return nil, errSettingsLocalOutsideCampaign(key)
 		}
-		if local.Commit == nil {
-			return false, nil
+		// Unset local block is "inherit", not false — false is an explicit override.
+		if local == nil || local.Commit == nil {
+			return settingsThemeInherit, nil
 		}
 		return local.Commit.SyncProjectRefs, nil
 	case settingsKeyLocalCommitDisableTags:
 		if !inCampaign {
 			return nil, errSettingsLocalOutsideCampaign(key)
 		}
-		if local.Commit == nil {
-			return false, nil
+		if local == nil || local.Commit == nil {
+			return settingsThemeInherit, nil
 		}
 		return local.Commit.DisableCommitTags, nil
 	default:
@@ -374,8 +377,8 @@ func printSettingsAll(w io.Writer, cfg *config.GlobalConfig, local *config.Local
 		if _, err := fmt.Fprintf(w, "%s = %s\n", settingsKeyLocalThemeOverride, local.ThemeOverride); err != nil {
 			return err
 		}
-		locSync, locTags := false, false
-		if local.Commit != nil {
+		locSync, locTags := any(settingsThemeInherit), any(settingsThemeInherit)
+		if local != nil && local.Commit != nil {
 			locSync, locTags = local.Commit.SyncProjectRefs, local.Commit.DisableCommitTags
 		}
 		if _, err := fmt.Fprintf(w, "%s = %v\n", settingsKeyLocalCommitSyncRefs, locSync); err != nil {
@@ -596,10 +599,23 @@ func setLocalCommitPref(ctx context.Context, cmd *cobra.Command, key, value stri
 	if err != nil || root == "" {
 		return errSettingsLocalOutsideCampaign(key)
 	}
-	parsed, err := strconv.ParseBool(strings.ToLower(strings.TrimSpace(value)))
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	// inherit/clear drops the whole local commit block (full-replace merge:
+	// both fields return to global). Mirrors local.theme_override inherit.
+	if normalized == settingsThemeInherit || normalized == "clear" {
+		if err := config.WithLocalSettingsLock(ctx, root, func(s *config.LocalSettings) error {
+			s.Commit = nil
+			return nil
+		}); err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "cleared local.commit (inherit global)\n")
+		return err
+	}
+	parsed, err := strconv.ParseBool(normalized)
 	if err != nil {
 		return camperrors.NewValidation(key,
-			fmt.Sprintf("invalid boolean %q (valid: true, false)", value), err)
+			fmt.Sprintf("invalid value %q (valid: true, false, inherit)", value), err)
 	}
 	if err := config.WithLocalSettingsLock(ctx, root, func(s *config.LocalSettings) error {
 		base, err := config.EffectiveCommitPrefs(ctx, root)

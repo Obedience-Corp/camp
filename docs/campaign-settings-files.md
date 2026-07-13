@@ -365,12 +365,20 @@ Notes:
   `light`, `dark`, or `high-contrast`. When absent or empty, the campaign
   inherits the global theme from `~/.obey/campaign/config.json`.
 - `commit` (optional) fully overrides machine-global commit prefs for this
-  campaign when present:
+  campaign when present (pointer full-replace: both fields are taken from the
+  local block; global is ignored while the block exists):
   - `sync_project_refs` — when true, `camp project commit` updates the
     campaign-root submodule pointer after a project commit (same as `--sync`).
     Default is false. Use `--no-sync` on a single invocation to force off.
   - `disable_commit_tags` — when true, skips `[campaign:id-…]` subject prefixes
     on camp-managed commits. Default is false (tags enabled).
+  - An empty `"commit": {}` still counts as an explicit override that pins both
+    defaults for this campaign.
+  - Unset local commit (no `commit` key) is reported by `camp settings get
+    local.commit.*` as `inherit`, not `false`. Clear with
+    `camp settings set local.commit.sync_project_refs inherit` (or
+    `local.commit.disable_commit_tags inherit`) — either clears the whole
+    local commit block so both fields inherit global again.
 - The file is created on first save by `camp settings` (Local Settings) or
   `camp settings set local.*`. Clearing the last setting deletes the file.
 - Prefer the `camp settings` commands over hand-editing; writes are atomic and
@@ -449,6 +457,7 @@ camp settings set local.theme_override inherit    # Clear the override
 camp settings set local.campaign.type research
 camp settings set global.commit.disable_commit_tags true
 camp settings set local.commit.sync_project_refs true
+camp settings set local.commit.sync_project_refs inherit  # Clear local commit block
 ```
 
 Keys: `global.theme`, `global.editor`, `global.campaigns_dir`,
