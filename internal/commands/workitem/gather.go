@@ -1,6 +1,7 @@
 package workitem
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -17,8 +18,11 @@ import (
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/ui"
+	"github.com/Obedience-Corp/camp/internal/ui/theme"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 )
+
+var gatherFormRunner = theme.RunForm
 
 type gatherOptions struct {
 	Title    string
@@ -160,7 +164,7 @@ func runWorkitemGather(cmd *cobra.Command, wfType string, args []string, opts ga
 			return camperrors.NewValidation("selectors",
 				"pass at least 2 "+wfType+" workitem selectors (list candidates with `camp workitem --json --type "+wfType+"`)", nil)
 		}
-		selected, title, err = promptGatherSelection(typed, wfType, title)
+		selected, title, err = promptGatherSelection(ctx, typed, wfType, title)
 		if err != nil {
 			return err
 		}
@@ -237,7 +241,7 @@ func runWorkitemGather(cmd *cobra.Command, wfType string, args []string, opts ga
 	return emitGatherResult(cmd, plan, execution, opts.JSON)
 }
 
-func promptGatherSelection(typed []wkitem.WorkItem, wfType, preTitle string) ([]wkitem.WorkItem, string, error) {
+func promptGatherSelection(ctx context.Context, typed []wkitem.WorkItem, wfType, preTitle string) ([]wkitem.WorkItem, string, error) {
 	if len(typed) < 2 {
 		return nil, "", camperrors.NewValidation("selectors",
 			fmt.Sprintf("need at least 2 %s workitems to gather, found %d", wfType, len(typed)), nil)
@@ -284,7 +288,7 @@ func promptGatherSelection(typed []wkitem.WorkItem, wfType, preTitle string) ([]
 			Value(&title))
 	}
 
-	if err := huh.NewForm(huh.NewGroup(fields...)).Run(); err != nil {
+	if err := gatherFormRunner(ctx, huh.NewForm(huh.NewGroup(fields...))); err != nil {
 		return nil, "", camperrors.Wrap(err, "gather selection cancelled")
 	}
 
