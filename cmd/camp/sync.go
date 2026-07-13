@@ -76,7 +76,7 @@ func init() {
 	syncCmd.Flags().BoolVarP(&syncOpts.verbose, "verbose", "v", false,
 		"Show detailed output for each submodule")
 	syncCmd.Flags().IntVarP(&syncOpts.parallel, "parallel", "p", 4,
-		"Number of parallel git operations (git serializes internally via repo lockfiles; lower this if slow disks surface transient lock errors)")
+		"Number of parallel git operations (git guards superproject ops with repo lockfiles that fail fast on contention; lower this if a slow disk surfaces transient lock errors)")
 	syncCmd.Flags().BoolVar(&syncOpts.noFetch, "no-fetch", false,
 		"Skip fetching from remote (use local refs only)")
 	syncCmd.Flags().BoolVar(&syncOpts.json, "json", false,
