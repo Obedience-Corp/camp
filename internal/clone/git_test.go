@@ -5,8 +5,121 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/Obedience-Corp/camp/internal/peer"
 )
+
+func TestGitCloneFromPeer_SeedsAndRepointsOrigin(t *testing.T) {
+	ctx := context.Background()
+	origin := setupTestRepo(t)
+	setupSubmodule(t, origin, "projects/sub")
+
+	// Peer copy of the campaign: a clone of origin with the submodule
+	// initialized, standing in for the same campaign on another machine.
+	peerRoot := filepath.Join(t.TempDir(), "peer-campaign")
+	runGit(t, t.TempDir(), "clone", origin, peerRoot)
+	runGit(t, peerRoot, "-c", "protocol.file.allow=always", "submodule", "update", "--init")
+
+	target := filepath.Join(t.TempDir(), "cloned")
+	cloner := NewCloner(
+		WithURL(origin),
+		WithDirectory(target),
+		WithNoRegister(true),
+		WithPeer(peer.FromPath("peerbox", peerRoot)),
+	)
+	result, err := cloner.Clone(ctx)
+	if err != nil {
+		t.Fatalf("Clone() error = %v (warnings: %v)", err, result.Warnings)
+	}
+	if !result.Success {
+		t.Fatalf("Clone().Success = false: errors=%v warnings=%v", result.Errors, result.Warnings)
+	}
+
+	// The root repo's origin must be the real origin URL, not the peer.
+	out, err := exec.Command("git", "-C", target, "remote", "get-url", "origin").Output()
+	if err != nil {
+		t.Fatalf("reading root origin url: %v", err)
+	}
+	if got := strings.TrimSpace(string(out)); got != origin {
+		t.Errorf("root origin url = %q, want %q", got, origin)
+	}
+
+	// The submodule must be seeded from the peer and re-pointed at its
+	// declared URL.
+	declaredOut, err := exec.Command("git", "-C", origin,
+		"config", "-f", ".gitmodules", "submodule.projects/sub.url").Output()
+	if err != nil {
+		t.Fatalf("reading declared submodule url: %v", err)
+	}
+	declared := strings.TrimSpace(string(declaredOut))
+
+	subOut, err := exec.Command("git", "-C", filepath.Join(target, "projects/sub"),
+		"remote", "get-url", "origin").Output()
+	if err != nil {
+		t.Fatalf("reading submodule origin url: %v", err)
+	}
+	if got := strings.TrimSpace(string(subOut)); got != declared {
+		t.Errorf("submodule origin url = %q, want declared %q", got, declared)
+	}
+
+	foundSub := false
+	for _, s := range result.Submodules {
+		if s.Path != "projects/sub" {
+			continue
+		}
+		foundSub = true
+		if !s.Success {
+			t.Errorf("submodule Success = false: %v", s.Error)
+		}
+		if !s.PeerSeeded {
+			t.Errorf("submodule PeerSeeded = false, want true (warnings: %v)", result.Warnings)
+		}
+	}
+	if !foundSub {
+		t.Errorf("projects/sub missing from results: %+v", result.Submodules)
+	}
+}
+
+func TestGitCloneFromPeer_FallsBackToOrigin(t *testing.T) {
+	ctx := context.Background()
+	origin := setupTestRepo(t)
+
+	target := filepath.Join(t.TempDir(), "cloned")
+	cloner := NewCloner(
+		WithURL(origin),
+		WithDirectory(target),
+		WithNoRegister(true),
+		WithNoSubmodules(true),
+		WithPeer(peer.FromPath("ghost", filepath.Join(t.TempDir(), "missing"))),
+	)
+	result, err := cloner.Clone(ctx)
+	if err != nil {
+		t.Fatalf("Clone() error = %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("Clone().Success = false: errors=%v", result.Errors)
+	}
+
+	hasFallbackWarning := false
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "peer clone") {
+			hasFallbackWarning = true
+		}
+	}
+	if !hasFallbackWarning {
+		t.Errorf("expected peer fallback warning, got %v", result.Warnings)
+	}
+
+	out, err := exec.Command("git", "-C", target, "remote", "get-url", "origin").Output()
+	if err != nil {
+		t.Fatalf("reading root origin url: %v", err)
+	}
+	if got := strings.TrimSpace(string(out)); got != origin {
+		t.Errorf("root origin url = %q, want %q", got, origin)
+	}
+}
 
 func TestParseSubmoduleStatus(t *testing.T) {
 	tests := []struct {

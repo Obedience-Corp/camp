@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Obedience-Corp/camp/internal/peer"
 )
 
 func TestSync_CleanRepo(t *testing.T) {
@@ -278,6 +280,77 @@ func TestUpdateSubmodules_ContextCanceledMidFlight(t *testing.T) {
 		}
 	case <-time.After(30 * time.Second):
 		t.Fatal("updateSubmodules() did not return after cancellation")
+	}
+}
+
+func TestUpdateSubmodules_PeerFetch(t *testing.T) {
+	ctx := context.Background()
+	repoRoot := setupTestRepo(t)
+	setupSubmodule(t, repoRoot, "projects/sub")
+
+	// Build a peer campaign mirroring the layout: projects/sub is a clone of
+	// the same source repo with a branch the local copy has never seen.
+	cmd := exec.Command("git", "-C", repoRoot, "config", "-f", ".gitmodules", "submodule.projects/sub.url")
+	urlBytes, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("reading submodule url: %v", err)
+	}
+	sourceRepo := strings.TrimSpace(string(urlBytes))
+
+	peerRoot := t.TempDir()
+	peerSub := filepath.Join(peerRoot, "projects", "sub")
+	runGit(t, t.TempDir(), "clone", sourceRepo, peerSub)
+	runGit(t, peerSub, "config", "user.email", "test@test.com")
+	runGit(t, peerSub, "config", "user.name", "Test")
+	runGit(t, peerSub, "checkout", "-b", "peer-work")
+	createFile(t, filepath.Join(peerSub, "peer-only.txt"), "only on the peer")
+	runGit(t, peerSub, "add", ".")
+	runGit(t, peerSub, "commit", "-m", "peer-only work")
+
+	syncer := NewSyncer(repoRoot, WithPeer(peer.FromPath("peerbox", peerRoot)))
+	results, err := syncer.updateSubmodules(ctx)
+	if err != nil {
+		t.Fatalf("updateSubmodules() error = %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("updateSubmodules() results = %d, want 1", len(results))
+	}
+	if !results[0].Success {
+		t.Fatalf("submodule Success = false: %v", results[0].Error)
+	}
+	if !results[0].PeerFetched {
+		t.Errorf("PeerFetched = false, want true (warning: %q)", results[0].PeerWarning)
+	}
+
+	// Peer heads land under refs/peer/<id>/*, bringing their objects along.
+	localSub := filepath.Join(repoRoot, "projects/sub")
+	verify := exec.Command("git", "-C", localSub, "rev-parse", "--verify", "refs/peer/peerbox/peer-work")
+	if out, verifyErr := verify.CombinedOutput(); verifyErr != nil {
+		t.Errorf("refs/peer/peerbox/peer-work not present after peer fetch: %s", strings.TrimSpace(string(out)))
+	}
+}
+
+func TestUpdateSubmodules_PeerUnreachableDegrades(t *testing.T) {
+	ctx := context.Background()
+	repoRoot := setupTestRepo(t)
+	setupSubmodule(t, repoRoot, "projects/sub")
+
+	syncer := NewSyncer(repoRoot, WithPeer(peer.FromPath("ghost", filepath.Join(t.TempDir(), "missing"))))
+	results, err := syncer.updateSubmodules(ctx)
+	if err != nil {
+		t.Fatalf("updateSubmodules() error = %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("updateSubmodules() results = %d, want 1", len(results))
+	}
+	if !results[0].Success {
+		t.Errorf("submodule Success = false, want true (peer failure must degrade): %v", results[0].Error)
+	}
+	if results[0].PeerFetched {
+		t.Error("PeerFetched = true, want false for unreachable peer")
+	}
+	if results[0].PeerWarning == "" {
+		t.Error("PeerWarning empty, want degradation warning")
 	}
 }
 

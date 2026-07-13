@@ -9,7 +9,10 @@
 // This provides a reliable single-command bootstrap experience for new devices.
 package clone
 
-import "github.com/Obedience-Corp/camp/internal/sync"
+import (
+	"github.com/Obedience-Corp/camp/internal/peer"
+	"github.com/Obedience-Corp/camp/internal/sync"
+)
 
 // CloneOptions configures clone behavior.
 type CloneOptions struct {
@@ -93,6 +96,9 @@ type SubmoduleResult struct {
 	Commit string
 	// Error contains any error that occurred during initialization.
 	Error error
+	// PeerSeeded indicates the submodule's objects were cloned from the
+	// configured peer instead of origin.
+	PeerSeeded bool
 }
 
 // ValidationResult tracks post-clone validation checks.
@@ -135,6 +141,7 @@ type Cloner struct {
 	options  CloneOptions
 	syncer   *sync.Syncer     // Optional syncer for post-clone URL synchronization
 	progress ProgressReporter // Progress reporter for output
+	peer     *peer.Source     // Optional peer to seed git objects from
 }
 
 // NewCloner creates a new Cloner with the given options.
@@ -230,6 +237,17 @@ func WithSyncer(s *sync.Syncer) ClonerOption {
 func WithNoRegister(noRegister bool) ClonerOption {
 	return func(c *Cloner) {
 		c.options.NoRegister = noRegister
+	}
+}
+
+// WithPeer configures a peer source to seed git objects from. The root repo
+// and each submodule clone from the peer copy first, then origin is
+// re-pointed to the real URL and the delta fetched, so the final state is an
+// origin replica regardless of how the bytes arrived. Any peer failure falls
+// back to the normal origin path with a warning.
+func WithPeer(p *peer.Source) ClonerOption {
+	return func(c *Cloner) {
+		c.peer = p
 	}
 }
 

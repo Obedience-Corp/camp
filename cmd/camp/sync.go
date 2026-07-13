@@ -1,9 +1,13 @@
 package main
 
 import (
+	"context"
+
 	"github.com/Obedience-Corp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
+	"github.com/Obedience-Corp/camp/internal/peer"
 	"github.com/Obedience-Corp/camp/internal/sync"
 	"github.com/spf13/cobra"
 )
@@ -52,7 +56,13 @@ EXAMPLES:
   camp sync --verbose
 
   # JSON output for scripting
-  camp sync --json`,
+  camp sync --json
+
+  # Accelerate over a peer machine from ~/.obey/machines.yaml: fetch each
+  # submodule's objects from that machine first (LAN/tailnet), then run the
+  # normal origin-based update. Preflight, origin URLs, validation, and exit
+  # codes are unchanged; an unreachable peer degrades to a warning.
+  camp sync --from studio-mac`,
 	Args: cobra.ArbitraryArgs,
 	RunE: jsoncontract.RunE(SyncJSONVersion, func() bool { return syncOpts.json }, runSync),
 }
@@ -66,6 +76,7 @@ var syncOpts struct {
 	parallel int
 	noFetch  bool
 	json     bool
+	from     string
 }
 
 func init() {
@@ -81,6 +92,8 @@ func init() {
 		"Skip fetching from remote (use local refs only)")
 	syncCmd.Flags().BoolVar(&syncOpts.json, "json", false,
 		"Output results as JSON for scripting")
+	syncCmd.Flags().StringVar(&syncOpts.from, "from", "",
+		"Fetch submodule objects from this machine (id from ~/.obey/machines.yaml) before the origin update")
 
 	rootCmd.AddCommand(syncCmd)
 	syncCmd.GroupID = "campaign"
@@ -97,7 +110,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	// Build syncer with options
-	syncer := sync.NewSyncer(campRoot,
+	syncerOpts := []sync.SyncerOption{
 		sync.WithDryRun(syncOpts.dryRun),
 		sync.WithForce(syncOpts.force),
 		sync.WithVerbose(syncOpts.verbose),
@@ -105,7 +118,15 @@ func runSync(cmd *cobra.Command, args []string) error {
 		sync.WithNoFetch(syncOpts.noFetch),
 		sync.WithJSON(syncOpts.json),
 		sync.WithSubmodules(args),
-	)
+	}
+	if syncOpts.from != "" {
+		src, err := resolveSyncPeer(ctx, campRoot, syncOpts.from)
+		if err != nil {
+			return err
+		}
+		syncerOpts = append(syncerOpts, sync.WithPeer(src))
+	}
+	syncer := sync.NewSyncer(campRoot, syncerOpts...)
 
 	// Run preflight once for display, then pass it into Sync to avoid double execution
 	preflight, err := syncer.RunPreflight(ctx)
@@ -144,4 +165,21 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// resolveSyncPeer maps --from to a peer source for this campaign: the local
+// registry supplies the campaign's name, and the far machine's own camp
+// resolves where that campaign lives there.
+func resolveSyncPeer(ctx context.Context, campRoot, machineID string) (*peer.Source, error) {
+	reg, err := config.LoadRegistry(ctx)
+	if err != nil {
+		return nil, camperrors.Wrap(err, "load registry")
+	}
+	c, found := reg.FindByPath(campRoot)
+	if !found {
+		return nil, camperrors.Newf(
+			"campaign at %s is not in the registry; --from needs the campaign's registered name to resolve it on %q",
+			campRoot, machineID)
+	}
+	return peer.FromMachine(ctx, machineID, c.Name)
 }

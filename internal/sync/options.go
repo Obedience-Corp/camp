@@ -8,6 +8,8 @@
 // This prevents data loss from stale URLs or uncommitted changes during sync operations.
 package sync
 
+import "github.com/Obedience-Corp/camp/internal/peer"
+
 // SyncOptions configures sync behavior.
 type SyncOptions struct {
 	// DryRun shows what would happen without making changes.
@@ -66,6 +68,12 @@ type SubmoduleResult struct {
 	CheckedOutBranch string
 	// DriftWarning describes detected gitlink drift for this submodule.
 	DriftWarning string
+	// PeerFetched indicates objects were fetched from the configured peer
+	// before the origin-based update.
+	PeerFetched bool
+	// PeerWarning describes a peer fetch failure; the submodule still syncs
+	// through origin when this is set.
+	PeerWarning string
 }
 
 // URLChange represents a URL that was updated during synchronization.
@@ -86,6 +94,7 @@ type Syncer struct {
 	repoRoot        string
 	options         SyncOptions
 	cachedPreflight *PreflightResult // Optional pre-computed preflight result
+	peer            *peer.Source     // Optional peer to fetch objects from before origin
 }
 
 // NewSyncer creates a new Syncer for the given repository root.
@@ -168,6 +177,16 @@ func WithJSON(json bool) SyncerOption {
 func WithPreflightResult(pr *PreflightResult) SyncerOption {
 	return func(s *Syncer) {
 		s.cachedPreflight = pr
+	}
+}
+
+// WithPeer configures a peer source to fetch git objects from before each
+// submodule's origin-based update. The peer is a transfer accelerator only:
+// preflight checks, origin URLs, and post-sync validation are unchanged, and
+// a failed peer fetch degrades to the normal origin path with a warning.
+func WithPeer(p *peer.Source) SyncerOption {
+	return func(s *Syncer) {
+		s.peer = p
 	}
 }
 

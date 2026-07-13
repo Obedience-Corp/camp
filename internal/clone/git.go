@@ -228,6 +228,141 @@ func (c *Cloner) cleanOrphanedGitlinks(ctx context.Context, dir string) ([]strin
 	return removed, nil
 }
 
+// gitCloneFromPeer clones the root repository from the peer copy, then
+// re-points origin at the real URL and fetches the delta, so the resulting
+// checkout is an origin replica that merely arrived over the fast path. Any
+// failure removes the partial clone and returns an error for the caller to
+// fall back to the plain origin clone.
+func (c *Cloner) gitCloneFromPeer(ctx context.Context) (string, error) {
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+
+	targetDir := c.options.Directory
+	if targetDir == "" {
+		targetDir = extractRepoName(c.options.URL)
+	}
+	if _, err := os.Stat(targetDir); err == nil {
+		return "", camperrors.Newf("target directory %s already exists", targetDir)
+	}
+
+	args := []string{"clone"}
+	if c.options.Branch != "" {
+		args = append(args, "--branch", c.options.Branch)
+	}
+	if c.options.Depth > 0 {
+		args = append(args, "--depth", fmt.Sprintf("%d", c.options.Depth))
+	}
+	args = append(args, c.peer.URL(""), targetDir)
+
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Env = c.peer.GitEnv()
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return "", camperrors.Wrapf(err, "clone from peer %s: %s", c.peer.ID(), strings.TrimSpace(string(output)))
+	}
+
+	if err := c.repointOrigin(ctx, targetDir); err != nil {
+		_ = os.RemoveAll(targetDir)
+		return "", err
+	}
+
+	absDir, err := filepath.Abs(targetDir)
+	if err != nil {
+		return targetDir, nil
+	}
+	return absDir, nil
+}
+
+// repointOrigin moves a peer-cloned repository onto its real origin: set-url,
+// fetch the delta the peer did not have, and align the checkout with origin's
+// tip of the requested (or default) branch. The reset is safe because the
+// clone is fresh: there is no local work to lose, and clone semantics promise
+// an origin replica.
+func (c *Cloner) repointOrigin(ctx context.Context, dir string) error {
+	steps := [][]string{
+		{"remote", "set-url", "origin", c.options.URL},
+		{"fetch", "--tags", "origin"},
+		{"remote", "set-head", "origin", "--auto"},
+	}
+	for _, step := range steps {
+		cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, step...)...)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return camperrors.Wrapf(err, "re-point origin (git %s): %s",
+				strings.Join(step, " "), strings.TrimSpace(string(output)))
+		}
+	}
+
+	branch := c.options.Branch
+	if branch == "" {
+		cmd := exec.CommandContext(ctx, "git", "-C", dir, "symbolic-ref", "refs/remotes/origin/HEAD")
+		output, err := cmd.Output()
+		if err != nil {
+			return camperrors.Wrap(err, "determine origin default branch")
+		}
+		branch = strings.TrimPrefix(strings.TrimSpace(string(output)), "refs/remotes/origin/")
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "-C", dir, "checkout", "-B", branch, "--track", "origin/"+branch)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return camperrors.Wrapf(err, "checkout origin/%s: %s", branch, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
+// seedSubmoduleFromPeer clones one submodule's objects from the peer copy
+// instead of origin. The peer URL is supplied for that single `git submodule
+// update` invocation via -c, so the parent's persisted config keeps the
+// declared origin URL; afterwards the freshly created module's origin remote
+// (which git set from the -c value) is re-pointed at the declared URL. No
+// origin fetch runs here: the recorded gitlink SHA is either present from the
+// peer (checkout proceeds with zero origin traffic) or the caller's graceful
+// init fetches the delta from origin.
+func (c *Cloner) seedSubmoduleFromPeer(ctx context.Context, repoDir string, sub SubmoduleInfo) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if strings.HasPrefix(sub.URL, "./") || strings.HasPrefix(sub.URL, "../") {
+		return camperrors.New("relative submodule URL; origin init handles it")
+	}
+
+	initCmd := exec.CommandContext(ctx, "git", "-C", repoDir, "submodule", "init", sub.Path)
+	_ = initCmd.Run() // may already be initialized, matching InitSubmoduleGraceful
+
+	updateArgs := []string{"-C", repoDir,
+		"-c", "submodule." + sub.Name + ".url=" + c.peer.URL(sub.Path)}
+	if c.peer.IsFilesystem() {
+		updateArgs = append(updateArgs, "-c", "protocol.file.allow=always")
+	}
+	updateArgs = append(updateArgs, "submodule", "update", sub.Path)
+	updateCmd := exec.CommandContext(ctx, "git", updateArgs...)
+	updateCmd.Env = c.peer.GitEnv()
+	output, updateErr := updateCmd.CombinedOutput()
+
+	// Best-effort re-point even when update failed partway (e.g. peer lacked
+	// the recorded SHA after a successful module clone), so the fallback path
+	// and all future fetches talk to the declared origin.
+	subDir := filepath.Join(repoDir, sub.Path)
+	if _, statErr := os.Stat(filepath.Join(subDir, ".git")); statErr == nil {
+		setURLCmd := exec.CommandContext(ctx, "git", "-C", subDir, "remote", "set-url", "origin", sub.URL)
+		if setOut, setErr := setURLCmd.CombinedOutput(); setErr != nil && updateErr == nil {
+			return camperrors.Wrapf(setErr, "re-point %s origin: %s", sub.Path, strings.TrimSpace(string(setOut)))
+		}
+	}
+
+	if updateErr != nil {
+		return camperrors.Wrapf(updateErr, "seed %s from peer %s: %s",
+			sub.Path, c.peer.ID(), strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
+// RepoNameFromURL returns the repository name a clone of url would produce,
+// exposed for callers that need the default directory/campaign name (e.g.
+// resolving the same campaign on a peer machine).
+func RepoNameFromURL(url string) string {
+	return extractRepoName(url)
+}
+
 // extractRepoName extracts repository name from a git URL.
 func extractRepoName(url string) string {
 	// Handle various URL formats:

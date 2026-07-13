@@ -94,6 +94,7 @@ func runSyncExitCodePreflightFailure(t *testing.T) error {
 		parallel int
 		noFetch  bool
 		json     bool
+		from     string
 	}{}
 	t.Cleanup(func() { syncOpts = oldOpts })
 

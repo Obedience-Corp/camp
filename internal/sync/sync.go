@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -102,6 +103,9 @@ func (s *Syncer) Sync(ctx context.Context) (*SyncResult, error) {
 		if sub.DriftWarning != "" {
 			result.Success = false
 			result.Warnings = append(result.Warnings, sub.DriftWarning)
+		}
+		if sub.PeerWarning != "" {
+			result.Warnings = append(result.Warnings, sub.PeerWarning)
 		}
 	}
 
@@ -300,6 +304,15 @@ func (s *Syncer) updateSubmodule(ctx context.Context, path string) SubmoduleResu
 		Success: true,
 	}
 
+	if s.peer != nil {
+		fetched, peerErr := s.peerFetch(ctx, path)
+		result.PeerFetched = fetched
+		if peerErr != nil {
+			result.PeerWarning = fmt.Sprintf("%s: peer fetch from %s failed, continuing via origin: %v",
+				path, s.peer.ID(), peerErr)
+		}
+	}
+
 	// Use shared graceful init (handles stale refs with fallback)
 	if err := git.InitSubmoduleGraceful(ctx, s.repoRoot, path); err != nil {
 		result.Success = false
@@ -331,6 +344,22 @@ func (s *Syncer) updateSubmodule(ctx context.Context, path string) SubmoduleResu
 	}
 
 	return result
+}
+
+// peerFetch pulls objects for one submodule from the configured peer ahead of
+// the origin-based update. It returns (false, nil) for a submodule that is not
+// initialized locally: there is no repository to fetch into yet, and the
+// normal init path handles it from origin. A fetch failure is returned for
+// the caller to surface as a warning; sync then proceeds via origin.
+func (s *Syncer) peerFetch(ctx context.Context, path string) (bool, error) {
+	subDir := filepath.Join(s.repoRoot, path)
+	if _, err := os.Stat(filepath.Join(subDir, ".git")); err != nil {
+		return false, nil
+	}
+	if err := s.peer.Fetch(ctx, subDir, path); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // verifySubmodules checks the status of all submodules after update.
