@@ -2,11 +2,14 @@ package sync
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSync_CleanRepo(t *testing.T) {
@@ -230,6 +233,51 @@ func TestUpdateSubmodules_PartialFailureIsolation(t *testing.T) {
 	}
 	if syncErr.Op != "init" {
 		t.Errorf("SyncError.Op = %q, want %q", syncErr.Op, "init")
+	}
+}
+
+// Mid-flight cancellation must abort promptly through the concurrent paths
+// (spawn-loop break, semaphore-wait select, in-flight git subprocesses) and
+// still honor the contract of returning (nil, context.Canceled). Six
+// submodules at parallelism 1 take well over a second of git work, so a
+// 150ms cancel reliably lands while workers are in flight; if timing ever
+// degenerates to cancel-before-entry, the assertions still hold via the
+// entry guard.
+func TestUpdateSubmodules_ContextCanceledMidFlight(t *testing.T) {
+	repoRoot := setupTestRepo(t)
+	for i := range 6 {
+		setupSubmodule(t, repoRoot, fmt.Sprintf("projects/sub%d", i))
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		cancel()
+	}()
+
+	syncer := NewSyncer(repoRoot, WithParallel(1))
+
+	type outcome struct {
+		results []SubmoduleResult
+		err     error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		results, err := syncer.updateSubmodules(ctx)
+		done <- outcome{results, err}
+	}()
+
+	select {
+	case got := <-done:
+		if !errors.Is(got.err, context.Canceled) {
+			t.Fatalf("updateSubmodules() error = %v, want context.Canceled", got.err)
+		}
+		if got.results != nil {
+			t.Errorf("updateSubmodules() results = %v, want nil on cancellation", got.results)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("updateSubmodules() did not return after cancellation")
 	}
 }
 

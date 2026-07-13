@@ -224,6 +224,12 @@ func (s *Syncer) diffURLs(before, after map[string]string) []URLChange {
 // processed concurrently under a semaphore bounded by SyncOptions.Parallel,
 // mirroring the worker pattern clone uses for submodule initialization; results
 // preserve .gitmodules declaration order.
+//
+// Concurrency tradeoff (shared with clone's parallel init): each worker runs
+// superproject git commands, which git serializes internally via lockfiles.
+// Under high parallelism on slow disks that can surface transient
+// "Unable to create ...lock" failures the serial path never hit; the
+// mitigation is lowering --parallel for that campaign.
 func (s *Syncer) updateSubmodules(ctx context.Context) ([]SubmoduleResult, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -266,7 +272,7 @@ func (s *Syncer) updateSubmodules(ctx context.Context) ([]SubmoduleResult, error
 					Path:    path,
 					Name:    path,
 					Success: false,
-					Error:   ctx.Err(),
+					Error:   &SyncError{Op: "update", Submodule: path, Cause: ctx.Err()},
 				}
 				return
 			}
