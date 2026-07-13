@@ -42,6 +42,14 @@ const (
 	settingsKeyLocalCampaignMission     = "local.campaign.mission"
 	settingsKeyLocalCampaignType        = "local.campaign.type"
 	settingsKeyLocalCampaignCommitHook  = "local.campaign.commit_hook"
+
+	// Commit behavior (global defaults + local overrides + effective view).
+	settingsKeyGlobalCommitSyncRefs       = "global.commit.sync_project_refs"
+	settingsKeyGlobalCommitDisableTags    = "global.commit.disable_commit_tags"
+	settingsKeyLocalCommitSyncRefs        = "local.commit.sync_project_refs"
+	settingsKeyLocalCommitDisableTags     = "local.commit.disable_commit_tags"
+	settingsKeyEffectiveCommitSyncRefs    = "effective.commit.sync_project_refs"
+	settingsKeyEffectiveCommitDisableTags = "effective.commit.disable_commit_tags"
 )
 
 const settingsThemeInherit = "inherit"
@@ -53,7 +61,11 @@ func settingsKeys() []string {
 		settingsKeyGlobalCampaignsDir,
 		settingsKeyGlobalVerbose,
 		settingsKeyGlobalNoColor,
+		settingsKeyGlobalCommitSyncRefs,
+		settingsKeyGlobalCommitDisableTags,
 		settingsKeyLocalThemeOverride,
+		settingsKeyLocalCommitSyncRefs,
+		settingsKeyLocalCommitDisableTags,
 		settingsKeyLocalCampaignName,
 		settingsKeyLocalCampaignDescription,
 		settingsKeyLocalCampaignMission,
@@ -83,19 +95,34 @@ type settingsPayload struct {
 }
 
 type settingsGlobalPayload struct {
-	Theme        string `json:"theme"`
-	Editor       string `json:"editor"`
-	CampaignsDir string `json:"campaigns_dir"`
-	Verbose      bool   `json:"verbose"`
-	NoColor      bool   `json:"no_color"`
+	Theme        string                `json:"theme"`
+	Editor       string                `json:"editor"`
+	CampaignsDir string                `json:"campaigns_dir"`
+	Verbose      bool                  `json:"verbose"`
+	NoColor      bool                  `json:"no_color"`
+	Commit       settingsCommitPayload `json:"commit"`
 }
 
 type settingsLocalPayload struct {
-	ThemeOverride string `json:"theme_override"`
+	ThemeOverride string                 `json:"theme_override"`
+	Commit        *settingsCommitPayload `json:"commit,omitempty"`
 }
 
 type settingsEffectivePayload struct {
-	Theme string `json:"theme"`
+	Theme  string                `json:"theme"`
+	Commit settingsCommitPayload `json:"commit"`
+}
+
+type settingsCommitPayload struct {
+	SyncProjectRefs   bool `json:"sync_project_refs"`
+	DisableCommitTags bool `json:"disable_commit_tags"`
+}
+
+func commitPayload(p config.CommitPrefs) settingsCommitPayload {
+	return settingsCommitPayload{
+		SyncProjectRefs:   p.SyncProjectRefs,
+		DisableCommitTags: p.DisableCommitTags,
+	}
 }
 
 type settingsValuePayload struct {
@@ -121,17 +148,23 @@ Keys:
   global.campaigns_dir       Where camp create places new campaigns
   global.verbose             Verbose output
   global.no_color            Disable colored output
+  global.commit.sync_project_refs   Default: camp p commit updates campaign-root submodule pointer
+  global.commit.disable_commit_tags Default: skip [campaign:…] tags on camp commits
   local.theme_override       Campaign-local theme override (requires a campaign)
+  local.commit.sync_project_refs    Campaign override for project-ref sync after project commits
+  local.commit.disable_commit_tags  Campaign override to skip commit subject tags
   local.campaign.name        Campaign name in .campaign/campaign.yaml
   local.campaign.description Campaign description
   local.campaign.mission     Campaign mission
   local.campaign.type        Campaign type (product, research, tools, personal)
   local.campaign.commit_hook Commit-message hook command
+  effective.commit.*         Resolved commit prefs (get only; local overrides global)
 
 The campaign.yaml list and tree fields (intents.tags, concepts) have no flat
 key and are edited only through the interactive 'camp settings' TUI.`,
 		Example: `  camp settings get
   camp settings get global.theme
+  camp settings get effective.commit.sync_project_refs
   camp settings get --json`,
 		Args:         jsoncontract.Args(SettingsJSONVersion, func() bool { return jsonOut }, cobra.MaximumNArgs(1)),
 		SilenceUsage: true,
@@ -196,10 +229,14 @@ func runSettingsGet(ctx context.Context, cmd *cobra.Command, args []string, json
 	if len(args) == 1 {
 		return printSettingsValue(ctx, cmd, args[0], cfg, local, inCampaign, jsonOut)
 	}
-	if jsonOut {
-		return emitSettingsJSON(cmd.OutOrStdout(), cfg, local, inCampaign, effective)
+	rootForEffective := ""
+	if inCampaign {
+		rootForEffective = root
 	}
-	return printSettingsAll(cmd.OutOrStdout(), cfg, local, inCampaign, effective)
+	if jsonOut {
+		return emitSettingsJSON(cmd.OutOrStdout(), cfg, local, inCampaign, effective, rootForEffective)
+	}
+	return printSettingsAll(cmd.OutOrStdout(), cfg, local, inCampaign, effective, rootForEffective)
 }
 
 // resolveSettingValue returns the value for a key, loading campaign.yaml for the
@@ -208,6 +245,20 @@ func runSettingsGet(ctx context.Context, cmd *cobra.Command, args []string, json
 func resolveSettingValue(ctx context.Context, key string, cfg *config.GlobalConfig, local *config.LocalSettings, inCampaign bool) (any, error) {
 	if isCampaignScalarKey(key) {
 		return campaignScalarGet(ctx, key)
+	}
+	switch key {
+	case settingsKeyEffectiveCommitSyncRefs, settingsKeyEffectiveCommitDisableTags:
+		root := ""
+		if inCampaign {
+			if r, err := campaign.DetectCached(ctx); err == nil {
+				root = r
+			}
+		}
+		prefs := config.EffectiveCommitPrefs(ctx, root)
+		if key == settingsKeyEffectiveCommitSyncRefs {
+			return prefs.SyncProjectRefs, nil
+		}
+		return prefs.DisableCommitTags, nil
 	}
 	return settingsValueFor(key, cfg, local, inCampaign)
 }
@@ -254,6 +305,26 @@ func settingsValueFor(key string, cfg *config.GlobalConfig, local *config.LocalS
 			return nil, errSettingsLocalOutsideCampaign(key)
 		}
 		return local.ThemeOverride, nil
+	case settingsKeyGlobalCommitSyncRefs:
+		return cfg.Commit.SyncProjectRefs, nil
+	case settingsKeyGlobalCommitDisableTags:
+		return cfg.Commit.DisableCommitTags, nil
+	case settingsKeyLocalCommitSyncRefs:
+		if !inCampaign {
+			return nil, errSettingsLocalOutsideCampaign(key)
+		}
+		if local.Commit == nil {
+			return false, nil
+		}
+		return local.Commit.SyncProjectRefs, nil
+	case settingsKeyLocalCommitDisableTags:
+		if !inCampaign {
+			return nil, errSettingsLocalOutsideCampaign(key)
+		}
+		if local.Commit == nil {
+			return false, nil
+		}
+		return local.Commit.DisableCommitTags, nil
 	default:
 		return nil, errSettingsUnknownKey(key)
 	}
@@ -278,7 +349,7 @@ func printSettingsValue(ctx context.Context, cmd *cobra.Command, key string, cfg
 	return err
 }
 
-func printSettingsAll(w io.Writer, cfg *config.GlobalConfig, local *config.LocalSettings, inCampaign bool, effective string) error {
+func printSettingsAll(w io.Writer, cfg *config.GlobalConfig, local *config.LocalSettings, inCampaign bool, effective, campaignRoot string) error {
 	lines := []struct {
 		key   string
 		value any
@@ -288,6 +359,8 @@ func printSettingsAll(w io.Writer, cfg *config.GlobalConfig, local *config.Local
 		{settingsKeyGlobalCampaignsDir, cfg.CampaignsDir},
 		{settingsKeyGlobalVerbose, cfg.Verbose},
 		{settingsKeyGlobalNoColor, cfg.NoColor},
+		{settingsKeyGlobalCommitSyncRefs, cfg.Commit.SyncProjectRefs},
+		{settingsKeyGlobalCommitDisableTags, cfg.Commit.DisableCommitTags},
 	}
 	for _, line := range lines {
 		if _, err := fmt.Fprintf(w, "%s = %v\n", line.key, line.value); err != nil {
@@ -298,12 +371,32 @@ func printSettingsAll(w io.Writer, cfg *config.GlobalConfig, local *config.Local
 		if _, err := fmt.Fprintf(w, "%s = %s\n", settingsKeyLocalThemeOverride, local.ThemeOverride); err != nil {
 			return err
 		}
+		locSync, locTags := false, false
+		if local.Commit != nil {
+			locSync, locTags = local.Commit.SyncProjectRefs, local.Commit.DisableCommitTags
+		}
+		if _, err := fmt.Fprintf(w, "%s = %v\n", settingsKeyLocalCommitSyncRefs, locSync); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "%s = %v\n", settingsKeyLocalCommitDisableTags, locTags); err != nil {
+			return err
+		}
 	}
-	_, err := fmt.Fprintf(w, "%s = %s\n", settingsKeyEffectiveTheme, effective)
+	// printSettingsAll is pure formatting; effective prefs are already merged
+	// via EffectiveCommitPrefs using campaignRoot (empty when outside a campaign).
+	prefs := config.EffectiveCommitPrefs(context.TODO(), campaignRoot)
+	if _, err := fmt.Fprintf(w, "%s = %s\n", settingsKeyEffectiveTheme, effective); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "%s = %v\n", settingsKeyEffectiveCommitSyncRefs, prefs.SyncProjectRefs); err != nil {
+		return err
+	}
+	_, err := fmt.Fprintf(w, "%s = %v\n", settingsKeyEffectiveCommitDisableTags, prefs.DisableCommitTags)
 	return err
 }
 
-func emitSettingsJSON(w io.Writer, cfg *config.GlobalConfig, local *config.LocalSettings, inCampaign bool, effective string) error {
+func emitSettingsJSON(w io.Writer, cfg *config.GlobalConfig, local *config.LocalSettings, inCampaign bool, effective, campaignRoot string) error {
+	prefs := config.EffectiveCommitPrefs(context.TODO(), campaignRoot)
 	payload := settingsPayload{
 		SchemaVersion: SettingsJSONVersion,
 		GeneratedAt:   time.Now().UTC(),
@@ -314,11 +407,17 @@ func emitSettingsJSON(w io.Writer, cfg *config.GlobalConfig, local *config.Local
 			CampaignsDir: cfg.CampaignsDir,
 			Verbose:      cfg.Verbose,
 			NoColor:      cfg.NoColor,
+			Commit:       commitPayload(cfg.Commit),
 		},
-		Effective: settingsEffectivePayload{Theme: effective},
+		Effective: settingsEffectivePayload{Theme: effective, Commit: commitPayload(prefs)},
 	}
 	if inCampaign {
-		payload.Local = &settingsLocalPayload{ThemeOverride: local.ThemeOverride}
+		lp := &settingsLocalPayload{ThemeOverride: local.ThemeOverride}
+		if local.Commit != nil {
+			cp := commitPayload(*local.Commit)
+			lp.Commit = &cp
+		}
+		payload.Local = lp
 	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
@@ -328,10 +427,13 @@ func emitSettingsJSON(w io.Writer, cfg *config.GlobalConfig, local *config.Local
 func runSettingsSet(ctx context.Context, cmd *cobra.Command, key, value string) error {
 	switch {
 	case key == settingsKeyGlobalTheme, key == settingsKeyGlobalEditor, key == settingsKeyGlobalCampaignsDir,
-		key == settingsKeyGlobalVerbose, key == settingsKeyGlobalNoColor:
+		key == settingsKeyGlobalVerbose, key == settingsKeyGlobalNoColor,
+		key == settingsKeyGlobalCommitSyncRefs, key == settingsKeyGlobalCommitDisableTags:
 		return setGlobalSetting(ctx, cmd, key, value)
 	case key == settingsKeyLocalThemeOverride:
 		return setLocalThemeOverride(ctx, cmd, value)
+	case key == settingsKeyLocalCommitSyncRefs, key == settingsKeyLocalCommitDisableTags:
+		return setLocalCommitPref(ctx, cmd, key, value)
 	case isCampaignScalarKey(key):
 		return setCampaignScalar(ctx, cmd, key, value)
 	default:
@@ -434,16 +536,22 @@ func applyGlobalSetting(cfg *config.GlobalConfig, key, value string) (string, er
 		}
 		cfg.CampaignsDir = next.CampaignsDir
 		return cfg.CampaignsDir, nil
-	case settingsKeyGlobalVerbose, settingsKeyGlobalNoColor:
+	case settingsKeyGlobalVerbose, settingsKeyGlobalNoColor,
+		settingsKeyGlobalCommitSyncRefs, settingsKeyGlobalCommitDisableTags:
 		parsed, err := strconv.ParseBool(strings.ToLower(strings.TrimSpace(value)))
 		if err != nil {
 			return "", camperrors.NewValidation(key,
 				fmt.Sprintf("invalid boolean %q (valid: true, false)", value), err)
 		}
-		if key == settingsKeyGlobalVerbose {
+		switch key {
+		case settingsKeyGlobalVerbose:
 			cfg.Verbose = parsed
-		} else {
+		case settingsKeyGlobalNoColor:
 			cfg.NoColor = parsed
+		case settingsKeyGlobalCommitSyncRefs:
+			cfg.Commit.SyncProjectRefs = parsed
+		case settingsKeyGlobalCommitDisableTags:
+			cfg.Commit.DisableCommitTags = parsed
 		}
 		return strconv.FormatBool(parsed), nil
 	default:
@@ -479,6 +587,37 @@ func setLocalThemeOverride(ctx context.Context, cmd *cobra.Command, value string
 		return err
 	}
 	_, err = fmt.Fprintf(cmd.OutOrStdout(), "set %s = %s\n", settingsKeyLocalThemeOverride, normalized)
+	return err
+}
+
+func setLocalCommitPref(ctx context.Context, cmd *cobra.Command, key, value string) error {
+	root, err := campaign.DetectCached(ctx)
+	if err != nil || root == "" {
+		return errSettingsLocalOutsideCampaign(key)
+	}
+	parsed, err := strconv.ParseBool(strings.ToLower(strings.TrimSpace(value)))
+	if err != nil {
+		return camperrors.NewValidation(key,
+			fmt.Sprintf("invalid boolean %q (valid: true, false)", value), err)
+	}
+	if err := config.WithLocalSettingsLock(ctx, root, func(s *config.LocalSettings) error {
+		base := config.EffectiveCommitPrefs(ctx, root)
+		if s.Commit != nil {
+			base = *s.Commit
+		}
+		switch key {
+		case settingsKeyLocalCommitSyncRefs:
+			base.SyncProjectRefs = parsed
+		case settingsKeyLocalCommitDisableTags:
+			base.DisableCommitTags = parsed
+		}
+		cp := base
+		s.Commit = &cp
+		return nil
+	}); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "set %s = %s\n", key, strconv.FormatBool(parsed))
 	return err
 }
 

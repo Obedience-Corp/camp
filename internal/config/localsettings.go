@@ -39,10 +39,26 @@ func IsValidThemeName(name string) bool {
 
 type LocalSettings struct {
 	ThemeOverride string `json:"theme_override,omitempty"`
+	// Commit, when non-nil, fully replaces global commit prefs for this campaign.
+	Commit *CommitPrefs `json:"commit,omitempty"`
 }
 
 func (s *LocalSettings) IsEmpty() bool {
-	return s == nil || *s == LocalSettings{}
+	if s == nil {
+		return true
+	}
+	if s.ThemeOverride != "" {
+		return false
+	}
+	if s.Commit != nil && !s.Commit.IsEmpty() {
+		return false
+	}
+	// Explicit empty commit override still counts as non-empty so the file
+	// is kept when the user intentionally cleared both commit flags.
+	if s.Commit != nil {
+		return false
+	}
+	return true
 }
 
 func LocalSettingsPath(campaignRoot string) string {

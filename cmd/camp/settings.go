@@ -225,6 +225,8 @@ func editGlobalConfig(ctx context.Context, e settings.SettingEntry, campaignRoot
 			huh.NewOption(fmt.Sprintf("Campaigns Dir  %s", displayStr(cfg.CampaignsDir, "~/campaigns")), "campaigns_dir"),
 			huh.NewOption(fmt.Sprintf("Verbose        %s", boolStr(cfg.Verbose)), "verbose"),
 			huh.NewOption(fmt.Sprintf("No Color       %s", boolStr(cfg.NoColor)), "no_color"),
+			huh.NewOption(fmt.Sprintf("Sync project refs  %s", boolStr(cfg.Commit.SyncProjectRefs)), "commit_sync_refs"),
+			huh.NewOption(fmt.Sprintf("Disable commit tags %s", boolStr(cfg.Commit.DisableCommitTags)), "commit_disable_tags"),
 			huh.NewOption(rowSeparator, valSeparator),
 			huh.NewOption("Back", valBack),
 		}
@@ -272,6 +274,16 @@ func editGlobalConfig(ctx context.Context, e settings.SettingEntry, campaignRoot
 			if err := config.SaveGlobalConfig(ctx, cfg); err != nil {
 				return camperrors.Wrap(err, "saving config")
 			}
+		case "commit_sync_refs":
+			cfg.Commit.SyncProjectRefs = !cfg.Commit.SyncProjectRefs
+			if err := config.SaveGlobalConfig(ctx, cfg); err != nil {
+				return camperrors.Wrap(err, "saving config")
+			}
+		case "commit_disable_tags":
+			cfg.Commit.DisableCommitTags = !cfg.Commit.DisableCommitTags
+			if err := config.SaveGlobalConfig(ctx, cfg); err != nil {
+				return camperrors.Wrap(err, "saving config")
+			}
 		}
 	}
 }
@@ -287,10 +299,19 @@ func editLocalSettingsFile(ctx context.Context, e settings.SettingEntry, campaig
 			return camperrors.Wrap(err, "loading local settings")
 		}
 
+		locSync, locTags := false, false
+		if local.Commit != nil {
+			locSync, locTags = local.Commit.SyncProjectRefs, local.Commit.DisableCommitTags
+		}
+		eff := config.EffectiveCommitPrefs(ctx, campaignRoot)
 		options := []huh.Option[string]{
 			huh.NewOption(fmt.Sprintf("Theme Override  %s (effective: %s)",
 				displayStr(local.ThemeOverride, "inherit global"),
 				config.EffectiveTheme(ctx)), "theme_override"),
+			huh.NewOption(fmt.Sprintf("Sync project refs  %s (effective: %s)",
+				boolStr(locSync), boolStr(eff.SyncProjectRefs)), "commit_sync_refs"),
+			huh.NewOption(fmt.Sprintf("Disable commit tags %s (effective: %s)",
+				boolStr(locTags), boolStr(eff.DisableCommitTags)), "commit_disable_tags"),
 			huh.NewOption(rowSeparator, valSeparator),
 			huh.NewOption("Back", valBack),
 		}
@@ -320,8 +341,36 @@ func editLocalSettingsFile(ctx context.Context, e settings.SettingEntry, campaig
 			if err := editLocalThemeOverride(ctx, campaignRoot, local.ThemeOverride); err != nil {
 				return err
 			}
+		case "commit_sync_refs":
+			if err := toggleLocalCommitPref(ctx, campaignRoot, true); err != nil {
+				return err
+			}
+		case "commit_disable_tags":
+			if err := toggleLocalCommitPref(ctx, campaignRoot, false); err != nil {
+				return err
+			}
 		}
 	}
+}
+
+// toggleLocalCommitPref flips one local commit preference. When local.Commit is
+// nil, seed it from the current effective prefs so the other field keeps its
+// global meaning until explicitly changed.
+func toggleLocalCommitPref(ctx context.Context, campaignRoot string, syncRefs bool) error {
+	return config.WithLocalSettingsLock(ctx, campaignRoot, func(s *config.LocalSettings) error {
+		base := config.EffectiveCommitPrefs(ctx, campaignRoot)
+		if s.Commit != nil {
+			base = *s.Commit
+		}
+		if syncRefs {
+			base.SyncProjectRefs = !base.SyncProjectRefs
+		} else {
+			base.DisableCommitTags = !base.DisableCommitTags
+		}
+		cp := base
+		s.Commit = &cp
+		return nil
+	})
 }
 
 func editLocalThemeOverride(ctx context.Context, campaignRoot, current string) error {

@@ -95,7 +95,11 @@ Current fields:
     "theme": "adaptive",
     "vim_mode": false
   },
-  "campaigns_dir": "~/campaigns/"
+  "campaigns_dir": "~/campaigns/",
+  "commit": {
+    "sync_project_refs": false,
+    "disable_commit_tags": false
+  }
 }
 ```
 
@@ -103,6 +107,10 @@ Notes:
 
 - If the file does not exist, camp loads defaults and tries to create it.
 - `editor` is only used if `$EDITOR` and `$VISUAL` are not set.
+- `commit.sync_project_refs` / `commit.disable_commit_tags` are machine-wide
+  defaults for project-ref linking after `camp p commit` and for campaign
+  subject-tag tracing. Per-campaign overrides live in
+  `.campaign/settings/local.json` under the same `commit` object.
 - `camp settings` currently supports the global settings in this file.
 
 #### `campaigns_dir`
@@ -343,7 +351,11 @@ Example:
 
 ```json
 {
-  "theme_override": "dark"
+  "theme_override": "dark",
+  "commit": {
+    "sync_project_refs": false,
+    "disable_commit_tags": false
+  }
 }
 ```
 
@@ -352,9 +364,15 @@ Notes:
 - `theme_override` forces a color theme for this campaign: one of `adaptive`,
   `light`, `dark`, or `high-contrast`. When absent or empty, the campaign
   inherits the global theme from `~/.obey/campaign/config.json`.
+- `commit` (optional) fully overrides machine-global commit prefs for this
+  campaign when present:
+  - `sync_project_refs` — when true, `camp project commit` updates the
+    campaign-root submodule pointer after a project commit (same as `--sync`).
+    Default is false. Use `--no-sync` on a single invocation to force off.
+  - `disable_commit_tags` — when true, skips `[campaign:id-…]` subject prefixes
+    on camp-managed commits. Default is false (tags enabled).
 - The file is created on first save by `camp settings` (Local Settings) or
-  `camp settings set local.theme_override <value>`. Clearing the last setting
-  deletes the file.
+  `camp settings set local.*`. Clearing the last setting deletes the file.
 - Prefer the `camp settings` commands over hand-editing; writes are atomic and
   lock-protected.
 
@@ -395,14 +413,16 @@ Local (under `.campaign/`):
   `intents.tags` list via a one-per-line editor; and the nested `concepts`
   taxonomy via an in-TUI YAML editor (validated all-or-nothing so an invalid
   edit never touches the file).
-- `settings/local.json` - the campaign theme override.
+- `settings/local.json` - the campaign theme override and optional commit
+  behavior overrides (project-ref sync, disable commit tags).
 - `settings/allowlist.json` - daemon/agent tool allowlist (not camp CLI):
   toggle `allowed` per command, add, and remove commands. `inherit_defaults` is
   shown but not changed here.
 
 Global (under `~/.obey/campaign/`):
 
-- `config.json` - theme, editor, campaigns dir, verbose, and no-color.
+- `config.json` - theme, editor, campaigns dir, verbose, no-color, and commit
+  defaults (project-ref sync, disable commit tags).
 - `registry.json` - view registered campaigns and make safe per-campaign edits
   (org, display name, and path repair). Path repair only points at an existing
   directory and asks for confirmation. Lifecycle operations (register,
@@ -427,10 +447,14 @@ camp settings set global.theme dark
 camp settings set local.theme_override light
 camp settings set local.theme_override inherit    # Clear the override
 camp settings set local.campaign.type research
+camp settings set global.commit.disable_commit_tags true
+camp settings set local.commit.sync_project_refs true
 ```
 
 Keys: `global.theme`, `global.editor`, `global.campaigns_dir`,
-`global.verbose`, `global.no_color`, `local.theme_override`,
+`global.verbose`, `global.no_color`, `global.commit.sync_project_refs`,
+`global.commit.disable_commit_tags`, `local.theme_override`,
+`local.commit.sync_project_refs`, `local.commit.disable_commit_tags`,
 `local.campaign.name`, `local.campaign.description`, `local.campaign.mission`,
 `local.campaign.type`, and `local.campaign.commit_hook`. The `local.*` keys
 require running inside a campaign. The campaign.yaml list and tree fields
