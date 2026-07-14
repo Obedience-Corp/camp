@@ -83,6 +83,47 @@ func TestSourceURL(t *testing.T) {
 	}
 }
 
+func TestSourceRsyncSpec(t *testing.T) {
+	tests := []struct {
+		name    string
+		source  *Source
+		relPath string
+		want    string
+	}{
+		{
+			name:    "filesystem source is an unquoted local path",
+			source:  FromPath("vol", "/Volumes/backup/campaign"),
+			relPath: "media/renders",
+			want:    "/Volumes/backup/campaign/media/renders/",
+		},
+		{
+			name:    "ssh source single-quotes the remote path",
+			source:  &Source{root: "/home/me/campaign", target: "me@studio"},
+			relPath: "media/renders",
+			want:    "me@studio:'/home/me/campaign/media/renders'/",
+		},
+		{
+			name:    "space in an ssh remote path stays one argument",
+			source:  &Source{root: "/home/me/campaign", target: "me@studio"},
+			relPath: "Final Renders",
+			want:    "me@studio:'/home/me/campaign/Final Renders'/",
+		},
+		{
+			name:    "shell metacharacters in an ssh remote path are neutralized",
+			source:  &Source{root: "/root", target: "me@studio"},
+			relPath: "a; rm -rf ~",
+			want:    "me@studio:'/root/a; rm -rf ~'/",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.source.RsyncSpec(tt.relPath); got != tt.want {
+				t.Errorf("RsyncSpec(%q) = %q, want %q", tt.relPath, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestSourceRefspec(t *testing.T) {
 	s := FromPath("studio-mac", "/x")
 	wantHeads := "+refs/heads/*:refs/peer/studio-mac/*"

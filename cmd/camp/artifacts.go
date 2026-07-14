@@ -116,13 +116,24 @@ func runArtifactsList(cmd *cobra.Command, _ []string) error {
 
 	out := artifactsListOutput{Version: 1, Roots: []artifactRootJSON{}}
 	for _, r := range cfg.Roots {
-		abs := filepath.Join(campRoot, filepath.FromSlash(artifacts.NormalizeRootPath(r.Path)))
-		info, statErr := os.Stat(abs)
+		// Validate before stat: a hand-edited artifacts.yaml with a `../..`
+		// root would otherwise make this read-only command stat and report on
+		// files outside the campaign. Invalid roots are listed (so the user
+		// sees the bad declaration) but never touched on disk.
+		normalized, verr := artifacts.EnsureRootWithin(campRoot, r.Path)
+		exists := false
+		if verr == nil {
+			abs := filepath.Join(campRoot, filepath.FromSlash(normalized))
+			info, statErr := os.Stat(abs)
+			exists = statErr == nil && info.IsDir()
+		} else {
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "  warning: artifact root %q is invalid and was skipped: %v\n", r.Path, verr)
+		}
 		out.Roots = append(out.Roots, artifactRootJSON{
 			Path:       artifacts.NormalizeRootPath(r.Path),
 			Policy:     r.EffectivePolicy(),
-			Exists:     statErr == nil && info.IsDir(),
-			Gitignored: isGitignored(cmd, campRoot, r.Path),
+			Exists:     exists,
+			Gitignored: verr == nil && isGitignored(cmd, campRoot, r.Path),
 		})
 	}
 
@@ -223,6 +234,11 @@ func runArtifactsManifest(cmd *cobra.Command, args []string) error {
 	root, found := cfg.Find(args[0])
 	if !found {
 		return camperrors.Newf("artifact root %q is not declared (see 'camp artifacts list')", args[0])
+	}
+	// Validate before walking: a hand-edited root must not let this read-only
+	// command build a manifest of files outside the campaign.
+	if _, err := artifacts.EnsureRootWithin(campRoot, root.Path); err != nil {
+		return camperrors.Wrapf(err, "artifact root %q", root.Path)
 	}
 	m, err := artifacts.BuildManifest(ctx, campRoot, root.Path)
 	if err != nil {

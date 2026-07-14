@@ -150,7 +150,15 @@ func (s *Syncer) pullArtifacts(ctx context.Context, result *SyncResult) {
 	}
 	cfg, err := artifacts.Load(s.repoRoot)
 	if err != nil {
+		// A default `--from` sync degrades artifact failures to warnings (the
+		// accelerated path must never be worse than a plain sync), but under
+		// --artifacts-only the artifacts were the entire ask, so an unreadable
+		// config is a hard failure rather than a silent exit 0.
 		result.Warnings = append(result.Warnings, fmt.Sprintf("artifacts config: %v", err))
+		if s.options.ArtifactsOnly {
+			result.Success = false
+			result.Errors = append(result.Errors, &SyncError{Op: "artifacts", Cause: err})
+		}
 		return
 	}
 	for _, root := range cfg.Roots {
@@ -164,6 +172,15 @@ func (s *Syncer) pullArtifacts(ctx context.Context, result *SyncResult) {
 		}
 		pr := artifacts.Pull(ctx, s.repoRoot, s.peer, root)
 		result.Artifacts = append(result.Artifacts, pr)
+		// The top-of-loop guard cannot catch a cancellation that lands during
+		// this root's transfer (the last root has no next iteration), so
+		// re-check here: a cancelled sync must fail regardless of mode rather
+		// than reporting the interrupted transfer as a warning and exiting 0.
+		if ctx.Err() != nil {
+			result.Success = false
+			result.Errors = append(result.Errors, ctx.Err())
+			return
+		}
 		if pr.Warning != "" {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("artifacts %s: %s", pr.Root, pr.Warning))
 			if s.options.ArtifactsOnly {
@@ -177,6 +194,17 @@ func (s *Syncer) pullArtifacts(ctx context.Context, result *SyncResult) {
 // snapshots: no transfer, no git phases. Discrepancies fail the run so
 // scripting can rely on the exit code.
 func (s *Syncer) verifyArtifacts(ctx context.Context, result *SyncResult) {
+	// VerifyPeer comes straight from --from and is joined into the snapshot
+	// path (.campaign/cache/peersync/<peer>/...); validate it before it can
+	// traverse on read (e.g. --verify-artifacts --from ../../..).
+	if s.options.VerifyPeer != "" {
+		if err := artifacts.ValidatePeerID(s.options.VerifyPeer); err != nil {
+			result.Success = false
+			result.Errors = append(result.Errors, &SyncError{Op: "artifacts-verify", Cause: err})
+			return
+		}
+	}
+
 	cfg, err := artifacts.Load(s.repoRoot)
 	if err != nil {
 		result.Success = false

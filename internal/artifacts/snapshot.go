@@ -19,8 +19,35 @@ const snapshotDir = ".campaign/cache/peersync"
 
 // snapshotPath returns the snapshot file for one (peer, root) pair.
 func snapshotPath(campaignRoot, peerID, rootRel string) string {
-	slug := strings.ReplaceAll(NormalizeRootPath(rootRel), "/", "__")
-	return filepath.Join(campaignRoot, filepath.FromSlash(snapshotDir), peerID, slug+".json")
+	return filepath.Join(campaignRoot, filepath.FromSlash(snapshotDir), peerID, snapshotSlug(rootRel)+".json")
+}
+
+// snapshotSlug encodes a root path into a single, injective, filesystem-safe
+// filename component. A raw "/"->"__" replace is not injective (the roots
+// "a/b" and "a__b" collapse onto one baseline file, so syncing one poisons
+// the other's baseline). Percent-escaping the escape byte first and then the
+// separator keeps distinct roots distinct while staying human-readable.
+func snapshotSlug(rootRel string) string {
+	norm := NormalizeRootPath(rootRel)
+	norm = strings.ReplaceAll(norm, "%", "%25")
+	norm = strings.ReplaceAll(norm, "/", "%2F")
+	return norm
+}
+
+// ValidatePeerID rejects peer identifiers that could escape the snapshot tree
+// (peer ids are joined into .campaign/cache/peersync/<peer>/...). Ids resolved
+// from the machines file are already constrained, but `--from` in verify mode
+// is raw user input read straight into a filesystem path.
+func ValidatePeerID(id string) error {
+	if id == "" {
+		return camperrors.New("peer id must not be empty")
+	}
+	if strings.HasPrefix(id, ".") ||
+		strings.ContainsAny(id, "/\\\x00") ||
+		strings.Contains(id, "..") {
+		return camperrors.Newf("invalid peer id %q", id)
+	}
+	return nil
 }
 
 // LoadSnapshot reads the last-transfer manifest for (peer, root). A missing

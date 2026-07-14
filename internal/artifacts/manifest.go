@@ -28,7 +28,14 @@ type Manifest struct {
 type FileEntry struct {
 	Path string `json:"path"` // slash-separated, relative to the root
 	Size int64  `json:"size"`
-	MTime int64 `json:"mtime_unix"`
+	// MTime is nanosecond-resolution modification time. Second resolution let a
+	// same-size in-place edit made within the same wall-clock second as the
+	// baseline pass as unchanged, so it was excluded from protection and
+	// silently overwritten; nanoseconds close that no-clobber hole. The JSON
+	// key is versioned (mtime_unix_nano) so a pre-existing second-resolution
+	// snapshot is simply absent here and degrades to first-sync caution rather
+	// than being misread as nanoseconds.
+	MTime int64 `json:"mtime_unix_nano"`
 	// Symlink marks an entry that is a symbolic link (recorded via lstat, not
 	// followed) so a local symlink participates in conflict protection instead
 	// of being invisible to it.
@@ -79,7 +86,7 @@ func BuildManifest(ctx context.Context, campaignRoot, rootRel string) (*Manifest
 		m.Files = append(m.Files, FileEntry{
 			Path:    filepath.ToSlash(rel),
 			Size:    fi.Size(),
-			MTime:   fi.ModTime().Unix(),
+			MTime:   fi.ModTime().UnixNano(),
 			Symlink: isSymlink,
 		})
 		return nil

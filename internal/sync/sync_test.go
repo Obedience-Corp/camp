@@ -761,3 +761,50 @@ func containsHelper(s, substr string) bool {
 	}
 	return false
 }
+
+// TestPullArtifacts_ConfigLoadExitContract pins the exit-code contract for an
+// unreadable artifacts config: --artifacts-only fails the run (the artifacts
+// were the whole ask), a default --from sync degrades to a warning and keeps
+// exit 0 (the accelerated path must never be worse than a plain sync).
+func TestPullArtifacts_ConfigLoadExitContract(t *testing.T) {
+	ctx := context.Background()
+	repoRoot := t.TempDir()
+	// A directory where .campaign/artifacts.yaml must be forces a read error
+	// in artifacts.Load regardless of YAML-parser leniency.
+	if err := os.MkdirAll(filepath.Join(repoRoot, ".campaign", "artifacts.yaml"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	peerSrc := peer.FromPath("peerbox", t.TempDir())
+
+	only := NewSyncer(repoRoot, WithPeer(peerSrc), WithArtifactsOnly(true))
+	onlyRes := &SyncResult{Success: true}
+	only.pullArtifacts(ctx, onlyRes)
+	if onlyRes.Success {
+		t.Error("--artifacts-only with unreadable config: Success = true, want false")
+	}
+	if len(onlyRes.Errors) == 0 {
+		t.Error("--artifacts-only with unreadable config: no error recorded")
+	}
+
+	def := NewSyncer(repoRoot, WithPeer(peerSrc))
+	defRes := &SyncResult{Success: true}
+	def.pullArtifacts(ctx, defRes)
+	if !defRes.Success {
+		t.Error("default sync with unreadable config: Success = false, want true (degrade)")
+	}
+	if len(defRes.Warnings) == 0 {
+		t.Error("default sync with unreadable config: no warning recorded")
+	}
+}
+
+// TestVerifyArtifacts_RejectsTraversalPeer ensures a --from value that could
+// escape the snapshot tree is rejected before it is joined into a path.
+func TestVerifyArtifacts_RejectsTraversalPeer(t *testing.T) {
+	ctx := context.Background()
+	s := NewSyncer(t.TempDir(), WithVerifyArtifacts(true, "../../etc"))
+	res := &SyncResult{Success: true}
+	s.verifyArtifacts(ctx, res)
+	if res.Success {
+		t.Error("verify with a traversal peer id: Success = true, want false")
+	}
+}

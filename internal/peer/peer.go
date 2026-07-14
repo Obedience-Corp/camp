@@ -148,12 +148,21 @@ func (s *Source) GitEnv() []string {
 // RsyncSpec returns the rsync source spec for the directory at relPath under
 // the peer's campaign root, with a trailing slash so rsync copies contents
 // into the destination directory rather than nesting it.
+//
+// For an ssh source the path after "host:" is handed to the peer's remote
+// login shell, so it is single-quoted: a legitimate media root with a space
+// ("Final Renders/") would otherwise be split into two source arguments, and
+// shell metacharacters in a committed artifacts.yaml path would be
+// interpreted remotely. The trailing slash stays outside the quotes so the
+// local side still sees a copy-contents (not copy-dir) source. Filesystem
+// sources are passed to rsync as a local argv element (no shell), so they are
+// returned unquoted.
 func (s *Source) RsyncSpec(relPath string) string {
 	p := path.Join(s.root, relPath)
 	if s.target == "" {
 		return p + "/"
 	}
-	return s.target + ":" + p + "/"
+	return s.target + ":" + remote.ShellQuote(p) + "/"
 }
 
 // Fetch fetches heads and HEAD from the peer copy of the repository at

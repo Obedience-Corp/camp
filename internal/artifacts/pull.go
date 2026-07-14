@@ -110,11 +110,19 @@ func pull(ctx context.Context, campaignRoot string, src *peer.Source, result *Pu
 	// --no-links: never materialize a peer symlink locally (phantom state no
 	// snapshot could track); local symlinks are recorded in the manifest and
 	// so are protected like any other entry.
+	// --update: the protected set is computed from a walk that finished before
+	// this transfer starts, so a file written locally in the window between
+	// the walk and rsync is not in the exclude list. --update skips any
+	// destination that is newer than the peer's copy, which is exactly the
+	// signature of a file a local writer just touched, so a concurrent edit is
+	// not clobbered. This narrows but does not fully eliminate the race (a
+	// concurrent write landing an older-or-equal mtime is still possible on a
+	// truly live tree); the design's guarantee assumes a quiescent root.
 	partialDir := filepath.Join(campaignRoot, ".campaign", "cache", "rsync-partial")
 	if err := os.MkdirAll(partialDir, 0o755); err != nil {
 		return camperrors.Wrap(err, "create rsync partial dir")
 	}
-	args := []string{"-a", "--no-links", "--partial-dir=" + partialDir}
+	args := []string{"-a", "--no-links", "--update", "--partial-dir=" + partialDir}
 	if sshCmd := src.SSHCommand(); sshCmd != "" {
 		args = append(args, "-e", sshCmd)
 	}

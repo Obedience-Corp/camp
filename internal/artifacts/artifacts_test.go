@@ -121,8 +121,14 @@ func TestPullLifecycle(t *testing.T) {
 
 	peerCampaign := t.TempDir()
 	localCampaign := t.TempDir()
+	// Ordered, whole-second timestamps an hour apart replace wall-clock sleeps:
+	// they make transfer ordering deterministic (rsync --update and the
+	// conflict predicate both compare mtimes) and cannot be reordered by
+	// rsync -a rounding preserved mtimes to seconds.
+	base := time.Unix(1_600_000_000, 0)
 	writeArtifact(t, peerCampaign, "media/render.mov", "peer render v1")
 	writeArtifact(t, peerCampaign, "media/audio.wav", "peer audio v1")
+	setMTime(t, peerCampaign, "media/render.mov", base)
 	src := peer.FromPath("peerbox", peerCampaign)
 	root := Root{Path: "media"}
 
@@ -137,8 +143,8 @@ func TestPullLifecycle(t *testing.T) {
 	assertArtifact(t, localCampaign, "media/render.mov", "peer render v1")
 
 	// Peer updates a file; local is untouched: the update flows through.
-	time.Sleep(1100 * time.Millisecond) // distinct mtime at unix-second resolution
 	writeArtifact(t, peerCampaign, "media/render.mov", "peer render v2")
+	setMTime(t, peerCampaign, "media/render.mov", base.Add(time.Hour))
 	r2 := Pull(ctx, localCampaign, src, root)
 	if r2.Warning != "" || !r2.Synced || r2.FirstSync {
 		t.Fatalf("second pull = %+v, want clean non-first sync", r2)
@@ -150,9 +156,10 @@ func TestPullLifecycle(t *testing.T) {
 
 	// Both sides change the same file: local wins, conflict reported, and the
 	// protection is sticky on the following pull.
-	time.Sleep(1100 * time.Millisecond)
 	writeArtifact(t, localCampaign, "media/render.mov", "LOCAL edit")
+	setMTime(t, localCampaign, "media/render.mov", base.Add(2*time.Hour))
 	writeArtifact(t, peerCampaign, "media/render.mov", "peer render v3")
+	setMTime(t, peerCampaign, "media/render.mov", base.Add(3*time.Hour))
 	r3 := Pull(ctx, localCampaign, src, root)
 	if r3.Warning != "" || !r3.Synced {
 		t.Fatalf("third pull = %+v, want sync with conflict", r3)
@@ -278,6 +285,17 @@ func writeArtifact(t *testing.T, campaignRoot, rel, content string) {
 	}
 }
 
+// setMTime forces a deterministic modification time on an artifact so tests
+// control transfer ordering and conflict detection without depending on
+// wall-clock timing.
+func setMTime(t *testing.T, campaignRoot, rel string, mtime time.Time) {
+	t.Helper()
+	path := filepath.Join(campaignRoot, filepath.FromSlash(rel))
+	if err := os.Chtimes(path, mtime, mtime); err != nil {
+		t.Fatalf("chtimes %s: %v", rel, err)
+	}
+}
+
 func assertArtifact(t *testing.T, campaignRoot, rel, want string) {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join(campaignRoot, filepath.FromSlash(rel)))
@@ -286,5 +304,82 @@ func assertArtifact(t *testing.T, campaignRoot, rel, want string) {
 	}
 	if string(data) != want {
 		t.Errorf("%s = %q, want %q", rel, string(data), want)
+	}
+}
+
+// TestManifest_SameSecondEditIsDetected proves the no-clobber predicate keys
+// on nanosecond mtime: a same-size in-place edit made in the same wall-clock
+// second as the baseline must still register as a change (second resolution
+// silently overwrote it).
+func TestManifest_SameSecondEditIsDetected(t *testing.T) {
+	ctx := context.Background()
+	campaign := t.TempDir()
+
+	// Skip on a filesystem that does not preserve sub-second mtimes; the fix
+	// depends on them (CI and the container harness do).
+	probe := filepath.Join(campaign, ".mtime-probe")
+	if err := os.WriteFile(probe, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pt := time.Unix(1_600_000_000, 123_456_789)
+	if err := os.Chtimes(probe, pt, pt); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := os.Stat(probe); err == nil && fi.ModTime().Nanosecond() == 0 {
+		t.Skip("filesystem does not preserve sub-second mtime")
+	}
+
+	writeArtifact(t, campaign, "media/clip.bin", "AAAA")
+	t0 := time.Unix(1_600_000_000, 100_000_000) // .1s
+	setMTime(t, campaign, "media/clip.bin", t0)
+	base, err := BuildManifest(ctx, campaign, "media")
+	if err != nil {
+		t.Fatalf("BuildManifest baseline: %v", err)
+	}
+
+	writeArtifact(t, campaign, "media/clip.bin", "BBBB") // same size, different content
+	t1 := time.Unix(1_600_000_000, 900_000_000)          // .9s, SAME unix second
+	setMTime(t, campaign, "media/clip.bin", t1)
+	after, err := BuildManifest(ctx, campaign, "media")
+	if err != nil {
+		t.Fatalf("BuildManifest after: %v", err)
+	}
+
+	if t0.Unix() != t1.Unix() {
+		t.Fatalf("test setup: timestamps not in the same unix second")
+	}
+	if len(base.Files) != 1 || len(after.Files) != 1 {
+		t.Fatalf("manifest files base=%d after=%d, want 1 each", len(base.Files), len(after.Files))
+	}
+	if sameEntry(after.Files[0], base.Files[0]) {
+		t.Fatalf("same-second same-size edit treated as unchanged: base=%+v after=%+v", base.Files[0], after.Files[0])
+	}
+}
+
+// TestSnapshotSlug_Injective guards against the "/"->"__" collision that let
+// two distinct roots share one baseline file (and thus poison each other).
+func TestSnapshotSlug_Injective(t *testing.T) {
+	collisions := [][2]string{
+		{"a/b", "a__b"},
+		{"media/renders", "media__renders"},
+		{"a%2Fb", "a/b"},
+	}
+	for _, c := range collisions {
+		if snapshotSlug(c[0]) == snapshotSlug(c[1]) {
+			t.Errorf("snapshotSlug(%q) == snapshotSlug(%q) = %q; must be injective", c[0], c[1], snapshotSlug(c[0]))
+		}
+	}
+}
+
+func TestValidatePeerID(t *testing.T) {
+	for _, v := range []string{"studio-mac", "laptop", "box.local", "m1_max"} {
+		if err := ValidatePeerID(v); err != nil {
+			t.Errorf("ValidatePeerID(%q) = %v, want nil", v, err)
+		}
+	}
+	for _, v := range []string{"", "..", "../evil", "a/b", `a\b`, ".hidden", "x/../y", "a\x00b"} {
+		if err := ValidatePeerID(v); err == nil {
+			t.Errorf("ValidatePeerID(%q) = nil, want error", v)
+		}
 	}
 }
