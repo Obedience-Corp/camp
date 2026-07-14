@@ -588,6 +588,150 @@ func TestModel_FooterRendersFilterChips(t *testing.T) {
 	}
 }
 
+func TestModel_InitialFiltersAreVisibleAndEditable(t *testing.T) {
+	items := []workitem.WorkItem{
+		{Key: "design", WorkflowType: workitem.WorkflowTypeDesign, WorkflowCategory: "plan", AttentionStage: "active", Title: "auth design"},
+		{Key: "intent", WorkflowType: workitem.WorkflowTypeIntent, WorkflowCategory: "plan", LifecycleStage: workitem.LifecycleStageActive, Title: "auth intent"},
+		{Key: "other", WorkflowType: workitem.WorkflowTypeExplore, WorkflowCategory: "research", AttentionStage: "active", Title: "other"},
+	}
+	m := New(context.Background(), items, "/campaign", nil, nil, "")
+	m.SetInitialFilters(workitem.FilterOptions{
+		Types:      []string{"design"},
+		Categories: []string{"plan"},
+		Statuses:   []string{"active"},
+		Query:      "auth",
+		ShowParked: false,
+	})
+	if len(m.filteredItems) != 1 || m.filteredItems[0].Key != "design" {
+		t.Fatalf("initial filters = %v, want design", m.filteredItems)
+	}
+	header := m.renderHeader()
+	for _, want := range []string{"type:design", "category:plan", "status:active", "search:auth"} {
+		if !strings.Contains(header, want) {
+			t.Fatalf("header missing %q: %s", want, header)
+		}
+	}
+
+	updated, _ := m.handleNormalKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'0'}})
+	m = updated.(Model)
+	if m.typeFilter != "" || len(m.initialFilters.Types) != 0 {
+		t.Fatalf("type filter not cleared: %q / %v", m.typeFilter, m.initialFilters.Types)
+	}
+}
+
+func TestModel_ZeroClearsSeededSelectionFilters(t *testing.T) {
+	items := []workitem.WorkItem{
+		{Key: "one", Title: "one", WorkflowType: workitem.WorkflowTypeDesign, WorkflowCategory: "plan", AttentionStage: "active", Group: "alpha"},
+		{Key: "two", Title: "two", WorkflowType: workitem.WorkflowTypeIntent, WorkflowCategory: "research", AttentionStage: "ready", Group: "beta"},
+	}
+	tests := []struct {
+		name    string
+		filters workitem.FilterOptions
+	}{
+		{name: "category", filters: workitem.FilterOptions{Categories: []string{"plan"}}},
+		{name: "status", filters: workitem.FilterOptions{Statuses: []string{"active"}}},
+		{name: "group", filters: workitem.FilterOptions{Groups: []string{"alpha"}}},
+		{name: "query", filters: workitem.FilterOptions{Query: "one"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := New(context.Background(), items, "/campaign", nil, nil, "")
+			m.SetInitialFilters(tt.filters)
+			if len(m.filteredItems) != 1 {
+				t.Fatalf("seeded filter returned %d items, want 1", len(m.filteredItems))
+			}
+
+			updated, _ := m.handleNormalKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'0'}})
+			m = updated.(Model)
+			if len(m.filteredItems) != len(items) {
+				t.Fatalf("after '0': %d items, want %d", len(m.filteredItems), len(items))
+			}
+			if m.typeFilter != "" || m.categoryFilter != "" || m.statusFilter != "" {
+				t.Fatalf("interactive filters remain: type=%q category=%q status=%q", m.typeFilter, m.categoryFilter, m.statusFilter)
+			}
+			if m.searchQuery != "" || m.searchInput.Value() != "" {
+				t.Fatalf("search filter remains: query=%q input=%q", m.searchQuery, m.searchInput.Value())
+			}
+			if len(m.initialFilters.Types) != 0 || len(m.initialFilters.Categories) != 0 || len(m.initialFilters.Statuses) != 0 ||
+				len(m.initialFilters.LifecycleStages) != 0 || len(m.initialFilters.AttentionStages) != 0 || len(m.initialFilters.Groups) != 0 {
+				t.Fatalf("seeded filters remain: %+v", m.initialFilters)
+			}
+		})
+	}
+}
+
+func TestModel_StatusFilterModeClearsSeededStatus(t *testing.T) {
+	items := []workitem.WorkItem{
+		{Key: "current", AttentionStage: "current"},
+		{Key: "active", AttentionStage: "active"},
+	}
+	m := New(context.Background(), items, "/campaign", nil, nil, "")
+	m.SetInitialFilters(workitem.FilterOptions{Statuses: []string{"current"}})
+	if len(m.filteredItems) != 1 {
+		t.Fatalf("seeded status returned %d items", len(m.filteredItems))
+	}
+	m.enterStatusMode()
+	updated, _ := m.handleStatusFilterKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'0'}})
+	m = updated.(Model)
+	if m.statusFilter != "" || len(m.initialFilters.Statuses) != 0 || len(m.filteredItems) != 2 {
+		t.Fatalf("status clear failed: filter=%q seed=%v items=%d", m.statusFilter, m.initialFilters.Statuses, len(m.filteredItems))
+	}
+}
+
+// Stage seeds must survive live navigation back to "all" in status mode; only
+// a concrete status (or explicit 0) clears lifecycle/attention prefilters.
+func TestModel_StatusModePreservesStageSeedsOnAll(t *testing.T) {
+	items := []workitem.WorkItem{
+		{Key: "active", LifecycleStage: workitem.LifecycleStageActive, Title: "active"},
+		{Key: "ready", LifecycleStage: workitem.LifecycleStageReady, Title: "ready"},
+	}
+	m := New(context.Background(), items, "/campaign", nil, nil, "")
+	m.SetInitialFilters(workitem.FilterOptions{LifecycleStages: []string{"active"}})
+	if len(m.filteredItems) != 1 {
+		t.Fatalf("seeded stage returned %d items", len(m.filteredItems))
+	}
+	m.enterStatusMode()
+	// Navigate to a concrete status then back to "all" (index 0).
+	m.statusIndex = 1
+	m.applyStatusFilter(m.statusOptions[1])
+	if len(m.initialFilters.LifecycleStages) != 0 {
+		t.Fatalf("concrete status should clear lifecycle seeds, got %v", m.initialFilters.LifecycleStages)
+	}
+	m.statusIndex = 0
+	m.applyStatusFilter("")
+	// "all" does not restore seeds (they were cleared by concrete status), but
+	// also must not panic; re-seed and verify empty apply leaves stages alone.
+	m.initialFilters.LifecycleStages = []string{"active"}
+	m.applyStatusFilter("")
+	if got := m.initialFilters.LifecycleStages; len(got) != 1 || got[0] != "active" {
+		t.Fatalf("applyStatusFilter(\"\") clobbered lifecycle seeds: %v", got)
+	}
+	if len(m.filteredItems) != 1 {
+		t.Fatalf("stage seed after all: %d items, want 1", len(m.filteredItems))
+	}
+}
+
+func TestModel_LimitNotAppliedInTUI(t *testing.T) {
+	items := makeTestItems(3)
+	m := New(context.Background(), items, "/campaign", nil, nil, "")
+	// Even if a caller left limit set, SetInitialFilters clears it.
+	m.limit = 1
+	m.SetInitialFilters(workitem.FilterOptions{})
+	if m.limit != 0 {
+		t.Fatalf("limit after SetInitialFilters = %d, want 0", m.limit)
+	}
+	if len(m.filteredItems) != 3 {
+		t.Fatalf("filtered = %d, want full set 3", len(m.filteredItems))
+	}
+	m.limit = 1
+	m.refilter()
+	// refilter still honors an explicit internal limit if set, but clear-all drops it.
+	m.clearAllFilters()
+	if m.limit != 0 || len(m.filteredItems) != 3 {
+		t.Fatalf("after clearAll: limit=%d items=%d", m.limit, len(m.filteredItems))
+	}
+}
+
 func TestChipWindow(t *testing.T) {
 	labels := []string{"all 40", "intent 10", "design 10", "bug 10", "feature 10"}
 	tests := []struct {

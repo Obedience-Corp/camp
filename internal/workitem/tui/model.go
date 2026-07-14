@@ -121,14 +121,25 @@ type Model struct {
 	savedSearchQuery string // snapshot of committed query when search mode starts
 
 	// Filters
-	typeFilter      string // empty = all, or any workflow type
-	categoryFilter  string // empty = all, or any workflow category
+	typeFilter      string // interactive single-type override
+	categoryFilter  string // interactive single-category override
+	statusFilter    string // interactive displayed-status override
+	initialFilters  workitem.FilterOptions
+	limit           int
 	categoryForType func(string) string
 	showParked      bool
 	filterMode      bool
 	filterOptions   []string // chip values while filter mode is active; "" = all
 	filterIndex     int
 	savedTypeFilter string // snapshot of typeFilter when filter mode starts
+	savedTypes      []string
+	statusMode      bool
+	statusOptions   []string
+	statusIndex     int
+	savedStatus     string
+	savedStatuses   []string
+	savedStages     []string
+	savedAttention  []string
 
 	// Preview
 	showPreview    bool
@@ -187,6 +198,30 @@ func (m *Model) SetCategoryResolver(fn func(string) string) {
 	m.categoryForType = fn
 }
 
+// SetInitialFilters seeds visible, editable filters supplied by the command.
+// Result-size limits (--limit) are intentionally not applied here: limit is a
+// non-interactive result control, not a browsable TUI prefilter.
+func (m *Model) SetInitialFilters(opts workitem.FilterOptions) {
+	m.initialFilters = opts
+	m.limit = 0
+	m.showParked = opts.ShowParked
+	m.searchQuery = opts.Query
+	m.searchInput.SetValue(opts.Query)
+	if len(opts.Types) == 1 {
+		m.typeFilter = opts.Types[0]
+		m.initialFilters.Types = nil
+	}
+	if len(opts.Categories) == 1 {
+		m.categoryFilter = opts.Categories[0]
+		m.initialFilters.Categories = nil
+	}
+	if len(opts.Statuses) == 1 {
+		m.statusFilter = workitem.NormalizeDisplayStatus(opts.Statuses[0])
+		m.initialFilters.Statuses = nil
+	}
+	m.refilter()
+}
+
 // typeFilterFor resolves a pressed key to a type filter value.
 // "0" clears the filter; 1-4 are the builtin types.
 func (m Model) typeFilterFor(key string) (string, bool) {
@@ -204,6 +239,7 @@ func (m Model) typeFilterFor(key string) (string, bool) {
 func (m *Model) enterFilterMode() {
 	m.rebuildFilterOptions()
 	m.savedTypeFilter = m.typeFilter
+	m.savedTypes = append([]string(nil), m.initialFilters.Types...)
 	m.filterMode = true
 }
 
@@ -229,13 +265,41 @@ func (m *Model) rebuildFilterOptions() {
 	}
 }
 
-// visibleBaseItems returns allItems narrowed by the committed search and
-// parked visibility: exactly what the list shows before any type filter.
+// visibleBaseItems returns the rows visible before applying the type dimension,
+// so type chips and counts still reflect every other active filter.
 func (m Model) visibleBaseItems() []workitem.WorkItem {
-	return workitem.FilterAdvanced(m.allItems, workitem.FilterOptions{
-		Query:      m.searchQuery,
-		ShowParked: m.showParked,
-	})
+	opts := m.filterOptionsForState(m.searchQuery)
+	opts.Types = nil
+	return workitem.FilterAdvanced(m.allItems, opts)
+}
+
+func (m Model) categoryBaseItems() []workitem.WorkItem {
+	opts := m.filterOptionsForState(m.searchQuery)
+	opts.Categories = nil
+	return workitem.FilterAdvanced(m.allItems, opts)
+}
+
+func (m *Model) enterStatusMode() {
+	m.statusOptions = deriveStatusOptions(m.visibleBaseItems(), m.statusFilter)
+	m.statusIndex = 0
+	for i, status := range m.statusOptions {
+		if status == m.statusFilter {
+			m.statusIndex = i
+			break
+		}
+	}
+	m.savedStatus = m.statusFilter
+	m.savedStatuses = append([]string(nil), m.initialFilters.Statuses...)
+	m.savedStages = append([]string(nil), m.initialFilters.LifecycleStages...)
+	m.savedAttention = append([]string(nil), m.initialFilters.AttentionStages...)
+	m.statusMode = true
+}
+
+func (m Model) isStatusMode() bool { return m.statusMode }
+
+func deriveStatusOptions(_ []workitem.WorkItem, _ string) []string {
+	opts := []string{""}
+	return append(opts, workitem.DisplayStatusVocabulary()...)
 }
 
 // visibleTypeCounts tallies visible items per workflow type, returning the
@@ -275,6 +339,9 @@ func (m Model) currentItem() workitem.WorkItem {
 // then clamps cursor and scrollOffset to stay within bounds.
 func (m *Model) refilter() {
 	m.filteredItems = workitem.FilterAdvanced(m.allItems, m.filterOptionsForState(m.searchQuery))
+	if m.limit > 0 && len(m.filteredItems) > m.limit {
+		m.filteredItems = m.filteredItems[:m.limit]
+	}
 	if m.cursor >= len(m.filteredItems) {
 		m.cursor = max(0, len(m.filteredItems)-1)
 	}
@@ -282,24 +349,23 @@ func (m *Model) refilter() {
 }
 
 func (m Model) filterOptionsForState(query string) workitem.FilterOptions {
-	var types []string
+	opts := m.initialFilters
 	if m.typeFilter != "" {
-		types = []string{m.typeFilter}
+		opts.Types = []string{m.typeFilter}
 	}
-	var categories []string
 	if m.categoryFilter != "" {
-		categories = []string{m.categoryFilter}
+		opts.Categories = []string{m.categoryFilter}
 	}
-	return workitem.FilterOptions{
-		Types:      types,
-		Categories: categories,
-		Query:      query,
-		ShowParked: m.showParked,
+	if m.statusFilter != "" {
+		opts.Statuses = []string{m.statusFilter}
 	}
+	opts.Query = query
+	opts.ShowParked = m.showParked
+	return opts
 }
 
 func (m *Model) cycleCategory() {
-	opts := deriveCategoryOptions(m.visibleBaseItems(), m.categoryFilter)
+	opts := deriveCategoryOptions(m.categoryBaseItems(), m.categoryFilter)
 	if len(opts) <= 1 {
 		return
 	}
@@ -311,6 +377,7 @@ func (m *Model) cycleCategory() {
 		}
 	}
 	m.categoryFilter = opts[(idx+1)%len(opts)]
+	m.initialFilters.Categories = nil
 	m.refilter()
 }
 

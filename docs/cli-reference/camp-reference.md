@@ -6009,6 +6009,7 @@ camp workitem [flags]
       --query string                  Search query to filter items
       --show-parked                   include parked attention-stage workitems in default output
       --stage stringArray             Filter by lifecycle stage (none, inbox, active, ready, planning, ritual, chains)
+      --status stringArray            Filter by displayed status (current, next, active, parked, inbox, ready, plan, ritual, chains, none)
       --type stringArray              Filter by workflow type (builtin: intent, design, explore, festival; or any slug-safe custom type produced by 'camp workitem create --type <name>')
 ```
 
@@ -6316,6 +6317,55 @@ camp workitem links [selector] [flags]
 ```
   -h, --help   help for links
       --json   emit a structured JSON result
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp workitem list
+
+List or browse filtered workitems
+
+### Synopsis
+
+List campaign workitems with the same filters used by the dashboard.
+
+In a terminal, this opens the TUI with visible, editable prefilters. When
+stdout is not a terminal, it prints a compact grouped list. Use --json for the
+stable machine-readable contract in either environment.
+
+The optional positional filter resolves as a workflow type, displayed status,
+or configured category. Ambiguous values must use an explicit flag.
+
+Examples:
+  camp workitem list intent
+  camp workitem list active
+  camp workitem list --category research --query auth
+  camp workitem list festival --status ready --json
+
+```
+camp workitem list [type|status|category] [flags]
+```
+
+### Options
+
+```
+      --attention-stage stringArray   Filter by attention stage (repeat for OR)
+      --category stringArray          Filter by workflow category (repeat for OR)
+      --group stringArray             Filter by workitem group (repeat for OR)
+      --group-by string               Group output sections by attention_stage, group, type, or category
+  -h, --help                          help for list
+      --json                          Output as JSON
+      --limit int                     Maximum number of items to return
+      --query string                  Search query to filter items
+      --show-parked                   Include parked attention-stage workitems
+      --stage stringArray             Filter by lifecycle stage (repeat for OR)
+      --status stringArray            Filter by displayed status (repeat for OR)
+      --type stringArray              Filter by workflow type (repeat for OR)
 ```
 
 ### Options inherited from parent commands

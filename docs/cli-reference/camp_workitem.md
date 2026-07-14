@@ -35,6 +35,7 @@ camp workitem [flags]
       --query string                  Search query to filter items
       --show-parked                   include parked attention-stage workitems in default output
       --stage stringArray             Filter by lifecycle stage (none, inbox, active, ready, planning, ritual, chains)
+      --status stringArray            Filter by displayed status (current, next, active, parked, inbox, ready, plan, ritual, chains, none)
       --type stringArray              Filter by workflow type (builtin: intent, design, explore, festival; or any slug-safe custom type produced by 'camp workitem create --type <name>')
 ```
 
@@ -56,6 +57,7 @@ camp workitem [flags]
 * [camp workitem group](camp_workitem_group.md)	 - Set or clear the group of a workitem
 * [camp workitem link](camp_workitem_link.md)	 - Attach a workitem to a project, festival, worktree, or campaign path
 * [camp workitem links](camp_workitem_links.md)	 - List workitem links
+* [camp workitem list](camp_workitem_list.md)	 - List or browse filtered workitems
 * [camp workitem priority](camp_workitem_priority.md)	 - Set or clear the manual priority of a workitem
 * [camp workitem promote](camp_workitem_promote.md)	 - Promote a workitem to a festival, doc, or dungeon status
 * [camp workitem resolve](camp_workitem_resolve.md)	 - Print the workitem the current context resolves to (read-only)

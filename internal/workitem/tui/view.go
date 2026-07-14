@@ -67,11 +67,17 @@ func (m Model) renderPreviewOverlay() string {
 func (m Model) renderHeader() string {
 	title := headerStyle.Render("camp workitem")
 	var filters []string
-	if m.typeFilter != "" {
-		filters = append(filters, filterActiveStyle.Render("type:"+m.typeFilter))
+	if values := m.activeTypes(); len(values) > 0 {
+		filters = append(filters, filterActiveStyle.Render("type:"+strings.Join(values, ",")))
 	}
-	if m.categoryFilter != "" {
-		filters = append(filters, filterActiveStyle.Render("category:"+m.categoryFilter))
+	if values := m.activeCategories(); len(values) > 0 {
+		filters = append(filters, filterActiveStyle.Render("category:"+strings.Join(values, ",")))
+	}
+	if values := m.activeStatuses(); len(values) > 0 {
+		filters = append(filters, filterActiveStyle.Render("status:"+strings.Join(values, ",")))
+	}
+	if len(m.initialFilters.Groups) > 0 {
+		filters = append(filters, filterActiveStyle.Render("group:"+strings.Join(m.initialFilters.Groups, ",")))
 	}
 	if m.searchQuery != "" {
 		filters = append(filters, filterActiveStyle.Render("search:"+m.searchQuery))
@@ -83,6 +89,34 @@ func (m Model) renderHeader() string {
 		title += "  " + footerStyle.Render("/"+m.searchInput.Value())
 	}
 	return title
+}
+
+func (m Model) activeTypes() []string {
+	if m.typeFilter != "" {
+		return []string{m.typeFilter}
+	}
+	return m.initialFilters.Types
+}
+
+func (m Model) activeCategories() []string {
+	if m.categoryFilter != "" {
+		return []string{m.categoryFilter}
+	}
+	return m.initialFilters.Categories
+}
+
+func (m Model) activeStatuses() []string {
+	if m.statusFilter != "" {
+		return []string{m.statusFilter}
+	}
+	values := append([]string(nil), m.initialFilters.Statuses...)
+	for _, stage := range m.initialFilters.LifecycleStages {
+		values = append(values, "lifecycle="+stage)
+	}
+	for _, stage := range m.initialFilters.AttentionStages {
+		values = append(values, "attention="+stage)
+	}
+	return values
 }
 
 func (m Model) renderFooter() string {
@@ -104,12 +138,36 @@ func (m Model) renderFooter() string {
 	if m.isFilterMode() {
 		return m.renderFilterChips()
 	}
+	if m.isStatusMode() {
+		return m.renderStatusFilter()
+	}
 	count := fmt.Sprintf("%d items", len(m.filteredItems))
-	keys := "j/k move  / search  f filter  c category  0 all  S stage  P priority  tab preview  r refresh  ? help  q quit"
+	keys := "j/k move  / search  f type  s status  c category  0 all  S set-stage  P priority  tab preview  r refresh  ? help  q quit"
 	if len(keys)+len(count)+2 > m.width {
-		keys = "j/k / f c P tab r ? q"
+		keys = "j/k / f filter s status c category P tab r ? q"
 	}
 	return footerStyle.Render(fmt.Sprintf("%s  %s", count, keys))
+}
+
+func (m Model) renderStatusFilter() string {
+	labels := make([]string, len(m.statusOptions))
+	for i, status := range m.statusOptions {
+		if status == "" {
+			labels[i] = "all"
+		} else {
+			labels[i] = status
+		}
+	}
+	parts := make([]string, len(labels))
+	for i, label := range labels {
+		if i == m.statusIndex {
+			parts[i] = "[" + label + "]"
+		} else {
+			parts[i] = label
+		}
+	}
+	row := "status: " + strings.Join(parts, "  ")
+	return footerStyle.Render(truncate(row, max(m.width, 1)))
 }
 
 const (
@@ -381,7 +439,8 @@ func shortLifecycle(stage workitem.LifecycleStage) string {
 	case workitem.LifecycleStageChains:
 		return "chains"
 	case workitem.LifecycleStageNone, "":
-		return "-"
+		// Match DisplayStatus / --status none filter token.
+		return "none"
 	default:
 		return string(stage)
 	}
@@ -550,7 +609,7 @@ func (m Model) renderHelp() string {
 			{"/", "Start search"},
 			{"Esc", "Clear search / close overlay"},
 			{"f", "Filter by type (j/k or arrows step, Enter apply, Esc cancel)"},
-			{"0", "Show all types"},
+			{"0", "Clear all filters"},
 			{"1", "Filter: intent"},
 			{"2", "Filter: design"},
 			{"3", "Filter: explore"},
