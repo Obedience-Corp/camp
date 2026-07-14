@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -166,15 +167,20 @@ func runClone(cmd *cobra.Command, args []string) error {
 			name = filepath.Base(directory)
 		}
 		src, err := peer.FromMachine(ctx, cloneOpts.from, name)
-		if err != nil {
-			// Help text promises peer failures fall back to a plain origin
-			// clone; a resolve failure (unreachable/typo'd peer) must degrade,
-			// not abort. Warn and clone from origin with no peer configured.
+		switch {
+		case err != nil && errors.Is(err, peer.ErrPeerConfig):
+			// Misconfiguration or typo (unknown machine, bad auth): fail fast
+			// so the user fixes it, rather than silently ignoring --from.
+			formatCloneError(err, cloneOpts.json)
+			return camperrors.NewCommand("camp clone", clone.ExitCloneFailed, "", err)
+		case err != nil:
+			// Reachability failure: help text promises fallback to a plain
+			// origin clone. Warn and clone from origin with no peer configured.
 			if !cloneOpts.json {
-				fmt.Fprintf(os.Stderr, "%s peer %q unavailable (%v); cloning from origin\n",
+				fmt.Fprintf(os.Stderr, "%s peer %q unreachable (%v); cloning from origin\n",
 					ui.WarningIcon(), cloneOpts.from, err)
 			}
-		} else {
+		default:
 			clonerOpts = append(clonerOpts, clone.WithPeer(src))
 		}
 	}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
@@ -124,13 +125,18 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 	if syncOpts.from != "" {
 		src, err := resolveSyncPeer(ctx, campRoot, syncOpts.from)
-		if err != nil {
-			// Help text promises an unreachable peer degrades to a warning
-			// and the git sync still runs via origin; a resolve failure
-			// (unreachable/typo'd peer) must not abort the whole command.
-			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "camp: warning: peer %q unavailable (%v); syncing via origin\n",
+		switch {
+		case err != nil && errors.Is(err, peer.ErrPeerConfig):
+			// Misconfiguration or typo (unknown machine, campaign not
+			// registered, bad auth): fail fast so --from is not silently
+			// ignored.
+			return err
+		case err != nil:
+			// Reachability failure: help text promises an unreachable peer
+			// degrades to a warning and the git sync still runs via origin.
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "camp: warning: peer %q unreachable (%v); syncing via origin\n",
 				syncOpts.from, err)
-		} else {
+		default:
 			syncerOpts = append(syncerOpts, sync.WithPeer(src))
 		}
 	}
@@ -185,7 +191,9 @@ func resolveSyncPeer(ctx context.Context, campRoot, machineID string) (*peer.Sou
 	}
 	c, found := reg.FindByPath(campRoot)
 	if !found {
-		return nil, camperrors.Newf(
+		// A setup error, not a reachability one: --from cannot proceed until
+		// the campaign is registered, so mark it ErrPeerConfig to fail fast.
+		return nil, camperrors.WrapJoinf(peer.ErrPeerConfig, nil,
 			"campaign at %s is not in the registry; --from needs the campaign's registered name to resolve it on %q",
 			campRoot, machineID)
 	}

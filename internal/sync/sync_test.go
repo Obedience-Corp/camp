@@ -330,6 +330,36 @@ func TestUpdateSubmodules_PeerFetch(t *testing.T) {
 	}
 }
 
+// --no-fetch promises local refs only, so it must suppress the peer network
+// fetch even when a peer is configured.
+func TestUpdateSubmodules_NoFetchSuppressesPeer(t *testing.T) {
+	ctx := context.Background()
+	repoRoot := setupTestRepo(t)
+	setupSubmodule(t, repoRoot, "projects/sub")
+
+	syncer := NewSyncer(repoRoot,
+		WithPeer(peer.FromPath("peerbox", t.TempDir())),
+		WithNoFetch(true),
+	)
+	results, err := syncer.updateSubmodules(ctx)
+	if err != nil {
+		t.Fatalf("updateSubmodules() error = %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("updateSubmodules() results = %d, want 1", len(results))
+	}
+	if results[0].PeerFetched {
+		t.Error("PeerFetched = true with --no-fetch, want false (no network transfer)")
+	}
+	// No peer refs should have been created.
+	localSub := filepath.Join(repoRoot, "projects/sub")
+	check := exec.Command("git", "-C", localSub, "for-each-ref", "refs/peer")
+	out, _ := check.Output()
+	if strings.TrimSpace(string(out)) != "" {
+		t.Errorf("refs/peer/* created despite --no-fetch:\n%s", out)
+	}
+}
+
 func TestUpdateSubmodules_PeerUnreachableDegrades(t *testing.T) {
 	ctx := context.Background()
 	repoRoot := setupTestRepo(t)

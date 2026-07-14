@@ -1,9 +1,45 @@
 package peer
 
 import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// A config/usage failure (unknown machine id) must be classified ErrPeerConfig
+// so callers fail fast; it must not be mistaken for a reachability failure.
+func TestFromMachine_UnknownMachineIsConfigError(t *testing.T) {
+	machinesFile := filepath.Join(t.TempDir(), "machines.yaml")
+	if err := os.WriteFile(machinesFile, []byte("version: 1\nmachines: []\n"), 0o644); err != nil {
+		t.Fatalf("writing machines file: %v", err)
+	}
+	t.Setenv("CAMP_MACHINES_PATH", machinesFile)
+
+	_, err := FromMachine(context.Background(), "no-such-machine", "campaign")
+	if err == nil {
+		t.Fatal("FromMachine() error = nil, want ErrPeerConfig")
+	}
+	if !errors.Is(err, ErrPeerConfig) {
+		t.Errorf("FromMachine() error = %v, want wrapped ErrPeerConfig", err)
+	}
+}
+
+// The reserved "local" id is a usage error, also ErrPeerConfig.
+func TestFromMachine_LocalIsConfigError(t *testing.T) {
+	machinesFile := filepath.Join(t.TempDir(), "machines.yaml")
+	if err := os.WriteFile(machinesFile, []byte("version: 1\nmachines: []\n"), 0o644); err != nil {
+		t.Fatalf("writing machines file: %v", err)
+	}
+	t.Setenv("CAMP_MACHINES_PATH", machinesFile)
+
+	_, err := FromMachine(context.Background(), "local", "campaign")
+	if err == nil || !errors.Is(err, ErrPeerConfig) {
+		t.Errorf("FromMachine(local) error = %v, want ErrPeerConfig", err)
+	}
+}
 
 func TestSourceURL(t *testing.T) {
 	tests := []struct {

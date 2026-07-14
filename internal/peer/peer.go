@@ -29,27 +29,42 @@ type Source struct {
 	sshOpts []string
 }
 
+// ErrPeerConfig marks a peer-resolution failure that is a configuration or
+// usage error — an unknown machine id, the reserved "local" id, or unusable
+// auth — as opposed to a reachability failure (the peer is configured but
+// offline/unresolvable). Callers hard-fail on ErrPeerConfig so a typo or
+// misconfiguration is caught immediately, but degrade to the origin path on
+// reachability failures, matching the documented "unreachable peer degrades
+// to a warning" contract.
+var ErrPeerConfig = camperrors.New("peer configuration error")
+
 // FromMachine resolves machineID in ~/.obey/machines.yaml and asks the far
 // machine's own camp where campaign `remainder` lives (remote registry
 // resolution via `camp switch --print`, never the local filesystem).
+//
+// Configuration failures (unknown id, "local", bad auth) are wrapped with
+// ErrPeerConfig; a reachability failure from resolving the root on the peer
+// is returned as-is so callers can degrade rather than abort.
 func FromMachine(ctx context.Context, machineID, remainder string) (*Source, error) {
 	file, err := machines.Load()
 	if err != nil {
-		return nil, camperrors.Wrap(err, "load machines file")
+		return nil, camperrors.WrapJoinf(ErrPeerConfig, err, "load machines file")
 	}
 	m, isLocal, found := file.Lookup(machineID)
 	if !found {
-		return nil, camperrors.Newf("machine %q not found in %s (see 'camp machine list')",
+		return nil, camperrors.WrapJoinf(ErrPeerConfig, nil, "machine %q not found in %s (see 'camp machine list')",
 			machineID, machines.MachinesPath())
 	}
 	if isLocal {
-		return nil, camperrors.Newf("machine %q is this machine; --from needs a different machine", machineID)
+		return nil, camperrors.WrapJoinf(ErrPeerConfig, nil, "machine %q is this machine; --from needs a different machine", machineID)
 	}
 	if err := remote.EnsureKeyAuth(m); err != nil {
-		return nil, err
+		return nil, camperrors.WrapJoin(ErrPeerConfig, err, "")
 	}
 	root, err := remote.ResolveRoot(ctx, m, remainder)
 	if err != nil {
+		// Reachability/resolution failure: not wrapped with ErrPeerConfig, so
+		// callers degrade to origin.
 		return nil, err
 	}
 	return &Source{id: m.ID, root: root, target: remote.Target(m), sshOpts: remote.Opts(m)}, nil

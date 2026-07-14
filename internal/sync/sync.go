@@ -304,7 +304,9 @@ func (s *Syncer) updateSubmodule(ctx context.Context, path string) SubmoduleResu
 		Success: true,
 	}
 
-	if s.peer != nil {
+	// --no-fetch promises local refs only, so it suppresses the peer network
+	// fetch too (a peer fetch is still a network transfer).
+	if s.peer != nil && !s.options.NoFetch {
 		fetched, peerErr := s.peerFetch(ctx, path)
 		result.PeerFetched = fetched
 		if peerErr != nil {

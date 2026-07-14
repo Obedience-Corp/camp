@@ -237,6 +237,63 @@ func TestGitCloneFromPeer_ForwardsBranch(t *testing.T) {
 	}
 }
 
+// A peer-seeded submodule must land on ORIGIN's branch tip, not the peer's.
+// If the peer's submodule has commits ahead of origin, re-pointing origin
+// without refreshing refs would make the branch checkout DWIM off the peer's
+// stale origin/<branch> and silently import the peer's un-pushed commits.
+func TestGitCloneFromPeer_SubmoduleLandsOnOriginNotPeerTip(t *testing.T) {
+	ctx := context.Background()
+	origin := setupTestRepo(t)
+	subWork := setupSubmodule(t, origin, "projects/sub") // origin records this submodule commit
+
+	// Peer copy: clone the campaign and advance ITS submodule ahead of origin
+	// with a commit origin does not have.
+	peerRoot := filepath.Join(t.TempDir(), "peer-campaign")
+	runGit(t, t.TempDir(), "clone", origin, peerRoot)
+	runGit(t, peerRoot, "-c", "protocol.file.allow=always", "submodule", "update", "--init")
+	peerSub := filepath.Join(peerRoot, "projects/sub")
+	createFile(t, filepath.Join(peerSub, "peer-only.txt"), "un-pushed peer work")
+	runGit(t, peerSub, "add", ".")
+	runGit(t, peerSub, "commit", "-m", "peer-only commit ahead of origin")
+
+	// Sanity: the peer-only file must not exist in origin's submodule.
+	if _, err := os.Stat(filepath.Join(subWork, "peer-only.txt")); !os.IsNotExist(err) {
+		t.Fatalf("test setup: peer-only.txt leaked into origin submodule")
+	}
+
+	target := filepath.Join(t.TempDir(), "cloned")
+	cloner := NewCloner(
+		WithURL(origin),
+		WithDirectory(target),
+		WithNoRegister(true),
+		WithPeer(peer.FromPath("peerbox", peerRoot)),
+	)
+	result, err := cloner.Clone(ctx)
+	if err != nil || !result.Success {
+		t.Fatalf("Clone() err=%v success=%v warnings=%v", err, result.Success, result.Warnings)
+	}
+
+	// The cloned submodule must be at origin's state: the peer's un-pushed
+	// commit must NOT have been imported.
+	targetSub := filepath.Join(target, "projects/sub")
+	if _, err := os.Stat(filepath.Join(targetSub, "peer-only.txt")); !os.IsNotExist(err) {
+		t.Error("cloned submodule imported the peer's un-pushed commit (peer-only.txt present); want origin's state")
+	}
+
+	// And origin/<branch> in the submodule must reflect the real origin, not
+	// the peer (the peer-only commit must be unreachable from any origin ref).
+	remotes, err := exec.Command("git", "-C", targetSub, "for-each-ref", "--format=%(refname)", "refs/remotes/origin").Output()
+	if err != nil {
+		t.Fatalf("listing submodule origin refs: %v", err)
+	}
+	for _, ref := range strings.Fields(string(remotes)) {
+		logOut, _ := exec.Command("git", "-C", targetSub, "log", "--oneline", ref).Output()
+		if strings.Contains(string(logOut), "peer-only commit") {
+			t.Errorf("submodule %s still reachable to peer-only commit; origin refs not refreshed", ref)
+		}
+	}
+}
+
 func TestParseSubmoduleStatus(t *testing.T) {
 	tests := []struct {
 		name        string

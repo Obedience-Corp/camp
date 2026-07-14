@@ -375,6 +375,21 @@ func (c *Cloner) seedSubmoduleFromPeer(ctx context.Context, repoDir string, sub 
 	if repointErr != nil {
 		return repointErr
 	}
+
+	// The submodule's origin/* still reflect the PEER (the seed fetched from
+	// the peer URL). Left alone, checkoutSubmoduleBranch would DWIM a local
+	// branch off the peer's stale origin/<branch> and land on the peer's tip,
+	// silently importing un-pushed peer commits instead of origin's state.
+	// Refresh from the now-real origin: a cheap delta (the peer already
+	// supplied the objects) that makes a peer-seeded submodule identical to a
+	// normally-cloned one. A failure here means origin is unusable, so report
+	// it as a seed failure and let graceful init fall back through origin.
+	fetchCmd := exec.CommandContext(ctx, "git", "-C", subDir,
+		"fetch", "--prune", "--prune-tags", "--tags", "origin")
+	if out, err := fetchCmd.CombinedOutput(); err != nil {
+		return camperrors.Wrapf(err, "refresh %s from origin after peer seed: %s",
+			sub.Path, strings.TrimSpace(string(out)))
+	}
 	return nil
 }
 
