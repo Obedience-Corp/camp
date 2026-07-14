@@ -143,9 +143,17 @@ func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Prepend campaign/workitem context tag.
-	questID, workitemRef := resolveWorktreeCommitContext(ctx, campRoot, wtCtx.WorktreePath, wtCommitWorkitem)
-	message = commitkit.PrependContextTagsFullNamed(cfg.Name, cfg.ID, questID, "", workitemRef, message)
+	// Prepend campaign/workitem context tag unless tracing is disabled. Resolve
+	// before committing so a malformed commit config fails loudly here rather
+	// than silently applying a default policy.
+	prefs, err := config.EffectiveCommitPrefs(ctx, campRoot)
+	if err != nil {
+		return err
+	}
+	if prefs.TagCommits() {
+		questID, workitemRef := resolveWorktreeCommitContext(ctx, campRoot, wtCtx.WorktreePath, wtCommitWorkitem)
+		message = commitkit.PrependContextTagsFullNamed(cfg.Name, cfg.ID, questID, "", workitemRef, message)
+	}
 
 	// Commit
 	fmt.Println(ui.Info("Committing changes..."))

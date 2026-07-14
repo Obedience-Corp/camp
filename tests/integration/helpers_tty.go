@@ -29,16 +29,33 @@ type InteractiveStep struct {
 	Input   string
 }
 
+// defaultInteractiveTimeout bounds a full interactive TTY session. Deep
+// multi-screen flows with a lot of per-character typing can raise it via
+// RunCampInteractiveStepsInDirTimeout.
+const defaultInteractiveTimeout = 15 * time.Second
+
 // RunCampInteractiveStepsInDir runs camp inside the shared test container
 // through a real TTY and sends input only after each requested screen appears.
 func (tc *TestContainer) RunCampInteractiveStepsInDir(dir string, steps []InteractiveStep, args ...string) (string, error) {
-	return tc.RunCampInteractiveStepsInDirWithEnv(dir, nil, steps, args...)
+	return tc.runCampInteractive(dir, nil, defaultInteractiveTimeout, steps, args...)
+}
+
+// RunCampInteractiveStepsInDirTimeout is like RunCampInteractiveStepsInDir but
+// overrides the overall session deadline. Deep multi-screen TUI flows (e.g. the
+// settings menu down to a multiline concepts paste) need more than the default
+// budget, especially given camp's known bubbletea init tty-query stall.
+func (tc *TestContainer) RunCampInteractiveStepsInDirTimeout(dir string, timeout time.Duration, steps []InteractiveStep, args ...string) (string, error) {
+	return tc.runCampInteractive(dir, nil, timeout, steps, args...)
 }
 
 // RunCampInteractiveStepsInDirWithEnv is like RunCampInteractiveStepsInDir
 // but also exports the given environment variables for the camp process.
 // Useful for tests that exercise EDITOR handoff or other env-driven behavior.
 func (tc *TestContainer) RunCampInteractiveStepsInDirWithEnv(dir string, env map[string]string, steps []InteractiveStep, args ...string) (string, error) {
+	return tc.runCampInteractive(dir, env, defaultInteractiveTimeout, steps, args...)
+}
+
+func (tc *TestContainer) runCampInteractive(dir string, env map[string]string, timeout time.Duration, steps []InteractiveStep, args ...string) (string, error) {
 	if tc.t != nil {
 		tc.t.Helper()
 	}
@@ -54,7 +71,10 @@ func (tc *TestContainer) RunCampInteractiveStepsInDirWithEnv(dir string, env map
 	}
 
 	cmdStr := fmt.Sprintf("cd %s && %sTERM=xterm /camp %s 2>&1", shellQuote(dir), envPrefix, strings.Join(quotedArgs, " "))
-	ctx, cancel := context.WithTimeout(tc.ctx, 15*time.Second)
+	if timeout <= 0 {
+		timeout = defaultInteractiveTimeout
+	}
+	ctx, cancel := context.WithTimeout(tc.ctx, timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "docker", "exec", "-i", "-t", tc.container.GetContainerID(), "sh", "-lc", cmdStr)

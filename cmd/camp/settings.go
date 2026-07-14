@@ -133,7 +133,9 @@ func runScopeMenu(ctx context.Context, cat []settings.SettingEntry, scope settin
 		}
 
 		switch choice {
-		case valBack:
+		case valBack, "":
+			// Empty choice is how some terminals surface ESC on Select
+			// without ErrUserAborted — treat it as Back.
 			return nil
 		case valSeparator:
 			continue
@@ -223,6 +225,8 @@ func editGlobalConfig(ctx context.Context, e settings.SettingEntry, campaignRoot
 			huh.NewOption(fmt.Sprintf("Campaigns Dir  %s", displayStr(cfg.CampaignsDir, "~/campaigns")), "campaigns_dir"),
 			huh.NewOption(fmt.Sprintf("Verbose        %s", boolStr(cfg.Verbose)), "verbose"),
 			huh.NewOption(fmt.Sprintf("No Color       %s", boolStr(cfg.NoColor)), "no_color"),
+			huh.NewOption(fmt.Sprintf("Sync project refs  %s", boolStr(cfg.Commit.SyncProjectRefs)), "commit_sync_refs"),
+			huh.NewOption(fmt.Sprintf("Disable commit tags %s", boolStr(cfg.Commit.DisableCommitTags)), "commit_disable_tags"),
 			huh.NewOption(rowSeparator, valSeparator),
 			huh.NewOption("Back", valBack),
 		}
@@ -244,7 +248,7 @@ func editGlobalConfig(ctx context.Context, e settings.SettingEntry, campaignRoot
 		}
 
 		switch choice {
-		case valBack:
+		case valBack, "":
 			return nil
 		case valSeparator:
 			continue
@@ -270,13 +274,22 @@ func editGlobalConfig(ctx context.Context, e settings.SettingEntry, campaignRoot
 			if err := config.SaveGlobalConfig(ctx, cfg); err != nil {
 				return camperrors.Wrap(err, "saving config")
 			}
+		case "commit_sync_refs":
+			cfg.Commit.SyncProjectRefs = !cfg.Commit.SyncProjectRefs
+			if err := config.SaveGlobalConfig(ctx, cfg); err != nil {
+				return camperrors.Wrap(err, "saving config")
+			}
+		case "commit_disable_tags":
+			cfg.Commit.DisableCommitTags = !cfg.Commit.DisableCommitTags
+			if err := config.SaveGlobalConfig(ctx, cfg); err != nil {
+				return camperrors.Wrap(err, "saving config")
+			}
 		}
 	}
 }
 
-// editLocalSettingsFile opens the local.json fields (theme override) as a
-// sub-form under the local_settings catalog entry. Behavior and persistence are
-// unchanged from the former flat local menu.
+// editLocalSettingsFile opens the local.json fields (theme override + commit
+// prefs) as a sub-form under the local_settings catalog entry.
 func editLocalSettingsFile(ctx context.Context, e settings.SettingEntry, campaignRoot string) error {
 	header := "File: " + settings.CatalogPath(e, campaignRoot)
 	for {
@@ -285,11 +298,26 @@ func editLocalSettingsFile(ctx context.Context, e settings.SettingEntry, campaig
 			return camperrors.Wrap(err, "loading local settings")
 		}
 
+		// Unset local commit block shows "inherit", not false — false would
+		// imply an explicit override and make toggle invert effective prefs.
+		locSync, locTags := "inherit", "inherit"
+		if local.Commit != nil {
+			locSync, locTags = boolStr(local.Commit.SyncProjectRefs), boolStr(local.Commit.DisableCommitTags)
+		}
+		eff, err := config.EffectiveCommitPrefs(ctx, campaignRoot)
+		if err != nil {
+			return err
+		}
 		options := []huh.Option[string]{
 			huh.NewOption(fmt.Sprintf("Theme Override  %s (effective: %s)",
 				displayStr(local.ThemeOverride, "inherit global"),
 				config.EffectiveTheme(ctx)), "theme_override"),
+			huh.NewOption(fmt.Sprintf("Sync project refs  %s (effective: %s)",
+				locSync, boolStr(eff.SyncProjectRefs)), "commit_sync_refs"),
+			huh.NewOption(fmt.Sprintf("Disable commit tags %s (effective: %s)",
+				locTags, boolStr(eff.DisableCommitTags)), "commit_disable_tags"),
 			huh.NewOption(rowSeparator, valSeparator),
+			huh.NewOption("Reset commit prefs to inherit global", "commit_reset"),
 			huh.NewOption("Back", valBack),
 		}
 
@@ -310,7 +338,7 @@ func editLocalSettingsFile(ctx context.Context, e settings.SettingEntry, campaig
 		}
 
 		switch choice {
-		case valBack:
+		case valBack, "":
 			return nil
 		case valSeparator:
 			continue
@@ -318,8 +346,87 @@ func editLocalSettingsFile(ctx context.Context, e settings.SettingEntry, campaig
 			if err := editLocalThemeOverride(ctx, campaignRoot, local.ThemeOverride); err != nil {
 				return err
 			}
+		case "commit_sync_refs":
+			if err := editLocalCommitPref(ctx, campaignRoot, true, local.Commit); err != nil {
+				return err
+			}
+		case "commit_disable_tags":
+			if err := editLocalCommitPref(ctx, campaignRoot, false, local.Commit); err != nil {
+				return err
+			}
+		case "commit_reset":
+			if err := resetLocalCommitPrefs(ctx, campaignRoot); err != nil {
+				return err
+			}
 		}
 	}
+}
+
+// editLocalCommitPref sets one local commit preference via true/false/inherit.
+// inherit clears the whole local commit block (full-replace merge: one local
+// write freezes both fields, so clearing returns both to global).
+func editLocalCommitPref(ctx context.Context, campaignRoot string, syncRefs bool, current *config.CommitPrefs) error {
+	currentVal := "inherit"
+	if current != nil {
+		if syncRefs {
+			currentVal = boolStr(current.SyncProjectRefs)
+		} else {
+			currentVal = boolStr(current.DisableCommitTags)
+		}
+	}
+	title := "Disable commit tags"
+	if syncRefs {
+		title = "Sync project refs"
+	}
+	value := currentVal
+	form := huh.NewForm(huh.NewGroup(
+		huh.NewSelect[string]().
+			Title(title).
+			Description("Local override; 'inherit' clears the whole local commit block (both fields) so global applies").
+			Options(
+				huh.NewOption("Inherit global", "inherit"),
+				huh.NewOption("true", "true"),
+				huh.NewOption("false", "false"),
+			).
+			Value(&value),
+	))
+	if err := theme.RunForm(ctx, form); err != nil {
+		if theme.IsCancelled(err) {
+			return nil
+		}
+		return err
+	}
+	if value == currentVal {
+		return nil
+	}
+	if value == "inherit" {
+		return resetLocalCommitPrefs(ctx, campaignRoot)
+	}
+	parsed := value == "true"
+	return config.WithLocalSettingsLock(ctx, campaignRoot, func(s *config.LocalSettings) error {
+		base, err := config.EffectiveCommitPrefs(ctx, campaignRoot)
+		if err != nil {
+			return err
+		}
+		if s.Commit != nil {
+			base = *s.Commit
+		}
+		if syncRefs {
+			base.SyncProjectRefs = parsed
+		} else {
+			base.DisableCommitTags = parsed
+		}
+		cp := base
+		s.Commit = &cp
+		return nil
+	})
+}
+
+func resetLocalCommitPrefs(ctx context.Context, campaignRoot string) error {
+	return config.WithLocalSettingsLock(ctx, campaignRoot, func(s *config.LocalSettings) error {
+		s.Commit = nil
+		return nil
+	})
 }
 
 func editLocalThemeOverride(ctx context.Context, campaignRoot, current string) error {

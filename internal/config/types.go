@@ -325,6 +325,10 @@ type GlobalConfig struct {
 	// keeping the ledger merge-conflict-free. Generated once on first ledger
 	// write via ledgerkit.ResolveWriterID.
 	LedgerWriterID string `json:"ledger_writer_id,omitempty" yaml:"ledger_writer_id,omitempty"`
+	// Commit holds machine-wide defaults for campaign-aware commit behavior
+	// (project ref linking and subject-tag tracing). Per-campaign overrides
+	// live in .campaign/settings/local.json under the same shape.
+	Commit CommitPrefs `json:"commit,omitempty" yaml:"commit,omitempty"`
 }
 
 // RegistryVersion is the current registry format version.

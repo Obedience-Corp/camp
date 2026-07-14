@@ -95,7 +95,11 @@ func runRefsSync(cmd *cobra.Command, args []string) error {
 
 	cfg, _ := config.LoadCampaignConfig(ctx, campRoot)
 	msg := fmt.Sprintf("sync submodule refs: %s", strings.Join(names, ", "))
-	if cfg != nil {
+	prefs, err := config.EffectiveCommitPrefs(ctx, campRoot)
+	if err != nil {
+		return err
+	}
+	if cfg != nil && prefs.TagCommits() {
 		msg = git.PrependContextTagsFull(cfg.Name, cfg.ID, "", "", "", msg)
 	}
 	if err := git.CommitScoped(ctx, campRoot, toSync, &git.CommitOptions{Message: msg}); err != nil {
