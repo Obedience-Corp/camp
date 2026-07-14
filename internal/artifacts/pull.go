@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -50,10 +51,13 @@ type PullResult struct {
 const excludeFromThreshold = 20
 
 // Pull transfers one declared artifact root from the peer, directionally and
-// without deletions (rsync -a --partial over the same ssh options as the
-// rest of the peer stack). A local file is only overwritable when its state
-// exactly matches the last agreed baseline with this peer; everything else
-// is excluded and reported, never clobbered. On success, the agreed state is
+// without deletions. rsync stages the delta into a scratch tree outside the
+// live root (a --compare-dest delta transfer over the same ssh options as the
+// rest of the peer stack), then each staged file is merged into place only
+// after re-checking that the live destination still exactly matches the last
+// agreed baseline. A file that differs from the baseline at merge time —
+// including one a local writer touched during the transfer — is left
+// untouched and reported, never clobbered. On success, the agreed state is
 // snapshotted as the new baseline.
 func Pull(ctx context.Context, campaignRoot string, src *peer.Source, root Root) *PullResult {
 	result := &PullResult{Root: NormalizeRootPath(root.Path), Policy: root.EffectivePolicy()}
@@ -101,28 +105,30 @@ func pull(ctx context.Context, campaignRoot string, src *peer.Source, result *Pu
 		result.SkippedConflicts = modifiedSubset(protected, baseline)
 	}
 
-	// --partial-dir keeps interrupted-transfer bytes OUT of the destination
-	// tree (a bare --partial would leave a truncated file at the real name,
-	// which the post-pull manifest would then record as an agreed baseline
-	// and refuse to repair). The partial dir lives under .campaign/cache
-	// (gitignored, same filesystem as the root so completed files rename
-	// atomically) and is never walked by BuildManifest.
-	// --no-links: never materialize a peer symlink locally (phantom state no
-	// snapshot could track); local symlinks are recorded in the manifest and
-	// so are protected like any other entry.
-	// --update: the protected set is computed from a walk that finished before
-	// this transfer starts, so a file written locally in the window between
-	// the walk and rsync is not in the exclude list. --update skips any
-	// destination that is newer than the peer's copy, which is exactly the
-	// signature of a file a local writer just touched, so a concurrent edit is
-	// not clobbered. This narrows but does not fully eliminate the race (a
-	// concurrent write landing an older-or-equal mtime is still possible on a
-	// truly live tree); the design's guarantee assumes a quiescent root.
-	partialDir := filepath.Join(campaignRoot, ".campaign", "cache", "rsync-partial")
-	if err := os.MkdirAll(partialDir, 0o755); err != nil {
-		return camperrors.Wrap(err, "create rsync partial dir")
+	// Stage the transfer outside the live root, then atomically merge each
+	// file only after re-checking it against the baseline. A pre-transfer
+	// exclude scan alone cannot give no-clobber semantics: a renderer can
+	// write an unprotected path in the window between the walk and the write.
+	// So rsync never touches the live tree directly.
+	//
+	// --compare-dest=<live root> keeps this a delta transfer: rsync compares
+	// each source file against the live copy and only writes the ones that
+	// changed or are new into the staging tree, so unchanged multi-GB media
+	// is not re-copied. --no-links keeps peer symlinks from becoming phantom
+	// local state. No --partial: rsync writes each file to a temp name and
+	// renames on completion, and drops the in-flight temp on interruption, so
+	// the staging tree only ever holds complete files (staging is per-pull and
+	// wiped, so cross-run resume would buy nothing).
+	stagingDir := filepath.Join(campaignRoot, ".campaign", "cache", "rsync-staging", snapshotSlug(rootRel))
+	if err := os.RemoveAll(stagingDir); err != nil {
+		return camperrors.Wrap(err, "clear rsync staging dir")
 	}
-	args := []string{"-a", "--no-links", "--update", "--partial-dir=" + partialDir}
+	if err := os.MkdirAll(stagingDir, 0o755); err != nil {
+		return camperrors.Wrap(err, "create rsync staging dir")
+	}
+	defer func() { _ = os.RemoveAll(stagingDir) }()
+
+	args := []string{"-a", "--no-links", "--compare-dest=" + destAbs}
 	if sshCmd := src.SSHCommand(); sshCmd != "" {
 		args = append(args, "-e", sshCmd)
 	}
@@ -134,54 +140,147 @@ func pull(ctx context.Context, campaignRoot string, src *peer.Source, result *Pu
 		defer func() { _ = os.Remove(excludeFile) }()
 	}
 	args = append(args, excludeArgs...)
-	args = append(args, src.RsyncSpec(rootRel), destAbs+string(os.PathSeparator))
+	args = append(args, src.RsyncSpec(rootRel), stagingDir+string(os.PathSeparator))
 
 	cmd := exec.CommandContext(ctx, "rsync", args...)
 	output, runErr := cmd.CombinedOutput()
 
-	after, mErr := BuildManifest(ctx, campaignRoot, rootRel)
-	if mErr != nil {
-		return camperrors.Wrap(mErr, "manifest after pull")
+	staged, countErr := countFiles(stagingDir)
+	if countErr != nil {
+		return camperrors.Wrap(countErr, "scan rsync staging dir")
 	}
-
 	if runErr != nil {
 		// rsync 23 (partial transfer due to error) and 24 (source files
-		// vanished mid-transfer) can be partial successes: the files that DID
-		// arrive are valid, so snapshotting them avoids poisoning them into
-		// never-agreed protection on the next run. But the SAME exit codes
-		// also cover "source root does not exist," where nothing transferred.
-		// Distinguish by whether any complete file actually changed locally
-		// (--partial-dir keeps incomplete files out of the tree, so an
-		// unchanged tree means nothing landed) and treat a no-op as the hard
-		// failure it is.
+		// vanished mid-transfer) are partial successes when files actually
+		// staged; the SAME codes also cover "source root does not exist,"
+		// where nothing staged. An empty staging tree on any error is the
+		// hard failure it is.
 		code := exitCode(runErr)
-		if (code == 23 || code == 24) && !manifestsEqual(local, after) {
+		if (code == 23 || code == 24) && staged > 0 {
 			result.Partial = true
 			result.Warning = fmt.Sprintf("partial transfer (rsync exit %d): %s", code, lastLines(string(output), 3))
 		} else {
 			return camperrors.Wrapf(runErr, "rsync %s from %s: %s", rootRel, src.ID(), lastLines(string(output), 3))
 		}
 	}
+
+	// Atomically merge staged files into the live root, re-validating each
+	// destination against the baseline immediately before the rename. A file
+	// a local writer created or changed during the transfer no longer matches
+	// the baseline and is left untouched (a late conflict), so no local byte
+	// stream is ever silently overwritten.
+	lateConflicts, err := mergeStaged(stagingDir, destAbs, baseline)
+	if err != nil {
+		return err
+	}
+	result.SkippedConflicts = appendUnique(result.SkippedConflicts, lateConflicts)
+	result.Protected += len(lateConflicts)
 	result.Synced = true
 
-	return SaveSnapshot(campaignRoot, src.ID(), rootRel, agreedState(after, baseline, protected))
+	after, err := BuildManifest(ctx, campaignRoot, rootRel)
+	if err != nil {
+		return camperrors.Wrap(err, "manifest after pull")
+	}
+	// Protect both the pre-scan protected set and any late conflicts so their
+	// baseline stays sticky rather than being recorded as agreed.
+	return SaveSnapshot(campaignRoot, src.ID(), rootRel,
+		agreedState(after, baseline, append(append([]string{}, protected...), lateConflicts...)))
 }
 
-// manifestsEqual reports whether two manifests describe the same set of files
-// with the same versions, so a failed rsync that changed nothing can be told
-// apart from a partial transfer that landed at least one complete file.
-func manifestsEqual(a, b *Manifest) bool {
-	if len(a.Files) != len(b.Files) {
-		return false
+// mergeStaged moves each file from the staging tree into the live root, but
+// only after re-checking that the live destination still exactly matches the
+// baseline (or is absent). A destination that changed during the transfer is
+// a late conflict: it is left as-is and reported, never overwritten. Renames
+// are atomic because staging and the live root share the campaign filesystem.
+func mergeStaged(stagingDir, destAbs string, baseline *Manifest) ([]string, error) {
+	var base map[string]FileEntry
+	if baseline != nil {
+		base = baseline.Index()
 	}
-	bi := b.Index()
-	for _, f := range a.Files {
-		g, ok := bi[f.Path]
-		if !ok || !sameEntry(f, g) {
-			return false
+	var lateConflicts []string
+
+	walkErr := filepath.WalkDir(stagingDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.Type().IsRegular() {
+			return nil
+		}
+		rel, err := filepath.Rel(stagingDir, path)
+		if err != nil {
+			return err
+		}
+		relSlash := filepath.ToSlash(rel)
+		if !safeToReplace(destAbs, rel, base) {
+			lateConflicts = append(lateConflicts, relSlash)
+			return nil
+		}
+		destPath := filepath.Join(destAbs, rel)
+		if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+			return camperrors.Wrapf(err, "create dir for %s", relSlash)
+		}
+		if err := os.Rename(path, destPath); err != nil {
+			return camperrors.Wrapf(err, "merge %s into artifact root", relSlash)
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return nil, walkErr
+	}
+	return lateConflicts, nil
+}
+
+// safeToReplace reports whether the live file at rel may be overwritten: it is
+// safe only when the live destination is absent, or present and identical to
+// the recorded baseline. A file present locally but not in the baseline was
+// created out-of-band (protect it); a file whose current state differs from
+// the baseline was modified since the last transfer (a conflict).
+func safeToReplace(destAbs, rel string, base map[string]FileEntry) bool {
+	info, err := os.Lstat(filepath.Join(destAbs, filepath.FromSlash(rel)))
+	if err != nil {
+		return true // absent locally: nothing to clobber
+	}
+	b, ok := base[filepath.ToSlash(rel)]
+	if !ok {
+		return false // created locally out-of-band since the baseline
+	}
+	cur := FileEntry{
+		Size:    info.Size(),
+		MTime:   info.ModTime().UnixNano(),
+		Symlink: info.Mode()&os.ModeSymlink != 0,
+	}
+	return sameEntry(cur, b)
+}
+
+// countFiles returns the number of regular files under dir, used to tell a
+// partial transfer (some files staged) from a total failure (nothing staged).
+func countFiles(dir string) (int, error) {
+	n := 0
+	err := filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.Type().IsRegular() {
+			n++
+		}
+		return nil
+	})
+	return n, err
+}
+
+// appendUnique appends items to dst, skipping values already present.
+func appendUnique(dst, items []string) []string {
+	seen := make(map[string]bool, len(dst))
+	for _, s := range dst {
+		seen[s] = true
+	}
+	for _, s := range items {
+		if !seen[s] {
+			dst = append(dst, s)
+			seen[s] = true
 		}
 	}
-	return true
+	return dst
 }
 
 // exitCode extracts a process exit code from an exec error, or -1 if the
