@@ -11,18 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestSyncFromPeerOverSSH_FetchesObjectsIntoPeerNamespace drives
-// `camp sync --from self --git-only` over a real loopback ssh hop and proves
-// the git peer transport: submodule objects that exist only on the peer are
-// fetched over ssh (via GIT_SSH_COMMAND, a different channel than the artifact
-// rsync's -e) into the local repository's refs/peer/<id>/* namespace, while the
-// checkout itself stays on origin's tip. The unit tests build a filesystem
-// peer.Source and never dial ssh, so this ssh fetch path is otherwise
-// unexercised.
-//
-// Fixture: a shared submodule origin holds C1. The peer's copy of the submodule
-// is advanced to C2 (a child of C1) that is committed on the peer but never
-// pushed to origin, so C2 can only reach the local repo through the peer fetch.
+// TestSyncFromPeerOverSSH_FetchesObjectsIntoPeerNamespace verifies SSH peer
+// object transfer without changing the checkout.
 func TestSyncFromPeerOverSSH_FetchesObjectsIntoPeerNamespace(t *testing.T) {
 	tc := GetSharedContainer(t)
 	ensurePeerAccount(t, tc)
@@ -33,7 +23,6 @@ func TestSyncFromPeerOverSSH_FetchesObjectsIntoPeerNamespace(t *testing.T) {
 	localRoot := "/campaigns/" + name
 	const origin = "/test/sub-origin.git"
 
-	// Shared submodule origin with C1 on main.
 	tc.Shell(t, fmt.Sprintf(`
 set -e
 git init -q --bare %[1]s
@@ -47,8 +36,6 @@ git --git-dir %[1]s symbolic-ref HEAD refs/heads/main
 `, origin))
 	c1 := tc.GitOutput(t, origin, "rev-parse", "main")
 
-	// Peer campaign: submodule advanced to C2, committed but not pushed. The
-	// resulting sha is written to a shared path root can read back.
 	peerSSH(t, tc, fmt.Sprintf(`
 set -e
 camp create %[1]s -d 'peer git source' -m 'advance sub' --path %[2]s
@@ -64,7 +51,6 @@ git rev-parse main > /tmp/peer-c2.sha
 	c2 := strings.TrimSpace(c2raw)
 	require.NotEqual(t, c1, c2, "peer submodule tip C2 must differ from origin C1")
 
-	// Local campaign: same submodule at C1 (from origin), initialized.
 	createOut, err := tc.RunCamp("create", name, "-d", "local dest", "-m", "sync from peer", "--path", "/campaigns")
 	require.NoError(t, err, "local camp create failed: %s", createOut)
 	tc.Shell(t, fmt.Sprintf(`

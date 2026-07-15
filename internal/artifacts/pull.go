@@ -147,11 +147,8 @@ func pull(ctx context.Context, campaignRoot string, src *peer.Source, result *Pu
 	}
 	defer func() { _ = os.RemoveAll(stagingDir) }()
 
-	// -s (--secluded-args) transmits each path over the rsync protocol without
-	// a remote shell parsing it, so a peer.RsyncSpec path with spaces or shell
-	// metacharacters is safe unquoted. It also matches what rsync 3.2.4+ does by
-	// default; passing it explicitly keeps 3.0-3.2.3 correct for spaced roots
-	// too. (The remote path must therefore NOT be pre-quoted; see RsyncSpec.)
+	// Send paths through rsync's protocol so spaces and shell metacharacters do
+	// not depend on remote-shell parsing.
 	args := []string{"-a", "-s", "--no-links", "--compare-dest=" + destAbs}
 	if sshCmd := src.SSHCommand(); sshCmd != "" {
 		args = append(args, "-e", sshCmd)

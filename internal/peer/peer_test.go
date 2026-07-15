@@ -97,10 +97,6 @@ func TestSourceRsyncSpec(t *testing.T) {
 			want:    "/Volumes/backup/campaign/media/renders/",
 		},
 		{
-			// The remote path is unquoted: rsync 3.2.4+ protects args itself
-			// (no remote shell), so a caller quote would be taken literally.
-			// The pull's -s/--secluded-args flag is what keeps spaces and
-			// metacharacters safe over the wire.
 			name:    "ssh source leaves the remote path unquoted",
 			source:  &Source{root: "/home/me/campaign", target: "me@studio"},
 			relPath: "media/renders",
