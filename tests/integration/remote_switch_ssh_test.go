@@ -25,49 +25,11 @@ import (
 func TestRemoteSwitchLocalhostSshSmoke(t *testing.T) {
 	tc := GetSharedContainer(t)
 
-	// --- Provision sshd idempotently. ------------------------------------
-	// The pooled container is shared across tests and Reset() does not
-	// uninstall packages or kill processes (it only clears /test,
-	// /campaigns, /root/.obey*, /root/.camp). So package install, host key
-	// generation, and starting sshd must all check-then-act, or a later test
-	// reusing this same container would redo (and potentially break) work
-	// that already succeeded.
-	apkOut, apkExitCode, apkErr := tc.ExecCommand("sh", "-c",
-		"apk info -e openssh-server >/dev/null 2>&1 || apk add --no-cache openssh openssh-server")
-	require.NoError(t, apkErr, "apk add exec failed to run")
-	if apkExitCode != 0 {
-		t.Skipf("cannot install openssh-server in this container environment: %s", apkOut)
-	}
-
-	tc.Shell(t, `
-set -e
-ssh-keygen -A >/dev/null 2>&1
-mkdir -p /root/.ssh
-chmod 700 /root/.ssh
-[ -f /root/.ssh/id_ed25519 ] || ssh-keygen -t ed25519 -N '' -f /root/.ssh/id_ed25519 >/dev/null
-cat /root/.ssh/id_ed25519.pub > /root/.ssh/authorized_keys
-chmod 600 /root/.ssh/authorized_keys
-if grep -q '^PermitRootLogin' /etc/ssh/sshd_config; then
-  sed -i 's/^PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
-else
-  printf '%s\n' 'PermitRootLogin yes' >> /etc/ssh/sshd_config
-fi
-ln -sf /camp /usr/bin/camp
-pgrep sshd >/dev/null 2>&1 || /usr/sbin/sshd
-`)
-
-	// Sanity-check loopback ssh actually works before trusting camp's hop.
-	// sshd daemonizes on start, so retry briefly in case it isn't accepting
-	// connections the instant the provisioning script returns.
-	sshCheck := tc.Shell(t, `
-out=""
-for i in 1 2 3 4 5; do
-  out=$(ssh -i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new -o BatchMode=yes root@localhost 'echo SSHOK' 2>&1) && break
-  sleep 1
-done
-echo "$out"
-`)
-	require.Contains(t, sshCheck, "SSHOK", "loopback ssh sanity check failed: %s", sshCheck)
+	// Provision sshd + root loopback key (idempotent; shared with the peer
+	// transport smoke tests). This test drives the ssh hop as root, so the
+	// `self` machine it registers below uses ssh_user=root and resolves the
+	// one campaign identically on both ends.
+	ensureSSHDaemon(t, tc)
 
 	// --- Create a campaign that both the "local" and "remote" camp switch
 	// resolve identically, since remote == local == this container here.

@@ -149,20 +149,27 @@ func (s *Source) GitEnv() []string {
 // the peer's campaign root, with a trailing slash so rsync copies contents
 // into the destination directory rather than nesting it.
 //
-// For an ssh source the path after "host:" is handed to the peer's remote
-// login shell, so it is single-quoted: a legitimate media root with a space
-// ("Final Renders/") would otherwise be split into two source arguments, and
-// shell metacharacters in a committed artifacts.yaml path would be
-// interpreted remotely. The trailing slash stays outside the quotes so the
-// local side still sees a copy-contents (not copy-dir) source. Filesystem
-// sources are passed to rsync as a local argv element (no shell), so they are
-// returned unquoted.
+// The remote path is NOT shell-quoted. rsync 3.2.4+ defaults to secluded
+// (protected) args and no longer hands the remote path to a login shell, so a
+// caller-added quote is taken literally: `host:'/media'/` makes the remote
+// side look for a directory whose name begins with a single quote and fails
+// with change_dir(2). Spaces and shell metacharacters in a committed
+// artifacts.yaml path ("Final Renders/") are instead kept safe by the
+// -s/--secluded-args flag the artifact pull passes, which transmits each arg
+// over the rsync protocol with no shell parsing on either end. The trailing
+// slash keeps this a copy-contents (not copy-dir) source. Filesystem sources
+// are a local argv element (no shell) and are likewise returned unquoted.
+//
+// Tradeoff: -s and this unquoted form require rsync >= 3.0.0 on both ends
+// (2008; every current Homebrew/Linux build). rsync 2.6.9, the ancient Apple
+// bundle, would need the old shell-quoted form instead; version-adaptive
+// quoting is the deferred rsync/openrsync probing work, not this path.
 func (s *Source) RsyncSpec(relPath string) string {
 	p := path.Join(s.root, relPath)
 	if s.target == "" {
 		return p + "/"
 	}
-	return s.target + ":" + remote.ShellQuote(p) + "/"
+	return s.target + ":" + p + "/"
 }
 
 // Fetch fetches heads and HEAD from the peer copy of the repository at
