@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -473,5 +474,90 @@ func TestValidatePeerID(t *testing.T) {
 		if err := ValidatePeerID(v); err == nil {
 			t.Errorf("ValidatePeerID(%q) = nil, want error", v)
 		}
+	}
+}
+
+// TestCopyIntoPlace_PreservesContentModeAndMtime exercises the cross-device
+// merge fallback (used when the artifact root is a mounted volume and staging
+// under .campaign is on a different filesystem): the bytes, permission bits,
+// and mtime must survive so the next --compare-dest run does not re-transfer,
+// and the temp file must not linger.
+func TestCopyIntoPlace_PreservesContentModeAndMtime(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.bin")
+	dst := filepath.Join(dir, "dst.bin")
+	if err := os.WriteFile(src, []byte("peer bytes"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	mtime := time.Unix(1_600_000_000, 250_000_000)
+	if err := os.Chtimes(src, mtime, mtime); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := copyIntoPlace(src, dst); err != nil {
+		t.Fatalf("copyIntoPlace: %v", err)
+	}
+
+	if got, err := os.ReadFile(dst); err != nil || string(got) != "peer bytes" {
+		t.Fatalf("dst content = %q err=%v, want %q", got, err, "peer bytes")
+	}
+	fi, err := os.Stat(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode().Perm() != 0o640 {
+		t.Errorf("dst mode = %v, want 0640", fi.Mode().Perm())
+	}
+	if !fi.ModTime().Equal(mtime) {
+		t.Errorf("dst mtime = %v, want %v (must be preserved so --compare-dest does not re-transfer)", fi.ModTime(), mtime)
+	}
+	if leftovers, _ := filepath.Glob(filepath.Join(dir, ".camp-artifact-*.tmp")); len(leftovers) != 0 {
+		t.Errorf("leftover temp files: %v", leftovers)
+	}
+}
+
+func TestMoveIntoPlace_OverwritesExisting(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.bin")
+	dst := filepath.Join(dir, "dst.bin")
+	if err := os.WriteFile(dst, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(src, []byte("new peer version"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := moveIntoPlace(src, dst); err != nil {
+		t.Fatalf("moveIntoPlace: %v", err)
+	}
+	if got, _ := os.ReadFile(dst); string(got) != "new peer version" {
+		t.Errorf("dst = %q, want %q", got, "new peer version")
+	}
+}
+
+func TestFileValidate(t *testing.T) {
+	tests := []struct {
+		name    string
+		file    File
+		wantErr string
+	}{
+		{"valid", File{Version: 1, Roots: []Root{{Path: "media"}, {Path: "datasets", Policy: PolicyOnDemand}}}, ""},
+		{"unsupported version", File{Version: 2, Roots: []Root{{Path: "media"}}}, "version"},
+		{"unknown policy", File{Version: 1, Roots: []Root{{Path: "media", Policy: "sometimes"}}}, "policy"},
+		{"duplicate root", File{Version: 1, Roots: []Root{{Path: "media"}, {Path: "./media/"}}}, "duplicate"},
+		{"escaping path", File{Version: 1, Roots: []Root{{Path: "../outside"}}}, "escapes"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.file.Validate()
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Validate() = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("Validate() = %v, want error containing %q", err, tt.wantErr)
+			}
+		})
 	}
 }

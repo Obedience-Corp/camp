@@ -161,6 +161,18 @@ func (s *Syncer) pullArtifacts(ctx context.Context, result *SyncResult) {
 		}
 		return
 	}
+	// A committed declaration is not trusted just because it parsed: an
+	// unsupported version, unknown policy, or duplicate root must fail closed
+	// here rather than be silently skipped on a normal sync yet pulled under
+	// --artifacts-only. Same degrade contract as an unreadable config.
+	if verr := cfg.Validate(); verr != nil {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("artifacts config: %v", verr))
+		if s.options.ArtifactsOnly {
+			result.Success = false
+			result.Errors = append(result.Errors, &SyncError{Op: "artifacts", Cause: verr})
+		}
+		return
+	}
 	for _, root := range cfg.Roots {
 		if ctx.Err() != nil {
 			result.Errors = append(result.Errors, ctx.Err())
@@ -207,6 +219,11 @@ func (s *Syncer) verifyArtifacts(ctx context.Context, result *SyncResult) {
 
 	cfg, err := artifacts.Load(s.repoRoot)
 	if err != nil {
+		result.Success = false
+		result.Errors = append(result.Errors, &SyncError{Op: "artifacts-verify", Cause: err})
+		return
+	}
+	if err := cfg.Validate(); err != nil {
 		result.Success = false
 		result.Errors = append(result.Errors, &SyncError{Op: "artifacts-verify", Cause: err})
 		return
