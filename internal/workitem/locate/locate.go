@@ -3,10 +3,12 @@
 package locate
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
 
+	"github.com/Obedience-Corp/camp/internal/dungeon/spelling"
 	"github.com/Obedience-Corp/camp/internal/dungeon/statuspath"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
@@ -48,15 +50,20 @@ func DetectFromCwd(campaignRoot, cwd string) (*Location, error) {
 		return nil, camperrors.New("not inside a workitem; cwd is at workflow root, expected workflow/<type>/<slug>/")
 	}
 	typeName := parts[1]
-	if typeName == "" || typeName == "dungeon" {
+	if typeName == "" || spelling.IsDungeonName(typeName) {
 		return nil, camperrors.New(fmt.Sprintf("not inside a workitem; %q is not a valid workflow type", typeName))
 	}
 
-	if parts[2] != "dungeon" {
+	if !spelling.IsDungeonName(parts[2]) {
 		slug := parts[2]
 		parentRel := filepath.Join("workflow", typeName)
 		sourceRel := filepath.Join("workflow", typeName, slug)
-		dungeonRel := filepath.Join("workflow", typeName, "dungeon")
+		resolved, err := spelling.Resolve(context.Background(), filepath.Join(campaignRoot, parentRel))
+		dungeonName := spelling.Visible
+		if err == nil {
+			dungeonName = resolved.Name
+		}
+		dungeonRel := filepath.Join("workflow", typeName, dungeonName)
 		return &Location{
 			Type:        typeName,
 			Slug:        slug,
@@ -66,8 +73,9 @@ func DetectFromCwd(campaignRoot, cwd string) (*Location, error) {
 		}, nil
 	}
 
+	dungeonName := parts[2]
 	if len(parts) < 5 {
-		return nil, camperrors.New(fmt.Sprintf("not inside a workitem; cwd is at workflow/%s/dungeon[/...] without a slug", typeName))
+		return nil, camperrors.New(fmt.Sprintf("not inside a workitem; cwd is at workflow/%s/%s[/...] without a slug", typeName, dungeonName))
 	}
 	status := parts[3]
 	if status == "" {
@@ -78,16 +86,16 @@ func DetectFromCwd(campaignRoot, cwd string) (*Location, error) {
 	var parentRel string
 	if statuspath.IsDateDir(parts[4]) {
 		if len(parts) < 6 || parts[5] == "" {
-			return nil, camperrors.New(fmt.Sprintf("not inside a workitem; cwd is at workflow/%s/dungeon/%s/%s without a slug", typeName, status, parts[4]))
+			return nil, camperrors.New(fmt.Sprintf("not inside a workitem; cwd is at workflow/%s/%s/%s/%s without a slug", typeName, dungeonName, status, parts[4]))
 		}
 		slug = parts[5]
-		parentRel = filepath.Join("workflow", typeName, "dungeon", status, parts[4])
+		parentRel = filepath.Join("workflow", typeName, dungeonName, status, parts[4])
 	} else {
 		slug = parts[4]
-		parentRel = filepath.Join("workflow", typeName, "dungeon", status)
+		parentRel = filepath.Join("workflow", typeName, dungeonName, status)
 	}
 
-	dungeonRel := filepath.Join("workflow", typeName, "dungeon")
+	dungeonRel := filepath.Join("workflow", typeName, dungeonName)
 	return &Location{
 		Type:        typeName,
 		Slug:        slug,
