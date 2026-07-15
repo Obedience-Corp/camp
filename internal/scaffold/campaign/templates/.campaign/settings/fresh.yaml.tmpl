@@ -29,3 +29,29 @@
 #   fest:
 #     branch: feat/fest
 #     push_upstream: false
+
+# Follow-up command workflows run, in order, after a successful sync/prune/
+# branch cycle. Manage these with `camp fresh configure show|add|remove`
+# instead of hand-editing this list, though hand-editing works too.
+#
+# Each step: name (required, unique within its scope), run (required shell
+# command), dir (optional, relative to the project root), and
+# continue_on_error (optional, default false — set true to keep running
+# later steps even if this one fails).
+#
+# follow_up:
+#   - name: install
+#     run: npm install
+
+# A project's follow_up list under `projects` replaces the global list above
+# entirely for that project; it is never merged with it.
+# projects:
+#   camp:
+#     follow_up:
+#       - name: build
+#         run: go build ./...
+#         dir: cmd/camp
+#         continue_on_error: false
+
+# Skip follow-ups for a single run with `camp fresh --no-follow-up`. They are
+# never executed on `camp fresh --dry-run`, only listed in the preview.

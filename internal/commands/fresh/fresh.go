@@ -34,6 +34,7 @@ func NewFreshCommand() *cobra.Command {
 		freshNoBranch    bool
 		freshNoPush      bool
 		freshNoPrune     bool
+		freshNoFollowUp  bool
 		freshDryRun      bool
 		freshProjectFlag string
 		freshList        []string
@@ -52,7 +53,9 @@ single project name. Use --list to cycle a specific set of projects in one
 run, or 'camp fresh all' to cycle every project submodule in the campaign.
 
 Without configuration, syncs to the default branch and prunes.
-Configure .campaign/settings/fresh.yaml to set a default working branch.
+Configure .campaign/settings/fresh.yaml to set a default working branch, or
+follow-up command workflows (install, build, bootstrap, ...) to run once the
+cycle succeeds. Manage those with 'camp fresh configure'.
 
 Examples:
   camp fresh                            # Sync current project (checkout default, pull, prune)
@@ -60,7 +63,8 @@ Examples:
   camp fresh camp -b feat/new-thing     # Sync camp project, create feature branch
   camp fresh --list camp,fest,festival  # Sync a specific set of projects
   camp fresh --no-prune                 # Sync without pruning
-  camp fresh --dry-run                  # Preview what would happen`,
+  camp fresh --no-follow-up             # Sync without running configured follow-ups
+  camp fresh --dry-run                  # Preview what would happen (follow-ups listed, not run)`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeProjectName,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -78,11 +82,12 @@ Examples:
 			}
 
 			flags := freshFlagSet{
-				branch:   freshBranch,
-				noBranch: freshNoBranch,
-				noPush:   freshNoPush,
-				noPrune:  freshNoPrune,
-				dryRun:   freshDryRun,
+				branch:     freshBranch,
+				noBranch:   freshNoBranch,
+				noPush:     freshNoPush,
+				noPrune:    freshNoPrune,
+				noFollowUp: freshNoFollowUp,
+				dryRun:     freshDryRun,
 			}
 
 			// --list runs a batch across an explicit set of projects. It is
@@ -123,12 +128,14 @@ Examples:
 			branch := cfg.ResolveFreshBranch(freshBranch, freshNoBranch, result.Name)
 			doPrune := !freshNoPrune && cfg.ResolveFreshPrune()
 			doPush := !freshNoPush && cfg.ResolveFreshPushUpstream(result.Name)
+			followUps := resolveFreshFollowUps(cfg, result.Name, freshNoFollowUp)
 
 			return executeFresh(ctx, result.Name, result.Path, freshOptions{
 				branch:      branch,
 				prune:       doPrune,
 				pruneRemote: cfg.ResolveFreshPruneRemote(),
 				push:        doPush,
+				followUps:   followUps,
 				dryRun:      freshDryRun,
 			})
 		},
@@ -139,6 +146,7 @@ Examples:
 	freshCmd.PersistentFlags().BoolVar(&freshNoBranch, "no-branch", false, "Skip branch creation even if configured")
 	freshCmd.PersistentFlags().BoolVar(&freshNoPush, "no-push", false, "Skip pushing the new branch upstream")
 	freshCmd.PersistentFlags().BoolVar(&freshNoPrune, "no-prune", false, "Skip pruning merged branches")
+	freshCmd.PersistentFlags().BoolVar(&freshNoFollowUp, "no-follow-up", false, "Skip configured follow-up command workflows")
 	freshCmd.PersistentFlags().BoolVarP(&freshDryRun, "dry-run", "n", false, "Preview without making changes")
 	freshCmd.Flags().StringVarP(&freshProjectFlag, "project", "p", "", "Project name (auto-detected from cwd)")
 	freshCmd.RegisterFlagCompletionFunc("project", completeProjectName)
@@ -146,8 +154,9 @@ Examples:
 	_ = freshCmd.RegisterFlagCompletionFunc("list", completeProjectName)
 	freshCmd.MarkFlagsMutuallyExclusive("project", "list")
 
-	// Add subcommand
+	// Add subcommands
 	freshCmd.AddCommand(newAllCommand(freshCmd))
+	freshCmd.AddCommand(newConfigureCommand())
 
 	return freshCmd
 }
@@ -157,6 +166,7 @@ type freshOptions struct {
 	prune       bool
 	pruneRemote bool
 	push        bool
+	followUps   []config.FollowUpConfig
 	dryRun      bool
 }
 
@@ -331,6 +341,13 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 				fmt.Printf("%s── Push %-28s %s\n", prefix, opts.branch+" -> origin", freshStepGreen.Render("done"))
 			}
 		}
+	}
+
+	// Step 6: Run configured follow-up command workflows. Only reachable once
+	// every prior step has succeeded, so a failed sync/prune/branch cycle
+	// never triggers follow-ups.
+	if err := runFreshFollowUps(ctx, path, opts.followUps, opts.dryRun); err != nil {
+		return err
 	}
 
 	// Summary
