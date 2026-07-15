@@ -60,6 +60,10 @@ func init() {
 		"Show only stale worktrees")
 	worktreesListCmd.Flags().BoolVar(&listJSON, "json", false,
 		"Output as JSON")
+	worktreesListCmd.Flags().BoolP("interactive", "i", false,
+		"Open the interactive worktree browser (prints the table when stdout is not a terminal)")
+	worktreesListCmd.Flags().String("path-output", "", "Write the selected worktree path to a file (shell integration)")
+	_ = worktreesListCmd.Flags().MarkHidden("path-output")
 	worktreesListCmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(WorktreesListJSONVersion, func() bool { return listJSON }))
 }
 
@@ -97,9 +101,23 @@ func runWorktreesList(cmd *cobra.Command, args []string) error {
 	resolver := paths.NewResolver(campRoot, cfg.Paths())
 	pathManager := worktree.NewPathManager(resolver)
 
-	result, err := listWorktrees(ctx, campRoot, pathManager, listProject, listStale)
+	// In a terminal, a bare `camp worktrees list` opens the interactive browser
+	// (the same pattern as `camp list`). The browser holds every worktree and
+	// applies --stale as a live, toggleable filter, so load unfiltered for it;
+	// --json and the shaping flags still print the table/JSON.
+	openTUI := worktreesListTUIRequested(cmd, stdoutIsTTY())
+	loadStale := listStale
+	if openTUI {
+		loadStale = false
+	}
+
+	result, err := listWorktrees(ctx, campRoot, pathManager, listProject, loadStale)
 	if err != nil {
 		return err
+	}
+
+	if openTUI {
+		return runWorktreesListTUI(cmd, result)
 	}
 
 	if listJSON {
