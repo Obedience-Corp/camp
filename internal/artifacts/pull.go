@@ -14,6 +14,7 @@ import (
 	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"github.com/Obedience-Corp/camp/internal/peer"
 )
 
@@ -89,6 +90,22 @@ func pull(ctx context.Context, campaignRoot string, src *peer.Source, result *Pu
 	if err := os.MkdirAll(destAbs, 0o755); err != nil {
 		return camperrors.Wrapf(err, "create artifact root %s", rootRel)
 	}
+
+	// Serialize concurrent pulls of the SAME root: the staging dir, the live
+	// merge, and the snapshot write are all keyed on the root, so two
+	// simultaneous `camp sync --from` for one root would clear each other's
+	// staging tree and interleave into an inconsistent baseline. A per-root
+	// lock (stale-safe, 5s timeout) makes them queue; different roots still
+	// pull concurrently. The lock lives under .campaign/cache (gitignored).
+	cacheDir := filepath.Join(campaignRoot, ".campaign", "cache")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		return camperrors.Wrap(err, "create cache dir")
+	}
+	release, err := fsutil.AcquireFileLock(ctx, filepath.Join(cacheDir, "artifact-pull-"+snapshotSlug(rootRel)+".lock"))
+	if err != nil {
+		return camperrors.Wrapf(err, "lock artifact root %s", rootRel)
+	}
+	defer release()
 
 	local, err := BuildManifest(ctx, campaignRoot, rootRel)
 	if err != nil {
@@ -199,6 +216,12 @@ func mergeStaged(stagingDir, destAbs string, baseline *Manifest) ([]string, erro
 	if baseline != nil {
 		base = baseline.Index()
 	}
+	// Resolve the root once so per-file destination checks can tell whether a
+	// path stays inside it after symlink resolution.
+	rootReal, err := filepath.EvalSymlinks(destAbs)
+	if err != nil {
+		rootReal = destAbs
+	}
 	var lateConflicts []string
 
 	walkErr := filepath.WalkDir(stagingDir, func(path string, d fs.DirEntry, err error) error {
@@ -213,11 +236,16 @@ func mergeStaged(stagingDir, destAbs string, baseline *Manifest) ([]string, erro
 			return err
 		}
 		relSlash := filepath.ToSlash(rel)
-		if !safeToReplace(destAbs, rel, base) {
+		destPath := filepath.Join(destAbs, rel)
+		// A local symlinked directory component would let MkdirAll and the
+		// rename follow it and write outside the campaign; safeToReplace also
+		// reads every Lstat error as "absent, safe to write," which through a
+		// symlinked parent means a non-existent escape target. Refuse and
+		// report such a destination instead of following it.
+		if !destWithinRoot(rootReal, destPath) || !safeToReplace(destAbs, rel, base) {
 			lateConflicts = append(lateConflicts, relSlash)
 			return nil
 		}
-		destPath := filepath.Join(destAbs, rel)
 		if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
 			return camperrors.Wrapf(err, "create dir for %s", relSlash)
 		}
@@ -230,6 +258,22 @@ func mergeStaged(stagingDir, destAbs string, baseline *Manifest) ([]string, erro
 		return nil, walkErr
 	}
 	return lateConflicts, nil
+}
+
+// destWithinRoot reports whether destPath resolves inside rootReal (the
+// symlink-resolved artifact root). It resolves the existing prefix of the
+// destination's parent, so a local symlinked directory component pointing
+// outside the campaign is caught before MkdirAll or the rename can follow it.
+func destWithinRoot(rootReal, destPath string) bool {
+	resolved, err := resolveExistingPrefix(filepath.Dir(destPath))
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(rootReal, resolved)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return false
+	}
+	return true
 }
 
 // moveIntoPlace atomically replaces dst with the staged file at src. The fast
