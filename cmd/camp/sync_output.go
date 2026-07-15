@@ -52,13 +52,21 @@ func formatSyncHuman(result *sync.SyncResult, opts syncOptions, preflight *sync.
 
 	// Update results section
 	formatUpdateSection(result, opts.verbose)
+	formatArtifactsSection(result, opts.verbose)
 	formatWarningsSection(result.Warnings)
 
 	// Final status
 	fmt.Println()
-	if result.Success {
+	switch {
+	case result.Success && opts.verifyArtifacts:
+		fmt.Println(ui.Success("Artifact verification complete."))
+	case result.Success && opts.artifactsOnly:
+		fmt.Println(ui.Success("Artifacts synchronized successfully."))
+	case result.Success:
 		fmt.Println(ui.Success("Campaign synchronized successfully."))
-	} else {
+	case opts.verifyArtifacts:
+		fmt.Fprintln(os.Stderr, ui.Error("Artifact verification found discrepancies. See details above."))
+	default:
 		fmt.Fprintln(os.Stderr, ui.Error("Sync failed. See errors or warnings above."))
 	}
 }
@@ -223,6 +231,56 @@ func formatFixSuggestions(preflight *sync.PreflightResult) {
 	fmt.Println("  camp sync --force")
 }
 
+// formatArtifactsSection displays artifact pull/verify outcomes; silent when
+// the sync involved no artifacts.
+func formatArtifactsSection(result *sync.SyncResult, verbose bool) {
+	if len(result.Artifacts) == 0 && len(result.ArtifactVerifies) == 0 {
+		return
+	}
+	fmt.Println()
+	fmt.Println("Artifacts:")
+	for _, a := range result.Artifacts {
+		switch {
+		case a.Warning != "":
+			fmt.Fprintf(os.Stderr, "  %s %s: %s\n", ui.ErrorIcon(), a.Root, a.Warning)
+		case a.FirstSync:
+			fmt.Printf("  %s %s (first sync; %d pre-existing local files left untouched)\n",
+				ui.SuccessIcon(), a.Root, a.Protected)
+		case len(a.SkippedConflicts) > 0:
+			fmt.Printf("  %s %s (synced; %d conflicts kept local)\n",
+				ui.WarningIcon(), a.Root, len(a.SkippedConflicts))
+			for i, p := range a.SkippedConflicts {
+				if !verbose && i == 5 {
+					fmt.Printf("      ... and %d more (use --verbose)\n", len(a.SkippedConflicts)-i)
+					break
+				}
+				fmt.Printf("      %s (local edit preserved; remove the file to take the peer's copy)\n", p)
+			}
+		default:
+			fmt.Printf("  %s %s (synced)\n", ui.SuccessIcon(), a.Root)
+		}
+	}
+	for _, v := range result.ArtifactVerifies {
+		if v.Result.Clean() {
+			fmt.Printf("  %s %s vs %s: clean (%d files)\n", ui.SuccessIcon(), v.Result.Root, v.Peer, v.Result.Checked)
+			continue
+		}
+		fmt.Fprintf(os.Stderr, "  %s %s vs %s: %d missing, %d differ, %d extra\n",
+			ui.ErrorIcon(), v.Result.Root, v.Peer, len(v.Result.Missing), len(v.Result.Differ), len(v.Result.Extra))
+		if verbose {
+			for _, p := range v.Result.Missing {
+				fmt.Fprintf(os.Stderr, "      missing: %s\n", p)
+			}
+			for _, p := range v.Result.Differ {
+				fmt.Fprintf(os.Stderr, "      differs: %s\n", p)
+			}
+			for _, p := range v.Result.Extra {
+				fmt.Fprintf(os.Stderr, "      extra:   %s\n", p)
+			}
+		}
+	}
+}
+
 // formatSyncJSON outputs sync results as JSON.
 func formatSyncJSON(result *sync.SyncResult, preflight *sync.PreflightResult) {
 	// Build preflight submodules info
@@ -302,9 +360,38 @@ func formatSyncJSON(result *sync.SyncResult, preflight *sync.PreflightResult) {
 		"warnings":      warnings,
 	}
 
+	// Peer-transport keys appear only when the feature ran, keeping default
+	// `camp sync --json` byte-identical for existing consumers.
+	if len(result.Artifacts) > 0 {
+		output["artifacts"] = result.Artifacts
+	}
+	if len(result.ArtifactVerifies) > 0 {
+		verifies := make([]map[string]interface{}, len(result.ArtifactVerifies))
+		for i, v := range result.ArtifactVerifies {
+			verifies[i] = map[string]interface{}{
+				"peer":    v.Peer,
+				"root":    v.Result.Root,
+				"clean":   v.Result.Clean(),
+				"checked": v.Result.Checked,
+				"missing": emptyIfNil(v.Result.Missing),
+				"differ":  emptyIfNil(v.Result.Differ),
+				"extra":   emptyIfNil(v.Result.Extra),
+			}
+		}
+		output["artifactVerify"] = verifies
+	}
+
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	enc.Encode(output)
+}
+
+// emptyIfNil keeps JSON list fields as [] rather than null.
+func emptyIfNil(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
 }
 
 // countSucceeded counts successful submodule results.
@@ -331,10 +418,12 @@ func countFailed(results []sync.SubmoduleResult) int {
 
 // syncOptions is a copy of the flag struct for passing to formatters.
 type syncOptions struct {
-	dryRun   bool
-	force    bool
-	verbose  bool
-	parallel int
-	noFetch  bool
-	json     bool
+	dryRun          bool
+	force           bool
+	verbose         bool
+	parallel        int
+	noFetch         bool
+	json            bool
+	verifyArtifacts bool
+	artifactsOnly   bool
 }

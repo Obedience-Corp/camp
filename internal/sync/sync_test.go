@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Obedience-Corp/camp/internal/peer"
 )
 
 func TestSync_CleanRepo(t *testing.T) {
@@ -278,6 +280,167 @@ func TestUpdateSubmodules_ContextCanceledMidFlight(t *testing.T) {
 		}
 	case <-time.After(30 * time.Second):
 		t.Fatal("updateSubmodules() did not return after cancellation")
+	}
+}
+
+func TestUpdateSubmodules_PeerFetch(t *testing.T) {
+	ctx := context.Background()
+	repoRoot := setupTestRepo(t)
+	setupSubmodule(t, repoRoot, "projects/sub")
+
+	// Build a peer campaign mirroring the layout: projects/sub is a clone of
+	// the same source repo with a branch the local copy has never seen.
+	cmd := exec.Command("git", "-C", repoRoot, "config", "-f", ".gitmodules", "submodule.projects/sub.url")
+	urlBytes, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("reading submodule url: %v", err)
+	}
+	sourceRepo := strings.TrimSpace(string(urlBytes))
+
+	peerRoot := t.TempDir()
+	peerSub := filepath.Join(peerRoot, "projects", "sub")
+	runGit(t, t.TempDir(), "clone", sourceRepo, peerSub)
+	runGit(t, peerSub, "config", "user.email", "test@test.com")
+	runGit(t, peerSub, "config", "user.name", "Test")
+	runGit(t, peerSub, "checkout", "-b", "peer-work")
+	createFile(t, filepath.Join(peerSub, "peer-only.txt"), "only on the peer")
+	runGit(t, peerSub, "add", ".")
+	runGit(t, peerSub, "commit", "-m", "peer-only work")
+
+	syncer := NewSyncer(repoRoot, WithPeer(peer.FromPath("peerbox", peerRoot)))
+	results, err := syncer.updateSubmodules(ctx)
+	if err != nil {
+		t.Fatalf("updateSubmodules() error = %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("updateSubmodules() results = %d, want 1", len(results))
+	}
+	if !results[0].Success {
+		t.Fatalf("submodule Success = false: %v", results[0].Error)
+	}
+	if !results[0].PeerFetched {
+		t.Errorf("PeerFetched = false, want true (warning: %q)", results[0].PeerWarning)
+	}
+
+	// Peer heads land under refs/peer/<id>/*, bringing their objects along.
+	localSub := filepath.Join(repoRoot, "projects/sub")
+	verify := exec.Command("git", "-C", localSub, "rev-parse", "--verify", "refs/peer/peerbox/peer-work")
+	if out, verifyErr := verify.CombinedOutput(); verifyErr != nil {
+		t.Errorf("refs/peer/peerbox/peer-work not present after peer fetch: %s", strings.TrimSpace(string(out)))
+	}
+}
+
+// --no-fetch promises local refs only, so it must suppress the peer network
+// fetch even when a peer is configured.
+func TestUpdateSubmodules_NoFetchSuppressesPeer(t *testing.T) {
+	ctx := context.Background()
+	repoRoot := setupTestRepo(t)
+	setupSubmodule(t, repoRoot, "projects/sub")
+
+	syncer := NewSyncer(repoRoot,
+		WithPeer(peer.FromPath("peerbox", t.TempDir())),
+		WithNoFetch(true),
+	)
+	results, err := syncer.updateSubmodules(ctx)
+	if err != nil {
+		t.Fatalf("updateSubmodules() error = %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("updateSubmodules() results = %d, want 1", len(results))
+	}
+	if results[0].PeerFetched {
+		t.Error("PeerFetched = true with --no-fetch, want false (no network transfer)")
+	}
+	// No peer refs should have been created.
+	localSub := filepath.Join(repoRoot, "projects/sub")
+	check := exec.Command("git", "-C", localSub, "for-each-ref", "refs/peer")
+	out, _ := check.Output()
+	if strings.TrimSpace(string(out)) != "" {
+		t.Errorf("refs/peer/* created despite --no-fetch:\n%s", out)
+	}
+}
+
+func TestUpdateSubmodules_PeerUnreachableDegrades(t *testing.T) {
+	ctx := context.Background()
+	repoRoot := setupTestRepo(t)
+	setupSubmodule(t, repoRoot, "projects/sub")
+
+	syncer := NewSyncer(repoRoot, WithPeer(peer.FromPath("ghost", filepath.Join(t.TempDir(), "missing"))))
+	results, err := syncer.updateSubmodules(ctx)
+	if err != nil {
+		t.Fatalf("updateSubmodules() error = %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("updateSubmodules() results = %d, want 1", len(results))
+	}
+	if !results[0].Success {
+		t.Errorf("submodule Success = false, want true (peer failure must degrade): %v", results[0].Error)
+	}
+	if results[0].PeerFetched {
+		t.Error("PeerFetched = true, want false for unreachable peer")
+	}
+	if results[0].PeerWarning == "" {
+		t.Error("PeerWarning empty, want degradation warning")
+	}
+}
+
+// Peer submodule sitting detached at a commit that is not a branch tip: HEAD
+// must still transfer so gitlink objects accelerate without origin.
+func TestUpdateSubmodules_PeerFetchDetachedHEAD(t *testing.T) {
+	ctx := context.Background()
+	repoRoot := setupTestRepo(t)
+	setupSubmodule(t, repoRoot, "projects/sub")
+
+	cmd := exec.Command("git", "-C", repoRoot, "config", "-f", ".gitmodules", "submodule.projects/sub.url")
+	urlBytes, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("reading submodule url: %v", err)
+	}
+	sourceRepo := strings.TrimSpace(string(urlBytes))
+
+	peerRoot := t.TempDir()
+	peerSub := filepath.Join(peerRoot, "projects", "sub")
+	runGit(t, t.TempDir(), "clone", sourceRepo, peerSub)
+	runGit(t, peerSub, "config", "user.email", "test@test.com")
+	runGit(t, peerSub, "config", "user.name", "Test")
+	// Detached commit reachable only via HEAD (delete the only branch tip).
+	runGit(t, peerSub, "checkout", "--detach")
+	createFile(t, filepath.Join(peerSub, "detached-only.txt"), "only on detached peer HEAD")
+	runGit(t, peerSub, "add", ".")
+	runGit(t, peerSub, "commit", "-m", "detached peer tip")
+	shaOut, err := exec.Command("git", "-C", peerSub, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("peer HEAD: %v", err)
+	}
+	detachedSHA := strings.TrimSpace(string(shaOut))
+	// Drop all local branches so heads refspec alone would miss this object.
+	branches, err := exec.Command("git", "-C", peerSub, "for-each-ref", "--format=%(refname:short)", "refs/heads").Output()
+	if err != nil {
+		t.Fatalf("list branches: %v", err)
+	}
+	for _, b := range strings.Fields(string(branches)) {
+		runGit(t, peerSub, "branch", "-D", b)
+	}
+
+	syncer := NewSyncer(repoRoot, WithPeer(peer.FromPath("peerbox", peerRoot)))
+	results, err := syncer.updateSubmodules(ctx)
+	if err != nil {
+		t.Fatalf("updateSubmodules() error = %v", err)
+	}
+	if len(results) != 1 || !results[0].Success {
+		t.Fatalf("update failed: %+v", results)
+	}
+	if !results[0].PeerFetched {
+		t.Fatalf("PeerFetched = false (warning: %q)", results[0].PeerWarning)
+	}
+
+	localSub := filepath.Join(repoRoot, "projects/sub")
+	if out, verifyErr := exec.Command("git", "-C", localSub, "cat-file", "-e", detachedSHA).CombinedOutput(); verifyErr != nil {
+		t.Errorf("detached peer HEAD object %s missing after peer fetch: %s",
+			detachedSHA, strings.TrimSpace(string(out)))
+	}
+	if out, verifyErr := exec.Command("git", "-C", localSub, "rev-parse", "--verify", "refs/peer/peerbox/HEAD").CombinedOutput(); verifyErr != nil {
+		t.Errorf("refs/peer/peerbox/HEAD not present: %s", strings.TrimSpace(string(out)))
 	}
 }
 
@@ -597,4 +760,89 @@ func containsHelper(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// TestPullArtifacts_ConfigLoadExitContract pins the exit-code contract for an
+// unreadable artifacts config: --artifacts-only fails the run (the artifacts
+// were the whole ask), a default --from sync degrades to a warning and keeps
+// exit 0 (the accelerated path must never be worse than a plain sync).
+func TestPullArtifacts_ConfigLoadExitContract(t *testing.T) {
+	ctx := context.Background()
+	repoRoot := t.TempDir()
+	// A directory where .campaign/artifacts.yaml must be forces a read error
+	// in artifacts.Load regardless of YAML-parser leniency.
+	if err := os.MkdirAll(filepath.Join(repoRoot, ".campaign", "artifacts.yaml"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	peerSrc := peer.FromPath("peerbox", t.TempDir())
+
+	only := NewSyncer(repoRoot, WithPeer(peerSrc), WithArtifactsOnly(true))
+	onlyRes := &SyncResult{Success: true}
+	only.pullArtifacts(ctx, onlyRes)
+	if onlyRes.Success {
+		t.Error("--artifacts-only with unreadable config: Success = true, want false")
+	}
+	if len(onlyRes.Errors) == 0 {
+		t.Error("--artifacts-only with unreadable config: no error recorded")
+	}
+
+	def := NewSyncer(repoRoot, WithPeer(peerSrc))
+	defRes := &SyncResult{Success: true}
+	def.pullArtifacts(ctx, defRes)
+	if !defRes.Success {
+		t.Error("default sync with unreadable config: Success = false, want true (degrade)")
+	}
+	if len(defRes.Warnings) == 0 {
+		t.Error("default sync with unreadable config: no warning recorded")
+	}
+}
+
+// TestVerifyArtifacts_RejectsTraversalPeer ensures a --from value that could
+// escape the snapshot tree is rejected before it is joined into a path.
+func TestVerifyArtifacts_RejectsTraversalPeer(t *testing.T) {
+	ctx := context.Background()
+	s := NewSyncer(t.TempDir(), WithVerifyArtifacts(true, "../../etc"))
+	res := &SyncResult{Success: true}
+	s.verifyArtifacts(ctx, res)
+	if res.Success {
+		t.Error("verify with a traversal peer id: Success = true, want false")
+	}
+}
+
+// TestPullArtifacts_InvalidSchemaExitContract pins the same exit contract for a
+// parseable but invalid committed declaration (here an unknown policy): it must
+// fail closed under --artifacts-only and degrade to a warning on a default
+// sync, rather than being silently skipped or blindly pulled.
+func TestPullArtifacts_InvalidSchemaExitContract(t *testing.T) {
+	ctx := context.Background()
+	writeConfig := func(t *testing.T) string {
+		t.Helper()
+		root := t.TempDir()
+		p := filepath.Join(root, ".campaign", "artifacts.yaml")
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("version: 1\nroots:\n  - path: media\n    policy: bogus\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return root
+	}
+	peerSrc := peer.FromPath("peerbox", t.TempDir())
+
+	only := NewSyncer(writeConfig(t), WithPeer(peerSrc), WithArtifactsOnly(true))
+	onlyRes := &SyncResult{Success: true}
+	only.pullArtifacts(ctx, onlyRes)
+	if onlyRes.Success {
+		t.Error("--artifacts-only with invalid schema: Success = true, want false")
+	}
+
+	def := NewSyncer(writeConfig(t), WithPeer(peerSrc))
+	defRes := &SyncResult{Success: true}
+	def.pullArtifacts(ctx, defRes)
+	if !defRes.Success {
+		t.Error("default sync with invalid schema: Success = false, want true (degrade)")
+	}
+	if len(defRes.Warnings) == 0 {
+		t.Error("default sync with invalid schema: no warning recorded")
+	}
 }

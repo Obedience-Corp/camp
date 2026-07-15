@@ -1,13 +1,16 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/clone"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
+	"github.com/Obedience-Corp/camp/internal/peer"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -69,7 +72,14 @@ EXAMPLES:
   camp clone git@github.com:org/repo.git --no-register
 
   # JSON output for scripting
-  camp clone git@github.com:org/repo.git --json`,
+  camp clone git@github.com:org/repo.git --json
+
+  # Seed from a peer machine in ~/.obey/machines.yaml: root repo and
+  # submodules clone from that machine's copy (LAN/tailnet), then origin is
+  # re-pointed to the URL above and the delta fetched. The result is an
+  # origin replica that arrived over the fast path; peer failures fall back
+  # to plain origin cloning.
+  camp clone git@github.com:org/repo.git --from studio-mac`,
 	Args: jsoncontract.Args(CloneJSONVersion, func() bool { return cloneOpts.json }, cobra.RangeArgs(1, 2)),
 	Annotations: map[string]string{
 		"agent_allowed": "false",
@@ -89,6 +99,7 @@ var cloneOpts struct {
 	noRegister   bool
 	verbose      bool
 	json         bool
+	from         string
 }
 
 func init() {
@@ -108,6 +119,8 @@ func init() {
 		"Show detailed output for each operation")
 	cloneCmd.Flags().BoolVar(&cloneOpts.json, "json", false,
 		"Output results as JSON for scripting")
+	cloneCmd.Flags().StringVar(&cloneOpts.from, "from", "",
+		"Seed git objects from this machine (id from ~/.obey/machines.yaml), then fetch the delta from origin")
 
 	rootCmd.AddCommand(cloneCmd)
 	cloneCmd.GroupID = "setup"
@@ -132,7 +145,7 @@ func runClone(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create cloner with options
-	cloner := clone.NewCloner(
+	clonerOpts := []clone.ClonerOption{
 		clone.WithURL(url),
 		clone.WithDirectory(directory),
 		clone.WithBranch(cloneOpts.branch),
@@ -144,7 +157,34 @@ func runClone(cmd *cobra.Command, args []string) error {
 		clone.WithVerbose(cloneOpts.verbose),
 		clone.WithJSON(cloneOpts.json),
 		clone.WithProgress(progress),
-	)
+	}
+	if cloneOpts.from != "" {
+		// The campaign is looked up on the peer by the name this clone will
+		// register under: the directory argument when given, else the repo
+		// name from the URL.
+		name := clone.RepoNameFromURL(url)
+		if directory != "" {
+			name = filepath.Base(directory)
+		}
+		src, err := peer.FromMachine(ctx, cloneOpts.from, name)
+		switch {
+		case err != nil && errors.Is(err, peer.ErrPeerConfig):
+			// Misconfiguration or typo (unknown machine, bad auth): fail fast
+			// so the user fixes it, rather than silently ignoring --from.
+			formatCloneError(err, cloneOpts.json)
+			return camperrors.NewCommand("camp clone", clone.ExitCloneFailed, "", err)
+		case err != nil:
+			// Reachability failure: help text promises fallback to a plain
+			// origin clone. Warn and clone from origin with no peer configured.
+			if !cloneOpts.json {
+				fmt.Fprintf(os.Stderr, "%s peer %q unreachable (%v); cloning from origin\n",
+					ui.WarningIcon(), cloneOpts.from, err)
+			}
+		default:
+			clonerOpts = append(clonerOpts, clone.WithPeer(src))
+		}
+	}
+	cloner := clone.NewCloner(clonerOpts...)
 
 	// Execute clone
 	result, err := cloner.Clone(ctx)

@@ -1,9 +1,16 @@
 package main
 
 import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+
 	"github.com/Obedience-Corp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
+	"github.com/Obedience-Corp/camp/internal/peer"
 	"github.com/Obedience-Corp/camp/internal/sync"
 	"github.com/spf13/cobra"
 )
@@ -52,7 +59,24 @@ EXAMPLES:
   camp sync --verbose
 
   # JSON output for scripting
-  camp sync --json`,
+  camp sync --json
+
+  # Accelerate over a peer machine from ~/.obey/machines.yaml: for each
+  # already-initialized submodule, fetch objects from that machine first
+  # (LAN/tailnet), then run the normal origin-based update, then pull
+  # declared artifact roots (policy=always) from the same machine.
+  # Uninitialized submodules skip the peer step and init from origin.
+  # Preflight, origin URLs, validation, and exit codes are unchanged; an
+  # unreachable peer degrades to a warning.
+  camp sync --from studio-mac
+
+  # Peer git objects only, skip artifacts / artifacts only, skip git phases
+  camp sync --from studio-mac --git-only
+  camp sync --from studio-mac --artifacts-only
+
+  # Check artifact roots against last-transfer snapshots, no transfer
+  camp sync --verify-artifacts
+  camp sync --verify-artifacts --from studio-mac`,
 	Args: cobra.ArbitraryArgs,
 	RunE: jsoncontract.RunE(SyncJSONVersion, func() bool { return syncOpts.json }, runSync),
 }
@@ -60,12 +84,16 @@ EXAMPLES:
 const SyncJSONVersion = "sync/v1alpha1"
 
 var syncOpts struct {
-	dryRun   bool
-	force    bool
-	verbose  bool
-	parallel int
-	noFetch  bool
-	json     bool
+	dryRun          bool
+	force           bool
+	verbose         bool
+	parallel        int
+	noFetch         bool
+	json            bool
+	from            string
+	gitOnly         bool
+	artifactsOnly   bool
+	verifyArtifacts bool
 }
 
 func init() {
@@ -81,6 +109,14 @@ func init() {
 		"Skip fetching from remote (use local refs only)")
 	syncCmd.Flags().BoolVar(&syncOpts.json, "json", false,
 		"Output results as JSON for scripting")
+	syncCmd.Flags().StringVar(&syncOpts.from, "from", "",
+		"Fetch objects for already-initialized submodules (and declared artifact roots) from this machine (id from ~/.obey/machines.yaml)")
+	syncCmd.Flags().BoolVar(&syncOpts.gitOnly, "git-only", false,
+		"With --from: move git objects only, skip artifact roots")
+	syncCmd.Flags().BoolVar(&syncOpts.artifactsOnly, "artifacts-only", false,
+		"With --from: pull declared artifact roots only, skip git phases")
+	syncCmd.Flags().BoolVar(&syncOpts.verifyArtifacts, "verify-artifacts", false,
+		"Check artifact roots against last-transfer snapshots (no transfer)")
 
 	rootCmd.AddCommand(syncCmd)
 	syncCmd.GroupID = "campaign"
@@ -97,7 +133,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	// Build syncer with options
-	syncer := sync.NewSyncer(campRoot,
+	syncerOpts := []sync.SyncerOption{
 		sync.WithDryRun(syncOpts.dryRun),
 		sync.WithForce(syncOpts.force),
 		sync.WithVerbose(syncOpts.verbose),
@@ -105,7 +141,40 @@ func runSync(cmd *cobra.Command, args []string) error {
 		sync.WithNoFetch(syncOpts.noFetch),
 		sync.WithJSON(syncOpts.json),
 		sync.WithSubmodules(args),
-	)
+	}
+	if err := validateSyncFlagCombos(); err != nil {
+		return err
+	}
+	if syncOpts.verifyArtifacts {
+		// Verify is purely local (tree vs recorded snapshots): --from only
+		// scopes which peer's snapshots to check, no ssh dial needed.
+		syncerOpts = append(syncerOpts, sync.WithVerifyArtifacts(true, syncOpts.from))
+	} else if syncOpts.from != "" {
+		src, err := resolveSyncPeer(ctx, campRoot, syncOpts.from)
+		switch {
+		case err != nil && errors.Is(err, peer.ErrPeerConfig):
+			// Misconfiguration or typo (unknown machine, campaign not
+			// registered, bad auth): fail fast so --from is not silently
+			// ignored.
+			return err
+		case err != nil && syncOpts.artifactsOnly:
+			// Reachability failure with no origin fallback: --artifacts-only
+			// makes the peer the sole source, so a resolve failure is fatal.
+			return err
+		case err != nil:
+			// Reachability failure: help text promises an unreachable peer
+			// degrades to a warning and the git sync still runs via origin.
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "camp: warning: peer %q unreachable (%v); syncing via origin\n",
+				syncOpts.from, err)
+		default:
+			syncerOpts = append(syncerOpts,
+				sync.WithPeer(src),
+				sync.WithGitOnly(syncOpts.gitOnly),
+				sync.WithArtifactsOnly(syncOpts.artifactsOnly),
+			)
+		}
+	}
+	syncer := sync.NewSyncer(campRoot, syncerOpts...)
 
 	// Run preflight once for display, then pass it into Sync to avoid double execution
 	preflight, err := syncer.RunPreflight(ctx)
@@ -124,12 +193,14 @@ func runSync(cmd *cobra.Command, args []string) error {
 
 	// Build options for formatter
 	opts := syncOptions{
-		dryRun:   syncOpts.dryRun,
-		force:    syncOpts.force,
-		verbose:  syncOpts.verbose,
-		parallel: syncOpts.parallel,
-		noFetch:  syncOpts.noFetch,
-		json:     syncOpts.json,
+		dryRun:          syncOpts.dryRun,
+		force:           syncOpts.force,
+		verbose:         syncOpts.verbose,
+		parallel:        syncOpts.parallel,
+		noFetch:         syncOpts.noFetch,
+		json:            syncOpts.json,
+		verifyArtifacts: syncOpts.verifyArtifacts,
+		artifactsOnly:   syncOpts.artifactsOnly,
 	}
 
 	// Format and display output
@@ -144,4 +215,48 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// validateSyncFlagCombos rejects contradictory peer-flag combinations with a
+// usage error (exit 2) before any work runs.
+func validateSyncFlagCombos() error {
+	if syncOpts.gitOnly && syncOpts.artifactsOnly {
+		return syncUsageError("--git-only and --artifacts-only are mutually exclusive")
+	}
+	if syncOpts.verifyArtifacts && (syncOpts.gitOnly || syncOpts.artifactsOnly) {
+		return syncUsageError("--verify-artifacts does not combine with --git-only/--artifacts-only")
+	}
+	if (syncOpts.gitOnly || syncOpts.artifactsOnly) && syncOpts.from == "" {
+		return syncUsageError("--git-only/--artifacts-only need --from <machine>")
+	}
+	return nil
+}
+
+// syncUsageError prints the message (human mode; a CommandError's exit code
+// propagates silently by design) and returns the exit-2 contract error. JSON
+// mode leaves printing to the jsoncontract error envelope.
+func syncUsageError(msg string) error {
+	if !syncOpts.json {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", msg)
+	}
+	return camperrors.NewCommand("camp sync", sync.ExitInvalidArgs, msg, nil)
+}
+
+// resolveSyncPeer maps --from to a peer source for this campaign: the local
+// registry supplies the campaign's name, and the far machine's own camp
+// resolves where that campaign lives there.
+func resolveSyncPeer(ctx context.Context, campRoot, machineID string) (*peer.Source, error) {
+	reg, err := config.LoadRegistry(ctx)
+	if err != nil {
+		return nil, camperrors.Wrap(err, "load registry")
+	}
+	c, found := reg.FindByPath(campRoot)
+	if !found {
+		// A setup error, not a reachability one: --from cannot proceed until
+		// the campaign is registered, so mark it ErrPeerConfig to fail fast.
+		return nil, camperrors.WrapJoinf(peer.ErrPeerConfig, nil,
+			"campaign at %s is not in the registry; --from needs the campaign's registered name to resolve it on %q",
+			campRoot, machineID)
+	}
+	return peer.FromMachine(ctx, machineID, c.Name)
 }

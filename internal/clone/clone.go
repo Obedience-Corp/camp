@@ -37,7 +37,19 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 
 	// Phase 1: Clone repository (without --recurse-submodules to avoid all-or-nothing failure)
 	c.progress.StartPhase("Cloning campaign repository")
-	targetDir, err := c.gitClone(ctx)
+	var targetDir string
+	var err error
+	if c.peer != nil {
+		targetDir, err = c.gitCloneFromPeer(ctx)
+		if err != nil {
+			result.Warnings = append(result.Warnings,
+				fmt.Sprintf("peer clone from %s failed, falling back to origin: %v", c.peer.ID(), err))
+			c.progress.Message(fmt.Sprintf("Peer clone from %s failed; cloning from origin", c.peer.ID()))
+			targetDir, err = c.gitClone(ctx)
+		}
+	} else {
+		targetDir, err = c.gitClone(ctx)
+	}
 	if err != nil {
 		c.progress.EndPhase("Clone", false)
 		result.Success = false
@@ -153,14 +165,27 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 				r := subInitResult{index: idx}
 				c.progress.Verbose(fmt.Sprintf("Initializing submodule: %s", sub.Path))
 
+				// Step 0: Seed objects from the peer when one is configured;
+				// failure degrades to the normal origin path below.
+				peerSeeded := false
+				if c.peer != nil {
+					if seedErr := c.seedSubmoduleFromPeer(ctx, targetDir, sub); seedErr != nil {
+						r.warnings = append(r.warnings,
+							fmt.Sprintf("peer seed %s: %v (initializing from origin)", sub.Path, seedErr))
+					} else {
+						peerSeeded = true
+					}
+				}
+
 				// Step 1: Initialize submodule gracefully (handles stale refs)
 				subErr := c.initSubmoduleGraceful(ctx, targetDir, sub.Path)
 				r.result = SubmoduleResult{
-					Name:    sub.Name,
-					Path:    sub.Path,
-					URL:     sub.URL,
-					Success: subErr == nil,
-					Error:   subErr,
+					Name:       sub.Name,
+					Path:       sub.Path,
+					URL:        sub.URL,
+					Success:    subErr == nil,
+					Error:      subErr,
+					PeerSeeded: peerSeeded,
 				}
 
 				if subErr != nil {
@@ -219,6 +244,7 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 		nestedCount := 0
 		branchCount := 0
 		staleRefCount := 0
+		peerSeededCount := 0
 
 		for _, r := range results {
 			result.Submodules = append(result.Submodules, r.result)
@@ -235,10 +261,16 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 			if r.branchOK {
 				branchCount++
 			}
+			if r.result.PeerSeeded {
+				peerSeededCount++
+			}
 		}
 
 		c.progress.EndSubmodules(succeeded, failed)
 
+		if peerSeededCount > 0 && c.peer != nil {
+			c.progress.Message(fmt.Sprintf("Seeded %d submodules from peer %s", peerSeededCount, c.peer.ID()))
+		}
 		if staleRefCount > 0 {
 			c.progress.Message(fmt.Sprintf("Recovered %d submodules with stale commit references", staleRefCount))
 		}

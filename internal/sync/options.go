@@ -8,6 +8,11 @@
 // This prevents data loss from stale URLs or uncommitted changes during sync operations.
 package sync
 
+import (
+	"github.com/Obedience-Corp/camp/internal/artifacts"
+	"github.com/Obedience-Corp/camp/internal/peer"
+)
+
 // SyncOptions configures sync behavior.
 type SyncOptions struct {
 	// DryRun shows what would happen without making changes.
@@ -24,6 +29,17 @@ type SyncOptions struct {
 	JSON bool
 	// Submodules lists specific submodules to sync (empty = all).
 	Submodules []string
+	// GitOnly skips artifact transfer on a peer-assisted sync.
+	GitOnly bool
+	// ArtifactsOnly skips the git phases and only pulls declared artifact
+	// roots from the peer (all policies, since the ask is explicit).
+	ArtifactsOnly bool
+	// VerifyArtifacts checks artifact roots against last-transfer snapshots
+	// (no transfer, no git phases). VerifyPeer scopes it to one peer id;
+	// empty means every peer with a snapshot.
+	VerifyArtifacts bool
+	// VerifyPeer scopes VerifyArtifacts to one peer id.
+	VerifyPeer string
 }
 
 // SyncResult contains the outcome of a sync operation.
@@ -36,10 +52,21 @@ type SyncResult struct {
 	URLChanges []URLChange
 	// UpdateResults contains the outcome for each submodule.
 	UpdateResults []SubmoduleResult
+	// Artifacts contains per-root outcomes of the peer artifact pull.
+	Artifacts []*artifacts.PullResult
+	// ArtifactVerifies contains per-root, per-peer verification outcomes.
+	ArtifactVerifies []ArtifactVerify
 	// Warnings contains non-fatal issues encountered.
 	Warnings []string
 	// Errors contains fatal errors that occurred.
 	Errors []error
+}
+
+// ArtifactVerify pairs a verification result with the peer snapshot it ran
+// against.
+type ArtifactVerify struct {
+	Peer   string
+	Result *artifacts.VerifyResult
 }
 
 // SubmoduleResult tracks the outcome for a single submodule.
@@ -66,6 +93,12 @@ type SubmoduleResult struct {
 	CheckedOutBranch string
 	// DriftWarning describes detected gitlink drift for this submodule.
 	DriftWarning string
+	// PeerFetched indicates objects were fetched from the configured peer
+	// before the origin-based update.
+	PeerFetched bool
+	// PeerWarning describes a peer fetch failure; the submodule still syncs
+	// through origin when this is set.
+	PeerWarning string
 }
 
 // URLChange represents a URL that was updated during synchronization.
@@ -86,6 +119,7 @@ type Syncer struct {
 	repoRoot        string
 	options         SyncOptions
 	cachedPreflight *PreflightResult // Optional pre-computed preflight result
+	peer            *peer.Source     // Optional peer to fetch objects from before origin
 }
 
 // NewSyncer creates a new Syncer for the given repository root.
@@ -171,10 +205,45 @@ func WithPreflightResult(pr *PreflightResult) SyncerOption {
 	}
 }
 
+// WithPeer configures a peer source to fetch git objects from before each
+// submodule's origin-based update. The peer is a transfer accelerator only:
+// preflight checks, origin URLs, and post-sync validation are unchanged, and
+// a failed peer fetch degrades to the normal origin path with a warning.
+func WithPeer(p *peer.Source) SyncerOption {
+	return func(s *Syncer) {
+		s.peer = p
+	}
+}
+
 // WithSubmodules sets specific submodules to sync.
 func WithSubmodules(submodules []string) SyncerOption {
 	return func(s *Syncer) {
 		s.options.Submodules = submodules
+	}
+}
+
+// WithGitOnly skips artifact transfer on a peer-assisted sync.
+func WithGitOnly(gitOnly bool) SyncerOption {
+	return func(s *Syncer) {
+		s.options.GitOnly = gitOnly
+	}
+}
+
+// WithArtifactsOnly skips the git phases and only pulls declared artifact
+// roots from the configured peer.
+func WithArtifactsOnly(artifactsOnly bool) SyncerOption {
+	return func(s *Syncer) {
+		s.options.ArtifactsOnly = artifactsOnly
+	}
+}
+
+// WithVerifyArtifacts checks artifact roots against last-transfer snapshots
+// instead of syncing. peerID scopes the check to one peer; empty checks every
+// peer with a snapshot.
+func WithVerifyArtifacts(verify bool, peerID string) SyncerOption {
+	return func(s *Syncer) {
+		s.options.VerifyArtifacts = verify
+		s.options.VerifyPeer = peerID
 	}
 }
 
