@@ -16,6 +16,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	campcontract "github.com/Obedience-Corp/camp/internal/contract"
 	dungeonscaffold "github.com/Obedience-Corp/camp/internal/dungeon/scaffold"
+	"github.com/Obedience-Corp/camp/internal/dungeon/spelling"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/quest"
@@ -163,18 +164,32 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 		CampaignRoot: absDir,
 	}
 
-	standardDungeonPaths := []string{
-		filepath.Join(absDir, "dungeon"),
-		filepath.Join(absDir, "workflow", "reviews", "dungeon"),
-		filepath.Join(absDir, "workflow", "design", "dungeon"),
-		filepath.Join(absDir, "workflow", "explore", "dungeon"),
+	standardDungeonParents := []string{
+		absDir,
+		filepath.Join(absDir, "workflow", "reviews"),
+		filepath.Join(absDir, "workflow", "design"),
+		filepath.Join(absDir, "workflow", "explore"),
 	}
-	preExistingDungeons := make(map[string]bool, len(standardDungeonPaths))
-	for _, path := range standardDungeonPaths {
-		if _, err := os.Stat(path); err == nil {
-			preExistingDungeons[path] = true
+	dungeonPreResolved := make([]spelling.Resolved, len(standardDungeonParents))
+	for i, parent := range standardDungeonParents {
+		resolved, err := spelling.Resolve(ctx, parent)
+		if err != nil {
+			return nil, camperrors.Wrapf(err, "resolving dungeon spelling under %s", parent)
 		}
+		spelling.WarnIfConflicting(os.Stderr, resolved)
+		dungeonPreResolved[i] = resolved
 	}
+
+	// The canonical intents root is a fixed location the static scaffold
+	// template always mirrors to, independent of any jumps.yaml override, so
+	// its dungeon spelling is resolved and reconciled here alongside the
+	// other standard locations rather than inside intent.EnsureDirectories.
+	intentsParent := filepath.Join(absDir, config.CampaignDir, "intents")
+	intentsDungeonPreResolved, err := spelling.Resolve(ctx, intentsParent)
+	if err != nil {
+		return nil, camperrors.Wrapf(err, "resolving dungeon spelling under %s", intentsParent)
+	}
+	spelling.WarnIfConflicting(os.Stderr, intentsDungeonPreResolved)
 
 	// Scaffold path
 	scaffoldPath := "campaign/scaffold.yaml"
@@ -222,9 +237,19 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 			result.Skipped = append(result.Skipped, filepath.Join(absDir, skipped))
 		}
 
-		for _, dungeonPath := range standardDungeonPaths {
+		dungeonHiddenDefault, err := resolveDungeonHiddenDefault(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		for i, parent := range standardDungeonParents {
+			dungeonPath, isNew, err := reconcileDungeonSpelling(result, parent, dungeonPreResolved[i], dungeonHiddenDefault)
+			if err != nil {
+				return nil, err
+			}
+
 			dungeonResult, err := dungeonscaffold.Init(ctx, dungeonPath, dungeonscaffold.InitOptions{
-				Force: !preExistingDungeons[dungeonPath],
+				Force: isNew,
 			})
 			if err != nil {
 				return nil, camperrors.Wrapf(err, "failed to initialize dungeon scaffold %s", dungeonPath)
@@ -232,6 +257,14 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 			result.DirsCreated = appendUniquePaths(result.DirsCreated, dungeonResult.CreatedDirs...)
 			result.FilesCreated = appendUniquePaths(result.FilesCreated, dungeonResult.CreatedFiles...)
 			result.Skipped = appendUniquePaths(result.Skipped, dungeonResult.Skipped...)
+		}
+
+		// Reconcile the canonical intents dungeon the same way; its own
+		// AllStatuses()-driven scaffolding happens later via
+		// intent.EnsureDirectories, which must see the correct established
+		// spelling by the time it runs.
+		if _, _, err := reconcileDungeonSpelling(result, intentsParent, intentsDungeonPreResolved, dungeonHiddenDefault); err != nil {
+			return nil, err
 		}
 
 		if version.Profile == "dev" {
@@ -510,6 +543,103 @@ func isQuestScaffoldRelPath(path string) bool {
 	normalized := filepath.ToSlash(strings.TrimSpace(path))
 	root := filepath.ToSlash(quest.RootDirName)
 	return normalized == root || strings.HasPrefix(normalized, root+"/")
+}
+
+// resolveDungeonHiddenDefault loads the system-level dungeon_hidden setting.
+func resolveDungeonHiddenDefault(ctx context.Context) (bool, error) {
+	globalCfg, err := config.LoadGlobalConfig(ctx)
+	if err != nil {
+		return false, camperrors.Wrap(err, "failed to load global config")
+	}
+	return globalCfg.ResolveDungeonHidden(), nil
+}
+
+// reconcileDungeonSpelling decides which name a dungeon directory under
+// parent should use, given how it looked (preResolved) before the
+// guild-scaffold template step ran. The template step has no notion of
+// hidden dungeons and always mirrors its static tree under the visible
+// "dungeon" name, so:
+//   - if only the hidden spelling pre-existed, the visible skeleton the
+//     template step just recreated is a duplicate and is removed;
+//   - if the visible spelling pre-existed (with or without a stale hidden
+//     copy), it is left untouched;
+//   - if neither pre-existed, the freshly scaffolded visible dungeon is
+//     renamed to hidden when hiddenDefault is true.
+//
+// It returns the final path to use and whether the directory is being
+// initialized for the first time (i.e. should be force-populated).
+func reconcileDungeonSpelling(result *InitResult, parent string, preResolved spelling.Resolved, hiddenDefault bool) (dungeonPath string, isNew bool, err error) {
+	visiblePath := filepath.Join(parent, spelling.Visible)
+	hiddenPath := filepath.Join(parent, spelling.Hidden)
+
+	switch {
+	case preResolved.Exists && preResolved.Name == spelling.Hidden:
+		if err := os.RemoveAll(visiblePath); err != nil {
+			return "", false, camperrors.Wrapf(err, "removing duplicate visible dungeon scaffold at %s", visiblePath)
+		}
+		result.DirsCreated = removePathsUnder(result.DirsCreated, visiblePath)
+		result.FilesCreated = removePathsUnder(result.FilesCreated, visiblePath)
+		result.Skipped = removePathsUnder(result.Skipped, visiblePath)
+		return hiddenPath, false, nil
+	case preResolved.Exists:
+		return visiblePath, false, nil
+	case hiddenDefault:
+		if err := os.Rename(visiblePath, hiddenPath); err != nil {
+			return "", false, camperrors.Wrapf(err, "hiding new dungeon scaffold at %s", visiblePath)
+		}
+		result.DirsCreated = renamePathsUnder(result.DirsCreated, visiblePath, hiddenPath)
+		result.FilesCreated = renamePathsUnder(result.FilesCreated, visiblePath, hiddenPath)
+		return hiddenPath, true, nil
+	default:
+		return visiblePath, true, nil
+	}
+}
+
+// renamePathsUnder rewrites entries in paths that equal oldRoot or live
+// nested under it to the equivalent path under newRoot, leaving unrelated
+// entries untouched. It mirrors an on-disk directory rename so init
+// reporting stays accurate after a standard dungeon path is relocated.
+func renamePathsUnder(paths []string, oldRoot, newRoot string) []string {
+	if len(paths) == 0 {
+		return paths
+	}
+	out := make([]string, len(paths))
+	for i, p := range paths {
+		if p == oldRoot {
+			out[i] = newRoot
+		} else if rel, ok := relUnder(p, oldRoot); ok {
+			out[i] = filepath.Join(newRoot, rel)
+		} else {
+			out[i] = p
+		}
+	}
+	return out
+}
+
+// removePathsUnder drops entries in paths equal to root or nested under it.
+func removePathsUnder(paths []string, root string) []string {
+	if len(paths) == 0 {
+		return paths
+	}
+	out := paths[:0:0]
+	for _, p := range paths {
+		if p == root {
+			continue
+		}
+		if _, ok := relUnder(p, root); ok {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+func relUnder(path, root string) (string, bool) {
+	prefix := root + string(filepath.Separator)
+	if rest, ok := strings.CutPrefix(path, prefix); ok {
+		return rest, true
+	}
+	return "", false
 }
 
 func appendUniquePaths(existing []string, paths ...string) []string {
