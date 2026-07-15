@@ -149,20 +149,16 @@ func (s *Source) GitEnv() []string {
 // the peer's campaign root, with a trailing slash so rsync copies contents
 // into the destination directory rather than nesting it.
 //
-// For an ssh source the path after "host:" is handed to the peer's remote
-// login shell, so it is single-quoted: a legitimate media root with a space
-// ("Final Renders/") would otherwise be split into two source arguments, and
-// shell metacharacters in a committed artifacts.yaml path would be
-// interpreted remotely. The trailing slash stays outside the quotes so the
-// local side still sees a copy-contents (not copy-dir) source. Filesystem
-// sources are passed to rsync as a local argv element (no shell), so they are
-// returned unquoted.
+// The remote path is intentionally unquoted. rsync 3.2.4 added shell escaping
+// that treats caller-added quotes literally; artifact pulls pass -s so the path
+// is sent through the rsync protocol instead. This requires rsync >= 3.0.0 on
+// both ends. The trailing slash keeps this a copy-contents source.
 func (s *Source) RsyncSpec(relPath string) string {
 	p := path.Join(s.root, relPath)
 	if s.target == "" {
 		return p + "/"
 	}
-	return s.target + ":" + remote.ShellQuote(p) + "/"
+	return s.target + ":" + p + "/"
 }
 
 // Fetch fetches heads and HEAD from the peer copy of the repository at

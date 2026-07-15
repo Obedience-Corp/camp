@@ -147,7 +147,9 @@ func pull(ctx context.Context, campaignRoot string, src *peer.Source, result *Pu
 	}
 	defer func() { _ = os.RemoveAll(stagingDir) }()
 
-	args := []string{"-a", "--no-links", "--compare-dest=" + destAbs}
+	// Send paths through rsync's protocol so spaces and shell metacharacters do
+	// not depend on remote-shell parsing.
+	args := []string{"-a", "-s", "--no-links", "--compare-dest=" + destAbs}
 	if sshCmd := src.SSHCommand(); sshCmd != "" {
 		args = append(args, "-e", sshCmd)
 	}

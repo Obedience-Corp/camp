@@ -97,22 +97,22 @@ func TestSourceRsyncSpec(t *testing.T) {
 			want:    "/Volumes/backup/campaign/media/renders/",
 		},
 		{
-			name:    "ssh source single-quotes the remote path",
+			name:    "ssh source leaves the remote path unquoted",
 			source:  &Source{root: "/home/me/campaign", target: "me@studio"},
 			relPath: "media/renders",
-			want:    "me@studio:'/home/me/campaign/media/renders'/",
+			want:    "me@studio:/home/me/campaign/media/renders/",
 		},
 		{
-			name:    "space in an ssh remote path stays one argument",
+			name:    "space in an ssh remote path stays unquoted (protected by -s)",
 			source:  &Source{root: "/home/me/campaign", target: "me@studio"},
 			relPath: "Final Renders",
-			want:    "me@studio:'/home/me/campaign/Final Renders'/",
+			want:    "me@studio:/home/me/campaign/Final Renders/",
 		},
 		{
-			name:    "shell metacharacters in an ssh remote path are neutralized",
+			name:    "shell metacharacters in an ssh remote path stay unquoted (protected by -s)",
 			source:  &Source{root: "/root", target: "me@studio"},
 			relPath: "a; rm -rf ~",
-			want:    "me@studio:'/root/a; rm -rf ~'/",
+			want:    "me@studio:/root/a; rm -rf ~/",
 		},
 	}
 	for _, tt := range tests {
