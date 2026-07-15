@@ -11,19 +11,19 @@ import (
 func TestService_Init_DungeonSpelling(t *testing.T) {
 	tests := []struct {
 		name       string
-		hidden     bool
+		spelling   string
 		wantDir    string
 		wantAbsent string
 	}{
-		{name: "hidden by default setting", hidden: true, wantDir: ".dungeon", wantAbsent: "dungeon"},
-		{name: "visible when setting disabled", hidden: false, wantDir: "dungeon", wantAbsent: ".dungeon"},
+		{name: "campaign is hidden", spelling: ".dungeon", wantDir: ".dungeon", wantAbsent: "dungeon"},
+		{name: "campaign is visible", spelling: "dungeon", wantDir: "dungeon", wantAbsent: ".dungeon"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
 			dir, _ = filepath.EvalSymlinks(dir)
-			svc := NewService(dir, WithDungeonHidden(tt.hidden))
+			svc := NewService(dir, WithDungeonSpelling(tt.spelling))
 
 			if _, err := svc.Init(context.Background(), InitOptions{SchemaVersion: 2}); err != nil {
 				t.Fatalf("Init() error = %v", err)
@@ -51,7 +51,7 @@ func TestService_Init_PreservesEstablishedDungeonSpelling(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 
-	svc := NewService(dir, WithDungeonHidden(true))
+	svc := NewService(dir, WithDungeonSpelling(".dungeon"))
 	if _, err := svc.Init(context.Background(), InitOptions{SchemaVersion: 2, Force: true}); err != nil {
 		t.Fatalf("Init() error = %v", err)
 	}
@@ -68,7 +68,7 @@ func TestService_ListAndMove_HiddenDungeon(t *testing.T) {
 	dir := t.TempDir()
 	dir, _ = filepath.EvalSymlinks(dir)
 
-	svc := NewService(dir, WithDungeonHidden(true))
+	svc := NewService(dir, WithDungeonSpelling(".dungeon"))
 	ctx := context.Background()
 	if _, err := svc.Init(ctx, InitOptions{SchemaVersion: 2}); err != nil {
 		t.Fatalf("Init() error = %v", err)

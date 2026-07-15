@@ -84,7 +84,6 @@ func (s *Service) Migrate(ctx context.Context, opts MigrateOptions) (*MigrateRes
 	if err != nil {
 		return nil, camperrors.Wrap(err, "resolving dungeon path")
 	}
-	spelling.WarnIfConflicting(os.Stderr, resolvedDungeon)
 
 	if !resolvedDungeon.Exists {
 		// No dungeon - just do a regular init
@@ -318,7 +317,7 @@ func validateV1ToV2MovePlan(ctx context.Context, root string, moves []v1ToV2Move
 // checkMigrateDestination enforces logical no-replace semantics for v1->v2 root moves.
 func checkMigrateDestination(ctx context.Context, root, name string) error {
 	dst := filepath.Join(root, name)
-	if existing, exists, err := resolveWorkflowItemPath(ctx, root, ".", name, false); err != nil {
+	if existing, exists, err := resolveWorkflowItemPath(ctx, root, ".", name, spelling.Visible); err != nil {
 		return camperrors.Wrapf(err, "checking destination: %s", dst)
 	} else if exists {
 		return camperrors.Wrapf(ErrAlreadyExists, "destination already exists: %s", existing)

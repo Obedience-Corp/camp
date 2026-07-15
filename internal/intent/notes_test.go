@@ -305,7 +305,7 @@ func TestRestoreNote_RefusesToClobberExistingActiveFile(t *testing.T) {
 	// resolves the archived copy, so RestoreNote reaches the write. It must fail
 	// loudly instead of overwriting the occupant and then deleting the archived
 	// source when the follow-up remove races.
-	activePath := svc.getIntentPath(StatusNote, note.ID)
+	activePath := mustIntentPath(t, svc, StatusNote, note.ID)
 	if err := os.MkdirAll(filepath.Dir(activePath), 0755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}

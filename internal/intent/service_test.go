@@ -635,7 +635,7 @@ func TestIntentService_MoveDestinationCollisionPreservesExisting(t *testing.T) {
 		t.Fatalf("CreateDirect() error = %v", err)
 	}
 
-	collisionPath := svc.getIntentPath(StatusActive, created.ID)
+	collisionPath := mustIntentPath(t, svc, StatusActive, created.ID)
 	if err := os.MkdirAll(filepath.Dir(collisionPath), 0755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
@@ -1398,7 +1398,7 @@ func TestIntentService_getIntentPath(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := svc.getIntentPath(tt.status, tt.id)
+		got := mustIntentPath(t, svc, tt.status, tt.id)
 		if got != tt.want {
 			t.Errorf("getIntentPath(%q, %q) = %q, want %q", tt.status, tt.id, got, tt.want)
 		}
@@ -1419,7 +1419,7 @@ func TestIntentService_EnsureDirectories_CreatesCanonicalLayout(t *testing.T) {
 	}
 
 	for _, status := range AllStatuses() {
-		dir := filepath.Join(svc.intentsDir, svc.statusRel(status))
+		dir := mustStatusDir(t, svc, status)
 		info, err := os.Stat(dir)
 		if err != nil {
 			t.Fatalf("expected status directory %s to exist: %v", dir, err)
@@ -2347,7 +2347,7 @@ func TestIntentService_Move_CleansUpOrphans(t *testing.T) {
 	}
 
 	// Verify inbox copy is gone
-	inboxPath := svc.getIntentPath(StatusInbox, created.ID)
+	inboxPath := mustIntentPath(t, svc, StatusInbox, created.ID)
 	if _, err := os.Stat(inboxPath); !os.IsNotExist(err) {
 		t.Error("Inbox copy should not exist after Move()")
 	}

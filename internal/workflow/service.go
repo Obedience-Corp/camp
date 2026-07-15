@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+
+	"github.com/Obedience-Corp/camp/internal/dungeon/spelling"
 )
 
 // Service provides all workflow operations.
@@ -13,12 +15,13 @@ type Service struct {
 	schemaPath string  // Path to .workflow.yaml
 	schema     *Schema // Loaded schema (nil if not loaded)
 
-	// dungeonHidden selects the spelling a brand-new dungeon directory under
-	// root should use when neither "dungeon" nor ".dungeon" exists yet. It has
-	// no effect once a dungeon directory exists — its established spelling
-	// always wins. Defaults to false (visible); callers that want the
-	// dungeon_hidden system setting honored must pass WithDungeonHidden.
-	dungeonHidden bool
+	// dungeonSpelling is the spelling the owning campaign has established, and
+	// the name a brand-new dungeon directory under root takes when neither
+	// "dungeon" nor ".dungeon" exists there yet. It has no effect once a
+	// dungeon directory exists — its established spelling always wins.
+	// Defaults to visible; callers resolve the campaign's spelling with
+	// spelling.CampaignName and pass it via WithDungeonSpelling.
+	dungeonSpelling string
 }
 
 // ServiceOption configures a Service.
@@ -28,8 +31,9 @@ type ServiceOption func(*Service)
 // The service will look for a .workflow.yaml file in the root directory.
 func NewService(root string, opts ...ServiceOption) *Service {
 	s := &Service{
-		root:       root,
-		schemaPath: filepath.Join(root, SchemaFileName),
+		root:            root,
+		schemaPath:      filepath.Join(root, SchemaFileName),
+		dungeonSpelling: spelling.Visible,
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -45,14 +49,17 @@ func WithSchema(schema *Schema) ServiceOption {
 	}
 }
 
-// WithDungeonHidden selects the spelling a brand-new dungeon directory under
-// root should use (true = ".dungeon", false = "dungeon") when the workflow
-// doesn't have one yet. Pass the resolved dungeon_hidden system setting here;
-// an existing dungeon directory's spelling always takes precedence regardless
-// of this value.
-func WithDungeonHidden(hidden bool) ServiceOption {
+// WithDungeonSpelling sets the dungeon spelling the owning campaign has
+// established ("dungeon" or ".dungeon"), which a brand-new dungeon directory
+// under root adopts when the workflow doesn't have one yet. Resolve it with
+// spelling.CampaignName rather than reading the dungeon_hidden setting
+// directly: that setting governs what camp init scaffolds for a new campaign,
+// and letting a new directory inside an existing campaign follow it is what
+// produces a campaign holding both spellings. An existing dungeon directory's
+// spelling always takes precedence regardless of this value.
+func WithDungeonSpelling(name string) ServiceOption {
 	return func(s *Service) {
-		s.dungeonHidden = hidden
+		s.dungeonSpelling = name
 	}
 }
 
@@ -241,5 +248,5 @@ type CrawlResult struct {
 // rewriting a leading "dungeon" segment to whichever spelling is
 // established under root (or the configured default when neither exists).
 func (s *Service) resolvePath(ctx context.Context, status string) (string, error) {
-	return resolveStatusRoot(ctx, s.root, status, s.dungeonHidden)
+	return resolveStatusRoot(ctx, s.root, status, s.dungeonSpelling)
 }

@@ -6,8 +6,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Obedience-Corp/camp/internal/config"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/Obedience-Corp/camp/internal/workflow"
 )
@@ -50,12 +48,12 @@ Examples:
 				return err
 			}
 
-			globalCfg, err := config.LoadGlobalConfig(ctx)
+			dungeonSpelling, err := campaignDungeonSpelling(ctx)
 			if err != nil {
-				return camperrors.Wrap(err, "loading global config")
+				return err
 			}
 
-			svc := workflow.NewService(cwd, workflow.WithDungeonHidden(globalCfg.ResolveDungeonHidden()))
+			svc := workflow.NewService(cwd, workflow.WithDungeonSpelling(dungeonSpelling))
 
 			// Check if workflow schema exists
 			if !svc.HasSchema() {

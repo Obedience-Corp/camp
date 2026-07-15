@@ -129,7 +129,7 @@ func (s *Service) findItem(ctx context.Context, itemName string) (string, string
 			return "", "", ctx.Err()
 		}
 
-		itemPath, exists, err := resolveWorkflowItemPath(ctx, s.root, status, itemName, s.dungeonHidden)
+		itemPath, exists, err := resolveWorkflowItemPath(ctx, s.root, status, itemName, s.dungeonSpelling)
 		if err != nil {
 			return "", "", camperrors.Wrap(err, "locating workflow item")
 		}

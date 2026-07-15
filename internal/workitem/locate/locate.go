@@ -59,11 +59,10 @@ func DetectFromCwd(campaignRoot, cwd string) (*Location, error) {
 		parentRel := filepath.Join("workflow", typeName)
 		sourceRel := filepath.Join("workflow", typeName, slug)
 		resolved, err := spelling.Resolve(context.Background(), filepath.Join(campaignRoot, parentRel))
-		dungeonName := spelling.Visible
-		if err == nil {
-			dungeonName = resolved.Name
+		if err != nil {
+			return nil, err
 		}
-		dungeonRel := filepath.Join("workflow", typeName, dungeonName)
+		dungeonRel := filepath.Join("workflow", typeName, resolved.Name)
 		return &Location{
 			Type:        typeName,
 			Slug:        slug,

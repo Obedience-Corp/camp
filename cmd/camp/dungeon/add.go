@@ -64,7 +64,11 @@ func runDungeonAdd(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return camperrors.Wrap(err, "loading global config")
 	}
-	dungeonName, err := spelling.NameForNew(ctx, cwd, globalCfg.ResolveDungeonHidden())
+	campaignName, err := spelling.CampaignName(ctx, campaignRoot, globalCfg.ResolveDungeonHidden())
+	if err != nil {
+		return camperrors.Wrap(err, "resolving campaign dungeon spelling")
+	}
+	dungeonName, err := spelling.NameForNew(ctx, cwd, campaignName)
 	if err != nil {
 		return camperrors.Wrap(err, "resolving dungeon spelling")
 	}

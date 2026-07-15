@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 
-	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/charmbracelet/huh"
@@ -75,12 +74,12 @@ Examples:
 				return err
 			}
 
-			globalCfg, err := config.LoadGlobalConfig(ctx)
+			dungeonSpelling, err := campaignDungeonSpelling(ctx)
 			if err != nil {
-				return camperrors.Wrap(err, "loading global config")
+				return err
 			}
 
-			svc := workflow.NewService(cwd, workflow.WithDungeonHidden(globalCfg.ResolveDungeonHidden()))
+			svc := workflow.NewService(cwd, workflow.WithDungeonSpelling(dungeonSpelling))
 			result, err := svc.Init(ctx, workflow.InitOptions{
 				Force:         flowAddForce,
 				SchemaVersion: 2,

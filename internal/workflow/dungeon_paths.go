@@ -15,21 +15,21 @@ import (
 // resolveStatusRoot translates a schema status path (e.g. "dungeon/completed",
 // "active", ".") into its actual on-disk directory under root. A leading
 // "dungeon" segment is rewritten to whichever of "dungeon"/".dungeon" is
-// already established under root, or to the hidden-selected spelling when
-// neither exists yet. Non-dungeon statuses are returned unchanged.
-func resolveStatusRoot(ctx context.Context, root, status string, hidden bool) (string, error) {
+// already established under root, or to campaignSpelling when neither exists
+// yet. Non-dungeon statuses are returned unchanged.
+func resolveStatusRoot(ctx context.Context, root, status, campaignSpelling string) (string, error) {
 	if status != spelling.Visible && !strings.HasPrefix(status, spelling.Visible+"/") {
 		return filepath.Join(root, status), nil
 	}
-	name, err := spelling.NameForNew(ctx, root, hidden)
+	name, err := spelling.NameForNew(ctx, root, campaignSpelling)
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join(root, spelling.RewriteRel(status, name)), nil
 }
 
-func resolveWorkflowDestinationPath(ctx context.Context, root, status, itemName string, hidden bool, now time.Time) (string, error) {
-	statusRoot, err := resolveStatusRoot(ctx, root, status, hidden)
+func resolveWorkflowDestinationPath(ctx context.Context, root, status, itemName, campaignSpelling string, now time.Time) (string, error) {
+	statusRoot, err := resolveStatusRoot(ctx, root, status, campaignSpelling)
 	if err != nil {
 		return "", err
 	}
@@ -39,8 +39,8 @@ func resolveWorkflowDestinationPath(ctx context.Context, root, status, itemName 
 	return filepath.Join(statusRoot, itemName), nil
 }
 
-func resolveWorkflowItemPath(ctx context.Context, root, status, itemName string, hidden bool) (string, bool, error) {
-	statusRoot, err := resolveStatusRoot(ctx, root, status, hidden)
+func resolveWorkflowItemPath(ctx context.Context, root, status, itemName, campaignSpelling string) (string, bool, error) {
+	statusRoot, err := resolveStatusRoot(ctx, root, status, campaignSpelling)
 	if err != nil {
 		return "", false, err
 	}

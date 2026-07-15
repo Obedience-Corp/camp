@@ -20,7 +20,10 @@ import (
 //     cached on the service and invalidated on mutation.
 func (s *IntentService) resolveByID(id string) (string, error) {
 	for _, status := range AllStatuses() {
-		p := s.getIntentPath(status, id)
+		p, err := s.getIntentPath(status, id)
+		if err != nil {
+			return "", err
+		}
 		if it, err := s.loadIntent(p); err == nil && it.ID == id {
 			return p, nil
 		}
@@ -44,7 +47,10 @@ func (s *IntentService) resolveByID(id string) (string, error) {
 func (s *IntentService) buildIDIndexLocked() error {
 	index := make(map[string]string)
 	for _, status := range AllStatuses() {
-		dir := filepath.Join(s.intentsDir, s.statusRel(status))
+		dir, err := s.statusDir(status)
+		if err != nil {
+			return err
+		}
 		files, err := os.ReadDir(dir)
 		if err != nil {
 			if os.IsNotExist(err) {

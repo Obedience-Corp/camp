@@ -36,7 +36,10 @@ func (s *IntentService) Find(ctx context.Context, id string) (*Intent, error) {
 
 	// Try fuzzy match (ID contains the search term)
 	for _, status := range AllStatuses() {
-		dir := filepath.Join(s.intentsDir, s.statusRel(status))
+		dir, err := s.statusDir(status)
+		if err != nil {
+			return nil, err
+		}
 		files, err := os.ReadDir(dir)
 		if err != nil {
 			continue // Directory may not exist
@@ -94,7 +97,10 @@ func (s *IntentService) List(ctx context.Context, opts *ListOptions) ([]*Intent,
 			return nil, camperrors.Wrap(err, "context cancelled")
 		}
 
-		dir := filepath.Join(s.intentsDir, s.statusRel(status))
+		dir, err := s.statusDir(status)
+		if err != nil {
+			return nil, err
+		}
 		files, err := os.ReadDir(dir)
 		if err != nil {
 			if os.IsNotExist(err) {

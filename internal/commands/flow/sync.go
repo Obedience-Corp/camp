@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Obedience-Corp/camp/internal/config"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/Obedience-Corp/camp/internal/workflow"
 	"github.com/spf13/cobra"
@@ -36,12 +34,12 @@ Examples:
 				return err
 			}
 
-			globalCfg, err := config.LoadGlobalConfig(ctx)
+			dungeonSpelling, err := campaignDungeonSpelling(ctx)
 			if err != nil {
-				return camperrors.Wrap(err, "loading global config")
+				return err
 			}
 
-			svc := workflow.NewService(cwd, workflow.WithDungeonHidden(globalCfg.ResolveDungeonHidden()))
+			svc := workflow.NewService(cwd, workflow.WithDungeonSpelling(dungeonSpelling))
 			result, err := svc.Sync(ctx, workflow.SyncOptions{DryRun: flowSyncDryRun})
 			if err != nil {
 				return err

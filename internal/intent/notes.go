@@ -47,14 +47,20 @@ func (s *IntentService) GetNote(ctx context.Context, id string) (*Intent, error)
 func (s *IntentService) resolveNoteByID(id string) (string, error) {
 	// Fast path: filename == id (an unrenamed note).
 	for _, status := range NoteStatuses() {
-		p := s.getIntentPath(status, id)
+		p, err := s.getIntentPath(status, id)
+		if err != nil {
+			return "", err
+		}
 		if note, err := s.loadIntent(p); err == nil && note.ID == id {
 			return p, nil
 		}
 	}
 	// Slow path: a renamed note whose filename no longer matches its id.
 	for _, status := range NoteStatuses() {
-		dir := filepath.Join(s.intentsDir, s.statusRel(status))
+		dir, err := s.statusDir(status)
+		if err != nil {
+			return "", err
+		}
 		files, err := os.ReadDir(dir)
 		if err != nil {
 			continue
@@ -87,7 +93,10 @@ func (s *IntentService) ListNotes(ctx context.Context, includeArchived bool) ([]
 
 	var notes []*Intent
 	for _, status := range statuses {
-		dir := filepath.Join(s.intentsDir, s.statusRel(status))
+		dir, err := s.statusDir(status)
+		if err != nil {
+			return nil, err
+		}
 		files, err := os.ReadDir(dir)
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -171,7 +180,10 @@ func (s *IntentService) ArchiveNote(ctx context.Context, id string) (*Intent, er
 	note.Status = StatusNoteArchived
 	note.UpdatedAt = time.Now()
 
-	newPath := s.getIntentPath(StatusNoteArchived, note.ID)
+	newPath, err := s.getIntentPath(StatusNoteArchived, note.ID)
+	if err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(filepath.Dir(newPath), 0755); err != nil {
 		return nil, camperrors.Wrap(err, "creating directory")
 	}
@@ -219,7 +231,10 @@ func (s *IntentService) RestoreNote(ctx context.Context, id string) (*Intent, er
 	note.Status = StatusNote
 	note.UpdatedAt = time.Now()
 
-	newPath := s.getIntentPath(StatusNote, note.ID)
+	newPath, err := s.getIntentPath(StatusNote, note.ID)
+	if err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(filepath.Dir(newPath), 0755); err != nil {
 		return nil, camperrors.Wrap(err, "creating directory")
 	}
@@ -287,7 +302,10 @@ func (s *IntentService) MoveIntentToNote(ctx context.Context, id string) (*Inten
 	it.GatheredInto = ""
 	it.UpdatedAt = time.Now()
 
-	newPath := s.moveTargetPath(it.ID, StatusNote, oldPath)
+	newPath, err := s.moveTargetPath(it.ID, StatusNote, oldPath)
+	if err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(filepath.Dir(newPath), 0755); err != nil {
 		return nil, camperrors.Wrap(err, "creating directory")
 	}
@@ -304,7 +322,9 @@ func (s *IntentService) MoveIntentToNote(ctx context.Context, id string) (*Inten
 		return nil, camperrors.Wrap(err, "removing old intent file")
 	}
 
-	s.removeAllCopies(id, newPath)
+	if err := s.removeAllCopies(id, newPath); err != nil {
+		return nil, err
+	}
 	it.Path = newPath
 	s.invalidateIDIndex()
 	return it, nil
@@ -344,7 +364,10 @@ func (s *IntentService) MoveNoteToStatus(ctx context.Context, id string, newStat
 	note.Type = newType
 	note.UpdatedAt = time.Now()
 
-	newPath := s.moveTargetPath(note.ID, newStatus, oldPath)
+	newPath, err := s.moveTargetPath(note.ID, newStatus, oldPath)
+	if err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(filepath.Dir(newPath), 0755); err != nil {
 		return nil, camperrors.Wrap(err, "creating directory")
 	}
