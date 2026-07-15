@@ -267,6 +267,98 @@ func TestVerifyAgainstSnapshot(t *testing.T) {
 	}
 }
 
+// mergeStaged must not overwrite a live file that no longer matches the
+// baseline — the case a local writer touching an unprotected path during the
+// transfer window produces. This is the no-clobber guarantee that a
+// pre-transfer exclude scan alone cannot provide.
+func TestMergeStaged_PreservesLateLocalWrite(t *testing.T) {
+	camp := t.TempDir()
+	writeArtifact(t, camp, "media/x.bin", "LOCAL EDIT DURING TRANSFER")
+	dest := filepath.Join(camp, "media")
+
+	// Baseline recorded x.bin as a different (smaller) version, so the current
+	// live file does not match it — exactly what a mid-transfer local edit
+	// looks like at merge time.
+	baseline := &Manifest{Version: 1, Root: "media", Files: []FileEntry{
+		{Path: "x.bin", Size: 2, MTime: 1},
+	}}
+
+	staging := filepath.Join(camp, ".campaign", "cache", "stg")
+	if err := os.MkdirAll(staging, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(staging, "x.bin"), []byte("peer version"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	late, err := mergeStaged(staging, dest, baseline)
+	if err != nil {
+		t.Fatalf("mergeStaged() error = %v", err)
+	}
+	if len(late) != 1 || late[0] != "x.bin" {
+		t.Errorf("late conflicts = %v, want [x.bin]", late)
+	}
+	assertArtifact(t, camp, "media/x.bin", "LOCAL EDIT DURING TRANSFER")
+}
+
+func TestMergeStaged_MovesAgreedAndNewFiles(t *testing.T) {
+	ctx := context.Background()
+	camp := t.TempDir()
+	writeArtifact(t, camp, "media/agreed.bin", "v1")
+
+	// Baseline matches the current live agreed.bin exactly.
+	baseline, err := BuildManifest(ctx, camp, "media")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(camp, "media")
+
+	staging := filepath.Join(camp, ".campaign", "cache", "stg")
+	if err := os.MkdirAll(filepath.Join(staging, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(staging, "agreed.bin"), []byte("peer-v2"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(staging, "sub", "new.bin"), []byte("brand new"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	late, err := mergeStaged(staging, dest, baseline)
+	if err != nil {
+		t.Fatalf("mergeStaged() error = %v", err)
+	}
+	if len(late) != 0 {
+		t.Errorf("late conflicts = %v, want none", late)
+	}
+	assertArtifact(t, camp, "media/agreed.bin", "peer-v2")     // agreed -> updated
+	assertArtifact(t, camp, "media/sub/new.bin", "brand new") // new nested file -> created
+}
+
+func TestMergeStaged_ProtectsOutOfBandLocalFile(t *testing.T) {
+	camp := t.TempDir()
+	writeArtifact(t, camp, "media/z.bin", "created locally, not in baseline")
+	dest := filepath.Join(camp, "media")
+
+	staging := filepath.Join(camp, ".campaign", "cache", "stg")
+	if err := os.MkdirAll(staging, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(staging, "z.bin"), []byte("peer z"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	baseline := &Manifest{Version: 1, Root: "media"} // empty: z.bin never agreed
+
+	late, err := mergeStaged(staging, dest, baseline)
+	if err != nil {
+		t.Fatalf("mergeStaged() error = %v", err)
+	}
+	if len(late) != 1 || late[0] != "z.bin" {
+		t.Errorf("late conflicts = %v, want [z.bin]", late)
+	}
+	assertArtifact(t, camp, "media/z.bin", "created locally, not in baseline")
+}
+
 func requireRsync(t *testing.T) {
 	t.Helper()
 	if _, err := exec.LookPath("rsync"); err != nil {
