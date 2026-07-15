@@ -38,6 +38,9 @@ type IntentItem struct {
 	PromotedTo        string   `json:"promoted_to,omitempty"`
 	CreatedAt         string   `json:"created_at"`
 	UpdatedAt         string   `json:"updated_at,omitempty"`
+	AssignedTo        string   `json:"assigned_to,omitempty"`
+	AssignedAt        string   `json:"assigned_at,omitempty"`
+	WorkRef           []string `json:"work_ref,omitempty"`
 	Path              string   `json:"path"`
 }
 
@@ -130,10 +133,15 @@ func intentItemFromIntent(campaignRoot string, i *intentcore.Intent) (IntentItem
 		PromotionCriteria: i.PromotionCriteria,
 		PromotedTo:        i.PromotedTo,
 		CreatedAt:         i.CreatedAt.Format(time.RFC3339),
+		AssignedTo:        i.AssignedTo,
+		WorkRef:           i.WorkRef,
 		Path:              relPath,
 	}
 	if !i.UpdatedAt.IsZero() {
 		item.UpdatedAt = i.UpdatedAt.Format(time.RFC3339)
+	}
+	if !i.AssignedAt.IsZero() {
+		item.AssignedAt = i.AssignedAt.Format(time.RFC3339)
 	}
 	return item, nil
 }
