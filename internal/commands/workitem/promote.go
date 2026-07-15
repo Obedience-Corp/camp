@@ -134,6 +134,18 @@ func runWorkitemPromote(cmd *cobra.Command, opts runWorkitemPromoteOptions) erro
 		return err
 	}
 
+	// Read .workitem metadata now, before any promote branch runs: festival
+	// and doc targets relocate or remove loc.SourcePath while shelving the
+	// source, so the marker will not be readable from here afterward. The
+	// ledger correlates events by the real generated id/ref, not the slug;
+	// a directory promoted without ever being adopted (no marker) still
+	// promotes today, so a missing or unreadable marker falls back to the
+	// slug rather than failing the command.
+	ledgerID, ledgerRef, ledgerTitle := loc.Slug, "", ""
+	if meta, metaErr := wkitem.LoadMetadata(ctx, loc.SourcePath); metaErr == nil && meta != nil {
+		ledgerID, ledgerRef, ledgerTitle = meta.ID, meta.Ref, meta.Title
+	}
+
 	result := workitemPromoteResult{
 		ID:     loc.Slug,
 		Type:   loc.Type,
@@ -168,17 +180,17 @@ func runWorkitemPromote(cmd *cobra.Command, opts runWorkitemPromoteOptions) erro
 		return nil
 	}
 
-	if err := wkaudit.AppendEvent(ctx, root, wkaudit.Event{
+	appendWorkitemAuditEvent(ctx, cmd, root, wkaudit.Event{
 		Event:      wkaudit.EventPromote,
-		ID:         result.ID,
+		ID:         ledgerID,
+		Ref:        ledgerRef,
+		Title:      ledgerTitle,
 		Type:       result.Type,
 		From:       result.From,
 		To:         result.To,
 		Target:     result.Target,
 		PromotedTo: result.PromotedTo,
-	}); err != nil {
-		return camperrors.Wrap(err, "writing workitem audit event")
-	}
+	})
 	ci.destPaths = append(ci.destPaths, filepath.Join(root, ".campaign", "workitems", wkaudit.AuditFile))
 
 	ledger.NewFromRoot(ctx, root, ledger.WarnTo(cmd.ErrOrStderr())).
