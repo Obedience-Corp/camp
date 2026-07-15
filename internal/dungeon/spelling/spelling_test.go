@@ -1,21 +1,60 @@
 package spelling
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
+
+func TestResolve_BothSpellingsIsAConflict(t *testing.T) {
+	parent := t.TempDir()
+	mustMkdir(t, filepath.Join(parent, Visible))
+	mustMkdir(t, filepath.Join(parent, Hidden))
+
+	_, err := Resolve(context.Background(), parent)
+	if err == nil {
+		t.Fatal("Resolve() error = nil, want a conflict: resolving either spelling hides the other")
+	}
+	if !errors.Is(err, camperrors.ErrConflict) {
+		t.Errorf("errors.Is(err, ErrConflict) = false, want true (err = %v)", err)
+	}
+
+	var conflict *ConflictError
+	if !errors.As(err, &conflict) {
+		t.Fatalf("errors.As(err, *ConflictError) = false, want true (err = %v)", err)
+	}
+	if conflict.Parent != parent {
+		t.Errorf("Parent = %q, want %q", conflict.Parent, parent)
+	}
+	if !strings.Contains(err.Error(), MigrateCommand) {
+		t.Errorf("error must tell the user how to get unstuck by naming %q, got: %v", MigrateCommand, err)
+	}
+}
+
+func TestResolve_ConflictErrorIsMatchesByParent(t *testing.T) {
+	err := error(NewConflict("/a/b"))
+	if !errors.Is(err, &ConflictError{Parent: "/a/b"}) {
+		t.Error("conflict should match a ConflictError with the same parent")
+	}
+	if errors.Is(err, &ConflictError{Parent: "/other"}) {
+		t.Error("conflict should not match a ConflictError with a different parent")
+	}
+	if !errors.Is(err, &ConflictError{}) {
+		t.Error("conflict should match a parentless ConflictError probe")
+	}
+}
 
 func TestResolve(t *testing.T) {
 	tests := []struct {
-		name        string
-		setup       func(t *testing.T, parent string)
-		wantName    string
-		wantExists  bool
-		wantWarning bool
+		name       string
+		setup      func(t *testing.T, parent string)
+		wantName   string
+		wantExists bool
 	}{
 		{
 			name:       "neither spelling exists",
@@ -38,16 +77,6 @@ func TestResolve(t *testing.T) {
 			},
 			wantName:   Hidden,
 			wantExists: true,
-		},
-		{
-			name: "both exist prefers visible and warns",
-			setup: func(t *testing.T, parent string) {
-				mustMkdir(t, filepath.Join(parent, Visible))
-				mustMkdir(t, filepath.Join(parent, Hidden))
-			},
-			wantName:    Visible,
-			wantExists:  true,
-			wantWarning: true,
 		},
 		{
 			name: "non-directory file named dungeon is ignored",
@@ -76,9 +105,6 @@ func TestResolve(t *testing.T) {
 			if got.Exists != tt.wantExists {
 				t.Errorf("Exists = %v, want %v", got.Exists, tt.wantExists)
 			}
-			if (got.Warning != "") != tt.wantWarning {
-				t.Errorf("Warning = %q, wantWarning = %v", got.Warning, tt.wantWarning)
-			}
 			wantPath := filepath.Join(parent, tt.wantName)
 			if got.Path != wantPath {
 				t.Errorf("Path = %q, want %q", got.Path, wantPath)
@@ -100,49 +126,67 @@ func TestResolve_ContextCancelled(t *testing.T) {
 	}
 }
 
+func TestNameForNew_RejectsUnresolvedCampaignSpelling(t *testing.T) {
+	for _, campaignName := range []string{"", "Dungeon", "hidden", "true"} {
+		t.Run("campaignName="+campaignName, func(t *testing.T) {
+			_, err := NameForNew(context.Background(), t.TempDir(), campaignName)
+			if err == nil {
+				t.Fatalf("NameForNew(%q) error = nil, want an error: the caller must resolve the campaign spelling first", campaignName)
+			}
+			if !errors.Is(err, camperrors.ErrInvalidInput) {
+				t.Errorf("errors.Is(err, ErrInvalidInput) = false, want true (err = %v)", err)
+			}
+		})
+	}
+}
+
+func TestNameForNew_ConflictPropagates(t *testing.T) {
+	parent := t.TempDir()
+	mustMkdir(t, filepath.Join(parent, Visible))
+	mustMkdir(t, filepath.Join(parent, Hidden))
+
+	if _, err := NameForNew(context.Background(), parent, Hidden); !errors.Is(err, camperrors.ErrConflict) {
+		t.Fatalf("NameForNew() error = %v, want a conflict", err)
+	}
+}
+
 func TestNameForNew(t *testing.T) {
 	tests := []struct {
-		name   string
-		setup  func(t *testing.T, parent string)
-		hidden bool
-		want   string
+		name         string
+		setup        func(t *testing.T, parent string)
+		campaignName string
+		want         string
 	}{
 		{
-			name:   "neither exists, hidden requested",
-			setup:  func(t *testing.T, parent string) {},
-			hidden: true,
-			want:   Hidden,
+			name:         "nothing established, campaign is hidden",
+			setup:        func(t *testing.T, parent string) {},
+			campaignName: Hidden,
+			want:         Hidden,
 		},
 		{
-			name:   "neither exists, visible requested",
-			setup:  func(t *testing.T, parent string) {},
-			hidden: false,
-			want:   Visible,
+			// The regression the migrate model exists to prevent: a new
+			// directory inside a legacy campaign must not adopt the hidden
+			// spelling just because dungeon_hidden defaults to true.
+			name:         "nothing established, campaign is visible",
+			setup:        func(t *testing.T, parent string) {},
+			campaignName: Visible,
+			want:         Visible,
 		},
 		{
-			name: "visible already exists, hidden requested keeps visible",
+			name: "visible already exists under parent wins over a hidden campaign",
 			setup: func(t *testing.T, parent string) {
 				mustMkdir(t, filepath.Join(parent, Visible))
 			},
-			hidden: true,
-			want:   Visible,
+			campaignName: Hidden,
+			want:         Visible,
 		},
 		{
-			name: "hidden already exists, visible requested keeps hidden",
+			name: "hidden already exists under parent wins over a visible campaign",
 			setup: func(t *testing.T, parent string) {
 				mustMkdir(t, filepath.Join(parent, Hidden))
 			},
-			hidden: false,
-			want:   Hidden,
-		},
-		{
-			name: "both exist keeps visible regardless of request",
-			setup: func(t *testing.T, parent string) {
-				mustMkdir(t, filepath.Join(parent, Visible))
-				mustMkdir(t, filepath.Join(parent, Hidden))
-			},
-			hidden: true,
-			want:   Visible,
+			campaignName: Visible,
+			want:         Hidden,
 		},
 	}
 
@@ -151,7 +195,7 @@ func TestNameForNew(t *testing.T) {
 			parent := t.TempDir()
 			tt.setup(t, parent)
 
-			got, err := NameForNew(context.Background(), parent, tt.hidden)
+			got, err := NameForNew(context.Background(), parent, tt.campaignName)
 			if err != nil {
 				t.Fatalf("NameForNew() error = %v", err)
 			}
@@ -204,22 +248,13 @@ func TestIsDungeonName(t *testing.T) {
 	}
 }
 
-func TestWarnIfConflicting(t *testing.T) {
-	t.Run("no warning is a no-op", func(t *testing.T) {
-		var buf bytes.Buffer
-		WarnIfConflicting(&buf, Resolved{})
-		if buf.Len() != 0 {
-			t.Errorf("expected no output, got %q", buf.String())
-		}
-	})
-
-	t.Run("warning is written", func(t *testing.T) {
-		var buf bytes.Buffer
-		WarnIfConflicting(&buf, Resolved{Warning: "both exist"})
-		if got := buf.String(); got != "warning: both exist\n" {
-			t.Errorf("output = %q, want %q", got, "warning: both exist\n")
-		}
-	})
+func TestNameFor(t *testing.T) {
+	if got := NameFor(true); got != Hidden {
+		t.Errorf("NameFor(true) = %q, want %q", got, Hidden)
+	}
+	if got := NameFor(false); got != Visible {
+		t.Errorf("NameFor(false) = %q, want %q", got, Visible)
+	}
 }
 
 func mustMkdir(t *testing.T, path string) {

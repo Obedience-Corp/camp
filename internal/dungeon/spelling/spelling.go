@@ -2,14 +2,20 @@
 // dungeon directory can have: the visible "dungeon" and the hidden
 // ".dungeon". Every camp code path that locates or creates a dungeon
 // directory should go through this package instead of hardcoding either
-// spelling, so existing campaigns (visible) and new campaigns (hidden by
-// default) are both handled uniformly.
+// spelling.
+//
+// A campaign uses exactly one spelling. "dungeon_hidden" decides which one a
+// brand-new campaign is scaffolded with; from then on the campaign's own
+// layout decides, and "camp dungeon migrate" converts a legacy campaign to
+// the hidden spelling in one sweep. Both spellings under the same parent is a
+// broken state rather than a supported one: whichever spelling lost would be
+// invisible to every listing, so Resolve reports a ConflictError instead of
+// picking one.
 package spelling
 
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,7 +28,47 @@ const (
 	Visible = "dungeon"
 	// Hidden is the dotfile dungeon directory name used by new campaigns.
 	Hidden = ".dungeon"
+
+	// MigrateCommand converts a campaign to the hidden spelling. It is named
+	// in ConflictError so the error tells the user how to get unstuck.
+	MigrateCommand = "camp dungeon migrate"
 )
+
+// ConflictError reports that both dungeon spellings exist under Parent.
+//
+// Resolving this to either spelling would hide whatever is filed under the
+// other one, so camp refuses to guess and asks for the two to be reconciled.
+type ConflictError struct {
+	// Parent is the directory holding both "dungeon" and ".dungeon".
+	Parent string
+}
+
+// Error implements the error interface.
+func (e *ConflictError) Error() string {
+	return fmt.Sprintf(
+		"both %s/ and %s/ exist under %s: a campaign uses exactly one dungeon spelling, "+
+			"so camp cannot tell which one holds your work and resolving either would hide the other. "+
+			"Move the contents of one into the other and delete the empty directory, then run %q "+
+			"to convert the campaign to %s/.",
+		Visible, Hidden, e.Parent, MigrateCommand, Hidden,
+	)
+}
+
+// Is reports whether e matches target. A ConflictError matches ErrConflict, or
+// another *ConflictError with the same Parent.
+func (e *ConflictError) Is(target error) bool {
+	if target == camperrors.ErrConflict {
+		return true
+	}
+	t, ok := target.(*ConflictError)
+	if !ok {
+		return false
+	}
+	return t.Parent == "" || e.Parent == t.Parent
+}
+
+// NewConflict creates a ConflictError for parent.
+func NewConflict(parent string) *ConflictError { return &ConflictError{Parent: parent} }
 
 // Resolved describes the outcome of resolving a dungeon directory name under
 // a parent directory.
@@ -33,17 +79,17 @@ type Resolved struct {
 	Path string
 	// Exists reports whether Path was already present on disk.
 	Exists bool
-	// Warning is non-empty only when both spellings exist under parent.
-	Warning string
 }
+
+// Hidden reports whether r resolved to the hidden spelling.
+func (r Resolved) Hidden() bool { return r.Name == Hidden }
 
 // Resolve inspects parent for "dungeon" and ".dungeon" subdirectories.
 //
-// If both exist, the visible spelling wins and Warning explains the
-// conflict. If exactly one exists, that spelling is returned. If neither
-// exists, Resolve reports Exists=false and defaults Name to Visible; callers
-// that are about to create a new dungeon directory should decide the
-// spelling with NameForNew instead of relying on this fallback.
+// Exactly one present returns that spelling. Both present returns a
+// ConflictError. Neither present reports Exists=false and defaults Name to
+// Visible; callers about to create a dungeon should use NameForNew rather
+// than relying on that fallback.
 func Resolve(ctx context.Context, parent string) (Resolved, error) {
 	if err := ctx.Err(); err != nil {
 		return Resolved{}, camperrors.Wrap(err, "context cancelled")
@@ -63,15 +109,7 @@ func Resolve(ctx context.Context, parent string) (Resolved, error) {
 
 	switch {
 	case visibleOK && hiddenOK:
-		return Resolved{
-			Name:   Visible,
-			Path:   visiblePath,
-			Exists: true,
-			Warning: fmt.Sprintf(
-				"both %s and %s exist under %s; using %s",
-				Visible, Hidden, parent, Visible,
-			),
-		}, nil
+		return Resolved{}, NewConflict(parent)
 	case visibleOK:
 		return Resolved{Name: Visible, Path: visiblePath, Exists: true}, nil
 	case hiddenOK:
@@ -82,11 +120,19 @@ func Resolve(ctx context.Context, parent string) (Resolved, error) {
 }
 
 // NameForNew decides the directory name a brand-new dungeon under parent
-// should use. If a dungeon already exists under parent (either spelling),
-// its established name wins so repeated init/repair calls stay idempotent
-// and never create a second copy alongside it. Otherwise hidden selects
-// between the hidden and visible spelling.
-func NameForNew(ctx context.Context, parent string, hidden bool) (string, error) {
+// should use.
+//
+// A dungeon already under parent keeps its established name, so repeated
+// init/repair calls stay idempotent. Otherwise campaignName wins: a new
+// directory inside an existing campaign follows what that campaign already
+// uses, never the dungeon_hidden setting, because a campaign that accreted
+// one spelling next to the other is exactly the broken state Resolve rejects.
+// Resolve campaignName with CampaignName.
+func NameForNew(ctx context.Context, parent, campaignName string) (string, error) {
+	if !IsDungeonName(campaignName) {
+		return "", camperrors.Wrapf(camperrors.ErrInvalidInput,
+			"campaign dungeon spelling %q must be %q or %q", campaignName, Visible, Hidden)
+	}
 	resolved, err := Resolve(ctx, parent)
 	if err != nil {
 		return "", err
@@ -94,10 +140,7 @@ func NameForNew(ctx context.Context, parent string, hidden bool) (string, error)
 	if resolved.Exists {
 		return resolved.Name, nil
 	}
-	if hidden {
-		return Hidden, nil
-	}
-	return Visible, nil
+	return campaignName, nil
 }
 
 // RewriteRel rewrites the leading "dungeon" path segment of rel (e.g.
@@ -118,13 +161,12 @@ func IsDungeonName(name string) bool {
 	return name == Visible || name == Hidden
 }
 
-// WarnIfConflicting writes resolved.Warning to w when both spellings exist
-// under the resolved parent. It is a no-op otherwise.
-func WarnIfConflicting(w io.Writer, resolved Resolved) {
-	if resolved.Warning == "" {
-		return
+// NameFor returns the spelling selected by a dungeon_hidden setting value.
+func NameFor(hidden bool) string {
+	if hidden {
+		return Hidden
 	}
-	_, _ = fmt.Fprintln(w, "warning: "+resolved.Warning)
+	return Visible
 }
 
 func isDir(path string) (bool, error) {

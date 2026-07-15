@@ -2,7 +2,6 @@ package dungeon
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -69,10 +68,12 @@ func ResolveContext(ctx context.Context, campaignRoot, cwd string) (Context, err
 
 		resolved, err := spelling.Resolve(ctx, dir)
 		if err != nil {
+			if camperrors.Is(err, camperrors.ErrConflict) {
+				return Context{}, err
+			}
 			return Context{}, camperrors.Wrapf(err, "resolving dungeon spelling under %s", dir)
 		}
 		if resolved.Exists && !isFestOwned(root, dir) {
-			spelling.WarnIfConflicting(os.Stderr, resolved)
 			return Context{
 				DungeonPath: resolved.Path,
 				ParentPath:  dir,

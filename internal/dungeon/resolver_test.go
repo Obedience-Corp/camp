@@ -5,8 +5,10 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/Obedience-Corp/camp/internal/dungeon/spelling"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
@@ -192,7 +194,11 @@ func TestResolveContext_HiddenSpelling(t *testing.T) {
 	}
 }
 
-func TestResolveContext_BothSpellingsPrefersVisible(t *testing.T) {
+// TestResolveContext_BothSpellingsErrors covers the rule that replaced
+// prefer-visible-and-warn: resolving to either spelling would make everything
+// filed under the other invisible to every listing, with only a warning to say
+// so. Failing loudly with migration instructions is the supported outcome.
+func TestResolveContext_BothSpellingsErrors(t *testing.T) {
 	campaignRoot := t.TempDir()
 
 	visibleDungeon := filepath.Join(campaignRoot, "dungeon")
@@ -205,11 +211,14 @@ func TestResolveContext_BothSpellingsPrefersVisible(t *testing.T) {
 	}
 
 	got, err := ResolveContext(context.Background(), campaignRoot, campaignRoot)
-	if err != nil {
-		t.Fatalf("ResolveContext() error = %v", err)
+	if err == nil {
+		t.Fatalf("ResolveContext() = %+v, want a conflict error rather than a silently chosen spelling", got)
 	}
-	if got.DungeonPath != mustEval(t, visibleDungeon) {
-		t.Fatalf("DungeonPath = %q, want visible %q", got.DungeonPath, mustEval(t, visibleDungeon))
+	if !errors.Is(err, camperrors.ErrConflict) {
+		t.Fatalf("errors.Is(err, ErrConflict) = false, want true (err = %v)", err)
+	}
+	if !strings.Contains(err.Error(), spelling.MigrateCommand) {
+		t.Errorf("error should name %q so the user can get unstuck, got: %v", spelling.MigrateCommand, err)
 	}
 }
 
