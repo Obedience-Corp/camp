@@ -1,6 +1,6 @@
 ## camp workitem promote
 
-Promote a workitem to a festival, doc, or dungeon status
+Promote a workitem to a festival, doc, or dungeon
 
 ### Synopsis
 

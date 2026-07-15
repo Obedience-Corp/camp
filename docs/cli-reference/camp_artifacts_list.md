@@ -1,0 +1,24 @@
+## camp artifacts list
+
+List declared artifact roots
+
+```
+camp artifacts list [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for list
+      --json   Output as JSON for scripting
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+
+### SEE ALSO
+
+* [camp artifacts](camp_artifacts.md)	 - Manage declared artifact roots (.campaign/artifacts.yaml)
