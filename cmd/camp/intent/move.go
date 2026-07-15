@@ -21,7 +21,7 @@ import (
 var intentMoveCmd = &cobra.Command{
 	Use:   "move <id> <status>",
 	Short: "Move idea to a different status",
-	Long: `Transition an intent between lifecycle statuses.
+	Long: `Transition an idea between lifecycle statuses.
 
 VALID STATUSES:
   inbox      Captured, not yet reviewed
@@ -42,7 +42,7 @@ You can use short dungeon names (done) or canonical paths (dungeon/done).
 Examples:
   camp idea move add-dark ready                         Mark as ready
   camp idea move add-dark done --reason "completed"     Mark as done
-  camp idea move add-dark killed --reason "superseded"  Kill intent`,
+  camp idea move add-dark killed --reason "superseded"  Kill idea`,
 	Args: cobra.ExactArgs(2),
 	RunE: runIntentMove,
 }
@@ -86,20 +86,20 @@ func runIntentMove(cmd *cobra.Command, args []string) error {
 
 	// Ensure directories exist and migrate legacy layout
 	if err := svc.EnsureDirectories(ctx); err != nil {
-		return camperrors.Wrap(err, "ensuring intent directories")
+		return camperrors.Wrap(err, "ensuring idea directories")
 	}
 
 	// Get intent title for commit message (before moving)
 	i, err := svc.Find(ctx, id)
 	if err != nil {
-		return camperrors.Newf("intent not found: %s", id)
+		return camperrors.Newf("idea not found: %s", id)
 	}
 	intentTitle := i.Title
 	sourcePath := i.Path
 	prevStatus := i.Status
 
 	if prevStatus == status {
-		fmt.Printf("Intent already in %s status: %s\n", status, i.Path)
+		fmt.Printf("Idea already in %s status: %s\n", status, i.Path)
 		return nil
 	}
 
@@ -114,10 +114,10 @@ func runIntentMove(cmd *cobra.Command, args []string) error {
 	// Move the intent
 	result, err := svc.Move(ctx, id, status)
 	if err != nil {
-		return camperrors.Wrap(err, "failed to move intent")
+		return camperrors.Wrap(err, "failed to move idea")
 	}
 
-	fmt.Printf("✓ Intent moved to %s: %s\n", status, result.Path)
+	fmt.Printf("✓ Idea moved to %s: %s\n", status, result.Path)
 
 	// Log audit event
 	if err := appendIntentAuditEvent(ctx, resolver.Intents(), audit.Event{

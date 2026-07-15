@@ -99,7 +99,7 @@ func outputIntentCountPayload(w io.Writer, campaignRoot string, counts []intentc
 func outputIntentAddPayload(w io.Writer, campaignRoot string, i *intentcore.Intent) error {
 	relPath, err := pathutil.RelativeToRoot(campaignRoot, i.Path)
 	if err != nil {
-		return camperrors.Wrap(err, "relativizing intent path")
+		return camperrors.Wrap(err, "relativizing idea path")
 	}
 	return encodeIntentJSON(w, IntentAddPayload{
 		SchemaVersion: IntentJSONVersion,
@@ -113,7 +113,7 @@ func outputIntentAddPayload(w io.Writer, campaignRoot string, i *intentcore.Inte
 func intentItemFromIntent(campaignRoot string, i *intentcore.Intent) (IntentItem, error) {
 	relPath, err := pathutil.RelativeToRoot(campaignRoot, i.Path)
 	if err != nil {
-		return IntentItem{}, camperrors.Wrap(err, "relativizing intent path")
+		return IntentItem{}, camperrors.Wrap(err, "relativizing idea path")
 	}
 	item := IntentItem{
 		ID:                i.ID,

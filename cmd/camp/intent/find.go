@@ -23,10 +23,10 @@ func newIntentFindCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "find [query]",
 		Short: "Search for ideas by title or content",
-		Long: `Search for intents across all statuses by title, content, or ID.
+		Long: `Search for ideas across all statuses by title, content, or ID.
 
 The search is case-insensitive and matches partial strings.
-Without a query, returns all intents.
+Without a query, returns all ideas.
 
 OUTPUT FORMATS:
   table (default)   Human-readable table with columns
@@ -34,10 +34,10 @@ OUTPUT FORMATS:
   json              Full metadata in JSON format
 
 Examples:
-  camp idea find                   List all intents
-  camp idea find dark              Find intents containing "dark"
-  camp idea find "bug fix"         Find intents with "bug fix"
-  camp idea find -f simple auth    Get IDs of auth-related intents`,
+  camp idea find                   List all ideas
+  camp idea find dark              Find ideas containing "dark"
+  camp idea find "bug fix"         Find ideas with "bug fix"
+  camp idea find -f simple auth    Get IDs of auth-related ideas`,
 	}
 	jsonRequested := func() bool { return intentJSONRequested(cmd, &jsonOut) }
 	cmd.Args = jsoncontract.Args(IntentJSONVersion, jsonRequested, cobra.MaximumNArgs(1))
@@ -87,7 +87,7 @@ func runIntentFind(cmd *cobra.Command, args []string) error {
 	// Search for intents
 	intents, err := svc.Search(ctx, query)
 	if err != nil {
-		return camperrors.Wrap(err, "failed to search intents")
+		return camperrors.Wrap(err, "failed to search ideas")
 	}
 
 	// Apply limit
@@ -109,9 +109,9 @@ func runIntentFind(cmd *cobra.Command, args []string) error {
 func outputFindTable(intents []*intent.Intent, query string) error {
 	if len(intents) == 0 {
 		if query != "" {
-			fmt.Printf("No intents found matching %q\n", query)
+			fmt.Printf("No ideas found matching %q\n", query)
 		} else {
-			fmt.Println("No intents found.")
+			fmt.Println("No ideas found.")
 		}
 		return nil
 	}
@@ -161,7 +161,7 @@ func outputFindTable(intents []*intent.Intent, query string) error {
 	if query != "" {
 		fmt.Printf("\n%d result(s) for %q\n", len(intents), query)
 	} else {
-		fmt.Printf("\n%d intent(s)\n", len(intents))
+		fmt.Printf("\n%d idea(s)\n", len(intents))
 	}
 	return nil
 }

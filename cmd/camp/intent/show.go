@@ -22,7 +22,7 @@ func newIntentShowCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show <id>",
 		Short: "Show detailed idea information",
-		Long: `Display detailed information about a specific intent.
+		Long: `Display detailed information about a specific idea.
 
 Supports partial ID matching - you can use:
   - Full ID: 20260119-153412-add-retry-logic
@@ -86,7 +86,7 @@ func runIntentShow(cmd *cobra.Command, args []string) error {
 	// Find the intent (supports partial matching)
 	i, err := svc.Find(ctx, id)
 	if err != nil {
-		return camperrors.Newf("intent not found: %s", id)
+		return camperrors.Newf("idea not found: %s", id)
 	}
 
 	// Format and output
@@ -103,7 +103,7 @@ func runIntentShow(cmd *cobra.Command, args []string) error {
 func showText(i *intent.Intent) error {
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("Intent: %s\n\n", i.ID))
+	fmt.Fprintf(&sb, "Idea: %s\n\n", i.ID)
 	sb.WriteString(fmt.Sprintf("Title:    %s\n", i.Title))
 	sb.WriteString(fmt.Sprintf("Type:     %s\n", i.Type))
 	sb.WriteString(fmt.Sprintf("Status:   %s\n", i.Status))

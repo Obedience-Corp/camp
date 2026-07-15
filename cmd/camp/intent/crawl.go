@@ -24,13 +24,13 @@ import (
 var intentCrawlCmd = &cobra.Command{
 	Use:   "crawl",
 	Short: "Interactive idea triage",
-	Long: `Walk live intents one at a time and decide their fate.
+	Long: `Walk live ideas one at a time and decide their fate.
 
 Default scope is the working set: inbox, ready, and active. Each candidate is
 shown with a compact preview. For each one you can keep, move to another
 status, skip, or quit. Moves to dungeon statuses require a reason.
 
-Existing dungeon intents are not crawl candidates. Use 'camp idea move' to
+Existing dungeon ideas are not crawl candidates. Use 'camp idea move' to
 restore them explicitly.
 
 Examples:
@@ -77,7 +77,7 @@ func runIntentCrawl(cmd *cobra.Command, _ []string) error {
 	intentsDir := resolver.Intents()
 	svc := intent.NewIntentService(campaignRoot, intentsDir)
 	if err := svc.EnsureDirectories(ctx); err != nil {
-		return camperrors.Wrap(err, "ensuring intent directories")
+		return camperrors.Wrap(err, "ensuring idea directories")
 	}
 
 	opts := intentcrawl.Options{
@@ -89,7 +89,7 @@ func runIntentCrawl(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	if !ui.IsTerminal() {
-		return camperrors.Wrap(camperrors.ErrInvalidInput, "intent crawl requires an interactive terminal")
+		return camperrors.Wrap(camperrors.ErrInvalidInput, "idea crawl requires an interactive terminal")
 	}
 
 	runCfg := intentcrawl.Config{
@@ -150,9 +150,9 @@ func parseStatusFlags(raw []string) ([]intent.Status, error) {
 func printIntentCrawlSummary(result *intentcrawl.Result, aborted bool) {
 	fmt.Println()
 	if aborted {
-		fmt.Printf("%s Intent crawl cancelled.\n", ui.InfoIcon())
+		fmt.Printf("%s Idea crawl cancelled.\n", ui.InfoIcon())
 	} else {
-		fmt.Printf("%s Intent crawl complete!\n", ui.SuccessIcon())
+		fmt.Printf("%s Idea crawl complete!\n", ui.SuccessIcon())
 	}
 
 	targets := make([]string, 0, len(result.Summary.Moved))
@@ -216,9 +216,9 @@ func commitIntentCrawl(ctx context.Context, campaignRoot, campaignID string, res
 		return nil
 	}
 	if res.Err != nil {
-		fmt.Printf("\n%s Intent crawl moves were applied on disk, but auto-commit failed.\n", ui.WarningIcon())
+		fmt.Printf("\n%s Idea crawl moves were applied on disk, but auto-commit failed.\n", ui.WarningIcon())
 		fmt.Printf("%s %v\n", ui.WarningIcon(), res.Err)
-		return camperrors.Wrap(res.Err, "auto-committing intent crawl changes")
+		return camperrors.Wrap(res.Err, "auto-committing idea crawl changes")
 	}
 	if res.Message != "" {
 		fmt.Printf("\n%s %s\n", ui.InfoIcon(), res.Message)

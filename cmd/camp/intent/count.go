@@ -22,7 +22,7 @@ func newIntentCountCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "count",
 		Short: "Count ideas by status directory",
-		Long: `Display a count of intents grouped by status directory.
+		Long: `Display a count of ideas grouped by status directory.
 
 OUTPUT FORMATS:
   table (default)   Styled summary with counts per status
@@ -65,7 +65,7 @@ func runIntentCount(cmd *cobra.Command, args []string) error {
 
 	counts, total, err := svc.Count(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "counting intents")
+		return camperrors.Wrap(err, "counting ideas")
 	}
 
 	switch {
@@ -82,7 +82,7 @@ func outputCountTable(counts []intent.StatusCount, total int) error {
 	totalStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.AccentColor)
 	dimStyle := lipgloss.NewStyle().Foreground(ui.DimColor)
 
-	fmt.Println(titleStyle.Render("Intent Counts"))
+	fmt.Println(titleStyle.Render("Idea Counts"))
 	fmt.Println()
 
 	for _, sc := range counts {

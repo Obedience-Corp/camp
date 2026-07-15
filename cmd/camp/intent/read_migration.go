@@ -7,7 +7,7 @@ import (
 	intentcore "github.com/Obedience-Corp/camp/internal/intent"
 )
 
-const legacyIntentMigrationWarning = "warning: legacy intent layout detected at workflow/intents/; run 'camp init --repair' to migrate\n"
+const legacyIntentMigrationWarning = "warning: legacy idea layout detected at workflow/intents/; run 'camp init --repair' to migrate\n"
 
 func warnPendingLegacyMigration(svc *intentcore.IntentService) {
 	pending, err := svc.PendingLegacyMigration()

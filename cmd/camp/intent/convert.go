@@ -18,11 +18,11 @@ import (
 var intentConvertCmd = &cobra.Command{
 	Use:   "convert <id>",
 	Short: "Convert a note into an idea",
-	Long: `Promote a note into the intent lifecycle.
+	Long: `Promote a note into the idea lifecycle.
 
 A note lives outside the inbox → ready → active lifecycle. Converting it moves
-the note into inbox/ and attaches an intent type, after which it behaves like
-any other intent. This is the only bridge from a note into the lifecycle.
+the note into inbox/ and attaches an idea type, after which it behaves like
+any other idea. This is the only bridge from a note into the lifecycle.
 
 Examples:
   camp idea convert check-daemon-socket --type idea
@@ -34,7 +34,7 @@ Examples:
 func init() {
 	Cmd.AddCommand(intentConvertCmd)
 
-	intentConvertCmd.Flags().StringP("type", "t", "idea", "Intent type to attach (idea, feature, bug, research, chore)")
+	intentConvertCmd.Flags().StringP("type", "t", "idea", "Type to attach (idea, feature, bug, research, chore)")
 	intentConvertCmd.Flags().Bool("no-commit", false, "Don't create a git commit")
 }
 
@@ -52,7 +52,7 @@ func runIntentConvert(cmd *cobra.Command, args []string) error {
 	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
 	svc := intent.NewIntentService(campaignRoot, resolver.Intents())
 	if err := svc.EnsureDirectories(ctx); err != nil {
-		return camperrors.Wrap(err, "ensuring intent directories")
+		return camperrors.Wrap(err, "ensuring idea directories")
 	}
 
 	note, err := svc.GetNote(ctx, id)
@@ -66,7 +66,7 @@ func runIntentConvert(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "failed to convert note")
 	}
 
-	fmt.Printf("✓ Note converted to %s intent: %s\n", typeFlag, result.Path)
+	fmt.Printf("✓ Note converted to %s idea: %s\n", typeFlag, result.Path)
 
 	if err := appendIntentAuditEvent(ctx, resolver.Intents(), audit.Event{
 		Type:   audit.EventMove,
@@ -87,7 +87,7 @@ func runIntentConvert(cmd *cobra.Command, args []string) error {
 			Options:     opts,
 			Action:      commit.IntentMove,
 			IntentTitle: result.Title,
-			Description: "Converted note to " + typeFlag + " intent",
+			Description: "Converted note to " + typeFlag + " idea",
 		})
 		if commitResult.Message != "" {
 			fmt.Printf("  %s\n", commitResult.Message)

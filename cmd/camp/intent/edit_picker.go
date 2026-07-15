@@ -21,10 +21,10 @@ func resolveIntentByPartialID(ctx context.Context, svc *intent.IntentService, pa
 
 	// If Find failed with not found, provide helpful error
 	if camperrors.Is(err, camperrors.ErrNotFound) {
-		return nil, camperrors.NewNotFound("intent", partialID, nil)
+		return nil, camperrors.NewNotFound("idea", partialID, nil)
 	}
 
-	return nil, camperrors.Wrap(err, "failed to find intent")
+	return nil, camperrors.Wrap(err, "failed to find idea")
 }
 
 // pickIntent shows a fuzzy picker for intent selection.
@@ -48,11 +48,11 @@ func pickIntent(ctx context.Context, svc *intent.IntentService, status, typ, pro
 	// Get intents
 	intents, err := svc.List(ctx, opts)
 	if err != nil {
-		return nil, camperrors.Wrap(err, "failed to list intents")
+		return nil, camperrors.Wrap(err, "failed to list ideas")
 	}
 
 	if len(intents) == 0 {
-		return nil, camperrors.Wrap(camperrors.ErrNotFound, "no intents found")
+		return nil, camperrors.Wrap(camperrors.ErrNotFound, "no ideas found")
 	}
 
 	// Show fuzzy picker
@@ -72,7 +72,7 @@ func pickIntent(ctx context.Context, svc *intent.IntentService, status, typ, pro
 				concept,
 			)
 		},
-		fuzzyfinder.WithPromptString("Select intent: "),
+		fuzzyfinder.WithPromptString("Select idea: "),
 		fuzzyfinder.WithPreviewWindow(func(i, w, h int) string {
 			if i < 0 || i >= len(intents) {
 				return ""

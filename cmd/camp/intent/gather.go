@@ -39,21 +39,21 @@ var (
 var intentGatherCmd = &cobra.Command{
 	Use:   "gather [ids...]",
 	Short: "Gather related ideas into a unified document",
-	Long: `Gather multiple related intents into a single unified document.
+	Long: `Gather multiple related ideas into a single unified document.
 
 DISCOVERY MODES:
-  By IDs      Explicitly specify intent IDs to gather
-  --tag       Find intents with a specific frontmatter tag
-  --hashtag   Find intents containing a specific #hashtag
-  --similar   Find intents similar to a given ID (TF-IDF)
+  By IDs      Explicitly specify idea IDs to gather
+  --tag       Find ideas with a specific frontmatter tag
+  --hashtag   Find ideas containing a specific #hashtag
+  --similar   Find ideas similar to a given ID (TF-IDF)
 
 The gather process:
-  1. Find related intents using the specified discovery method
+  1. Find related ideas using the specified discovery method
   2. Merge their content with full metadata preservation
-  3. Create a new unified intent in inbox status
-  4. Archive source intents (unless --no-archive)
+  3. Create a new unified idea in inbox status
+  4. Archive source ideas (unless --no-archive)
 
-Source intents are preserved with a 'gathered_into' reference.
+Source ideas are preserved with a 'gathered_into' reference.
 
 Examples:
   # Gather by explicit IDs
@@ -65,7 +65,7 @@ Examples:
   # Find and gather by hashtag
   camp idea gather --hashtag login --title "Login System"
 
-  # Find similar intents and gather
+  # Find similar ideas and gather
   camp idea gather --similar auth-feature --title "Auth Unified"
 
   # Gather without archiving sources
@@ -80,12 +80,12 @@ func init() {
 	Cmd.AddCommand(intentGatherCmd)
 
 	// Required title
-	intentGatherCmd.Flags().StringVarP(&gatherTitle, "title", "t", "", "Title for the gathered intent (required)")
+	intentGatherCmd.Flags().StringVarP(&gatherTitle, "title", "t", "", "Title for the gathered idea (required)")
 
 	// Discovery options
-	intentGatherCmd.Flags().StringVar(&gatherTag, "tag", "", "Find intents by frontmatter tag")
-	intentGatherCmd.Flags().StringVar(&gatherHashtag, "hashtag", "", "Find intents by content hashtag")
-	intentGatherCmd.Flags().StringVar(&gatherSimilar, "similar", "", "Find intents similar to this ID")
+	intentGatherCmd.Flags().StringVar(&gatherTag, "tag", "", "Find ideas by frontmatter tag")
+	intentGatherCmd.Flags().StringVar(&gatherHashtag, "hashtag", "", "Find ideas by content hashtag")
+	intentGatherCmd.Flags().StringVar(&gatherSimilar, "similar", "", "Find ideas similar to this ID")
 	intentGatherCmd.Flags().Float64Var(&gatherMinScore, "min-score", 0.1, "Minimum similarity score (0.0-1.0)")
 
 	// Merge overrides
@@ -95,7 +95,7 @@ func init() {
 	intentGatherCmd.Flags().StringVar(&gatherHorizon, "horizon", "", "Override horizon (now, next, later, someday)")
 
 	// Behavior options
-	intentGatherCmd.Flags().BoolVar(&gatherNoArchive, "no-archive", false, "Don't archive source intents")
+	intentGatherCmd.Flags().BoolVar(&gatherNoArchive, "no-archive", false, "Don't archive source ideas")
 	intentGatherCmd.Flags().BoolVar(&gatherDryRun, "dry-run", false, "Preview gather without making changes")
 	intentGatherCmd.Flags().BoolVar(&gatherNoCommit, "no-commit", false, "Don't create a git commit")
 }
@@ -113,7 +113,7 @@ func runIntentGather(cmd *cobra.Command, args []string) error {
 	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
 	intentSvc := intent.NewIntentService(campaignRoot, resolver.Intents())
 	if err := intentSvc.EnsureDirectories(ctx); err != nil {
-		return camperrors.Wrap(err, "failed to ensure intent directories")
+		return camperrors.Wrap(err, "failed to ensure idea directories")
 	}
 	gatherSvc := gather.NewService(intentSvc, resolver.Intents())
 
@@ -134,7 +134,7 @@ func runIntentGather(cmd *cobra.Command, args []string) error {
 	ids = deduplicateIDs(ids)
 
 	if len(ids) < 2 {
-		return camperrors.Newf("need at least 2 intents to gather, found %d", len(ids))
+		return camperrors.Newf("need at least 2 ideas to gather, found %d", len(ids))
 	}
 
 	// Title is required
@@ -219,21 +219,21 @@ func runIntentGather(cmd *cobra.Command, args []string) error {
 	}
 
 	// Output results
-	fmt.Printf("✓ Gathered %d intents into: %s\n", result.SourceCount, result.Gathered.Path)
+	fmt.Printf("✓ Gathered %d ideas into: %s\n", result.SourceCount, result.Gathered.Path)
 	if len(result.ArchivedPaths) > 0 {
-		fmt.Printf("  Archived %d source intents\n", len(result.ArchivedPaths))
+		fmt.Printf("  Archived %d source ideas\n", len(result.ArchivedPaths))
 	}
 
 	// Git commit (unless --no-commit)
 	if !gatherNoCommit {
 		// Build description for commit message
-		description := fmt.Sprintf("Unified %d intents into %q\nSources: %s",
+		description := fmt.Sprintf("Unified %d ideas into %q\nSources: %s",
 			result.SourceCount,
 			gatherTitle,
 			strings.Join(ids, ", "),
 		)
 		if len(result.ArchivedPaths) > 0 {
-			description += fmt.Sprintf("\nArchived: %d source intents", len(result.ArchivedPaths))
+			description += fmt.Sprintf("\nArchived: %d source ideas", len(result.ArchivedPaths))
 		}
 
 		files := make([]string, 0, len(sourcePaths)+len(result.ArchivedPaths)+1)
@@ -279,7 +279,7 @@ func discoverIntentsToGather(ctx context.Context, svc *gather.Service, intentSvc
 	}
 
 	if methods == 0 {
-		return nil, camperrors.Newf("specify intent IDs or use --tag, --hashtag, or --similar")
+		return nil, camperrors.Newf("specify idea IDs or use --tag, --hashtag, or --similar")
 	}
 
 	if methods > 1 {
@@ -292,7 +292,7 @@ func discoverIntentsToGather(ctx context.Context, svc *gather.Service, intentSvc
 		for _, id := range args {
 			i, err := intentSvc.Get(ctx, id)
 			if err != nil {
-				return nil, camperrors.Wrapf(err, "intent %q not found", id)
+				return nil, camperrors.Wrapf(err, "idea %q not found", id)
 			}
 			if i.Status.InDungeon() {
 				fmt.Printf("  Skipping %s — status %s is not eligible for gathering\n", id, i.Status)
@@ -334,10 +334,10 @@ func discoverIntentsToGather(ctx context.Context, svc *gather.Service, intentSvc
 		// Validate reference intent is not in a final state
 		refIntent, err := intentSvc.Get(ctx, gatherSimilar)
 		if err != nil {
-			return nil, camperrors.Wrapf(err, "reference intent %q not found", gatherSimilar)
+			return nil, camperrors.Wrapf(err, "reference idea %q not found", gatherSimilar)
 		}
 		if refIntent.Status.InDungeon() {
-			return nil, camperrors.Newf("reference intent %q is in %s status — only inbox/active/ready intents can be gathered", gatherSimilar, refIntent.Status)
+			return nil, camperrors.Newf("reference idea %q is in %s status — only inbox/active/ready ideas can be gathered", gatherSimilar, refIntent.Status)
 		}
 
 		similar, err := svc.FindSimilar(ctx, gatherSimilar, gatherMinScore)
@@ -356,8 +356,8 @@ func discoverIntentsToGather(ctx context.Context, svc *gather.Service, intentSvc
 }
 
 func showDryRun(ctx context.Context, svc *intent.IntentService, ids []string, title string) error {
-	fmt.Printf("Would gather %d intents into: %q\n\n", len(ids), title)
-	fmt.Println("Source intents:")
+	fmt.Printf("Would gather %d ideas into: %q\n\n", len(ids), title)
+	fmt.Println("Source ideas:")
 	fmt.Println(strings.Repeat("-", 60))
 
 	for _, id := range ids {
@@ -372,9 +372,9 @@ func showDryRun(ctx context.Context, svc *intent.IntentService, ids []string, ti
 	fmt.Println(strings.Repeat("-", 60))
 
 	if !gatherNoArchive {
-		fmt.Println("\nSource intents would be archived after gathering.")
+		fmt.Println("\nSource ideas would be archived after gathering.")
 	} else {
-		fmt.Println("\nSource intents would NOT be archived (--no-archive).")
+		fmt.Println("\nSource ideas would NOT be archived (--no-archive).")
 	}
 
 	return nil
