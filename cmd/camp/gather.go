@@ -15,6 +15,7 @@ var gatherCmd = &cobra.Command{
 Available sources:
   feedback    Import feedback observations from festivals into intents
   design      Combine selected design workitems into one gathered package
+  explore     Combine selected explore workitems into one gathered package
 
 For gathering intents by tag, hashtag, or similarity, see 'camp intent gather'.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -25,4 +26,5 @@ For gathering intents by tag, hashtag, or similarity, see 'camp intent gather'.`
 func init() {
 	rootCmd.AddCommand(gatherCmd)
 	gatherCmd.AddCommand(workitemcmd.NewGatherCommand("design"))
+	gatherCmd.AddCommand(workitemcmd.NewGatherCommand("explore"))
 }
