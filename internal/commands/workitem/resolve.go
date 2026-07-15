@@ -24,7 +24,7 @@ func newResolveCommand() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "resolve",
-		Short: "Print the workitem the current context resolves to (read-only)",
+		Short: "Print the workitem for the current context",
 		Long: `Resolve the active workitem from the current campaign context.
 
 Resolution checks explicit selectors, cwd, festival context, linked scopes,
