@@ -15,6 +15,9 @@ const (
 	IntentPromote IntentAction = "Promote"
 	IntentCrawl   IntentAction = "Crawl"
 	IntentRename  IntentAction = "Rename"
+	IntentClaim   IntentAction = "Claim"
+	IntentRelease IntentAction = "Release"
+	IntentSync    IntentAction = "Sync"
 )
 
 // IntentOptions configures an intent commit.

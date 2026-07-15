@@ -43,6 +43,8 @@ const (
 	KindEvidenceAttached Kind = "evidence_attached"
 	KindReconciled       Kind = "reconciled"
 	KindRepaired         Kind = "repaired"
+	KindClaimed          Kind = "claimed"
+	KindReleased         Kind = "released"
 )
 
 // Source records how an event entered the ledger (D001).
