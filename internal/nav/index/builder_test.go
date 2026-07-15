@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/camp/internal/nav"
+	"github.com/Obedience-Corp/camp/internal/worktree"
 )
 
 func TestNewBuilder(t *testing.T) {
@@ -220,87 +221,113 @@ func TestBuilder_scanCategory_SkipsFiles(t *testing.T) {
 	}
 }
 
-func TestBuilder_scanWorktrees(t *testing.T) {
-	root := t.TempDir()
-	root, _ = filepath.EvalSymlinks(root)
+// TestWorktreeTarget covers the pure classification of git worktree entries
+// into navigation targets. The filesystem/git enumeration in scanWorktrees is
+// exercised end-to-end in the containerized integration harness
+// (tests/integration/navigation_worktree_test.go).
+func TestWorktreeTarget(t *testing.T) {
+	const (
+		project     = "camp"
+		projectPath = "/campaign/projects/camp"
+	)
 
-	// Create worktrees directory structure: projects/worktrees/<project>/<branch>
-	worktreesDir := filepath.Join(root, "projects", "worktrees")
-	if err := os.MkdirAll(filepath.Join(worktreesDir, "myproject", "feature-branch"), 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Join(worktreesDir, "myproject", "main"), 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Join(worktreesDir, "other-proj", "dev"), 0755); err != nil {
-		t.Fatal(err)
+	tests := []struct {
+		name     string
+		entry    worktree.GitWorktreeEntry
+		wantOK   bool
+		wantName string
+		wantPath string
+	}{
+		{
+			name:   "bare entry skipped",
+			entry:  worktree.GitWorktreeEntry{Path: "/campaign/projects/worktrees/camp/x", IsBare: true},
+			wantOK: false,
+		},
+		{
+			name:   "empty path skipped",
+			entry:  worktree.GitWorktreeEntry{Path: ""},
+			wantOK: false,
+		},
+		{
+			name:   "main working tree skipped",
+			entry:  worktree.GitWorktreeEntry{Path: projectPath, Branch: "main"},
+			wantOK: false,
+		},
+		{
+			name:   "submodule main worktree under .git skipped",
+			entry:  worktree.GitWorktreeEntry{Path: "/campaign/.git/modules/projects/camp", Branch: "main"},
+			wantOK: false,
+		},
+		{
+			name:   "hidden worktree directory skipped",
+			entry:  worktree.GitWorktreeEntry{Path: "/campaign/projects/worktrees/camp/.tmp"},
+			wantOK: false,
+		},
+		{
+			name:     "preferred-location worktree",
+			entry:    worktree.GitWorktreeEntry{Path: "/campaign/projects/worktrees/camp/feature-auth", Branch: "feature-auth"},
+			wantOK:   true,
+			wantName: "camp@feature-auth",
+			wantPath: "/campaign/projects/worktrees/camp/feature-auth",
+		},
+		{
+			name:     "non-preferred-location worktree still resolves",
+			entry:    worktree.GitWorktreeEntry{Path: "/campaign/projects/worktrees/fix-camp-392", IsDetached: true},
+			wantOK:   true,
+			wantName: "camp@fix-camp-392",
+			wantPath: "/campaign/projects/worktrees/fix-camp-392",
+		},
+		{
+			name:     "worktree entirely outside the worktrees dir still resolves",
+			entry:    worktree.GitWorktreeEntry{Path: "/tmp/scratch/camp-experiment", Branch: "experiment"},
+			wantOK:   true,
+			wantName: "camp@camp-experiment",
+			wantPath: "/tmp/scratch/camp-experiment",
+		},
 	}
 
-	builder := NewBuilder(root)
-	ctx := context.Background()
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := worktreeTarget(project, projectPath, tc.entry)
+			if ok != tc.wantOK {
+				t.Fatalf("worktreeTarget() ok = %v, want %v", ok, tc.wantOK)
+			}
+			if !tc.wantOK {
+				return
+			}
+			if got.Name != tc.wantName {
+				t.Errorf("Name = %q, want %q", got.Name, tc.wantName)
+			}
+			if got.Path != tc.wantPath {
+				t.Errorf("Path = %q, want %q", got.Path, tc.wantPath)
+			}
+			if got.Category != nav.CategoryWorktrees {
+				t.Errorf("Category = %q, want %q", got.Category, nav.CategoryWorktrees)
+			}
+		})
+	}
+}
 
-	targets, err := builder.scanWorktrees(ctx)
-	if err != nil {
-		t.Fatalf("scanWorktrees() error = %v", err)
+func TestContainsGitDir(t *testing.T) {
+	tests := []struct {
+		path string
+		want bool
+	}{
+		{"/campaign/.git/modules/projects/camp", true},
+		{"/campaign/projects/worktrees/camp/feature", false},
+		{"/campaign/projects/worktrees/fix-camp-392", false},
+		{".git/worktrees/x", true},
+		{"/campaign/projects/camp", false},
 	}
 
-	if len(targets) != 3 {
-		t.Errorf("Expected 3 worktree targets, got %d", len(targets))
-	}
-
-	// Verify naming convention: project@branch
-	names := make(map[string]bool)
-	for _, target := range targets {
-		names[target.Name] = true
-		if target.Category != nav.CategoryWorktrees {
-			t.Errorf("Worktree category = %q, want %q", target.Category, nav.CategoryWorktrees)
+	for _, tc := range tests {
+		if got := containsGitDir(tc.path); got != tc.want {
+			t.Errorf("containsGitDir(%q) = %v, want %v", tc.path, got, tc.want)
 		}
 	}
-
-	if !names["myproject@feature-branch"] {
-		t.Error("Expected myproject@feature-branch in targets")
-	}
-	if !names["myproject@main"] {
-		t.Error("Expected myproject@main in targets")
-	}
-	if !names["other-proj@dev"] {
-		t.Error("Expected other-proj@dev in targets")
-	}
 }
 
-func TestBuilder_scanWorktrees_SkipsHidden(t *testing.T) {
-	root := t.TempDir()
-	root, _ = filepath.EvalSymlinks(root)
-
-	worktreesDir := filepath.Join(root, "projects", "worktrees")
-	if err := os.MkdirAll(filepath.Join(worktreesDir, ".hidden-proj", "main"), 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Join(worktreesDir, "visible-proj", ".hidden-branch"), 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Join(worktreesDir, "visible-proj", "visible-branch"), 0755); err != nil {
-		t.Fatal(err)
-	}
-
-	builder := NewBuilder(root)
-	ctx := context.Background()
-
-	targets, err := builder.scanWorktrees(ctx)
-	if err != nil {
-		t.Fatalf("scanWorktrees() error = %v", err)
-	}
-
-	if len(targets) != 1 {
-		t.Errorf("Expected 1 target (hidden skipped), got %d", len(targets))
-	}
-
-	if len(targets) > 0 && targets[0].Name != "visible-proj@visible-branch" {
-		t.Errorf("Expected visible-proj@visible-branch, got %s", targets[0].Name)
-	}
-}
-
-func TestBuilder_scanWorktrees_NoWorktreesDir(t *testing.T) {
+func TestBuilder_scanWorktrees_NoProjects(t *testing.T) {
 	root := t.TempDir()
 	root, _ = filepath.EvalSymlinks(root)
 
@@ -313,7 +340,7 @@ func TestBuilder_scanWorktrees_NoWorktreesDir(t *testing.T) {
 	}
 
 	if len(targets) != 0 {
-		t.Errorf("Expected 0 targets for missing worktrees dir, got %d", len(targets))
+		t.Errorf("Expected 0 targets when no projects are registered, got %d", len(targets))
 	}
 }
 

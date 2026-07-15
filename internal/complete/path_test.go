@@ -96,6 +96,12 @@ func TestPathComplete_CaseInsensitive(t *testing.T) {
 	}
 }
 
+// TestCompleteWorktree_NoAt covers project-name completion, which reads the
+// worktrees directory directly and does not depend on git. The project@branch
+// completion (the part that reads the git-backed navigation index) is covered
+// end-to-end in the containerized harness
+// (tests/integration/navigation_worktree_test.go), because it now requires real
+// git worktrees rather than bare directory fixtures.
 func TestCompleteWorktree_NoAt(t *testing.T) {
 	root := t.TempDir()
 	campDir := filepath.Join(root, ".campaign")
@@ -121,77 +127,15 @@ func TestCompleteWorktree_NoAt(t *testing.T) {
 		t.Fatalf("CompleteWorktree failed: %v", err)
 	}
 
-	// Should return project directory name and matching project@branch entries
+	// Should return the matching project directory name.
 	foundDir := false
-	foundBranch := false
 	for _, c := range candidates {
 		if c == "api-service" {
 			foundDir = true
 		}
-		if c == "api-service@feature-x" || c == "api-service@bugfix-y" {
-			foundBranch = true
-		}
 	}
 	if !foundDir {
 		t.Errorf("Expected 'api-service' project dir in candidates: %v", candidates)
-	}
-	if !foundBranch {
-		t.Errorf("Expected project@branch entries in candidates: %v", candidates)
-	}
-}
-
-func TestCompleteWorktree_WithAt(t *testing.T) {
-	root := t.TempDir()
-	campDir := filepath.Join(root, ".campaign")
-	os.MkdirAll(campDir, 0755)
-
-	// Create worktree structure
-	worktreeDir := filepath.Join(root, "projects", "worktrees", "api-service", "feature-x")
-	os.MkdirAll(worktreeDir, 0755)
-	worktreeDir2 := filepath.Join(root, "projects", "worktrees", "api-service", "bugfix-y")
-	os.MkdirAll(worktreeDir2, 0755)
-
-	oldWd, _ := os.Getwd()
-	defer os.Chdir(oldWd)
-	os.Chdir(root)
-
-	ctx := context.Background()
-
-	// Test completing with @
-	candidates, err := CompleteWorktree(ctx, "api-service@")
-	if err != nil {
-		t.Fatalf("CompleteWorktree failed: %v", err)
-	}
-
-	if len(candidates) < 2 {
-		t.Errorf("Expected at least 2 candidates for 'api-service@', got %d", len(candidates))
-	}
-}
-
-func TestCompleteWorktree_WithBranchPartial(t *testing.T) {
-	root := t.TempDir()
-	campDir := filepath.Join(root, ".campaign")
-	os.MkdirAll(campDir, 0755)
-
-	// Create worktree structure
-	worktreeDir := filepath.Join(root, "projects", "worktrees", "api-service", "feature-x")
-	os.MkdirAll(worktreeDir, 0755)
-	worktreeDir2 := filepath.Join(root, "projects", "worktrees", "api-service", "bugfix-y")
-	os.MkdirAll(worktreeDir2, 0755)
-
-	oldWd, _ := os.Getwd()
-	defer os.Chdir(oldWd)
-	os.Chdir(root)
-
-	ctx := context.Background()
-
-	candidates, err := CompleteWorktree(ctx, "api-service@feat")
-	if err != nil {
-		t.Fatalf("CompleteWorktree failed: %v", err)
-	}
-
-	if len(candidates) != 1 {
-		t.Errorf("Expected 1 candidate for 'api-service@feat', got %d: %v", len(candidates), candidates)
 	}
 }
 
