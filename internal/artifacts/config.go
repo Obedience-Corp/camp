@@ -113,15 +113,53 @@ func (f *File) Add(root Root) error {
 		return err
 	}
 	root.Path = NormalizeRootPath(root.Path)
-	switch root.Policy {
-	case "", PolicyAlways, PolicyOnDemand:
-	default:
+	if !knownPolicy(root.Policy) {
 		return camperrors.Newf("unknown policy %q (want %s or %s)", root.Policy, PolicyAlways, PolicyOnDemand)
 	}
 	if _, exists := f.Find(root.Path); exists {
 		return camperrors.Newf("artifact root %q is already declared", root.Path)
 	}
 	f.Roots = append(f.Roots, root)
+	return nil
+}
+
+// knownPolicy reports whether p is a recognized root policy (empty means the
+// default, PolicyAlways).
+func knownPolicy(p string) bool {
+	switch p {
+	case "", PolicyAlways, PolicyOnDemand:
+		return true
+	default:
+		return false
+	}
+}
+
+// Validate checks that the whole declaration is well-formed before the
+// sync/pull engine consumes it: a supported version, known policies,
+// campaign-relative paths, and no duplicate roots. Load stays lenient so the
+// edit commands can still open a broken file to repair it; the data-moving
+// paths (pull and verify) call Validate so a hand-edited or maliciously
+// committed artifacts.yaml fails closed instead of being partially honored -
+// an unknown policy is otherwise silently skipped on a normal sync but pulled
+// under --artifacts-only, and a duplicate root writes the same snapshot twice.
+func (f *File) Validate() error {
+	if f.Version != 1 {
+		return camperrors.Newf("unsupported artifacts.yaml version %d (want 1)", f.Version)
+	}
+	seen := make(map[string]bool, len(f.Roots))
+	for _, r := range f.Roots {
+		if err := ValidateRootPath(r.Path); err != nil {
+			return err
+		}
+		if !knownPolicy(r.Policy) {
+			return camperrors.Newf("unknown policy %q for root %q (want %s or %s)", r.Policy, r.Path, PolicyAlways, PolicyOnDemand)
+		}
+		norm := NormalizeRootPath(r.Path)
+		if seen[norm] {
+			return camperrors.Newf("duplicate artifact root %q", norm)
+		}
+		seen[norm] = true
+	}
 	return nil
 }
 

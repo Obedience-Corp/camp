@@ -808,3 +808,41 @@ func TestVerifyArtifacts_RejectsTraversalPeer(t *testing.T) {
 		t.Error("verify with a traversal peer id: Success = true, want false")
 	}
 }
+
+// TestPullArtifacts_InvalidSchemaExitContract pins the same exit contract for a
+// parseable but invalid committed declaration (here an unknown policy): it must
+// fail closed under --artifacts-only and degrade to a warning on a default
+// sync, rather than being silently skipped or blindly pulled.
+func TestPullArtifacts_InvalidSchemaExitContract(t *testing.T) {
+	ctx := context.Background()
+	writeConfig := func(t *testing.T) string {
+		t.Helper()
+		root := t.TempDir()
+		p := filepath.Join(root, ".campaign", "artifacts.yaml")
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("version: 1\nroots:\n  - path: media\n    policy: bogus\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return root
+	}
+	peerSrc := peer.FromPath("peerbox", t.TempDir())
+
+	only := NewSyncer(writeConfig(t), WithPeer(peerSrc), WithArtifactsOnly(true))
+	onlyRes := &SyncResult{Success: true}
+	only.pullArtifacts(ctx, onlyRes)
+	if onlyRes.Success {
+		t.Error("--artifacts-only with invalid schema: Success = true, want false")
+	}
+
+	def := NewSyncer(writeConfig(t), WithPeer(peerSrc))
+	defRes := &SyncResult{Success: true}
+	def.pullArtifacts(ctx, defRes)
+	if !defRes.Success {
+		t.Error("default sync with invalid schema: Success = false, want true (degrade)")
+	}
+	if len(defRes.Warnings) == 0 {
+		t.Error("default sync with invalid schema: no warning recorded")
+	}
+}

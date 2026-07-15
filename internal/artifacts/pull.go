@@ -4,14 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"github.com/Obedience-Corp/camp/internal/peer"
 )
 
@@ -87,6 +90,22 @@ func pull(ctx context.Context, campaignRoot string, src *peer.Source, result *Pu
 	if err := os.MkdirAll(destAbs, 0o755); err != nil {
 		return camperrors.Wrapf(err, "create artifact root %s", rootRel)
 	}
+
+	// Serialize concurrent pulls of the SAME root: the staging dir, the live
+	// merge, and the snapshot write are all keyed on the root, so two
+	// simultaneous `camp sync --from` for one root would clear each other's
+	// staging tree and interleave into an inconsistent baseline. A per-root
+	// lock (stale-safe, 5s timeout) makes them queue; different roots still
+	// pull concurrently. The lock lives under .campaign/cache (gitignored).
+	cacheDir := filepath.Join(campaignRoot, ".campaign", "cache")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		return camperrors.Wrap(err, "create cache dir")
+	}
+	release, err := fsutil.AcquireFileLock(ctx, filepath.Join(cacheDir, "artifact-pull-"+snapshotSlug(rootRel)+".lock"))
+	if err != nil {
+		return camperrors.Wrapf(err, "lock artifact root %s", rootRel)
+	}
+	defer release()
 
 	local, err := BuildManifest(ctx, campaignRoot, rootRel)
 	if err != nil {
@@ -197,6 +216,12 @@ func mergeStaged(stagingDir, destAbs string, baseline *Manifest) ([]string, erro
 	if baseline != nil {
 		base = baseline.Index()
 	}
+	// Resolve the root once so per-file destination checks can tell whether a
+	// path stays inside it after symlink resolution.
+	rootReal, err := filepath.EvalSymlinks(destAbs)
+	if err != nil {
+		rootReal = destAbs
+	}
 	var lateConflicts []string
 
 	walkErr := filepath.WalkDir(stagingDir, func(path string, d fs.DirEntry, err error) error {
@@ -211,15 +236,20 @@ func mergeStaged(stagingDir, destAbs string, baseline *Manifest) ([]string, erro
 			return err
 		}
 		relSlash := filepath.ToSlash(rel)
-		if !safeToReplace(destAbs, rel, base) {
+		destPath := filepath.Join(destAbs, rel)
+		// A local symlinked directory component would let MkdirAll and the
+		// rename follow it and write outside the campaign; safeToReplace also
+		// reads every Lstat error as "absent, safe to write," which through a
+		// symlinked parent means a non-existent escape target. Refuse and
+		// report such a destination instead of following it.
+		if !destWithinRoot(rootReal, destPath) || !safeToReplace(destAbs, rel, base) {
 			lateConflicts = append(lateConflicts, relSlash)
 			return nil
 		}
-		destPath := filepath.Join(destAbs, rel)
 		if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
 			return camperrors.Wrapf(err, "create dir for %s", relSlash)
 		}
-		if err := os.Rename(path, destPath); err != nil {
+		if err := moveIntoPlace(path, destPath); err != nil {
 			return camperrors.Wrapf(err, "merge %s into artifact root", relSlash)
 		}
 		return nil
@@ -230,11 +260,100 @@ func mergeStaged(stagingDir, destAbs string, baseline *Manifest) ([]string, erro
 	return lateConflicts, nil
 }
 
+// destWithinRoot reports whether destPath resolves inside rootReal (the
+// symlink-resolved artifact root). It resolves the existing prefix of the
+// destination's parent, so a local symlinked directory component pointing
+// outside the campaign is caught before MkdirAll or the rename can follow it.
+func destWithinRoot(rootReal, destPath string) bool {
+	resolved, err := resolveExistingPrefix(filepath.Dir(destPath))
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(rootReal, resolved)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return false
+	}
+	return true
+}
+
+// moveIntoPlace atomically replaces dst with the staged file at src. The fast
+// path is a rename, which is atomic on one filesystem. But an artifact root is
+// commonly a mounted volume (large media on a dedicated disk) while staging
+// lives under .campaign, so the rename can fail cross-device (EXDEV); in that
+// case the staged bytes are copied into a temp file on the destination's own
+// filesystem and that temp is atomically renamed into place, so the final swap
+// is still atomic even though the copy is not.
+func moveIntoPlace(src, dst string) error {
+	if err := os.Rename(src, dst); err == nil {
+		return nil
+	} else if !isCrossDevice(err) {
+		return err
+	}
+	return copyIntoPlace(src, dst)
+}
+
+// isCrossDevice reports whether err is a cross-filesystem link error (EXDEV).
+func isCrossDevice(err error) bool {
+	var le *os.LinkError
+	if errors.As(err, &le) {
+		return errors.Is(le.Err, syscall.EXDEV)
+	}
+	return errors.Is(err, syscall.EXDEV)
+}
+
+// copyIntoPlace copies src into a temp file beside dst (same filesystem) and
+// atomically renames it over dst. It preserves mode and mtime so the next
+// --compare-dest run does not see the file as changed and re-transfer it.
+func copyIntoPlace(src, dst string) (err error) {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = in.Close() }()
+	info, err := in.Stat()
+	if err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(dst), ".camp-artifact-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	committed := false
+	defer func() {
+		if !committed {
+			_ = os.Remove(tmpName)
+		}
+	}()
+	if _, err := io.Copy(tmp, in); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(info.Mode().Perm()); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chtimes(tmpName, info.ModTime(), info.ModTime()); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpName, dst); err != nil {
+		return err
+	}
+	committed = true
+	return nil
+}
+
 // safeToReplace reports whether the live file at rel may be overwritten: it is
 // safe only when the live destination is absent, or present and identical to
 // the recorded baseline. A file present locally but not in the baseline was
 // created out-of-band (protect it); a file whose current state differs from
-// the baseline was modified since the last transfer (a conflict).
+// the baseline was modified since the last transfer (a conflict). Detection
+// uses size and nanosecond mtime, so on a filesystem whose mtime granularity
+// cannot separate two writes, a same-size edit within one tick is the residual
+// limit of the no-clobber guarantee.
 func safeToReplace(destAbs, rel string, base map[string]FileEntry) bool {
 	info, err := os.Lstat(filepath.Join(destAbs, filepath.FromSlash(rel)))
 	if err != nil {

@@ -2,9 +2,12 @@ package artifacts
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -473,5 +476,162 @@ func TestValidatePeerID(t *testing.T) {
 		if err := ValidatePeerID(v); err == nil {
 			t.Errorf("ValidatePeerID(%q) = nil, want error", v)
 		}
+	}
+}
+
+// TestCopyIntoPlace_PreservesContentModeAndMtime exercises the cross-device
+// merge fallback (used when the artifact root is a mounted volume and staging
+// under .campaign is on a different filesystem): the bytes, permission bits,
+// and mtime must survive so the next --compare-dest run does not re-transfer,
+// and the temp file must not linger.
+func TestCopyIntoPlace_PreservesContentModeAndMtime(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.bin")
+	dst := filepath.Join(dir, "dst.bin")
+	if err := os.WriteFile(src, []byte("peer bytes"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	mtime := time.Unix(1_600_000_000, 250_000_000)
+	if err := os.Chtimes(src, mtime, mtime); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := copyIntoPlace(src, dst); err != nil {
+		t.Fatalf("copyIntoPlace: %v", err)
+	}
+
+	if got, err := os.ReadFile(dst); err != nil || string(got) != "peer bytes" {
+		t.Fatalf("dst content = %q err=%v, want %q", got, err, "peer bytes")
+	}
+	fi, err := os.Stat(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode().Perm() != 0o640 {
+		t.Errorf("dst mode = %v, want 0640", fi.Mode().Perm())
+	}
+	if !fi.ModTime().Equal(mtime) {
+		t.Errorf("dst mtime = %v, want %v (must be preserved so --compare-dest does not re-transfer)", fi.ModTime(), mtime)
+	}
+	if leftovers, _ := filepath.Glob(filepath.Join(dir, ".camp-artifact-*.tmp")); len(leftovers) != 0 {
+		t.Errorf("leftover temp files: %v", leftovers)
+	}
+}
+
+func TestMoveIntoPlace_OverwritesExisting(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.bin")
+	dst := filepath.Join(dir, "dst.bin")
+	if err := os.WriteFile(dst, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(src, []byte("new peer version"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := moveIntoPlace(src, dst); err != nil {
+		t.Fatalf("moveIntoPlace: %v", err)
+	}
+	if got, _ := os.ReadFile(dst); string(got) != "new peer version" {
+		t.Errorf("dst = %q, want %q", got, "new peer version")
+	}
+}
+
+func TestFileValidate(t *testing.T) {
+	tests := []struct {
+		name    string
+		file    File
+		wantErr string
+	}{
+		{"valid", File{Version: 1, Roots: []Root{{Path: "media"}, {Path: "datasets", Policy: PolicyOnDemand}}}, ""},
+		{"unsupported version", File{Version: 2, Roots: []Root{{Path: "media"}}}, "version"},
+		{"unknown policy", File{Version: 1, Roots: []Root{{Path: "media", Policy: "sometimes"}}}, "policy"},
+		{"duplicate root", File{Version: 1, Roots: []Root{{Path: "media"}, {Path: "./media/"}}}, "duplicate"},
+		{"escaping path", File{Version: 1, Roots: []Root{{Path: "../outside"}}}, "escapes"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.file.Validate()
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Validate() = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("Validate() = %v, want error containing %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestMergeStaged_RefusesSymlinkedParentEscape proves the merge does not follow
+// a local symlinked directory out of the campaign: `safeToReplace` reads the
+// (through-symlink, non-existent) destination as "absent, safe," so without the
+// containment check the staged file would land outside the campaign. It must be
+// refused and reported instead.
+func TestMergeStaged_RefusesSymlinkedParentEscape(t *testing.T) {
+	camp := t.TempDir()
+	outside := t.TempDir()
+	dest := filepath.Join(camp, "media")
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A local subdirectory of the artifact root is a symlink pointing outside.
+	if err := os.Symlink(outside, filepath.Join(dest, "evil")); err != nil {
+		t.Fatal(err)
+	}
+	staging := filepath.Join(camp, ".campaign", "cache", "stg")
+	if err := os.MkdirAll(filepath.Join(staging, "evil"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(staging, "evil", "payload"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	late, err := mergeStaged(staging, dest, nil)
+	if err != nil {
+		t.Fatalf("mergeStaged: %v", err)
+	}
+	if len(late) != 1 || late[0] != "evil/payload" {
+		t.Errorf("late conflicts = %v, want [evil/payload] (escape refused)", late)
+	}
+	if _, err := os.Stat(filepath.Join(outside, "payload")); !os.IsNotExist(err) {
+		t.Errorf("payload escaped the campaign into the symlink target (stat err = %v)", err)
+	}
+}
+
+// TestPull_ConcurrentSameRootIsSerialized runs two pulls of the same root at
+// once; the per-root lock must serialize them so neither errors and the tree
+// ends complete and consistent (a shared deterministic staging dir would
+// otherwise let one RemoveAll the other's transfer).
+func TestPull_ConcurrentSameRootIsSerialized(t *testing.T) {
+	requireRsync(t)
+	ctx := context.Background()
+	peerCampaign := t.TempDir()
+	localCampaign := t.TempDir()
+	for i := 0; i < 20; i++ {
+		writeArtifact(t, peerCampaign, fmt.Sprintf("media/f%02d.bin", i), fmt.Sprintf("peer %d", i))
+	}
+	src := peer.FromPath("peerbox", peerCampaign)
+	root := Root{Path: "media"}
+
+	var wg sync.WaitGroup
+	results := make([]*PullResult, 2)
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			results[i] = Pull(ctx, localCampaign, src, root)
+		}(i)
+	}
+	wg.Wait()
+
+	for i, r := range results {
+		if r.Warning != "" {
+			t.Errorf("pull %d warning = %q, want none (lock should serialize, not error)", i, r.Warning)
+		}
+	}
+	for i := 0; i < 20; i++ {
+		assertArtifact(t, localCampaign, fmt.Sprintf("media/f%02d.bin", i), fmt.Sprintf("peer %d", i))
 	}
 }
