@@ -21,7 +21,7 @@ import (
 
 var intentEditCmd = &cobra.Command{
 	Use:   "edit [id]",
-	Short: "Edit an existing intent",
+	Short: "Edit an existing idea",
 	Long: `Edit an intent in your preferred editor or programmatically via flags.
 
 If no programmatic flags are given, opens the intent in $EDITOR.
@@ -56,14 +56,14 @@ FILTER FLAGS (for picker only, not update targets):
   -p/--project       Filter picker by project/concept
 
 Examples:
-  camp intent edit                                Interactive picker + $EDITOR
-  camp intent edit retry-logic                    Direct edit by partial ID
-  camp intent edit --status active                Picker filtered by status
-  camp intent edit retry --title "Retry with backoff"
-  camp intent edit retry --body "New description"
-  camp intent edit retry --append-body "Additional note"
-  camp intent edit retry --set-type feature --priority high
-  echo "details" | camp intent edit retry --body-file -`,
+  camp idea edit                                Interactive picker + $EDITOR
+  camp idea edit retry-logic                    Direct edit by partial ID
+  camp idea edit --status active                Picker filtered by status
+  camp idea edit retry --title "Retry with backoff"
+  camp idea edit retry --body "New description"
+  camp idea edit retry --append-body "Additional note"
+  camp idea edit retry --set-type feature --priority high
+  echo "details" | camp idea edit retry --body-file -`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runIntentEdit,
 }

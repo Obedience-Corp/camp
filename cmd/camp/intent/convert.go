@@ -17,7 +17,7 @@ import (
 
 var intentConvertCmd = &cobra.Command{
 	Use:   "convert <id>",
-	Short: "Convert a note into an intent",
+	Short: "Convert a note into an idea",
 	Long: `Promote a note into the intent lifecycle.
 
 A note lives outside the inbox → ready → active lifecycle. Converting it moves
@@ -25,8 +25,8 @@ the note into inbox/ and attaches an intent type, after which it behaves like
 any other intent. This is the only bridge from a note into the lifecycle.
 
 Examples:
-  camp intent convert check-daemon-socket --type idea
-  camp intent convert check-daemon-socket -t feature`,
+  camp idea convert check-daemon-socket --type idea
+  camp idea convert check-daemon-socket -t feature`,
 	Args: cobra.ExactArgs(1),
 	RunE: runIntentConvert,
 }

@@ -21,7 +21,7 @@ func newIntentShowCommand() *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "show <id>",
-		Short: "Show detailed intent information",
+		Short: "Show detailed idea information",
 		Long: `Display detailed information about a specific intent.
 
 Supports partial ID matching - you can use:
@@ -35,10 +35,10 @@ OUTPUT FORMATS:
   yaml             Full metadata in YAML format
 
 Examples:
-  camp intent show 20260119-153412...    Show by full ID
-  camp intent show retry-logic           Show by partial match
-  camp intent show retry -f json         JSON output
-  camp intent show retry -f yaml         YAML output`,
+  camp idea show 20260119-153412...    Show by full ID
+  camp idea show retry-logic           Show by partial match
+  camp idea show retry -f json         JSON output
+  camp idea show retry -f yaml         YAML output`,
 	}
 	jsonRequested := func() bool { return intentJSONRequested(cmd, &jsonOut) }
 	cmd.Args = jsoncontract.Args(IntentJSONVersion, jsonRequested, cobra.ExactArgs(1))

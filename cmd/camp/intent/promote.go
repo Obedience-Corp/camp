@@ -22,7 +22,7 @@ import (
 
 var intentPromoteCmd = &cobra.Command{
 	Use:   "promote <id>",
-	Short: "Promote an intent through the pipeline",
+	Short: "Promote an idea through the pipeline",
 	Long: `Promote an intent to the next pipeline stage.
 
 TARGETS:
@@ -34,10 +34,10 @@ The intent moves to active status when promoted to festival or design,
 because work is just beginning. Use --force to bypass status checks.
 
 Examples:
-  camp intent promote add-dark                       Promote ready → festival
-  camp intent promote add-dark --target design       Promote ready → design doc
-  camp intent promote add-dark --target ready         Promote inbox → ready
-  camp intent promote add-dark --force                Force promote from any status`,
+  camp idea promote add-dark                       Promote ready → festival
+  camp idea promote add-dark --target design       Promote ready → design doc
+  camp idea promote add-dark --target ready         Promote inbox → ready
+  camp idea promote add-dark --force                Force promote from any status`,
 	Args: cobra.ExactArgs(1),
 	RunE: runIntentPromote,
 }

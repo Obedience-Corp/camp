@@ -18,15 +18,15 @@ import (
 
 var intentRenameCmd = &cobra.Command{
 	Use:   "rename <id> <new title>",
-	Short: "Rename an intent",
+	Short: "Rename an idea",
 	Long: `Rename an intent: update its title and regenerate its human-readable
 filename. The intent's stable id is preserved, so references and lookups survive
 the rename.
 
-Resolution is by exact id (run 'camp intent list' to copy one).
+Resolution is by exact id (run 'camp idea list' to copy one).
 
 Examples:
-  camp intent rename add-dark-mode-20260119-153412 "Add a dark mode toggle"`,
+  camp idea rename add-dark-mode-20260119-153412 "Add a dark mode toggle"`,
 	Args: cobra.ExactArgs(2),
 	RunE: runIntentRename,
 }

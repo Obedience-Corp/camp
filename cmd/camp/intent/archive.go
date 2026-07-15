@@ -20,18 +20,18 @@ import (
 
 var intentArchiveCmd = &cobra.Command{
 	Use:   "archive <id>",
-	Short: "Archive an intent",
+	Short: "Archive an idea",
 	Long: `Archive an intent by moving it to dungeon/archived.
 
 This is a convenience command equivalent to:
-  camp intent move <id> archived --reason "..."
+  camp idea move <id> archived --reason "..."
 
 Dungeon moves require a reason and append a decision record to the intent body.
-Use 'camp intent move <id> inbox' to un-archive if needed.
+Use 'camp idea move <id> inbox' to un-archive if needed.
 
 Examples:
-  camp intent archive add-dark --reason "superseded by broader initiative"
-  camp intent archive 20260119-153412 --reason "preserve as reference"`,
+  camp idea archive add-dark --reason "superseded by broader initiative"
+  camp idea archive 20260119-153412 --reason "preserve as reference"`,
 	Args: cobra.ExactArgs(1),
 	RunE: runIntentArchive,
 }

@@ -22,7 +22,7 @@ func newIntentFindCommand() *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "find [query]",
-		Short: "Search for intents by title or content",
+		Short: "Search for ideas by title or content",
 		Long: `Search for intents across all statuses by title, content, or ID.
 
 The search is case-insensitive and matches partial strings.
@@ -34,10 +34,10 @@ OUTPUT FORMATS:
   json              Full metadata in JSON format
 
 Examples:
-  camp intent find                   List all intents
-  camp intent find dark              Find intents containing "dark"
-  camp intent find "bug fix"         Find intents with "bug fix"
-  camp intent find -f simple auth    Get IDs of auth-related intents`,
+  camp idea find                   List all intents
+  camp idea find dark              Find intents containing "dark"
+  camp idea find "bug fix"         Find intents with "bug fix"
+  camp idea find -f simple auth    Get IDs of auth-related intents`,
 	}
 	jsonRequested := func() bool { return intentJSONRequested(cmd, &jsonOut) }
 	cmd.Args = jsoncontract.Args(IntentJSONVersion, jsonRequested, cobra.MaximumNArgs(1))

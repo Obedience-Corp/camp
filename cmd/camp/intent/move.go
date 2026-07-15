@@ -20,7 +20,7 @@ import (
 
 var intentMoveCmd = &cobra.Command{
 	Use:   "move <id> <status>",
-	Short: "Move intent to a different status",
+	Short: "Move idea to a different status",
 	Long: `Transition an intent between lifecycle statuses.
 
 VALID STATUSES:
@@ -40,9 +40,9 @@ Dungeon moves require a --reason flag.
 You can use short dungeon names (done) or canonical paths (dungeon/done).
 
 Examples:
-  camp intent move add-dark ready                         Mark as ready
-  camp intent move add-dark done --reason "completed"     Mark as done
-  camp intent move add-dark killed --reason "superseded"  Kill intent`,
+  camp idea move add-dark ready                         Mark as ready
+  camp idea move add-dark done --reason "completed"     Mark as done
+  camp idea move add-dark killed --reason "superseded"  Kill intent`,
 	Args: cobra.ExactArgs(2),
 	RunE: runIntentMove,
 }

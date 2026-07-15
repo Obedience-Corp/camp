@@ -24,7 +24,7 @@ func newIntentListCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
-		Short:   "List intents in the campaign",
+		Short:   "List ideas in the campaign",
 		Long: `List intents with filtering, sorting, and output format options.
 
 By default, lists intents in inbox, active, and ready status.
@@ -36,11 +36,11 @@ OUTPUT FORMATS:
   json              Full metadata in JSON format
 
 Examples:
-  camp intent list                         List active intents
-  camp intent ls --status inbox            List inbox only
-  camp intent list -f json                 JSON output
-  camp intent list -f simple | xargs ...   Pipe IDs to commands
-  camp intent list --all                   Include archived`,
+  camp idea list                         List active intents
+  camp idea ls --status inbox            List inbox only
+  camp idea list -f json                 JSON output
+  camp idea list -f simple | xargs ...   Pipe IDs to commands
+  camp idea list --all                   Include archived`,
 	}
 	jsonRequested := func() bool { return intentJSONRequested(cmd, &jsonOut) }
 	cmd.Args = jsoncontract.Args(IntentJSONVersion, jsonRequested, cobra.NoArgs)

@@ -38,7 +38,7 @@ var (
 
 var intentGatherCmd = &cobra.Command{
 	Use:   "gather [ids...]",
-	Short: "Gather related intents into a unified document",
+	Short: "Gather related ideas into a unified document",
 	Long: `Gather multiple related intents into a single unified document.
 
 DISCOVERY MODES:
@@ -57,22 +57,22 @@ Source intents are preserved with a 'gathered_into' reference.
 
 Examples:
   # Gather by explicit IDs
-  camp intent gather id1 id2 id3 --title "Auth System"
+  camp idea gather id1 id2 id3 --title "Auth System"
 
   # Find and gather by tag
-  camp intent gather --tag auth --title "Auth System"
+  camp idea gather --tag auth --title "Auth System"
 
   # Find and gather by hashtag
-  camp intent gather --hashtag login --title "Login System"
+  camp idea gather --hashtag login --title "Login System"
 
   # Find similar intents and gather
-  camp intent gather --similar auth-feature --title "Auth Unified"
+  camp idea gather --similar auth-feature --title "Auth Unified"
 
   # Gather without archiving sources
-  camp intent gather id1 id2 --title "Combined" --no-archive
+  camp idea gather id1 id2 --title "Combined" --no-archive
 
   # Dry run to preview what would be gathered
-  camp intent gather --tag auth --title "Auth System" --dry-run`,
+  camp idea gather --tag auth --title "Auth System" --dry-run`,
 	RunE: runIntentGather,
 }
 

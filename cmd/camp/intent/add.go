@@ -40,7 +40,7 @@ func newIntentAddCommand() *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "add [title]",
-		Short: "Create a new intent",
+		Short: "Create a new idea",
 		Long: `Create a new intent with fast or deep capture mode.
 
 CAPTURE MODES:
@@ -65,18 +65,18 @@ PROGRAMMATIC (agent) FLAGS:
   --edit + body flags pre-fills the editor template.
 
 Examples:
-  camp intent add "Add dark mode"        Ultra-fast capture
-  camp intent add -c obey-campaign "Add dark mode"
-  camp intent add                        Fast TUI (3-step form)
-  camp intent add --campaign             Pick a target campaign interactively
-  camp intent add --full                 Full TUI (includes body)
-  camp intent add --note                 Note TUI (title + body, no type/concept)
-  camp intent add --note "Meeting note" --body "Follow up next week"
-  camp intent add -e "Complex feature"   Deep capture with editor
-  camp intent add -t feature "New API"   Set type explicitly
-  camp intent add "Fix login" --body "The login page returns 500"
-  camp intent add "Migrate DB" --body-file spec.md --concept projects/camp
-  echo "body" | camp intent add "Idea" --body-file -`,
+  camp idea add "Add dark mode"        Ultra-fast capture
+  camp idea add -c obey-campaign "Add dark mode"
+  camp idea add                        Fast TUI (3-step form)
+  camp idea add --campaign             Pick a target campaign interactively
+  camp idea add --full                 Full TUI (includes body)
+  camp idea add --note                 Note TUI (title + body, no type/concept)
+  camp idea add --note "Meeting note" --body "Follow up next week"
+  camp idea add -e "Complex feature"   Deep capture with editor
+  camp idea add -t feature "New API"   Set type explicitly
+  camp idea add "Fix login" --body "The login page returns 500"
+  camp idea add "Migrate DB" --body-file spec.md --concept projects/camp
+  echo "body" | camp idea add "Idea" --body-file -`,
 	}
 	jsonRequested := func() bool { return jsonOut }
 	cmd.Args = jsoncontract.Args(IntentJSONVersion, jsonRequested, validateIntentAddArgs)
@@ -206,7 +206,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	// Programmatic flags like --body/--concept/--author supplement a title,
 	// they don't replace it.
 	if !navtui.IsTerminal() {
-		return camperrors.Wrap(camperrors.ErrInvalidInput, "title argument required in non-interactive mode (use 'camp intent add <title>')")
+		return camperrors.Wrap(camperrors.ErrInvalidInput, "title argument required in non-interactive mode (use 'camp idea add <title>')")
 	}
 
 	// TUI path: use git config author (human), unless --author overrides
@@ -363,7 +363,7 @@ func (r intentAddCampaignResolver) resolve(ctx context.Context, targetCampaign s
 	var selected config.RegisteredCampaign
 	if targetCampaign == "" {
 		if !r.isInteractive() {
-			return nil, "", camperrors.Wrap(camperrors.ErrInvalidInput, "campaign name required in non-interactive mode (use 'camp intent add --campaign <name> [title]')")
+			return nil, "", camperrors.Wrap(camperrors.ErrInvalidInput, "campaign name required in non-interactive mode (use 'camp idea add --campaign <name> [title]')")
 		}
 		selected, err = r.pickCampaign(ctx, reg)
 		if err != nil {

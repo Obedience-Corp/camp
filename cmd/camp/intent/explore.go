@@ -22,7 +22,7 @@ import (
 
 var intentExploreCmd = &cobra.Command{
 	Use:   "explore",
-	Short: "Interactive intent explorer",
+	Short: "Interactive idea explorer",
 	Long: `Launch the interactive Intent Explorer TUI.
 
 The explorer provides a full-screen interface for browsing,
@@ -65,7 +65,7 @@ VIEW
   q             Quit explorer
 
 Examples:
-  camp intent explore          Launch the intent explorer`,
+  camp idea explore          Launch the intent explorer`,
 	Args: cobra.NoArgs,
 	Annotations: map[string]string{
 		"agent_allowed": "false",
