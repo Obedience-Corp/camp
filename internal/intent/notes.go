@@ -54,7 +54,7 @@ func (s *IntentService) resolveNoteByID(id string) (string, error) {
 	}
 	// Slow path: a renamed note whose filename no longer matches its id.
 	for _, status := range NoteStatuses() {
-		dir := filepath.Join(s.intentsDir, string(status))
+		dir := filepath.Join(s.intentsDir, s.statusRel(status))
 		files, err := os.ReadDir(dir)
 		if err != nil {
 			continue
@@ -87,7 +87,7 @@ func (s *IntentService) ListNotes(ctx context.Context, includeArchived bool) ([]
 
 	var notes []*Intent
 	for _, status := range statuses {
-		dir := filepath.Join(s.intentsDir, string(status))
+		dir := filepath.Join(s.intentsDir, s.statusRel(status))
 		files, err := os.ReadDir(dir)
 		if err != nil {
 			if os.IsNotExist(err) {

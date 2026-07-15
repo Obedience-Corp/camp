@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
@@ -1405,6 +1406,10 @@ func TestIntentService_getIntentPath(t *testing.T) {
 }
 
 func TestIntentService_EnsureDirectories_CreatesCanonicalLayout(t *testing.T) {
+	// dungeon_hidden defaults to true for new campaigns; isolate the global
+	// config so this test observes that default deterministically.
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
 	campaignRoot := t.TempDir()
 	svc := NewIntentService(campaignRoot, filepath.Join(campaignRoot, ".campaign", "intents"))
 	ctx := context.Background()
@@ -1414,7 +1419,7 @@ func TestIntentService_EnsureDirectories_CreatesCanonicalLayout(t *testing.T) {
 	}
 
 	for _, status := range AllStatuses() {
-		dir := filepath.Join(svc.intentsDir, string(status))
+		dir := filepath.Join(svc.intentsDir, svc.statusRel(status))
 		info, err := os.Stat(dir)
 		if err != nil {
 			t.Fatalf("expected status directory %s to exist: %v", dir, err)
@@ -1422,6 +1427,39 @@ func TestIntentService_EnsureDirectories_CreatesCanonicalLayout(t *testing.T) {
 		if !info.IsDir() {
 			t.Fatalf("expected %s to be a directory", dir)
 		}
+	}
+	if _, err := os.Stat(filepath.Join(svc.intentsDir, "dungeon")); !os.IsNotExist(err) {
+		t.Error("visible dungeon directory should not be created when dungeon_hidden defaults to true")
+	}
+}
+
+func TestIntentService_EnsureDirectories_VisibleDungeonWhenSettingDisabled(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	ctx := context.Background()
+	disabled := false
+	globalCfg, err := config.LoadGlobalConfig(ctx)
+	if err != nil {
+		t.Fatalf("LoadGlobalConfig() error = %v", err)
+	}
+	globalCfg.DungeonHidden = &disabled
+	if err := config.SaveGlobalConfig(ctx, globalCfg); err != nil {
+		t.Fatalf("SaveGlobalConfig() error = %v", err)
+	}
+
+	campaignRoot := t.TempDir()
+	svc := NewIntentService(campaignRoot, filepath.Join(campaignRoot, ".campaign", "intents"))
+
+	if err := svc.EnsureDirectories(ctx); err != nil {
+		t.Fatalf("EnsureDirectories() error = %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(svc.intentsDir, "dungeon", "done")); err != nil {
+		t.Errorf("expected visible dungeon/done to exist: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(svc.intentsDir, ".dungeon")); !os.IsNotExist(err) {
+		t.Error("hidden dungeon should not exist when dungeon_hidden=false")
 	}
 }
 
@@ -2126,6 +2164,48 @@ func TestIntentService_Count(t *testing.T) {
 	}
 	if countMap[StatusReady] != 0 {
 		t.Errorf("ready count = %d, want 0", countMap[StatusReady])
+	}
+}
+
+func TestIntentService_Count_HiddenDungeon(t *testing.T) {
+	tmpDir := t.TempDir()
+	intentsDir := filepath.Join(tmpDir, "intents")
+	svc := NewIntentService(tmpDir, intentsDir)
+	ctx := context.Background()
+
+	mustWriteIntentFile(t, filepath.Join(intentsDir, ".dungeon", "done", "20260316-hidden-done.md"), StatusDone, "hidden-done")
+
+	counts, total, err := svc.Count(ctx)
+	if err != nil {
+		t.Fatalf("Count() error = %v", err)
+	}
+	if total != 1 {
+		t.Errorf("Count() total = %d, want 1", total)
+	}
+	for _, sc := range counts {
+		if sc.Status == StatusDone && sc.Count != 1 {
+			t.Errorf("dungeon/done count = %d, want 1", sc.Count)
+		}
+	}
+}
+
+func TestIntentService_Find_HiddenDungeon(t *testing.T) {
+	tmpDir := t.TempDir()
+	intentsDir := filepath.Join(tmpDir, "intents")
+	svc := NewIntentService(tmpDir, intentsDir)
+	ctx := context.Background()
+
+	mustWriteIntentFile(t, filepath.Join(intentsDir, ".dungeon", "archived", "20260316-hidden-archived.md"), StatusArchived, "hidden-archived")
+
+	found, err := svc.Find(ctx, "20260316-hidden-archived")
+	if err != nil {
+		t.Fatalf("Find() error = %v", err)
+	}
+	if found.ID != "20260316-hidden-archived" {
+		t.Errorf("Find() ID = %q, want %q", found.ID, "20260316-hidden-archived")
+	}
+	if found.Status != StatusArchived {
+		t.Errorf("Find() Status = %q, want %q", found.Status, StatusArchived)
 	}
 }
 

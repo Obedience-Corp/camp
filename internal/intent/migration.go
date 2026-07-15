@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/dungeon/spelling"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	intentaudit "github.com/Obedience-Corp/camp/internal/intent/audit"
 )
@@ -56,8 +58,17 @@ func (s *IntentService) EnsureDirectories(ctx context.Context) error {
 		return camperrors.Wrap(err, "ensuring canonical intent root")
 	}
 
+	globalCfg, err := config.LoadGlobalConfig(ctx)
+	if err != nil {
+		return camperrors.Wrap(err, "loading global config")
+	}
+	dungeonName, err := spelling.NameForNew(ctx, s.intentsDir, globalCfg.ResolveDungeonHidden())
+	if err != nil {
+		return camperrors.Wrap(err, "resolving intents dungeon spelling")
+	}
+
 	for _, status := range AllStatuses() {
-		dir := filepath.Join(s.intentsDir, string(status))
+		dir := filepath.Join(s.intentsDir, spelling.RewriteRel(string(status), dungeonName))
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return camperrors.Wrapf(err, "creating directory %s", dir)
 		}

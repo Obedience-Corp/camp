@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Obedience-Corp/camp/internal/dungeon/spelling"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/fsutil"
 )
@@ -412,7 +413,7 @@ func (s *IntentService) Count(ctx context.Context) ([]StatusCount, int, error) {
 	total := 0
 
 	for _, status := range statuses {
-		dir := filepath.Join(s.intentsDir, string(status))
+		dir := filepath.Join(s.intentsDir, s.statusRel(status))
 		files, err := os.ReadDir(dir)
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -440,7 +441,23 @@ func (s *IntentService) Count(ctx context.Context) ([]StatusCount, int, error) {
 // getIntentPath returns the file path for an intent given its status and ID.
 // Used when creating files (filename derived from id at birth).
 func (s *IntentService) getIntentPath(status Status, id string) string {
-	return filepath.Join(s.intentsDir, string(status), id+".md")
+	return filepath.Join(s.intentsDir, s.statusRel(status), id+".md")
+}
+
+// statusRel returns the on-disk relative path for status, rewriting a
+// leading "dungeon" segment to whichever spelling is established under
+// intentsDir ("dungeon" or ".dungeon"). Non-dungeon statuses are returned
+// unchanged.
+func (s *IntentService) statusRel(status Status) string {
+	rel := string(status)
+	if rel != "dungeon" && !strings.HasPrefix(rel, "dungeon/") {
+		return rel
+	}
+	resolved, err := spelling.Resolve(context.Background(), s.intentsDir)
+	if err != nil {
+		return rel
+	}
+	return spelling.RewriteRel(rel, resolved.Name)
 }
 
 // moveTargetPath returns the destination when moving the intent identified by id
@@ -455,7 +472,7 @@ func (s *IntentService) getIntentPath(status Status, id string) string {
 // suffix (the same scheme rename uses) rather than overwriting. A path already
 // holding this same id is reused — it is our own orphan copy.
 func (s *IntentService) moveTargetPath(id string, newStatus Status, oldPath string) string {
-	dir := filepath.Join(s.intentsDir, string(newStatus))
+	dir := filepath.Join(s.intentsDir, s.statusRel(newStatus))
 	base := strings.TrimSuffix(filepath.Base(oldPath), ".md")
 	return s.collisionSafeMovePath(dir, base, id)
 }

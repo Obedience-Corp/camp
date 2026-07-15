@@ -44,7 +44,7 @@ func (s *IntentService) resolveByID(id string) (string, error) {
 func (s *IntentService) buildIDIndexLocked() error {
 	index := make(map[string]string)
 	for _, status := range AllStatuses() {
-		dir := filepath.Join(s.intentsDir, string(status))
+		dir := filepath.Join(s.intentsDir, s.statusRel(status))
 		files, err := os.ReadDir(dir)
 		if err != nil {
 			if os.IsNotExist(err) {
