@@ -202,6 +202,7 @@ func applyDungeonMoves(ctx context.Context, svc *intdungeon.Service, cmdCtx *dun
 			applyErr = camperrors.Wrap(err, pi.preview.Item)
 			break
 		}
+		recordWorkitemMove(ctx, cmdCtx.CampaignRoot, pi.mp.Source, dst)
 		fmt.Printf("%s Moved %s (%s → %s)\n", ui.SuccessIcon(), pi.preview.Item, pi.preview.SourceRel, pi.preview.DestRel)
 		sources = append(sources, pi.mp.Source)
 		dests = append(dests, dst)
@@ -220,6 +221,9 @@ func applyDungeonMoves(ctx context.Context, svc *intdungeon.Service, cmdCtx *dun
 	description := plans[0].description
 	if batch {
 		description = batchCommitDescription(status, plans[:len(dests)])
+	}
+	if ledgerPath, ok := workitemLedgerPathIfExists(cmdCtx.CampaignRoot); ok {
+		dests = append(dests, ledgerPath)
 	}
 	commitErr := CommitDungeonMove(ctx, &DungeonMoveCommit{
 		Config:           cmdCtx.Config,
