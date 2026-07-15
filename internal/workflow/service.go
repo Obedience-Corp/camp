@@ -12,6 +12,13 @@ type Service struct {
 	root       string  // Workflow root path
 	schemaPath string  // Path to .workflow.yaml
 	schema     *Schema // Loaded schema (nil if not loaded)
+
+	// dungeonHidden selects the spelling a brand-new dungeon directory under
+	// root should use when neither "dungeon" nor ".dungeon" exists yet. It has
+	// no effect once a dungeon directory exists — its established spelling
+	// always wins. Defaults to false (visible); callers that want the
+	// dungeon_hidden system setting honored must pass WithDungeonHidden.
+	dungeonHidden bool
 }
 
 // ServiceOption configures a Service.
@@ -35,6 +42,17 @@ func NewService(root string, opts ...ServiceOption) *Service {
 func WithSchema(schema *Schema) ServiceOption {
 	return func(s *Service) {
 		s.schema = schema
+	}
+}
+
+// WithDungeonHidden selects the spelling a brand-new dungeon directory under
+// root should use (true = ".dungeon", false = "dungeon") when the workflow
+// doesn't have one yet. Pass the resolved dungeon_hidden system setting here;
+// an existing dungeon directory's spelling always takes precedence regardless
+// of this value.
+func WithDungeonHidden(hidden bool) ServiceOption {
+	return func(s *Service) {
+		s.dungeonHidden = hidden
 	}
 }
 
@@ -219,7 +237,9 @@ type CrawlResult struct {
 	Transitions map[string]int // "from → to": count
 }
 
-// resolvePath converts a status path to an absolute filesystem path.
-func (s *Service) resolvePath(status string) string {
-	return filepath.Join(s.root, status)
+// resolvePath converts a status path to an absolute filesystem path,
+// rewriting a leading "dungeon" segment to whichever spelling is
+// established under root (or the configured default when neither exists).
+func (s *Service) resolvePath(ctx context.Context, status string) (string, error) {
+	return resolveStatusRoot(ctx, s.root, status, s.dungeonHidden)
 }

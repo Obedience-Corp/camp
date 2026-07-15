@@ -44,7 +44,10 @@ func (s *Service) Move(ctx context.Context, item, to string, opts MoveOptions) (
 	}
 
 	// Destination path
-	destPath := resolveWorkflowDestinationPath(s.root, to, filepath.Base(itemPath), time.Now())
+	destPath, err := resolveWorkflowDestinationPath(ctx, s.root, to, filepath.Base(itemPath), s.dungeonHidden, time.Now())
+	if err != nil {
+		return nil, camperrors.Wrapf(err, "resolving destination for %s", to)
+	}
 
 	movedPath, err := statusmove.Move(ctx, itemPath, destPath, statusmove.MoveOptions{BoundaryRoot: s.root})
 	if err != nil {
