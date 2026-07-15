@@ -48,7 +48,7 @@ func TestIntentCrawl_TTYMovesInboxToReady(t *testing.T) {
 		[]InteractiveStep{
 			{WaitFor: "Intent 1/1", Input: moveStep},
 			{WaitFor: "Destinations", Input: pickReady},
-			{WaitFor: "Intent crawl complete", Input: ""},
+			{WaitFor: "Idea crawl complete", Input: ""},
 		},
 		"intent", "crawl", "--status", "inbox", "--limit", "1", "--no-commit",
 	)

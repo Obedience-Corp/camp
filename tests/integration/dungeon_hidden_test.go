@@ -99,22 +99,23 @@ func TestDungeonHidden_LegacyCampaignUntouchedWhenSystemDefaultFlips(t *testing.
 	listOut, err := tc.RunCampInDir(path, "dungeon", "list")
 	require.NoError(t, err, "dungeon list: %s", listOut)
 
-	// A brand new location that never had a dungeon before follows the
-	// *current* system setting (now hidden), per the "new dungeons follow
-	// the setting" rule — it has no established spelling of its own to
-	// preserve, unlike the campaign's pre-existing standard locations.
+	// A brand new location inside this campaign follows what the campaign
+	// already uses, NOT the system setting. Letting it follow the setting is
+	// what manufactured mixed campaigns: a legacy campaign would accrete
+	// .dungeon/ dirs one at a time alongside its dungeon/ dirs, and every
+	// location that drifted would then be unresolvable.
 	subdir := path + "/workflow/pipelines"
 	_, exitCode, err := tc.ExecCommand("mkdir", "-p", subdir)
 	require.NoError(t, err)
 	require.Equal(t, 0, exitCode)
 	addOut, err := tc.RunCampInDir(subdir, "dungeon", "add")
 	require.NoError(t, err, "dungeon add: %s", addOut)
-	exists, err = tc.CheckDirExists(subdir + "/.dungeon")
-	require.NoError(t, err)
-	assert.True(t, exists, "a brand new dungeon location should follow the current system setting")
 	exists, err = tc.CheckDirExists(subdir + "/dungeon")
 	require.NoError(t, err)
-	assert.False(t, exists, "a brand new dungeon location should not use the visible spelling once the setting is hidden")
+	assert.True(t, exists, "a new dungeon in a legacy campaign must stay visible like the rest of that campaign")
+	exists, err = tc.CheckDirExists(subdir + "/.dungeon")
+	require.NoError(t, err)
+	assert.False(t, exists, "the dungeon_hidden setting governs camp init for a NEW campaign, not new dirs inside an existing one")
 
 	// camp idea (intent) add/list/move must keep resolving the existing
 	// visible intents dungeon.
@@ -162,10 +163,12 @@ func TestDungeonHidden_LegacyCampaignUntouchedWhenSystemDefaultFlips(t *testing.
 	}
 }
 
-// TestDungeonHidden_BothSpellingsPrefersVisibleAndWarns covers the explicit
-// conflict-resolution rule: when both "dungeon" and ".dungeon" exist under
-// the same parent, camp resolves to the visible one and warns on stderr.
-func TestDungeonHidden_BothSpellingsPrefersVisibleAndWarns(t *testing.T) {
+// TestDungeonHidden_BothSpellingsIsAnError covers the rule that replaced
+// prefer-visible-and-warn. Resolving to the visible spelling made everything
+// already filed under .dungeon/ invisible to every listing, with a one-time
+// stderr warning as the only signal that work had dropped out. A campaign uses
+// exactly one spelling, so camp now refuses to guess and says how to fix it.
+func TestDungeonHidden_BothSpellingsIsAnError(t *testing.T) {
 	tc := GetSharedContainer(t)
 	require.NoError(t, tc.WriteGlobalConfig(`{"dungeon_hidden": false}`))
 
@@ -175,17 +178,48 @@ func TestDungeonHidden_BothSpellingsPrefersVisibleAndWarns(t *testing.T) {
 
 	// The scaffold already created a visible dungeon; add a conflicting
 	// hidden one alongside it to simulate manual meddling or a partial
-	// migration.
-	_, exitCode, err := tc.ExecCommand("mkdir", "-p", path+"/.dungeon")
+	// migration, and file work under the spelling that used to lose.
+	_, exitCode, err := tc.ExecCommand("mkdir", "-p", path+"/.dungeon/completed")
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode)
+	require.NoError(t, tc.WriteFile(path+"/.dungeon/completed/would-be-hidden.md", "# work that must not vanish\n"))
+
+	stdout, stderr, exitCode, err := tc.RunCampSplitInDir(path, "dungeon", "list")
+	require.NoError(t, err)
+	require.NotEqual(t, 0, exitCode,
+		"dungeon list must fail rather than silently hide .dungeon/ contents (stdout=%s stderr=%s)", stdout, stderr)
+
+	combined := stdout + stderr
+	assert.Contains(t, combined, "exist under", "the error should name the conflicting location")
+	assert.Contains(t, combined, "camp dungeon migrate", "the error must tell the user how to get unstuck")
+	assert.NotContains(t, stdout, "would-be-hidden", "nothing should be listed from a conflicted dungeon")
+}
+
+// TestDungeonHidden_ConflictIsScopedToDungeonPaths keeps the loud failure from
+// becoming a campaign-wide outage: a conflict in one location must not break
+// commands that never resolve that dungeon.
+func TestDungeonHidden_ConflictIsScopedToDungeonPaths(t *testing.T) {
+	tc := GetSharedContainer(t)
+	require.NoError(t, tc.WriteGlobalConfig(`{"dungeon_hidden": false}`))
+
+	path := "/campaigns/conflict-scoped"
+	_, err := tc.RunCamp("init", path, "--name", "conflict-scoped", "-d", "d", "-m", "m", "--no-git")
+	require.NoError(t, err)
+
+	// Conflict the intents dungeon only.
+	_, exitCode, err := tc.ExecCommand("mkdir", "-p", path+"/.campaign/intents/.dungeon")
 	require.NoError(t, err)
 	require.Equal(t, 0, exitCode)
 
-	stdout, stderr, exitCode, err := tc.RunCampSplitInDir(path, "dungeon", "list")
-	_ = stdout
+	// A command that resolves the intents dungeon fails...
+	_, stderr, exitCode, err := tc.RunCampSplitInDir(path, "idea", "list")
 	require.NoError(t, err)
-	require.Equal(t, 0, exitCode, "camp dungeon list should still succeed: %s", stderr)
-	assert.Contains(t, stderr, "both dungeon and .dungeon exist", "conflicting spellings should be warned about")
-	assert.Contains(t, stderr, "using dungeon", "the warning should state the visible spelling wins")
+	require.NotEqual(t, 0, exitCode, "idea list resolves the intents dungeon and must report the conflict")
+	assert.Contains(t, stderr, "camp dungeon migrate")
+
+	// ...while one that does not resolve any dungeon keeps working.
+	versionOut, err := tc.RunCampInDir(path, "--version")
+	require.NoError(t, err, "unrelated commands must keep working in a drifted campaign: %s", versionOut)
 }
 
 // TestDungeonHidden_IdeaAddWorksHidden exercises "camp idea add" end to end
