@@ -168,6 +168,51 @@ func TestResolveContext_NoDungeonFound(t *testing.T) {
 	}
 }
 
+func TestResolveContext_HiddenSpelling(t *testing.T) {
+	campaignRoot := t.TempDir()
+	nested := filepath.Join(campaignRoot, "workflow", "design")
+	if err := os.MkdirAll(nested, 0755); err != nil {
+		t.Fatalf("creating nested directory: %v", err)
+	}
+
+	hiddenDungeon := filepath.Join(campaignRoot, ".dungeon")
+	if err := os.MkdirAll(hiddenDungeon, 0755); err != nil {
+		t.Fatalf("creating hidden dungeon: %v", err)
+	}
+
+	got, err := ResolveContext(context.Background(), campaignRoot, nested)
+	if err != nil {
+		t.Fatalf("ResolveContext() error = %v", err)
+	}
+	if got.DungeonPath != mustEval(t, hiddenDungeon) {
+		t.Fatalf("DungeonPath = %q, want %q", got.DungeonPath, mustEval(t, hiddenDungeon))
+	}
+	if got.ParentPath != mustEval(t, campaignRoot) {
+		t.Fatalf("ParentPath = %q, want %q", got.ParentPath, mustEval(t, campaignRoot))
+	}
+}
+
+func TestResolveContext_BothSpellingsPrefersVisible(t *testing.T) {
+	campaignRoot := t.TempDir()
+
+	visibleDungeon := filepath.Join(campaignRoot, "dungeon")
+	if err := os.MkdirAll(visibleDungeon, 0755); err != nil {
+		t.Fatalf("creating visible dungeon: %v", err)
+	}
+	hiddenDungeon := filepath.Join(campaignRoot, ".dungeon")
+	if err := os.MkdirAll(hiddenDungeon, 0755); err != nil {
+		t.Fatalf("creating hidden dungeon: %v", err)
+	}
+
+	got, err := ResolveContext(context.Background(), campaignRoot, campaignRoot)
+	if err != nil {
+		t.Fatalf("ResolveContext() error = %v", err)
+	}
+	if got.DungeonPath != mustEval(t, visibleDungeon) {
+		t.Fatalf("DungeonPath = %q, want visible %q", got.DungeonPath, mustEval(t, visibleDungeon))
+	}
+}
+
 func TestResolveContext_CwdOutsideCampaign(t *testing.T) {
 	campaignRoot := t.TempDir()
 	outside := t.TempDir()
