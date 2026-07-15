@@ -97,10 +97,17 @@ type Index struct {
 	Version int `json:"version"`
 }
 
-// IndexVersion is the current index format version.
+// IndexVersion is the current index format version. Bump it whenever the
+// meaning of cached contents changes so older on-disk indexes are discarded and
+// rebuilt (see IsStale), not just when the JSON shape changes.
+//
 // Version 3 drops the unused per-target last_access cache field. Navigation
 // history remains in .campaign/cache/state.jsonl.
-const IndexVersion = 3
+//
+// Version 4 enumerates worktree targets from git worktree list rather than the
+// projects/worktrees/<project>/ directory layout, so pre-existing version 3
+// indexes miss worktrees outside the conventional location and must be rebuilt.
+const IndexVersion = 4
 
 // NewIndex creates a new empty index for a campaign root.
 func NewIndex(campaignRoot string) *Index {

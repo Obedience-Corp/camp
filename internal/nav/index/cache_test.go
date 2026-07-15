@@ -478,6 +478,56 @@ func TestGetOrBuild_UsesCache(t *testing.T) {
 	}
 }
 
+// TestGetOrBuild_DiscardsVersionMismatchedCache reproduces the stale-cache
+// scenario: a campaign carries a nav index written by an older binary whose
+// IndexVersion is behind the running binary. GetOrBuild must discard that cache
+// and rebuild without a manual "camp cache rebuild", so campaigns self-heal
+// after the enumeration semantics change.
+func TestGetOrBuild_DiscardsVersionMismatchedCache(t *testing.T) {
+	root := setupTestCampaign(t)
+	ctx := context.Background()
+
+	// A target a fresh build would never produce, tagged with the previous
+	// index version. Everything else about the cache is fresh, so the version
+	// mismatch is the only reason it can be considered stale.
+	stale := &Index{
+		Targets: []Target{{
+			Name:     "ghost@stale-worktree",
+			Path:     filepath.Join(root, "projects", "worktrees", "ghost", "stale-worktree"),
+			Category: nav.CategoryWorktrees,
+		}},
+		BuildTime:    time.Now(),
+		CampaignRoot: root,
+		Version:      IndexVersion - 1,
+	}
+	if err := Save(stale, root); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	idx, err := GetOrBuild(ctx, root, false)
+	if err != nil {
+		t.Fatalf("GetOrBuild() error = %v", err)
+	}
+
+	if idx.Version != IndexVersion {
+		t.Errorf("rebuilt index Version = %d, want %d", idx.Version, IndexVersion)
+	}
+	for _, target := range idx.Targets {
+		if target.Name == "ghost@stale-worktree" {
+			t.Fatalf("stale version-%d target survived; cache was not discarded", IndexVersion-1)
+		}
+	}
+
+	// The self-heal must persist to disk at the current version.
+	reloaded, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if reloaded == nil || reloaded.Version != IndexVersion {
+		t.Errorf("persisted cache = %v, want Version %d", reloaded, IndexVersion)
+	}
+}
+
 func TestGetOrBuild_ForceRebuild(t *testing.T) {
 	root := setupTestCampaign(t)
 
