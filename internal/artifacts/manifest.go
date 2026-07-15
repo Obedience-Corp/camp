@@ -1,0 +1,198 @@
+package artifacts
+
+import (
+	"context"
+	"encoding/json"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+)
+
+// Manifest describes one artifact root's current contents on one machine:
+// derived state, rebuilt from the filesystem whenever needed, never
+// committed. Size and mtime identify a file version; content hashing is a
+// deliberate non-default for multi-hundred-GB media roots.
+type Manifest struct {
+	Version     int         `json:"version"`
+	Root        string      `json:"root"`
+	GeneratedAt time.Time   `json:"generated_at"`
+	Files       []FileEntry `json:"files"`
+}
+
+// FileEntry is one regular file (or symlink) inside an artifact root.
+type FileEntry struct {
+	Path string `json:"path"` // slash-separated, relative to the root
+	Size int64  `json:"size"`
+	// MTime is nanosecond-resolution modification time. Second resolution let a
+	// same-size in-place edit made within the same wall-clock second as the
+	// baseline pass as unchanged, so it was excluded from protection and
+	// silently overwritten; nanoseconds close that no-clobber hole. The JSON
+	// key is versioned (mtime_unix_nano) so a pre-existing second-resolution
+	// snapshot is simply absent here and degrades to first-sync caution rather
+	// than being misread as nanoseconds.
+	MTime int64 `json:"mtime_unix_nano"`
+	// Symlink marks an entry that is a symbolic link (recorded via lstat, not
+	// followed) so a local symlink participates in conflict protection instead
+	// of being invisible to it.
+	Symlink bool `json:"symlink,omitempty"`
+}
+
+// BuildManifest walks the artifact root and records every regular file and
+// symlink (symlinks via lstat, never followed). Directories are skipped. A
+// root directory that does not exist yet yields an empty manifest.
+func BuildManifest(ctx context.Context, campaignRoot, rootRel string) (*Manifest, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	m := &Manifest{Version: 1, Root: NormalizeRootPath(rootRel), GeneratedAt: time.Now().UTC()}
+	rootAbs := filepath.Join(campaignRoot, filepath.FromSlash(m.Root))
+
+	info, err := os.Stat(rootAbs)
+	if os.IsNotExist(err) {
+		return m, nil
+	}
+	if err != nil {
+		return nil, camperrors.Wrapf(err, "stat artifact root %s", m.Root)
+	}
+	if !info.IsDir() {
+		return nil, camperrors.Newf("artifact root %s is not a directory", m.Root)
+	}
+
+	walkErr := filepath.WalkDir(rootAbs, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		isSymlink := d.Type()&fs.ModeSymlink != 0
+		if !d.Type().IsRegular() && !isSymlink {
+			return nil
+		}
+		fi, err := d.Info() // WalkDir uses lstat, so symlinks are not followed
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(rootAbs, path)
+		if err != nil {
+			return err
+		}
+		m.Files = append(m.Files, FileEntry{
+			Path:    filepath.ToSlash(rel),
+			Size:    fi.Size(),
+			MTime:   fi.ModTime().UnixNano(),
+			Symlink: isSymlink,
+		})
+		return nil
+	})
+	if walkErr != nil {
+		return nil, camperrors.Wrapf(walkErr, "walk artifact root %s", m.Root)
+	}
+
+	sort.Slice(m.Files, func(i, j int) bool { return m.Files[i].Path < m.Files[j].Path })
+	return m, nil
+}
+
+// Index returns the manifest's files keyed by relative path.
+func (m *Manifest) Index() map[string]FileEntry {
+	idx := make(map[string]FileEntry, len(m.Files))
+	for _, f := range m.Files {
+		idx[f.Path] = f
+	}
+	return idx
+}
+
+// ProtectedPaths lists the local files a pull must not overwrite: everything
+// whose current state is not exactly the last agreed baseline with that peer.
+// That covers files modified since the last transfer AND files the baseline
+// has never seen (unknown provenance). With no baseline at all (first sync
+// with this peer), every existing local file is protected. The rule errs
+// toward never losing local bytes; a pull can only update files whose local
+// state is known-agreed.
+func (m *Manifest) ProtectedPaths(baseline *Manifest) []string {
+	var base map[string]FileEntry
+	if baseline != nil {
+		base = baseline.Index()
+	}
+	var protected []string
+	for _, f := range m.Files {
+		b, ok := base[f.Path]
+		if !ok || !sameEntry(b, f) {
+			protected = append(protected, f.Path)
+		}
+	}
+	return protected
+}
+
+// sameEntry reports whether two entries represent the same file version:
+// same size, same mtime, and same kind (a regular file and a symlink at one
+// path are never "the same," so a peer file replacing a local symlink counts
+// as a change and stays protected).
+func sameEntry(a, b FileEntry) bool {
+	return a.Size == b.Size && a.MTime == b.MTime && a.Symlink == b.Symlink
+}
+
+// VerifyResult compares a local tree against a reference manifest.
+type VerifyResult struct {
+	Root    string   `json:"root"`
+	Checked int      `json:"checked"`
+	Missing []string `json:"missing"`
+	Differ  []string `json:"differ"`
+	Extra   []string `json:"extra"`
+}
+
+// Clean reports whether the verification found no discrepancies.
+func (v *VerifyResult) Clean() bool {
+	return len(v.Missing) == 0 && len(v.Differ) == 0 && len(v.Extra) == 0
+}
+
+// Verify compares the local manifest against a reference (typically the
+// last-transfer snapshot): files the reference has that the local tree lacks
+// (missing), files whose size or mtime differ (differ), and local files the
+// reference does not know about (extra).
+func Verify(local, reference *Manifest) *VerifyResult {
+	result := &VerifyResult{Root: local.Root, Checked: len(reference.Files)}
+	localIdx := local.Index()
+	refIdx := reference.Index()
+
+	for _, f := range reference.Files {
+		l, ok := localIdx[f.Path]
+		if !ok {
+			result.Missing = append(result.Missing, f.Path)
+			continue
+		}
+		if !sameEntry(l, f) {
+			result.Differ = append(result.Differ, f.Path)
+		}
+	}
+	for _, f := range local.Files {
+		if _, ok := refIdx[f.Path]; !ok {
+			result.Extra = append(result.Extra, f.Path)
+		}
+	}
+	return result
+}
+
+// EncodeJSON renders the manifest for --json consumers (and remote verify).
+func (m *Manifest) EncodeJSON() ([]byte, error) {
+	data, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return nil, camperrors.Wrap(err, "encode manifest")
+	}
+	return append(data, '\n'), nil
+}
+
+// DecodeManifest parses a manifest produced by EncodeJSON.
+func DecodeManifest(data []byte) (*Manifest, error) {
+	var m Manifest
+	if err := json.Unmarshal([]byte(strings.TrimSpace(string(data))), &m); err != nil {
+		return nil, camperrors.Wrap(err, "parse manifest")
+	}
+	return &m, nil
+}
