@@ -61,6 +61,11 @@ func ensureSSHDaemon(t *testing.T, tc *TestContainer) {
 	tc.Shell(t, `
 set -e
 ssh-keygen -A >/dev/null 2>&1
+# The peer-transport tests share submodule/campaign origins between the root
+# ("local") and peer accounts, so each side reads repos the other owns. Trust
+# all repos regardless of owner — git's dubious-ownership guard is not
+# meaningful in a single-tenant test container.
+git config --global --add safe.directory '*'
 mkdir -p /root/.ssh
 chmod 700 /root/.ssh
 [ -f /root/.ssh/id_ed25519 ] || ssh-keygen -t ed25519 -N '' -f /root/.ssh/id_ed25519 >/dev/null
@@ -113,8 +118,11 @@ mkdir -p %[2]s/.ssh
 cat /root/.ssh/id_ed25519.pub > %[2]s/.ssh/authorized_keys
 chmod 700 %[2]s/.ssh
 chmod 600 %[2]s/.ssh/authorized_keys
-# camp runs git for any campaign op; give peer a committer identity.
-su %[1]s -c 'git config --global user.email peer@test.com && git config --global user.name Peer'
+# camp runs git for any campaign op; give peer a committer identity. peer also
+# operates on repos root created (a shared submodule origin), so trust all repos
+# regardless of owner — git's dubious-ownership guard is not meaningful in a
+# single-tenant test container.
+su %[1]s -c 'git config --global user.email peer@test.com && git config --global user.name Peer && git config --global --add safe.directory "*"'
 rm -rf %[2]s/.obey %[2]s/.config %[3]s
 mkdir -p %[3]s
 # sshd StrictModes: peer must own its HOME, .ssh, and authorized_keys, and
