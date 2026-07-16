@@ -44,7 +44,7 @@ func newCommitCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "commit [selector]",
-		Short: "Commit changes scoped to the resolved workitem",
+		Short: "Commit changes scoped to a workitem",
 		Long: `Stage and commit changes belonging to a resolved workitem.
 
 The staging plan is computed from the resolver context (cwd-aware, with

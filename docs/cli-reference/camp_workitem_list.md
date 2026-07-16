@@ -32,11 +32,11 @@ camp workitem list [type|status|category] [flags]
       --group-by string               Group output sections by attention_stage, group, type, or category
   -h, --help                          help for list
       --json                          Output as JSON
-      --limit int                     Maximum number of items to return
+      --limit int                     Maximum number of items to return (non-interactive / --json only)
       --query string                  Search query to filter items
       --show-parked                   Include parked attention-stage workitems
       --stage stringArray             Filter by lifecycle stage (repeat for OR)
-      --status stringArray            Filter by displayed status (repeat for OR)
+      --status stringArray            Filter by displayed status: current, next, active, parked, inbox, ready, plan, ritual, chains, none (repeat for OR)
       --type stringArray              Filter by workflow type (repeat for OR)
 ```
 

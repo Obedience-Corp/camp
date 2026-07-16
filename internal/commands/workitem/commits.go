@@ -67,7 +67,7 @@ func newCommitsCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "commits [selector]",
-		Short: "List commits referencing a workitem across linked repos",
+		Short: "List commits referencing a workitem",
 		Long: `List commits referencing this workitem, newest first.
 
 When the campaign event ledger already holds the workitem's commit evidence,

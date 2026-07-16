@@ -41,7 +41,9 @@ camp [flags]
 
 ### SEE ALSO
 
+* [camp artifacts](camp_artifacts.md)	 - Manage declared artifact roots (.campaign/artifacts.yaml)
 * [camp attach](camp_attach.md)	 - Attach an external directory to a campaign
+* [camp audit](camp_audit.md)	 - Inspect the campaign audit trail
 * [camp cache](camp_cache.md)	 - Manage the navigation index cache
 * [camp clone](camp_clone.md)	 - Clone a campaign with full submodule setup
 * [camp commit](camp_commit.md)	 - Commit changes in the campaign root
@@ -53,6 +55,7 @@ camp [flags]
 * [camp detach](camp_detach.md)	 - Remove the attachment marker from a directory
 * [camp doctor](camp_doctor.md)	 - Diagnose and fix campaign health issues
 * [camp dungeon](camp_dungeon.md)	 - Manage the campaign dungeon
+* [camp event](camp_event.md)	 - Record and inspect campaign ledger events
 * [camp festivals](camp_festivals.md)	 - List festivals across campaigns, filtered by org/tag
 * [camp fresh](camp_fresh.md)	 - Post-merge branch cycling: sync to default branch and optionally create a new working branch
 * [camp gather](camp_gather.md)	 - Gather related work into unified items

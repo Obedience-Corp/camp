@@ -1,6 +1,6 @@
 ## camp workitem resolve
 
-Print the workitem the current context resolves to (read-only)
+Print the workitem for the current context
 
 ### Synopsis
 

@@ -25,7 +25,7 @@ func newUnlinkCommand() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "unlink [selector] [path]",
-		Short: "Remove one or more workitem links",
+		Short: "Remove workitem links",
 		Long: `Remove workitem links from the campaign link registry.
 
 The command updates .campaign/workitems/links.yaml by link id, workitem
