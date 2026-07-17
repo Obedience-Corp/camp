@@ -163,17 +163,9 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 		CampaignRoot: absDir,
 	}
 
-	standardDungeonPaths := []string{
-		filepath.Join(absDir, "dungeon"),
-		filepath.Join(absDir, "workflow", "reviews", "dungeon"),
-		filepath.Join(absDir, "workflow", "design", "dungeon"),
-		filepath.Join(absDir, "workflow", "explore", "dungeon"),
-	}
-	preExistingDungeons := make(map[string]bool, len(standardDungeonPaths))
-	for _, path := range standardDungeonPaths {
-		if _, err := os.Stat(path); err == nil {
-			preExistingDungeons[path] = true
-		}
+	dungeonPlan, err := planDungeonScaffold(ctx, absDir)
+	if err != nil {
+		return nil, err
 	}
 
 	// Scaffold path
@@ -222,9 +214,14 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 			result.Skipped = append(result.Skipped, filepath.Join(absDir, skipped))
 		}
 
-		for _, dungeonPath := range standardDungeonPaths {
+		for i, parent := range dungeonPlan.parents {
+			dungeonPath, isNew, err := reconcileDungeonSpelling(result, parent, dungeonPlan.preResolved[i], dungeonPlan.campaignSpelling)
+			if err != nil {
+				return nil, err
+			}
+
 			dungeonResult, err := dungeonscaffold.Init(ctx, dungeonPath, dungeonscaffold.InitOptions{
-				Force: !preExistingDungeons[dungeonPath],
+				Force: isNew,
 			})
 			if err != nil {
 				return nil, camperrors.Wrapf(err, "failed to initialize dungeon scaffold %s", dungeonPath)
@@ -232,6 +229,14 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 			result.DirsCreated = appendUniquePaths(result.DirsCreated, dungeonResult.CreatedDirs...)
 			result.FilesCreated = appendUniquePaths(result.FilesCreated, dungeonResult.CreatedFiles...)
 			result.Skipped = appendUniquePaths(result.Skipped, dungeonResult.Skipped...)
+		}
+
+		// Reconcile the canonical intents dungeon the same way; its own
+		// AllStatuses()-driven scaffolding happens later via
+		// intent.EnsureDirectories, which must see the correct established
+		// spelling by the time it runs.
+		if _, _, err := reconcileDungeonSpelling(result, dungeonPlan.intentsParent, dungeonPlan.intentsPre, dungeonPlan.campaignSpelling); err != nil {
+			return nil, err
 		}
 
 		if version.Profile == "dev" {

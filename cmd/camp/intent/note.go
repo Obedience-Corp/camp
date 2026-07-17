@@ -36,19 +36,19 @@ func noteRef(id string) string {
 var intentNoteCmd = &cobra.Command{
 	Use:   "note [text]",
 	Short: "Capture a quick note",
-	Long: `Capture a freeform note. Notes are a separate category from intents: they
+	Long: `Capture a freeform note. Notes are a separate category from ideas: they
 are stored in .campaign/intents/notes/ and do not flow through the
 inbox → ready → active lifecycle. A note carries no type or concept; tags
 organize them.
 
 Fast capture skips the TUI. Interactive capture uses the same title/body/tag
-flow as intent add, but skips the type wheel and concept picker.
+flow as idea add, but skips the type wheel and concept picker.
 
 Examples:
-  camp intent note "check the daemon socket path"   Capture a note immediately
-  camp intent note "follow up" --body "details..."  Note with a longer body
-  echo "body" | camp intent note "idea" --body-file -
-  camp intent note                                  Note TUI (title + body)`,
+  camp idea note "check the daemon socket path"   Capture a note immediately
+  camp idea note "follow up" --body "details..."  Note with a longer body
+  echo "body" | camp idea note "idea" --body-file -
+  camp idea note                                  Note TUI (title + body)`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runIntentNote,
 }
@@ -84,7 +84,7 @@ func runIntentNote(cmd *cobra.Command, args []string) error {
 	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
 	svc := intent.NewIntentService(campaignRoot, resolver.Intents())
 	if err := svc.EnsureDirectories(ctx); err != nil {
-		return camperrors.Wrap(err, "ensuring intent directories")
+		return camperrors.Wrap(err, "ensuring idea directories")
 	}
 
 	// Fast path: note text provided as an argument
@@ -99,7 +99,7 @@ func runIntentNote(cmd *cobra.Command, args []string) error {
 
 	// No argument: non-TTY requires note text (can't launch TUI)
 	if !navtui.IsTerminal() {
-		return camperrors.Wrap(camperrors.ErrInvalidInput, "note text required in non-interactive mode\n       Usage: camp intent note <text> [flags]")
+		return camperrors.Wrap(camperrors.ErrInvalidInput, "note text required in non-interactive mode\n       Usage: camp idea note <text> [flags]")
 	}
 
 	author := git.GetUserName(ctx)

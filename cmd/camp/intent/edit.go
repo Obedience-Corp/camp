@@ -21,16 +21,16 @@ import (
 
 var intentEditCmd = &cobra.Command{
 	Use:   "edit [id]",
-	Short: "Edit an existing intent",
-	Long: `Edit an intent in your preferred editor or programmatically via flags.
+	Short: "Edit an existing idea",
+	Long: `Edit an idea in your preferred editor or programmatically via flags.
 
-If no programmatic flags are given, opens the intent in $EDITOR.
+If no programmatic flags are given, opens the idea in $EDITOR.
 If any programmatic flag is present, applies the update directly and
 emits an audit event — no editor is launched.
 
 PICKER / EDITOR PATH:
-  If ID is provided, opens the intent directly (supports partial matching).
-  If no ID is provided, shows a fuzzy picker to select an intent.
+  If ID is provided, opens the idea directly (supports partial matching).
+  If no ID is provided, shows a fuzzy picker to select an idea.
 
 PROGRAMMATIC FLAGS (skip $EDITOR):
   --title            Set a new title
@@ -38,8 +38,8 @@ PROGRAMMATIC FLAGS (skip $EDITOR):
   --body-file        Replace the body from a file (- for stdin)
   --append-body      Append text to the existing body
   --append-body-file Append text from a file (- for stdin)
-  --set-type         Change the intent type
-  --set-status       Change the intent status
+  --set-type         Change the idea type
+  --set-status       Change the idea status
   --set-concept      Change the concept field
   --priority         Change priority (low, medium, high)
   --horizon          Change horizon (now, next, later, someday)
@@ -56,14 +56,14 @@ FILTER FLAGS (for picker only, not update targets):
   -p/--project       Filter picker by project/concept
 
 Examples:
-  camp intent edit                                Interactive picker + $EDITOR
-  camp intent edit retry-logic                    Direct edit by partial ID
-  camp intent edit --status active                Picker filtered by status
-  camp intent edit retry --title "Retry with backoff"
-  camp intent edit retry --body "New description"
-  camp intent edit retry --append-body "Additional note"
-  camp intent edit retry --set-type feature --priority high
-  echo "details" | camp intent edit retry --body-file -`,
+  camp idea edit                                Interactive picker + $EDITOR
+  camp idea edit retry-logic                    Direct edit by partial ID
+  camp idea edit --status active                Picker filtered by status
+  camp idea edit retry --title "Retry with backoff"
+  camp idea edit retry --body "New description"
+  camp idea edit retry --append-body "Additional note"
+  camp idea edit retry --set-type feature --priority high
+  echo "details" | camp idea edit retry --body-file -`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runIntentEdit,
 }
@@ -80,17 +80,17 @@ func init() {
 
 	// Programmatic update flags
 	flags.String("title", "", "Set a new title")
-	flags.String("body", "", "Replace the intent body")
+	flags.String("body", "", "Replace the idea body")
 	flags.String("body-file", "", "Replace body from file (- for stdin, 10 MiB cap)")
 	flags.String("append-body", "", "Append text to the existing body")
 	flags.String("append-body-file", "", "Append text from file (- for stdin, 10 MiB cap)")
-	flags.String("set-type", "", "Change the intent type (idea, feature, bug, research, chore)")
-	flags.String("set-status", "", "Change the intent status")
+	flags.String("set-type", "", "Change the type (idea, feature, bug, research, chore)")
+	flags.String("set-status", "", "Change the idea status")
 	flags.String("set-concept", "", "Change the concept field")
 	flags.String("priority", "", "Change priority (low, medium, high)")
 	flags.String("horizon", "", "Change horizon (now, next, later, someday)")
 	flags.String("author", "", "Override the author attribution")
-	flags.StringArray("tag", nil, "Replace the intent's tags (repeatable)")
+	flags.StringArray("tag", nil, "Replace the idea's tags (repeatable)")
 	flags.Bool("no-commit", false, "Don't create a git commit")
 }
 
@@ -117,7 +117,7 @@ func runIntentEdit(cmd *cobra.Command, args []string) error {
 	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
 	svc := intent.NewIntentService(campaignRoot, resolver.Intents())
 	if err := svc.EnsureDirectories(ctx); err != nil {
-		return camperrors.Wrap(err, "failed to ensure intent directories")
+		return camperrors.Wrap(err, "failed to ensure idea directories")
 	}
 
 	// Determine if we're in programmatic mode
@@ -136,7 +136,7 @@ func runIntentEdit(cmd *cobra.Command, args []string) error {
 	} else {
 		// No ID + programmatic flags + no TTY = deterministic error
 		if programmatic && !navtui.IsTerminal() {
-			return camperrors.Wrap(camperrors.ErrInvalidInput, "intent ID required in non-interactive mode")
+			return camperrors.Wrap(camperrors.ErrInvalidInput, "idea ID required in non-interactive mode")
 		}
 		// No ID - show fuzzy picker
 		selectedIntent, err = pickIntent(ctx, svc, statusFilter, typeFilter, projectFilter)
@@ -165,10 +165,10 @@ func runEditorEdit(ctx context.Context, svc *intent.IntentService, i *intent.Int
 
 	updated, err := svc.Edit(ctx, i.ID, editorFn)
 	if err != nil {
-		return camperrors.Wrap(err, "failed to edit intent")
+		return camperrors.Wrap(err, "failed to edit idea")
 	}
 
-	fmt.Printf("Intent saved: %s\n", updated.Path)
+	fmt.Printf("Idea saved: %s\n", updated.Path)
 	return nil
 }
 
@@ -191,7 +191,7 @@ func runProgrammaticEdit(
 
 	updated, changes, err := svc.UpdateDirect(ctx, target.ID, opts)
 	if err != nil {
-		return camperrors.Wrap(err, "failed to update intent")
+		return camperrors.Wrap(err, "failed to update idea")
 	}
 
 	if len(changes) == 0 {
@@ -218,7 +218,7 @@ func runProgrammaticEdit(
 		return err
 	}
 
-	fmt.Printf("Intent updated: %s\n", updated.Path)
+	fmt.Printf("Idea updated: %s\n", updated.Path)
 	for _, c := range changes {
 		fmt.Printf("  %s: %q -> %q\n", c.Field, c.Old, c.New)
 	}

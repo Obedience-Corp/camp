@@ -146,7 +146,10 @@ func TestRunGendocs_StripsNoOptDefValSentinelsFromDocs(t *testing.T) {
 		t.Fatalf("runGendocs: %v", err)
 	}
 
-	content, err := os.ReadFile(filepath.Join(dir, "camp_intent_add.md"))
+	// "idea" is the canonical name (Use) as of the idea/intent rename;
+	// "intent" remains a working alias but doc filenames follow the
+	// canonical command path.
+	content, err := os.ReadFile(filepath.Join(dir, "camp_idea_add.md"))
 	if err != nil {
 		t.Fatalf("read generated doc: %v", err)
 	}

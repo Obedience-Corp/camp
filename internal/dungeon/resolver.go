@@ -2,11 +2,10 @@ package dungeon
 
 import (
 	"context"
-	"errors"
-	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/Obedience-Corp/camp/internal/dungeon/spelling"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
@@ -63,19 +62,22 @@ func ResolveContext(ctx context.Context, campaignRoot, cwd string) (Context, err
 	}
 
 	for {
-		candidate := filepath.Join(dir, "dungeon")
-		info, statErr := os.Stat(candidate)
-		switch {
-		case statErr == nil && info.IsDir():
-			if isFestOwned(root, dir) {
-				break
+		if err := ctx.Err(); err != nil {
+			return Context{}, camperrors.Wrap(err, "context cancelled")
+		}
+
+		resolved, err := spelling.Resolve(ctx, dir)
+		if err != nil {
+			if camperrors.Is(err, camperrors.ErrConflict) {
+				return Context{}, err
 			}
+			return Context{}, camperrors.Wrapf(err, "resolving dungeon spelling under %s", dir)
+		}
+		if resolved.Exists && !isFestOwned(root, dir) {
 			return Context{
-				DungeonPath: candidate,
+				DungeonPath: resolved.Path,
 				ParentPath:  dir,
 			}, nil
-		case statErr != nil && !errors.Is(statErr, os.ErrNotExist):
-			return Context{}, camperrors.Wrapf(statErr, "stat %s", candidate)
 		}
 
 		if dir == root {

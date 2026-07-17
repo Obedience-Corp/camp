@@ -24,11 +24,11 @@ func newIntentListCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
-		Short:   "List intents in the campaign",
-		Long: `List intents with filtering, sorting, and output format options.
+		Short:   "List ideas in the campaign",
+		Long: `List ideas with filtering, sorting, and output format options.
 
-By default, lists intents in inbox, active, and ready status.
-Use --all to include dungeon intents.
+By default, lists ideas in inbox, active, and ready status.
+Use --all to include dungeon ideas.
 
 OUTPUT FORMATS:
   table (default)   Human-readable table with columns
@@ -36,11 +36,11 @@ OUTPUT FORMATS:
   json              Full metadata in JSON format
 
 Examples:
-  camp intent list                         List active intents
-  camp intent ls --status inbox            List inbox only
-  camp intent list -f json                 JSON output
-  camp intent list -f simple | xargs ...   Pipe IDs to commands
-  camp intent list --all                   Include archived`,
+  camp idea list                         List active ideas
+  camp idea ls --status inbox            List inbox only
+  camp idea list -f json                 JSON output
+  camp idea list -f simple | xargs ...   Pipe IDs to commands
+  camp idea list --all                   Include archived`,
 	}
 	jsonRequested := func() bool { return intentJSONRequested(cmd, &jsonOut) }
 	cmd.Args = jsoncontract.Args(IntentJSONVersion, jsonRequested, cobra.NoArgs)
@@ -56,7 +56,7 @@ Examples:
 	flags.StringP("project", "p", "", "Filter by project")
 	flags.String("horizon", "", "Filter by horizon")
 	flags.IntP("limit", "n", 0, "Limit results (0 = no limit)")
-	flags.BoolP("all", "a", false, "Include dungeon intents")
+	flags.BoolP("all", "a", false, "Include dungeon ideas")
 	return cmd
 }
 
@@ -102,7 +102,7 @@ func runIntentList(cmd *cobra.Command, args []string) error {
 	// Get intents
 	intents, err := svc.List(ctx, opts)
 	if err != nil {
-		return camperrors.Wrap(err, "failed to list intents")
+		return camperrors.Wrap(err, "failed to list ideas")
 	}
 
 	// Apply status filtering (exclude dungeon statuses by default)
@@ -169,7 +169,7 @@ func buildListOptions(statuses, types []string, project, horizon, sortBy string,
 
 func outputTable(intents []*intent.Intent) error {
 	if len(intents) == 0 {
-		fmt.Println("No intents found.")
+		fmt.Println("No ideas found.")
 		return nil
 	}
 
@@ -223,7 +223,7 @@ func outputTable(intents []*intent.Intent) error {
 		})
 
 	fmt.Println(t)
-	fmt.Printf("\n%d intent(s)\n", len(intents))
+	fmt.Printf("\n%d idea(s)\n", len(intents))
 	return nil
 }
 

@@ -74,7 +74,12 @@ Examples:
 				return err
 			}
 
-			svc := workflow.NewService(cwd)
+			dungeonSpelling, err := campaignDungeonSpelling(ctx)
+			if err != nil {
+				return err
+			}
+
+			svc := workflow.NewService(cwd, workflow.WithDungeonSpelling(dungeonSpelling))
 			result, err := svc.Init(ctx, workflow.InitOptions{
 				Force:         flowAddForce,
 				SchemaVersion: 2,
