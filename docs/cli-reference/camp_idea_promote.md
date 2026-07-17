@@ -1,27 +1,27 @@
-## camp intent promote
+## camp idea promote
 
-Promote an intent through the pipeline
+Promote an idea through the pipeline
 
 ### Synopsis
 
-Promote an intent to the next pipeline stage.
+Promote an idea to the next pipeline stage.
 
 TARGETS:
   ready      Move from inbox to ready (reviewed/enriched)
   festival   Move from ready to active + create festival (default)
   design     Move from ready to active + create design doc
 
-The intent moves to active status when promoted to festival or design,
+The idea moves to active status when promoted to festival or design,
 because work is just beginning. Use --force to bypass status checks.
 
 Examples:
-  camp intent promote add-dark                       Promote ready → festival
-  camp intent promote add-dark --target design       Promote ready → design doc
-  camp intent promote add-dark --target ready         Promote inbox → ready
-  camp intent promote add-dark --force                Force promote from any status
+  camp idea promote add-dark                       Promote ready → festival
+  camp idea promote add-dark --target design       Promote ready → design doc
+  camp idea promote add-dark --target ready         Promote inbox → ready
+  camp idea promote add-dark --force                Force promote from any status
 
 ```
-camp intent promote <id> [flags]
+camp idea promote <id> [flags]
 ```
 
 ### Options
@@ -42,4 +42,4 @@ camp intent promote <id> [flags]
 
 ### SEE ALSO
 
-* [camp intent](camp_intent.md)	 - Manage campaign intents
+* [camp idea](camp_idea.md)	 - Manage campaign ideas

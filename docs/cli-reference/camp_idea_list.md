@@ -1,13 +1,13 @@
-## camp intent list
+## camp idea list
 
-List intents in the campaign
+List ideas in the campaign
 
 ### Synopsis
 
-List intents with filtering, sorting, and output format options.
+List ideas with filtering, sorting, and output format options.
 
-By default, lists intents in inbox, active, and ready status.
-Use --all to include dungeon intents.
+By default, lists ideas in inbox, active, and ready status.
+Use --all to include dungeon ideas.
 
 OUTPUT FORMATS:
   table (default)   Human-readable table with columns
@@ -15,20 +15,20 @@ OUTPUT FORMATS:
   json              Full metadata in JSON format
 
 Examples:
-  camp intent list                         List active intents
-  camp intent ls --status inbox            List inbox only
-  camp intent list -f json                 JSON output
-  camp intent list -f simple | xargs ...   Pipe IDs to commands
-  camp intent list --all                   Include archived
+  camp idea list                         List active ideas
+  camp idea ls --status inbox            List inbox only
+  camp idea list -f json                 JSON output
+  camp idea list -f simple | xargs ...   Pipe IDs to commands
+  camp idea list --all                   Include archived
 
 ```
-camp intent list [flags]
+camp idea list [flags]
 ```
 
 ### Options
 
 ```
-  -a, --all              Include dungeon intents
+  -a, --all              Include dungeon ideas
   -f, --format string    Output format: table, simple, json (default "table")
   -h, --help             help for list
       --horizon string   Filter by horizon
@@ -48,4 +48,4 @@ camp intent list [flags]
 
 ### SEE ALSO
 
-* [camp intent](camp_intent.md)	 - Manage campaign intents
+* [camp idea](camp_idea.md)	 - Manage campaign ideas
