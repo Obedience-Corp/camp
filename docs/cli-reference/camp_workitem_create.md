@@ -1,6 +1,6 @@
 ## camp workitem create
 
-Create a new workitem with v1 minimum metadata
+Create a workitem
 
 ### Synopsis
 

@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+
+	"github.com/Obedience-Corp/camp/internal/dungeon/spelling"
 )
 
 // Service provides all workflow operations.
@@ -12,6 +14,14 @@ type Service struct {
 	root       string  // Workflow root path
 	schemaPath string  // Path to .workflow.yaml
 	schema     *Schema // Loaded schema (nil if not loaded)
+
+	// dungeonSpelling is the spelling the owning campaign has established, and
+	// the name a brand-new dungeon directory under root takes when neither
+	// "dungeon" nor ".dungeon" exists there yet. It has no effect once a
+	// dungeon directory exists — its established spelling always wins.
+	// Defaults to visible; callers resolve the campaign's spelling with
+	// spelling.CampaignName and pass it via WithDungeonSpelling.
+	dungeonSpelling string
 }
 
 // ServiceOption configures a Service.
@@ -21,8 +31,9 @@ type ServiceOption func(*Service)
 // The service will look for a .workflow.yaml file in the root directory.
 func NewService(root string, opts ...ServiceOption) *Service {
 	s := &Service{
-		root:       root,
-		schemaPath: filepath.Join(root, SchemaFileName),
+		root:            root,
+		schemaPath:      filepath.Join(root, SchemaFileName),
+		dungeonSpelling: spelling.Visible,
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -35,6 +46,20 @@ func NewService(root string, opts ...ServiceOption) *Service {
 func WithSchema(schema *Schema) ServiceOption {
 	return func(s *Service) {
 		s.schema = schema
+	}
+}
+
+// WithDungeonSpelling sets the dungeon spelling the owning campaign has
+// established ("dungeon" or ".dungeon"), which a brand-new dungeon directory
+// under root adopts when the workflow doesn't have one yet. Resolve it with
+// spelling.CampaignName rather than reading the dungeon_hidden setting
+// directly: that setting governs what camp init scaffolds for a new campaign,
+// and letting a new directory inside an existing campaign follow it is what
+// produces a campaign holding both spellings. An existing dungeon directory's
+// spelling always takes precedence regardless of this value.
+func WithDungeonSpelling(name string) ServiceOption {
+	return func(s *Service) {
+		s.dungeonSpelling = name
 	}
 }
 
@@ -219,7 +244,9 @@ type CrawlResult struct {
 	Transitions map[string]int // "from → to": count
 }
 
-// resolvePath converts a status path to an absolute filesystem path.
-func (s *Service) resolvePath(status string) string {
-	return filepath.Join(s.root, status)
+// resolvePath converts a status path to an absolute filesystem path,
+// rewriting a leading "dungeon" segment to whichever spelling is
+// established under root (or the configured default when neither exists).
+func (s *Service) resolvePath(ctx context.Context, status string) (string, error) {
+	return resolveStatusRoot(ctx, s.root, status, s.dungeonSpelling)
 }

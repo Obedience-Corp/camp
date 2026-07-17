@@ -30,7 +30,10 @@ func (s *Service) List(ctx context.Context, status string, opts ListOptions) (*L
 		return nil, camperrors.Wrap(ErrInvalidStatus, status)
 	}
 
-	statusPath := s.resolvePath(status)
+	statusPath, err := s.resolvePath(ctx, status)
+	if err != nil {
+		return nil, camperrors.Wrapf(err, "resolving status %s", status)
+	}
 	entries, err := os.ReadDir(statusPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -126,7 +129,7 @@ func (s *Service) findItem(ctx context.Context, itemName string) (string, string
 			return "", "", ctx.Err()
 		}
 
-		itemPath, exists, err := resolveWorkflowItemPath(s.root, status, itemName)
+		itemPath, exists, err := resolveWorkflowItemPath(ctx, s.root, status, itemName, s.dungeonSpelling)
 		if err != nil {
 			return "", "", camperrors.Wrap(err, "locating workflow item")
 		}

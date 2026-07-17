@@ -20,18 +20,18 @@ import (
 
 var intentArchiveCmd = &cobra.Command{
 	Use:   "archive <id>",
-	Short: "Archive an intent",
-	Long: `Archive an intent by moving it to dungeon/archived.
+	Short: "Archive an idea",
+	Long: `Archive an idea by moving it to dungeon/archived.
 
 This is a convenience command equivalent to:
-  camp intent move <id> archived --reason "..."
+  camp idea move <id> archived --reason "..."
 
-Dungeon moves require a reason and append a decision record to the intent body.
-Use 'camp intent move <id> inbox' to un-archive if needed.
+Dungeon moves require a reason and append a decision record to the idea body.
+Use 'camp idea move <id> inbox' to un-archive if needed.
 
 Examples:
-  camp intent archive add-dark --reason "superseded by broader initiative"
-  camp intent archive 20260119-153412 --reason "preserve as reference"`,
+  camp idea archive add-dark --reason "superseded by broader initiative"
+  camp idea archive 20260119-153412 --reason "preserve as reference"`,
 	Args: cobra.ExactArgs(1),
 	RunE: runIntentArchive,
 }
@@ -50,7 +50,7 @@ func runIntentArchive(cmd *cobra.Command, args []string) error {
 	reason, _ := cmd.Flags().GetString("reason")
 	reason = strings.TrimSpace(reason)
 	if reason == "" {
-		return camperrors.Newf("--reason is required when archiving an intent")
+		return camperrors.Newf("--reason is required when archiving an idea")
 	}
 
 	// Find campaign root
@@ -64,20 +64,20 @@ func runIntentArchive(cmd *cobra.Command, args []string) error {
 	svc := intent.NewIntentService(campaignRoot, resolver.Intents())
 	svc.SetLedger(ledger.NewFromRoot(ctx, campaignRoot, ledger.WarnTo(cmd.ErrOrStderr())))
 	if err := svc.EnsureDirectories(ctx); err != nil {
-		return camperrors.Wrap(err, "ensuring intent directories")
+		return camperrors.Wrap(err, "ensuring idea directories")
 	}
 
 	// Get intent title for commit message (before archiving)
 	i, err := svc.Find(ctx, id)
 	if err != nil {
-		return camperrors.Newf("intent not found: %s", id)
+		return camperrors.Newf("idea not found: %s", id)
 	}
 	intentTitle := i.Title
 	sourcePath := i.Path
 	prevStatus := i.Status
 
 	if prevStatus == intent.StatusArchived {
-		fmt.Printf("Intent already archived: %s\n", i.Path)
+		fmt.Printf("Idea already archived: %s\n", i.Path)
 		return nil
 	}
 
@@ -89,7 +89,7 @@ func runIntentArchive(cmd *cobra.Command, args []string) error {
 	// Archive the intent (moves to dungeon/archived)
 	result, err := svc.Move(ctx, id, intent.StatusArchived)
 	if err != nil {
-		return camperrors.Wrap(err, "failed to archive intent")
+		return camperrors.Wrap(err, "failed to archive idea")
 	}
 
 	if err := appendIntentAuditEvent(ctx, resolver.Intents(), audit.Event{
@@ -103,7 +103,7 @@ func runIntentArchive(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Printf("✓ Intent archived: %s\n", result.Path)
+	fmt.Printf("✓ Idea archived: %s\n", result.Path)
 
 	// Auto-commit (unless --no-commit)
 	if !noCommit {

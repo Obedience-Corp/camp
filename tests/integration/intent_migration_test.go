@@ -37,7 +37,7 @@ func TestIntentList_WarnsWithoutMigratingLegacyIntentRootAndAudit(t *testing.T) 
 	output, err := tc.RunCampInDir(path, "intent", "list")
 	require.NoError(t, err, "intent list should warn but not migrate legacy intent state:\n%s", output)
 	assert.Contains(t, output, "camp init --repair")
-	assert.Contains(t, output, "No intents found.")
+	assert.Contains(t, output, "No ideas found.")
 
 	inboxExists, err := tc.CheckFileExists(fmt.Sprintf("%s/.campaign/intents/inbox/%s.md", path, inboxID))
 	require.NoError(t, err)

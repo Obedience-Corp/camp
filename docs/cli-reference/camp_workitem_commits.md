@@ -1,6 +1,6 @@
 ## camp workitem commits
 
-List commits referencing a workitem across linked repos
+List commits referencing a workitem
 
 ### Synopsis
 

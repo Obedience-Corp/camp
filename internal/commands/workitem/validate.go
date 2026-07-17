@@ -55,7 +55,7 @@ func newValidateCommand() *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "validate [path]",
-		Short: "Validate workflow work item directories and their .workitem markers",
+		Short: "Validate workitem directories",
 		Long: `Validate that workflow work item directories carry a correct .workitem marker.
 
 Without an argument, every work item directory under workflow/ is scanned:

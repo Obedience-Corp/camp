@@ -1,6 +1,6 @@
 ## camp workitem commit
 
-Commit changes scoped to the resolved workitem
+Commit changes scoped to a workitem
 
 ### Synopsis
 

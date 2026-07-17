@@ -1,6 +1,6 @@
 ## camp workitem group
 
-Set or clear the group of a workitem
+Set or clear the group
 
 ```
 camp workitem group <selector> <group|clear> [flags]

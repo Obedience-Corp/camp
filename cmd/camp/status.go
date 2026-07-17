@@ -8,6 +8,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/notice"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -53,6 +54,8 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return camperrors.Wrap(err, "not in a campaign")
 	}
+
+	notice.Render(os.Stderr, notice.Detect(ctx, campRoot, notice.DungeonLegacy))
 
 	gitArgs, showRefsArg := extractShowRefs(args)
 	showRefs := statusShowRefs || showRefsArg

@@ -61,8 +61,8 @@ camp [flags]
 * [camp gather](camp_gather.md)	 - Gather related work into unified items
 * [camp go](camp_go.md)	 - Navigate to campaign directories
 * [camp id](camp_id.md)	 - Print the current campaign ID
+* [camp idea](camp_idea.md)	 - Manage campaign ideas
 * [camp init](camp_init.md)	 - Initialize a new campaign
-* [camp intent](camp_intent.md)	 - Manage campaign intents
 * [camp leverage](camp_leverage.md)	 - Compute leverage scores for campaign projects
 * [camp lifecycle](camp_lifecycle.md)	 - Manage campaign lifecycle status
 * [camp list](camp_list.md)	 - List all registered campaigns

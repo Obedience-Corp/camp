@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -210,6 +211,10 @@ type FreshConfig struct {
 	Prune *bool `yaml:"prune,omitempty"`
 	// PruneRemote controls whether to prune stale remote tracking refs.
 	PruneRemote *bool `yaml:"prune_remote,omitempty"`
+	// FollowUp lists command workflow steps run, in order, after a successful
+	// sync/prune/branch cycle. A project override in Projects replaces this
+	// list entirely; it is never merged with it.
+	FollowUp []FollowUpConfig `yaml:"follow_up,omitempty"`
 	// Projects holds per-project overrides keyed by project name.
 	Projects map[string]FreshProjectConfig `yaml:"projects,omitempty"`
 }
@@ -219,6 +224,36 @@ type FreshConfig struct {
 type FreshProjectConfig struct {
 	Branch       *string `yaml:"branch,omitempty"`
 	PushUpstream *bool   `yaml:"push_upstream,omitempty"`
+	// FollowUp, when non-nil (including an explicit empty list), entirely
+	// replaces the global FollowUp list for this project.
+	FollowUp []FollowUpConfig `yaml:"follow_up,omitempty"`
+}
+
+// FollowUpConfig defines a single post-sync command workflow step that
+// `camp fresh` runs after a successful sync/prune/branch cycle.
+type FollowUpConfig struct {
+	// Name identifies the step for display and `camp fresh configure remove`.
+	Name string `yaml:"name"`
+	// Run is the shell command executed for this step.
+	Run string `yaml:"run"`
+	// Dir is a working directory relative to the project root. Empty runs
+	// the command in the project root.
+	Dir string `yaml:"dir,omitempty"`
+	// ContinueOnError lets the fresh cycle keep running later steps (and
+	// complete successfully) if this step's command fails.
+	ContinueOnError bool `yaml:"continue_on_error,omitempty"`
+}
+
+// Validate reports whether the follow-up step is well-formed. An empty Run
+// is always rejected, since it cannot be meaningfully executed.
+func (f FollowUpConfig) Validate() error {
+	if strings.TrimSpace(f.Name) == "" {
+		return camperrors.NewValidation("name", "must not be empty", nil)
+	}
+	if strings.TrimSpace(f.Run) == "" {
+		return camperrors.NewValidation("run", "must not be empty", nil)
+	}
+	return nil
 }
 
 // FreshConfigPath returns the path to fresh.yaml for a given campaign root.
@@ -291,4 +326,14 @@ func (c *FreshConfig) ResolveFreshPruneRemote() bool {
 		return *c.PruneRemote
 	}
 	return true
+}
+
+// ResolveFreshFollowUps resolves the follow-up steps to run for projectName
+// using the priority chain: project override (if defined at all, even as an
+// explicit empty list) > global default list.
+func (c *FreshConfig) ResolveFreshFollowUps(projectName string) []FollowUpConfig {
+	if pc, ok := c.Projects[projectName]; ok && pc.FollowUp != nil {
+		return pc.FollowUp
+	}
+	return c.FollowUp
 }

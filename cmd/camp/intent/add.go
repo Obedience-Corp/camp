@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
@@ -40,8 +41,8 @@ func newIntentAddCommand() *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "add [title]",
-		Short: "Create a new intent",
-		Long: `Create a new intent with fast or deep capture mode.
+		Short: "Create a new idea",
+		Long: `Create a new idea with fast or deep capture mode.
 
 CAPTURE MODES:
   Ultra-fast          Title provided as argument → immediate creation
@@ -54,10 +55,10 @@ Use --full when you want to add a body description in the form.
 Use --edit when you need the complete template in your editor.
 
 PROGRAMMATIC (agent) FLAGS:
-  --body              Set intent body from a literal string
-  --body-file         Read intent body from a file (- for stdin)
+  --body              Set idea body from a literal string
+  --body-file         Read idea body from a file (- for stdin)
   --concept           Set the concept field (e.g., "projects/camp")
-  --note              Create a note instead of a lifecycle intent
+  --note              Create a note instead of a lifecycle idea
   --author            Override the default author attribution
 
   --body and --body-file are mutually exclusive.
@@ -65,18 +66,18 @@ PROGRAMMATIC (agent) FLAGS:
   --edit + body flags pre-fills the editor template.
 
 Examples:
-  camp intent add "Add dark mode"        Ultra-fast capture
-  camp intent add -c obey-campaign "Add dark mode"
-  camp intent add                        Fast TUI (3-step form)
-  camp intent add --campaign             Pick a target campaign interactively
-  camp intent add --full                 Full TUI (includes body)
-  camp intent add --note                 Note TUI (title + body, no type/concept)
-  camp intent add --note "Meeting note" --body "Follow up next week"
-  camp intent add -e "Complex feature"   Deep capture with editor
-  camp intent add -t feature "New API"   Set type explicitly
-  camp intent add "Fix login" --body "The login page returns 500"
-  camp intent add "Migrate DB" --body-file spec.md --concept projects/camp
-  echo "body" | camp intent add "Idea" --body-file -`,
+  camp idea add "Add dark mode"        Ultra-fast capture
+  camp idea add -c obey-campaign "Add dark mode"
+  camp idea add                        Fast TUI (3-step form)
+  camp idea add --campaign             Pick a target campaign interactively
+  camp idea add --full                 Full TUI (includes body)
+  camp idea add --note                 Note TUI (title + body, no type/concept)
+  camp idea add --note "Meeting note" --body "Follow up next week"
+  camp idea add -e "Complex feature"   Deep capture with editor
+  camp idea add -t feature "New API"   Set type explicitly
+  camp idea add "Fix login" --body "The login page returns 500"
+  camp idea add "Migrate DB" --body-file spec.md --concept projects/camp
+  echo "body" | camp idea add "Idea" --body-file -`,
 	}
 	jsonRequested := func() bool { return jsonOut }
 	cmd.Args = jsoncontract.Args(IntentJSONVersion, jsonRequested, validateIntentAddArgs)
@@ -84,7 +85,7 @@ Examples:
 	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(IntentJSONVersion, jsonRequested))
 
 	flags := cmd.Flags()
-	flags.StringP("type", "t", "idea", "Intent type (idea, feature, bug, research, chore)")
+	flags.StringP("type", "t", "idea", "Type (idea, feature, bug, research, chore)")
 	flags.BoolP("edit", "e", false, "Open in $EDITOR for deep capture")
 	flags.Bool("full", false, "Full TUI mode with body textarea")
 	flags.StringP("campaign", "c", "", "Target campaign by name or ID; omit value to pick interactively")
@@ -93,10 +94,10 @@ Examples:
 	flags.BoolVar(&jsonOut, "json", false, "emit a structured JSON result")
 
 	// Programmatic (agent) flags
-	flags.String("body", "", "Set intent body as a literal string")
-	flags.String("body-file", "", "Read intent body from file (- for stdin, 10 MiB cap)")
+	flags.String("body", "", "Set idea body as a literal string")
+	flags.String("body-file", "", "Read idea body from file (- for stdin, 10 MiB cap)")
 	flags.String("concept", "", "Set the concept field (e.g., projects/camp)")
-	flags.Bool("note", false, "Create a note instead of a lifecycle intent")
+	flags.Bool("note", false, "Create a note instead of a lifecycle idea")
 	flags.String("author", "", "Override the default author attribution")
 	flags.StringArray("tag", nil, "Add a tag (repeatable)")
 
@@ -167,7 +168,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 
 	// Ensure directories exist and migrate legacy layout
 	if err := svc.EnsureDirectories(ctx); err != nil {
-		return camperrors.Wrap(err, "ensuring intent directories")
+		return camperrors.Wrap(err, "ensuring idea directories")
 	}
 
 	// Ultra-fast path: title provided as argument
@@ -206,7 +207,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	// Programmatic flags like --body/--concept/--author supplement a title,
 	// they don't replace it.
 	if !navtui.IsTerminal() {
-		return camperrors.Wrap(camperrors.ErrInvalidInput, "title argument required in non-interactive mode (use 'camp intent add <title>')")
+		return camperrors.Wrap(camperrors.ErrInvalidInput, "title argument required in non-interactive mode (use 'camp idea add <title>')")
 	}
 
 	// TUI path: use git config author (human), unless --author overrides
@@ -232,6 +233,11 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// TUI session: apply every create on disk immediately, but defer git until
+	// the form exits (crawl-style batch). Mid-session commits freeze capture.
+	intentsDir := resolver.Intents()
+	var session batchCommit
+
 	// Process intents saved via Ctrl-n during the session
 	for _, saved := range model.SavedResults() {
 		savedOpts := intent.CreateOptions{
@@ -243,14 +249,18 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 			Tags:    mergeTags(tagsFlag, saved.Tags),
 		}
 		if createNote {
-			if err := runNoteCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, savedOpts); err != nil {
+			created, err := createNoteWithoutCommit(ctx, svc, intentsDir, savedOpts)
+			if err != nil {
 				return err
 			}
+			session.add(commit.IntentCreate, created.Title, "", created.Path)
 			continue
 		}
-		if err := runFastCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, savedOpts); err != nil {
+		created, err := createIntentWithoutCommit(ctx, svc, intentsDir, campaignRoot, savedOpts, false)
+		if err != nil {
 			return err
 		}
+		session.add(commit.IntentCreate, created.Title, "", created.Path)
 	}
 
 	// Process the final result (from normal save-and-quit)
@@ -258,7 +268,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	if result == nil {
 		if len(model.SavedResults()) > 0 {
 			// User saved some intents via Ctrl-n, then cancelled the last one
-			return nil
+			return session.flush(ctx, cfg, campaignRoot, intentsDir, noCommit, cmd.OutOrStdout())
 		}
 		return intent.ErrCancelled
 	}
@@ -274,15 +284,30 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	if createNote {
-		return runNoteCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, opts)
+		created, err := createNoteWithoutCommit(ctx, svc, intentsDir, opts)
+		if err != nil {
+			return err
+		}
+		session.add(commit.IntentCreate, created.Title, "", created.Path)
+		return session.flush(ctx, cfg, campaignRoot, intentsDir, noCommit, cmd.OutOrStdout())
 	}
 
-	// Deep capture if requested
+	// Deep capture if requested (editor runs after TUI; still session-end commit)
 	if useEditor {
-		return runDeepCaptureWithOutput(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, opts, cmd.OutOrStdout(), jsonOut)
+		created, err := createIntentWithoutCommit(ctx, svc, intentsDir, campaignRoot, opts, true)
+		if err != nil {
+			return err
+		}
+		session.add(commit.IntentCreate, created.Title, "", created.Path)
+		return session.flush(ctx, cfg, campaignRoot, intentsDir, noCommit, cmd.OutOrStdout())
 	}
 
-	return runFastCaptureWithOutput(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, opts, cmd.OutOrStdout(), jsonOut)
+	created, err := createIntentWithoutCommit(ctx, svc, intentsDir, campaignRoot, opts, false)
+	if err != nil {
+		return err
+	}
+	session.add(commit.IntentCreate, created.Title, "", created.Path)
+	return session.flush(ctx, cfg, campaignRoot, intentsDir, noCommit, cmd.OutOrStdout())
 }
 
 func navigationShortcuts(cfg *config.CampaignConfig) map[string]string {
@@ -363,7 +388,7 @@ func (r intentAddCampaignResolver) resolve(ctx context.Context, targetCampaign s
 	var selected config.RegisteredCampaign
 	if targetCampaign == "" {
 		if !r.isInteractive() {
-			return nil, "", camperrors.Wrap(camperrors.ErrInvalidInput, "campaign name required in non-interactive mode (use 'camp intent add --campaign <name> [title]')")
+			return nil, "", camperrors.Wrap(camperrors.ErrInvalidInput, "campaign name required in non-interactive mode (use 'camp idea add --campaign <name> [title]')")
 		}
 		selected, err = r.pickCampaign(ctx, reg)
 		if err != nil {
@@ -422,7 +447,7 @@ func runFastCapture(ctx context.Context, svc *intent.IntentService, intentsDir s
 func runFastCaptureWithOutput(ctx context.Context, svc *intent.IntentService, intentsDir string, cfg *config.CampaignConfig, campaignRoot string, noCommit bool, opts intent.CreateOptions, output io.Writer, jsonOut bool) error {
 	result, err := svc.CreateDirect(ctx, opts)
 	if err != nil {
-		return camperrors.Wrap(err, "failed to create intent")
+		return camperrors.Wrap(err, "failed to create idea")
 	}
 
 	return finalizeCreatedIntentWithOutput(ctx, result, intentsDir, cfg, campaignRoot, noCommit, output, jsonOut)
@@ -444,7 +469,7 @@ func runDeepCaptureWithOutput(ctx context.Context, svc *intent.IntentService, in
 		if errors.Is(err, camperrors.ErrCancelled) {
 			return intent.ErrCancelled
 		}
-		return camperrors.Wrap(err, "failed to create intent")
+		return camperrors.Wrap(err, "failed to create idea")
 	}
 
 	return finalizeCreatedIntentWithOutput(ctx, result, intentsDir, cfg, campaignRoot, noCommit, output, jsonOut)
@@ -475,26 +500,11 @@ func finalizeCreatedIntent(ctx context.Context, result *intent.Intent, intentsDi
 }
 
 func finalizeCreatedIntentWithOutput(ctx context.Context, result *intent.Intent, intentsDir string, cfg *config.CampaignConfig, campaignRoot string, noCommit bool, output io.Writer, jsonOut bool) error {
-	if err := appendIntentAuditEvent(ctx, intentsDir, audit.Event{
-		Type:  audit.EventCreate,
-		ID:    result.ID,
-		Title: result.Title,
-		To:    string(result.Status),
-	}); err != nil {
+	if err := writeCreatedIntent(ctx, result, intentsDir, campaignRoot, output, jsonOut); err != nil {
 		return err
 	}
 
-	if jsonOut {
-		if err := outputIntentAddPayload(output, campaignRoot, result); err != nil {
-			return err
-		}
-	} else {
-		if _, err := fmt.Fprintf(output, "✓ Intent created: %s\n", result.Path); err != nil {
-			return err
-		}
-	}
-
-	// Auto-commit (unless --no-commit)
+	// Auto-commit (unless --no-commit). One-shot CLI path: single op, single commit.
 	if !noCommit {
 		opts := wkcmd.AmbientCommitOptions(ctx, campaignRoot, cfg.ID, os.Stderr)
 		opts.Files = commit.NormalizeFiles(campaignRoot, result.Path, audit.FilePath(intentsDir))
@@ -512,5 +522,134 @@ func finalizeCreatedIntentWithOutput(ctx context.Context, result *intent.Intent,
 		commit.WarnIfSkipped(os.Stderr, commitResult)
 	}
 
+	return nil
+}
+
+// writeCreatedIntent appends the domain audit event and prints the success line
+// without touching git. Used by session-batched TUI capture.
+func writeCreatedIntent(ctx context.Context, result *intent.Intent, intentsDir, campaignRoot string, output io.Writer, jsonOut bool) error {
+	if err := appendIntentAuditEvent(ctx, intentsDir, audit.Event{
+		Type:  audit.EventCreate,
+		ID:    result.ID,
+		Title: result.Title,
+		To:    string(result.Status),
+	}); err != nil {
+		return err
+	}
+
+	if jsonOut {
+		return outputIntentAddPayload(output, campaignRoot, result)
+	}
+	_, err := fmt.Fprintf(output, "✓ Idea created: %s\n", result.Path)
+	return err
+}
+
+func createIntentWithoutCommit(ctx context.Context, svc *intent.IntentService, intentsDir, campaignRoot string, opts intent.CreateOptions, useEditor bool) (*intent.Intent, error) {
+	var (
+		result *intent.Intent
+		err    error
+	)
+	if useEditor {
+		editorFn := func(ctx context.Context, path string) error {
+			return editor.Edit(ctx, path)
+		}
+		result, err = svc.CreateWithEditor(ctx, opts, editorFn)
+		if err != nil {
+			if errors.Is(err, camperrors.ErrCancelled) {
+				return nil, intent.ErrCancelled
+			}
+			return nil, camperrors.Wrap(err, "failed to create intent")
+		}
+	} else {
+		result, err = svc.CreateDirect(ctx, opts)
+		if err != nil {
+			return nil, camperrors.Wrap(err, "failed to create intent")
+		}
+	}
+	if err := writeCreatedIntent(ctx, result, intentsDir, campaignRoot, os.Stdout, false); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func createNoteWithoutCommit(ctx context.Context, svc *intent.IntentService, intentsDir string, opts intent.CreateOptions) (*intent.Intent, error) {
+	result, err := svc.CreateNote(ctx, opts)
+	if err != nil {
+		return nil, camperrors.Wrap(err, "failed to create note")
+	}
+	if err := appendIntentAuditEvent(ctx, intentsDir, audit.Event{
+		Type:  audit.EventCreate,
+		ID:    result.ID,
+		Title: result.Title,
+		To:    string(result.Status),
+	}); err != nil {
+		return nil, err
+	}
+	fmt.Printf("✓ Note created: %s\n", result.Path)
+	return result, nil
+}
+
+// batchCommit accumulates paths from a multi-create TUI session and flushes one
+// selective git commit when the session ends.
+type batchCommit struct {
+	files []string
+	ops   []struct {
+		action commit.IntentAction
+		title  string
+		desc   string
+	}
+}
+
+func (b *batchCommit) add(action commit.IntentAction, title, desc, path string) {
+	if path != "" {
+		b.files = append(b.files, path)
+	}
+	b.ops = append(b.ops, struct {
+		action commit.IntentAction
+		title  string
+		desc   string
+	}{action: action, title: title, desc: desc})
+}
+
+func (b *batchCommit) flush(ctx context.Context, cfg *config.CampaignConfig, campaignRoot, intentsDir string, noCommit bool, output io.Writer) error {
+	if noCommit || len(b.ops) == 0 {
+		return nil
+	}
+
+	opts := wkcmd.AmbientCommitOptions(ctx, campaignRoot, cfg.ID, os.Stderr)
+	fileArgs := append([]string{}, b.files...)
+	fileArgs = append(fileArgs, audit.FilePath(intentsDir))
+	opts.Files = commit.NormalizeFiles(campaignRoot, fileArgs...)
+	opts.SelectiveOnly = true
+
+	intentOpts := commit.IntentOptions{
+		Options: opts,
+	}
+	if len(b.ops) == 1 {
+		intentOpts.Action = b.ops[0].action
+		intentOpts.IntentTitle = b.ops[0].title
+		intentOpts.Description = b.ops[0].desc
+	} else {
+		intentOpts.Action = commit.IntentUpdate
+		intentOpts.IntentTitle = "intent capture session"
+		var desc strings.Builder
+		for _, op := range b.ops {
+			line := fmt.Sprintf("%s: %s", op.action, op.title)
+			if op.desc != "" {
+				line += " — " + op.desc
+			}
+			desc.WriteString(line)
+			desc.WriteByte('\n')
+		}
+		intentOpts.Description = strings.TrimRight(desc.String(), "\n")
+	}
+
+	commitResult := commit.Intent(ctx, intentOpts)
+	if commitResult.Message != "" {
+		if _, err := fmt.Fprintf(output, "  %s\n", commitResult.Message); err != nil {
+			return err
+		}
+	}
+	commit.WarnIfSkipped(os.Stderr, commitResult)
 	return nil
 }

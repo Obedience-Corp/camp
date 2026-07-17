@@ -25,7 +25,7 @@ func newPriorityCommand() *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "priority <selector> <high|medium|low|clear>",
-		Short: "Set or clear the manual priority of a workitem",
+		Short: "Set or clear the manual priority",
 		Long: `Set or clear the manual priority of a workitem.
 
 The selector accepts the same forms as 'camp workitem current': a stable

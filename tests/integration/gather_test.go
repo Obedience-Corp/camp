@@ -55,7 +55,7 @@ func TestIntentGather_ByIDs(t *testing.T) {
 	// Gather the intents
 	output, err := tc.RunCampInDir("/campaigns/gather-ids", "intent", "gather", id1, id2, "--title", "Unified Auth")
 	require.NoError(t, err, "gather should succeed")
-	assert.Contains(t, output, "Gathered 2 intents", "output should confirm gathering")
+	assert.Contains(t, output, "Gathered 2 ideas", "output should confirm gathering")
 	assert.Contains(t, output, "Archived 2", "output should confirm archiving")
 }
 
@@ -120,7 +120,7 @@ Not related to auth.
 	// Gather by auth tag
 	output, err := tc.RunCampInDir("/campaigns/gather-tag", "intent", "gather", "--tag", "auth", "--title", "Combined Auth")
 	require.NoError(t, err, "gather by tag should succeed")
-	assert.Contains(t, output, "Gathered 2 intents", "should gather exactly 2 auth-tagged intents")
+	assert.Contains(t, output, "Gathered 2 ideas", "should gather exactly 2 auth-tagged ideas")
 }
 
 func TestIntentGather_DryRun(t *testing.T) {
@@ -148,8 +148,8 @@ func TestIntentGather_DryRun(t *testing.T) {
 	// Dry run gather
 	output, err := tc.RunCampInDir("/campaigns/gather-dry", "intent", "gather", id1, id2, "--title", "Combined", "--dry-run")
 	require.NoError(t, err, "dry run should succeed")
-	assert.Contains(t, output, "Would gather 2 intents", "output should indicate dry run")
-	assert.Contains(t, output, "Source intents", "output should list sources")
+	assert.Contains(t, output, "Would gather 2 ideas", "output should indicate dry run")
+	assert.Contains(t, output, "Source ideas", "output should list sources")
 
 	// Verify no actual changes (intents still in inbox)
 	lsAfter, err := execLS(tc, "/campaigns/gather-dry/.campaign/intents/inbox")
@@ -182,7 +182,7 @@ func TestIntentGather_NoArchive(t *testing.T) {
 	// Gather without archiving
 	output, err := tc.RunCampInDir("/campaigns/gather-noarch", "intent", "gather", id1, id2, "--title", "Combined", "--no-archive")
 	require.NoError(t, err, "gather without archiving should succeed")
-	assert.Contains(t, output, "Gathered 2 intents", "should confirm gathering")
+	assert.Contains(t, output, "Gathered 2 ideas", "should confirm gathering")
 	assert.NotContains(t, output, "Archived", "should not mention archiving")
 
 	// Verify source intents still exist in inbox

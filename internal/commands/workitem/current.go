@@ -19,7 +19,7 @@ func newCurrentCommand() *cobra.Command {
 	var clear, jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "current [selector]",
-		Short: "Get, set, or clear the local current workitem",
+		Short: "Get, set, or clear the current workitem",
 		Long: `Get, set, or clear the campaign-local current workitem pointer.
 
 The selection is stored in .campaign/workitems/current.yaml and is used by

@@ -1,6 +1,6 @@
 ## camp workitem link
 
-Attach a workitem to a project, festival, worktree, or campaign path
+Create a workitem link
 
 ### Synopsis
 

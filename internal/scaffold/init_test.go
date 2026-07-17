@@ -45,13 +45,18 @@ func TestInit(t *testing.T) {
 		t.Errorf("CampaignRoot = %q, want %q", result.CampaignRoot, campaignDir)
 	}
 
-	// Check key directories were created (based on templates/ structure)
-	expectedDirs := []string{".campaign", "projects", "docs", "dungeon", "workflow"}
+	// Check key directories were created (based on templates/ structure).
+	// dungeon_hidden defaults to true for new campaigns, so fresh campaigns
+	// get ".dungeon" instead of the legacy visible "dungeon".
+	expectedDirs := []string{".campaign", "projects", "docs", ".dungeon", "workflow"}
 	for _, dir := range expectedDirs {
 		path := filepath.Join(campaignDir, dir)
 		if _, err := os.Stat(path); os.IsNotExist(err) {
 			t.Errorf("directory %s was not created", dir)
 		}
+	}
+	if _, err := os.Stat(filepath.Join(campaignDir, "dungeon")); !os.IsNotExist(err) {
+		t.Error("visible dungeon directory should not be created when dungeon_hidden defaults to true")
 	}
 
 	// ai_docs is no longer scaffolded.
@@ -129,16 +134,16 @@ func TestInit(t *testing.T) {
 
 	rootDungeonStatuses := []string{"completed", "archived", "someday"}
 	for _, status := range rootDungeonStatuses {
-		if _, err := os.Stat(filepath.Join(campaignDir, "dungeon", status)); os.IsNotExist(err) {
-			t.Errorf("dungeon/%s directory was not created", status)
+		if _, err := os.Stat(filepath.Join(campaignDir, ".dungeon", status)); os.IsNotExist(err) {
+			t.Errorf(".dungeon/%s directory was not created", status)
 		}
 	}
 
 	standardDungeonObeys := []string{
-		filepath.Join(campaignDir, "dungeon", "OBEY.md"),
-		filepath.Join(campaignDir, "workflow", "reviews", "dungeon", "OBEY.md"),
-		filepath.Join(campaignDir, "workflow", "design", "dungeon", "OBEY.md"),
-		filepath.Join(campaignDir, "workflow", "explore", "dungeon", "OBEY.md"),
+		filepath.Join(campaignDir, ".dungeon", "OBEY.md"),
+		filepath.Join(campaignDir, "workflow", "reviews", ".dungeon", "OBEY.md"),
+		filepath.Join(campaignDir, "workflow", "design", ".dungeon", "OBEY.md"),
+		filepath.Join(campaignDir, "workflow", "explore", ".dungeon", "OBEY.md"),
 	}
 	for _, removed := range []string{"code_reviews", "pipelines"} {
 		if _, err := os.Stat(filepath.Join(campaignDir, "workflow", removed)); !os.IsNotExist(err) {
@@ -150,12 +155,12 @@ func TestInit(t *testing.T) {
 			t.Errorf("standard dungeon OBEY.md was not created at %s", obeyPath)
 		}
 	}
-	rootDungeonObey, err := os.ReadFile(filepath.Join(campaignDir, "dungeon", "OBEY.md"))
+	rootDungeonObey, err := os.ReadFile(filepath.Join(campaignDir, ".dungeon", "OBEY.md"))
 	if err != nil {
-		t.Fatalf("failed to read dungeon/OBEY.md: %v", err)
+		t.Fatalf("failed to read .dungeon/OBEY.md: %v", err)
 	}
 	if strings.Contains(string(rootDungeonObey), "camp flow") {
-		t.Error("dungeon/OBEY.md should not reference dev-only camp flow commands")
+		t.Error(".dungeon/OBEY.md should not reference dev-only camp flow commands")
 	}
 
 	// Check key skill files were scaffolded
@@ -263,6 +268,96 @@ func TestInit(t *testing.T) {
 	}
 }
 
+func TestInit_VisibleDungeonWhenSettingDisabled(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	ctx := context.Background()
+	disabled := false
+	globalCfg, err := config.LoadGlobalConfig(ctx)
+	if err != nil {
+		t.Fatalf("LoadGlobalConfig() error = %v", err)
+	}
+	globalCfg.DungeonHidden = &disabled
+	if err := config.SaveGlobalConfig(ctx, globalCfg); err != nil {
+		t.Fatalf("SaveGlobalConfig() error = %v", err)
+	}
+
+	campaignDir := filepath.Join(tmpDir, "visible-campaign")
+	if err := os.MkdirAll(campaignDir, 0755); err != nil {
+		t.Fatalf("failed to create test dir: %v", err)
+	}
+
+	if _, err := Init(ctx, campaignDir, InitOptions{Name: "visible", NoRegister: true}); err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+
+	standardDungeons := []string{
+		filepath.Join(campaignDir, "dungeon"),
+		filepath.Join(campaignDir, "workflow", "reviews", "dungeon"),
+		filepath.Join(campaignDir, "workflow", "design", "dungeon"),
+		filepath.Join(campaignDir, "workflow", "explore", "dungeon"),
+	}
+	for _, dir := range standardDungeons {
+		if _, err := os.Stat(dir); os.IsNotExist(err) {
+			t.Errorf("visible dungeon %s was not created when dungeon_hidden=false", dir)
+		}
+		hidden := filepath.Join(filepath.Dir(dir), ".dungeon")
+		if _, err := os.Stat(hidden); !os.IsNotExist(err) {
+			t.Errorf("hidden dungeon %s should not exist when dungeon_hidden=false", hidden)
+		}
+	}
+}
+
+func TestInit_RepairPreservesExistingVisibleDungeon(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	campaignDir := filepath.Join(tmpDir, "legacy-campaign")
+	ctx := context.Background()
+
+	if _, err := Init(ctx, campaignDir, InitOptions{Name: "legacy", NoRegister: true}); err != nil {
+		t.Fatalf("initial Init() error = %v", err)
+	}
+
+	// Simulate a legacy campaign predating the hidden-dungeon default: it has
+	// a visible "dungeon" only, no ".dungeon".
+	if _, err := os.Stat(filepath.Join(campaignDir, ".dungeon")); os.IsNotExist(err) {
+		t.Fatal("setup: expected initial init to have used .dungeon by default")
+	}
+	if err := os.Rename(filepath.Join(campaignDir, ".dungeon"), filepath.Join(campaignDir, "dungeon")); err != nil {
+		t.Fatalf("failed to simulate legacy visible dungeon: %v", err)
+	}
+
+	if _, err := Init(ctx, campaignDir, InitOptions{Name: "legacy", NoRegister: true, Repair: true}); err != nil {
+		t.Fatalf("repair Init() error = %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(campaignDir, "dungeon")); os.IsNotExist(err) {
+		t.Error("repair should preserve the existing visible dungeon directory")
+	}
+	if _, err := os.Stat(filepath.Join(campaignDir, ".dungeon")); !os.IsNotExist(err) {
+		t.Error("repair should not introduce a hidden dungeon alongside an existing visible one")
+	}
+
+	// The other three standard locations were left hidden by the initial
+	// Init() call; repair must not duplicate them with a fresh visible copy.
+	for _, parent := range []string{
+		filepath.Join(campaignDir, "workflow", "reviews"),
+		filepath.Join(campaignDir, "workflow", "design"),
+		filepath.Join(campaignDir, "workflow", "explore"),
+	} {
+		if _, err := os.Stat(filepath.Join(parent, ".dungeon")); os.IsNotExist(err) {
+			t.Errorf("repair should preserve existing hidden dungeon under %s", parent)
+		}
+		if _, err := os.Stat(filepath.Join(parent, "dungeon")); !os.IsNotExist(err) {
+			t.Errorf("repair should not duplicate a visible dungeon under %s", parent)
+		}
+	}
+}
+
 func TestInit_AlreadyInCampaign(t *testing.T) {
 	tmpDir := t.TempDir()
 	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
@@ -317,7 +412,7 @@ func TestInit_DryRun(t *testing.T) {
 	}
 
 	// In dry run, scaffold doesn't run so directories should NOT exist
-	expectedDirs := []string{".campaign", "projects", "docs", "dungeon", "workflow"}
+	expectedDirs := []string{".campaign", "projects", "docs", "dungeon", ".dungeon", "workflow"}
 	for _, dir := range expectedDirs {
 		path := filepath.Join(campaignDir, dir)
 		if _, err := os.Stat(path); err == nil {

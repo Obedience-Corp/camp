@@ -25,7 +25,7 @@ func newGroupCommand() *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "group <selector> <group|clear>",
-		Short: "Set or clear the group of a workitem",
+		Short: "Set or clear the group",
 		Args:  jsoncontract.Args(WorkitemGroupJSONVersion, func() bool { return jsonOut }, cobra.ExactArgs(2)),
 		RunE: jsoncontract.RunE(WorkitemGroupJSONVersion, func() bool { return jsonOut }, func(cmd *cobra.Command, args []string) error {
 			return runGroup(cmd.Context(), cmd, args[0], args[1], jsonOut)

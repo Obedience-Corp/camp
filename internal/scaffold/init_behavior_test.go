@@ -224,14 +224,16 @@ func TestInit_CreatesCanonicalIntentDirectories(t *testing.T) {
 		t.Fatalf("Init() error = %v", err)
 	}
 
+	// dungeon_hidden defaults to true for new campaigns, so the intents
+	// dungeon is scaffolded under ".dungeon" rather than the legacy "dungeon".
 	for _, relDir := range []string{
 		".campaign/intents/inbox",
 		".campaign/intents/ready",
 		".campaign/intents/active",
-		".campaign/intents/dungeon/done",
-		".campaign/intents/dungeon/killed",
-		".campaign/intents/dungeon/archived",
-		".campaign/intents/dungeon/someday",
+		".campaign/intents/.dungeon/done",
+		".campaign/intents/.dungeon/killed",
+		".campaign/intents/.dungeon/archived",
+		".campaign/intents/.dungeon/someday",
 	} {
 		path := filepath.Join(campaignDir, filepath.FromSlash(relDir))
 		if info, statErr := os.Stat(path); statErr != nil {
@@ -239,5 +241,8 @@ func TestInit_CreatesCanonicalIntentDirectories(t *testing.T) {
 		} else if !info.IsDir() {
 			t.Fatalf("expected %s to be a directory", relDir)
 		}
+	}
+	if _, err := os.Stat(filepath.Join(campaignDir, ".campaign", "intents", "dungeon")); !os.IsNotExist(err) {
+		t.Error("visible intents dungeon should not exist when dungeon_hidden defaults to true")
 	}
 }

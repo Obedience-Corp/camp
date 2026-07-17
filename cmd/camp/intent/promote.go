@@ -22,22 +22,22 @@ import (
 
 var intentPromoteCmd = &cobra.Command{
 	Use:   "promote <id>",
-	Short: "Promote an intent through the pipeline",
-	Long: `Promote an intent to the next pipeline stage.
+	Short: "Promote an idea through the pipeline",
+	Long: `Promote an idea to the next pipeline stage.
 
 TARGETS:
   ready      Move from inbox to ready (reviewed/enriched)
   festival   Move from ready to active + create festival (default)
   design     Move from ready to active + create design doc
 
-The intent moves to active status when promoted to festival or design,
+The idea moves to active status when promoted to festival or design,
 because work is just beginning. Use --force to bypass status checks.
 
 Examples:
-  camp intent promote add-dark                       Promote ready → festival
-  camp intent promote add-dark --target design       Promote ready → design doc
-  camp intent promote add-dark --target ready         Promote inbox → ready
-  camp intent promote add-dark --force                Force promote from any status`,
+  camp idea promote add-dark                       Promote ready → festival
+  camp idea promote add-dark --target design       Promote ready → design doc
+  camp idea promote add-dark --target ready         Promote inbox → ready
+  camp idea promote add-dark --force                Force promote from any status`,
 	Args: cobra.ExactArgs(1),
 	RunE: runIntentPromote,
 }
@@ -86,19 +86,19 @@ func runIntentPromote(cmd *cobra.Command, args []string) error {
 	svc := intent.NewIntentService(campaignRoot, resolver.Intents())
 	svc.SetLedger(ledger.NewFromRoot(ctx, campaignRoot, ledger.WarnTo(cmd.ErrOrStderr())))
 	if err := svc.EnsureDirectories(ctx); err != nil {
-		return camperrors.Wrap(err, "failed to ensure intent directories")
+		return camperrors.Wrap(err, "failed to ensure idea directories")
 	}
 
 	// Find the intent
 	i, err := svc.Find(ctx, id)
 	if err != nil {
-		return camperrors.Newf("intent not found: %s", id)
+		return camperrors.Newf("idea not found: %s", id)
 	}
 
 	// Dry run mode
 	if dryRun {
 		fmt.Println("Dry run - no changes made")
-		fmt.Printf("Would promote intent: %s\n", i.ID)
+		fmt.Printf("Would promote idea: %s\n", i.ID)
 		fmt.Printf("Title: %s\n", i.Title)
 		fmt.Printf("Target: %s\n", target)
 		fmt.Printf("Current status: %s\n", i.Status)
@@ -116,7 +116,7 @@ func runIntentPromote(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "promotion failed")
 	}
 
-	fmt.Printf("%s Intent promoted to %s\n", ui.SuccessIcon(), result.NewStatus)
+	fmt.Printf("%s Idea promoted to %s\n", ui.SuccessIcon(), result.NewStatus)
 
 	promotedTo := result.DesignDir
 	if promotedTo == "" {
@@ -180,9 +180,9 @@ func runIntentPromote(cmd *cobra.Command, args []string) error {
 			fmt.Println("Next step: Create the Festival with:")
 			fmt.Printf("  fest create festival --name %q\n", i.Title)
 		} else if result.FestivalCreated {
-			fmt.Printf("\n%s Festival '%s' created from promoted intent.\n", ui.SuccessIcon(), result.FestivalDir)
+			fmt.Printf("\n%s Festival '%s' created from promoted idea.\n", ui.SuccessIcon(), result.FestivalDir)
 			if result.IntentCopied {
-				fmt.Printf("  Intent copied to %s/%s/001_INGEST/input_specs/\n", result.FestivalDest, result.FestivalDir)
+				fmt.Printf("  Idea copied to %s/%s/001_INGEST/input_specs/\n", result.FestivalDest, result.FestivalDir)
 			}
 		} else {
 			fmt.Println()
@@ -190,7 +190,7 @@ func runIntentPromote(cmd *cobra.Command, args []string) error {
 			if result.FestCLIError != "" {
 				fmt.Fprintf(os.Stderr, "fest error: %s\n", result.FestCLIError)
 			}
-			fmt.Println("Intent was promoted successfully. Create the festival manually with:")
+			fmt.Println("Idea was promoted successfully. Create the festival manually with:")
 			fmt.Printf("  fest create festival --type standard --name %q\n", result.FestivalName)
 		}
 
@@ -200,7 +200,7 @@ func runIntentPromote(cmd *cobra.Command, args []string) error {
 		} else {
 			fmt.Println()
 			fmt.Printf("%s design doc creation failed\n", ui.WarningIcon())
-			fmt.Println("Intent was promoted to active. Create the design doc manually.")
+			fmt.Println("Idea was promoted to active. Create the design doc manually.")
 		}
 	}
 

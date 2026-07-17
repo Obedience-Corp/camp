@@ -212,7 +212,7 @@ func TestUpdateDirect_StatusChangeDestinationCollisionPreservesExisting(t *testi
 	svc, id, _ := setupTestService(t)
 	ctx := context.Background()
 
-	collisionPath := svc.getIntentPath(StatusReady, id)
+	collisionPath := mustIntentPath(t, svc, StatusReady, id)
 	if err := os.MkdirAll(filepath.Dir(collisionPath), 0755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
@@ -239,7 +239,7 @@ func TestUpdateDirect_StatusChangeDestinationCollisionPreservesExisting(t *testi
 		t.Fatalf("UpdateDirect() error = %v, want ErrFileExists", err)
 	}
 
-	inboxPath := svc.getIntentPath(StatusInbox, id)
+	inboxPath := mustIntentPath(t, svc, StatusInbox, id)
 	if _, err := os.Stat(inboxPath); err != nil {
 		t.Fatalf("source file should remain after failed update: %v", err)
 	}

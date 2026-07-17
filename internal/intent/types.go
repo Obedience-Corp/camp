@@ -258,6 +258,13 @@ type Intent struct {
 	// Tracking
 	UpdatedAt time.Time `yaml:"updated_at,omitempty"`
 
+	// Assignment - who is currently working this intent, and where. WorkRef
+	// is repeatable: a PR URL, branch name, or festival path. Additive fields;
+	// intents written before this existed simply omit them.
+	AssignedTo string    `yaml:"assigned_to,omitempty"`
+	AssignedAt time.Time `yaml:"assigned_at,omitempty"`
+	WorkRef    []string  `yaml:"work_ref,omitempty"`
+
 	// Runtime fields (not serialized to YAML)
 	Path              string             `yaml:"-"` // Filesystem path to the intent file
 	Content           string             `yaml:"-"` // Markdown body content (after frontmatter)

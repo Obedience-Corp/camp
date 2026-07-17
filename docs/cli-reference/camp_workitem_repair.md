@@ -1,6 +1,6 @@
 ## camp workitem repair
 
-Repair a workflow directory into a current-schema work item
+Repair a workflow directory into a workitem
 
 ### Synopsis
 

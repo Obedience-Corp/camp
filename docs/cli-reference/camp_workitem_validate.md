@@ -1,6 +1,6 @@
 ## camp workitem validate
 
-Validate workflow work item directories and their .workitem markers
+Validate workitem directories
 
 ### Synopsis
 

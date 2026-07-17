@@ -1,6 +1,7 @@
 package audit
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -69,6 +70,18 @@ func TestAppendEvent_NewEventTypes(t *testing.T) {
 				Type:  "design",
 				Title: "Legacy",
 				To:    "workflow/design/legacy",
+			},
+		},
+		{
+			name: "move",
+			event: Event{
+				Event: EventMove,
+				ID:    "bug-triage-2026-07-11",
+				Ref:   "WI-a1b2c3",
+				Type:  "bug",
+				Title: "Triage item",
+				From:  "workflow/bug/triage-item",
+				To:    "workflow/bug/dungeon/archived/2026-07-11/triage-item",
 			},
 		},
 	}
@@ -157,5 +170,72 @@ func TestAppendEvent_OldFormatStillDecodes(t *testing.T) {
 	}
 	if newEvt.Event != EventCreate || newEvt.Ref != "WI-fedcba" || newEvt.Title != "New" {
 		t.Fatalf("new event decoded unexpectedly: %+v", newEvt)
+	}
+}
+
+// TestAppendBestEffort_WritesEventOnSuccess locks in that AppendBestEffort is
+// the same construction-and-append path as AppendEvent when the write
+// succeeds: every FS-mutating workitem command routes through this one
+// function instead of re-implementing the ledger append.
+func TestAppendBestEffort_WritesEventOnSuccess(t *testing.T) {
+	root := t.TempDir()
+	var warnings bytes.Buffer
+
+	AppendBestEffort(context.Background(), &warnings, root, Event{
+		Event: EventMove,
+		ID:    "design-example-2026-07-11",
+		Ref:   "WI-abc123",
+		Type:  "design",
+		From:  "workflow/design/example",
+		To:    "workflow/design/dungeon/archived/2026-07-11/example",
+	})
+
+	if warnings.Len() != 0 {
+		t.Fatalf("expected no warning on success, got %q", warnings.String())
+	}
+
+	data, err := os.ReadFile(filepath.Join(root, ".campaign", "workitems", AuditFile))
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	var got Event
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if got.Event != EventMove || got.ID != "design-example-2026-07-11" || got.Ref != "WI-abc123" {
+		t.Fatalf("unexpected event: %+v", got)
+	}
+}
+
+// TestAppendBestEffort_WarnsWithoutFailing locks in the mandatory best-effort
+// contract: a ledger write failure must never abort the caller's already
+// applied filesystem mutation, only warn. Forcing os.MkdirAll to fail by
+// occupying the ledger directory's path with a file simulates a real write
+// failure without needing root or a read-only filesystem.
+func TestAppendBestEffort_WarnsWithoutFailing(t *testing.T) {
+	root := t.TempDir()
+	campaignDir := filepath.Join(root, ".campaign")
+	if err := os.MkdirAll(campaignDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A file where the "workitems" directory needs to be created makes
+	// MkdirAll fail with ENOTDIR.
+	if err := os.WriteFile(filepath.Join(campaignDir, "workitems"), []byte("occupied"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var warnings bytes.Buffer
+	AppendBestEffort(context.Background(), &warnings, root, Event{
+		Event: EventMove,
+		ID:    "design-blocked-2026-07-11",
+		From:  "workflow/design/blocked",
+		To:    "workflow/design/dungeon/archived/blocked",
+	})
+
+	if warnings.Len() == 0 {
+		t.Fatal("expected a warning to be written when the ledger append fails")
+	}
+	if !strings.Contains(warnings.String(), "failed to append workitem audit event") {
+		t.Fatalf("warning = %q, want it to describe the ledger append failure", warnings.String())
 	}
 }

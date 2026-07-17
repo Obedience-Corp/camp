@@ -1,6 +1,6 @@
 ## camp workitem priority
 
-Set or clear the manual priority of a workitem
+Set or clear the manual priority
 
 ### Synopsis
 

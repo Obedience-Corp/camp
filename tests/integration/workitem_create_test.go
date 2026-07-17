@@ -58,7 +58,7 @@ func TestIntegration_WorkitemCreateAndAdopt(t *testing.T) {
 
 		manifest, err := tc.ReadFile(campaignDir + "/workflow/feature/demo-feature/.workitem")
 		require.NoError(t, err)
-		assert.Contains(t, manifest, "version: v1alpha6")
+		assert.Contains(t, manifest, "version: v1alpha7")
 		assert.Contains(t, manifest, "kind: workitem")
 		assert.Contains(t, manifest, "type: feature")
 		assert.Contains(t, manifest, "title: Demo")
@@ -215,7 +215,7 @@ func TestIntegration_WorkitemCreateJSON(t *testing.T) {
 	assert.Equal(t, "Agent JSON", payload.Workitem.Title)
 	assert.Empty(t, payload.Workitem.QuestID)
 	assert.Equal(t, "workflow/feature/agent-json", payload.Workitem.RelativePath)
-	assert.Equal(t, "v1alpha6", payload.Workitem.MarkerVersion)
+	assert.Equal(t, "v1alpha7", payload.Workitem.MarkerVersion)
 	assert.Equal(t, "fest create workflow agent-json", payload.Next.Command)
 	assert.Equal(t, "workflow/feature/agent-json", payload.Next.Cwd)
 	assert.Contains(t, payload.Next.Hint, "cd workflow/feature/agent-json")

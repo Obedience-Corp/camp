@@ -12,7 +12,7 @@ func appendIntentAuditEvent(ctx context.Context, intentsDir string, event audit.
 		event.Actor = resolveIntentActor(ctx)
 	}
 	if err := audit.AppendEvent(ctx, intentsDir, event); err != nil {
-		return camperrors.Wrap(err, "writing intent audit event")
+		return camperrors.Wrap(err, "writing idea audit event")
 	}
 	return nil
 }

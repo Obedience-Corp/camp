@@ -1,25 +1,49 @@
 package workflow
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	dungeonscaffold "github.com/Obedience-Corp/camp/internal/dungeon/scaffold"
+	"github.com/Obedience-Corp/camp/internal/dungeon/spelling"
 	"github.com/Obedience-Corp/camp/internal/dungeon/statuspath"
 )
 
-func resolveWorkflowDestinationPath(root, status, itemName string, now time.Time) string {
-	statusRoot := filepath.Join(root, status)
-	if isStandardDungeonPath(status) {
-		return statuspath.DatedItemPath(statusRoot, itemName, now)
+// resolveStatusRoot translates a schema status path (e.g. "dungeon/completed",
+// "active", ".") into its actual on-disk directory under root. A leading
+// "dungeon" segment is rewritten to whichever of "dungeon"/".dungeon" is
+// already established under root, or to campaignSpelling when neither exists
+// yet. Non-dungeon statuses are returned unchanged.
+func resolveStatusRoot(ctx context.Context, root, status, campaignSpelling string) (string, error) {
+	if status != spelling.Visible && !strings.HasPrefix(status, spelling.Visible+"/") {
+		return filepath.Join(root, status), nil
 	}
-	return filepath.Join(statusRoot, itemName)
+	name, err := spelling.NameForNew(ctx, root, campaignSpelling)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(root, spelling.RewriteRel(status, name)), nil
 }
 
-func resolveWorkflowItemPath(root, status, itemName string) (string, bool, error) {
-	statusRoot := filepath.Join(root, status)
+func resolveWorkflowDestinationPath(ctx context.Context, root, status, itemName, campaignSpelling string, now time.Time) (string, error) {
+	statusRoot, err := resolveStatusRoot(ctx, root, status, campaignSpelling)
+	if err != nil {
+		return "", err
+	}
+	if isStandardDungeonPath(status) {
+		return statuspath.DatedItemPath(statusRoot, itemName, now), nil
+	}
+	return filepath.Join(statusRoot, itemName), nil
+}
+
+func resolveWorkflowItemPath(ctx context.Context, root, status, itemName, campaignSpelling string) (string, bool, error) {
+	statusRoot, err := resolveStatusRoot(ctx, root, status, campaignSpelling)
+	if err != nil {
+		return "", false, err
+	}
 	if isStandardDungeonPath(status) {
 		return statuspath.ExistingItemPath(statusRoot, itemName)
 	}
@@ -35,7 +59,7 @@ func resolveWorkflowItemPath(root, status, itemName string) (string, bool, error
 }
 
 func isStandardDungeonPath(path string) bool {
-	return strings.HasPrefix(path, "dungeon/")
+	return strings.HasPrefix(path, spelling.Visible+"/")
 }
 
 func appendStandardDungeonInitResult(result *InitResult, root string, dungeonResult *dungeonscaffold.InitResult) {

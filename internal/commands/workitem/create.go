@@ -31,7 +31,7 @@ func newCreateCommand() *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "create <slug>",
-		Short: "Create a new workitem with v1 minimum metadata",
+		Short: "Create a workitem",
 		Long: `Create a new workitem directory with minimal v1 metadata.
 
 The workitem is created under workflow/<type>/<slug>/ unless --dir supplies a
