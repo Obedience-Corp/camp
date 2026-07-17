@@ -2,23 +2,68 @@ package fresh
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sort"
 	"strings"
-
-	"github.com/charmbracelet/huh"
-	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/ui"
-	"github.com/Obedience-Corp/camp/internal/ui/theme"
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/spf13/cobra"
 )
 
 const globalFollowUpScope = "__global__"
+
+type followUpPane int
+
+const (
+	followUpScopesPane followUpPane = iota
+	followUpWorkflowPane
+)
+
+type followUpOverlay int
+
+const (
+	followUpNoOverlay followUpOverlay = iota
+	followUpFormOverlay
+	followUpDeleteOverlay
+	followUpHelpOverlay
+)
+
+type followUpScope struct {
+	projectName string
+	label       string
+}
+
+type followUpTUIModel struct {
+	ctx      context.Context
+	root     string
+	projects []project.Project
+	cfg      *config.FreshConfig
+	scopes   []followUpScope
+
+	pane        followUpPane
+	scopeCursor int
+	stepCursor  int
+
+	overlay       followUpOverlay
+	inputs        [3]textinput.Model
+	formField     int
+	formEditName  string
+	formContinue  bool
+	formError     string
+	pendingDelete string
+
+	status    string
+	statusErr bool
+	width     int
+	height    int
+	quitting  bool
+}
 
 // runConfigureTUI is the human-facing entry point for `camp fresh configure`.
 // The child commands remain available for scripts and agents that need a
@@ -34,213 +79,49 @@ func runConfigureTUI(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return camperrors.Wrap(err, "not in a campaign")
 	}
-
 	projects, err := project.List(ctx, campRoot)
 	if err != nil {
 		return camperrors.Wrap(err, "listing campaign projects")
 	}
-
-	return runFollowUpMenu(ctx, campRoot, projects)
-}
-
-func runFollowUpMenu(ctx context.Context, campRoot string, projects []project.Project) error {
-	for {
-		var action string
-		form := huh.NewForm(huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Fresh follow-ups").
-				Description("Commands run after a successful camp fresh cycle.").
-				Options(
-					huh.NewOption("Add a follow-up command", "add"),
-					huh.NewOption("Remove a follow-up command", "remove"),
-					huh.NewOption("Review configured commands", "review"),
-					huh.NewOption("Done", "done"),
-				).
-				Value(&action),
-		))
-
-		if err := theme.RunForm(ctx, form); err != nil {
-			if theme.IsCancelled(err) {
-				return nil
-			}
-			return err
-		}
-
-		switch action {
-		case "add":
-			if err := addFollowUpTUI(ctx, campRoot, projects); err != nil {
-				if errors.Is(err, errFollowUpTUIBack) {
-					continue
-				}
-				return err
-			}
-		case "remove":
-			if err := removeFollowUpTUI(ctx, campRoot, projects); err != nil {
-				if errors.Is(err, errFollowUpTUIBack) {
-					continue
-				}
-				return err
-			}
-		case "review":
-			cfg, err := config.LoadFreshConfig(ctx, campRoot)
-			if err != nil {
-				return camperrors.Wrap(err, "loading fresh config")
-			}
-			fmt.Println()
-			printFollowUpSection("Global default", cfg.FollowUp)
-			for _, name := range configuredProjectNames(cfg) {
-				fmt.Println()
-				printFollowUpSection("Project: "+name, cfg.Projects[name].FollowUp)
-			}
-			fmt.Println()
-		case "done", "":
-			return nil
-		}
-	}
-}
-
-var errFollowUpTUIBack = errors.New("follow-up TUI back")
-
-func addFollowUpTUI(ctx context.Context, campRoot string, projects []project.Project) error {
-	scope, err := selectFollowUpScope(ctx, projects, nil)
-	if err != nil {
-		if theme.IsCancelled(err) {
-			return errFollowUpTUIBack
-		}
-		return err
-	}
-
-	var name, run, dir string
-	continueOnError := false
-	form := huh.NewForm(huh.NewGroup(
-		huh.NewInput().
-			Title("Command name").
-			Description("A short label, such as install or build.").
-			Placeholder("install").
-			Value(&name).
-			Validate(requiredField("command name")),
-		huh.NewInput().
-			Title("Command").
-			Description("Runs after camp fresh finishes syncing.").
-			Placeholder("npm install").
-			Value(&run).
-			Validate(requiredField("command")),
-		huh.NewInput().
-			Title("Working directory (optional)").
-			Description("Relative to the project root; leave blank for the root.").
-			Placeholder("cmd/camp").
-			Value(&dir),
-		huh.NewConfirm().
-			Title("Continue if this command fails?").
-			Description("Choose No to stop the fresh cycle on failure.").
-			Affirmative("Continue").
-			Negative("Stop").
-			Value(&continueOnError),
-	).Title("Add follow-up").Description(scopeDescription(scope)))
-
-	if err := theme.RunForm(ctx, form); err != nil {
-		if theme.IsCancelled(err) {
-			return errFollowUpTUIBack
-		}
-		return err
-	}
-
-	entry := config.FollowUpConfig{
-		Name:            strings.TrimSpace(name),
-		Run:             strings.TrimSpace(run),
-		Dir:             strings.TrimSpace(dir),
-		ContinueOnError: continueOnError,
-	}
-	if err := config.AddFreshFollowUp(ctx, campRoot, scopeProjectName(scope), entry); err != nil {
-		return err
-	}
-
-	fmt.Println(ui.Success(fmt.Sprintf("Added %q to %s.", entry.Name, scopeDescription(scope))))
-	return nil
-}
-
-func removeFollowUpTUI(ctx context.Context, campRoot string, projects []project.Project) error {
 	cfg, err := config.LoadFreshConfig(ctx, campRoot)
 	if err != nil {
 		return camperrors.Wrap(err, "loading fresh config")
 	}
 
-	scope, err := selectFollowUpScope(ctx, projects, cfg)
-	if err != nil {
-		if theme.IsCancelled(err) {
-			return errFollowUpTUIBack
-		}
-		return err
+	program := tea.NewProgram(newFollowUpTUIModel(ctx, campRoot, projects, cfg), tea.WithContext(ctx), tea.WithAltScreen())
+	if _, err := program.Run(); err != nil {
+		return camperrors.Wrap(err, "running fresh configuration TUI")
 	}
-
-	steps := followUpsForScope(cfg, scope)
-	if len(steps) == 0 {
-		fmt.Println(ui.Warning(fmt.Sprintf("No follow-up commands are configured for %s.", scopeDescription(scope))))
-		return errFollowUpTUIBack
-	}
-
-	options := make([]huh.Option[string], 0, len(steps))
-	for _, step := range steps {
-		label := fmt.Sprintf("%-16s %s", step.Name, step.Run)
-		if step.Dir != "" {
-			label += "  (dir: " + step.Dir + ")"
-		}
-		options = append(options, huh.NewOption(label, step.Name))
-	}
-
-	var name string
-	form := huh.NewForm(huh.NewGroup(
-		huh.NewSelect[string]().
-			Title("Remove follow-up").
-			Description(scopeDescription(scope)).
-			Options(options...).
-			Value(&name),
-	))
-	if err := theme.RunForm(ctx, form); err != nil {
-		if theme.IsCancelled(err) {
-			return errFollowUpTUIBack
-		}
-		return err
-	}
-
-	var confirm bool
-	confirmForm := huh.NewForm(huh.NewGroup(
-		huh.NewConfirm().
-			Title(fmt.Sprintf("Remove %q?", name)).
-			Affirmative("Remove").
-			Negative("Keep").
-			Value(&confirm),
-	))
-	if err := theme.RunForm(ctx, confirmForm); err != nil {
-		if theme.IsCancelled(err) {
-			return errFollowUpTUIBack
-		}
-		return err
-	}
-	if !confirm {
-		return errFollowUpTUIBack
-	}
-
-	if err := config.RemoveFreshFollowUp(ctx, campRoot, scopeProjectName(scope), name); err != nil {
-		return err
-	}
-	fmt.Println(ui.Success(fmt.Sprintf("Removed %q from %s.", name, scopeDescription(scope))))
 	return nil
 }
 
-func selectFollowUpScope(ctx context.Context, projects []project.Project, cfg *config.FreshConfig) (string, error) {
-	options := []huh.Option[string]{huh.NewOption("Global default (all projects)", globalFollowUpScope)}
-
-	names := make(map[string]bool)
-	for _, p := range projects {
-		names[p.Name] = true
+func newFollowUpTUIModel(ctx context.Context, root string, projects []project.Project, cfg *config.FreshConfig) *followUpTUIModel {
+	m := &followUpTUIModel{
+		ctx:      ctx,
+		root:     root,
+		projects: projects,
+		cfg:      cfg,
 	}
-	if cfg != nil {
-		for name, pc := range cfg.Projects {
-			if pc.FollowUp != nil {
-				names[name] = true
-			}
-		}
+	for i := range m.inputs {
+		m.inputs[i] = textinput.New()
+		m.inputs[i].Prompt = "  "
+		m.inputs[i].CharLimit = 256
+	}
+	m.inputs[0].Placeholder = "install"
+	m.inputs[1].Placeholder = "npm install"
+	m.inputs[2].Placeholder = "optional, relative to project root"
+	m.rebuildScopes(globalFollowUpScope)
+	return m
+}
+
+func (m *followUpTUIModel) rebuildScopes(selected string) {
+	scopes := []followUpScope{{projectName: globalFollowUpScope, label: "Global defaults"}}
+	names := make(map[string]struct{}, len(m.projects)+len(m.cfg.Projects))
+	for _, p := range m.projects {
+		names[p.Name] = struct{}{}
+	}
+	for name := range m.cfg.Projects {
+		names[name] = struct{}{}
 	}
 	projectNames := make([]string, 0, len(names))
 	for name := range names {
@@ -248,36 +129,91 @@ func selectFollowUpScope(ctx context.Context, projects []project.Project, cfg *c
 	}
 	sort.Strings(projectNames)
 	for _, name := range projectNames {
-		label := name
-		if cfg != nil {
-			if steps := cfg.Projects[name].FollowUp; steps != nil {
-				label = fmt.Sprintf("%s (%d configured)", name, len(steps))
-			}
+		label := name + " · inherits global"
+		if pc, ok := m.cfg.Projects[name]; ok && pc.FollowUp != nil {
+			label = fmt.Sprintf("%s · project override (%d)", name, len(pc.FollowUp))
 		}
-		options = append(options, huh.NewOption(label, name))
+		scopes = append(scopes, followUpScope{projectName: name, label: label})
 	}
-
-	var scope string
-	form := huh.NewForm(huh.NewGroup(
-		huh.NewSelect[string]().
-			Title("Where should this apply?").
-			Description("Global commands apply to projects without their own override.").
-			Options(options...).
-			Value(&scope),
-	))
-	if err := theme.RunForm(ctx, form); err != nil {
-		return "", err
+	m.scopes = scopes
+	m.scopeCursor = 0
+	for i, scope := range scopes {
+		if scope.projectName == selected {
+			m.scopeCursor = i
+			break
+		}
 	}
-	return scope, nil
+	m.stepCursor = min(m.stepCursor, max(len(m.workflowSteps())-1, 0))
 }
 
-func requiredField(label string) func(string) error {
-	return func(value string) error {
-		if strings.TrimSpace(value) == "" {
-			return fmt.Errorf("%s is required", label)
-		}
-		return nil
+func (m *followUpTUIModel) refresh(selected string) error {
+	cfg, err := config.LoadFreshConfig(m.ctx, m.root)
+	if err != nil {
+		return camperrors.Wrap(err, "loading fresh config")
 	}
+	m.cfg = cfg
+	m.rebuildScopes(selected)
+	return nil
+}
+
+func (m *followUpTUIModel) selectedScope() string {
+	if len(m.scopes) == 0 {
+		return globalFollowUpScope
+	}
+	return m.scopes[m.scopeCursor].projectName
+}
+
+func (m *followUpTUIModel) workflowSteps() []freshWorkflowStep {
+	return buildFreshWorkflow(m.cfg, scopeProjectName(m.selectedScope()))
+}
+
+func (m *followUpTUIModel) effectiveFollowUps() []config.FollowUpConfig {
+	return m.cfg.ResolveFreshFollowUps(scopeProjectName(m.selectedScope()))
+}
+
+func (m *followUpTUIModel) selectedFollowUp() (int, config.FollowUpConfig, bool) {
+	steps := m.workflowSteps()
+	if m.stepCursor < 0 || m.stepCursor >= len(steps) || steps[m.stepCursor].Follow == nil {
+		return -1, config.FollowUpConfig{}, false
+	}
+	for i, follow := range m.effectiveFollowUps() {
+		if follow.Name == steps[m.stepCursor].Follow.Name {
+			return i, follow, true
+		}
+	}
+	return -1, config.FollowUpConfig{}, false
+}
+
+func (m *followUpTUIModel) setStatus(message string) {
+	m.status = message
+	m.statusErr = false
+}
+
+func (m *followUpTUIModel) setError(err error) {
+	m.status = err.Error()
+	m.statusErr = true
+}
+
+func (m *followUpTUIModel) Init() tea.Cmd {
+	return textinput.Blink
+}
+
+func configuredProjectNames(cfg *config.FreshConfig) []string {
+	names := make([]string, 0, len(cfg.Projects))
+	for name, pc := range cfg.Projects {
+		if pc.FollowUp != nil {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+func followUpsForScope(cfg *config.FreshConfig, scope string) []config.FollowUpConfig {
+	if scope == globalFollowUpScope {
+		return cfg.FollowUp
+	}
+	return cfg.Projects[scope].FollowUp
 }
 
 func scopeProjectName(scope string) string {
@@ -294,20 +230,11 @@ func scopeDescription(scope string) string {
 	return "project " + scope
 }
 
-func followUpsForScope(cfg *config.FreshConfig, scope string) []config.FollowUpConfig {
-	if scope == globalFollowUpScope {
-		return cfg.FollowUp
-	}
-	return cfg.Projects[scope].FollowUp
-}
-
-func configuredProjectNames(cfg *config.FreshConfig) []string {
-	names := make([]string, 0, len(cfg.Projects))
-	for name, pc := range cfg.Projects {
-		if pc.FollowUp != nil {
-			names = append(names, name)
+func requiredField(label string) func(string) error {
+	return func(value string) error {
+		if strings.TrimSpace(value) == "" {
+			return camperrors.NewValidation(label, "must not be empty", nil)
 		}
+		return nil
 	}
-	sort.Strings(names)
-	return names
 }

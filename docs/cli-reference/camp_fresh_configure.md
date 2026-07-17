@@ -1,6 +1,6 @@
 ## camp fresh configure
 
-Manage camp fresh follow-up command workflows
+Configure camp fresh follow-up commands
 
 ### Synopsis
 
@@ -9,12 +9,21 @@ successful sync/prune/branch cycle. Configuration lives in
 .campaign/settings/fresh.yaml: a global default list, plus optional
 per-project override lists that replace the global list entirely.
 
+Run without a subcommand to open the interactive setup for humans. Use
+show, add, and remove for scripts and agents.
+
 Examples:
+  camp fresh configure
+  camp fresh show-workflow camp
   camp fresh configure show
   camp fresh configure add install --run "npm install"
   camp fresh configure add build --run "go build ./..." --project camp --dir cmd/camp
   camp fresh configure remove install
   camp fresh configure remove build --project camp
+
+```
+camp fresh configure [flags]
+```
 
 ### Options
 

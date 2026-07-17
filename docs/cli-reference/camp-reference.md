@@ -1457,7 +1457,8 @@ run, or 'camp fresh all' to cycle every project submodule in the campaign.
 Without configuration, syncs to the default branch and prunes.
 Configure .campaign/settings/fresh.yaml to set a default working branch, or
 follow-up command workflows (install, build, bootstrap, ...) to run once the
-cycle succeeds. Manage those with 'camp fresh configure'.
+cycle succeeds. Manage those with 'camp fresh configure'. Inspect the resolved
+sequence with 'camp fresh show-workflow [project-name]'.
 
 Examples:
   camp fresh                            # Sync current project (checkout default, pull, prune)
@@ -1533,7 +1534,7 @@ camp fresh all [flags]
 
 ## camp fresh configure
 
-Manage camp fresh follow-up command workflows
+Configure camp fresh follow-up commands
 
 ### Synopsis
 
@@ -1542,12 +1543,21 @@ successful sync/prune/branch cycle. Configuration lives in
 .campaign/settings/fresh.yaml: a global default list, plus optional
 per-project override lists that replace the global list entirely.
 
+Run without a subcommand to open the interactive setup for humans. Use
+show, add, and remove for scripts and agents.
+
 Examples:
+  camp fresh configure
+  camp fresh show-workflow camp
   camp fresh configure show
   camp fresh configure add install --run "npm install"
   camp fresh configure add build --run "go build ./..." --project camp --dir cmd/camp
   camp fresh configure remove install
   camp fresh configure remove build --project camp
+
+```
+camp fresh configure [flags]
+```
 
 ### Options
 
@@ -1639,6 +1649,41 @@ camp fresh configure show [flags]
 
 ```
   -h, --help   help for show
+```
+
+### Options inherited from parent commands
+
+```
+  -b, --branch string   Branch to create after syncing (overrides config)
+  -n, --dry-run         Preview without making changes
+      --no-branch       Skip branch creation even if configured
+      --no-color        disable colored output
+      --no-follow-up    Skip configured follow-up command workflows
+      --no-prune        Skip pruning merged branches
+      --no-push         Skip pushing the new branch upstream
+```
+---
+
+## camp fresh show-workflow
+
+Show the fresh cycle and configured follow-up steps
+
+### Synopsis
+
+Show the ordered steps camp fresh will use, including disabled steps
+and the follow-up commands resolved for a project.
+
+With no project name, the global defaults are shown. Pass a project name to
+include its branch, pruning, and follow-up overrides.
+
+```
+camp fresh show-workflow [project-name] [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for show-workflow
 ```
 
 ### Options inherited from parent commands

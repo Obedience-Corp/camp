@@ -9,6 +9,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
@@ -29,6 +30,7 @@ show, add, and remove for scripts and agents.
 
 Examples:
   camp fresh configure
+  camp fresh show-workflow camp
   camp fresh configure show
   camp fresh configure add install --run "npm install"
   camp fresh configure add build --run "go build ./..." --project camp --dir cmd/camp
@@ -43,6 +45,40 @@ Examples:
 	configureCmd.AddCommand(newConfigureRemoveCommand())
 
 	return configureCmd
+}
+
+func newShowWorkflowCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "show-workflow [project-name]",
+		Short: "Show the fresh cycle and configured follow-up steps",
+		Long: `Show the ordered steps camp fresh will use, including disabled steps
+and the follow-up commands resolved for a project.
+
+With no project name, the global defaults are shown. Pass a project name to
+include its branch, pruning, and follow-up overrides.`,
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeProjectName,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			campRoot, err := campaign.DetectCached(ctx)
+			if err != nil {
+				return camperrors.Wrap(err, "not in a campaign")
+			}
+			cfg, err := config.LoadFreshConfig(ctx, campRoot)
+			if err != nil {
+				return camperrors.Wrap(err, "loading fresh config")
+			}
+			projectName := ""
+			if len(args) == 1 {
+				resolved, err := project.Resolve(ctx, campRoot, args[0])
+				if err != nil {
+					return err
+				}
+				projectName = resolved.Name
+			}
+			return printFreshWorkflow(cmd.OutOrStdout(), cfg, projectName)
+		},
+	}
 }
 
 func newConfigureShowCommand() *cobra.Command {

@@ -30,4 +30,4 @@ camp fresh configure add <name> [flags]
 
 ### SEE ALSO
 
-* [camp fresh configure](camp_fresh_configure.md)	 - Manage camp fresh follow-up command workflows
+* [camp fresh configure](camp_fresh_configure.md)	 - Configure camp fresh follow-up commands
