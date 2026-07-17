@@ -199,6 +199,11 @@ cgo external-repo
 `camp detach <path>` removes the marker. Linked projects keep using
 `camp project link` / `camp project unlink`.
 
+When a shared attachment is accessed directly rather than through a
+campaign-local symlink, camp resolves it to the first bound campaign
+(`active_campaign_id`). Detaching that fallback campaign makes the next bound
+campaign active.
+
 ### Planning
 
 Intents, promotion, and the dungeon provide lightweight planning tools:

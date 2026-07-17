@@ -39,7 +39,7 @@ func Detect(ctx context.Context, startDir string) (string, error) {
 	dir := startDir
 	if dir == "" {
 		var err error
-		dir, err = os.Getwd()
+		dir, err = logicalWorkingDirectory()
 		if err != nil {
 			return "", err
 		}
@@ -67,6 +67,50 @@ func Detect(ctx context.Context, startDir string) (string, error) {
 	}
 
 	return "", ErrNotInCampaign
+}
+
+// logicalWorkingDirectory recovers the shell's logical working directory when
+// the process cwd has been entered through a symlink. os.Getwd may return the
+// physical target path, which loses the campaign-local symlink context needed
+// to resolve shared attachments. PWD is only trusted when it is absolute,
+// exists, and resolves to the same physical directory as os.Getwd.
+func logicalWorkingDirectory() (string, error) {
+	physical, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	physical, err = filepath.Abs(physical)
+	if err != nil {
+		return "", err
+	}
+	physical = filepath.Clean(physical)
+
+	logical := os.Getenv("PWD")
+	if logical == "" || !filepath.IsAbs(logical) {
+		return physical, nil
+	}
+	logical, err = filepath.Abs(logical)
+	if err != nil {
+		return physical, nil
+	}
+	logical = filepath.Clean(logical)
+	if _, err := os.Stat(logical); err != nil {
+		return physical, nil
+	}
+
+	resolvedPhysical, err := filepath.EvalSymlinks(physical)
+	if err != nil {
+		return physical, nil
+	}
+	resolvedLogical, err := filepath.EvalSymlinks(logical)
+	if err != nil {
+		return physical, nil
+	}
+	if resolvedPhysical == resolvedLogical {
+		return logical, nil
+	}
+
+	return physical, nil
 }
 
 func detectCampaignRootOverride() (string, bool) {
