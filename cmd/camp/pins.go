@@ -132,24 +132,22 @@ func runPin(cmd *cobra.Command, args []string) error {
 		dir = cwd
 	}
 
-	// Resolve to canonical absolute path (follows symlinks so the
-	// comparison with the symlink-resolved campaign root is consistent)
-	absPath, err := filepath.Abs(dir)
+	// Keep the logical absolute path first. A symlink inside a campaign can
+	// point at a shared attachment, and preserving that path lets the pin stay
+	// campaign-relative instead of being forced into the attachment marker's
+	// fallback campaign.
+	logicalPath, err := filepath.Abs(dir)
 	if err != nil {
 		return camperrors.Wrap(err, "resolve path")
 	}
-	absPath, err = filepath.EvalSymlinks(absPath)
-	if err != nil {
-		return camperrors.Wrapf(err, "resolve symlinks for %q", dir)
-	}
 
 	// Validate path exists and is a directory
-	info, err := os.Stat(absPath)
+	info, err := os.Stat(logicalPath)
 	if err != nil {
-		return camperrors.Wrapf(err, "path %q does not exist", absPath)
+		return camperrors.Wrapf(err, "path %q does not exist", logicalPath)
 	}
 	if !info.IsDir() {
-		return camperrors.Newf("path %q is not a directory", absPath)
+		return camperrors.Newf("path %q is not a directory", logicalPath)
 	}
 
 	store, campaignRoot, err := loadPinStore(cmd)
@@ -157,7 +155,20 @@ func runPin(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	pin, display, err := buildPinForPath(cmd.Context(), absPath, campaignRoot)
+	relPath, relErr := filepath.Rel(campaignRoot, logicalPath)
+	insideCampaign := relErr == nil && relPath != ".." && !strings.HasPrefix(relPath, ".."+string(filepath.Separator))
+	var pin pins.Pin
+	var display string
+	if insideCampaign {
+		pin = pins.Pin{Path: relPath}
+		display = relPath
+	} else {
+		absPath, evalErr := filepath.EvalSymlinks(logicalPath)
+		if evalErr != nil {
+			return camperrors.Wrapf(evalErr, "resolve symlinks for %q", dir)
+		}
+		pin, display, err = buildPinForPath(cmd.Context(), absPath, campaignRoot)
+	}
 	if err != nil {
 		return err
 	}
@@ -236,9 +247,11 @@ func runUnpin(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return camperrors.Wrap(err, "get working directory")
 		}
-		cwd, err = filepath.EvalSymlinks(cwd)
+		// Keep a campaign-local symlink path logical so it can match an
+		// in-tree pin even when the target is a shared attachment.
+		cwd, err = filepath.Abs(cwd)
 		if err != nil {
-			return camperrors.Wrap(err, "resolve symlinks for working directory")
+			return camperrors.Wrap(err, "resolve working directory")
 		}
 		pin, ok := findPinForCwd(store, cwd, campaignRoot)
 		if !ok {

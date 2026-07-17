@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -108,7 +109,7 @@ func detectCampaignByWalking(ctx context.Context, startDir string) (string, erro
 		markerPath := filepath.Join(dir, LinkMarkerFile)
 		marker, markerErr := ReadMarkerFile(markerPath)
 		if markerErr == nil {
-			if root, ok, resolveErr := resolveMarkerCampaignRoot(ctx, marker); resolveErr != nil {
+			if root, ok, resolveErr := resolveMarkerCampaignRoot(ctx, marker, dir); resolveErr != nil {
 				return "", resolveErr
 			} else if ok {
 				return root, nil
@@ -131,19 +132,37 @@ func detectCampaignByWalking(ctx context.Context, startDir string) (string, erro
 	}
 }
 
-func resolveMarkerCampaignRoot(ctx context.Context, marker *LinkMarker) (string, bool, error) {
+func resolveMarkerCampaignRoot(ctx context.Context, marker *LinkMarker, startDir string) (string, bool, error) {
 	if marker == nil {
 		return "", false, nil
 	}
 
-	if activeID := marker.EffectiveCampaignID(); activeID != "" {
-		root, found, err := lookupRegisteredCampaignRoot(ctx, activeID)
+	// When a shared attachment is reached through a campaign-local symlink,
+	// prefer the campaign whose root contains the logical path. This preserves
+	// the context of each symlink while keeping direct access deterministic via
+	// active_campaign_id below.
+	var fallback string
+	campaignIDs := []string{marker.EffectiveCampaignID()}
+	if marker.Kind == KindAttachment {
+		campaignIDs = marker.EffectiveCampaignIDs()
+	}
+	for _, campaignID := range campaignIDs {
+		root, found, err := lookupRegisteredCampaignRoot(ctx, campaignID)
 		if err != nil {
 			return "", false, err
 		}
-		if found && IsCampaignRoot(root) {
+		if !found || !IsCampaignRoot(root) {
+			continue
+		}
+		if campaignID == marker.EffectiveCampaignID() {
+			fallback = root
+		}
+		if pathWithin(startDir, root) {
 			return root, true, nil
 		}
+	}
+	if fallback != "" {
+		return fallback, true, nil
 	}
 
 	// Legacy fallback for pre-v2 markers that persisted campaign roots.
@@ -161,6 +180,18 @@ func resolveMarkerCampaignRoot(ctx context.Context, marker *LinkMarker) (string,
 	}
 
 	return "", false, nil
+}
+
+// pathWithin reports whether path is inside root using the logical path. The
+// logical path is intentional: callers may be inside a campaign-local
+// symlink, and resolving it first would erase the context needed to select a
+// shared attachment's campaign.
+func pathWithin(path, root string) bool {
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
 
 // DetectFromCwd is a convenience function that detects from current working directory.

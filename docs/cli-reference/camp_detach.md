@@ -1,13 +1,14 @@
 ## camp detach
 
-Remove the attachment marker from a directory
+Remove the current campaign's attachment binding
 
 ### Synopsis
 
-Remove the .camp attachment marker from the target directory.
+Remove the current campaign's binding from the .camp attachment marker.
 
 Refuses on linked-project markers; use 'camp project unlink' for those.
-The user-managed symlink (if any) is not modified.
+The user-managed symlink (if any) is not modified. If run outside any
+campaign, the entire attachment marker is removed.
 
 Examples:
   camp detach docs/examples/external-repo

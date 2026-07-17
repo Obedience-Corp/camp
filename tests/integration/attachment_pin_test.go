@@ -45,7 +45,7 @@ func TestAttachmentPin_HappyPath(t *testing.T) {
 	marker, err := tc.ReadFile(externalPath + "/.camp")
 	require.NoError(t, err, "marker should exist at resolved target")
 	assert.Contains(t, marker, `"kind": "attachment"`)
-	assert.Contains(t, marker, `"version": 3`)
+	assert.Contains(t, marker, `"version": 4`)
 
 	exclude, err := tc.ReadFile(externalPath + "/.git/info/exclude")
 	require.NoError(t, err)
@@ -184,4 +184,56 @@ func TestAttachmentPin_UnpinFromAttachedCwd(t *testing.T) {
 	listOut, err := tc.RunCampInDir(campaignPath, "pins")
 	require.NoError(t, err)
 	assert.NotContains(t, listOut, "cwd-target", "pin should be gone from listing")
+}
+
+func TestSharedAttachment_ResolvesPerCampaignSymlink(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campaignA := "/campaigns/shared-attachment-a"
+	campaignB := "/campaigns/shared-attachment-b"
+	external := "/test/shared-attachment-target"
+	symlinkA := campaignA + "/docs/shared"
+	symlinkB := campaignB + "/docs/shared"
+
+	_, err := tc.InitCampaign(campaignA, "shared-attachment-a", "product")
+	require.NoError(t, err)
+	_, err = tc.InitCampaign(campaignB, "shared-attachment-b", "product")
+	require.NoError(t, err)
+	_, _, err = tc.ExecCommand("mkdir", "-p", external)
+	require.NoError(t, err)
+
+	campaignIDA := readCampaignID(t, tc, campaignA)
+	campaignIDB := readCampaignID(t, tc, campaignB)
+	tc.Shell(t, "mkdir -p "+campaignA+"/docs "+campaignB+"/docs && ln -s "+external+" "+symlinkA+" && ln -s "+external+" "+symlinkB)
+
+	_, err = tc.RunCampInDir(campaignA, "attach", symlinkA)
+	require.NoError(t, err)
+	_, err = tc.RunCampInDir(campaignB, "attach", symlinkB)
+	require.NoError(t, err)
+
+	marker, err := tc.ReadFile(external + "/.camp")
+	require.NoError(t, err)
+	assert.Contains(t, marker, `"active_campaign_id": "`+campaignIDA+`"`)
+	assert.Contains(t, marker, campaignIDB)
+
+	idA, err := tc.RunCampInDir(symlinkA, "id")
+	require.NoError(t, err)
+	assert.Contains(t, idA, campaignIDA)
+	idB, err := tc.RunCampInDir(symlinkB, "id")
+	require.NoError(t, err)
+	assert.Contains(t, idB, campaignIDB)
+
+	_, err = tc.RunCampInDir(campaignA, "pin", "exrepos", symlinkA)
+	require.NoError(t, err)
+	resolved, err := tc.RunCampInDir(campaignA, "go", "exrepos", "--print")
+	require.NoError(t, err)
+	assert.Contains(t, resolved, symlinkA)
+	_, err = tc.RunCampInDir(symlinkA, "unpin")
+	require.NoError(t, err)
+
+	_, err = tc.RunCampInDir(campaignA, "detach", symlinkA)
+	require.NoError(t, err)
+	marker, err = tc.ReadFile(external + "/.camp")
+	require.NoError(t, err)
+	assert.NotContains(t, marker, campaignIDA)
+	assert.Contains(t, marker, campaignIDB)
 }

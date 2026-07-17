@@ -81,16 +81,31 @@ func Attach(ctx context.Context, campaignRoot, campaignID, input string, opts Op
 
 	// Check for an existing marker at target first.
 	markerPath := campaign.MarkerPath(target)
+	marker := campaign.LinkMarker{
+		Version:          campaign.LinkMarkerVersion,
+		Kind:             campaign.KindAttachment,
+		ActiveCampaignID: campaignID,
+	}
 	if existing, readErr := campaign.ReadMarker(target); readErr == nil {
-		if !opts.Force {
-			return nil, camperrors.Wrapf(camperrors.ErrAlreadyExists,
-				"marker already exists at %q (kind=%q); use --force to overwrite", markerPath, existing.Kind)
-		}
 		if existing.Kind == campaign.KindProject {
+			if !opts.Force {
+				return nil, camperrors.Wrapf(camperrors.ErrAlreadyExists,
+					"marker already exists at %q (kind=%q); use --force to overwrite", markerPath, existing.Kind)
+			}
 			return nil, camperrors.Wrapf(camperrors.ErrInvalidInput,
 				"refusing to overwrite linked-project marker at %q with --force; use 'camp project unlink' first",
 				markerPath)
 		}
+		if existing.Kind != campaign.KindAttachment {
+			return nil, camperrors.Wrapf(camperrors.ErrInvalidInput,
+				"refusing to update unknown marker kind %q at %q", existing.Kind, markerPath)
+		}
+		if existing.HasCampaign(campaignID) && !opts.Force {
+			return nil, camperrors.Wrapf(camperrors.ErrAlreadyExists,
+				"marker already binds %q to campaign %q; use --force to rewrite it", markerPath, campaignID)
+		}
+		marker = *existing
+		marker.AddCampaign(campaignID)
 	} else if !errors.Is(readErr, os.ErrNotExist) && !os.IsNotExist(readErr) {
 		return nil, camperrors.Wrapf(readErr, "read existing marker at %q", markerPath)
 	}
@@ -112,11 +127,6 @@ func Attach(ctx context.Context, campaignRoot, campaignID, input string, opts Op
 		}
 	}
 
-	marker := campaign.LinkMarker{
-		Version:          campaign.LinkMarkerVersion,
-		Kind:             campaign.KindAttachment,
-		ActiveCampaignID: campaignID,
-	}
 	if err := campaign.WriteMarker(target, marker); err != nil {
 		return nil, camperrors.Wrapf(err, "write marker at %q", markerPath)
 	}
@@ -140,11 +150,21 @@ func Attach(ctx context.Context, campaignRoot, campaignID, input string, opts Op
 }
 
 // Detach removes the attachment marker at the resolved target of input.
-// Refuses if the marker is missing or has Kind="project".
+// Refuses if the marker is missing or has Kind="project". It preserves the
+// historical behavior of removing the whole marker; callers that know the
+// active campaign should use DetachForCampaign so shared attachments retain
+// their other campaign bindings.
 //
 // When the target is a Git working tree, .camp is removed from that repo's
 // .git/info/exclude on a best-effort basis to mirror Attach.
 func Detach(ctx context.Context, input string) (*Result, error) {
+	return DetachForCampaign(ctx, input, "")
+}
+
+// DetachForCampaign removes only campaignID from a shared attachment. If the
+// attachment has no other campaigns, the marker and its git exclude entry are
+// removed. An empty campaignID preserves the legacy remove-all behavior.
+func DetachForCampaign(ctx context.Context, input, campaignID string) (*Result, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -171,15 +191,32 @@ func Detach(ctx context.Context, input string) (*Result, error) {
 			"%q is a linked project; use 'camp project unlink' instead", target)
 	}
 
-	if err := campaign.RemoveMarker(target); err != nil {
-		return nil, camperrors.Wrapf(err, "remove marker at %q", markerPath)
+	if campaignID != "" && !marker.HasCampaign(campaignID) {
+		return nil, camperrors.Wrapf(camperrors.ErrConflict,
+			"attachment at %q is not bound to campaign %q", target, campaignID)
 	}
 
 	res := &Result{
 		Input:           input,
 		Target:          target,
-		CampaignID:      marker.EffectiveCampaignID(),
+		CampaignID:      campaignID,
 		FollowedSymlink: target != abs,
+	}
+	if res.CampaignID == "" {
+		res.CampaignID = marker.EffectiveCampaignID()
+	}
+
+	removeMarker := campaignID == "" || len(marker.EffectiveCampaignIDs()) <= 1
+	if !removeMarker {
+		marker.RemoveCampaign(campaignID)
+		if err := campaign.WriteMarker(target, *marker); err != nil {
+			return nil, camperrors.Wrapf(err, "update marker at %q", markerPath)
+		}
+		return res, nil
+	}
+
+	if err := campaign.RemoveMarker(target); err != nil {
+		return nil, camperrors.Wrapf(err, "remove marker at %q", markerPath)
 	}
 	if git.IsRepo(target) {
 		updated, err := git.RemoveInfoExclude(ctx, target, campaign.LinkMarkerFile)

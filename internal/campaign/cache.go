@@ -45,8 +45,10 @@ func DetectCached(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	// Resolve symlinks for consistent comparison
-	cwd, err = filepath.EvalSymlinks(cwd)
+	// Keep the logical cwd as the cache key. A shared attachment can be
+	// reached through different campaign-local symlinks, and resolving the cwd
+	// here would erase the path context used by Detect to select the campaign.
+	cwd, err = filepath.Abs(cwd)
 	if err != nil {
 		return "", err
 	}
