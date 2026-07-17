@@ -284,7 +284,10 @@ func emitCycleTarget(w io.Writer, action string, from, to config.RegisteredCampa
 			To:            cycleCampaignOutput{ID: to.ID, Name: to.Name, Org: to.Org, Path: to.Path},
 		})
 	default:
-		_, err := fmt.Fprintf(w, "cd %s\n", to.Path)
+		// Quote like the shell-connect branch: the default also prints a cd
+		// command a user may copy-paste or eval, so a path with spaces (or a
+		// leading dash) must not break.
+		_, err := fmt.Fprintf(w, "cd -- %s\n", remote.ShellQuote(to.Path))
 		return err
 	}
 }

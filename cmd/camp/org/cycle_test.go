@@ -177,13 +177,17 @@ func TestEmitCycleTarget(t *testing.T) {
 		}
 	})
 
-	t.Run("plain emits cd", func(t *testing.T) {
+	t.Run("plain emits a quoted cd", func(t *testing.T) {
 		var buf bytes.Buffer
 		if err := emitCycleTarget(&buf, "next", from, to, cycleFlags{}); err != nil {
 			t.Fatal(err)
 		}
-		if got := buf.String(); got != "cd "+to.Path+"\n" {
-			t.Fatalf("plain output = %q, want %q", got, "cd "+to.Path+"\n")
+		got := buf.String()
+		if !strings.HasPrefix(got, "cd -- ") {
+			t.Fatalf("plain output %q missing 'cd -- ' prefix", got)
+		}
+		if strings.Contains(got, "/camps/needs quote\n") {
+			t.Fatalf("plain path with a space was not quoted: %q", got)
 		}
 	})
 
