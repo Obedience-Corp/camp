@@ -35,11 +35,12 @@ var (
 //   - a wrapped ErrSelectorNotFound when nothing matches.
 //
 // Resolution order:
-//  1. exact stable .workitem id
-//  2. exact key (`<type>:<path>`)
-//  3. exact RelativePath
-//  4. exact directory-base slug
-//  5. fuzzy substring on key or title (only when opts.AllowFuzzy)
+//  1. exact workitem ref (`WI-<6 hex>`, case-insensitive)
+//  2. exact stable .workitem id
+//  3. exact key (`<type>:<path>`)
+//  4. exact RelativePath
+//  5. exact directory-base slug
+//  6. fuzzy substring on key or title (only when opts.AllowFuzzy)
 func Resolve(ctx context.Context, root string, query string, opts ResolveOptions) (*workitem.WorkItem, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -59,6 +60,10 @@ func Resolve(ctx context.Context, root string, query string, opts ResolveOptions
 		eq   func(workitem.WorkItem) bool
 	}
 	matchers := []matcher{
+		{"ref", func(w workitem.WorkItem) bool {
+			ref, _ := w.SourceMetadata["ref"].(string)
+			return ref != "" && strings.EqualFold(ref, query)
+		}},
 		{"id", func(w workitem.WorkItem) bool { return w.StableID != "" && w.StableID == query }},
 		{"key", func(w workitem.WorkItem) bool { return strings.EqualFold(w.Key, query) }},
 		{"path", func(w workitem.WorkItem) bool { return w.RelativePath == strings.TrimRight(query, "/") }},

@@ -202,6 +202,20 @@ func (g *GitWorktree) Prune(ctx context.Context, dryRun bool) ([]string, error) 
 	return pruned, nil
 }
 
+// LocalBranchExists reports whether a local branch (refs/heads/<branch>)
+// exists. Unlike BranchExists it ignores remote-tracking refs, because
+// 'git worktree add -b <branch>' only conflicts with a local branch of the
+// same name; a matching origin/<branch> is created locally, not rejected.
+func (g *GitWorktree) LocalBranchExists(ctx context.Context, branch string) bool {
+	ctx, cancel := context.WithTimeout(ctx, g.timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "git", "show-ref", "--verify", "--quiet",
+		"refs/heads/"+branch)
+	cmd.Dir = g.projectPath
+	return cmd.Run() == nil
+}
+
 // BranchExists checks if a branch exists.
 func (g *GitWorktree) BranchExists(ctx context.Context, branch string) bool {
 	ctx, cancel := context.WithTimeout(ctx, g.timeout)
