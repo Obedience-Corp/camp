@@ -1544,7 +1544,7 @@ successful sync/prune/branch cycle. Configuration lives in
 per-project override lists that replace the global list entirely.
 
 Run without a subcommand to open the interactive setup for humans. Use
-show, add, and remove for scripts and agents.
+show, add, move, and remove for scripts and agents.
 
 Examples:
   camp fresh configure
@@ -1552,6 +1552,7 @@ Examples:
   camp fresh configure show
   camp fresh configure add install --run "npm install"
   camp fresh configure add build --run "go build ./..." --project camp --dir cmd/camp
+  camp fresh configure move build --up --project camp
   camp fresh configure remove install
   camp fresh configure remove build --project camp
 
@@ -1594,6 +1595,36 @@ camp fresh configure add <name> [flags]
   -h, --help                help for add
       --project string      Scope this follow-up to a single project (default: global)
       --run string          Command to run for this follow-up step (required)
+```
+
+### Options inherited from parent commands
+
+```
+  -b, --branch string   Branch to create after syncing (overrides config)
+  -n, --dry-run         Preview without making changes
+      --no-branch       Skip branch creation even if configured
+      --no-color        disable colored output
+      --no-follow-up    Skip configured follow-up command workflows
+      --no-prune        Skip pruning merged branches
+      --no-push         Skip pushing the new branch upstream
+```
+---
+
+## camp fresh configure move
+
+Move a follow-up command workflow step
+
+```
+camp fresh configure move <name> [flags]
+```
+
+### Options
+
+```
+      --down             Move the step later in the workflow
+  -h, --help             help for move
+      --project string   Scope the move to a single project (default: global)
+      --up               Move the step earlier in the workflow
 ```
 
 ### Options inherited from parent commands

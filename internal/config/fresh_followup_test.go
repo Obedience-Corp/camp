@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -43,6 +44,67 @@ func TestFollowUpConfig_Validate(t *testing.T) {
 			}
 			if !tt.wantErr && err != nil {
 				t.Fatalf("Validate() = %v, want nil", err)
+			}
+		})
+	}
+}
+
+func TestReorderFreshFollowUps(t *testing.T) {
+	entries := []FollowUpConfig{
+		{Name: "install", Run: "npm install"},
+		{Name: "generate", Run: "npm run generate"},
+		{Name: "build", Run: "npm run build"},
+	}
+
+	tests := []struct {
+		name  string
+		step  string
+		delta int
+		want  []string
+	}{
+		{name: "up", step: "build", delta: -1, want: []string{"install", "build", "generate"}},
+		{name: "down", step: "install", delta: 1, want: []string{"generate", "install", "build"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ReorderFreshFollowUps(entries, tt.step, tt.delta)
+			if err != nil {
+				t.Fatalf("ReorderFreshFollowUps() error = %v", err)
+			}
+			var names []string
+			for _, entry := range got {
+				names = append(names, entry.Name)
+			}
+			if !reflect.DeepEqual(names, tt.want) {
+				t.Fatalf("reordered names = %v, want %v", names, tt.want)
+			}
+		})
+	}
+
+	if !reflect.DeepEqual(entries, []FollowUpConfig{
+		{Name: "install", Run: "npm install"},
+		{Name: "generate", Run: "npm run generate"},
+		{Name: "build", Run: "npm run build"},
+	}) {
+		t.Fatal("ReorderFreshFollowUps mutated its input")
+	}
+}
+
+func TestReorderFreshFollowUpsRejectsInvalidMoves(t *testing.T) {
+	entries := []FollowUpConfig{{Name: "install", Run: "npm install"}}
+	for _, tt := range []struct {
+		name  string
+		step  string
+		delta int
+	}{
+		{name: "already first", step: "install", delta: -1},
+		{name: "already last", step: "install", delta: 1},
+		{name: "unknown step", step: "missing", delta: -1},
+		{name: "invalid delta", step: "install", delta: 2},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := ReorderFreshFollowUps(entries, tt.step, tt.delta); err == nil {
+				t.Fatal("ReorderFreshFollowUps() error = nil, want error")
 			}
 		})
 	}
