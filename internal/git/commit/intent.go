@@ -18,6 +18,8 @@ const (
 	IntentClaim   IntentAction = "Claim"
 	IntentRelease IntentAction = "Release"
 	IntentSync    IntentAction = "Sync"
+	// IntentUpdate is used for multi-op session batches (e.g. explorer exit).
+	IntentUpdate IntentAction = "Update"
 )
 
 // IntentOptions configures an intent commit.

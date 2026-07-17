@@ -21,17 +21,18 @@ var (
 
 const MetadataFilename = ".workitem"
 
-const WorkitemSchemaVersion = "v1alpha6"
+const WorkitemSchemaVersion = "v1alpha7"
 
 const MetadataKind = "workitem"
 
 // acceptedWorkitemVersions are loadable .workitem schema versions. v1alpha4
-// and v1alpha5 are accepted for backward compatibility; v1alpha6 is the
-// current shape and gains the Ref and QuestID fields.
+// through v1alpha6 are accepted for backward compatibility; v1alpha7 is the
+// current shape and gains the GatheredInto and GatheredAt fields.
 var acceptedWorkitemVersions = map[string]bool{
 	"v1alpha4": true,
 	"v1alpha5": true,
 	"v1alpha6": true,
+	"v1alpha7": true,
 }
 
 type Metadata struct {
@@ -56,11 +57,9 @@ type Metadata struct {
 	PromotedAt string `yaml:"promoted_at,omitempty"`
 	// GatheredInto records the id of the combined workitem this workitem was
 	// merged into by `camp gather`. Set on source workitems when their
-	// directories are moved inside the gathered package. Added without a
-	// schema version bump, following the promoted_to precedent; loaders use
-	// non-strict YAML so older binaries ignore the field.
+	// directories are moved inside the gathered package. Added in v1alpha7.
 	GatheredInto string `yaml:"gathered_into,omitempty"`
-	// GatheredAt is the RFC3339 UTC timestamp of the gather.
+	// GatheredAt is the RFC3339 UTC timestamp of the gather. Added in v1alpha7.
 	GatheredAt string `yaml:"gathered_at,omitempty"`
 }
 

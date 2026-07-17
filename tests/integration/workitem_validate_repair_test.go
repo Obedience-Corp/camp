@@ -156,11 +156,11 @@ func TestIntegration_WorkitemRepair_CreatesMarkerFromH1(t *testing.T) {
 	assert.Equal(t, "design", rep.Workitem.Type)
 	assert.Equal(t, "Legacy Design Title", rep.Workitem.Title, "title must come from the README H1")
 	assert.Regexp(t, `^WI-[0-9a-f]{6}$`, rep.Workitem.Ref)
-	assert.Equal(t, "v1alpha6", rep.Workitem.MarkerVersion)
+	assert.Equal(t, "v1alpha7", rep.Workitem.MarkerVersion)
 
 	marker, err := tc.ReadFile(dir + "/" + target + "/.workitem")
 	require.NoError(t, err)
-	assert.Contains(t, marker, "version: v1alpha6")
+	assert.Contains(t, marker, "version: v1alpha7")
 	assert.Contains(t, marker, "type: design")
 	assert.Contains(t, marker, "title: Legacy Design Title")
 
@@ -183,7 +183,7 @@ func TestIntegration_WorkitemRepair_UpgradesLegacyMarkerIdempotently(t *testing.
 
 	marker, err := tc.ReadFile(dir + "/" + target + "/.workitem")
 	require.NoError(t, err)
-	assert.Contains(t, marker, "version: v1alpha6", "schema upgraded")
+	assert.Contains(t, marker, "version: v1alpha7", "schema upgraded")
 	assert.Contains(t, marker, "type: design", "type aligned to path")
 	assert.Contains(t, marker, "id: design-legacy-marker-2026-05-25", "existing id preserved")
 	assert.Regexp(t, `ref: WI-[0-9a-f]{6}`, marker, "ref backfilled")
