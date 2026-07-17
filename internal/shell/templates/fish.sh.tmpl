@@ -314,6 +314,46 @@ function csw --description "Switch campaigns (shorthand for camp switch)"
     camp switch $argv
 end
 
+# Camp workitem shorthand.
+# Routes through the camp wrapper, so selecting a work item cd's to it.
+# Usage: cwi [filters]
+function cwi --description "Camp workitem shorthand (cd's to the selected item)"
+    camp workitem $argv
+end
+
+# Cycle through campaigns in the current campaign's org.
+# Usage:
+#   corg        cd to the next campaign in this org (stable, name-ordered)
+#   corg t      cd back to the last-visited campaign in this org
+#   corg --all  include inactive/reference campaigns in the cycle
+function corg --description "Cycle through campaigns in the current org"
+    set -l action next
+    set -l rest $argv
+    if test (count $rest) -gt 0
+        switch "$rest[1]"
+            case t toggle back
+                set action toggle
+                set rest $rest[2..-1]
+        end
+    end
+    # Inspection flags print without changing directory.
+    for arg in $rest
+        switch "$arg"
+            case --help -h --print '--print=*' --json '--json=*'
+                command camp org $action $rest
+                return $status
+        end
+    end
+    set -l line (command camp org $action --shell-connect $rest)
+    set -l cmd_status $status
+    if test "$cmd_status" -ne 0
+        return $cmd_status
+    end
+    if test -n "$line"
+        eval "$line"
+    end
+end
+
 # Quick intent capture
 # Usage: cint "my idea"
 function cint --description "Quick intent capture"

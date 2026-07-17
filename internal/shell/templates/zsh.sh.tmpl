@@ -387,6 +387,39 @@ _csw() {
 
   (( ${#campaigns} )) && compadd -a campaigns
 }
+# Camp workitem shorthand.
+# Routes through the camp() wrapper, so selecting a work item cd's to it.
+# Usage: cwi [filters]
+cwi() {
+  camp workitem "$@"
+}
+
+# Cycle through campaigns in the current campaign's org.
+# Usage:
+#   corg        cd to the next campaign in this org (stable, name-ordered)
+#   corg t      cd back to the last-visited campaign in this org
+#   corg --all  include inactive/reference campaigns in the cycle
+# Inspection flags (--print/--json/--help) print without changing directory.
+corg() {
+  local action=next line arg
+  case "${1:-}" in
+    t|toggle|back)
+      action=toggle
+      shift
+      ;;
+  esac
+  for arg in "$@"; do
+    case "$arg" in
+      --help|-h|--print|--print=*|--json|--json=*)
+        command camp org "$action" "$@"
+        return
+        ;;
+    esac
+  done
+  line=$(command camp org "$action" --shell-connect "$@") || return $?
+  [[ -n "$line" ]] && eval "$line"
+}
+
 # Quick intent capture
 # Usage: cint "my idea"
 cint() {

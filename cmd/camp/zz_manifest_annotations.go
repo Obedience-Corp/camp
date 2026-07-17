@@ -40,6 +40,8 @@ var manifestAgentAllowedReasons = map[string]string{
 	"machine diagnose":           "Read path (socket status) is safe; never pass --reset from an agent",
 	"machine list":               "Read-only listing of ~/.obey/machines.yaml",
 	"machine remove":             "Non-interactive removal with explicit id argument",
+	"org next":                   "Non-interactive; --print/--json resolve the next org campaign without a TUI",
+	"org toggle":                 "Non-interactive; --print/--json resolve the last-visited org campaign without a TUI",
 	"project list":               "Read-only project listing",
 	"project remote list":        "Read-only project remote listing",
 	"promote":                    "Routes to a type-specific promote; needs an explicit id and --target in non-interactive use",
