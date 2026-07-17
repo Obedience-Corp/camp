@@ -38,6 +38,12 @@ as a single commit you can revert.
 projects/ is never touched. Projects own their own trees, and a source
 directory named "dungeon" inside one is not a campaign dungeon.
 
+Release ordering matters when a campaign contains festivals/: this command
+also renames festivals/dungeon. Do not run it against a campaign used by a
+fest build that does not understand .dungeon. Land fest#274 and ship a fest
+release with the matching support before making this migration available to
+users.
+
 Nothing is moved unless everything can be: if any location holds both
 spellings, or a .dungeon is already in the way, the command reports it and
 exits without changing anything.`,

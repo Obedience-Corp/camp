@@ -124,21 +124,6 @@ func CampaignName(ctx context.Context, campaignRoot string, hiddenDefault bool) 
 	return NameFor(hiddenDefault), nil
 }
 
-// HasLegacyDungeons reports whether campaignRoot still holds any visible
-// dungeon, i.e. whether camp dungeon migrate has work to do.
-func HasLegacyDungeons(ctx context.Context, campaignRoot string) (bool, error) {
-	found, err := Discover(ctx, campaignRoot)
-	if err != nil {
-		return false, err
-	}
-	for _, d := range found {
-		if !d.Hidden() {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
 const gitDirName = ".git"
 
 func isNestedRepo(dir string) bool {
