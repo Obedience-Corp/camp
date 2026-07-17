@@ -55,6 +55,7 @@ camp idea [flags]
 * [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
 * [camp idea add](camp_idea_add.md)	 - Create a new idea
 * [camp idea archive](camp_idea_archive.md)	 - Archive an idea
+* [camp idea claim](camp_idea_claim.md)	 - Claim an intent for an agent or session
 * [camp idea convert](camp_idea_convert.md)	 - Convert a note into an idea
 * [camp idea count](camp_idea_count.md)	 - Count ideas by status directory
 * [camp idea crawl](camp_idea_crawl.md)	 - Interactive idea triage
@@ -66,5 +67,7 @@ camp idea [flags]
 * [camp idea move](camp_idea_move.md)	 - Move idea to a different status
 * [camp idea note](camp_idea_note.md)	 - Capture a quick note
 * [camp idea promote](camp_idea_promote.md)	 - Promote an idea through the pipeline
+* [camp idea release](camp_idea_release.md)	 - Release an intent's assignment
 * [camp idea rename](camp_idea_rename.md)	 - Rename an idea
 * [camp idea show](camp_idea_show.md)	 - Show detailed idea information
+* [camp idea sync](camp_idea_sync.md)	 - Reconcile intents against their tracked GitHub PRs

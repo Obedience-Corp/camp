@@ -40,7 +40,9 @@ Examples:
   camp idea ls --status inbox            List inbox only
   camp idea list -f json                 JSON output
   camp idea list -f simple | xargs ...   Pipe IDs to commands
-  camp idea list --all                   Include archived`,
+  camp idea list --all                   Include archived
+  camp idea list --stale                 Claimed ideas with no update in 7 days
+  camp idea list --stale --days 3        Same, with a 3 day threshold`,
 	}
 	jsonRequested := func() bool { return intentJSONRequested(cmd, &jsonOut) }
 	cmd.Args = jsoncontract.Args(IntentJSONVersion, jsonRequested, cobra.NoArgs)
@@ -57,8 +59,14 @@ Examples:
 	flags.String("horizon", "", "Filter by horizon")
 	flags.IntP("limit", "n", 0, "Limit results (0 = no limit)")
 	flags.BoolP("all", "a", false, "Include dungeon ideas")
+	flags.Bool("stale", false, "Only show claimed ideas with no update in --days (default 7)")
+	flags.Int("days", staleDefaultDays, "Staleness threshold in days, used with --stale")
 	return cmd
 }
+
+// staleDefaultDays is the default staleness threshold for --stale: a claimed
+// intent with no update in this many days is surfaced.
+const staleDefaultDays = 7
 
 func init() {
 	Cmd.AddCommand(intentListCmd)
@@ -77,6 +85,8 @@ func runIntentList(cmd *cobra.Command, args []string) error {
 	horizon, _ := cmd.Flags().GetString("horizon")
 	limit, _ := cmd.Flags().GetInt("limit")
 	includeAll, _ := cmd.Flags().GetBool("all")
+	stale, _ := cmd.Flags().GetBool("stale")
+	staleDays, _ := cmd.Flags().GetInt("days")
 
 	// Find campaign root
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
@@ -108,6 +118,7 @@ func runIntentList(cmd *cobra.Command, args []string) error {
 	// Apply status filtering (exclude dungeon statuses by default)
 	intents = filterStatuses(intents, includeAll, statuses)
 	intents = filterTypes(intents, types)
+	intents = filterStale(intents, stale, staleDays)
 
 	// Apply limit
 	if limit > 0 && len(intents) > limit {
@@ -137,6 +148,34 @@ func filterTypes(intents []*intent.Intent, allowedTypes []string) []*intent.Inte
 	result := make([]*intent.Intent, 0, len(intents))
 	for _, i := range intents {
 		if typeSet[i.Type] {
+			result = append(result, i)
+		}
+	}
+	return result
+}
+
+// filterStale returns only claimed intents (assigned_to set) with no update
+// in the last days. staleOnly=false returns intents unchanged. A day count of
+// 0 or less falls back to staleDefaultDays.
+func filterStale(intents []*intent.Intent, staleOnly bool, days int) []*intent.Intent {
+	if !staleOnly {
+		return intents
+	}
+	if days <= 0 {
+		days = staleDefaultDays
+	}
+	cutoff := time.Now().Add(-time.Duration(days) * 24 * time.Hour)
+
+	result := make([]*intent.Intent, 0, len(intents))
+	for _, i := range intents {
+		if i.AssignedTo == "" {
+			continue
+		}
+		lastTouched := i.UpdatedAt
+		if lastTouched.IsZero() {
+			lastTouched = i.CreatedAt
+		}
+		if lastTouched.Before(cutoff) {
 			result = append(result, i)
 		}
 	}
@@ -191,7 +230,7 @@ func outputTable(intents []*intent.Intent) error {
 	}
 
 	// Build table data
-	headers := []string{"TITLE", "TYPE", "STATUS", "CONCEPT", "UPDATED"}
+	headers := []string{"TITLE", "TYPE", "STATUS", "CONCEPT", "ASSIGNED", "AGE", "UPDATED"}
 	rows := make([][]string, 0, len(intents))
 
 	for _, i := range intents {
@@ -206,6 +245,8 @@ func outputTable(intents []*intent.Intent) error {
 			typeStyle(i.Type),
 			statusStyle(i.Status),
 			conceptStyle(i.Concept),
+			assignedDisplay(i.AssignedTo),
+			relativeTime(i.AssignedAt),
 			updated,
 		})
 	}
@@ -225,6 +266,14 @@ func outputTable(intents []*intent.Intent) error {
 	fmt.Println(t)
 	fmt.Printf("\n%d idea(s)\n", len(intents))
 	return nil
+}
+
+// assignedDisplay returns the agent name, or "-" when the intent is unclaimed.
+func assignedDisplay(agent string) string {
+	if agent == "" {
+		return "-"
+	}
+	return agent
 }
 
 func outputSimple(intents []*intent.Intent) error {
