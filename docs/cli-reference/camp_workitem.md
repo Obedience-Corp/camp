@@ -60,7 +60,9 @@ camp workitem [flags]
 * [camp workitem list](camp_workitem_list.md)	 - List or browse filtered workitems
 * [camp workitem priority](camp_workitem_priority.md)	 - Set or clear the manual priority of a workitem
 * [camp workitem promote](camp_workitem_promote.md)	 - Promote a workitem to a festival, doc, or dungeon status
+* [camp workitem repair](camp_workitem_repair.md)	 - Repair a workflow directory into a current-schema work item
 * [camp workitem resolve](camp_workitem_resolve.md)	 - Print the workitem the current context resolves to (read-only)
 * [camp workitem stage](camp_workitem_stage.md)	 - Set or clear the attention stage of a workitem
 * [camp workitem unlink](camp_workitem_unlink.md)	 - Remove one or more workitem links
+* [camp workitem validate](camp_workitem_validate.md)	 - Validate workflow work item directories and their .workitem markers
 * [camp workitem worktree](camp_workitem_worktree.md)	 - Create a project worktree from a workitem

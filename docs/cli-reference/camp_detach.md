@@ -7,8 +7,13 @@ Remove the current campaign's attachment binding
 Remove the current campaign's binding from the .camp attachment marker.
 
 Refuses on linked-project markers; use 'camp project unlink' for those.
-The user-managed symlink (if any) is not modified. If run outside any
-campaign, the entire attachment marker is removed.
+The user-managed symlink (if any) is not modified. If run outside any campaign,
+the entire attachment marker is removed.
+
+On an attachment shared by several campaigns this removes only the current
+campaign's binding; the others keep resolving. Detaching the campaign that a
+bare cd into the shared target resolved to shifts that fallback to the next
+remaining campaign.
 
 Examples:
   camp detach docs/examples/external-repo

@@ -49,6 +49,149 @@ camp [flags]
 ```
 ---
 
+## camp artifacts
+
+Manage declared artifact roots (.campaign/artifacts.yaml)
+
+### Synopsis
+
+Manage the campaign's declared artifact roots: directories of heavy non-git
+payloads (media, renders, datasets) that 'camp sync --from <machine>' moves
+between your machines with rsync instead of git.
+
+The declaration file (.campaign/artifacts.yaml) is committed, so every
+machine knows what belongs to the campaign. Declared roots should be
+gitignored: a root that is also git-tracked would make the same bytes both
+git content and artifact content. Manifests and per-peer sync snapshots are
+machine-local derived state under .campaign/cache (gitignored).
+
+### Examples
+
+```
+  camp artifacts list
+  camp artifacts add media/renders
+  camp artifacts add datasets --policy on-demand
+  camp artifacts remove media/renders
+  camp artifacts manifest media/renders
+```
+
+### Options
+
+```
+  -h, --help   help for artifacts
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp artifacts add
+
+Declare an artifact root
+
+### Synopsis
+
+Declare a campaign-relative directory as an artifact root.
+
+Policy 'always' (default) syncs the root on every 'camp sync --from
+<machine>'; 'on-demand' syncs it only when artifacts are requested
+explicitly (--artifacts-only).
+
+```
+camp artifacts add <path> [flags]
+```
+
+### Options
+
+```
+  -h, --help            help for add
+      --policy string   Sync policy: always (every peer sync) or on-demand (--artifacts-only) (default "always")
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp artifacts list
+
+List declared artifact roots
+
+```
+camp artifacts list [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for list
+      --json   Output as JSON for scripting
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp artifacts manifest
+
+Print a declared root's manifest as JSON
+
+### Synopsis
+
+Walk a declared artifact root and print its manifest (relative path, size,
+mtime per file) as JSON. This is the same shape sync snapshots use, so it is
+useful for scripting and for comparing roots across machines.
+
+```
+camp artifacts manifest <path> [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for manifest
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp artifacts remove
+
+Remove an artifact root declaration
+
+### Synopsis
+
+Remove a declared artifact root. Files on disk are not touched.
+
+```
+camp artifacts remove <path> [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for remove
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
 ## camp attach
 
 Attach an external directory to a campaign
@@ -64,6 +207,11 @@ running attach again from another campaign adds that campaign to the marker.
 
 If the target is reached through a symlink, camp follows it once and writes
 the marker at the final directory.
+
+When several campaigns share one attachment, which campaign a command resolves
+depends on how the directory is reached: entering through a campaign-local
+symlink resolves that campaign, while a bare cd into the shared target itself
+resolves to the first campaign it was attached to.
 
 Campaign selection:
   - inside a campaign, omit --campaign to attach to the current campaign
@@ -87,6 +235,164 @@ camp attach <path> [flags]
   -c, --campaign string   Target campaign by name or ID; omit value to pick interactively
       --force             Rewrite an existing attachment marker
   -h, --help              help for attach
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp audit
+
+Inspect the campaign audit trail
+
+### Synopsis
+
+Inspect the campaign audit trail.
+
+'camp audit doctor' scans linked repos for commits with no captured intent
+linkage and reports them informationally. Untagged commits are a normal mode
+for wrapper-opt-out workflows, not a violation.
+
+### Options
+
+```
+  -h, --help   help for audit
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp audit backfill
+
+Derive a source:backfill event stream from history (opt-in write)
+
+### Synopsis
+
+Derive ledger events from a campaign's existing history - tagged commits across
+linked repos, intent frontmatter, and festival status histories - so a pre-ledger
+campaign (or the pre-ledger history of this one) renders on the same timeline as
+new activity.
+
+Backfill is optional and never required. It is idempotent and live-wins: a fact
+already captured live or by a prior backfill is skipped, so consecutive runs
+produce zero new events. Dry-run by default; --apply writes the source:backfill
+events into the standard shard layout.
+
+```
+camp audit backfill [flags]
+```
+
+### Options
+
+```
+      --apply   write the derived source:backfill events into the ledger
+  -h, --help    help for backfill
+      --json    emit a structured JSON result
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp audit doctor
+
+Scan linked repos for unattributed commits (informational)
+
+### Synopsis
+
+Scan the campaign root and every linked project repo, classifying each
+commit as tagged, degraded, or untagged (no captured intent linkage).
+
+Output is informational: untagged commits are surfaced, never scolded, and the
+command exits 0 even when findings exist. Use --window to bound each repo to its
+most recent N commits (default: full history).
+
+```
+camp audit doctor [flags]
+```
+
+### Options
+
+```
+  -h, --help         help for doctor
+      --json         emit a structured JSON report
+      --window int   scan only the most recent N commits per repo (0 = full history)
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp audit reconcile
+
+Fill ledger gaps from state files (opt-in write)
+
+### Synopsis
+
+Derive the events implied by campaign state files (intent statuses and
+festival status histories), diff them against the ledger, and report the gaps -
+facts the ledger does not yet capture. This covers users who never commit at all.
+
+By default this is a dry run. Pass --apply to append the missing facts as
+reconciled events (idempotent: reconciled ids are content-derived, so re-running
+does not duplicate).
+
+```
+camp audit reconcile [flags]
+```
+
+### Options
+
+```
+      --apply   append the missing facts as reconciled events
+  -h, --help    help for reconcile
+      --json    emit a structured JSON result
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp audit repair
+
+Attribute a commit to a workitem or festival after the fact
+
+### Synopsis
+
+Attribute an already-landed commit to a workitem or festival by appending a
+repaired event. This never rewrites git history; it only records the attribution
+in the ledger (D004). Use it to claim an untagged commit surfaced by
+'camp audit doctor' for a piece of work.
+
+```
+camp audit repair --sha <sha> (--workitem <id> | --festival <id>) --why <reason> [flags]
+```
+
+### Options
+
+```
+      --festival string   festival to attribute the commit to
+  -h, --help              help for repair
+      --repo string       evidence repo label (default: campaign-root)
+      --sha string        commit sha to attribute (required)
+      --why string        reason for the attribution (required)
+      --workitem string   workitem to attribute the commit to
 ```
 
 ### Options inherited from parent commands
@@ -258,6 +564,13 @@ EXAMPLES:
   # JSON output for scripting
   camp clone git@github.com:org/repo.git --json
 
+  # Seed from a peer machine in ~/.obey/machines.yaml: root repo and
+  # submodules clone from that machine's copy (LAN/tailnet), then origin is
+  # re-pointed to the URL above and the delta fetched. The result is an
+  # origin replica that arrived over the fast path; peer failures fall back
+  # to plain origin cloning.
+  camp clone git@github.com:org/repo.git --from studio-mac
+
 ```
 camp clone <url> [directory] [flags]
 ```
@@ -267,6 +580,7 @@ camp clone <url> [directory] [flags]
 ```
   -b, --branch string   Clone specific branch (default: repository default branch)
       --depth int       Shallow clone depth (0 = full history)
+      --from string     Seed git objects from this machine (id from ~/.obey/machines.yaml), then fetch the delta from origin
   -h, --help            help for clone
       --json            Output results as JSON for scripting
       --no-register     Skip auto-registration in global campaign registry
@@ -316,16 +630,16 @@ camp commit [flags]
 ### Options
 
 ```
-  -a, --all               Stage all changes before committing (default true)
-      --amend             Amend the previous commit
-      --auto-write        Run configured commit message writer
-  -h, --help              help for commit
-      --include-refs      Include submodule ref changes when staging at campaign root
-  -m, --message string    Commit message (required unless --auto-write)
-      --no-edit           Amend without editing the commit message (requires --amend)
-  -p, --project string    Operate on a specific project/submodule path
-      --sub               Operate on the submodule detected from current directory
-      --workitem string   explicit workitem selector for the commit tag (overrides cwd-based resolution)
+  -a, --all                   Stage all changes before committing (default true)
+      --amend                 Amend the previous commit
+      --auto-write            Run configured commit message writer
+  -h, --help                  help for commit
+      --include-refs          Include submodule ref changes when staging at campaign root
+  -m, --message stringArray   Commit message (repeatable; multiple -m are joined git-style into subject + body; required unless --auto-write)
+      --no-edit               Amend without editing the commit message (requires --amend)
+  -p, --project string        Operate on a specific project/submodule path
+      --sub                   Operate on the submodule detected from current directory
+      --workitem string       explicit workitem selector for the commit tag (overrides cwd-based resolution)
 ```
 
 ### Options inherited from parent commands
@@ -620,6 +934,7 @@ camp create <name> [flags]
   -n, --name string          Campaign display name (defaults to <name> positional)
       --no-git               Skip git repository initialization
       --no-skills            Skip linking campaign skills into .claude/skills and .agents/skills
+      --org string           Assign the new campaign to this org (created if new; defaults to the fallback org)
       --path string          Override the base campaigns directory (campaign created at <path>/<name>/)
   -t, --type string          Campaign type (product, research, tools, personal) (default "product")
 ```
@@ -686,8 +1001,13 @@ Remove the current campaign's attachment binding
 Remove the current campaign's binding from the .camp attachment marker.
 
 Refuses on linked-project markers; use 'camp project unlink' for those.
-The user-managed symlink (if any) is not modified. If run outside any
-campaign, the entire attachment marker is removed.
+The user-managed symlink (if any) is not modified. If run outside any campaign,
+the entire attachment marker is removed.
+
+On an attachment shared by several campaigns this removes only the current
+campaign's binding; the others keep resolving. Detaching the campaign that a
+bare cd into the shared target resolved to shifts that fallback to the next
+remaining campaign.
 
 Examples:
   camp detach docs/examples/external-repo
@@ -999,6 +1319,77 @@ camp dungeon move <item>... [status] [flags]
       --to-docs string   Route triage item into an existing campaign-root docs/<subdir> (requires --triage)
       --triage           Move from parent directory (not from dungeon root)
       --workitem         Resolve item as a campaign workitem and move its directory to the local dungeon
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp event
+
+Record and inspect campaign ledger events
+
+### Synopsis
+
+Record and inspect campaign event-ledger entries.
+
+The ledger is the append-only trail of high-intent actions across a campaign.
+Most events are captured automatically by state-changing camp/fest commands;
+'camp event add' is the explicit escape hatch for actions that never touch git.
+
+### Options
+
+```
+  -h, --help   help for event
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp event add
+
+Record an explicit campaign ledger event
+
+### Synopsis
+
+Record an explicit campaign ledger event for an out-of-band action.
+
+Scope is inferred from the current directory (the workitem or festival you are
+in); flags override inference. Evidence may be a campaign-relative path, a URL,
+or a repo@sha commit reference, and may be repeated.
+
+Examples:
+  # A media-production decision, with the produced file as evidence
+  camp event add --type decided "chose H.265 for the trailer" \
+    --why "smaller files, target players all support it" \
+    --evidence renders/trailer_final_v3.mp4
+
+  # A quick note-to-trail from inside a workitem directory
+  camp event add --type created "kicked off the color grade pass"
+
+```
+camp event add <title> [flags]
+```
+
+### Options
+
+```
+      --action string          join an existing action id (default: a fresh action per invocation)
+      --evidence stringArray   evidence ref: <path> | <url> | <repo>@<sha> (repeatable)
+      --festival string        festival id to scope the event (overrides cwd inference)
+  -h, --help                   help for add
+      --json                   emit a structured JSON result
+      --quest string           quest id to scope the event
+      --type string            event kind (required): created, transitioned, completed, decided, evidence_attached, reconciled, repaired
+      --why string             the reason for the action (rendered prominently)
+      --workitem string        workitem selector to scope the event (overrides cwd inference)
 ```
 
 ### Options inherited from parent commands
@@ -1454,6 +1845,7 @@ camp init [path] [flags]
       --no-git               Skip git repository initialization
       --no-register          Don't add to global registry
       --no-skills            Skip linking campaign skills into .claude/skills and .agents/skills
+      --org string           Assign the new campaign to this org (created if new; defaults to the fallback org)
       --repair               Add missing files to existing campaign
   -t, --type string          Campaign type (product, research, tools, personal) (default "product")
   -v, --verbose              Show skipped optional setup details
@@ -2629,8 +3021,9 @@ with 'camp register'. The registry lives at ~/.obey/campaign/registry.json.
 
 In a terminal, 'camp list' (with no flags) opens an interactive browser where you
 can deactivate/reactivate campaigns (cycle lifecycle status), reassign their org,
-and copy paths. Piped, with --json/--count, or with any filter/sort flag it
-prints the table instead. Home paths display as '~'.
+and copy paths. Pass an org as a positional argument to open the browser filtered
+to that org. Piped, with --json/--count, or with any filter/sort flag it prints
+the table instead. Home paths display as '~'.
 
 Output formats:
   table   - Aligned columns with headers (default)
@@ -2645,15 +3038,22 @@ Sorting options:
 
 Examples:
   camp list                  List all campaigns
+  camp list obey             Browse campaigns in the obey org
   camp list --json           Output as JSON
   camp list --format json    Output as JSON
   camp list --sort name      Sort by name
   camp list --sort org       Sort by org, then name
   camp list --format simple  Names only for scripting
   camp list --count          Print only the total number of campaigns
+  camp list --remote         Also list campaigns on machines in ~/.obey/machines.yaml
+
+--remote runs each machine's own 'camp list --json' through a login shell
+(sh -lc) so PATH entries a login profile exports (~/.profile, etc.) are
+picked up. If camp still can't be found on a machine, set
+CAMP_REMOTE_CAMP_PATH to its exact path there.
 
 ```
-camp list [flags]
+camp list [org] [flags]
 ```
 
 ### Options
@@ -2668,6 +3068,7 @@ camp list [flags]
       --json             Output as JSON (shorthand for --format json)
       --no-group         Suppress org grouping
       --org string       Only campaigns in this org
+      --remote           Also list campaigns on machines in ~/.obey/machines.yaml (ssh)
   -s, --sort string      Sort by (name, accessed, type, org) (default "accessed")
       --status string    Only campaigns in this status (active, inactive, reference)
       --tag strings      Only campaigns carrying this tag (repeat for AND)
@@ -2711,6 +3112,195 @@ camp log [flags]
 
 ```
   -h, --help   help for log
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp machine
+
+Manage remote machines (~/.obey/machines.yaml)
+
+### Synopsis
+
+Manage the fleet of remote machines camp can reach for 'camp switch machine:campaign'
+and 'camp list --remote'.
+
+Machines are stored in ~/.obey/machines.yaml. The current machine is always
+implicitly available as "local" and is never written to that file.
+
+'camp machine diagnose' inspects the per-machine ssh ControlMaster sockets and
+can clear a stale one (the state a sleep or network flap can leave behind, which
+would otherwise hang the next hop until ControlPersist expires).
+
+### Examples
+
+```
+  camp machine list
+  camp machine add devbox --host devbox.tailnet.ts.net --auth tailscale-ssh
+  camp machine add --discover
+  camp machine remove devbox
+  camp machine diagnose
+  camp machine diagnose devbox --reset
+```
+
+### Options
+
+```
+  -h, --help   help for machine
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp machine add
+
+Add or update a machine
+
+### Synopsis
+
+Add a machine to ~/.obey/machines.yaml, or update it if the id already exists
+(idempotent on id: a second 'add' with the same id replaces the entry rather
+than duplicating it).
+
+With --discover, camp runs 'tailscale status --json' and lets you pick a
+tailnet device instead of specifying --host/--auth by hand; the chosen device
+is saved with auth_method=tailscale-ssh. Pass an id positionally with
+--discover to select that device by its derived id non-interactively (skips
+the picker), or use --yes to take the first discovered device.
+
+```
+camp machine add [id] [flags]
+```
+
+### Examples
+
+```
+  camp machine add devbox --host devbox.tailnet.ts.net --auth tailscale-ssh
+  camp machine add buildbox --host 10.0.0.12 --auth ssh-agent --user ci
+  camp machine add --discover
+  camp machine add devbox --discover
+  camp machine add --discover --yes
+```
+
+### Options
+
+```
+      --auth string       Auth method: tailscale-ssh, ssh-agent, ssh-password (default "ssh-agent")
+      --discover          Discover devices via 'tailscale status --json' and pick one
+  -h, --help              help for add
+      --host string       SSH host or Tailscale MagicDNS name (required unless --discover)
+      --identity string   Path to SSH identity file
+      --label string      Human-readable label
+      --user string       SSH user
+      --yes               With --discover, take the first discovered device non-interactively
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp machine diagnose
+
+Inspect (and optionally clear) ssh ControlMaster sockets
+
+### Synopsis
+
+Report the ssh ControlMaster multiplex socket state for each configured machine
+(or one machine if an id is given):
+
+  none   no socket — the next hop opens a fresh master
+  live   socket present and the master answers 'ssh -O check'
+  stale  socket present but the master no longer answers
+
+A stale socket is what a sleep or network flap can leave behind; until it is
+removed (or ControlPersist expires) the next 'camp switch machine:...' or
+'camp list --remote' hop to that machine can hang. Pass --reset to tear down
+stale sockets so the next hop reconnects cleanly. Live and absent sockets are
+left untouched.
+
+```
+camp machine diagnose [id] [flags]
+```
+
+### Examples
+
+```
+  camp machine diagnose
+  camp machine diagnose devbox
+  camp machine diagnose --reset
+  camp machine diagnose devbox --reset --json
+```
+
+### Options
+
+```
+  -h, --help    help for diagnose
+      --json    Output as JSON
+      --reset   Tear down stale ControlMaster sockets so the next hop reconnects
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp machine list
+
+List configured machines
+
+### Synopsis
+
+List every machine in ~/.obey/machines.yaml, plus the implicit "local" machine
+(this machine, never persisted to the file).
+
+```
+camp machine list [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for list
+      --json   Output as JSON
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp machine remove
+
+Remove a machine
+
+### Synopsis
+
+Remove a machine from ~/.obey/machines.yaml. Removing "local" or an unknown id is an error.
+
+```
+camp machine remove <id> [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for remove
 ```
 
 ### Options inherited from parent commands
@@ -2769,11 +3359,11 @@ Group campaigns into orgs
 
 ### Synopsis
 
-Group related campaigns into orgs.
+Group related campaigns into first-class orgs.
 
-Every campaign belongs to exactly one org (default "default"). Orgs are derived:
-an org exists because a campaign names it, and disappears when its last member
-leaves.
+Every campaign belongs to exactly one org (default "default"). Orgs are first-class:
+they persist in the machine-wide registry, can hold zero members, and are deleted
+explicitly with 'camp org delete'.
 
 In a terminal, 'camp org' (no arguments) opens an interactive browser of orgs
 and their members where you can move, create, rename, and return campaigns. When
@@ -2782,9 +3372,10 @@ piped or with --json it prints the current campaign's org instead; use
 
 Commands:
   which   Print the current campaign's org
-  create  Create an org by joining campaigns (the current campaign if none named)
+  create  Create an org (optionally --empty) and optionally join campaigns
   add     Assign campaigns to an org (also reassigns; single-membership)
   remove  Return campaigns to the default org
+  delete  Delete an org (empty only unless --force)
 
 ```
 camp org [flags]
@@ -2796,8 +3387,10 @@ camp org [flags]
   camp org                                       Browse and manage orgs interactively (TTY)
   camp org which                                 Print the current campaign's org
   camp org create obey                           Add the current campaign to "obey"
+  camp org create empty-org --empty              Create an org with no members
   camp org add obey obey-campaign obey-content   Move campaigns into "obey"
   camp org remove obey-content                   Return a campaign to "default"
+  camp org delete empty-org                      Delete an empty org
 ```
 
 ### Options
@@ -2854,11 +3447,11 @@ camp org add <org> <campaign>... [flags]
 
 ## camp org create
 
-Create an org by joining campaigns (the current campaign if none named)
+Create an org (optionally empty) and join campaigns
 
 ### Synopsis
 
-Create an org by joining campaigns to it.
+Create a first-class org, optionally joining campaigns to it.
 
 Run inside a campaign with no campaign arguments to add the current campaign:
   camp org create obey
@@ -2866,7 +3459,10 @@ Run inside a campaign with no campaign arguments to add the current campaign:
 Or name the campaigns explicitly:
   camp org create obey obey-campaign obey-content
 
-Orgs remain derived: "create" assigns membership and never makes an empty org.
+Create an empty org with no members (works outside a campaign):
+  camp org create obey --empty
+
+Orgs are first-class: they persist in the registry even with zero members.
 Joining an org that already has members is allowed; there is no "already exists"
 error, and a campaign already in the org is reported as unchanged.
 
@@ -2878,14 +3474,56 @@ camp org create <org> [campaign...] [flags]
 
 ```
   camp org create obey
+  camp org create obey --empty
   camp org create client-acme acme-site other-site
 ```
 
 ### Options
 
 ```
-  -h, --help   help for create
-      --json   Output as JSON
+      --empty   Create the org with no members (do not join any campaign)
+  -h, --help    help for create
+      --json    Output as JSON
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp org delete
+
+Delete an org (empty only unless --force)
+
+### Synopsis
+
+Delete a first-class org from the registry.
+
+Empty orgs delete without flags. Orgs with members require --force, which
+reassigns every member to the fallback org and then deletes the org.
+
+The fallback org cannot be deleted.
+
+```
+camp org delete <name> [flags]
+```
+
+### Examples
+
+```
+  camp org delete empty-org
+  camp org delete obey --force
+  camp org delete empty-org --json
+```
+
+### Options
+
+```
+      --force   Reassign members to the fallback org, then delete
+  -h, --help    help for delete
+      --json    Output as JSON
 ```
 
 ### Options inherited from parent commands
@@ -3145,12 +3783,17 @@ A project can be:
   - a machine-local linked workspace attached via symlink under projects/
 
 Use 'camp project add' for submodules and 'camp project link' / 'camp project unlink'
-for linked workspaces.
+for linked workspaces. Use 'camp project run' (or the 'cr -p' shell shorthand)
+to run a command inside a project from anywhere in the campaign.
 
 Examples:
   camp project list                    List all projects
   camp project add git@github.com:org/repo.git  Add a new project
   camp project link ~/code/my-project  Link an existing local workspace
+  camp project run -p fest -- just build  Run a command inside a project
+  camp project commit -p fest -m "fix"  Commit changes in a project submodule
+  camp project prune                   Delete merged branches in the cwd's project
+  camp project worktree add my-branch --project fest  Create a worktree for a project
   camp project remove api-service      Remove a project
 
 ```
@@ -3245,14 +3888,15 @@ camp project commit [flags]
 ### Options
 
 ```
-  -a, --all               Stage all changes (default true)
-      --amend             Amend the previous commit
-      --auto-write        Run configured commit message writer
-  -h, --help              help for commit
-  -m, --message string    Commit message (required unless --auto-write)
-  -p, --project string    Project name (auto-detected from cwd if not specified)
-      --sync              Sync submodule ref at campaign root after commit (opt-in)
-      --workitem string   explicit workitem selector for the commit tag (overrides cwd-based resolution)
+  -a, --all                   Stage all changes (default true)
+      --amend                 Amend the previous commit
+      --auto-write            Run configured commit message writer
+  -h, --help                  help for commit
+  -m, --message stringArray   Commit message (repeatable; multiple -m are joined git-style into subject + body; required unless --auto-write)
+      --no-sync               Do not sync submodule ref even if settings enable it
+  -p, --project string        Project name (auto-detected from cwd if not specified)
+      --sync                  Sync submodule ref at campaign root after commit (also enabled by commit.sync_project_refs setting)
+      --workitem string       explicit workitem selector for the commit tag (overrides cwd-based resolution)
 ```
 
 ### Options inherited from parent commands
@@ -3763,14 +4407,17 @@ camp project remove <name> [flags]
 
 ## camp project run
 
-Run a command inside a project directory
+Run a command inside a project directory, like cr but project-scoped
 
 ### Synopsis
 
 Run any shell command inside a project directory from anywhere in the campaign.
 
+This is the project-scoped counterpart to 'camp run' (cr): cr runs from the
+campaign root, camp project run (cr -p) runs inside a project.
+
 The project is resolved in this order:
-  1. --project / -p flag (explicit project name)
+  1. --project / -p flag (explicit project name, tab-completes registered projects)
   2. Auto-detect from current working directory
   3. Interactive fuzzy picker (if neither above applies)
 
@@ -3790,6 +4437,10 @@ Examples:
   # Simple commands (no -- needed when no flags)
   camp project run make build
 
+  # Shell shorthand (after 'eval "$(camp shell-init <shell>)"')
+  cr -p fest -- just build
+  cr -p camp go test ./...
+
 ```
 camp project run [--project <name>] [--] <command> [args...] [flags]
 ```
@@ -3797,7 +4448,8 @@ camp project run [--project <name>] [--] <command> [args...] [flags]
 ### Options
 
 ```
-  -h, --help   help for run
+  -h, --help             help for run
+  -p, --project string   Project name (auto-detected from cwd, or interactive picker if omitted)
 ```
 
 ### Options inherited from parent commands
@@ -3977,6 +4629,10 @@ Examples:
   # Explicit project
   camp project worktree add feature --project my-api
 
+  # Link a design/explore workitem so camp p commit in the worktree tags WI-*
+  camp project worktree add fest-list-watch --project fest --workitem WI-2a7950
+  camp project worktree add settings-tui --project camp --workitem workflow/design/camp-settings-tui
+
 ```
 camp project worktree add <name> [flags]
 ```
@@ -3989,6 +4645,7 @@ camp project worktree add <name> [flags]
   -p, --project string       Project name (auto-detected from cwd if not specified)
   -s, --start-point string   Base branch/commit for new branch (default: current branch)
   -t, --track string         Remote branch to track (creates new local tracking branch)
+      --workitem string      workitem selector (ref, path, or id) to primary-link to this worktree for camp p commit tags
 ```
 
 ### Options inherited from parent commands
@@ -4642,12 +5299,25 @@ With no key, prints all settings including the effective theme. With a key,
 prints just that value.
 
 Keys:
-  global.theme           Color theme in ~/.obey/campaign/config.json
-  global.editor          Preferred editor
-  global.campaigns_dir   Where camp create places new campaigns
-  global.verbose         Verbose output
-  global.no_color        Disable colored output
-  local.theme_override   Campaign-local theme override (requires a campaign)
+  global.theme               Color theme in ~/.obey/campaign/config.json
+  global.editor              Preferred editor
+  global.campaigns_dir       Where camp create places new campaigns
+  global.verbose             Verbose output
+  global.no_color            Disable colored output
+  global.commit.sync_project_refs   When true, camp p commit updates campaign-root submodule pointer (default false)
+  global.commit.disable_commit_tags When true, skip [campaign:…] tags on camp commits (default false; tags on)
+  local.theme_override       Campaign-local theme override (requires a campaign)
+  local.commit.sync_project_refs    Campaign override for project-ref sync (true/false/inherit)
+  local.commit.disable_commit_tags  Campaign override to skip commit subject tags (true/false/inherit)
+  local.campaign.name        Campaign name in .campaign/campaign.yaml
+  local.campaign.description Campaign description
+  local.campaign.mission     Campaign mission
+  local.campaign.type        Campaign type (product, research, tools, personal)
+  local.campaign.commit_hook Commit-message hook command
+  effective.commit.*         Resolved commit prefs (get only; local overrides global)
+
+The campaign.yaml list and tree fields (intents.tags, concepts) have no flat
+key and are edited only through the interactive 'camp settings' TUI.
 
 ```
 camp settings get [key] [flags]
@@ -4658,6 +5328,7 @@ camp settings get [key] [flags]
 ```
   camp settings get
   camp settings get global.theme
+  camp settings get effective.commit.sync_project_refs
   camp settings get --json
 ```
 
@@ -5339,6 +6010,15 @@ Use campaign@tab to navigate to a specific location in the target campaign:
   camp switch obey-campaign@p    # Switch and navigate to projects/
   camp switch obey/platform@f    # Switch inside org and navigate to festivals/
 
+Use machine:campaign to resolve a campaign on a machine registered in
+~/.obey/machines.yaml (via the csw shell wrapper, which hops there over ssh):
+  csw devbox:obey-campaign       # Resolve and hop to obey-campaign on devbox
+
+Remote resolution runs the far machine's own 'camp switch' through a login
+shell (sh -lc) so PATH entries a login profile exports (~/.profile, etc.) are
+picked up. If camp still can't be found there, set CAMP_REMOTE_CAMP_PATH to
+its exact path on that machine.
+
 ```
 camp switch [campaign] [flags]
 ```
@@ -5424,6 +6104,23 @@ EXAMPLES:
   # JSON output for scripting
   camp sync --json
 
+  # Accelerate over a peer machine from ~/.obey/machines.yaml: for each
+  # already-initialized submodule, fetch objects from that machine first
+  # (LAN/tailnet), then run the normal origin-based update, then pull
+  # declared artifact roots (policy=always) from the same machine.
+  # Uninitialized submodules skip the peer step and init from origin.
+  # Preflight, origin URLs, validation, and exit codes are unchanged; an
+  # unreachable peer degrades to a warning.
+  camp sync --from studio-mac
+
+  # Peer git objects only, skip artifacts / artifacts only, skip git phases
+  camp sync --from studio-mac --git-only
+  camp sync --from studio-mac --artifacts-only
+
+  # Check artifact roots against last-transfer snapshots, no transfer
+  camp sync --verify-artifacts
+  camp sync --verify-artifacts --from studio-mac
+
 ```
 camp sync [submodule...] [flags]
 ```
@@ -5431,13 +6128,17 @@ camp sync [submodule...] [flags]
 ### Options
 
 ```
-  -n, --dry-run        Show what would happen without making changes
-  -f, --force          Skip safety checks (uncommitted changes warning still shown)
-  -h, --help           help for sync
-      --json           Output results as JSON for scripting
-      --no-fetch       Skip fetching from remote (use local refs only)
-  -p, --parallel int   Number of parallel git operations (default 4)
-  -v, --verbose        Show detailed output for each submodule
+      --artifacts-only     With --from: pull declared artifact roots only, skip git phases
+  -n, --dry-run            Show what would happen without making changes
+  -f, --force              Skip safety checks (uncommitted changes warning still shown)
+      --from string        Fetch objects for already-initialized submodules (and declared artifact roots) from this machine (id from ~/.obey/machines.yaml)
+      --git-only           With --from: move git objects only, skip artifact roots
+  -h, --help               help for sync
+      --json               Output results as JSON for scripting
+      --no-fetch           Skip fetching from remote (use local refs only)
+  -p, --parallel int       Number of parallel git operations (git guards superproject ops with repo lockfiles that fail fast on contention; lower this if a slow disk surfaces transient lock errors) (default 4)
+  -v, --verbose            Show detailed output for each submodule
+      --verify-artifacts   Check artifact roots against last-transfer snapshots (no transfer)
 ```
 
 ### Options inherited from parent commands
@@ -6087,7 +6788,7 @@ camp workitem commit [selector] [flags]
       --include stringArray         additional path to stage (repeatable; relative to repo root)
       --include-submodule-pointer   include dirty project submodule pointers in the plan
       --json                        emit the staging plan and commit result as JSON on stdout
-  -m, --message string              commit message (required unless --dry-run)
+  -m, --message stringArray         commit message (repeatable; multiple -m are joined git-style into subject + body; required unless --dry-run)
       --project string              force project-repo context by name (skips resolver)
       --staged                      commit whatever is already in the git index
       --workitem string             explicit workitem selector (overrides cwd-based resolution)
@@ -6106,13 +6807,18 @@ List commits referencing a workitem across linked repos
 
 ### Synopsis
 
-Search the campaign root and every linked project/repo/worktree/festival
-repo for commits whose campaign tag references this workitem's ref.
+List commits referencing this workitem, newest first.
 
-Default sort: most recent first across all repos. Use --json for structured
-output. Repos that are not git checkouts or that fail their git log invocation
-are reported under "errors" in JSON mode; table mode warns on stderr when
-repo queries fail.
+When the campaign event ledger already holds the workitem's commit evidence,
+the answer comes from a single merged ledger read (fast path). Otherwise it
+falls back to scanning the campaign root and every linked
+project/repo/worktree/festival repo for commits whose campaign tag references
+the workitem's ref (pre-ledger history).
+
+Use --json for structured output; the "source" field reports which path
+answered ("ledger" or "scan"). Repos that are not git checkouts or that fail
+their git log invocation are reported under "errors" in JSON mode; table mode
+warns on stderr when repo queries fail.
 
 ```
 camp workitem commits [selector] [flags]
@@ -6126,6 +6832,7 @@ camp workitem commits [selector] [flags]
       --limit int         maximum commits to return (default 100)
       --offset int        number of commits to skip (after sorting)
       --ref string        query by workitem ref directly (e.g. WI-abc123) — skips resolver
+      --source string     where to read commits from: auto (ledger when present, else scan), ledger, or scan (default "auto")
       --workitem string   alias for the positional <selector>
 ```
 
@@ -6272,6 +6979,17 @@ identity to an explicit scope for planning, execution, and lookup. Pass a
 workitem selector plus a path, or use --project, --festival, --worktree, or
 --cwd to derive the scope. Use --json for machine-readable link output.
 
+A primary worktree link is how design/explore workitems under workflow/ get
+into camp p commit tags: when you commit from that worktree, the resolver
+matches the link and stamps WI-<ref> on the subject.
+
+Examples:
+  camp workitem link WI-2a7950 --worktree fest/fest-list-watch
+  camp workitem link workflow/design/fest-list-watch --worktree projects/worktrees/fest/fest-list-watch
+  camp workitem link WI-2a7950 projects/worktrees/fest/fest-list-watch
+  # Or at create time:
+  camp project worktree add fest-list-watch --project fest --workitem WI-2a7950
+
 ```
 camp workitem link <selector> [path] [flags]
 ```
@@ -6287,7 +7005,7 @@ camp workitem link <selector> [path] [flags]
       --project string    project name (matches projects/<name>)
       --replace           replace an existing primary link on the same scope
       --role string       primary | related | blocked_by | supersedes (default "primary")
-      --worktree string   worktree relative path under projects/worktrees/
+      --worktree string   worktree path under projects/worktrees/ (project/name or full projects/worktrees/project/name)
 ```
 
 ### Options inherited from parent commands
@@ -6362,11 +7080,11 @@ camp workitem list [type|status|category] [flags]
       --group-by string               Group output sections by attention_stage, group, type, or category
   -h, --help                          help for list
       --json                          Output as JSON
-      --limit int                     Maximum number of items to return
+      --limit int                     Maximum number of items to return (non-interactive / --json only)
       --query string                  Search query to filter items
       --show-parked                   Include parked attention-stage workitems
       --stage stringArray             Filter by lifecycle stage (repeat for OR)
-      --status stringArray            Filter by displayed status (repeat for OR)
+      --status stringArray            Filter by displayed status: current, next, active, parked, inbox, ready, plan, ritual, chains, none (repeat for OR)
       --type stringArray              Filter by workflow type (repeat for OR)
 ```
 
@@ -6445,6 +7163,43 @@ camp workitem promote [id] --target <target> [flags]
       --keep            On festival/doc, do not move the source workitem to the dungeon
       --no-commit       Skip the auto-commit
       --target string   Promotion target: festival, doc, completed, archived, someday
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp workitem repair
+
+Repair a workflow directory into a current-schema work item
+
+### Synopsis
+
+Repair a workflow directory so it carries a valid current-schema .workitem marker.
+
+The directory is never moved or renamed and document contents are never touched.
+When no marker exists one is created; when a legacy or incomplete marker exists
+its schema version, kind, id, type, ref, and title are brought up to the current
+shape. The workflow type is inferred from the path segment after workflow/, the
+title from the first markdown H1 (else the humanized directory name), and id/ref
+from the same rules as create and adopt. Repair is idempotent: a directory that
+is already valid reports no changes. Use --dry-run to preview and --json for a
+machine-readable result.
+
+```
+camp workitem repair <path> [flags]
+```
+
+### Options
+
+```
+      --dry-run       report what would change without writing
+  -h, --help          help for repair
+      --json          emit a structured JSON result
+      --type string   override the workflow type inferred from the path
 ```
 
 ### Options inherited from parent commands
@@ -6537,6 +7292,98 @@ camp workitem unlink [selector] [path] [flags]
       --json              emit a structured JSON result
       --project string    project scope filter
       --worktree string   worktree scope filter
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp workitem validate
+
+Validate workflow work item directories and their .workitem markers
+
+### Synopsis
+
+Validate that workflow work item directories carry a correct .workitem marker.
+
+Without an argument, every work item directory under workflow/ is scanned:
+builtin doc directories (workflow/design, workflow/explore) are always work
+items, custom type directories surface only when they carry a marker, and
+dungeon/hidden control areas are ignored. With a path argument, only that
+directory is validated.
+
+Each problem prints the exact repair command, for example
+"camp workitem repair workflow/design/foo". Use --json for stable finding
+codes. The command exits non-zero when any error-severity finding is present.
+
+```
+camp workitem validate [path] [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for validate
+      --json   emit a structured JSON result
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp workitem worktree
+
+Create a project worktree from a workitem
+
+### Synopsis
+
+Create a git worktree for a workitem and primary-link it, so commits in
+that worktree carry the workitem's WI-* tag.
+
+This is the workitem-first counterpart to 'camp project worktree add': instead
+of naming a worktree and optionally tagging a workitem, you name a workitem and
+the worktree name, branch, and link are derived from it.
+
+Project resolution:
+  The target project is taken from the workitem's linked project (see
+  'camp workitem link --project'). When the workitem has no project link, or
+  is linked to more than one, pass --project explicitly.
+
+Re-entry:
+  If the workitem already has a primary worktree link, the existing path is
+  printed and no new worktree is created.
+
+Examples:
+  # Festival workitem already linked to a project
+  camp workitem worktree WI-2a7950
+
+  # Design/explore/intent workitem: name the project
+  camp workitem worktree workflow/design/camp-settings-tui --project camp
+
+  # Override the derived worktree name
+  camp workitem worktree WI-2a7950 --name grok-list-fix
+
+  # Print only the path (for shell integration)
+  cd "$(camp workitem worktree WI-2a7950 --print)"
+
+```
+camp workitem worktree <selector> [flags]
+```
+
+### Options
+
+```
+  -h, --help                 help for worktree
+      --name string          Worktree/branch name (derived from the workitem if omitted)
+      --print                Print only the worktree path
+  -p, --project string       Project name (inferred from the workitem's project link if omitted)
+  -s, --start-point string   Base branch/commit for the new branch (default: current branch)
 ```
 
 ### Options inherited from parent commands

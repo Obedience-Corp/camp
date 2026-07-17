@@ -14,6 +14,11 @@ running attach again from another campaign adds that campaign to the marker.
 If the target is reached through a symlink, camp follows it once and writes
 the marker at the final directory.
 
+When several campaigns share one attachment, which campaign a command resolves
+depends on how the directory is reached: entering through a campaign-local
+symlink resolves that campaign, while a bare cd into the shared target itself
+resolves to the first campaign it was attached to.
+
 Campaign selection:
   - inside a campaign, omit --campaign to attach to the current campaign
   - outside a campaign in an interactive terminal, omit --campaign to pick

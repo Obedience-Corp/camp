@@ -43,6 +43,11 @@ running attach again from another campaign adds that campaign to the marker.
 If the target is reached through a symlink, camp follows it once and writes
 the marker at the final directory.
 
+When several campaigns share one attachment, which campaign a command resolves
+depends on how the directory is reached: entering through a campaign-local
+symlink resolves that campaign, while a bare cd into the shared target itself
+resolves to the first campaign it was attached to.
+
 Campaign selection:
   - inside a campaign, omit --campaign to attach to the current campaign
   - outside a campaign in an interactive terminal, omit --campaign to pick
@@ -100,6 +105,11 @@ func NewDetachCommand() *cobra.Command {
 Refuses on linked-project markers; use 'camp project unlink' for those.
 The user-managed symlink (if any) is not modified. If run outside any campaign,
 the entire attachment marker is removed.
+
+On an attachment shared by several campaigns this removes only the current
+campaign's binding; the others keep resolving. Detaching the campaign that a
+bare cd into the shared target resolved to shifts that fallback to the next
+remaining campaign.
 
 Examples:
   camp detach docs/examples/external-repo
