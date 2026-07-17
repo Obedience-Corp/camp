@@ -212,14 +212,19 @@ func runCommit(ctx context.Context, cmd *cobra.Command, flags commitFlags) error
 		// reusing flags.Message (untagged): every other CommitEvidence call
 		// site records the actual tagged git subject, and readers like
 		// `workitem commits` parse the campaign tag back out of it.
-		subject := flags.Message
-		if s, serr := lastCommitSubject(ctx, plan.RepoRoot, sha); serr == nil {
-			subject = s
+		subject, serr := lastCommitSubject(ctx, plan.RepoRoot, sha)
+		record, subj, warn := evidenceDecision(sha, subject, serr)
+		if warn != "" {
+			if _, writeErr := fmt.Fprintln(cmd.ErrOrStderr(), warn); writeErr != nil {
+				return writeErr
+			}
 		}
-		ledger.NewFromRoot(ctx, campaignRoot, ledger.WarnTo(cmd.ErrOrStderr())).
-			CommitEvidence(ctx,
-				ledgerkit.Scope{Workitem: plan.WorkitemRef, Festival: plan.FestivalRef, Quest: plan.QuestID},
-				campaignRoot, plan.RepoRoot, sha, subject)
+		if record {
+			ledger.NewFromRoot(ctx, campaignRoot, ledger.WarnTo(cmd.ErrOrStderr())).
+				CommitEvidence(ctx,
+					ledgerkit.Scope{Workitem: plan.WorkitemRef, Festival: plan.FestivalRef, Quest: plan.QuestID},
+					campaignRoot, plan.RepoRoot, sha, subj)
+		}
 	}
 	if flags.JSON {
 		return emitJSON(cmd.OutOrStdout(), plan, sha)
@@ -291,4 +296,20 @@ func lastCommitSubject(ctx context.Context, repoRoot, sha string) (string, error
 		return "", err
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+// evidenceDecision decides whether to record ledger evidence for a landed
+// commit given the tagged subject read back from git. A failed subject read
+// must never fall back to the untagged commit message and still record
+// evidence: that would look like a clean tagged ledger write and recreate the
+// git/ledger mismatch this path exists to prevent. On error it returns
+// record=false with an operator warning; the commit already landed, so only the
+// ledger annotation is skipped.
+func evidenceDecision(sha, subject string, subjectErr error) (record bool, subj, warn string) {
+	if subjectErr != nil {
+		return false, "", fmt.Sprintf(
+			"warning: committed %s but could not read its subject for ledger evidence (%v); "+
+				"skipping ledger record to avoid an untagged entry", sha, subjectErr)
+	}
+	return true, subject, ""
 }
