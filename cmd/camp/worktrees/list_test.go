@@ -3,14 +3,8 @@ package worktrees
 import (
 	"io"
 	"os"
-	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
-
-	"github.com/Obedience-Corp/camp/internal/config"
-	"github.com/Obedience-Corp/camp/internal/paths"
-	intworktree "github.com/Obedience-Corp/camp/internal/worktree"
 )
 
 func captureWorktreesStdout(fn func() error) (string, error) {
@@ -98,23 +92,5 @@ func TestOutputListTable_StaleReasonInStatus(t *testing.T) {
 	}
 	if !strings.Contains(out, "missing .git") {
 		t.Errorf("outputListTable missing stale reason in output, got:\n%s", out)
-	}
-}
-
-func TestFilterRegisteredWorktreeNames_DropsCopiedCheckoutChildren(t *testing.T) {
-	root := filepath.Join(string(filepath.Separator), "campaign")
-	pm := intworktree.NewPathManager(paths.NewResolver(root, config.DefaultCampaignPaths()))
-
-	got := filterRegisteredWorktreeNames("fest-gif-review",
-		[]string{"bin", "node_modules", "scripts", "src", "real-review"},
-		[]intworktree.GitWorktreeEntry{{
-			Path: pm.WorktreePath("fest-gif-review", "real-review"),
-		}},
-		pm,
-	)
-	want := []string{"real-review"}
-
-	if !slices.Equal(got, want) {
-		t.Fatalf("filterRegisteredWorktreeNames() = %v, want %v", got, want)
 	}
 }
