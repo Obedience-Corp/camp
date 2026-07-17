@@ -1455,7 +1455,9 @@ single project name. Use --list to cycle a specific set of projects in one
 run, or 'camp fresh all' to cycle every project submodule in the campaign.
 
 Without configuration, syncs to the default branch and prunes.
-Configure .campaign/settings/fresh.yaml to set a default working branch.
+Configure .campaign/settings/fresh.yaml to set a default working branch, or
+follow-up command workflows (install, build, bootstrap, ...) to run once the
+cycle succeeds. Manage those with 'camp fresh configure'.
 
 Examples:
   camp fresh                            # Sync current project (checkout default, pull, prune)
@@ -1463,7 +1465,8 @@ Examples:
   camp fresh camp -b feat/new-thing     # Sync camp project, create feature branch
   camp fresh --list camp,fest,festival  # Sync a specific set of projects
   camp fresh --no-prune                 # Sync without pruning
-  camp fresh --dry-run                  # Preview what would happen
+  camp fresh --no-follow-up             # Sync without running configured follow-ups
+  camp fresh --dry-run                  # Preview what would happen (follow-ups listed, not run)
 
 ```
 camp fresh [project-name] [flags]
@@ -1477,6 +1480,7 @@ camp fresh [project-name] [flags]
   -h, --help             help for fresh
       --list strings     Comma-separated set of projects to cycle in one run
       --no-branch        Skip branch creation even if configured
+      --no-follow-up     Skip configured follow-up command workflows
       --no-prune         Skip pruning merged branches
       --no-push          Skip pushing the new branch upstream
   -p, --project string   Project name (auto-detected from cwd)
@@ -1521,6 +1525,130 @@ camp fresh all [flags]
   -n, --dry-run         Preview without making changes
       --no-branch       Skip branch creation even if configured
       --no-color        disable colored output
+      --no-follow-up    Skip configured follow-up command workflows
+      --no-prune        Skip pruning merged branches
+      --no-push         Skip pushing the new branch upstream
+```
+---
+
+## camp fresh configure
+
+Manage camp fresh follow-up command workflows
+
+### Synopsis
+
+Manage the follow-up command workflows camp fresh runs after a
+successful sync/prune/branch cycle. Configuration lives in
+.campaign/settings/fresh.yaml: a global default list, plus optional
+per-project override lists that replace the global list entirely.
+
+Examples:
+  camp fresh configure show
+  camp fresh configure add install --run "npm install"
+  camp fresh configure add build --run "go build ./..." --project camp --dir cmd/camp
+  camp fresh configure remove install
+  camp fresh configure remove build --project camp
+
+### Options
+
+```
+  -h, --help   help for configure
+```
+
+### Options inherited from parent commands
+
+```
+  -b, --branch string   Branch to create after syncing (overrides config)
+  -n, --dry-run         Preview without making changes
+      --no-branch       Skip branch creation even if configured
+      --no-color        disable colored output
+      --no-follow-up    Skip configured follow-up command workflows
+      --no-prune        Skip pruning merged branches
+      --no-push         Skip pushing the new branch upstream
+```
+---
+
+## camp fresh configure add
+
+Add a follow-up command workflow step
+
+```
+camp fresh configure add <name> [flags]
+```
+
+### Options
+
+```
+      --continue-on-error   Keep running later follow-ups if this step fails
+      --dir string          Directory relative to the project root to run the command in
+  -h, --help                help for add
+      --project string      Scope this follow-up to a single project (default: global)
+      --run string          Command to run for this follow-up step (required)
+```
+
+### Options inherited from parent commands
+
+```
+  -b, --branch string   Branch to create after syncing (overrides config)
+  -n, --dry-run         Preview without making changes
+      --no-branch       Skip branch creation even if configured
+      --no-color        disable colored output
+      --no-follow-up    Skip configured follow-up command workflows
+      --no-prune        Skip pruning merged branches
+      --no-push         Skip pushing the new branch upstream
+```
+---
+
+## camp fresh configure remove
+
+Remove a follow-up command workflow step
+
+```
+camp fresh configure remove <name> [flags]
+```
+
+### Options
+
+```
+  -h, --help             help for remove
+      --project string   Scope removal to a single project (default: global)
+```
+
+### Options inherited from parent commands
+
+```
+  -b, --branch string   Branch to create after syncing (overrides config)
+  -n, --dry-run         Preview without making changes
+      --no-branch       Skip branch creation even if configured
+      --no-color        disable colored output
+      --no-follow-up    Skip configured follow-up command workflows
+      --no-prune        Skip pruning merged branches
+      --no-push         Skip pushing the new branch upstream
+```
+---
+
+## camp fresh configure show
+
+Show configured follow-up workflows
+
+```
+camp fresh configure show [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for show
+```
+
+### Options inherited from parent commands
+
+```
+  -b, --branch string   Branch to create after syncing (overrides config)
+  -n, --dry-run         Preview without making changes
+      --no-branch       Skip branch creation even if configured
+      --no-color        disable colored output
+      --no-follow-up    Skip configured follow-up command workflows
       --no-prune        Skip pruning merged branches
       --no-push         Skip pushing the new branch upstream
 ```

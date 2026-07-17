@@ -19,11 +19,12 @@ import (
 // invocation. It is passed to runFreshBatch so per-project settings can be
 // resolved against the fresh config.
 type freshFlagSet struct {
-	branch   string
-	noBranch bool
-	noPush   bool
-	noPrune  bool
-	dryRun   bool
+	branch     string
+	noBranch   bool
+	noPush     bool
+	noPrune    bool
+	noFollowUp bool
+	dryRun     bool
 }
 
 // freshTarget is a resolved project to run the fresh cycle against.
@@ -39,13 +40,15 @@ func getFreshFlagSet(freshCmd *cobra.Command) freshFlagSet {
 	noBranch, _ := freshCmd.PersistentFlags().GetBool("no-branch")
 	noPush, _ := freshCmd.PersistentFlags().GetBool("no-push")
 	noPrune, _ := freshCmd.PersistentFlags().GetBool("no-prune")
+	noFollowUp, _ := freshCmd.PersistentFlags().GetBool("no-follow-up")
 	dryRun, _ := freshCmd.PersistentFlags().GetBool("dry-run")
 	return freshFlagSet{
-		branch:   branch,
-		noBranch: noBranch,
-		noPush:   noPush,
-		noPrune:  noPrune,
-		dryRun:   dryRun,
+		branch:     branch,
+		noBranch:   noBranch,
+		noPush:     noPush,
+		noPrune:    noPrune,
+		noFollowUp: noFollowUp,
+		dryRun:     dryRun,
 	}
 }
 
@@ -116,12 +119,14 @@ func runFreshBatch(ctx context.Context, cfg *config.FreshConfig, targets []fresh
 		branch := cfg.ResolveFreshBranch(flags.branch, flags.noBranch, t.name)
 		doPrune := !flags.noPrune && cfg.ResolveFreshPrune()
 		doPush := !flags.noPush && cfg.ResolveFreshPushUpstream(t.name)
+		followUps := resolveFreshFollowUps(cfg, t.name, flags.noFollowUp)
 
 		err := executeFresh(ctx, t.name, t.path, freshOptions{
 			branch:      branch,
 			prune:       doPrune,
 			pruneRemote: cfg.ResolveFreshPruneRemote(),
 			push:        doPush,
+			followUps:   followUps,
 			dryRun:      flags.dryRun,
 		})
 		if err != nil {
