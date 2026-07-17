@@ -1,4 +1,4 @@
-## camp intent claim
+## camp idea claim
 
 Claim an intent for an agent or session
 
@@ -21,7 +21,7 @@ Examples:
     --ref https://github.com/Obedience-Corp/camp/pull/123
 
 ```
-camp intent claim <id> [flags]
+camp idea claim <id> [flags]
 ```
 
 ### Options
@@ -41,4 +41,4 @@ camp intent claim <id> [flags]
 
 ### SEE ALSO
 
-* [camp intent](camp_intent.md)	 - Manage campaign intents
+* [camp idea](camp_idea.md)	 - Manage campaign ideas

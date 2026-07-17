@@ -186,7 +186,7 @@ func TestIntentAddJSONEmitsCreatedPayload(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(campaignRoot, path)); err != nil {
 		t.Fatalf("created intent path missing: %v", err)
 	}
-	if bytes.Contains([]byte(stdout), []byte("Intent created")) {
+	if bytes.Contains([]byte(stdout), []byte("Idea created")) {
 		t.Fatalf("add --json leaked human output: %s", stdout)
 	}
 }

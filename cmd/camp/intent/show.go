@@ -21,8 +21,8 @@ func newIntentShowCommand() *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "show <id>",
-		Short: "Show detailed intent information",
-		Long: `Display detailed information about a specific intent.
+		Short: "Show detailed idea information",
+		Long: `Display detailed information about a specific idea.
 
 Supports partial ID matching - you can use:
   - Full ID: 20260119-153412-add-retry-logic
@@ -35,10 +35,10 @@ OUTPUT FORMATS:
   yaml             Full metadata in YAML format
 
 Examples:
-  camp intent show 20260119-153412...    Show by full ID
-  camp intent show retry-logic           Show by partial match
-  camp intent show retry -f json         JSON output
-  camp intent show retry -f yaml         YAML output`,
+  camp idea show 20260119-153412...    Show by full ID
+  camp idea show retry-logic           Show by partial match
+  camp idea show retry -f json         JSON output
+  camp idea show retry -f yaml         YAML output`,
 	}
 	jsonRequested := func() bool { return intentJSONRequested(cmd, &jsonOut) }
 	cmd.Args = jsoncontract.Args(IntentJSONVersion, jsonRequested, cobra.ExactArgs(1))
@@ -86,7 +86,7 @@ func runIntentShow(cmd *cobra.Command, args []string) error {
 	// Find the intent (supports partial matching)
 	i, err := svc.Find(ctx, id)
 	if err != nil {
-		return camperrors.Newf("intent not found: %s", id)
+		return camperrors.Newf("idea not found: %s", id)
 	}
 
 	// Format and output
@@ -103,7 +103,7 @@ func runIntentShow(cmd *cobra.Command, args []string) error {
 func showText(i *intent.Intent) error {
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("Intent: %s\n\n", i.ID))
+	fmt.Fprintf(&sb, "Idea: %s\n\n", i.ID)
 	sb.WriteString(fmt.Sprintf("Title:    %s\n", i.Title))
 	sb.WriteString(fmt.Sprintf("Type:     %s\n", i.Type))
 	sb.WriteString(fmt.Sprintf("Status:   %s\n", i.Status))

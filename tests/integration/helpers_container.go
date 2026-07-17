@@ -18,6 +18,13 @@ import (
 // The trailing `sync` ensures filesystem buffers are flushed before the next test
 // begins — required for consistency on macOS/Colima where Docker exec runs through
 // a virtualization layer (overlayfs in a Linux VM).
+//
+// The default global config seeds dungeon_hidden=false so the bulk of this
+// suite (written against the legacy visible "dungeon" spelling) keeps
+// exercising real dungeon mechanics without every test needing to know about
+// the setting. Tests that specifically cover the hidden-by-default behavior
+// or the dual-spelling resolution override this fixture explicitly via
+// WriteGlobalConfig.
 func (tc *TestContainer) Reset() error {
 	// Remove all test artifacts and recreate clean directories. Include both
 	// current and legacy config homes so registry/global settings never leak
@@ -25,7 +32,8 @@ func (tc *TestContainer) Reset() error {
 	exitCode, _, err := tc.container.Exec(tc.ctx, []string{
 		"sh", "-c",
 		"rm -rf /test /campaigns /root/.obey /root/.config/camp /root/.camp /tmp/create-* 2>/dev/null; " +
-			"mkdir -p /test /campaigns /root/.config/camp; sync",
+			"mkdir -p /test /campaigns /root/.config/camp /root/.obey/campaign; sync; " +
+			`printf '{"dungeon_hidden": false}' > /root/.obey/campaign/config.json`,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reset container: %w", err)
@@ -286,6 +294,33 @@ func (tc *TestContainer) RunCampSplit(args ...string) (stdout, stderr string, ex
 		exitCode = 1
 	}
 	// Clean up temp files (best-effort).
+	_, _, _ = tc.ExecCommand("rm", "-f", "/tmp/_camp_stdout", "/tmp/_camp_stderr", "/tmp/_camp_exitcode")
+	return stdoutRaw, stderrRaw, exitCode, nil
+}
+
+// RunCampSplitInDir runs camp from dir and returns stdout and stderr as
+// separate strings along with the exit code, mirroring RunCampSplit but
+// scoped to a working directory the way RunCampInDir is for combined output.
+func (tc *TestContainer) RunCampSplitInDir(dir string, args ...string) (stdout, stderr string, exitCode int, err error) {
+	quotedArgs := make([]string, len(args))
+	for i, arg := range args {
+		escaped := strings.ReplaceAll(arg, "'", "'\"'\"'")
+		quotedArgs[i] = "'" + escaped + "'"
+	}
+	cmdStr := fmt.Sprintf(
+		"cd %s && /camp %s >/tmp/_camp_stdout 2>/tmp/_camp_stderr; echo $? >/tmp/_camp_exitcode",
+		dir, strings.Join(quotedArgs, " "),
+	)
+	if _, _, err = tc.ExecCommand("sh", "-c", cmdStr); err != nil {
+		return "", "", -1, fmt.Errorf("RunCampSplitInDir exec failed: %w", err)
+	}
+	stdoutRaw, _, _ := tc.ExecCommand("cat", "/tmp/_camp_stdout")
+	stderrRaw, _, _ := tc.ExecCommand("cat", "/tmp/_camp_stderr")
+	exitStr, _, _ := tc.ExecCommand("cat", "/tmp/_camp_exitcode")
+	exitCode = 0
+	if s := strings.TrimSpace(exitStr); s != "" && s != "0" {
+		exitCode = 1
+	}
 	_, _, _ = tc.ExecCommand("rm", "-f", "/tmp/_camp_stdout", "/tmp/_camp_stderr", "/tmp/_camp_exitcode")
 	return stdoutRaw, stderrRaw, exitCode, nil
 }

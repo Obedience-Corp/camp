@@ -1,4 +1,4 @@
-## camp intent sync
+## camp idea sync
 
 Reconcile intents against their tracked GitHub PRs
 
@@ -19,7 +19,7 @@ Examples:
   camp intent sync --dry-run    Preview without moving anything
 
 ```
-camp intent sync [flags]
+camp idea sync [flags]
 ```
 
 ### Options
@@ -38,4 +38,4 @@ camp intent sync [flags]
 
 ### SEE ALSO
 
-* [camp intent](camp_intent.md)	 - Manage campaign intents
+* [camp idea](camp_idea.md)	 - Manage campaign ideas

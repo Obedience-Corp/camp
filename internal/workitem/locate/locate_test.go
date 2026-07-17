@@ -27,6 +27,54 @@ func TestDetectFromCwd_ResolvesSymlinkedRoot(t *testing.T) {
 	}
 }
 
+func TestDetectFromCwd_HiddenDungeon(t *testing.T) {
+	root := t.TempDir()
+	root, _ = filepath.EvalSymlinks(root)
+	itemDir := filepath.Join(root, "workflow", "design", ".dungeon", "completed", "oldslug")
+	if err := os.MkdirAll(itemDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	loc, err := DetectFromCwd(root, itemDir)
+	if err != nil {
+		t.Fatalf("DetectFromCwd() error = %v", err)
+	}
+	if loc.Type != "design" || loc.Slug != "oldslug" {
+		t.Fatalf("loc = %+v, want design/oldslug", loc)
+	}
+	if !loc.InDungeon {
+		t.Error("InDungeon = false, want true")
+	}
+	if loc.Status != "completed" {
+		t.Errorf("Status = %q, want completed", loc.Status)
+	}
+	wantDungeon := filepath.Join(root, "workflow", "design", ".dungeon")
+	if loc.DungeonPath != wantDungeon {
+		t.Errorf("DungeonPath = %q, want %q", loc.DungeonPath, wantDungeon)
+	}
+}
+
+func TestDetectFromCwd_ActiveItemPointsAtEstablishedHiddenDungeon(t *testing.T) {
+	root := t.TempDir()
+	root, _ = filepath.EvalSymlinks(root)
+	if err := os.MkdirAll(filepath.Join(root, "workflow", "design", ".dungeon"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	itemDir := filepath.Join(root, "workflow", "design", "myslug")
+	if err := os.MkdirAll(itemDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	loc, err := DetectFromCwd(root, itemDir)
+	if err != nil {
+		t.Fatalf("DetectFromCwd() error = %v", err)
+	}
+	wantDungeon := filepath.Join(root, "workflow", "design", ".dungeon")
+	if loc.DungeonPath != wantDungeon {
+		t.Errorf("DungeonPath = %q, want %q (established hidden spelling)", loc.DungeonPath, wantDungeon)
+	}
+}
+
 func TestDetectFromCwd(t *testing.T) {
 	const root = "/campaign"
 

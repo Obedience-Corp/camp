@@ -52,7 +52,7 @@ func festivalRootRelFromCwd(campaignRoot, cwd string) string {
 	switch parts[1] {
 	case "planning", "ready", "active", "ritual", "chains":
 		return strings.Join(parts[:3], "/")
-	case "dungeon":
+	case "dungeon", ".dungeon":
 		if len(parts) >= 5 && parts[2] == "completed" {
 			return strings.Join(parts[:5], "/")
 		}

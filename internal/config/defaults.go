@@ -166,3 +166,12 @@ func (c *GlobalConfig) ApplyDefaults() {
 		c.TUI.Theme = ThemeNameAdaptive
 	}
 }
+
+// ResolveDungeonHidden resolves the dungeon_hidden system setting: unset
+// defaults to true so new campaigns scaffold hidden ".dungeon" directories.
+func (c *GlobalConfig) ResolveDungeonHidden() bool {
+	if c == nil || c.DungeonHidden == nil {
+		return true
+	}
+	return *c.DungeonHidden
+}

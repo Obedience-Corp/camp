@@ -1,13 +1,13 @@
-## camp intent explore
+## camp idea explore
 
-Interactive intent explorer
+Interactive idea explorer
 
 ### Synopsis
 
-Launch the interactive Intent Explorer TUI.
+Launch the interactive Idea Explorer TUI.
 
 The explorer provides a full-screen interface for browsing,
-filtering, and managing intents with keyboard shortcuts.
+filtering, and managing ideas with keyboard shortcuts.
 
 NAVIGATION
   j/↓           Move down
@@ -21,19 +21,19 @@ ACTIONS
   e             Edit in $EDITOR
   o             Open with system handler
   O             Reveal in file manager
-  n             New intent
+  n             New idea
   p             Promote to next status
-  a             Archive intent
-  d             Delete intent
-  m             Move intent to status
+  a             Archive idea
+  d             Delete idea
+  m             Move idea to status
 
 GATHER (Multi-Select)
   Space         Toggle selection / enter gather mode
-  ga            Gather selected intents
+  ga            Gather selected ideas
   Escape        Exit multi-select mode
 
 FILTERS
-  /             Search intents (fuzzy)
+  /             Search ideas (fuzzy)
   t             Filter by type
   s             Filter by status
   c             Filter by concept
@@ -46,10 +46,10 @@ VIEW
   q             Quit explorer
 
 Examples:
-  camp intent explore          Launch the intent explorer
+  camp idea explore          Launch the idea explorer
 
 ```
-camp intent explore [flags]
+camp idea explore [flags]
 ```
 
 ### Options
@@ -66,4 +66,4 @@ camp intent explore [flags]
 
 ### SEE ALSO
 
-* [camp intent](camp_intent.md)	 - Manage campaign intents
+* [camp idea](camp_idea.md)	 - Manage campaign ideas

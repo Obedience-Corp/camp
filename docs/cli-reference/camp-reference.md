@@ -1256,6 +1256,64 @@ camp dungeon list [flags]
 ```
 ---
 
+## camp dungeon migrate
+
+Convert every campaign dungeon to the hidden .dungeon spelling
+
+### Synopsis
+
+Convert every dungeon in this campaign from "dungeon" to ".dungeon".
+
+New campaigns hide the dungeon so it stops being the first thing newcomers ask
+about. This converts a campaign made before that change. A campaign uses one
+spelling throughout, so the sweep covers every dungeon at once: the campaign
+root, festivals/, .campaign/intents/, .campaign/quests/, and each workflow
+type. Dungeons are discovered on disk, so locations added since this command
+was written are included too.
+
+The move goes through git, so history and rename detection survive, and lands
+as a single commit you can revert.
+
+projects/ is never touched. Projects own their own trees, and a source
+directory named "dungeon" inside one is not a campaign dungeon.
+
+Release ordering matters when a campaign contains festivals/: this command
+also renames festivals/dungeon. Do not run it against a campaign used by a
+fest build that does not understand .dungeon. Land fest#274 and ship a fest
+release with the matching support before making this migration available to
+users.
+
+Nothing is moved unless everything can be: if any location holds both
+spellings, or a .dungeon is already in the way, the command reports it and
+exits without changing anything.
+
+```
+camp dungeon migrate [flags]
+```
+
+### Examples
+
+```
+  camp dungeon migrate            Convert and commit
+  camp dungeon migrate --dry-run  Show what would move, change nothing
+  camp dungeon migrate --no-commit  Convert, leave the changes staged
+```
+
+### Options
+
+```
+      --dry-run     Show what would move without changing anything
+  -h, --help        help for migrate
+      --no-commit   Move the directories but do not commit
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
 ## camp dungeon move
 
 Move dungeon items between statuses
@@ -2006,6 +2064,915 @@ camp id [flags]
 ```
 ---
 
+## camp idea
+
+Manage campaign ideas
+
+### Synopsis
+
+Manage ideas for features and improvements not yet ready for full planning.
+
+Ideas capture thoughts, bugs, features, and research topics that depend on work
+not yet completed. They serve as structured storage for ideas that aren't ready
+to become Festivals but need to be tracked.
+
+CAPTURE MODES:
+  Fast (default)    Quick capture with minimal fields
+  Deep (--edit)     Open in editor for full context
+
+IDEA LIFECYCLE:
+  inbox  → Captured, not yet reviewed
+  ready  → Reviewed/enriched, ready for promotion
+  active → Promoted to festival/design doc, work in progress
+  dungeon/* → Terminal statuses (done, killed, archived, someday)
+
+"camp intent" (the original name) keeps working as an alias for every
+command below; the storage path is .campaign/intents/ either way.
+
+Examples:
+  camp idea add "Add dark mode toggle"         Fast capture to inbox
+  camp idea add -e "Refactor auth system"      Deep capture with editor
+  camp idea list                               List all ideas
+  camp idea list --status active               List active ideas
+  camp idea edit add-dark                      Edit idea (fuzzy match)
+  camp idea show 20260119-153412-add-dark      Show idea details
+  camp idea move add-dark ready                Mark as ready
+  camp idea promote add-dark                   Promote to active via festival
+  camp idea archive add-dark                   Archive idea
+
+```
+camp idea [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for idea
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea add
+
+Create a new idea
+
+### Synopsis
+
+Create a new idea with fast or deep capture mode.
+
+CAPTURE MODES:
+  Ultra-fast          Title provided as argument → immediate creation
+  Fast TUI (default)  Step-through form (title, type, concept)
+  Full TUI (--full)   Step-through form including body textarea
+  Deep (--edit)       Full template in $EDITOR
+
+Fast capture is optimized for speed - ideas are saved immediately.
+Use --full when you want to add a body description in the form.
+Use --edit when you need the complete template in your editor.
+
+PROGRAMMATIC (agent) FLAGS:
+  --body              Set idea body from a literal string
+  --body-file         Read idea body from a file (- for stdin)
+  --concept           Set the concept field (e.g., "projects/camp")
+  --note              Create a note instead of a lifecycle idea
+  --author            Override the default author attribution
+
+  --body and --body-file are mutually exclusive.
+  --full + body flags is a usage error.
+  --edit + body flags pre-fills the editor template.
+
+Examples:
+  camp idea add "Add dark mode"        Ultra-fast capture
+  camp idea add -c obey-campaign "Add dark mode"
+  camp idea add                        Fast TUI (3-step form)
+  camp idea add --campaign             Pick a target campaign interactively
+  camp idea add --full                 Full TUI (includes body)
+  camp idea add --note                 Note TUI (title + body, no type/concept)
+  camp idea add --note "Meeting note" --body "Follow up next week"
+  camp idea add -e "Complex feature"   Deep capture with editor
+  camp idea add -t feature "New API"   Set type explicitly
+  camp idea add "Fix login" --body "The login page returns 500"
+  camp idea add "Migrate DB" --body-file spec.md --concept projects/camp
+  echo "body" | camp idea add "Idea" --body-file -
+
+```
+camp idea add [title] [flags]
+```
+
+### Options
+
+```
+      --author string      Override the default author attribution
+      --body string        Set idea body as a literal string
+      --body-file string   Read idea body from file (- for stdin, 10 MiB cap)
+  -c, --campaign string    Target campaign by name or ID; omit value to pick interactively
+      --concept string     Set the concept field (e.g., projects/camp)
+  -e, --edit               Open in $EDITOR for deep capture
+      --full               Full TUI mode with body textarea
+  -h, --help               help for add
+      --json               emit a structured JSON result
+      --no-commit          Don't create a git commit
+      --note               Create a note instead of a lifecycle idea
+      --tag stringArray    Add a tag (repeatable)
+  -t, --type string        Type (idea, feature, bug, research, chore) (default "idea")
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea archive
+
+Archive an idea
+
+### Synopsis
+
+Archive an idea by moving it to dungeon/archived.
+
+This is a convenience command equivalent to:
+  camp idea move <id> archived --reason "..."
+
+Dungeon moves require a reason and append a decision record to the idea body.
+Use 'camp idea move <id> inbox' to un-archive if needed.
+
+Examples:
+  camp idea archive add-dark --reason "superseded by broader initiative"
+  camp idea archive 20260119-153412 --reason "preserve as reference"
+
+```
+camp idea archive <id> [flags]
+```
+
+### Options
+
+```
+  -h, --help            help for archive
+      --no-commit       Don't create a git commit
+      --reason string   Reason for archiving (required)
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea claim
+
+Claim an intent for an agent or session
+
+### Synopsis
+
+Assign an intent to an agent so the campaign tracks who is working it.
+
+Stamps assigned_to and assigned_at, and merges any --ref values (a PR URL,
+branch, or festival path) into work_ref. Calling claim again on an
+already-claimed intent re-stamps assigned_at and merges in new refs without
+dropping ones already recorded -- this is the expected way to record a PR URL
+once one is opened, after an initial claim at the start of work.
+
+Use 'camp intent release' to clear the assignment, and 'camp intent sync' to
+auto-close intents once their tracked PR merges.
+
+Examples:
+  camp intent claim add-dark --agent claude-code-session-1
+  camp intent claim add-dark --agent claude-code-session-1 \
+    --ref https://github.com/Obedience-Corp/camp/pull/123
+
+```
+camp idea claim <id> [flags]
+```
+
+### Options
+
+```
+      --agent string      Agent or session name claiming the intent (required)
+  -h, --help              help for claim
+      --no-commit         Don't create a git commit
+      --ref stringArray   Work reference: PR URL, branch, or festival path (repeatable)
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea convert
+
+Convert a note into an idea
+
+### Synopsis
+
+Promote a note into the idea lifecycle.
+
+A note lives outside the inbox → ready → active lifecycle. Converting it moves
+the note into inbox/ and attaches an idea type, after which it behaves like
+any other idea. This is the only bridge from a note into the lifecycle.
+
+Examples:
+  camp idea convert check-daemon-socket --type idea
+  camp idea convert check-daemon-socket -t feature
+
+```
+camp idea convert <id> [flags]
+```
+
+### Options
+
+```
+  -h, --help          help for convert
+      --no-commit     Don't create a git commit
+  -t, --type string   Type to attach (idea, feature, bug, research, chore) (default "idea")
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea count
+
+Count ideas by status directory
+
+### Synopsis
+
+Display a count of ideas grouped by status directory.
+
+OUTPUT FORMATS:
+  table (default)   Styled summary with counts per status
+  json              Machine-readable JSON output
+
+Examples:
+  camp idea count              Show counts per status
+  camp idea count -f json      JSON output for scripting
+
+```
+camp idea count [flags]
+```
+
+### Options
+
+```
+  -f, --format string   Output format: table, json (default "table")
+  -h, --help            help for count
+      --json            emit a structured JSON result
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea crawl
+
+Interactive idea triage
+
+### Synopsis
+
+Walk live ideas one at a time and decide their fate.
+
+Default scope is the working set: inbox, ready, and active. Each candidate is
+shown with a compact preview. For each one you can keep, move to another
+status, skip, or quit. Moves to dungeon statuses require a reason.
+
+Existing dungeon ideas are not crawl candidates. Use 'camp idea move' to
+restore them explicitly.
+
+Examples:
+  camp idea crawl
+  camp idea crawl --status inbox --limit 25
+  camp idea crawl --status ready --status active --sort priority
+  camp idea crawl --no-commit
+
+```
+camp idea crawl [flags]
+```
+
+### Options
+
+```
+  -h, --help             help for crawl
+      --limit int        Stop after N candidates (0 = no limit)
+      --no-commit        Apply moves and logs but do not auto-commit
+      --sort string      Sort mode: stale, updated, created, priority, title (default "stale")
+      --status strings   Restrict to live statuses (repeatable: inbox, ready, active)
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea edit
+
+Edit an existing idea
+
+### Synopsis
+
+Edit an idea in your preferred editor or programmatically via flags.
+
+If no programmatic flags are given, opens the idea in $EDITOR.
+If any programmatic flag is present, applies the update directly and
+emits an audit event — no editor is launched.
+
+PICKER / EDITOR PATH:
+  If ID is provided, opens the idea directly (supports partial matching).
+  If no ID is provided, shows a fuzzy picker to select an idea.
+
+PROGRAMMATIC FLAGS (skip $EDITOR):
+  --title            Set a new title
+  --body             Replace the body with a literal string
+  --body-file        Replace the body from a file (- for stdin)
+  --append-body      Append text to the existing body
+  --append-body-file Append text from a file (- for stdin)
+  --set-type         Change the idea type
+  --set-status       Change the idea status
+  --set-concept      Change the concept field
+  --priority         Change priority (low, medium, high)
+  --horizon          Change horizon (now, next, later, someday)
+  --author           Override the author attribution
+
+MUTUAL EXCLUSIVITY:
+  --body vs --body-file
+  --append-body vs --append-body-file
+  --body/--body-file vs --append-body/--append-body-file (replace vs append)
+
+FILTER FLAGS (for picker only, not update targets):
+  -s/--status        Filter picker by status
+  -t/--type          Filter picker by type
+  -p/--project       Filter picker by project/concept
+
+Examples:
+  camp idea edit                                Interactive picker + $EDITOR
+  camp idea edit retry-logic                    Direct edit by partial ID
+  camp idea edit --status active                Picker filtered by status
+  camp idea edit retry --title "Retry with backoff"
+  camp idea edit retry --body "New description"
+  camp idea edit retry --append-body "Additional note"
+  camp idea edit retry --set-type feature --priority high
+  echo "details" | camp idea edit retry --body-file -
+
+```
+camp idea edit [id] [flags]
+```
+
+### Options
+
+```
+      --append-body string        Append text to the existing body
+      --append-body-file string   Append text from file (- for stdin, 10 MiB cap)
+      --author string             Override the author attribution
+      --body string               Replace the idea body
+      --body-file string          Replace body from file (- for stdin, 10 MiB cap)
+  -h, --help                      help for edit
+      --horizon string            Change horizon (now, next, later, someday)
+      --no-commit                 Don't create a git commit
+      --priority string           Change priority (low, medium, high)
+  -p, --project string            Filter picker by project
+      --set-concept string        Change the concept field
+      --set-status string         Change the idea status
+      --set-type string           Change the type (idea, feature, bug, research, chore)
+  -s, --status string             Filter picker by status
+      --tag stringArray           Replace the idea's tags (repeatable)
+      --title string              Set a new title
+  -t, --type string               Filter picker by type
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea explore
+
+Interactive idea explorer
+
+### Synopsis
+
+Launch the interactive Idea Explorer TUI.
+
+The explorer provides a full-screen interface for browsing,
+filtering, and managing ideas with keyboard shortcuts.
+
+NAVIGATION
+  j/↓           Move down
+  k/↑           Move up
+  g             Go to top (preview)
+  G             Go to bottom (preview)
+  Enter/Space   Select/expand group
+  Tab           Switch focus (list/preview)
+
+ACTIONS
+  e             Edit in $EDITOR
+  o             Open with system handler
+  O             Reveal in file manager
+  n             New idea
+  p             Promote to next status
+  a             Archive idea
+  d             Delete idea
+  m             Move idea to status
+
+GATHER (Multi-Select)
+  Space         Toggle selection / enter gather mode
+  ga            Gather selected ideas
+  Escape        Exit multi-select mode
+
+FILTERS
+  /             Search ideas (fuzzy)
+  t             Filter by type
+  s             Filter by status
+  c             Filter by concept
+  C             Clear concept filter
+  Escape        Clear filter/cancel
+
+VIEW
+  v             Toggle preview pane
+  ?             Show help overlay
+  q             Quit explorer
+
+Examples:
+  camp idea explore          Launch the idea explorer
+
+```
+camp idea explore [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for explore
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea find
+
+Search for ideas by title or content
+
+### Synopsis
+
+Search for ideas across all statuses by title, content, or ID.
+
+The search is case-insensitive and matches partial strings.
+Without a query, returns all ideas.
+
+OUTPUT FORMATS:
+  table (default)   Human-readable table with columns
+  simple            IDs only, one per line (for scripting)
+  json              Full metadata in JSON format
+
+Examples:
+  camp idea find                   List all ideas
+  camp idea find dark              Find ideas containing "dark"
+  camp idea find "bug fix"         Find ideas with "bug fix"
+  camp idea find -f simple auth    Get IDs of auth-related ideas
+
+```
+camp idea find [query] [flags]
+```
+
+### Options
+
+```
+  -f, --format string   Output format: table, simple, json (default "table")
+  -h, --help            help for find
+      --json            emit a structured JSON result
+  -n, --limit int       Limit results (0 = no limit)
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea gather
+
+Gather related ideas into a unified document
+
+### Synopsis
+
+Gather multiple related ideas into a single unified document.
+
+DISCOVERY MODES:
+  By IDs      Explicitly specify idea IDs to gather
+  --tag       Find ideas with a specific frontmatter tag
+  --hashtag   Find ideas containing a specific #hashtag
+  --similar   Find ideas similar to a given ID (TF-IDF)
+
+The gather process:
+  1. Find related ideas using the specified discovery method
+  2. Merge their content with full metadata preservation
+  3. Create a new unified idea in inbox status
+  4. Archive source ideas (unless --no-archive)
+
+Source ideas are preserved with a 'gathered_into' reference.
+
+Examples:
+  # Gather by explicit IDs
+  camp idea gather id1 id2 id3 --title "Auth System"
+
+  # Find and gather by tag
+  camp idea gather --tag auth --title "Auth System"
+
+  # Find and gather by hashtag
+  camp idea gather --hashtag login --title "Login System"
+
+  # Find similar ideas and gather
+  camp idea gather --similar auth-feature --title "Auth Unified"
+
+  # Gather without archiving sources
+  camp idea gather id1 id2 --title "Combined" --no-archive
+
+  # Dry run to preview what would be gathered
+  camp idea gather --tag auth --title "Auth System" --dry-run
+
+```
+camp idea gather [ids...] [flags]
+```
+
+### Options
+
+```
+      --concept string    Override concept path
+      --dry-run           Preview gather without making changes
+      --hashtag string    Find ideas by content hashtag
+  -h, --help              help for gather
+      --horizon string    Override horizon (now, next, later, someday)
+      --min-score float   Minimum similarity score (0.0-1.0) (default 0.1)
+      --no-archive        Don't archive source ideas
+      --no-commit         Don't create a git commit
+      --priority string   Override priority (low, medium, high)
+      --similar string    Find ideas similar to this ID
+      --tag string        Find ideas by frontmatter tag
+  -t, --title string      Title for the gathered idea (required)
+      --type string       Override type (idea, feature, bug, research)
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea list
+
+List ideas in the campaign
+
+### Synopsis
+
+List ideas with filtering, sorting, and output format options.
+
+By default, lists ideas in inbox, active, and ready status.
+Use --all to include dungeon ideas.
+
+OUTPUT FORMATS:
+  table (default)   Human-readable table with columns
+  simple            IDs only, one per line (for scripting)
+  json              Full metadata in JSON format
+
+Examples:
+  camp idea list                         List active ideas
+  camp idea ls --status inbox            List inbox only
+  camp idea list -f json                 JSON output
+  camp idea list -f simple | xargs ...   Pipe IDs to commands
+  camp idea list --all                   Include archived
+  camp idea list --stale                 Claimed ideas with no update in 7 days
+  camp idea list --stale --days 3        Same, with a 3 day threshold
+
+```
+camp idea list [flags]
+```
+
+### Options
+
+```
+  -a, --all              Include dungeon ideas
+      --days int         Staleness threshold in days, used with --stale (default 7)
+  -f, --format string    Output format: table, simple, json (default "table")
+  -h, --help             help for list
+      --horizon string   Filter by horizon
+      --json             emit a structured JSON result
+  -n, --limit int        Limit results (0 = no limit)
+  -p, --project string   Filter by project
+  -S, --sort string      Sort by: updated, created, priority, title (default "updated")
+      --stale            Only show claimed ideas with no update in --days (default 7)
+  -s, --status strings   Filter by status (repeatable)
+  -t, --type strings     Filter by type (repeatable)
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea move
+
+Move idea to a different status
+
+### Synopsis
+
+Transition an idea between lifecycle statuses.
+
+VALID STATUSES:
+  inbox      Captured, not yet reviewed
+  ready      Reviewed/enriched, ready to be promoted
+  active     Promoted to festival/design, work in progress
+  done       Resolved (dungeon)
+  killed     Abandoned (dungeon)
+  archived   Preserved but inactive (dungeon)
+  someday    Deferred (dungeon)
+
+PIPELINE ORDER:
+  inbox → ready → active → dungeon/done
+
+Move is an escape hatch that allows any-to-any transitions.
+Dungeon moves require a --reason flag.
+You can use short dungeon names (done) or canonical paths (dungeon/done).
+
+Examples:
+  camp idea move add-dark ready                         Mark as ready
+  camp idea move add-dark done --reason "completed"     Mark as done
+  camp idea move add-dark killed --reason "superseded"  Kill idea
+
+```
+camp idea move <id> <status> [flags]
+```
+
+### Options
+
+```
+  -h, --help            help for move
+      --no-commit       Don't create a git commit
+      --reason string   Reason for the move (required for dungeon targets)
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea note
+
+Capture a quick note
+
+### Synopsis
+
+Capture a freeform note. Notes are a separate category from ideas: they
+are stored in .campaign/intents/notes/ and do not flow through the
+inbox → ready → active lifecycle. A note carries no type or concept; tags
+organize them.
+
+Fast capture skips the TUI. Interactive capture uses the same title/body/tag
+flow as idea add, but skips the type wheel and concept picker.
+
+Examples:
+  camp idea note "check the daemon socket path"   Capture a note immediately
+  camp idea note "follow up" --body "details..."  Note with a longer body
+  echo "body" | camp idea note "idea" --body-file -
+  camp idea note                                  Note TUI (title + body)
+
+```
+camp idea note [text] [flags]
+```
+
+### Options
+
+```
+      --author string      Override the default author attribution
+      --body string        Set note body as a literal string
+      --body-file string   Read note body from file (- for stdin, 10 MiB cap)
+  -h, --help               help for note
+      --no-commit          Don't create a git commit
+  -t, --tag stringArray    Add a tag (repeatable)
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea promote
+
+Promote an idea through the pipeline
+
+### Synopsis
+
+Promote an idea to the next pipeline stage.
+
+TARGETS:
+  ready      Move from inbox to ready (reviewed/enriched)
+  festival   Move from ready to active + create festival (default)
+  design     Move from ready to active + create design doc
+
+The idea moves to active status when promoted to festival or design,
+because work is just beginning. Use --force to bypass status checks.
+
+Examples:
+  camp idea promote add-dark                       Promote ready → festival
+  camp idea promote add-dark --target design       Promote ready → design doc
+  camp idea promote add-dark --target ready         Promote inbox → ready
+  camp idea promote add-dark --force                Force promote from any status
+
+```
+camp idea promote <id> [flags]
+```
+
+### Options
+
+```
+      --dry-run         Preview promotion without making changes
+      --force           Promote even if not in expected status
+  -h, --help            help for promote
+      --no-commit       Don't create a git commit
+      --target string   Promote target: ready, festival, design (default "festival")
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea release
+
+Release an intent's assignment
+
+### Synopsis
+
+Clear an intent's assigned_to and assigned_at, returning it to the
+unclaimed pool. Any recorded work_ref entries (PR URLs, branches, festival
+paths) are left in place so a later camp intent sync can still resolve them.
+
+Examples:
+  camp intent release add-dark
+
+```
+camp idea release <id> [flags]
+```
+
+### Options
+
+```
+  -h, --help        help for release
+      --no-commit   Don't create a git commit
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea rename
+
+Rename an idea
+
+### Synopsis
+
+Rename an idea: update its title and regenerate its human-readable
+filename. The idea's stable id is preserved, so references and lookups survive
+the rename.
+
+Resolution is by exact id (run 'camp idea list' to copy one).
+
+Examples:
+  camp idea rename add-dark-mode-20260119-153412 "Add a dark mode toggle"
+
+```
+camp idea rename <id> <new title> [flags]
+```
+
+### Options
+
+```
+  -h, --help        help for rename
+      --no-commit   Don't create a git commit
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea show
+
+Show detailed idea information
+
+### Synopsis
+
+Display detailed information about a specific idea.
+
+Supports partial ID matching - you can use:
+  - Full ID: 20260119-153412-add-retry-logic
+  - Time suffix: 153412-add-retry
+  - Slug portion: add-retry
+
+OUTPUT FORMATS:
+  text (default)   Human-readable detailed view
+  json             Full metadata in JSON format
+  yaml             Full metadata in YAML format
+
+Examples:
+  camp idea show 20260119-153412...    Show by full ID
+  camp idea show retry-logic           Show by partial match
+  camp idea show retry -f json         JSON output
+  camp idea show retry -f yaml         YAML output
+
+```
+camp idea show <id> [flags]
+```
+
+### Options
+
+```
+  -f, --format string   Output format: text, json, yaml (default "text")
+  -h, --help            help for show
+      --json            emit a structured JSON result
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea sync
+
+Reconcile intents against their tracked GitHub PRs
+
+### Synopsis
+
+For every non-dungeon intent whose work_ref contains a GitHub PR URL,
+query the PR's state via the gh CLI. Intents whose PR has merged are moved to
+dungeon/done automatically, with a decision record and a ledger event. Intents
+whose PR closed without merging are reported but never auto-moved -- resolve
+those manually with 'camp intent move' or 'camp intent release'.
+
+Requires the gh CLI (https://cli.github.com) on PATH with an authenticated
+'gh auth login' session. Intents with no PR reference in work_ref are skipped
+without needing gh at all.
+
+Examples:
+  camp intent sync              Reconcile and auto-close merged PRs
+  camp intent sync --dry-run    Preview without moving anything
+
+```
+camp idea sync [flags]
+```
+
+### Options
+
+```
+      --dry-run     Preview without moving anything
+  -h, --help        help for sync
+      --no-commit   Don't create a git commit
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
 ## camp init
 
 Initialize a new campaign
@@ -2065,912 +3032,6 @@ camp init [path] [flags]
   -t, --type string          Campaign type (product, research, tools, personal) (default "product")
   -v, --verbose              Show skipped optional setup details
       --yes                  Skip repair confirmation prompt (for scripting)
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp intent
-
-Manage campaign intents
-
-### Synopsis
-
-Manage intents for ideas and features not yet ready for full planning.
-
-Intents capture ideas, bugs, features, and research topics that depend on work
-not yet completed. They serve as structured storage for ideas that aren't ready
-to become Festivals but need to be tracked.
-
-CAPTURE MODES:
-  Fast (default)    Quick capture with minimal fields
-  Deep (--edit)     Open in editor for full context
-
-INTENT LIFECYCLE:
-  inbox  → Captured, not yet reviewed
-  ready  → Reviewed/enriched, ready for promotion
-  active → Promoted to festival/design doc, work in progress
-  dungeon/* → Terminal statuses (done, killed, archived, someday)
-
-Examples:
-  camp intent add "Add dark mode toggle"         Fast capture to inbox
-  camp intent add -e "Refactor auth system"      Deep capture with editor
-  camp intent list                               List all intents
-  camp intent list --status active               List active intents
-  camp intent edit add-dark                      Edit intent (fuzzy match)
-  camp intent show 20260119-153412-add-dark      Show intent details
-  camp intent move add-dark ready                Mark as ready
-  camp intent promote add-dark                   Promote to active via festival
-  camp intent archive add-dark                   Archive intent
-
-```
-camp intent [flags]
-```
-
-### Options
-
-```
-  -h, --help   help for intent
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp intent add
-
-Create a new intent
-
-### Synopsis
-
-Create a new intent with fast or deep capture mode.
-
-CAPTURE MODES:
-  Ultra-fast          Title provided as argument → immediate creation
-  Fast TUI (default)  Step-through form (title, type, concept)
-  Full TUI (--full)   Step-through form including body textarea
-  Deep (--edit)       Full template in $EDITOR
-
-Fast capture is optimized for speed - ideas are saved immediately.
-Use --full when you want to add a body description in the form.
-Use --edit when you need the complete template in your editor.
-
-PROGRAMMATIC (agent) FLAGS:
-  --body              Set intent body from a literal string
-  --body-file         Read intent body from a file (- for stdin)
-  --concept           Set the concept field (e.g., "projects/camp")
-  --note              Create a note instead of a lifecycle intent
-  --author            Override the default author attribution
-
-  --body and --body-file are mutually exclusive.
-  --full + body flags is a usage error.
-  --edit + body flags pre-fills the editor template.
-
-Examples:
-  camp intent add "Add dark mode"        Ultra-fast capture
-  camp intent add -c obey-campaign "Add dark mode"
-  camp intent add                        Fast TUI (3-step form)
-  camp intent add --campaign             Pick a target campaign interactively
-  camp intent add --full                 Full TUI (includes body)
-  camp intent add --note                 Note TUI (title + body, no type/concept)
-  camp intent add --note "Meeting note" --body "Follow up next week"
-  camp intent add -e "Complex feature"   Deep capture with editor
-  camp intent add -t feature "New API"   Set type explicitly
-  camp intent add "Fix login" --body "The login page returns 500"
-  camp intent add "Migrate DB" --body-file spec.md --concept projects/camp
-  echo "body" | camp intent add "Idea" --body-file -
-
-```
-camp intent add [title] [flags]
-```
-
-### Options
-
-```
-      --author string      Override the default author attribution
-      --body string        Set intent body as a literal string
-      --body-file string   Read intent body from file (- for stdin, 10 MiB cap)
-  -c, --campaign string    Target campaign by name or ID; omit value to pick interactively
-      --concept string     Set the concept field (e.g., projects/camp)
-  -e, --edit               Open in $EDITOR for deep capture
-      --full               Full TUI mode with body textarea
-  -h, --help               help for add
-      --json               emit a structured JSON result
-      --no-commit          Don't create a git commit
-      --note               Create a note instead of a lifecycle intent
-      --tag stringArray    Add a tag (repeatable)
-  -t, --type string        Intent type (idea, feature, bug, research, chore) (default "idea")
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp intent archive
-
-Archive an intent
-
-### Synopsis
-
-Archive an intent by moving it to dungeon/archived.
-
-This is a convenience command equivalent to:
-  camp intent move <id> archived --reason "..."
-
-Dungeon moves require a reason and append a decision record to the intent body.
-Use 'camp intent move <id> inbox' to un-archive if needed.
-
-Examples:
-  camp intent archive add-dark --reason "superseded by broader initiative"
-  camp intent archive 20260119-153412 --reason "preserve as reference"
-
-```
-camp intent archive <id> [flags]
-```
-
-### Options
-
-```
-  -h, --help            help for archive
-      --no-commit       Don't create a git commit
-      --reason string   Reason for archiving (required)
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp intent claim
-
-Claim an intent for an agent or session
-
-### Synopsis
-
-Assign an intent to an agent so the campaign tracks who is working it.
-
-Stamps assigned_to and assigned_at, and merges any --ref values (a PR URL,
-branch, or festival path) into work_ref. Calling claim again on an
-already-claimed intent re-stamps assigned_at and merges in new refs without
-dropping ones already recorded -- this is the expected way to record a PR URL
-once one is opened, after an initial claim at the start of work.
-
-Use 'camp intent release' to clear the assignment, and 'camp intent sync' to
-auto-close intents once their tracked PR merges.
-
-Examples:
-  camp intent claim add-dark --agent claude-code-session-1
-  camp intent claim add-dark --agent claude-code-session-1 \
-    --ref https://github.com/Obedience-Corp/camp/pull/123
-
-```
-camp intent claim <id> [flags]
-```
-
-### Options
-
-```
-      --agent string      Agent or session name claiming the intent (required)
-  -h, --help              help for claim
-      --no-commit         Don't create a git commit
-      --ref stringArray   Work reference: PR URL, branch, or festival path (repeatable)
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp intent convert
-
-Convert a note into an intent
-
-### Synopsis
-
-Promote a note into the intent lifecycle.
-
-A note lives outside the inbox → ready → active lifecycle. Converting it moves
-the note into inbox/ and attaches an intent type, after which it behaves like
-any other intent. This is the only bridge from a note into the lifecycle.
-
-Examples:
-  camp intent convert check-daemon-socket --type idea
-  camp intent convert check-daemon-socket -t feature
-
-```
-camp intent convert <id> [flags]
-```
-
-### Options
-
-```
-  -h, --help          help for convert
-      --no-commit     Don't create a git commit
-  -t, --type string   Intent type to attach (idea, feature, bug, research, chore) (default "idea")
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp intent count
-
-Count intents by status directory
-
-### Synopsis
-
-Display a count of intents grouped by status directory.
-
-OUTPUT FORMATS:
-  table (default)   Styled summary with counts per status
-  json              Machine-readable JSON output
-
-Examples:
-  camp intent count              Show counts per status
-  camp intent count -f json      JSON output for scripting
-
-```
-camp intent count [flags]
-```
-
-### Options
-
-```
-  -f, --format string   Output format: table, json (default "table")
-  -h, --help            help for count
-      --json            emit a structured JSON result
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp intent crawl
-
-Interactive intent triage
-
-### Synopsis
-
-Walk live intents one at a time and decide their fate.
-
-Default scope is the working set: inbox, ready, and active. Each candidate is
-shown with a compact preview. For each one you can keep, move to another
-status, skip, or quit. Moves to dungeon statuses require a reason.
-
-Existing dungeon intents are not crawl candidates. Use 'camp intent move' to
-restore them explicitly.
-
-Examples:
-  camp intent crawl
-  camp intent crawl --status inbox --limit 25
-  camp intent crawl --status ready --status active --sort priority
-  camp intent crawl --no-commit
-
-```
-camp intent crawl [flags]
-```
-
-### Options
-
-```
-  -h, --help             help for crawl
-      --limit int        Stop after N candidates (0 = no limit)
-      --no-commit        Apply moves and logs but do not auto-commit
-      --sort string      Sort mode: stale, updated, created, priority, title (default "stale")
-      --status strings   Restrict to live statuses (repeatable: inbox, ready, active)
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp intent edit
-
-Edit an existing intent
-
-### Synopsis
-
-Edit an intent in your preferred editor or programmatically via flags.
-
-If no programmatic flags are given, opens the intent in $EDITOR.
-If any programmatic flag is present, applies the update directly and
-emits an audit event — no editor is launched.
-
-PICKER / EDITOR PATH:
-  If ID is provided, opens the intent directly (supports partial matching).
-  If no ID is provided, shows a fuzzy picker to select an intent.
-
-PROGRAMMATIC FLAGS (skip $EDITOR):
-  --title            Set a new title
-  --body             Replace the body with a literal string
-  --body-file        Replace the body from a file (- for stdin)
-  --append-body      Append text to the existing body
-  --append-body-file Append text from a file (- for stdin)
-  --set-type         Change the intent type
-  --set-status       Change the intent status
-  --set-concept      Change the concept field
-  --priority         Change priority (low, medium, high)
-  --horizon          Change horizon (now, next, later, someday)
-  --author           Override the author attribution
-
-MUTUAL EXCLUSIVITY:
-  --body vs --body-file
-  --append-body vs --append-body-file
-  --body/--body-file vs --append-body/--append-body-file (replace vs append)
-
-FILTER FLAGS (for picker only, not update targets):
-  -s/--status        Filter picker by status
-  -t/--type          Filter picker by type
-  -p/--project       Filter picker by project/concept
-
-Examples:
-  camp intent edit                                Interactive picker + $EDITOR
-  camp intent edit retry-logic                    Direct edit by partial ID
-  camp intent edit --status active                Picker filtered by status
-  camp intent edit retry --title "Retry with backoff"
-  camp intent edit retry --body "New description"
-  camp intent edit retry --append-body "Additional note"
-  camp intent edit retry --set-type feature --priority high
-  echo "details" | camp intent edit retry --body-file -
-
-```
-camp intent edit [id] [flags]
-```
-
-### Options
-
-```
-      --append-body string        Append text to the existing body
-      --append-body-file string   Append text from file (- for stdin, 10 MiB cap)
-      --author string             Override the author attribution
-      --body string               Replace the intent body
-      --body-file string          Replace body from file (- for stdin, 10 MiB cap)
-  -h, --help                      help for edit
-      --horizon string            Change horizon (now, next, later, someday)
-      --no-commit                 Don't create a git commit
-      --priority string           Change priority (low, medium, high)
-  -p, --project string            Filter picker by project
-      --set-concept string        Change the concept field
-      --set-status string         Change the intent status
-      --set-type string           Change the intent type (idea, feature, bug, research, chore)
-  -s, --status string             Filter picker by status
-      --tag stringArray           Replace the intent's tags (repeatable)
-      --title string              Set a new title
-  -t, --type string               Filter picker by type
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp intent explore
-
-Interactive intent explorer
-
-### Synopsis
-
-Launch the interactive Intent Explorer TUI.
-
-The explorer provides a full-screen interface for browsing,
-filtering, and managing intents with keyboard shortcuts.
-
-NAVIGATION
-  j/↓           Move down
-  k/↑           Move up
-  g             Go to top (preview)
-  G             Go to bottom (preview)
-  Enter/Space   Select/expand group
-  Tab           Switch focus (list/preview)
-
-ACTIONS
-  e             Edit in $EDITOR
-  o             Open with system handler
-  O             Reveal in file manager
-  n             New intent
-  p             Promote to next status
-  a             Archive intent
-  d             Delete intent
-  m             Move intent to status
-
-GATHER (Multi-Select)
-  Space         Toggle selection / enter gather mode
-  ga            Gather selected intents
-  Escape        Exit multi-select mode
-
-FILTERS
-  /             Search intents (fuzzy)
-  t             Filter by type
-  s             Filter by status
-  c             Filter by concept
-  C             Clear concept filter
-  Escape        Clear filter/cancel
-
-VIEW
-  v             Toggle preview pane
-  ?             Show help overlay
-  q             Quit explorer
-
-Examples:
-  camp intent explore          Launch the intent explorer
-
-```
-camp intent explore [flags]
-```
-
-### Options
-
-```
-  -h, --help   help for explore
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp intent find
-
-Search for intents by title or content
-
-### Synopsis
-
-Search for intents across all statuses by title, content, or ID.
-
-The search is case-insensitive and matches partial strings.
-Without a query, returns all intents.
-
-OUTPUT FORMATS:
-  table (default)   Human-readable table with columns
-  simple            IDs only, one per line (for scripting)
-  json              Full metadata in JSON format
-
-Examples:
-  camp intent find                   List all intents
-  camp intent find dark              Find intents containing "dark"
-  camp intent find "bug fix"         Find intents with "bug fix"
-  camp intent find -f simple auth    Get IDs of auth-related intents
-
-```
-camp intent find [query] [flags]
-```
-
-### Options
-
-```
-  -f, --format string   Output format: table, simple, json (default "table")
-  -h, --help            help for find
-      --json            emit a structured JSON result
-  -n, --limit int       Limit results (0 = no limit)
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp intent gather
-
-Gather related intents into a unified document
-
-### Synopsis
-
-Gather multiple related intents into a single unified document.
-
-DISCOVERY MODES:
-  By IDs      Explicitly specify intent IDs to gather
-  --tag       Find intents with a specific frontmatter tag
-  --hashtag   Find intents containing a specific #hashtag
-  --similar   Find intents similar to a given ID (TF-IDF)
-
-The gather process:
-  1. Find related intents using the specified discovery method
-  2. Merge their content with full metadata preservation
-  3. Create a new unified intent in inbox status
-  4. Archive source intents (unless --no-archive)
-
-Source intents are preserved with a 'gathered_into' reference.
-
-Examples:
-  # Gather by explicit IDs
-  camp intent gather id1 id2 id3 --title "Auth System"
-
-  # Find and gather by tag
-  camp intent gather --tag auth --title "Auth System"
-
-  # Find and gather by hashtag
-  camp intent gather --hashtag login --title "Login System"
-
-  # Find similar intents and gather
-  camp intent gather --similar auth-feature --title "Auth Unified"
-
-  # Gather without archiving sources
-  camp intent gather id1 id2 --title "Combined" --no-archive
-
-  # Dry run to preview what would be gathered
-  camp intent gather --tag auth --title "Auth System" --dry-run
-
-```
-camp intent gather [ids...] [flags]
-```
-
-### Options
-
-```
-      --concept string    Override concept path
-      --dry-run           Preview gather without making changes
-      --hashtag string    Find intents by content hashtag
-  -h, --help              help for gather
-      --horizon string    Override horizon (now, next, later, someday)
-      --min-score float   Minimum similarity score (0.0-1.0) (default 0.1)
-      --no-archive        Don't archive source intents
-      --no-commit         Don't create a git commit
-      --priority string   Override priority (low, medium, high)
-      --similar string    Find intents similar to this ID
-      --tag string        Find intents by frontmatter tag
-  -t, --title string      Title for the gathered intent (required)
-      --type string       Override type (idea, feature, bug, research)
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp intent list
-
-List intents in the campaign
-
-### Synopsis
-
-List intents with filtering, sorting, and output format options.
-
-By default, lists intents in inbox, active, and ready status.
-Use --all to include dungeon intents.
-
-OUTPUT FORMATS:
-  table (default)   Human-readable table with columns
-  simple            IDs only, one per line (for scripting)
-  json              Full metadata in JSON format
-
-Examples:
-  camp intent list                         List active intents
-  camp intent ls --status inbox            List inbox only
-  camp intent list -f json                 JSON output
-  camp intent list -f simple | xargs ...   Pipe IDs to commands
-  camp intent list --all                   Include archived
-  camp intent list --stale                 Claimed intents with no update in 7 days
-  camp intent list --stale --days 3        Same, with a 3 day threshold
-
-```
-camp intent list [flags]
-```
-
-### Options
-
-```
-  -a, --all              Include dungeon intents
-      --days int         Staleness threshold in days, used with --stale (default 7)
-  -f, --format string    Output format: table, simple, json (default "table")
-  -h, --help             help for list
-      --horizon string   Filter by horizon
-      --json             emit a structured JSON result
-  -n, --limit int        Limit results (0 = no limit)
-  -p, --project string   Filter by project
-  -S, --sort string      Sort by: updated, created, priority, title (default "updated")
-      --stale            Only show claimed intents with no update in --days (default 7)
-  -s, --status strings   Filter by status (repeatable)
-  -t, --type strings     Filter by type (repeatable)
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp intent move
-
-Move intent to a different status
-
-### Synopsis
-
-Transition an intent between lifecycle statuses.
-
-VALID STATUSES:
-  inbox      Captured, not yet reviewed
-  ready      Reviewed/enriched, ready to be promoted
-  active     Promoted to festival/design, work in progress
-  done       Resolved (dungeon)
-  killed     Abandoned (dungeon)
-  archived   Preserved but inactive (dungeon)
-  someday    Deferred (dungeon)
-
-PIPELINE ORDER:
-  inbox → ready → active → dungeon/done
-
-Move is an escape hatch that allows any-to-any transitions.
-Dungeon moves require a --reason flag.
-You can use short dungeon names (done) or canonical paths (dungeon/done).
-
-Examples:
-  camp intent move add-dark ready                         Mark as ready
-  camp intent move add-dark done --reason "completed"     Mark as done
-  camp intent move add-dark killed --reason "superseded"  Kill intent
-
-```
-camp intent move <id> <status> [flags]
-```
-
-### Options
-
-```
-  -h, --help            help for move
-      --no-commit       Don't create a git commit
-      --reason string   Reason for the move (required for dungeon targets)
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp intent note
-
-Capture a quick note
-
-### Synopsis
-
-Capture a freeform note. Notes are a separate category from intents: they
-are stored in .campaign/intents/notes/ and do not flow through the
-inbox → ready → active lifecycle. A note carries no type or concept; tags
-organize them.
-
-Fast capture skips the TUI. Interactive capture uses the same title/body/tag
-flow as intent add, but skips the type wheel and concept picker.
-
-Examples:
-  camp intent note "check the daemon socket path"   Capture a note immediately
-  camp intent note "follow up" --body "details..."  Note with a longer body
-  echo "body" | camp intent note "idea" --body-file -
-  camp intent note                                  Note TUI (title + body)
-
-```
-camp intent note [text] [flags]
-```
-
-### Options
-
-```
-      --author string      Override the default author attribution
-      --body string        Set note body as a literal string
-      --body-file string   Read note body from file (- for stdin, 10 MiB cap)
-  -h, --help               help for note
-      --no-commit          Don't create a git commit
-  -t, --tag stringArray    Add a tag (repeatable)
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp intent promote
-
-Promote an intent through the pipeline
-
-### Synopsis
-
-Promote an intent to the next pipeline stage.
-
-TARGETS:
-  ready      Move from inbox to ready (reviewed/enriched)
-  festival   Move from ready to active + create festival (default)
-  design     Move from ready to active + create design doc
-
-The intent moves to active status when promoted to festival or design,
-because work is just beginning. Use --force to bypass status checks.
-
-Examples:
-  camp intent promote add-dark                       Promote ready → festival
-  camp intent promote add-dark --target design       Promote ready → design doc
-  camp intent promote add-dark --target ready         Promote inbox → ready
-  camp intent promote add-dark --force                Force promote from any status
-
-```
-camp intent promote <id> [flags]
-```
-
-### Options
-
-```
-      --dry-run         Preview promotion without making changes
-      --force           Promote even if not in expected status
-  -h, --help            help for promote
-      --no-commit       Don't create a git commit
-      --target string   Promote target: ready, festival, design (default "festival")
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp intent release
-
-Release an intent's assignment
-
-### Synopsis
-
-Clear an intent's assigned_to and assigned_at, returning it to the
-unclaimed pool. Any recorded work_ref entries (PR URLs, branches, festival
-paths) are left in place so a later camp intent sync can still resolve them.
-
-Examples:
-  camp intent release add-dark
-
-```
-camp intent release <id> [flags]
-```
-
-### Options
-
-```
-  -h, --help        help for release
-      --no-commit   Don't create a git commit
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp intent rename
-
-Rename an intent
-
-### Synopsis
-
-Rename an intent: update its title and regenerate its human-readable
-filename. The intent's stable id is preserved, so references and lookups survive
-the rename.
-
-Resolution is by exact id (run 'camp intent list' to copy one).
-
-Examples:
-  camp intent rename add-dark-mode-20260119-153412 "Add a dark mode toggle"
-
-```
-camp intent rename <id> <new title> [flags]
-```
-
-### Options
-
-```
-  -h, --help        help for rename
-      --no-commit   Don't create a git commit
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp intent show
-
-Show detailed intent information
-
-### Synopsis
-
-Display detailed information about a specific intent.
-
-Supports partial ID matching - you can use:
-  - Full ID: 20260119-153412-add-retry-logic
-  - Time suffix: 153412-add-retry
-  - Slug portion: add-retry
-
-OUTPUT FORMATS:
-  text (default)   Human-readable detailed view
-  json             Full metadata in JSON format
-  yaml             Full metadata in YAML format
-
-Examples:
-  camp intent show 20260119-153412...    Show by full ID
-  camp intent show retry-logic           Show by partial match
-  camp intent show retry -f json         JSON output
-  camp intent show retry -f yaml         YAML output
-
-```
-camp intent show <id> [flags]
-```
-
-### Options
-
-```
-  -f, --format string   Output format: text, json, yaml (default "text")
-  -h, --help            help for show
-      --json            emit a structured JSON result
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp intent sync
-
-Reconcile intents against their tracked GitHub PRs
-
-### Synopsis
-
-For every non-dungeon intent whose work_ref contains a GitHub PR URL,
-query the PR's state via the gh CLI. Intents whose PR has merged are moved to
-dungeon/done automatically, with a decision record and a ledger event. Intents
-whose PR closed without merging are reported but never auto-moved -- resolve
-those manually with 'camp intent move' or 'camp intent release'.
-
-Requires the gh CLI (https://cli.github.com) on PATH with an authenticated
-'gh auth login' session. Intents with no PR reference in work_ref are skipped
-without needing gh at all.
-
-Examples:
-  camp intent sync              Reconcile and auto-close merged PRs
-  camp intent sync --dry-run    Preview without moving anything
-
-```
-camp intent sync [flags]
-```
-
-### Options
-
-```
-      --dry-run     Preview without moving anything
-  -h, --help        help for sync
-      --no-commit   Don't create a git commit
 ```
 
 ### Options inherited from parent commands

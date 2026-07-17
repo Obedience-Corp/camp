@@ -1,13 +1,13 @@
-## camp intent list
+## camp idea list
 
-List intents in the campaign
+List ideas in the campaign
 
 ### Synopsis
 
-List intents with filtering, sorting, and output format options.
+List ideas with filtering, sorting, and output format options.
 
-By default, lists intents in inbox, active, and ready status.
-Use --all to include dungeon intents.
+By default, lists ideas in inbox, active, and ready status.
+Use --all to include dungeon ideas.
 
 OUTPUT FORMATS:
   table (default)   Human-readable table with columns
@@ -15,22 +15,22 @@ OUTPUT FORMATS:
   json              Full metadata in JSON format
 
 Examples:
-  camp intent list                         List active intents
-  camp intent ls --status inbox            List inbox only
-  camp intent list -f json                 JSON output
-  camp intent list -f simple | xargs ...   Pipe IDs to commands
-  camp intent list --all                   Include archived
-  camp intent list --stale                 Claimed intents with no update in 7 days
-  camp intent list --stale --days 3        Same, with a 3 day threshold
+  camp idea list                         List active ideas
+  camp idea ls --status inbox            List inbox only
+  camp idea list -f json                 JSON output
+  camp idea list -f simple | xargs ...   Pipe IDs to commands
+  camp idea list --all                   Include archived
+  camp idea list --stale                 Claimed ideas with no update in 7 days
+  camp idea list --stale --days 3        Same, with a 3 day threshold
 
 ```
-camp intent list [flags]
+camp idea list [flags]
 ```
 
 ### Options
 
 ```
-  -a, --all              Include dungeon intents
+  -a, --all              Include dungeon ideas
       --days int         Staleness threshold in days, used with --stale (default 7)
   -f, --format string    Output format: table, simple, json (default "table")
   -h, --help             help for list
@@ -39,7 +39,7 @@ camp intent list [flags]
   -n, --limit int        Limit results (0 = no limit)
   -p, --project string   Filter by project
   -S, --sort string      Sort by: updated, created, priority, title (default "updated")
-      --stale            Only show claimed intents with no update in --days (default 7)
+      --stale            Only show claimed ideas with no update in --days (default 7)
   -s, --status strings   Filter by status (repeatable)
   -t, --type strings     Filter by type (repeatable)
 ```
@@ -52,4 +52,4 @@ camp intent list [flags]
 
 ### SEE ALSO
 
-* [camp intent](camp_intent.md)	 - Manage campaign intents
+* [camp idea](camp_idea.md)	 - Manage campaign ideas

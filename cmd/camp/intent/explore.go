@@ -22,11 +22,11 @@ import (
 
 var intentExploreCmd = &cobra.Command{
 	Use:   "explore",
-	Short: "Interactive intent explorer",
-	Long: `Launch the interactive Intent Explorer TUI.
+	Short: "Interactive idea explorer",
+	Long: `Launch the interactive Idea Explorer TUI.
 
 The explorer provides a full-screen interface for browsing,
-filtering, and managing intents with keyboard shortcuts.
+filtering, and managing ideas with keyboard shortcuts.
 
 NAVIGATION
   j/↓           Move down
@@ -40,19 +40,19 @@ ACTIONS
   e             Edit in $EDITOR
   o             Open with system handler
   O             Reveal in file manager
-  n             New intent
+  n             New idea
   p             Promote to next status
-  a             Archive intent
-  d             Delete intent
-  m             Move intent to status
+  a             Archive idea
+  d             Delete idea
+  m             Move idea to status
 
 GATHER (Multi-Select)
   Space         Toggle selection / enter gather mode
-  ga            Gather selected intents
+  ga            Gather selected ideas
   Escape        Exit multi-select mode
 
 FILTERS
-  /             Search intents (fuzzy)
+  /             Search ideas (fuzzy)
   t             Filter by type
   s             Filter by status
   c             Filter by concept
@@ -65,7 +65,7 @@ VIEW
   q             Quit explorer
 
 Examples:
-  camp intent explore          Launch the intent explorer`,
+  camp idea explore          Launch the idea explorer`,
 	Args: cobra.NoArgs,
 	Annotations: map[string]string{
 		"agent_allowed": "false",
@@ -82,7 +82,7 @@ func init() {
 func runIntentExplore(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	if !ui.IsTerminal() {
-		return camperrors.Wrap(camperrors.ErrInvalidInput, "intent explore requires an interactive terminal")
+		return camperrors.Wrap(camperrors.ErrInvalidInput, "idea explore requires an interactive terminal")
 	}
 
 	// Find campaign root
@@ -99,7 +99,7 @@ func runIntentExplore(cmd *cobra.Command, args []string) error {
 
 	// Ensure directories exist and migrate legacy layout
 	if err := svc.EnsureDirectories(ctx); err != nil {
-		return camperrors.Wrap(err, "ensuring intent directories")
+		return camperrors.Wrap(err, "ensuring idea directories")
 	}
 
 	// Get author from git config

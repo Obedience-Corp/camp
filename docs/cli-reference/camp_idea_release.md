@@ -1,4 +1,4 @@
-## camp intent release
+## camp idea release
 
 Release an intent's assignment
 
@@ -12,7 +12,7 @@ Examples:
   camp intent release add-dark
 
 ```
-camp intent release <id> [flags]
+camp idea release <id> [flags]
 ```
 
 ### Options
@@ -30,4 +30,4 @@ camp intent release <id> [flags]
 
 ### SEE ALSO
 
-* [camp intent](camp_intent.md)	 - Manage campaign intents
+* [camp idea](camp_idea.md)	 - Manage campaign ideas

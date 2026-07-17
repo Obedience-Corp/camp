@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Obedience-Corp/camp/internal/dungeon/spelling"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/fsutil"
 )
@@ -116,7 +117,10 @@ func (s *IntentService) CreateDirect(ctx context.Context, opts CreateOptions) (*
 	}
 
 	// Determine final path: notes route to notes/, intents to inbox/
-	finalPath := s.getIntentPath(createStatus(opts.Category), data.ID)
+	finalPath, err := s.getIntentPath(createStatus(opts.Category), data.ID)
+	if err != nil {
+		return nil, err
+	}
 
 	// Ensure directory exists
 	if err := os.MkdirAll(filepath.Dir(finalPath), 0755); err != nil {
@@ -210,7 +214,10 @@ func (s *IntentService) CreateWithEditor(ctx context.Context, opts CreateOptions
 	}
 
 	// Move to final location
-	finalPath := s.getIntentPath(intent.Status, intent.ID)
+	finalPath, err := s.getIntentPath(intent.Status, intent.ID)
+	if err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(filepath.Dir(finalPath), 0755); err != nil {
 		return nil, camperrors.Wrap(err, "creating directory")
 	}
@@ -267,7 +274,10 @@ func (s *IntentService) Edit(ctx context.Context, id string, editorFn EditorFunc
 	// Handle status change (move to new directory), preserving the basename so
 	// a renamed slug survives.
 	if updated.Status != originalStatus {
-		newPath := s.moveTargetPath(updated.ID, updated.Status, originalPath)
+		newPath, err := s.moveTargetPath(updated.ID, updated.Status, originalPath)
+		if err != nil {
+			return nil, err
+		}
 		if err := os.MkdirAll(filepath.Dir(newPath), 0755); err != nil {
 			return nil, camperrors.Wrap(err, "creating directory")
 		}
@@ -357,7 +367,10 @@ func (s *IntentService) Move(ctx context.Context, id string, newStatus Status) (
 	// Determine new path, preserving the current (possibly renamed) basename so
 	// a renamed slug survives the move without clobbering a different intent that
 	// shares the basename in the target status.
-	newPath := s.moveTargetPath(intent.ID, newStatus, oldPath)
+	newPath, err := s.moveTargetPath(intent.ID, newStatus, oldPath)
+	if err != nil {
+		return nil, err
+	}
 
 	// Ensure directory exists
 	if err := os.MkdirAll(filepath.Dir(newPath), 0755); err != nil {
@@ -381,7 +394,9 @@ func (s *IntentService) Move(ctx context.Context, id string, newStatus Status) (
 		return nil, camperrors.Wrap(err, "removing old intent file")
 	}
 	// Clean up any orphan copies in other status directories
-	s.removeAllCopies(id, newPath)
+	if err := s.removeAllCopies(id, newPath); err != nil {
+		return nil, err
+	}
 
 	intent.Path = newPath
 	s.invalidateIDIndex()
@@ -412,7 +427,10 @@ func (s *IntentService) Count(ctx context.Context) ([]StatusCount, int, error) {
 	total := 0
 
 	for _, status := range statuses {
-		dir := filepath.Join(s.intentsDir, string(status))
+		dir, err := s.statusDir(status)
+		if err != nil {
+			return nil, 0, err
+		}
 		files, err := os.ReadDir(dir)
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -439,8 +457,40 @@ func (s *IntentService) Count(ctx context.Context) ([]StatusCount, int, error) {
 
 // getIntentPath returns the file path for an intent given its status and ID.
 // Used when creating files (filename derived from id at birth).
-func (s *IntentService) getIntentPath(status Status, id string) string {
-	return filepath.Join(s.intentsDir, string(status), id+".md")
+func (s *IntentService) getIntentPath(status Status, id string) (string, error) {
+	rel, err := s.statusRel(status)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(s.intentsDir, rel, id+".md"), nil
+}
+
+// statusDir returns the on-disk directory for status under intentsDir.
+func (s *IntentService) statusDir(status Status) (string, error) {
+	rel, err := s.statusRel(status)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(s.intentsDir, rel), nil
+}
+
+// statusRel returns the on-disk relative path for status, rewriting a
+// leading "dungeon" segment to whichever spelling is established under
+// intentsDir ("dungeon" or ".dungeon"). Non-dungeon statuses are returned
+// unchanged.
+//
+// A parent holding both spellings is reported rather than resolved: picking
+// one would silently hide every idea filed under the other.
+func (s *IntentService) statusRel(status Status) (string, error) {
+	rel := string(status)
+	if rel != spelling.Visible && !strings.HasPrefix(rel, spelling.Visible+"/") {
+		return rel, nil
+	}
+	resolved, err := spelling.Resolve(context.Background(), s.intentsDir)
+	if err != nil {
+		return "", err
+	}
+	return spelling.RewriteRel(rel, resolved.Name), nil
 }
 
 // moveTargetPath returns the destination when moving the intent identified by id
@@ -454,10 +504,13 @@ func (s *IntentService) getIntentPath(status Status, id string) string {
 // when the basename is held by another id we disambiguate with a -2, -3, ...
 // suffix (the same scheme rename uses) rather than overwriting. A path already
 // holding this same id is reused — it is our own orphan copy.
-func (s *IntentService) moveTargetPath(id string, newStatus Status, oldPath string) string {
-	dir := filepath.Join(s.intentsDir, string(newStatus))
+func (s *IntentService) moveTargetPath(id string, newStatus Status, oldPath string) (string, error) {
+	dir, err := s.statusDir(newStatus)
+	if err != nil {
+		return "", err
+	}
 	base := strings.TrimSuffix(filepath.Base(oldPath), ".md")
-	return s.collisionSafeMovePath(dir, base, id)
+	return s.collisionSafeMovePath(dir, base, id), nil
 }
 
 // collisionSafeMovePath returns dir/base.md, or dir/base-2.md, dir/base-3.md, ...
@@ -497,9 +550,12 @@ func (s *IntentService) pathAvailableForID(path, id string) bool {
 // removeAllCopies removes all files for the given intent ID across all
 // status directories except the one at exceptPath. Used by Move() to
 // clean up orphan copies left by incomplete prior moves.
-func (s *IntentService) removeAllCopies(id string, exceptPath string) {
+func (s *IntentService) removeAllCopies(id string, exceptPath string) error {
 	for _, status := range AllStatuses() {
-		p := s.getIntentPath(status, id)
+		p, err := s.getIntentPath(status, id)
+		if err != nil {
+			return err
+		}
 		if p == exceptPath {
 			continue
 		}
@@ -509,6 +565,7 @@ func (s *IntentService) removeAllCopies(id string, exceptPath string) {
 		}
 		os.Remove(p) // ignore errors — file may not exist
 	}
+	return nil
 }
 
 // loadIntent reads and parses an intent from a file path.
