@@ -207,10 +207,19 @@ func runCommit(ctx context.Context, cmd *cobra.Command, flags commitFlags) error
 		}
 	}
 	if sha != "" {
+		// commit.Workitem composes the tagged subject internally and never
+		// returns it, so the landed subject is read back from git rather than
+		// reusing flags.Message (untagged): every other CommitEvidence call
+		// site records the actual tagged git subject, and readers like
+		// `workitem commits` parse the campaign tag back out of it.
+		subject := flags.Message
+		if s, serr := lastCommitSubject(ctx, plan.RepoRoot, sha); serr == nil {
+			subject = s
+		}
 		ledger.NewFromRoot(ctx, campaignRoot, ledger.WarnTo(cmd.ErrOrStderr())).
 			CommitEvidence(ctx,
 				ledgerkit.Scope{Workitem: plan.WorkitemRef, Festival: plan.FestivalRef, Quest: plan.QuestID},
-				campaignRoot, plan.RepoRoot, sha, flags.Message)
+				campaignRoot, plan.RepoRoot, sha, subject)
 	}
 	if flags.JSON {
 		return emitJSON(cmd.OutOrStdout(), plan, sha)
@@ -270,6 +279,14 @@ type writeFlusher interface {
 
 func lastCommitSHA(ctx context.Context, repoRoot string) (string, error) {
 	out, err := exec.CommandContext(ctx, "git", "-C", repoRoot, "rev-parse", "HEAD").Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func lastCommitSubject(ctx context.Context, repoRoot, sha string) (string, error) {
+	out, err := exec.CommandContext(ctx, "git", "-C", repoRoot, "log", "-1", "--format=%s", sha).Output()
 	if err != nil {
 		return "", err
 	}
