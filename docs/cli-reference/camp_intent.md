@@ -52,6 +52,7 @@ camp intent [flags]
 * [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
 * [camp intent add](camp_intent_add.md)	 - Create a new intent
 * [camp intent archive](camp_intent_archive.md)	 - Archive an intent
+* [camp intent claim](camp_intent_claim.md)	 - Claim an intent for an agent or session
 * [camp intent convert](camp_intent_convert.md)	 - Convert a note into an intent
 * [camp intent count](camp_intent_count.md)	 - Count intents by status directory
 * [camp intent crawl](camp_intent_crawl.md)	 - Interactive intent triage
@@ -63,5 +64,7 @@ camp intent [flags]
 * [camp intent move](camp_intent_move.md)	 - Move intent to a different status
 * [camp intent note](camp_intent_note.md)	 - Capture a quick note
 * [camp intent promote](camp_intent_promote.md)	 - Promote an intent through the pipeline
+* [camp intent release](camp_intent_release.md)	 - Release an intent's assignment
 * [camp intent rename](camp_intent_rename.md)	 - Rename an intent
 * [camp intent show](camp_intent_show.md)	 - Show detailed intent information
+* [camp intent sync](camp_intent_sync.md)	 - Reconcile intents against their tracked GitHub PRs

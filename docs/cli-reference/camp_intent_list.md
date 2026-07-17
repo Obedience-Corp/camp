@@ -20,6 +20,8 @@ Examples:
   camp intent list -f json                 JSON output
   camp intent list -f simple | xargs ...   Pipe IDs to commands
   camp intent list --all                   Include archived
+  camp intent list --stale                 Claimed intents with no update in 7 days
+  camp intent list --stale --days 3        Same, with a 3 day threshold
 
 ```
 camp intent list [flags]
@@ -29,6 +31,7 @@ camp intent list [flags]
 
 ```
   -a, --all              Include dungeon intents
+      --days int         Staleness threshold in days, used with --stale (default 7)
   -f, --format string    Output format: table, simple, json (default "table")
   -h, --help             help for list
       --horizon string   Filter by horizon
@@ -36,6 +39,7 @@ camp intent list [flags]
   -n, --limit int        Limit results (0 = no limit)
   -p, --project string   Filter by project
   -S, --sort string      Sort by: updated, created, priority, title (default "updated")
+      --stale            Only show claimed intents with no update in --days (default 7)
   -s, --status strings   Filter by status (repeatable)
   -t, --type strings     Filter by type (repeatable)
 ```

@@ -2006,6 +2006,48 @@ camp intent archive <id> [flags]
 ```
 ---
 
+## camp intent claim
+
+Claim an intent for an agent or session
+
+### Synopsis
+
+Assign an intent to an agent so the campaign tracks who is working it.
+
+Stamps assigned_to and assigned_at, and merges any --ref values (a PR URL,
+branch, or festival path) into work_ref. Calling claim again on an
+already-claimed intent re-stamps assigned_at and merges in new refs without
+dropping ones already recorded -- this is the expected way to record a PR URL
+once one is opened, after an initial claim at the start of work.
+
+Use 'camp intent release' to clear the assignment, and 'camp intent sync' to
+auto-close intents once their tracked PR merges.
+
+Examples:
+  camp intent claim add-dark --agent claude-code-session-1
+  camp intent claim add-dark --agent claude-code-session-1 \
+    --ref https://github.com/Obedience-Corp/camp/pull/123
+
+```
+camp intent claim <id> [flags]
+```
+
+### Options
+
+```
+      --agent string      Agent or session name claiming the intent (required)
+  -h, --help              help for claim
+      --no-commit         Don't create a git commit
+      --ref stringArray   Work reference: PR URL, branch, or festival path (repeatable)
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
 ## camp intent convert
 
 Convert a note into an intent
@@ -2401,6 +2443,8 @@ Examples:
   camp intent list -f json                 JSON output
   camp intent list -f simple | xargs ...   Pipe IDs to commands
   camp intent list --all                   Include archived
+  camp intent list --stale                 Claimed intents with no update in 7 days
+  camp intent list --stale --days 3        Same, with a 3 day threshold
 
 ```
 camp intent list [flags]
@@ -2410,6 +2454,7 @@ camp intent list [flags]
 
 ```
   -a, --all              Include dungeon intents
+      --days int         Staleness threshold in days, used with --stale (default 7)
   -f, --format string    Output format: table, simple, json (default "table")
   -h, --help             help for list
       --horizon string   Filter by horizon
@@ -2417,6 +2462,7 @@ camp intent list [flags]
   -n, --limit int        Limit results (0 = no limit)
   -p, --project string   Filter by project
   -S, --sort string      Sort by: updated, created, priority, title (default "updated")
+      --stale            Only show claimed intents with no update in --days (default 7)
   -s, --status strings   Filter by status (repeatable)
   -t, --type strings     Filter by type (repeatable)
 ```
@@ -2561,6 +2607,37 @@ camp intent promote <id> [flags]
 ```
 ---
 
+## camp intent release
+
+Release an intent's assignment
+
+### Synopsis
+
+Clear an intent's assigned_to and assigned_at, returning it to the
+unclaimed pool. Any recorded work_ref entries (PR URLs, branches, festival
+paths) are left in place so a later camp intent sync can still resolve them.
+
+Examples:
+  camp intent release add-dark
+
+```
+camp intent release <id> [flags]
+```
+
+### Options
+
+```
+  -h, --help        help for release
+      --no-commit   Don't create a git commit
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
 ## camp intent rename
 
 Rename an intent
@@ -2628,6 +2705,45 @@ camp intent show <id> [flags]
   -f, --format string   Output format: text, json, yaml (default "text")
   -h, --help            help for show
       --json            emit a structured JSON result
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp intent sync
+
+Reconcile intents against their tracked GitHub PRs
+
+### Synopsis
+
+For every non-dungeon intent whose work_ref contains a GitHub PR URL,
+query the PR's state via the gh CLI. Intents whose PR has merged are moved to
+dungeon/done automatically, with a decision record and a ledger event. Intents
+whose PR closed without merging are reported but never auto-moved -- resolve
+those manually with 'camp intent move' or 'camp intent release'.
+
+Requires the gh CLI (https://cli.github.com) on PATH with an authenticated
+'gh auth login' session. Intents with no PR reference in work_ref are skipped
+without needing gh at all.
+
+Examples:
+  camp intent sync              Reconcile and auto-close merged PRs
+  camp intent sync --dry-run    Preview without moving anything
+
+```
+camp intent sync [flags]
+```
+
+### Options
+
+```
+      --dry-run     Preview without moving anything
+  -h, --help        help for sync
+      --no-commit   Don't create a git commit
 ```
 
 ### Options inherited from parent commands
