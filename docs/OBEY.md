@@ -53,3 +53,5 @@ campaigns.
 - [migrations/intent-path-targeting-upgrade-2026-03.md](migrations/intent-path-targeting-upgrade-2026-03.md)
 - [migrations/workitem-v1alpha6-2026-05.md](migrations/workitem-v1alpha6-2026-05.md) —
   `.workitem` schema bump (added `ref` and `quest_id`).
+- [migrations/workitem-v1alpha7-2026-07.md](migrations/workitem-v1alpha7-2026-07.md) —
+  `.workitem` schema bump (added `gathered_into` and `gathered_at`).

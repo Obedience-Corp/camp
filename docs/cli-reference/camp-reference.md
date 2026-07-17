@@ -1513,7 +1513,10 @@ single project name. Use --list to cycle a specific set of projects in one
 run, or 'camp fresh all' to cycle every project submodule in the campaign.
 
 Without configuration, syncs to the default branch and prunes.
-Configure .campaign/settings/fresh.yaml to set a default working branch.
+Configure .campaign/settings/fresh.yaml to set a default working branch, or
+follow-up command workflows (install, build, bootstrap, ...) to run once the
+cycle succeeds. Manage those with 'camp fresh configure'. Inspect the resolved
+sequence with 'camp fresh show-workflow [project-name]'.
 
 Examples:
   camp fresh                            # Sync current project (checkout default, pull, prune)
@@ -1521,7 +1524,8 @@ Examples:
   camp fresh camp -b feat/new-thing     # Sync camp project, create feature branch
   camp fresh --list camp,fest,festival  # Sync a specific set of projects
   camp fresh --no-prune                 # Sync without pruning
-  camp fresh --dry-run                  # Preview what would happen
+  camp fresh --no-follow-up             # Sync without running configured follow-ups
+  camp fresh --dry-run                  # Preview what would happen (follow-ups listed, not run)
 
 ```
 camp fresh [project-name] [flags]
@@ -1535,6 +1539,7 @@ camp fresh [project-name] [flags]
   -h, --help             help for fresh
       --list strings     Comma-separated set of projects to cycle in one run
       --no-branch        Skip branch creation even if configured
+      --no-follow-up     Skip configured follow-up command workflows
       --no-prune         Skip pruning merged branches
       --no-push          Skip pushing the new branch upstream
   -p, --project string   Project name (auto-detected from cwd)
@@ -1579,6 +1584,174 @@ camp fresh all [flags]
   -n, --dry-run         Preview without making changes
       --no-branch       Skip branch creation even if configured
       --no-color        disable colored output
+      --no-follow-up    Skip configured follow-up command workflows
+      --no-prune        Skip pruning merged branches
+      --no-push         Skip pushing the new branch upstream
+```
+---
+
+## camp fresh configure
+
+Configure camp fresh follow-up commands
+
+### Synopsis
+
+Manage the follow-up command workflows camp fresh runs after a
+successful sync/prune/branch cycle. Configuration lives in
+.campaign/settings/fresh.yaml: a global default list, plus optional
+per-project override lists that replace the global list entirely.
+
+Run without a subcommand to open the interactive setup for humans. Use
+show, add, and remove for scripts and agents.
+
+Examples:
+  camp fresh configure
+  camp fresh show-workflow camp
+  camp fresh configure show
+  camp fresh configure add install --run "npm install"
+  camp fresh configure add build --run "go build ./..." --project camp --dir cmd/camp
+  camp fresh configure remove install
+  camp fresh configure remove build --project camp
+
+```
+camp fresh configure [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for configure
+```
+
+### Options inherited from parent commands
+
+```
+  -b, --branch string   Branch to create after syncing (overrides config)
+  -n, --dry-run         Preview without making changes
+      --no-branch       Skip branch creation even if configured
+      --no-color        disable colored output
+      --no-follow-up    Skip configured follow-up command workflows
+      --no-prune        Skip pruning merged branches
+      --no-push         Skip pushing the new branch upstream
+```
+---
+
+## camp fresh configure add
+
+Add a follow-up command workflow step
+
+```
+camp fresh configure add <name> [flags]
+```
+
+### Options
+
+```
+      --continue-on-error   Keep running later follow-ups if this step fails
+      --dir string          Directory relative to the project root to run the command in
+  -h, --help                help for add
+      --project string      Scope this follow-up to a single project (default: global)
+      --run string          Command to run for this follow-up step (required)
+```
+
+### Options inherited from parent commands
+
+```
+  -b, --branch string   Branch to create after syncing (overrides config)
+  -n, --dry-run         Preview without making changes
+      --no-branch       Skip branch creation even if configured
+      --no-color        disable colored output
+      --no-follow-up    Skip configured follow-up command workflows
+      --no-prune        Skip pruning merged branches
+      --no-push         Skip pushing the new branch upstream
+```
+---
+
+## camp fresh configure remove
+
+Remove a follow-up command workflow step
+
+```
+camp fresh configure remove <name> [flags]
+```
+
+### Options
+
+```
+  -h, --help             help for remove
+      --project string   Scope removal to a single project (default: global)
+```
+
+### Options inherited from parent commands
+
+```
+  -b, --branch string   Branch to create after syncing (overrides config)
+  -n, --dry-run         Preview without making changes
+      --no-branch       Skip branch creation even if configured
+      --no-color        disable colored output
+      --no-follow-up    Skip configured follow-up command workflows
+      --no-prune        Skip pruning merged branches
+      --no-push         Skip pushing the new branch upstream
+```
+---
+
+## camp fresh configure show
+
+Show configured follow-up workflows
+
+```
+camp fresh configure show [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for show
+```
+
+### Options inherited from parent commands
+
+```
+  -b, --branch string   Branch to create after syncing (overrides config)
+  -n, --dry-run         Preview without making changes
+      --no-branch       Skip branch creation even if configured
+      --no-color        disable colored output
+      --no-follow-up    Skip configured follow-up command workflows
+      --no-prune        Skip pruning merged branches
+      --no-push         Skip pushing the new branch upstream
+```
+---
+
+## camp fresh show-workflow
+
+Show the fresh cycle and configured follow-up steps
+
+### Synopsis
+
+Show the ordered steps camp fresh will use, including disabled steps
+and the follow-up commands resolved for a project.
+
+With no project name, the global defaults are shown. Pass a project name to
+include its branch, pruning, and follow-up overrides.
+
+```
+camp fresh show-workflow [project-name] [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for show-workflow
+```
+
+### Options inherited from parent commands
+
+```
+  -b, --branch string   Branch to create after syncing (overrides config)
+  -n, --dry-run         Preview without making changes
+      --no-branch       Skip branch creation even if configured
+      --no-color        disable colored output
+      --no-follow-up    Skip configured follow-up command workflows
       --no-prune        Skip pruning merged branches
       --no-push         Skip pushing the new branch upstream
 ```
@@ -1595,6 +1768,7 @@ Gather related work into unified items.
 Available sources:
   feedback    Import feedback observations from festivals into intents
   design      Combine selected design workitems into one gathered package
+  explore     Combine selected explore workitems into one gathered package
 
 For gathering intents by tag, hashtag, or similarity, see 'camp intent gather'.
 
@@ -1655,6 +1829,59 @@ camp gather design [selectors...] [flags]
       --dry-run        Print the planned gather, change nothing
       --force          Gather sources even when one has an active workflow run
   -h, --help           help for design
+      --json           Output result as a single JSON object
+      --no-commit      Skip the auto-commit
+      --slug string    Directory slug override (default: derived from title)
+  -t, --title string   Title for the gathered workitem (required unless prompted interactively)
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp gather explore
+
+Combine selected explore workitems into one gathered package
+
+### Synopsis
+
+Combine selected explore workitems into one gathered package.
+
+Sources are always chosen explicitly: pass 2 or more selectors (stable id,
+key, path, or directory slug), or run with no arguments in a terminal for an
+interactive picker. There is no automatic discovery mode.
+
+The gather process:
+  1. Create workflow/explore/<slug>/ with a fresh .workitem and a
+     generated README.md indexing the gathered packages
+  2. Move each source directory inside the new package (git history follows
+     the rename)
+  3. Stamp gathered_into/gathered_at on each source .workitem
+  4. Migrate manual priority state and re-home workitem links
+  5. Commit the move (unless --no-commit)
+
+Moved sources stop appearing as separate workitems because discovery only
+scans the top level of workflow/explore/.
+
+Examples:
+  camp gather explore pkg-one pkg-two --title "Unified topic"
+  camp gather explore pkg-one pkg-two pkg-three -t "Unified topic" --slug unified-topic
+  camp gather explore                # interactive picker (TTY only)
+  camp gather explore pkg-one pkg-two -t "Unified topic" --dry-run
+
+```
+camp gather explore [selectors...] [flags]
+```
+
+### Options
+
+```
+      --dry-run        Print the planned gather, change nothing
+      --force          Gather sources even when one has an active workflow run
+  -h, --help           help for explore
       --json           Output result as a single JSON object
       --no-commit      Skip the auto-commit
       --slug string    Directory slug override (default: derived from title)

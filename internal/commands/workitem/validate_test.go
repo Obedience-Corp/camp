@@ -41,19 +41,19 @@ func TestClassifyMarker(t *testing.T) {
 		{
 			name:      "unparseable marker",
 			present:   true,
-			raw:       "version: v1alpha6\n[not: yaml{{{\n",
+			raw:       "version: v1alpha7\n[not: yaml{{{\n",
 			wantCodes: []string{codeMarkerMalformed},
 		},
 		{
 			name:      "valid current marker",
 			present:   true,
-			raw:       "version: v1alpha6\nkind: workitem\nid: design-foo-2026-05-25\ntype: design\ntitle: Foo\nref: WI-abc123\n",
+			raw:       "version: v1alpha7\nkind: workitem\nid: design-foo-2026-05-25\ntype: design\ntitle: Foo\nref: WI-abc123\n",
 			wantCodes: nil,
 		},
 		{
 			name:      "missing ref only",
 			present:   true,
-			raw:       "version: v1alpha6\nkind: workitem\nid: design-foo-2026-05-25\ntype: design\ntitle: Foo\n",
+			raw:       "version: v1alpha7\nkind: workitem\nid: design-foo-2026-05-25\ntype: design\ntitle: Foo\n",
 			wantCodes: []string{codeMissingRefField},
 		},
 		{
@@ -65,7 +65,7 @@ func TestClassifyMarker(t *testing.T) {
 		{
 			name:      "type mismatch",
 			present:   true,
-			raw:       "version: v1alpha6\nkind: workitem\nid: design-foo-2026-05-25\ntype: feature\ntitle: Foo\nref: WI-abc123\n",
+			raw:       "version: v1alpha7\nkind: workitem\nid: design-foo-2026-05-25\ntype: feature\ntitle: Foo\nref: WI-abc123\n",
 			wantCodes: []string{codeTypeMismatch},
 		},
 		{
@@ -77,13 +77,13 @@ func TestClassifyMarker(t *testing.T) {
 		{
 			name:      "empty id and wrong kind are malformed",
 			present:   true,
-			raw:       "version: v1alpha6\nkind: note\ntype: design\nref: WI-abc123\n",
+			raw:       "version: v1alpha7\nkind: note\ntype: design\nref: WI-abc123\n",
 			wantCodes: []string{codeMarkerMalformed},
 		},
 		{
 			name:      "invalid ref shape is malformed",
 			present:   true,
-			raw:       "version: v1alpha6\nkind: workitem\nid: design-foo-2026-05-25\ntype: design\nref: nope\n",
+			raw:       "version: v1alpha7\nkind: workitem\nid: design-foo-2026-05-25\ntype: design\nref: nope\n",
 			wantCodes: []string{codeMarkerMalformed},
 		},
 		{

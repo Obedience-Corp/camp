@@ -114,7 +114,7 @@ id: x
 type: design
 title: T
 `,
-			wantSubstr: "v1alpha6",
+			wantSubstr: "v1alpha7",
 		},
 		{
 			name: "wrong kind",
