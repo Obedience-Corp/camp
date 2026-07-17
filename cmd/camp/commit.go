@@ -219,8 +219,8 @@ func runCommit(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		if prefs.TagCommits() {
-			questID, workitemRef := resolveCommitContext(ctx, campRoot, commitWorkitem)
-			message = commitkit.PrependContextTagsFullNamed(cfg.Name, cfg.ID, questID, "", workitemRef, message)
+			questID, festivalRef, workitemRef := resolveCommitContext(ctx, campRoot, commitWorkitem)
+			message = commitkit.PrependContextTagsFullNamed(cfg.Name, cfg.ID, questID, festivalRef, workitemRef, message)
 		}
 	}
 
@@ -255,9 +255,9 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	// Record the landed commit as ledger evidence (D003: after the commit
 	// exists). Tagging and the message above are untouched.
 	if sha, shaErr := commitkit.ShortHash(ctx, target.Path); shaErr == nil {
-		_, workitemRef := resolveCommitContext(ctx, campRoot, commitWorkitem)
+		_, festivalRef, workitemRef := resolveCommitContext(ctx, campRoot, commitWorkitem)
 		ledger.NewFromRoot(ctx, campRoot, ledger.WarnTo(cmd.ErrOrStderr())).
-			CommitEvidence(ctx, ledgerkit.Scope{Workitem: workitemRef}, campRoot, target.Path, sha, message)
+			CommitEvidence(ctx, ledgerkit.Scope{Workitem: workitemRef, Festival: festivalRef}, campRoot, target.Path, sha, message)
 	}
 
 	fmt.Println(ui.Success("Changes committed successfully"))

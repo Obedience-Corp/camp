@@ -13,6 +13,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/ui"
+	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
 	"github.com/Obedience-Corp/camp/internal/workitem/selector"
 	intworktree "github.com/Obedience-Corp/camp/internal/worktree"
@@ -165,16 +166,12 @@ func linkWorktreeToWorkitem(ctx context.Context, campRoot, selectorQuery, relati
 	if err != nil {
 		return links.Link{}, camperrors.Wrap(err, "resolve workitem "+selectorQuery)
 	}
-	workitemID := wi.StableID
-	if workitemID == "" {
-		workitemID = wi.Key
-	}
 	scopePath := relativeWorktreePath
 	if scopePath == "" {
 		return links.Link{}, camperrors.NewValidation("worktree", "missing worktree relative path", nil)
 	}
 	return links.AttachPrimary(ctx, campRoot, links.AttachOptions{
-		WorkitemID:  workitemID,
+		WorkitemID:  wkitem.LinkWorkitemID(wi),
 		WorkitemKey: wi.Key,
 		Scope: links.LinkScope{
 			Kind: links.ScopeWorktree,
