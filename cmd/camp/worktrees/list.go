@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -20,7 +21,13 @@ import (
 	"github.com/Obedience-Corp/camp/internal/worktree"
 )
 
-const WorktreesListJSONVersion = "worktrees-list/v1alpha1"
+// WorktreesListJSONVersion is bumped to v1alpha2 because git-derived
+// enumeration changed the meaning of the emitted path and name fields: path is
+// now the worktree's real on-disk location (which may be outside the
+// conventional projects/worktrees/<project>/ layout), and name is
+// disambiguated to a campaign-relative path when two linked worktrees share a
+// basename. Clients can key on this version to detect the new semantics.
+const WorktreesListJSONVersion = "worktrees-list/v1alpha2"
 
 var (
 	listProject string
@@ -153,6 +160,13 @@ func listWorktrees(ctx context.Context, campRoot string, filterProject string, s
 		}
 	}
 
+	// git-derived enumeration can surface two linked worktrees for the same
+	// project whose directory basenames match (a preferred
+	// projects/worktrees/<project>/foo and a loose /elsewhere/foo). Basename
+	// alone would collapse them to one name in the table/JSON, so rewrite
+	// colliding names to a unique, path-derived form.
+	disambiguateWorktreeNames(campRoot, allWorktrees)
+
 	// Filter if needed
 	var result []WorktreeListItem
 	staleCount := 0
@@ -198,6 +212,37 @@ func listWorktreeProjectTargets(ctx context.Context, campRoot, filterProject str
 		})
 	}
 	return targets, nil
+}
+
+// disambiguateWorktreeNames rewrites the Name of any worktrees that share a
+// (project, basename) so every table row and JSON entry stays uniquely
+// identifiable. A colliding name becomes the campaign-relative path (or the
+// cleaned absolute path when the worktree lives outside the campaign tree),
+// which is unique because git worktree paths are unique.
+func disambiguateWorktreeNames(campRoot string, worktrees []WorktreeListItem) {
+	counts := make(map[string]int, len(worktrees))
+	for _, wt := range worktrees {
+		counts[wt.Project+"\x00"+wt.Name]++
+	}
+	for i := range worktrees {
+		if counts[worktrees[i].Project+"\x00"+worktrees[i].Name] > 1 {
+			worktrees[i].Name = worktreeUniqueName(campRoot, worktrees[i].Path)
+		}
+	}
+}
+
+// worktreeUniqueName returns a stable, unique display name for a worktree whose
+// basename collides with another: the campaign-relative path when the worktree
+// is inside the campaign, otherwise the cleaned absolute path.
+func worktreeUniqueName(campRoot, path string) string {
+	clean := filepath.Clean(path)
+	if campRoot != "" {
+		if rel, err := filepath.Rel(campRoot, clean); err == nil &&
+			rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return rel
+		}
+	}
+	return clean
 }
 
 func buildWorktreeListItem(project, name, path string) WorktreeListItem {

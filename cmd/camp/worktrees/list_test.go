@@ -3,6 +3,7 @@ package worktrees
 import (
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -58,6 +59,40 @@ func TestOutputListTable_RendersColumns(t *testing.T) {
 	}
 	if !strings.Contains(out, "(1 stale)") {
 		t.Errorf("outputListTable missing stale count, got:\n%s", out)
+	}
+}
+
+func TestDisambiguateWorktreeNames_SameBasenameDifferentPath(t *testing.T) {
+	campRoot := "/camp"
+	worktrees := []WorktreeListItem{
+		// Two linked worktrees for the same project sharing a basename "foo":
+		// one preferred (inside the campaign), one loose (outside).
+		{Project: "proj", Name: "foo", Path: "/camp/projects/worktrees/proj/foo"},
+		{Project: "proj", Name: "foo", Path: "/elsewhere/foo"},
+		// A distinct basename in the same project must be left untouched.
+		{Project: "proj", Name: "bar", Path: "/camp/projects/worktrees/proj/bar"},
+		// A same basename under a DIFFERENT project does not collide.
+		{Project: "other", Name: "foo", Path: "/camp/projects/worktrees/other/foo"},
+	}
+
+	disambiguateWorktreeNames(campRoot, worktrees)
+
+	// The colliding "proj/foo" pair is rewritten to unique, path-derived names.
+	if worktrees[0].Name != filepath.FromSlash("projects/worktrees/proj/foo") {
+		t.Errorf("preferred colliding worktree name = %q, want campaign-relative path", worktrees[0].Name)
+	}
+	if worktrees[1].Name != filepath.FromSlash("/elsewhere/foo") {
+		t.Errorf("loose colliding worktree name = %q, want absolute path", worktrees[1].Name)
+	}
+	if worktrees[0].Name == worktrees[1].Name {
+		t.Errorf("colliding worktrees must get distinct names, both = %q", worktrees[0].Name)
+	}
+	// Non-colliding entries keep their basename.
+	if worktrees[2].Name != "bar" {
+		t.Errorf("non-colliding name changed: %q, want bar", worktrees[2].Name)
+	}
+	if worktrees[3].Name != "foo" {
+		t.Errorf("same basename in another project must not be disambiguated: %q, want foo", worktrees[3].Name)
 	}
 }
 

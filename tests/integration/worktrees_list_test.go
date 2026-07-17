@@ -6,6 +6,7 @@ package integration
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -74,4 +75,52 @@ mkdir -p %[2]s/projects/worktrees/proj/not-a-worktree
 	assert.Contains(t, out, "projects/worktrees/loose-wt")
 	assert.NotContains(t, out, "projects/worktrees/proj/loose-wt")
 	assert.NotContains(t, out, "not-a-worktree")
+}
+
+// TestWorktreesList_DisambiguatesSameBasename verifies that two linked
+// worktrees for the same project whose directory basenames match (a preferred
+// projects/worktrees/proj/dup and a loose projects/worktrees/dup) do not
+// collapse to one "dup" name in --json: each keeps a unique, path-derived name.
+func TestWorktreesList_DisambiguatesSameBasename(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campPath, projPath := setupWorktreeNavCampaign(t, tc, "wt-list-dup-basename")
+
+	tc.Shell(t, fmt.Sprintf(`
+set -e
+git -C %[1]s worktree add %[2]s/projects/worktrees/proj/dup -b dup-pref
+git -C %[1]s worktree add %[2]s/projects/worktrees/dup -b dup-loose
+`, projPath, campPath))
+
+	out, err := tc.RunCampInDir(campPath, "worktrees", "list", "--json")
+	require.NoError(t, err, "output:\n%s", out)
+
+	var result struct {
+		Worktrees []struct {
+			Name string `json:"name"`
+			Path string `json:"path"`
+		} `json:"worktrees"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &result), "parse JSON: %s", out)
+
+	nameByPathSuffix := map[string]string{}
+	names := map[string]int{}
+	for _, wt := range result.Worktrees {
+		names[wt.Name]++
+		switch {
+		case strings.HasSuffix(wt.Path, "/projects/worktrees/proj/dup"):
+			nameByPathSuffix["proj/dup"] = wt.Name
+		case strings.HasSuffix(wt.Path, "/projects/worktrees/dup"):
+			nameByPathSuffix["dup"] = wt.Name
+		}
+	}
+
+	prefName, hasPref := nameByPathSuffix["proj/dup"]
+	looseName, hasLoose := nameByPathSuffix["dup"]
+	require.True(t, hasPref, "preferred dup worktree missing: %s", out)
+	require.True(t, hasLoose, "loose dup worktree missing: %s", out)
+	assert.NotEqual(t, prefName, looseName, "same-basename worktrees must get distinct names")
+	assert.Equal(t, 1, names[prefName], "disambiguated name %q must be unique in output", prefName)
+	assert.Equal(t, 1, names[looseName], "disambiguated name %q must be unique in output", looseName)
+	assert.Contains(t, prefName, "projects/worktrees/proj/dup")
+	assert.Contains(t, looseName, "projects/worktrees/dup")
 }
