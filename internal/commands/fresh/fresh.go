@@ -55,7 +55,8 @@ run, or 'camp fresh all' to cycle every project submodule in the campaign.
 Without configuration, syncs to the default branch and prunes.
 Configure .campaign/settings/fresh.yaml to set a default working branch, or
 follow-up command workflows (install, build, bootstrap, ...) to run once the
-cycle succeeds. Manage those with 'camp fresh configure'.
+cycle succeeds. Manage those with 'camp fresh configure'. Inspect the resolved
+sequence with 'camp fresh show-workflow [project-name]'.
 
 Examples:
   camp fresh                            # Sync current project (checkout default, pull, prune)
@@ -157,6 +158,7 @@ Examples:
 	// Add subcommands
 	freshCmd.AddCommand(newAllCommand(freshCmd))
 	freshCmd.AddCommand(newConfigureCommand())
+	freshCmd.AddCommand(newShowWorkflowCommand())
 
 	return freshCmd
 }

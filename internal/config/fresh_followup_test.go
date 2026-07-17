@@ -328,3 +328,42 @@ func TestRemoveFreshFollowUp_ContextCanceled(t *testing.T) {
 	}
 }
 
+func TestSetFreshFollowUps_PreservesInheritedStepsForProjectEdits(t *testing.T) {
+	root := t.TempDir()
+	ctx := context.Background()
+	global := []FollowUpConfig{{Name: "install", Run: "npm install"}}
+	if err := SetFreshFollowUps(ctx, root, "", global); err != nil {
+		t.Fatalf("SetFreshFollowUps(global) error = %v", err)
+	}
+
+	projectSteps := append(append([]FollowUpConfig(nil), global...), FollowUpConfig{Name: "build", Run: "npm run build"})
+	if err := SetFreshFollowUps(ctx, root, "web-app", projectSteps); err != nil {
+		t.Fatalf("SetFreshFollowUps(project) error = %v", err)
+	}
+
+	cfg, err := LoadFreshConfig(ctx, root)
+	if err != nil {
+		t.Fatalf("LoadFreshConfig() error = %v", err)
+	}
+	got := cfg.ResolveFreshFollowUps("web-app")
+	if len(got) != 2 || got[0].Name != "install" || got[1].Name != "build" {
+		t.Fatalf("project follow-ups = %+v, want inherited install followed by build", got)
+	}
+}
+
+func TestSetFreshFollowUps_ProjectEmptyListRemainsExplicit(t *testing.T) {
+	root := t.TempDir()
+	ctx := context.Background()
+	if err := SetFreshFollowUps(ctx, root, "web-app", nil); err != nil {
+		t.Fatalf("SetFreshFollowUps(empty project) error = %v", err)
+	}
+
+	cfg, err := LoadFreshConfig(ctx, root)
+	if err != nil {
+		t.Fatalf("LoadFreshConfig() error = %v", err)
+	}
+	steps, ok := cfg.Projects["web-app"]
+	if !ok || steps.FollowUp == nil {
+		t.Fatalf("project empty override = %+v, want explicit empty follow_up list", cfg.Projects)
+	}
+}

@@ -96,6 +96,43 @@ func RemoveFreshFollowUp(ctx context.Context, campaignRoot, projectName, name st
 	})
 }
 
+// SetFreshFollowUps replaces the ordered follow-up list for a scope. It is
+// used by interactive editors that need to preserve the effective workflow
+// while changing one project override at a time. A project scope with an
+// empty list is kept as an explicit override, which intentionally disables
+// inherited global follow-ups for that project.
+func SetFreshFollowUps(ctx context.Context, campaignRoot, projectName string, entries []FollowUpConfig) error {
+	seen := make(map[string]struct{}, len(entries))
+	for _, entry := range entries {
+		if err := entry.Validate(); err != nil {
+			return err
+		}
+		if _, ok := seen[entry.Name]; ok {
+			return camperrors.NewValidation("name", fmt.Sprintf("follow-up %q appears more than once", entry.Name), nil)
+		}
+		seen[entry.Name] = struct{}{}
+	}
+
+	return withFreshConfigLock(ctx, campaignRoot, func(mapping *yaml.Node) error {
+		seq, err := followUpSequence(mapping, projectName, true)
+		if err != nil {
+			return err
+		}
+		seq.Content = nil
+		for _, entry := range entries {
+			var node yaml.Node
+			if err := node.Encode(entry); err != nil {
+				return camperrors.Wrap(err, "encode follow-up entry")
+			}
+			seq.Content = append(seq.Content, &node)
+		}
+		if projectName == "" {
+			pruneEmptyFollowUpScope(mapping, projectName, seq)
+		}
+		return nil
+	})
+}
+
 // withFreshConfigLock loads fresh.yaml as a raw YAML document (creating an
 // empty mapping document if the file is missing or has no parseable
 // mapping content), runs mutate against its top-level mapping, then writes
