@@ -79,6 +79,11 @@ func moveWorkitemToDungeon(ctx context.Context, cmd *cobra.Command, target, stat
 	}
 	destinationPaths = append(destinationPaths, targetPath)
 
+	recordWorkitemMove(ctx, campaignRoot, resolved.SourcePath, targetPath)
+	if ledgerPath, ok := workitemLedgerPathIfExists(campaignRoot); ok {
+		destinationPaths = append(destinationPaths, ledgerPath)
+	}
+
 	src := RelFromRoot(campaignRoot, resolved.SourcePath)
 	dst := RelFromRoot(campaignRoot, targetPath)
 	fmt.Printf("%s Moved %s (%s → %s)\n", ui.SuccessIcon(), resolved.ItemName, src, dst)

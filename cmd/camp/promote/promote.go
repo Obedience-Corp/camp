@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -14,6 +15,8 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	navindex "github.com/Obedience-Corp/camp/internal/nav/index"
 	"github.com/Obedience-Corp/camp/internal/ui"
+	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
+	wkaudit "github.com/Obedience-Corp/camp/internal/workitem/audit"
 	"github.com/Obedience-Corp/camp/internal/workitem/locate"
 )
 
@@ -79,10 +82,31 @@ func runShelveAlias(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Read .workitem metadata before the move: shelve relocates loc.SourcePath,
+	// so the marker will not be readable from its original path afterward.
+	// camp shelve is a promote alias (see command Long text), so it records
+	// the same "promote" event type camp workitem promote uses for the
+	// completed/archived/someday targets.
+	ledgerID, ledgerRef, ledgerTitle := loc.Slug, "", ""
+	if meta, metaErr := wkitem.LoadMetadata(ctx, loc.SourcePath); metaErr == nil && meta != nil {
+		ledgerID, ledgerRef, ledgerTitle = meta.ID, meta.Ref, meta.Title
+	}
+
 	move, err := wicmd.MoveToDungeon(ctx, campaignRoot, loc, status)
 	if err != nil {
 		return err
 	}
+
+	wkaudit.AppendBestEffort(ctx, cmd.ErrOrStderr(), campaignRoot, wkaudit.Event{
+		Event:  wkaudit.EventPromote,
+		ID:     ledgerID,
+		Ref:    ledgerRef,
+		Title:  ledgerTitle,
+		Type:   loc.Type,
+		From:   move.FromRel,
+		To:     move.ToRel,
+		Target: status,
+	})
 
 	result := promoteResult{
 		Slug:   loc.Slug,
@@ -117,6 +141,7 @@ func runShelveAlias(cmd *cobra.Command, args []string) error {
 	if !noCommit {
 		destinationPaths := append([]string{}, move.CreatedFiles...)
 		destinationPaths = append(destinationPaths, move.TargetPath)
+		destinationPaths = append(destinationPaths, filepath.Join(campaignRoot, ".campaign", "workitems", wkaudit.AuditFile))
 		description := fmt.Sprintf("Shelve workitem %s → %s", loc.Slug, result.To)
 
 		outcome := dungeoncmd.StageAndCommitDungeonMove(ctx, &dungeoncmd.DungeonMoveCommit{

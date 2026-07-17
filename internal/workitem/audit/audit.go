@@ -5,6 +5,8 @@ package audit
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -21,6 +23,10 @@ const (
 	EventGather  EventType = "gather"
 	EventCreate  EventType = "create"
 	EventAdopt   EventType = "adopt"
+	// EventMove records a directory-workitem relocation that is not itself a
+	// promote (e.g. `camp dungeon move` triage or status changes). Mirrors
+	// the intent audit log's own "move" event for cross-ledger consistency.
+	EventMove EventType = "move"
 )
 
 type Event struct {
@@ -67,4 +73,15 @@ func AppendEvent(ctx context.Context, campaignRoot string, e Event) error {
 		return camperrors.Wrap(err, "writing workitem audit event")
 	}
 	return nil
+}
+
+// AppendBestEffort is the single shared entry point every FS-mutating
+// workitem command routes through to record a ledger event. A ledger write
+// failure never fails the caller's already-applied filesystem mutation; it
+// is reported to warn instead, so degraded ledger coverage is visible
+// without stranding an operator behind a spurious command failure.
+func AppendBestEffort(ctx context.Context, warn io.Writer, campaignRoot string, e Event) {
+	if err := AppendEvent(ctx, campaignRoot, e); err != nil {
+		_, _ = fmt.Fprintf(warn, "warning: failed to append workitem audit event: %v\n", err)
+	}
 }
