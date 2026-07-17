@@ -1,6 +1,6 @@
 ## camp workitem current
 
-Get, set, or clear the local current workitem
+Get, set, or clear the current workitem
 
 ### Synopsis
 

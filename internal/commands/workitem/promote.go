@@ -73,7 +73,7 @@ func newPromoteCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "promote [id] --target <target>",
-		Short: "Promote a workitem to a festival, doc, or dungeon status",
+		Short: "Promote a workitem to a festival, doc, or dungeon",
 		Long: `Promote the workitem identified by [id], by cwd, or by the current pointer.
 
 TARGETS:

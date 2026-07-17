@@ -1,6 +1,6 @@
 ## camp workitem unlink
 
-Remove one or more workitem links
+Remove workitem links
 
 ### Synopsis
 

@@ -45,17 +45,16 @@ func NewWorkitemCommand() *cobra.Command {
 		Use:     "workitem",
 		Aliases: []string{"wi", "workitems"},
 		Short:   "View active campaign work items",
-		Long: `View active campaign work items across intents, designs, explore, and festivals.
+		Long: `View active campaign work items.
 
-Default mode launches an interactive TUI dashboard. Use --json for machine-readable
-output or --print to select and print a path for shell integration.
+Launches an interactive dashboard on a TTY. Non-interactive callers must pass
+--json, --list, or --print.
 
 Examples:
-  camp workitem                              # interactive dashboard
-  camp workitem --json                       # JSON output for agents/scripts
-  camp workitem --json --type design         # filter by type
-  camp workitem --json --type intent --limit 5
-  camp workitem --print                      # select and print path`,
+  camp workitem                       # interactive dashboard
+  camp workitem --json --type design  # JSON, filtered by type
+  camp workitem --list                # compact grouped list
+  camp workitem --print               # print a path for shell integration`,
 		Annotations: map[string]string{
 			"agent_allowed": "true",
 			"agent_reason":  "Supports --json for non-interactive output",
@@ -71,7 +70,7 @@ Examples:
 			}
 
 			interactive := isInteractive()
-			if !interactive && !flagJSON && !flagList && !flagPrint && flagPathOutput == "" {
+			if needsExplicitOutputMode(interactive, flagJSON, flagList, flagPrint, flagPathOutput) {
 				return camperrors.New("non-interactive use requires --json, --list, or --print flag")
 			}
 
@@ -124,19 +123,19 @@ Examples:
 
 	cmd.Flags().BoolVar(&flagJSON, "json", false, "Output as JSON")
 	cmd.Flags().BoolVar(&flagList, "list", false, "Output a compact grouped list")
-	cmd.Flags().BoolVar(&flagPrint, "print", false, "Print path only (for shell integration)")
-	cmd.Flags().StringVar(&flagPathOutput, "path-output", "", "Write selected relative path to file (shell integration)")
+	cmd.Flags().BoolVar(&flagPrint, "print", false, "Print path only")
+	cmd.Flags().StringVar(&flagPathOutput, "path-output", "", "Write selected relative path to file")
 	_ = cmd.Flags().MarkHidden("path-output")
-	cmd.Flags().StringArrayVar(&flagTypes, "type", nil, "Filter by workflow type (builtin: intent, design, explore, festival; or any slug-safe custom type produced by 'camp workitem create --type <name>')")
-	cmd.Flags().StringArrayVar(&flagCategories, "category", nil, "Filter by workflow category (builtin: plan, research, pipeline, review, uncategorized; or any category defined under workflows in campaign.yaml)")
-	cmd.Flags().StringArrayVar(&flagStatuses, "status", nil, "Filter by displayed status (current, next, active, parked, inbox, ready, plan, ritual, chains, none)")
-	cmd.Flags().StringArrayVar(&flagStages, "stage", nil, "Filter by lifecycle stage (none, inbox, active, ready, planning, ritual, chains)")
-	cmd.Flags().StringArrayVar(&flagAttentionStages, "attention-stage", nil, "Filter by attention stage (current, next, active, parked)")
+	cmd.Flags().StringArrayVar(&flagTypes, "type", nil, "Filter by workflow type")
+	cmd.Flags().StringArrayVar(&flagCategories, "category", nil, "Filter by workflow category")
+	cmd.Flags().StringArrayVar(&flagStatuses, "status", nil, "Filter by displayed status")
+	cmd.Flags().StringArrayVar(&flagStages, "stage", nil, "Filter by lifecycle stage")
+	cmd.Flags().StringArrayVar(&flagAttentionStages, "attention-stage", nil, "Filter by attention stage")
 	cmd.Flags().StringArrayVar(&flagGroups, "group", nil, "Filter by workitem group")
-	cmd.Flags().StringVar(&flagGroupBy, "group-by", "attention_stage", "Group JSON/list sections by attention_stage, group, type, or category; --list defaults to group unless set")
-	cmd.Flags().BoolVar(&flagShowParked, "show-parked", false, "include parked attention-stage workitems in default output")
-	cmd.Flags().IntVar(&flagLimit, "limit", 0, "Maximum number of items to return")
-	cmd.Flags().StringVar(&flagQuery, "query", "", "Search query to filter items")
+	cmd.Flags().StringVar(&flagGroupBy, "group-by", "attention_stage", "Group sections")
+	cmd.Flags().BoolVar(&flagShowParked, "show-parked", false, "Include parked workitems")
+	cmd.Flags().IntVar(&flagLimit, "limit", 0, "Maximum items to return")
+	cmd.Flags().StringVar(&flagQuery, "query", "", "Filter by search query")
 
 	cmd.AddCommand(newCreateCommand())
 	cmd.AddCommand(newAdoptCommand())
@@ -262,6 +261,12 @@ func openSelectedItem(ctx context.Context, item wkitem.WorkItem, campaignRoot st
 		return camperrors.Wrap(err, "opening selected work item")
 	}
 	return nil
+}
+
+// needsExplicitOutputMode reports whether an invocation has no way to present
+// results: no terminal for the TUI and no explicit non-interactive output mode.
+func needsExplicitOutputMode(interactive, jsonMode, listMode, printMode bool, pathOutput string) bool {
+	return !interactive && !jsonMode && !listMode && !printMode && pathOutput == ""
 }
 
 func isInteractive() bool {

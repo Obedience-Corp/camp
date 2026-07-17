@@ -68,7 +68,7 @@ func newDoctorCommand() *cobra.Command {
 	var jsonOut, fix bool
 	cmd := &cobra.Command{
 		Use:   "doctor",
-		Short: "Report workitem link-registry health issues",
+		Short: "Report link-registry health issues",
 		Long: `Report health issues in the campaign workitem link registry.
 
 The command reads .campaign/workitems/links.yaml, scans .workitem metadata on
