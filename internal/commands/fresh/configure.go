@@ -18,18 +18,24 @@ import (
 func newConfigureCommand() *cobra.Command {
 	configureCmd := &cobra.Command{
 		Use:   "configure",
-		Short: "Manage camp fresh follow-up command workflows",
+		Short: "Configure camp fresh follow-up commands",
 		Long: `Manage the follow-up command workflows camp fresh runs after a
 successful sync/prune/branch cycle. Configuration lives in
 .campaign/settings/fresh.yaml: a global default list, plus optional
 per-project override lists that replace the global list entirely.
 
+Run without a subcommand to open the interactive setup for humans. Use
+show, add, and remove for scripts and agents.
+
 Examples:
+  camp fresh configure
   camp fresh configure show
   camp fresh configure add install --run "npm install"
   camp fresh configure add build --run "go build ./..." --project camp --dir cmd/camp
   camp fresh configure remove install
   camp fresh configure remove build --project camp`,
+		Args: cobra.NoArgs,
+		RunE: runConfigureTUI,
 	}
 
 	configureCmd.AddCommand(newConfigureShowCommand())
