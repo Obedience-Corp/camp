@@ -128,8 +128,9 @@ func runIntentExplore(cmd *cobra.Command, args []string) error {
 	model := explorer.NewModel(ctx, svc, conceptSvc, intentsDir, campaignRoot, cfg.ID, author, shortcuts).
 		WithAvailableTags(cfg.IntentTags())
 
-	// Deferred after restoreLogger so LIFO drains in-flight auto-commits (on both
-	// success and error exits) while slog is still routed to the TUI log file.
+	// Deferred after restoreLogger so LIFO runs the session-end batch commit
+	// (crawl-style: one git commit for all mutations) while slog is still
+	// routed to the TUI log file — on both success and error exits.
 	defer model.DrainAutoCommits(cmd.ErrOrStderr())
 
 	if _, err := tea.NewProgram(model, tea.WithAltScreen()).Run(); err != nil {
