@@ -329,6 +329,12 @@ type GlobalConfig struct {
 	// (project ref linking and subject-tag tracing). Per-campaign overrides
 	// live in .campaign/settings/local.json under the same shape.
 	Commit CommitPrefs `json:"commit,omitempty" yaml:"commit,omitempty"`
+	// DungeonHidden controls whether newly scaffolded dungeon directories use
+	// the hidden ".dungeon" spelling instead of the visible "dungeon". A
+	// pointer distinguishes "not set" (defaults to true) from an explicit
+	// false. This only governs directories created going forward — existing
+	// campaigns and existing dungeon directories are never renamed.
+	DungeonHidden *bool `json:"dungeon_hidden,omitempty" yaml:"dungeon_hidden,omitempty"`
 }
 
 // RegistryVersion is the current registry format version.

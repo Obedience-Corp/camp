@@ -73,7 +73,10 @@ func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, erro
 			continue
 		}
 
-		fullPath := s.resolvePath(dirPath)
+		fullPath, err := s.resolvePath(ctx, dirPath)
+		if err != nil {
+			return nil, camperrors.Wrapf(err, "resolving directory %s", dirPath)
+		}
 		if err := os.MkdirAll(fullPath, 0755); err != nil {
 			return nil, camperrors.Wrapf(err, "failed to create directory %s", dirPath)
 		}
@@ -119,7 +122,11 @@ func (s *Service) Init(ctx context.Context, opts InitOptions) (*InitResult, erro
 		result.CreatedFiles = append(result.CreatedFiles, obey.path)
 	}
 
-	dungeonResult, err := dungeonscaffold.Init(ctx, s.resolvePath("dungeon"), dungeonscaffold.InitOptions{
+	dungeonPath, err := s.resolvePath(ctx, "dungeon")
+	if err != nil {
+		return nil, camperrors.Wrap(err, "resolving dungeon path")
+	}
+	dungeonResult, err := dungeonscaffold.Init(ctx, dungeonPath, dungeonscaffold.InitOptions{
 		Force: opts.Force,
 	})
 	if err != nil {

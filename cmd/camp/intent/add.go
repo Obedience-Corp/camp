@@ -41,8 +41,8 @@ func newIntentAddCommand() *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "add [title]",
-		Short: "Create a new intent",
-		Long: `Create a new intent with fast or deep capture mode.
+		Short: "Create a new idea",
+		Long: `Create a new idea with fast or deep capture mode.
 
 CAPTURE MODES:
   Ultra-fast          Title provided as argument → immediate creation
@@ -55,10 +55,10 @@ Use --full when you want to add a body description in the form.
 Use --edit when you need the complete template in your editor.
 
 PROGRAMMATIC (agent) FLAGS:
-  --body              Set intent body from a literal string
-  --body-file         Read intent body from a file (- for stdin)
+  --body              Set idea body from a literal string
+  --body-file         Read idea body from a file (- for stdin)
   --concept           Set the concept field (e.g., "projects/camp")
-  --note              Create a note instead of a lifecycle intent
+  --note              Create a note instead of a lifecycle idea
   --author            Override the default author attribution
 
   --body and --body-file are mutually exclusive.
@@ -66,18 +66,18 @@ PROGRAMMATIC (agent) FLAGS:
   --edit + body flags pre-fills the editor template.
 
 Examples:
-  camp intent add "Add dark mode"        Ultra-fast capture
-  camp intent add -c obey-campaign "Add dark mode"
-  camp intent add                        Fast TUI (3-step form)
-  camp intent add --campaign             Pick a target campaign interactively
-  camp intent add --full                 Full TUI (includes body)
-  camp intent add --note                 Note TUI (title + body, no type/concept)
-  camp intent add --note "Meeting note" --body "Follow up next week"
-  camp intent add -e "Complex feature"   Deep capture with editor
-  camp intent add -t feature "New API"   Set type explicitly
-  camp intent add "Fix login" --body "The login page returns 500"
-  camp intent add "Migrate DB" --body-file spec.md --concept projects/camp
-  echo "body" | camp intent add "Idea" --body-file -`,
+  camp idea add "Add dark mode"        Ultra-fast capture
+  camp idea add -c obey-campaign "Add dark mode"
+  camp idea add                        Fast TUI (3-step form)
+  camp idea add --campaign             Pick a target campaign interactively
+  camp idea add --full                 Full TUI (includes body)
+  camp idea add --note                 Note TUI (title + body, no type/concept)
+  camp idea add --note "Meeting note" --body "Follow up next week"
+  camp idea add -e "Complex feature"   Deep capture with editor
+  camp idea add -t feature "New API"   Set type explicitly
+  camp idea add "Fix login" --body "The login page returns 500"
+  camp idea add "Migrate DB" --body-file spec.md --concept projects/camp
+  echo "body" | camp idea add "Idea" --body-file -`,
 	}
 	jsonRequested := func() bool { return jsonOut }
 	cmd.Args = jsoncontract.Args(IntentJSONVersion, jsonRequested, validateIntentAddArgs)
@@ -85,7 +85,7 @@ Examples:
 	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(IntentJSONVersion, jsonRequested))
 
 	flags := cmd.Flags()
-	flags.StringP("type", "t", "idea", "Intent type (idea, feature, bug, research, chore)")
+	flags.StringP("type", "t", "idea", "Type (idea, feature, bug, research, chore)")
 	flags.BoolP("edit", "e", false, "Open in $EDITOR for deep capture")
 	flags.Bool("full", false, "Full TUI mode with body textarea")
 	flags.StringP("campaign", "c", "", "Target campaign by name or ID; omit value to pick interactively")
@@ -94,10 +94,10 @@ Examples:
 	flags.BoolVar(&jsonOut, "json", false, "emit a structured JSON result")
 
 	// Programmatic (agent) flags
-	flags.String("body", "", "Set intent body as a literal string")
-	flags.String("body-file", "", "Read intent body from file (- for stdin, 10 MiB cap)")
+	flags.String("body", "", "Set idea body as a literal string")
+	flags.String("body-file", "", "Read idea body from file (- for stdin, 10 MiB cap)")
 	flags.String("concept", "", "Set the concept field (e.g., projects/camp)")
-	flags.Bool("note", false, "Create a note instead of a lifecycle intent")
+	flags.Bool("note", false, "Create a note instead of a lifecycle idea")
 	flags.String("author", "", "Override the default author attribution")
 	flags.StringArray("tag", nil, "Add a tag (repeatable)")
 
@@ -168,7 +168,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 
 	// Ensure directories exist and migrate legacy layout
 	if err := svc.EnsureDirectories(ctx); err != nil {
-		return camperrors.Wrap(err, "ensuring intent directories")
+		return camperrors.Wrap(err, "ensuring idea directories")
 	}
 
 	// Ultra-fast path: title provided as argument
@@ -207,7 +207,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	// Programmatic flags like --body/--concept/--author supplement a title,
 	// they don't replace it.
 	if !navtui.IsTerminal() {
-		return camperrors.Wrap(camperrors.ErrInvalidInput, "title argument required in non-interactive mode (use 'camp intent add <title>')")
+		return camperrors.Wrap(camperrors.ErrInvalidInput, "title argument required in non-interactive mode (use 'camp idea add <title>')")
 	}
 
 	// TUI path: use git config author (human), unless --author overrides
@@ -388,7 +388,7 @@ func (r intentAddCampaignResolver) resolve(ctx context.Context, targetCampaign s
 	var selected config.RegisteredCampaign
 	if targetCampaign == "" {
 		if !r.isInteractive() {
-			return nil, "", camperrors.Wrap(camperrors.ErrInvalidInput, "campaign name required in non-interactive mode (use 'camp intent add --campaign <name> [title]')")
+			return nil, "", camperrors.Wrap(camperrors.ErrInvalidInput, "campaign name required in non-interactive mode (use 'camp idea add --campaign <name> [title]')")
 		}
 		selected, err = r.pickCampaign(ctx, reg)
 		if err != nil {
@@ -447,7 +447,7 @@ func runFastCapture(ctx context.Context, svc *intent.IntentService, intentsDir s
 func runFastCaptureWithOutput(ctx context.Context, svc *intent.IntentService, intentsDir string, cfg *config.CampaignConfig, campaignRoot string, noCommit bool, opts intent.CreateOptions, output io.Writer, jsonOut bool) error {
 	result, err := svc.CreateDirect(ctx, opts)
 	if err != nil {
-		return camperrors.Wrap(err, "failed to create intent")
+		return camperrors.Wrap(err, "failed to create idea")
 	}
 
 	return finalizeCreatedIntentWithOutput(ctx, result, intentsDir, cfg, campaignRoot, noCommit, output, jsonOut)
@@ -469,7 +469,7 @@ func runDeepCaptureWithOutput(ctx context.Context, svc *intent.IntentService, in
 		if errors.Is(err, camperrors.ErrCancelled) {
 			return intent.ErrCancelled
 		}
-		return camperrors.Wrap(err, "failed to create intent")
+		return camperrors.Wrap(err, "failed to create idea")
 	}
 
 	return finalizeCreatedIntentWithOutput(ctx, result, intentsDir, cfg, campaignRoot, noCommit, output, jsonOut)
@@ -540,7 +540,7 @@ func writeCreatedIntent(ctx context.Context, result *intent.Intent, intentsDir, 
 	if jsonOut {
 		return outputIntentAddPayload(output, campaignRoot, result)
 	}
-	_, err := fmt.Fprintf(output, "✓ Intent created: %s\n", result.Path)
+	_, err := fmt.Fprintf(output, "✓ Idea created: %s\n", result.Path)
 	return err
 }
 

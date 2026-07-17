@@ -48,7 +48,7 @@ func TestIntentCrawl_TTYMovesInboxToReady(t *testing.T) {
 		[]InteractiveStep{
 			{WaitFor: "Intent 1/1", Input: moveStep},
 			{WaitFor: "Destinations", Input: pickReady},
-			{WaitFor: "Intent crawl complete", Input: ""},
+			{WaitFor: "Idea crawl complete", Input: ""},
 		},
 		"intent", "crawl", "--status", "inbox", "--limit", "1", "--no-commit",
 	)
@@ -210,7 +210,9 @@ func TestIntentCrawl_KeepOnlyAutoCommitsCrawlLog(t *testing.T) {
 
 // TestManifest_IntentCrawlAgentRestricted verifies that the new
 // command appears in the manifest with agent_allowed=false and
-// interactive=true.
+// interactive=true. "idea" is the canonical command name (Use) as of the
+// idea/intent rename; "intent" remains a working alias but the manifest
+// path always reflects the canonical name.
 func TestManifest_IntentCrawlAgentRestricted(t *testing.T) {
 	tc := GetSharedContainer(t)
 
@@ -228,11 +230,11 @@ func TestManifest_IntentCrawlAgentRestricted(t *testing.T) {
 
 	var found bool
 	for _, c := range manifest.Commands {
-		if c.Path == "intent crawl" {
+		if c.Path == "idea crawl" {
 			found = true
-			assert.False(t, c.AgentAllowed, "intent crawl should be agent_allowed=false")
-			assert.True(t, c.Interactive, "intent crawl should be interactive=true")
+			assert.False(t, c.AgentAllowed, "idea crawl should be agent_allowed=false")
+			assert.True(t, c.Interactive, "idea crawl should be interactive=true")
 		}
 	}
-	assert.True(t, found, "intent crawl missing from manifest")
+	assert.True(t, found, "idea crawl missing from manifest")
 }

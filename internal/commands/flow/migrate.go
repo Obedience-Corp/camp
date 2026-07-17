@@ -48,7 +48,12 @@ Examples:
 				return err
 			}
 
-			svc := workflow.NewService(cwd)
+			dungeonSpelling, err := campaignDungeonSpelling(ctx)
+			if err != nil {
+				return err
+			}
+
+			svc := workflow.NewService(cwd, workflow.WithDungeonSpelling(dungeonSpelling))
 
 			// Check if workflow schema exists
 			if !svc.HasSchema() {

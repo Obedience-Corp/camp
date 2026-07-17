@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	dungeonscaffold "github.com/Obedience-Corp/camp/internal/dungeon/scaffold"
+	"github.com/Obedience-Corp/camp/internal/dungeon/spelling"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"github.com/Obedience-Corp/camp/internal/statusmove"
@@ -47,7 +48,10 @@ func (s *Service) Sync(ctx context.Context, opts SyncOptions) (*SyncResult, erro
 			return nil, ctx.Err()
 		}
 
-		fullPath := s.resolvePath(dirPath)
+		fullPath, err := s.resolvePath(ctx, dirPath)
+		if err != nil {
+			return nil, camperrors.Wrapf(err, "resolving directory %s", dirPath)
+		}
 		info, err := os.Stat(fullPath)
 		if err == nil && info.IsDir() {
 			result.Existing = append(result.Existing, dirPath)
@@ -75,9 +79,13 @@ func (s *Service) Migrate(ctx context.Context, opts MigrateOptions) (*MigrateRes
 
 	result := &MigrateResult{}
 
-	// Check for existing dungeon directory
-	dungeonPath := s.resolvePath("dungeon")
-	if _, err := os.Stat(dungeonPath); os.IsNotExist(err) {
+	// Check for an existing dungeon directory (either spelling).
+	resolvedDungeon, err := spelling.Resolve(ctx, s.root)
+	if err != nil {
+		return nil, camperrors.Wrap(err, "resolving dungeon path")
+	}
+
+	if !resolvedDungeon.Exists {
 		// No dungeon - just do a regular init
 		schema := DefaultSchema()
 		initResult, err := s.Init(ctx, InitOptions{Force: opts.Force})
@@ -90,15 +98,17 @@ func (s *Service) Migrate(ctx context.Context, opts MigrateOptions) (*MigrateRes
 		return result, nil
 	}
 
+	dungeonPath := resolvedDungeon.Path
+
 	// Dungeon exists - preserve it and add workflow
-	result.Preserved = append(result.Preserved, "dungeon/")
+	result.Preserved = append(result.Preserved, resolvedDungeon.Name+"/")
 
 	// Check for subdirectories
 	entries, err := os.ReadDir(dungeonPath)
 	if err == nil {
 		for _, entry := range entries {
 			if entry.IsDir() {
-				result.Preserved = append(result.Preserved, "dungeon/"+entry.Name()+"/")
+				result.Preserved = append(result.Preserved, resolvedDungeon.Name+"/"+entry.Name()+"/")
 			}
 		}
 	}
@@ -119,7 +129,10 @@ func (s *Service) Migrate(ctx context.Context, opts MigrateOptions) (*MigrateRes
 
 		// Create non-dungeon directories
 		for _, dir := range []string{"active", "ready"} {
-			dirPath := s.resolvePath(dir)
+			dirPath, err := s.resolvePath(ctx, dir)
+			if err != nil {
+				return nil, camperrors.Wrapf(err, "resolving directory %s", dir)
+			}
 			if _, err := os.Stat(dirPath); os.IsNotExist(err) {
 				if err := os.MkdirAll(dirPath, 0755); err != nil {
 					return nil, camperrors.Wrapf(err, "failed to create directory %s", dir)
@@ -150,7 +163,7 @@ func (s *Service) Migrate(ctx context.Context, opts MigrateOptions) (*MigrateRes
 			}
 		}
 
-		dungeonResult, err := dungeonscaffold.Init(ctx, s.resolvePath("dungeon"), dungeonscaffold.InitOptions{})
+		dungeonResult, err := dungeonscaffold.Init(ctx, dungeonPath, dungeonscaffold.InitOptions{})
 		if err != nil {
 			return nil, camperrors.Wrap(err, "failed to initialize dungeon")
 		}
@@ -186,11 +199,11 @@ func (s *Service) migrateV1ToV2(ctx context.Context, dryRun bool, moveItem workf
 
 	result := &MigrateV1ToV2Result{}
 
-	moves, err := s.planV1ToV2Moves()
+	moves, err := s.planV1ToV2Moves(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if err := validateV1ToV2MovePlan(s.root, moves); err != nil {
+	if err := validateV1ToV2MovePlan(ctx, s.root, moves); err != nil {
 		return nil, err
 	}
 
@@ -205,7 +218,15 @@ func (s *Service) migrateV1ToV2(ctx context.Context, dryRun bool, moveItem workf
 	}
 
 	// Remove empty active/ and ready/ directories
-	for _, dir := range []string{s.resolvePath("active"), s.resolvePath("ready")} {
+	activeDir, err := s.resolvePath(ctx, "active")
+	if err != nil {
+		return nil, camperrors.Wrap(err, "resolving active directory")
+	}
+	readyDir, err := s.resolvePath(ctx, "ready")
+	if err != nil {
+		return nil, camperrors.Wrap(err, "resolving ready directory")
+	}
+	for _, dir := range []string{activeDir, readyDir} {
 		if entries, err := os.ReadDir(dir); err == nil {
 			isEmpty := true
 			for _, e := range entries {
@@ -241,10 +262,13 @@ func (s *Service) migrateV1ToV2(ctx context.Context, dryRun bool, moveItem workf
 	return result, nil
 }
 
-func (s *Service) planV1ToV2Moves() ([]v1ToV2Move, error) {
+func (s *Service) planV1ToV2Moves(ctx context.Context) ([]v1ToV2Move, error) {
 	var moves []v1ToV2Move
 	for _, statusDir := range []string{"active", "ready"} {
-		dirPath := s.resolvePath(statusDir)
+		dirPath, err := s.resolvePath(ctx, statusDir)
+		if err != nil {
+			return nil, camperrors.Wrapf(err, "resolving %s", statusDir)
+		}
 		entries, err := os.ReadDir(dirPath)
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -269,11 +293,11 @@ func (s *Service) planV1ToV2Moves() ([]v1ToV2Move, error) {
 	return moves, nil
 }
 
-func validateV1ToV2MovePlan(root string, moves []v1ToV2Move) error {
+func validateV1ToV2MovePlan(ctx context.Context, root string, moves []v1ToV2Move) error {
 	var errs []string
 	seen := make(map[string]v1ToV2Move, len(moves))
 	for _, move := range moves {
-		if err := checkMigrateDestination(root, move.name); err != nil {
+		if err := checkMigrateDestination(ctx, root, move.name); err != nil {
 			errs = append(errs, fmt.Sprintf("%s/%s: %v", move.statusDir, move.name, err))
 		}
 		if previous, ok := seen[move.name]; ok {
@@ -291,9 +315,9 @@ func validateV1ToV2MovePlan(root string, moves []v1ToV2Move) error {
 }
 
 // checkMigrateDestination enforces logical no-replace semantics for v1->v2 root moves.
-func checkMigrateDestination(root, name string) error {
+func checkMigrateDestination(ctx context.Context, root, name string) error {
 	dst := filepath.Join(root, name)
-	if existing, exists, err := resolveWorkflowItemPath(root, ".", name); err != nil {
+	if existing, exists, err := resolveWorkflowItemPath(ctx, root, ".", name, spelling.Visible); err != nil {
 		return camperrors.Wrapf(err, "checking destination: %s", dst)
 	} else if exists {
 		return camperrors.Wrapf(ErrAlreadyExists, "destination already exists: %s", existing)

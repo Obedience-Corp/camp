@@ -7,6 +7,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	intdungeon "github.com/Obedience-Corp/camp/internal/dungeon"
+	"github.com/Obedience-Corp/camp/internal/dungeon/spelling"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
@@ -58,7 +59,20 @@ func runDungeonAdd(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return camperrors.Wrap(err, "getting current directory")
 	}
-	dungeonPath := filepath.Join(cwd, "dungeon")
+
+	globalCfg, err := config.LoadGlobalConfig(ctx)
+	if err != nil {
+		return camperrors.Wrap(err, "loading global config")
+	}
+	campaignName, err := spelling.CampaignName(ctx, campaignRoot, globalCfg.ResolveDungeonHidden())
+	if err != nil {
+		return camperrors.Wrap(err, "resolving campaign dungeon spelling")
+	}
+	dungeonName, err := spelling.NameForNew(ctx, cwd, campaignName)
+	if err != nil {
+		return camperrors.Wrap(err, "resolving dungeon spelling")
+	}
+	dungeonPath := filepath.Join(cwd, dungeonName)
 
 	// Create dungeon service (still validates campaign, but uses CWD for dungeon)
 	_ = cfg // campaign config loaded to validate we're in a campaign
@@ -104,7 +118,7 @@ func runDungeonAdd(cmd *cobra.Command, args []string) error {
 	if totalCreated == 0 && len(result.Skipped) > 0 {
 		fmt.Printf("\n%s Dungeon already initialized. Use --force to overwrite.\n", ui.InfoIcon())
 	} else if totalCreated > 0 {
-		fmt.Printf("\n%s Dungeon initialized at %s\n", ui.SuccessIcon(), ui.Value("./dungeon"))
+		fmt.Printf("\n%s Dungeon initialized at %s\n", ui.SuccessIcon(), ui.Value("./"+dungeonName))
 	}
 
 	return nil

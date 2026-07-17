@@ -1,10 +1,10 @@
-## camp intent add
+## camp idea add
 
-Create a new intent
+Create a new idea
 
 ### Synopsis
 
-Create a new intent with fast or deep capture mode.
+Create a new idea with fast or deep capture mode.
 
 CAPTURE MODES:
   Ultra-fast          Title provided as argument → immediate creation
@@ -17,10 +17,10 @@ Use --full when you want to add a body description in the form.
 Use --edit when you need the complete template in your editor.
 
 PROGRAMMATIC (agent) FLAGS:
-  --body              Set intent body from a literal string
-  --body-file         Read intent body from a file (- for stdin)
+  --body              Set idea body from a literal string
+  --body-file         Read idea body from a file (- for stdin)
   --concept           Set the concept field (e.g., "projects/camp")
-  --note              Create a note instead of a lifecycle intent
+  --note              Create a note instead of a lifecycle idea
   --author            Override the default author attribution
 
   --body and --body-file are mutually exclusive.
@@ -28,29 +28,29 @@ PROGRAMMATIC (agent) FLAGS:
   --edit + body flags pre-fills the editor template.
 
 Examples:
-  camp intent add "Add dark mode"        Ultra-fast capture
-  camp intent add -c obey-campaign "Add dark mode"
-  camp intent add                        Fast TUI (3-step form)
-  camp intent add --campaign             Pick a target campaign interactively
-  camp intent add --full                 Full TUI (includes body)
-  camp intent add --note                 Note TUI (title + body, no type/concept)
-  camp intent add --note "Meeting note" --body "Follow up next week"
-  camp intent add -e "Complex feature"   Deep capture with editor
-  camp intent add -t feature "New API"   Set type explicitly
-  camp intent add "Fix login" --body "The login page returns 500"
-  camp intent add "Migrate DB" --body-file spec.md --concept projects/camp
-  echo "body" | camp intent add "Idea" --body-file -
+  camp idea add "Add dark mode"        Ultra-fast capture
+  camp idea add -c obey-campaign "Add dark mode"
+  camp idea add                        Fast TUI (3-step form)
+  camp idea add --campaign             Pick a target campaign interactively
+  camp idea add --full                 Full TUI (includes body)
+  camp idea add --note                 Note TUI (title + body, no type/concept)
+  camp idea add --note "Meeting note" --body "Follow up next week"
+  camp idea add -e "Complex feature"   Deep capture with editor
+  camp idea add -t feature "New API"   Set type explicitly
+  camp idea add "Fix login" --body "The login page returns 500"
+  camp idea add "Migrate DB" --body-file spec.md --concept projects/camp
+  echo "body" | camp idea add "Idea" --body-file -
 
 ```
-camp intent add [title] [flags]
+camp idea add [title] [flags]
 ```
 
 ### Options
 
 ```
       --author string      Override the default author attribution
-      --body string        Set intent body as a literal string
-      --body-file string   Read intent body from file (- for stdin, 10 MiB cap)
+      --body string        Set idea body as a literal string
+      --body-file string   Read idea body from file (- for stdin, 10 MiB cap)
   -c, --campaign string    Target campaign by name or ID; omit value to pick interactively
       --concept string     Set the concept field (e.g., projects/camp)
   -e, --edit               Open in $EDITOR for deep capture
@@ -58,9 +58,9 @@ camp intent add [title] [flags]
   -h, --help               help for add
       --json               emit a structured JSON result
       --no-commit          Don't create a git commit
-      --note               Create a note instead of a lifecycle intent
+      --note               Create a note instead of a lifecycle idea
       --tag stringArray    Add a tag (repeatable)
-  -t, --type string        Intent type (idea, feature, bug, research, chore) (default "idea")
+  -t, --type string        Type (idea, feature, bug, research, chore) (default "idea")
 ```
 
 ### Options inherited from parent commands
@@ -71,4 +71,4 @@ camp intent add [title] [flags]
 
 ### SEE ALSO
 
-* [camp intent](camp_intent.md)	 - Manage campaign intents
+* [camp idea](camp_idea.md)	 - Manage campaign ideas

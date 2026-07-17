@@ -1,10 +1,10 @@
-## camp intent move
+## camp idea move
 
-Move intent to a different status
+Move idea to a different status
 
 ### Synopsis
 
-Transition an intent between lifecycle statuses.
+Transition an idea between lifecycle statuses.
 
 VALID STATUSES:
   inbox      Captured, not yet reviewed
@@ -23,12 +23,12 @@ Dungeon moves require a --reason flag.
 You can use short dungeon names (done) or canonical paths (dungeon/done).
 
 Examples:
-  camp intent move add-dark ready                         Mark as ready
-  camp intent move add-dark done --reason "completed"     Mark as done
-  camp intent move add-dark killed --reason "superseded"  Kill intent
+  camp idea move add-dark ready                         Mark as ready
+  camp idea move add-dark done --reason "completed"     Mark as done
+  camp idea move add-dark killed --reason "superseded"  Kill idea
 
 ```
-camp intent move <id> <status> [flags]
+camp idea move <id> <status> [flags]
 ```
 
 ### Options
@@ -47,4 +47,4 @@ camp intent move <id> <status> [flags]
 
 ### SEE ALSO
 
-* [camp intent](camp_intent.md)	 - Manage campaign intents
+* [camp idea](camp_idea.md)	 - Manage campaign ideas
