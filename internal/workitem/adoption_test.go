@@ -57,3 +57,25 @@ func TestNotAdoptedError_NamesAdoptCommandAndPath(t *testing.T) {
 		t.Errorf("message should name the adopt command: %s", msg)
 	}
 }
+
+func TestNotAdoptedError_ShellQuotesUnsafePath(t *testing.T) {
+	// A hand-created design dir may contain spaces; the recovery command must
+	// stay copy-paste safe, mirroring workitem validate's repair command.
+	err := NotAdoptedError("workflow/design/my feature")
+	msg := err.Error()
+	if !strings.Contains(msg, "camp workitem adopt 'workflow/design/my feature'") {
+		t.Errorf("adopt command must single-quote a spaced path: %s", msg)
+	}
+	if strings.Contains(msg, "camp workitem adopt workflow/design/my feature ") {
+		t.Errorf("spaced path must not be emitted unquoted: %s", msg)
+	}
+}
+
+func TestAdoptCommand_LeavesSlugPathsUnquoted(t *testing.T) {
+	if got := adoptCommand("workflow/design/thing"); got != "camp workitem adopt workflow/design/thing" {
+		t.Errorf("slug path should stay unquoted, got %q", got)
+	}
+	if got := adoptCommand("workflow/design/my feature"); got != "camp workitem adopt 'workflow/design/my feature'" {
+		t.Errorf("spaced path should be quoted, got %q", got)
+	}
+}
