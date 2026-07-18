@@ -82,7 +82,7 @@ func TestFollowUpTUIModelVisualizesResolvedWorkflow(t *testing.T) {
 	projects := []project.Project{{Name: "web-app"}, {Name: "camp"}}
 	m := newFollowUpTUIModel(context.Background(), "/campaign", projects, cfg)
 
-	if got := m.scopes[0].label; got != "Global defaults" {
+	if got := m.scopes[0].name; got != "Global defaults" {
 		t.Fatalf("global scope label = %q", got)
 	}
 	if len(m.workflowSteps()) != 9 {

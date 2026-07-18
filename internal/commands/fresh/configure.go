@@ -13,6 +13,10 @@ import (
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
+// configureProjectFlag preselects the project scope the interactive configure
+// TUI opens on. Empty means "detect from the working directory".
+var configureProjectFlag string
+
 // newConfigureCommand builds the non-interactive `camp fresh configure`
 // subcommand group for managing follow-up command workflows stored in
 // .campaign/settings/fresh.yaml.
@@ -28,8 +32,14 @@ per-project override lists that replace the global list entirely.
 Run without a subcommand to open the interactive setup for humans. Use
 show, add, move, and remove for scripts and agents.
 
+The interactive setup opens on the project you are standing in, resolved the
+same way camp fresh picks its target, so the overrides you edit are the ones
+that run. Pass --project to open on a different project, and edit the global
+defaults by selecting them in the left pane.
+
 Examples:
   camp fresh configure
+  camp fresh configure --project camp
   camp fresh show-workflow camp
   camp fresh configure show
   camp fresh configure add install --run "npm install"
@@ -40,6 +50,9 @@ Examples:
 		Args: cobra.NoArgs,
 		RunE: runConfigureTUI,
 	}
+
+	configureCmd.Flags().StringVar(&configureProjectFlag, "project", "", "Open the setup on a project scope (default: detected from the current directory)")
+	_ = configureCmd.RegisterFlagCompletionFunc("project", completeProjectName)
 
 	configureCmd.AddCommand(newConfigureShowCommand())
 	configureCmd.AddCommand(newConfigureAddCommand())

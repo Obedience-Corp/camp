@@ -6,6 +6,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -97,6 +98,7 @@ func (m *followUpTUIModel) moveSelectedFollowUp(delta int) tea.Cmd {
 		return nil
 	}
 
+	forked := m.scopeInheritsGlobal()
 	ordered, err := config.ReorderFreshFollowUps(m.effectiveFollowUps(), entry.Name, delta)
 	if err != nil {
 		m.setError(err)
@@ -123,7 +125,12 @@ func (m *followUpTUIModel) moveSelectedFollowUp(delta int) tea.Cmd {
 	if delta < 0 {
 		direction = "up"
 	}
-	m.setStatus(fmt.Sprintf("moved %q %s", entry.Name, direction))
+	status := fmt.Sprintf("moved %q %s in %s", entry.Name, direction, workflowScopeLabel(scopeProjectName(scope)))
+	if forked {
+		status += fmt.Sprintf(" · now overrides the global list with %s",
+			ui.CountLabel(len(ordered), "step", "steps"))
+	}
+	m.setStatus(status)
 	return nil
 }
 
@@ -241,6 +248,22 @@ func (m *followUpTUIModel) closeOverlay() {
 	}
 }
 
+// forkNotice explains, for a project scope with no list of its own, what
+// saving will do to it. A project's follow-up list replaces the global one
+// rather than extending it, so the first edit has to carry the global steps
+// across or the project would silently lose them.
+func (m *followUpTUIModel) forkNotice() string {
+	if !m.scopeInheritsGlobal() {
+		return ""
+	}
+	inherited := len(m.cfg.FollowUp)
+	if inherited == 0 {
+		return fmt.Sprintf("Saving creates a project list for %s.", m.selectedScope())
+	}
+	return fmt.Sprintf("Saving copies the %s into a project list for %s.",
+		ui.CountLabel(inherited, "global step", "global steps"), m.selectedScope())
+}
+
 func (m *followUpTUIModel) saveForm() tea.Cmd {
 	entry := config.FollowUpConfig{
 		Name:            strings.TrimSpace(m.inputs[0].Value()),
@@ -253,6 +276,7 @@ func (m *followUpTUIModel) saveForm() tea.Cmd {
 		return nil
 	}
 
+	forked := m.scopeInheritsGlobal()
 	entries := append([]config.FollowUpConfig(nil), m.effectiveFollowUps()...)
 	if m.formEditName != "" {
 		found := false
@@ -268,6 +292,21 @@ func (m *followUpTUIModel) saveForm() tea.Cmd {
 			return nil
 		}
 	} else {
+		// A name already in the resolved list would be written twice and
+		// rejected on validation. Say which list it came from, because the
+		// answer decides what the user does next: a clashing global step is
+		// edited into a project-specific one rather than added alongside.
+		for _, existing := range entries {
+			if existing.Name != entry.Name {
+				continue
+			}
+			if forked {
+				m.formError = fmt.Sprintf("%q is inherited from global · press e to edit it here", entry.Name)
+			} else {
+				m.formError = fmt.Sprintf("%q already exists here · press e to edit it", entry.Name)
+			}
+			return nil
+		}
 		entries = append(entries, entry)
 	}
 
@@ -281,15 +320,21 @@ func (m *followUpTUIModel) saveForm() tea.Cmd {
 		return nil
 	}
 	m.closeOverlay()
+	action := "added"
 	if m.formEditName != "" {
-		m.setStatus(fmt.Sprintf("updated %q", entry.Name))
-	} else {
-		m.setStatus(fmt.Sprintf("added %q to %s", entry.Name, workflowScopeLabel(scopeProjectName(selected))))
+		action = "updated"
 	}
+	status := fmt.Sprintf("%s %q in %s", action, entry.Name, workflowScopeLabel(scopeProjectName(selected)))
+	if forked {
+		status += fmt.Sprintf(" · now overrides the global list with %s",
+			ui.CountLabel(len(entries), "step", "steps"))
+	}
+	m.setStatus(status)
 	return nil
 }
 
 func (m *followUpTUIModel) deletePendingFollowUp() tea.Cmd {
+	forked := m.scopeInheritsGlobal()
 	entries := make([]config.FollowUpConfig, 0, len(m.effectiveFollowUps()))
 	for _, entry := range m.effectiveFollowUps() {
 		if entry.Name != m.pendingDelete {
@@ -313,6 +358,11 @@ func (m *followUpTUIModel) deletePendingFollowUp() tea.Cmd {
 	m.pendingDelete = ""
 	m.overlay = followUpNoOverlay
 	m.stepCursor = min(m.stepCursor, max(len(m.workflowSteps())-1, 0))
-	m.setStatus(fmt.Sprintf("removed %q", name))
+	status := fmt.Sprintf("removed %q from %s", name, workflowScopeLabel(scopeProjectName(selected)))
+	if forked {
+		status += fmt.Sprintf(" · now overrides the global list with %s",
+			ui.CountLabel(len(entries), "step", "steps"))
+	}
+	m.setStatus(status)
 	return nil
 }

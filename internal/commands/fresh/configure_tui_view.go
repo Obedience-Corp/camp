@@ -12,6 +12,15 @@ import (
 
 var freshTUIPal = theme.TUI()
 
+// freshPaneTextInset and freshOverlayTextInset are the horizontal padding the
+// pane and overlay styles add inside their borders, which lipgloss counts
+// against the width given to Style.Width. Content has to be clamped to the
+// width minus its inset or lipgloss wraps the line inside the box.
+const (
+	freshPaneTextInset    = 2
+	freshOverlayTextInset = 4
+)
+
 var (
 	freshTUITitleStyle = tui.TitleStyle
 	freshTUIHelpStyle  = tui.HelpStyle
@@ -106,7 +115,7 @@ func (m *followUpTUIModel) renderScopesPane(lay freshTUILayout) string {
 	inner := max(width-4, 1)
 	lines := []string{
 		ui.ClampWidth(freshTUITitleStyle.Render("Scopes"), inner),
-		freshMuted.Render("Global · project overrides"),
+		freshMuted.Render("select where a follow-up runs"),
 	}
 	rows := max(lay.bodyRows-2, 1)
 	start, end := ui.WindowRange(m.scopeCursor, len(m.scopes), rows)
@@ -118,7 +127,7 @@ func (m *followUpTUIModel) renderScopesPane(lay freshTUILayout) string {
 		if selected {
 			style = freshSelected
 		}
-		lines = append(lines, ui.ClampWidth(prefix+style.Render(scope.label), inner))
+		lines = append(lines, prefix+style.Render(scopeRowText(scope, max(inner-freshPaneTextInset-lipgloss.Width(prefix), 1))))
 	}
 	if len(m.scopes) == 0 {
 		lines = append(lines, freshMuted.Render("no projects found"))
@@ -126,11 +135,51 @@ func (m *followUpTUIModel) renderScopesPane(lay freshTUILayout) string {
 	return m.finishPane(lines, inner, lay.bodyRows, m.pane == followUpScopesPane)
 }
 
+// scopeRowText fits a scope onto one line of the given width, shedding badges
+// as it narrows. Badges are annotations, so they go before the project name is
+// truncated: a half-spelled name is worse than a missing hint, and a wrapped
+// one is worse than both because it costs the pane a row it does not have.
+//
+// The override badge outranks "here" when only one fits. Which project you are
+// standing in is already obvious from the cursor and the opening status line,
+// while whether a project has its own follow-up list is not visible anywhere
+// else in this pane.
+func scopeRowText(scope followUpScope, width int) string {
+	here := ""
+	if scope.current {
+		here = "here"
+	}
+	override := ""
+	if scope.override {
+		override = fmt.Sprintf("override %d", scope.overrideCount)
+	}
+
+	for _, badges := range [][]string{{here, override}, {override}, {here}} {
+		kept := make([]string, 0, len(badges))
+		for _, badge := range badges {
+			if badge != "" {
+				kept = append(kept, badge)
+			}
+		}
+		if len(kept) == 0 {
+			continue
+		}
+		candidate := scope.name + " · " + strings.Join(kept, " · ")
+		if lipgloss.Width(candidate) <= width {
+			return candidate
+		}
+	}
+	return ui.Truncate(scope.name, width)
+}
+
 func (m *followUpTUIModel) renderWorkflowPane(lay freshTUILayout) string {
 	width := lay.rightWidth
 	inner := max(width-4, 1)
 	scope := workflowScopeLabel(scopeProjectName(m.selectedScope()))
 	headerDetail := "Follow-ups run only after the sync steps succeed"
+	if m.scopeInheritsGlobal() {
+		headerDetail = "Inherits the global follow-ups · editing here makes a project copy"
+	}
 	steps := m.workflowSteps()
 	if m.pane == followUpWorkflowPane && m.stepCursor >= 0 && m.stepCursor < len(steps) {
 		headerDetail = "Selected · " + steps[m.stepCursor].Detail
@@ -183,15 +232,20 @@ func (m *followUpTUIModel) finishPane(lines []string, width, rows int, focused b
 	if len(lines) > want {
 		lines = lines[:want]
 	}
-	content := strings.Join(ui.ClampLines(lines, width), "\n")
 	if m.layout().dual || m.width <= 0 {
 		style := freshPaneBlurred
 		if focused {
 			style = freshPaneFocused
 		}
+		// lipgloss.Width sets the block width with the padding counted inside
+		// it, so the text area is narrower than the number passed to Width.
+		// Clamping to the block width instead lets a full-width line wrap onto
+		// a second row, which pushes the pane past the row budget the layout
+		// allotted and shoves the bottom border off the terminal.
+		content := strings.Join(ui.ClampLines(lines, max(width-freshPaneTextInset, 1)), "\n")
 		return style.Width(width).Render(content)
 	}
-	return content
+	return strings.Join(ui.ClampLines(lines, width), "\n")
 }
 
 func (m *followUpTUIModel) frame(lines []string, width, height int) string {
@@ -241,9 +295,11 @@ func (m *followUpTUIModel) overlayView() string {
 			"",
 			freshPrimary.Render(fmt.Sprintf("Remove %q from %s?", m.pendingDelete, workflowScopeLabel(scopeProjectName(m.selectedScope())))),
 			freshMuted.Render("The remaining workflow steps will stay in order."),
-			"",
-			freshTUIHelpStyle.Render("y/enter remove · n/esc cancel"),
 		}
+		if note := m.forkNotice(); note != "" {
+			body = append(body, freshMuted.Render(note))
+		}
+		body = append(body, "", freshTUIHelpStyle.Render("y/enter remove · n/esc cancel"))
 	case followUpFormOverlay:
 		title := "Add follow-up"
 		if m.formEditName != "" {
@@ -252,6 +308,11 @@ func (m *followUpTUIModel) overlayView() string {
 		body = []string{
 			freshTUITitleStyle.Render(title + " · " + workflowScopeLabel(scopeProjectName(m.selectedScope()))),
 			freshMuted.Render("This command runs after checkout, pull, prune, and branch setup."),
+		}
+		if note := m.forkNotice(); note != "" {
+			body = append(body, freshMuted.Render(note))
+		}
+		body = append(body,
 			"",
 			freshPrimary.Render("Name"),
 			m.inputs[0].View(),
@@ -261,7 +322,7 @@ func (m *followUpTUIModel) overlayView() string {
 			m.inputs[2].View(),
 			freshPrimary.Render("Failure behavior"),
 			freshSelected.Render(failureBehaviorLabel(m.formContinue)),
-		}
+		)
 		if m.formError != "" {
 			body = append(body, freshTUIErrorStyle.Render("✗ "+m.formError))
 		}
@@ -269,7 +330,8 @@ func (m *followUpTUIModel) overlayView() string {
 	}
 
 	boxWidth := min(max(lay.width-6, 30), 76)
-	box := freshOverlay.Width(max(boxWidth-6, 24)).Render(strings.Join(ui.ClampLines(body, max(boxWidth-6, 24)), "\n"))
+	inner := max(boxWidth-6, 24)
+	box := freshOverlay.Width(inner).Render(strings.Join(ui.ClampLines(body, max(inner-freshOverlayTextInset, 1)), "\n"))
 	canvas := lipgloss.NewStyle().
 		Width(lay.width).
 		Height(lay.height).
