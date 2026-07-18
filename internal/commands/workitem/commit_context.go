@@ -48,14 +48,9 @@ func ResolveCommitContext(ctx context.Context, campaignRoot, cwd string, errw io
 		ref = wkitem.RefOf(res.Workitem)
 	}
 
-	festivalRef := ""
-	if res.Source == resolver.SourceFestival {
-		festivalRef = festivalRefFromString(festivalID)
-	}
-
 	return CommitContext{
 		QuestID:     res.QuestID,
-		FestivalRef: festivalRef,
+		FestivalRef: festivalRefForResolved(res, festivalID),
 		WorkitemRef: ref,
 	}
 }

@@ -256,10 +256,7 @@ func attachWorktreeLink(ctx context.Context, root string, wi *wkitem.WorkItem, r
 	if relativeWorktreePath == "" {
 		return links.Link{}, camperrors.NewValidation("worktree", "missing worktree relative path", nil)
 	}
-	workitemID := wi.StableID
-	if workitemID == "" {
-		workitemID = wi.Key
-	}
+	workitemID := wkitem.LinkWorkitemID(wi)
 	return links.AttachPrimary(ctx, root, links.AttachOptions{
 		WorkitemID:  workitemID,
 		WorkitemKey: wi.Key,
