@@ -2,6 +2,7 @@ package worktrees
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 
@@ -98,6 +99,19 @@ func runWorktreesCreate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Resolve and validate the workitem before creating anything, so a bad or
+	// unadopted selector fails fast instead of leaving a dangling worktree.
+	var linkTarget *wkitem.WorkItem
+	if createWorkitem != "" {
+		linkTarget, err = selector.Resolve(ctx, campRoot, createWorkitem, selector.ResolveOptions{})
+		if err != nil {
+			return camperrors.Wrap(err, "resolve workitem "+createWorkitem)
+		}
+		if wkitem.NeedsAdoption(linkTarget) {
+			return wkitem.NotAdoptedError(linkTarget.RelativePath)
+		}
+	}
+
 	// Build options based on new semantics:
 	// - Default: create new branch with worktree name, based on current branch
 	// - --branch: checkout existing branch
@@ -139,6 +153,13 @@ func runWorktreesCreate(cmd *cobra.Command, args []string) error {
 	// Execute creation
 	result, err := creator.Create(ctx, opts)
 	if err != nil {
+		if errors.Is(err, worktree.ErrBranchExists) {
+			return camperrors.Wrap(err, fmt.Sprintf(
+				"branch %q already exists (a previous worktree may have been removed "+
+					"without deleting its branch); reuse it with --branch %s, choose a "+
+					"different name, or delete it with 'git branch -D %s'",
+				opts.Branch, opts.Branch, opts.Branch))
+		}
 		return err
 	}
 
@@ -147,8 +168,8 @@ func runWorktreesCreate(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  Path:   %s\n", ui.Value(result.Path))
 	fmt.Printf("  Branch: %s\n", ui.Value(result.Branch))
 
-	if createWorkitem != "" {
-		link, lerr := linkWorktreeToWorkitem(ctx, campRoot, createWorkitem, filepath.ToSlash(result.RelativePath))
+	if linkTarget != nil {
+		link, lerr := attachWorktreeLink(ctx, campRoot, linkTarget, filepath.ToSlash(result.RelativePath))
 		if lerr != nil {
 			return camperrors.Wrap(lerr, "worktree created but workitem link failed")
 		}
@@ -162,11 +183,10 @@ func runWorktreesCreate(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func linkWorktreeToWorkitem(ctx context.Context, campRoot, selectorQuery, relativeWorktreePath string) (links.Link, error) {
-	wi, err := selector.Resolve(ctx, campRoot, selectorQuery, selector.ResolveOptions{})
-	if err != nil {
-		return links.Link{}, camperrors.Wrap(err, "resolve workitem "+selectorQuery)
-	}
+// attachWorktreeLink attaches a primary worktree link for an already-resolved
+// workitem so the resolver (and therefore camp p commit) picks up the workitem
+// ref inside that tree.
+func attachWorktreeLink(ctx context.Context, campRoot string, wi *wkitem.WorkItem, relativeWorktreePath string) (links.Link, error) {
 	return links.AttachPrimary(ctx, campRoot, links.AttachOptions{
 		WorkitemID:  wkitem.LinkWorkitemID(wi),
 		WorkitemKey: wi.Key,

@@ -13,6 +13,7 @@ const (
 	ErrCodeWorktreeExists   = "WORKTREE_ALREADY_EXISTS"
 	ErrCodeWorktreeNotFound = "WORKTREE_NOT_FOUND"
 	ErrCodeBranchNotFound   = "WORKTREE_BRANCH_NOT_FOUND"
+	ErrCodeBranchExists     = "WORKTREE_BRANCH_EXISTS"
 	ErrCodeInvalidName      = "WORKTREE_INVALID_NAME"
 	ErrCodeGitFailed        = "WORKTREE_GIT_FAILED"
 	ErrCodeStaleWorktree    = "WORKTREE_STALE"
@@ -29,6 +30,7 @@ var (
 	ErrWorktreeExists   = camperrors.Wrap(camperrors.ErrAlreadyExists, "worktree already exists")
 	ErrWorktreeNotFound = camperrors.Wrap(camperrors.ErrNotFound, "worktree not found")
 	ErrBranchNotFound   = camperrors.Wrap(camperrors.ErrNotFound, "branch not found")
+	ErrBranchExists     = camperrors.Wrap(camperrors.ErrAlreadyExists, "branch already exists")
 	ErrInvalidName      = camperrors.Wrap(camperrors.ErrInvalidInput, "invalid worktree name")
 	ErrNotInWorktree    = errors.New("not inside a worktree")
 	ErrStaleWorktree    = errors.New("worktree is stale")
@@ -129,6 +131,16 @@ func BranchNotFoundError(project, branch string) error {
 		WithProject(project).
 		WithBranch(branch).
 		WithCause(ErrBranchNotFound)
+}
+
+// BranchAlreadyExists creates an error for a new-branch worktree whose target
+// branch already exists locally (commonly a branch left behind by a prior
+// 'worktree remove', which does not delete the branch).
+func BranchAlreadyExists(project, branch string) error {
+	return NewError(ErrCodeBranchExists).
+		WithProject(project).
+		WithBranch(branch).
+		WithCause(ErrBranchExists)
 }
 
 // InvalidWorktreeName creates an error for invalid name.
