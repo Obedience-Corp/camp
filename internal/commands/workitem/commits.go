@@ -38,7 +38,7 @@ var commitsPerRepoTimeout = 30 * time.Second
 
 // CommitRecord is the per-row payload emitted by `camp workitem commits`.
 // Repo is the campaign-relative path of the git repo the commit was found
-// in (".") for the campaign root.
+// in, or "campaign-root" for the campaign root itself.
 type CommitRecord struct {
 	SHA      string                  `json:"sha"`
 	Author   string                  `json:"author"`
@@ -487,12 +487,16 @@ func queryRepo(ctx context.Context, campaignRoot, repo, ref string) ([]CommitRec
 	return records, nil
 }
 
+// repoDisplayPath must label the campaign root the same way the ledger scan
+// path does (ledger.RepoLabel: "campaign-root") so records read the same
+// shape regardless of which path (ledger fast-path vs. this git-log scan)
+// answered the query.
 func repoDisplayPath(campaignRoot, repo string) string {
 	rel, err := filepath.Rel(campaignRoot, repo)
 	if err == nil {
 		slashRel := filepath.ToSlash(rel)
 		if slashRel == "." {
-			return "."
+			return "campaign-root"
 		}
 		if slashRel != ".." && !strings.HasPrefix(slashRel, "../") && !filepath.IsAbs(rel) {
 			return slashRel
