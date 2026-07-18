@@ -36,7 +36,15 @@ const (
 
 type followUpScope struct {
 	projectName string
-	label       string
+	// name is the scope's display name on its own, without decoration, so the
+	// renderer can drop badges rather than the identity when space is short.
+	name string
+	// overrideCount is the length of this project's own follow-up list.
+	// override distinguishes an explicit empty list from no list at all.
+	override      bool
+	overrideCount int
+	// current marks the project detected from the working directory.
+	current bool
 }
 
 type followUpTUIModel struct {
@@ -45,6 +53,9 @@ type followUpTUIModel struct {
 	projects []project.Project
 	cfg      *config.FreshConfig
 	scopes   []followUpScope
+	// cwdProject is the project camp fresh would act on from this directory,
+	// or empty at the campaign root.
+	cwdProject string
 
 	pane        followUpPane
 	scopeCursor int
@@ -88,11 +99,40 @@ func runConfigureTUI(cmd *cobra.Command, _ []string) error {
 		return camperrors.Wrap(err, "loading fresh config")
 	}
 
-	program := tea.NewProgram(newFollowUpTUIModel(ctx, campRoot, projects, cfg), tea.WithContext(ctx), tea.WithAltScreen())
+	scope, err := resolveConfigureScope(ctx, campRoot, configureProjectFlag)
+	if err != nil {
+		return err
+	}
+
+	model := newFollowUpTUIModel(ctx, campRoot, projects, cfg)
+	model.selectProjectScope(scope)
+
+	program := tea.NewProgram(model, tea.WithContext(ctx), tea.WithAltScreen())
 	if _, err := program.Run(); err != nil {
 		return camperrors.Wrap(err, "running fresh configuration TUI")
 	}
 	return nil
+}
+
+// resolveConfigureScope names the project the TUI should open on. An explicit
+// --project wins and must resolve; otherwise the working directory decides,
+// through the same resolver `camp fresh` uses to pick its target. Sharing that
+// resolver is what keeps the two commands honest: whatever name fresh will act
+// on is the name whose overrides you are editing. Outside a project the
+// campaign root is the honest answer, so detection failure is not an error.
+func resolveConfigureScope(ctx context.Context, campRoot, flagProject string) (string, error) {
+	if flagProject != "" {
+		resolved, err := project.Resolve(ctx, campRoot, flagProject)
+		if err != nil {
+			return "", err
+		}
+		return resolved.Name, nil
+	}
+	resolved, err := project.Resolve(ctx, campRoot, "")
+	if err != nil {
+		return "", nil
+	}
+	return resolved.Name, nil
 }
 
 func newFollowUpTUIModel(ctx context.Context, root string, projects []project.Project, cfg *config.FreshConfig) *followUpTUIModel {
@@ -115,13 +155,19 @@ func newFollowUpTUIModel(ctx context.Context, root string, projects []project.Pr
 }
 
 func (m *followUpTUIModel) rebuildScopes(selected string) {
-	scopes := []followUpScope{{projectName: globalFollowUpScope, label: "Global defaults"}}
-	names := make(map[string]struct{}, len(m.projects)+len(m.cfg.Projects))
+	scopes := []followUpScope{{projectName: globalFollowUpScope, name: "Global defaults"}}
+	names := make(map[string]struct{}, len(m.projects)+len(m.cfg.Projects)+1)
 	for _, p := range m.projects {
 		names[p.Name] = struct{}{}
 	}
 	for name := range m.cfg.Projects {
 		names[name] = struct{}{}
+	}
+	// The detected project may be a worktree or a linked repo that project.List
+	// does not enumerate. It still needs a row: it is the scope the user is
+	// standing in, and fresh will read overrides under exactly this name.
+	if m.cwdProject != "" {
+		names[m.cwdProject] = struct{}{}
 	}
 	projectNames := make([]string, 0, len(names))
 	for name := range names {
@@ -129,11 +175,16 @@ func (m *followUpTUIModel) rebuildScopes(selected string) {
 	}
 	sort.Strings(projectNames)
 	for _, name := range projectNames {
-		label := name + " · inherits global"
-		if pc, ok := m.cfg.Projects[name]; ok && pc.FollowUp != nil {
-			label = fmt.Sprintf("%s · project override (%d)", name, len(pc.FollowUp))
+		scope := followUpScope{
+			projectName: name,
+			name:        name,
+			current:     name == m.cwdProject,
 		}
-		scopes = append(scopes, followUpScope{projectName: name, label: label})
+		if pc, ok := m.cfg.Projects[name]; ok && pc.FollowUp != nil {
+			scope.override = true
+			scope.overrideCount = len(pc.FollowUp)
+		}
+		scopes = append(scopes, scope)
 	}
 	m.scopes = scopes
 	m.scopeCursor = 0
@@ -146,6 +197,19 @@ func (m *followUpTUIModel) rebuildScopes(selected string) {
 	m.stepCursor = min(m.stepCursor, max(len(m.workflowSteps())-1, 0))
 }
 
+// selectProjectScope opens the TUI on projectName. An empty name, or one with
+// no matching row, leaves the global scope selected.
+func (m *followUpTUIModel) selectProjectScope(projectName string) {
+	if projectName == "" {
+		return
+	}
+	m.cwdProject = projectName
+	m.rebuildScopes(projectName)
+	if m.selectedScope() == projectName {
+		m.setStatus(fmt.Sprintf("editing %s · detected from the current directory", workflowScopeLabel(projectName)))
+	}
+}
+
 func (m *followUpTUIModel) refresh(selected string) error {
 	cfg, err := config.LoadFreshConfig(m.ctx, m.root)
 	if err != nil {
@@ -154,6 +218,19 @@ func (m *followUpTUIModel) refresh(selected string) error {
 	m.cfg = cfg
 	m.rebuildScopes(selected)
 	return nil
+}
+
+// scopeInheritsGlobal reports whether the selected project scope is showing
+// the global list because it has none of its own. Mutating such a scope forks
+// the global steps into a project override, so the callers that change
+// configuration have to say so.
+func (m *followUpTUIModel) scopeInheritsGlobal() bool {
+	scope := m.selectedScope()
+	if scope == globalFollowUpScope {
+		return false
+	}
+	pc, ok := m.cfg.Projects[scope]
+	return !ok || pc.FollowUp == nil
 }
 
 func (m *followUpTUIModel) selectedScope() string {
