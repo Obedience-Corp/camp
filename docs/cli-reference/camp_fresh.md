@@ -56,5 +56,5 @@ camp fresh [project-name] [flags]
 
 * [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
 * [camp fresh all](camp_fresh_all.md)	 - Run fresh across all project submodules
-* [camp fresh configure](camp_fresh_configure.md)	 - Configure camp fresh follow-up commands
+* [camp fresh configure](camp_fresh_configure.md)	 - Configure the camp fresh workflow
 * [camp fresh show-workflow](camp_fresh_show-workflow.md)	 - Show the fresh cycle and configured follow-up steps

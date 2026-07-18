@@ -26,4 +26,4 @@ camp fresh configure show [flags]
 
 ### SEE ALSO
 
-* [camp fresh configure](camp_fresh_configure.md)	 - Configure camp fresh follow-up commands
+* [camp fresh configure](camp_fresh_configure.md)	 - Configure the camp fresh workflow
