@@ -11,6 +11,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/machines"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 	"github.com/Obedience-Corp/camp/internal/remote"
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
@@ -63,8 +64,16 @@ implicitly available as "local" and is never written to that file.
 
 'camp machine diagnose' inspects the per-machine ssh ControlMaster sockets and
 can clear a stale one (the state a sleep or network flap can leave behind, which
-would otherwise hang the next hop until ControlPersist expires).`,
-	Example: `  camp machine list
+would otherwise hang the next hop until ControlPersist expires).
+
+Run without a subcommand in a terminal to manage the fleet interactively: add,
+discover, edit, and remove machines, and see each one's socket state. The
+subcommands stay the interface for scripts and agents, and remain what a
+non-terminal 'camp machine' prints help for.`,
+	Args: cobra.NoArgs,
+	RunE: runMachineTUI,
+	Example: `  camp machine
+  camp machine list
   camp machine add devbox --host devbox.tailnet.ts.net --auth tailscale-ssh
   camp machine add --discover
   camp machine remove devbox
@@ -364,7 +373,10 @@ func renderMachineDiagnoseTable(w io.Writer, rows []machineDiagnoseRow) error {
 			state = r.State + " (was stale, cleared)"
 			reset++
 		}
-		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\n", ui.Label(r.ID), state, ui.Dim(r.Socket)); err != nil {
+		// The human table abbreviates $HOME, which spells out the operator's
+		// account name in any pasted output. --json keeps the absolute path,
+		// since a consumer needs the real one.
+		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\n", ui.Label(r.ID), state, ui.Dim(pathutil.AbbreviateHome(r.Socket))); err != nil {
 			return err
 		}
 	}

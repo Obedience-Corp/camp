@@ -32,8 +32,8 @@ func TestParseTailscaleStatusFixture(t *testing.T) {
 	got := devices[0]
 	want := discoveredDevice{
 		HostName: "Devbox",
-		Host:     "devbox.tail37114b.ts.net",
-		DNSName:  "devbox.tail37114b.ts.net",
+		Host:     "devbox.example-net.ts.net",
+		DNSName:  "devbox.example-net.ts.net",
 		Online:   true,
 		OS:       "linux",
 	}
@@ -127,7 +127,7 @@ func TestParseTailscaleStatusRejectsUnparsableOutput(t *testing.T) {
 
 func TestSanitizeID(t *testing.T) {
 	tests := map[string]string{
-		"devbox.tail37114b.ts.net": "devbox",
+		"devbox.example-net.ts.net": "devbox",
 		"devbox.tailnet.ts.net.":   "devbox",
 		"Buildbox":                 "buildbox",
 		"UPPER.example.com":        "upper",
@@ -140,7 +140,7 @@ func TestSanitizeID(t *testing.T) {
 }
 
 func TestDeriveMachineID(t *testing.T) {
-	id, err := deriveMachineID(discoveredDevice{DNSName: "devbox.tail37114b.ts.net", HostName: "Devbox"})
+	id, err := deriveMachineID(discoveredDevice{DNSName: "devbox.example-net.ts.net", HostName: "Devbox"})
 	if err != nil {
 		t.Fatalf("deriveMachineID() error = %v", err)
 	}
