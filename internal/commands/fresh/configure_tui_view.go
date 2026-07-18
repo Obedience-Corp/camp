@@ -332,11 +332,13 @@ func (m *followUpTUIModel) overlayView() string {
 	boxWidth := min(max(lay.width-6, 30), 76)
 	inner := max(boxWidth-6, 24)
 	box := freshOverlay.Width(inner).Render(strings.Join(ui.ClampLines(body, max(inner-freshOverlayTextInset, 1)), "\n"))
-	canvas := lipgloss.NewStyle().
-		Width(lay.width).
-		Height(lay.height).
-		Background(freshTUIPal.BgOverlay).
-		Render(lipgloss.Place(lay.width, lay.height, lipgloss.Center, lipgloss.Center, box))
+	// Place paints its own filler, so the dimmed background has to be handed to
+	// Place rather than wrapped around it. A background set on the surrounding
+	// style does not survive the resets the box emits, which left the padding to
+	// the right of the box on the box's own rows unstyled: a black notch down
+	// one side of an otherwise dimmed screen.
+	canvas := lipgloss.Place(lay.width, lay.height, lipgloss.Center, lipgloss.Center, box,
+		lipgloss.WithWhitespaceBackground(freshTUIPal.BgOverlay))
 	return ui.FitFullscreenView(canvas, lay.height)
 }
 

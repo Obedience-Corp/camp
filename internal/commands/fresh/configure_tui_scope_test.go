@@ -4,10 +4,12 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 )
 
 func globalAndProjectConfig() *config.FreshConfig {
@@ -98,7 +100,7 @@ func TestForkNoticeDescribesWhatSavingDoes(t *testing.T) {
 	}
 
 	m.rebuildScopes("web")
-	want := "Saving copies the 2 global steps into a project list for web."
+	want := "Saving copies the 2 global steps into this project's own list."
 	if got := m.forkNotice(); got != want {
 		t.Errorf("inheriting scope notice = %q, want %q", got, want)
 	}
@@ -109,7 +111,7 @@ func TestForkNoticeWithNoGlobalSteps(t *testing.T) {
 	m := newFollowUpTUIModel(context.Background(), "/campaign", []project.Project{{Name: "web"}}, cfg)
 	m.rebuildScopes("web")
 
-	want := "Saving creates a project list for web."
+	want := "Saving creates a follow-up list for this project."
 	if got := m.forkNotice(); got != want {
 		t.Errorf("notice = %q, want %q", got, want)
 	}
@@ -254,4 +256,80 @@ func TestRenderedPanesStayWithinTheirRowBudget(t *testing.T) {
 			}
 		}
 	}
+}
+
+// The dimmed backdrop behind an overlay has to cover the whole canvas. Setting
+// it on a style wrapped around lipgloss.Place did not: the box emits its own
+// resets, so the filler to the right of the box on the box's own rows came out
+// unstyled and showed as a black notch down one side of the screen.
+func TestOverlayBackdropCoversEveryRow(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(termenv.Ascii) })
+
+	m := newFollowUpTUIModel(context.Background(), "/campaign", []project.Project{{Name: "payments-api"}}, globalAndProjectConfig())
+	m.selectProjectScope("payments-api")
+	m.width, m.height = 150, 35
+	m.openFollowUpForm(false, config.FollowUpConfig{})
+
+	lines := strings.Split(m.View(), "\n")
+	if len(lines) != m.height {
+		t.Fatalf("overlay rendered %d rows, want %d", len(lines), m.height)
+	}
+	for i, line := range lines {
+		if w := lipgloss.Width(line); w != m.width {
+			t.Errorf("row %d width %d, want %d", i, w, m.width)
+		}
+		for _, col := range unpaintedMarginColumns(line) {
+			t.Errorf("row %d has backdrop with no background at column %d: %q", i, col, line)
+		}
+	}
+}
+
+// unpaintedMarginColumns reports the columns in a rendered row's leading and
+// trailing whitespace that carry no background color. A terminal draws those
+// cells in its own background, so they are holes in the backdrop around the
+// overlay box. Only the margins are checked: whitespace between the box
+// borders belongs to the widgets inside it, which style themselves.
+func unpaintedMarginColumns(line string) []int {
+	type cell struct {
+		r       rune
+		painted bool
+	}
+	var cells []cell
+
+	bg := false
+	for i := 0; i < len(line); {
+		if strings.HasPrefix(line[i:], "\x1b[") {
+			end := strings.IndexByte(line[i:], 'm')
+			if end < 0 {
+				break
+			}
+			for _, param := range strings.Split(line[i+2:i+end], ";") {
+				switch param {
+				case "0", "":
+					bg = false
+				case "48":
+					bg = true
+				}
+			}
+			i += end + 1
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(line[i:])
+		cells = append(cells, cell{r: r, painted: bg})
+		i += size
+	}
+
+	var unpainted []int
+	for i := 0; i < len(cells) && cells[i].r == ' '; i++ {
+		if !cells[i].painted {
+			unpainted = append(unpainted, i)
+		}
+	}
+	for i := len(cells) - 1; i >= 0 && cells[i].r == ' '; i-- {
+		if !cells[i].painted {
+			unpainted = append(unpainted, i)
+		}
+	}
+	return unpainted
 }

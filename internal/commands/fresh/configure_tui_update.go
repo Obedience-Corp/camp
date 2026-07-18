@@ -256,12 +256,14 @@ func (m *followUpTUIModel) forkNotice() string {
 	if !m.scopeInheritsGlobal() {
 		return ""
 	}
+	// The overlay title already names the project, and a long project name here
+	// would push the line past the overlay's width and be clipped.
 	inherited := len(m.cfg.FollowUp)
 	if inherited == 0 {
-		return fmt.Sprintf("Saving creates a project list for %s.", m.selectedScope())
+		return "Saving creates a follow-up list for this project."
 	}
-	return fmt.Sprintf("Saving copies the %s into a project list for %s.",
-		ui.CountLabel(inherited, "global step", "global steps"), m.selectedScope())
+	return fmt.Sprintf("Saving copies the %s into this project's own list.",
+		ui.CountLabel(inherited, "global step", "global steps"))
 }
 
 func (m *followUpTUIModel) saveForm() tea.Cmd {
