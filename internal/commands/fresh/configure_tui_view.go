@@ -199,9 +199,9 @@ func (m *followUpTUIModel) frame(lines []string, width, height int) string {
 }
 
 func (m *followUpTUIModel) footer(width int) string {
-	full := "j/k: move · h/l: switch pane · a: add · e: edit · d: delete · r: reload · ?: help · q: quit"
-	mid := "j/k move · h/l pane · a add · e edit · d delete · ? help · q quit"
-	short := "j/k · h/l · a/e/d · ? · q"
+	full := "j/k: select · K/J: move step · h/l: switch pane · a: add · e: edit · d: delete · r: reload · ?: help · q: quit"
+	mid := "j/k select · K/J move · h/l pane · a add · e edit · d delete · ? help · q quit"
+	short := "j/k · K/J · h/l · a/e/d · ? · q"
 	return freshTUIHelpStyle.Render(ui.CollapseHelp(width, full, mid, short, "q: quit"))
 }
 
@@ -228,6 +228,7 @@ func (m *followUpTUIModel) overlayView() string {
 			"",
 			freshPrimary.Render("a  add a follow-up after the core sync steps"),
 			freshPrimary.Render("e  edit the selected follow-up"),
+			freshPrimary.Render("K/J  move the selected follow-up earlier/later"),
 			freshPrimary.Render("d  delete the selected follow-up"),
 			freshPrimary.Render("r  reload fresh.yaml from disk"),
 			freshPrimary.Render("h/l or tab  move between scopes and workflow"),

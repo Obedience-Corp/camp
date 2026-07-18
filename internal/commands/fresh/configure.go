@@ -26,7 +26,7 @@ successful sync/prune/branch cycle. Configuration lives in
 per-project override lists that replace the global list entirely.
 
 Run without a subcommand to open the interactive setup for humans. Use
-show, add, and remove for scripts and agents.
+show, add, move, and remove for scripts and agents.
 
 Examples:
   camp fresh configure
@@ -34,6 +34,7 @@ Examples:
   camp fresh configure show
   camp fresh configure add install --run "npm install"
   camp fresh configure add build --run "go build ./..." --project camp --dir cmd/camp
+  camp fresh configure move build --up --project camp
   camp fresh configure remove install
   camp fresh configure remove build --project camp`,
 		Args: cobra.NoArgs,
@@ -42,6 +43,7 @@ Examples:
 
 	configureCmd.AddCommand(newConfigureShowCommand())
 	configureCmd.AddCommand(newConfigureAddCommand())
+	configureCmd.AddCommand(newConfigureMoveCommand())
 	configureCmd.AddCommand(newConfigureRemoveCommand())
 
 	return configureCmd
@@ -209,6 +211,59 @@ func newConfigureRemoveCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&project, "project", "", "Scope removal to a single project (default: global)")
+
+	return cmd
+}
+
+func newConfigureMoveCommand() *cobra.Command {
+	var (
+		project string
+		up      bool
+		down    bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "move <name>",
+		Short: "Move a follow-up command workflow step",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if up == down {
+				return camperrors.NewValidation("direction", "choose exactly one of --up or --down", nil)
+			}
+
+			ctx := cmd.Context()
+			campRoot, err := campaign.DetectCached(ctx)
+			if err != nil {
+				return camperrors.Wrap(err, "not in a campaign")
+			}
+
+			cfg, err := config.LoadFreshConfig(ctx, campRoot)
+			if err != nil {
+				return camperrors.Wrap(err, "loading fresh config")
+			}
+			name := args[0]
+			delta := 1
+			direction := "down"
+			if up {
+				delta = -1
+				direction = "up"
+			}
+			ordered, err := config.ReorderFreshFollowUps(cfg.ResolveFreshFollowUps(project), name, delta)
+			if err != nil {
+				return err
+			}
+			if err := config.SetFreshFollowUps(ctx, campRoot, project, ordered); err != nil {
+				return err
+			}
+
+			fmt.Println(ui.Success(fmt.Sprintf("Moved follow-up %q %s (%s)", name, direction, followUpScopeDescription(project))))
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&project, "project", "", "Scope the move to a single project (default: global)")
+	cmd.Flags().BoolVar(&up, "up", false, "Move the step earlier in the workflow")
+	cmd.Flags().BoolVar(&down, "down", false, "Move the step later in the workflow")
 
 	return cmd
 }
