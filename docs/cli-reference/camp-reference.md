@@ -201,11 +201,17 @@ Attach an external directory to a campaign
 Attach a non-project directory to a campaign by writing a .camp marker.
 
 The user manages the symlink (if any). camp attach only writes the marker at
-the resolved target so commands run from inside that directory know which
-campaign owns it.
+the resolved target so commands run from inside that directory can recover
+campaign context. Attachment markers may be shared by multiple campaigns;
+running attach again from another campaign adds that campaign to the marker.
 
 If the target is reached through a symlink, camp follows it once and writes
 the marker at the final directory.
+
+When several campaigns share one attachment, which campaign a command resolves
+depends on how the directory is reached: entering through a campaign-local
+symlink resolves that campaign, while a bare cd into the shared target itself
+resolves to the first campaign it was attached to.
 
 Campaign selection:
   - inside a campaign, omit --campaign to attach to the current campaign
@@ -227,7 +233,7 @@ camp attach <path> [flags]
 
 ```
   -c, --campaign string   Target campaign by name or ID; omit value to pick interactively
-      --force             Overwrite an existing attachment marker
+      --force             Rewrite an existing attachment marker
   -h, --help              help for attach
 ```
 
@@ -988,14 +994,20 @@ camp date <path> [flags]
 
 ## camp detach
 
-Remove the attachment marker from a directory
+Remove the current campaign's attachment binding
 
 ### Synopsis
 
-Remove the .camp attachment marker from the target directory.
+Remove the current campaign's binding from the .camp attachment marker.
 
 Refuses on linked-project markers; use 'camp project unlink' for those.
-The user-managed symlink (if any) is not modified.
+The user-managed symlink (if any) is not modified. If run outside any campaign,
+the entire attachment marker is removed.
+
+On an attachment shared by several campaigns this removes only the current
+campaign's binding; the others keep resolving. Detaching the campaign that a
+bare cd into the shared target resolved to shifts that fallback to the next
+remaining campaign.
 
 Examples:
   camp detach docs/examples/external-repo

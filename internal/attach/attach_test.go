@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -165,6 +166,45 @@ func TestAttach_RefusesExistingMarkerWithoutForce(t *testing.T) {
 	}
 	if !errors.Is(err, camperrors.ErrAlreadyExists) {
 		t.Errorf("error = %v, want ErrAlreadyExists", err)
+	}
+}
+
+func TestAttach_AddsCampaignToExistingAttachment(t *testing.T) {
+	campaignRoot, _ := setupCampaign(t)
+
+	external := filepath.Join(t.TempDir(), "external")
+	if err := os.MkdirAll(external, 0755); err != nil {
+		t.Fatalf("mkdir external: %v", err)
+	}
+	if err := campaign.WriteMarker(external, campaign.LinkMarker{
+		Version:          campaign.LinkMarkerVersion,
+		Kind:             campaign.KindAttachment,
+		ActiveCampaignID: "other-campaign",
+	}); err != nil {
+		t.Fatalf("write existing marker: %v", err)
+	}
+
+	if _, err := Attach(context.Background(), campaignRoot, "campaign-xyz", external, Options{}); err != nil {
+		t.Fatalf("Attach shared target: %v", err)
+	}
+
+	marker, err := campaign.ReadMarker(external)
+	if err != nil {
+		t.Fatalf("ReadMarker: %v", err)
+	}
+	if got, want := marker.EffectiveCampaignIDs(), []string{"other-campaign", "campaign-xyz"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("EffectiveCampaignIDs = %v, want %v", got, want)
+	}
+
+	if _, err := DetachForCampaign(context.Background(), external, "campaign-xyz"); err != nil {
+		t.Fatalf("DetachForCampaign: %v", err)
+	}
+	marker, err = campaign.ReadMarker(external)
+	if err != nil {
+		t.Fatalf("ReadMarker after detach: %v", err)
+	}
+	if got, want := marker.EffectiveCampaignIDs(), []string{"other-campaign"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("remaining EffectiveCampaignIDs = %v, want %v", got, want)
 	}
 }
 

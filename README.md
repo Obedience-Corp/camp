@@ -177,11 +177,15 @@ For the rest of the project surface (`list`, `remove`, `unlink`, `stage`,
 Some directories belong to a campaign for context but aren't full projects
 (notes, reference repos, scratch dirs). After creating a symlink to one
 inside the campaign tree, run `camp attach` on the symlink to bind its
-target so detection works from inside it:
+target so detection works from inside it. The same attachment can be bound
+to multiple campaigns; each campaign-local symlink selects its own context:
 
 ```bash
 ln -s ~/Dev/external-repo docs/examples/external-repo
 camp attach docs/examples/external-repo
+
+# From another campaign, attach the same resolved target again:
+camp attach /path/to/external-repo --campaign other-campaign
 
 # Force the campaign picker instead of using the current campaign:
 camp attach docs/examples/external-repo --campaign
@@ -194,6 +198,11 @@ cgo external-repo
 
 `camp detach <path>` removes the marker. Linked projects keep using
 `camp project link` / `camp project unlink`.
+
+When a shared attachment is accessed directly rather than through a
+campaign-local symlink, camp resolves it to the first bound campaign
+(`active_campaign_id`). Detaching that fallback campaign makes the next bound
+campaign active.
 
 ### Planning
 
