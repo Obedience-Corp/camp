@@ -202,39 +202,19 @@ func (b *Builder) scanWorktrees(ctx context.Context) ([]Target, error) {
 // worktreeTarget builds a navigation target for a linked worktree entry. It
 // reports ok=false for entries that are not navigable parallel worktrees: the
 // project's own main working tree, bare entries, git-internal paths, and hidden
-// directories.
+// directories. The classification itself lives in worktree.IsLinkedWorktree so
+// every enumerator (nav index, camp worktrees list, camp project worktree
+// list) agrees on what counts as a linked worktree.
 func worktreeTarget(projectName, projectPath string, entry worktree.GitWorktreeEntry) (Target, bool) {
-	if entry.IsBare || entry.Path == "" {
+	if !worktree.IsLinkedWorktree(projectPath, entry) {
 		return Target{}, false
 	}
 
-	clean := filepath.Clean(entry.Path)
-
-	// Skip the project's own checkout (the main working tree). For submodules
-	// git reports the main worktree under <superproject>/.git/modules/<name>,
-	// so also skip any path that lives inside a .git directory.
-	if clean == filepath.Clean(projectPath) || containsGitDir(clean) {
-		return Target{}, false
-	}
-
-	name := filepath.Base(clean)
-	if name == "" || name == "." || strings.HasPrefix(name, ".") {
-		return Target{}, false
-	}
+	name := filepath.Base(filepath.Clean(entry.Path))
 
 	return Target{
 		Name:     projectName + "@" + name,
 		Path:     entry.Path,
 		Category: nav.CategoryWorktrees,
 	}, true
-}
-
-// containsGitDir reports whether path has a ".git" path component.
-func containsGitDir(path string) bool {
-	for _, part := range strings.Split(path, string(filepath.Separator)) {
-		if part == ".git" {
-			return true
-		}
-	}
-	return false
 }
