@@ -23,14 +23,24 @@ var configureProjectFlag string
 func newConfigureCommand() *cobra.Command {
 	configureCmd := &cobra.Command{
 		Use:   "configure",
-		Short: "Configure camp fresh follow-up commands",
-		Long: `Manage the follow-up command workflows camp fresh runs after a
-successful sync/prune/branch cycle. Configuration lives in
-.campaign/settings/fresh.yaml: a global default list, plus optional
-per-project override lists that replace the global list entirely.
+		Short: "Configure the camp fresh workflow",
+		Long: `Configure what camp fresh does after a merge. Configuration lives in
+.campaign/settings/fresh.yaml, as campaign-wide defaults plus optional
+per-project overrides.
 
-Run without a subcommand to open the interactive setup for humans. Use
-show, add, move, and remove for scripts and agents.
+Run without a subcommand to open the interactive setup for humans, which
+groups the fresh sequence by what you can change about each step:
+
+  Sync        checkout, pull, and safety checks; always runs
+  Settings    branch, push_upstream, prune, and prune_remote
+  Follow-ups  your own commands, run after a successful cycle
+
+Press enter on a settings step to change it, and a/e/d/K/J on a follow-up to
+add, edit, delete, or reorder it. prune and prune_remote are campaign-wide,
+so they are changed under Global defaults rather than under a project.
+
+The subcommands below cover follow-ups only, for scripts and agents; edit the
+other keys in the interactive setup or in fresh.yaml directly.
 
 The interactive setup opens on the project you are standing in, resolved the
 same way camp fresh picks its target, so the overrides you edit are the ones

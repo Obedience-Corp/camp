@@ -59,25 +59,28 @@ func (m *followUpTUIModel) updateBrowse(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		if m.pane == followUpScopesPane {
 			m.pane = followUpWorkflowPane
+			return m, nil
 		}
+		return m.activateSelectedStep()
 	case "a":
 		m.openFollowUpForm(false, config.FollowUpConfig{})
 		return m, textinput.Blink
 	case "e":
-		_, entry, ok := m.selectedFollowUp()
-		if ok {
+		if _, entry, ok := m.selectedFollowUp(); ok {
 			m.openFollowUpForm(true, entry)
 			return m, textinput.Blink
 		}
-		m.setError(camperrors.New("select a follow-up step to edit"))
+		// e and enter mean the same thing on a settings row, so a user who
+		// learned "e edits" from the follow-ups section is not bounced off the
+		// section above it.
+		return m.activateSelectedStep()
 	case "d":
-		_, entry, ok := m.selectedFollowUp()
-		if ok {
+		if _, entry, ok := m.selectedFollowUp(); ok {
 			m.pendingDelete = entry.Name
 			m.overlay = followUpDeleteOverlay
 			return m, nil
 		}
-		m.setError(camperrors.New("select a follow-up step to delete"))
+		m.noticeForUnsupportedVerb("delete")
 	case "r":
 		selected := m.selectedScope()
 		if err := m.refresh(selected); err != nil {
@@ -91,10 +94,80 @@ func (m *followUpTUIModel) updateBrowse(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// activateSelectedStep opens the editor that fits the row under the cursor.
+// Rows with nothing to configure explain themselves rather than failing: the
+// pane already groups them under a header that says so, and a red error for
+// pressing enter on "Pull" would be noise.
+func (m *followUpTUIModel) activateSelectedStep() (tea.Model, tea.Cmd) {
+	step, ok := m.selectedStep()
+	if !ok {
+		return m, nil
+	}
+
+	switch {
+	case step.Kind == freshStepFollowUp:
+		if _, entry, found := m.selectedFollowUp(); found {
+			m.openFollowUpForm(true, entry)
+			return m, textinput.Blink
+		}
+		return m, nil
+	case step.Kind == freshStepSetting && step.GlobalOnly && m.inProjectScope():
+		// Writing the key under this project would produce a fresh.yaml that
+		// looks configured and changes nothing, because ResolveFreshPrune never
+		// consults a project. Send the user where the key actually lives.
+		m.setNotice(fmt.Sprintf("%s is a campaign-wide setting · select Global defaults to change it",
+			settingTitle(step.Setting)))
+		return m, nil
+	case step.Kind == freshStepSetting:
+		m.openSettingEditor(step)
+		return m, textinput.Blink
+	default:
+		m.setNotice(fmt.Sprintf("%s always runs · nothing to configure", step.Title))
+		return m, nil
+	}
+}
+
+// noticeForUnsupportedVerb explains why a follow-up verb did nothing on the
+// selected row, naming the row rather than restating the requirement.
+func (m *followUpTUIModel) noticeForUnsupportedVerb(verb string) {
+	step, ok := m.selectedStep()
+	if !ok {
+		m.setNotice("select a follow-up step to " + verb)
+		return
+	}
+	if step.Kind == freshStepSetting {
+		m.setNotice(fmt.Sprintf("%q is a fresh setting · press enter to change it, not %s", step.Title, verb))
+		return
+	}
+	m.setNotice(fmt.Sprintf("%q is a built-in step · only follow-ups can be %sd", step.Title, verb))
+}
+
+func (m *followUpTUIModel) openSettingEditor(step freshWorkflowStep) {
+	m.overlay = followUpSettingOverlay
+	m.settingStep = step
+	m.settingError = ""
+	m.settingOptions = m.settingOptionsFor(step)
+
+	current := m.currentSettingAction(step)
+	m.settingChoice = 0
+	for i, option := range m.settingOptions {
+		if option.action == current {
+			m.settingChoice = i
+			break
+		}
+	}
+
+	m.settingInput.SetValue(m.settingScopeBranch())
+	m.settingInput.Blur()
+	if step.Setting == freshSettingBranch && current == freshSettingCustomBranch {
+		m.settingInput.Focus()
+	}
+}
+
 func (m *followUpTUIModel) moveSelectedFollowUp(delta int) tea.Cmd {
 	_, entry, ok := m.selectedFollowUp()
 	if !ok {
-		m.setError(camperrors.New("select a follow-up step to move"))
+		m.noticeForUnsupportedVerb("move")
 		return nil
 	}
 
@@ -201,9 +274,157 @@ func (m *followUpTUIModel) updateOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case followUpFormOverlay:
 		return m.updateForm(msg)
+	case followUpSettingOverlay:
+		return m.updateSettingEditor(msg)
 	default:
 		return m, nil
 	}
+}
+
+func (m *followUpTUIModel) updateSettingEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c":
+		m.quitting = true
+		return m, tea.Quit
+	case "esc":
+		m.closeSettingEditor()
+		return m, nil
+	case "up", "shift+tab":
+		m.moveSettingChoice(-1)
+		return m, nil
+	case "down", "tab":
+		m.moveSettingChoice(1)
+		return m, nil
+	case "enter":
+		return m, m.saveSettingEditor()
+	}
+
+	// Typing only reaches the branch input, and only while the custom option is
+	// the selected one. Anywhere else the keystroke would edit a value the user
+	// cannot see, so it is dropped.
+	if m.settingInput.Focused() {
+		var cmd tea.Cmd
+		m.settingInput, cmd = m.settingInput.Update(msg)
+		return m, cmd
+	}
+	return m, nil
+}
+
+func (m *followUpTUIModel) moveSettingChoice(delta int) {
+	if len(m.settingOptions) == 0 {
+		return
+	}
+	m.settingChoice = (m.settingChoice + delta + len(m.settingOptions)) % len(m.settingOptions)
+	m.settingError = ""
+	if m.selectedSettingAction() == freshSettingCustomBranch {
+		m.settingInput.Focus()
+		return
+	}
+	m.settingInput.Blur()
+}
+
+func (m *followUpTUIModel) selectedSettingAction() freshSettingAction {
+	if m.settingChoice < 0 || m.settingChoice >= len(m.settingOptions) {
+		return freshSettingInherit
+	}
+	return m.settingOptions[m.settingChoice].action
+}
+
+func (m *followUpTUIModel) closeSettingEditor() {
+	m.overlay = followUpNoOverlay
+	m.settingError = ""
+	m.settingInput.Blur()
+}
+
+func (m *followUpTUIModel) saveSettingEditor() tea.Cmd {
+	step := m.settingStep
+	scope := m.selectedScope()
+	projectName := scopeProjectName(scope)
+	action := m.selectedSettingAction()
+
+	var (
+		err     error
+		outcome string
+	)
+	switch step.Setting {
+	case freshSettingBranch:
+		branch, description, verr := m.resolveBranchAction(action)
+		if verr != nil {
+			m.settingError = verr.Error()
+			return nil
+		}
+		outcome = description
+		err = config.SetFreshBranch(m.ctx, m.root, projectName, branch)
+	case freshSettingPushUpstream:
+		value := boolForAction(action)
+		outcome = settingOutcome("push_upstream", value)
+		err = config.SetFreshPushUpstream(m.ctx, m.root, projectName, value)
+	case freshSettingPrune:
+		value := boolForAction(action)
+		outcome = settingOutcome("prune", value)
+		err = config.SetFreshPrune(m.ctx, m.root, value)
+	case freshSettingPruneRemote:
+		value := boolForAction(action)
+		outcome = settingOutcome("prune_remote", value)
+		err = config.SetFreshPruneRemote(m.ctx, m.root, value)
+	default:
+		m.closeSettingEditor()
+		return nil
+	}
+
+	if err != nil {
+		m.settingError = err.Error()
+		return nil
+	}
+	if err := m.refresh(scope); err != nil {
+		m.settingError = err.Error()
+		return nil
+	}
+
+	m.closeSettingEditor()
+	m.setStatus(fmt.Sprintf("%s in %s", outcome, workflowScopeLabel(projectName)))
+	return nil
+}
+
+// resolveBranchAction turns the selected option into the branch value to
+// write, rejecting a custom branch with no name rather than writing an empty
+// string that would read back as "no branch".
+func (m *followUpTUIModel) resolveBranchAction(action freshSettingAction) (*string, string, error) {
+	switch action {
+	case freshSettingInherit:
+		return nil, "branch now inherits the global default", nil
+	case freshSettingNoBranch:
+		empty := ""
+		return &empty, "branch cleared · fresh stays on the default branch", nil
+	default:
+		name := strings.TrimSpace(m.settingInput.Value())
+		if name == "" {
+			return nil, "", camperrors.NewValidation("branch", "must not be empty; choose \"no branch\" to stay on the default branch", nil)
+		}
+		return &name, fmt.Sprintf("branch set to %s", name), nil
+	}
+}
+
+// boolForAction maps an option onto the pointer the config writers take, where
+// nil clears the key.
+func boolForAction(action freshSettingAction) *bool {
+	switch action {
+	case freshSettingOn:
+		on := true
+		return &on
+	case freshSettingOff:
+		off := false
+		return &off
+	default:
+		return nil
+	}
+}
+
+func settingOutcome(key string, value *bool) string {
+	if value == nil {
+		return key + " now inherits the global default"
+	}
+	return fmt.Sprintf("%s set to %s", key, onOffWord(*value))
 }
 
 func (m *followUpTUIModel) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

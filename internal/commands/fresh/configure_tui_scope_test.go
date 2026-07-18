@@ -39,7 +39,7 @@ func TestSelectProjectScopeOpensOnDetectedProject(t *testing.T) {
 	if !strings.Contains(m.status, "project web") {
 		t.Errorf("status %q does not name the detected project", m.status)
 	}
-	if m.statusErr {
+	if m.statusLevel == statusError {
 		t.Error("detecting a project scope reported an error status")
 	}
 }
