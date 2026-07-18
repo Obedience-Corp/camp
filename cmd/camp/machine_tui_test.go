@@ -10,6 +10,7 @@ import (
 	"github.com/muesli/termenv"
 
 	"github.com/Obedience-Corp/camp/internal/machines"
+	"github.com/Obedience-Corp/camp/internal/remote"
 )
 
 func fleetFile() *machines.File {
@@ -215,7 +216,7 @@ func TestRemovePendingDropsOnlyThatMachine(t *testing.T) {
 func TestPrefillFromDeviceOpensFormWithoutSaving(t *testing.T) {
 	path := isolateMachines(t)
 	m := newMachineTUIModel(t.Context(), &machines.File{Version: 1})
-	m.devices = []discoveredDevice{{HostName: "archdtop", Host: "archdtop.tail37114b.ts.net", DNSName: "archdtop.tail37114b.ts.net", Online: true}}
+	m.devices = []discoveredDevice{{HostName: "workstation", Host: "workstation.example-net.ts.net", DNSName: "workstation.example-net.ts.net", Online: true}}
 	m.overlay = machineDiscoverOverlay
 
 	m.prefillFromDevice()
@@ -223,7 +224,7 @@ func TestPrefillFromDeviceOpensFormWithoutSaving(t *testing.T) {
 	if m.overlay != machineFormOverlay {
 		t.Fatalf("overlay = %v, want the form", m.overlay)
 	}
-	if got := m.form.value(machineFieldHost); got != "archdtop.tail37114b.ts.net" {
+	if got := m.form.value(machineFieldHost); got != "workstation.example-net.ts.net" {
 		t.Errorf("host = %q, want the device host", got)
 	}
 	if m.form.auth != machines.AuthTailscaleSSH {
@@ -306,5 +307,41 @@ func TestMachinePanesStayWithinTheirRowBudget(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// The socket path is rendered in a pane people screenshot and in output people
+// paste into issues. An absolute path there spells out the operator's account
+// name, so both surfaces abbreviate $HOME the way the rest of the pane does.
+func TestSocketPathIsAbbreviatedInHumanOutput(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.Ascii)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skipf("no home directory: %v", err)
+	}
+
+	m := newMachineTUIModel(t.Context(), fleetFile())
+	m.width, m.height = 120, 30
+	m.cursor = 1
+	m.sockets = map[string]remote.SocketDiagnosis{
+		"buildbox": {MachineID: "buildbox", Socket: filepath.Join(home, ".obey", "ssh-ctl", "buildbox.sock"), State: remote.ControlNone},
+	}
+
+	pane := m.renderDetailPane(m.layout())
+	if strings.Contains(pane, home) {
+		t.Errorf("detail pane leaked the home directory:\n%s", pane)
+	}
+	if !strings.Contains(pane, "~/.obey/ssh-ctl/buildbox.sock") {
+		t.Errorf("detail pane did not show the abbreviated socket path:\n%s", pane)
+	}
+
+	var table strings.Builder
+	if err := renderMachineDiagnoseTable(&table, []machineDiagnoseRow{
+		{ID: "buildbox", Socket: filepath.Join(home, ".obey", "ssh-ctl", "buildbox.sock"), State: "none"},
+	}); err != nil {
+		t.Fatalf("rendering diagnose table: %v", err)
+	}
+	if strings.Contains(table.String(), home) {
+		t.Errorf("diagnose table leaked the home directory:\n%s", table.String())
 	}
 }

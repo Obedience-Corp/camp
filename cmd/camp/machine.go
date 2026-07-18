@@ -11,6 +11,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/machines"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 	"github.com/Obedience-Corp/camp/internal/remote"
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
@@ -372,7 +373,10 @@ func renderMachineDiagnoseTable(w io.Writer, rows []machineDiagnoseRow) error {
 			state = r.State + " (was stale, cleared)"
 			reset++
 		}
-		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\n", ui.Label(r.ID), state, ui.Dim(r.Socket)); err != nil {
+		// The human table abbreviates $HOME, which spells out the operator's
+		// account name in any pasted output. --json keeps the absolute path,
+		// since a consumer needs the real one.
+		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\n", ui.Label(r.ID), state, ui.Dim(pathutil.AbbreviateHome(r.Socket))); err != nil {
 			return err
 		}
 	}

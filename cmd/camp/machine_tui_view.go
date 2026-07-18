@@ -8,6 +8,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/intent/tui"
 	"github.com/Obedience-Corp/camp/internal/machines"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 	"github.com/Obedience-Corp/camp/internal/remote"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/Obedience-Corp/camp/internal/ui/theme"
@@ -26,16 +27,16 @@ const (
 )
 
 var (
-	machineTitleStyle   = tui.TitleStyle
-	machineHelpStyle    = tui.HelpStyle
-	machineErrorStyle   = tui.ErrorStyle
-	machineOKStyle      = tui.SuccessStyle
-	machinePaneFocused  = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(machineTUIPal.BorderFocus).Padding(0, 1)
-	machinePaneBlurred  = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(machineTUIPal.Border).Padding(0, 1)
-	machineSelected     = lipgloss.NewStyle().Foreground(machineTUIPal.Accent).Bold(true)
-	machinePrimary      = lipgloss.NewStyle().Foreground(machineTUIPal.TextPrimary)
-	machineMuted        = lipgloss.NewStyle().Foreground(machineTUIPal.TextMuted)
-	machineWarn         = lipgloss.NewStyle().Foreground(machineTUIPal.Warning)
+	machineTitleStyle  = tui.TitleStyle
+	machineHelpStyle   = tui.HelpStyle
+	machineErrorStyle  = tui.ErrorStyle
+	machineOKStyle     = tui.SuccessStyle
+	machinePaneFocused = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(machineTUIPal.BorderFocus).Padding(0, 1)
+	machinePaneBlurred = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(machineTUIPal.Border).Padding(0, 1)
+	machineSelected    = lipgloss.NewStyle().Foreground(machineTUIPal.Accent).Bold(true)
+	machinePrimary     = lipgloss.NewStyle().Foreground(machineTUIPal.TextPrimary)
+	machineMuted       = lipgloss.NewStyle().Foreground(machineTUIPal.TextMuted)
+	machineWarn        = lipgloss.NewStyle().Foreground(machineTUIPal.Warning)
 	// The overlay box deliberately carries no background of its own. lipgloss
 	// applies a container background to a line's first segment only, so any
 	// row built from several styled pieces (a picker row is name, host, and
@@ -188,7 +189,10 @@ func (m *machineTUIModel) renderDetailPane(lay machineLayout) string {
 		machineDetailRow("Identity", machine.IdentityFile),
 		"",
 		machineSocketRow(diagnosis),
-		machineMuted.Render(ui.Truncate(diagnosis.Socket, max(inner-machineOverlayTextInset, 1))),
+		// Abbreviated like every other path this pane shows, and because an
+		// absolute one spells out the operator's home directory and account
+		// name in any screenshot or recording of this screen.
+		machineMuted.Render(ui.Truncate(pathutil.AbbreviateHome(diagnosis.Socket), max(inner-machineOverlayTextInset, 1))),
 	)
 	if diagnosis.State == remote.ControlStale {
 		lines = append(lines, "", machineWarn.Render("A stale socket can hang the next hop. Press R to clear it."))
@@ -391,7 +395,7 @@ func (m *machineTUIModel) formFieldLines(field machineFormField, label string) [
 	}
 
 	if field == machineFieldID && m.form.editing() {
-		return []string{machineMuted.Render(label + " (fixed)"), machineMuted.Render("  "+m.form.editID)}
+		return []string{machineMuted.Render(label + " (fixed)"), machineMuted.Render("  " + m.form.editID)}
 	}
 
 	heading := machinePrimary.Render(label)
