@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# A stand-in for the tailscale CLI, used only when recording docs/demos tapes.
+#
+# The discovery flow shells out to `tailscale status --json`. Recording against
+# a real tailnet would bake the recorder's own tailnet name, device inventory,
+# and online state into a GIF committed to a public repo, and would make the
+# recording depend on whatever hardware happened to be awake. This emits a
+# fixed, invented tailnet instead, so the tape is both safe and reproducible.
+#
+# Put this directory first on PATH before running vhs.
+set -euo pipefail
+
+if [ "${1:-}" != "status" ]; then
+    echo "demo tailscale stub: only 'status --json' is implemented" >&2
+    exit 1
+fi
+
+cat <<'JSON'
+{
+  "BackendState": "Running",
+  "Self": {
+    "HostName": "thinkpad",
+    "DNSName": "thinkpad.example-net.ts.net.",
+    "TailscaleIPs": ["100.64.0.1"],
+    "Online": true,
+    "OS": "linux"
+  },
+  "Peer": {
+    "nodekey:0000000000000000000000000000000000000000000000000000000000000001": {
+      "HostName": "workstation",
+      "DNSName": "workstation.example-net.ts.net.",
+      "TailscaleIPs": ["100.64.0.2"],
+      "Online": true,
+      "OS": "linux"
+    },
+    "nodekey:0000000000000000000000000000000000000000000000000000000000000002": {
+      "HostName": "buildfarm",
+      "DNSName": "buildfarm.example-net.ts.net.",
+      "TailscaleIPs": ["100.64.0.3"],
+      "Online": true,
+      "OS": "linux"
+    },
+    "nodekey:0000000000000000000000000000000000000000000000000000000000000003": {
+      "HostName": "media-server",
+      "DNSName": "media-server.example-net.ts.net.",
+      "TailscaleIPs": ["100.64.0.4"],
+      "Online": false,
+      "OS": "linux"
+    },
+    "nodekey:0000000000000000000000000000000000000000000000000000000000000004": {
+      "HostName": "gpu-box",
+      "DNSName": "gpu-box.example-net.ts.net.",
+      "TailscaleIPs": ["100.64.0.5"],
+      "Online": true,
+      "OS": "linux"
+    }
+  }
+}
+JSON
