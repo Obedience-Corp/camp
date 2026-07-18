@@ -17,6 +17,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+
+	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
 // Notice is one advisory about campaign state.
@@ -56,8 +58,16 @@ func Detect(ctx context.Context, campaignRoot string, detectors ...Detector) []N
 }
 
 // Render writes notices to w.
+//
+// A notice shares stderr with the command's own output, so it is styled like
+// the rest of camp's advisories: a warning icon and label carry the severity,
+// and the fix is accented so the line a user should act on stands out from the
+// line that explains why. Styling collapses to plain text under --no-color and
+// on non-terminal writers, which keeps the notice greppable in scripts and in
+// the integration tests that assert on its text.
 func Render(w io.Writer, notices []Notice) {
 	for _, n := range notices {
-		_, _ = fmt.Fprintf(w, "notice: %s\n  run: %s\n", n.Message, n.Command)
+		_, _ = fmt.Fprintf(w, "%s %s %s\n", ui.WarningIcon(), ui.Warning("notice:"), n.Message)
+		_, _ = fmt.Fprintf(w, "  %s %s\n", ui.Dim("run:"), ui.Accent(n.Command))
 	}
 }

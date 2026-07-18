@@ -45,6 +45,10 @@ func (m *followUpTUIModel) updateBrowse(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.moveCursor(-1)
 	case "down", "j":
 		m.moveCursor(1)
+	case "shift+up", "K":
+		return m, m.moveSelectedFollowUp(-1)
+	case "shift+down", "J":
+		return m, m.moveSelectedFollowUp(1)
 	case "left", "h":
 		m.pane = followUpScopesPane
 	case "right", "l", "tab":
@@ -84,6 +88,43 @@ func (m *followUpTUIModel) updateBrowse(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.overlay = followUpHelpOverlay
 	}
 	return m, nil
+}
+
+func (m *followUpTUIModel) moveSelectedFollowUp(delta int) tea.Cmd {
+	_, entry, ok := m.selectedFollowUp()
+	if !ok {
+		m.setError(camperrors.New("select a follow-up step to move"))
+		return nil
+	}
+
+	ordered, err := config.ReorderFreshFollowUps(m.effectiveFollowUps(), entry.Name, delta)
+	if err != nil {
+		m.setError(err)
+		return nil
+	}
+
+	scope := m.selectedScope()
+	if err := config.SetFreshFollowUps(m.ctx, m.root, scopeProjectName(scope), ordered); err != nil {
+		m.setError(err)
+		return nil
+	}
+	if err := m.refresh(scope); err != nil {
+		m.setError(err)
+		return nil
+	}
+
+	for i, step := range m.workflowSteps() {
+		if step.Follow != nil && step.Follow.Name == entry.Name {
+			m.stepCursor = i
+			break
+		}
+	}
+	direction := "down"
+	if delta < 0 {
+		direction = "up"
+	}
+	m.setStatus(fmt.Sprintf("moved %q %s", entry.Name, direction))
+	return nil
 }
 
 func (m *followUpTUIModel) moveCursor(delta int) {

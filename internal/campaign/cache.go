@@ -3,7 +3,6 @@ package campaign
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"sync"
 )
 
@@ -40,13 +39,7 @@ func DetectCached(ctx context.Context) (string, error) {
 		return DetectFromCwd(ctx)
 	}
 
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-
-	// Resolve symlinks for consistent comparison
-	cwd, err = filepath.EvalSymlinks(cwd)
+	cwd, err := logicalWorkingDirectory()
 	if err != nil {
 		return "", err
 	}

@@ -139,3 +139,162 @@ func TestDetect_AttachmentMarker_ViaSymlinkInTree(t *testing.T) {
 		t.Errorf("Detect = %q, want %q", got, campaignRoot)
 	}
 }
+
+func TestDetect_SharedAttachmentUsesLogicalCampaignSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink test not supported on Windows")
+	}
+
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+
+	campaignA := filepath.Join(tmpDir, "campaign-a")
+	campaignB := filepath.Join(tmpDir, "campaign-b")
+	for _, root := range []string{campaignA, campaignB} {
+		if err := os.MkdirAll(filepath.Join(root, CampaignDir), 0755); err != nil {
+			t.Fatalf("mkdir campaign: %v", err)
+		}
+	}
+
+	regPath := filepath.Join(tmpDir, "registry.json")
+	regData := []byte(`{
+  "version": 1,
+  "campaigns": {
+    "campaign-a": {"name": "campaign-a", "path": "` + campaignA + `"},
+    "campaign-b": {"name": "campaign-b", "path": "` + campaignB + `"}
+  }
+}`)
+	if err := os.WriteFile(regPath, regData, 0644); err != nil {
+		t.Fatalf("write registry: %v", err)
+	}
+	t.Setenv("CAMP_REGISTRY_PATH", regPath)
+
+	external := filepath.Join(tmpDir, "external", "shared")
+	if err := os.MkdirAll(external, 0755); err != nil {
+		t.Fatalf("mkdir external: %v", err)
+	}
+	marker := LinkMarker{
+		Version:          LinkMarkerVersion,
+		Kind:             KindAttachment,
+		ActiveCampaignID: "campaign-b",
+		CampaignIDs:      []string{"campaign-a"},
+	}
+	if err := WriteMarker(external, marker); err != nil {
+		t.Fatalf("WriteMarker: %v", err)
+	}
+
+	symlinkA := filepath.Join(campaignA, "docs", "shared")
+	symlinkB := filepath.Join(campaignB, "docs", "shared")
+	for _, link := range []string{symlinkA, symlinkB} {
+		if err := os.MkdirAll(filepath.Dir(link), 0755); err != nil {
+			t.Fatalf("mkdir symlink parent: %v", err)
+		}
+		if err := os.Symlink(external, link); err != nil {
+			t.Fatalf("symlink %s: %v", link, err)
+		}
+	}
+
+	ClearCache()
+	if got, err := Detect(context.Background(), symlinkA); err != nil {
+		t.Fatalf("Detect from campaign A symlink: %v", err)
+	} else if got != campaignA {
+		t.Errorf("Detect from campaign A symlink = %q, want %q", got, campaignA)
+	}
+
+	ClearCache()
+	if got, err := Detect(context.Background(), symlinkB); err != nil {
+		t.Fatalf("Detect from campaign B symlink: %v", err)
+	} else if got != campaignB {
+		t.Errorf("Detect from campaign B symlink = %q, want %q", got, campaignB)
+	}
+
+	ClearCache()
+	if got, err := Detect(context.Background(), external); err != nil {
+		t.Fatalf("Detect from direct attachment path: %v", err)
+	} else if got != campaignB {
+		t.Errorf("Detect from direct attachment path = %q, want active campaign %q", got, campaignB)
+	}
+}
+
+func TestDetect_SharedAttachmentUsesLogicalPWDFromCwd(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink test not supported on Windows")
+	}
+
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+
+	campaignA := filepath.Join(tmpDir, "campaign-a")
+	campaignB := filepath.Join(tmpDir, "campaign-b")
+	for _, root := range []string{campaignA, campaignB} {
+		if err := os.MkdirAll(filepath.Join(root, CampaignDir), 0755); err != nil {
+			t.Fatalf("mkdir campaign: %v", err)
+		}
+	}
+
+	regPath := filepath.Join(tmpDir, "registry.json")
+	regData := []byte(`{
+  "version": 1,
+  "campaigns": {
+    "campaign-a": {"name": "campaign-a", "path": "` + campaignA + `"},
+    "campaign-b": {"name": "campaign-b", "path": "` + campaignB + `"}
+  }
+}`)
+	if err := os.WriteFile(regPath, regData, 0644); err != nil {
+		t.Fatalf("write registry: %v", err)
+	}
+	t.Setenv("CAMP_REGISTRY_PATH", regPath)
+
+	external := filepath.Join(tmpDir, "external", "shared")
+	if err := os.MkdirAll(external, 0755); err != nil {
+		t.Fatalf("mkdir external: %v", err)
+	}
+	marker := LinkMarker{
+		Version:          LinkMarkerVersion,
+		Kind:             KindAttachment,
+		ActiveCampaignID: "campaign-b",
+		CampaignIDs:      []string{"campaign-a"},
+	}
+	if err := WriteMarker(external, marker); err != nil {
+		t.Fatalf("write marker: %v", err)
+	}
+
+	symlinkA := filepath.Join(campaignA, "docs", "shared")
+	symlinkB := filepath.Join(campaignB, "docs", "shared")
+	for _, link := range []string{symlinkA, symlinkB} {
+		if err := os.MkdirAll(filepath.Dir(link), 0755); err != nil {
+			t.Fatalf("mkdir symlink parent: %v", err)
+		}
+		if err := os.Symlink(external, link); err != nil {
+			t.Fatalf("symlink %s: %v", link, err)
+		}
+	}
+
+	originalWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(originalWD) })
+
+	if err := os.Chdir(symlinkA); err != nil {
+		t.Fatalf("chdir campaign A symlink: %v", err)
+	}
+	t.Setenv("PWD", symlinkA)
+	ClearCache()
+	if got, err := DetectFromCwd(context.Background()); err != nil {
+		t.Fatalf("DetectFromCwd from campaign A symlink: %v", err)
+	} else if got != campaignA {
+		t.Errorf("DetectFromCwd from campaign A symlink = %q, want %q", got, campaignA)
+	}
+
+	if err := os.Chdir(symlinkB); err != nil {
+		t.Fatalf("chdir campaign B symlink: %v", err)
+	}
+	t.Setenv("PWD", symlinkB)
+	ClearCache()
+	if got, err := DetectCached(context.Background()); err != nil {
+		t.Fatalf("DetectCached from campaign B symlink: %v", err)
+	} else if got != campaignB {
+		t.Errorf("DetectCached from campaign B symlink = %q, want %q", got, campaignB)
+	}
+}

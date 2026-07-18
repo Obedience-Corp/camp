@@ -224,7 +224,9 @@ func TestIntegration_CommitTags_NoteNoContext(t *testing.T) {
 	initCommitTagsCampaign(t, tc, dir)
 
 	// No workitems and no ambient context: a note from the campaign root gets
-	// the bare campaign tag with no WI-/qst_/FE- segments.
+	// the campaign tag with no WI-/qst_/FE- segments, but still carries its
+	// own NT-<ref> (see TestIntegration_CommitTags_NoteRefSegment: the note
+	// ref identifies the note itself, independent of ambient context).
 	out, err := tc.RunCampInDir(dir, "intent", "note", "loose thought")
 	require.NoError(t, err, "camp intent note: %s", out)
 
@@ -232,8 +234,8 @@ func TestIntegration_CommitTags_NoteNoContext(t *testing.T) {
 	assert.NotContains(t, subject, "WI-", "no-context note must not include WI-: %s", subject)
 	assert.NotContains(t, subject, "qst_", "no-context note must not include qst_: %s", subject)
 	assert.NotContains(t, subject, "FE-", "no-context note must not include FE-: %s", subject)
-	assert.Regexp(t, `^\[commit-tags:[0-9a-f]{1,8}\]`, subject,
-		"note should still carry the campaign tag: %s", subject)
+	assert.Regexp(t, `^\[commit-tags:[0-9a-f]{1,8}-NT-[0-9a-f]{6}\]`, subject,
+		"note should still carry the campaign tag and its own NT-<ref>: %s", subject)
 }
 
 func TestIntegration_CommitTags_NoteRefSegment(t *testing.T) {

@@ -4,13 +4,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
-
-	"github.com/Obedience-Corp/camp/internal/config"
-	"github.com/Obedience-Corp/camp/internal/paths"
-	intworktree "github.com/Obedience-Corp/camp/internal/worktree"
 )
 
 func captureWorktreesStdout(fn func() error) (string, error) {
@@ -67,6 +62,40 @@ func TestOutputListTable_RendersColumns(t *testing.T) {
 	}
 }
 
+func TestDisambiguateWorktreeNames_SameBasenameDifferentPath(t *testing.T) {
+	campRoot := "/camp"
+	worktrees := []WorktreeListItem{
+		// Two linked worktrees for the same project sharing a basename "foo":
+		// one preferred (inside the campaign), one loose (outside).
+		{Project: "proj", Name: "foo", Path: "/camp/projects/worktrees/proj/foo"},
+		{Project: "proj", Name: "foo", Path: "/elsewhere/foo"},
+		// A distinct basename in the same project must be left untouched.
+		{Project: "proj", Name: "bar", Path: "/camp/projects/worktrees/proj/bar"},
+		// A same basename under a DIFFERENT project does not collide.
+		{Project: "other", Name: "foo", Path: "/camp/projects/worktrees/other/foo"},
+	}
+
+	disambiguateWorktreeNames(campRoot, worktrees)
+
+	// The colliding "proj/foo" pair is rewritten to unique, path-derived names.
+	if worktrees[0].Name != filepath.FromSlash("projects/worktrees/proj/foo") {
+		t.Errorf("preferred colliding worktree name = %q, want campaign-relative path", worktrees[0].Name)
+	}
+	if worktrees[1].Name != filepath.FromSlash("/elsewhere/foo") {
+		t.Errorf("loose colliding worktree name = %q, want absolute path", worktrees[1].Name)
+	}
+	if worktrees[0].Name == worktrees[1].Name {
+		t.Errorf("colliding worktrees must get distinct names, both = %q", worktrees[0].Name)
+	}
+	// Non-colliding entries keep their basename.
+	if worktrees[2].Name != "bar" {
+		t.Errorf("non-colliding name changed: %q, want bar", worktrees[2].Name)
+	}
+	if worktrees[3].Name != "foo" {
+		t.Errorf("same basename in another project must not be disambiguated: %q, want foo", worktrees[3].Name)
+	}
+}
+
 func TestOutputListTable_Empty(t *testing.T) {
 	result := &WorktreeListResult{Worktrees: nil, Total: 0, StaleCount: 0}
 
@@ -98,23 +127,5 @@ func TestOutputListTable_StaleReasonInStatus(t *testing.T) {
 	}
 	if !strings.Contains(out, "missing .git") {
 		t.Errorf("outputListTable missing stale reason in output, got:\n%s", out)
-	}
-}
-
-func TestFilterRegisteredWorktreeNames_DropsCopiedCheckoutChildren(t *testing.T) {
-	root := filepath.Join(string(filepath.Separator), "campaign")
-	pm := intworktree.NewPathManager(paths.NewResolver(root, config.DefaultCampaignPaths()))
-
-	got := filterRegisteredWorktreeNames("fest-gif-review",
-		[]string{"bin", "node_modules", "scripts", "src", "real-review"},
-		[]intworktree.GitWorktreeEntry{{
-			Path: pm.WorktreePath("fest-gif-review", "real-review"),
-		}},
-		pm,
-	)
-	want := []string{"real-review"}
-
-	if !slices.Equal(got, want) {
-		t.Fatalf("filterRegisteredWorktreeNames() = %v, want %v", got, want)
 	}
 }

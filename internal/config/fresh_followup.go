@@ -133,6 +133,46 @@ func SetFreshFollowUps(ctx context.Context, campaignRoot, projectName string, en
 	})
 }
 
+// ReorderFreshFollowUps moves the named follow-up one position in the
+// effective workflow. It returns a new slice and leaves entries unchanged.
+// A positive delta moves the step later; a negative delta moves it earlier.
+// Core fresh steps are intentionally outside this helper: follow-ups are the
+// user-defined portion of the workflow and can be safely reordered without
+// violating fresh's sync and branch dependencies.
+func ReorderFreshFollowUps(entries []FollowUpConfig, name string, delta int) ([]FollowUpConfig, error) {
+	if delta != -1 && delta != 1 {
+		return nil, camperrors.NewValidation("delta", "must be -1 or 1", nil)
+	}
+
+	idx := -1
+	for i, entry := range entries {
+		if entry.Name == name {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		names := make([]string, 0, len(entries))
+		for _, entry := range entries {
+			names = append(names, entry.Name)
+		}
+		return nil, &FollowUpNotFoundError{Name: name, Scope: "workflow", ValidNames: names}
+	}
+
+	target := idx + delta
+	if target < 0 || target >= len(entries) {
+		direction := "first"
+		if delta > 0 {
+			direction = "last"
+		}
+		return nil, camperrors.Newf("follow-up %q is already the %s step", name, direction)
+	}
+
+	ordered := append([]FollowUpConfig(nil), entries...)
+	ordered[idx], ordered[target] = ordered[target], ordered[idx]
+	return ordered, nil
+}
+
 // withFreshConfigLock loads fresh.yaml as a raw YAML document (creating an
 // empty mapping document if the file is missing or has no parseable
 // mapping content), runs mutate against its top-level mapping, then writes

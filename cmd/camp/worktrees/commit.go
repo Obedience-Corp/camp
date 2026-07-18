@@ -151,8 +151,8 @@ func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if prefs.TagCommits() {
-		questID, workitemRef := resolveWorktreeCommitContext(ctx, campRoot, wtCtx.WorktreePath, wtCommitWorkitem)
-		message = commitkit.PrependContextTagsFullNamed(cfg.Name, cfg.ID, questID, "", workitemRef, message)
+		questID, festivalRef, workitemRef := resolveWorktreeCommitContext(ctx, campRoot, wtCtx.WorktreePath, wtCommitWorkitem)
+		message = commitkit.PrependContextTagsFullNamed(cfg.Name, cfg.ID, questID, festivalRef, workitemRef, message)
 	}
 
 	// Commit

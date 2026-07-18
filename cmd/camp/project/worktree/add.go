@@ -184,16 +184,12 @@ func runProjectWorktreeAdd(cmd *cobra.Command, args []string) error {
 // The workitem is resolved and validated by the caller before the worktree is
 // created, so a bad selector never leaves a dangling worktree behind.
 func attachWorktreeLink(ctx context.Context, campRoot string, wi *wkitem.WorkItem, relativeWorktreePath string) (links.Link, error) {
-	workitemID := wi.StableID
-	if workitemID == "" {
-		workitemID = wi.Key
-	}
 	scopePath := relativeWorktreePath
 	if scopePath == "" {
 		return links.Link{}, camperrors.NewValidation("worktree", "missing worktree relative path", nil)
 	}
 	return links.AttachPrimary(ctx, campRoot, links.AttachOptions{
-		WorkitemID:  workitemID,
+		WorkitemID:  wkitem.LinkWorkitemID(wi),
 		WorkitemKey: wi.Key,
 		Scope: links.LinkScope{
 			Kind: links.ScopeWorktree,

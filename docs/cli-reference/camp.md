@@ -52,7 +52,7 @@ camp [flags]
 * [camp copy](camp_copy.md)	 - Copy a file or directory within the campaign
 * [camp create](camp_create.md)	 - Create a new campaign at the default campaigns directory
 * [camp date](camp_date.md)	 - Append date suffix to file or directory name
-* [camp detach](camp_detach.md)	 - Remove the attachment marker from a directory
+* [camp detach](camp_detach.md)	 - Remove the current campaign's attachment binding
 * [camp doctor](camp_doctor.md)	 - Diagnose and fix campaign health issues
 * [camp dungeon](camp_dungeon.md)	 - Manage the campaign dungeon
 * [camp event](camp_event.md)	 - Record and inspect campaign ledger events

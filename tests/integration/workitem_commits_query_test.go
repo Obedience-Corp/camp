@@ -78,7 +78,7 @@ func TestIntegration_WorkitemCommits_IncludesCampaignAndLinkedProject(t *testing
 	for _, c := range got.Commits {
 		repos[c.Repo] = true
 	}
-	assert.True(t, repos["."] || repos[""],
+	assert.True(t, repos["campaign-root"],
 		"expected campaign-root commit in results, got repos: %v", repos)
 	assert.True(t, repos["projects/demo"],
 		"expected projects/demo commit in results, got repos: %v", repos)

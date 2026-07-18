@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 
 	dungeoncmd "github.com/Obedience-Corp/camp/cmd/camp/dungeon"
 	"github.com/Obedience-Corp/camp/internal/config"
@@ -272,6 +273,11 @@ func doFestivalPromote(ctx context.Context, cmd *cobra.Command, opts runWorkitem
 		return nil, camperrors.New("--dest is only valid for --target doc; fest chooses the festival directory")
 	}
 
+	// Capture the source workitem identity before the festival is created and
+	// the source is shelved, so links pointing at it can be migrated onto the
+	// festival afterward.
+	oldID, oldKey := promotedWorkitemIdentity(ctx, campaignRoot, loc, result)
+
 	name := intent.SlugFromTitle(titleFromDoc(docContent, loc.Slug))
 	goal := opts.Goal
 	if goal == "" {
@@ -312,7 +318,23 @@ func doFestivalPromote(ctx context.Context, cmd *cobra.Command, opts runWorkitem
 			filepath.Join(campaignRoot, "festivals", ".festival", ".state"),
 		},
 	}
-	return appendShelve(ctx, opts, campaignRoot, loc, ci, result)
+	ci, err = appendShelve(ctx, opts, campaignRoot, loc, ci, result)
+	if err != nil {
+		return nil, err
+	}
+
+	// Only a shelved source orphans its links; --keep leaves the source in
+	// place and resolvable, so there is nothing to migrate.
+	if !opts.Keep {
+		migrated, mErr := migratePromotedLinks(ctx, campaignRoot, oldID, oldKey, promotedTo)
+		if mErr != nil {
+			return nil, camperrors.Wrap(mErr, "migrate workitem links to festival")
+		}
+		if migrated {
+			ci.destPaths = append(ci.destPaths, links.LinksPath(campaignRoot))
+		}
+	}
+	return ci, nil
 }
 
 func doDocPromote(ctx context.Context, opts runWorkitemPromoteOptions, campaignRoot string, loc *locate.Location, result *workitemPromoteResult) (*commitInputs, error) {
@@ -359,6 +381,96 @@ func doDocPromote(ctx context.Context, opts runWorkitemPromoteOptions, campaignR
 		destPaths:   []string{destDir},
 	}
 	return appendShelve(ctx, opts, campaignRoot, loc, ci, result)
+}
+
+// promotedWorkitemIdentity returns the stable id and key that links may
+// reference for the workitem being promoted, read from its .workitem marker
+// before it is shelved. Returns ("", key) for an unadopted directory (no
+// marker), which has no stable-id links to migrate.
+func promotedWorkitemIdentity(ctx context.Context, campaignRoot string, loc *locate.Location, result *workitemPromoteResult) (id, key string) {
+	key = loc.Type + ":" + result.From
+	if meta, err := wkitem.LoadMetadata(ctx, loc.SourcePath); err == nil && meta != nil {
+		id = meta.ID
+	}
+	return id, key
+}
+
+// migratePromotedLinks re-points every link that referenced the promoted
+// workitem (by its old stable id or key) onto the created festival, addressed
+// by the festival's single-segment fest.yaml id. Returns whether the registry
+// changed. Best-effort: if the festival has no readable id there is no valid
+// single-segment link target, so the links are left untouched.
+func migratePromotedLinks(ctx context.Context, campaignRoot, oldID, oldKey, promotedTo string) (bool, error) {
+	newID := readFestivalID(campaignRoot, promotedTo)
+	if newID == "" || (oldID == "" && oldKey == "") {
+		return false, nil
+	}
+	newKey := "festival:" + promotedTo
+
+	changed := false
+	err := links.WithLock(ctx, campaignRoot, func(reg *links.Links) error {
+		if !rehomePromotedLinks(reg, oldID, oldKey, newID, newKey) {
+			return links.ErrSkipSave
+		}
+		changed = true
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return changed, nil
+}
+
+// rehomePromotedLinks re-points links matching the promoted workitem onto the
+// festival (updating both workitem_id and workitem_key), then drops links that
+// became exact duplicates. Mirrors rehomeGatherLinks, extended to carry the key
+// because a festival's id and key differ from the source workitem's.
+func rehomePromotedLinks(reg *links.Links, oldID, oldKey, newID, newKey string) bool {
+	changed := false
+	for i := range reg.Links {
+		l := &reg.Links[i]
+		matches := (oldID != "" && l.WorkitemID == oldID) || (oldKey != "" && l.WorkitemKey == oldKey)
+		if matches && (l.WorkitemID != newID || l.WorkitemKey != newKey) {
+			l.WorkitemID = newID
+			l.WorkitemKey = newKey
+			changed = true
+		}
+	}
+	if !changed {
+		return false
+	}
+	seen := make(map[string]bool, len(reg.Links))
+	deduped := make([]links.Link, 0, len(reg.Links))
+	for _, link := range reg.Links {
+		key := link.WorkitemID + "|" + string(link.Scope.Kind) + "|" + link.Scope.Path + "|" + string(link.Role)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		deduped = append(deduped, link)
+	}
+	reg.Links = deduped
+	return true
+}
+
+// readFestivalID returns the fest.yaml metadata id (e.g. SC0001) for the
+// festival at promotedTo (a campaign-relative festivals/... path), or "" when
+// it cannot be read. This is the same id discovery exposes as the festival
+// workitem's SourceID, which the selector resolves and links address.
+func readFestivalID(campaignRoot, promotedTo string) string {
+	data, err := os.ReadFile(filepath.Join(campaignRoot, filepath.FromSlash(promotedTo), "fest.yaml"))
+	if err != nil {
+		return ""
+	}
+	var doc struct {
+		Metadata struct {
+			ID string `yaml:"id"`
+		} `yaml:"metadata"`
+	}
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(doc.Metadata.ID)
 }
 
 func recordPromotedTo(ctx context.Context, campaignRoot string, loc *locate.Location, promotedTo string) error {

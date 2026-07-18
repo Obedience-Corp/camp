@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -13,16 +14,20 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
-	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
-	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/Obedience-Corp/camp/internal/worktree"
 )
 
-const WorktreesListJSONVersion = "worktrees-list/v1alpha1"
+// WorktreesListJSONVersion is bumped to v1alpha2 because git-derived
+// enumeration changed the meaning of the emitted path and name fields: path is
+// now the worktree's real on-disk location (which may be outside the
+// conventional projects/worktrees/<project>/ layout), and name is
+// disambiguated to a campaign-relative path when two linked worktrees share a
+// basename. Clients can key on this version to detect the new semantics.
+const WorktreesListJSONVersion = "worktrees-list/v1alpha2"
 
 var (
 	listProject string
@@ -93,14 +98,6 @@ func runWorktreesList(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "not in a campaign")
 	}
 
-	cfg, err := config.LoadCampaignConfig(ctx, campRoot)
-	if err != nil {
-		return camperrors.Wrap(err, "failed to load campaign config")
-	}
-
-	resolver := paths.NewResolver(campRoot, cfg.Paths())
-	pathManager := worktree.NewPathManager(resolver)
-
 	// In a terminal, a bare `camp worktrees list` opens the interactive browser
 	// (the same pattern as `camp list`). The browser holds every worktree and
 	// applies --stale as a live, toggleable filter, so load unfiltered for it;
@@ -111,7 +108,7 @@ func runWorktreesList(cmd *cobra.Command, args []string) error {
 		loadStale = false
 	}
 
-	result, err := listWorktrees(ctx, campRoot, pathManager, listProject, loadStale)
+	result, err := listWorktrees(ctx, campRoot, listProject, loadStale)
 	if err != nil {
 		return err
 	}
@@ -132,7 +129,7 @@ type listProjectTarget struct {
 	path string
 }
 
-func listWorktrees(ctx context.Context, campRoot string, pm *worktree.PathManager, filterProject string, staleOnly bool) (*WorktreeListResult, error) {
+func listWorktrees(ctx context.Context, campRoot string, filterProject string, staleOnly bool) (*WorktreeListResult, error) {
 	var allWorktrees []WorktreeListItem
 
 	projectTargets, err := listWorktreeProjectTargets(ctx, campRoot, filterProject)
@@ -140,7 +137,9 @@ func listWorktrees(ctx context.Context, campRoot string, pm *worktree.PathManage
 		return nil, err
 	}
 
-	// Scan each project
+	// Scan each project. git worktree list is the source of truth: it finds
+	// every linked worktree regardless of where it lives on disk, not just
+	// those under the conventional projects/worktrees/<project>/ layout.
 	for _, target := range projectTargets {
 		gitEntries, err := worktree.NewGitWorktree(target.path).List(ctx)
 		if err != nil {
@@ -151,17 +150,22 @@ func listWorktrees(ctx context.Context, campRoot string, pm *worktree.PathManage
 		}
 
 		projectName := target.name
-		fsWorktrees, err := pm.ListProjectWorktrees(projectName)
-		if err != nil {
-			continue // Skip projects with errors
-		}
-
-		for _, name := range filterRegisteredWorktreeNames(projectName, fsWorktrees, gitEntries, pm) {
-			wtPath := pm.WorktreePath(projectName, name)
-			info := buildWorktreeListItem(projectName, name, wtPath)
+		for _, entry := range gitEntries {
+			if !worktree.IsLinkedWorktree(target.path, entry) {
+				continue
+			}
+			name := filepath.Base(filepath.Clean(entry.Path))
+			info := buildWorktreeListItem(projectName, name, entry.Path)
 			allWorktrees = append(allWorktrees, info)
 		}
 	}
+
+	// git-derived enumeration can surface two linked worktrees for the same
+	// project whose directory basenames match (a preferred
+	// projects/worktrees/<project>/foo and a loose /elsewhere/foo). Basename
+	// alone would collapse them to one name in the table/JSON, so rewrite
+	// colliding names to a unique, path-derived form.
+	disambiguateWorktreeNames(campRoot, allWorktrees)
 
 	// Filter if needed
 	var result []WorktreeListItem
@@ -210,19 +214,35 @@ func listWorktreeProjectTargets(ctx context.Context, campRoot, filterProject str
 	return targets, nil
 }
 
-func filterRegisteredWorktreeNames(projectName string, names []string, entries []worktree.GitWorktreeEntry, pm *worktree.PathManager) []string {
-	registered := make(map[string]struct{}, len(entries))
-	for _, entry := range entries {
-		registered[filepath.Clean(entry.Path)] = struct{}{}
+// disambiguateWorktreeNames rewrites the Name of any worktrees that share a
+// (project, basename) so every table row and JSON entry stays uniquely
+// identifiable. A colliding name becomes the campaign-relative path (or the
+// cleaned absolute path when the worktree lives outside the campaign tree),
+// which is unique because git worktree paths are unique.
+func disambiguateWorktreeNames(campRoot string, worktrees []WorktreeListItem) {
+	counts := make(map[string]int, len(worktrees))
+	for _, wt := range worktrees {
+		counts[wt.Project+"\x00"+wt.Name]++
 	}
-
-	filtered := make([]string, 0, len(names))
-	for _, name := range names {
-		if _, ok := registered[filepath.Clean(pm.WorktreePath(projectName, name))]; ok {
-			filtered = append(filtered, name)
+	for i := range worktrees {
+		if counts[worktrees[i].Project+"\x00"+worktrees[i].Name] > 1 {
+			worktrees[i].Name = worktreeUniqueName(campRoot, worktrees[i].Path)
 		}
 	}
-	return filtered
+}
+
+// worktreeUniqueName returns a stable, unique display name for a worktree whose
+// basename collides with another: the campaign-relative path when the worktree
+// is inside the campaign, otherwise the cleaned absolute path.
+func worktreeUniqueName(campRoot, path string) string {
+	clean := filepath.Clean(path)
+	if campRoot != "" {
+		if rel, err := filepath.Rel(campRoot, clean); err == nil &&
+			rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return rel
+		}
+	}
+	return clean
 }
 
 func buildWorktreeListItem(project, name, path string) WorktreeListItem {

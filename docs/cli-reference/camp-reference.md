@@ -201,11 +201,17 @@ Attach an external directory to a campaign
 Attach a non-project directory to a campaign by writing a .camp marker.
 
 The user manages the symlink (if any). camp attach only writes the marker at
-the resolved target so commands run from inside that directory know which
-campaign owns it.
+the resolved target so commands run from inside that directory can recover
+campaign context. Attachment markers may be shared by multiple campaigns;
+running attach again from another campaign adds that campaign to the marker.
 
 If the target is reached through a symlink, camp follows it once and writes
 the marker at the final directory.
+
+When several campaigns share one attachment, which campaign a command resolves
+depends on how the directory is reached: entering through a campaign-local
+symlink resolves that campaign, while a bare cd into the shared target itself
+resolves to the first campaign it was attached to.
 
 Campaign selection:
   - inside a campaign, omit --campaign to attach to the current campaign
@@ -227,7 +233,7 @@ camp attach <path> [flags]
 
 ```
   -c, --campaign string   Target campaign by name or ID; omit value to pick interactively
-      --force             Overwrite an existing attachment marker
+      --force             Rewrite an existing attachment marker
   -h, --help              help for attach
 ```
 
@@ -988,14 +994,20 @@ camp date <path> [flags]
 
 ## camp detach
 
-Remove the attachment marker from a directory
+Remove the current campaign's attachment binding
 
 ### Synopsis
 
-Remove the .camp attachment marker from the target directory.
+Remove the current campaign's binding from the .camp attachment marker.
 
 Refuses on linked-project markers; use 'camp project unlink' for those.
-The user-managed symlink (if any) is not modified.
+The user-managed symlink (if any) is not modified. If run outside any campaign,
+the entire attachment marker is removed.
+
+On an attachment shared by several campaigns this removes only the current
+campaign's binding; the others keep resolving. Detaching the campaign that a
+bare cd into the shared target resolved to shifts that fallback to the next
+remaining campaign.
 
 Examples:
   camp detach docs/examples/external-repo
@@ -1602,7 +1614,7 @@ successful sync/prune/branch cycle. Configuration lives in
 per-project override lists that replace the global list entirely.
 
 Run without a subcommand to open the interactive setup for humans. Use
-show, add, and remove for scripts and agents.
+show, add, move, and remove for scripts and agents.
 
 Examples:
   camp fresh configure
@@ -1610,6 +1622,7 @@ Examples:
   camp fresh configure show
   camp fresh configure add install --run "npm install"
   camp fresh configure add build --run "go build ./..." --project camp --dir cmd/camp
+  camp fresh configure move build --up --project camp
   camp fresh configure remove install
   camp fresh configure remove build --project camp
 
@@ -1652,6 +1665,36 @@ camp fresh configure add <name> [flags]
   -h, --help                help for add
       --project string      Scope this follow-up to a single project (default: global)
       --run string          Command to run for this follow-up step (required)
+```
+
+### Options inherited from parent commands
+
+```
+  -b, --branch string   Branch to create after syncing (overrides config)
+  -n, --dry-run         Preview without making changes
+      --no-branch       Skip branch creation even if configured
+      --no-color        disable colored output
+      --no-follow-up    Skip configured follow-up command workflows
+      --no-prune        Skip pruning merged branches
+      --no-push         Skip pushing the new branch upstream
+```
+---
+
+## camp fresh configure move
+
+Move a follow-up command workflow step
+
+```
+camp fresh configure move <name> [flags]
+```
+
+### Options
+
+```
+      --down             Move the step later in the workflow
+  -h, --help             help for move
+      --project string   Scope the move to a single project (default: global)
+      --up               Move the step earlier in the workflow
 ```
 
 ### Options inherited from parent commands
@@ -3953,6 +3996,53 @@ camp org list [flags]
 ```
 ---
 
+## camp org next
+
+Switch to the next campaign in the current campaign's org
+
+### Synopsis
+
+Switch to the next campaign in the current campaign's org.
+
+Members are ordered by name, so the cycle is stable and predictable
+(a -> b -> c -> a). By default only active campaigns are cycled; use --all to
+include inactive and reference campaigns.
+
+Use with the corg shell function for instant navigation:
+  corg        # cd to the next campaign in this org
+
+The --print flag outputs just the target path for shell integration, and --json
+emits the resolved source and target campaigns.
+
+```
+camp org next [flags]
+```
+
+### Examples
+
+```
+  camp org next            # Print cd to the next org campaign
+  camp org next --print    # Print the target path only
+  camp org next --all      # Include inactive/reference campaigns
+  camp org next --json
+```
+
+### Options
+
+```
+      --all     Include inactive and reference campaigns in the cycle
+  -h, --help    help for next
+      --json    Output the resolved source and target campaigns as JSON
+      --print   Print the target path only (for shell integration)
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
 ## camp org remove
 
 Return campaigns to the default org
@@ -4043,6 +4133,50 @@ camp org show <org> [flags]
 ```
   -h, --help   help for show
       --json   Output as JSON
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp org toggle
+
+Toggle back to the last-visited campaign in the current org
+
+### Synopsis
+
+Toggle back to the most recently visited other campaign in the current org.
+
+"Most recently visited" is tracked by last-access time, which camp updates on
+every 'camp switch' and 'camp org next'/'toggle'. Paired with 'camp org next',
+this gives a natural A <-> B toggle within an org. By default only active
+campaigns are considered; use --all to include inactive and reference campaigns.
+
+Use with the corg shell function for instant navigation:
+  corg t      # cd back to the last org campaign you were in
+
+```
+camp org toggle [flags]
+```
+
+### Examples
+
+```
+  camp org toggle          # Print cd to the last-visited org campaign
+  camp org toggle --print  # Print the target path only
+  camp org toggle --json
+```
+
+### Options
+
+```
+      --all     Include inactive and reference campaigns in the cycle
+  -h, --help    help for toggle
+      --json    Output the resolved source and target campaigns as JSON
+      --print   Print the target path only (for shell integration)
 ```
 
 ### Options inherited from parent commands

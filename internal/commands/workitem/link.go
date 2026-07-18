@@ -291,6 +291,9 @@ func workitemIDForLink(wi *wkitem.WorkItem, opts linkOptions) string {
 	if wi.StableID != "" {
 		return wi.StableID
 	}
+	if wi.WorkflowType == wkitem.WorkflowTypeFestival && wi.SourceID != "" {
+		return wi.SourceID
+	}
 	if opts.AllowMissing {
 		return opts.Selector
 	}

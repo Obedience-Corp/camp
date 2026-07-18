@@ -187,12 +187,8 @@ func runWorktreesCreate(cmd *cobra.Command, args []string) error {
 // workitem so the resolver (and therefore camp p commit) picks up the workitem
 // ref inside that tree.
 func attachWorktreeLink(ctx context.Context, campRoot string, wi *wkitem.WorkItem, relativeWorktreePath string) (links.Link, error) {
-	workitemID := wi.StableID
-	if workitemID == "" {
-		workitemID = wi.Key
-	}
 	return links.AttachPrimary(ctx, campRoot, links.AttachOptions{
-		WorkitemID:  workitemID,
+		WorkitemID:  wkitem.LinkWorkitemID(wi),
 		WorkitemKey: wi.Key,
 		Scope: links.LinkScope{
 			Kind: links.ScopeWorktree,

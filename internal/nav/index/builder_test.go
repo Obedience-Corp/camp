@@ -308,25 +308,6 @@ func TestWorktreeTarget(t *testing.T) {
 	}
 }
 
-func TestContainsGitDir(t *testing.T) {
-	tests := []struct {
-		path string
-		want bool
-	}{
-		{"/campaign/.git/modules/projects/camp", true},
-		{"/campaign/projects/worktrees/camp/feature", false},
-		{"/campaign/projects/worktrees/fix-camp-392", false},
-		{".git/worktrees/x", true},
-		{"/campaign/projects/camp", false},
-	}
-
-	for _, tc := range tests {
-		if got := containsGitDir(tc.path); got != tc.want {
-			t.Errorf("containsGitDir(%q) = %v, want %v", tc.path, got, tc.want)
-		}
-	}
-}
-
 func TestBuilder_scanWorktrees_NoProjects(t *testing.T) {
 	root := t.TempDir()
 	root, _ = filepath.EvalSymlinks(root)

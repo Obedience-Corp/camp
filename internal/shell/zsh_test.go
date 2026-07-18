@@ -25,6 +25,11 @@ func TestGenerateZsh(t *testing.T) {
 		{"cint implementation", "camp intent add"},
 		{"cnote function", "cnote()"},
 		{"cnote implementation", "camp intent note"},
+		{"cwi function", "cwi()"},
+		{"cwi implementation", "camp workitem"},
+		{"corg function", "corg()"},
+		{"corg next call", "camp org \"$action\" --shell-connect"},
+		{"corg toggle dispatch", "t|toggle|back)"},
 		{"cd command", "cd \"$dest\""},
 		{"camp go call", "camp go"},
 		{"command camp binary call", "command camp"},
@@ -264,6 +269,12 @@ func TestGenerateBash_Basic(t *testing.T) {
 	if !strings.Contains(output, "cgo()") {
 		t.Error("bash init missing cgo function")
 	}
+	if !strings.Contains(output, "cwi()") {
+		t.Error("bash init missing cwi function")
+	}
+	if !strings.Contains(output, "corg()") {
+		t.Error("bash init missing corg function")
+	}
 }
 
 func TestGenerateFish_Basic(t *testing.T) {
@@ -276,6 +287,12 @@ func TestGenerateFish_Basic(t *testing.T) {
 	// Check for cgo function
 	if !strings.Contains(output, "function cgo") {
 		t.Error("fish init missing cgo function")
+	}
+	if !strings.Contains(output, "function cwi") {
+		t.Error("fish init missing cwi function")
+	}
+	if !strings.Contains(output, "function corg") {
+		t.Error("fish init missing corg function")
 	}
 }
 

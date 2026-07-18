@@ -40,7 +40,8 @@ var (
 //  3. exact key (`<type>:<path>`)
 //  4. exact RelativePath
 //  5. exact directory-base slug
-//  6. fuzzy substring on key or title (only when opts.AllowFuzzy)
+//  6. exact festival id (`fest.yaml` metadata id, e.g. SC0001)
+//  7. fuzzy substring on key or title (only when opts.AllowFuzzy)
 func Resolve(ctx context.Context, root string, query string, opts ResolveOptions) (*workitem.WorkItem, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -68,6 +69,9 @@ func Resolve(ctx context.Context, root string, query string, opts ResolveOptions
 		{"key", func(w workitem.WorkItem) bool { return strings.EqualFold(w.Key, query) }},
 		{"path", func(w workitem.WorkItem) bool { return w.RelativePath == strings.TrimRight(query, "/") }},
 		{"slug", func(w workitem.WorkItem) bool { return strings.EqualFold(filepath.Base(w.RelativePath), query) }},
+		{"festival_id", func(w workitem.WorkItem) bool {
+			return w.WorkflowType == workitem.WorkflowTypeFestival && w.SourceID != "" && strings.EqualFold(w.SourceID, query)
+		}},
 	}
 	for _, m := range matchers {
 		var matched []workitem.WorkItem
