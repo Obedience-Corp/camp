@@ -122,10 +122,13 @@ func runCommitMessageCommandWithEnv(
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
-	// Keep stderr available for error reporting while forwarding successful
-	// hook diagnostics to the operator. Commands such as `ob commit` report
-	// the daemon session ID on stderr so the session can be inspected while
-	// the commit-message request is running.
+	// Tee stderr: keep a copy for error wrapping and forward live diagnostics
+	// (progress like "ob: connecting..." / "ob: generating...") to the operator
+	// while the hook runs. Tools such as `ob commit --print-session-id` may also
+	// emit session_id= on stderr when the hook finishes; that is post-completion
+	// diagnostics, not a mid-run recovery handle (a hung generation never
+	// finalizes, so no session_id appears). Operators may see stderr twice on
+	// failure (live stream + wrapped error); that is intentional for now.
 	if diagnosticOut == nil {
 		cmd.Stderr = &stderr
 	} else {
