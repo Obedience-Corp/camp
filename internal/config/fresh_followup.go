@@ -259,17 +259,9 @@ func mutateFreshDoc(configPath string, mutate func(mapping *yaml.Node) error) er
 // mapping/sequence node along the path is created; when false, a missing
 // node returns (nil, nil) rather than an error.
 func followUpSequence(mapping *yaml.Node, projectName string, create bool) (*yaml.Node, error) {
-	target := mapping
-	if projectName != "" {
-		projectsNode, err := mappingChild(target, "projects", yaml.MappingNode, "!!map", create)
-		if err != nil || projectsNode == nil {
-			return nil, err
-		}
-		projectNode, err := mappingChild(projectsNode, projectName, yaml.MappingNode, "!!map", create)
-		if err != nil || projectNode == nil {
-			return nil, err
-		}
-		target = projectNode
+	target, err := freshScopeMapping(mapping, projectName, create)
+	if err != nil || target == nil {
+		return nil, err
 	}
 	return mappingChild(target, "follow_up", yaml.SequenceNode, "!!seq", create)
 }
@@ -324,22 +316,12 @@ func pruneEmptyFollowUpScope(mapping *yaml.Node, projectName string, seq *yaml.N
 		return
 	}
 
-	projectsNode, _ := mappingChild(mapping, "projects", yaml.MappingNode, "!!map", false)
-	if projectsNode == nil {
-		return
-	}
-	projectNode, _ := mappingChild(projectsNode, projectName, yaml.MappingNode, "!!map", false)
+	projectNode, _ := freshScopeMapping(mapping, projectName, false)
 	if projectNode == nil {
 		return
 	}
-
 	removeMappingKey(projectNode, "follow_up")
-	if len(projectNode.Content) == 0 {
-		removeMappingKey(projectsNode, projectName)
-	}
-	if len(projectsNode.Content) == 0 {
-		removeMappingKey(mapping, "projects")
-	}
+	pruneEmptyProjectScope(mapping, projectName)
 }
 
 // findFollowUpIndex returns the index of the entry named name within seq, or
