@@ -46,6 +46,11 @@ A primary worktree link is how design/explore workitems under workflow/ get
 into camp p commit tags: when you commit from that worktree, the resolver
 matches the link and stamps WI-<ref> on the subject.
 
+Note: role:related links to a project scope are no longer accepted; a workitem's
+related projects live in its own projects: field. Use "camp workitem
+create/adopt --project <path>" (or edit the .workitem/frontmatter) instead of
+"--role related --project".
+
 Examples:
   camp workitem link WI-2a7950 --worktree fest/fest-list-watch
   camp workitem link workflow/design/fest-list-watch --worktree projects/worktrees/fest/fest-list-watch
@@ -124,6 +129,17 @@ func runLink(ctx context.Context, cmd *cobra.Command, opts linkOptions) error {
 	scope, err := resolveLinkScope(root, opts)
 	if err != nil {
 		return err
+	}
+
+	// role:related + scope.kind:project is the deprecated overlap (doc 04): that
+	// fact now lives only in the workitem's projects: field, so reject new such
+	// rows at the command layer. AddLink stays a pure registry primitive the
+	// doctor migration can still call to remove existing rows.
+	if role == links.RoleRelated && scope.Kind == links.ScopeProject {
+		return camperrors.NewValidation("role",
+			"role:related + scope.kind:project links are deprecated; use the workitem's own "+
+				"`projects:` field instead (e.g. `camp workitem create/adopt --project "+
+				scope.Path+"`, or edit the .workitem/frontmatter directly)", nil)
 	}
 
 	if !opts.AllowMissing {
