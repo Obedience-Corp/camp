@@ -13,7 +13,6 @@ import (
 	git "github.com/Obedience-Corp/camp/internal/git"
 	navtui "github.com/Obedience-Corp/camp/internal/nav/tui"
 	"github.com/Obedience-Corp/camp/internal/paths"
-	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/Obedience-Corp/camp/internal/worktree"
 	"github.com/spf13/cobra"
@@ -33,9 +32,17 @@ var worktreesCleanCmd = &cobra.Command{
 	Short: "Remove stale worktrees",
 	Long: `Remove stale or orphaned worktrees.
 
-Stale worktrees are those where the git worktree reference is broken or
-the directory no longer exists. This command cleans up both the filesystem
-and git's internal worktree tracking.
+Enumeration uses git worktree list as the source of truth (same as
+camp worktrees list), then scans the preferred projects/worktrees/<project>/
+layout for orphan directories not registered with git.
+
+Auto-removal is conservative. Only worktrees whose .git file points at a
+gitdir that no longer exists are removed from disk without further flags.
+Full clones (.git is a directory) are listed and skipped for manual review.
+
+Git-listed entries whose checkout directory (or .git file) is already gone
+are not auto-pruned here; use git worktree prune in the project repo for
+admin-only leftovers after the directory has vanished.
 
 Examples:
   # Preview what would be cleaned
@@ -208,8 +215,8 @@ func findStaleWorktrees(ctx context.Context, campRoot string, pm *worktree.PathM
 	var stale []cleanResult
 	seen := make(map[string]struct{})
 
-	// Project targets: registered campaign projects (same approach as worktrees list).
-	targets, err := cleanProjectTargets(ctx, campRoot, filterProject)
+	// Project targets: shared with list so both commands scan the same set.
+	targets, err := worktreeProjectTargets(ctx, campRoot, filterProject)
 	if err != nil {
 		return nil, err
 	}
@@ -257,33 +264,6 @@ func findStaleWorktrees(ctx context.Context, campRoot string, pm *worktree.PathM
 	}
 
 	return stale, nil
-}
-
-type cleanProjectTarget struct {
-	name string
-	path string
-}
-
-func cleanProjectTargets(ctx context.Context, campRoot, filterProject string) ([]cleanProjectTarget, error) {
-	if filterProject != "" {
-		resolved, err := project.Resolve(ctx, campRoot, filterProject)
-		if err != nil {
-			return nil, err
-		}
-		return []cleanProjectTarget{{name: resolved.Name, path: resolved.Path}}, nil
-	}
-	projects, err := project.List(ctx, campRoot)
-	if err != nil {
-		return nil, camperrors.Wrap(err, "failed to list projects")
-	}
-	out := make([]cleanProjectTarget, 0, len(projects))
-	for _, proj := range projects {
-		out = append(out, cleanProjectTarget{
-			name: proj.Name,
-			path: project.ResolveProjectPath(campRoot, proj),
-		})
-	}
-	return out, nil
 }
 
 func staleIfRemovable(projectName, worktreeName, path string) (cleanResult, bool) {

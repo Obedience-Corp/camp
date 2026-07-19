@@ -124,15 +124,10 @@ func runWorktreesList(cmd *cobra.Command, args []string) error {
 	return outputListTable(result)
 }
 
-type listProjectTarget struct {
-	name string
-	path string
-}
-
 func listWorktrees(ctx context.Context, campRoot string, filterProject string, staleOnly bool) (*WorktreeListResult, error) {
 	var allWorktrees []WorktreeListItem
 
-	projectTargets, err := listWorktreeProjectTargets(ctx, campRoot, filterProject)
+	projectTargets, err := worktreeProjectTargets(ctx, campRoot, filterProject)
 	if err != nil {
 		return nil, err
 	}
@@ -187,13 +182,23 @@ func listWorktrees(ctx context.Context, campRoot string, filterProject string, s
 	}, nil
 }
 
-func listWorktreeProjectTargets(ctx context.Context, campRoot, filterProject string) ([]listProjectTarget, error) {
+// worktreeProjectTarget is a registered campaign project used as a scan root
+// for worktree list/clean enumeration.
+type worktreeProjectTarget struct {
+	name string
+	path string
+}
+
+// worktreeProjectTargets resolves the set of projects whose git worktrees
+// should be enumerated. Shared by list and clean so the project set cannot
+// drift between commands (how clean lagged list after git-as-source-of-truth).
+func worktreeProjectTargets(ctx context.Context, campRoot, filterProject string) ([]worktreeProjectTarget, error) {
 	if filterProject != "" {
 		resolved, err := project.Resolve(ctx, campRoot, filterProject)
 		if err != nil {
 			return nil, err
 		}
-		return []listProjectTarget{{
+		return []worktreeProjectTarget{{
 			name: resolved.Name,
 			path: resolved.Path,
 		}}, nil
@@ -204,9 +209,9 @@ func listWorktreeProjectTargets(ctx context.Context, campRoot, filterProject str
 		return nil, camperrors.Wrap(err, "failed to list projects")
 	}
 
-	targets := make([]listProjectTarget, 0, len(projects))
+	targets := make([]worktreeProjectTarget, 0, len(projects))
 	for _, proj := range projects {
-		targets = append(targets, listProjectTarget{
+		targets = append(targets, worktreeProjectTarget{
 			name: proj.Name,
 			path: project.ResolveProjectPath(campRoot, proj),
 		})
