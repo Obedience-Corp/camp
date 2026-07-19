@@ -7,7 +7,7 @@
 # inventory and online state into a GIF in a public repo. Never record this
 # tape with the real tailscale ahead of the fixture on PATH.
 #
-# Setup expected at /tmp/mdemo: bin/camp (the branch build), bin/tailscale
+# Setup expected at $CAMP_VHS_ROOT: bin/camp (the branch build), bin/tailscale
 # (a copy of the fixture), and no machines.yaml.
 #
 # Record with: just vhs record "$PWD/docs/demos/machine-tui.tape"
@@ -26,11 +26,12 @@ Set TypingSpeed 70ms
 Set Theme {"name":"termcast","background":"#0d0d11","foreground":"#f8f8f2","cursor":"#F2721C","selection":"#2a2a33","black":"#16161a","red":"#ff5f57","green":"#50fa7b","yellow":"#febc2e","blue":"#57a6ff","magenta":"#bd93f9","cyan":"#8be9fd","white":"#f8f8f2","brightBlack":"#6b7280","brightRed":"#ff6e67","brightGreen":"#69ff94","brightYellow":"#ffd23f","brightBlue":"#7ab8ff","brightMagenta":"#d0a9ff","brightCyan":"#a4f0ff","brightWhite":"#ffffff"}
 
 Hide
-Type "export PATH=/tmp/mdemo/bin:$PATH" Enter
+Type "export HOME=$CAMP_VHS_ROOT/home" Enter
+Type "export PATH=$CAMP_VHS_ROOT/bin:$PATH" Enter
 Type "export TERM=xterm-256color COLORTERM=truecolor COLORFGBG=15\;0" Enter
-Type "export CAMP_MACHINES_PATH=/tmp/mdemo/machines.yaml" Enter
+Type "export CAMP_MACHINES_PATH=$CAMP_VHS_ROOT/machines.yaml" Enter
 Type "export PS1='\033[38;5;208m❯\033[0m '" Enter
-Type "cd /tmp/mdemo" Enter
+Type "cd $CAMP_VHS_ROOT" Enter
 Type "clear" Enter
 Show
 

@@ -1,0 +1,121 @@
+{
+  "artifacts": {
+    "optimization_note": null,
+    "optimized": {
+      "byte_size": 349656,
+      "duration_ms": 29650.0,
+      "format": "gif",
+      "fps": 20.0,
+      "frame_count": 593,
+      "height": 593,
+      "path": "private-evidence/machine-tui/optimized.gif",
+      "sha256": "a6c4492d63a4d319146dc56e98f29032e5ed516b15705d75c23eab6778cda112",
+      "width": 960
+    },
+    "raw": {
+      "byte_size": 552299,
+      "duration_ms": 29640.0,
+      "format": "gif",
+      "fps": 25.0,
+      "frame_count": 741,
+      "height": 840,
+      "path": "private-evidence/machine-tui/raw.gif",
+      "sha256": "d8bc4f66f621cd00bebc77144e0929b89a465b5b1a975dc67237ffbb3736e061",
+      "width": 1360
+    }
+  },
+  "fixture": {
+    "disposable": true,
+    "fake_home": true,
+    "id": "camp-machine-v2-1d5415b8"
+  },
+  "gist": {
+    "markdown": "![Camp machine TUI using the shared Obedience Corp fire palette](https://gist.githubusercontent.com/lancekrogers/09ffb2ecd5fb42edd13f684e95402314/raw/camp-machine-brand.gif)",
+    "page_url": "https://gist.github.com/lancekrogers/09ffb2ecd5fb42edd13f684e95402314",
+    "raw_url": "https://gist.githubusercontent.com/lancekrogers/09ffb2ecd5fb42edd13f684e95402314/raw/camp-machine-brand.gif",
+    "visibility": "secret"
+  },
+  "journey": "machine-tui",
+  "privacy": {
+    "result": "passed",
+    "scan_path": "private-evidence/machine-tui/privacy-scan.txt",
+    "scan_sha256": "8ce13857824d3be9967aff1ca8dcf18dab381a02b23d2fa82f84dfb5f6308666"
+  },
+  "pty": {
+    "fake_home": true,
+    "fixture_id": "camp-machine-v2-1d5415b8",
+    "pyte_version": "installed",
+    "renderer": "pyte",
+    "snapshots_path": "private-evidence/machine-tui/screen-snapshots.json",
+    "snapshots_sha256": "3966bbe3484f88457114af05fc00565639e4c493aaa8ae6614554115f8b4c52c",
+    "states": [
+      "initial",
+      "selected-device-1",
+      "selected-device-2",
+      "form",
+      "user-tab-1",
+      "user-tab-2",
+      "user-tab-3",
+      "user-field",
+      "user",
+      "save",
+      "help",
+      "final",
+      "quit"
+    ],
+    "terminal": {
+      "columns": 170,
+      "mode": "dark/adaptive truecolor",
+      "pixel_height": 840,
+      "pixel_width": 1360,
+      "rows": 52
+    },
+    "transcript_path": "private-evidence/machine-tui/pty-transcript.txt",
+    "transcript_sha256": "e5f8bd15424a2089a1745e5bb1c03d823665efbd9e66b4e39dfc20f08f77557c",
+    "transport": "pty"
+  },
+  "repository": "camp",
+  "review": {
+    "recorded_at": "2026-07-19T09:42:03Z",
+    "reviewed_at": null,
+    "reviewer": "lancekrogers"
+  },
+  "schema_version": 1,
+  "source": {
+    "binary": {
+      "executable": true,
+      "path": "bin/camp",
+      "sha256": "a838b80bf65c2ab2093aa5a3931704707e27aeb6c45dc4ca7690a0597341c09e"
+    },
+    "dependencies": {
+      "path": "private-evidence/machine-tui/dependencies.txt",
+      "sha256": "eae376a19263c09d9b288ecf464d7d141c912bb418a4bac7ddd0baed52b82998",
+      "versions": [
+        "build_command=just build default-build",
+        "source_revision=50dfb0250624d2a4d48ce4bb5108e6811c18f5a4",
+        "vhs version 0.11.0",
+        "ffmpeg version 8.1.2",
+        "ffprobe version 8.1.2",
+        "pyte_version=installed",
+        "github.com/Obedience-Corp/obey-shared v0.4.5",
+        "journey=machine-tui"
+      ]
+    },
+    "revision": "50dfb0250624d2a4d48ce4bb5108e6811c18f5a4",
+    "tape": {
+      "path": "docs/demos/machine-tui.tape",
+      "sha256": "b110d2de468cd3fbb357c115f6a06fdb7181838052673d5cb272ebd55ebaf8e1"
+    }
+  },
+  "validation": {
+    "command": "vhs 0.11.0 recording plus independent PTY/pyte matrix validation",
+    "expected_states": [
+      "initial",
+      "form",
+      "save",
+      "help",
+      "final"
+    ],
+    "result": "passed"
+  }
+}

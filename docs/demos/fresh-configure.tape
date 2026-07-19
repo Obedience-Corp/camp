@@ -1,7 +1,7 @@
 # camp fresh configure — the interactive follow-up setup, recorded against the
 # real binary on a fixture campaign with 15 linked projects.
 #
-# Record with: just vhs record docs/demos/fresh-configure.tape
+# Record with: CAMP_VHS_ROOT=/path/to/fresh-configure-fixture just vhs record docs/demos/fresh-configure.tape
 Output out/fresh-configure.gif
 
 Set Shell "bash"
@@ -18,10 +18,11 @@ Set Theme {"name":"termcast","background":"#0d0d11","foreground":"#f8f8f2","curs
 
 # ── hidden setup: branch binary on PATH, standing inside a project ──
 Hide
-Type "export PATH=/tmp/demo-bin:$PATH" Enter
+Type "export HOME=$CAMP_VHS_ROOT/home" Enter
+Type "export PATH=$CAMP_VHS_ROOT/bin:$PATH" Enter
 Type "export TERM=xterm-256color COLORTERM=truecolor COLORFGBG=15\;0" Enter
 Type "export PS1='\033[38;5;208m❯\033[0m '" Enter
-Type "cd /tmp/campaigns/fresh-demo/projects/payments-api" Enter
+Type "cd $CAMP_VHS_ROOT/campaigns/fresh-demo/projects/payments-api" Enter
 Type "clear" Enter
 Show
 
