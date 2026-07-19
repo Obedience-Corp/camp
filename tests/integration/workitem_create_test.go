@@ -39,6 +39,8 @@ func TestIntegration_WorkitemCreateAndAdopt(t *testing.T) {
 		require.NoError(t, err, "camp workitem create design: %s", out)
 		assert.Contains(t, out, "created workitem tracking at workflow/design/nav-design")
 		assert.Contains(t, out, "directory + .workitem only")
+		assert.Contains(t, out, "recommended next:")
+		assert.NotContains(t, out, "optional next:")
 
 		out, err = tc.RunCampInDir(campaignDir, "complete", "de")
 		require.NoError(t, err, "completion after workitem create: %s", out)
@@ -56,7 +58,10 @@ func TestIntegration_WorkitemCreateAndAdopt(t *testing.T) {
 		assert.Contains(t, out, "created workitem tracking at workflow/feature/demo-feature")
 		assert.Contains(t, out, "id: feature-demo-feature-")
 		assert.Contains(t, out, "type: feature")
-		assert.Contains(t, out, "optional next:")
+		assert.Contains(t, out, "directory + .workitem only")
+		assert.NotContains(t, out, "optional next:")
+		assert.NotContains(t, out, "recommended next:")
+		assert.NotContains(t, out, "fest create workflow")
 
 		manifest, err := tc.ReadFile(campaignDir + "/workflow/feature/demo-feature/.workitem")
 		require.NoError(t, err)
@@ -189,6 +194,7 @@ func TestIntegration_WorkitemCreateJSON(t *testing.T) {
 	require.NoError(t, err, "camp workitem create --json: %s", out)
 	assert.NotContains(t, out, "created workitem tracking at workflow/feature/agent-json")
 	assert.NotContains(t, out, "\n  optional next:")
+	assert.NotContains(t, out, "\n  recommended next:")
 
 	var payload struct {
 		SchemaVersion string    `json:"schema_version"`
@@ -218,9 +224,45 @@ func TestIntegration_WorkitemCreateJSON(t *testing.T) {
 	assert.Empty(t, payload.Workitem.QuestID)
 	assert.Equal(t, "workflow/feature/agent-json", payload.Workitem.RelativePath)
 	assert.Equal(t, "v1alpha7", payload.Workitem.MarkerVersion)
-	assert.Equal(t, "fest create workflow agent-json", payload.Next.Command)
+	// feature/bug/chore: no agent-executable scaffold command
+	assert.Empty(t, payload.Next.Command,
+		"non-explore/design types must not ship unconditional fest create workflow")
+	assert.NotContains(t, out, `"command"`,
+		"empty next.command should be omitted via omitempty for non-scaffold types")
 	assert.Equal(t, "workflow/feature/agent-json", payload.Next.Cwd)
-	assert.Contains(t, payload.Next.Hint, "cd workflow/feature/agent-json")
+	assert.Contains(t, payload.Next.Hint, "tracking only",
+		"agent-facing hint must lock the metadata-only signal")
+	assert.Contains(t, payload.Next.Hint, "workflow/feature/agent-json")
+	assert.NotContains(t, payload.Next.Hint, "fest create workflow",
+		"feature create must not recommend festival scaffold")
+
+	// explore/design retain recommended next.command + tracking-only hint
+	designOut, err := tc.RunCampInDir(campaignDir,
+		"workitem", "create", "agent-design",
+		"--type", "design",
+		"--title", "Agent Design",
+		"--id", "agent-design-fixed",
+		"--json",
+	)
+	require.NoError(t, err, "camp workitem create design --json: %s", designOut)
+	var designPayload struct {
+		Next struct {
+			Command string `json:"command"`
+			Cwd     string `json:"cwd"`
+			Hint    string `json:"hint"`
+		} `json:"next"`
+		Workitem struct {
+			Type string `json:"type"`
+		} `json:"workitem"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(designOut), &designPayload), "raw=%s", designOut)
+	assert.Equal(t, "design", designPayload.Workitem.Type)
+	assert.Equal(t, "fest create workflow agent-design", designPayload.Next.Command)
+	assert.Equal(t, "workflow/design/agent-design", designPayload.Next.Cwd)
+	assert.Contains(t, designPayload.Next.Hint, "tracking only",
+		"agent-facing hint must lock the metadata-only signal")
+	assert.Contains(t, designPayload.Next.Hint, "recommended next")
+	assert.Contains(t, designPayload.Next.Hint, "cd workflow/design/agent-design")
 
 	resolveOut, err := tc.RunCampInDir(campaignDir,
 		"workitem", "resolve", "--workitem", payload.Workitem.ID, "--json")
